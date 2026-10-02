@@ -42,7 +42,7 @@ Recibido ─→ Esperando cliente ───────────────�
 - El cajero presiona **Tomar** y el pedido queda a su nombre ("Lo prepara Ana"). Nadie más puede imprimirlo.
 - Si nadie lo toma en cierto tiempo, se resalta y se avisa.
 - Se imprime **desde el pedido.** El trabajo llega a la impresora con el folio en el nombre (`P-0042 · archivo.pdf`) y
-  Control Print lo liga solo, con su costo real.
+  el [módulo de impresión](impresion.md) lo liga solo, con su costo real.
 
 ## Listo y recogida
 
@@ -78,8 +78,8 @@ Evitan imprimir de más cuando dos personas mandan lo mismo, o la misma persona 
 
 - **Mismo archivo:** huella SHA-256. Aviso: "ya se imprimió en P-0042 a las 10:32".
 - **Mismo contenido en otro archivo** (la CURP descargada de nuevo, un PDF exportado otra vez): huella visual de cada
-  página. Control Print ya dibuja cada página a 300 dpi para medir la tinta, así que sacarla cuesta casi nada. Funciona
+  página. El módulo de impresión ya dibuja cada página a 300 dpi para medir la tinta, así que sacarla cuesta casi nada. Funciona
   también con lo que se imprime directo desde Word, sin pasar por un pedido.
 - Si se reimprime de todas formas, se pide motivo (y, según configuración, autorización).
-- Después, el detector de documentos comunes de Control Print (CURP, recibo de luz) sugiere el servicio que
+- Después, el detector de documentos comunes (CURP, recibo de luz) sugiere el servicio que
   corresponde cobrar.

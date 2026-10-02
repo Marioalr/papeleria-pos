@@ -1,22 +1,46 @@
 # Administrar desde fuera
 
-> **Propuesta en discusión.** Falta confirmar las preguntas del final.
+> Propuesta vigente, en lluvia de ideas: puede cambiar.
 
-## Qué necesita el dueño
+## Lo que se sabe
 
-- **Cada día:** ver las aperturas y los cierres de todas las sucursales (ventas, cortes, diferencias).
-- **Administrar desde fuera:** precios, catálogo, compras y traspasos (las entregas son 1 o 2 días por semana) y
-  reportes.
-- **Autorizar excepciones:** cada vez menos, una vez que el sistema funcione bien.
-- **Más adelante:** recibir WhatsApp por la API (necesita una dirección siempre disponible) y respaldo fuera de la
-  tienda.
+- Las cajas principales **se apagan de noche** y las sucursales probablemente tendrán **horarios distintos**.
+- La casa del dueño está en un lugar distinto a la matriz.
+- El dueño revisa aperturas y cierres cada día; las autorizaciones a distancia serán cada vez menos.
+- Las entregas de proveedores son 1 o 2 días por semana.
+- Es posible que lleguen dispositivos propios que trabajan de noche (vigilancia): ver [ideas](ideas.md).
 
-## El central es un rol, no una máquina
+## Propuesta: servidor virtual como central
 
-El servicio POS es el mismo programa en todas partes; "central" es un modo de configuración. Moverlo de la matriz a
-otro equipo es restaurar un respaldo y cambiar una dirección, sin cambiar código.
+| | |
+|---|---|
+| Dónde | Vultr, Ciudad de México, 1 GB |
+| Costo | ~5–6 USD/mes, más un dominio (~10–15 USD al año) para HTTPS |
+| Qué corre | El mismo servicio POS en modo central (SQLite), panel del dueño, bot de Telegram, webhook de WhatsApp y, a futuro, la entrada de los dispositivos |
+| Quién lo administra | Yo, con scripts: instalación, actualizaciones y respaldos automáticos. El equipo no necesita entrar ni saber Linux |
+| Cuándo | Al abrir la sucursal 2. En el piloto (solo la matriz) no hace falta |
 
-Por eso se puede empezar con lo más barato y moverlo solo cuando haga falta.
+**Por qué cambió la recomendación:**
+
+- Con las cajas apagadas de noche y horarios distintos, un central en la matriz no tendría el cierre de la sucursal 2
+  si esta cierra después, y de noche no habría panel.
+- La vigilancia nocturna y los mensajes de WhatsApp que llegan de noche necesitan algo prendido siempre.
+- Un mini PC en casa sirve, pero dejaría la vigilancia y WhatsApp dependiendo de la luz y el internet de una casa, y
+  necesita un túnel para recibir de fuera. El centro de datos es más confiable por unos 110 MXN al mes.
+- Dejar la caja principal prendida toda la noche costaría más en luz que el servidor.
+- Antes se descartó un "servidor Linux". Se retoma porque cambió el contexto, y el sistema operativo queda invisible
+  para el equipo: es el mismo programa .NET, instalado y actualizado con scripts.
+
+## Cómo funciona
+
+- Cada sucursal sincroniza directo con el central mientras su caja principal está prendida.
+- Lo que llega de noche espera en el central y se entrega al encender la caja principal.
+- La matriz pasa a ser una sucursal más (donde llegan las compras).
+- El panel solo se abre por Tailscale. Lo único público es el webhook de WhatsApp y, a futuro, la entrada de los
+  dispositivos.
+- Respaldo: el central tiene todo, y además sube una copia diaria cifrada a Backblaze B2 o Cloudflare R2 (gratis hasta
+  10 GB).
+- Si el central falla, las sucursales siguen vendiendo; se reconstruye desde el respaldo.
 
 ## Gestión por excepción
 
@@ -27,41 +51,20 @@ La rutina diaria no necesita abrir ningún panel; llega por Telegram:
   mensaje y en archivo.
 - **Alertas** en el momento y **autorizaciones** con botones.
 
-Cada sucursal manda sus propios mensajes directo a Telegram (conexión de salida): funciona aunque la matriz esté
-apagada. El panel queda para el trabajo de fondo: precios, catálogo, compras y reportes.
+Cada sucursal manda sus propios mensajes directo a Telegram, así que esto funciona desde el piloto, antes de que exista
+el central. El panel queda para el trabajo de fondo: precios, catálogo, compras y reportes.
 
-## Opciones para el central
+## Opciones evaluadas
 
-| Opción | Costo aprox. | Disponible | Notas |
-|---|---|---|---|
-| **A. Caja principal de la matriz** | $0 si se apaga de noche. Si se deja prendida 24/7, una PC de escritorio gasta del orden de 100–250 MXN/mes de luz | En horario de tienda | Sin equipo nuevo. Fuera de horario no hay panel |
-| **B. Mini PC en casa del dueño** | Unos 4,000–6,000 MXN una vez, más ~10–30 MXN/mes de luz | 24/7, si hay luz e internet en casa | Windows y el mismo instalador. Además es respaldo fuera de la tienda |
-| **C. Servidor virtual (Vultr, Ciudad de México, 1 GB)** | ~6 USD/mes | 24/7, en centro de datos | El sistema operativo (Linux) no se ve: un solo programa que se despliega con un script |
-| **D. Plataforma administrada (Azure App Service u otras)** | 13 USD/mes o más para algo que no se "duerma" | 24/7 | Más caro sin ventaja real a este tamaño |
-
-## Recomendación
-
-**Etapa 1, al abrir la sucursal 2:** opción A más Telegram, Tailscale y respaldos cifrados a almacenamiento gratuito
-(Backblaze B2 o Cloudflare R2: 10 GB gratis, de sobra para la base). **Costo mensual: $0.**
-
-Lo que no se tiene en esta etapa:
-
-- Panel con todas las sucursales fuera del horario de tienda (lo cubre el resumen de cierre por Telegram).
-- Si la matriz se queda sin internet, la sucursal 2 sigue vendiendo, pero los cambios de precio hechos en la matriz le
-  llegan cuando vuelve.
-- WhatsApp por la API (se usa la captura manual desde la PC).
-
-**Etapa 2, cuando llegue WhatsApp por la API, la 3.ª sucursal o haga falta el panel fuera de horario:** mover el
-central a la opción **B**. Si no se quiere tener un equipo en casa, la **C**.
-
-## Red local
-
-- Router Tenda en cada sucursal: reservar una IP fija para la caja principal. Las cajas también la encuentran solas
-  por búsqueda en la red, como Control Print.
-- Tailscale no requiere configurar el router.
+| Opción | Costo aprox. | Resultado |
+|---|---|---|
+| A. Caja principal de la matriz | $0 si se apaga de noche; 100–250 MXN/mes de luz si se deja prendida | Descartada para 2+ sucursales: de noche no hay central |
+| B. Mini PC en casa del dueño | 4,000–6,000 MXN una vez + ~10–30 MXN/mes de luz | Alternativa si se prefiere no pagar mensualidad |
+| **C. Servidor virtual (Vultr CDMX)** | **~5–6 USD/mes** | **Propuesta** |
+| D. Plataforma administrada (Azure App Service u otras) | 13 USD/mes o más | Más cara sin ventaja real a este tamaño |
 
 ## Preguntas
 
-- [ ] ¿Las cajas principales se apagan de noche? ¿Las sucursales abren y cierran a la misma hora?
-- [ ] ¿La casa del dueño está en un lugar distinto a la matriz? (Para la opción B.)
-- [ ] ¿Qué prefiere el dueño: equipo en casa (pago único) o pago mensual?
+- [ ] Confirmar el servidor virtual (o preferir el mini PC en casa).
+- [ ] Horario de cada sucursal.
+- [ ] Nombre del dominio (puede ser el del negocio).

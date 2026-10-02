@@ -8,7 +8,7 @@ toma un trámite, nadie se entera. Aquí cada servicio tiene una **receta** y su
 | Componente | Ejemplo: engargolado carta | De dónde sale |
 |---|---|---|
 | Materiales | 1 espiral de 10 mm, 2 micas, 1 contraportada | De la receta; se descuentan del inventario al cobrar, al costo promedio |
-| Impresión | 40 páginas en blanco y negro | Costo real que calcula [Control Print](control-print.md) |
+| Impresión | 40 páginas en blanco y negro | Costo real del [módulo de impresión](impresion.md) |
 | Tiempo | 6 minutos | Minutos estándar × costo por minuto del personal |
 | Gastos indirectos | Internet, luz, renta | Gastos del mes, repartidos al cierre |
 
@@ -18,7 +18,7 @@ El cajero captura el parámetro y el sistema elige materiales y precio de una ta
 
 - **Engargolado:** número de hojas → tamaño de espiral y precio.
 - **Enmicado:** tamaño (credencial, carta, oficio) → mica y precio.
-- **Impresión y copia:** páginas, color o blanco y negro, tipo de papel (Control Print ya lo calcula).
+- **Impresión y copia:** páginas, color o blanco y negro, tipo de papel (lo calcula el módulo de impresión).
 
 ## Dos utilidades
 
