@@ -25,7 +25,7 @@
 | Lenguaje | C# / .NET 10 en todo: Windows (impresoras, spooler), Android y web con un solo lenguaje |
 | Interfaz | Una sola, en componentes Blazor: la caja (ventana de Windows), la app Android (MAUI) y el panel del dueño. Todo operable con teclado; diseño para 1366×768 |
 | Servidor de sucursal | Vive en la **caja principal**, como en eleventa, como servicio de Windows (corre sin sesión iniciada y se reinicia solo) |
-| Central | **Servidor virtual** siempre prendido (Vultr CDMX, ~5–6 USD/mes) desde que abra la sucursal 2; en el piloto no hace falta ([propuesta](servidor-remoto.md)) |
+| Central | **Servidor virtual** siempre prendido (Vultr CDMX, 5 USD/mes) desde que abra la sucursal 2; en el piloto no hace falta ([propuesta](servidor-remoto.md)) |
 | Base de datos | SQLite en todas partes; en cada lugar el servicio es el único que escribe |
 | Núcleo | Sin dependencias de Windows: lo comparten la caja, los servidores y la app Android |
 | Inventario | Kardex: solo se agregan movimientos y la existencia es la suma |
