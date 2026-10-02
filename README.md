@@ -13,6 +13,7 @@ Reemplaza a eleventa multicaja e integra [Control Print](https://github.com/Mari
 |---|---|
 | [Plan](docs/plan.md) | Contexto del negocio, decisiones aprobadas, fases y pendientes |
 | [Arquitectura](docs/arquitectura.md) | Componentes, datos, contingencia, varias sucursales, red, respaldos y hardware |
+| [Administrar desde fuera](docs/servidor-remoto.md) | Dónde vive el central, gestión por excepción y costos (propuesta) |
 | [Caja y control](docs/caja-y-control.md) | Venta, cobro, cortes, autorizaciones configurables, bitácora y alertas |
 | [Catálogo e inventario](docs/inventario.md) | Variantes, presentaciones, códigos, kardex, compras, conteos y precios |
 | [Servicios y costeo](docs/servicios.md) | Recetas, servicios con parámetros, utilidad directa y neta |

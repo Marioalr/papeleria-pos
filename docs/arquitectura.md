@@ -61,6 +61,8 @@
   catálogo por número de versión. Cada evento lleva su ID: reenviarlo no duplica nada.
 - **Si la matriz está apagada o sin internet,** las sucursales siguen trabajando y sincronizan cuando vuelve. Mientras
   tanto el panel del dueño no muestra datos nuevos de las demás sucursales.
+- **El central es un rol, no una máquina:** puede pasar de la matriz a otro equipo sin cambiar código. Opciones y
+  recomendación en [administrar desde fuera](servidor-remoto.md).
 - **Traspasos:** documento con estados (enviado → recibido). Cada lado genera sus movimientos y las diferencias se
   marcan.
 
@@ -76,8 +78,8 @@
 - **Local:** copia diaria de la base a otra carpeta o disco, con N días de historia (como el `BackupService` de
   Control Print).
 - **Matriz:** por la sincronización, tiene copia de los datos de todas las sucursales.
-- **Fuera de la tienda (por definir):** copia diaria cifrada a un almacenamiento en la nube. Sin esto, un robo o
-  incendio en la matriz pierde todo.
+- **Fuera de la tienda:** copia diaria cifrada a almacenamiento gratuito (Backblaze B2 o Cloudflare R2, 10 GB). Sin
+  esto, un robo o incendio en la matriz pierde todo.
 
 ## Actualizaciones
 

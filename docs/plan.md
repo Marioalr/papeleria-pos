@@ -20,7 +20,7 @@
 | Lenguaje | C# / .NET 10 en todo, como Control Print |
 | Caja | WPF en Windows 11, todo operable con teclado, diseñada para 1366×768 (monitores económicos) |
 | Servidor | Vive en la **caja principal** de cada sucursal, como en eleventa, como servicio de Windows (corre sin sesión iniciada y se reinicia solo) |
-| Varias sucursales | La caja principal de la **matriz** concentra los datos de todas. Sin servidores en la nube ni Linux |
+| Varias sucursales | La caja principal de la **matriz** concentra los datos de todas. "Central" es un rol que puede moverse después a otro equipo ([propuesta](servidor-remoto.md)) |
 | Base de datos | SQLite en todas partes; el servicio es el único que escribe |
 | Núcleo | Sin dependencias de Windows: lo comparten la caja, el servicio y la app Android |
 | Inventario | Kardex: solo se agregan movimientos y la existencia es la suma |
@@ -75,5 +75,6 @@ Por definir:
 - [ ] Demás funciones a la medida (las describe el dueño)
 - [ ] Privilegios de los clientes registrados: pedido sin anticipo, crédito, apartar sin pagar… ¿qué más?
 - [ ] Regla para pedidos de no registrados: monto máximo que se prepara sin anticipo, y días para borrar el celular
-- [ ] Dónde se guardan los respaldos fuera de la tienda
+- [ ] Dónde vive el central a largo plazo y dónde se guardan los respaldos fuera de la tienda: ver
+      [administrar desde fuera](servidor-remoto.md#preguntas)
 - [ ] WhatsApp: ver [pendientes](whatsapp.md#pendientes)
