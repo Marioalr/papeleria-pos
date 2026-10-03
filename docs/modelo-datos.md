@@ -158,7 +158,7 @@ camino desde el principio.
 - **`PapeleriaPos.Herramientas`** (consola):
   - `generar-ficticios`: crea una base con una papelería inventada, con la forma de una importación de eleventa
     (catálogo, histórico de ventas y existencias al cierre). Ver [datos ficticios](#datos-ficticios).
-  - `diagnostico`: el Excel, primero sobre la base ficticia.
+  - `diagnostico`: el Excel, primero sobre la base ficticia ([hojas](migracion-eleventa.md#diagnóstico-primer-entregable)).
   - `importar-eleventa`: al final de la fase.
 - **`PapeleriaPos.Pruebas`**: reglas del núcleo sin base de datos, y pruebas de la capa de datos contra SQLite en
   memoria.

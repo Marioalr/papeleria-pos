@@ -109,7 +109,7 @@ Fase 0:
 - [x] Revisar el [modelo de datos](modelo-datos.md) propuesto y contestar sus preguntas
 - [x] Modelo en código: núcleo, base SQLite y pruebas
 - [x] Generador de datos ficticios
-- [ ] Diagnóstico en Excel sobre los datos ficticios
+- [x] Diagnóstico en Excel sobre los datos ficticios
 - [ ] Importación de prueba desde eleventa y diagnóstico con los datos reales
 
 Fase 1:
@@ -117,6 +117,9 @@ Fase 1:
 - [ ] Modelo y ancho (58 u 80 mm) de la impresora de tickets; foto de un ticket actual
 
 Por definir:
+
+- [ ] Módulo de convivencia: el POS nuevo como una caja más de eleventa durante la adaptación
+  ([idea](migracion-eleventa.md#convivencia-con-eleventa-idea-a-evaluar))
 
 - [ ] Demás funciones a la medida (las describe el dueño)
 - [ ] Privilegios de los clientes registrados: pedido sin anticipo, crédito, apartar sin pagar… ¿qué más?

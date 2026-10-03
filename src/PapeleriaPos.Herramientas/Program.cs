@@ -1,5 +1,6 @@
 using System.Globalization;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Herramientas.Diagnostico;
 using PapeleriaPos.Herramientas.Ficticios;
 using PapeleriaPos.Nucleo;
 
@@ -8,6 +9,7 @@ CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("es-MX");
 return args switch
 {
     ["generar-ficticios", .. var resto] => await GenerarFicticiosAsync(resto),
+    ["diagnostico", .. var resto] => await DiagnosticoAsync(resto),
     _ => Ayuda(),
 };
 
@@ -18,8 +20,55 @@ static int Ayuda()
 
           generar-ficticios [--salida ficticios.db] [--semilla 2026] [--reemplazar]
               Crea una base con una papelería inventada: catálogo, un año de ventas y existencias.
+
+          diagnostico [--base ficticios.db] [--salida diagnostico.xlsx]
+              Analiza una base y deja el resultado en Excel, una hoja por análisis.
         """);
     return 1;
+}
+
+static async Task<int> DiagnosticoAsync(string[] args)
+{
+    var ruta = Opcion(args, "--base") ?? "ficticios.db";
+    var salida = Opcion(args, "--salida") ?? "diagnostico.xlsx";
+    if (!File.Exists(ruta))
+    {
+        Console.Error.WriteLine($"No existe la base {ruta}.");
+        return 1;
+    }
+
+    Console.WriteLine($"Analizando {ruta}…");
+    DatosDiagnostico datos;
+    await using (var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={ruta}")))
+    {
+        await BaseDeDatos.PrepararAsync(db);
+        datos = await DatosDiagnostico.CargarAsync(db);
+    }
+    if (datos.Ventas.Count == 0)
+    {
+        Console.Error.WriteLine("La base no tiene ventas que analizar.");
+        return 1;
+    }
+
+    var analisis = new Analisis(datos);
+    LibroDiagnostico.Guardar(analisis, salida, Path.GetFileName(ruta));
+
+    Console.WriteLine();
+    foreach (var fila in analisis.Resumen().Where(f => f.Concepto.Length > 0))
+    {
+        var valor = fila.Valor switch
+        {
+            decimal d when fila.Formato == Formato.Dinero => d.ToString("C0"),
+            decimal d when fila.Formato == Formato.Porcentaje => d.ToString("P1"),
+            decimal d => d.ToString("N1"),
+            int i => i.ToString("N0"),
+            DateTime f => f.ToString("dd/MM/yyyy"),
+            var v => v?.ToString() ?? "",
+        };
+        Console.WriteLine($"  {fila.Concepto,-42} {valor,16}");
+    }
+    Console.WriteLine($"\nDiagnóstico: {Path.GetFullPath(salida)}");
+    return 0;
 }
 
 static async Task<int> GenerarFicticiosAsync(string[] args)
