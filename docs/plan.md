@@ -53,6 +53,9 @@
 | Marca | Catálogo propio de marcas: distingue productos parecidos y sirve para buscar |
 | Variantes | Texto libre ("Azul") en la fase 0; con atributos (Color, Tamaño) más adelante |
 | Costo promedio | Por sucursal |
+| Formas de pago | Efectivo, tarjeta (terminal externa) y transferencia (por verificar). Hoy casi todo es efectivo |
+| Impresora de tickets | POS-8360, térmica de 80 mm, ESC/POS; el ticket conserva el formato y el logo del de eleventa |
+| Inversión por sucursal | Se registra lo que cuesta abrir cada sucursal para saber cuándo alcanza el punto de equilibrio ([detalle](#inversión-y-punto-de-equilibrio)) |
 | Git | Ramas cortas por tema, fusionadas a `main` |
 
 ### Cómo han cambiado
@@ -80,7 +83,7 @@ Sin tiempos: se avanza cuando la fase anterior funciona en la tienda.
 | 4. Servicios y pedidos | Recetas y costeo, pedidos, cola compartida, charolas, recogida por celular, duplicados, apartados, listas escolares, captura manual desde WhatsApp |
 | 5. Piloto en la matriz | Depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo |
 | 6. Central y WhatsApp | Servidor virtual, sincronización, panel del dueño, API de WhatsApp → pedidos |
-| 7. Sucursal 2 | Precios por sucursal, traspasos, compras que se reparten |
+| 7. Sucursal 2 | Precios por sucursal, traspasos, compras que se reparten, inversión de apertura y punto de equilibrio |
 | 8. App Android | Preventa y pedidos desde el celular |
 | 9. A la medida | Listas escolares avanzadas, dispositivos propios y lo que se vaya describiendo |
 
@@ -115,6 +118,31 @@ existencias que no son correctas.
   igual en la importación final, justo antes del arranque.
 - **Existencias:** las de eleventa solo sirven de referencia para el conteo; las que valen son las contadas.
 
+### Inversión y punto de equilibrio
+
+Para decidir la tercera sucursal con números reales, no con intuición: cuánto costó abrir la segunda y cuándo se
+pagó sola.
+
+- **Inversión de apertura** por sucursal, una sola vez: mobiliario, equipo (impresoras, computadoras, engargoladoras),
+  adecuaciones del local, depósito de renta, trámites e inventario inicial. Con fecha, monto y comprobante.
+- **Gastos fijos del mes** por sucursal: renta, sueldos, luz, internet. Son los mismos gastos que se reparten en la
+  [utilidad neta de los servicios](servicios.md#dos-utilidades).
+- **De las ventas:** la utilidad bruta de cada mes (venta − costo de lo vendido), que ya sale del POS.
+
+Con eso, un reporte por sucursal:
+
+| Indicador | Cómo se calcula |
+|---|---|
+| Punto de equilibrio mensual | Venta necesaria para cubrir los gastos fijos: gastos fijos ÷ margen bruto |
+| Resultado del mes | Utilidad bruta − gastos fijos |
+| Recuperación de la inversión | Mes en que la suma de los resultados alcanza la inversión de apertura |
+| Rendimiento | Resultado anual ÷ inversión |
+
+- El equipo de la matriz que hoy está en el inventario de eleventa (impresoras, engargoladoras) entra aquí como
+  inversión, no como mercancía.
+- Si la sucursal 2 abre antes de que el POS llegue a la fase 7, hay que **guardar desde ya la lista de gastos de
+  apertura con sus comprobantes** para capturarla después; si no, el cálculo empieza incompleto.
+
 ## Pendientes
 
 Fase 0:
@@ -128,7 +156,8 @@ Fase 0:
 
 Fase 1:
 
-- [ ] Modelo y ancho (58 u 80 mm) de la impresora de tickets; foto de un ticket actual
+- [x] Impresora de tickets: POS-8360 de 80 mm; formato del ticket de eleventa
+- [ ] Revisar el [plan de la fase 1](fase-1-caja.md) y contestar sus preguntas (turnos, teclas, fondo, logo)
 
 Fase 3:
 
@@ -138,7 +167,7 @@ Fase 3:
 Depuración del inventario (antes del piloto, [ver abajo](#depuración-del-inventario)):
 
 - [ ] Dar de baja los productos que ya no existen
-- [ ] Sacar del inventario el equipo de la tienda (impresoras, engargoladoras, enmicadoras, mobiliario)
+- [ ] Sacar del inventario el equipo de la tienda (impresoras, engargoladoras, enmicadoras, mobiliario) y registrarlo como [inversión](#inversión-y-punto-de-equilibrio)
 - [ ] Juntar los productos capturados dos veces (los que marca el diagnóstico)
 - [ ] Corregir unidades: los productos a granel que eleventa tiene en KG (listón, micas, hojas sueltas…)
 - [ ] Pasar a servicios lo que eleventa vende como producto a granel (impresiones, copias, engargolado, escaneo)
@@ -146,9 +175,9 @@ Depuración del inventario (antes del piloto, [ver abajo](#depuración-del-inven
 
 Por definir:
 
+- [ ] Si la sucursal 2 abre antes de la fase 7: guardar la lista de gastos de apertura con comprobantes
 - [ ] Módulo de convivencia: el POS nuevo como una caja más de eleventa durante la adaptación
   ([idea](migracion-eleventa.md#convivencia-con-eleventa-idea-a-evaluar))
-
 - [ ] Demás funciones a la medida (las describe el dueño)
 - [ ] Privilegios de los clientes registrados: pedido sin anticipo, crédito, apartar sin pagar… ¿qué más?
 - [ ] Regla para pedidos de no registrados: monto máximo que se prepara sin anticipo, y días para borrar el celular
