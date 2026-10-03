@@ -90,10 +90,12 @@ puede tener varios códigos.
   su factor: el paquete de 12 cuesta 12 piezas.
 - Si una presentación tiene precio propio (es raro), se captura con `PresentacionId` y gana sobre el cálculo.
 - Para cobrar se busca primero el precio de la sucursal y, si no hay, el base. Luego se usa la escala más alta que
-  alcance la cantidad, contada en unidades base (un paquete de 12 cuenta como 12 piezas para el mayoreo).
+  alcance la cantidad, contada en unidades base (un paquete de 12 cuenta como 12 piezas para el mayoreo). Si no
+  alcanza ninguna (medio metro con el menudeo desde 1 m), se usa la más baja.
 - Importe de una línea = precio × cantidad, redondeado al centavo (1.5 m a $7.50 = $11.25).
+- No se pueden repetir dos filas con la misma variante, presentación, sucursal y escala (índice único).
 - Cada cambio de precio se copia a `PrecioHistorial` (variante, presentación, sucursal, escala, precio anterior y
-  nuevo, fecha). Sirve para el análisis y para la bitácora de la fase 1.
+  nuevo, fecha). Lo escribe sola la capa de datos al guardar. Sirve para el análisis y para la bitácora de la fase 1.
 
 **Proveedor**: `Nombre`, `Telefono`, `Rfc`, `Notas`, `Activo`.
 
