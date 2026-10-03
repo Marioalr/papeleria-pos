@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Nucleo.Ventas;
@@ -115,4 +116,17 @@ internal sealed class CorteConfiguracion : IEntityTypeConfiguration<Corte>
 internal sealed class CorteConteoConfiguracion : IEntityTypeConfiguration<CorteConteo>
 {
     public void Configure(EntityTypeBuilder<CorteConteo> b) => b.ToTable("CortesConteo");
+}
+
+internal sealed class ConfiguracionTicketConfiguracion : IEntityTypeConfiguration<ConfiguracionTicket>
+{
+    public void Configure(EntityTypeBuilder<ConfiguracionTicket> b)
+    {
+        b.ToTable("ConfiguracionesTicket");
+        b.HasKey(c => c.SucursalId);
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(c => c.SucursalId);
+        b.Ignore(c => c.RenglonesEncabezado);
+        b.Ignore(c => c.RenglonesPie);
+        b.Ignore(c => c.TieneLogo);
+    }
 }

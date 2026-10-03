@@ -2,12 +2,14 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
+using PapeleriaPos.Impresion;
 using PapeleriaPos.Interfaz;
 
 namespace PapeleriaPos.Caja;
 
 /// <summary>Configuración de esta PC (caja.json, junto al programa).</summary>
-public sealed record ConfiguracionCaja(string Servicio, Guid? CajaId, string Impresora)
+/// <param name="Impresora">"tcp://ip:9100" (impresora de red), el nombre de una impresora de Windows, o vacío para ver el ticket en pantalla.</param>
+public sealed record ConfiguracionCaja(string Servicio, Guid? CajaId, string? Impresora)
 {
     public static ConfiguracionCaja Leer()
     {
@@ -27,7 +29,9 @@ public partial class MainWindow : Window
         var configuracion = ConfiguracionCaja.Leer();
         var servicios = new ServiceCollection();
         servicios.AddWpfBlazorWebView();
-        servicios.AgregarInterfazCaja(new Uri(configuracion.Servicio), configuracion.CajaId, new ImpresoraWindows(configuracion.Impresora));
+        // "tcp://192.168.1.100:9100" imprime directo por la red; un nombre (como "Tickets") usa la impresora de Windows.
+        var impresora = Impresoras.Crear(configuracion.Impresora, nombre => new ImpresoraWindows(nombre));
+        servicios.AgregarInterfazCaja(new Uri(configuracion.Servicio), configuracion.CajaId, impresora);
         Vista.Services = servicios.BuildServiceProvider();
     }
 }

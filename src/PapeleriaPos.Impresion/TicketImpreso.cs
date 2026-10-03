@@ -32,6 +32,7 @@ public static class TicketTexto
             {
                 Renglon r => (r.Texto, r.Alineacion),
                 Qr q => ($"[QR {q.Datos}]", Alineacion.Centro),
+                Imagen i => ($"[logo {i.Logo.Ancho}×{i.Logo.Alto}]", Alineacion.Centro),
                 _ => ("", Alineacion.Izquierda),
             };
             sb.AppendLine(Alinear(texto, alineacion).TrimEnd());
@@ -88,6 +89,10 @@ public static class TicketEscPos
                     b.AddRange(Pc850.GetBytes(r.Texto.Length > DisenoTicket.Columnas ? r.Texto[..DisenoTicket.Columnas] : r.Texto));
                     b.Add(0x0A);
                     break;
+                case Imagen i:
+                    b.AddRange([Esc, (byte)'a', 1]);
+                    AgregarImagen(b, i.Logo);
+                    break;
                 case Qr q:
                     b.AddRange([Esc, (byte)'a', 1]);
                     AgregarQr(b, q.Datos);
@@ -99,6 +104,18 @@ public static class TicketEscPos
         b.AddRange([Esc, (byte)'d', 4]);         // avanza para que el pie pase la cuchilla
         b.AddRange([Gs, (byte)'V', 66, 0]);      // corte parcial
         return b.ToArray();
+    }
+
+    /// <summary>GS v 0: imagen en modo raster, renglón por renglón.</summary>
+    private static void AgregarImagen(List<byte> b, LogoTicketDto logo)
+    {
+        var bits = Convert.FromBase64String(logo.BitsBase64);
+        var bytesPorRenglon = (logo.Ancho + 7) / 8;
+        if (bits.Length != bytesPorRenglon * logo.Alto)
+            throw new ArgumentException("El logo no tiene el tamaño que dice.", nameof(logo));
+        b.AddRange([Gs, (byte)'v', (byte)'0', 0, (byte)(bytesPorRenglon % 256), (byte)(bytesPorRenglon / 256), (byte)(logo.Alto % 256), (byte)(logo.Alto / 256)]);
+        b.AddRange(bits);
+        b.Add(0x0A);
     }
 
     private static void AgregarQr(List<byte> b, string datos)

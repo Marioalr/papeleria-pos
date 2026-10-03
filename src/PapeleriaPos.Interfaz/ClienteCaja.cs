@@ -50,6 +50,23 @@ public sealed class ClienteCaja(HttpClient http)
 
     public Task<TicketDto?> UltimoTicketAsync(Guid cajaId) => GetAsync<TicketDto>($"api/cajas/{cajaId}/ultimo-ticket");
 
+    public Task<ConfiguracionTicketDto?> ConfiguracionTicketAsync(Guid sucursalId) =>
+        GetAsync<ConfiguracionTicketDto>($"api/sucursales/{sucursalId}/ticket");
+
+    public Task<ConfiguracionTicketDto> GuardarTextosTicketAsync(Guid sucursalId, SolicitudTextosTicket solicitud) =>
+        PutAsync<ConfiguracionTicketDto>($"api/sucursales/{sucursalId}/ticket/textos", solicitud);
+
+    /// <summary>Sin imagen, quita el logo.</summary>
+    public Task<ConfiguracionTicketDto> GuardarLogoTicketAsync(Guid sucursalId, SolicitudLogo solicitud) =>
+        PutAsync<ConfiguracionTicketDto>($"api/sucursales/{sucursalId}/ticket/logo", solicitud);
+
+    private async Task<T> PutAsync<T>(string url, object cuerpo)
+    {
+        using var respuesta = await EnviarAsync(() => http.PutAsJsonAsync(url, cuerpo));
+        await RevisarAsync(respuesta);
+        return (await respuesta.Content.ReadFromJsonAsync<T>())!;
+    }
+
     private async Task<T?> GetAsync<T>(string url, bool nadaEsNulo = false, bool noEncontradoEsNulo = false)
     {
         using var respuesta = await EnviarAsync(() => http.GetAsync(url));

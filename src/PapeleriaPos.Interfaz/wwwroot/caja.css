@@ -112,3 +112,16 @@ details summary { cursor: pointer; color: var(--azul); }
 .conteo input { width: 90px; font-size: 15px; padding: 4px 6px; }
 
 pre.ticket { font-family: Consolas, "Courier New", monospace; font-size: 13px; background: #fffef8; border: 1px dashed var(--borde); padding: 12px; margin: 0; }
+
+/* Configuración del ticket */
+.ventana.configuracion { width: 1040px; }
+.configuracion-ticket { display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: start; }
+.config-campos { display: flex; flex-direction: column; gap: 10px; }
+.config-vista { display: flex; flex-direction: column; align-items: center; background: #fffef8; border: 1px dashed var(--borde); padding: 12px; }
+.config-vista pre.ticket { border: none; padding: 0; background: none; }
+.logo-vista { image-rendering: pixelated; max-width: 384px; margin-bottom: 6px; }
+textarea { font-family: Consolas, "Courier New", monospace; font-size: 14px; padding: 6px 8px; border: 1px solid var(--borde); border-radius: 4px; resize: vertical; }
+.logo-config { display: flex; align-items: center; gap: 8px; }
+.boton.archivo { position: relative; overflow: hidden; display: inline-block; }
+.boton.archivo input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.aviso { color: var(--exito); margin: 4px 0; }

@@ -20,11 +20,12 @@ Este documento detalla la entrega 1; las demás se cierran cuando les toque.
 
 **Avance de la entrega 1:** ya funcionan, probados de punta a punta en el navegador con datos ficticios, la entrada
 con PIN, abrir turno, escanear y buscar, cantidades (`3*código`, `+`/`-`), varios tickets (F5/F6), artículo común,
-entradas y salidas de efectivo, verificador, cobro mixto, ticket, ventas del día, reimprimir y los cortes X y Z.
+entradas y salidas de efectivo, verificador, cobro mixto, ticket, ventas del día, reimprimir, los cortes X y Z y la
+configuración del ticket con logo.
 Falta:
 
-- Probar la ventana de Windows con la POS-8360 y el cajón de verdad.
-- Importar el logo y capturar los textos del ticket desde la configuración (hoy están en `appsettings.json`).
+- Confirmar cómo sale el ticket en papel (ya se le mandó uno de prueba a la POS-8360 por la red) y probar el cajón y
+  la ventana de Windows.
 - Instalar el servicio como servicio de Windows (entrega 3).
 
 ## Entrega 1: cómo se arma
@@ -52,7 +53,7 @@ Falta:
 
 ## Ticket
 
-**Impresora:** POS-8360, térmica de 80 mm, comandos ESC/POS. Son 576 puntos de ancho: 48 caracteres por línea con la
+**Impresora:** POS-8360, térmica de 80 mm, comandos ESC/POS, conectada a la red (puerto 9100): la caja le manda el ticket directo, sin controlador. Son 576 puntos de ancho: 48 caracteres por línea con la
 letra normal. El ticket se manda directo con comandos, no como documento de Windows: sale más rápido y permite el QR.
 
 Mismo orden que el ticket de eleventa, para que nadie extrañe nada:
@@ -84,8 +85,11 @@ Mismo orden que el ticket de eleventa, para que nadie extrañe nada:
      Síguenos en nuestras redes sociales
 ```
 
-- Encabezado, pie y logo se configuran (los mismos textos que hoy tiene eleventa).
-- **Logo:** se convierte una vez a blanco y negro al ancho del papel y se manda con cada ticket.
+- **Configuración** (botón en la barra, como en eleventa): encabezado y pie de hasta 8 renglones de 48 caracteres,
+  "Agregar logotipo…" y "Quitar logotipo…", vista previa e "Imprimir ticket de prueba". Se guarda por sucursal y la
+  cambia el encargado o el dueño con su PIN.
+- **Logo:** al importarlo se convierte una vez a blanco y negro, a lo más 384 puntos de ancho (unos 48 mm), con los
+  grises simulados con puntos; se manda con cada ticket como imagen.
 - **QR con el folio:** sirve para devoluciones y, más adelante, para encontrar pedidos.
 - **Cajón:** se abre con el comando de la impresora al cobrar en efectivo, y cada apertura queda registrada.
 - Las descripciones largas pasan a la siguiente línea; el importe siempre va alineado a la derecha.

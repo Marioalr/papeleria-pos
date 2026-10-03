@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Historico;
 using PapeleriaPos.Nucleo.Importacion;
 using PapeleriaPos.Nucleo.Inventario;
@@ -40,6 +41,7 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<Cobro> Cobros => Set<Cobro>();
     public DbSet<Corte> Cortes => Set<Corte>();
     public DbSet<CorteConteo> CortesConteo => Set<CorteConteo>();
+    public DbSet<ConfiguracionTicket> ConfiguracionesTicket => Set<ConfiguracionTicket>();
 
     /// <summary>Reloj para <see cref="IVersionado.ModificadoUtc"/> y el historial de precios; las pruebas lo fijan.</summary>
     public TimeProvider Reloj { get; init; } = TimeProvider.System;
