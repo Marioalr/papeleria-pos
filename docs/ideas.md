@@ -23,6 +23,17 @@ Lo que implicaría:
   retiros, cortes).
 - Si hay cámaras o grabación: aviso de privacidad y letreros.
 
+## Experiencia de usuario (mejora continua)
+
+Se tratan cuando el sistema ya esté en uso y se trabaje en mejorar la experiencia de los cajeros.
+
+- **Más de un código por producto, con distintos usos.** Además del código de barras:
+  - el **código del proveedor**, para armar pedidos de compra con la clave que él entiende;
+  - una **clave corta** para buscar más rápido lo que se vende seguido.
+
+  El [modelo](modelo-datos.md) ya lo permite (varios códigos por presentación y `CodigoProveedor`). Falta decidir
+  cómo se usan en la búsqueda y en los pedidos.
+
 ## Otras ideas que han salido
 
 - Leer la foto de una lista escolar y convertirla en pedido.
