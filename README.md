@@ -16,6 +16,12 @@ dotnet build
 dotnet test
 ```
 
+Base con una papelería inventada (catálogo, un año de ventas y existencias), para probar sin datos reales:
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- generar-ficticios --salida ficticios.db
+```
+
 Migraciones de la base (EF Core):
 
 ```

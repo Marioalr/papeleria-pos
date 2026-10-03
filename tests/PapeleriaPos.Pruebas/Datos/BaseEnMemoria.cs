@@ -29,12 +29,6 @@ public sealed class BaseEnMemoria : IAsyncDisposable
     public async ValueTask DisposeAsync() => await _conexion.DisposeAsync();
 }
 
-public sealed class RelojFijo(DateTimeOffset ahora) : TimeProvider
-{
-    public DateTimeOffset Ahora { get; set; } = ahora;
-    public override DateTimeOffset GetUtcNow() => Ahora;
-}
-
 /// <summary>Un catálogo mínimo: matriz, un departamento y una pluma con pieza y docena.</summary>
 public sealed class CatalogoMinimo
 {

@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\PapeleriaPos.Nucleo\PapeleriaPos.Nucleo.csproj" />
     <ProjectReference Include="..\..\src\PapeleriaPos.Datos\PapeleriaPos.Datos.csproj" />
+    <ProjectReference Include="..\..\src\PapeleriaPos.Herramientas\PapeleriaPos.Herramientas.csproj" />
   </ItemGroup>
 
 </Project>

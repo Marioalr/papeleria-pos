@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/PapeleriaPos.Datos/PapeleriaPos.Datos.csproj" />
+    <Project Path="src/PapeleriaPos.Herramientas/PapeleriaPos.Herramientas.csproj" />
     <Project Path="src/PapeleriaPos.Nucleo/PapeleriaPos.Nucleo.csproj" />
   </Folder>
   <Folder Name="/tests/">
