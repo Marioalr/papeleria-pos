@@ -1,0 +1,104 @@
+@* Raíz de la caja: conecta con el servicio, pide entrar con PIN, abre el turno y muestra la venta. *@
+@inject ClienteCaja Cliente
+@inject OpcionesCaja Opciones
+
+<div class="caja">
+    @if (_error is not null)
+    {
+        <div class="centrado">
+            <div class="tarjeta">
+                <h2>Sin conexión</h2>
+                <p class="error">@_error</p>
+                <button class="boton principal" @onclick="IniciarAsync">Reintentar</button>
+            </div>
+        </div>
+    }
+    else if (_caja is null)
+    {
+        <div class="centrado"><p>Conectando con el servicio…</p></div>
+    }
+    else if (_sesion is null)
+    {
+        <Entrada Caja="_caja" Turno="_turno" AlEntrar="Entrar" />
+    }
+    else if (_turno is null)
+    {
+        <AbrirTurno Caja="_caja" Sesion="_sesion" AlAbrir="TurnoAbierto" AlSalir="Salir" />
+    }
+    else if (_turno.CajeroId != _sesion.UsuarioId)
+    {
+        @* Un turno por cajero: si entra otro, primero el corte del que sale. *@
+        <div class="centrado">
+            <div class="tarjeta ancha">
+                <h2>@_caja.Nombre tiene abierto el turno de @_turno.Cajero</h2>
+                <p>Antes de que entre otro cajero, el encargado hace el corte de cierre de ese turno.</p>
+                @if (_corte)
+                {
+                    <CorteCaja Turno="_turno" Sesion="_sesion" SoloCierre="true" AlTerminar="CorteTerminado" />
+                }
+                else
+                {
+                    <div class="acciones">
+                        <button class="boton principal" @onclick="() => _corte = true">Hacer el corte</button>
+                        <button class="boton" @onclick="Salir">Salir</button>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        <PantallaVenta Caja="_caja" Sesion="_sesion" Turno="_turno" AlSalir="Salir" AlCerrarTurno="CorteTerminado" />
+    }
+</div>
+
+@code {
+    private CajaDto? _caja;
+    private SesionDto? _sesion;
+    private TurnoDto? _turno;
+    private string? _error;
+    private bool _corte;
+
+    protected override Task OnInitializedAsync() => IniciarAsync();
+
+    private async Task IniciarAsync()
+    {
+        _error = null;
+        try
+        {
+            var cajas = await Cliente.CajasAsync();
+            _caja = Opciones.CajaId is { } id ? cajas.SingleOrDefault(c => c.Id == id) : cajas.FirstOrDefault();
+            if (_caja is null)
+            {
+                _error = "Esta PC no tiene una caja dada de alta en el servicio.";
+                return;
+            }
+            _turno = await Cliente.TurnoAsync(_caja.Id);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task Entrar(SesionDto sesion)
+    {
+        _sesion = sesion;
+        _turno = await Cliente.TurnoAsync(_caja!.Id);
+    }
+
+    private void TurnoAbierto(TurnoDto turno) => _turno = turno;
+
+    private void Salir()
+    {
+        _sesion = null;
+        _corte = false;
+    }
+
+    private async Task CorteTerminado()
+    {
+        _corte = false;
+        _sesion = null;
+        _turno = await Cliente.TurnoAsync(_caja!.Id);
+    }
+}

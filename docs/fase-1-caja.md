@@ -18,6 +18,15 @@ aparte, sin tocar la operación de la tienda, hasta el piloto (fase 5).
 
 Este documento detalla la entrega 1; las demás se cierran cuando les toque.
 
+**Avance de la entrega 1:** ya funcionan, probados de punta a punta en el navegador con datos ficticios, la entrada
+con PIN, abrir turno, escanear y buscar, cantidades (`3*código`, `+`/`-`), varios tickets (F5/F6), artículo común,
+entradas y salidas de efectivo, verificador, cobro mixto, ticket, ventas del día, reimprimir y los cortes X y Z.
+Falta:
+
+- Probar la ventana de Windows con la POS-8360 y el cajón de verdad.
+- Importar el logo y capturar los textos del ticket desde la configuración (hoy están en `appsettings.json`).
+- Instalar el servicio como servicio de Windows (entrega 3).
+
 ## Entrega 1: cómo se arma
 
 ```

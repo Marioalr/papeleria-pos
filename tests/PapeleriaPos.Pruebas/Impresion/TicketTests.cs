@@ -1,0 +1,90 @@
+using PapeleriaPos.Impresion;
+using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Ventas;
+
+namespace PapeleriaPos.Pruebas.Impresion;
+
+public class TicketTests
+{
+    private static TicketDto Ticket(params CobroTicketDto[] cobros) => new(
+        "A-000123", new DateTime(2026, 10, 3, 12, 47, 0), "Caja 1", "Ana",
+        [
+            new LineaTicketDto("2", "Nylon C10 x metro", 6000, 12000),
+            new LineaTicketDto("0.5 m", "Listón de raso 2.5 cm rojo con orilla dorada para moños grandes", 800, 400),
+            new LineaTicketDto("1", "Cuaderno profesional Español", 4500, 4500),
+        ],
+        4, 16900, 2331,
+        cobros.Length > 0 ? cobros : [new CobroTicketDto(FormaPago.Efectivo, 16900, 20000, 3100, null)],
+        ["PAPELERÍA DE PRUEBA", "Calle 1"], ["Gracias por su compra"]);
+
+    [Fact]
+    public void El_texto_cabe_en_48_columnas_y_trae_lo_importante()
+    {
+        var texto = TicketTexto.Generar(Ticket());
+        var renglones = texto.Split(Environment.NewLine);
+
+        Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
+        Assert.Contains("Folio A-000123", texto);
+        Assert.Contains("Total: $169.00", texto);
+        Assert.Contains("Efectivo: $200.00  Cambio: $31.00", texto);
+        Assert.Contains("Incluye IVA: $23.31", texto);
+        Assert.Contains("[QR A-000123]", texto);
+        Assert.Contains("Español", texto);
+    }
+
+    [Fact]
+    public void Las_descripciones_largas_siguen_en_el_renglon_de_abajo_sin_cortar_palabras()
+    {
+        var partes = DisenoTicket.Partir("Listón de raso 2.5 cm rojo con orilla dorada para moños grandes", 30);
+
+        Assert.True(partes.Count > 1);
+        Assert.All(partes, p => Assert.True(p.Length <= 30));
+        Assert.Equal("Listón de raso 2.5 cm rojo con orilla dorada para moños grandes", string.Join(" ", partes));
+    }
+
+    [Fact]
+    public void Tarjeta_y_transferencia_aparecen_con_su_referencia()
+    {
+        var texto = TicketTexto.Generar(Ticket(
+            new CobroTicketDto(FormaPago.Tarjeta, 10000, 0, 0, "Aut 4411"),
+            new CobroTicketDto(FormaPago.Transferencia, 6900, 0, 0, "SPEI")));
+
+        Assert.Contains("Tarjeta: $100.00 (Aut 4411)", texto);
+        Assert.Contains("Transferencia: $69.00", texto);
+    }
+
+    [Fact]
+    public void Escpos_inicia_corta_y_abre_el_cajon_solo_si_se_pide()
+    {
+        var conCajon = TicketEscPos.Generar(Ticket(), abrirCajon: true);
+        var sinCajon = TicketEscPos.Generar(Ticket(), abrirCajon: false);
+        byte[] cajon = [0x1B, (byte)'p', 0, 25, 250];
+        byte[] corte = [0x1D, (byte)'V', 66, 0];
+
+        Assert.Equal([0x1B, (byte)'@'], conCajon[..2]);
+        Assert.Equal(corte, conCajon[^4..]);
+        Assert.True(Contiene(conCajon, cajon));
+        Assert.False(Contiene(sinCajon, cajon));
+    }
+
+    [Fact]
+    public void Escpos_usa_la_pagina_850_para_la_ñ_y_trae_el_qr()
+    {
+        var bytes = TicketEscPos.Generar(Ticket(), abrirCajon: false);
+
+        Assert.True(Contiene(bytes, [0x1B, (byte)'t', 2]));
+        Assert.True(Contiene(bytes, [(byte)'E', (byte)'s', (byte)'p', (byte)'a', 0xA4, (byte)'o', (byte)'l'])); // "Español"
+        Assert.True(Contiene(bytes, "A-000123"u8.ToArray()));
+        Assert.True(Contiene(bytes, [0x1D, (byte)'(', (byte)'k', 3, 0, 49, 81, 48]));
+    }
+
+    private static bool Contiene(byte[] datos, byte[] buscado)
+    {
+        for (var i = 0; i <= datos.Length - buscado.Length; i++)
+        {
+            if (datos.AsSpan(i, buscado.Length).SequenceEqual(buscado))
+                return true;
+        }
+        return false;
+    }
+}

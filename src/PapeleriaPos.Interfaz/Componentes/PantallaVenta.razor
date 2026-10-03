@@ -1,0 +1,540 @@
+@* La pantalla de venta: misma distribución y mismas teclas que eleventa. *@
+@implements IAsyncDisposable
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+@inject IImpresora Impresora
+
+<div class="venta">
+    <header class="barra-modulos">
+        <button class="modulo activo">F1 Ventas</button>
+        <button class="modulo" disabled title="Llega en otra entrega">F3 Productos</button>
+        <button class="modulo" disabled title="Llega en otra entrega">F4 Inventario</button>
+        <button class="modulo" @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
+        <span class="espacio"></span>
+        <div class="atiende">
+            <small>Le atiende:</small>
+            <strong>@Sesion.Nombre</strong>
+            <small>@Caja.Sucursal · @Caja.Nombre · turno desde @Turno.AbiertoLocal.ToString("HH:mm")</small>
+        </div>
+        <button class="modulo" @onclick="AlSalir">Salir</button>
+    </header>
+
+    <div class="titulo-venta">VENTA - Ticket @Actual.Numero</div>
+
+    <div class="captura">
+        <label for="codigo">Código del producto:</label>
+        <input id="codigo" data-codigo autocomplete="off" @bind="_codigo" @bind:event="oninput" @onkeydown="AlTeclearCodigo" />
+        <button class="boton" @onclick="AgregarCodigoAsync">ENTER - Agregar producto</button>
+    </div>
+    <div class="botones-venta">
+        <button class="boton" @onclick="() => Abrir(Ventanas.Comun)">INS Varios</button>
+        <button class="boton" @onclick="() => Abrir(Ventanas.Comun)">CTRL+P Art. común</button>
+        <button class="boton" @onclick="() => Abrir(Ventanas.Buscar)">F10 Buscar</button>
+        <button class="boton" disabled title="Mayoreo: pendiente de decidir (fase 3)">F11 Mayoreo</button>
+        <button class="boton" @onclick="() => Abrir(Ventanas.Entrada)">F7 Entradas</button>
+        <button class="boton" @onclick="() => Abrir(Ventanas.Salida)">F8 Salidas</button>
+        <button class="boton" @onclick="BorrarSeleccion">DEL Borrar art.</button>
+        <button class="boton" @onclick="() => Abrir(Ventanas.Verificador)">F9 Verificador</button>
+    </div>
+
+    <nav class="pestanas">
+        @foreach (var t in _tickets)
+        {
+            <button class="pestana @(t == Actual ? "activa" : "")" @onclick="() => Cambiar(t)">
+                Ticket @t.Numero @(t.Venta.Lineas.Count > 0 && t != Actual ? $"({Formato.Dinero(t.Venta.TotalCentavos)})" : "")
+            </button>
+        }
+    </nav>
+
+    <div class="tabla-venta">
+        <table>
+            <thead>
+                <tr>
+                    <th class="col-codigo">Código de barras</th>
+                    <th>Descripción del producto</th>
+                    <th class="num">Precio venta</th>
+                    <th class="num col-cant">Cant.</th>
+                    <th class="num">Importe</th>
+                    <th class="num">Existencia</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < Actual.Venta.Lineas.Count; i++)
+                {
+                    var indice = i;
+                    var linea = Actual.Venta.Lineas[i];
+                    var producto = linea.VarianteId is { } v ? Actual.Productos.GetValueOrDefault(v) : null;
+                    <tr id="linea-@i" class="@(i == _seleccion ? "seleccionada" : "")" @onclick="() => Seleccionar(indice)">
+                        <td class="col-codigo">@(producto?.Codigo ?? "—")</td>
+                        <td>@Descripcion(linea, producto)</td>
+                        <td class="num">@Formato.Dinero(linea.PrecioCentavos)</td>
+                        <td class="num col-cant">@Formato.Numero(linea.Cantidad.EnUnidades)</td>
+                        <td class="num">@Formato.Dinero(linea.ImporteCentavos)</td>
+                        <td class="num">@(producto?.Existencia is { } e ? Formato.Numero(e) : "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (Actual.Venta.Lineas.Count == 0)
+        {
+            <p class="vacia">Escanea un producto o escribe su código. F10 para buscar por nombre.</p>
+        }
+    </div>
+
+    @if (_mensaje is not null)
+    {
+        <div class="mensaje @(_mensajeEsError ? "error" : "")">@_mensaje</div>
+    }
+
+    <footer class="pie-venta">
+        <div class="pie-izquierda">
+            <div class="conteo"><span class="numero">@Formato.Numero(Actual.Venta.NumeroDeArticulos)</span> Productos en la venta actual.</div>
+            <div class="botones-pie">
+                <button class="boton" @onclick="CambiarSiguiente">F5 - Cambiar</button>
+                <button class="boton" @onclick="NuevoTicket">F6 - Pendiente</button>
+                <button class="boton" @onclick="EliminarTicket">Eliminar</button>
+            </div>
+            <div class="ultima">
+                <div><small>Total:</small> <strong>@(_ultimo is null ? "$0.00" : Formato.Dinero(_ultimo.TotalCentavos))</strong></div>
+                <div><small>Pagó con:</small> <strong>@(_ultimo is null ? "$0.00" : Formato.Dinero(_ultimo.PagoConCentavos))</strong></div>
+                <div><small>Cambio:</small> <strong class="cambio">@(_ultimo is null ? "$0.00" : Formato.Dinero(_ultimo.CambioCentavos))</strong></div>
+            </div>
+        </div>
+        <div class="pie-derecha">
+            <div class="cobro">
+                <button class="boton cobrar" disabled="@(Actual.Venta.Lineas.Count == 0)" @onclick="() => Abrir(Ventanas.Cobrar)">F12 - Cobrar</button>
+                <div class="total">@Formato.Dinero(Actual.Venta.TotalCentavos)</div>
+            </div>
+            <div class="botones-pie">
+                <button class="boton" @onclick="ReimprimirUltimoAsync">Reimprimir último ticket</button>
+                <button class="boton" @onclick="() => Abrir(Ventanas.VentasDelDia)">Ventas del día</button>
+            </div>
+        </div>
+    </footer>
+
+    @switch (_ventana)
+    {
+        case Ventanas.Cobrar:
+            <Ventana Titulo="Cobrar" Clase="cobrar" AlCerrar="Cerrar">
+                <CobrarVenta TotalCentavos="Actual.Venta.TotalCentavos" AlCobrar="CobrarAsync" />
+            </Ventana>
+            break;
+        case Ventanas.Buscar:
+            <Ventana Titulo="Buscar producto" Clase="buscar" AlCerrar="Cerrar">
+                <BuscarProducto SucursalId="Caja.SucursalId" AlElegir="AgregarVarianteAsync" />
+            </Ventana>
+            break;
+        case Ventanas.Comun:
+            <Ventana Titulo="Artículo varios / común" AlCerrar="Cerrar">
+                <ArticuloComun AlAgregar="AgregarComun" />
+            </Ventana>
+            break;
+        case Ventanas.Entrada:
+        case Ventanas.Salida:
+            var tipo = _ventana == Ventanas.Entrada ? TipoMovimientoCaja.Entrada : TipoMovimientoCaja.Salida;
+            <Ventana Titulo="@(tipo == TipoMovimientoCaja.Entrada ? "Entrada de efectivo" : "Salida de efectivo")" AlCerrar="Cerrar">
+                <MovimientoEfectivo Tipo="tipo" TurnoId="Turno.Id" UsuarioId="Sesion.UsuarioId" AlTerminar="MovimientoRegistrado" />
+            </Ventana>
+            break;
+        case Ventanas.Verificador:
+            <Ventana Titulo="Verificador de precios" AlCerrar="Cerrar">
+                <Verificador SucursalId="Caja.SucursalId" />
+            </Ventana>
+            break;
+        case Ventanas.Corte:
+            <Ventana Titulo="Corte" Clase="corte" AlCerrar="Cerrar">
+                @if (_tickets.Count(t => t.Venta.Lineas.Count > 0) is var sinCobrar and > 0)
+                {
+                    <p class="error">Hay @sinCobrar @(sinCobrar == 1 ? "ticket" : "tickets") sin cobrar: si se cierra el turno, se pierden.</p>
+                }
+                <CorteCaja Turno="Turno" Sesion="Sesion" AlTerminar="AlCerrarTurno" />
+            </Ventana>
+            break;
+        case Ventanas.VentasDelDia:
+            <Ventana Titulo="Ventas del día" Clase="ventas-dia" AlCerrar="Cerrar">
+                <VentasDelDia CajaId="Caja.Id" AlReimprimir="ReimprimirAsync" />
+            </Ventana>
+            break;
+        case Ventanas.VistaPrevia when _ultimo is not null:
+            <Ventana Titulo="@($"Ticket {_ultimo.Folio}")" Clase="vista-previa" AlCerrar="Cerrar">
+                <pre class="ticket">@TicketTexto.Generar(_ultimo)</pre>
+                <p class="nota">Sin impresora conectada: así saldrá impreso en la de 80 mm.</p>
+            </Ventana>
+            break;
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter, EditorRequired] public TurnoDto Turno { get; set; } = null!;
+    [Parameter] public EventCallback AlSalir { get; set; }
+    [Parameter] public EventCallback AlCerrarTurno { get; set; }
+
+    private enum Ventanas { Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia }
+
+    private sealed class TicketAbierto
+    {
+        public required Venta Venta { get; init; }
+        public required int Numero { get; init; }
+        public Dictionary<Guid, ProductoVentaDto> Productos { get; } = [];
+    }
+
+    private readonly List<TicketAbierto> _tickets = [];
+    private TicketAbierto Actual => _tickets[_actual];
+    private int _actual;
+    private int _seleccion = -1;
+    private int _siguienteNumero = 1;
+    private string _codigo = "";
+    private string? _mensaje;
+    private bool _mensajeEsError;
+    private TicketDto? _ultimo;
+    private Ventanas _ventana;
+    private DotNetObjectReference<PantallaVenta>? _referencia;
+
+    protected override void OnInitialized() => NuevoTicket();
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!primera)
+            return;
+        _referencia = DotNetObjectReference.Create(this);
+        await Js.RegistrarTeclasAsync(_referencia);
+        await Js.EnfocarAsync("#codigo");
+    }
+
+    [JSInvokable]
+    public async Task Tecla(string tecla)
+    {
+        if (_ventana != Ventanas.Ninguna)
+        {
+            if (tecla == "Escape")
+                await Cerrar();
+            return;
+        }
+
+        switch (tecla)
+        {
+            case "F10": await Abrir(Ventanas.Buscar); break;
+            case "F12" when Actual.Venta.Lineas.Count > 0: await Abrir(Ventanas.Cobrar); break;
+            case "F5": CambiarSiguiente(); break;
+            case "F6": NuevoTicket(); break;
+            case "F7": await Abrir(Ventanas.Entrada); break;
+            case "F8": await Abrir(Ventanas.Salida); break;
+            case "F9": await Abrir(Ventanas.Verificador); break;
+            case "Insert" or "Ctrl+P": await Abrir(Ventanas.Comun); break;
+            case "Delete": BorrarSeleccion(); break;
+            case "ArrowUp": await MoverSeleccion(-1); break;
+            case "ArrowDown": await MoverSeleccion(1); break;
+            case "+": CambiarCantidadSeleccion(1); break;
+            case "-": CambiarCantidadSeleccion(-1); break;
+            case "F11": Avisar("El mayoreo está pendiente de decidir (fase 3).", error: false); break;
+            case "F3" or "F4": Avisar("Ese módulo llega en otra entrega.", error: false); break;
+            case "Escape": _codigo = ""; _mensaje = null; break;
+        }
+        StateHasChanged();
+    }
+
+    // ── Captura ─────────────────────────────────────────────────────────────
+
+    private async Task AlTeclearCodigo(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await AgregarCodigoAsync();
+    }
+
+    /// <summary>"7501…" agrega una pieza; "3*7501…" agrega tres; "5*" cambia la cantidad del renglón seleccionado.</summary>
+    private async Task AgregarCodigoAsync()
+    {
+        var texto = _codigo.Trim();
+        if (texto.Length == 0)
+            return;
+
+        var cantidad = Cantidad.Piezas(1);
+        var asterisco = texto.IndexOf('*');
+        if (asterisco > 0)
+        {
+            if (!decimal.TryParse(texto[..asterisco], NumberStyles.Number, CultureInfo.InvariantCulture, out var n) || n <= 0)
+            {
+                Avisar($"Cantidad inválida: «{texto[..asterisco]}».");
+                return;
+            }
+            cantidad = Cantidad.Unidades(Math.Round(n, 3));
+            texto = texto[(asterisco + 1)..].Trim();
+            if (texto.Length == 0)
+            {
+                FijarCantidadSeleccion(cantidad);
+                _codigo = "";
+                return;
+            }
+        }
+
+        try
+        {
+            var producto = await Cliente.PorCodigoAsync(texto, Caja.SucursalId);
+            if (producto is null)
+            {
+                Avisar($"No existe el código «{texto}». F10 para buscar por nombre.");
+                return;
+            }
+            Agregar(producto, null, cantidad);
+            _codigo = "";
+        }
+        catch (ErrorCaja ex)
+        {
+            Avisar(ex.Message);
+        }
+    }
+
+    private async Task AgregarVarianteAsync(Guid varianteId)
+    {
+        await Cerrar();
+        try
+        {
+            if (await Cliente.PorVarianteAsync(varianteId, Caja.SucursalId) is { } producto)
+                Agregar(producto, null, Cantidad.Piezas(1));
+        }
+        catch (ErrorCaja ex)
+        {
+            Avisar(ex.Message);
+        }
+    }
+
+    private void Agregar(ProductoVentaDto producto, Guid? presentacionId, Cantidad cantidad)
+    {
+        try
+        {
+            var linea = Actual.Venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(presentacionId), cantidad, producto.PreciosModelo());
+            Actual.Productos[producto.VarianteId] = producto;
+            _seleccion = Actual.Venta.Lineas.IndexOf(linea);
+            _mensaje = null;
+            _ = Js.MostrarAsync($"#linea-{_seleccion}");
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Avisar(ex.Message);
+        }
+    }
+
+    private async Task AgregarComun((string Descripcion, long Precio, Cantidad Cantidad) articulo)
+    {
+        await Cerrar();
+        try
+        {
+            var linea = Actual.Venta.AgregarArticuloComun(articulo.Descripcion, articulo.Precio, articulo.Cantidad);
+            _seleccion = Actual.Venta.Lineas.IndexOf(linea);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Avisar(ex.Message);
+        }
+    }
+
+    // ── Renglones ───────────────────────────────────────────────────────────
+
+    private void Seleccionar(int indice) => _seleccion = indice;
+
+    private async Task MoverSeleccion(int paso)
+    {
+        if (Actual.Venta.Lineas.Count == 0)
+            return;
+        _seleccion = Math.Clamp(_seleccion + paso, 0, Actual.Venta.Lineas.Count - 1);
+        await Js.MostrarAsync($"#linea-{_seleccion}");
+    }
+
+    private void BorrarSeleccion()
+    {
+        if (_seleccion < 0 || _seleccion >= Actual.Venta.Lineas.Count)
+            return;
+        Actual.Venta.QuitarLinea(Actual.Venta.Lineas[_seleccion]);
+        _seleccion = Math.Min(_seleccion, Actual.Venta.Lineas.Count - 1);
+    }
+
+    private void CambiarCantidadSeleccion(int paso)
+    {
+        if (_seleccion < 0 || _seleccion >= Actual.Venta.Lineas.Count)
+            return;
+        var linea = Actual.Venta.Lineas[_seleccion];
+        var nueva = linea.Cantidad + Cantidad.Piezas(paso);
+        if (!nueva.EsPositiva)
+        {
+            BorrarSeleccion();
+            return;
+        }
+        FijarCantidadSeleccion(nueva);
+    }
+
+    private void FijarCantidadSeleccion(Cantidad cantidad)
+    {
+        if (_seleccion < 0 || _seleccion >= Actual.Venta.Lineas.Count)
+        {
+            Avisar("Selecciona un renglón (flechas) para cambiar su cantidad.");
+            return;
+        }
+        var linea = Actual.Venta.Lineas[_seleccion];
+        if (linea.VarianteId is not { } varianteId || !Actual.Productos.TryGetValue(varianteId, out var producto))
+        {
+            Avisar("La cantidad del artículo común no se cambia: bórralo y agrégalo de nuevo.");
+            return;
+        }
+        try
+        {
+            Actual.Venta.CambiarCantidad(linea, cantidad, producto.PresentacionModelo(linea.PresentacionId), producto.PreciosModelo());
+            _mensaje = null;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Avisar(ex.Message);
+        }
+    }
+
+    // ── Tickets ─────────────────────────────────────────────────────────────
+
+    private void NuevoTicket()
+    {
+        _tickets.Add(new TicketAbierto
+        {
+            Numero = _siguienteNumero++,
+            Venta = new Venta
+            {
+                SucursalId = Caja.SucursalId,
+                CajaId = Caja.Id,
+                TurnoId = Turno.Id,
+                CajeroId = Sesion.UsuarioId,
+                Serie = Caja.Serie,
+                CreadaUtc = DateTime.UtcNow,
+            },
+        });
+        _actual = _tickets.Count - 1;
+        _seleccion = -1;
+        _ = Js.EnfocarAsync("#codigo");
+    }
+
+    private void Cambiar(TicketAbierto ticket)
+    {
+        _actual = _tickets.IndexOf(ticket);
+        _seleccion = Actual.Venta.Lineas.Count - 1;
+    }
+
+    private void CambiarSiguiente()
+    {
+        if (_tickets.Count > 1)
+            Cambiar(_tickets[(_actual + 1) % _tickets.Count]);
+    }
+
+    private void EliminarTicket()
+    {
+        _tickets.RemoveAt(_actual);
+        if (_tickets.Count == 0)
+            NuevoTicket();
+        else
+            Cambiar(_tickets[Math.Min(_actual, _tickets.Count - 1)]);
+    }
+
+    // ── Cobro e impresión ───────────────────────────────────────────────────
+
+    /// <summary>Lo llama la ventana de cobro. Devuelve el error para mostrarlo ahí, o null si se cobró.</summary>
+    private async Task<string?> CobrarAsync(IReadOnlyList<CobroSolicitado> cobros)
+    {
+        var lineas = Actual.Venta.Lineas.Select(l => l.VarianteId is null
+            ? new LineaSolicitada(null, null, l.Cantidad.Milesimas, l.Descripcion, l.PrecioCentavos)
+            : new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas)).ToList();
+        try
+        {
+            var ticket = await Cliente.CobrarAsync(new SolicitudCobro(Caja.Id, Turno.Id, Sesion.UsuarioId, lineas, cobros));
+            _tickets.RemoveAt(_actual);
+            if (_tickets.Count == 0)
+                NuevoTicket();
+            else
+                Cambiar(_tickets[^1]);
+            await ImprimirAsync(ticket, abrirCajon: ticket.AbreCajon);
+            Avisar($"Venta {ticket.Folio} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: false);
+            return null;
+        }
+        catch (ErrorCaja ex)
+        {
+            return ex.Message;
+        }
+    }
+
+    private Task ReimprimirAsync(TicketDto ticket) => ImprimirAsync(ticket, abrirCajon: false);
+
+    private async Task ImprimirAsync(TicketDto ticket, bool abrirCajon)
+    {
+        _ultimo = ticket;
+        try
+        {
+            await Impresora.ImprimirAsync(ticket, abrirCajon);
+            if (Impresora.MuestraVistaPrevia)
+                await Abrir(Ventanas.VistaPrevia);
+            else
+                await Cerrar();
+        }
+        catch (Exception ex)
+        {
+            await Cerrar();
+            Avisar($"No se pudo imprimir el ticket {ticket.Folio}: {ex.Message}");
+        }
+    }
+
+    private async Task ReimprimirUltimoAsync()
+    {
+        try
+        {
+            if (await Cliente.UltimoTicketAsync(Caja.Id) is { } ticket)
+                await ReimprimirAsync(ticket);
+        }
+        catch (ErrorCaja ex)
+        {
+            Avisar(ex.Message);
+        }
+    }
+
+    private async Task MovimientoRegistrado(string resumen)
+    {
+        await Cerrar();
+        Avisar(resumen, error: false);
+    }
+
+    // ── Ventanas y avisos ───────────────────────────────────────────────────
+
+    private async Task Abrir(Ventanas ventana)
+    {
+        _ventana = ventana;
+        await Js.VentanaAbiertaAsync(true);
+        StateHasChanged();
+    }
+
+    private async Task Cerrar()
+    {
+        _ventana = Ventanas.Ninguna;
+        await Js.VentanaAbiertaAsync(false);
+        StateHasChanged();
+        await Js.EnfocarAsync("#codigo");
+    }
+
+    private void Avisar(string mensaje, bool error = true)
+    {
+        _mensaje = mensaje;
+        _mensajeEsError = error;
+    }
+
+    private static string Descripcion(VentaLinea linea, ProductoVentaDto? producto)
+    {
+        var presentacion = producto?.Presentaciones.FirstOrDefault(p => p.Id == linea.PresentacionId);
+        return presentacion is { EsBase: false } ? $"{linea.Descripcion} ({presentacion.Nombre})" : linea.Descripcion;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await Js.QuitarTeclasAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // El navegador ya se cerró.
+        }
+        _referencia?.Dispose();
+    }
+}

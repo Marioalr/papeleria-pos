@@ -35,6 +35,32 @@ Importar una copia de la base de eleventa (requiere Firebird 2.5 embebido, ver
 dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --salida eleventa.db
 ```
 
+### Probar la caja
+
+1. Una base de prueba (ficticia o importada) con la Caja 1 y usuarios de prueba:
+
+   ```
+   dotnet run --project src/PapeleriaPos.Herramientas -- generar-ficticios --salida ficticios.db
+   dotnet run --project src/PapeleriaPos.Herramientas -- preparar-caja --base ficticios.db
+   ```
+
+2. El servicio de la sucursal, apuntando a esa base (en desarrollo también muestra la caja en el navegador, en
+   <http://localhost:5080>, con vista previa del ticket en lugar de imprimir):
+
+   ```
+   dotnet run --project src/PapeleriaPos.Servicio -- --environment Development --ConnectionStrings:Pos="Data Source=ficticios.db"
+   ```
+
+3. La caja de Windows (`src/PapeleriaPos.Caja`) se conecta al servicio e imprime en la impresora de `caja.json`.
+
+Usuarios de prueba que crea `preparar-caja` (solo para bases de prueba):
+
+| Usuario | Rol | PIN |
+|---|---|---|
+| `cajero` | Cajero | 1111 |
+| `encargado` | Encargado (hace el corte Z) | 2222 |
+| `dueno` | Dueño | 3333 |
+
 Migraciones de la base (EF Core):
 
 ```
