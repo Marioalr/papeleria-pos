@@ -107,7 +107,9 @@ para que el POS nuevo trabaje con datos al día sin escribir nada en eleventa. S
 
 ## Arranque (fase 5)
 
-1. Conteo físico completo, por departamentos, en las semanas previas.
-2. Arranque en un día tranquilo.
-3. Eleventa queda instalado solo para consulta unas semanas, como respaldo, con un plan para regresar si algo falla.
-4. Capacitación a cajeros y encargado antes del arranque, con datos de prueba.
+1. Depuración del catálogo sobre la base importada ([plan](plan.md#depuración-del-inventario)): bajas, duplicados,
+   equipo de la tienda, unidades y servicios.
+2. Conteo físico completo, por departamentos, en las semanas previas. Reemplaza todas las existencias de eleventa.
+3. Arranque en un día tranquilo.
+4. Eleventa queda instalado solo para consulta unas semanas, como respaldo, con un plan para regresar si algo falla.
+5. Capacitación a cajeros y encargado antes del arranque, con datos de prueba.
