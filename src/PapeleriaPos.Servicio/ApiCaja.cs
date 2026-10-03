@@ -1,0 +1,203 @@
+using System.Globalization;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using PapeleriaPos.Datos;
+using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Turnos;
+using PapeleriaPos.Nucleo.Usuarios;
+using PapeleriaPos.Nucleo.Ventas;
+
+namespace PapeleriaPos.Servicio;
+
+/// <summary>Textos del ticket. Los mismos que tiene hoy el ticket de eleventa; se configuran en appsettings.</summary>
+public sealed class OpcionesTicket
+{
+    public List<string> Encabezado { get; set; } = [];
+    public List<string> Pie { get; set; } = [];
+}
+
+/// <summary>La API que usa la caja. Los errores de negocio regresan 400 con un mensaje para el cajero.</summary>
+public static class ApiCaja
+{
+    public static void MapearApiCaja(this IEndpointRouteBuilder app)
+    {
+        var api = app.MapGroup("/api").AddEndpointFilter(async (contexto, siguiente) =>
+        {
+            try
+            {
+                return await siguiente(contexto);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+            {
+                return Results.BadRequest(new ErrorDto(ex.Message));
+            }
+        });
+
+        api.MapGet("/cajas", async (PosDbContext db) =>
+            await (from c in db.Cajas
+                   join s in db.Sucursales on c.SucursalId equals s.Id
+                   where c.Activa
+                   orderby c.Serie
+                   select new CajaDto(c.Id, c.Nombre, c.Serie, s.Id, s.Nombre)).ToListAsync());
+
+        api.MapPost("/sesion", async (SolicitudEntrada solicitud, PosDbContext db) =>
+        {
+            var usuario = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == solicitud.Usuario.Trim().ToLower());
+            if (usuario is null)
+                return Results.BadRequest(new ErrorDto("Usuario o PIN incorrecto."));
+            var resultado = usuario.VerificarPin(solicitud.Pin, db.Reloj.GetUtcNow().UtcDateTime);
+            await db.SaveChangesAsync();
+            return resultado switch
+            {
+                ResultadoPin.Correcto => Results.Ok(new SesionDto(usuario.Id, usuario.Nombre, usuario.Rol)),
+                ResultadoPin.Bloqueado => Results.BadRequest(new ErrorDto("Demasiados intentos: espera unos minutos.")),
+                _ => Results.BadRequest(new ErrorDto("Usuario o PIN incorrecto.")),
+            };
+        });
+
+        api.MapGet("/cajas/{cajaId:guid}/turno", async (Guid cajaId, PosDbContext db) =>
+            await new RegistroCaja(db).TurnoAbiertoAsync(cajaId) is { } turno ? Results.Ok(await TurnoDtoAsync(db, turno)) : Results.NoContent());
+
+        api.MapPost("/turnos", async (SolicitudTurno s, PosDbContext db) =>
+            await TurnoDtoAsync(db, await new RegistroCaja(db).AbrirTurnoAsync(s.CajaId, s.CajeroId, s.FondoCentavos)));
+
+        api.MapPost("/turnos/{turnoId:guid}/movimientos", async (Guid turnoId, SolicitudMovimiento s, PosDbContext db) =>
+        {
+            await new RegistroCaja(db).RegistrarMovimientoAsync(turnoId, s.Tipo, s.MontoCentavos, s.Motivo, s.UsuarioId);
+            return Results.Ok();
+        });
+
+        api.MapPost("/turnos/{turnoId:guid}/corte-x", async (Guid turnoId, Guid usuarioId, PosDbContext db) =>
+            await CorteDtoAsync(db, await new RegistroCaja(db).CorteXAsync(turnoId, usuarioId)));
+
+        api.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, SolicitudCorteZ s, PosDbContext db) =>
+        {
+            var encargado = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == s.EncargadoUsuario.Trim().ToLower());
+            var resultado = encargado?.VerificarPin(s.EncargadoPin, db.Reloj.GetUtcNow().UtcDateTime);
+            await db.SaveChangesAsync();
+            if (resultado != ResultadoPin.Correcto)
+                return Results.BadRequest(new ErrorDto(resultado == ResultadoPin.Bloqueado ? "Demasiados intentos: espera unos minutos." : "Usuario o PIN del encargado incorrecto."));
+            return Results.Ok(await CorteDtoAsync(db, await new RegistroCaja(db).CorteZAsync(turnoId, encargado!.Id, s.Conteo)));
+        });
+
+        api.MapGet("/productos/codigo/{codigo}", async (string codigo, Guid sucursalId, PosDbContext db, CatalogoEnMemoria catalogo) =>
+            await catalogo.PorCodigoAsync(db, codigo, sucursalId) is { } p ? Results.Ok(p) : Results.NotFound(new ErrorDto($"No existe el código «{codigo}».")));
+
+        api.MapGet("/productos/{varianteId:guid}", async (Guid varianteId, Guid sucursalId, PosDbContext db, CatalogoEnMemoria catalogo) =>
+            await catalogo.PorVarianteAsync(db, varianteId, sucursalId) is { } p ? Results.Ok(p) : Results.NotFound(new ErrorDto("El producto ya no está en el catálogo.")));
+
+        api.MapGet("/productos/buscar", async (string q, Guid sucursalId, PosDbContext db, CatalogoEnMemoria catalogo) =>
+            await catalogo.BuscarAsync(db, q, sucursalId));
+
+        api.MapPost("/ventas", async (SolicitudCobro s, PosDbContext db, CatalogoEnMemoria catalogo, IOptions<OpcionesTicket> ticket) =>
+        {
+            var turno = await db.Turnos.FindAsync(s.TurnoId) ?? throw new InvalidOperationException("El turno no existe.");
+            var caja = await db.Cajas.FindAsync(s.CajaId) ?? throw new InvalidOperationException("La caja no existe.");
+            var venta = new Venta
+            {
+                SucursalId = caja.SucursalId,
+                CajaId = caja.Id,
+                TurnoId = turno.Id,
+                CajeroId = s.CajeroId,
+                Serie = caja.Serie,
+                CreadaUtc = db.Reloj.GetUtcNow().UtcDateTime,
+            };
+
+            // Se vuelve a armar con los precios del catálogo: la caja solo dice qué y cuánto.
+            foreach (var l in s.Lineas)
+            {
+                var cantidad = new Cantidad(l.CantidadMilesimas);
+                if (l.VarianteId is not { } varianteId)
+                {
+                    venta.AgregarArticuloComun(l.Descripcion ?? "", l.PrecioCentavos ?? 0, cantidad);
+                    continue;
+                }
+                var producto = await catalogo.PorVarianteAsync(db, varianteId, caja.SucursalId)
+                    ?? throw new InvalidOperationException("Un producto de la venta ya no está en el catálogo.");
+                venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
+            }
+
+            await new RegistroCaja(db).CobrarAsync(venta, s.Cobros);
+            return await TicketAsync(db, venta, ticket.Value);
+        });
+
+        api.MapGet("/cajas/{cajaId:guid}/ventas-del-dia", async (Guid cajaId, PosDbContext db) =>
+        {
+            var hoy = HoraMexico.ALocal(db.Reloj.GetUtcNow().UtcDateTime).Date;
+            var desde = HoraMexico.AUtc(hoy);
+            var ventas = await (from v in db.Ventas.Include(v => v.Lineas)
+                                join u in db.Usuarios on v.CajeroId equals u.Id
+                                where v.CajaId == cajaId && v.PagadaUtc >= desde
+                                select new { Venta = v, Cajero = u.Nombre }).ToListAsync();
+            return ventas.OrderByDescending(x => x.Venta.Folio)
+                .Select(x => new VentaDelDiaDto(x.Venta.Id, x.Venta.FolioTexto!, HoraMexico.ALocal(x.Venta.PagadaUtc!.Value), x.Venta.TotalCentavos,
+                    (int)x.Venta.NumeroDeArticulos, x.Cajero))
+                .ToList();
+        });
+
+        api.MapGet("/ventas/{ventaId:guid}/ticket", async (Guid ventaId, PosDbContext db, IOptions<OpcionesTicket> ticket) =>
+            await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleOrDefaultAsync(v => v.Id == ventaId) is { } venta
+                ? Results.Ok(await TicketAsync(db, venta, ticket.Value))
+                : Results.NotFound(new ErrorDto("La venta no existe.")));
+
+        api.MapGet("/cajas/{cajaId:guid}/ultimo-ticket", async (Guid cajaId, PosDbContext db, IOptions<OpcionesTicket> ticket) =>
+            await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).Where(v => v.CajaId == cajaId && v.Folio != null)
+                .OrderByDescending(v => v.Folio).FirstOrDefaultAsync() is { } venta
+                ? Results.Ok(await TicketAsync(db, venta, ticket.Value))
+                : Results.NotFound(new ErrorDto("Esta caja todavía no tiene ventas.")));
+    }
+
+    private static async Task<TurnoDto> TurnoDtoAsync(PosDbContext db, Turno t)
+    {
+        var cajero = await db.Usuarios.Where(u => u.Id == t.CajeroId).Select(u => u.Nombre).SingleAsync();
+        return new TurnoDto(t.Id, t.CajaId, t.CajeroId, cajero, HoraMexico.ALocal(t.AbiertoUtc), t.FondoCentavos);
+    }
+
+    private static async Task<CorteDto> CorteDtoAsync(PosDbContext db, Corte c)
+    {
+        var turno = await db.Turnos.FindAsync(c.TurnoId);
+        var nombres = await db.Usuarios.Where(u => u.Id == turno!.CajeroId || u.Id == c.RealizadoPorId).ToDictionaryAsync(u => u.Id, u => u.Nombre);
+        return new CorteDto(c.Tipo, HoraMexico.ALocal(c.FechaUtc), nombres[turno!.CajeroId], nombres[c.RealizadoPorId], c.Ventas, c.FondoCentavos,
+            c.EfectivoVentasCentavos, c.EntradasCentavos, c.SalidasCentavos, c.TarjetaCentavos, c.TransferenciaCentavos, c.EsperadoCentavos,
+            c.ContadoCentavos, c.DiferenciaCentavos);
+    }
+
+    private static async Task<TicketDto> TicketAsync(PosDbContext db, Venta v, OpcionesTicket opciones)
+    {
+        var caja = await db.Cajas.FindAsync(v.CajaId);
+        var cajero = await db.Usuarios.Where(u => u.Id == v.CajeroId).Select(u => u.Nombre).SingleAsync();
+        var ids = v.Lineas.Where(l => l.PresentacionId != null).Select(l => l.PresentacionId!.Value).ToList();
+        var presentaciones = await db.Presentaciones.Where(p => ids.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, p => p);
+
+        var lineas = v.Lineas.Select(l =>
+        {
+            var descripcion = l.PresentacionId is { } pid && presentaciones.TryGetValue(pid, out var p) && !p.EsBase
+                ? $"{l.Descripcion} ({p.Nombre})"
+                : l.Descripcion;
+            return new LineaTicketDto(CantidadTexto(l, esBase: descripcion == l.Descripcion), descripcion, l.PrecioCentavos, l.ImporteCentavos);
+        }).ToList();
+
+        return new TicketDto(v.FolioTexto!, HoraMexico.ALocal(v.PagadaUtc!.Value), caja!.Nombre, cajero, lineas, v.NumeroDeArticulos,
+            v.TotalCentavos, v.IvaCentavos,
+            v.Cobros.OrderBy(c => c.Forma).Select(c => new CobroTicketDto(c.Forma, c.MontoCentavos, c.RecibidoCentavos, c.CambioCentavos, c.Referencia)).ToList(),
+            opciones.Encabezado, opciones.Pie);
+    }
+
+    /// <summary>"2" piezas; "1.5 m", "0.25 kg", "0.5 l" a granel.</summary>
+    private static string CantidadTexto(VentaLinea l, bool esBase)
+    {
+        var numero = l.Cantidad.EnUnidades.ToString("0.###", CultureInfo.InvariantCulture);
+        if (!esBase)
+            return numero;
+        return l.Unidad switch
+        {
+            UnidadBase.Metro => $"{numero} m",
+            UnidadBase.Kilogramo => $"{numero} kg",
+            UnidadBase.Litro => $"{numero} l",
+            _ => numero,
+        };
+    }
+}

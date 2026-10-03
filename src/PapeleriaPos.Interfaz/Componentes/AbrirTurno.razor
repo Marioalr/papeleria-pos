@@ -1,0 +1,67 @@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="centrado">
+    <div class="tarjeta">
+        <h2>Abrir turno · @Caja.Nombre</h2>
+        <p>Hola, @Sesion.Nombre. Cuenta el fondo de la caja antes de empezar.</p>
+        <label>Fondo de caja
+            <input id="fondo" inputmode="decimal" @bind="_fondo" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+        </label>
+        @if (_error is not null)
+        {
+            <p class="error">@_error</p>
+        }
+        <div class="acciones">
+            <button class="boton principal" disabled="@_ocupado" @onclick="AbrirAsync">Abrir turno</button>
+            <button class="boton" @onclick="AlSalir">Salir</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter] public EventCallback<TurnoDto> AlAbrir { get; set; }
+    [Parameter] public EventCallback AlSalir { get; set; }
+
+    private string _fondo = "";
+    private string? _error;
+    private bool _ocupado;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+            await Js.EnfocarAsync("#fondo");
+    }
+
+    private async Task AlTeclear(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await AbrirAsync();
+    }
+
+    private async Task AbrirAsync()
+    {
+        if (_ocupado)
+            return;
+        if (Formato.LeerPesos(_fondo) is not { } fondo)
+        {
+            _error = "Escribe el fondo contado (puede ser $0).";
+            return;
+        }
+        _ocupado = true;
+        try
+        {
+            await AlAbrir.InvokeAsync(await Cliente.AbrirTurnoAsync(Caja.Id, Sesion.UsuarioId, fondo));
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

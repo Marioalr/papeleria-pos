@@ -1,5 +1,6 @@
 using System.Globalization;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Herramientas;
 using PapeleriaPos.Herramientas.Diagnostico;
 using PapeleriaPos.Herramientas.Eleventa;
 using PapeleriaPos.Herramientas.Ficticios;
@@ -13,6 +14,7 @@ return args switch
     ["generar-ficticios", .. var resto] => await GenerarFicticiosAsync(resto),
     ["diagnostico", .. var resto] => await DiagnosticoAsync(resto),
     ["importar-eleventa", .. var resto] => await ImportarEleventaAsync(resto),
+    ["preparar-caja", .. var resto] => await PrepararCajaAsync(resto),
     _ => Ayuda(),
 };
 
@@ -32,6 +34,9 @@ static int Ayuda()
                             [--firebird32 <carpeta>] [--firebird64 <carpeta>]
               Importa una copia de la base de eleventa (catálogo, ventas y existencias). La original no se abre.
               Por omisión busca Firebird en firebird25-32\embed y firebird25, junto a la carpeta de la base.
+
+          preparar-caja --base ficticios.db
+              Da de alta la Caja 1 y usuarios de prueba (ver README) en una base de prueba.
         """);
     return 1;
 }
@@ -90,6 +95,21 @@ static async Task<int> ImportarEleventaAsync(string[] args)
         foreach (var (aviso, veces) in datos.Avisos)
             Console.WriteLine($"  {veces,6:N0}  {aviso}");
     }
+    return 0;
+}
+
+static async Task<int> PrepararCajaAsync(string[] args)
+{
+    var ruta = Opcion(args, "--base") ?? "ficticios.db";
+    if (!File.Exists(ruta))
+    {
+        Console.Error.WriteLine($"No existe la base {ruta}.");
+        return 1;
+    }
+    await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={ruta}"));
+    await BaseDeDatos.PrepararAsync(db);
+    var hecho = await PreparacionCaja.PrepararAsync(db);
+    Console.WriteLine(hecho.Count == 0 ? "La base ya tenía caja y usuarios." : string.Join(Environment.NewLine, hecho.Select(h => $"Creado: {h}")));
     return 0;
 }
 

@@ -1,0 +1,98 @@
+@* F10. Busca mientras se escribe; flechas para moverse y Enter para agregar. *@
+@implements IDisposable
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<input id="buscar" class="buscar-texto" placeholder="Nombre, código o marca…" autocomplete="off"
+       @bind="_texto" @bind:event="oninput" @bind:after="Programar" @onkeydown="AlTeclear" />
+
+<div class="resultados">
+    @if (_resultados.Count == 0 && _texto.Trim().Length >= 2 && !_buscando)
+    {
+        <p class="vacia">Nada coincide con «@_texto».</p>
+    }
+    <table>
+        @for (var i = 0; i < _resultados.Count; i++)
+        {
+            var r = _resultados[i];
+            var indice = i;
+            <tr id="resultado-@i" class="@(i == _seleccion ? "seleccionada" : "")" @onclick="() => ElegirAsync(indice)">
+                <td class="col-codigo">@r.Codigo</td>
+                <td>@r.Descripcion</td>
+                <td class="num">@Formato.Dinero(r.PrecioCentavos)</td>
+                <td class="num">@(r.Existencia is { } e ? Formato.Numero(e) : "—")</td>
+            </tr>
+        }
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid SucursalId { get; set; }
+    [Parameter] public EventCallback<Guid> AlElegir { get; set; }
+
+    private string _texto = "";
+    private List<ResultadoBusquedaDto> _resultados = [];
+    private int _seleccion;
+    private bool _buscando;
+    private CancellationTokenSource? _espera;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+            await Js.EnfocarAsync("#buscar");
+    }
+
+    /// <summary>Espera a que se deje de teclear un momento antes de buscar.</summary>
+    private async Task Programar()
+    {
+        _espera?.Cancel();
+        _espera = new CancellationTokenSource();
+        var token = _espera.Token;
+        try
+        {
+            await Task.Delay(150, token);
+            _buscando = true;
+            var texto = _texto.Trim();
+            var resultados = texto.Length >= 2 ? await Cliente.BuscarAsync(texto, SucursalId) : [];
+            if (!token.IsCancellationRequested)
+            {
+                _resultados = resultados;
+                _seleccion = 0;
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            // Se siguió tecleando.
+        }
+        catch (ErrorCaja)
+        {
+            _resultados = [];
+        }
+        finally
+        {
+            _buscando = false;
+        }
+    }
+
+    private async Task AlTeclear(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown" when _resultados.Count > 0:
+                _seleccion = Math.Min(_seleccion + 1, _resultados.Count - 1);
+                await Js.MostrarAsync($"#resultado-{_seleccion}");
+                break;
+            case "ArrowUp" when _resultados.Count > 0:
+                _seleccion = Math.Max(_seleccion - 1, 0);
+                await Js.MostrarAsync($"#resultado-{_seleccion}");
+                break;
+            case "Enter" when _resultados.Count > 0:
+                await ElegirAsync(_seleccion);
+                break;
+        }
+    }
+
+    private async Task ElegirAsync(int indice) => await AlElegir.InvokeAsync(_resultados[indice].VarianteId);
+
+    public void Dispose() => _espera?.Cancel();
+}

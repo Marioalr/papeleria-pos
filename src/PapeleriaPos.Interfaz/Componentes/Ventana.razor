@@ -1,0 +1,19 @@
+@* Ventana sobre la pantalla de venta. Escape la cierra (lo atrapa la pantalla de venta). *@
+<div class="fondo-ventana">
+    <div class="ventana @Clase">
+        <div class="ventana-titulo">
+            <span>@Titulo</span>
+            <button class="cerrar" title="Cerrar (Esc)" @onclick="AlCerrar">×</button>
+        </div>
+        <div class="ventana-cuerpo">
+            @ChildContent
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Titulo { get; set; } = "";
+    [Parameter] public string? Clase { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback AlCerrar { get; set; }
+}

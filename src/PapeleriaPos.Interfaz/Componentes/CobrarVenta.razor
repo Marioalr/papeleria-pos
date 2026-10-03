@@ -1,0 +1,107 @@
+@* F12. "Pagó con" es lo que entregó el cliente en efectivo; tarjeta y transferencia no dan cambio. *@
+@inject ModuloCaja Js
+
+<div class="cobrar-total">@Formato.Dinero(TotalCentavos)</div>
+
+<label>Pagó con (efectivo)
+    <input id="pago-efectivo" inputmode="decimal" @bind="_efectivo" @bind:event="oninput" @onkeydown="AlTeclear" />
+</label>
+
+<details>
+    <summary>Tarjeta o transferencia</summary>
+    <div class="dos-columnas">
+        <label>Tarjeta
+            <input inputmode="decimal" @bind="_tarjeta" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+        </label>
+        <label>Referencia de la terminal
+            <input @bind="_refTarjeta" @onkeydown="AlTeclear" />
+        </label>
+        <label>Transferencia
+            <input inputmode="decimal" @bind="_transferencia" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+        </label>
+        <label>Referencia
+            <input @bind="_refTransferencia" @onkeydown="AlTeclear" />
+        </label>
+    </div>
+    <p class="nota">La transferencia queda por verificar hasta que el encargado confirme que llegó el dinero.</p>
+</details>
+
+<div class="cobrar-resumen">
+    @if (Faltante > 0)
+    {
+        <span class="falta">Falta: @Formato.Dinero(Faltante)</span>
+    }
+    else
+    {
+        <span class="cambio">Cambio: @Formato.Dinero(Cambio)</span>
+    }
+</div>
+
+@if (_error is not null)
+{
+    <p class="error">@_error</p>
+}
+
+<div class="acciones">
+    <button class="boton principal" disabled="@(_ocupado || Faltante > 0)" @onclick="CobrarAsync">Cobrar (Enter)</button>
+</div>
+
+@code {
+    [Parameter] public long TotalCentavos { get; set; }
+
+    /// <summary>Devuelve el error a mostrar, o null si se cobró.</summary>
+    [Parameter] public Func<IReadOnlyList<CobroSolicitado>, Task<string?>> AlCobrar { get; set; } = null!;
+
+    private string _efectivo = "";
+    private string _tarjeta = "";
+    private string _transferencia = "";
+    private string _refTarjeta = "";
+    private string _refTransferencia = "";
+    private string? _error;
+    private bool _ocupado;
+
+    private long Efectivo => Formato.LeerPesos(_efectivo) ?? 0;
+    private long Tarjeta => Formato.LeerPesos(_tarjeta) ?? 0;
+    private long Transferencia => Formato.LeerPesos(_transferencia) ?? 0;
+    private long Faltante => Math.Max(0, TotalCentavos - Tarjeta - Transferencia - Efectivo);
+    private long Cambio => Math.Max(0, Efectivo - Math.Max(0, TotalCentavos - Tarjeta - Transferencia));
+
+    protected override void OnInitialized() => _efectivo = (TotalCentavos / 100m).ToString("0.00", CultureInfo.InvariantCulture);
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+            await Js.EnfocarAsync("#pago-efectivo");
+    }
+
+    private async Task AlTeclear(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await CobrarAsync();
+    }
+
+    private async Task CobrarAsync()
+    {
+        if (_ocupado || Faltante > 0)
+            return;
+
+        var cobros = new List<CobroSolicitado>();
+        if (Tarjeta > 0)
+            cobros.Add(new CobroSolicitado(FormaPago.Tarjeta, Tarjeta, Vacio(_refTarjeta)));
+        if (Transferencia > 0)
+            cobros.Add(new CobroSolicitado(FormaPago.Transferencia, Transferencia, Vacio(_refTransferencia)));
+        if (Tarjeta + Transferencia > TotalCentavos)
+        {
+            _error = "Tarjeta y transferencia no pueden pasar del total: no dan cambio.";
+            return;
+        }
+        if (Tarjeta + Transferencia < TotalCentavos)
+            cobros.Add(new CobroSolicitado(FormaPago.Efectivo, Efectivo));
+
+        _ocupado = true;
+        _error = await AlCobrar(cobros);
+        _ocupado = false;
+    }
+
+    private static string? Vacio(string texto) => string.IsNullOrWhiteSpace(texto) ? null : texto.Trim();
+}

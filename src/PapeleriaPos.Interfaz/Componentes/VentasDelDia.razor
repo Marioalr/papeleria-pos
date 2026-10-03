@@ -1,0 +1,67 @@
+@inject ClienteCaja Cliente
+
+@if (_error is not null)
+{
+    <p class="error">@_error</p>
+}
+else if (_ventas is null)
+{
+    <p>Cargando…</p>
+}
+else if (_ventas.Count == 0)
+{
+    <p class="vacia">Esta caja no ha vendido hoy.</p>
+}
+else
+{
+    <p><strong>@_ventas.Count</strong> ventas · <strong>@Formato.Dinero(_ventas.Sum(v => v.TotalCentavos))</strong></p>
+    <div class="resultados">
+        <table>
+            <thead><tr><th>Folio</th><th>Hora</th><th>Cajero</th><th class="num">Artículos</th><th class="num">Total</th><th></th></tr></thead>
+            @foreach (var v in _ventas)
+            {
+                <tr>
+                    <td>@v.Folio</td>
+                    <td>@v.FechaLocal.ToString("HH:mm")</td>
+                    <td>@v.Cajero</td>
+                    <td class="num">@v.Articulos</td>
+                    <td class="num">@Formato.Dinero(v.TotalCentavos)</td>
+                    <td><button class="boton chico" @onclick="() => ReimprimirAsync(v.Id)">Reimprimir</button></td>
+                </tr>
+            }
+        </table>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid CajaId { get; set; }
+    [Parameter] public EventCallback<TicketDto> AlReimprimir { get; set; }
+
+    private List<VentaDelDiaDto>? _ventas;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _ventas = await Cliente.VentasDelDiaAsync(CajaId);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task ReimprimirAsync(Guid ventaId)
+    {
+        try
+        {
+            if (await Cliente.TicketAsync(ventaId) is { } ticket)
+                await AlReimprimir.InvokeAsync(ticket);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}

@@ -1,8 +1,12 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/PapeleriaPos.Caja/PapeleriaPos.Caja.csproj" />
     <Project Path="src/PapeleriaPos.Datos/PapeleriaPos.Datos.csproj" />
     <Project Path="src/PapeleriaPos.Herramientas/PapeleriaPos.Herramientas.csproj" />
+    <Project Path="src/PapeleriaPos.Impresion/PapeleriaPos.Impresion.csproj" />
+    <Project Path="src/PapeleriaPos.Interfaz/PapeleriaPos.Interfaz.csproj" />
     <Project Path="src/PapeleriaPos.Nucleo/PapeleriaPos.Nucleo.csproj" />
+    <Project Path="src/PapeleriaPos.Servicio/PapeleriaPos.Servicio.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/PapeleriaPos.Pruebas/PapeleriaPos.Pruebas.csproj" />

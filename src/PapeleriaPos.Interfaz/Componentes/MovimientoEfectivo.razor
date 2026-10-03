@@ -1,0 +1,67 @@
+@* F7 / F8: entra o sale efectivo que no es venta. Siempre con motivo. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<label>Monto
+    <input id="movimiento-monto" inputmode="decimal" @bind="_monto" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+</label>
+<label>Motivo
+    <input @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclear"
+           placeholder="@(Tipo == TipoMovimientoCaja.Entrada ? "Ej. cambio que se trajo" : "Ej. pago a proveedor, garrafón")" />
+</label>
+@if (_error is not null)
+{
+    <p class="error">@_error</p>
+}
+<div class="acciones">
+    <button class="boton principal" disabled="@_ocupado" @onclick="RegistrarAsync">Registrar (Enter)</button>
+</div>
+
+@code {
+    [Parameter] public TipoMovimientoCaja Tipo { get; set; }
+    [Parameter] public Guid TurnoId { get; set; }
+    [Parameter] public Guid UsuarioId { get; set; }
+    [Parameter] public EventCallback<string> AlTerminar { get; set; }
+
+    private string _monto = "";
+    private string _motivo = "";
+    private string? _error;
+    private bool _ocupado;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+            await Js.EnfocarAsync("#movimiento-monto");
+    }
+
+    private async Task AlTeclear(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await RegistrarAsync();
+    }
+
+    private async Task RegistrarAsync()
+    {
+        if (_ocupado)
+            return;
+        if (Formato.LeerPesos(_monto) is not ({ } monto and > 0) || string.IsNullOrWhiteSpace(_motivo))
+        {
+            _error = "Escribe el monto y el motivo.";
+            return;
+        }
+        _ocupado = true;
+        try
+        {
+            await Cliente.MovimientoAsync(TurnoId, new SolicitudMovimiento(Tipo, monto, _motivo.Trim(), UsuarioId));
+            await AlTerminar.InvokeAsync($"{(Tipo == TipoMovimientoCaja.Entrada ? "Entrada" : "Salida")} de {Formato.Dinero(monto)} registrada.");
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

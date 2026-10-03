@@ -1,0 +1,53 @@
+@* F9: consulta precio y existencia sin agregar a la venta. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<label>Código del producto
+    <input id="verificador" autocomplete="off" @bind="_codigo" @bind:event="oninput" @onkeydown="AlTeclear" />
+</label>
+
+@if (_producto is not null)
+{
+    <div class="verificado">
+        <div class="descripcion">@_producto.Descripcion</div>
+        <div class="precio">@Formato.Dinero(Precio(_producto))</div>
+        <div class="nota">Existencia: @(_producto.Existencia is { } e ? Formato.Numero(e) : "no lleva inventario")</div>
+    </div>
+}
+@if (_error is not null)
+{
+    <p class="error">@_error</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid SucursalId { get; set; }
+
+    private string _codigo = "";
+    private ProductoVentaDto? _producto;
+    private string? _error;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+            await Js.EnfocarAsync("#verificador");
+    }
+
+    private async Task AlTeclear(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || _codigo.Trim().Length == 0)
+            return;
+        try
+        {
+            _producto = await Cliente.PorCodigoAsync(_codigo.Trim(), SucursalId);
+            _error = _producto is null ? $"No existe el código «{_codigo.Trim()}»." : null;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        _codigo = "";
+    }
+
+    private long Precio(ProductoVentaDto p) =>
+        CalculoPrecio.Calcular(p.PreciosModelo(), SucursalId, p.PresentacionModelo(), Cantidad.Piezas(1))?.ImporteCentavos ?? 0;
+}

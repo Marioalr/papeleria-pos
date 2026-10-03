@@ -1,0 +1,142 @@
+@* Corte X (parcial) y corte Z (cierre): el encargado cuenta el efectivo sin ver cuánto debería haber. *@
+@inject ClienteCaja Cliente
+
+@if (_resultado is not null)
+{
+    <h3>Corte @(_resultado.Tipo == TipoCorte.Z ? "de cierre (Z)" : "parcial (X)") · @_resultado.FechaLocal.ToString("dd/MM/yyyy HH:mm")</h3>
+    <table class="resumen-corte">
+        <tr><td>Cajero</td><td>@_resultado.Cajero</td></tr>
+        <tr><td>Ventas</td><td>@_resultado.Ventas</td></tr>
+        <tr><td>Fondo</td><td>@Formato.Dinero(_resultado.FondoCentavos)</td></tr>
+        <tr><td>Efectivo de ventas</td><td>@Formato.Dinero(_resultado.EfectivoVentasCentavos)</td></tr>
+        <tr><td>Entradas</td><td>@Formato.Dinero(_resultado.EntradasCentavos)</td></tr>
+        <tr><td>Salidas</td><td>− @Formato.Dinero(_resultado.SalidasCentavos)</td></tr>
+        <tr class="total"><td>Efectivo esperado</td><td>@Formato.Dinero(_resultado.EsperadoCentavos)</td></tr>
+        @if (_resultado.ContadoCentavos is { } contado)
+        {
+            <tr><td>Contado</td><td>@Formato.Dinero(contado)</td></tr>
+            <tr class="@(_resultado.DiferenciaCentavos < 0 ? "faltante" : "total")">
+                <td>@(_resultado.DiferenciaCentavos < 0 ? "Faltante" : _resultado.DiferenciaCentavos > 0 ? "Sobrante" : "Diferencia")</td>
+                <td>@Formato.Dinero(Math.Abs(_resultado.DiferenciaCentavos ?? 0))</td>
+            </tr>
+        }
+        <tr><td>Tarjeta</td><td>@Formato.Dinero(_resultado.TarjetaCentavos)</td></tr>
+        <tr><td>Transferencias (por verificar)</td><td>@Formato.Dinero(_resultado.TransferenciaCentavos)</td></tr>
+    </table>
+    <div class="acciones">
+        @if (_resultado.Tipo == TipoCorte.Z)
+        {
+            <button class="boton principal" @onclick="AlTerminar">Terminar</button>
+        }
+        else
+        {
+            <button class="boton" @onclick="() => _resultado = null">Volver</button>
+        }
+    </div>
+}
+else if (!_cierre)
+{
+    <p>Turno de <strong>@Turno.Cajero</strong> desde las @Turno.AbiertoLocal.ToString("HH:mm").</p>
+    <div class="acciones">
+        <button class="boton" disabled="@_ocupado" @onclick="CorteXAsync">Corte parcial (X)</button>
+        <button class="boton principal" @onclick="() => _cierre = true">Corte de cierre (Z)</button>
+    </div>
+}
+else
+{
+    <p>El encargado cuenta el efectivo de la caja por denominación. No se muestra cuánto debería haber hasta terminar.</p>
+    <div class="dos-columnas">
+        <label>Usuario del encargado <input @bind="_usuario" autocomplete="off" /></label>
+        <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" /></label>
+    </div>
+    <table class="conteo">
+        @foreach (var d in Denominaciones.Mexico)
+        {
+            var denominacion = d;
+            <tr>
+                <td class="num">@Formato.Dinero(d)</td>
+                <td>×</td>
+                <td><input inputmode="numeric" value="@(_conteo.GetValueOrDefault(d) is var n && n > 0 ? n : "")"
+                           @onchange="e => Contar(denominacion, e.Value?.ToString())" /></td>
+                <td class="num">@Formato.Dinero(d * _conteo.GetValueOrDefault(d))</td>
+            </tr>
+        }
+        <tr class="total"><td colspan="3">Contado</td><td class="num">@Formato.Dinero(_conteo.Sum(c => c.Key * c.Value))</td></tr>
+    </table>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    <div class="acciones">
+        <button class="boton principal" disabled="@_ocupado" @onclick="CorteZAsync">Cerrar el turno</button>
+        @if (!SoloCierre)
+        {
+            <button class="boton" @onclick="() => _cierre = false">Volver</button>
+        }
+    </div>
+}
+@if (_error is not null && !_cierre)
+{
+    <p class="error">@_error</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public TurnoDto Turno { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter] public bool SoloCierre { get; set; }
+    [Parameter] public EventCallback AlTerminar { get; set; }
+
+    private bool _cierre;
+    private string _usuario = "";
+    private string _pin = "";
+    private readonly Dictionary<long, int> _conteo = [];
+    private CorteDto? _resultado;
+    private string? _error;
+    private bool _ocupado;
+
+    protected override void OnInitialized() => _cierre = SoloCierre;
+
+    private void Contar(long denominacion, string? texto) =>
+        _conteo[denominacion] = int.TryParse(texto, out var n) && n > 0 ? n : 0;
+
+    private async Task CorteXAsync()
+    {
+        _ocupado = true;
+        try
+        {
+            _resultado = await Cliente.CorteXAsync(Turno.Id, Sesion.UsuarioId);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task CorteZAsync()
+    {
+        if (_usuario.Trim().Length == 0 || _pin.Length == 0)
+        {
+            _error = "Falta el usuario y PIN del encargado.";
+            return;
+        }
+        _ocupado = true;
+        try
+        {
+            _resultado = await Cliente.CorteZAsync(Turno.Id, new SolicitudCorteZ(_usuario.Trim(), _pin, _conteo.Where(c => c.Value > 0).ToDictionary()));
+            _error = null;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+            _pin = "";
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

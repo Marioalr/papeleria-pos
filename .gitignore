@@ -490,3 +490,6 @@ $RECYCLE.BIN/
 datos-reales/
 # Diagnósticos: con datos reales traen ventas y costos del negocio
 *.xlsx
+
+# Configuración local de vista previa (rutas de esta máquina)
+.claude/launch.json

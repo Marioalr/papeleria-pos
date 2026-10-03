@@ -1,0 +1,55 @@
+@* INS / CTRL+P: algo que no está en el catálogo. No descuenta inventario. *@
+@inject ModuloCaja Js
+
+<label>Descripción
+    <input id="comun-descripcion" @bind="_descripcion" @bind:event="oninput" @onkeydown="AlTeclear" />
+</label>
+<div class="dos-columnas">
+    <label>Precio
+        <input inputmode="decimal" @bind="_precio" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+    </label>
+    <label>Cantidad
+        <input inputmode="decimal" @bind="_cantidad" @bind:event="oninput" @onkeydown="AlTeclear" />
+    </label>
+</div>
+<p class="nota">No se descuenta del inventario. Úsalo solo para lo que no está en el catálogo.</p>
+@if (_error is not null)
+{
+    <p class="error">@_error</p>
+}
+<div class="acciones">
+    <button class="boton principal" @onclick="AgregarAsync">Agregar (Enter)</button>
+</div>
+
+@code {
+    [Parameter] public EventCallback<(string Descripcion, long Precio, Cantidad Cantidad)> AlAgregar { get; set; }
+
+    private string _descripcion = "";
+    private string _precio = "";
+    private string _cantidad = "1";
+    private string? _error;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+            await Js.EnfocarAsync("#comun-descripcion");
+    }
+
+    private async Task AlTeclear(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await AgregarAsync();
+    }
+
+    private async Task AgregarAsync()
+    {
+        var precio = Formato.LeerPesos(_precio);
+        if (string.IsNullOrWhiteSpace(_descripcion) || precio is null or 0
+            || !decimal.TryParse(_cantidad, NumberStyles.Number, CultureInfo.InvariantCulture, out var cantidad) || cantidad <= 0)
+        {
+            _error = "Escribe descripción, precio y cantidad.";
+            return;
+        }
+        await AlAgregar.InvokeAsync((_descripcion.Trim(), precio.Value, Cantidad.Unidades(Math.Round(cantidad, 3))));
+    }
+}
