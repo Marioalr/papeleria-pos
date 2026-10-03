@@ -4,8 +4,19 @@ Punto de venta a la medida para una papelería con varias sucursales: venta, inv
 copias, engargolado, trámites…), pedidos y control de cada sucursal sin que el dueño tenga que estar presente.
 Reemplaza a eleventa multicaja e incorpora lo que hoy hace [Control Print](https://github.com/Marioalr/control-print).
 
-> **Estado: planeación, en lluvia de ideas.** Todavía no hay código. Las decisiones se cierran en el
-> [plan](docs/plan.md) antes de escribir la primera línea.
+> **Estado: fase 0.** Se construye el modelo de datos con datos ficticios. El resto sigue en planeación; las
+> decisiones se cierran en el [plan](docs/plan.md).
+
+## Desarrollo
+
+Requiere el SDK de .NET 10.
+
+```
+dotnet build
+dotnet test
+```
+
+Los datos reales del negocio (como la base de eleventa) nunca se guardan en el repositorio.
 
 ## Documentos
 

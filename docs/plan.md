@@ -40,7 +40,14 @@
 | App Android | .NET MAUI con la misma interfaz, sin publicar en la tienda |
 | Fiscal | Fuera de alcance, pero se guardan clave SAT, unidad y desglose de impuestos para poder facturar después |
 | Nube | Azure for Students solo para pruebas |
-| Código | Hasta cerrar el plan, solo documentos |
+| Código | La fase 0 ya se programa; las demás fases, hasta cerrar su parte del plan |
+| Idioma del código | Dominio en español (`Producto`, `Existencia`, `Corte`); lo técnico en inglés |
+| Acceso a datos | EF Core con migraciones; SQL directo donde convenga (kardex, reportes) |
+| Pruebas | xUnit |
+| Datos reales | Nunca entran al repositorio. Viven fuera de él, en `Documents\TPV` de la máquina de desarrollo |
+| Diagnóstico | Se entrega en Excel, una hoja por análisis |
+| Precios | Precio al público con IVA incluido; el desglose de impuestos se guarda aparte |
+| Git | Ramas cortas por tema, fusionadas a `main` |
 
 ### Cómo han cambiado
 
@@ -60,7 +67,7 @@ Sin tiempos: se avanza cuando la fase anterior funciona en la tienda.
 
 | Fase | Contenido |
 |---|---|
-| 0. Base e importación | Modelo de datos, importador de eleventa y diagnóstico con los datos reales |
+| 0. Base e importación | Modelo de datos probado con datos y productos **ficticios**; al final, importación de prueba desde eleventa y diagnóstico con los datos reales ([detalle](#fase-0)) |
 | 1. Caja | Venta, cobro mixto, ticket, turnos y corte ciego, roles y autorizaciones, bitácora, contingencia, Telegram, módulo de impresión |
 | 2. Inventario | Compras, recepción ciega, presentaciones, conteos cíclicos, etiquetas, sugerido de compra |
 | 3. Precios y clientes | Mayoreo, promociones, kits, clientes registrados, crédito |
@@ -71,11 +78,33 @@ Sin tiempos: se avanza cuando la fase anterior funciona en la tienda.
 | 8. App Android | Preventa y pedidos desde el celular |
 | 9. A la medida | Listas escolares avanzadas, dispositivos propios y lo que se vaya describiendo |
 
+### Fase 0
+
+1. **Modelo con datos ficticios.** No se importan datos reales de momento: el modelo se construye y se prueba con
+   productos, precios y movimientos inventados (un generador de datos de prueba).
+   - Solo entra lo que pide la importación: sucursal, departamento, producto y variante, códigos, presentaciones,
+     precios (incluido mayoreo), costo, proveedor, kardex e historial de ventas. Ventas, turnos y usuarios esperan a
+     la fase 1.
+   - El historial de eleventa va en tablas propias de "histórico importado", sin mezclarse con las ventas del POS
+     (no tiene folios por caja, turnos ni cortes).
+   - Los productos se importan como variantes sueltas; agruparlas ("Pluma azul" + "Pluma roja") se hace después.
+2. **Diagnóstico en Excel**, primero sobre los datos ficticios.
+3. **Al final, prueba con datos reales:** importación desde una copia de eleventa y el diagnóstico con esos datos.
+   - Fechas de eleventa: vienen en hora local; se pasan a UTC con la zona de Ciudad de México (con horario de verano
+     antes de octubre de 2022).
+
+Solución: `PapeleriaPos.Nucleo` (sin dependencias de Windows), `PapeleriaPos.Datos` (EF Core + SQLite) y
+`PapeleriaPos.Pruebas` (xUnit). Nada de interfaz ni servicio hasta la fase 1.
+
 ## Pendientes
 
-Para empezar la fase 0:
+Fase 0:
 
-- [ ] Copia de la carpeta de datos de eleventa (base Firebird `PDVDATA.FDB`, por confirmar)
+- [x] Copia de la base de eleventa: `PDVDATA.FDB` (≈ 90 MB), guardada fuera del repositorio
+- [ ] Revisar el modelo de datos propuesto
+
+Fase 1:
+
 - [ ] Modelo y ancho (58 u 80 mm) de la impresora de tickets; foto de un ticket actual
 
 Por definir:

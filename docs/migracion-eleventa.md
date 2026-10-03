@@ -2,9 +2,12 @@
 
 ## Fuente
 
-- La carpeta de datos de eleventa multicaja. Guarda todo en una base Firebird (`PDVDATA.FDB`, por confirmar con la
-  copia).
-- Se lee directo con el cliente de Firebird para .NET, **siempre sobre una copia,** nunca sobre la base en uso.
+- La carpeta de datos de eleventa multicaja. Guarda todo en una base Firebird, `PDVDATA.FDB` (confirmado con la
+  copia: ≈ 90 MB, páginas de 16 KB).
+- El encabezado de la copia dice **ODS 10, es decir Firebird 1.x.** Firebird 3 en adelante no abre ese formato
+  directo: para leerla hará falta un Firebird 2.5 (que sí lo abre) o pasarla a un formato nuevo con respaldo y
+  restauración (`gbak`). Se resuelve al llegar a la importación de prueba.
+- Se lee con el cliente de Firebird para .NET, **siempre sobre una copia,** nunca sobre la base en uso.
 
 ## Qué se importa
 
