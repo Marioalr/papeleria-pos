@@ -101,7 +101,7 @@ Solución: `PapeleriaPos.Nucleo` (sin dependencias de Windows), `PapeleriaPos.Da
 Fase 0:
 
 - [x] Copia de la base de eleventa: `PDVDATA.FDB` (≈ 90 MB), guardada fuera del repositorio
-- [ ] Revisar el modelo de datos propuesto
+- [ ] Revisar el [modelo de datos](modelo-datos.md) propuesto y contestar sus preguntas
 
 Fase 1:
 

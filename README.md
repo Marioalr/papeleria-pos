@@ -23,6 +23,7 @@ Los datos reales del negocio (como la base de eleventa) nunca se guardan en el r
 | Documento | Contenido |
 |---|---|
 | [Plan](docs/plan.md) | Contexto del negocio, decisiones aprobadas, fases y pendientes |
+| [Modelo de datos](docs/modelo-datos.md) | Tablas de la fase 0: catálogo, precios, kardex e histórico importado |
 | [Arquitectura](docs/arquitectura.md) | Componentes, datos, contingencia, varias sucursales, red, respaldos y hardware |
 | [Administrar desde fuera](docs/servidor-remoto.md) | Central en servidor virtual, gestión por excepción y costos |
 | [Caja y control](docs/caja-y-control.md) | Venta, cobro, cortes, autorizaciones configurables, bitácora y alertas |
