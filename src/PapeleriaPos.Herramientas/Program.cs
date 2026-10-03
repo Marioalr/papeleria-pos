@@ -1,7 +1,9 @@
 using System.Globalization;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Herramientas.Diagnostico;
+using PapeleriaPos.Herramientas.Eleventa;
 using PapeleriaPos.Herramientas.Ficticios;
+using PapeleriaPos.Herramientas.Importacion;
 using PapeleriaPos.Nucleo;
 
 CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("es-MX");
@@ -10,6 +12,7 @@ return args switch
 {
     ["generar-ficticios", .. var resto] => await GenerarFicticiosAsync(resto),
     ["diagnostico", .. var resto] => await DiagnosticoAsync(resto),
+    ["importar-eleventa", .. var resto] => await ImportarEleventaAsync(resto),
     _ => Ayuda(),
 };
 
@@ -21,10 +24,87 @@ static int Ayuda()
           generar-ficticios [--salida ficticios.db] [--semilla 2026] [--reemplazar]
               Crea una base con una papelería inventada: catálogo, un año de ventas y existencias.
 
-          diagnostico [--base ficticios.db] [--salida diagnostico.xlsx]
-              Analiza una base y deja el resultado en Excel, una hoja por análisis.
+          diagnostico [--base ficticios.db] [--salida diagnostico.xlsx] [--desde 2025-10-01]
+              Analiza una base y deja el resultado en Excel, una hoja por análisis. Con --desde, solo las
+              ventas a partir de ese día (las existencias siempre son las actuales).
+
+          importar-eleventa --fdb PDVDATA.FDB [--salida eleventa.db] [--reemplazar]
+                            [--firebird32 <carpeta>] [--firebird64 <carpeta>]
+              Importa una copia de la base de eleventa (catálogo, ventas y existencias). La original no se abre.
+              Por omisión busca Firebird en firebird25-32\embed y firebird25, junto a la carpeta de la base.
         """);
     return 1;
+}
+
+static async Task<int> ImportarEleventaAsync(string[] args)
+{
+    if (Opcion(args, "--fdb") is not { } fdb || !File.Exists(fdb))
+    {
+        Console.Error.WriteLine("Indica la copia de la base de eleventa con --fdb (por ejemplo PDVDATA.FDB).");
+        return 1;
+    }
+    var salida = Opcion(args, "--salida") ?? "eleventa.db";
+    if (!PrepararSalida(salida, args.Contains("--reemplazar")))
+        return 1;
+
+    var carpeta = Path.GetDirectoryName(Path.GetFullPath(fdb))!;
+    var firebird = new FirebirdLocal(
+        Opcion(args, "--firebird32") ?? Path.Combine(carpeta, "firebird25-32", "embed"),
+        Opcion(args, "--firebird64") ?? Path.Combine(carpeta, "firebird25"));
+
+    var eleventa = await LectorEleventa.LeerAsync(fdb, firebird, Console.WriteLine);
+    Console.WriteLine("Pasando al modelo del POS…");
+    var datos = ImportadorEleventa.Importar(eleventa);
+
+    await using (var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={salida}")))
+    {
+        await BaseDeDatos.PrepararAsync(db);
+        await GuardadoLote.GuardarAsync(datos, db);
+    }
+
+    var lineas = datos.Ventas.Sum(v => v.Lineas.Count);
+    var primera = datos.Ventas.Min(v => HoraMexico.ALocal(v.FechaUtc));
+    var ultima = datos.Ventas.Max(v => HoraMexico.ALocal(v.FechaUtc));
+    Console.WriteLine($"""
+
+        Base creada: {Path.GetFullPath(salida)}
+
+        Catálogo
+          Departamentos   {datos.Departamentos.Count,8:N0}
+          Productos       {datos.Productos.Count,8:N0}  ({datos.Productos.Count(p => p.Activo):N0} activos)
+          Códigos         {datos.Codigos.Count,8:N0}
+          Precios         {datos.Precios.Count,8:N0}
+
+        Ventas ({primera:d} a {ultima:d})
+          Tickets         {datos.Ventas.Count,8:N0}  ({datos.Ventas.Count(v => v.Cancelada):N0} cancelados)
+          Líneas          {lineas,8:N0}
+          Total           {datos.VentasCentavos / 100m,14:C0}
+
+        Inventario
+          Con existencia  {datos.Movimientos.Count,8:N0}
+          Valor a costo   {datos.ValorInventarioCentavos / 100m,14:C0}
+        """);
+    if (datos.Avisos.Count > 0)
+    {
+        Console.WriteLine("\nPara revisar");
+        foreach (var (aviso, veces) in datos.Avisos)
+            Console.WriteLine($"  {veces,6:N0}  {aviso}");
+    }
+    return 0;
+}
+
+static bool PrepararSalida(string salida, bool reemplazar)
+{
+    if (!File.Exists(salida))
+        return true;
+    if (!reemplazar)
+    {
+        Console.Error.WriteLine($"Ya existe {salida}. Usa --reemplazar para sobrescribirla.");
+        return false;
+    }
+    foreach (var archivo in new[] { salida, salida + "-wal", salida + "-shm" })
+        File.Delete(archivo);
+    return true;
 }
 
 static async Task<int> DiagnosticoAsync(string[] args)
@@ -44,6 +124,8 @@ static async Task<int> DiagnosticoAsync(string[] args)
         await BaseDeDatos.PrepararAsync(db);
         datos = await DatosDiagnostico.CargarAsync(db);
     }
+    if (Opcion(args, "--desde") is { } desde)
+        datos = datos.Desde(DateOnly.Parse(desde, CultureInfo.InvariantCulture));
     if (datos.Ventas.Count == 0)
     {
         Console.Error.WriteLine("La base no tiene ventas que analizar.");
@@ -75,18 +157,8 @@ static async Task<int> GenerarFicticiosAsync(string[] args)
 {
     var salida = Opcion(args, "--salida") ?? "ficticios.db";
     var semilla = int.Parse(Opcion(args, "--semilla") ?? "2026", CultureInfo.InvariantCulture);
-    var reemplazar = args.Contains("--reemplazar");
-
-    if (File.Exists(salida))
-    {
-        if (!reemplazar)
-        {
-            Console.Error.WriteLine($"Ya existe {salida}. Usa --reemplazar para sobrescribirla.");
-            return 1;
-        }
-        foreach (var archivo in new[] { salida, salida + "-wal", salida + "-shm" })
-            File.Delete(archivo);
-    }
+    if (!PrepararSalida(salida, args.Contains("--reemplazar")))
+        return 1;
 
     var opciones = new OpcionesFicticios { Semilla = semilla };
     Console.WriteLine($"Generando datos ficticios (semilla {semilla})…");
@@ -97,7 +169,7 @@ static async Task<int> GenerarFicticiosAsync(string[] args)
     await using (var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={salida}")) { Reloj = new RelojFijo(cierre) })
     {
         await BaseDeDatos.PrepararAsync(db);
-        await GuardadoFicticios.GuardarAsync(datos, db);
+        await GuardadoLote.GuardarAsync(datos, db);
     }
 
     var lineas = datos.Ventas.Sum(v => v.Lineas.Count);

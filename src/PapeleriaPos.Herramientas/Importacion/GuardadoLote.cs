@@ -1,9 +1,9 @@
 using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo;
 
-namespace PapeleriaPos.Herramientas.Ficticios;
+namespace PapeleriaPos.Herramientas.Importacion;
 
-public static class GuardadoFicticios
+public static class GuardadoLote
 {
     private const int Lote = 2_000;
 
@@ -11,9 +11,9 @@ public static class GuardadoFicticios
     /// Guarda los datos en una base ya preparada. Las existencias pasan por <see cref="RegistroInventario"/>, el
     /// mismo camino que usará la importación real.
     /// </summary>
-    public static async Task GuardarAsync(DatosFicticios datos, PosDbContext db, CancellationToken ct = default)
+    public static async Task GuardarAsync(LoteDeDatos datos, PosDbContext db, CancellationToken ct = default)
     {
-        using var _ = Ids.Usar(datos.GeneradorIds.Nuevo);
+        using var _ = datos.GeneradorIds is { } generador ? Ids.Usar(generador) : null;
         db.ChangeTracker.AutoDetectChangesEnabled = false;
 
         db.AddRange(datos.Sucursales);

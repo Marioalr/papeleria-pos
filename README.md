@@ -28,6 +28,13 @@ Diagnóstico en Excel de una base (dinero parado, 80-20, margen, catálogo a rev
 dotnet run --project src/PapeleriaPos.Herramientas -- diagnostico --base ficticios.db --salida diagnostico.xlsx
 ```
 
+Importar una copia de la base de eleventa (requiere Firebird 2.5 embebido, ver
+[migración](docs/migracion-eleventa.md#leer-la-base)):
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --salida eleventa.db
+```
+
 Migraciones de la base (EF Core):
 
 ```
