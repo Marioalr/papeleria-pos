@@ -62,7 +62,7 @@ public sealed class GeneradorFicticios
     public static DatosFicticios Generar(OpcionesFicticios? opciones = null)
     {
         var generador = new GeneradorFicticios(opciones ?? new OpcionesFicticios());
-        using (Ids.Usar(generador._datos.GeneradorIds.Nuevo))
+        using (Ids.Usar(generador._datos.Ids.Nuevo))
         {
             generador.CrearCatalogo();
             generador.CrearDuplicados();

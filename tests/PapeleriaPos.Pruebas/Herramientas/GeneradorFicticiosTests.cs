@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Herramientas.Ficticios;
+using PapeleriaPos.Herramientas.Importacion;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Pruebas.Datos;
@@ -146,7 +147,7 @@ public class GeneradorFicticiosTests(AnioFicticio anio) : IClassFixture<AnioFict
         await using var baseEnMemoria = await BaseEnMemoria.CrearAsync();
 
         await using (var db = baseEnMemoria.Contexto())
-            await GuardadoFicticios.GuardarAsync(datos, db);
+            await GuardadoLote.GuardarAsync(datos, db);
 
         await using var lectura = baseEnMemoria.Contexto();
         Assert.Equal(datos.Variantes.Count, await lectura.Variantes.CountAsync());

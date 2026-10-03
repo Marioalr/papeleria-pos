@@ -1,6 +1,7 @@
 using ClosedXML.Excel;
 using PapeleriaPos.Herramientas.Diagnostico;
 using PapeleriaPos.Herramientas.Ficticios;
+using PapeleriaPos.Herramientas.Importacion;
 using PapeleriaPos.Pruebas.Datos;
 
 namespace PapeleriaPos.Pruebas.Herramientas;
@@ -17,7 +18,7 @@ public sealed class DiagnosticoFicticio : IAsyncLifetime
         Ficticios = GeneradorFicticios.Generar();
         await using var baseEnMemoria = await BaseEnMemoria.CrearAsync();
         await using (var db = baseEnMemoria.Contexto())
-            await GuardadoFicticios.GuardarAsync(Ficticios, db);
+            await GuardadoLote.GuardarAsync(Ficticios, db);
         await using (var db = baseEnMemoria.Contexto())
             Datos = await DatosDiagnostico.CargarAsync(db);
         Analisis = new Analisis(Datos);

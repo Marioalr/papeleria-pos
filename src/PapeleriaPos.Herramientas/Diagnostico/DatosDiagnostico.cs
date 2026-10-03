@@ -46,6 +46,21 @@ public sealed class DatosDiagnostico
     /// <summary>Centavos por unidad base, el más reciente de cualquier proveedor.</summary>
     public required Dictionary<Guid, long> UltimoCosto { get; init; }
 
+    /// <summary>Solo las ventas desde ese día; el catálogo y las existencias quedan igual.</summary>
+    public DatosDiagnostico Desde(DateOnly dia)
+    {
+        var inicio = dia.ToDateTime(TimeOnly.MinValue);
+        return new DatosDiagnostico
+        {
+            Articulos = Articulos,
+            Ventas = Ventas.Where(v => v.FechaLocal >= inicio).ToList(),
+            Lineas = Lineas.Where(l => l.FechaLocal >= inicio).ToList(),
+            Existencias = Existencias,
+            Precios = Precios,
+            UltimoCosto = UltimoCosto,
+        };
+    }
+
     public static async Task<DatosDiagnostico> CargarAsync(PosDbContext db, CancellationToken ct = default)
     {
         var variantes = await db.Variantes.AsNoTracking()

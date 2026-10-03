@@ -110,7 +110,11 @@ Fase 0:
 - [x] Modelo en código: núcleo, base SQLite y pruebas
 - [x] Generador de datos ficticios
 - [x] Diagnóstico en Excel sobre los datos ficticios
-- [ ] Importación de prueba desde eleventa y diagnóstico con los datos reales
+- [x] Importación de prueba desde eleventa y diagnóstico con los datos reales
+- [ ] Mayoreo de eleventa: es un precio que se activa a mano; decidir a partir de cuántas piezas aplica como escala
+- [ ] Unidades: revisar los productos a granel que eleventa tiene en KG (listón, micas, hojas sueltas…)
+- [ ] Equipo de la tienda (impresoras, engargoladoras) dado de alta como mercancía: sacarlo del inventario
+- [ ] Servicios (impresiones, copias, engargolado) que eleventa vende como productos a granel: pasarlos a servicios
 
 Fase 1:
 
