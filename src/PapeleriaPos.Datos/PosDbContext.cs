@@ -1,0 +1,129 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Historico;
+using PapeleriaPos.Nucleo.Importacion;
+using PapeleriaPos.Nucleo.Inventario;
+
+namespace PapeleriaPos.Datos;
+
+public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(options)
+{
+    public DbSet<Sucursal> Sucursales => Set<Sucursal>();
+    public DbSet<Departamento> Departamentos => Set<Departamento>();
+    public DbSet<Marca> Marcas => Set<Marca>();
+    public DbSet<Producto> Productos => Set<Producto>();
+    public DbSet<Variante> Variantes => Set<Variante>();
+    public DbSet<Presentacion> Presentaciones => Set<Presentacion>();
+    public DbSet<CodigoBarras> CodigosBarras => Set<CodigoBarras>();
+    public DbSet<Precio> Precios => Set<Precio>();
+    public DbSet<PrecioHistorial> PreciosHistorial => Set<PrecioHistorial>();
+    public DbSet<Proveedor> Proveedores => Set<Proveedor>();
+    public DbSet<ProveedorVariante> ProveedoresVariantes => Set<ProveedorVariante>();
+    public DbSet<MovimientoInventario> MovimientosInventario => Set<MovimientoInventario>();
+    public DbSet<Existencia> Existencias => Set<Existencia>();
+    public DbSet<VentaHistorica> VentasHistoricas => Set<VentaHistorica>();
+    public DbSet<VentaHistoricaLinea> VentasHistoricasLineas => Set<VentaHistoricaLinea>();
+    public DbSet<MapeoImportacion> MapeosImportacion => Set<MapeoImportacion>();
+    public DbSet<Secuencia> Secuencias => Set<Secuencia>();
+
+    /// <summary>Reloj para <see cref="IVersionado.ModificadoUtc"/> y el historial de precios; las pruebas lo fijan.</summary>
+    public TimeProvider Reloj { get; init; } = TimeProvider.System;
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        configurationBuilder.Properties<Cantidad>().HaveConversion<CantidadConverter>();
+        configurationBuilder.Properties<DateTime>().HaveConversion<UtcConverter>();
+        configurationBuilder.Properties<Enum>().HaveConversion<string>();
+    }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(PosDbContext).Assembly);
+
+        // Nada se borra en cascada: el catálogo se desactiva y el kardex nunca se toca.
+        foreach (var fk in modelBuilder.Model.GetEntityTypes().SelectMany(t => t.GetForeignKeys()))
+            fk.DeleteBehavior = DeleteBehavior.Restrict;
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        PrepararCambios(ObtenerSecuencia());
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        PrepararCambios(await ObtenerSecuenciaAsync(cancellationToken));
+        return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private bool HayCambiosDeCatalogo() =>
+        ChangeTracker.Entries<IVersionado>().Any(e => e.State is EntityState.Added or EntityState.Modified);
+
+    private Secuencia? ObtenerSecuencia() =>
+        HayCambiosDeCatalogo() ? Secuencias.Find(Secuencia.Catalogo) ?? NuevaSecuencia() : null;
+
+    private async Task<Secuencia?> ObtenerSecuenciaAsync(CancellationToken ct) =>
+        HayCambiosDeCatalogo() ? await Secuencias.FindAsync([Secuencia.Catalogo], ct) ?? NuevaSecuencia() : null;
+
+    private Secuencia NuevaSecuencia() => Secuencias.Add(new Secuencia { Nombre = Secuencia.Catalogo }).Entity;
+
+    private void PrepararCambios(Secuencia? secuenciaCatalogo)
+    {
+        var ahora = Reloj.GetUtcNow().UtcDateTime;
+
+        ProtegerSoloAgregar<MovimientoInventario>();
+        ProtegerSoloAgregar<PrecioHistorial>();
+        RegistrarCambiosDePrecio(ahora);
+
+        if (secuenciaCatalogo is null)
+            return;
+
+        // Todo lo que se guarda junto lleva la misma versión: la sincronización baja "lo posterior a la versión N".
+        secuenciaCatalogo.Valor++;
+        foreach (var entry in ChangeTracker.Entries<IVersionado>().Where(e => e.State is EntityState.Added or EntityState.Modified))
+        {
+            entry.Entity.Version = secuenciaCatalogo.Valor;
+            entry.Entity.ModificadoUtc = ahora;
+        }
+    }
+
+    private void ProtegerSoloAgregar<T>() where T : class
+    {
+        if (ChangeTracker.Entries<T>().Any(e => e.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException($"Los registros de {typeof(T).Name} solo se agregan: no se editan ni se borran.");
+    }
+
+    private void RegistrarCambiosDePrecio(DateTime ahora)
+    {
+        foreach (var entry in ChangeTracker.Entries<Precio>().ToList())
+        {
+            (long? anterior, long? nuevo) = entry.State switch
+            {
+                EntityState.Added => (null, entry.Entity.PrecioCentavos),
+                EntityState.Deleted => (Original(entry), null),
+                EntityState.Modified when entry.Property(p => p.PrecioCentavos).IsModified
+                    && Original(entry) != entry.Entity.PrecioCentavos => (Original(entry), entry.Entity.PrecioCentavos),
+                _ => ((long?)null, (long?)null),
+            };
+            if (anterior is null && nuevo is null)
+                continue;
+
+            PreciosHistorial.Add(new PrecioHistorial
+            {
+                PrecioId = entry.Entity.Id,
+                VarianteId = entry.Entity.VarianteId,
+                PresentacionId = entry.Entity.PresentacionId,
+                SucursalId = entry.Entity.SucursalId,
+                CantidadMinima = entry.Entity.CantidadMinima,
+                PrecioAnteriorCentavos = anterior,
+                PrecioNuevoCentavos = nuevo,
+                FechaUtc = ahora,
+            });
+        }
+
+        static long Original(EntityEntry<Precio> entry) => entry.Property(p => p.PrecioCentavos).OriginalValue;
+    }
+}

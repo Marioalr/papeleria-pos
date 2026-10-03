@@ -16,6 +16,13 @@ dotnet build
 dotnet test
 ```
 
+Migraciones de la base (EF Core):
+
+```
+dotnet tool restore
+dotnet ef migrations add <Nombre> -p src/PapeleriaPos.Datos -s src/PapeleriaPos.Datos -o Migraciones
+```
+
 Los datos reales del negocio (como la base de eleventa) nunca se guardan en el repositorio.
 
 ## Documentos
