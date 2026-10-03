@@ -46,7 +46,12 @@
 | Pruebas | xUnit |
 | Datos reales | Nunca entran al repositorio. Viven fuera de él, en `Documents\TPV` de la máquina de desarrollo |
 | Diagnóstico | Se entrega en Excel, una hoja por análisis |
-| Precios | Precio al público con IVA incluido; el desglose de impuestos se guarda aparte |
+| Precios | Precio al público con IVA incluido; el desglose de impuestos se guarda aparte. Precio por unidad base: el paquete cuesta las piezas que trae, salvo excepción |
+| Impuestos | IVA 16 %, 0 % o exento; sin IEPS |
+| Cantidades | Se vende por metro y a granel: enteros en milésimas de la unidad base |
+| Marca | Catálogo propio de marcas: distingue productos parecidos y sirve para buscar |
+| Variantes | Texto libre ("Azul") en la fase 0; con atributos (Color, Tamaño) más adelante |
+| Costo promedio | Por sucursal |
 | Git | Ramas cortas por tema, fusionadas a `main` |
 
 ### Cómo han cambiado
@@ -82,7 +87,7 @@ Sin tiempos: se avanza cuando la fase anterior funciona en la tienda.
 
 1. **Modelo con datos ficticios.** No se importan datos reales de momento: el modelo se construye y se prueba con
    productos, precios y movimientos inventados (un generador de datos de prueba).
-   - Solo entra lo que pide la importación: sucursal, departamento, producto y variante, códigos, presentaciones,
+   - Solo entra lo que pide la importación: sucursal, departamento, marca, producto y variante, códigos, presentaciones,
      precios (incluido mayoreo), costo, proveedor, kardex e historial de ventas. Ventas, turnos y usuarios esperan a
      la fase 1.
    - El historial de eleventa va en tablas propias de "histórico importado", sin mezclarse con las ventas del POS
@@ -101,7 +106,7 @@ Solución: `PapeleriaPos.Nucleo` (sin dependencias de Windows), `PapeleriaPos.Da
 Fase 0:
 
 - [x] Copia de la base de eleventa: `PDVDATA.FDB` (≈ 90 MB), guardada fuera del repositorio
-- [ ] Revisar el [modelo de datos](modelo-datos.md) propuesto y contestar sus preguntas
+- [x] Revisar el [modelo de datos](modelo-datos.md) propuesto y contestar sus preguntas
 
 Fase 1:
 

@@ -7,7 +7,8 @@
 - **Departamentos** para agrupar y reportar.
 - **Presentaciones:** pieza, paquete, caja, con su factor de conversión. El inventario se lleva en la unidad base.
   "Abrir paquete" es un movimiento que convierte un paquete en piezas sin perder el rastro.
-- **Productos por peso:** ya vienen pesados, se manejan como pieza.
+- **Por metro y a granel:** se venden con fracciones (1.5 m, 0.250 kg). Lo que ya viene pesado se maneja como pieza.
+- **Marca** como catálogo propio: distingue productos parecidos y sirve para buscar.
 - **Caducidad:** opcional por producto (son pocos), con aviso de próximos a caducar. Sin control de lotes por ahora.
 - **Campos fiscales** (clave SAT, unidad, impuestos) desde el inicio, aunque no se facture todavía.
 - Tamaño estimado: 3,000 a 8,000 SKUs contando variantes (el dato real sale de eleventa). Diseño para más de 50,000.
