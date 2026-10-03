@@ -26,6 +26,9 @@ public class VentaHistoricaLinea
     /// <summary>Precio por unidad base, con IVA, como lo cobró eleventa.</summary>
     public long PrecioCentavos { get; set; }
 
+    /// <summary>Lo que se cobró por la línea, con IVA. No siempre es precio × cantidad (precio propio de un paquete).</summary>
+    public long ImporteCentavos { get; set; }
+
     /// <summary>Costo total de la línea, como lo guardó eleventa.</summary>
     public long CostoCentavos { get; set; }
 }

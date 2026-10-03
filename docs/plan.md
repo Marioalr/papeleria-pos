@@ -107,6 +107,10 @@ Fase 0:
 
 - [x] Copia de la base de eleventa: `PDVDATA.FDB` (≈ 90 MB), guardada fuera del repositorio
 - [x] Revisar el [modelo de datos](modelo-datos.md) propuesto y contestar sus preguntas
+- [x] Modelo en código: núcleo, base SQLite y pruebas
+- [x] Generador de datos ficticios
+- [ ] Diagnóstico en Excel sobre los datos ficticios
+- [ ] Importación de prueba desde eleventa y diagnóstico con los datos reales
 
 Fase 1:
 

@@ -473,6 +473,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<long>("CostoCentavos")
                         .HasColumnType("INTEGER");
 
+                    b.Property<long>("ImporteCentavos")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("PrecioCentavos")
                         .HasColumnType("INTEGER");
 

@@ -142,8 +142,8 @@ Solo alimenta el análisis ABC, la temporada y el sugerido de compra.
 
 **VentaHistorica**: `SucursalId`, `FechaUtc`, `FolioOrigen`, `TotalCentavos`, `Cancelada`.
 
-**VentaHistoricaLinea**: `VentaHistoricaId`, `VarianteId`, `Cantidad`, `PrecioCentavos`, `CostoCentavos` (como lo
-guardó eleventa).
+**VentaHistoricaLinea**: `VentaHistoricaId`, `VarianteId`, `Cantidad`, `PrecioCentavos` (por unidad base),
+`ImporteCentavos` (lo que se cobró por la línea) y `CostoCentavos` (total de la línea), como los guardó eleventa.
 
 **MapeoImportacion**: `Origen` (`eleventa`), `Entidad`, `IdOrigen`, `IdNuevo`. Permite repetir la importación sin
 duplicar y rastrear de dónde salió cada registro. En fase 0 lo usa el generador de datos ficticios, para probar ese
@@ -155,14 +155,31 @@ camino desde el principio.
   precio que aplica, costo de una salida, existencia). No conoce la base de datos.
 - **`PapeleriaPos.Datos`**: el `DbContext`, la configuración de cada tabla (Fluent API), las conversiones (enums a
   texto) y las migraciones.
-- **`PapeleriaPos.Herramientas`** (nuevo, consola):
-  - `generar-ficticios`: crea una base con productos de papelería inventados y una semilla fija (siempre salen
-    iguales). Unas 200 familias para llegar a ~3,000 variantes, con marcas, presentaciones, productos por metro y a
-    granel, mayoreo, proveedores y un año de ventas con el pico de regreso a clases.
+- **`PapeleriaPos.Herramientas`** (consola):
+  - `generar-ficticios`: crea una base con una papelería inventada, con la forma de una importación de eleventa
+    (catálogo, histórico de ventas y existencias al cierre). Ver [datos ficticios](#datos-ficticios).
   - `diagnostico`: el Excel, primero sobre la base ficticia.
   - `importar-eleventa`: al final de la fase.
 - **`PapeleriaPos.Pruebas`**: reglas del núcleo sin base de datos, y pruebas de la capa de datos contra SQLite en
   memoria.
+
+## Datos ficticios
+
+`generar-ficticios` inventa una papelería parecida a la real. Con la semilla de siempre salen los mismos datos,
+IDs incluidos, así que dos diagnósticos se pueden comparar.
+
+| Qué | Cuánto (semilla 2026) |
+|---|---|
+| Catálogo | ~250 productos y ~1,450 variantes en 11 departamentos, 62 marcas, 12 proveedores |
+| Por metro y a granel | Listón, forros, papel kraft y celofán por metro; diamantina y ligas por kilo; pegamento por litro |
+| Precios | Por unidad base; mayoreo en hojas, folders, clips y la mitad de los paquetes; precio propio en ~3 % de los paquetes |
+| Ventas | Un año (oct 2025 – sep 2026): ~20,600 tickets, ~57 por día, picos de ~120 en regreso a clases; ~2.2 millones de pesos |
+| Horario | Lunes a sábado, domingo a medio gas, cerrado en días festivos; más gente a media mañana y a la salida de la escuela |
+| Inventario al cierre | ~500 mil pesos a costo (lo de hoy en el negocio) |
+
+Lo que trae a propósito para que el diagnóstico lo encuentre: mercancía sin movimiento en todo el año (~8 %),
+productos sin código (~20 %, sobre todo genéricos), precios debajo del costo (~1 %) y 15 productos capturados dos
+veces con otro nombre.
 
 ## Decisiones de la revisión
 
