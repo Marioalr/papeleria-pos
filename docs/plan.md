@@ -45,6 +45,7 @@
 | Acceso a datos | EF Core con migraciones; SQL directo donde convenga (kardex, reportes) |
 | Pruebas | xUnit |
 | Datos reales | Nunca entran al repositorio. Viven fuera de él, en `Documents\TPV` de la máquina de desarrollo |
+| Migración | El inventario **se depura** al pasar al POS nuevo: el catálogo y las existencias de eleventa son punto de partida, no se conservan tal cual. Las existencias de arranque salen del conteo físico |
 | Diagnóstico | Se entrega en Excel, una hoja por análisis |
 | Precios | Precio al público con IVA incluido; el desglose de impuestos se guarda aparte. Precio por unidad base: el paquete cuesta las piezas que trae, salvo excepción |
 | Impuestos | IVA 16 %, 0 % o exento; sin IEPS |
@@ -77,7 +78,7 @@ Sin tiempos: se avanza cuando la fase anterior funciona en la tienda.
 | 2. Inventario | Compras, recepción ciega, presentaciones, conteos cíclicos, etiquetas, sugerido de compra |
 | 3. Precios y clientes | Mayoreo, promociones, kits, clientes registrados, crédito |
 | 4. Servicios y pedidos | Recetas y costeo, pedidos, cola compartida, charolas, recogida por celular, duplicados, apartados, listas escolares, captura manual desde WhatsApp |
-| 5. Piloto en la matriz | Conteo físico inicial, arranque, eleventa como respaldo |
+| 5. Piloto en la matriz | Depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo |
 | 6. Central y WhatsApp | Servidor virtual, sincronización, panel del dueño, API de WhatsApp → pedidos |
 | 7. Sucursal 2 | Precios por sucursal, traspasos, compras que se reparten |
 | 8. App Android | Preventa y pedidos desde el celular |
@@ -98,8 +99,21 @@ Sin tiempos: se avanza cuando la fase anterior funciona en la tienda.
    - Fechas de eleventa: vienen en hora local; se pasan a UTC con la zona de Ciudad de México (con horario de verano
      antes de octubre de 2022).
 
-Solución: `PapeleriaPos.Nucleo` (sin dependencias de Windows), `PapeleriaPos.Datos` (EF Core + SQLite) y
-`PapeleriaPos.Pruebas` (xUnit). Nada de interfaz ni servicio hasta la fase 1.
+Solución: `PapeleriaPos.Nucleo` (sin dependencias de Windows), `PapeleriaPos.Datos` (EF Core + SQLite),
+`PapeleriaPos.Herramientas` (generador de ficticios, diagnóstico e importador) y `PapeleriaPos.Pruebas` (xUnit).
+Nada de interfaz ni servicio hasta la fase 1.
+
+### Depuración del inventario
+
+El POS nuevo es el salto a un control total, así que no hereda los problemas de eleventa. Antes del piloto se limpia
+el catálogo con ayuda del diagnóstico y de la importación ("para revisar"), y el conteo físico completo da las
+existencias de arranque. No se trata solo de lo que marcó el diagnóstico: también hay productos que ya no existen y
+existencias que no son correctas.
+
+- **Importar, limpiar y volver a importar:** la limpieza se puede hacer sobre la base importada, sin tocar eleventa,
+  mientras eleventa sigue en uso. Lo que se decida (dar de baja, juntar, cambiar unidad) se guarda para aplicarlo
+  igual en la importación final, justo antes del arranque.
+- **Existencias:** las de eleventa solo sirven de referencia para el conteo; las que valen son las contadas.
 
 ## Pendientes
 
@@ -111,14 +125,24 @@ Fase 0:
 - [x] Generador de datos ficticios
 - [x] Diagnóstico en Excel sobre los datos ficticios
 - [x] Importación de prueba desde eleventa y diagnóstico con los datos reales
-- [ ] Mayoreo de eleventa: es un precio que se activa a mano; decidir a partir de cuántas piezas aplica como escala
-- [ ] Unidades: revisar los productos a granel que eleventa tiene en KG (listón, micas, hojas sueltas…)
-- [ ] Equipo de la tienda (impresoras, engargoladoras) dado de alta como mercancía: sacarlo del inventario
-- [ ] Servicios (impresiones, copias, engargolado) que eleventa vende como productos a granel: pasarlos a servicios
 
 Fase 1:
 
 - [ ] Modelo y ancho (58 u 80 mm) de la impresora de tickets; foto de un ticket actual
+
+Fase 3:
+
+- [ ] Mayoreo: en eleventa es un precio que el cajero activa a mano; decidir si pasa a escalas por cantidad (¿desde
+  cuántas piezas?) o se deja fuera
+
+Depuración del inventario (antes del piloto, [ver abajo](#depuración-del-inventario)):
+
+- [ ] Dar de baja los productos que ya no existen
+- [ ] Sacar del inventario el equipo de la tienda (impresoras, engargoladoras, enmicadoras, mobiliario)
+- [ ] Juntar los productos capturados dos veces (los que marca el diagnóstico)
+- [ ] Corregir unidades: los productos a granel que eleventa tiene en KG (listón, micas, hojas sueltas…)
+- [ ] Pasar a servicios lo que eleventa vende como producto a granel (impresiones, copias, engargolado, escaneo)
+- [ ] Conteo físico completo: reemplaza todas las existencias de eleventa
 
 Por definir:
 
