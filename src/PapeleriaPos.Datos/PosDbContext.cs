@@ -5,6 +5,9 @@ using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Historico;
 using PapeleriaPos.Nucleo.Importacion;
 using PapeleriaPos.Nucleo.Inventario;
+using PapeleriaPos.Nucleo.Turnos;
+using PapeleriaPos.Nucleo.Usuarios;
+using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Datos;
 
@@ -27,6 +30,16 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<VentaHistoricaLinea> VentasHistoricasLineas => Set<VentaHistoricaLinea>();
     public DbSet<MapeoImportacion> MapeosImportacion => Set<MapeoImportacion>();
     public DbSet<Secuencia> Secuencias => Set<Secuencia>();
+    public DbSet<Usuario> Usuarios => Set<Usuario>();
+    public DbSet<Caja> Cajas => Set<Caja>();
+    public DbSet<Turno> Turnos => Set<Turno>();
+    public DbSet<MovimientoCaja> MovimientosCaja => Set<MovimientoCaja>();
+    public DbSet<AperturaCajon> AperturasCajon => Set<AperturaCajon>();
+    public DbSet<Venta> Ventas => Set<Venta>();
+    public DbSet<VentaLinea> VentasLineas => Set<VentaLinea>();
+    public DbSet<Cobro> Cobros => Set<Cobro>();
+    public DbSet<Corte> Cortes => Set<Corte>();
+    public DbSet<CorteConteo> CortesConteo => Set<CorteConteo>();
 
     /// <summary>Reloj para <see cref="IVersionado.ModificadoUtc"/> y el historial de precios; las pruebas lo fijan.</summary>
     public TimeProvider Reloj { get; init; } = TimeProvider.System;

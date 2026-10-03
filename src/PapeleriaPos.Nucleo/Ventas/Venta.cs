@@ -1,0 +1,250 @@
+using PapeleriaPos.Nucleo.Catalogo;
+
+namespace PapeleriaPos.Nucleo.Ventas;
+
+public enum EstadoVenta
+{
+    EnCaptura,
+    /// <summary>F6: se deja para después (el cliente que regresa por algo más).</summary>
+    Pendiente,
+    Pagada,
+    Cancelada,
+}
+
+/// <summary>Lo que la venta necesita saber de un producto del catálogo.</summary>
+public sealed record ProductoEnVenta(Guid VarianteId, string Descripcion, Impuesto Impuesto, UnidadBase Unidad, bool LlevaInventario);
+
+/// <summary>
+/// Un ticket. Se arma en la caja (agregar, cambiar cantidad, quitar) y al cobrar recibe su folio. Los precios ya traen
+/// IVA; el IVA solo se desglosa.
+/// </summary>
+public class Venta
+{
+    public Guid Id { get; set; } = Ids.Nuevo();
+    public Guid SucursalId { get; set; }
+    public Guid CajaId { get; set; }
+    public Guid TurnoId { get; set; }
+    public Guid CajeroId { get; set; }
+
+    public required string Serie { get; set; }
+
+    /// <summary>Consecutivo de la serie; vacío hasta que se cobra.</summary>
+    public int? Folio { get; private set; }
+
+    public EstadoVenta Estado { get; set; } = EstadoVenta.EnCaptura;
+    public DateTime CreadaUtc { get; set; }
+    public DateTime? PagadaUtc { get; private set; }
+
+    public long TotalCentavos { get; private set; }
+
+    /// <summary>IVA incluido en el total.</summary>
+    public long IvaCentavos { get; private set; }
+
+    public List<VentaLinea> Lineas { get; set; } = [];
+    public List<Cobro> Cobros { get; set; } = [];
+
+    public string? FolioTexto => Folio is { } f ? $"{Serie}-{f:000000}" : null;
+
+    /// <summary>Artículos para el ticket: piezas por cantidad; lo que se vende por metro o a granel cuenta uno por línea.</summary>
+    public decimal NumeroDeArticulos => Lineas.Sum(l => l.Cantidad.EsEntera ? l.Cantidad.EnUnidades : 1);
+
+    public bool EsEditable => Estado is EstadoVenta.EnCaptura or EstadoVenta.Pendiente;
+
+    /// <summary>
+    /// Agrega un producto. Si ya está en el ticket con la misma presentación, suma la cantidad (y puede alcanzar otra
+    /// escala de mayoreo).
+    /// </summary>
+    public VentaLinea AgregarProducto(ProductoEnVenta producto, Presentacion presentacion, Cantidad cantidad, IReadOnlyList<Precio> precios)
+    {
+        RequerirEditable();
+        var existente = Lineas.FirstOrDefault(l => l.VarianteId == producto.VarianteId && l.PresentacionId == presentacion.Id);
+        if (existente is not null)
+        {
+            CambiarCantidad(existente, existente.Cantidad + cantidad, presentacion, precios);
+            return existente;
+        }
+
+        var linea = new VentaLinea
+        {
+            VentaId = Id,
+            VarianteId = producto.VarianteId,
+            PresentacionId = presentacion.Id,
+            Descripcion = producto.Descripcion,
+            Impuesto = producto.Impuesto,
+            Unidad = producto.Unidad,
+            LlevaInventario = producto.LlevaInventario,
+        };
+        Lineas.Add(linea);
+        try
+        {
+            CambiarCantidad(linea, cantidad, presentacion, precios);
+        }
+        catch
+        {
+            Lineas.Remove(linea);
+            throw;
+        }
+        return linea;
+    }
+
+    /// <summary>Cambia la cantidad de una línea y vuelve a buscar el precio que le toca.</summary>
+    public void CambiarCantidad(VentaLinea linea, Cantidad cantidad, Presentacion presentacion, IReadOnlyList<Precio> precios)
+    {
+        RequerirEditable();
+        if (!cantidad.EsPositiva)
+            throw new ArgumentOutOfRangeException(nameof(cantidad), "La cantidad debe ser positiva.");
+        var cantidadBase = cantidad.Por(presentacion.Factor);
+        if (linea.Unidad == UnidadBase.Pieza && !cantidadBase.EsEntera)
+            throw new ArgumentException("Este producto se vende por pieza: no admite fracciones.", nameof(cantidad));
+
+        var aplicado = CalculoPrecio.Calcular(precios, SucursalId, presentacion, cantidad)
+            ?? throw new InvalidOperationException($"«{linea.Descripcion}» no tiene precio.");
+
+        linea.Cantidad = cantidad;
+        linea.CantidadBase = cantidadBase;
+        linea.ImporteCentavos = aplicado.ImporteCentavos;
+        linea.PrecioCentavos = aplicado.Precio.PresentacionId is null
+            ? presentacion.Factor.Importe(aplicado.Precio.PrecioCentavos)
+            : aplicado.Precio.PrecioCentavos;
+        Recalcular();
+    }
+
+    /// <summary>INS / CTRL+P: artículo varios o común, con descripción y precio a mano. No descuenta inventario.</summary>
+    public VentaLinea AgregarArticuloComun(string descripcion, long precioCentavos, Cantidad cantidad)
+    {
+        RequerirEditable();
+        if (string.IsNullOrWhiteSpace(descripcion))
+            throw new ArgumentException("El artículo común necesita una descripción.", nameof(descripcion));
+        if (precioCentavos <= 0 || !cantidad.EsPositiva)
+            throw new ArgumentOutOfRangeException(nameof(precioCentavos), "Precio y cantidad deben ser positivos.");
+
+        var linea = new VentaLinea
+        {
+            VentaId = Id,
+            Descripcion = descripcion.Trim(),
+            Impuesto = Impuesto.Iva16,
+            Unidad = UnidadBase.Pieza,
+            Cantidad = cantidad,
+            CantidadBase = cantidad,
+            PrecioCentavos = precioCentavos,
+            ImporteCentavos = cantidad.Importe(precioCentavos),
+        };
+        Lineas.Add(linea);
+        Recalcular();
+        return linea;
+    }
+
+    public void QuitarLinea(VentaLinea linea)
+    {
+        RequerirEditable();
+        Lineas.Remove(linea);
+        Recalcular();
+    }
+
+    /// <summary>
+    /// F12: aplica los cobros y deja la venta pagada con su folio. Tarjeta y transferencia no pueden pasar del total;
+    /// el efectivo cubre lo que falta y da el cambio.
+    /// </summary>
+    public void Pagar(int folio, IReadOnlyList<CobroSolicitado> cobros, DateTime ahoraUtc)
+    {
+        if (ahoraUtc.Kind != DateTimeKind.Utc)
+            throw new ArgumentException("La fecha debe estar en UTC.", nameof(ahoraUtc));
+        var (faltante, recibido) = ValidarCobros(cobros);
+
+        Cobros = cobros.Where(c => c.Forma != FormaPago.Efectivo).Select(c => new Cobro
+        {
+            VentaId = Id,
+            Forma = c.Forma,
+            MontoCentavos = c.MontoCentavos,
+            Referencia = c.Referencia,
+            Verificacion = c.Forma == FormaPago.Transferencia ? Verificacion.PorVerificar : Verificacion.NoAplica,
+        }).ToList();
+        if (faltante > 0)
+            Cobros.Insert(0, new Cobro
+            {
+                VentaId = Id,
+                Forma = FormaPago.Efectivo,
+                MontoCentavos = faltante,
+                RecibidoCentavos = recibido,
+                CambioCentavos = recibido - faltante,
+            });
+
+        Folio = folio;
+        PagadaUtc = ahoraUtc;
+        Estado = EstadoVenta.Pagada;
+    }
+
+    /// <summary>Revisa que los cobros alcancen sin cambiar nada. Devuelve lo que falta cubrir en efectivo y lo recibido.</summary>
+    public (long Faltante, long Recibido) ValidarCobros(IReadOnlyList<CobroSolicitado> cobros)
+    {
+        RequerirEditable();
+        if (Lineas.Count == 0)
+            throw new InvalidOperationException("No hay nada que cobrar.");
+        if (cobros.Any(c => c.MontoCentavos <= 0))
+            throw new ArgumentException("Cada cobro debe ser mayor a cero.", nameof(cobros));
+        if (cobros.Count(c => c.Forma == FormaPago.Efectivo) > 1)
+            throw new ArgumentException("El efectivo va en un solo cobro.", nameof(cobros));
+
+        var sinEfectivo = cobros.Where(c => c.Forma != FormaPago.Efectivo).Sum(c => c.MontoCentavos);
+        if (sinEfectivo > TotalCentavos)
+            throw new InvalidOperationException("Tarjeta y transferencia no pueden pasar del total: no dan cambio.");
+
+        var faltante = TotalCentavos - sinEfectivo;
+        var efectivo = cobros.SingleOrDefault(c => c.Forma == FormaPago.Efectivo);
+        var recibido = efectivo?.MontoCentavos ?? 0;
+        if (recibido < faltante)
+            throw new InvalidOperationException($"Faltan {(faltante - recibido) / 100m:C2} por cobrar.");
+        return (faltante, recibido);
+    }
+
+    public long CambioCentavos => Cobros.Sum(c => c.CambioCentavos);
+
+    public bool LlevaEfectivo => Cobros.Any(c => c.Forma == FormaPago.Efectivo);
+
+    private void Recalcular()
+    {
+        foreach (var l in Lineas)
+            l.IvaCentavos = l.Impuesto == Impuesto.Iva16 ? l.ImporteCentavos - Redondeo.Dividir(l.ImporteCentavos * 100L, 116) : 0;
+        TotalCentavos = Lineas.Sum(l => l.ImporteCentavos);
+        IvaCentavos = Lineas.Sum(l => l.IvaCentavos);
+    }
+
+    private void RequerirEditable()
+    {
+        if (!EsEditable)
+            throw new InvalidOperationException($"La venta ya está {Estado.ToString().ToLowerInvariant()}: no se puede cambiar.");
+    }
+}
+
+public class VentaLinea
+{
+    public Guid Id { get; set; } = Ids.Nuevo();
+    public Guid VentaId { get; set; }
+
+    /// <summary>Vacía en el artículo varios o común.</summary>
+    public Guid? VarianteId { get; set; }
+
+    public Guid? PresentacionId { get; set; }
+
+    /// <summary>Como se vendió: si después cambia el nombre en el catálogo, el ticket no cambia.</summary>
+    public required string Descripcion { get; set; }
+
+    public Impuesto Impuesto { get; set; }
+    public UnidadBase Unidad { get; set; }
+    public bool LlevaInventario { get; set; }
+
+    /// <summary>En presentaciones (2 paquetes, 1.5 metros).</summary>
+    public Cantidad Cantidad { get; set; }
+
+    /// <summary>En unidad base (24 piezas): lo que sale del inventario.</summary>
+    public Cantidad CantidadBase { get; set; }
+
+    /// <summary>Precio de una presentación, con IVA.</summary>
+    public long PrecioCentavos { get; set; }
+
+    public long ImporteCentavos { get; set; }
+    public long IvaCentavos { get; set; }
+
+    /// <summary>Costo de lo vendido, del kardex al momento de cobrar.</summary>
+    public long CostoCentavos { get; set; }
+}
