@@ -157,7 +157,8 @@ Fase 0:
 Fase 1:
 
 - [x] Impresora de tickets: POS-8360 de 80 mm; formato del ticket de eleventa
-- [ ] Revisar el [plan de la fase 1](fase-1-caja.md) y contestar sus preguntas (turnos, teclas, fondo, logo)
+- [x] Revisar el [plan de la fase 1](fase-1-caja.md) y contestar sus preguntas (turnos, teclas, fondo, logo)
+- [ ] Entrega 1: vender y cobrar en una caja
 
 Fase 3:
 

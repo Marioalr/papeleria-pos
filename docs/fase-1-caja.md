@@ -1,6 +1,6 @@
 # Fase 1 — Caja
 
-> **Propuesta para revisar.** Cierra lo que falta decidir antes de programar la caja. Lo que la caja debe hacer ya
+> **Revisado.** Cierra lo que faltaba decidir antes de programar la caja. Lo que la caja debe hacer ya
 > está en [caja y control](caja-y-control.md); aquí va cómo se construye, en qué orden y con qué datos.
 
 ## Entregas
@@ -83,40 +83,65 @@ Mismo orden que el ticket de eleventa, para que nadie extrañe nada:
 
 ## Pantalla de venta
 
-Diseñada para 1366×768, todo con teclado y letra grande.
+Diseñada para 1366×768, todo con teclado y letra grande. **Misma distribución y mismas teclas que eleventa,** para
+que los cajeros no tengan que aprender otras.
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│ Matriz · Caja 1 · Ana · Turno desde 08:02                     En espera: 1  [F6] │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│ Código o búsqueda: [ 7501015213247__________________ ]                           │
-├──────┬──────────────────────────────────────────────┬────────────┬───────────────┤
-│ Cant │ Descripción                                  │     Precio │       Importe │
-├──────┼──────────────────────────────────────────────┼────────────┼───────────────┤
-│    2 │ Nylon C10 x metro                            │     $60.00 │       $120.00 │
-│    1 │ Goma M40 Pelikan                             │      $5.00 │         $5.00 │
-│▶   8 │ Impresión blanco y negro                     │      $1.00 │         $8.00 │
-├──────┴──────────────────────────────────────────────┴────────────┴───────────────┤
-│                                                     4 artículos     $133.00      │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│ F2 Buscar  F3 Cantidad  Supr Quitar  F5 Espera  F6 Recuperar  F12 Cobrar         │
-└──────────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│ F1 Ventas   F3 Productos   F4 Inventario   Corte              Matriz · Caja 1 · Ana  │
+├──────────────────────────────────────────────────────────────────────────────────────┤
+│ VENTA - Ticket 1                                                                     │
+│ Código del producto: [ 7501015213247______________________ ]   ENTER Agregar         │
+│ INS Varios   CTRL+P Art. común   F10 Buscar   F7 Entradas   F8 Salidas   DEL Borrar  │
+│ F9 Verificador                                                                       │
+├─[ Ticket 1 ]─[ Ticket 2 ]────────────────────────────────────────────────────────────┤
+│ Código de barras │ Descripción               │ Precio venta │ Cant. │ Importe │ Exist.│
+│ N10              │ Nylon C10 x metro         │       $60.00 │     2 │ $120.00 │  44   │
+│ 7501015213247    │ Goma M40 Pelikan          │        $5.00 │     1 │   $5.00 │  74   │
+│▶IMP              │ Impresión blanco y negro  │        $1.00 │     8 │   $8.00 │   —   │
+├──────────────────────────────────────────────────────────────────────────────────────┤
+│ 3  Productos en la venta actual.                       ┌───────────────┐             │
+│ F5 Cambiar   F6 Pendiente   Eliminar                   │  F12 Cobrar   │   $133.00   │
+│ Total: $133.00   Pagó con: $0.00   Cambio: $0.00       └───────────────┘             │
+│ Reimprimir último ticket                     Ventas del día                          │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- El lector escribe en el cuadro de búsqueda; si el código existe, se agrega solo.
-- Escribir texto busca por nombre, código o marca sin importar acentos, y muestra resultados mientras se escribe.
-- `*` antes del código cambia la cantidad (`3*7501015213247`), como en muchas cajas.
-- **Cobro:** total grande; efectivo recibido y cambio; se puede repartir entre efectivo, tarjeta y transferencia.
+| Tecla | Qué hace | Entrega |
+|---|---|---|
+| ENTER | Agrega el producto del código escrito o escaneado | 1 |
+| F10 | Buscar por nombre, código o marca, sin importar acentos | 1 |
+| DEL | Borrar el artículo seleccionado | 1 (con bitácora en la 2) |
+| F5 / F6 | Cambiar entre tickets abiertos / dejar el ticket pendiente | 1 |
+| F7 / F8 | Entrada / salida de efectivo, siempre con motivo | 1 |
+| F9 | Verificador: consultar precio y existencia sin agregar a la venta | 1 |
+| INS / CTRL+P | Artículo varios / artículo común: descripción y precio a mano, sin inventario | 1 (permiso configurable en la 2) |
+| F12 | Cobrar | 1 |
+| F11 | Mayoreo | Cuando se decida el mayoreo (fase 3) |
+| F1, F3, F4 | Ventas, productos, inventario | Conforme llegue cada módulo |
+
+- El lector escribe en el código del producto; si existe, se agrega solo.
+- `*` antes del código cambia la cantidad (`3*7501015213247`); también se puede editar la columna de cantidad.
+- La columna de existencia se queda, como en eleventa.
+- **Artículo varios y artículo común** son la puerta para vender sin que se descuente inventario. Se conservan porque
+  los cajeros los usan, pero en la entrega 2 su permiso será configurable y cada uso quedará en la bitácora.
+- **Cobro:** total grande; "pagó con" y cambio; se puede repartir entre efectivo, tarjeta y transferencia.
   La transferencia queda **por verificar**, y la tarjeta guarda la referencia de la terminal.
 
 ## Turno y corte ciego
 
-1. **Abrir turno:** el cajero entra con su usuario y PIN y cuenta el fondo.
-2. **Durante el turno:** retiros y gastos de caja, siempre con motivo.
+Dos turnos al día. **Cada cajero tiene su propio turno** y responde por su efectivo. **El corte lo hace el
+encargado.**
+
+1. **Abrir turno:** el cajero entra con su usuario y PIN y se cuenta el fondo, que no siempre es el mismo monto.
+2. **Durante el turno:** entradas (F7) y salidas (F8) de efectivo, siempre con motivo.
 3. **Corte X (parcial):** informativo; no cierra el turno.
-4. **Corte Z (cierre):** el cajero cuenta el efectivo por denominación **sin ver cuánto debería haber.** El sistema
-   compara con lo esperado (fondo + efectivo cobrado − cambio − retiros − gastos), guarda la diferencia y la marca si
-   pasa del umbral. Tarjeta y transferencias se listan aparte.
+4. **Corte Z (cierre):** el encargado entra con su PIN y cuenta el efectivo por denominación **sin ver cuánto debería
+   haber.** El sistema compara con lo esperado (fondo + efectivo cobrado − cambio + entradas − salidas), guarda la
+   diferencia a nombre del cajero del turno y la marca si pasa del umbral. Tarjeta y transferencias se listan aparte.
+5. **Cambio de cajero en la misma caja:** se hace el corte del que sale y se abre el turno del que entra.
+
+Imprimir el corte como comprobante en papel queda como [idea](ideas.md#documentos-impresos).
 
 ## Datos nuevos
 
@@ -127,9 +152,9 @@ Se suman a los del [modelo de la fase 0](modelo-datos.md), con las mismas reglas
 | **Usuario** | Nombre, usuario, hash del PIN, rol (Dueño, Encargado, Cajero), sucursal, activo, intentos fallidos, bloqueado hasta |
 | **Caja** | Sucursal, nombre, serie de folios (A, B…), es principal |
 | **Turno** | Caja, cajero, abierto y cerrado (UTC), fondo |
-| **MovimientoCaja** | Turno, tipo (retiro, gasto), monto, motivo, quién |
+| **MovimientoCaja** | Turno, tipo (entrada, salida), monto, motivo, quién |
 | **Venta** | Sucursal, caja, turno, cajero, serie y folio (A-000123), estado (en captura, en espera, pagada, cancelada), total, IVA desglosado, fechas |
-| **VentaLinea** | Venta, variante, presentación, descripción tal como se vendió, cantidad, precio, importe, costo al momento de vender |
+| **VentaLinea** | Venta, variante (vacía en artículo varios o común), presentación, descripción tal como se vendió, cantidad, precio, importe, costo al momento de vender |
 | **Cobro** | Venta, forma (efectivo, tarjeta, transferencia), monto, recibido y cambio, referencia, verificación (por verificar, verificada, rechazada) |
 | **Corte** | Turno, tipo (X o Z), esperado por forma de pago, contado, diferencia, quién |
 | **CorteConteo** | Corte, denominación, cantidad |
@@ -140,12 +165,12 @@ Se suman a los del [modelo de la fase 0](modelo-datos.md), con las mismas reglas
 - El IVA se desglosa de precios que ya lo incluyen, según el impuesto de cada producto: con IVA 16 %, base =
   importe ÷ 1.16; con 0 % o exento, todo es base.
 
-## Preguntas
+## Decisiones de la revisión
 
-1. **Turnos:** ¿cuántos hay al día y quién hace el corte, el cajero o el encargado?
-2. **Varios cajeros en una caja:** ¿comparten el turno o cada uno tiene el suyo? La propuesta es un turno por cajero
-   (cada quien responde por su efectivo), con cambio de cajero = corte del que sale.
-3. **Teclas:** ¿copiamos las de eleventa para que los cajeros no tengan que aprender otras? Una foto de la barra de
-   teclas de eleventa ayudaría. La pantalla de arriba usa F12 para cobrar, como eleventa.
-4. **Fondo de caja:** ¿es siempre el mismo monto?
-5. **Logo:** el archivo del logo que sale en el ticket.
+| Pregunta | Respuesta | Efecto |
+|---|---|---|
+| Turnos y corte | Dos turnos al día; el corte lo hace el encargado | Corte Z con el PIN del encargado, que cuenta a ciegas |
+| Varios cajeros en una caja | Un turno por cajero | Cambio de cajero = corte del que sale |
+| Teclas | Las de eleventa | Misma pantalla y mismas teclas ([arriba](#pantalla-de-venta)) |
+| Fondo de caja | No siempre es el mismo | Se cuenta al abrir cada turno |
+| Logo | Se importa | En la configuración, "Agregar logotipo…" carga la imagen, como en eleventa (no está en su base de datos) |

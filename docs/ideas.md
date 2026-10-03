@@ -34,6 +34,17 @@ Se tratan cuando el sistema ya esté en uso y se trabaje en mejorar la experienc
   El [modelo](modelo-datos.md) ya lo permite (varios códigos por presentación y `CodigoProveedor`). Falta decidir
   cómo se usan en la búsqueda y en los pedidos.
 
+## Documentos impresos
+
+Imprimir en la impresora de tickets, como documentación en papel, lo que hoy solo quedaría en el sistema:
+
+- el **corte** de cada turno, con espacio para la firma del cajero y del encargado;
+- las **entradas y salidas de efectivo** (F7 y F8), con su motivo;
+- la **apertura del turno** con el fondo contado.
+
+Sirve de respaldo físico para archivar y para aclarar diferencias. Falta decidir cuáles se imprimen siempre y cuáles
+solo si se piden.
+
 ## Otras ideas que han salido
 
 - Leer la foto de una lista escolar y convertirla en pedido.
