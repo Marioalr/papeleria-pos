@@ -148,7 +148,9 @@ public sealed class GeneradorFicticios
 
         // La marca líder sale más cara y se vende más; las siguientes, un poco menos.
         var precioProducto = 100 * Uniforme(familia.Precio.Min, familia.Precio.Max) * (decimal)(1.15 - 0.08 * Math.Min(rangoMarca, 4));
-        var margen = Uniforme(1.40m, 2.00m);
+        // Con mayoreo fuerte (hojas, folders) el margen de menudeo es mayor, para que el mayoreo no quede bajo costo.
+        var margenMinimo = Math.Max(1.40m, 1.15m / (1 - (familia.DescuentoMayoreo ?? 0)));
+        var margen = Uniforme(margenMinimo, margenMinimo + 0.60m);
         var pesoMarca = 1.0 / (1 + 0.35 * rangoMarca);
         var proveedor = _datos.Proveedores[(_datos.Departamentos.IndexOf(departamento) + rangoMarca) % _datos.Proveedores.Count];
 

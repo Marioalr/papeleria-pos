@@ -22,6 +22,12 @@ Base con una papelería inventada (catálogo, un año de ventas y existencias), 
 dotnet run --project src/PapeleriaPos.Herramientas -- generar-ficticios --salida ficticios.db
 ```
 
+Diagnóstico en Excel de una base (dinero parado, 80-20, margen, catálogo a revisar y temporada):
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- diagnostico --base ficticios.db --salida diagnostico.xlsx
+```
+
 Migraciones de la base (EF Core):
 
 ```
