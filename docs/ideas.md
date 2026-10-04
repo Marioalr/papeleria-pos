@@ -39,7 +39,8 @@ Se tratan cuando el sistema ya esté en uso y se trabaje en mejorar la experienc
 Imprimir en la impresora de tickets, como documentación en papel, lo que hoy solo quedaría en el sistema:
 
 - el **corte** de cada turno, con espacio para la firma del cajero y del encargado;
-- las **entradas y salidas de efectivo** (F7 y F8), con su motivo;
+- las **entradas de efectivo** (F7), con su motivo (las **salidas** ya se decidieron: siempre se imprimen, ver
+  [entrega 2](fase-1-control.md#efectivo-en-caja));
 - la **apertura del turno** con el fondo contado.
 
 Sirve de respaldo físico para archivar y para aclarar diferencias. Falta decidir cuáles se imprimen siempre y cuáles
