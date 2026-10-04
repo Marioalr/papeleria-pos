@@ -453,8 +453,8 @@
                 NuevoTicket();
             else
                 Cambiar(_tickets[^1]);
-            await ImprimirAsync(ticket, abrirCajon: ticket.AbreCajon);
             Avisar($"Venta {ticket.Folio} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: false);
+            await ImprimirAsync(ticket, abrirCajon: ticket.AbreCajon);
             return null;
         }
         catch (ErrorCaja ex)
@@ -468,18 +468,22 @@
     private async Task ImprimirAsync(TicketDto ticket, bool abrirCajon)
     {
         _ultimo = ticket;
+        if (Impresora.MuestraVistaPrevia)
+        {
+            await Abrir(Ventanas.VistaPrevia);
+            return;
+        }
+
+        // Primero se cierra el cobro y se ve la pantalla lista; la impresora tarda un par de segundos con el logo.
+        await Cerrar();
         try
         {
             await Impresora.ImprimirAsync(ticket, abrirCajon);
-            if (Impresora.MuestraVistaPrevia)
-                await Abrir(Ventanas.VistaPrevia);
-            else
-                await Cerrar();
         }
         catch (Exception ex)
         {
-            await Cerrar();
-            Avisar($"No se pudo imprimir el ticket {ticket.Folio}: {ex.Message}");
+            Avisar($"No se pudo imprimir el ticket {ticket.Folio}: {ex.Message} Se puede reimprimir.");
+            StateHasChanged();
         }
     }
 

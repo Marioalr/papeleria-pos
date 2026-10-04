@@ -4,12 +4,21 @@ using PapeleriaPos.Nucleo.Contratos;
 namespace PapeleriaPos.Impresion;
 
 /// <summary>
-/// Impresora de tickets en la red (como la POS-8360 de la tienda, en 192.168.1.100): se le mandan los comandos
-/// ESC/POS directo al puerto 9100, sin controlador de Windows. Sirve igual desde la caja que desde el servicio.
+/// Impresora de tickets en la red (como la POS-8360 de la tienda): se le mandan los comandos ESC/POS directo al
+/// puerto 9100, sin controlador de Windows. Sirve igual desde la caja que desde el servicio.
+/// <para>
+/// Si se cierra la conexión mientras la impresora sigue imprimiendo (el logo tarda), descarta lo que no alcanzó a
+/// procesar y el ticket sale cortado. Por eso se manda en partes y al final se le pregunta el estado del papel con
+/// GS r 1, que la impresora contesta en orden: cuando responde, ya imprimió todo lo anterior.
+/// </para>
 /// </summary>
-public sealed class ImpresoraRed(string host, int puerto = 9100) : IImpresora
+public sealed class ImpresoraRed(string host, int puerto = 9100, TimeSpan? esperaConexion = null, TimeSpan? esperaImpresion = null) : IImpresora
 {
-    public static readonly TimeSpan Espera = TimeSpan.FromSeconds(5);
+    private const int TamanoParte = 1024;
+    private static readonly byte[] PreguntarPapel = [0x1D, (byte)'r', 1];
+
+    private readonly TimeSpan _esperaConexion = esperaConexion ?? TimeSpan.FromSeconds(5);
+    private readonly TimeSpan _esperaImpresion = esperaImpresion ?? TimeSpan.FromSeconds(30);
 
     public string Host { get; } = host;
     public int Puerto { get; } = puerto;
@@ -21,20 +30,46 @@ public sealed class ImpresoraRed(string host, int puerto = 9100) : IImpresora
 
     public async Task EnviarAsync(byte[] datos, CancellationToken ct = default)
     {
-        using var limite = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        limite.CancelAfter(Espera);
         using var cliente = new TcpClient();
+        var conectado = false;
         try
         {
-            await cliente.ConnectAsync(Host, Puerto, limite.Token);
+            using (var limite = Limite(_esperaConexion, ct))
+                await cliente.ConnectAsync(Host, Puerto, limite.Token);
+            conectado = true;
+
             await using var canal = cliente.GetStream();
-            await canal.WriteAsync(datos, limite.Token);
-            await canal.FlushAsync(limite.Token);
+            using (var limite = Limite(_esperaImpresion, ct))
+            {
+                for (var i = 0; i < datos.Length; i += TamanoParte)
+                    await canal.WriteAsync(datos.AsMemory(i, Math.Min(TamanoParte, datos.Length - i)), limite.Token);
+                await canal.WriteAsync(PreguntarPapel, limite.Token);
+
+                var respuesta = new byte[1];
+                if (await canal.ReadAsync(respuesta, limite.Token) == 0)
+                    throw new IOException("La impresora cerró la conexión antes de terminar de imprimir.");
+                // Bits 2 y 3: sin papel.
+                if ((respuesta[0] & 0x0C) != 0)
+                    throw new IOException("Se acabó el papel de la impresora de tickets.");
+            }
         }
-        catch (Exception ex) when (ex is SocketException or OperationCanceledException && !ct.IsCancellationRequested)
+        catch (SocketException ex)
         {
             throw new IOException($"No responde la impresora de tickets en {Host}:{Puerto}.", ex);
         }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw new IOException(conectado
+                ? "La impresora de tickets no confirmó que terminó de imprimir."
+                : $"No responde la impresora de tickets en {Host}:{Puerto}.", ex);
+        }
+    }
+
+    private static CancellationTokenSource Limite(TimeSpan espera, CancellationToken ct)
+    {
+        var limite = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limite.CancelAfter(espera);
+        return limite;
     }
 }
 

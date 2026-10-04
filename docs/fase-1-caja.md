@@ -24,7 +24,8 @@ entradas y salidas de efectivo, verificador, cobro mixto, ticket, ventas del dí
 configuración del ticket con logo.
 Falta:
 
-- Confirmar cómo sale el ticket en papel (ya se le mandó uno de prueba a la POS-8360 por la red) y probar el cajón y
+- Confirmar el ticket completo en papel (el primero salió cortado: se cerraba la conexión mientras imprimía el logo;
+  ya se espera la confirmación de la impresora) y probar el cajón (todavía no hay) y
   la ventana de Windows.
 - Instalar el servicio como servicio de Windows (entrega 3).
 

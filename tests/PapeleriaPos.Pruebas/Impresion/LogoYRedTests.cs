@@ -83,24 +83,67 @@ public class LogoYRedTests
         Assert.Contains("[logo 200×100]", TicketTexto.Generar(Ticket(logo)));
     }
 
-    [Fact]
-    public async Task La_impresora_de_red_recibe_los_comandos_por_tcp()
+    /// <summary>
+    /// Una impresora de mentira: recibe hasta la pregunta de estado (GS r 1) y contesta con <paramref name="estado"/>,
+    /// o no contesta si es null. Devuelve lo que recibió antes de la pregunta.
+    /// </summary>
+    private static (int Puerto, Task<byte[]> Recibido) ImpresoraFalsa(byte? estado)
     {
-        using var escucha = new TcpListener(IPAddress.Loopback, 0);
+        var escucha = new TcpListener(IPAddress.Loopback, 0);
         escucha.Start();
         var puerto = ((IPEndPoint)escucha.LocalEndpoint).Port;
         var recibido = Task.Run(async () =>
         {
             using var cliente = await escucha.AcceptTcpClientAsync();
-            using var memoria = new MemoryStream();
-            await cliente.GetStream().CopyToAsync(memoria);
-            return memoria.ToArray();
+            var canal = cliente.GetStream();
+            var datos = new List<byte>();
+            var buffer = new byte[4096];
+            while (!(datos.Count >= 3 && datos[^3] == 0x1D && datos[^2] == (byte)'r' && datos[^1] == 1))
+            {
+                var n = await canal.ReadAsync(buffer);
+                if (n == 0)
+                    break;
+                datos.AddRange(buffer.AsSpan(0, n));
+            }
+            if (estado is { } e)
+                await canal.WriteAsync(new[] { e });
+            else
+                await Task.Delay(1000);
+            escucha.Stop();
+            return datos.Take(datos.Count - 3).ToArray();
         });
+        return (puerto, recibido);
+    }
+
+    [Fact]
+    public async Task La_impresora_de_red_recibe_todo_y_se_espera_a_que_termine()
+    {
+        var (puerto, recibido) = ImpresoraFalsa(estado: 0x00);
+        var conLogo = Ticket(LogoTicket.DesdeImagen(Imagen(384, 200)));
 
         var impresora = (ImpresoraRed)Impresoras.Crear($"tcp://127.0.0.1:{puerto}");
-        await impresora.ImprimirAsync(Ticket(null), abrirCajon: true);
+        await impresora.ImprimirAsync(conLogo, abrirCajon: true);
 
-        Assert.Equal(TicketEscPos.Generar(Ticket(null), abrirCajon: true), await recibido);
+        Assert.Equal(TicketEscPos.Generar(conLogo, abrirCajon: true), await recibido);
+    }
+
+    [Fact]
+    public async Task Sin_papel_se_avisa()
+    {
+        var (puerto, _) = ImpresoraFalsa(estado: 0x0C);
+
+        var error = await Assert.ThrowsAsync<IOException>(() => new ImpresoraRed("127.0.0.1", puerto).ImprimirAsync(Ticket(null), false));
+        Assert.Contains("papel", error.Message);
+    }
+
+    [Fact]
+    public async Task Si_la_impresora_no_confirma_que_termino_se_avisa()
+    {
+        var (puerto, _) = ImpresoraFalsa(estado: null);
+
+        var error = await Assert.ThrowsAsync<IOException>(() =>
+            new ImpresoraRed("127.0.0.1", puerto, esperaImpresion: TimeSpan.FromMilliseconds(300)).ImprimirAsync(Ticket(null), false));
+        Assert.Contains("no confirmó", error.Message);
     }
 
     [Fact]
