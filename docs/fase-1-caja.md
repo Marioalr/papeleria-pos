@@ -13,7 +13,7 @@ aparte, sin tocar la operación de la tienda, hasta el piloto (fase 5).
 | 1 | **Vender y cobrar en una caja** | Pantalla de venta, búsqueda y escaneo, ventas en espera, cobro mixto, ticket con logo y QR, cajón, turno con fondo, retiros y gastos, corte ciego (X y Z), entrada con usuario y PIN |
 | 2 | **Control** ([plan](fase-1-control.md)) | Roles configurables, autorizaciones con PIN, bitácora, cancelaciones y devoluciones escaneando el ticket, verificar transferencias |
 | 3 | **Varias cajas** ([plan](fase-1-varias-cajas.md)) | La caja principal como servidor de la sucursal, las demás cajas por red, contingencia con bandeja de salida |
-| 4 | **Telegram** | Alertas, autorización a distancia y resumen diario |
+| 4 | **Telegram** ([plan](fase-1-telegram.md)) | Alertas, autorización a distancia y resumen diario |
 | 5 | **Módulo de impresión** | Lo que hoy hace Control Print ([detalle](impresion.md)) |
 
 Este documento detalla la entrega 1; las demás se cierran cuando les toque.
