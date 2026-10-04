@@ -5,6 +5,7 @@ using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Historico;
+using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Importacion;
 using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Telegram;
@@ -54,6 +55,8 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<CodigoVinculacion> CodigosVinculacion => Set<CodigoVinculacion>();
     public DbSet<SolicitudRemota> SolicitudesRemotas => Set<SolicitudRemota>();
     public DbSet<MensajeTelegram> MensajesTelegram => Set<MensajeTelegram>();
+    public DbSet<TrabajoImpresion> TrabajosImpresion => Set<TrabajoImpresion>();
+    public DbSet<ConfiguracionImpresion> ConfiguracionesImpresion => Set<ConfiguracionImpresion>();
 
     /// <summary>Reloj para <see cref="IVersionado.ModificadoUtc"/> y el historial de precios; las pruebas lo fijan.</summary>
     public TimeProvider Reloj { get; init; } = TimeProvider.System;

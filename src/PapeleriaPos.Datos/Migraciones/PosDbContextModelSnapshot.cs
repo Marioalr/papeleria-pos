@@ -750,6 +750,158 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("MapeosImportacion", (string)null);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Impresiones.ConfiguracionImpresion", b =>
+                {
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CostosJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ModificadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("SucursalId");
+
+                    b.ToTable("ConfiguracionesImpresion", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Impresiones.TrabajoImpresion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("AtendioId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CajaId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Calidad")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Caras")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("CarasColor")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Cobro")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CobroUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Cola")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Color")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Copias")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CostoCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CostoOtrosCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CostoPapelCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CostoTintaCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DetalleJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Documento")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Duplex")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Hojas")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("ImpresoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("MarcoId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal>("MargenPorcentaje")
+                        .HasPrecision(9, 2)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Medido")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<byte[]>("Miniatura")
+                        .HasColumnType("BLOB");
+
+                    b.Property<string>("MotivoNoVendida")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Nota")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NotaNoVendida")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Paginas")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Pc")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("PrecioCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("SpoolId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Tamano")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TipoPapel")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UsuarioWindows")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("VentaId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CajaId");
+
+                    b.HasIndex("VentaId");
+
+                    b.HasIndex("SucursalId", "Cobro");
+
+                    b.ToTable("TrabajosImpresion", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.Existencia", b =>
                 {
                     b.Property<Guid>("SucursalId")
@@ -1513,6 +1665,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("EsImpresiones")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("ImporteCentavos")
                         .HasColumnType("INTEGER");
 
@@ -1728,6 +1883,35 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasForeignKey("VentaHistoricaId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Impresiones.ConfiguracionImpresion", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Impresiones.TrabajoImpresion", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Turnos.Caja", null)
+                        .WithMany()
+                        .HasForeignKey("CajaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Ventas.Venta", null)
+                        .WithMany()
+                        .HasForeignKey("VentaId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.Existencia", b =>

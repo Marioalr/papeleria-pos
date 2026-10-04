@@ -155,6 +155,38 @@ public class Venta
         MotivoCancelacion = motivo.Trim();
     }
 
+    /// <summary>
+    /// Las impresiones que se cobran en el ticket, en una sola línea (docs/fase-1-impresion.md). Si ya había, se
+    /// reemplaza: la caja la vuelve a armar cada vez que se agregan o quitan trabajos. Sin trabajos, se quita.
+    /// </summary>
+    public VentaLinea? FijarImpresiones(long precioCentavos, long costoCentavos)
+    {
+        RequerirEditable();
+        if (Lineas.FirstOrDefault(l => l.EsImpresiones) is { } anterior)
+            Lineas.Remove(anterior);
+        if (precioCentavos <= 0)
+        {
+            Recalcular();
+            return null;
+        }
+        var linea = new VentaLinea
+        {
+            VentaId = Id,
+            Descripcion = "Impresiones",
+            Impuesto = Impuesto.Iva16,
+            Unidad = UnidadBase.Pieza,
+            Cantidad = Cantidad.Piezas(1),
+            CantidadBase = Cantidad.Piezas(1),
+            PrecioCentavos = precioCentavos,
+            ImporteCentavos = precioCentavos,
+            CostoCentavos = costoCentavos,
+            EsImpresiones = true,
+        };
+        Lineas.Add(linea);
+        Recalcular();
+        return linea;
+    }
+
     /// <summary>INS / CTRL+P: artículo varios o común, con descripción y precio a mano. No descuenta inventario.</summary>
     public VentaLinea AgregarArticuloComun(string descripcion, long precioCentavos, Cantidad cantidad)
     {
@@ -305,4 +337,7 @@ public class VentaLinea
     public bool PrecioCambiado => PrecioOriginalCentavos is not null;
 
     public Cantidad CantidadPorDevolver => Cantidad - CantidadDevuelta;
+
+    /// <summary>La línea "Impresiones": junta los trabajos de impresión que se cobran en este ticket (sin inventario).</summary>
+    public bool EsImpresiones { get; set; }
 }

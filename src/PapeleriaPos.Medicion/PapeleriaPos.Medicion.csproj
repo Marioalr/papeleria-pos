@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- El costo y el precio de una impresión, a partir de lo que midió el agente. Sin dependencias de Windows: lo
+       calcula el servicio de la caja principal. Traído de Control Print (ver docs/fase-1-impresion.md). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

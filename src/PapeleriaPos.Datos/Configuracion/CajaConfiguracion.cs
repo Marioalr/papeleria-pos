@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
@@ -248,5 +249,29 @@ internal sealed class DevolucionLineaConfiguracion : IEntityTypeConfiguration<De
     {
         b.ToTable("DevolucionesLineas");
         b.HasOne<VentaLinea>().WithMany().HasForeignKey(l => l.VentaLineaId);
+    }
+}
+
+internal sealed class TrabajoImpresionConfiguracion : IEntityTypeConfiguration<TrabajoImpresion>
+{
+    public void Configure(EntityTypeBuilder<TrabajoImpresion> b)
+    {
+        b.ToTable("TrabajosImpresion");
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(t => t.SucursalId);
+        b.HasOne<Caja>().WithMany().HasForeignKey(t => t.CajaId);
+        b.HasOne<Venta>().WithMany().HasForeignKey(t => t.VentaId);
+        b.Property(t => t.MargenPorcentaje).HasPrecision(9, 2);
+        b.HasIndex(t => new { t.SucursalId, t.Cobro });
+        b.HasIndex(t => t.VentaId);
+    }
+}
+
+internal sealed class ConfiguracionImpresionConfiguracion : IEntityTypeConfiguration<ConfiguracionImpresion>
+{
+    public void Configure(EntityTypeBuilder<ConfiguracionImpresion> b)
+    {
+        b.ToTable("ConfiguracionesImpresion");
+        b.HasKey(c => c.SucursalId);
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(c => c.SucursalId);
     }
 }

@@ -1,5 +1,6 @@
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
@@ -61,8 +62,10 @@ public sealed record LineaSolicitada(
 
 /// <summary>El servicio vuelve a armar la venta con los precios del catálogo: nunca confía en los precios de la caja.</summary>
 /// <param name="VentaId">Lo pone la caja: si la respuesta no llegó y se manda otra vez (o sube con la bandeja), no se cobra dos veces.</param>
+/// <param name="Impresiones">Los trabajos de impresión que se cobran: el servicio los junta en la línea "Impresiones".</param>
 public sealed record SolicitudCobro(
-    Guid CajaId, Guid TurnoId, Guid CajeroId, IReadOnlyList<LineaSolicitada> Lineas, IReadOnlyList<CobroSolicitado> Cobros, Guid? VentaId = null);
+    Guid CajaId, Guid TurnoId, Guid CajeroId, IReadOnlyList<LineaSolicitada> Lineas, IReadOnlyList<CobroSolicitado> Cobros, Guid? VentaId = null,
+    IReadOnlyList<Guid>? Impresiones = null);
 
 public sealed record LineaTicketDto(string Cantidad, string Descripcion, long PrecioCentavos, long ImporteCentavos);
 
@@ -245,3 +248,28 @@ public sealed record SolicitudRemotaDto(Guid Id, DateTime VenceUtc);
 
 /// <param name="Autorizacion">Cuando la aprueban: la caja sigue con ella como si fuera la del PIN.</param>
 public sealed record EstadoSolicitudRemotaDto(EstadoSolicitudRemota Estado, AutorizacionDto? Autorizacion, string? Respondio);
+
+// ── Impresiones (entrega 5) ─────────────────────────────────────────────────
+
+/// <summary>Los ajustes con que salió un trabajo (del PrintTicket de Windows).</summary>
+public sealed record AjustesTrabajoDto(
+    string Calidad, string TipoPapel, string Tamano, double AnchoMm, double AltoMm, bool Color, bool Duplex, int Copias, int PaginasPorHoja,
+    bool DelPrintTicket);
+
+/// <summary>Cobertura de tinta de una página (fracciones 0..1) y su área en pulgadas cuadradas.</summary>
+public sealed record CoberturaPaginaDto(double C, double M, double Y, double K, double Gris, double AreaPulg2, bool ConColor);
+
+/// <summary>Lo que manda el agente de una caja por cada trabajo impreso; el servicio le pone costo y precio.</summary>
+/// <param name="Id">Fijo para ese trabajo (PC, cola, número y hora): si se manda dos veces, se guarda una.</param>
+public sealed record TrabajoMedidoDto(
+    Guid Id, Guid CajaId, Guid? AtendioId, string Pc, string Cola, long SpoolId, string Documento, string? UsuarioWindows, DateTime ImpresoUtc,
+    EstadoTrabajo Estado, AjustesTrabajoDto Ajustes, IReadOnlyList<CoberturaPaginaDto> Paginas, bool Medido, string? Nota, string? MiniaturaBase64);
+
+/// <summary>Solo el dueño lo recibe.</summary>
+public sealed record CostoImpresionDto(long TintaCentavos, long PapelCentavos, long OtrosCentavos, long TotalCentavos, decimal MargenPorcentaje);
+
+public sealed record ImpresionPorCobrarDto(
+    Guid Id, string Documento, string Pc, DateTime FechaLocal, int Paginas, int Caras, bool Color, string Tamano, long PrecioCentavos,
+    string? Atendio, string? MiniaturaBase64, string? Nota, CostoImpresionDto? Costo = null);
+
+public sealed record SolicitudNoVendida(Guid UsuarioId, MotivoNoVendida Motivo, string? Nota);

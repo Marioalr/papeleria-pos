@@ -3,6 +3,31 @@
 > **Revisado.** Lo que hoy hace [Control Print](https://github.com/Marioalr/control-print) (v1.12),
 > dentro del POS: cada impresión de la WF-6590 se mide, se le pone precio y se cobra en el mismo ticket. Parte del
 > [módulo de impresión](impresion.md). Aquí también se definen los **descuentos** que quedaron pendientes en la
+**Avance:** la parte 1 ya funciona.
+
+- **Núcleo traído de Control Print:**
+  - `PapeleriaPos.Medicion` calcula costos y precio; lo usa el servicio.
+  - `PapeleriaPos.Medicion.Windows` lee el spool y mide la tinta.
+  - Las 50 pruebas de Control Print vienen junto con el código.
+- **Agente en la caja de cada PC** (`ColaImpresion` en la configuración de la caja). Manda cada trabajo por la bandeja, sin que la caja pase a modo sin conexión.
+- **F2 Impresiones por cobrar:** de todas las PC, con no vendidas que llevan motivo. El costo solo lo ve el dueño.
+- **Ticket:** una sola línea "Impresiones". Si se cancela o se devuelve, los trabajos vuelven a estar por cobrar.
+- **Importar la configuración de Control Print:** `importar-control-print`.
+
+Falta probarlo con impresiones de verdad en la cola de laboratorio. Las partes 2 y 3 siguen pendientes.
+
+**Probar con la cola de laboratorio** (sin papel, sin tocar la cola real de Control Print):
+
+1. Como administrador, correr `research\lab-setup.ps1` de Control Print. Crea "ControlPrint Lab (WF-6590)" con el mismo driver y salida a archivo.
+2. En `C:\ProgramData\PapeleriaPos\caja.json` de esa PC, poner `"ColaImpresion": "ControlPrint Lab (WF-6590)"`.
+3. Importar los costos:
+
+   ```
+   dotnet run --project src/PapeleriaPos.Herramientas -- importar-control-print --base <base del POS>
+   ```
+
+4. Imprimir algo en la cola de laboratorio desde esa PC: aparece en F2 con su precio.
+
 > [entrega 2](fase-1-control.md).
 
 ## Qué se trae de Control Print
