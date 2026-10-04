@@ -11,7 +11,7 @@ aparte, sin tocar la operación de la tienda, hasta el piloto (fase 5).
 | # | Entrega | Qué incluye |
 |---|---|---|
 | 1 | **Vender y cobrar en una caja** | Pantalla de venta, búsqueda y escaneo, ventas en espera, cobro mixto, ticket con logo y QR, cajón, turno con fondo, retiros y gastos, corte ciego (X y Z), entrada con usuario y PIN |
-| 2 | **Control** | Roles configurables, autorizaciones con PIN, bitácora, cancelaciones y devoluciones escaneando el ticket, verificar transferencias |
+| 2 | **Control** ([plan](fase-1-control.md)) | Roles configurables, autorizaciones con PIN, bitácora, cancelaciones y devoluciones escaneando el ticket, verificar transferencias |
 | 3 | **Varias cajas** | La caja principal como servidor de la sucursal, las demás cajas por red, contingencia con bandeja de salida |
 | 4 | **Telegram** | Alertas, autorización a distancia y resumen diario |
 | 5 | **Módulo de impresión** | Lo que hoy hace Control Print ([detalle](impresion.md)) |
@@ -21,12 +21,10 @@ Este documento detalla la entrega 1; las demás se cierran cuando les toque.
 **Avance de la entrega 1:** ya funcionan, probados de punta a punta en el navegador con datos ficticios, la entrada
 con PIN, abrir turno, escanear y buscar, cantidades (`3*código`, `+`/`-`), varios tickets (F5/F6), artículo común,
 entradas y salidas de efectivo, verificador, cobro mixto, ticket, ventas del día, reimprimir, los cortes X y Z y la
-configuración del ticket con logo.
-Falta:
+configuración del ticket con logo. El ticket ya salió completo en la POS-8360 por la red: logo, acentos, QR y corte
+de papel. Falta:
 
-- Confirmar el ticket completo en papel (el primero salió cortado: se cerraba la conexión mientras imprimía el logo;
-  ya se espera la confirmación de la impresora) y probar el cajón (todavía no hay) y
-  la ventana de Windows.
+- Probar el cajón (todavía no hay) y la ventana de Windows.
 - Instalar el servicio como servicio de Windows (entrega 3).
 
 ## Entrega 1: cómo se arma
