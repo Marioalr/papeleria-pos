@@ -172,6 +172,8 @@ Fase 1:
 - [x] Entrega 3: varias cajas (falta instalarla en la caja principal y probarla con las tres cajas)
 - [x] Revisar el [plan de la entrega 4](fase-1-telegram.md) (Telegram) y contestar sus preguntas
 - [x] Entrega 4: Telegram (falta crear el bot de verdad y probarlo)
+- [ ] Revisar el [plan de la entrega 5](fase-1-impresion.md) (módulo de impresión y descuentos) y contestar sus preguntas
+- [ ] Entrega 5: módulo de impresión
 - [ ] Descuentos: definirlos con el módulo de impresión (entrega 5)
 
 Fase 3:
