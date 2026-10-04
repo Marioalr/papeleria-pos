@@ -14,7 +14,7 @@ aparte, sin tocar la operación de la tienda, hasta el piloto (fase 5).
 | 2 | **Control** ([plan](fase-1-control.md)) | Roles configurables, autorizaciones con PIN, bitácora, cancelaciones y devoluciones escaneando el ticket, verificar transferencias |
 | 3 | **Varias cajas** ([plan](fase-1-varias-cajas.md)) | La caja principal como servidor de la sucursal, las demás cajas por red, contingencia con bandeja de salida |
 | 4 | **Telegram** ([plan](fase-1-telegram.md)) | Alertas, autorización a distancia y resumen diario |
-| 5 | **Módulo de impresión** | Lo que hoy hace Control Print ([detalle](impresion.md)) |
+| 5 | **Módulo de impresión** ([plan](fase-1-impresion.md)) | Lo que hoy hace Control Print ([detalle](impresion.md)) |
 
 Este documento detalla la entrega 1; las demás se cierran cuando les toque.
 
