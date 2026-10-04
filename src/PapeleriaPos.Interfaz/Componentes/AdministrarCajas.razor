@@ -1,0 +1,94 @@
+@* Las cajas de la sucursal y qué PC usa cada una. El dueño puede quitar una PC (robada, reemplazada o que ya no se usa). *@
+@inject ClienteCaja Cliente
+
+@if (_cajas is null)
+{
+    <p>@(_error ?? "Cargando…")</p>
+}
+else
+{
+    <p class="nota">Para agregar una caja, abre el POS en la PC nueva: pide el PIN del dueño y se da de alta sola.</p>
+    <div class="resultados">
+        <table>
+            <thead><tr><th>Caja</th><th>Serie</th><th>PC</th><th></th></tr></thead>
+            @foreach (var c in _cajas)
+            {
+                var caja = c;
+                <tr>
+                    <td>@c.Nombre@(c.Id == Caja.Id ? " (esta)" : "")</td>
+                    <td>@c.Serie</td>
+                    <td>@(c.Equipo ?? "—")</td>
+                    <td>
+                        @if (c.Equipo is not null)
+                        {
+                            <button class="boton chico" disabled="@_ocupado" @onclick="() => QuitarAsync(caja)">Quitar PC</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </table>
+    </div>
+    <div class="dos-columnas">
+        <label>Usuario del dueño <input @bind="_usuario" autocomplete="off" /></label>
+        <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" /></label>
+    </div>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_aviso is not null)
+    {
+        <p class="aviso">@_aviso</p>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+
+    private List<CajaDto>? _cajas;
+    private string _usuario = "";
+    private string _pin = "";
+    private string? _error;
+    private string? _aviso;
+    private bool _ocupado;
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            _cajas = (await Cliente.CajasAsync()).Where(c => c.SucursalId == Caja.SucursalId).ToList();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task QuitarAsync(CajaDto caja)
+    {
+        (_error, _aviso) = (null, null);
+        if (_usuario.Trim().Length == 0 || _pin.Length == 0)
+        {
+            _error = "Escribe el usuario y PIN del dueño.";
+            return;
+        }
+        _ocupado = true;
+        try
+        {
+            await Cliente.QuitarEquipoAsync(caja.Id, new SolicitudCredenciales(_usuario, _pin));
+            _aviso = $"«{caja.Equipo}» ya no puede usar {caja.Nombre}. Para volver a usarla, se da de alta otra vez.";
+            _pin = "";
+            await CargarAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

@@ -6,10 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
-
-  <ItemGroup>
-    <SupportedPlatform Include="browser" />
-  </ItemGroup>
+  <!-- Corre en el servicio (Blazor Server) y en la ventana de Windows, nunca en WebAssembly: puede usar la red (UDP). -->
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.12" />

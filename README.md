@@ -4,8 +4,9 @@ Punto de venta a la medida para una papelería con varias sucursales: venta, inv
 copias, engargolado, trámites…), pedidos y control de cada sucursal sin que el dueño tenga que estar presente.
 Reemplaza a eleventa multicaja e incorpora lo que hoy hace [Control Print](https://github.com/Marioalr/control-print).
 
-> **Estado: fase 0.** Se construye el modelo de datos con datos ficticios. El resto sigue en planeación; las
-> decisiones se cierran en el [plan](docs/plan.md).
+> **Estado: fase 1.** La caja vende, cobra e imprime, con control (reglas, autorizaciones y bitácora) y varias cajas
+> en red; todo se prueba con datos ficticios. Lo demás sigue en planeación; las decisiones se
+> cierran en el [plan](docs/plan.md).
 
 ## Desarrollo
 
@@ -63,6 +64,25 @@ Usuarios de prueba que crea `preparar-caja` (solo para bases de prueba):
 | `encargado` | Encargado (hace el corte Z) | 2222 |
 | `dueno` | Dueño | 3333 |
 
+### Instalar en la tienda (varias cajas)
+
+1. Publicar, en la PC de desarrollo:
+
+   ```
+   dotnet publish src/PapeleriaPos.Servicio -c Release -r win-x64 --self-contained -o publicar/servicio
+   dotnet publish src/PapeleriaPos.Caja -c Release -r win-x64 --self-contained -o publicar/caja
+   ```
+
+2. **Caja principal:** copiar `publicar/servicio` (por ejemplo a `C:\PapeleriaPos\Servicio`) y, como
+   administrador, correr ahí `instalar-servicio.ps1`. El servicio arranca con Windows, deja la base en
+   `C:\ProgramData\PapeleriaPos\pos.db`, los respaldos en `C:\ProgramData\PapeleriaPos\respaldos` y abre el firewall
+   solo para la red local. Mientras no haya datos reales, se copia ahí una base de prueba antes de instalar.
+
+3. **Cada caja** (también la principal): copiar `publicar/caja` y abrir `PapeleriaPos.Caja.exe`. La primera vez pide
+   la dirección de la caja principal (o la busca en la red) y el PIN del dueño, y queda dada de alta.
+
+Para probar la pantalla de alta en el navegador: `--Caja:PideAlta=true` al correr el servicio.
+
 Migraciones de la base (EF Core):
 
 ```
@@ -80,6 +100,7 @@ Los datos reales del negocio (como la base de eleventa) nunca se guardan en el r
 | [Modelo de datos](docs/modelo-datos.md) | Tablas de la fase 0: catálogo, precios, kardex e histórico importado |
 | [Fase 1: caja](docs/fase-1-caja.md) | Entregas de la fase 1, ticket, pantalla de venta, turno y corte, datos nuevos |
 | [Fase 1: control](docs/fase-1-control.md) | Entrega 2: reglas por rol, autorizaciones con PIN, bitácora, cancelaciones y devoluciones |
+| [Fase 1: varias cajas](docs/fase-1-varias-cajas.md) | Entrega 3: servicio de Windows, alta de cajas con llave, respaldos y contingencia |
 | [Arquitectura](docs/arquitectura.md) | Componentes, datos, contingencia, varias sucursales, red, respaldos y hardware |
 | [Administrar desde fuera](docs/servidor-remoto.md) | Central en servidor virtual, gestión por excepción y costos |
 | [Caja y control](docs/caja-y-control.md) | Venta, cobro, cortes, autorizaciones configurables, bitácora y alertas |

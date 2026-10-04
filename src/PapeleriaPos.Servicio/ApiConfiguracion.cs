@@ -13,7 +13,7 @@ public static class ApiConfiguracion
 {
     public static void MapearApiConfiguracion(this IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api/sucursales/{sucursalId:guid}/ticket").ConErrores();
+        var api = app.MapGroup("/api/sucursales/{sucursalId:guid}/ticket").ConErrores().SoloSuCaja();
 
         api.MapGet("", async (Guid sucursalId, PosDbContext db, IOptions<OpcionesTicket> opciones) =>
             Dto(await ConfiguracionAsync(db, sucursalId, opciones.Value)));

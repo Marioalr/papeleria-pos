@@ -1,0 +1,255 @@
+@* Primera vez en una PC: encontrar la caja principal y dar de alta esta PC como caja, con el PIN del dueño. *@
+@inject ClienteCaja Cliente
+@inject ConexionCaja Conexion
+
+<div class="centrado">
+    <div class="tarjeta ancha configurar-caja">
+        <h2>Dar de alta esta PC como caja</h2>
+        @if (Aviso is not null)
+        {
+            <p class="error">@Aviso</p>
+        }
+
+        @if (_estado is null)
+        {
+            <p>¿Dónde está la caja principal? Escribe su dirección o búscala en la red.</p>
+            <div class="captura-folio">
+                <label>Dirección de la caja principal
+                    <input id="direccion" autocomplete="off" @bind="_direccion" @bind:event="oninput" @onkeydown="AlTeclearDireccion" placeholder="192.168.1.10" />
+                </label>
+                <button class="boton principal" disabled="@_ocupado" @onclick="() => ProbarAsync(_direccion)">Conectar</button>
+                <button class="boton" disabled="@_ocupado" @onclick="BuscarAsync">Buscar en la red</button>
+            </div>
+            @if (_encontrados is { Count: > 0 })
+            {
+                <p>Se encontró:</p>
+                @foreach (var uri in _encontrados)
+                {
+                    var encontrado = uri;
+                    <button class="boton" @onclick="() => ProbarAsync(encontrado.ToString())">@encontrado.Authority</button>
+                }
+            }
+            else if (_encontrados is { Count: 0 })
+            {
+                <p class="nota">No contestó ningún servicio. Revisa que la caja principal esté prendida y en la misma red, o escribe su IP.</p>
+            }
+        }
+        else if (_sucursales is null)
+        {
+            <p>Conectado a <strong>@_servicio!.Authority</strong> · @string.Join(", ", _estado.Sucursales) · versión @_estado.Version</p>
+            <p class="nota">Lo autoriza el dueño.</p>
+            <div class="dos-columnas">
+                <label>Usuario del dueño <input @bind="_usuario" autocomplete="off" /></label>
+                <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" @bind:event="oninput" @onkeydown="AlTeclearPin" /></label>
+            </div>
+            <div class="acciones">
+                <button class="boton" @onclick="() => _estado = null">Otra dirección</button>
+                <button class="boton principal" disabled="@_ocupado" @onclick="OpcionesAsync">Continuar</button>
+            </div>
+        }
+        else
+        {
+            @if (_sucursales.Count > 1)
+            {
+                <label>Sucursal
+                    <select @bind="_sucursalId" @bind:after="ElegirSucursal">
+                        @foreach (var s in _sucursales)
+                        {
+                            <option value="@s.Id">@s.Nombre</option>
+                        }
+                    </select>
+                </label>
+            }
+            <p>¿Qué caja es esta PC (@Environment.MachineName)?</p>
+            <div class="opciones-caja">
+                @foreach (var c in Sucursal.Cajas)
+                {
+                    var caja = c;
+                    <label class="en-linea opcion">
+                        <input type="radio" name="caja" checked="@(_cajaId == c.Id)" @onchange="() => _cajaId = caja.Id" />
+                        @c.Nombre (serie @c.Serie)
+                        @if (c.Equipo is not null)
+                        {
+                            <small class="nota"> · hoy la usa «@c.Equipo»: esa PC dejará de poder vender</small>
+                        }
+                    </label>
+                }
+                <label class="en-linea opcion">
+                    <input type="radio" name="caja" checked="@(_cajaId is null)" @onchange="() => _cajaId = null" />
+                    Caja nueva
+                </label>
+            </div>
+            @if (_cajaId is null)
+            {
+                <div class="dos-columnas">
+                    <label>Nombre <input @bind="_nombre" autocomplete="off" /></label>
+                    <label>Serie de folios <input @bind="_serie" maxlength="3" autocomplete="off" /></label>
+                </div>
+            }
+            <div class="acciones">
+                <button class="boton principal" disabled="@_ocupado" @onclick="AltaAsync">Dar de alta</button>
+            </div>
+        }
+
+        @if (_error is not null)
+        {
+            <p class="error">@_error</p>
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>Por qué se pide el alta (por ejemplo, el dueño quitó esta PC).</summary>
+    [Parameter] public string? Aviso { get; set; }
+    [Parameter] public EventCallback AlTerminar { get; set; }
+
+    private string _direccion = "";
+    private List<Uri>? _encontrados;
+    private Uri? _servicio;
+    private EstadoServicioDto? _estado;
+    private string _usuario = "";
+    private string _pin = "";
+    private List<SucursalAltaDto>? _sucursales;
+    private Guid _sucursalId;
+    private Guid? _cajaId;
+    private string _nombre = "";
+    private string _serie = "";
+    private string? _error;
+    private bool _ocupado;
+
+    private SucursalAltaDto Sucursal => _sucursales!.Single(s => s.Id == _sucursalId);
+
+    protected override void OnInitialized() =>
+        _direccion = Conexion.Servicio.IsLoopback ? "" : Conexion.Servicio.Authority;
+
+    private async Task AlTeclearDireccion(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await ProbarAsync(_direccion);
+    }
+
+    private async Task AlTeclearPin(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await OpcionesAsync();
+    }
+
+    private async Task BuscarAsync()
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            _encontrados = await Descubrimiento.BuscarAsync(TimeSpan.FromSeconds(2));
+            if (_encontrados.Count == 1)
+                await ProbarAsync(_encontrados[0].ToString());
+        }
+        catch (System.Net.Sockets.SocketException ex)
+        {
+            _error = $"No se pudo buscar en la red: {ex.Message}";
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    /// <summary>"192.168.1.10" basta: sin esquema se usa http, y sin puerto el 5080.</summary>
+    private static Uri? Direccion(string texto)
+    {
+        texto = texto.Trim();
+        if (texto.Length == 0)
+            return null;
+        if (!texto.Contains("://"))
+            texto = "http://" + texto;
+        if (!Uri.TryCreate(texto, UriKind.Absolute, out var uri))
+            return null;
+        return uri.IsDefaultPort && !texto[(texto.IndexOf("://") + 3)..].Contains(':') ? new UriBuilder(uri) { Port = 5080 }.Uri : uri;
+    }
+
+    private async Task ProbarAsync(string texto)
+    {
+        _error = null;
+        if (Direccion(texto) is not { } servicio)
+        {
+            _error = "Escribe la IP de la caja principal (por ejemplo, 192.168.1.10).";
+            return;
+        }
+        _ocupado = true;
+        try
+        {
+            _estado = await Cliente.EstadoAsync(servicio);
+            _servicio = servicio;
+            _direccion = servicio.Authority;
+        }
+        catch (ErrorCaja)
+        {
+            _error = $"No contestó el servicio en {servicio.Authority}.";
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task OpcionesAsync()
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            _sucursales = await Cliente.OpcionesAltaAsync(_servicio!, new SolicitudCredenciales(_usuario, _pin));
+            _sucursalId = _sucursales[0].Id;
+            ElegirSucursal();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+            _pin = "";
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    /// <summary>Propone la primera caja sin equipo, o una nueva con la siguiente serie libre.</summary>
+    private void ElegirSucursal()
+    {
+        var cajas = Sucursal.Cajas;
+        _cajaId = cajas.FirstOrDefault(c => c.Equipo is null)?.Id;
+        var serie = Enumerable.Range('A', 26).Select(c => ((char)c).ToString()).First(s => cajas.All(c => c.Serie != s));
+        _serie = serie;
+        _nombre = $"Caja {cajas.Count + 1}";
+    }
+
+    private async Task AltaAsync()
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            var alta = await Cliente.AltaAsync(_servicio!,
+                new SolicitudAltaCaja(_usuario, _pin, _sucursalId, _cajaId, _nombre, _serie, Environment.MachineName));
+            Conexion.Servicio = _servicio!;
+            Conexion.CajaId = alta.Caja.Id;
+            Conexion.Llave = alta.Llave;
+            if (Conexion.AlGuardar is { } guardar)
+                await guardar(Conexion);
+            _pin = "";
+            await AlTerminar.InvokeAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _error = $"Se dio de alta, pero no se pudo guardar en esta PC: {ex.Message}";
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

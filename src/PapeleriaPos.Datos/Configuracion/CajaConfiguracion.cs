@@ -25,6 +25,8 @@ internal sealed class CajaConfiguracion : IEntityTypeConfiguration<Caja>
     {
         b.HasOne<Sucursal>().WithMany().HasForeignKey(c => c.SucursalId);
         b.HasIndex(c => new { c.SucursalId, c.Serie }).IsUnique();
+        b.HasIndex(c => c.LlaveHuella).IsUnique();
+        b.Property(c => c.LlaveHuella).HasMaxLength(64);
         b.HasIndex(c => c.Version);
     }
 }

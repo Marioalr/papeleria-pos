@@ -20,6 +20,7 @@ public enum AccionControlada
     ConfigurarTicket,
     EditarReglas,
     ConsultarBitacora,
+    AdministrarCajas,
 }
 
 public enum NivelPermiso
@@ -75,19 +76,24 @@ public static class Permisos
         Regla(AccionControlada.ConfigurarTicket, Rol.Cajero, NivelPermiso.NoPermitido),
         Regla(AccionControlada.ConfigurarTicket, Rol.Encargado, NivelPermiso.Permitido),
         .. Ambos(AccionControlada.EditarReglas, NivelPermiso.NoPermitido),
+        .. Ambos(AccionControlada.AdministrarCajas, NivelPermiso.NoPermitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Cajero, NivelPermiso.NoPermitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Encargado, NivelPermiso.Permitido),
     ];
 
     /// <summary>
     /// La regla de la sucursal gana sobre la general, y la general sobre la inicial. Sin ninguna, se pide autorización.
-    /// Editar las reglas es siempre solo del dueño.
+    /// Editar las reglas y dar de alta cajas es siempre solo del dueño.
     /// </summary>
+    /// <summary>Acciones que no se pueden dar a otro rol: no aparecen en el editor de reglas.</summary>
+    public static bool SoloDelDueno(AccionControlada accion) =>
+        accion is AccionControlada.EditarReglas or AccionControlada.AdministrarCajas;
+
     public static DecisionPermiso Evaluar(IEnumerable<ReglaPermiso> reglas, Rol rol, Guid sucursalId, AccionControlada accion, long? montoCentavos = null)
     {
         if (rol == Rol.Dueno)
             return new DecisionPermiso(NivelPermiso.Permitido, false);
-        if (accion == AccionControlada.EditarReglas)
+        if (SoloDelDueno(accion))
             return new DecisionPermiso(NivelPermiso.NoPermitido, false);
 
         var candidatas = reglas.Where(r => r.Accion == accion && r.Rol == rol).ToList();

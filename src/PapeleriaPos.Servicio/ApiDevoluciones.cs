@@ -13,7 +13,7 @@ public static class ApiDevoluciones
 {
     public static void MapearApiDevoluciones(this IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api").ConErrores();
+        var api = app.MapGroup("/api").ConErrores().SoloSuCaja();
 
         api.MapGet("/sucursales/{sucursalId:guid}/ventas/folio/{folio}", async (Guid sucursalId, string folio, PosDbContext db) =>
         {

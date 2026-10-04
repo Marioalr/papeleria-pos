@@ -24,14 +24,14 @@ public static class ApiCaja
 {
     public static void MapearApiCaja(this IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api").ConErrores();
+        var api = app.MapGroup("/api").ConErrores().SoloSuCaja();
 
         api.MapGet("/cajas", async (PosDbContext db) =>
             await (from c in db.Cajas
                    join s in db.Sucursales on c.SucursalId equals s.Id
                    where c.Activa
                    orderby c.Serie
-                   select new CajaDto(c.Id, c.Nombre, c.Serie, s.Id, s.Nombre)).ToListAsync());
+                   select new CajaDto(c.Id, c.Nombre, c.Serie, s.Id, s.Nombre, c.Equipo)).ToListAsync());
 
         api.MapPost("/sesion", async (SolicitudEntrada solicitud, PosDbContext db) =>
         {
@@ -60,11 +60,14 @@ public static class ApiCaja
         api.MapPost("/turnos/{turnoId:guid}/corte-x", async (Guid turnoId, Guid usuarioId, PosDbContext db) =>
             await CorteDtoAsync(db, await new RegistroCaja(db).CorteXAsync(turnoId, usuarioId)));
 
-        api.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, SolicitudCorteZ s, PosDbContext db) =>
+        api.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, SolicitudCorteZ s, PosDbContext db, ServicioRespaldos respaldos) =>
         {
             var turno = await db.Turnos.FindAsync(turnoId) ?? throw new InvalidOperationException("El turno no existe.");
             var encargado = await new ServicioControl(db).IdentificarAsync(s.EncargadoUsuario, s.EncargadoPin, turno.SucursalId, AccionControlada.CorteZ);
-            return await CorteDtoAsync(db, await new RegistroCaja(db).CorteZAsync(turnoId, encargado.Id, s.Conteo));
+            var corte = await CorteDtoAsync(db, await new RegistroCaja(db).CorteZAsync(turnoId, encargado.Id, s.Conteo));
+            // Con cada cierre, una copia de la base (además de la diaria); si falla, el corte ya quedó guardado.
+            _ = Task.Run(() => respaldos.Hacer($"z-{corte.FechaLocal:HHmm}"));
+            return corte;
         });
 
         api.MapGet("/productos/codigo/{codigo}", async (string codigo, Guid sucursalId, PosDbContext db, CatalogoEnMemoria catalogo) =>

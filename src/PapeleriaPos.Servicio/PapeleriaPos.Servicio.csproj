@@ -7,6 +7,15 @@
     <ProjectReference Include="..\PapeleriaPos.Impresion\PapeleriaPos.Impresion.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Va junto al .exe publicado: se corre ahí, como administrador, en la caja principal. -->
+    <None Include="..\..\instalacion\instalar-servicio.ps1" Link="instalar-servicio.ps1" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>

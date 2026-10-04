@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+
 namespace PapeleriaPos.Nucleo.Turnos;
 
 /// <summary>Una caja de la sucursal. Cada una tiene su serie de folios (A-000123).</summary>
@@ -13,8 +16,47 @@ public class Caja : IVersionado
     public bool EsPrincipal { get; set; }
     public bool Activa { get; set; } = true;
 
+    /// <summary>Huella de la llave del equipo dado de alta como esta caja. Vacía: ningún equipo la usa.</summary>
+    public string? LlaveHuella { get; private set; }
+
+    /// <summary>Nombre de la PC dada de alta (para reconocerla en la lista).</summary>
+    public string? Equipo { get; private set; }
+
+    public DateTime? AltaUtc { get; private set; }
+
     public long Version { get; set; }
     public DateTime ModificadoUtc { get; set; }
+
+    /// <summary>Da de alta un equipo como esta caja; el que tenía antes deja de servir. Devuelve la llave, que solo ve el equipo.</summary>
+    public string DarDeAlta(string equipo, DateTime ahoraUtc)
+    {
+        var llave = LlaveCaja.Nueva();
+        LlaveHuella = LlaveCaja.Huella(llave);
+        Equipo = string.IsNullOrWhiteSpace(equipo) ? null : equipo.Trim();
+        AltaUtc = ahoraUtc;
+        return llave;
+    }
+
+    /// <summary>El equipo deja de poder usar el servicio; la caja, sus ventas y su serie se quedan.</summary>
+    public void QuitarEquipo()
+    {
+        LlaveHuella = null;
+        Equipo = null;
+        AltaUtc = null;
+    }
+
+    public bool TieneEquipo => LlaveHuella is not null;
+}
+
+/// <summary>
+/// La llave con que una caja se identifica ante el servicio. El servicio solo guarda su huella (SHA-256): con la base
+/// en la mano no se puede hacer pasar por una caja.
+/// </summary>
+public static class LlaveCaja
+{
+    public static string Nueva() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+    public static string Huella(string llave) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(llave)));
 }
 
 /// <summary>El tiempo de un cajero en una caja, desde que cuenta el fondo hasta el corte Z del encargado.</summary>

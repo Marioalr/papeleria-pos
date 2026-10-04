@@ -493,3 +493,6 @@ datos-reales/
 
 # Configuración local de vista previa (rutas de esta máquina)
 .claude/launch.json
+
+# Instaladores publicados (dotnet publish -o publicar/...)
+publicar/

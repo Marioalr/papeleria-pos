@@ -1,4 +1,4 @@
-@* Configuración de la sucursal en pestañas: el ticket, las reglas (solo el dueño) y la bitácora. *@
+@* Configuración de la sucursal en pestañas: el ticket, las reglas (solo el dueño), la bitácora y las cajas. *@
 
 <nav class="pestanas config-pestanas">
     @foreach (var p in Enum.GetValues<Pestanas>())
@@ -16,6 +16,9 @@
     case Pestanas.Reglas:
         <EditorReglas Caja="Caja" />
         break;
+    case Pestanas.Cajas:
+        <AdministrarCajas Caja="Caja" />
+        break;
     case Pestanas.Bitacora:
         <ConsultaBitacora Caja="Caja" />
         break;
@@ -25,7 +28,7 @@
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
-    private enum Pestanas { Ticket, Reglas, Bitacora }
+    private enum Pestanas { Ticket, Reglas, Bitacora, Cajas }
 
     private Pestanas _pestana;
 
@@ -33,6 +36,7 @@
     {
         Pestanas.Ticket => "Ticket",
         Pestanas.Reglas => "Reglas",
-        _ => "Bitácora",
+        Pestanas.Bitacora => "Bitácora",
+        _ => "Cajas",
     };
 }
