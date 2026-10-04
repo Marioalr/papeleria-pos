@@ -1,5 +1,6 @@
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Nucleo.Ventas;
@@ -221,3 +222,26 @@ public sealed record CorteContingenciaDto(Guid Id, Guid EncargadoId, IReadOnlyDi
 
 /// <summary>El último folio que usó la caja (aunque alguna venta no haya podido subir): la serie sigue después de él.</summary>
 public sealed record FolioUsadoDto(int Folio);
+
+// ── Telegram (entrega 4) ────────────────────────────────────────────────────
+
+public sealed record AjustesAlertasDto(
+    IReadOnlyList<TipoAlerta> Apagadas, long UmbralCorteCentavos, long UmbralDevolucionCentavos, long UmbralSalidaCentavos, int MinutosSinConexion,
+    TimeOnly HoraApertura, TimeOnly HoraCierre);
+
+public sealed record ChatTelegramDto(Guid Id, string Usuario, string? Nombre, DateTime VinculadoLocal);
+
+/// <param name="Configurado">Si la caja principal tiene el token del bot.</param>
+/// <param name="Bot">El nombre del bot (@...), para decir a quién escribirle.</param>
+public sealed record EstadoTelegramDto(bool Configurado, string? Bot, IReadOnlyList<ChatTelegramDto> Chats, AjustesAlertasDto Alertas);
+
+public sealed record CodigoVinculacionDto(string Codigo, DateTime VenceLocal, string? Bot);
+
+public sealed record SolicitudAlertas(string Usuario, string Pin, AjustesAlertasDto Alertas);
+
+public sealed record SolicitudAutorizacionRemota(AccionControlada Accion, Guid SucursalId, Guid? CajaId, Guid SolicitanteId, long? MontoCentavos, string Detalle);
+
+public sealed record SolicitudRemotaDto(Guid Id, DateTime VenceUtc);
+
+/// <param name="Autorizacion">Cuando la aprueban: la caja sigue con ella como si fuera la del PIN.</param>
+public sealed record EstadoSolicitudRemotaDto(EstadoSolicitudRemota Estado, AutorizacionDto? Autorizacion, string? Respondio);

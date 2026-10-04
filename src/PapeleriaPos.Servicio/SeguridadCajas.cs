@@ -4,6 +4,7 @@ using PapeleriaPos.Datos;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Turnos;
+using PapeleriaPos.Servicio.Telegram;
 
 namespace PapeleriaPos.Servicio;
 
@@ -14,18 +15,18 @@ namespace PapeleriaPos.Servicio;
 public static class SeguridadCajas
 {
     public const string Encabezado = ClienteCaja.EncabezadoLlave;
-    private const string CajaDeLaLlave = "caja-de-la-llave";
+    internal const string CajaDeLaLlave = "caja-de-la-llave";
 
     public static IApplicationBuilder UsarLlavesDeCaja(this IApplicationBuilder app) => app.Use(async (contexto, siguiente) =>
     {
         var ruta = contexto.Request.Path;
-        if (!ruta.StartsWithSegments("/api") || ruta.StartsWithSegments("/api/estado") || ruta.StartsWithSegments("/api/alta")
-            || EsLaMismaPc(contexto.Connection.RemoteIpAddress))
+        if (!ruta.StartsWithSegments("/api"))
         {
             await siguiente(contexto);
             return;
         }
 
+        // Con llave, se sabe qué caja es (y que sigue viva: su latido pasa por aquí, para la alerta de caja sin conexión).
         var llave = contexto.Request.Headers[Encabezado].ToString();
         if (llave.Length > 0)
         {
@@ -34,9 +35,15 @@ public static class SeguridadCajas
             if (await db.Cajas.Where(c => c.LlaveHuella == huella && c.Activa).Select(c => (Guid?)c.Id).SingleOrDefaultAsync() is { } cajaId)
             {
                 contexto.Items[CajaDeLaLlave] = cajaId;
-                await siguiente(contexto);
-                return;
+                contexto.RequestServices.GetService<PresenciaCajas>()?.Visto(cajaId, db.Reloj.GetUtcNow().UtcDateTime);
             }
+        }
+
+        if (contexto.Items.ContainsKey(CajaDeLaLlave) || ruta.StartsWithSegments("/api/estado") || ruta.StartsWithSegments("/api/alta")
+            || EsLaMismaPc(contexto.Connection.RemoteIpAddress))
+        {
+            await siguiente(contexto);
+            return;
         }
         contexto.Response.StatusCode = StatusCodes.Status401Unauthorized;
         await contexto.Response.WriteAsJsonAsync(new ErrorDto("Esta PC no está dada de alta como caja: el dueño la da de alta con su PIN.", "caja-sin-alta"));

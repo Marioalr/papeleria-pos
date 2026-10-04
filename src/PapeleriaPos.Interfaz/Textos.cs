@@ -24,6 +24,7 @@ public static class Textos
         AccionControlada.EditarReglas => "Editar las reglas",
         AccionControlada.ConsultarBitacora => "Consultar la bitácora",
         AccionControlada.AdministrarCajas => "Dar de alta o quitar cajas",
+        AccionControlada.ConfigurarTelegram => "Configurar Telegram",
         _ => accion.ToString(),
     };
 

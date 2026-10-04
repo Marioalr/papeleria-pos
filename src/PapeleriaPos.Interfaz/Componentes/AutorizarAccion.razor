@@ -1,22 +1,39 @@
-@* "Requiere autorización": el encargado (o el dueño) escribe su usuario y PIN en la misma caja. Vale una sola vez. *@
+@* "Requiere autorización": el encargado (o el dueño) escribe su usuario y PIN en la misma caja, o se le pide al dueño
+   por Telegram. Vale una sola vez. *@
+@implements IAsyncDisposable
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
 <div class="autorizacion">
     <p class="aviso-autorizacion">🔒 @Textos.Accion(Accion) requiere autorización</p>
     <p>@Detalle@(MontoCentavos is { } m ? $" · {Formato.Dinero(m)}" : "")</p>
-    <div class="dos-columnas">
-        <label>Usuario de quien autoriza <input id="autoriza-usuario" @bind="_usuario" autocomplete="off" @onkeydown="AlTeclear" /></label>
-        <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" @bind:event="oninput" @onkeydown="AlTeclear" /></label>
-    </div>
-    @if (_error is not null)
+    @if (_remota is { } remota)
     {
-        <p class="error">@_error</p>
+        <p class="esperando">Se le pidió al dueño por Telegram. Esperando su respuesta… (vence a las @HoraMexico.ALocal(remota.VenceUtc).ToString("HH:mm"))</p>
+        @if (_error is not null)
+        {
+            <p class="error">@_error</p>
+        }
+        <div class="acciones">
+            <button class="boton" @onclick="CancelarRemotaAsync">Ya no la necesito</button>
+        </div>
     }
-    <div class="acciones">
-        <button class="boton" @onclick="AlCancelar">Cancelar</button>
-        <button class="boton principal" disabled="@_ocupado" @onclick="AutorizarAsync">Autorizar (Enter)</button>
-    </div>
+    else
+    {
+        <div class="dos-columnas">
+            <label>Usuario de quien autoriza <input id="autoriza-usuario" @bind="_usuario" autocomplete="off" @onkeydown="AlTeclear" /></label>
+            <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" @bind:event="oninput" @onkeydown="AlTeclear" /></label>
+        </div>
+        @if (_error is not null)
+        {
+            <p class="error">@_error</p>
+        }
+        <div class="acciones">
+            <button class="boton" @onclick="AlCancelar">Cancelar</button>
+            <button class="boton" disabled="@_ocupado" @onclick="PedirPorTelegramAsync">Pedir por Telegram</button>
+            <button class="boton principal" disabled="@_ocupado" @onclick="AutorizarAsync">Autorizar (Enter)</button>
+        </div>
+    }
 </div>
 
 @code {
@@ -34,6 +51,8 @@
     private string _pin = "";
     private string? _error;
     private bool _ocupado;
+    private SolicitudRemotaDto? _remota;
+    private CancellationTokenSource? _espera;
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
@@ -66,5 +85,97 @@
         {
             _ocupado = false;
         }
+    }
+
+    /// <summary>Le llega al dueño con botones; la caja pregunta cada 2 segundos hasta que contesta o vence.</summary>
+    private async Task PedirPorTelegramAsync()
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            _remota = await Cliente.PedirPorTelegramAsync(new SolicitudAutorizacionRemota(Accion, Caja.SucursalId, Caja.Id, Sesion.UsuarioId, MontoCentavos, Detalle));
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+            return;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+        _espera = new CancellationTokenSource();
+        _ = EsperarAsync(_remota.Id, _espera.Token);
+    }
+
+    private async Task EsperarAsync(Guid solicitudId, CancellationToken ct)
+    {
+        using var reloj = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        try
+        {
+            while (await reloj.WaitForNextTickAsync(ct))
+            {
+                EstadoSolicitudRemotaDto estado;
+                try
+                {
+                    estado = await Cliente.EstadoPorTelegramAsync(solicitudId);
+                }
+                catch (ErrorCaja ex)
+                {
+                    await InvokeAsync(() => { _error = ex.Message; StateHasChanged(); });
+                    continue;
+                }
+                switch (estado.Estado)
+                {
+                    case EstadoSolicitudRemota.Aprobada when estado.Autorizacion is { } autorizacion:
+                        _remota = null;
+                        await InvokeAsync(() => AlAutorizar.InvokeAsync(autorizacion));
+                        return;
+                    case EstadoSolicitudRemota.Rechazada:
+                        await TerminarAsync($"{estado.Respondio} la rechazó.");
+                        return;
+                    case EstadoSolicitudRemota.Vencida:
+                        await TerminarAsync("Nadie contestó a tiempo: pídela otra vez o con PIN.");
+                        return;
+                    case EstadoSolicitudRemota.Cancelada:
+                        return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Se cerró la ventana o ya no se necesita.
+        }
+    }
+
+    private Task TerminarAsync(string mensaje) => InvokeAsync(() =>
+    {
+        _remota = null;
+        _error = mensaje;
+        StateHasChanged();
+    });
+
+    private async Task CancelarRemotaAsync()
+    {
+        _espera?.Cancel();
+        if (_remota is { } remota)
+        {
+            _remota = null;
+            try
+            {
+                await Cliente.CancelarPorTelegramAsync(remota.Id);
+            }
+            catch (ErrorCaja)
+            {
+                // Si no llega, vence sola.
+            }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await CancelarRemotaAsync();
+        _espera?.Dispose();
     }
 }

@@ -54,6 +54,9 @@ public class Autorizacion
     public DateTime VenceUtc { get; init; }
     public DateTime? UsadaUtc { get; private set; }
 
+    /// <summary>La dio el dueño desde Telegram (no con su PIN en la caja).</summary>
+    public bool PorTelegram { get; init; }
+
     /// <summary>La gasta en esta acción; falla si es de otra acción o sucursal, ya se usó, venció o el monto es mayor.</summary>
     public void Usar(AccionControlada accion, Guid sucursalId, long? montoCentavos, DateTime ahoraUtc)
     {

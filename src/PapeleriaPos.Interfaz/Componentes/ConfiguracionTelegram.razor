@@ -1,0 +1,210 @@
+@* Telegram: vincular el celular del dueño, qué alertas le llegan, sus umbrales y el horario de la tienda. Solo el dueño. *@
+@inject ClienteCaja Cliente
+
+@if (_estado is null)
+{
+    <p>@(_error ?? "Cargando…")</p>
+}
+else
+{
+    @if (!_estado.Configurado)
+    {
+        <p class="error">La caja principal todavía no tiene el bot: falta su token (ver docs/fase-1-telegram.md).</p>
+    }
+    else
+    {
+        <p>Bot: <strong>@(_estado.Bot is { } bot ? "@" + bot : "sin nombre")</strong> · solo el dueño recibe las alertas y autoriza por Telegram.</p>
+    }
+
+    <div class="dos-columnas">
+        <label>Usuario del dueño <input @bind="_usuario" autocomplete="off" /></label>
+        <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" /></label>
+    </div>
+
+    <h4>Celulares vinculados</h4>
+    @if (_estado.Chats.Count == 0)
+    {
+        <p class="nota">Ninguno todavía.</p>
+    }
+    else
+    {
+        <table class="resultados">
+            @foreach (var c in _estado.Chats)
+            {
+                var chat = c;
+                <tr>
+                    <td>@c.Usuario@(c.Nombre is { } n ? $" ({n} en Telegram)" : "")</td>
+                    <td>desde @c.VinculadoLocal.ToString("dd/MM/yyyy")</td>
+                    <td><button class="boton chico" disabled="@_ocupado" @onclick="() => DesvincularAsync(chat)">Desvincular</button></td>
+                </tr>
+            }
+        </table>
+    }
+    <div class="acciones">
+        <button class="boton" disabled="@_ocupado" @onclick="CodigoAsync">Vincular un celular</button>
+        <button class="boton" disabled="@(_ocupado || _estado.Chats.Count == 0)" @onclick="PruebaAsync">Mandar mensaje de prueba</button>
+    </div>
+    @if (_codigo is { } codigo)
+    {
+        <p class="aviso-autorizacion">
+            En Telegram, escríbele al bot@(codigo.Bot is { } b ? " @" + b : ""): <strong>/vincular @codigo.Codigo</strong> (vale hasta las @codigo.VenceLocal.ToString("HH:mm")).
+        </p>
+    }
+
+    <h4>Alertas</h4>
+    <div class="alertas">
+        @foreach (var tipo in Enum.GetValues<TipoAlerta>())
+        {
+            var t = tipo;
+            <label class="en-linea opcion">
+                <input type="checkbox" checked="@(!_apagadas.Contains(t))" @onchange="e => Cambiar(t, e.Value is true)" />
+                @Nombre(t)
+            </label>
+        }
+    </div>
+    <div class="dos-columnas">
+        <label>Diferencia en el corte desde <input inputmode="decimal" @bind="_corte" /></label>
+        <label>Devolución desde <input inputmode="decimal" @bind="_devolucion" /></label>
+        <label>Salida de efectivo desde <input inputmode="decimal" @bind="_salida" /></label>
+        <label>Caja sin conexión después de (minutos) <input inputmode="numeric" @bind="_minutos" /></label>
+        <label>La tienda abre <input type="time" @bind="_apertura" /></label>
+        <label>La tienda cierra <input type="time" @bind="_cierre" /></label>
+    </div>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_aviso is not null)
+    {
+        <p class="aviso">@_aviso</p>
+    }
+    <div class="acciones">
+        <button class="boton principal" disabled="@_ocupado" @onclick="GuardarAsync">Guardar alertas</button>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+
+    private EstadoTelegramDto? _estado;
+    private CodigoVinculacionDto? _codigo;
+    private readonly HashSet<TipoAlerta> _apagadas = [];
+    private string _corte = "";
+    private string _devolucion = "";
+    private string _salida = "";
+    private int _minutos;
+    private TimeOnly _apertura;
+    private TimeOnly _cierre;
+    private string _usuario = "";
+    private string _pin = "";
+    private string? _error;
+    private string? _aviso;
+    private bool _ocupado;
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            _estado = await Cliente.TelegramAsync(Caja.SucursalId);
+            Mostrar(_estado.Alertas);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void Mostrar(AjustesAlertasDto a)
+    {
+        _apagadas.Clear();
+        _apagadas.UnionWith(a.Apagadas);
+        _corte = Pesos(a.UmbralCorteCentavos);
+        _devolucion = Pesos(a.UmbralDevolucionCentavos);
+        _salida = Pesos(a.UmbralSalidaCentavos);
+        _minutos = a.MinutosSinConexion;
+        _apertura = a.HoraApertura;
+        _cierre = a.HoraCierre;
+    }
+
+    private static string Pesos(long centavos) => (centavos / 100m).ToString("0.##", CultureInfo.InvariantCulture);
+
+    private void Cambiar(TipoAlerta tipo, bool avisa)
+    {
+        if (avisa)
+            _apagadas.Remove(tipo);
+        else
+            _apagadas.Add(tipo);
+    }
+
+    private SolicitudCredenciales? Credenciales()
+    {
+        if (_usuario.Trim().Length > 0 && _pin.Length > 0)
+            return new SolicitudCredenciales(_usuario, _pin);
+        _error = "Escribe el usuario y PIN del dueño.";
+        return null;
+    }
+
+    private async Task HacerAsync(Func<SolicitudCredenciales, Task> accion)
+    {
+        (_error, _aviso) = (null, null);
+        if (Credenciales() is not { } credenciales)
+            return;
+        _ocupado = true;
+        try
+        {
+            await accion(credenciales);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private Task CodigoAsync() => HacerAsync(async c => _codigo = await Cliente.CodigoTelegramAsync(Caja.SucursalId, c));
+
+    private Task PruebaAsync() => HacerAsync(async c =>
+    {
+        await Cliente.PruebaTelegramAsync(Caja.SucursalId, c);
+        _aviso = "Mensaje de prueba en camino.";
+    });
+
+    private Task DesvincularAsync(ChatTelegramDto chat) => HacerAsync(async c =>
+    {
+        await Cliente.DesvincularTelegramAsync(Caja.SucursalId, chat.Id, c);
+        await CargarAsync();
+        _aviso = "Desvinculado: ese chat ya no recibe nada.";
+    });
+
+    private Task GuardarAsync() => HacerAsync(async c =>
+    {
+        if (Formato.LeerPesos(_corte) is not { } corte || Formato.LeerPesos(_devolucion) is not { } devolucion || Formato.LeerPesos(_salida) is not { } salida)
+        {
+            _error = "Revisa los montos.";
+            return;
+        }
+        var ajustes = new AjustesAlertasDto(_apagadas.ToList(), corte, devolucion, salida, _minutos, _apertura, _cierre);
+        Mostrar(await Cliente.GuardarAlertasAsync(Caja.SucursalId, new SolicitudAlertas(c.Usuario, c.Pin, ajustes)));
+        _aviso = "Alertas guardadas.";
+    });
+
+    private static string Nombre(TipoAlerta t) => t switch
+    {
+        TipoAlerta.DiferenciaCorte => "Diferencia en el corte",
+        TipoAlerta.Cancelacion => "Cancelación de ticket",
+        TipoAlerta.Devolucion => "Devolución",
+        TipoAlerta.CambioPrecio => "Cambio de precio",
+        TipoAlerta.VentaBajoCosto => "Venta debajo del costo",
+        TipoAlerta.SalidaEfectivo => "Salida de efectivo",
+        TipoAlerta.AutorizacionNegada => "Autorización negada (PIN incorrecto o sin permiso)",
+        TipoAlerta.TransferenciaRechazada => "Transferencia rechazada",
+        TipoAlerta.CajaSinConexion => "Caja sin conexión o algo que no pudo subir",
+        TipoAlerta.FueraDeHorario => "Caja abierta fuera de horario",
+        _ => "Resumen del día (con el último corte)",
+    };
+}

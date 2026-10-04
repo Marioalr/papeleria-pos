@@ -3,6 +3,24 @@
 > **Revisado.** El dueño se entera de lo importante y autoriza sin estar en la tienda. Parte de las
 > [alertas](caja-y-control.md#alertas-al-dueño-telegram) y de la [gestión por excepción](servidor-remoto.md#gestión-por-excepción).
 
+**Avance:** ya funciona todo, probado con un Telegram simulado (sin internet):
+
+- vincular el chat del dueño con `/vincular` y el código de la caja;
+- alertas sacadas de la bitácora, también lo que llega con la bandeja de una caja sin conexión;
+- autorización a distancia con botones Aprobar / Rechazar;
+- resumen diario con el último corte Z, y `/resumen` a cualquier hora;
+- avisos de caja sin conexión y fuera de horario;
+- Configuración → Telegram.
+
+Falta probarlo con el bot de verdad.
+
+**Instalar el bot:**
+
+1. Crear el bot con @BotFather.
+2. Guardar su token en `C:\ProgramData\PapeleriaPos\telegram-token.txt`, en la caja principal. También se puede
+   poner en `Telegram:Token` o `Telegram:ArchivoToken`.
+3. Reiniciar el servicio.
+
 ## Qué incluye
 
 - **Un bot de Telegram propio** del negocio. Lo crea el dueño con @BotFather (es gratis); el token se guarda en la
@@ -53,7 +71,7 @@ El dueño puede desvincular un chat desde la misma pantalla (por ejemplo, si cam
 
 Sin conexión con la caja principal (contingencia) no se puede pedir por Telegram: queda el PIN.
 
-## Alertas propuestas
+## Alertas
 
 | Alerta | Cuándo | Propuesta |
 |---|---|---|

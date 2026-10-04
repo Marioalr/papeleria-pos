@@ -435,11 +435,39 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<Guid>("SucursalId")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("AlertasApagadas")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<TimeOnly>("HoraApertura")
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue(new TimeOnly(8, 0, 0));
+
+                    b.Property<TimeOnly>("HoraCierre")
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue(new TimeOnly(21, 0, 0));
+
                     b.Property<long?>("LimiteEfectivoCentavos")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("MinutosSinConexion")
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(10);
+
                     b.Property<DateTime>("ModificadoUtc")
                         .HasColumnType("TEXT");
+
+                    b.Property<long>("UmbralCorteCentavos")
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(5000L);
+
+                    b.Property<long>("UmbralDevolucionCentavos")
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(20000L);
+
+                    b.Property<long>("UmbralSalidaCentavos")
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(50000L);
 
                     b.Property<long>("Version")
                         .HasColumnType("INTEGER");
@@ -506,6 +534,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasColumnType("TEXT");
 
                     b.Property<long?>("MontoCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("PorTelegram")
                         .HasColumnType("INTEGER");
 
                     b.Property<Guid>("SolicitanteId")
@@ -783,6 +814,171 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasIndex("SucursalId", "VarianteId", "FechaUtc");
 
                     b.ToTable("MovimientosInventario", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Telegram.ChatTelegram", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("ChatId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Nombre")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UsuarioId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("VinculadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChatId");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.ToTable("ChatsTelegram", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Telegram.CodigoVinculacion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UsadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UsuarioId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("VenceUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Codigo");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.ToTable("CodigosVinculacion", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Telegram.MensajeTelegram", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ChatId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Clave")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("EnviadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Intentos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("MensajeId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("SolicitudId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Texto")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TextoNuevo")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Tipo")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Clave");
+
+                    b.HasIndex("EnviadoUtc");
+
+                    b.HasIndex("SolicitudId");
+
+                    b.ToTable("MensajesTelegram", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Telegram.SolicitudRemota", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Accion")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("AutorizacionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CajaId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreadaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Detalle")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("MontoCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("RespondidaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("RespondioId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SolicitanteId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("VenceUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Estado");
+
+                    b.HasIndex("SolicitanteId");
+
+                    b.HasIndex("SucursalId");
+
+                    b.ToTable("SolicitudesRemotas", (string)null);
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Turnos.AperturaCajon", b =>
@@ -1560,6 +1756,39 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
                         .WithMany()
                         .HasForeignKey("VarianteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Telegram.ChatTelegram", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Telegram.CodigoVinculacion", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Telegram.SolicitudRemota", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("SolicitanteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

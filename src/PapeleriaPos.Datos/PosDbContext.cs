@@ -7,6 +7,7 @@ using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Historico;
 using PapeleriaPos.Nucleo.Importacion;
 using PapeleriaPos.Nucleo.Inventario;
+using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Nucleo.Ventas;
@@ -49,6 +50,10 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<Bitacora> Bitacora => Set<Bitacora>();
     public DbSet<Devolucion> Devoluciones => Set<Devolucion>();
     public DbSet<DevolucionLinea> DevolucionesLineas => Set<DevolucionLinea>();
+    public DbSet<ChatTelegram> ChatsTelegram => Set<ChatTelegram>();
+    public DbSet<CodigoVinculacion> CodigosVinculacion => Set<CodigoVinculacion>();
+    public DbSet<SolicitudRemota> SolicitudesRemotas => Set<SolicitudRemota>();
+    public DbSet<MensajeTelegram> MensajesTelegram => Set<MensajeTelegram>();
 
     /// <summary>Reloj para <see cref="IVersionado.ModificadoUtc"/> y el historial de precios; las pruebas lo fijan.</summary>
     public TimeProvider Reloj { get; init; } = TimeProvider.System;
@@ -71,12 +76,14 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
+        AlertasTelegram.RevisarBitacora(this);
         PrepararCambios(ObtenerSecuencia());
         return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
     public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
+        AlertasTelegram.RevisarBitacora(this);
         PrepararCambios(await ObtenerSecuenciaAsync(cancellationToken));
         return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
