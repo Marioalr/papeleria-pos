@@ -1,6 +1,6 @@
 # Fase 1, entrega 3 — Varias cajas
 
-> **Propuesta para revisar.** Cómo pasa la caja de la entrega 1 a una sucursal con varias cajas en red, y qué hace
+> **Revisado.** Cómo pasa la caja de la entrega 1 a una sucursal con varias cajas en red, y qué hace
 > una caja cuando no encuentra al servidor. Parte de la [arquitectura](arquitectura.md).
 
 ## Qué incluye
@@ -62,12 +62,19 @@ de color y la caja pasa a contingencia.
 - Entradas y salidas de efectivo, con su comprobante.
 - El turno abierto sigue igual.
 
-**Qué espera a que vuelva la conexión** (propuesta, ver preguntas):
+**Qué espera a que vuelva la conexión:**
 
 - Cancelar y devolver: necesitan la venta original y el inventario al día.
-- Verificar transferencias, el corte Z y la configuración.
-- Las autorizaciones con PIN: la propuesta es permitirlas con una copia local de los PIN (cifrados, nunca en texto)
-  para no frenar la venta, y marcarlas en la bitácora como "en contingencia".
+- Verificar transferencias y la configuración.
+
+**También en contingencia:**
+
+- **Autorizaciones con PIN,** con una copia local de los PIN (cifrados, nunca en texto) para no frenar la venta.
+  Quedan en la bitácora como "en contingencia".
+- **Corte Z:** si la caja principal no prende al cierre, la caja cierra el turno con su propio corte e imprime el
+  ticket del corte. Se cuadra al volver la conexión: el servicio recibe el turno con su conteo y lo marca como
+  hecho en contingencia. Para eso la caja guarda en su copia local todo lo de su turno (también lo que ya subió),
+  no solo lo pendiente.
 
 **Al volver:** la caja sube la bandeja en orden. Cada venta lleva su ID, así que reenviarla no la duplica. El
 inventario no choca porque son movimientos. Si algo no se puede aplicar (por ejemplo, un producto dado de baja
@@ -93,18 +100,19 @@ venta en contingencia queda marcada para que se vea en el corte y en la bitácor
 | `PapeleriaPos.Herramientas` | Instalar y quitar el servicio de Windows y la regla del firewall |
 | Datos nuevos | Caja: llave (solo su huella), alta y baja. Venta y movimiento: "en contingencia". Respaldo: fecha y archivo |
 
+Se hace en dos partes: **parte 1,** servicio de Windows, cajas por la red, alta con llave y respaldos; **parte 2,**
+contingencia (copia local, bandeja, latido, autorizaciones y corte sin servidor).
+
 **Pruebas:** dos cajas en la misma PC (dos ventanas con su propia copia local) contra un servicio; se apaga el
 servicio a media venta, se sigue vendiendo en las dos, se prende y se revisa que todo llegue una sola vez, con
 folios, inventario y corte correctos.
 
-## Preguntas
+## Decisiones de la revisión
 
-1. **Cajas:** ¿cuántas cajas hay hoy en la matriz y cuál PC sería la principal? Conviene la que siempre prende
-   primero y tiene no-break.
-2. **Contingencia:** ¿se permiten las autorizaciones con PIN sin servidor (propuesta: sí, marcadas), o todo lo que
-   pide autorización espera a que vuelva la conexión?
-3. **Corte sin servidor:** si la caja principal no prende al cierre, ¿se permite un corte Z en contingencia (y se
-   cuadra después) o el turno se queda abierto hasta que vuelva?
-4. **Respaldos:** ¿30 días de historia está bien? ¿Hay una memoria USB o un disco donde copiar también?
-5. **Arranque de la PC:** ¿las cajas inician sesión de Windows solas y abren el POS (modo kiosco), o el cajero inicia
-   sesión y lo abre?
+| Pregunta | Respuesta | Efecto |
+|---|---|---|
+| Cajas | 3 cajas en la matriz; la principal es otra PC (no la de desarrollo) | El servicio se instala en esa PC; las otras dos se dan de alta por la red |
+| Autorizaciones sin servidor | Se permiten | Copia local de los PIN cifrados; marcadas "en contingencia" en la bitácora |
+| Corte Z sin servidor | Se permite, con ticket | La caja cierra el turno e imprime el corte; se cuadra al volver |
+| Respaldos | 30 días de historia | Copia diaria y al corte Z |
+| Arranque de la PC | El cajero inicia sesión y abre el POS | Sin modo kiosco; el servicio sí arranca solo con la PC |
