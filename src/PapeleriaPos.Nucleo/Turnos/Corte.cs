@@ -26,7 +26,12 @@ public class Corte
     public long TarjetaCentavos { get; set; }
     public long TransferenciaCentavos { get; set; }
 
-    /// <summary>Fondo + efectivo de ventas + entradas − salidas.</summary>
+    /// <summary>Efectivo que salió de la caja por cancelaciones y devoluciones.</summary>
+    public long DevolucionesCentavos { get; set; }
+
+    public int Cancelaciones { get; set; }
+
+    /// <summary>Fondo + efectivo de ventas + entradas − salidas − devoluciones.</summary>
     public long EsperadoCentavos { get; set; }
 
     /// <summary>Lo que contó el encargado (solo en el corte Z).</summary>
@@ -61,10 +66,13 @@ public static class CalculoCorte
     /// </summary>
     public static Corte Calcular(
         Turno turno, IEnumerable<Venta> ventas, IEnumerable<MovimientoCaja> movimientos, TipoCorte tipo, Guid realizadoPorId,
-        DateTime ahoraUtc, IReadOnlyDictionary<long, int>? conteo = null)
+        DateTime ahoraUtc, IReadOnlyDictionary<long, int>? conteo = null, IEnumerable<Devolucion>? devoluciones = null)
     {
-        var pagadas = ventas.Where(v => v.TurnoId == turno.Id && v.Estado == EstadoVenta.Pagada).ToList();
-        var cobros = pagadas.SelectMany(v => v.Cobros).ToList();
+        // El efectivo de un ticket que después se canceló sí entró a la caja; su reembolso se resta aparte.
+        var cobradas = ventas.Where(v => v.TurnoId == turno.Id && v.Estado is EstadoVenta.Pagada or EstadoVenta.Cancelada).ToList();
+        var vigentes = cobradas.Where(v => v.Estado == EstadoVenta.Pagada).ToList();
+        var cobros = vigentes.SelectMany(v => v.Cobros).ToList();
+        var reembolsos = (devoluciones ?? []).Where(d => d.TurnoId == turno.Id).ToList();
         var delTurno = movimientos.Where(m => m.TurnoId == turno.Id).ToList();
 
         var corte = new Corte
@@ -73,15 +81,18 @@ public static class CalculoCorte
             Tipo = tipo,
             FechaUtc = ahoraUtc,
             RealizadoPorId = realizadoPorId,
-            Ventas = pagadas.Count,
+            Ventas = vigentes.Count,
+            Cancelaciones = cobradas.Count - vigentes.Count,
             FondoCentavos = turno.FondoCentavos,
-            EfectivoVentasCentavos = cobros.Where(c => c.Forma == FormaPago.Efectivo).Sum(c => c.MontoCentavos),
+            EfectivoVentasCentavos = cobradas.SelectMany(v => v.Cobros).Where(c => c.Forma == FormaPago.Efectivo).Sum(c => c.MontoCentavos),
             TarjetaCentavos = cobros.Where(c => c.Forma == FormaPago.Tarjeta).Sum(c => c.MontoCentavos),
             TransferenciaCentavos = cobros.Where(c => c.Forma == FormaPago.Transferencia).Sum(c => c.MontoCentavos),
             EntradasCentavos = delTurno.Where(m => m.Tipo == TipoMovimientoCaja.Entrada).Sum(m => m.MontoCentavos),
             SalidasCentavos = delTurno.Where(m => m.Tipo == TipoMovimientoCaja.Salida).Sum(m => m.MontoCentavos),
+            DevolucionesCentavos = reembolsos.Sum(d => d.ReembolsoEfectivoCentavos),
         };
-        corte.EsperadoCentavos = corte.FondoCentavos + corte.EfectivoVentasCentavos + corte.EntradasCentavos - corte.SalidasCentavos;
+        corte.EsperadoCentavos = corte.FondoCentavos + corte.EfectivoVentasCentavos + corte.EntradasCentavos - corte.SalidasCentavos
+            - corte.DevolucionesCentavos;
 
         if (tipo == TipoCorte.Z)
         {

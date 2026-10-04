@@ -47,6 +47,8 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<ReglaPermiso> ReglasPermiso => Set<ReglaPermiso>();
     public DbSet<Autorizacion> Autorizaciones => Set<Autorizacion>();
     public DbSet<Bitacora> Bitacora => Set<Bitacora>();
+    public DbSet<Devolucion> Devoluciones => Set<Devolucion>();
+    public DbSet<DevolucionLinea> DevolucionesLineas => Set<DevolucionLinea>();
 
     /// <summary>Reloj para <see cref="IVersionado.ModificadoUtc"/> y el historial de precios; las pruebas lo fijan.</summary>
     public TimeProvider Reloj { get; init; } = TimeProvider.System;
@@ -97,6 +99,7 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
         ProtegerSoloAgregar<MovimientoInventario>();
         ProtegerSoloAgregar<PrecioHistorial>();
         ProtegerSoloAgregar<Bitacora>();
+        ProtegerSoloAgregar<Devolucion>();
         RegistrarCambiosDePrecio(ahora);
 
         if (secuenciaCatalogo is null)

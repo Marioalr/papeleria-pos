@@ -35,6 +35,10 @@ public class Venta
     public DateTime CreadaUtc { get; set; }
     public DateTime? PagadaUtc { get; private set; }
 
+    public DateTime? CanceladaUtc { get; private set; }
+    public Guid? CanceladaPorId { get; private set; }
+    public string? MotivoCancelacion { get; private set; }
+
     public long TotalCentavos { get; private set; }
 
     /// <summary>IVA incluido en el total.</summary>
@@ -102,11 +106,50 @@ public class Venta
 
         linea.Cantidad = cantidad;
         linea.CantidadBase = cantidadBase;
-        linea.ImporteCentavos = aplicado.ImporteCentavos;
-        linea.PrecioCentavos = aplicado.Precio.PresentacionId is null
-            ? presentacion.Factor.Importe(aplicado.Precio.PrecioCentavos)
-            : aplicado.Precio.PrecioCentavos;
+        if (linea.PrecioCambiado)
+        {
+            // Con precio cambiado (autorizado), la cantidad nueva se cobra a ese precio.
+            linea.ImporteCentavos = cantidad.Importe(linea.PrecioCentavos);
+        }
+        else
+        {
+            linea.ImporteCentavos = aplicado.ImporteCentavos;
+            linea.PrecioCentavos = aplicado.Precio.PresentacionId is null
+                ? presentacion.Factor.Importe(aplicado.Precio.PrecioCentavos)
+                : aplicado.Precio.PrecioCentavos;
+        }
         Recalcular();
+    }
+
+    /// <summary>
+    /// Cambia el precio de una línea (por presentación, con IVA). Requiere autorización según las reglas: la venta solo
+    /// guarda cuál; el servicio la revisa y la gasta al cobrar.
+    /// </summary>
+    public void CambiarPrecio(VentaLinea linea, long precioCentavos, Guid? autorizacionId)
+    {
+        RequerirEditable();
+        if (precioCentavos <= 0)
+            throw new ArgumentOutOfRangeException(nameof(precioCentavos), "El precio debe ser mayor a cero.");
+        if (linea.VarianteId is null)
+            throw new InvalidOperationException("El artículo común ya lleva el precio que se escribió: bórralo y agrégalo de nuevo.");
+        linea.PrecioOriginalCentavos ??= linea.PrecioCentavos;
+        linea.PrecioCentavos = precioCentavos;
+        linea.ImporteCentavos = linea.Cantidad.Importe(precioCentavos);
+        linea.AutorizacionPrecioId = autorizacionId;
+        Recalcular();
+    }
+
+    /// <summary>Cancela un ticket cobrado. El reembolso y el inventario los mueve quien lo guarda.</summary>
+    public void Cancelar(Guid usuarioId, string motivo, DateTime ahoraUtc)
+    {
+        if (Estado != EstadoVenta.Pagada)
+            throw new InvalidOperationException("Solo se cancela un ticket cobrado.");
+        if (string.IsNullOrWhiteSpace(motivo))
+            throw new ArgumentException("La cancelación lleva motivo.", nameof(motivo));
+        Estado = EstadoVenta.Cancelada;
+        CanceladaUtc = ahoraUtc;
+        CanceladaPorId = usuarioId;
+        MotivoCancelacion = motivo.Trim();
     }
 
     /// <summary>INS / CTRL+P: artículo varios o común, con descripción y precio a mano. No descuenta inventario.</summary>
@@ -247,4 +290,16 @@ public class VentaLinea
 
     /// <summary>Costo de lo vendido, del kardex al momento de cobrar.</summary>
     public long CostoCentavos { get; set; }
+
+    /// <summary>El precio del catálogo, si se cambió en la venta.</summary>
+    public long? PrecioOriginalCentavos { get; set; }
+
+    public Guid? AutorizacionPrecioId { get; set; }
+
+    /// <summary>Lo que ya se devolvió de esta línea, en presentaciones: no se puede devolver dos veces.</summary>
+    public Cantidad CantidadDevuelta { get; set; }
+
+    public bool PrecioCambiado => PrecioOriginalCentavos is not null;
+
+    public Cantidad CantidadPorDevolver => Cantidad - CantidadDevuelta;
 }

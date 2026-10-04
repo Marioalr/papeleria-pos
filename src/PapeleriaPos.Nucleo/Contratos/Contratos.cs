@@ -53,7 +53,9 @@ public sealed record SolicitudTurno(Guid CajaId, Guid CajeroId, long FondoCentav
 public sealed record SolicitudMovimiento(TipoMovimientoCaja Tipo, long MontoCentavos, string Motivo, Guid UsuarioId);
 
 /// <summary>Una línea tal como la manda la caja. Sin variante es artículo común, con descripción y precio a mano.</summary>
-public sealed record LineaSolicitada(Guid? VarianteId, Guid? PresentacionId, long CantidadMilesimas, string? Descripcion = null, long? PrecioCentavos = null);
+/// <param name="PrecioCentavos">En un producto del catálogo, el precio cambiado en la caja (con <paramref name="AutorizacionId"/>).</param>
+public sealed record LineaSolicitada(
+    Guid? VarianteId, Guid? PresentacionId, long CantidadMilesimas, string? Descripcion = null, long? PrecioCentavos = null, Guid? AutorizacionId = null);
 
 /// <summary>El servicio vuelve a armar la venta con los precios del catálogo: nunca confía en los precios de la caja.</summary>
 public sealed record SolicitudCobro(Guid CajaId, Guid TurnoId, Guid CajeroId, IReadOnlyList<LineaSolicitada> Lineas, IReadOnlyList<CobroSolicitado> Cobros);
@@ -83,7 +85,7 @@ public sealed record SolicitudCorteZ(string EncargadoUsuario, string EncargadoPi
 public sealed record CorteDto(
     TipoCorte Tipo, DateTime FechaLocal, string Cajero, string RealizadoPor, int Ventas, long FondoCentavos, long EfectivoVentasCentavos,
     long EntradasCentavos, long SalidasCentavos, long TarjetaCentavos, long TransferenciaCentavos, long EsperadoCentavos,
-    long? ContadoCentavos, long? DiferenciaCentavos);
+    long? ContadoCentavos, long? DiferenciaCentavos, long DevolucionesCentavos = 0, int Cancelaciones = 0);
 
 /// <param name="Codigo">"requiere-autorizacion" o "no-permitido" cuando lo detiene una regla.</param>
 public sealed record ErrorDto(string Mensaje, string? Codigo = null);
@@ -131,3 +133,31 @@ public sealed record ReglaDto(AccionControlada Accion, Rol Rol, NivelPermiso Niv
 
 /// <summary>Solo el dueño cambia las reglas.</summary>
 public sealed record SolicitudReglas(string Usuario, string Pin, IReadOnlyList<ReglaDto> Reglas);
+
+// ── Cancelar, devolver y verificar (entrega 2, parte 2) ─────────────────────
+
+public sealed record LineaDevolucionDto(Guid LineaId, string Descripcion, long CantidadMilesimas, long CantidadDevueltaMilesimas, long ImporteCentavos, bool LlevaInventario);
+
+/// <param name="PuedeCancelar">Si su turno sigue abierto (después, solo devolución).</param>
+public sealed record VentaParaDevolverDto(
+    Guid Id, string Folio, DateTime FechaLocal, EstadoVenta Estado, long TotalCentavos, IReadOnlyList<LineaDevolucionDto> Lineas,
+    bool PuedeCancelar, int DiasParaDevolver);
+
+public sealed record SolicitudCancelacion(Guid UsuarioId, Guid CajaId, string Motivo, Guid? AutorizacionId = null);
+
+public sealed record LineaDevolucionSolicitada(Guid LineaId, long CantidadMilesimas, bool RegresaAlInventario = true);
+
+public sealed record SolicitudDevolucion(Guid UsuarioId, Guid CajaId, string Motivo, IReadOnlyList<LineaDevolucionSolicitada> Lineas, Guid? AutorizacionId = null);
+
+/// <summary>Comprobante que se imprime al reembolsar.</summary>
+public sealed record ComprobanteDevolucionDto(
+    string Folio, bool EsCancelacion, long TotalCentavos, long ReembolsoEfectivoCentavos, string Motivo, DateTime FechaLocal, string Caja,
+    string Usuario, string? Autorizo, IReadOnlyList<LineaTicketDto> Lineas, IReadOnlyList<string> Encabezado);
+
+public sealed record TransferenciaDto(Guid CobroId, string Folio, DateTime FechaLocal, long MontoCentavos, string? Referencia, string Cajero, Verificacion Verificacion);
+
+public sealed record SolicitudVerificacion(string Usuario, string Pin, bool Llego);
+
+public sealed record SolicitudConsultaBitacora(string Usuario, string Pin, DateOnly Desde, DateOnly Hasta);
+
+public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionControlada Accion, string Detalle, long? MontoCentavos, string? Autorizo, ResultadoBitacora Resultado);

@@ -130,6 +130,20 @@ public sealed class ServicioControl(PosDbContext db)
         };
     }
 
+    /// <summary>Lo que pasó en la sucursal entre dos momentos, lo más reciente primero.</summary>
+    public async Task<List<(Bitacora Registro, string? Usuario, string? Autorizo)>> ConsultarAsync(
+        Guid sucursalId, DateTime desdeUtc, DateTime hastaUtc, CancellationToken ct = default)
+    {
+        var registros = await db.Bitacora.AsNoTracking()
+            .Where(b => b.SucursalId == sucursalId && b.FechaUtc >= desdeUtc && b.FechaUtc < hastaUtc)
+            .OrderByDescending(b => b.FechaUtc)
+            .Take(2000)
+            .ToListAsync(ct);
+        var nombres = await db.Usuarios.AsNoTracking().ToDictionaryAsync(u => u.Id, u => u.Nombre, ct);
+        return registros.Select(r => (r, r.UsuarioId is { } u ? nombres.GetValueOrDefault(u) : null,
+            r.AutorizoId is { } a ? nombres.GetValueOrDefault(a) : null)).ToList();
+    }
+
     private async Task<Usuario> UsuarioAsync(Guid usuarioId, CancellationToken ct) =>
         await db.Usuarios.FindAsync([usuarioId], ct) is { Activo: true } u ? u : throw new InvalidOperationException("El usuario no existe o está inactivo.");
 }

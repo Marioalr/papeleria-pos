@@ -101,7 +101,9 @@ public static class ApiCaja
                 }
                 var producto = await catalogo.PorVarianteAsync(db, varianteId, caja.SucursalId)
                     ?? throw new InvalidOperationException("Un producto de la venta ya no está en el catálogo.");
-                venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
+                var agregada = venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
+                if (l.PrecioCentavos is { } precio && precio != agregada.PrecioCentavos)
+                    venta.CambiarPrecio(agregada, precio, l.AutorizacionId);
             }
 
             await new RegistroCaja(db).CobrarAsync(venta, s.Cobros);
@@ -157,7 +159,7 @@ public static class ApiCaja
         var nombres = await db.Usuarios.Where(u => u.Id == turno!.CajeroId || u.Id == c.RealizadoPorId).ToDictionaryAsync(u => u.Id, u => u.Nombre);
         return new CorteDto(c.Tipo, HoraMexico.ALocal(c.FechaUtc), nombres[turno!.CajeroId], nombres[c.RealizadoPorId], c.Ventas, c.FondoCentavos,
             c.EfectivoVentasCentavos, c.EntradasCentavos, c.SalidasCentavos, c.TarjetaCentavos, c.TransferenciaCentavos, c.EsperadoCentavos,
-            c.ContadoCentavos, c.DiferenciaCentavos);
+            c.ContadoCentavos, c.DiferenciaCentavos, c.DevolucionesCentavos, c.Cancelaciones);
     }
 
     private static async Task<TicketDto> TicketAsync(PosDbContext db, Venta v, OpcionesTicket opciones)
@@ -184,7 +186,7 @@ public static class ApiCaja
     }
 
     /// <summary>"2" piezas; "1.5 m", "0.25 kg", "0.5 l" a granel.</summary>
-    private static string CantidadTexto(VentaLinea l, bool esBase)
+    internal static string CantidadTexto(VentaLinea l, bool esBase)
     {
         var numero = l.Cantidad.EnUnidades.ToString("0.###", CultureInfo.InvariantCulture);
         if (!esBase)

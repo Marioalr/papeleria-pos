@@ -19,6 +19,7 @@ public enum AccionControlada
     CorteZ,
     ConfigurarTicket,
     EditarReglas,
+    ConsultarBitacora,
 }
 
 public enum NivelPermiso
@@ -74,6 +75,8 @@ public static class Permisos
         Regla(AccionControlada.ConfigurarTicket, Rol.Cajero, NivelPermiso.NoPermitido),
         Regla(AccionControlada.ConfigurarTicket, Rol.Encargado, NivelPermiso.Permitido),
         .. Ambos(AccionControlada.EditarReglas, NivelPermiso.NoPermitido),
+        Regla(AccionControlada.ConsultarBitacora, Rol.Cajero, NivelPermiso.NoPermitido),
+        Regla(AccionControlada.ConsultarBitacora, Rol.Encargado, NivelPermiso.Permitido),
     ];
 
     /// <summary>
