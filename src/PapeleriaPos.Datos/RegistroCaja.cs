@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Ventas;
@@ -41,6 +42,9 @@ public sealed class RegistroCaja(PosDbContext db)
         if (string.IsNullOrWhiteSpace(motivo))
             throw new ArgumentException("Toda entrada o salida de efectivo lleva motivo.", nameof(motivo));
         var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
+        var accion = tipo == TipoMovimientoCaja.Entrada ? AccionControlada.EntradaEfectivo : AccionControlada.SalidaEfectivo;
+        await new ServicioControl(db).RequerirAsync(usuarioId, turno.SucursalId, turno.CajaId, accion, montoCentavos,
+            $"{(tipo == TipoMovimientoCaja.Entrada ? "Entrada" : "Salida")} de efectivo", motivo: motivo);
 
         var movimiento = new MovimientoCaja { TurnoId = turno.Id, Tipo = tipo, MontoCentavos = montoCentavos, Motivo = motivo.Trim(), UsuarioId = usuarioId, FechaUtc = Ahora };
         db.MovimientosCaja.Add(movimiento);
@@ -80,6 +84,10 @@ public sealed class RegistroCaja(PosDbContext db)
             }
 
             venta.Pagar(folio, cobros, ahora);
+            var control = new ServicioControl(db);
+            foreach (var comun in venta.Lineas.Where(l => l.VarianteId is null))
+                control.Registrar(venta.SucursalId, venta.CajaId, venta.CajeroId, AccionControlada.ArticuloComun,
+                    $"{comun.Descripcion} × {comun.Cantidad}", comun.ImporteCentavos, venta.Id);
             db.Ventas.Add(venta);
             if (venta.LlevaEfectivo)
                 db.AperturasCajon.Add(new AperturaCajon { CajaId = venta.CajaId, TurnoId = turno.Id, UsuarioId = venta.CajeroId, Motivo = MotivoApertura.Venta, VentaId = venta.Id, FechaUtc = ahora });
@@ -108,17 +116,28 @@ public sealed class RegistroCaja(PosDbContext db)
     /// <summary>Corte de cierre: lo hace el encargado contando a ciegas; el turno se cierra.</summary>
     public async Task<Corte> CorteZAsync(Guid turnoId, Guid encargadoId, IReadOnlyDictionary<long, int> conteo, CancellationToken ct = default)
     {
-        var encargado = await db.Usuarios.FindAsync([encargadoId], ct) ?? throw new InvalidOperationException("El usuario no existe.");
-        if (!encargado.PuedeHacerCorte)
-            throw new InvalidOperationException("El corte de cierre lo hace el encargado.");
         var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
+        var decision = await new ServicioControl(db).EvaluarAsync(encargadoId, turno.SucursalId, AccionControlada.CorteZ, ct: ct);
+        if (decision.Nivel != NivelPermiso.Permitido)
+            throw new InvalidOperationException("El corte de cierre lo hace el encargado.");
 
         var ahora = Ahora;
         var corte = CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.Z, encargadoId, ahora, conteo);
         turno.CerradoUtc = ahora;
+        new ServicioControl(db).Registrar(turno.SucursalId, turno.CajaId, encargadoId, AccionControlada.CorteZ,
+            $"Corte de cierre: esperado {corte.EsperadoCentavos / 100m:N2}, contado {corte.ContadoCentavos / 100m:N2}", corte.DiferenciaCentavos);
         db.Cortes.Add(corte);
         await db.SaveChangesAsync(ct);
         return corte;
+    }
+
+    /// <summary>Lo que debería haber en efectivo en la caja ahora, y si ya pasó del límite de la sucursal.</summary>
+    public async Task<(long Esperado, long? Limite)> EfectivoAsync(Guid turnoId, CancellationToken ct = default)
+    {
+        var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
+        var corte = CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.X, turno.CajeroId, Ahora);
+        var limite = await db.ConfiguracionesSucursal.Where(c => c.SucursalId == turno.SucursalId).Select(c => c.LimiteEfectivoCentavos).FirstOrDefaultAsync(ct);
+        return (corte.EsperadoCentavos, limite);
     }
 
     private async Task<Turno> TurnoAbiertoPorIdAsync(Guid turnoId, CancellationToken ct)

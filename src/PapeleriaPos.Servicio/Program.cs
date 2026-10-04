@@ -28,6 +28,7 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapearApiCaja();
 app.MapearApiConfiguracion();
+app.MapearApiControl();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Run();

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Configuracion;
+using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Nucleo.Ventas;
@@ -15,7 +16,6 @@ internal sealed class UsuarioConfiguracion : IEntityTypeConfiguration<Usuario>
         b.HasIndex(u => u.NombreUsuario).IsUnique();
         b.HasOne<Sucursal>().WithMany().HasForeignKey(u => u.SucursalId);
         b.HasIndex(u => u.Version);
-        b.Ignore(u => u.PuedeHacerCorte);
     }
 }
 
@@ -128,5 +128,48 @@ internal sealed class ConfiguracionTicketConfiguracion : IEntityTypeConfiguratio
         b.Ignore(c => c.RenglonesEncabezado);
         b.Ignore(c => c.RenglonesPie);
         b.Ignore(c => c.TieneLogo);
+    }
+}
+
+internal sealed class ConfiguracionSucursalConfiguracion : IEntityTypeConfiguration<ConfiguracionSucursal>
+{
+    public void Configure(EntityTypeBuilder<ConfiguracionSucursal> b)
+    {
+        b.ToTable("ConfiguracionesSucursal");
+        b.HasKey(c => c.SucursalId);
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(c => c.SucursalId);
+    }
+}
+
+internal sealed class ReglaPermisoConfiguracion : IEntityTypeConfiguration<ReglaPermiso>
+{
+    public void Configure(EntityTypeBuilder<ReglaPermiso> b)
+    {
+        b.ToTable("ReglasPermiso");
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(r => r.SucursalId);
+        b.HasIndex(r => new { r.Accion, r.Rol, r.SucursalId });
+        b.HasIndex(r => r.Version);
+    }
+}
+
+internal sealed class AutorizacionConfiguracion : IEntityTypeConfiguration<Autorizacion>
+{
+    public void Configure(EntityTypeBuilder<Autorizacion> b)
+    {
+        b.ToTable("Autorizaciones");
+        b.HasOne<Usuario>().WithMany().HasForeignKey(a => a.SolicitanteId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(a => a.AutorizadorId);
+    }
+}
+
+internal sealed class BitacoraConfiguracion : IEntityTypeConfiguration<Bitacora>
+{
+    public void Configure(EntityTypeBuilder<Bitacora> b)
+    {
+        b.ToTable("Bitacora");
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(x => x.SucursalId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(x => x.UsuarioId);
+        b.HasIndex(x => new { x.SucursalId, x.FechaUtc });
+        b.HasIndex(x => x.VentaId);
     }
 }

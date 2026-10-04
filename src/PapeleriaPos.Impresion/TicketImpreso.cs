@@ -3,13 +3,23 @@ using PapeleriaPos.Nucleo.Contratos;
 
 namespace PapeleriaPos.Impresion;
 
-/// <summary>Dónde se imprime: la caja de Windows manda los bytes a la impresora; el navegador solo muestra la vista previa.</summary>
+/// <summary>Dónde se imprime: la caja de Windows o la impresora de red reciben los comandos; el navegador muestra la vista previa.</summary>
 public interface IImpresora
 {
-    /// <summary>Sin impresora (en el navegador, en pruebas): la caja muestra el ticket en pantalla.</summary>
+    /// <summary>Sin impresora (en el navegador, en pruebas): la caja muestra el documento en pantalla.</summary>
     bool MuestraVistaPrevia { get; }
 
-    Task ImprimirAsync(TicketDto ticket, bool abrirCajon, CancellationToken ct = default);
+    /// <summary>Manda los comandos ESC/POS ya armados.</summary>
+    Task EnviarAsync(byte[] escPos, CancellationToken ct = default);
+}
+
+public static class ImpresoraExtensiones
+{
+    public static Task ImprimirAsync(this IImpresora impresora, TicketDto ticket, bool abrirCajon, CancellationToken ct = default) =>
+        impresora.EnviarAsync(TicketEscPos.Generar(ticket, abrirCajon), ct);
+
+    public static Task ImprimirAsync(this IImpresora impresora, IReadOnlyList<Elemento> documento, bool abrirCajon, CancellationToken ct = default) =>
+        impresora.EnviarAsync(TicketEscPos.Generar(documento, abrirCajon), ct);
 }
 
 /// <summary>No imprime: la caja muestra la vista previa. Para el navegador y para probar sin la POS-8360.</summary>
@@ -17,16 +27,18 @@ public sealed class SinImpresora : IImpresora
 {
     public bool MuestraVistaPrevia => true;
 
-    public Task ImprimirAsync(TicketDto ticket, bool abrirCajon, CancellationToken ct = default) => Task.CompletedTask;
+    public Task EnviarAsync(byte[] escPos, CancellationToken ct = default) => Task.CompletedTask;
 }
 
 /// <summary>El ticket en texto, tal como saldrá impreso. Sirve de vista previa y para las pruebas.</summary>
 public static class TicketTexto
 {
-    public static string Generar(TicketDto ticket)
+    public static string Generar(TicketDto ticket) => Generar(DisenoTicket.Armar(ticket));
+
+    public static string Generar(IReadOnlyList<Elemento> documento)
     {
         var sb = new StringBuilder();
-        foreach (var elemento in DisenoTicket.Armar(ticket))
+        foreach (var elemento in documento)
         {
             var (texto, alineacion) = elemento switch
             {
@@ -70,7 +82,12 @@ public static class TicketEscPos
         Pc850 = Encoding.GetEncoding(850);
     }
 
-    public static byte[] Generar(TicketDto ticket, bool abrirCajon)
+    /// <summary>Solo abre el cajón, sin imprimir ni cortar (para una entrada de efectivo).</summary>
+    public static byte[] AbrirCajon() => [Esc, (byte)'@', Esc, (byte)'p', 0, 25, 250];
+
+    public static byte[] Generar(TicketDto ticket, bool abrirCajon) => Generar(DisenoTicket.Armar(ticket), abrirCajon);
+
+    public static byte[] Generar(IReadOnlyList<Elemento> documento, bool abrirCajon)
     {
         var b = new List<byte>();
         b.AddRange([Esc, (byte)'@']);           // reinicia la impresora
@@ -78,7 +95,7 @@ public static class TicketEscPos
         if (abrirCajon)
             b.AddRange([Esc, (byte)'p', 0, 25, 250]);
 
-        foreach (var elemento in DisenoTicket.Armar(ticket))
+        foreach (var elemento in documento)
         {
             switch (elemento)
             {

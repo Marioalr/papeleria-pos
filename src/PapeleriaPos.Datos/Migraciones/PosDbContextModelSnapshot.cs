@@ -430,6 +430,25 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("Variantes");
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Configuracion.ConfiguracionSucursal", b =>
+                {
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("LimiteEfectivoCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("ModificadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("SucursalId");
+
+                    b.ToTable("ConfiguracionesSucursal", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Configuracion.ConfiguracionTicket", b =>
                 {
                     b.Property<Guid>("SucursalId")
@@ -461,6 +480,147 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasKey("SucursalId");
 
                     b.ToTable("ConfiguracionesTicket", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Control.Autorizacion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Accion")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AutorizadorId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CajaId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreadaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Detalle")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("MontoCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("SolicitanteId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UsadaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("VenceUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AutorizadorId");
+
+                    b.HasIndex("SolicitanteId");
+
+                    b.ToTable("Autorizaciones", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Control.Bitacora", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Accion")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("AutorizoId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CajaId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Detalle")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("FechaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("MontoCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Resultado")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("UsuarioId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("VentaId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.HasIndex("VentaId");
+
+                    b.HasIndex("SucursalId", "FechaUtc");
+
+                    b.ToTable("Bitacora", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Control.ReglaPermiso", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Accion")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ModificadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Nivel")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("PideMotivo")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Rol")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("UmbralCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SucursalId");
+
+                    b.HasIndex("Version");
+
+                    b.HasIndex("Accion", "Rol", "SucursalId");
+
+                    b.ToTable("ReglasPermiso", (string)null);
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Historico.VentaHistorica", b =>
@@ -1159,6 +1319,15 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Navigation("Producto");
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Configuracion.ConfiguracionSucursal", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Configuracion.ConfiguracionTicket", b =>
                 {
                     b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
@@ -1166,6 +1335,43 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasForeignKey("SucursalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Control.Autorizacion", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("AutorizadorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("SolicitanteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Control.Bitacora", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Control.ReglaPermiso", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Historico.VentaHistorica", b =>

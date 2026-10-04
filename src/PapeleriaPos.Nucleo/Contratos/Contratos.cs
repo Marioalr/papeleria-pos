@@ -1,4 +1,5 @@
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Nucleo.Ventas;
@@ -67,7 +68,7 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
     long TotalCentavos, long IvaCentavos, IReadOnlyList<CobroTicketDto> Cobros, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie,
-    LogoTicketDto? Logo = null)
+    LogoTicketDto? Logo = null, Guid? VentaId = null)
 {
     public long CambioCentavos => Cobros.Sum(c => c.CambioCentavos);
     public long PagoConCentavos => Cobros.Sum(c => c.Forma == FormaPago.Efectivo ? c.RecibidoCentavos : c.MontoCentavos);
@@ -84,7 +85,8 @@ public sealed record CorteDto(
     long EntradasCentavos, long SalidasCentavos, long TarjetaCentavos, long TransferenciaCentavos, long EsperadoCentavos,
     long? ContadoCentavos, long? DiferenciaCentavos);
 
-public sealed record ErrorDto(string Mensaje);
+/// <param name="Codigo">"requiere-autorizacion" o "no-permitido" cuando lo detiene una regla.</param>
+public sealed record ErrorDto(string Mensaje, string? Codigo = null);
 
 /// <param name="LogoPngBase64">Cómo se ve el logo convertido, para la pantalla.</param>
 public sealed record ConfiguracionTicketDto(IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, string? LogoPngBase64);
@@ -94,3 +96,38 @@ public sealed record SolicitudTextosTicket(string Usuario, string Pin, IReadOnly
 
 /// <param name="ImagenBase64">El archivo tal cual (PNG, JPG o BMP); el servicio lo pasa a blanco y negro.</param>
 public sealed record SolicitudLogo(string Usuario, string Pin, string? ImagenBase64);
+
+// ── Control (entrega 2) ─────────────────────────────────────────────────────
+
+public sealed record SolicitudPermiso(Guid UsuarioId, Guid SucursalId, AccionControlada Accion, long? MontoCentavos = null);
+
+public sealed record DecisionDto(NivelPermiso Nivel, bool PideMotivo);
+
+/// <summary>El encargado (o el dueño) autoriza en la misma caja con su usuario y PIN.</summary>
+public sealed record SolicitudAutorizacion(
+    AccionControlada Accion, Guid SucursalId, Guid? CajaId, Guid SolicitanteId, string Usuario, string Pin, long? MontoCentavos, string Detalle);
+
+public sealed record AutorizacionDto(Guid Id, DateTime VenceUtc, string Autorizo);
+
+/// <summary>Lo que pasa en la caja antes de cobrar y el servicio no ve (quitar un producto ya escaneado).</summary>
+public sealed record SolicitudBitacora(Guid UsuarioId, Guid SucursalId, Guid? CajaId, AccionControlada Accion, string Detalle, long? MontoCentavos = null);
+
+public sealed record EfectivoCajaDto(long EsperadoCentavos, long? LimiteCentavos)
+{
+    public bool PideRetiro => LimiteCentavos is { } limite && EsperadoCentavos >= limite;
+}
+
+public sealed record ConfiguracionSucursalDto(long? LimiteEfectivoCentavos);
+
+public sealed record SolicitudConfiguracionSucursal(string Usuario, string Pin, long? LimiteEfectivoCentavos);
+
+/// <summary>El comprobante que se imprime al sacar efectivo de la caja.</summary>
+public sealed record ComprobanteMovimientoDto(
+    string Folio, TipoMovimientoCaja Tipo, long MontoCentavos, string Motivo, DateTime FechaLocal, string Caja, string Usuario, IReadOnlyList<string> Encabezado);
+
+public sealed record SolicitudReimpresion(Guid UsuarioId, Guid CajaId, string? Motivo);
+
+public sealed record ReglaDto(AccionControlada Accion, Rol Rol, NivelPermiso Nivel, long? UmbralCentavos, bool PideMotivo);
+
+/// <summary>Solo el dueño cambia las reglas.</summary>
+public sealed record SolicitudReglas(string Usuario, string Pin, IReadOnlyList<ReglaDto> Reglas);

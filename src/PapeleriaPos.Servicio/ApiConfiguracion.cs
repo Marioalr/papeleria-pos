@@ -4,7 +4,7 @@ using PapeleriaPos.Datos;
 using PapeleriaPos.Impresion;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
-using PapeleriaPos.Nucleo.Usuarios;
+using PapeleriaPos.Nucleo.Control;
 
 namespace PapeleriaPos.Servicio;
 
@@ -13,24 +13,16 @@ public static class ApiConfiguracion
 {
     public static void MapearApiConfiguracion(this IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api/sucursales/{sucursalId:guid}/ticket").AddEndpointFilter(async (contexto, siguiente) =>
-        {
-            try
-            {
-                return await siguiente(contexto);
-            }
-            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or FormatException)
-            {
-                return Results.BadRequest(new ErrorDto(ex.Message));
-            }
-        });
+        var api = app.MapGroup("/api/sucursales/{sucursalId:guid}/ticket").ConErrores();
 
         api.MapGet("", async (Guid sucursalId, PosDbContext db, IOptions<OpcionesTicket> opciones) =>
             Dto(await ConfiguracionAsync(db, sucursalId, opciones.Value)));
 
         api.MapPut("/textos", async (Guid sucursalId, SolicitudTextosTicket s, PosDbContext db, IOptions<OpcionesTicket> opciones) =>
         {
-            await AutorizarAsync(db, s.Usuario, s.Pin);
+            var control = new ServicioControl(db);
+            var usuario = await control.IdentificarAsync(s.Usuario, s.Pin, sucursalId, AccionControlada.ConfigurarTicket);
+            control.Registrar(sucursalId, null, usuario.Id, AccionControlada.ConfigurarTicket, "Cambió el encabezado y el pie del ticket");
             var configuracion = await ParaCambiarAsync(db, sucursalId, opciones.Value);
             configuracion.CambiarTextos(s.Encabezado, s.Pie);
             await db.SaveChangesAsync();
@@ -39,7 +31,9 @@ public static class ApiConfiguracion
 
         api.MapPut("/logo", async (Guid sucursalId, SolicitudLogo s, PosDbContext db, IOptions<OpcionesTicket> opciones) =>
         {
-            await AutorizarAsync(db, s.Usuario, s.Pin);
+            var control = new ServicioControl(db);
+            var usuario = await control.IdentificarAsync(s.Usuario, s.Pin, sucursalId, AccionControlada.ConfigurarTicket);
+            control.Registrar(sucursalId, null, usuario.Id, AccionControlada.ConfigurarTicket, string.IsNullOrEmpty(s.ImagenBase64) ? "Quitó el logotipo del ticket" : "Cambió el logotipo del ticket");
             var configuracion = await ParaCambiarAsync(db, sucursalId, opciones.Value);
             if (string.IsNullOrEmpty(s.ImagenBase64))
                 configuracion.QuitarLogo();
@@ -80,20 +74,5 @@ public static class ApiConfiguracion
         var nueva = await ConfiguracionAsync(db, sucursalId, opciones);
         db.ConfiguracionesTicket.Add(nueva);
         return nueva;
-    }
-
-    /// <summary>Usuario y PIN de un encargado o del dueño; si no, error.</summary>
-    public static async Task<Usuario> AutorizarAsync(PosDbContext db, string usuario, string pin)
-    {
-        var encontrado = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == usuario.Trim().ToLower());
-        var resultado = encontrado?.VerificarPin(pin, db.Reloj.GetUtcNow().UtcDateTime);
-        await db.SaveChangesAsync();
-        return resultado switch
-        {
-            ResultadoPin.Correcto when encontrado!.PuedeHacerCorte => encontrado,
-            ResultadoPin.Correcto => throw new InvalidOperationException("Esto lo autoriza el encargado o el dueño."),
-            ResultadoPin.Bloqueado => throw new InvalidOperationException("Demasiados intentos: espera unos minutos."),
-            _ => throw new InvalidOperationException("Usuario o PIN del encargado incorrecto."),
-        };
     }
 }

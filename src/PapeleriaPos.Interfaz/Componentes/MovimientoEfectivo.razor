@@ -21,7 +21,7 @@
     [Parameter] public TipoMovimientoCaja Tipo { get; set; }
     [Parameter] public Guid TurnoId { get; set; }
     [Parameter] public Guid UsuarioId { get; set; }
-    [Parameter] public EventCallback<string> AlTerminar { get; set; }
+    [Parameter] public EventCallback<ComprobanteMovimientoDto> AlTerminar { get; set; }
 
     private string _monto = "";
     private string _motivo = "";
@@ -52,8 +52,7 @@
         _ocupado = true;
         try
         {
-            await Cliente.MovimientoAsync(TurnoId, new SolicitudMovimiento(Tipo, monto, _motivo.Trim(), UsuarioId));
-            await AlTerminar.InvokeAsync($"{(Tipo == TipoMovimientoCaja.Entrada ? "Entrada" : "Salida")} de {Formato.Dinero(monto)} registrada.");
+            await AlTerminar.InvokeAsync(await Cliente.MovimientoAsync(TurnoId, new SolicitudMovimiento(Tipo, monto, _motivo.Trim(), UsuarioId)));
         }
         catch (ErrorCaja ex)
         {
