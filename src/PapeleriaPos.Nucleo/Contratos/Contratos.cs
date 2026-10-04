@@ -77,7 +77,7 @@ public sealed record TicketDto(
     public bool AbreCajon => Cobros.Any(c => c.Forma == FormaPago.Efectivo);
 }
 
-public sealed record VentaDelDiaDto(Guid Id, string Folio, DateTime FechaLocal, long TotalCentavos, int Articulos, string Cajero);
+public sealed record VentaDelDiaDto(Guid Id, string Folio, DateTime FechaLocal, long TotalCentavos, int Articulos, string Cajero, bool Cancelada = false);
 
 /// <summary>El encargado se identifica con su usuario y PIN en la misma caja.</summary>
 public sealed record SolicitudCorteZ(string EncargadoUsuario, string EncargadoPin, IReadOnlyDictionary<long, int> Conteo);

@@ -120,7 +120,7 @@ public static class ApiCaja
                                 select new { Venta = v, Cajero = u.Nombre }).ToListAsync();
             return ventas.OrderByDescending(x => x.Venta.Folio)
                 .Select(x => new VentaDelDiaDto(x.Venta.Id, x.Venta.FolioTexto!, HoraMexico.ALocal(x.Venta.PagadaUtc!.Value), x.Venta.TotalCentavos,
-                    (int)x.Venta.NumeroDeArticulos, x.Cajero))
+                    (int)x.Venta.NumeroDeArticulos, x.Cajero, x.Venta.Estado == EstadoVenta.Cancelada))
                 .ToList();
         });
 

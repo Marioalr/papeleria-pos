@@ -34,6 +34,11 @@ public class Autorizacion
 {
     public static readonly TimeSpan Vigencia = TimeSpan.FromMinutes(2);
 
+    /// <summary>El cambio de precio se autoriza al capturar y se gasta al cobrar: le da tiempo a terminar la venta.</summary>
+    public static readonly TimeSpan VigenciaEnVenta = TimeSpan.FromMinutes(30);
+
+    public static TimeSpan VigenciaDe(AccionControlada accion) => accion == AccionControlada.CambiarPrecio ? VigenciaEnVenta : Vigencia;
+
     public Guid Id { get; init; } = Ids.Nuevo();
     public AccionControlada Accion { get; init; }
     public Guid SucursalId { get; init; }

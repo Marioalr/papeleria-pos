@@ -56,7 +56,7 @@ public sealed class ServicioControl(PosDbContext db)
             MontoCentavos = monto,
             Detalle = detalle,
             CreadaUtc = Ahora,
-            VenceUtc = Ahora + Autorizacion.Vigencia,
+            VenceUtc = Ahora + Autorizacion.VigenciaDe(accion),
         };
         db.Autorizaciones.Add(autorizacion);
         await db.SaveChangesAsync(ct);

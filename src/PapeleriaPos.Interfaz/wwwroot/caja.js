@@ -1,4 +1,5 @@
-// Teclas de la caja, iguales a las de eleventa. Se atrapan antes que el navegador (F5 no recarga, Ctrl+P no imprime).
+// Teclas de la caja, iguales a las de eleventa. Se atrapan antes que el navegador (F5 no recarga, Ctrl+P no imprime,
+// Ctrl+E no busca).
 let pantalla = null;
 let hayVentana = false;
 
@@ -24,13 +25,14 @@ function alPresionar(e) {
     const enCodigo = campo !== null && campo.dataset.codigo !== undefined;
     const vacio = campo === null || campo.value === '';
     const ctrlP = e.ctrlKey && (tecla === 'p' || tecla === 'P');
+    const ctrlE = e.ctrlKey && (tecla === 'e' || tecla === 'E');
     const funcion = /^F([1-9]|1[0-2])$/.test(tecla);
 
     let atrapar;
     if (hayVentana) {
-        atrapar = tecla === 'Escape' || funcion || ctrlP;
+        atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE;
     } else {
-        atrapar = funcion || ctrlP || tecla === 'Escape' || tecla === 'Insert'
+        atrapar = funcion || ctrlP || ctrlE || tecla === 'Escape' || tecla === 'Insert'
             || (tecla === 'Delete' && vacio)
             || ((tecla === 'ArrowUp' || tecla === 'ArrowDown') && (campo === null || enCodigo))
             || ((tecla === '+' || tecla === '-') && vacio && (campo === null || enCodigo));
@@ -39,7 +41,7 @@ function alPresionar(e) {
 
     e.preventDefault();
     e.stopPropagation();
-    pantalla.invokeMethodAsync('Tecla', ctrlP ? 'Ctrl+P' : tecla);
+    pantalla.invokeMethodAsync('Tecla', ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : tecla);
 }
 
 export function enfocar(selector) {

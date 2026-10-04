@@ -1,0 +1,210 @@
+@* Devoluciones y cancelaciones con el folio del ticket (el QR lo escribe solo). Si la regla lo pide, autoriza el encargado. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+@if (_autorizar is { } pendiente)
+{
+    <AutorizarAccion Accion="pendiente.Accion" Detalle="@pendiente.Detalle" MontoCentavos="pendiente.Monto" Caja="Caja" Sesion="Sesion"
+                     AlAutorizar="a => pendiente.Reintentar(a.Id)" AlCancelar="() => _autorizar = null" />
+}
+else
+{
+    <div class="captura-folio">
+        <label>Folio del ticket (escanea el QR)
+            <input id="folio" autocomplete="off" @bind="_folio" @bind:event="oninput" @onkeydown="AlTeclearFolio" placeholder="A-000123" />
+        </label>
+        <button class="boton" @onclick="BuscarAsync">Buscar</button>
+    </div>
+
+    @if (_venta is { } v)
+    {
+        <p>
+            <strong>@v.Folio</strong> · @v.FechaLocal.ToString("dd/MM/yyyy HH:mm") · @Formato.Dinero(v.TotalCentavos)
+            @if (v.Estado == EstadoVenta.Cancelada)
+            {
+                <span class="error"> · cancelado</span>
+            }
+            else if (v.DiasParaDevolver == 0)
+            {
+                <span class="error"> · ya pasaron 7 días: no admite devoluciones</span>
+            }
+        </p>
+        <div class="resultados">
+            <table>
+                <thead><tr><th>Descripción</th><th class="num">Vendido</th><th class="num">Ya devuelto</th><th class="num">Importe</th><th class="num">Devolver</th><th>Dañado</th></tr></thead>
+                @foreach (var l in v.Lineas)
+                {
+                    var linea = l;
+                    var queda = (l.CantidadMilesimas - l.CantidadDevueltaMilesimas) / 1000m;
+                    <tr>
+                        <td>@l.Descripcion</td>
+                        <td class="num">@Formato.Numero(l.CantidadMilesimas / 1000m)</td>
+                        <td class="num">@Formato.Numero(l.CantidadDevueltaMilesimas / 1000m)</td>
+                        <td class="num">@Formato.Dinero(l.ImporteCentavos)</td>
+                        <td class="num">
+                            @if (queda > 0 && v.Estado == EstadoVenta.Pagada)
+                            {
+                                <input class="cantidad-devolver" inputmode="decimal" placeholder="0" value="@_cantidades.GetValueOrDefault(l.LineaId)"
+                                       @onchange="e => _cantidades[linea.LineaId] = e.Value?.ToString() ?? string.Empty" />
+                            }
+                        </td>
+                        <td>
+                            @if (l.LlevaInventario && queda > 0)
+                            {
+                                <input type="checkbox" checked="@_danados.Contains(l.LineaId)" @onchange="e => Marcar(linea.LineaId, e.Value is true)" />
+                            }
+                        </td>
+                    </tr>
+                }
+            </table>
+        </div>
+        <label>Motivo <input @bind="_motivo" @bind:event="oninput" autocomplete="off" /></label>
+    }
+
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_venta is { Estado: EstadoVenta.Pagada } venta)
+    {
+        <div class="acciones">
+            @if (venta.PuedeCancelar)
+            {
+                <button class="boton" disabled="@_ocupado" @onclick="() => CancelarAsync(null)">Cancelar todo el ticket</button>
+            }
+            <button class="boton principal" disabled="@(_ocupado || venta.DiasParaDevolver == 0)" @onclick="() => DevolverAsync(null)">Devolver lo marcado</button>
+        </div>
+        <p class="nota">Cancelar es todo el ticket y solo en el mismo turno; después es devolución (con ticket y hasta 7 días). El reembolso sale en efectivo.</p>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter] public string? FolioInicial { get; set; }
+    [Parameter] public EventCallback<ComprobanteDevolucionDto> AlTerminar { get; set; }
+
+    private sealed record Pendiente(AccionControlada Accion, string Detalle, long Monto, Func<Guid, Task> Reintentar);
+
+    private string _folio = "";
+    private string _motivo = "";
+    private VentaParaDevolverDto? _venta;
+    private readonly Dictionary<Guid, string> _cantidades = [];
+    private readonly HashSet<Guid> _danados = [];
+    private Pendiente? _autorizar;
+    private string? _error;
+    private bool _ocupado;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (FolioInicial is { Length: > 0 } folio)
+        {
+            _folio = folio;
+            await BuscarAsync();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera && _venta is null)
+            await Js.EnfocarAsync("#folio");
+    }
+
+    private async Task AlTeclearFolio(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await BuscarAsync();
+    }
+
+    private async Task BuscarAsync()
+    {
+        _error = null;
+        _cantidades.Clear();
+        _danados.Clear();
+        try
+        {
+            _venta = await Cliente.VentaPorFolioAsync(Caja.SucursalId, _folio.Trim());
+            if (_venta is null)
+                _error = $"No existe el ticket «{_folio.Trim()}».";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void Marcar(Guid lineaId, bool danado)
+    {
+        if (danado)
+            _danados.Add(lineaId);
+        else
+            _danados.Remove(lineaId);
+    }
+
+    private async Task CancelarAsync(Guid? autorizacionId)
+    {
+        var venta = _venta!;
+        await EjecutarAsync(AccionControlada.CancelarTicket, $"Cancelar el ticket {venta.Folio}", venta.TotalCentavos, CancelarAsync,
+            () => Cliente.CancelarAsync(venta.Id, new SolicitudCancelacion(Sesion.UsuarioId, Caja.Id, _motivo, autorizacionId)));
+    }
+
+    private async Task DevolverAsync(Guid? autorizacionId)
+    {
+        var venta = _venta!;
+        var lineas = new List<LineaDevolucionSolicitada>();
+        long monto = 0;
+        foreach (var l in venta.Lineas)
+        {
+            if (!_cantidades.TryGetValue(l.LineaId, out var texto) || string.IsNullOrWhiteSpace(texto))
+                continue;
+            if (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out var cantidad) || cantidad < 0)
+            {
+                _error = $"Cantidad inválida en «{l.Descripcion}».";
+                return;
+            }
+            if (cantidad == 0)
+                continue;
+            var milesimas = (long)Math.Round(cantidad * 1000);
+            lineas.Add(new LineaDevolucionSolicitada(l.LineaId, milesimas, !_danados.Contains(l.LineaId)));
+            monto += l.ImporteCentavos * milesimas / l.CantidadMilesimas;
+        }
+        if (lineas.Count == 0)
+        {
+            _error = "Escribe cuánto se devuelve de cada artículo.";
+            return;
+        }
+        await EjecutarAsync(AccionControlada.Devolucion, $"Devolución del ticket {venta.Folio}", monto, DevolverAsync,
+            () => Cliente.DevolverAsync(venta.Id, new SolicitudDevolucion(Sesion.UsuarioId, Caja.Id, _motivo, lineas, autorizacionId)));
+    }
+
+    /// <summary>Hace la operación; si la regla pide autorización, muestra la ventana del encargado y la repite con ella.</summary>
+    private async Task EjecutarAsync(AccionControlada accion, string detalle, long monto, Func<Guid?, Task> repetir, Func<Task<ComprobanteDevolucionDto>> operacion)
+    {
+        if (string.IsNullOrWhiteSpace(_motivo))
+        {
+            _error = "Escribe el motivo.";
+            return;
+        }
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            var comprobante = await operacion();
+            _autorizar = null;
+            await AlTerminar.InvokeAsync(comprobante);
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "requiere-autorizacion")
+        {
+            _autorizar = new Pendiente(accion, detalle, monto, id => repetir(id));
+        }
+        catch (ErrorCaja ex)
+        {
+            _autorizar = null;
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

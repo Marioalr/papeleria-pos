@@ -1,0 +1,38 @@
+@* Configuración de la sucursal en pestañas: el ticket, las reglas (solo el dueño) y la bitácora. *@
+
+<nav class="pestanas config-pestanas">
+    @foreach (var p in Enum.GetValues<Pestanas>())
+    {
+        var pestana = p;
+        <button class="pestana @(p == _pestana ? "activa" : "")" @onclick="() => _pestana = pestana">@Nombre(p)</button>
+    }
+</nav>
+
+@switch (_pestana)
+{
+    case Pestanas.Ticket:
+        <ConfiguracionTicket Caja="Caja" Sesion="Sesion" />
+        break;
+    case Pestanas.Reglas:
+        <EditorReglas Caja="Caja" />
+        break;
+    case Pestanas.Bitacora:
+        <ConsultaBitacora Caja="Caja" />
+        break;
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    private enum Pestanas { Ticket, Reglas, Bitacora }
+
+    private Pestanas _pestana;
+
+    private static string Nombre(Pestanas p) => p switch
+    {
+        Pestanas.Ticket => "Ticket",
+        Pestanas.Reglas => "Reglas",
+        _ => "Bitácora",
+    };
+}

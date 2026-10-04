@@ -1,5 +1,6 @@
 @* La pantalla de venta: misma distribución y mismas teclas que eleventa. *@
 @implements IAsyncDisposable
+@using System.Text.RegularExpressions
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 @inject IImpresora Impresora
@@ -35,6 +36,7 @@
         <button class="boton" @onclick="() => Abrir(Ventanas.Entrada)">F7 Entradas</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Salida)">F8 Salidas</button>
         <button class="boton" @onclick="BorrarSeleccion">DEL Borrar art.</button>
+        <button class="boton" @onclick="AbrirCambioPrecio">CTRL+E Cambiar precio</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Verificador)">F9 Verificador</button>
     </div>
 
@@ -68,7 +70,13 @@
                     <tr id="linea-@i" class="@(i == _seleccion ? "seleccionada" : "")" @onclick="() => Seleccionar(indice)">
                         <td class="col-codigo">@(producto?.Codigo ?? "—")</td>
                         <td>@Descripcion(linea, producto)</td>
-                        <td class="num">@Formato.Dinero(linea.PrecioCentavos)</td>
+                        <td class="num">
+                            @if (linea.PrecioCambiado)
+                            {
+                                <s class="precio-original">@Formato.Dinero(linea.PrecioOriginalCentavos ?? 0)</s>
+                            }
+                            @Formato.Dinero(linea.PrecioCentavos)
+                        </td>
                         <td class="num col-cant">@Formato.Numero(linea.Cantidad.EnUnidades)</td>
                         <td class="num">@Formato.Dinero(linea.ImporteCentavos)</td>
                         <td class="num">@(producto?.Existencia is { } e ? Formato.Numero(e) : "—")</td>
@@ -113,6 +121,8 @@
             <div class="botones-pie">
                 <button class="boton" @onclick="ReimprimirUltimoAsync">Reimprimir último ticket</button>
                 <button class="boton" @onclick="() => Abrir(Ventanas.VentasDelDia)">Ventas del día</button>
+                <button class="boton" @onclick="() => AbrirDevolucion(null)">Devoluciones</button>
+                <button class="boton" @onclick="() => Abrir(Ventanas.Transferencias)">Transferencias</button>
             </div>
         </div>
     </footer>
@@ -157,12 +167,28 @@
             break;
         case Ventanas.VentasDelDia:
             <Ventana Titulo="Ventas del día" Clase="ventas-dia" AlCerrar="Cerrar">
-                <VentasDelDia CajaId="Caja.Id" AlReimprimir="(Guid id) => PedirReimpresion(id)" />
+                <VentasDelDia CajaId="Caja.Id" AlReimprimir="(Guid id) => PedirReimpresion(id)" AlDevolver="(string folio) => AbrirDevolucion(folio)" />
+            </Ventana>
+            break;
+        case Ventanas.Devolucion:
+            <Ventana Titulo="Devoluciones y cancelaciones" Clase="ventas-dia" AlCerrar="Cerrar">
+                <DevolverCancelar Caja="Caja" Sesion="Sesion" FolioInicial="@_folioDevolucion" AlTerminar="DevolucionHechaAsync" />
+            </Ventana>
+            break;
+        case Ventanas.CambiarPrecio when LineaSeleccionada is { } seleccionada:
+            <Ventana Titulo="Cambiar precio" AlCerrar="Cerrar">
+                <CambiarPrecio Descripcion="@seleccionada.Descripcion" PrecioActualCentavos="seleccionada.PrecioCentavos" Cantidad="seleccionada.Cantidad"
+                               Caja="Caja" Sesion="Sesion" AlCambiar="PrecioCambiadoAsync" />
+            </Ventana>
+            break;
+        case Ventanas.Transferencias:
+            <Ventana Titulo="Verificar transferencias" Clase="ventas-dia" AlCerrar="Cerrar">
+                <VerificarTransferencias Caja="Caja" />
             </Ventana>
             break;
         case Ventanas.Configuracion:
-            <Ventana Titulo="Personalización del ticket de venta" Clase="configuracion" AlCerrar="Cerrar">
-                <ConfiguracionTicket Caja="Caja" Sesion="Sesion" />
+            <Ventana Titulo="Configuración" Clase="configuracion" AlCerrar="Cerrar">
+                <Configuracion Caja="Caja" Sesion="Sesion" />
             </Ventana>
             break;
         case Ventanas.Motivo:
@@ -186,7 +212,11 @@
     [Parameter] public EventCallback AlSalir { get; set; }
     [Parameter] public EventCallback AlCerrarTurno { get; set; }
 
-    private enum Ventanas { Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo }
+    private enum Ventanas
+    {
+        Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
+        CambiarPrecio, Transferencias,
+    }
 
     private sealed class TicketAbierto
     {
@@ -241,6 +271,7 @@
             case "F8": await Abrir(Ventanas.Salida); break;
             case "F9": await Abrir(Ventanas.Verificador); break;
             case "Insert" or "Ctrl+P": await Abrir(Ventanas.Comun); break;
+            case "Ctrl+E": await AbrirCambioPrecio(); break;
             case "Delete": await BorrarSeleccion(); break;
             case "ArrowUp": await MoverSeleccion(-1); break;
             case "ArrowDown": await MoverSeleccion(1); break;
@@ -261,12 +292,21 @@
             await AgregarCodigoAsync();
     }
 
-    /// <summary>"7501…" agrega una pieza; "3*7501…" agrega tres; "5*" cambia la cantidad del renglón seleccionado.</summary>
+    /// <summary>
+    /// "7501…" agrega una pieza; "3*7501…" agrega tres; "5*" cambia la cantidad del renglón seleccionado. El QR de un
+    /// ticket ("A-000123") abre la devolución.
+    /// </summary>
     private async Task AgregarCodigoAsync()
     {
         var texto = _codigo.Trim();
         if (texto.Length == 0)
             return;
+        if (FolioTicket.IsMatch(texto))
+        {
+            _codigo = "";
+            await AbrirDevolucion(texto.ToUpperInvariant());
+            return;
+        }
 
         var cantidad = Cantidad.Piezas(1);
         var asterisco = texto.IndexOf('*');
@@ -476,9 +516,12 @@
     /// <summary>Lo llama la ventana de cobro. Devuelve el error para mostrarlo ahí, o null si se cobró.</summary>
     private async Task<string?> CobrarAsync(IReadOnlyList<CobroSolicitado> cobros)
     {
-        var lineas = Actual.Venta.Lineas.Select(l => l.VarianteId is null
-            ? new LineaSolicitada(null, null, l.Cantidad.Milesimas, l.Descripcion, l.PrecioCentavos)
-            : new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas)).ToList();
+        var lineas = Actual.Venta.Lineas.Select(l => l switch
+        {
+            { VarianteId: null } => new LineaSolicitada(null, null, l.Cantidad.Milesimas, l.Descripcion, l.PrecioCentavos),
+            { PrecioCambiado: true } => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas, null, l.PrecioCentavos, l.AutorizacionPrecioId),
+            _ => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas),
+        }).ToList();
         try
         {
             var ticket = await Cliente.CobrarAsync(new SolicitudCobro(Caja.Id, Turno.Id, Sesion.UsuarioId, lineas, cobros));
@@ -558,6 +601,60 @@
         }
     }
 
+    // ── Cambiar precio (Ctrl+E) ─────────────────────────────────────────────
+
+    private VentaLinea? LineaSeleccionada =>
+        _seleccion >= 0 && _seleccion < Actual.Venta.Lineas.Count ? Actual.Venta.Lineas[_seleccion] : null;
+
+    private async Task AbrirCambioPrecio()
+    {
+        switch (LineaSeleccionada)
+        {
+            case null: Avisar("Selecciona un renglón (flechas) para cambiar su precio."); break;
+            case { VarianteId: null }: Avisar("El artículo común ya lleva el precio que se escribió: bórralo y agrégalo de nuevo."); break;
+            default: await Abrir(Ventanas.CambiarPrecio); break;
+        }
+    }
+
+    /// <summary>Queda en la venta con su autorización; el servicio la revisa y la gasta al cobrar.</summary>
+    private async Task PrecioCambiadoAsync((long Precio, Guid? AutorizacionId) cambio)
+    {
+        var linea = LineaSeleccionada!;
+        await Cerrar();
+        try
+        {
+            Actual.Venta.CambiarPrecio(linea, cambio.Precio, cambio.AutorizacionId);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Avisar(ex.Message);
+        }
+    }
+
+    // ── Devoluciones y cancelaciones ────────────────────────────────────────
+
+    private static readonly Regex FolioTicket = new(@"^[A-Za-z]{1,3}-\d{6,}$");
+
+    private string? _folioDevolucion;
+
+    private async Task AbrirDevolucion(string? folio)
+    {
+        _folioDevolucion = folio;
+        // Si ya estaba abierta (desde ventas del día), se vuelve a crear con el folio nuevo.
+        _ventana = Ventanas.Ninguna;
+        StateHasChanged();
+        await Abrir(Ventanas.Devolucion);
+    }
+
+    private async Task DevolucionHechaAsync(ComprobanteDevolucionDto comprobante)
+    {
+        await Cerrar();
+        Avisar($"{(comprobante.EsCancelacion ? "Ticket cancelado" : "Devolución registrada")}: entrega {Formato.Dinero(comprobante.ReembolsoEfectivoCentavos)} en efectivo.", error: false);
+        await ImprimirDocumentoAsync($"{(comprobante.EsCancelacion ? "Cancelación" : "Devolución")} {comprobante.Folio}",
+            DisenoComprobante.Devolucion(comprobante), abrirCajon: comprobante.ReembolsoEfectivoCentavos > 0);
+        await RevisarEfectivoAsync();
+    }
+
     // ── Efectivo en caja ────────────────────────────────────────────────────
 
     private EfectivoCajaDto? _efectivo;
@@ -594,6 +691,8 @@
         {
             // Sin conexión no hay aviso; lo demás ya muestra el error.
         }
+        // Lo llaman callbacks de las ventanas que no vuelven a dibujar esta pantalla.
+        StateHasChanged();
     }
 
     // ── Ventanas y avisos ───────────────────────────────────────────────────

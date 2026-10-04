@@ -1,0 +1,102 @@
+@* El encargado confirma que cada transferencia llegó a la cuenta, o la rechaza. *@
+@inject ClienteCaja Cliente
+
+<div class="dos-columnas">
+    <label>Usuario del encargado <input @bind="_usuario" autocomplete="off" /></label>
+    <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" /></label>
+</div>
+@if (_error is not null)
+{
+    <p class="error">@_error</p>
+}
+@if (_transferencias is null)
+{
+    <p>Cargando…</p>
+}
+else if (_transferencias.Count == 0)
+{
+    <p class="vacia">No hay transferencias en los últimos 30 días.</p>
+}
+else
+{
+    <div class="resultados">
+        <table>
+            <thead><tr><th>Folio</th><th>Fecha</th><th>Cajero</th><th>Referencia</th><th class="num">Monto</th><th>Estado</th><th></th></tr></thead>
+            @foreach (var t in _transferencias)
+            {
+                var transferencia = t;
+                <tr>
+                    <td>@t.Folio</td>
+                    <td>@t.FechaLocal.ToString("dd/MM HH:mm")</td>
+                    <td>@t.Cajero</td>
+                    <td>@t.Referencia</td>
+                    <td class="num">@Formato.Dinero(t.MontoCentavos)</td>
+                    <td class="@(t.Verificacion == Verificacion.Rechazada ? "error" : "")">@Estado(t.Verificacion)</td>
+                    <td>
+                        @if (t.Verificacion == Verificacion.PorVerificar)
+                        {
+                            <button class="boton chico" disabled="@_ocupado" @onclick="() => VerificarAsync(transferencia, true)">Llegó</button>
+                            <button class="boton chico" disabled="@_ocupado" @onclick="() => VerificarAsync(transferencia, false)">Rechazar</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </table>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+
+    private List<TransferenciaDto>? _transferencias;
+    private string _usuario = "";
+    private string _pin = "";
+    private string? _error;
+    private bool _ocupado;
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            _transferencias = await Cliente.TransferenciasAsync(Caja.SucursalId);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task VerificarAsync(TransferenciaDto t, bool llego)
+    {
+        if (_usuario.Trim().Length == 0 || _pin.Length == 0)
+        {
+            _error = "Escribe el usuario y PIN del encargado.";
+            return;
+        }
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            await Cliente.VerificarTransferenciaAsync(t.CobroId, new SolicitudVerificacion(_usuario, _pin, llego));
+            await CargarAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private static string Estado(Verificacion v) => v switch
+    {
+        Verificacion.PorVerificar => "Por verificar",
+        Verificacion.Verificada => "Llegó",
+        Verificacion.Rechazada => "Rechazada",
+        _ => "",
+    };
+}

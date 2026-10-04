@@ -14,19 +14,32 @@ else if (_ventas.Count == 0)
 }
 else
 {
-    <p><strong>@_ventas.Count</strong> ventas · <strong>@Formato.Dinero(_ventas.Sum(v => v.TotalCentavos))</strong></p>
+    var cobradas = _ventas.Where(v => !v.Cancelada).ToList();
+    <p>
+        <strong>@cobradas.Count</strong> ventas · <strong>@Formato.Dinero(cobradas.Sum(v => v.TotalCentavos))</strong>
+        @if (_ventas.Count > cobradas.Count)
+        {
+            <span> · @(_ventas.Count - cobradas.Count) canceladas</span>
+        }
+    </p>
     <div class="resultados">
         <table>
             <thead><tr><th>Folio</th><th>Hora</th><th>Cajero</th><th class="num">Artículos</th><th class="num">Total</th><th></th></tr></thead>
             @foreach (var v in _ventas)
             {
-                <tr>
-                    <td>@v.Folio</td>
+                <tr class="@(v.Cancelada ? "negado" : "")">
+                    <td>@v.Folio@(v.Cancelada ? " (cancelado)" : "")</td>
                     <td>@v.FechaLocal.ToString("HH:mm")</td>
                     <td>@v.Cajero</td>
                     <td class="num">@v.Articulos</td>
                     <td class="num">@Formato.Dinero(v.TotalCentavos)</td>
-                    <td><button class="boton chico" @onclick="() => ReimprimirAsync(v.Id)">Reimprimir</button></td>
+                    <td>
+                        <button class="boton chico" @onclick="() => ReimprimirAsync(v.Id)">Reimprimir</button>
+                        @if (!v.Cancelada)
+                        {
+                            <button class="boton chico" @onclick="() => AlDevolver.InvokeAsync(v.Folio)">Devolver / cancelar</button>
+                        }
+                    </td>
                 </tr>
             }
         </table>
@@ -37,6 +50,8 @@ else
     [Parameter, EditorRequired] public Guid CajaId { get; set; }
     /// <summary>La pantalla de venta pide el motivo y reimprime.</summary>
     [Parameter] public EventCallback<Guid> AlReimprimir { get; set; }
+    /// <summary>Abre la devolución o cancelación con el folio ya escrito.</summary>
+    [Parameter] public EventCallback<string> AlDevolver { get; set; }
 
     private List<VentaDelDiaDto>? _ventas;
     private string? _error;
