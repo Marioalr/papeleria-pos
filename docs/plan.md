@@ -170,6 +170,8 @@ Fase 1:
 - [x] Entrega 2: control (cancelar, devolver, cambio de precio, transferencias, reglas y bitácora)
 - [x] Revisar el [plan de la entrega 3](fase-1-varias-cajas.md) (varias cajas y contingencia) y contestar sus preguntas
 - [x] Entrega 3: varias cajas (falta instalarla en la caja principal y probarla con las tres cajas)
+- [ ] Revisar el [plan de la entrega 4](fase-1-telegram.md) (Telegram) y contestar sus preguntas
+- [ ] Entrega 4: Telegram
 - [ ] Descuentos: definirlos con el módulo de impresión (entrega 5)
 
 Fase 3:
