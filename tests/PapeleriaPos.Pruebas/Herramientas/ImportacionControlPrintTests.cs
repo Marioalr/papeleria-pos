@@ -45,6 +45,21 @@ public sealed class ImportacionControlPrintTests : IDisposable
     }
 
     [Fact]
+    public void Lee_la_impresora_que_vigila_control_print()
+    {
+        CrearBase(JsonSerializer.Serialize(new CostSettings(), CostSettings.Json));
+        using (var conexion = new SqliteConnection($"Data Source={_ruta};Pooling=False"))
+        {
+            conexion.Open();
+            using var comando = conexion.CreateCommand();
+            comando.CommandText = """INSERT INTO settings (key, value) VALUES ('app', '{"PrinterHost":" 10.0.0.7 ","PrinterQueue":"EPSON"}')""";
+            comando.ExecuteNonQuery();
+        }
+
+        Assert.Equal("10.0.0.7", ImportacionControlPrint.LeerImpresora(_ruta));
+    }
+
+    [Fact]
     public void Sin_configuracion_avisa()
     {
         CrearBase(null);

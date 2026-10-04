@@ -171,7 +171,7 @@ public class ImpresoraApiTests(ServicioConImpresora servicio) : IClassFixture<Se
         // Sin el tope en cero: lo que contó la impresora menos lo registrado.
         static long Diferencia(ComparacionContadorDto? c) => c is null ? 0 : c.Contadas - c.CarasImpresas - c.CarasCopias;
         Assert.Equal(4, Diferencia(despues.Hoy) - Diferencia(antes.Hoy));
-        Assert.True(despues.Hoy.CarasCopias >= 5);
+        Assert.True(despues.Hoy!.CarasCopias >= 5);
         Assert.Equal(HttpStatusCode.BadRequest, (await http.PostAsJsonAsync("api/impresiones/copias",
             new SolicitudCopias(Guid.NewGuid(), caja.Id, cajero.UsuarioId, 0, false, "Carta", false, null, null))).StatusCode);
     }

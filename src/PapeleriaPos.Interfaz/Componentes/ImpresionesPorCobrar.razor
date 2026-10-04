@@ -1,4 +1,4 @@
-@* F2: lo impreso en la WF-6590 que falta cobrar, de todas las PC. Se eligen los trabajos del cliente y entran al
+@* F2: lo impreso en la WF-6590 que falta cobrar, de todas las PC, y las copias del panel. Se eligen los trabajos del cliente y entran al
    ticket en una sola línea "Impresiones". El costo solo lo ve el dueño. *@
 @inject ClienteCaja Cliente
 
@@ -28,9 +28,47 @@ else if (_noVendida is { } marcada)
         <button class="boton principal" disabled="@_ocupado" @onclick="MarcarNoVendidaAsync">Marcar no vendida</button>
     </div>
 }
+else if (_copias)
+{
+    <p>Copias hechas en el panel de la impresora: se registran al cobrarlas y cuentan contra su contador.</p>
+    <div class="dos-columnas">
+        <label>Cuántas copias <input type="number" min="1" max="9999" @bind="_cantidad" @bind:after="PrecioCopiasAsync" /></label>
+        <label>Color
+            <select @bind="_color" @bind:after="PrecioCopiasAsync">
+                <option value="false">Blanco y negro</option>
+                <option value="true">Color</option>
+            </select>
+        </label>
+        <label>Tamaño
+            <select @bind="_tamano" @bind:after="PrecioCopiasAsync">
+                <option value="Carta">Carta</option>
+                <option value="Oficio">Oficio</option>
+                <option value="A4">A4</option>
+            </select>
+        </label>
+        <label class="en-linea opcion"><input type="checkbox" @bind="_duplex" @bind:after="PrecioCopiasAsync" /> Doble cara</label>
+        <label>Se cobra <input inputmode="decimal" @bind="Cobrado" @bind:event="oninput" autocomplete="off" /></label>
+        <label>Nota (opcional) <input @bind="_notaCopias" autocomplete="off" /></label>
+    </div>
+    @if (_precioCopias is { } sugerido)
+    {
+        <p class="nota">Precio sugerido: @Formato.Dinero(sugerido.PrecioCentavos) (@sugerido.Descripcion), con la tinta típica y el papel.</p>
+    }
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    <div class="acciones">
+        <button class="boton" @onclick="() => _copias = false">Volver</button>
+        <button class="boton principal" disabled="@(_ocupado || _precioCopias is null)" @onclick="RegistrarCopiasAsync">Registrar y elegir</button>
+    </div>
+}
 else if (_trabajos.Count == 0)
 {
     <p class="vacia">No hay impresiones por cobrar.</p>
+    <div class="acciones">
+        <button class="boton" @onclick="AbrirCopiasAsync">Copias del panel</button>
+    </div>
 }
 else
 {
@@ -48,16 +86,40 @@ else
                             <img class="miniatura" src="data:image/png;base64,@miniatura" alt="" />
                         }
                     </td>
-                    <td>@t.Documento</td>
+                    <td>
+                        @if (t.Tipo == TipoTrabajoImpresion.Copia)
+                        {
+                            <span class="etiqueta">Copias</span>
+                        }
+                        @t.Documento
+                        @if (t.CarasContadas is { } contadas && contadas < t.Caras)
+                        {
+                            <div class="salieron">La impresora contó @contadas de @t.Caras caras: atasco o cancelación.</div>
+                        }
+                    </td>
                     <td>@t.Pc · @t.FechaLocal.ToString("HH:mm")@(t.Atendio is { } a ? $" · {a}" : "")</td>
                     <td class="num">@t.Paginas@(t.Caras != t.Paginas ? $" ({t.Caras} caras)" : "")</td>
                     <td>@(t.Color ? "Color" : "B/N") · @t.Tamano</td>
-                    <td class="num">@Formato.Dinero(t.PrecioCentavos)</td>
+                    <td class="num">
+                        @Formato.Dinero(t.PrecioCentavos)
+                        @if (t.PrecioCompletoCentavos is { } completo)
+                        {
+                            <div class="nota">@(t.Tipo == TipoTrabajoImpresion.Copia ? "sugerido" : "completo") @Formato.Dinero(completo)</div>
+                        }
+                    </td>
                     @if (EsDueno)
                     {
                         <td class="num">@(t.Costo is { } c ? Formato.Dinero(c.TotalCentavos) : "")</td>
                     }
-                    <td><button class="boton chico" @onclick:stopPropagation="true" @onclick="() => _noVendida = trabajo">No vendida</button></td>
+                    <td>
+                        @if (t.PrecioSoloLoQueSalioCentavos is { } parcial)
+                        {
+                            <button class="boton chico" disabled="@_ocupado" @onclick:stopPropagation="true" @onclick="() => SoloLoQueSalioAsync(trabajo)">
+                                Cobrar lo que salió (@Formato.Dinero(parcial))
+                            </button>
+                        }
+                        <button class="boton chico" @onclick:stopPropagation="true" @onclick="() => _noVendida = trabajo">No vendida</button>
+                    </td>
                 </tr>
             }
         </table>
@@ -68,6 +130,7 @@ else
     }
     <div class="acciones">
         <span class="total-elegido">@_elegidos.Count elegidas · @Formato.Dinero(_trabajos.Where(t => _elegidos.Contains(t.Id)).Sum(t => t.PrecioCentavos))</span>
+        <button class="boton" @onclick="AbrirCopiasAsync">Copias del panel</button>
         <button class="boton principal" disabled="@(_elegidos.Count == 0)" @onclick="AgregarAsync">Agregar al ticket</button>
     </div>
 }
@@ -129,6 +192,104 @@ else
             await Cliente.NoVendidaAsync(_noVendida!.Id, new SolicitudNoVendida(Sesion.UsuarioId, _motivo, _nota));
             _elegidos.Remove(_noVendida.Id);
             (_noVendida, _nota) = (null, "");
+            await CargarAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    // ── Cobrar solo lo que salió ─────────────────────────────────────────────
+
+    private async Task SoloLoQueSalioAsync(ImpresionPorCobrarDto trabajo)
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            var actualizado = await Cliente.SoloLoQueSalioAsync(trabajo.Id, new SolicitudSoloLoQueSalio(Sesion.UsuarioId));
+            _trabajos![_trabajos.IndexOf(trabajo)] = actualizado;
+            _elegidos.Add(actualizado.Id);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    // ── Copias del panel ────────────────────────────────────────────────────
+
+    private bool _copias;
+    private int _cantidad = 1;
+    private bool _color;
+    private string _tamano = "Carta";
+    private bool _duplex;
+    private string _cobrado = "";
+    private bool _cobradoAMano;
+    private int _pedido;
+    private string _notaCopias = "";
+    private PrecioCopiasDto? _precioCopias;
+
+    private string Cobrado
+    {
+        get => _cobrado;
+        set => (_cobrado, _cobradoAMano) = (value, true);
+    }
+
+    private async Task AbrirCopiasAsync()
+    {
+        (_copias, _error, _cantidad, _color, _tamano, _duplex, _notaCopias, _cobradoAMano) = (true, null, 1, false, "Carta", false, "", false);
+        await PrecioCopiasAsync();
+    }
+
+    /// <summary>
+    /// Con cada cambio, el precio sugerido; lo que se cobra lo sigue hasta que se escriba otro. Si llegan dos cambios
+    /// seguidos, solo cuenta la respuesta del último.
+    /// </summary>
+    private async Task PrecioCopiasAsync()
+    {
+        _error = null;
+        var pedido = ++_pedido;
+        try
+        {
+            var precio = await Cliente.PrecioCopiasAsync(new SolicitudPrecioCopias(Caja.SucursalId, _cantidad, _color, _tamano, _duplex));
+            if (pedido != _pedido)
+                return;
+            _precioCopias = precio;
+            if (!_cobradoAMano)
+                _cobrado = (precio.PrecioCentavos / 100m).ToString("0.##", CultureInfo.InvariantCulture);
+        }
+        catch (ErrorCaja ex)
+        {
+            if (pedido == _pedido)
+                (_precioCopias, _error) = (null, ex.Message);
+        }
+    }
+
+    private async Task RegistrarCopiasAsync()
+    {
+        _error = null;
+        if (Formato.LeerPesos(_cobrado) is not { } cobrado)
+        {
+            _error = "Escribe cuánto se cobra.";
+            return;
+        }
+        _ocupado = true;
+        try
+        {
+            var copias = await Cliente.RegistrarCopiasAsync(new SolicitudCopias(Ids.Nuevo(), Caja.Id, Sesion.UsuarioId, _cantidad, _color,
+                _tamano, _duplex, cobrado, _notaCopias));
+            _elegidos.Add(copias.Id);
+            (_copias, _precioCopias, _cobrado) = (false, null, "");
             await CargarAsync();
         }
         catch (ErrorCaja ex)

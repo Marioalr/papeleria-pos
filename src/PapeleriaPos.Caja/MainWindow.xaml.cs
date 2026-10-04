@@ -95,6 +95,8 @@ public partial class MainWindow : Window
         var impresora = Impresoras.Crear(configuracion.Impresora, nombre => new ImpresoraWindows(nombre));
         // La copia para vender sin la caja principal y la bandeja de salida, junto a la configuración de la caja.
         servicios.AgregarInterfazCaja(conexion, impresora, ConfiguracionCaja.BaseLocal);
+        // Cotizar: el PDF se mide aquí, en la PC donde está; el precio lo pone la caja principal.
+        servicios.AddSingleton<IMedidorPdf, MedidorPdfWindows>();
         var proveedor = servicios.BuildServiceProvider();
         Vista.Services = proveedor;
         IniciarAgente(configuracion, conexion, proveedor.GetRequiredService<Contingencia>());

@@ -28,6 +28,14 @@ function alPresionar(e) {
     const ctrlE = e.ctrlKey && (tecla === 'e' || tecla === 'E');
     const funcion = /^F([1-9]|1[0-2])$/.test(tecla);
 
+    // Ctrl+Q: cotizar a una tecla. El selector de archivos solo se abre desde la tecla misma, no después.
+    if (e.ctrlKey && (tecla === 'q' || tecla === 'Q')) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!hayVentana) document.getElementById('pdf-cotizar')?.click();
+        return;
+    }
+
     let atrapar;
     if (hayVentana) {
         atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE;
@@ -54,4 +62,9 @@ export function enfocar(selector) {
 
 export function mostrar(selector) {
     document.querySelector(selector)?.scrollIntoView({ block: 'nearest' });
+}
+
+// El resumen de una cotización, para pegarlo en WhatsApp.
+export async function copiar(texto) {
+    await navigator.clipboard.writeText(texto);
 }

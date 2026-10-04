@@ -16,6 +16,8 @@
   <ItemGroup>
     <ProjectReference Include="..\PapeleriaPos.Nucleo\PapeleriaPos.Nucleo.csproj" />
     <ProjectReference Include="..\PapeleriaPos.Impresion\PapeleriaPos.Impresion.csproj" />
+    <!-- IMedidorPdf: cotizar mide el PDF en la PC donde está (la ventana de Windows pone el medidor). -->
+    <ProjectReference Include="..\PapeleriaPos.Medicion\PapeleriaPos.Medicion.csproj" />
   </ItemGroup>
 
 </Project>

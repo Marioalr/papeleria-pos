@@ -1,0 +1,248 @@
+@* La impresora vista desde la caja principal: niveles, contador contra lo registrado, cómo se lee (solo el dueño), la
+   calibración de la tinta y el desglose de las impresiones del día (dueño y encargado; el costo, solo el dueño). *@
+@inject ClienteCaja Cliente
+
+@if (_estado is null)
+{
+    <p>@(_error ?? "Cargando…")</p>
+}
+else
+{
+    @if (_estado.Configuracion.Host is null)
+    {
+        <p class="nota">Escribe la IP de la impresora (la WF-6590) para leer sus niveles y su contador desde la caja principal.</p>
+    }
+    else if (_estado.Ultima is { } u)
+    {
+        <div class="niveles">
+            @foreach (var (nombre, nivel, color) in Niveles(u))
+            {
+                <div class="nivel @(nivel <= _estado.Configuracion.AvisoTintaPorcentaje ? "bajo" : "")">
+                    <span>@nombre: <strong>@(nivel is { } n ? $"{n} %" : "—")</strong></span>
+                    <div class="barra"><span style="width: @(nivel ?? 0)%; background: @color"></span></div>
+                </div>
+            }
+        </div>
+        <p class="nota">
+            Leída a las @u.TomadaLocal.ToString("HH:mm") del @u.TomadaLocal.ToString("dd/MM")
+            @(u.Contador is { } c ? $" · contador {c:N0} caras" : "")@(u.ContadorColor is { } cc ? $" ({cc:N0} color, {u.ContadorBN:N0} B/N)" : "")
+            @(u.Serie is { } s ? $" · serie {s}" : "")
+        </p>
+    }
+    @if (_estado.Error is { } error)
+    {
+        <p class="error">No respondió: @error</p>
+    }
+    @if (_estado.Hoy is { } hoy)
+    {
+        <p>
+            Hoy, desde las @hoy.DesdeLocal.ToString("HH:mm"), la impresora contó <strong>@hoy.Contadas.ToString("N0")</strong> caras; registradas
+            @((hoy.CarasImpresas + hoy.CarasCopias).ToString("N0")) (@hoy.CarasImpresas.ToString("N0") desde las PC y @hoy.CarasCopias.ToString("N0") en copias cobradas).
+            @if (hoy.SinRegistrar == 0)
+            {
+                <span>No hay caras sin registrar.</span>
+            }
+            else
+            {
+                <strong class="salieron">Sin registrar: @hoy.SinRegistrar.ToString("N0")@(hoy.SinRegistrarColor is { } sc ? $" ({hoy.SinRegistrar - sc:N0} B/N y {sc:N0} color)" : "")</strong>
+                <span class="nota">: copias sin cobrar, impresiones desde el celular o páginas de prueba.</span>
+            }
+        </p>
+    }
+    <div class="acciones">
+        <button class="boton" disabled="@(_ocupado || _estado.Configuracion.Host is null)" @onclick="LeerAsync">Leer ahora</button>
+    </div>
+
+    <h4>Cómo se lee (solo el dueño)</h4>
+    <div class="dos-columnas">
+        <label>IP de la impresora <input @bind="_host" placeholder="192.168.1.50" autocomplete="off" /></label>
+        <label>Avisar por Telegram con tinta en (%) o menos <input type="number" min="0" max="100" @bind="_aviso" /></label>
+        <label>Leer cada (minutos) <input type="number" min="1" max="120" @bind="_minutos" /></label>
+        <span></span>
+        <label>Usuario del dueño <input @bind="_usuario" autocomplete="off" /></label>
+        <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" /></label>
+    </div>
+    <div class="acciones">
+        <button class="boton principal" disabled="@_ocupado" @onclick="GuardarAsync">Guardar</button>
+    </div>
+
+    <h4>Calibración de la tinta</h4>
+    @if (_calibracion is { } cal)
+    {
+        <p class="nota">
+            Lo que bajaron los niveles en la impresora contra lo que estimó el cálculo@(cal.DesdeLocal is { } d ? $", desde el {d:dd/MM}" : "").
+            La impresora contó @cal.CarasImpresora.ToString("N0") caras y el POS registró @cal.CarasRegistradas.ToString("N0").
+            @(cal.AplicadaLocal is { } a ? $"Última aplicada: {a:dd/MM HH:mm}." : "Todavía no se ha aplicado.")
+        </p>
+        <table class="resultados">
+            <thead><tr><th>Tinta</th><th class="num">Bajó en la impresora</th><th class="num">Estimado</th><th class="num">Corrección</th><th class="num">Actual</th><th>Datos</th></tr></thead>
+            @foreach (var c in cal.Canales)
+            {
+                <tr>
+                    <td>@c.Canal</td>
+                    <td class="num">@c.Observado.ToString("0.#") puntos</td>
+                    <td class="num">@c.Estimado.ToString("0.#") puntos</td>
+                    <td class="num">× @c.Factor.ToString("0.000")</td>
+                    <td class="num">× @c.Actual.ToString("0.000")</td>
+                    <td>@c.Calidad</td>
+                </tr>
+            }
+        </table>
+        <p class="nota">
+            Caja de mantenimiento: @(cal.PaginasPorCaja is { } p ? $"{p:N0} caras por caja según la impresora" : "todavía sin datos")
+            (hoy se calcula con @cal.PaginasPorCajaActual.ToString("N0")).
+        </p>
+        @foreach (var cambio in cal.Cambios)
+        {
+            <p class="nota">Cambio: @cambio</p>
+        }
+        <p class="nota">Mientras el agente vigile la cola de laboratorio, lo registrado no sale de la impresora: no apliques la calibración hasta usar la cola real.</p>
+        <div class="acciones">
+            <button class="boton" disabled="@_ocupado" @onclick="AplicarCalibracionAsync">Aplicar la corrección (usuario y PIN del dueño)</button>
+        </div>
+    }
+
+    @if (Sesion.Rol is Rol.Dueno or Rol.Encargado)
+    {
+        <h4>Impresiones del día</h4>
+        <div class="acciones izquierda">
+            <input type="date" @bind="_fecha" @bind:after="CargarDiaAsync" />
+        </div>
+        @if (_dia is { } dia)
+        {
+            <p>
+                Cobradas @Formato.Dinero(dia.Where(t => t.Cobro == EstadoCobroImpresion.Cobrada).Sum(t => t.PrecioCentavos))
+                · por cobrar @Formato.Dinero(dia.Where(t => t.Cobro == EstadoCobroImpresion.PorCobrar).Sum(t => t.PrecioCentavos))
+                · no vendidas @dia.Count(t => t.Cobro == EstadoCobroImpresion.NoVendida)
+                @if (Sesion.Rol == Rol.Dueno)
+                {
+                    <span> · costo de todo @Formato.Dinero(dia.Sum(t => t.Costo?.TotalCentavos ?? 0))</span>
+                }
+            </p>
+            <div class="resultados">
+                <table>
+                    <thead><tr><th>Hora</th><th>Documento</th><th>PC</th><th class="num">Caras</th><th class="num">Precio</th><th>Cobro</th>@if (Sesion.Rol == Rol.Dueno) {<th class="num">Costo</th>}</tr></thead>
+                    @foreach (var t in dia)
+                    {
+                        <tr>
+                            <td>@t.FechaLocal.ToString("HH:mm")</td>
+                            <td>@(t.Tipo == TipoTrabajoImpresion.Copia ? "Copias: " : "")@t.Documento</td>
+                            <td>@t.Pc@(t.Atendio is { } a ? $" · {a}" : "")</td>
+                            <td class="num">@(t.CarasContadas is { } c && c < t.Caras ? $"{c} de {t.Caras}" : t.Caras.ToString())</td>
+                            <td class="num">@Formato.Dinero(t.PrecioCentavos)</td>
+                            <td>@Cobro(t)</td>
+                            @if (t.Costo is { } costo)
+                            {
+                                <td class="num">@Formato.Dinero(costo.TotalCentavos)</td>
+                            }
+                        </tr>
+                    }
+                </table>
+            </div>
+        }
+    }
+
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_avisoTexto is not null)
+    {
+        <p class="aviso">@_avisoTexto</p>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    private EstadoImpresoraDto? _estado;
+    private CalibracionDto? _calibracion;
+    private List<ImpresionDelDiaDto>? _dia;
+    private DateOnly _fecha = DateOnly.FromDateTime(DateTime.Now);
+    private string _host = "";
+    private int _aviso;
+    private int _minutos;
+    private string _usuario = "";
+    private string _pin = "";
+    private string? _error;
+    private string? _avisoTexto;
+    private bool _ocupado;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await HacerAsync(async () =>
+        {
+            Mostrar(await Cliente.ImpresoraAsync(Caja.SucursalId));
+            _calibracion = await Cliente.CalibracionAsync(Caja.SucursalId);
+        });
+        await CargarDiaAsync();
+    }
+
+    private void Mostrar(EstadoImpresoraDto estado)
+    {
+        _estado = estado;
+        (_host, _aviso, _minutos) = (estado.Configuracion.Host ?? "", estado.Configuracion.AvisoTintaPorcentaje, estado.Configuracion.MinutosEntreLecturas);
+    }
+
+    private async Task CargarDiaAsync()
+    {
+        if (Sesion.Rol is not (Rol.Dueno or Rol.Encargado))
+            return;
+        await HacerAsync(async () => _dia = await Cliente.ImpresionesDelDiaAsync(Caja.SucursalId, _fecha, Sesion.UsuarioId));
+    }
+
+    private Task LeerAsync() => HacerAsync(async () => Mostrar(await Cliente.LeerImpresoraAsync(Caja.SucursalId)));
+
+    private Task GuardarAsync() => HacerAsync(async () =>
+    {
+        Mostrar(await Cliente.GuardarImpresoraAsync(Caja.SucursalId,
+            new SolicitudConfiguracionImpresora(_usuario, _pin, new ConfiguracionImpresoraDto(_host, _aviso, _minutos))));
+        _avisoTexto = _estado!.Error is null ? "Guardado." : "Guardado, pero la impresora no respondió.";
+    });
+
+    private Task AplicarCalibracionAsync() => HacerAsync(async () =>
+    {
+        _calibracion = await Cliente.AplicarCalibracionAsync(Caja.SucursalId, new SolicitudCredenciales(_usuario, _pin));
+        _avisoTexto = "Corrección aplicada: las impresiones nuevas ya salen con ella.";
+    });
+
+    private async Task HacerAsync(Func<Task> accion)
+    {
+        (_error, _avisoTexto, _ocupado) = (null, null, true);
+        try
+        {
+            await accion();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private static IEnumerable<(string Nombre, int? Nivel, string Color)> Niveles(LecturaImpresoraDto u)
+    {
+        yield return ("Negro", u.TintaK, "#222");
+        yield return ("Cian", u.TintaC, "#00a0d6");
+        yield return ("Magenta", u.TintaM, "#d6007a");
+        yield return ("Amarillo", u.TintaY, "#e6c200");
+        yield return ("Caja de mantenimiento", u.Mantenimiento, "#7a8a99");
+    }
+
+    private static string Cobro(ImpresionDelDiaDto t) => t.Cobro switch
+    {
+        EstadoCobroImpresion.Cobrada => "Cobrada",
+        EstadoCobroImpresion.NoVendida => t.Motivo switch
+        {
+            MotivoNoVendida.NoEraLoQueQueria => "No vendida: no era lo que quería",
+            MotivoNoVendida.SalioMal => "No vendida: salió mal",
+            MotivoNoVendida.Atasco => "No vendida: atasco",
+            _ => "No vendida: otro",
+        },
+        _ => "Por cobrar",
+    };
+}

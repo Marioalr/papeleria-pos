@@ -22,6 +22,8 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
 
     public async Task MostrarAsync(string selector) => await (await Modulo).InvokeVoidAsync("mostrar", selector);
 
+    public async Task CopiarAsync(string texto) => await (await Modulo).InvokeVoidAsync("copiar", texto);
+
     public async ValueTask DisposeAsync()
     {
         if (_modulo is { IsCompletedSuccessfully: true })

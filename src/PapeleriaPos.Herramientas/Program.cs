@@ -39,7 +39,8 @@ static int Ayuda()
 
           importar-control-print --base pos.db [--control-print controlprint.db]
               Copia la configuración de costos de Control Print (tinta, papel, márgenes, calibración) a todas las
-              sucursales. Sus trabajos no se importan. Por omisión lee la base de Control Print de esta PC.
+              sucursales, y la IP de su impresora si hay una sola sucursal. Sus trabajos no se importan. Por
+              omisión lee la base de Control Print de esta PC.
 
           preparar-caja --base ficticios.db
               Da de alta la Caja 1 y usuarios de prueba (ver README) en una base de prueba.
@@ -250,10 +251,26 @@ static async Task<int> ImportarControlPrintAsync(string[] args)
     await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={ruta}"));
     await BaseDeDatos.PrepararAsync(db);
     var registro = new RegistroImpresiones(db);
-    foreach (var sucursal in await db.Sucursales.ToListAsync())
+    var sucursales = await db.Sucursales.ToListAsync();
+    foreach (var sucursal in sucursales)
     {
         await registro.GuardarCostosAsync(sucursal.Id, costos);
         Console.WriteLine($"Costos de impresión copiados a {sucursal.Nombre}.");
+    }
+    // La impresora es de una sucursal: con varias, su IP se escribe en Configuración → Impresora.
+    if (ImportacionControlPrint.LeerImpresora(origen) is { } host)
+    {
+        if (sucursales.Count == 1)
+        {
+            var configuracion = await db.ConfiguracionesImpresion.SingleAsync();
+            configuracion.ImpresoraHost = host;
+            await db.SaveChangesAsync();
+            Console.WriteLine($"La caja principal leerá la impresora de {sucursales[0].Nombre} (la misma que lee Control Print).");
+        }
+        else
+        {
+            Console.WriteLine("Hay varias sucursales: escribe la IP de la impresora en Configuración → Impresora de la que la tiene.");
+        }
     }
     return 0;
 }

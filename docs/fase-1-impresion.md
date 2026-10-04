@@ -3,32 +3,53 @@
 > **Revisado.** Lo que hoy hace [Control Print](https://github.com/Marioalr/control-print) (v1.12),
 > dentro del POS: cada impresión de la WF-6590 se mide, se le pone precio y se cobra en el mismo ticket. Parte del
 > [módulo de impresión](impresion.md). Aquí también se definen los **descuentos** que quedaron pendientes en la
-**Avance:** la parte 1 ya funciona.
+> [entrega 2](fase-1-control.md).
+
+## Avance
+
+**Parte 1 (hecha):**
 
 - **Núcleo traído de Control Print:**
   - `PapeleriaPos.Medicion` calcula costos y precio; lo usa el servicio.
   - `PapeleriaPos.Medicion.Windows` lee el spool y mide la tinta.
-  - Las 50 pruebas de Control Print vienen junto con el código.
+  - Las pruebas de Control Print vienen junto con el código.
 - **Agente en la caja de cada PC** (`ColaImpresion` en la configuración de la caja). Manda cada trabajo por la bandeja, sin que la caja pase a modo sin conexión.
 - **F2 Impresiones por cobrar:** de todas las PC, con no vendidas que llevan motivo. El costo solo lo ve el dueño.
 - **Ticket:** una sola línea "Impresiones". Si se cancela o se devuelve, los trabajos vuelven a estar por cobrar.
 - **Importar la configuración de Control Print:** `importar-control-print`.
 
-Falta probarlo con impresiones de verdad en la cola de laboratorio. Las partes 2 y 3 siguen pendientes.
+**Parte 2 (hecha):**
+
+- **Cotizar a un botón (CTRL+Q):** se elige el PDF y sale el precio. La caja de Windows mide la tinta de cada página con el motor de PDF de Windows, igual que una impresión, y la caja principal pone el precio. Cada opción recalcula al instante: color, copias, páginas, tamaño, papel, calidad, páginas por hoja y doble cara. "Copiar resumen" deja el texto para WhatsApp, sin costos. El dueño ve además el costo y la ganancia. Solo funciona en la ventana de Windows: el navegador no tiene con qué medir el PDF.
+- **La impresora desde la caja principal:** lee por la red (SNMP y la página de estado) los niveles de tinta, la caja de mantenimiento y el contador.
+  - Lee cada 5 minutos y poco después de cada impresión.
+  - La IP se escribe en Configuración → Impresora; `importar-control-print` la trae si hay una sola sucursal.
+- **Verificación de hojas:** con el contador se sabe cuántas caras salieron de verdad. Si faltan (un atasco o una cancelación en el panel), F2 lo dice y ofrece "Cobrar lo que salió", y el costo baja a lo que se gastó.
+  - Si la verificación tiene dudas, no marca nada: puede no ver un faltante, pero nunca inventarlo.
+  - Necesita la hora en que cada trabajo entró a la cola, que manda el agente.
+- **Copias del panel (en F2):** cuántas, color, tamaño y doble cara. Se sugiere el precio con la tinta típica y se puede cobrar otro. Entran a la línea "Impresiones".
+- **Contador contra lo cobrado:** la pestaña Impresora y el resumen del día dicen cuántas caras contó la impresora sin que nadie las registrara: copias sin cobrar, el celular o páginas de prueba.
+- **Calibración:** compara lo que bajaron los niveles con lo que estimó el cálculo. El dueño la aplica con su PIN; no es automática, porque con la cola de laboratorio lo registrado no sale de la impresora.
+- **Avisos por Telegram:**
+  - una tinta o la caja de mantenimiento en el umbral (10 % por omisión), y cuando se cambia un consumible;
+  - la impresora sin responder 30 minutos en horario;
+  - una impresión incompleta.
+- **Desglose de la línea "Impresiones":** en la pestaña Impresora, todo lo impreso en el día y cómo se cobró. Lo ven el dueño y el encargado; el costo, solo el dueño.
+- **El resumen del día** suma las impresiones no vendidas (su costo) y el contador.
+
+**Mientras se prueba con la cola de laboratorio:** el POS registra impresiones que no salen de la impresora y la impresora cuenta lo que manda Control Print. La comparación con el contador y la calibración no sirven hasta pasar a la cola real. Los niveles y los avisos de tinta sí.
 
 **Probar con la cola de laboratorio** (sin papel, sin tocar la cola real de Control Print):
 
 1. Como administrador, correr `research\lab-setup.ps1` de Control Print. Crea "ControlPrint Lab (WF-6590)" con el mismo driver y salida a archivo.
 2. En `C:\ProgramData\PapeleriaPos\caja.json` de esa PC, poner `"ColaImpresion": "ControlPrint Lab (WF-6590)"`.
-3. Importar los costos:
+3. Importar los costos y la impresora:
 
    ```
    dotnet run --project src/PapeleriaPos.Herramientas -- importar-control-print --base <base del POS>
    ```
 
 4. Imprimir algo en la cola de laboratorio desde esa PC: aparece en F2 con su precio.
-
-> [entrega 2](fase-1-control.md).
 
 ## Qué se trae de Control Print
 

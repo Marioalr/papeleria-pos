@@ -39,6 +39,9 @@
         <button class="boton" @onclick="AbrirCambioPrecio">CTRL+E Cambiar precio</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Verificador)">F9 Verificador</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Impresiones)">F2 Impresiones</button>
+        @* Cotizar a un botón: la etiqueta abre el selector de archivos; al elegir el PDF se abre la cotización. *@
+        <label class="boton" for="pdf-cotizar" title="Elige un PDF y te dice cuánto cobrar">CTRL+Q Cotizar PDF</label>
+        <InputFile id="pdf-cotizar" class="oculto" accept=".pdf,application/pdf" onclick="this.value = ''" OnChange="PdfElegidoAsync" />
     </div>
 
     <nav class="pestanas">
@@ -187,6 +190,11 @@
                 <ImpresionesPorCobrar Caja="Caja" Sesion="Sesion" EnElTicket="@Actual.Impresiones.Select(i => i.Id).ToList()" AlAgregar="ImpresionesElegidasAsync" />
             </Ventana>
             break;
+        case Ventanas.Cotizar:
+            <Ventana Titulo="Cotizar PDF" Clase="ventas-dia" AlCerrar="Cerrar">
+                <Cotizar Caja="Caja" Sesion="Sesion" Archivo="_pdfACotizar" />
+            </Ventana>
+            break;
         case Ventanas.Transferencias:
             <Ventana Titulo="Verificar transferencias" Clase="ventas-dia" AlCerrar="Cerrar">
                 <VerificarTransferencias Caja="Caja" />
@@ -221,7 +229,7 @@
     private enum Ventanas
     {
         Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
-        CambiarPrecio, Transferencias, Impresiones,
+        CambiarPrecio, Transferencias, Impresiones, Cotizar,
     }
 
     private sealed class TicketAbierto
@@ -635,6 +643,18 @@
         // El costo no viaja a la caja: el servicio pone el de cada trabajo al cobrar.
         var linea = Actual.Venta.FijarImpresiones(elegidas.Sum(i => i.PrecioCentavos), 0);
         _seleccion = linea is null ? Math.Min(_seleccion, Actual.Venta.Lineas.Count - 1) : Actual.Venta.Lineas.IndexOf(linea);
+    }
+
+    // ── Cotizar (Ctrl+Q) ────────────────────────────────────────────────────
+
+    private IBrowserFile? _pdfACotizar;
+
+    private async Task PdfElegidoAsync(InputFileChangeEventArgs e)
+    {
+        if (_ventana != Ventanas.Ninguna)
+            await Cerrar();
+        _pdfACotizar = e.File;
+        await Abrir(Ventanas.Cotizar);
     }
 
     // ── Cambiar precio (Ctrl+E) ─────────────────────────────────────────────
