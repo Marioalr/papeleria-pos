@@ -40,11 +40,13 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
 
 public static class RegistroInterfaz
 {
-    /// <summary>Lo que necesita la interfaz de la caja; cada anfitrión (ventana de Windows o navegador) pone su impresora.</summary>
-    public static IServiceCollection AgregarInterfazCaja(this IServiceCollection servicios, Uri servicio, Guid? cajaId, IImpresora impresora)
+    /// <summary>Lo que necesita la interfaz de la caja; cada anfitrión (ventana de Windows o navegador) pone su conexión e impresora.</summary>
+    public static IServiceCollection AgregarInterfazCaja(this IServiceCollection servicios, ConexionCaja conexion, IImpresora impresora)
     {
-        servicios.AddScoped(_ => new ClienteCaja(new HttpClient { BaseAddress = servicio }));
-        servicios.AddSingleton(new OpcionesCaja { CajaId = cajaId });
+        // Sin respuesta en unos segundos, la caja avisa en lugar de quedarse congelada.
+        var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        servicios.AddSingleton(conexion);
+        servicios.AddScoped(_ => new ClienteCaja(http, conexion));
         servicios.AddSingleton(impresora);
         servicios.AddScoped<ModuloCaja>();
         return servicios;

@@ -37,7 +37,7 @@ public static class ApiControl
 {
     public static void MapearApiControl(this IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api").ConErrores();
+        var api = app.MapGroup("/api").ConErrores().SoloSuCaja();
 
         api.MapPost("/permisos", async (SolicitudPermiso s, PosDbContext db) =>
         {
@@ -99,7 +99,7 @@ public static class ApiControl
             var control = new ServicioControl(db);
             var dueno = await control.IdentificarAsync(s.Usuario, s.Pin, sucursalId, AccionControlada.EditarReglas);
             var guardadas = await db.ReglasPermiso.Where(r => r.SucursalId == sucursalId).ToListAsync();
-            foreach (var r in s.Reglas.Where(r => r.Rol != Rol.Dueno && r.Accion != AccionControlada.EditarReglas))
+            foreach (var r in s.Reglas.Where(r => r.Rol != Rol.Dueno && !Permisos.SoloDelDueno(r.Accion)))
             {
                 if (r.UmbralCentavos is <= 0)
                     throw new ArgumentException("Los umbrales deben ser mayores a cero.");
@@ -131,7 +131,7 @@ public static class ApiControl
 
     /// <summary>Todas las combinaciones acción × rol (sin el dueño), con la regla que aplica hoy en la sucursal.</summary>
     private static List<ReglaDto> ReglasEfectivas(List<ReglaPermiso> reglas, Guid sucursalId) =>
-        Enum.GetValues<AccionControlada>().Where(a => a != AccionControlada.EditarReglas)
+        Enum.GetValues<AccionControlada>().Where(a => !Permisos.SoloDelDueno(a))
             .SelectMany(a => new[] { Rol.Cajero, Rol.Encargado }.Select(rol =>
             {
                 var regla = reglas.FirstOrDefault(r => r.Accion == a && r.Rol == rol && r.SucursalId == sucursalId)

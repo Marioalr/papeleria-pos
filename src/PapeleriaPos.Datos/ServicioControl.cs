@@ -122,7 +122,7 @@ public sealed class ServicioControl(PosDbContext db)
         return resultado switch
         {
             ResultadoPin.Correcto when puede => encontrado!,
-            ResultadoPin.Correcto => throw new InvalidOperationException(accion == AccionControlada.EditarReglas
+            ResultadoPin.Correcto => throw new InvalidOperationException(Permisos.SoloDelDueno(accion)
                 ? "Esto lo autoriza el dueño."
                 : "Esto lo autoriza el encargado o el dueño."),
             ResultadoPin.Bloqueado => throw new InvalidOperationException("Demasiados intentos: espera unos minutos."),

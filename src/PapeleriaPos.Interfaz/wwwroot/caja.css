@@ -141,3 +141,7 @@ input.cantidad-devolver { width: 80px; text-align: right; font-size: 15px; paddi
 .filtros-bitacora { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .filtros-bitacora input { font-size: 14px; width: 130px; }
 tr.negado td { color: var(--error); }
+
+/* Entrega 3: alta de la caja */
+.opciones-caja { display: flex; flex-direction: column; gap: 6px; }
+label.opcion { flex-direction: row; align-items: center; gap: 8px; font-size: 15px; color: var(--texto); }

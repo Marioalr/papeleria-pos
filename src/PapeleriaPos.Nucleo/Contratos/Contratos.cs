@@ -44,7 +44,8 @@ public sealed record SolicitudEntrada(string Usuario, string Pin);
 
 public sealed record SesionDto(Guid UsuarioId, string Nombre, Rol Rol);
 
-public sealed record CajaDto(Guid Id, string Nombre, string Serie, Guid SucursalId, string Sucursal);
+/// <param name="Equipo">La PC dada de alta como esta caja; vacío si ninguna.</param>
+public sealed record CajaDto(Guid Id, string Nombre, string Serie, Guid SucursalId, string Sucursal, string? Equipo = null);
 
 public sealed record TurnoDto(Guid Id, Guid CajaId, Guid CajeroId, string Cajero, DateTime AbiertoLocal, long FondoCentavos);
 
@@ -161,3 +162,21 @@ public sealed record SolicitudVerificacion(string Usuario, string Pin, bool Lleg
 public sealed record SolicitudConsultaBitacora(string Usuario, string Pin, DateOnly Desde, DateOnly Hasta);
 
 public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionControlada Accion, string Detalle, long? MontoCentavos, string? Autorizo, ResultadoBitacora Resultado);
+
+// ── Varias cajas (entrega 3) ────────────────────────────────────────────────
+
+/// <summary>Lo que contesta el servicio sin llave: para encontrarlo en la red y saber que está vivo.</summary>
+public sealed record EstadoServicioDto(string Servicio, string Version, IReadOnlyList<string> Sucursales);
+
+/// <summary>Usuario y PIN de quien autoriza (el dueño para dar de alta o quitar cajas).</summary>
+public sealed record SolicitudCredenciales(string Usuario, string Pin);
+
+public sealed record CajaAltaDto(Guid Id, string Nombre, string Serie, string? Equipo);
+
+public sealed record SucursalAltaDto(Guid Id, string Nombre, IReadOnlyList<CajaAltaDto> Cajas);
+
+/// <summary>Sin <paramref name="CajaId"/>, se crea una caja nueva con <paramref name="Nombre"/> y <paramref name="Serie"/>.</summary>
+public sealed record SolicitudAltaCaja(string Usuario, string Pin, Guid SucursalId, Guid? CajaId, string? Nombre, string? Serie, string Equipo);
+
+/// <param name="Llave">Solo la ve el equipo: la guarda y la manda en cada llamada (encabezado X-Caja-Llave).</param>
+public sealed record AltaCajaDto(CajaDto Caja, string Llave);

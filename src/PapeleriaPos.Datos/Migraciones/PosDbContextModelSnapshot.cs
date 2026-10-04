@@ -830,8 +830,18 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<bool>("Activa")
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime?>("AltaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Equipo")
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("EsPrincipal")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("LlaveHuella")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTime>("ModificadoUtc")
                         .HasColumnType("TEXT");
@@ -851,6 +861,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("LlaveHuella")
+                        .IsUnique();
 
                     b.HasIndex("Version");
 

@@ -1,15 +1,23 @@
-@* Raíz de la caja: conecta con el servicio, pide entrar con PIN, abre el turno y muestra la venta. *@
+@* Raíz de la caja: conecta con el servicio (o da de alta la PC), pide entrar con PIN, abre el turno y muestra la venta. *@
 @inject ClienteCaja Cliente
-@inject OpcionesCaja Opciones
+@inject ConexionCaja Conexion
 
 <div class="caja">
-    @if (_error is not null)
+    @if (_alta || !Conexion.Lista)
+    {
+        <ConfigurarCaja Aviso="@_avisoAlta" AlTerminar="AltaTerminada" />
+    }
+    else if (_error is not null)
     {
         <div class="centrado">
             <div class="tarjeta">
                 <h2>Sin conexión</h2>
                 <p class="error">@_error</p>
                 <button class="boton principal" @onclick="IniciarAsync">Reintentar</button>
+                @if (Conexion.PideAlta)
+                {
+                    <button class="boton" @onclick="() => _alta = true">Cambiar la caja principal o dar de alta de nuevo</button>
+                }
             </div>
         </div>
     }
@@ -58,8 +66,10 @@
     private TurnoDto? _turno;
     private string? _error;
     private bool _corte;
+    private bool _alta;
+    private string? _avisoAlta;
 
-    protected override Task OnInitializedAsync() => IniciarAsync();
+    protected override Task OnInitializedAsync() => Conexion.Lista ? IniciarAsync() : Task.CompletedTask;
 
     private async Task IniciarAsync()
     {
@@ -67,7 +77,7 @@
         try
         {
             var cajas = await Cliente.CajasAsync();
-            _caja = Opciones.CajaId is { } id ? cajas.SingleOrDefault(c => c.Id == id) : cajas.FirstOrDefault();
+            _caja = Conexion.CajaId is { } id ? cajas.SingleOrDefault(c => c.Id == id) : cajas.FirstOrDefault();
             if (_caja is null)
             {
                 _error = "Esta PC no tiene una caja dada de alta en el servicio.";
@@ -75,10 +85,21 @@
             }
             _turno = await Cliente.TurnoAsync(_caja.Id);
         }
+        catch (ErrorCaja ex) when (ex.Codigo == "caja-sin-alta" && Conexion.PideAlta)
+        {
+            // El dueño quitó esta PC (o la base es otra): se vuelve a dar de alta.
+            (_alta, _avisoAlta) = (true, ex.Message);
+        }
         catch (ErrorCaja ex)
         {
             _error = ex.Message;
         }
+    }
+
+    private async Task AltaTerminada()
+    {
+        (_alta, _avisoAlta, _caja) = (false, null, null);
+        await IniciarAsync();
     }
 
     private async Task Entrar(SesionDto sesion)

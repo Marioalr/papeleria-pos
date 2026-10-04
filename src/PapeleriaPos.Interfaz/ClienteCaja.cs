@@ -8,19 +8,37 @@ namespace PapeleriaPos.Interfaz;
 /// <summary>Error que se le muestra al cajero tal cual (viene del servicio o de la conexión).</summary>
 public sealed class ErrorCaja(string mensaje, string? codigo = null) : Exception(mensaje)
 {
-    /// <summary>"requiere-autorizacion" o "no-permitido" cuando lo detiene una regla.</summary>
+    /// <summary>
+    /// "requiere-autorizacion" o "no-permitido" cuando lo detiene una regla; "caja-sin-alta" si el servicio no
+    /// reconoce la llave; "sin-conexion" si no contesta.
+    /// </summary>
     public string? Codigo { get; } = codigo;
 }
 
-/// <summary>Qué caja es esta PC. Vacío: la primera caja de la sucursal (útil en pruebas).</summary>
-public sealed class OpcionesCaja
+/// <summary>A qué servicio habla esta PC y como qué caja. La ventana de Windows la guarda al dar de alta la caja.</summary>
+public sealed class ConexionCaja
 {
+    public required Uri Servicio { get; set; }
+
+    /// <summary>Vacío: la primera caja de la sucursal (la caja del navegador en la misma PC del servicio).</summary>
     public Guid? CajaId { get; set; }
+
+    public string? Llave { get; set; }
+
+    /// <summary>La ventana de Windows se da de alta antes de vender; la del navegador, en la PC del servicio, no.</summary>
+    public bool PideAlta { get; init; }
+
+    /// <summary>Lo pone el anfitrión: dónde guardar la conexión después del alta.</summary>
+    public Func<ConexionCaja, Task>? AlGuardar { get; init; }
+
+    public bool Lista => !PideAlta || (CajaId is not null && Llave is not null);
 }
 
 /// <summary>Habla con el servicio de la sucursal. La caja no toca la base de datos: todo pasa por aquí.</summary>
-public sealed class ClienteCaja(HttpClient http)
+public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion)
 {
+    public const string EncabezadoLlave = "X-Caja-Llave";
+
     public Task<List<CajaDto>> CajasAsync() => GetAsync<List<CajaDto>>("api/cajas")!;
 
     public Task<SesionDto> EntrarAsync(string usuario, string pin) => PostAsync<SesionDto>("api/sesion", new SolicitudEntrada(usuario, pin));
@@ -106,38 +124,56 @@ public sealed class ClienteCaja(HttpClient http)
     public Task<List<ReglaDto>> GuardarReglasAsync(Guid sucursalId, SolicitudReglas solicitud) =>
         PutAsync<List<ReglaDto>>($"api/sucursales/{sucursalId}/reglas", solicitud);
 
+    // ── Alta de la caja (antes de tener llave; el servicio todavía no es el guardado) ──
+
+    public Task<EstadoServicioDto?> EstadoAsync(Uri servicio) => GetAsync<EstadoServicioDto>("api/estado", servicio: servicio);
+
+    public Task<List<SucursalAltaDto>> OpcionesAltaAsync(Uri servicio, SolicitudCredenciales credenciales) =>
+        PostAsync<List<SucursalAltaDto>>("api/alta/opciones", credenciales, servicio: servicio);
+
+    public Task<AltaCajaDto> AltaAsync(Uri servicio, SolicitudAltaCaja solicitud) => PostAsync<AltaCajaDto>("api/alta", solicitud, servicio: servicio);
+
+    public Task QuitarEquipoAsync(Guid cajaId, SolicitudCredenciales credenciales) =>
+        PostAsync<object>($"api/cajas/{cajaId}/quitar-equipo", credenciales, sinRespuesta: true);
+
     private async Task<T> PutAsync<T>(string url, object cuerpo)
     {
-        using var respuesta = await EnviarAsync(() => http.PutAsJsonAsync(url, cuerpo));
+        using var respuesta = await EnviarAsync(HttpMethod.Put, url, cuerpo);
         await RevisarAsync(respuesta);
         return (await respuesta.Content.ReadFromJsonAsync<T>())!;
     }
 
-    private async Task<T?> GetAsync<T>(string url, bool nadaEsNulo = false, bool noEncontradoEsNulo = false)
+    private async Task<T?> GetAsync<T>(string url, bool nadaEsNulo = false, bool noEncontradoEsNulo = false, Uri? servicio = null)
     {
-        using var respuesta = await EnviarAsync(() => http.GetAsync(url));
+        using var respuesta = await EnviarAsync(HttpMethod.Get, url, servicio: servicio);
         if ((nadaEsNulo && respuesta.StatusCode == HttpStatusCode.NoContent) || (noEncontradoEsNulo && respuesta.StatusCode == HttpStatusCode.NotFound))
             return default;
         await RevisarAsync(respuesta);
         return await respuesta.Content.ReadFromJsonAsync<T>();
     }
 
-    private async Task<T> PostAsync<T>(string url, object? cuerpo, bool sinRespuesta = false)
+    private async Task<T> PostAsync<T>(string url, object? cuerpo, bool sinRespuesta = false, Uri? servicio = null)
     {
-        using var respuesta = await EnviarAsync(() => http.PostAsJsonAsync(url, cuerpo));
+        using var respuesta = await EnviarAsync(HttpMethod.Post, url, cuerpo, servicio);
         await RevisarAsync(respuesta);
         return sinRespuesta ? default! : (await respuesta.Content.ReadFromJsonAsync<T>())!;
     }
 
-    private static async Task<HttpResponseMessage> EnviarAsync(Func<Task<HttpResponseMessage>> envio)
+    /// <summary>Cada llamada va a la caja principal guardada y lleva la llave de esta caja.</summary>
+    private async Task<HttpResponseMessage> EnviarAsync(HttpMethod metodo, string url, object? cuerpo = null, Uri? servicio = null)
     {
+        using var mensaje = new HttpRequestMessage(metodo, new Uri(servicio ?? conexion.Servicio, url));
+        if (conexion.Llave is { } llave)
+            mensaje.Headers.Add(EncabezadoLlave, llave);
+        if (metodo != HttpMethod.Get)
+            mensaje.Content = JsonContent.Create(cuerpo, cuerpo?.GetType() ?? typeof(object));
         try
         {
-            return await envio();
+            return await http.SendAsync(mensaje);
         }
-        catch (HttpRequestException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            throw new ErrorCaja("No hay conexión con el servicio de la caja principal.");
+            throw new ErrorCaja("No hay conexión con el servicio de la caja principal.", "sin-conexion");
         }
     }
 

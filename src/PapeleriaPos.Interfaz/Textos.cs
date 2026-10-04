@@ -23,6 +23,7 @@ public static class Textos
         AccionControlada.ConfigurarTicket => "Configurar el ticket",
         AccionControlada.EditarReglas => "Editar las reglas",
         AccionControlada.ConsultarBitacora => "Consultar la bitácora",
+        AccionControlada.AdministrarCajas => "Dar de alta o quitar cajas",
         _ => accion.ToString(),
     };
 
