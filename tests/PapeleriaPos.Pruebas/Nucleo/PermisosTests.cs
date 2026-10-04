@@ -95,4 +95,11 @@ public class PermisosTests
         Assert.Throws<InvalidOperationException>(() => Autorizacion().Usar(AccionControlada.CancelarTicket, Matriz, 100, Ahora.AddMinutes(3)));
         Assert.Throws<InvalidOperationException>(() => Autorizacion().Usar(AccionControlada.CancelarTicket, Matriz, 50001, Ahora));
     }
+
+    [Fact]
+    public void El_cambio_de_precio_se_autoriza_al_capturar_y_dura_hasta_cobrar()
+    {
+        Assert.Equal(TimeSpan.FromMinutes(2), PapeleriaPos.Nucleo.Control.Autorizacion.VigenciaDe(AccionControlada.CancelarTicket));
+        Assert.True(PapeleriaPos.Nucleo.Control.Autorizacion.VigenciaDe(AccionControlada.CambiarPrecio) >= TimeSpan.FromMinutes(15));
+    }
 }

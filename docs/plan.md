@@ -160,7 +160,7 @@ Fase 1:
 - [x] Revisar el [plan de la fase 1](fase-1-caja.md) y contestar sus preguntas (turnos, teclas, fondo, logo)
 - [x] Entrega 1: vender y cobrar en una caja (falta probar el cajón cuando lo haya)
 - [x] Revisar el [plan de la entrega 2](fase-1-control.md) (control) y contestar sus preguntas
-- [ ] Entrega 2: control
+- [x] Entrega 2: control (cancelar, devolver, cambio de precio, transferencias, reglas y bitácora)
 - [ ] Descuentos: definirlos con el módulo de impresión (entrega 5)
 
 Fase 3:

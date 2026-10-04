@@ -11,6 +11,10 @@
         <tr><td>Efectivo de ventas</td><td>@Formato.Dinero(_resultado.EfectivoVentasCentavos)</td></tr>
         <tr><td>Entradas</td><td>@Formato.Dinero(_resultado.EntradasCentavos)</td></tr>
         <tr><td>Salidas</td><td>− @Formato.Dinero(_resultado.SalidasCentavos)</td></tr>
+        @if (_resultado.DevolucionesCentavos > 0 || _resultado.Cancelaciones > 0)
+        {
+            <tr><td>Devoluciones y cancelaciones@(_resultado.Cancelaciones > 0 ? $" ({_resultado.Cancelaciones} {(_resultado.Cancelaciones == 1 ? "cancelado" : "cancelados")})" : "")</td><td>− @Formato.Dinero(_resultado.DevolucionesCentavos)</td></tr>
+        }
         <tr class="total"><td>Efectivo esperado</td><td>@Formato.Dinero(_resultado.EsperadoCentavos)</td></tr>
         @if (_resultado.ContadoCentavos is { } contado)
         {
@@ -21,7 +25,7 @@
             </tr>
         }
         <tr><td>Tarjeta</td><td>@Formato.Dinero(_resultado.TarjetaCentavos)</td></tr>
-        <tr><td>Transferencias (por verificar)</td><td>@Formato.Dinero(_resultado.TransferenciaCentavos)</td></tr>
+        <tr><td>Transferencias</td><td>@Formato.Dinero(_resultado.TransferenciaCentavos)</td></tr>
     </table>
     <div class="acciones">
         @if (_resultado.Tipo == TipoCorte.Z)

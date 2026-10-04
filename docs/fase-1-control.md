@@ -3,11 +3,13 @@
 > **Revisado.** Cómo se construyen las [autorizaciones configurables y la bitácora](caja-y-control.md) sobre la caja
 > de la entrega 1.
 
-**Avance:** la parte 1 ya funciona: reglas (con las iniciales de abajo), autorización de un solo uso que el servicio
-vuelve a revisar, bitácora (quitar productos, artículo común, entradas y salidas, reimpresiones, corte Z,
+**Avance:** la entrega está completa. Parte 1: reglas (con las iniciales de abajo), autorización de un solo uso que
+el servicio vuelve a revisar, bitácora (quitar productos, artículo común, entradas y salidas, reimpresiones, corte Z,
 configuración y autorizaciones negadas), límite de efectivo con aviso de retiro y comprobante impreso de salidas.
-Falta la parte 2: cancelar y devolver, cambio de precio, verificar transferencias, la ventana de autorización en la
-caja, el editor de reglas del dueño y la consulta de la bitácora.
+Parte 2: cancelar y devolver escaneando el QR del ticket (o desde ventas del día), con comprobante para firma;
+cambio de precio con Ctrl+E (lo autoriza el dueño); verificar transferencias; la ventana de autorización en la caja;
+el editor de reglas del dueño y la consulta de la bitácora (en Configuración); devoluciones y cancelaciones en el
+corte.
 
 ## Qué incluye
 
@@ -58,8 +60,8 @@ El dueño puede todo. Quedan para su fase: ajuste de inventario (fase 2), mayore
 
 **El servicio es el que decide, no la pantalla.** La caja pregunta para mostrar la ventana a tiempo, pero cada
 operación vuelve a revisar la regla en el servicio. Si requiere autorización, la operación tiene que traer una
-autorización vigente (de un solo uso, que vence en 2 minutos); si no, se rechaza. Así no se puede saltar el
-control con otra pantalla o llamando a la API directo.
+autorización vigente (de un solo uso, que vence en 2 minutos; la del cambio de precio, en 30, porque se gasta al
+cobrar); si no, se rechaza. Así no se puede saltar el control con otra pantalla o llamando a la API directo.
 
 Lo que pasa antes de cobrar (quitar un producto, agregar un artículo común) se reporta a la bitácora en ese momento.
 Al cobrar, el servicio vuelve a revisar los precios de cada línea contra las reglas.

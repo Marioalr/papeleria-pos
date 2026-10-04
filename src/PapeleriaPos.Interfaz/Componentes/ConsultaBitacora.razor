@@ -1,0 +1,74 @@
+@* Quién hizo qué, quién lo autorizó y qué se negó. La consulta el encargado o el dueño con su usuario y PIN. *@
+@inject ClienteCaja Cliente
+
+<div class="filtros-bitacora">
+    <label>Desde <input type="date" @bind="_desde" /></label>
+    <label>Hasta <input type="date" @bind="_hasta" /></label>
+    <label>Usuario <input @bind="_usuario" autocomplete="off" /></label>
+    <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" /></label>
+    <button class="boton principal" disabled="@_ocupado" @onclick="ConsultarAsync">Consultar</button>
+</div>
+@if (_error is not null)
+{
+    <p class="error">@_error</p>
+}
+@if (_registros is { Count: 0 })
+{
+    <p class="vacia">No hay registros en esas fechas.</p>
+}
+else if (_registros is not null)
+{
+    <div class="resultados">
+        <table>
+            <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Detalle</th><th class="num">Monto</th><th>Autorizó</th><th>Resultado</th></tr></thead>
+            @foreach (var r in _registros)
+            {
+                <tr class="@(r.Resultado == ResultadoBitacora.Negado ? "negado" : "")">
+                    <td>@r.FechaLocal.ToString("dd/MM HH:mm")</td>
+                    <td>@r.Usuario</td>
+                    <td>@Textos.Accion(r.Accion)</td>
+                    <td>@r.Detalle</td>
+                    <td class="num">@(r.MontoCentavos is { } m ? Formato.Dinero(m) : "")</td>
+                    <td>@r.Autorizo</td>
+                    <td>@Textos.Resultado(r.Resultado)</td>
+                </tr>
+            }
+        </table>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+
+    private DateOnly _desde = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly _hasta = DateOnly.FromDateTime(DateTime.Today);
+    private string _usuario = "";
+    private string _pin = "";
+    private List<BitacoraDto>? _registros;
+    private string? _error;
+    private bool _ocupado;
+
+    private async Task ConsultarAsync()
+    {
+        if (_usuario.Trim().Length == 0 || _pin.Length == 0)
+        {
+            _error = "Escribe el usuario y PIN del encargado.";
+            return;
+        }
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            _registros = await Cliente.ConsultarBitacoraAsync(Caja.SucursalId, new SolicitudConsultaBitacora(_usuario, _pin, _desde, _hasta));
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+            _registros = null;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

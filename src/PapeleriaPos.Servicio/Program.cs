@@ -29,6 +29,7 @@ app.MapStaticAssets();
 app.MapearApiCaja();
 app.MapearApiConfiguracion();
 app.MapearApiControl();
+app.MapearApiDevoluciones();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Run();

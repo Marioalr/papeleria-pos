@@ -1,0 +1,87 @@
+@* Ctrl+E: cambiar el precio del renglón seleccionado. Con la regla inicial lo autoriza el dueño. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+@if (_autorizar)
+{
+    <AutorizarAccion Accion="AccionControlada.CambiarPrecio" Detalle="@Detalle()" MontoCentavos="Importe()" Caja="Caja" Sesion="Sesion"
+                     AlAutorizar="a => Terminar(a.Id)" AlCancelar="() => _autorizar = false" />
+}
+else
+{
+    <p><strong>@Descripcion</strong> · precio actual @Formato.Dinero(PrecioActualCentavos)</p>
+    <label>Precio nuevo (con IVA)
+        <input id="precio-nuevo" inputmode="decimal" @bind="_precio" @bind:event="oninput" @onkeydown="AlTeclear" />
+    </label>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    <div class="acciones">
+        <button class="boton principal" disabled="@_ocupado" @onclick="ContinuarAsync">Cambiar (Enter)</button>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Descripcion { get; set; } = "";
+    [Parameter] public long PrecioActualCentavos { get; set; }
+    [Parameter] public Cantidad Cantidad { get; set; }
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Precio nuevo y la autorización (vacía si la regla lo permite sin ella).</summary>
+    [Parameter] public EventCallback<(long Precio, Guid? AutorizacionId)> AlCambiar { get; set; }
+
+    private string _precio = "";
+    private long _nuevo;
+    private bool _autorizar;
+    private string? _error;
+    private bool _ocupado;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+            await Js.EnfocarAsync("#precio-nuevo");
+    }
+
+    private string Detalle() => $"Precio de «{Descripcion}»: {Formato.Dinero(PrecioActualCentavos)} → {Formato.Dinero(_nuevo)}";
+
+    private long Importe() => Cantidad.Importe(_nuevo);
+
+    private async Task AlTeclear(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await ContinuarAsync();
+    }
+
+    private async Task ContinuarAsync()
+    {
+        if (Formato.LeerPesos(_precio) is not ({ } precio and > 0))
+        {
+            _error = "Escribe el precio nuevo.";
+            return;
+        }
+        _nuevo = precio;
+        _ocupado = true;
+        try
+        {
+            var decision = await Cliente.PermisoAsync(new SolicitudPermiso(Sesion.UsuarioId, Caja.SucursalId, AccionControlada.CambiarPrecio, Importe()));
+            switch (decision.Nivel)
+            {
+                case NivelPermiso.Permitido: await Terminar(null); break;
+                case NivelPermiso.RequiereAutorizacion: _autorizar = true; break;
+                default: _error = "No tienes permiso para cambiar precios."; break;
+            }
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private Task Terminar(Guid? autorizacionId) => AlCambiar.InvokeAsync((_nuevo, autorizacionId));
+}

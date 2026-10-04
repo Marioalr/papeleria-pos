@@ -91,6 +91,8 @@ internal sealed class VentaLineaConfiguracion : IEntityTypeConfiguration<VentaLi
         b.HasOne<Variante>().WithMany().HasForeignKey(l => l.VarianteId);
         b.HasOne<Presentacion>().WithMany().HasForeignKey(l => l.PresentacionId);
         b.HasIndex(l => l.VarianteId);
+        b.Ignore(l => l.PrecioCambiado);
+        b.Ignore(l => l.CantidadPorDevolver);
     }
 }
 
@@ -171,5 +173,28 @@ internal sealed class BitacoraConfiguracion : IEntityTypeConfiguration<Bitacora>
         b.HasOne<Usuario>().WithMany().HasForeignKey(x => x.UsuarioId);
         b.HasIndex(x => new { x.SucursalId, x.FechaUtc });
         b.HasIndex(x => x.VentaId);
+    }
+}
+
+internal sealed class DevolucionConfiguracion : IEntityTypeConfiguration<Devolucion>
+{
+    public void Configure(EntityTypeBuilder<Devolucion> b)
+    {
+        b.ToTable("Devoluciones");
+        b.HasOne<Venta>().WithMany().HasForeignKey(d => d.VentaId);
+        b.HasOne<Turno>().WithMany().HasForeignKey(d => d.TurnoId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(d => d.UsuarioId);
+        b.HasMany(d => d.Lineas).WithOne().HasForeignKey(l => l.DevolucionId);
+        b.HasIndex(d => d.VentaId);
+        b.HasIndex(d => d.TurnoId);
+    }
+}
+
+internal sealed class DevolucionLineaConfiguracion : IEntityTypeConfiguration<DevolucionLinea>
+{
+    public void Configure(EntityTypeBuilder<DevolucionLinea> b)
+    {
+        b.ToTable("DevolucionesLineas");
+        b.HasOne<VentaLinea>().WithMany().HasForeignKey(l => l.VentaLineaId);
     }
 }

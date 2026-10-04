@@ -82,6 +82,30 @@ public sealed class ClienteCaja(HttpClient http)
     public Task<ConfiguracionTicketDto> GuardarLogoTicketAsync(Guid sucursalId, SolicitudLogo solicitud) =>
         PutAsync<ConfiguracionTicketDto>($"api/sucursales/{sucursalId}/ticket/logo", solicitud);
 
+    public Task<VentaParaDevolverDto?> VentaPorFolioAsync(Guid sucursalId, string folio) =>
+        GetAsync<VentaParaDevolverDto>($"api/sucursales/{sucursalId}/ventas/folio/{Uri.EscapeDataString(folio)}", noEncontradoEsNulo: true);
+
+    public Task<ComprobanteDevolucionDto> CancelarAsync(Guid ventaId, SolicitudCancelacion solicitud) =>
+        PostAsync<ComprobanteDevolucionDto>($"api/ventas/{ventaId}/cancelacion", solicitud);
+
+    public Task<ComprobanteDevolucionDto> DevolverAsync(Guid ventaId, SolicitudDevolucion solicitud) =>
+        PostAsync<ComprobanteDevolucionDto>($"api/ventas/{ventaId}/devoluciones", solicitud);
+
+    public async Task<List<TransferenciaDto>> TransferenciasAsync(Guid sucursalId) =>
+        await GetAsync<List<TransferenciaDto>>($"api/sucursales/{sucursalId}/transferencias") ?? [];
+
+    public Task VerificarTransferenciaAsync(Guid cobroId, SolicitudVerificacion solicitud) =>
+        PostAsync<object>($"api/cobros/{cobroId}/verificacion", solicitud, sinRespuesta: true);
+
+    public Task<List<BitacoraDto>> ConsultarBitacoraAsync(Guid sucursalId, SolicitudConsultaBitacora solicitud) =>
+        PostAsync<List<BitacoraDto>>($"api/sucursales/{sucursalId}/bitacora/consulta", solicitud);
+
+    public async Task<List<ReglaDto>> ReglasAsync(Guid sucursalId) =>
+        await GetAsync<List<ReglaDto>>($"api/sucursales/{sucursalId}/reglas") ?? [];
+
+    public Task<List<ReglaDto>> GuardarReglasAsync(Guid sucursalId, SolicitudReglas solicitud) =>
+        PutAsync<List<ReglaDto>>($"api/sucursales/{sucursalId}/reglas", solicitud);
+
     private async Task<T> PutAsync<T>(string url, object cuerpo)
     {
         using var respuesta = await EnviarAsync(() => http.PutAsJsonAsync(url, cuerpo));

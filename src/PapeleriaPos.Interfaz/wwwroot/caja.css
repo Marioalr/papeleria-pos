@@ -127,3 +127,17 @@ textarea { font-family: Consolas, "Courier New", monospace; font-size: 14px; pad
 .aviso { color: var(--exito); margin: 4px 0; }
 .mensaje.retiro { background: #fff4d6; color: #8a5a00; font-weight: 600; }
 label.en-linea { flex: 1; }
+
+/* Entrega 2, parte 2: autorizar, devolver, cambiar precio, reglas y bitácora */
+.autorizacion { display: flex; flex-direction: column; gap: 8px; }
+.aviso-autorizacion { margin: 0; padding: 8px 12px; background: #fff4d6; color: #8a5a00; font-weight: 600; border-radius: 4px; }
+.captura-folio { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 8px; }
+.captura-folio label { flex: 1; }
+input.cantidad-devolver { width: 80px; text-align: right; font-size: 15px; padding: 3px 6px; }
+.precio-original { color: var(--suave); font-size: 12px; margin-right: 4px; }
+.config-pestanas { background: none; padding: 0 0 0; border-bottom: 1px solid var(--borde); margin-bottom: 10px; }
+.reglas select { font: inherit; font-size: 13px; padding: 2px 4px; }
+.reglas input.umbral { width: 80px; font-size: 13px; padding: 2px 6px; text-align: right; }
+.filtros-bitacora { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.filtros-bitacora input { font-size: 14px; width: 130px; }
+tr.negado td { color: var(--error); }

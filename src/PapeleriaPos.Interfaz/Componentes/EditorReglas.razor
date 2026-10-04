@@ -1,0 +1,132 @@
+@* Qué puede hacer cada rol en esta sucursal. Lo ve cualquiera; lo cambia solo el dueño con su usuario y PIN. *@
+@inject ClienteCaja Cliente
+
+@if (_reglas is null)
+{
+    <p>@(_error ?? "Cargando…")</p>
+}
+else
+{
+    <p class="nota">
+        «Hasta» solo aplica a lo permitido: arriba de ese monto pide autorización. El dueño puede todo y solo él cambia las reglas.
+    </p>
+    <div class="resultados reglas">
+        <table>
+            <thead>
+                <tr><th rowspan="2">Acción</th><th colspan="3">Cajero</th><th colspan="3">Encargado</th></tr>
+                <tr><th>Nivel</th><th>Hasta</th><th>Motivo</th><th>Nivel</th><th>Hasta</th><th>Motivo</th></tr>
+            </thead>
+            @foreach (var accion in _reglas.Select(r => r.Accion).Distinct())
+            {
+                <tr>
+                    <td>@Textos.Accion(accion)</td>
+                    @foreach (var regla in _reglas.Where(r => r.Accion == accion).OrderBy(r => r.Rol))
+                    {
+                        var r = regla;
+                        <td>
+                            <select value="@r.Nivel" @onchange="e => r.Nivel = Enum.Parse<NivelPermiso>(e.Value!.ToString()!)">
+                                @foreach (var nivel in Enum.GetValues<NivelPermiso>())
+                                {
+                                    <option value="@nivel">@Textos.Nivel(nivel)</option>
+                                }
+                            </select>
+                        </td>
+                        <td>
+                            @if (r.Nivel == NivelPermiso.Permitido)
+                            {
+                                <input class="umbral" inputmode="decimal" placeholder="Sin tope" @bind="r.Umbral" />
+                            }
+                        </td>
+                        <td><input type="checkbox" @bind="r.PideMotivo" /></td>
+                    }
+                </tr>
+            }
+        </table>
+    </div>
+    <div class="dos-columnas">
+        <label>Usuario del dueño <input @bind="_usuario" autocomplete="off" /></label>
+        <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" /></label>
+    </div>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_guardado)
+    {
+        <p class="aviso">Reglas guardadas.</p>
+    }
+    <div class="acciones">
+        <button class="boton principal" disabled="@_ocupado" @onclick="GuardarAsync">Guardar reglas</button>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+
+    /// <summary>Copia editable de una regla; el umbral se escribe en pesos.</summary>
+    private sealed class Fila(ReglaDto r)
+    {
+        public AccionControlada Accion { get; } = r.Accion;
+        public Rol Rol { get; } = r.Rol;
+        public NivelPermiso Nivel { get; set; } = r.Nivel;
+        public string Umbral { get; set; } = r.UmbralCentavos is { } u ? (u / 100m).ToString("0.##", CultureInfo.InvariantCulture) : "";
+        public bool PideMotivo { get; set; } = r.PideMotivo;
+    }
+
+    private List<Fila>? _reglas;
+    private string _usuario = "";
+    private string _pin = "";
+    private string? _error;
+    private bool _guardado;
+    private bool _ocupado;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            Mostrar(await Cliente.ReglasAsync(Caja.SucursalId));
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void Mostrar(List<ReglaDto> reglas) => _reglas = reglas.Select(r => new Fila(r)).ToList();
+
+    private async Task GuardarAsync()
+    {
+        _error = null;
+        _guardado = false;
+        var reglas = new List<ReglaDto>();
+        foreach (var r in _reglas!)
+        {
+            long? umbral = null;
+            if (r.Nivel == NivelPermiso.Permitido && !string.IsNullOrWhiteSpace(r.Umbral))
+            {
+                if (Formato.LeerPesos(r.Umbral) is not ({ } pesos and > 0))
+                {
+                    _error = $"«{r.Umbral}» no es un monto válido ({Textos.Accion(r.Accion)}, {Textos.Rol(r.Rol)}).";
+                    return;
+                }
+                umbral = pesos;
+            }
+            reglas.Add(new ReglaDto(r.Accion, r.Rol, r.Nivel, umbral, r.PideMotivo));
+        }
+        _ocupado = true;
+        try
+        {
+            Mostrar(await Cliente.GuardarReglasAsync(Caja.SucursalId, new SolicitudReglas(_usuario, _pin, reglas)));
+            _guardado = true;
+            _pin = "";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

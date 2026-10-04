@@ -1,0 +1,70 @@
+@* "Requiere autorización": el encargado (o el dueño) escribe su usuario y PIN en la misma caja. Vale una sola vez. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="autorizacion">
+    <p class="aviso-autorizacion">🔒 @Textos.Accion(Accion) requiere autorización</p>
+    <p>@Detalle@(MontoCentavos is { } m ? $" · {Formato.Dinero(m)}" : "")</p>
+    <div class="dos-columnas">
+        <label>Usuario de quien autoriza <input id="autoriza-usuario" @bind="_usuario" autocomplete="off" @onkeydown="AlTeclear" /></label>
+        <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" @bind:event="oninput" @onkeydown="AlTeclear" /></label>
+    </div>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    <div class="acciones">
+        <button class="boton" @onclick="AlCancelar">Cancelar</button>
+        <button class="boton principal" disabled="@_ocupado" @onclick="AutorizarAsync">Autorizar (Enter)</button>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public AccionControlada Accion { get; set; }
+    [Parameter, EditorRequired] public string Detalle { get; set; } = "";
+    [Parameter] public long? MontoCentavos { get; set; }
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Recibe el ID de la autorización para mandarlo con la operación.</summary>
+    [Parameter] public EventCallback<AutorizacionDto> AlAutorizar { get; set; }
+    [Parameter] public EventCallback AlCancelar { get; set; }
+
+    private string _usuario = "";
+    private string _pin = "";
+    private string? _error;
+    private bool _ocupado;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+            await Js.EnfocarAsync("#autoriza-usuario");
+    }
+
+    private async Task AlTeclear(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await AutorizarAsync();
+    }
+
+    private async Task AutorizarAsync()
+    {
+        if (_ocupado || _usuario.Trim().Length == 0 || _pin.Length == 0)
+            return;
+        _ocupado = true;
+        try
+        {
+            var autorizacion = await Cliente.AutorizarAsync(new SolicitudAutorizacion(Accion, Caja.SucursalId, Caja.Id, Sesion.UsuarioId, _usuario, _pin, MontoCentavos, Detalle));
+            await AlAutorizar.InvokeAsync(autorizacion);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+            _pin = "";
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}
