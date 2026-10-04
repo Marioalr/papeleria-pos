@@ -120,7 +120,7 @@ public static class ApiControl
     /// <summary>Movimiento de efectivo: lo valida el control, se guarda y regresa el comprobante para imprimir.</summary>
     public static async Task<ComprobanteMovimientoDto> MovimientoAsync(Guid turnoId, SolicitudMovimiento s, PosDbContext db, OpcionesTicket opciones)
     {
-        var movimiento = await new RegistroCaja(db).RegistrarMovimientoAsync(turnoId, s.Tipo, s.MontoCentavos, s.Motivo, s.UsuarioId);
+        var movimiento = await new RegistroCaja(db).RegistrarMovimientoAsync(turnoId, s.Tipo, s.MontoCentavos, s.Motivo, s.UsuarioId, s.Id);
         var turno = await db.Turnos.FindAsync(turnoId);
         var caja = await db.Cajas.FindAsync(turno!.CajaId);
         var usuario = await db.Usuarios.Where(u => u.Id == s.UsuarioId).Select(u => u.Nombre).SingleAsync();
@@ -130,7 +130,7 @@ public static class ApiControl
     }
 
     /// <summary>Todas las combinaciones acción × rol (sin el dueño), con la regla que aplica hoy en la sucursal.</summary>
-    private static List<ReglaDto> ReglasEfectivas(List<ReglaPermiso> reglas, Guid sucursalId) =>
+    internal static List<ReglaDto> ReglasEfectivas(List<ReglaPermiso> reglas, Guid sucursalId) =>
         Enum.GetValues<AccionControlada>().Where(a => !Permisos.SoloDelDueno(a))
             .SelectMany(a => new[] { Rol.Cajero, Rol.Encargado }.Select(rol =>
             {

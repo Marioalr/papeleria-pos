@@ -32,6 +32,45 @@ public static class DisenoComprobante
         return e;
     }
 
+    /// <summary>El corte de cierre impreso, para guardarlo con el efectivo. Sin conexión, avisa que se cuadra al volver.</summary>
+    public static List<Elemento> Corte(CorteDto c, string caja)
+    {
+        var e = new List<Elemento>
+        {
+            new Renglon(c.Tipo == TipoCorte.Z ? "CORTE DE CIERRE (Z)" : "CORTE PARCIAL (X)", Alineacion.Centro, Negrita: true, Grande: true),
+        };
+        if (c.EnContingencia)
+            e.Add(new Renglon("Sin conexión: se cuadra al volver", Alineacion.Centro, Negrita: true));
+        e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
+        e.Add(new Renglon($"Fecha: {c.FechaLocal.ToString("dd/MM/yyyy  HH:mm", Mexico)}"));
+        e.Add(new Renglon($"{caja} · Cajero: {c.Cajero}"));
+        e.Add(new Renglon($"Hizo el corte: {c.RealizadoPor}"));
+        e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
+        void Linea(string concepto, long centavos, bool negrita = false) =>
+            e.Add(new Renglon(concepto.PadRight(DisenoTicket.Columnas - 14) + DisenoTicket.Dinero(centavos).PadLeft(14), Negrita: negrita));
+        e.Add(new Renglon($"Ventas: {c.Ventas}" + (c.Cancelaciones > 0 ? $" · canceladas: {c.Cancelaciones}" : "")));
+        Linea("Fondo", c.FondoCentavos);
+        Linea("Efectivo de ventas", c.EfectivoVentasCentavos);
+        Linea("Entradas", c.EntradasCentavos);
+        Linea("Salidas", -c.SalidasCentavos);
+        if (c.DevolucionesCentavos > 0)
+            Linea("Devoluciones y cancelaciones", -c.DevolucionesCentavos);
+        Linea("Efectivo esperado", c.EsperadoCentavos, negrita: true);
+        if (c.ContadoCentavos is { } contado)
+        {
+            Linea("Contado", contado, negrita: true);
+            var diferencia = c.DiferenciaCentavos ?? 0;
+            Linea(diferencia < 0 ? "Faltante" : diferencia > 0 ? "Sobrante" : "Diferencia", Math.Abs(diferencia), negrita: true);
+        }
+        Linea("Tarjeta", c.TarjetaCentavos);
+        Linea("Transferencias", c.TransferenciaCentavos);
+        e.Add(new Renglon(""));
+        e.Add(new Renglon(""));
+        e.Add(new Renglon("________________________________", Alineacion.Centro));
+        e.Add(new Renglon("Firma del encargado", Alineacion.Centro));
+        return e;
+    }
+
     /// <summary>Comprobante de una cancelación o devolución: qué regresó y cuánto efectivo salió de la caja.</summary>
     public static List<Elemento> Devolucion(ComprobanteDevolucionDto c)
     {

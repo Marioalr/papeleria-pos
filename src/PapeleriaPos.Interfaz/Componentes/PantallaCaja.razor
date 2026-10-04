@@ -3,6 +3,7 @@
 @inject ConexionCaja Conexion
 
 <div class="caja">
+    <FranjaContingencia />
     @if (_alta || !Conexion.Lista)
     {
         <ConfigurarCaja Aviso="@_avisoAlta" AlTerminar="AltaTerminada" />
@@ -42,7 +43,7 @@
                 <p>Antes de que entre otro cajero, el encargado hace el corte de cierre de ese turno.</p>
                 @if (_corte)
                 {
-                    <CorteCaja Turno="_turno" Sesion="_sesion" SoloCierre="true" AlTerminar="CorteTerminado" />
+                    <CorteCaja Turno="_turno" Sesion="_sesion" Caja="@_caja.Nombre" SoloCierre="true" AlTerminar="CorteTerminado" />
                 }
                 else
                 {

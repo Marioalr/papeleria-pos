@@ -162,7 +162,7 @@
                 {
                     <p class="error">Hay @sinCobrar @(sinCobrar == 1 ? "ticket" : "tickets") sin cobrar: si se cierra el turno, se pierden.</p>
                 }
-                <CorteCaja Turno="Turno" Sesion="Sesion" AlTerminar="AlCerrarTurno" />
+                <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="AlCerrarTurno" />
             </Ventana>
             break;
         case Ventanas.VentasDelDia:

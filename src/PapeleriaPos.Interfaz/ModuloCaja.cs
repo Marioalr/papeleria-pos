@@ -40,13 +40,24 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
 
 public static class RegistroInterfaz
 {
-    /// <summary>Lo que necesita la interfaz de la caja; cada anfitrión (ventana de Windows o navegador) pone su conexión e impresora.</summary>
-    public static IServiceCollection AgregarInterfazCaja(this IServiceCollection servicios, ConexionCaja conexion, IImpresora impresora)
+    /// <summary>
+    /// Lo que necesita la interfaz de la caja; cada anfitrión (ventana de Windows o navegador) pone su conexión e impresora.
+    /// Con <paramref name="baseLocal"/> (la ventana de Windows), la caja sigue vendiendo si la caja principal no contesta.
+    /// </summary>
+    public static IServiceCollection AgregarInterfazCaja(this IServiceCollection servicios, ConexionCaja conexion, IImpresora impresora, string? baseLocal = null)
     {
-        // Sin respuesta en unos segundos, la caja avisa en lugar de quedarse congelada.
-        var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        // Si la caja principal está apagada, la conexión falla en 3 s; si contesta pero tarda, se espera hasta 15 s. Así la
+        // caja avisa (o pasa a contingencia) en lugar de quedarse congelada.
+        var http = new HttpClient(new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(3) }) { Timeout = TimeSpan.FromSeconds(15) };
+        Contingencia? contingencia = null;
+        if (baseLocal is not null)
+        {
+            contingencia = new Contingencia(new AlmacenLocal(baseLocal), http, conexion);
+            servicios.AddSingleton(contingencia);
+            contingencia.Iniciar();
+        }
         servicios.AddSingleton(conexion);
-        servicios.AddScoped(_ => new ClienteCaja(http, conexion));
+        servicios.AddScoped(_ => new ClienteCaja(http, conexion, contingencia));
         servicios.AddSingleton(impresora);
         servicios.AddScoped<ModuloCaja>();
         return servicios;

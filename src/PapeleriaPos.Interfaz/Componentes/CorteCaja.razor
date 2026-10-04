@@ -1,5 +1,6 @@
 @* Corte X (parcial) y corte Z (cierre): el encargado cuenta el efectivo sin ver cuánto debería haber. *@
 @inject ClienteCaja Cliente
+@inject IImpresora Impresora
 
 @if (_resultado is not null)
 {
@@ -27,6 +28,14 @@
         <tr><td>Tarjeta</td><td>@Formato.Dinero(_resultado.TarjetaCentavos)</td></tr>
         <tr><td>Transferencias</td><td>@Formato.Dinero(_resultado.TransferenciaCentavos)</td></tr>
     </table>
+    @if (_resultado.EnContingencia)
+    {
+        <p class="nota">Sin conexión con la caja principal: es la cuenta de esta caja. Se cuadra cuando sube la bandeja.</p>
+    }
+    @if (_vistaPrevia is not null)
+    {
+        <pre class="ticket">@_vistaPrevia</pre>
+    }
     <div class="acciones">
         @if (_resultado.Tipo == TipoCorte.Z)
         {
@@ -88,6 +97,8 @@ else
     [Parameter, EditorRequired] public TurnoDto Turno { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
     [Parameter] public bool SoloCierre { get; set; }
+    /// <summary>Nombre de la caja, para el corte impreso.</summary>
+    [Parameter] public string Caja { get; set; } = "";
     [Parameter] public EventCallback AlTerminar { get; set; }
 
     private bool _cierre;
@@ -120,6 +131,27 @@ else
         }
     }
 
+    private string? _vistaPrevia;
+
+    /// <summary>El corte Z se imprime para guardarlo con el efectivo; si falla la impresora, el corte ya quedó.</summary>
+    private async Task ImprimirAsync(CorteDto corte)
+    {
+        var documento = DisenoComprobante.Corte(corte, Caja);
+        if (Impresora.MuestraVistaPrevia)
+        {
+            _vistaPrevia = TicketTexto.Generar(documento);
+            return;
+        }
+        try
+        {
+            await Impresora.ImprimirAsync(documento, abrirCajon: false);
+        }
+        catch (Exception ex)
+        {
+            _error = $"El corte quedó, pero no se pudo imprimir: {ex.Message}";
+        }
+    }
+
     private async Task CorteZAsync()
     {
         if (_usuario.Trim().Length == 0 || _pin.Length == 0)
@@ -131,6 +163,7 @@ else
         try
         {
             _resultado = await Cliente.CorteZAsync(Turno.Id, new SolicitudCorteZ(_usuario.Trim(), _pin, _conteo.Where(c => c.Value > 0).ToDictionary()));
+            await ImprimirAsync(_resultado);
             _error = null;
         }
         catch (ErrorCaja ex)

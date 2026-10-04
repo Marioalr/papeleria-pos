@@ -1,0 +1,47 @@
+@* Avisa en toda la caja cuando trabaja sin la caja principal, y lo que falta por subir. *@
+@implements IDisposable
+@inject IServiceProvider Servicios
+
+@if (_contingencia is { } c)
+{
+    @if (!c.ServidorResponde)
+    {
+        <div class="franja-contingencia sin-conexion">
+            Sin conexión con la caja principal: se vende con la copia de esta caja.
+            @if (c.Pendientes > 0)
+            {
+                <span> · @c.Pendientes por subir</span>
+            }
+        </div>
+    }
+    else if (c.Pendientes > 0)
+    {
+        <div class="franja-contingencia subiendo">Volvió la conexión: subiendo @c.Pendientes pendientes…</div>
+    }
+    @if (c.ConError > 0)
+    {
+        <div class="franja-contingencia con-error">
+            @c.ConError @(c.ConError == 1 ? "operación no pudo subir" : "operaciones no pudieron subir"): «@c.UltimoError». Avisa al encargado; se reintenta sola.
+        </div>
+    }
+}
+
+@code {
+    private Contingencia? _contingencia;
+
+    protected override void OnInitialized()
+    {
+        // Solo la ventana de Windows trabaja sin conexión; en el navegador de la caja principal no hay contingencia.
+        _contingencia = Servicios.GetService<Contingencia>();
+        if (_contingencia is not null)
+            _contingencia.Cambio += AlCambiar;
+    }
+
+    private void AlCambiar() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        if (_contingencia is not null)
+            _contingencia.Cambio -= AlCambiar;
+    }
+}

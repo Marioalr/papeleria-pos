@@ -3,11 +3,23 @@
 > **Revisado.** Cómo pasa la caja de la entrega 1 a una sucursal con varias cajas en red, y qué hace
 > una caja cuando no encuentra al servidor. Parte de la [arquitectura](arquitectura.md).
 
-**Avance:** la parte 1 ya funciona: el servicio corre como servicio de Windows (con su script de instalación),
-escucha en la red y contesta a "Buscar en la red"; las cajas se dan de alta con el PIN del dueño y reciben su llave
-(sin ella la API no contesta desde la red, y cada caja solo opera la suya); el dueño quita una PC desde
-Configuración → Cajas; y hay respaldo diario y con cada corte Z, con 30 días de historia. Falta la parte 2:
-contingencia.
+**Avance:** la entrega está completa.
+
+- **Parte 1:**
+  - El servicio corre como servicio de Windows (con su script de instalación), escucha en la red y contesta a
+    "Buscar en la red".
+  - Las cajas se dan de alta con el PIN del dueño y reciben su llave. Sin ella la API no contesta desde la red, y
+    cada caja solo opera la suya.
+  - El dueño quita una PC desde Configuración → Cajas.
+  - Hay respaldo diario y con cada corte Z, con 30 días de historia.
+- **Parte 2:**
+  - La caja revisa cada 5 s si la caja principal contesta y guarda su copia en una SQLite propia (catálogo,
+    usuarios con su PIN cifrado, reglas, ticket y último folio).
+  - Sin conexión vende, hace entradas y salidas, autoriza con PIN y hace los cortes X y Z (el Z se imprime). Todo
+    queda en la bandeja.
+  - Al volver sube la bandeja en orden, sin duplicar nada, y hasta terminar sigue trabajando por su cuenta para que
+    sus folios no choquen.
+  - Si algo no se puede subir, queda marcado con su motivo en la franja y se reintenta solo.
 
 ## Qué incluye
 
@@ -101,10 +113,10 @@ venta en contingencia queda marcada para que se vea en el corte y en la bitácor
 | Pieza | Qué cambia |
 |---|---|
 | `PapeleriaPos.Servicio` | Corre como servicio de Windows, escucha en la red, responde al descubrimiento, revisa la llave de cada caja, recibe la bandeja y hace los respaldos |
-| `PapeleriaPos.Caja` | Configuración inicial (encontrar el servicio y pedir el alta), latido, copia local del catálogo en su propia SQLite, bandeja de salida |
-| `PapeleriaPos.Interfaz` | Franja de contingencia; las pantallas usan un cliente que decide si va a la API o a la copia local |
+| `PapeleriaPos.Caja` | Configuración inicial (encontrar el servicio y pedir el alta); la base local va en `C:\ProgramData\PapeleriaPos\caja-local.db` |
+| `PapeleriaPos.Interfaz` | `Contingencia` (latido, copia local, bandeja y diario del turno en `AlmacenLocal`) y la franja; el cliente de la caja decide si va a la API o a la copia local |
 | `instalacion/instalar-servicio.ps1` | Instalar y quitar el servicio de Windows y las reglas del firewall (va junto al servicio publicado) |
-| Datos nuevos | Caja: llave (solo su huella), alta y baja. Venta y movimiento: "en contingencia". Respaldo: fecha y archivo |
+| Datos nuevos | Caja: llave (solo su huella), equipo y alta. Venta, movimiento, corte y bitácora: "en contingencia"; turno: "abierto en contingencia" |
 
 Se hace en dos partes: **parte 1,** servicio de Windows, cajas por la red, alta con llave y respaldos; **parte 2,**
 contingencia (copia local, bandeja, latido, autorizaciones y corte sin servidor).

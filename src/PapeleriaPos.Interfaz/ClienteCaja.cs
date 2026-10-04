@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
 
 namespace PapeleriaPos.Interfaz;
@@ -34,163 +35,197 @@ public sealed class ConexionCaja
     public bool Lista => !PideAlta || (CajaId is not null && Llave is not null);
 }
 
-/// <summary>Habla con el servicio de la sucursal. La caja no toca la base de datos: todo pasa por aquí.</summary>
-public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion)
+/// <summary>
+/// Habla con el servicio de la sucursal. La caja no toca la base de datos: todo pasa por aquí. Con contingencia (la
+/// ventana de Windows), si la caja principal no contesta, lo que se puede hacer sin ella se hace con la copia local y
+/// queda en la bandeja; lo demás espera a que vuelva la conexión.
+/// </summary>
+public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Contingencia? contingencia = null)
 {
     public const string EncabezadoLlave = "X-Caja-Llave";
 
-    public Task<List<CajaDto>> CajasAsync() => GetAsync<List<CajaDto>>("api/cajas")!;
+    private readonly Transporte _http = new(http, conexion);
 
-    public Task<SesionDto> EntrarAsync(string usuario, string pin) => PostAsync<SesionDto>("api/sesion", new SolicitudEntrada(usuario, pin));
+    public Task<List<CajaDto>> CajasAsync() =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<List<CajaDto>>("api/cajas"))!, l => l.Cajas());
 
-    public Task<TurnoDto?> TurnoAsync(Guid cajaId) => GetAsync<TurnoDto>($"api/cajas/{cajaId}/turno", nadaEsNulo: true);
+    public Task<SesionDto> EntrarAsync(string usuario, string pin) =>
+        ConRespaldoAsync(() => _http.PostAsync<SesionDto>("api/sesion", new SolicitudEntrada(usuario, pin)), l => l.Entrar(usuario, pin));
 
-    public Task<TurnoDto> AbrirTurnoAsync(Guid cajaId, Guid cajeroId, long fondo) =>
-        PostAsync<TurnoDto>("api/turnos", new SolicitudTurno(cajaId, cajeroId, fondo));
+    public Task<TurnoDto?> TurnoAsync(Guid cajaId) =>
+        ConRespaldoAsync(() => _http.GetAsync<TurnoDto>($"api/cajas/{cajaId}/turno", nadaEsNulo: true), l => l.Turno(cajaId),
+            (l, turno) => l.TurnoEnLineaAsync(turno));
 
-    public Task<ComprobanteMovimientoDto> MovimientoAsync(Guid turnoId, SolicitudMovimiento movimiento) =>
-        PostAsync<ComprobanteMovimientoDto>($"api/turnos/{turnoId}/movimientos", movimiento);
+    public Task<TurnoDto> AbrirTurnoAsync(Guid cajaId, Guid cajeroId, long fondo)
+    {
+        var solicitud = new SolicitudTurno(cajaId, cajeroId, fondo, Ids.Nuevo());
+        return ConRespaldoAsync(() => _http.PostAsync<TurnoDto>("api/turnos", solicitud), l => l.AbrirTurno(solicitud),
+            (l, turno) => l.TurnoAbiertoEnLinea(turno));
+    }
+
+    public Task<ComprobanteMovimientoDto> MovimientoAsync(Guid turnoId, SolicitudMovimiento movimiento)
+    {
+        movimiento = movimiento with { Id = movimiento.Id ?? Ids.Nuevo() };
+        return ConRespaldoAsync(() => _http.PostAsync<ComprobanteMovimientoDto>($"api/turnos/{turnoId}/movimientos", movimiento),
+            l => l.Movimiento(turnoId, movimiento), (l, comprobante) => l.MovimientoEnLinea(turnoId, movimiento.Id!.Value, comprobante));
+    }
 
     public Task<TicketDto> ReimprimirAsync(Guid ventaId, SolicitudReimpresion solicitud) =>
-        PostAsync<TicketDto>($"api/ventas/{ventaId}/reimpresion", solicitud);
+        ConRespaldoAsync(() => _http.PostAsync<TicketDto>($"api/ventas/{ventaId}/reimpresion", solicitud));
 
-    public Task<EfectivoCajaDto?> EfectivoAsync(Guid turnoId) => GetAsync<EfectivoCajaDto>($"api/turnos/{turnoId}/efectivo");
+    public Task<EfectivoCajaDto?> EfectivoAsync(Guid turnoId) =>
+        ConRespaldoAsync(() => _http.GetAsync<EfectivoCajaDto>($"api/turnos/{turnoId}/efectivo"), l => l.Efectivo(turnoId));
 
-    public Task BitacoraAsync(SolicitudBitacora solicitud) => PostAsync<object>("api/bitacora", solicitud, sinRespuesta: true);
+    public Task BitacoraAsync(SolicitudBitacora solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<object>("api/bitacora", solicitud, sinRespuesta: true), l => l.Bitacora(solicitud));
 
-    public Task<DecisionDto> PermisoAsync(SolicitudPermiso solicitud) => PostAsync<DecisionDto>("api/permisos", solicitud);
+    public Task<DecisionDto> PermisoAsync(SolicitudPermiso solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<DecisionDto>("api/permisos", solicitud), l => l.Permiso(solicitud));
 
-    public Task<AutorizacionDto> AutorizarAsync(SolicitudAutorizacion solicitud) => PostAsync<AutorizacionDto>("api/autorizaciones", solicitud);
+    public Task<AutorizacionDto> AutorizarAsync(SolicitudAutorizacion solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<AutorizacionDto>("api/autorizaciones", solicitud), l => l.Autorizar(solicitud));
 
     public Task<ConfiguracionSucursalDto?> ConfiguracionSucursalAsync(Guid sucursalId) =>
-        GetAsync<ConfiguracionSucursalDto>($"api/sucursales/{sucursalId}/configuracion");
+        ConRespaldoAsync(() => _http.GetAsync<ConfiguracionSucursalDto>($"api/sucursales/{sucursalId}/configuracion"));
 
     public Task<ConfiguracionSucursalDto> GuardarConfiguracionSucursalAsync(Guid sucursalId, SolicitudConfiguracionSucursal solicitud) =>
-        PutAsync<ConfiguracionSucursalDto>($"api/sucursales/{sucursalId}/configuracion", solicitud);
+        ConRespaldoAsync(() => _http.PutAsync<ConfiguracionSucursalDto>($"api/sucursales/{sucursalId}/configuracion", solicitud));
 
-    public Task<CorteDto> CorteXAsync(Guid turnoId, Guid usuarioId) => PostAsync<CorteDto>($"api/turnos/{turnoId}/corte-x?usuarioId={usuarioId}", null);
+    public Task<CorteDto> CorteXAsync(Guid turnoId, Guid usuarioId) =>
+        ConRespaldoAsync(() => _http.PostAsync<CorteDto>($"api/turnos/{turnoId}/corte-x?usuarioId={usuarioId}", null), l => l.CorteX(turnoId, usuarioId));
 
-    public Task<CorteDto> CorteZAsync(Guid turnoId, SolicitudCorteZ solicitud) => PostAsync<CorteDto>($"api/turnos/{turnoId}/corte-z", solicitud);
+    public Task<CorteDto> CorteZAsync(Guid turnoId, SolicitudCorteZ solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<CorteDto>($"api/turnos/{turnoId}/corte-z", solicitud), l => l.CorteZ(turnoId, solicitud),
+            (l, _) => l.TurnoCerradoEnLinea());
 
     public Task<ProductoVentaDto?> PorCodigoAsync(string codigo, Guid sucursalId) =>
-        GetAsync<ProductoVentaDto>($"api/productos/codigo/{Uri.EscapeDataString(codigo)}?sucursalId={sucursalId}", noEncontradoEsNulo: true);
+        ConRespaldoAsync(() => _http.GetAsync<ProductoVentaDto>($"api/productos/codigo/{Uri.EscapeDataString(codigo)}?sucursalId={sucursalId}",
+            noEncontradoEsNulo: true), l => l.PorCodigo(codigo));
 
     public Task<ProductoVentaDto?> PorVarianteAsync(Guid varianteId, Guid sucursalId) =>
-        GetAsync<ProductoVentaDto>($"api/productos/{varianteId}?sucursalId={sucursalId}", noEncontradoEsNulo: true);
+        ConRespaldoAsync(() => _http.GetAsync<ProductoVentaDto>($"api/productos/{varianteId}?sucursalId={sucursalId}", noEncontradoEsNulo: true),
+            l => l.PorVariante(varianteId));
 
-    public async Task<List<ResultadoBusquedaDto>> BuscarAsync(string texto, Guid sucursalId) =>
-        await GetAsync<List<ResultadoBusquedaDto>>($"api/productos/buscar?q={Uri.EscapeDataString(texto)}&sucursalId={sucursalId}") ?? [];
+    public Task<List<ResultadoBusquedaDto>> BuscarAsync(string texto, Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<ResultadoBusquedaDto>>(
+            $"api/productos/buscar?q={Uri.EscapeDataString(texto)}&sucursalId={sucursalId}") ?? [], l => l.Buscar(texto));
 
-    public Task<TicketDto> CobrarAsync(SolicitudCobro solicitud) => PostAsync<TicketDto>("api/ventas", solicitud);
+    /// <summary>La venta lleva su ID desde la caja: si la respuesta no llega y se cobra sin conexión, al subir no se duplica.</summary>
+    public Task<TicketDto> CobrarAsync(SolicitudCobro solicitud)
+    {
+        solicitud = solicitud with { VentaId = solicitud.VentaId ?? Ids.Nuevo() };
+        return ConRespaldoAsync(() => _http.PostAsync<TicketDto>("api/ventas", solicitud), l => l.Cobrar(solicitud),
+            (l, ticket) => l.CobroEnLinea(solicitud.TurnoId, ticket));
+    }
 
-    public async Task<List<VentaDelDiaDto>> VentasDelDiaAsync(Guid cajaId) =>
-        await GetAsync<List<VentaDelDiaDto>>($"api/cajas/{cajaId}/ventas-del-dia") ?? [];
+    public Task<List<VentaDelDiaDto>> VentasDelDiaAsync(Guid cajaId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<VentaDelDiaDto>>($"api/cajas/{cajaId}/ventas-del-dia") ?? []);
 
-    public Task<TicketDto?> TicketAsync(Guid ventaId) => GetAsync<TicketDto>($"api/ventas/{ventaId}/ticket");
+    public Task<TicketDto?> TicketAsync(Guid ventaId) => ConRespaldoAsync(() => _http.GetAsync<TicketDto>($"api/ventas/{ventaId}/ticket"));
 
-    public Task<TicketDto?> UltimoTicketAsync(Guid cajaId) => GetAsync<TicketDto>($"api/cajas/{cajaId}/ultimo-ticket");
+    public Task<TicketDto?> UltimoTicketAsync(Guid cajaId) => ConRespaldoAsync(() => _http.GetAsync<TicketDto>($"api/cajas/{cajaId}/ultimo-ticket"));
 
     public Task<ConfiguracionTicketDto?> ConfiguracionTicketAsync(Guid sucursalId) =>
-        GetAsync<ConfiguracionTicketDto>($"api/sucursales/{sucursalId}/ticket");
+        ConRespaldoAsync(() => _http.GetAsync<ConfiguracionTicketDto>($"api/sucursales/{sucursalId}/ticket"));
 
     public Task<ConfiguracionTicketDto> GuardarTextosTicketAsync(Guid sucursalId, SolicitudTextosTicket solicitud) =>
-        PutAsync<ConfiguracionTicketDto>($"api/sucursales/{sucursalId}/ticket/textos", solicitud);
+        ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/sucursales/{sucursalId}/ticket/textos", solicitud));
 
     /// <summary>Sin imagen, quita el logo.</summary>
     public Task<ConfiguracionTicketDto> GuardarLogoTicketAsync(Guid sucursalId, SolicitudLogo solicitud) =>
-        PutAsync<ConfiguracionTicketDto>($"api/sucursales/{sucursalId}/ticket/logo", solicitud);
+        ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/sucursales/{sucursalId}/ticket/logo", solicitud));
 
     public Task<VentaParaDevolverDto?> VentaPorFolioAsync(Guid sucursalId, string folio) =>
-        GetAsync<VentaParaDevolverDto>($"api/sucursales/{sucursalId}/ventas/folio/{Uri.EscapeDataString(folio)}", noEncontradoEsNulo: true);
+        ConRespaldoAsync(() => _http.GetAsync<VentaParaDevolverDto>($"api/sucursales/{sucursalId}/ventas/folio/{Uri.EscapeDataString(folio)}",
+            noEncontradoEsNulo: true));
 
     public Task<ComprobanteDevolucionDto> CancelarAsync(Guid ventaId, SolicitudCancelacion solicitud) =>
-        PostAsync<ComprobanteDevolucionDto>($"api/ventas/{ventaId}/cancelacion", solicitud);
+        ConRespaldoAsync(() => _http.PostAsync<ComprobanteDevolucionDto>($"api/ventas/{ventaId}/cancelacion", solicitud), null,
+            (l, comprobante) => l.DevolucionEnLinea(comprobante));
 
     public Task<ComprobanteDevolucionDto> DevolverAsync(Guid ventaId, SolicitudDevolucion solicitud) =>
-        PostAsync<ComprobanteDevolucionDto>($"api/ventas/{ventaId}/devoluciones", solicitud);
+        ConRespaldoAsync(() => _http.PostAsync<ComprobanteDevolucionDto>($"api/ventas/{ventaId}/devoluciones", solicitud), null,
+            (l, comprobante) => l.DevolucionEnLinea(comprobante));
 
-    public async Task<List<TransferenciaDto>> TransferenciasAsync(Guid sucursalId) =>
-        await GetAsync<List<TransferenciaDto>>($"api/sucursales/{sucursalId}/transferencias") ?? [];
+    public Task<List<TransferenciaDto>> TransferenciasAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<TransferenciaDto>>($"api/sucursales/{sucursalId}/transferencias") ?? []);
 
     public Task VerificarTransferenciaAsync(Guid cobroId, SolicitudVerificacion solicitud) =>
-        PostAsync<object>($"api/cobros/{cobroId}/verificacion", solicitud, sinRespuesta: true);
+        ConRespaldoAsync(() => _http.PostAsync<object>($"api/cobros/{cobroId}/verificacion", solicitud, sinRespuesta: true));
 
     public Task<List<BitacoraDto>> ConsultarBitacoraAsync(Guid sucursalId, SolicitudConsultaBitacora solicitud) =>
-        PostAsync<List<BitacoraDto>>($"api/sucursales/{sucursalId}/bitacora/consulta", solicitud);
+        ConRespaldoAsync(() => _http.PostAsync<List<BitacoraDto>>($"api/sucursales/{sucursalId}/bitacora/consulta", solicitud));
 
-    public async Task<List<ReglaDto>> ReglasAsync(Guid sucursalId) =>
-        await GetAsync<List<ReglaDto>>($"api/sucursales/{sucursalId}/reglas") ?? [];
+    public Task<List<ReglaDto>> ReglasAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<ReglaDto>>($"api/sucursales/{sucursalId}/reglas") ?? []);
 
     public Task<List<ReglaDto>> GuardarReglasAsync(Guid sucursalId, SolicitudReglas solicitud) =>
-        PutAsync<List<ReglaDto>>($"api/sucursales/{sucursalId}/reglas", solicitud);
+        ConRespaldoAsync(() => _http.PutAsync<List<ReglaDto>>($"api/sucursales/{sucursalId}/reglas", solicitud));
 
     // ── Alta de la caja (antes de tener llave; el servicio todavía no es el guardado) ──
 
-    public Task<EstadoServicioDto?> EstadoAsync(Uri servicio) => GetAsync<EstadoServicioDto>("api/estado", servicio: servicio);
+    public Task<EstadoServicioDto?> EstadoAsync(Uri servicio) => _http.GetAsync<EstadoServicioDto>("api/estado", servicio: servicio);
 
     public Task<List<SucursalAltaDto>> OpcionesAltaAsync(Uri servicio, SolicitudCredenciales credenciales) =>
-        PostAsync<List<SucursalAltaDto>>("api/alta/opciones", credenciales, servicio: servicio);
+        _http.PostAsync<List<SucursalAltaDto>>("api/alta/opciones", credenciales, servicio: servicio);
 
-    public Task<AltaCajaDto> AltaAsync(Uri servicio, SolicitudAltaCaja solicitud) => PostAsync<AltaCajaDto>("api/alta", solicitud, servicio: servicio);
+    public Task<AltaCajaDto> AltaAsync(Uri servicio, SolicitudAltaCaja solicitud) => _http.PostAsync<AltaCajaDto>("api/alta", solicitud, servicio: servicio);
 
     public Task QuitarEquipoAsync(Guid cajaId, SolicitudCredenciales credenciales) =>
-        PostAsync<object>($"api/cajas/{cajaId}/quitar-equipo", credenciales, sinRespuesta: true);
+        ConRespaldoAsync(() => _http.PostAsync<object>($"api/cajas/{cajaId}/quitar-equipo", credenciales, sinRespuesta: true));
 
-    private async Task<T> PutAsync<T>(string url, object cuerpo)
+    /// <summary>
+    /// En línea, va a la caja principal y le avisa a la contingencia lo que pasó (para su cuenta del turno). Sin
+    /// conexión, usa la copia local si esa operación se puede hacer sin la caja principal.
+    /// </summary>
+    private async Task<T> ConRespaldoAsync<T>(
+        Func<Task<T>> enLinea, Func<Contingencia, T>? sinConexion = null, Func<Contingencia, T, Task>? trasEnLinea = null)
     {
-        using var respuesta = await EnviarAsync(HttpMethod.Put, url, cuerpo);
-        await RevisarAsync(respuesta);
-        return (await respuesta.Content.ReadFromJsonAsync<T>())!;
-    }
-
-    private async Task<T?> GetAsync<T>(string url, bool nadaEsNulo = false, bool noEncontradoEsNulo = false, Uri? servicio = null)
-    {
-        using var respuesta = await EnviarAsync(HttpMethod.Get, url, servicio: servicio);
-        if ((nadaEsNulo && respuesta.StatusCode == HttpStatusCode.NoContent) || (noEncontradoEsNulo && respuesta.StatusCode == HttpStatusCode.NotFound))
-            return default;
-        await RevisarAsync(respuesta);
-        return await respuesta.Content.ReadFromJsonAsync<T>();
-    }
-
-    private async Task<T> PostAsync<T>(string url, object? cuerpo, bool sinRespuesta = false, Uri? servicio = null)
-    {
-        using var respuesta = await EnviarAsync(HttpMethod.Post, url, cuerpo, servicio);
-        await RevisarAsync(respuesta);
-        return sinRespuesta ? default! : (await respuesta.Content.ReadFromJsonAsync<T>())!;
-    }
-
-    /// <summary>Cada llamada va a la caja principal guardada y lleva la llave de esta caja.</summary>
-    private async Task<HttpResponseMessage> EnviarAsync(HttpMethod metodo, string url, object? cuerpo = null, Uri? servicio = null)
-    {
-        using var mensaje = new HttpRequestMessage(metodo, new Uri(servicio ?? conexion.Servicio, url));
-        if (conexion.Llave is { } llave)
-            mensaje.Headers.Add(EncabezadoLlave, llave);
-        if (metodo != HttpMethod.Get)
-            mensaje.Content = JsonContent.Create(cuerpo, cuerpo?.GetType() ?? typeof(object));
+        if (contingencia is null)
+            return await enLinea();
+        if (!contingencia.EnLinea)
+            return Local(contingencia, sinConexion);
+        T resultado;
         try
         {
-            return await http.SendAsync(mensaje);
+            resultado = await enLinea();
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
         {
-            throw new ErrorCaja("No hay conexión con el servicio de la caja principal.", "sin-conexion");
+            contingencia.MarcarSinConexion();
+            return Local(contingencia, sinConexion);
         }
+        if (trasEnLinea is not null)
+            await trasEnLinea(contingencia, resultado);
+        return resultado;
     }
 
-    private static async Task RevisarAsync(HttpResponseMessage respuesta)
+    private Task<T> ConRespaldoAsync<T>(Func<Task<T>> enLinea, Func<Contingencia, T>? sinConexion, Action<Contingencia, T> trasEnLinea) =>
+        ConRespaldoAsync(enLinea, sinConexion, (l, r) =>
+        {
+            trasEnLinea(l, r);
+            return Task.CompletedTask;
+        });
+
+    private Task ConRespaldoAsync(Func<Task<object>> enLinea, Action<Contingencia> sinConexion) =>
+        ConRespaldoAsync(enLinea, l =>
+        {
+            sinConexion(l);
+            return new object();
+        });
+
+    private static T Local<T>(Contingencia contingencia, Func<Contingencia, T>? sinConexion)
     {
-        if (respuesta.IsSuccessStatusCode)
-            return;
-        ErrorDto? error = null;
+        if (sinConexion is null)
+            throw new ErrorCaja("No hay conexión con la caja principal: esto espera a que vuelva.", "sin-conexion");
         try
         {
-            error = await respuesta.Content.ReadFromJsonAsync<ErrorDto>();
+            return sinConexion(contingencia);
         }
-        catch (Exception)
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
-            // Sin mensaje del servicio: se usa el genérico.
+            throw new ErrorCaja(ex.Message);
         }
-        throw new ErrorCaja(error?.Mensaje ?? $"El servicio respondió con un error ({(int)respuesta.StatusCode}).", error?.Codigo);
     }
 }
 

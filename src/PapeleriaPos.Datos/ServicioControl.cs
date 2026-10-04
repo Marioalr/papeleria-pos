@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Usuarios;
 
@@ -89,6 +90,20 @@ public sealed class ServicioControl(PosDbContext db)
             throw new PermisoRequerido(accion, NivelPermiso.RequiereAutorizacion, "Esto requiere la autorización del encargado.");
         autorizacion.Usar(accion, sucursalId, monto, Ahora);
         Registrar(sucursalId, cajaId, usuarioId, accion, texto, monto, ventaId, autorizacion.AutorizadorId, ResultadoBitacora.Autorizado);
+    }
+
+    /// <summary>Un registro de la bitácora que hizo una caja sin conexión. Guarda; si ya llegó antes, no lo repite.</summary>
+    public async Task RegistrarDeContingenciaAsync(BitacoraContingenciaDto b, CancellationToken ct = default)
+    {
+        if (await db.Bitacora.AnyAsync(x => x.Id == b.Id, ct))
+            return;
+        db.Bitacora.Add(new Bitacora
+        {
+            Id = b.Id, SucursalId = b.SucursalId, CajaId = b.CajaId, UsuarioId = b.UsuarioId, Accion = b.Accion, Detalle = b.Detalle,
+            MontoCentavos = b.MontoCentavos, VentaId = b.VentaId, AutorizoId = b.AutorizoId, Resultado = b.Resultado, FechaUtc = b.FechaUtc,
+            EnContingencia = true,
+        });
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>Agrega a la bitácora sin guardar.</summary>

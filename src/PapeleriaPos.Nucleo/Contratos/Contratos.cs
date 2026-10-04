@@ -49,9 +49,9 @@ public sealed record CajaDto(Guid Id, string Nombre, string Serie, Guid Sucursal
 
 public sealed record TurnoDto(Guid Id, Guid CajaId, Guid CajeroId, string Cajero, DateTime AbiertoLocal, long FondoCentavos);
 
-public sealed record SolicitudTurno(Guid CajaId, Guid CajeroId, long FondoCentavos);
+public sealed record SolicitudTurno(Guid CajaId, Guid CajeroId, long FondoCentavos, Guid? Id = null);
 
-public sealed record SolicitudMovimiento(TipoMovimientoCaja Tipo, long MontoCentavos, string Motivo, Guid UsuarioId);
+public sealed record SolicitudMovimiento(TipoMovimientoCaja Tipo, long MontoCentavos, string Motivo, Guid UsuarioId, Guid? Id = null);
 
 /// <summary>Una línea tal como la manda la caja. Sin variante es artículo común, con descripción y precio a mano.</summary>
 /// <param name="PrecioCentavos">En un producto del catálogo, el precio cambiado en la caja (con <paramref name="AutorizacionId"/>).</param>
@@ -59,7 +59,9 @@ public sealed record LineaSolicitada(
     Guid? VarianteId, Guid? PresentacionId, long CantidadMilesimas, string? Descripcion = null, long? PrecioCentavos = null, Guid? AutorizacionId = null);
 
 /// <summary>El servicio vuelve a armar la venta con los precios del catálogo: nunca confía en los precios de la caja.</summary>
-public sealed record SolicitudCobro(Guid CajaId, Guid TurnoId, Guid CajeroId, IReadOnlyList<LineaSolicitada> Lineas, IReadOnlyList<CobroSolicitado> Cobros);
+/// <param name="VentaId">Lo pone la caja: si la respuesta no llegó y se manda otra vez (o sube con la bandeja), no se cobra dos veces.</param>
+public sealed record SolicitudCobro(
+    Guid CajaId, Guid TurnoId, Guid CajeroId, IReadOnlyList<LineaSolicitada> Lineas, IReadOnlyList<CobroSolicitado> Cobros, Guid? VentaId = null);
 
 public sealed record LineaTicketDto(string Cantidad, string Descripcion, long PrecioCentavos, long ImporteCentavos);
 
@@ -86,7 +88,7 @@ public sealed record SolicitudCorteZ(string EncargadoUsuario, string EncargadoPi
 public sealed record CorteDto(
     TipoCorte Tipo, DateTime FechaLocal, string Cajero, string RealizadoPor, int Ventas, long FondoCentavos, long EfectivoVentasCentavos,
     long EntradasCentavos, long SalidasCentavos, long TarjetaCentavos, long TransferenciaCentavos, long EsperadoCentavos,
-    long? ContadoCentavos, long? DiferenciaCentavos, long DevolucionesCentavos = 0, int Cancelaciones = 0);
+    long? ContadoCentavos, long? DiferenciaCentavos, long DevolucionesCentavos = 0, int Cancelaciones = 0, bool EnContingencia = false);
 
 /// <param name="Codigo">"requiere-autorizacion" o "no-permitido" cuando lo detiene una regla.</param>
 public sealed record ErrorDto(string Mensaje, string? Codigo = null);
@@ -166,7 +168,8 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 // ── Varias cajas (entrega 3) ────────────────────────────────────────────────
 
 /// <summary>Lo que contesta el servicio sin llave: para encontrarlo en la red y saber que está vivo.</summary>
-public sealed record EstadoServicioDto(string Servicio, string Version, IReadOnlyList<string> Sucursales);
+/// <param name="VersionDatos">Cambia con el catálogo, los usuarios o las reglas: la caja vuelve a bajar su copia.</param>
+public sealed record EstadoServicioDto(string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0);
 
 /// <summary>Usuario y PIN de quien autoriza (el dueño para dar de alta o quitar cajas).</summary>
 public sealed record SolicitudCredenciales(string Usuario, string Pin);
@@ -180,3 +183,41 @@ public sealed record SolicitudAltaCaja(string Usuario, string Pin, Guid Sucursal
 
 /// <param name="Llave">Solo la ve el equipo: la guarda y la manda en cada llamada (encabezado X-Caja-Llave).</param>
 public sealed record AltaCajaDto(CajaDto Caja, string Llave);
+
+// ── Contingencia (entrega 3, parte 2) ───────────────────────────────────────
+
+/// <summary>Un usuario en la copia local de la caja: el PIN va como su hash (PBKDF2), nunca en claro.</summary>
+public sealed record UsuarioLocalDto(Guid Id, string Usuario, string Nombre, Rol Rol, string PinHash, bool Activo);
+
+/// <summary>Cada código de barras y la presentación que vende (la caja de 12, la pieza…).</summary>
+public sealed record CodigoLocalDto(string Codigo, Guid VarianteId, Guid PresentacionId);
+
+/// <summary>Lo que la caja guarda para vender sin la caja principal.</summary>
+/// <param name="Version">La <see cref="EstadoServicioDto.VersionDatos"/> con que se armó.</param>
+/// <param name="UltimoFolio">El último folio de la serie de la caja que conoce el servicio.</param>
+public sealed record PaqueteContingenciaDto(
+    long Version, CajaDto Caja, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<UsuarioLocalDto> Usuarios,
+    IReadOnlyList<ReglaDto> Reglas,
+    IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, int UltimoFolio, long? LimiteEfectivoCentavos);
+
+// Lo que sube con la bandeja. Cada cosa lleva el ID que le dio la caja: si llega dos veces, se guarda una.
+
+public sealed record TurnoContingenciaDto(Guid Id, Guid CajaId, Guid CajeroId, long FondoCentavos, DateTime AbiertoUtc);
+
+/// <param name="PrecioCentavos">El que se cobró (por presentación, con IVA): manda sobre el del catálogo.</param>
+public sealed record LineaContingenciaDto(Guid? VarianteId, Guid? PresentacionId, string Descripcion, long CantidadMilesimas, long PrecioCentavos);
+
+public sealed record VentaContingenciaDto(
+    Guid Id, Guid CajaId, Guid TurnoId, Guid CajeroId, int Folio, DateTime PagadaUtc, IReadOnlyList<LineaContingenciaDto> Lineas,
+    IReadOnlyList<CobroSolicitado> Cobros);
+
+public sealed record MovimientoContingenciaDto(Guid Id, TipoMovimientoCaja Tipo, long MontoCentavos, string Motivo, Guid UsuarioId, DateTime FechaUtc);
+
+public sealed record BitacoraContingenciaDto(
+    Guid Id, Guid SucursalId, Guid CajaId, Guid? UsuarioId, AccionControlada Accion, string Detalle, long? MontoCentavos, Guid? AutorizoId,
+    ResultadoBitacora Resultado, DateTime FechaUtc, Guid? VentaId = null);
+
+public sealed record CorteContingenciaDto(Guid Id, Guid EncargadoId, IReadOnlyDictionary<long, int> Conteo, DateTime FechaUtc);
+
+/// <summary>El último folio que usó la caja (aunque alguna venta no haya podido subir): la serie sigue después de él.</summary>
+public sealed record FolioUsadoDto(int Folio);
