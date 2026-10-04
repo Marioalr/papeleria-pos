@@ -164,6 +164,9 @@ public sealed class RegistroCaja(PosDbContext db)
             $"Corte de cierre: esperado {corte.EsperadoCentavos / 100m:N2}, contado {corte.ContadoCentavos / 100m:N2}", corte.DiferenciaCentavos);
         db.Cortes.Add(corte);
         await db.SaveChangesAsync(ct);
+        // Si era el último turno abierto de la sucursal, sale el resumen del día por Telegram.
+        await AlertasTelegram.ResumenSiEsElUltimoAsync(db, corte, turno.SucursalId, ct);
+        await db.SaveChangesAsync(ct);
         return corte;
     }
 
@@ -270,6 +273,9 @@ public sealed class RegistroCaja(PosDbContext db)
             MontoCentavos = corte.DiferenciaCentavos, Resultado = ResultadoBitacora.Hecho, FechaUtc = c.FechaUtc, EnContingencia = true,
         });
         db.Cortes.Add(corte);
+        await db.SaveChangesAsync(ct);
+        // Si era el último turno abierto de la sucursal, sale el resumen del día por Telegram.
+        await AlertasTelegram.ResumenSiEsElUltimoAsync(db, corte, turno.SucursalId, ct);
         await db.SaveChangesAsync(ct);
         return corte;
     }

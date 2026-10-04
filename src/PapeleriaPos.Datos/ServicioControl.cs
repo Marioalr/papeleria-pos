@@ -89,7 +89,8 @@ public sealed class ServicioControl(PosDbContext db)
         if (autorizacionId is not { } id || await db.Autorizaciones.FindAsync([id], ct) is not { } autorizacion)
             throw new PermisoRequerido(accion, NivelPermiso.RequiereAutorizacion, "Esto requiere la autorización del encargado.");
         autorizacion.Usar(accion, sucursalId, monto, Ahora);
-        Registrar(sucursalId, cajaId, usuarioId, accion, texto, monto, ventaId, autorizacion.AutorizadorId, ResultadoBitacora.Autorizado);
+        Registrar(sucursalId, cajaId, usuarioId, accion, autorizacion.PorTelegram ? $"{texto} (autorizado por Telegram)" : texto, monto, ventaId,
+            autorizacion.AutorizadorId, ResultadoBitacora.Autorizado);
     }
 
     /// <summary>Un registro de la bitácora que hizo una caja sin conexión. Guarda; si ya llegó antes, no lo repite.</summary>

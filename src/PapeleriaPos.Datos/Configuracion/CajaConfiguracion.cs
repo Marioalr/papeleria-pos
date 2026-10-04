@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Nucleo.Ventas;
@@ -142,6 +143,55 @@ internal sealed class ConfiguracionSucursalConfiguracion : IEntityTypeConfigurat
         b.ToTable("ConfiguracionesSucursal");
         b.HasKey(c => c.SucursalId);
         b.HasOne<Sucursal>().WithMany().HasForeignKey(c => c.SucursalId);
+        // Las sucursales que ya tenían configuración arrancan con los umbrales propuestos (docs/fase-1-telegram.md).
+        b.Property(c => c.UmbralCorteCentavos).HasDefaultValue(5000L).ValueGeneratedNever();
+        b.Property(c => c.UmbralDevolucionCentavos).HasDefaultValue(20000L).ValueGeneratedNever();
+        b.Property(c => c.UmbralSalidaCentavos).HasDefaultValue(50000L).ValueGeneratedNever();
+        b.Property(c => c.MinutosSinConexion).HasDefaultValue(10).ValueGeneratedNever();
+        b.Property(c => c.HoraApertura).HasDefaultValue(new TimeOnly(8, 0)).ValueGeneratedNever();
+        b.Property(c => c.HoraCierre).HasDefaultValue(new TimeOnly(21, 0)).ValueGeneratedNever();
+    }
+}
+
+internal sealed class ChatTelegramConfiguracion : IEntityTypeConfiguration<ChatTelegram>
+{
+    public void Configure(EntityTypeBuilder<ChatTelegram> b)
+    {
+        b.ToTable("ChatsTelegram");
+        b.HasOne<Usuario>().WithMany().HasForeignKey(c => c.UsuarioId);
+        b.HasIndex(c => c.ChatId);
+    }
+}
+
+internal sealed class CodigoVinculacionConfiguracion : IEntityTypeConfiguration<CodigoVinculacion>
+{
+    public void Configure(EntityTypeBuilder<CodigoVinculacion> b)
+    {
+        b.ToTable("CodigosVinculacion");
+        b.HasOne<Usuario>().WithMany().HasForeignKey(c => c.UsuarioId);
+        b.HasIndex(c => c.Codigo);
+    }
+}
+
+internal sealed class SolicitudRemotaConfiguracion : IEntityTypeConfiguration<SolicitudRemota>
+{
+    public void Configure(EntityTypeBuilder<SolicitudRemota> b)
+    {
+        b.ToTable("SolicitudesRemotas");
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(s => s.SucursalId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(s => s.SolicitanteId);
+        b.HasIndex(s => s.Estado);
+    }
+}
+
+internal sealed class MensajeTelegramConfiguracion : IEntityTypeConfiguration<MensajeTelegram>
+{
+    public void Configure(EntityTypeBuilder<MensajeTelegram> b)
+    {
+        b.ToTable("MensajesTelegram");
+        b.HasIndex(m => m.EnviadoUtc);
+        b.HasIndex(m => m.Clave);
+        b.HasIndex(m => m.SolicitudId);
     }
 }
 

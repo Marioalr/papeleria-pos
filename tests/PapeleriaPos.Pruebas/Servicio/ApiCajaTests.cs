@@ -25,7 +25,7 @@ public sealed class ServicioDePrueba : IAsyncLifetime
             await PreparacionCaja.PrepararAsync(db);
         }
         Fabrica = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
-            b.UseSetting("ConnectionStrings:Pos", $"Data Source={_ruta};Pooling=False").UseSetting("Respaldos:Activo", "false"));
+            b.UseSetting("ConnectionStrings:Pos", $"Data Source={_ruta};Pooling=False").UseSetting("Respaldos:Activo", "false").UseSetting("Telegram:Activo", "false"));
     }
 
     public async Task DisposeAsync()

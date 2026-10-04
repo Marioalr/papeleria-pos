@@ -4,6 +4,7 @@ using PapeleriaPos.Impresion;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Servicio;
 using PapeleriaPos.Servicio.Componentes;
+using PapeleriaPos.Servicio.Telegram;
 
 // Servicio de la sucursal: el único que escribe en la base. En la caja principal corre como servicio de Windows y
 // atiende por la red a las cajas dadas de alta. Para probar sin la ventana de Windows, muestra la caja en el navegador
@@ -30,6 +31,13 @@ if (respaldos)
 if (builder.Configuration.GetValue("Descubrimiento:Activo", true))
     builder.Services.AddHostedService<DescubrimientoEnRed>();
 
+// Telegram: el bot vive en la caja principal; sin token (Telegram:Token o telegram-token.txt) no hace nada.
+builder.Services.AddSingleton<PresenciaCajas>();
+builder.Services.AddSingleton<ITelegram>(new TelegramBot(TelegramBot.LeerToken(builder.Configuration)));
+builder.Services.AddSingleton<MotorTelegram>();
+if (builder.Configuration.GetValue("Telegram:Activo", true))
+    builder.Services.AddHostedService<TrabajadorTelegram>();
+
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 var urlPropia = new Uri(builder.Configuration["Caja:Servicio"] ?? "http://localhost:5080");
 // Sin impresora configurada, la caja del navegador muestra el ticket en pantalla; con "tcp://ip:9100", imprime.
@@ -52,6 +60,7 @@ app.MapearApiConfiguracion();
 app.MapearApiControl();
 app.MapearApiDevoluciones();
 app.MapearApiContingencia();
+app.MapearApiTelegram();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Run();

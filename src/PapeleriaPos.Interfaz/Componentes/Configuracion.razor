@@ -1,4 +1,4 @@
-@* Configuración de la sucursal en pestañas: el ticket, las reglas (solo el dueño), la bitácora y las cajas. *@
+@* Configuración de la sucursal en pestañas: el ticket, las reglas (solo el dueño), la bitácora, las cajas y Telegram. *@
 
 <nav class="pestanas config-pestanas">
     @foreach (var p in Enum.GetValues<Pestanas>())
@@ -19,6 +19,9 @@
     case Pestanas.Cajas:
         <AdministrarCajas Caja="Caja" />
         break;
+    case Pestanas.Telegram:
+        <ConfiguracionTelegram Caja="Caja" />
+        break;
     case Pestanas.Bitacora:
         <ConsultaBitacora Caja="Caja" />
         break;
@@ -28,7 +31,7 @@
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
-    private enum Pestanas { Ticket, Reglas, Bitacora, Cajas }
+    private enum Pestanas { Ticket, Reglas, Bitacora, Cajas, Telegram }
 
     private Pestanas _pestana;
 
@@ -37,6 +40,7 @@
         Pestanas.Ticket => "Ticket",
         Pestanas.Reglas => "Reglas",
         Pestanas.Bitacora => "Bitácora",
-        _ => "Cajas",
+        Pestanas.Cajas => "Cajas",
+        _ => "Telegram",
     };
 }
