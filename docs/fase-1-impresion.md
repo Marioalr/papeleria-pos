@@ -1,6 +1,6 @@
 # Fase 1, entrega 5 — Módulo de impresión
 
-> **Propuesta para revisar.** Lo que hoy hace [Control Print](https://github.com/Marioalr/control-print) (v1.12),
+> **Revisado.** Lo que hoy hace [Control Print](https://github.com/Marioalr/control-print) (v1.12),
 > dentro del POS: cada impresión de la WF-6590 se mide, se le pone precio y se cobra en el mismo ticket. Parte del
 > [módulo de impresión](impresion.md). Aquí también se definen los **descuentos** que quedaron pendientes en la
 > [entrega 2](fase-1-control.md).
@@ -51,7 +51,7 @@ Control Print ya resolvió lo difícil; se trae su núcleo y se deja lo que el P
   queda como pérdida en el resumen.
 - **Copias en el panel de la impresora:** se registran al cobrarlas (cuántas, color, tamaño, dúplex) y se comparan
   con el contador de la impresora: lo que contó la impresora y nadie cobró aparece en el corte y en el resumen del día.
-- **Precio especial** de Control Print → se vuelve un **descuento** (ver abajo).
+- **Precio especial** de impresiones: aparte, cuando el cálculo esté afinado.
 
 ## Descuentos
 
@@ -60,7 +60,7 @@ Propuesta para cerrar lo pendiente de la entrega 2:
 | Tipo | Cómo | Regla propuesta |
 |---|---|---|
 | Descuento en una línea o en todo el ticket | Porcentaje o monto, con motivo | Cajero hasta 10 % sin autorización; más, encargado |
-| Precio especial en impresiones | El margen especial de Control Print (50 % por omisión), con el nombre del cliente | Permitido; queda en la bitácora con el nombre |
+| Precio especial en impresiones | Aparte: espera a que el cálculo de impresiones esté afinado | — |
 | Clientes especiales | Lista que administra el dueño (maestros, negocios vecinos) con su descuento | Se elige de la lista; no se escribe a mano |
 
 Todo descuento va a la bitácora y, arriba del umbral, avisa por Telegram (como el cambio de precio). El descuento
@@ -75,16 +75,21 @@ nunca deja la línea debajo del costo sin autorización ("vender debajo del cost
 | **3** | Descuentos (línea, ticket, precio especial, clientes especiales) |
 | Después | Cotizar PDF y cotizaciones guardadas (con los pedidos, fase 4); celular y copias detectadas por contador; documentos comunes (CURP, recibo de luz); varias impresoras (sucursal 2) |
 
-## Preguntas
+## Decisiones de la revisión
 
-1. **Alcance y orden:** ¿te parecen las tres partes y dejar la cotización de PDF para la fase 4 (pedidos)?
-2. **Historial de Control Print:** ¿se importa (trabajos, cotizaciones) o solo la configuración de costos y la
-   calibración, y el historial se queda consultable en Control Print?
-3. **Mientras se prueba:** Control Print sigue en uso y ambos no pueden vigilar la misma cola (los dos quitan los
-   trabajos). Propuesta: probar el POS con la cola de laboratorio de Control Print (salida a archivo, sin papel) o en
-   una PC donde no esté Control Print. ¿Cuál prefieres?
-4. **Quién ve costos y ganancia:** ¿solo el dueño, o también el encargado?
-5. **Descuentos:** ¿la regla de la tabla (cajero hasta 10 %, más con encargado) y la lista de clientes especiales
-   te sirven? ¿El descuento se permite en todo o solo en algunas cosas (por ejemplo, no en recargas)?
-6. **Precio de impresiones en el ticket:** ¿una línea por trabajo (recomendado, para saber qué se cobró) o una sola
-   línea "Impresiones" con el total?
+| Pregunta | Respuesta | Efecto |
+|---|---|---|
+| Alcance | Las tres partes, pero cotizar tiene que estar a un botón | "Cotizar" entra en esta entrega (parte 2), no en la fase 4 |
+| Historial de Control Print | Solo la configuración | Se importan costos, márgenes y calibración; los trabajos se quedan en Control Print |
+| Mientras se prueba | Con la cola de laboratorio | El agente del POS vigila la cola de laboratorio (salida a archivo, sin papel); Control Print sigue con la real |
+| Costos y ganancia | Solo el dueño | El servicio no se los manda a nadie más |
+| Descuentos | La regla y los clientes especiales sirven; las impresiones van aparte | Los descuentos (parte 3) son para la mercancía; el precio especial de impresiones espera a que el cálculo esté afinado |
+| En el ticket | Una sola línea "Impresiones" | El ticket lleva el total de las impresiones; el desglose por trabajo lo ven el dueño y el encargado |
+
+Con esto, las partes quedan así:
+
+| Parte | Contenido |
+|---|---|
+| **1** | Núcleo traído de Control Print; agente en la caja (cola de laboratorio); trabajos en la base del POS; F2 Impresiones por cobrar; una línea "Impresiones" en el ticket; no vendidas; costos solo para el dueño; importar la configuración de Control Print |
+| **2** | Cotizar con un botón; la impresora desde la caja principal (niveles, contadores, verificación de hojas, calibración, avisos por Telegram); copias en el panel con su comparación |
+| **3** | Descuentos en la mercancía (línea, ticket, clientes especiales) |
