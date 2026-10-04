@@ -18,6 +18,8 @@ public sealed record Renglon(string Texto, Alineacion Alineacion = Alineacion.Iz
 
 public sealed record Qr(string Datos) : Elemento;
 
+public sealed record Imagen(LogoTicketDto Logo) : Elemento;
+
 /// <summary>
 /// El orden del ticket, igual que el de eleventa: encabezado, folio, artículos, total, cobro y pie. Lo usan la
 /// impresión ESC/POS y la vista previa en texto.
@@ -38,6 +40,8 @@ public static class DisenoTicket
     public static List<Elemento> Armar(TicketDto t)
     {
         var e = new List<Elemento>();
+        if (t.Logo is not null)
+            e.Add(new Imagen(t.Logo));
         for (var i = 0; i < t.Encabezado.Count; i++)
             e.Add(new Renglon(t.Encabezado[i], Alineacion.Centro, Negrita: i == 0, Grande: i == 0));
 

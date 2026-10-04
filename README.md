@@ -51,7 +51,9 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
    dotnet run --project src/PapeleriaPos.Servicio -- --environment Development --ConnectionStrings:Pos="Data Source=ficticios.db"
    ```
 
-3. La caja de Windows (`src/PapeleriaPos.Caja`) se conecta al servicio e imprime en la impresora de `caja.json`.
+3. La caja de Windows (`src/PapeleriaPos.Caja`) se conecta al servicio e imprime en la impresora de `caja.json`:
+   `tcp://192.168.1.100:9100` para una impresora de red, el nombre de una impresora de Windows, o vacío para ver el
+   ticket en pantalla. El servicio acepta lo mismo en `Caja:Impresora` para la caja del navegador.
 
 Usuarios de prueba que crea `preparar-caja` (solo para bases de prueba):
 

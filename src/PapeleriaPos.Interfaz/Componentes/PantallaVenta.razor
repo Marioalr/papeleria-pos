@@ -9,6 +9,7 @@
         <button class="modulo activo">F1 Ventas</button>
         <button class="modulo" disabled title="Llega en otra entrega">F3 Productos</button>
         <button class="modulo" disabled title="Llega en otra entrega">F4 Inventario</button>
+        <button class="modulo" @onclick="() => Abrir(Ventanas.Configuracion)">Configuración</button>
         <button class="modulo" @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
         <span class="espacio"></span>
         <div class="atiende">
@@ -155,6 +156,11 @@
                 <VentasDelDia CajaId="Caja.Id" AlReimprimir="ReimprimirAsync" />
             </Ventana>
             break;
+        case Ventanas.Configuracion:
+            <Ventana Titulo="Personalización del ticket de venta" Clase="configuracion" AlCerrar="Cerrar">
+                <ConfiguracionTicket Caja="Caja" Sesion="Sesion" />
+            </Ventana>
+            break;
         case Ventanas.VistaPrevia when _ultimo is not null:
             <Ventana Titulo="@($"Ticket {_ultimo.Folio}")" Clase="vista-previa" AlCerrar="Cerrar">
                 <pre class="ticket">@TicketTexto.Generar(_ultimo)</pre>
@@ -171,7 +177,7 @@
     [Parameter] public EventCallback AlSalir { get; set; }
     [Parameter] public EventCallback AlCerrarTurno { get; set; }
 
-    private enum Ventanas { Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia }
+    private enum Ventanas { Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion }
 
     private sealed class TicketAbierto
     {
@@ -447,8 +453,8 @@
                 NuevoTicket();
             else
                 Cambiar(_tickets[^1]);
-            await ImprimirAsync(ticket, abrirCajon: ticket.AbreCajon);
             Avisar($"Venta {ticket.Folio} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: false);
+            await ImprimirAsync(ticket, abrirCajon: ticket.AbreCajon);
             return null;
         }
         catch (ErrorCaja ex)
@@ -462,18 +468,22 @@
     private async Task ImprimirAsync(TicketDto ticket, bool abrirCajon)
     {
         _ultimo = ticket;
+        if (Impresora.MuestraVistaPrevia)
+        {
+            await Abrir(Ventanas.VistaPrevia);
+            return;
+        }
+
+        // Primero se cierra el cobro y se ve la pantalla lista; la impresora tarda un par de segundos con el logo.
+        await Cerrar();
         try
         {
             await Impresora.ImprimirAsync(ticket, abrirCajon);
-            if (Impresora.MuestraVistaPrevia)
-                await Abrir(Ventanas.VistaPrevia);
-            else
-                await Cerrar();
         }
         catch (Exception ex)
         {
-            await Cerrar();
-            Avisar($"No se pudo imprimir el ticket {ticket.Folio}: {ex.Message}");
+            Avisar($"No se pudo imprimir el ticket {ticket.Folio}: {ex.Message} Se puede reimprimir.");
+            StateHasChanged();
         }
     }
 

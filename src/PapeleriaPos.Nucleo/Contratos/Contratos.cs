@@ -61,9 +61,13 @@ public sealed record LineaTicketDto(string Cantidad, string Descripcion, long Pr
 
 public sealed record CobroTicketDto(FormaPago Forma, long MontoCentavos, long RecibidoCentavos, long CambioCentavos, string? Referencia);
 
+/// <summary>Logo en blanco y negro listo para la impresora: un bit por punto, renglones de (Ancho + 7) / 8 bytes.</summary>
+public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
+
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
-    long TotalCentavos, long IvaCentavos, IReadOnlyList<CobroTicketDto> Cobros, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie)
+    long TotalCentavos, long IvaCentavos, IReadOnlyList<CobroTicketDto> Cobros, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie,
+    LogoTicketDto? Logo = null)
 {
     public long CambioCentavos => Cobros.Sum(c => c.CambioCentavos);
     public long PagoConCentavos => Cobros.Sum(c => c.Forma == FormaPago.Efectivo ? c.RecibidoCentavos : c.MontoCentavos);
@@ -81,3 +85,12 @@ public sealed record CorteDto(
     long? ContadoCentavos, long? DiferenciaCentavos);
 
 public sealed record ErrorDto(string Mensaje);
+
+/// <param name="LogoPngBase64">Cómo se ve el logo convertido, para la pantalla.</param>
+public sealed record ConfiguracionTicketDto(IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, string? LogoPngBase64);
+
+/// <summary>Cambiar el ticket lo autoriza el encargado o el dueño con su usuario y PIN.</summary>
+public sealed record SolicitudTextosTicket(string Usuario, string Pin, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie);
+
+/// <param name="ImagenBase64">El archivo tal cual (PNG, JPG o BMP); el servicio lo pasa a blanco y negro.</param>
+public sealed record SolicitudLogo(string Usuario, string Pin, string? ImagenBase64);

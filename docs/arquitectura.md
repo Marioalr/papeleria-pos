@@ -113,7 +113,7 @@ arquitectura hoy; solo se deja lugar para que sus eventos entren por el mismo ca
 |---|---|
 | Cajas | i5-12400F, 16 GB, NVMe: de sobra. Para cajas nuevas basta un i3 o mini PC N100 con gráficos integrados |
 | Monitor | Económico: diseño para 1366×768, alto contraste y letra grande |
-| Impresora de tickets | POS-8360, térmica de 80 mm, ESC/POS. Impresión directa con comandos: logo, QR y códigos en el ticket ([ticket](fase-1-caja.md#ticket)) |
+| Impresora de tickets | POS-8360, térmica de 80 mm, ESC/POS, en la red (puerto 9100). Impresión directa con comandos: logo, QR y códigos en el ticket ([ticket](fase-1-caja.md#ticket)) |
 | Lector | Genérico, lee QR, funciona como teclado |
 | Cajón de dinero | Recomendado (~1,000 MXN). Se conecta a la impresora de tickets; cada apertura queda registrada |
 | Router | Tenda en cada sucursal |

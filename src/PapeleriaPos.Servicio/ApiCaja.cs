@@ -74,12 +74,8 @@ public static class ApiCaja
 
         api.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, SolicitudCorteZ s, PosDbContext db) =>
         {
-            var encargado = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == s.EncargadoUsuario.Trim().ToLower());
-            var resultado = encargado?.VerificarPin(s.EncargadoPin, db.Reloj.GetUtcNow().UtcDateTime);
-            await db.SaveChangesAsync();
-            if (resultado != ResultadoPin.Correcto)
-                return Results.BadRequest(new ErrorDto(resultado == ResultadoPin.Bloqueado ? "Demasiados intentos: espera unos minutos." : "Usuario o PIN del encargado incorrecto."));
-            return Results.Ok(await CorteDtoAsync(db, await new RegistroCaja(db).CorteZAsync(turnoId, encargado!.Id, s.Conteo)));
+            var encargado = await ApiConfiguracion.AutorizarAsync(db, s.EncargadoUsuario, s.EncargadoPin);
+            return await CorteDtoAsync(db, await new RegistroCaja(db).CorteZAsync(turnoId, encargado.Id, s.Conteo));
         });
 
         api.MapGet("/productos/codigo/{codigo}", async (string codigo, Guid sucursalId, PosDbContext db, CatalogoEnMemoria catalogo) =>
@@ -180,10 +176,11 @@ public static class ApiCaja
             return new LineaTicketDto(CantidadTexto(l, esBase: descripcion == l.Descripcion), descripcion, l.PrecioCentavos, l.ImporteCentavos);
         }).ToList();
 
+        var configuracion = await ApiConfiguracion.ConfiguracionAsync(db, v.SucursalId, opciones);
         return new TicketDto(v.FolioTexto!, HoraMexico.ALocal(v.PagadaUtc!.Value), caja!.Nombre, cajero, lineas, v.NumeroDeArticulos,
             v.TotalCentavos, v.IvaCentavos,
             v.Cobros.OrderBy(c => c.Forma).Select(c => new CobroTicketDto(c.Forma, c.MontoCentavos, c.RecibidoCentavos, c.CambioCentavos, c.Referencia)).ToList(),
-            opciones.Encabezado, opciones.Pie);
+            configuracion.RenglonesEncabezado, configuracion.RenglonesPie, ApiConfiguracion.Logo(configuracion));
     }
 
     /// <summary>"2" piezas; "1.5 m", "0.25 kg", "0.5 l" a granel.</summary>

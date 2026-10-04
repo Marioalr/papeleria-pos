@@ -16,7 +16,8 @@ builder.Services.Configure<OpcionesTicket>(builder.Configuration.GetSection("Tic
 
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 var urlPropia = new Uri(builder.Configuration["Caja:Servicio"] ?? "http://localhost:5080");
-builder.Services.AgregarInterfazCaja(urlPropia, cajaId: null, new SinImpresora());
+// Sin impresora configurada, la caja del navegador muestra el ticket en pantalla; con "tcp://ip:9100", imprime.
+builder.Services.AgregarInterfazCaja(urlPropia, cajaId: null, Impresoras.Crear(builder.Configuration["Caja:Impresora"]));
 
 var app = builder.Build();
 
@@ -26,6 +27,7 @@ using (var alcance = app.Services.CreateScope())
 app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapearApiCaja();
+app.MapearApiConfiguracion();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Run();

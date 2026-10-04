@@ -430,6 +430,39 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("Variantes");
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Configuracion.ConfiguracionTicket", b =>
+                {
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Encabezado")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("LogoAlto")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("LogoAncho")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<byte[]>("LogoBits")
+                        .HasColumnType("BLOB");
+
+                    b.Property<DateTime>("ModificadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Pie")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("SucursalId");
+
+                    b.ToTable("ConfiguracionesTicket", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Historico.VentaHistorica", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1124,6 +1157,15 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired();
 
                     b.Navigation("Producto");
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Configuracion.ConfiguracionTicket", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Historico.VentaHistorica", b =>
