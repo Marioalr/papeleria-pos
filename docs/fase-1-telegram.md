@@ -1,13 +1,14 @@
 # Fase 1, entrega 4 — Telegram
 
-> **Propuesta para revisar.** El dueño se entera de lo importante y autoriza sin estar en la tienda. Parte de las
+> **Revisado.** El dueño se entera de lo importante y autoriza sin estar en la tienda. Parte de las
 > [alertas](caja-y-control.md#alertas-al-dueño-telegram) y de la [gestión por excepción](servidor-remoto.md#gestión-por-excepción).
 
 ## Qué incluye
 
 - **Un bot de Telegram propio** del negocio. Lo crea el dueño con @BotFather (es gratis); el token se guarda en la
   configuración de la caja principal, nunca en el repositorio.
-- **Vincular** a quien recibe mensajes y autoriza: desde la caja, con su usuario y PIN.
+- **Vincular** el celular del dueño (el único que recibe mensajes y autoriza por Telegram): desde la caja, con su
+  usuario y PIN.
 - **Alertas en el momento:** lo que el dueño quiere saber al instante (ver abajo).
 - **Autorización a distancia:** en la ventana "requiere autorización", un botón para pedirla por Telegram. Llega con el
   detalle y botones Aprobar / Rechazar.
@@ -41,12 +42,12 @@ El dueño puede desvincular un chat desde la misma pantalla (por ejemplo, si cam
 
 1. El cajero intenta algo que requiere autorización (cancelar un ticket, cambiar un precio…). En la ventana de
    autorización aparece **"Pedir por Telegram"**, además del PIN.
-2. A quienes pueden autorizar esa acción (el dueño para cambiar precios; encargado o dueño para lo demás) les llega:
+2. Al dueño le llega:
    *"Caja 2 · Ana pide cancelar el ticket A-000123 por $245.00. Motivo: el cliente se arrepintió."* con botones
    **Aprobar** y **Rechazar**.
-3. La caja muestra "Esperando respuesta…" (se puede cancelar). El primero que contesta decide; a los demás se les
-   actualiza el mensaje ("Lo aprobó Luis").
-4. Al aprobar, la caja sigue sola, con la misma autorización de un solo uso que da el PIN. Si nadie contesta en 5
+3. La caja muestra "Esperando respuesta…" (se puede cancelar). Si el dueño tiene más de un chat vinculado, el primero
+   que contesta decide y en los demás se actualiza el mensaje.
+4. Al aprobar, la caja sigue sola, con la misma autorización de un solo uso que da el PIN. Si nadie contesta en 10
    minutos, la solicitud vence.
 5. Aprobada o rechazada, queda en la bitácora: quién la pidió, quién contestó y que fue por Telegram.
 
@@ -66,14 +67,14 @@ Sin conexión con la caja principal (contingencia) no se puede pedir por Telegra
 | Transferencia rechazada | Al rechazarla el encargado | Siempre |
 | Transferencias sin verificar | En el resumen del cierre | Siempre |
 | Caja sin conexión | Una caja lleva más de N minutos en contingencia, o algo no pudo subir | 10 minutos |
-| Caja abierta fuera de horario | Un turno abierto antes o después del horario de la sucursal | Con el horario |
+| Caja abierta fuera de horario | Un turno abierto antes o después del horario de la sucursal | 8:00 a 21:00 (configurable) |
 
 Cada alerta se puede apagar o cambiar su umbral desde Configuración → Telegram (solo el dueño). Las de inventario
 (existencia negativa, conteos) llegan con la fase 2.
 
 ## Resumen diario
 
-Al hacer el último corte Z del día (o a una hora fija, si alguna caja se quedó abierta):
+Al hacer el último corte Z del día (cuando ya no queda ningún turno abierto en la sucursal):
 
 - Ventas y número de tickets, por caja; utilidad bruta (venta − costo de lo vendido).
 - Cada corte: esperado, contado y diferencia.
@@ -92,15 +93,13 @@ Al hacer el último corte Z del día (o a una hora fija, si alguna caja se qued�
 
 **Pruebas:** con un Telegram falso en las pruebas automáticas (sin internet), y al final con el bot de verdad.
 
-## Preguntas
+## Decisiones de la revisión
 
-1. **Quién:** ¿solo el dueño recibe alertas y autoriza por Telegram, o también los encargados (cada uno las de su
-   sucursal)?
-2. **Umbrales:** ¿te parecen los de la tabla (corte $50, devolución $200, salida $500, caja sin conexión 10 min)?
-   ¿Alguna alerta sobra o falta?
-3. **Resumen y horario:** ¿el resumen sale con el último corte Z del día o a una hora fija? ¿Cuál es el horario de la
-   tienda (para "abierta fuera de horario")?
-4. **Esperar respuesta:** ¿5 minutos para que alguien conteste una autorización remota está bien?
-5. **El bot:** hay que crearlo con @BotFather desde el Telegram del dueño (yo no puedo crear cuentas). Para probar,
-   guarda el token en un archivo fuera del repositorio (por ejemplo `C:\Users\salva\Documents\TPV\telegram-token.txt`)
-   y lo leo de ahí; no hace falta pegarlo en el chat.
+| Pregunta | Respuesta | Efecto |
+|---|---|---|
+| Quién recibe y autoriza | Solo el dueño | Solo se vinculan chats del dueño; las autorizaciones remotas las contesta él |
+| Umbrales | Los propuestos | Corte $50, devolución $200, salida $500, caja sin conexión 10 min; todos configurables |
+| Resumen diario | Con el último corte Z del día | Sale cuando ya no queda turno abierto en la sucursal |
+| Horario | Simulado y configurable | 8:00 a 21:00 por omisión; se cambia en Configuración → Telegram |
+| Espera de una autorización remota | 10 minutos | Después vence y la caja vuelve a pedir PIN o a pedirla de nuevo |
+| El bot | Lo crea el dueño con @BotFather | El token va en un archivo fuera del repositorio; las pruebas usan un Telegram simulado |
