@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Impresion;
 using PapeleriaPos.Interfaz;
@@ -37,6 +38,13 @@ builder.Services.AddSingleton<ITelegram>(new TelegramBot(TelegramBot.LeerToken(b
 builder.Services.AddSingleton<MotorTelegram>();
 if (builder.Configuration.GetValue("Telegram:Activo", true))
     builder.Services.AddHostedService<TrabajadorTelegram>();
+
+// La impresora de cada sucursal (su IP está en la configuración de impresión): niveles, contador, hojas que salieron.
+builder.Services.TryAddSingleton(TimeProvider.System);
+builder.Services.TryAddSingleton<ILectorImpresora, LectorImpresora>();
+builder.Services.AddSingleton<VigilanciaImpresora>();
+if (builder.Configuration.GetValue("Impresora:Vigilar", true))
+    builder.Services.AddHostedService(proveedor => proveedor.GetRequiredService<VigilanciaImpresora>());
 
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 var urlPropia = new Uri(builder.Configuration["Caja:Servicio"] ?? "http://localhost:5080");

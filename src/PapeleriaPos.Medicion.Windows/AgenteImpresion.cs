@@ -187,7 +187,7 @@ public sealed class AgenteImpresion(string cola, Func<TrabajoMedidoDto, Task> ma
             a.Pages.Select(p => new CoberturaPaginaDto(p.C, p.M, p.Y, p.K, p.Gray, p.AreaSqIn, p.HasColor)).ToList(),
             a.Level == AnalysisLevel.Measured,
             conError ? "Terminó con error en la impresora (atasco o cancelación)." : a.Note,
-            a.Thumbnail is { } png ? Convert.ToBase64String(png) : null);
+            a.Thumbnail is { } png ? Convert.ToBase64String(png) : null, job.SubmittedUtc);
     }
 
     /// <summary>El mismo trabajo siempre tiene el mismo ID: si se manda otra vez (la caja se reinició), no se duplica.</summary>

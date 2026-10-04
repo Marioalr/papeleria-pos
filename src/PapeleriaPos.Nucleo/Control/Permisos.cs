@@ -22,6 +22,7 @@ public enum AccionControlada
     ConsultarBitacora,
     AdministrarCajas,
     ConfigurarTelegram,
+    ConfigurarImpresora,
 }
 
 public enum NivelPermiso
@@ -79,6 +80,7 @@ public static class Permisos
         .. Ambos(AccionControlada.EditarReglas, NivelPermiso.NoPermitido),
         .. Ambos(AccionControlada.AdministrarCajas, NivelPermiso.NoPermitido),
         .. Ambos(AccionControlada.ConfigurarTelegram, NivelPermiso.NoPermitido),
+        .. Ambos(AccionControlada.ConfigurarImpresora, NivelPermiso.NoPermitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Cajero, NivelPermiso.NoPermitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Encargado, NivelPermiso.Permitido),
     ];
@@ -89,7 +91,8 @@ public static class Permisos
     /// </summary>
     /// <summary>Acciones que no se pueden dar a otro rol: no aparecen en el editor de reglas.</summary>
     public static bool SoloDelDueno(AccionControlada accion) =>
-        accion is AccionControlada.EditarReglas or AccionControlada.AdministrarCajas or AccionControlada.ConfigurarTelegram;
+        accion is AccionControlada.EditarReglas or AccionControlada.AdministrarCajas or AccionControlada.ConfigurarTelegram
+            or AccionControlada.ConfigurarImpresora;
 
     public static DecisionPermiso Evaluar(IEnumerable<ReglaPermiso> reglas, Rol rol, Guid sucursalId, AccionControlada accion, long? montoCentavos = null)
     {

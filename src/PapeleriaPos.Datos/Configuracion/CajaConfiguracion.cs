@@ -263,6 +263,7 @@ internal sealed class TrabajoImpresionConfiguracion : IEntityTypeConfiguration<T
         b.Property(t => t.MargenPorcentaje).HasPrecision(9, 2);
         b.HasIndex(t => new { t.SucursalId, t.Cobro });
         b.HasIndex(t => t.VentaId);
+        b.HasIndex(t => new { t.SucursalId, t.ImpresoUtc });
     }
 }
 
@@ -273,5 +274,15 @@ internal sealed class ConfiguracionImpresionConfiguracion : IEntityTypeConfigura
         b.ToTable("ConfiguracionesImpresion");
         b.HasKey(c => c.SucursalId);
         b.HasOne<Sucursal>().WithMany().HasForeignKey(c => c.SucursalId);
+    }
+}
+
+internal sealed class LecturaImpresoraConfiguracion : IEntityTypeConfiguration<LecturaImpresora>
+{
+    public void Configure(EntityTypeBuilder<LecturaImpresora> b)
+    {
+        b.ToTable("LecturasImpresora");
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(l => l.SucursalId);
+        b.HasIndex(l => new { l.SucursalId, l.TomadaUtc });
     }
 }
