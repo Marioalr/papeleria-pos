@@ -81,7 +81,12 @@ Usuarios de prueba que crea `preparar-caja` (solo para bases de prueba):
 3. **Cada caja** (también la principal): copiar `publicar/caja` y abrir `PapeleriaPos.Caja.exe`. La primera vez pide
    la dirección de la caja principal (o la busca en la red) y el PIN del dueño, y queda dada de alta.
 
-Para probar la pantalla de alta en el navegador: `--Caja:PideAlta=true` al correr el servicio.
+Para probar en el navegador lo que hace la ventana de Windows:
+
+- `--Caja:PideAlta=true` muestra la pantalla de alta.
+- Para la contingencia hacen falta dos servicios: la caja principal en el 5080 y otro que hace de caja, con
+  `--Urls=http://localhost:5090 --Caja:Servicio=http://localhost:5080 --Caja:PideAlta=true --Caja:BaseLocal=caja-local.db`.
+  Al apagar la caja principal, la del 5090 sigue vendiendo; al prenderla, sube lo pendiente.
 
 Migraciones de la base (EF Core):
 

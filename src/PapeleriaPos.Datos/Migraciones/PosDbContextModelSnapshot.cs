@@ -549,6 +549,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("EnContingencia")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime>("FechaUtc")
                         .HasColumnType("TEXT");
 
@@ -894,6 +897,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<long>("EfectivoVentasCentavos")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("EnContingencia")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("EntradasCentavos")
                         .HasColumnType("INTEGER");
 
@@ -965,6 +971,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("EnContingencia")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime>("FechaUtc")
                         .HasColumnType("TEXT");
 
@@ -999,6 +1008,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("AbiertoEnContingencia")
+                        .HasColumnType("INTEGER");
 
                     b.Property<DateTime>("AbiertoUtc")
                         .HasColumnType("TEXT");
@@ -1231,6 +1243,9 @@ namespace PapeleriaPos.Datos.Migraciones
 
                     b.Property<DateTime>("CreadaUtc")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("EnContingencia")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Estado")
                         .IsRequired()

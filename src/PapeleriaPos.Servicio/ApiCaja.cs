@@ -52,7 +52,7 @@ public static class ApiCaja
             await new RegistroCaja(db).TurnoAbiertoAsync(cajaId) is { } turno ? Results.Ok(await TurnoDtoAsync(db, turno)) : Results.NoContent());
 
         api.MapPost("/turnos", async (SolicitudTurno s, PosDbContext db) =>
-            await TurnoDtoAsync(db, await new RegistroCaja(db).AbrirTurnoAsync(s.CajaId, s.CajeroId, s.FondoCentavos)));
+            await TurnoDtoAsync(db, await new RegistroCaja(db).AbrirTurnoAsync(s.CajaId, s.CajeroId, s.FondoCentavos, s.Id)));
 
         api.MapPost("/turnos/{turnoId:guid}/movimientos", async (Guid turnoId, SolicitudMovimiento s, PosDbContext db, IOptions<OpcionesTicket> ticket) =>
             await ApiControl.MovimientoAsync(turnoId, s, db, ticket.Value));
@@ -81,34 +81,13 @@ public static class ApiCaja
 
         api.MapPost("/ventas", async (SolicitudCobro s, PosDbContext db, CatalogoEnMemoria catalogo, IOptions<OpcionesTicket> ticket) =>
         {
+            // La caja manda otra vez la misma venta si no le llegó la respuesta: se regresa el ticket que ya se cobró.
+            if (s.VentaId is { } ventaId && await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleOrDefaultAsync(v => v.Id == ventaId) is { } cobrada)
+                return await TicketAsync(db, cobrada, ticket.Value);
+
             var turno = await db.Turnos.FindAsync(s.TurnoId) ?? throw new InvalidOperationException("El turno no existe.");
             var caja = await db.Cajas.FindAsync(s.CajaId) ?? throw new InvalidOperationException("La caja no existe.");
-            var venta = new Venta
-            {
-                SucursalId = caja.SucursalId,
-                CajaId = caja.Id,
-                TurnoId = turno.Id,
-                CajeroId = s.CajeroId,
-                Serie = caja.Serie,
-                CreadaUtc = db.Reloj.GetUtcNow().UtcDateTime,
-            };
-
-            // Se vuelve a armar con los precios del catálogo: la caja solo dice qué y cuánto.
-            foreach (var l in s.Lineas)
-            {
-                var cantidad = new Cantidad(l.CantidadMilesimas);
-                if (l.VarianteId is not { } varianteId)
-                {
-                    venta.AgregarArticuloComun(l.Descripcion ?? "", l.PrecioCentavos ?? 0, cantidad);
-                    continue;
-                }
-                var producto = await catalogo.PorVarianteAsync(db, varianteId, caja.SucursalId)
-                    ?? throw new InvalidOperationException("Un producto de la venta ya no está en el catálogo.");
-                var agregada = venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
-                if (l.PrecioCentavos is { } precio && precio != agregada.PrecioCentavos)
-                    venta.CambiarPrecio(agregada, precio, l.AutorizacionId);
-            }
-
+            var venta = await ArmarVentaAsync(db, catalogo, caja, turno.Id, s.CajeroId, s.VentaId ?? Ids.Nuevo(), s.Lineas);
             await new RegistroCaja(db).CobrarAsync(venta, s.Cobros);
             return await TicketAsync(db, venta, ticket.Value);
         });
@@ -150,56 +129,63 @@ public static class ApiCaja
                 : Results.NotFound(new ErrorDto("Esta caja todavía no tiene ventas.")));
     }
 
-    private static async Task<TurnoDto> TurnoDtoAsync(PosDbContext db, Turno t)
+    /// <summary>
+    /// Arma la venta con los precios del catálogo: la caja solo dice qué y cuánto. Un precio distinto (cambiado en la caja,
+    /// o el que se cobró sin conexión) queda como precio cambiado.
+    /// </summary>
+    internal static async Task<Venta> ArmarVentaAsync(
+        PosDbContext db, CatalogoEnMemoria catalogo, Caja caja, Guid turnoId, Guid cajeroId, Guid ventaId, IReadOnlyList<LineaSolicitada> lineas)
+    {
+        var venta = new Venta
+        {
+            Id = ventaId,
+            SucursalId = caja.SucursalId,
+            CajaId = caja.Id,
+            TurnoId = turnoId,
+            CajeroId = cajeroId,
+            Serie = caja.Serie,
+            CreadaUtc = db.Reloj.GetUtcNow().UtcDateTime,
+        };
+        foreach (var l in lineas)
+        {
+            var cantidad = new Cantidad(l.CantidadMilesimas);
+            if (l.VarianteId is not { } varianteId)
+            {
+                venta.AgregarArticuloComun(l.Descripcion ?? "", l.PrecioCentavos ?? 0, cantidad);
+                continue;
+            }
+            var producto = await catalogo.PorVarianteAsync(db, varianteId, caja.SucursalId)
+                ?? throw new InvalidOperationException($"«{l.Descripcion ?? "Un producto"}» ya no está en el catálogo.");
+            var agregada = venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
+            if (l.PrecioCentavos is { } precio && precio != agregada.PrecioCentavos)
+                venta.CambiarPrecio(agregada, precio, l.AutorizacionId);
+        }
+        return venta;
+    }
+
+    internal static async Task<TurnoDto> TurnoDtoAsync(PosDbContext db, Turno t)
     {
         var cajero = await db.Usuarios.Where(u => u.Id == t.CajeroId).Select(u => u.Nombre).SingleAsync();
         return new TurnoDto(t.Id, t.CajaId, t.CajeroId, cajero, HoraMexico.ALocal(t.AbiertoUtc), t.FondoCentavos);
     }
 
-    private static async Task<CorteDto> CorteDtoAsync(PosDbContext db, Corte c)
+    internal static async Task<CorteDto> CorteDtoAsync(PosDbContext db, Corte c)
     {
         var turno = await db.Turnos.FindAsync(c.TurnoId);
         var nombres = await db.Usuarios.Where(u => u.Id == turno!.CajeroId || u.Id == c.RealizadoPorId).ToDictionaryAsync(u => u.Id, u => u.Nombre);
         return new CorteDto(c.Tipo, HoraMexico.ALocal(c.FechaUtc), nombres[turno!.CajeroId], nombres[c.RealizadoPorId], c.Ventas, c.FondoCentavos,
             c.EfectivoVentasCentavos, c.EntradasCentavos, c.SalidasCentavos, c.TarjetaCentavos, c.TransferenciaCentavos, c.EsperadoCentavos,
-            c.ContadoCentavos, c.DiferenciaCentavos, c.DevolucionesCentavos, c.Cancelaciones);
+            c.ContadoCentavos, c.DiferenciaCentavos, c.DevolucionesCentavos, c.Cancelaciones, c.EnContingencia);
     }
 
-    private static async Task<TicketDto> TicketAsync(PosDbContext db, Venta v, OpcionesTicket opciones)
+    internal static async Task<TicketDto> TicketAsync(PosDbContext db, Venta v, OpcionesTicket opciones)
     {
         var caja = await db.Cajas.FindAsync(v.CajaId);
         var cajero = await db.Usuarios.Where(u => u.Id == v.CajeroId).Select(u => u.Nombre).SingleAsync();
         var ids = v.Lineas.Where(l => l.PresentacionId != null).Select(l => l.PresentacionId!.Value).ToList();
-        var presentaciones = await db.Presentaciones.Where(p => ids.Contains(p.Id))
-            .ToDictionaryAsync(p => p.Id, p => p);
-
-        var lineas = v.Lineas.Select(l =>
-        {
-            var descripcion = l.PresentacionId is { } pid && presentaciones.TryGetValue(pid, out var p) && !p.EsBase
-                ? $"{l.Descripcion} ({p.Nombre})"
-                : l.Descripcion;
-            return new LineaTicketDto(CantidadTexto(l, esBase: descripcion == l.Descripcion), descripcion, l.PrecioCentavos, l.ImporteCentavos);
-        }).ToList();
-
+        var presentaciones = await db.Presentaciones.Where(p => ids.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => (p.Nombre, p.EsBase));
         var configuracion = await ApiConfiguracion.ConfiguracionAsync(db, v.SucursalId, opciones);
-        return new TicketDto(v.FolioTexto!, HoraMexico.ALocal(v.PagadaUtc!.Value), caja!.Nombre, cajero, lineas, v.NumeroDeArticulos,
-            v.TotalCentavos, v.IvaCentavos,
-            v.Cobros.OrderBy(c => c.Forma).Select(c => new CobroTicketDto(c.Forma, c.MontoCentavos, c.RecibidoCentavos, c.CambioCentavos, c.Referencia)).ToList(),
-            configuracion.RenglonesEncabezado, configuracion.RenglonesPie, ApiConfiguracion.Logo(configuracion), v.Id);
-    }
-
-    /// <summary>"2" piezas; "1.5 m", "0.25 kg", "0.5 l" a granel.</summary>
-    internal static string CantidadTexto(VentaLinea l, bool esBase)
-    {
-        var numero = l.Cantidad.EnUnidades.ToString("0.###", CultureInfo.InvariantCulture);
-        if (!esBase)
-            return numero;
-        return l.Unidad switch
-        {
-            UnidadBase.Metro => $"{numero} m",
-            UnidadBase.Kilogramo => $"{numero} kg",
-            UnidadBase.Litro => $"{numero} l",
-            _ => numero,
-        };
+        return ArmadoTicket.Desde(v, caja!.Nombre, cajero, id => presentaciones.TryGetValue(id, out var p) ? p : null,
+            configuracion.RenglonesEncabezado, configuracion.RenglonesPie, ApiConfiguracion.Logo(configuracion));
     }
 }

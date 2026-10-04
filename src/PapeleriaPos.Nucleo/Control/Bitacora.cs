@@ -24,6 +24,9 @@ public class Bitacora
     public Guid? AutorizoId { get; init; }
     public ResultadoBitacora Resultado { get; init; }
     public DateTime FechaUtc { get; init; }
+
+    /// <summary>Pasó en una caja sin conexión (con la copia local de reglas y PIN).</summary>
+    public bool EnContingencia { get; init; }
 }
 
 /// <summary>

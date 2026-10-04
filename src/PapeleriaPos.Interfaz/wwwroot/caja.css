@@ -145,3 +145,9 @@ tr.negado td { color: var(--error); }
 /* Entrega 3: alta de la caja */
 .opciones-caja { display: flex; flex-direction: column; gap: 6px; }
 label.opcion { flex-direction: row; align-items: center; gap: 8px; font-size: 15px; color: var(--texto); }
+
+/* Entrega 3: contingencia */
+.franja-contingencia { padding: 6px 12px; font-weight: 600; text-align: center; }
+.franja-contingencia.sin-conexion { background: #fff4d6; color: #8a5a00; }
+.franja-contingencia.subiendo { background: var(--azul-claro); color: var(--azul); }
+.franja-contingencia.con-error { background: #fdecea; color: var(--error); }

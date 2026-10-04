@@ -16,6 +16,9 @@ public class Corte
     public Guid TurnoId { get; set; }
     public TipoCorte Tipo { get; set; }
     public DateTime FechaUtc { get; set; }
+
+    /// <summary>Corte Z que hizo la caja sin conexión; el servicio lo recalcula con lo que llegó en la bandeja.</summary>
+    public bool EnContingencia { get; set; }
     public Guid RealizadoPorId { get; set; }
 
     public int Ventas { get; set; }

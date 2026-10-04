@@ -33,9 +33,10 @@ if (builder.Configuration.GetValue("Descubrimiento:Activo", true))
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 var urlPropia = new Uri(builder.Configuration["Caja:Servicio"] ?? "http://localhost:5080");
 // Sin impresora configurada, la caja del navegador muestra el ticket en pantalla; con "tcp://ip:9100", imprime.
-// Caja:PideAlta=true hace que la caja del navegador pase por el alta, como la ventana de Windows (para probarla).
+// Para probar en el navegador lo que hace la ventana de Windows: Caja:PideAlta=true pasa por el alta, y Caja:BaseLocal
+// (una ruta) la deja vender sin la caja principal de Caja:Servicio.
 var conexion = new ConexionCaja { Servicio = urlPropia, PideAlta = builder.Configuration.GetValue("Caja:PideAlta", false) };
-builder.Services.AgregarInterfazCaja(conexion, Impresoras.Crear(builder.Configuration["Caja:Impresora"]));
+builder.Services.AgregarInterfazCaja(conexion, Impresoras.Crear(builder.Configuration["Caja:Impresora"]), builder.Configuration["Caja:BaseLocal"]);
 
 var app = builder.Build();
 
@@ -50,6 +51,7 @@ app.MapearApiCaja();
 app.MapearApiConfiguracion();
 app.MapearApiControl();
 app.MapearApiDevoluciones();
+app.MapearApiContingencia();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Run();

@@ -123,6 +123,20 @@ public sealed class CatalogoEnMemoria
             a.LlevaInventario ? existencias.GetValueOrDefault(a.VarianteId) : null)).ToList();
     }
 
+    /// <summary>Todo el catálogo vendible de una sucursal, con existencias: la copia de una caja para vender sin conexión.</summary>
+    public async Task<(long Version, List<ProductoVentaDto> Productos, List<CodigoLocalDto> Codigos)> TodosAsync(
+        PosDbContext db, Guid sucursalId, CancellationToken ct = default)
+    {
+        var indice = await ActualAsync(db, ct);
+        var existencias = await db.Existencias.AsNoTracking().Where(e => e.SucursalId == sucursalId)
+            .ToDictionaryAsync(e => e.VarianteId, e => e.Cantidad.EnUnidades, ct);
+        var productos = indice.PorVariante.Values.Select(a => new ProductoVentaDto(
+            a.VarianteId, a.Descripcion, a.Codigo, a.Impuesto, a.Unidad, a.LlevaInventario,
+            a.LlevaInventario ? existencias.GetValueOrDefault(a.VarianteId) : null,
+            a.Presentaciones.First(p => p.EsBase), a.Presentaciones, a.Precios)).ToList();
+        return (indice.Version, productos, indice.PorCodigo.Select(c => new CodigoLocalDto(c.Key, c.Value.Variante, c.Value.Presentacion)).ToList());
+    }
+
     private static long PrecioMenudeo(Articulo a, Guid sucursalId)
     {
         var porUnidad = a.Precios.Where(p => p.PresentacionId is null).ToList();

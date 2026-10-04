@@ -47,6 +47,9 @@ public class Venta
     public List<VentaLinea> Lineas { get; set; } = [];
     public List<Cobro> Cobros { get; set; } = [];
 
+    /// <summary>Cobrada en una caja sin conexión, con su copia del catálogo y su propio folio.</summary>
+    public bool EnContingencia { get; set; }
+
     public string? FolioTexto => Folio is { } f ? $"{Serie}-{f:000000}" : null;
 
     /// <summary>Artículos para el ticket: piezas por cantidad; lo que se vende por metro o a granel cuenta uno por línea.</summary>

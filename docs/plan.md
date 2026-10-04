@@ -168,8 +168,8 @@ Fase 1:
 - [x] Entrega 1: vender y cobrar en una caja (falta probar el cajón cuando lo haya)
 - [x] Revisar el [plan de la entrega 2](fase-1-control.md) (control) y contestar sus preguntas
 - [x] Entrega 2: control (cancelar, devolver, cambio de precio, transferencias, reglas y bitácora)
-- [ ] Revisar el [plan de la entrega 3](fase-1-varias-cajas.md) (varias cajas y contingencia) y contestar sus preguntas
-- [ ] Entrega 3: varias cajas
+- [x] Revisar el [plan de la entrega 3](fase-1-varias-cajas.md) (varias cajas y contingencia) y contestar sus preguntas
+- [x] Entrega 3: varias cajas (falta instalarla en la caja principal y probarla con las tres cajas)
 - [ ] Descuentos: definirlos con el módulo de impresión (entrega 5)
 
 Fase 3:

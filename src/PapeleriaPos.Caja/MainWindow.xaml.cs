@@ -19,7 +19,12 @@ public sealed record ConfiguracionCaja(string Servicio, Guid? CajaId, string? Im
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
 
-    private static string Guardada => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PapeleriaPos", "caja.json");
+    private static string Carpeta => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PapeleriaPos");
+
+    private static string Guardada => Path.Combine(Carpeta, "caja.json");
+
+    /// <summary>La base local de la caja: copia del catálogo, bandeja de salida y diario del turno.</summary>
+    public static string BaseLocal => Path.Combine(Carpeta, "caja-local.db");
 
     public static ConfiguracionCaja Leer()
     {
@@ -83,7 +88,8 @@ public partial class MainWindow : Window
         servicios.AddWpfBlazorWebView();
         // "tcp://192.168.1.100:9100" imprime directo por la red; un nombre (como "Tickets") usa la impresora de Windows.
         var impresora = Impresoras.Crear(configuracion.Impresora, nombre => new ImpresoraWindows(nombre));
-        servicios.AgregarInterfazCaja(conexion, impresora);
+        // La copia para vender sin la caja principal y la bandeja de salida, junto a la configuración de la caja.
+        servicios.AgregarInterfazCaja(conexion, impresora, ConfiguracionCaja.BaseLocal);
         Vista.Services = servicios.BuildServiceProvider();
     }
 }

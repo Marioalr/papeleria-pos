@@ -73,6 +73,9 @@ public class Turno
 
     public DateTime? CerradoUtc { get; set; }
 
+    /// <summary>Abierto en una caja sin conexión con la caja principal.</summary>
+    public bool AbiertoEnContingencia { get; set; }
+
     public bool Abierto => CerradoUtc is null;
 }
 
@@ -96,6 +99,9 @@ public class MovimientoCaja
     public required string Motivo { get; set; }
     public Guid UsuarioId { get; set; }
     public DateTime FechaUtc { get; set; }
+
+    /// <summary>Hecho en una caja sin conexión con la caja principal; llegó después con la bandeja.</summary>
+    public bool EnContingencia { get; set; }
 }
 
 public enum MotivoApertura

@@ -82,7 +82,7 @@ public static class ApiDevoluciones
         {
             var linea = venta.Lineas.Single(x => x.Id == l.VentaLineaId);
             var cantidad = new VentaLinea { Descripcion = linea.Descripcion, Unidad = linea.Unidad, Cantidad = l.Cantidad };
-            return new LineaTicketDto(ApiCaja.CantidadTexto(cantidad, esBase: true), linea.Descripcion, linea.PrecioCentavos, l.ImporteCentavos);
+            return new LineaTicketDto(ArmadoTicket.CantidadTexto(cantidad, esBase: true), linea.Descripcion, linea.PrecioCentavos, l.ImporteCentavos);
         }).ToList();
         return new ComprobanteDevolucionDto(venta.FolioTexto!, d.EsCancelacion, d.TotalCentavos, d.ReembolsoEfectivoCentavos, d.Motivo,
             HoraMexico.ALocal(d.FechaUtc), caja!.Nombre, nombres[d.UsuarioId], d.AutorizoId is { } a ? nombres.GetValueOrDefault(a) : null, lineas, encabezado);
