@@ -1,0 +1,151 @@
+@* F2: lo impreso en la WF-6590 que falta cobrar, de todas las PC. Se eligen los trabajos del cliente y entran al
+   ticket en una sola línea "Impresiones". El costo solo lo ve el dueño. *@
+@inject ClienteCaja Cliente
+
+@if (_trabajos is null)
+{
+    <p>@(_error ?? "Cargando…")</p>
+}
+else if (_noVendida is { } marcada)
+{
+    <p>Marcar como <strong>no vendida</strong>: «@marcada.Documento» (@Formato.Dinero(marcada.PrecioCentavos)). No se cobra y su costo queda como pérdida.</p>
+    <div class="opciones-caja">
+        @foreach (var motivo in Enum.GetValues<MotivoNoVendida>())
+        {
+            var m = motivo;
+            <label class="en-linea opcion">
+                <input type="radio" name="motivo" checked="@(_motivo == m)" @onchange="() => _motivo = m" /> @Nombre(m)
+            </label>
+        }
+    </div>
+    <label>Nota @(_motivo == MotivoNoVendida.Otro ? "(qué pasó)" : "(opcional)") <input @bind="_nota" autocomplete="off" /></label>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    <div class="acciones">
+        <button class="boton" @onclick="() => _noVendida = null">Volver</button>
+        <button class="boton principal" disabled="@_ocupado" @onclick="MarcarNoVendidaAsync">Marcar no vendida</button>
+    </div>
+}
+else if (_trabajos.Count == 0)
+{
+    <p class="vacia">No hay impresiones por cobrar.</p>
+}
+else
+{
+    <div class="resultados impresiones">
+        <table>
+            <thead><tr><th></th><th></th><th>Documento</th><th>PC · hora</th><th class="num">Págs.</th><th>Color</th><th class="num">Precio</th>@if (EsDueno) {<th class="num">Costo</th>}<th></th></tr></thead>
+            @foreach (var t in _trabajos)
+            {
+                var trabajo = t;
+                <tr class="@(_elegidos.Contains(t.Id) ? "seleccionada" : "")" @onclick="() => Alternar(trabajo.Id)">
+                    <td><input type="checkbox" checked="@_elegidos.Contains(t.Id)" @onclick:stopPropagation="true" @onchange="() => Alternar(trabajo.Id)" /></td>
+                    <td>
+                        @if (t.MiniaturaBase64 is { } miniatura)
+                        {
+                            <img class="miniatura" src="data:image/png;base64,@miniatura" alt="" />
+                        }
+                    </td>
+                    <td>@t.Documento</td>
+                    <td>@t.Pc · @t.FechaLocal.ToString("HH:mm")@(t.Atendio is { } a ? $" · {a}" : "")</td>
+                    <td class="num">@t.Paginas@(t.Caras != t.Paginas ? $" ({t.Caras} caras)" : "")</td>
+                    <td>@(t.Color ? "Color" : "B/N") · @t.Tamano</td>
+                    <td class="num">@Formato.Dinero(t.PrecioCentavos)</td>
+                    @if (EsDueno)
+                    {
+                        <td class="num">@(t.Costo is { } c ? Formato.Dinero(c.TotalCentavos) : "")</td>
+                    }
+                    <td><button class="boton chico" @onclick:stopPropagation="true" @onclick="() => _noVendida = trabajo">No vendida</button></td>
+                </tr>
+            }
+        </table>
+    </div>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    <div class="acciones">
+        <span class="total-elegido">@_elegidos.Count elegidas · @Formato.Dinero(_trabajos.Where(t => _elegidos.Contains(t.Id)).Sum(t => t.PrecioCentavos))</span>
+        <button class="boton principal" disabled="@(_elegidos.Count == 0)" @onclick="AgregarAsync">Agregar al ticket</button>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Las que ya están en este ticket: salen elegidas.</summary>
+    [Parameter] public IReadOnlyCollection<Guid> EnElTicket { get; set; } = [];
+
+    /// <summary>Las elegidas (reemplazan a las que había en el ticket).</summary>
+    [Parameter] public EventCallback<IReadOnlyList<ImpresionPorCobrarDto>> AlAgregar { get; set; }
+
+    private List<ImpresionPorCobrarDto>? _trabajos;
+    private readonly HashSet<Guid> _elegidos = [];
+    private ImpresionPorCobrarDto? _noVendida;
+    private MotivoNoVendida _motivo = MotivoNoVendida.NoEraLoQueQueria;
+    private string _nota = "";
+    private string? _error;
+    private bool _ocupado;
+
+    private bool EsDueno => Sesion.Rol == Rol.Dueno;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _elegidos.UnionWith(EnElTicket);
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            _trabajos = await Cliente.ImpresionesPorCobrarAsync(Caja.SucursalId, Sesion.UsuarioId);
+            _elegidos.IntersectWith(_trabajos.Select(t => t.Id).Concat(EnElTicket));
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void Alternar(Guid id)
+    {
+        if (!_elegidos.Remove(id))
+            _elegidos.Add(id);
+    }
+
+    private Task AgregarAsync() =>
+        AlAgregar.InvokeAsync(_trabajos!.Where(t => _elegidos.Contains(t.Id)).ToList());
+
+    private async Task MarcarNoVendidaAsync()
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            await Cliente.NoVendidaAsync(_noVendida!.Id, new SolicitudNoVendida(Sesion.UsuarioId, _motivo, _nota));
+            _elegidos.Remove(_noVendida.Id);
+            (_noVendida, _nota) = (null, "");
+            await CargarAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private static string Nombre(MotivoNoVendida m) => m switch
+    {
+        MotivoNoVendida.NoEraLoQueQueria => "No era lo que quería el cliente",
+        MotivoNoVendida.SalioMal => "La impresora la sacó mal",
+        MotivoNoVendida.Atasco => "Atasco de papel",
+        _ => "Otro",
+    };
+}

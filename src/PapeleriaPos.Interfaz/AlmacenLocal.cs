@@ -41,6 +41,12 @@ public sealed class AlmacenLocal
                 Transferencia INTEGER NOT NULL, Entradas INTEGER NOT NULL, Salidas INTEGER NOT NULL, Devoluciones INTEGER NOT NULL,
                 Cancelaciones INTEGER NOT NULL);
             """);
+        // Bases creadas antes de las impresiones (entrega 5): sin la columna, todo bloquea.
+        using (var columnas = Comando(conexion, null, "SELECT COUNT(*) FROM pragma_table_info('Bandeja') WHERE name = 'Bloquea'"))
+        {
+            if (Convert.ToInt32(columnas.ExecuteScalar()) == 0)
+                Ejecutar(conexion, null, "ALTER TABLE Bandeja ADD COLUMN Bloquea INTEGER NOT NULL DEFAULT 1");
+        }
     }
 
     public T? Leer<T>(string clave)
@@ -81,18 +87,23 @@ public sealed class AlmacenLocal
     }
 
     /// <summary>Cuántas faltan por subir, cuántas no se pudieron subir y el último motivo.</summary>
-    public (int Pendientes, int ConError, string? UltimoError) Contar()
+    /// <summary>
+    /// Cuántas faltan por subir (las que bloquean: mientras haya, la caja sigue por su cuenta), cuántas no se pudieron
+    /// subir, el último motivo y cuántas esperan sin bloquear (las impresiones).
+    /// </summary>
+    public (int Pendientes, int ConError, string? UltimoError, int SinBloquear) Contar()
     {
         using var conexion = Abrir();
         using var comando = Comando(conexion, null, """
             SELECT
-                (SELECT COUNT(*) FROM Bandeja WHERE SubidoUtc IS NULL AND Error IS NULL),
+                (SELECT COUNT(*) FROM Bandeja WHERE SubidoUtc IS NULL AND Error IS NULL AND Bloquea = 1),
                 (SELECT COUNT(*) FROM Bandeja WHERE SubidoUtc IS NULL AND Error IS NOT NULL),
-                (SELECT Error FROM Bandeja WHERE SubidoUtc IS NULL AND Error IS NOT NULL ORDER BY Orden DESC LIMIT 1)
+                (SELECT Error FROM Bandeja WHERE SubidoUtc IS NULL AND Error IS NOT NULL ORDER BY Orden DESC LIMIT 1),
+                (SELECT COUNT(*) FROM Bandeja WHERE SubidoUtc IS NULL AND Error IS NULL AND Bloquea = 0)
             """);
         using var lector = comando.ExecuteReader();
         lector.Read();
-        return (lector.GetInt32(0), lector.GetInt32(1), lector.IsDBNull(2) ? null : lector.GetString(2));
+        return (lector.GetInt32(0), lector.GetInt32(1), lector.IsDBNull(2) ? null : lector.GetString(2), lector.GetInt32(3));
     }
 
     /// <summary>Lo que se ha anotado de un turno, sumado.</summary>
@@ -159,12 +170,15 @@ public sealed class Lote : IDisposable
         return this;
     }
 
-    /// <summary>A la bandeja: se sube en este orden a <paramref name="ruta"/>.</summary>
-    public Lote Encolar<T>(Guid id, string ruta, T cuerpo)
+    /// <summary>
+    /// A la bandeja: se sube en este orden a <paramref name="ruta"/>. Sin <paramref name="bloquea"/> (las impresiones), la
+    /// caja sigue en línea aunque esté pendiente: no lleva folio que pueda chocar.
+    /// </summary>
+    public Lote Encolar<T>(Guid id, string ruta, T cuerpo, bool bloquea = true)
     {
-        AlmacenLocal.Ejecutar(_conexion, _transaccion, "INSERT INTO Bandeja (Id, Ruta, Json, CreadoUtc) VALUES ($id, $ruta, $json, $fecha)",
+        AlmacenLocal.Ejecutar(_conexion, _transaccion, "INSERT OR IGNORE INTO Bandeja (Id, Ruta, Json, CreadoUtc, Bloquea) VALUES ($id, $ruta, $json, $fecha, $bloquea)",
             ("$id", id.ToString()), ("$ruta", ruta), ("$json", JsonSerializer.Serialize(cuerpo, AlmacenLocal.Json)),
-            ("$fecha", DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture)));
+            ("$fecha", DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture)), ("$bloquea", bloquea ? 1 : 0));
         return this;
     }
 

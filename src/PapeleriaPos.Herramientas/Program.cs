@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using System.Globalization;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Herramientas;
@@ -15,6 +16,7 @@ return args switch
     ["diagnostico", .. var resto] => await DiagnosticoAsync(resto),
     ["importar-eleventa", .. var resto] => await ImportarEleventaAsync(resto),
     ["preparar-caja", .. var resto] => await PrepararCajaAsync(resto),
+    ["importar-control-print", .. var resto] => await ImportarControlPrintAsync(resto),
     _ => Ayuda(),
 };
 
@@ -34,6 +36,10 @@ static int Ayuda()
                             [--firebird32 <carpeta>] [--firebird64 <carpeta>]
               Importa una copia de la base de eleventa (catálogo, ventas y existencias). La original no se abre.
               Por omisión busca Firebird en firebird25-32\embed y firebird25, junto a la carpeta de la base.
+
+          importar-control-print --base pos.db [--control-print controlprint.db]
+              Copia la configuración de costos de Control Print (tinta, papel, márgenes, calibración) a todas las
+              sucursales. Sus trabajos no se importan. Por omisión lee la base de Control Print de esta PC.
 
           preparar-caja --base ficticios.db
               Da de alta la Caja 1 y usuarios de prueba (ver README) en una base de prueba.
@@ -229,4 +235,25 @@ static string? Opcion(string[] args, string nombre)
 {
     var i = Array.IndexOf(args, nombre);
     return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
+}
+
+static async Task<int> ImportarControlPrintAsync(string[] args)
+{
+    var ruta = Opcion(args, "--base") ?? "pos.db";
+    var origen = Opcion(args, "--control-print") ?? ImportacionControlPrint.RutaPorOmision;
+    if (!File.Exists(ruta) || !File.Exists(origen))
+    {
+        Console.Error.WriteLine($"No existe {(File.Exists(ruta) ? origen : ruta)}.");
+        return 1;
+    }
+    var costos = ImportacionControlPrint.LeerCostos(origen);
+    await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={ruta}"));
+    await BaseDeDatos.PrepararAsync(db);
+    var registro = new RegistroImpresiones(db);
+    foreach (var sucursal in await db.Sucursales.ToListAsync())
+    {
+        await registro.GuardarCostosAsync(sucursal.Id, costos);
+        Console.WriteLine($"Costos de impresión copiados a {sucursal.Nombre}.");
+    }
+    return 0;
 }

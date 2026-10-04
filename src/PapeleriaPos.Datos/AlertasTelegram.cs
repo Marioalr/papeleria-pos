@@ -142,7 +142,7 @@ public static class AlertasTelegram
         var ventas = await db.Ventas.AsNoTracking().Include(v => v.Lineas)
             .Where(v => v.SucursalId == sucursalId && v.PagadaUtc >= desde && v.PagadaUtc < hasta).ToListAsync(ct);
         var vigentes = ventas.Where(v => v.Estado == EstadoVenta.Pagada).ToList();
-        var deCatalogo = vigentes.SelectMany(v => v.Lineas).Where(l => l.VarianteId != null).ToList();
+        var deCatalogo = vigentes.SelectMany(v => v.Lineas).Where(l => l.VarianteId != null || l.EsImpresiones).ToList();
         var utilidad = deCatalogo.Sum(l => l.ImporteCentavos - l.CostoCentavos);
 
         var turnos = await db.Turnos.AsNoTracking().Where(t => t.SucursalId == sucursalId).Select(t => new { t.Id, t.CajaId, t.CajeroId }).ToListAsync(ct);

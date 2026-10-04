@@ -32,6 +32,9 @@ public sealed class ConexionCaja
     /// <summary>Lo pone el anfitrión: dónde guardar la conexión después del alta.</summary>
     public Func<ConexionCaja, Task>? AlGuardar { get; init; }
 
+    /// <summary>Quien atiende ahora en esta caja: a su nombre quedan las impresiones que salen de esta PC.</summary>
+    public Guid? UsuarioEnCaja { get; set; }
+
     public bool Lista => !PideAlta || (CajaId is not null && Llave is not null);
 }
 
@@ -161,6 +164,15 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     public Task<List<ReglaDto>> GuardarReglasAsync(Guid sucursalId, SolicitudReglas solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<List<ReglaDto>>($"api/sucursales/{sucursalId}/reglas", solicitud));
+
+    // ── Impresiones (solo con la caja principal: ahí llegan los trabajos de todas las PC) ──
+
+    public Task<List<ImpresionPorCobrarDto>> ImpresionesPorCobrarAsync(Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<ImpresionPorCobrarDto>>(
+            $"api/sucursales/{sucursalId}/impresiones/por-cobrar?usuarioId={usuarioId}") ?? []);
+
+    public Task NoVendidaAsync(Guid trabajoId, SolicitudNoVendida solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<object>($"api/impresiones/{trabajoId}/no-vendida", solicitud, sinRespuesta: true));
 
     // ── Telegram (solo con la caja principal: el bot vive ahí) ──
 

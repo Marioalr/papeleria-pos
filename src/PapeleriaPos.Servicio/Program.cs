@@ -61,6 +61,7 @@ app.MapearApiControl();
 app.MapearApiDevoluciones();
 app.MapearApiContingencia();
 app.MapearApiTelegram();
+app.MapearApiImpresiones();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Run();

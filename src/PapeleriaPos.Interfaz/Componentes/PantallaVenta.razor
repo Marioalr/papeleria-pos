@@ -38,6 +38,7 @@
         <button class="boton" @onclick="BorrarSeleccion">DEL Borrar art.</button>
         <button class="boton" @onclick="AbrirCambioPrecio">CTRL+E Cambiar precio</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Verificador)">F9 Verificador</button>
+        <button class="boton" @onclick="() => Abrir(Ventanas.Impresiones)">F2 Impresiones</button>
     </div>
 
     <nav class="pestanas">
@@ -69,7 +70,7 @@
                     var producto = linea.VarianteId is { } v ? Actual.Productos.GetValueOrDefault(v) : null;
                     <tr id="linea-@i" class="@(i == _seleccion ? "seleccionada" : "")" @onclick="() => Seleccionar(indice)">
                         <td class="col-codigo">@(producto?.Codigo ?? "—")</td>
-                        <td>@Descripcion(linea, producto)</td>
+                        <td>@(linea.EsImpresiones ? $"Impresiones ({Actual.Impresiones.Count})" : Descripcion(linea, producto))</td>
                         <td class="num">
                             @if (linea.PrecioCambiado)
                             {
@@ -181,6 +182,11 @@
                                Caja="Caja" Sesion="Sesion" AlCambiar="PrecioCambiadoAsync" />
             </Ventana>
             break;
+        case Ventanas.Impresiones:
+            <Ventana Titulo="Impresiones por cobrar" Clase="ventas-dia" AlCerrar="Cerrar">
+                <ImpresionesPorCobrar Caja="Caja" Sesion="Sesion" EnElTicket="@Actual.Impresiones.Select(i => i.Id).ToList()" AlAgregar="ImpresionesElegidasAsync" />
+            </Ventana>
+            break;
         case Ventanas.Transferencias:
             <Ventana Titulo="Verificar transferencias" Clase="ventas-dia" AlCerrar="Cerrar">
                 <VerificarTransferencias Caja="Caja" />
@@ -215,7 +221,7 @@
     private enum Ventanas
     {
         Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
-        CambiarPrecio, Transferencias,
+        CambiarPrecio, Transferencias, Impresiones,
     }
 
     private sealed class TicketAbierto
@@ -223,6 +229,9 @@
         public required Venta Venta { get; init; }
         public required int Numero { get; init; }
         public Dictionary<Guid, ProductoVentaDto> Productos { get; } = [];
+
+        /// <summary>Los trabajos de impresión que van en la línea "Impresiones" de este ticket.</summary>
+        public List<ImpresionPorCobrarDto> Impresiones { get; } = [];
     }
 
     private readonly List<TicketAbierto> _tickets = [];
@@ -270,6 +279,7 @@
             case "F7": await Abrir(Ventanas.Entrada); break;
             case "F8": await Abrir(Ventanas.Salida); break;
             case "F9": await Abrir(Ventanas.Verificador); break;
+            case "F2": await Abrir(Ventanas.Impresiones); break;
             case "Insert" or "Ctrl+P": await Abrir(Ventanas.Comun); break;
             case "Ctrl+E": await AbrirCambioPrecio(); break;
             case "Delete": await BorrarSeleccion(); break;
@@ -405,7 +415,13 @@
         if (_seleccion < 0 || _seleccion >= Actual.Venta.Lineas.Count)
             return;
         var linea = Actual.Venta.Lineas[_seleccion];
-        Actual.Venta.QuitarLinea(linea);
+        if (linea.EsImpresiones)
+        {
+            Actual.Impresiones.Clear();
+            Actual.Venta.FijarImpresiones(0, 0);
+        }
+        else
+            Actual.Venta.QuitarLinea(linea);
         _seleccion = Math.Min(_seleccion, Actual.Venta.Lineas.Count - 1);
         await RegistrarQuitadoAsync($"Quitó «{linea.Descripcion}» × {linea.Cantidad} del ticket {Actual.Numero}", linea.ImporteCentavos);
     }
@@ -445,6 +461,11 @@
             return;
         }
         var linea = Actual.Venta.Lineas[_seleccion];
+        if (linea.EsImpresiones)
+        {
+            Avisar("Las impresiones se eligen con F2.");
+            return;
+        }
         if (linea.VarianteId is not { } varianteId || !Actual.Productos.TryGetValue(varianteId, out var producto))
         {
             Avisar("La cantidad del artículo común no se cambia: bórralo y agrégalo de nuevo.");
@@ -516,7 +537,8 @@
     /// <summary>Lo llama la ventana de cobro. Devuelve el error para mostrarlo ahí, o null si se cobró.</summary>
     private async Task<string?> CobrarAsync(IReadOnlyList<CobroSolicitado> cobros)
     {
-        var lineas = Actual.Venta.Lineas.Select(l => l switch
+        // La línea "Impresiones" no se manda: el servicio la arma con los trabajos y sus precios.
+        var lineas = Actual.Venta.Lineas.Where(l => !l.EsImpresiones).Select(l => l switch
         {
             { VarianteId: null } => new LineaSolicitada(null, null, l.Cantidad.Milesimas, l.Descripcion, l.PrecioCentavos),
             { PrecioCambiado: true } => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas, null, l.PrecioCentavos, l.AutorizacionPrecioId),
@@ -524,7 +546,8 @@
         }).ToList();
         try
         {
-            var ticket = await Cliente.CobrarAsync(new SolicitudCobro(Caja.Id, Turno.Id, Sesion.UsuarioId, lineas, cobros));
+            var ticket = await Cliente.CobrarAsync(new SolicitudCobro(Caja.Id, Turno.Id, Sesion.UsuarioId, lineas, cobros,
+                Impresiones: Actual.Impresiones.Count > 0 ? Actual.Impresiones.Select(i => i.Id).ToList() : null));
             _tickets.RemoveAt(_actual);
             if (_tickets.Count == 0)
                 NuevoTicket();
@@ -599,6 +622,19 @@
         {
             _ocupadoMotivo = false;
         }
+    }
+
+    // ── Impresiones (F2) ────────────────────────────────────────────────────
+
+    /// <summary>Las elegidas reemplazan a las que había: van juntas en la línea "Impresiones".</summary>
+    private async Task ImpresionesElegidasAsync(IReadOnlyList<ImpresionPorCobrarDto> elegidas)
+    {
+        await Cerrar();
+        Actual.Impresiones.Clear();
+        Actual.Impresiones.AddRange(elegidas);
+        // El costo no viaja a la caja: el servicio pone el de cada trabajo al cobrar.
+        var linea = Actual.Venta.FijarImpresiones(elegidas.Sum(i => i.PrecioCentavos), 0);
+        _seleccion = linea is null ? Math.Min(_seleccion, Actual.Venta.Lineas.Count - 1) : Actual.Venta.Lineas.IndexOf(linea);
     }
 
     // ── Cambiar precio (Ctrl+E) ─────────────────────────────────────────────

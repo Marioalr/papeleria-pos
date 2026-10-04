@@ -6,6 +6,7 @@ using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using PapeleriaPos.Impresion;
 using PapeleriaPos.Interfaz;
+using PapeleriaPos.Medicion;
 
 namespace PapeleriaPos.Caja;
 
@@ -15,7 +16,11 @@ namespace PapeleriaPos.Caja;
 /// </summary>
 /// <param name="Impresora">"tcp://ip:9100" (impresora de red), el nombre de una impresora de Windows, o vacío para ver el ticket en pantalla.</param>
 /// <param name="LlaveProtegida">La llave de la caja cifrada para esta PC: copiada a otra no sirve.</param>
-public sealed record ConfiguracionCaja(string Servicio, Guid? CajaId, string? Impresora, string? LlaveProtegida = null)
+/// <param name="ColaImpresion">La cola de Windows de la WF-6590 que vigila esta PC (vacío: no vigila ninguna). Mientras
+/// Control Print siga en uso, se prueba con su cola de laboratorio.</param>
+/// <param name="QuitarImpresos">Quitar de la cola lo ya impreso y medido (la cola conserva los documentos impresos).</param>
+public sealed record ConfiguracionCaja(
+    string Servicio, Guid? CajaId, string? Impresora, string? LlaveProtegida = null, string? ColaImpresion = null, bool QuitarImpresos = true)
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
 
@@ -90,6 +95,30 @@ public partial class MainWindow : Window
         var impresora = Impresoras.Crear(configuracion.Impresora, nombre => new ImpresoraWindows(nombre));
         // La copia para vender sin la caja principal y la bandeja de salida, junto a la configuración de la caja.
         servicios.AgregarInterfazCaja(conexion, impresora, ConfiguracionCaja.BaseLocal);
-        Vista.Services = servicios.BuildServiceProvider();
+        var proveedor = servicios.BuildServiceProvider();
+        Vista.Services = proveedor;
+        IniciarAgente(configuracion, conexion, proveedor.GetRequiredService<Contingencia>());
+    }
+
+    private AgenteImpresion? _agente;
+
+    /// <summary>
+    /// Si esta PC tiene la WF-6590, mide cada impresión y la manda a la caja principal (con la bandeja: sin conexión, sube
+    /// cuando vuelva). Queda a nombre de quien atiende la caja.
+    /// </summary>
+    private void IniciarAgente(ConfiguracionCaja configuracion, ConexionCaja conexion, Contingencia contingencia)
+    {
+        if (string.IsNullOrWhiteSpace(configuracion.ColaImpresion))
+            return;
+        _agente = new AgenteImpresion(configuracion.ColaImpresion, trabajo =>
+        {
+            if (conexion.CajaId is not { } caja)
+                throw new InvalidOperationException("La caja todavía no está dada de alta.");
+            contingencia.EncolarImpresion(trabajo with { CajaId = caja, AtendioId = conexion.UsuarioEnCaja });
+            return Task.CompletedTask;
+        }, configuracion.QuitarImpresos);
+        _agente.Aviso += aviso => System.Diagnostics.Trace.TraceInformation(aviso);
+        _agente.Iniciar();
+        Closed += async (_, _) => await _agente.DisposeAsync();
     }
 }

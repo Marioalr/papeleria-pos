@@ -88,7 +88,11 @@ public static class ApiCaja
             var turno = await db.Turnos.FindAsync(s.TurnoId) ?? throw new InvalidOperationException("El turno no existe.");
             var caja = await db.Cajas.FindAsync(s.CajaId) ?? throw new InvalidOperationException("La caja no existe.");
             var venta = await ArmarVentaAsync(db, catalogo, caja, turno.Id, s.CajeroId, s.VentaId ?? Ids.Nuevo(), s.Lineas);
-            await new RegistroCaja(db).CobrarAsync(venta, s.Cobros);
+            // Las impresiones van juntas en una línea; su precio y costo salen de cada trabajo, no de la caja.
+            var impresiones = s.Impresiones is { Count: > 0 } ids ? await new RegistroImpresiones(db).ParaCobrarAsync(caja.SucursalId, ids) : [];
+            if (impresiones.Count > 0)
+                venta.FijarImpresiones(impresiones.Sum(t => t.PrecioCentavos), impresiones.Sum(t => t.CostoCentavos));
+            await new RegistroCaja(db).CobrarAsync(venta, s.Cobros, impresiones: impresiones);
             return await TicketAsync(db, venta, ticket.Value);
         });
 

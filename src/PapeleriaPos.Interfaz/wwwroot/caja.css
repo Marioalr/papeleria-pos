@@ -155,3 +155,8 @@ label.opcion { flex-direction: row; align-items: center; gap: 8px; font-size: 15
 /* Entrega 4: Telegram */
 .esperando { padding: 8px 12px; background: var(--azul-claro); color: var(--azul); border-radius: 4px; }
 .alertas { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
+
+/* Entrega 5: impresiones */
+.impresiones img.miniatura { width: 48px; height: auto; border: 1px solid var(--borde); background: #fff; }
+.impresiones tr { cursor: pointer; }
+.total-elegido { margin-right: auto; font-weight: 600; }

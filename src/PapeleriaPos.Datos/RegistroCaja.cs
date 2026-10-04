@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Ventas;
@@ -65,8 +66,10 @@ public sealed class RegistroCaja(PosDbContext db)
     /// F12: asigna el folio de la serie, aplica los cobros, descuenta del inventario lo vendido (guardando su costo en
     /// cada línea) y registra la apertura del cajón si hubo efectivo.
     /// </summary>
-    public Task<Venta> CobrarAsync(Venta venta, IReadOnlyList<CobroSolicitado> cobros, CancellationToken ct = default) =>
-        GuardarCobroAsync(venta, cobros, null, Ahora, ct);
+    /// <param name="impresiones">Los trabajos que van en la línea "Impresiones": quedan cobrados con la venta.</param>
+    public Task<Venta> CobrarAsync(
+        Venta venta, IReadOnlyList<CobroSolicitado> cobros, CancellationToken ct = default, IReadOnlyList<TrabajoImpresion>? impresiones = null) =>
+        GuardarCobroAsync(venta, cobros, null, Ahora, ct, impresiones);
 
     /// <summary>
     /// Una venta que cobró una caja sin conexión y llega con la bandeja: trae su folio y su hora. Las reglas ya se
@@ -75,7 +78,8 @@ public sealed class RegistroCaja(PosDbContext db)
     public Task<Venta> CobroDeContingenciaAsync(Venta venta, IReadOnlyList<CobroSolicitado> cobros, int folio, DateTime pagadaUtc, CancellationToken ct = default) =>
         GuardarCobroAsync(venta, cobros, folio, pagadaUtc, ct);
 
-    private async Task<Venta> GuardarCobroAsync(Venta venta, IReadOnlyList<CobroSolicitado> cobros, int? folioDeLaCaja, DateTime ahora, CancellationToken ct)
+    private async Task<Venta> GuardarCobroAsync(
+        Venta venta, IReadOnlyList<CobroSolicitado> cobros, int? folioDeLaCaja, DateTime ahora, CancellationToken ct, IReadOnlyList<TrabajoImpresion>? impresiones = null)
     {
         var turno = await TurnoAbiertoPorIdAsync(venta.TurnoId, ct);
         if (turno.CajaId != venta.CajaId || turno.SucursalId != venta.SucursalId)
@@ -119,7 +123,9 @@ public sealed class RegistroCaja(PosDbContext db)
             }
 
             venta.Pagar(folio, cobros, ahora);
-            foreach (var comun in venta.Lineas.Where(l => l.VarianteId is null))
+            foreach (var trabajo in impresiones ?? [])
+                trabajo.Cobrar(venta.Id, ahora);
+            foreach (var comun in venta.Lineas.Where(l => l.VarianteId is null && !l.EsImpresiones))
                 control.Registrar(venta.SucursalId, venta.CajaId, venta.CajeroId, AccionControlada.ArticuloComun,
                     $"{comun.Descripcion} × {comun.Cantidad}", comun.ImporteCentavos, venta.Id);
             db.Ventas.Add(venta);

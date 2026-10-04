@@ -79,7 +79,7 @@ public sealed class Contingencia
         _reloj = reloj ?? TimeProvider.System;
         if (almacen.Leer<PaqueteContingenciaDto>("paquete") is { } paquete)
             _copia = new Copia(paquete);
-        (Pendientes, ConError, UltimoError) = almacen.Contar();
+        (Pendientes, ConError, UltimoError, ImpresionesPorSubir) = almacen.Contar();
     }
 
     /// <summary>Cambió la conexión o la bandeja: la pantalla vuelve a dibujar la franja.</summary>
@@ -93,6 +93,9 @@ public sealed class Contingencia
     public int Pendientes { get; private set; }
     public int ConError { get; private set; }
     public string? UltimoError { get; private set; }
+
+    /// <summary>Trabajos de impresión medidos en esta PC que todavía no llegan a la caja principal.</summary>
+    public int ImpresionesPorSubir { get; private set; }
     public PaqueteContingenciaDto? Paquete => _copia?.Paquete;
     public int UltimoFolio => _almacen.Leer<int?>("folio") ?? 0;
 
@@ -150,7 +153,7 @@ public sealed class Contingencia
             return;
         }
         Fijar(responde: true);
-        if (Pendientes > 0 || (ConError > 0 && Ahora - _ultimoReintentoUtc > ReintentoErrores))
+        if (Pendientes > 0 || ImpresionesPorSubir > 0 || (ConError > 0 && Ahora - _ultimoReintentoUtc > ReintentoErrores))
             await SubirAsync();
         if (_responde && (Paquete is null || Paquete.Version != estado!.VersionDatos || Ahora - _paqueteBajadoUtc > PaqueteViejo))
             await ActualizarPaqueteAsync();
@@ -236,8 +239,21 @@ public sealed class Contingencia
 
     private void Recontar()
     {
-        (Pendientes, ConError, UltimoError) = _almacen.Contar();
+        (Pendientes, ConError, UltimoError, ImpresionesPorSubir) = _almacen.Contar();
         Cambio?.Invoke();
+    }
+
+    /// <summary>
+    /// Un trabajo que midió el agente de esta PC: queda en la bandeja (sin bloquear la caja) y se sube en seguida; sin
+    /// conexión, sube cuando vuelva.
+    /// </summary>
+    public void EncolarImpresion(TrabajoMedidoDto trabajo)
+    {
+        using (var lote = _almacen.Lote())
+            lote.Encolar(trabajo.Id, "api/impresiones", trabajo, bloquea: false).Confirmar();
+        Recontar();
+        if (_responde)
+            _ = Task.Run(SubirAsync);
     }
 
     // ── Lo que se hace sin conexión ─────────────────────────────────────────
@@ -400,6 +416,8 @@ public sealed class Contingencia
         var datos = Datos;
         var caja = Caja;
         var turno = TurnoRequerido(s.TurnoId);
+        if (s.Impresiones is { Count: > 0 })
+            throw new InvalidOperationException("Las impresiones se cobran con conexión con la caja principal: quítalas del ticket o espera a que vuelva.");
         var ahora = Ahora;
         var venta = new Venta
         {

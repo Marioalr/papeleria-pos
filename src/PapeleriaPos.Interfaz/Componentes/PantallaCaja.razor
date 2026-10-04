@@ -106,6 +106,7 @@
     private async Task Entrar(SesionDto sesion)
     {
         _sesion = sesion;
+        Conexion.UsuarioEnCaja = sesion.UsuarioId;
         _turno = await Cliente.TurnoAsync(_caja!.Id);
     }
 
@@ -114,6 +115,7 @@
     private void Salir()
     {
         _sesion = null;
+        Conexion.UsuarioEnCaja = null;
         _corte = false;
     }
 
@@ -121,6 +123,7 @@
     {
         _corte = false;
         _sesion = null;
+        Conexion.UsuarioEnCaja = null;
         _turno = await Cliente.TurnoAsync(_caja!.Id);
     }
 }

@@ -1,5 +1,6 @@
 {
   "Servicio": "http://localhost:5080",
   "CajaId": null,
-  "Impresora": ""
+  "Impresora": "",
+  "ColaImpresion": null
 }
