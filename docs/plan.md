@@ -55,7 +55,7 @@
 | Costo promedio | Por sucursal |
 | Formas de pago | Efectivo, tarjeta (terminal externa) y transferencia (por verificar). Hoy casi todo es efectivo |
 | Impresora de tickets | POS-8360, térmica de 80 mm, ESC/POS; el ticket conserva el formato y el logo del de eleventa |
-| Inversión por sucursal | Se registra lo que cuesta abrir cada sucursal para saber cuándo alcanza el punto de equilibrio ([detalle](#inversión-y-punto-de-equilibrio)) |
+| Administración | Inversión de apertura, gastos fijos e insumos del mes por sucursal: la ganancia mensual real y el punto de equilibrio ([detalle](#administración-y-punto-de-equilibrio)) |
 | Git | Ramas cortas por tema, fusionadas a `main` |
 
 ### Cómo han cambiado
@@ -118,25 +118,32 @@ existencias que no son correctas.
   igual en la importación final, justo antes del arranque.
 - **Existencias:** las de eleventa solo sirven de referencia para el conteo; las que valen son las contadas.
 
-### Inversión y punto de equilibrio
+### Administración y punto de equilibrio
 
-Para decidir la tercera sucursal con números reales, no con intuición: cuánto costó abrir la segunda y cuándo se
-pagó sola.
+Para saber cuánto se gana de verdad cada mes y decidir la tercera sucursal con números reales, no con intuición:
+cuánto costó abrir la segunda y cuándo se pagó sola.
 
 - **Inversión de apertura** por sucursal, una sola vez: mobiliario, equipo (impresoras, computadoras, engargoladoras),
   adecuaciones del local, depósito de renta, trámites e inventario inicial. Con fecha, monto y comprobante.
 - **Gastos fijos del mes** por sucursal: renta, sueldos, luz, internet. Son los mismos gastos que se reparten en la
   [utilidad neta de los servicios](servicios.md#dos-utilidades).
 - **De las ventas:** la utilidad bruta de cada mes (venta − costo de lo vendido), que ya sale del POS.
+- **Insumos del negocio:** lo que la tienda gasta pero no vende, comprado cuando se necesita: un rollo de papel
+  térmico a medio mes, cinta, bolsas, artículos de limpieza, tóner de la impresora de tickets. Se registran con
+  fecha, sucursal, concepto, categoría, monto y comprobante, y entran como gasto del mes en la ganancia mensual.
+  - Si se pagan con el efectivo de la caja, la salida F8 lleva la categoría "Insumo" y queda registrado solo, sin
+    capturarlo dos veces.
+  - Los materiales de los servicios (espirales, micas, papel para copias) no son insumos: están en el inventario y se
+    descuentan con la [receta](servicios.md#receta-de-un-servicio). Así no se cuentan dos veces.
 
 Con eso, un reporte por sucursal:
 
 | Indicador | Cómo se calcula |
 |---|---|
-| Punto de equilibrio mensual | Venta necesaria para cubrir los gastos fijos: gastos fijos ÷ margen bruto |
-| Resultado del mes | Utilidad bruta − gastos fijos |
-| Recuperación de la inversión | Mes en que la suma de los resultados alcanza la inversión de apertura |
-| Rendimiento | Resultado anual ÷ inversión |
+| Punto de equilibrio mensual | Venta necesaria para cubrir los gastos: (gastos fijos + insumos) ÷ margen bruto |
+| Ganancia del mes | Utilidad bruta − gastos fijos − insumos |
+| Recuperación de la inversión | Mes en que la suma de las ganancias alcanza la inversión de apertura |
+| Rendimiento | Ganancia anual ÷ inversión |
 
 - El equipo de la matriz que hoy está en el inventario de eleventa (impresoras, engargoladoras) entra aquí como
   inversión, no como mercancía.
@@ -161,6 +168,8 @@ Fase 1:
 - [x] Entrega 1: vender y cobrar en una caja (falta probar el cajón cuando lo haya)
 - [x] Revisar el [plan de la entrega 2](fase-1-control.md) (control) y contestar sus preguntas
 - [x] Entrega 2: control (cancelar, devolver, cambio de precio, transferencias, reglas y bitácora)
+- [ ] Revisar el [plan de la entrega 3](fase-1-varias-cajas.md) (varias cajas y contingencia) y contestar sus preguntas
+- [ ] Entrega 3: varias cajas
 - [ ] Descuentos: definirlos con el módulo de impresión (entrega 5)
 
 Fase 3:
@@ -171,7 +180,7 @@ Fase 3:
 Depuración del inventario (antes del piloto, [ver abajo](#depuración-del-inventario)):
 
 - [ ] Dar de baja los productos que ya no existen
-- [ ] Sacar del inventario el equipo de la tienda (impresoras, engargoladoras, enmicadoras, mobiliario) y registrarlo como [inversión](#inversión-y-punto-de-equilibrio)
+- [ ] Sacar del inventario el equipo de la tienda (impresoras, engargoladoras, enmicadoras, mobiliario) y registrarlo como [inversión](#administración-y-punto-de-equilibrio)
 - [ ] Juntar los productos capturados dos veces (los que marca el diagnóstico)
 - [ ] Corregir unidades: los productos a granel que eleventa tiene en KG (listón, micas, hojas sueltas…)
 - [ ] Pasar a servicios lo que eleventa vende como producto a granel (impresiones, copias, engargolado, escaneo)
@@ -180,6 +189,8 @@ Depuración del inventario (antes del piloto, [ver abajo](#depuración-del-inven
 Por definir:
 
 - [ ] Si la sucursal 2 abre antes de la fase 7: guardar la lista de gastos de apertura con comprobantes
+- [ ] Administración: insumos del mes (papel térmico, cinta, limpieza…) para la ganancia mensual
+  ([detalle](#administración-y-punto-de-equilibrio)); la categoría "Insumo" en las salidas F8 puede llegar antes
 - [ ] Módulo de convivencia: el POS nuevo como una caja más de eleventa durante la adaptación
   ([idea](migracion-eleventa.md#convivencia-con-eleventa-idea-a-evaluar))
 - [ ] Demás funciones a la medida (las describe el dueño)
