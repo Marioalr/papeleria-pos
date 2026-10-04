@@ -13,8 +13,8 @@ public sealed class ImpresoraWindows(string nombre) : IImpresora
 {
     public bool MuestraVistaPrevia => false;
 
-    public Task ImprimirAsync(TicketDto ticket, bool abrirCajon, CancellationToken ct = default) =>
-        Task.Run(() => EnviarRaw(nombre, TicketEscPos.Generar(ticket, abrirCajon), $"Ticket {ticket.Folio}"), ct);
+    public Task EnviarAsync(byte[] escPos, CancellationToken ct = default) =>
+        Task.Run(() => EnviarRaw(nombre, escPos, "Papelería POS"), ct);
 
     private static void EnviarRaw(string impresora, byte[] datos, string documento)
     {

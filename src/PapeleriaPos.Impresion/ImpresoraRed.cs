@@ -25,9 +25,6 @@ public sealed class ImpresoraRed(string host, int puerto = 9100, TimeSpan? esper
 
     public bool MuestraVistaPrevia => false;
 
-    public Task ImprimirAsync(TicketDto ticket, bool abrirCajon, CancellationToken ct = default) =>
-        EnviarAsync(TicketEscPos.Generar(ticket, abrirCajon), ct);
-
     public async Task EnviarAsync(byte[] datos, CancellationToken ct = default)
     {
         using var cliente = new TcpClient();

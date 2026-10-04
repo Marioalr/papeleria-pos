@@ -5,6 +5,7 @@ using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Nucleo.Ventas;
@@ -23,17 +24,7 @@ public static class ApiCaja
 {
     public static void MapearApiCaja(this IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("/api").AddEndpointFilter(async (contexto, siguiente) =>
-        {
-            try
-            {
-                return await siguiente(contexto);
-            }
-            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
-            {
-                return Results.BadRequest(new ErrorDto(ex.Message));
-            }
-        });
+        var api = app.MapGroup("/api").ConErrores();
 
         api.MapGet("/cajas", async (PosDbContext db) =>
             await (from c in db.Cajas
@@ -63,18 +54,16 @@ public static class ApiCaja
         api.MapPost("/turnos", async (SolicitudTurno s, PosDbContext db) =>
             await TurnoDtoAsync(db, await new RegistroCaja(db).AbrirTurnoAsync(s.CajaId, s.CajeroId, s.FondoCentavos)));
 
-        api.MapPost("/turnos/{turnoId:guid}/movimientos", async (Guid turnoId, SolicitudMovimiento s, PosDbContext db) =>
-        {
-            await new RegistroCaja(db).RegistrarMovimientoAsync(turnoId, s.Tipo, s.MontoCentavos, s.Motivo, s.UsuarioId);
-            return Results.Ok();
-        });
+        api.MapPost("/turnos/{turnoId:guid}/movimientos", async (Guid turnoId, SolicitudMovimiento s, PosDbContext db, IOptions<OpcionesTicket> ticket) =>
+            await ApiControl.MovimientoAsync(turnoId, s, db, ticket.Value));
 
         api.MapPost("/turnos/{turnoId:guid}/corte-x", async (Guid turnoId, Guid usuarioId, PosDbContext db) =>
             await CorteDtoAsync(db, await new RegistroCaja(db).CorteXAsync(turnoId, usuarioId)));
 
         api.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, SolicitudCorteZ s, PosDbContext db) =>
         {
-            var encargado = await ApiConfiguracion.AutorizarAsync(db, s.EncargadoUsuario, s.EncargadoPin);
+            var turno = await db.Turnos.FindAsync(turnoId) ?? throw new InvalidOperationException("El turno no existe.");
+            var encargado = await new ServicioControl(db).IdentificarAsync(s.EncargadoUsuario, s.EncargadoPin, turno.SucursalId, AccionControlada.CorteZ);
             return await CorteDtoAsync(db, await new RegistroCaja(db).CorteZAsync(turnoId, encargado.Id, s.Conteo));
         });
 
@@ -133,6 +122,17 @@ public static class ApiCaja
                 .ToList();
         });
 
+        // Reimprimir: con motivo si la regla lo pide, y queda en la bitácora.
+        api.MapPost("/ventas/{ventaId:guid}/reimpresion", async (Guid ventaId, SolicitudReimpresion s, PosDbContext db, IOptions<OpcionesTicket> ticket) =>
+        {
+            var venta = await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleOrDefaultAsync(v => v.Id == ventaId)
+                ?? throw new InvalidOperationException("La venta no existe.");
+            await new ServicioControl(db).RequerirAsync(s.UsuarioId, venta.SucursalId, s.CajaId, AccionControlada.Reimprimir, venta.TotalCentavos,
+                $"Reimpresión del ticket {venta.FolioTexto}", motivo: s.Motivo, ventaId: venta.Id);
+            await db.SaveChangesAsync();
+            return await TicketAsync(db, venta, ticket.Value);
+        });
+
         api.MapGet("/ventas/{ventaId:guid}/ticket", async (Guid ventaId, PosDbContext db, IOptions<OpcionesTicket> ticket) =>
             await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleOrDefaultAsync(v => v.Id == ventaId) is { } venta
                 ? Results.Ok(await TicketAsync(db, venta, ticket.Value))
@@ -180,7 +180,7 @@ public static class ApiCaja
         return new TicketDto(v.FolioTexto!, HoraMexico.ALocal(v.PagadaUtc!.Value), caja!.Nombre, cajero, lineas, v.NumeroDeArticulos,
             v.TotalCentavos, v.IvaCentavos,
             v.Cobros.OrderBy(c => c.Forma).Select(c => new CobroTicketDto(c.Forma, c.MontoCentavos, c.RecibidoCentavos, c.CambioCentavos, c.Referencia)).ToList(),
-            configuracion.RenglonesEncabezado, configuracion.RenglonesPie, ApiConfiguracion.Logo(configuracion));
+            configuracion.RenglonesEncabezado, configuracion.RenglonesPie, ApiConfiguracion.Logo(configuracion), v.Id);
     }
 
     /// <summary>"2" piezas; "1.5 m", "0.25 kg", "0.5 l" a granel.</summary>

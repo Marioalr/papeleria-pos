@@ -28,6 +28,13 @@ else
             }
 
             <div class="logo-config">
+                <label class="en-linea">Límite de efectivo en caja (lo cambia el dueño)
+                    <input inputmode="decimal" placeholder="Sin límite" @bind="_limite" @bind:event="oninput" />
+                </label>
+                <button class="boton" disabled="@_ocupado" @onclick="GuardarLimiteAsync">Guardar límite</button>
+            </div>
+
+            <div class="logo-config">
                 <span>Logotipo</span>
                 <label class="boton archivo">
                     Agregar logotipo…
@@ -72,6 +79,7 @@ else
     private string _pie = "";
     private LogoTicketDto? _logo;
     private string? _logoPng;
+    private string _limite = "";
     private string? _error;
     private string? _aviso;
 
@@ -79,6 +87,8 @@ else
     {
         try
         {
+            if (await Cliente.ConfiguracionSucursalAsync(Caja.SucursalId) is { LimiteEfectivoCentavos: { } limite })
+                _limite = (limite / 100m).ToString("0.##", CultureInfo.InvariantCulture);
             if (await Cliente.ConfiguracionTicketAsync(Caja.SucursalId) is { } c)
                 Mostrar(c);
         }
@@ -118,6 +128,14 @@ else
             await archivo.CopyToAsync(memoria);
             Mostrar(await Cliente.GuardarLogoTicketAsync(Caja.SucursalId, new SolicitudLogo(_usuario, _pin, Convert.ToBase64String(memoria.ToArray()))));
             _aviso = "Logotipo guardado. Así saldrá impreso.";
+        });
+
+    private async Task GuardarLimiteAsync() =>
+        await EjecutarAsync(async () =>
+        {
+            long? limite = string.IsNullOrWhiteSpace(_limite) ? null : Formato.LeerPesos(_limite) ?? throw new ArgumentException("Escribe el límite en pesos, o déjalo vacío.");
+            var guardado = await Cliente.GuardarConfiguracionSucursalAsync(Caja.SucursalId, new SolicitudConfiguracionSucursal(_usuario, _pin, limite));
+            _aviso = guardado.LimiteEfectivoCentavos is { } l ? $"Al llegar a {Formato.Dinero(l)} en efectivo, la caja pedirá un retiro." : "Sin límite de efectivo.";
         });
 
     private async Task QuitarLogoAsync() =>

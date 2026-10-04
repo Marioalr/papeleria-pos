@@ -63,7 +63,4 @@ public class Usuario : IVersionado
         }
         return ResultadoPin.Incorrecto;
     }
-
-    /// <summary>Encargado y dueño pueden hacer el corte y, más adelante, autorizar.</summary>
-    public bool PuedeHacerCorte => Rol is Rol.Encargado or Rol.Dueno;
 }

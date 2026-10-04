@@ -3,6 +3,12 @@
 > **Revisado.** Cómo se construyen las [autorizaciones configurables y la bitácora](caja-y-control.md) sobre la caja
 > de la entrega 1.
 
+**Avance:** la parte 1 ya funciona: reglas (con las iniciales de abajo), autorización de un solo uso que el servicio
+vuelve a revisar, bitácora (quitar productos, artículo común, entradas y salidas, reimpresiones, corte Z,
+configuración y autorizaciones negadas), límite de efectivo con aviso de retiro y comprobante impreso de salidas.
+Falta la parte 2: cancelar y devolver, cambio de precio, verificar transferencias, la ventana de autorización en la
+caja, el editor de reglas del dueño y la consulta de la bitácora.
+
 ## Qué incluye
 
 - **Reglas por acción, rol y sucursal:** permitido, requiere autorización o no permitido, con umbral.

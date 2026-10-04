@@ -1,0 +1,112 @@
+using PapeleriaPos.Nucleo.Usuarios;
+
+namespace PapeleriaPos.Nucleo.Control;
+
+/// <summary>Lo que se controla con reglas. Los descuentos llegan con el módulo de impresión (entrega 5).</summary>
+public enum AccionControlada
+{
+    QuitarProducto,
+    ArticuloComun,
+    CambiarPrecio,
+    VenderBajoCosto,
+    CancelarTicket,
+    Devolucion,
+    SalidaEfectivo,
+    EntradaEfectivo,
+    AbrirCajonSinVenta,
+    Reimprimir,
+    VerificarTransferencia,
+    CorteZ,
+    ConfigurarTicket,
+    EditarReglas,
+}
+
+public enum NivelPermiso
+{
+    Permitido,
+    RequiereAutorizacion,
+    NoPermitido,
+}
+
+/// <summary>
+/// Qué puede hacer un rol en una acción, en una sucursal (vacía: todas). Con umbral, arriba de ese monto pasa de
+/// permitido a requerir autorización (devoluciones de más de $200).
+/// </summary>
+public class ReglaPermiso : IVersionado
+{
+    public Guid Id { get; set; } = Ids.Nuevo();
+    public AccionControlada Accion { get; set; }
+    public Rol Rol { get; set; }
+    public Guid? SucursalId { get; set; }
+    public NivelPermiso Nivel { get; set; }
+    public long? UmbralCentavos { get; set; }
+    public bool PideMotivo { get; set; }
+
+    public long Version { get; set; }
+    public DateTime ModificadoUtc { get; set; }
+}
+
+public sealed record DecisionPermiso(NivelPermiso Nivel, bool PideMotivo);
+
+public static class Permisos
+{
+    /// <summary>Las reglas con que arranca el sistema (docs/fase-1-control.md). El dueño siempre puede todo.</summary>
+    public static readonly IReadOnlyList<ReglaPermiso> Iniciales =
+    [
+        .. Ambos(AccionControlada.QuitarProducto, NivelPermiso.Permitido),
+        .. Ambos(AccionControlada.ArticuloComun, NivelPermiso.Permitido),
+        .. Ambos(AccionControlada.CambiarPrecio, NivelPermiso.RequiereAutorizacion),
+        Regla(AccionControlada.VenderBajoCosto, Rol.Cajero, NivelPermiso.RequiereAutorizacion),
+        Regla(AccionControlada.VenderBajoCosto, Rol.Encargado, NivelPermiso.Permitido),
+        Regla(AccionControlada.CancelarTicket, Rol.Cajero, NivelPermiso.RequiereAutorizacion),
+        Regla(AccionControlada.CancelarTicket, Rol.Encargado, NivelPermiso.Permitido),
+        Regla(AccionControlada.Devolucion, Rol.Cajero, NivelPermiso.Permitido, umbral: 20000),
+        Regla(AccionControlada.Devolucion, Rol.Encargado, NivelPermiso.Permitido),
+        .. Ambos(AccionControlada.SalidaEfectivo, NivelPermiso.Permitido, motivo: true),
+        .. Ambos(AccionControlada.EntradaEfectivo, NivelPermiso.Permitido, motivo: true),
+        .. Ambos(AccionControlada.AbrirCajonSinVenta, NivelPermiso.Permitido, motivo: true),
+        Regla(AccionControlada.Reimprimir, Rol.Cajero, NivelPermiso.Permitido, motivo: true),
+        Regla(AccionControlada.Reimprimir, Rol.Encargado, NivelPermiso.Permitido),
+        Regla(AccionControlada.VerificarTransferencia, Rol.Cajero, NivelPermiso.NoPermitido),
+        Regla(AccionControlada.VerificarTransferencia, Rol.Encargado, NivelPermiso.Permitido),
+        Regla(AccionControlada.CorteZ, Rol.Cajero, NivelPermiso.NoPermitido),
+        Regla(AccionControlada.CorteZ, Rol.Encargado, NivelPermiso.Permitido),
+        Regla(AccionControlada.ConfigurarTicket, Rol.Cajero, NivelPermiso.NoPermitido),
+        Regla(AccionControlada.ConfigurarTicket, Rol.Encargado, NivelPermiso.Permitido),
+        .. Ambos(AccionControlada.EditarReglas, NivelPermiso.NoPermitido),
+    ];
+
+    /// <summary>
+    /// La regla de la sucursal gana sobre la general, y la general sobre la inicial. Sin ninguna, se pide autorización.
+    /// Editar las reglas es siempre solo del dueño.
+    /// </summary>
+    public static DecisionPermiso Evaluar(IEnumerable<ReglaPermiso> reglas, Rol rol, Guid sucursalId, AccionControlada accion, long? montoCentavos = null)
+    {
+        if (rol == Rol.Dueno)
+            return new DecisionPermiso(NivelPermiso.Permitido, false);
+        if (accion == AccionControlada.EditarReglas)
+            return new DecisionPermiso(NivelPermiso.NoPermitido, false);
+
+        var candidatas = reglas.Where(r => r.Accion == accion && r.Rol == rol).ToList();
+        var regla = candidatas.FirstOrDefault(r => r.SucursalId == sucursalId)
+            ?? candidatas.FirstOrDefault(r => r.SucursalId is null)
+            ?? Iniciales.FirstOrDefault(r => r.Accion == accion && r.Rol == rol);
+        if (regla is null)
+            return new DecisionPermiso(NivelPermiso.RequiereAutorizacion, false);
+
+        var nivel = regla.Nivel == NivelPermiso.Permitido && regla.UmbralCentavos is { } umbral && montoCentavos > umbral
+            ? NivelPermiso.RequiereAutorizacion
+            : regla.Nivel;
+        return new DecisionPermiso(nivel, regla.PideMotivo);
+    }
+
+    /// <summary>Puede autorizar quien tiene la acción permitida por ese monto (el encargado cancela; cambiar precio, solo el dueño).</summary>
+    public static bool PuedeAutorizar(IEnumerable<ReglaPermiso> reglas, Rol rol, Guid sucursalId, AccionControlada accion, long? montoCentavos) =>
+        Evaluar(reglas, rol, sucursalId, accion, montoCentavos).Nivel == NivelPermiso.Permitido;
+
+    private static ReglaPermiso Regla(AccionControlada accion, Rol rol, NivelPermiso nivel, long? umbral = null, bool motivo = false) =>
+        new() { Accion = accion, Rol = rol, Nivel = nivel, UmbralCentavos = umbral, PideMotivo = motivo };
+
+    private static ReglaPermiso[] Ambos(AccionControlada accion, NivelPermiso nivel, bool motivo = false) =>
+        [Regla(accion, Rol.Cajero, nivel, motivo: motivo), Regla(accion, Rol.Encargado, nivel, motivo: motivo)];
+}

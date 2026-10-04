@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Configuracion;
+using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Historico;
 using PapeleriaPos.Nucleo.Importacion;
 using PapeleriaPos.Nucleo.Inventario;
@@ -42,6 +43,10 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<Corte> Cortes => Set<Corte>();
     public DbSet<CorteConteo> CortesConteo => Set<CorteConteo>();
     public DbSet<ConfiguracionTicket> ConfiguracionesTicket => Set<ConfiguracionTicket>();
+    public DbSet<ConfiguracionSucursal> ConfiguracionesSucursal => Set<ConfiguracionSucursal>();
+    public DbSet<ReglaPermiso> ReglasPermiso => Set<ReglaPermiso>();
+    public DbSet<Autorizacion> Autorizaciones => Set<Autorizacion>();
+    public DbSet<Bitacora> Bitacora => Set<Bitacora>();
 
     /// <summary>Reloj para <see cref="IVersionado.ModificadoUtc"/> y el historial de precios; las pruebas lo fijan.</summary>
     public TimeProvider Reloj { get; init; } = TimeProvider.System;
@@ -91,6 +96,7 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
 
         ProtegerSoloAgregar<MovimientoInventario>();
         ProtegerSoloAgregar<PrecioHistorial>();
+        ProtegerSoloAgregar<Bitacora>();
         RegistrarCambiosDePrecio(ahora);
 
         if (secuenciaCatalogo is null)

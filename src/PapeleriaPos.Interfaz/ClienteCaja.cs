@@ -6,7 +6,11 @@ using PapeleriaPos.Nucleo.Contratos;
 namespace PapeleriaPos.Interfaz;
 
 /// <summary>Error que se le muestra al cajero tal cual (viene del servicio o de la conexión).</summary>
-public sealed class ErrorCaja(string mensaje) : Exception(mensaje);
+public sealed class ErrorCaja(string mensaje, string? codigo = null) : Exception(mensaje)
+{
+    /// <summary>"requiere-autorizacion" o "no-permitido" cuando lo detiene una regla.</summary>
+    public string? Codigo { get; } = codigo;
+}
 
 /// <summary>Qué caja es esta PC. Vacío: la primera caja de la sucursal (útil en pruebas).</summary>
 public sealed class OpcionesCaja
@@ -26,7 +30,25 @@ public sealed class ClienteCaja(HttpClient http)
     public Task<TurnoDto> AbrirTurnoAsync(Guid cajaId, Guid cajeroId, long fondo) =>
         PostAsync<TurnoDto>("api/turnos", new SolicitudTurno(cajaId, cajeroId, fondo));
 
-    public Task MovimientoAsync(Guid turnoId, SolicitudMovimiento movimiento) => PostAsync<object>($"api/turnos/{turnoId}/movimientos", movimiento, sinRespuesta: true);
+    public Task<ComprobanteMovimientoDto> MovimientoAsync(Guid turnoId, SolicitudMovimiento movimiento) =>
+        PostAsync<ComprobanteMovimientoDto>($"api/turnos/{turnoId}/movimientos", movimiento);
+
+    public Task<TicketDto> ReimprimirAsync(Guid ventaId, SolicitudReimpresion solicitud) =>
+        PostAsync<TicketDto>($"api/ventas/{ventaId}/reimpresion", solicitud);
+
+    public Task<EfectivoCajaDto?> EfectivoAsync(Guid turnoId) => GetAsync<EfectivoCajaDto>($"api/turnos/{turnoId}/efectivo");
+
+    public Task BitacoraAsync(SolicitudBitacora solicitud) => PostAsync<object>("api/bitacora", solicitud, sinRespuesta: true);
+
+    public Task<DecisionDto> PermisoAsync(SolicitudPermiso solicitud) => PostAsync<DecisionDto>("api/permisos", solicitud);
+
+    public Task<AutorizacionDto> AutorizarAsync(SolicitudAutorizacion solicitud) => PostAsync<AutorizacionDto>("api/autorizaciones", solicitud);
+
+    public Task<ConfiguracionSucursalDto?> ConfiguracionSucursalAsync(Guid sucursalId) =>
+        GetAsync<ConfiguracionSucursalDto>($"api/sucursales/{sucursalId}/configuracion");
+
+    public Task<ConfiguracionSucursalDto> GuardarConfiguracionSucursalAsync(Guid sucursalId, SolicitudConfiguracionSucursal solicitud) =>
+        PutAsync<ConfiguracionSucursalDto>($"api/sucursales/{sucursalId}/configuracion", solicitud);
 
     public Task<CorteDto> CorteXAsync(Guid turnoId, Guid usuarioId) => PostAsync<CorteDto>($"api/turnos/{turnoId}/corte-x?usuarioId={usuarioId}", null);
 
@@ -108,7 +130,7 @@ public sealed class ClienteCaja(HttpClient http)
         {
             // Sin mensaje del servicio: se usa el genérico.
         }
-        throw new ErrorCaja(error?.Mensaje ?? $"El servicio respondió con un error ({(int)respuesta.StatusCode}).");
+        throw new ErrorCaja(error?.Mensaje ?? $"El servicio respondió con un error ({(int)respuesta.StatusCode}).", error?.Codigo);
     }
 }
 

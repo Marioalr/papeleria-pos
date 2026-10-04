@@ -1,0 +1,40 @@
+@* Pide el motivo de una acción (reimprimir, abrir el cajón…), que queda en la bitácora. *@
+@inject ModuloCaja Js
+
+<label>@Etiqueta
+    <input id="motivo" @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" />
+</label>
+@if (Error is not null)
+{
+    <p class="error">@Error</p>
+}
+<div class="acciones">
+    <button class="boton principal" disabled="@Ocupado" @onclick="AceptarAsync">Aceptar (Enter)</button>
+</div>
+
+@code {
+    [Parameter] public string Etiqueta { get; set; } = "Motivo";
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public bool Ocupado { get; set; }
+    [Parameter] public EventCallback<string> AlAceptar { get; set; }
+
+    private string _motivo = "";
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+            await Js.EnfocarAsync("#motivo");
+    }
+
+    private async Task AlTeclear(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await AceptarAsync();
+    }
+
+    private async Task AceptarAsync()
+    {
+        if (!Ocupado)
+            await AlAceptar.InvokeAsync(_motivo.Trim());
+    }
+}

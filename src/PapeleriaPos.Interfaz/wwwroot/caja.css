@@ -125,3 +125,5 @@ textarea { font-family: Consolas, "Courier New", monospace; font-size: 14px; pad
 .boton.archivo { position: relative; overflow: hidden; display: inline-block; }
 .boton.archivo input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .aviso { color: var(--exito); margin: 4px 0; }
+.mensaje.retiro { background: #fff4d6; color: #8a5a00; font-weight: 600; }
+label.en-linea { flex: 1; }

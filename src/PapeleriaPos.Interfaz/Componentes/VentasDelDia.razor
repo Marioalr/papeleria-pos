@@ -35,7 +35,8 @@ else
 
 @code {
     [Parameter, EditorRequired] public Guid CajaId { get; set; }
-    [Parameter] public EventCallback<TicketDto> AlReimprimir { get; set; }
+    /// <summary>La pantalla de venta pide el motivo y reimprime.</summary>
+    [Parameter] public EventCallback<Guid> AlReimprimir { get; set; }
 
     private List<VentaDelDiaDto>? _ventas;
     private string? _error;
@@ -52,16 +53,5 @@ else
         }
     }
 
-    private async Task ReimprimirAsync(Guid ventaId)
-    {
-        try
-        {
-            if (await Cliente.TicketAsync(ventaId) is { } ticket)
-                await AlReimprimir.InvokeAsync(ticket);
-        }
-        catch (ErrorCaja ex)
-        {
-            _error = ex.Message;
-        }
-    }
+    private Task ReimprimirAsync(Guid ventaId) => AlReimprimir.InvokeAsync(ventaId);
 }

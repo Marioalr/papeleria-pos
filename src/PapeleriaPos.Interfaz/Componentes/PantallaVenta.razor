@@ -82,6 +82,10 @@
         }
     </div>
 
+    @if (_efectivo is { PideRetiro: true } efectivo)
+    {
+        <div class="mensaje retiro">Hay @Formato.Dinero(efectivo.EsperadoCentavos) en efectivo y el límite es @Formato.Dinero(efectivo.LimiteCentavos ?? 0): haz un retiro con F8.</div>
+    }
     @if (_mensaje is not null)
     {
         <div class="mensaje @(_mensajeEsError ? "error" : "")">@_mensaje</div>
@@ -153,7 +157,7 @@
             break;
         case Ventanas.VentasDelDia:
             <Ventana Titulo="Ventas del día" Clase="ventas-dia" AlCerrar="Cerrar">
-                <VentasDelDia CajaId="Caja.Id" AlReimprimir="ReimprimirAsync" />
+                <VentasDelDia CajaId="Caja.Id" AlReimprimir="(Guid id) => PedirReimpresion(id)" />
             </Ventana>
             break;
         case Ventanas.Configuracion:
@@ -161,9 +165,14 @@
                 <ConfiguracionTicket Caja="Caja" Sesion="Sesion" />
             </Ventana>
             break;
-        case Ventanas.VistaPrevia when _ultimo is not null:
-            <Ventana Titulo="@($"Ticket {_ultimo.Folio}")" Clase="vista-previa" AlCerrar="Cerrar">
-                <pre class="ticket">@TicketTexto.Generar(_ultimo)</pre>
+        case Ventanas.Motivo:
+            <Ventana Titulo="Reimprimir ticket" AlCerrar="Cerrar">
+                <PedirMotivo Etiqueta="Motivo de la reimpresión" Error="@_errorMotivo" Ocupado="_ocupadoMotivo" AlAceptar="ConfirmarReimpresionAsync" />
+            </Ventana>
+            break;
+        case Ventanas.VistaPrevia when _vistaPrevia is { } vista:
+            <Ventana Titulo="@vista.Titulo" Clase="vista-previa" AlCerrar="Cerrar">
+                <pre class="ticket">@vista.Texto</pre>
                 <p class="nota">Sin impresora conectada: así saldrá impreso en la de 80 mm.</p>
             </Ventana>
             break;
@@ -177,7 +186,7 @@
     [Parameter] public EventCallback AlSalir { get; set; }
     [Parameter] public EventCallback AlCerrarTurno { get; set; }
 
-    private enum Ventanas { Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion }
+    private enum Ventanas { Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo }
 
     private sealed class TicketAbierto
     {
@@ -195,6 +204,7 @@
     private string? _mensaje;
     private bool _mensajeEsError;
     private TicketDto? _ultimo;
+    private (string Titulo, string Texto)? _vistaPrevia;
     private Ventanas _ventana;
     private DotNetObjectReference<PantallaVenta>? _referencia;
 
@@ -207,6 +217,8 @@
         _referencia = DotNetObjectReference.Create(this);
         await Js.RegistrarTeclasAsync(_referencia);
         await Js.EnfocarAsync("#codigo");
+        await RevisarEfectivoAsync();
+        StateHasChanged();
     }
 
     [JSInvokable]
@@ -229,11 +241,11 @@
             case "F8": await Abrir(Ventanas.Salida); break;
             case "F9": await Abrir(Ventanas.Verificador); break;
             case "Insert" or "Ctrl+P": await Abrir(Ventanas.Comun); break;
-            case "Delete": BorrarSeleccion(); break;
+            case "Delete": await BorrarSeleccion(); break;
             case "ArrowUp": await MoverSeleccion(-1); break;
             case "ArrowDown": await MoverSeleccion(1); break;
-            case "+": CambiarCantidadSeleccion(1); break;
-            case "-": CambiarCantidadSeleccion(-1); break;
+            case "+": await CambiarCantidadSeleccion(1); break;
+            case "-": await CambiarCantidadSeleccion(-1); break;
             case "F11": Avisar("El mayoreo está pendiente de decidir (fase 3).", error: false); break;
             case "F3" or "F4": Avisar("Ese módulo llega en otra entrega.", error: false); break;
             case "Escape": _codigo = ""; _mensaje = null; break;
@@ -269,7 +281,7 @@
             texto = texto[(asterisco + 1)..].Trim();
             if (texto.Length == 0)
             {
-                FijarCantidadSeleccion(cantidad);
+                await FijarCantidadSeleccion(cantidad);
                 _codigo = "";
                 return;
             }
@@ -348,15 +360,17 @@
         await Js.MostrarAsync($"#linea-{_seleccion}");
     }
 
-    private void BorrarSeleccion()
+    private async Task BorrarSeleccion()
     {
         if (_seleccion < 0 || _seleccion >= Actual.Venta.Lineas.Count)
             return;
-        Actual.Venta.QuitarLinea(Actual.Venta.Lineas[_seleccion]);
+        var linea = Actual.Venta.Lineas[_seleccion];
+        Actual.Venta.QuitarLinea(linea);
         _seleccion = Math.Min(_seleccion, Actual.Venta.Lineas.Count - 1);
+        await RegistrarQuitadoAsync($"Quitó «{linea.Descripcion}» × {linea.Cantidad} del ticket {Actual.Numero}", linea.ImporteCentavos);
     }
 
-    private void CambiarCantidadSeleccion(int paso)
+    private async Task CambiarCantidadSeleccion(int paso)
     {
         if (_seleccion < 0 || _seleccion >= Actual.Venta.Lineas.Count)
             return;
@@ -364,13 +378,26 @@
         var nueva = linea.Cantidad + Cantidad.Piezas(paso);
         if (!nueva.EsPositiva)
         {
-            BorrarSeleccion();
+            await BorrarSeleccion();
             return;
         }
-        FijarCantidadSeleccion(nueva);
+        await FijarCantidadSeleccion(nueva);
     }
 
-    private void FijarCantidadSeleccion(Cantidad cantidad)
+    /// <summary>Quitar lo ya escaneado no requiere permiso, pero siempre queda en la bitácora.</summary>
+    private async Task RegistrarQuitadoAsync(string detalle, long montoCentavos)
+    {
+        try
+        {
+            await Cliente.BitacoraAsync(new SolicitudBitacora(Sesion.UsuarioId, Caja.SucursalId, Caja.Id, AccionControlada.QuitarProducto, detalle, montoCentavos));
+        }
+        catch (ErrorCaja ex)
+        {
+            Avisar($"No quedó en la bitácora: {ex.Message}");
+        }
+    }
+
+    private async Task FijarCantidadSeleccion(Cantidad cantidad)
     {
         if (_seleccion < 0 || _seleccion >= Actual.Venta.Lineas.Count)
         {
@@ -383,6 +410,7 @@
             Avisar("La cantidad del artículo común no se cambia: bórralo y agrégalo de nuevo.");
             return;
         }
+        var (antes, importeAntes) = (linea.Cantidad, linea.ImporteCentavos);
         try
         {
             Actual.Venta.CambiarCantidad(linea, cantidad, producto.PresentacionModelo(linea.PresentacionId), producto.PreciosModelo());
@@ -391,7 +419,10 @@
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
             Avisar(ex.Message);
+            return;
         }
+        if (cantidad < antes)
+            await RegistrarQuitadoAsync($"Bajó «{linea.Descripcion}» de {antes} a {cantidad} en el ticket {Actual.Numero}", importeAntes - linea.ImporteCentavos);
     }
 
     // ── Tickets ─────────────────────────────────────────────────────────────
@@ -428,8 +459,11 @@
             Cambiar(_tickets[(_actual + 1) % _tickets.Count]);
     }
 
-    private void EliminarTicket()
+    private async Task EliminarTicket()
     {
+        var venta = Actual.Venta;
+        if (venta.Lineas.Count > 0)
+            await RegistrarQuitadoAsync($"Eliminó el ticket {Actual.Numero} con {Formato.Numero(venta.NumeroDeArticulos)} productos", venta.TotalCentavos);
         _tickets.RemoveAt(_actual);
         if (_tickets.Count == 0)
             NuevoTicket();
@@ -454,7 +488,9 @@
             else
                 Cambiar(_tickets[^1]);
             Avisar($"Venta {ticket.Folio} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: false);
+            _ultimo = ticket;
             await ImprimirAsync(ticket, abrirCajon: ticket.AbreCajon);
+            await RevisarEfectivoAsync();
             return null;
         }
         catch (ErrorCaja ex)
@@ -463,47 +499,101 @@
         }
     }
 
-    private Task ReimprimirAsync(TicketDto ticket) => ImprimirAsync(ticket, abrirCajon: false);
+    private Task ImprimirAsync(TicketDto ticket, bool abrirCajon) =>
+        ImprimirDocumentoAsync($"Ticket {ticket.Folio}", DisenoTicket.Armar(ticket), abrirCajon);
 
-    private async Task ImprimirAsync(TicketDto ticket, bool abrirCajon)
+    private async Task ImprimirDocumentoAsync(string titulo, IReadOnlyList<Elemento> documento, bool abrirCajon)
     {
-        _ultimo = ticket;
         if (Impresora.MuestraVistaPrevia)
         {
+            _vistaPrevia = (titulo, TicketTexto.Generar(documento));
             await Abrir(Ventanas.VistaPrevia);
             return;
         }
 
-        // Primero se cierra el cobro y se ve la pantalla lista; la impresora tarda un par de segundos con el logo.
+        // Primero se cierra la ventana y se ve la pantalla lista; la impresora tarda un par de segundos con el logo.
         await Cerrar();
         try
         {
-            await Impresora.ImprimirAsync(ticket, abrirCajon);
+            await Impresora.ImprimirAsync(documento, abrirCajon);
         }
         catch (Exception ex)
         {
-            Avisar($"No se pudo imprimir el ticket {ticket.Folio}: {ex.Message} Se puede reimprimir.");
+            Avisar($"No se pudo imprimir ({titulo}): {ex.Message} Se puede reimprimir.");
             StateHasChanged();
         }
     }
 
-    private async Task ReimprimirUltimoAsync()
+    // ── Reimprimir (con motivo, queda en la bitácora) ───────────────────────
+
+    private Guid? _reimprimir;
+    private string? _errorMotivo;
+    private bool _ocupadoMotivo;
+
+    private Task ReimprimirUltimoAsync() => PedirReimpresion(null);
+
+    private async Task PedirReimpresion(Guid? ventaId)
     {
+        (_reimprimir, _errorMotivo) = (ventaId, null);
+        await Abrir(Ventanas.Motivo);
+    }
+
+    private async Task ConfirmarReimpresionAsync(string motivo)
+    {
+        _ocupadoMotivo = true;
         try
         {
-            if (await Cliente.UltimoTicketAsync(Caja.Id) is { } ticket)
-                await ReimprimirAsync(ticket);
+            var ventaId = _reimprimir ?? (await Cliente.UltimoTicketAsync(Caja.Id))?.VentaId
+                ?? throw new ErrorCaja("Esta caja todavía no tiene ventas.");
+            var ticket = await Cliente.ReimprimirAsync(ventaId, new SolicitudReimpresion(Sesion.UsuarioId, Caja.Id, motivo));
+            await ImprimirAsync(ticket, abrirCajon: false);
         }
         catch (ErrorCaja ex)
         {
-            Avisar(ex.Message);
+            _errorMotivo = ex.Message;
+        }
+        finally
+        {
+            _ocupadoMotivo = false;
         }
     }
 
-    private async Task MovimientoRegistrado(string resumen)
+    // ── Efectivo en caja ────────────────────────────────────────────────────
+
+    private EfectivoCajaDto? _efectivo;
+
+    private async Task MovimientoRegistrado(ComprobanteMovimientoDto comprobante)
     {
+        var salida = comprobante.Tipo == TipoMovimientoCaja.Salida;
         await Cerrar();
-        Avisar(resumen, error: false);
+        Avisar($"{(salida ? "Salida" : "Entrada")} de {Formato.Dinero(comprobante.MontoCentavos)} registrada.", error: false);
+        if (salida)
+            await ImprimirDocumentoAsync($"Comprobante {comprobante.Folio}", DisenoComprobante.Movimiento(comprobante), abrirCajon: true);
+        else if (!Impresora.MuestraVistaPrevia)
+        {
+            try
+            {
+                await Impresora.EnviarAsync(TicketEscPos.AbrirCajon());
+            }
+            catch (Exception ex)
+            {
+                Avisar($"No se pudo abrir el cajón: {ex.Message}");
+            }
+        }
+        await RevisarEfectivoAsync();
+    }
+
+    /// <summary>Si el efectivo llegó al límite de la sucursal, aparece el aviso de retiro hasta que se haga.</summary>
+    private async Task RevisarEfectivoAsync()
+    {
+        try
+        {
+            _efectivo = await Cliente.EfectivoAsync(Turno.Id);
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión no hay aviso; lo demás ya muestra el error.
+        }
     }
 
     // ── Ventanas y avisos ───────────────────────────────────────────────────
