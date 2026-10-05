@@ -267,6 +267,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("PorCompletar")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Tipo")
                         .IsRequired()
                         .HasColumnType("TEXT");

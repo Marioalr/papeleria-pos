@@ -21,6 +21,9 @@ public class Producto : IVersionado
 
     public bool Activo { get; set; } = true;
 
+    /// <summary>Lo dio de alta un cajero desde la caja (nombre, precio, departamento): el encargado lo termina.</summary>
+    public bool PorCompletar { get; set; }
+
     public List<Variante> Variantes { get; set; } = [];
 
     /// <summary>Solo la mercancía lleva inventario.</summary>

@@ -165,6 +165,34 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<List<ReglaDto>> GuardarReglasAsync(Guid sucursalId, SolicitudReglas solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<List<ReglaDto>>($"api/sucursales/{sucursalId}/reglas", solicitud));
 
+    // ── Catálogo (F3, solo con la caja principal) ──
+
+    public Task<List<ProductoCatalogoDto>> CatalogoAsync(Guid sucursalId, string? texto, Guid? departamentoId, bool porCompletar, bool inactivos) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<ProductoCatalogoDto>>(
+            $"api/catalogo/productos?sucursalId={sucursalId}&q={Uri.EscapeDataString(texto ?? "")}"
+            + (departamentoId is { } d ? $"&departamentoId={d}" : "") + $"&porCompletar={porCompletar}&inactivos={inactivos}") ?? []);
+
+    public Task<OpcionesCatalogoDto> OpcionesCatalogoAsync() =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<OpcionesCatalogoDto>("api/catalogo/opciones"))!);
+
+    public Task<FichaProductoDto?> FichaProductoAsync(Guid productoId, Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(() => _http.GetAsync<FichaProductoDto>($"api/catalogo/productos/{productoId}?sucursalId={sucursalId}&usuarioId={usuarioId}",
+            noEncontradoEsNulo: true));
+
+    public Task<FichaProductoDto> GuardarProductoAsync(SolicitudGuardarProducto solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<FichaProductoDto>("api/catalogo/productos", solicitud));
+
+    public async Task<string> CodigoInternoAsync() =>
+        (await ConRespaldoAsync(() => _http.PostAsync<CodigoGenerado>("api/catalogo/codigo-interno", null))).Codigo;
+
+    public Task<List<MovimientoKardexDto>> KardexAsync(Guid varianteId, Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<MovimientoKardexDto>>($"api/catalogo/variantes/{varianteId}/kardex?sucursalId={sucursalId}") ?? []);
+
+    public Task<ProductoVentaDto> AltaRapidaAsync(SolicitudAltaRapida solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<ProductoVentaDto>("api/catalogo/alta-rapida", solicitud));
+
+    private sealed record CodigoGenerado(string Codigo);
+
     // ── Descuentos ──
 
     /// <summary>Sin conexión, los de la copia local (solo los activos).</summary>

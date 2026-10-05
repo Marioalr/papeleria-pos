@@ -5,6 +5,20 @@
 > fase le da al POS el control del inventario: qué hay, qué llega, qué se pierde y qué comprar. Parte del diseño de
 > [catálogo e inventario](inventario.md) y de la [depuración](plan.md#depuración-del-inventario) que va antes del piloto.
 
+**Avance:** la entrega 1 va en dos partes; la parte 1 ya funciona.
+
+- **F3 Productos:** buscar por nombre, marca o código (también los inactivos y lo que está por completar) y abrir la
+  ficha.
+- **La ficha:** variantes, presentaciones con sus códigos, precios de menudeo y mayoreo, existencia y kardex. El costo
+  promedio y los proveedores solo los ven el dueño y el encargado. Lo guardan ellos dos (regla "Editar el catálogo").
+- **Precios:** cada cambio queda en el historial y en la bitácora y avisa por Telegram, salvo los del dueño.
+- **Código interno:** un botón genera un EAN-13 que empieza con 2 (el rango de uso interno) para lo que no trae código.
+- **Alta rápida:** si se escanea un código que no existe, el cajero lo da de alta con nombre, precio y departamento,
+  entra al ticket y queda "por completar".
+
+Falta la parte 2: dar de baja, juntar productos capturados dos veces, cambiar la unidad (a metro o kilo) y guardar esas
+decisiones para repetirlas en la importación final.
+
 ## Qué ya existe
 
 - **Catálogo** importado de eleventa: productos y variantes, códigos, departamentos, marcas, presentaciones (pieza,

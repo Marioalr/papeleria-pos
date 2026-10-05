@@ -8,7 +8,7 @@
 <div class="venta">
     <header class="barra-modulos">
         <button class="modulo activo">F1 Ventas</button>
-        <button class="modulo" disabled title="Llega en otra entrega">F3 Productos</button>
+        <button class="modulo" @onclick="() => Abrir(Ventanas.Productos)">F3 Productos</button>
         <button class="modulo" disabled title="Llega en otra entrega">F4 Inventario</button>
         <button class="modulo" @onclick="() => Abrir(Ventanas.Configuracion)">Configuración</button>
         <button class="modulo" @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
@@ -107,7 +107,13 @@
     }
     @if (_mensaje is not null)
     {
-        <div class="mensaje @(_mensajeEsError ? "error" : "")">@_mensaje</div>
+        <div class="mensaje @(_mensajeEsError ? "error" : "")">
+            @_mensaje
+            @if (_codigoNuevo is { } nuevo && _mensaje is not null)
+            {
+                <button class="boton chico" @onclick="() => Abrir(Ventanas.AltaRapida)">Dar de alta «@nuevo»</button>
+            }
+        </div>
     }
 
     <footer class="pie-venta">
@@ -201,6 +207,16 @@
                 <ImpresionesPorCobrar Caja="Caja" Sesion="Sesion" EnElTicket="@Actual.Impresiones.Select(i => i.Id).ToList()" AlAgregar="ImpresionesElegidasAsync" />
             </Ventana>
             break;
+        case Ventanas.Productos:
+            <Ventana Titulo="Productos" Clase="configuracion" AlCerrar="Cerrar">
+                <Productos Caja="Caja" Sesion="Sesion" />
+            </Ventana>
+            break;
+        case Ventanas.AltaRapida when _codigoNuevo is { } codigoNuevo:
+            <Ventana Titulo="Dar de alta" AlCerrar="Cerrar">
+                <AltaRapida Codigo="@codigoNuevo" Caja="Caja" Sesion="Sesion" AlDarDeAlta="DadoDeAltaAsync" />
+            </Ventana>
+            break;
         case Ventanas.Descuento:
             <Ventana Titulo="Descuento" AlCerrar="Cerrar">
                 <Descuento Venta="Actual.Venta" Linea="LineaSeleccionada" Caja="Caja" Sesion="Sesion" AlTerminar="DescuentoAplicadoAsync" />
@@ -245,7 +261,7 @@
     private enum Ventanas
     {
         Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
-        CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento,
+        CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, Productos, AltaRapida,
     }
 
     private sealed class TicketAbierto
@@ -316,7 +332,8 @@
             case "+": await CambiarCantidadSeleccion(1); break;
             case "-": await CambiarCantidadSeleccion(-1); break;
             case "F11": Avisar("El mayoreo está pendiente de decidir (fase 3).", error: false); break;
-            case "F3" or "F4": Avisar("Ese módulo llega en otra entrega.", error: false); break;
+            case "F3": await Abrir(Ventanas.Productos); break;
+            case "F4": Avisar("Inventario llega en la siguiente entrega.", error: false); break;
             case "Escape": _codigo = ""; _mensaje = null; break;
         }
         StateHasChanged();
@@ -370,7 +387,8 @@
             var producto = await Cliente.PorCodigoAsync(texto, Caja.SucursalId);
             if (producto is null)
             {
-                Avisar($"No existe el código «{texto}». F10 para buscar por nombre.");
+                Avisar($"No existe el código «{texto}». F10 para buscar por nombre, o dalo de alta.");
+                _codigoNuevo = texto;
                 return;
             }
             Agregar(producto, null, cantidad);
@@ -681,6 +699,19 @@
             Actual.Venta.DescontarLinea(linea, cliente.DescuentoCentesimas, null, $"Cliente especial: {cliente.Nombre}");
     }
 
+    // ── Alta rápida de un código que no existe ──────────────────────────────
+
+    private string? _codigoNuevo;
+
+    private async Task DadoDeAltaAsync(ProductoVentaDto producto)
+    {
+        _codigoNuevo = null;
+        await Cerrar();
+        Agregar(producto, null, Cantidad.Piezas(1));
+        _codigo = "";
+        Avisar($"«{producto.Descripcion}» quedó dado de alta (por completar en F3).", error: false);
+    }
+
     // ── Cotizar (Ctrl+Q) ────────────────────────────────────────────────────
 
     private IBrowserFile? _pdfACotizar;
@@ -808,6 +839,7 @@
     {
         _mensaje = mensaje;
         _mensajeEsError = error;
+        _codigoNuevo = null;
     }
 
     private static string Descripcion(VentaLinea linea, ProductoVentaDto? producto)

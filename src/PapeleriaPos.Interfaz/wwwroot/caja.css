@@ -185,3 +185,17 @@ select { font: inherit; font-size: 15px; padding: 6px 8px; border: 1px solid var
 /* Entrega 5, parte 3: descuentos */
 .tabla-venta small.descuento { display: block; color: var(--exito); font-size: 12px; }
 .descuento-total { color: var(--exito); font-weight: 600; text-align: right; }
+
+/* Fase 2: catálogo (F3) */
+.filtros-catalogo { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.filtros-catalogo input#buscar-catalogo { flex: 1; min-width: 240px; }
+.catalogo tr { cursor: pointer; }
+.catalogo tr.inactivo { color: var(--suave); text-decoration: line-through; }
+.ficha-producto { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 12px; align-items: end; }
+.ficha-producto .ancho { grid-column: span 2; }
+fieldset.variante { border: 1px solid var(--borde); border-radius: 6px; margin: 10px 0; padding: 8px 12px; }
+fieldset.variante legend { color: var(--azul); font-weight: 600; padding: 0 4px; }
+fieldset.variante h5 { margin: 10px 0 4px; }
+input.codigos { width: 100%; font-size: 14px; }
+.kardex { max-height: 240px; }
+.mensaje .boton.chico { margin-left: 8px; }

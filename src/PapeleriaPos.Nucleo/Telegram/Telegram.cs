@@ -26,6 +26,9 @@ public enum TipoAlerta
 
     /// <summary>Un descuento arriba de lo que el cajero puede dar solo (lo autorizó el encargado o el dueño).</summary>
     Descuento,
+
+    /// <summary>Un precio del catálogo que cambió alguien que no es el dueño.</summary>
+    CambioPrecioCatalogo,
 }
 
 /// <summary>Un chat de Telegram vinculado a un usuario (solo el dueño): recibe alertas y contesta autorizaciones.</summary>

@@ -8,6 +8,7 @@ using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Ventas;
+using PapeleriaPos.Nucleo.Usuarios;
 
 namespace PapeleriaPos.Datos;
 
@@ -34,8 +35,12 @@ public static class AlertasTelegram
         foreach (var b in nuevas)
         {
             var configuracion = Configuracion(db, b.SucursalId);
-            if (Tipo(b, configuracion) is { } tipo && configuracion.Avisa(tipo))
-                Agregar(db, chats, tipo, Texto(db, b, tipo), $"bitacora:{b.Id}");
+            if (Tipo(b, configuracion) is not { } tipo || !configuracion.Avisa(tipo))
+                continue;
+            // Lo que cambia el dueño en el catálogo no se le avisa a él mismo.
+            if (tipo == TipoAlerta.CambioPrecioCatalogo && b.UsuarioId is { } quien && db.Usuarios.Find(quien)?.Rol == Rol.Dueno)
+                continue;
+            Agregar(db, chats, tipo, Texto(db, b, tipo), $"bitacora:{b.Id}");
         }
     }
 
@@ -80,6 +85,8 @@ public static class AlertasTelegram
             AccionControlada.CambiarPrecio => TipoAlerta.CambioPrecio,
             AccionControlada.VenderBajoCosto => TipoAlerta.VentaBajoCosto,
             AccionControlada.Descuento when b.Resultado == ResultadoBitacora.Autorizado => TipoAlerta.Descuento,
+            // RegistroCatalogo escribe "Precio de «…»: antes → después" por cada precio que cambia.
+            AccionControlada.EditarCatalogo when b.Detalle.StartsWith("Precio de", StringComparison.Ordinal) => TipoAlerta.CambioPrecioCatalogo,
             AccionControlada.SalidaEfectivo when b.MontoCentavos > c.UmbralSalidaCentavos => TipoAlerta.SalidaEfectivo,
             // RegistroCaja.VerificarTransferenciaAsync escribe "Verificó…" o "Rechazó…".
             AccionControlada.VerificarTransferencia when b.Detalle.StartsWith("Rechazó", StringComparison.Ordinal) => TipoAlerta.TransferenciaRechazada,
@@ -102,6 +109,7 @@ public static class AlertasTelegram
         TipoAlerta.Impresora => "Impresora",
         TipoAlerta.HojasFaltantes => "Hojas que no salieron",
         TipoAlerta.Descuento => "Descuento",
+        TipoAlerta.CambioPrecioCatalogo => "Precio del catálogo",
         _ => "Resumen del día",
     };
 
