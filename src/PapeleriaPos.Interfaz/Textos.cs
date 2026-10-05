@@ -26,6 +26,8 @@ public static class Textos
         AccionControlada.AdministrarCajas => "Dar de alta o quitar cajas",
         AccionControlada.ConfigurarTelegram => "Configurar Telegram",
         AccionControlada.ConfigurarImpresora => "Configurar la impresora",
+        AccionControlada.Descuento => "Hacer un descuento",
+        AccionControlada.AdministrarClientes => "Administrar los clientes especiales",
         _ => accion.ToString(),
     };
 

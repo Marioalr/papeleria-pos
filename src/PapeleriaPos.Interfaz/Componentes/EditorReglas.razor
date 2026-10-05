@@ -8,7 +8,7 @@
 else
 {
     <p class="nota">
-        «Hasta» solo aplica a lo permitido: arriba de ese monto pide autorización. El dueño puede todo y solo él cambia las reglas.
+        «Hasta» solo aplica a lo permitido: arriba de ese monto (en el descuento, de ese porcentaje) pide autorización. El dueño puede todo y solo él cambia las reglas.
     </p>
     <div class="resultados reglas">
         <table>
@@ -34,7 +34,7 @@ else
                         <td>
                             @if (r.Nivel == NivelPermiso.Permitido)
                             {
-                                <input class="umbral" inputmode="decimal" placeholder="Sin tope" @bind="r.Umbral" />
+                                <input class="umbral" inputmode="decimal" placeholder="Sin tope" @bind="r.Umbral" />@(Permisos.EnPorcentaje(r.Accion) ? " %" : "")
                             }
                         </td>
                         <td><input type="checkbox" @bind="r.PideMotivo" /></td>

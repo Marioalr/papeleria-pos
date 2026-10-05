@@ -88,6 +88,8 @@ public static class ApiCaja
             var turno = await db.Turnos.FindAsync(s.TurnoId) ?? throw new InvalidOperationException("El turno no existe.");
             var caja = await db.Cajas.FindAsync(s.CajaId) ?? throw new InvalidOperationException("La caja no existe.");
             var venta = await ArmarVentaAsync(db, catalogo, caja, turno.Id, s.CajeroId, s.VentaId ?? Ids.Nuevo(), s.Lineas);
+            (venta.ClienteEspecialId, venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId) =
+                (s.ClienteEspecialId, s.AutorizacionDescuentoId, s.AutorizacionBajoCostoId);
             // Las impresiones van juntas en una línea; su precio y costo salen de cada trabajo, no de la caja.
             var impresiones = s.Impresiones is { Count: > 0 } ids ? await new RegistroImpresiones(db).ParaCobrarAsync(caja.SucursalId, ids) : [];
             if (impresiones.Count > 0)
@@ -155,7 +157,8 @@ public static class ApiCaja
             var cantidad = new Cantidad(l.CantidadMilesimas);
             if (l.VarianteId is not { } varianteId)
             {
-                venta.AgregarArticuloComun(l.Descripcion ?? "", l.PrecioCentavos ?? 0, cantidad);
+                var comun = venta.AgregarArticuloComun(l.Descripcion ?? "", l.PrecioCentavos ?? 0, cantidad);
+                venta.AplicarDescuentoSolicitado(comun, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
                 continue;
             }
             var producto = await catalogo.PorVarianteAsync(db, varianteId, caja.SucursalId)
@@ -163,6 +166,7 @@ public static class ApiCaja
             var agregada = venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
             if (l.PrecioCentavos is { } precio && precio != agregada.PrecioCentavos)
                 venta.CambiarPrecio(agregada, precio, l.AutorizacionId);
+            venta.AplicarDescuentoSolicitado(agregada, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
         }
         return venta;
     }

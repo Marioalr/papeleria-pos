@@ -1,0 +1,117 @@
+@* Los clientes especiales (maestros, negocios vecinos) con su descuento. Lo ve cualquiera; lo cambia solo el dueño con
+   su usuario y PIN. En la caja se eligen de esta lista y su descuento no pide autorización. *@
+@inject ClienteCaja Cliente
+
+@if (_clientes is null)
+{
+    <p>@(_error ?? "Cargando…")</p>
+}
+else
+{
+    <p class="nota">En la caja se eligen con CTRL+D → "A todo el ticket". Quitar a alguien lo deja inactivo: sus ventas lo siguen nombrando.</p>
+    <div class="resultados">
+        <table>
+            <thead><tr><th>Nombre</th><th class="num">Descuento (%)</th><th>Nota</th><th>Activo</th><th></th></tr></thead>
+            @foreach (var c in _clientes)
+            {
+                var cliente = c;
+                <tr>
+                    <td><input @bind="cliente.Nombre" maxlength="80" autocomplete="off" /></td>
+                    <td class="num"><input class="umbral" inputmode="decimal" @bind="cliente.Porcentaje" /></td>
+                    <td><input @bind="cliente.Nota" autocomplete="off" /></td>
+                    <td><input type="checkbox" @bind="cliente.Activo" /></td>
+                    <td><button class="boton chico" @onclick="() => _clientes.Remove(cliente)">Quitar</button></td>
+                </tr>
+            }
+        </table>
+    </div>
+    <div class="acciones izquierda">
+        <button class="boton" @onclick="Agregar">Agregar cliente</button>
+    </div>
+    <div class="dos-columnas">
+        <label>Usuario del dueño <input @bind="_usuario" autocomplete="off" /></label>
+        <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" /></label>
+    </div>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_guardado)
+    {
+        <p class="aviso">Clientes guardados.</p>
+    }
+    <div class="acciones">
+        <button class="boton principal" disabled="@_ocupado" @onclick="GuardarAsync">Guardar clientes</button>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+
+    /// <summary>Copia editable; el descuento se escribe en porcentaje.</summary>
+    private sealed class Fila
+    {
+        public Guid Id { get; init; } = Ids.Nuevo();
+        public string Nombre { get; set; } = "";
+        public string Porcentaje { get; set; } = "";
+        public string? Nota { get; set; }
+        public bool Activo { get; set; } = true;
+    }
+
+    private List<Fila>? _clientes;
+    private string _usuario = "";
+    private string _pin = "";
+    private string? _error;
+    private bool _guardado;
+    private bool _ocupado;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            Mostrar(await Cliente.ClientesEspecialesAsync(Caja.SucursalId));
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void Mostrar(List<ClienteEspecialDto> clientes) => _clientes = clientes.Select(c => new Fila
+    {
+        Id = c.Id, Nombre = c.Nombre, Porcentaje = (c.DescuentoCentesimas / 100m).ToString("0.##", CultureInfo.InvariantCulture), Nota = c.Nota,
+        Activo = c.Activo,
+    }).ToList();
+
+    private void Agregar() => _clientes!.Add(new Fila());
+
+    private async Task GuardarAsync()
+    {
+        (_error, _guardado) = (null, false);
+        var clientes = new List<ClienteEspecialDto>();
+        foreach (var c in _clientes!)
+        {
+            if (!decimal.TryParse(c.Porcentaje.Trim().TrimEnd('%'), NumberStyles.Number, CultureInfo.InvariantCulture, out var porcentaje)
+                || porcentaje <= 0 || porcentaje > 100)
+            {
+                _error = $"Revisa el descuento de «{c.Nombre}» (de más de 0 a 100 %).";
+                return;
+            }
+            clientes.Add(new ClienteEspecialDto(c.Id, c.Nombre, (int)Math.Round(porcentaje * 100, MidpointRounding.AwayFromZero), c.Nota, c.Activo));
+        }
+        _ocupado = true;
+        try
+        {
+            Mostrar(await Cliente.GuardarClientesEspecialesAsync(Caja.SucursalId, new SolicitudClientesEspeciales(_usuario, _pin, clientes)));
+            _guardado = true;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

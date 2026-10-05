@@ -15,7 +15,8 @@ public static class ArmadoTicket
         var lineas = v.Lineas.Select(l =>
         {
             var descripcion = l.PresentacionId is { } pid && presentacion(pid) is { EsBase: false } p ? $"{l.Descripcion} ({p.Nombre})" : l.Descripcion;
-            return new LineaTicketDto(CantidadTexto(l, esBase: descripcion == l.Descripcion), descripcion, l.PrecioCentavos, l.ImporteCentavos);
+            return new LineaTicketDto(CantidadTexto(l, esBase: descripcion == l.Descripcion), descripcion, l.PrecioCentavos, l.ImporteCentavos,
+                l.DescuentoCentavos, l.DescuentoCentesimas is { } c ? Control.Permisos.TextoMonto(Control.AccionControlada.Descuento, c) : null);
         }).ToList();
 
         return new TicketDto(v.FolioTexto!, HoraMexico.ALocal(v.PagadaUtc!.Value), caja, cajero, lineas, v.NumeroDeArticulos, v.TotalCentavos,

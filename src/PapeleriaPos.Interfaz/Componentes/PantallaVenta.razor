@@ -37,6 +37,7 @@
         <button class="boton" @onclick="() => Abrir(Ventanas.Salida)">F8 Salidas</button>
         <button class="boton" @onclick="BorrarSeleccion">DEL Borrar art.</button>
         <button class="boton" @onclick="AbrirCambioPrecio">CTRL+E Cambiar precio</button>
+        <button class="boton" @onclick="() => Abrir(Ventanas.Descuento)">CTRL+D Descuento</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Verificador)">F9 Verificador</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Impresiones)">F2 Impresiones</button>
         @* Cotizar a un botón: la etiqueta abre el selector de archivos; al elegir el PDF se abre la cotización. *@
@@ -73,7 +74,13 @@
                     var producto = linea.VarianteId is { } v ? Actual.Productos.GetValueOrDefault(v) : null;
                     <tr id="linea-@i" class="@(i == _seleccion ? "seleccionada" : "")" @onclick="() => Seleccionar(indice)">
                         <td class="col-codigo">@(producto?.Codigo ?? "—")</td>
-                        <td>@(linea.EsImpresiones ? $"Impresiones ({Actual.Impresiones.Count})" : Descripcion(linea, producto))</td>
+                        <td>
+                            @(linea.EsImpresiones ? $"Impresiones ({Actual.Impresiones.Count})" : Descripcion(linea, producto))
+                            @if (linea.TieneDescuento)
+                            {
+                                <small class="descuento">Descuento @(linea.DescuentoCentesimas is { } c ? Permisos.TextoMonto(AccionControlada.Descuento, c) + " " : "")−@Formato.Dinero(linea.DescuentoCentavos) · @linea.MotivoDescuento</small>
+                            }
+                        </td>
                         <td class="num">
                             @if (linea.PrecioCambiado)
                             {
@@ -121,6 +128,10 @@
             <div class="cobro">
                 <button class="boton cobrar" disabled="@(Actual.Venta.Lineas.Count == 0)" @onclick="() => Abrir(Ventanas.Cobrar)">F12 - Cobrar</button>
                 <div class="total">@Formato.Dinero(Actual.Venta.TotalCentavos)</div>
+                @if (Actual.Venta.DescuentoCentavos > 0)
+                {
+                    <div class="descuento-total">Descuento: −@Formato.Dinero(Actual.Venta.DescuentoCentavos)@(Actual.Cliente is { } cliente ? $" · {cliente.Nombre}" : "")</div>
+                }
             </div>
             <div class="botones-pie">
                 <button class="boton" @onclick="ReimprimirUltimoAsync">Reimprimir último ticket</button>
@@ -190,6 +201,11 @@
                 <ImpresionesPorCobrar Caja="Caja" Sesion="Sesion" EnElTicket="@Actual.Impresiones.Select(i => i.Id).ToList()" AlAgregar="ImpresionesElegidasAsync" />
             </Ventana>
             break;
+        case Ventanas.Descuento:
+            <Ventana Titulo="Descuento" AlCerrar="Cerrar">
+                <Descuento Venta="Actual.Venta" Linea="LineaSeleccionada" Caja="Caja" Sesion="Sesion" AlTerminar="DescuentoAplicadoAsync" />
+            </Ventana>
+            break;
         case Ventanas.Cotizar:
             <Ventana Titulo="Cotizar PDF" Clase="ventas-dia" AlCerrar="Cerrar">
                 <Cotizar Caja="Caja" Sesion="Sesion" Archivo="_pdfACotizar" />
@@ -229,7 +245,7 @@
     private enum Ventanas
     {
         Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
-        CambiarPrecio, Transferencias, Impresiones, Cotizar,
+        CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento,
     }
 
     private sealed class TicketAbierto
@@ -240,6 +256,9 @@
 
         /// <summary>Los trabajos de impresión que van en la línea "Impresiones" de este ticket.</summary>
         public List<ImpresionPorCobrarDto> Impresiones { get; } = [];
+
+        /// <summary>El cliente especial del ticket: lo que se agregue después también lleva su descuento.</summary>
+        public ClienteEspecialDto? Cliente { get; set; }
     }
 
     private readonly List<TicketAbierto> _tickets = [];
@@ -290,6 +309,7 @@
             case "F2": await Abrir(Ventanas.Impresiones); break;
             case "Insert" or "Ctrl+P": await Abrir(Ventanas.Comun); break;
             case "Ctrl+E": await AbrirCambioPrecio(); break;
+            case "Ctrl+D": await Abrir(Ventanas.Descuento); break;
             case "Delete": await BorrarSeleccion(); break;
             case "ArrowUp": await MoverSeleccion(-1); break;
             case "ArrowDown": await MoverSeleccion(1); break;
@@ -381,6 +401,7 @@
         try
         {
             var linea = Actual.Venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(presentacionId), cantidad, producto.PreciosModelo());
+            DescuentoDelCliente(linea);
             Actual.Productos[producto.VarianteId] = producto;
             _seleccion = Actual.Venta.Lineas.IndexOf(linea);
             _mensaje = null;
@@ -398,6 +419,7 @@
         try
         {
             var linea = Actual.Venta.AgregarArticuloComun(articulo.Descripcion, articulo.Precio, articulo.Cantidad);
+            DescuentoDelCliente(linea);
             _seleccion = Actual.Venta.Lineas.IndexOf(linea);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
@@ -545,17 +567,13 @@
     /// <summary>Lo llama la ventana de cobro. Devuelve el error para mostrarlo ahí, o null si se cobró.</summary>
     private async Task<string?> CobrarAsync(IReadOnlyList<CobroSolicitado> cobros)
     {
-        // La línea "Impresiones" no se manda: el servicio la arma con los trabajos y sus precios.
-        var lineas = Actual.Venta.Lineas.Where(l => !l.EsImpresiones).Select(l => l switch
-        {
-            { VarianteId: null } => new LineaSolicitada(null, null, l.Cantidad.Milesimas, l.Descripcion, l.PrecioCentavos),
-            { PrecioCambiado: true } => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas, null, l.PrecioCentavos, l.AutorizacionPrecioId),
-            _ => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas),
-        }).ToList();
+        var venta = Actual.Venta;
         try
         {
-            var ticket = await Cliente.CobrarAsync(new SolicitudCobro(Caja.Id, Turno.Id, Sesion.UsuarioId, lineas, cobros,
-                Impresiones: Actual.Impresiones.Count > 0 ? Actual.Impresiones.Select(i => i.Id).ToList() : null));
+            var ticket = await Cliente.CobrarAsync(new SolicitudCobro(Caja.Id, Turno.Id, Sesion.UsuarioId, ArmadoSolicitud.Lineas(venta), cobros,
+                Impresiones: Actual.Impresiones.Count > 0 ? Actual.Impresiones.Select(i => i.Id).ToList() : null,
+                ClienteEspecialId: venta.ClienteEspecialId, AutorizacionDescuentoId: venta.AutorizacionDescuentoId,
+                AutorizacionBajoCostoId: venta.AutorizacionBajoCostoId));
             _tickets.RemoveAt(_actual);
             if (_tickets.Count == 0)
                 NuevoTicket();
@@ -643,6 +661,24 @@
         // El costo no viaja a la caja: el servicio pone el de cada trabajo al cobrar.
         var linea = Actual.Venta.FijarImpresiones(elegidas.Sum(i => i.PrecioCentavos), 0);
         _seleccion = linea is null ? Math.Min(_seleccion, Actual.Venta.Lineas.Count - 1) : Actual.Venta.Lineas.IndexOf(linea);
+    }
+
+    // ── Descuento (Ctrl+D) ──────────────────────────────────────────────────
+
+    private async Task DescuentoAplicadoAsync(ClienteEspecialDto? cliente)
+    {
+        Actual.Cliente = cliente;
+        await Cerrar();
+        Avisar(Actual.Venta.DescuentoCentavos > 0
+            ? $"Descuento de {Formato.Dinero(Actual.Venta.DescuentoCentavos)}" + (cliente is null ? "." : $" para {cliente.Nombre}.")
+            : "Se quitaron los descuentos.", error: false);
+    }
+
+    /// <summary>Con cliente especial, lo que se agrega al ticket lleva su descuento.</summary>
+    private void DescuentoDelCliente(VentaLinea linea)
+    {
+        if (Actual.Cliente is { } cliente && !linea.EsImpresiones && linea.DescuentoCentesimas != cliente.DescuentoCentesimas)
+            Actual.Venta.DescontarLinea(linea, cliente.DescuentoCentesimas, null, $"Cliente especial: {cliente.Nombre}");
     }
 
     // ── Cotizar (Ctrl+Q) ────────────────────────────────────────────────────

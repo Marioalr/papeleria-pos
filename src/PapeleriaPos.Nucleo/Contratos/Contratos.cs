@@ -57,17 +57,23 @@ public sealed record SolicitudMovimiento(TipoMovimientoCaja Tipo, long MontoCent
 
 /// <summary>Una línea tal como la manda la caja. Sin variante es artículo común, con descripción y precio a mano.</summary>
 /// <param name="PrecioCentavos">En un producto del catálogo, el precio cambiado en la caja (con <paramref name="AutorizacionId"/>).</param>
+/// <param name="DescuentoCentesimas">Descuento en porcentaje (centésimas: 1000 = 10 %); o <paramref name="DescuentoCentavos"/> en monto. Con motivo.</param>
 public sealed record LineaSolicitada(
-    Guid? VarianteId, Guid? PresentacionId, long CantidadMilesimas, string? Descripcion = null, long? PrecioCentavos = null, Guid? AutorizacionId = null);
+    Guid? VarianteId, Guid? PresentacionId, long CantidadMilesimas, string? Descripcion = null, long? PrecioCentavos = null, Guid? AutorizacionId = null,
+    int? DescuentoCentesimas = null, long? DescuentoCentavos = null, string? MotivoDescuento = null);
 
 /// <summary>El servicio vuelve a armar la venta con los precios del catálogo: nunca confía en los precios de la caja.</summary>
 /// <param name="VentaId">Lo pone la caja: si la respuesta no llegó y se manda otra vez (o sube con la bandeja), no se cobra dos veces.</param>
 /// <param name="Impresiones">Los trabajos de impresión que se cobran: el servicio los junta en la línea "Impresiones".</param>
+/// <param name="AutorizacionDescuentoId">La del descuento más alto, si pasó de lo que el cajero da solo.</param>
+/// <param name="AutorizacionBajoCostoId">Si un descuento o un precio cambiado deja líneas debajo del costo.</param>
 public sealed record SolicitudCobro(
     Guid CajaId, Guid TurnoId, Guid CajeroId, IReadOnlyList<LineaSolicitada> Lineas, IReadOnlyList<CobroSolicitado> Cobros, Guid? VentaId = null,
-    IReadOnlyList<Guid>? Impresiones = null);
+    IReadOnlyList<Guid>? Impresiones = null, Guid? ClienteEspecialId = null, Guid? AutorizacionDescuentoId = null, Guid? AutorizacionBajoCostoId = null);
 
-public sealed record LineaTicketDto(string Cantidad, string Descripcion, long PrecioCentavos, long ImporteCentavos);
+/// <param name="ImporteCentavos">Ya con el descuento.</param>
+/// <param name="Descuento">Cómo se lee el descuento ("10 %" o vacío si fue un monto).</param>
+public sealed record LineaTicketDto(string Cantidad, string Descripcion, long PrecioCentavos, long ImporteCentavos, long DescuentoCentavos = 0, string? Descuento = null);
 
 public sealed record CobroTicketDto(FormaPago Forma, long MontoCentavos, long RecibidoCentavos, long CambioCentavos, string? Referencia);
 
@@ -82,6 +88,7 @@ public sealed record TicketDto(
     public long CambioCentavos => Cobros.Sum(c => c.CambioCentavos);
     public long PagoConCentavos => Cobros.Sum(c => c.Forma == FormaPago.Efectivo ? c.RecibidoCentavos : c.MontoCentavos);
     public bool AbreCajon => Cobros.Any(c => c.Forma == FormaPago.Efectivo);
+    public long DescuentoCentavos => Lineas.Sum(l => l.DescuentoCentavos);
 }
 
 public sealed record VentaDelDiaDto(Guid Id, string Folio, DateTime FechaLocal, long TotalCentavos, int Articulos, string Cajero, bool Cancelada = false);
@@ -202,18 +209,21 @@ public sealed record CodigoLocalDto(string Codigo, Guid VarianteId, Guid Present
 public sealed record PaqueteContingenciaDto(
     long Version, CajaDto Caja, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<UsuarioLocalDto> Usuarios,
     IReadOnlyList<ReglaDto> Reglas,
-    IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, int UltimoFolio, long? LimiteEfectivoCentavos);
+    IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, int UltimoFolio, long? LimiteEfectivoCentavos,
+    IReadOnlyList<ClienteEspecialDto>? Clientes = null);
 
 // Lo que sube con la bandeja. Cada cosa lleva el ID que le dio la caja: si llega dos veces, se guarda una.
 
 public sealed record TurnoContingenciaDto(Guid Id, Guid CajaId, Guid CajeroId, long FondoCentavos, DateTime AbiertoUtc);
 
 /// <param name="PrecioCentavos">El que se cobró (por presentación, con IVA): manda sobre el del catálogo.</param>
-public sealed record LineaContingenciaDto(Guid? VarianteId, Guid? PresentacionId, string Descripcion, long CantidadMilesimas, long PrecioCentavos);
+public sealed record LineaContingenciaDto(
+    Guid? VarianteId, Guid? PresentacionId, string Descripcion, long CantidadMilesimas, long PrecioCentavos, int? DescuentoCentesimas = null,
+    long? DescuentoCentavos = null, string? MotivoDescuento = null);
 
 public sealed record VentaContingenciaDto(
     Guid Id, Guid CajaId, Guid TurnoId, Guid CajeroId, int Folio, DateTime PagadaUtc, IReadOnlyList<LineaContingenciaDto> Lineas,
-    IReadOnlyList<CobroSolicitado> Cobros);
+    IReadOnlyList<CobroSolicitado> Cobros, Guid? ClienteEspecialId = null);
 
 public sealed record MovimientoContingenciaDto(Guid Id, TipoMovimientoCaja Tipo, long MontoCentavos, string Motivo, Guid UsuarioId, DateTime FechaUtc);
 
@@ -356,3 +366,18 @@ public sealed record CanalCalibradoDto(string Canal, double Observado, double Es
 public sealed record CalibracionDto(
     DateTime? DesdeLocal, DateTime? HastaLocal, IReadOnlyList<CanalCalibradoDto> Canales, long CarasImpresora, long CarasRegistradas,
     int? PaginasPorCaja, int PaginasPorCajaActual, IReadOnlyList<string> Cambios, DateTime? AplicadaLocal);
+
+// ── Descuentos (entrega 5, parte 3) ─────────────────────────────────────────
+
+/// <param name="DescuentoCentesimas">Su descuento en centésimas de porcentaje (1000 = 10 %).</param>
+public sealed record ClienteEspecialDto(Guid Id, string Nombre, int DescuentoCentesimas, string? Nota, bool Activo);
+
+/// <summary>El dueño guarda la lista completa de clientes especiales de la sucursal.</summary>
+public sealed record SolicitudClientesEspeciales(string Usuario, string Pin, IReadOnlyList<ClienteEspecialDto> Clientes);
+
+/// <summary>¿Este ticket, con sus descuentos y precios cambiados, deja líneas debajo del costo? El costo no viaja a la caja.</summary>
+public sealed record SolicitudBajoCosto(Guid CajaId, IReadOnlyList<LineaSolicitada> Lineas);
+
+/// <param name="FaltanteCentavos">Cuánto queda debajo del costo en total (cero: nada).</param>
+/// <param name="Lineas">Las descripciones de las líneas que quedan debajo del costo.</param>
+public sealed record BajoCostoDto(long FaltanteCentavos, IReadOnlyList<string> Lineas);

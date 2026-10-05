@@ -81,6 +81,8 @@ internal sealed class VentaConfiguracion : IEntityTypeConfiguration<Venta>
         b.HasIndex(v => v.PagadaUtc);
         b.Ignore(v => v.FolioTexto);
         b.Ignore(v => v.NumeroDeArticulos);
+        b.Ignore(v => v.DescuentoCentavos);
+        b.HasOne<ClienteEspecial>().WithMany().HasForeignKey(v => v.ClienteEspecialId);
         b.Ignore(v => v.EsEditable);
         b.Ignore(v => v.CambioCentavos);
         b.Ignore(v => v.LlevaEfectivo);
@@ -97,6 +99,9 @@ internal sealed class VentaLineaConfiguracion : IEntityTypeConfiguration<VentaLi
         b.HasIndex(l => l.VarianteId);
         b.Ignore(l => l.PrecioCambiado);
         b.Ignore(l => l.CantidadPorDevolver);
+        b.Ignore(l => l.TieneDescuento);
+        b.Ignore(l => l.ImporteSinDescuentoCentavos);
+        b.Ignore(l => l.PorcentajeDescuento);
     }
 }
 
@@ -284,5 +289,15 @@ internal sealed class LecturaImpresoraConfiguracion : IEntityTypeConfiguration<L
         b.ToTable("LecturasImpresora");
         b.HasOne<Sucursal>().WithMany().HasForeignKey(l => l.SucursalId);
         b.HasIndex(l => new { l.SucursalId, l.TomadaUtc });
+    }
+}
+
+internal sealed class ClienteEspecialConfiguracion : IEntityTypeConfiguration<ClienteEspecial>
+{
+    public void Configure(EntityTypeBuilder<ClienteEspecial> b)
+    {
+        b.ToTable("ClientesEspeciales");
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(c => c.SucursalId);
+        b.Property(c => c.Nombre).HasMaxLength(80);
     }
 }
