@@ -172,9 +172,13 @@ Fase 1:
 - [x] Entrega 3: varias cajas (falta instalarla en la caja principal y probarla con las tres cajas)
 - [x] Revisar el [plan de la entrega 4](fase-1-telegram.md) (Telegram) y contestar sus preguntas
 - [x] Entrega 4: Telegram (falta crear el bot de verdad y probarlo)
-- [ ] Revisar el [plan de la entrega 5](fase-1-impresion.md) (módulo de impresión y descuentos) y contestar sus preguntas
-- [ ] Entrega 5: módulo de impresión
-- [ ] Descuentos: definirlos con el módulo de impresión (entrega 5)
+- [x] Revisar el [plan de la entrega 5](fase-1-impresion.md) (módulo de impresión y descuentos) y contestar sus preguntas
+- [x] Entrega 5: módulo de impresión, cotizar, la impresora y descuentos (falta probar con la cola de laboratorio)
+- [x] Descuentos: en la mercancía, con clientes especiales (entrega 5, parte 3)
+
+Fase 2:
+
+- [ ] Revisar el [plan de la fase 2](fase-2-inventario.md) (inventario) y contestar sus preguntas
 
 Fase 3:
 
@@ -194,7 +198,7 @@ Por definir:
 
 - [ ] Si la sucursal 2 abre antes de la fase 7: guardar la lista de gastos de apertura con comprobantes
 - [ ] Administración: insumos del mes (papel térmico, cinta, limpieza…) para la ganancia mensual
-  ([detalle](#administración-y-punto-de-equilibrio)); la categoría "Insumo" en las salidas F8 puede llegar antes
+  ([detalle](#administración-y-punto-de-equilibrio)); propuesto en la [fase 2](fase-2-inventario.md#5-insumos-del-mes)
 - [ ] Módulo de convivencia: el POS nuevo como una caja más de eleventa durante la adaptación
   ([idea](migracion-eleventa.md#convivencia-con-eleventa-idea-a-evaluar))
 - [ ] Demás funciones a la medida (las describe el dueño)
