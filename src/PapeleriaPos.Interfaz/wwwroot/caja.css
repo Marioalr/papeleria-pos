@@ -199,3 +199,5 @@ fieldset.variante h5 { margin: 10px 0 4px; }
 input.codigos { width: 100%; font-size: 14px; }
 .kardex { max-height: 240px; }
 .mensaje .boton.chico { margin-left: 8px; }
+.depurar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--borde); }
+.depurar > p, .depurar > .dos-columnas, .depurar > .filtros-catalogo, .depurar > table { flex-basis: 100%; }

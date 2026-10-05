@@ -7,6 +7,7 @@ using PapeleriaPos.Herramientas.Eleventa;
 using PapeleriaPos.Herramientas.Ficticios;
 using PapeleriaPos.Herramientas.Importacion;
 using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Catalogo;
 
 CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("es-MX");
 
@@ -17,6 +18,7 @@ return args switch
     ["importar-eleventa", .. var resto] => await ImportarEleventaAsync(resto),
     ["preparar-caja", .. var resto] => await PrepararCajaAsync(resto),
     ["importar-control-print", .. var resto] => await ImportarControlPrintAsync(resto),
+    ["aplicar-depuracion", .. var resto] => await AplicarDepuracionAsync(resto),
     _ => Ayuda(),
 };
 
@@ -41,6 +43,10 @@ static int Ayuda()
               Copia la configuración de costos de Control Print (tinta, papel, márgenes, calibración) a todas las
               sucursales, y la IP de su impresora si hay una sola sucursal. Sus trabajos no se importan. Por
               omisión lee la base de Control Print de esta PC.
+
+          aplicar-depuracion --desde pos-anterior.db --base eleventa-nueva.db
+              Repite en una importación nueva de eleventa lo que se decidió al depurar el catálogo en otra base (dar
+              de baja, juntar, cambiar la unidad), buscando cada producto por su ID de eleventa.
 
           preparar-caja --base ficticios.db
               Da de alta la Caja 1 y usuarios de prueba (ver README) en una base de prueba.
@@ -272,5 +278,24 @@ static async Task<int> ImportarControlPrintAsync(string[] args)
             Console.WriteLine("Hay varias sucursales: escribe la IP de la impresora en Configuración → Impresora de la que la tiene.");
         }
     }
+    return 0;
+}
+
+static async Task<int> AplicarDepuracionAsync(string[] args)
+{
+    if (Opcion(args, "--desde") is not { } desde || Opcion(args, "--base") is not { } destino || !File.Exists(desde) || !File.Exists(destino))
+    {
+        Console.Error.WriteLine("Indica la base donde se depuró (--desde) y la importación nueva (--base); las dos deben existir.");
+        return 1;
+    }
+    List<DecisionDepuracion> decisiones;
+    await using (var anterior = new PosDbContext(BaseDeDatos.Opciones($"Data Source={desde};Mode=ReadOnly")))
+        decisiones = await anterior.DecisionesDepuracion.AsNoTracking().ToListAsync();
+    await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={destino}"));
+    await BaseDeDatos.PrepararAsync(db);
+    var (aplicadas, omitidas) = await new RegistroDepuracion(db).RepetirAsync(decisiones);
+    Console.WriteLine($"Decisiones aplicadas: {aplicadas} de {decisiones.Count}.");
+    foreach (var o in omitidas)
+        Console.WriteLine($"  Omitida: {o}");
     return 0;
 }

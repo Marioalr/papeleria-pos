@@ -193,6 +193,22 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     private sealed record CodigoGenerado(string Codigo);
 
+    public Task DarDeBajaAsync(SolicitudBaja solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<object>("api/catalogo/depuracion/baja", solicitud, sinRespuesta: true));
+
+    public Task JuntarAsync(SolicitudJuntar solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<object>("api/catalogo/depuracion/juntar", solicitud, sinRespuesta: true));
+
+    public Task CambiarUnidadAsync(SolicitudCambiarUnidad solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<object>("api/catalogo/depuracion/unidad", solicitud, sinRespuesta: true));
+
+    public Task<List<DecisionDepuracionDto>> DecisionesDepuracionAsync() =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<DecisionDepuracionDto>>("api/catalogo/depuracion") ?? []);
+
+    public Task<List<VarianteParaJuntarDto>> VariantesParaJuntarAsync(string texto, Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<VarianteParaJuntarDto>>(
+            $"api/catalogo/variantes?q={Uri.EscapeDataString(texto)}&sucursalId={sucursalId}") ?? []);
+
     // ── Descuentos ──
 
     /// <summary>Sin conexión, los de la copia local (solo los activos).</summary>

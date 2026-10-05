@@ -1,0 +1,184 @@
+@* La depuración de una variante antes del piloto: dar de baja lo que ya no existe, juntarla con la que se capturó dos
+   veces o cambiar su unidad. Cada decisión se guarda para repetirla en la importación final. *@
+@inject ClienteCaja Cliente
+
+<div class="depurar">
+    @switch (_modo)
+    {
+        case Modo.Ninguno:
+            <span class="nota">Depuración:</span>
+            <button class="boton chico" @onclick="() => _modo = Modo.Baja">Dar de baja</button>
+            <button class="boton chico" @onclick="() => _modo = Modo.Juntar">Juntar con otro…</button>
+            <button class="boton chico" @onclick="() => _modo = Modo.Unidad">Cambiar unidad…</button>
+            break;
+
+        case Modo.Baja:
+            <p>«@Nombre» sale de la venta y su existencia queda en cero. Su historia se conserva.</p>
+            <div class="acciones izquierda">
+                <button class="boton" @onclick="Cancelar">Cancelar</button>
+                <button class="boton principal" disabled="@_ocupado" @onclick="DarDeBajaAsync">Dar de baja</button>
+            </div>
+            break;
+
+        case Modo.Juntar:
+            <p>¿Con cuál se junta «@Nombre»? Sus códigos, existencia y proveedores pasan a ese; este queda inactivo con su historia.</p>
+            <div class="filtros-catalogo">
+                <input placeholder="Busca el que se queda (nombre o código)" @bind="_busqueda" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" />
+                <button class="boton" @onclick="BuscarAsync">Buscar</button>
+                <button class="boton" @onclick="Cancelar">Cancelar</button>
+            </div>
+            @if (_candidatos is { } candidatos)
+            {
+                <table class="resultados">
+                    @foreach (var c in candidatos.Where(c => c.VarianteId != VarianteId))
+                    {
+                        var candidato = c;
+                        <tr>
+                            <td>@c.Codigo</td>
+                            <td>@c.Nombre</td>
+                            <td class="num">@(c.PrecioCentavos is { } p ? Formato.Dinero(p) : "")</td>
+                            <td>
+                                @if (c.Unidad == Unidad)
+                                {
+                                    <button class="boton chico" disabled="@_ocupado" @onclick="() => JuntarAsync(candidato)">Juntar aquí</button>
+                                }
+                                else
+                                {
+                                    <span class="nota">Otra unidad</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </table>
+            }
+            break;
+
+        case Modo.Unidad:
+            <div class="dos-columnas">
+                <label>Se vende por
+                    <select @bind="_unidad">
+                        @foreach (var u in Enum.GetValues<UnidadBase>().Where(u => u != Unidad))
+                        {
+                            <option value="@u">@Texto(u)</option>
+                        }
+                    </select>
+                </label>
+                <label>Precio de menudeo (por @Texto(_unidad).ToLowerInvariant()) <input inputmode="decimal" @bind="_precio" autocomplete="off" /></label>
+                <label>1 @Texto(Unidad).ToLowerInvariant() de antes = ¿cuántos @Texto(_unidad).ToLowerInvariant()? <input inputmode="decimal" @bind="_factor" placeholder="Vacío: se cuenta de nuevo" autocomplete="off" /></label>
+            </div>
+            <p class="nota">Sin conversión, la existencia queda en cero para contarla. Las escalas de mayoreo se quitan (estaban en la unidad de antes).</p>
+            <div class="acciones izquierda">
+                <button class="boton" @onclick="Cancelar">Cancelar</button>
+                <button class="boton principal" disabled="@_ocupado" @onclick="CambiarUnidadAsync">Cambiar unidad</button>
+            </div>
+            break;
+    }
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter, EditorRequired] public Guid VarianteId { get; set; }
+    [Parameter, EditorRequired] public string Nombre { get; set; } = "";
+    [Parameter, EditorRequired] public UnidadBase Unidad { get; set; }
+
+    /// <summary>Se aplicó: el mensaje para mostrar.</summary>
+    [Parameter] public EventCallback<string> AlTerminar { get; set; }
+
+    private enum Modo { Ninguno, Baja, Juntar, Unidad }
+
+    private Modo _modo;
+    private string _busqueda = "";
+    private List<VarianteParaJuntarDto>? _candidatos;
+    private UnidadBase _unidad;
+    private string _precio = "";
+    private string _factor = "";
+    private string? _error;
+    private bool _ocupado;
+
+    protected override void OnParametersSet()
+    {
+        if (_unidad == Unidad || !_iniciado)
+            _unidad = Enum.GetValues<UnidadBase>().First(u => u != Unidad && (Unidad != UnidadBase.Kilogramo || u == UnidadBase.Metro));
+        _iniciado = true;
+    }
+
+    private bool _iniciado;
+
+    private void Cancelar() => (_modo, _error, _candidatos) = (Modo.Ninguno, null, null);
+
+    private async Task AlTeclear(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await BuscarAsync();
+    }
+
+    private async Task BuscarAsync()
+    {
+        if (_busqueda.Trim().Length == 0)
+            return;
+        await HacerAsync(async () => _candidatos = await Cliente.VariantesParaJuntarAsync(_busqueda, Caja.SucursalId));
+    }
+
+    private Task DarDeBajaAsync() => HacerAsync(async () =>
+    {
+        await Cliente.DarDeBajaAsync(new SolicitudBaja(Sesion.UsuarioId, Caja.SucursalId, VarianteId));
+        await AlTerminar.InvokeAsync($"«{Nombre}» se dio de baja.");
+    });
+
+    private Task JuntarAsync(VarianteParaJuntarDto destino) => HacerAsync(async () =>
+    {
+        await Cliente.JuntarAsync(new SolicitudJuntar(Sesion.UsuarioId, Caja.SucursalId, VarianteId, destino.VarianteId));
+        await AlTerminar.InvokeAsync($"«{Nombre}» se juntó con «{destino.Nombre}».");
+    });
+
+    private Task CambiarUnidadAsync() => HacerAsync(async () =>
+    {
+        if (Formato.LeerPesos(_precio) is not ({ } precio and > 0))
+        {
+            _error = "Escribe el precio de menudeo en la unidad nueva.";
+            return;
+        }
+        long? factor = null;
+        if (_factor.Trim().Length > 0)
+        {
+            if (!decimal.TryParse(_factor.Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) || n <= 0)
+            {
+                _error = "Revisa la conversión.";
+                return;
+            }
+            factor = (long)Math.Round(n * Cantidad.Escala);
+        }
+        await Cliente.CambiarUnidadAsync(new SolicitudCambiarUnidad(Sesion.UsuarioId, Caja.SucursalId, VarianteId, _unidad, factor, precio));
+        await AlTerminar.InvokeAsync($"«{Nombre}» ahora se vende por {Texto(_unidad).ToLowerInvariant()}.");
+    });
+
+    private async Task HacerAsync(Func<Task> accion)
+    {
+        (_error, _ocupado) = (null, true);
+        try
+        {
+            await accion();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private static string Texto(UnidadBase u) => u switch
+    {
+        UnidadBase.Metro => "Metro",
+        UnidadBase.Kilogramo => "Kilo",
+        UnidadBase.Litro => "Litro",
+        _ => "Pieza",
+    };
+}

@@ -25,6 +25,7 @@ else
         <label class="en-linea opcion"><input type="checkbox" @bind="_porCompletar" @bind:after="BuscarAsync" /> Por completar</label>
         <label class="en-linea opcion"><input type="checkbox" @bind="_inactivos" @bind:after="BuscarAsync" /> Con inactivos</label>
         <button class="boton" @onclick="BuscarAsync">Buscar</button>
+        <button class="boton" @onclick="DecisionesAsync">Decisiones de depuración</button>
         @if (Sesion.Rol is Rol.Dueno or Rol.Encargado)
         {
             <button class="boton principal" @onclick="() => _abierto = new Abierto(null)">Nuevo producto</button>
@@ -34,7 +35,24 @@ else
     {
         <p class="error">@_error</p>
     }
-    @if (_productos is { Count: 0 })
+    @if (_decisiones is { } decisiones)
+    {
+        <p class="nota">Lo que se decidió al depurar. Lo que vino de eleventa se repite en la importación final con <code>aplicar-depuracion</code>.</p>
+        <div class="resultados">
+            <table>
+                <thead><tr><th>Fecha</th><th>Decisión</th><th>De eleventa</th></tr></thead>
+                @foreach (var d in decisiones)
+                {
+                    <tr><td>@d.FechaLocal.ToString("dd/MM/yyyy HH:mm")</td><td>@d.Descripcion</td><td>@(d.DeEleventa ? "Sí" : "No (se repite a mano)")</td></tr>
+                }
+            </table>
+        </div>
+        @if (decisiones.Count == 0)
+        {
+            <p class="vacia">Todavía no hay decisiones.</p>
+        }
+    }
+    else if (_productos is { Count: 0 })
     {
         <p class="vacia">No hay productos con esa búsqueda.</p>
     }
@@ -74,6 +92,7 @@ else
 
     private OpcionesCatalogoDto? _opciones;
     private List<ProductoCatalogoDto>? _productos;
+    private List<DecisionDepuracionDto>? _decisiones;
     private Abierto? _abierto;
     private string _texto = "";
     private string _departamento = "";
@@ -105,11 +124,25 @@ else
             await BuscarAsync();
     }
 
+    private async Task DecisionesAsync()
+    {
+        _error = null;
+        try
+        {
+            _decisiones = await Cliente.DecisionesDepuracionAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
     private async Task BuscarAsync()
     {
         _error = null;
         try
         {
+            _decisiones = null;
             _productos = await Cliente.CatalogoAsync(Caja.SucursalId, _texto, Guid.TryParse(_departamento, out var d) ? d : null, _porCompletar, _inactivos);
         }
         catch (ErrorCaja ex)

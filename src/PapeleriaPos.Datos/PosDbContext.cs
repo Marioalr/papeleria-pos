@@ -41,6 +41,7 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<AperturaCajon> AperturasCajon => Set<AperturaCajon>();
     public DbSet<Venta> Ventas => Set<Venta>();
     public DbSet<ClienteEspecial> ClientesEspeciales => Set<ClienteEspecial>();
+    public DbSet<DecisionDepuracion> DecisionesDepuracion => Set<DecisionDepuracion>();
     public DbSet<VentaLinea> VentasLineas => Set<VentaLinea>();
     public DbSet<Cobro> Cobros => Set<Cobro>();
     public DbSet<Corte> Cortes => Set<Corte>();
