@@ -33,7 +33,8 @@ public static class ApiContingencia
             var limite = await db.ConfiguracionesSucursal.Where(c => c.SucursalId == caja.SucursalId).Select(c => c.LimiteEfectivoCentavos).FirstOrDefaultAsync();
             return new PaqueteContingenciaDto(version, new CajaDto(caja.Id, caja.Nombre, caja.Serie, caja.SucursalId, sucursal!.Nombre, caja.Equipo),
                 productos, codigos, usuarios, reglas, ticket.RenglonesEncabezado, ticket.RenglonesPie, ApiConfiguracion.Logo(ticket),
-                await new RegistroCaja(db).UltimoFolioAsync(caja.SucursalId, caja.Serie), limite);
+                await new RegistroCaja(db).UltimoFolioAsync(caja.SucursalId, caja.Serie), limite,
+                (await ApiDescuentos.ClientesAsync(db, caja.SucursalId)).Where(c => c.Activo).Select(ApiDescuentos.Dto).ToList());
         });
 
         // Lo que lleva el turno, sin guardar un corte: la base de la cuenta que la caja lleva por su lado.
@@ -56,8 +57,10 @@ public static class ApiContingencia
             if (await db.Ventas.AnyAsync(x => x.Id == v.Id))
                 return Results.NoContent();
             var caja = await db.Cajas.FindAsync(v.CajaId) ?? throw new InvalidOperationException("La caja no existe.");
-            var lineas = v.Lineas.Select(l => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.CantidadMilesimas, l.Descripcion, l.PrecioCentavos)).ToList();
+            var lineas = v.Lineas.Select(l => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.CantidadMilesimas, l.Descripcion, l.PrecioCentavos,
+                DescuentoCentesimas: l.DescuentoCentesimas, DescuentoCentavos: l.DescuentoCentavos, MotivoDescuento: l.MotivoDescuento)).ToList();
             var venta = await ApiCaja.ArmarVentaAsync(db, catalogo, caja, v.TurnoId, v.CajeroId, v.Id, lineas);
+            venta.ClienteEspecialId = v.ClienteEspecialId;
             await new RegistroCaja(db).CobroDeContingenciaAsync(venta, v.Cobros, v.Folio, v.PagadaUtc);
             return Results.NoContent();
         });

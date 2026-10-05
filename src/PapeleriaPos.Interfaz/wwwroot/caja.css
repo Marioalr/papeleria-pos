@@ -181,3 +181,7 @@ select { font: inherit; font-size: 15px; padding: 6px 8px; border: 1px solid var
 .nivel.bajo strong { color: var(--error); }
 
 .acciones.izquierda { justify-content: flex-start; }
+
+/* Entrega 5, parte 3: descuentos */
+.tabla-venta small.descuento { display: block; color: var(--exito); font-size: 12px; }
+.descuento-total { color: var(--exito); font-weight: 600; text-align: right; }

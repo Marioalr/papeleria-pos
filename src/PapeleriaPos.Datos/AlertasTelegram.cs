@@ -79,6 +79,7 @@ public static class AlertasTelegram
             AccionControlada.Devolucion when b.MontoCentavos > c.UmbralDevolucionCentavos => TipoAlerta.Devolucion,
             AccionControlada.CambiarPrecio => TipoAlerta.CambioPrecio,
             AccionControlada.VenderBajoCosto => TipoAlerta.VentaBajoCosto,
+            AccionControlada.Descuento when b.Resultado == ResultadoBitacora.Autorizado => TipoAlerta.Descuento,
             AccionControlada.SalidaEfectivo when b.MontoCentavos > c.UmbralSalidaCentavos => TipoAlerta.SalidaEfectivo,
             // RegistroCaja.VerificarTransferenciaAsync escribe "Verificó…" o "Rechazó…".
             AccionControlada.VerificarTransferencia when b.Detalle.StartsWith("Rechazó", StringComparison.Ordinal) => TipoAlerta.TransferenciaRechazada,
@@ -100,6 +101,7 @@ public static class AlertasTelegram
         TipoAlerta.FueraDeHorario => "Caja abierta fuera de horario",
         TipoAlerta.Impresora => "Impresora",
         TipoAlerta.HojasFaltantes => "Hojas que no salieron",
+        TipoAlerta.Descuento => "Descuento",
         _ => "Resumen del día",
     };
 
@@ -193,6 +195,9 @@ public static class AlertasTelegram
             t.AppendLine($"Devoluciones: {devueltas.Count} · {Dinero(devueltas.Sum(d => d.TotalCentavos))}");
         if (precios > 0)
             t.AppendLine($"Cambios de precio: {precios}");
+        if (vigentes.Where(v => v.Lineas.Any(l => l.TieneDescuento)).ToList() is { Count: > 0 } conDescuento)
+            t.AppendLine($"Descuentos: {conDescuento.Count} tickets · {Dinero(conDescuento.Sum(v => v.DescuentoCentavos))}"
+                + (conDescuento.Count(v => v.ClienteEspecialId != null) is var especiales and > 0 ? $" ({especiales} a clientes especiales)" : ""));
         if (salidas > 0)
             t.AppendLine($"Salidas de efectivo: {Dinero(salidas)}");
         if (porVerificar.Count > 0)

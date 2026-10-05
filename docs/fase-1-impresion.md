@@ -37,6 +37,16 @@
 - **Desglose de la línea "Impresiones":** en la pestaña Impresora, todo lo impreso en el día y cómo se cobró. Lo ven el dueño y el encargado; el costo, solo el dueño.
 - **El resumen del día** suma las impresiones no vendidas (su costo) y el contador.
 
+**Parte 3 (hecha): descuentos en la mercancía**
+
+- **CTRL+D Descuento:** al renglón seleccionado o a todo el ticket, en porcentaje o en monto, siempre con motivo. Un monto en todo el ticket se reparte entre los artículos en proporción a su importe. Las impresiones no llevan descuento (su precio especial va aparte).
+- **La regla "Hacer un descuento"** (Configuración → Reglas): el cajero da hasta 10 % solo; más, con autorización del encargado o del dueño (con PIN o por Telegram). El encargado no tiene tope.
+- **Clientes especiales** (Configuración → Clientes especiales): los da de alta el dueño con su descuento. En la caja se eligen de la lista ("A todo el ticket"), no se escriben a mano, y no piden autorización. Lo que se agregue después al ticket también lleva su descuento. Quitar a un cliente lo deja inactivo.
+- **Nunca debajo del costo sin autorización:** si un descuento deja un artículo debajo de lo que cuesta, se pide la autorización de "Vender debajo del costo". La caja no ve el costo: solo cuáles artículos y cuánto falta.
+- **Bitácora y Telegram:** todo descuento queda en la bitácora con su motivo. Cuando pasó de lo que el cajero da solo, te avisa por Telegram. El resumen del día dice cuántos tickets llevaron descuento y cuánto sumaron.
+- **El ticket impreso** pone el descuento debajo de cada artículo y "Usted ahorró" antes del total. Una devolución regresa lo que se cobró, ya con el descuento.
+- **Sin conexión:** la regla y los clientes especiales funcionan con la copia de la caja y el descuento sube con la venta. Lo que no se revisa sin conexión es el costo.
+
 **Mientras se prueba con la cola de laboratorio:** el POS registra impresiones que no salen de la impresora y la impresora cuenta lo que manda Control Print. La comparación con el contador y la calibración no sirven hasta pasar a la cola real. Los niveles y los avisos de tinta sí.
 
 **Probar con la cola de laboratorio** (sin papel, sin tocar la cola real de Control Print):

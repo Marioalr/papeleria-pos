@@ -112,16 +112,127 @@ public class Venta
         if (linea.PrecioCambiado)
         {
             // Con precio cambiado (autorizado), la cantidad nueva se cobra a ese precio.
-            linea.ImporteCentavos = cantidad.Importe(linea.PrecioCentavos);
+            AplicarDescuento(linea, cantidad.Importe(linea.PrecioCentavos));
         }
         else
         {
-            linea.ImporteCentavos = aplicado.ImporteCentavos;
+            AplicarDescuento(linea, aplicado.ImporteCentavos);
             linea.PrecioCentavos = aplicado.Precio.PresentacionId is null
                 ? presentacion.Factor.Importe(aplicado.Precio.PrecioCentavos)
                 : aplicado.Precio.PrecioCentavos;
         }
         Recalcular();
+    }
+
+    /// <summary>Quien la atiende como cliente especial (maestros, negocios vecinos): su descuento ya lo aprobó el dueño.</summary>
+    public Guid? ClienteEspecialId { get; set; }
+
+    /// <summary>La autorización del descuento más alto del ticket (la regla se revisa al cobrar).</summary>
+    public Guid? AutorizacionDescuentoId { get; set; }
+
+    /// <summary>La autorización para que un descuento o un precio cambiado deje líneas debajo del costo.</summary>
+    public Guid? AutorizacionBajoCostoId { get; set; }
+
+    public long DescuentoCentavos => Lineas.Sum(l => l.DescuentoCentavos);
+
+    /// <summary>
+    /// Descuento a una línea, en porcentaje (centésimas: 1000 = 10 %) o en monto, siempre con motivo. El porcentaje se
+    /// vuelve a aplicar si cambia la cantidad. Las impresiones no llevan descuento (su precio especial va aparte).
+    /// </summary>
+    public void DescontarLinea(VentaLinea linea, int? centesimas, long? montoCentavos, string motivo)
+    {
+        RequerirEditable();
+        if (linea.EsImpresiones)
+            throw new InvalidOperationException("Las impresiones no llevan descuento: su precio especial va aparte.");
+        if (string.IsNullOrWhiteSpace(motivo))
+            throw new ArgumentException("El descuento lleva motivo.", nameof(motivo));
+        if ((centesimas is null) == (montoCentavos is null))
+            throw new ArgumentException("El descuento va en porcentaje o en monto.");
+        if (centesimas is <= 0 or > 10000)
+            throw new ArgumentOutOfRangeException(nameof(centesimas), "El porcentaje va de más de 0 a 100 %.");
+        var bruto = linea.ImporteSinDescuentoCentavos;
+        if (montoCentavos is { } monto && (monto <= 0 || monto > bruto))
+            throw new ArgumentOutOfRangeException(nameof(montoCentavos), $"El descuento de «{linea.Descripcion}» va de más de $0 a {bruto / 100m:C2}.");
+        (linea.DescuentoCentesimas, linea.DescuentoCentavos, linea.MotivoDescuento) = (centesimas, montoCentavos ?? 0, motivo.Trim());
+        AplicarDescuento(linea, bruto);
+        Recalcular();
+    }
+
+    /// <summary>
+    /// Descuento a todo el ticket (menos las impresiones). En porcentaje, cada línea lleva el mismo; en monto, se reparte
+    /// en proporción al importe de cada línea (lo que sobra del redondeo va a la más grande).
+    /// </summary>
+    public void DescontarTicket(int? centesimas, long? montoCentavos, string motivo)
+    {
+        RequerirEditable();
+        var lineas = Lineas.Where(l => !l.EsImpresiones).ToList();
+        if (lineas.Count == 0)
+            throw new InvalidOperationException("No hay artículos a los que hacer descuento.");
+        if (centesimas is not null)
+        {
+            foreach (var l in lineas)
+                DescontarLinea(l, centesimas, null, motivo);
+            return;
+        }
+        if (montoCentavos is not { } monto)
+            throw new ArgumentException("El descuento va en porcentaje o en monto.");
+        var total = lineas.Sum(l => l.ImporteSinDescuentoCentavos);
+        if (monto <= 0 || monto > total)
+            throw new ArgumentOutOfRangeException(nameof(montoCentavos), $"El descuento va de más de $0 a {total / 100m:C2}.");
+        if (string.IsNullOrWhiteSpace(motivo))
+            throw new ArgumentException("El descuento lleva motivo.", nameof(motivo));
+        var partes = lineas.ToDictionary(l => l, l => (long)(Int128.CreateTruncating(monto) * l.ImporteSinDescuentoCentavos / total));
+        partes[lineas.MaxBy(l => l.ImporteSinDescuentoCentavos)!] += monto - partes.Values.Sum();
+        foreach (var (l, parte) in partes)
+        {
+            if (parte > 0)
+                DescontarLinea(l, null, parte, motivo);
+            else
+                QuitarDescuento(l);
+        }
+    }
+
+    public void QuitarDescuento(VentaLinea linea)
+    {
+        RequerirEditable();
+        var bruto = linea.ImporteSinDescuentoCentavos;
+        (linea.DescuentoCentesimas, linea.DescuentoCentavos, linea.MotivoDescuento) = (null, 0, null);
+        linea.ImporteCentavos = bruto;
+        Recalcular();
+    }
+
+    /// <summary>El descuento que mandó la caja para una línea (porcentaje o monto); sin ninguno, no hace nada.</summary>
+    public void AplicarDescuentoSolicitado(VentaLinea linea, int? centesimas, long? montoCentavos, string? motivo)
+    {
+        if (centesimas is not null)
+            DescontarLinea(linea, centesimas, null, motivo ?? "");
+        else if (montoCentavos is > 0)
+            DescontarLinea(linea, null, montoCentavos, motivo ?? "");
+    }
+
+    /// <summary>Quita todos los descuentos, el cliente especial y sus autorizaciones.</summary>
+    public void QuitarDescuentos()
+    {
+        foreach (var l in Lineas.Where(l => l.TieneDescuento))
+            QuitarDescuento(l);
+        (ClienteEspecialId, AutorizacionDescuentoId) = (null, null);
+    }
+
+    /// <summary>
+    /// El descuento más alto del ticket en centésimas de porcentaje, sin contar las líneas que llevan exactamente el del
+    /// cliente especial (<paramref name="preaprobado"/>): ese ya lo aprobó el dueño. Cero si no hay nada que revisar.
+    /// </summary>
+    public int DescuentoARevisar(int? preaprobado) =>
+        Lineas.Where(l => l.TieneDescuento && (preaprobado is null || l.DescuentoCentesimas != preaprobado))
+            .Select(l => l.PorcentajeDescuento).DefaultIfEmpty(0).Max();
+
+    /// <summary>El importe sale del bruto menos el descuento (el porcentaje se recalcula; el monto no pasa del bruto).</summary>
+    private static void AplicarDescuento(VentaLinea linea, long bruto)
+    {
+        linea.DescuentoCentavos = linea.DescuentoCentesimas is { } c
+            ? Redondeo.Dividir((Int128)bruto * c, 10000)
+            : Math.Min(linea.DescuentoCentavos, bruto);
+        linea.ImporteCentavos = bruto - linea.DescuentoCentavos;
     }
 
     /// <summary>
@@ -137,7 +248,7 @@ public class Venta
             throw new InvalidOperationException("El artículo común ya lleva el precio que se escribió: bórralo y agrégalo de nuevo.");
         linea.PrecioOriginalCentavos ??= linea.PrecioCentavos;
         linea.PrecioCentavos = precioCentavos;
-        linea.ImporteCentavos = linea.Cantidad.Importe(precioCentavos);
+        AplicarDescuento(linea, linea.Cantidad.Importe(precioCentavos));
         linea.AutorizacionPrecioId = autorizacionId;
         Recalcular();
     }
@@ -340,4 +451,40 @@ public class VentaLinea
 
     /// <summary>La línea "Impresiones": junta los trabajos de impresión que se cobran en este ticket (sin inventario).</summary>
     public bool EsImpresiones { get; set; }
+
+    /// <summary>Lo que se descontó del importe (ya restado de <see cref="ImporteCentavos"/>).</summary>
+    public long DescuentoCentavos { get; set; }
+
+    /// <summary>Si el descuento es en porcentaje: centésimas (1000 = 10 %). Vacío si es un monto.</summary>
+    public int? DescuentoCentesimas { get; set; }
+
+    public string? MotivoDescuento { get; set; }
+
+    public bool TieneDescuento => DescuentoCentavos > 0;
+
+    public long ImporteSinDescuentoCentavos => ImporteCentavos + DescuentoCentavos;
+
+    /// <summary>El descuento como porcentaje del importe, en centésimas (redondeado hacia arriba: 10.001 % cuenta como más de 10 %).</summary>
+    public int PorcentajeDescuento =>
+        DescuentoCentesimas ?? (ImporteSinDescuentoCentavos == 0 ? 0 : (int)Math.Ceiling(DescuentoCentavos * 10000m / ImporteSinDescuentoCentavos));
+}
+
+/// <summary>
+/// Un cliente con descuento fijo (maestros, negocios vecinos). Lo da de alta el dueño; en la caja se elige de la lista,
+/// nunca se escribe a mano, y su descuento no pide autorización.
+/// </summary>
+public class ClienteEspecial : IVersionado
+{
+    public Guid Id { get; set; } = Ids.Nuevo();
+    public Guid? SucursalId { get; set; }
+    public required string Nombre { get; set; }
+
+    /// <summary>Centésimas de porcentaje (1000 = 10 %).</summary>
+    public int DescuentoCentesimas { get; set; }
+
+    public string? Nota { get; set; }
+    public bool Activo { get; set; } = true;
+
+    public long Version { get; set; }
+    public DateTime ModificadoUtc { get; set; }
 }

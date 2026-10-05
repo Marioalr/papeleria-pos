@@ -18,6 +18,23 @@ public class TicketTests
         ["PAPELERÍA DE PRUEBA", "Calle 1"], ["Gracias por su compra"]);
 
     [Fact]
+    public void El_descuento_sale_debajo_del_articulo_y_el_ahorro_antes_del_total()
+    {
+        var ticket = Ticket() with
+        {
+            Lineas = [new LineaTicketDto("2", "Nylon C10 x metro", 6000, 10800, 1200, "10 %"), new LineaTicketDto("1", "Goma", 500, 500)],
+            TotalCentavos = 11300,
+        };
+
+        var renglones = TicketTexto.Generar(ticket).Split(Environment.NewLine);
+
+        Assert.Contains(renglones, r => r.Contains("Nylon C10 x metro") && r.EndsWith("$120.00"));
+        Assert.Contains(renglones, r => r.Contains("Descuento 10 %") && r.EndsWith("-$12.00"));
+        Assert.Contains(renglones, r => r.Contains("Usted ahorró: $12.00"));
+        Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
+    }
+
+    [Fact]
     public void El_texto_cabe_en_48_columnas_y_trae_lo_importante()
     {
         var texto = TicketTexto.Generar(Ticket());

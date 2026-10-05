@@ -6,7 +6,7 @@
 
 <div class="autorizacion">
     <p class="aviso-autorizacion">🔒 @Textos.Accion(Accion) requiere autorización</p>
-    <p>@Detalle@(MontoCentavos is { } m ? $" · {Formato.Dinero(m)}" : "")</p>
+    <p>@Detalle@(MontoCentavos is { } m ? $" · {Permisos.TextoMonto(Accion, m)}" : "")</p>
     @if (_remota is { } remota)
     {
         <p class="esperando">Se le pidió al dueño por Telegram. Esperando su respuesta… (vence a las @HoraMexico.ALocal(remota.VenceUtc).ToString("HH:mm"))</p>

@@ -37,7 +37,8 @@ public sealed class ServicioControl(PosDbContext db)
 
         if (!puede)
         {
-            Registrar(sucursalId, cajaId, solicitanteId, accion, $"Autorización negada: {detalle}", monto, null, autorizador?.Id, ResultadoBitacora.Negado);
+            Registrar(sucursalId, cajaId, solicitanteId, accion, $"Autorización negada: {detalle}", Permisos.MontoParaBitacora(accion, monto), null,
+                autorizador?.Id, ResultadoBitacora.Negado);
             await db.SaveChangesAsync(ct);
             throw new InvalidOperationException(resultado switch
             {
@@ -68,10 +69,12 @@ public sealed class ServicioControl(PosDbContext db)
     /// Revisa que el usuario pueda hacer la acción y la deja en la bitácora (sin guardar: se guarda junto con la
     /// operación). Si requiere autorización, gasta la que se mande; sin ella, o si no está permitida, falla.
     /// </summary>
+    /// <param name="montoBitacora">Lo que va en la bitácora si no es <paramref name="monto"/> (en un descuento, el monto es el porcentaje).</param>
     public async Task RequerirAsync(
         Guid usuarioId, Guid sucursalId, Guid? cajaId, AccionControlada accion, long? monto, string detalle, Guid? autorizacionId = null,
-        string? motivo = null, Guid? ventaId = null, CancellationToken ct = default)
+        string? motivo = null, Guid? ventaId = null, CancellationToken ct = default, long? montoBitacora = null)
     {
+        var registrado = montoBitacora ?? Permisos.MontoParaBitacora(accion, monto);
         var decision = await EvaluarAsync(usuarioId, sucursalId, accion, monto, ct);
         if (decision.PideMotivo && string.IsNullOrWhiteSpace(motivo))
             throw new ArgumentException("Esta acción lleva motivo.");
@@ -80,7 +83,7 @@ public sealed class ServicioControl(PosDbContext db)
         switch (decision.Nivel)
         {
             case NivelPermiso.Permitido:
-                Registrar(sucursalId, cajaId, usuarioId, accion, texto, monto, ventaId, null, ResultadoBitacora.Hecho);
+                Registrar(sucursalId, cajaId, usuarioId, accion, texto, registrado, ventaId, null, ResultadoBitacora.Hecho);
                 return;
             case NivelPermiso.NoPermitido:
                 throw new PermisoRequerido(accion, NivelPermiso.NoPermitido, "No tienes permiso para esto.");
@@ -89,7 +92,7 @@ public sealed class ServicioControl(PosDbContext db)
         if (autorizacionId is not { } id || await db.Autorizaciones.FindAsync([id], ct) is not { } autorizacion)
             throw new PermisoRequerido(accion, NivelPermiso.RequiereAutorizacion, "Esto requiere la autorización del encargado.");
         autorizacion.Usar(accion, sucursalId, monto, Ahora);
-        Registrar(sucursalId, cajaId, usuarioId, accion, autorizacion.PorTelegram ? $"{texto} (autorizado por Telegram)" : texto, monto, ventaId,
+        Registrar(sucursalId, cajaId, usuarioId, accion, autorizacion.PorTelegram ? $"{texto} (autorizado por Telegram)" : texto, registrado, ventaId,
             autorizacion.AutorizadorId, ResultadoBitacora.Autorizado);
     }
 

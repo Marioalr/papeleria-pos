@@ -23,6 +23,10 @@ public enum AccionControlada
     AdministrarCajas,
     ConfigurarTelegram,
     ConfigurarImpresora,
+
+    /// <summary>Descuento en una línea o en todo el ticket. Su umbral es en centésimas de porcentaje (1000 = 10 %).</summary>
+    Descuento,
+    AdministrarClientes,
 }
 
 public enum NivelPermiso
@@ -81,6 +85,9 @@ public static class Permisos
         .. Ambos(AccionControlada.AdministrarCajas, NivelPermiso.NoPermitido),
         .. Ambos(AccionControlada.ConfigurarTelegram, NivelPermiso.NoPermitido),
         .. Ambos(AccionControlada.ConfigurarImpresora, NivelPermiso.NoPermitido),
+        .. Ambos(AccionControlada.AdministrarClientes, NivelPermiso.NoPermitido),
+        Regla(AccionControlada.Descuento, Rol.Cajero, NivelPermiso.Permitido, umbral: 1000),
+        Regla(AccionControlada.Descuento, Rol.Encargado, NivelPermiso.Permitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Cajero, NivelPermiso.NoPermitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Encargado, NivelPermiso.Permitido),
     ];
@@ -92,7 +99,19 @@ public static class Permisos
     /// <summary>Acciones que no se pueden dar a otro rol: no aparecen en el editor de reglas.</summary>
     public static bool SoloDelDueno(AccionControlada accion) =>
         accion is AccionControlada.EditarReglas or AccionControlada.AdministrarCajas or AccionControlada.ConfigurarTelegram
-            or AccionControlada.ConfigurarImpresora;
+            or AccionControlada.ConfigurarImpresora or AccionControlada.AdministrarClientes;
+
+    /// <summary>Acciones cuyo umbral (y el monto que se revisa) es un porcentaje en centésimas, no dinero.</summary>
+    public static bool EnPorcentaje(AccionControlada accion) => accion == AccionControlada.Descuento;
+
+    /// <summary>El monto de una acción como se lee: "$200.00", o "12.5 %" en las de porcentaje.</summary>
+    public static string TextoMonto(AccionControlada accion, long monto) =>
+        EnPorcentaje(accion)
+            ? $"{(monto / 100m).ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("es-MX"))} %"
+            : (monto / 100m).ToString("$#,##0.00", System.Globalization.CultureInfo.GetCultureInfo("es-MX"));
+
+    /// <summary>Lo que va como monto en la bitácora: dinero; en las de porcentaje, nada (el porcentaje va en el detalle).</summary>
+    public static long? MontoParaBitacora(AccionControlada accion, long? monto) => EnPorcentaje(accion) ? null : monto;
 
     public static DecisionPermiso Evaluar(IEnumerable<ReglaPermiso> reglas, Rol rol, Guid sucursalId, AccionControlada accion, long? montoCentavos = null)
     {

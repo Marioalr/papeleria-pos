@@ -107,6 +107,7 @@ public sealed class RegistroCaja(PosDbContext db)
                     await control.RequerirAsync(venta.CajeroId, venta.SucursalId, venta.CajaId, AccionControlada.CambiarPrecio, cambiada.ImporteCentavos,
                         $"Precio de «{cambiada.Descripcion}»: {cambiada.PrecioOriginalCentavos / 100m:N2} → {cambiada.PrecioCentavos / 100m:N2}",
                         cambiada.AutorizacionPrecioId, ventaId: venta.Id, ct: ct);
+                await RevisarDescuentosAsync(venta, control, ct);
                 folio = await SiguienteFolioAsync(venta.SucursalId, venta.Serie, ct);
             }
 
@@ -141,6 +142,66 @@ public sealed class RegistroCaja(PosDbContext db)
             db.ChangeTracker.Clear();
             throw;
         }
+    }
+
+    /// <summary>
+    /// Los descuentos del ticket (docs/fase-1-impresion.md): el más alto se revisa con la regla (el cajero da hasta 10 %
+    /// solo; más, con autorización) salvo el del cliente especial, que ya aprobó el dueño. Y ningún descuento deja una
+    /// línea debajo del costo sin autorización. Todo queda en la bitácora.
+    /// </summary>
+    private async Task RevisarDescuentosAsync(Venta venta, ServicioControl control, CancellationToken ct)
+    {
+        if (venta.DescuentoCentavos > 0)
+        {
+            ClienteEspecial? cliente = null;
+            if (venta.ClienteEspecialId is { } id
+                && (cliente = await db.ClientesEspeciales.FindAsync([id], ct)) is not { Activo: true })
+                throw new InvalidOperationException("Ese cliente especial ya no está en la lista: quita su descuento.");
+            var revisar = venta.DescuentoARevisar(cliente?.DescuentoCentesimas);
+            var detalle = DetalleDescuento(venta, cliente?.Nombre);
+            if (revisar > 0)
+                await control.RequerirAsync(venta.CajeroId, venta.SucursalId, venta.CajaId, AccionControlada.Descuento, revisar, detalle,
+                    venta.AutorizacionDescuentoId, ventaId: venta.Id, ct: ct, montoBitacora: venta.DescuentoCentavos);
+            else
+                control.Registrar(venta.SucursalId, venta.CajaId, venta.CajeroId, AccionControlada.Descuento, detalle, venta.DescuentoCentavos, venta.Id);
+        }
+
+        var bajoCosto = await BajoCostoAsync(venta, ct);
+        if (bajoCosto.Count > 0)
+            await control.RequerirAsync(venta.CajeroId, venta.SucursalId, venta.CajaId, AccionControlada.VenderBajoCosto,
+                bajoCosto.Sum(b => b.Costo - b.Linea.ImporteCentavos),
+                $"Con descuento quedan debajo del costo: {string.Join(", ", bajoCosto.Select(b => b.Linea.Descripcion))}",
+                venta.AutorizacionBajoCostoId, ventaId: venta.Id, ct: ct);
+    }
+
+    /// <summary>"Descuento de $25.00 (hasta 15 %): motivo" (o el cliente especial), para la bitácora y Telegram.</summary>
+    public static string DetalleDescuento(Venta venta, string? clienteEspecial)
+    {
+        var maximo = venta.Lineas.Where(l => l.TieneDescuento).Max(l => l.PorcentajeDescuento);
+        var motivos = string.Join("; ", venta.Lineas.Where(l => l.TieneDescuento).Select(l => l.MotivoDescuento).Distinct());
+        return $"Descuento de {AlertasTelegram.Dinero(venta.DescuentoCentavos)} (hasta {Permisos.TextoMonto(AccionControlada.Descuento, maximo)})"
+            + (clienteEspecial is null ? "" : $" a {clienteEspecial}, cliente especial") + $": {motivos}";
+    }
+
+    /// <summary>
+    /// Las líneas con descuento que quedan debajo de lo que cuesta sacarlas del inventario (el mismo cálculo que al
+    /// cobrar). El costo no sale de aquí hacia la caja: solo cuáles y cuánto falta en total.
+    /// </summary>
+    public async Task<List<(VentaLinea Linea, long Costo)>> BajoCostoAsync(Venta venta, CancellationToken ct = default)
+    {
+        var resultado = new List<(VentaLinea, long)>();
+        var inventario = new RegistroInventario(db);
+        foreach (var linea in venta.Lineas.Where(l => l.TieneDescuento && l.LlevaInventario && l.VarianteId is not null))
+        {
+            if (await db.Variantes.FindAsync([linea.VarianteId!.Value], ct) is not { } variante)
+                continue;
+            var existencia = await inventario.ExistenciaAsync(venta.SucursalId, variante.Id, ct);
+            var costo = -Kardex.Salida(venta.SucursalId, variante, TipoMovimiento.Venta, linea.CantidadBase, existencia,
+                await UltimoCostoAsync(variante.Id, ct), Ahora).CostoCentavos;
+            if (costo > 0 && linea.ImporteCentavos < costo)
+                resultado.Add((linea, costo));
+        }
+        return resultado;
     }
 
     /// <summary>Corte parcial: informativo, el turno sigue abierto.</summary>

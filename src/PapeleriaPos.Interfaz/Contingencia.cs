@@ -333,6 +333,9 @@ public sealed class Contingencia
         Encolar(registro);
     }
 
+    /// <summary>Los clientes especiales de la copia local, para elegir uno sin conexión.</summary>
+    public List<ClienteEspecialDto> ClientesEspeciales() => Datos.Paquete.Clientes?.Where(c => c.Activo).ToList() ?? [];
+
     public DecisionDto Permiso(SolicitudPermiso s)
     {
         var decision = Evaluar(s.UsuarioId, s.Accion, s.MontoCentavos);
@@ -429,7 +432,8 @@ public sealed class Contingencia
             var cantidad = new Cantidad(l.CantidadMilesimas);
             if (l.VarianteId is not { } varianteId)
             {
-                venta.AgregarArticuloComun(l.Descripcion ?? "", l.PrecioCentavos ?? 0, cantidad);
+                var comun = venta.AgregarArticuloComun(l.Descripcion ?? "", l.PrecioCentavos ?? 0, cantidad);
+                venta.AplicarDescuentoSolicitado(comun, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
                 continue;
             }
             var producto = datos.PorVariante.GetValueOrDefault(varianteId)
@@ -437,6 +441,7 @@ public sealed class Contingencia
             var agregada = venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
             if (l.PrecioCentavos is { } precio && precio != agregada.PrecioCentavos)
                 venta.CambiarPrecio(agregada, precio, l.AutorizacionId);
+            venta.AplicarDescuentoSolicitado(agregada, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
         }
         venta.ValidarCobros(s.Cobros);
 
@@ -455,6 +460,31 @@ public sealed class Contingencia
                 cambiada.ImporteCentavos, autorizo, autorizo is null ? ResultadoBitacora.Hecho : ResultadoBitacora.Autorizado, venta.Id));
         }
 
+        // Descuentos: la misma regla con la copia local. Sin conexión no se sabe el costo: eso no se revisa aquí.
+        if (venta.DescuentoCentavos > 0)
+        {
+            ClienteEspecialDto? cliente = null;
+            if (s.ClienteEspecialId is { } clienteId
+                && (cliente = datos.Paquete.Clientes?.FirstOrDefault(c => c.Id == clienteId && c.Activo)) is null)
+                throw new InvalidOperationException("Ese cliente especial no está en la copia de esta caja: quita su descuento.");
+            venta.ClienteEspecialId = cliente?.Id;
+            var revisar = venta.DescuentoARevisar(cliente?.DescuentoCentesimas);
+            Guid? autorizo = null;
+            if (revisar > 0)
+            {
+                var decision = Evaluar(s.CajeroId, AccionControlada.Descuento, revisar);
+                if (decision.Nivel == NivelPermiso.RequiereAutorizacion)
+                    autorizo = UsarAutorizacion(s.AutorizacionDescuentoId, AccionControlada.Descuento, revisar)
+                        ?? throw new ErrorCaja("Este descuento requiere la autorización del encargado.", "requiere-autorizacion");
+                else
+                    Requerir(decision);
+            }
+            bitacora.Add(Registro(s.CajeroId, AccionControlada.Descuento,
+                $"Descuento de {Formato.Dinero(venta.DescuentoCentavos)}" + (cliente is null ? "" : $" a {cliente.Nombre}, cliente especial")
+                + $": {string.Join("; ", venta.Lineas.Where(l => l.TieneDescuento).Select(l => l.MotivoDescuento).Distinct())}",
+                venta.DescuentoCentavos, autorizo, autorizo is null ? ResultadoBitacora.Hecho : ResultadoBitacora.Autorizado, venta.Id));
+        }
+
         var folio = UltimoFolio + 1;
         venta.Pagar(folio, s.Cobros, ahora);
         venta.EnContingencia = true;
@@ -462,8 +492,9 @@ public sealed class Contingencia
             id => datos.Presentaciones.TryGetValue(id, out var p) ? (p.Nombre, p.EsBase) : null,
             datos.Paquete.Encabezado, datos.Paquete.Pie, datos.Paquete.Logo);
         var subida = new VentaContingenciaDto(venta.Id, caja.Id, turno.Id, s.CajeroId, folio, ahora,
-            venta.Lineas.Select(x => new LineaContingenciaDto(x.VarianteId, x.PresentacionId, x.Descripcion, x.Cantidad.Milesimas, x.PrecioCentavos)).ToList(),
-            s.Cobros);
+            venta.Lineas.Select(x => new LineaContingenciaDto(x.VarianteId, x.PresentacionId, x.Descripcion, x.Cantidad.Milesimas, x.PrecioCentavos,
+                x.DescuentoCentesimas, x.DescuentoCentesimas is null && x.TieneDescuento ? x.DescuentoCentavos : null, x.MotivoDescuento)).ToList(),
+            s.Cobros, venta.ClienteEspecialId);
 
         using (var lote = _almacen.Lote())
         {

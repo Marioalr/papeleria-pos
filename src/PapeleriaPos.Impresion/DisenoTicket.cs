@@ -58,13 +58,19 @@ public static class DisenoTicket
             for (var i = 0; i < partes.Count; i++)
             {
                 var cantidad = i == 0 ? l.Cantidad : "";
-                var importe = i == 0 ? Dinero(l.ImporteCentavos) : "";
+                // Con descuento, el renglón lleva el importe completo y abajo va lo que se descontó.
+                var importe = i == 0 ? Dinero(l.ImporteCentavos + l.DescuentoCentavos) : "";
                 e.Add(new Renglon(Columna(cantidad, AnchoCantidad) + Columna(partes[i], AnchoDescripcion + 1) + importe.PadLeft(AnchoImporte)));
             }
+            if (l.DescuentoCentavos > 0)
+                e.Add(new Renglon(new string(' ', AnchoCantidad) + Columna(l.Descuento is { } p ? $"Descuento {p}" : "Descuento", AnchoDescripcion + 1)
+                    + $"-{Dinero(l.DescuentoCentavos)}".PadLeft(AnchoImporte)));
         }
 
         e.Add(Linea('-'));
         e.Add(new Renglon($"No. de artículos: {t.NumeroDeArticulos.ToString("0.###", Mexico),5}", Alineacion.Derecha));
+        if (t.DescuentoCentavos > 0)
+            e.Add(new Renglon($"Usted ahorró: {Dinero(t.DescuentoCentavos)}", Alineacion.Derecha));
         e.Add(new Renglon($"Total: {Dinero(t.TotalCentavos)}", Alineacion.Derecha, Negrita: true, Grande: true));
         foreach (var c in t.Cobros)
         {

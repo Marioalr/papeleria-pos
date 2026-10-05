@@ -165,6 +165,20 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<List<ReglaDto>> GuardarReglasAsync(Guid sucursalId, SolicitudReglas solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<List<ReglaDto>>($"api/sucursales/{sucursalId}/reglas", solicitud));
 
+    // ── Descuentos ──
+
+    /// <summary>Sin conexión, los de la copia local (solo los activos).</summary>
+    public Task<List<ClienteEspecialDto>> ClientesEspecialesAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<ClienteEspecialDto>>($"api/sucursales/{sucursalId}/clientes-especiales") ?? [],
+            l => l.ClientesEspeciales());
+
+    public Task<List<ClienteEspecialDto>> GuardarClientesEspecialesAsync(Guid sucursalId, SolicitudClientesEspeciales solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<List<ClienteEspecialDto>>($"api/sucursales/{sucursalId}/clientes-especiales", solicitud));
+
+    /// <summary>Solo con la caja principal (ahí está el costo); sin conexión, el costo no se revisa.</summary>
+    public Task<BajoCostoDto> BajoCostoAsync(SolicitudBajoCosto solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<BajoCostoDto>("api/descuentos/bajo-costo", solicitud), _ => new BajoCostoDto(0, []));
+
     // ── Impresiones (solo con la caja principal: ahí llegan los trabajos de todas las PC) ──
 
     public Task<List<ImpresionPorCobrarDto>> ImpresionesPorCobrarAsync(Guid sucursalId, Guid usuarioId) =>

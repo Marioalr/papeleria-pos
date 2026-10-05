@@ -109,7 +109,7 @@ public sealed class ServicioTelegram(PosDbContext db)
         else
         {
             new ServicioControl(db).Registrar(solicitud.SucursalId, solicitud.CajaId, solicitud.SolicitanteId, solicitud.Accion,
-                $"Rechazada por Telegram: {solicitud.Detalle}", solicitud.MontoCentavos, autorizoId: usuario.Id, resultado: ResultadoBitacora.Negado);
+                $"Rechazada por Telegram: {solicitud.Detalle}", Permisos.MontoParaBitacora(solicitud.Accion, solicitud.MontoCentavos), autorizoId: usuario.Id, resultado: ResultadoBitacora.Negado);
         }
         await CerrarAsync(solicitud, aprobar ? EstadoSolicitudRemota.Aprobada : EstadoSolicitudRemota.Rechazada, usuario, ct);
         return aprobar ? "Aprobada: la caja ya puede seguir." : "Rechazada.";
@@ -168,7 +168,7 @@ public sealed class ServicioTelegram(PosDbContext db)
         var caja = s.CajaId is { } c ? await db.Cajas.Where(x => x.Id == c).Select(x => x.Nombre).FirstOrDefaultAsync(ct) : null;
         var quien = await db.Usuarios.Where(u => u.Id == s.SolicitanteId).Select(u => u.Nombre).FirstOrDefaultAsync(ct);
         return $"Autorización · {caja ?? "Caja"}\n{quien} pide: {s.Detalle}"
-            + (s.MontoCentavos is { } m ? $"\n{AlertasTelegram.Dinero(m)}" : "");
+            + (s.MontoCentavos is { } m ? $"\n{Permisos.TextoMonto(s.Accion, m)}" : "");
     }
 
     private static string Estado(EstadoSolicitudRemota e) => e switch
