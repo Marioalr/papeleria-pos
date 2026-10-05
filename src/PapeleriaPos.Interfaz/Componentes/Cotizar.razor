@@ -1,0 +1,305 @@
+@* Cotizar un PDF antes de imprimirlo, a un botón: la caja mide la tinta de cada página (como en una impresión real) y
+   la caja principal le pone precio; con cada opción se recalcula al instante. El PDF no se guarda. Traído de Control
+   Print (QuoteViewModel). *@
+@using PapeleriaPos.Medicion
+@implements IDisposable
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+@inject IServiceProvider Servicios
+
+@if (_medidor is null)
+{
+    <p class="error">Cotizar un PDF funciona en la caja de Windows: aquí no hay con qué medir el archivo.</p>
+}
+else
+{
+    <div class="cotizar">
+        <div class="cotizar-documento">
+            @if (_miniatura is { } miniatura)
+            {
+                <img class="miniatura-grande" src="data:image/png;base64,@miniatura" alt="" />
+            }
+            <div>
+                <strong>@(_nombre ?? "Ningún PDF")</strong>
+                <div class="nota">@_resumen</div>
+                @if (_estado is not null)
+                {
+                    <div class="@(_estadoEsError ? "error" : "nota")">@_estado</div>
+                }
+                <label class="boton chico otro-pdf">
+                    Otro PDF
+                    <InputFile accept=".pdf,application/pdf" OnChange="OtroPdfAsync" />
+                </label>
+            </div>
+        </div>
+
+        @if (_paginas is not null)
+        {
+            <div class="cotizar-opciones">
+                <label>Color
+                    <select @bind="Color" @bind:after="CotizarAsync">
+                        <option value="true">Color</option>
+                        <option value="false">Blanco y negro</option>
+                    </select>
+                </label>
+                <label>Copias <input type="number" min="1" max="9999" @bind="Copias" @bind:after="CotizarAsync" /></label>
+                <label>Páginas (vacío: todas) <input placeholder="1-3, 5" @bind="Rango" @bind:after="CotizarAsync" autocomplete="off" /></label>
+                <label>Tamaño
+                    <select @bind="Tamano" @bind:after="CotizarAsync">
+                        @foreach (var t in _opciones?.Tamanos ?? ["Carta"])
+                        {
+                            <option value="@t">@t</option>
+                        }
+                    </select>
+                </label>
+                <label>Papel
+                    <select @bind="TipoPapel" @bind:after="CotizarAsync">
+                        @foreach (var p in _opciones?.TiposPapel ?? [new OpcionDto("Plain", "Normal")])
+                        {
+                            <option value="@p.Clave">@p.Nombre</option>
+                        }
+                    </select>
+                </label>
+                <label>Calidad
+                    <select @bind="Calidad" @bind:after="CotizarAsync">
+                        @foreach (var calidad in _opciones?.Calidades ?? [new OpcionDto("Standard", "Normal")])
+                        {
+                            <option value="@calidad.Clave">@calidad.Nombre</option>
+                        }
+                    </select>
+                </label>
+                <label>Páginas por hoja
+                    <select @bind="PaginasPorHoja" @bind:after="CotizarAsync">
+                        <option value="1">1 (normal)</option>
+                        <option value="2">2 por hoja</option>
+                        <option value="4">4 por hoja</option>
+                    </select>
+                </label>
+                <label class="en-linea opcion"><input type="checkbox" @bind="Duplex" @bind:after="CotizarAsync" /> Doble cara</label>
+            </div>
+        }
+
+        @if (_cotizacion is { } c)
+        {
+            <div class="cotizar-precio">
+                <small>@(c.CobroMinimo ? "Cobro mínimo" : "Precio a cobrar")</small>
+                <div class="precio">@Formato.Dinero(c.PrecioCentavos)</div>
+                <div>@Detalle(c)</div>
+                @if (c.Costo is { } costo)
+                {
+                    <div class="nota">Costo @Formato.Dinero(costo.TotalCentavos) · ganancia @Formato.Dinero(c.PrecioCentavos - costo.TotalCentavos) (margen @costo.MargenPorcentaje.ToString("0.#") %)</div>
+                }
+                @foreach (var aviso in c.Avisos)
+                {
+                    <div class="aviso-autorizacion">@aviso</div>
+                }
+            </div>
+            <details>
+                <summary>Precio por página</summary>
+                <p class="nota">Lo que le toca a cada página según su tinta (por copia). El total se redondea una sola vez e incluye cobro mínimo y mayoreo, igual que al imprimir.</p>
+                <div class="resultados">
+                    <table>
+                        <thead><tr><th class="num">Página</th><th>Tipo</th><th class="num">Precio</th>@if (c.Costo is not null) {<th class="num">Costo</th>}</tr></thead>
+                        @foreach (var p in c.PorPagina)
+                        {
+                            <tr>
+                                <td class="num">@p.Pagina</td>
+                                <td>@p.Tipo</td>
+                                <td class="num">@Centavos(p.PrecioCentavos)</td>
+                                @if (p.CostoCentavos is { } costoPagina)
+                                {
+                                    <td class="num">@Centavos(costoPagina)</td>
+                                }
+                            </tr>
+                        }
+                    </table>
+                </div>
+            </details>
+        }
+        @if (_error is not null)
+        {
+            <p class="error">@_error</p>
+        }
+        @if (_aviso is not null)
+        {
+            <p class="aviso">@_aviso</p>
+        }
+        <div class="acciones">
+            <button class="boton principal" disabled="@(_cotizacion is null)" @onclick="CopiarAsync">Copiar resumen para el cliente</button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>El PDF que se eligió con el botón de la pantalla de venta.</summary>
+    [Parameter] public IBrowserFile? Archivo { get; set; }
+
+    /// <summary>El tamaño más grande que se acepta (los PDF escaneados pesan mucho).</summary>
+    private const long MaximoBytes = 200L * 1024 * 1024;
+
+    private IMedidorPdf? _medidor;
+    private OpcionesImpresionDto? _opciones;
+    private IReadOnlyList<CoberturaPaginaDto>? _paginas;
+    private CotizacionDto? _cotizacion;
+    private CancellationTokenSource? _midiendo;
+    private int _pedido;
+    private string? _nombre;
+    private string _resumen = "Elige un PDF para saber cuánto cobrar antes de imprimir.";
+    private string? _miniatura;
+    private string? _estado;
+    private bool _estadoEsError;
+    private string? _error;
+    private string? _aviso;
+
+    private bool Color { get; set; } = true;
+    private int Copias { get; set; } = 1;
+    private string Rango { get; set; } = "";
+    private string Tamano { get; set; } = "Carta";
+    private string TipoPapel { get; set; } = "Plain";
+    private string Calidad { get; set; } = "Standard";
+    private int PaginasPorHoja { get; set; } = 1;
+    private bool Duplex { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _medidor = Servicios.GetService<IMedidorPdf>();
+        if (_medidor is null)
+            return;
+        try
+        {
+            _opciones = await Cliente.OpcionesImpresionAsync(Caja.SucursalId);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        if (Archivo is not null)
+            await MedirAsync(Archivo);
+    }
+
+    private Task OtroPdfAsync(InputFileChangeEventArgs e) => MedirAsync(e.File);
+
+    private async Task MedirAsync(IBrowserFile archivo)
+    {
+        _midiendo?.Cancel();
+        var cts = _midiendo = new CancellationTokenSource();
+        (_paginas, _cotizacion, _miniatura, _error, _aviso) = (null, null, null, null, null);
+        _nombre = archivo.Name;
+        _resumen = "";
+        (_estado, _estadoEsError) = ("Abriendo…", false);
+        if (archivo.Size > MaximoBytes)
+        {
+            (_estado, _estadoEsError) = ("El PDF pesa más de 200 MB: no se puede cotizar aquí.", true);
+            return;
+        }
+        try
+        {
+            // El archivo se lee completo antes de medirlo: la pantalla puede cambiar mientras se mide.
+            var memoria = new MemoryStream();
+            await using (var flujo = archivo.OpenReadStream(MaximoBytes, cts.Token))
+                await flujo.CopyToAsync(memoria, cts.Token);
+            memoria.Position = 0;
+            var avance = new Progress<(int Hechas, int Total)>(a =>
+            {
+                if (_midiendo != cts)
+                    return;
+                _estado = a.Hechas < a.Total ? $"Midiendo la tinta de la página {a.Hechas + 1} de {a.Total}…" : null;
+                InvokeAsync(StateHasChanged);
+            });
+            var medido = await _medidor!.MedirAsync(memoria, avance, cts.Token);
+            if (_midiendo != cts)
+                return;
+            _paginas = medido.Paginas.Select(p => new CoberturaPaginaDto(p.C, p.M, p.Y, p.K, p.Gray, p.AreaSqIn, p.HasColor)).ToList();
+            _miniatura = medido.MiniaturaPng is { } png ? Convert.ToBase64String(png) : null;
+            var conColor = medido.Paginas.Count(p => p.HasColor);
+            _resumen = $"{Plural(medido.Paginas.Count, "página", "páginas")}" + (conColor == 0 ? " · todas en blanco y negro" : $" · {conColor} con color");
+            // Un documento sin color se cotiza en blanco y negro (como lo imprimiría el driver).
+            Color = conColor > 0;
+            (_estado, _estadoEsError) = (medido.Nota, false);
+            await CotizarAsync();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (InvalidDataException ex)
+        {
+            (_estado, _estadoEsError) = (ex.Message, true);
+        }
+        catch (Exception ex) when (ex is IOException or JSException)
+        {
+            (_estado, _estadoEsError) = ("No se pudo leer el PDF: " + ex.Message, true);
+        }
+    }
+
+    private async Task CotizarAsync()
+    {
+        if (_paginas is null)
+            return;
+        (_error, _aviso) = (null, null);
+        if (Copias is < 1 or > 9999)
+        {
+            (_cotizacion, _error) = (null, "Escribe cuántas copias (1 o más).");
+            return;
+        }
+        // Si cambian dos opciones seguidas, solo cuenta la respuesta de la última.
+        var pedido = ++_pedido;
+        try
+        {
+            var cotizacion = await Cliente.CotizarAsync(new SolicitudCotizacion(Caja.SucursalId, Sesion.UsuarioId, _paginas,
+                new OpcionesCotizacionDto(TipoPapel, Tamano, Color, Calidad, Duplex, Copias, PaginasPorHoja, Rango)));
+            if (pedido == _pedido)
+                _cotizacion = cotizacion;
+        }
+        catch (ErrorCaja ex)
+        {
+            if (pedido == _pedido)
+                (_cotizacion, _error) = (null, ex.Message);
+        }
+    }
+
+    private string Detalle(CotizacionDto c) =>
+        $"{Plural(c.Paginas, "página", "páginas")}" + (c.Copias > 1 ? $" × {c.Copias} copias" : "")
+        + $" = {Plural(c.Caras, "cara", "caras")} en {Plural(c.Hojas, "hoja", "hojas")} {c.Tamano.ToLowerInvariant()} · {c.TipoPapel.ToLowerInvariant()}"
+        + (c.CarasColor > 0 ? $" · {c.CarasColor} a color" : "");
+
+    /// <summary>Para el cliente (sin costos): se pega en WhatsApp o en un correo.</summary>
+    private string Resumen(CotizacionDto c)
+    {
+        var lineas = new List<string>
+        {
+            $"Cotización · {DateTime.Now.ToString("dd/MM/yyyy HH:mm", Formato.Mexico)}",
+            $"Documento: {_nombre} ({Detalle(c)})",
+            (Color ? "Color" : "Blanco y negro") + (Duplex ? " · doble cara" : "") + (PaginasPorHoja > 1 ? $" · {PaginasPorHoja} páginas por hoja" : ""),
+        };
+        if (!string.IsNullOrWhiteSpace(Rango))
+            lineas.Add($"Páginas: {Rango}");
+        lineas.Add($"Total: {Formato.Dinero(c.PrecioCentavos)}");
+        if (c.Copias > 1)
+            lineas.Add($"Por copia: aprox. {Formato.Dinero(c.PrecioCentavos / c.Copias)}");
+        return string.Join(Environment.NewLine, lineas);
+    }
+
+    private async Task CopiarAsync()
+    {
+        if (_cotizacion is not { } c)
+            return;
+        try
+        {
+            await Js.CopiarAsync(Resumen(c));
+            _aviso = "Resumen copiado: pégalo en WhatsApp o en un correo.";
+        }
+        catch (JSException ex)
+        {
+            _error = "No se pudo copiar: " + ex.Message;
+        }
+    }
+
+    private static string Centavos(decimal centavos) => (centavos / 100m).ToString("$#,##0.00", Formato.Mexico);
+
+    private static string Plural(int n, string uno, string varios) => $"{n:N0} {(n == 1 ? uno : varios)}";
+
+    public void Dispose() => _midiendo?.Cancel();
+}

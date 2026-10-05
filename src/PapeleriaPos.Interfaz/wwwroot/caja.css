@@ -160,3 +160,24 @@ label.opcion { flex-direction: row; align-items: center; gap: 8px; font-size: 15
 .impresiones img.miniatura { width: 48px; height: auto; border: 1px solid var(--borde); background: #fff; }
 .impresiones tr { cursor: pointer; }
 .total-elegido { margin-right: auto; font-weight: 600; }
+
+/* Entrega 5, parte 2: cotizar, copias y la impresora */
+.oculto { display: none; }
+.cotizar { display: flex; flex-direction: column; gap: 10px; }
+.cotizar-documento { display: flex; gap: 14px; align-items: flex-start; }
+.cotizar-documento img.miniatura-grande { width: 110px; border: 1px solid var(--borde); background: #fff; }
+.otro-pdf { display: inline-block; margin-top: 6px; color: var(--texto); font-size: 13px; }
+.otro-pdf input { display: none; }
+.cotizar-opciones { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 12px; align-items: end; }
+select { font: inherit; font-size: 15px; padding: 6px 8px; border: 1px solid var(--borde); border-radius: 4px; color: var(--texto); background: #fff; }
+.cotizar-precio { background: var(--verde-claro); border: 1px solid var(--borde); border-radius: 6px; padding: 10px 14px; display: flex; flex-direction: column; gap: 4px; }
+.cotizar-precio .precio { font-size: 34px; font-weight: 700; color: var(--exito); }
+.salieron { color: #8a5a00; font-weight: 600; font-size: 13px; }
+.etiqueta { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 8px; background: var(--azul-claro); color: var(--azul); margin-right: 4px; }
+.niveles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.nivel { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.nivel .barra { height: 12px; border: 1px solid var(--borde); border-radius: 6px; overflow: hidden; background: #fff; }
+.nivel .barra span { display: block; height: 100%; }
+.nivel.bajo strong { color: var(--error); }
+
+.acciones.izquierda { justify-content: flex-start; }

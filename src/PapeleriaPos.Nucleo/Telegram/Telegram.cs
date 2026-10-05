@@ -17,6 +17,12 @@ public enum TipoAlerta
     CajaSinConexion,
     FueraDeHorario,
     ResumenDiario,
+
+    /// <summary>Tinta o caja de mantenimiento bajas, un consumible cambiado o la impresora sin responder.</summary>
+    Impresora,
+
+    /// <summary>La impresora contó menos hojas de las que se mandaron: un atasco o una cancelación en su panel.</summary>
+    HojasFaltantes,
 }
 
 /// <summary>Un chat de Telegram vinculado a un usuario (solo el dueño): recibe alertas y contesta autorizaciones.</summary>

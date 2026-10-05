@@ -174,6 +174,42 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task NoVendidaAsync(Guid trabajoId, SolicitudNoVendida solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<object>($"api/impresiones/{trabajoId}/no-vendida", solicitud, sinRespuesta: true));
 
+    public Task<ImpresionPorCobrarDto> SoloLoQueSalioAsync(Guid trabajoId, SolicitudSoloLoQueSalio solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<ImpresionPorCobrarDto>($"api/impresiones/{trabajoId}/solo-lo-que-salio", solicitud));
+
+    public Task<List<ImpresionDelDiaDto>> ImpresionesDelDiaAsync(Guid sucursalId, DateOnly fecha, Guid usuarioId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<ImpresionDelDiaDto>>(
+            $"api/sucursales/{sucursalId}/impresiones?fecha={fecha:yyyy-MM-dd}&usuarioId={usuarioId}") ?? []);
+
+    public Task<OpcionesImpresionDto> OpcionesImpresionAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<OpcionesImpresionDto>($"api/sucursales/{sucursalId}/impresiones/opciones"))!);
+
+    public Task<CotizacionDto> CotizarAsync(SolicitudCotizacion solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<CotizacionDto>("api/impresiones/cotizar", solicitud));
+
+    public Task<PrecioCopiasDto> PrecioCopiasAsync(SolicitudPrecioCopias solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<PrecioCopiasDto>("api/impresiones/copias/precio", solicitud));
+
+    public Task<ImpresionPorCobrarDto> RegistrarCopiasAsync(SolicitudCopias solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<ImpresionPorCobrarDto>("api/impresiones/copias", solicitud));
+
+    // ── La impresora (la lee la caja principal) ──
+
+    public Task<EstadoImpresoraDto> ImpresoraAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<EstadoImpresoraDto>($"api/sucursales/{sucursalId}/impresora"))!);
+
+    public Task<EstadoImpresoraDto> GuardarImpresoraAsync(Guid sucursalId, SolicitudConfiguracionImpresora solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<EstadoImpresoraDto>($"api/sucursales/{sucursalId}/impresora", solicitud));
+
+    public Task<EstadoImpresoraDto> LeerImpresoraAsync(Guid sucursalId) =>
+        ConRespaldoAsync(() => _http.PostAsync<EstadoImpresoraDto>($"api/sucursales/{sucursalId}/impresora/leer", null));
+
+    public Task<CalibracionDto> CalibracionAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<CalibracionDto>($"api/sucursales/{sucursalId}/impresora/calibracion"))!);
+
+    public Task<CalibracionDto> AplicarCalibracionAsync(Guid sucursalId, SolicitudCredenciales credenciales) =>
+        ConRespaldoAsync(() => _http.PostAsync<CalibracionDto>($"api/sucursales/{sucursalId}/impresora/calibracion", credenciales));
+
     // ── Telegram (solo con la caja principal: el bot vive ahí) ──
 
     public Task<EstadoTelegramDto> TelegramAsync(Guid sucursalId) =>

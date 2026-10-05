@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Ventas;
@@ -97,6 +98,8 @@ public static class AlertasTelegram
         TipoAlerta.TransferenciaRechazada => "Transferencia rechazada",
         TipoAlerta.CajaSinConexion => "Caja sin conexión",
         TipoAlerta.FueraDeHorario => "Caja abierta fuera de horario",
+        TipoAlerta.Impresora => "Impresora",
+        TipoAlerta.HojasFaltantes => "Hojas que no salieron",
         _ => "Resumen del día",
     };
 
@@ -196,6 +199,14 @@ public static class AlertasTelegram
             t.AppendLine($"Transferencias por verificar: {porVerificar.Count} · {Dinero(porVerificar.Sum())}");
         if (vigentes.Count(v => v.EnContingencia) is var sinConexion and > 0)
             t.AppendLine($"Ventas hechas sin conexión: {sinConexion}");
+        var noVendidas = await db.TrabajosImpresion.AsNoTracking()
+            .Where(i => i.SucursalId == sucursalId && i.Cobro == EstadoCobroImpresion.NoVendida && i.CobroUtc >= desde && i.CobroUtc < hasta)
+            .Select(i => i.CostoCentavos).ToListAsync(ct);
+        if (noVendidas.Count > 0)
+            t.AppendLine($"Impresiones no vendidas: {noVendidas.Count} · costo {Dinero(noVendidas.Sum())}");
+        if (await new ServicioImpresora(db).ComparacionAsync(sucursalId, fecha, ct) is { } contador)
+            t.AppendLine($"Impresora: contó {contador.Counted:N0} caras, registradas {contador.RegisteredTotal:N0}"
+                + (contador.Unregistered > 0 ? $" · sin registrar {contador.Unregistered:N0} (copias sin cobrar, celular, pruebas)" : " · todo registrado"));
         return t.ToString().TrimEnd();
     }
 }
