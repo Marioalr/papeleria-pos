@@ -18,8 +18,8 @@ corte.
   llega en la entrega 4, con el mismo mecanismo.
 - **Bitácora** de todo lo sensible, incluidas las autorizaciones negadas.
 - **Cancelar y devolver** escaneando el QR del ticket.
-- **Cambios de precio** en la venta, controlados por las reglas. Los **descuentos** quedan por hacer hasta integrar el
-  módulo de impresión (entrega 5).
+- **Cambios de precio** en la venta, controlados por las reglas. Los **descuentos** llegaron con la entrega 5
+  ([parte 3](fase-1-impresion.md#avance)): el cajero da hasta 10 % solo y la regla se cambia como las demás.
 - **Límite de efectivo en caja:** al llegar a un monto configurable, la caja pide hacer un retiro.
 - **Comprobante impreso** de cada salida de efectivo.
 - **Verificar transferencias.**
