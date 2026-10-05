@@ -108,7 +108,7 @@ Los datos reales del negocio (como la base de eleventa) nunca se guardan en el r
 | [Fase 1: varias cajas](docs/fase-1-varias-cajas.md) | Entrega 3: servicio de Windows, alta de cajas con llave, respaldos y contingencia |
 | [Fase 1: Telegram](docs/fase-1-telegram.md) | Entrega 4: alertas, autorización a distancia y resumen diario |
 | [Fase 1: impresión](docs/fase-1-impresion.md) | Entrega 5: lo de Control Print dentro del POS, y los descuentos |
-| [Fase 2: inventario](docs/fase-2-inventario.md) | Catálogo, compras con recepción ciega, ajustes y conteos, etiquetas, sugerido de compra e insumos |
+| [Fase 2: inventario](docs/fase-2-inventario.md) | Catálogo, compras con recepción ciega y el documento del proveedor, ajustes y conteos, etiquetas y sugerido de compra |
 | [Arquitectura](docs/arquitectura.md) | Componentes, datos, contingencia, varias sucursales, red, respaldos y hardware |
 | [Administrar desde fuera](docs/servidor-remoto.md) | Central en servidor virtual, gestión por excepción y costos |
 | [Caja y control](docs/caja-y-control.md) | Venta, cobro, cortes, autorizaciones configurables, bitácora y alertas |
