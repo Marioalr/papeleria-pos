@@ -1,6 +1,7 @@
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Impresiones;
+using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
@@ -381,3 +382,46 @@ public sealed record SolicitudBajoCosto(Guid CajaId, IReadOnlyList<LineaSolicita
 /// <param name="FaltanteCentavos">Cuánto queda debajo del costo en total (cero: nada).</param>
 /// <param name="Lineas">Las descripciones de las líneas que quedan debajo del costo.</param>
 public sealed record BajoCostoDto(long FaltanteCentavos, IReadOnlyList<string> Lineas);
+
+// ── Catálogo (fase 2, entrega 1) ────────────────────────────────────────────
+
+/// <summary>Un renglón de la búsqueda de F3 Productos.</summary>
+/// <param name="PrecioCentavos">El de menudeo de la primera variante.</param>
+public sealed record ProductoCatalogoDto(
+    Guid ProductoId, string Nombre, string? Marca, string Departamento, int Variantes, string? Codigo, long? PrecioCentavos, decimal? Existencia,
+    bool Activo, bool PorCompletar);
+
+public sealed record CodigoFichaDto(string Codigo, OrigenCodigo Origen = OrigenCodigo.Fabrica);
+
+/// <param name="Id">Vacío en una presentación nueva.</param>
+/// <param name="FactorMilesimas">Cuántas unidades base contiene, en milésimas (la base: 1000).</param>
+public sealed record PresentacionFichaDto(Guid? Id, string Nombre, long FactorMilesimas, bool EsBase, IReadOnlyList<CodigoFichaDto> Codigos);
+
+/// <param name="Presentacion">Vacío: precio por unidad base. Con nombre: el precio propio de esa presentación.</param>
+/// <param name="CantidadMinimaMilesimas">Desde cuánto aplica (1000 = una unidad: menudeo; más, mayoreo).</param>
+public sealed record PrecioFichaDto(string? Presentacion, long CantidadMinimaMilesimas, long PrecioCentavos);
+
+public sealed record ProveedorFichaDto(Guid ProveedorId, string Proveedor, string? CodigoProveedor, long? UltimoCostoCentavos, DateTime? UltimaCompraLocal);
+
+/// <param name="Existencia">En la sucursal, en unidades base (solo lectura).</param>
+/// <param name="CostoPromedioCentavos">Solo para el dueño y el encargado (solo lectura).</param>
+public sealed record VarianteFichaDto(
+    Guid? Id, string Descripcion, UnidadBase Unidad, bool Activa, IReadOnlyList<PresentacionFichaDto> Presentaciones, IReadOnlyList<PrecioFichaDto> Precios,
+    decimal? Existencia = null, decimal? CostoPromedioCentavos = null, IReadOnlyList<ProveedorFichaDto>? Proveedores = null);
+
+/// <summary>La ficha de un producto en F3: lo que se edita junto (el producto, sus variantes, presentaciones, códigos y precios).</summary>
+/// <param name="Marca">Por nombre: si no existe, se da de alta.</param>
+public sealed record FichaProductoDto(
+    Guid? Id, string Nombre, Guid DepartamentoId, string? Marca, TipoProducto Tipo, Impuesto Impuesto, string? ClaveSat, bool Activo, bool PorCompletar,
+    IReadOnlyList<VarianteFichaDto> Variantes);
+
+public sealed record SolicitudGuardarProducto(Guid UsuarioId, Guid SucursalId, FichaProductoDto Producto);
+
+public sealed record OpcionCatalogoDto(Guid Id, string Nombre);
+
+public sealed record OpcionesCatalogoDto(IReadOnlyList<OpcionCatalogoDto> Departamentos, IReadOnlyList<string> Marcas);
+
+public sealed record MovimientoKardexDto(DateTime FechaLocal, TipoMovimiento Tipo, decimal Cantidad, decimal Existencia, string? Motivo, string? Documento);
+
+/// <summary>Desde la caja: un código que se escaneó y no existe. Queda "por completar".</summary>
+public sealed record SolicitudAltaRapida(Guid UsuarioId, Guid SucursalId, string Codigo, string Nombre, long PrecioCentavos, Guid DepartamentoId);

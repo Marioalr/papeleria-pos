@@ -1,0 +1,423 @@
+@* La ficha de un producto en F3: sus variantes, presentaciones (con sus códigos) y precios, todo junto. Lo guardan el dueño
+   y el encargado; el costo y los proveedores solo los ven ellos. *@
+@inject ClienteCaja Cliente
+
+@if (_error is not null && _producto is null)
+{
+    <p class="error">@_error</p>
+}
+else if (_producto is null)
+{
+    <p>Cargando…</p>
+}
+else
+{
+    var p = _producto;
+    @if (p.PorCompletar)
+    {
+        <p class="aviso-autorizacion">Lo dio de alta un cajero desde la caja: complétalo (departamento, marca, presentaciones) y guárdalo.</p>
+    }
+    <div class="ficha-producto">
+        <label class="ancho">Nombre <input @bind="p.Nombre" maxlength="150" autocomplete="off" /></label>
+        <label>Departamento
+            <select @bind="p.DepartamentoId">
+                @foreach (var d in Opciones.Departamentos)
+                {
+                    <option value="@d.Id">@d.Nombre</option>
+                }
+            </select>
+        </label>
+        <label>Marca <input list="marcas" @bind="p.Marca" autocomplete="off" placeholder="Sin marca" /></label>
+        <datalist id="marcas">
+            @foreach (var m in Opciones.Marcas)
+            {
+                <option value="@m"></option>
+            }
+        </datalist>
+        <label>Tipo
+            <select @bind="p.Tipo">
+                <option value="@TipoProducto.Mercancia">Mercancía (lleva inventario)</option>
+                <option value="@TipoProducto.Servicio">Servicio</option>
+            </select>
+        </label>
+        <label>IVA
+            <select @bind="p.Impuesto">
+                <option value="@Impuesto.Iva16">16 %</option>
+                <option value="@Impuesto.Iva0">0 %</option>
+                <option value="@Impuesto.Exento">Exento</option>
+            </select>
+        </label>
+        <label class="en-linea opcion"><input type="checkbox" @bind="p.Activo" /> Se vende (activo)</label>
+    </div>
+
+    @foreach (var v in p.Variantes)
+    {
+        var variante = v;
+        <fieldset class="variante">
+            <legend>@(p.Variantes.Count > 1 ? $"Variante {p.Variantes.IndexOf(variante) + 1}" : "Producto")</legend>
+            <div class="ficha-producto">
+                <label class="ancho">Variante (color, tamaño…) <input @bind="variante.Descripcion" placeholder="@(p.Variantes.Count > 1 ? "Azul, Carta…" : "Vacío si es la única")" autocomplete="off" /></label>
+                <label>Se vende por
+                    <select @bind="variante.Unidad">
+                        <option value="@UnidadBase.Pieza">Pieza</option>
+                        <option value="@UnidadBase.Metro">Metro</option>
+                        <option value="@UnidadBase.Kilogramo">Kilo</option>
+                        <option value="@UnidadBase.Litro">Litro</option>
+                    </select>
+                </label>
+                <label class="en-linea opcion"><input type="checkbox" @bind="variante.Activa" /> Activa</label>
+                @if (variante.Id is not null)
+                {
+                    <span class="nota">
+                        Existencia: @(variante.Existencia is { } e ? Formato.Numero(e) : "—")
+                        @if (variante.Costo is { } c)
+                        {
+                            <span> · costo promedio @Formato.Dinero((long)Math.Round(c))</span>
+                        }
+                    </span>
+                }
+            </div>
+
+            <h5>Presentaciones y códigos</h5>
+            <table class="resultados">
+                <thead><tr><th>Nombre</th><th class="num">Contiene</th><th>Base</th><th>Códigos (separados por espacio)</th><th></th></tr></thead>
+                @foreach (var pr in variante.Presentaciones)
+                {
+                    var presentacion = pr;
+                    <tr>
+                        <td><input @bind="presentacion.Nombre" autocomplete="off" /></td>
+                        <td class="num"><input class="umbral" inputmode="decimal" @bind="presentacion.Contiene" disabled="@presentacion.EsBase" /></td>
+                        <td><input type="radio" name="base-@variante.Clave" checked="@presentacion.EsBase" @onchange="() => HacerBase(variante, presentacion)" /></td>
+                        <td><input class="codigos" @bind="presentacion.Codigos" autocomplete="off" /></td>
+                        <td>
+                            <button class="boton chico" disabled="@_ocupado" @onclick="() => CodigoInternoAsync(presentacion)">Código interno</button>
+                            @if (!presentacion.EsBase)
+                            {
+                                <button class="boton chico" @onclick="() => variante.Presentaciones.Remove(presentacion)">Quitar</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </table>
+            <div class="acciones izquierda">
+                <button class="boton chico" @onclick="() => variante.Presentaciones.Add(new PresentacionEditable { Contiene = string.Empty })">Agregar presentación</button>
+            </div>
+
+            <h5>Precios (con IVA)</h5>
+            <table class="resultados">
+                <thead><tr><th>De</th><th class="num">Desde (cantidad)</th><th class="num">Precio</th><th></th></tr></thead>
+                @foreach (var pc in variante.Precios)
+                {
+                    var precio = pc;
+                    <tr>
+                        <td>
+                            <select @bind="precio.Presentacion">
+                                <option value="">Cada @Unidad(variante.Unidad)</option>
+                                @foreach (var pr in variante.Presentaciones.Where(x => !x.EsBase && x.Nombre.Trim().Length > 0))
+                                {
+                                    <option value="@pr.Nombre.Trim()">@pr.Nombre.Trim() (precio propio)</option>
+                                }
+                            </select>
+                        </td>
+                        <td class="num"><input class="umbral" inputmode="decimal" @bind="precio.Desde" /></td>
+                        <td class="num"><input class="umbral" inputmode="decimal" @bind="precio.Precio" /></td>
+                        <td><button class="boton chico" @onclick="() => variante.Precios.Remove(precio)">Quitar</button></td>
+                    </tr>
+                }
+            </table>
+            <div class="acciones izquierda">
+                <button class="boton chico" @onclick="() => variante.Precios.Add(new PrecioEditable())">Agregar precio</button>
+                <span class="nota">Desde 1 es el menudeo; más cantidad, mayoreo.</span>
+            </div>
+
+            @if (variante.Proveedores is { Count: > 0 } proveedores)
+            {
+                <p class="nota">Proveedores: @string.Join(" · ", proveedores.Select(x => x.Proveedor + (x.UltimoCostoCentavos is { } u ? $" ({Formato.Dinero(u)})" : "")))</p>
+            }
+            @if (variante.Id is { } varianteId)
+            {
+                <div class="acciones izquierda">
+                    <button class="boton chico" @onclick="() => KardexAsync(varianteId)">@(_kardexDe == varianteId ? "Ocultar kardex" : "Ver kardex")</button>
+                </div>
+                @if (_kardexDe == varianteId && _kardex is { } kardex)
+                {
+                    <div class="resultados kardex">
+                        <table>
+                            <thead><tr><th>Fecha</th><th>Movimiento</th><th class="num">Cantidad</th><th class="num">Existencia</th><th>Motivo</th></tr></thead>
+                            @foreach (var m in kardex)
+                            {
+                                <tr>
+                                    <td>@m.FechaLocal.ToString("dd/MM/yyyy HH:mm")</td>
+                                    <td>@Movimiento(m.Tipo)</td>
+                                    <td class="num">@Formato.Numero(m.Cantidad)</td>
+                                    <td class="num">@Formato.Numero(m.Existencia)</td>
+                                    <td>@m.Motivo</td>
+                                </tr>
+                            }
+                        </table>
+                    </div>
+                }
+            }
+        </fieldset>
+    }
+    <div class="acciones izquierda">
+        <button class="boton" @onclick="AgregarVariante">Agregar variante</button>
+    </div>
+
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_aviso is not null)
+    {
+        <p class="aviso">@_aviso</p>
+    }
+    <div class="acciones">
+        <button class="boton" @onclick="AlVolver">Volver a la lista</button>
+        @if (PuedeEditar)
+        {
+            <button class="boton principal" disabled="@_ocupado" @onclick="GuardarAsync">Guardar</button>
+        }
+        else
+        {
+            <span class="nota">El catálogo lo editan el dueño y el encargado.</span>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter, EditorRequired] public OpcionesCatalogoDto Opciones { get; set; } = null!;
+
+    /// <summary>Vacío: un producto nuevo.</summary>
+    [Parameter] public Guid? ProductoId { get; set; }
+
+    [Parameter] public EventCallback AlVolver { get; set; }
+
+    private sealed class PresentacionEditable
+    {
+        public Guid? Id { get; init; }
+        public string Nombre { get; set; } = "";
+        public string Contiene { get; set; } = "1";
+        public bool EsBase { get; set; }
+        public string Codigos { get; set; } = "";
+        public HashSet<string> Internos { get; } = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private sealed class PrecioEditable
+    {
+        public string Presentacion { get; set; } = "";
+        public string Desde { get; set; } = "1";
+        public string Precio { get; set; } = "";
+    }
+
+    private sealed class VarianteEditable
+    {
+        public Guid Clave { get; } = Guid.NewGuid();
+        public Guid? Id { get; init; }
+        public string Descripcion { get; set; } = "";
+        public UnidadBase Unidad { get; set; } = UnidadBase.Pieza;
+        public bool Activa { get; set; } = true;
+        public List<PresentacionEditable> Presentaciones { get; init; } = [];
+        public List<PrecioEditable> Precios { get; init; } = [];
+        public decimal? Existencia { get; init; }
+        public decimal? Costo { get; init; }
+        public IReadOnlyList<ProveedorFichaDto>? Proveedores { get; init; }
+    }
+
+    private sealed class ProductoEditable
+    {
+        public Guid? Id { get; init; }
+        public string Nombre { get; set; } = "";
+        public Guid DepartamentoId { get; set; }
+        public string? Marca { get; set; }
+        public TipoProducto Tipo { get; set; } = TipoProducto.Mercancia;
+        public Impuesto Impuesto { get; set; } = Impuesto.Iva16;
+        public string? ClaveSat { get; init; }
+        public bool Activo { get; set; } = true;
+        public bool PorCompletar { get; set; }
+        public List<VarianteEditable> Variantes { get; init; } = [];
+    }
+
+    private ProductoEditable? _producto;
+    private Guid? _kardexDe;
+    private List<MovimientoKardexDto>? _kardex;
+    private string? _error;
+    private string? _aviso;
+    private bool _ocupado;
+
+    private bool PuedeEditar => Sesion.Rol is Rol.Dueno or Rol.Encargado;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (ProductoId is not { } id)
+        {
+            _producto = new ProductoEditable { DepartamentoId = Opciones.Departamentos.FirstOrDefault()?.Id ?? Guid.Empty };
+            AgregarVariante();
+            return;
+        }
+        try
+        {
+            if (await Cliente.FichaProductoAsync(id, Caja.SucursalId, Sesion.UsuarioId) is { } ficha)
+                Mostrar(ficha);
+            else
+                _error = "El producto ya no existe.";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void Mostrar(FichaProductoDto f) => _producto = new ProductoEditable
+    {
+        Id = f.Id, Nombre = f.Nombre, DepartamentoId = f.DepartamentoId, Marca = f.Marca, Tipo = f.Tipo, Impuesto = f.Impuesto, ClaveSat = f.ClaveSat,
+        Activo = f.Activo, PorCompletar = f.PorCompletar,
+        Variantes = f.Variantes.Select(v => new VarianteEditable
+        {
+            Id = v.Id, Descripcion = v.Descripcion, Unidad = v.Unidad, Activa = v.Activa, Existencia = v.Existencia, Costo = v.CostoPromedioCentavos,
+            Proveedores = v.Proveedores,
+            Presentaciones = v.Presentaciones.Select(p =>
+            {
+                var editable = new PresentacionEditable
+                {
+                    Id = p.Id, Nombre = p.Nombre, Contiene = Numero(p.FactorMilesimas), EsBase = p.EsBase, Codigos = string.Join(" ", p.Codigos.Select(c => c.Codigo)),
+                };
+                editable.Internos.UnionWith(p.Codigos.Where(c => c.Origen == OrigenCodigo.Interno).Select(c => c.Codigo));
+                return editable;
+            }).ToList(),
+            Precios = v.Precios.Select(p => new PrecioEditable
+            {
+                Presentacion = p.Presentacion ?? "", Desde = Numero(p.CantidadMinimaMilesimas), Precio = (p.PrecioCentavos / 100m).ToString("0.00", CultureInfo.InvariantCulture),
+            }).ToList(),
+        }).ToList(),
+    };
+
+    private void AgregarVariante() => _producto!.Variantes.Add(new VarianteEditable
+    {
+        Presentaciones = [new PresentacionEditable { Nombre = "Pieza", EsBase = true }],
+        Precios = [new PrecioEditable()],
+    });
+
+    private static void HacerBase(VarianteEditable variante, PresentacionEditable presentacion)
+    {
+        foreach (var p in variante.Presentaciones)
+            p.EsBase = p == presentacion;
+        presentacion.Contiene = "1";
+    }
+
+    private async Task CodigoInternoAsync(PresentacionEditable presentacion)
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            var codigo = await Cliente.CodigoInternoAsync();
+            presentacion.Internos.Add(codigo);
+            presentacion.Codigos = (presentacion.Codigos.Trim() + " " + codigo).Trim();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task KardexAsync(Guid varianteId)
+    {
+        if (_kardexDe == varianteId)
+        {
+            (_kardexDe, _kardex) = (null, null);
+            return;
+        }
+        try
+        {
+            _kardex = await Cliente.KardexAsync(varianteId, Caja.SucursalId);
+            _kardexDe = varianteId;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task GuardarAsync()
+    {
+        (_error, _aviso) = (null, null);
+        var p = _producto!;
+        var variantes = new List<VarianteFichaDto>();
+        foreach (var v in p.Variantes)
+        {
+            var presentaciones = new List<PresentacionFichaDto>();
+            foreach (var pr in v.Presentaciones)
+            {
+                if (Milesimas(pr.EsBase ? "1" : pr.Contiene) is not { } factor)
+                {
+                    _error = $"Revisa cuánto contiene «{pr.Nombre}».";
+                    return;
+                }
+                var codigos = pr.Codigos.Split([' ', ','], StringSplitOptions.RemoveEmptyEntries)
+                    .Select(c => new CodigoFichaDto(c, pr.Internos.Contains(c) ? OrigenCodigo.Interno : OrigenCodigo.Fabrica)).ToList();
+                presentaciones.Add(new PresentacionFichaDto(pr.Id, pr.Nombre, factor, pr.EsBase, codigos));
+            }
+            var precios = new List<PrecioFichaDto>();
+            foreach (var pc in v.Precios)
+            {
+                if (Milesimas(pc.Desde) is not { } desde || Formato.LeerPesos(pc.Precio) is not ({ } centavos and > 0))
+                {
+                    _error = "Revisa los precios: cada uno lleva desde qué cantidad y cuánto.";
+                    return;
+                }
+                precios.Add(new PrecioFichaDto(pc.Presentacion.Length == 0 ? null : pc.Presentacion, desde, centavos));
+            }
+            variantes.Add(new VarianteFichaDto(v.Id, v.Descripcion, v.Unidad, v.Activa, presentaciones, precios));
+        }
+        var ficha = new FichaProductoDto(p.Id, p.Nombre, p.DepartamentoId, p.Marca, p.Tipo, p.Impuesto, p.ClaveSat, p.Activo, p.PorCompletar, variantes);
+        _ocupado = true;
+        try
+        {
+            Mostrar(await Cliente.GuardarProductoAsync(new SolicitudGuardarProducto(Sesion.UsuarioId, Caja.SucursalId, ficha)));
+            _aviso = "Guardado: las cajas ya lo venden así.";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private static long? Milesimas(string texto) =>
+        decimal.TryParse(texto.Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) && n > 0 ? (long)Math.Round(n * Cantidad.Escala) : null;
+
+    private static string Numero(long milesimas) => (milesimas / (decimal)Cantidad.Escala).ToString("0.###", CultureInfo.InvariantCulture);
+
+    private static string Unidad(UnidadBase u) => u switch
+    {
+        UnidadBase.Metro => "metro",
+        UnidadBase.Kilogramo => "kilo",
+        UnidadBase.Litro => "litro",
+        _ => "pieza",
+    };
+
+    private static string Movimiento(PapeleriaPos.Nucleo.Inventario.TipoMovimiento t) => t switch
+    {
+        PapeleriaPos.Nucleo.Inventario.TipoMovimiento.InventarioInicial => "Inventario inicial",
+        PapeleriaPos.Nucleo.Inventario.TipoMovimiento.Venta => "Venta",
+        PapeleriaPos.Nucleo.Inventario.TipoMovimiento.Devolucion => "Devolución",
+        PapeleriaPos.Nucleo.Inventario.TipoMovimiento.Compra => "Compra",
+        PapeleriaPos.Nucleo.Inventario.TipoMovimiento.Ajuste => "Ajuste",
+        PapeleriaPos.Nucleo.Inventario.TipoMovimiento.Merma => "Merma",
+        PapeleriaPos.Nucleo.Inventario.TipoMovimiento.TraspasoSalida => "Traspaso (salida)",
+        PapeleriaPos.Nucleo.Inventario.TipoMovimiento.TraspasoEntrada => "Traspaso (entrada)",
+        PapeleriaPos.Nucleo.Inventario.TipoMovimiento.ConsumoServicio => "Consumo de servicio",
+        PapeleriaPos.Nucleo.Inventario.TipoMovimiento.AperturaPaquete => "Apertura de paquete",
+        _ => "Conteo",
+    };
+}

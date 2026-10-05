@@ -27,6 +27,12 @@ public enum AccionControlada
     /// <summary>Descuento en una línea o en todo el ticket. Su umbral es en centésimas de porcentaje (1000 = 10 %).</summary>
     Descuento,
     AdministrarClientes,
+
+    /// <summary>Dar de alta y editar productos, códigos, presentaciones y precios del catálogo (F3).</summary>
+    EditarCatalogo,
+
+    /// <summary>Dar de alta desde la caja un código escaneado que no existe (queda por completar).</summary>
+    AltaRapida,
 }
 
 public enum NivelPermiso
@@ -88,6 +94,9 @@ public static class Permisos
         .. Ambos(AccionControlada.AdministrarClientes, NivelPermiso.NoPermitido),
         Regla(AccionControlada.Descuento, Rol.Cajero, NivelPermiso.Permitido, umbral: 1000),
         Regla(AccionControlada.Descuento, Rol.Encargado, NivelPermiso.Permitido),
+        Regla(AccionControlada.EditarCatalogo, Rol.Cajero, NivelPermiso.NoPermitido),
+        Regla(AccionControlada.EditarCatalogo, Rol.Encargado, NivelPermiso.Permitido),
+        .. Ambos(AccionControlada.AltaRapida, NivelPermiso.Permitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Cajero, NivelPermiso.NoPermitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Encargado, NivelPermiso.Permitido),
     ];

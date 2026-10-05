@@ -1,0 +1,88 @@
+@* Se escaneó un código que no existe: se da de alta ahí mismo con nombre, precio y departamento, y entra al ticket. Queda
+   "por completar" para que el encargado lo termine en F3. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<p>El código <strong>@Codigo</strong> no está en el catálogo. Dalo de alta y entra al ticket; el encargado lo completa después.</p>
+<label>Nombre <input id="alta-nombre" @bind="_nombre" @bind:event="oninput" @onkeydown="AlTeclear" maxlength="150" autocomplete="off" /></label>
+<div class="dos-columnas">
+    <label>Precio (con IVA) <input inputmode="decimal" @bind="_precio" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" /></label>
+    <label>Departamento
+        <select @bind="_departamento">
+            @foreach (var d in _departamentos)
+            {
+                <option value="@d.Id">@d.Nombre</option>
+            }
+        </select>
+    </label>
+</div>
+@if (_error is not null)
+{
+    <p class="error">@_error</p>
+}
+<div class="acciones">
+    <button class="boton principal" disabled="@_ocupado" @onclick="DarDeAltaAsync">Dar de alta y agregar (Enter)</button>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Codigo { get; set; } = "";
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter] public EventCallback<ProductoVentaDto> AlDarDeAlta { get; set; }
+
+    private IReadOnlyList<OpcionCatalogoDto> _departamentos = [];
+    private string _nombre = "";
+    private string _precio = "";
+    private Guid _departamento;
+    private string? _error;
+    private bool _ocupado;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _departamentos = (await Cliente.OpcionesCatalogoAsync()).Departamentos;
+            _departamento = _departamentos.FirstOrDefault()?.Id ?? Guid.Empty;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+            await Js.EnfocarAsync("#alta-nombre");
+    }
+
+    private async Task AlTeclear(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await DarDeAltaAsync();
+    }
+
+    private async Task DarDeAltaAsync()
+    {
+        _error = null;
+        if (_nombre.Trim().Length == 0 || Formato.LeerPesos(_precio) is not ({ } precio and > 0))
+        {
+            _error = "Escribe el nombre y el precio.";
+            return;
+        }
+        _ocupado = true;
+        try
+        {
+            var producto = await Cliente.AltaRapidaAsync(new SolicitudAltaRapida(Sesion.UsuarioId, Caja.SucursalId, Codigo, _nombre, precio, _departamento));
+            await AlDarDeAlta.InvokeAsync(producto);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

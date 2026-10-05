@@ -28,6 +28,8 @@ public static class Textos
         AccionControlada.ConfigurarImpresora => "Configurar la impresora",
         AccionControlada.Descuento => "Hacer un descuento",
         AccionControlada.AdministrarClientes => "Administrar los clientes especiales",
+        AccionControlada.EditarCatalogo => "Editar el catálogo (productos y precios)",
+        AccionControlada.AltaRapida => "Dar de alta un código desde la caja",
         _ => accion.ToString(),
     };
 

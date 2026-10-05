@@ -1,0 +1,127 @@
+@* F3 Productos: buscar en el catálogo (también lo inactivo y lo que un cajero dio de alta y falta completar) y abrir la
+   ficha para editarla, o dar de alta uno nuevo. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+@if (_opciones is null)
+{
+    <p>@(_error ?? "Cargando…")</p>
+}
+else if (_abierto is { } abierto)
+{
+    <FichaProducto Caja="Caja" Sesion="Sesion" Opciones="_opciones" ProductoId="abierto.Id" AlVolver="VolverAsync" />
+}
+else
+{
+    <div class="filtros-catalogo">
+        <input id="buscar-catalogo" placeholder="Nombre, marca o código" @bind="_texto" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" />
+        <select @bind="_departamento" @bind:after="BuscarAsync">
+            <option value="">Todos los departamentos</option>
+            @foreach (var d in _opciones.Departamentos)
+            {
+                <option value="@d.Id">@d.Nombre</option>
+            }
+        </select>
+        <label class="en-linea opcion"><input type="checkbox" @bind="_porCompletar" @bind:after="BuscarAsync" /> Por completar</label>
+        <label class="en-linea opcion"><input type="checkbox" @bind="_inactivos" @bind:after="BuscarAsync" /> Con inactivos</label>
+        <button class="boton" @onclick="BuscarAsync">Buscar</button>
+        @if (Sesion.Rol is Rol.Dueno or Rol.Encargado)
+        {
+            <button class="boton principal" @onclick="() => _abierto = new Abierto(null)">Nuevo producto</button>
+        }
+    </div>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_productos is { Count: 0 })
+    {
+        <p class="vacia">No hay productos con esa búsqueda.</p>
+    }
+    else if (_productos is not null)
+    {
+        <div class="resultados catalogo">
+            <table>
+                <thead><tr><th>Código</th><th>Producto</th><th>Departamento</th><th class="num">Precio</th><th class="num">Existencia</th></tr></thead>
+                @foreach (var p in _productos)
+                {
+                    var producto = p;
+                    <tr class="@(p.Activo ? "" : "inactivo")" @onclick="() => _abierto = new Abierto(producto.ProductoId)">
+                        <td>@p.Codigo</td>
+                        <td>
+                            @if (p.PorCompletar)
+                            {
+                                <span class="etiqueta">Por completar</span>
+                            }
+                            @p.Nombre@(p.Marca is { } m ? $" · {m}" : "")@(p.Variantes > 1 ? $" ({p.Variantes} variantes)" : "")
+                        </td>
+                        <td>@p.Departamento</td>
+                        <td class="num">@(p.PrecioCentavos is { } precio ? Formato.Dinero(precio) : "—")</td>
+                        <td class="num">@(p.Existencia is { } e ? Formato.Numero(e) : "—")</td>
+                    </tr>
+                }
+            </table>
+        </div>
+        <p class="nota">Se muestran hasta 100; escribe más para afinar la búsqueda.</p>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    private sealed record Abierto(Guid? Id);
+
+    private OpcionesCatalogoDto? _opciones;
+    private List<ProductoCatalogoDto>? _productos;
+    private Abierto? _abierto;
+    private string _texto = "";
+    private string _departamento = "";
+    private bool _porCompletar;
+    private bool _inactivos;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _opciones = await Cliente.OpcionesCatalogoAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+            await Js.EnfocarAsync("#buscar-catalogo");
+    }
+
+    private async Task AlTeclear(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await BuscarAsync();
+    }
+
+    private async Task BuscarAsync()
+    {
+        _error = null;
+        try
+        {
+            _productos = await Cliente.CatalogoAsync(Caja.SucursalId, _texto, Guid.TryParse(_departamento, out var d) ? d : null, _porCompletar, _inactivos);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task VolverAsync()
+    {
+        _abierto = null;
+        if (_productos is not null)
+            await BuscarAsync();
+    }
+}
