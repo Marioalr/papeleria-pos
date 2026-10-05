@@ -23,6 +23,28 @@ Lo que implicaría:
   retiros, cortes).
 - Si hay cámaras o grabación: aviso de privacidad y letreros.
 
+## Asistente inteligente (piloto automático)
+
+Lo propuso el dueño al revisar la [fase 2](fase-2-inventario.md): que el POS se administre solo cuando él no está y
+que pida las tareas de la tienda en el momento oportuno, no a una hora fija.
+
+- **Piloto automático:** si el dueño se ausenta, el POS sigue la operación por su cuenta. Decide lo rutinario con las
+  reglas que él dejó (autorizaciones dentro de límites, pedidos del sugerido de compra, avisos al encargado) y solo le
+  escala lo que sale de lo normal.
+- **Detector de ratos tranquilos:** con dispositivos propios (contador de clientes, presencia en el mostrador) y el
+  ritmo de las ventas, sabe cuándo hay calma y aprovecha para pedir lo que espera: el conteo cíclico del día, ordenar
+  una zona, reacomodar.
+- **Tareas que salen de lo vendido:**
+  - ordenar una zona después de mucho movimiento ahí;
+  - recoger y enrollar los listones después de ciertos metros vendidos;
+  - reacomodar los paquetes abiertos.
+- Cada tarea se pide en la caja (o al celular del encargado), se marca como hecha y queda registrada: el dueño ve quién
+  la hizo y cuánto tardó.
+
+Lo que implicaría: saber en qué zona está cada producto (ubicación en el catálogo), los dispositivos de la sección
+anterior y un historial de tareas. El conteo cíclico de la fase 2 se diseña para que después lo pueda disparar el
+asistente en lugar de una hora fija.
+
 ## Experiencia de usuario (mejora continua)
 
 Se tratan cuando el sistema ya esté en uso y se trabaje en mejorar la experiencia de los cajeros.
