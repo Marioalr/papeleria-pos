@@ -5,7 +5,9 @@
 > fase le da al POS el control del inventario: qué hay, qué llega, qué se pierde y qué comprar. Parte del diseño de
 > [catálogo e inventario](inventario.md) y de la [depuración](plan.md#depuración-del-inventario) que va antes del piloto.
 
-**Avance:** la entrega 1 va en dos partes; la parte 1 ya funciona.
+**Avance:** la entrega 1 (catálogo) está completa.
+
+Parte 1:
 
 - **F3 Productos:** buscar por nombre, marca o código (también los inactivos y lo que está por completar) y abrir la
   ficha.
@@ -16,8 +18,22 @@
 - **Alta rápida:** si se escanea un código que no existe, el cajero lo da de alta con nombre, precio y departamento,
   entra al ticket y queda "por completar".
 
-Falta la parte 2: dar de baja, juntar productos capturados dos veces, cambiar la unidad (a metro o kilo) y guardar esas
-decisiones para repetirlas en la importación final.
+Parte 2, la depuración (en la ficha, solo el dueño y el encargado):
+
+- **Dar de baja:** sale de la venta y su existencia queda en cero con un ajuste; su historia se conserva.
+- **Juntar con otro:** los códigos (con sus presentaciones), la existencia con su costo y los proveedores pasan al que se
+  queda; el otro queda inactivo, con su historia y apuntando al que se quedó. Se quedan los precios del que se queda.
+- **Cambiar la unidad** (el listón en metro, no en kilo): con la conversión, la existencia y las presentaciones se
+  convierten; sin ella, la existencia queda en cero para contarla. El precio de menudeo es el nuevo.
+- **Las decisiones** se ven en F3 → "Decisiones de depuración" y guardan el ID de eleventa. En la importación final se
+  repiten con:
+
+  ```
+  dotnet run --project src/PapeleriaPos.Herramientas -- aplicar-depuracion --desde <base depurada> --base <importación nueva>
+  ```
+
+  Lo que no vino de eleventa (productos creados en el POS) y los cambios de la ficha (precios, presentaciones) no se
+  repiten solos.
 
 ## Qué ya existe
 

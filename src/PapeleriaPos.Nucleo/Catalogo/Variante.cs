@@ -15,6 +15,9 @@ public class Variante : IVersionado
     public bool ManejaCaducidad { get; set; }
     public bool Activa { get; set; } = true;
 
+    /// <summary>Si se juntó con otra (estaba capturada dos veces): su historia se queda aquí, lo demás pasó a esa.</summary>
+    public Guid? JuntadaEnId { get; set; }
+
     public List<Presentacion> Presentaciones { get; set; } = [];
 
     public bool AdmiteCantidad(Cantidad cantidad) => UnidadBase.AdmiteFracciones() || cantidad.EsEntera;

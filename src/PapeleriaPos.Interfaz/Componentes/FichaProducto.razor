@@ -139,6 +139,11 @@ else
                 <div class="acciones izquierda">
                     <button class="boton chico" @onclick="() => KardexAsync(varianteId)">@(_kardexDe == varianteId ? "Ocultar kardex" : "Ver kardex")</button>
                 </div>
+                @if (PuedeEditar && variante.Activa)
+                {
+                    <DepurarVariante Caja="Caja" Sesion="Sesion" VarianteId="varianteId" Unidad="variante.Unidad"
+                                     Nombre="@(variante.Descripcion.Length > 0 ? $"{p.Nombre} {variante.Descripcion}" : p.Nombre)" AlTerminar="DepuradoAsync" />
+                }
                 @if (_kardexDe == varianteId && _kardex is { } kardex)
                 {
                     <div class="resultados kardex">
@@ -343,6 +348,24 @@ else
         {
             _error = ex.Message;
         }
+    }
+
+    /// <summary>Después de depurar, la ficha al día (lo que se dio de baja o se juntó se ve inactivo).</summary>
+    private async Task DepuradoAsync(string mensaje)
+    {
+        _aviso = mensaje;
+        if (_producto?.Id is not { } id)
+            return;
+        try
+        {
+            if (await Cliente.FichaProductoAsync(id, Caja.SucursalId, Sesion.UsuarioId) is { } ficha)
+                Mostrar(ficha);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        (_kardexDe, _kardex) = (null, null);
     }
 
     private async Task GuardarAsync()

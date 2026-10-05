@@ -179,7 +179,7 @@ Fase 1:
 Fase 2:
 
 - [x] Revisar el [plan de la fase 2](fase-2-inventario.md) (inventario) y contestar sus preguntas
-- [ ] Entrega 1: catálogo (F3 Productos) y depuración
+- [x] Entrega 1: catálogo (F3 Productos) y depuración
 - [ ] Entrega 2: compras con recepción ciega y el documento del proveedor
 - [ ] Entrega 3: ajustes, mermas y conteos
 - [ ] Entrega 4: etiquetas y sugerido de compra

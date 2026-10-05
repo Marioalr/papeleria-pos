@@ -65,6 +65,54 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("CodigosBarras");
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.DecisionDepuracion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Descripcion")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DestinoEleventa")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("DestinoId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("FactorMilesimas")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("FechaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OrigenEleventa")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("PrecioCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Unidad")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("UsuarioId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("VarianteId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VarianteId");
+
+                    b.ToTable("DecisionesDepuracion", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Departamento", b =>
                 {
                     b.Property<Guid>("Id")
@@ -406,6 +454,9 @@ namespace PapeleriaPos.Datos.Migraciones
 
                     b.Property<string>("Descripcion")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("JuntadaEnId")
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("ManejaCaducidad")

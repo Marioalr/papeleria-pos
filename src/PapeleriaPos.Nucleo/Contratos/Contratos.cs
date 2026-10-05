@@ -425,3 +425,19 @@ public sealed record MovimientoKardexDto(DateTime FechaLocal, TipoMovimiento Tip
 
 /// <summary>Desde la caja: un código que se escaneó y no existe. Queda "por completar".</summary>
 public sealed record SolicitudAltaRapida(Guid UsuarioId, Guid SucursalId, string Codigo, string Nombre, long PrecioCentavos, Guid DepartamentoId);
+
+// ── Depuración del catálogo (fase 2, entrega 1, parte 2) ────────────────────
+
+public sealed record SolicitudBaja(Guid UsuarioId, Guid SucursalId, Guid VarianteId);
+
+/// <param name="OrigenId">La variante capturada dos veces (la que se va).</param>
+/// <param name="DestinoId">La que se queda.</param>
+public sealed record SolicitudJuntar(Guid UsuarioId, Guid SucursalId, Guid OrigenId, Guid DestinoId);
+
+/// <param name="FactorMilesimas">Cuántas unidades nuevas hay en una de antes (en milésimas); vacío: la existencia se cuenta de nuevo.</param>
+public sealed record SolicitudCambiarUnidad(Guid UsuarioId, Guid SucursalId, Guid VarianteId, UnidadBase Unidad, long? FactorMilesimas, long PrecioCentavos);
+
+public sealed record DecisionDepuracionDto(DateTime FechaLocal, TipoDecisionDepuracion Tipo, string Descripcion, bool DeEleventa);
+
+/// <summary>Una variante para elegir con cuál juntar: nombre, código y precio.</summary>
+public sealed record VarianteParaJuntarDto(Guid VarianteId, string Nombre, string? Codigo, long? PrecioCentavos, UnidadBase Unidad);

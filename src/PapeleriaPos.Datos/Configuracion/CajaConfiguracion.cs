@@ -301,3 +301,12 @@ internal sealed class ClienteEspecialConfiguracion : IEntityTypeConfiguration<Cl
         b.Property(c => c.Nombre).HasMaxLength(80);
     }
 }
+
+internal sealed class DecisionDepuracionConfiguracion : IEntityTypeConfiguration<DecisionDepuracion>
+{
+    public void Configure(EntityTypeBuilder<DecisionDepuracion> b)
+    {
+        b.ToTable("DecisionesDepuracion");
+        b.HasIndex(d => d.VarianteId);
+    }
+}
