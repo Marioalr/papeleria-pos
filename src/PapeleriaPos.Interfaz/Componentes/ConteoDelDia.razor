@@ -1,0 +1,158 @@
+@* El conteo cíclico del día: los productos que eligió el POS se cuentan a ciegas (anaquel y bodega), sin ver lo que
+   dice el sistema. Lo que esperaba el sistema y la diferencia solo los ven el dueño y el encargado. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+@if (_conteo is null)
+{
+    <p class="@(_error is null ? "" : "error")">@(_error ?? "Cargando…")</p>
+}
+else if (_conteo.Total == 0)
+{
+    <p class="vacia">Hoy no hay nada que contar.</p>
+}
+else
+{
+    var c = _conteo;
+    <p>
+        <strong>Conteo del @c.Fecha.ToString("dd/MM/yyyy"):</strong> @c.Contados de @c.Total contados.
+        <span class="nota">Cuenta todo lo que hay de cada uno (anaquel, mostrador y bodega) y escribe el total en piezas, metros o kilos.</span>
+    </p>
+    <div class="resultados compra revision">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th><th>Producto</th><th>Código</th><th class="num">Contado</th><th></th>
+                    @if (_veCostos)
+                    {
+                        <th class="num">Sistema</th><th class="num">Diferencia</th><th class="num">Costo</th>
+                    }
+                </tr>
+            </thead>
+            @for (var i = 0; i < c.Renglones.Count; i++)
+            {
+                var r = c.Renglones[i];
+                var indice = i;
+                <tr class="@(r.Diferencia is { } d && d != 0 ? "diferencia" : "")">
+                    <td>@(i + 1)</td>
+                    <td>
+                        @r.Producto
+                        @if (r.Presentaciones is { } p)
+                        {
+                            <div class="nota">@p</div>
+                        }
+                    </td>
+                    <td>@r.Codigo</td>
+                    <td class="num">
+                        @if (r.Contado is { } contado)
+                        {
+                            @Formato.Numero(contado)
+                        }
+                        else
+                        {
+                            <input id="contar-@indice" class="umbral" inputmode="decimal" value="@_capturas.GetValueOrDefault(r.VarianteId)"
+                                   @oninput="e => _capturas[r.VarianteId] = e.Value?.ToString() ?? string.Empty"
+                                   @onkeydown="e => AlTeclearAsync(e, r)" />
+                        }
+                    </td>
+                    <td>
+                        @if (r.Contado is null)
+                        {
+                            <button class="boton chico" disabled="@_ocupado" @onclick="() => ContarAsync(r)">Listo</button>
+                        }
+                        else
+                        {
+                            <span class="nota">✓ @r.ContadoPor, @r.ContadoLocal?.ToString("HH:mm")</span>
+                        }
+                    </td>
+                    @if (_veCostos)
+                    {
+                        <td class="num">@(r.Esperado is { } e ? Formato.Numero(e) : "")</td>
+                        <td class="num">@(r.Diferencia is { } d2 ? (d2 > 0 ? "+" : "") + Formato.Numero(d2) : "")</td>
+                        <td class="num">@(r.CostoDiferenciaCentavos is { } costo && costo != 0 ? Formato.Dinero(costo) : "")</td>
+                    }
+                </tr>
+            }
+        </table>
+    </div>
+    @if (c.Contados == c.Total)
+    {
+        <p class="aviso">Listo: se contó todo el conteo de hoy.</p>
+    }
+}
+@if (_error is not null && _conteo is not null)
+{
+    <p class="error">@_error</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Cada vez que se cuenta algo: cuántos faltan.</summary>
+    [Parameter] public EventCallback<ConteoCiclicoDto> AlContar { get; set; }
+
+    private ConteoCiclicoDto? _conteo;
+    private readonly Dictionary<Guid, string> _capturas = [];
+    private bool _veCostos;
+    private bool _ocupado;
+    private bool _enfocar = true;
+    private string? _error;
+
+    /// <summary>El cursor va al primero que falta: se cuenta uno tras otro con Enter.</summary>
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!_enfocar || _conteo is null)
+            return;
+        _enfocar = false;
+        var siguiente = _conteo.Renglones.ToList().FindIndex(r => r.Contado is null);
+        if (siguiente >= 0)
+            await Js.EnfocarAsync($"#contar-{siguiente}");
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _veCostos = Sesion.Rol is Rol.Dueno or Rol.Encargado;
+        try
+        {
+            _conteo = await Cliente.ConteoDelDiaAsync(Caja.SucursalId, Sesion.UsuarioId);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task AlTeclearAsync(KeyboardEventArgs e, RenglonConteoDto r)
+    {
+        if (e.Key == "Enter")
+            await ContarAsync(r);
+    }
+
+    private async Task ContarAsync(RenglonConteoDto r)
+    {
+        var texto = _capturas.GetValueOrDefault(r.VarianteId)?.Replace(",", "").Trim();
+        if (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out var cantidad) || cantidad < 0)
+        {
+            _error = $"Escribe cuánto contaste de «{r.Producto}» (0 si no hay).";
+            return;
+        }
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            _conteo = await Cliente.ContarDelDiaAsync(_conteo!.Id, new SolicitudContar(Sesion.UsuarioId, r.VarianteId, (long)Math.Round(cantidad * 1000)));
+            _capturas.Remove(r.VarianteId);
+            await AlContar.InvokeAsync(_conteo);
+            _enfocar = true;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

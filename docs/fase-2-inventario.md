@@ -6,8 +6,8 @@
 > [catálogo e inventario](inventario.md) y de la [depuración](plan.md#depuración-del-inventario) que va antes del piloto.
 
 **Avance:** las entregas 1 (catálogo) y 2 (compras) están completas y la
-[prueba con una persona real](plan.md#prueba-con-una-persona-real) está lista para instalarse. De la entrega 3 está
-la parte 1 (ajustes y mermas).
+[prueba con una persona real](plan.md#prueba-con-una-persona-real) está lista para instalarse. De la entrega 3 están
+la parte 1 (ajustes y mermas) y la parte 2 (conteo cíclico diario).
 
 Entrega 1, parte 1:
 
@@ -134,8 +134,22 @@ Entrega 3, parte 1, ajustes y mermas (F4 → Ajustes y mermas):
 - **Avisos:** un ajuste o una merma de $200 o más le llega al dueño por Telegram (los suyos no; el umbral se cambia en
   la configuración de Telegram). El resumen del día suma las mermas y los ajustes.
 
-Lo que sigue de la entrega 3: el conteo cíclico diario en la caja (parte 2) y el conteo completo desde el celular
-(parte 3).
+Entrega 3, parte 2, el conteo cíclico diario:
+
+- **Qué se cuenta:** 15 productos al día por sucursal, los mismos en todas sus cajas. Primero lo que tiene existencia
+  negativa (se vendió sin haber: algo está mal); luego lo que más pesa (su valor a costo más lo vendido a costo en 90
+  días, incluido el historial de eleventa) por los días que lleva sin contarse o ajustarse. Lo contado hoy no vuelve
+  a salir hasta que pasen días; lo que no vale ni se vende no sale.
+- **Cuándo:** al abrir el turno, la pantalla de venta muestra «Conteo del día: faltan N» y se cuenta cuando haya calma
+  («Contar ahora»). También en F4 → Conteo del día. Queda listo para que después lo pida el asistente inteligente.
+- **A ciegas:** nadie ve lo que dice el sistema antes de contar. Se escribe el total (anaquel, mostrador y bodega); la
+  diferencia entra al kardex como movimiento de conteo, a su costo promedio. Un producto se cuenta una vez al día; un
+  error se corrige con un ajuste.
+- **Después:** el dueño y el encargado ven lo que decía el sistema, la diferencia y lo que vale. Desde el umbral de
+  ajustes ($200) se le avisa al dueño (alerta «Diferencia en el conteo del día»), y el resumen del día dice cuántos se
+  contaron y cuánto no cuadró. Queda en la bitácora (regla «Contar el conteo del día», permitida a todos).
+
+Lo que sigue de la entrega 3: el conteo completo por departamento desde el celular (parte 3).
 
 ## 1. Catálogo (F3 Productos)
 

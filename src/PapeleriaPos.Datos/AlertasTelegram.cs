@@ -39,7 +39,8 @@ public static class AlertasTelegram
             if (Tipo(b, configuracion) is not { } tipo || !configuracion.Avisa(tipo))
                 continue;
             // Lo que cambia el dueño en el catálogo o en el inventario no se le avisa a él mismo.
-            if (tipo is TipoAlerta.CambioPrecioCatalogo or TipoAlerta.AjusteInventario && b.UsuarioId is { } quien && db.Usuarios.Find(quien)?.Rol == Rol.Dueno)
+            if (tipo is TipoAlerta.CambioPrecioCatalogo or TipoAlerta.AjusteInventario or TipoAlerta.DiferenciaConteo && b.UsuarioId is { } quien
+                && db.Usuarios.Find(quien)?.Rol == Rol.Dueno)
                 continue;
             Agregar(db, chats, tipo, Texto(db, b, tipo), $"bitacora:{b.Id}");
         }
@@ -90,6 +91,7 @@ public static class AlertasTelegram
             AccionControlada.EditarCatalogo when b.Detalle.StartsWith("Precio de", StringComparison.Ordinal) => TipoAlerta.CambioPrecioCatalogo,
             AccionControlada.SalidaEfectivo when b.MontoCentavos > c.UmbralSalidaCentavos => TipoAlerta.SalidaEfectivo,
             AccionControlada.AjustarInventario or AccionControlada.Merma when b.MontoCentavos >= c.UmbralAjusteCentavos => TipoAlerta.AjusteInventario,
+            AccionControlada.ContarInventario when b.MontoCentavos >= c.UmbralAjusteCentavos => TipoAlerta.DiferenciaConteo,
             // RegistroCaja.VerificarTransferenciaAsync escribe "Verificó…" o "Rechazó…".
             AccionControlada.VerificarTransferencia when b.Detalle.StartsWith("Rechazó", StringComparison.Ordinal) => TipoAlerta.TransferenciaRechazada,
             _ => null,
@@ -114,6 +116,7 @@ public static class AlertasTelegram
         TipoAlerta.CambioPrecioCatalogo => "Precio del catálogo",
         TipoAlerta.Compra => "Compra con diferencias o margen bajo",
         TipoAlerta.AjusteInventario => "Ajuste o merma de inventario",
+        TipoAlerta.DiferenciaConteo => "Diferencia en el conteo del día",
         _ => "Resumen del día",
     };
 
@@ -218,6 +221,14 @@ public static class AlertasTelegram
             t.AppendLine($"Mermas: {mermas.Count} · costo {Dinero(-mermas.Sum(m => m.CostoCentavos))}");
         if (ajustes.Where(a => a.Tipo == TipoMovimiento.Ajuste).ToList() is { Count: > 0 } ajustados)
             t.AppendLine($"Ajustes de inventario: {ajustados.Count} · neto {Dinero(ajustados.Sum(a => a.CostoCentavos))}");
+        if (await db.ConteosCiclicos.AsNoTracking().Include(c => c.Renglones)
+                .FirstOrDefaultAsync(c => c.SucursalId == sucursalId && c.Fecha == fecha, ct) is { Renglones.Count: > 0 } conteo)
+        {
+            var contados = conteo.Renglones.Where(r => r.ContadoUtc != null).ToList();
+            var conDiferencia = contados.Where(r => r.CostoDiferenciaCentavos is not (null or 0)).ToList();
+            t.AppendLine($"Conteo del día: {contados.Count} de {conteo.Renglones.Count}"
+                + (conDiferencia.Count > 0 ? $" · con diferencia {conDiferencia.Count} (neto {Dinero(conDiferencia.Sum(r => r.CostoDiferenciaCentavos ?? 0))})" : " · todo cuadra"));
+        }
         if (porVerificar.Count > 0)
             t.AppendLine($"Transferencias por verificar: {porVerificar.Count} · {Dinero(porVerificar.Sum())}");
         if (vigentes.Count(v => v.EnContingencia) is var sinConexion and > 0)

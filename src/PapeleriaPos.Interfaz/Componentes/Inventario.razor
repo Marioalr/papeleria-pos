@@ -18,6 +18,9 @@
     case Pestanas.Ordenes:
         <Ordenes Caja="Caja" Sesion="Sesion" />
         break;
+    case Pestanas.Conteo:
+        <ConteoDelDia Caja="Caja" Sesion="Sesion" />
+        break;
     case Pestanas.Ajustes:
         <AjustesMermas Caja="Caja" Sesion="Sesion" />
         break;
@@ -36,7 +39,7 @@
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
-    private enum Pestanas { Compras, Ordenes, Ajustes, Paquete, Proveedores, Margen }
+    private enum Pestanas { Compras, Ordenes, Conteo, Ajustes, Paquete, Proveedores, Margen }
 
     private bool Visible(Pestanas p) => p switch
     {
@@ -51,6 +54,7 @@
     {
         Pestanas.Compras => "Compras",
         Pestanas.Ordenes => "Órdenes de compra",
+        Pestanas.Conteo => "Conteo del día",
         Pestanas.Ajustes => "Ajustes y mermas",
         Pestanas.Paquete => "Abrir paquete",
         Pestanas.Proveedores => "Proveedores",

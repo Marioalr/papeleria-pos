@@ -1355,6 +1355,70 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("ComprasRenglones", (string)null);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.ConteoCiclico", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly>("Fecha")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SucursalId", "Fecha")
+                        .IsUnique();
+
+                    b.ToTable("ConteosCiclicos", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.ConteoCiclicoRenglon", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("Contado")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("ContadoPorId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ContadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ConteoId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("CostoDiferenciaCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("Esperado")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("VarianteId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContadoPorId");
+
+                    b.HasIndex("ConteoId");
+
+                    b.HasIndex("VarianteId");
+
+                    b.ToTable("ConteosCiclicosRenglones", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.Existencia", b =>
                 {
                     b.Property<Guid>("SucursalId")
@@ -2675,6 +2739,35 @@ namespace PapeleriaPos.Datos.Migraciones
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.ConteoCiclico", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.ConteoCiclicoRenglon", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("ContadoPorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PapeleriaPos.Nucleo.Inventario.ConteoCiclico", null)
+                        .WithMany("Renglones")
+                        .HasForeignKey("ConteoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
+                        .WithMany()
+                        .HasForeignKey("VarianteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.Existencia", b =>
                 {
                     b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
@@ -3027,6 +3120,11 @@ namespace PapeleriaPos.Datos.Migraciones
 
                     b.Navigation("Documentos");
 
+                    b.Navigation("Renglones");
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.ConteoCiclico", b =>
+                {
                     b.Navigation("Renglones");
                 });
 

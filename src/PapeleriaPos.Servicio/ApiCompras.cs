@@ -107,6 +107,14 @@ public static class ApiCompras
         api.MapGet("/sucursales/{sucursalId:guid}/ajustes", (Guid sucursalId, Guid usuarioId, PosDbContext db) =>
             new RegistroAjustes(db).RecientesAsync(sucursalId, usuarioId));
 
+        // ── Conteo cíclico (entrega 3, parte 2) ──
+
+        api.MapGet("/sucursales/{sucursalId:guid}/conteo-del-dia", (Guid sucursalId, Guid usuarioId, PosDbContext db) =>
+            new RegistroConteoCiclico(db).HoyAsync(sucursalId, usuarioId));
+
+        api.MapPost("/conteos/{conteoId:guid}/contar", (Guid conteoId, SolicitudContar s, PosDbContext db) =>
+            new RegistroConteoCiclico(db).ContarAsync(conteoId, s));
+
         api.MapGet("/sucursales/{sucursalId:guid}/margenes", (Guid sucursalId, PosDbContext db) => new RegistroCompras(db).MargenesAsync(sucursalId));
 
         api.MapPut("/sucursales/{sucursalId:guid}/margenes", (Guid sucursalId, SolicitudMargenes s, PosDbContext db) =>

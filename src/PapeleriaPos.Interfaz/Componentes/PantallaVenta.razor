@@ -21,6 +21,14 @@
         <button class="modulo" @onclick="AlSalir">Salir</button>
     </header>
 
+    @if (_conteo is { } conteo && conteo.Contados < conteo.Total)
+    {
+        @* Se pide al abrir el turno; se cuenta cuando haya calma. *@
+        <div class="franja-conteo">
+            Conteo del día: faltan @(conteo.Total - conteo.Contados) de @conteo.Total productos por contar.
+            <button class="boton chico" @onclick="() => Abrir(Ventanas.Conteo)">Contar ahora</button>
+        </div>
+    }
     <div class="titulo-venta">VENTA - Ticket @Actual.Numero</div>
 
     <div class="captura">
@@ -212,6 +220,11 @@
                 <Productos Caja="Caja" Sesion="Sesion" />
             </Ventana>
             break;
+        case Ventanas.Conteo:
+            <Ventana Titulo="Conteo del día" Clase="configuracion" AlCerrar="Cerrar">
+                <ConteoDelDia Caja="Caja" Sesion="Sesion" AlContar="c => _conteo = c" />
+            </Ventana>
+            break;
         case Ventanas.Inventario:
             <Ventana Titulo="Inventario" Clase="configuracion" AlCerrar="Cerrar">
                 <Inventario Caja="Caja" Sesion="Sesion" />
@@ -266,7 +279,22 @@
     private enum Ventanas
     {
         Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
-        CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, Productos, AltaRapida, Inventario,
+        CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, Productos, AltaRapida, Inventario, Conteo,
+    }
+
+    /// <summary>El conteo cíclico de hoy: cuántos faltan, para pedirlo en la franja.</summary>
+    private ConteoCiclicoDto? _conteo;
+
+    private async Task RevisarConteoAsync()
+    {
+        try
+        {
+            _conteo = await Cliente.ConteoDelDiaAsync(Caja.SucursalId, Sesion.UsuarioId);
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión no se pide: el conteo espera a que vuelva.
+        }
     }
 
     private sealed class TicketAbierto
@@ -305,6 +333,7 @@
         await Js.RegistrarTeclasAsync(_referencia);
         await Js.EnfocarAsync("#codigo");
         await RevisarEfectivoAsync();
+        await RevisarConteoAsync();
         StateHasChanged();
     }
 

@@ -54,6 +54,9 @@ public enum AccionControlada
 
     /// <summary>Sacar del inventario lo dañado, caducado o perdido. El umbral es su costo.</summary>
     Merma,
+
+    /// <summary>Contar los productos del conteo cíclico del día (a ciegas). La diferencia entra al inventario.</summary>
+    ContarInventario,
 }
 
 public enum NivelPermiso
@@ -128,6 +131,7 @@ public static class Permisos
         Regla(AccionControlada.AjustarInventario, Rol.Encargado, NivelPermiso.Permitido),
         Regla(AccionControlada.Merma, Rol.Cajero, NivelPermiso.Permitido, umbral: 20000),
         Regla(AccionControlada.Merma, Rol.Encargado, NivelPermiso.Permitido),
+        .. Ambos(AccionControlada.ContarInventario, NivelPermiso.Permitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Cajero, NivelPermiso.NoPermitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Encargado, NivelPermiso.Permitido),
     ];
