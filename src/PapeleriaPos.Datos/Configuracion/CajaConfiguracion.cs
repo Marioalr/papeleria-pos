@@ -5,6 +5,7 @@ using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Impresiones;
+using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
@@ -160,6 +161,8 @@ internal sealed class ConfiguracionSucursalConfiguracion : IEntityTypeConfigurat
         b.Property(c => c.HoraCierre).HasDefaultValue(new TimeOnly(21, 0)).ValueGeneratedNever();
         b.Property(c => c.MargenMinimoCentesimas).HasDefaultValue(Margen.MinimoInicial).ValueGeneratedNever();
         b.Property(c => c.EtiquetasFormato).HasDefaultValue(FormatoEtiquetas.PorOmision.Id).ValueGeneratedNever();
+        b.Property(c => c.SugeridoCoberturaDias).HasDefaultValue(SugeridoCompra.Parametros.PorOmision.CoberturaDias).ValueGeneratedNever();
+        b.Property(c => c.SugeridoColchonDias).HasDefaultValue(SugeridoCompra.Parametros.PorOmision.ColchonDias).ValueGeneratedNever();
         // Las medidas de una hoja propia van como JSON: se leen y se guardan juntas.
         b.Property(c => c.EtiquetasPropio).HasConversion(
             f => f == null ? null : JsonSerializer.Serialize(f, JsonOpciones),

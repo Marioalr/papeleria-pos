@@ -51,6 +51,14 @@ public class ConfiguracionSucursal : IVersionado
 
     public int EtiquetasAjusteYDecimas { get; set; }
 
+    // ── Sugerido de compra (fase 2, entrega 4) ──
+
+    /// <summary>Cada cuánto se compra: lo que tiene que alcanzar un pedido.</summary>
+    public int SugeridoCoberturaDias { get; set; } = Inventario.SugeridoCompra.Parametros.PorOmision.CoberturaDias;
+
+    /// <summary>Lo que se guarda de más por si el proveedor tarda o se vende más: el mínimo.</summary>
+    public int SugeridoColchonDias { get; set; } = Inventario.SugeridoCompra.Parametros.PorOmision.ColchonDias;
+
     /// <summary>La hoja que se usa, con sus medidas.</summary>
     public Catalogo.FormatoEtiquetas FormatoDeEtiquetas() =>
         EtiquetasFormato == Catalogo.FormatoEtiquetas.Propio && EtiquetasPropio is { } propio

@@ -194,7 +194,23 @@ Entrega 4, parte 2, la hoja de códigos del mostrador (F4 → Hoja de códigos, 
   barras ancho para leerlo a través de la mica y su número; el precio solo si se pide. A lo que no tiene código se le
   da uno interno al prepararla. Se imprime al 100 % desde la vista previa, como las etiquetas.
 
-Lo que sigue de la entrega 4: el sugerido de compra (parte 3).
+Entrega 4, parte 3, el sugerido de compra (F4 → Sugerido de compra, el dueño y el encargado):
+
+- **Lo que se vende al día:** lo vendido en 90 días, con las ventas del POS y el historial de eleventa. Un producto
+  nuevo se mide desde su primera venta.
+- **La temporada:** cómo se vendieron el año pasado las semanas que vienen contra los 90 días anteriores (el regreso
+  a clases multiplica; una temporada floja divide), entre ×0.25 y ×4. Lo que este año no se ha vendido pero el año
+  pasado sí en estas semanas (las mochilas en agosto) se pide con lo del año pasado.
+- **Mínimo y máximo:** el mínimo es lo que se vende en los días de colchón (7 por omisión); el máximo, en los días que
+  tiene que alcanzar un pedido más el colchón (14 + 7). Se configuran por sucursal.
+- **Cuánto pedir:** hasta el máximo, contando lo que ya viene en órdenes abiertas, en la presentación en que se compró
+  la última vez (cajas de 12). Debajo del mínimo es urgente y se completa la caja; arriba, solo cajas enteras que de
+  verdad hagan falta.
+- **Por proveedor:** el de la última compra de cada producto, con su clave y su último costo. Se ajustan las
+  cantidades, se quitan renglones y cada proveedor se vuelve una orden de compra abierta (lo que no tiene proveedor se
+  le asigna a uno al hacer la orden). La orden se revisa y se manda desde «Órdenes de compra».
+
+Con esto queda la entrega 4 y la fase 2 completa: falta la prueba con la persona real y la depuración antes del piloto.
 
 ## 1. Catálogo (F3 Productos)
 

@@ -1,6 +1,6 @@
-@* F4 Inventario: las compras (recibir a ciegas y capturar la nota), las órdenes de compra (el dueño y el encargado), el
-   conteo del día y el completo por departamento, ajustes y mermas, abrir paquete, los proveedores y el margen mínimo
-   (solo el dueño), y las etiquetas y la hoja de códigos del mostrador (el dueño y el encargado). *@
+@* F4 Inventario: las compras (recibir a ciegas y capturar la nota), las órdenes de compra y el sugerido (el dueño y el
+   encargado), el conteo del día y el completo por departamento, ajustes y mermas, abrir paquete, los proveedores, el
+   margen mínimo (solo el dueño), y las etiquetas y la hoja de códigos del mostrador (el dueño y el encargado). *@
 
 <nav class="pestanas config-pestanas">
     @foreach (var p in Enum.GetValues<Pestanas>().Where(Visible))
@@ -17,6 +17,9 @@
         break;
     case Pestanas.Ordenes:
         <Ordenes Caja="Caja" Sesion="Sesion" />
+        break;
+    case Pestanas.Sugerido:
+        <Sugerido Caja="Caja" Sesion="Sesion" />
         break;
     case Pestanas.Conteo:
         <ConteoDelDia Caja="Caja" Sesion="Sesion" />
@@ -48,11 +51,11 @@
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
-    private enum Pestanas { Compras, Ordenes, Conteo, ConteoCompleto, Ajustes, Etiquetas, HojaCodigos, Paquete, Proveedores, Margen }
+    private enum Pestanas { Compras, Ordenes, Sugerido, Conteo, ConteoCompleto, Ajustes, Etiquetas, HojaCodigos, Paquete, Proveedores, Margen }
 
     private bool Visible(Pestanas p) => p switch
     {
-        Pestanas.Ordenes or Pestanas.Etiquetas or Pestanas.HojaCodigos => Sesion.Rol is Rol.Dueno or Rol.Encargado,
+        Pestanas.Ordenes or Pestanas.Sugerido or Pestanas.Etiquetas or Pestanas.HojaCodigos => Sesion.Rol is Rol.Dueno or Rol.Encargado,
         Pestanas.Margen => Sesion.Rol == Rol.Dueno,
         _ => true,
     };
@@ -63,6 +66,7 @@
     {
         Pestanas.Compras => "Compras",
         Pestanas.Ordenes => "Órdenes de compra",
+        Pestanas.Sugerido => "Sugerido de compra",
         Pestanas.Conteo => "Conteo del día",
         Pestanas.ConteoCompleto => "Conteo completo",
         Pestanas.Ajustes => "Ajustes y mermas",
