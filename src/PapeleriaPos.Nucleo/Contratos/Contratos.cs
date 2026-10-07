@@ -181,7 +181,8 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 
 /// <summary>Lo que contesta el servicio sin llave: para encontrarlo en la red y saber que está vivo.</summary>
 /// <param name="VersionDatos">Cambia con el catálogo, los usuarios o las reglas: la caja vuelve a bajar su copia.</param>
-public sealed record EstadoServicioDto(string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0);
+/// <param name="Prueba">El servicio es el de la prueba con una persona real: datos ficticios, guía y avisos simulados.</param>
+public sealed record EstadoServicioDto(string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false);
 
 /// <summary>Usuario y PIN de quien autoriza (el dueño para dar de alta o quitar cajas).</summary>
 public sealed record SolicitudCredenciales(string Usuario, string Pin);
@@ -550,3 +551,19 @@ public sealed record AperturaDto(DateTime FechaLocal, string Origen, decimal Can
 
 /// <summary>La última vez que se abrió ese paquete: en qué producto y cuántas piezas traía cada uno.</summary>
 public sealed record UltimaAperturaDto(Guid DestinoId, string Destino, decimal PiezasPorPaquete);
+
+// ── Prueba con una persona real (docs/plan.md) ──────────────────────────────
+
+/// <summary>Un aviso que le habría llegado al dueño por Telegram (en la prueba no se manda).</summary>
+public sealed record AvisoPruebaDto(DateTime FechaLocal, TipoAlerta? Tipo, string Texto);
+
+/// <param name="SalioBien">Vacío mientras no se contesta.</param>
+public sealed record RespuestaTareaDto(bool? SalioBien, string? Nota);
+
+/// <summary>Lo que contestó quien prueba, por tarea de la guía.</summary>
+public sealed record RespuestasPruebaDto(string? Nombre, IReadOnlyDictionary<string, RespuestaTareaDto> Tareas, string? Comentarios);
+
+/// <summary>Las respuestas ya escritas como documento, para guardarlas en un archivo.</summary>
+public sealed record SolicitudExportarRespuestas(string Texto);
+
+public sealed record ArchivoGuardadoDto(string Ruta);

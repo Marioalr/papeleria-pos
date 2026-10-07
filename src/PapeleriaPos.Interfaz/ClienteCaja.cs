@@ -35,6 +35,9 @@ public sealed class ConexionCaja
     /// <summary>Quien atiende ahora en esta caja: a su nombre quedan las impresiones que salen de esta PC.</summary>
     public Guid? UsuarioEnCaja { get; set; }
 
+    /// <summary>La caja de prueba arranca su propio servicio: se espera a que conteste antes de conectarse.</summary>
+    public Task Listo { get; init; } = Task.CompletedTask;
+
     public bool Lista => !PideAlta || (CajaId is not null && Llave is not null);
 }
 
@@ -367,6 +370,23 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     public Task CancelarPorTelegramAsync(Guid solicitudId) =>
         ConRespaldoAsync(() => _http.PostAsync<object>($"api/autorizaciones/remotas/{solicitudId}/cancelar", null, sinRespuesta: true));
+
+    // ── La prueba con una persona real (solo existe en el servicio de prueba) ──
+
+    public Task<List<AvisoPruebaDto>> AvisosPruebaAsync() =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<AvisoPruebaDto>>("api/prueba/avisos") ?? []);
+
+    public Task<RespuestasPruebaDto> RespuestasPruebaAsync() =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<RespuestasPruebaDto>("api/prueba/respuestas"))!);
+
+    public Task<RespuestasPruebaDto> GuardarRespuestasPruebaAsync(RespuestasPruebaDto respuestas) =>
+        ConRespaldoAsync(() => _http.PutAsync<RespuestasPruebaDto>("api/prueba/respuestas", respuestas));
+
+    public Task<ArchivoGuardadoDto> ExportarRespuestasPruebaAsync(string texto) =>
+        ConRespaldoAsync(() => _http.PostAsync<ArchivoGuardadoDto>("api/prueba/respuestas/exportar", new SolicitudExportarRespuestas(texto)));
+
+    public Task EmpezarDeCeroAsync() =>
+        ConRespaldoAsync(() => _http.PostAsync<object>("api/prueba/empezar-de-cero", null, sinRespuesta: true));
 
     // ── Alta de la caja (antes de tener llave; el servicio todavía no es el guardado) ──
 

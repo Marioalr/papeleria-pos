@@ -1,0 +1,9 @@
+{
+  "Servicio": "http://localhost:5180",
+  "CajaId": null,
+  "Impresora": "",
+  "ColaImpresion": null,
+  "Prueba": true,
+  "ServicioLocal": "..\\Servicio\\PapeleriaPos.Servicio.exe",
+  "BaseInicial": "..\\datos\\prueba.db"
+}

@@ -1,0 +1,244 @@
+@* Solo en la prueba con una persona real (docs/plan.md): avisa que son datos ficticios y da la guía de la prueba, los
+   avisos que le habrían llegado al dueño por Telegram y empezar de cero. *@
+@inject ClienteCaja Cliente
+@inject ConexionCaja Conexion
+@inject ModuloCaja Js
+@inject NavigationManager Navegacion
+
+@if (_prueba)
+{
+    <div class="franja-prueba">
+        <strong>Prueba: datos ficticios.</strong>
+        <span>Nada de esto es real; puedes equivocarte sin problema.</span>
+        <button class="boton chico" @onclick="AbrirGuiaAsync">Guía de la prueba (@Contestadas de @GuiaPrueba.Tareas.Count)</button>
+        <button class="boton chico" @onclick="AbrirAvisosAsync">Avisos al dueño</button>
+        <button class="boton chico" @onclick="() => AbrirAsync(Panel.EmpezarDeCero)">Empezar de cero</button>
+    </div>
+
+    @switch (_panel)
+    {
+        case Panel.Guia:
+            <Ventana Titulo="Guía de la prueba" Clase="configuracion" AlCerrar="CerrarAsync">
+                <p class="nota">
+                    Haz cada tarea en la caja (puedes cerrar esta ventana y volver) y marca si salió lo que debía pasar. Si algo
+                    estorbó, fue lento o confuso, escríbelo aunque haya salido bien. Los usuarios y PIN están en «Léeme.txt».
+                </p>
+                <label>Tu nombre <input @bind="_respuestas.Nombre" @bind:after="GuardarAsync" autocomplete="off" /></label>
+                @foreach (var grupo in GuiaPrueba.Tareas.GroupBy(t => t.Tema))
+                {
+                    <h5>@grupo.Key</h5>
+                    @foreach (var tarea in grupo)
+                    {
+                        var t = tarea;
+                        var r = Respuesta(t.Id);
+                        <div class="tarea-prueba @(r.SalioBien switch { true => "bien", false => "mal", _ => "" })">
+                            <div><strong>@t.Hacer</strong></div>
+                            <div class="nota">Debe pasar: @t.Esperado</div>
+                            <div class="acciones izquierda">
+                                <button class="boton chico @(r.SalioBien == true ? "principal" : "")" @onclick="() => MarcarAsync(t.Id, true)">Salió bien</button>
+                                <button class="boton chico @(r.SalioBien == false ? "principal" : "")" @onclick="() => MarcarAsync(t.Id, false)">Algo falló</button>
+                                <input class="nota-tarea" placeholder="¿Qué viste? (opcional)" value="@r.Nota" @onchange="e => AnotarAsync(t.Id, e.Value?.ToString())" />
+                            </div>
+                        </div>
+                    }
+                }
+                <label>Comentarios generales: ¿qué te faltó, qué fue lento o confuso?
+                    <textarea rows="4" @bind="_respuestas.Comentarios" @bind:after="GuardarAsync"></textarea>
+                </label>
+                @if (_error is not null)
+                {
+                    <p class="error">@_error</p>
+                }
+                @if (_aviso is not null)
+                {
+                    <p class="aviso">@_aviso</p>
+                }
+                <div class="acciones izquierda">
+                    <button class="boton principal" disabled="@_ocupado" @onclick="ExportarAsync">Guardar mis respuestas en el escritorio</button>
+                    <span class="nota">Se guardan solas mientras contestas; este botón deja el archivo para mandarlo.</span>
+                </div>
+            </Ventana>
+            break;
+
+        case Panel.Avisos:
+            <Ventana Titulo="Avisos que le llegarían al dueño por Telegram" Clase="ventas-dia" AlCerrar="CerrarAsync">
+                <p class="nota">En la tienda le llegan al dueño a su celular. En la prueba no se manda nada: se ven aquí.</p>
+                @if (_avisos is { Count: 0 })
+                {
+                    <p class="vacia">Todavía no hay avisos. Llegan con una cancelación, un corte con diferencia, una compra con faltantes…</p>
+                }
+                @foreach (var aviso in _avisos ?? [])
+                {
+                    <div class="tarea-prueba">
+                        <div class="nota">@aviso.FechaLocal.ToString("dd/MM/yyyy HH:mm")</div>
+                        <pre class="aviso-telegram">@aviso.Texto</pre>
+                    </div>
+                }
+            </Ventana>
+            break;
+
+        case Panel.EmpezarDeCero:
+            <Ventana Titulo="Empezar de cero" AlCerrar="CerrarAsync">
+                <p>La caja vuelve a como se instaló: se pierde lo que hiciste en la prueba (ventas, compras, turnos). Tus respuestas de la guía se quedan.</p>
+                @if (_error is not null)
+                {
+                    <p class="error">@_error</p>
+                }
+                <div class="acciones">
+                    <button class="boton" @onclick="CerrarAsync">No</button>
+                    <button class="boton principal" disabled="@_ocupado" @onclick="EmpezarDeCeroAsync">Sí, empezar de cero</button>
+                </div>
+            </Ventana>
+            break;
+    }
+}
+
+@code {
+    private enum Panel { Ninguno, Guia, Avisos, EmpezarDeCero }
+
+    private sealed class Respuestas
+    {
+        public string? Nombre { get; set; }
+        public Dictionary<string, RespuestaTareaDto> Tareas { get; set; } = [];
+        public string? Comentarios { get; set; }
+
+        public RespuestasPruebaDto Dto() => new(Nombre, Tareas, Comentarios);
+    }
+
+    private bool _prueba;
+    private Panel _panel;
+    private Respuestas _respuestas = new();
+    private List<AvisoPruebaDto>? _avisos;
+    private bool _ocupado;
+    private string? _error;
+    private string? _aviso;
+
+    private int Contestadas => GuiaPrueba.Tareas.Count(t => _respuestas.Tareas.GetValueOrDefault(t.Id)?.SalioBien is not null);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (await Cliente.EstadoAsync(Conexion.Servicio) is { Prueba: true })
+            {
+                _prueba = true;
+                await CargarRespuestasAsync();
+            }
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión no se sabe si es la prueba: la caja lo dice por su lado.
+        }
+    }
+
+    private async Task CargarRespuestasAsync()
+    {
+        var r = await Cliente.RespuestasPruebaAsync();
+        _respuestas = new Respuestas { Nombre = r.Nombre, Tareas = r.Tareas.ToDictionary(), Comentarios = r.Comentarios };
+    }
+
+    private RespuestaTareaDto Respuesta(string id) => _respuestas.Tareas.GetValueOrDefault(id) ?? new RespuestaTareaDto(null, null);
+
+    /// <summary>Con la guía abierta, la pantalla de venta de atrás no atrapa las teclas que se escriben aquí.</summary>
+    private async Task AbrirAsync(Panel panel)
+    {
+        (_panel, _error, _aviso) = (panel, null, null);
+        await Js.VentanaAbiertaAsync(true);
+    }
+
+    private async Task CerrarAsync()
+    {
+        _panel = Panel.Ninguno;
+        await Js.VentanaAbiertaAsync(false);
+    }
+
+    private async Task AbrirGuiaAsync()
+    {
+        await AbrirAsync(Panel.Guia);
+        try
+        {
+            await CargarRespuestasAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task AbrirAvisosAsync()
+    {
+        await AbrirAsync(Panel.Avisos);
+        try
+        {
+            _avisos = await Cliente.AvisosPruebaAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private Task MarcarAsync(string id, bool salioBien)
+    {
+        var r = Respuesta(id);
+        _respuestas.Tareas[id] = r with { SalioBien = r.SalioBien == salioBien ? null : salioBien };
+        return GuardarAsync();
+    }
+
+    private Task AnotarAsync(string id, string? nota)
+    {
+        _respuestas.Tareas[id] = Respuesta(id) with { Nota = string.IsNullOrWhiteSpace(nota) ? null : nota };
+        return GuardarAsync();
+    }
+
+    private async Task GuardarAsync()
+    {
+        _error = null;
+        try
+        {
+            await Cliente.GuardarRespuestasPruebaAsync(_respuestas.Dto());
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task ExportarAsync()
+    {
+        _ocupado = true;
+        (_error, _aviso) = (null, null);
+        try
+        {
+            await Cliente.GuardarRespuestasPruebaAsync(_respuestas.Dto());
+            var archivo = await Cliente.ExportarRespuestasPruebaAsync(GuiaPrueba.Documento(_respuestas.Dto(), DateTime.Now));
+            _aviso = $"Listo: tus respuestas quedaron en «{archivo.Ruta}». Mándalo por WhatsApp o correo.";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task EmpezarDeCeroAsync()
+    {
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            await Cliente.EmpezarDeCeroAsync();
+            await Js.VentanaAbiertaAsync(false);
+            // Todo lo que la caja tenía en memoria (sesión, turno, tickets) era de la base anterior.
+            Navegacion.NavigateTo(Navegacion.Uri, forceLoad: true);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+            _ocupado = false;
+        }
+    }
+}

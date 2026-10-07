@@ -19,8 +19,12 @@ namespace PapeleriaPos.Caja;
 /// <param name="ColaImpresion">La cola de Windows de la WF-6590 que vigila esta PC (vacío: no vigila ninguna). Mientras
 /// Control Print siga en uso, se prueba con su cola de laboratorio.</param>
 /// <param name="QuitarImpresos">Quitar de la cola lo ya impreso y medido (la cola conserva los documentos impresos).</param>
+/// <param name="Prueba">La caja de la prueba con una persona real: arranca su propio servicio y no pide alta.</param>
+/// <param name="ServicioLocal">En la prueba: el servicio, relativo a la carpeta de la caja.</param>
+/// <param name="BaseInicial">En la prueba: la base con que se instaló (la de trabajo se guarda junto a ella).</param>
 public sealed record ConfiguracionCaja(
-    string Servicio, Guid? CajaId, string? Impresora, string? LlaveProtegida = null, string? ColaImpresion = null, bool QuitarImpresos = true)
+    string Servicio, Guid? CajaId, string? Impresora, string? LlaveProtegida = null, string? ColaImpresion = null, bool QuitarImpresos = true,
+    bool Prueba = false, string? ServicioLocal = null, string? BaseInicial = null)
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
 
@@ -33,10 +37,16 @@ public sealed record ConfiguracionCaja(
 
     public static ConfiguracionCaja Leer()
     {
-        var ruta = File.Exists(Guardada) ? Guardada : Path.Combine(AppContext.BaseDirectory, "caja.json");
-        return JsonSerializer.Deserialize<ConfiguracionCaja>(File.ReadAllText(ruta), Json)
-            ?? throw new InvalidOperationException($"{ruta} está vacío.");
+        // La de la prueba manda sobre la guardada: en la misma PC puede estar la caja de verdad.
+        var junto = Path.Combine(AppContext.BaseDirectory, "caja.json");
+        if (Deserializar(junto) is { Prueba: true } prueba)
+            return prueba;
+        var ruta = File.Exists(Guardada) ? Guardada : junto;
+        return Deserializar(ruta) ?? throw new InvalidOperationException($"{ruta} está vacío.");
     }
+
+    private static ConfiguracionCaja? Deserializar(string ruta) =>
+        File.Exists(ruta) ? JsonSerializer.Deserialize<ConfiguracionCaja>(File.ReadAllText(ruta), Json) : null;
 
     /// <summary>Si no se puede descifrar (el archivo viene de otra PC), la caja se vuelve a dar de alta.</summary>
     public string? Llave()
@@ -77,12 +87,17 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         var configuracion = ConfiguracionCaja.Leer();
+        // La prueba con una persona real: su propio servicio en esta PC, sin alta ni copia para trabajar sin conexión.
+        var prueba = configuracion.Prueba ? ServicioDePrueba.Iniciar(configuracion) : null;
+        if (prueba is not null)
+            Closed += (_, _) => prueba.Dispose();
         var conexion = new ConexionCaja
         {
             Servicio = new Uri(configuracion.Servicio),
-            CajaId = configuracion.CajaId,
-            Llave = configuracion.Llave(),
-            PideAlta = true,
+            CajaId = prueba is null ? configuracion.CajaId : null,
+            Llave = prueba is null ? configuracion.Llave() : null,
+            PideAlta = prueba is null,
+            Listo = prueba?.Listo ?? Task.CompletedTask,
             AlGuardar = c =>
             {
                 configuracion = configuracion.Guardar(c);
@@ -94,7 +109,7 @@ public partial class MainWindow : Window
         // "tcp://192.168.1.100:9100" imprime directo por la red; un nombre (como "Tickets") usa la impresora de Windows.
         var impresora = Impresoras.Crear(configuracion.Impresora, nombre => new ImpresoraWindows(nombre));
         // La copia para vender sin la caja principal y la bandeja de salida, junto a la configuración de la caja.
-        servicios.AgregarInterfazCaja(conexion, impresora, ConfiguracionCaja.BaseLocal);
+        servicios.AgregarInterfazCaja(conexion, impresora, prueba is null ? ConfiguracionCaja.BaseLocal : null);
         // Cotizar: el PDF se mide aquí, en la PC donde está; el precio lo pone la caja principal.
         servicios.AddSingleton<IMedidorPdf, MedidorPdfWindows>();
         var proveedor = servicios.BuildServiceProvider();

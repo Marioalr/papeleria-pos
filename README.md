@@ -4,9 +4,9 @@ Punto de venta a la medida para una papelería con varias sucursales: venta, inv
 copias, engargolado, trámites…), pedidos y control de cada sucursal sin que el dueño tenga que estar presente.
 Reemplaza a eleventa multicaja e incorpora lo que hoy hace [Control Print](https://github.com/Marioalr/control-print).
 
-> **Estado: fase 1.** La caja vende, cobra e imprime, con control (reglas, autorizaciones y bitácora) y varias cajas
-> en red; todo se prueba con datos ficticios. Lo demás sigue en planeación; las decisiones se
-> cierran en el [plan](docs/plan.md).
+> **Estado: fase 2.** La caja vende, cobra e imprime, con control (reglas, autorizaciones y bitácora) y varias cajas
+> en red; el catálogo (F3) y las compras (F4) ya se manejan en el POS. Todo se prueba con datos ficticios. Lo demás
+> sigue en planeación; las decisiones se cierran en el [plan](docs/plan.md).
 
 ## Desarrollo
 
@@ -87,6 +87,28 @@ Para probar en el navegador lo que hace la ventana de Windows:
 - Para la contingencia hacen falta dos servicios: la caja principal en el 5080 y otro que hace de caja, con
   `--Urls=http://localhost:5090 --Caja:Servicio=http://localhost:5080 --Caja:PideAlta=true --Caja:BaseLocal=caja-local.db`.
   Al apagar la caja principal, la del 5090 sigue vendiendo; al prenderla, sube lo pendiente.
+
+### Prueba con una persona real
+
+Para que alguien de la tienda pruebe lo que ya funciona, solo y sin tocar eleventa ([plan](docs/plan.md#prueba-con-una-persona-real)).
+
+- **El instalador** `PapeleriaPos-Prueba.exe` lo arma GitHub Actions en Windows (flujo «Instalador de prueba»). Se lanza a
+  mano desde la pestaña Actions, con una etiqueta `prueba-*` o en un PR que toque `instalacion/`, y queda como artefacto
+  de la corrida.
+- **Se instala para el usuario, sin administrador.** En el escritorio deja «Papelería POS (prueba)» y la carpeta
+  «Ejemplos de la prueba»: el Léeme con los usuarios y PIN, y una factura XML y una nota PDF de un proveedor de la base.
+- **La caja arranca su propio servicio** en el puerto 5180, con la base ficticia junto a la instalación, y lo apaga al
+  cerrarse. No hay servicio de Windows ni segunda caja.
+- **La franja de prueba,** arriba, tiene la guía de tareas (las respuestas se guardan en un archivo en el escritorio),
+  los avisos que le llegarían al dueño por Telegram y «Empezar de cero».
+- Necesita Windows 10 u 11 de 64 bits con WebView2 (viene con Windows 11 y con Windows 10 actualizado).
+
+Lo mismo en desarrollo, en el navegador:
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- preparar-prueba --salida prueba/datos/prueba.db --ejemplos prueba/Ejemplos
+dotnet run --project src/PapeleriaPos.Servicio -- --environment Development --Urls=http://localhost:5180 --ConnectionStrings:Pos="Data Source=prueba/datos/pos.db" --Prueba:Activa=true --Prueba:BaseInicial=prueba/datos/prueba.db --Telegram:Activo=false
+```
 
 Migraciones de la base (EF Core):
 

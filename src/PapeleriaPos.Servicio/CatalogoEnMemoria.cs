@@ -21,6 +21,9 @@ public sealed class CatalogoEnMemoria
     private Indice _indice = new(-1, [], []);
     private readonly SemaphoreSlim _recarga = new(1, 1);
 
+    /// <summary>La base cambió entera (la prueba empezó de cero): se vuelve a cargar aunque la versión coincida.</summary>
+    public void Invalidar() => _indice = new(-1, [], []);
+
     private async Task<Indice> ActualAsync(PosDbContext db, CancellationToken ct)
     {
         var version = await db.Secuencias.Where(s => s.Nombre == Secuencia.Catalogo).Select(s => s.Valor).FirstOrDefaultAsync(ct);

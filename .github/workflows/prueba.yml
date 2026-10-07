@@ -1,0 +1,49 @@
+# El instalador de la prueba con una persona real (docs/plan.md). Se arma en Windows porque la PC de desarrollo es
+# Linux: corre todas las pruebas, publica el servicio y la caja, prepara la base y los ejemplos, y deja
+# PapeleriaPos-Prueba.exe como artefacto de la corrida.
+name: Instalador de prueba
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['prueba-*']
+  pull_request:
+    paths: ['instalacion/**', '.github/workflows/prueba.yml']
+
+jobs:
+  instalador:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Pruebas
+        run: dotnet test -c Release
+
+      - name: Publicar el servicio y la caja
+        run: |
+          dotnet publish src/PapeleriaPos.Servicio -c Release -r win-x64 --self-contained -o publicar/servicio
+          dotnet publish src/PapeleriaPos.Caja -c Release -r win-x64 --self-contained -o publicar/caja
+
+      - name: Base y ejemplos de la prueba
+        run: dotnet run --project src/PapeleriaPos.Herramientas -c Release -- preparar-prueba --salida publicar/datos/prueba.db --ejemplos publicar/ejemplos
+
+      - name: Instalador
+        shell: pwsh
+        env:
+          VERSION_PRUEBA: ${{ github.ref_name }}.${{ github.run_number }}
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc instalacion/prueba.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PapeleriaPos-Prueba
+          path: publicar/PapeleriaPos-Prueba.exe
+          retention-days: 30
