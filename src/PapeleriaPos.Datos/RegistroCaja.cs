@@ -387,7 +387,7 @@ public sealed class RegistroCaja(PosDbContext db)
         return checked((int)secuencia.Valor);
     }
 
-    private async Task<long> UltimoCostoAsync(Guid varianteId, CancellationToken ct) =>
+    internal async Task<long> UltimoCostoAsync(Guid varianteId, CancellationToken ct) =>
         await db.ProveedoresVariantes
             .Where(pv => pv.VarianteId == varianteId && pv.UltimoCostoCentavos != null)
             .OrderByDescending(pv => pv.UltimaCompraUtc)

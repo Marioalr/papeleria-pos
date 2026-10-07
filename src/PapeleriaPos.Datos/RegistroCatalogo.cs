@@ -295,7 +295,8 @@ public sealed class RegistroCatalogo(PosDbContext db)
         {
             if (await db.Set<VentaLinea>().AnyAsync(l => l.PresentacionId == quitada.Id, ct) || await db.Precios.AnyAsync(p => p.PresentacionId == quitada.Id && p.SucursalId != null, ct))
                 throw new InvalidOperationException($"La presentación «{quitada.Nombre}» ya se vendió: no se puede quitar.");
-            if (await db.ComprasConteo.AnyAsync(c => c.PresentacionId == quitada.Id, ct) || await db.ComprasRenglones.AnyAsync(r => r.PresentacionId == quitada.Id, ct))
+            if (await db.ComprasConteo.AnyAsync(c => c.PresentacionId == quitada.Id, ct) || await db.ComprasRenglones.AnyAsync(r => r.PresentacionId == quitada.Id, ct)
+                || await db.OrdenesRenglones.AnyAsync(r => r.PresentacionId == quitada.Id, ct))
                 throw new InvalidOperationException($"La presentación «{quitada.Nombre}» ya se usó en una compra: no se puede quitar.");
             db.CodigosBarras.RemoveRange(quitada.Codigos);
             db.LigasProveedor.RemoveRange(db.LigasProveedor.Where(l => l.PresentacionId == quitada.Id));

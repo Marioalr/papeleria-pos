@@ -1,0 +1,150 @@
+@* Abrir paquete: cuando el paquete y la pieza son productos distintos (como vienen de eleventa), sale el paquete y entran
+   sus piezas con el mismo costo. Se propone lo de la última vez que se abrió ese paquete. *@
+@inject ClienteCaja Cliente
+
+@if (_origen is null)
+{
+    <p>¿Qué paquete se abre? Escanéalo o búscalo.</p>
+    <ElegirProducto SucursalId="Caja.SucursalId" Accion="Este paquete" AlElegir="ElegirOrigenAsync" />
+}
+else if (_destino is null)
+{
+    <p>Se abre <strong>@_origen.Descripcion</strong>. ¿Qué producto trae adentro (la pieza)?</p>
+    <ElegirProducto SucursalId="Caja.SucursalId" Accion="Esta pieza" AlElegir="ElegirDestino" />
+    <div class="acciones izquierda"><button class="boton" @onclick="Reiniciar">Cancelar</button></div>
+}
+else
+{
+    <div class="ficha-producto">
+        <label class="ancho">Paquete <input value="@_origen.Descripcion" readonly /></label>
+        <label>¿Cuántos se abren? <input id="cantidad-paquetes" class="umbral" inputmode="decimal" @bind="_cantidad" @bind:event="oninput" /></label>
+        <label>Piezas en cada uno <input class="umbral" inputmode="decimal" @bind="_piezas" @bind:event="oninput" /></label>
+        <label class="ancho">Pieza <input value="@_destino.Descripcion" readonly /></label>
+    </div>
+    @if (Total() is { } total)
+    {
+        <p class="nota">Sale @Formato.Numero(total.Paquetes) «@_origen.Descripcion» y entran @Formato.Numero(total.Piezas) «@_destino.Descripcion» con el mismo costo.</p>
+    }
+    <div class="acciones izquierda">
+        <button class="boton" @onclick="Reiniciar">Cancelar</button>
+        <button class="boton" @onclick="() => _destino = null">Otra pieza</button>
+        <button class="boton principal" disabled="@_ocupado" @onclick="AbrirAsync">Abrir</button>
+    </div>
+}
+@if (_error is not null)
+{
+    <p class="error">@_error</p>
+}
+@if (_aviso is not null)
+{
+    <p class="aviso">@_aviso</p>
+}
+
+@if (_recientes is { Count: > 0 } recientes)
+{
+    <h5>Últimos que se abrieron</h5>
+    <div class="resultados">
+        <table>
+            <thead><tr><th>Fecha</th><th>Paquete</th><th class="num">Cantidad</th><th>Pieza</th><th class="num">Piezas</th><th>Quién</th></tr></thead>
+            @foreach (var a in recientes)
+            {
+                <tr>
+                    <td>@a.FechaLocal.ToString("dd/MM/yyyy HH:mm")</td>
+                    <td>@a.Origen</td>
+                    <td class="num">@Formato.Numero(a.Cantidad)</td>
+                    <td>@a.Destino</td>
+                    <td class="num">@Formato.Numero(a.CantidadDestino)</td>
+                    <td>@a.Usuario</td>
+                </tr>
+            }
+        </table>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    private ProductoVentaDto? _origen;
+    private ProductoVentaDto? _destino;
+    private string _cantidad = "1";
+    private string _piezas = "";
+    private List<AperturaDto>? _recientes;
+    private bool _ocupado;
+    private string? _error;
+    private string? _aviso;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _recientes = await Cliente.AperturasAsync(Caja.SucursalId);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task ElegirOrigenAsync((ProductoVentaDto Producto, PresentacionDto Presentacion) elegido)
+    {
+        (_error, _aviso, _origen) = (null, null, elegido.Producto);
+        try
+        {
+            // Lo de la última vez que se abrió ese paquete.
+            if (await Cliente.UltimaAperturaAsync(elegido.Producto.VarianteId) is { } ultima
+                && await Cliente.PorVarianteAsync(ultima.DestinoId, Caja.SucursalId) is { } destino)
+                (_destino, _piezas) = (destino, ultima.PiezasPorPaquete.ToString("0.###", CultureInfo.InvariantCulture));
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void ElegirDestino((ProductoVentaDto Producto, PresentacionDto Presentacion) elegido)
+    {
+        _error = null;
+        if (elegido.Producto.VarianteId == _origen?.VarianteId)
+        {
+            _error = "La pieza es otro producto que el paquete.";
+            return;
+        }
+        _destino = elegido.Producto;
+    }
+
+    private (decimal Paquetes, decimal Piezas)? Total() =>
+        Leer(_cantidad) is { } paquetes && Leer(_piezas) is { } piezas ? (paquetes, paquetes * piezas) : null;
+
+    private static decimal? Leer(string texto) =>
+        decimal.TryParse(texto.Replace(",", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) && n > 0 ? n : null;
+
+    private async Task AbrirAsync()
+    {
+        if (_origen is null || _destino is null || Total() is not { } total)
+        {
+            _error = "Escribe cuántos paquetes se abren y cuántas piezas trae cada uno.";
+            return;
+        }
+        _ocupado = true;
+        (_error, _aviso) = (null, null);
+        try
+        {
+            var apertura = await Cliente.AbrirPaqueteAsync(new SolicitudAbrirPaquete(Sesion.UsuarioId, Caja.SucursalId, _origen.VarianteId,
+                (long)Math.Round(total.Paquetes * 1000), _destino.VarianteId, (long)Math.Round(total.Piezas * 1000)));
+            _aviso = $"Listo: salió {Formato.Numero(apertura.Cantidad)} «{apertura.Origen}» y entraron {Formato.Numero(apertura.CantidadDestino)} «{apertura.Destino}».";
+            _recientes = await Cliente.AperturasAsync(Caja.SucursalId);
+            (_origen, _destino, _cantidad, _piezas) = (null, null, "1", "");
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private void Reiniciar() => (_origen, _destino, _cantidad, _piezas, _error) = (null, null, "1", "", null);
+}

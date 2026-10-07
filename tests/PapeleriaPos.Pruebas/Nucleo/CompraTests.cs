@@ -77,6 +77,29 @@ public class CompraTests
         Assert.Equal(DiferenciaCompra.Ninguna, Assert.Single(ComparacionCompra.Comparar(compra.Conteo, compra.Renglones)).Tipo);
     }
 
+    [Fact]
+    public void Con_orden_se_compara_tambien_lo_pedido_y_lo_que_no_vino_queda_como_no_llego()
+    {
+        var orden = new OrdenCompra { Folio = 3, CreadaUtc = Ahora };
+        orden.Pedir(Pluma, PlumaCaja, Cantidad.Piezas(3), Doce);
+        orden.Pedir(Goma, GomaPieza, Cantidad.Piezas(10), Una);
+        orden.Pedir(Goma, GomaPieza, Cantidad.Piezas(6), Una);
+        var compra = new Compra { Folio = 1, AbiertaUtc = Ahora };
+        compra.Contar(Pluma, PlumaCaja, Cantidad.Piezas(3), Doce);
+        compra.TerminarConteo(Ahora);
+        compra.Renglon(null, Pluma, PlumaCaja, Cantidad.Piezas(3), Doce, 27000, "Pluma", null);
+
+        var comparacion = ComparacionCompra.Comparar(compra.Conteo, compra.Renglones, orden.Renglones);
+        orden.Recibir(compra.Id);
+
+        Assert.Equal((Cantidad.Piezas(36), DiferenciaCompra.Ninguna), (comparacion.Single(c => c.VarianteId == Pluma).Pedido, comparacion.Single(c => c.VarianteId == Pluma).Tipo));
+        var goma = comparacion.Single(c => c.VarianteId == Goma);
+        Assert.Equal((Cantidad.Piezas(6), DiferenciaCompra.NoLlego), (goma.Pedido, goma.Tipo));
+        Assert.Equal((EstadoOrden.Recibida, compra.Id), (orden.Estado, orden.CompraId));
+        Assert.Throws<InvalidOperationException>(() => orden.Pedir(Goma, GomaPieza, Una, Una));
+        Assert.Throws<InvalidOperationException>(() => orden.Recibir(Guid.NewGuid()));
+    }
+
     [Theory]
     [InlineData(1500, 750, 5000)]
     [InlineData(1500, 1200, 2000)]

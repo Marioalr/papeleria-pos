@@ -247,6 +247,33 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<CompraDto> CancelarCompraAsync(Guid compraId, SolicitudCancelarCompra solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<CompraDto>($"api/compras/{compraId}/cancelar", solicitud));
 
+    public Task<CompraDto> OrdenDeCompraAsync(Guid compraId, SolicitudOrdenDeCompra solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<CompraDto>($"api/compras/{compraId}/orden", solicitud));
+
+    public Task<List<OrdenResumenDto>> OrdenesAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<OrdenResumenDto>>($"api/sucursales/{sucursalId}/ordenes") ?? []);
+
+    public Task<OrdenDto> AbrirOrdenAsync(SolicitudAbrirOrden solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<OrdenDto>("api/ordenes", solicitud));
+
+    public Task<OrdenDto> OrdenAsync(Guid ordenId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<OrdenDto>($"api/ordenes/{ordenId}"))!);
+
+    public Task<OrdenDto> PedirAsync(Guid ordenId, SolicitudPedido solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<OrdenDto>($"api/ordenes/{ordenId}/renglones", solicitud));
+
+    public Task<OrdenDto> CancelarOrdenAsync(Guid ordenId, Guid usuarioId) =>
+        ConRespaldoAsync(() => _http.PostAsync<OrdenDto>($"api/ordenes/{ordenId}/cancelar", new SolicitudCompra(usuarioId)));
+
+    public Task<AperturaDto> AbrirPaqueteAsync(SolicitudAbrirPaquete solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<AperturaDto>("api/aperturas", solicitud));
+
+    public Task<List<AperturaDto>> AperturasAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<AperturaDto>>($"api/sucursales/{sucursalId}/aperturas") ?? []);
+
+    public Task<UltimaAperturaDto?> UltimaAperturaAsync(Guid origenId) =>
+        ConRespaldoAsync(() => _http.GetAsync<UltimaAperturaDto>($"api/variantes/{origenId}/ultima-apertura", nadaEsNulo: true));
+
     public Task CambiarMenudeoAsync(SolicitudPrecioMenudeo solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<object>("api/catalogo/precio-menudeo", solicitud, sinRespuesta: true));
 

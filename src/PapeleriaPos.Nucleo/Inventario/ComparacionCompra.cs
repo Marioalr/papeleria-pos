@@ -20,12 +20,15 @@ public enum DiferenciaCompra
 
 /// <summary>Una variante de la compra: lo que dice la nota contra lo que se contó, en unidad base.</summary>
 /// <param name="ImporteNotaCentavos">Lo que cobra la nota por esta variante (todos sus renglones).</param>
-public sealed record ComparacionVariante(Guid VarianteId, Cantidad Nota, Cantidad Contado, long ImporteNotaCentavos)
+/// <param name="Pedido">Lo que se pidió en la orden de compra, si la compra viene de una.</param>
+public sealed record ComparacionVariante(Guid VarianteId, Cantidad Nota, Cantidad Contado, long ImporteNotaCentavos, Cantidad? Pedido = null)
 {
     public Cantidad Diferencia => Contado - Nota;
 
     public DiferenciaCompra Tipo => (Nota.Milesimas, Contado.Milesimas) switch
     {
+        // Solo en la orden: se pidió y no vino ni en la nota ni en la caja.
+        (0, 0) => DiferenciaCompra.NoLlego,
         (0, _) => DiferenciaCompra.NoVieneEnLaNota,
         (_, 0) => DiferenciaCompra.NoLlego,
         var (n, c) when n == c => DiferenciaCompra.Ninguna,
@@ -48,15 +51,20 @@ public sealed record ComparacionVariante(Guid VarianteId, Cantidad Nota, Cantida
 
 public static class ComparacionCompra
 {
-    /// <summary>Junta por variante lo contado (en cualquier presentación) y lo que dice la nota (lo ya ligado).</summary>
-    public static List<ComparacionVariante> Comparar(IEnumerable<CompraConteo> conteo, IEnumerable<CompraRenglon> renglones)
+    /// <summary>
+    /// Junta por variante lo contado (en cualquier presentación), lo que dice la nota (lo ya ligado) y, si la compra viene
+    /// de una orden, lo pedido.
+    /// </summary>
+    public static List<ComparacionVariante> Comparar(
+        IEnumerable<CompraConteo> conteo, IEnumerable<CompraRenglon> renglones, IEnumerable<OrdenRenglon>? pedido = null)
     {
+        var pedidos = pedido?.GroupBy(p => p.VarianteId).ToDictionary(g => g.Key, g => g.Aggregate(Cantidad.Cero, (s, p) => s + p.CantidadBase));
         var contado = conteo.GroupBy(c => c.VarianteId).ToDictionary(g => g.Key, g => g.Aggregate(Cantidad.Cero, (s, c) => s + c.CantidadBase));
         var nota = renglones.Where(r => r.VarianteId is not null).GroupBy(r => r.VarianteId!.Value).ToDictionary(g => g.Key,
             g => (Cantidad: g.Aggregate(Cantidad.Cero, (s, r) => s + r.CantidadBase), Importe: g.Sum(r => r.ImporteCentavos)));
-        return nota.Keys.Union(contado.Keys)
+        return nota.Keys.Union(contado.Keys).Union(pedidos?.Keys ?? Enumerable.Empty<Guid>())
             .Select(v => new ComparacionVariante(v, nota.TryGetValue(v, out var n) ? n.Cantidad : Cantidad.Cero,
-                contado.GetValueOrDefault(v, Cantidad.Cero), n.Importe))
+                contado.GetValueOrDefault(v, Cantidad.Cero), n.Importe, pedidos is null ? null : pedidos.GetValueOrDefault(v, Cantidad.Cero)))
             .ToList();
     }
 }

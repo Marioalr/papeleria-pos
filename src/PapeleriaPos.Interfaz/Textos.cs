@@ -34,6 +34,8 @@ public static class Textos
         AccionControlada.RecibirMercancia => "Recibir mercancía (contar lo que llegó)",
         AccionControlada.CostearCompra => "Capturar la nota del proveedor y cerrar la compra",
         AccionControlada.ConfigurarMargen => "Configurar el margen mínimo",
+        AccionControlada.PedirCompra => "Hacer órdenes de compra",
+        AccionControlada.AbrirPaquete => "Abrir un paquete (sale el paquete, entran sus piezas)",
         _ => accion.ToString(),
     };
 
@@ -56,6 +58,13 @@ public static class Textos
         EstadoCompra.Recibiendo => "Contando",
         EstadoCompra.PorCostear => "Falta la nota",
         EstadoCompra.Cerrada => "Cerrada",
+        _ => "Cancelada",
+    };
+
+    public static string Estado(EstadoOrden estado) => estado switch
+    {
+        EstadoOrden.Abierta => "Abierta",
+        EstadoOrden.Recibida => "Recibida",
         _ => "Cancelada",
     };
 

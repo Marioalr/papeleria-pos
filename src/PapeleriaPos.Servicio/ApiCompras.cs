@@ -54,6 +54,30 @@ public static class ApiCompras
             return Results.NoContent();
         });
 
+        // ── Órdenes de compra y abrir paquete (parte 3) ──
+
+        api.MapPost("/compras/{compraId:guid}/orden", (Guid compraId, SolicitudOrdenDeCompra s, PosDbContext db) =>
+            new RegistroCompras(db).OrdenAsync(compraId, s));
+
+        api.MapGet("/sucursales/{sucursalId:guid}/ordenes", (Guid sucursalId, PosDbContext db) => new RegistroOrdenes(db).ListaAsync(sucursalId));
+
+        api.MapPost("/ordenes", (SolicitudAbrirOrden s, PosDbContext db) => new RegistroOrdenes(db).AbrirAsync(s));
+
+        api.MapGet("/ordenes/{ordenId:guid}", async (Guid ordenId, PosDbContext db) =>
+            await new RegistroOrdenes(db).DetalleAsync(ordenId) is { } orden ? Results.Ok(orden) : Results.NotFound(new ErrorDto("La orden ya no existe.")));
+
+        api.MapPost("/ordenes/{ordenId:guid}/renglones", (Guid ordenId, SolicitudPedido s, PosDbContext db) => new RegistroOrdenes(db).PedirAsync(ordenId, s));
+
+        api.MapPost("/ordenes/{ordenId:guid}/cancelar", (Guid ordenId, SolicitudCompra s, PosDbContext db) =>
+            new RegistroOrdenes(db).CancelarAsync(ordenId, s.UsuarioId));
+
+        api.MapPost("/aperturas", (SolicitudAbrirPaquete s, PosDbContext db) => new RegistroAperturas(db).AbrirAsync(s));
+
+        api.MapGet("/sucursales/{sucursalId:guid}/aperturas", (Guid sucursalId, PosDbContext db) => new RegistroAperturas(db).RecientesAsync(sucursalId));
+
+        api.MapGet("/variantes/{varianteId:guid}/ultima-apertura", async (Guid varianteId, PosDbContext db) =>
+            await new RegistroAperturas(db).UltimaAsync(varianteId) is { } ultima ? Results.Ok(ultima) : Results.NoContent());
+
         api.MapGet("/sucursales/{sucursalId:guid}/margenes", (Guid sucursalId, PosDbContext db) => new RegistroCompras(db).MargenesAsync(sucursalId));
 
         api.MapPut("/sucursales/{sucursalId:guid}/margenes", (Guid sucursalId, SolicitudMargenes s, PosDbContext db) =>

@@ -42,6 +42,12 @@ public enum AccionControlada
 
     /// <summary>El margen mínimo general y por departamento.</summary>
     ConfigurarMargen,
+
+    /// <summary>Hacer órdenes de compra a los proveedores.</summary>
+    PedirCompra,
+
+    /// <summary>Abrir un paquete: sale el paquete y entran sus piezas (cuando son productos distintos).</summary>
+    AbrirPaquete,
 }
 
 public enum NivelPermiso
@@ -109,6 +115,9 @@ public static class Permisos
         .. Ambos(AccionControlada.RecibirMercancia, NivelPermiso.Permitido),
         Regla(AccionControlada.CostearCompra, Rol.Cajero, NivelPermiso.NoPermitido),
         Regla(AccionControlada.CostearCompra, Rol.Encargado, NivelPermiso.Permitido),
+        Regla(AccionControlada.PedirCompra, Rol.Cajero, NivelPermiso.NoPermitido),
+        Regla(AccionControlada.PedirCompra, Rol.Encargado, NivelPermiso.Permitido),
+        .. Ambos(AccionControlada.AbrirPaquete, NivelPermiso.Permitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Cajero, NivelPermiso.NoPermitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Encargado, NivelPermiso.Permitido),
     ];

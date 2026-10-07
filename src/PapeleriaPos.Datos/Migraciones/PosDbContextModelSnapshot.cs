@@ -1045,6 +1045,49 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("TrabajosImpresion", (string)null);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.AperturaPaquete", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Cantidad")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CantidadDestino")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CostoCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("DestinoId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("FechaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OrigenId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UsuarioId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DestinoId");
+
+                    b.HasIndex("SucursalId");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.HasIndex("OrigenId", "FechaUtc");
+
+                    b.ToTable("AperturasPaquete", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.Compra", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1076,6 +1119,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<string>("Motivo")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("OrdenId")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid>("ProveedorId")
                         .HasColumnType("TEXT");
 
@@ -1088,6 +1134,8 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasKey("Id");
 
                     b.HasIndex("CosteoId");
+
+                    b.HasIndex("OrdenId");
 
                     b.HasIndex("ProveedorId");
 
@@ -1330,6 +1378,83 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasIndex("SucursalId", "VarianteId", "FechaUtc");
 
                     b.ToTable("MovimientosInventario", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.OrdenCompra", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CompraId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreadaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Folio")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Notas")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ProveedorId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UsuarioId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProveedorId");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.HasIndex("SucursalId", "Estado");
+
+                    b.HasIndex("SucursalId", "Folio")
+                        .IsUnique();
+
+                    b.ToTable("OrdenesCompra", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.OrdenRenglon", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Cantidad")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CantidadBase")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("OrdenId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("PresentacionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("VarianteId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrdenId");
+
+                    b.HasIndex("PresentacionId");
+
+                    b.HasIndex("VarianteId");
+
+                    b.ToTable("OrdenesRenglones", (string)null);
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Telegram.ChatTelegram", b =>
@@ -2343,11 +2468,43 @@ namespace PapeleriaPos.Datos.Migraciones
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.AperturaPaquete", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
+                        .WithMany()
+                        .HasForeignKey("DestinoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
+                        .WithMany()
+                        .HasForeignKey("OrigenId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.Compra", b =>
                 {
                     b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
                         .WithMany()
                         .HasForeignKey("CosteoId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PapeleriaPos.Nucleo.Inventario.OrdenCompra", null)
+                        .WithMany()
+                        .HasForeignKey("OrdenId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("PapeleriaPos.Nucleo.Catalogo.Proveedor", null)
@@ -2459,6 +2616,48 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
                         .WithMany()
                         .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
+                        .WithMany()
+                        .HasForeignKey("VarianteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.OrdenCompra", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Proveedor", null)
+                        .WithMany()
+                        .HasForeignKey("ProveedorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.OrdenRenglon", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Inventario.OrdenCompra", null)
+                        .WithMany("Renglones")
+                        .HasForeignKey("OrdenId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Presentacion", null)
+                        .WithMany()
+                        .HasForeignKey("PresentacionId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -2734,6 +2933,11 @@ namespace PapeleriaPos.Datos.Migraciones
 
                     b.Navigation("Documentos");
 
+                    b.Navigation("Renglones");
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.OrdenCompra", b =>
+                {
                     b.Navigation("Renglones");
                 });
 

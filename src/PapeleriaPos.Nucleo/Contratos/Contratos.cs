@@ -489,15 +489,18 @@ public sealed record SolicitudDocumentoCompra(Guid UsuarioId, string Nombre, str
 /// <param name="PrecioSugeridoCentavos">Si el margen queda debajo del mínimo: el precio que lo deja en el mínimo.</param>
 public sealed record ComparacionCompraDto(
     Guid VarianteId, string Producto, UnidadBase Unidad, decimal Nota, decimal Contado, DiferenciaCompra Diferencia, decimal? CostoUnitarioCentavos,
-    long? CostoAnteriorCentavos, long? PrecioCentavos, int? MargenCentesimas, int MargenMinimoCentesimas, long? PrecioSugeridoCentavos);
+    long? CostoAnteriorCentavos, long? PrecioCentavos, int? MargenCentesimas, int MargenMinimoCentesimas, long? PrecioSugeridoCentavos,
+    decimal? Pedido = null);
 
 /// <param name="Renglones">La nota: solo para quien captura costos, y cuando el conteo ya se cerró (quien cuenta no la ve).</param>
 /// <param name="Comparacion">Igual que los renglones.</param>
 /// <param name="Documentos">Los documentos del proveedor que se cargaron; igual que los renglones.</param>
+/// <param name="OrdenId">La orden de compra de la que viene; igual que los renglones.</param>
 public sealed record CompraDto(
     Guid Id, string Folio, Guid ProveedorId, string Proveedor, string? Documento, EstadoCompra Estado, DateTime AbiertaLocal, string Recibio,
     string? Costeo, DateTime? CerradaLocal, string? Motivo, IReadOnlyList<ConteoCompraDto> Conteo, IReadOnlyList<RenglonCompraDto>? Renglones,
-    IReadOnlyList<ComparacionCompraDto>? Comparacion, long? TotalCentavos, IReadOnlyList<DocumentoCompraDto>? Documentos = null);
+    IReadOnlyList<ComparacionCompraDto>? Comparacion, long? TotalCentavos, IReadOnlyList<DocumentoCompraDto>? Documentos = null, Guid? OrdenId = null,
+    string? Orden = null);
 
 public sealed record SolicitudCompra(Guid UsuarioId);
 
@@ -514,3 +517,36 @@ public sealed record MargenesDto(int MargenMinimoCentesimas, IReadOnlyList<Marge
 
 /// <summary>Solo el dueño los cambia.</summary>
 public sealed record SolicitudMargenes(Guid UsuarioId, MargenesDto Margenes);
+
+// ── Órdenes de compra y abrir paquete (fase 2, entrega 2, parte 3) ──────────
+
+public sealed record SolicitudAbrirOrden(Guid UsuarioId, Guid SucursalId, Guid ProveedorId, string? Notas);
+
+/// <param name="Compra">El folio de la compra que la recibió.</param>
+public sealed record OrdenResumenDto(Guid Id, string Folio, Guid ProveedorId, string Proveedor, EstadoOrden Estado, DateTime CreadaLocal, int Productos, string? Compra);
+
+/// <param name="UltimoCostoCentavos">Por unidad base, con este proveedor.</param>
+/// <param name="Existencia">En la sucursal, en unidad base.</param>
+public sealed record OrdenRenglonDto(
+    Guid VarianteId, Guid PresentacionId, string Producto, string Presentacion, long CantidadMilesimas, decimal CantidadBase, long? UltimoCostoCentavos,
+    decimal? Existencia);
+
+/// <param name="Texto">La orden lista para mandarla al proveedor (por WhatsApp o correo).</param>
+public sealed record OrdenDto(
+    Guid Id, string Folio, Guid ProveedorId, string Proveedor, EstadoOrden Estado, DateTime CreadaLocal, string Usuario, string? Notas,
+    IReadOnlyList<OrdenRenglonDto> Renglones, string? Compra, string Texto);
+
+/// <summary>Pone lo que se pide de una presentación (cero la quita).</summary>
+public sealed record SolicitudPedido(Guid UsuarioId, Guid VarianteId, Guid PresentacionId, long CantidadMilesimas);
+
+/// <summary>De qué orden viene una compra (vacío: de ninguna).</summary>
+public sealed record SolicitudOrdenDeCompra(Guid UsuarioId, Guid? OrdenId);
+
+/// <param name="CantidadMilesimas">Paquetes que se abren, en la unidad del paquete.</param>
+/// <param name="CantidadDestinoMilesimas">Piezas que salieron de todos, en la unidad de la pieza.</param>
+public sealed record SolicitudAbrirPaquete(Guid UsuarioId, Guid SucursalId, Guid OrigenId, long CantidadMilesimas, Guid DestinoId, long CantidadDestinoMilesimas);
+
+public sealed record AperturaDto(DateTime FechaLocal, string Origen, decimal Cantidad, string Destino, decimal CantidadDestino, string Usuario);
+
+/// <summary>La última vez que se abrió ese paquete: en qué producto y cuántas piezas traía cada uno.</summary>
+public sealed record UltimaAperturaDto(Guid DestinoId, string Destino, decimal PiezasPorPaquete);
