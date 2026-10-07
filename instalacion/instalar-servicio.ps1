@@ -1,4 +1,4 @@
-#Requires -RunAsAdministrator
+﻿#Requires -RunAsAdministrator
 <#
     Instala el servicio de Papeleria POS en la caja principal. Se corre como administrador desde la carpeta publicada
     del servicio (donde esta PapeleriaPos.Servicio.exe):
@@ -8,6 +8,8 @@
 
     - El servicio arranca con Windows, aunque nadie inicie sesion, y se reinicia solo si falla.
     - La base queda en C:\ProgramData\PapeleriaPos\pos.db y los respaldos en C:\ProgramData\PapeleriaPos\respaldos.
+    - Deja C:\ProgramData\PapeleriaPos\Caja con escritura para los usuarios: la caja de esta PC se usa desde un usuario
+      común (docs/plan.md, instalación y usuarios de Windows). Para las demás cajas, instalar-caja.ps1.
     - Abre el firewall solo para la red local: el puerto 5080 (las cajas) y el 5081 (buscar el servicio en la red).
 #>
 param([switch]$Quitar)
@@ -43,6 +45,12 @@ sc.exe failure $nombre reset= 86400 actions= restart/5000/restart/5000/restart/6
 
 netsh advfirewall firewall add rule name="$reglaCajas" dir=in action=allow protocol=TCP localport=5080 remoteip=localsubnet profile=any | Out-Null
 netsh advfirewall firewall add rule name="$reglaBuscar" dir=in action=allow protocol=UDP localport=5081 remoteip=localsubnet profile=any | Out-Null
+
+# La carpeta de la caja: los usuarios comunes escriben su configuración y su copia para trabajar sin conexión.
+# S-1-5-32-545 es el grupo Usuarios (se llama distinto según el idioma de Windows).
+$carpetaCaja = Join-Path $env:ProgramData 'PapeleriaPos\Caja'
+New-Item -ItemType Directory -Force -Path $carpetaCaja | Out-Null
+icacls $carpetaCaja /grant '*S-1-5-32-545:(OI)(CI)M' | Out-Null
 
 Start-Service $nombre
 Write-Host "Servicio instalado y en marcha. Las cajas lo encuentran en http://$(hostname):5080 o con 'Buscar en la red'."

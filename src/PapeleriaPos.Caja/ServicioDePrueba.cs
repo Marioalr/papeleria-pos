@@ -6,8 +6,9 @@ namespace PapeleriaPos.Caja;
 
 /// <summary>
 /// La prueba con una persona real (docs/plan.md): no hay servicio de Windows. La caja arranca su propio servicio en su
-/// puerto, con la base junto a la instalación, y lo apaga al cerrarse. Si ya estaba corriendo (la caja se cerró mal), usa
-/// ese.
+/// puerto y lo apaga al cerrarse; si ya estaba corriendo (la caja se cerró mal), usa ese. La instaló el administrador en
+/// Archivos de programa, así que la base de trabajo va en la carpeta de datos (ProgramData, con escritura para los
+/// usuarios) y la inicial se lee de la instalación.
 /// </summary>
 internal sealed class ServicioDePrueba : IDisposable
 {
@@ -31,13 +32,15 @@ internal sealed class ServicioDePrueba : IDisposable
         var carpeta = AppContext.BaseDirectory;
         var exe = Path.GetFullPath(Path.Combine(carpeta, configuracion.ServicioLocal ?? @"..\Servicio\PapeleriaPos.Servicio.exe"));
         var inicial = Path.GetFullPath(Path.Combine(carpeta, configuracion.BaseInicial ?? @"..\datos\prueba.db"));
+        var datos = configuracion.CarpetaDatos is { Length: > 0 } c ? Environment.ExpandEnvironmentVariables(c) : Path.GetDirectoryName(inicial)!;
+        Directory.CreateDirectory(datos);
         if (!File.Exists(exe))
             throw new InvalidOperationException($"No se encontró el servicio de la prueba ({exe}): reinstala la prueba.");
         var origen = url.GetLeftPart(UriPartial.Authority);
         var info = new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(exe)! };
         foreach (var argumento in new[]
                  {
-                     $"--Urls={origen}", $"--Caja:Servicio={origen}", $"--ConnectionStrings:Pos=Data Source={Path.Combine(Path.GetDirectoryName(inicial)!, "pos.db")}",
+                     $"--Urls={origen}", $"--Caja:Servicio={origen}", $"--ConnectionStrings:Pos=Data Source={Path.Combine(datos, "pos.db")}",
                      "--Prueba:Activa=true", $"--Prueba:BaseInicial={inicial}", "--Telegram:Activo=false", "--Descubrimiento:Activo=false",
                      "--Impresora:Vigilar=false", "--Respaldos:Activo=false",
                  })

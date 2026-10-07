@@ -12,7 +12,9 @@ namespace PapeleriaPos.Caja;
 
 /// <summary>
 /// Configuración de esta PC. La primera vez sale de caja.json, junto al programa; al dar de alta la caja se guarda en
-/// ProgramData (sirve para cualquier usuario de Windows que entre a la PC) con la llave cifrada por Windows.
+/// ProgramData\PapeleriaPos\Caja con la llave cifrada por Windows. Esa carpeta la deja el instalador (administrador) con
+/// escritura para los usuarios: la caja se usa desde un usuario común y sirve igual para cualquiera que entre a la PC
+/// (docs/plan.md, instalación y usuarios de Windows).
 /// </summary>
 /// <param name="Impresora">"tcp://ip:9100" (impresora de red), el nombre de una impresora de Windows, o vacío para ver el ticket en pantalla.</param>
 /// <param name="LlaveProtegida">La llave de la caja cifrada para esta PC: copiada a otra no sirve.</param>
@@ -21,16 +23,22 @@ namespace PapeleriaPos.Caja;
 /// <param name="QuitarImpresos">Quitar de la cola lo ya impreso y medido (la cola conserva los documentos impresos).</param>
 /// <param name="Prueba">La caja de la prueba con una persona real: arranca su propio servicio y no pide alta.</param>
 /// <param name="ServicioLocal">En la prueba: el servicio, relativo a la carpeta de la caja.</param>
-/// <param name="BaseInicial">En la prueba: la base con que se instaló (la de trabajo se guarda junto a ella).</param>
+/// <param name="BaseInicial">En la prueba: la base con que se instaló (de solo lectura, en Archivos de programa).</param>
+/// <param name="CarpetaDatos">En la prueba: dónde va la base de trabajo y las respuestas (admite %ProgramData%).</param>
 public sealed record ConfiguracionCaja(
     string Servicio, Guid? CajaId, string? Impresora, string? LlaveProtegida = null, string? ColaImpresion = null, bool QuitarImpresos = true,
-    bool Prueba = false, string? ServicioLocal = null, string? BaseInicial = null)
+    bool Prueba = false, string? ServicioLocal = null, string? BaseInicial = null, string? CarpetaDatos = null)
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
 
-    private static string Carpeta => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PapeleriaPos");
+    private static string Raiz => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PapeleriaPos");
+
+    private static string Carpeta => Path.Combine(Raiz, "Caja");
 
     private static string Guardada => Path.Combine(Carpeta, "caja.json");
+
+    /// <summary>Donde la guardaban las versiones anteriores (antes de la carpeta con permisos para los usuarios).</summary>
+    private static string GuardadaAntes => Path.Combine(Raiz, "caja.json");
 
     /// <summary>La base local de la caja: copia del catálogo, bandeja de salida y diario del turno.</summary>
     public static string BaseLocal => Path.Combine(Carpeta, "caja-local.db");
@@ -41,7 +49,7 @@ public sealed record ConfiguracionCaja(
         var junto = Path.Combine(AppContext.BaseDirectory, "caja.json");
         if (Deserializar(junto) is { Prueba: true } prueba)
             return prueba;
-        var ruta = File.Exists(Guardada) ? Guardada : junto;
+        var ruta = File.Exists(Guardada) ? Guardada : File.Exists(GuardadaAntes) ? GuardadaAntes : junto;
         return Deserializar(ruta) ?? throw new InvalidOperationException($"{ruta} está vacío.");
     }
 

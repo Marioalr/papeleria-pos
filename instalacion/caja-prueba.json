@@ -5,5 +5,6 @@
   "ColaImpresion": null,
   "Prueba": true,
   "ServicioLocal": "..\\Servicio\\PapeleriaPos.Servicio.exe",
-  "BaseInicial": "..\\datos\\prueba.db"
+  "BaseInicial": "..\\datos\\prueba.db",
+  "CarpetaDatos": "%ProgramData%\\PapeleriaPos-Prueba"
 }
