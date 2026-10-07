@@ -66,8 +66,9 @@ Usuarios de prueba que crea `preparar-caja` (solo para bases de prueba):
 
 ### Instalar en la tienda (varias cajas)
 
-Instala el administrador de cada PC; después todo se usa desde un usuario común de Windows, sin administrador
-([plan](docs/plan.md#instalación-y-usuarios-de-windows)).
+Instala el administrador de cada PC; después todo se usa desde una cuenta común de Windows, sin administrador
+(el cajero, el encargado y el dueño entran con su usuario y PIN del POS desde esa misma cuenta;
+[plan](docs/plan.md#instalación-y-usuarios-de-windows)).
 
 1. Publicar, en la PC de desarrollo:
 
@@ -84,7 +85,7 @@ Instala el administrador de cada PC; después todo se usa desde un usuario comú
 3. **Cada caja** (también la principal): como administrador, correr `instalar-caja.ps1` desde `publicar/caja` (con
    `-ColaImpresion "<cola>"` en la PC de la WF-6590). La copia a Archivos de programa, deja
    `C:\ProgramData\PapeleriaPos\Caja` con escritura para los usuarios y pone el acceso en el escritorio de todos.
-   Después, con el usuario de todos los días, se abre la caja: la primera vez pide la dirección de la caja principal
+   Después, con la cuenta de Windows de todos los días, se abre la caja: la primera vez pide la dirección de la caja principal
    (o la busca en la red) y el PIN del dueño, y queda dada de alta.
 
 Para probar en el navegador lo que hace la ventana de Windows:
@@ -101,7 +102,7 @@ Para que alguien de la tienda pruebe lo que ya funciona, solo y sin tocar eleven
 - **El instalador** `PapeleriaPos-Prueba.exe` lo arma GitHub Actions en Windows (flujo «Instalador de prueba»). Se lanza a
   mano desde la pestaña Actions, con una etiqueta `prueba-*` o en un PR que toque `instalacion/`, y queda como artefacto
   de la corrida.
-- **Lo instala el administrador, para todos los usuarios;** quien prueba la usa con su usuario común. En el escritorio
+- **Lo instala el administrador, para todas las cuentas de Windows;** quien prueba la usa con una cuenta común. En el escritorio
   deja «Papelería POS (prueba)» y la carpeta «Ejemplos de la prueba»: el Léeme con los usuarios y PIN, y una factura
   XML y una nota PDF de un proveedor de la base.
 - **La caja arranca su propio servicio** en el puerto 5180 y lo apaga al cerrarse. No hay servicio de Windows ni

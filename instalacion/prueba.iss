@@ -2,7 +2,7 @@
 ; (.github/workflows/prueba.yml) con lo publicado en ..\publicar.
 ;
 ; - Como en la tienda (docs/plan.md, instalación y usuarios de Windows): lo instala el administrador para todos los
-;   usuarios y quien prueba lo usa con su usuario común. Sin servicio de Windows: la caja arranca su propio servicio
+;   usuarios y quien prueba lo usa con una cuenta común de Windows. Sin servicio de Windows: la caja arranca su propio servicio
 ;   (puerto 5180) y lo apaga al cerrarse.
 ; - La base de prueba va en {app}\datos (solo lectura); la de trabajo y las respuestas, en
 ;   {commonappdata}\PapeleriaPos-Prueba, con escritura para los usuarios.

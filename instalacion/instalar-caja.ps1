@@ -1,7 +1,7 @@
 ﻿#Requires -RunAsAdministrator
 <#
     Instala la caja en esta PC para todos sus usuarios. Lo corre el administrador desde la carpeta publicada de la caja
-    (donde está PapeleriaPos.Caja.exe); después la caja se usa desde un usuario común (docs/plan.md, instalación y
+    (donde está PapeleriaPos.Caja.exe); después la caja se usa desde una cuenta común de Windows (docs/plan.md, instalación y
     usuarios de Windows):
 
         powershell -ExecutionPolicy Bypass -File .\instalar-caja.ps1
@@ -53,4 +53,4 @@ if ($ColaImpresion) {
     Write-Host "La cola «$ColaImpresion» conserva los documentos impresos."
 }
 
-Write-Host "Caja instalada. Ábrela desde el escritorio con el usuario de todos los días (no hace falta administrador)."
+Write-Host "Caja instalada. Ábrela desde el escritorio con la cuenta de Windows de todos los días (no hace falta administrador)."
