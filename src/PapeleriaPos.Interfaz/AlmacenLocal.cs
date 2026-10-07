@@ -11,9 +11,10 @@ public sealed record ElementoBandeja(long Orden, Guid Id, string Ruta, string Js
 /// Lo que cambia el efectivo y los totales del turno. La caja anota todo lo de su turno (en línea o sin conexión) para
 /// poder hacer el corte aunque la caja principal no conteste.
 /// </summary>
+/// <param name="Redondeo">El del efectivo al peso: + el de una venta, − el de un reembolso (informativo, ya va en el efectivo).</param>
 public sealed record AnotacionDiario(
     Guid Id, Guid TurnoId, int Ventas = 0, long Efectivo = 0, long Tarjeta = 0, long Transferencia = 0, long Entradas = 0, long Salidas = 0,
-    long Devoluciones = 0, int Cancelaciones = 0);
+    long Devoluciones = 0, int Cancelaciones = 0, long Redondeo = 0);
 
 /// <summary>
 /// La base local de la caja (una SQLite propia, junto a su configuración): la copia del catálogo y demás datos para vender
@@ -46,6 +47,12 @@ public sealed class AlmacenLocal
         {
             if (Convert.ToInt32(columnas.ExecuteScalar()) == 0)
                 Ejecutar(conexion, null, "ALTER TABLE Bandeja ADD COLUMN Bloquea INTEGER NOT NULL DEFAULT 1");
+        }
+        // Bases creadas antes del redondeo al peso (fase 3): lo anotado antes no tiene redondeo.
+        using (var columnas = Comando(conexion, null, "SELECT COUNT(*) FROM pragma_table_info('Diario') WHERE name = 'Redondeo'"))
+        {
+            if (Convert.ToInt32(columnas.ExecuteScalar()) == 0)
+                Ejecutar(conexion, null, "ALTER TABLE Diario ADD COLUMN Redondeo INTEGER NOT NULL DEFAULT 0");
         }
     }
 
@@ -112,13 +119,14 @@ public sealed class AlmacenLocal
         using var conexion = Abrir();
         using var comando = Comando(conexion, null, """
             SELECT COALESCE(SUM(Ventas), 0), COALESCE(SUM(Efectivo), 0), COALESCE(SUM(Tarjeta), 0), COALESCE(SUM(Transferencia), 0),
-                   COALESCE(SUM(Entradas), 0), COALESCE(SUM(Salidas), 0), COALESCE(SUM(Devoluciones), 0), COALESCE(SUM(Cancelaciones), 0)
+                   COALESCE(SUM(Entradas), 0), COALESCE(SUM(Salidas), 0), COALESCE(SUM(Devoluciones), 0), COALESCE(SUM(Cancelaciones), 0),
+                   COALESCE(SUM(Redondeo), 0)
             FROM Diario WHERE TurnoId = $turno
             """, ("$turno", turnoId.ToString()));
         using var lector = comando.ExecuteReader();
         lector.Read();
         return new AnotacionDiario(Guid.Empty, turnoId, lector.GetInt32(0), lector.GetInt64(1), lector.GetInt64(2), lector.GetInt64(3),
-            lector.GetInt64(4), lector.GetInt64(5), lector.GetInt64(6), lector.GetInt32(7));
+            lector.GetInt64(4), lector.GetInt64(5), lector.GetInt64(6), lector.GetInt32(7), lector.GetInt64(8));
     }
 
     private SqliteConnection Abrir()
@@ -186,12 +194,12 @@ public sealed class Lote : IDisposable
     public Lote Anotar(AnotacionDiario a)
     {
         AlmacenLocal.Ejecutar(_conexion, _transaccion, """
-            INSERT OR IGNORE INTO Diario (Id, TurnoId, Ventas, Efectivo, Tarjeta, Transferencia, Entradas, Salidas, Devoluciones, Cancelaciones)
-            VALUES ($id, $turno, $ventas, $efectivo, $tarjeta, $transferencia, $entradas, $salidas, $devoluciones, $cancelaciones)
+            INSERT OR IGNORE INTO Diario (Id, TurnoId, Ventas, Efectivo, Tarjeta, Transferencia, Entradas, Salidas, Devoluciones, Cancelaciones, Redondeo)
+            VALUES ($id, $turno, $ventas, $efectivo, $tarjeta, $transferencia, $entradas, $salidas, $devoluciones, $cancelaciones, $redondeo)
             """,
             ("$id", a.Id.ToString()), ("$turno", a.TurnoId.ToString()), ("$ventas", a.Ventas), ("$efectivo", a.Efectivo), ("$tarjeta", a.Tarjeta),
             ("$transferencia", a.Transferencia), ("$entradas", a.Entradas), ("$salidas", a.Salidas), ("$devoluciones", a.Devoluciones),
-            ("$cancelaciones", a.Cancelaciones));
+            ("$cancelaciones", a.Cancelaciones), ("$redondeo", a.Redondeo));
         return this;
     }
 

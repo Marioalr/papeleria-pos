@@ -41,6 +41,15 @@ public class Venta
 
     public long TotalCentavos { get; private set; }
 
+    /// <summary>
+    /// Lo que se cobró de más (+) o de menos (−) al redondear al peso el efectivo (fase 3). El total y el IVA siguen
+    /// exactos: el redondeo va aparte en el ticket y en el corte.
+    /// </summary>
+    public long RedondeoCentavos { get; private set; }
+
+    /// <summary>Lo que pagó el cliente: el total con el redondeo del efectivo.</summary>
+    public long TotalCobradoCentavos => TotalCentavos + RedondeoCentavos;
+
     /// <summary>IVA incluido en el total.</summary>
     public long IvaCentavos { get; private set; }
 
@@ -332,13 +341,14 @@ public class Venta
 
     /// <summary>
     /// F12: aplica los cobros y deja la venta pagada con su folio. Tarjeta y transferencia no pueden pasar del total;
-    /// el efectivo cubre lo que falta y da el cambio.
+    /// el efectivo cubre lo que falta, redondeado al peso (<see cref="Efectivo"/>), y da el cambio.
     /// </summary>
-    public void Pagar(int folio, IReadOnlyList<CobroSolicitado> cobros, DateTime ahoraUtc)
+    /// <param name="redondear">Falso solo para lo que se cobró sin conexión antes de que existiera el redondeo.</param>
+    public void Pagar(int folio, IReadOnlyList<CobroSolicitado> cobros, DateTime ahoraUtc, bool redondear = true)
     {
         if (ahoraUtc.Kind != DateTimeKind.Utc)
             throw new ArgumentException("La fecha debe estar en UTC.", nameof(ahoraUtc));
-        var (faltante, recibido) = ValidarCobros(cobros);
+        var (efectivo, recibido) = Revisar(cobros, redondear);
 
         Cobros = cobros.Where(c => c.Forma != FormaPago.Efectivo).Select(c => new Cobro
         {
@@ -348,23 +358,49 @@ public class Venta
             Referencia = c.Referencia,
             Verificacion = c.Forma == FormaPago.Transferencia ? Verificacion.PorVerificar : Verificacion.NoAplica,
         }).ToList();
-        if (faltante > 0)
+        if (efectivo.ACobrarCentavos > 0)
             Cobros.Insert(0, new Cobro
             {
                 VentaId = Id,
                 Forma = FormaPago.Efectivo,
-                MontoCentavos = faltante,
+                MontoCentavos = efectivo.ACobrarCentavos,
                 RecibidoCentavos = recibido,
-                CambioCentavos = recibido - faltante,
+                CambioCentavos = recibido - efectivo.ACobrarCentavos,
             });
 
+        RedondeoCentavos = efectivo.RedondeoCentavos;
         Folio = folio;
         PagadaUtc = ahoraUtc;
         Estado = EstadoVenta.Pagada;
     }
 
-    /// <summary>Revisa que los cobros alcancen sin cambiar nada. Devuelve lo que falta cubrir en efectivo y lo recibido.</summary>
-    public (long Faltante, long Recibido) ValidarCobros(IReadOnlyList<CobroSolicitado> cobros)
+    /// <summary>
+    /// Revisa que los cobros alcancen sin cambiar nada. Devuelve lo que falta cubrir en efectivo (ya redondeado) y lo
+    /// recibido.
+    /// </summary>
+    public (long Faltante, long Recibido) ValidarCobros(IReadOnlyList<CobroSolicitado> cobros, bool redondear = true)
+    {
+        var (efectivo, recibido) = Revisar(cobros, redondear);
+        return (efectivo.ACobrarCentavos, recibido);
+    }
+
+    /// <summary>
+    /// Lo que falta pagar en efectivo después de la tarjeta y la transferencia: al peso más cercano y, si falta algo,
+    /// al menos $1 (fase 3). Las impresiones no se redondean (tienen sus propias reglas): el efectivo cubre primero la
+    /// mercancía, que se redondea, y lo que queda de impresiones va exacto. La tarjeta y la transferencia van exactas.
+    /// La ventana de cobro usa esto mismo para mostrar cuánto pedir.
+    /// </summary>
+    public EfectivoACobrar Efectivo(long sinEfectivoCentavos, bool redondear = true)
+    {
+        var exacto = Math.Max(0, TotalCentavos - sinEfectivoCentavos);
+        if (!redondear || exacto == 0)
+            return new EfectivoACobrar(exacto, exacto);
+        var mercancia = Math.Min(exacto, Lineas.Where(l => !l.EsImpresiones).Sum(l => l.ImporteCentavos));
+        var aCobrar = exacto - mercancia + Redondeo.AlPeso(mercancia);
+        return new EfectivoACobrar(exacto, aCobrar == 0 ? 100 : aCobrar);
+    }
+
+    private (EfectivoACobrar Efectivo, long Recibido) Revisar(IReadOnlyList<CobroSolicitado> cobros, bool redondear)
     {
         RequerirEditable();
         if (Lineas.Count == 0)
@@ -378,12 +414,11 @@ public class Venta
         if (sinEfectivo > TotalCentavos)
             throw new InvalidOperationException("Tarjeta y transferencia no pueden pasar del total: no dan cambio.");
 
-        var faltante = TotalCentavos - sinEfectivo;
-        var efectivo = cobros.SingleOrDefault(c => c.Forma == FormaPago.Efectivo);
-        var recibido = efectivo?.MontoCentavos ?? 0;
-        if (recibido < faltante)
-            throw new InvalidOperationException($"Faltan {(faltante - recibido) / 100m:C2} por cobrar.");
-        return (faltante, recibido);
+        var efectivo = Efectivo(sinEfectivo, redondear);
+        var recibido = cobros.SingleOrDefault(c => c.Forma == FormaPago.Efectivo)?.MontoCentavos ?? 0;
+        if (recibido < efectivo.ACobrarCentavos)
+            throw new InvalidOperationException($"Faltan {(efectivo.ACobrarCentavos - recibido) / 100m:C2} por cobrar.");
+        return (efectivo, recibido);
     }
 
     public long CambioCentavos => Cobros.Sum(c => c.CambioCentavos);

@@ -20,6 +20,12 @@ public enum Verificacion
 /// <summary>Lo que captura el cajero al cobrar. En efectivo, el monto es lo que entregó el cliente.</summary>
 public sealed record CobroSolicitado(FormaPago Forma, long MontoCentavos, string? Referencia = null);
 
+/// <summary>Lo que falta pagar en efectivo: exacto y ya redondeado al peso.</summary>
+public sealed record EfectivoACobrar(long ExactoCentavos, long ACobrarCentavos)
+{
+    public long RedondeoCentavos => ACobrarCentavos - ExactoCentavos;
+}
+
 public class Cobro
 {
     public Guid Id { get; set; } = Ids.Nuevo();

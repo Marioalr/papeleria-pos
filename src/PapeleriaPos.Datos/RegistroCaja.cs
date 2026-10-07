@@ -75,17 +75,20 @@ public sealed class RegistroCaja(PosDbContext db)
     /// Una venta que cobró una caja sin conexión y llega con la bandeja: trae su folio y su hora. Las reglas ya se
     /// revisaron en la caja (su bitácora sube aparte), así que aquí no se vuelven a pedir autorizaciones.
     /// </summary>
-    public Task<Venta> CobroDeContingenciaAsync(Venta venta, IReadOnlyList<CobroSolicitado> cobros, int folio, DateTime pagadaUtc, CancellationToken ct = default) =>
-        GuardarCobroAsync(venta, cobros, folio, pagadaUtc, ct);
+    /// <param name="redondear">Falso para lo que la caja cobró antes de que existiera el redondeo al peso: se cobra exacto.</param>
+    public Task<Venta> CobroDeContingenciaAsync(
+        Venta venta, IReadOnlyList<CobroSolicitado> cobros, int folio, DateTime pagadaUtc, CancellationToken ct = default, bool redondear = true) =>
+        GuardarCobroAsync(venta, cobros, folio, pagadaUtc, ct, redondear: redondear);
 
     private async Task<Venta> GuardarCobroAsync(
-        Venta venta, IReadOnlyList<CobroSolicitado> cobros, int? folioDeLaCaja, DateTime ahora, CancellationToken ct, IReadOnlyList<TrabajoImpresion>? impresiones = null)
+        Venta venta, IReadOnlyList<CobroSolicitado> cobros, int? folioDeLaCaja, DateTime ahora, CancellationToken ct, IReadOnlyList<TrabajoImpresion>? impresiones = null,
+        bool redondear = true)
     {
         var turno = await TurnoAbiertoPorIdAsync(venta.TurnoId, ct);
         if (turno.CajaId != venta.CajaId || turno.SucursalId != venta.SucursalId)
             throw new InvalidOperationException("La venta no es del turno abierto de esta caja.");
 
-        venta.ValidarCobros(cobros);
+        venta.ValidarCobros(cobros, redondear);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         try
@@ -123,7 +126,7 @@ public sealed class RegistroCaja(PosDbContext db)
                 await inventario.AgregarAsync(salida, ct);
             }
 
-            venta.Pagar(folio, cobros, ahora);
+            venta.Pagar(folio, cobros, ahora, redondear);
             foreach (var trabajo in impresiones ?? [])
                 trabajo.Cobrar(venta.Id, ahora);
             foreach (var comun in venta.Lineas.Where(l => l.VarianteId is null && !l.EsImpresiones))

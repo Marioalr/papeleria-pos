@@ -133,7 +133,7 @@
                 <button class="boton" @onclick="EliminarTicket">Eliminar</button>
             </div>
             <div class="ultima">
-                <div><small>Total:</small> <strong>@(_ultimo is null ? "$0.00" : Formato.Dinero(_ultimo.TotalCentavos))</strong></div>
+                <div><small>Total:</small> <strong>@(_ultimo is null ? "$0.00" : Formato.Dinero(_ultimo.TotalCobradoCentavos))</strong></div>
                 <div><small>Pagó con:</small> <strong>@(_ultimo is null ? "$0.00" : Formato.Dinero(_ultimo.PagoConCentavos))</strong></div>
                 <div><small>Cambio:</small> <strong class="cambio">@(_ultimo is null ? "$0.00" : Formato.Dinero(_ultimo.CambioCentavos))</strong></div>
             </div>
@@ -142,6 +142,10 @@
             <div class="cobro">
                 <button class="boton cobrar" disabled="@(Actual.Venta.Lineas.Count == 0)" @onclick="() => Abrir(Ventanas.Cobrar)">F12 - Cobrar</button>
                 <div class="total">@Formato.Dinero(Actual.Venta.TotalCentavos)</div>
+                @if (Actual.Venta.Lineas.Count > 0 && Actual.Venta.Efectivo(0) is { RedondeoCentavos: not 0 } enEfectivo)
+                {
+                    <div class="total-efectivo">En efectivo: @Formato.Dinero(enEfectivo.ACobrarCentavos)</div>
+                }
                 @if (Actual.Venta.DescuentoCentavos > 0)
                 {
                     <div class="descuento-total">Descuento: −@Formato.Dinero(Actual.Venta.DescuentoCentavos)@(Actual.Cliente is { } cliente ? $" · {cliente.Nombre}" : "")</div>
@@ -160,7 +164,7 @@
     {
         case Ventanas.Cobrar:
             <Ventana Titulo="Cobrar" Clase="cobrar" AlCerrar="Cerrar">
-                <CobrarVenta TotalCentavos="Actual.Venta.TotalCentavos" AlCobrar="CobrarAsync" />
+                <CobrarVenta Venta="Actual.Venta" AlCobrar="CobrarAsync" />
             </Ventana>
             break;
         case Ventanas.Buscar:

@@ -71,7 +71,15 @@ public static class DisenoTicket
         e.Add(new Renglon($"No. de artículos: {t.NumeroDeArticulos.ToString("0.###", Mexico),5}", Alineacion.Derecha));
         if (t.DescuentoCentavos > 0)
             e.Add(new Renglon($"Usted ahorró: {Dinero(t.DescuentoCentavos)}", Alineacion.Derecha));
-        e.Add(new Renglon($"Total: {Dinero(t.TotalCentavos)}", Alineacion.Derecha, Negrita: true, Grande: true));
+        if (t.RedondeoCentavos == 0)
+            e.Add(new Renglon($"Total: {Dinero(t.TotalCentavos)}", Alineacion.Derecha, Negrita: true, Grande: true));
+        else
+        {
+            // El efectivo se cobra al peso: el total exacto, el redondeo y lo que se pagó.
+            e.Add(new Renglon($"Total: {Dinero(t.TotalCentavos)}", Alineacion.Derecha));
+            e.Add(new Renglon($"Redondeo: {(t.RedondeoCentavos > 0 ? "+" : "-")}{Dinero(Math.Abs(t.RedondeoCentavos))}", Alineacion.Derecha));
+            e.Add(new Renglon($"Total a pagar: {Dinero(t.TotalCobradoCentavos)}", Alineacion.Derecha, Negrita: true, Grande: true));
+        }
         foreach (var c in t.Cobros)
         {
             e.Add(new Renglon(c.Forma switch

@@ -74,7 +74,7 @@ public static class ApiDevoluciones
 
     private static async Task<ComprobanteDevolucionDto> ComprobanteAsync(PosDbContext db, Devolucion d, OpcionesTicket opciones)
     {
-        var venta = await db.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == d.VentaId);
+        var venta = await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleAsync(v => v.Id == d.VentaId);
         var caja = await db.Cajas.FindAsync(d.CajaId);
         var nombres = await db.Usuarios.Where(u => u.Id == d.UsuarioId || u.Id == d.AutorizoId).ToDictionaryAsync(u => u.Id, u => u.Nombre);
         var encabezado = (await ApiConfiguracion.ConfiguracionAsync(db, d.SucursalId, opciones)).RenglonesEncabezado;
@@ -85,6 +85,7 @@ public static class ApiDevoluciones
             return new LineaTicketDto(ArmadoTicket.CantidadTexto(cantidad, esBase: true), linea.Descripcion, linea.PrecioCentavos, l.ImporteCentavos);
         }).ToList();
         return new ComprobanteDevolucionDto(venta.FolioTexto!, d.EsCancelacion, d.TotalCentavos, d.ReembolsoEfectivoCentavos, d.Motivo,
-            HoraMexico.ALocal(d.FechaUtc), caja!.Nombre, nombres[d.UsuarioId], d.AutorizoId is { } a ? nombres.GetValueOrDefault(a) : null, lineas, encabezado);
+            HoraMexico.ALocal(d.FechaUtc), caja!.Nombre, nombres[d.UsuarioId], d.AutorizoId is { } a ? nombres.GetValueOrDefault(a) : null, lineas, encabezado,
+            d.RedondeoCentavos, d.EsCancelacion ? venta.Cobros.Where(c => c.Forma != FormaPago.Efectivo).Sum(c => c.MontoCentavos) : 0);
     }
 }

@@ -2049,6 +2049,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<Guid>("RealizadoPorId")
                         .HasColumnType("TEXT");
 
+                    b.Property<long>("RedondeoCentavos")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("SalidasCentavos")
                         .HasColumnType("INTEGER");
 
@@ -2331,6 +2334,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<long>("RedondeoCentavos")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("ReembolsoEfectivoCentavos")
                         .HasColumnType("INTEGER");
 
@@ -2441,6 +2447,9 @@ namespace PapeleriaPos.Datos.Migraciones
 
                     b.Property<DateTime?>("PagadaUtc")
                         .HasColumnType("TEXT");
+
+                    b.Property<long>("RedondeoCentavos")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Serie")
                         .IsRequired()

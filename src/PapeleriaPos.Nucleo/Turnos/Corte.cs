@@ -34,6 +34,12 @@ public class Corte
 
     public int Cancelaciones { get; set; }
 
+    /// <summary>
+    /// El redondeo al peso del turno (fase 3): lo de las ventas menos lo de los reembolsos. Informativo: ya viene dentro
+    /// del efectivo de ventas y de los reembolsos, así que no se suma otra vez al esperado.
+    /// </summary>
+    public long RedondeoCentavos { get; set; }
+
     /// <summary>Fondo + efectivo de ventas + entradas − salidas − devoluciones.</summary>
     public long EsperadoCentavos { get; set; }
 
@@ -93,6 +99,7 @@ public static class CalculoCorte
             EntradasCentavos = delTurno.Where(m => m.Tipo == TipoMovimientoCaja.Entrada).Sum(m => m.MontoCentavos),
             SalidasCentavos = delTurno.Where(m => m.Tipo == TipoMovimientoCaja.Salida).Sum(m => m.MontoCentavos),
             DevolucionesCentavos = reembolsos.Sum(d => d.ReembolsoEfectivoCentavos),
+            RedondeoCentavos = cobradas.Sum(v => v.RedondeoCentavos) - reembolsos.Sum(d => d.RedondeoCentavos),
         };
         corte.EsperadoCentavos = corte.FondoCentavos + corte.EfectivoVentasCentavos + corte.EntradasCentavos - corte.SalidasCentavos
             - corte.DevolucionesCentavos;

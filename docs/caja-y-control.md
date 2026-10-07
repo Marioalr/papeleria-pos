@@ -14,6 +14,10 @@ El centro del proyecto: que la sucursal funcione bien y con control aunque el du
   - transferencia (queda **por verificar**, ver abajo)
   - crédito (solo clientes registrados)
   - anticipos de pedidos
+- **Redondeo al peso** del cobro en efectivo (fase 3): al peso más cercano y al menos $1; la tarjeta y la transferencia
+  van exactas y las impresiones no se redondean. El total y el IVA quedan exactos; el redondeo va aparte en el ticket
+  («Total a pagar») y en el corte. Lo que se regresa en efectivo también sale en pesos, y al cancelar se regresa lo
+  cobrado.
 - Ticket con QR del folio: sirve para devoluciones y para encontrar pedidos.
 - Devoluciones escaneando el ticket.
 

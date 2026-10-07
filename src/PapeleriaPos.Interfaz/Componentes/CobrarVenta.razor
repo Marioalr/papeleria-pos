@@ -1,7 +1,13 @@
-@* F12. "Pagó con" es lo que entregó el cliente en efectivo; tarjeta y transferencia no dan cambio. *@
+@* F12. "Pagó con" es lo que entregó el cliente en efectivo; tarjeta y transferencia no dan cambio. El efectivo se cobra
+   al peso con la misma regla que aplica el servicio (Venta.Efectivo); las impresiones van exactas. *@
 @inject ModuloCaja Js
 
 <div class="cobrar-total">@Formato.Dinero(TotalCentavos)</div>
+@if (ACobrar.RedondeoCentavos != 0)
+{
+    <p class="cobrar-redondeo">En efectivo: <strong>@Formato.Dinero(ACobrar.ACobrarCentavos)</strong>
+        (redondeo @(ACobrar.RedondeoCentavos > 0 ? "+" : "−")@Formato.Dinero(Math.Abs(ACobrar.RedondeoCentavos)))</p>
+}
 
 <label>Pagó con (efectivo)
     <input id="pago-efectivo" inputmode="decimal" @bind="_efectivo" @bind:event="oninput" @onkeydown="AlTeclear" />
@@ -47,7 +53,10 @@
 </div>
 
 @code {
-    [Parameter] public long TotalCentavos { get; set; }
+    /// <summary>La venta que se cobra: de ella sale cuánto pedir en efectivo, ya redondeado.</summary>
+    [Parameter, EditorRequired] public Venta Venta { get; set; } = null!;
+
+    private long TotalCentavos => Venta.TotalCentavos;
 
     /// <summary>Devuelve el error a mostrar, o null si se cobró.</summary>
     [Parameter] public Func<IReadOnlyList<CobroSolicitado>, Task<string?>> AlCobrar { get; set; } = null!;
@@ -63,10 +72,12 @@
     private long Efectivo => Formato.LeerPesos(_efectivo) ?? 0;
     private long Tarjeta => Formato.LeerPesos(_tarjeta) ?? 0;
     private long Transferencia => Formato.LeerPesos(_transferencia) ?? 0;
-    private long Faltante => Math.Max(0, TotalCentavos - Tarjeta - Transferencia - Efectivo);
-    private long Cambio => Math.Max(0, Efectivo - Math.Max(0, TotalCentavos - Tarjeta - Transferencia));
+    /// <summary>Lo que falta en efectivo después de la tarjeta y la transferencia, al peso.</summary>
+    private EfectivoACobrar ACobrar => Venta.Efectivo(Tarjeta + Transferencia);
+    private long Faltante => Math.Max(0, ACobrar.ACobrarCentavos - Efectivo);
+    private long Cambio => Math.Max(0, Efectivo - ACobrar.ACobrarCentavos);
 
-    protected override void OnInitialized() => _efectivo = (TotalCentavos / 100m).ToString("0.00", CultureInfo.InvariantCulture);
+    protected override void OnInitialized() => _efectivo = (Venta.Efectivo(0).ACobrarCentavos / 100m).ToString("0.00", CultureInfo.InvariantCulture);
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
@@ -95,7 +106,7 @@
             _error = "Tarjeta y transferencia no pueden pasar del total: no dan cambio.";
             return;
         }
-        if (Tarjeta + Transferencia < TotalCentavos)
+        if (ACobrar.ACobrarCentavos > 0)
             cobros.Add(new CobroSolicitado(FormaPago.Efectivo, Efectivo));
 
         _ocupado = true;

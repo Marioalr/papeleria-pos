@@ -61,7 +61,7 @@ public static class ApiContingencia
                 DescuentoCentesimas: l.DescuentoCentesimas, DescuentoCentavos: l.DescuentoCentavos, MotivoDescuento: l.MotivoDescuento)).ToList();
             var venta = await ApiCaja.ArmarVentaAsync(db, catalogo, caja, v.TurnoId, v.CajeroId, v.Id, lineas);
             venta.ClienteEspecialId = v.ClienteEspecialId;
-            await new RegistroCaja(db).CobroDeContingenciaAsync(venta, v.Cobros, v.Folio, v.PagadaUtc);
+            await new RegistroCaja(db).CobroDeContingenciaAsync(venta, v.Cobros, v.Folio, v.PagadaUtc, redondear: v.RedondeoCentavos is not null);
             return Results.NoContent();
         });
 

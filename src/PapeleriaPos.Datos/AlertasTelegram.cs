@@ -217,6 +217,10 @@ public static class AlertasTelegram
             t.AppendLine($"Cancelaciones: {canceladas.Count} · {Dinero(canceladas.Sum(d => d.TotalCentavos))}");
         if (devueltas.Count > 0)
             t.AppendLine($"Devoluciones: {devueltas.Count} · {Dinero(devueltas.Sum(d => d.TotalCentavos))}");
+        // El redondeo al peso del efectivo: lo de las ventas del día menos lo de sus reembolsos (no es venta ni utilidad).
+        var redondeo = vigentes.Sum(v => v.RedondeoCentavos) - devoluciones.Where(d => !d.EsCancelacion).Sum(d => d.RedondeoCentavos);
+        if (redondeo != 0)
+            t.AppendLine($"Redondeo en efectivo: {(redondeo > 0 ? "+" : "-")}{Dinero(Math.Abs(redondeo))}");
         if (precios > 0)
             t.AppendLine($"Cambios de precio: {precios}");
         if (vigentes.Where(v => v.Lineas.Any(l => l.TieneDescuento)).ToList() is { Count: > 0 } conDescuento)

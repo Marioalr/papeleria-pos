@@ -166,7 +166,8 @@ else
                 continue;
             var milesimas = (long)Math.Round(cantidad * 1000);
             lineas.Add(new LineaDevolucionSolicitada(l.LineaId, milesimas, !_danados.Contains(l.LineaId)));
-            monto += l.ImporteCentavos * milesimas / l.CantidadMilesimas;
+            // Igual que el servicio (CalculoDevolucion): en proporción, redondeado al centavo, para que la autorización cuadre.
+            monto += milesimas == l.CantidadMilesimas ? l.ImporteCentavos : Redondeo.Dividir((Int128)l.ImporteCentavos * milesimas, l.CantidadMilesimas);
         }
         if (lineas.Count == 0)
         {
