@@ -48,6 +48,9 @@ public class Compra
     /// <summary>Los renglones de la nota: lo que el proveedor dice que mandó y lo que cobra.</summary>
     public List<CompraRenglon> Renglones { get; init; } = [];
 
+    /// <summary>Los documentos del proveedor que se cargaron (el XML de la factura o el PDF de la nota).</summary>
+    public List<CompraDocumento> Documentos { get; init; } = [];
+
     public string FolioTexto => $"C-{Folio:D6}";
 
     public long TotalNotaCentavos => Renglones.Sum(r => r.ImporteCentavos);
@@ -106,9 +109,33 @@ public class Compra
         renglon.Cantidad = cantidad;
         renglon.CantidadBase = cantidad.Por(factor);
         renglon.ImporteCentavos = importeCentavos;
-        renglon.Descripcion = descripcion;
-        renglon.CodigoProveedor = string.IsNullOrWhiteSpace(codigoProveedor) ? null : codigoProveedor.Trim();
+        // Lo que dice el documento se queda como vino: al ligarlo o corregirlo solo cambia a qué producto corresponde.
+        if (!renglon.DelDocumento)
+        {
+            renglon.Descripcion = descripcion;
+            renglon.CodigoProveedor = string.IsNullOrWhiteSpace(codigoProveedor) ? null : codigoProveedor.Trim();
+        }
         return renglon;
+    }
+
+    /// <summary>
+    /// Los renglones que leyó el POS del documento del proveedor. Los que reconoció llegan ligados a su producto; los
+    /// demás se ligan a mano antes de cerrar.
+    /// </summary>
+    public void AgregarDocumento(CompraDocumento documento, IEnumerable<RenglonDocumento> renglones)
+    {
+        RequerirEstado(EstadoCompra.PorCostear, "La nota se captura cuando termina el conteo.");
+        Documentos.Add(documento);
+        var orden = Renglones.Count == 0 ? 0 : Renglones.Max(r => r.Orden);
+        foreach (var r in renglones)
+        {
+            Renglones.Add(new CompraRenglon
+            {
+                CompraId = Id, Orden = ++orden, CodigoProveedor = r.CodigoProveedor, Descripcion = r.Descripcion, Unidad = r.Unidad, DelDocumento = true,
+                VarianteId = r.Liga?.VarianteId, PresentacionId = r.Liga?.PresentacionId, Cantidad = r.Cantidad,
+                CantidadBase = r.Liga is { } liga ? r.Cantidad.Por(liga.Factor) : Cantidad.Cero, ImporteCentavos = r.ImporteCentavos,
+            });
+        }
     }
 
     public void QuitarRenglon(Guid renglonId)
@@ -122,6 +149,8 @@ public class Compra
         RequerirEstado(EstadoCompra.PorCostear, Estado == EstadoCompra.Recibiendo ? "Primero termina el conteo." : "La compra ya se cerró.");
         if (Renglones.Count == 0)
             throw new InvalidOperationException("Captura la nota del proveedor antes de cerrar.");
+        if (Renglones.FirstOrDefault(r => !r.Ligado) is { } sinLigar)
+            throw new InvalidOperationException($"Falta decir qué producto es «{sinLigar.Descripcion}» (o quitarlo si no es mercancía).");
         Estado = EstadoCompra.Cerrada;
         CosteoId = costeoId;
         CerradaUtc = ahoraUtc;
@@ -173,14 +202,84 @@ public class CompraRenglon
     /// <summary>Como viene en la nota (o el nombre del producto si se capturó a mano).</summary>
     public string Descripcion { get; set; } = "";
 
-    public Guid VarianteId { get; set; }
-    public Guid PresentacionId { get; set; }
+    /// <summary>La unidad como la escribe el documento (CAJA, PZA, H87), solo para mostrarla.</summary>
+    public string? Unidad { get; set; }
+
+    /// <summary>Lo leyó el POS del documento del proveedor (no se capturó a mano).</summary>
+    public bool DelDocumento { get; init; }
+
+    /// <summary>Vacíos mientras un renglón del documento no se liga a su producto.</summary>
+    public Guid? VarianteId { get; set; }
+
+    public Guid? PresentacionId { get; set; }
+
+    public bool Ligado => PresentacionId is not null;
 
     /// <summary>En la presentación de la nota (cajas, paquetes, piezas).</summary>
     public Cantidad Cantidad { get; set; }
 
+    /// <summary>En unidad base; cero mientras no está ligado.</summary>
     public Cantidad CantidadBase { get; set; }
 
     /// <summary>Lo que se paga por el renglón, con IVA y descuentos: el costo es lo que sale de la caja.</summary>
     public long ImporteCentavos { get; set; }
+}
+
+public enum TipoDocumentoProveedor
+{
+    /// <summary>El XML de una factura (CFDI): trae cada concepto con su clave, cantidad, importe e impuestos.</summary>
+    Xml,
+
+    /// <summary>El PDF de una nota o factura: los renglones se leen del texto.</summary>
+    Pdf,
+}
+
+/// <summary>Un documento del proveedor cargado en una compra. Se guarda tal cual para consultarlo después.</summary>
+public class CompraDocumento
+{
+    public Guid Id { get; init; } = Ids.Nuevo();
+    public Guid CompraId { get; init; }
+    public required string Nombre { get; init; }
+    public TipoDocumentoProveedor Tipo { get; init; }
+    public required byte[] Contenido { get; init; }
+
+    /// <summary>Serie y folio del documento, si los trae.</summary>
+    public string? Folio { get; init; }
+
+    /// <summary>El folio fiscal de una factura: la misma no se carga dos veces.</summary>
+    public string? Uuid { get; init; }
+
+    public string? RfcEmisor { get; init; }
+    public long? TotalCentavos { get; init; }
+
+    /// <summary>Lo que hay que revisar de la lectura (renglones repartidos, otro RFC…), un aviso por renglón.</summary>
+    public string? Avisos { get; init; }
+
+    public Guid UsuarioId { get; init; }
+    public DateTime CargadoUtc { get; init; }
+}
+
+/// <summary>Un renglón leído del documento, con el producto si el POS lo reconoció.</summary>
+public sealed record RenglonDocumento(string? CodigoProveedor, string Descripcion, string? Unidad, Cantidad Cantidad, long ImporteCentavos, LigaRenglon? Liga);
+
+public sealed record LigaRenglon(Guid VarianteId, Guid PresentacionId, Cantidad Factor);
+
+/// <summary>
+/// Lo que aprendió el POS de cada proveedor: su clave (o su descripción, si no trae clave) es tal presentación. Se guarda
+/// al ligar un renglón del documento; la siguiente vez ese renglón llega ligado.
+/// </summary>
+public class LigaProveedor
+{
+    public Guid Id { get; init; } = Ids.Nuevo();
+    public Guid ProveedorId { get; init; }
+
+    /// <summary>"codigo:…" o "descripcion:…", normalizado.</summary>
+    public required string Clave { get; init; }
+
+    public Guid PresentacionId { get; set; }
+    public DateTime ModificadaUtc { get; set; }
+
+    /// <summary>Con qué se busca un renglón: su clave del proveedor; sin ella, su descripción.</summary>
+    public static string ClaveDe(string? codigoProveedor, string descripcion) =>
+        string.IsNullOrWhiteSpace(codigoProveedor) ? $"descripcion:{Texto.Normalizar(descripcion)}" : $"codigo:{Texto.Normalizar(codigoProveedor)}";
 }

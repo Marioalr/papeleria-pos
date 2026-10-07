@@ -34,6 +34,10 @@ public static class ApiCompras
         api.MapPost("/compras/{compraId:guid}/renglones", (Guid compraId, SolicitudRenglonCompra s, PosDbContext db) =>
             new RegistroCompras(db).RenglonAsync(compraId, s));
 
+        // El XML de la factura o el PDF de la nota llena los renglones (fase 2, entrega 2, parte 2).
+        api.MapPost("/compras/{compraId:guid}/documentos", (Guid compraId, SolicitudDocumentoCompra s, PosDbContext db) =>
+            new RegistroCompras(db).CargarDocumentoAsync(compraId, s));
+
         api.MapPost("/compras/{compraId:guid}/renglones/{renglonId:guid}/quitar", (Guid compraId, Guid renglonId, SolicitudCompra s, PosDbContext db) =>
             new RegistroCompras(db).QuitarRenglonAsync(compraId, renglonId, s.UsuarioId));
 

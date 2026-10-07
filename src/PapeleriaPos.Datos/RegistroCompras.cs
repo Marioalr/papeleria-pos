@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Configuracion;
+using PapeleriaPos.Datos.Documentos;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Inventario;
@@ -134,11 +135,104 @@ public sealed class RegistroCompras(PosDbContext db)
             throw new ArgumentException($"«{Nombre(presentacion.Variante)}» se cuenta en piezas enteras.");
 
         var antes = compra.Renglones.ToList();
-        compra.Renglon(s.RenglonId, s.VarianteId, s.PresentacionId, cantidad, presentacion.Factor, s.ImporteCentavos,
+        var renglon = compra.Renglon(s.RenglonId, s.VarianteId, s.PresentacionId, cantidad, presentacion.Factor, s.ImporteCentavos,
             $"{Nombre(presentacion.Variante)} ({presentacion.Nombre})", s.CodigoProveedor);
         Sincronizar(antes, compra.Renglones);
+        // Un renglón del documento: la próxima vez que este proveedor mande esa clave (o esa descripción), llega ligado.
+        if (renglon.DelDocumento)
+            await LigarAsync(compra.ProveedorId, LigaProveedor.ClaveDe(renglon.CodigoProveedor, renglon.Descripcion), presentacion.Id, ct);
         await db.SaveChangesAsync(ct);
         return (await DetalleAsync(compraId, s.UsuarioId, ct))!;
+    }
+
+    /// <summary>
+    /// El documento del proveedor (XML de la factura o PDF de la nota) llena los renglones. Los que el POS reconoce (por
+    /// la clave que ya se ligó con este proveedor, o por código de barras) llegan ligados; los demás se ligan a mano.
+    /// </summary>
+    public async Task<CompraDto> CargarDocumentoAsync(Guid compraId, SolicitudDocumentoCompra s, CancellationToken ct = default)
+    {
+        var compra = await CompraAsync(compraId, ct);
+        await RequerirCosteoAsync(s.UsuarioId, compra.SucursalId, ct);
+        if (compra.Estado != EstadoCompra.PorCostear)
+            throw new InvalidOperationException(compra.Estado == EstadoCompra.Recibiendo ? "La nota se captura cuando termina el conteo." : "La nota ya no se puede cambiar.");
+        byte[] contenido;
+        try
+        {
+            contenido = Convert.FromBase64String(s.ContenidoBase64);
+        }
+        catch (FormatException)
+        {
+            throw new InvalidOperationException("El archivo no llegó completo: vuelve a cargarlo.");
+        }
+        var leido = LectorDocumentos.Leer(contenido);
+        if (leido.Uuid is { } uuid
+            && await db.ComprasDocumentos.Where(d => d.Uuid == uuid).Join(db.Compras, d => d.CompraId, c => c.Id, (d, c) => c)
+                .FirstOrDefaultAsync(c => c.Estado != EstadoCompra.Cancelada, ct) is { } otra)
+            throw new InvalidOperationException($"Esa factura ya se cargó en la compra {otra.FolioTexto}.");
+
+        var avisos = leido.Avisos.ToList();
+        var proveedor = await db.Proveedores.FindAsync([compra.ProveedorId], ct) ?? throw new InvalidOperationException("El proveedor ya no existe.");
+        if (leido.RfcEmisor is { } rfc)
+        {
+            if (proveedor.Rfc is null)
+            {
+                proveedor.Rfc = rfc;
+                avisos.Add($"Se guardó el RFC del proveedor: {rfc}.");
+            }
+            else if (!string.Equals(proveedor.Rfc, rfc, StringComparison.OrdinalIgnoreCase))
+                avisos.Add($"La factura es de {leido.NombreEmisor ?? "otro"} (RFC {rfc}) y el proveedor de esta compra tiene RFC {proveedor.Rfc}.");
+        }
+        if (compra.Documento is null && leido.Folio is { } folio)
+            compra.Documento = folio;
+
+        var renglones = new List<RenglonDocumento>();
+        foreach (var l in leido.Lineas)
+            renglones.Add(new RenglonDocumento(Limpio(l.Codigo), l.Descripcion, l.Unidad, Cantidad.Unidades(l.Cantidad), l.ImporteCentavos,
+                await ReconocerAsync(compra.ProveedorId, l, ct)));
+        var documento = new CompraDocumento
+        {
+            CompraId = compra.Id, Nombre = Path.GetFileName(s.Nombre.Trim()) is { Length: > 0 } nombre ? nombre : "documento", Tipo = leido.Tipo,
+            Contenido = contenido, Folio = leido.Folio, Uuid = leido.Uuid, RfcEmisor = leido.RfcEmisor, TotalCentavos = leido.TotalCentavos,
+            Avisos = avisos.Count == 0 ? null : string.Join('\n', avisos), UsuarioId = s.UsuarioId, CargadoUtc = Ahora,
+        };
+        var antes = compra.Renglones.ToList();
+        compra.AgregarDocumento(documento, renglones);
+        Sincronizar(antes, compra.Renglones);
+        db.ComprasDocumentos.Add(documento);
+        new ServicioControl(db).Registrar(compra.SucursalId, null, s.UsuarioId, AccionControlada.CostearCompra,
+            $"Cargó «{documento.Nombre}» en la compra {compra.FolioTexto}: {renglones.Count} renglones, {renglones.Count(r => r.Liga is null)} por ligar");
+        await db.SaveChangesAsync(ct);
+        return (await DetalleAsync(compraId, s.UsuarioId, ct))!;
+    }
+
+    /// <summary>
+    /// Qué presentación es un renglón del documento: la que se ligó antes con esta clave del proveedor (o esta descripción),
+    /// o la del código de barras si la clave es uno. Si no se sabe, o no se puede llevar al inventario, va sin ligar.
+    /// </summary>
+    private async Task<LigaRenglon?> ReconocerAsync(Guid proveedorId, LineaLeida l, CancellationToken ct)
+    {
+        var clave = LigaProveedor.ClaveDe(l.Codigo, l.Descripcion);
+        var presentacionId = await db.LigasProveedor.Where(x => x.ProveedorId == proveedorId && x.Clave == clave).Select(x => (Guid?)x.PresentacionId)
+            .FirstOrDefaultAsync(ct);
+        if (presentacionId is null && Limpio(l.Codigo) is { } codigo)
+            presentacionId = await db.CodigosBarras.Where(c => c.Codigo == codigo).Select(c => (Guid?)c.PresentacionId).FirstOrDefaultAsync(ct);
+        if (presentacionId is null)
+            return null;
+        var presentacion = await db.Presentaciones.AsNoTracking().Include(p => p.Variante).ThenInclude(v => v!.Producto)
+            .SingleOrDefaultAsync(p => p.Id == presentacionId, ct);
+        if (presentacion?.Variante is not { Activa: true, Producto.LlevaInventario: true } variante
+            || !variante.AdmiteCantidad(Cantidad.Unidades(l.Cantidad).Por(presentacion.Factor)))
+            return null;
+        return new LigaRenglon(variante.Id, presentacion.Id, presentacion.Factor);
+    }
+
+    private async Task LigarAsync(Guid proveedorId, string clave, Guid presentacionId, CancellationToken ct)
+    {
+        var liga = await db.LigasProveedor.FirstOrDefaultAsync(x => x.ProveedorId == proveedorId && x.Clave == clave, ct);
+        if (liga is null)
+            db.LigasProveedor.Add(new LigaProveedor { ProveedorId = proveedorId, Clave = clave, PresentacionId = presentacionId, ModificadaUtc = Ahora });
+        else
+            (liga.PresentacionId, liga.ModificadaUtc) = (presentacionId, Ahora);
     }
 
     public async Task<CompraDto> QuitarRenglonAsync(Guid compraId, Guid renglonId, Guid usuarioId, CancellationToken ct = default)
@@ -249,7 +343,7 @@ public sealed class RegistroCompras(PosDbContext db)
         if (compra is null)
             return null;
         var veNota = compra.Estado != EstadoCompra.Recibiendo && await VeCostosAsync(usuarioId, compra.SucursalId, ct);
-        var ids = compra.Conteo.Select(c => c.VarianteId).Union(compra.Renglones.Select(r => r.VarianteId)).ToList();
+        var ids = compra.Conteo.Select(c => c.VarianteId).Union(compra.Renglones.Where(r => r.VarianteId is not null).Select(r => r.VarianteId!.Value)).ToList();
         var variantes = await db.Variantes.AsNoTracking().Include(v => v.Producto).ThenInclude(p => p!.Marca).Include(v => v.Presentaciones)
             .Where(v => ids.Contains(v.Id)).AsSplitQuery().ToDictionaryAsync(v => v.Id, ct);
         string Presentacion(Guid varianteId, Guid presentacionId) =>
@@ -261,15 +355,24 @@ public sealed class RegistroCompras(PosDbContext db)
                 c.Cantidad.Milesimas, c.CantidadBase.EnUnidades))
             .ToList();
         var renglones = veNota
-            ? compra.Renglones.OrderBy(r => r.Orden).Select(r => new RenglonCompraDto(r.Id, r.Orden, r.CodigoProveedor, r.VarianteId, r.PresentacionId,
-                Producto(r.VarianteId), Presentacion(r.VarianteId, r.PresentacionId), r.Cantidad.Milesimas, r.ImporteCentavos)).ToList()
+            ? compra.Renglones.OrderBy(r => r.Orden).Select(r => new RenglonCompraDto(r.Id, r.Orden, r.CodigoProveedor, r.Descripcion, r.Unidad, r.DelDocumento,
+                r.VarianteId, r.PresentacionId, r.VarianteId is { } v ? Producto(v) : null,
+                r is { VarianteId: { } rv, PresentacionId: { } rp } ? Presentacion(rv, rp) : null, r.Cantidad.Milesimas, r.ImporteCentavos)).ToList()
             : null;
         var comparacion = veNota ? await CompararAsync(compra, variantes, ct) : null;
+        var documentos = veNota
+            ? (await db.ComprasDocumentos.AsNoTracking().Where(d => d.CompraId == compraId)
+                    .Select(d => new { d.Id, d.Nombre, d.Tipo, d.Folio, d.TotalCentavos, d.Avisos, d.CargadoUtc }).ToListAsync(ct))
+                .OrderBy(d => d.CargadoUtc)
+                .Select(d => new DocumentoCompraDto(d.Id, d.Nombre, d.Tipo, d.Folio, d.TotalCentavos,
+                    d.Avisos?.Split('\n', StringSplitOptions.RemoveEmptyEntries) ?? [], HoraMexico.ALocal(d.CargadoUtc)))
+                .ToList()
+            : null;
         var usuarios = await db.Usuarios.AsNoTracking().ToDictionaryAsync(u => u.Id, u => u.Nombre, ct);
         return new CompraDto(compra.Id, compra.FolioTexto, compra.ProveedorId, await NombreProveedorAsync(compra.ProveedorId, ct), compra.Documento,
             compra.Estado, HoraMexico.ALocal(compra.AbiertaUtc), usuarios.GetValueOrDefault(compra.RecibioId, "?"),
             compra.CosteoId is { } c ? usuarios.GetValueOrDefault(c) : null, compra.CerradaUtc is { } cerrada ? HoraMexico.ALocal(cerrada) : null, compra.Motivo,
-            conteo, renglones, comparacion, veNota ? compra.TotalNotaCentavos : null);
+            conteo, renglones, comparacion, veNota ? compra.TotalNotaCentavos : null, documentos);
     }
 
     private async Task<List<ComparacionCompraDto>> CompararAsync(Compra compra, Dictionary<Guid, Variante> variantes, CancellationToken ct)

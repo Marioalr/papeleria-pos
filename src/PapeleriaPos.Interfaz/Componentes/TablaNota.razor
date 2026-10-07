@@ -1,31 +1,54 @@
-@* Los renglones de la nota del proveedor, con el costo por unidad que sale de cada producto. *@
+@* Los renglones de la nota del proveedor, con el costo por unidad que sale de cada producto. Los que vienen del
+   documento traen su descripción tal cual; los que no se reconocieron esperan que se liguen a su producto. *@
 
 @if (Renglones.Count == 0)
 {
-    <p class="vacia">La nota está vacía: agrega sus renglones (escanea o busca cada producto).</p>
+    <p class="vacia">La nota está vacía: carga el XML o PDF del proveedor, o agrega sus renglones (escanea o busca cada producto).</p>
 }
 else
 {
-    <div class="resultados">
+    <div class="resultados compra">
         <table>
             <thead>
-                <tr><th>#</th><th>Clave</th><th>Producto</th><th>Presentación</th><th class="num">Cantidad</th><th class="num">Importe</th><th class="num">Costo por unidad</th>@if (AlQuitar.HasDelegate) { <th></th> }</tr>
+                <tr>
+                    <th>#</th><th>Clave</th><th>En el documento</th><th>Producto</th><th>Presentación</th><th class="num">Cantidad</th><th class="num">Importe</th>
+                    <th class="num">Costo por unidad</th>@if (AlQuitar.HasDelegate || AlLigar.HasDelegate) { <th></th> }
+                </tr>
             </thead>
             @foreach (var r in Renglones)
             {
                 var renglon = r;
-                var costo = Comparacion.FirstOrDefault(c => c.VarianteId == r.VarianteId)?.CostoUnitarioCentavos;
-                <tr>
+                var costo = r.VarianteId is { } v ? Comparacion.FirstOrDefault(c => c.VarianteId == v)?.CostoUnitarioCentavos : null;
+                <tr class="@(r.VarianteId is null ? "sin-ligar" : "")">
                     <td>@r.Orden</td>
                     <td>@r.CodigoProveedor</td>
-                    <td>@r.Producto</td>
-                    <td>@r.Presentacion</td>
+                    <td>@(r.DelDocumento ? r.Descripcion : "")</td>
+                    <td>
+                        @if (r.Producto is { } producto)
+                        {
+                            @producto
+                        }
+                        else
+                        {
+                            <span class="etiqueta">Sin ligar</span>
+                        }
+                    </td>
+                    <td>@(r.Presentacion ?? r.Unidad)</td>
                     <td class="num">@Formato.Numero(r.CantidadMilesimas / 1000m)</td>
                     <td class="num">@Formato.Dinero(r.ImporteCentavos)</td>
                     <td class="num">@(costo is { } x ? Formato.Dinero((long)Math.Round(x, MidpointRounding.AwayFromZero)) : "")</td>
-                    @if (AlQuitar.HasDelegate)
+                    @if (AlQuitar.HasDelegate || AlLigar.HasDelegate)
                     {
-                        <td><button class="boton chico" @onclick="() => AlQuitar.InvokeAsync(renglon.Id)">Quitar</button></td>
+                        <td>
+                            @if (AlLigar.HasDelegate)
+                            {
+                                <button class="boton chico" @onclick="() => AlLigar.InvokeAsync(renglon)">@(r.VarianteId is null ? "Ligar" : "Corregir")</button>
+                            }
+                            @if (AlQuitar.HasDelegate)
+                            {
+                                <button class="boton chico" @onclick="() => AlQuitar.InvokeAsync(renglon.Id)">Quitar</button>
+                            }
+                        </td>
                     }
                 </tr>
             }
@@ -37,4 +60,7 @@ else
     [Parameter, EditorRequired] public IReadOnlyList<RenglonCompraDto> Renglones { get; set; } = [];
     [Parameter, EditorRequired] public IReadOnlyList<ComparacionCompraDto> Comparacion { get; set; } = [];
     [Parameter] public EventCallback<Guid> AlQuitar { get; set; }
+
+    /// <summary>Ligar un renglón del documento a su producto, o corregir uno ya ligado.</summary>
+    [Parameter] public EventCallback<RenglonCompraDto> AlLigar { get; set; }
 }

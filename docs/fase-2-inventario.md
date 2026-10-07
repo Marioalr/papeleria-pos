@@ -5,8 +5,8 @@
 > fase le da al POS el control del inventario: qué hay, qué llega, qué se pierde y qué comprar. Parte del diseño de
 > [catálogo e inventario](inventario.md) y de la [depuración](plan.md#depuración-del-inventario) que va antes del piloto.
 
-**Avance:** la entrega 1 (catálogo) está completa; de la entrega 2 (compras) está la parte 1: recibir a ciegas y
-capturar la nota a mano.
+**Avance:** la entrega 1 (catálogo) está completa; de la entrega 2 (compras) están la parte 1 (recibir a ciegas y
+capturar la nota) y la parte 2 (el documento del proveedor llena la nota).
 
 Entrega 1, parte 1:
 
@@ -57,10 +57,26 @@ Entrega 2, parte 1, recibir y costear (F4 Inventario → Compras):
   ni abrir uno propio. Con una sola caja, así se captura la nota o se corrige el catálogo.
 - **Proveedores:** alta y edición en F4 → Proveedores (el dueño y el encargado).
 
+Entrega 2, parte 2, el documento del proveedor (en la misma pantalla, quien captura la nota):
+
+- **Se carga el XML de la factura o el PDF de la nota** y llena los renglones. El documento se guarda con la compra.
+- **XML (CFDI 3.3 o 4.0):** cada concepto con su clave, descripción, cantidad y unidad; el importe es lo que se paga
+  (importe − descuento + IVA e IEPS trasladados). Si es en dólares, se pasa a pesos con su tipo de cambio. Una nota de
+  crédito no se toma, y la misma factura (por su folio fiscal) no se carga en dos compras. Si el proveedor no tenía
+  RFC se guarda el de la factura; si tenía otro, avisa.
+- **PDF:** cada proveedor tiene su formato, así que se toma como producto el renglón que termina en precio e importe y
+  tiene una cantidad que cuadra con ellos; la primera palabra es la clave si lo parece. Si el total de la nota no es
+  la suma de los renglones (precios sin IVA, descuento general), la diferencia se reparte en proporción y se avisa. Un
+  PDF escaneado (sin texto) no se puede leer: esa nota se captura a mano.
+- **Reconocer cada renglón:** por la clave que ya se ligó con ese proveedor (o por su descripción, si no trae clave),
+  o por el código de barras si la clave es uno. Lo que no reconoce queda "sin ligar": se dice una vez qué producto y
+  presentación es («Ligar») y la próxima vez ese renglón llega ligado. Lo que no es mercancía (un flete) se quita.
+  Mientras haya renglones sin ligar, la compra no se cierra.
+- **Corregir:** cualquier renglón del documento se puede corregir (otra presentación, cantidad o importe); lo que dice
+  el documento se queda a la vista.
+
 Lo que sigue de la entrega 2:
 
-- **Parte 2:** el documento del proveedor (el XML de la factura o el PDF de la nota) llena los renglones; lo que no
-  reconoce se liga una vez al producto por la clave del proveedor.
 - **Parte 3:** la orden de compra opcional y abrir paquete.
 - **Al cerrarla:** se prepara la [prueba con una persona real](plan.md#prueba-con-una-persona-real), antes de la entrega 3.
 
