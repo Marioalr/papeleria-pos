@@ -40,7 +40,8 @@ internal sealed class ServicioDePrueba : IDisposable
         var info = new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(exe)! };
         foreach (var argumento in new[]
                  {
-                     $"--Urls={origen}", $"--Caja:Servicio={origen}", $"--ConnectionStrings:Pos=Data Source={Path.Combine(datos, "pos.db")}",
+                     // Escucha en la red para el conteo desde el celular; el instalador abrió el firewall solo a la red local.
+                     $"--Urls=http://*:{url.Port}", $"--Caja:Servicio={origen}", $"--ConnectionStrings:Pos=Data Source={Path.Combine(datos, "pos.db")}",
                      "--Prueba:Activa=true", $"--Prueba:BaseInicial={inicial}", "--Telegram:Activo=false", "--Descubrimiento:Activo=false",
                      "--Impresora:Vigilar=false", "--Respaldos:Activo=false",
                  })

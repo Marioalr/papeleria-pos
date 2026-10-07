@@ -50,7 +50,7 @@ public static class SeguridadCajas
     });
 
     /// <summary>Sin dirección es una llamada dentro del mismo proceso (las pruebas).</summary>
-    private static bool EsLaMismaPc(IPAddress? ip) =>
+    internal static bool EsLaMismaPc(IPAddress? ip) =>
         ip is null || IPAddress.IsLoopback(ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip);
 
     /// <summary>

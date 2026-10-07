@@ -51,6 +51,8 @@ Name: "{commondesktop}\Papelería POS (prueba)"; Filename: "{app}\Caja\Papeleria
 Name: "{commonprograms}\Papelería POS (prueba)"; Filename: "{app}\Caja\PapeleriaPos.Caja.exe"; WorkingDir: "{app}\Caja"
 
 [Run]
+; El conteo desde el celular: el servicio de la prueba recibe a los aparatos de la red local en el 5180.
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Papeleria POS (prueba) - celulares"" dir=in action=allow program=""{app}\Servicio\PapeleriaPos.Servicio.exe"" protocol=TCP localport=5180 remoteip=localsubnet profile=any"; Flags: runhidden
 ; Como el usuario que lanzó el instalador, no como administrador.
 Filename: "{commondesktop}\Ejemplos de la prueba\Léeme.txt"; Description: "Leer las instrucciones (usuarios y PIN)"; Flags: postinstall shellexec skipifsilent runasoriginaluser
 Filename: "{app}\Caja\PapeleriaPos.Caja.exe"; Description: "Abrir la caja de prueba"; Flags: postinstall nowait skipifsilent runasoriginaluser
@@ -58,6 +60,7 @@ Filename: "{app}\Caja\PapeleriaPos.Caja.exe"; Description: "Abrir la caja de pru
 [UninstallRun]
 ; Si la caja se cerró mal, su servicio puede seguir abierto.
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /T /IM PapeleriaPos.Servicio.exe"; Flags: runhidden; RunOnceId: "CerrarServicio"
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Papeleria POS (prueba) - celulares"""; Flags: runhidden; RunOnceId: "QuitarFirewall"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"

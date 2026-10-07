@@ -218,3 +218,61 @@ pre.aviso-telegram { white-space: pre-wrap; margin: 0; font-family: inherit; }
 .producto-nuevo input, .producto-nuevo select { font-size: 14px; padding: 3px 6px; width: 100%; }
 .resultados.revision { max-height: none; }
 .franja-conteo { display: flex; gap: 10px; align-items: center; justify-content: center; padding: 4px 12px; background: var(--azul-claro); color: var(--azul); font-size: 14px; }
+
+/* Fase 2, entrega 3, parte 3: conteo completo por departamento (en F4 y en el celular) */
+.celular-qr { display: flex; gap: 16px; align-items: center; padding: 8px 12px; margin-bottom: 10px; background: var(--azul-claro); border-radius: 6px; }
+.celular-qr .qr svg { display: block; }
+.celular-qr p { margin: 2px 0; }
+.celular-qr .direccion { font-size: 20px; font-weight: 600; color: var(--azul); user-select: all; }
+.encabezado-conteo { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+ul.departamentos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+ul.departamentos li { display: grid; grid-template-columns: 1.2fr 2fr auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--borde); border-radius: 6px; background: #fff; }
+ul.departamentos li.abierto { border-color: var(--azul); background: var(--azul-claro); }
+ul.departamentos .nombre, ul.departamentos .estado { display: flex; flex-direction: column; }
+.acciones-dep { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.barra-conteo { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.barra-conteo strong { font-size: 18px; color: var(--azul); }
+.barra-conteo .avance { color: var(--suave); margin-right: auto; }
+.captura-conteo { border: 2px solid var(--azul); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; background: #fff; display: flex; flex-direction: column; gap: 8px; }
+.producto-elegido { display: flex; flex-direction: column; font-size: 17px; }
+.total-conteo { margin: 0; font-size: 17px; min-height: 1.2em; }
+.buscar-conteo { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+.buscar-conteo input#buscar-conteo { flex: 1; min-width: 200px; }
+.buscar-conteo label.en-linea { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 4px; font-size: 14px; color: var(--texto); }
+ul.productos-conteo { list-style: none; margin: 0; padding: 0; border: 1px solid var(--borde); border-radius: 6px; background: #fff; }
+ul.productos-conteo li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 10px; border-bottom: 1px solid #eef0f3; cursor: pointer; }
+ul.productos-conteo li:last-child { border-bottom: none; }
+ul.productos-conteo .nombre { display: flex; flex-direction: column; }
+ul.productos-conteo small { color: var(--suave); font-size: 12px; }
+ul.productos-conteo .cuenta { font-variant-numeric: tabular-nums; color: var(--suave); white-space: nowrap; }
+ul.productos-conteo li.contado .cuenta { color: var(--exito); font-weight: 600; }
+ul.productos-conteo li.elegido { background: #cfe1f7; }
+h3.subtitulo { font-size: 15px; margin: 14px 0 6px; color: var(--azul); }
+ul.capturas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+ul.capturas li { display: flex; gap: 8px; align-items: center; }
+ul.capturas li span { flex: 1; }
+.resumen-conteo p { margin: 4px 0; }
+.resumen-conteo span + span { margin-left: .35em; }
+.filtros-conteo { display: flex; gap: 4px; margin: 8px 0; flex-wrap: wrap; }
+.boton.activo { border-color: var(--azul); background: var(--azul-claro); color: var(--azul); font-weight: 600; }
+.resultados.revision { overflow-x: auto; }
+.resultados.revision tr.diferencia td { color: var(--error); }
+ul.revision-celular { list-style: none; margin: 0; padding: 0; border: 1px solid var(--borde); border-radius: 6px; background: #fff; }
+ul.revision-celular li { display: flex; flex-direction: column; gap: 2px; padding: 7px 10px; border-bottom: 1px solid #eef0f3; }
+ul.revision-celular li.diferencia .cifras strong { color: var(--error); }
+ul.revision-celular .cifras { color: var(--suave); font-size: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+.confirmar { border: 1px solid var(--error); background: #fdecea; border-radius: 6px; padding: 8px 12px; margin-top: 8px; }
+.confirmar p { margin: 4px 0; }
+
+/* La página del celular (/conteo en el servicio) */
+.pagina-celular { min-height: 100vh; display: flex; flex-direction: column; }
+.barra-celular { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px; background: var(--azul); color: #fff; position: sticky; top: 0; z-index: 5; }
+.cuerpo-celular { padding: 10px 12px 40px; }
+.celular .boton { font-size: 16px; padding: 10px 14px; }
+.celular .boton.chico { font-size: 14px; padding: 6px 10px; }
+.celular td, .celular th { padding: 5px 6px; font-size: 14px; }
+@media (max-width: 640px) {
+    .tarjeta { width: calc(100vw - 24px); padding: 18px 16px; }
+    ul.departamentos li { grid-template-columns: 1fr; gap: 4px; }
+    .acciones-dep .boton, .captura-conteo .acciones .boton, .confirmar .acciones .boton { flex: 1; }
+}

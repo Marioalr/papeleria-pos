@@ -1,0 +1,263 @@
+@* Revisar y cerrar el conteo completo de un departamento (el encargado y el dueño): lo contado contra lo que decía el
+   sistema al contarlo, lo que nadie contó y lo que vale la diferencia. Al cerrar, lo contado reemplaza la existencia y
+   lo que nadie contó queda en cero. Ya cerrado, queda como reporte. *@
+@inject ClienteCaja Cliente
+
+@if (_conteo is null)
+{
+    <p class="@(_error is null ? "" : "error")">@(_error ?? "Cargando…")</p>
+    <button class="boton" @onclick="AlVolver">Volver a los departamentos</button>
+}
+else if (!_conteo.Revision)
+{
+    <p class="error">Solo el encargado revisa y cierra el conteo.</p>
+    <button class="boton" @onclick="AlVolver">Volver a los departamentos</button>
+}
+else
+{
+    var c = _conteo;
+    var abierto = c.Estado == EstadoConteoDepartamento.Abierto;
+    var conDiferencia = c.Renglones.Count(r => r.Diferencia is { } d && d != 0);
+    var enCero = c.Renglones.Where(r => r.Contado is null && r.Sistema is { } s && s != 0).ToList();
+    <div class="barra-conteo">
+        <button class="boton chico" @onclick="AlVolver">← Departamentos</button>
+        <strong>@c.Departamento</strong>
+        @if (abierto)
+        {
+            <button class="boton chico" @onclick="AlSeguirContando">Seguir contando</button>
+        }
+    </div>
+
+    <div class="resumen-conteo">
+        @if (abierto)
+        {
+            <p>Abierto por @c.AbiertoPor a las @c.AbiertoLocal.ToString("HH:mm") del @c.AbiertoLocal.ToString("dd/MM/yyyy"). Contados <strong>@c.Contados de @c.Productos</strong>.</p>
+        }
+        else
+        {
+            <p>@(c.Estado == EstadoConteoDepartamento.Cerrado ? "Cerrado" : "Cancelado") por @c.TerminadoPor el @c.TerminadoLocal?.ToString("dd/MM/yyyy HH:mm"). Contados <strong>@c.Contados</strong>.</p>
+        }
+        <p>
+            <span>@(conDiferencia == 0 ? "Todo cuadra." : $"Con diferencia: {conDiferencia}.")</span>
+            @if (enCero.Count > 0)
+            {
+                <span class="@(abierto ? "error" : "")">@enCero.Count que nadie contó @(abierto ? "y el sistema dice que hay: quedarán en 0" : "quedaron en 0").</span>
+            }
+            @if (c.NetoCentavos is { } neto && neto != 0)
+            {
+                <span>@(neto < 0 ? "Faltó" : "Sobró") <strong>@Formato.Dinero(Math.Abs(neto))</strong> a costo.</span>
+            }
+        </p>
+        @if (abierto)
+        {
+            <p class="nota">Lo que se vendió o llegó después de contar un producto sigue contando: al cerrar se compara contra lo que decía el sistema cuando se contó.</p>
+        }
+    </div>
+
+    <nav class="filtros-conteo">
+        @foreach (var f in Enum.GetValues<Filtro>())
+        {
+            var filtro = f;
+            <button class="boton chico @(f == _filtro ? "activo" : "")" @onclick="() => _filtro = filtro">@Nombre(f)</button>
+        }
+    </nav>
+
+    var lista = Lista(c).ToList();
+    @if (EnCelular)
+    {
+        @* En el celular, un renglón por producto: la tabla no cabe. *@
+        <ul class="revision-celular">
+            @foreach (var r in lista.Take(Maximo))
+            {
+                <li class="@(r.Diferencia is { } d && d != 0 ? "diferencia" : "")">
+                    <span class="nombre">@r.Producto</span>
+                    <span class="cifras">
+                        @(r.Contado is { } contado ? $"Contado {Formato.Numero(contado)}" : "Sin contar") · Sistema @(r.Sistema is { } s ? Formato.Numero(s) : "")
+                        @if (r.Diferencia is { } dif && dif != 0)
+                        {
+                            <strong>@((dif > 0 ? "+" : "") + Formato.Numero(dif))</strong>
+                        }
+                        @if (r.CostoDiferenciaCentavos is { } costo && costo != 0)
+                        {
+                            <span>@Formato.Dinero(costo)</span>
+                        }
+                    </span>
+                </li>
+            }
+        </ul>
+    }
+    else
+    {
+        <div class="resultados revision">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Producto</th><th class="num">Contado</th><th class="num">Sistema</th><th class="num">Diferencia</th>
+                        @if (c.NetoCentavos is not null)
+                        {
+                            <th class="num">Costo</th>
+                        }
+                    </tr>
+                </thead>
+                @foreach (var r in lista.Take(Maximo))
+                {
+                    <tr class="@(r.Diferencia is { } d && d != 0 ? "diferencia" : "")">
+                        <td>@r.Producto @if (r.Codigo is { } codigo) { <div class="nota">@codigo</div> }</td>
+                        <td class="num">@(r.Contado is { } contado ? Formato.Numero(contado) : "sin contar")</td>
+                        <td class="num">@(r.Sistema is { } s ? Formato.Numero(s) : "")</td>
+                        <td class="num">@(r.Diferencia is { } dif && dif != 0 ? (dif > 0 ? "+" : "") + Formato.Numero(dif) : "")</td>
+                        @if (c.NetoCentavos is not null)
+                        {
+                            <td class="num">@(r.CostoDiferenciaCentavos is { } costo && costo != 0 ? Formato.Dinero(costo) : "")</td>
+                        }
+                    </tr>
+                }
+            </table>
+        </div>
+    }
+    @if (lista.Count > Maximo)
+    {
+        <p class="nota">Se muestran @Maximo de @lista.Count.</p>
+    }
+    else if (lista.Count == 0)
+    {
+        <p class="vacia">Nada en esta lista.</p>
+    }
+
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+
+    @if (abierto)
+    {
+        @if (_confirmar is Confirmar.Cerrar)
+        {
+            <div class="confirmar">
+                <p>
+                    Al cerrar, lo contado reemplaza la existencia de los @c.Productos productos de «@c.Departamento».
+                    @if (enCero.Count > 0)
+                    {
+                        <strong>Los @enCero.Count que nadie contó quedarán en 0.</strong>
+                    }
+                    Ya no se podrá capturar.
+                </p>
+                <div class="acciones">
+                    <button class="boton" @onclick="() => _confirmar = null">No, todavía no</button>
+                    <button class="boton principal" disabled="@_ocupado" @onclick="CerrarAsync">Sí, cerrar el departamento</button>
+                </div>
+            </div>
+        }
+        else if (_confirmar is Confirmar.Cancelar)
+        {
+            <div class="confirmar">
+                <p>Se descarta lo contado (@c.Capturas.Count @(c.Capturas.Count == 1 ? "captura" : "capturas")) y la existencia no cambia.</p>
+                <div class="acciones">
+                    <button class="boton" @onclick="() => _confirmar = null">No</button>
+                    <button class="boton principal" disabled="@_ocupado" @onclick="CancelarAsync">Sí, cancelar el conteo</button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="acciones">
+                <button class="boton" @onclick="() => _confirmar = Confirmar.Cancelar">Cancelar el conteo</button>
+                <button class="boton" disabled="@_ocupado" @onclick="CargarAsync">Actualizar</button>
+                <button class="boton principal" @onclick="() => _confirmar = Confirmar.Cerrar">Cerrar el departamento</button>
+            </div>
+        }
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid ConteoId { get; set; }
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter] public bool EnCelular { get; set; }
+    [Parameter] public EventCallback AlSeguirContando { get; set; }
+    [Parameter] public EventCallback AlVolver { get; set; }
+
+    private const int Maximo = 300;
+
+    private enum Filtro { ConDiferencia, SinContar, Todos }
+
+    private enum Confirmar { Cerrar, Cancelar }
+
+    private ConteoDepartamentoDto? _conteo;
+    private Filtro _filtro;
+    private Confirmar? _confirmar;
+    private bool _ocupado;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            _conteo = await Cliente.ConteoCompletoAsync(ConteoId, Sesion.UsuarioId, revision: true);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private IEnumerable<ProductoConteoDto> Lista(ConteoDepartamentoDto c) => _filtro switch
+    {
+        Filtro.ConDiferencia => c.Renglones.Where(r => r.Diferencia is { } d && d != 0)
+            .OrderByDescending(r => Math.Abs(r.CostoDiferenciaCentavos ?? 0)).ThenByDescending(r => Math.Abs(r.Diferencia ?? 0)),
+        Filtro.SinContar => c.Renglones.Where(r => r.Contado is null).OrderByDescending(r => r.Sistema ?? 0),
+        _ => c.Renglones,
+    };
+
+    private static string Nombre(Filtro f) => f switch
+    {
+        Filtro.ConDiferencia => "Con diferencia",
+        Filtro.SinContar => "Sin contar",
+        _ => "Todos",
+    };
+
+    private async Task CerrarAsync()
+    {
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            _conteo = await Cliente.CerrarConteoAsync(ConteoId, Sesion.UsuarioId);
+            _confirmar = null;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task CancelarAsync()
+    {
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            await Cliente.CancelarConteoAsync(ConteoId, Sesion.UsuarioId);
+            await AlVolver.InvokeAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

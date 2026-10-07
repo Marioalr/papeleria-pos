@@ -1,4 +1,28 @@
 @page "/"
 
-<PageTitle>Caja · Papelería POS</PageTitle>
-<PantallaCaja @rendermode="new InteractiveServerRenderMode(prerender: false)" />
+@* La caja en el navegador solo se abre en esta misma PC: las demás cajas usan la ventana de Windows dada de alta (con
+   su llave). Desde otro aparato de la red, como el celular, solo está el conteo. *@
+@if (DesdeEstaPc)
+{
+    <PageTitle>Caja · Papelería POS</PageTitle>
+    <PantallaCaja @rendermode="new InteractiveServerRenderMode(prerender: false)" />
+}
+else
+{
+    <PageTitle>Papelería POS</PageTitle>
+    <div class="caja">
+        <div class="centrado">
+            <div class="tarjeta">
+                <h2>Papelería POS</h2>
+                <p>Desde este aparato se usa el <a href="@ApiConteos.PaginaCelular">conteo de inventario</a>.</p>
+                <p class="nota">La caja se abre en la PC de la caja principal o en una caja dada de alta.</p>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [CascadingParameter] public HttpContext? Http { get; set; }
+
+    private bool DesdeEstaPc => SeguridadCajas.EsLaMismaPc(Http?.Connection.RemoteIpAddress);
+}

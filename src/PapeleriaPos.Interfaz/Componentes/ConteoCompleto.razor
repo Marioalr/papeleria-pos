@@ -1,0 +1,213 @@
+@* El conteo completo por departamento (fase 2, entrega 3, parte 3): el encargado abre un departamento y quienes estén
+   presentes cuentan desde el celular, en la página /conteo del servicio. Al cerrarlo, lo contado reemplaza la existencia.
+   Es la pestaña de F4 en la caja y la pantalla del celular. *@
+@inject ClienteCaja Cliente
+
+<div class="conteo-completo @(EnCelular ? "celular" : "")">
+    @if (_conteoId is { } id)
+    {
+        @if (_revisar)
+        {
+            <RevisarConteo ConteoId="id" Sesion="Sesion" EnCelular="EnCelular" AlSeguirContando="() => _revisar = false" AlVolver="VolverAsync" />
+        }
+        else
+        {
+            <ContarDepartamento ConteoId="id" Sesion="Sesion" EnCelular="EnCelular" PuedeAdministrar="PuedeAdministrar"
+                                AlRevisar="() => _revisar = true" AlVolver="VolverAsync" />
+        }
+    }
+    else
+    {
+        @if (!EnCelular)
+        {
+            <div class="celular-qr">
+                @if (_direccion is { Direcciones.Count: > 0 } d)
+                {
+                    @if (d.QrSvg is { } qr)
+                    {
+                        <div class="qr">@((MarkupString)qr)</div>
+                    }
+                    <div>
+                        <p><strong>Para contar desde el celular:</strong> conéctalo al wifi de la tienda y escanea el código con la cámara, o abre</p>
+                        @foreach (var url in d.Direcciones)
+                        {
+                            <p class="direccion">@url</p>
+                        }
+                        <p class="nota">Cada quien entra con su usuario y PIN. El encargado abre el departamento; todos cuentan a la vez.</p>
+                    </div>
+                }
+                else if (_direccion is not null)
+                {
+                    <p class="nota">No se encontró la red de esta PC: conecta la caja principal a la red de la tienda para contar desde el celular.</p>
+                }
+            </div>
+        }
+
+        @if (_departamentos is null)
+        {
+            <p class="@(_error is null ? "" : "error")">@(_error ?? "Cargando…")</p>
+        }
+        else if (_departamentos.Count == 0)
+        {
+            <p class="vacia">No hay departamentos con productos de inventario.</p>
+        }
+        else
+        {
+            <div class="encabezado-conteo">
+                <span>@(PuedeAdministrar ? "Abre el departamento que van a contar; al terminar, revísalo y ciérralo." : "Elige el departamento que te toca contar.")</span>
+                <button class="boton chico" disabled="@_ocupado" @onclick="CargarAsync">Actualizar</button>
+            </div>
+            <ul class="departamentos">
+                @foreach (var dep in Visibles)
+                {
+                    var d = dep;
+                    <li class="@(d.Abierto is null ? "" : "abierto")">
+                        <div class="nombre">
+                            <strong>@d.Departamento</strong>
+                            <span class="nota">@d.Productos @(d.Productos == 1 ? "producto" : "productos")</span>
+                        </div>
+                        <div class="estado">
+                            @if (d.Abierto is { } a)
+                            {
+                                <span>Contando: @a.Contados de @d.Productos</span>
+                                <span class="nota">
+                                    Lo abrió @a.Usuario a las @a.FechaLocal.ToString("HH:mm")@(a.Personas.Count > 0 ? $" · {string.Join(", ", a.Personas)}" : "")
+                                </span>
+                            }
+                            else if (d.UltimoCerrado is { } u)
+                            {
+                                <span class="nota">Último conteo: @u.FechaLocal.ToString("dd/MM/yyyy") (@u.Usuario)</span>
+                            }
+                            else
+                            {
+                                <span class="nota">Nunca se ha contado completo</span>
+                            }
+                        </div>
+                        <div class="acciones-dep">
+                            @if (d.Abierto is { } abierto)
+                            {
+                                <button class="boton principal" @onclick="() => Entrar(abierto.Id, revisar: false)">Contar</button>
+                                @if (PuedeAdministrar)
+                                {
+                                    <button class="boton" @onclick="() => Entrar(abierto.Id, revisar: true)">Revisar y cerrar</button>
+                                }
+                            }
+                            else
+                            {
+                                @if (PuedeAdministrar)
+                                {
+                                    <button class="boton" disabled="@_ocupado" @onclick="() => AbrirAsync(d)">Abrir</button>
+                                }
+                                @if (d.UltimoCerrado is { } cerrado && PuedeAdministrar)
+                                {
+                                    <button class="boton" @onclick="() => Entrar(cerrado.Id, revisar: true)">Ver el último</button>
+                                }
+                            }
+                        </div>
+                    </li>
+                }
+            </ul>
+            @if (_error is not null)
+            {
+                <p class="error">@_error</p>
+            }
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>La página del celular: pantalla angosta y sin el código QR.</summary>
+    [Parameter] public bool EnCelular { get; set; }
+
+    /// <summary>Para volver al mismo conteo si el celular recarga la página.</summary>
+    [Parameter] public Guid? ConteoInicial { get; set; }
+
+    [Parameter] public EventCallback<Guid?> AlCambiarConteo { get; set; }
+
+    private List<DepartamentoConteoDto>? _departamentos;
+    private DireccionCelularDto? _direccion;
+    private Guid? _conteoId;
+    private bool _revisar;
+    private bool _ocupado;
+    private string? _error;
+
+    /// <summary>Por omisión, el dueño y el encargado (regla «Abrir y cerrar el conteo completo»); el servicio decide.</summary>
+    private bool PuedeAdministrar => Sesion.Rol is Rol.Dueno or Rol.Encargado;
+
+    /// <summary>Quien solo cuenta ve los departamentos abiertos.</summary>
+    private IEnumerable<DepartamentoConteoDto> Visibles =>
+        PuedeAdministrar ? _departamentos!.OrderByDescending(d => d.Abierto is not null) : _departamentos!.Where(d => d.Abierto is not null);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _conteoId = ConteoInicial;
+        await CargarAsync();
+        if (!EnCelular)
+        {
+            try
+            {
+                _direccion = await Cliente.DireccionCelularAsync();
+            }
+            catch (ErrorCaja)
+            {
+                // Sin la dirección se cuenta igual en la caja.
+            }
+        }
+    }
+
+    private async Task CargarAsync()
+    {
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            _departamentos = await Cliente.ConteosCompletosAsync(Caja.SucursalId);
+            if (!PuedeAdministrar && !_departamentos.Any(d => d.Abierto is not null))
+                _error = "Todavía no hay ningún departamento abierto: el encargado lo abre.";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task AbrirAsync(DepartamentoConteoDto d)
+    {
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            var conteo = await Cliente.AbrirConteoAsync(Caja.SucursalId, new SolicitudAbrirConteo(Sesion.UsuarioId, d.DepartamentoId));
+            await Entrar(conteo.Id, revisar: false);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+            await CargarAsync();
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task Entrar(Guid conteoId, bool revisar)
+    {
+        (_conteoId, _revisar) = (conteoId, revisar);
+        await AlCambiarConteo.InvokeAsync(conteoId);
+    }
+
+    private async Task VolverAsync()
+    {
+        (_conteoId, _revisar) = (null, false);
+        await AlCambiarConteo.InvokeAsync(null);
+        await CargarAsync();
+    }
+}

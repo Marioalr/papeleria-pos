@@ -38,7 +38,8 @@ public static class Textos
         AccionControlada.AbrirPaquete => "Abrir un paquete (sale el paquete, entran sus piezas)",
         AccionControlada.AjustarInventario => "Ajustar una existencia",
         AccionControlada.Merma => "Registrar una merma (dañado, caducado, perdido)",
-        AccionControlada.ContarInventario => "Contar el conteo del día",
+        AccionControlada.ContarInventario => "Contar (el conteo del día y el conteo completo)",
+        AccionControlada.ConteoCompleto => "Abrir y cerrar el conteo completo de un departamento",
         _ => accion.ToString(),
     };
 

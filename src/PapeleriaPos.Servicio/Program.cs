@@ -50,7 +50,9 @@ builder.Services.AddSingleton<VigilanciaImpresora>();
 if (builder.Configuration.GetValue("Impresora:Vigilar", true))
     builder.Services.AddHostedService(proveedor => proveedor.GetRequiredService<VigilanciaImpresora>());
 
-builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+// Un celular que apaga la pantalla mientras cuenta se desconecta: al volver retoma donde estaba si no pasó media hora.
+builder.Services.AddRazorComponents().AddInteractiveServerComponents(o => o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(30));
+builder.Services.AddSingleton<SesionesCelular>();
 var urlPropia = new Uri(builder.Configuration["Caja:Servicio"] ?? "http://localhost:5080");
 // Sin impresora configurada, la caja del navegador muestra el ticket en pantalla; con "tcp://ip:9100", imprime.
 // Para probar en el navegador lo que hace la ventana de Windows: Caja:PideAlta=true pasa por el alta, y Caja:BaseLocal
@@ -77,6 +79,7 @@ app.MapearApiImpresiones();
 app.MapearApiDescuentos();
 app.MapearApiCatalogo();
 app.MapearApiCompras();
+app.MapearApiConteos();
 app.MapearApiPrueba();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
