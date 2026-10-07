@@ -253,14 +253,13 @@ Prueba con una persona real (al cerrar la entrega 2 de la fase 2, [ver arriba](#
 
 Fase 3:
 
-- [ ] Revisar el [plan de la fase 3](fase-3-precios-clientes.md) (precios y clientes) y contestar sus preguntas
-- [ ] Mayoreo: en eleventa es un precio que el cajero activa a mano; decidir si pasa a escalas por cantidad (¿desde
-  cuántas piezas?) o se deja fuera ([pregunta 1](fase-3-precios-clientes.md#preguntas))
-- [ ] Entrega 1: mayoreo y redondeo
+- [x] Revisar el [plan de la fase 3](fase-3-precios-clientes.md) (precios y clientes) y contestar sus preguntas
+- [x] Mayoreo: el F11 de eleventa vende el paquete a su precio; pasa a escalas por cantidad que se aplican solas
+  ([decisión](fase-3-precios-clientes.md#decisiones-de-la-revisión))
+- [ ] Entrega 1: mayoreo y redondeo al peso
 - [ ] Entrega 2: clientes registrados y crédito
-- [ ] Entrega 3: promociones
-- [ ] Entrega 4: kits
-- [ ] Entrega 5: insumos del mes
+- [ ] Entrega 3: consumibles del mes
+- [ ] Promociones y kits: antes del próximo regreso a clases
 
 Depuración del inventario (antes del piloto, [ver abajo](#depuración-del-inventario)):
 
@@ -279,12 +278,12 @@ Por definir:
 - [ ] Si la sucursal 2 abre antes de la fase 7: guardar la lista de gastos de apertura con comprobantes
 - [ ] Administración: insumos del mes (papel térmico, cinta, limpieza…) para la ganancia mensual
   ([detalle](#administración-y-punto-de-equilibrio)); el dueño lo pasó a la fase 3 al revisar la fase 2 (es la
-  [entrega 5](fase-3-precios-clientes.md#5-insumos-del-mes))
+  [entrega 3](fase-3-precios-clientes.md#3-consumibles-del-mes), «Consumibles del mes»)
 - [ ] Módulo de convivencia: el POS nuevo como una caja más de eleventa durante la adaptación
   ([idea](migracion-eleventa.md#convivencia-con-eleventa-idea-a-evaluar))
 - [ ] Demás funciones a la medida (las describe el dueño)
-- [ ] Privilegios de los clientes registrados: pedido sin anticipo, crédito, apartar sin pagar… ¿qué más?
-  ([pregunta 5 de la fase 3](fase-3-precios-clientes.md#preguntas))
+- [x] Privilegios de los clientes registrados: descuento, mayoreo, crédito, pedido sin anticipo y apartar sin pagar;
+  nada más ([decisión](fase-3-precios-clientes.md#decisiones-de-la-revisión))
 - [ ] Regla para pedidos de no registrados: monto máximo que se prepara sin anticipo, y días para borrar el celular
 - [ ] Central: ver [preguntas](servidor-remoto.md#preguntas)
 - [ ] WhatsApp: ver [pendientes](whatsapp.md#pendientes)
