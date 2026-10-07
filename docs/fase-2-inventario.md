@@ -5,8 +5,9 @@
 > fase le da al POS el control del inventario: qué hay, qué llega, qué se pierde y qué comprar. Parte del diseño de
 > [catálogo e inventario](inventario.md) y de la [depuración](plan.md#depuración-del-inventario) que va antes del piloto.
 
-**Avance:** las entregas 1 (catálogo) y 2 (compras) están completas. Sigue la
-[prueba con una persona real](plan.md#prueba-con-una-persona-real) y después la entrega 3.
+**Avance:** las entregas 1 (catálogo) y 2 (compras) están completas y la
+[prueba con una persona real](plan.md#prueba-con-una-persona-real) está lista para instalarse. De la entrega 3 está
+la parte 1 (ajustes y mermas).
 
 Entrega 1, parte 1:
 
@@ -121,6 +122,20 @@ Entrega 2, parte 4, todo el pedido desde el documento (lo pidió el dueño al re
 | 2 | **Compras (F4 Inventario)** | Recepción ciega de mercancía, el documento del proveedor (PDF o XML) cargado para no capturar a mano, orden de compra opcional, costo promedio y último costo por proveedor, aviso de margen bajo, abrir paquete |
 | 3 | **Ajustes, mermas y conteos** | Ajustes y mermas con motivo y regla, conteo cíclico ciego diario en la caja, conteo completo por departamento desde el celular |
 | 4 | **Etiquetas y sugerido de compra** | Etiquetas y códigos internos en hojas adhesivas en la WF-6590, hoja de códigos para lo diminuto, mínimos y máximos con el historial y la temporada, lista de compra por proveedor |
+
+Entrega 3, parte 1, ajustes y mermas (F4 → Ajustes y mermas):
+
+- **Ajuste:** se escribe la existencia real y entra o sale la diferencia, con motivo obligatorio; lo que entra vale el
+  costo promedio. Por omisión el cajero necesita al encargado (regla "Ajustar una existencia"); el encargado lo hace solo.
+- **Merma:** cuántos, la causa (dañado, caducado, perdido u otro, que pide qué pasó) y una nota. Sale a su costo: es
+  pérdida. El cajero la registra solo hasta $200 de costo; arriba, autoriza el encargado (regla "Registrar una merma").
+- Cada uno es un movimiento del kardex con su documento (quién, quién autorizó, por qué) y queda en la bitácora. El
+  costo solo lo ven el dueño y el encargado.
+- **Avisos:** un ajuste o una merma de $200 o más le llega al dueño por Telegram (los suyos no; el umbral se cambia en
+  la configuración de Telegram). El resumen del día suma las mermas y los ajustes.
+
+Lo que sigue de la entrega 3: el conteo cíclico diario en la caja (parte 2) y el conteo completo desde el celular
+(parte 3).
 
 ## 1. Catálogo (F3 Productos)
 

@@ -58,6 +58,7 @@ public static class ApiTelegram
             configuracion.UmbralCorteCentavos = a.UmbralCorteCentavos;
             configuracion.UmbralDevolucionCentavos = a.UmbralDevolucionCentavos;
             configuracion.UmbralSalidaCentavos = a.UmbralSalidaCentavos;
+            configuracion.UmbralAjusteCentavos = a.UmbralAjusteCentavos;
             configuracion.MinutosSinConexion = a.MinutosSinConexion;
             configuracion.HoraApertura = a.HoraApertura;
             configuracion.HoraCierre = a.HoraCierre;
@@ -99,5 +100,6 @@ public static class ApiTelegram
     }
 
     private static AjustesAlertasDto Ajustes(ConfiguracionSucursal c) =>
-        new(c.Apagadas(), c.UmbralCorteCentavos, c.UmbralDevolucionCentavos, c.UmbralSalidaCentavos, c.MinutosSinConexion, c.HoraApertura, c.HoraCierre);
+        new(c.Apagadas(), c.UmbralCorteCentavos, c.UmbralDevolucionCentavos, c.UmbralSalidaCentavos, c.MinutosSinConexion, c.HoraApertura, c.HoraCierre,
+            c.UmbralAjusteCentavos);
 }

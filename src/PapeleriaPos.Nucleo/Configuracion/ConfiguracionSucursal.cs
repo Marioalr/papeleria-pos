@@ -20,6 +20,9 @@ public class ConfiguracionSucursal : IVersionado
 
     public long UmbralDevolucionCentavos { get; set; } = 20000;
     public long UmbralSalidaCentavos { get; set; } = 50000;
+
+    /// <summary>Un ajuste o una merma con este costo o más avisa al dueño.</summary>
+    public long UmbralAjusteCentavos { get; set; } = 20000;
     public int MinutosSinConexion { get; set; } = 10;
 
     /// <summary>Horario de la tienda: un turno abierto fuera de él avisa.</summary>

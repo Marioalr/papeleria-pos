@@ -242,7 +242,7 @@ public sealed record FolioUsadoDto(int Folio);
 
 public sealed record AjustesAlertasDto(
     IReadOnlyList<TipoAlerta> Apagadas, long UmbralCorteCentavos, long UmbralDevolucionCentavos, long UmbralSalidaCentavos, int MinutosSinConexion,
-    TimeOnly HoraApertura, TimeOnly HoraCierre);
+    TimeOnly HoraApertura, TimeOnly HoraCierre, long UmbralAjusteCentavos = 20000);
 
 public sealed record ChatTelegramDto(Guid Id, string Usuario, string? Nombre, DateTime VinculadoLocal);
 
@@ -593,3 +593,20 @@ public sealed record RespuestasPruebaDto(string? Nombre, IReadOnlyDictionary<str
 public sealed record SolicitudExportarRespuestas(string Texto);
 
 public sealed record ArchivoGuardadoDto(string Ruta);
+
+// ── Ajustes y mermas (fase 2, entrega 3) ────────────────────────────────────
+
+/// <summary>Corregir la existencia a la que se encontró. El motivo es obligatorio.</summary>
+/// <param name="ExistenciaRealMilesimas">La que hay de verdad, en unidad base.</param>
+/// <param name="AutorizacionId">Si la regla pide la del encargado.</param>
+public sealed record SolicitudAjuste(Guid UsuarioId, Guid SucursalId, Guid VarianteId, long ExistenciaRealMilesimas, string Motivo, Guid? AutorizacionId = null);
+
+/// <summary>Sacar lo dañado, caducado o perdido.</summary>
+/// <param name="CantidadMilesimas">En unidad base.</param>
+public sealed record SolicitudMerma(
+    Guid UsuarioId, Guid SucursalId, Guid VarianteId, long CantidadMilesimas, CausaMerma Causa, string? Motivo, Guid? AutorizacionId = null);
+
+/// <param name="CostoCentavos">Solo para el dueño y el encargado.</param>
+public sealed record AjusteInventarioDto(
+    DateTime FechaLocal, TipoMovimiento Tipo, string Producto, decimal Cantidad, long? CostoCentavos, CausaMerma? Causa, string Motivo, string Usuario,
+    string? Autorizo);
