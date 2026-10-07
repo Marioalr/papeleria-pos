@@ -150,6 +150,26 @@ Con eso, un reporte por sucursal:
 - Si la sucursal 2 abre antes de que el POS llegue a la fase 7, hay que **guardar desde ya la lista de gastos de
   apertura con sus comprobantes** para capturarla después; si no, el cálculo empieza incompleto.
 
+### Prueba con una persona real
+
+**Lo antes posible:** se prepara en cuanto termine la parte 1 de las compras (fase 2, entrega 2), antes de seguir
+con lo demás. Alguien de la tienda (no quien programa) prueba solo lo que ya funciona, sin ayuda, en una PC con
+Windows y sin tocar eleventa. Sirve para encontrar lo que estorba al usarlo de verdad, mucho antes del piloto.
+
+- **Solo la caja principal:** el servicio y la caja en la misma PC; no hace falta una segunda caja ni la red. La caja
+  se da de alta sola, sin pedir la dirección ni el PIN del dueño.
+- **Un instalador:** un solo archivo (`PapeleriaPos-Prueba.exe`) que deja todo listo: el servicio, la caja, una base
+  ficticia con los usuarios de prueba y un acceso en el escritorio; se desinstala sin dejar nada. Se arma en GitHub
+  Actions (Windows), porque la PC de desarrollo es Linux.
+- **Autoconclusiva:** trae su guía dentro de la caja: tareas cortas (vender, cobro mixto, cancelar, devolver, corte X
+  y Z, F3 Productos, alta rápida, recibir una compra…) con lo que debe pasar en cada una. Quien prueba marca si salió
+  bien y escribe lo que vio; al final queda un archivo con sus respuestas para mandarlo.
+- **Simula lo que no hay:** sin impresora de tickets, el ticket se ve en pantalla; sin Telegram, los avisos que le
+  llegarían al dueño se ven en una lista; sin la WF-6590, hay impresiones de ejemplo para cobrar.
+- **Se nota que es prueba:** una franja "Prueba: datos ficticios" en la caja y un botón para empezar de cero con la
+  base ficticia.
+- **Aparte de eleventa:** su propio puerto y su propia carpeta; no lee ni toca la base de eleventa.
+
 ## Pendientes
 
 Fase 0:
@@ -183,6 +203,15 @@ Fase 2:
 - [ ] Entrega 2: compras con recepción ciega y el documento del proveedor
 - [ ] Entrega 3: ajustes, mermas y conteos
 - [ ] Entrega 4: etiquetas y sugerido de compra
+
+Prueba con una persona real (lo antes posible, [ver arriba](#prueba-con-una-persona-real)):
+
+- [ ] Instalador de prueba de la caja principal (servicio, caja, base ficticia y usuarios), armado en GitHub Actions
+- [ ] La caja principal se da de alta sola en la prueba
+- [ ] Guía de prueba dentro de la caja, con las respuestas en un archivo
+- [ ] Simular lo que no hay: ticket en pantalla, avisos de Telegram en una lista, impresiones de ejemplo
+- [ ] Franja de prueba y botón para empezar de cero
+- [ ] Instalarlo en una PC con Windows limpia antes de dárselo a quien prueba
 
 Fase 3:
 
