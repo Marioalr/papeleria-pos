@@ -174,7 +174,7 @@ tareas a la guía y la prueba se puede repetir con la versión nueva (con los co
 - **Un instalador:** un solo archivo (`PapeleriaPos-Prueba.exe`) que deja todo listo: el servicio, la caja, una base
   ficticia con los usuarios de prueba y un acceso en el escritorio; se desinstala sin dejar nada. Se arma en GitHub
   Actions (Windows), porque la PC de desarrollo es Linux. Como en la tienda, lo instala el administrador para todos
-  los usuarios de la PC y quien prueba lo usa con su usuario común ([instalación](#instalación-y-usuarios-de-windows)).
+  los usuarios de la PC y quien prueba lo usa con una cuenta común de Windows ([instalación](#instalación-y-usuarios-de-windows)).
 - **Autoconclusiva:** trae su guía dentro de la caja: tareas cortas (vender, cobro mixto, cancelar, devolver, corte X
   y Z, F3 Productos, alta rápida, recibir una compra…) con lo que debe pasar en cada una. Quien prueba marca si salió
   bien y escribe lo que vio; al final queda un archivo con sus respuestas para mandarlo.
@@ -186,8 +186,11 @@ tareas a la guía y la prueba se puede repetir con la versión nueva (con los co
 
 ### Instalación y usuarios de Windows
 
-El sistema lo instala el administrador de la PC; después, la gran mayoría de las veces se usa desde un usuario común
+El sistema lo instala el administrador de la PC; después, la gran mayoría de las veces se usa desde una cuenta común
 de Windows, sin privilegios de administrador. Nada de lo diario puede pedir administrador.
+
+Aquí "usuario" es la **cuenta de Windows** de la PC, no el usuario del POS: el cajero, el encargado y el dueño entran a
+la caja con su usuario y PIN del POS, todos desde la misma cuenta común de Windows.
 
 - **Lo que hace el administrador** (al instalar y al actualizar):
   - El servicio de la caja principal como servicio de Windows: arranca con la PC, sin que nadie inicie sesión.
@@ -195,15 +198,15 @@ de Windows, sin privilegios de administrador. Nada de lo diario puede pedir admi
   - Las reglas del firewall para la red local.
   - La carpeta de datos de la caja, con permiso de escritura para los usuarios.
   - En la PC de la WF-6590, su cola con "Conservar documentos impresos" (cambiarlo pide administrador).
-- **Lo que hace el usuario común:** vender y todo lo de la caja, dar de alta la caja (pide el PIN del dueño, no
-  administrador), trabajar sin conexión, cotizar e imprimir.
+- **Lo que se hace desde la cuenta común de Windows:** vender y todo lo de la caja, dar de alta la caja (pide el PIN
+  del dueño, no administrador), trabajar sin conexión, cotizar e imprimir.
 - **Dónde se escribe:** la base de la sucursal la escribe solo el servicio. Lo de cada caja (su configuración y la
   copia para trabajar sin conexión) va en `C:\ProgramData\PapeleriaPos\Caja`, que el instalador deja con escritura para
-  los usuarios: sirve igual si la dio de alta el administrador o si entra otro usuario de Windows.
+  las cuentas de Windows: sirve igual si la dio de alta el administrador o si la PC tiene otra cuenta común.
 - **La WF-6590:** el agente lee los trabajos del usuario que tiene abierta la caja. Si alguien imprime desde otra
   cuenta de Windows, esa cuenta necesita "Administrar documentos" en la cola (lo da el administrador).
-- **La prueba con una persona real** se instala igual: el administrador la instala para todos los usuarios y quien
-  prueba la usa con su usuario común.
+- **La prueba con una persona real** se instala igual: el administrador la instala para todas las cuentas de Windows
+  y quien prueba la usa con una cuenta común.
 
 ## Pendientes
 
