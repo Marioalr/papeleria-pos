@@ -693,3 +693,19 @@ public sealed record EtiquetaDto(Guid VarianteId, string Nombre, string Codigo, 
 /// <param name="Etiquetas">Una por cada etiqueta que se imprime, en el orden de la lista.</param>
 /// <param name="CodigosNuevos">A cuántos productos se les dio código interno porque no tenían.</param>
 public sealed record EtiquetasDto(IReadOnlyList<EtiquetaDto> Etiquetas, int CodigosNuevos);
+
+// ── Hoja de códigos del mostrador (fase 2, entrega 4, parte 2) ───────────────
+
+/// <param name="Codigo">Vacío si todavía no tiene: se le da uno interno al preparar la hoja.</param>
+public sealed record RenglonHojaCodigosDto(Guid VarianteId, string Producto, string Departamento, string? Codigo);
+
+/// <param name="Variantes">Los productos de la hoja, en el orden en que salen.</param>
+public sealed record SolicitudHojaCodigos(Guid UsuarioId, IReadOnlyList<Guid> Variantes);
+
+public sealed record SolicitudPrepararHojaCodigos(Guid UsuarioId, bool ConPrecio);
+
+/// <param name="Productos">En el orden de la hoja, ya con código.</param>
+/// <param name="CodigosNuevos">A cuántos se les dio código interno porque no tenían.</param>
+public sealed record HojaCodigosDto(string Sucursal, IReadOnlyList<ProductoHojaCodigosDto> Productos, int CodigosNuevos);
+
+public sealed record ProductoHojaCodigosDto(string Departamento, string Producto, string Codigo, long? PrecioCentavos);

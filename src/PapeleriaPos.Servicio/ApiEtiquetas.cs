@@ -3,7 +3,7 @@ using PapeleriaPos.Nucleo.Contratos;
 
 namespace PapeleriaPos.Servicio;
 
-/// <summary>Las etiquetas de código de barras (fase 2, entrega 4, parte 1). La hoja la arma y la imprime la caja.</summary>
+/// <summary>Las etiquetas de código de barras y la hoja de códigos del mostrador (fase 2, entrega 4). La hoja la arma y la imprime la caja.</summary>
 public static class ApiEtiquetas
 {
     public static void MapearApiEtiquetas(this IEndpointRouteBuilder app)
@@ -21,5 +21,15 @@ public static class ApiEtiquetas
         api.MapGet("/etiquetas/sin-codigo", (Guid departamentoId, PosDbContext db) => new RegistroEtiquetas(db).SinCodigoAsync(departamentoId));
 
         api.MapPost("/etiquetas", (SolicitudEtiquetas s, PosDbContext db) => new RegistroEtiquetas(db).PrepararAsync(s));
+
+        // ── La hoja de códigos del mostrador (parte 2) ──
+
+        api.MapGet("/sucursales/{sucursalId:guid}/hoja-codigos", (Guid sucursalId, PosDbContext db) => new RegistroEtiquetas(db).HojaCodigosAsync(sucursalId));
+
+        api.MapPut("/sucursales/{sucursalId:guid}/hoja-codigos", (Guid sucursalId, SolicitudHojaCodigos s, PosDbContext db) =>
+            new RegistroEtiquetas(db).GuardarHojaCodigosAsync(sucursalId, s));
+
+        api.MapPost("/sucursales/{sucursalId:guid}/hoja-codigos/preparar", (Guid sucursalId, SolicitudPrepararHojaCodigos s, PosDbContext db) =>
+            new RegistroEtiquetas(db).PrepararHojaCodigosAsync(sucursalId, s));
     }
 }

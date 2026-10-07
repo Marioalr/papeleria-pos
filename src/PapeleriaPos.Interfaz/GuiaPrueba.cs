@@ -100,6 +100,9 @@ public static class GuiaPrueba
             "Como «encargado», en F4 → Etiquetas agrega lo que llegó en la compra que cerraste (quita «Solo lo que no trae código de fábrica») "
             + "y da «Vista previa». Luego imprime la hoja de prueba (si no hay impresora, elige «Microsoft Print to PDF»).",
             "Sale una etiqueta por pieza con el nombre y su código de barras, en hojas carta. La hoja de prueba marca dónde cae cada etiqueta."),
+        new("hoja-codigos", "Inventario (F4)",
+            "Como «encargado», en F4 → Hoja de códigos agrega tres productos chicos (por ejemplo, gomas) y da «Vista previa».",
+            "Sale una hoja con el nombre y el código de barras de cada uno, separada por departamento. Al volver a entrar, la lista sigue ahí."),
         new("merma", "Inventario (F4)",
             "Como «cajero», en F4 → Ajustes y mermas, registra una merma de 1 producto dañado. Luego intenta una de 30 piezas de algo caro.",
             "La chica entra sola; la grande (más de $200 de costo) pide al encargado. Las dos salen del inventario y quedan en la lista."),

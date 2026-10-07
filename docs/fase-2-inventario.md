@@ -184,7 +184,17 @@ Entrega 4, parte 1, las etiquetas (F4 → Etiquetas, el dueño y el encargado):
 - **Imprimir:** la vista previa es la hoja tal cual; se imprime al 100 % (tamaño real) en la WF-6590. La hoja de
   prueba dibuja el contorno de cada etiqueta para compararla a contraluz con una hoja de etiquetas y calibrar.
 
-Lo que sigue de la entrega 4: la hoja de códigos para lo diminuto (parte 2) y el sugerido de compra (parte 3).
+Entrega 4, parte 2, la hoja de códigos del mostrador (F4 → Hoja de códigos, el dueño y el encargado):
+
+- **Para qué:** lo diminuto que no lleva etiqueta (gomas, clips sueltos, botones) se cobra escaneando su código desde
+  una hoja enmicada en el mostrador.
+- **La lista** es de la sucursal: se agregan productos escaneándolos o buscándolos, se ordenan y se quitan; cada cambio
+  se guarda.
+- **La hoja:** carta, tres columnas, separada por departamento (o en el orden de la lista), con el nombre, el código de
+  barras ancho para leerlo a través de la mica y su número; el precio solo si se pide. A lo que no tiene código se le
+  da uno interno al prepararla. Se imprime al 100 % desde la vista previa, como las etiquetas.
+
+Lo que sigue de la entrega 4: el sugerido de compra (parte 3).
 
 ## 1. Catálogo (F3 Productos)
 

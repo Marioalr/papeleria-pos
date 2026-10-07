@@ -22,6 +22,28 @@ public sealed record Barras(Simbologia Simbologia, string Texto, bool[] Modulos)
 /// </summary>
 public static class CodigosDeBarras
 {
+    /// <summary>Las barras como dibujo SVG del tamaño exacto, para la hoja de etiquetas y la hoja de códigos.</summary>
+    public static string Svg(Barras barras, decimal moduloMm, decimal altoMm)
+    {
+        var svg = new System.Text.StringBuilder();
+        svg.Append($"<svg class=\"barras\" width=\"{HojaEtiquetas.Mm(moduloMm * barras.Modulos.Length)}\" height=\"{HojaEtiquetas.Mm(altoMm)}\" ");
+        svg.Append($"viewBox=\"0 0 {barras.Modulos.Length} 1\" preserveAspectRatio=\"none\" shape-rendering=\"crispEdges\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"");
+        for (var i = 0; i < barras.Modulos.Length;)
+        {
+            if (!barras.Modulos[i])
+            {
+                i++;
+                continue;
+            }
+            var inicio = i;
+            while (i < barras.Modulos.Length && barras.Modulos[i])
+                i++;
+            svg.Append($"M{inicio} 0h{i - inicio}v1h-{i - inicio}z");
+        }
+        svg.Append("\" fill=\"#000\"/></svg>");
+        return svg.ToString();
+    }
+
     public static Barras Para(string codigo) =>
         Ean13.EsValido(codigo) ? new Barras(Simbologia.Ean13, codigo, CodificarEan13(codigo)) : new Barras(Simbologia.Code128, codigo, CodificarCode128(codigo));
 

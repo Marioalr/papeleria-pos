@@ -1,6 +1,7 @@
 using System.Globalization;
-using System.Net;
 using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Unicode;
 using PapeleriaPos.Nucleo.Catalogo;
 
 namespace PapeleriaPos.Impresion;
@@ -15,6 +16,9 @@ public sealed record Etiqueta(string Nombre, string Codigo, long? PrecioCentavos
 /// </summary>
 public static class HojaEtiquetas
 {
+    /// <summary>Escapa lo que rompería la página (&lt;, &amp;, comillas) y deja los acentos y la ñ como están.</summary>
+    internal static readonly HtmlEncoder Escapar = HtmlEncoder.Create(UnicodeRanges.All);
+
     private static readonly CultureInfo Invariante = CultureInfo.InvariantCulture;
     private static readonly CultureInfo Mexico = CultureInfo.GetCultureInfo("es-MX");
 
@@ -96,45 +100,30 @@ public static class HojaEtiquetas
             .barras { display: block; }
             .texto-codigo { font-family: "Courier New", monospace; font-size: {{(chica ? "5pt" : "6.5pt")}}; line-height: 1; letter-spacing: 0.3pt; }
             .sin-lugar { font-size: 6pt; color: #b42318; text-align: center; }
-            @media screen { .hoja { box-shadow: 0 0 0 1px #c9d2dc; margin-bottom: 8mm; } }
+            @media screen { html { overflow: hidden; } .hoja { box-shadow: 0 0 0 1px #c9d2dc; margin-bottom: 8mm; } }
             """;
     }
 
     private static string Contenido(FormatoEtiquetas f, Etiqueta e)
     {
         var html = new StringBuilder();
-        var nombre = WebUtility.HtmlEncode(e.Nombre);
+        var nombre = Escapar.Encode(e.Nombre);
         var precio = e.PrecioCentavos is { } p ? $" <span class=\"precio\">{(p / 100m).ToString("$#,##0.00", Mexico)}</span>" : "";
         html.Append($"<div class=\"nombre\">{nombre}{precio}</div>");
 
         var barras = CodigosDeBarras.Para(e.Codigo);
         if (Modulo(f, barras) is not { } modulo)
         {
-            html.Append($"<div class=\"sin-lugar\">El código {WebUtility.HtmlEncode(e.Codigo)} no cabe en esta etiqueta</div>");
+            html.Append($"<div class=\"sin-lugar\">El código {Escapar.Encode(e.Codigo)} no cabe en esta etiqueta</div>");
             return html.ToString();
         }
         // El alto que queda: la etiqueta menos el relleno, el nombre y el texto del código.
         var chica = f.AltoMm < 16;
         var alto = Math.Max(3m, f.AltoMm - 2 * Relleno(f) - (chica ? 2.4m : 7.2m) - (chica ? 2m : 2.6m));
-        var ancho = modulo * barras.Modulos.Length;
-        html.Append($"<svg class=\"barras\" width=\"{Mm(ancho)}\" height=\"{Mm(alto)}\" viewBox=\"0 0 {barras.Modulos.Length} 1\" ");
-        html.Append("preserveAspectRatio=\"none\" shape-rendering=\"crispEdges\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"");
-        for (var i = 0; i < barras.Modulos.Length;)
-        {
-            if (!barras.Modulos[i])
-            {
-                i++;
-                continue;
-            }
-            var inicio = i;
-            while (i < barras.Modulos.Length && barras.Modulos[i])
-                i++;
-            html.Append($"M{inicio} 0h{i - inicio}v1h-{i - inicio}z");
-        }
-        html.Append("\" fill=\"#000\"/></svg>");
-        html.Append($"<div class=\"texto-codigo\">{WebUtility.HtmlEncode(e.Codigo)}</div>");
+        html.Append(CodigosDeBarras.Svg(barras, modulo, alto));
+        html.Append($"<div class=\"texto-codigo\">{Escapar.Encode(e.Codigo)}</div>");
         return html.ToString();
     }
 
-    private static string Mm(decimal valor) => Math.Round(valor, 3).ToString("0.###", Invariante) + "mm";
+    internal static string Mm(decimal valor) => Math.Round(valor, 3).ToString("0.###", Invariante) + "mm";
 }

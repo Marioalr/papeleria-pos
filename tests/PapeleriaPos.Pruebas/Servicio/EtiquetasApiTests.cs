@@ -117,3 +117,73 @@ public class EtiquetasApiTests(ServicioDePrueba servicio) : IClassFixture<Servic
         Assert.Equal(HttpStatusCode.BadRequest, noCerrada.StatusCode);
     }
 }
+
+public class HojaCodigosApiTests(ServicioDePrueba servicio) : IClassFixture<ServicioDePrueba>
+{
+    private static async Task<T> Leer<T>(HttpResponseMessage r)
+    {
+        Assert.True(r.IsSuccessStatusCode, await r.Content.ReadAsStringAsync());
+        return (await r.Content.ReadFromJsonAsync<T>())!;
+    }
+
+    [Fact]
+    public async Task El_encargado_arma_la_hoja_en_su_orden_y_lo_que_no_tiene_codigo_recibe_uno()
+    {
+        var http = servicio.Fabrica.CreateClient();
+        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        var cajero = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("cajero", "1111")));
+        var encargado = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("encargado", "2222")));
+        var url = $"api/sucursales/{caja.SucursalId}/hoja-codigos";
+        Guid a, b, c;
+        using (var alcance = servicio.Fabrica.Services.CreateScope())
+        {
+            var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
+            var variantes = await db.Variantes.Include(v => v.Presentaciones).ThenInclude(p => p.Codigos)
+                .Where(v => v.Activa && v.Producto!.Tipo == TipoProducto.Mercancia && v.Presentaciones.Count == 1).Take(3).ToListAsync();
+            (a, b, c) = (variantes[0].Id, variantes[1].Id, variantes[2].Id);
+            db.CodigosBarras.RemoveRange(variantes[2].Presentaciones.SelectMany(p => p.Codigos));
+            await db.SaveChangesAsync();
+        }
+
+        var vacia = await Leer<List<RenglonHojaCodigosDto>>(await http.GetAsync(url));
+        var sinNada = await http.PostAsJsonAsync($"{url}/preparar", new SolicitudPrepararHojaCodigos(encargado.UsuarioId, false));
+        var delCajero = await http.PutAsJsonAsync(url, new SolicitudHojaCodigos(cajero.UsuarioId, [a]));
+        await Leer<List<RenglonHojaCodigosDto>>(await http.PutAsJsonAsync(url, new SolicitudHojaCodigos(encargado.UsuarioId, [a, b, c])));
+        var reordenada = await Leer<List<RenglonHojaCodigosDto>>(await http.PutAsJsonAsync(url, new SolicitudHojaCodigos(encargado.UsuarioId, [c, a])));
+        var hoja = await Leer<HojaCodigosDto>(await http.PostAsJsonAsync($"{url}/preparar", new SolicitudPrepararHojaCodigos(encargado.UsuarioId, true)));
+        var guardada = await Leer<List<RenglonHojaCodigosDto>>(await http.GetAsync(url));
+
+        Assert.Empty(vacia);
+        Assert.Equal(HttpStatusCode.BadRequest, sinNada.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, delCajero.StatusCode);
+        Assert.Equal([c, a], reordenada.Select(r => r.VarianteId));
+        Assert.Null(reordenada[0].Codigo);
+        Assert.Equal(1, hoja.CodigosNuevos);
+        Assert.Equal(2, hoja.Productos.Count);
+        Assert.True(Ean13.EsValido(hoja.Productos[0].Codigo) && hoja.Productos[0].Codigo.StartsWith('2'));
+        Assert.All(hoja.Productos, p => Assert.True(p.PrecioCentavos > 0));
+        Assert.Equal(hoja.Productos[0].Codigo, guardada[0].Codigo);
+        Assert.False(string.IsNullOrEmpty(hoja.Sucursal));
+    }
+}
+
+public class HojaCodigosConcurrenciaTests(ServicioDePrueba servicio) : IClassFixture<ServicioDePrueba>
+{
+    [Fact]
+    public async Task Dos_guardados_a_la_vez_no_chocan()
+    {
+        var http = servicio.Fabrica.CreateClient();
+        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        var encargado = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("encargado", "2222"))).Content.ReadFromJsonAsync<SesionDto>())!;
+        Guid variante;
+        using (var alcance = servicio.Fabrica.Services.CreateScope())
+            variante = await alcance.ServiceProvider.GetRequiredService<PosDbContext>().Variantes.Select(v => v.Id).FirstAsync();
+        var url = $"api/sucursales/{caja.SucursalId}/hoja-codigos";
+
+        var respuestas = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ =>
+            servicio.Fabrica.CreateClient().PutAsJsonAsync(url, new SolicitudHojaCodigos(encargado.UsuarioId, [variante]))));
+
+        Assert.All(respuestas, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
+        Assert.Single((await http.GetFromJsonAsync<List<RenglonHojaCodigosDto>>(url))!);
+    }
+}

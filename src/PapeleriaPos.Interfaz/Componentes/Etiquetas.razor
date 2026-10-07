@@ -332,6 +332,7 @@
         {
             _hojas = 1;
             _vigente = false;
+            StateHasChanged();
             await Js.MostrarEnMarcoAsync(Marco, HojaEtiquetas.Html(Formato, [], ajusteXMm: _ajusteX, ajusteYMm: _ajusteY, soloBordes: true));
             await Js.ImprimirMarcoAsync(Marco);
         });

@@ -413,6 +413,31 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("ProveedoresVariantes", (string)null);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.RenglonHojaCodigos", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("VarianteId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VarianteId");
+
+                    b.HasIndex("SucursalId", "VarianteId")
+                        .IsUnique();
+
+                    b.ToTable("HojaCodigos", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Sucursal", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2602,6 +2627,21 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Navigation("Proveedor");
 
                     b.Navigation("Variante");
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.RenglonHojaCodigos", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
+                        .WithMany()
+                        .HasForeignKey("VarianteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Variante", b =>
