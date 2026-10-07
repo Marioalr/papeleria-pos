@@ -57,6 +57,7 @@
 | Impresora de tickets | POS-8360, térmica de 80 mm, ESC/POS; el ticket conserva el formato y el logo del de eleventa |
 | Administración | Inversión de apertura, gastos fijos e insumos del mes por sucursal: la ganancia mensual real y el punto de equilibrio ([detalle](#administración-y-punto-de-equilibrio)) |
 | Git | Ramas cortas por tema, fusionadas a `main` |
+| Instalación | La hace el administrador de la PC, una vez y en cada actualización; el día a día corre en un usuario común de Windows, sin privilegios de administrador ([detalle](#instalación-y-usuarios-de-windows)) |
 
 ### Cómo han cambiado
 
@@ -172,7 +173,8 @@ tareas a la guía y la prueba se puede repetir con la versión nueva (con los co
   se da de alta sola, sin pedir la dirección ni el PIN del dueño.
 - **Un instalador:** un solo archivo (`PapeleriaPos-Prueba.exe`) que deja todo listo: el servicio, la caja, una base
   ficticia con los usuarios de prueba y un acceso en el escritorio; se desinstala sin dejar nada. Se arma en GitHub
-  Actions (Windows), porque la PC de desarrollo es Linux.
+  Actions (Windows), porque la PC de desarrollo es Linux. Como en la tienda, lo instala el administrador para todos
+  los usuarios de la PC y quien prueba lo usa con su usuario común ([instalación](#instalación-y-usuarios-de-windows)).
 - **Autoconclusiva:** trae su guía dentro de la caja: tareas cortas (vender, cobro mixto, cancelar, devolver, corte X
   y Z, F3 Productos, alta rápida, recibir una compra…) con lo que debe pasar en cada una. Quien prueba marca si salió
   bien y escribe lo que vio; al final queda un archivo con sus respuestas para mandarlo.
@@ -181,6 +183,27 @@ tareas a la guía y la prueba se puede repetir con la versión nueva (con los co
 - **Se nota que es prueba:** una franja "Prueba: datos ficticios" en la caja y un botón para empezar de cero con la
   base ficticia.
 - **Aparte de eleventa:** su propio puerto y su propia carpeta; no lee ni toca la base de eleventa.
+
+### Instalación y usuarios de Windows
+
+El sistema lo instala el administrador de la PC; después, la gran mayoría de las veces se usa desde un usuario común
+de Windows, sin privilegios de administrador. Nada de lo diario puede pedir administrador.
+
+- **Lo que hace el administrador** (al instalar y al actualizar):
+  - El servicio de la caja principal como servicio de Windows: arranca con la PC, sin que nadie inicie sesión.
+  - Las cajas en Archivos de programa, con su acceso para todos los usuarios.
+  - Las reglas del firewall para la red local.
+  - La carpeta de datos de la caja, con permiso de escritura para los usuarios.
+  - En la PC de la WF-6590, su cola con "Conservar documentos impresos" (cambiarlo pide administrador).
+- **Lo que hace el usuario común:** vender y todo lo de la caja, dar de alta la caja (pide el PIN del dueño, no
+  administrador), trabajar sin conexión, cotizar e imprimir.
+- **Dónde se escribe:** la base de la sucursal la escribe solo el servicio. Lo de cada caja (su configuración y la
+  copia para trabajar sin conexión) va en `C:\ProgramData\PapeleriaPos\Caja`, que el instalador deja con escritura para
+  los usuarios: sirve igual si la dio de alta el administrador o si entra otro usuario de Windows.
+- **La WF-6590:** el agente lee los trabajos del usuario que tiene abierta la caja. Si alguien imprime desde otra
+  cuenta de Windows, esa cuenta necesita "Administrar documentos" en la cola (lo da el administrador).
+- **La prueba con una persona real** se instala igual: el administrador la instala para todos los usuarios y quien
+  prueba la usa con su usuario común.
 
 ## Pendientes
 
@@ -240,6 +263,9 @@ Depuración del inventario (antes del piloto, [ver abajo](#depuración-del-inven
 - [ ] Conteo físico completo: reemplaza todas las existencias de eleventa
 
 Por definir:
+
+- [ ] Instalador de la tienda para el administrador: servicio, cajas, firewall, carpeta de la caja con permisos y la
+  cola de la WF-6590 ([detalle](#instalación-y-usuarios-de-windows)). Hoy son los scripts de `instalacion/`
 
 - [ ] Si la sucursal 2 abre antes de la fase 7: guardar la lista de gastos de apertura con comprobantes
 - [ ] Administración: insumos del mes (papel térmico, cinta, limpieza…) para la ganancia mensual
