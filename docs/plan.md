@@ -152,9 +152,21 @@ Con eso, un reporte por sucursal:
 
 ### Prueba con una persona real
 
-**Lo antes posible:** se prepara en cuanto termine la parte 1 de las compras (fase 2, entrega 2), antes de seguir
-con lo demás. Alguien de la tienda (no quien programa) prueba solo lo que ya funciona, sin ayuda, en una PC con
-Windows y sin tocar eleventa. Sirve para encontrar lo que estorba al usarlo de verdad, mucho antes del piloto.
+Alguien de la tienda (no quien programa) prueba solo lo que ya funciona, sin ayuda, en una PC con Windows y sin tocar
+eleventa. Sirve para encontrar lo que estorba al usarlo de verdad, mucho antes del piloto.
+
+**Hito: al cerrar la entrega 2 de la fase 2 (compras completas), antes de empezar la entrega 3.** Es lo más pronto en
+que tiene sentido:
+
+- Ahí el día de la tienda ya se hace completo en el POS: abrir turno, vender y cobrar, cancelar y devolver, cortes,
+  corregir el catálogo y recibir mercancía con el documento del proveedor.
+- Antes no conviene: sin la parte 2 de compras, quien prueba capturaría la nota a mano, justo lo que esa parte
+  reemplaza, y sus observaciones serían de algo que va a cambiar.
+- Esperar a toda la fase 2 tampoco: lo que más importa probar (la venta y el control) ya está, y los conteos y las
+  etiquetas se suman después.
+
+La preparación (instalador, guía, simulaciones) se hace al cerrar esa entrega. Desde ahí, cada entrega agrega sus
+tareas a la guía y la prueba se puede repetir con la versión nueva (con los conteos de la entrega 3, por ejemplo).
 
 - **Solo la caja principal:** el servicio y la caja en la misma PC; no hace falta una segunda caja ni la red. La caja
   se da de alta sola, sin pedir la dirección ni el PIN del dueño.
@@ -204,7 +216,7 @@ Fase 2:
 - [ ] Entrega 3: ajustes, mermas y conteos
 - [ ] Entrega 4: etiquetas y sugerido de compra
 
-Prueba con una persona real (lo antes posible, [ver arriba](#prueba-con-una-persona-real)):
+Prueba con una persona real (al cerrar la entrega 2 de la fase 2, [ver arriba](#prueba-con-una-persona-real)):
 
 - [ ] Instalador de prueba de la caja principal (servicio, caja, base ficticia y usuarios), armado en GitHub Actions
 - [ ] La caja principal se da de alta sola en la prueba
