@@ -209,6 +209,50 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         ConRespaldoAsync(async () => await _http.GetAsync<List<VarianteParaJuntarDto>>(
             $"api/catalogo/variantes?q={Uri.EscapeDataString(texto)}&sucursalId={sucursalId}") ?? []);
 
+    // ── Compras (F4, solo con la caja principal) ──
+
+    public Task<List<ProveedorDto>> ProveedoresAsync(bool inactivos = false) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<ProveedorDto>>($"api/proveedores?inactivos={inactivos}") ?? []);
+
+    public Task<ProveedorDto> GuardarProveedorAsync(SolicitudGuardarProveedor solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<ProveedorDto>("api/proveedores", solicitud));
+
+    public Task<List<CompraResumenDto>> ComprasAsync(Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<CompraResumenDto>>($"api/sucursales/{sucursalId}/compras?usuarioId={usuarioId}") ?? []);
+
+    public Task<CompraDto> AbrirCompraAsync(SolicitudAbrirCompra solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<CompraDto>("api/compras", solicitud));
+
+    public Task<CompraDto> CompraAsync(Guid compraId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<CompraDto>($"api/compras/{compraId}?usuarioId={usuarioId}"))!);
+
+    public Task<CompraDto> ContarAsync(Guid compraId, SolicitudConteo solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<CompraDto>($"api/compras/{compraId}/conteo", solicitud));
+
+    public Task<CompraDto> TerminarConteoAsync(Guid compraId, Guid usuarioId) =>
+        ConRespaldoAsync(() => _http.PostAsync<CompraDto>($"api/compras/{compraId}/terminar-conteo", new SolicitudCompra(usuarioId)));
+
+    public Task<CompraDto> RenglonCompraAsync(Guid compraId, SolicitudRenglonCompra solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<CompraDto>($"api/compras/{compraId}/renglones", solicitud));
+
+    public Task<CompraDto> QuitarRenglonCompraAsync(Guid compraId, Guid renglonId, Guid usuarioId) =>
+        ConRespaldoAsync(() => _http.PostAsync<CompraDto>($"api/compras/{compraId}/renglones/{renglonId}/quitar", new SolicitudCompra(usuarioId)));
+
+    public Task<CompraDto> CerrarCompraAsync(Guid compraId, Guid usuarioId) =>
+        ConRespaldoAsync(() => _http.PostAsync<CompraDto>($"api/compras/{compraId}/cerrar", new SolicitudCompra(usuarioId)));
+
+    public Task<CompraDto> CancelarCompraAsync(Guid compraId, SolicitudCancelarCompra solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<CompraDto>($"api/compras/{compraId}/cancelar", solicitud));
+
+    public Task CambiarMenudeoAsync(SolicitudPrecioMenudeo solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<object>("api/catalogo/precio-menudeo", solicitud, sinRespuesta: true));
+
+    public Task<MargenesDto> MargenesAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<MargenesDto>($"api/sucursales/{sucursalId}/margenes"))!);
+
+    public Task<MargenesDto> GuardarMargenesAsync(Guid sucursalId, SolicitudMargenes solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<MargenesDto>($"api/sucursales/{sucursalId}/margenes", solicitud));
+
     // ── Descuentos ──
 
     /// <summary>Sin conexión, los de la copia local (solo los activos).</summary>

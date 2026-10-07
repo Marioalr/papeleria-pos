@@ -1,0 +1,48 @@
+@* La nota contra lo que llegó, por producto (en unidades), con el costo nuevo y el margen sobre el precio de menudeo.
+   Debajo del margen mínimo se sugiere precio; con AlPonerPrecio, un botón lo pone. *@
+
+<div class="resultados compra">
+    <table>
+        <thead>
+            <tr>
+                <th>Producto</th><th class="num">Nota</th><th class="num">Llegó</th><th>Diferencia</th><th class="num">Costo</th><th class="num">Antes</th>
+                <th class="num">Precio</th><th class="num">Margen</th><th></th>
+            </tr>
+        </thead>
+        @foreach (var c in Comparacion)
+        {
+            var comparada = c;
+            <tr class="@(c.Diferencia == DiferenciaCompra.Ninguna ? "" : "diferencia")">
+                <td>@c.Producto</td>
+                <td class="num">@Formato.Numero(c.Nota)</td>
+                <td class="num">@Formato.Numero(c.Contado)</td>
+                <td>@Textos.Diferencia(c.Diferencia)@(c.Diferencia is DiferenciaCompra.Falto or DiferenciaCompra.Sobro ? $" {Formato.Numero(Math.Abs(c.Contado - c.Nota))}" : "")</td>
+                <td class="num">@(c.CostoUnitarioCentavos is { } costo ? Formato.Dinero((long)Math.Round(costo, MidpointRounding.AwayFromZero)) : "")</td>
+                <td class="num">@(c.CostoAnteriorCentavos is { } antes ? Formato.Dinero(antes) : "")</td>
+                <td class="num">@(c.PrecioCentavos is { } precio ? Formato.Dinero(precio) : "Sin precio")</td>
+                <td class="num @(c.PrecioSugeridoCentavos is null ? "" : "bajo")" title="Mínimo @Margen.Texto(c.MargenMinimoCentesimas)">
+                    @(c.MargenCentesimas is { } m ? Margen.Texto(m) : "")
+                </td>
+                <td>
+                    @if (c.PrecioSugeridoCentavos is { } sugerido)
+                    {
+                        @if (AlPonerPrecio.HasDelegate)
+                        {
+                            <button class="boton chico" disabled="@Ocupado" @onclick="() => AlPonerPrecio.InvokeAsync(comparada)">Poner @Formato.Dinero(sugerido)</button>
+                        }
+                        else
+                        {
+                            <span class="nota">Sugerido @Formato.Dinero(sugerido)</span>
+                        }
+                    }
+                </td>
+            </tr>
+        }
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ComparacionCompraDto> Comparacion { get; set; } = [];
+    [Parameter] public EventCallback<ComparacionCompraDto> AlPonerPrecio { get; set; }
+    [Parameter] public bool Ocupado { get; set; }
+}

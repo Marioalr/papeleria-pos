@@ -110,6 +110,7 @@ public static class AlertasTelegram
         TipoAlerta.HojasFaltantes => "Hojas que no salieron",
         TipoAlerta.Descuento => "Descuento",
         TipoAlerta.CambioPrecioCatalogo => "Precio del catálogo",
+        TipoAlerta.Compra => "Compra con diferencias o margen bajo",
         _ => "Resumen del día",
     };
 

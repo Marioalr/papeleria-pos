@@ -441,3 +441,65 @@ public sealed record DecisionDepuracionDto(DateTime FechaLocal, TipoDecisionDepu
 
 /// <summary>Una variante para elegir con cuál juntar: nombre, código y precio.</summary>
 public sealed record VarianteParaJuntarDto(Guid VarianteId, string Nombre, string? Codigo, long? PrecioCentavos, UnidadBase Unidad);
+
+// ── Compras (fase 2, entrega 2) ─────────────────────────────────────────────
+
+/// <param name="Id">Vacío en uno nuevo.</param>
+public sealed record ProveedorDto(Guid? Id, string Nombre, string? Telefono, string? Rfc, string? Notas, bool Activo = true);
+
+public sealed record SolicitudGuardarProveedor(Guid UsuarioId, Guid SucursalId, ProveedorDto Proveedor);
+
+/// <param name="Documento">El número de la nota o factura, si lo trae.</param>
+public sealed record SolicitudAbrirCompra(Guid UsuarioId, Guid SucursalId, Guid ProveedorId, string? Documento);
+
+/// <param name="TotalCentavos">Lo que cobra la nota; solo para quien captura costos.</param>
+public sealed record CompraResumenDto(
+    Guid Id, string Folio, string Proveedor, string? Documento, EstadoCompra Estado, DateTime AbiertaLocal, string Recibio, int Productos, long? TotalCentavos);
+
+/// <summary>Pone lo contado de una presentación (cero la quita). Lo manda quien recibe, sin ver la nota.</summary>
+/// <param name="CantidadMilesimas">En presentaciones: 3 cajas = 3000.</param>
+public sealed record SolicitudConteo(Guid UsuarioId, Guid VarianteId, Guid PresentacionId, long CantidadMilesimas);
+
+public sealed record ConteoCompraDto(Guid VarianteId, Guid PresentacionId, string Producto, string Presentacion, long CantidadMilesimas, decimal CantidadBase);
+
+/// <summary>Un renglón de la nota del proveedor. Sin <paramref name="RenglonId"/>, se agrega.</summary>
+/// <param name="CantidadMilesimas">En la presentación de la nota (cajas, paquetes, piezas).</param>
+/// <param name="ImporteCentavos">Lo que se paga por todo el renglón, con IVA y descuentos.</param>
+public sealed record SolicitudRenglonCompra(
+    Guid UsuarioId, Guid? RenglonId, Guid VarianteId, Guid PresentacionId, long CantidadMilesimas, long ImporteCentavos, string? CodigoProveedor = null);
+
+public sealed record RenglonCompraDto(
+    Guid Id, int Orden, string? CodigoProveedor, Guid VarianteId, Guid PresentacionId, string Producto, string Presentacion, long CantidadMilesimas,
+    long ImporteCentavos);
+
+/// <summary>Una variante de la compra: lo de la nota contra lo contado (en unidad base), el costo y el margen.</summary>
+/// <param name="CostoUnitarioCentavos">Por unidad base, según la nota.</param>
+/// <param name="CostoAnteriorCentavos">El último costo de este proveedor antes de esta compra.</param>
+/// <param name="PrecioCentavos">El de menudeo.</param>
+/// <param name="PrecioSugeridoCentavos">Si el margen queda debajo del mínimo: el precio que lo deja en el mínimo.</param>
+public sealed record ComparacionCompraDto(
+    Guid VarianteId, string Producto, UnidadBase Unidad, decimal Nota, decimal Contado, DiferenciaCompra Diferencia, decimal? CostoUnitarioCentavos,
+    long? CostoAnteriorCentavos, long? PrecioCentavos, int? MargenCentesimas, int MargenMinimoCentesimas, long? PrecioSugeridoCentavos);
+
+/// <param name="Renglones">La nota: solo para quien captura costos, y cuando el conteo ya se cerró (quien cuenta no la ve).</param>
+/// <param name="Comparacion">Igual que los renglones.</param>
+public sealed record CompraDto(
+    Guid Id, string Folio, Guid ProveedorId, string Proveedor, string? Documento, EstadoCompra Estado, DateTime AbiertaLocal, string Recibio,
+    string? Costeo, DateTime? CerradaLocal, string? Motivo, IReadOnlyList<ConteoCompraDto> Conteo, IReadOnlyList<RenglonCompraDto>? Renglones,
+    IReadOnlyList<ComparacionCompraDto>? Comparacion, long? TotalCentavos);
+
+public sealed record SolicitudCompra(Guid UsuarioId);
+
+public sealed record SolicitudCancelarCompra(Guid UsuarioId, string Motivo);
+
+/// <summary>Cambiar el precio de menudeo de una variante (el sugerido después de una compra, u otro).</summary>
+public sealed record SolicitudPrecioMenudeo(Guid UsuarioId, Guid SucursalId, Guid VarianteId, long PrecioCentavos);
+
+/// <param name="MargenMinimoCentesimas">Vacío: el general.</param>
+public sealed record MargenDepartamentoDto(Guid DepartamentoId, string Departamento, int? MargenMinimoCentesimas);
+
+/// <summary>El margen mínimo general de la sucursal y el propio de cada departamento (centésimas: 3000 = 30 %).</summary>
+public sealed record MargenesDto(int MargenMinimoCentesimas, IReadOnlyList<MargenDepartamentoDto> Departamentos);
+
+/// <summary>Solo el dueño los cambia.</summary>
+public sealed record SolicitudMargenes(Guid UsuarioId, MargenesDto Margenes);

@@ -27,6 +27,14 @@ public class ConfiguracionSucursal : IVersionado
 
     public TimeOnly HoraCierre { get; set; } = new(21, 0);
 
+    // ── Compras (fase 2, entrega 2) ──
+
+    /// <summary>
+    /// Debajo de este margen (centésimas: 3000 = 30 %), una compra avisa y sugiere precio. Cada departamento puede tener
+    /// el suyo.
+    /// </summary>
+    public int MargenMinimoCentesimas { get; set; } = Catalogo.Margen.MinimoInicial;
+
     public long Version { get; set; }
     public DateTime ModificadoUtc { get; set; }
 

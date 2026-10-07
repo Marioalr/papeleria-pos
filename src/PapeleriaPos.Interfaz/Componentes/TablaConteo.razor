@@ -1,0 +1,49 @@
+@* Lo que se contó en una compra, por presentación. Editable mientras se recibe (cero lo quita). *@
+
+@if (Conteo.Count == 0)
+{
+    <p class="vacia">Todavía no se cuenta nada: escanea el primer producto.</p>
+}
+else
+{
+    <div class="resultados compra">
+        <table>
+            <thead><tr><th>Producto</th><th>Presentación</th><th class="num">Cantidad</th><th class="num">En unidades</th>@if (Editable) { <th></th> }</tr></thead>
+            @foreach (var l in Conteo)
+            {
+                var linea = l;
+                <tr>
+                    <td>@l.Producto</td>
+                    <td>@l.Presentacion</td>
+                    <td class="num">
+                        @if (Editable)
+                        {
+                            <input class="umbral" inputmode="decimal" value="@Formato.Numero(l.CantidadMilesimas / 1000m)" @onchange="e => CambiarAsync(linea, e.Value)" />
+                        }
+                        else
+                        {
+                            @Formato.Numero(l.CantidadMilesimas / 1000m)
+                        }
+                    </td>
+                    <td class="num">@Formato.Numero(l.CantidadBase)</td>
+                    @if (Editable)
+                    {
+                        <td><button class="boton chico" @onclick="() => AlCambiar.InvokeAsync((linea, 0))">Quitar</button></td>
+                    }
+                </tr>
+            }
+        </table>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ConteoCompraDto> Conteo { get; set; } = [];
+    [Parameter] public bool Editable { get; set; }
+    [Parameter] public EventCallback<(ConteoCompraDto Linea, long CantidadMilesimas)> AlCambiar { get; set; }
+
+    private async Task CambiarAsync(ConteoCompraDto linea, object? valor)
+    {
+        if (decimal.TryParse(valor?.ToString()?.Replace(",", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var cantidad) && cantidad >= 0)
+            await AlCambiar.InvokeAsync((linea, (long)Math.Round(cantidad * 1000)));
+    }
+}

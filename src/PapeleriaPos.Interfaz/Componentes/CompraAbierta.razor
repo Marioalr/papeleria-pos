@@ -1,0 +1,300 @@
+@* Una compra. Quien recibe cuenta lo que llegó sin ver la nota; quien captura los costos pasa la nota del proveedor, ve
+   la comparación (faltó, sobró, no venía) y el margen con el costo nuevo, y la cierra: entra al inventario. Si un producto
+   queda debajo del margen mínimo se sugiere precio, pero el precio no cambia solo. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+@if (_compra is null)
+{
+    <p class="@(_error is null ? "" : "error")">@(_error ?? "Cargando…")</p>
+    <div class="acciones izquierda"><button class="boton" @onclick="AlVolver">Volver</button></div>
+}
+else
+{
+    var c = _compra;
+    <p>
+        <strong>@c.Folio</strong> · @c.Proveedor@(c.Documento is { } d ? $" · nota {d}" : "") · <span class="etiqueta">@Textos.Estado(c.Estado)</span>
+        <span class="nota">
+            Recibió @c.Recibio el @c.AbiertaLocal.ToString("dd/MM/yyyy HH:mm")@(c.Costeo is { } quien && c.CerradaLocal is { } f ? $" · la cerró {quien} el {f:dd/MM/yyyy HH:mm}" : "")
+        </span>
+    </p>
+
+    @switch (c.Estado)
+    {
+        case EstadoCompra.Recibiendo:
+            <ElegirProducto SucursalId="Caja.SucursalId" Accion="Contar uno" AlElegir="ContarUnoAsync" />
+            <p class="nota">Cada código escaneado suma uno de esa presentación (el de la caja cuenta una caja). La cantidad se corrige en la tabla.</p>
+            <TablaConteo Conteo="c.Conteo" Editable="true" AlCambiar="CambiarConteoAsync" />
+            @if (_confirmar == Confirmar.TerminarConteo)
+            {
+                <p class="aviso-autorizacion">¿Ya contaste todo lo que llegó? Después ya no se puede cambiar el conteo.</p>
+                <div class="acciones izquierda">
+                    <button class="boton" @onclick="() => _confirmar = Confirmar.Nada">Seguir contando</button>
+                    <button class="boton principal" disabled="@_ocupado" @onclick="TerminarConteoAsync">Sí, terminar el conteo</button>
+                </div>
+            }
+            else
+            {
+                <div class="acciones izquierda">
+                    <button class="boton principal" disabled="@(c.Conteo.Count == 0)" @onclick="() => _confirmar = Confirmar.TerminarConteo">Terminar el conteo</button>
+                </div>
+            }
+            break;
+
+        case EstadoCompra.PorCostear when c.Renglones is null:
+            <p class="aviso-autorizacion">El conteo terminó. Falta que el encargado capture la nota del proveedor y cierre la compra.</p>
+            <TablaConteo Conteo="c.Conteo" />
+            break;
+
+        case EstadoCompra.PorCostear:
+            <h5>Nota del proveedor</h5>
+            <TablaNota Renglones="c.Renglones!" Comparacion="c.Comparacion!" AlQuitar="QuitarRenglonAsync" />
+            @if (_renglon is { } r)
+            {
+                <fieldset class="variante">
+                    <legend>@r.Producto.Descripcion</legend>
+                    <div class="ficha-producto">
+                        <label>Viene por
+                            <select @bind="r.PresentacionId">
+                                @foreach (var p in r.Producto.Presentaciones)
+                                {
+                                    <option value="@p.Id">@p.Nombre@(p.EsBase ? "" : $" ({Formato.Numero(p.FactorMilesimas / 1000m)})")</option>
+                                }
+                            </select>
+                        </label>
+                        <label>Cantidad <input id="cantidad-renglon" class="umbral" inputmode="decimal" @bind="r.Cantidad" @bind:event="oninput" @onkeydown="AlTeclearRenglon" autocomplete="off" /></label>
+                        <label>Importe del renglón (con IVA) <input class="umbral" inputmode="decimal" @bind="r.Importe" @bind:event="oninput" @onkeydown="AlTeclearRenglon" autocomplete="off" /></label>
+                        <label>Clave del proveedor <input @bind="r.Clave" @bind:event="oninput" @onkeydown="AlTeclearRenglon" placeholder="Si la trae" autocomplete="off" /></label>
+                    </div>
+                    <div class="acciones izquierda">
+                        <button class="boton" @onclick="() => _renglon = null">Cancelar</button>
+                        <button class="boton principal" disabled="@_ocupado" @onclick="AgregarRenglonAsync">Agregar a la nota</button>
+                    </div>
+                </fieldset>
+            }
+            else
+            {
+                <ElegirProducto SucursalId="Caja.SucursalId" Accion="Agregar a la nota" AlElegir="ElegirParaRenglon" />
+            }
+
+            <h5>Contra lo que llegó</h5>
+            <TablaComparacion Comparacion="c.Comparacion!" />
+            @if (_confirmar == Confirmar.Cerrar)
+            {
+                <p class="aviso-autorizacion">
+                    Lo contado entra al inventario con el costo de la nota@(c.Comparacion!.Any(x => x.Diferencia != DiferenciaCompra.Ninguna)
+                        ? "; las diferencias quedan para reclamarlas al proveedor y se le avisan al dueño" : "").
+                </p>
+                <div class="acciones izquierda">
+                    <button class="boton" @onclick="() => _confirmar = Confirmar.Nada">Todavía no</button>
+                    <button class="boton principal" disabled="@_ocupado" @onclick="CerrarAsync">Sí, cerrar la compra</button>
+                </div>
+            }
+            else
+            {
+                <div class="acciones izquierda">
+                    <span class="nota">Total de la nota: <strong>@Formato.Dinero(c.TotalCentavos ?? 0)</strong></span>
+                    <button class="boton principal" disabled="@(c.Renglones!.Count == 0)" @onclick="() => _confirmar = Confirmar.Cerrar">Cerrar la compra</button>
+                </div>
+            }
+            break;
+
+        case EstadoCompra.Cerrada when c.Comparacion is not null:
+            @if (c.Comparacion.Where(x => x.Diferencia != DiferenciaCompra.Ninguna).ToList() is { Count: > 0 } diferencias)
+            {
+                <p class="aviso-autorizacion">Diferencias contra la nota, para reclamar al proveedor: @string.Join("; ", diferencias.Select(Diferencia))</p>
+            }
+            @if (c.Comparacion.Any(x => x.PrecioSugeridoCentavos is not null))
+            {
+                <p class="nota">Con el costo nuevo, algunos productos quedaron debajo del margen mínimo. El precio no cambió: ponlo tú si estás de acuerdo.</p>
+            }
+            <TablaComparacion Comparacion="c.Comparacion" AlPonerPrecio="PonerPrecioAsync" Ocupado="_ocupado" />
+            <h5>Nota del proveedor</h5>
+            <TablaNota Renglones="c.Renglones!" Comparacion="c.Comparacion" />
+            <p class="nota">Total de la nota: <strong>@Formato.Dinero(c.TotalCentavos ?? 0)</strong></p>
+            break;
+
+        case EstadoCompra.Cancelada:
+            <p class="aviso-autorizacion">Se canceló: @c.Motivo</p>
+            <TablaConteo Conteo="c.Conteo" />
+            break;
+
+        default:
+            <TablaConteo Conteo="c.Conteo" />
+            break;
+    }
+
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_aviso is not null)
+    {
+        <p class="aviso">@_aviso</p>
+    }
+
+    @if (_confirmar == Confirmar.Cancelar)
+    {
+        <div class="filtros-catalogo">
+            <input placeholder="¿Por qué se cancela?" @bind="_motivo" autocomplete="off" />
+            <button class="boton" @onclick="() => _confirmar = Confirmar.Nada">No cancelar</button>
+            <button class="boton principal" disabled="@_ocupado" @onclick="CancelarAsync">Cancelar la compra</button>
+        </div>
+    }
+    <div class="acciones izquierda">
+        <button class="boton" @onclick="AlVolver">Volver a las compras</button>
+        @if ((c.Estado == EstadoCompra.Recibiendo || c.Renglones is not null && c.Estado == EstadoCompra.PorCostear) && _confirmar != Confirmar.Cancelar)
+        {
+            <button class="boton" @onclick="() => _confirmar = Confirmar.Cancelar">Cancelar la compra…</button>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter, EditorRequired] public Guid CompraId { get; set; }
+    [Parameter] public EventCallback AlVolver { get; set; }
+
+    private enum Confirmar { Nada, TerminarConteo, Cerrar, Cancelar }
+
+    private sealed class RenglonEditable(ProductoVentaDto producto, PresentacionDto presentacion)
+    {
+        public ProductoVentaDto Producto { get; } = producto;
+        public Guid PresentacionId { get; set; } = presentacion.Id;
+        public string Cantidad { get; set; } = "1";
+        public string Importe { get; set; } = "";
+        public string Clave { get; set; } = "";
+    }
+
+    private CompraDto? _compra;
+    private RenglonEditable? _renglon;
+    private Confirmar _confirmar;
+    private string _motivo = "";
+    private bool _ocupado;
+    private bool _enfocarCantidad;
+    private string? _error;
+    private string? _aviso;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!_enfocarCantidad)
+            return;
+        _enfocarCantidad = false;
+        await Js.EnfocarAsync("#cantidad-renglon");
+    }
+
+    protected override Task OnInitializedAsync() => HacerAsync(() => Cliente.CompraAsync(CompraId, Sesion.UsuarioId));
+
+    /// <summary>Cada operación regresa la compra como la ve este usuario.</summary>
+    private async Task HacerAsync(Func<Task<CompraDto>> operacion, string? aviso = null)
+    {
+        _ocupado = true;
+        (_error, _aviso) = (null, null);
+        try
+        {
+            _compra = await operacion();
+            _aviso = aviso;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private Task ContarUnoAsync((ProductoVentaDto Producto, PresentacionDto Presentacion) elegido)
+    {
+        var actual = _compra!.Conteo.FirstOrDefault(x => x.PresentacionId == elegido.Presentacion.Id)?.CantidadMilesimas ?? 0;
+        return HacerAsync(() => Cliente.ContarAsync(CompraId,
+            new SolicitudConteo(Sesion.UsuarioId, elegido.Producto.VarianteId, elegido.Presentacion.Id, actual + 1000)));
+    }
+
+    private Task CambiarConteoAsync((ConteoCompraDto Linea, long CantidadMilesimas) cambio) =>
+        HacerAsync(() => Cliente.ContarAsync(CompraId,
+            new SolicitudConteo(Sesion.UsuarioId, cambio.Linea.VarianteId, cambio.Linea.PresentacionId, cambio.CantidadMilesimas)));
+
+    private async Task TerminarConteoAsync()
+    {
+        await HacerAsync(() => Cliente.TerminarConteoAsync(CompraId, Sesion.UsuarioId), "Conteo terminado.");
+        _confirmar = Confirmar.Nada;
+    }
+
+    private void ElegirParaRenglon((ProductoVentaDto Producto, PresentacionDto Presentacion) elegido)
+    {
+        _renglon = new RenglonEditable(elegido.Producto, elegido.Presentacion);
+        _enfocarCantidad = true;
+    }
+
+    private async Task AlTeclearRenglon(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await AgregarRenglonAsync();
+    }
+
+    private async Task AgregarRenglonAsync()
+    {
+        if (_renglon is not { } r)
+            return;
+        if (!decimal.TryParse(r.Cantidad.Replace(",", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var cantidad) || cantidad <= 0)
+        {
+            _error = "Escribe cuántos dice la nota.";
+            return;
+        }
+        if (Formato.LeerPesos(r.Importe) is not { } importe)
+        {
+            _error = "Escribe el importe del renglón.";
+            return;
+        }
+        await HacerAsync(() => Cliente.RenglonCompraAsync(CompraId, new SolicitudRenglonCompra(Sesion.UsuarioId, null, r.Producto.VarianteId, r.PresentacionId,
+            (long)Math.Round(cantidad * 1000), importe, string.IsNullOrWhiteSpace(r.Clave) ? null : r.Clave)));
+        if (_error is null)
+            _renglon = null;
+    }
+
+    private Task QuitarRenglonAsync(Guid renglonId) => HacerAsync(() => Cliente.QuitarRenglonCompraAsync(CompraId, renglonId, Sesion.UsuarioId));
+
+    private async Task CerrarAsync()
+    {
+        await HacerAsync(() => Cliente.CerrarCompraAsync(CompraId, Sesion.UsuarioId), "La compra entró al inventario.");
+        _confirmar = Confirmar.Nada;
+    }
+
+    private async Task CancelarAsync()
+    {
+        await HacerAsync(() => Cliente.CancelarCompraAsync(CompraId, new SolicitudCancelarCompra(Sesion.UsuarioId, _motivo)));
+        if (_error is null)
+            _confirmar = Confirmar.Nada;
+    }
+
+    private async Task PonerPrecioAsync(ComparacionCompraDto c)
+    {
+        _ocupado = true;
+        (_error, _aviso) = (null, null);
+        try
+        {
+            await Cliente.CambiarMenudeoAsync(new SolicitudPrecioMenudeo(Sesion.UsuarioId, Caja.SucursalId, c.VarianteId, c.PrecioSugeridoCentavos!.Value));
+            _compra = await Cliente.CompraAsync(CompraId, Sesion.UsuarioId);
+            _aviso = $"«{c.Producto}» quedó a {Formato.Dinero(c.PrecioSugeridoCentavos.Value)}.";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private static string Diferencia(ComparacionCompraDto c) => c.Diferencia switch
+    {
+        DiferenciaCompra.Falto => $"faltó {Formato.Numero(c.Nota - c.Contado)} de «{c.Producto}»",
+        DiferenciaCompra.Sobro => $"sobró {Formato.Numero(c.Contado - c.Nota)} de «{c.Producto}»",
+        DiferenciaCompra.NoLlego => $"no llegó «{c.Producto}»",
+        _ => $"llegó «{c.Producto}» sin estar en la nota",
+    };
+}

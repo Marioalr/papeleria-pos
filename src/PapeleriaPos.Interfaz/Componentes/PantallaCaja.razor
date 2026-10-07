@@ -30,9 +30,14 @@
     {
         <Entrada Caja="_caja" Turno="_turno" AlEntrar="Entrar" />
     }
+    else if (_administrar)
+    {
+        <Administracion Caja="_caja" Sesion="_sesion" AlSalir="Salir" />
+    }
     else if (_turno is null)
     {
-        <AbrirTurno Caja="_caja" Sesion="_sesion" AlAbrir="TurnoAbierto" AlSalir="Salir" />
+        <AbrirTurno Caja="_caja" Sesion="_sesion" AlAbrir="TurnoAbierto" AlSalir="Salir"
+                    AlAdministrar="@(PuedeAdministrar ? EventCallback.Factory.Create(this, () => _administrar = true) : default)" />
     }
     else if (_turno.CajeroId != _sesion.UsuarioId)
     {
@@ -48,6 +53,10 @@
                 else
                 {
                     <div class="acciones">
+                        @if (PuedeAdministrar)
+                        {
+                            <button class="boton" @onclick="() => _administrar = true">Productos e inventario (sin cortar)</button>
+                        }
                         <button class="boton principal" @onclick="() => _corte = true">Hacer el corte</button>
                         <button class="boton" @onclick="Salir">Salir</button>
                     </div>
@@ -67,6 +76,10 @@
     private TurnoDto? _turno;
     private string? _error;
     private bool _corte;
+    private bool _administrar;
+
+    /// <summary>El encargado y el dueño pueden entrar a productos e inventario sin vender (sin cortar ni abrir turno).</summary>
+    private bool PuedeAdministrar => _sesion?.Rol is Rol.Encargado or Rol.Dueno;
     private bool _alta;
     private string? _avisoAlta;
 
@@ -117,6 +130,7 @@
         _sesion = null;
         Conexion.UsuarioEnCaja = null;
         _corte = false;
+        _administrar = false;
     }
 
     private async Task CorteTerminado()

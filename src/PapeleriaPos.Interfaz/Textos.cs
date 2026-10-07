@@ -1,4 +1,5 @@
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Usuarios;
 
 namespace PapeleriaPos.Interfaz;
@@ -30,6 +31,9 @@ public static class Textos
         AccionControlada.AdministrarClientes => "Administrar los clientes especiales",
         AccionControlada.EditarCatalogo => "Editar el catálogo (productos y precios)",
         AccionControlada.AltaRapida => "Dar de alta un código desde la caja",
+        AccionControlada.RecibirMercancia => "Recibir mercancía (contar lo que llegó)",
+        AccionControlada.CostearCompra => "Capturar la nota del proveedor y cerrar la compra",
+        AccionControlada.ConfigurarMargen => "Configurar el margen mínimo",
         _ => accion.ToString(),
     };
 
@@ -45,6 +49,23 @@ public static class Textos
         Nucleo.Usuarios.Rol.Cajero => "Cajero",
         Nucleo.Usuarios.Rol.Encargado => "Encargado",
         _ => "Dueño",
+    };
+
+    public static string Estado(EstadoCompra estado) => estado switch
+    {
+        EstadoCompra.Recibiendo => "Contando",
+        EstadoCompra.PorCostear => "Falta la nota",
+        EstadoCompra.Cerrada => "Cerrada",
+        _ => "Cancelada",
+    };
+
+    public static string Diferencia(DiferenciaCompra diferencia) => diferencia switch
+    {
+        DiferenciaCompra.Ninguna => "Completo",
+        DiferenciaCompra.Falto => "Faltó",
+        DiferenciaCompra.Sobro => "Sobró",
+        DiferenciaCompra.NoLlego => "No llegó",
+        _ => "No está en la nota",
     };
 
     public static string Resultado(ResultadoBitacora resultado) => resultado switch

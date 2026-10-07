@@ -1,0 +1,159 @@
+@* Las compras de la sucursal, las abiertas primero. Quien recibe abre una con el proveedor y cuenta lo que llegó; quien
+   captura los costos la termina con la nota del proveedor. *@
+@inject ClienteCaja Cliente
+
+@if (_abierta is { } abierta)
+{
+    <CompraAbierta Caja="Caja" Sesion="Sesion" CompraId="abierta" AlVolver="VolverAsync" />
+}
+else if (_nueva)
+{
+    <div class="dos-columnas">
+        <label>Proveedor
+            <select @bind="_proveedor">
+                <option value="">Elige el proveedor…</option>
+                @foreach (var p in _proveedores)
+                {
+                    <option value="@p.Id">@p.Nombre</option>
+                }
+            </select>
+        </label>
+        <label>Número de la nota o factura <input @bind="_documento" placeholder="Si lo trae" autocomplete="off" /></label>
+    </div>
+    @if (_proveedores.Count == 0)
+    {
+        <p class="nota">No hay proveedores: dalos de alta en la pestaña Proveedores.</p>
+    }
+    <p class="nota">Cuenta lo que llegó sin ver la nota. La nota la captura después el encargado y el sistema compara las dos cosas.</p>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    <div class="acciones izquierda">
+        <button class="boton" @onclick="() => _nueva = false">Cancelar</button>
+        <button class="boton principal" disabled="@_ocupado" @onclick="AbrirAsync">Empezar a contar</button>
+    </div>
+}
+else
+{
+    <div class="filtros-catalogo">
+        <button class="boton principal" @onclick="NuevaAsync">Recibir mercancía</button>
+        <button class="boton" @onclick="CargarAsync">Actualizar</button>
+    </div>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_compras is null)
+    {
+        <p>Cargando…</p>
+    }
+    else if (_compras.Count == 0)
+    {
+        <p class="vacia">Todavía no hay compras. Cuando llegue mercancía, empieza con «Recibir mercancía».</p>
+    }
+    else
+    {
+        <div class="resultados catalogo">
+            <table>
+                <thead><tr><th>Folio</th><th>Fecha</th><th>Proveedor</th><th>Nota</th><th>Estado</th><th>Recibió</th><th class="num">Productos</th><th class="num">Total</th></tr></thead>
+                @foreach (var c in _compras)
+                {
+                    var compra = c;
+                    <tr class="@(c.Estado == EstadoCompra.Cancelada ? "inactivo" : "")" @onclick="() => _abierta = compra.Id">
+                        <td>@c.Folio</td>
+                        <td>@c.AbiertaLocal.ToString("dd/MM/yyyy HH:mm")</td>
+                        <td>@c.Proveedor</td>
+                        <td>@c.Documento</td>
+                        <td>
+                            @if (c.Estado is EstadoCompra.Recibiendo or EstadoCompra.PorCostear)
+                            {
+                                <span class="etiqueta">@Textos.Estado(c.Estado)</span>
+                            }
+                            else
+                            {
+                                @Textos.Estado(c.Estado)
+                            }
+                        </td>
+                        <td>@c.Recibio</td>
+                        <td class="num">@c.Productos</td>
+                        <td class="num">@(c.TotalCentavos is { } t ? Formato.Dinero(t) : "")</td>
+                    </tr>
+                }
+            </table>
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    private List<CompraResumenDto>? _compras;
+    private List<ProveedorDto> _proveedores = [];
+    private Guid? _abierta;
+    private bool _nueva;
+    private string _proveedor = "";
+    private string _documento = "";
+    private bool _ocupado;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _error = null;
+        try
+        {
+            _compras = await Cliente.ComprasAsync(Caja.SucursalId, Sesion.UsuarioId);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task NuevaAsync()
+    {
+        _error = null;
+        try
+        {
+            _proveedores = await Cliente.ProveedoresAsync();
+            (_proveedor, _documento, _nueva) = ("", "", true);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task AbrirAsync()
+    {
+        if (!Guid.TryParse(_proveedor, out var proveedor))
+        {
+            _error = "Elige el proveedor.";
+            return;
+        }
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            var compra = await Cliente.AbrirCompraAsync(new SolicitudAbrirCompra(Sesion.UsuarioId, Caja.SucursalId, proveedor, _documento));
+            (_nueva, _abierta) = (false, compra.Id);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task VolverAsync()
+    {
+        _abierta = null;
+        await CargarAsync();
+    }
+}

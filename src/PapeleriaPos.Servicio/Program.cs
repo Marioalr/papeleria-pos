@@ -72,6 +72,7 @@ app.MapearApiTelegram();
 app.MapearApiImpresiones();
 app.MapearApiDescuentos();
 app.MapearApiCatalogo();
+app.MapearApiCompras();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Run();

@@ -9,7 +9,7 @@
     <header class="barra-modulos">
         <button class="modulo activo">F1 Ventas</button>
         <button class="modulo" @onclick="() => Abrir(Ventanas.Productos)">F3 Productos</button>
-        <button class="modulo" disabled title="Llega en otra entrega">F4 Inventario</button>
+        <button class="modulo" @onclick="() => Abrir(Ventanas.Inventario)">F4 Inventario</button>
         <button class="modulo" @onclick="() => Abrir(Ventanas.Configuracion)">Configuración</button>
         <button class="modulo" @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
         <span class="espacio"></span>
@@ -212,6 +212,11 @@
                 <Productos Caja="Caja" Sesion="Sesion" />
             </Ventana>
             break;
+        case Ventanas.Inventario:
+            <Ventana Titulo="Inventario" Clase="configuracion" AlCerrar="Cerrar">
+                <Inventario Caja="Caja" Sesion="Sesion" />
+            </Ventana>
+            break;
         case Ventanas.AltaRapida when _codigoNuevo is { } codigoNuevo:
             <Ventana Titulo="Dar de alta" AlCerrar="Cerrar">
                 <AltaRapida Codigo="@codigoNuevo" Caja="Caja" Sesion="Sesion" AlDarDeAlta="DadoDeAltaAsync" />
@@ -261,7 +266,7 @@
     private enum Ventanas
     {
         Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
-        CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, Productos, AltaRapida,
+        CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, Productos, AltaRapida, Inventario,
     }
 
     private sealed class TicketAbierto
@@ -333,7 +338,7 @@
             case "-": await CambiarCantidadSeleccion(-1); break;
             case "F11": Avisar("El mayoreo está pendiente de decidir (fase 3).", error: false); break;
             case "F3": await Abrir(Ventanas.Productos); break;
-            case "F4": Avisar("Inventario llega en la siguiente entrega.", error: false); break;
+            case "F4": await Abrir(Ventanas.Inventario); break;
             case "Escape": _codigo = ""; _mensaje = null; break;
         }
         StateHasChanged();

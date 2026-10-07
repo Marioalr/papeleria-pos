@@ -187,6 +187,36 @@ public sealed class RegistroCatalogo(PosDbContext db)
         return producto.Id;
     }
 
+    /// <summary>
+    /// Solo el precio de menudeo de una variante: el sugerido después de una compra con margen bajo, u otro. Queda en la
+    /// bitácora y avisa por Telegram como cualquier cambio de precio del catálogo.
+    /// </summary>
+    public async Task CambiarMenudeoAsync(SolicitudPrecioMenudeo s, CancellationToken ct = default)
+    {
+        var control = new ServicioControl(db);
+        if ((await control.EvaluarAsync(s.UsuarioId, s.SucursalId, AccionControlada.EditarCatalogo, ct: ct)).Nivel != NivelPermiso.Permitido)
+            throw new PermisoRequerido(AccionControlada.EditarCatalogo, NivelPermiso.NoPermitido, "Los precios los cambian el dueño y el encargado.");
+        if (s.PrecioCentavos <= 0)
+            throw new ArgumentException("Escribe el precio.");
+        var variante = await db.Variantes.Include(v => v.Producto).SingleOrDefaultAsync(v => v.Id == s.VarianteId, ct)
+            ?? throw new InvalidOperationException("El producto ya no existe.");
+        var menudeo = (await db.Precios.Where(p => p.VarianteId == variante.Id && p.PresentacionId == null && p.SucursalId == null).ToListAsync(ct))
+            .MinBy(p => p.CantidadMinima);
+        if (menudeo is null)
+        {
+            db.Precios.Add(new Precio { VarianteId = variante.Id, PrecioCentavos = s.PrecioCentavos });
+            control.Registrar(s.SucursalId, null, s.UsuarioId, AccionControlada.EditarCatalogo,
+                $"Precio de «{Nombre(variante.Producto!, variante)}»: nuevo {s.PrecioCentavos / 100m:N2}");
+        }
+        else if (menudeo.PrecioCentavos != s.PrecioCentavos)
+        {
+            control.Registrar(s.SucursalId, null, s.UsuarioId, AccionControlada.EditarCatalogo,
+                $"Precio de «{Nombre(variante.Producto!, variante)}»: {menudeo.PrecioCentavos / 100m:N2} → {s.PrecioCentavos / 100m:N2}");
+            menudeo.PrecioCentavos = s.PrecioCentavos;
+        }
+        await db.SaveChangesAsync(ct);
+    }
+
     private static void Validar(FichaProductoDto f)
     {
         if (string.IsNullOrWhiteSpace(f.Nombre))
@@ -265,6 +295,8 @@ public sealed class RegistroCatalogo(PosDbContext db)
         {
             if (await db.Set<VentaLinea>().AnyAsync(l => l.PresentacionId == quitada.Id, ct) || await db.Precios.AnyAsync(p => p.PresentacionId == quitada.Id && p.SucursalId != null, ct))
                 throw new InvalidOperationException($"La presentación «{quitada.Nombre}» ya se vendió: no se puede quitar.");
+            if (await db.ComprasConteo.AnyAsync(c => c.PresentacionId == quitada.Id, ct) || await db.ComprasRenglones.AnyAsync(r => r.PresentacionId == quitada.Id, ct))
+                throw new InvalidOperationException($"La presentación «{quitada.Nombre}» ya se usó en una compra: no se puede quitar.");
             db.CodigosBarras.RemoveRange(quitada.Codigos);
             db.Precios.RemoveRange(db.Precios.Where(p => p.PresentacionId == quitada.Id));
             variante.Presentaciones.Remove(quitada);

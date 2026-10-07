@@ -29,6 +29,9 @@ public enum TipoAlerta
 
     /// <summary>Un precio del catálogo que cambió alguien que no es el dueño.</summary>
     CambioPrecioCatalogo,
+
+    /// <summary>Una compra cerrada con diferencias contra la nota o con productos que quedaron debajo del margen mínimo.</summary>
+    Compra,
 }
 
 /// <summary>Un chat de Telegram vinculado a un usuario (solo el dueño): recibe alertas y contesta autorizaciones.</summary>

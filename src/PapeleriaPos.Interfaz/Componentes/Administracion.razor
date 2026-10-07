@@ -1,0 +1,36 @@
+@* Productos e inventario sin vender: el encargado o el dueño entran aquí cuando la caja tiene el turno de otro (o ninguno)
+   y no hace falta cortar ni abrir turno para capturar una nota o corregir el catálogo. *@
+
+<div class="venta">
+    <header class="barra-modulos">
+        <button class="modulo @(_modulo == Modulo.Productos ? "activo" : "")" @onclick="() => _modulo = Modulo.Productos">F3 Productos</button>
+        <button class="modulo @(_modulo == Modulo.Inventario ? "activo" : "")" @onclick="() => _modulo = Modulo.Inventario">F4 Inventario</button>
+        <span class="espacio"></span>
+        <div class="atiende">
+            <small>Administra:</small>
+            <strong>@Sesion.Nombre</strong>
+            <small>@Caja.Sucursal · @Caja.Nombre · sin vender</small>
+        </div>
+        <button class="modulo" @onclick="AlSalir">Salir</button>
+    </header>
+    <div class="administracion">
+        @if (_modulo == Modulo.Productos)
+        {
+            <Productos Caja="Caja" Sesion="Sesion" />
+        }
+        else
+        {
+            <Inventario Caja="Caja" Sesion="Sesion" />
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter] public EventCallback AlSalir { get; set; }
+
+    private enum Modulo { Productos, Inventario }
+
+    private Modulo _modulo = Modulo.Inventario;
+}

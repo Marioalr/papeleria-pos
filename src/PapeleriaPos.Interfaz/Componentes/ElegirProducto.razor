@@ -1,0 +1,96 @@
+@* Para las compras: escanear un código (el de la caja de 12 elige la caja) o buscar por nombre. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="captura">
+    <label for="codigo-compra">Código:</label>
+    <input id="codigo-compra" autocomplete="off" @bind="_codigo" @bind:event="oninput" @onkeydown="AlTeclear" />
+    <button class="boton" @onclick="AgregarCodigoAsync">ENTER - @Accion</button>
+    <button class="boton" @onclick="AlternarBusquedaAsync">@(_buscando ? "Cerrar búsqueda" : "Buscar por nombre")</button>
+</div>
+@if (_buscando)
+{
+    <BuscarProducto SucursalId="SucursalId" AlElegir="ElegidoAsync" />
+}
+@if (_error is not null)
+{
+    <p class="error">@_error</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid SucursalId { get; set; }
+    [Parameter] public string Accion { get; set; } = "Agregar";
+
+    /// <summary>El producto y la presentación del código (la base si se buscó por nombre).</summary>
+    [Parameter] public EventCallback<(ProductoVentaDto Producto, PresentacionDto Presentacion)> AlElegir { get; set; }
+
+    private string _codigo = "";
+    private bool _buscando;
+    private string? _error;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+            await Js.EnfocarAsync("#codigo-compra");
+    }
+
+    private async Task AlTeclear(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await AgregarCodigoAsync();
+    }
+
+    private async Task AgregarCodigoAsync()
+    {
+        var codigo = _codigo.Trim();
+        if (codigo.Length == 0)
+            return;
+        _error = null;
+        try
+        {
+            if (await Cliente.PorCodigoAsync(codigo, SucursalId) is { } producto)
+                await ElegirAsync(producto);
+            else
+                _error = $"El código «{codigo}» no existe: dalo de alta en F3 Productos.";
+            _codigo = "";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        await Js.EnfocarAsync("#codigo-compra");
+    }
+
+    private async Task ElegidoAsync(Guid varianteId)
+    {
+        _error = null;
+        try
+        {
+            if (await Cliente.PorVarianteAsync(varianteId, SucursalId) is { } producto)
+                await ElegirAsync(producto);
+            _buscando = false;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        await Js.EnfocarAsync("#codigo-compra");
+    }
+
+    private async Task ElegirAsync(ProductoVentaDto producto)
+    {
+        if (!producto.LlevaInventario)
+        {
+            _error = $"«{producto.Descripcion}» es un servicio: no lleva inventario.";
+            return;
+        }
+        await AlElegir.InvokeAsync((producto, producto.Presentacion));
+    }
+
+    private async Task AlternarBusquedaAsync()
+    {
+        _buscando = !_buscando;
+        if (!_buscando)
+            await Js.EnfocarAsync("#codigo-compra");
+    }
+}
