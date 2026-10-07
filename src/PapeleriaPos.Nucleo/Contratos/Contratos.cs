@@ -461,7 +461,12 @@ public sealed record CompraResumenDto(
 /// <param name="CantidadMilesimas">En presentaciones: 3 cajas = 3000.</param>
 public sealed record SolicitudConteo(Guid UsuarioId, Guid VarianteId, Guid PresentacionId, long CantidadMilesimas);
 
-public sealed record ConteoCompraDto(Guid VarianteId, Guid PresentacionId, string Producto, string Presentacion, long CantidadMilesimas, decimal CantidadBase);
+/// <param name="VarianteId">Vacío si se contó un código que no está en el catálogo (<paramref name="Codigo"/>).</param>
+public sealed record ConteoCompraDto(
+    Guid? VarianteId, Guid? PresentacionId, string Producto, string Presentacion, long CantidadMilesimas, decimal CantidadBase, string? Codigo = null);
+
+/// <summary>Contar algo que llegó y no está en el catálogo, por su código (cero lo quita).</summary>
+public sealed record SolicitudConteoDesconocido(Guid UsuarioId, string Codigo, string? Descripcion, long CantidadMilesimas);
 
 /// <summary>Un renglón de la nota del proveedor. Sin <paramref name="RenglonId"/>, se agrega.</summary>
 /// <param name="CantidadMilesimas">En la presentación de la nota (cajas, paquetes, piezas).</param>
@@ -472,9 +477,30 @@ public sealed record SolicitudRenglonCompra(
 /// <summary>Un renglón de la nota. Los que vienen del documento traen su descripción y unidad tal cual.</summary>
 /// <param name="VarianteId">Vacío mientras un renglón del documento no se liga a su producto.</param>
 /// <param name="CantidadMilesimas">En la presentación ligada (o en la unidad del documento, si no está ligado).</param>
+/// <param name="Sugerencia">El producto del catálogo que se parece (sin ligar), con su presentación base.</param>
+/// <param name="Nuevo">Si es un producto nuevo en borrador, lo precargado para revisarlo.</param>
+/// <param name="Presentaciones">Las del producto ligado, para cambiarla en la revisión.</param>
 public sealed record RenglonCompraDto(
     Guid Id, int Orden, string? CodigoProveedor, string Descripcion, string? Unidad, bool DelDocumento, Guid? VarianteId, Guid? PresentacionId,
-    string? Producto, string? Presentacion, long CantidadMilesimas, long ImporteCentavos);
+    string? Producto, string? Presentacion, long CantidadMilesimas, long ImporteCentavos, Guid? SugerenciaId = null, string? Sugerencia = null,
+    Guid? SugerenciaPresentacionId = null, ProductoNuevoDto? Nuevo = null, IReadOnlyList<PresentacionDto>? Presentaciones = null);
+
+/// <summary>Un producto nuevo precargado desde el documento, para revisarlo y corregirlo antes de darlo de alta.</summary>
+/// <param name="ContieneMilesimas">Piezas en cada unidad del documento.</param>
+/// <param name="LlegoMilesimas">Cuántos llegaron, en unidades del documento; vacío: lo que contó quien recibió.</param>
+/// <param name="ContadoPorCodigo">Lo que contó quien recibió con su código, en unidades del documento.</param>
+/// <param name="CostoUnitarioCentavos">Por pieza, según el documento.</param>
+public sealed record ProductoNuevoDto(
+    string Nombre, Guid DepartamentoId, long PrecioCentavos, string? Codigo, long ContieneMilesimas, long? LlegoMilesimas, decimal? ContadoPorCodigo,
+    decimal? CostoUnitarioCentavos, int? MargenCentesimas, long? PrecioSugeridoCentavos);
+
+/// <summary>Corregir la cantidad (en su presentación o en la unidad del documento) y el importe de un renglón de la nota.</summary>
+public sealed record SolicitudCorregirRenglon(Guid UsuarioId, long CantidadMilesimas, long ImporteCentavos);
+
+/// <summary>Un renglón del documento como producto nuevo. Sin nombre se precarga solo; con él, se guarda lo que se mande.</summary>
+public sealed record SolicitudProductoNuevo(
+    Guid UsuarioId, string? Nombre = null, Guid? DepartamentoId = null, long? PrecioCentavos = null, string? Codigo = null, long? ContieneMilesimas = null,
+    long? LlegoMilesimas = null);
 
 /// <param name="Avisos">Lo que hay que revisar de la lectura.</param>
 public sealed record DocumentoCompraDto(

@@ -12,8 +12,8 @@ else
             @foreach (var l in Conteo)
             {
                 var linea = l;
-                <tr>
-                    <td>@l.Producto</td>
+                <tr class="@(l.VarianteId is null ? "sin-ligar" : "")">
+                    <td>@l.Producto@(l.Codigo is { } codigo ? $" · {codigo}" : "")</td>
                     <td>@l.Presentacion</td>
                     <td class="num">
                         @if (Editable)

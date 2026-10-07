@@ -59,7 +59,8 @@ public static class ComparacionCompra
         IEnumerable<CompraConteo> conteo, IEnumerable<CompraRenglon> renglones, IEnumerable<OrdenRenglon>? pedido = null)
     {
         var pedidos = pedido?.GroupBy(p => p.VarianteId).ToDictionary(g => g.Key, g => g.Aggregate(Cantidad.Cero, (s, p) => s + p.CantidadBase));
-        var contado = conteo.GroupBy(c => c.VarianteId).ToDictionary(g => g.Key, g => g.Aggregate(Cantidad.Cero, (s, c) => s + c.CantidadBase));
+        var contado = conteo.Where(c => c.VarianteId is not null).GroupBy(c => c.VarianteId!.Value)
+            .ToDictionary(g => g.Key, g => g.Aggregate(Cantidad.Cero, (s, c) => s + c.CantidadBase));
         var nota = renglones.Where(r => r.VarianteId is not null).GroupBy(r => r.VarianteId!.Value).ToDictionary(g => g.Key,
             g => (Cantidad: g.Aggregate(Cantidad.Cero, (s, r) => s + r.CantidadBase), Importe: g.Sum(r => r.ImporteCentavos)));
         return nota.Keys.Union(contado.Keys).Union(pedidos?.Keys ?? Enumerable.Empty<Guid>())

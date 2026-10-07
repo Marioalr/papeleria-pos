@@ -111,6 +111,23 @@ public sealed class RegistroCompras(PosDbContext db)
         return (await DetalleAsync(compraId, s.UsuarioId, ct))!;
     }
 
+    /// <summary>Quien recibe cuenta un código que no está en el catálogo (cero lo quita). Sigue a ciegas.</summary>
+    public async Task<CompraDto> ContarDesconocidoAsync(Guid compraId, SolicitudConteoDesconocido s, CancellationToken ct = default)
+    {
+        var compra = await CompraAsync(compraId, ct);
+        await RequerirAsync(s.UsuarioId, compra.SucursalId, AccionControlada.RecibirMercancia, "No tienes permiso para recibir mercancía.", ct);
+        var cantidad = new Cantidad(s.CantidadMilesimas);
+        if (!cantidad.EsEntera)
+            throw new ArgumentException("Lo que no está en el catálogo se cuenta en piezas enteras.");
+        if (await db.CodigosBarras.AnyAsync(c => c.Codigo == s.Codigo.Trim(), ct))
+            throw new InvalidOperationException($"El código «{s.Codigo.Trim()}» sí está en el catálogo: escanéalo de nuevo.");
+        var antes = compra.Conteo.ToList();
+        compra.ContarDesconocido(s.Codigo, s.Descripcion, cantidad);
+        Sincronizar(antes, compra.Conteo);
+        await db.SaveChangesAsync(ct);
+        return (await DetalleAsync(compraId, s.UsuarioId, ct))!;
+    }
+
     public async Task<CompraDto> TerminarConteoAsync(Guid compraId, Guid usuarioId, CancellationToken ct = default)
     {
         var compra = await CompraAsync(compraId, ct);
@@ -140,7 +157,10 @@ public sealed class RegistroCompras(PosDbContext db)
         Sincronizar(antes, compra.Renglones);
         // Un renglón del documento: la próxima vez que este proveedor mande esa clave (o esa descripción), llega ligado.
         if (renglon.DelDocumento)
+        {
             await LigarAsync(compra.ProveedorId, LigaProveedor.ClaveDe(renglon.CodigoProveedor, renglon.Descripcion), presentacion.Id, ct);
+            await CodigoNuevoAsync(compra, renglon.CodigoProveedor, presentacion, ct);
+        }
         await db.SaveChangesAsync(ct);
         return (await DetalleAsync(compraId, s.UsuarioId, ct))!;
     }
@@ -212,14 +232,249 @@ public sealed class RegistroCompras(PosDbContext db)
             Avisos = avisos.Count == 0 ? null : string.Join('\n', avisos), UsuarioId = s.UsuarioId, CargadoUtc = Ahora,
         };
         var antes = compra.Renglones.ToList();
+        // Lo que quien recibió contó por un código que no estaba en el catálogo, si el documento lo reconoce, ya es de ese producto.
+        foreach (var r in renglones.Where(r => r.Liga is not null))
+            compra.AsignarDesconocidos(r.CodigoProveedor, r.Liga!.VarianteId, r.Liga.PresentacionId, r.Liga.Factor);
         compra.AgregarDocumento(documento, renglones);
+        var cargados = compra.Renglones.Except(antes).ToList();
+        await PrecargarAsync(compra, cargados, ct);
         Sincronizar(antes, compra.Renglones);
         db.ComprasDocumentos.Add(documento);
         new ServicioControl(db).Registrar(compra.SucursalId, null, s.UsuarioId, AccionControlada.CostearCompra,
-            $"Cargó «{documento.Nombre}» en la compra {compra.FolioTexto}: {renglones.Count} renglones, {renglones.Count(r => r.Liga is null)} por ligar");
+            $"Cargó «{documento.Nombre}» en la compra {compra.FolioTexto}: {cargados.Count} renglones, {cargados.Count(r => r.Ligado)} reconocidos, "
+            + $"{cargados.Count(r => r.SugerenciaId is not null)} parecidos a uno del catálogo y {cargados.Count(r => r.Nuevo is not null)} nuevos");
         await db.SaveChangesAsync(ct);
         return (await DetalleAsync(compraId, s.UsuarioId, ct))!;
     }
+
+    // ── Todo el pedido desde el documento: lo que no está en el catálogo ──────
+
+    /// <summary>
+    /// Lo que el documento no reconoció se precarga para revisarlo: si se parece a un producto del catálogo se sugiere
+    /// ese (no se liga solo); si no, queda como producto nuevo en borrador con lo que se sabe (nombre, costo, precio
+    /// sugerido, código). Quien captura la nota lo corrige y después lo da de alta.
+    /// </summary>
+    private async Task PrecargarAsync(Compra compra, IReadOnlyList<CompraRenglon> cargados, CancellationToken ct)
+    {
+        var pendientes = cargados.Where(r => !r.Ligado).ToList();
+        if (pendientes.Count == 0)
+            return;
+        var delProveedor = (await db.ProveedoresVariantes.AsNoTracking().Where(p => p.ProveedorId == compra.ProveedorId).Select(p => p.VarianteId).ToListAsync(ct))
+            .ToHashSet();
+        var catalogo = (await db.Variantes.AsNoTracking().Where(v => v.Activa && v.Producto!.Activo && v.Producto.Tipo == TipoProducto.Mercancia)
+                .Select(v => new { v.Id, Producto = v.Producto!.Nombre, Marca = v.Producto.Marca == null ? null : v.Producto.Marca.Nombre, v.Descripcion })
+                .ToListAsync(ct))
+            .Select(v => (v.Id, Palabras: NombresParecidos.Palabras($"{v.Producto} {v.Marca} {v.Descripcion}")))
+            .ToList();
+        foreach (var r in pendientes)
+        {
+            var palabras = NombresParecidos.Palabras(r.Descripcion);
+            var mejor = catalogo.Select(c => (c.Id, Puntaje: NombresParecidos.Parecido(palabras, c.Palabras) + (delProveedor.Contains(c.Id) ? 0.05 : 0)))
+                .Where(x => x.Puntaje >= 0.6).OrderByDescending(x => x.Puntaje).FirstOrDefault();
+            if (mejor.Id != Guid.Empty)
+                r.SugerenciaId = mejor.Id;
+            else
+                compra.ProponerNuevo(r.Id, await PropuestaAsync(compra, r, ct));
+        }
+    }
+
+    /// <summary>
+    /// Lo que se precarga de un producto nuevo: el nombre del documento, el departamento donde más productos tiene ese
+    /// proveedor, una pieza por unidad, el precio que deja el margen mínimo y el código si es un código de barras libre.
+    /// </summary>
+    private async Task<ProductoNuevo> PropuestaAsync(Compra compra, CompraRenglon r, CancellationToken ct)
+    {
+        var departamento = await (from pv in db.ProveedoresVariantes
+                                  join v in db.Variantes on pv.VarianteId equals v.Id
+                                  where pv.ProveedorId == compra.ProveedorId
+                                  group v by v.Producto!.DepartamentoId into g
+                                  orderby g.Count() descending
+                                  select (Guid?)g.Key).FirstOrDefaultAsync(ct)
+            ?? (await db.Departamentos.AsNoTracking().Where(d => d.Activo).ToListAsync(ct)).OrderBy(d => d.Nombre, StringComparer.CurrentCultureIgnoreCase)
+                .Select(d => (Guid?)d.Id).FirstOrDefault()
+            ?? throw new InvalidOperationException("Da de alta al menos un departamento en F3 Productos.");
+        var una = Cantidad.Piezas(1);
+        var minimos = await MargenesMinimosAsync(compra.SucursalId, ct);
+        var codigo = EsCodigoDeBarras(r.CodigoProveedor) && !await db.CodigosBarras.AnyAsync(c => c.Codigo == r.CodigoProveedor, ct) ? r.CodigoProveedor : null;
+        return new ProductoNuevo(Titulo(r.Descripcion), departamento, Margen.PrecioSugerido(CostoPorPieza(r, una), minimos.De(departamento)), codigo, una, null);
+    }
+
+    /// <summary>
+    /// Un renglón del documento como producto nuevo. Sin nombre en la solicitud se precarga; con él, se guarda lo que manda
+    /// quien revisa (todo, para corregir cualquier dato).
+    /// </summary>
+    public async Task<CompraDto> ProponerNuevoAsync(Guid compraId, Guid renglonId, SolicitudProductoNuevo s, CancellationToken ct = default)
+    {
+        var compra = await CompraAsync(compraId, ct);
+        await RequerirCosteoAsync(s.UsuarioId, compra.SucursalId, ct);
+        var renglon = compra.Renglones.FirstOrDefault(r => r.Id == renglonId) ?? throw new InvalidOperationException("El renglón ya no existe.");
+        ProductoNuevo nuevo;
+        if (string.IsNullOrWhiteSpace(s.Nombre))
+            nuevo = await PropuestaAsync(compra, renglon, ct);
+        else
+        {
+            if (s.DepartamentoId is not { } departamento || !await db.Departamentos.AnyAsync(d => d.Id == departamento, ct))
+                throw new ArgumentException("Elige el departamento.");
+            if (Limpio(s.Codigo) is { } codigo && await db.CodigosBarras.AsNoTracking().Where(c => c.Codigo == codigo)
+                    .Select(c => c.Presentacion!.Variante!.Producto!.Nombre).FirstOrDefaultAsync(ct) is { } de)
+                throw new InvalidOperationException($"El código «{codigo}» ya es de «{de}».");
+            nuevo = new ProductoNuevo(s.Nombre, departamento, s.PrecioCentavos ?? 0, Limpio(s.Codigo), new Cantidad(s.ContieneMilesimas ?? Cantidad.Escala),
+                s.LlegoMilesimas is { } llego ? new Cantidad(llego) : null);
+        }
+        compra.ProponerNuevo(renglonId, nuevo);
+        await db.SaveChangesAsync(ct);
+        return (await DetalleAsync(compraId, s.UsuarioId, ct))!;
+    }
+
+    /// <summary>Corrige la cantidad y el importe de un renglón de la nota (ligado, sin ligar o nuevo).</summary>
+    public async Task<CompraDto> CorregirRenglonAsync(Guid compraId, Guid renglonId, SolicitudCorregirRenglon s, CancellationToken ct = default)
+    {
+        var compra = await CompraAsync(compraId, ct);
+        await RequerirCosteoAsync(s.UsuarioId, compra.SucursalId, ct);
+        var renglon = compra.Renglones.FirstOrDefault(r => r.Id == renglonId) ?? throw new InvalidOperationException("El renglón ya no existe.");
+        var cantidad = new Cantidad(s.CantidadMilesimas);
+        if (renglon is { VarianteId: { } varianteId, PresentacionId: { } presentacionId })
+        {
+            var presentacion = await PresentacionAsync(varianteId, presentacionId, ct);
+            if (!presentacion.Variante!.AdmiteCantidad(cantidad.Por(presentacion.Factor)))
+                throw new ArgumentException($"«{Nombre(presentacion.Variante)}» se cuenta en piezas enteras.");
+            compra.Renglon(renglon.Id, varianteId, presentacionId, cantidad, presentacion.Factor, s.ImporteCentavos, renglon.Descripcion, renglon.CodigoProveedor);
+        }
+        else
+            compra.CorregirSinLigar(renglon.Id, cantidad, s.ImporteCentavos);
+        await db.SaveChangesAsync(ct);
+        return (await DetalleAsync(compraId, s.UsuarioId, ct))!;
+    }
+
+    /// <summary>Ya no es un producto nuevo: vuelve a estar sin ligar (para decir de qué producto del catálogo es).</summary>
+    public async Task<CompraDto> NoEsNuevoAsync(Guid compraId, Guid renglonId, Guid usuarioId, CancellationToken ct = default)
+    {
+        var compra = await CompraAsync(compraId, ct);
+        await RequerirCosteoAsync(usuarioId, compra.SucursalId, ct);
+        compra.NoEsNuevo(renglonId);
+        await db.SaveChangesAsync(ct);
+        return (await DetalleAsync(compraId, usuarioId, ct))!;
+    }
+
+    /// <summary>
+    /// Los renglones que siguen sin ligar se precargan como productos nuevos. Los que se parecen a uno del catálogo no:
+    /// se confirman o se marcan como nuevos uno por uno, para no dar de alta dos veces el mismo producto.
+    /// </summary>
+    public async Task<CompraDto> ProponerNuevosAsync(Guid compraId, Guid usuarioId, CancellationToken ct = default)
+    {
+        var compra = await CompraAsync(compraId, ct);
+        await RequerirCosteoAsync(usuarioId, compra.SucursalId, ct);
+        foreach (var r in compra.Renglones.Where(r => !r.Ligado && r.Nuevo is null && r.SugerenciaId is null).ToList())
+            compra.ProponerNuevo(r.Id, await PropuestaAsync(compra, r, ct));
+        await db.SaveChangesAsync(ct);
+        return (await DetalleAsync(compraId, usuarioId, ct))!;
+    }
+
+    /// <summary>
+    /// Da de alta en el catálogo los productos nuevos de la nota, como quedaron después de revisarlos: cada uno con su
+    /// pieza (y su presentación si la unidad del documento trae varias), su precio y su código. Su renglón queda ligado
+    /// (y la próxima vez llega ligado) y lo que llegó entra al conteo: lo que contó quien recibió por su código o lo que
+    /// escribió quien captura la nota.
+    /// </summary>
+    public async Task<CompraDto> DarDeAltaNuevosAsync(Guid compraId, Guid usuarioId, CancellationToken ct = default)
+    {
+        var compra = await CompraAsync(compraId, ct);
+        await RequerirCosteoAsync(usuarioId, compra.SucursalId, ct);
+        var nuevos = compra.Renglones.Where(r => r.Nuevo is not null).OrderBy(r => r.Orden).ToList();
+        if (nuevos.Count == 0)
+            throw new InvalidOperationException("No hay productos nuevos por dar de alta.");
+        foreach (var r in nuevos.Where(r => r.Nuevo!.Llego is null && ContadoPorCodigo(compra, r) is null))
+            throw new ArgumentException($"¿Cuántos llegaron de «{r.Nuevo!.Nombre}»? Quien recibió no lo contó con su código.");
+
+        var catalogo = new RegistroCatalogo(db);
+        foreach (var r in nuevos)
+        {
+            var n = r.Nuevo!;
+            var porPaquete = n.Contiene > Cantidad.Piezas(1);
+            IReadOnlyList<CodigoFichaDto> codigos = n.Codigo is { } c ? [new CodigoFichaDto(c)] : [];
+            var presentaciones = new List<PresentacionFichaDto> { new(null, "Pieza", Cantidad.Escala, true, porPaquete ? [] : codigos) };
+            if (porPaquete)
+                presentaciones.Add(new PresentacionFichaDto(null, NombrePaquete(r.Unidad), n.Contiene.Milesimas, false, codigos));
+            var ficha = new FichaProductoDto(null, n.Nombre, n.DepartamentoId, null, TipoProducto.Mercancia, Impuesto.Iva16, null, true, false,
+                [new VarianteFichaDto(null, "", UnidadBase.Pieza, true, presentaciones, [new PrecioFichaDto(null, Cantidad.Escala, n.PrecioCentavos)])]);
+            var productoId = await catalogo.GuardarAsync(new SolicitudGuardarProducto(usuarioId, compra.SucursalId, ficha), ct);
+
+            var variante = await db.Variantes.Include(v => v.Presentaciones).SingleAsync(v => v.ProductoId == productoId, ct);
+            var presentacion = variante.Presentaciones.Single(p => porPaquete ? !p.EsBase : p.EsBase);
+            var antes = compra.Conteo.ToList();
+            compra.Renglon(r.Id, variante.Id, presentacion.Id, r.Cantidad, presentacion.Factor, r.ImporteCentavos, r.Descripcion, r.CodigoProveedor);
+            compra.AsignarDesconocidos(r.CodigoProveedor, variante.Id, presentacion.Id, presentacion.Factor);
+            if (n.Llego is { } llego)
+                compra.ContarNuevo(variante.Id, presentacion.Id, llego, presentacion.Factor);
+            Sincronizar(antes, compra.Conteo);
+            await LigarAsync(compra.ProveedorId, LigaProveedor.ClaveDe(r.CodigoProveedor, r.Descripcion), presentacion.Id, ct);
+            new ServicioControl(db).Registrar(compra.SucursalId, null, usuarioId, AccionControlada.CostearCompra,
+                $"Dio de alta «{n.Nombre}» desde la compra {compra.FolioTexto}" + (n.Llego is { } l ? $"; contó {Formato(l.EnUnidades)} al darlo de alta" : ""));
+            // Uno por uno: si el siguiente falla (un código repetido), los anteriores ya quedaron dados de alta y ligados.
+            await db.SaveChangesAsync(ct);
+        }
+        return (await DetalleAsync(compraId, usuarioId, ct))!;
+    }
+
+    /// <summary>
+    /// Al ligar un renglón del documento a un producto: si su clave es un código de barras que no está en el catálogo, se
+    /// le agrega a esa presentación (el producto cambió de código), y lo que se contó con él ya es de ese producto.
+    /// </summary>
+    private async Task CodigoNuevoAsync(Compra compra, string? codigo, Presentacion presentacion, CancellationToken ct)
+    {
+        compra.AsignarDesconocidos(codigo, presentacion.VarianteId, presentacion.Id, presentacion.Factor);
+        if (!EsCodigoDeBarras(codigo) || await db.CodigosBarras.AnyAsync(c => c.Codigo == codigo, ct))
+            return;
+        db.CodigosBarras.Add(new CodigoBarras { Codigo = codigo!, PresentacionId = presentacion.Id, Origen = OrigenCodigo.Fabrica });
+        new ServicioControl(db).Registrar(compra.SucursalId, null, null, AccionControlada.EditarCatalogo,
+            $"Se agregó el código {codigo} a «{Nombre(presentacion.Variante!)}» ({presentacion.Nombre}) desde la compra {compra.FolioTexto}");
+    }
+
+    /// <summary>Lo que contó quien recibió con el código de este renglón, en unidades del documento.</summary>
+    private static Cantidad? ContadoPorCodigo(Compra compra, CompraRenglon r) =>
+        r.CodigoProveedor is { } codigo && compra.Conteo.Where(c => c.VarianteId is null && string.Equals(c.Codigo, codigo, StringComparison.OrdinalIgnoreCase))
+            .ToList() is { Count: > 0 } lineas
+            ? lineas.Aggregate(Cantidad.Cero, (s, c) => s + c.Cantidad)
+            : null;
+
+    private static decimal CostoPorPieza(CompraRenglon r, Cantidad contiene) =>
+        r.Cantidad.Por(contiene) is { EsPositiva: true } piezas ? r.ImporteCentavos * Cantidad.Escala / (decimal)piezas.Milesimas : 0;
+
+    private ProductoNuevoDto NuevoDto(CompraRenglon r, ProductoNuevo n, Compra compra, MargenesMinimos minimos)
+    {
+        var costo = CostoPorPieza(r, n.Contiene);
+        var minimo = minimos.De(n.DepartamentoId);
+        return new ProductoNuevoDto(n.Nombre, n.DepartamentoId, n.PrecioCentavos, n.Codigo, n.Contiene.Milesimas, n.Llego?.Milesimas,
+            ContadoPorCodigo(compra, r)?.EnUnidades, costo, n.PrecioCentavos > 0 ? Margen.Calcular(n.PrecioCentavos, costo) : null,
+            Margen.PrecioSugerido(costo, minimo));
+    }
+
+    /// <summary>Los EAN-13 y UPC de fábrica (los que empiezan con 2 son de uso interno de cada tienda).</summary>
+    private static bool EsCodigoDeBarras(string? codigo) =>
+        codigo is { Length: 13 } c13 && Ean13.EsValido(c13) && c13[0] != '2'
+        || codigo is { Length: 12 } c12 && Ean13.EsValido("0" + c12);
+
+    /// <summary>Como los nombres del catálogo, con mayúscula solo al inicio: "SOBRE DE BURBUJA" → "Sobre de burbuja".</summary>
+    private static string Titulo(string descripcion) =>
+        descripcion.Trim().ToLowerInvariant() is { Length: > 0 } minusculas ? char.ToUpperInvariant(minusculas[0]) + minusculas[1..] : descripcion;
+
+    private static string NombrePaquete(string? unidad) => (unidad ?? "").Trim().ToUpperInvariant().TrimEnd('.') switch
+    {
+        "CAJA" or "CAJAS" or "CJA" or "CJ" or "XBX" => "Caja",
+        "DOC" or "DOCENA" => "Docena",
+        "BOLSA" or "BLS" => "Bolsa",
+        "BLISTER" => "Blíster",
+        _ => "Paquete",
+    };
+
+    private sealed record MargenesMinimos(int General, Dictionary<Guid, int?> PorDepartamento)
+    {
+        public int De(Guid departamentoId) => PorDepartamento.GetValueOrDefault(departamentoId) ?? General;
+    }
+
+    private async Task<MargenesMinimos> MargenesMinimosAsync(Guid sucursalId, CancellationToken ct) =>
+        new(AlertasTelegram.Configuracion(db, sucursalId).MargenMinimoCentesimas,
+            await db.Departamentos.AsNoTracking().ToDictionaryAsync(d => d.Id, d => d.MargenMinimoCentesimas, ct));
 
     /// <summary>
     /// Qué presentación es un renglón del documento: la que se ligó antes con esta clave del proveedor (o esta descripción),
@@ -276,6 +531,10 @@ public sealed class RegistroCompras(PosDbContext db)
 
         if (compra.OrdenId is { } ordenId)
             (await db.OrdenesCompra.FindAsync([ordenId], ct))?.Recibir(compra.Id);
+        // Lo contado por un código que no estaba en el catálogo y ya está (se dio de alta en F3 mientras tanto).
+        foreach (var desconocido in compra.Conteo.Where(c => c.VarianteId is null).ToList())
+            if (await db.CodigosBarras.Include(c => c.Presentacion).FirstOrDefaultAsync(c => c.Codigo == desconocido.Codigo, ct) is { Presentacion: { } p })
+                compra.AsignarDesconocidos(desconocido.Codigo, p.VarianteId, p.Id, p.Factor);
         var comparacion = ComparacionCompra.Comparar(compra.Conteo, compra.Renglones);
         var ids = comparacion.Select(c => c.VarianteId).ToList();
         var variantes = await db.Variantes.Include(v => v.Producto).ThenInclude(p => p!.Marca).Where(v => ids.Contains(v.Id)).ToDictionaryAsync(v => v.Id, ct);
@@ -307,7 +566,10 @@ public sealed class RegistroCompras(PosDbContext db)
                 pv.CodigoProveedor = codigo;
         }
 
-        var diferencias = resumen.Comparacion!.Where(c => c.Diferencia != DiferenciaCompra.Ninguna).Select(TextoDiferencia).ToList();
+        var diferencias = resumen.Comparacion!.Where(c => c.Diferencia != DiferenciaCompra.Ninguna).Select(TextoDiferencia)
+            .Concat(compra.Conteo.Where(c => c.VarianteId is null)
+                .Select(c => $"llegó el código {c.Codigo}{(c.Descripcion is { } d ? $" («{d}»)" : "")} ({Formato(c.Cantidad.EnUnidades)}), que no está en el catálogo ni en la nota"))
+            .ToList();
         var margenBajo = resumen.Comparacion!.Where(c => c.PrecioSugeridoCentavos is not null).Select(TextoMargen).ToList();
         var productos = comparacion.Count(c => c.Contado.EsPositiva);
         var detalle = $"Cerró la compra {compra.FolioTexto} de «{resumen.Proveedor}»{(compra.Documento is { } d ? $" (nota {d})" : "")}: "
@@ -361,21 +623,34 @@ public sealed class RegistroCompras(PosDbContext db)
         if (compra is null)
             return null;
         var veNota = compra.Estado != EstadoCompra.Recibiendo && await VeCostosAsync(usuarioId, compra.SucursalId, ct);
-        var ids = compra.Conteo.Select(c => c.VarianteId).Union(compra.Renglones.Where(r => r.VarianteId is not null).Select(r => r.VarianteId!.Value)).ToList();
+        var ids = compra.Conteo.Select(c => c.VarianteId).Concat(compra.Renglones.Select(r => r.VarianteId)).Concat(compra.Renglones.Select(r => r.SugerenciaId))
+            .OfType<Guid>().Distinct().ToList();
         var variantes = await db.Variantes.AsNoTracking().Include(v => v.Producto).ThenInclude(p => p!.Marca).Include(v => v.Presentaciones)
             .Where(v => ids.Contains(v.Id)).AsSplitQuery().ToDictionaryAsync(v => v.Id, ct);
         string Presentacion(Guid varianteId, Guid presentacionId) =>
             variantes.GetValueOrDefault(varianteId)?.Presentaciones.FirstOrDefault(p => p.Id == presentacionId)?.Nombre ?? "?";
         string Producto(Guid varianteId) => variantes.TryGetValue(varianteId, out var v) ? Nombre(v) : "?";
 
-        var conteo = compra.Conteo.OrderBy(c => Producto(c.VarianteId), StringComparer.CurrentCultureIgnoreCase)
-            .Select(c => new ConteoCompraDto(c.VarianteId, c.PresentacionId, Producto(c.VarianteId), Presentacion(c.VarianteId, c.PresentacionId),
-                c.Cantidad.Milesimas, c.CantidadBase.EnUnidades))
+        var conteo = compra.Conteo
+            .Select(c => c is { VarianteId: { } v, PresentacionId: { } p }
+                ? new ConteoCompraDto(v, p, Producto(v), Presentacion(v, p), c.Cantidad.Milesimas, c.CantidadBase.EnUnidades)
+                : new ConteoCompraDto(null, null, c.Descripcion ?? $"Código {c.Codigo}", "No está en el catálogo", c.Cantidad.Milesimas, c.Cantidad.EnUnidades,
+                    c.Codigo))
+            .OrderBy(c => c.VarianteId is null).ThenBy(c => c.Producto, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
+        var minimos = veNota ? await MargenesMinimosAsync(compra.SucursalId, ct) : null;
         var renglones = veNota
-            ? compra.Renglones.OrderBy(r => r.Orden).Select(r => new RenglonCompraDto(r.Id, r.Orden, r.CodigoProveedor, r.Descripcion, r.Unidad, r.DelDocumento,
-                r.VarianteId, r.PresentacionId, r.VarianteId is { } v ? Producto(v) : null,
-                r is { VarianteId: { } rv, PresentacionId: { } rp } ? Presentacion(rv, rp) : null, r.Cantidad.Milesimas, r.ImporteCentavos)).ToList()
+            ? compra.Renglones.OrderBy(r => r.Orden).Select(r =>
+            {
+                var sugerida = r.SugerenciaId is { } s ? variantes.GetValueOrDefault(s) : null;
+                var ligada = r.VarianteId is { } v ? variantes.GetValueOrDefault(v) : null;
+                return new RenglonCompraDto(r.Id, r.Orden, r.CodigoProveedor, r.Descripcion, r.Unidad, r.DelDocumento, r.VarianteId, r.PresentacionId,
+                    ligada is null ? null : Nombre(ligada), r is { VarianteId: { } rv, PresentacionId: { } rp } ? Presentacion(rv, rp) : null,
+                    r.Cantidad.Milesimas, r.ImporteCentavos, sugerida?.Id, sugerida is null ? null : Nombre(sugerida),
+                    sugerida?.Presentaciones.FirstOrDefault(p => p.EsBase)?.Id, r.Nuevo is { } n ? NuevoDto(r, n, compra, minimos!) : null,
+                    ligada?.Presentaciones.OrderByDescending(p => p.EsBase).ThenBy(p => p.Factor)
+                        .Select(p => new PresentacionDto(p.Id, p.Nombre, p.Factor.Milesimas, p.EsBase)).ToList());
+            }).ToList()
             : null;
         var comparacion = veNota ? await CompararAsync(compra, variantes, ct) : null;
         var documentos = veNota

@@ -80,6 +80,63 @@ public class Compra
         linea.CantidadBase = cantidad.Por(factor);
     }
 
+    /// <summary>
+    /// Lo que llegó y no está en el catálogo (se escaneó un código que no existe): se cuenta por su código, con una
+    /// descripción opcional. Al dar de alta el producto desde la nota (o ligar el renglón con ese código) se le asigna.
+    /// </summary>
+    public void ContarDesconocido(string codigo, string? descripcion, Cantidad cantidad)
+    {
+        RequerirEstado(EstadoCompra.Recibiendo, "El conteo ya se cerró.");
+        if (string.IsNullOrWhiteSpace(codigo))
+            throw new ArgumentException("Escanea o escribe el código.");
+        if (cantidad.Milesimas < 0)
+            throw new ArgumentOutOfRangeException(nameof(cantidad), "La cantidad no puede ser negativa.");
+        var limpio = codigo.Trim();
+        var linea = Conteo.FirstOrDefault(c => c.VarianteId is null && string.Equals(c.Codigo, limpio, StringComparison.OrdinalIgnoreCase));
+        if (cantidad.Milesimas == 0)
+        {
+            if (linea is not null)
+                Conteo.Remove(linea);
+            return;
+        }
+        if (linea is null)
+        {
+            linea = new CompraConteo { CompraId = Id, Codigo = limpio };
+            Conteo.Add(linea);
+        }
+        linea.Descripcion = string.IsNullOrWhiteSpace(descripcion) ? linea.Descripcion : descripcion.Trim();
+        linea.Cantidad = cantidad;
+    }
+
+    /// <summary>Lo contado sin catálogo con este código ya es de esta presentación (se dio de alta o se ligó).</summary>
+    public void AsignarDesconocidos(string? codigo, Guid varianteId, Guid presentacionId, Cantidad factor)
+    {
+        if (string.IsNullOrWhiteSpace(codigo))
+            return;
+        foreach (var linea in Conteo.Where(c => c.VarianteId is null && string.Equals(c.Codigo, codigo.Trim(), StringComparison.OrdinalIgnoreCase)))
+        {
+            linea.VarianteId = varianteId;
+            linea.PresentacionId = presentacionId;
+            linea.CantidadBase = linea.Cantidad.Por(factor);
+        }
+    }
+
+    /// <summary>
+    /// Un producto nuevo que quien recibió no pudo contar (no tenía código): lo cuenta quien captura la nota al darlo de
+    /// alta. Queda marcado como suyo.
+    /// </summary>
+    public void ContarNuevo(Guid varianteId, Guid presentacionId, Cantidad cantidad, Cantidad factor)
+    {
+        RequerirEstado(EstadoCompra.PorCostear, "Ya no se puede contar.");
+        if (!cantidad.EsPositiva)
+            return;
+        Conteo.Add(new CompraConteo
+        {
+            CompraId = Id, VarianteId = varianteId, PresentacionId = presentacionId, Cantidad = cantidad, CantidadBase = cantidad.Por(factor),
+            DelEncargado = true,
+        });
+    }
+
     public void TerminarConteo(DateTime ahoraUtc)
     {
         RequerirEstado(EstadoCompra.Recibiendo, "El conteo ya se cerró.");
@@ -112,6 +169,7 @@ public class Compra
         renglon.Cantidad = cantidad;
         renglon.CantidadBase = cantidad.Por(factor);
         renglon.ImporteCentavos = importeCentavos;
+        renglon.QuitarNuevo();
         // Lo que dice el documento se queda como vino: al ligarlo o corregirlo solo cambia a qué producto corresponde.
         if (!renglon.DelDocumento)
         {
@@ -148,6 +206,49 @@ public class Compra
         OrdenId = ordenId;
     }
 
+    /// <summary>
+    /// Un renglón del documento que no está en el catálogo queda como producto nuevo en borrador, con lo que se precargó
+    /// (nombre, departamento, contenido, precio, código y cuántos llegaron); quien captura la nota lo corrige y después lo
+    /// da de alta.
+    /// </summary>
+    public void ProponerNuevo(Guid renglonId, ProductoNuevo nuevo)
+    {
+        RequerirEstado(EstadoCompra.PorCostear, "La nota ya no se puede cambiar.");
+        var renglon = Renglones.FirstOrDefault(r => r.Id == renglonId) ?? throw new InvalidOperationException("El renglón ya no existe.");
+        if (renglon.Ligado)
+            throw new InvalidOperationException("Ese renglón ya es de un producto del catálogo.");
+        if (string.IsNullOrWhiteSpace(nuevo.Nombre))
+            throw new ArgumentException("El producto nuevo lleva nombre.");
+        if (nuevo.PrecioCentavos <= 0)
+            throw new ArgumentException($"Escribe el precio de «{nuevo.Nombre.Trim()}».");
+        if (!nuevo.Contiene.EsPositiva || !nuevo.Contiene.EsEntera)
+            throw new ArgumentException($"¿Cuántas piezas trae cada {renglon.Unidad ?? "unidad"} de «{nuevo.Nombre.Trim()}»?");
+        if (nuevo.Llego is { } llego && (llego.Milesimas < 0 || !llego.Por(nuevo.Contiene).EsEntera))
+            throw new ArgumentException($"Lo que llegó de «{nuevo.Nombre.Trim()}» va en piezas enteras.");
+        renglon.Nuevo = nuevo with { Nombre = nuevo.Nombre.Trim(), Codigo = string.IsNullOrWhiteSpace(nuevo.Codigo) ? null : nuevo.Codigo.Trim() };
+    }
+
+    /// <summary>Corrige la cantidad y el importe de un renglón que todavía no es de un producto (sin ligar o nuevo).</summary>
+    public void CorregirSinLigar(Guid renglonId, Cantidad cantidad, long importeCentavos)
+    {
+        RequerirEstado(EstadoCompra.PorCostear, "La nota ya no se puede cambiar.");
+        var renglon = Renglones.FirstOrDefault(r => r.Id == renglonId) ?? throw new InvalidOperationException("El renglón ya no existe.");
+        if (renglon.Ligado)
+            throw new InvalidOperationException("Ese renglón es de un producto: corrígelo con su presentación.");
+        if (!cantidad.EsPositiva)
+            throw new ArgumentOutOfRangeException(nameof(cantidad), "La cantidad de la nota va mayor a cero.");
+        if (importeCentavos < 0)
+            throw new ArgumentOutOfRangeException(nameof(importeCentavos), "El importe no puede ser negativo.");
+        renglon.Cantidad = cantidad;
+        renglon.ImporteCentavos = importeCentavos;
+    }
+
+    public void NoEsNuevo(Guid renglonId)
+    {
+        RequerirEstado(EstadoCompra.PorCostear, "La nota ya no se puede cambiar.");
+        (Renglones.FirstOrDefault(r => r.Id == renglonId) ?? throw new InvalidOperationException("El renglón ya no existe.")).QuitarNuevo();
+    }
+
     public void QuitarRenglon(Guid renglonId)
     {
         RequerirEstado(EstadoCompra.PorCostear, "La nota ya no se puede cambiar.");
@@ -159,6 +260,8 @@ public class Compra
         RequerirEstado(EstadoCompra.PorCostear, Estado == EstadoCompra.Recibiendo ? "Primero termina el conteo." : "La compra ya se cerró.");
         if (Renglones.Count == 0)
             throw new InvalidOperationException("Captura la nota del proveedor antes de cerrar.");
+        if (Renglones.FirstOrDefault(r => r.Nuevo is not null) is { } nuevo)
+            throw new InvalidOperationException($"Primero da de alta los productos nuevos («{nuevo.Nuevo!.Nombre}»…) o quítalos de la nota.");
         if (Renglones.FirstOrDefault(r => !r.Ligado) is { } sinLigar)
             throw new InvalidOperationException($"Falta decir qué producto es «{sinLigar.Descripcion}» (o quitarlo si no es mercancía).");
         Estado = EstadoCompra.Cerrada;
@@ -184,13 +287,25 @@ public class Compra
     }
 }
 
-/// <summary>Lo que contó quien recibió, de una presentación.</summary>
+/// <summary>Lo que contó quien recibió, de una presentación (o de un código que no está en el catálogo).</summary>
 public class CompraConteo
 {
     public Guid Id { get; init; } = Ids.Nuevo();
     public Guid CompraId { get; init; }
-    public Guid VarianteId { get; init; }
-    public Guid PresentacionId { get; init; }
+
+    /// <summary>Vacíos si se contó un código que no está en el catálogo, hasta que se da de alta o se liga.</summary>
+    public Guid? VarianteId { get; set; }
+
+    public Guid? PresentacionId { get; set; }
+
+    /// <summary>El código escaneado que no está en el catálogo.</summary>
+    public string? Codigo { get; init; }
+
+    /// <summary>Lo que escribió quien recibió de lo que no está en el catálogo.</summary>
+    public string? Descripcion { get; set; }
+
+    /// <summary>Lo contó quien captura la nota, al dar de alta un producto nuevo que no se pudo contar.</summary>
+    public bool DelEncargado { get; init; }
 
     /// <summary>En presentaciones: 3 cajas.</summary>
     public Cantidad Cantidad { get; set; }
@@ -224,6 +339,18 @@ public class CompraRenglon
     public Guid? PresentacionId { get; set; }
 
     public bool Ligado => PresentacionId is not null;
+
+    /// <summary>El producto del catálogo que se parece a la descripción (se sugiere; no está ligado).</summary>
+    public Guid? SugerenciaId { get; set; }
+
+    /// <summary>Un producto que no está en el catálogo, en borrador hasta que se da de alta.</summary>
+    public ProductoNuevo? Nuevo { get; set; }
+
+    internal void QuitarNuevo()
+    {
+        Nuevo = null;
+        SugerenciaId = null;
+    }
 
     /// <summary>En la presentación de la nota (cajas, paquetes, piezas).</summary>
     public Cantidad Cantidad { get; set; }
@@ -293,3 +420,13 @@ public class LigaProveedor
     public static string ClaveDe(string? codigoProveedor, string descripcion) =>
         string.IsNullOrWhiteSpace(codigoProveedor) ? $"descripcion:{Texto.Normalizar(descripcion)}" : $"codigo:{Texto.Normalizar(codigoProveedor)}";
 }
+
+/// <summary>
+/// Un producto nuevo precargado desde un renglón del documento del proveedor. Se da de alta con una variante: la pieza y,
+/// si cada unidad del documento trae varias, su presentación (la caja de 12).
+/// </summary>
+/// <param name="Contiene">Piezas en cada unidad del documento (1 si viene por pieza).</param>
+/// <param name="PrecioCentavos">El de menudeo, por pieza.</param>
+/// <param name="Codigo">El código de barras que se le da (el del documento si es uno); vacío, sin código.</param>
+/// <param name="Llego">Cuántos llegaron, en unidades del documento. Vacío: lo que contó quien recibió por su código.</param>
+public sealed record ProductoNuevo(string Nombre, Guid DepartamentoId, long PrecioCentavos, string? Codigo, Cantidad Contiene, Cantidad? Llego);

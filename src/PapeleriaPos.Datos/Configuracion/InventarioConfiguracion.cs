@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using PapeleriaPos.Nucleo.Catalogo;
@@ -91,12 +92,18 @@ internal sealed class CompraConteoConfiguracion : IEntityTypeConfiguration<Compr
 
 internal sealed class CompraRenglonConfiguracion : IEntityTypeConfiguration<CompraRenglon>
 {
+    private static readonly JsonSerializerOptions JsonOpciones = new(JsonSerializerDefaults.Web);
+
     public void Configure(EntityTypeBuilder<CompraRenglon> b)
     {
         b.ToTable("ComprasRenglones");
         b.HasOne<Variante>().WithMany().HasForeignKey(r => r.VarianteId);
         b.HasOne<Presentacion>().WithMany().HasForeignKey(r => r.PresentacionId);
         b.Ignore(r => r.Ligado);
+        // El borrador de un producto nuevo vive poco (hasta que se da de alta): va como JSON en el renglón.
+        b.Property(r => r.Nuevo).HasConversion(
+            n => n == null ? null : JsonSerializer.Serialize(n, JsonOpciones),
+            j => j == null ? null : JsonSerializer.Deserialize<ProductoNuevo>(j, JsonOpciones));
     }
 }
 

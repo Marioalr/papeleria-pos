@@ -298,7 +298,9 @@ public class ComprasApiTests(ServicioDePrueba servicio) : IClassFixture<Servicio
         Assert.Equal((conCodigo.Pieza, "MARCADOR NEGRO", 4640L), (reconocido.PresentacionId!.Value, reconocido.Descripcion, reconocido.ImporteCentavos));
         Assert.Equal(("PEGAMENTO BARRA C/12", "CAJA", (string?)null), (pendiente.Descripcion, pendiente.Unidad, pendiente.Producto));
         Assert.Equal(HttpStatusCode.BadRequest, sinLigar.StatusCode);
-        Assert.Contains("«PEGAMENTO BARRA C/12»", (await sinLigar.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+        // Lo que no se parece a nada del catálogo llega precargado como producto nuevo: no se cierra sin revisarlo.
+        Assert.Equal("Pegamento barra c/12", pendiente.Nuevo!.Nombre);
+        Assert.Contains("da de alta los productos nuevos («Pegamento barra c/12»", (await sinLigar.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
         Assert.All(ligada.Comparacion!, c => Assert.Equal(DiferenciaCompra.Ninguna, c.Diferencia));
         Assert.Equal("PEGAMENTO BARRA C/12", ligada.Renglones!.Single(r => r.Id == pendiente.Id).Descripcion);
         Assert.Equal((EstadoCompra.Cerrada, 16240L), (cerrada.Estado, cerrada.TotalCentavos!.Value));
@@ -385,6 +387,91 @@ public class ComprasApiTests(ServicioDePrueba servicio) : IClassFixture<Servicio
     }
 
     [Fact]
+    public async Task Todo_el_pedido_desde_la_factura_se_precarga_se_corrige_y_lo_nuevo_se_da_de_alta()
+    {
+        var e = await PrepararAsync();
+        var conocido = await ProductoAsync(e, "Resistol de prueba pedido");
+        var parecido = await ProductoAsync(e, "Goma migajon grande prueba pedido");
+        var codigoNuevo = Ean13.Completar("759" + Random.Shared.NextInt64(100_000_000, 999_999_999));
+        var claveNueva = $"PRV-{Guid.NewGuid():N}"[..12];
+        string codigoDe(Articulo a)
+        {
+            using var alcance = servicio.Fabrica.Services.CreateScope();
+            return alcance.ServiceProvider.GetRequiredService<PosDbContext>().CodigosBarras.Single(c => c.PresentacionId == a.Pieza).Codigo;
+        }
+        var factura = Datos.DocumentoProveedorTests.Factura(Guid.NewGuid().ToString(), rfc: "DPA010101AAA", conceptos:
+        [
+            Datos.DocumentoProveedorTests.Concepto(codigoDe(conocido), "RESISTOL 850", "5", "PIEZA", "50.00", "8.00"),
+            Datos.DocumentoProveedorTests.Concepto($"G-{Guid.NewGuid():N}"[..10], "GOMA MIGAJON GRANDE PRUEBA PEDIDO", "3", "PIEZA", "30.00", "4.80"),
+            Datos.DocumentoProveedorTests.Concepto(codigoNuevo, "SOBRE BURBUJA ZAFIRO 12X18", "6", "PIEZA", "60.00", "9.60"),
+            Datos.DocumentoProveedorTests.Concepto(claveNueva, "ETIQUETA HOLOGRAFICA TRIANGULO", "2", "CAJA", "200.00", "32.00"),
+        ]);
+
+        var compra = await AbrirAsync(e, e.Cajero);
+        await Leer<CompraDto>(await ContarAsync(e, compra, e.Cajero, conocido, conocido.Pieza, 5));
+        await Leer<CompraDto>(await ContarAsync(e, compra, e.Cajero, parecido, parecido.Pieza, 3));
+        var desconocido = await Leer<CompraDto>(await e.Http.PostAsJsonAsync($"api/compras/{compra.Id}/conteo/desconocido",
+            new SolicitudConteoDesconocido(e.Cajero.UsuarioId, codigoNuevo, "Sobres de burbuja", 6000)));
+        await Leer<CompraDto>(await AccionAsync(e, compra, "terminar-conteo", e.Cajero));
+        var cargada = await Leer<CompraDto>(await e.Http.PostAsJsonAsync($"api/compras/{compra.Id}/documentos",
+            new SolicitudDocumentoCompra(e.Encargado.UsuarioId, "factura.xml", Convert.ToBase64String(factura))));
+        var renglon = (string inicio) => cargada.Renglones!.Single(r => r.Descripcion.StartsWith(inicio));
+
+        // Lo que se precargó: uno del catálogo, uno parecido (sin ligar) y dos nuevos en borrador.
+        Assert.Equal("Sobres de burbuja", desconocido.Conteo.Single(c => c.VarianteId is null).Producto);
+        Assert.Equal(conocido.Variante, renglon("RESISTOL").VarianteId);
+        Assert.Equal((null, parecido.Variante), (renglon("GOMA").VarianteId, renglon("GOMA").SugerenciaId));
+        var sobre = renglon("SOBRE").Nuevo!;
+        Assert.Equal(("Sobre burbuja zafiro 12x18", codigoNuevo, 6m, 1160m), (sobre.Nombre, sobre.Codigo, sobre.ContadoPorCodigo!.Value, sobre.CostoUnitarioCentavos!.Value));
+        Assert.Equal(1700, sobre.PrecioCentavos);
+        var etiqueta = renglon("ETIQUETA");
+        Assert.NotNull(etiqueta.Nuevo);
+        Assert.Null(etiqueta.Nuevo!.Codigo);
+
+        var cerrarConNuevos = await AccionAsync(e, compra, "cerrar", e.Encargado);
+        var sinSaberCuantos = await AccionAsync(e, compra, "nuevos/alta", e.Encargado);
+        await Leer<CompraDto>(await e.Http.PostAsJsonAsync($"api/compras/{compra.Id}/renglones",
+            new SolicitudRenglonCompra(e.Encargado.UsuarioId, renglon("GOMA").Id, parecido.Variante, renglon("GOMA").SugerenciaPresentacionId!.Value, 3000, 3480)));
+        // Se corrige lo precargado: cada caja trae 12 etiquetas, llegaron las 2 y se venden a $15.
+        await Leer<CompraDto>(await e.Http.PostAsJsonAsync($"api/compras/{compra.Id}/renglones/{etiqueta.Id}/nuevo",
+            new SolicitudProductoNuevo(e.Encargado.UsuarioId, "Etiqueta holográfica triángulo", etiqueta.Nuevo.DepartamentoId, 1500, null, 12000, 2000)));
+        var corregida = await Leer<CompraDto>(await e.Http.PostAsJsonAsync($"api/compras/{compra.Id}/renglones/{etiqueta.Id}/corregir",
+            new SolicitudCorregirRenglon(e.Encargado.UsuarioId, 2000, 23000)));
+        var dadas = await Leer<CompraDto>(await AccionAsync(e, compra, "nuevos/alta", e.Encargado));
+        var cerrada = await Leer<CompraDto>(await AccionAsync(e, compra, "cerrar", e.Encargado));
+
+        Assert.Equal(HttpStatusCode.BadRequest, cerrarConNuevos.StatusCode);
+        Assert.Contains("da de alta los productos nuevos", (await cerrarConNuevos.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+        Assert.Contains("¿Cuántos llegaron de «Etiqueta holografica triangulo»?", (await sinSaberCuantos.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+        Assert.Equal(23000, corregida.Renglones!.Single(r => r.Id == etiqueta.Id).ImporteCentavos);
+        Assert.All(dadas.Renglones!, r => Assert.NotNull(r.VarianteId));
+        Assert.DoesNotContain(dadas.Conteo, c => c.VarianteId is null);
+        Assert.Equal(EstadoCompra.Cerrada, cerrada.Estado);
+        Assert.All(cerrada.Comparacion!, c => Assert.Equal(DiferenciaCompra.Ninguna, c.Diferencia));
+
+        using var alcance = servicio.Fabrica.Services.CreateScope();
+        var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
+        var etiquetas = await db.Variantes.Include(v => v.Producto).Include(v => v.Presentaciones)
+            .SingleAsync(v => v.Producto!.Nombre == "Etiqueta holográfica triángulo");
+        Assert.Equal(["Caja", "Pieza"], etiquetas.Presentaciones.Select(p => p.Nombre).Order());
+        Assert.Equal((24000L, 23000L), ((await db.Existencias.SingleAsync(x => x.VarianteId == etiquetas.Id)).Cantidad.Milesimas,
+            (await db.Existencias.SingleAsync(x => x.VarianteId == etiquetas.Id)).CostoCentavos));
+        Assert.Equal(1500, (await db.Precios.SingleAsync(p => p.VarianteId == etiquetas.Id)).PrecioCentavos);
+        var sobres = await db.CodigosBarras.Include(c => c.Presentacion).SingleAsync(c => c.Codigo == codigoNuevo);
+        Assert.Equal(6000, (await db.Existencias.SingleAsync(x => x.VarianteId == sobres.Presentacion!.VarianteId)).Cantidad.Milesimas);
+        Assert.True(await db.Bitacora.AnyAsync(b => b.Detalle.StartsWith("Dio de alta «Etiqueta holográfica triángulo» desde la compra") && b.Detalle.Contains("contó 2")));
+
+        // La siguiente factura del mismo proveedor ya trae ligadas la clave nueva y la goma.
+        var siguiente = await AbrirAsync(e, e.Encargado);
+        await Leer<CompraDto>(await ContarAsync(e, siguiente, e.Encargado, conocido, conocido.Pieza, 1));
+        await Leer<CompraDto>(await AccionAsync(e, siguiente, "terminar-conteo", e.Encargado));
+        var otra = await Leer<CompraDto>(await e.Http.PostAsJsonAsync($"api/compras/{siguiente.Id}/documentos", new SolicitudDocumentoCompra(e.Encargado.UsuarioId,
+            "otra.xml", Convert.ToBase64String(Datos.DocumentoProveedorTests.Factura(Guid.NewGuid().ToString(), rfc: "DPA010101AAA",
+                conceptos: [Datos.DocumentoProveedorTests.Concepto(claveNueva, "ETIQUETA HOLOGRAFICA TRIANGULO", "1", "CAJA", "100.00", "16.00")])))));
+        Assert.Equal((etiquetas.Id, "Caja"), (otra.Renglones!.Single().VarianteId!.Value, otra.Renglones!.Single().Presentacion));
+    }
+
+        [Fact]
     public async Task Contar_cero_quita_la_presentacion_y_un_renglon_de_la_nota_se_quita()
     {
         var e = await PrepararAsync();

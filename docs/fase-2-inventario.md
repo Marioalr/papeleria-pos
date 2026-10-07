@@ -88,6 +88,23 @@ Entrega 2, parte 3, la orden de compra y abrir paquete (F4):
   vez se propone la misma pieza y cuántas trae. Lo puede hacer el cajero (queda en la bitácora). Si el paquete y la
   pieza son presentaciones del mismo producto no hace falta: la existencia ya está en piezas.
 
+Entrega 2, parte 4, todo el pedido desde el documento (lo pidió el dueño al revisar la parte 2):
+
+- **Se precarga todo:** al cargar el XML o el PDF, cada renglón llega ligado (lo reconoció), con la pregunta «¿Es…?»
+  (se parece a un producto del catálogo; se confirma con un clic) o como **producto nuevo en borrador**, con nombre,
+  departamento (donde más productos tiene ese proveedor), piezas en cada unidad, precio que deja el margen mínimo y el
+  código de barras si el documento trae uno libre.
+- **Todo se revisa y se corrige** en una tabla, renglón por renglón y hasta cerrar la compra: el producto, la
+  presentación, la cantidad, el importe y cada dato de los nuevos. Los que siguen sin ligar se marcan como nuevos de
+  una vez («Los que faltan son nuevos»; los parecidos no, para no darlos de alta dos veces).
+- **Dar de alta los nuevos:** quedan en el catálogo con su pieza (y su caja, si cada unidad trae varias), su precio y su
+  código; su renglón queda ligado y la próxima vez llega ligado. La compra no se cierra con nuevos pendientes.
+- **Lo que llegó de un producto nuevo:** quien recibe escanea su código, el POS dice que no está en el catálogo y lo
+  cuenta aparte, a ciegas; al darlo de alta se le asigna. Si no tenía código, lo escribe quien captura la nota (queda
+  en la bitácora).
+- **Un código de barras nuevo de un producto que ya existe** (el proveedor cambió el empaque): al ligar ese renglón, el
+  código se le agrega al producto y lo que se contó con él ya es suyo.
+
 ## Qué ya existe
 
 - **Catálogo** importado de eleventa: productos y variantes, códigos, departamentos, marcas, presentaciones (pieza,

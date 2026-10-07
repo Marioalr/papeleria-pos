@@ -76,14 +76,16 @@ public class PruebaApiTests(ServicioEnPrueba prueba) : IClassFixture<ServicioEnP
         var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
         Assert.True(await db.ChatsTelegram.AnyAsync(c => c.ChatId == ChatTelegram.Simulado));
         Assert.Equal(4, await db.TrabajosImpresion.CountAsync(t => t.Cobro == EstadoCobroImpresion.PorCobrar && t.CajaId == caja.Id && t.PrecioCentavos > 0));
-        // La factura trae tres códigos de barras de la base (llegan ligados) y una clave del proveedor (se liga a mano).
-        Assert.Equal(4, factura.Lineas.Count);
+        // La factura trae tres códigos de barras de la base (llegan ligados), una clave del proveedor (se confirma) y un
+        // producto que no está en el catálogo (llega como nuevo).
+        Assert.Equal(5, factura.Lineas.Count);
         var codigos = factura.Lineas.Select(l => l.Codigo!).ToList();
         Assert.Equal(3, await db.CodigosBarras.CountAsync(c => codigos.Contains(c.Codigo)));
         Assert.Equal(3, nota.Lineas.Count);
         Assert.Contains(nota.Avisos, a => a.Contains("repartió"));
         Assert.Contains("cajero / 1111", leeme);
         Assert.Contains(factura.Lineas[0].Codigo!, leeme);
+        Assert.Contains("no está en el catálogo", leeme);
     }
 
     [Fact]

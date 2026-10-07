@@ -101,6 +101,37 @@ public class CompraTests
     }
 
     [Theory]
+    [InlineData("PLUMA BIC P/FINO ROJA", "Pluma punto fino Bic Rojo", true)]
+    [InlineData("CUAD. PROF. RAYA 100H", "Cuaderno profesional raya 100h", true)]
+    [InlineData("PLUMA BIC AZUL", "Pluma punto fino Bic Rojo", false)]
+    [InlineData("SOBRE BURBUJA ZAFIRO", "Pluma punto fino Bic Rojo", false)]
+    public void Un_renglon_del_documento_se_parece_al_producto_del_catalogo(string documento, string catalogo, bool seParece) =>
+        Assert.Equal(seParece, NombresParecidos.Parecido(NombresParecidos.Palabras(documento), NombresParecidos.Palabras(catalogo)) >= 0.6);
+
+    [Fact]
+    public void Lo_que_no_esta_en_el_catalogo_se_cuenta_por_codigo_y_se_asigna_al_darlo_de_alta()
+    {
+        var compra = new Compra { Folio = 1, AbiertaUtc = Ahora };
+        compra.ContarDesconocido("7501112223334", "Libreta", Cantidad.Piezas(4));
+        compra.ContarDesconocido("7501112223334", null, Cantidad.Piezas(6));
+        compra.TerminarConteo(Ahora);
+        compra.AgregarDocumento(new CompraDocumento { Nombre = "f.xml", Contenido = [] },
+            [new RenglonDocumento("7501112223334", "LIBRETA", "PZA", Cantidad.Piezas(6), 6000, null)]);
+        var renglon = compra.Renglones.Single();
+        compra.ProponerNuevo(renglon.Id, new ProductoNuevo("Libreta", Guid.NewGuid(), 1500, "7501112223334", Una, null));
+
+        Assert.Throws<InvalidOperationException>(() => compra.Cerrar(Guid.NewGuid(), Ahora));
+        Assert.Throws<ArgumentException>(() => compra.ProponerNuevo(renglon.Id, new ProductoNuevo("Libreta", Guid.NewGuid(), 0, null, Una, null)));
+        compra.Renglon(renglon.Id, Goma, GomaPieza, Cantidad.Piezas(6), Una, 6000, "", null);
+        compra.AsignarDesconocidos("7501112223334", Goma, GomaPieza, Una);
+
+        Assert.Null(renglon.Nuevo);
+        var contado = Assert.Single(compra.Conteo);
+        Assert.Equal((Goma, Cantidad.Piezas(6), "Libreta"), (contado.VarianteId!.Value, contado.CantidadBase, contado.Descripcion));
+        Assert.Equal(DiferenciaCompra.Ninguna, Assert.Single(ComparacionCompra.Comparar(compra.Conteo, compra.Renglones)).Tipo);
+    }
+
+        [Theory]
     [InlineData(1500, 750, 5000)]
     [InlineData(1500, 1200, 2000)]
     [InlineData(1000, 1000, 0)]
