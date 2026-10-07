@@ -496,6 +496,20 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("EtiquetasAjusteXDecimas")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("EtiquetasAjusteYDecimas")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("EtiquetasFormato")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("5160");
+
+                    b.Property<string>("EtiquetasPropio")
+                        .HasColumnType("TEXT");
+
                     b.Property<TimeOnly>("HoraApertura")
                         .HasColumnType("TEXT")
                         .HasDefaultValue(new TimeOnly(8, 0, 0));

@@ -276,3 +276,18 @@ ul.revision-celular .cifras { color: var(--suave); font-size: 14px; display: fle
     ul.departamentos li { grid-template-columns: 1fr; gap: 4px; }
     .acciones-dep .boton, .captura-conteo .acciones .boton, .confirmar .acciones .boton { flex: 1; }
 }
+
+/* Fase 2, entrega 4, parte 1: etiquetas */
+.etiquetas { display: grid; grid-template-columns: 1.3fr 1fr; gap: 6px 20px; align-items: start; }
+.etiquetas > section { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.etiquetas > p, .vista-etiquetas { grid-column: 1 / -1; }
+.origenes-etiquetas { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+.origenes-etiquetas label:first-child { flex: 1; min-width: 220px; }
+.origenes-etiquetas label.en-linea { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 4px; }
+.hoja-etiquetas-config { display: flex; flex-direction: column; gap: 8px; }
+.medidas-hoja { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 10px; }
+.medidas-hoja input, .hoja-etiquetas-config .dos-columnas input:not([type=checkbox]) { width: 100%; font-size: 15px; padding: 4px 6px; }
+.vista-etiquetas { max-height: 75vh; overflow: auto; background: #e9edf2; border: 1px solid var(--borde); border-radius: 6px; padding: 10px; }
+.vista-etiquetas iframe { display: block; width: 216mm; border: none; margin: 0 auto; background: #fff; }
+.etiquetas .captura { flex-wrap: wrap; padding: 0; background: none; }
+@media (max-width: 1100px) { .etiquetas { grid-template-columns: 1fr; } }

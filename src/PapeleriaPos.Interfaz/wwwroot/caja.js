@@ -86,3 +86,20 @@ export function leer(clave) {
         return null;
     }
 }
+
+// La hoja de etiquetas va en un marco: así se ve como saldrá y se imprime sola, sin la caja alrededor.
+export function mostrarEnMarco(selector, html) {
+    const marco = document.querySelector(selector);
+    if (!marco) return Promise.resolve();
+    return new Promise(listo => {
+        marco.addEventListener('load', () => listo(), { once: true });
+        marco.srcdoc = html;
+    });
+}
+
+export function imprimirMarco(selector) {
+    const marco = document.querySelector(selector);
+    if (!marco || !marco.contentWindow) return;
+    marco.contentWindow.focus();
+    marco.contentWindow.print();
+}

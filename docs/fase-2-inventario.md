@@ -169,7 +169,22 @@ Entrega 3, parte 3, el conteo completo por departamento (F4 → Conteo completo 
   Al dueño le llega «Conteo completo de un departamento» (los suyos no) y el resumen del día lo menciona. Lo contado
   ya no vuelve a salir pronto en el conteo del día, y el último conteo de cada departamento queda como reporte.
 
-Lo que sigue: la entrega 4 (etiquetas y sugerido de compra).
+Entrega 4, parte 1, las etiquetas (F4 → Etiquetas, el dueño y el encargado):
+
+- **Qué se imprime:** lo que llegó en una compra cerrada (una etiqueta por pieza; por omisión solo lo que no trae
+  código de fábrica), lo que no tiene ningún código en un departamento, o productos sueltos (escaneados o buscados).
+  Las cantidades se ajustan en la lista.
+- **El código:** el interno si tiene, si no el de fábrica. A lo que no tiene ninguno se le da uno interno al preparar
+  la hoja (EAN-13 que empieza con 2; queda en la bitácora y las cajas lo reciben con el catálogo). Los internos salen
+  en EAN-13, que para 13 dígitos es más corto que Code 128; los que inventó eleventa (con letras) salen en Code 128.
+- **La etiqueta:** nombre y código de barras con su número; el precio de menudeo solo si se pide.
+- **La hoja:** tamaño carta, de las comunes (30, 80, 20 o 10 por hoja, medidas de Avery que también usan Janel y
+  otras) o una propia con sus medidas. Se puede empezar en cualquier etiqueta para usar hojas ya empezadas. La hoja,
+  y cuánto mover todo para que caiga en las etiquetas, se guardan por sucursal.
+- **Imprimir:** la vista previa es la hoja tal cual; se imprime al 100 % (tamaño real) en la WF-6590. La hoja de
+  prueba dibuja el contorno de cada etiqueta para compararla a contraluz con una hoja de etiquetas y calibrar.
+
+Lo que sigue de la entrega 4: la hoja de códigos para lo diminuto (parte 2) y el sugerido de compra (parte 3).
 
 ## 1. Catálogo (F3 Productos)
 

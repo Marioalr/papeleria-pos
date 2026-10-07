@@ -1,0 +1,392 @@
+@* F4 → Etiquetas (fase 2, entrega 4, parte 1): etiquetas de código de barras en hojas adhesivas tamaño carta, para la
+   WF-6590. La lista sale de lo que llegó en una compra, de lo que no tiene código o se arma a mano; a lo que no tiene
+   código se le da uno interno al preparar la hoja. Se imprime al 100 % desde la vista previa. *@
+@using PapeleriaPos.Impresion
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="etiquetas">
+    <section>
+        <h3 class="subtitulo">Qué imprimir</h3>
+        <ElegirProducto SucursalId="Caja.SucursalId" Accion="Agregar" AlElegir="AgregarElegido" />
+        <div class="origenes-etiquetas">
+            <label>
+                Lo que llegó en una compra
+                <select @bind="_compraId">
+                    <option value="">Elige la compra…</option>
+                    @foreach (var c in _compras)
+                    {
+                        <option value="@c.Id">@c.Folio · @c.Proveedor · @c.AbiertaLocal.ToString("dd/MM")</option>
+                    }
+                </select>
+            </label>
+            <label class="en-linea"><input type="checkbox" @bind="_soloSinFabrica" /> Solo lo que no trae código de fábrica</label>
+            <button class="boton" disabled="@(_ocupado || string.IsNullOrEmpty(_compraId))" @onclick="AgregarCompraAsync">Agregar</button>
+        </div>
+        <div class="origenes-etiquetas">
+            <label>
+                Lo que no tiene código, del departamento
+                <select @bind="_departamentoId">
+                    <option value="">Elige el departamento…</option>
+                    @foreach (var d in _departamentos)
+                    {
+                        <option value="@d.Id">@d.Nombre</option>
+                    }
+                </select>
+            </label>
+            <button class="boton" disabled="@(_ocupado || string.IsNullOrEmpty(_departamentoId))" @onclick="AgregarSinCodigoAsync">Agregar</button>
+        </div>
+
+        @if (_lista.Count == 0)
+        {
+            <p class="vacia">La lista está vacía: agrega productos.</p>
+        }
+        else
+        {
+            <div class="resultados revision">
+                <table>
+                    <thead><tr><th>Producto</th><th>Código</th><th class="num">Etiquetas</th><th></th></tr></thead>
+                    @foreach (var r in _lista)
+                    {
+                        var renglon = r;
+                        <tr>
+                            <td>@r.Producto</td>
+                            <td>@(r.Codigo ?? "le daremos uno interno")</td>
+                            <td class="num">
+                                <input class="umbral" type="number" min="0" max="@RegistroMaximo" value="@r.Cantidad"
+                                       @onchange="e => CambiarCantidad(renglon, e.Value)" />
+                            </td>
+                            <td><button class="boton chico" @onclick="() => Quitar(renglon)">Quitar</button></td>
+                        </tr>
+                    }
+                </table>
+            </div>
+            <p class="nota">
+                @Total() @(Total() == 1 ? "etiqueta" : "etiquetas") · @HojaEtiquetas.Hojas(Formato, Total(), EmpezarEn) @(HojaEtiquetas.Hojas(Formato, Total(), EmpezarEn) == 1 ? "hoja" : "hojas")
+                @if (_lista.Any(r => r.Codigo is null))
+                {
+                    <span> · a @_lista.Count(r => r.Codigo is null) se les da código interno al preparar la hoja</span>
+                }
+                <button class="boton chico" @onclick="Vaciar">Vaciar la lista</button>
+            </p>
+        }
+    </section>
+
+    <section>
+        <h3 class="subtitulo">La hoja</h3>
+        <div class="hoja-etiquetas-config">
+            <label>
+                Hoja de etiquetas
+                <select value="@_formatoId" @onchange="e => CambiarFormato(e.Value?.ToString())">
+                    @foreach (var f in FormatoEtiquetas.Comunes)
+                    {
+                        <option value="@f.Id">@f.Nombre</option>
+                    }
+                    <option value="@FormatoEtiquetas.Propio">Otra: escribo sus medidas</option>
+                </select>
+            </label>
+            @if (_formatoId == FormatoEtiquetas.Propio)
+            {
+                <div class="medidas-hoja">
+                    <label>Columnas <input inputmode="numeric" value="@_propio.Columnas" @onchange="e => Medida(e.Value, (f, v) => f with { Columnas = (int)v })" /></label>
+                    <label>Filas <input inputmode="numeric" value="@_propio.Filas" @onchange="e => Medida(e.Value, (f, v) => f with { Filas = (int)v })" /></label>
+                    <label>Ancho (mm) <input inputmode="decimal" value="@Mm(_propio.AnchoMm)" @onchange="e => Medida(e.Value, (f, v) => f with { AnchoMm = v })" /></label>
+                    <label>Alto (mm) <input inputmode="decimal" value="@Mm(_propio.AltoMm)" @onchange="e => Medida(e.Value, (f, v) => f with { AltoMm = v })" /></label>
+                    <label>Margen de arriba <input inputmode="decimal" value="@Mm(_propio.MargenSuperiorMm)" @onchange="e => Medida(e.Value, (f, v) => f with { MargenSuperiorMm = v })" /></label>
+                    <label>Margen izquierdo <input inputmode="decimal" value="@Mm(_propio.MargenIzquierdoMm)" @onchange="e => Medida(e.Value, (f, v) => f with { MargenIzquierdoMm = v })" /></label>
+                    <label>De una a la de al lado <input inputmode="decimal" value="@Mm(_propio.PasoHorizontalMm)" @onchange="e => Medida(e.Value, (f, v) => f with { PasoHorizontalMm = v })" /></label>
+                    <label>De una a la de abajo <input inputmode="decimal" value="@Mm(_propio.PasoVerticalMm)" @onchange="e => Medida(e.Value, (f, v) => f with { PasoVerticalMm = v })" /></label>
+                </div>
+                @if (_propio.Problema() is { } problema)
+                {
+                    <p class="error">@problema</p>
+                }
+            }
+            <div class="dos-columnas">
+                <label>Mover a la derecha (mm) <input inputmode="decimal" value="@Mm(_ajusteX)" @onchange="e => Ajuste(e.Value, horizontal: true)" /></label>
+                <label>Mover hacia abajo (mm) <input inputmode="decimal" value="@Mm(_ajusteY)" @onchange="e => Ajuste(e.Value, horizontal: false)" /></label>
+            </div>
+            @if (_cambiada)
+            {
+                <div class="acciones izquierda">
+                    <button class="boton" disabled="@(_ocupado || FormatoInvalido)" @onclick="GuardarHojaAsync">Guardar la hoja para la próxima vez</button>
+                </div>
+            }
+            <div class="dos-columnas">
+                <label>Empezar en la etiqueta <input type="number" min="1" max="@Formato.PorHoja" value="@EmpezarEn" @onchange="CambiarInicio" /></label>
+                <label class="en-linea opcion"><input type="checkbox" @bind="_conPrecio" @bind:after="Invalidar" /> Con precio de menudeo</label>
+            </div>
+            <p class="nota">
+                Imprime al <strong>100 % (tamaño real)</strong>, sin «ajustar a la página». La primera vez imprime la hoja de prueba en
+                papel blanco y ponla sobre una hoja de etiquetas a contraluz: si no coincide, mueve el ajuste.
+            </p>
+            <div class="acciones izquierda">
+                <button class="boton" disabled="@(_ocupado || FormatoInvalido)" @onclick="HojaDePruebaAsync">Hoja de prueba</button>
+                <button class="boton" disabled="@(_ocupado || FormatoInvalido || _lista.Count == 0)" @onclick="VistaPreviaAsync">Vista previa</button>
+                <button class="boton principal" disabled="@(_ocupado || FormatoInvalido || _lista.Count == 0)" @onclick="ImprimirAsync">Imprimir</button>
+            </div>
+        </div>
+    </section>
+
+    @if (_mensaje is not null)
+    {
+        <p class="aviso">@_mensaje</p>
+    }
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+
+    <div class="vista-etiquetas @(_hojas == 0 ? "oculto" : "")">
+        <iframe id="marco-etiquetas" title="Vista previa de las etiquetas" style="height: @Mm(_hojas * 287.4m)mm"></iframe>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    private sealed class Renglon(Guid varianteId, string producto, string? codigo, int cantidad)
+    {
+        public Guid VarianteId { get; } = varianteId;
+        public string Producto { get; } = producto;
+        public string? Codigo { get; set; } = codigo;
+        public int Cantidad { get; set; } = cantidad;
+    }
+
+    private const int RegistroMaximo = 2000;
+    private const string Marco = "#marco-etiquetas";
+
+    private readonly List<Renglon> _lista = [];
+    private List<CompraResumenDto> _compras = [];
+    private IReadOnlyList<OpcionCatalogoDto> _departamentos = [];
+    private string _compraId = "";
+    private string _departamentoId = "";
+    private bool _soloSinFabrica = true;
+
+    private string _formatoId = FormatoEtiquetas.PorOmision.Id;
+    private FormatoEtiquetas _propio = FormatoEtiquetas.PorOmision with { Id = FormatoEtiquetas.Propio, Nombre = "Hoja propia" };
+    private decimal _ajusteX, _ajusteY;
+    private bool _cambiada;
+    private int _empezarEn = 1;
+    private bool _conPrecio;
+
+    /// <summary>La vista previa corresponde a la lista y a la hoja de ahora (si no, se vuelve a preparar antes de imprimir).</summary>
+    private bool _vigente;
+    private int _hojas;
+    private bool _ocupado;
+    private string? _mensaje;
+    private string? _error;
+
+    private FormatoEtiquetas Formato =>
+        _formatoId == FormatoEtiquetas.Propio ? _propio : FormatoEtiquetas.Comunes.FirstOrDefault(f => f.Id == _formatoId) ?? FormatoEtiquetas.PorOmision;
+
+    private bool FormatoInvalido => Formato.Problema() is not null;
+
+    private int EmpezarEn => Math.Clamp(_empezarEn, 1, Formato.PorHoja);
+
+    private int Total() => _lista.Sum(r => r.Cantidad);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var configuracion = await Cliente.ConfiguracionEtiquetasAsync(Caja.SucursalId);
+            _formatoId = configuracion.FormatoId;
+            if (configuracion.Propio is { } propio)
+                _propio = propio;
+            (_ajusteX, _ajusteY) = (configuracion.AjusteXDecimas / 10m, configuracion.AjusteYDecimas / 10m);
+            _compras = (await Cliente.ComprasAsync(Caja.SucursalId, Sesion.UsuarioId)).Where(c => c.Estado == EstadoCompra.Cerrada).ToList();
+            _departamentos = (await Cliente.OpcionesCatalogoAsync()).Departamentos;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    // ── La lista ──
+
+    private void Agregar(Guid varianteId, string producto, string? codigo, int cantidad)
+    {
+        if (_lista.FirstOrDefault(r => r.VarianteId == varianteId) is { } existente)
+            existente.Cantidad = Math.Min(RegistroMaximo, existente.Cantidad + cantidad);
+        else
+            _lista.Add(new Renglon(varianteId, producto, codigo, cantidad));
+        Invalidar();
+    }
+
+    private void AgregarElegido((ProductoVentaDto Producto, PresentacionDto Presentacion) elegido)
+    {
+        _error = null;
+        if (!elegido.Producto.LlevaInventario)
+        {
+            _error = $"«{elegido.Producto.Descripcion}» es un servicio: no lleva etiqueta.";
+            return;
+        }
+        Agregar(elegido.Producto.VarianteId, elegido.Producto.Descripcion, elegido.Producto.Codigo, 1);
+        _mensaje = $"Agregado: «{elegido.Producto.Descripcion}».";
+    }
+
+    private async Task AgregarCompraAsync()
+    {
+        if (!Guid.TryParse(_compraId, out var compraId))
+            return;
+        await HacerAsync(async () =>
+        {
+            var productos = await Cliente.EtiquetasDeCompraAsync(compraId);
+            var elegidos = productos.Where(p => !_soloSinFabrica || !p.DeFabrica).ToList();
+            foreach (var p in elegidos)
+                Agregar(p.VarianteId, p.Producto, p.Codigo, p.Sugeridas);
+            _mensaje = elegidos.Count == 0
+                ? "Todo lo de esa compra trae código de fábrica: no necesita etiquetas."
+                : $"Agregados {elegidos.Count} de {productos.Count} productos de la compra, una etiqueta por pieza. Ajusta las cantidades si no todas llevan.";
+        });
+    }
+
+    private async Task AgregarSinCodigoAsync()
+    {
+        if (!Guid.TryParse(_departamentoId, out var departamentoId))
+            return;
+        await HacerAsync(async () =>
+        {
+            var productos = await Cliente.SinCodigoAsync(departamentoId);
+            foreach (var p in productos)
+                Agregar(p.VarianteId, p.Producto, p.Codigo, 1);
+            _mensaje = productos.Count == 0 ? "En ese departamento todo tiene código." : $"Agregados {productos.Count} productos sin código, una etiqueta de cada uno.";
+        });
+    }
+
+    private void CambiarCantidad(Renglon r, object? valor)
+    {
+        r.Cantidad = int.TryParse(valor?.ToString(), out var n) ? Math.Clamp(n, 0, RegistroMaximo) : r.Cantidad;
+        Invalidar();
+    }
+
+    private void Quitar(Renglon r)
+    {
+        _lista.Remove(r);
+        Invalidar();
+    }
+
+    private void Vaciar()
+    {
+        _lista.Clear();
+        Invalidar();
+        _hojas = 0;
+    }
+
+    // ── La hoja ──
+
+    private void CambiarFormato(string? id)
+    {
+        _formatoId = id ?? FormatoEtiquetas.PorOmision.Id;
+        _empezarEn = 1;
+        _cambiada = true;
+        Invalidar();
+    }
+
+    private void Medida(object? valor, Func<FormatoEtiquetas, decimal, FormatoEtiquetas> cambiar)
+    {
+        if (LeerMm(valor) is not { } v)
+            return;
+        _propio = cambiar(_propio, v);
+        _cambiada = true;
+        Invalidar();
+    }
+
+    private void Ajuste(object? valor, bool horizontal)
+    {
+        if (LeerMm(valor) is not { } v)
+            return;
+        v = Math.Clamp(Math.Round(v, 1), -10, 10);
+        if (horizontal)
+            _ajusteX = v;
+        else
+            _ajusteY = v;
+        _cambiada = true;
+        Invalidar();
+    }
+
+    private void CambiarInicio(ChangeEventArgs e)
+    {
+        _empezarEn = int.TryParse(e.Value?.ToString(), out var n) ? n : 1;
+        Invalidar();
+    }
+
+    private void Invalidar() => _vigente = false;
+
+    private async Task GuardarHojaAsync() =>
+        await HacerAsync(async () =>
+        {
+            await Cliente.GuardarConfiguracionEtiquetasAsync(Caja.SucursalId, new SolicitudConfiguracionEtiquetas(Sesion.UsuarioId,
+                new ConfiguracionEtiquetasDto(_formatoId, _formatoId == FormatoEtiquetas.Propio ? _propio : null, (int)(_ajusteX * 10), (int)(_ajusteY * 10))));
+            _cambiada = false;
+            _mensaje = "Listo: la próxima vez se usa esta hoja con este ajuste.";
+        });
+
+    // ── Vista previa e impresión ──
+
+    private async Task HojaDePruebaAsync() =>
+        await HacerAsync(async () =>
+        {
+            _hojas = 1;
+            _vigente = false;
+            await Js.MostrarEnMarcoAsync(Marco, HojaEtiquetas.Html(Formato, [], ajusteXMm: _ajusteX, ajusteYMm: _ajusteY, soloBordes: true));
+            await Js.ImprimirMarcoAsync(Marco);
+        });
+
+    private async Task VistaPreviaAsync() => await HacerAsync(PrepararAsync);
+
+    private async Task ImprimirAsync() =>
+        await HacerAsync(async () =>
+        {
+            if (!_vigente)
+                await PrepararAsync();
+            await Js.ImprimirMarcoAsync(Marco);
+        });
+
+    /// <summary>Pide las etiquetas al servicio (que da código a lo que no tiene) y arma la hoja en el marco.</summary>
+    private async Task PrepararAsync()
+    {
+        var resultado = await Cliente.PrepararEtiquetasAsync(new SolicitudEtiquetas(Sesion.UsuarioId, Caja.SucursalId,
+            _lista.Select(r => new RenglonEtiquetasDto(r.VarianteId, r.Cantidad)).ToList(), _conPrecio));
+        foreach (var r in _lista.Where(r => r.Codigo is null))
+            r.Codigo = resultado.Etiquetas.FirstOrDefault(e => e.VarianteId == r.VarianteId)?.Codigo;
+        var etiquetas = resultado.Etiquetas.Select(e => new Etiqueta(e.Nombre, e.Codigo, e.PrecioCentavos)).ToList();
+        _hojas = HojaEtiquetas.Hojas(Formato, etiquetas.Count, EmpezarEn);
+        StateHasChanged();
+        await Js.MostrarEnMarcoAsync(Marco, HojaEtiquetas.Html(Formato, etiquetas, EmpezarEn, _ajusteX, _ajusteY));
+        _vigente = true;
+        _mensaje = resultado.CodigosNuevos == 0
+            ? $"{etiquetas.Count} etiquetas en {_hojas} {(_hojas == 1 ? "hoja" : "hojas")}."
+            : $"{etiquetas.Count} etiquetas en {_hojas} {(_hojas == 1 ? "hoja" : "hojas")}. A {resultado.CodigosNuevos} productos se les dio código interno: ya se pueden vender escaneándolo.";
+    }
+
+    private async Task HacerAsync(Func<Task> accion)
+    {
+        _ocupado = true;
+        (_mensaje, _error) = (null, null);
+        try
+        {
+            await accion();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        catch (ArgumentException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private static decimal? LeerMm(object? valor) =>
+        decimal.TryParse(valor?.ToString()?.Replace(",", ".").Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var v) ? v : null;
+
+    private static string Mm(decimal valor) => valor.ToString("0.##", CultureInfo.InvariantCulture);
+}

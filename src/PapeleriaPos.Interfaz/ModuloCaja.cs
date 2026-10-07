@@ -24,6 +24,12 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
 
     public async Task CopiarAsync(string texto) => await (await Modulo).InvokeVoidAsync("copiar", texto);
 
+    /// <summary>Pone una página en un marco (la hoja de etiquetas) y espera a que cargue.</summary>
+    public async Task MostrarEnMarcoAsync(string selector, string html) => await (await Modulo).InvokeVoidAsync("mostrarEnMarco", selector, html);
+
+    /// <summary>Abre el diálogo de impresión solo con lo que hay en el marco.</summary>
+    public async Task ImprimirMarcoAsync(string selector) => await (await Modulo).InvokeVoidAsync("imprimirMarco", selector);
+
     /// <summary>Guarda en el navegador (vacío: lo borra).</summary>
     public async Task GuardarAsync(string clave, string? valor) => await (await Modulo).InvokeVoidAsync("guardar", clave, valor);
 

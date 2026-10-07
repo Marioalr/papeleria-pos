@@ -666,3 +666,30 @@ public sealed record SolicitudAbrirConteo(Guid UsuarioId, Guid DepartamentoId);
 public sealed record SolicitudCaptura(Guid Id, Guid UsuarioId, Guid VarianteId, long CantidadMilesimas);
 
 public sealed record SolicitudConteoCompleto(Guid UsuarioId);
+
+// ── Etiquetas (fase 2, entrega 4, parte 1) ──────────────────────────────────
+
+/// <summary>La hoja de etiquetas de la sucursal y cuánto se mueve todo para que caiga en las etiquetas.</summary>
+/// <param name="FormatoId">Una de <see cref="FormatoEtiquetas.Comunes"/> o <see cref="FormatoEtiquetas.Propio"/>.</param>
+/// <param name="AjusteXDecimas">Décimas de milímetro: + a la derecha.</param>
+/// <param name="AjusteYDecimas">Décimas de milímetro: + hacia abajo.</param>
+public sealed record ConfiguracionEtiquetasDto(string FormatoId, FormatoEtiquetas? Propio, int AjusteXDecimas, int AjusteYDecimas);
+
+public sealed record SolicitudConfiguracionEtiquetas(Guid UsuarioId, ConfiguracionEtiquetasDto Configuracion);
+
+/// <summary>Un producto para la lista de etiquetas.</summary>
+/// <param name="Codigo">El que sale en la etiqueta; vacío si todavía no tiene (se le da uno interno al imprimir).</param>
+/// <param name="DeFabrica">Si su código ya viene impreso en el empaque (casi nunca necesita etiqueta).</param>
+/// <param name="Sugeridas">Cuántas etiquetas: lo que llegó en la compra, en piezas; una si no.</param>
+public sealed record ProductoEtiquetaDto(Guid VarianteId, string Producto, string? Codigo, bool DeFabrica, int Sugeridas);
+
+public sealed record RenglonEtiquetasDto(Guid VarianteId, int Cantidad);
+
+/// <param name="ConPrecio">El precio de menudeo en la etiqueta (casi nunca: cambia y habría que reimprimir).</param>
+public sealed record SolicitudEtiquetas(Guid UsuarioId, Guid SucursalId, IReadOnlyList<RenglonEtiquetasDto> Renglones, bool ConPrecio);
+
+public sealed record EtiquetaDto(Guid VarianteId, string Nombre, string Codigo, long? PrecioCentavos);
+
+/// <param name="Etiquetas">Una por cada etiqueta que se imprime, en el orden de la lista.</param>
+/// <param name="CodigosNuevos">A cuántos productos se les dio código interno porque no tenían.</param>
+public sealed record EtiquetasDto(IReadOnlyList<EtiquetaDto> Etiquetas, int CodigosNuevos);
