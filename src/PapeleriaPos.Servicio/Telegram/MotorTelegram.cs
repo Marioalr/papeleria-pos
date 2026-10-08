@@ -176,7 +176,10 @@ public sealed class MotorTelegram(IServiceScopeFactory alcances, ITelegram teleg
             AlertasTelegram.Agregar(db, [a.ChatId], null, respuesta);
     }
 
-    /// <summary>Lo que depende del tiempo: solicitudes vencidas, cajas que dejaron de comunicarse y turnos fuera de horario.</summary>
+    /// <summary>
+    /// Lo que depende del tiempo: solicitudes vencidas, cajas que dejaron de comunicarse, turnos fuera de horario y lo
+    /// fiado que se venció sin pagarse.
+    /// </summary>
     public async Task RevisarAsync(CancellationToken ct = default)
     {
         using var alcance = alcances.CreateScope();
@@ -210,6 +213,15 @@ public sealed class MotorTelegram(IServiceScopeFactory alcances, ITelegram teleg
                     + $"el horario es de {configuracion.HoraApertura:HH\\:mm} a {configuracion.HoraCierre:HH\\:mm}.",
                     $"fuera-horario:{x.Turno.Id}");
             }
+        }
+        // Lo vencido aparte: si algo falla ahí, no detiene lo demás ni el envío.
+        try
+        {
+            await AlertasTelegram.RevisarVencidosAsync(db, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            log.LogWarning(ex, "No se pudo revisar lo vencido del crédito; se intenta en la siguiente vuelta.");
         }
         await db.SaveChangesAsync(ct);
     }

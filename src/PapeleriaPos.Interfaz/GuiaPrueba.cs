@@ -119,7 +119,8 @@ public static class GuiaPrueba
             "La cobrada entra en la línea «Impresiones» del ticket; la no vendida ya no aparece por cobrar."),
         new("corte", "Corte",
             "Haz un corte X (parcial). Después haz el corte Z: entra el encargado, cuenta el efectivo sin ver cuánto debería haber.",
-            "El corte X no cierra el turno. El Z lo cierra y muestra si sobró o faltó; con diferencia, sale en «Avisos al dueño»."),
+            "El corte X no cierra el turno. El Z lo cierra y muestra si sobró o faltó; con diferencia, sale en «Avisos al dueño», y también el "
+            + "resumen del día (con lo fiado, los abonos y lo que deben los clientes, si hubo crédito)."),
         new("productos", "Productos (F3)",
             "Entra como «encargado» (2222) y elige «Productos e inventario». En F3 busca un producto, cámbiale el precio y mira su kardex.",
             "El precio nuevo queda guardado y el kardex muestra sus movimientos (ventas, compras…)."),

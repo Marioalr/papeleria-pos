@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Impresiones;
@@ -130,6 +131,7 @@ public static class AlertasTelegram
         TipoAlerta.PrivilegiosCliente => "Privilegios de un cliente",
         TipoAlerta.Credito => "Crédito de un cliente",
         TipoAlerta.FueraDeCorte => "Llegó después del corte",
+        TipoAlerta.CreditoVencido => "Crédito vencido",
         _ => "Resumen del día",
     };
 
@@ -157,6 +159,72 @@ public static class AlertasTelegram
         return texto.ToString().TrimEnd();
     }
 
+    /// <summary>Lo vencido se avisa si venció en estos últimos días; lo de antes lo dice el resumen del día.</summary>
+    public const int DiasParaAvisarVencido = 7;
+
+    /// <summary>
+    /// Lo que se fió (o lo que debía de la libreta) y pasó su plazo sin pagarse: un aviso por cargo, en el horario de su
+    /// sucursal (lo que vence en la noche se avisa al abrir). Solo lo que venció en los últimos <see cref="DiasParaAvisarVencido"/>
+    /// días: al vincular Telegram o al actualizar no llega de golpe lo de hace meses. Quien llama guarda.
+    /// </summary>
+    public static async Task RevisarVencidosAsync(PosDbContext db, CancellationToken ct = default)
+    {
+        // Sin chat vinculado no hay a quién avisar (al vincularlo, llega lo de la última semana).
+        if (Chats(db).Count == 0)
+            return;
+        var local = HoraMexico.ALocal(db.Reloj.GetUtcNow().UtcDateTime);
+        var hoy = DateOnly.FromDateTime(local);
+        var desde = hoy.AddDays(-DiasParaAvisarVencido);
+        // Los que podrían estar vencidos sin avisar (lo que sube la cuenta y venció en esos días): de esos se arma su cuenta.
+        var candidatos = await db.MovimientosCredito.AsNoTracking()
+            .Where(m => m.MontoCentavos > 0 && m.Vence >= desde && m.Vence < hoy)
+            .Select(m => new { m.Id, m.ClienteId }).ToListAsync(ct);
+        if (candidatos.Count == 0)
+            return;
+        var claves = candidatos.Select(c => ClaveVencido(c.Id)).ToList();
+        var avisados = (await db.MensajesTelegram.AsNoTracking().Where(m => m.Clave != null && claves.Contains(m.Clave))
+            .Select(m => m.Clave!).ToListAsync(ct)).ToHashSet();
+        var clientes = candidatos.Where(c => !avisados.Contains(ClaveVencido(c.Id))).Select(c => c.ClienteId).Distinct().ToList();
+        if (clientes.Count == 0)
+            return;
+        var movimientos = (await db.MovimientosCredito.AsNoTracking().Where(m => clientes.Contains(m.ClienteId)).ToListAsync(ct)).ToLookup(m => m.ClienteId);
+        var registrados = await db.ClientesRegistrados.AsNoTracking().Where(c => clientes.Contains(c.Id)).ToDictionaryAsync(c => c.Id, ct);
+        var ventas = movimientos.SelectMany(g => g).Where(m => m.VentaId is not null).Select(m => m.VentaId!.Value).Distinct().ToList();
+        var folios = await db.Ventas.AsNoTracking().Where(v => ventas.Contains(v.Id)).Select(v => new { v.Id, v.Serie, v.Folio })
+            .ToDictionaryAsync(v => v.Id, v => $"{v.Serie}-{v.Folio:000000}", ct);
+        foreach (var clienteId in clientes)
+        {
+            var lista = movimientos[clienteId].ToList();
+            var porId = lista.ToDictionary(m => m.Id);
+            var cuenta = CuentaCredito.Aplicar(lista);
+            foreach (var cargo in cuenta.Cargos.Where(c => c.PendienteCentavos > 0 && c.Vence >= desde && c.Vence < hoy))
+            {
+                var m = porId[cargo.MovimientoId];
+                if (avisados.Contains(ClaveVencido(m.Id)) || Configuracion(db, m.SucursalId).FueraDeHorario(local))
+                    continue;
+                var cliente = registrados[clienteId];
+                // De lo que se devolvió de esa venta no se debe nada: «faltan $300» de una compra de $500 con $200 devueltos.
+                var total = cargo.MontoCentavos - cargo.DevueltoCentavos;
+                var que = m.Tipo switch
+                {
+                    TipoMovimientoCredito.Cargo => $"Compra a crédito{(m.VentaId is { } venta && folios.TryGetValue(venta, out var folio) ? $" {folio}" : "")}",
+                    TipoMovimientoCredito.Ajuste => $"Lo que debía ({m.Motivo})",
+                    _ => "Lo que quedó a deber",
+                };
+                Avisar(db, m.SucursalId, TipoAlerta.CreditoVencido,
+                    $"{Titulo(TipoAlerta.CreditoVencido)} · «{cliente.Nombre}»\n"
+                    + $"{que} del {HoraMexico.ALocal(m.FechaUtc).ToString("dd/MM/yyyy", Mexico)}: faltan {Dinero(cargo.PendienteCentavos)}"
+                    + (cargo.PendienteCentavos < total ? $" de {Dinero(total)}" : "")
+                    + $" y vencía el {cargo.Vence.ToString("dd/MM/yyyy", Mexico)}.\n"
+                    + $"Debe en total {Dinero(cuenta.SaldoCentavos)}, vencido {Dinero(cuenta.Vencido(hoy))}."
+                    + (cliente.Telefono is { Length: > 0 } telefono ? $" Tel. {telefono}" : ""),
+                    ClaveVencido(m.Id));
+            }
+        }
+    }
+
+    private static string ClaveVencido(Guid cargoId) => $"vencido:{cargoId}";
+
     /// <summary>Después de un corte Z: si ya no queda turno abierto en la sucursal, sale el resumen del día. Quien llama guarda.</summary>
     public static async Task ResumenSiEsElUltimoAsync(PosDbContext db, Corte corte, Guid sucursalId, CancellationToken ct = default)
     {
@@ -177,8 +245,8 @@ public static class AlertasTelegram
         var cajas = await db.Cajas.Where(c => c.SucursalId == sucursalId).ToDictionaryAsync(c => c.Id, c => c.Nombre, ct);
         var usuarios = await db.Usuarios.ToDictionaryAsync(u => u.Id, u => u.Nombre, ct);
 
-        var ventas = await db.Ventas.AsNoTracking().Include(v => v.Lineas)
-            .Where(v => v.SucursalId == sucursalId && v.PagadaUtc >= desde && v.PagadaUtc < hasta).ToListAsync(ct);
+        var ventas = await db.Ventas.AsNoTracking().Include(v => v.Lineas).Include(v => v.Cobros)
+            .Where(v => v.SucursalId == sucursalId && v.PagadaUtc >= desde && v.PagadaUtc < hasta).AsSplitQuery().ToListAsync(ct);
         var vigentes = ventas.Where(v => v.Estado == EstadoVenta.Pagada).ToList();
         var deCatalogo = vigentes.SelectMany(v => v.Lineas).Where(l => l.VarianteId != null || l.EsImpresiones).ToList();
         var utilidad = deCatalogo.Sum(l => l.ImporteCentavos - l.CostoCentavos);
@@ -200,6 +268,10 @@ public static class AlertasTelegram
                                   join v in db.Ventas on c.VentaId equals v.Id
                                   where v.SucursalId == sucursalId && c.Forma == FormaPago.Transferencia && c.Verificacion == Verificacion.PorVerificar
                                   select c.MontoCentavos).ToListAsync(ct);
+        // También las de los abonos de los clientes (fase 3).
+        porVerificar.AddRange(await db.Abonos.AsNoTracking()
+            .Where(a => a.SucursalId == sucursalId && a.Forma == FormaPago.Transferencia && a.Verificacion == Verificacion.PorVerificar && a.CanceladoUtc == null)
+            .Select(a => a.MontoCentavos).ToListAsync(ct));
 
         var t = new StringBuilder();
         t.AppendLine($"Resumen del día · {sucursal?.Nombre} · {fecha.ToString("dddd d 'de' MMMM", Mexico)}");
@@ -237,6 +309,7 @@ public static class AlertasTelegram
                 + (conDescuento.Count(v => v.ClienteId != null) is var aClientes and > 0 ? $" ({aClientes} a clientes registrados)" : ""));
         if (salidas > 0)
             t.AppendLine($"Salidas de efectivo: {Dinero(salidas)}");
+        await CreditoDelDiaAsync(db, sucursalId, desde, hasta, vigentes, t, ct);
         var ajustes = await db.AjustesInventario.AsNoTracking()
             .Where(a => a.SucursalId == sucursalId && a.FechaUtc >= desde && a.FechaUtc < hasta).Select(a => new { a.Tipo, a.CostoCentavos }).ToListAsync(ct);
         if (ajustes.Where(a => a.Tipo == TipoMovimiento.Merma).ToList() is { Count: > 0 } mermas)
@@ -295,6 +368,44 @@ public static class AlertasTelegram
             t.AppendLine($"Impresora: contó {contador.Counted:N0} caras, registradas {contador.RegisteredTotal:N0}"
                 + (contador.Unregistered > 0 ? $" · sin registrar {contador.Unregistered:N0} (copias sin cobrar, celular, pruebas)" : " · todo registrado"));
         return t.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// El crédito en el resumen (fase 3): lo fiado del día (ya cuenta en las ventas), los abonos (no son venta) por forma de
+    /// pago con lo que entró, el saldo a favor que se devolvió, y lo que hay por cobrar (ahora) con lo vencido.
+    /// </summary>
+    private static async Task CreditoDelDiaAsync(PosDbContext db, Guid sucursalId, DateTime desde, DateTime hasta, List<Venta> vigentes, StringBuilder t,
+        CancellationToken ct)
+    {
+        if (vigentes.Where(v => v.CreditoCentavos > 0).ToList() is { Count: > 0 } fiadas)
+            t.AppendLine($"Fiado: {Dinero(fiadas.Sum(v => v.CreditoCentavos))} en {Cuantas(fiadas.Count, "ticket")}");
+        var delDia = await db.Abonos.AsNoTracking()
+            .Where(a => a.SucursalId == sucursalId && a.FechaUtc >= desde && a.FechaUtc < hasta && a.CanceladoUtc == null)
+            .Select(a => new { a.Tipo, a.Forma, a.MontoCentavos, a.RedondeoCentavos }).ToListAsync(ct);
+        // Lo que entró: en efectivo, con su redondeo (como en el corte).
+        var abonos = delDia.Where(a => a.Tipo == TipoAbono.Abono)
+            .Select(a => (a.Forma, Entro: a.Forma == FormaPago.Efectivo ? a.MontoCentavos + a.RedondeoCentavos : a.MontoCentavos)).ToList();
+        if (abonos.Count > 0)
+            t.AppendLine($"Abonos: {Dinero(abonos.Sum(a => a.Entro))} en {Cuantas(abonos.Count, "abono")} ("
+                + string.Join(", ", abonos.GroupBy(a => a.Forma).OrderBy(g => g.Key).Select(g => g.Key switch
+                {
+                    FormaPago.Tarjeta => "tarjeta",
+                    FormaPago.Transferencia => "transferencia",
+                    _ => "efectivo",
+                } + $" {Dinero(g.Sum(a => a.Entro))}")) + ")");
+        if (delDia.Where(a => a.Tipo == TipoAbono.SaldoDevuelto).ToList() is { Count: > 0 } devueltos)
+            t.AppendLine($"Saldo a favor devuelto: {Dinero(devueltos.Sum(a => a.MontoCentavos + a.RedondeoCentavos))}");
+        // Lo que deben ahora (aunque el resumen sea de un día anterior), con lo vencido a hoy. Los clientes son de todas las
+        // sucursales (salvo los que tienen una): con varias sucursales en la base, la línea lo dice.
+        var deben = (await new RegistroCredito(db).CuentasDeLaSucursalAsync(sucursalId, ct)).Where(c => c.SaldoCentavos > 0).ToList();
+        if (deben.Count == 0)
+            return;
+        var hoy = DateOnly.FromDateTime(HoraMexico.ALocal(db.Reloj.GetUtcNow().UtcDateTime));
+        var vencidos = deben.Where(c => c.Vencido(hoy) > 0).ToList();
+        var varias = await db.Sucursales.CountAsync(ct) > 1;
+        t.AppendLine($"Por cobrar{(varias ? " (con los clientes de todas las sucursales)" : "")}: {Dinero(deben.Sum(c => c.SaldoCentavos))} "
+            + $"de {Cuantas(deben.Count, "cliente")}"
+            + (vencidos.Count > 0 ? $" · vencido {Dinero(vencidos.Sum(c => c.Vencido(hoy)))} de {Cuantas(vencidos.Count, "cliente")}" : ""));
     }
 
     private static string Cuantas(int cuantas, string que) => $"{cuantas} {que}{(cuantas == 1 ? "" : "s")}";

@@ -53,6 +53,9 @@ public enum TipoAlerta
     /// guardó, pero no entró a ese corte.
     /// </summary>
     FueraDeCorte,
+
+    /// <summary>Una compra a crédito (o lo que debía de la libreta) pasó su plazo sin pagarse: una vez por cargo, en horario.</summary>
+    CreditoVencido,
 }
 
 /// <summary>Un chat de Telegram vinculado a un usuario (solo el dueño): recibe alertas y contesta autorizaciones.</summary>
