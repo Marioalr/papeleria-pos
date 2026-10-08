@@ -129,6 +129,7 @@ public static class AlertasTelegram
         TipoAlerta.ConteoCompleto => "Conteo completo de un departamento",
         TipoAlerta.PrivilegiosCliente => "Privilegios de un cliente",
         TipoAlerta.Credito => "Crédito de un cliente",
+        TipoAlerta.FueraDeCorte => "Llegó después del corte",
         _ => "Resumen del día",
     };
 
@@ -263,6 +264,20 @@ public static class AlertasTelegram
             t.AppendLine($"Transferencias por verificar: {porVerificar.Count} · {Dinero(porVerificar.Sum())}");
         if (vigentes.Count(v => v.EnContingencia) is var sinConexion and > 0)
             t.AppendLine($"Ventas hechas sin conexión: {sinConexion}");
+        // Lo de una caja sin conexión que llegó hoy cuando su turno ya tenía corte Z (cada cosa ya se avisó al llegar).
+        var ventasFuera = await db.Ventas.AsNoTracking()
+            .Where(v => v.SucursalId == sucursalId && v.FueraDeCorteUtc >= desde && v.FueraDeCorteUtc < hasta)
+            .Select(v => v.TotalCentavos + v.RedondeoCentavos).ToListAsync(ct);
+        var movimientosFuera = await db.MovimientosCaja.AsNoTracking()
+            .Where(m => idsTurnos.Contains(m.TurnoId) && m.FueraDeCorteUtc >= desde && m.FueraDeCorteUtc < hasta)
+            .Select(m => new { m.Tipo, m.MontoCentavos }).ToListAsync(ct);
+        var fueraDeCorte = new List<string>();
+        if (ventasFuera.Count > 0)
+            fueraDeCorte.Add($"{Cuantas(ventasFuera.Count, "venta")} · {Dinero(ventasFuera.Sum())}");
+        foreach (var g in movimientosFuera.GroupBy(m => m.Tipo).OrderBy(g => g.Key))
+            fueraDeCorte.Add($"{Cuantas(g.Count(), g.Key == TipoMovimientoCaja.Entrada ? "entrada" : "salida")} · {Dinero(g.Sum(m => m.MontoCentavos))}");
+        if (fueraDeCorte.Count > 0)
+            t.AppendLine($"Llegaron después de su corte: {string.Join("; ", fueraDeCorte)} (esos cortes no los incluyen)");
         var noVendidas = await db.TrabajosImpresion.AsNoTracking()
             .Where(i => i.SucursalId == sucursalId && i.Cobro == EstadoCobroImpresion.NoVendida && i.CobroUtc >= desde && i.CobroUtc < hasta)
             .Select(i => i.CostoCentavos).ToListAsync(ct);
@@ -273,4 +288,6 @@ public static class AlertasTelegram
                 + (contador.Unregistered > 0 ? $" · sin registrar {contador.Unregistered:N0} (copias sin cobrar, celular, pruebas)" : " · todo registrado"));
         return t.ToString().TrimEnd();
     }
+
+    private static string Cuantas(int cuantas, string que) => $"{cuantas} {que}{(cuantas == 1 ? "" : "s")}";
 }

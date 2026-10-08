@@ -5,6 +5,7 @@ using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Inventario;
+using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Ventas;
 
@@ -74,7 +75,8 @@ public sealed class RegistroCaja(PosDbContext db)
 
     /// <summary>
     /// Una venta que cobró una caja sin conexión y llega con la bandeja: trae su folio y su hora. Las reglas ya se
-    /// revisaron en la caja (su bitácora sube aparte), así que aquí no se vuelven a pedir autorizaciones.
+    /// revisaron en la caja (su bitácora sube aparte), así que aquí no se vuelven a pedir autorizaciones. Ya está cobrada:
+    /// si su turno ya tiene corte Z (la primera vez no subió y el corte sí), se guarda igual, fuera de ese corte.
     /// </summary>
     /// <param name="redondear">Falso para lo que la caja cobró antes de que existiera el redondeo al peso: se cobra exacto.</param>
     public Task<Venta> CobroDeContingenciaAsync(
@@ -85,7 +87,7 @@ public sealed class RegistroCaja(PosDbContext db)
         Venta venta, IReadOnlyList<CobroSolicitado> cobros, int? folioDeLaCaja, DateTime ahora, CancellationToken ct, IReadOnlyList<TrabajoImpresion>? impresiones = null,
         bool redondear = true)
     {
-        var turno = await TurnoAbiertoPorIdAsync(venta.TurnoId, ct);
+        var turno = folioDeLaCaja is null ? await TurnoAbiertoPorIdAsync(venta.TurnoId, ct) : await TurnoPorIdAsync(venta.TurnoId, ct);
         if (turno.CajaId != venta.CajaId || turno.SucursalId != venta.SucursalId)
             throw new InvalidOperationException("La venta no es del turno abierto de esta caja.");
 
@@ -140,6 +142,13 @@ public sealed class RegistroCaja(PosDbContext db)
             db.Ventas.Add(venta);
             if (venta.LlevaEfectivo)
                 db.AperturasCajon.Add(new AperturaCajon { CajaId = venta.CajaId, TurnoId = turno.Id, UsuarioId = venta.CajeroId, Motivo = MotivoApertura.Venta, VentaId = venta.Id, FechaUtc = ahora });
+            if (!turno.Abierto)
+            {
+                venta.FueraDeCorteUtc = Ahora;
+                await AvisarFueraDeCorteAsync(turno, venta.Id,
+                    $"La venta {venta.FolioTexto} de las {HoraMexico.ALocal(ahora):HH:mm} por {AlertasTelegram.Dinero(venta.TotalCobradoCentavos)}",
+                    venta.Cobros.Where(c => c.Forma == FormaPago.Efectivo).Sum(c => c.MontoCentavos), ct);
+            }
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
             return venta;
@@ -312,20 +321,50 @@ public sealed class RegistroCaja(PosDbContext db)
         return turno;
     }
 
+    /// <summary>Un F7 o F8 de la caja sin conexión. Como la venta, si su turno ya tiene corte Z se guarda fuera de ese corte.</summary>
     public async Task<MovimientoCaja> MovimientoDeContingenciaAsync(Guid turnoId, MovimientoContingenciaDto m, CancellationToken ct = default)
     {
         if (await db.MovimientosCaja.FindAsync([m.Id], ct) is { } existente)
             return existente;
-        var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
+        var turno = await TurnoPorIdAsync(turnoId, ct);
         var movimiento = new MovimientoCaja
         {
             Id = m.Id, TurnoId = turno.Id, Tipo = m.Tipo, MontoCentavos = m.MontoCentavos, Motivo = m.Motivo.Trim(), UsuarioId = m.UsuarioId,
-            FechaUtc = m.FechaUtc, EnContingencia = true,
+            FechaUtc = m.FechaUtc, EnContingencia = true, FueraDeCorteUtc = turno.Abierto ? null : Ahora,
         };
         db.MovimientosCaja.Add(movimiento);
         db.AperturasCajon.Add(new AperturaCajon { CajaId = turno.CajaId, TurnoId = turno.Id, UsuarioId = m.UsuarioId, Motivo = MotivoApertura.SinVenta, Nota = $"{m.Tipo}: {movimiento.Motivo}", FechaUtc = m.FechaUtc });
+        if (!turno.Abierto)
+        {
+            var entrada = m.Tipo == TipoMovimientoCaja.Entrada;
+            await AvisarFueraDeCorteAsync(turno, movimiento.Id,
+                $"La {(entrada ? "entrada" : "salida")} de efectivo de las {HoraMexico.ALocal(m.FechaUtc):HH:mm} por {AlertasTelegram.Dinero(m.MontoCentavos)} ({movimiento.Motivo})",
+                entrada ? m.MontoCentavos : -m.MontoCentavos, ct);
+        }
         await db.SaveChangesAsync(ct);
         return movimiento;
+    }
+
+    /// <summary>
+    /// Lo de una caja sin conexión que llegó cuando su turno ya tenía corte Z: se le avisa al dueño qué fue y cuánto
+    /// efectivo movió que ese corte no tomó en cuenta. Quien llama guarda.
+    /// </summary>
+    /// <param name="efectivoCentavos">Lo que entró al cajón (negativo, lo que salió).</param>
+    private async Task AvisarFueraDeCorteAsync(Turno turno, Guid id, string que, long efectivoCentavos, CancellationToken ct)
+    {
+        var caja = await db.Cajas.FindAsync([turno.CajaId], ct);
+        var cajero = await db.Usuarios.FindAsync([turno.CajeroId], ct);
+        var efectivo = efectivoCentavos switch
+        {
+            > 0 => $"Al cajón entraron {AlertasTelegram.Dinero(efectivoCentavos)} que ese corte no esperaba: pueden explicar un sobrante.",
+            < 0 => $"Del cajón salieron {AlertasTelegram.Dinero(-efectivoCentavos)} que ese corte no restó: pueden explicar un faltante.",
+            _ => "No movió efectivo: el conteo de ese corte no cambia.",
+        };
+        AlertasTelegram.Avisar(db, turno.SucursalId, TipoAlerta.FueraDeCorte,
+            $"{AlertasTelegram.Titulo(TipoAlerta.FueraDeCorte)} · {caja?.Nombre}\n"
+            + $"{que} se hizo sin conexión en el turno de {cajero?.Nombre} y llegó cuando ese turno ya tenía su corte Z "
+            + $"(de las {HoraMexico.ALocal(turno.CerradoUtc!.Value):HH:mm}). Se guardó con su turno; el corte no se cambió.\n{efectivo}",
+            $"fuera-de-corte:{id}");
     }
 
     /// <summary>
@@ -379,9 +418,12 @@ public sealed class RegistroCaja(PosDbContext db)
         secuencia.Valor = Math.Max(secuencia.Valor, folio);
     }
 
+    private async Task<Turno> TurnoPorIdAsync(Guid turnoId, CancellationToken ct) =>
+        await db.Turnos.FindAsync([turnoId], ct) ?? throw new InvalidOperationException("El turno no existe.");
+
     private async Task<Turno> TurnoAbiertoPorIdAsync(Guid turnoId, CancellationToken ct)
     {
-        var turno = await db.Turnos.FindAsync([turnoId], ct) ?? throw new InvalidOperationException("El turno no existe.");
+        var turno = await TurnoPorIdAsync(turnoId, ct);
         return turno.Abierto ? turno : throw new InvalidOperationException("El turno ya está cerrado.");
     }
 
