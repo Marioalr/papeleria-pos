@@ -47,6 +47,12 @@ public enum TipoAlerta
 
     /// <summary>El crédito de los clientes: se fió arriba del límite, se ajustó un saldo o algo de sin conexión no cuadró.</summary>
     Credito,
+
+    /// <summary>
+    /// Una venta o una entrada/salida de efectivo de una caja sin conexión llegó cuando su turno ya tenía corte Z: se
+    /// guardó, pero no entró a ese corte.
+    /// </summary>
+    FueraDeCorte,
 }
 
 /// <summary>Un chat de Telegram vinculado a un usuario (solo el dueño): recibe alertas y contesta autorizaciones.</summary>

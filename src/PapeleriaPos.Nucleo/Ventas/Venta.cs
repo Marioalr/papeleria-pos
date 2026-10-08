@@ -59,6 +59,12 @@ public class Venta
     /// <summary>Cobrada en una caja sin conexión, con su copia del catálogo y su propio folio.</summary>
     public bool EnContingencia { get; set; }
 
+    /// <summary>
+    /// Cuándo llegó con la bandeja, si su turno ya tenía corte Z: no entró a ese corte (que no se cambia) y queda para
+    /// revisarla. Ya estaba cobrada, así que no se rechaza.
+    /// </summary>
+    public DateTime? FueraDeCorteUtc { get; set; }
+
     public string? FolioTexto => Folio is { } f ? $"{Serie}-{f:000000}" : null;
 
     /// <summary>Artículos para el ticket: piezas por cantidad; lo que se vende por metro o a granel cuenta uno por línea.</summary>
