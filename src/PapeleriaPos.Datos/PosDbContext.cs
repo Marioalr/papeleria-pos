@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Historico;
@@ -40,7 +41,7 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<MovimientoCaja> MovimientosCaja => Set<MovimientoCaja>();
     public DbSet<AperturaCajon> AperturasCajon => Set<AperturaCajon>();
     public DbSet<Venta> Ventas => Set<Venta>();
-    public DbSet<ClienteEspecial> ClientesEspeciales => Set<ClienteEspecial>();
+    public DbSet<ClienteRegistrado> ClientesRegistrados => Set<ClienteRegistrado>();
     public DbSet<DecisionDepuracion> DecisionesDepuracion => Set<DecisionDepuracion>();
     public DbSet<MayoreoPorRevisar> MayoreoPorRevisar => Set<MayoreoPorRevisar>();
     public DbSet<VentaLinea> VentasLineas => Set<VentaLinea>();

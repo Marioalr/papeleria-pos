@@ -25,12 +25,12 @@ Recibido ─→ Esperando cliente ───────────────�
   cliente por cada número.
 - Después de entregado el pedido, y pasados N días (configurable), el número se borra; solo quedan los últimos 4
   dígitos en el historial.
-- **Clientes registrados:** pocos, los de confianza, dados de alta a mano por el encargado o el dueño. Sus privilegios
-  se configuran por cliente:
-  - pedidos sin anticipo (por ejemplo, imprimir un trabajo grande)
+- **Clientes registrados:** pocos, los de confianza, dados de alta a mano por el encargado o el dueño (fase 3, ver
+  [caja y control](caja-y-control.md#venta)). Sus privilegios se configuran por cliente, y no hay más:
+  - descuento fijo y mayoreo siempre (en la venta)
   - crédito, con límite y estado de cuenta
+  - pedidos sin anticipo (por ejemplo, imprimir un trabajo grande)
   - apartar sin pagar
-  - *por definir qué más*
 - **No registrados (regla configurable):** se prepara sin anticipo hasta cierto monto. Arriba de eso, el pedido queda
   en *Esperando cliente* (el archivo ya está en el sistema y cotizado, pero no se imprime) hasta que llega o deja
   anticipo.

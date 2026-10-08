@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Impresiones;
@@ -148,19 +149,22 @@ public sealed class RegistroCaja(PosDbContext db)
     }
 
     /// <summary>
-    /// Los descuentos del ticket (docs/fase-1-impresion.md): el más alto se revisa con la regla (el cajero da hasta 10 %
-    /// solo; más, con autorización) salvo el del cliente especial, que ya aprobó el dueño. Y ningún descuento deja una
-    /// línea debajo del costo sin autorización. Todo queda en la bitácora.
+    /// El cliente y los descuentos del ticket (docs/fase-1-impresion.md): el cliente registrado tiene que seguir activo;
+    /// el descuento más alto se revisa con la regla (el cajero da hasta 10 % solo; más, con autorización) salvo el del
+    /// cliente, que ya está aprobado. Y ningún descuento deja una línea debajo del costo sin autorización. Todo queda en
+    /// la bitácora.
     /// </summary>
     private async Task RevisarDescuentosAsync(Venta venta, ServicioControl control, CancellationToken ct)
     {
+        ClienteRegistrado? cliente = null;
+        if (venta.ClienteId is { } id && (cliente = await db.ClientesRegistrados.FindAsync([id], ct)) is not { Activo: true })
+            throw new InvalidOperationException("Ese cliente ya no está activo: quítalo del ticket (CTRL+L).");
+        // Su descuento cambió mientras el ticket estaba abierto: mejor decirlo que pedir una autorización sin explicar por qué.
+        if (cliente is not null && venta.Lineas.Any(l => l.MotivoDescuento == ClienteRegistrado.MotivoDescuento(cliente.Nombre) && l.DescuentoCentesimas != cliente.DescuentoCentesimas))
+            throw new InvalidOperationException("El descuento del cliente cambió: vuelve a elegirlo con CTRL+L.");
         if (venta.DescuentoCentavos > 0)
         {
-            ClienteEspecial? cliente = null;
-            if (venta.ClienteEspecialId is { } id
-                && (cliente = await db.ClientesEspeciales.FindAsync([id], ct)) is not { Activo: true })
-                throw new InvalidOperationException("Ese cliente especial ya no está en la lista: quita su descuento.");
-            var revisar = venta.DescuentoARevisar(cliente?.DescuentoCentesimas);
+            var revisar = venta.DescuentoARevisar(cliente?.DescuentoCentesimas is > 0 and var d ? d : null);
             var detalle = DetalleDescuento(venta, cliente?.Nombre);
             if (revisar > 0)
                 await control.RequerirAsync(venta.CajeroId, venta.SucursalId, venta.CajaId, AccionControlada.Descuento, revisar, detalle,
@@ -177,13 +181,13 @@ public sealed class RegistroCaja(PosDbContext db)
                 venta.AutorizacionBajoCostoId, ventaId: venta.Id, ct: ct);
     }
 
-    /// <summary>"Descuento de $25.00 (hasta 15 %): motivo" (o el cliente especial), para la bitácora y Telegram.</summary>
-    public static string DetalleDescuento(Venta venta, string? clienteEspecial)
+    /// <summary>"Descuento de $25.00 (hasta 15 %): motivo" (o a qué cliente registrado), para la bitácora y Telegram.</summary>
+    public static string DetalleDescuento(Venta venta, string? cliente)
     {
         var maximo = venta.Lineas.Where(l => l.TieneDescuento).Max(l => l.PorcentajeDescuento);
         var motivos = string.Join("; ", venta.Lineas.Where(l => l.TieneDescuento).Select(l => l.MotivoDescuento).Distinct());
         return $"Descuento de {AlertasTelegram.Dinero(venta.DescuentoCentavos)} (hasta {Permisos.TextoMonto(AccionControlada.Descuento, maximo)})"
-            + (clienteEspecial is null ? "" : $" a {clienteEspecial}, cliente especial") + $": {motivos}";
+            + (cliente is null ? "" : $" a {cliente}, cliente registrado") + $": {motivos}";
     }
 
     /// <summary>

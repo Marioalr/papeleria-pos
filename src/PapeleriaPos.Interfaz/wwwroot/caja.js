@@ -27,6 +27,7 @@ function alPresionar(e) {
     const ctrlP = e.ctrlKey && (tecla === 'p' || tecla === 'P');
     const ctrlE = e.ctrlKey && (tecla === 'e' || tecla === 'E');
     const ctrlD = e.ctrlKey && (tecla === 'd' || tecla === 'D');
+    const ctrlL = e.ctrlKey && (tecla === 'l' || tecla === 'L');
     const funcion = /^F([1-9]|1[0-2])$/.test(tecla);
 
     // Ctrl+Q: cotizar a una tecla. El selector de archivos solo se abre desde la tecla misma, no después.
@@ -39,9 +40,9 @@ function alPresionar(e) {
 
     let atrapar;
     if (hayVentana) {
-        atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD;
+        atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL;
     } else {
-        atrapar = funcion || ctrlP || ctrlE || ctrlD || tecla === 'Escape' || tecla === 'Insert'
+        atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || tecla === 'Escape' || tecla === 'Insert'
             || (tecla === 'Delete' && vacio)
             || ((tecla === 'ArrowUp' || tecla === 'ArrowDown') && (campo === null || enCodigo))
             || ((tecla === '+' || tecla === '-') && vacio && (campo === null || enCodigo));
@@ -50,7 +51,7 @@ function alPresionar(e) {
 
     e.preventDefault();
     e.stopPropagation();
-    pantalla.invokeMethodAsync('Tecla', ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : tecla);
+    pantalla.invokeMethodAsync('Tecla', ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : tecla);
 }
 
 export function enfocar(selector) {

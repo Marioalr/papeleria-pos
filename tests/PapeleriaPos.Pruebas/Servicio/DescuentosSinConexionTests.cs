@@ -27,9 +27,11 @@ public sealed class DescuentosSinConexionTests(ServicioDePrueba servicio) : ICla
     {
         var local = servicio.Fabrica.CreateClient();
         var caja = (await local.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
-        var maestros = new ClienteEspecialDto(Guid.NewGuid(), "Maestros de la secundaria", 2000, null, true);
-        (await local.PutAsJsonAsync($"api/sucursales/{caja.SucursalId}/clientes-especiales",
-            new SolicitudClientesEspeciales("dueno", "3333", [maestros]))).EnsureSuccessStatusCode();
+        var dueno = (await (await local.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333"))).Content.ReadFromJsonAsync<SesionDto>())!;
+        var guardado = await local.PostAsJsonAsync("api/clientes", new SolicitudGuardarCliente(dueno.UsuarioId, caja.SucursalId,
+            new ClienteRegistradoDto(Guid.Empty, "Maestros de la secundaria", 2000, null, true)));
+        guardado.EnsureSuccessStatusCode();
+        var maestros = (await guardado.Content.ReadFromJsonAsync<ClienteRegistradoDto>())!;
 
         var interruptor = new Interruptor(servicio.Fabrica.Server.CreateHandler());
         var http = new HttpClient(interruptor);
@@ -44,18 +46,18 @@ public sealed class DescuentosSinConexionTests(ServicioDePrueba servicio) : ICla
         SolicitudCobro Cobro(int centesimas, string motivo, Guid? cliente = null, Guid? autorizacion = null) =>
             new(caja.Id, turno.Id, cajero.UsuarioId,
                 [new LineaSolicitada(pluma.VarianteId, pluma.Presentacion.Id, 4000, pluma.Descripcion, DescuentoCentesimas: centesimas, MotivoDescuento: motivo)],
-                [new CobroSolicitado(FormaPago.Efectivo, 100000)], ClienteEspecialId: cliente, AutorizacionDescuentoId: autorizacion);
+                [new CobroSolicitado(FormaPago.Efectivo, 100000)], ClienteId: cliente, AutorizacionDescuentoId: autorizacion);
 
         interruptor.Caido = true;
         await contingencia.LatidoAsync();
         Assert.False(contingencia.EnLinea);
 
-        var clientes = await cliente.ClientesEspecialesAsync(caja.SucursalId);
+        var clientes = await cliente.ClientesRegistradosAsync(caja.SucursalId);
         var requiere = await Assert.ThrowsAsync<ErrorCaja>(() => cliente.CobrarAsync(Cobro(1500, "Pasta doblada")));
         var autorizacion = await cliente.AutorizarAsync(new SolicitudAutorizacion(AccionControlada.Descuento, caja.SucursalId, caja.Id, cajero.UsuarioId,
             "encargado", "2222", 1500, "Descuento"));
         var conDescuento = await cliente.CobrarAsync(Cobro(1500, "Pasta doblada", autorizacion: autorizacion.Id));
-        var deCliente = await cliente.CobrarAsync(Cobro(2000, "Cliente especial: Maestros de la secundaria", cliente: maestros.Id));
+        var deCliente = await cliente.CobrarAsync(Cobro(2000, maestros.MotivoDescuento(), cliente: maestros.Id));
         var sinCosto = await cliente.BajoCostoAsync(new SolicitudBajoCosto(caja.Id, [new LineaSolicitada(pluma.VarianteId, pluma.Presentacion.Id, 1000)]));
 
         Assert.Contains(clientes, c => c.Id == maestros.Id);
@@ -72,7 +74,7 @@ public sealed class DescuentosSinConexionTests(ServicioDePrueba servicio) : ICla
         var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
         var subida = await db.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == deCliente.VentaId);
         Assert.Equal(deCliente.TotalCentavos, subida.TotalCentavos);
-        Assert.Equal(maestros.Id, subida.ClienteEspecialId);
+        Assert.Equal(maestros.Id, subida.ClienteId);
         Assert.Equal(2000, subida.Lineas.Single().DescuentoCentesimas);
         Assert.True(await db.Bitacora.AnyAsync(b => b.VentaId == conDescuento.VentaId && b.Accion == AccionControlada.Descuento
             && b.Resultado == ResultadoBitacora.Autorizado && b.EnContingencia));

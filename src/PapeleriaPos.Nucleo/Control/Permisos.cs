@@ -121,7 +121,9 @@ public static class Permisos
         .. Ambos(AccionControlada.AdministrarCajas, NivelPermiso.NoPermitido),
         .. Ambos(AccionControlada.ConfigurarTelegram, NivelPermiso.NoPermitido),
         .. Ambos(AccionControlada.ConfigurarImpresora, NivelPermiso.NoPermitido),
-        .. Ambos(AccionControlada.AdministrarClientes, NivelPermiso.NoPermitido),
+        // Los clientes registrados (fase 3): el encargado también los da de alta; lo que toca a sus privilegios se le avisa al dueño.
+        Regla(AccionControlada.AdministrarClientes, Rol.Cajero, NivelPermiso.NoPermitido),
+        Regla(AccionControlada.AdministrarClientes, Rol.Encargado, NivelPermiso.Permitido),
         Regla(AccionControlada.Descuento, Rol.Cajero, NivelPermiso.Permitido, umbral: 1000),
         Regla(AccionControlada.Descuento, Rol.Encargado, NivelPermiso.Permitido),
         Regla(AccionControlada.EditarCatalogo, Rol.Cajero, NivelPermiso.NoPermitido),
@@ -151,7 +153,7 @@ public static class Permisos
     /// <summary>Acciones que no se pueden dar a otro rol: no aparecen en el editor de reglas.</summary>
     public static bool SoloDelDueno(AccionControlada accion) =>
         accion is AccionControlada.EditarReglas or AccionControlada.AdministrarCajas or AccionControlada.ConfigurarTelegram
-            or AccionControlada.ConfigurarImpresora or AccionControlada.AdministrarClientes or AccionControlada.ConfigurarMargen;
+            or AccionControlada.ConfigurarImpresora or AccionControlada.ConfigurarMargen;
 
     /// <summary>Acciones cuyo umbral (y el monto que se revisa) es un porcentaje en centésimas, no dinero.</summary>
     public static bool EnPorcentaje(AccionControlada accion) => accion == AccionControlada.Descuento;

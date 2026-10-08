@@ -310,3 +310,4 @@ td.acciones-renglon { white-space: nowrap; text-align: right; }
 .cobrar-redondeo strong { color: var(--azul); font-size: 22px; }
 .total-efectivo { text-align: right; color: var(--suave); font-size: 14px; }
 .escalas-mayoreo td, .escalas-mayoreo th { font-size: 15px; }
+.titulo-venta .cliente-ticket { font-size: 15px; font-weight: 400; margin-left: 16px; }

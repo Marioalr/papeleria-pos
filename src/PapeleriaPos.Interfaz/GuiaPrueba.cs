@@ -50,6 +50,16 @@ public static class GuiaPrueba
         new("descuento", "Control",
             "Haz un descuento de 5 % a un producto con Ctrl+D. Luego intenta uno de 20 %.",
             "El de 5 % entra solo; el de 20 % pide la autorización del encargado."),
+        new("cliente-venta", "Clientes",
+            "En una venta, oprime Ctrl+L y busca a la «Escuela Primaria Benito Juárez» por su teléfono (escribe 1234). Agrega productos y cóbrala. "
+            + "En otra venta elige a «Papelería La Esquina» y agrega un solo folder (todos tienen mayoreo desde 100).",
+            "La escuela lleva su 10 % en todo el ticket sin pedir autorización y el ticket dice «Cliente: …». La papelería paga el folder a precio "
+            + "de mayoreo aunque sea uno: el renglón dice «Mayoreo de cliente». Si el descuento deja algo debajo del costo, F12 pide la autorización."),
+        new("cliente-alta", "Clientes",
+            "Como «encargado» (2222), entra al módulo «Clientes», da de alta un cliente con su teléfono y 5 % de descuento, y revisa a «Maestra Carmen», "
+            + "que dice «Por revisar».",
+            "El cliente queda en la lista y ya se puede elegir con Ctrl+L. En «Avisos al dueño» llega que el encargado le dio privilegios. "
+            + "Al guardar a Maestra Carmen se quita «Por revisar». Abre a la escuela: dice cuánto compra al mes."),
         new("efectivo", "Control",
             "Haz una salida de efectivo con F8 (con motivo) y una entrada con F7.",
             "Las dos piden motivo y salen en el corte."),

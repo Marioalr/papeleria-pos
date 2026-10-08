@@ -77,6 +77,7 @@ app.MapearApiContingencia();
 app.MapearApiTelegram();
 app.MapearApiImpresiones();
 app.MapearApiDescuentos();
+app.MapearApiClientes();
 app.MapearApiCatalogo();
 app.MapearApiCompras();
 app.MapearApiConteos();

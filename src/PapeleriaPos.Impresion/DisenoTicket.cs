@@ -48,6 +48,11 @@ public static class DisenoTicket
         e.Add(Linea('-'));
         e.Add(new Renglon(DosColumnas($"Folio {t.Folio}", t.FechaLocal.ToString("dd/MM/yyyy  HH:mm", Mexico))));
         e.Add(new Renglon(DosColumnas(t.Caja, $"Atendió: {t.Cajero}")));
+        if (t.Cliente is { } cliente)
+        {
+            foreach (var parte in Partir($"Cliente: {cliente}", Columnas))
+                e.Add(new Renglon(parte));
+        }
         e.Add(Linea('-'));
         e.Add(new Renglon(Columna("Cant.", AnchoCantidad) + Columna("Descripción", AnchoDescripcion + 1) + "Importe".PadLeft(AnchoImporte)));
         e.Add(Linea('='));

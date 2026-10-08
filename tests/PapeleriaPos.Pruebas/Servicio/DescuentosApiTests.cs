@@ -35,7 +35,7 @@ public class DescuentosApiTests(ServicioDePrueba servicio) : IClassFixture<Servi
     private static SolicitudCobro Cobro(CajaDto caja, TurnoDto turno, SesionDto cajero, LineaSolicitada linea, Guid? cliente = null, Guid? autorizacion = null,
         Guid? bajoCosto = null) =>
         new(caja.Id, turno.Id, cajero.UsuarioId, [linea], [new CobroSolicitado(FormaPago.Efectivo, 1_000_000)], Guid.NewGuid(),
-            ClienteEspecialId: cliente, AutorizacionDescuentoId: autorizacion, AutorizacionBajoCostoId: bajoCosto);
+            ClienteId: cliente, AutorizacionDescuentoId: autorizacion, AutorizacionBajoCostoId: bajoCosto);
 
     private List<Bitacora> Bitacora(Guid ventaId)
     {
@@ -86,30 +86,28 @@ public class DescuentosApiTests(ServicioDePrueba servicio) : IClassFixture<Servi
     }
 
     [Fact]
-    public async Task El_cliente_especial_no_pide_autorizacion_y_solo_el_dueno_cambia_la_lista()
+    public async Task El_descuento_del_cliente_registrado_no_pide_autorizacion_y_un_cliente_inactivo_ya_no_se_cobra()
     {
         var (http, caja, cajero, turno, producto) = await PrepararAsync();
-        var escuela = new ClienteEspecialDto(Guid.NewGuid(), "Escuela Benito Juárez", 2000, "Maestros con credencial", true);
-
-        var porCajero = await http.PutAsJsonAsync($"api/sucursales/{caja.SucursalId}/clientes-especiales",
-            new SolicitudClientesEspeciales("cajero", "1111", [escuela]));
-        var lista = await Leer<List<ClienteEspecialDto>>(await http.PutAsJsonAsync($"api/sucursales/{caja.SucursalId}/clientes-especiales",
-            new SolicitudClientesEspeciales("dueno", "3333", [escuela])));
+        var encargado = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("encargado", "2222")));
+        var escuela = await Leer<ClienteRegistradoDto>(await http.PostAsJsonAsync("api/clientes", new SolicitudGuardarCliente(encargado.UsuarioId,
+            caja.SucursalId, new ClienteRegistradoDto(Guid.Empty, "Escuela Benito Juárez (descuentos)", 2000, "Maestros con credencial", true))));
         var linea = new LineaSolicitada(producto.VarianteId, producto.Presentacion.Id, 1000, DescuentoCentesimas: 2000,
-            MotivoDescuento: "Cliente especial: Escuela Benito Juárez");
+            MotivoDescuento: escuela.MotivoDescuento());
         var ticket = await Leer<TicketDto>(await http.PostAsJsonAsync("api/ventas", Cobro(caja, turno, cajero, linea, cliente: escuela.Id)));
         var paquete = await http.GetFromJsonAsync<PaqueteContingenciaDto>($"api/cajas/{caja.Id}/paquete");
 
-        Assert.Equal(HttpStatusCode.BadRequest, porCajero.StatusCode);
-        Assert.Contains(lista, c => c.Id == escuela.Id && c.DescuentoCentesimas == 2000);
-        Assert.Contains("Escuela Benito Juárez, cliente especial", Assert.Single(Bitacora(ticket.VentaId!.Value), b => b.Accion == AccionControlada.Descuento).Detalle);
+        Assert.Contains("Escuela Benito Juárez (descuentos), cliente registrado",
+            Assert.Single(Bitacora(ticket.VentaId!.Value), b => b.Accion == AccionControlada.Descuento).Detalle);
+        Assert.Equal("Escuela Benito Juárez (descuentos) (descuento 20 %)", ticket.Cliente);
         Assert.Contains(paquete!.Clientes!, c => c.Id == escuela.Id);
 
-        // Quitarlo de la lista lo deja inactivo: ya no se le puede cobrar con su descuento.
-        await Leer<List<ClienteEspecialDto>>(await http.PutAsJsonAsync($"api/sucursales/{caja.SucursalId}/clientes-especiales",
-            new SolicitudClientesEspeciales("dueno", "3333", [])));
+        // Inactivo ya no se le puede cobrar (ni con su descuento ni sin él).
+        await Leer<ClienteRegistradoDto>(await http.PostAsJsonAsync("api/clientes",
+            new SolicitudGuardarCliente(encargado.UsuarioId, caja.SucursalId, escuela with { Activo = false })));
         var inactivo = await http.PostAsJsonAsync("api/ventas", Cobro(caja, turno, cajero, linea, cliente: escuela.Id));
         Assert.Equal(HttpStatusCode.BadRequest, inactivo.StatusCode);
+        Assert.Contains("ya no está activo", (await inactivo.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
     }
 
     [Fact]

@@ -251,3 +251,29 @@ public sealed class TelegramTiempoTests(ServicioDePrueba servicio) : PruebaTeleg
         Assert.Single(mensajes, t => t.StartsWith("Caja abierta fuera de horario · Caja 9"));
     }
 }
+
+public sealed class TelegramClientesTests(ServicioDePrueba servicio) : PruebaTelegram(servicio)
+{
+    [Fact]
+    public async Task Al_dueno_le_llegan_los_privilegios_que_da_el_encargado_y_no_los_suyos()
+    {
+        await VincularAsync();
+        var http = Http();
+        var caja = await CajaAsync();
+        var encargado = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("encargado", "2222")));
+        var dueno = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+        var antes = MensajesA(ChatDueno).Count;
+
+        var cliente = await Leer<ClienteRegistradoDto>(await http.PostAsJsonAsync("api/clientes", new SolicitudGuardarCliente(encargado.UsuarioId,
+            caja.SucursalId, new ClienteRegistradoDto(Guid.Empty, "Cliente de Telegram", 1500, null, true))));
+        await Leer<ClienteRegistradoDto>(await http.PostAsJsonAsync("api/clientes", new SolicitudGuardarCliente(dueno.UsuarioId, caja.SucursalId,
+            cliente with { DescuentoCentesimas = 500 })));
+        await Leer<ClienteRegistradoDto>(await http.PostAsJsonAsync("api/clientes", new SolicitudGuardarCliente(encargado.UsuarioId, caja.SucursalId,
+            cliente with { DescuentoCentesimas = 500, Nota = "Solo cambia la nota" })));
+        await Motor.EnviarAsync();
+
+        var aviso = Assert.Single(MensajesA(ChatDueno).Skip(antes));
+        Assert.Contains("Privilegios de un cliente", aviso);
+        Assert.Contains("Privilegios de «Cliente de Telegram» (alta): descuento 15 %", aviso);
+    }
+}

@@ -38,8 +38,9 @@ public static class AlertasTelegram
             var configuracion = Configuracion(db, b.SucursalId);
             if (Tipo(b, configuracion) is not { } tipo || !configuracion.Avisa(tipo))
                 continue;
-            // Lo que cambia el dueño en el catálogo o en el inventario no se le avisa a él mismo.
+            // Lo que cambia el dueño en el catálogo, el inventario o los clientes no se le avisa a él mismo.
             if (tipo is TipoAlerta.CambioPrecioCatalogo or TipoAlerta.AjusteInventario or TipoAlerta.DiferenciaConteo or TipoAlerta.ConteoCompleto
+                    or TipoAlerta.PrivilegiosCliente
                 && b.UsuarioId is { } quien
                 && db.Usuarios.Find(quien)?.Rol == Rol.Dueno)
                 continue;
@@ -95,6 +96,8 @@ public static class AlertasTelegram
             AccionControlada.ContarInventario when b.MontoCentavos >= c.UmbralAjusteCentavos => TipoAlerta.DiferenciaConteo,
             // RegistroConteoCompleto.CerrarAsync escribe "Cerró el conteo de…"; abrir y cancelar no se avisan.
             AccionControlada.ConteoCompleto when b.Detalle.StartsWith("Cerró", StringComparison.Ordinal) => TipoAlerta.ConteoCompleto,
+            // RegistroClientes escribe "Privilegios de «…»" cuando se dan o cambian.
+            AccionControlada.AdministrarClientes when b.Detalle.StartsWith("Privilegios de", StringComparison.Ordinal) => TipoAlerta.PrivilegiosCliente,
             // RegistroCaja.VerificarTransferenciaAsync escribe "Verificó…" o "Rechazó…".
             AccionControlada.VerificarTransferencia when b.Detalle.StartsWith("Rechazó", StringComparison.Ordinal) => TipoAlerta.TransferenciaRechazada,
             _ => null,
@@ -121,6 +124,7 @@ public static class AlertasTelegram
         TipoAlerta.AjusteInventario => "Ajuste o merma de inventario",
         TipoAlerta.DiferenciaConteo => "Diferencia en el conteo del día",
         TipoAlerta.ConteoCompleto => "Conteo completo de un departamento",
+        TipoAlerta.PrivilegiosCliente => "Privilegios de un cliente",
         _ => "Resumen del día",
     };
 
@@ -225,7 +229,7 @@ public static class AlertasTelegram
             t.AppendLine($"Cambios de precio: {precios}");
         if (vigentes.Where(v => v.Lineas.Any(l => l.TieneDescuento)).ToList() is { Count: > 0 } conDescuento)
             t.AppendLine($"Descuentos: {conDescuento.Count} tickets · {Dinero(conDescuento.Sum(v => v.DescuentoCentavos))}"
-                + (conDescuento.Count(v => v.ClienteEspecialId != null) is var especiales and > 0 ? $" ({especiales} a clientes especiales)" : ""));
+                + (conDescuento.Count(v => v.ClienteId != null) is var aClientes and > 0 ? $" ({aClientes} a clientes registrados)" : ""));
         if (salidas > 0)
             t.AppendLine($"Salidas de efectivo: {Dinero(salidas)}");
         var ajustes = await db.AjustesInventario.AsNoTracking()

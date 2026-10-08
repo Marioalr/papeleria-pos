@@ -1,0 +1,255 @@
+@* Clientes (fase 3, entrega 2): los clientes registrados, con lo que compra cada uno. Los dan de alta y los editan el
+   dueño y el encargado (lo que toca a sus privilegios se le avisa al dueño); el cajero solo los consulta. Nunca se
+   borran: se dejan inactivos. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+@if (_ficha is { } ficha)
+{
+    <div class="ficha-producto">
+        <label class="ancho">Nombre <input @bind="ficha.Nombre" maxlength="80" autocomplete="off" disabled="@(!PuedeEditar)" /></label>
+        <label>Teléfono <input @bind="ficha.Telefono" inputmode="tel" maxlength="20" autocomplete="off" disabled="@(!PuedeEditar)" placeholder="10 dígitos" /></label>
+        <label>Descuento (%) <input @bind="ficha.Descuento" inputmode="decimal" autocomplete="off" disabled="@(!PuedeEditar)" placeholder="0: sin descuento" /></label>
+        <label class="ancho">Notas <input @bind="ficha.Nota" maxlength="200" autocomplete="off" disabled="@(!PuedeEditar)" placeholder="Escuela, negocio, quién recoge…" /></label>
+        <label class="en-linea opcion"><input type="checkbox" @bind="ficha.MayoreoSiempre" disabled="@(!PuedeEditar)" /> Mayoreo siempre (desde la primera pieza)</label>
+        <label class="en-linea opcion"><input type="checkbox" @bind="ficha.PedidoSinAnticipo" disabled="@(!PuedeEditar)" /> Pedido sin anticipo (con los pedidos, fase 4)</label>
+        <label class="en-linea opcion"><input type="checkbox" @bind="ficha.ApartarSinPagar" disabled="@(!PuedeEditar)" /> Apartar sin pagar (con los pedidos, fase 4)</label>
+        <label class="en-linea opcion"><input type="checkbox" @bind="ficha.Activo" disabled="@(!PuedeEditar)" /> Activo</label>
+    </div>
+    @if (ficha.PorRevisar)
+    {
+        <p class="aviso">Venía de los clientes especiales: revisa su teléfono y sus privilegios y guárdalo.</p>
+    }
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    <div class="acciones izquierda">
+        <button class="boton" @onclick="VolverAsync">Volver a la lista</button>
+        @if (PuedeEditar)
+        {
+            <button class="boton principal" disabled="@_ocupado" @onclick="GuardarAsync">Guardar</button>
+        }
+    </div>
+
+    @if (ficha.Evaluacion is { } evaluacion)
+    {
+        <h3>Lo que compra</h3>
+        <p class="nota">
+            Al mes, en promedio: <strong>@Formato.Dinero(evaluacion.PromedioMensualCentavos)</strong> (los últimos tres meses completos).
+            @(evaluacion.UltimaCompraLocal is { } ultima ? $"Última compra: {ultima:dd/MM/yyyy}." : "Todavía no compra como cliente registrado.")
+        </p>
+        <div class="resultados">
+            <table>
+                <thead><tr><th>Mes</th><th class="num">Tickets</th><th class="num">Compró</th></tr></thead>
+                @foreach (var m in evaluacion.Meses)
+                {
+                    <tr><td>@NombreMes(m)</td><td class="num">@m.Tickets</td><td class="num">@Formato.Dinero(m.TotalCentavos)</td></tr>
+                }
+            </table>
+        </div>
+        <p class="nota">Sin lo cancelado ni lo devuelto. Solo cuentan los tickets en que se eligió al cliente (CTRL+L).</p>
+    }
+}
+else
+{
+    <div class="filtros-catalogo">
+        <input id="buscar-clientes" placeholder="Nombre o teléfono" @bind="_texto" @bind:event="oninput" autocomplete="off" />
+        <label class="en-linea opcion"><input type="checkbox" @bind="_inactivos" @bind:after="CargarAsync" /> Con inactivos</label>
+        @if (PuedeEditar)
+        {
+            <button class="boton principal" @onclick="Nuevo">Nuevo cliente</button>
+        }
+    </div>
+    @if (_aviso is not null)
+    {
+        <p class="aviso">@_aviso</p>
+    }
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_lista is null)
+    {
+        <p>Cargando…</p>
+    }
+    else if (_lista.Count == 0)
+    {
+        <p class="vacia">Todavía no hay clientes registrados.@(PuedeEditar ? " Dalos de alta con «Nuevo cliente»." : "")</p>
+    }
+    else
+    {
+        <div class="resultados catalogo">
+            <table>
+                <thead><tr><th>Cliente</th><th>Teléfono</th><th>Privilegios</th><th class="num">Compra al mes</th><th>Última compra</th></tr></thead>
+                @foreach (var r in Encontrados)
+                {
+                    var renglon = r;
+                    <tr class="@(r.Cliente.Activo ? "" : "inactivo")" @onclick="() => AbrirAsync(renglon.Cliente)">
+                        <td>
+                            @if (r.Cliente.PorRevisar)
+                            {
+                                <span class="etiqueta">Por revisar</span>
+                            }
+                            @r.Cliente.Nombre
+                        </td>
+                        <td>@ElegirCliente.Telefono(r.Cliente.Telefono)</td>
+                        <td>@Privilegios(r.Cliente)</td>
+                        <td class="num">@Formato.Dinero(r.PromedioMensualCentavos)</td>
+                        <td>@(r.UltimaCompraLocal?.ToString("dd/MM/yyyy") ?? "—")</td>
+                    </tr>
+                }
+            </table>
+        </div>
+        <p class="nota">Haz clic en un cliente para ver lo que compra@(PuedeEditar ? " y editarlo" : "").</p>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Se guardó un cliente: la venta pone al día los tickets abiertos que lo tienen.</summary>
+    [Parameter] public EventCallback<ClienteRegistradoDto> AlGuardar { get; set; }
+
+    private sealed class Ficha
+    {
+        public Guid Id { get; init; }
+        public string Nombre { get; set; } = "";
+        public string? Telefono { get; set; }
+        public string? Nota { get; set; }
+        public string Descuento { get; set; } = "";
+        public bool MayoreoSiempre { get; set; }
+        public bool PedidoSinAnticipo { get; set; }
+        public bool ApartarSinPagar { get; set; }
+        public bool Activo { get; set; } = true;
+        public bool PorRevisar { get; init; }
+        public FichaClienteDto? Evaluacion { get; set; }
+    }
+
+    private bool PuedeEditar => Sesion.Rol is Rol.Dueno or Rol.Encargado;
+
+    private List<ClienteResumenDto>? _lista;
+    private Ficha? _ficha;
+    private string _texto = "";
+    private bool _inactivos;
+    private bool _ocupado;
+    private string? _error;
+    private string? _aviso;
+
+    private IEnumerable<ClienteResumenDto> Encontrados
+    {
+        get
+        {
+            var texto = Texto.Normalizar(_texto.Trim());
+            var digitos = new string(_texto.Where(char.IsAsciiDigit).ToArray());
+            return texto.Length == 0 ? _lista ?? []
+                : (_lista ?? []).Where(r => Texto.Normalizar(r.Cliente.Nombre).Contains(texto)
+                    || (digitos.Length >= 3 && r.Cliente.Telefono is { } t && t.Contains(digitos)));
+        }
+    }
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+            await Js.EnfocarAsync("#buscar-clientes");
+    }
+
+    private async Task CargarAsync()
+    {
+        _error = null;
+        try
+        {
+            _lista = await Cliente.ListaClientesAsync(Caja.SucursalId, _inactivos);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void Nuevo()
+    {
+        (_error, _aviso) = (null, null);
+        _ficha = new Ficha();
+    }
+
+    private async Task AbrirAsync(ClienteRegistradoDto c)
+    {
+        (_error, _aviso) = (null, null);
+        _ficha = new Ficha
+        {
+            Id = c.Id, Nombre = c.Nombre, Telefono = c.Telefono, Nota = c.Nota, Descuento = c.DescuentoCentesimas == 0 ? "" : (c.DescuentoCentesimas / 100m).ToString("0.##", CultureInfo.InvariantCulture),
+            MayoreoSiempre = c.MayoreoSiempre, PedidoSinAnticipo = c.PedidoSinAnticipo, ApartarSinPagar = c.ApartarSinPagar, Activo = c.Activo, PorRevisar = c.PorRevisar,
+        };
+        try
+        {
+            _ficha.Evaluacion = await Cliente.FichaClienteAsync(c.Id);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task VolverAsync()
+    {
+        _ficha = null;
+        _error = null;
+        await CargarAsync();
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_ficha is not { } f)
+            return;
+        var texto = f.Descuento.Trim().TrimEnd('%').Trim();
+        int centesimas = 0;
+        if (texto.Length > 0)
+        {
+            if (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out var porcentaje) || porcentaje < 0 || porcentaje > 100)
+            {
+                _error = "Escribe el descuento en porcentaje (de 0 a 100), o déjalo vacío.";
+                return;
+            }
+            centesimas = (int)Math.Round(porcentaje * 100, MidpointRounding.AwayFromZero);
+        }
+        _ocupado = true;
+        (_error, _aviso) = (null, null);
+        try
+        {
+            var guardado = await Cliente.GuardarClienteAsync(new SolicitudGuardarCliente(Sesion.UsuarioId, Caja.SucursalId,
+                new ClienteRegistradoDto(f.Id, f.Nombre, centesimas, f.Nota, f.Activo, f.Telefono, f.MayoreoSiempre, f.PedidoSinAnticipo, f.ApartarSinPagar)));
+            _ficha = null;
+            _aviso = $"«{guardado.Nombre}» guardado.";
+            await AlGuardar.InvokeAsync(guardado);
+            await CargarAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    /// <summary>Los de la venta y los de la fase 4, para la lista.</summary>
+    private static string Privilegios(ClienteRegistradoDto c)
+    {
+        var partes = new List<string>();
+        if (c.TextoPrivilegios() is { Length: > 0 } venta)
+            partes.Add(venta);
+        if (c.PedidoSinAnticipo)
+            partes.Add("pedido sin anticipo");
+        if (c.ApartarSinPagar)
+            partes.Add("apartar sin pagar");
+        return partes.Count == 0 ? "—" : string.Join(" · ", partes);
+    }
+
+    private static string NombreMes(CompraMesDto m) =>
+        new DateTime(m.Anio, m.Mes, 1).ToString("MMMM yyyy", CultureInfo.GetCultureInfo("es-MX"));
+}

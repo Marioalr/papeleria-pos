@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Impresiones;
@@ -84,7 +85,9 @@ internal sealed class VentaConfiguracion : IEntityTypeConfiguration<Venta>
         b.Ignore(v => v.FolioTexto);
         b.Ignore(v => v.NumeroDeArticulos);
         b.Ignore(v => v.DescuentoCentavos);
-        b.HasOne<ClienteEspecial>().WithMany().HasForeignKey(v => v.ClienteEspecialId);
+        b.HasOne<ClienteRegistrado>().WithMany().HasForeignKey(v => v.ClienteId);
+        b.HasIndex(v => new { v.ClienteId, v.PagadaUtc });
+        b.Ignore(v => v.MayoreoDeCliente);
         b.Ignore(v => v.EsEditable);
         b.Ignore(v => v.CambioCentavos);
         b.Ignore(v => v.LlevaEfectivo);
@@ -106,6 +109,7 @@ internal sealed class VentaLineaConfiguracion : IEntityTypeConfiguration<VentaLi
         b.Ignore(l => l.ImporteSinDescuentoCentavos);
         b.Ignore(l => l.PorcentajeDescuento);
         b.Ignore(l => l.TieneMayoreo);
+        b.Ignore(l => l.MayoreoDeCliente);
     }
 }
 
@@ -307,13 +311,15 @@ internal sealed class LecturaImpresoraConfiguracion : IEntityTypeConfiguration<L
     }
 }
 
-internal sealed class ClienteEspecialConfiguracion : IEntityTypeConfiguration<ClienteEspecial>
+internal sealed class ClienteRegistradoConfiguracion : IEntityTypeConfiguration<ClienteRegistrado>
 {
-    public void Configure(EntityTypeBuilder<ClienteEspecial> b)
+    public void Configure(EntityTypeBuilder<ClienteRegistrado> b)
     {
-        b.ToTable("ClientesEspeciales");
+        b.ToTable("ClientesRegistrados");
         b.HasOne<Sucursal>().WithMany().HasForeignKey(c => c.SucursalId);
         b.Property(c => c.Nombre).HasMaxLength(80);
+        b.Property(c => c.Telefono).HasMaxLength(20);
+        b.Property(c => c.Nota).HasMaxLength(200);
     }
 }
 

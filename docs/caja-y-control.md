@@ -21,6 +21,24 @@ El centro del proyecto: que la sucursal funcione bien y con control aunque el du
   van exactas y las impresiones no se redondean. El total y el IVA quedan exactos; el redondeo va aparte en el ticket
   («Total a pagar») y en el corte. Lo que se regresa en efectivo también sale en pesos, y al cancelar se regresa lo
   cobrado.
+- **Clientes registrados** (fase 3): los de confianza, dados de alta a mano en el módulo «Clientes» por el dueño o el
+  encargado (nombre, teléfono y notas, sin RFC). Con CTRL+L se elige el del ticket por nombre o teléfono, y queda
+  aunque no lleve descuento; el ticket dice su nombre y sus privilegios. Privilegios por cliente:
+  - **descuento fijo:** todo el ticket lo lleva (también lo que se agregue después) y no pide autorización; si deja algo
+    debajo del costo, eso sí se pide (al elegirlo o al oprimir F12). Un descuento a mano lo reemplaza en ese renglón, y al
+    quitar los descuentos a mano vuelve el del cliente;
+  - **mayoreo siempre:** paga desde la primera pieza el precio de la primera escala de mayoreo; las escalas más altas
+    siguen al llegar a ellas. El renglón dice «Mayoreo de cliente». Si también tiene descuento, el descuento va sobre el
+    precio de mayoreo;
+  - **pedido sin anticipo** y **apartar sin pagar**, que se usan con los pedidos (fase 4).
+
+  El ticket dice los privilegios que llevó la venta (también al reimprimirlo). Su ficha dice cuánto compra al mes (el
+  promedio de los últimos tres meses completos, sin lo cancelado ni lo devuelto). Lo que el encargado cambia de los
+  privilegios le llega al dueño por Telegram, y también cuando un cliente con privilegios cambia de nombre o de teléfono o
+  vuelve a estar activo. Si se edita al cliente de un ticket abierto, el ticket se pone al día; si se cambia desde otra
+  caja, al cobrar se pide volver a elegirlo. Los que eran «clientes especiales» pasaron con su descuento, marcados «Por
+  revisar». Sin conexión se eligen de la copia de la caja. Una caja que todavía no se actualiza solo ve a los que tienen
+  descuento y cobra sin el mayoreo del cliente.
 - Ticket con QR del folio: sirve para devoluciones y para encontrar pedidos.
 - Devoluciones escaneando el ticket.
 
@@ -55,6 +73,7 @@ Se pueden poner umbrales. Ejemplos de reglas (todas editables):
 | Preparar un pedido grande sin anticipo (cliente no registrado) | Requiere encargado |
 | Reimprimir un documento ya impreso | Permitido con motivo |
 | Verificar una transferencia | Solo encargado o dueño |
+| Dar de alta y editar clientes registrados | Encargado o dueño (los privilegios que da el encargado se le avisan al dueño) |
 
 **Cómo se autoriza:**
 - con el PIN del encargado o del dueño en la misma caja, o

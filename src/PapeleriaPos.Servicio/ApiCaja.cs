@@ -87,9 +87,10 @@ public static class ApiCaja
 
             var turno = await db.Turnos.FindAsync(s.TurnoId) ?? throw new InvalidOperationException("El turno no existe.");
             var caja = await db.Cajas.FindAsync(s.CajaId) ?? throw new InvalidOperationException("La caja no existe.");
-            var venta = await ArmarVentaAsync(db, catalogo, caja, turno.Id, s.CajeroId, s.VentaId ?? Ids.Nuevo(), s.Lineas);
-            (venta.ClienteEspecialId, venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId) =
-                (s.ClienteEspecialId, s.AutorizacionDescuentoId, s.AutorizacionBajoCostoId);
+            var venta = await ArmarVentaAsync(db, catalogo, caja, turno.Id, s.CajeroId, s.VentaId ?? Ids.Nuevo(), s.Lineas,
+                await ApiClientes.MayoreoDelCobroAsync(db, s.ClienteId, s.MayoreoDeCliente));
+            (venta.ClienteId, venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId) =
+                (s.ClienteId, s.AutorizacionDescuentoId, s.AutorizacionBajoCostoId);
             // Las impresiones van juntas en una línea; su precio y costo salen de cada trabajo, no de la caja.
             var impresiones = s.Impresiones is { Count: > 0 } ids ? await new RegistroImpresiones(db).ParaCobrarAsync(caja.SucursalId, ids) : [];
             if (impresiones.Count > 0)
@@ -137,10 +138,12 @@ public static class ApiCaja
 
     /// <summary>
     /// Arma la venta con los precios del catálogo: la caja solo dice qué y cuánto. Un precio distinto (cambiado en la caja,
-    /// o el que se cobró sin conexión) queda como precio cambiado.
+    /// o el que se cobró sin conexión) queda como precio cambiado. Con <paramref name="mayoreoDeCliente"/> (el cliente del
+    /// ticket paga mayoreo siempre), los mismos precios que calculó la caja.
     /// </summary>
     internal static async Task<Venta> ArmarVentaAsync(
-        PosDbContext db, CatalogoEnMemoria catalogo, Caja caja, Guid turnoId, Guid cajeroId, Guid ventaId, IReadOnlyList<LineaSolicitada> lineas)
+        PosDbContext db, CatalogoEnMemoria catalogo, Caja caja, Guid turnoId, Guid cajeroId, Guid ventaId, IReadOnlyList<LineaSolicitada> lineas,
+        bool mayoreoDeCliente = false)
     {
         var venta = new Venta
         {
@@ -151,6 +154,7 @@ public static class ApiCaja
             CajeroId = cajeroId,
             Serie = caja.Serie,
             CreadaUtc = db.Reloj.GetUtcNow().UtcDateTime,
+            MayoreoDeCliente = mayoreoDeCliente,
         };
         foreach (var l in lineas)
         {
@@ -193,7 +197,8 @@ public static class ApiCaja
         var ids = v.Lineas.Where(l => l.PresentacionId != null).Select(l => l.PresentacionId!.Value).ToList();
         var presentaciones = await db.Presentaciones.Where(p => ids.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => (p.Nombre, p.EsBase));
         var configuracion = await ApiConfiguracion.ConfiguracionAsync(db, v.SucursalId, opciones);
+        var cliente = v.ClienteId is { } clienteId && await db.ClientesRegistrados.FindAsync(clienteId) is { } c ? RegistroClientes.Dto(c) : null;
         return ArmadoTicket.Desde(v, caja!.Nombre, cajero, id => presentaciones.TryGetValue(id, out var p) ? p : null,
-            configuracion.RenglonesEncabezado, configuracion.RenglonesPie, ApiConfiguracion.Logo(configuracion));
+            configuracion.RenglonesEncabezado, configuracion.RenglonesPie, ApiConfiguracion.Logo(configuracion), cliente);
     }
 }

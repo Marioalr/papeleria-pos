@@ -31,10 +31,11 @@ public static class ApiContingencia
             var reglas = ApiControl.ReglasEfectivas(await new ServicioControl(db).ReglasAsync(caja.SucursalId), caja.SucursalId);
             var ticket = await ApiConfiguracion.ConfiguracionAsync(db, caja.SucursalId, opciones.Value);
             var limite = await db.ConfiguracionesSucursal.Where(c => c.SucursalId == caja.SucursalId).Select(c => c.LimiteEfectivoCentavos).FirstOrDefaultAsync();
+            var clientes = await ApiClientes.ParaLaCajaAsync(db, caja.SucursalId);
             return new PaqueteContingenciaDto(version, new CajaDto(caja.Id, caja.Nombre, caja.Serie, caja.SucursalId, sucursal!.Nombre, caja.Equipo),
                 productos, codigos, usuarios, reglas, ticket.RenglonesEncabezado, ticket.RenglonesPie, ApiConfiguracion.Logo(ticket),
                 await new RegistroCaja(db).UltimoFolioAsync(caja.SucursalId, caja.Serie), limite,
-                (await ApiDescuentos.ClientesAsync(db, caja.SucursalId)).Where(c => c.Activo).Select(ApiDescuentos.Dto).ToList());
+                ApiClientes.ParaCajasDeAntes(clientes), clientes);
         });
 
         // Lo que lleva el turno, sin guardar un corte: la base de la cuenta que la caja lleva por su lado.
@@ -59,8 +60,9 @@ public static class ApiContingencia
             var caja = await db.Cajas.FindAsync(v.CajaId) ?? throw new InvalidOperationException("La caja no existe.");
             var lineas = v.Lineas.Select(l => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.CantidadMilesimas, l.Descripcion, l.PrecioCentavos,
                 DescuentoCentesimas: l.DescuentoCentesimas, DescuentoCentavos: l.DescuentoCentavos, MotivoDescuento: l.MotivoDescuento)).ToList();
-            var venta = await ApiCaja.ArmarVentaAsync(db, catalogo, caja, v.TurnoId, v.CajeroId, v.Id, lineas);
-            venta.ClienteEspecialId = v.ClienteEspecialId;
+            // El precio que se cobró manda; el mayoreo del cliente (el que usó la caja) solo sirve para que el ticket diga el ahorro.
+            var venta = await ApiCaja.ArmarVentaAsync(db, catalogo, caja, v.TurnoId, v.CajeroId, v.Id, lineas, v.MayoreoDeCliente == true);
+            venta.ClienteId = v.ClienteId;
             await new RegistroCaja(db).CobroDeContingenciaAsync(venta, v.Cobros, v.Folio, v.PagadaUtc, redondear: v.RedondeoCentavos is not null);
             return Results.NoContent();
         });

@@ -27,15 +27,16 @@ public static class CalculoPrecio
     /// <item>Si no, el precio por unidad base: el paquete de 12 cuesta 12 piezas y cuenta como 12 para el mayoreo.</item>
     /// </list>
     /// En ambos casos se prefieren los precios de la sucursal sobre los base, y se toma la escala más alta que
-    /// alcance la cantidad. Devuelve <c>null</c> si la variante no tiene precio.
+    /// alcance la cantidad. Con <paramref name="mayoreoSiempre"/> (el privilegio de un cliente registrado), al menos la
+    /// primera escala de mayoreo aunque no se llegue a su cantidad. Devuelve <c>null</c> si la variante no tiene precio.
     /// </summary>
     public static PrecioAplicado? Calcular(
-        IEnumerable<Precio> precios, Guid sucursalId, Presentacion presentacion, Cantidad cantidad)
+        IEnumerable<Precio> precios, Guid sucursalId, Presentacion presentacion, Cantidad cantidad, bool mayoreoSiempre = false)
     {
         var deLaVariante = precios.Where(p => p.VarianteId == presentacion.VarianteId).ToList();
 
         var propias = DeSucursalOBase(deLaVariante.Where(p => p.PresentacionId == presentacion.Id), sucursalId);
-        if (ElegirEscala(propias, cantidad) is { } propio)
+        if (ElegirEscala(propias, cantidad, mayoreoSiempre) is { } propio)
         {
             var menudeo = propias.MinBy(p => p.CantidadMinima)!;
             return new PrecioAplicado(propio, cantidad.Importe(propio.PrecioCentavos))
@@ -47,7 +48,7 @@ public static class CalculoPrecio
 
         var unidadesBase = cantidad.Por(presentacion.Factor);
         var porUnidad = DeSucursalOBase(deLaVariante.Where(p => p.PresentacionId is null), sucursalId);
-        if (ElegirEscala(porUnidad, unidadesBase) is not { } escala)
+        if (ElegirEscala(porUnidad, unidadesBase, mayoreoSiempre) is not { } escala)
             return null;
         var deMenudeo = porUnidad.MinBy(p => p.CantidadMinima)!;
         return new PrecioAplicado(escala, unidadesBase.Importe(escala.PrecioCentavos))
@@ -74,11 +75,19 @@ public static class CalculoPrecio
         return deSucursal.Count > 0 ? deSucursal : lista.Where(p => p.SucursalId is null).ToList();
     }
 
-    /// <summary>La escala más alta que alcanza la cantidad; si no alcanza ninguna (medio metro), la más baja.</summary>
-    private static Precio? ElegirEscala(List<Precio> escalas, Cantidad cantidad)
+    /// <summary>
+    /// La escala más alta que alcanza la cantidad; si no alcanza ninguna (medio metro), la más baja. Con mayoreo siempre,
+    /// nunca menos que la primera de mayoreo (la segunda escala).
+    /// </summary>
+    private static Precio? ElegirEscala(List<Precio> escalas, Cantidad cantidad, bool mayoreoSiempre)
     {
         var abs = cantidad.Abs();
-        return escalas.Where(p => p.CantidadMinima <= abs).MaxBy(p => p.CantidadMinima)
+        var elegida = escalas.Where(p => p.CantidadMinima <= abs).MaxBy(p => p.CantidadMinima)
             ?? escalas.MinBy(p => p.CantidadMinima);
+        if (mayoreoSiempre && elegida is not null
+            && escalas.OrderBy(p => p.CantidadMinima).Skip(1).FirstOrDefault() is { } primeraDeMayoreo
+            && elegida.CantidadMinima < primeraDeMayoreo.CantidadMinima)
+            return primeraDeMayoreo;
+        return elegida;
     }
 }
