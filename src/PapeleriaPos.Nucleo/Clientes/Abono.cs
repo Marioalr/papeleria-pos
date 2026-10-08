@@ -41,6 +41,10 @@ public class Abono
     public long SaldoAnteriorCentavos { get; set; }
 
     public long SaldoCentavos { get; set; }
+
+    /// <summary>Con saldo después del abono, cuándo vence lo más antiguo que queda por pagar.</summary>
+    public DateOnly? Vence { get; set; }
+
     public DateTime FechaUtc { get; set; }
     public bool EnContingencia { get; set; }
     public DateTime? CanceladoUtc { get; set; }

@@ -89,8 +89,8 @@ public static class ApiCaja
             var caja = await db.Cajas.FindAsync(s.CajaId) ?? throw new InvalidOperationException("La caja no existe.");
             var venta = await ArmarVentaAsync(db, catalogo, caja, turno.Id, s.CajeroId, s.VentaId ?? Ids.Nuevo(), s.Lineas,
                 await ApiClientes.MayoreoDelCobroAsync(db, s.ClienteId, s.MayoreoDeCliente));
-            (venta.ClienteId, venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId) =
-                (s.ClienteId, s.AutorizacionDescuentoId, s.AutorizacionBajoCostoId);
+            (venta.ClienteId, venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId, venta.AutorizacionCreditoId) =
+                (s.ClienteId, s.AutorizacionDescuentoId, s.AutorizacionBajoCostoId, s.AutorizacionCreditoId);
             // Las impresiones van juntas en una línea; su precio y costo salen de cada trabajo, no de la caja.
             var impresiones = s.Impresiones is { Count: > 0 } ids ? await new RegistroImpresiones(db).ParaCobrarAsync(caja.SucursalId, ids) : [];
             if (impresiones.Count > 0)
@@ -187,7 +187,8 @@ public static class ApiCaja
         var nombres = await db.Usuarios.Where(u => u.Id == turno!.CajeroId || u.Id == c.RealizadoPorId).ToDictionaryAsync(u => u.Id, u => u.Nombre);
         return new CorteDto(c.Tipo, HoraMexico.ALocal(c.FechaUtc), nombres[turno!.CajeroId], nombres[c.RealizadoPorId], c.Ventas, c.FondoCentavos,
             c.EfectivoVentasCentavos, c.EntradasCentavos, c.SalidasCentavos, c.TarjetaCentavos, c.TransferenciaCentavos, c.EsperadoCentavos,
-            c.ContadoCentavos, c.DiferenciaCentavos, c.DevolucionesCentavos, c.Cancelaciones, c.EnContingencia, c.RedondeoCentavos);
+            c.ContadoCentavos, c.DiferenciaCentavos, c.DevolucionesCentavos, c.Cancelaciones, c.EnContingencia, c.RedondeoCentavos, c.CreditoCentavos,
+            c.Abonos, c.AbonosEfectivoCentavos, c.AbonosTarjetaCentavos, c.AbonosTransferenciaCentavos);
     }
 
     internal static async Task<TicketDto> TicketAsync(PosDbContext db, Venta v, OpcionesTicket opciones)
@@ -199,6 +200,7 @@ public static class ApiCaja
         var configuracion = await ApiConfiguracion.ConfiguracionAsync(db, v.SucursalId, opciones);
         var cliente = v.ClienteId is { } clienteId && await db.ClientesRegistrados.FindAsync(clienteId) is { } c ? RegistroClientes.Dto(c) : null;
         return ArmadoTicket.Desde(v, caja!.Nombre, cajero, id => presentaciones.TryGetValue(id, out var p) ? p : null,
-            configuracion.RenglonesEncabezado, configuracion.RenglonesPie, ApiConfiguracion.Logo(configuracion), cliente);
+            configuracion.RenglonesEncabezado, configuracion.RenglonesPie, ApiConfiguracion.Logo(configuracion), cliente,
+            await new RegistroCredito(db).TicketAsync(v.Id));
     }
 }

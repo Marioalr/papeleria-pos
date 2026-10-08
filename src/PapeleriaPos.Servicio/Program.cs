@@ -78,6 +78,7 @@ app.MapearApiTelegram();
 app.MapearApiImpresiones();
 app.MapearApiDescuentos();
 app.MapearApiClientes();
+app.MapearApiCredito();
 app.MapearApiCatalogo();
 app.MapearApiCompras();
 app.MapearApiConteos();
