@@ -31,7 +31,12 @@ public sealed class RegistroCredito(PosDbContext db)
         (await CuentasAsync([clienteId], ct)).GetValueOrDefault(clienteId) ?? throw new InvalidOperationException("El cliente ya no existe.");
 
     /// <summary>Las cuentas de varios clientes de una vez (la lista de clientes, la caja).</summary>
-    public async Task<Dictionary<Guid, CreditoClienteDto>> CuentasAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
+    public async Task<Dictionary<Guid, CreditoClienteDto>> CuentasAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct = default) =>
+        (await EvaluarAsync(ids, ct)).ToDictionary(c => c.Key, c => c.Value.Cuenta);
+
+    /// <summary>Las cuentas con qué tan puntual paga cada uno (la lista y la ficha de los clientes).</summary>
+    public async Task<Dictionary<Guid, (CreditoClienteDto Cuenta, PuntualidadDto Puntualidad)>> EvaluarAsync(
+        IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
     {
         var clientes = ids.ToList();
         var condiciones = await db.ClientesRegistrados.AsNoTracking().Where(c => clientes.Contains(c.Id))
@@ -42,11 +47,13 @@ public sealed class RegistroCredito(PosDbContext db)
                     && a.CanceladoUtc == null)
                 .Select(a => new { a.ClienteId, a.MontoCentavos }).ToListAsync(ct))
             .GroupBy(a => a.ClienteId).ToDictionary(g => g.Key, g => g.Sum(a => a.MontoCentavos));
+        var hoy = Hoy;
         return condiciones.ToDictionary(c => c.Id, c =>
         {
             var cuenta = CuentaCredito.Aplicar(movimientos[c.Id]);
-            return new CreditoClienteDto(c.Id, cuenta.SaldoCentavos, porVerificar.GetValueOrDefault(c.Id), c.LimiteCreditoCentavos, c.PlazoCreditoDias,
-                cuenta.Cargos.Where(p => p.PendienteCentavos > 0).Select(p => new CargoPendienteDto(p.Vence, p.PendienteCentavos)).ToList());
+            return (new CreditoClienteDto(c.Id, cuenta.SaldoCentavos, porVerificar.GetValueOrDefault(c.Id), c.LimiteCreditoCentavos, c.PlazoCreditoDias,
+                cuenta.Cargos.Where(p => p.PendienteCentavos > 0).Select(p => new CargoPendienteDto(p.Vence, p.PendienteCentavos)).ToList()),
+                CuentaCredito.Puntualidad(movimientos[c.Id], hoy));
         });
     }
 
@@ -63,21 +70,73 @@ public sealed class RegistroCredito(PosDbContext db)
     {
         var cuenta = await CuentaAsync(clienteId, ct);
         var movimientos = await db.MovimientosCredito.AsNoTracking().Where(m => m.ClienteId == clienteId).ToListAsync(ct);
-        var ventas = movimientos.Where(m => m.VentaId is not null).Select(m => m.VentaId!.Value).Distinct().ToList();
-        var folios = await db.Ventas.AsNoTracking().Where(v => ventas.Contains(v.Id)).Select(v => new { v.Id, v.Serie, v.Folio })
-            .ToDictionaryAsync(v => v.Id, v => $"{v.Serie}-{v.Folio:000000}", ct);
-        long saldo = 0;
-        var renglones = movimientos.OrderBy(m => m.FechaUtc).ThenBy(m => m.Id).Select(m =>
-        {
-            saldo += m.MontoCentavos;
-            var folio = m.Tipo is TipoMovimientoCredito.Abono or TipoMovimientoCredito.AbonoCancelado or TipoMovimientoCredito.AbonoRechazado
-                ? m.AbonoId is { } abono ? Abono.FolioDe(abono) : null
-                : m.VentaId is { } venta ? folios.GetValueOrDefault(venta) : null;
-            return new MovimientoCreditoDto(m.Id, HoraMexico.ALocal(m.FechaUtc), m.Tipo, Concepto(m), folio, m.MontoCentavos, saldo, m.Vence, m.EnContingencia);
-        }).ToList();
+        var renglones = Renglones(movimientos, await FoliosAsync(movimientos, ct));
         renglones.Reverse();
         return new CuentaClienteDto(cuenta, renglones.Take(ultimos).ToList());
     }
+
+    /// <summary>Los movimientos del más viejo al más reciente, cada uno con su folio y el saldo que dejó.</summary>
+    private static List<MovimientoCreditoDto> Renglones(List<MovimientoCredito> movimientos, Dictionary<Guid, string> folios)
+    {
+        long saldo = 0;
+        return movimientos.OrderBy(m => m.FechaUtc).ThenBy(m => m.Id).Select(m =>
+        {
+            saldo += m.MontoCentavos;
+            return new MovimientoCreditoDto(m.Id, HoraMexico.ALocal(m.FechaUtc), m.Tipo, Concepto(m), Folio(m, folios), m.MontoCentavos, saldo, m.Vence,
+                m.EnContingencia);
+        }).ToList();
+    }
+
+    /// <summary>Los folios de las ventas de esos movimientos ("A-000123").</summary>
+    private async Task<Dictionary<Guid, string>> FoliosAsync(List<MovimientoCredito> movimientos, CancellationToken ct)
+    {
+        var ventas = movimientos.Where(m => m.VentaId is not null).Select(m => m.VentaId!.Value).Distinct().ToList();
+        return await db.Ventas.AsNoTracking().Where(v => ventas.Contains(v.Id)).Select(v => new { v.Id, v.Serie, v.Folio })
+            .ToDictionaryAsync(v => v.Id, v => $"{v.Serie}-{v.Folio:000000}", ct);
+    }
+
+    /// <summary>El del abono (o del saldo devuelto) o el de la venta.</summary>
+    private static string? Folio(MovimientoCredito m, Dictionary<Guid, string> folios) => m.Tipo switch
+    {
+        TipoMovimientoCredito.Abono or TipoMovimientoCredito.AbonoCancelado or TipoMovimientoCredito.AbonoRechazado =>
+            m.AbonoId is { } abono ? Abono.FolioDe(abono) : null,
+        TipoMovimientoCredito.SaldoDevuelto => m.AbonoId is { } devuelto ? Abono.FolioDe(devuelto, TipoAbono.SaldoDevuelto) : null,
+        _ => m.VentaId is { } venta ? folios.GetValueOrDefault(venta) : null,
+    };
+
+    /// <summary>
+    /// El estado de cuenta: desde una fecha (por omisión, la de la compra más vieja que sigue sin pagarse, y al menos los
+    /// últimos 30 días), lo que debía antes, cada movimiento con el saldo que dejó y lo que falta pagar con su vencimiento.
+    /// </summary>
+    public async Task<EstadoCuentaDto> EstadoDeCuentaAsync(Guid clienteId, DateOnly? desde = null, CancellationToken ct = default)
+    {
+        var cliente = await db.ClientesRegistrados.AsNoTracking().SingleOrDefaultAsync(c => c.Id == clienteId, ct)
+            ?? throw new InvalidOperationException("El cliente ya no existe.");
+        // El saldo, lo vencido y lo pendiente salen de la misma lectura que los movimientos: así siempre cuadran.
+        var movimientos = await db.MovimientosCredito.AsNoTracking().Where(m => m.ClienteId == clienteId).ToListAsync(ct);
+        var porVerificar = await db.Abonos.AsNoTracking()
+            .Where(a => a.ClienteId == clienteId && a.Forma == FormaPago.Transferencia && a.Verificacion == Verificacion.PorVerificar && a.CanceladoUtc == null)
+            .SumAsync(a => (long?)a.MontoCentavos, ct) ?? 0;
+        var aplicada = CuentaCredito.Aplicar(movimientos);
+        var hoy = Hoy;
+        var pendientes = aplicada.Cargos.Where(c => c.PendienteCentavos > 0).ToList();
+        var inicio = desde ?? pendientes.Select(c => DateOnly.FromDateTime(HoraMexico.ALocal(c.FechaUtc))).Append(hoy.AddDays(-DiasDelEstadoDeCuenta)).Min();
+        if (inicio > hoy)
+            throw new ArgumentException("El estado de cuenta no puede empezar después de hoy.");
+        var desdeUtc = HoraMexico.AUtc(inicio.ToDateTime(TimeOnly.MinValue));
+        var folios = await FoliosAsync(movimientos, ct);
+        var renglones = Renglones(movimientos, folios);
+        var porId = movimientos.ToDictionary(m => m.Id);
+        return new EstadoCuentaDto(cliente.Id, cliente.Nombre, cliente.Telefono, HoraMexico.ALocal(Ahora), inicio,
+            movimientos.Where(m => m.FechaUtc < desdeUtc).Sum(m => m.MontoCentavos),
+            renglones.Where(r => porId[r.Id].FechaUtc >= desdeUtc).ToList(), aplicada.SaldoCentavos, aplicada.Vencido(hoy), porVerificar,
+            pendientes.Select(c => new PendienteEstadoDto(DateOnly.FromDateTime(HoraMexico.ALocal(c.FechaUtc)), Concepto(porId[c.MovimientoId]),
+                Folio(porId[c.MovimientoId], folios), c.MontoCentavos, c.PendienteCentavos, c.Vence)).ToList(),
+            cliente.LimiteCreditoCentavos, cliente.PlazoCreditoDias, []);
+    }
+
+    /// <summary>Si no debe nada, el estado de cuenta muestra al menos los últimos días.</summary>
+    public const int DiasDelEstadoDeCuenta = 30;
 
     private static string Concepto(MovimientoCredito m) => m.Tipo switch
     {
@@ -88,6 +147,7 @@ public sealed class RegistroCredito(PosDbContext db)
         TipoMovimientoCredito.AbonoCancelado => $"Abono cancelado{(m.Motivo is { } motivo ? $": {motivo}" : "")}",
         TipoMovimientoCredito.AbonoRechazado => "La transferencia del abono no llegó",
         TipoMovimientoCredito.Ajuste => $"Ajuste: {m.Motivo}",
+        TipoMovimientoCredito.SaldoDevuelto => "Se le devolvió su saldo a favor",
         _ => m.Tipo.ToString(),
     };
 
@@ -368,6 +428,9 @@ public sealed class RegistroCredito(PosDbContext db)
         {
             var abono = await db.Abonos.FindAsync([abonoId], ct) ?? throw new InvalidOperationException("El abono no existe.");
             await db.Entry(abono).ReloadAsync(ct);
+            if (abono.Tipo == TipoAbono.SaldoDevuelto)
+                throw new InvalidOperationException(
+                    "Lo que se devolvió de un saldo a favor no se cancela: si fue un error, el efectivo regresa como entrada (F7) y el dueño ajusta su saldo.");
             if (abono.CanceladoUtc is not null)
                 throw new InvalidOperationException("Ese abono ya se canceló.");
             if (abono.Verificacion == Verificacion.Verificada)
@@ -444,6 +507,82 @@ public sealed class RegistroCredito(PosDbContext db)
         await tx.CommitAsync(ct);
         return abono;
     }
+
+    // ── Devolver el saldo a favor (parte 3) ──────────────────────────────────
+
+    /// <summary>
+    /// Devolverle en efectivo lo que tiene a favor, en el turno abierto de una caja: el dinero sale de ese turno y la
+    /// cuenta sube hasta cero. Solo lo que no viene de transferencias por verificar, y con la regla «Devolver saldo a favor»
+    /// (el cajero, con la autorización del encargado). Se decide con el saldo de dentro de la transacción; con el mismo Id,
+    /// regresa la que ya estaba. No se cancela.
+    /// </summary>
+    public async Task<Abono> DevolverSaldoAsync(Guid clienteId, SolicitudDevolverSaldo s, CancellationToken ct = default)
+    {
+        if (await db.Abonos.FindAsync([s.Id], ct) is { } yaEsta)
+            return LaMisma(yaEsta, clienteId);
+        var turno = await db.Turnos.FindAsync([s.TurnoId], ct) ?? throw new InvalidOperationException("El turno no existe.");
+        if (!turno.Abierto || turno.CajaId != s.CajaId)
+            throw new InvalidOperationException("El saldo a favor se devuelve en el turno abierto de esta caja.");
+        var cliente = await db.ClientesRegistrados.FindAsync([clienteId], ct) ?? throw new InvalidOperationException("El cliente ya no existe.");
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            if (await db.Abonos.AsNoTracking().SingleOrDefaultAsync(a => a.Id == s.Id, ct) is { } guardado)
+                return LaMisma(guardado, clienteId);
+            var cuenta = await CuentaAsync(cliente.Id, ct);
+            if (s.SaldoVistoCentavos is { } visto && visto != cuenta.SaldoCentavos)
+                throw new InvalidOperationException(cuenta.SaldoCentavos switch
+                {
+                    < 0 => $"La cuenta cambió mientras tanto: ahora tiene {Pesos(cuenta.AFavorCentavos)} a favor. Revísalo y devuelve otra vez.",
+                    0 => "La cuenta cambió mientras tanto: ya no tiene saldo a favor.",
+                    _ => $"La cuenta cambió mientras tanto: ya no tiene saldo a favor (debe {Pesos(cuenta.SaldoCentavos)}).",
+                });
+            if (cuenta.AFavorCentavos > 0 && cuenta.DevolvibleCentavos == 0)
+                throw new InvalidOperationException(
+                    $"Su saldo a favor viene de transferencias por verificar ({Pesos(cuenta.PorVerificarCentavos)}): se le devuelve cuando se verifiquen.");
+            var calculo = CalculoAbono.DevolverSaldo(cuenta.DevolvibleCentavos, s.MontoCentavos);
+            var control = new ServicioControl(db);
+            await control.RequerirAsync(s.UsuarioId, turno.SucursalId, s.CajaId, AccionControlada.DevolverSaldoAFavor, calculo.EntregaCentavos,
+                $"Devolvió {Pesos(calculo.EntregaCentavos)} en efectivo del saldo a favor de «{cliente.Nombre}» (tenía {Pesos(cuenta.AFavorCentavos)} a favor)",
+                s.AutorizacionId, ct: ct);
+            var ahora = Ahora;
+            var devolucion = new Abono
+            {
+                Id = s.Id, Tipo = TipoAbono.SaldoDevuelto, SucursalId = turno.SucursalId, CajaId = s.CajaId, TurnoId = turno.Id, ClienteId = cliente.Id,
+                UsuarioId = s.UsuarioId, Forma = FormaPago.Efectivo, MontoCentavos = calculo.MontoCentavos, RedondeoCentavos = calculo.RedondeoCentavos,
+                Verificacion = Verificacion.NoAplica, SaldoAnteriorCentavos = cuenta.SaldoCentavos, SaldoCentavos = cuenta.SaldoCentavos + calculo.MontoCentavos,
+                FechaUtc = ahora,
+            };
+            db.Abonos.Add(devolucion);
+            // Vence como un ajuste que sube la cuenta: si algo de antes que llega después (lo fiado sin conexión) se come lo que
+            // tenía a favor, lo que quede por pagar no amanece vencido.
+            db.MovimientosCredito.Add(new MovimientoCredito
+            {
+                Id = devolucion.Id, ClienteId = cliente.Id, SucursalId = devolucion.SucursalId, CajaId = devolucion.CajaId, TurnoId = devolucion.TurnoId,
+                UsuarioId = devolucion.UsuarioId, Tipo = TipoMovimientoCredito.SaldoDevuelto, MontoCentavos = devolucion.MontoCentavos, FechaUtc = ahora,
+                Vence = CuentaCredito.Vence(ahora, cliente.PlazoCreditoDias), AbonoId = devolucion.Id, SaldoCentavos = devolucion.SaldoCentavos,
+            });
+            db.AperturasCajon.Add(new AperturaCajon
+            {
+                CajaId = devolucion.CajaId, TurnoId = devolucion.TurnoId, UsuarioId = devolucion.UsuarioId, Motivo = MotivoApertura.Abono,
+                Nota = $"Saldo a favor devuelto {devolucion.Folio} a «{cliente.Nombre}»", FechaUtc = ahora,
+            });
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return devolucion;
+        }
+        catch
+        {
+            db.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    /// <summary>Con el mismo Id ya se guardó algo: si es esta devolución, se regresa; si no, el Id ya se usó.</summary>
+    private static Abono LaMisma(Abono guardado, Guid clienteId) =>
+        guardado.ClienteId == clienteId && guardado.Tipo == TipoAbono.SaldoDevuelto
+            ? guardado : throw new InvalidOperationException("Ese folio ya se usó para otra cosa.");
 
     // ── Sin conexión ─────────────────────────────────────────────────────────
 
@@ -578,8 +717,10 @@ public sealed class RegistroCredito(PosDbContext db)
                             where a.CajaId == cajaId && a.FechaUtc >= desde
                             select new { Abono = a, Cliente = c.Nombre, Usuario = u.Nombre }).ToListAsync(ct);
         return abonos.OrderByDescending(x => x.Abono.FechaUtc)
-            .Select(x => new AbonoDelDiaDto(x.Abono.Id, x.Abono.Folio, HoraMexico.ALocal(x.Abono.FechaUtc), x.Cliente, x.Abono.Forma, x.Abono.MontoCentavos,
-                x.Usuario, x.Abono.CanceladoUtc is not null, x.Abono.TurnoId == turnoAbierto))
+            .Select(x => new AbonoDelDiaDto(x.Abono.Id, x.Abono.Folio, HoraMexico.ALocal(x.Abono.FechaUtc), x.Cliente, x.Abono.Forma,
+                // De un saldo devuelto, el efectivo que salió (con su redondeo), como en el corte.
+                x.Abono.Tipo == TipoAbono.SaldoDevuelto ? x.Abono.CobradoCentavos : x.Abono.MontoCentavos,
+                x.Usuario, x.Abono.CanceladoUtc is not null, x.Abono.TurnoId == turnoAbierto, x.Abono.Tipo))
             .ToList();
     }
 

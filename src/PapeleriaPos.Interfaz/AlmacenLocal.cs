@@ -15,10 +15,11 @@ public sealed record ElementoBandeja(long Orden, Guid Id, string Ruta, string Js
 /// <param name="Redondeo">El del efectivo al peso: + el de una venta, − el de un reembolso (informativo, ya va en el efectivo).</param>
 /// <param name="Credito">Lo fiado en las ventas (fase 3): informativo, no es dinero.</param>
 /// <param name="AbonosEfectivo">Lo que entró al cajón por abonos de clientes: suma al esperado.</param>
+/// <param name="SaldoDevuelto">El saldo a favor que se les devolvió en efectivo a los clientes (parte 3): resta del esperado.</param>
 public sealed record AnotacionDiario(
     Guid Id, Guid TurnoId, int Ventas = 0, long Efectivo = 0, long Tarjeta = 0, long Transferencia = 0, long Entradas = 0, long Salidas = 0,
     long Devoluciones = 0, int Cancelaciones = 0, long Redondeo = 0, long Credito = 0, int Abonos = 0, long AbonosEfectivo = 0, long AbonosTarjeta = 0,
-    long AbonosTransferencia = 0);
+    long AbonosTransferencia = 0, long SaldoDevuelto = 0);
 
 /// <summary>Un renglón de la cuenta propia de la caja: lo que fió o abonó y el servicio todavía no le confirma.</summary>
 public sealed record CreditoPorConfirmar(Guid Id, Guid ClienteId, CreditoLocal Local);
@@ -61,7 +62,7 @@ public sealed class AlmacenLocal
                 Ejecutar(conexion, null, "ALTER TABLE Bandeja ADD COLUMN Bloquea INTEGER NOT NULL DEFAULT 1");
         }
         // Bases creadas antes del redondeo al peso y del crédito (fase 3): lo anotado antes no tiene esas columnas.
-        foreach (var columna in new[] { "Redondeo", "Credito", "Abonos", "AbonosEfectivo", "AbonosTarjeta", "AbonosTransferencia" })
+        foreach (var columna in new[] { "Redondeo", "Credito", "Abonos", "AbonosEfectivo", "AbonosTarjeta", "AbonosTransferencia", "SaldoDevuelto" })
         {
             using var columnas = Comando(conexion, null, "SELECT COUNT(*) FROM pragma_table_info('Diario') WHERE name = $columna", ("$columna", columna));
             if (Convert.ToInt32(columnas.ExecuteScalar()) == 0)
@@ -134,17 +135,28 @@ public sealed class AlmacenLocal
             SELECT COALESCE(SUM(Ventas), 0), COALESCE(SUM(Efectivo), 0), COALESCE(SUM(Tarjeta), 0), COALESCE(SUM(Transferencia), 0),
                    COALESCE(SUM(Entradas), 0), COALESCE(SUM(Salidas), 0), COALESCE(SUM(Devoluciones), 0), COALESCE(SUM(Cancelaciones), 0),
                    COALESCE(SUM(Redondeo), 0), COALESCE(SUM(Credito), 0), COALESCE(SUM(Abonos), 0), COALESCE(SUM(AbonosEfectivo), 0),
-                   COALESCE(SUM(AbonosTarjeta), 0), COALESCE(SUM(AbonosTransferencia), 0)
+                   COALESCE(SUM(AbonosTarjeta), 0), COALESCE(SUM(AbonosTransferencia), 0), COALESCE(SUM(SaldoDevuelto), 0)
             FROM Diario WHERE TurnoId = $turno
             """, ("$turno", turnoId.ToString()));
         using var lector = comando.ExecuteReader();
         lector.Read();
         return new AnotacionDiario(Guid.Empty, turnoId, lector.GetInt32(0), lector.GetInt64(1), lector.GetInt64(2), lector.GetInt64(3),
             lector.GetInt64(4), lector.GetInt64(5), lector.GetInt64(6), lector.GetInt32(7), lector.GetInt64(8), lector.GetInt64(9), lector.GetInt32(10),
-            lector.GetInt64(11), lector.GetInt64(12), lector.GetInt64(13));
+            lector.GetInt64(11), lector.GetInt64(12), lector.GetInt64(13), lector.GetInt64(14));
     }
 
     /// <summary>Lo propio sin confirmar de un cliente (o de todos), en el orden en que pasó.</summary>
+    /// <summary>Si la caja tiene algo del cliente (fiado o abonado) en la bandeja que todavía no sube.</summary>
+    public bool CreditoSinSubir(Guid clienteId)
+    {
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, null, """
+            SELECT EXISTS (SELECT 1 FROM Credito JOIN Bandeja ON Bandeja.Id = Credito.Id
+                WHERE Credito.ClienteId = $cliente AND Credito.Confirmado = 0 AND Bandeja.SubidoUtc IS NULL)
+            """, ("$cliente", clienteId.ToString()));
+        return Convert.ToInt64(comando.ExecuteScalar()) != 0;
+    }
+
     public List<CreditoPorConfirmar> CuentaPropia(Guid? clienteId = null)
     {
         using var conexion = Abrir();
@@ -234,14 +246,15 @@ public sealed class Lote : IDisposable
     {
         AlmacenLocal.Ejecutar(_conexion, _transaccion, """
             INSERT OR IGNORE INTO Diario (Id, TurnoId, Ventas, Efectivo, Tarjeta, Transferencia, Entradas, Salidas, Devoluciones, Cancelaciones, Redondeo,
-                Credito, Abonos, AbonosEfectivo, AbonosTarjeta, AbonosTransferencia)
+                Credito, Abonos, AbonosEfectivo, AbonosTarjeta, AbonosTransferencia, SaldoDevuelto)
             VALUES ($id, $turno, $ventas, $efectivo, $tarjeta, $transferencia, $entradas, $salidas, $devoluciones, $cancelaciones, $redondeo,
-                $credito, $abonos, $abonosEfectivo, $abonosTarjeta, $abonosTransferencia)
+                $credito, $abonos, $abonosEfectivo, $abonosTarjeta, $abonosTransferencia, $saldoDevuelto)
             """,
             ("$id", a.Id.ToString()), ("$turno", a.TurnoId.ToString()), ("$ventas", a.Ventas), ("$efectivo", a.Efectivo), ("$tarjeta", a.Tarjeta),
             ("$transferencia", a.Transferencia), ("$entradas", a.Entradas), ("$salidas", a.Salidas), ("$devoluciones", a.Devoluciones),
             ("$cancelaciones", a.Cancelaciones), ("$redondeo", a.Redondeo), ("$credito", a.Credito), ("$abonos", a.Abonos),
-            ("$abonosEfectivo", a.AbonosEfectivo), ("$abonosTarjeta", a.AbonosTarjeta), ("$abonosTransferencia", a.AbonosTransferencia));
+            ("$abonosEfectivo", a.AbonosEfectivo), ("$abonosTarjeta", a.AbonosTarjeta), ("$abonosTransferencia", a.AbonosTransferencia),
+            ("$saldoDevuelto", a.SaldoDevuelto));
         return this;
     }
 

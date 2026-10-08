@@ -53,6 +53,8 @@ public static class DisenoComprobante
         Linea("Efectivo de ventas", c.EfectivoVentasCentavos);
         if (c.AbonosEfectivoCentavos != 0)
             Linea("Abonos de clientes en efectivo", c.AbonosEfectivoCentavos);
+        if (c.SaldoDevueltoCentavos != 0)
+            Linea("Saldo a favor devuelto", -c.SaldoDevueltoCentavos);
         Linea("Entradas", c.EntradasCentavos);
         Linea("Salidas", -c.SalidasCentavos);
         if (c.DevolucionesCentavos > 0)
@@ -136,6 +138,8 @@ public static class DisenoComprobante
     /// </summary>
     public static List<Elemento> Abono(ComprobanteAbonoDto c)
     {
+        if (c.EsSaldoDevuelto)
+            return SaldoDevuelto(c);
         var e = new List<Elemento>();
         if (c.Encabezado.Count > 0)
             e.Add(new Renglon(c.Encabezado[0], Alineacion.Centro, Negrita: true));
@@ -201,4 +205,143 @@ public static class DisenoComprobante
         e.Add(new Renglon("Firma de quien recibe", Alineacion.Centro));
         return e;
     }
+
+    /// <summary>
+    /// Comprobante de un saldo a favor que se le devolvió en efectivo (parte 3): lo que tenía, lo que se le entregó y lo
+    /// que le queda; lo firma el cliente.
+    /// </summary>
+    private static List<Elemento> SaldoDevuelto(ComprobanteAbonoDto c)
+    {
+        var e = new List<Elemento>();
+        if (c.Encabezado.Count > 0)
+            e.Add(new Renglon(c.Encabezado[0], Alineacion.Centro, Negrita: true));
+        e.Add(new Renglon("SALDO A FAVOR DEVUELTO", Alineacion.Centro, Negrita: true, Grande: true));
+        e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
+        e.Add(new Renglon($"Comprobante {c.Folio}"));
+        e.Add(new Renglon($"Fecha: {c.FechaLocal.ToString("dd/MM/yyyy  HH:mm", Mexico)}"));
+        e.Add(new Renglon($"{c.Caja} · Entregó: {c.Usuario}"));
+        foreach (var parte in DisenoTicket.Partir($"Cliente: {c.Cliente}", DisenoTicket.Columnas))
+            e.Add(new Renglon(parte));
+        e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
+        void Linea(string concepto, long centavos, bool negrita = false) =>
+            e.Add(new Renglon(concepto.PadRight(DisenoTicket.Columnas - 14) + DisenoTicket.Dinero(centavos).PadLeft(14), Negrita: negrita));
+        Linea("Tenía a favor", -c.SaldoAnteriorCentavos);
+        Linea("Se le entregan en efectivo", c.CobradoCentavos, negrita: true);
+        if (c.RedondeoCentavos != 0)
+            e.Add(new Renglon($"(redondeo al peso: {(c.RedondeoCentavos > 0 ? "+" : "-")}{DisenoTicket.Dinero(Math.Abs(c.RedondeoCentavos))})", Alineacion.Derecha));
+        e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
+        e.Add(c.SaldoCentavos < 0
+            ? new Renglon($"Le quedan a favor: {DisenoTicket.Dinero(-c.SaldoCentavos)}", Alineacion.Derecha, Negrita: true, Grande: true)
+            : new Renglon("Al corriente", Alineacion.Centro, Negrita: true, Grande: true));
+        e.Add(new Renglon(""));
+        e.Add(new Renglon(""));
+        e.Add(new Renglon("________________________________", Alineacion.Centro));
+        e.Add(new Renglon("Firma del cliente (recibí el efectivo)", Alineacion.Centro));
+        return e;
+    }
+
+    /// <summary>
+    /// El estado de cuenta de un cliente (parte 3), para dárselo impreso: lo que debía al empezar, cada compra a crédito y
+    /// cada abono con el saldo que dejó, lo que debe y lo que falta pagar de cada compra con su vencimiento.
+    /// </summary>
+    public static List<Elemento> EstadoCuenta(EstadoCuentaDto c)
+    {
+        const int monto = 13, saldo = 13, concepto = DisenoTicket.Columnas - monto - saldo;
+        var e = new List<Elemento>();
+        for (var i = 0; i < c.Encabezado.Count; i++)
+            e.Add(new Renglon(c.Encabezado[i], Alineacion.Centro, Negrita: i == 0));
+        e.Add(new Renglon("ESTADO DE CUENTA", Alineacion.Centro, Negrita: true, Grande: true));
+        e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
+        foreach (var parte in DisenoTicket.Partir($"Cliente: {c.Cliente}", DisenoTicket.Columnas))
+            e.Add(new Renglon(parte));
+        e.Add(new Renglon($"Fecha: {c.FechaLocal.ToString("dd/MM/yyyy  HH:mm", Mexico)}"));
+        if (c.LimiteCentavos > 0)
+            e.Add(new Renglon($"Crédito de {DisenoTicket.Dinero(c.LimiteCentavos)} a {c.PlazoDias} días, sin recargos"));
+        e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
+        e.Add(new Renglon("Fecha y concepto".PadRight(concepto) + "Monto".PadLeft(monto) + "Saldo".PadLeft(saldo)));
+        e.Add(new Renglon(new string('=', DisenoTicket.Columnas)));
+        e.Add(new Renglon($"Saldo antes del {Fecha(c.Desde)}".PadRight(concepto + monto) + DisenoTicket.Dinero(c.SaldoAnteriorCentavos).PadLeft(saldo)));
+        foreach (var m in c.Movimientos)
+        {
+            var partes = DisenoTicket.Partir($"{Dia(c, m)} {Movimiento(m)}", concepto - 1);
+            e.Add(new Renglon(partes[0].PadRight(concepto) + Firmado(m.MontoCentavos).PadLeft(monto) + DisenoTicket.Dinero(m.SaldoCentavos).PadLeft(saldo)));
+            foreach (var parte in partes.Skip(1))
+                e.Add(new Renglon("      " + parte));
+        }
+        e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
+        e.Add(new Renglon(Saldo(c), Alineacion.Derecha, Negrita: true, Grande: true));
+        if (c.VencidoCentavos > 0)
+            e.Add(new Renglon($"Vencido: {DisenoTicket.Dinero(c.VencidoCentavos)}", Alineacion.Derecha, Negrita: true));
+        if (c.PorVerificarCentavos > 0)
+            e.Add(new Renglon($"Transferencias por verificar: {DisenoTicket.Dinero(c.PorVerificarCentavos)}", Alineacion.Derecha));
+        if (c.Pendientes.Count > 0)
+        {
+            e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
+            e.Add(new Renglon("LO QUE FALTA PAGAR", Negrita: true));
+            var hoy = DateOnly.FromDateTime(c.FechaLocal);
+            foreach (var p in c.Pendientes)
+            {
+                var partes = DisenoTicket.Partir($"{Fecha(p.Fecha)} {p.Concepto}{(p.Folio is { } folio ? $" {folio}" : "")}", DisenoTicket.Columnas - monto - 1);
+                e.Add(new Renglon(partes[0].PadRight(DisenoTicket.Columnas - monto) + DisenoTicket.Dinero(p.PendienteCentavos).PadLeft(monto)));
+                foreach (var parte in partes.Skip(1))
+                    e.Add(new Renglon("  " + parte));
+                e.Add(new Renglon("  " + (p.PendienteCentavos < p.MontoCentavos ? $"(de {DisenoTicket.Dinero(p.MontoCentavos)}) " : "")
+                    + (p.Vence < hoy ? $"VENCIÓ EL {Fecha(p.Vence)}" : $"vence el {Fecha(p.Vence)}"), Negrita: p.Vence < hoy));
+            }
+        }
+        e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
+        e.Add(new Renglon(c.SaldoCentavos > 0 ? "Sin recargos. ¡Gracias por su preferencia!" : "¡Gracias por su preferencia!", Alineacion.Centro));
+        return e;
+    }
+
+    /// <summary>El estado de cuenta como texto, para pegarlo en WhatsApp (los asteriscos son negritas).</summary>
+    public static string EstadoCuentaTexto(EstadoCuentaDto c)
+    {
+        var l = new List<string>();
+        if (c.Encabezado.Count > 0)
+            l.Add($"*{c.Encabezado[0]}*");
+        l.Add($"Estado de cuenta de *{c.Cliente}*");
+        l.Add($"Al {c.FechaLocal.ToString("dd/MM/yyyy HH:mm", Mexico)}");
+        l.Add("");
+        l.Add($"Saldo antes del {Fecha(c.Desde)}: {DisenoTicket.Dinero(c.SaldoAnteriorCentavos)}");
+        foreach (var m in c.Movimientos)
+            l.Add($"{Dia(c, m)} {Movimiento(m)}: {Firmado(m.MontoCentavos)} (saldo {DisenoTicket.Dinero(m.SaldoCentavos)})");
+        l.Add("");
+        l.Add($"*{Saldo(c)}*");
+        if (c.VencidoCentavos > 0)
+            l.Add($"Vencido: {DisenoTicket.Dinero(c.VencidoCentavos)}");
+        if (c.PorVerificarCentavos > 0)
+            l.Add($"Transferencias por verificar: {DisenoTicket.Dinero(c.PorVerificarCentavos)}");
+        if (c.Pendientes.Count > 0)
+        {
+            l.Add("");
+            l.Add("Lo que falta pagar:");
+            var hoy = DateOnly.FromDateTime(c.FechaLocal);
+            foreach (var p in c.Pendientes)
+                l.Add($"- {p.Concepto}{(p.Folio is { } folio ? $" {folio}" : "")} del {Fecha(p.Fecha)}: {DisenoTicket.Dinero(p.PendienteCentavos)}"
+                    + (p.PendienteCentavos < p.MontoCentavos ? $" de {DisenoTicket.Dinero(p.MontoCentavos)}" : "")
+                    + (p.Vence < hoy ? $", *venció el {Fecha(p.Vence)}*" : $", vence el {Fecha(p.Vence)}"));
+        }
+        l.Add("");
+        l.Add(c.SaldoCentavos > 0 ? "Sin recargos. ¡Gracias por su preferencia!" : "¡Gracias por su preferencia!");
+        return string.Join("\n", l);
+    }
+
+    /// <summary>"05/10"; si el estado de cuenta empieza en otro año, "05/10/25".</summary>
+    private static string Dia(EstadoCuentaDto c, MovimientoCreditoDto m) =>
+        m.FechaLocal.ToString(c.Desde.Year == c.FechaLocal.Year ? "dd/MM" : "dd/MM/yy", Mexico);
+
+    private static string Movimiento(MovimientoCreditoDto m) => m.Folio is { } folio ? $"{m.Concepto} {folio}" : m.Concepto;
+
+    private static string Saldo(EstadoCuentaDto c) => c.SaldoCentavos switch
+    {
+        > 0 => $"Debe: {DisenoTicket.Dinero(c.SaldoCentavos)}",
+        < 0 => $"Tiene a favor: {DisenoTicket.Dinero(-c.SaldoCentavos)}",
+        _ => "Al corriente",
+    };
+
+    /// <summary>"+$250.00" o "-$150.00".</summary>
+    private static string Firmado(long centavos) => (centavos < 0 ? "-" : "+") + DisenoTicket.Dinero(Math.Abs(centavos));
+
+    private static string Fecha(DateOnly fecha) => fecha.ToString("dd/MM/yyyy", Mexico);
 }

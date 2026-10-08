@@ -333,10 +333,10 @@ public class CreditoTests
 
     // ── El corte ─────────────────────────────────────────────────────────────
 
-    private Abono Abono(FormaPago forma, long monto, long redondeo = 0, bool cancelado = false) => new()
+    private Abono Abono(FormaPago forma, long monto, long redondeo = 0, bool cancelado = false, TipoAbono tipo = TipoAbono.Abono) => new()
     {
         TurnoId = _turno.Id, ClienteId = Cliente, Forma = forma, MontoCentavos = monto, RedondeoCentavos = redondeo,
-        CanceladoUtc = cancelado ? Ahora : null,
+        CanceladoUtc = cancelado ? Ahora : null, Tipo = tipo,
     };
 
     [Fact]
@@ -363,6 +363,148 @@ public class CreditoTests
         Assert.Equal(-45, corte.RedondeoCentavos);
     }
 
+    [Fact]
+    public void En_el_corte_el_saldo_devuelto_sale_de_lo_esperado_y_no_cuenta_como_abono()
+    {
+        Abono[] abonos =
+        [
+            Abono(FormaPago.Efectivo, 10000),
+            // Tenía $123.45 a favor: se le entregan $123.00 y su cuenta queda en cero exacto.
+            Abono(FormaPago.Efectivo, 12345, redondeo: -45, tipo: TipoAbono.SaldoDevuelto),
+        ];
+
+        var corte = CalculoCorte.Calcular(_turno, [], [], TipoCorte.X, Ids.Nuevo(), Ahora, abonos: abonos);
+
+        Assert.Equal((1, 10000L, 12300L), (corte.Abonos, corte.AbonosEfectivoCentavos, corte.SaldoDevueltoCentavos));
+        Assert.Equal(50000 + 10000 - 12300, corte.EsperadoCentavos);
+        Assert.Equal(45, corte.RedondeoCentavos);
+    }
+
+    // ── Qué tan puntual paga (parte 3) ───────────────────────────────────────
+
+    private static readonly DateOnly HoyPuntualidad = new(2026, 10, 8);
+
+    /// <summary>Un movimiento a mediodía de ese día (de México); lo que sube la cuenta vence a 30 días.</summary>
+    private static MovimientoCredito El(DateOnly dia, TipoMovimientoCredito tipo, long monto, Guid? venta = null)
+    {
+        var fecha = HoraMexico.AUtc(dia.ToDateTime(new TimeOnly(12, 0)));
+        return new MovimientoCredito
+        {
+            Id = Ids.Nuevo(), ClienteId = Cliente, Tipo = tipo, MontoCentavos = monto, FechaUtc = fecha, Vence = monto > 0 ? CuentaCredito.Vence(fecha, 30) : null,
+            VentaId = venta,
+        };
+    }
+
+    [Fact]
+    public void La_puntualidad_cuenta_lo_liquidado_a_tiempo_y_los_dias_que_tardo()
+    {
+        var puntualidad = CuentaCredito.Puntualidad([
+            El(new DateOnly(2026, 8, 1), TipoMovimientoCredito.Cargo, 10000),
+            El(new DateOnly(2026, 8, 10), TipoMovimientoCredito.Abono, -10000),
+            // Vencía el 01/10 y la liquidó el 05/10: 34 días, tarde.
+            El(new DateOnly(2026, 9, 1), TipoMovimientoCredito.Cargo, 20000),
+            El(new DateOnly(2026, 10, 5), TipoMovimientoCredito.Abono, -20000),
+            El(new DateOnly(2026, 9, 20), TipoMovimientoCredito.Cargo, 5000),
+        ], HoyPuntualidad);
+
+        Assert.Equal(new PuntualidadDto(3, 2, 1, 22, 0), puntualidad);
+        Assert.Equal("Liquida en 22 días, en promedio · 1 de 2 a tiempo", puntualidad.Texto());
+        Assert.Equal("1 de 2", puntualidad.Corto());
+    }
+
+    [Fact]
+    public void La_puntualidad_no_cuenta_ajustes_ni_lo_devuelto_completo_pero_si_lo_viejo_que_debe()
+    {
+        var devuelta = Ids.Nuevo();
+        var puntualidad = CuentaCredito.Puntualidad([
+            // Liquidada hace más de seis meses: ya no cuenta.
+            El(new DateOnly(2026, 1, 15), TipoMovimientoCredito.Cargo, 8000),
+            El(new DateOnly(2026, 1, 20), TipoMovimientoCredito.Abono, -8000),
+            // Vieja, pero la sigue debiendo y ya venció: sí cuenta.
+            El(new DateOnly(2026, 2, 1), TipoMovimientoCredito.Cargo, 10000),
+            El(new DateOnly(2026, 6, 1), TipoMovimientoCredito.Ajuste, 35000),
+            El(new DateOnly(2026, 9, 1), TipoMovimientoCredito.Cargo, 6000, devuelta),
+            El(new DateOnly(2026, 9, 2), TipoMovimientoCredito.Devolucion, -6000, devuelta),
+        ], HoyPuntualidad);
+
+        Assert.Equal(new PuntualidadDto(1, 0, 0, null, 1), puntualidad);
+        Assert.Equal(("0 de 1 a tiempo · 1 compra vencida sin pagar", "0 de 1"), (puntualidad.Texto(), puntualidad.Corto()));
+    }
+
+    [Fact]
+    public void La_puntualidad_no_cuenta_lo_devuelto_despues_de_abonar_ni_lo_que_pago_su_saldo_a_favor_ni_lo_perdonado()
+    {
+        var (devuelta, cubierta, perdonada) = (Ids.Nuevo(), Ids.Nuevo(), Ids.Nuevo());
+        var puntualidad = CuentaCredito.Puntualidad([
+            // Abonó $30 y luego devolvió todo: no fue una compra que pagó tarde.
+            El(new DateOnly(2026, 8, 1), TipoMovimientoCredito.Cargo, 10000, devuelta),
+            El(new DateOnly(2026, 8, 5), TipoMovimientoCredito.Abono, -3000),
+            El(new DateOnly(2026, 9, 15), TipoMovimientoCredito.Devolucion, -10000, devuelta),
+            // Lo pagó su saldo a favor al fiarla: no fue crédito.
+            El(new DateOnly(2026, 9, 16), TipoMovimientoCredito.Cargo, 2000, cubierta),
+            // Se la perdonaron con un ajuste: no la pagó.
+            El(new DateOnly(2026, 9, 20), TipoMovimientoCredito.Cargo, 5000, perdonada),
+            El(new DateOnly(2026, 10, 1), TipoMovimientoCredito.Ajuste, -5000),
+        ], HoyPuntualidad);
+
+        Assert.True(puntualidad.SinDatos, puntualidad.ToString());
+    }
+
+    [Theory]
+    [InlineData(0, 0, 0, null, 0, "Sin compras a crédito en los últimos 6 meses.")]
+    [InlineData(2, 0, 0, null, 0, "Todavía no liquida sus compras a crédito; ninguna ha vencido.")]
+    [InlineData(1, 1, 1, 0, 0, "Liquida el mismo día, en promedio · 1 de 1 a tiempo")]
+    [InlineData(4, 2, 2, 1, 2, "Liquida en 1 día, en promedio · 2 de 4 a tiempo · 2 compras vencidas sin pagar")]
+    public void La_puntualidad_se_dice_en_una_linea(int compras, int liquidadas, int aTiempo, int? dias, int vencidas, string texto) =>
+        Assert.Equal(texto, new PuntualidadDto(compras, liquidadas, aTiempo, dias, vencidas).Texto());
+
+    // ── Devolver el saldo a favor (parte 3) ──────────────────────────────────
+
+    [Theory]
+    [InlineData(12345, 12300, -45)]
+    [InlineData(12360, 12400, 40)]
+    [InlineData(15000, 15000, 0)]
+    public void Devolver_todo_el_saldo_a_favor_entrega_al_peso_y_deja_la_cuenta_en_cero(long aFavor, long entrega, long redondeo) =>
+        Assert.Equal(new SaldoDevueltoCalculado(aFavor, entrega, redondeo, Todo: true), CalculoAbono.DevolverSaldo(aFavor, null));
+
+    [Fact]
+    public void Devolver_una_parte_del_saldo_a_favor_va_en_pesos_exactos()
+    {
+        Assert.Equal(new SaldoDevueltoCalculado(10000, 10000, 0, Todo: false), CalculoAbono.DevolverSaldo(15000, 10000));
+        Assert.True(CalculoAbono.DevolverSaldo(12345, 12300).Todo);
+    }
+
+    [Theory]
+    [InlineData(0, null, "No tiene saldo a favor que se pueda devolver.")]
+    [InlineData(40, null, "Tiene $0.40 a favor: menos de un peso no se devuelve en efectivo.")]
+    [InlineData(15000, 20000L, "Tiene $150.00 a favor: se le devuelven hasta $150.00.")]
+    [InlineData(15000, 5050L, "En efectivo se devuelve en pesos, o todo con $150.00.")]
+    public void Lo_que_no_se_puede_devolver_dice_por_que(long devolvible, long? monto, string mensaje) =>
+        Assert.Equal(mensaje, Assert.ThrowsAny<Exception>(() => CalculoAbono.DevolverSaldo(devolvible, monto)).Message);
+
+    [Fact]
+    public void El_saldo_devuelto_se_come_lo_que_tenia_a_favor_y_no_cuenta_como_compra()
+    {
+        MovimientoCredito[] movimientos =
+        [
+            El(new DateOnly(2026, 10, 1), TipoMovimientoCredito.Ajuste, -15000),
+            El(new DateOnly(2026, 10, 2), TipoMovimientoCredito.SaldoDevuelto, 15000),
+        ];
+        var cuenta = CuentaCredito.Aplicar(movimientos);
+
+        Assert.Equal((0L, 0L, 0L), (cuenta.SaldoCentavos, cuenta.AFavorCentavos, cuenta.Cargos.Sum(c => c.PendienteCentavos)));
+        Assert.True(CuentaCredito.Puntualidad(movimientos, HoyPuntualidad).SinDatos);
+    }
+
+    [Fact]
+    public void Lo_que_viene_de_transferencias_por_verificar_no_se_devuelve()
+    {
+        var cuenta = new CreditoClienteDto(Cliente, -30000, 20000, 0, 30, []);
+
+        Assert.Equal((30000L, 10000L), (cuenta.AFavorCentavos, cuenta.DevolvibleCentavos));
+        Assert.Equal(0, (cuenta with { PorVerificarCentavos = 50000 }).DevolvibleCentavos);
+    }
+
     // ── Reglas ───────────────────────────────────────────────────────────────
 
     [Fact]
@@ -378,6 +520,8 @@ public class CreditoTests
         Assert.Equal(NivelPermiso.NoPermitido, Para(Rol.Encargado, AccionControlada.AjustarCredito).Nivel);
         Assert.True(Para(Rol.Encargado, AccionControlada.CancelarAbono).PideMotivo);
         Assert.False(Permisos.SoloDelDueno(AccionControlada.DarCredito));
+        Assert.Equal((NivelPermiso.RequiereAutorizacion, NivelPermiso.Permitido),
+            (Para(Rol.Cajero, AccionControlada.DevolverSaldoAFavor).Nivel, Para(Rol.Encargado, AccionControlada.DevolverSaldoAFavor).Nivel));
     }
 
     // ── Sin conexión: la cuenta que conoce la caja (parte 2.4) ──────────────

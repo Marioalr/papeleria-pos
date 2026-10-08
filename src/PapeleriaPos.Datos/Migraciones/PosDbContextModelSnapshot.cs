@@ -622,6 +622,10 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<Guid>("SucursalId")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid>("TurnoId")
                         .HasColumnType("TEXT");
 
@@ -2398,6 +2402,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasColumnType("TEXT");
 
                     b.Property<long>("RedondeoCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("SaldoDevueltoCentavos")
                         .HasColumnType("INTEGER");
 
                     b.Property<long>("SalidasCentavos")

@@ -75,6 +75,9 @@ public enum AccionControlada
 
     /// <summary>Cancelar un abono, solo en el turno en que se recibió. El monto es el del abono.</summary>
     CancelarAbono,
+
+    /// <summary>Devolverle en efectivo a un cliente lo que tiene a favor (parte 3). El monto es lo que se devuelve.</summary>
+    DevolverSaldoAFavor,
 }
 
 public enum NivelPermiso
@@ -164,6 +167,8 @@ public static class Permisos
         .. Ambos(AccionControlada.AjustarCredito, NivelPermiso.NoPermitido),
         Regla(AccionControlada.CancelarAbono, Rol.Cajero, NivelPermiso.RequiereAutorizacion, motivo: true),
         Regla(AccionControlada.CancelarAbono, Rol.Encargado, NivelPermiso.Permitido, motivo: true),
+        Regla(AccionControlada.DevolverSaldoAFavor, Rol.Cajero, NivelPermiso.RequiereAutorizacion),
+        Regla(AccionControlada.DevolverSaldoAFavor, Rol.Encargado, NivelPermiso.Permitido),
     ];
 
     /// <summary>

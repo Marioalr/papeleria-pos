@@ -42,8 +42,8 @@ else
                             <td>@a.Folio</td>
                             <td>@a.FechaLocal.ToString("HH:mm")</td>
                             <td>@a.Cliente</td>
-                            <td>@Forma(a.Forma)</td>
-                            <td class="num">@Formato.Dinero(a.MontoCentavos)</td>
+                            <td>@(a.Tipo == TipoAbono.SaldoDevuelto ? "Saldo devuelto" : Forma(a.Forma))</td>
+                            <td class="num">@(a.Tipo == TipoAbono.SaldoDevuelto ? "−" : "")@Formato.Dinero(a.MontoCentavos)</td>
                             <td class="acciones-renglon">
                                 @if (a.Cancelado)
                                 {
@@ -52,7 +52,7 @@ else
                                 else
                                 {
                                     <button class="boton chico" disabled="@_ocupado" @onclick="() => ReimprimirAsync(abono)">Reimprimir</button>
-                                    @if (a.DeEsteTurno)
+                                    @if (a.DeEsteTurno && a.Tipo == TipoAbono.Abono)
                                     {
                                         <button class="boton chico" disabled="@_ocupado" @onclick="() => CancelarAsync(abono, null)">Cancelar</button>
                                     }
@@ -348,9 +348,8 @@ else
         {
             _error = ex.Message;
             // Se perdió la respuesta: hasta saber si quedó, este abono (el mismo Id) solo se manda en línea y la pantalla
-            // se queda con lo que se vio. Si no, lo que se muestre después, con el saldo de ahora.
-            if (ex.Codigo == "abono-sin-confirmar")
-                _sinConfirmar = true;
+            // se queda con lo que se vio. Cualquier otra respuesta del servicio dice que no quedó: se ve el saldo de ahora.
+            _sinConfirmar = ex.Codigo == "abono-sin-confirmar";
             try
             {
                 if (!_sinConfirmar)

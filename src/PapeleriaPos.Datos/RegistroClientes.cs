@@ -38,20 +38,21 @@ public sealed class RegistroClientes(PosDbContext db)
         var ids = clientes.Select(c => c.Id).ToList();
         var compras = await ComprasAsync(ids, ct);
         var ultimas = await UltimasComprasAsync(ids, ct);
-        var cuentas = await new RegistroCredito(db).CuentasAsync(ids, ct);
+        var cuentas = await new RegistroCredito(db).EvaluarAsync(ids, ct);
         var hoy = DateOnly.FromDateTime(HoraMexico.ALocal(Ahora));
         return clientes.Select(c => new ClienteResumenDto(Dto(c), Promedio(Meses(compras, c.Id)), ultimas.GetValueOrDefault(c.Id),
-            cuentas[c.Id].SaldoCentavos, cuentas[c.Id].Vencido(hoy))).ToList();
+            cuentas[c.Id].Cuenta.SaldoCentavos, cuentas[c.Id].Cuenta.Vencido(hoy), cuentas[c.Id].Puntualidad)).ToList();
     }
 
-    /// <summary>La ficha con su evaluación: lo que compró cada mes y el promedio.</summary>
+    /// <summary>La ficha con su evaluación: lo que compró cada mes, el promedio y qué tan puntual paga.</summary>
     public async Task<FichaClienteDto?> FichaAsync(Guid clienteId, CancellationToken ct = default)
     {
         if (await db.ClientesRegistrados.AsNoTracking().SingleOrDefaultAsync(c => c.Id == clienteId, ct) is not { } cliente)
             return null;
         var meses = Meses(await ComprasAsync([cliente.Id], ct), cliente.Id);
         var ultima = (await UltimasComprasAsync([cliente.Id], ct)).GetValueOrDefault(cliente.Id);
-        return new FichaClienteDto(Dto(cliente), meses, Promedio(meses), ultima);
+        var (_, puntualidad) = (await new RegistroCredito(db).EvaluarAsync([cliente.Id], ct))[cliente.Id];
+        return new FichaClienteDto(Dto(cliente), meses, Promedio(meses), ultima, puntualidad);
     }
 
     /// <summary>

@@ -115,7 +115,7 @@ public enum MotivoApertura
     Venta,
     SinVenta,
 
-    /// <summary>Un abono a la cuenta de un cliente en efectivo (o su cancelación).</summary>
+    /// <summary>Un abono a la cuenta de un cliente en efectivo (o su cancelación), o su saldo a favor que se le devuelve.</summary>
     Abono,
 }
 

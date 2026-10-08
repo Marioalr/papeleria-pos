@@ -39,9 +39,11 @@ public sealed class AlmacenLocalTests : IDisposable
         var almacen = new AlmacenLocal(_ruta);
         var cliente = Ids.Nuevo();
         using (var lote = almacen.Lote())
-            lote.Credito(Ids.Nuevo(), cliente, 2500, DateTime.UtcNow, new DateOnly(2026, 11, 7)).Confirmar();
+            lote.Credito(Ids.Nuevo(), cliente, 2500, DateTime.UtcNow, new DateOnly(2026, 11, 7))
+                .Anotar(new AnotacionDiario(Ids.Nuevo(), turno, Redondeo: 45, SaldoDevuelto: 12300)).Confirmar();
 
-        Assert.Equal((1, 5000L, 0L), (almacen.Diario(turno).Ventas, almacen.Diario(turno).Efectivo, almacen.Diario(turno).Credito));
+        var diario = almacen.Diario(turno);
+        Assert.Equal((1, 5000L, 0L, 45L, 12300L), (diario.Ventas, diario.Efectivo, diario.Credito, diario.Redondeo, diario.SaldoDevuelto));
         var fila = Assert.Single(almacen.CuentaPropia(cliente));
         Assert.Equal((2500L, new DateOnly(2026, 11, 7), false), (fila.Local.MontoCentavos, fila.Local.Vence, fila.Local.PorVerificar));
     }

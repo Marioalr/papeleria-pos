@@ -99,7 +99,7 @@ public static class AlertasTelegram
             // RegistroClientes y RegistroCredito escriben "Privilegios de «…»" cuando se dan o cambian (también el crédito).
             AccionControlada.AdministrarClientes or AccionControlada.DarCredito when b.Detalle.StartsWith("Privilegios de", StringComparison.Ordinal)
                 => TipoAlerta.PrivilegiosCliente,
-            AccionControlada.ExcederLimiteCredito or AccionControlada.AjustarCredito => TipoAlerta.Credito,
+            AccionControlada.ExcederLimiteCredito or AccionControlada.AjustarCredito or AccionControlada.DevolverSaldoAFavor => TipoAlerta.Credito,
             AccionControlada.CancelarAbono => TipoAlerta.Cancelacion,
             // RegistroCaja.VerificarTransferenciaAsync escribe "Verificó…" o "Rechazó…".
             AccionControlada.VerificarTransferencia when b.Detalle.StartsWith("Rechazó", StringComparison.Ordinal) => TipoAlerta.TransferenciaRechazada,

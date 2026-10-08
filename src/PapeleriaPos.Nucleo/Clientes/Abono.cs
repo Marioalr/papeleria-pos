@@ -2,6 +2,18 @@ using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Nucleo.Clientes;
 
+public enum TipoAbono
+{
+    /// <summary>Lo que paga el cliente: baja su cuenta y entra a la caja.</summary>
+    Abono,
+
+    /// <summary>
+    /// Lo que tenía a favor y se le devuelve en efectivo (parte 3): sube su cuenta hasta cero y sale de la caja. Solo en
+    /// línea y en efectivo; no se cancela.
+    /// </summary>
+    SaldoDevuelto,
+}
+
 /// <summary>
 /// Un abono a la cuenta de un cliente (fase 3, entrega 2): se recibe en cualquier caja con su turno abierto y entra al
 /// corte de ese turno como ingreso aparte (no es venta: la venta ya se contó al fiar). Baja la cuenta con su
@@ -18,13 +30,19 @@ public class Abono
     public Guid ClienteId { get; set; }
     public Guid UsuarioId { get; set; }
 
+    /// <summary>Un abono, o un saldo a favor que se le devolvió en efectivo (entonces el dinero sale de la caja).</summary>
+    public TipoAbono Tipo { get; set; }
+
     /// <summary>Efectivo, tarjeta o transferencia; nunca crédito.</summary>
     public FormaPago Forma { get; set; }
 
-    /// <summary>Lo que baja la cuenta, exacto.</summary>
+    /// <summary>Lo que baja la cuenta, exacto (un saldo devuelto: lo que la sube).</summary>
     public long MontoCentavos { get; set; }
 
-    /// <summary>Solo en efectivo al liquidar: lo cobrado al peso menos el saldo exacto. Va al corte, nunca a la cuenta.</summary>
+    /// <summary>
+    /// Solo en efectivo al liquidar (o al devolver todo el saldo a favor): lo cobrado (o entregado) al peso menos el saldo
+    /// exacto. Va al corte, nunca a la cuenta.
+    /// </summary>
     public long RedondeoCentavos { get; set; }
 
     public long RecibidoCentavos { get; set; }
@@ -55,19 +73,25 @@ public class Abono
     public Guid? AutorizoCancelacionId { get; set; }
     public string? MotivoCancelacion { get; set; }
 
-    /// <summary>Lo que entró a la caja: el monto con su redondeo.</summary>
+    /// <summary>Lo que entró a la caja (un saldo devuelto: lo que salió): el monto con su redondeo.</summary>
     public long CobradoCentavos => MontoCentavos + RedondeoCentavos;
 
-    /// <summary>"AB-1A2B3C": sale del Id, así no choca aunque se haga sin conexión.</summary>
-    public string Folio => FolioDe(Id);
+    /// <summary>"AB-1A2B3C" (un saldo devuelto, "DS-1A2B3C"): sale del Id, así no choca aunque se haga sin conexión.</summary>
+    public string Folio => FolioDe(Id, Tipo);
 
-    public static string FolioDe(Guid id) => "AB-" + id.ToString("N")[^6..].ToUpperInvariant();
+    public static string FolioDe(Guid id, TipoAbono tipo = TipoAbono.Abono) =>
+        (tipo == TipoAbono.SaldoDevuelto ? "DS-" : "AB-") + id.ToString("N")[^6..].ToUpperInvariant();
 }
 
 /// <param name="MontoCentavos">Lo que baja la cuenta.</param>
 /// <param name="ACobrarCentavos">Lo que se le pide al cliente (en efectivo, al peso).</param>
 /// <param name="Liquida">Si deja la cuenta en cero.</param>
 public sealed record AbonoCalculado(long MontoCentavos, long ACobrarCentavos, long RedondeoCentavos, long CambioCentavos, bool Liquida);
+
+/// <param name="MontoCentavos">Lo que sube la cuenta (hacia cero).</param>
+/// <param name="EntregaCentavos">Lo que sale de la caja (al peso).</param>
+/// <param name="Todo">Si deja la cuenta en cero.</param>
+public sealed record SaldoDevueltoCalculado(long MontoCentavos, long EntregaCentavos, long RedondeoCentavos, bool Todo);
 
 /// <summary>Cuánto baja un abono y cuánto se cobra. Lo usan igual la caja (para mostrarlo) y el servicio (para guardarlo).</summary>
 public static class CalculoAbono
@@ -112,6 +136,31 @@ public static class CalculoAbono
             default:
                 throw new ArgumentException("Un abono se paga en efectivo, con tarjeta o con transferencia.", nameof(forma));
         }
+    }
+
+    /// <summary>
+    /// Cuánto se le devuelve en efectivo de lo que tiene a favor (sin lo que viene de transferencias por verificar: no se
+    /// regresa dinero de una transferencia que quizá no llegó). En pesos; vacío, o todo: lo que tiene a favor al peso, y la
+    /// cuenta queda en cero exacto (el redondeo va al corte, como al liquidar un abono).
+    /// </summary>
+    /// <param name="devolvibleCentavos">Lo que tiene a favor sin lo que está por verificar.</param>
+    /// <param name="montoCentavos">Vacío: todo.</param>
+    public static SaldoDevueltoCalculado DevolverSaldo(long devolvibleCentavos, long? montoCentavos)
+    {
+        if (devolvibleCentavos <= 0)
+            throw new InvalidOperationException("No tiene saldo a favor que se pueda devolver.");
+        if (montoCentavos is <= 0)
+            throw new ArgumentException("Lo que se devuelve debe ser mayor a cero.");
+        var todo = Redondeo.AlPeso(devolvibleCentavos);
+        if (todo < 100)
+            throw new InvalidOperationException($"Tiene {Pesos(devolvibleCentavos)} a favor: menos de un peso no se devuelve en efectivo.");
+        if (montoCentavos is null || montoCentavos == todo)
+            return new SaldoDevueltoCalculado(devolvibleCentavos, todo, todo - devolvibleCentavos, Todo: true);
+        if (montoCentavos > todo)
+            throw new ArgumentException($"Tiene {Pesos(devolvibleCentavos)} a favor: se le devuelven hasta {Pesos(todo)}.");
+        if (montoCentavos % 100 != 0)
+            throw new ArgumentException($"En efectivo se devuelve en pesos, o todo con {Pesos(todo)}.");
+        return new SaldoDevueltoCalculado(montoCentavos.Value, montoCentavos.Value, 0, Todo: false);
     }
 
     private static AbonoCalculado Recibir(long monto, long aCobrar, long recibido, bool liquida)

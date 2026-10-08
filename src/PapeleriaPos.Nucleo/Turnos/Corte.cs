@@ -55,7 +55,10 @@ public class Corte
 
     public long AbonosTransferenciaCentavos { get; set; }
 
-    /// <summary>Fondo + efectivo de ventas + abonos en efectivo + entradas − salidas − devoluciones.</summary>
+    /// <summary>El saldo a favor que se les devolvió en efectivo a los clientes (parte 3, con su redondeo): sale del esperado.</summary>
+    public long SaldoDevueltoCentavos { get; set; }
+
+    /// <summary>Fondo + efectivo de ventas + abonos en efectivo + entradas − salidas − devoluciones − saldo devuelto.</summary>
     public long EsperadoCentavos { get; set; }
 
     /// <summary>Lo que contó el encargado (solo en el corte Z).</summary>
@@ -85,8 +88,9 @@ public static class Denominaciones
 public static class CalculoCorte
 {
     /// <summary>
-    /// Arma el corte de un turno con sus ventas pagadas, sus movimientos de efectivo y los abonos de clientes que se
-    /// recibieron en él. Con conteo (corte Z) calcula la diferencia; el que cuenta nunca ve lo esperado antes de terminar.
+    /// Arma el corte de un turno con sus ventas pagadas, sus movimientos de efectivo, los abonos de clientes que se
+    /// recibieron en él y el saldo a favor que se devolvió. Con conteo (corte Z) calcula la diferencia; el que cuenta nunca
+    /// ve lo esperado antes de terminar.
     /// </summary>
     public static Corte Calcular(
         Turno turno, IEnumerable<Venta> ventas, IEnumerable<MovimientoCaja> movimientos, TipoCorte tipo, Guid realizadoPorId,
@@ -99,7 +103,9 @@ public static class CalculoCorte
         var cobros = vigentes.SelectMany(v => v.Cobros).ToList();
         var reembolsos = (devoluciones ?? []).Where(d => d.TurnoId == turno.Id).ToList();
         var delTurno = movimientos.Where(m => m.TurnoId == turno.Id).ToList();
-        var abonosDelTurno = (abonos ?? []).Where(a => a.TurnoId == turno.Id && a.CanceladoUtc is null).ToList();
+        var deClientes = (abonos ?? []).Where(a => a.TurnoId == turno.Id && a.CanceladoUtc is null).ToList();
+        var abonosDelTurno = deClientes.Where(a => a.Tipo == TipoAbono.Abono).ToList();
+        var devueltos = deClientes.Where(a => a.Tipo == TipoAbono.SaldoDevuelto).ToList();
 
         var corte = new Corte
         {
@@ -117,16 +123,17 @@ public static class CalculoCorte
             SalidasCentavos = delTurno.Where(m => m.Tipo == TipoMovimientoCaja.Salida).Sum(m => m.MontoCentavos),
             DevolucionesCentavos = reembolsos.Sum(d => d.ReembolsoEfectivoCentavos),
             RedondeoCentavos = cobradas.Sum(v => v.RedondeoCentavos) - reembolsos.Sum(d => d.RedondeoCentavos)
-                + abonosDelTurno.Sum(a => a.RedondeoCentavos),
+                + abonosDelTurno.Sum(a => a.RedondeoCentavos) - devueltos.Sum(a => a.RedondeoCentavos),
             // Lo fiado de una venta que se canceló deja de contar, como la tarjeta.
             CreditoCentavos = cobros.Where(c => c.Forma == FormaPago.Credito).Sum(c => c.MontoCentavos),
             Abonos = abonosDelTurno.Count,
             AbonosEfectivoCentavos = abonosDelTurno.Where(a => a.Forma == FormaPago.Efectivo).Sum(a => a.CobradoCentavos),
             AbonosTarjetaCentavos = abonosDelTurno.Where(a => a.Forma == FormaPago.Tarjeta).Sum(a => a.MontoCentavos),
             AbonosTransferenciaCentavos = abonosDelTurno.Where(a => a.Forma == FormaPago.Transferencia).Sum(a => a.MontoCentavos),
+            SaldoDevueltoCentavos = devueltos.Sum(a => a.CobradoCentavos),
         };
         corte.EsperadoCentavos = corte.FondoCentavos + corte.EfectivoVentasCentavos + corte.AbonosEfectivoCentavos + corte.EntradasCentavos
-            - corte.SalidasCentavos - corte.DevolucionesCentavos;
+            - corte.SalidasCentavos - corte.DevolucionesCentavos - corte.SaldoDevueltoCentavos;
 
         if (tipo == TipoCorte.Z)
         {

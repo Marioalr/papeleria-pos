@@ -458,4 +458,66 @@ public sealed class CreditoSinConexionTests(ServicioDePrueba servicio) : IClassF
             return await new RegistroCredito(alcance.ServiceProvider.GetRequiredService<PosDbContext>()).CuentaAsync(clienteId);
         }
     }
+
+    // ── Devolver el saldo a favor (parte 3): solo en línea, y cuenta en el corte de la caja ──
+
+    [Fact]
+    public async Task Lo_devuelto_de_un_saldo_a_favor_entra_al_corte_de_la_caja_y_si_se_pierde_la_respuesta_no_se_repite()
+    {
+        var p = await PuestoAsync();
+        var cliente = await ClienteAsync(p, "Sin conexión: pagó de más", 0, debe: -15000);
+        await SinConexionAsync(p);
+        var antes = await p.Cliente.CorteXAsync(p.Turno.Id, p.Encargado.UsuarioId);
+        var sinConexion = await Assert.ThrowsAsync<ErrorCaja>(() => p.Cliente.DevolverSaldoAsync(cliente.Id,
+            new SolicitudDevolverSaldo(Ids.Nuevo(), p.Caja.Id, p.Turno.Id, p.Encargado.UsuarioId, 15000, -15000), 15000));
+        p.Red.Caido = false;
+        await p.Contingencia.LatidoAsync();
+        var solicitud = new SolicitudDevolverSaldo(Ids.Nuevo(), p.Caja.Id, p.Turno.Id, p.Encargado.UsuarioId, 15000, -15000);
+
+        // Se guarda, pero la respuesta no llega: la caja no sabe si quedó, y ya no cuenta con ese saldo a favor.
+        p.Red.PierdeRespuesta = r => r.RequestUri!.AbsolutePath.EndsWith("/saldo-devuelto");
+        var perdida = await Assert.ThrowsAsync<ErrorCaja>(() => p.Cliente.DevolverSaldoAsync(cliente.Id, solicitud, 15000));
+        var sabiaSinConexion = p.Contingencia.Credito(cliente.Id);
+        var pendiente = p.Cliente.DevolucionSinConfirmar(cliente.Id);
+        p.Red.PierdeRespuesta = null;
+        await p.Contingencia.LatidoAsync();
+        var comprobante = await p.Cliente.DevolverSaldoAsync(cliente.Id, solicitud, 15000);
+        var otraVez = await p.Cliente.DevolverSaldoAsync(cliente.Id, solicitud, 15000);
+        await SinConexionAsync(p);
+        var despues = await p.Cliente.CorteXAsync(p.Turno.Id, p.Encargado.UsuarioId);
+
+        Assert.Equal("sin-conexion", sinConexion.Codigo);
+        Assert.Equal("saldo-sin-confirmar", perdida.Codigo);
+        Assert.Equal(0, sabiaSinConexion!.SaldoCentavos);
+        Assert.Equal(solicitud, pendiente?.Solicitud);
+        Assert.Null(p.Cliente.DevolucionSinConfirmar(cliente.Id));
+        Assert.Equal((comprobante.AbonoId, 15000L), (otraVez.AbonoId, comprobante.CobradoCentavos));
+        Assert.True(antes.EnContingencia && despues.EnContingencia);
+        Assert.Equal((15000L, -15000L), (despues.SaldoDevueltoCentavos - antes.SaldoDevueltoCentavos, despues.EsperadoCentavos - antes.EsperadoCentavos));
+        Assert.Equal(0, await SaldoAsync(cliente.Id));
+        Assert.Equal(0, p.Contingencia.Credito(cliente.Id)!.SaldoCentavos);
+    }
+
+    [Fact]
+    public async Task Si_la_caja_tiene_algo_del_cliente_sin_subir_no_le_devuelve_su_saldo()
+    {
+        var p = await PuestoAsync();
+        var cliente = await ClienteAsync(p, "Sin conexión: le fiaron y pagó de más", 100000, debe: -15000);
+        await p.Contingencia.LatidoAsync();
+        await SinConexionAsync(p);
+        await p.Cliente.CobrarAsync(p.Venta(cliente.Id, 5000, new CobroSolicitado(FormaPago.Credito, 5000)));
+        // Vuelve la conexión pero la bandeja todavía no sube.
+        p.Red.Caido = false;
+        p.Red.Rechaza = r => r.RequestUri!.AbsolutePath.Contains("/bandeja/");
+        await p.Contingencia.LatidoAsync();
+
+        var error = await Assert.ThrowsAsync<ErrorCaja>(() => p.Cliente.DevolverSaldoAsync(cliente.Id,
+            new SolicitudDevolverSaldo(Ids.Nuevo(), p.Caja.Id, p.Turno.Id, p.Encargado.UsuarioId, 15000, -15000), 15000));
+
+        Assert.StartsWith("Esta caja todavía tiene lo fiado o abonado de este cliente sin subir", error.Message);
+        Assert.Equal(-15000, await SaldoAsync(cliente.Id));
+        p.Red.Rechaza = null;
+        await p.Contingencia.SubirAsync();
+        await VuelveAsync(p);
+    }
 }

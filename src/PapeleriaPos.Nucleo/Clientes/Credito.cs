@@ -24,6 +24,12 @@ public enum TipoMovimientoCredito
 
     /// <summary>Un ajuste del dueño: el saldo inicial de la libreta o una corrección.</summary>
     Ajuste,
+
+    /// <summary>
+    /// Se le devolvió en efectivo lo que tenía a favor (parte 3): debe más, hasta cero. Su Id es el de la devolución, que
+    /// se guarda como un <see cref="Abono"/> de tipo <see cref="TipoAbono.SaldoDevuelto"/>.
+    /// </summary>
+    SaldoDevuelto,
 }
 
 /// <summary>
@@ -113,8 +119,9 @@ public sealed record FiadoSinConexion(long SaldoConocidoCentavos, long ExcesoAut
 /// <summary>Un cargo con lo que le queda por pagar después de aplicar lo pagado a lo más viejo.</summary>
 /// <param name="DevueltoCentavos">Lo que se descontó del cargo porque se devolvió mercancía de esa misma venta.</param>
 /// <param name="LiquidadoUtc">Cuando quedó en cero (para medir qué tan puntual paga).</param>
+/// <param name="Tipo">Una compra a crédito, o lo demás que sube la cuenta (un ajuste, un saldo devuelto).</param>
 public sealed record CargoAplicado(Guid MovimientoId, Guid? VentaId, DateTime FechaUtc, DateOnly Vence, long MontoCentavos,
-    long PendienteCentavos, long DevueltoCentavos, DateTime? LiquidadoUtc);
+    long PendienteCentavos, long DevueltoCentavos, DateTime? LiquidadoUtc, TipoMovimientoCredito Tipo = TipoMovimientoCredito.Cargo);
 
 /// <summary>La cuenta con lo pagado aplicado: el saldo, lo que tiene a favor y cada cargo con lo que le falta.</summary>
 public sealed record CuentaAplicada(long SaldoCentavos, long AFavorCentavos, IReadOnlyList<CargoAplicado> Cargos)
@@ -129,6 +136,9 @@ public sealed record CuentaAplicada(long SaldoCentavos, long AFavorCentavos, IRe
 /// <summary>Las reglas de la cuenta de un cliente: cuándo vence, cuánto pasa del límite y a qué se aplica lo pagado.</summary>
 public static class CuentaCredito
 {
+    /// <summary>La puntualidad se mide con las compras a crédito de estos últimos meses (y las que todavía debe).</summary>
+    public const int MesesDePuntualidad = 6;
+
     /// <summary>El último día para pagar a tiempo: la fecha (de México) del cargo más el plazo. Al día siguiente está vencido.</summary>
     public static DateOnly Vence(DateTime fechaUtc, int plazoDias) => DateOnly.FromDateTime(HoraMexico.ALocal(fechaUtc)).AddDays(plazoDias);
 
@@ -182,9 +192,41 @@ public static class CuentaCredito
         }
 
         var aplicados = cargos.Select(c => new CargoAplicado(c.Movimiento.Id, c.Movimiento.VentaId, c.Movimiento.FechaUtc, c.Vence,
-            c.Movimiento.MontoCentavos, c.Restante, c.Devuelto, c.LiquidadoUtc)).ToList();
+            c.Movimiento.MontoCentavos, c.Restante, c.Devuelto, c.LiquidadoUtc, c.Movimiento.Tipo)).ToList();
         return new CuentaAplicada(aplicados.Sum(c => c.PendienteCentavos) - aFavor, aFavor, aplicados);
     }
+
+    /// <summary>
+    /// Qué tan puntual paga (su evaluación): de las compras a crédito de los últimos <see cref="MesesDePuntualidad"/>
+    /// meses (y las más viejas que todavía debe), cuántas liquidó a más tardar el día que vencían y en cuántos días, y
+    /// cuántas ya vencieron sin pagarse. No cuentan los ajustes (la libreta), lo que se devolvió completo, lo que pagó su
+    /// saldo a favor al fiarlo (no fue crédito) ni lo que se le perdonó con un ajuste.
+    /// </summary>
+    public static PuntualidadDto Puntualidad(IEnumerable<MovimientoCredito> movimientos, DateOnly hoy)
+    {
+        var lista = movimientos.ToList();
+        var cuenta = Aplicar(lista);
+        // Lo devuelto o cancelado de cada venta, todo (no solo lo que bajó de lo que le faltaba pagar).
+        var devuelto = lista.Where(m => m.Tipo is TipoMovimientoCredito.Devolucion or TipoMovimientoCredito.Cancelacion && m.VentaId is not null)
+            .GroupBy(m => m.VentaId!.Value).ToDictionary(g => g.Key, g => -g.Sum(m => m.MontoCentavos));
+        var perdones = lista.Where(m => m.Tipo == TipoMovimientoCredito.Ajuste && m.MontoCentavos < 0).Select(m => m.FechaUtc).ToHashSet();
+        var desde = hoy.AddMonths(-MesesDePuntualidad);
+        var compras = cuenta.Cargos
+            .Where(c => c.Tipo == TipoMovimientoCredito.Cargo
+                && (c.VentaId is not { } venta || devuelto.GetValueOrDefault(venta) < c.MontoCentavos)
+                && c.LiquidadoUtc != c.FechaUtc
+                && !(c.LiquidadoUtc is { } liquidado && perdones.Contains(liquidado))
+                && (c.PendienteCentavos > 0 || Dia(c.FechaUtc) >= desde))
+            .ToList();
+        var liquidadas = compras.Where(c => c.PendienteCentavos == 0 && c.LiquidadoUtc is not null)
+            .Select(c => (Dias: Dia(c.LiquidadoUtc!.Value).DayNumber - Dia(c.FechaUtc).DayNumber, ATiempo: Dia(c.LiquidadoUtc.Value) <= c.Vence))
+            .ToList();
+        return new PuntualidadDto(compras.Count, liquidadas.Count, liquidadas.Count(l => l.ATiempo),
+            liquidadas.Count == 0 ? null : (int)Math.Round(liquidadas.Average(l => l.Dias), MidpointRounding.AwayFromZero),
+            compras.Count(c => c.PendienteCentavos > 0 && c.Vence < hoy));
+    }
+
+    private static DateOnly Dia(DateTime fechaUtc) => DateOnly.FromDateTime(HoraMexico.ALocal(fechaUtc));
 
     /// <summary>
     /// La cuenta que conoce una caja sin conexión: la última que le mandó el servicio más lo suyo sin confirmar, en el

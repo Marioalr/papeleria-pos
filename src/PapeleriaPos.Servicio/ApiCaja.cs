@@ -188,7 +188,7 @@ public static class ApiCaja
         return new CorteDto(c.Tipo, HoraMexico.ALocal(c.FechaUtc), nombres[turno!.CajeroId], nombres[c.RealizadoPorId], c.Ventas, c.FondoCentavos,
             c.EfectivoVentasCentavos, c.EntradasCentavos, c.SalidasCentavos, c.TarjetaCentavos, c.TransferenciaCentavos, c.EsperadoCentavos,
             c.ContadoCentavos, c.DiferenciaCentavos, c.DevolucionesCentavos, c.Cancelaciones, c.EnContingencia, c.RedondeoCentavos, c.CreditoCentavos,
-            c.Abonos, c.AbonosEfectivoCentavos, c.AbonosTarjetaCentavos, c.AbonosTransferenciaCentavos);
+            c.Abonos, c.AbonosEfectivoCentavos, c.AbonosTarjetaCentavos, c.AbonosTransferenciaCentavos, c.SaldoDevueltoCentavos);
     }
 
     internal static async Task<TicketDto> TicketAsync(PosDbContext db, Venta v, OpcionesTicket opciones)
