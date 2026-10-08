@@ -14,6 +14,7 @@
 - Un número de WhatsApp Business por sucursal, en un celular (también para llamadas); el grueso del trabajo se hace
   desde la PC.
 - Las cajas principales se apagan de noche; las sucursales probablemente tendrán horarios distintos.
+- **Cámaras Dahua con grabador en las dos sucursales,** que hoy se ven con la app DMSS ([cámaras](camaras.md)).
 - Posibles dispositivos propios: contador de clientes, presencia en la zona del efectivo, vigilancia nocturna
   ([ideas](ideas.md)).
 - **Objetivo:** que el dueño no tenga que estar presente en cada sucursal y tenga control preciso de todas.
@@ -26,7 +27,7 @@
 | Lenguaje | C# / .NET 10 en todo: Windows (impresoras, spooler), Android y web con un solo lenguaje |
 | Interfaz | Una sola, en componentes Blazor: la caja (ventana de Windows), la app Android (MAUI) y el panel del dueño. Todo operable con teclado; diseño para 1366×768 |
 | Servidor de sucursal | Vive en la **caja principal**, como en eleventa, como servicio de Windows (corre sin sesión iniciada y se reinicia solo) |
-| Central | **En revisión.** Propuesta: el primer año, sin central; cada sucursal sola, la matriz reparte el catálogo y lo que debe estar siempre prendido lo hacen servicios gratis ([dos sucursales](#dos-sucursales-el-primer-año)). El central, en un servidor virtual, con la 3.ª sucursal o una [señal](servidor-remoto.md#cuándo-montar-el-central) |
+| Central | **En revisión.** Propuesta: **servidor virtual** siempre prendido (Vultr Ciudad de México, 1 o 2 GB según la prueba, 107.87 o 215.74 MXN al mes) antes de que la sucursal 2 pase al POS, para administrar ante un suceso, precios por sucursal y cualquier flujo de mercancía ([propuesta](servidor-remoto.md)). Antes se ensaya en una máquina propia con Linux ([prueba](#prueba-de-varias-sucursales-con-un-servidor-linux)) |
 | Base de datos | SQLite en todas partes; en cada lugar el servicio es el único que escribe |
 | Núcleo | Sin dependencias de Windows: lo comparten la caja, los servidores y la app Android |
 | Inventario | Kardex: solo se agregan movimientos y la existencia es la suma |
@@ -36,11 +37,12 @@
 | Clientes | El celular solo identifica un **pedido** al recogerlo. **Clientes registrados**: pocos, los de confianza |
 | Impresión | Lo que hace Control Print se reescribe como módulo del POS ([detalle](impresion.md)) |
 | WhatsApp | API oficial en modo coexistencia; nunca librerías no oficiales. Antes de eso, captura manual desde la PC |
-| Alertas y autorización remota | Bot de Telegram, desde el piloto |
-| Panel del dueño | Servido por el central. Propuesta para el primer año: resumen de cada sucursal por Telegram y, de día, la caja del dueño conectada por una red privada a la sucursal que elija ([opciones](servidor-remoto.md)) |
+| Alertas y autorización remota | Bot de Telegram, desde el piloto. Propuesta con el central: un solo bot en el central, con foto del suceso y botones; si el dueño no lo ve, alerta que suena en silencio (Pushover) y llamada (Twilio); acciones a distancia con PIN o huella ([propuesta](servidor-remoto.md)) |
+| Panel del dueño | Servido por el central, en internet con llave de acceso (passkey) y dominio propio; las cámaras en vivo, por una red privada (NetBird) ([propuesta](servidor-remoto.md)) |
+| Cámaras | Las de cada sucursal se cruzan con el sistema: texto de cada suceso sobre el video, foto y clip del momento, y vigilancia de noche, con un puente siempre prendido por tienda (Raspberry Pi) ([cámaras](camaras.md)) |
 | App Android | .NET MAUI con la misma interfaz, sin publicar en la tienda |
 | Fiscal | Fuera de alcance, pero se guardan clave SAT, unidad y desglose de impuestos para poder facturar después |
-| Nube | Para unas horas de prueba, un servidor virtual que se cobra por hora ([opciones](servidor-remoto.md)). Azure for Students no sirve: es solo para estudiantes y para uso educativo no comercial |
+| Nube | El central, en un servidor virtual siempre prendido ([central](servidor-remoto.md)); antes de contratarlo, unas horas en uno que se cobra por hora ([prueba](prueba-sucursales-linux.md)). Azure for Students no sirve: es solo para estudiantes y para uso educativo no comercial |
 | Código | La fase 0 ya se programa; las demás fases, hasta cerrar su parte del plan |
 | Idioma del código | Dominio en español (`Producto`, `Existencia`, `Corte`); lo técnico en inglés |
 | Acceso a datos | EF Core con migraciones; SQL directo donde convenga (kardex, reportes) |
@@ -48,7 +50,7 @@
 | Datos reales | Nunca entran al repositorio. Viven fuera de él, en `Documents\TPV` de la máquina de desarrollo |
 | Migración | El inventario **se depura** al pasar al POS nuevo: el catálogo y las existencias de eleventa son punto de partida, no se conservan tal cual. Las existencias de arranque salen del conteo físico |
 | Diagnóstico | Se entrega en Excel, una hoja por análisis |
-| Precios | Precio al público con IVA incluido; el desglose de impuestos se guarda aparte. Precio por unidad base: el paquete cuesta las piezas que trae, salvo excepción |
+| Precios | Precio al público con IVA incluido; el desglose de impuestos se guarda aparte. Precio por unidad base: el paquete cuesta las piezas que trae, salvo excepción. Por sucursal: iguales el primer día, después se ajustan |
 | Impuestos | IVA 16 %, 0 % o exento; sin IEPS |
 | Cantidades | Se vende por metro y a granel: enteros en milésimas de la unidad base |
 | Marca | Catálogo propio de marcas: distingue productos parecidos y sirve para buscar |
@@ -83,11 +85,11 @@ Sin tiempos: se avanza cuando la fase anterior funciona en la tienda.
 | 2. Inventario | Compras, recepción ciega, presentaciones, conteos cíclicos, etiquetas, sugerido de compra |
 | 3. Precios y clientes | Mayoreo, promociones, kits, clientes registrados, crédito |
 | 4. Servicios y pedidos | Recetas y costeo, pedidos, cola compartida, charolas, recogida por celular, duplicados, apartados, listas escolares, captura manual desde WhatsApp |
-| 5. Piloto en la matriz | Depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo. Propuesta: desde el arranque, respaldo cifrado en Backblaze B2 y aviso de apertura en Healthchecks.io |
-| 6. Varias sucursales y WhatsApp | Propuesta: **6a**, antes de la 7, el enlace de las dos sucursales (alta de la sucursal 2, catálogo desde la matriz, aviso de aperturas por sucursal, traspaso a mano); **6b**, con la 3.ª sucursal o una señal, el central en un servidor virtual, la sincronización y el panel del dueño. La API de WhatsApp → pedidos no espera al central: va con un receptor aparte cuando el dueño la quiera |
-| 7. Sucursal 2 | Inversión de apertura y punto de equilibrio. Propuesta: el primer año, precios iguales y traspasos capturados a mano; los precios por sucursal, el traspaso automático y las compras repartidas llegan con el central (6b) |
+| 5. Piloto en la matriz | Depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo. Propuesta: desde el arranque, respaldo cifrado en Backblaze B2, aviso de apertura en Healthchecks.io y el puente de la matriz (el dueño ya ve sus cámaras sin abrir puertos) |
+| 6. Central y WhatsApp | Propuesta, antes de la 7 ([entregas](servidor-remoto.md#entregas)): 6.1 central y subida; 6.2 bajada y precios por sucursal; 6.3 sucesos, avisos y acciones a distancia; 6.4 mercancía (traspasos, compras en cualquier sucursal y repartidas); 6.5 cámaras y contador; 6.6 ensayo largo. La API de WhatsApp → pedidos va cuando el dueño la quiera, después de 6.2 |
+| 7. Sucursal 2 | Su puente, sus avisos y su horario; precios iguales el día 1; inversión de apertura y punto de equilibrio. Mínimo para pasarla al POS: de 6.1 a 6.5 y la etapa 2 de la [prueba](prueba-sucursales-linux.md). Si abre antes, abre con eleventa; su puente solo sirve para ver en vivo |
 | 8. App Android | Preventa y pedidos desde el celular |
-| 9. A la medida | Listas escolares avanzadas, dispositivos propios, [asistente inteligente](ideas.md#asistente-inteligente-piloto-automático) y lo que se vaya describiendo |
+| 9. A la medida | Listas escolares avanzadas, dispositivos propios, [piloto automático](ideas.md#asistente-inteligente-piloto-automático) (se apoya en lo de la fase 6) y lo que se vaya describiendo |
 
 ### Fase 0
 
@@ -209,39 +211,37 @@ la caja con su usuario y PIN del POS, todos desde la misma cuenta común de Wind
 - **La prueba con una persona real** se instala igual: el administrador la instala para todas las cuentas de Windows
   y quien prueba la usa con una cuenta común.
 
-### Dos sucursales el primer año
+### Varias sucursales: el central
 
-**Propuesta en revisión** ([opciones](servidor-remoto.md), revisadas el 2026-10-08 con precios vigentes). Con solo dos
-sucursales durante al menos un año, no hace falta un central todavía:
+**Propuesta en revisión** ([propuesta](servidor-remoto.md), revisada el 2026-10-08 con las respuestas del dueño y
+precios vigentes). El dueño rechazó empezar sin central: necesita administrar ante un suceso a cualquier hora, con las
+cámaras y el contador, precios por sucursal y que el POS resista cualquier flujo de mercancía, con la mejor
+calidad-precio.
 
-- **Cada sucursal sola:** su servidor en la caja principal y ninguna venta pasa por internet.
-- **El catálogo lo reparte la matriz:** lo publica completo en Backblaze B2 (almacenamiento en internet, gratis hasta
-  10 GB) y la sucursal 2 lo aplica al encender y cada pocos minutos, aunque la matriz esté apagada. Precios iguales;
-  la sucursal 2 no edita el catálogo.
-- **Lo que debe estar siempre prendido lo hacen servicios gratis:** el respaldo cifrado en Backblaze B2, el aviso de
-  que una sucursal no abrió en Healthchecks.io, un bot de Telegram por sucursal y una red privada (NetBird) para que el
-  dueño y soporte entren a cada caja principal desde fuera, sin abrirla a internet.
-- **Costo:** 0 al mes y sin pagos en dólares (falta confirmar si NetBird pide tarjeta; no cobra). El plan anterior
-  (servidor virtual, Tailscale para negocio y dominio) costaba 3,050–4,780 MXN al año.
-- **Lo que se pierde y cuándo montar el central:** ver las [opciones](servidor-remoto.md#el-primer-año-sin-central) y
-  las [señales](servidor-remoto.md#cuándo-montar-el-central). El central se monta con la 3.ª sucursal, unos 6 meses
-  antes, o con una señal.
+- **Cada sucursal vende sola,** con su servidor en la caja principal; ninguna venta pasa por el central.
+- **El central,** en un servidor virtual (Vultr Ciudad de México, 215.74 MXN al mes el de 2 GB, o 107.87 el de 1 GB si
+  la prueba muestra que alcanza), antes de que la sucursal 2 pase al POS: sincronización en los dos sentidos, precios
+  por sucursal, traspasos y compras en cualquier sucursal, sucesos, avisos y acciones a distancia, panel y un solo bot.
+- **Un puente en cada tienda** (Raspberry Pi) para las [cámaras](camaras.md): la foto y el clip del momento, la
+  vigilancia de noche, el reloj de la tienda y el contador. La caja escribe el texto de cada suceso sobre el video.
+- **Avisos que escalan:** Telegram con foto y botones, alerta que suena en silencio y llamada.
+- **Costo:** ≈287–309 MXN al mes ya instalado; ≈9,400–9,700 el primer año (más los no-break si hacen falta).
 
 ### Prueba de varias sucursales con un servidor Linux
 
-Con la propuesta de arriba, el primer año ninguna máquina Linux queda en la tienda. Lo que pidió el dueño (un
-servidor Linux en una de las máquinas para ver cómo responde) se puede hacer ya, como medición de la etapa 1; la prueba
-de dos sucursales contra un servidor Linux es la etapa 3, cuando se decida el central. Se usan la laptop con Intel
-Celeron y la PC con AMD A6, las dos con 8 GB: la mejor se queda con Windows y la otra va a Linux
-([detalle](prueba-sucursales-linux.md)):
+El central correrá en Linux. Antes de contratar el servidor virtual se ensaya en una máquina que ya hay: la laptop con
+Intel Celeron o la PC con AMD A6, las dos con 8 GB. Que sean modestas sirve: si el procesador no es muy viejo (se
+confirma con su modelo), por núcleo rinden algo menos que el servidor virtual (un Celeron, unos dos tercios; un A6,
+parecido), así que si el central responde bien ahí, allá irá igual o mejor. La máquina con Linux se limita a 1 núcleo y
+2 GB, como el plan elegido; la otra se queda con Windows y hace de sucursal 2 ([detalle](prueba-sucursales-linux.md)):
 
 | Etapa | Cuándo | Qué prueba |
 |---|---|---|
-| 0. Conocer las máquinas | Ya | Procesador, disco y Windows de cada una: si sirven para .NET y cuál conviene |
-| 1. Arreglos para Linux | Ya, en paralelo a la fase 3 | Lo que hoy solo funciona en Windows y el simulador de cajas. Si el dueño quiere, medir ya cómo responde la máquina con Linux, también limitada a lo que tendría un servidor virtual de 1 GB |
-| 2. Dos sucursales sin central | Antes de que la sucursal 2 pase al POS (fase 6a) | La matriz en la PC de desarrollo y la sucursal 2 en la máquina con Windows: el catálogo que baja, el respaldo, los avisos y la red privada |
-| 3. El central de verdad | Cuando se decida el central | La máquina con Linux como central de dos sucursales, con el script que luego irá al servidor virtual |
-| 4. Ensayo largo | Antes de contratar el servidor virtual | Dos a cuatro semanas con fallas provocadas y, al final, unas horas en un servidor virtual de verdad |
+| 0. Conocer las máquinas | Ya | Procesador, disco y Windows de cada una: si sirven para .NET y cuál queda con Windows |
+| 1. Arreglos para Linux | Ya, en paralelo a la fase 3 | Lo que hoy solo funciona en Windows y el simulador de cajas. Si el dueño quiere, medir ya cómo responde la máquina con Linux (con una sola sucursal) |
+| 2. Dos sucursales con central | Entregas 6.1 a 6.4, después del piloto | El central en Linux con la matriz y la sucursal 2: subida y bajada, precios por sucursal, mercancía, acciones y avisos. Al cerrar 6.1, unas horas en un servidor virtual de verdad y se contrata el central |
+| 3. El puente con el grabador real | Fase 5 y entrega 6.5 | La Raspberry Pi contra el grabador de la matriz: foto, eventos de personas, reloj y red privada |
+| 4. Ensayo largo | Entrega 6.6 | Dos a cuatro semanas con fallas provocadas y simulacro de noche |
 
 ## Pendientes
 
@@ -296,20 +296,20 @@ Fase 3:
 - [ ] Entrega 3: consumibles del mes
 - [ ] Promociones y kits: antes del próximo regreso a clases
 
-Dos sucursales y la prueba en Linux ([ver arriba](#dos-sucursales-el-primer-año)):
+Varias sucursales y la prueba en Linux ([ver arriba](#varias-sucursales-el-central)):
 
-- [ ] Revisar la [propuesta para dos sucursales](servidor-remoto.md) y contestar sus preguntas
-- [ ] Revisar el [plan de la prueba](prueba-sucursales-linux.md) y contestar sus preguntas: con eso se decide cuál
-  máquina queda con Windows y cuál con Linux
-- [ ] Antes del piloto: respaldo cifrado de la matriz en Backblaze B2, con una restauración de ensayo, y su aviso en
-  Healthchecks.io
-- [ ] Etapa 1: arreglos para Linux (dónde guarda sus datos, logo del ticket, pruebas en Linux) y simulador de cajas
-- [ ] (Si el dueño quiere) Etapa 1: Ubuntu Server en la máquina de Linux y medir cómo responde: día pico, techo,
-  cortes de luz y 72 horas, también limitada a 1 núcleo y 800 MB
-- [ ] Etapa 2: dos sucursales sin central (antes: el enlace de las dos sucursales, las cuentas de los servicios y los
-  dos bots de prueba)
-- [ ] Etapas 3 y 4: el central de verdad y el ensayo largo, cuando se decida el central (antes de poner Caddy, que nada
-  pase sin llave)
+- [ ] Revisar la [propuesta del central](servidor-remoto.md), la de [cámaras](camaras.md) y el
+  [plan de la prueba](prueba-sucursales-linux.md), y contestar sus preguntas
+- [ ] Ya: configurar los grabadores de las dos sucursales ([lista](camaras.md#configurar-el-grabador)); abrir las
+  cuentas a nombre del negocio y registrar el dominio antes del 31 de octubre
+- [ ] Arreglos previos al central y para Linux (fase 3), y el simulador de cajas
+- [ ] (Si el dueño quiere) Medir ya cómo responde la máquina con Linux: día pico, techo, cortes de luz y 72 horas, con
+  1 núcleo y 2 GB
+- [ ] Antes del piloto: respaldo cifrado de la matriz en Backblaze B2, con una restauración de ensayo, su aviso en
+  Healthchecks.io y el puente de la matriz
+- [ ] Entregas 6.1 a 6.6 del [central](servidor-remoto.md#entregas), con las etapas 2 a 4 de la prueba
+- [ ] Al cerrar 6.1: unas horas del script del central en un servidor por hora, decidir entre 1 y 2 GB y contratar el
+  central (al principio, solo con la matriz)
 
 Depuración del inventario (antes del piloto, [ver abajo](#depuración-del-inventario)):
 

@@ -34,9 +34,15 @@ erDiagram
 | Cantidades | Enteros en **milésimas de la unidad base** (`long`): 1 pieza = 1000, 1.5 m = 1500, 250 g = 250 |
 | Fechas | UTC; se muestran en hora de Ciudad de México |
 | Enumeraciones | Se guardan como texto (`"Compra"`, no `2`): la base se lee sin el código |
-| Catálogo | Productos y variantes nunca se borran, se desactivan (`Activo = false`): el kardex y el histórico los siguen apuntando. Los códigos y las presentaciones sin uso sí se borran sin rastro, y los precios quitados solo quedan en su historial: para repartir el catálogo hay que mandarlo completo o registrar lo que se quita ([opciones](servidor-remoto.md)) |
+| Catálogo | Productos y variantes nunca se borran, se desactivan (`Activo = false`): el kardex y el histórico los siguen apuntando. Los códigos y las presentaciones sin uso sí se borran sin rastro, y los precios quitados solo quedan en su historial: con el [central](servidor-remoto.md#entregas) se registra lo que se quita para que la sucursal se entere |
 | Sincronización | Las tablas del catálogo llevan `Version` y `ModificadoUtc` desde ya, para bajar cambios por versión después (ojo: un borrado no sube la versión) |
 | Sucursal | Todo lo que pertenece a una sucursal lleva `SucursalId`, aunque hoy solo exista la matriz |
+
+**Lo que agregaría el central** (propuesta, [entregas](servidor-remoto.md#entregas)): sucursal o almacén; días de
+descanso; autor, sucursal de origen y versión en el historial de precios; prefijo de sucursal en los códigos internos;
+registro de lo que se quita del catálogo; documentos de traspaso con estados; compra con quién paga y quién recibe;
+orden con destino por línea; mercancía «de paso» con salida a costo dado; bandeja de subida, propuestas y comandos;
+sucesos con su foto y su clip; conteo de personas y qué cámara ve cada caja.
 
 **Por qué milésimas:** se vende por metro y a granel. Con milésimas, 1.5 m o 0.250 kg son enteros, SQLite los suma
 sin errores de redondeo (sus decimales no son exactos) y las piezas siguen siendo múltiplos de 1000. En el núcleo, un
@@ -126,8 +132,8 @@ con centavos enteros se perdería. Con el total, el valor del inventario es exac
   centavo.
 - Con existencia en cero o negativa (se permite vender sin existencia), la salida usa el último costo conocido.
 
-El costo promedio es **por sucursal**: un traspaso sale de la matriz a su promedio y entra a la sucursal 2 con ese
-mismo costo.
+El costo promedio es **por sucursal**: un traspaso sale de una sucursal a su promedio y entra a la otra con ese mismo
+costo, salvo la mercancía «de paso» de una compra repartida, que sale al costo de la nota.
 
 **Existencia** (`SucursalId`, `VarianteId`, `Cantidad`, `CostoCentavos`): copia de las sumas de arriba para que la
 caja no tenga que sumar todo el kardex en cada consulta. Se actualiza en la misma transacción que el movimiento y se

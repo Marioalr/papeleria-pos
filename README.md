@@ -110,7 +110,8 @@ Los datos reales del negocio (como la base de eleventa) nunca se guardan en el r
 | [Fase 1: impresión](docs/fase-1-impresion.md) | Entrega 5: lo de Control Print dentro del POS, y los descuentos |
 | [Fase 2: inventario](docs/fase-2-inventario.md) | Catálogo, compras con recepción ciega y el documento del proveedor, ajustes y conteos, etiquetas y sugerido de compra |
 | [Arquitectura](docs/arquitectura.md) | Componentes, datos, contingencia, varias sucursales, red, respaldos y hardware |
-| [Varias sucursales y el central](docs/servidor-remoto.md) | Las dos sucursales sin central el primer año, cuándo y dónde montar el central, gestión por excepción y costos |
+| [Central y administración ante un suceso](docs/servidor-remoto.md) | El central para varias sucursales: sincronización, precios por sucursal, mercancía, avisos que escalan, acciones a distancia, opciones y costos |
+| [Cámaras, puente y contador](docs/camaras.md) | El grabador Dahua de cada sucursal con el POS: foto y clip de cada suceso, vigilancia de noche, conteo de personas y seguridad |
 | [Prueba de varias sucursales en Linux](docs/prueba-sucursales-linux.md) | Las máquinas, las etapas, las fallas a provocar y las metas |
 | [Caja y control](docs/caja-y-control.md) | Venta, cobro, cortes, autorizaciones configurables, bitácora y alertas |
 | [Catálogo e inventario](docs/inventario.md) | Variantes, presentaciones, códigos, kardex, compras, conteos y precios |

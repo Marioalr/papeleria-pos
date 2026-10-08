@@ -42,8 +42,11 @@
 - Orden de compra (opcional) → **recepción ciega**: quien recibe cuenta lo que llegó sin ver lo pedido, y las
   diferencias se marcan.
 - Proveedores con su último costo por producto.
-- Las compras llegan a la matriz y se reparten por traspaso. Algunos proveedores podrían entregar directo en la
-  sucursal 2.
+- Dónde llega la mercancía y cómo se reparte está por definir, y el POS debe resistir cualquier forma (propuesta del
+  [central](servidor-remoto.md#cómo-se-cumple-cada-respuesta)): cualquier sucursal compra y recibe; la orden lleva el
+  destino de cada línea, así que un proveedor puede entregar directo en cada sucursal; una compra repartida queda «de
+  paso» en quien la recibe y sale como traspaso al mismo costo; el traspaso tiene estados (borrador → enviado →
+  recibido a ciegas → cerrado) y un QR; un almacén futuro es una sucursal sin cajas.
 - **Sugerido de compra:** mínimos y máximos calculados con el historial de ventas (incluido el de eleventa) y la
   temporada (regreso a clases).
 
@@ -55,7 +58,8 @@
 
 ## Precios
 
-- Precio base (matriz) y **precio por sucursal**.
+- Precio base (lo guarda el central; el día 1 todos los productos usan solo el base) y **precio por sucursal**, con un
+  interruptor por producto: «igual en todas» o «distinto» ([central](servidor-remoto.md#cómo-se-cumple-cada-respuesta)).
 - **Mayoreo:** por escalas de cantidad y por cliente registrado.
 - **Promociones:** 3×2, porcentaje por producto o departamento, con vigencia por fechas y sucursal.
 - **Kits:** precio propio; descuentan del inventario cada producto que los forma.

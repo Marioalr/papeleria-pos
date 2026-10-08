@@ -17,7 +17,7 @@ Sin API, sin costo y sin riesgo:
 - El cajero escribe o pega el celular.
 - El pedido queda cotizado al instante (con la función de cotizar del [módulo de impresión](impresion.md)).
 
-## Etapa 2: API oficial en coexistencia (cuando se decida; no necesita el central)
+## Etapa 2: API oficial en coexistencia (cuando el dueño la quiera, después de la entrega 6.2)
 
 Con **coexistencia,** el mismo número sigue funcionando en la app de WhatsApp Business y el sistema recibe una copia de
 cada mensaje y archivo. Disponible en México desde 2025.
@@ -42,14 +42,12 @@ cada mensaje y archivo. Disponible en México desde 2025.
   - Hay que registrar un medio de pago: según proveedores, sin él Meta deja de entregar después del mensaje 1,000.
   - En total, de 0 a unos 80 MXN al mes por sucursal.
   - Con un proveedor se suma su cuota: Kapso, 25 USD al mes por hasta 3 números; 360dialog, 49 EUR por número.
-- **Dirección pública:** Meta manda cada mensaje a una dirección HTTPS. No hace falta el [central](servidor-remoto.md):
-  basta un receptor aparte que guarde los mensajes hasta que la caja principal los recoja, por ejemplo un Cloudflare
-  Worker con su base (gratis) o un proveedor que los guarde, como Kapso (la caja los pide por su API al encender); con
-  360dialog sigue haciendo falta el receptor. Se puede usar una dirección por número. Con el central, el
-  receptor se puede mudar ahí.
-- **Si la caja principal está apagada (de noche):** los mensajes esperan en el receptor y aparecen como pedidos al
+- **Dirección pública:** Meta manda cada mensaje a una dirección HTTPS: el webhook vive en el
+  [central](servidor-remoto.md), con el dominio propio, y el central sabe a qué sucursal pertenece cada número. Se
+  puede usar una dirección por número.
+- **Si la caja principal está apagada (de noche):** los mensajes esperan en el central y aparecen como pedidos al
   encenderla. El archivo hay que bajarlo de Meta antes de 7 días.
-- **Si el receptor no responde:** Meta reintenta hasta 7 días (puede repetir mensajes: se descartan por su ID). Mientras
+- **Si el central no responde:** Meta reintenta hasta 7 días (puede repetir mensajes: se descartan por su ID). Mientras
   tanto, los mensajes siguen en WhatsApp como siempre y se usa la etapa 1.
 - **Celulares:** el número que manda WhatsApp para México puede no coincidir con el que se marca. Se guarda tal como
   llega, para responder, y se normaliza a 10 dígitos para que coincida con el de mostrador.
@@ -62,9 +60,9 @@ banea esos números, y perder el número de una sucursal sería un golpe serio.
 ## Pendientes
 
 - [x] WhatsApp en la PC con coexistencia: la app para Windows no se admite; WhatsApp Web en Chrome o Edge sí.
-- [ ] Alta en coexistencia: ¿directo con Meta (sin cuota; hay que programar el receptor y pasar la revisión de Meta
-      como «Tech Provider», sin plazo publicado) o con un proveedor (Kapso: 25 USD ≈ 449 MXN al mes por hasta 3
-      números, sin esa revisión)?
-- [x] Cuánto reintenta Meta si el receptor no responde: hasta 7 días.
+- [ ] Alta en coexistencia: ¿directo con Meta (sin cuota; hay que pasar la revisión de Meta como «Tech Provider», sin
+      plazo publicado) o con un proveedor (Kapso: 25 USD ≈ 449 MXN al mes por hasta 3 números, sin esa revisión)? En
+      los dos casos el webhook vive en el central.
+- [x] Cuánto reintenta Meta si el central no responde: hasta 7 días.
 - [ ] Probar en la etapa 1 si se puede arrastrar el archivo directo desde WhatsApp en la PC, o solo desde la carpeta de
       descargas.

@@ -1,186 +1,217 @@
-# Varias sucursales y el central
+# Central y administración ante un suceso
 
-> **Propuesta revisada el 2026-10-08** con precios y condiciones vigentes, en lluvia de ideas: puede cambiar. La
-> versión anterior proponía un servidor virtual desde la sucursal 2 por ~4,000 MXN a 3 años. Esa cuenta no sumaba la
-> red privada (Tailscale gratis no se puede usar en un negocio; pagando, el plan costaba 3,050–4,780 MXN al año) ni
-> consideraba pagar en pesos con factura (AWS México, desde 2026). Con solo dos sucursales hay opciones más simples.
-> Tipo de cambio: 17.98 MXN por dólar (FIX de Banxico del 7 de octubre de 2026). Cada precio dice si lleva IVA.
+> **Propuesta revisada el 2026-10-08** con las respuestas del dueño, en revisión. Él rechazó empezar sin central:
+> necesita administrar ante un suceso a cualquier hora, con las cámaras y el contador, y precios por sucursal. Pide
+> la mejor calidad-precio (cumplir todo al menor precio), aunque cueste más programarlo. Precios consultados ese día;
+> tipo de cambio: 17.98 MXN por dólar (FIX de Banxico del 7 de octubre de 2026). El equipo lleva IVA; los servicios
+> que se pagan en dólares, no, salvo donde se dice.
 
-## Lo que se sabe
+## Lo que pide el dueño
 
-- **Solo serán 2 sucursales durante al menos un año;** una 3.ª, quizá en unos dos años.
-- Unos 60 tickets al día por sucursal, con picos de ~120: el volumen no presiona nada.
-- Cada sucursal vende sin internet: su servidor vive en la caja principal y las demás cajas tienen contingencia.
-- Las cajas principales **se apagan de noche** y las sucursales probablemente tendrán **horarios distintos**.
-- La casa del dueño está en un lugar distinto a la matriz. El dueño revisa aperturas y cierres cada día; las
-  autorizaciones a distancia serán cada vez menos.
-- Las entregas de proveedores son 1 o 2 días por semana.
-- Es posible que lleguen dispositivos propios que trabajan de noche (vigilancia): ver [ideas](ideas.md).
-- Pagar en dólares con tarjeta es una preocupación.
+1. **Administrar ante un suceso estando fuera:** enterarse, revisarlo de inmediato contra el sistema y las cámaras (y
+   el contador de personas), y actuar. Es la base del piloto automático ([ideas](ideas.md)).
+2. **Precios por sucursal:** iguales el primer día; con seguridad se irán ajustando.
+3. **Resistir cualquier flujo de mercancía:** dónde llega y cómo se reparte está por definir. No hay clientes con
+   crédito compartidos.
+4. **Calidad-precio:** cumplir los requisitos al menor precio posible; la dificultad de programarlo no es impedimento.
 
-## Las opciones
+Y lo de siempre: cada sucursal vende sin internet, las cajas principales se apagan de noche, los horarios son
+distintos y solo serán 2 sucursales durante al menos un año (una 3.ª, quizá en unos dos).
 
-| Opción | Cómo funciona | Al mes | Veredicto |
-|---|---|---|---|
-| **Sucursales autónomas y enlazadas** | Cada sucursal con su servidor en la caja principal. La matriz publica el catálogo; lo que debe estar siempre prendido lo hacen servicios gratis | 0 | **Recomendada el primer año** |
-| Central ligero | Un servidor virtual recibe ventas, cortes y movimientos de las dos, reparte el mismo catálogo y da un panel de las dos juntas | 90 (Vultr) a 146 (Lightsail, con IVA) MXN | Si aparece una [señal](#cuándo-montar-el-central) |
-| Central completo | Lo anterior y además clientes, crédito, usuarios y un solo bot compartidos (era el plan) | 90 a 146 MXN | Con la 3.ª sucursal o una [señal](#cuándo-montar-el-central) |
-| Un solo servidor en la nube para las dos | Todas las cajas trabajan por internet contra el servidor | 90 a 180 MXN | Descartada: sin internet, toda la sucursal queda en contingencia |
-| La matriz atiende también a la sucursal 2 | Las cajas de la sucursal 2 se conectan por internet a la caja principal de la matriz | 0 | Descartada: la sucursal 2 depende de la luz, el internet y el horario de la matriz |
-| Sincronizar directo entre las dos | Las cajas principales se pasan los cambios entre sí | 0 | Descartada: el mismo código grande que el central, y solo funciona con las dos prendidas a la vez |
-| Cada una con su catálogo | Igual que la recomendada, sin repartir el catálogo | 0 | Solo como puente de unas semanas: doble captura de productos y precios |
-
-**Por qué no un servidor para las dos:** en contingencia una caja vende, pero no cancela, no devuelve, no cobra
-impresiones, no recibe compras ni cuenta inventario: eso espera a la conexión. Con el servidor lejos, cada corte de
-internet deja así a toda la sucursal.
-
-## El primer año, sin central
-
-Lo que el plan le pedía al central, y quién lo cubre el primer año:
-
-| Lo que hacía el central | El primer año |
-|---|---|
-| Repartir catálogo y precios | La matriz publica el **catálogo completo** en Backblaze B2; la sucursal 2 lo aplica al encender y cada pocos minutos. No tienen que estar prendidas a la vez. Precios iguales; la sucursal 2 no edita el catálogo |
-| Concentrar los datos y el panel | Cada sucursal guarda los suyos. De noche llega el resumen de cierre de cada una por Telegram. De día, el dueño abre en su PC la caja con su usuario y PIN, conectada por la red privada a la sucursal que elija (una a la vez) |
-| Bot de Telegram | Un bot por sucursal: dos chats |
-| Vigilar aperturas | Healthchecks.io: una vigilancia por sucursal con su horario. Si la sucursal no se reporta a su hora, avisa, aunque la tienda no tenga luz ni internet |
-| Respaldo fuera de la tienda | Cada caja principal sube a B2 la copia diaria y la del corte Z, comprimidas y cifradas, y borra lo viejo con una regla |
-| Cola de entrega | No hace falta: el catálogo espera en B2, y los mensajes de WhatsApp en su receptor, hasta que la caja principal enciende |
-| WhatsApp | Captura desde la PC ([etapa 1](whatsapp.md)). Si se quiere la API, no obliga a tener central: basta un receptor aparte |
-| Actualizaciones | El mismo día en las dos sucursales, por acceso remoto |
-| Dispositivos propios | Para avisar no necesitan central ([ideas](ideas.md)); para cruzar sus eventos con la caja, sí |
-
-**Lo que se pierde frente al central:** ver las dos sucursales juntas (de día se ve cada una por separado; de noche,
-solo el resumen), el aviso de una caja principal que se apaga a media jornada, el crédito y los clientes compartidos,
-los precios por sucursal, las compras repartidas y los traspasos automáticos (se capturan a mano: salida en la matriz
-y entrada en la sucursal 2).
-
-**Qué hay que programar** (mediano, mucho menos que el central):
-
-- Dar de alta la sucursal 2 en una base nueva a partir del catálogo de la matriz, con los mismos Id.
-- El paquete de catálogo completo, con versión y huella. Tiene que ser completo: hoy los códigos y presentaciones que
-  se quitan se borran sin rastro (los precios quitados solo quedan en su historial), y ningún borrado sube la versión
-  del catálogo; una bajada de «solo lo cambiado» no los vería.
-- El catálogo de solo lectura en la sucursal 2 (también para el dueño), con su regla por sucursal.
-- Que el POS se reporte con Healthchecks al abrir el turno y al terminar el respaldo.
-- El nombre de la sucursal en los mensajes de Telegram.
-- Que el dueño abra desde su PC la sucursal que elija: hoy una caja se da de alta en una sola sucursal y el servicio
-  solo acepta la red local.
-- El traspaso a mano: la salida en la matriz y la entrada en la sucursal 2 con el costo de la salida (hoy no hay
-  pantalla).
-- **Seguridad:** hoy el servicio deja pasar sin llave lo que llega de la misma PC. Ningún túnel ni intermediario
-  (Caddy, cloudflared, Tailscale Serve) va en una caja principal mientras sea así.
-
-### Servicios
-
-| Servicio | Para qué | Costo | Ojo |
-|---|---|---|---|
-| **Backblaze B2** | Respaldo y paquete de catálogo | 0 hasta 10 GB; después ~0.12 MXN por GB al mes | No pide tarjeta. Sin una regla que borre lo viejo (por ejemplo, 14 días) se llena en semanas; al tope deja de subir |
-| **Healthchecks.io** (Hobbyist) | Aviso si una sucursal no abrió o no respaldó | 0 (hasta 20 vigilancias; se usan 4: apertura y respaldo de cada sucursal) | Permite uso en empresa y no pide tarjeta. Lo opera una sola persona. Borra la cuenta tras un año sin entrar. Si al abrir se cae el internet, avisa aunque sí se abrió. Avisa por su propio bot de Telegram y por correo |
-| **NetBird** (Free) | Red privada: el dueño y soporte llegan a cada caja principal sin abrirla a internet | 0 (5 usuarios, 100 equipos) | Sus términos admiten uso en un negocio. Puede quitar el plan con 14 días de aviso: el plan B es Tailscale para negocio con 1 usuario, 8 USD al mes (≈144 MXN). Falta confirmar si pide tarjeta (no cobra) |
-| **RustDesk** | Control remoto para soporte, por la red privada | 0 | Programa libre; por la red privada no necesita servidor propio |
-| **Bot de Telegram** | Alertas, resumen y autorizaciones | 0 | Uno por sucursal |
-
-Las cuentas las abre el dueño a nombre del negocio, con su correo y verificación en dos pasos; soporte entra como
-invitado.
-
-**Descartados:** Tailscale y ZeroTier gratis (solo uso no comercial); Cloudflare Tunnel y Access (hacen de intermediario
-en la misma PC; Access además pide tarjeta aunque no cobre); Cloudflare R2 (pide tarjeta y cobra las escrituras arriba
-de un millón); Litestream en las cajas principales (no tiene soporte oficial en Windows: la copia que ya hace el POS
-basta).
-
-## Cuándo montar el central
-
-**Central ligero**, con cualquiera de estas señales:
-
-- El dueño necesita ver las dos sucursales juntas, de noche o en fin de semana, más de una vez por semana.
-- Llegan los dispositivos de vigilancia y sus eventos se tienen que cruzar con la caja.
-- Llega la API de WhatsApp y no se quiere un receptor aparte.
-
-**Central completo**, con la primera de estas:
-
-- Se decide la 3.ª sucursal. Hay que empezar unos 6 meses antes: la sincronización es grande y el ensayo largo dura
-  de 2 a 4 semanas.
-- Clientes con crédito compran seguido en las dos sucursales.
-- La sucursal 2 necesita dar de alta productos o tener precios propios con frecuencia.
-- Los traspasos capturados a mano dejan de cuadrar (más de unos 5 por semana).
-
-## Dónde, cuando haga falta
-
-| Opción | Al mes | A favor | En contra |
-|---|---|---|---|
-| **Vultr Ciudad de México** (1 vCPU, 1 GB, 25 GB) | 89.89 MXN (5 USD; no cobra IVA) | Lo más barato con región en México. Se cobra por hora, acepta saldo prepagado y crece en minutos (2 GB: 179.78 MXN) | Cobra en dólares y no da factura |
-| **AWS Lightsail** de 1 GB, facturado por AWS México | ≈146 MXN con IVA | Desde 2026 cobra en pesos con tarjeta mexicana y da CFDI | Está en EE. UU. (no importa para esto). Hay que elegir el plan de pago desde el inicio: el plan gratis suspende la cuenta a los 6 meses |
-| **Una máquina propia en casa del dueño** | Luz con IVA: 10–34 MXN la laptop, 34–120 la PC | Ya existe | Depende de la luz y el internet de la casa y de que nadie la apague. Solo si pasa la [prueba](prueba-sucursales-linux.md) |
-
-**Descartados:** Oracle Cloud gratis (recupera las máquinas que casi no usan procesador, como esta); servidores pagados
-en pesos por adelantado como Hostinger o Neubox (piden 1 o 2 años por adelantado; Hostinger sale más barato los primeros
-2 años pero renueva al doble, y no está confirmado que dé CFDI); DigitalOcean, Akamai, Hetzner, Azure y Google (Google y
-Akamai cuestan igual o menos, pero en dólares, fuera de México y sin CFDI; Hetzner casi triplicó su precio en EE. UU. en
-2026); un mini PC nuevo (5,600–10,000 MXN de capacidad que no se usa); un equipo prendido toda la noche en la matriz (si
-la matriz se queda sin luz o internet, no puede avisar que no abrió).
-
-### Costo
-
-| | Primer año | A 3 años |
-|---|---|---|
-| Sin central (recomendada) | 0 | 0; si la 3.ª llega en unos dos años (central desde el mes 19): 1,620–2,630 MXN |
-| El plan anterior: Vultr, Tailscale para negocio y dominio | 3,050–4,780 MXN | 9,160–14,340 MXN |
-| Central ligero en Vultr o Lightsail, con red privada en el mismo servidor | 1,080–1,750 MXN | 3,240–5,260 MXN |
-
-### Cómo se arma
+## La propuesta
 
 ```
-Servidor virtual · Ubuntu 26.04 LTS · 1 núcleo · 1 GB
+Cada sucursal                                    Central: servidor virtual siempre prendido
+├─ Caja principal: vende sin internet ──HTTPS──► sincronización, catálogo y precios por sucursal,
+│  sube cada cambio; baja catálogo,              sucesos y avisos, acciones a distancia, panel,
+│  precios, reglas y comandos                    un solo bot, WhatsApp, respaldo continuo
+├─ Cajas: contingencia, como hoy
+├─ Puente (Raspberry Pi) ──────────────HTTPS──►
+│  cámaras, reloj de la tienda, contador
+└─ Grabador Dahua y cámaras
+
+Fuera: Healthchecks.io (vigila al central y a las tiendas), Backblaze B2 (respaldos), NetBird (red privada)
+```
+
+- **Cada sucursal vende sola:** su servidor sigue en la caja principal y ninguna venta pasa por el central.
+- **El central** va en un servidor virtual en Ciudad de México (Vultr), con respaldo diario: **215.74 MXN al mes** el
+  de 2 GB (12 USD, sin IVA ni CFDI), o 107.87 el de 1 GB si la [prueba](prueba-sucursales-linux.md) muestra que
+  alcanza (se puede subir de plan, no bajar).
+- **Sincronización hecha a la medida:** la caja principal sube cada cambio en segundos cuando hay internet, y baja
+  catálogo, precios, reglas y comandos. La conexión siempre la abre la tienda: nada entra a la tienda desde fuera.
+- **Un puente en cada tienda** para las cámaras, el reloj y el contador ([cámaras](camaras.md)).
+- **Avisos que escalan:** Telegram con foto y botones; si no se ve, una alerta que suena aunque el celular esté en
+  silencio (Pushover); a los 5 minutos, una llamada en español con opciones por teclado (Twilio), que entra aunque el
+  celular no tenga datos; a los 10, al suplente. Healthchecks.io vigila desde fuera, aunque falle el central, y si el
+  central no contesta, el puente manda lo urgente directo por Pushover.
+- **Actuar a distancia:** bloquear lo sensible o toda la caja, corte X sorpresa, suspender a un usuario, modo estricto
+  por unas horas (todo retiro, cancelación, devolución o descuento pide autorización), pedir un conteo, mandar un
+  mensaje a la pantalla de la caja y encender la caja principal. Lo sensible pide PIN o huella. Cada acción vence sola
+  si no llega a tiempo, y la caja confirma que la recibió. El bloqueo también aplica en contingencia.
+- **Panel del dueño en internet** con llave de acceso (passkey, resiste el robo de contraseñas) en un dominio propio.
+  No depende de la red privada.
+- **Red privada** (NetBird, gratis) solo para ver las cámaras en vivo y para soporte. Si se cae, siguen los avisos, el
+  panel y las acciones.
+- **En el celular del dueño:** Telegram, Pushover (con las alertas críticas encendidas), NetBird conectada para ver en
+  vivo, DMSS y el navegador para el panel. La llamada no necesita app.
+
+### Cómo se cumple cada respuesta
+
+| Respuesta | Cómo |
+|---|---|
+| 1. Administrar ante un suceso | **Detectar:** reglas en la sucursal, que funcionan sin internet, y reglas en el central (horario, noche, presencia, contador). **Ver:** cada suceso llega con el ticket, lo que pasó en esa caja 10 minutos antes y después, el conteo de personas, la foto de esa caja en ese segundo y su clip ([cámaras](camaras.md)). **Actuar:** las acciones a distancia. **Escalar:** Telegram, alerta que suena aunque el celular esté en silencio, llamada y suplente. Si la caja principal deja de reportar en horario, el central avisa en minutos y dice si fue la PC o la luz y el internet |
+| 2. Precios por sucursal | El cobro ya usa el precio de la sucursal y, si no hay, el base, con conexión y sin ella. El día 1 todo queda en el base. En F3, un interruptor por producto: «igual en todas» o «distinto», y un permiso aparte para «precio de mi sucursal». Un cambio hecho sin internet se aplica al momento y sube como propuesta: si nadie tocó ese precio entra; si alguien lo tocó, gana el de mayor rango, nunca por la hora del reloj, y al otro se le avisa |
+| 3. Cualquier flujo de mercancía | El kardex dice dónde está cada pieza. Cualquier sucursal compra y recibe; la compra guarda quién paga y quién recibe, y el retiro con que se pagó se liga a ella aunque la reciba la otra sucursal. La orden lleva el destino de cada línea, así que el proveedor puede entregar directo en cada sucursal. En una compra repartida, quien recibe registra todo al costo de la nota y la parte de la otra sucursal queda «de paso» (no se vende) hasta que sale como traspaso, al mismo costo. Traspaso con estados (borrador → enviado → recibido a ciegas → cerrado) y un QR. Un almacén futuro es una sucursal sin cajas. El crédito es de cada sucursal y sube al central solo para verlo |
+| 4. Calidad-precio | Cada pieza cubre un requisito y se eligió la más barata que lo cumple ([opciones](#opciones-comparadas)) |
+
+## Opciones comparadas
+
+| Pieza | Elegida | Costo | Lo que se descartó y por qué |
+|---|---|---|---|
+| Central | Vultr Ciudad de México con respaldo diario | 2 GB: 215.74 MXN al mes; 1 GB: 107.87 (en dólares, sin IVA ni CFDI) | **Por medir:** 1 GB. La estimación deja 110–500 MB libres durante un suceso; la prueba decide. **Alternativa:** Lightsail de 2 GB facturado por AWS México, ≈315–325 con IVA y CFDI, si el contador dice que la factura lo compensa. **Descartados:** un equipo en la casa del dueño (depende de su luz e internet); Oracle gratis (recupera las máquinas que casi no usan procesador); todas las cajas trabajando contra el central (sin internet no cancelan, no devuelven ni cobran impresiones); sin central (no cumple la respuesta 1) |
+| Red privada | NetBird gratis (5 personas, 100 equipos; sus términos admiten un negocio) | 0 | **Plan B:** Tailscale para negocio con 1 usuario, 143.82 MXN al mes (en dólares, sin IVA), si NetBird falla la prueba o retira su plan gratis. **Descartados:** Tailscale y ZeroTier gratis (solo uso no comercial); Headscale en el central (si cae el central se pierde también el acceso a las cámaras); dejar el P2P de DMSS para siempre ([ataque de 2026](camaras.md#ver-desde-fuera)) |
+| Puente | Raspberry Pi 5 de 2 GB en cada tienda (kit con fuente, carcasa y microSD) | 2,788 MXN con IVA cada uno, más envío; 9–11 al mes de luz | La laptop o la PC del dueño, solo de emergencia: casi ninguna enciende sola si se le agotó la batería. **Descartados:** mini PC N150 (5,100–7,600 con IVA, sin hacer nada más) y router GL.iNet (no guarda video) |
+| Contador | Líneas de cruce del grabador | 0 | Si el error es alto: una cámara Dahua que cuenta de verdad sobre la puerta (≈4,640 con IVA; descontinuada) o Frigate (≈6,700 con IVA). **Descartados:** sensor ESP32 (falla con grupos, igual que las líneas), cámara 3D y contador comercial (12,000–19,000 por entrada, sin IVA) ([cámaras](camaras.md#contar-personas)) |
+| Avisos | Telegram, Pushover, Twilio y Healthchecks.io gratis | Pushover 99–105 MXN una vez, con IVA; Twilio 37–55 al mes, con IVA | **Descartado:** Healthchecks de pago para llamar (359.56 al mes, sin IVA; llama en inglés y no actúa sobre el POS) |
+| Respaldo | Backblaze B2 con llaves que no pueden borrar y bloqueo de 14–30 días | 0 hasta 10 GB | Cloudflare R2 (pide tarjeta y cobra escrituras) |
+| Dominio | `.com` en Cloudflare | 188 MXN si se registra antes del 31 de octubre de 2026; 201 al año después (en dólares) | Hace falta: las llaves de acceso no funcionan con una dirección IP. **Alternativa en pesos:** `.com.mx` en Akky, 249 con IVA el primer año, sin prisa |
+
+## Costo
+
+| Concepto | Una vez | Al mes |
+|---|---|---|
+| Central (Vultr 2 GB con respaldo) | 0 | 215.74 (en dólares) |
+| Dominio `.com` | — | ≈16 (188–201 al año) |
+| 2 puentes Raspberry Pi 5 de 2 GB y una microSD de repuesto | 5,892 con IVA, más envío | 18–22 de luz |
+| Pushover en el celular del dueño | 99–105 | 0 |
+| Twilio: llamada que entra aunque el celular no tenga datos, también al suplente | saldo prepagado, que se gasta en las llamadas | 37–55 con IVA (10 a 25 llamadas de 1 minuto; ≈86 si duran 2; ≈12–31 si sale con el teléfono fijo de la tienda) |
+| NetBird, Healthchecks.io, Backblaze B2, Telegram y el software | 0 | 0 |
+| Contador | 0 si sirven las líneas del grabador | 0 |
+| No-break de 800–1000 VA, solo si no hay (2 × 1,009–1,799, con IVA; dato previo sin reverificar) | 2,020–3,600 | 0 |
+| Grabador de la matriz, solo si es básico (XVR5104HS-4KL-I3, se reusa el disco) | ≈1,739 con IVA | 0 |
+| Opcional: internet de respaldo por 4G, por sucursal | 720–940 | ≈200 |
+
+- **Al mes, ya instalado:** ≈287–309 MXN.
+- **Primer año:** ≈9,400–9,700 MXN, o ≈11,400–13,300 si hay que comprar los dos no-break.
+- **A 3 años:** ≈16,300–17,100 MXN, más los no-break si hacen falta.
+- **Si alcanza el central de 1 GB:** ≈1,300 menos al año.
+- **La 3.ª sucursal** suma su puente y su no-break (≈3,800–4,600 MXN) y ≈10 al mes de luz; su grabador debe ser de la
+  serie XVR5 con «-I3» (si no, ≈1,739 más).
+
+## Entregas
+
+| Cuándo | Qué |
+|---|---|
+| **Ya** (fase 3; solo el dominio cuesta) | [Configurar los grabadores](camaras.md#configurar-el-grabador). Abrir a nombre del negocio, con verificación en dos pasos, Backblaze, Healthchecks.io, NetBird, Cloudflare y Vultr. Registrar el dominio (`.com` antes del 31 de octubre si acepta pagar en dólares; si no, `.com.mx` sin prisa). Etapa 0 de la [prueba](prueba-sucursales-linux.md) |
+| **Arreglos previos** (fase 3, chico) | Cerrar un hueco de seguridad: hoy el servicio deja pasar sin llave lo que llega de la misma PC. Identidad fija de cada sucursal. Quitar lo que da por hecho una sola sucursal. Registrar lo que se quita del catálogo (hoy las presentaciones, los códigos y las ligas con proveedores se borran sin rastro; solo los precios quedan en su historial). Autor, sucursal de origen y versión en el historial de precios. Prefijo de sucursal en los códigos internos. Días de descanso. Los arreglos para Linux |
+| **Fase 5** (piloto en la matriz) | Respaldo cifrado en B2, aviso de apertura en Healthchecks.io, red privada para soporte. El puente de la matriz con lo básico: ver la matriz en vivo sin abrir puertos ni usar el P2P |
+| **6.1** Central, solo de subida (grande) | **Lo que gana el dueño:** ve en el panel, casi en vivo, las ventas, los cortes y las existencias de las dos sucursales, y un cuadre diario avisa si algo no llegó. **Por dentro:** llave por sucursal, bandeja de subida, réplica sin duplicados, cuarentena de lo que no cuadra, versión del protocolo y respaldo continuo. Al cerrarla: unas horas en un servidor por hora, se contrata el central y entra a trabajar solo con la matriz |
+| **6.2** Bajada y precios (grande) | Catálogo maestro, precios por sucursal en F3, propuestas sin internet, el arreglo del ajuste de margen en compras (hoy mueve el precio base) y el alta de la sucursal 2 desde el central con los mismos Id |
+| **6.3** Sucesos, avisos y acciones (mediano) | Un solo bot en el central, presencia de cada sucursal, estados del suceso, Pushover (también directo desde el puente si el central no contesta), llamada con suplente, acciones a distancia con vencimiento y confirmación, bloqueo que aplica en contingencia, PIN o huella, diagnóstico dentro del aviso |
+| **6.4** Mercancía (grande) | Sucursal o almacén, traspaso con estados y QR, orden con destino por línea, compra en cualquier sucursal con quién paga separado de quién recibe, compra repartida «de paso» con salida al costo de la nota, y devolución de una venta de otra sucursal |
+| **6.5** Cámaras y contador (mediano) | La caja manda el texto de cada suceso al grabador. El servicio del puente: eventos del grabador, foto y clip, reloj de la tienda, vigilancia nocturna y conteo. Simulacro de noche con datos móviles: cámara y panel en menos de 15 s |
+| **6.6** Ensayo largo (2–4 semanas) | Fallas provocadas, restauraciones y medir la memoria y el disco del central |
+| **Fase 7** (sucursal 2) | Llega con su puente, su no-break, sus avisos y su horario; precios iguales el día 1. **Mínimo para pasarla al POS:** de 6.1 a 6.5 y la etapa 2 de la [prueba](prueba-sucursales-linux.md) (dos sucursales con central). Si abre antes, abre con eleventa: su puente solo sirve para ver en vivo sin P2P; no hay avisos de sucesos ni cruce con el sistema |
+| **Fase 9** (piloto automático) | Modo ausente con sus reglas, que funcionan sin internet; límites de aprobación; comparación contra lo normal de cada hora; cada decisión queda en la bitácora como «piloto». La inteligencia artificial, si se usa, solo resume: nunca aprueba ni bloquea |
+
+La **API de WhatsApp** ya no espera a toda la fase 6: va cuando el dueño la quiera, después de 6.2 (cuando ya hay
+bajada), con el webhook en el central ([WhatsApp](whatsapp.md)).
+
+## Si algo falla
+
+| Falla | Qué sigue funcionando |
+|---|---|
+| El central | La venta y las cámaras en vivo por la red privada; Healthchecks.io avisa, y el puente manda directo por Pushover lo urgente (persona de noche, retiro grande). Mientras vuelve se pierden el panel, la sincronización, los avisos por Telegram y las acciones a distancia; en la caja queda el PIN |
+| La red privada | Los avisos con foto, el panel y las acciones; no se ve en vivo |
+| El puente | La venta; el central avisa. De día, los sucesos llegan sin foto; de noche, no hay vigilancia ni contador hasta que vuelva |
+| El internet de una tienda | La venta; el central avisa. Mientras dure, no se ven las cámaras ni llegan los sucesos (por ejemplo, si de noche cortan el cable); suben al volver. Por eso el internet de respaldo por 4G es opcional |
+| Telegram | La alerta que suena aunque el celular esté en silencio, y la llamada |
+
+## Respaldos
+
+1. **Local:** la copia diaria y la del corte Z en cada caja principal, como hoy.
+2. **El central:** la réplica casi en vivo de las dos sucursales.
+3. **Fuera:** la copia cifrada de cada sucursal en Backblaze B2, con una llave que no puede borrar y bloqueo de 14–30
+   días.
+4. **El central mismo:** copia continua (Litestream) a B2 y el respaldo diario de Vultr.
+
+**Ensayos:** una restauración automática cada semana, una completa cada mes en la máquina con Linux de la
+[prueba](prueba-sucursales-linux.md#las-máquinas) y reconstruir una caja principal cada 3 meses.
+
+## Cómo se arma el central
+
+```
+Servidor virtual · Ubuntu 26.04 LTS · 1 núcleo · 1 o 2 GB
 │
-├─ Cortafuegos ........ a internet solo lo indispensable
-├─ WireGuard .......... red privada de las sucursales, el dueño y soporte (reemplaza a NetBird)
-├─ Caddy .............. HTTPS automático, solo si hay algo público (WhatsApp, dispositivos)
-├─ Servicio POS en modo central (.NET 10, se reinicia solo)
-│  └─ central.db (SQLite)
-├─ Litestream ......... copia continua de la base a Backblaze B2
-└─ Parches de seguridad automáticos
+├─ Cortafuegos y parches automáticos; acceso de soporte solo por la red privada
+├─ Caddy: HTTPS; a internet solo la sincronización, los puentes, el panel, la app de Telegram, la llamada
+│  y, cuando llegue, el webhook de WhatsApp; todo con llave, llave de acceso o firma
+├─ Servicio POS en modo central (.NET 10): réplica, catálogo, sucesos, acciones, bot, panel
+│  ├─ central.db (SQLite)
+│  └─ fotos y clips de los sucesos, 30 días, como archivos aparte
+├─ Litestream: copia continua de central.db a Backblaze B2 (sin las fotos ni los clips)
 Fuera: Healthchecks.io avisa si el central deja de reportarse
 ```
 
 - **Instalación con un script** que queda en el repositorio. El servidor es desechable: si muere, se crea otro, se corre
-  el script y se restaura la base en 15–30 minutos. Antes se prueba en una máquina propia
-  ([prueba](prueba-sucursales-linux.md)) y unas horas en el servidor virtual, que se cobra por hora.
-- **Memoria:** el servicio de sucursal usa ~190–230 MB (medido en la PC de desarrollo). Se espera que 1 GB alcance
-  para 2 o 3 sucursales; la [prueba](prueba-sucursales-linux.md) lo confirma (si no, el plan de 2 GB).
-- **Dominio** (solo si hay algo público): `.com.mx` en Akky, 249 MXN con IVA el primer año, en pesos (renovación por
-  confirmar).
+  el script y se restaura la base en 15–30 minutos.
+- **Memoria:** la prueba mide si basta 1 GB; con 2 GB, debe quedar bajo 1.4 GB sostenidos (si no, el plan de 4 GB,
+  431.47 MXN al mes con respaldo, sin IVA).
+- **Disco:** los clips van en calidad baja (≈8 MB cada uno) y la foto en alta. Con hasta unos 100 sucesos al día, 30
+  días ocupan ≈24 GB: caben en los 55 GB del plan de 2 GB; con 1 GB (25 GB de disco), menos días.
+- **Antes de Caddy,** el servicio deja de confiar en lo que llega de la misma PC.
 
-## Gestión por excepción
+## Riesgos
 
-La rutina diaria no necesita abrir ningún panel; llega por Telegram:
-
-- **Apertura:** Healthchecks avisa si una sucursal no abrió a su hora.
-- **Cierre:** el resumen de cada sucursal (ventas, utilidad, corte y diferencias, cancelaciones) al hacer el último
-  corte Z.
-- **Alertas** en el momento y **autorizaciones** con botones.
+- **Mucho código:** sincronización, acciones, mercancía y puente son lo más pesado del plan. Defensas: entregas en
+  orden, pruebas de dos sucursales, un simulador con fallas y el cuadre diario. La sucursal 2 puede abrir con eleventa
+  si el código no llega a tiempo.
+- **Precios mal cobrados al separar un producto:** hoy el precio propio de una presentación le gana a la escala de la
+  sucursal, y el ajuste de margen en compras mueve el precio base. Deben quedar cubiertos por pruebas antes de 6.2.
+- **El grabador:** falta probar en sitio la foto, los eventos de personas, los permisos del usuario limitado y la hora
+  ([cámaras](camaras.md)).
+- **Servicios gratis:** NetBird puede retirar su plan con 14 días de aviso y parar hasta 2 horas por semana por
+  mantenimiento, que en México puede caer entre las 18:00 y las 19:00, con la tienda abierta: en ese rato quizá no se
+  vea en vivo, pero los avisos con foto sí llegan; el simulacro decide y Tailscale es el plan B. Healthchecks.io
+  gratis borra la cuenta tras un año sin entrar: soporte entra cada pocos meses.
+- **La hora:** sin el reloj de la tienda, la foto no coincide con el suceso.
+- **Demasiados avisos:** si suena todo, el dueño deja de hacer caso. Defensas: tres niveles, agrupar los repetidos,
+  umbrales fijos el primer mes y, de noche, solo con persona detectada.
+- **El celular del dueño:** la alerta que suena en silencio se activa a mano (en iPhone) o con una excepción de «No
+  molestar» (en Android); el número de la llamada se guarda como contacto para que no parezca spam.
+- **Pagos en dólares:** Vultr y el dominio, sin factura mexicana; Twilio sí da CFDI desde marzo de 2026 si se capturan
+  bien el RFC y los datos fiscales (cobra IVA e IEPS). La deducción con factura extranjera la confirma el contador.
+- **Telegram** guarda los mensajes sin leer solo 24 horas: si el central pasa más de un día caído, se pierden las
+  respuestas de ese tiempo.
+- **Privacidad:** fotos y clips son datos personales ([cámaras](camaras.md#privacidad)).
 
 ## Preguntas
 
-- [ ] ¿Cuándo abre la sucursal 2? ¿Abre con eleventa o directo con el POS nuevo?
-- [ ] ¿Qué horario tiene cada sucursal y qué días descansa? (para el aviso de «no abrió»)
-- [ ] ¿Le basta el resumen de cierre por Telegram y entrar de día a cada sucursal, o necesita ver las dos juntas de
-  noche? De eso depende si el primer año hace falta un servidor.
-- [ ] ¿Los precios pueden ser iguales en las dos sucursales el primer año? ¿Acepta que solo la matriz dé de alta
-  productos y que la sucursal 2 venda lo nuevo como artículo común?
-- [ ] ¿Cómo le llega la mercancía a la sucursal 2: por traspaso desde la matriz o directo del proveedor? ¿Cuántos
-  traspasos por semana espera?
-- [ ] ¿Hay clientes con crédito que compren en las dos sucursales?
-- [ ] ¿Le parece bien tener dos chats de Telegram, uno por sucursal, más el de Healthchecks para el aviso de «no
-  abrió»?
-- [ ] ¿NetBird gratis (sus términos admiten un negocio, pero puede quitar el plan con 14 días de aviso; entonces se
-  pasa a Tailscale) o Tailscale para negocio desde el principio, 8 USD al mes (≈144 MXN) con tarjeta que acepte
-  dólares?
-- [ ] ¿Abre usted las cuentas de Backblaze, Healthchecks.io y NetBird a nombre del negocio? ¿Acepta que las copias
-  cifradas se guarden fuera de México?
-- [ ] ¿La caja principal de la sucursal 2 tendrá SSD y no-break?
-- [ ] Cuando haga falta un servidor, ¿en pesos con factura (AWS México, ≈146 MXN al mes con IVA) o en dólares sin
-  factura (Vultr, 89.89 MXN al mes)?
-- [ ] ¿Quiere la API de WhatsApp el primer año, o sigue la captura desde la PC? ¿La sucursal 2 tendrá un número
-  nuevo? Conviene usarlo con clientes unas semanas antes del alta.
-- [ ] ¿Qué tan segura es la 3.ª sucursal y para cuándo? Marca cuándo empezar el central, unos 6 meses antes.
+- [ ] ¿Cuándo abre la sucursal 2? ¿Abre con eleventa o directo con el POS? ¿Cuántas cajas tendrá?
+- [ ] ¿Qué horario y qué días de descanso tiene cada sucursal? ¿En qué estado y municipio está cada una (zona
+  horaria)?
+- [ ] Internet de cada sucursal: ¿qué compañía, fibra o cobre, qué velocidad de subida? ¿El módem queda prendido de
+  noche? ¿Hay no-break? ¿Quiere internet de respaldo por 4G para que la vigilancia de noche no dependa del cable?
+- [ ] ¿Hay teléfono fijo en la tienda? Si lo hay, la llamada de aviso sale con ese número: más barata y no parece
+  spam.
+- [ ] ¿Su celular es iPhone o Android? ¿Acepta instalar Pushover y NetBird y dejar NetBird conectada?
+- [ ] Si usted no contesta en 10 minutos, ¿a quién llamamos? ¿Esa persona solo se entera, o también puede bloquear o
+  aprobar?
+- [ ] ¿Desde qué nivel de suceso lo despertamos de noche? ¿Desde qué monto es un retiro grande y una diferencia en
+  corte?
+- [ ] Bloquear una caja a distancia: ¿detiene toda venta o solo lo sensible (retiros, cancelaciones, devoluciones y
+  descuentos)?
+- [ ] Precios: ¿quién cambia los de cada sucursal, solo usted o también el encargado? ¿Se pueden cambiar sin
+  internet? ¿Las sucursales pueden dar de alta productos?
+- [ ] Mercancía: ¿dónde llegan hoy las compras? ¿Habrá entrega directa a la sucursal 2? En una compra repartida, ¿el
+  reparto se decide al pedir o al recibir? ¿Quién paga? En un traspaso con faltante, ¿quién responde?
+- [ ] ¿Se puede devolver en una sucursal lo comprado en la otra? ¿El descuento de un cliente registrado vale en las
+  dos?
+- [ ] Pagos: ¿en dólares sin factura (Vultr) o en pesos con CFDI (Lightsail, ≈315–325 con IVA)? Pregúntele a su
+  contador por la deducción de servicios del extranjero.
+- [ ] ¿Acepta comprar 2 Raspberry Pi y, si hace falta, 2 no-break? ¿Y cambiar el grabador de la matriz si es básico
+  (≈1,739)?
+- [ ] ¿Acepta guardar 30 días de fotos y clips en el central? ¿Ya tiene aviso de privacidad y letreros?
+- [ ] ¿Quién más necesita el panel o las cámaras (encargado, contador, soporte)? En NetBird gratis caben 5 personas.
+- [ ] ¿Quiere la API de WhatsApp el primer año? ¿La sucursal 2 tendrá un número nuevo?
+- [ ] ¿Qué tan segura es la 3.ª sucursal y para cuándo?

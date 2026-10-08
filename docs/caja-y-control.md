@@ -51,14 +51,14 @@ Se pueden poner umbrales. Ejemplos de reglas (todas editables):
 
 **Cómo se autoriza:**
 - con el PIN del encargado o del dueño en la misma caja, o
-- a distancia por Telegram: llega la solicitud con el detalle y botones para aprobar o rechazar.
+- a distancia por Telegram: llega la solicitud con el detalle y botones para aprobar o rechazar. Propuesta con el
+  [central](servidor-remoto.md): lo sensible pide además PIN o huella.
 
 Cada autorización guarda quién, cuándo y desde dónde. Es la idea de los permisos del invitado de Control Print,
 extendida a todo el POS.
 
 **Roles base:**
-- **Dueño:** todo, en todas las sucursales (propuesta para el primer año: en la sucursal 2 el catálogo es de solo
-  lectura también para él; se edita en la matriz, ver [opciones](servidor-remoto.md)).
+- **Dueño:** todo, en todas las sucursales.
 - **Encargado:** su sucursal.
 - **Cajero.**
 
@@ -73,6 +73,7 @@ Queda registrado, con quién y cuándo:
 - cambios de precio y descuentos
 - aperturas del cajón sin venta
 - ajustes de inventario
+- acciones a distancia (bloqueos, cortes X sorpresa, conteos pedidos) y lo que decida el piloto automático
 - ventas bajo costo
 - reimpresiones
 - autorizaciones dadas y negadas
@@ -80,10 +81,14 @@ Queda registrado, con quién y cuándo:
 
 ## Alertas al dueño (Telegram)
 
+Propuesta con el [central](servidor-remoto.md): tres niveles; lo urgente llega con la foto de la cámara de esa caja y
+botones, y si el dueño no lo ve, suena aunque el celular esté en silencio y después hay llamada. Desde el aviso se
+puede actuar: bloquear lo sensible o toda la caja, pedir un corte X o un conteo ([cámaras](camaras.md)).
+
 - Diferencia en el corte mayor a lo configurado
 - Cancelaciones, descuentos y precios fuera de regla
-- Sucursal sin conexión o caja principal apagada (latido cada minuto, con el central; el primer año, solo el aviso de
-  que no abrió o no respaldó)
+- Sucursal sin conexión o caja principal apagada en horario (la detecta el central)
+- Personas en la tienda después del corte Z, y mucha gente con pocos tickets (con el contador)
 - Caja abierta fuera de horario
 - Existencia negativa y diferencias en conteos y recepciones
 - Transferencias sin verificar al cierre

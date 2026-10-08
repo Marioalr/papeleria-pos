@@ -1,7 +1,8 @@
 # Fase 1, entrega 4 — Telegram
 
 > **Revisado.** El dueño se entera de lo importante y autoriza sin estar en la tienda. Parte de las
-> [alertas](caja-y-control.md#alertas-al-dueño-telegram) y de la [gestión por excepción](servidor-remoto.md#gestión-por-excepción).
+> [alertas](caja-y-control.md#alertas-al-dueño-telegram) y de la
+> [administración ante un suceso](servidor-remoto.md#la-propuesta).
 
 **Avance:** ya funciona todo, probado con un Telegram simulado (sin internet):
 
@@ -42,8 +43,9 @@ Falta probarlo con el bot de verdad.
 
 - **Solo conexiones de salida.** El servicio le pregunta a Telegram cada pocos segundos si hay respuestas (no
   necesita IP pública ni abrir puertos). Telegram solo deja un receptor por bot, así que el bot vive en la caja
-  principal. Con dos sucursales, la propuesta es un bot por sucursal; con el [central](servidor-remoto.md), un solo
-  bot que reparte a cada sucursal.
+  principal. Con el [central](servidor-remoto.md) (propuesta: antes de que la sucursal 2 pase al POS), un solo bot
+  en el central que reparte a cada sucursal, con el nombre de la sucursal, la foto del suceso y, para lo urgente, una
+  alerta que suena en silencio y una llamada si el dueño no lo ve.
 - **Cola de salida.** Cada mensaje se guarda antes de mandarse; si no hay internet, sale cuando vuelva, sin repetirse.
 - **Solo chats vinculados.** El bot ignora a cualquiera que no se haya vinculado, aunque encuentre el bot.
 

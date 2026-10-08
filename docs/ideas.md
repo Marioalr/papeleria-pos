@@ -1,26 +1,28 @@
 # Ideas a evaluar
 
-> Lluvia de ideas. Nada de esto condiciona la arquitectura todavía; solo se cuida no cerrarle la puerta.
+> Lluvia de ideas. El contador de clientes y la vigilancia de noche ya pasaron al plan ([cámaras](camaras.md)); lo
+> demás no condiciona la arquitectura todavía: solo se cuida no cerrarle la puerta.
 
 ## Dispositivos propios
 
-Supuesto de trabajo: dispositivos hechos a la medida (por ejemplo con ESP32 y Wi-Fi). Para avisar, directo a Telegram y
-a Healthchecks.io; para cruzar sus eventos con la caja, conectados al central con MQTT sobre TLS. Cada uno con su
+Propuesta (2026-10-08): el contador de clientes y la vigilancia nocturna pasan al plan, en la entrega 6.5 del
+[central](servidor-remoto.md#entregas), y usan primero lo que ya hay: el grabador Dahua de cada sucursal detecta
+personas de noche y cuenta cruces en la puerta, y el puente de la tienda recibe sus eventos ([cámaras](camaras.md)).
+Un dispositivo hecho a la medida (por ejemplo con ESP32 y Wi-Fi) solo si lo del grabador no alcanza: con su
 credencial, actualización remota y memoria para guardar eventos si se cae el internet.
 
 | Idea | Qué aporta al control |
 |---|---|
 | **Contador de clientes en la entrada** | **Conversión** = tickets ÷ personas que entran, por hora y por turno. Si entra mucha gente y hay pocos tickets, algo pasa: mala atención, faltantes o ventas sin registrar. También ayuda a decidir cuántas cajas abrir por hora |
 | **Presencia en la zona donde se guarda el efectivo** | Cada acceso se cruza con los retiros y depósitos registrados en la caja. Acceso sin movimiento registrado → alerta. Acceso fuera de horario → alarma |
-| **Vigilancia nocturna de una zona** | Se activa sola con el último corte del día y se desactiva con la apertura. Alerta por Telegram |
+| **Vigilancia nocturna de una zona** | Se activa sola con el último corte del día y se desactiva con la apertura. Alerta con foto que escala si el dueño no la ve ([cámaras](camaras.md#de-noche)) |
 
 Lo que implicaría:
 
-- Para solo avisar no hace falta el central: el dispositivo manda su aviso a Telegram con su propio bot y avisa a
-  Healthchecks.io que sigue vivo. Para cruzar sus eventos con la caja hace falta algo siempre prendido que los reciba
-  de noche: es una de las señales para montar el [central](servidor-remoto.md#cuándo-montar-el-central).
-- Router y dispositivo con no-break, para que la vigilancia no se apague con la luz. Opcional: respaldo por datos
-  celulares para la alarma.
+- Algo siempre prendido que reciba los eventos de noche: el puente de cada tienda y el central.
+- Módem, grabador, cámaras y puente con no-break, para que la vigilancia no se apague con la luz. Opcional: respaldo
+  por datos celulares para la alarma.
+- La presencia en la zona del efectivo queda para la fase 9 (un sensor en el cajón o una zona del grabador).
 - Los eventos de los dispositivos entran por el mismo camino que los de las cajas y se cruzan con ellos (tickets,
   retiros, cortes).
 - Si hay cámaras o grabación: aviso de privacidad y letreros.
@@ -32,7 +34,10 @@ que pida las tareas de la tienda en el momento oportuno, no a una hora fija.
 
 - **Piloto automático:** si el dueño se ausenta, el POS sigue la operación por su cuenta. Decide lo rutinario con las
   reglas que él dejó (autorizaciones dentro de límites, pedidos del sugerido de compra, avisos al encargado) y solo le
-  escala lo que sale de lo normal.
+  escala lo que sale de lo normal. Se apoya en lo que construye la fase 6 para
+  [administrar ante un suceso](servidor-remoto.md#la-propuesta): sucesos con foto, avisos que escalan y acciones a
+  distancia. Las reglas del modo ausente funcionan sin internet y cada decisión queda en la bitácora como «piloto». Si
+  se usa inteligencia artificial, solo resume y explica: nunca aprueba ni bloquea.
 - **Detector de ratos tranquilos:** con dispositivos propios (contador de clientes, presencia en el mostrador) y el
   ritmo de las ventas, sabe cuándo hay calma y aprovecha para pedir lo que espera: el conteo cíclico del día, ordenar
   una zona, reacomodar.
