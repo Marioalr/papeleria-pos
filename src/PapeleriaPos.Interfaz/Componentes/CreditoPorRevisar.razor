@@ -1,0 +1,101 @@
+@* Clientes → Por revisar (fase 3, entrega 2, parte 2.4): lo del crédito que se hizo sin conexión y no cuadró al volver
+   (pasó el límite más de lo autorizado, ya no tenía crédito o un abono lo dejó a favor). El servicio lo aceptó (ya se
+   entregó la mercancía o se recibió el dinero); aquí el encargado o el dueño lo leen, lo arreglan si hace falta (un
+   ajuste, hablar con el cliente) y lo marcan revisado con una nota. *@
+@inject ClienteCaja Cliente
+
+@if (_lista is null)
+{
+    <p class="@(_error is null ? "" : "error")">@(_error ?? "Cargando…")</p>
+}
+else if (_lista.Count == 0)
+{
+    <p class="vacia">No hay nada del crédito por revisar.</p>
+}
+else
+{
+    <p class="nota">Se hizo sin conexión y no cuadró con lo que ya había llegado. Ya está en la cuenta del cliente; revísalo y márcalo.</p>
+    <div class="resultados revision">
+        <table>
+            <thead><tr><th>Cuándo</th><th>Cliente</th><th>Qué pasó</th><th class="num">Monto</th><th>Nota</th><th></th></tr></thead>
+            @foreach (var r in _lista)
+            {
+                var revision = r;
+                <tr>
+                    <td>@r.CreadaLocal.ToString("dd/MM HH:mm")</td>
+                    <td>
+                        <a href="" @onclick="() => AlAbrir.InvokeAsync(revision.ClienteId)" @onclick:preventDefault>@r.Cliente</a>
+                    </td>
+                    <td>
+                        <strong>@Textos.Motivo(r.Motivo)</strong>
+                        <div class="nota">@r.Detalle</div>
+                    </td>
+                    <td class="num">@Formato.Dinero(r.MontoCentavos)</td>
+                    <td><input maxlength="200" placeholder="Qué se hizo" value="@_notas.GetValueOrDefault(r.Id)"
+                               @onchange="@(e => _notas[revision.Id] = e.Value?.ToString() ?? "")" /></td>
+                    <td class="acciones-renglon">
+                        <button class="boton chico" disabled="@_ocupado" @onclick="() => RevisadaAsync(revision)">Revisado</button>
+                    </td>
+                </tr>
+            }
+        </table>
+    </div>
+}
+@if (_mensaje is not null)
+{
+    <p class="aviso">@_mensaje</p>
+}
+@if (_error is not null && _lista is not null)
+{
+    <p class="error">@_error</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Abrir la ficha del cliente (su cuenta).</summary>
+    [Parameter] public EventCallback<Guid> AlAbrir { get; set; }
+
+    /// <summary>Cambió cuántas quedan (para el número de la pestaña).</summary>
+    [Parameter] public EventCallback<int> AlCambiar { get; set; }
+
+    private List<RevisionCreditoDto>? _lista;
+    private readonly Dictionary<Guid, string> _notas = [];
+    private bool _ocupado;
+    private string? _mensaje;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _lista = await Cliente.RevisionesCreditoAsync(Caja.SucursalId);
+            await AlCambiar.InvokeAsync(_lista.Count);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Codigo == "sin-conexion" ? "Sin conexión con la caja principal: lo por revisar se ve cuando vuelva." : ex.Message;
+        }
+    }
+
+    private async Task RevisadaAsync(RevisionCreditoDto r)
+    {
+        (_ocupado, _error, _mensaje) = (true, null, null);
+        try
+        {
+            await Cliente.MarcarRevisadaAsync(r.Id, new SolicitudRevision(Sesion.UsuarioId, _notas.GetValueOrDefault(r.Id)));
+            _lista!.Remove(r);
+            _mensaje = $"Lo de «{r.Cliente}» quedó revisado.";
+            await AlCambiar.InvokeAsync(_lista.Count);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

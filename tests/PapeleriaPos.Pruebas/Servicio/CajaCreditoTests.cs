@@ -7,24 +7,10 @@ using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Pruebas.Servicio;
 
-/// <summary>Deja pasar la petición al servicio y luego pierde la respuesta (como un tiempo agotado), si <see cref="Perder"/> lo dice.</summary>
-internal sealed class RespuestaPerdida(HttpMessageHandler interno) : DelegatingHandler(interno)
-{
-    public Func<HttpRequestMessage, bool> Perder { get; set; } = _ => false;
-    public bool Caido { get; set; }
-
-    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-    {
-        if (Caido)
-            throw new HttpRequestException("La caja principal no contesta.");
-        var respuesta = await base.SendAsync(request, cancellationToken);
-        return Perder(request) ? throw new HttpRequestException("Se perdió la respuesta.") : respuesta;
-    }
-}
-
 /// <summary>
-/// La caja de verdad con el crédito (fase 3, entrega 2, parte 2.3): lo que fía, los abonos y sus cancelaciones quedan en
-/// su cuenta del turno, y si se va la conexión su corte dice lo mismo que el del servicio.
+/// La caja de verdad con el crédito (fase 3, entrega 2, partes 2.3 y 2.4): lo que fía, los abonos y sus cancelaciones
+/// quedan en su cuenta del turno, y si se va la conexión su corte dice lo mismo que el del servicio. Sin los saldos no se
+/// fía sin conexión, y una respuesta perdida no fía dos veces.
 /// </summary>
 public sealed class CajaCreditoTests(ServicioDePrueba servicio) : IClassFixture<ServicioDePrueba>, IDisposable
 {
@@ -103,63 +89,73 @@ public sealed class CajaCreditoTests(ServicioDePrueba servicio) : IClassFixture<
                 corteLocal.AbonosTransferenciaCentavos));
     }
 
+    /// <summary>La caja de verdad contra el servicio, con su base local (la de esta prueba) y el interruptor de la red.</summary>
+    private (ClienteCaja Cliente, Contingencia Contingencia, AlmacenLocal Almacen, Interruptor Red) Armar(CajaDto caja)
+    {
+        var red = new Interruptor(servicio.Fabrica.Server.CreateHandler());
+        var http = new HttpClient(red);
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
+        var almacen = new AlmacenLocal(_baseLocal);
+        var contingencia = new Contingencia(almacen, http, conexion);
+        return (new ClienteCaja(http, conexion, contingencia), contingencia, almacen, red);
+    }
+
+    private static bool PideSaldos(HttpRequestMessage r) => r.Method == HttpMethod.Post && r.RequestUri!.AbsolutePath.EndsWith("/creditos");
+
+    private static bool CobraEnLinea(HttpRequestMessage r) => r.Method == HttpMethod.Post && r.RequestUri!.AbsolutePath == "/api/ventas";
+
     [Fact]
-    public async Task Sin_conexion_todavia_no_se_fia_ni_se_abona()
+    public async Task Sin_los_saldos_no_se_fia_ni_se_abona_sin_conexion()
     {
         var local = servicio.Fabrica.CreateClient();
         var caja = (await local.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
-        var interruptor = new Interruptor(servicio.Fabrica.Server.CreateHandler());
-        var http = new HttpClient(interruptor);
-        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
-        var contingencia = new Contingencia(new AlmacenLocal(_baseLocal), http, conexion);
-        var cliente = new ClienteCaja(http, conexion, contingencia);
+        var (cliente, contingencia, _, red) = Armar(caja);
+        // Una caja que nunca recibió los saldos (por ejemplo, contra una caja principal de antes).
+        red.Rechaza = PideSaldos;
         await contingencia.LatidoAsync();
         var cajero = await cliente.EntrarAsync("cajero", "1111");
         var turno = await cliente.TurnoAsync(caja.Id) ?? await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
-        var registrado = (await cliente.ClientesRegistradosAsync(caja.SucursalId)).FirstOrDefault()
-            ?? await cliente.GuardarClienteAsync(new SolicitudGuardarCliente((await cliente.EntrarAsync("encargado", "2222")).UsuarioId, caja.SucursalId,
-                new ClienteRegistradoDto(Guid.Empty, "Caja: Sin conexión", 0, null, true)));
-        await contingencia.LatidoAsync();
+        var registrado = await cliente.GuardarClienteAsync(new SolicitudGuardarCliente((await cliente.EntrarAsync("encargado", "2222")).UsuarioId,
+            caja.SucursalId, new ClienteRegistradoDto(Guid.Empty, "Caja: Sin saldos", 0, null, true)));
+        await contingencia.ActualizarPaqueteAsync();
 
-        interruptor.Caido = true;
+        red.Caido = true;
         await contingencia.LatidoAsync();
         var fiar = await Assert.ThrowsAsync<ErrorCaja>(() => cliente.CobrarAsync(new SolicitudCobro(caja.Id, turno.Id, cajero.UsuarioId,
             [new LineaSolicitada(null, null, 1000, "Mercancía", 1000)], [new CobroSolicitado(FormaPago.Credito, 1000)], Ids.Nuevo(), ClienteId: registrado.Id)));
         var abonar = await Assert.ThrowsAsync<ErrorCaja>(() => cliente.AbonarAsync(new SolicitudAbono(Ids.Nuevo(), caja.Id, turno.Id, cajero.UsuarioId,
             registrado.Id, FormaPago.Efectivo, 1000, 1000)));
+        var cuentas = await Assert.ThrowsAsync<ErrorCaja>(() => cliente.CreditosAsync(caja.SucursalId));
 
-        Assert.StartsWith("Sin conexión todavía no se fía", fiar.Message);
-        Assert.Equal("sin-conexion", abonar.Codigo);
-        Assert.Empty(await cliente.CreditosAsync(caja.SucursalId));
+        Assert.Null(contingencia.Saldos);
+        Assert.All(new[] { fiar, abonar, cuentas }, e => Assert.StartsWith("Esta caja todavía no conoce los saldos", e.Message));
         Assert.Equal(0, contingencia.Pendientes);
     }
 
     [Fact]
-    public async Task Si_se_pierde_la_respuesta_al_fiar_el_ticket_espera_la_conexion_y_no_se_fia_dos_veces()
+    public async Task Si_se_pierde_la_respuesta_al_fiar_y_no_conoce_los_saldos_el_ticket_espera_la_conexion()
     {
         var local = servicio.Fabrica.CreateClient();
         var caja = (await local.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
-        var red = new RespuestaPerdida(servicio.Fabrica.Server.CreateHandler());
-        var http = new HttpClient(red);
-        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
-        var contingencia = new Contingencia(new AlmacenLocal(_baseLocal), http, conexion);
-        var cliente = new ClienteCaja(http, conexion, contingencia);
+        var (cliente, contingencia, _, red) = Armar(caja);
+        red.Rechaza = PideSaldos;
         await contingencia.LatidoAsync();
         var cajero = await cliente.EntrarAsync("cajero", "1111");
         var encargado = await cliente.EntrarAsync("encargado", "2222");
         var dueno = await cliente.EntrarAsync("dueno", "3333");
         var turno = await cliente.TurnoAsync(caja.Id) ?? await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
         var registrado = await cliente.GuardarClienteAsync(new SolicitudGuardarCliente(encargado.UsuarioId, caja.SucursalId,
-            new ClienteRegistradoDto(Guid.Empty, "Caja: Respuesta perdida", 0, null, true)));
+            new ClienteRegistradoDto(Guid.Empty, "Caja: Respuesta perdida sin saldos", 0, null, true)));
         await cliente.GuardarCondicionesAsync(registrado.Id, new SolicitudCreditoCliente(dueno.UsuarioId, caja.SucursalId, 100000, 30));
+        await contingencia.ActualizarPaqueteAsync();
         var ventaId = Ids.Nuevo();
         SolicitudCobro Venta(params CobroSolicitado[] cobros) => new(caja.Id, turno.Id, cajero.UsuarioId,
             [new LineaSolicitada(null, null, 1000, "Mercancía", 20000)], cobros, ventaId, ClienteId: registrado.Id);
 
-        // Se fía y se pierde la respuesta: el servicio ya lo guardó, pero la caja no lo sabe.
-        red.Perder = r => r.Method == HttpMethod.Post && r.RequestUri!.AbsolutePath == "/api/ventas";
+        // Se fía y se pierde la respuesta: el servicio ya lo guardó, pero la caja no lo sabe ni puede fiar sin conexión.
+        red.PierdeRespuesta = CobraEnLinea;
         var perdido = await Assert.ThrowsAsync<ErrorCaja>(() => cliente.CobrarAsync(Venta(new CobroSolicitado(FormaPago.Credito, 20000))));
-        red.Perder = _ => false;
+        red.PierdeRespuesta = null;
         red.Caido = true;
         await contingencia.LatidoAsync();
         // Sin conexión, ese ticket no se cobra de otra forma.
@@ -175,5 +171,38 @@ public sealed class CajaCreditoTests(ServicioDePrueba servicio) : IClassFixture<
         Assert.Equal(0, contingencia.Pendientes);
         Assert.Equal((ventaId, 20000L), (ticket.VentaId!.Value, ticket.CreditoCentavos));
         Assert.Equal(20000, (await cliente.CuentaClienteAsync(registrado.Id)).Credito.SaldoCentavos);
+    }
+
+    [Fact]
+    public async Task Si_se_pierde_la_respuesta_al_fiar_se_hace_sin_conexion_con_el_mismo_Id_y_cuenta_una_vez()
+    {
+        var local = servicio.Fabrica.CreateClient();
+        var caja = (await local.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        var (cliente, contingencia, almacen, red) = Armar(caja);
+        await contingencia.LatidoAsync();
+        var cajero = await cliente.EntrarAsync("cajero", "1111");
+        var encargado = await cliente.EntrarAsync("encargado", "2222");
+        var dueno = await cliente.EntrarAsync("dueno", "3333");
+        var turno = await cliente.TurnoAsync(caja.Id) ?? await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
+        var registrado = await cliente.GuardarClienteAsync(new SolicitudGuardarCliente(encargado.UsuarioId, caja.SucursalId,
+            new ClienteRegistradoDto(Guid.Empty, "Caja: Respuesta perdida con saldos", 0, null, true)));
+        await cliente.GuardarCondicionesAsync(registrado.Id, new SolicitudCreditoCliente(dueno.UsuarioId, caja.SucursalId, 100000, 30));
+        await contingencia.LatidoAsync();
+        var ventaId = Ids.Nuevo();
+
+        red.PierdeRespuesta = CobraEnLinea;
+        var ticket = await cliente.CobrarAsync(new SolicitudCobro(caja.Id, turno.Id, cajero.UsuarioId,
+            [new LineaSolicitada(null, null, 1000, "Mercancía", 20000)], [new CobroSolicitado(FormaPago.Credito, 20000)], ventaId, ClienteId: registrado.Id));
+        red.PierdeRespuesta = null;
+        // Sin conexión, la caja lo hizo con el mismo Id y con el saldo que conocía (sin contar dos veces lo que anotó al mandarlo).
+        Assert.Equal(new CreditoTicketDto(20000, 20000, ticket.Credito!.Vence, Estimado: true), ticket.Credito);
+        await contingencia.LatidoAsync();
+        await contingencia.LatidoAsync();
+
+        Assert.Equal((0, 0), (contingencia.Pendientes, contingencia.ConError));
+        Assert.Equal(ventaId, ticket.VentaId);
+        Assert.Equal(20000, (await cliente.CuentaClienteAsync(registrado.Id)).Credito.SaldoCentavos);
+        Assert.Empty(almacen.CuentaPropia(registrado.Id));
+        Assert.Equal(20000, contingencia.Credito(registrado.Id)!.SaldoCentavos);
     }
 }

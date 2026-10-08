@@ -1,3 +1,5 @@
+using PapeleriaPos.Nucleo.Contratos;
+
 namespace PapeleriaPos.Nucleo.Clientes;
 
 public enum TipoMovimientoCredito
@@ -97,6 +99,17 @@ public class RevisionCredito
     public string? Nota { get; set; }
 }
 
+/// <summary>Lo que una caja hizo con la cuenta de un cliente y el servicio todavía no le confirma: + lo que fió, − lo que abonó.</summary>
+/// <param name="Vence">De lo fiado: el último día para pagarlo.</param>
+/// <param name="PorVerificar">Un abono por transferencia: baja el saldo pero no da crédito hasta que se verifica.</param>
+public sealed record CreditoLocal(long MontoCentavos, DateOnly? Vence = null, bool PorVerificar = false);
+
+/// <summary>Lo que sabía la caja cuando fió sin conexión: con eso se imprimió el ticket y con eso se revisa al subir.</summary>
+/// <param name="SaldoConocidoCentavos">Lo que la caja creía que debía antes de esta venta.</param>
+/// <param name="ExcesoAutorizadoCentavos">Lo que pasó del límite con permiso (autorizado con PIN, o el encargado que puede).</param>
+/// <param name="Vence">El que se imprimió (con el plazo de la copia de la caja).</param>
+public sealed record FiadoSinConexion(long SaldoConocidoCentavos, long ExcesoAutorizadoCentavos, DateOnly? Vence = null);
+
 /// <summary>Un cargo con lo que le queda por pagar después de aplicar lo pagado a lo más viejo.</summary>
 /// <param name="DevueltoCentavos">Lo que se descontó del cargo porque se devolvió mercancía de esa misma venta.</param>
 /// <param name="LiquidadoUtc">Cuando quedó en cero (para medir qué tan puntual paga).</param>
@@ -171,6 +184,44 @@ public static class CuentaCredito
         var aplicados = cargos.Select(c => new CargoAplicado(c.Movimiento.Id, c.Movimiento.VentaId, c.Movimiento.FechaUtc, c.Vence,
             c.Movimiento.MontoCentavos, c.Restante, c.Devuelto, c.LiquidadoUtc)).ToList();
         return new CuentaAplicada(aplicados.Sum(c => c.PendienteCentavos) - aFavor, aFavor, aplicados);
+    }
+
+    /// <summary>
+    /// La cuenta que conoce una caja sin conexión: la última que le mandó el servicio más lo suyo sin confirmar, en el
+    /// orden en que pasó. Lo fiado primero se come lo que tenga a favor y lo demás vence por su plazo; lo abonado paga lo
+    /// más viejo y lo que sobra queda a favor. Lo vencido sigue siendo exacto aunque pasen días sin conexión.
+    /// </summary>
+    public static CreditoClienteDto Estimar(CreditoClienteDto delServicio, IEnumerable<CreditoLocal> locales)
+    {
+        var pendientes = delServicio.Pendientes.Select(p => (p.Vence, Pendiente: p.PendienteCentavos)).ToList();
+        var (saldo, aFavor, porVerificar) = (delServicio.SaldoCentavos, delServicio.AFavorCentavos, delServicio.PorVerificarCentavos);
+        foreach (var local in locales)
+        {
+            saldo += local.MontoCentavos;
+            if (local.MontoCentavos > 0)
+            {
+                var usado = Math.Min(aFavor, local.MontoCentavos);
+                aFavor -= usado;
+                if (local.MontoCentavos > usado)
+                    pendientes.Add((local.Vence ?? DateOnly.MaxValue, local.MontoCentavos - usado));
+                continue;
+            }
+            if (local.PorVerificar)
+                porVerificar -= local.MontoCentavos;
+            var resto = -local.MontoCentavos;
+            for (var i = 0; i < pendientes.Count && resto > 0; i++)
+            {
+                var tomado = Math.Min(resto, pendientes[i].Pendiente);
+                pendientes[i] = (pendientes[i].Vence, pendientes[i].Pendiente - tomado);
+                resto -= tomado;
+            }
+            aFavor += resto;
+        }
+        return delServicio with
+        {
+            SaldoCentavos = saldo, PorVerificarCentavos = porVerificar, Estimado = true,
+            Pendientes = pendientes.Where(p => p.Pendiente > 0).Select(p => new CargoPendienteDto(p.Vence, p.Pendiente)).ToList(),
+        };
     }
 
     private sealed class Pendiente(MovimientoCredito movimiento, DateOnly vence)

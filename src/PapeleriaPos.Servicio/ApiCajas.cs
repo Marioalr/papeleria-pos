@@ -20,8 +20,12 @@ public static partial class ApiCajas
 
         // Abierto: la caja lo usa para encontrar el servicio en la red y, después, como latido.
         api.MapGet("/estado", async (PosDbContext db, ModoPrueba prueba) =>
-            new EstadoServicioDto("Papelería POS", Version, await db.Sucursales.OrderBy(s => s.Nombre).Select(s => s.Nombre).ToListAsync(),
-                await db.Secuencias.Where(s => s.Nombre == Secuencia.Catalogo).Select(s => s.Valor).FirstOrDefaultAsync(), prueba.Activo));
+        {
+            var versiones = await db.Secuencias.Where(s => s.Nombre == Secuencia.Catalogo || s.Nombre == Secuencia.Credito)
+                .ToDictionaryAsync(s => s.Nombre, s => s.Valor);
+            return new EstadoServicioDto("Papelería POS", Version, await db.Sucursales.OrderBy(s => s.Nombre).Select(s => s.Nombre).ToListAsync(),
+                versiones.GetValueOrDefault(Secuencia.Catalogo), prueba.Activo, versiones.GetValueOrDefault(Secuencia.Credito));
+        });
 
         // Abierto, pero solo contesta con el PIN del dueño: qué sucursales y cajas hay para elegir.
         api.MapPost("/alta/opciones", async (SolicitudCredenciales s, PosDbContext db) =>

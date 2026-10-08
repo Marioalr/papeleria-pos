@@ -51,6 +51,22 @@ public static class ApiCredito
         });
 
         api.MapGet("/cajas/{cajaId:guid}/abonos-del-dia", (Guid cajaId, PosDbContext db) => new RegistroCredito(db).AbonosDelDiaAsync(cajaId));
+
+        // Sin conexión (parte 2.4): la caja pide los saldos cuando cambia la versión del crédito y pregunta cuáles de los suyos ya están.
+        api.MapPost("/cajas/{cajaId:guid}/creditos", async (Guid cajaId, SolicitudSaldosCredito s, PosDbContext db) =>
+        {
+            var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
+            return await new RegistroCredito(db).SaldosAsync(caja.SucursalId, s.Pendientes);
+        });
+
+        api.MapGet("/sucursales/{sucursalId:guid}/creditos/por-revisar", (Guid sucursalId, PosDbContext db) =>
+            new RegistroCredito(db).PorRevisarAsync(sucursalId));
+
+        api.MapPost("/creditos/revisiones/{revisionId:guid}", async (Guid revisionId, SolicitudRevision s, PosDbContext db) =>
+        {
+            await new RegistroCredito(db).MarcarRevisadaAsync(revisionId, s);
+            return Results.NoContent();
+        });
     }
 
     /// <summary>El comprobante del abono (o de su cancelación), con lo que debía y lo que quedó cuando se recibió.</summary>

@@ -139,4 +139,49 @@ public class RegistroCreditoTests : IAsyncLifetime
         Assert.Equal(Hoy.AddDays(25), (await db.Abonos.FindAsync(primero.Id))!.Vence);
         Assert.Null((await db.Abonos.FindAsync(liquida.Id))!.Vence);
     }
+
+    private async Task<long> VersionAsync(string secuencia)
+    {
+        await using var db = _base.Contexto();
+        return await db.Secuencias.Where(x => x.Nombre == secuencia).Select(x => x.Valor).FirstOrDefaultAsync();
+    }
+
+    [Fact]
+    public async Task Lo_del_credito_sube_su_version_y_no_la_del_catalogo()
+    {
+        var (catalogo, credito) = (await VersionAsync(Secuencia.Catalogo), await VersionAsync(Secuencia.Credito));
+        await AjustarAsync(10000);
+        var trasAjuste = (await VersionAsync(Secuencia.Catalogo), await VersionAsync(Secuencia.Credito));
+        var abono = await AbonarAsync(FormaPago.Transferencia, 5000);
+        var trasAbono = await VersionAsync(Secuencia.Credito);
+        await using (var db = _base.Contexto())
+            await new RegistroCredito(db).VerificarAbonoAsync(abono.Id, "don", "3333", llego: true);
+        var trasVerificar = await VersionAsync(Secuencia.Credito);
+        await using (var db = _base.Contexto())
+            await new RegistroCredito(db).GuardarCondicionesAsync(_cliente.Id, new SolicitudCreditoCliente(_dueno.Id, _catalogo.Matriz.Id, 200000, 15));
+        var trasCondiciones = (await VersionAsync(Secuencia.Catalogo), await VersionAsync(Secuencia.Credito));
+
+        Assert.Equal((catalogo, credito + 1), trasAjuste);
+        Assert.Equal(trasAjuste.Item2 + 1, trasAbono);
+        Assert.Equal(trasAbono + 1, trasVerificar);
+        // El límite es del cliente (lo baja la copia de la caja) y también de sus saldos.
+        Assert.True(trasCondiciones.Item1 > catalogo);
+        Assert.Equal(trasVerificar + 1, trasCondiciones.Item2);
+    }
+
+    [Fact]
+    public async Task Los_saldos_dicen_cuales_de_los_pendientes_de_la_caja_ya_estan_sumados()
+    {
+        await AjustarAsync(30000);
+        var abono = await AbonarAsync(FormaPago.Efectivo, 10000);
+        var noLlego = Ids.Nuevo();
+
+        SaldosCreditoDto saldos;
+        await using (var db = _base.Contexto())
+            saldos = await new RegistroCredito(db).SaldosAsync(_catalogo.Matriz.Id, [abono.Id, noLlego]);
+
+        Assert.Equal([abono.Id], saldos.Incluidos);
+        Assert.Equal(20000, saldos.Cuentas.Single(c => c.ClienteId == _cliente.Id).SaldoCentavos);
+        Assert.Equal(await VersionAsync(Secuencia.Credito), saldos.Version);
+    }
 }

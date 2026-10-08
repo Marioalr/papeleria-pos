@@ -49,6 +49,8 @@
   carpeta compartida no es confiable con varios escritores).
 - **Kardex:** cada venta, compra, ajuste, merma, traspaso o consumo de un servicio es un movimiento nuevo. La
   existencia es la suma. No hay que "pisar" cantidades, así que sincronizar no genera conflictos.
+- **Crédito:** la cuenta de cada cliente es un libro de movimientos que solo se agregan, cada uno con el ID de la venta,
+  el abono o la devolución que lo originó; el saldo es la suma, así que lo que llega dos veces o tarde no descuadra.
 - **IDs UUIDv7** generados donde nace el registro: no chocan entre cajas ni sucursales.
 - **Dinero en centavos enteros** (sin errores de redondeo). Fechas en UTC; se muestran en hora de México.
 - **Folios por caja:** serie + consecutivo (A-000123), legibles para el ticket.
@@ -60,8 +62,9 @@
 - Si la caja principal no responde, la caja entra en modo contingencia: vende con sus propios folios, imprime ticket y
   guarda todo para enviarlo después.
 - Al volver el servidor, se sube la bandeja; el inventario no choca porque son movimientos.
-- Limitaciones en contingencia: no se ven los pedidos de otras cajas ni saldos de crédito actualizados (se permite con
-  aviso o se bloquea, según configuración).
+- Limitaciones en contingencia: no se ven los pedidos de otras cajas. El crédito sigue: se fía hasta el saldo que conoce
+  la caja (los últimos saldos del servicio más lo que ella hizo y él todavía no le confirma) y se reciben abonos; al
+  volver, el servicio acepta todo y lo que no cuadra queda por revisar, con aviso al dueño.
 
 ## Varias sucursales
 
@@ -99,8 +102,8 @@
 ## Actualizaciones
 
 El central guarda el instalador vigente; cada caja principal lo descarga y verifica (SHA-256) y las cajas lo toman de
-su caja principal. Dentro de una sucursal todas las cajas deben tener la misma versión. Primero se actualiza una
-sucursal y después las demás.
+su caja principal. Dentro de una sucursal todas las cajas deben tener la misma versión: primero se actualiza la caja
+principal y después las demás cajas. Primero se actualiza una sucursal y después las demás.
 
 ## Dispositivos propios (a futuro)
 

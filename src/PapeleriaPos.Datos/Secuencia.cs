@@ -1,9 +1,13 @@
 namespace PapeleriaPos.Datos;
 
-/// <summary>Contadores de la base. "catalogo" da el número de versión de cada cambio al catálogo.</summary>
+/// <summary>
+/// Contadores de la base. "catalogo" da el número de versión de cada cambio al catálogo; "credito" cambia con cada
+/// fiado, abono o cambio del crédito (así las cajas saben cuándo volver a pedir los saldos sin bajar el catálogo).
+/// </summary>
 public class Secuencia
 {
     public const string Catalogo = "catalogo";
+    public const string Credito = "credito";
 
     public required string Nombre { get; set; }
     public long Valor { get; set; }

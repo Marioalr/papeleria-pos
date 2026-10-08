@@ -47,6 +47,9 @@ public class Abono
 
     public DateTime FechaUtc { get; set; }
     public bool EnContingencia { get; set; }
+
+    /// <summary>Hecho sin conexión, llegó cuando su turno ya tenía corte Z: cuándo llegó (ese corte no lo incluye).</summary>
+    public DateTime? FueraDeCorteUtc { get; set; }
     public DateTime? CanceladoUtc { get; set; }
     public Guid? CanceladoPorId { get; set; }
     public Guid? AutorizoCancelacionId { get; set; }

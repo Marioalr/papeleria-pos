@@ -67,15 +67,27 @@ public static class PreparacionPrueba
                     continue;
                 // Lo que ya debía en la libreta, de hace 40 días: con 30 de plazo, ya está vencido.
                 var fecha = HoraMexico.AUtc(HoraMexico.ALocal(ahora).Date.AddDays(-DiasDeLaDeuda).AddHours(12));
-                db.MovimientosCredito.Add(new MovimientoCredito
+                var ajuste = new MovimientoCredito
                 {
                     Id = Ids.Nuevo(), ClienteId = cliente.Id, SucursalId = sucursal, UsuarioId = dueno.Id, Tipo = TipoMovimientoCredito.Ajuste,
                     MontoCentavos = DeudaCentavos, FechaUtc = fecha, Vence = CuentaCredito.Vence(fecha, cliente.PlazoCreditoDias),
                     SaldoCentavos = DeudaCentavos, Motivo = "Saldo inicial de la libreta",
+                };
+                db.MovimientosCredito.Add(ajuste);
+                // Para practicar «Clientes → Por revisar»: así se ve lo que no cuadró al volver la conexión (aquí no pasó de verdad).
+                db.RevisionesCredito.Add(new RevisionCredito
+                {
+                    SucursalId = sucursal, ClienteId = cliente.Id, MovimientoId = ajuste.Id, Motivo = MotivoRevisionCredito.PasoLimite,
+                    MontoCentavos = DeudaCentavos + 90000 - credito,
+                    // Con sus números: debía $350; la caja 2 le fió $600 sin saber de $300 que le fiaron en otra: $1,250 contra $1,000.
+                    CreadaUtc = ahora, Detalle = $"Ejemplo de la prueba: fiado sin conexión en Caja 2 a «{ConDeuda}» por $600.00: la caja sabía que debía "
+                        + $"{AlertasTelegram.Dinero(DeudaCentavos)}; con lo que llegó antes ahora debe {AlertasTelegram.Dinero(DeudaCentavos + 90000)} y pasó su "
+                        + $"límite de {AlertasTelegram.Dinero(credito)} por {AlertasTelegram.Dinero(DeudaCentavos + 90000 - credito)} (se autorizaron $0.00).",
                 });
             }
             await db.SaveChangesAsync(ct);
-            hecho.Add($"Crédito para {ClientesDePrueba.Count(c => c.Credito > 0)} clientes; «{ConDeuda}» debe {AlertasTelegram.Dinero(DeudaCentavos)} (vencido)");
+            hecho.Add($"Crédito para {ClientesDePrueba.Count(c => c.Credito > 0)} clientes; «{ConDeuda}» debe {AlertasTelegram.Dinero(DeudaCentavos)} (vencido) "
+                + "y tiene un ejemplo «por revisar»");
         }
 
         hecho.AddRange(await EjemplosProveedor.EscribirAsync(db, carpetaEjemplos, ct));

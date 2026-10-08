@@ -593,6 +593,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("FueraDeCorteUtc")
+                        .HasColumnType("TEXT");
+
                     b.Property<long>("MontoCentavos")
                         .HasColumnType("INTEGER");
 
@@ -833,6 +836,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasKey("Id");
 
                     b.HasIndex("ClienteId");
+
+                    b.HasIndex("MovimientoId", "Motivo")
+                        .IsUnique();
 
                     b.HasIndex("SucursalId", "RevisadaUtc");
 

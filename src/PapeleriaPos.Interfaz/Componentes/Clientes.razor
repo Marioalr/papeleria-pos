@@ -59,59 +59,73 @@
 }
 else
 {
-    <div class="filtros-catalogo">
-        <input id="buscar-clientes" placeholder="Nombre o teléfono" @bind="_texto" @bind:event="oninput" autocomplete="off" />
-        <label class="en-linea opcion"><input type="checkbox" @bind="_inactivos" @bind:after="CargarAsync" /> Con inactivos</label>
-        <label class="en-linea opcion"><input type="checkbox" @bind="_deben" /> Solo los que deben</label>
-        @if (PuedeEditar)
-        {
-            <button class="boton principal" @onclick="Nuevo">Nuevo cliente</button>
-        }
-    </div>
-    @if (_aviso is not null)
+    @if (_puedeRevisar)
     {
-        <p class="aviso">@_aviso</p>
+        <nav class="pestanas">
+            <button class="pestana @(_porRevisar ? "" : "activa")" @onclick="() => _porRevisar = false">Clientes</button>
+            <button class="pestana @(_porRevisar ? "activa" : "")" @onclick="() => _porRevisar = true">Por revisar@(_cuantasPorRevisar > 0 ? $" ({_cuantasPorRevisar})" : "")</button>
+        </nav>
     }
-    @if (_error is not null)
+    @if (_porRevisar)
     {
-        <p class="error">@_error</p>
-    }
-    @if (_lista is null)
-    {
-        <p>Cargando…</p>
-    }
-    else if (_lista.Count == 0)
-    {
-        <p class="vacia">Todavía no hay clientes registrados.@(PuedeEditar ? " Dalos de alta con «Nuevo cliente»." : "")</p>
+        <CreditoPorRevisar Caja="Caja" Sesion="Sesion" AlAbrir="AbrirPorIdAsync" AlCambiar="n => _cuantasPorRevisar = n" />
     }
     else
     {
-        <div class="resultados catalogo">
-            <table>
-                <thead><tr><th>Cliente</th><th>Teléfono</th><th>Privilegios</th><th class="num">Debe</th><th class="num">Compra al mes</th><th>Última compra</th></tr></thead>
-                @foreach (var r in Encontrados)
-                {
-                    var renglon = r;
-                    <tr class="@(r.Cliente.Activo ? "" : "inactivo")" @onclick="() => AbrirAsync(renglon.Cliente)">
-                        <td>
-                            @if (r.Cliente.PorRevisar)
-                            {
-                                <span class="etiqueta">Por revisar</span>
-                            }
-                            @r.Cliente.Nombre
-                        </td>
-                        <td>@ElegirCliente.Telefono(r.Cliente.Telefono)</td>
-                        <td>@Privilegios(r.Cliente)</td>
-                        <td class="num @(r.VencidoCentavos > 0 ? "error" : "")" title="@(r.VencidoCentavos > 0 ? $"Vencido: {Formato.Dinero(r.VencidoCentavos)}" : null)">
-                            @Debe(r)
-                        </td>
-                        <td class="num">@Formato.Dinero(r.PromedioMensualCentavos)</td>
-                        <td>@(r.UltimaCompraLocal?.ToString("dd/MM/yyyy") ?? "—")</td>
-                    </tr>
-                }
-            </table>
+        <div class="filtros-catalogo">
+            <input id="buscar-clientes" placeholder="Nombre o teléfono" @bind="_texto" @bind:event="oninput" autocomplete="off" />
+            <label class="en-linea opcion"><input type="checkbox" @bind="_inactivos" @bind:after="CargarAsync" /> Con inactivos</label>
+            <label class="en-linea opcion"><input type="checkbox" @bind="_deben" /> Solo los que deben</label>
+            @if (PuedeEditar)
+            {
+                <button class="boton principal" @onclick="Nuevo">Nuevo cliente</button>
+            }
         </div>
-        <p class="nota">Haz clic en un cliente para ver lo que compra@(PuedeEditar ? " y editarlo" : "").</p>
+        @if (_aviso is not null)
+        {
+            <p class="aviso">@_aviso</p>
+        }
+        @if (_error is not null)
+        {
+            <p class="error">@_error</p>
+        }
+        @if (_lista is null)
+        {
+            <p>Cargando…</p>
+        }
+        else if (_lista.Count == 0)
+        {
+            <p class="vacia">Todavía no hay clientes registrados.@(PuedeEditar ? " Dalos de alta con «Nuevo cliente»." : "")</p>
+        }
+        else
+        {
+            <div class="resultados catalogo">
+                <table>
+                    <thead><tr><th>Cliente</th><th>Teléfono</th><th>Privilegios</th><th class="num">Debe</th><th class="num">Compra al mes</th><th>Última compra</th></tr></thead>
+                    @foreach (var r in Encontrados)
+                    {
+                        var renglon = r;
+                        <tr class="@(r.Cliente.Activo ? "" : "inactivo")" @onclick="() => AbrirAsync(renglon.Cliente)">
+                            <td>
+                                @if (r.Cliente.PorRevisar)
+                                {
+                                    <span class="etiqueta">Por revisar</span>
+                                }
+                                @r.Cliente.Nombre
+                            </td>
+                            <td>@ElegirCliente.Telefono(r.Cliente.Telefono)</td>
+                            <td>@Privilegios(r.Cliente)</td>
+                            <td class="num @(r.VencidoCentavos > 0 ? "error" : "")" title="@(r.VencidoCentavos > 0 ? $"Vencido: {Formato.Dinero(r.VencidoCentavos)}" : null)">
+                                @Debe(r)
+                            </td>
+                            <td class="num">@Formato.Dinero(r.PromedioMensualCentavos)</td>
+                            <td>@(r.UltimaCompraLocal?.ToString("dd/MM/yyyy") ?? "—")</td>
+                        </tr>
+                    }
+                </table>
+            </div>
+            <p class="nota">Haz clic en un cliente para ver lo que compra@(PuedeEditar ? " y editarlo" : "").</p>
+        }
     }
 }
 
@@ -173,7 +187,44 @@ else
         }
     }
 
-    protected override Task OnInitializedAsync() => CargarAsync();
+    /// <summary>Lo del crédito sin conexión que no cuadró: lo revisan quienes administran los clientes.</summary>
+    private bool _puedeRevisar;
+    private bool _porRevisar;
+    private int _cuantasPorRevisar;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAsync();
+        try
+        {
+            _puedeRevisar = (await Cliente.PermisoAsync(new SolicitudPermiso(Sesion.UsuarioId, Caja.SucursalId, AccionControlada.AdministrarClientes))).Nivel
+                == NivelPermiso.Permitido;
+            if (_puedeRevisar)
+                _cuantasPorRevisar = (await Cliente.RevisionesCreditoAsync(Caja.SucursalId)).Count;
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión no hay nada que revisar aquí: la pestaña dice por qué.
+        }
+    }
+
+    /// <summary>Desde «Por revisar»: la ficha del cliente, aunque ya esté inactivo.</summary>
+    private async Task AbrirPorIdAsync(Guid clienteId)
+    {
+        try
+        {
+            var cliente = _lista?.FirstOrDefault(r => r.Cliente.Id == clienteId)?.Cliente
+                ?? (await Cliente.ListaClientesAsync(Caja.SucursalId, inactivos: true)).FirstOrDefault(r => r.Cliente.Id == clienteId)?.Cliente;
+            if (cliente is null)
+                return;
+            _porRevisar = false;
+            await AbrirAsync(cliente);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {

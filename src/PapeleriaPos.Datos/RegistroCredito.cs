@@ -1,8 +1,10 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Ventas;
 
@@ -182,22 +184,81 @@ public sealed class RegistroCredito(PosDbContext db)
     }
 
     /// <summary>
-    /// Después de <see cref="Venta.Pagar"/>, en la misma transacción: el cargo con lo fiado, cuándo vence (con el plazo de
-    /// hoy) y el saldo que dice el ticket. Nunca rechaza por reglas del crédito (eso ya se revisó, o vino de sin conexión).
+    /// Después de <see cref="Venta.Pagar"/>, en la misma transacción: el cargo con lo fiado, cuándo vence y el saldo que
+    /// dice el ticket. Nunca rechaza por reglas del crédito: en línea ya se revisó, y lo de sin conexión ya se entregó. Lo
+    /// de sin conexión guarda lo que se imprimió (con el saldo que conocía la caja) y, si no cuadró con lo que ya había
+    /// llegado (pasó el límite más de lo autorizado, o ya no tenía crédito), queda por revisar.
     /// </summary>
-    internal async Task CargarAsync(Venta venta, CancellationToken ct)
+    internal async Task CargarAsync(Venta venta, Turno turno, FiadoSinConexion? sinConexion, CancellationToken ct)
     {
         if (venta.CreditoCentavos == 0)
             return;
         var cliente = await db.ClientesRegistrados.FindAsync([venta.ClienteId!.Value], ct) ?? throw new InvalidOperationException("El cliente ya no existe.");
-        var saldo = await SaldoAsync(cliente.Id, ct);
-        db.MovimientosCredito.Add(new MovimientoCredito
+        var fiado = venta.CreditoCentavos;
+        if (!venta.EnContingencia)
         {
-            Id = venta.Id, ClienteId = cliente.Id, SucursalId = venta.SucursalId, CajaId = venta.CajaId, TurnoId = venta.TurnoId, UsuarioId = venta.CajeroId,
-            Tipo = TipoMovimientoCredito.Cargo, MontoCentavos = venta.CreditoCentavos, FechaUtc = venta.PagadaUtc!.Value,
-            Vence = CuentaCredito.Vence(venta.PagadaUtc.Value, cliente.PlazoCreditoDias), VentaId = venta.Id,
-            SaldoCentavos = saldo + venta.CreditoCentavos, EnContingencia = venta.EnContingencia,
-        });
+            var saldo = await SaldoAsync(cliente.Id, ct);
+            db.MovimientosCredito.Add(Cargo(venta, cliente.Id, venta.PagadaUtc!.Value, CuentaCredito.Vence(venta.PagadaUtc.Value, cliente.PlazoCreditoDias),
+                saldo + fiado));
+            return;
+        }
+
+        // Con el saldo real de antes de este cargo (dentro de la transacción del cobro).
+        var cuenta = await CuentaAsync(cliente.Id, ct);
+        sinConexion ??= new FiadoSinConexion(cuenta.SaldoCentavos, 0);
+        var fecha = Acotar(venta.PagadaUtc!.Value, turno.AbiertoUtc);
+        // Vence lo que se imprimió: el plazo que usó la caja, desde la fecha. Si el reloj de la caja estaba mal (la fecha se
+        // acotó), ese mismo plazo desde la fecha acotada; y si no se entiende, el plazo del cliente.
+        var plazoCaja = sinConexion.Vence is { } impreso ? impreso.DayNumber - DateOnly.FromDateTime(HoraMexico.ALocal(venta.PagadaUtc.Value)).DayNumber : 0;
+        var vence = CuentaCredito.Vence(fecha, plazoCaja is >= 1 and <= ClienteRegistrado.PlazoMaximoDias ? plazoCaja : cliente.PlazoCreditoDias);
+        var cargo = Cargo(venta, cliente.Id, fecha, vence, sinConexion.SaldoConocidoCentavos + fiado);
+        db.MovimientosCredito.Add(cargo);
+
+        var exceso = CuentaCredito.Exceso(cuenta.SaldoCentavos, cuenta.PorVerificarCentavos, fiado, cliente.LimiteCreditoCentavos);
+        var caja = await db.Cajas.FindAsync([venta.CajaId], ct);
+        var que = $"Fiado sin conexión en {caja?.Nombre} ({venta.FolioTexto}) a «{cliente.Nombre}» por {Pesos(fiado)}";
+        var debe = cuenta.SaldoCentavos + fiado;
+        if (!cliente.Activo)
+            await RevisarAsync(cargo, MotivoRevisionCredito.SinCredito, fiado, $"{que}, que ya no estaba activo: ahora debe {Pesos(debe)}.", ct);
+        else if (!cliente.TieneCredito && exceso > 0)
+            await RevisarAsync(cargo, MotivoRevisionCredito.SinCredito, exceso,
+                $"{que}, que ya no tenía crédito: usó {Pesos(exceso)} más de lo que tenía a favor y ahora debe {Pesos(debe)}.", ct);
+        else if (exceso > sinConexion.ExcesoAutorizadoCentavos)
+            await RevisarAsync(cargo, MotivoRevisionCredito.PasoLimite, exceso - sinConexion.ExcesoAutorizadoCentavos,
+                $"{que}: la caja sabía que debía {Pesos(sinConexion.SaldoConocidoCentavos)}; con lo que llegó antes ahora debe {Pesos(debe)} "
+                + $"y pasó su límite de {Pesos(cliente.LimiteCreditoCentavos)} por {Pesos(exceso)} (se autorizaron {Pesos(sinConexion.ExcesoAutorizadoCentavos)}).", ct);
+    }
+
+    private static MovimientoCredito Cargo(Venta venta, Guid clienteId, DateTime fechaUtc, DateOnly vence, long saldoCentavos) => new()
+    {
+        Id = venta.Id, ClienteId = clienteId, SucursalId = venta.SucursalId, CajaId = venta.CajaId, TurnoId = venta.TurnoId, UsuarioId = venta.CajeroId,
+        Tipo = TipoMovimientoCredito.Cargo, MontoCentavos = venta.CreditoCentavos, FechaUtc = fechaUtc, Vence = vence, VentaId = venta.Id,
+        SaldoCentavos = saldoCentavos, EnContingencia = venta.EnContingencia,
+    };
+
+    /// <summary>
+    /// La hora de lo hecho sin conexión viene del reloj de la caja, y ordena lo pagado y los vencimientos: no puede ser
+    /// antes de que abriera su turno ni después de que llegó.
+    /// </summary>
+    private DateTime Acotar(DateTime fechaUtc, DateTime desdeUtc)
+    {
+        var ahora = Ahora;
+        return fechaUtc < desdeUtc ? desdeUtc : fechaUtc > ahora ? ahora : fechaUtc;
+    }
+
+    /// <summary>Lo que no cuadró de lo que subió una caja: queda por revisar y se le avisa al dueño. Quien llama guarda.</summary>
+    private async Task RevisarAsync(MovimientoCredito movimiento, MotivoRevisionCredito motivo, long montoCentavos, string detalle, CancellationToken ct)
+    {
+        if (await db.RevisionesCredito.AnyAsync(r => r.MovimientoId == movimiento.Id && r.Motivo == motivo, ct))
+            return;
+        var revision = new RevisionCredito
+        {
+            SucursalId = movimiento.SucursalId, ClienteId = movimiento.ClienteId, MovimientoId = movimiento.Id, Motivo = motivo,
+            Detalle = detalle.Length > 300 ? detalle[..300] : detalle, MontoCentavos = montoCentavos, CreadaUtc = Ahora,
+        };
+        db.RevisionesCredito.Add(revision);
+        AlertasTelegram.Avisar(db, movimiento.SucursalId, TipoAlerta.Credito,
+            $"{AlertasTelegram.Titulo(TipoAlerta.Credito)}\n{detalle}\nQueda en Clientes → Por revisar.", $"credito-revisar:{revision.Id}");
     }
 
     /// <summary>Lo que dijo el ticket de la cuenta: sale del cargo, así la reimpresión es igual aunque después haya abonos.</summary>
@@ -382,6 +443,128 @@ public sealed class RegistroCredito(PosDbContext db)
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return abono;
+    }
+
+    // ── Sin conexión ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Un abono que hizo una caja sin conexión. Se guarda siempre y tal como se cobró (el dinero ya se recibió y el
+    /// comprobante ya se entregó): con el saldo que conocía la caja, aunque su turno ya tenga corte Z (entonces queda fuera
+    /// de ese corte y se avisa) o aunque deje la cuenta a favor (queda por revisar). Con el mismo Id, se guarda uno.
+    /// </summary>
+    public async Task<Abono> AbonoDeContingenciaAsync(AbonoContingenciaDto a, CancellationToken ct = default)
+    {
+        if (await db.Abonos.FindAsync([a.Id], ct) is { } yaEsta)
+            return yaEsta;
+        var turno = await db.Turnos.FindAsync([a.TurnoId], ct) ?? throw new InvalidOperationException("El turno no existe.");
+        if (turno.CajaId != a.CajaId)
+            throw new InvalidOperationException("El abono no es de un turno de esta caja.");
+        var cliente = await db.ClientesRegistrados.FindAsync([a.ClienteId], ct) ?? throw new InvalidOperationException("El cliente ya no existe.");
+        if (a.Forma is not (FormaPago.Efectivo or FormaPago.Tarjeta or FormaPago.Transferencia) || a.MontoCentavos <= 0)
+            throw new ArgumentException("El abono no es válido.");
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            if (await db.Abonos.AsNoTracking().SingleOrDefaultAsync(x => x.Id == a.Id, ct) is { } guardado)
+                return guardado;
+            var saldo = await SaldoAsync(cliente.Id, ct);
+            var fecha = Acotar(a.FechaUtc, turno.AbiertoUtc);
+            var referencia = string.IsNullOrWhiteSpace(a.Referencia) ? null : a.Referencia.Trim() is var r && r.Length > 60 ? r[..60] : r;
+            var abono = new Abono
+            {
+                Id = a.Id, SucursalId = turno.SucursalId, CajaId = a.CajaId, TurnoId = turno.Id, ClienteId = cliente.Id, UsuarioId = a.UsuarioId, Forma = a.Forma,
+                MontoCentavos = a.MontoCentavos, RedondeoCentavos = a.RedondeoCentavos, RecibidoCentavos = a.RecibidoCentavos, CambioCentavos = a.CambioCentavos,
+                Referencia = referencia, Verificacion = a.Forma == FormaPago.Transferencia ? Verificacion.PorVerificar : Verificacion.NoAplica,
+                SaldoAnteriorCentavos = a.SaldoConocidoCentavos, SaldoCentavos = a.SaldoConocidoCentavos - a.MontoCentavos, Vence = a.Vence,
+                FechaUtc = fecha, EnContingencia = true, FueraDeCorteUtc = turno.Abierto ? null : Ahora,
+            };
+            db.Abonos.Add(abono);
+            var movimiento = new MovimientoCredito
+            {
+                Id = abono.Id, ClienteId = cliente.Id, SucursalId = abono.SucursalId, CajaId = abono.CajaId, TurnoId = abono.TurnoId, UsuarioId = abono.UsuarioId,
+                Tipo = TipoMovimientoCredito.Abono, MontoCentavos = -abono.MontoCentavos, FechaUtc = fecha, AbonoId = abono.Id,
+                SaldoCentavos = abono.SaldoCentavos, EnContingencia = true,
+            };
+            db.MovimientosCredito.Add(movimiento);
+            if (abono.Forma == FormaPago.Efectivo)
+                db.AperturasCajon.Add(new AperturaCajon
+                {
+                    CajaId = abono.CajaId, TurnoId = abono.TurnoId, UsuarioId = abono.UsuarioId, Motivo = MotivoApertura.Abono,
+                    Nota = $"Abono {abono.Folio} de «{cliente.Nombre}» (sin conexión)", FechaUtc = fecha,
+                });
+            if (saldo - abono.MontoCentavos < 0)
+            {
+                var caja = await db.Cajas.FindAsync([abono.CajaId], ct);
+                await RevisarAsync(movimiento, MotivoRevisionCredito.SaldoAFavor, abono.MontoCentavos - saldo,
+                    $"Abono sin conexión en {caja?.Nombre} ({abono.Folio}) de «{cliente.Nombre}» por {Pesos(abono.MontoCentavos)}: la caja sabía que debía "
+                    + $"{Pesos(a.SaldoConocidoCentavos)}; con lo que llegó antes debía {Pesos(saldo)} y le quedan {Pesos(abono.MontoCentavos - saldo)} a favor.", ct);
+            }
+            if (!turno.Abierto)
+                await new RegistroCaja(db).AvisarFueraDeCorteAsync(turno, abono.Id,
+                    $"El abono {abono.Folio} de «{cliente.Nombre}» de las {HoraMexico.ALocal(fecha):HH:mm} por {Pesos(abono.CobradoCentavos)}"
+                    + (abono.Forma == FormaPago.Efectivo ? "" : abono.Forma == FormaPago.Tarjeta ? " con tarjeta" : " por transferencia"),
+                    abono.Forma == FormaPago.Efectivo ? abono.CobradoCentavos : 0, ct);
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return abono;
+        }
+        catch
+        {
+            db.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Los saldos de la sucursal para una caja, en una sola foto (una transacción de lectura: no detiene a los que
+    /// cobran): la versión, las cuentas y cuáles de los pendientes de la caja ya están sumados en ellas.
+    /// </summary>
+    public async Task<SaldosCreditoDto> SaldosAsync(Guid sucursalId, IReadOnlyList<Guid> pendientes, CancellationToken ct = default)
+    {
+        await db.Database.OpenConnectionAsync(ct);
+        try
+        {
+            await using var tx = ((SqliteConnection)db.Database.GetDbConnection()).BeginTransaction(deferred: true);
+            await db.Database.UseTransactionAsync(tx, ct);
+            var version = await db.Secuencias.AsNoTracking().Where(x => x.Nombre == Secuencia.Credito).Select(x => x.Valor).FirstOrDefaultAsync(ct);
+            var cuentas = await CuentasDeLaSucursalAsync(sucursalId, ct);
+            var incluidos = new List<Guid>();
+            foreach (var trozo in pendientes.Distinct().Chunk(500))
+                incluidos.AddRange(await db.MovimientosCredito.AsNoTracking().Where(m => trozo.Contains(m.Id)).Select(m => m.Id).ToListAsync(ct));
+            await db.Database.UseTransactionAsync(null, ct);
+            return new SaldosCreditoDto(version, cuentas, incluidos);
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync();
+        }
+    }
+
+    /// <summary>Lo que no cuadró de lo que subieron las cajas sin conexión y nadie ha revisado, lo más viejo primero.</summary>
+    public async Task<List<RevisionCreditoDto>> PorRevisarAsync(Guid sucursalId, CancellationToken ct = default)
+    {
+        var revisiones = await (from r in db.RevisionesCredito.AsNoTracking()
+                                join c in db.ClientesRegistrados on r.ClienteId equals c.Id
+                                where r.SucursalId == sucursalId && r.RevisadaUtc == null
+                                select new { Revision = r, Cliente = c.Nombre }).ToListAsync(ct);
+        return revisiones.OrderBy(x => x.Revision.CreadaUtc)
+            .Select(x => new RevisionCreditoDto(x.Revision.Id, x.Revision.ClienteId, x.Cliente, HoraMexico.ALocal(x.Revision.CreadaUtc), x.Revision.Motivo,
+                x.Revision.Detalle, x.Revision.MontoCentavos))
+            .ToList();
+    }
+
+    /// <summary>El encargado o el dueño (la regla de los clientes) la da por revisada, con una nota de qué se hizo.</summary>
+    public async Task MarcarRevisadaAsync(Guid revisionId, SolicitudRevision s, CancellationToken ct = default)
+    {
+        var revision = await db.RevisionesCredito.FindAsync([revisionId], ct) ?? throw new InvalidOperationException("La revisión no existe.");
+        await new ServicioControl(db).ExigirAsync(s.UsuarioId, revision.SucursalId, AccionControlada.AdministrarClientes,
+            "Lo de crédito por revisar lo revisan el encargado y el dueño.", ct);
+        if (revision.RevisadaUtc is not null)
+            return;
+        var nota = string.IsNullOrWhiteSpace(s.Nota) ? null : s.Nota.Trim();
+        (revision.RevisadaUtc, revision.RevisoId, revision.Nota) = (Ahora, s.UsuarioId, nota is { Length: > 200 } ? nota[..200] : nota);
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>Los abonos de hoy en una caja, los más recientes primero.</summary>

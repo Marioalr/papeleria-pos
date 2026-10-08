@@ -80,6 +80,17 @@ public static class GuiaPrueba
             + "a 15 días. Vuelve a la lista, quita «Solo los que deben» y dale crédito de $500 a «Papelería La Esquina».",
             "La lista dice cuánto debe cada quien (en rojo, si tiene algo vencido). En su cuenta están el saldo inicial, lo fiado, el abono y la "
             + "devolución, cada uno con el saldo que dejó. El cajero y el encargado ven la cuenta, pero no pueden cambiar el crédito."),
+        new("credito-sin-conexion", "Crédito",
+            "En la caja de Windows, oprime «Simular sin conexión» en la franja de prueba. Con Ctrl+L elige a la «Escuela Primaria Benito Juárez», "
+            + "fíale unos $300 con «Todo a crédito» y luego otra venta de unos $2,000. Con Ctrl+B abónale $100 en efectivo. Oprime «Volver a conectar» "
+            + "y espera unos segundos.",
+            "Sin conexión se fía y se abona con el saldo que conoce la caja: el ticket y el comprobante dicen «(saldo según esta caja)». La segunda venta "
+            + "pasa su límite de $2,000 y pide la autorización del encargado (2222). Al volver, la franja deja de avisar y en «Clientes» su cuenta "
+            + "tiene las dos ventas y el abono una sola vez, marcados «(sin conexión)»."),
+        new("credito-por-revisar", "Crédito",
+            "Como «encargado» (2222), entra a «Clientes» → «Por revisar». Lee lo del «Arq. Ramírez» (es un ejemplo de la prueba), escribe una nota y "
+            + "márcalo «Revisado». Luego entra como «cajero» y busca la pestaña.",
+            "Dice qué pasó, cuándo y por cuánto; al marcarlo sale de la lista. El cajero no ve la pestaña «Por revisar»."),
         new("efectivo", "Control",
             "Haz una salida de efectivo con F8 (con motivo) y una entrada con F7.",
             "Las dos piden motivo y salen en el corte."),

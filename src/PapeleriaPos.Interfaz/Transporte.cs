@@ -25,9 +25,9 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
         return await respuesta.Content.ReadFromJsonAsync<T>();
     }
 
-    public async Task<T> PostAsync<T>(string url, object? cuerpo, bool sinRespuesta = false, Uri? servicio = null)
+    public async Task<T> PostAsync<T>(string url, object? cuerpo, bool sinRespuesta = false, Uri? servicio = null, TimeSpan? espera = null)
     {
-        using var respuesta = await EnviarAsync(HttpMethod.Post, url, cuerpo, servicio);
+        using var respuesta = await EnviarAsync(HttpMethod.Post, url, cuerpo, servicio, espera);
         await RevisarAsync(respuesta);
         return sinRespuesta ? default! : (await respuesta.Content.ReadFromJsonAsync<T>())!;
     }
@@ -43,6 +43,9 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
     private async Task<HttpResponseMessage> EnviarAsync(
         HttpMethod metodo, string url, object? cuerpo = null, Uri? servicio = null, TimeSpan? espera = null, HttpContent? contenido = null)
     {
+        // La prueba con una persona real puede simular que no hay conexión (lo suyo, la guía y los avisos, sí contesta).
+        if (conexion.SimularSinConexion && !url.StartsWith("api/prueba/", StringComparison.Ordinal))
+            throw new ErrorCaja("No hay conexión con el servicio de la caja principal (simulado en la prueba).", "sin-conexion");
         using var mensaje = new HttpRequestMessage(metodo, new Uri(servicio ?? conexion.Servicio, url));
         if (conexion.Llave is { } llave)
             mensaje.Headers.Add(ClienteCaja.EncabezadoLlave, llave);

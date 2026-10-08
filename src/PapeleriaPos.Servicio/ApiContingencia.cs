@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Ventas;
@@ -63,7 +64,16 @@ public static class ApiContingencia
             // El precio que se cobró manda; el mayoreo del cliente (el que usó la caja) solo sirve para que el ticket diga el ahorro.
             var venta = await ApiCaja.ArmarVentaAsync(db, catalogo, caja, v.TurnoId, v.CajeroId, v.Id, lineas, v.MayoreoDeCliente == true);
             venta.ClienteId = v.ClienteId;
-            await new RegistroCaja(db).CobroDeContingenciaAsync(venta, v.Cobros, v.Folio, v.PagadaUtc, redondear: v.RedondeoCentavos is not null);
+            // Si fió: con lo que sabía la caja (una caja de antes no fía sin conexión; si llegara, se revisa con el saldo real).
+            await new RegistroCaja(db).CobroDeContingenciaAsync(venta, v.Cobros, v.Folio, v.PagadaUtc, redondear: v.RedondeoCentavos is not null,
+                fiado: v.SaldoConocidoCentavos is { } conocido ? new FiadoSinConexion(conocido, v.ExcesoAutorizadoCentavos, v.VenceCredito) : null);
+            return Results.NoContent();
+        });
+
+        // Un abono sin conexión: se guarda siempre (ya se cobró); lo que no cuadre queda por revisar.
+        bandeja.MapPost("/abonos", async (AbonoContingenciaDto a, PosDbContext db) =>
+        {
+            await new RegistroCredito(db).AbonoDeContingenciaAsync(a);
             return Results.NoContent();
         });
 

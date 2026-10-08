@@ -16,20 +16,26 @@ namespace PapeleriaPos.Pruebas.Servicio;
 
 /// <summary>
 /// Entre la caja y el servicio de prueba: con <see cref="Caido"/>, como si la caja principal estuviera apagada; con
-/// <see cref="Rechaza"/>, contesta con un error a lo que cumpla, como si el servicio no lo hubiera podido guardar.
+/// <see cref="Rechaza"/>, contesta con un error a lo que cumpla, como si el servicio no lo hubiera podido guardar; con
+/// <see cref="PierdeRespuesta"/>, lo manda (el servicio lo guarda) pero la respuesta no llega.
 /// </summary>
 internal sealed class Interruptor(HttpMessageHandler interno) : DelegatingHandler(interno)
 {
     public bool Caido { get; set; }
     public Func<HttpRequestMessage, bool>? Rechaza { get; set; }
+    public Func<HttpRequestMessage, bool>? PierdeRespuesta { get; set; }
 
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         if (Caido)
             throw new HttpRequestException("La caja principal no contesta.");
         if (Rechaza?.Invoke(request) == true)
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = JsonContent.Create(new ErrorDto("La base estaba ocupada.")) });
-        return base.SendAsync(request, cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = JsonContent.Create(new ErrorDto("La base estaba ocupada.")) };
+        var respuesta = await base.SendAsync(request, cancellationToken);
+        if (PierdeRespuesta?.Invoke(request) != true)
+            return respuesta;
+        respuesta.Dispose();
+        throw new HttpRequestException("Se cortó antes de la respuesta.");
     }
 }
 
