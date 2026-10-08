@@ -12,7 +12,8 @@ namespace PapeleriaPos.Herramientas.Prueba;
 /// <summary>
 /// La base de la prueba con una persona real (docs/plan.md): sobre la papelería ficticia, la caja y los usuarios de
 /// prueba, un chat de Telegram simulado del dueño (sus avisos se ven en la caja), impresiones por cobrar como si
-/// vinieran de la WF-6590, unos clientes registrados, y una factura y una nota de un proveedor con productos de esta base.
+/// vinieran de la WF-6590, unos clientes registrados (dos con crédito, uno que ya debe y está vencido), y una factura y una
+/// nota de un proveedor con productos de esta base.
 /// </summary>
 public static class PreparacionPrueba
 {
@@ -54,18 +55,50 @@ public static class PreparacionPrueba
             hecho.Add($"{ClientesDePrueba.Length} clientes registrados de prueba");
         }
 
+        if (!await db.ClientesRegistrados.AnyAsync(c => c.LimiteCreditoCentavos > 0, ct))
+        {
+            var dueno = await db.Usuarios.FirstAsync(u => u.Rol == Rol.Dueno, ct);
+            var sucursal = (await db.Cajas.FirstAsync(ct)).SucursalId;
+            foreach (var (nombre, _, _, _, _, _, credito) in ClientesDePrueba.Where(c => c.Credito > 0))
+            {
+                var cliente = await db.ClientesRegistrados.FirstAsync(c => c.Nombre == nombre, ct);
+                cliente.LimiteCreditoCentavos = credito;
+                if (nombre != ConDeuda)
+                    continue;
+                // Lo que ya debía en la libreta, de hace 40 días: con 30 de plazo, ya está vencido.
+                var fecha = HoraMexico.AUtc(HoraMexico.ALocal(ahora).Date.AddDays(-DiasDeLaDeuda).AddHours(12));
+                db.MovimientosCredito.Add(new MovimientoCredito
+                {
+                    Id = Ids.Nuevo(), ClienteId = cliente.Id, SucursalId = sucursal, UsuarioId = dueno.Id, Tipo = TipoMovimientoCredito.Ajuste,
+                    MontoCentavos = DeudaCentavos, FechaUtc = fecha, Vence = CuentaCredito.Vence(fecha, cliente.PlazoCreditoDias),
+                    SaldoCentavos = DeudaCentavos, Motivo = "Saldo inicial de la libreta",
+                });
+            }
+            await db.SaveChangesAsync(ct);
+            hecho.Add($"Crédito para {ClientesDePrueba.Count(c => c.Credito > 0)} clientes; «{ConDeuda}» debe {AlertasTelegram.Dinero(DeudaCentavos)} (vencido)");
+        }
+
         hecho.AddRange(await EjemplosProveedor.EscribirAsync(db, carpetaEjemplos, ct));
         return hecho;
     }
 
-    /// <summary>Uno con descuento, uno con mayoreo siempre, uno sin privilegios y uno que venía de los clientes especiales.</summary>
-    public static readonly (string Nombre, string Telefono, string? Nota, int Descuento, bool Mayoreo, bool PorRevisar)[] ClientesDePrueba =
+    /// <summary>
+    /// Uno con descuento y crédito, uno con mayoreo siempre, uno solo con crédito (que ya debe) y uno que venía de los
+    /// clientes especiales. El crédito, en centavos.
+    /// </summary>
+    public static readonly (string Nombre, string Telefono, string? Nota, int Descuento, bool Mayoreo, bool PorRevisar, long Credito)[] ClientesDePrueba =
     [
-        ("Escuela Primaria Benito Juárez", "5512345678", "Recoge la maestra Laura", 1000, false, false),
-        ("Papelería La Esquina", "5587654321", "Revende: compra por paquete", 0, true, false),
-        ("Arq. Ramírez", "5522334455", "Paga en su siguiente compra", 0, false, false),
-        ("Maestra Carmen (cliente especial)", "", null, 500, false, true),
+        ("Escuela Primaria Benito Juárez", "5512345678", "Recoge la maestra Laura", 1000, false, false, 200000),
+        ("Papelería La Esquina", "5587654321", "Revende: compra por paquete", 0, true, false, 0),
+        ("Arq. Ramírez", "5522334455", "Paga en su siguiente compra", 0, false, false, 100000),
+        ("Maestra Carmen (cliente especial)", "", null, 500, false, true, 0),
     ];
+
+    /// <summary>El que ya debe desde la libreta, cuánto y de hace cuántos días.</summary>
+    public const string ConDeuda = "Arq. Ramírez";
+
+    public const long DeudaCentavos = 35000;
+    public const int DiasDeLaDeuda = 40;
 
     private static TrabajoMedidoDto Trabajo(Guid cajaId, string documento, int paginas, bool color, DateTime impresoUtc) =>
         new(Ids.Nuevo(), cajaId, null, "PC-MOSTRADOR", "WF-6590 (prueba)", 100 + paginas, documento, "mostrador", impresoUtc, EstadoTrabajo.Impreso,

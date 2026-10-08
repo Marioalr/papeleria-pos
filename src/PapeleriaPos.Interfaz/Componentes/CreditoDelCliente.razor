@@ -1,0 +1,262 @@
+@* La cuenta de un cliente en su ficha (fase 3, entrega 2): lo que debe, lo vencido y sus últimos movimientos. Sus
+   condiciones (límite y plazo) y los ajustes del saldo los hace quien tiene la regla (al empezar, el dueño). Con un turno
+   abierto, desde aquí se le recibe un abono. *@
+@inject ClienteCaja Servicio
+
+@if (_abonando && Turno is not null)
+{
+    <Abonar Caja="Caja" Sesion="Sesion" Turno="Turno" ClienteInicial="Cliente" AlTerminar="AbonadoAsync" AlReimprimir="AlReimprimir" />
+    <div class="acciones izquierda">
+        <button class="boton" @onclick="() => _abonando = false">Volver a su cuenta</button>
+    </div>
+}
+else
+{
+    <h3>Su cuenta</h3>
+    @if (_cuenta is null)
+    {
+        <p>@(_error ?? "Cargando…")</p>
+    }
+    else
+    {
+        var credito = _cuenta.Credito;
+        <p class="nota">
+            @if (credito.SaldoCentavos > 0)
+            {
+                <span>Debe <strong>@Formato.Dinero(credito.SaldoCentavos)</strong></span>
+                @if (credito.Vencido(Hoy) is > 0 and var vencido)
+                {
+                    <span class="error"> · vencido @Formato.Dinero(vencido)</span>
+                }
+                @if (credito.VenceMasAntiguo is { } vence)
+                {
+                    <span> · lo más antiguo @(vence < Hoy ? "venció" : "vence") el @vence.ToString("dd/MM/yyyy")</span>
+                }
+            }
+            else if (credito.SaldoCentavos < 0)
+            {
+                <span>Tiene <strong>@Formato.Dinero(credito.AFavorCentavos)</strong> a favor.</span>
+            }
+            else
+            {
+                <span>No debe nada.</span>
+            }
+            @if (credito.PorVerificarCentavos > 0)
+            {
+                <span> · @Formato.Dinero(credito.PorVerificarCentavos) en transferencias por verificar</span>
+            }
+        </p>
+        <p class="nota">
+            @(credito.LimiteCentavos > 0
+                ? $"Crédito hasta {Formato.Dinero(credito.LimiteCentavos)}, a {credito.PlazoDias} días · le quedan {Formato.Dinero(credito.DisponibleCentavos)}."
+                : "Sin crédito.")
+        </p>
+
+        @if (Turno is not null && credito.SaldoCentavos > 0)
+        {
+            <div class="acciones izquierda">
+                <button class="boton principal" @onclick="() => _abonando = true">Recibir abono</button>
+            </div>
+        }
+
+        @if (_puedeDar)
+        {
+            <fieldset class="cobrar-credito">
+                <legend>Condiciones</legend>
+                <div class="dos-columnas">
+                    <label>Límite de crédito (0: sin crédito) <input inputmode="decimal" @bind="_limite" autocomplete="off" /></label>
+                    <label>Plazo (días) <input inputmode="numeric" @bind="_plazo" autocomplete="off" /></label>
+                </div>
+                <p class="nota">El plazo nuevo cuenta para lo que se fíe desde hoy; lo ya fiado vence cuando decía.</p>
+                <div class="acciones izquierda">
+                    <button class="boton" disabled="@_ocupado" @onclick="GuardarCondicionesAsync">Guardar condiciones</button>
+                </div>
+            </fieldset>
+        }
+
+        @if (_puedeAjustar)
+        {
+            <fieldset class="cobrar-credito">
+                <legend>Ajustar el saldo</legend>
+                <div class="dos-columnas">
+                    <label>
+                        <select @bind="_sube">
+                            <option value="@true">Debe más</option>
+                            <option value="@false">Debe menos</option>
+                        </select>
+                    </label>
+                    <label>Cuánto <input inputmode="decimal" @bind="_ajuste" autocomplete="off" placeholder="$0.00" /></label>
+                    <label class="ancho">Motivo <input @bind="_motivo" maxlength="200" autocomplete="off" placeholder="Saldo inicial de la libreta, corrección…" /></label>
+                    <label>Desde (lo que ya debía) <input type="date" @bind="_desde" /></label>
+                </div>
+                <p class="nota">Para pasar la libreta: «Debe más» con la fecha de lo que ya debía (desde ahí cuenta su plazo). No mueve dinero de la caja.</p>
+                <div class="acciones izquierda">
+                    <button class="boton" disabled="@_ocupado" @onclick="AjustarAsync">Ajustar</button>
+                </div>
+            </fieldset>
+        }
+
+        @if (_cuenta.Movimientos.Count > 0)
+        {
+            <div class="resultados movimientos-credito">
+                <table>
+                    <thead><tr><th>Fecha</th><th>Concepto</th><th>Folio</th><th class="num">Monto</th><th class="num">Saldo</th><th>Vence</th></tr></thead>
+                    @foreach (var m in _cuenta.Movimientos)
+                    {
+                        <tr>
+                            <td>@m.FechaLocal.ToString("dd/MM/yyyy HH:mm")</td>
+                            <td>@m.Concepto@(m.EnContingencia ? " (sin conexión)" : "")</td>
+                            <td>@m.Folio</td>
+                            <td class="num">@(m.MontoCentavos > 0 ? "+" : "−")@Formato.Dinero(Math.Abs(m.MontoCentavos))</td>
+                            <td class="num">@Formato.Dinero(m.SaldoCentavos)</td>
+                            <td>@m.Vence?.ToString("dd/MM/yyyy")</td>
+                        </tr>
+                    }
+                </table>
+            </div>
+            <p class="nota">Los últimos movimientos, del más reciente al más viejo.</p>
+        }
+    }
+    @if (_aviso is not null)
+    {
+        <p class="aviso">@_aviso</p>
+    }
+    @if (_error is not null && _cuenta is not null)
+    {
+        <p class="error">@_error</p>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter, EditorRequired] public ClienteRegistradoDto Cliente { get; set; } = null!;
+
+    /// <summary>El turno abierto de la caja: sin él no se reciben abonos.</summary>
+    [Parameter] public TurnoDto? Turno { get; set; }
+
+    /// <summary>Cambiaron sus condiciones: el cliente como quedó (quien lo muestra lo pone al día).</summary>
+    [Parameter] public EventCallback<ClienteRegistradoDto> AlCambiar { get; set; }
+
+    /// <summary>Se recibió (o se canceló) un abono: el comprobante para imprimirlo.</summary>
+    [Parameter] public EventCallback<ComprobanteAbonoDto> AlAbonar { get; set; }
+
+    /// <summary>Se reimprimió un abono: solo se imprime.</summary>
+    [Parameter] public EventCallback<ComprobanteAbonoDto> AlReimprimir { get; set; }
+
+    private CuentaClienteDto? _cuenta;
+    private bool _puedeDar;
+    private bool _puedeAjustar;
+    private bool _abonando;
+    private bool _ocupado;
+    private string? _error;
+    private string? _aviso;
+    private string _limite = "";
+    private string _plazo = "";
+    private bool _sube = true;
+    private string _ajuste = "";
+    private string _motivo = "";
+    private DateOnly? _desde;
+
+    /// <summary>El Id del ajuste que se está mandando: si se manda dos veces, se guarda uno.</summary>
+    private Guid? _idAjuste;
+
+    private static DateOnly Hoy => DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
+
+    protected override async Task OnInitializedAsync()
+    {
+        (_limite, _plazo) = (Pesos(Cliente.LimiteCreditoCentavos), Cliente.PlazoCreditoDias.ToString(CultureInfo.InvariantCulture));
+        try
+        {
+            _cuenta = await Servicio.CuentaClienteAsync(Cliente.Id);
+            _puedeDar = (await Servicio.PermisoAsync(new SolicitudPermiso(Sesion.UsuarioId, Caja.SucursalId, AccionControlada.DarCredito))).Nivel
+                == NivelPermiso.Permitido;
+            _puedeAjustar = (await Servicio.PermisoAsync(new SolicitudPermiso(Sesion.UsuarioId, Caja.SucursalId, AccionControlada.AjustarCredito, 1))).Nivel
+                == NivelPermiso.Permitido;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Codigo == "sin-conexion" ? "Sin conexión con la caja principal: la cuenta se ve cuando vuelva." : ex.Message;
+        }
+    }
+
+    private async Task GuardarCondicionesAsync()
+    {
+        (_error, _aviso) = (null, null);
+        var limite = string.IsNullOrWhiteSpace(_limite) ? 0 : Formato.LeerPesos(_limite);
+        if (limite is null or < 0)
+        {
+            _error = "Escribe el límite en pesos (0: sin crédito).";
+            return;
+        }
+        if (!int.TryParse(_plazo.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var plazo))
+        {
+            _error = "Escribe el plazo en días.";
+            return;
+        }
+        _ocupado = true;
+        try
+        {
+            var guardado = await Servicio.GuardarCondicionesAsync(Cliente.Id, new SolicitudCreditoCliente(Sesion.UsuarioId, Caja.SucursalId, limite.Value, plazo));
+            _cuenta = await Servicio.CuentaClienteAsync(Cliente.Id);
+            _aviso = guardado.TieneCredito ? $"Crédito hasta {Formato.Dinero(guardado.LimiteCreditoCentavos)}, a {guardado.PlazoCreditoDias} días." : "Quedó sin crédito.";
+            await AlCambiar.InvokeAsync(guardado);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task AjustarAsync()
+    {
+        (_error, _aviso) = (null, null);
+        if (Formato.LeerPesos(_ajuste) is not { } monto || monto <= 0)
+        {
+            _error = "Escribe cuánto sube o baja la cuenta.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_motivo))
+        {
+            _error = "El ajuste lleva motivo.";
+            return;
+        }
+        _ocupado = true;
+        _idAjuste ??= Ids.Nuevo();
+        try
+        {
+            _cuenta = await Servicio.AjustarCreditoAsync(Cliente.Id,
+                new SolicitudAjusteCredito(_idAjuste.Value, Sesion.UsuarioId, Caja.SucursalId, _sube ? monto : -monto, _motivo.Trim(), _desde));
+            _aviso = $"Ajuste de {(_sube ? "+" : "−")}{Formato.Dinero(monto)} guardado.";
+            (_idAjuste, _ajuste, _motivo, _desde) = (null, "", "", null);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task AbonadoAsync(ComprobanteAbonoDto comprobante)
+    {
+        _abonando = false;
+        await AlAbonar.InvokeAsync(comprobante);
+        try
+        {
+            _cuenta = await Servicio.CuentaClienteAsync(Cliente.Id);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private static string Pesos(long centavos) => (centavos / 100m).ToString("0.##", CultureInfo.InvariantCulture);
+}

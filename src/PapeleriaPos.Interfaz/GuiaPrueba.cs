@@ -60,6 +60,26 @@ public static class GuiaPrueba
             + "que dice «Por revisar».",
             "El cliente queda en la lista y ya se puede elegir con Ctrl+L. En «Avisos al dueño» llega que el encargado le dio privilegios. "
             + "Al guardar a Maestra Carmen se quita «Por revisar». Abre a la escuela: dice cuánto compra al mes."),
+        new("credito-fiar", "Crédito",
+            "En una venta, elige con Ctrl+L al «Arq. Ramírez». Agrega productos por unos $200, oprime F12 y usa «Todo a crédito».",
+            "Al elegirlo, arriba aparece que debe $350 y que está vencido (no impide fiarle). Se cobra sin efectivo y el ticket trae «SU CUENTA»: "
+            + "lo fiado, cuánto debe ahora y hasta cuándo paga."),
+        new("credito-limite", "Crédito",
+            "Al mismo cliente fíale otra venta de unos $600 (su límite es $1,000). Prueba también pagar una parte en efectivo y «El resto a crédito».",
+            "La ventana de cobro avisa que pasa el límite y al cobrar pide la autorización del encargado (2222). La autorización aparece en «Avisos al dueño»."),
+        new("credito-abono", "Crédito",
+            "Oprime Ctrl+B, busca al «Arq. Ramírez» y abona $300 en efectivo pagando con $500. Vuelve a oprimir Ctrl+B y en «Abonos de hoy» "
+            + "escribe un motivo y reimprime el comprobante. Haz un corte X.",
+            "Sale el comprobante con lo que debía, lo que abonó, el cambio ($200) y lo que queda, y se abre el cajón (la reimpresión sale igual y "
+            + "no lo abre). En el corte salen «Abonos en efectivo» (suman a lo esperado) y lo fiado aparte, que no suma."),
+        new("credito-devolucion", "Crédito",
+            "En «Devoluciones», devuelve un producto de una de las ventas fiadas.",
+            "No sale efectivo: el comprobante dice cuánto se descuenta de su cuenta y cuánto debe ahora."),
+        new("credito-cuenta", "Crédito",
+            "Como «dueno» (3333), entra a «Clientes» y marca «Solo los que deben». Abre al «Arq. Ramírez»: revisa sus movimientos y cambia su plazo "
+            + "a 15 días. Vuelve a la lista, quita «Solo los que deben» y dale crédito de $500 a «Papelería La Esquina».",
+            "La lista dice cuánto debe cada quien (en rojo, si tiene algo vencido). En su cuenta están el saldo inicial, lo fiado, el abono y la "
+            + "devolución, cada uno con el saldo que dejó. El cajero y el encargado ven la cuenta, pero no pueden cambiar el crédito."),
         new("efectivo", "Control",
             "Haz una salida de efectivo con F8 (con motivo) y una entrada con F7.",
             "Las dos piden motivo y salen en el corte."),

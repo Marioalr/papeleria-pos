@@ -1,6 +1,6 @@
-@* Clientes (fase 3, entrega 2): los clientes registrados, con lo que compra cada uno. Los dan de alta y los editan el
-   dueño y el encargado (lo que toca a sus privilegios se le avisa al dueño); el cajero solo los consulta. Nunca se
-   borran: se dejan inactivos. *@
+@* Clientes (fase 3, entrega 2): los clientes registrados, con lo que compra cada uno y lo que debe. Los dan de alta y
+   los editan el dueño y el encargado (lo que toca a sus privilegios se le avisa al dueño); el cajero solo los consulta.
+   Nunca se borran: se dejan inactivos (si no deben nada). En la ficha, su cuenta: desde ahí se le recibe un abono. *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
@@ -50,12 +50,19 @@
         </div>
         <p class="nota">Sin lo cancelado ni lo devuelto. Solo cuentan los tickets en que se eligió al cliente (CTRL+L).</p>
     }
+
+    @if (ficha.Registrado is { } registrado)
+    {
+        <CreditoDelCliente @key="registrado.Id" Caja="Caja" Sesion="Sesion" Cliente="registrado" Turno="Turno"
+                           AlCambiar="CondicionesAsync" AlAbonar="AlAbonar" AlReimprimir="AlReimprimir" />
+    }
 }
 else
 {
     <div class="filtros-catalogo">
         <input id="buscar-clientes" placeholder="Nombre o teléfono" @bind="_texto" @bind:event="oninput" autocomplete="off" />
         <label class="en-linea opcion"><input type="checkbox" @bind="_inactivos" @bind:after="CargarAsync" /> Con inactivos</label>
+        <label class="en-linea opcion"><input type="checkbox" @bind="_deben" /> Solo los que deben</label>
         @if (PuedeEditar)
         {
             <button class="boton principal" @onclick="Nuevo">Nuevo cliente</button>
@@ -81,7 +88,7 @@ else
     {
         <div class="resultados catalogo">
             <table>
-                <thead><tr><th>Cliente</th><th>Teléfono</th><th>Privilegios</th><th class="num">Compra al mes</th><th>Última compra</th></tr></thead>
+                <thead><tr><th>Cliente</th><th>Teléfono</th><th>Privilegios</th><th class="num">Debe</th><th class="num">Compra al mes</th><th>Última compra</th></tr></thead>
                 @foreach (var r in Encontrados)
                 {
                     var renglon = r;
@@ -95,6 +102,9 @@ else
                         </td>
                         <td>@ElegirCliente.Telefono(r.Cliente.Telefono)</td>
                         <td>@Privilegios(r.Cliente)</td>
+                        <td class="num @(r.VencidoCentavos > 0 ? "error" : "")" title="@(r.VencidoCentavos > 0 ? $"Vencido: {Formato.Dinero(r.VencidoCentavos)}" : null)">
+                            @Debe(r)
+                        </td>
                         <td class="num">@Formato.Dinero(r.PromedioMensualCentavos)</td>
                         <td>@(r.UltimaCompraLocal?.ToString("dd/MM/yyyy") ?? "—")</td>
                     </tr>
@@ -109,8 +119,17 @@ else
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
-    /// <summary>Se guardó un cliente: la venta pone al día los tickets abiertos que lo tienen.</summary>
+    /// <summary>El turno abierto de la caja: con él, desde la ficha se recibe un abono.</summary>
+    [Parameter] public TurnoDto? Turno { get; set; }
+
+    /// <summary>Se guardó un cliente (o sus condiciones de crédito): la venta pone al día los tickets abiertos que lo tienen.</summary>
     [Parameter] public EventCallback<ClienteRegistradoDto> AlGuardar { get; set; }
+
+    /// <summary>Se recibió un abono desde la ficha: el comprobante para imprimirlo.</summary>
+    [Parameter] public EventCallback<ComprobanteAbonoDto> AlAbonar { get; set; }
+
+    /// <summary>Se reimprimió un abono desde la ficha: solo se imprime.</summary>
+    [Parameter] public EventCallback<ComprobanteAbonoDto> AlReimprimir { get; set; }
 
     private sealed class Ficha
     {
@@ -125,6 +144,9 @@ else
         public bool Activo { get; set; } = true;
         public bool PorRevisar { get; init; }
         public FichaClienteDto? Evaluacion { get; set; }
+
+        /// <summary>Como está guardado (sin él, es un alta): su cuenta y sus condiciones de crédito.</summary>
+        public ClienteRegistradoDto? Registrado { get; set; }
     }
 
     private bool PuedeEditar => Sesion.Rol is Rol.Dueno or Rol.Encargado;
@@ -133,6 +155,7 @@ else
     private Ficha? _ficha;
     private string _texto = "";
     private bool _inactivos;
+    private bool _deben;
     private bool _ocupado;
     private string? _error;
     private string? _aviso;
@@ -143,8 +166,9 @@ else
         {
             var texto = Texto.Normalizar(_texto.Trim());
             var digitos = new string(_texto.Where(char.IsAsciiDigit).ToArray());
-            return texto.Length == 0 ? _lista ?? []
-                : (_lista ?? []).Where(r => Texto.Normalizar(r.Cliente.Nombre).Contains(texto)
+            var lista = (_lista ?? []).Where(r => !_deben || r.SaldoCentavos > 0);
+            return texto.Length == 0 ? lista
+                : lista.Where(r => Texto.Normalizar(r.Cliente.Nombre).Contains(texto)
                     || (digitos.Length >= 3 && r.Cliente.Telefono is { } t && t.Contains(digitos)));
         }
     }
@@ -183,6 +207,7 @@ else
         {
             Id = c.Id, Nombre = c.Nombre, Telefono = c.Telefono, Nota = c.Nota, Descuento = c.DescuentoCentesimas == 0 ? "" : (c.DescuentoCentesimas / 100m).ToString("0.##", CultureInfo.InvariantCulture),
             MayoreoSiempre = c.MayoreoSiempre, PedidoSinAnticipo = c.PedidoSinAnticipo, ApartarSinPagar = c.ApartarSinPagar, Activo = c.Activo, PorRevisar = c.PorRevisar,
+            Registrado = c,
         };
         try
         {
@@ -236,6 +261,22 @@ else
             _ocupado = false;
         }
     }
+
+    /// <summary>Cambiaron sus condiciones de crédito: la ficha y los tickets abiertos se ponen al día.</summary>
+    private async Task CondicionesAsync(ClienteRegistradoDto guardado)
+    {
+        if (_ficha is { } f && f.Id == guardado.Id)
+            f.Registrado = guardado;
+        await AlGuardar.InvokeAsync(guardado);
+    }
+
+    /// <summary>Lo que debe, o lo que tiene a favor; vacío si está en cero.</summary>
+    private static string Debe(ClienteResumenDto r) => r.SaldoCentavos switch
+    {
+        > 0 => Formato.Dinero(r.SaldoCentavos),
+        < 0 => $"{Formato.Dinero(-r.SaldoCentavos)} a favor",
+        _ => "",
+    };
 
     /// <summary>Los de la venta y los de la fase 4, para la lista.</summary>
     private static string Privilegios(ClienteRegistradoDto c)

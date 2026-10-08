@@ -421,6 +421,8 @@ public sealed class Contingencia
         var turno = TurnoRequerido(s.TurnoId);
         if (s.Impresiones is { Count: > 0 })
             throw new InvalidOperationException("Las impresiones se cobran con conexión con la caja principal: quítalas del ticket o espera a que vuelva.");
+        if (s.Cobros.Any(c => c.Forma == FormaPago.Credito))
+            throw new InvalidOperationException("Sin conexión todavía no se fía: cóbralo de otra forma o espera a que vuelva la conexión.");
         var ahora = Ahora;
         // El cliente va antes que las líneas: con mayoreo siempre, sus precios son otros.
         ClienteRegistradoDto? cliente = null;
@@ -533,7 +535,8 @@ public sealed class Contingencia
             if (resumen is not null)
                 lote.Guardar("base", new BaseTurno(turno.Id, resumen.FondoCentavos, new AnotacionDiario(Guid.Empty, turno.Id, resumen.Ventas,
                     resumen.EfectivoVentasCentavos, resumen.TarjetaCentavos, resumen.TransferenciaCentavos, resumen.EntradasCentavos,
-                    resumen.SalidasCentavos, resumen.DevolucionesCentavos, resumen.Cancelaciones, resumen.RedondeoCentavos))).LimpiarDiario();
+                    resumen.SalidasCentavos, resumen.DevolucionesCentavos, resumen.Cancelaciones, resumen.RedondeoCentavos, resumen.CreditoCentavos,
+                    resumen.Abonos, resumen.AbonosEfectivoCentavos, resumen.AbonosTarjetaCentavos, resumen.AbonosTransferenciaCentavos))).LimpiarDiario();
             lote.Confirmar();
         }
     }
@@ -565,15 +568,40 @@ public sealed class Contingencia
         lote.Anotar(new AnotacionDiario(id, turnoId, Entradas: entrada ? m.MontoCentavos : 0, Salidas: entrada ? 0 : m.MontoCentavos)).Confirmar();
     }
 
-    /// <summary>El reembolso sale del efectivo del turno abierto de esta caja; una cancelación deja de contar como venta.</summary>
+    /// <summary>
+    /// El reembolso sale del efectivo del turno abierto de esta caja; una cancelación deja de contar como venta, y su
+    /// tarjeta, su transferencia y lo fiado dejan de contar en el corte (como en el del servicio, que solo suma las vigentes).
+    /// </summary>
     public void DevolucionEnLinea(ComprobanteDevolucionDto d)
     {
         if (_almacen.Leer<TurnoDto>("turno") is not { } turno)
             return;
         using var lote = _almacen.Lote();
         lote.Anotar(new AnotacionDiario(Ids.Nuevo(), turno.Id, Ventas: d.EsCancelacion ? -1 : 0, Devoluciones: d.ReembolsoEfectivoCentavos,
-            Cancelaciones: d.EsCancelacion ? 1 : 0, Redondeo: -d.RedondeoCentavos)).Confirmar();
+            Cancelaciones: d.EsCancelacion ? 1 : 0, Redondeo: -d.RedondeoCentavos,
+            Tarjeta: d.EsCancelacion ? -d.TarjetaCentavos : 0, Transferencia: d.EsCancelacion ? -d.TransferenciaCentavos : 0,
+            Credito: d.EsCancelacion ? -d.AlCreditoCentavos : 0)).Confirmar();
     }
+
+    /// <summary>Un abono recibido en línea entra a la cuenta del turno: en efectivo suma al esperado.</summary>
+    public void AbonoEnLinea(Guid turnoId, ComprobanteAbonoDto c)
+    {
+        using var lote = _almacen.Lote();
+        lote.Anotar(AnotacionAbono(c.AbonoId, turnoId, c, 1)).Confirmar();
+    }
+
+    /// <summary>Un abono cancelado en línea sale de la cuenta del turno (con su propio renglón: el del abono se queda).</summary>
+    public void AbonoCanceladoEnLinea(Guid turnoId, ComprobanteAbonoDto c)
+    {
+        using var lote = _almacen.Lote();
+        lote.Anotar(AnotacionAbono(Ids.Nuevo(), turnoId, c, -1)).Confirmar();
+    }
+
+    private static AnotacionDiario AnotacionAbono(Guid id, Guid turnoId, ComprobanteAbonoDto c, int signo) =>
+        new(id, turnoId, Abonos: signo, Redondeo: signo * c.RedondeoCentavos,
+            AbonosEfectivo: c.Forma == FormaPago.Efectivo ? signo * c.CobradoCentavos : 0,
+            AbonosTarjeta: c.Forma == FormaPago.Tarjeta ? signo * c.MontoCentavos : 0,
+            AbonosTransferencia: c.Forma == FormaPago.Transferencia ? signo * c.MontoCentavos : 0);
 
     // ── Apoyo ───────────────────────────────────────────────────────────────
 
@@ -590,11 +618,14 @@ public sealed class Contingencia
         var entradas = t.Entradas + d.Entradas;
         var salidas = t.Salidas + d.Salidas;
         var devoluciones = t.Devoluciones + d.Devoluciones;
-        var esperado = base_.FondoCentavos + efectivo + entradas - salidas - devoluciones;
+        var abonosEfectivo = t.AbonosEfectivo + d.AbonosEfectivo;
+        var esperado = base_.FondoCentavos + efectivo + abonosEfectivo + entradas - salidas - devoluciones;
         long? contado = conteo?.Sum(c => c.Key * c.Value);
         return new CorteDto(tipo, HoraMexico.ALocal(Ahora), turno.Cajero, realizadoPor, t.Ventas + d.Ventas, base_.FondoCentavos, efectivo, entradas, salidas,
             t.Tarjeta + d.Tarjeta, t.Transferencia + d.Transferencia, esperado, contado, contado - esperado, devoluciones, t.Cancelaciones + d.Cancelaciones,
-            EnContingencia: true, RedondeoCentavos: t.Redondeo + d.Redondeo);
+            EnContingencia: true, RedondeoCentavos: t.Redondeo + d.Redondeo, CreditoCentavos: t.Credito + d.Credito, Abonos: t.Abonos + d.Abonos,
+            AbonosEfectivoCentavos: abonosEfectivo, AbonosTarjetaCentavos: t.AbonosTarjeta + d.AbonosTarjeta,
+            AbonosTransferenciaCentavos: t.AbonosTransferencia + d.AbonosTransferencia);
     }
 
     private static AnotacionDiario Anotacion(Guid turnoId, TicketDto ticket) =>
@@ -602,7 +633,7 @@ public sealed class Contingencia
             Efectivo: ticket.Cobros.Where(c => c.Forma == FormaPago.Efectivo).Sum(c => c.MontoCentavos),
             Tarjeta: ticket.Cobros.Where(c => c.Forma == FormaPago.Tarjeta).Sum(c => c.MontoCentavos),
             Transferencia: ticket.Cobros.Where(c => c.Forma == FormaPago.Transferencia).Sum(c => c.MontoCentavos),
-            Redondeo: ticket.RedondeoCentavos);
+            Redondeo: ticket.RedondeoCentavos, Credito: ticket.CreditoCentavos);
 
     private long PrecioMenudeo(ProductoVentaDto p)
     {

@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo;
@@ -59,8 +60,12 @@ public static class ApiCredito
         var usuario = await db.Usuarios.FindAsync(a.UsuarioId);
         var cliente = await db.ClientesRegistrados.FindAsync(a.ClienteId);
         var encabezado = (await ApiConfiguracion.ConfiguracionAsync(db, a.SucursalId, opciones)).RenglonesEncabezado;
+        // Al cancelarlo, lo que quedó a deber lo guarda su movimiento (el abono guarda lo de cuando se recibió).
+        var trasCancelar = a.CanceladoUtc is null ? null
+            : await db.MovimientosCredito.Where(m => m.AbonoId == a.Id && m.Tipo == TipoMovimientoCredito.AbonoCancelado)
+                .Select(m => (long?)m.SaldoCentavos).SingleOrDefaultAsync();
         return new ComprobanteAbonoDto(a.Id, a.Folio, HoraMexico.ALocal(a.FechaUtc), caja!.Nombre, usuario!.Nombre, a.ClienteId, cliente!.Nombre, a.Forma,
             a.MontoCentavos, a.RedondeoCentavos, a.RecibidoCentavos, a.CambioCentavos, a.Referencia, a.SaldoAnteriorCentavos, a.SaldoCentavos, a.Vence,
-            encabezado, a.CanceladoUtc is not null, a.EnContingencia, a.MotivoCancelacion);
+            encabezado, a.CanceladoUtc is not null, a.EnContingencia, a.MotivoCancelacion, trasCancelar);
     }
 }

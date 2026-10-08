@@ -37,6 +37,22 @@
             <span class="cliente-ticket">Cliente: @delTicket.Nombre@(delTicket.TextoPrivilegios() is { Length: > 0 } privilegios ? $" · {privilegios}" : "")</span>
         }
     </div>
+    @if (Actual.Cliente is { } conCuenta && Actual.Cuenta is { SaldoCentavos: not 0 } cuenta)
+    {
+        @* Si debe, la caja lo dice al elegirlo, para cobrarlo en esta compra (fase 3). *@
+        var vencido = cuenta.Vencido(DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow)));
+        <div class="franja-credito @(vencido > 0 ? "vencido" : "")">
+            @if (cuenta.SaldoCentavos > 0)
+            {
+                <span>@conCuenta.Nombre debe @Formato.Dinero(cuenta.SaldoCentavos)@(cuenta.VenceMasAntiguo is { } vence ? $" · vence {vence:dd/MM}" : "")@(vencido > 0 ? $" · vencido {Formato.Dinero(vencido)}" : "")</span>
+                <button class="boton chico" @onclick="() => Abrir(Ventanas.Abono)">CTRL+B Abonar</button>
+            }
+            else
+            {
+                <span>@conCuenta.Nombre tiene @Formato.Dinero(cuenta.AFavorCentavos) a favor: se usa con «A crédito» al cobrar.</span>
+            }
+        </div>
+    }
 
     <div class="captura">
         <label for="codigo">Código del producto:</label>
@@ -54,6 +70,7 @@
         <button class="boton" @onclick="AbrirCambioPrecio">CTRL+E Cambiar precio</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Descuento)">CTRL+D Descuento</button>
         <button class="boton" title="El cliente registrado del ticket, por nombre o teléfono" @onclick="() => Abrir(Ventanas.ElegirCliente)">CTRL+L Cliente</button>
+        <button class="boton" title="Un abono a la cuenta de un cliente" @onclick="() => Abrir(Ventanas.Abono)">CTRL+B Abono</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Verificador)">F9 Verificador</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Impresiones)">F2 Impresiones</button>
         @* Cotizar a un botón: la etiqueta abre el selector de archivos; al elegir el PDF se abre la cotización. *@
@@ -176,7 +193,7 @@
     {
         case Ventanas.Cobrar:
             <Ventana Titulo="Cobrar" Clase="cobrar" AlCerrar="Cerrar">
-                <CobrarVenta Venta="Actual.Venta" AlCobrar="CobrarAsync" />
+                <CobrarVenta Venta="Actual.Venta" Caja="Caja" Sesion="Sesion" Cliente="Actual.Cliente" Cuenta="Actual.Cuenta" AlCobrar="CobrarAsync" />
             </Ventana>
             break;
         case Ventanas.AutorizarCosto when _costoPorAutorizar is { } costo:
@@ -279,7 +296,14 @@
             break;
         case Ventanas.Clientes:
             <Ventana Titulo="Clientes" Clase="configuracion" AlCerrar="Cerrar">
-                <Clientes Caja="Caja" Sesion="Sesion" AlGuardar="ClienteGuardado" />
+                <Clientes Caja="Caja" Sesion="Sesion" Turno="Turno" AlGuardar="ClienteGuardadoAsync" AlAbonar="AbonoRegistradoAsync"
+                          AlReimprimir="AbonoReimpresoAsync" />
+            </Ventana>
+            break;
+        case Ventanas.Abono:
+            <Ventana Titulo="Abono a cuenta" Clase="buscar" AlCerrar="Cerrar">
+                <Abonar Caja="Caja" Sesion="Sesion" Turno="Turno" ClienteInicial="Actual.Cliente" AlTerminar="AbonoRegistradoAsync"
+                        AlReimprimir="AbonoReimpresoAsync" />
             </Ventana>
             break;
         case Ventanas.Cotizar:
@@ -322,7 +346,7 @@
     {
         Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
         CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, Productos, AltaRapida, Inventario, Conteo, Mayoreo, ElegirCliente, Clientes,
-        AutorizarCosto,
+        AutorizarCosto, Abono,
     }
 
     /// <summary>El conteo cíclico de hoy: cuántos faltan, para pedirlo en la franja.</summary>
@@ -351,6 +375,12 @@
 
         /// <summary>El cliente registrado del ticket: lo que se agregue después también lleva su descuento y su mayoreo.</summary>
         public ClienteRegistradoDto? Cliente { get; set; }
+
+        /// <summary>Su cuenta (lo que debe, su límite): se pide al elegirlo y otra vez antes de cobrar.</summary>
+        public CreditoClienteDto? Cuenta { get; set; }
+
+        /// <summary>Se mandó a fiar y se perdió la respuesta: puede que ya esté guardado. Solo se cobra en línea, con el mismo Id.</summary>
+        public bool FiadoSinConfirmar { get; set; }
     }
 
     private readonly List<TicketAbierto> _tickets = [];
@@ -404,6 +434,7 @@
             case "Ctrl+E": await AbrirCambioPrecio(); break;
             case "Ctrl+D": await Abrir(Ventanas.Descuento); break;
             case "Ctrl+L": await Abrir(Ventanas.ElegirCliente); break;
+            case "Ctrl+B": await Abrir(Ventanas.Abono); break;
             case "Delete": await BorrarSeleccion(); break;
             case "ArrowUp": await MoverSeleccion(-1); break;
             case "ArrowDown": await MoverSeleccion(1); break;
@@ -702,15 +733,18 @@
     // ── Cobro e impresión ───────────────────────────────────────────────────
 
     /// <summary>Lo llama la ventana de cobro. Devuelve el error para mostrarlo ahí, o null si se cobró.</summary>
-    private async Task<string?> CobrarAsync(IReadOnlyList<CobroSolicitado> cobros)
+    private async Task<string?> CobrarAsync(IReadOnlyList<CobroSolicitado> cobros, Guid? autorizacionCredito)
     {
-        var venta = Actual.Venta;
+        var abierto = Actual;
+        var venta = abierto.Venta;
         try
         {
+            // Con el Id del ticket: si la respuesta se pierde, el siguiente intento (en línea o sin conexión) es la misma venta.
             var ticket = await Cliente.CobrarAsync(new SolicitudCobro(Caja.Id, Turno.Id, Sesion.UsuarioId, ArmadoSolicitud.Lineas(venta), cobros,
-                Impresiones: Actual.Impresiones.Count > 0 ? Actual.Impresiones.Select(i => i.Id).ToList() : null,
+                VentaId: venta.Id, Impresiones: abierto.Impresiones.Count > 0 ? abierto.Impresiones.Select(i => i.Id).ToList() : null,
                 ClienteId: venta.ClienteId, AutorizacionDescuentoId: venta.AutorizacionDescuentoId,
-                AutorizacionBajoCostoId: venta.AutorizacionBajoCostoId, MayoreoDeCliente: venta.MayoreoDeCliente));
+                AutorizacionBajoCostoId: venta.AutorizacionBajoCostoId, MayoreoDeCliente: venta.MayoreoDeCliente,
+                AutorizacionCreditoId: autorizacionCredito), soloEnLinea: abierto.FiadoSinConfirmar);
             _tickets.RemoveAt(_actual);
             if (_tickets.Count == 0)
                 NuevoTicket();
@@ -724,6 +758,15 @@
         }
         catch (ErrorCaja ex)
         {
+            if (ex.Codigo == "fiado-sin-confirmar")
+                abierto.FiadoSinConfirmar = true;
+            // Si no se pudo fiar (otra caja le fió, le abonaron, venció la autorización…), la ventana sigue abierta con la
+            // cuenta al día; los callbacks de las ventanas no vuelven a dibujar esta pantalla.
+            if (abierto.Cliente is not null && cobros.Any(c => c.Forma == FormaPago.Credito))
+            {
+                await CargarCuentaAsync(abierto);
+                StateHasChanged();
+            }
             return ex.Message;
         }
     }
@@ -853,6 +896,7 @@
                 return;
             }
         }
+        await CargarCuentaAsync(Actual);
         await Abrir(Ventanas.Cobrar);
     }
 
@@ -860,13 +904,66 @@
     {
         Actual.Venta.AutorizacionBajoCostoId = autorizacionId;
         _costoPorAutorizar = null;
+        await CargarCuentaAsync(Actual);
         await Abrir(Ventanas.Cobrar);
+    }
+
+    /// <summary>La cuenta del cliente del ticket (lo que debe y su límite). Sin conexión no se conoce: no se fía.</summary>
+    private async Task CargarCuentaAsync(TicketAbierto ticket)
+    {
+        if (ticket.Cliente is not { } cliente)
+        {
+            ticket.Cuenta = null;
+            return;
+        }
+        try
+        {
+            ticket.Cuenta = (await Cliente.CuentaClienteAsync(cliente.Id)).Credito;
+        }
+        catch (ErrorCaja)
+        {
+            ticket.Cuenta = null;
+        }
+    }
+
+    /// <summary>
+    /// Un abono o su cancelación: se imprime su comprobante (en efectivo se abre el cajón: entra o sale dinero, y el
+    /// servicio lo registra) y se pone al día la cuenta del ticket.
+    /// </summary>
+    private async Task AbonoRegistradoAsync(ComprobanteAbonoDto comprobante)
+    {
+        await Cerrar();
+        Avisar(comprobante.Cancelado
+            ? $"Se canceló el abono {comprobante.Folio}"
+              + (comprobante.Forma == FormaPago.Efectivo ? $": entrega {Formato.Dinero(comprobante.CobradoCentavos)} en efectivo" : "")
+              + $". «{comprobante.Cliente}» vuelve a deber {Formato.Dinero(comprobante.MontoCentavos)}."
+            : $"Abono de {Formato.Dinero(comprobante.MontoCentavos)} de «{comprobante.Cliente}». Saldo: {Formato.Dinero(comprobante.SaldoCentavos)}"
+              + (comprobante.Forma == FormaPago.Efectivo ? $". Cambio: {Formato.Dinero(comprobante.CambioCentavos)}." : "."), error: false);
+        foreach (var ticket in _tickets.Where(t => t.Cliente?.Id == comprobante.ClienteId))
+            await CargarCuentaAsync(ticket);
+        await ImprimirDocumentoAsync($"Abono {comprobante.Folio}", DisenoComprobante.Abono(comprobante), abrirCajon: comprobante.AbreCajon);
+        await RevisarEfectivoAsync();
+    }
+
+    /// <summary>Una reimpresión: solo el papel; el cajón no se abre (no entra ni sale dinero).</summary>
+    private async Task AbonoReimpresoAsync(ComprobanteAbonoDto comprobante)
+    {
+        await Cerrar();
+        Avisar($"Se reimprimió el abono {comprobante.Folio}.", error: false);
+        await ImprimirDocumentoAsync($"Abono {comprobante.Folio}", DisenoComprobante.Abono(comprobante), abrirCajon: false);
     }
 
     /// <summary>
     /// Se editó un cliente en el módulo Clientes: los tickets abiertos que lo tienen se ponen al día (su descuento y su
     /// mayoreo); si quedó inactivo, sale del ticket.
     /// </summary>
+    private async Task ClienteGuardadoAsync(ClienteRegistradoDto guardado)
+    {
+        ClienteGuardado(guardado);
+        foreach (var ticket in _tickets.Where(t => t.Cliente?.Id == guardado.Id))
+            await CargarCuentaAsync(ticket);
+    }
+
     private void ClienteGuardado(ClienteRegistradoDto guardado)
     {
         foreach (var ticket in _tickets.Where(t => t.Cliente?.Id == guardado.Id))
@@ -893,6 +990,7 @@
     {
         Actual.Cliente = cliente;
         await Cerrar();
+        await CargarCuentaAsync(Actual);
         Avisar(cliente is null ? "El ticket ya no tiene cliente." : $"Cliente: {ArmadoTicket.ClienteTexto(cliente)}.", error: false);
     }
 
@@ -984,7 +1082,8 @@
     private async Task DevolucionHechaAsync(ComprobanteDevolucionDto comprobante)
     {
         await Cerrar();
-        Avisar($"{(comprobante.EsCancelacion ? "Ticket cancelado" : "Devolución registrada")}: entrega {Formato.Dinero(comprobante.ReembolsoEfectivoCentavos)} en efectivo.", error: false);
+        Avisar($"{(comprobante.EsCancelacion ? "Ticket cancelado" : "Devolución registrada")}: entrega {Formato.Dinero(comprobante.ReembolsoEfectivoCentavos)} en efectivo"
+            + (comprobante.AlCreditoCentavos > 0 ? $" y baja {Formato.Dinero(comprobante.AlCreditoCentavos)} de la cuenta de «{comprobante.Cliente}»." : "."), error: false);
         await ImprimirDocumentoAsync($"{(comprobante.EsCancelacion ? "Cancelación" : "Devolución")} {comprobante.Folio}",
             DisenoComprobante.Devolucion(comprobante), abrirCajon: comprobante.ReembolsoEfectivoCentavos > 0);
         await RevisarEfectivoAsync();

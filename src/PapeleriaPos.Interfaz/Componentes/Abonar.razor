@@ -1,0 +1,428 @@
+@* CTRL+B (fase 3, entrega 2): un abono a la cuenta de un cliente, en cualquier caja con su turno; el dinero entra a este
+   turno y al corte como ingreso aparte. En efectivo se abona en pesos, o se liquida al peso; con tarjeta o transferencia,
+   exacto. Con la caja principal (sin conexión, los abonos esperan). También los abonos de hoy: reimprimir y cancelar
+   (solo los de este turno, con motivo). *@
+@using PapeleriaPos.Nucleo.Clientes
+@inject ClienteCaja Servicio
+@inject ModuloCaja Js
+
+@if (_autorizar is { } pendiente)
+{
+    <AutorizarAccion Accion="AccionControlada.CancelarAbono" Detalle="@($"Cancelar el abono {pendiente.Folio} de «{pendiente.Cliente}»")"
+                     MontoCentavos="pendiente.MontoCentavos" Caja="Caja" Sesion="Sesion" AlAutorizar="a => CancelarAsync(pendiente, a.Id)"
+                     AlCancelar="() => _autorizar = null" />
+}
+else
+{
+    <nav class="pestanas">
+        <button class="pestana @(_deHoy ? "" : "activa")" @onclick="() => _deHoy = false">Abonar</button>
+        <button class="pestana @(_deHoy ? "activa" : "")" @onclick="AbonosDeHoyAsync">Abonos de hoy</button>
+    </nav>
+
+    @if (_deHoy)
+    {
+        @if (_hoy is null)
+        {
+            <p>Cargando…</p>
+        }
+        else if (_hoy.Count == 0)
+        {
+            <p class="vacia">Hoy no hay abonos en esta caja.</p>
+        }
+        else
+        {
+            <label>Motivo (para cancelar o reimprimir) <input @bind="_motivo" autocomplete="off" /></label>
+            <div class="resultados">
+                <table>
+                    <thead><tr><th>Abono</th><th>Hora</th><th>Cliente</th><th>Forma</th><th class="num">Monto</th><th></th></tr></thead>
+                    @foreach (var a in _hoy)
+                    {
+                        var abono = a;
+                        <tr class="@(a.Cancelado ? "inactivo" : "")">
+                            <td>@a.Folio</td>
+                            <td>@a.FechaLocal.ToString("HH:mm")</td>
+                            <td>@a.Cliente</td>
+                            <td>@Forma(a.Forma)</td>
+                            <td class="num">@Formato.Dinero(a.MontoCentavos)</td>
+                            <td class="acciones-renglon">
+                                @if (a.Cancelado)
+                                {
+                                    <span>Cancelado</span>
+                                }
+                                else
+                                {
+                                    <button class="boton chico" disabled="@_ocupado" @onclick="() => ReimprimirAsync(abono)">Reimprimir</button>
+                                    @if (a.DeEsteTurno)
+                                    {
+                                        <button class="boton chico" disabled="@_ocupado" @onclick="() => CancelarAsync(abono, null)">Cancelar</button>
+                                    }
+                                }
+                            </td>
+                        </tr>
+                    }
+                </table>
+            </div>
+        }
+    }
+    else if (_cliente is null)
+    {
+        <input id="buscar-deudor" class="buscar-texto" placeholder="¿Quién abona? Nombre o teléfono…" autocomplete="off" @bind="_texto" @bind:event="oninput"
+               @onkeydown="ElegirPrimeroAsync" />
+        <div class="resultados">
+            @if (_deudores is null)
+            {
+                <p>@(_error ?? "Cargando…")</p>
+            }
+            else if (Encontrados.Count == 0)
+            {
+                <p class="vacia">@(_deudores.Count == 0 ? "Nadie debe." : $"Nadie que deba coincide con «{_texto}».")</p>
+            }
+            <table>
+                @foreach (var (cliente, cuenta) in Encontrados)
+                {
+                    var elegido = cliente;
+                    <tr @onclick="() => ElegirAsync(elegido)">
+                        <td>@cliente.Nombre</td>
+                        <td>@ElegirCliente.Telefono(cliente.Telefono)</td>
+                        <td class="num @(cuenta.Vencido(Hoy) > 0 ? "error" : "")">@Formato.Dinero(cuenta.SaldoCentavos)</td>
+                    </tr>
+                }
+            </table>
+        </div>
+    }
+    else if (_cuenta is { } cuenta)
+    {
+        <p>
+            <strong>@_cliente.Nombre</strong> debe <strong>@Formato.Dinero(cuenta.SaldoCentavos)</strong>
+            @if (cuenta.Vencido(Hoy) is > 0 and var vencido)
+            {
+                <span class="error"> · vencido @Formato.Dinero(vencido)</span>
+            }
+            @if (cuenta.PorVerificarCentavos > 0)
+            {
+                <span> · @Formato.Dinero(cuenta.PorVerificarCentavos) en transferencias por verificar</span>
+            }
+            @if (ClienteInicial is null)
+            {
+                <button class="boton chico" @onclick="OtroCliente">Otro cliente</button>
+            }
+        </p>
+        @if (cuenta.SaldoCentavos <= 0)
+        {
+            <p class="vacia">No debe nada.</p>
+        }
+        else
+        {
+            <div class="dos-columnas">
+                <label>Forma de pago
+                    <select @bind="_forma">
+                        <option value="@FormaPago.Efectivo">Efectivo</option>
+                        <option value="@FormaPago.Tarjeta">Tarjeta</option>
+                        <option value="@FormaPago.Transferencia">Transferencia</option>
+                    </select>
+                </label>
+                <label>Abona (vacío: liquida)
+                    <input id="abono-monto" inputmode="decimal" @bind="_monto" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="Liquidar" autocomplete="off" />
+                </label>
+                @if (_forma == FormaPago.Efectivo)
+                {
+                    <label>Pagó con (efectivo)
+                        <input inputmode="decimal" @bind="_recibido" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off"
+                               placeholder="@(Calculo is { } exacto ? $"Exacto: {Formato.Dinero(exacto.ACobrarCentavos)}" : "Exacto")" />
+                    </label>
+                }
+                else
+                {
+                    <label>Referencia <input @bind="_referencia" @onkeydown="AlTeclear" maxlength="60" autocomplete="off" /></label>
+                }
+            </div>
+            <div class="acciones izquierda">
+                <button class="boton chico" @onclick="Liquidar">Liquidar (@Formato.Dinero(Liquidacion.ACobrarCentavos)@(Liquidacion.RedondeoCentavos != 0 ? $", redondeo {(Liquidacion.RedondeoCentavos > 0 ? "+" : "−")}{Formato.Dinero(Math.Abs(Liquidacion.RedondeoCentavos))}" : ""))</button>
+            </div>
+            @if (Calculo is { } calculo)
+            {
+                <p class="cobrar-resumen">
+                    Abona @Formato.Dinero(calculo.MontoCentavos)@(calculo.Liquida ? " (liquida)" : $" · queda a deber {Formato.Dinero(cuenta.SaldoCentavos - calculo.MontoCentavos)}")
+                    @if (_forma == FormaPago.Efectivo)
+                    {
+                        <span> · se cobran @Formato.Dinero(calculo.ACobrarCentavos) · cambio <strong>@Formato.Dinero(calculo.CambioCentavos)</strong></span>
+                    }
+                    else if (_forma == FormaPago.Transferencia)
+                    {
+                        <span> · queda por verificar</span>
+                    }
+                </p>
+            }
+            else if (_problema is not null)
+            {
+                <p class="aviso">@_problema</p>
+            }
+            <div class="acciones">
+                <button class="boton principal" disabled="@(_ocupado || Calculo is null)" @onclick="AbonarAsync">Abonar (Enter)</button>
+            </div>
+        }
+    }
+    else
+    {
+        <p>@(_error ?? "Cargando…")</p>
+    }
+
+    @if (_error is not null && (_cuenta is not null || _deHoy))
+    {
+        <p class="error">@_error</p>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter, EditorRequired] public TurnoDto Turno { get; set; } = null!;
+
+    /// <summary>El cliente del ticket (o el de la ficha): si viene, se abona a él.</summary>
+    [Parameter] public ClienteRegistradoDto? ClienteInicial { get; set; }
+
+    /// <summary>Se abonó o se canceló: el comprobante para imprimirlo (y abrir el cajón si fue en efectivo).</summary>
+    [Parameter] public EventCallback<ComprobanteAbonoDto> AlTerminar { get; set; }
+
+    /// <summary>Se reimprimió: solo se imprime, sin abrir el cajón (no entra ni sale dinero).</summary>
+    [Parameter] public EventCallback<ComprobanteAbonoDto> AlReimprimir { get; set; }
+
+    private ClienteRegistradoDto? _cliente;
+    private CreditoClienteDto? _cuenta;
+    private List<(ClienteRegistradoDto Cliente, CreditoClienteDto Cuenta)>? _deudores;
+    private List<AbonoDelDiaDto>? _hoy;
+    private bool _deHoy;
+    private string _texto = "";
+    private FormaPago _forma = FormaPago.Efectivo;
+    private string _monto = "";
+    private string _recibido = "";
+    private string _referencia = "";
+    private string _motivo = "";
+    private string? _error;
+    private string? _problema;
+    private bool _ocupado;
+    private AbonoDelDiaDto? _autorizar;
+
+    /// <summary>El Id del abono que se está mandando: si se manda dos veces (o se pierde la respuesta), se guarda uno.</summary>
+    private Guid? _id;
+
+    private static DateOnly Hoy => DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
+
+    private List<(ClienteRegistradoDto Cliente, CreditoClienteDto Cuenta)> Encontrados
+    {
+        get
+        {
+            var texto = Texto.Normalizar(_texto.Trim());
+            var digitos = new string(_texto.Where(char.IsAsciiDigit).ToArray());
+            return (_deudores ?? []).Where(d => texto.Length == 0 || Texto.Normalizar(d.Cliente.Nombre).Contains(texto)
+                || (digitos.Length >= 3 && d.Cliente.Telefono is { } t && t.Contains(digitos))).ToList();
+        }
+    }
+
+    private AbonoCalculado Liquidacion => _cuenta is { SaldoCentavos: > 0 } c
+        ? CalculoAbono.Calcular(c.SaldoCentavos, _forma, null, long.MaxValue / 2) with { CambioCentavos = 0 }
+        : new AbonoCalculado(0, 0, 0, 0, false);
+
+    /// <summary>Lo que va a pasar con lo capturado, con la misma regla que el servicio; si no se puede, por qué.</summary>
+    private AbonoCalculado? Calculo
+    {
+        get
+        {
+            _problema = null;
+            if (_cuenta is not { SaldoCentavos: > 0 } cuenta)
+                return null;
+            long? monto = string.IsNullOrWhiteSpace(_monto) ? null : Formato.LeerPesos(_monto);
+            if (!string.IsNullOrWhiteSpace(_monto) && monto is null)
+            {
+                _problema = "Escribe cuánto abona.";
+                return null;
+            }
+            try
+            {
+                // «Pagó con» vacío: lo exacto.
+                var exacto = CalculoAbono.Calcular(cuenta.SaldoCentavos, _forma, monto, long.MaxValue / 2).ACobrarCentavos;
+                return CalculoAbono.Calcular(cuenta.SaldoCentavos, _forma, monto,
+                    _forma == FormaPago.Efectivo ? Formato.LeerPesos(_recibido) ?? exacto : 0);
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+            {
+                _problema = ex.Message;
+                return null;
+            }
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (ClienteInicial is { } cliente)
+        {
+            await ElegirAsync(cliente);
+            return;
+        }
+        try
+        {
+            var clientes = (await Servicio.ClientesRegistradosAsync(Caja.SucursalId)).ToDictionary(c => c.Id);
+            _deudores = (await Servicio.CreditosEnLineaAsync(Caja.SucursalId))
+                .Where(c => c.SaldoCentavos > 0 && clientes.ContainsKey(c.ClienteId))
+                .Select(c => (clientes[c.ClienteId], c))
+                .OrderBy(d => d.Item1.Nombre, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Codigo == "sin-conexion" ? "Sin conexión con la caja principal: los abonos esperan a que vuelva." : ex.Message;
+        }
+    }
+
+    /// <summary>Al abrir, o al elegir a quien abona: el cursor va donde sigue escribir.</summary>
+    private bool _enfocar = true;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!_enfocar || (_cliente is not null && _cuenta is null))
+            return;
+        _enfocar = false;
+        await Js.EnfocarAsync(_cliente is null ? "#buscar-deudor" : "#abono-monto");
+    }
+
+    /// <summary>Enter en la búsqueda: el primero que coincide.</summary>
+    private async Task ElegirPrimeroAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && Encontrados.Count > 0)
+            await ElegirAsync(Encontrados[0].Cliente);
+    }
+
+    private async Task ElegirAsync(ClienteRegistradoDto cliente)
+    {
+        (_cliente, _cuenta, _error, _id, _enfocar) = (cliente, null, null, null, true);
+        try
+        {
+            _cuenta = (await Servicio.CuentaClienteAsync(cliente.Id)).Credito;
+            _recibido = "";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Codigo == "sin-conexion" ? "Sin conexión con la caja principal: los abonos esperan a que vuelva." : ex.Message;
+        }
+    }
+
+    private void OtroCliente() => (_cliente, _cuenta, _monto, _referencia, _enfocar) = (null, null, "", "", true);
+
+    private void Liquidar() => _monto = "";
+
+    private async Task AlTeclear(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await AbonarAsync();
+    }
+
+    private async Task AbonarAsync()
+    {
+        if (_ocupado || _cliente is null || _cuenta is null || Calculo is not { } calculo)
+            return;
+        _ocupado = true;
+        _error = null;
+        _id ??= Ids.Nuevo();
+        try
+        {
+            // Con el saldo que se vio: si cambió mientras tanto (otra caja le fió o le abonó), el servicio no lo guarda.
+            long? monto = string.IsNullOrWhiteSpace(_monto) ? null : Formato.LeerPesos(_monto);
+            var comprobante = await Servicio.AbonarAsync(new SolicitudAbono(_id.Value, Caja.Id, Turno.Id, Sesion.UsuarioId, _cliente.Id, _forma, monto,
+                _forma == FormaPago.Efectivo ? calculo.ACobrarCentavos + calculo.CambioCentavos : 0,
+                string.IsNullOrWhiteSpace(_referencia) ? null : _referencia.Trim(), _cuenta.SaldoCentavos));
+            _id = null;
+            await AlTerminar.InvokeAsync(comprobante);
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
+        {
+            _error = "Sin conexión con la caja principal: los abonos esperan a que vuelva.";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+            // Lo que se muestre después, con el saldo de ahora.
+            try
+            {
+                _cuenta = (await Servicio.CuentaClienteAsync(_cliente.Id)).Credito;
+            }
+            catch (ErrorCaja)
+            {
+            }
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task AbonosDeHoyAsync()
+    {
+        (_deHoy, _error) = (true, null);
+        try
+        {
+            _hoy = await Servicio.AbonosDelDiaAsync(Caja.Id);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task ReimprimirAsync(AbonoDelDiaDto abono)
+    {
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            var comprobante = await Servicio.ReimprimirAbonoAsync(abono.AbonoId,
+                new SolicitudReimpresion(Sesion.UsuarioId, Caja.Id, string.IsNullOrWhiteSpace(_motivo) ? null : _motivo.Trim()));
+            await AlReimprimir.InvokeAsync(comprobante);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    /// <summary>Con motivo; si la regla pide autorización, se pide y se vuelve a intentar con ella.</summary>
+    private async Task CancelarAsync(AbonoDelDiaDto abono, Guid? autorizacion)
+    {
+        _autorizar = null;
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_motivo))
+        {
+            _error = "Escribe el motivo para cancelar el abono.";
+            return;
+        }
+        _ocupado = true;
+        try
+        {
+            var comprobante = await Servicio.CancelarAbonoAsync(abono.AbonoId, Turno.Id,
+                new SolicitudCancelacion(Sesion.UsuarioId, Caja.Id, _motivo.Trim(), autorizacion));
+            await AlTerminar.InvokeAsync(comprobante);
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "requiere-autorizacion" && autorizacion is null)
+        {
+            _autorizar = abono;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private static string Forma(FormaPago forma) => forma switch
+    {
+        FormaPago.Tarjeta => "Tarjeta",
+        FormaPago.Transferencia => "Transferencia",
+        _ => "Efectivo",
+    };
+}

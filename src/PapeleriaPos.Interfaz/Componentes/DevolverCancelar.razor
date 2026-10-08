@@ -29,6 +29,10 @@ else
                 <span class="error"> · ya pasaron 7 días: no admite devoluciones</span>
             }
         </p>
+        @if (v.CreditoCentavos > 0)
+        {
+            <p class="aviso">Este ticket se fió (@Formato.Dinero(v.CreditoCentavos) a «@v.Cliente»): lo devuelto baja primero su cuenta, y solo sale en efectivo lo que pagó.</p>
+        }
         <div class="resultados">
             <table>
                 <thead><tr><th>Descripción</th><th class="num">Vendido</th><th class="num">Ya devuelto</th><th class="num">Importe</th><th class="num">Devolver</th><th>Dañado</th></tr></thead>

@@ -160,12 +160,16 @@ public static class EjemplosProveedor
             t.AppendLine($"  {usuario} / {pin}  ({nombre})");
         t.AppendLine();
         t.AppendLine("Clientes registrados de prueba (CTRL+L en la venta, por nombre o teléfono):");
-        foreach (var (nombre, telefono, _, descuento, mayoreo, porRevisar) in PreparacionPrueba.ClientesDePrueba)
+        foreach (var (nombre, telefono, _, descuento, mayoreo, porRevisar, credito) in PreparacionPrueba.ClientesDePrueba)
         {
             var privilegios = Nucleo.Clientes.ClienteRegistrado.Privilegios(descuento, mayoreo);
             t.AppendLine($"  {nombre}{(telefono.Length > 0 ? $" · tel. {telefono}" : "")}{(privilegios.Length > 0 ? $" · {privilegios}" : "")}"
+                + (credito > 0 ? $" · crédito hasta {AlertasTelegram.Dinero(credito)} a 30 días" : "")
+                + (nombre == PreparacionPrueba.ConDeuda
+                    ? $" · debe {AlertasTelegram.Dinero(PreparacionPrueba.DeudaCentavos)} de hace {PreparacionPrueba.DiasDeLaDeuda} días (vencido)" : "")
                 + (porRevisar ? " · venía de los clientes especiales: por revisar" : ""));
         }
+        t.AppendLine("  Para fiar: elige al cliente con CTRL+L y en F12 usa «A crédito». Para abonar: CTRL+B.");
         t.AppendLine();
         t.AppendLine("La guía de la prueba está dentro de la caja: botón «Guía de la prueba» en la franja de arriba.");
         t.AppendLine();

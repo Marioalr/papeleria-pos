@@ -253,6 +253,9 @@ public sealed class RegistroCredito(PosDbContext db)
                 return guardado;
             var movimientos = await db.MovimientosCredito.AsNoTracking().Where(m => m.ClienteId == cliente.Id).ToListAsync(ct);
             var saldo = movimientos.Sum(m => m.MontoCentavos);
+            // Lo que la caja cobró lo calculó con el saldo que vio: si otra caja le fió o le abonó mientras tanto, no cuadra.
+            if (s.SaldoVistoCentavos is { } visto && visto != saldo)
+                throw new InvalidOperationException($"La cuenta cambió mientras tanto: ahora debe {Pesos(saldo)}. Revísalo y abona otra vez.");
             var calculo = CalculoAbono.Calcular(saldo, s.Forma, s.MontoCentavos, s.RecibidoCentavos);
             var ahora = Ahora;
             var abono = new Abono

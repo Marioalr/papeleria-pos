@@ -39,6 +39,26 @@ El centro del proyecto: que la sucursal funcione bien y con control aunque el du
   caja, al cobrar se pide volver a elegirlo. Los que eran «clientes especiales» pasaron con su descuento, marcados «Por
   revisar». Sin conexión se eligen de la copia de la caja. Una caja que todavía no se actualiza solo ve a los que tienen
   descuento y cobra sin el mayoreo del cliente.
+- **Crédito** (fase 3): solo para clientes registrados a los que el dueño les da un límite (cero: sin crédito) y un
+  plazo (30 días al empezar). Sin recargos.
+  - **Fiar:** en F12, «A crédito» con una parte o todo («El resto a crédito», «Todo a crédito»). Lo fiado va exacto y el
+    efectivo que falte se redondea como siempre. Pasar el límite lo autoriza el encargado (o el dueño). Lo vencido no
+    impide fiar: al elegir al cliente, la franja de arriba dice cuánto debe y cuánto está vencido. Un cliente sin crédito
+    puede usar lo que tenga a favor.
+  - **El ticket** trae «SU CUENTA»: lo fiado, cuánto debe con eso y hasta cuándo paga esta compra (lo de antes vence
+    cuando decía su ticket). Si lo cubrió su saldo a favor, dice cuánto le queda a favor.
+  - Si se pierde la respuesta al fiar, el ticket no se cobra de otra forma: espera la conexión y se manda otra vez (si ya
+    había quedado, sale el mismo ticket, sin fiar dos veces).
+  - **Abonos (CTRL+B)** en cualquier caja con su turno: en efectivo en pesos, o «liquidar» al peso; con tarjeta o
+    transferencia, exacto (la transferencia queda por verificar). Lo pagado se aplica a lo más viejo. Sale un
+    comprobante con lo que debía, lo que abonó y lo que queda. Si la cuenta cambió mientras se cobraba (otra caja le fió
+    o le abonó), no se guarda y se muestra el saldo nuevo. Un abono se cancela en su mismo turno, con motivo y según la
+    regla; desde «Abonos de hoy» también se reimprime (sin abrir el cajón).
+  - **Devolver lo fiado** baja su cuenta: solo sale en efectivo lo que se pagó. Si ya lo había pagado, le queda a favor.
+  - **Su cuenta** está en su ficha del módulo «Clientes»: lo que debe, lo vencido y sus movimientos, cada uno con el
+    saldo que dejó. Ahí el dueño cambia sus condiciones y ajusta el saldo (por ejemplo, para pasar lo que ya debía en la
+    libreta, con la fecha de entonces). La lista dice cuánto debe cada quien. No se deja inactivo a quien debe.
+  - Sin conexión todavía no se fía ni se abona (parte 2.4).
 - Ticket con QR del folio: sirve para devoluciones y para encontrar pedidos.
 - Devoluciones escaneando el ticket.
 
@@ -49,6 +69,8 @@ El centro del proyecto: que la sucursal funcione bien y con control aunque el du
 - **Corte ciego:** el cajero cuenta por denominación sin ver cuánto debería haber. El sistema calcula la diferencia y
   avisa al dueño.
 - Corte parcial (X) y de cierre (Z).
+- Los abonos de los clientes van aparte, por forma de pago; los de efectivo suman a lo esperado. Lo fiado también sale
+  aparte, solo para saberlo: no entró dinero.
 
 ## Autorizaciones configurables
 

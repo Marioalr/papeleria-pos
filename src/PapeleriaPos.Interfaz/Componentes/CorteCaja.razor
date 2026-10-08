@@ -10,6 +10,10 @@
         <tr><td>Ventas</td><td>@_resultado.Ventas</td></tr>
         <tr><td>Fondo</td><td>@Formato.Dinero(_resultado.FondoCentavos)</td></tr>
         <tr><td>Efectivo de ventas</td><td>@Formato.Dinero(_resultado.EfectivoVentasCentavos)</td></tr>
+        @if (_resultado.AbonosEfectivoCentavos != 0)
+        {
+            <tr><td>Abonos de clientes en efectivo</td><td>@Formato.Dinero(_resultado.AbonosEfectivoCentavos)</td></tr>
+        }
         <tr><td>Entradas</td><td>@Formato.Dinero(_resultado.EntradasCentavos)</td></tr>
         <tr><td>Salidas</td><td>− @Formato.Dinero(_resultado.SalidasCentavos)</td></tr>
         @if (_resultado.DevolucionesCentavos > 0 || _resultado.Cancelaciones > 0)
@@ -31,6 +35,19 @@
         }
         <tr><td>Tarjeta</td><td>@Formato.Dinero(_resultado.TarjetaCentavos)</td></tr>
         <tr><td>Transferencias</td><td>@Formato.Dinero(_resultado.TransferenciaCentavos)</td></tr>
+        @* Los abonos no son venta y lo fiado no es dinero: van aparte (fase 3). *@
+        @if (_resultado.AbonosTarjetaCentavos != 0)
+        {
+            <tr><td>Abonos con tarjeta</td><td>@Formato.Dinero(_resultado.AbonosTarjetaCentavos)</td></tr>
+        }
+        @if (_resultado.AbonosTransferenciaCentavos != 0)
+        {
+            <tr><td>Abonos por transferencia</td><td>@Formato.Dinero(_resultado.AbonosTransferenciaCentavos)</td></tr>
+        }
+        @if (_resultado.CreditoCentavos != 0)
+        {
+            <tr><td>Fiado (ventas a crédito, no es efectivo)</td><td>@Formato.Dinero(_resultado.CreditoCentavos)</td></tr>
+        }
     </table>
     @if (_resultado.EnContingencia)
     {

@@ -256,6 +256,7 @@ public sealed class CreditoApiTests(ServicioDePrueba servicio) : IClassFixture<S
 
         Assert.Equal(HttpStatusCode.Forbidden, delCajero.StatusCode);
         Assert.True(cancelado.Cancelado);
+        Assert.Equal((30000L, 50000L), (cancelado.SaldoCentavos, cancelado.SaldoTrasCancelarCentavos));
         Assert.Equal(50000, (await CuentaAsync(c, cliente)).Credito.SaldoCentavos);
         Assert.Equal((conAbono.Abonos - 1, conAbono.EsperadoCentavos - 20000), (sinAbono.Abonos, sinAbono.EsperadoCentavos));
     }
@@ -429,5 +430,23 @@ public sealed class CreditoApiTests(ServicioDePrueba servicio) : IClassFixture<S
             new SolicitudCancelacion(c.Encargado.UsuarioId, c.Datos.Id, "Se arrepintió")));
 
         Assert.Equal((5000L, 3000L, 8000L), (cancelacion.TarjetaCentavos, cancelacion.TransferenciaCentavos, cancelacion.CobradoSinEfectivoCentavos));
+    }
+
+    [Fact]
+    public async Task Si_la_cuenta_cambio_mientras_se_cobraba_el_abono_no_se_guarda()
+    {
+        var c = await CajaAsync();
+        var cliente = await ClienteAsync(c, "Crédito: Le fiaron mientras tanto", 100000);
+        await Leer<CuentaClienteDto>(await AjustarAsync(c, cliente, 23745));
+        var visto = (await CuentaAsync(c, cliente)).Credito.SaldoCentavos;
+        // Mientras el cajero cobra «liquidar» con tarjeta, otra caja le fía $100.
+        await Leer<TicketDto>(await CobrarAsync(c, cliente, 10000, [new CobroSolicitado(FormaPago.Credito, 10000)]));
+
+        var r = await c.Http.PostAsJsonAsync("api/abonos", new SolicitudAbono(Ids.Nuevo(), c.Datos.Id, c.Turno.Id, c.Cajero.UsuarioId, cliente.Id,
+            FormaPago.Tarjeta, null, Referencia: "T-1", SaldoVistoCentavos: visto));
+
+        Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode);
+        Assert.Equal("La cuenta cambió mientras tanto: ahora debe $337.45. Revísalo y abona otra vez.", await Error(r));
+        Assert.Equal(33745, (await CuentaAsync(c, cliente)).Credito.SaldoCentavos);
     }
 }
