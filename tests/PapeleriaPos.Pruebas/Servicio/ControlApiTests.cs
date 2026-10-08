@@ -53,6 +53,10 @@ public class ControlApiTests(ServicioDePrueba servicio) : IClassFixture<Servicio
         var efectivo = await http.GetFromJsonAsync<EfectivoCajaDto>($"api/turnos/{turno.Id}/efectivo");
         Assert.True(efectivo!.PideRetiro);
 
+        var sinMonto = await http.PostAsJsonAsync($"api/turnos/{turno.Id}/movimientos", new SolicitudMovimiento(TipoMovimientoCaja.Salida, 0, "Garrafón", cajero.UsuarioId));
+        Assert.Equal(HttpStatusCode.BadRequest, sinMonto.StatusCode);
+        Assert.Equal("El monto debe ser mayor a cero.", (await sinMonto.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje); // sin « (Parameter …)»
+
         var salida = await http.PostAsJsonAsync($"api/turnos/{turno.Id}/movimientos", new SolicitudMovimiento(TipoMovimientoCaja.Salida, 300, "Garrafón", cajero.UsuarioId));
         var comprobante = (await salida.Content.ReadFromJsonAsync<ComprobanteMovimientoDto>())!;
         Assert.Equal((300L, "Garrafón"), (comprobante.MontoCentavos, comprobante.Motivo));

@@ -16,7 +16,7 @@ public readonly record struct Cantidad(long Milesimas) : IComparable<Cantidad>
     {
         var milesimas = unidades * Escala;
         if (milesimas != decimal.Truncate(milesimas))
-            throw new ArgumentException($"La cantidad {unidades} tiene más de tres decimales.", nameof(unidades));
+            throw new ArgumentException($"La cantidad {unidades} tiene más de tres decimales.");
         return new Cantidad(checked((long)milesimas));
     }
 

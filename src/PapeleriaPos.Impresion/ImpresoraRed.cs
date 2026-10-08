@@ -86,6 +86,6 @@ public static class Impresoras
             return new ImpresoraRed(uri.Host, uri.Port > 0 ? uri.Port : 9100);
         }
         return windows?.Invoke(configuracion)
-            ?? throw new ArgumentException($"«{configuracion}» no es una impresora de red (tcp://ip:9100).", nameof(configuracion));
+            ?? throw new ArgumentException($"«{configuracion}» no es una impresora de red (tcp://ip:9100).");
     }
 }

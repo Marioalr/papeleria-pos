@@ -16,7 +16,7 @@ public static class Pin
     public static string Hash(string pin)
     {
         if (!EsValido(pin))
-            throw new ArgumentException("El PIN debe tener de 4 a 6 dígitos.", nameof(pin));
+            throw new ArgumentException("El PIN debe tener de 4 a 6 dígitos.");
 
         var sal = RandomNumberGenerator.GetBytes(BytesSal);
         var hash = Derivar(pin, sal, Iteraciones);

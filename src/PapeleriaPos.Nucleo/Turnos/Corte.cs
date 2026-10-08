@@ -131,9 +131,9 @@ public static class CalculoCorte
         if (tipo == TipoCorte.Z)
         {
             if (conteo is null)
-                throw new ArgumentException("El corte Z necesita el conteo del efectivo.", nameof(conteo));
+                throw new ArgumentException("El corte Z necesita el conteo del efectivo.");
             if (conteo.Any(c => !Denominaciones.Mexico.Contains(c.Key) || c.Value < 0))
-                throw new ArgumentException("Conteo con una denominación que no existe o una cantidad negativa.", nameof(conteo));
+                throw new ArgumentException("Conteo con una denominación que no existe o una cantidad negativa.");
 
             corte.Conteo = conteo.Where(c => c.Value > 0)
                 .Select(c => new CorteConteo { CorteId = corte.Id, DenominacionCentavos = c.Key, Cantidad = c.Value })

@@ -100,7 +100,9 @@ public class VentaTests
         var liston = venta.AgregarProducto(_liston, _metro, Cantidad.Unidades(1.5m), _precios);
         Assert.Equal(1125, liston.ImporteCentavos);
 
-        Assert.Throws<ArgumentException>(() => venta.AgregarProducto(_pluma, _pieza, Cantidad.Unidades(0.5m), _precios));
+        var fraccion = Assert.Throws<ArgumentException>(() => venta.AgregarProducto(_pluma, _pieza, Cantidad.Unidades(0.5m), _precios));
+        // Así lo ve el cajero: sin « (Parameter 'cantidad')» al final.
+        Assert.Equal("Este producto se vende por pieza: no admite fracciones.", fraccion.Message);
         Assert.Single(venta.Lineas);
     }
 

@@ -30,7 +30,7 @@ public sealed class RegistroCaja(PosDbContext db)
         if (id is { } yaPedido && await db.Turnos.FindAsync([yaPedido], ct) is { } existente)
             return existente;
         if (fondoCentavos < 0)
-            throw new ArgumentOutOfRangeException(nameof(fondoCentavos), "El fondo no puede ser negativo.");
+            throw new ArgumentException("El fondo no puede ser negativo.");
         var caja = await db.Cajas.FindAsync([cajaId], ct) ?? throw new InvalidOperationException("La caja no existe.");
         if (await TurnoAbiertoAsync(cajaId, ct) is not null)
             throw new InvalidOperationException($"La {caja.Nombre} ya tiene un turno abierto: primero el corte del turno anterior.");
@@ -48,9 +48,9 @@ public sealed class RegistroCaja(PosDbContext db)
         if (id is { } yaPedido && await db.MovimientosCaja.FindAsync([yaPedido], ct) is { } existente)
             return existente;
         if (montoCentavos <= 0)
-            throw new ArgumentOutOfRangeException(nameof(montoCentavos), "El monto debe ser mayor a cero.");
+            throw new ArgumentException("El monto debe ser mayor a cero.");
         if (string.IsNullOrWhiteSpace(motivo))
-            throw new ArgumentException("Toda entrada o salida de efectivo lleva motivo.", nameof(motivo));
+            throw new ArgumentException("Toda entrada o salida de efectivo lleva motivo.");
         var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
         var accion = tipo == TipoMovimientoCaja.Entrada ? AccionControlada.EntradaEfectivo : AccionControlada.SalidaEfectivo;
         await new ServicioControl(db).RequerirAsync(usuarioId, turno.SucursalId, turno.CajaId, accion, montoCentavos,

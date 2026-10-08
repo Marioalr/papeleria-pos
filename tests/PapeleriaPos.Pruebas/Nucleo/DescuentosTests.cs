@@ -68,8 +68,9 @@ public class DescuentosTests
         var linea = venta.AgregarProducto(_pluma, _piezaPluma, Cantidad.Piezas(1), _precios);
 
         Assert.Throws<ArgumentException>(() => venta.DescontarLinea(linea, 1000, null, " "));
-        Assert.Throws<ArgumentOutOfRangeException>(() => venta.DescontarLinea(linea, null, 1001, "Demasiado"));
-        Assert.Throws<ArgumentOutOfRangeException>(() => venta.DescontarLinea(linea, 10001, null, "Más de 100 %"));
+        Assert.Throws<ArgumentException>(() => venta.DescontarLinea(linea, null, 1001, "Demasiado"));
+        Assert.Equal("El porcentaje va de más de 0 a 100 %.",
+            Assert.Throws<ArgumentException>(() => venta.DescontarLinea(linea, 10001, null, "Más de 100 %")).Message);
         Assert.Equal(1000, venta.TotalCentavos);
     }
 

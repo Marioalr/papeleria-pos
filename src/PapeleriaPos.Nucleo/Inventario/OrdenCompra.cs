@@ -42,7 +42,7 @@ public class OrdenCompra
         if (Estado != EstadoOrden.Abierta)
             throw new InvalidOperationException("La orden ya no se puede cambiar.");
         if (cantidad.Milesimas < 0)
-            throw new ArgumentOutOfRangeException(nameof(cantidad), "La cantidad no puede ser negativa.");
+            throw new ArgumentException("La cantidad no puede ser negativa.");
         var renglon = Renglones.FirstOrDefault(r => r.PresentacionId == presentacionId);
         if (cantidad.Milesimas == 0)
         {
