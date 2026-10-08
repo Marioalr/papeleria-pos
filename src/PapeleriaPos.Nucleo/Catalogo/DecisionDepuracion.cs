@@ -10,6 +10,12 @@ public enum TipoDecisionDepuracion
 
     /// <summary>Se vende por otra unidad (el listón en metro, no en kilo).</summary>
     CambiarUnidad,
+
+    /// <summary>El mayoreo de eleventa queda como escala: desde <c>FactorMilesimas</c> a <c>PrecioCentavos</c> (fase 3).</summary>
+    EscalaMayoreo,
+
+    /// <summary>El mayoreo de eleventa no se usa: no lleva escala.</summary>
+    SinMayoreo,
 }
 
 /// <summary>
@@ -29,7 +35,10 @@ public class DecisionDepuracion
     public string? OrigenEleventa { get; set; }
     public string? DestinoEleventa { get; set; }
 
-    /// <summary>Al cambiar la unidad: la nueva, cuántas nuevas hay en una de antes (vacío: se cuenta de nuevo) y el precio de menudeo.</summary>
+    /// <summary>
+    /// Al cambiar la unidad: la nueva, cuántas nuevas hay en una de antes (vacío: se cuenta de nuevo) y el precio de
+    /// menudeo. En la escala de mayoreo: desde cuántas (<c>FactorMilesimas</c>) y a qué precio.
+    /// </summary>
     public UnidadBase? Unidad { get; set; }
     public long? FactorMilesimas { get; set; }
     public long? PrecioCentavos { get; set; }

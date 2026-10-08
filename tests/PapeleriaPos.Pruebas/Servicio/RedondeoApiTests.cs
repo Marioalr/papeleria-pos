@@ -122,4 +122,42 @@ public sealed class RedondeoApiTests(ServicioDePrueba servicio) : IClassFixture<
             .SingleAsync(v => v.Id == ticket.VentaId);
         Assert.Equal((50L, precio + 50), (venta.RedondeoCentavos, venta.Cobros.Single().MontoCentavos));
     }
+
+    [Fact]
+    public async Task La_venta_en_la_escala_de_mayoreo_deja_el_ahorro_en_el_ticket_y_en_la_reimpresion()
+    {
+        var http = servicio.Fabrica.CreateClient();
+        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        var cajero = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("cajero", "1111")));
+        var respuesta = await http.GetAsync($"api/cajas/{caja.Id}/turno");
+        var turno = respuesta.StatusCode == HttpStatusCode.NoContent
+            ? await Leer<TurnoDto>(await http.PostAsJsonAsync("api/turnos", new SolicitudTurno(caja.Id, cajero.UsuarioId, 50000)))
+            : await Leer<TurnoDto>(respuesta);
+        // Un producto por pieza con su escala de mayoreo (los datos ficticios la tienen en hojas, folders y clips).
+        Guid variante, presentacion;
+        long desde, menudeo, mayoreo;
+        using (var alcance = servicio.Fabrica.Services.CreateScope())
+        {
+            var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
+            var escalas = await (from p in db.Precios
+                                 join v in db.Variantes on p.VarianteId equals v.Id
+                                 where p.PresentacionId == null && p.SucursalId == null && v.Activa && v.UnidadBase == UnidadBase.Pieza
+                                 select new { p.VarianteId, p.CantidadMinima, p.PrecioCentavos }).ToListAsync();
+            var conMayoreo = escalas.GroupBy(e => e.VarianteId).First(g => g.Count() > 1);
+            var orden = conMayoreo.OrderBy(e => e.CantidadMinima.Milesimas).ToList();
+            (variante, desde, menudeo, mayoreo) = (conMayoreo.Key, orden[1].CantidadMinima.Milesimas, orden[0].PrecioCentavos, orden[1].PrecioCentavos);
+            presentacion = await db.Presentaciones.Where(p => p.VarianteId == variante && p.EsBase).Select(p => p.Id).SingleAsync();
+        }
+
+        var ticket = await Leer<TicketDto>(await http.PostAsJsonAsync("api/ventas", new SolicitudCobro(caja.Id, turno.Id, cajero.UsuarioId,
+            [new LineaSolicitada(variante, presentacion, desde, "x")], [new CobroSolicitado(FormaPago.Efectivo, 10_000_000)])));
+        var reimpreso = await Leer<TicketDto>(await http.GetAsync($"api/ventas/{ticket.VentaId}/ticket"));
+
+        var piezas = desde / 1000;
+        var linea = ticket.Lineas.Single();
+        Assert.Equal(piezas * (menudeo - mayoreo), linea.AhorroMayoreoCentavos);
+        Assert.Equal($"Mayoreo desde {piezas}", linea.Mayoreo);
+        Assert.Equal(linea, reimpreso.Lineas.Single());
+        Assert.Equal(ticket.AhorroCentavos, reimpreso.AhorroCentavos);
+    }
 }

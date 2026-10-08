@@ -46,6 +46,41 @@ public class VentaTests
     }
 
     [Fact]
+    public void La_linea_guarda_desde_cuanto_fue_mayoreo_y_lo_que_se_ahorro()
+    {
+        var venta = NuevaVenta();
+
+        var linea = venta.AgregarProducto(_pluma, _pieza, Cantidad.Piezas(12), _precios);
+        var caja = venta.AgregarProducto(_pluma, _caja12, Cantidad.Piezas(1), _precios);
+        var poquitas = NuevaVenta().AgregarProducto(_pluma, _pieza, Cantidad.Piezas(11), _precios);
+
+        // 12 a $8 en vez de $10: ahorra $24. La caja de 12 cuenta como 12 piezas.
+        Assert.Equal((Cantidad.Piezas(12), 2400L), (linea.MayoreoDesde!.Value, linea.AhorroMayoreoCentavos));
+        Assert.Equal((Cantidad.Piezas(12), 2400L), (caja.MayoreoDesde!.Value, caja.AhorroMayoreoCentavos));
+        Assert.Equal((false, 0L), (poquitas.TieneMayoreo, poquitas.AhorroMayoreoCentavos));
+    }
+
+    [Fact]
+    public void Con_el_precio_cambiado_ya_no_es_mayoreo()
+    {
+        var venta = NuevaVenta();
+        var linea = venta.AgregarProducto(_pluma, _pieza, Cantidad.Piezas(12), _precios);
+
+        venta.CambiarPrecio(linea, 700, null);
+
+        Assert.Equal((false, 0L), (linea.TieneMayoreo, linea.AhorroMayoreoCentavos));
+    }
+
+    [Fact]
+    public void Las_escalas_de_un_producto_salen_en_orden_y_de_la_sucursal_si_tiene()
+    {
+        var escalas = CalculoPrecio.Escalas(_precios, Matriz, _pieza);
+
+        Assert.False(escalas.DePresentacion);
+        Assert.Equal([1000L, 800L], escalas.Escalas.Select(e => e.PrecioCentavos));
+    }
+
+    [Fact]
     public void Una_caja_de_12_sale_a_precio_de_mayoreo_y_descuenta_12_piezas()
     {
         var venta = NuevaVenta();

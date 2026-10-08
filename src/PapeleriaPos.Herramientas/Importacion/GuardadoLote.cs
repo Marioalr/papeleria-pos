@@ -26,6 +26,7 @@ public static class GuardadoLote
         db.AddRange(datos.Codigos);
         db.AddRange(datos.Precios);
         db.AddRange(datos.ProveedoresVariantes);
+        db.AddRange(datos.MayoreoPorRevisar);
         await GuardarYLimpiarAsync(db, ct);
 
         await GuardarPorLotesAsync(db, datos.Ventas, ct);

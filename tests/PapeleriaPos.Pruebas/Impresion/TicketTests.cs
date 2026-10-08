@@ -65,6 +65,24 @@ public class TicketTests
     }
 
     [Fact]
+    public void El_mayoreo_sale_debajo_del_articulo_y_cuenta_en_lo_que_se_ahorro()
+    {
+        var ticket = Ticket() with
+        {
+            Lineas = [new LineaTicketDto("12", "Pluma Bic azul", 800, 9600, 0, null, 2400, "Mayoreo desde 12"), new LineaTicketDto("1", "Goma", 500, 450, 50, "10 %")],
+            TotalCentavos = 10050,
+        };
+
+        var renglones = TicketTexto.Generar(ticket).Split(Environment.NewLine);
+
+        // El renglón lleva el importe a menudeo ($120) y abajo lo que se ahorró por el mayoreo.
+        Assert.Contains(renglones, r => r.Contains("Pluma Bic azul") && r.EndsWith("$120.00"));
+        Assert.Contains(renglones, r => r.Contains("Mayoreo desde 12") && r.EndsWith("-$24.00"));
+        Assert.Contains(renglones, r => r.Contains("Usted ahorró: $24.50"));
+        Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
+    }
+
+    [Fact]
     public void El_texto_cabe_en_48_columnas_y_trae_lo_importante()
     {
         var texto = TicketTexto.Generar(Ticket());

@@ -10,7 +10,8 @@ namespace PapeleriaPos.Datos;
 
 /// <summary>
 /// La depuración del catálogo antes del piloto (docs/fase-2-inventario.md, entrega 1): dar de baja lo que ya no existe,
-/// juntar lo capturado dos veces y cambiar la unidad de lo que se vende a granel. Cada decisión se guarda con el ID de
+/// juntar lo capturado dos veces, cambiar la unidad de lo que se vende a granel y decidir el mayoreo de eleventa que la
+/// importación no pudo pasar a escala (fase 3). Cada decisión se guarda con el ID de
 /// eleventa para repetirla igual en la importación final (<see cref="RepetirAsync"/>). Las existencias se mueven con
 /// ajustes del kardex: la historia nunca se reescribe.
 /// </summary>
@@ -42,6 +43,7 @@ public sealed class RegistroDepuracion(PosDbContext db)
         variante.Activa = false;
         if (variante.Producto!.Variantes.All(v => !v.Activa))
             variante.Producto.Activo = false;
+        await ResolverMayoreoAsync(variante.Id, "Se dio de baja", ct);
         await DecidirAsync(TipoDecisionDepuracion.DarDeBaja, variante, null, $"«{nombre}» se dio de baja", usuarioId, sucursalId, ct);
         await db.SaveChangesAsync(ct);
     }
@@ -122,6 +124,8 @@ public sealed class RegistroDepuracion(PosDbContext db)
         (origen.Activa, origen.JuntadaEnId) = (false, destino.Id);
         if (origen.Producto!.Variantes.All(v => !v.Activa))
             origen.Producto.Activo = false;
+        // Como sus precios, el mayoreo del origen no pasa: el destino se queda con el suyo.
+        await ResolverMayoreoAsync(origen.Id, $"Se juntó con «{Nombre(destino)}»", ct);
         await DecidirAsync(TipoDecisionDepuracion.Juntar, origen, destino, $"«{Nombre(origen)}» se juntó con «{Nombre(destino)}»", usuarioId, sucursalId, ct);
         await db.SaveChangesAsync(ct);
     }
@@ -173,6 +177,8 @@ public sealed class RegistroDepuracion(PosDbContext db)
 
         db.Precios.RemoveRange(await db.Precios.Where(p => p.VarianteId == variante.Id && p.PresentacionId == null && p.SucursalId == null).ToListAsync(ct));
         db.Precios.Add(new Precio { VarianteId = variante.Id, PrecioCentavos = precioCentavos });
+        // El mayoreo de eleventa estaba en la unidad de antes: se captura de nuevo en la ficha, ya en la nueva.
+        await ResolverMayoreoAsync(variante.Id, "Cambió la unidad: el mayoreo se captura en la ficha", ct);
 
         var decision = await DecidirAsync(TipoDecisionDepuracion.CambiarUnidad, variante, null,
             $"«{Nombre(variante)}» pasó de {anterior} a {unidad}" + (factor is { } y ? $" (1 = {y})" : ", se cuenta de nuevo") + $", a {precioCentavos / 100m:N2}",
@@ -180,6 +186,105 @@ public sealed class RegistroDepuracion(PosDbContext db)
         (decision.Unidad, decision.FactorMilesimas, decision.PrecioCentavos) = (unidad, factorMilesimas, precioCentavos);
         await db.SaveChangesAsync(ct);
     }
+
+    // ── El mayoreo de eleventa (fase 3, entrega 1) ───────────────────────────
+
+    /// <summary>El mayoreo de eleventa que la importación no pudo pasar a escala, de lo que sigue a la venta.</summary>
+    public async Task<List<MayoreoPorRevisarDto>> MayoreoPorRevisarAsync(CancellationToken ct = default)
+    {
+        var pendientes = await db.MayoreoPorRevisar.AsNoTracking().Where(m => m.ResueltoUtc == null).ToListAsync(ct);
+        var ids = pendientes.Select(m => m.VarianteId).ToList();
+        var variantes = await db.Variantes.AsNoTracking().Include(v => v.Producto).ThenInclude(p => p!.Marca).Include(v => v.Presentaciones)
+            .ThenInclude(p => p.Codigos).Where(v => ids.Contains(v.Id) && v.Activa).AsSplitQuery().ToDictionaryAsync(v => v.Id, ct);
+        return pendientes.Where(m => variantes.ContainsKey(m.VarianteId))
+            .Select(m =>
+            {
+                var v = variantes[m.VarianteId];
+                var codigo = v.Presentaciones.OrderByDescending(p => p.EsBase).SelectMany(p => p.Codigos).Select(c => c.Codigo).FirstOrDefault();
+                return new MayoreoPorRevisarDto(m.Id, v.Id, v.Producto!.Id, Nombre(v), codigo, v.UnidadBase, m.MenudeoCentavos, m.PrecioMayoreoCentavos,
+                    m.CostoCentavos, m.VentasConMayoreo, m.Cantidades, m.Motivo, m.Sugerida?.Milesimas);
+            })
+            .OrderBy(m => m.Producto, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>
+    /// El encargado decide el mayoreo de eleventa: una escala desde cierta cantidad a cierto precio (por unidad base), o
+    /// sin mayoreo. La escala que ya era este mayoreo (la deducida al importar, o una decisión anterior) se cambia o se
+    /// quita; las promociones y el menudeo se quedan, y el precio por pieza no puede subir al subir la cantidad. Queda
+    /// como decisión de depuración para repetirse en la importación final.
+    /// </summary>
+    public async Task MayoreoAsync(Guid? usuarioId, Guid sucursalId, Guid varianteId, long? desdeMilesimas, long? precioCentavos, CancellationToken ct = default)
+    {
+        await RequerirAsync(usuarioId, sucursalId, ct);
+        var variante = await VarianteAsync(varianteId, ct);
+        var nombre = Nombre(variante);
+        if (!variante.Activa)
+            throw new InvalidOperationException(variante.JuntadaEnId is null
+                ? $"«{nombre}» se dio de baja: ya no lleva mayoreo."
+                : $"«{nombre}» se juntó con otro: decide el mayoreo en el que se quedó.");
+        var registros = await db.MayoreoPorRevisar.Where(m => m.VarianteId == variante.Id).ToListAsync(ct);
+        var escalas = await db.Precios.Where(p => p.VarianteId == variante.Id && p.PresentacionId == null && p.SucursalId == null).ToListAsync(ct);
+        var deEleventa = registros.Select(m => m.Escala).OfType<Cantidad>().ToHashSet();
+        var anteriores = escalas.Where(p => deEleventa.Contains(p.CantidadMinima)).ToList();
+        if (desdeMilesimas is null)
+        {
+            db.Precios.RemoveRange(anteriores);
+            foreach (var m in registros)
+                m.Resolver("Sin mayoreo", Ahora);
+            await DecidirAsync(TipoDecisionDepuracion.SinMayoreo, variante, null, $"«{nombre}» queda sin el mayoreo de eleventa", usuarioId, sucursalId, ct);
+            await db.SaveChangesAsync(ct);
+            return;
+        }
+
+        var desde = new Cantidad(desdeMilesimas.Value);
+        if (desde <= Cantidad.Unidades(1))
+            throw new ArgumentException("El mayoreo empieza en más de una pieza: escribe desde cuántas.");
+        if (!variante.AdmiteCantidad(desde))
+            throw new ArgumentException($"«{nombre}» se vende por pieza: el mayoreo empieza en piezas enteras.");
+        if (precioCentavos is not > 0)
+            throw new ArgumentException("Escribe el precio de mayoreo.");
+        var precio = precioCentavos.Value;
+        // Las otras escalas (el menudeo y las promociones de eleventa) se quedan como están.
+        var otras = escalas.Except(anteriores).ToList();
+        var menudeo = otras.MinBy(p => p.CantidadMinima);
+        if (menudeo is not null && precio >= menudeo.PrecioCentavos)
+            throw new ArgumentException($"El mayoreo tiene que ser más barato que el menudeo ({Pesos(menudeo.PrecioCentavos)}).");
+        var igual = otras.FirstOrDefault(p => p.CantidadMinima == desde);
+        if (igual is not null && igual.PrecioCentavos != precio)
+            throw new ArgumentException($"Desde {desde} ya hay otro precio ({Pesos(igual.PrecioCentavos)}): cámbialo en la ficha del producto.");
+        if (otras.Where(p => p.CantidadMinima < desde).MaxBy(p => p.CantidadMinima) is { } antes && precio > antes.PrecioCentavos)
+            throw new ArgumentException($"Desde {antes.CantidadMinima} ya sale a {Pesos(antes.PrecioCentavos)}: desde {desde} no puede costar más.");
+        if (otras.Where(p => p.CantidadMinima > desde).MinBy(p => p.CantidadMinima) is { } despues && precio < despues.PrecioCentavos)
+            throw new ArgumentException(
+                $"Desde {despues.CantidadMinima} sale a {Pesos(despues.PrecioCentavos)}: desde {desde} no puede ser más barato (el precio subiría con la cantidad).");
+
+        // La escala de este mayoreo se cambia o se crea; si ya había una promoción igual, ella es el mayoreo.
+        var misma = anteriores.FirstOrDefault(p => p.CantidadMinima == desde);
+        db.Precios.RemoveRange(anteriores.Where(p => p != misma));
+        if (misma is not null)
+            misma.PrecioCentavos = precio;
+        else if (igual is null)
+            db.Precios.Add(new Precio { VarianteId = variante.Id, CantidadMinima = desde, PrecioCentavos = precio });
+        foreach (var m in registros)
+            m.Resolver(igual is null ? $"Desde {desde} a {Pesos(precio)}" : $"Igual a la promoción desde {desde}", Ahora, igual is null ? desde : null);
+        var decision = await DecidirAsync(TipoDecisionDepuracion.EscalaMayoreo, variante, null,
+            $"«{nombre}»: mayoreo desde {desde} a {Pesos(precio)}", usuarioId, sucursalId, ct);
+        (decision.FactorMilesimas, decision.PrecioCentavos) = (desde.Milesimas, precio);
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// El mayoreo de eleventa ya no se decide (se dio de baja, se juntó, cambió la unidad): lo pendiente se resuelve, y
+    /// ninguna escala queda como suya.
+    /// </summary>
+    private async Task ResolverMayoreoAsync(Guid varianteId, string resolucion, CancellationToken ct)
+    {
+        foreach (var m in await db.MayoreoPorRevisar.Where(m => m.VarianteId == varianteId).ToListAsync(ct))
+            m.Resolver(m.Resolucion ?? resolucion, m.ResueltoUtc ?? Ahora);
+    }
+
+    private static string Pesos(long centavos) => (centavos / 100m).ToString("N2");
 
     // ── Las decisiones y repetirlas ──────────────────────────────────────────
 
@@ -195,8 +300,16 @@ public sealed class RegistroDepuracion(PosDbContext db)
         var sucursalId = await db.Sucursales.Select(s => s.Id).FirstAsync(ct);
         var aplicadas = 0;
         var omitidas = new List<string>();
+        // Del mayoreo de un producto vale lo último que se decidió.
+        var ultimas = decisiones.Where(d => TiposMayoreo.Contains(d.Tipo)).GroupBy(d => d.OrigenEleventa ?? d.Id.ToString())
+            .Select(g => g.MaxBy(d => d.FechaUtc)!).ToHashSet();
         foreach (var d in decisiones.OrderBy(d => d.FechaUtc))
         {
+            if (TiposMayoreo.Contains(d.Tipo) && !ultimas.Contains(d))
+            {
+                omitidas.Add($"{d.Descripcion}: después se decidió otra cosa.");
+                continue;
+            }
             var variante = await PorEleventaAsync(d.OrigenEleventa, ct);
             var destino = d.Tipo == TipoDecisionDepuracion.Juntar ? await PorEleventaAsync(d.DestinoEleventa, ct) : null;
             if (variante is null || (d.Tipo == TipoDecisionDepuracion.Juntar && destino is null))
@@ -204,7 +317,8 @@ public sealed class RegistroDepuracion(PosDbContext db)
                 omitidas.Add($"{d.Descripcion}: no viene en esta importación.");
                 continue;
             }
-            if (await db.DecisionesDepuracion.AnyAsync(x => x.Tipo == d.Tipo && x.VarianteId == variante.Value, ct))
+            var tipos = TiposMayoreo.Contains(d.Tipo) ? TiposMayoreo : [d.Tipo];
+            if (await db.DecisionesDepuracion.AnyAsync(x => tipos.Contains(x.Tipo) && x.VarianteId == variante.Value, ct))
             {
                 omitidas.Add($"{d.Descripcion}: ya estaba aplicada.");
                 continue;
@@ -222,6 +336,12 @@ public sealed class RegistroDepuracion(PosDbContext db)
                     case TipoDecisionDepuracion.CambiarUnidad:
                         await CambiarUnidadAsync(null, sucursalId, variante.Value, d.Unidad!.Value, d.FactorMilesimas, d.PrecioCentavos!.Value, ct);
                         break;
+                    case TipoDecisionDepuracion.EscalaMayoreo:
+                        await MayoreoAsync(null, sucursalId, variante.Value, d.FactorMilesimas, d.PrecioCentavos, ct);
+                        break;
+                    case TipoDecisionDepuracion.SinMayoreo:
+                        await MayoreoAsync(null, sucursalId, variante.Value, null, null, ct);
+                        break;
                 }
                 aplicadas++;
             }
@@ -233,6 +353,8 @@ public sealed class RegistroDepuracion(PosDbContext db)
         }
         return (aplicadas, omitidas);
     }
+
+    private static readonly TipoDecisionDepuracion[] TiposMayoreo = [TipoDecisionDepuracion.EscalaMayoreo, TipoDecisionDepuracion.SinMayoreo];
 
     private async Task<Guid?> PorEleventaAsync(string? idEleventa, CancellationToken ct) =>
         idEleventa is null

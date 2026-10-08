@@ -28,6 +28,10 @@ else
         <button class="boton" @onclick="DecisionesAsync">Decisiones de depuración</button>
         @if (Sesion.Rol is Rol.Dueno or Rol.Encargado)
         {
+            <button class="boton" @onclick="MayoreoPorRevisar">Mayoreo por revisar</button>
+        }
+        @if (Sesion.Rol is Rol.Dueno or Rol.Encargado)
+        {
             <button class="boton principal" @onclick="() => _abierto = new Abierto(null)">Nuevo producto</button>
         }
     </div>
@@ -35,7 +39,11 @@ else
     {
         <p class="error">@_error</p>
     }
-    @if (_decisiones is { } decisiones)
+    @if (_mayoreo)
+    {
+        <RevisarMayoreo Caja="Caja" Sesion="Sesion" Captura="_capturaMayoreo" AlAbrir="id => _abierto = new Abierto(id)" />
+    }
+    else if (_decisiones is { } decisiones)
     {
         <p class="nota">Lo que se decidió al depurar. Lo que vino de eleventa se repite en la importación final con <code>aplicar-depuracion</code>.</p>
         <div class="resultados">
@@ -124,9 +132,18 @@ else
             await BuscarAsync();
     }
 
+    /// <summary>El mayoreo de eleventa que la importación no pudo pasar a escala (fase 3).</summary>
+    private bool _mayoreo;
+
+    /// <summary>Lo escrito en la revisión del mayoreo: sigue ahí al volver de la ficha de un producto.</summary>
+    private readonly RevisarMayoreo.Capturado _capturaMayoreo = new();
+
+    private void MayoreoPorRevisar() => (_mayoreo, _decisiones, _error) = (true, null, null);
+
     private async Task DecisionesAsync()
     {
         _error = null;
+        _mayoreo = false;
         try
         {
             _decisiones = await Cliente.DecisionesDepuracionAsync();
@@ -142,7 +159,7 @@ else
         _error = null;
         try
         {
-            _decisiones = null;
+            (_decisiones, _mayoreo) = (null, false);
             _productos = await Cliente.CatalogoAsync(Caja.SucursalId, _texto, Guid.TryParse(_departamento, out var d) ? d : null, _porCompletar, _inactivos);
         }
         catch (ErrorCaja ex)
@@ -154,7 +171,8 @@ else
     private async Task VolverAsync()
     {
         _abierto = null;
-        if (_productos is not null)
+        // De la ficha abierta desde la revisión del mayoreo se vuelve a la revisión.
+        if (!_mayoreo && _productos is not null)
             await BuscarAsync();
     }
 }

@@ -163,4 +163,165 @@ public class DepuracionTests(ServicioDePrueba servicio) : IClassFixture<Servicio
         Assert.False(baja.Activa);
         Assert.Equal(Cantidad.Unidades(3), existencia.Cantidad);
     }
+
+    [Fact]
+    public async Task El_mayoreo_de_eleventa_se_captura_en_F3_y_se_repite_en_la_importacion_final()
+    {
+        var (http, caja, cajero, encargado) = await PrepararAsync();
+        var (hojas, _) = await ProductoAsync(caja.SucursalId, "Hoja de color", 100, 30, eleventa: "91001");
+        var (vieja, _) = await ProductoAsync(caja.SucursalId, "Pluma de temporada", 10, 500, eleventa: "91002");
+        await ConBaseAsync(async db =>
+        {
+            db.MayoreoPorRevisar.AddRange(
+                new MayoreoPorRevisar { VarianteId = hojas, PrecioMayoreoCentavos = 45, MenudeoCentavos = 60, VentasConMayoreo = 2, Cantidades = "100 ×2",
+                    Motivo = "Pocas ventas", Sugerida = Cantidad.Piezas(100) },
+                new MayoreoPorRevisar { VarianteId = vieja, PrecioMayoreoCentavos = 500, MenudeoCentavos = 1000, Motivo = "Al costo" });
+            return await db.SaveChangesAsync();
+        });
+
+        var lista = await Leer<List<MayoreoPorRevisarDto>>(await http.GetAsync("api/catalogo/depuracion/mayoreo"));
+        var delCajero = await http.PostAsJsonAsync("api/catalogo/depuracion/mayoreo", new SolicitudMayoreo(cajero.UsuarioId, caja.SucursalId, hojas, 100_000, 45));
+        var caro = await http.PostAsJsonAsync("api/catalogo/depuracion/mayoreo", new SolicitudMayoreo(encargado.UsuarioId, caja.SucursalId, hojas, 100_000, 60));
+        Assert.True((await http.PostAsJsonAsync("api/catalogo/depuracion/mayoreo", new SolicitudMayoreo(encargado.UsuarioId, caja.SucursalId, hojas, 100_000, 45)))
+            .IsSuccessStatusCode);
+        Assert.True((await http.PostAsJsonAsync("api/catalogo/depuracion/mayoreo", new SolicitudMayoreo(encargado.UsuarioId, caja.SucursalId, vieja, null, null)))
+            .IsSuccessStatusCode);
+        var despues = await Leer<List<MayoreoPorRevisarDto>>(await http.GetAsync("api/catalogo/depuracion/mayoreo"));
+
+        Assert.Contains(lista, m => m.VarianteId == hojas && m.SugeridaMilesimas == 100_000 && m.Cantidades == "100 ×2");
+        Assert.Equal(HttpStatusCode.Forbidden, delCajero.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, caro.StatusCode);
+        Assert.DoesNotContain(despues, m => m.VarianteId == hojas || m.VarianteId == vieja);
+        var escala = await ConBaseAsync(db => db.Precios.AsNoTracking().SingleAsync(p => p.VarianteId == hojas && p.CantidadMinima == Cantidad.Piezas(100)));
+        Assert.Equal(45, escala.PrecioCentavos);
+
+        // En la importación final (otra base) se repiten, por el ID de eleventa: aquí se simula quitando la escala.
+        var decisiones = await ConBaseAsync(db => db.DecisionesDepuracion.AsNoTracking()
+            .Where(d => d.VarianteId == hojas || d.VarianteId == vieja).ToListAsync());
+        await ConBaseAsync(async db =>
+        {
+            db.Precios.Remove(await db.Precios.SingleAsync(p => p.VarianteId == hojas && p.CantidadMinima == Cantidad.Piezas(100)));
+            db.DecisionesDepuracion.RemoveRange(db.DecisionesDepuracion.Where(d => d.VarianteId == hojas || d.VarianteId == vieja));
+            return await db.SaveChangesAsync();
+        });
+        var (aplicadas, _) = await ConBaseAsync(db => new RegistroDepuracion(db).RepetirAsync(decisiones));
+
+        Assert.Equal([TipoDecisionDepuracion.EscalaMayoreo, TipoDecisionDepuracion.SinMayoreo], decisiones.OrderBy(d => d.FechaUtc).Select(d => d.Tipo));
+        Assert.Equal(2, aplicadas);
+        Assert.Equal(45, (await ConBaseAsync(db => db.Precios.AsNoTracking().SingleAsync(p => p.VarianteId == hojas && p.CantidadMinima == Cantidad.Piezas(100))))
+            .PrecioCentavos);
+    }
+
+    /// <summary>Las escalas base del producto, «desde:precio» de menor a mayor: "1:700 12:450".</summary>
+    private Task<string> EscalasAsync(Guid variante) => ConBaseAsync(async db => string.Join(" ",
+        (await db.Precios.AsNoTracking().Where(p => p.VarianteId == variante && p.PresentacionId == null && p.SucursalId == null).ToListAsync())
+            .OrderBy(p => p.CantidadMinima).Select(p => $"{p.CantidadMinima.Milesimas / 1000}:{p.PrecioCentavos}")));
+
+    private Task<int> AgregarAsync(Guid variante, params (int Desde, long Precio)[] escalas) => ConBaseAsync(async db =>
+    {
+        db.Precios.AddRange(escalas.Select(e => new Precio { VarianteId = variante, CantidadMinima = Cantidad.Piezas(e.Desde), PrecioCentavos = e.Precio }));
+        return await db.SaveChangesAsync();
+    });
+
+    /// <summary>El mayoreo que dejó la importación: por revisar, o ya deducido desde <paramref name="deducido"/>.</summary>
+    private Task<int> MayoreoDeEleventaAsync(Guid variante, long mayoreo, int? deducido = null) => ConBaseAsync(async db =>
+    {
+        var m = new MayoreoPorRevisar { VarianteId = variante, PrecioMayoreoCentavos = mayoreo, MenudeoCentavos = 800, Motivo = "Pocas ventas" };
+        if (deducido is { } desde)
+            m.Resolver("Deducido", DateTime.UtcNow, Cantidad.Piezas(desde));
+        db.MayoreoPorRevisar.Add(m);
+        return await db.SaveChangesAsync();
+    });
+
+    [Fact]
+    public async Task El_mayoreo_de_F3_no_hace_subir_el_precio_con_la_cantidad_ni_tapa_una_promocion()
+    {
+        var (http, caja, _, encargado) = await PrepararAsync();
+        var (pluma, _) = await ProductoAsync(caja.SucursalId, "Pluma de gel", 0, 350); // menudeo $7
+        await AgregarAsync(pluma, (3, 500), (24, 400)); // promociones de eleventa
+        await MayoreoDeEleventaAsync(pluma, 600);
+        Task<HttpResponseMessage> Decidir(long? desde, long? precio) => http.PostAsJsonAsync("api/catalogo/depuracion/mayoreo",
+            new SolicitudMayoreo(encargado.UsuarioId, caja.SucursalId, pluma, desde * 1000, precio));
+
+        var masCaro = await Decidir(12, 600); // desde 3 ya sale a $5
+        var otraPromocion = await Decidir(24, 450);
+        var subiria = await Decidir(12, 380); // desde 24 sale a $4: 23 piezas costarían más que 24
+        var bien = await Decidir(12, 450);
+        var conEscala = await EscalasAsync(pluma);
+        // Otra decisión cambia la escala de este mayoreo (no suma otra), y «sin mayoreo» la quita; las promociones se quedan.
+        var otra = await Decidir(6, 480);
+        var conOtra = await EscalasAsync(pluma);
+        var sin = await Decidir(null, null);
+
+        Assert.All(new[] { masCaro, otraPromocion, subiria }, r => Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode));
+        Assert.Contains("ya hay otro precio", (await otraPromocion.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+        Assert.All(new[] { bien, otra, sin }, r => Assert.True(r.IsSuccessStatusCode));
+        Assert.Equal("1:700 3:500 12:450 24:400", conEscala);
+        Assert.Equal("1:700 3:500 6:480 24:400", conOtra);
+        Assert.Equal("1:700 3:500 24:400", await EscalasAsync(pluma));
+    }
+
+    [Fact]
+    public async Task Al_repetir_vale_la_ultima_decision_y_cambia_o_quita_la_escala_que_dedujo_la_importacion_final()
+    {
+        var (_, caja, _, _) = await PrepararAsync();
+        // La importación final dedujo 12 a $6.50 y 12 a $6.80; en la depuración se había decidido otra cosa.
+        var (sinMayoreo, _) = await ProductoAsync(caja.SucursalId, "Pegamento", 0, 400, eleventa: "92001");
+        var (desdeDiez, _) = await ProductoAsync(caja.SucursalId, "Corrector", 0, 400, eleventa: "92002");
+        var (dosVeces, _) = await ProductoAsync(caja.SucursalId, "Marcatextos", 0, 400, eleventa: "92003");
+        await AgregarAsync(sinMayoreo, (12, 650));
+        await MayoreoDeEleventaAsync(sinMayoreo, 650, deducido: 12);
+        await AgregarAsync(desdeDiez, (12, 680));
+        await MayoreoDeEleventaAsync(desdeDiez, 680, deducido: 12);
+        await MayoreoDeEleventaAsync(dosVeces, 650);
+        var hace = DateTime.UtcNow.AddHours(-1);
+        var decisiones = new List<DecisionDepuracion>
+        {
+            new() { Tipo = TipoDecisionDepuracion.SinMayoreo, OrigenEleventa = "92001", Descripcion = "pegamento", FechaUtc = hace },
+            new() { Tipo = TipoDecisionDepuracion.EscalaMayoreo, OrigenEleventa = "92002", Descripcion = "corrector", FechaUtc = hace.AddMinutes(1),
+                FactorMilesimas = 10_000, PrecioCentavos = 650 },
+            new() { Tipo = TipoDecisionDepuracion.EscalaMayoreo, OrigenEleventa = "92003", Descripcion = "marcatextos 120", FechaUtc = hace.AddMinutes(2),
+                FactorMilesimas = 120_000, PrecioCentavos = 650 },
+            new() { Tipo = TipoDecisionDepuracion.EscalaMayoreo, OrigenEleventa = "92003", Descripcion = "marcatextos 12", FechaUtc = hace.AddMinutes(3),
+                FactorMilesimas = 12_000, PrecioCentavos = 650 },
+        };
+
+        var (aplicadas, omitidas) = await ConBaseAsync(db => new RegistroDepuracion(db).RepetirAsync(decisiones));
+
+        Assert.Equal(3, aplicadas);
+        Assert.Equal("marcatextos 120: después se decidió otra cosa.", Assert.Single(omitidas));
+        Assert.Equal("1:800", await EscalasAsync(sinMayoreo));
+        Assert.Equal("1:800 10:650", await EscalasAsync(desdeDiez));
+        Assert.Equal("1:800 12:650", await EscalasAsync(dosVeces));
+    }
+
+    [Fact]
+    public async Task Lo_juntado_dado_de_baja_o_con_otra_unidad_sale_de_la_revision_del_mayoreo()
+    {
+        var (http, caja, _, encargado) = await PrepararAsync();
+        var (origen, _) = await ProductoAsync(caja.SucursalId, "Lápiz dup", 0, 350);
+        var (destino, _) = await ProductoAsync(caja.SucursalId, "Lápiz dup", 0, 350);
+        var (baja, _) = await ProductoAsync(caja.SucursalId, "Borrador viejo", 0, 350);
+        var (liston, _) = await ProductoAsync(caja.SucursalId, "Listón", 0, 100, UnidadBase.Metro);
+        foreach (var v in new[] { origen, baja, liston })
+            await MayoreoDeEleventaAsync(v, 600);
+
+        await ConBaseAsync(async db =>
+        {
+            var depuracion = new RegistroDepuracion(db);
+            await depuracion.JuntarAsync(null, caja.SucursalId, origen, destino);
+            await depuracion.DarDeBajaAsync(null, caja.SucursalId, baja);
+            await depuracion.CambiarUnidadAsync(null, caja.SucursalId, liston, UnidadBase.Pieza, 10, 15000);
+            return 0;
+        });
+        var lista = await Leer<List<MayoreoPorRevisarDto>>(await http.GetAsync("api/catalogo/depuracion/mayoreo"));
+        var alJuntado = await http.PostAsJsonAsync("api/catalogo/depuracion/mayoreo", new SolicitudMayoreo(encargado.UsuarioId, caja.SucursalId, origen, 12_000, 600));
+
+        Assert.DoesNotContain(lista, m => m.VarianteId == origen || m.VarianteId == baja || m.VarianteId == liston);
+        Assert.False(alJuntado.IsSuccessStatusCode);
+        Assert.Equal("1:700", await EscalasAsync(origen));
+        var resoluciones = await ConBaseAsync(db => db.MayoreoPorRevisar.AsNoTracking()
+            .Where(m => m.VarianteId == origen || m.VarianteId == baja || m.VarianteId == liston).Select(m => m.Resolucion).ToListAsync());
+        Assert.All(resoluciones, Assert.NotNull);
+    }
 }

@@ -24,7 +24,15 @@ public static class ImportadorEleventa
 {
     public const string Origen = "eleventa";
 
-    public const string AvisoMayoreo = "Precio de mayoreo no importado: en eleventa se activa a mano en la venta, no por cantidad";
+    public const string AvisoMayoreoDeducido = "Mayoreo de eleventa (F11) pasado a escala por cantidad: el paquete salió de sus ventas con F11";
+    public const string AvisoMayoreoPorRevisar = "Mayoreo de eleventa (F11) por revisar en F3: no se pudo saber desde cuántas piezas";
+    public const string AvisoMayoreoYaEstaba = "Mayoreo de eleventa (F11) igual a una promoción por cantidad: se quedó la promoción";
+    public const string AvisoPromocionRepetida = "Promoción por cantidad repetida en eleventa: se importó una vez";
+
+    public const string MotivoAlCosto = "El mayoreo está al costo o debajo: parece el precio del regreso a clases";
+    public const string MotivoGranel = "Se vende a granel: captura la escala en metros o kilos";
+    public const string MotivoChoca = "Choca con una promoción por cantidad de eleventa (el precio subiría con la cantidad)";
+    public const string MotivoCodigoRepetido = "Su código está repetido en eleventa: sus ventas con F11 no se pueden separar";
     public const string AvisoUnidadKilo = "Granel con medida KG en eleventa (la medida está desactivada): revisar la unidad";
     public const string AvisoFraccionEnPieza = "Por pieza en eleventa pero vendido o contado con fracciones: se importó a granel";
     public const string AvisoExistenciaNegativa = "Existencia negativa en eleventa: no se importó";
@@ -92,8 +100,6 @@ public static class ImportadorEleventa
                 r.Precios.Add(new Precio { VarianteId = variante.Id, CantidadMinima = Cantidad.Unidades(1), PrecioCentavos = precio });
             else
                 r.Avisar(AvisoPrecioCero);
-            if (p.Mayoreo > 0 && Centavos(p.Mayoreo) < precio)
-                r.Avisar(AvisoMayoreo);
 
             if (p.Costo > 0)
                 r.ProveedoresVariantes.Add(new ProveedorVariante
@@ -104,17 +110,23 @@ public static class ImportadorEleventa
                 });
         }
 
-        // Promociones por cantidad: son escalas de mayoreo de verdad.
+        // Promociones por cantidad: son escalas de mayoreo de verdad. Una escala repetida tumbaría el guardado.
+        var escalas = new HashSet<(Guid Variante, long Desde)>();
         foreach (var promo in e.Promociones)
         {
-            if (porCodigo.TryGetValue(promo.Codigo.Trim(), out var v) && promo.Desde > 1 && promo.PrecioConImpuestos > 0)
-                r.Precios.Add(new Precio
-                {
-                    VarianteId = v.Variante.Id,
-                    CantidadMinima = Cantidad.Unidades(Math.Round((decimal)promo.Desde, 3)),
-                    PrecioCentavos = Centavos(promo.PrecioConImpuestos),
-                });
+            // Un DESDE de 1.0004 se redondea a 1: sería el menudeo otra vez.
+            var desde = Cantidad.Unidades(Math.Round((decimal)promo.Desde, 3));
+            if (!porCodigo.TryGetValue(promo.Codigo.Trim(), out var v) || desde <= Cantidad.Unidades(1) || promo.PrecioConImpuestos <= 0)
+                continue;
+            if (!escalas.Add((v.Variante.Id, desde.Milesimas)))
+            {
+                r.Avisar(AvisoPromocionRepetida);
+                continue;
+            }
+            r.Precios.Add(new Precio { VarianteId = v.Variante.Id, CantidadMinima = desde, PrecioCentavos = Centavos(promo.PrecioConImpuestos) });
         }
+
+        ImportarMayoreo(e, r, porId, escalas);
 
         // Ventas
         var lineasPorTicket = e.Lineas.ToLookup(l => l.TicketId);
@@ -191,6 +203,90 @@ public static class ImportadorEleventa
 
         return r;
     }
+
+    /// <summary>
+    /// El mayoreo de F11 (docs/fase-3-precios-clientes.md, entrega 1): en eleventa se escribían las piezas del paquete y
+    /// se oprimía F11. De esas ventas sale el paquete y queda una escala desde ahí, al precio de mayoreo; lo que no se
+    /// pueda deducir queda en <see cref="LoteDeDatos.MayoreoPorRevisar"/> para que el encargado lo capture en F3. Lo
+    /// deducido también se anota (ya resuelto), para que una decisión de la depuración lo cambie al repetirse.
+    /// </summary>
+    private static void ImportarMayoreo(DatosEleventa e, ResultadoImportacion r, Dictionary<int, Variante> porId, HashSet<(Guid Variante, long Desde)> escalas)
+    {
+        var vendidos = e.Tickets.Where(t => t.VendidoEn is not null && !t.Cancelado).ToDictionary(t => t.Id, t => t.VendidoEn!.Value);
+        var conF11 = e.Lineas.Where(l => l.UsaMayoreo && vendidos.ContainsKey(l.TicketId))
+            .ToLookup(l => l.Codigo.Trim(), l => new VentaConMayoreo(l.Cantidad, vendidos[l.TicketId], l.Ganancia), StringComparer.OrdinalIgnoreCase);
+        var activos = e.Productos.Where(p => !p.Eliminado).ToList();
+        // Las ventas solo dicen el código: si dos productos lo comparten, no se sabe de cuál fue cada una.
+        var repetidos = activos.GroupBy(p => p.Codigo.Trim(), StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1)
+            .Select(g => g.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var fila in activos)
+        {
+            var variante = porId[fila.Id];
+            var codigo = fila.Codigo.Trim();
+            var menudeo = Centavos(fila.Precio);
+            var mayoreo = Centavos(fila.Mayoreo);
+            if (mayoreo <= 0 || mayoreo >= menudeo)
+                continue;
+            var costo = Centavos(fila.Costo);
+            var repetido = repetidos.Contains(codigo);
+            var deduccion = DeduccionMayoreo.Deducir(conF11[codigo]);
+            var sugerida = repetido ? null : deduccion.Sugerida;
+
+            string? motivo = costo > 0 && mayoreo <= costo ? MotivoAlCosto
+                : variante.UnidadBase != UnidadBase.Pieza ? MotivoGranel
+                : repetido ? MotivoCodigoRepetido
+                : deduccion.Motivo;
+            if (motivo is null && deduccion.Paquete is { } paquete)
+            {
+                if (escalas.Contains((variante.Id, paquete.Milesimas)))
+                {
+                    r.Avisar(AvisoMayoreoYaEstaba);
+                    continue;
+                }
+                // Con las promociones, el precio por pieza no puede subir al subir la cantidad.
+                if (Choca(r, variante, paquete, mayoreo))
+                    (motivo, sugerida) = (MotivoChoca, null);
+                else
+                {
+                    escalas.Add((variante.Id, paquete.Milesimas));
+                    r.Precios.Add(new Precio { VarianteId = variante.Id, CantidadMinima = paquete, PrecioCentavos = mayoreo });
+                    var deducido = Revisar(variante, menudeo, mayoreo, costo, deduccion, DeduccionMayoreo.Deducido, sugerida);
+                    deducido.Resolver($"Desde {paquete} a {mayoreo / 100m:N2}, por sus ventas con F11", DateTime.UtcNow, paquete);
+                    r.MayoreoPorRevisar.Add(deducido);
+                    r.Avisar(AvisoMayoreoDeducido);
+                    continue;
+                }
+            }
+
+            // Lo sugerido no sirve si ahí ya hay una promoción (con otro precio) o si haría subir el precio con la cantidad.
+            if (sugerida is { } s && (escalas.Contains((variante.Id, s.Milesimas)) || Choca(r, variante, s, mayoreo)))
+                sugerida = null;
+            r.MayoreoPorRevisar.Add(Revisar(variante, menudeo, mayoreo, costo, deduccion, motivo ?? DeduccionMayoreo.SinVentas, sugerida));
+            r.Avisar(AvisoMayoreoPorRevisar);
+        }
+    }
+
+    /// <summary>Si con una escala desde <paramref name="desde"/> el precio por pieza subiría al subir la cantidad.</summary>
+    private static bool Choca(ResultadoImportacion r, Variante variante, Cantidad desde, long precioCentavos)
+    {
+        var todas = r.Precios.Where(p => p.VarianteId == variante.Id && p.PresentacionId == null && p.SucursalId == null)
+            .Select(p => (p.CantidadMinima, p.PrecioCentavos)).Append((desde, precioCentavos)).OrderBy(x => x.Item1).ToList();
+        return todas.Zip(todas.Skip(1)).Any(par => par.Second.Item2 > par.First.Item2);
+    }
+
+    private static MayoreoPorRevisar Revisar(
+        Variante variante, long menudeo, long mayoreo, long costo, ResultadoMayoreo deduccion, string motivo, Cantidad? sugerida) =>
+        new()
+        {
+            VarianteId = variante.Id,
+            PrecioMayoreoCentavos = mayoreo,
+            MenudeoCentavos = menudeo,
+            CostoCentavos = costo,
+            VentasConMayoreo = deduccion.Ventas,
+            Cantidades = deduccion.Cantidades,
+            Motivo = motivo,
+            Sugerida = sugerida,
+        };
 
     private static Variante CrearProducto(
         ResultadoImportacion r, string nombre, Departamento departamento, UnidadBase unidad, bool activo, string? codigo, string idOrigen)

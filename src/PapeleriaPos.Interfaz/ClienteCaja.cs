@@ -205,6 +205,12 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task CambiarUnidadAsync(SolicitudCambiarUnidad solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<object>("api/catalogo/depuracion/unidad", solicitud, sinRespuesta: true));
 
+    public Task<List<MayoreoPorRevisarDto>> MayoreoPorRevisarAsync() =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<MayoreoPorRevisarDto>>("api/catalogo/depuracion/mayoreo") ?? []);
+
+    public Task DecidirMayoreoAsync(SolicitudMayoreo solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<object>("api/catalogo/depuracion/mayoreo", solicitud, sinRespuesta: true));
+
     public Task<List<DecisionDepuracionDto>> DecisionesDepuracionAsync() =>
         ConRespaldoAsync(async () => await _http.GetAsync<List<DecisionDepuracionDto>>("api/catalogo/depuracion") ?? []);
 

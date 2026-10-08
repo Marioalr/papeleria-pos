@@ -120,8 +120,9 @@ public class Venta
         linea.CantidadBase = cantidadBase;
         if (linea.PrecioCambiado)
         {
-            // Con precio cambiado (autorizado), la cantidad nueva se cobra a ese precio.
+            // Con precio cambiado (autorizado), la cantidad nueva se cobra a ese precio y ya no es mayoreo.
             AplicarDescuento(linea, cantidad.Importe(linea.PrecioCentavos));
+            (linea.MayoreoDesde, linea.AhorroMayoreoCentavos) = (null, 0);
         }
         else
         {
@@ -129,6 +130,10 @@ public class Venta
             linea.PrecioCentavos = aplicado.Precio.PresentacionId is null
                 ? presentacion.Factor.Importe(aplicado.Precio.PrecioCentavos)
                 : aplicado.Precio.PrecioCentavos;
+            // Queda en la línea desde cuánto aplicó el mayoreo y cuánto se ahorró: el ticket y la reimpresión lo dicen.
+            linea.MayoreoDesde = !aplicado.EsMayoreo ? null
+                : aplicado.Precio.PresentacionId is null ? aplicado.Precio.CantidadMinima : aplicado.Precio.CantidadMinima.Por(presentacion.Factor);
+            linea.AhorroMayoreoCentavos = aplicado.AhorroCentavos;
         }
         Recalcular();
     }
@@ -259,6 +264,7 @@ public class Venta
         linea.PrecioCentavos = precioCentavos;
         AplicarDescuento(linea, linea.Cantidad.Importe(precioCentavos));
         linea.AutorizacionPrecioId = autorizacionId;
+        (linea.MayoreoDesde, linea.AhorroMayoreoCentavos) = (null, 0);
         Recalcular();
     }
 
@@ -496,6 +502,17 @@ public class VentaLinea
     public string? MotivoDescuento { get; set; }
 
     public bool TieneDescuento => DescuentoCentavos > 0;
+
+    /// <summary>
+    /// Desde qué cantidad aplicó la escala de mayoreo (fase 3), en unidades base (piezas, metros, kilos). Vacío si se
+    /// cobró a menudeo o a un precio cambiado.
+    /// </summary>
+    public Cantidad? MayoreoDesde { get; set; }
+
+    /// <summary>Lo que se ahorró por el mayoreo contra el menudeo, antes del descuento. No es un descuento: no pide autorización.</summary>
+    public long AhorroMayoreoCentavos { get; set; }
+
+    public bool TieneMayoreo => MayoreoDesde is not null;
 
     public long ImporteSinDescuentoCentavos => ImporteCentavos + DescuentoCentavos;
 

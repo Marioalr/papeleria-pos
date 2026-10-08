@@ -31,8 +31,17 @@ public class ImportadorEleventaTests
         double precio = 15, double mayoreo = 15, int? departamento = 2, bool eliminado = false) =>
         new(id, codigo, descripcion, tipo, medida, costo, precio, mayoreo, departamento, eliminado);
 
-    private static FilaLinea Linea(int ticket, string codigo, double cantidad, double precio, double? total, double ganancia, string nombre = "x") =>
-        new(ticket, codigo, nombre, cantidad, total, precio, ganancia, 2, false);
+    private static FilaLinea Linea(int ticket, string codigo, double cantidad, double precio, double? total, double ganancia, string nombre = "x",
+        bool mayoreo = false) =>
+        new(ticket, codigo, nombre, cantidad, total, precio, ganancia, 2, mayoreo);
+
+    /// <summary>Ventas con F11 del producto, una por ticket: (cantidad, mes) fuera o dentro del regreso a clases.</summary>
+    private static (List<FilaTicket> Tickets, List<FilaLinea> Lineas) ConF11(string codigo, double precio, params (double Cantidad, int Mes)[] ventas)
+    {
+        var tickets = ventas.Select((v, i) => new FilaTicket(500 + i, 500 + i, new DateTime(2026, v.Mes, 5, 12, 0, 0), v.Cantidad * precio, false)).ToList();
+        var lineas = ventas.Select((v, i) => Linea(500 + i, codigo, v.Cantidad, precio, v.Cantidad * precio, v.Cantidad * 2, mayoreo: true)).ToList();
+        return (tickets, lineas);
+    }
 
     private static Variante VarianteDe(ResultadoImportacion r, string codigo)
     {
@@ -158,15 +167,114 @@ public class ImportadorEleventaTests
     }
 
     [Fact]
-    public void El_mayoreo_manual_no_se_importa_pero_las_promociones_por_cantidad_si()
+    public void El_mayoreo_de_F11_pasa_a_escala_desde_el_paquete_que_mas_se_vendio()
     {
+        // Hojas a $0.50 y $0.40 de mayoreo: con F11 se vendían paquetes de 100 (y uno de 200).
+        var (tickets, lineas) = ConF11("HOJA", 0.4, (100, 3), (100, 4), (200, 5), (100, 10), (3, 8));
         var r = ImportadorEleventa.Importar(Datos(
-            [Producto(1, "A1", "Pegamento 35g", precio: 22, mayoreo: 20), Producto(2, "B2", "Lápiz", precio: 6)],
+            [Producto(1, "HOJA", "Hoja blanca", costo: 0.2, precio: 0.5, mayoreo: 0.4), Producto(2, "B2", "Lápiz", precio: 6)],
+            tickets: tickets, lineas: lineas, promociones: [new("B2", 12, 5), new("B2", 12, 5)]));
+
+        var escala = r.Precios.Single(p => p.VarianteId == VarianteDe(r, "HOJA").Id && p.CantidadMinima == Cantidad.Piezas(100));
+        Assert.Equal(40, escala.PrecioCentavos);
+        Assert.Equal(1, r.Avisos[ImportadorEleventa.AvisoMayoreoDeducido]);
+        // La promoción repetida entra una vez (repetida tumbaría el guardado).
+        Assert.Single(r.Precios, p => p.VarianteId == VarianteDe(r, "B2").Id && p.CantidadMinima == Cantidad.Piezas(12));
+        Assert.Equal(1, r.Avisos[ImportadorEleventa.AvisoPromocionRepetida]);
+        // Lo deducido queda anotado y resuelto: una decisión de la depuración lo cambia al repetirse.
+        var deducido = Assert.Single(r.MayoreoPorRevisar);
+        Assert.Equal((DeduccionMayoreo.Deducido, Cantidad.Piezas(100), true), (deducido.Motivo, deducido.Escala, deducido.ResueltoUtc is not null));
+    }
+
+    [Fact]
+    public void Una_promocion_que_se_redondea_a_una_pieza_no_choca_con_el_menudeo()
+    {
+        var r = ImportadorEleventa.Importar(Datos([Producto(1, "B1", "Goma", precio: 10)], promociones: [new("B1", 1.0004, 9)]));
+
+        Assert.Equal(1000L, Assert.Single(r.Precios).PrecioCentavos);
+    }
+
+    [Fact]
+    public void Con_un_codigo_repetido_el_mayoreo_va_a_revisar_porque_sus_ventas_no_se_separan()
+    {
+        var (tickets, lineas) = ConF11("A1", 8, (12, 3), (12, 4), (12, 5), (12, 6));
+        var r = ImportadorEleventa.Importar(Datos(
+            [Producto(1, "A1", "Lápiz viejo", costo: 5, precio: 10), Producto(2, "A1", "Lápiz nuevo", costo: 5, precio: 10, mayoreo: 8)],
+            tickets: tickets, lineas: lineas));
+
+        var nuevo = r.Mapeos.Single(m => m.Entidad == nameof(Variante) && m.IdOrigen == "2").IdNuevo;
+        var revisar = Assert.Single(r.MayoreoPorRevisar);
+        Assert.Equal((nuevo, ImportadorEleventa.MotivoCodigoRepetido, (Cantidad?)null, (DateTime?)null),
+            (revisar.VarianteId, revisar.Motivo, revisar.Sugerida, revisar.ResueltoUtc));
+        Assert.DoesNotContain(r.Precios, p => p.CantidadMinima > Cantidad.Piezas(1));
+    }
+
+    [Fact]
+    public void No_se_sugiere_una_escala_que_choca_con_las_promociones()
+    {
+        // Choca: desde 3 ya sale a $5, y el mayoreo de $6 desde 12 haría subir el precio. Pocas: desde 12 ya hay promoción.
+        var (t1, l1) = ConF11("CHOCA", 6, (12, 3), (12, 4), (12, 5));
+        var (t2, l2) = ConF11("POCAS", 6, (12, 6), (12, 7));
+        t2 = t2.Select(t => t with { Id = t.Id + 100 }).ToList();
+        l2 = l2.Select(l => l with { TicketId = l.TicketId + 100 }).ToList();
+        var r = ImportadorEleventa.Importar(Datos(
+            [Producto(1, "CHOCA", "Pluma", costo: 3, precio: 7, mayoreo: 6), Producto(2, "POCAS", "Lápiz", costo: 3, precio: 7, mayoreo: 6)],
+            tickets: [.. t1, .. t2], lineas: [.. l1, .. l2], promociones: [new("CHOCA", 3, 5), new("POCAS", 12, 5)]));
+
+        var choca = r.MayoreoPorRevisar.Single(m => m.VarianteId == VarianteDe(r, "CHOCA").Id);
+        var pocas = r.MayoreoPorRevisar.Single(m => m.VarianteId == VarianteDe(r, "POCAS").Id);
+        Assert.Equal((ImportadorEleventa.MotivoChoca, (Cantidad?)null), (choca.Motivo, choca.Sugerida));
+        Assert.Equal((DeduccionMayoreo.PocasVentas, (Cantidad?)null), (pocas.Motivo, pocas.Sugerida));
+    }
+
+    [Fact]
+    public void Lo_que_no_se_puede_deducir_queda_por_revisar_con_lo_que_se_sabe()
+    {
+        var (tickets, lineas) = ConF11("POCAS", 18, (12, 3), (12, 4));
+        var r = ImportadorEleventa.Importar(Datos(
+            [
+                Producto(1, "POCAS", "Pegamento 35g", costo: 12, precio: 22, mayoreo: 18),
+                Producto(2, "COSTO", "Mochila", costo: 300, precio: 400, mayoreo: 300),
+                Producto(3, "LISTON", "Listón", 'D', 3, costo: 2, precio: 5, mayoreo: 4),
+                Producto(4, "IGUAL", "Clip", costo: 0.1, precio: 0.3, mayoreo: 0.3),
+            ],
+            tickets: tickets, lineas: lineas));
+
+        var pocas = r.MayoreoPorRevisar.Single(m => m.VarianteId == VarianteDe(r, "POCAS").Id);
+        Assert.Equal((DeduccionMayoreo.PocasVentas, 2, "12 ×2", 1800L), (pocas.Motivo, pocas.VentasConMayoreo, pocas.Cantidades, pocas.PrecioMayoreoCentavos));
+        Assert.Equal(Cantidad.Piezas(12), pocas.Sugerida);
+        Assert.Equal(ImportadorEleventa.MotivoAlCosto, r.MayoreoPorRevisar.Single(m => m.VarianteId == VarianteDe(r, "COSTO").Id).Motivo);
+        Assert.Equal(ImportadorEleventa.MotivoGranel, r.MayoreoPorRevisar.Single(m => m.VarianteId == VarianteDe(r, "LISTON").Id).Motivo);
+        // Mayoreo igual al menudeo: no hay mayoreo que revisar.
+        Assert.DoesNotContain(r.MayoreoPorRevisar, m => m.VarianteId == VarianteDe(r, "IGUAL").Id);
+        Assert.Equal(3, r.Avisos[ImportadorEleventa.AvisoMayoreoPorRevisar]);
+        Assert.Single(r.Precios, p => p.VarianteId == VarianteDe(r, "POCAS").Id);
+    }
+
+    [Fact]
+    public void Si_el_paquete_es_el_de_una_promocion_se_queda_la_promocion()
+    {
+        var (tickets, lineas) = ConF11("B2", 5, (12, 3), (12, 4), (12, 5));
+        var r = ImportadorEleventa.Importar(Datos([Producto(1, "B2", "Lápiz", costo: 3, precio: 6, mayoreo: 5.5)], tickets: tickets, lineas: lineas,
             promociones: [new("B2", 12, 5)]));
 
-        Assert.Equal(1, r.Avisos[ImportadorEleventa.AvisoMayoreo]);
-        var escala = r.Precios.Single(p => p.CantidadMinima == Cantidad.Piezas(12));
-        Assert.Equal((VarianteDe(r, "B2").Id, 500L), (escala.VarianteId, escala.PrecioCentavos));
+        Assert.Equal(500L, r.Precios.Single(p => p.CantidadMinima == Cantidad.Piezas(12)).PrecioCentavos);
+        Assert.Equal(1, r.Avisos[ImportadorEleventa.AvisoMayoreoYaEstaba]);
+    }
+
+    [Fact]
+    public async Task El_mayoreo_por_revisar_se_guarda_con_la_importacion()
+    {
+        var (tickets, lineas) = ConF11("POCAS", 18, (12, 3));
+        var r = ImportadorEleventa.Importar(Datos([Producto(1, "POCAS", "Pegamento 35g", costo: 12, precio: 22, mayoreo: 18)], tickets: tickets, lineas: lineas));
+        await using var baseEnMemoria = await BaseEnMemoria.CrearAsync();
+
+        await using (var db = baseEnMemoria.Contexto())
+            await GuardadoLote.GuardarAsync(r, db);
+
+        await using var lectura = baseEnMemoria.Contexto();
+        var guardado = await lectura.MayoreoPorRevisar.SingleAsync();
+        Assert.Equal((VarianteDe(r, "POCAS").Id, 1800L), (guardado.VarianteId, guardado.PrecioMayoreoCentavos));
     }
 
     [Fact]
