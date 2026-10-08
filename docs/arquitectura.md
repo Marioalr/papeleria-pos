@@ -6,7 +6,7 @@
 
 ```
               ┌───────────────────────────────────────────┐
-              │ Central: servidor virtual (Vultr CDMX)    │
+              │ Central: servidor virtual                 │
               │ servicio POS en modo central · SQLite     │
               │ panel del dueño · webhook de WhatsApp     │
               │ dispositivos propios (MQTT, a futuro)     │
@@ -20,8 +20,11 @@
                      │ LAN (router Tenda)        │ LAN
        Cajas · celulares · impresoras      Cajas · celulares · impresoras
 
-  Dueño: Telegram (alertas, cierres, autorizaciones) y panel por Tailscale
+  Dueño: Telegram (alertas, cierres, autorizaciones) y panel por red privada
 ```
+
+> Es la arquitectura con central. Con solo dos sucursales, la propuesta es empezar sin central el primer año:
+> cada sucursal sola y la matriz reparte el catálogo ([opciones](servidor-remoto.md)).
 
 | Componente | Tecnología | Dónde corre |
 |---|---|---|
@@ -29,7 +32,7 @@
 | Central | El mismo servicio en modo central | Servidor virtual ([por qué](servidor-remoto.md)) |
 | Caja | Ventana de Windows (WPF) que muestra la interfaz compartida | Todas las cajas |
 | App Android | .NET MAUI con la interfaz compartida | Celulares de la sucursal, por Wi-Fi |
-| Panel del dueño | La interfaz compartida, servida por el central | Navegador, por Tailscale |
+| Panel del dueño | La interfaz compartida, servida por el central | Navegador, por red privada |
 | Módulo de impresión | Agente en cada PC que imprime ([detalle](impresion.md)) | PCs con impresora |
 | Núcleo | Biblioteca .NET sin dependencias de Windows | Compartido por todo; sus pruebas corren en cualquier máquina |
 
@@ -61,7 +64,8 @@
   guarda todo para enviarlo después.
 - Al volver el servidor, se sube la bandeja; el inventario no choca porque son movimientos.
 - Limitaciones en contingencia: no se ven los pedidos de otras cajas ni saldos de crédito actualizados (se permite con
-  aviso o se bloquea, según configuración).
+  aviso o se bloquea, según configuración). Tampoco se cancela, se devuelve, se cobran impresiones, se reciben compras
+  ni se cuenta inventario: eso espera a que vuelva la caja principal.
 
 ## Varias sucursales
 
@@ -71,7 +75,9 @@
   - Cada sucursal es dueña de sus ventas, cortes, movimientos y pedidos.
 - **Sincronización:** mientras está prendida, la caja principal de cada sucursal se conecta al central: envía su
   bandeja de salida y recibe los cambios de catálogo por número de versión. Cada evento lleva su ID: reenviarlo no
-  duplica nada.
+  duplica nada. Ojo: hoy los códigos y presentaciones que se quitan se borran sin rastro (los precios quitados solo
+  quedan en su historial) y ningún borrado sube la versión; para que la sucursal se entere hay que mandar el catálogo
+  completo o registrar lo que se quita.
 - **De noche** las cajas se apagan. Lo que llega mientras tanto (WhatsApp, eventos de dispositivos) espera en el
   central y se entrega al encender la caja principal.
 - **Si el central falla,** las sucursales siguen vendiendo; se pierden por un rato el panel y la sincronización. Se
@@ -84,8 +90,11 @@
 
 - **Router Tenda** en cada sucursal: IP fija reservada para la caja principal. Las cajas también la encuentran solas
   por búsqueda en la red.
-- **Tailscale:** panel del dueño y soporte. El panel no queda expuesto a internet. Su plan gratuito es solo para uso
-  no comercial: ver la [pregunta](servidor-remoto.md#preguntas).
+- **Red privada:** panel del dueño y soporte, sin exponerlos a internet. Tailscale gratis es solo para uso no
+  comercial: la propuesta es NetBird gratis el primer año y, con el central, WireGuard en el mismo servidor
+  ([opciones](servidor-remoto.md)).
+- **Nada de intermediarios en la caja principal** (Caddy, túneles): el servicio deja pasar sin llave lo que llega de
+  la misma PC, y con un intermediario todo parecería venir de ahí.
 - **Públicos en el central** (HTTPS con dominio propio): solo el webhook de WhatsApp y, a futuro, la entrada de los
   dispositivos.
 - **Telegram:** cada sucursal y el central se conectan a Telegram por su cuenta (conexión de salida).
@@ -94,12 +103,14 @@
 
 - **Local:** copia diaria de la base en cada caja principal, con N días de historia.
 - **Central:** por la sincronización, tiene copia de los datos de todas las sucursales.
-- **Fuera:** copia diaria cifrada del central a almacenamiento gratuito (Backblaze B2 o Cloudflare R2, 10 GB). En el
-  piloto, sin central todavía, la caja principal sube su copia directo.
+- **Fuera:** desde el piloto, cada caja principal sube a Backblaze B2 su copia diaria y la del corte Z, comprimidas y
+  cifradas, y borra lo viejo con una regla (10 GB gratis). Con el central, copia continua del central a B2.
 
 ## Actualizaciones
 
-El central guarda el instalador vigente; cada caja principal lo descarga y verifica (SHA-256) y las cajas lo toman de
+El primer año, sin central: soporte instala la versión nueva por la red privada en las dos sucursales el mismo día
+([opciones](servidor-remoto.md)). Con el central: el central guarda el instalador vigente; cada caja principal lo
+descarga y verifica (SHA-256) y las cajas lo toman de
 su caja principal. Dentro de una sucursal todas las cajas deben tener la misma versión. Primero se actualiza una
 sucursal y después las demás.
 

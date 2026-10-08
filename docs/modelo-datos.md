@@ -34,8 +34,8 @@ erDiagram
 | Cantidades | Enteros en **milésimas de la unidad base** (`long`): 1 pieza = 1000, 1.5 m = 1500, 250 g = 250 |
 | Fechas | UTC; se muestran en hora de Ciudad de México |
 | Enumeraciones | Se guardan como texto (`"Compra"`, no `2`): la base se lee sin el código |
-| Catálogo | Nunca se borra, se desactiva (`Activo = false`): el kardex y el histórico lo siguen apuntando |
-| Sincronización | Las tablas del catálogo llevan `Version` y `ModificadoUtc` desde ya, para bajar cambios por versión después |
+| Catálogo | Productos y variantes nunca se borran, se desactivan (`Activo = false`): el kardex y el histórico los siguen apuntando. Los códigos y las presentaciones sin uso sí se borran sin rastro, y los precios quitados solo quedan en su historial: para repartir el catálogo hay que mandarlo completo o registrar lo que se quita ([opciones](servidor-remoto.md)) |
+| Sincronización | Las tablas del catálogo llevan `Version` y `ModificadoUtc` desde ya, para bajar cambios por versión después (ojo: un borrado no sube la versión) |
 | Sucursal | Todo lo que pertenece a una sucursal lleva `SucursalId`, aunque hoy solo exista la matriz |
 
 **Por qué milésimas:** se vende por metro y a granel. Con milésimas, 1.5 m o 0.250 kg son enteros, SQLite los suma

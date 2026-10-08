@@ -4,8 +4,9 @@
 
 ## Dispositivos propios
 
-Supuesto de trabajo: dispositivos hechos a la medida (por ejemplo con ESP32 y Wi-Fi), conectados al central con
-MQTT sobre TLS. Cada uno con su credencial, actualización remota y memoria para guardar eventos si se cae el internet.
+Supuesto de trabajo: dispositivos hechos a la medida (por ejemplo con ESP32 y Wi-Fi). Para avisar, directo a Telegram y
+a Healthchecks.io; para cruzar sus eventos con la caja, conectados al central con MQTT sobre TLS. Cada uno con su
+credencial, actualización remota y memoria para guardar eventos si se cae el internet.
 
 | Idea | Qué aporta al control |
 |---|---|
@@ -15,8 +16,9 @@ MQTT sobre TLS. Cada uno con su credencial, actualización remota y memoria para
 
 Lo que implicaría:
 
-- Algo siempre prendido que reciba los eventos de noche: el central en el servidor virtual (una de las razones de
-  [esa propuesta](servidor-remoto.md)).
+- Para solo avisar no hace falta el central: el dispositivo manda su aviso a Telegram con su propio bot y avisa a
+  Healthchecks.io que sigue vivo. Para cruzar sus eventos con la caja hace falta algo siempre prendido que los reciba
+  de noche: es una de las señales para montar el [central](servidor-remoto.md#cuándo-montar-el-central).
 - Router y dispositivo con no-break, para que la vigilancia no se apague con la luz. Opcional: respaldo por datos
   celulares para la alarma.
 - Los eventos de los dispositivos entran por el mismo camino que los de las cajas y se cruzan con ellos (tickets,

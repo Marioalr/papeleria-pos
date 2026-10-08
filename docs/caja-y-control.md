@@ -57,7 +57,8 @@ Cada autorización guarda quién, cuándo y desde dónde. Es la idea de los perm
 extendida a todo el POS.
 
 **Roles base:**
-- **Dueño:** todo, en todas las sucursales.
+- **Dueño:** todo, en todas las sucursales (propuesta para el primer año: en la sucursal 2 el catálogo es de solo
+  lectura también para él; se edita en la matriz, ver [opciones](servidor-remoto.md)).
 - **Encargado:** su sucursal.
 - **Cajero.**
 
@@ -81,7 +82,8 @@ Queda registrado, con quién y cuándo:
 
 - Diferencia en el corte mayor a lo configurado
 - Cancelaciones, descuentos y precios fuera de regla
-- Sucursal sin conexión o caja principal apagada (latido cada minuto)
+- Sucursal sin conexión o caja principal apagada (latido cada minuto, con el central; el primer año, solo el aviso de
+  que no abrió o no respaldó)
 - Caja abierta fuera de horario
 - Existencia negativa y diferencias en conteos y recepciones
 - Transferencias sin verificar al cierre

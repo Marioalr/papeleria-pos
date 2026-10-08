@@ -50,8 +50,8 @@
 - La caja encuentra al servicio por la **IP fija** reservada en el router; si cambia, lo busca sola en la red (un
   aviso por difusión que el servicio contesta).
 - Cada caja imprime en su propia impresora de tickets (la de la red o la conectada a esa PC).
-- Todas las cajas de una sucursal llevan la misma versión del programa (las actualizaciones llegan después, con el
-  central).
+- Todas las cajas de una sucursal llevan la misma versión del programa (las actualizaciones las instala soporte a
+  distancia; con el central, se reparten solas).
 
 ## Alta de una caja
 
@@ -105,8 +105,9 @@ venta en contingencia queda marcada para que se vea en el corte y en la bitácor
 
 - Copia diaria de la base en la caja principal (y otra al hacer el corte Z), con los últimos 30 días.
 - Se hace con la copia en línea de SQLite: no detiene la venta.
-- La copia fuera de la tienda (en la nube) llega con el central (fase 6). Mientras tanto, opcional: copiar también a
-  una memoria USB o a otra carpeta.
+- La copia fuera de la tienda: propuesta, desde el piloto la caja principal la sube a Backblaze B2, comprimida y
+  cifrada ([opciones](servidor-remoto.md)). Antes del piloto, opcional: copiar también a una memoria USB o a otra
+  carpeta.
 
 ## Cómo se arma
 
