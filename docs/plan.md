@@ -25,7 +25,7 @@
 | Lenguaje | C# / .NET 10 en todo: Windows (impresoras, spooler), Android y web con un solo lenguaje |
 | Interfaz | Una sola, en componentes Blazor: la caja (ventana de Windows), la app Android (MAUI) y el panel del dueño. Todo operable con teclado; diseño para 1366×768 |
 | Servidor de sucursal | Vive en la **caja principal**, como en eleventa, como servicio de Windows (corre sin sesión iniciada y se reinicia solo) |
-| Central | **Servidor virtual** siempre prendido (Vultr CDMX, 5 USD/mes) desde que abra la sucursal 2; en el piloto no hace falta ([propuesta](servidor-remoto.md)) |
+| Central | **Servidor virtual** siempre prendido (Vultr CDMX, 5 USD/mes) desde que abra la sucursal 2; en el piloto no hace falta ([propuesta](servidor-remoto.md)). Antes se prueba en una máquina propia con Linux ([prueba](#prueba-de-varias-sucursales-con-un-servidor-linux)) |
 | Base de datos | SQLite en todas partes; en cada lugar el servicio es el único que escribe |
 | Núcleo | Sin dependencias de Windows: lo comparten la caja, los servidores y la app Android |
 | Inventario | Kardex: solo se agregan movimientos y la existencia es la suma |
@@ -83,7 +83,7 @@ Sin tiempos: se avanza cuando la fase anterior funciona en la tienda.
 | 3. Precios y clientes | Mayoreo, promociones, kits, clientes registrados, crédito |
 | 4. Servicios y pedidos | Recetas y costeo, pedidos, cola compartida, charolas, recogida por celular, duplicados, apartados, listas escolares, captura manual desde WhatsApp |
 | 5. Piloto en la matriz | Depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo |
-| 6. Central y WhatsApp | Servidor virtual, sincronización, panel del dueño, API de WhatsApp → pedidos |
+| 6. Central y WhatsApp | Servidor virtual (probado antes en una máquina propia con Linux), sincronización, panel del dueño, API de WhatsApp → pedidos |
 | 7. Sucursal 2 | Precios por sucursal, traspasos, compras que se reparten, inversión de apertura y punto de equilibrio |
 | 8. App Android | Preventa y pedidos desde el celular |
 | 9. A la medida | Listas escolares avanzadas, dispositivos propios, [asistente inteligente](ideas.md#asistente-inteligente-piloto-automático) y lo que se vaya describiendo |
@@ -208,6 +208,27 @@ la caja con su usuario y PIN del POS, todos desde la misma cuenta común de Wind
 - **La prueba con una persona real** se instala igual: el administrador la instala para todas las cuentas de Windows
   y quien prueba la usa con una cuenta común.
 
+### Prueba de varias sucursales con un servidor Linux
+
+El central correrá en Linux, en el servidor virtual. Antes de contratarlo se prueba en una máquina que ya hay: una
+laptop con Intel Celeron y 8 GB, o una PC con AMD A6 y 8 GB. Que sean modestas sirve: si el procesador no es muy viejo
+(se confirma con su modelo), por núcleo rinden algo menos que el servidor virtual (un Celeron, unos dos tercios; un A6,
+parecido), así que si el servicio responde bien ahí, allá irá igual o mejor. Para parecerse más, cada medición se
+repite con el servicio limitado a lo que tendría en el servidor virtual de 1 GB: 1 núcleo y unos 800 MB.
+
+Va por etapas, porque la sincronización y el modo central llegan hasta la fase 6
+([detalle](prueba-sucursales-linux.md)):
+
+| Etapa | Cuándo | Qué prueba |
+|---|---|---|
+| 1. La máquina y el servicio de hoy | En paralelo a la fase 3 | El servicio de la sucursal en Linux con un día pico simulado, cortes de luz y 72 horas prendido: qué tan rápido responde y qué solo funciona en Windows |
+| 2. Dos sucursales en una sola base | Después de la etapa 1, sin esperar a la fase 6 | Las dos sucursales en la misma máquina, todavía sin central: que ventas, folios, existencias y cortes no se mezclen |
+| 3. El central de verdad | En la fase 6, en cuanto existan el modo central y la sincronización | La máquina como central con dos sucursales: sincronización, panel, Telegram, aviso de aperturas, respaldo y restauración con el script |
+| 4. Ensayo largo | Al cerrar la fase 6, antes de contratar el central y de que la sucursal 2 entre al POS | Dos a cuatro semanas con fallas provocadas: luz, internet, una sucursal apagada días, disco lleno. Al final, unas horas en un servidor virtual de verdad |
+
+Lo que salga contesta las [preguntas del central](servidor-remoto.md#preguntas): servidor virtual o mini PC, y de qué
+tamaño.
+
 ## Pendientes
 
 Fase 0:
@@ -260,6 +281,19 @@ Fase 3:
 - [ ] Entrega 2: clientes registrados y crédito
 - [ ] Entrega 3: consumibles del mes
 - [ ] Promociones y kits: antes del próximo regreso a clases
+
+Prueba de varias sucursales con un servidor Linux ([ver arriba](#prueba-de-varias-sucursales-con-un-servidor-linux)):
+
+- [ ] Revisar el [plan de la prueba](prueba-sucursales-linux.md) y contestar sus preguntas: con eso se elige entre la
+  laptop Celeron y la PC A6
+- [ ] Arreglos para Linux: dónde guarda sus datos, logo del ticket, script de instalación, pruebas en Linux y simulador
+  de cajas
+- [ ] Etapa 1: el servicio de hoy en la máquina Linux, con carga y con lo que tendría en el servidor virtual de 1 GB (en
+  paralelo a la fase 3)
+- [ ] Etapa 2: dos sucursales en una sola base (antes: el comando para dar de alta la sucursal 2 y el bot de prueba)
+- [ ] Etapa 3: la máquina como central con dos sucursales (fase 6; antes de poner Caddy, que nada pase sin llave)
+- [ ] Etapa 4: ensayo largo con fallas provocadas (al cerrar la fase 6, antes de que la sucursal 2 entre al POS)
+- [ ] Unas horas del script del central en un servidor virtual de verdad, antes de contratarlo
 
 Depuración del inventario (antes del piloto, [ver abajo](#depuración-del-inventario)):
 

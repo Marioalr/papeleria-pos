@@ -84,7 +84,8 @@
 
 - **Router Tenda** en cada sucursal: IP fija reservada para la caja principal. Las cajas también la encuentran solas
   por búsqueda en la red.
-- **Tailscale** (plan gratuito): panel del dueño y soporte. El panel no queda expuesto a internet.
+- **Tailscale:** panel del dueño y soporte. El panel no queda expuesto a internet. Su plan gratuito es solo para uso
+  no comercial: ver la [pregunta](servidor-remoto.md#preguntas).
 - **Públicos en el central** (HTTPS con dominio propio): solo el webhook de WhatsApp y, a futuro, la entrada de los
   dispositivos.
 - **Telegram:** cada sucursal y el central se conectan a Telegram por su cuenta (conexión de salida).

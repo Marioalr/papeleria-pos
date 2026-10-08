@@ -58,7 +58,7 @@ las cajas y los datos en casa.
 | Uso | Alcance |
 |---|---|
 | Datos | 3 sucursales × 60 tickets/día ≈ 66 mil tickets al año ≈ unos cientos de MB al año. Los 25 GB alcanzan para más de una década |
-| Memoria | El servicio usa ~100–200 MB; queda espacio para panel, bot, WhatsApp y dispositivos |
+| Memoria | El servicio usa ~190–230 MB (medido en la PC de desarrollo; la [prueba](prueba-sucursales-linux.md) lo mide con lo que tendría aquí); queda espacio para panel, bot, WhatsApp y dispositivos |
 | Sucursales | Holgado para 10 o más al volumen actual: el límite no son las ventas |
 | Dispositivos | Contadores y sensores mandan eventos pequeños: miles al día sin problema |
 | WhatsApp | Archivos temporales que se borran a los N días; unos pocos GB de tráfico al mes, lejos del 1 TB |
@@ -105,7 +105,7 @@ Fuera: Healthchecks.io avisa si el central deja de reportarse
 | Actualizaciones automáticas | Parches de seguridad sin intervención | Gratis |
 | Cortafuegos | Solo HTTPS abierto; el acceso de soporte no queda expuesto a internet | Gratis |
 | Memoria de intercambio (1–2 GB) | Colchón en un plan de 1 GB | Gratis |
-| Tailscale | Panel y soporte por red privada | Gratis (hasta 6 usuarios) |
+| Tailscale | Panel y soporte por red privada | Gratis hasta 6 usuarios, pero solo para uso no comercial; para negocios, 8 USD por usuario al mes ([pregunta](#preguntas)) |
 | Caddy | HTTPS automático (Let's Encrypt) | Gratis |
 | Servicio POS en modo central | Todo lo de "qué hace el central" | Nuestro |
 | Litestream | Copia continua de SQLite; se puede restaurar a cualquier momento | Gratis; 10 GB de almacenamiento gratis |
@@ -142,6 +142,11 @@ La rutina diaria no necesita abrir ningún panel; llega por Telegram:
 
 El panel queda para el trabajo de fondo: precios, catálogo, compras y reportes.
 
+## Antes de contratar
+
+El central se prueba primero en una máquina propia con Linux, con el mismo script de instalación, y al final unas
+horas en un servidor virtual de verdad, que se cobra por hora. Ver [la prueba](prueba-sucursales-linux.md).
+
 ## Recomendación
 
 **Servidor virtual**, desde que abra la sucursal 2. En el piloto no hace falta. El mini PC queda como alternativa si se
@@ -153,3 +158,6 @@ prefiere pago único.
 - [ ] Horario de cada sucursal.
 - [ ] Nombre del dominio (puede ser el del negocio).
 - [ ] Forma de pago al proveedor: tarjeta o saldo prepagado.
+- [ ] Tailscale: su plan gratuito es solo para uso no comercial. ¿Se paga el plan para negocios (8 USD por usuario al
+  mes; con el dueño y soporte, 16 USD, más que el propio servidor) o se busca otra forma de entrar al panel? La
+  [prueba en Linux](prueba-sucursales-linux.md) lo usa desde la etapa 2.
