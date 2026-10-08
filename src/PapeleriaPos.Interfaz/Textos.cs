@@ -40,6 +40,10 @@ public static class Textos
         AccionControlada.Merma => "Registrar una merma (dañado, caducado, perdido)",
         AccionControlada.ContarInventario => "Contar (el conteo del día y el conteo completo)",
         AccionControlada.ConteoCompleto => "Abrir y cerrar el conteo completo de un departamento",
+        AccionControlada.DarCredito => "Dar crédito a un cliente (límite y plazo)",
+        AccionControlada.ExcederLimiteCredito => "Fiar arriba del límite del cliente",
+        AccionControlada.AjustarCredito => "Ajustar el saldo de un cliente",
+        AccionControlada.CancelarAbono => "Cancelar un abono (en su turno)",
         _ => accion.ToString(),
     };
 

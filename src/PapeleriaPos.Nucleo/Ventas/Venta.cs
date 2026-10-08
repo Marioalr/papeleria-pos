@@ -171,6 +171,12 @@ public class Venta
     /// <summary>La autorización para que un descuento o un precio cambiado deje líneas debajo del costo.</summary>
     public Guid? AutorizacionBajoCostoId { get; set; }
 
+    /// <summary>La autorización para fiar arriba del límite del cliente (la regla se revisa al cobrar).</summary>
+    public Guid? AutorizacionCreditoId { get; set; }
+
+    /// <summary>Lo fiado en este ticket: el cobro a crédito. La venta ya cuenta completa; esto es lo que no entró a la caja.</summary>
+    public long CreditoCentavos => Cobros.Where(c => c.Forma == FormaPago.Credito).Sum(c => c.MontoCentavos);
+
     public long DescuentoCentavos => Lineas.Sum(l => l.DescuentoCentavos);
 
     /// <summary>
@@ -439,10 +445,15 @@ public class Venta
             throw new ArgumentException("Cada cobro debe ser mayor a cero.", nameof(cobros));
         if (cobros.Count(c => c.Forma == FormaPago.Efectivo) > 1)
             throw new ArgumentException("El efectivo va en un solo cobro.", nameof(cobros));
+        if (cobros.Count(c => c.Forma == FormaPago.Credito) > 1)
+            throw new ArgumentException("El crédito va en un solo cobro.", nameof(cobros));
+        if (cobros.Any(c => c.Forma == FormaPago.Credito) && ClienteId is null)
+            throw new InvalidOperationException("El crédito es para un cliente registrado: elígelo con CTRL+L.");
 
+        // El crédito, como la tarjeta, va exacto: lo que no es efectivo no se redondea ni da cambio.
         var sinEfectivo = cobros.Where(c => c.Forma != FormaPago.Efectivo).Sum(c => c.MontoCentavos);
         if (sinEfectivo > TotalCentavos)
-            throw new InvalidOperationException("Tarjeta y transferencia no pueden pasar del total: no dan cambio.");
+            throw new InvalidOperationException("Tarjeta, transferencia y crédito no pueden pasar del total: no dan cambio.");
 
         var efectivo = Efectivo(sinEfectivo, redondear);
         var recibido = cobros.SingleOrDefault(c => c.Forma == FormaPago.Efectivo)?.MontoCentavos ?? 0;

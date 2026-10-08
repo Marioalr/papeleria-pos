@@ -28,7 +28,8 @@ public sealed class RegistroClientes(PosDbContext db)
         .OrderByDescending(c => c.Activo).ThenBy(c => c.Nombre, StringComparer.CurrentCultureIgnoreCase).ToList();
 
     public static ClienteRegistradoDto Dto(ClienteRegistrado c) =>
-        new(c.Id, c.Nombre, c.DescuentoCentesimas, c.Nota, c.Activo, c.Telefono, c.MayoreoSiempre, c.PedidoSinAnticipo, c.ApartarSinPagar, c.PorRevisar);
+        new(c.Id, c.Nombre, c.DescuentoCentesimas, c.Nota, c.Activo, c.Telefono, c.MayoreoSiempre, c.PedidoSinAnticipo, c.ApartarSinPagar, c.PorRevisar,
+            c.LimiteCreditoCentavos, c.PlazoCreditoDias);
 
     /// <summary>La lista de la pantalla de clientes, con lo que compra cada uno.</summary>
     public async Task<List<ClienteResumenDto>> ListaAsync(Guid sucursalId, bool inactivos, CancellationToken ct = default)
@@ -84,6 +85,8 @@ public sealed class RegistroClientes(PosDbContext db)
                 throw new InvalidOperationException($"Ese teléfono ya es de «{mismoTelefono.Nombre}».");
         }
 
+        // El crédito (límite y plazo) no se cambia aquí: tiene su propia ruta y su propio permiso. Así una caja que manda
+        // la ficha completa (o una de antes, que no conoce el crédito) no se lo quita.
         var antes = cliente is null ? null : Dto(cliente);
         if (cliente is null)
         {

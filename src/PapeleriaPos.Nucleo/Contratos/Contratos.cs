@@ -104,7 +104,12 @@ public sealed record TicketDto(
     public long TotalCobradoCentavos => TotalCentavos + RedondeoCentavos;
 
     public long CambioCentavos => Cobros.Sum(c => c.CambioCentavos);
-    public long PagoConCentavos => Cobros.Sum(c => c.Forma == FormaPago.Efectivo ? c.RecibidoCentavos : c.MontoCentavos);
+    /// <summary>Lo que dio el cliente: el efectivo recibido, la tarjeta y la transferencia (lo fiado no es pago).</summary>
+    public long PagoConCentavos => Cobros.Where(c => c.Forma != FormaPago.Credito)
+        .Sum(c => c.Forma == FormaPago.Efectivo ? c.RecibidoCentavos : c.MontoCentavos);
+
+    /// <summary>Lo que quedó a deber en este ticket.</summary>
+    public long CreditoCentavos => Cobros.Where(c => c.Forma == FormaPago.Credito).Sum(c => c.MontoCentavos);
     public bool AbreCajon => Cobros.Any(c => c.Forma == FormaPago.Efectivo);
     public long DescuentoCentavos => Lineas.Sum(l => l.DescuentoCentavos);
 
@@ -408,12 +413,17 @@ public sealed record CalibracionDto(
 /// <param name="PedidoSinAnticipo">Fase 4 (pedidos).</param>
 /// <param name="ApartarSinPagar">Fase 4 (pedidos).</param>
 /// <param name="PorRevisar">Venía de los clientes especiales: falta revisar sus datos.</param>
+/// <param name="LimiteCreditoCentavos">Cuánto se le puede fiar; cero, sin crédito. Lo cambia quien puede dar crédito, por su propia ruta.</param>
+/// <param name="PlazoCreditoDias">Días para pagar lo fiado.</param>
 public sealed record ClienteRegistradoDto(
     Guid Id, string Nombre, int DescuentoCentesimas, string? Nota, bool Activo, string? Telefono = null, bool MayoreoSiempre = false,
-    bool PedidoSinAnticipo = false, bool ApartarSinPagar = false, bool PorRevisar = false)
+    bool PedidoSinAnticipo = false, bool ApartarSinPagar = false, bool PorRevisar = false, long LimiteCreditoCentavos = 0,
+    int PlazoCreditoDias = ClienteRegistrado.PlazoPorOmision)
 {
-    /// <summary>"descuento 10 % · mayoreo siempre" (vacío si no tiene privilegios de venta).</summary>
-    public string TextoPrivilegios() => ClienteRegistrado.Privilegios(DescuentoCentesimas, MayoreoSiempre);
+    public bool TieneCredito => LimiteCreditoCentavos > 0;
+
+    /// <summary>"descuento 10 % · mayoreo siempre · crédito" (vacío si no tiene privilegios de venta).</summary>
+    public string TextoPrivilegios() => ClienteRegistrado.Privilegios(DescuentoCentesimas, MayoreoSiempre, TieneCredito);
 
     /// <summary>El motivo con que su descuento queda en cada línea: así se distingue de un descuento a mano.</summary>
     public string MotivoDescuento() => ClienteRegistrado.MotivoDescuento(Nombre);

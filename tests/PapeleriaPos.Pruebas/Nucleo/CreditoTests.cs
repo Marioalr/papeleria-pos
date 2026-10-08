@@ -1,0 +1,381 @@
+using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Clientes;
+using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Turnos;
+using PapeleriaPos.Nucleo.Usuarios;
+using PapeleriaPos.Nucleo.Ventas;
+
+namespace PapeleriaPos.Pruebas.Nucleo;
+
+/// <summary>El crédito de los clientes registrados (fase 3, entrega 2, parte 2): fiar, abonar, la cuenta, las devoluciones y el corte.</summary>
+public class CreditoTests
+{
+    private static readonly DateTime Ahora = new(2026, 10, 8, 18, 0, 0, DateTimeKind.Utc);
+    private static readonly Guid Cliente = Ids.Nuevo();
+    private readonly Turno _turno = new() { FondoCentavos = 50000 };
+
+    /// <summary>Un ticket con un artículo común de ese importe, del cliente.</summary>
+    private Venta Ticket(long totalCentavos, int piezas = 1)
+    {
+        var venta = new Venta { TurnoId = _turno.Id, Serie = "A", ClienteId = Cliente };
+        venta.AgregarArticuloComun("Mercancía", totalCentavos / piezas, Cantidad.Piezas(piezas));
+        return venta;
+    }
+
+    private static CobroSolicitado Fiado(long centavos) => new(FormaPago.Credito, centavos);
+
+    private static CobroSolicitado Efectivo(long centavos) => new(FormaPago.Efectivo, centavos);
+
+    // ── Fiar ─────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Fiar_todo_no_redondea_ni_abre_el_cajon()
+    {
+        var venta = Ticket(13745);
+
+        venta.Pagar(1, [Fiado(13745)], Ahora);
+
+        Assert.Equal((13745L, 0L, false), (venta.CreditoCentavos, venta.RedondeoCentavos, venta.LlevaEfectivo));
+        Assert.Equal(FormaPago.Credito, Assert.Single(venta.Cobros).Forma);
+    }
+
+    [Fact]
+    public void Fiar_el_resto_deja_los_centavos_en_la_deuda()
+    {
+        var venta = Ticket(13745);
+
+        venta.Pagar(1, [Efectivo(10000), Fiado(3745)], Ahora);
+
+        var efectivo = venta.Cobros.Single(c => c.Forma == FormaPago.Efectivo);
+        Assert.Equal((10000L, 0L, 0L, 3745L), (efectivo.MontoCentavos, efectivo.CambioCentavos, venta.RedondeoCentavos, venta.CreditoCentavos));
+    }
+
+    [Fact]
+    public void Fiar_una_parte_redondea_solo_el_efectivo()
+    {
+        var venta = Ticket(13745);
+
+        venta.Pagar(1, [Efectivo(12000), Fiado(2000)], Ahora);
+
+        // Quedan $117.45 en efectivo: se cobran $117 (redondeo −$0.45) y de $120 se dan $3 de cambio.
+        var efectivo = venta.Cobros.Single(c => c.Forma == FormaPago.Efectivo);
+        Assert.Equal((11700L, -45L, 300L, 2000L), (efectivo.MontoCentavos, venta.RedondeoCentavos, efectivo.CambioCentavos, venta.CreditoCentavos));
+    }
+
+    [Fact]
+    public void El_credito_pide_cliente_va_en_un_solo_cobro_y_no_pasa_del_total()
+    {
+        var sinCliente = Ticket(5000);
+        sinCliente.ClienteId = null;
+
+        Assert.Contains("cliente registrado", Assert.Throws<InvalidOperationException>(() => sinCliente.Pagar(1, [Fiado(5000)], Ahora)).Message);
+        Assert.Throws<ArgumentException>(() => Ticket(5000).Pagar(1, [Fiado(2000), Fiado(3000)], Ahora));
+        Assert.Contains("crédito no pueden pasar del total",
+            Assert.Throws<InvalidOperationException>(() => Ticket(5000).Pagar(1, [new CobroSolicitado(FormaPago.Tarjeta, 3000), Fiado(3000)], Ahora)).Message);
+    }
+
+    [Theory]
+    [InlineData(50000, 45000, 0, 10000, 5000)]   // pasa por $50
+    [InlineData(50000, 80000, 0, 10000, 10000)]  // ya debía más del límite: todo lo fiado pasa
+    [InlineData(50000, 10000, 20000, 25000, 5000)] // la transferencia sin verificar no da crédito
+    [InlineData(0, -10000, 0, 6000, 0)]          // sin crédito, usa lo que tiene a favor
+    [InlineData(0, -10000, 0, 15000, 5000)]      // y no más
+    public void Lo_que_pasa_del_limite(long limite, long debe, long porVerificar, long fia, long exceso) =>
+        Assert.Equal(exceso, CuentaCredito.Exceso(debe, porVerificar, fia, limite));
+
+    [Fact]
+    public void Vence_el_ultimo_dia_del_plazo_en_hora_de_mexico()
+    {
+        // 8 de octubre a mediodía en México: con 30 días, el último día a tiempo es el 7 de noviembre.
+        Assert.Equal(new DateOnly(2026, 11, 7), CuentaCredito.Vence(Ahora, 30));
+        // A las 11 de la noche del 8 en México ya es 9 en UTC: cuenta el día de México.
+        Assert.Equal(new DateOnly(2026, 11, 7), CuentaCredito.Vence(new DateTime(2026, 10, 9, 5, 0, 0, DateTimeKind.Utc), 30));
+    }
+
+    // ── Abonar ───────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(23745, null, 30000, 23745, 23700, -45, 6300, true)]    // liquidar en efectivo: al peso
+    [InlineData(23745, 23700L, 23700, 23745, 23700, -45, 0, true)]    // teclear lo que es al peso también liquida
+    [InlineData(23745, 10000L, 10000, 10000, 10000, 0, 0, false)]     // abono parcial en pesos
+    [InlineData(30, null, 100, 30, 100, 70, 0, true)]                 // 30 centavos se liquidan con un peso
+    [InlineData(23760, null, 23800, 23760, 23800, 40, 0, true)]
+    public void Abono_en_efectivo(long saldo, long? monto, long recibido, long baja, long cobra, long redondeo, long cambio, bool liquida) =>
+        Assert.Equal(new AbonoCalculado(baja, cobra, redondeo, cambio, liquida), CalculoAbono.Calcular(saldo, FormaPago.Efectivo, monto, recibido));
+
+    [Fact]
+    public void Abono_que_no_se_puede()
+    {
+        Assert.Contains("($100.00 o $101.00), o liquida con $237.00",
+            Assert.Throws<ArgumentException>(() => CalculoAbono.Calcular(23745, FormaPago.Efectivo, 10050, 20000)).Message);
+        Assert.Contains("En efectivo se abona en pesos ($1.00), o liquida con $237.00",
+            Assert.Throws<ArgumentException>(() => CalculoAbono.Calcular(23745, FormaPago.Efectivo, 50, 20000)).Message);
+        Assert.Contains("La tarjeta no da cambio: abona hasta $237.45",
+            Assert.Throws<ArgumentException>(() => CalculoAbono.Calcular(23745, FormaPago.Tarjeta, 25000, 0)).Message);
+        Assert.Contains("No debe nada", Assert.Throws<InvalidOperationException>(() => CalculoAbono.Calcular(0, FormaPago.Efectivo, 1000, 1000)).Message);
+        Assert.Contains("Faltan", Assert.Throws<InvalidOperationException>(() => CalculoAbono.Calcular(23745, FormaPago.Efectivo, null, 20000)).Message);
+        Assert.Throws<ArgumentException>(() => CalculoAbono.Calcular(23745, FormaPago.Credito, 1000, 0));
+        Assert.Equal(new AbonoCalculado(23745, 23745, 0, 0, true), CalculoAbono.Calcular(23745, FormaPago.Tarjeta, null, 0));
+    }
+
+    // ── La cuenta ────────────────────────────────────────────────────────────
+
+    private static MovimientoCredito Movimiento(TipoMovimientoCredito tipo, long monto, int dia, Guid? venta = null, Guid? abono = null) => new()
+    {
+        Id = Ids.Nuevo(), ClienteId = Cliente, Tipo = tipo, MontoCentavos = monto, FechaUtc = new DateTime(2026, 10, dia, 18, 0, 0, DateTimeKind.Utc),
+        Vence = monto > 0 ? CuentaCredito.Vence(new DateTime(2026, 10, dia, 18, 0, 0, DateTimeKind.Utc), 30) : null, VentaId = venta, AbonoId = abono,
+    };
+
+    [Fact]
+    public void Lo_pagado_liquida_primero_lo_mas_viejo_y_dice_cuando()
+    {
+        var primero = Movimiento(TipoMovimientoCredito.Cargo, 10000, 1);
+        var segundo = Movimiento(TipoMovimientoCredito.Cargo, 5000, 5);
+        var abono = Movimiento(TipoMovimientoCredito.Abono, -12000, 10);
+
+        var cuenta = CuentaCredito.Aplicar([abono, segundo, primero]);
+
+        Assert.Equal((3000L, 0L), (cuenta.SaldoCentavos, cuenta.AFavorCentavos));
+        Assert.Equal((0L, abono.FechaUtc), (cuenta.Cargos[0].PendienteCentavos, cuenta.Cargos[0].LiquidadoUtc));
+        Assert.Equal((3000L, (DateTime?)null), (cuenta.Cargos[1].PendienteCentavos, cuenta.Cargos[1].LiquidadoUtc));
+        Assert.Equal(0, cuenta.Vencido(new DateOnly(2026, 11, 4)));
+        Assert.Equal(3000, cuenta.Vencido(new DateOnly(2026, 11, 5)));
+        Assert.Equal(new DateOnly(2026, 11, 4), cuenta.VenceMasAntiguo);
+    }
+
+    [Fact]
+    public void La_devolucion_va_primero_a_su_propia_venta()
+    {
+        var (ventaVieja, ventaNueva) = (Ids.Nuevo(), Ids.Nuevo());
+        var cuenta = CuentaCredito.Aplicar([
+            Movimiento(TipoMovimientoCredito.Cargo, 10000, 1, ventaVieja),
+            Movimiento(TipoMovimientoCredito.Cargo, 5000, 5, ventaNueva),
+            Movimiento(TipoMovimientoCredito.Devolucion, -3000, 6, ventaNueva),
+        ]);
+
+        Assert.Equal((10000L, 0L), (cuenta.Cargos[0].PendienteCentavos, cuenta.Cargos[0].DevueltoCentavos));
+        Assert.Equal((2000L, 3000L), (cuenta.Cargos[1].PendienteCentavos, cuenta.Cargos[1].DevueltoCentavos));
+    }
+
+    [Fact]
+    public void Un_abono_rechazado_o_cancelado_no_liquida_nada()
+    {
+        var (rechazado, cancelado) = (Ids.Nuevo(), Ids.Nuevo());
+        var cuenta = CuentaCredito.Aplicar([
+            Movimiento(TipoMovimientoCredito.Cargo, 10000, 1),
+            Movimiento(TipoMovimientoCredito.Abono, -6000, 2, abono: rechazado),
+            Movimiento(TipoMovimientoCredito.Abono, -4000, 3, abono: cancelado),
+            Movimiento(TipoMovimientoCredito.AbonoRechazado, 6000, 4, abono: rechazado),
+            Movimiento(TipoMovimientoCredito.AbonoCancelado, 4000, 4, abono: cancelado),
+        ]);
+
+        Assert.Equal((10000L, (DateTime?)null), (cuenta.Cargos.Single().PendienteCentavos, cuenta.Cargos.Single().LiquidadoUtc));
+        Assert.Equal(10000, cuenta.SaldoCentavos);
+    }
+
+    [Fact]
+    public void El_saldo_a_favor_se_lo_come_el_siguiente_cargo()
+    {
+        var cuenta = CuentaCredito.Aplicar([
+            Movimiento(TipoMovimientoCredito.Ajuste, -5000, 1),
+            Movimiento(TipoMovimientoCredito.Cargo, 8000, 2),
+        ]);
+
+        Assert.Equal((3000L, 0L, 3000L), (cuenta.SaldoCentavos, cuenta.AFavorCentavos, cuenta.Cargos.Single().PendienteCentavos));
+    }
+
+    [Fact]
+    public void Siempre_lo_pendiente_menos_lo_a_favor_es_el_saldo()
+    {
+        var azar = new Random(20261008);
+        for (var vuelta = 0; vuelta < 300; vuelta++)
+        {
+            var movimientos = new List<MovimientoCredito>();
+            var ventas = new List<Guid>();
+            for (var i = 0; i < azar.Next(1, 15); i++)
+            {
+                var dia = azar.Next(1, 28);
+                switch (azar.Next(5))
+                {
+                    case 0 or 1:
+                        var venta = Ids.Nuevo();
+                        ventas.Add(venta);
+                        movimientos.Add(Movimiento(TipoMovimientoCredito.Cargo, azar.Next(1, 50000), dia, venta));
+                        break;
+                    case 2:
+                        movimientos.Add(Movimiento(TipoMovimientoCredito.Abono, -azar.Next(1, 50000), dia, abono: Ids.Nuevo()));
+                        break;
+                    case 3 when ventas.Count > 0:
+                        movimientos.Add(Movimiento(TipoMovimientoCredito.Devolucion, -azar.Next(1, 20000), dia, ventas[azar.Next(ventas.Count)]));
+                        break;
+                    default:
+                        movimientos.Add(Movimiento(TipoMovimientoCredito.Ajuste, azar.Next(-20000, 20000) is var a and not 0 ? a : 1, dia));
+                        break;
+                }
+            }
+
+            var cuenta = CuentaCredito.Aplicar(movimientos);
+
+            Assert.Equal(movimientos.Sum(m => m.MontoCentavos), cuenta.SaldoCentavos);
+            Assert.Equal(cuenta.SaldoCentavos, cuenta.Cargos.Sum(c => c.PendienteCentavos) - cuenta.AFavorCentavos);
+            Assert.All(cuenta.Cargos, c => Assert.InRange(c.PendienteCentavos, 0, c.MontoCentavos));
+        }
+    }
+
+    // ── Devoluciones de lo fiado ─────────────────────────────────────────────
+
+    private Devolucion Devolver(Venta venta, int piezas, IEnumerable<Devolucion> anteriores)
+    {
+        var devolucion = CalculoDevolucion.Armar(venta, [new LineaPorDevolver(venta.Lineas.Single().Id, Cantidad.Piezas(piezas))], Ids.Nuevo(), _turno.Id,
+            Ids.Nuevo(), "No le quedó", Ahora.AddDays(1), anteriores);
+        CalculoDevolucion.Aplicar(venta, devolucion);
+        return devolucion;
+    }
+
+    [Fact]
+    public void Lo_devuelto_de_una_venta_fiada_baja_primero_lo_fiado()
+    {
+        // $200 en 20 piezas de $10: $100 en efectivo y $100 fiado.
+        var venta = Ticket(20000, piezas: 20);
+        venta.Pagar(1, [Efectivo(10000), Fiado(10000)], Ahora);
+
+        var primera = Devolver(venta, 5, []);                  // $50: todo a la cuenta
+        var segunda = Devolver(venta, 12, [primera]);          // $120: $50 a la cuenta y $70 en efectivo
+        var tercera = Devolver(venta, 3, [primera, segunda]);  // lo último, $30, en efectivo
+
+        Assert.Equal((5000L, 0L), (primera.AlCreditoCentavos, primera.ReembolsoEfectivoCentavos));
+        Assert.Equal((5000L, 7000L), (segunda.AlCreditoCentavos, segunda.ReembolsoEfectivoCentavos));
+        Assert.Equal((0L, 3000L), (tercera.AlCreditoCentavos, tercera.ReembolsoEfectivoCentavos));
+    }
+
+    [Fact]
+    public void Devolver_todo_de_una_venta_fiada_con_redondeo_regresa_lo_cobrado()
+    {
+        // $137.45: $37 fiado y $100.45 en efectivo, que se cobraron como $100 (redondeo −$0.45).
+        var venta = Ticket(13745);
+        venta.Pagar(1, [Efectivo(10000), Fiado(3700)], Ahora);
+
+        var toda = Devolver(venta, 1, []);
+
+        Assert.Equal((-45L, 3700L, 10000L, -45L), (venta.RedondeoCentavos, toda.AlCreditoCentavos, toda.ReembolsoEfectivoCentavos, toda.RedondeoCentavos));
+        // En el corte, el redondeo de la venta y el de la devolución se anulan.
+        Assert.Equal(0, venta.RedondeoCentavos - toda.RedondeoCentavos);
+    }
+
+    [Fact]
+    public void Cancelar_una_venta_fiada_quita_todo_lo_fiado_y_regresa_solo_el_efectivo()
+    {
+        var venta = Ticket(13745);
+        venta.Pagar(1, [Efectivo(10000), Fiado(3700)], Ahora);
+
+        var cancelacion = CalculoDevolucion.ArmarCancelacion(venta, _turno.Id, Ids.Nuevo(), "Se equivocó", Ahora);
+
+        Assert.Equal((3700L, 10000L, -45L), (cancelacion.AlCreditoCentavos, cancelacion.ReembolsoEfectivoCentavos, cancelacion.RedondeoCentavos));
+    }
+
+    [Fact]
+    public void Una_venta_toda_fiada_devuelta_en_partes_deja_la_cuenta_en_cero()
+    {
+        // 3 cuadernos de $12.55 con 10 % del cliente: $33.88, todo fiado. Cada pieza devuelta vale $11.29 (suman $33.87).
+        var venta = new Venta { TurnoId = _turno.Id, Serie = "A", ClienteId = Cliente };
+        venta.AgregarArticuloComun("Cuaderno", 1255, Cantidad.Piezas(3));
+        venta.DescontarTicket(1000, null, "Cliente: Escuela");
+        venta.Pagar(1, [Fiado(venta.TotalCentavos)], Ahora);
+
+        var partes = new List<Devolucion>();
+        for (var i = 0; i < 3; i++)
+            partes.Add(Devolver(venta, 1, partes));
+
+        Assert.Equal(3388, venta.CreditoCentavos);
+        Assert.Equal(venta.CreditoCentavos, partes.Sum(d => d.AlCreditoCentavos));
+        Assert.All(partes, d => Assert.Equal((0L, 0L), (d.ReembolsoEfectivoCentavos, d.RedondeoCentavos)));
+    }
+
+    [Fact]
+    public void Las_impresiones_fiadas_se_devuelven_a_la_cuenta_y_la_mercancia_en_pesos()
+    {
+        // Mercancía $50 + $40 e impresiones $10.25; se fían las impresiones y se pagan $90 en efectivo.
+        var venta = new Venta { TurnoId = _turno.Id, Serie = "A", ClienteId = Cliente };
+        var cuaderno = venta.AgregarArticuloComun("Cuaderno", 5000, Cantidad.Piezas(1));
+        var mochila = venta.AgregarArticuloComun("Lapicera", 4000, Cantidad.Piezas(1));
+        venta.FijarImpresiones(1025, 300);
+        var impresiones = venta.Lineas.Single(l => l.EsImpresiones);
+        venta.Pagar(1, [Efectivo(9000), Fiado(1025)], Ahora);
+        Devolucion Una(VentaLinea linea, List<Devolucion> antes)
+        {
+            var d = CalculoDevolucion.Armar(venta, [new LineaPorDevolver(linea.Id, linea.Cantidad)], Ids.Nuevo(), _turno.Id, Ids.Nuevo(), "x", Ahora, antes);
+            CalculoDevolucion.Aplicar(venta, d);
+            antes.Add(d);
+            return d;
+        }
+
+        var hechas = new List<Devolucion>();
+        var primero = Una(cuaderno, hechas);
+        var luego = Una(impresiones, hechas);
+        var ultimo = Una(mochila, hechas);
+
+        Assert.Equal((0L, 5000L), (primero.AlCreditoCentavos, primero.ReembolsoEfectivoCentavos));
+        Assert.Equal((1025L, 0L), (luego.AlCreditoCentavos, luego.ReembolsoEfectivoCentavos));
+        Assert.Equal((0L, 4000L), (ultimo.AlCreditoCentavos, ultimo.ReembolsoEfectivoCentavos));
+    }
+
+    [Fact]
+    public void Una_venta_sin_credito_se_devuelve_igual_que_antes()
+    {
+        var venta = Ticket(13745);
+        venta.Pagar(1, [Efectivo(13700)], Ahora);
+
+        var toda = Devolver(venta, 1, []);
+
+        Assert.Equal((0L, 13700L, -45L), (toda.AlCreditoCentavos, toda.ReembolsoEfectivoCentavos, toda.RedondeoCentavos));
+    }
+
+    // ── El corte ─────────────────────────────────────────────────────────────
+
+    private Abono Abono(FormaPago forma, long monto, long redondeo = 0, bool cancelado = false) => new()
+    {
+        TurnoId = _turno.Id, ClienteId = Cliente, Forma = forma, MontoCentavos = monto, RedondeoCentavos = redondeo,
+        CanceladoUtc = cancelado ? Ahora : null,
+    };
+
+    [Fact]
+    public void En_el_corte_los_abonos_en_efectivo_entran_al_esperado_y_lo_fiado_va_aparte()
+    {
+        var fiada = Ticket(13745);
+        fiada.Pagar(1, [Efectivo(10000), Fiado(3745)], Ahora);
+        var cancelada = Ticket(5000);
+        cancelada.Pagar(2, [Fiado(5000)], Ahora);
+        CalculoDevolucion.Aplicar(cancelada, CalculoDevolucion.ArmarCancelacion(cancelada, _turno.Id, Ids.Nuevo(), "x", Ahora));
+        Abono[] abonos =
+        [
+            Abono(FormaPago.Efectivo, 23745, redondeo: -45),
+            Abono(FormaPago.Tarjeta, 5000),
+            Abono(FormaPago.Transferencia, 2000),
+            Abono(FormaPago.Efectivo, 9900, cancelado: true),
+        ];
+
+        var corte = CalculoCorte.Calcular(_turno, [fiada, cancelada], [], TipoCorte.X, Ids.Nuevo(), Ahora, abonos: abonos);
+
+        Assert.Equal((3745L, 3, 23700L, 5000L, 2000L), (corte.CreditoCentavos, corte.Abonos, corte.AbonosEfectivoCentavos, corte.AbonosTarjetaCentavos,
+            corte.AbonosTransferenciaCentavos));
+        Assert.Equal(50000 + 10000 + 23700, corte.EsperadoCentavos);
+        Assert.Equal(-45, corte.RedondeoCentavos);
+    }
+
+    // ── Reglas ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void El_limite_lo_da_el_dueno_y_pasarlo_lo_autoriza_el_encargado()
+    {
+        var sucursal = Ids.Nuevo();
+        DecisionPermiso Para(Rol rol, AccionControlada accion) => Permisos.Evaluar(Permisos.Iniciales, rol, sucursal, accion, 1000);
+
+        Assert.Equal((NivelPermiso.NoPermitido, NivelPermiso.NoPermitido, NivelPermiso.Permitido),
+            (Para(Rol.Cajero, AccionControlada.DarCredito).Nivel, Para(Rol.Encargado, AccionControlada.DarCredito).Nivel, Para(Rol.Dueno, AccionControlada.DarCredito).Nivel));
+        Assert.Equal((NivelPermiso.RequiereAutorizacion, NivelPermiso.Permitido),
+            (Para(Rol.Cajero, AccionControlada.ExcederLimiteCredito).Nivel, Para(Rol.Encargado, AccionControlada.ExcederLimiteCredito).Nivel));
+        Assert.Equal(NivelPermiso.NoPermitido, Para(Rol.Encargado, AccionControlada.AjustarCredito).Nivel);
+        Assert.True(Para(Rol.Encargado, AccionControlada.CancelarAbono).PideMotivo);
+        Assert.False(Permisos.SoloDelDueno(AccionControlada.DarCredito));
+    }
+}

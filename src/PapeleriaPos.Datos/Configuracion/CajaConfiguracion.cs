@@ -88,6 +88,7 @@ internal sealed class VentaConfiguracion : IEntityTypeConfiguration<Venta>
         b.HasOne<ClienteRegistrado>().WithMany().HasForeignKey(v => v.ClienteId);
         b.HasIndex(v => new { v.ClienteId, v.PagadaUtc });
         b.Ignore(v => v.MayoreoDeCliente);
+        b.Ignore(v => v.CreditoCentavos);
         b.Ignore(v => v.EsEditable);
         b.Ignore(v => v.CambioCentavos);
         b.Ignore(v => v.LlevaEfectivo);
@@ -320,6 +321,68 @@ internal sealed class ClienteRegistradoConfiguracion : IEntityTypeConfiguration<
         b.Property(c => c.Nombre).HasMaxLength(80);
         b.Property(c => c.Telefono).HasMaxLength(20);
         b.Property(c => c.Nota).HasMaxLength(200);
+        b.Property(c => c.PlazoCreditoDias).HasDefaultValue(ClienteRegistrado.PlazoPorOmision).ValueGeneratedNever();
+        b.Ignore(c => c.TieneCredito);
+    }
+}
+
+/// <summary>La cuenta de los clientes (fase 3, entrega 2): el libro de solo agregar, los abonos y lo que quedó por revisar.</summary>
+internal sealed class MovimientoCreditoConfiguracion : IEntityTypeConfiguration<MovimientoCredito>
+{
+    public void Configure(EntityTypeBuilder<MovimientoCredito> b)
+    {
+        b.ToTable("MovimientosCredito");
+        // El Id lo pone lo que lo originó (la venta, el abono, la devolución): repetido no entra.
+        b.Property(m => m.Id).ValueGeneratedNever();
+        b.HasOne<ClienteRegistrado>().WithMany().HasForeignKey(m => m.ClienteId);
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(m => m.SucursalId);
+        b.HasOne<Caja>().WithMany().HasForeignKey(m => m.CajaId);
+        b.HasOne<Turno>().WithMany().HasForeignKey(m => m.TurnoId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(m => m.UsuarioId);
+        b.HasOne<Venta>().WithMany().HasForeignKey(m => m.VentaId);
+        b.HasOne<Devolucion>().WithMany().HasForeignKey(m => m.DevolucionId);
+        b.HasOne<Abono>().WithMany().HasForeignKey(m => m.AbonoId);
+        b.Property(m => m.Motivo).HasMaxLength(200);
+        b.HasIndex(m => new { m.ClienteId, m.FechaUtc });
+        b.HasIndex(m => m.VentaId);
+        b.HasIndex(m => m.DevolucionId);
+        // Un abono se rechaza o se cancela una sola vez.
+        b.HasIndex(m => new { m.AbonoId, m.Tipo }).IsUnique().HasFilter("\"AbonoId\" IS NOT NULL");
+    }
+}
+
+internal sealed class AbonoConfiguracion : IEntityTypeConfiguration<Abono>
+{
+    public void Configure(EntityTypeBuilder<Abono> b)
+    {
+        b.ToTable("Abonos");
+        b.Property(a => a.Id).ValueGeneratedNever();
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(a => a.SucursalId);
+        b.HasOne<Caja>().WithMany().HasForeignKey(a => a.CajaId);
+        b.HasOne<Turno>().WithMany().HasForeignKey(a => a.TurnoId);
+        b.HasOne<ClienteRegistrado>().WithMany().HasForeignKey(a => a.ClienteId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(a => a.UsuarioId);
+        b.Property(a => a.Referencia).HasMaxLength(60);
+        b.Property(a => a.MotivoCancelacion).HasMaxLength(200);
+        b.HasIndex(a => a.TurnoId);
+        b.HasIndex(a => new { a.ClienteId, a.FechaUtc });
+        b.HasIndex(a => new { a.Forma, a.Verificacion });
+        b.Ignore(a => a.CobradoCentavos);
+        b.Ignore(a => a.Folio);
+    }
+}
+
+internal sealed class RevisionCreditoConfiguracion : IEntityTypeConfiguration<RevisionCredito>
+{
+    public void Configure(EntityTypeBuilder<RevisionCredito> b)
+    {
+        b.ToTable("RevisionesCredito");
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(r => r.SucursalId);
+        b.HasOne<ClienteRegistrado>().WithMany().HasForeignKey(r => r.ClienteId);
+        b.Property(r => r.Detalle).HasMaxLength(300);
+        b.Property(r => r.Nota).HasMaxLength(200);
+        b.HasIndex(r => new { r.SucursalId, r.RevisadaUtc });
+        b.HasIndex(r => r.ClienteId);
     }
 }
 

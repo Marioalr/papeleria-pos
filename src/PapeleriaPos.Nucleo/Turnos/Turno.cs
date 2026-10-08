@@ -108,6 +108,9 @@ public enum MotivoApertura
 {
     Venta,
     SinVenta,
+
+    /// <summary>Un abono a la cuenta de un cliente en efectivo (o su cancelación).</summary>
+    Abono,
 }
 
 /// <summary>Cada vez que se abre el cajón: con una venta o sin ella.</summary>

@@ -125,6 +125,7 @@ public static class AlertasTelegram
         TipoAlerta.DiferenciaConteo => "Diferencia en el conteo del día",
         TipoAlerta.ConteoCompleto => "Conteo completo de un departamento",
         TipoAlerta.PrivilegiosCliente => "Privilegios de un cliente",
+        TipoAlerta.Credito => "Crédito de un cliente",
         _ => "Resumen del día",
     };
 
