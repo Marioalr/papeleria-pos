@@ -1,5 +1,9 @@
 # Prueba de varias sucursales con un servidor Linux
 
+> **Pospuesto (2026-10-08).** El dueño pausó la multisucursal para completar primero el POS de la matriz con caja
+> principal y secundaria, como hoy con eleventa. Esta propuesta no se retira: queda como nota para retomarla y no se
+> programa por ahora. Lo que sí aplica con una sola sucursal está en [notas](notas.md#aplica-ya-con-una-sola-sucursal).
+
 > Propuesta, en lluvia de ideas: puede cambiar. El [central](servidor-remoto.md) correrá en Linux, en un servidor
 > virtual de 2 GB. Antes de contratarlo se ensaya en una máquina que ya hay, con dos sucursales, para ver cómo
 > responde con poco hardware; y el puente de cada tienda se prueba con el grabador real ([cámaras](camaras.md)).
@@ -60,10 +64,10 @@ eso, antes de contratar, el mismo script corre unas horas en un servidor virtual
 
 | # | Etapa | Cuándo | Qué necesita |
 |---|---|---|---|
-| 0 | **Conocer las máquinas** | Ya: 10 minutos, sin borrar nada | Una USB de Ubuntu, o Windows |
-| 1 | **Arreglos para Linux** | Ya, en paralelo a la fase 3 | Cambios chicos en el código ([abajo](#lo-que-hay-que-arreglar-o-construir)) |
+| 0 | **Conocer las máquinas** | Al retomar (o antes, para saber si una sirve de caja de repuesto) | Una USB de Ubuntu, o Windows |
+| 1 | **Arreglos para Linux** | Al retomar. Lo que pasó al piloto: el logo en Linux, las pruebas en cada PR y el simulador de cajas ([plan](plan.md#para-el-piloto-con-dos-cajas)) | Cambios chicos en el código ([abajo](#lo-que-hay-que-arreglar-o-construir)) |
 | 2 | **Dos sucursales con central** | Entregas 6.1 a 6.4, después del piloto en la matriz. Al cerrar 6.1: unas horas en un servidor virtual de verdad y se contrata el central | El modo central y la sincronización |
-| 3 | **El puente con el grabador real** | Fase 5 (lo básico) y entrega 6.5 | Una Raspberry Pi 5 y el grabador de la matriz |
+| 3 | **El puente con el grabador real** | Al retomar (entrega 6.5) | Una Raspberry Pi 5 y el grabador de la matriz |
 | 4 | **Ensayo largo** | Entrega 6.6 | Las etapas 2 y 3 aprobadas |
 
 Las cajas simuladas corren en la PC de desarrollo, no en el central de ensayo, para no quitarle procesador.

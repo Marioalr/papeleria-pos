@@ -1,6 +1,11 @@
 # Cámaras, puente y contador de personas
 
-> **Propuesta (2026-10-08), en revisión.** El dueño quiere, ante un suceso, revisarlo de inmediato contra el sistema y
+> **Pospuesto (2026-10-08)** con la multisucursal: cruzar las cámaras con el sistema por medio del central y un puente
+> no se programa por ahora. Lo que sí sirve ya: [configurar los grabadores](#configurar-el-grabador) por seguridad, y
+> con una sola sucursal, la [idea](ideas.md#cámaras-con-una-sola-sucursal) del texto POS y la foto del momento desde la
+> caja principal. Más en [notas](notas.md).
+
+> **Propuesta (2026-10-08).** El dueño quiere, ante un suceso, revisarlo de inmediato contra el sistema y
 > las cámaras, también estando fuera ([central](servidor-remoto.md)). Datos de las hojas técnicas de Dahua y de sus
 > avisos de seguridad, consultados el 2026-10-08. Lo marcado «(falta probar)» no tiene fuente oficial o depende del
 > firmware: se prueba en la tienda antes de programarlo a fondo.
@@ -10,8 +15,9 @@
 - **Sucursal 2:** kit Dahua XVR5104HS-4KL-I3 (grabador de 4 canales, línea WizSense) con 4 cámaras HAC-HFW1500CM-A
   (5 MP, con micrófono, sin inteligencia propia).
 - **Matriz:** un kit parecido, modelo por confirmar. Si no es de la serie XVR5 con «-I3» (por ejemplo, un XVR1B04 o uno
-  sin «-I»), no tiene texto POS ni líneas de cruce: cambiarlo por un XVR5104HS-4KL-I3 cuesta unos 1,739 MXN con IVA y
-  se reusa el disco. El mismo modelo con hardware anterior a V3 trae las líneas de cruce en un solo canal.
+  sin «-I»), no tiene texto POS ni líneas de cruce: cambiarlo por un XVR5104HS-4KL-I3 cuesta unos 1,739 MXN con IVA (o
+  1,389 un XVR5104HS-I3/T; el XVR1B04-I/T, de 759, no sirve) y se reusa el disco. El modelo también se ve en el menú
+  INFO → VERSION del grabador. El mismo modelo con hardware anterior a V3 trae las líneas de cruce en un solo canal.
 - Hoy se ven con la app DMSS en el celular.
 - **Lo que hace el grabador** (hoja técnica, hardware V3):
   - Detecta personas (SMD Plus) en los 4 canales.
@@ -100,7 +106,7 @@ Un equipo pequeño siempre prendido en cada tienda, porque la caja principal se 
   hacia el grabador, recibe el contador, reporta al central y a Healthchecks.io cada minuto, manda lo urgente por
   Pushover si el central no contesta y, si el BIOS lo permite, enciende la caja principal a distancia.
 - **Nunca corre la venta:** si falla, se sigue vendiendo.
-- Guarda la clave del grabador, con un usuario de solo ver y reproducir; la caja no la guarda.
+- Guarda la clave del grabador, con un usuario de solo ver y reproducir; con puente, la caja no la guarda.
 - Con watchdog, parches automáticos y una microSD de repuesto con la imagen.
 - En una emergencia, la laptop o la PC de la [prueba](prueba-sucursales-linux.md#las-máquinas) puede hacer de puente
   unos días, arrancando Linux desde una USB. No reemplaza a la Pi: casi ninguna enciende sola si se le agotó la
@@ -112,17 +118,19 @@ En una visita a cada sucursal, ya y sin costo:
 
 - [ ] Anotar modelo, versión de hardware y firmware (etiqueta, o DMSS → el grabador → Device Details) y respaldar la
   configuración.
-- [ ] Actualizar el firmware con el último para ese modelo exacto (si la etiqueta dice «/T», el de esa variante), sin
-  cortar la luz mientras se actualiza.
+- [ ] Actualizar el firmware con el último para ese modelo exacto (si la etiqueta dice «/T», el de esa variante), por
+  Maintenance Center o por USB en FAT32, sin cortar la luz mientras se actualiza. Anotar la fecha del firmware: hay
+  fallas conocidas en firmwares de 2017 a 2021 y en los modelos «-I2» y «-X».
 - [ ] Cuentas: borrar las desconocidas (sobre todo «p2pwn», la que dejó el ataque de 2026), poner una clave de
   administrador nueva, dejar el bloqueo por intentos, crear un usuario de solo ver y reproducir para el POS y otro
   para el DMSS del dueño.
-- [ ] Red: dirección fija, una red distinta en cada sucursal (por ejemplo 192.168.10.x y 192.168.20.x), UPnP apagado
-  en el grabador y en el módem, ningún puerto abierto y SSH apagado.
+- [ ] Red: dirección fija dentro de la red actual de la tienda, UPnP apagado en el grabador y en el módem, ningún puerto
+  abierto y SSH apagado. (Al retomar la multisucursal: una red distinta en cada sucursal, por ejemplo 192.168.10.x y
+  192.168.20.x.)
 - [ ] Hora: NTP, horario de verano apagado y la zona de cada sucursal.
 - [ ] Inteligencia en modo «IVS y SMD», nunca en «rostro»; «Encode Enhancement» apagado; detección de personas en
   todas las cámaras.
-- [ ] Las dos líneas de cruce en la cámara de la puerta.
+- [ ] Opcional (para el contador, pospuesto): las dos líneas de cruce en la cámara de la puerta.
 - [ ] Función POS: una entrada por caja, con la cámara de esa caja.
 - [ ] Grabación continua; anotar cuántos días guarda el disco.
 - [ ] No agregar cámaras IP al grabador.

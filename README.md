@@ -110,9 +110,10 @@ Los datos reales del negocio (como la base de eleventa) nunca se guardan en el r
 | [Fase 1: impresión](docs/fase-1-impresion.md) | Entrega 5: lo de Control Print dentro del POS, y los descuentos |
 | [Fase 2: inventario](docs/fase-2-inventario.md) | Catálogo, compras con recepción ciega y el documento del proveedor, ajustes y conteos, etiquetas y sugerido de compra |
 | [Arquitectura](docs/arquitectura.md) | Componentes, datos, contingencia, varias sucursales, red, respaldos y hardware |
-| [Central y administración ante un suceso](docs/servidor-remoto.md) | El central para varias sucursales: sincronización, precios por sucursal, mercancía, avisos que escalan, acciones a distancia, opciones y costos |
-| [Cámaras, puente y contador](docs/camaras.md) | El grabador Dahua de cada sucursal con el POS: foto y clip de cada suceso, vigilancia de noche, conteo de personas y seguridad |
-| [Prueba de varias sucursales en Linux](docs/prueba-sucursales-linux.md) | Las máquinas, las etapas, las fallas a provocar y las metas |
+| [Central y administración ante un suceso](docs/servidor-remoto.md) | Pospuesto: el central para varias sucursales (sincronización, precios por sucursal, mercancía, avisos que escalan, acciones a distancia, opciones y costos) |
+| [Cámaras, puente y contador](docs/camaras.md) | El grabador Dahua con el POS (pospuesto) y cómo configurarlo por seguridad (ya) |
+| [Prueba de varias sucursales en Linux](docs/prueba-sucursales-linux.md) | Pospuesto: las máquinas, las etapas, las fallas a provocar y las metas |
+| [Notas de investigación](docs/notas.md) | Lo descubierto el 2026-10-08: lo que aplica ya con una sucursal y lo que sirve al retomar la multisucursal |
 | [Caja y control](docs/caja-y-control.md) | Venta, cobro, cortes, autorizaciones configurables, bitácora y alertas |
 | [Catálogo e inventario](docs/inventario.md) | Variantes, presentaciones, códigos, kardex, compras, conteos y precios |
 | [Servicios y costeo](docs/servicios.md) | Recetas, servicios con parámetros, utilidad directa y neta |
@@ -120,4 +121,4 @@ Los datos reales del negocio (como la base de eleventa) nunca se guardan en el r
 | [WhatsApp](docs/whatsapp.md) | Cómo llegan los archivos de WhatsApp a los pedidos |
 | [Módulo de impresión](docs/impresion.md) | Costo real de cada impresión (reescritura de Control Print) |
 | [Migración desde eleventa](docs/migracion-eleventa.md) | Importación, diagnóstico y arranque |
-| [Ideas a evaluar](docs/ideas.md) | Dispositivos propios (contador de clientes, presencia, vigilancia) y otras ideas |
+| [Ideas a evaluar](docs/ideas.md) | La multisucursal pospuesta, cámaras con una sola sucursal, dispositivos propios y otras ideas |

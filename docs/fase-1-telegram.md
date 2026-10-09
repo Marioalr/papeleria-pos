@@ -43,9 +43,9 @@ Falta probarlo con el bot de verdad.
 
 - **Solo conexiones de salida.** El servicio le pregunta a Telegram cada pocos segundos si hay respuestas (no
   necesita IP pública ni abrir puertos). Telegram solo deja un receptor por bot, así que el bot vive en la caja
-  principal. Con el [central](servidor-remoto.md) (propuesta: antes de que la sucursal 2 pase al POS), un solo bot
-  en el central que reparte a cada sucursal, con el nombre de la sucursal, la foto del suceso y, para lo urgente, una
-  alerta que suena en silencio y una llamada si el dueño no lo ve.
+  principal. Con el [central](servidor-remoto.md) (pospuesto con la multisucursal), un solo bot en el central que
+  reparte a cada sucursal, con el nombre de la sucursal, la foto del suceso y, para lo urgente, una alerta que suena
+  aunque el celular esté en silencio y una llamada si el dueño no lo ve.
 - **Cola de salida.** Cada mensaje se guarda antes de mandarse; si no hay internet, sale cuando vuelva, sin repetirse.
 - **Solo chats vinculados.** El bot ignora a cualquiera que no se haya vinculado, aunque encuentre el bot.
 

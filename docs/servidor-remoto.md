@@ -1,6 +1,10 @@
 # Central y administración ante un suceso
 
-> **Propuesta revisada el 2026-10-08** con las respuestas del dueño, en revisión. Él rechazó empezar sin central:
+> **Pospuesto (2026-10-08).** El dueño pausó la multisucursal para completar primero el POS de la matriz con caja
+> principal y secundaria, como hoy con eleventa. Esta propuesta no se retira: queda como nota para retomarla y no se
+> programa por ahora. Lo que sí aplica con una sola sucursal está en [notas](notas.md#aplica-ya-con-una-sola-sucursal).
+
+> **Propuesta revisada el 2026-10-08** con las respuestas del dueño. Él rechazó empezar sin central:
 > necesita administrar ante un suceso a cualquier hora, con las cámaras y el contador, y precios por sucursal. Pide
 > la mejor calidad-precio (cumplir todo al menor precio), aunque cueste más programarlo. Precios consultados ese día;
 > tipo de cambio: 17.98 MXN por dólar (FIX de Banxico del 7 de octubre de 2026). El equipo lleva IVA; los servicios
@@ -102,9 +106,9 @@ Fuera: Healthchecks.io (vigila al central y a las tiendas), Backblaze B2 (respal
 
 | Cuándo | Qué |
 |---|---|
-| **Ya** (fase 3; solo el dominio cuesta) | [Configurar los grabadores](camaras.md#configurar-el-grabador). Abrir a nombre del negocio, con verificación en dos pasos, Backblaze, Healthchecks.io, NetBird, Cloudflare y Vultr. Registrar el dominio (`.com` antes del 31 de octubre si acepta pagar en dólares; si no, `.com.mx` sin prisa). Etapa 0 de la [prueba](prueba-sucursales-linux.md) |
-| **Arreglos previos** (fase 3, chico) | Cerrar un hueco de seguridad: hoy el servicio deja pasar sin llave lo que llega de la misma PC. Identidad fija de cada sucursal. Quitar lo que da por hecho una sola sucursal. Registrar lo que se quita del catálogo (hoy las presentaciones, los códigos y las ligas con proveedores se borran sin rastro; solo los precios quedan en su historial). Autor, sucursal de origen y versión en el historial de precios. Prefijo de sucursal en los códigos internos. Días de descanso. Los arreglos para Linux |
-| **Fase 5** (piloto en la matriz) | Respaldo cifrado en B2, aviso de apertura en Healthchecks.io, red privada para soporte. El puente de la matriz con lo básico: ver la matriz en vivo sin abrir puertos ni usar el P2P |
+| **Al retomar** | Abrir Cloudflare y Vultr y registrar el dominio (revisar precios y fechas ese día). Lo que aplica ya (configurar los grabadores, Backblaze, Healthchecks.io y el soporte a distancia) está en el [plan](plan.md#para-el-piloto-con-dos-cajas) |
+| **Arreglos previos** (chico) | Cerrar un hueco de seguridad: hoy el servicio deja pasar sin llave lo que llega de la misma PC. Identidad fija de cada sucursal. Quitar lo que da por hecho una sola sucursal. Registrar lo que se quita del catálogo (hoy las presentaciones, los códigos y las ligas con proveedores se borran sin rastro; solo los precios quedan en su historial). Autor, sucursal de origen y versión en el historial de precios. Prefijo de sucursal en los códigos internos. Días de descanso. Los arreglos para Linux |
+| **Fase 5** (piloto en la matriz) | Lo que lleva está en el [plan](plan.md#para-el-piloto-con-dos-cajas), sin puente. Al retomar: el puente de la matriz con lo básico, para ver en vivo sin abrir puertos ni usar el P2P |
 | **6.1** Central, solo de subida (grande) | **Lo que gana el dueño:** ve en el panel, casi en vivo, las ventas, los cortes y las existencias de las dos sucursales, y un cuadre diario avisa si algo no llegó. **Por dentro:** llave por sucursal, bandeja de subida, réplica sin duplicados, cuarentena de lo que no cuadra, versión del protocolo y respaldo continuo. Al cerrarla: unas horas en un servidor por hora, se contrata el central y entra a trabajar solo con la matriz |
 | **6.2** Bajada y precios (grande) | Catálogo maestro, precios por sucursal en F3, propuestas sin internet, el arreglo del ajuste de margen en compras (hoy mueve el precio base) y el alta de la sucursal 2 desde el central con los mismos Id |
 | **6.3** Sucesos, avisos y acciones (mediano) | Un solo bot en el central, presencia de cada sucursal, estados del suceso, Pushover (también directo desde el puente si el central no contesta), llamada con suplente, acciones a distancia con vencimiento y confirmación, bloqueo que aplica en contingencia, PIN o huella, diagnóstico dentro del aviso |
@@ -114,8 +118,8 @@ Fuera: Healthchecks.io (vigila al central y a las tiendas), Backblaze B2 (respal
 | **Fase 7** (sucursal 2) | Llega con su puente, su no-break, sus avisos y su horario; precios iguales el día 1. **Mínimo para pasarla al POS:** de 6.1 a 6.5 y la etapa 2 de la [prueba](prueba-sucursales-linux.md) (dos sucursales con central). Si abre antes, abre con eleventa: su puente solo sirve para ver en vivo sin P2P; no hay avisos de sucesos ni cruce con el sistema |
 | **Fase 9** (piloto automático) | Modo ausente con sus reglas, que funcionan sin internet; límites de aprobación; comparación contra lo normal de cada hora; cada decisión queda en la bitácora como «piloto». La inteligencia artificial, si se usa, solo resume: nunca aprueba ni bloquea |
 
-La **API de WhatsApp** ya no espera a toda la fase 6: va cuando el dueño la quiera, después de 6.2 (cuando ya hay
-bajada), con el webhook en el central ([WhatsApp](whatsapp.md)).
+La **API de WhatsApp** no depende del central: va cuando el dueño la quiera, con un receptor aparte
+([WhatsApp](whatsapp.md)); con el central, el webhook se muda ahí.
 
 ## Si algo falla
 

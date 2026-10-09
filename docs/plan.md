@@ -2,19 +2,25 @@
 
 > **Lluvia de ideas.** Las decisiones de abajo son el punto de partida y pueden cambiar mientras se cierra el plan.
 
+> **Foco actual (2026-10-08):** completar el POS para tener en la matriz lo que hoy se tiene con eleventa, con una caja
+> principal y una secundaria, más las funciones ya planeadas: servicios y pedidos, WhatsApp y el módulo de impresión
+> que reemplaza a Control Print ([qué falta](#para-el-piloto-con-dos-cajas)). **La multisucursal queda pospuesta, no
+> retirada:** su propuesta y lo investigado están en [notas](notas.md) e [ideas](ideas.md#varias-sucursales-pospuesto).
+
 ## Contexto
 
 - Papelería con servicios: impresiones, copias, engargolado, enmicado, recargas, pago de servicios y trámites
   (CURP, actas…).
-- Hoy: **1 sucursal con 2 cajas** (se planea una 3.ª). **2.ª sucursal en camino** y una 3.ª en unos dos años:
-  **solo serán 2 sucursales durante al menos un año.**
+- Hoy: **1 sucursal con 2 cajas**, la principal y una secundaria (se planea una 3.ª). **2.ª sucursal en camino** y una
+  3.ª en unos dos años; en el POS, la multisucursal está [pospuesta](#varias-sucursales-pospuesto).
 - Unos **60 tickets al día**, con picos de ~120. La temporada de regreso a clases pesa mucho.
 - Inventario de ~500 mil MXN a costo, que creció 10 veces en 4 años; margen bruto anual de ~65 %.
 - Se usa **eleventa multicaja** (sin el módulo de clientes).
 - Un número de WhatsApp Business por sucursal, en un celular (también para llamadas); el grueso del trabajo se hace
   desde la PC.
 - Las cajas principales se apagan de noche; las sucursales probablemente tendrán horarios distintos.
-- **Cámaras Dahua con grabador en las dos sucursales,** que hoy se ven con la app DMSS ([cámaras](camaras.md)).
+- **Cámaras Dahua con grabador** en la matriz y en la sucursal 2, que hoy se ven con la app DMSS
+  ([cámaras](camaras.md)).
 - Posibles dispositivos propios: contador de clientes, presencia en la zona del efectivo, vigilancia nocturna
   ([ideas](ideas.md)).
 - **Objetivo:** que el dueño no tenga que estar presente en cada sucursal y tenga control preciso de todas.
@@ -27,7 +33,7 @@
 | Lenguaje | C# / .NET 10 en todo: Windows (impresoras, spooler), Android y web con un solo lenguaje |
 | Interfaz | Una sola, en componentes Blazor: la caja (ventana de Windows), la app Android (MAUI) y el panel del dueño. Todo operable con teclado; diseño para 1366×768 |
 | Servidor de sucursal | Vive en la **caja principal**, como en eleventa, como servicio de Windows (corre sin sesión iniciada y se reinicia solo) |
-| Central | **En revisión.** Propuesta: **servidor virtual** siempre prendido (Vultr Ciudad de México, 1 o 2 GB según la prueba, 107.87 o 215.74 MXN al mes) antes de que la sucursal 2 pase al POS, para administrar ante un suceso, precios por sucursal y cualquier flujo de mercancía ([propuesta](servidor-remoto.md)). Antes se ensaya en una máquina propia con Linux ([prueba](#prueba-de-varias-sucursales-con-un-servidor-linux)) |
+| Central | **Pospuesto** (2026-10-08) con la multisucursal. La propuesta: un servidor virtual siempre prendido (Vultr Ciudad de México) para administrar ante un suceso, precios por sucursal y cualquier flujo de mercancía, ensayado antes en una máquina propia con Linux ([propuesta](servidor-remoto.md), [prueba](prueba-sucursales-linux.md)) |
 | Base de datos | SQLite en todas partes; en cada lugar el servicio es el único que escribe |
 | Núcleo | Sin dependencias de Windows: lo comparten la caja, los servidores y la app Android |
 | Inventario | Kardex: solo se agregan movimientos y la existencia es la suma |
@@ -36,13 +42,13 @@
 | Roles | Dueño, encargado y cajero; lo que puede hacer cada uno es **configurable** |
 | Clientes | El celular solo identifica un **pedido** al recogerlo. **Clientes registrados**: pocos, los de confianza |
 | Impresión | Lo que hace Control Print se reescribe como módulo del POS ([detalle](impresion.md)) |
-| WhatsApp | API oficial en modo coexistencia; nunca librerías no oficiales. Antes de eso, captura manual desde la PC |
-| Alertas y autorización remota | Bot de Telegram, desde el piloto. Propuesta con el central: un solo bot en el central, con foto del suceso y botones; si el dueño no lo ve, alerta que suena en silencio (Pushover) y llamada (Twilio); acciones a distancia con PIN o huella ([propuesta](servidor-remoto.md)) |
-| Panel del dueño | Servido por el central, en internet con llave de acceso (passkey) y dominio propio; las cámaras en vivo, por una red privada (NetBird) ([propuesta](servidor-remoto.md)) |
-| Cámaras | Las de cada sucursal se cruzan con el sistema: texto de cada suceso sobre el video, foto y clip del momento, y vigilancia de noche, con un puente siempre prendido por tienda (Raspberry Pi) ([cámaras](camaras.md)) |
+| WhatsApp | API oficial en modo coexistencia; nunca librerías no oficiales. Antes de eso, captura manual desde la PC. Sin central, la API recibe los mensajes en un receptor aparte, nunca con un túnel en la caja principal ([WhatsApp](whatsapp.md)) |
+| Alertas y autorización remota | Bot de Telegram en la caja principal, desde el piloto. Con el central (pospuesto): un solo bot con foto del suceso y botones, alerta que suena aunque el celular esté en silencio, llamada y acciones a distancia con PIN o huella ([propuesta](servidor-remoto.md)) |
+| Panel del dueño | Pospuesto con el central ([propuesta](servidor-remoto.md)). Mientras, Telegram: el resumen diario y `/resumen` |
+| Cámaras | Cruzarlas con el sistema queda pospuesto ([cámaras](camaras.md); con una sola sucursal, [idea](ideas.md#cámaras-con-una-sola-sucursal)). Ya, sin costo: configurar los grabadores por seguridad ([lista](camaras.md#configurar-el-grabador)) |
 | App Android | .NET MAUI con la misma interfaz, sin publicar en la tienda |
 | Fiscal | Fuera de alcance, pero se guardan clave SAT, unidad y desglose de impuestos para poder facturar después |
-| Nube | El central, en un servidor virtual siempre prendido ([central](servidor-remoto.md)); antes de contratarlo, unas horas en uno que se cobra por hora ([prueba](prueba-sucursales-linux.md)). Azure for Students no sirve: es solo para estudiantes y para uso educativo no comercial |
+| Nube | Por ahora: el respaldo cifrado fuera de la tienda (Backblaze B2), la vigilancia de la caja principal (Healthchecks.io) y, con la API de WhatsApp, su receptor aparte. El central, al retomar la multisucursal ([propuesta](servidor-remoto.md)). Azure for Students no sirve: es solo para estudiantes y para uso educativo no comercial |
 | Código | La fase 0 ya se programa; las demás fases, hasta cerrar su parte del plan |
 | Idioma del código | Dominio en español (`Producto`, `Existencia`, `Corte`); lo técnico en inglés |
 | Acceso a datos | EF Core con migraciones; SQL directo donde convenga (kardex, reportes) |
@@ -50,7 +56,7 @@
 | Datos reales | Nunca entran al repositorio. Viven fuera de él, en `Documents\TPV` de la máquina de desarrollo |
 | Migración | El inventario **se depura** al pasar al POS nuevo: el catálogo y las existencias de eleventa son punto de partida, no se conservan tal cual. Las existencias de arranque salen del conteo físico |
 | Diagnóstico | Se entrega en Excel, una hoja por análisis |
-| Precios | Precio al público con IVA incluido; el desglose de impuestos se guarda aparte. Precio por unidad base: el paquete cuesta las piezas que trae, salvo excepción. Por sucursal: iguales el primer día, después se ajustan |
+| Precios | Precio al público con IVA incluido; el desglose de impuestos se guarda aparte. Precio por unidad base: el paquete cuesta las piezas que trae, salvo excepción. Por sucursal: pospuesto con la multisucursal (el modelo ya lo permite) |
 | Impuestos | IVA 16 %, 0 % o exento; sin IEPS |
 | Cantidades | Se vende por metro y a granel: enteros en milésimas de la unidad base |
 | Marca | Catálogo propio de marcas: distingue productos parecidos y sirve para buscar |
@@ -70,13 +76,15 @@
 | WPF (caja) + Blazor (panel) + MAUI (Android): tres interfaces | Una sola interfaz Blazor | Control Print ya no condiciona: se escribe una vez para los tres |
 | PostgreSQL en cada sucursal | SQLite | Cero administración en un sitio sin técnico; el volumen es bajo |
 | Mini PC dedicado como servidor | Caja principal | Decisión del negocio (como eleventa); la contingencia de las cajas cubre que se apague |
-| Central en la nube con PostgreSQL, luego en la caja principal de la matriz | Servidor virtual con SQLite | Las cajas se apagan de noche, los horarios serán distintos y podría haber vigilancia nocturna |
+| Central en la nube con PostgreSQL, luego en la caja principal de la matriz | Servidor virtual con SQLite (pospuesto con la multisucursal) | Las cajas se apagan de noche, los horarios serán distintos y podría haber vigilancia nocturna |
 | Integrar Control Print por API | Reescribirlo como módulo del POS | Fue una prueba de concepto; así hay un solo inicio de sesión, base e instalador |
 | Niveles de confianza automáticos por celular | Celular solo para el pedido; clientes registrados a mano | No guardar números de más |
+| Central desde que abra la sucursal 2 | Multisucursal pospuesta; foco en una sucursal con 2 cajas | Decisión del dueño (2026-10-08): primero igualar lo que hoy hace eleventa, con las funciones planeadas |
 
 ## Fases
 
-Sin tiempos: se avanza cuando la fase anterior funciona en la tienda.
+Sin tiempos: se avanza cuando la fase anterior funciona en la tienda. **Foco:** de la 3 a la 5 y la API de WhatsApp
+(fase 6); el central (resto de la 6) y la 7 quedan pospuestos.
 
 | Fase | Contenido |
 |---|---|
@@ -85,11 +93,11 @@ Sin tiempos: se avanza cuando la fase anterior funciona en la tienda.
 | 2. Inventario | Compras, recepción ciega, presentaciones, conteos cíclicos, etiquetas, sugerido de compra |
 | 3. Precios y clientes | Mayoreo, promociones, kits, clientes registrados, crédito |
 | 4. Servicios y pedidos | Recetas y costeo, pedidos, cola compartida, charolas, recogida por celular, duplicados, apartados, listas escolares, captura manual desde WhatsApp |
-| 5. Piloto en la matriz | Depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo. Propuesta: desde el arranque, respaldo cifrado en Backblaze B2, aviso de apertura en Healthchecks.io y el puente de la matriz (el dueño ya ve sus cámaras sin abrir puertos) |
-| 6. Central y WhatsApp | Propuesta, antes de la 7 ([entregas](servidor-remoto.md#entregas)): 6.1 central y subida; 6.2 bajada y precios por sucursal; 6.3 sucesos, avisos y acciones a distancia; 6.4 mercancía (traspasos, compras en cualquier sucursal y repartidas); 6.5 cámaras y contador; 6.6 ensayo largo. La API de WhatsApp → pedidos va cuando el dueño la quiera, después de 6.2 |
-| 7. Sucursal 2 | Su puente, sus avisos y su horario; precios iguales el día 1; inversión de apertura y punto de equilibrio. Mínimo para pasarla al POS: de 6.1 a 6.5 y la etapa 2 de la [prueba](prueba-sucursales-linux.md). Si abre antes, abre con eleventa; su puente solo sirve para ver en vivo |
+| 5. Piloto en la matriz | Con la caja principal y la secundaria: depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo. Desde el arranque, respaldo cifrado fuera de la tienda (Backblaze B2) y vigilancia de la caja principal (Healthchecks.io) ([qué falta](#para-el-piloto-con-dos-cajas)) |
+| 6. WhatsApp y central | La API de WhatsApp → pedidos cuando el dueño la quiera, con un receptor aparte ([WhatsApp](whatsapp.md)). **Pospuesto:** el central, con sus entregas 6.1 a 6.6 ([propuesta](servidor-remoto.md#entregas)) |
+| 7. Sucursal 2 | **Pospuesta.** Precios por sucursal, traspasos, compras que se reparten, inversión de apertura y punto de equilibrio ([propuesta](servidor-remoto.md)). Si abre antes, abre con eleventa |
 | 8. App Android | Preventa y pedidos desde el celular |
-| 9. A la medida | Listas escolares avanzadas, dispositivos propios, [piloto automático](ideas.md#asistente-inteligente-piloto-automático) (se apoya en lo de la fase 6) y lo que se vaya describiendo |
+| 9. A la medida | Listas escolares avanzadas, dispositivos propios, [piloto automático](ideas.md#asistente-inteligente-piloto-automático) (se apoyaría en el central, pospuesto) y lo que se vaya describiendo |
 
 ### Fase 0
 
@@ -211,37 +219,46 @@ la caja con su usuario y PIN del POS, todos desde la misma cuenta común de Wind
 - **La prueba con una persona real** se instala igual: el administrador la instala para todas las cuentas de Windows
   y quien prueba la usa con una cuenta común.
 
-### Varias sucursales: el central
+### Para el piloto con dos cajas
 
-**Propuesta en revisión** ([propuesta](servidor-remoto.md), revisada el 2026-10-08 con las respuestas del dueño y
-precios vigentes). El dueño rechazó empezar sin central: necesita administrar ante un suceso a cualquier hora, con las
-cámaras y el contador, precios por sucursal y que el POS resista cualquier flujo de mercancía, con la mejor
-calidad-precio.
+Lo que falta para tener en la matriz lo que hoy hace eleventa, con la caja principal y la secundaria, más lo ya
+planeado. Revisado el 2026-10-08 contra el plan, el código y los PR abiertos.
 
-- **Cada sucursal vende sola,** con su servidor en la caja principal; ninguna venta pasa por el central.
-- **El central,** en un servidor virtual (Vultr Ciudad de México, 215.74 MXN al mes el de 2 GB, o 107.87 el de 1 GB si
-  la prueba muestra que alcanza), antes de que la sucursal 2 pase al POS: sincronización en los dos sentidos, precios
-  por sucursal, traspasos y compras en cualquier sucursal, sucesos, avisos y acciones a distancia, panel y un solo bot.
-- **Un puente en cada tienda** (Raspberry Pi) para las [cámaras](camaras.md): la foto y el clip del momento, la
-  vigilancia de noche, el reloj de la tienda y el contador. La caja escribe el texto de cada suceso sobre el video.
-- **Avisos que escalan:** Telegram con foto y botones, alerta que suena en silencio y llamada.
-- **Costo:** ≈287–309 MXN al mes ya instalado; ≈9,400–9,700 el primer año (más los no-break si hacen falta).
-
-### Prueba de varias sucursales con un servidor Linux
-
-El central correrá en Linux. Antes de contratar el servidor virtual se ensaya en una máquina que ya hay: la laptop con
-Intel Celeron o la PC con AMD A6, las dos con 8 GB. Que sean modestas sirve: si el procesador no es muy viejo (se
-confirma con su modelo), por núcleo rinden algo menos que el servidor virtual (un Celeron, unos dos tercios; un A6,
-parecido), así que si el central responde bien ahí, allá irá igual o mejor. La máquina con Linux se limita a 1 núcleo y
-2 GB, como el plan elegido; la otra se queda con Windows y hace de sucursal 2 ([detalle](prueba-sucursales-linux.md)):
-
-| Etapa | Cuándo | Qué prueba |
+| Qué | Dónde está | Estado |
 |---|---|---|
-| 0. Conocer las máquinas | Ya | Procesador, disco y Windows de cada una: si sirven para .NET y cuál queda con Windows |
-| 1. Arreglos para Linux | Ya, en paralelo a la fase 3 | Lo que hoy solo funciona en Windows y el simulador de cajas. Si el dueño quiere, medir ya cómo responde la máquina con Linux (con una sola sucursal) |
-| 2. Dos sucursales con central | Entregas 6.1 a 6.4, después del piloto | El central en Linux con la matriz y la sucursal 2: subida y bajada, precios por sucursal, mercancía, acciones y avisos. Al cerrar 6.1, unas horas en un servidor virtual de verdad y se contrata el central |
-| 3. El puente con el grabador real | Fase 5 y entrega 6.5 | La Raspberry Pi contra el grabador de la matriz: foto, eventos de personas, reloj y red privada |
-| 4. Ensayo largo | Entrega 6.6 | Dos a cuatro semanas con fallas provocadas y simulacro de noche |
+| Fusionar a `main`, en orden, los PR abiertos (#27 en adelante) | Hoy `main` llega hasta la entrega 1 de la fase 2 | Lo fusiona el dueño. Ojo: el #45 no está en la pila (sale de la rama del #43): decidir si se pasa encima de la punta o se cierra |
+| Probar en Windows con las dos cajas reales: servicio, alta de la caja 2, contingencia, respaldos, ventana de la caja, ticket desde las dos y cajón | Fase 1, entregas 1 y 3 | Falta; fuera de horario y sin tocar eleventa |
+| Crear el bot de Telegram de verdad y probarlo | Fase 1, entrega 4 | Falta |
+| Probar la impresión con la cola de laboratorio y después con la real | Fase 1, entrega 5 | Falta |
+| Prueba con una persona real | [Ver arriba](#prueba-con-una-persona-real) | Hecha en el PR #31; falta fusionarla, instalarla en una PC con Windows limpia y dársela a quien prueba. Su hito ya pasó |
+| Medir un día pico (~120 tickets) con las dos cajas, en la caja principal real | Hace falta el simulador de cajas (no existe; [descrito aquí](prueba-sucursales-linux.md#lo-que-hay-que-arreglar-o-construir)) | Falta |
+| Precios y clientes: los consumibles del mes (entrega 3) | [Fase 3](fase-3-precios-clientes.md) | Las entregas 1 y 2 están en PR abiertos |
+| Servicios con receta, cobros a terceros aparte en el corte, pedidos, WhatsApp desde la PC, apartados y cotizaciones guardadas | Fase 4 ([servicios](servicios.md), [pedidos](pedidos.md), [WhatsApp](whatsapp.md)) | Falta su plan |
+| Instalador de la tienda, soporte a distancia (NetBird gratis u otro) y cómo se actualiza | [Por definir](#pendientes) | Falta |
+| Respaldo cifrado fuera de la tienda y vigilancia de la caja principal: se reporta a Healthchecks.io cada pocos minutos en horario, y si no abre o se apaga, Healthchecks.io avisa por Telegram (el bot del POS no puede avisar de su propia caja) | Fase 5 ([notas](notas.md#respaldo-fuera-de-la-tienda-y-aviso-de-apertura)) | Falta (chico) |
+| Depuración, conteo físico, importación final y arranque | Fase 5 y [depuración](#depuración-del-inventario) | Falta |
+| Promociones y kits, si el piloto queda cerca del regreso a clases | [Fase 3](fase-3-precios-clientes.md) | Pospuestas por ahora |
+
+**Lo que eleventa hace hoy y el plan no cubre todavía** (hay que preguntarlo, [pendientes](#pendientes)): una pantalla
+de reportes (ventas por periodo, turno, cajero y departamento, utilidad, lo más vendido, cortes anteriores, Excel), las
+recargas y el pago de servicios si salen de la plataforma de eleventa, la facturación si hoy se hace con eleventa, y
+ver el negocio desde el celular (pulso de eleventa).
+
+### Varias sucursales (pospuesto)
+
+El 2026-10-08 el dueño pospuso la multisucursal para completar primero el POS de una sucursal. No se retira:
+
+- **La propuesta** ([central](servidor-remoto.md)): un servidor virtual siempre prendido para administrar ante un
+  suceso a cualquier hora (con cámaras y contador), precios por sucursal y cualquier flujo de mercancía, con la mejor
+  calidad-precio. Las [cámaras](camaras.md) con un puente por tienda, y la [prueba](prueba-sucursales-linux.md) con la
+  laptop o la PC del dueño como central de ensayo.
+- **Lo investigado** y lo que sí aplica ya con una sucursal está en [notas](notas.md); las ideas, en
+  [ideas](ideas.md#varias-sucursales-pospuesto).
+- **El modelo de datos** ya lleva la sucursal en todo registro. Lo que hoy da por hecho una sola sucursal está en
+  [notas](notas.md#para-retomar-la-multisucursal) para arreglarlo al retomarla; lo nuevo (fase 4) no debe sumar más
+  supuestos de ese tipo.
+- **Cuándo retomarla:** cuando el dueño decida pasar la sucursal 2 (o la 3.ª) al POS, unos 6 meses antes de esa fecha;
+  mientras, la sucursal 2 abre con eleventa ([señales](notas.md#para-retomar-la-multisucursal)).
 
 ## Pendientes
 
@@ -262,7 +279,7 @@ Fase 1:
 - [x] Revisar el [plan de la entrega 2](fase-1-control.md) (control) y contestar sus preguntas
 - [x] Entrega 2: control (cancelar, devolver, cambio de precio, transferencias, reglas y bitácora)
 - [x] Revisar el [plan de la entrega 3](fase-1-varias-cajas.md) (varias cajas y contingencia) y contestar sus preguntas
-- [x] Entrega 3: varias cajas (falta instalarla en la caja principal y probarla con las tres cajas)
+- [x] Entrega 3: varias cajas (falta instalarla en la caja principal y probarla con las cajas de la matriz)
 - [x] Revisar el [plan de la entrega 4](fase-1-telegram.md) (Telegram) y contestar sus preguntas
 - [x] Entrega 4: Telegram (falta crear el bot de verdad y probarlo)
 - [x] Revisar el [plan de la entrega 5](fase-1-impresion.md) (módulo de impresión y descuentos) y contestar sus preguntas
@@ -277,7 +294,8 @@ Fase 2:
 - [ ] Entrega 3: ajustes, mermas y conteos
 - [ ] Entrega 4: etiquetas y sugerido de compra
 
-Prueba con una persona real (al cerrar la entrega 2 de la fase 2, [ver arriba](#prueba-con-una-persona-real)):
+Prueba con una persona real (al cerrar la entrega 2 de la fase 2, [ver arriba](#prueba-con-una-persona-real);
+hecha en el PR #31):
 
 - [ ] Instalador de prueba de la caja principal (servicio, caja, base ficticia y usuarios), armado en GitHub Actions
 - [ ] La caja principal se da de alta sola en la prueba
@@ -296,22 +314,27 @@ Fase 3:
 - [ ] Entrega 3: consumibles del mes
 - [ ] Promociones y kits: antes del próximo regreso a clases
 
-Varias sucursales y la prueba en Linux ([ver arriba](#varias-sucursales-el-central)):
+Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
 
-- [ ] Revisar la [propuesta del central](servidor-remoto.md), la de [cámaras](camaras.md) y el
-  [plan de la prueba](prueba-sucursales-linux.md), y contestar sus preguntas
-- [ ] Ya: configurar los grabadores de las dos sucursales ([lista](camaras.md#configurar-el-grabador)); abrir las
-  cuentas a nombre del negocio y registrar el dominio antes del 31 de octubre
-- [ ] Arreglos previos al central y para Linux (fase 3), y el simulador de cajas
-- [ ] (Si el dueño quiere) Medir ya cómo responde la máquina con Linux: día pico, techo, cortes de luz y 72 horas, con
-  1 núcleo y 2 GB
-- [ ] Antes del piloto: respaldo cifrado de la matriz en Backblaze B2, con una restauración de ensayo, su aviso en
-  Healthchecks.io y el puente de la matriz
-- [ ] Entregas 6.1 a 6.6 del [central](servidor-remoto.md#entregas), con las etapas 2 a 4 de la prueba
-- [ ] Al cerrar 6.1: unas horas del script del central en un servidor por hora, decidir entre 1 y 2 GB y contratar el
-  central (al principio, solo con la matriz)
+- [ ] Probar en Windows con las dos cajas reales: servicio, alta de la caja 2, contingencia, respaldos, ventana de la
+  caja, ticket desde las dos y cajón
+- [ ] Medir un día pico (~120 tickets) con las dos cajas, en la caja principal real, con el simulador de cajas
+- [ ] Antes del piloto: respaldo cifrado en Backblaze B2, con una restauración de ensayo, y vigilancia de la caja
+  principal en Healthchecks.io ([notas](notas.md#respaldo-fuera-de-la-tienda-y-aviso-de-apertura))
+- [ ] Soporte a distancia para instalar las actualizaciones (NetBird gratis u otro, [notas](notas.md#cuentas-y-pagos))
+- [ ] Ya, sin costo: configurar los grabadores de las dos sucursales por seguridad
+  ([lista](camaras.md#configurar-el-grabador))
+- [ ] Correr las pruebas en Windows en cada PR (hoy solo corren si cambia `instalacion/`) y arreglar las 8 que fallan en
+  Linux ([notas](notas.md#código-y-pruebas))
+- [ ] Escribir el plan de la fase 4 y revisarlo con el dueño
 
-Depuración del inventario (antes del piloto, [ver abajo](#depuración-del-inventario)):
+Varias sucursales ([pospuesto](#varias-sucursales-pospuesto)):
+
+- [ ] Retomar la [propuesta del central](servidor-remoto.md), la de [cámaras](camaras.md) y la [prueba en
+  Linux](prueba-sucursales-linux.md) cuando el dueño decida pasar la sucursal 2 al POS (unos 6 meses antes), y contestar
+  sus preguntas
+
+Depuración del inventario (antes del piloto, [ver arriba](#depuración-del-inventario)):
 
 - [ ] Dar de baja los productos que ya no existen
 - [ ] Sacar del inventario el equipo de la tienda (impresoras, engargoladoras, enmicadoras, mobiliario) y registrarlo como [inversión](#administración-y-punto-de-equilibrio)
@@ -335,5 +358,17 @@ Por definir:
 - [x] Privilegios de los clientes registrados: descuento, mayoreo, crédito, pedido sin anticipo y apartar sin pagar;
   nada más ([decisión](fase-3-precios-clientes.md#decisiones-de-la-revisión))
 - [ ] Regla para pedidos de no registrados: monto máximo que se prepara sin anticipo, y días para borrar el celular
+- [ ] Reportes: ¿cuáles de eleventa usa el dueño (ventas por periodo, turno, cajero y departamento; utilidad; lo más
+  vendido; cortes anteriores; Excel)? El POS solo tiene las ventas del día de cada caja y el resumen por Telegram
+- [ ] Recargas y pago de servicios: ¿salen hoy de la plataforma de eleventa (monto prepagado, 5.5 % de ganancia)? Al
+  apagarla se cortan
+- [ ] ¿Se usan hoy los apartados y las cotizaciones de eleventa?
+- [ ] Impresoras de la matriz: ¿la caja 2 tiene su propia impresora de tickets? ¿Hay otra de inyección además de la
+  WF-6590 (la L5590)? Hoy el POS vigila una sola por sucursal
+- [ ] Mientras la sucursal 2 use eleventa: ¿le manda mercancía la matriz? Si sí, se registra en el POS como salida con
+  motivo «A sucursal 2», al costo promedio, hasta que existan los traspasos
+- [ ] Autorizar por Telegram: hoy basta con tener el chat vinculado. ¿Se pide además un PIN antes del piloto (el bot lo
+  pide, lo borra y la caja principal lo verifica; no necesita el central) o un monto máximo para aprobar así?
+- [ ] ¿Se factura hoy con eleventa? ¿Se usa pulso de eleventa para ver las ventas en el celular?
 - [ ] WhatsApp: ver [pendientes](whatsapp.md#pendientes)
 - [ ] Dispositivos propios: ver [ideas](ideas.md)

@@ -28,17 +28,18 @@
   Fuera: Healthchecks.io vigila al central y a las tiendas; Backblaze B2 guarda los respaldos
 ```
 
-> Propuesta del 2026-10-08, en revisión: el central antes de que la sucursal 2 pase al POS, y un puente siempre
-> prendido en cada tienda ([central](servidor-remoto.md), [cámaras](camaras.md)).
+> Es el destino con varias sucursales, **pospuesto** el 2026-10-08: hoy el foco es la matriz con caja principal y
+> secundaria, sin central ni puente ([central](servidor-remoto.md), [cámaras](camaras.md), [notas](notas.md)).
 
 | Componente | Tecnología | Dónde corre |
 |---|---|---|
 | Servicio POS | ASP.NET Core como servicio de Windows | Caja principal de cada sucursal |
-| Central | El mismo servicio en modo central | Servidor virtual ([por qué](servidor-remoto.md)) |
+| Central | El mismo servicio en modo central (pospuesto) | Servidor virtual ([por qué](servidor-remoto.md)) |
 | Caja | Ventana de Windows (WPF) que muestra la interfaz compartida | Todas las cajas |
 | App Android | .NET MAUI con la interfaz compartida | Celulares de la sucursal, por Wi-Fi |
-| Panel del dueño | La interfaz compartida, servida por el central | Navegador, en internet con llave de acceso (passkey) |
-| Puente | Servicio .NET en Linux, siempre prendido: cámaras, reloj de la tienda y contador ([cámaras](camaras.md)) | Raspberry Pi en cada tienda |
+| Panel del dueño | La interfaz compartida, servida por el central (pospuesto) | Navegador, en internet con llave de acceso (passkey) |
+| Puente | Servicio .NET en Linux, siempre prendido: cámaras, reloj de la tienda y contador (pospuesto, [cámaras](camaras.md)) | Raspberry Pi en cada tienda |
+| Receptor de WhatsApp | Un Cloudflare Worker o un proveedor (Kapso) que guarda los mensajes ([WhatsApp](whatsapp.md)) | Fuera de la tienda, mientras no haya central |
 | Módulo de impresión | Agente en cada PC que imprime ([detalle](impresion.md)) | PCs con impresora |
 | Núcleo | Biblioteca .NET sin dependencias de Windows | Compartido por todo; sus pruebas corren en cualquier máquina |
 
@@ -46,8 +47,9 @@
   ventana de Windows (con WebView2, que ya trae Windows 11), la app Android en MAUI y el panel en el navegador. Se
   escriben una vez para los tres. .NET ya trae una plantilla para este esquema (MAUI Blazor Hybrid + Web). En la caja
   todo corre en la misma PC, sin red de por medio, así que la velocidad no se sacrifica.
-- **Cada sucursal funciona sola.** Internet solo se usa para hablar con el central, subir el respaldo a Backblaze B2 y
-  avisar a Healthchecks.io; el puente sube las fotos y los clips. Si se cae, se vende igual.
+- **Cada sucursal funciona sola.** Internet se usa para Telegram, el respaldo en Backblaze B2, Healthchecks.io y, con
+  la API de WhatsApp, pedir los mensajes a su receptor; con el central (pospuesto), también para hablar con él. Si se
+  cae, se vende igual.
 - **Servicio de Windows, no app de bandeja:** corre aunque nadie haya iniciado sesión y Windows lo reinicia si falla.
 - **Caja principal:** se recomienda no-break, porque guarda la base. Windows Update con horas activas configuradas para
   que no reinicie en horario de tienda.
@@ -69,11 +71,14 @@
 - Si la caja principal no responde, la caja entra en modo contingencia: vende con sus propios folios, imprime ticket y
   guarda todo para enviarlo después.
 - Al volver el servidor, se sube la bandeja; el inventario no choca porque son movimientos.
-- Limitaciones en contingencia: no se ven los pedidos de otras cajas ni saldos de crédito actualizados (se permite con
-  aviso o se bloquea, según configuración). Tampoco se cancela, se devuelve, se cobran impresiones, se reciben compras
-  ni se cuenta inventario: eso espera a que vuelva la caja principal.
+- Limitaciones en contingencia: no se ven los pedidos de otras cajas. El crédito sigue: se fía hasta el saldo que conoce
+  la caja (los últimos saldos del servicio más lo que ella hizo y él todavía no le confirma) y se reciben abonos; al
+  volver, el servicio acepta todo y lo que no cuadra queda por revisar, con aviso al dueño.
 
 ## Varias sucursales
+
+Pospuesto (2026-10-08). Lo que sigue es la propuesta para cuando se retome. Mientras, con una sola sucursal, soporte
+instala las actualizaciones a distancia ([plan](plan.md#para-el-piloto-con-dos-cajas)).
 
 - **Dueño de cada dato:**
   - El central es dueño del catálogo, los precios base y por sucursal y los usuarios. Se editan en el panel (o desde
@@ -105,33 +110,38 @@
 
 - **Router Tenda** en cada sucursal: IP fija reservada para la caja principal. Las cajas también la encuentran solas
   por búsqueda en la red.
-- **Red privada** (NetBird, gratis): las cámaras en vivo y soporte, sin abrir puertos. Tailscale gratis es solo para
-  uso no comercial; Tailscale de pago es el plan B ([propuesta](servidor-remoto.md)).
+- **Red privada** (NetBird, gratis): soporte a distancia y, con el central, las cámaras en vivo, sin abrir puertos.
+  Tailscale gratis es solo para uso no comercial; Tailscale de pago es el plan B ([propuesta](servidor-remoto.md)).
 - **Nada de intermediarios en la caja principal** (Caddy, túneles): el servicio deja pasar sin llave lo que llega de
   la misma PC, y con un intermediario todo parecería venir de ahí.
-- **Públicos en el central** (HTTPS con dominio propio): la sincronización, la entrada de los puentes y dispositivos,
-  el panel, la app de Telegram, la llamada y el webhook de WhatsApp. Todo pide llave, llave de acceso o firma.
-- **Telegram:** un solo bot, en el central (conexión de salida); las sucursales lo dejan de usar.
-- **La hora:** el puente es el reloj de la tienda; el grabador y las cajas la toman de ahí.
+- **Con el central (pospuesto), públicos en él** (HTTPS con dominio propio): la sincronización, la entrada de los
+  puentes y dispositivos, el panel, la app de Telegram, la llamada y el webhook de WhatsApp. Todo pide llave, llave de
+  acceso o firma. Mientras no haya central, el webhook de WhatsApp va en un receptor aparte ([WhatsApp](whatsapp.md)).
+- **Telegram:** el bot vive en la caja principal (conexión de salida). Con el central (pospuesto), un solo bot en el
+  central y las sucursales lo dejan de usar.
+- **La hora:** con el puente (pospuesto), el puente es el reloj de la tienda; mientras, cada PC toma la hora de
+  Windows, que fuera de dominio se corrige solo cada varias horas ([notas](notas.md#código-y-pruebas)).
 
 ## Respaldos
 
 - **Local:** copia diaria de la base en cada caja principal, y otra con el corte Z.
-- **Central:** por la sincronización, tiene la réplica casi en vivo de todas las sucursales.
+- **Central** (pospuesto): por la sincronización, tendría la réplica casi en vivo de todas las sucursales.
 - **Fuera:** desde el piloto, cada caja principal sube a Backblaze B2 su copia diaria y la del corte Z, cifradas, con
   una llave que no puede borrar y un bloqueo de 14–30 días. El central, copia continua a B2 y el respaldo diario del
   proveedor.
 
 ## Actualizaciones
 
-El central guarda el instalador vigente; cada caja principal lo descarga y verifica (SHA-256) y las cajas lo toman de su
-caja principal. Antes del central, soporte la instala a distancia. Dentro de una sucursal todas las cajas deben tener la
-misma versión. Primero se actualiza una sucursal y después las demás.
+El central guarda el instalador vigente; cada caja principal lo descarga y verifica (SHA-256) y las cajas lo toman de
+su caja principal. Dentro de una sucursal todas las cajas deben tener la misma versión: primero se actualiza la caja
+principal y después las demás cajas. Primero se actualiza una sucursal y después las demás.
 
 ## Cámaras y dispositivos
 
-El grabador Dahua de cada sucursal detecta personas de noche y cuenta cruces en la puerta; el puente recibe sus
-eventos, saca la foto y el clip de cada suceso y los sube al central ([cámaras](camaras.md)). La presencia en la zona
+Pospuesto con la multisucursal: el grabador Dahua de cada sucursal detecta personas de noche y cuenta cruces en la
+puerta; un puente recibiría sus eventos, sacaría la foto y el clip de cada suceso y los subiría al central
+([cámaras](camaras.md)). Con una sola sucursal, la caja principal podría escribir el texto de cada suceso sobre el video
+y adjuntar la foto del momento ([idea](ideas.md#cámaras-con-una-sola-sucursal)). La presencia en la zona
 del efectivo y otros dispositivos propios quedan en [ideas](ideas.md).
 
 ## Hardware
@@ -144,7 +154,7 @@ del efectivo y otros dispositivos propios quedan en [ideas](ideas.md).
 | Lector | Genérico, lee QR, funciona como teclado |
 | Cajón de dinero | Recomendado (~1,000 MXN). Se conecta a la impresora de tickets; cada apertura queda registrada |
 | Router | Tenda en cada sucursal |
-| Puente | Raspberry Pi 5 de 2 GB en cada tienda, siempre prendida (kit de 2,788 MXN con IVA) |
+| Puente | Pospuesto: Raspberry Pi 5 de 2 GB en cada tienda, siempre prendida (kit de 2,788 MXN con IVA) |
 | Cámaras | Grabador Dahua en cada sucursal: en la sucursal 2, XVR5104HS-4KL-I3 con 4 cámaras HAC-HFW1500CM-A de 5 MP; en la matriz, modelo por confirmar ([cámaras](camaras.md)) |
 | No-break | Recomendado para la caja principal, y otro para el módem, el grabador, las cámaras y el puente |
 | Etiquetas | Hojas adhesivas carta en la WF-6590 |

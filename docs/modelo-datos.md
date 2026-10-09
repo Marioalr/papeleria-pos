@@ -34,11 +34,11 @@ erDiagram
 | Cantidades | Enteros en **milésimas de la unidad base** (`long`): 1 pieza = 1000, 1.5 m = 1500, 250 g = 250 |
 | Fechas | UTC; se muestran en hora de Ciudad de México |
 | Enumeraciones | Se guardan como texto (`"Compra"`, no `2`): la base se lee sin el código |
-| Catálogo | Productos y variantes nunca se borran, se desactivan (`Activo = false`): el kardex y el histórico los siguen apuntando. Los códigos y las presentaciones sin uso sí se borran sin rastro, y los precios quitados solo quedan en su historial: con el [central](servidor-remoto.md#entregas) se registra lo que se quita para que la sucursal se entere |
+| Catálogo | Productos y variantes nunca se borran, se desactivan (`Activo = false`): el kardex y el histórico los siguen apuntando. Los códigos y las presentaciones sin uso sí se borran sin rastro, y los precios quitados solo quedan en su historial: con el [central](servidor-remoto.md#entregas) (pospuesto) se registraría lo que se quita para que la sucursal se entere |
 | Sincronización | Las tablas del catálogo llevan `Version` y `ModificadoUtc` desde ya, para bajar cambios por versión después (ojo: un borrado no sube la versión) |
 | Sucursal | Todo lo que pertenece a una sucursal lleva `SucursalId`, aunque hoy solo exista la matriz |
 
-**Lo que agregaría el central** (propuesta, [entregas](servidor-remoto.md#entregas)): sucursal o almacén; días de
+**Lo que agregaría el central** (pospuesto, [entregas](servidor-remoto.md#entregas)): sucursal o almacén; días de
 descanso; autor, sucursal de origen y versión en el historial de precios; prefijo de sucursal en los códigos internos;
 registro de lo que se quita del catálogo; documentos de traspaso con estados; compra con quién paga y quién recibe;
 orden con destino por línea; mercancía «de paso» con salida a costo dado; bandeja de subida, propuestas y comandos;

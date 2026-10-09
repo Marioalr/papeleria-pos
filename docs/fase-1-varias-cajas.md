@@ -105,9 +105,9 @@ venta en contingencia queda marcada para que se vea en el corte y en la bitácor
 
 - Copia diaria de la base en la caja principal (y otra al hacer el corte Z), con los últimos 30 días.
 - Se hace con la copia en línea de SQLite: no detiene la venta.
-- La copia fuera de la tienda: propuesta, desde el piloto la caja principal la sube a Backblaze B2, cifrada y con una
-  llave que no puede borrar ([central](servidor-remoto.md#respaldos)). Antes del piloto, opcional: copiar también a una
-  memoria USB o a otra carpeta.
+- La copia fuera de la tienda: desde el piloto la caja principal la sube a Backblaze B2, cifrada y con una llave que no
+  puede borrar ([notas](notas.md#respaldo-fuera-de-la-tienda-y-aviso-de-apertura)). Antes del piloto, opcional: copiar
+  también a una memoria USB o a otra carpeta.
 
 ## Cómo se arma
 
