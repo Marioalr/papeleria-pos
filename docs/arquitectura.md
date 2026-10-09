@@ -108,8 +108,9 @@ instala las actualizaciones a distancia ([plan](plan.md#para-el-piloto-con-dos-c
 
 ## Red
 
-- **Router Tenda** en cada sucursal: IP fija reservada para la caja principal. Las cajas también la encuentran solas
-  por búsqueda en la red.
+- **Router Tenda** en cada sucursal: IP fija reservada para la caja principal. Las cajas la encuentran por búsqueda en
+  la red al darlas de alta (si después cambia la IP, hoy hay que reconfigurarlas).
+- **La red local no debe depender del internet** ([red de la matriz](#la-red-de-la-matriz)).
 - **Red privada** (NetBird, gratis): soporte a distancia y, con el central, las cámaras en vivo, sin abrir puertos.
   Tailscale gratis es solo para uso no comercial; Tailscale de pago es el plan B ([propuesta](servidor-remoto.md)).
 - **Nada de intermediarios en la caja principal** (Caddy, túneles): el servicio deja pasar sin llave lo que llega de
@@ -121,6 +122,30 @@ instala las actualizaciones a distancia ([plan](plan.md#para-el-piloto-con-dos-c
   central y las sucursales lo dejan de usar.
 - **La hora:** con el puente (pospuesto), el puente es el reloj de la tienda; mientras, cada PC toma la hora de
   Windows, que fuera de dominio se corrige solo cada varias horas ([notas](notas.md#código-y-pruebas)).
+
+### La red de la matriz
+
+Todo va por la red local, sin USB: las dos cajas, una impresora de tickets, dos Epson WF-6590, una EcoTank L5590 y el
+grabador. El internet es de Megacable, y a veces, cuando se va, también se cae la red local; hoy el personal desconecta
+el cable de internet del Tenda para recuperarla. Las causas posibles y cómo diagnosticarlas están en
+[notas](notas.md#red-de-la-tienda).
+
+- **El arreglo propuesto,** sin automatizar nada:
+  - el módem solo al puerto de internet del Tenda, y nada más conectado al módem ni a su Wi-Fi;
+  - el Tenda en modo router, con su firmware al día, el reinicio programado de madrugada y su red local en una poco
+    común (por ejemplo 192.168.77.0/24, nunca 192.168.0.x, 192.168.1.x ni 192.168.100.x);
+  - IP fija puesta en cada equipo, fuera del rango del DHCP y reservada en el Tenda (por ejemplo: .10 caja principal,
+    .11 caja 2, .20 impresora de tickets, .21 y .22 las WF-6590, .23 la L5590, .30 el grabador; DHCP de .100 a .199);
+  - las cajas, las impresoras y el grabador por cable a un switch, con un solo cable del switch al Tenda (un TL-SG108
+    queda lleno con eso: con otra impresora u otra PC, usar los puertos del Tenda o uno con más puertos);
+  - en Windows, cada impresora por IP con puerto TCP/IP estándar y sin WSD; en el POS, todo por IP.
+- **Si aun así falla:** un router de negocio como único router y el Tenda solo como Wi-Fi, o automatizar el corte del
+  internet. Solo después del diagnóstico.
+- **En el POS:** que la caja 2 vuelva a buscar sola a la principal (con su llave) si cambia la IP; avisos si algo está
+  configurado por nombre o con WSD; una franja que distinga «sin internet: la venta sigue, no desconectes nada» de «sin
+  red local»; y una bitácora de red que junte sola el diagnóstico.
+- **Cambiar la red de la tienda** afecta también a eleventa y a Control Print, que siguen en uso: se hace un sábado o
+  domingo, con todo listado y la forma de regresar ([pruebas en la tienda](pruebas-en-tienda.md)).
 
 ## Respaldos
 
@@ -150,10 +175,12 @@ del efectivo y otros dispositivos propios quedan en [ideas](ideas.md).
 |---|---|
 | Cajas | i5-12400F, 16 GB, NVMe: de sobra. Para cajas nuevas basta un i3 o mini PC N100 con gráficos integrados |
 | Monitor | Económico: diseño para 1366×768, alto contraste y letra grande |
-| Impresora de tickets | POS-8360, térmica de 80 mm, ESC/POS, en la red (puerto 9100). Impresión directa con comandos: logo, QR y códigos en el ticket ([ticket](fase-1-caja.md#ticket)) |
+| Impresora de tickets | POS-8360, térmica de 80 mm, ESC/POS, en la red (puerto 9100). Impresión directa con comandos: logo, QR y códigos en el ticket ([ticket](fase-1-caja.md#ticket)). En la matriz hay una sola para las dos cajas: por decidir una segunda con su cajón |
+| Impresoras de inyección | En la matriz, dos Epson WF-6590 y una EcoTank L5590, por red ([impresión](impresion.md)) |
 | Lector | Genérico, lee QR, funciona como teclado |
-| Cajón de dinero | Recomendado (~1,000 MXN). Se conecta a la impresora de tickets; cada apertura queda registrada |
-| Router | Tenda en cada sucursal |
+| Cajón de dinero | Recomendado (≈799 MXN). Se conecta a la impresora de tickets; cada apertura queda registrada |
+| Router | Tenda en cada sucursal ([red de la matriz](#la-red-de-la-matriz)) |
+| Switch | Para conectar por cable las cajas, las impresoras y el grabador (el Tenda trae pocos puertos). Con la IP puesta en cada equipo se siguen viendo si el Tenda se reinicia o se traba; el Wi-Fi y el DHCP siguen en el Tenda. TP-Link TL-SG108 (433 + 138 de envío) |
 | Puente | Pospuesto: Raspberry Pi 5 de 2 GB en cada tienda, siempre prendida (kit de 2,788 MXN con IVA) |
 | Cámaras | Grabador Dahua en cada sucursal: en la sucursal 2, XVR5104HS-4KL-I3 con 4 cámaras HAC-HFW1500CM-A de 5 MP; en la matriz, modelo por confirmar ([cámaras](camaras.md)) |
 | No-break | Recomendado para la caja principal, y otro para el módem, el grabador, las cámaras y el puente |

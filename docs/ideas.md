@@ -24,6 +24,13 @@ mercancía; la mejor calidad-precio).
 - **Cuándo retomarla:** cuando el dueño decida pasar la sucursal 2 (o la 3.ª) al POS, unos 6 meses antes de esa fecha;
   mientras, la sucursal 2 abre con eleventa ([señales](notas.md#para-retomar-la-multisucursal)).
 
+## Recargas y pago de servicios
+
+Pospuesto (2026-10-08). Integrarlos al sistema: hoy se cobran fuera del POS. Son cobros a cuenta de terceros: solo la
+comisión es ingreso ([servicios](servicios.md#cobros-a-cuenta-de-terceros)). Habría que elegir el proveedor (la
+plataforma de recargas de eleventa trabaja con saldo prepagado y paga 5.5 % en recargas; el pago de servicios no
+aparece en esa página; eleventa.com/recargas, consultada el 2026-10-08) y separarlos en el corte.
+
 ## Cámaras con una sola sucursal
 
 Sin central ni puente, de día y con la caja principal, el grabador Dahua de la matriz (si es de la serie XVR5 con

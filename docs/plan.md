@@ -4,18 +4,24 @@
 
 > **Foco actual (2026-10-08):** completar el POS para tener en la matriz lo que hoy se tiene con eleventa, con una caja
 > principal y una secundaria, más las funciones ya planeadas: servicios y pedidos, WhatsApp y el módulo de impresión
-> que reemplaza a Control Print ([qué falta](#para-el-piloto-con-dos-cajas)). **La multisucursal queda pospuesta, no
+> que reemplaza a Control Print, y **saber exactamente cuánto se gana** ([qué falta](#para-el-piloto-con-dos-cajas)).
+> **La multisucursal queda pospuesta, no
 > retirada:** su propuesta y lo investigado están en [notas](notas.md) e [ideas](ideas.md#varias-sucursales-pospuesto).
 
 ## Contexto
 
-- Papelería con servicios: impresiones, copias, engargolado, enmicado, recargas, pago de servicios y trámites
-  (CURP, actas…).
+- Papelería con servicios: impresiones, copias, engargolado, enmicado, recargas, pago de servicios y trámites (CURP,
+  actas…). Las recargas y el pago de servicios quedan fuera del POS por ahora
+  ([idea](ideas.md#recargas-y-pago-de-servicios)).
 - Hoy: **1 sucursal con 2 cajas**, la principal y una secundaria (se planea una 3.ª). **2.ª sucursal en camino** y una
   3.ª en unos dos años; en el POS, la multisucursal está [pospuesta](#varias-sucursales-pospuesto).
 - Unos **60 tickets al día**, con picos de ~120. La temporada de regreso a clases pesa mucho.
 - Inventario de ~500 mil MXN a costo, que creció 10 veces en 4 años; margen bruto anual de ~65 %.
-- Se usa **eleventa multicaja** (sin el módulo de clientes).
+- Se usa **eleventa multicaja** (sin el módulo de clientes, sin apartados ni cotizaciones, y sin nada fiscal). De
+  eleventa solo se usa el punto de venta (ni pulso ni facturación); aparte sigue Control Print.
+- **Todo por la red local,** sin USB: una impresora de tickets para las dos cajas, dos Epson WF-6590, una EcoTank L5590,
+  el grabador y un router Tenda. El internet es de Megacable, y a veces, cuando se va, también se cae la red local
+  ([red de la matriz](arquitectura.md#la-red-de-la-matriz)).
 - Un número de WhatsApp Business por sucursal, en un celular (también para llamadas); el grueso del trabajo se hace
   desde la PC.
 - Las cajas principales se apagan de noche; las sucursales probablemente tendrán horarios distintos.
@@ -41,13 +47,13 @@
 | Contingencia | Cada caja guarda copia del catálogo y una bandeja de salida: si la caja principal se apaga, las demás siguen vendiendo |
 | Roles | Dueño, encargado y cajero; lo que puede hacer cada uno es **configurable** |
 | Clientes | El celular solo identifica un **pedido** al recogerlo. **Clientes registrados**: pocos, los de confianza |
-| Impresión | Lo que hace Control Print se reescribe como módulo del POS ([detalle](impresion.md)) |
+| Impresión | Lo que hace Control Print se reescribe como módulo del POS ([detalle](impresion.md)), para las tres impresoras de inyección de la matriz (dos WF-6590 y una L5590) |
 | WhatsApp | API oficial en modo coexistencia; nunca librerías no oficiales. Antes de eso, captura manual desde la PC. Sin central, la API recibe los mensajes en un receptor aparte, nunca con un túnel en la caja principal ([WhatsApp](whatsapp.md)) |
 | Alertas y autorización remota | Bot de Telegram en la caja principal, desde el piloto. Con el central (pospuesto): un solo bot con foto del suceso y botones, alerta que suena aunque el celular esté en silencio, llamada y acciones a distancia con PIN o huella ([propuesta](servidor-remoto.md)) |
 | Panel del dueño | Pospuesto con el central ([propuesta](servidor-remoto.md)). Mientras, Telegram: el resumen diario y `/resumen` |
 | Cámaras | Cruzarlas con el sistema queda pospuesto ([cámaras](camaras.md); con una sola sucursal, [idea](ideas.md#cámaras-con-una-sola-sucursal)). Ya, sin costo: configurar los grabadores por seguridad ([lista](camaras.md#configurar-el-grabador)) |
 | App Android | .NET MAUI con la misma interfaz, sin publicar en la tienda |
-| Fiscal | Fuera de alcance, pero se guardan clave SAT, unidad y desglose de impuestos para poder facturar después |
+| Fiscal | Fuera de alcance (hoy no se factura nada), pero se guardan clave SAT, unidad y desglose de impuestos para poder facturar después |
 | Nube | Por ahora: el respaldo cifrado fuera de la tienda (Backblaze B2), la vigilancia de la caja principal (Healthchecks.io) y, con la API de WhatsApp, su receptor aparte. El central, al retomar la multisucursal ([propuesta](servidor-remoto.md)). Azure for Students no sirve: es solo para estudiantes y para uso educativo no comercial |
 | Código | La fase 0 ya se programa; las demás fases, hasta cerrar su parte del plan |
 | Idioma del código | Dominio en español (`Producto`, `Existencia`, `Corte`); lo técnico en inglés |
@@ -63,7 +69,9 @@
 | Variantes | Texto libre ("Azul") en la fase 0; con atributos (Color, Tamaño) más adelante |
 | Costo promedio | Por sucursal |
 | Formas de pago | Efectivo, tarjeta (terminal externa) y transferencia (por verificar). Hoy casi todo es efectivo |
-| Impresora de tickets | POS-8360, térmica de 80 mm, ESC/POS; el ticket conserva el formato y el logo del de eleventa |
+| Impresora de tickets | POS-8360, térmica de 80 mm, ESC/POS; el ticket conserva el formato y el logo del de eleventa. En la matriz hay una sola para las dos cajas: por decidir una segunda con su cajón |
+| Red de la tienda | Todo por la red local, sin USB (respuesta del dueño). Propuesta, por aprobar después del diagnóstico: por cable, con IP fijas y todo configurado por IP, para que la venta y la impresión no dependan del internet ([red de la matriz](arquitectura.md#la-red-de-la-matriz)) |
+| Reportes | Ventas por día, mes y año a la fecha contra el año anterior, y la ganancia real del mes; la meta es saber exactamente cuánto se gana ([detalle](#para-el-piloto-con-dos-cajas)) |
 | Administración | Inversión de apertura, gastos fijos e insumos del mes por sucursal: la ganancia mensual real y el punto de equilibrio ([detalle](#administración-y-punto-de-equilibrio)) |
 | Git | Ramas cortas por tema, fusionadas a `main` |
 | Instalación | La hace el administrador de la PC, una vez y en cada actualización; el día a día corre en un usuario común de Windows, sin privilegios de administrador ([detalle](#instalación-y-usuarios-de-windows)) |
@@ -92,8 +100,8 @@ Sin tiempos: se avanza cuando la fase anterior funciona en la tienda. **Foco:** 
 | 1. Caja | Venta, cobro mixto, ticket, turnos y corte ciego, roles y autorizaciones, bitácora, contingencia, Telegram, módulo de impresión |
 | 2. Inventario | Compras, recepción ciega, presentaciones, conteos cíclicos, etiquetas, sugerido de compra |
 | 3. Precios y clientes | Mayoreo, promociones, kits, clientes registrados, crédito |
-| 4. Servicios y pedidos | Recetas y costeo, pedidos, cola compartida, charolas, recogida por celular, duplicados, apartados, listas escolares, captura manual desde WhatsApp |
-| 5. Piloto en la matriz | Con la caja principal y la secundaria: depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo. Desde el arranque, respaldo cifrado fuera de la tienda (Backblaze B2) y vigilancia de la caja principal (Healthchecks.io) ([qué falta](#para-el-piloto-con-dos-cajas)) |
+| 4. Servicios y pedidos | Primero, servicios con costo real: recetas con los consumibles del servicio (micas, espirales, portadas), depreciación del equipo y luz (engargolado y enmicado). Después pedidos, cola compartida, charolas, recogida por celular, duplicados, apartados, listas escolares, captura manual desde WhatsApp |
+| 5. Piloto en la matriz | Con la caja principal y la secundaria: depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo. Antes: la red de la tienda arreglada, las tres impresoras de inyección y los reportes. Desde el arranque, respaldo cifrado fuera de la tienda (Backblaze B2) y vigilancia de la caja principal (Healthchecks.io) ([qué falta](#para-el-piloto-con-dos-cajas)) |
 | 6. WhatsApp y central | La API de WhatsApp → pedidos cuando el dueño la quiera, con un receptor aparte ([WhatsApp](whatsapp.md)). **Pospuesto:** el central, con sus entregas 6.1 a 6.6 ([propuesta](servidor-remoto.md#entregas)) |
 | 7. Sucursal 2 | **Pospuesta.** Precios por sucursal, traspasos, compras que se reparten, inversión de apertura y punto de equilibrio ([propuesta](servidor-remoto.md)). Si abre antes, abre con eleventa |
 | 8. App Android | Preventa y pedidos desde el celular |
@@ -137,8 +145,9 @@ cuánto costó abrir la segunda y cuándo se pagó sola.
 
 - **Inversión de apertura** por sucursal, una sola vez: mobiliario, equipo (impresoras, computadoras, engargoladoras),
   adecuaciones del local, depósito de renta, trámites e inventario inicial. Con fecha, monto y comprobante.
-- **Gastos fijos del mes** por sucursal: renta, sueldos, luz, internet. Son los mismos gastos que se reparten en la
-  [utilidad neta de los servicios](servicios.md#dos-utilidades).
+- **Gastos fijos del mes** por sucursal: renta, sueldos, internet (la luz va aparte: el recibo menos lo ya cargado a
+  los servicios). Son los mismos gastos que se restan en la
+  [ganancia neta de los servicios](servicios.md#tres-niveles-de-costo).
 - **De las ventas:** la utilidad bruta de cada mes (venta − costo de lo vendido), que ya sale del POS.
 - **Insumos del negocio:** lo que la tienda gasta pero no vende, comprado cuando se necesita: un rollo de papel
   térmico a medio mes, cinta, bolsas, artículos de limpieza, tóner de la impresora de tickets. Se registran con
@@ -147,14 +156,17 @@ cuánto costó abrir la segunda y cuándo se pagó sola.
     capturarlo dos veces.
   - Los materiales de los servicios (espirales, micas, papel para copias) no son insumos: están en el inventario y se
     descuentan con la [receta](servicios.md#receta-de-un-servicio). Así no se cuentan dos veces.
+- **Equipo y luz:** el equipo (impresoras, engargoladora, enmicadora, guillotina, PC) se deprecia por uso o por mes,
+  nunca las dos; el recibo de luz se resta una sola vez, menos lo que ya se cargó a cada servicio
+  ([servicios](servicios.md#tres-niveles-de-costo)).
 
 Con eso, un reporte por sucursal:
 
 | Indicador | Cómo se calcula |
 |---|---|
-| Punto de equilibrio mensual | Venta necesaria para cubrir los gastos: (gastos fijos + insumos) ÷ margen bruto |
-| Ganancia del mes | Utilidad bruta − gastos fijos − insumos |
-| Recuperación de la inversión | Mes en que la suma de las ganancias alcanza la inversión de apertura |
+| Punto de equilibrio mensual | Venta necesaria para cubrir los gastos: (gastos fijos + insumos + luz y depreciación no cargadas a los servicios + mermas y faltantes + comisión de la tarjeta) ÷ margen bruto |
+| Ganancia del mes | Utilidad bruta − mermas y faltantes − gastos fijos − insumos − luz y depreciación no cargadas a los servicios − comisión de la tarjeta |
+| Recuperación de la inversión | Mes en que la suma de (ganancia + depreciación) alcanza la inversión de apertura |
 | Rendimiento | Ganancia anual ÷ inversión |
 
 - El equipo de la matriz que hoy está en el inventario de eleventa (impresoras, engargoladoras) entra aquí como
@@ -184,8 +196,9 @@ tareas a la guía y la prueba se puede repetir con la versión nueva (con los co
   se da de alta sola, sin pedir la dirección ni el PIN del dueño.
 - **Un instalador:** un solo archivo (`PapeleriaPos-Prueba.exe`) que deja todo listo: el servicio, la caja, una base
   ficticia con los usuarios de prueba y un acceso en el escritorio; se desinstala sin dejar nada. Se arma en GitHub
-  Actions (Windows), porque la PC de desarrollo es Linux. Como en la tienda, lo instala el administrador para todos
-  los usuarios de la PC y quien prueba lo usa con una cuenta común de Windows ([instalación](#instalación-y-usuarios-de-windows)).
+  Actions (Windows), porque la PC de desarrollo es Linux. Como en la tienda, lo instala el administrador para todos los
+  usuarios de la PC y quien prueba lo usa con una cuenta común de Windows
+  ([instalación](#instalación-y-usuarios-de-windows)).
 - **Autoconclusiva:** trae su guía dentro de la caja: tareas cortas (vender, cobro mixto, cancelar, devolver, corte X
   y Z, F3 Productos, alta rápida, recibir una compra…) con lo que debe pasar en cada una. Quien prueba marca si salió
   bien y escribe lo que vio; al final queda un archivo con sus respuestas para mandarlo.
@@ -208,14 +221,15 @@ la caja con su usuario y PIN del POS, todos desde la misma cuenta común de Wind
   - Las cajas en Archivos de programa, con su acceso para todos los usuarios.
   - Las reglas del firewall para la red local.
   - La carpeta de datos de la caja, con permiso de escritura para los usuarios.
-  - En la PC de la WF-6590, su cola con "Conservar documentos impresos" (cambiarlo pide administrador).
+  - En cada PC que imprime, una cola local por impresora (las dos WF-6590 y la L5590), con puerto TCP/IP estándar y
+    "Conservar documentos impresos" (cambiarlo pide administrador).
 - **Lo que se hace desde la cuenta común de Windows:** vender y todo lo de la caja, dar de alta la caja (pide el PIN
   del dueño, no administrador), trabajar sin conexión, cotizar e imprimir.
 - **Dónde se escribe:** la base de la sucursal la escribe solo el servicio. Lo de cada caja (su configuración y la
   copia para trabajar sin conexión) va en `C:\ProgramData\PapeleriaPos\Caja`, que el instalador deja con escritura para
   las cuentas de Windows: sirve igual si la dio de alta el administrador o si la PC tiene otra cuenta común.
-- **La WF-6590:** el agente lee los trabajos del usuario que tiene abierta la caja. Si alguien imprime desde otra
-  cuenta de Windows, esa cuenta necesita "Administrar documentos" en la cola (lo da el administrador).
+- **Las impresoras de inyección:** el agente lee los trabajos del usuario que tiene abierta la caja. Si alguien imprime
+  desde otra cuenta de Windows, esa cuenta necesita "Administrar documentos" en la cola (lo da el administrador).
 - **La prueba con una persona real** se instala igual: el administrador la instala para todas las cuentas de Windows
   y quien prueba la usa con una cuenta común.
 
@@ -224,25 +238,34 @@ la caja con su usuario y PIN del POS, todos desde la misma cuenta común de Wind
 Lo que falta para tener en la matriz lo que hoy hace eleventa, con la caja principal y la secundaria, más lo ya
 planeado. Revisado el 2026-10-08 contra el plan, el código y los PR abiertos.
 
+**Las pruebas en la tienda solo se pueden sábado y domingo:** entre semana se programa, se simula y se deja todo listo
+para esos días ([forma de trabajar](notas.md#forma-de-trabajar), [guía de los fines de semana](pruebas-en-tienda.md)).
+
 | Qué | Dónde está | Estado |
 |---|---|---|
+| **La red de la tienda:** diagnóstico, y el arreglo (el módem solo al internet del Tenda, red local nueva, IP fijas, switch, impresoras por IP sin WSD) | [Red de la matriz](arquitectura.md#la-red-de-la-matriz), [notas](notas.md#red-de-la-tienda) | Falta: dos fines de semana ([guía](pruebas-en-tienda.md)) y un script de diagnóstico (chico) |
+| En el POS, por la red: que la caja 2 vuelva a buscar sola a la principal, avisos de lo configurado por nombre o con WSD, la franja «sin internet» o «sin red local» y la bitácora de red | [Red de la matriz](arquitectura.md#la-red-de-la-matriz) | Falta (chico) |
+| **Las tres impresoras de inyección** (dos WF-6590 y una L5590): cada una con sus costos, su cola en cada PC, su contador, su calibración y sus hojas por cobrar | [Impresión](impresion.md), [notas](notas.md#impresoras) | Falta (mediano); antes, leer la L5590 por SNMP |
+| **La impresora de tickets compartida:** reintento si las dos cajas imprimen a la vez y botón «Reintentar»; decidir una segunda impresora con su cajón (≈2,700 MXN) | [Notas](notas.md#impresoras) | Falta (chico) y la decisión |
+| **Reportes de ventas:** día contra hace un año (el mismo día de la semana o la misma fecha: por decidir), mes y año a la fecha contra el año anterior, meses cerrados; venta neta, tickets, ticket promedio, costo, utilidad y margen; por departamento, caja, cajero y forma de pago; exportar a Excel y líneas en el resumen de Telegram. El año anterior sale del historial de eleventa (su utilidad, con el costo capturado en eleventa) | [Notas](notas.md#reportes) | Falta (mediano) |
+| **Ganancia real del mes:** gastos fijos, consumibles del mes (propuesta, por aprobar: juntarlos aquí con la entrega 3 de la fase 3), recibo de luz, equipo con su depreciación y comisión de la tarjeta; utilidad bruta − mermas y faltantes − gastos = ganancia; punto de equilibrio y cierre del mes por Telegram | [Administración](#administración-y-punto-de-equilibrio), [servicios](servicios.md#tres-niveles-de-costo) | Falta (mediano) |
 | Fusionar a `main`, en orden, los PR abiertos (#27 en adelante) | Hoy `main` llega hasta la entrega 1 de la fase 2 | Lo fusiona el dueño. Ojo: el #45 no está en la pila (sale de la rama del #43): decidir si se pasa encima de la punta o se cierra |
-| Probar en Windows con las dos cajas reales: servicio, alta de la caja 2, contingencia, respaldos, ventana de la caja, ticket desde las dos y cajón | Fase 1, entregas 1 y 3 | Falta; fuera de horario y sin tocar eleventa |
+| Probar en Windows con las dos cajas reales: servicio, alta de la caja 2, contingencia, respaldos, ventana de la caja, ticket desde las dos y cajón | Fase 1, entregas 1 y 3 | Falta: un sábado o domingo, sin tocar los datos de eleventa ([guía](pruebas-en-tienda.md#después-las-dos-cajas-con-el-pos)) |
 | Crear el bot de Telegram de verdad y probarlo | Fase 1, entrega 4 | Falta |
 | Probar la impresión con la cola de laboratorio y después con la real | Fase 1, entrega 5 | Falta |
 | Prueba con una persona real | [Ver arriba](#prueba-con-una-persona-real) | Hecha en el PR #31; falta fusionarla, instalarla en una PC con Windows limpia y dársela a quien prueba. Su hito ya pasó |
 | Medir un día pico (~120 tickets) con las dos cajas, en la caja principal real | Hace falta el simulador de cajas (no existe; [descrito aquí](prueba-sucursales-linux.md#lo-que-hay-que-arreglar-o-construir)) | Falta |
-| Precios y clientes: los consumibles del mes (entrega 3) | [Fase 3](fase-3-precios-clientes.md) | Las entregas 1 y 2 están en PR abiertos |
-| Servicios con receta, cobros a terceros aparte en el corte, pedidos, WhatsApp desde la PC, apartados y cotizaciones guardadas | Fase 4 ([servicios](servicios.md), [pedidos](pedidos.md), [WhatsApp](whatsapp.md)) | Falta su plan |
+| Precios y clientes | [Fase 3](fase-3-precios-clientes.md) | Las entregas 1 y 2 están en PR abiertos. Propuesta, por aprobar: juntar los consumibles del mes (entrega 3) con la ganancia real del mes |
+| Servicios con costo real (engargolado y enmicado con depreciación, luz y consumibles; impresiones por impresora), pedidos y WhatsApp desde la PC. Apartados y cotizaciones guardadas quedan como mejora: el eleventa de la tienda no los tiene | Fase 4 ([servicios](servicios.md), [pedidos](pedidos.md), [WhatsApp](whatsapp.md)) | Falta su plan |
 | Instalador de la tienda, soporte a distancia (NetBird gratis u otro) y cómo se actualiza | [Por definir](#pendientes) | Falta |
 | Respaldo cifrado fuera de la tienda y vigilancia de la caja principal: se reporta a Healthchecks.io cada pocos minutos en horario, y si no abre o se apaga, Healthchecks.io avisa por Telegram (el bot del POS no puede avisar de su propia caja) | Fase 5 ([notas](notas.md#respaldo-fuera-de-la-tienda-y-aviso-de-apertura)) | Falta (chico) |
 | Depuración, conteo físico, importación final y arranque | Fase 5 y [depuración](#depuración-del-inventario) | Falta |
 | Promociones y kits, si el piloto queda cerca del regreso a clases | [Fase 3](fase-3-precios-clientes.md) | Pospuestas por ahora |
 
-**Lo que eleventa hace hoy y el plan no cubre todavía** (hay que preguntarlo, [pendientes](#pendientes)): una pantalla
-de reportes (ventas por periodo, turno, cajero y departamento, utilidad, lo más vendido, cortes anteriores, Excel), las
-recargas y el pago de servicios si salen de la plataforma de eleventa, la facturación si hoy se hace con eleventa, y
-ver el negocio desde el celular (pulso de eleventa).
+**Respuestas del dueño (2026-10-08):** usa el reporte de ventas por periodo (día, mes y año a la fecha) y la comparación
+contra hace un año, y se agregarán más; la meta es saber exactamente cuánto se gana. Las recargas y el pago de servicios
+quedan pospuestos. No hay nada fiscal. Su eleventa no tiene apartados ni cotizaciones. Todas las impresoras van por la
+red local.
 
 ### Varias sucursales (pospuesto)
 
@@ -316,6 +339,16 @@ Fase 3:
 
 Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
 
+- [ ] Primer fin de semana en la tienda: conocer la red, las impresoras, los grabadores y el equipo, sin cambiar nada
+  ([guía](pruebas-en-tienda.md#primer-fin-de-semana-conocer-la-tienda))
+- [ ] Script de diagnóstico de red en el escritorio de la caja 2, y la instrucción al personal
+- [ ] Segundo fin de semana: arreglar la red ([guía](pruebas-en-tienda.md#segundo-fin-de-semana-arreglar-la-red))
+- [ ] En el POS, por la red: la caja 2 vuelve a buscar a la principal, avisos de nombres o WSD, la franja de «sin
+  internet» y la bitácora de red
+- [ ] Las tres impresoras de inyección en el módulo de impresión
+- [ ] Impresora de tickets compartida: reintento y botón «Reintentar»; decidir una segunda con su cajón
+- [ ] Reportes de ventas por periodo contra el año anterior
+- [ ] Ganancia real del mes (con los consumibles de la fase 3, si el dueño aprueba juntarlos)
 - [ ] Probar en Windows con las dos cajas reales: servicio, alta de la caja 2, contingencia, respaldos, ventana de la
   caja, ticket desde las dos y cajón
 - [ ] Medir un día pico (~120 tickets) con las dos cajas, en la caja principal real, con el simulador de cajas
@@ -326,7 +359,7 @@ Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
   ([lista](camaras.md#configurar-el-grabador))
 - [ ] Correr las pruebas en Windows en cada PR (hoy solo corren si cambia `instalacion/`) y arreglar las 8 que fallan en
   Linux ([notas](notas.md#código-y-pruebas))
-- [ ] Escribir el plan de la fase 4 y revisarlo con el dueño
+- [ ] Escribir el plan de la fase 4 (primero, servicios con costo real) y revisarlo con el dueño
 
 Varias sucursales ([pospuesto](#varias-sucursales-pospuesto)):
 
@@ -340,35 +373,53 @@ Depuración del inventario (antes del piloto, [ver arriba](#depuración-del-inve
 - [ ] Sacar del inventario el equipo de la tienda (impresoras, engargoladoras, enmicadoras, mobiliario) y registrarlo como [inversión](#administración-y-punto-de-equilibrio)
 - [ ] Juntar los productos capturados dos veces (los que marca el diagnóstico)
 - [ ] Corregir unidades: los productos a granel que eleventa tiene en KG (listón, micas, hojas sueltas…)
-- [ ] Pasar a servicios lo que eleventa vende como producto a granel (impresiones, copias, engargolado, escaneo)
+- [ ] Pasar a servicios lo que eleventa vende como producto a granel (impresiones, copias, engargolado, enmicado,
+  escaneo)
+- [ ] Marcar las recargas y los pagos de servicios como cobro a terceros, antes de comparar contra el año anterior
+  (falta esa decisión en la depuración y la opción en la ficha; tampoco existe todavía la decisión «es equipo»)
 - [ ] Conteo físico completo: reemplaza todas las existencias de eleventa
 
 Por definir:
 
-- [ ] Instalador de la tienda para el administrador: servicio, cajas, firewall, carpeta de la caja con permisos y la
-  cola de la WF-6590 ([detalle](#instalación-y-usuarios-de-windows)). Hoy son los scripts de `instalacion/`
+- [ ] Instalador de la tienda para el administrador: servicio, cajas, firewall, carpeta de la caja con permisos y las
+  colas de las impresoras de inyección ([detalle](#instalación-y-usuarios-de-windows)). Hoy son los scripts de
+  `instalacion/`
 
 - [ ] Si la sucursal 2 abre antes de la fase 7: guardar la lista de gastos de apertura con comprobantes
 - [ ] Administración: insumos del mes (papel térmico, cinta, limpieza…) para la ganancia mensual
   ([detalle](#administración-y-punto-de-equilibrio)); el dueño lo pasó a la fase 3 al revisar la fase 2 (es la
-  [entrega 3](fase-3-precios-clientes.md#3-consumibles-del-mes), «Consumibles del mes»)
+  [entrega 3](fase-3-precios-clientes.md#3-consumibles-del-mes), «Consumibles del mes»). Propuesta: se junta con la
+  ganancia real del mes, porque la captura es la misma
 - [ ] Módulo de convivencia: el POS nuevo como una caja más de eleventa durante la adaptación
   ([idea](migracion-eleventa.md#convivencia-con-eleventa-idea-a-evaluar))
 - [ ] Demás funciones a la medida (las describe el dueño)
 - [x] Privilegios de los clientes registrados: descuento, mayoreo, crédito, pedido sin anticipo y apartar sin pagar;
   nada más ([decisión](fase-3-precios-clientes.md#decisiones-de-la-revisión))
 - [ ] Regla para pedidos de no registrados: monto máximo que se prepara sin anticipo, y días para borrar el celular
-- [ ] Reportes: ¿cuáles de eleventa usa el dueño (ventas por periodo, turno, cajero y departamento; utilidad; lo más
-  vendido; cortes anteriores; Excel)? El POS solo tiene las ventas del día de cada caja y el resumen por Telegram
-- [ ] Recargas y pago de servicios: ¿salen hoy de la plataforma de eleventa (monto prepagado, 5.5 % de ganancia)? Al
-  apagarla se cortan
-- [ ] ¿Se usan hoy los apartados y las cotizaciones de eleventa?
-- [ ] Impresoras de la matriz: ¿la caja 2 tiene su propia impresora de tickets? ¿Hay otra de inyección además de la
-  WF-6590 (la L5590)? Hoy el POS vigila una sola por sucursal
+- [x] Reportes que usa el dueño: ventas por día, mes y año a la fecha, y contra el año anterior; se agregarán más
+  ([para el piloto](#para-el-piloto-con-dos-cajas))
+- [x] Recargas y pago de servicios: pospuestos ([idea](ideas.md#recargas-y-pago-de-servicios))
+- [x] Apartados y cotizaciones: el eleventa de la tienda no los tiene
+- [x] Impresoras de la matriz, todas por red: una de tickets para las dos cajas, dos WF-6590 y una L5590
+- [ ] Reportes: ¿contra el mismo día de la semana del año pasado o contra la misma fecha? ¿Quién ve la utilidad y la
+  ganancia: solo el dueño o también el encargado (hoy el resumen de Telegram la manda a todos los chats vinculados)?
+- [ ] Ganancia real: ¿cuáles son los gastos fijos (renta, sueldos, internet, teléfono, contador…) y se pagan con el
+  efectivo de la caja o fuera? ¿El sueldo del dueño es gasto? ¿Qué terminal de tarjeta y qué comisión? ¿Un faltante de
+  corte lo absorbe el negocio o el cajero?
+- [ ] Equipo y luz: la lista del equipo con precio, fecha de compra y años de uso (las tres impresoras de inyección, la
+  de tickets, engargoladora, enmicadora, guillotina, PC); el recibo de CFE (tarifa, si es mensual o bimestral, $/kWh);
+  marca y modelo de la engargoladora y la enmicadora
+- [ ] Impresoras: ¿desde qué PC se imprime a cada una? ¿Para qué se usa cada una? ¿El cliente paga lo mismo en las
+  tres? ¿Hay cajón de dinero y cuántos? En eleventa, ¿la caja 2 cobra en efectivo y en qué cajón lo guarda?
+- [ ] Red: modelo del módem de Megacable (y si es por cable o fibra) y del Tenda; ¿las cajas y las impresoras van por
+  cable o por Wi-Fi? ¿Cada cuánto se cae y cuánto dura? ¿Hay no-break para el módem y el Tenda?
+- [ ] Durante el piloto, las recargas y los pagos de servicios: ¿se registran a mano en el POS como cobro a terceros
+  para que el corte cuadre, si su efectivo entra al mismo cajón?
 - [ ] Mientras la sucursal 2 use eleventa: ¿le manda mercancía la matriz? Si sí, se registra en el POS como salida con
   motivo «A sucursal 2», al costo promedio, hasta que existan los traspasos
 - [ ] Autorizar por Telegram: hoy basta con tener el chat vinculado. ¿Se pide además un PIN antes del piloto (el bot lo
   pide, lo borra y la caja principal lo verifica; no necesita el central) o un monto máximo para aprobar así?
-- [ ] ¿Se factura hoy con eleventa? ¿Se usa pulso de eleventa para ver las ventas en el celular?
+- [x] Fiscal: hoy no se factura nada; de eleventa solo se usa el punto de venta (ni pulso ni facturación)
+- [ ] ¿El negocio tiene contador y declara IVA? Define si el IVA de la luz y de las compras es costo
 - [ ] WhatsApp: ver [pendientes](whatsapp.md#pendientes)
 - [ ] Dispositivos propios: ver [ideas](ideas.md)

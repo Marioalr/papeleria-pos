@@ -129,7 +129,7 @@ nunca deja la línea debajo del costo sin autorización ("vender debajo del cost
 | **1** | Núcleo traído de Control Print (medición y costos); agente en la caja; trabajos en la base del POS; F2 Impresiones por cobrar; cobrarlas en el ticket; no vendidas; costos solo con permiso; configuración de costos (dueño) |
 | **2** | La impresora desde la caja principal: niveles y contadores, verificación de hojas, calibración, avisos de consumibles por Telegram; copias en el panel con su comparación; costo real de las impresiones en la utilidad del día |
 | **3** | Descuentos (línea, ticket, precio especial, clientes especiales) |
-| Después | Cotizar PDF y cotizaciones guardadas (con los pedidos, fase 4); celular y copias detectadas por contador; documentos comunes (CURP, recibo de luz); varias impresoras (sucursal 2) |
+| Después | Cotizar PDF y cotizaciones guardadas (con los pedidos, fase 4); celular y copias detectadas por contador; documentos comunes (CURP, recibo de luz); varias impresoras: las dos WF-6590 y la L5590 de la matriz, antes del piloto ([plan](plan.md#para-el-piloto-con-dos-cajas)) |
 
 ## Decisiones de la revisión
 

@@ -47,9 +47,10 @@
                                                                        └─────────────────────┘
 ```
 
-- La caja encuentra al servicio por la **IP fija** reservada en el router; si cambia, lo busca sola en la red (un
-  aviso por difusión que el servicio contesta).
-- Cada caja imprime en su propia impresora de tickets (la de la red o la conectada a esa PC).
+- La caja encuentra al servicio por la **IP fija** reservada en el router. Hoy solo lo busca en la red al darla de alta:
+  si después cambia la IP de la caja principal, hay que reconfigurarla (pendiente: que la vuelva a buscar sola).
+- En la matriz hay **una sola impresora de tickets** en la red para las dos cajas (respuesta del dueño, 2026-10-08):
+  por decidir si se compra una segunda con su cajón ([plan](plan.md#para-el-piloto-con-dos-cajas)).
 - Todas las cajas de una sucursal llevan la misma versión del programa (las actualizaciones las instala soporte a
   distancia; con el central, se reparten solas).
 
@@ -72,7 +73,8 @@ de color y la caja pasa a contingencia.
 
 **Qué sigue funcionando:**
 
-- Escanear, buscar, varios tickets, cobro mixto, ticket impreso y cajón.
+- Escanear, buscar, varios tickets, cobro mixto, ticket impreso y cajón (si la impresora de tickets responde por la
+  red; si se cayó la red local, la venta queda guardada para reimprimir y el cajón se abre con la llave).
 - **Folios:** la serie es de la caja (A, B…), así que la caja continúa su propio consecutivo sin chocar con las
   demás. Al volver, el servicio acepta esos folios.
 - **Precios y catálogo:** la última copia que recibió. La caja la actualiza en cuanto cambia algo (cada producto y
@@ -130,7 +132,7 @@ folios, inventario y corte correctos.
 
 | Pregunta | Respuesta | Efecto |
 |---|---|---|
-| Cajas | 3 cajas en la matriz; la principal es otra PC (no la de desarrollo) | El servicio se instala en esa PC; las otras dos se dan de alta por la red |
+| Cajas | 3 cajas en la matriz (hoy son 2, la principal y la secundaria; se planea una 3.ª); la principal es otra PC (no la de desarrollo) | El servicio se instala en esa PC; las otras dos se dan de alta por la red |
 | Autorizaciones sin servidor | Se permiten | Copia local de los PIN cifrados; marcadas "en contingencia" en la bitácora |
 | Corte Z sin servidor | Se permite, con ticket | La caja cierra el turno e imprime el corte; se cuadra al volver |
 | Respaldos | 30 días de historia | Copia diaria y al corte Z |

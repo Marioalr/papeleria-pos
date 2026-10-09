@@ -7,6 +7,25 @@
 > que volver a revisarlos al retomar. Tipo de cambio usado: 17.98 MXN por dólar y 20.12 por euro (FIX de Banxico del
 > 7 de octubre de 2026).
 
+## Forma de trabajar
+
+Decidido por el dueño el 2026-10-08:
+
+- **Las pruebas reales, en la matriz, solo se pueden hacer sábado y domingo.** Ahí va todo lo que necesita la tienda:
+  las dos cajas reales, la red local, las impresoras, el grabador y el cajón.
+- **El resto de la semana:** desarrollo, simulaciones y pruebas con datos ficticios, dejando todo listo para esos días.
+
+Propuesta para cumplirlo ([guía](pruebas-en-tienda.md)):
+
+- **Llegar listos al fin de semana.** Cada prueba de la tienda se prepara entre semana para no perder tiempo ahí:
+  - el instalador armado y probado antes en una PC limpia;
+  - una guía paso a paso con lo que debe pasar, lo que hay que anotar o medir y quién lo hace;
+  - el respaldo al llegar y cómo regresar todo a como estaba, sin tocar los datos de eleventa;
+  - juntar en un mismo fin de semana todo lo que necesite la tienda, ordenado de lo más importante a lo menos.
+- **Lo que se adelanta sin la tienda:** el código, las pruebas automáticas, el simulador de cajas, el instalador en
+  GitHub Actions y en una PC limpia (si hace falta Windows, en la laptop o la PC del dueño), y la prueba con una persona
+  real (en cualquier PC con Windows).
+
 ## Aplica ya, con una sola sucursal
 
 ### Seguridad
@@ -51,8 +70,8 @@
   con el central; debe quedar «desde el piloto, en Backblaze B2», como en el plan.
 - **No hay simulador de cajas** para medir el día pico ni la contingencia, y la única medición de búsquedas (18 ms, 19
   de cada 20) es de la PC de desarrollo (i9): falta medir en una PC como las de caja.
-- **Una sola impresora de inyección por sucursal:** el servicio vigila una sola dirección (`ImpresoraHost`). Si la
-  matriz tiene otra (¿la L5590?), sus hojas no se miden.
+- **Una sola impresora de inyección por sucursal:** el servicio vigila una sola dirección (`ImpresoraHost`); la matriz
+  tiene tres ([impresoras](#impresoras)).
 - **Los borrados del catálogo no dejan rastro:** el catálogo y la depuración borran códigos, presentaciones y ligas con
   proveedores; solo los precios quedan en su historial. Un guardado que solo borra no sube la versión del catálogo, así
   que la copia de contingencia de la caja secundaria puede conservar un código borrado hasta 30 minutos.
@@ -85,7 +104,8 @@
 - **No-break** para la caja principal, que guarda la base. Uno de 480 VA (~639 MXN) puede quedarse corto si también
   alimenta módem y grabador; los de 800–1000 VA cuestan 1,009–1,799 (dato previo, sin reverificar). En el BIOS: encender
   sola al volver la luz; Windows Update fuera del horario de la tienda.
-- **Falta comprar el cajón** (~1,000 MXN) para probarlo con las dos cajas.
+- **El cajón:** por confirmar si hoy hay (y cuántos); si no, comprarlo (≈799 en Cyberpuerta) antes del fin de semana de
+  las dos cajas.
 - **.NET 11 y siguientes** (la 11 sale en noviembre de 2026) piden procesador x86-64-v2 (SSE4.2): sin eso no arrancan.
   Vale para las PC de caja que ya hay en la matriz y para las nuevas: revisarlas con `/lib64/ld-linux-x86-64.so.2
   --help` desde una USB de Ubuntu. .NET 10 (el del proyecto) tiene soporte hasta noviembre de 2028 y corre en cualquier
@@ -96,6 +116,94 @@
   HandleLidSwitch=ignore para que no se suspenda con la tapa cerrada. La PC A6 gasta de 3 a 5 veces más luz. Modelos por
   confirmar ([cómo](prueba-sucursales-linux.md#las-máquinas)).
 - **El cajón abierto con la llave** no lo ve el sistema; algunas impresoras de tickets reportan el sensor del cajón.
+
+### Red de la tienda
+
+El dueño reporta (2026-10-08) que a veces, cuando se va el internet de Megacable, también se cae la red local: no hay
+comunicación con las impresoras ni entre equipos. El router Tenda no lo resolvió; hoy el personal desconecta el cable
+de internet del Tenda y la red vuelve. Todo está conectado por la red local, sin USB. La causa **no se conoce** todavía;
+lo que se sabe:
+
+- **El Tenda cambia su red local él solo** si la dirección que recibe por internet cae en su misma red (su red de
+  fábrica es 192.168.0.1; pasa a 192.168.1.1). Lo documenta el manual del AC10 V5 (§9.1.2, p. 113); el del N301 V2 lo
+  menciona solo en modo WISP. Los equipos con la IP puesta en el propio equipo se siguen viendo entre ellos, pero
+  pierden al router; los que la toman del Tenda (aunque esté reservada) cambian de dirección.
+- **Los módems de cable de Megacable** (Arris, Technicolor, Ubee) usan 192.168.0.1, la misma red de fábrica del Tenda;
+  los de fibra, 192.168.1.1 (ZTE) o 192.168.100.1 (Huawei). Un módem de cable en modo puente que pierde la señal puede
+  repartir una dirección temporal 192.168.100.x (documentado en SURFboard y Xfinity; no confirmado en los de
+  Megacable); esa dirección no choca con la red de fábrica del Tenda. Con el módem en modo router, el choque de red
+  pasaría una sola vez, al instalar el Tenda.
+- **Causas que encajan,** de más a menos probable según la revisión: (1) el módem sigue dentro de la red local (su cable
+  entra a un puerto LAN del Tenda, el Tenda está en modo AP, o algo está conectado al módem o a su Wi-Fi); (2) el Tenda
+  se traba o reinicia mientras su internet queda «a medias»; (3) el choque de red de arriba; (4) equipos configurados
+  por nombre o con puertos WSD, más un DNS que, si no contesta, hace esperar hasta 10 s por nombre (si contesta con
+  error, Windows corta al instante; falta ver si los nombres cortos como CAJA1 pasan por el DNS); (5) un reinicio del
+  Tenda: el AC10 V5 trae de fábrica un reinicio diario que se dispara con poco tráfico (en el N301 V2 viene apagado);
+  después de un reinicio la red vuelve sola, así que explica cortes, no que haga falta desconectar el cable.
+- **Lo que hay que juntar** la próxima vez que falle, antes de desconectar nada (con un script que lo guarde solo):
+  `ipconfig /all`, `arp -a`, ping por IP al Tenda, a la impresora de tickets, a una WF-6590 y a la caja principal, ping
+  a la caja principal por nombre, cuánto tarda el DNS, y en el Tenda la dirección de internet, la de la red local y su
+  tiempo encendido (una foto de su pantalla de estado), y las luces del módem. Luego desconectar como hoy, esperar un
+  minuto y repetir.
+- **El arreglo de más probabilidad,** sin automatizar nada ([plan](plan.md#para-el-piloto-con-dos-cajas)): el módem
+  solo al puerto de internet del Tenda y nada más conectado al módem; el Tenda en modo router, con su firmware al día,
+  el reinicio programado de madrugada y su red local en una poco común (por ejemplo 192.168.77.0/24); IP fija puesta en
+  cada equipo y reservada en el Tenda; cajas, impresoras y grabador por cable a un switch (TP-Link TL-SG108, 433 + 138
+  de envío en Cyberpuerta); impresoras en Windows por IP con puerto TCP/IP estándar y sin WSD (en las WF-6590 se apaga
+  en su página; en la L5590, comprobarlo).
+- **Si aun así falla:** un router de negocio como único router y el Tenda solo como Wi-Fi (TP-Link ER605 V2, 1,029 + 128
+  de envío), o automatizar el corte con un MikroTik y su función Netwatch (el hEX lite de 889 era el único con
+  existencias, con puertos de 100 Mbps; los gigabit de 1,269 y 1,439, agotados; más envío; pide saber configurarlo).
+  Probablemente no conviene apagar el módem con un enchufe inteligente.
+- **En el POS:** la venta de la caja principal no usa la red (habla con su propio servicio). La caja 2 pasa a
+  contingencia y sigue vendiendo, pero hoy no vuelve a buscar a la principal si cambia su IP. La impresora de tickets,
+  el SNMP y la dirección de la caja principal en la caja 2 aceptan nombres (el instalador sugiere el nombre de la PC):
+  hay que configurarlos por IP, y que el instalador muestre la IP. Hace falta distinguir en pantalla «sin internet» (la
+  venta sigue, no desconectes nada) de «sin red local», y una bitácora de red que junte sola los datos del diagnóstico.
+
+### Impresoras
+
+- **En la matriz,** todo por red: una impresora de tickets (POS-8360) para las dos cajas, dos Epson WorkForce WF-6590 y
+  una EcoTank L5590. Las WF-6590 aceptan IP fija y en su página (Web Config) se apagan WSD, Bonjour e IPP; la L5590
+  también usa WSD (comprobar si se apaga) y tiene puerto de red por cable además de Wi-Fi.
+- **El POS mide y cobra una sola impresora de inyección por sucursal** (`ImpresoraHost`). Mientras no se cambie, no hay
+  que apuntar ninguna caja a la segunda WF-6590 ni a la L5590: saldrían faltantes falsos y costos en cero. Que la L5590
+  se lea igual por SNMP falta probarlo.
+- **Una impresora de tickets para dos cajas:** si se pone cajón, va conectado a ella, así que las dos cajas abrirían el
+  mismo cajón, y eso choca con el turno y el corte ciego de cada cajero. Si las dos imprimen a la vez, hoy no hay
+  reintento. Opciones: una segunda impresora de tickets con su cajón (≈1,909 la 3nStar RPT008 + ≈799 cada cajón, más
+  envío: ≈2,700, o ≈3,500 si hoy no hay ningún cajón; confirmar que tenga red), dos cajones en la misma impresora con
+  un cable en Y (si la POS-8360 tiene el segundo pulso), o la regla «la caja 2 no cobra en efectivo». No se recomienda
+  un cajón compartido entre dos turnos.
+
+### Luz y costo de los servicios
+
+- **Tarifa de luz de negocio** (PDBT, baja tensión hasta 25 kW), octubre de 2026: 3.565 (Valle de México) a 4.255
+  (Jalisco) $/kWh sin IVA en las seis divisiones del centro consultadas (las demás no se revisaron), más un cargo fijo
+  de 25.25 a 70.34 al mes. Si el negocio no declara IVA, el de la luz es costo: el $/kWh real es el cargo × 1.16. El
+  dato que vale sale del recibo de la matriz. (CFE, consultado el 2026-10-08)
+- **Consumo de las impresoras** (fichas de Epson): WF-6590, 36 W imprimiendo y 17 W en espera; L5590, 12 W. La luz por
+  cara impresa es despreciable (≈0.0001 MXN); la espera (17 W, y 2.7 W en reposo) suma a lo más ≈25 MXN al mes por
+  WF-6590 y va como luz no asignada. Lo que pesa es la tinta y la depreciación. El módulo trae 3.00 $/kWh y 25 W por
+  omisión: hay que corregirlos.
+- **La enmicadora** pesa por el tiempo que pasa encendida, no por cada uso: hay que medirla con un medidor de enchufe un
+  día normal. Una engargoladora manual no gasta luz, solo se deprecia.
+- **Depreciación:** (costo − valor final) ÷ meses de vida ÷ usos al mes. El equipo de la matriz que hoy está en el
+  inventario de eleventa (impresoras, engargoladora, enmicadora, guillotina, PC) sale del inventario y entra como
+  equipo; el dueño confirma precio y fecha de compra.
+- **Hoy el POS cobra los servicios con costo 0:** la utilidad sale inflada hasta que lleguen las recetas. Mientras,
+  conviene un costo estándar por unidad, como en eleventa.
+
+### Reportes
+
+- **Lo que usa el dueño en eleventa** (2026-10-08): ventas por día, mes y año a la fecha, y contra el año anterior. Su
+  versión de eleventa no tiene apartados ni cotizaciones, y hoy no se factura nada.
+- **El historial importado de eleventa** (tablas de ventas históricas) da el año anterior desde el primer día. Trae
+  tickets, líneas y el costo capturado en eleventa (en los servicios, sumado a mano), así que la utilidad del año
+  anterior se muestra como «utilidad según eleventa». El importador no lee caja ni cajero: el desglose por caja, cajero
+  y forma de pago solo sale para lo vendido en el POS. Falta revisar con la copia real desde qué año hay historial, si
+  la tabla de tickets de eleventa trae caja o cajero y si trae las recargas.
+- **Hoy el POS** solo tiene las ventas del día de cada caja, el resumen de Telegram y el diagnóstico en Excel.
 
 ### Respaldo fuera de la tienda y aviso de apertura
 
