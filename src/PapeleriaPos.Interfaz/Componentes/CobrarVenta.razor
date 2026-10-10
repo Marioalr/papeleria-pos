@@ -78,13 +78,13 @@ else
                 <input inputmode="decimal" @bind="_tarjeta" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
             </label>
             <label>Referencia de la terminal
-                <input @bind="_refTarjeta" @onkeydown="AlTeclear" />
+                <input @bind="_refTarjeta" @bind:event="oninput" @onkeydown="AlTeclear" />
             </label>
             <label>Transferencia
                 <input inputmode="decimal" @bind="_transferencia" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
             </label>
             <label>Referencia
-                <input @bind="_refTransferencia" @onkeydown="AlTeclear" />
+                <input @bind="_refTransferencia" @bind:event="oninput" @onkeydown="AlTeclear" />
             </label>
         </div>
         <p class="nota">La transferencia queda por verificar hasta que el encargado confirme que llegó el dinero.</p>

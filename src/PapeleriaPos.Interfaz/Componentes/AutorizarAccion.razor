@@ -21,7 +21,7 @@
     else
     {
         <div class="dos-columnas">
-            <label>Usuario de quien autoriza <input id="autoriza-usuario" @bind="_usuario" autocomplete="off" @onkeydown="AlTeclear" /></label>
+            <label>Usuario de quien autoriza <input id="autoriza-usuario" @bind="_usuario" @bind:event="oninput" autocomplete="off" @onkeydown="AlTeclear" /></label>
             <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" @bind:event="oninput" @onkeydown="AlTeclear" /></label>
         </div>
         @if (_error is not null)

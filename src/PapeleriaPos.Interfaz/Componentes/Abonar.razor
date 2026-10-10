@@ -137,7 +137,7 @@ else
                 }
                 else
                 {
-                    <label>Referencia <input @bind="_referencia" @onkeydown="AlTeclear" maxlength="60" autocomplete="off" /></label>
+                    <label>Referencia <input @bind="_referencia" @bind:event="oninput" @onkeydown="AlTeclear" maxlength="60" autocomplete="off" /></label>
                 }
             </div>
             <div class="acciones izquierda">
