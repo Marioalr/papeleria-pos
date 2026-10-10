@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <Content Update="caja.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\instalacion\instalar-caja.ps1" Link="instalar-caja.ps1" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <PropertyGroup>

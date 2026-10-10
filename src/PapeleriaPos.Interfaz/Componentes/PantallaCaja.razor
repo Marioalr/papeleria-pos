@@ -3,6 +3,7 @@
 @inject ConexionCaja Conexion
 
 <div class="caja">
+    <FranjaPrueba />
     <FranjaContingencia />
     @if (_alta || !Conexion.Lista)
     {
@@ -88,6 +89,15 @@
     private async Task IniciarAsync()
     {
         _error = null;
+        try
+        {
+            await Conexion.Listo;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or System.ComponentModel.Win32Exception)
+        {
+            _error = ex.Message;
+            return;
+        }
         try
         {
             var cajas = await Cliente.CajasAsync();

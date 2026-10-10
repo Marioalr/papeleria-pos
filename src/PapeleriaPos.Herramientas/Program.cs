@@ -6,6 +6,7 @@ using PapeleriaPos.Herramientas.Diagnostico;
 using PapeleriaPos.Herramientas.Eleventa;
 using PapeleriaPos.Herramientas.Ficticios;
 using PapeleriaPos.Herramientas.Importacion;
+using PapeleriaPos.Herramientas.Prueba;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 
@@ -19,6 +20,7 @@ return args switch
     ["preparar-caja", .. var resto] => await PrepararCajaAsync(resto),
     ["importar-control-print", .. var resto] => await ImportarControlPrintAsync(resto),
     ["aplicar-depuracion", .. var resto] => await AplicarDepuracionAsync(resto),
+    ["preparar-prueba", .. var resto] => await PrepararPruebaAsync(resto),
     _ => Ayuda(),
 };
 
@@ -50,6 +52,10 @@ static int Ayuda()
 
           preparar-caja --base ficticios.db
               Da de alta la Caja 1 y usuarios de prueba (ver README) en una base de prueba.
+
+          preparar-prueba [--salida prueba.db] [--ejemplos Ejemplos] [--reemplazar]
+              La base de la prueba con una persona real: la papelería ficticia con la caja y los usuarios de prueba,
+              un chat de Telegram simulado, impresiones por cobrar, y una factura XML y una nota PDF de ejemplo.
         """);
     return 1;
 }
@@ -108,6 +114,26 @@ static async Task<int> ImportarEleventaAsync(string[] args)
         foreach (var (aviso, veces) in datos.Avisos)
             Console.WriteLine($"  {veces,6:N0}  {aviso}");
     }
+    return 0;
+}
+
+static async Task<int> PrepararPruebaAsync(string[] args)
+{
+    var salida = Opcion(args, "--salida") ?? "prueba.db";
+    var ejemplos = Opcion(args, "--ejemplos") ?? "Ejemplos";
+    Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(salida))!);
+    var resultado = await GenerarFicticiosAsync(["--salida", salida, .. args.Contains("--reemplazar") ? new[] { "--reemplazar" } : []]);
+    if (resultado != 0)
+        return resultado;
+    await using (var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={salida}")))
+    {
+        await BaseDeDatos.PrepararAsync(db);
+        foreach (var hecho in await PreparacionPrueba.PrepararAsync(db, ejemplos))
+            Console.WriteLine($"Creado: {hecho}");
+        // Un solo archivo, sin el diario WAL aparte: el instalador lo copia tal cual.
+        await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=DELETE;");
+    }
+    Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
     return 0;
 }
 

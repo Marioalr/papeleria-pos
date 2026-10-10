@@ -20,6 +20,10 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 builder.Host.UseWindowsService(o => o.ServiceName = "PapeleriaPos");
 
 var cadena = RutasServicio.CadenaConexion(builder.Configuration);
+// La prueba con una persona real: la base empieza como copia de la de prueba (docs/plan.md).
+var prueba = ModoPrueba.Crear(builder.Configuration, cadena);
+prueba.PrepararBase();
+builder.Services.AddSingleton(prueba);
 builder.Services.AddDbContext<PosDbContext>(o => o.UseSqlite(cadena));
 builder.Services.AddSingleton<CatalogoEnMemoria>();
 builder.Services.Configure<OpcionesTicket>(builder.Configuration.GetSection("Ticket"));
@@ -73,6 +77,7 @@ app.MapearApiImpresiones();
 app.MapearApiDescuentos();
 app.MapearApiCatalogo();
 app.MapearApiCompras();
+app.MapearApiPrueba();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Run();

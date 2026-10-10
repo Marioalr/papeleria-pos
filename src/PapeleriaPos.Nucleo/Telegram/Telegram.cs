@@ -37,6 +37,12 @@ public enum TipoAlerta
 /// <summary>Un chat de Telegram vinculado a un usuario (solo el dueño): recibe alertas y contesta autorizaciones.</summary>
 public class ChatTelegram
 {
+    /// <summary>
+    /// El chat de la prueba con una persona real: no es de Telegram, sus mensajes no se mandan y la caja de prueba los
+    /// muestra como los avisos que le habrían llegado al dueño.
+    /// </summary>
+    public const long Simulado = 0;
+
     public Guid Id { get; set; } = Ids.Nuevo();
     public Guid UsuarioId { get; set; }
     public long ChatId { get; set; }

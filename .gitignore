@@ -496,3 +496,6 @@ datos-reales/
 
 # Instaladores publicados (dotnet publish -o publicar/...)
 publicar/
+
+# La prueba con una persona real en desarrollo (preparar-prueba --salida prueba/...)
+/prueba/
