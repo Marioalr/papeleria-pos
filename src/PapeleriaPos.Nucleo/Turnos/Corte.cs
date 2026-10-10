@@ -1,3 +1,4 @@
+using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Nucleo.Turnos;
@@ -40,7 +41,21 @@ public class Corte
     /// </summary>
     public long RedondeoCentavos { get; set; }
 
-    /// <summary>Fondo + efectivo de ventas + entradas − salidas − devoluciones.</summary>
+    /// <summary>Lo fiado en las ventas del turno (fase 3, entrega 2): ya cuenta como venta y no es dinero. Informativo.</summary>
+    public long CreditoCentavos { get; set; }
+
+    /// <summary>Cuántos abonos de clientes se recibieron en el turno (sin los cancelados).</summary>
+    public int Abonos { get; set; }
+
+    /// <summary>Lo que entró al cajón por abonos en efectivo (con su redondeo): sí suma al esperado.</summary>
+    public long AbonosEfectivoCentavos { get; set; }
+
+    /// <summary>Abonos con tarjeta y por transferencia: aparte, como los de las ventas; no son venta.</summary>
+    public long AbonosTarjetaCentavos { get; set; }
+
+    public long AbonosTransferenciaCentavos { get; set; }
+
+    /// <summary>Fondo + efectivo de ventas + abonos en efectivo + entradas − salidas − devoluciones.</summary>
     public long EsperadoCentavos { get; set; }
 
     /// <summary>Lo que contó el encargado (solo en el corte Z).</summary>
@@ -70,12 +85,13 @@ public static class Denominaciones
 public static class CalculoCorte
 {
     /// <summary>
-    /// Arma el corte de un turno con sus ventas pagadas y movimientos de efectivo. Con conteo (corte Z) calcula la
-    /// diferencia; el que cuenta nunca ve lo esperado antes de terminar.
+    /// Arma el corte de un turno con sus ventas pagadas, sus movimientos de efectivo y los abonos de clientes que se
+    /// recibieron en él. Con conteo (corte Z) calcula la diferencia; el que cuenta nunca ve lo esperado antes de terminar.
     /// </summary>
     public static Corte Calcular(
         Turno turno, IEnumerable<Venta> ventas, IEnumerable<MovimientoCaja> movimientos, TipoCorte tipo, Guid realizadoPorId,
-        DateTime ahoraUtc, IReadOnlyDictionary<long, int>? conteo = null, IEnumerable<Devolucion>? devoluciones = null)
+        DateTime ahoraUtc, IReadOnlyDictionary<long, int>? conteo = null, IEnumerable<Devolucion>? devoluciones = null,
+        IEnumerable<Abono>? abonos = null)
     {
         // El efectivo de un ticket que después se canceló sí entró a la caja; su reembolso se resta aparte.
         var cobradas = ventas.Where(v => v.TurnoId == turno.Id && v.Estado is EstadoVenta.Pagada or EstadoVenta.Cancelada).ToList();
@@ -83,6 +99,7 @@ public static class CalculoCorte
         var cobros = vigentes.SelectMany(v => v.Cobros).ToList();
         var reembolsos = (devoluciones ?? []).Where(d => d.TurnoId == turno.Id).ToList();
         var delTurno = movimientos.Where(m => m.TurnoId == turno.Id).ToList();
+        var abonosDelTurno = (abonos ?? []).Where(a => a.TurnoId == turno.Id && a.CanceladoUtc is null).ToList();
 
         var corte = new Corte
         {
@@ -99,10 +116,17 @@ public static class CalculoCorte
             EntradasCentavos = delTurno.Where(m => m.Tipo == TipoMovimientoCaja.Entrada).Sum(m => m.MontoCentavos),
             SalidasCentavos = delTurno.Where(m => m.Tipo == TipoMovimientoCaja.Salida).Sum(m => m.MontoCentavos),
             DevolucionesCentavos = reembolsos.Sum(d => d.ReembolsoEfectivoCentavos),
-            RedondeoCentavos = cobradas.Sum(v => v.RedondeoCentavos) - reembolsos.Sum(d => d.RedondeoCentavos),
+            RedondeoCentavos = cobradas.Sum(v => v.RedondeoCentavos) - reembolsos.Sum(d => d.RedondeoCentavos)
+                + abonosDelTurno.Sum(a => a.RedondeoCentavos),
+            // Lo fiado de una venta que se canceló deja de contar, como la tarjeta.
+            CreditoCentavos = cobros.Where(c => c.Forma == FormaPago.Credito).Sum(c => c.MontoCentavos),
+            Abonos = abonosDelTurno.Count,
+            AbonosEfectivoCentavos = abonosDelTurno.Where(a => a.Forma == FormaPago.Efectivo).Sum(a => a.CobradoCentavos),
+            AbonosTarjetaCentavos = abonosDelTurno.Where(a => a.Forma == FormaPago.Tarjeta).Sum(a => a.MontoCentavos),
+            AbonosTransferenciaCentavos = abonosDelTurno.Where(a => a.Forma == FormaPago.Transferencia).Sum(a => a.MontoCentavos),
         };
-        corte.EsperadoCentavos = corte.FondoCentavos + corte.EfectivoVentasCentavos + corte.EntradasCentavos - corte.SalidasCentavos
-            - corte.DevolucionesCentavos;
+        corte.EsperadoCentavos = corte.FondoCentavos + corte.EfectivoVentasCentavos + corte.AbonosEfectivoCentavos + corte.EntradasCentavos
+            - corte.SalidasCentavos - corte.DevolucionesCentavos;
 
         if (tipo == TipoCorte.Z)
         {

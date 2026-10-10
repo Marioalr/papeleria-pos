@@ -7,6 +7,9 @@ public enum FormaPago
     Tarjeta,
     /// <summary>Queda por verificar hasta que alguien con permiso confirma que llegó el dinero.</summary>
     Transferencia,
+
+    /// <summary>Fiado a la cuenta de un cliente registrado (fase 3, entrega 2): no es dinero que entre a la caja.</summary>
+    Credito,
 }
 
 public enum Verificacion

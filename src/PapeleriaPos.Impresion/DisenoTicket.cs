@@ -94,7 +94,10 @@ public static class DisenoTicket
             {
                 FormaPago.Efectivo => $"Efectivo: {Dinero(c.RecibidoCentavos)}  Cambio: {Dinero(c.CambioCentavos)}",
                 FormaPago.Tarjeta => $"Tarjeta: {Dinero(c.MontoCentavos)}" + (c.Referencia is { Length: > 0 } r ? $" ({r})" : ""),
-                _ => $"Transferencia: {Dinero(c.MontoCentavos)}",
+                FormaPago.Transferencia => $"Transferencia: {Dinero(c.MontoCentavos)}",
+                FormaPago.Credito => $"Crédito (a su cuenta): {Dinero(c.MontoCentavos)}",
+                // Una forma nueva nunca sale como otra: el ticket se imprime aunque falte su texto.
+                _ => $"{c.Forma}: {Dinero(c.MontoCentavos)}",
             }, Alineacion.Derecha));
         }
         if (t.IvaCentavos > 0)

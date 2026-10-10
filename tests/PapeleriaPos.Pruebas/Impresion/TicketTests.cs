@@ -119,6 +119,19 @@ public class TicketTests
     }
 
     [Fact]
+    public void Lo_fiado_sale_como_credito_y_no_cuenta_como_pago()
+    {
+        var ticket = Ticket(new CobroTicketDto(FormaPago.Efectivo, 10000, 10000, 0, null), new CobroTicketDto(FormaPago.Credito, 6900, 0, 0, null));
+
+        var texto = TicketTexto.Generar(ticket);
+
+        Assert.Contains("Crédito (a su cuenta): $69.00", texto);
+        Assert.DoesNotContain("Transferencia", texto);
+        Assert.Equal((10000L, 6900L, true), (ticket.PagoConCentavos, ticket.CreditoCentavos, ticket.AbreCajon));
+        Assert.False(Ticket(new CobroTicketDto(FormaPago.Credito, 16900, 0, 0, null)).AbreCajon);
+    }
+
+    [Fact]
     public void Escpos_inicia_corta_y_abre_el_cajon_solo_si_se_pide()
     {
         var conCajon = TicketEscPos.Generar(Ticket(), abrirCajon: true);

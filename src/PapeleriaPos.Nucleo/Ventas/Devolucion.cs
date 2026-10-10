@@ -3,7 +3,7 @@ namespace PapeleriaPos.Nucleo.Ventas;
 /// <summary>
 /// Dinero que regresa al cliente por una venta: una cancelación (todo el ticket, en su mismo turno) o una devolución
 /// (algunos artículos, con ticket y hasta 7 días). El reembolso sale en efectivo de la caja donde se hace, redondeado al
-/// peso como el cobro.
+/// peso como el cobro. De una venta fiada, lo devuelto baja primero su cuenta (<see cref="AlCreditoCentavos"/>).
 /// </summary>
 public class Devolucion
 {
@@ -32,6 +32,12 @@ public class Devolucion
     /// </summary>
     public long RedondeoCentavos { get; set; }
 
+    /// <summary>
+    /// Lo devuelto que bajó la cuenta del cliente en lugar de salir de la caja (fase 3, entrega 2): de una venta fiada,
+    /// lo devuelto va primero a lo fiado. No entra al corte.
+    /// </summary>
+    public long AlCreditoCentavos { get; set; }
+
     public DateTime FechaUtc { get; set; }
 
     public List<DevolucionLinea> Lineas { get; set; } = [];
@@ -58,10 +64,12 @@ public sealed record LineaPorDevolver(Guid VentaLineaId, Cantidad Cantidad, bool
 
 /// <summary>
 /// Lo que ya pasó con un ticket antes de esta devolución: lo que pagó el cliente y lo que ya se devolvió y se
-/// reembolsó. Con esto se redondea lo que sale en efectivo sin regresar centavos sueltos (fase 3).
+/// reembolsó. Con esto se redondea lo que sale en efectivo sin regresar centavos sueltos (fase 3). De una venta fiada,
+/// todo es sin lo fiado: lo fiado se devuelve a la cuenta, no en dinero.
 /// </summary>
-/// <param name="DevueltoCentavos">El total de las devoluciones anteriores, impresiones incluidas.</param>
-/// <param name="ImpresionesCentavos">Lo que llevó el ticket de impresiones: eso se regresa exacto.</param>
+/// <param name="PagadoCentavos">Lo que pagó en dinero: lo cobrado menos lo fiado.</param>
+/// <param name="DevueltoCentavos">Lo que se devolvió en dinero antes (sin lo que fue a la cuenta), impresiones incluidas.</param>
+/// <param name="ImpresionesCentavos">Lo que llevó el ticket de impresiones pagado en dinero: eso se regresa exacto.</param>
 public sealed record ResumenReembolsos(
     long PagadoCentavos, long DevueltoCentavos, long ImpresionesDevueltasCentavos, long ReembolsadoCentavos, long ImpresionesCentavos = 0)
 {
@@ -75,9 +83,13 @@ public sealed record ResumenReembolsos(
     {
         var lista = anteriores.Where(d => d.VentaId == venta.Id).ToList();
         var impresiones = venta.Lineas.Where(l => l.EsImpresiones).Select(l => l.Id).ToHashSet();
-        return new ResumenReembolsos(venta.TotalCobradoCentavos, lista.Sum(d => d.TotalCentavos),
-            lista.SelectMany(d => d.Lineas).Where(l => impresiones.Contains(l.VentaLineaId)).Sum(l => l.ImporteCentavos),
-            lista.Sum(d => d.ReembolsoEfectivoCentavos), venta.Lineas.Where(l => l.EsImpresiones).Sum(l => l.ImporteCentavos));
+        var fiado = venta.CreditoCentavos;
+        // Lo fiado cubre primero las impresiones, como todo lo que no es efectivo (Venta.Efectivo).
+        long ImpresionesEnDinero(Devolucion d) =>
+            Math.Max(0, d.Lineas.Where(l => impresiones.Contains(l.VentaLineaId)).Sum(l => l.ImporteCentavos) - d.AlCreditoCentavos);
+        return new ResumenReembolsos(venta.TotalCobradoCentavos - fiado, lista.Sum(d => Math.Max(0, d.TotalCentavos - d.AlCreditoCentavos)),
+            lista.Sum(ImpresionesEnDinero), lista.Sum(d => d.ReembolsoEfectivoCentavos),
+            Math.Max(0, venta.Lineas.Where(l => l.EsImpresiones).Sum(l => l.ImporteCentavos) - fiado));
     }
 }
 
@@ -132,9 +144,40 @@ public static class CalculoDevolucion
         var impresiones = devolucion.Lineas.Where(d => venta.Lineas.Single(l => l.Id == d.VentaLineaId).EsImpresiones).Sum(d => d.ImporteCentavos);
         var completa = venta.Lineas.All(l => l.CantidadDevuelta + devolucion.Lineas.Where(d => d.VentaLineaId == l.Id)
             .Aggregate(Cantidad.Cero, (suma, d) => suma + d.Cantidad) >= l.Cantidad);
-        devolucion.ReembolsoEfectivoCentavos = ReembolsoEnEfectivo(ResumenReembolsos.De(venta, anteriores ?? []), devolucion.TotalCentavos, impresiones, completa);
-        devolucion.RedondeoCentavos = devolucion.ReembolsoEfectivoCentavos - devolucion.TotalCentavos;
+        // De una venta fiada, lo devuelto baja primero lo que se fió (lo que queda de ello); solo el resto es dinero.
+        var previas = (anteriores ?? []).Where(d => d.VentaId == venta.Id).ToList();
+        var alCreditoImpresiones = AlCredito(venta, previas, impresiones, devolucion.TotalCentavos - impresiones, completa, out var alCreditoMercancia);
+        devolucion.AlCreditoCentavos = alCreditoImpresiones + alCreditoMercancia;
+        var enDinero = Math.Max(0, devolucion.TotalCentavos - devolucion.AlCreditoCentavos);
+        devolucion.ReembolsoEfectivoCentavos = ReembolsoEnEfectivo(ResumenReembolsos.De(venta, previas), enDinero,
+            Math.Max(0, impresiones - alCreditoImpresiones), completa);
+        devolucion.RedondeoCentavos = devolucion.ReembolsoEfectivoCentavos - enDinero;
         return devolucion;
+    }
+
+    /// <summary>
+    /// Cuánto de esta devolución baja la cuenta del cliente, con la misma regla con que se cobró: lo fiado cubrió primero
+    /// las impresiones (como todo lo que no es efectivo) y el resto, la mercancía. Cada parte toma de lo suyo que quede, y
+    /// la que completa el ticket toma todo lo que falta (los importes repartidos en proporción pueden sumar un centavo
+    /// menos). Así lo devuelto a la cuenta suma lo fiado y lo que sale en efectivo de la mercancía va en pesos.
+    /// </summary>
+    /// <returns>Lo que va a la cuenta por las impresiones; en <paramref name="alCreditoMercancia"/>, lo de la mercancía.</returns>
+    private static long AlCredito(Venta venta, List<Devolucion> previas, long impresiones, long mercancia, bool completa, out long alCreditoMercancia)
+    {
+        var fiado = venta.CreditoCentavos;
+        var lineasImpresiones = venta.Lineas.Where(l => l.EsImpresiones).Select(l => l.Id).ToHashSet();
+        var reservaImpresiones = Math.Min(fiado, venta.Lineas.Where(l => l.EsImpresiones).Sum(l => l.ImporteCentavos));
+        long usadoImpresiones = 0, usadoMercancia = 0;
+        foreach (var d in previas)
+        {
+            var deImpresiones = Math.Min(d.Lineas.Where(l => lineasImpresiones.Contains(l.VentaLineaId)).Sum(l => l.ImporteCentavos), d.AlCreditoCentavos);
+            usadoImpresiones += deImpresiones;
+            usadoMercancia += d.AlCreditoCentavos - deImpresiones;
+        }
+        var quedaImpresiones = Math.Max(0, reservaImpresiones - usadoImpresiones);
+        var quedaMercancia = Math.Max(0, fiado - reservaImpresiones - usadoMercancia);
+        alCreditoMercancia = completa ? quedaMercancia : Math.Min(mercancia, quedaMercancia);
+        return completa ? quedaImpresiones : Math.Min(impresiones, quedaImpresiones);
     }
 
     /// <summary>
@@ -164,9 +207,11 @@ public static class CalculoDevolucion
 
         var devolucion = Armar(venta, venta.Lineas.Select(l => new LineaPorDevolver(l.Id, l.Cantidad)).ToList(), venta.CajaId, turnoId, usuarioId, motivo, ahoraUtc);
         devolucion.EsCancelacion = true;
-        // Sale lo que entró en efectivo, ya redondeado: el redondeo de la venta se revierte completo.
+        // Sale lo que entró en efectivo, ya redondeado: el redondeo de la venta se revierte completo. Lo fiado se quita
+        // completo de la cuenta.
         devolucion.ReembolsoEfectivoCentavos = venta.Cobros.Where(c => c.Forma == FormaPago.Efectivo).Sum(c => c.MontoCentavos);
         devolucion.RedondeoCentavos = venta.RedondeoCentavos;
+        devolucion.AlCreditoCentavos = venta.CreditoCentavos;
         return devolucion;
     }
 

@@ -63,6 +63,18 @@ public enum AccionControlada
 
     /// <summary>Abrir, cancelar y cerrar el conteo completo de un departamento: al cerrarlo, lo contado reemplaza la existencia.</summary>
     ConteoCompleto,
+
+    /// <summary>Darle crédito a un cliente registrado: su límite y su plazo (fase 3, entrega 2).</summary>
+    DarCredito,
+
+    /// <summary>Fiar arriba del límite del cliente. El monto que se revisa es lo que pasa del límite.</summary>
+    ExcederLimiteCredito,
+
+    /// <summary>Ajustar el saldo de un cliente (el saldo inicial de la libreta, una corrección). El monto es el del ajuste.</summary>
+    AjustarCredito,
+
+    /// <summary>Cancelar un abono, solo en el turno en que se recibió. El monto es el del abono.</summary>
+    CancelarAbono,
 }
 
 public enum NivelPermiso
@@ -144,6 +156,14 @@ public static class Permisos
         Regla(AccionControlada.ConteoCompleto, Rol.Encargado, NivelPermiso.Permitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Cajero, NivelPermiso.NoPermitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Encargado, NivelPermiso.Permitido),
+        // El crédito (fase 3): el límite y los ajustes, al empezar, solo el dueño (se pueden dar desde el editor de reglas);
+        // pasar el límite lo autoriza el encargado.
+        .. Ambos(AccionControlada.DarCredito, NivelPermiso.NoPermitido),
+        Regla(AccionControlada.ExcederLimiteCredito, Rol.Cajero, NivelPermiso.RequiereAutorizacion),
+        Regla(AccionControlada.ExcederLimiteCredito, Rol.Encargado, NivelPermiso.Permitido),
+        .. Ambos(AccionControlada.AjustarCredito, NivelPermiso.NoPermitido),
+        Regla(AccionControlada.CancelarAbono, Rol.Cajero, NivelPermiso.RequiereAutorizacion, motivo: true),
+        Regla(AccionControlada.CancelarAbono, Rol.Encargado, NivelPermiso.Permitido, motivo: true),
     ];
 
     /// <summary>

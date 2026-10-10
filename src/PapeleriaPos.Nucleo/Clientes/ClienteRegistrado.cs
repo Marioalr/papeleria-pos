@@ -26,6 +26,18 @@ public class ClienteRegistrado : IVersionado
     /// <summary>Paga desde la primera pieza el precio de la primera escala de mayoreo; las escalas más altas siguen al llegar a ellas.</summary>
     public bool MayoreoSiempre { get; set; }
 
+    /// <summary>Cuánto se le puede fiar (fase 3, entrega 2); cero, sin crédito. Lo pone quien puede dar crédito (al empezar, el dueño).</summary>
+    public long LimiteCreditoCentavos { get; set; }
+
+    /// <summary>Días para pagar lo fiado, sin recargos. Cambiarlo no mueve lo que ya se fió: cada cargo guarda cuándo vence.</summary>
+    public int PlazoCreditoDias { get; set; } = PlazoPorOmision;
+
+    public bool TieneCredito => LimiteCreditoCentavos > 0;
+
+    public const int PlazoPorOmision = 30;
+    public const long LimiteMaximoCentavos = 10_000_000;
+    public const int PlazoMaximoDias = 90;
+
     /// <summary>Fase 4 (pedidos): se le prepara un pedido sin anticipo.</summary>
     public bool PedidoSinAnticipo { get; set; }
 
@@ -52,14 +64,16 @@ public class ClienteRegistrado : IVersionado
         return digitos.Length == 0 ? null : digitos;
     }
 
-    /// <summary>"descuento 10 % · mayoreo siempre": lo que lleva el ticket junto al nombre (vacío si no tiene privilegios de venta).</summary>
-    public static string Privilegios(int descuentoCentesimas, bool mayoreoSiempre)
+    /// <summary>"descuento 10 % · mayoreo siempre · crédito": lo que lleva el ticket junto al nombre (vacío si no tiene privilegios de venta).</summary>
+    public static string Privilegios(int descuentoCentesimas, bool mayoreoSiempre, bool credito = false)
     {
         var partes = new List<string>();
         if (descuentoCentesimas > 0)
             partes.Add($"descuento {Control.Permisos.TextoMonto(Control.AccionControlada.Descuento, descuentoCentesimas)}");
         if (mayoreoSiempre)
             partes.Add("mayoreo siempre");
+        if (credito)
+            partes.Add("crédito");
         return string.Join(" · ", partes);
     }
 }

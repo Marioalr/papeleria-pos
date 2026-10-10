@@ -44,6 +44,9 @@ public enum TipoAlerta
 
     /// <summary>Se dieron o cambiaron los privilegios de un cliente registrado (los del dueño no).</summary>
     PrivilegiosCliente,
+
+    /// <summary>El crédito de los clientes: se fió arriba del límite, se ajustó un saldo o algo de sin conexión no cuadró.</summary>
+    Credito,
 }
 
 /// <summary>Un chat de Telegram vinculado a un usuario (solo el dueño): recibe alertas y contesta autorizaciones.</summary>
