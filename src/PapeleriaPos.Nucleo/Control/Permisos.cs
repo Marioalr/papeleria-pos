@@ -33,6 +33,15 @@ public enum AccionControlada
 
     /// <summary>Dar de alta desde la caja un código escaneado que no existe (queda por completar).</summary>
     AltaRapida,
+
+    /// <summary>Contar a ciegas la mercancía que llegó (F4, entrega 2 de la fase 2).</summary>
+    RecibirMercancia,
+
+    /// <summary>Capturar la nota del proveedor, ver los costos y cerrar la compra (entra al inventario).</summary>
+    CostearCompra,
+
+    /// <summary>El margen mínimo general y por departamento.</summary>
+    ConfigurarMargen,
 }
 
 public enum NivelPermiso
@@ -97,6 +106,9 @@ public static class Permisos
         Regla(AccionControlada.EditarCatalogo, Rol.Cajero, NivelPermiso.NoPermitido),
         Regla(AccionControlada.EditarCatalogo, Rol.Encargado, NivelPermiso.Permitido),
         .. Ambos(AccionControlada.AltaRapida, NivelPermiso.Permitido),
+        .. Ambos(AccionControlada.RecibirMercancia, NivelPermiso.Permitido),
+        Regla(AccionControlada.CostearCompra, Rol.Cajero, NivelPermiso.NoPermitido),
+        Regla(AccionControlada.CostearCompra, Rol.Encargado, NivelPermiso.Permitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Cajero, NivelPermiso.NoPermitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Encargado, NivelPermiso.Permitido),
     ];
@@ -108,7 +120,7 @@ public static class Permisos
     /// <summary>Acciones que no se pueden dar a otro rol: no aparecen en el editor de reglas.</summary>
     public static bool SoloDelDueno(AccionControlada accion) =>
         accion is AccionControlada.EditarReglas or AccionControlada.AdministrarCajas or AccionControlada.ConfigurarTelegram
-            or AccionControlada.ConfigurarImpresora or AccionControlada.AdministrarClientes;
+            or AccionControlada.ConfigurarImpresora or AccionControlada.AdministrarClientes or AccionControlada.ConfigurarMargen;
 
     /// <summary>Acciones cuyo umbral (y el monto que se revisa) es un porcentaje en centésimas, no dinero.</summary>
     public static bool EnPorcentaje(AccionControlada accion) => accion == AccionControlada.Descuento;

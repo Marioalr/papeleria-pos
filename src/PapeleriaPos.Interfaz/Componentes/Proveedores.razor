@@ -1,0 +1,134 @@
+@* Los proveedores: a quién se le compra. Los dan de alta y los editan el dueño y el encargado. *@
+@inject ClienteCaja Cliente
+
+@if (_editando is { } p)
+{
+    <div class="ficha-producto">
+        <label class="ancho">Nombre <input @bind="p.Nombre" maxlength="120" autocomplete="off" /></label>
+        <label>Teléfono <input @bind="p.Telefono" autocomplete="off" /></label>
+        <label>RFC <input @bind="p.Rfc" maxlength="13" autocomplete="off" /></label>
+        <label class="ancho">Notas <input @bind="p.Notas" placeholder="Días de visita, contacto, condiciones…" autocomplete="off" /></label>
+        <label class="en-linea opcion"><input type="checkbox" @bind="p.Activo" /> Activo</label>
+    </div>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    <div class="acciones izquierda">
+        <button class="boton" @onclick="() => _editando = null">Cancelar</button>
+        <button class="boton principal" disabled="@_ocupado" @onclick="GuardarAsync">Guardar</button>
+    </div>
+}
+else
+{
+    <div class="filtros-catalogo">
+        <label class="en-linea opcion"><input type="checkbox" @bind="_inactivos" @bind:after="CargarAsync" /> Con inactivos</label>
+        @if (PuedeEditar)
+        {
+            <button class="boton principal" @onclick="() => _editando = new Editable()">Nuevo proveedor</button>
+        }
+    </div>
+    @if (_aviso is not null)
+    {
+        <p class="aviso">@_aviso</p>
+    }
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_proveedores is { Count: 0 })
+    {
+        <p class="vacia">No hay proveedores.</p>
+    }
+    else if (_proveedores is not null)
+    {
+        <div class="resultados catalogo">
+            <table>
+                <thead><tr><th>Proveedor</th><th>Teléfono</th><th>RFC</th><th>Notas</th></tr></thead>
+                @foreach (var x in _proveedores)
+                {
+                    var proveedor = x;
+                    <tr class="@(x.Activo ? "" : "inactivo")" @onclick="() => Editar(proveedor)">
+                        <td>@x.Nombre</td>
+                        <td>@x.Telefono</td>
+                        <td>@x.Rfc</td>
+                        <td>@x.Notas</td>
+                    </tr>
+                }
+            </table>
+        </div>
+        @if (PuedeEditar)
+        {
+            <p class="nota">Haz clic en un proveedor para editarlo.</p>
+        }
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    private sealed class Editable
+    {
+        public Guid? Id { get; init; }
+        public string Nombre { get; set; } = "";
+        public string? Telefono { get; set; }
+        public string? Rfc { get; set; }
+        public string? Notas { get; set; }
+        public bool Activo { get; set; } = true;
+    }
+
+    private bool PuedeEditar => Sesion.Rol is Rol.Dueno or Rol.Encargado;
+
+    private List<ProveedorDto>? _proveedores;
+    private Editable? _editando;
+    private bool _inactivos;
+    private bool _ocupado;
+    private string? _error;
+    private string? _aviso;
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _error = null;
+        try
+        {
+            _proveedores = await Cliente.ProveedoresAsync(_inactivos);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void Editar(ProveedorDto p)
+    {
+        if (PuedeEditar)
+            _editando = new Editable { Id = p.Id, Nombre = p.Nombre, Telefono = p.Telefono, Rfc = p.Rfc, Notas = p.Notas, Activo = p.Activo };
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_editando is not { } p)
+            return;
+        _ocupado = true;
+        (_error, _aviso) = (null, null);
+        try
+        {
+            var guardado = await Cliente.GuardarProveedorAsync(new SolicitudGuardarProveedor(Sesion.UsuarioId, Caja.SucursalId,
+                new ProveedorDto(p.Id, p.Nombre, p.Telefono, p.Rfc, p.Notas, p.Activo)));
+            _editando = null;
+            _aviso = $"«{guardado.Nombre}» guardado.";
+            await CargarAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

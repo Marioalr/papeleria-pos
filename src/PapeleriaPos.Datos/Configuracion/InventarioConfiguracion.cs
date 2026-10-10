@@ -4,6 +4,7 @@ using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Historico;
 using PapeleriaPos.Nucleo.Importacion;
 using PapeleriaPos.Nucleo.Inventario;
+using PapeleriaPos.Nucleo.Usuarios;
 
 namespace PapeleriaPos.Datos.Configuracion;
 
@@ -56,6 +57,43 @@ internal sealed class MapeoImportacionConfiguracion : IEntityTypeConfiguration<M
     {
         b.ToTable("MapeosImportacion");
         b.HasIndex(m => new { m.Origen, m.Entidad, m.IdOrigen }).IsUnique();
+    }
+}
+
+internal sealed class CompraConfiguracion : IEntityTypeConfiguration<Compra>
+{
+    public void Configure(EntityTypeBuilder<Compra> b)
+    {
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(c => c.SucursalId);
+        b.HasOne<Proveedor>().WithMany().HasForeignKey(c => c.ProveedorId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(c => c.RecibioId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(c => c.CosteoId);
+        b.HasMany(c => c.Conteo).WithOne().HasForeignKey(c => c.CompraId);
+        b.HasMany(c => c.Renglones).WithOne().HasForeignKey(r => r.CompraId);
+        b.HasIndex(c => new { c.SucursalId, c.Folio }).IsUnique();
+        b.HasIndex(c => new { c.SucursalId, c.Estado });
+        b.Ignore(c => c.FolioTexto);
+        b.Ignore(c => c.TotalNotaCentavos);
+    }
+}
+
+internal sealed class CompraConteoConfiguracion : IEntityTypeConfiguration<CompraConteo>
+{
+    public void Configure(EntityTypeBuilder<CompraConteo> b)
+    {
+        b.ToTable("ComprasConteo");
+        b.HasOne<Variante>().WithMany().HasForeignKey(c => c.VarianteId);
+        b.HasOne<Presentacion>().WithMany().HasForeignKey(c => c.PresentacionId);
+    }
+}
+
+internal sealed class CompraRenglonConfiguracion : IEntityTypeConfiguration<CompraRenglon>
+{
+    public void Configure(EntityTypeBuilder<CompraRenglon> b)
+    {
+        b.ToTable("ComprasRenglones");
+        b.HasOne<Variante>().WithMany().HasForeignKey(r => r.VarianteId);
+        b.HasOne<Presentacion>().WithMany().HasForeignKey(r => r.PresentacionId);
     }
 }
 

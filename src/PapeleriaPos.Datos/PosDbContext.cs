@@ -60,6 +60,9 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<TrabajoImpresion> TrabajosImpresion => Set<TrabajoImpresion>();
     public DbSet<ConfiguracionImpresion> ConfiguracionesImpresion => Set<ConfiguracionImpresion>();
     public DbSet<LecturaImpresora> LecturasImpresora => Set<LecturaImpresora>();
+    public DbSet<Compra> Compras => Set<Compra>();
+    public DbSet<CompraConteo> ComprasConteo => Set<CompraConteo>();
+    public DbSet<CompraRenglon> ComprasRenglones => Set<CompraRenglon>();
 
     /// <summary>Reloj para <see cref="IVersionado.ModificadoUtc"/> y el historial de precios; las pruebas lo fijan.</summary>
     public TimeProvider Reloj { get; init; } = TimeProvider.System;

@@ -13,6 +13,10 @@
             <p class="error">@_error</p>
         }
         <div class="acciones">
+            @if (AlAdministrar.HasDelegate)
+            {
+                <button class="boton" @onclick="AlAdministrar">Solo productos e inventario</button>
+            }
             <button class="boton principal" disabled="@_ocupado" @onclick="AbrirAsync">Abrir turno</button>
             <button class="boton" @onclick="AlSalir">Salir</button>
         </div>
@@ -24,6 +28,9 @@
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
     [Parameter] public EventCallback<TurnoDto> AlAbrir { get; set; }
     [Parameter] public EventCallback AlSalir { get; set; }
+
+    /// <summary>Para el encargado y el dueño: entrar a productos e inventario sin abrir turno.</summary>
+    [Parameter] public EventCallback AlAdministrar { get; set; }
 
     private string _fondo = "";
     private string? _error;

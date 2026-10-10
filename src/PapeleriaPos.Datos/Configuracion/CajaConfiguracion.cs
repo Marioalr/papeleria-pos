@@ -156,6 +156,7 @@ internal sealed class ConfiguracionSucursalConfiguracion : IEntityTypeConfigurat
         b.Property(c => c.MinutosSinConexion).HasDefaultValue(10).ValueGeneratedNever();
         b.Property(c => c.HoraApertura).HasDefaultValue(new TimeOnly(8, 0)).ValueGeneratedNever();
         b.Property(c => c.HoraCierre).HasDefaultValue(new TimeOnly(21, 0)).ValueGeneratedNever();
+        b.Property(c => c.MargenMinimoCentesimas).HasDefaultValue(Margen.MinimoInicial).ValueGeneratedNever();
     }
 }
 

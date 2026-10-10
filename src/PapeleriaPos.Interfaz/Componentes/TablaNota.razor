@@ -1,0 +1,40 @@
+@* Los renglones de la nota del proveedor, con el costo por unidad que sale de cada producto. *@
+
+@if (Renglones.Count == 0)
+{
+    <p class="vacia">La nota está vacía: agrega sus renglones (escanea o busca cada producto).</p>
+}
+else
+{
+    <div class="resultados">
+        <table>
+            <thead>
+                <tr><th>#</th><th>Clave</th><th>Producto</th><th>Presentación</th><th class="num">Cantidad</th><th class="num">Importe</th><th class="num">Costo por unidad</th>@if (AlQuitar.HasDelegate) { <th></th> }</tr>
+            </thead>
+            @foreach (var r in Renglones)
+            {
+                var renglon = r;
+                var costo = Comparacion.FirstOrDefault(c => c.VarianteId == r.VarianteId)?.CostoUnitarioCentavos;
+                <tr>
+                    <td>@r.Orden</td>
+                    <td>@r.CodigoProveedor</td>
+                    <td>@r.Producto</td>
+                    <td>@r.Presentacion</td>
+                    <td class="num">@Formato.Numero(r.CantidadMilesimas / 1000m)</td>
+                    <td class="num">@Formato.Dinero(r.ImporteCentavos)</td>
+                    <td class="num">@(costo is { } x ? Formato.Dinero((long)Math.Round(x, MidpointRounding.AwayFromZero)) : "")</td>
+                    @if (AlQuitar.HasDelegate)
+                    {
+                        <td><button class="boton chico" @onclick="() => AlQuitar.InvokeAsync(renglon.Id)">Quitar</button></td>
+                    }
+                </tr>
+            }
+        </table>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<RenglonCompraDto> Renglones { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<ComparacionCompraDto> Comparacion { get; set; } = [];
+    [Parameter] public EventCallback<Guid> AlQuitar { get; set; }
+}

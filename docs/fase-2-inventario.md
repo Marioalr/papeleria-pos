@@ -5,9 +5,10 @@
 > fase le da al POS el control del inventario: qué hay, qué llega, qué se pierde y qué comprar. Parte del diseño de
 > [catálogo e inventario](inventario.md) y de la [depuración](plan.md#depuración-del-inventario) que va antes del piloto.
 
-**Avance:** la entrega 1 (catálogo) está completa.
+**Avance:** la entrega 1 (catálogo) está completa; de la entrega 2 (compras) está la parte 1: recibir a ciegas y
+capturar la nota a mano.
 
-Parte 1:
+Entrega 1, parte 1:
 
 - **F3 Productos:** buscar por nombre, marca o código (también los inactivos y lo que está por completar) y abrir la
   ficha.
@@ -18,7 +19,7 @@ Parte 1:
 - **Alta rápida:** si se escanea un código que no existe, el cajero lo da de alta con nombre, precio y departamento,
   entra al ticket y queda "por completar".
 
-Parte 2, la depuración (en la ficha, solo el dueño y el encargado):
+Entrega 1, parte 2, la depuración (en la ficha, solo el dueño y el encargado):
 
 - **Dar de baja:** sale de la venta y su existencia queda en cero con un ajuste; su historia se conserva.
 - **Juntar con otro:** los códigos (con sus presentaciones), la existencia con su costo y los proveedores pasan al que se
@@ -34,6 +35,34 @@ Parte 2, la depuración (en la ficha, solo el dueño y el encargado):
 
   Lo que no vino de eleventa (productos creados en el POS) y los cambios de la ficha (precios, presentaciones) no se
   repiten solos.
+
+Entrega 2, parte 1, recibir y costear (F4 Inventario → Compras):
+
+- **Recibir a ciegas:** quien recibe (también el cajero) elige el proveedor, escribe el número de la nota si lo trae y
+  escanea lo que llegó: cada código suma uno de su presentación (el de la caja cuenta una caja) y la cantidad se corrige
+  en la tabla. No ve la nota ni los costos.
+- **La nota** la capturan el dueño o el encargado (regla "Capturar la nota del proveedor y cerrar la compra") cuando el
+  conteo terminó: producto, presentación, cantidad, importe del renglón y la clave del proveedor si la trae. La pantalla
+  compara por producto lo de la nota contra lo que llegó (faltó, sobró, no llegó, no está en la nota) con el costo
+  nuevo, el anterior y el margen.
+- **Al cerrar,** lo contado entra al kardex con el costo de la nota. Lo que faltó no entra (se reclama); lo que llegó sin
+  estar en la nota entra a su último costo, y sin ninguno hay que agregarlo a la nota. El costo promedio se ajusta solo
+  y cada proveedor guarda su último costo y su clave. Las diferencias quedan en la bitácora.
+- **El costo es lo que se paga, con IVA,** como el precio (y como el costo de eleventa): así se comparan directo.
+- **Margen mínimo:** 30 % general; el dueño lo cambia y puede poner uno por departamento (F4 → Margen mínimo). Si con
+  el costo nuevo un producto queda debajo, se sugiere el precio que lo deja en el mínimo, subido a los siguientes 50
+  centavos. El precio no cambia solo: "Poner $…" lo cambia como cualquier precio del catálogo (bitácora y Telegram).
+- **Telegram:** una compra con diferencias o con margen bajo le avisa al dueño (la alerta se puede apagar).
+- **Sin vender:** el encargado y el dueño entran a F3 y F4 desde la pantalla de entrada sin cortar el turno del cajero
+  ni abrir uno propio. Con una sola caja, así se captura la nota o se corrige el catálogo.
+- **Proveedores:** alta y edición en F4 → Proveedores (el dueño y el encargado).
+
+Lo que sigue de la entrega 2:
+
+- **Parte 2:** el documento del proveedor (el XML de la factura o el PDF de la nota) llena los renglones; lo que no
+  reconoce se liga una vez al producto por la clave del proveedor.
+- **Parte 3:** la orden de compra opcional y abrir paquete.
+- **Al cerrarla:** se prepara la [prueba con una persona real](plan.md#prueba-con-una-persona-real), antes de la entrega 3.
 
 ## Qué ya existe
 

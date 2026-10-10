@@ -1,0 +1,39 @@
+@* F4 Inventario: las compras (recibir a ciegas y capturar la nota), los proveedores y el margen mínimo (solo el dueño).
+   Los ajustes, conteos y etiquetas llegan en las siguientes entregas de la fase 2. *@
+
+<nav class="pestanas config-pestanas">
+    @foreach (var p in Enum.GetValues<Pestanas>().Where(p => p != Pestanas.Margen || Sesion.Rol == Rol.Dueno))
+    {
+        var pestana = p;
+        <button class="pestana @(p == _pestana ? "activa" : "")" @onclick="() => _pestana = pestana">@Nombre(p)</button>
+    }
+</nav>
+
+@switch (_pestana)
+{
+    case Pestanas.Compras:
+        <Compras Caja="Caja" Sesion="Sesion" />
+        break;
+    case Pestanas.Proveedores:
+        <Proveedores Caja="Caja" Sesion="Sesion" />
+        break;
+    case Pestanas.Margen:
+        <MargenMinimo Caja="Caja" Sesion="Sesion" />
+        break;
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    private enum Pestanas { Compras, Proveedores, Margen }
+
+    private Pestanas _pestana;
+
+    private static string Nombre(Pestanas p) => p switch
+    {
+        Pestanas.Compras => "Compras",
+        Pestanas.Proveedores => "Proveedores",
+        _ => "Margen mínimo",
+    };
+}
