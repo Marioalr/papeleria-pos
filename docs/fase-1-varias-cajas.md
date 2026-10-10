@@ -49,8 +49,8 @@
 
 - La caja encuentra al servicio por la **IP fija** reservada en el router. Hoy solo lo busca en la red al darla de alta:
   si después cambia la IP de la caja principal, hay que reconfigurarla (pendiente: que la vuelva a buscar sola).
-- En la matriz hay **una sola impresora de tickets** en la red para las dos cajas (respuesta del dueño, 2026-10-08):
-  por decidir si se compra una segunda con su cajón ([plan](plan.md#para-el-piloto-con-dos-cajas)).
+- En la matriz hay **una sola impresora de tickets** en la red para las dos cajas (respuesta del dueño, 2026-10-08),
+  y no hay cajón (2026-10-09, [notas](notas.md#impresoras)).
 - Todas las cajas de una sucursal llevan la misma versión del programa (las actualizaciones las instala soporte a
   distancia; con el central, se reparten solas).
 

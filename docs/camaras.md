@@ -124,9 +124,10 @@ En una visita a cada sucursal, ya y sin costo:
 - [ ] Cuentas: borrar las desconocidas (sobre todo «p2pwn», la que dejó el ataque de 2026), poner una clave de
   administrador nueva, dejar el bloqueo por intentos, crear un usuario de solo ver y reproducir para el POS y otro
   para el DMSS del dueño.
-- [ ] Red: dirección fija dentro de la red actual de la tienda, UPnP apagado en el grabador y en el módem, ningún puerto
-  abierto y SSH apagado. (Al retomar la multisucursal: una red distinta en cada sucursal, por ejemplo 192.168.10.x y
-  192.168.20.x.)
+- [ ] Red: dirección fija dentro de la red actual de la tienda, UPnP apagado en el grabador, ningún puerto abierto y SSH
+  apagado. El UPnP del Tenda (y el del módem, si está en modo router) se apaga en la matriz el segundo fin de semana,
+  con el arreglo de la red ([guía](pruebas-en-tienda.md#segundo-fin-de-semana-arreglar-la-red)). (Al retomar la
+  multisucursal: una red distinta en cada sucursal, por ejemplo 192.168.10.x y 192.168.20.x.)
 - [ ] Hora: NTP, horario de verano apagado y la zona de cada sucursal.
 - [ ] Inteligencia en modo «IVS y SMD», nunca en «rostro»; «Encode Enhancement» apagado; detección de personas en
   todas las cámaras.
@@ -153,7 +154,7 @@ En una visita a cada sucursal, ya y sin costo:
 - [ ] ¿Quién tiene la clave de administrador del grabador y del módem? ¿Algún técnico abrió puertos?
 - [ ] En DMSS, ¿el grabador está agregado por número de serie (P2P) o por dirección? ¿Lo comparte con alguien?
 - [ ] ¿Cuántos días graba hoy y de qué tamaño es el disco?
-- [ ] ¿El cajón se abre solo desde el POS o también con llave? ¿Qué impresora y qué cajón tienen?
+- [x] Matriz: impresora de tickets POS-8360, sin cajón (2026-10-09).
 - [ ] ¿Alguien se queda después del corte Z o llega antes de abrir turno (limpieza, velador)? ¿Cuánto tiempo?
 - [ ] ¿Acepta apagar el P2P de DMSS cuando la red privada funcione?
 - [ ] ¿Para qué quiere el conteo (visitas contra tickets, alarma o ambos) y qué error acepta?

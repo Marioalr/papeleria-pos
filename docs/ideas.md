@@ -118,8 +118,29 @@ Imprimir en la impresora de tickets, como documentación en papel, lo que hoy so
 Sirve de respaldo físico para archivar y para aclarar diferencias. Falta decidir cuáles se imprimen siempre y cuáles
 solo si se piden.
 
+## Internet de respaldo
+
+Idea, sin compras por ahora (el dueño no quiere lista de compras, 2026-10-09). Antes que nada se diagnostica y se
+arregla la red local ([notas](notas.md#red-de-la-tienda)), porque un respaldo puesto antes escondería la causa. En el
+último medio año se fue el internet 3 veces, y suele tardar unas 12 horas en volver.
+
+- **Qué deja de funcionar sin internet:** las recargas y el pago de servicios, los trámites (CURP, actas), WhatsApp en
+  las PC (por donde llegan los archivos de los clientes), ver las cámaras desde fuera y la autorización por Telegram
+  (queda el PIN). Los avisos de Telegram esperan en una cola y salen si el internet vuelve antes de un día; los de más
+  de un día vencen sin enviarse. Falta anotar el modelo de la terminal de tarjetas: unas traen su propio chip y otras
+  usan el celular por Bluetooth.
+- **Hoy:** en una caída usan los datos del celular, que es gratis: el celular comparte sus datos por Wi-Fi (para la
+  terminal) o por cable USB (para la caja principal; no probado con los celulares de la tienda).
+- **Si un día se quiere algo más:** un módem de prepago al que el personal pasa el cable del puerto de internet del
+  Tenda en una caída, o un router de negocio que haga el cambio solo. Solo después del arreglo de la red: con el
+  módem de respaldo, la red local del Tenda no debe chocar con la suya. Referencia de modelos y precios en
+  [notas](notas.md#red-de-la-tienda).
+
 ## Otras ideas que han salido
 
+- **Con contador** (está en los planes del dueño, 2026-10-09): hoy no hay nada fiscal, así que el IVA de las compras y
+  de la luz es costo. El desglose del IVA de cada venta ya se guarda; con contador, revisar con él qué más necesita
+  (por ejemplo, el IVA de cada compra) y si el IVA de las compras deja de ser costo.
 - Leer la foto de una lista escolar y convertirla en pedido.
 - Detector de documentos comunes (CURP, recibo de luz) que sugiere el servicio a cobrar.
 - Plantillas de listas por escuela y grado para la temporada de regreso a clases.

@@ -51,8 +51,9 @@
   la API de WhatsApp, pedir los mensajes a su receptor; con el central (pospuesto), también para hablar con él. Si se
   cae, se vende igual.
 - **Servicio de Windows, no app de bandeja:** corre aunque nadie haya iniciado sesión y Windows lo reinicia si falla.
-- **Caja principal:** se recomienda no-break, porque guarda la base. Windows Update con horas activas configuradas para
-  que no reinicie en horario de tienda.
+- **Caja principal:** guarda la base; en la matriz no hay no-break (2026-10-09), así que si se va la luz se apaga de
+  golpe ([notas](notas.md#hardware-de-la-tienda)). Windows Update con horas activas configuradas para que no reinicie en
+  horario de tienda.
 
 ## Datos
 
@@ -125,22 +126,31 @@ instala las actualizaciones a distancia ([plan](plan.md#para-el-piloto-con-dos-c
 
 ### La red de la matriz
 
-Todo va por la red local, sin USB: las dos cajas, una impresora de tickets, dos Epson WF-6590, una EcoTank L5590 y el
-grabador. El internet es de Megacable, y a veces, cuando se va, también se cae la red local; hoy el personal desconecta
-el cable de internet del Tenda para recuperarla. Las causas posibles y cómo diagnosticarlas están en
-[notas](notas.md#red-de-la-tienda).
+Todo va por la red local, sin USB: las dos cajas (la caja 2 por Wi-Fi), una impresora de tickets, dos Epson WF-6590, una
+EcoTank L5590 y el grabador, con un switch y el Tenda. No hay no-break. El internet es de Megacable, y casi siempre que
+se va, también se cae toda la red local: no contesta el ping y los celulares no se conectan al Wi-Fi. Se cae en cuanto
+se va el internet y vuelve en cuanto regresa, y solo en una caída real (desconectar el módem no lo reproduce). Ya pasaba
+con el módem solo y con otro módem, y siguió con el Tenda; hoy, para que la red vuelva antes, el personal desconecta el
+cable de red que va del módem al Tenda. Las
+causas posibles y qué se junta en la próxima caída están en [notas](notas.md#red-de-la-tienda).
 
-- **El arreglo propuesto,** sin automatizar nada:
+- **El arreglo propuesto,** por aprobar, con lo que ya hay y sin automatizar nada: que la venta y la impresión no
+  dependan del router.
+  - IP fija puesta en cada equipo, dentro de la red local de hoy, fuera del rango del DHCP y reservada en el Tenda (por
+    ejemplo: .10 caja principal, .11 caja 2, .20 impresora de tickets, .21 y .22 las WF-6590, .23 la L5590, .30 el
+    grabador; DHCP de .100 a .199). Cambiar de red local solo después, si choca con la del módem;
+  - todos los equipos de la tienda en el switch que ya hay, con un solo cable del switch al Tenda; la caja 2 también,
+    si hay un cable que llegue (si no, con eleventa no puede vender mientras el router esté trabado);
+  - en Windows, cada cola de impresión con puerto TCP/IP estándar, sin cambiarle el nombre, y sin WSD; en el firewall,
+    el ping y los puertos 3050 y 3309 (los de eleventa) permitidos en todos los perfiles de red, solo desde la red
+    local; en el POS, todo por IP;
   - el módem solo al puerto de internet del Tenda, y nada más conectado al módem ni a su Wi-Fi;
-  - el Tenda en modo router, con su firmware al día, el reinicio programado de madrugada y su red local en una poco
-    común (por ejemplo 192.168.77.0/24, nunca 192.168.0.x, 192.168.1.x ni 192.168.100.x);
-  - IP fija puesta en cada equipo, fuera del rango del DHCP y reservada en el Tenda (por ejemplo: .10 caja principal,
-    .11 caja 2, .20 impresora de tickets, .21 y .22 las WF-6590, .23 la L5590, .30 el grabador; DHCP de .100 a .199);
-  - las cajas, las impresoras y el grabador por cable a un switch, con un solo cable del switch al Tenda (un TL-SG108
-    queda lleno con eso: con otra impresora u otra PC, usar los puertos del Tenda o uno con más puertos);
-  - en Windows, cada impresora por IP con puerto TCP/IP estándar y sin WSD; en el POS, todo por IP.
-- **Si aun así falla:** un router de negocio como único router y el Tenda solo como Wi-Fi, o automatizar el corte del
-  internet. Solo después del diagnóstico.
+  - el Tenda en modo router, con UPnP e IPv6 apagados, concesiones largas y el reinicio programado de madrugada; el
+    firmware, solo si trae un arreglo para su versión de hardware.
+
+  Si en la próxima caída los equipos que ya están en el switch no se contestan por IP, el arreglo no basta.
+- **Si aun así falla:** lo que se podría comprar queda solo como referencia ([notas](notas.md#red-de-la-tienda)); el
+  dueño no quiere lista de compras (2026-10-09).
 - **En el POS:** que la caja 2 vuelva a buscar sola a la principal (con su llave) si cambia la IP; avisos si algo está
   configurado por nombre o con WSD; una franja que distinga «sin internet: la venta sigue, no desconectes nada» de «sin
   red local»; y una bitácora de red que junte sola el diagnóstico.
@@ -175,13 +185,13 @@ del efectivo y otros dispositivos propios quedan en [ideas](ideas.md).
 |---|---|
 | Cajas | i5-12400F, 16 GB, NVMe: de sobra. Para cajas nuevas basta un i3 o mini PC N100 con gráficos integrados |
 | Monitor | Económico: diseño para 1366×768, alto contraste y letra grande |
-| Impresora de tickets | POS-8360, térmica de 80 mm, ESC/POS, en la red (puerto 9100). Impresión directa con comandos: logo, QR y códigos en el ticket ([ticket](fase-1-caja.md#ticket)). En la matriz hay una sola para las dos cajas: por decidir una segunda con su cajón |
+| Impresora de tickets | POS-8360, térmica de 80 mm, ESC/POS, en la red (puerto 9100). Impresión directa con comandos: logo, QR y códigos en el ticket ([ticket](fase-1-caja.md#ticket)). En la matriz hay una sola para las dos cajas y no hay cajón ([notas](notas.md#impresoras)) |
 | Impresoras de inyección | En la matriz, dos Epson WF-6590 y una EcoTank L5590, por red ([impresión](impresion.md)) |
 | Lector | Genérico, lee QR, funciona como teclado |
-| Cajón de dinero | Recomendado (≈799 MXN). Se conecta a la impresora de tickets; cada apertura queda registrada |
+| Cajón de dinero | En la matriz no hay. Se conecta a la impresora de tickets; cada apertura queda registrada |
 | Router | Tenda en cada sucursal ([red de la matriz](#la-red-de-la-matriz)) |
-| Switch | Para conectar por cable las cajas, las impresoras y el grabador (el Tenda trae pocos puertos). Con la IP puesta en cada equipo se siguen viendo si el Tenda se reinicia o se traba; el Wi-Fi y el DHCP siguen en el Tenda. TP-Link TL-SG108 (433 + 138 de envío) |
+| Switch | Ya hay uno en la matriz (2026-10-09); el primer fin de semana se anotan su marca, modelo, puertos libres y qué va conectado a él. Conecta por cable las cajas, las impresoras y el grabador (el Tenda trae pocos puertos): con la IP puesta en cada equipo se siguen viendo si el Tenda se reinicia o se traba; el Wi-Fi y el DHCP siguen en el Tenda |
 | Puente | Pospuesto: Raspberry Pi 5 de 2 GB en cada tienda, siempre prendida (kit de 2,788 MXN con IVA) |
 | Cámaras | Grabador Dahua en cada sucursal: en la sucursal 2, XVR5104HS-4KL-I3 con 4 cámaras HAC-HFW1500CM-A de 5 MP; en la matriz, modelo por confirmar ([cámaras](camaras.md)) |
-| No-break | Recomendado para la caja principal, y otro para el módem, el grabador, las cámaras y el puente |
+| No-break | En la matriz no hay ninguno, y por ahora no se compra (2026-10-09): si se va la luz, se apagan de golpe la caja principal y la red. Referencia, por si un día se compra: [notas](notas.md#hardware-de-la-tienda) |
 | Etiquetas | Hojas adhesivas carta en la WF-6590 |

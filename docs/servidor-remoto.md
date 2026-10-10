@@ -191,11 +191,15 @@ Fuera: Healthchecks.io avisa si el central deja de reportarse
 
 ## Preguntas
 
+Ya contestado para la matriz (2026-10-09): el internet es de Megacable, no hay ningún no-break, no hay contador por
+ahora y no se hace lista de compras ([notas](notas.md#red-de-la-tienda)).
+
 - [ ] ¿Cuándo abre la sucursal 2? ¿Abre con eleventa o directo con el POS? ¿Cuántas cajas tendrá?
 - [ ] ¿Qué horario y qué días de descanso tiene cada sucursal? ¿En qué estado y municipio está cada una (zona
   horaria)?
-- [ ] Internet de cada sucursal: ¿qué compañía, fibra o cobre, qué velocidad de subida? ¿El módem queda prendido de
-  noche? ¿Hay no-break? ¿Quiere internet de respaldo por 4G para que la vigilancia de noche no dependa del cable?
+- [ ] Internet de cada sucursal (en la matriz, Megacable): ¿fibra o cable, qué velocidad de subida? ¿El módem queda
+  prendido de noche? En la sucursal 2, ¿hay no-break? ¿Quiere internet de respaldo por 4G para que la vigilancia de
+  noche no dependa del cable?
 - [ ] ¿Hay teléfono fijo en la tienda? Si lo hay, la llamada de aviso sale con ese número: más barata y no parece
   spam.
 - [ ] ¿Su celular es iPhone o Android? ¿Acepta instalar Pushover y NetBird y dejar NetBird conectada?
@@ -211,8 +215,8 @@ Fuera: Healthchecks.io avisa si el central deja de reportarse
   reparto se decide al pedir o al recibir? ¿Quién paga? En un traspaso con faltante, ¿quién responde?
 - [ ] ¿Se puede devolver en una sucursal lo comprado en la otra? ¿El descuento de un cliente registrado vale en las
   dos?
-- [ ] Pagos: ¿en dólares sin factura (Vultr) o en pesos con CFDI (Lightsail, ≈315–325 con IVA)? Pregúntele a su
-  contador por la deducción de servicios del extranjero.
+- [ ] Pagos: ¿en dólares sin factura (Vultr) o en pesos con CFDI (Lightsail, ≈315–325 con IVA)? Cuando haya
+  contador, preguntarle por la deducción de servicios del extranjero.
 - [ ] ¿Acepta comprar 2 Raspberry Pi y, si hace falta, 2 no-break? ¿Y cambiar el grabador de la matriz si es básico
   (≈1,739)?
 - [ ] ¿Acepta guardar 30 días de fotos y clips en el central? ¿Ya tiene aviso de privacidad y letreros?

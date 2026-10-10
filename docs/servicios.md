@@ -9,8 +9,8 @@ toma un trámite, nadie se entera. Aquí cada servicio tiene una **receta** y su
 |---|---|---|
 | Materiales | 1 espiral de 10 mm, 2 micas, 1 contraportada | De la receta; se descuentan del inventario al cobrar, al costo promedio |
 | Impresión | 40 páginas en blanco y negro | Costo real del [módulo de impresión](impresion.md) |
-| Uso del equipo | La engargoladora | Su depreciación: (costo − valor final) ÷ meses de vida ÷ usos al mes |
-| Luz del equipo | La enmicadora encendida | kWh del equipo × $/kWh del recibo (con IVA, si el negocio no lo acredita) ÷ usos del mes. En las impresoras ya va por cara |
+| Uso del equipo | La engargoladora | Su depreciación: (costo − valor final) ÷ meses de vida ÷ usos al mes. El equipo de la matriz no tiene fecha de compra; propuesta, por aprobar: tomar como costo lo que vale hoy y como meses de vida los que le quedan |
+| Luz del equipo | La enmicadora encendida | kWh del equipo × $/kWh del recibo (con IVA: sin contador, hoy no se acredita) ÷ usos del mes. En las impresoras ya va por cara |
 | Tiempo | 6 minutos | Minutos estándar × costo por minuto del personal (informativo: los sueldos se restan una vez al mes) |
 | Gastos indirectos | Internet, renta, la luz y la depreciación que no se cargaron a un equipo | Gastos del mes, al cierre |
 

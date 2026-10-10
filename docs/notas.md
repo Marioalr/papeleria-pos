@@ -1,11 +1,12 @@
 # Notas de investigación
 
 > Lo que se descubrió el **2026-10-08** al planear la multisucursal, que el dueño **pospuso** ese mismo día para
-> completar primero el POS de una sola sucursal con caja principal y secundaria. Nada se retira: la propuesta completa
-> queda en [central](servidor-remoto.md), [cámaras](camaras.md) y [prueba en Linux](prueba-sucursales-linux.md), y las
-> ideas en [ideas](ideas.md#varias-sucursales-pospuesto). Cada dato lleva su fuente; los precios y planes cambian: hay
-> que volver a revisarlos al retomar. Tipo de cambio usado: 17.98 MXN por dólar y 20.12 por euro (FIX de Banxico del
-> 7 de octubre de 2026).
+> completar primero el POS de una sola sucursal con caja principal y secundaria, y lo que se revisó el **2026-10-09**
+> con sus respuestas (la red de la tienda, gastos, reportes y quién ve la ganancia). Nada se retira: la propuesta
+> completa queda en [central](servidor-remoto.md), [cámaras](camaras.md) y [prueba en
+> Linux](prueba-sucursales-linux.md), y las ideas en [ideas](ideas.md#varias-sucursales-pospuesto). Cada dato lleva su
+> fuente; los precios y planes cambian: hay que volver a revisarlos al retomar. Tipo de cambio usado: 17.98 MXN por
+> dólar y 20.12 por euro (FIX de Banxico del 7 de octubre de 2026).
 
 ## Forma de trabajar
 
@@ -101,11 +102,18 @@ Propuesta para cumplirlo ([guía](pruebas-en-tienda.md)):
 
 ### Hardware de la tienda
 
-- **No-break** para la caja principal, que guarda la base. Uno de 480 VA (~639 MXN) puede quedarse corto si también
-  alimenta módem y grabador; los de 800–1000 VA cuestan 1,009–1,799 (dato previo, sin reverificar). En el BIOS: encender
-  sola al volver la luz; Windows Update fuera del horario de la tienda.
-- **El cajón:** por confirmar si hoy hay (y cuántos); si no, comprarlo (≈799 en Cyberpuerta) antes del fin de semana de
-  las dos cajas.
+- **No-break:** no hay ninguno, y por ahora no se compra (el dueño no quiere lista de compras, 2026-10-09). Riesgo: si
+  se va la luz, se apagan de golpe la caja principal, que guarda la base, y toda la red. En el BIOS: encender sola al
+  volver la luz; Windows Update fuera del horario de la tienda.
+  - **Referencia, por si un día se compra** (precios del 2026-10-09): APC BE600M1-LM (600 VA / 330 W, con puerto USB
+    de datos), 1,499 en Amazon México. Uno para la caja principal, su monitor y la impresora de tickets, con el cable
+    USB para que Windows la apague sola; otro para el módem, el Tenda, el switch, el grabador y la fuente de las
+    cámaras. Según la tabla de APC dura unos 30 minutos con 80 W y unos 10 con 180 W. Es de onda escalonada: con
+    algunas fuentes de PC (las que tienen PFC activo) la PC se apaga de golpe al pasar a batería, así que hay que
+    probarlo antes de confiar en él. Si Windows apaga la caja y la luz vuelve antes de que se acabe la batería, la
+    caja no se prende sola: hay que prenderla con el botón.
+- **No hay cajón** (ya se sabía: la entrega 1 quedó sin probarlo), y por ahora no se compra (2026-10-09). Las opciones
+  quedan como referencia en [impresoras](#impresoras).
 - **.NET 11 y siguientes** (la 11 sale en noviembre de 2026) piden procesador x86-64-v2 (SSE4.2): sin eso no arrancan.
   Vale para las PC de caja que ya hay en la matriz y para las nuevas: revisarlas con `/lib64/ld-linux-x86-64.so.2
   --help` desde una USB de Ubuntu. .NET 10 (el del proyecto) tiene soporte hasta noviembre de 2028 y corre en cualquier
@@ -119,47 +127,154 @@ Propuesta para cumplirlo ([guía](pruebas-en-tienda.md)):
 
 ### Red de la tienda
 
-El dueño reporta (2026-10-08) que a veces, cuando se va el internet de Megacable, también se cae la red local: no hay
-comunicación con las impresoras ni entre equipos. El router Tenda no lo resolvió; hoy el personal desconecta el cable
-de internet del Tenda y la red vuelve. Todo está conectado por la red local, sin USB. La causa **no se conoce** todavía;
-lo que se sabe:
+Lo que reporta el dueño (2026-10-08 y 2026-10-09): casi siempre que se va el internet de Megacable (no siempre),
+también se cae **toda** la red local: no hay comunicación entre las cajas ni con las impresoras. **El problema es
+anterior al Tenda:** con el módem solo (como router y Wi-Fi) ya pasaba; entonces esperaban a que volviera el internet
+y, para seguir trabajando, usaban los datos del celular y conectaban la impresora directo a la PC con un cable de red.
+Se cambió el módem y siguió; el Tenda se compró para arreglarlo y tampoco. Hoy el personal desconecta el cable de
+internet del Tenda y la red vuelve. **Solo pasa en una caída real del internet:** si se desconecta el módem o el
+cable de internet, no se reproduce. **Cuando pasa, la red local se cae en cuanto se va el internet y vuelve sola en
+cuanto regresa.** Durante la falla no contesta el ping y los celulares no se pueden conectar al
+Wi-Fi. Todo va por cable salvo la caja 2, que va por Wi-Fi. El Tenda está bien configurado y conectado a su switch. En
+el último medio año se fue el internet 3 veces (es variable), y suele tardar unas 12 horas en volver. No hay ningún
+no-break. La causa **no se conoce** todavía.
 
-- **El Tenda cambia su red local él solo** si la dirección que recibe por internet cae en su misma red (su red de
-  fábrica es 192.168.0.1; pasa a 192.168.1.1). Lo documenta el manual del AC10 V5 (§9.1.2, p. 113); el del N301 V2 lo
-  menciona solo en modo WISP. Los equipos con la IP puesta en el propio equipo se siguen viendo entre ellos, pero
-  pierden al router; los que la toman del Tenda (aunque esté reservada) cambian de dirección.
-- **Los módems de cable de Megacable** (Arris, Technicolor, Ubee) usan 192.168.0.1, la misma red de fábrica del Tenda;
-  los de fibra, 192.168.1.1 (ZTE) o 192.168.100.1 (Huawei). Un módem de cable en modo puente que pierde la señal puede
-  repartir una dirección temporal 192.168.100.x (documentado en SURFboard y Xfinity; no confirmado en los de
-  Megacable); esa dirección no choca con la red de fábrica del Tenda. Con el módem en modo router, el choque de red
-  pasaría una sola vez, al instalar el Tenda.
-- **Causas que encajan,** de más a menos probable según la revisión: (1) el módem sigue dentro de la red local (su cable
-  entra a un puerto LAN del Tenda, el Tenda está en modo AP, o algo está conectado al módem o a su Wi-Fi); (2) el Tenda
-  se traba o reinicia mientras su internet queda «a medias»; (3) el choque de red de arriba; (4) equipos configurados
-  por nombre o con puertos WSD, más un DNS que, si no contesta, hace esperar hasta 10 s por nombre (si contesta con
-  error, Windows corta al instante; falta ver si los nombres cortos como CAJA1 pasan por el DNS); (5) un reinicio del
-  Tenda: el AC10 V5 trae de fábrica un reinicio diario que se dispara con poco tráfico (en el N301 V2 viene apagado);
-  después de un reinicio la red vuelve sola, así que explica cortes, no que haga falta desconectar el cable.
-- **Lo que hay que juntar** la próxima vez que falle, antes de desconectar nada (con un script que lo guarde solo):
-  `ipconfig /all`, `arp -a`, ping por IP al Tenda, a la impresora de tickets, a una WF-6590 y a la caja principal, ping
-  a la caja principal por nombre, cuánto tarda el DNS, y en el Tenda la dirección de internet, la de la red local y su
-  tiempo encendido (una foto de su pantalla de estado), y las luces del módem. Luego desconectar como hoy, esperar un
-  minuto y repetir.
-- **El arreglo de más probabilidad,** sin automatizar nada ([plan](plan.md#para-el-piloto-con-dos-cajas)): el módem
-  solo al puerto de internet del Tenda y nada más conectado al módem; el Tenda en modo router, con su firmware al día,
-  el reinicio programado de madrugada y su red local en una poco común (por ejemplo 192.168.77.0/24); IP fija puesta en
-  cada equipo y reservada en el Tenda; cajas, impresoras y grabador por cable a un switch (TP-Link TL-SG108, 433 + 138
-  de envío en Cyberpuerta); impresoras en Windows por IP con puerto TCP/IP estándar y sin WSD (en las WF-6590 se apaga
-  en su página; en la L5590, comprobarlo).
-- **Si aun así falla:** un router de negocio como único router y el Tenda solo como Wi-Fi (TP-Link ER605 V2, 1,029 + 128
-  de envío), o automatizar el corte con un MikroTik y su función Netwatch (el hEX lite de 889 era el único con
-  existencias, con puertos de 100 Mbps; los gigabit de 1,269 y 1,439, agotados; más envío; pide saber configurarlo).
-  Probablemente no conviene apagar el módem con un enchufe inteligente.
+- **Lo que dicen los datos** (revisión del 2026-10-09): lo más probable es que no sea un aparato dañado. Cambiar el
+  módem por otro de Megacable descarta un módem descompuesto, pero no la forma en que se porta ese tipo de módem
+  cuando pierde el servicio (no se sabe si el nuevo es del mismo modelo). Que los celulares no se puedan conectar
+  probablemente apunta al propio router, que deja de dar Wi-Fi y direcciones, no solo internet (la captura del celular
+  lo confirma). Pasó con dos routers distintos (antes el módem, ahora el Tenda), así que lo que lo dispara viene del
+  lado del internet, y desconectar ese cable lo libera. Que la red se caiga y vuelva al mismo tiempo que el internet
+  dice que, mientras dura ese tipo de caída, algo afecta al router en vivo; no es algo que se acumule con las horas. Y
+  que no pase en todas las caídas ni al desconectar dice que depende de cómo se cae el servicio de Megacable: al
+  desconectar, el corte es limpio.
+- **Causas posibles** (las dos primeras, de más a menos probable; la 3 se suma a cualquiera de ellas; es inferencia: no
+  hay reportes públicos de esto ni en Tenda ni en Megacable):
+  1. **Algo que llega del lado de Megacable mientras dura la caída:** con la señal a medias, un módem de cable se
+     resincroniza o se reinicia en ciclo (su conexión con el router sube y baja sin parar), o manda tráfico de más.
+     El router no lo aguanta y deja de dar Wi-Fi y direcciones; cuando el servicio vuelve, el módem se estabiliza y el
+     router se recupera solo. Si el módem también es router, se cae su propia red local: el síntoma de antes del
+     Tenda. Solo pasa en algunas caídas, y desenroscar el cable da un corte limpio, no un ciclo. Es más débil si el
+     servicio es de fibra.
+  2. **Los reintentos de los equipos saturan al router:** sin respuesta de internet, el grabador, los celulares y las
+     PC reintentan sin parar, y cada intento ocupa lugar en la memoria de un router barato. Encaja con que empiece y
+     termine junto con el internet. Es menos probable: son unos 10 equipos, los intentos sin respuesta se borran en
+     unos 30 s, una tabla llena no impide que el celular se una al Wi-Fi, y no explica que no pase en todas las caídas.
+  3. **Por qué también se cae lo que va por cable:** si el problema solo traba al router, el switch sigue pasando el
+     tráfico entre equipos con dirección vigente. Para que se caiga todo tiene que pasar algo más: equipos conectados a
+     los puertos del Tenda o a su Wi-Fi; una tormenta de tráfico que el switch reparte a todos los puertos; equipos
+     configurados por nombre o con WSD, que esperan al DNS del router trabado; o Windows que pasa la red a «Pública» y
+     su firewall corta el ping y a eleventa. Antes, la impresora conectada directo a la PC sí funcionaba.
+
+  **Descartadas:**
+  - que el router se trabe por algo que se acumula con las horas (que se le venza su dirección o se le llene la
+    memoria poco a poco): la red se cae y vuelve en el mismo momento que el internet;
+  - que solo falle la caja 2 por su Wi-Fi: se cae toda la red;
+  - un corte de luz como causa principal: quitar el cable no arreglaría un apagón (puede sumarse en alguna caída);
+  - que el Tenda cambie su red local él solo (manual del AC10 V5, §9.1.2): también pasaría fuera de las caídas;
+  - una página de «sin servicio» de Megacable o ajustes del internet (MTU, IPv6): no impedirían que se conecten los
+    celulares.
+- **El primer fin de semana no se provoca la falla a propósito:** desconectar no la reproduce y un resultado negativo
+  no demuestra nada; ese fin de semana es solo mirar y anotar. Opcional, más adelante y solo con el visto bueno del
+  dueño, una prueba de «hoyo negro»: con la tienda cerrada pero las PC, el grabador y un par de celulares prendidos,
+  como en un día normal, en lugar del módem va la laptop del dueño con una USB de Linux en el puerto de internet del
+  Tenda, dándole dirección pero sin contestar nada más, hasta una hora. Si la red se cae, apoya la causa 2; si no, no
+  se concluye nada. No se compra nada.
+- **Lo que se junta en la próxima caída real** (cada dos meses, más o menos, con la tienda abierta). Lo que más
+  importa: si el módem se reinicia o resincroniza en ciclo (el video de sus luces y su registro de eventos), si el
+  Tenda ve su internet subir y bajar (su registro), y si los equipos con IP fija en el switch se siguen viendo.
+  - **El script de diagnóstico** (PowerShell 5.1, sin permisos de administrador) corre en las dos cajas desde que se
+    inicia sesión, con un acceso directo (`powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File …`) que no
+    cambia la configuración de Windows. Cada 30 s guarda en un archivo:
+    - la hora y el número de vuelta (los huecos muestran que la PC estuvo apagada o que se fue la luz);
+    - cómo está conectada (cable o Wi-Fi, con Get-NetAdapter, sin activar la ubicación), la IP y de dónde viene (del
+      Tenda, fija o una 169.254), la puerta de enlace y su MAC (avisa si cambia) y el perfil de red;
+    - ping con límite de 1 s (con la clase Ping de .NET; el Test-Connection de PowerShell 5.1 no deja poner límite),
+      con cuánto tarda, a la puerta de enlace, a la otra caja, a la impresora de tickets (solo ping: dejar abierta una
+      conexión al 9100 bloquearía los tickets de eleventa), a cada Epson, al grabador, al módem y a 1.1.1.1 y 8.8.8.8.
+      Windows no contesta el ping si no se le permite: al arrancar se anota si la otra caja contesta, y si no, no
+      cuenta como caída;
+    - con conexiones de 1 s como máximo: si contesta la página del Tenda (puerto 80) y, desde la caja 2, los puertos
+      3050 y 3309 de la caja principal (eleventa);
+    - consultas rápidas de DNS (Resolve-DnsName -QuickTimeout) al Tenda para un nombre suyo (tendawifi.com) y uno de
+      internet (si no contesta ni el suyo, está trabado), y cuánto tardan en resolverse el nombre de la caja principal
+      y los de las impresoras que usen las colas o eleventa;
+    - cuántos paquetes de difusión (los que van a todos los equipos) y cuántos descartados recibió la tarjeta de red,
+      para ver si hay una tormenta de tráfico;
+    - la hora del reinicio programado del Tenda, para saber si su registro se borró.
+
+    Cada 5 minutos, y en cuanto algo cambie, guarda `ipconfig /all`, las fechas de la concesión, `arp -a`, la ruta
+    hacia 1.1.1.1 (`tracert -d -h 5 -w 500`) y la hora en que arrancó la PC. El archivo se rota para no crecer sin fin
+    y nunca va al repositorio. En la caja 2 tiene un ícono «Diagnóstico de red» con tres botones: «Se cayó la red», «Ya
+    desconecté» y «Reconecté». Se prueba entre semana en una PC con Windows, con una cuenta común y una vez con el
+    cable desconectado.
+  - **El personal**, con la instrucción de la [guía](pruebas-en-tienda.md#durante-una-falla-de-red): antes de
+    desconectar (máximo 3 minutos), un video de 60 s de las luces del módem, del Tenda y del switch, la captura del
+    Wi-Fi de un celular y «Se cayó la red» en la caja 2. No apagar ni reiniciar nada: eso borra los registros.
+    Desconectar solo el cable de red del módem al Tenda, nunca el redondo de Megacable. Como la red vuelve en cuanto
+    regresa el internet, cada hora, sin venta abierta en la caja 2, se reconecta y se presiona «Reconecté»; no hay que
+    guiarse por la luz de «en línea» del módem, que puede seguir prendida toda la caída. Al cerrar se deja conectado.
+  - **Después, en este orden** (el dueño o quien él diga): con el cable todavía fuera (la red local funciona), y antes
+    de la primera reconexión, guardar el registro del Tenda (exportarlo o foto de cada página), porque las reconexiones
+    y su reinicio diario lo borran; la página de estado y el registro de eventos del módem, desde una laptop conectada
+    a un puerto de red del módem; copiar a una USB la carpeta del script de las dos cajas; exportar del Visor de eventos
+    los registros Sistema, Dhcp-Client, NetworkProfile y WLAN-AutoConfig (en Registros de aplicaciones y servicios >
+    Microsoft > Windows); y el número de reporte y la hora de la caída según Megacable. Todo eso queda fuera del
+    repositorio.
+- **El arreglo propuesto, con lo que ya hay** (sin compras, 2026-10-09; por aprobar): que la venta y la impresión no
+  dependan del router ([plan](plan.md#para-el-piloto-con-dos-cajas)):
+  - IP fija puesta en cada equipo, dentro de la red local de hoy, fuera del rango que reparte el Tenda y reservada en
+    él, para que un equipo que se prende o renueva su dirección con el router trabado no se quede sin ella (causa 3).
+    Cambiar de red local (por ejemplo a 192.168.77.0/24) cambiaría la dirección de todo en un solo fin de semana: solo
+    después, y solo si el primer fin de semana muestra que choca con la del módem;
+  - todos los equipos de la tienda en el switch que ya hay, no en los puertos del Tenda (causa 3); si al switch le
+    faltan puertos, lo que no quepa se queda en el Tenda;
+  - impresoras y eleventa configuradas por IP, sin WSD ni nombres; en el firewall de Windows, el ping y los puertos
+    3050 y 3309 (los de eleventa) permitidos en todos los perfiles de red, solo desde la red local (causa 3);
+  - la caja 2 por cable si ya hay uno que llegue. Si no, sigue por Wi-Fi: con eleventa, no puede vender mientras el
+    router esté trabado; con el POS, pasa a contingencia y sigue vendiendo. Como la caja va por el Wi-Fi del Tenda,
+    aplica la regla de que las cajas no compartan red con el público ([seguridad](#seguridad));
+  - el módem solo al puerto de internet del Tenda y nada más conectado a él (causa 1);
+  - en el Tenda, gratis y con poco efecto esperado: apagar UPnP e IPv6, concesiones largas (que la dirección que da a
+    cada equipo dure lo más posible) y el reinicio diario de madrugada (anotar su hora: borra el registro). El firmware,
+    al final y solo si las notas de esa versión de hardware traen un arreglo de seguridad o de estabilidad: si el Tenda
+    queda inservible no hay otro, y se volvería a como estaba antes de él (el módem como router y Wi-Fi).
+
+  Con eso, si lo que pasa solo traba al router (por el módem o por los reintentos), el switch sigue pasando el tráfico y
+  los equipos con IP fija se siguen encontrando: la caja principal y lo que va por cable siguen vendiendo e imprimiendo,
+  y se pierden el internet y el Wi-Fi de los celulares. **Si en la próxima caída los equipos que ya están en el switch
+  no se contestan por IP, el arreglo no basta** (tormenta de tráfico o firewall de Windows). Se comprueba apagando el
+  Tenda con la tienda cerrada ([guía](pruebas-en-tienda.md#segundo-fin-de-semana-arreglar-la-red)).
+- **Referencia, por si un día se compra algo** (el dueño no quiere lista de compras, 2026-10-09; precios del
+  2026-10-09, con IVA):
+  - si el script muestra una tormenta de tráfico, un switch administrable con control de tormentas (TP-Link
+    TL-SG108E, 579 + 138 de envío en Cyberpuerta; viene con ese control apagado);
+  - si el que se traba es el Tenda, un router de negocio como único router y el Tenda solo como Wi-Fi (TP-Link ER605
+    V2, 1,029 + 128 de envío en Cyberpuerta): aguanta muchas más conexiones y manda su registro a una PC; no sirve si
+    lo que falla es el módem;
+  - un MikroTik con Netwatch, solo si alguien que sepa RouterOS lo va a mantener (hEX lite, 899 + 148 de envío, con
+    puertos de 100 Mbps): no apaga su puerto de internet, porque entonces no sabría cuándo volvió; mientras no hay
+    internet, rechaza el tráfico de la tienda hacia internet, para que los equipos fallen rápido, como si se hubiera
+    desconectado el cable;
+  - el módem en modo puente, solo si el Tenda muestra una dirección de internet privada y los registros apuntan al
+    módem: depende de Megacable y, según usuarios, pide IP pública con costo mensual (sin verificar);
+  - para la caja 2, un cable de red hasta ella (Cat 6 de 20 m, 279 en Steren), o un punto de acceso propio conectado
+    al switch (TP-Link EAP225, 1,210 en Amazon México); no sirven un puente Wi-Fi ni los adaptadores que llevan la red
+    por los cables de la luz (powerline);
+  - para el [internet de respaldo](ideas.md#internet-de-respaldo): Bait «Internet en Casa» (kit de 999 con 120 GB por
+    30 días; recargas de 99 por 30 GB para 7 días o 349 por 120 GB para 30 días), Telcel «Internet en tu Casa Amigo»
+    (recargas de 80 por 10 GB a 200 por 30 GB; kit sin verificar), Bait «Internet Portátil» (kit de 899 con 10 GB por 30
+    días) o el ER605 de arriba para que el cambio sea automático. Cada chip nuevo se registra con la CURP del dueño
+    (obligatorio en 2026).
+
+  No conviene un enchufe inteligente que reinicie el módem: en 12 horas lo apagaría a cada rato y borraría su registro.
 - **En el POS:** la venta de la caja principal no usa la red (habla con su propio servicio). La caja 2 pasa a
   contingencia y sigue vendiendo, pero hoy no vuelve a buscar a la principal si cambia su IP. La impresora de tickets,
   el SNMP y la dirección de la caja principal en la caja 2 aceptan nombres (el instalador sugiere el nombre de la PC):
   hay que configurarlos por IP, y que el instalador muestre la IP. Hace falta distinguir en pantalla «sin internet» (la
   venta sigue, no desconectes nada) de «sin red local», y una bitácora de red que junte sola los datos del diagnóstico.
+- **Internet de respaldo:** las caídas de unas 12 horas también cortan lo que sí necesita internet (WhatsApp, recargas,
+  Telegram, ver las cámaras). Queda como [idea](ideas.md#internet-de-respaldo), para después de arreglar la red local.
 
 ### Impresoras
 
@@ -169,33 +284,51 @@ lo que se sabe:
 - **El POS mide y cobra una sola impresora de inyección por sucursal** (`ImpresoraHost`). Mientras no se cambie, no hay
   que apuntar ninguna caja a la segunda WF-6590 ni a la L5590: saldrían faltantes falsos y costos en cero. Que la L5590
   se lea igual por SNMP falta probarlo.
-- **Una impresora de tickets para dos cajas:** si se pone cajón, va conectado a ella, así que las dos cajas abrirían el
-  mismo cajón, y eso choca con el turno y el corte ciego de cada cajero. Si las dos imprimen a la vez, hoy no hay
-  reintento. Opciones: una segunda impresora de tickets con su cajón (≈1,909 la 3nStar RPT008 + ≈799 cada cajón, más
-  envío: ≈2,700, o ≈3,500 si hoy no hay ningún cajón; confirmar que tenga red), dos cajones en la misma impresora con
-  un cable en Y (si la POS-8360 tiene el segundo pulso), o la regla «la caja 2 no cobra en efectivo». No se recomienda
-  un cajón compartido entre dos turnos.
+- **Una impresora de tickets para dos cajas, y no hay cajón:** el cajón se conecta a la impresora de tickets, así que
+  con una sola las dos cajas abrirían el mismo cajón, y eso choca con el turno y el corte ciego de cada cajero. Si las
+  dos imprimen a la vez, hoy no hay reintento. No se recomienda un cajón compartido entre dos turnos. Opciones,
+  **referencia, por si un día se compra** (el dueño no quiere lista de compras, 2026-10-09; precios del 2026-10-08):
+  1. una segunda impresora de tickets (≈1,909 la 3nStar RPT008; confirmar que tenga red) y un cajón para cada una
+     (≈799 cada uno);
+  2. dos cajones en la misma impresora con un cable en Y (≈799 cada uno, más el cable), si la POS-8360 tiene el
+     segundo pulso;
+  3. un solo cajón, para la caja principal, y la regla «la caja 2 no cobra en efectivo».
 
 ### Luz y costo de los servicios
 
 - **Tarifa de luz de negocio** (PDBT, baja tensión hasta 25 kW), octubre de 2026: 3.565 (Valle de México) a 4.255
   (Jalisco) $/kWh sin IVA en las seis divisiones del centro consultadas (las demás no se revisaron), más un cargo fijo
-  de 25.25 a 70.34 al mes. Si el negocio no declara IVA, el de la luz es costo: el $/kWh real es el cargo × 1.16. El
-  dato que vale sale del recibo de la matriz. (CFE, consultado el 2026-10-08)
+  de 25.25 a 70.34 al mes. No hay contador ni nada fiscal por ahora (el contador está en los planes del dueño,
+  2026-10-09): el IVA de la luz es costo, y el $/kWh real es el cargo × 1.16. El dato que vale sale del recibo de la
+  matriz. (CFE, consultado el 2026-10-08)
 - **Consumo de las impresoras** (fichas de Epson): WF-6590, 36 W imprimiendo y 17 W en espera; L5590, 12 W. La luz por
   cara impresa es despreciable (≈0.0001 MXN); la espera (17 W, y 2.7 W en reposo) suma a lo más ≈25 MXN al mes por
   WF-6590 y va como luz no asignada. Lo que pesa es la tinta y la depreciación. El módulo trae 3.00 $/kWh y 25 W por
   omisión: hay que corregirlos.
-- **La enmicadora** pesa por el tiempo que pasa encendida, no por cada uso: hay que medirla con un medidor de enchufe un
-  día normal. Una engargoladora manual no gasta luz, solo se deprecia.
+- **La enmicadora** pesa por el tiempo que pasa encendida, no por cada uso: se estima con la potencia de su etiqueta y
+  las horas que pasa encendida en un día normal (sin comprar medidor). Una engargoladora manual no gasta luz, solo se
+  deprecia.
 - **Depreciación:** (costo − valor final) ÷ meses de vida ÷ usos al mes. El equipo de la matriz que hoy está en el
   inventario de eleventa (impresoras, engargoladora, enmicadora, guillotina, PC) sale del inventario y entra como
-  equipo; el dueño confirma precio y fecha de compra.
+  equipo. **No hay fecha de compra** (2026-10-09). Propuesta, por aprobar: se toma lo que vale hoy cada equipo y los
+  años de uso que le quedan, y se deprecia desde el arranque del piloto; el costo que tenga en el inventario de
+  eleventa sirve de referencia. El dueño confirma esos valores.
 - **Hoy el POS cobra los servicios con costo 0:** la utilidad sale inflada hasta que lleguen las recetas. Mientras,
   conviene un costo estándar por unidad, como en eleventa.
 
 ### Reportes
 
+- **Pospuestos** (2026-10-09): el dueño los deja para después de la
+  [prueba con una persona real](plan.md#prueba-con-una-persona-real) y de que él la apruebe. Lo de abajo queda para
+  entonces. La captura de cada gasto cuando se paga no es un reporte: no se pospone
+  ([administración](plan.md#administración-y-punto-de-equilibrio)).
+- **La utilidad y la ganancia solo las ve el dueño** (2026-10-09). Hoy ya es así en el margen mínimo, los costos de las
+  impresiones y la cotización, y el resumen de Telegram (con la utilidad del día) solo va a los chats que vinculó el
+  dueño. El encargado sí ve costos: al costear una compra (con el margen de cada producto), en la ficha del producto
+  (F3) y en el conteo del día, porque los necesita para poner precios y contar. **Falla en el código:** el bot deja
+  vincular un grupo, y como autoriza por chat y no por persona, si el dueño vinculara uno con el encargado, el
+  encargado vería la utilidad y cualquiera del grupo podría apretar «Aprobar». Hay que corregirlo para cumplir lo
+  decidido: rechazar el vínculo desde un grupo y revisar quién aprieta el botón.
 - **Lo que usa el dueño en eleventa** (2026-10-08): ventas por día, mes y año a la fecha, y contra el año anterior. Su
   versión de eleventa no tiene apartados ni cotizaciones, y hoy no se factura nada.
 - **El historial importado de eleventa** (tablas de ventas históricas) da el año anterior desde el primer día. Trae
@@ -277,10 +410,11 @@ lo que se sabe:
 - **Azure for Students** es solo para estudiantes de tiempo completo y uso educativo no comercial: no sirve para probar
   el sistema del negocio.
 - **Pagos al extranjero:** Vultr y el dominio cobran en dólares sin factura mexicana; Twilio da CFDI desde marzo de
-  2026; AWS México cobra en pesos con CFDI desde febrero de 2026. La deducción con factura extranjera la confirma el
-  contador: llevarle la regla 2.7.1.14 de la RMF 2026 (permitiría deducir con la factura de un proveedor extranjero si
-  trae ciertos datos; fuente secundaria) y preguntarle si se causa IVA por importar servicios. Aplica ya a Kapso
-  (WhatsApp) y, al retomar, a Vultr, Twilio, Pushover y el dominio.
+  2026; AWS México cobra en pesos con CFDI desde febrero de 2026. Hoy no hay contador ni nada fiscal (2026-10-09).
+  Para cuando haya contador (está en los planes del dueño, [idea](ideas.md#otras-ideas-que-han-salido)): llevarle la
+  regla 2.7.1.14 de la RMF 2026 (permitiría deducir con la factura de un proveedor extranjero si trae ciertos datos;
+  fuente secundaria) y preguntarle si se causa IVA por importar servicios. Toca a Kapso (WhatsApp) y, al retomar la
+  multisucursal, a Vultr, Twilio, Pushover y el dominio.
 
 ## Para retomar la multisucursal
 
