@@ -121,7 +121,7 @@ Lo mismo en desarrollo, en el navegador:
 
 ```
 dotnet run --project src/PapeleriaPos.Herramientas -- preparar-prueba --salida prueba/datos/prueba.db --ejemplos prueba/Ejemplos
-dotnet run --project src/PapeleriaPos.Servicio -- --environment Development --Urls=http://localhost:5180 --ConnectionStrings:Pos="Data Source=prueba/datos/pos.db" --Prueba:Activa=true --Prueba:BaseInicial=prueba/datos/prueba.db --Telegram:Activo=false
+dotnet run --project src/PapeleriaPos.Servicio -- --environment Development --Urls=http://localhost:5180 --Caja:Servicio=http://localhost:5180 --ConnectionStrings:Pos="Data Source=prueba/datos/pos.db" --Prueba:Activa=true --Prueba:BaseInicial=prueba/datos/prueba.db --Telegram:Activo=false
 ```
 
 Migraciones de la base (EF Core):
