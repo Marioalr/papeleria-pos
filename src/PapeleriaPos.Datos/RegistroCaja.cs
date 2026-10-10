@@ -114,6 +114,9 @@ public sealed class RegistroCaja(PosDbContext db)
                         $"Precio de «{cambiada.Descripcion}»: {cambiada.PrecioOriginalCentavos / 100m:N2} → {cambiada.PrecioCentavos / 100m:N2}",
                         cambiada.AutorizacionPrecioId, ventaId: venta.Id, ct: ct);
                 await RevisarDescuentosAsync(venta, control, ct);
+                // Lo fiado: el límite se revisa con el saldo de dentro de esta transacción.
+                if (cobros.Where(c => c.Forma == FormaPago.Credito).Sum(c => c.MontoCentavos) is var fiado and > 0)
+                    await new RegistroCredito(db).RevisarFiadoAsync(venta, fiado, control, ct);
                 folio = await SiguienteFolioAsync(venta.SucursalId, venta.Serie, ct);
             }
 
@@ -130,6 +133,7 @@ public sealed class RegistroCaja(PosDbContext db)
             }
 
             venta.Pagar(folio, cobros, ahora, redondear);
+            await new RegistroCredito(db).CargarAsync(venta, ct);
             foreach (var trabajo in impresiones ?? [])
                 trabajo.Cobrar(venta.Id, ahora);
             foreach (var comun in venta.Lineas.Where(l => l.VarianteId is null && !l.EsImpresiones))
@@ -225,7 +229,7 @@ public sealed class RegistroCaja(PosDbContext db)
     {
         var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
         var corte = CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.X, usuarioId, Ahora,
-            devoluciones: await DevolucionesAsync(turno.Id, ct));
+            devoluciones: await DevolucionesAsync(turno.Id, ct), abonos: await AbonosAsync(turno.Id, ct));
         db.Cortes.Add(corte);
         await db.SaveChangesAsync(ct);
         return corte;
@@ -241,7 +245,7 @@ public sealed class RegistroCaja(PosDbContext db)
 
         var ahora = Ahora;
         var corte = CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.Z, encargadoId, ahora, conteo,
-            await DevolucionesAsync(turno.Id, ct));
+            await DevolucionesAsync(turno.Id, ct), await AbonosAsync(turno.Id, ct));
         turno.CerradoUtc = ahora;
         new ServicioControl(db).Registrar(turno.SucursalId, turno.CajaId, encargadoId, AccionControlada.CorteZ,
             $"Corte de cierre: esperado {corte.EsperadoCentavos / 100m:N2}, contado {corte.ContadoCentavos / 100m:N2}", corte.DiferenciaCentavos);
@@ -258,7 +262,7 @@ public sealed class RegistroCaja(PosDbContext db)
     {
         var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
         var corte = CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.X, turno.CajeroId, Ahora,
-            devoluciones: await DevolucionesAsync(turno.Id, ct));
+            devoluciones: await DevolucionesAsync(turno.Id, ct), abonos: await AbonosAsync(turno.Id, ct));
         var limite = await db.ConfiguracionesSucursal.Where(c => c.SucursalId == turno.SucursalId).Select(c => c.LimiteEfectivoCentavos).FirstOrDefaultAsync(ct);
         return (corte.EsperadoCentavos, limite);
     }
@@ -290,7 +294,7 @@ public sealed class RegistroCaja(PosDbContext db)
     {
         var turno = await db.Turnos.FindAsync([turnoId], ct) ?? throw new InvalidOperationException("El turno no existe.");
         return CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.X, turno.CajeroId, Ahora,
-            devoluciones: await DevolucionesAsync(turno.Id, ct));
+            devoluciones: await DevolucionesAsync(turno.Id, ct), abonos: await AbonosAsync(turno.Id, ct));
     }
 
     /// <summary>El último folio usado en la serie de una caja (0 si todavía no vende).</summary>
@@ -373,7 +377,7 @@ public sealed class RegistroCaja(PosDbContext db)
             return existente;
         var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
         var corte = CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.Z, c.EncargadoId, c.FechaUtc,
-            c.Conteo, await DevolucionesAsync(turno.Id, ct));
+            c.Conteo, await DevolucionesAsync(turno.Id, ct), await AbonosAsync(turno.Id, ct));
         corte.Id = c.Id;
         corte.EnContingencia = true;
         foreach (var conteo in corte.Conteo)
@@ -451,4 +455,8 @@ public sealed class RegistroCaja(PosDbContext db)
 
     private async Task<List<MovimientoCaja>> MovimientosAsync(Guid turnoId, CancellationToken ct) =>
         await db.MovimientosCaja.Where(m => m.TurnoId == turnoId).ToListAsync(ct);
+
+    /// <summary>Los abonos de clientes recibidos en el turno (el corte deja fuera los cancelados).</summary>
+    private async Task<List<Abono>> AbonosAsync(Guid turnoId, CancellationToken ct) =>
+        await db.Abonos.Where(a => a.TurnoId == turnoId).ToListAsync(ct);
 }

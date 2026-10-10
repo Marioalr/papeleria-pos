@@ -38,7 +38,10 @@ public sealed class RegistroClientes(PosDbContext db)
         var ids = clientes.Select(c => c.Id).ToList();
         var compras = await ComprasAsync(ids, ct);
         var ultimas = await UltimasComprasAsync(ids, ct);
-        return clientes.Select(c => new ClienteResumenDto(Dto(c), Promedio(Meses(compras, c.Id)), ultimas.GetValueOrDefault(c.Id))).ToList();
+        var cuentas = await new RegistroCredito(db).CuentasAsync(ids, ct);
+        var hoy = DateOnly.FromDateTime(HoraMexico.ALocal(Ahora));
+        return clientes.Select(c => new ClienteResumenDto(Dto(c), Promedio(Meses(compras, c.Id)), ultimas.GetValueOrDefault(c.Id),
+            cuentas[c.Id].SaldoCentavos, cuentas[c.Id].Vencido(hoy))).ToList();
     }
 
     /// <summary>La ficha con su evaluación: lo que compró cada mes y el promedio.</summary>
@@ -76,6 +79,22 @@ public sealed class RegistroClientes(PosDbContext db)
 
         var cliente = f.Id == Guid.Empty ? null
             : await db.ClientesRegistrados.FindAsync([f.Id], ct) ?? throw new InvalidOperationException("El cliente ya no existe.");
+        // Quien debe (o tiene algo a favor, o abonos por verificar) no se deja inactivo: su cuenta tiene que quedar en cero
+        // primero. Se lee dentro de la transacción, como toda decisión del crédito: una caja que le fía en ese momento
+        // espera, y luego ya lo ve inactivo.
+        var inactivar = cliente is { Activo: true } && !f.Activo;
+        await using var tx = inactivar ? await db.Database.BeginTransactionAsync(ct) : null;
+        if (inactivar)
+        {
+            var cuenta = await new RegistroCredito(db).CuentaAsync(cliente!.Id, ct);
+            if (cuenta.SaldoCentavos != 0)
+                throw new InvalidOperationException(cuenta.SaldoCentavos > 0
+                    ? $"«{cliente.Nombre}» todavía debe {RegistroCredito.Pesos(cuenta.SaldoCentavos)}: primero que liquide, o ajusta su saldo."
+                    : $"«{cliente.Nombre}» tiene {RegistroCredito.Pesos(cuenta.AFavorCentavos)} a favor: primero úsalo o ajusta su saldo.");
+            if (cuenta.PorVerificarCentavos > 0)
+                throw new InvalidOperationException(
+                    $"«{cliente.Nombre}» tiene {RegistroCredito.Pesos(cuenta.PorVerificarCentavos)} en transferencias por verificar: si no llegan, vuelve a deber.");
+        }
         if (f.Activo)
         {
             var otros = await db.ClientesRegistrados.AsNoTracking().Where(c => c.Activo && c.Id != f.Id).ToListAsync(ct);
@@ -99,6 +118,8 @@ public sealed class RegistroClientes(PosDbContext db)
 
         new ServicioControl(db).Registrar(s.SucursalId, null, s.UsuarioId, AccionControlada.AdministrarClientes, Detalle(antes, Dto(cliente)));
         await db.SaveChangesAsync(ct);
+        if (tx is not null)
+            await tx.CommitAsync(ct);
         return Dto(cliente);
     }
 
@@ -140,7 +161,8 @@ public sealed class RegistroClientes(PosDbContext db)
         var cambios = privilegios.Concat(quien).ToList();
         if (cambios.Count == 0)
             return $"Editó el cliente {nombre}";
-        var tienePrivilegios = despues.DescuentoCentesimas > 0 || despues.MayoreoSiempre || despues.PedidoSinAnticipo || despues.ApartarSinPagar;
+        var tienePrivilegios = despues.DescuentoCentesimas > 0 || despues.MayoreoSiempre || despues.PedidoSinAnticipo || despues.ApartarSinPagar
+            || despues.TieneCredito;
         var avisar = privilegios.Count > 0
             || (tienePrivilegios && despues.Activo && (antes.Nombre != despues.Nombre || antes.Telefono != despues.Telefono || !antes.Activo));
         return (avisar ? $"Privilegios de {nombre}: " : $"Cliente {nombre}: ") + string.Join(", ", cambios);

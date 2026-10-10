@@ -48,6 +48,12 @@ public sealed class RegistroDevoluciones(PosDbContext db)
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         try
         {
+            // Lo devuelto se calculó con el ticket leído antes: si otra caja lo canceló o devolvió algo mientras tanto, no
+            // se reembolsa (ni se baja de la cuenta del cliente) dos veces.
+            var actual = await db.Ventas.AsNoTracking().Include(v => v.Lineas).SingleAsync(v => v.Id == venta.Id, ct);
+            if (actual.Estado != venta.Estado || actual.Lineas.Any(l => l.CantidadDevuelta != venta.Lineas.Single(x => x.Id == l.Id).CantidadDevuelta))
+                throw new InvalidOperationException("El ticket cambió mientras tanto (se canceló o se devolvió algo en otra caja): vuelve a buscarlo.");
+
             var control = new ServicioControl(db);
             await control.RequerirAsync(devolucion.UsuarioId, venta.SucursalId, devolucion.CajaId, accion, devolucion.TotalCentavos, detalle,
                 autorizacionId, devolucion.Motivo, venta.Id, ct);
@@ -80,6 +86,8 @@ public sealed class RegistroDevoluciones(PosDbContext db)
 
             CalculoDevolucion.Aplicar(venta, devolucion);
             db.Devoluciones.Add(devolucion);
+            // De una venta fiada, lo devuelto baja primero la cuenta del cliente.
+            await new RegistroCredito(db).RevertirAsync(venta, devolucion, ct);
             if (devolucion.ReembolsoEfectivoCentavos > 0)
                 db.AperturasCajon.Add(new AperturaCajon
                 {

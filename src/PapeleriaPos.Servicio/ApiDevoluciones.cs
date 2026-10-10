@@ -22,9 +22,10 @@ public static class ApiDevoluciones
                 return Results.NotFound(new ErrorDto($"No existe el ticket «{folio}»."));
             var turnoAbierto = await db.Turnos.AnyAsync(t => t.Id == venta.TurnoId && t.CerradoUtc == null);
             var dias = Devolucion.DiasParaDevolver - (int)(db.Reloj.GetUtcNow().UtcDateTime - venta.PagadaUtc!.Value).TotalDays;
+            var cliente = venta.ClienteId is { } clienteId ? (await db.ClientesRegistrados.FindAsync(clienteId))?.Nombre : null;
             return Results.Ok(new VentaParaDevolverDto(venta.Id, venta.FolioTexto!, HoraMexico.ALocal(venta.PagadaUtc.Value), venta.Estado, venta.TotalCentavos,
                 venta.Lineas.Select(l => new LineaDevolucionDto(l.Id, l.Descripcion, l.Cantidad.Milesimas, l.CantidadDevuelta.Milesimas, l.ImporteCentavos, l.LlevaInventario)).ToList(),
-                turnoAbierto && venta.Estado == EstadoVenta.Pagada, Math.Max(0, dias)));
+                turnoAbierto && venta.Estado == EstadoVenta.Pagada, Math.Max(0, dias), venta.CreditoCentavos, cliente));
         });
 
         api.MapPost("/ventas/{ventaId:guid}/cancelacion", async (Guid ventaId, SolicitudCancelacion s, PosDbContext db, IOptions<OpcionesTicket> opciones) =>
@@ -48,10 +49,19 @@ public static class ApiDevoluciones
                                         join u in db.Usuarios on v.CajeroId equals u.Id
                                         where v.SucursalId == sucursalId && c.Forma == FormaPago.Transferencia && v.PagadaUtc >= desde
                                         select new { Cobro = c, Venta = v, Cajero = u.Nombre }).ToListAsync();
+            // También las de los abonos de clientes (fase 3): se verifican igual, por su propia ruta.
+            var abonos = await (from a in db.Abonos
+                                join c in db.ClientesRegistrados on a.ClienteId equals c.Id
+                                join u in db.Usuarios on a.UsuarioId equals u.Id
+                                where a.SucursalId == sucursalId && a.Forma == FormaPago.Transferencia && a.FechaUtc >= desde && a.CanceladoUtc == null
+                                select new { Abono = a, Cliente = c.Nombre, Cajero = u.Nombre }).ToListAsync();
             return transferencias
-                .OrderBy(t => t.Cobro.Verificacion != Verificacion.PorVerificar).ThenByDescending(t => t.Venta.PagadaUtc)
-                .Select(t => new TransferenciaDto(t.Cobro.Id, t.Venta.FolioTexto!, HoraMexico.ALocal(t.Venta.PagadaUtc!.Value), t.Cobro.MontoCentavos,
-                    t.Cobro.Referencia, t.Cajero, t.Cobro.Verificacion))
+                .Select(t => (Fecha: t.Venta.PagadaUtc!.Value, Dto: new TransferenciaDto(t.Cobro.Id, t.Venta.FolioTexto!, HoraMexico.ALocal(t.Venta.PagadaUtc!.Value),
+                    t.Cobro.MontoCentavos, t.Cobro.Referencia, t.Cajero, t.Cobro.Verificacion)))
+                .Concat(abonos.Select(a => (Fecha: a.Abono.FechaUtc, Dto: new TransferenciaDto(a.Abono.Id, a.Abono.Folio, HoraMexico.ALocal(a.Abono.FechaUtc),
+                    a.Abono.MontoCentavos, a.Abono.Referencia, a.Cajero, a.Abono.Verificacion, EsAbono: true, Cliente: a.Cliente))))
+                .OrderBy(t => t.Dto.Verificacion != Verificacion.PorVerificar).ThenByDescending(t => t.Fecha)
+                .Select(t => t.Dto)
                 .ToList();
         });
 
@@ -84,8 +94,15 @@ public static class ApiDevoluciones
             var cantidad = new VentaLinea { Descripcion = linea.Descripcion, Unidad = linea.Unidad, Cantidad = l.Cantidad };
             return new LineaTicketDto(ArmadoTicket.CantidadTexto(cantidad, esBase: true), linea.Descripcion, linea.PrecioCentavos, l.ImporteCentavos);
         }).ToList();
+        // Lo que se regresa por su medio de pago es la tarjeta y la transferencia; lo fiado baja la cuenta del cliente.
+        var cliente = venta.ClienteId is { } clienteId ? (await db.ClientesRegistrados.FindAsync(clienteId))?.Nombre : null;
         return new ComprobanteDevolucionDto(venta.FolioTexto!, d.EsCancelacion, d.TotalCentavos, d.ReembolsoEfectivoCentavos, d.Motivo,
             HoraMexico.ALocal(d.FechaUtc), caja!.Nombre, nombres[d.UsuarioId], d.AutorizoId is { } a ? nombres.GetValueOrDefault(a) : null, lineas, encabezado,
-            d.RedondeoCentavos, d.EsCancelacion ? venta.Cobros.Where(c => c.Forma != FormaPago.Efectivo).Sum(c => c.MontoCentavos) : 0);
+            d.RedondeoCentavos,
+            d.EsCancelacion ? venta.Cobros.Where(c => c.Forma is FormaPago.Tarjeta or FormaPago.Transferencia).Sum(c => c.MontoCentavos) : 0,
+            d.AlCreditoCentavos, cliente, d.AlCreditoCentavos > 0 ? await new RegistroCredito(db).SaldoDespuesDeAsync(d.Id) : null,
+            // Lo que una cancelación deja de contar en el corte (la caja lleva su propia cuenta del turno).
+            d.EsCancelacion ? venta.Cobros.Where(c => c.Forma == FormaPago.Tarjeta).Sum(c => c.MontoCentavos) : 0,
+            d.EsCancelacion ? venta.Cobros.Where(c => c.Forma == FormaPago.Transferencia).Sum(c => c.MontoCentavos) : 0);
     }
 }

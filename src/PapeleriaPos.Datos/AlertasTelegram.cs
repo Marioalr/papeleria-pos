@@ -40,7 +40,7 @@ public static class AlertasTelegram
                 continue;
             // Lo que cambia el dueño en el catálogo, el inventario o los clientes no se le avisa a él mismo.
             if (tipo is TipoAlerta.CambioPrecioCatalogo or TipoAlerta.AjusteInventario or TipoAlerta.DiferenciaConteo or TipoAlerta.ConteoCompleto
-                    or TipoAlerta.PrivilegiosCliente
+                    or TipoAlerta.PrivilegiosCliente or TipoAlerta.Credito
                 && b.UsuarioId is { } quien
                 && db.Usuarios.Find(quien)?.Rol == Rol.Dueno)
                 continue;
@@ -96,8 +96,11 @@ public static class AlertasTelegram
             AccionControlada.ContarInventario when b.MontoCentavos >= c.UmbralAjusteCentavos => TipoAlerta.DiferenciaConteo,
             // RegistroConteoCompleto.CerrarAsync escribe "Cerró el conteo de…"; abrir y cancelar no se avisan.
             AccionControlada.ConteoCompleto when b.Detalle.StartsWith("Cerró", StringComparison.Ordinal) => TipoAlerta.ConteoCompleto,
-            // RegistroClientes escribe "Privilegios de «…»" cuando se dan o cambian.
-            AccionControlada.AdministrarClientes when b.Detalle.StartsWith("Privilegios de", StringComparison.Ordinal) => TipoAlerta.PrivilegiosCliente,
+            // RegistroClientes y RegistroCredito escriben "Privilegios de «…»" cuando se dan o cambian (también el crédito).
+            AccionControlada.AdministrarClientes or AccionControlada.DarCredito when b.Detalle.StartsWith("Privilegios de", StringComparison.Ordinal)
+                => TipoAlerta.PrivilegiosCliente,
+            AccionControlada.ExcederLimiteCredito or AccionControlada.AjustarCredito => TipoAlerta.Credito,
+            AccionControlada.CancelarAbono => TipoAlerta.Cancelacion,
             // RegistroCaja.VerificarTransferenciaAsync escribe "Verificó…" o "Rechazó…".
             AccionControlada.VerificarTransferencia when b.Detalle.StartsWith("Rechazó", StringComparison.Ordinal) => TipoAlerta.TransferenciaRechazada,
             _ => null,

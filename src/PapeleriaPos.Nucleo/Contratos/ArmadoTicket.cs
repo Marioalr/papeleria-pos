@@ -11,7 +11,7 @@ public static class ArmadoTicket
     /// <param name="cliente">El cliente registrado del ticket, si hay.</param>
     public static TicketDto Desde(
         Venta v, string caja, string cajero, Func<Guid, (string Nombre, bool EsBase)?> presentacion, IReadOnlyList<string> encabezado,
-        IReadOnlyList<string> pie, LogoTicketDto? logo, ClienteRegistradoDto? cliente = null)
+        IReadOnlyList<string> pie, LogoTicketDto? logo, ClienteRegistradoDto? cliente = null, CreditoTicketDto? credito = null)
     {
         var lineas = v.Lineas.Select(l =>
         {
@@ -26,7 +26,7 @@ public static class ArmadoTicket
         return new TicketDto(v.FolioTexto!, HoraMexico.ALocal(v.PagadaUtc!.Value), caja, cajero, lineas, v.NumeroDeArticulos, v.TotalCentavos,
             v.IvaCentavos,
             v.Cobros.OrderBy(c => c.Forma).Select(c => new CobroTicketDto(c.Forma, c.MontoCentavos, c.RecibidoCentavos, c.CambioCentavos, c.Referencia)).ToList(),
-            encabezado, pie, logo, v.Id, v.RedondeoCentavos, cliente is null ? null : ClienteTexto(cliente.Nombre, PrivilegiosAplicados(v)));
+            encabezado, pie, logo, v.Id, v.RedondeoCentavos, cliente is null ? null : ClienteTexto(cliente.Nombre, PrivilegiosAplicados(v)), credito);
     }
 
     /// <summary>"Escuela Benito Juárez (descuento 10 % · mayoreo siempre)", o solo el nombre si no tiene privilegios de venta.</summary>

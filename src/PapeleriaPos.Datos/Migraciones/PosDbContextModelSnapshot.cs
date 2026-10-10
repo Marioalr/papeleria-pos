@@ -625,6 +625,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<Guid>("UsuarioId")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateOnly?>("Vence")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Verificacion")
                         .IsRequired()
                         .HasColumnType("TEXT");

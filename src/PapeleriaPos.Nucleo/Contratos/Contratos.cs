@@ -78,7 +78,7 @@ public sealed record LineaSolicitada(
 public sealed record SolicitudCobro(
     Guid CajaId, Guid TurnoId, Guid CajeroId, IReadOnlyList<LineaSolicitada> Lineas, IReadOnlyList<CobroSolicitado> Cobros, Guid? VentaId = null,
     IReadOnlyList<Guid>? Impresiones = null, [property: JsonPropertyName("clienteEspecialId")] Guid? ClienteId = null,
-    Guid? AutorizacionDescuentoId = null, Guid? AutorizacionBajoCostoId = null, bool? MayoreoDeCliente = null);
+    Guid? AutorizacionDescuentoId = null, Guid? AutorizacionBajoCostoId = null, bool? MayoreoDeCliente = null, Guid? AutorizacionCreditoId = null);
 
 /// <param name="ImporteCentavos">Ya con el descuento.</param>
 /// <param name="Descuento">Cómo se lee el descuento ("10 %" o vacío si fue un monto).</param>
@@ -99,7 +99,7 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
     long TotalCentavos, long IvaCentavos, IReadOnlyList<CobroTicketDto> Cobros, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie,
-    LogoTicketDto? Logo = null, Guid? VentaId = null, long RedondeoCentavos = 0, string? Cliente = null)
+    LogoTicketDto? Logo = null, Guid? VentaId = null, long RedondeoCentavos = 0, string? Cliente = null, CreditoTicketDto? Credito = null)
 {
     public long TotalCobradoCentavos => TotalCentavos + RedondeoCentavos;
 
@@ -126,7 +126,8 @@ public sealed record CorteDto(
     TipoCorte Tipo, DateTime FechaLocal, string Cajero, string RealizadoPor, int Ventas, long FondoCentavos, long EfectivoVentasCentavos,
     long EntradasCentavos, long SalidasCentavos, long TarjetaCentavos, long TransferenciaCentavos, long EsperadoCentavos,
     long? ContadoCentavos, long? DiferenciaCentavos, long DevolucionesCentavos = 0, int Cancelaciones = 0, bool EnContingencia = false,
-    long RedondeoCentavos = 0);
+    long RedondeoCentavos = 0, long CreditoCentavos = 0, int Abonos = 0, long AbonosEfectivoCentavos = 0, long AbonosTarjetaCentavos = 0,
+    long AbonosTransferenciaCentavos = 0);
 
 /// <param name="Codigo">"requiere-autorizacion" o "no-permitido" cuando lo detiene una regla.</param>
 public sealed record ErrorDto(string Mensaje, string? Codigo = null);
@@ -182,7 +183,7 @@ public sealed record LineaDevolucionDto(Guid LineaId, string Descripcion, long C
 /// <param name="PuedeCancelar">Si su turno sigue abierto (después, solo devolución).</param>
 public sealed record VentaParaDevolverDto(
     Guid Id, string Folio, DateTime FechaLocal, EstadoVenta Estado, long TotalCentavos, IReadOnlyList<LineaDevolucionDto> Lineas,
-    bool PuedeCancelar, int DiasParaDevolver);
+    bool PuedeCancelar, int DiasParaDevolver, long CreditoCentavos = 0, string? Cliente = null);
 
 public sealed record SolicitudCancelacion(Guid UsuarioId, Guid CajaId, string Motivo, Guid? AutorizacionId = null);
 
@@ -196,9 +197,13 @@ public sealed record SolicitudDevolucion(Guid UsuarioId, Guid CajaId, string Mot
 public sealed record ComprobanteDevolucionDto(
     string Folio, bool EsCancelacion, long TotalCentavos, long ReembolsoEfectivoCentavos, string Motivo, DateTime FechaLocal, string Caja,
     string Usuario, string? Autorizo, IReadOnlyList<LineaTicketDto> Lineas, IReadOnlyList<string> Encabezado, long RedondeoCentavos = 0,
-    long CobradoSinEfectivoCentavos = 0);
+    long CobradoSinEfectivoCentavos = 0, long AlCreditoCentavos = 0, string? Cliente = null, long? SaldoClienteCentavos = null,
+    long TarjetaCentavos = 0, long TransferenciaCentavos = 0);
 
-public sealed record TransferenciaDto(Guid CobroId, string Folio, DateTime FechaLocal, long MontoCentavos, string? Referencia, string Cajero, Verificacion Verificacion);
+/// <param name="CobroId">El cobro de la venta, o el abono si <paramref name="EsAbono"/>.</param>
+public sealed record TransferenciaDto(
+    Guid CobroId, string Folio, DateTime FechaLocal, long MontoCentavos, string? Referencia, string Cajero, Verificacion Verificacion,
+    bool EsAbono = false, string? Cliente = null);
 
 public sealed record SolicitudVerificacion(string Usuario, string Pin, bool Llego);
 
@@ -434,7 +439,9 @@ public sealed record SolicitudGuardarCliente(Guid UsuarioId, Guid SucursalId, Cl
 
 /// <summary>Un renglón de la lista de clientes, con lo que compra.</summary>
 /// <param name="PromedioMensualCentavos">Lo que compra al mes: el promedio de los últimos tres meses completos.</param>
-public sealed record ClienteResumenDto(ClienteRegistradoDto Cliente, long PromedioMensualCentavos, DateTime? UltimaCompraLocal);
+/// <param name="SaldoCentavos">Lo que debe (negativo: lo que tiene a favor).</param>
+public sealed record ClienteResumenDto(
+    ClienteRegistradoDto Cliente, long PromedioMensualCentavos, DateTime? UltimaCompraLocal, long SaldoCentavos = 0, long VencidoCentavos = 0);
 
 /// <summary>Lo que compró en un mes (sin lo cancelado ni lo devuelto).</summary>
 public sealed record CompraMesDto(int Anio, int Mes, int Tickets, long TotalCentavos);
@@ -818,3 +825,61 @@ public sealed record MayoreoPorRevisarDto(
 /// <param name="DesdeMilesimas">Desde cuántas, en unidad base.</param>
 /// <param name="PrecioCentavos">Por unidad base.</param>
 public sealed record SolicitudMayoreo(Guid UsuarioId, Guid SucursalId, Guid VarianteId, long? DesdeMilesimas, long? PrecioCentavos);
+
+// ── Crédito y abonos (fase 3, entrega 2, parte 2) ────────────────────────────
+
+/// <summary>Lo que falta pagar de un cargo y cuándo vence.</summary>
+public sealed record CargoPendienteDto(DateOnly Vence, long PendienteCentavos);
+
+/// <summary>La cuenta de un cliente: lo que debe, lo que tiene por verificar, sus condiciones y lo pendiente por cargo.</summary>
+/// <param name="SaldoCentavos">Lo que debe; negativo, lo que tiene a favor.</param>
+/// <param name="PorVerificarCentavos">Abonos por transferencia sin verificar: ya bajaron el saldo, pero no dan crédito.</param>
+/// <param name="Estimado">Sin conexión: el saldo que conoce la caja.</param>
+public sealed record CreditoClienteDto(
+    Guid ClienteId, long SaldoCentavos, long PorVerificarCentavos, long LimiteCentavos, int PlazoDias, IReadOnlyList<CargoPendienteDto> Pendientes,
+    bool Estimado = false)
+{
+    public long AFavorCentavos => Math.Max(0, -SaldoCentavos);
+    public long DisponibleCentavos => Math.Max(0, LimiteCentavos - SaldoCentavos - PorVerificarCentavos);
+    public long Vencido(DateOnly hoy) => Pendientes.Where(p => p.Vence < hoy).Sum(p => p.PendienteCentavos);
+    public DateOnly? VenceMasAntiguo => Pendientes.Min(p => (DateOnly?)p.Vence);
+    public long Exceso(long creditoCentavos) => CuentaCredito.Exceso(SaldoCentavos, PorVerificarCentavos, creditoCentavos, LimiteCentavos);
+}
+
+/// <summary>Lo que el ticket dice de la cuenta: lo fiado, el saldo con eso y hasta cuándo se paga.</summary>
+public sealed record CreditoTicketDto(long FiadoCentavos, long SaldoCentavos, DateOnly? Vence, bool Estimado = false);
+
+/// <summary>Quien puede dar crédito pone el límite (cero, sin crédito) y el plazo.</summary>
+public sealed record SolicitudCreditoCliente(Guid UsuarioId, Guid SucursalId, long LimiteCentavos, int PlazoDias);
+
+/// <summary>Un ajuste del saldo (positivo: debe más). Con el mismo Id, se guarda una vez.</summary>
+/// <param name="Desde">Para el saldo inicial de la libreta: la fecha de lo que debía (de ahí cuenta el plazo).</param>
+public sealed record SolicitudAjusteCredito(Guid Id, Guid UsuarioId, Guid SucursalId, long MontoCentavos, string Motivo, DateOnly? Desde = null);
+
+/// <summary>Un abono. El Id lo pone la caja: si llega dos veces, se guarda una.</summary>
+/// <param name="MontoCentavos">Vacío: liquidar.</param>
+/// <param name="RecibidoCentavos">En efectivo, lo que entregó el cliente.</param>
+public sealed record SolicitudAbono(
+    Guid Id, Guid CajaId, Guid TurnoId, Guid UsuarioId, Guid ClienteId, FormaPago Forma, long? MontoCentavos, long RecibidoCentavos = 0,
+    string? Referencia = null);
+
+/// <summary>El comprobante de un abono (o de su cancelación).</summary>
+public sealed record ComprobanteAbonoDto(
+    Guid AbonoId, string Folio, DateTime FechaLocal, string Caja, string Usuario, Guid ClienteId, string Cliente, FormaPago Forma, long MontoCentavos,
+    long RedondeoCentavos, long RecibidoCentavos, long CambioCentavos, string? Referencia, long SaldoAnteriorCentavos, long SaldoCentavos,
+    DateOnly? Vence, IReadOnlyList<string> Encabezado, bool Cancelado = false, bool Estimado = false, string? MotivoCancelacion = null)
+{
+    public long CobradoCentavos => MontoCentavos + RedondeoCentavos;
+    public bool AbreCajon => Forma == FormaPago.Efectivo;
+}
+
+public sealed record AbonoDelDiaDto(
+    Guid AbonoId, string Folio, DateTime FechaLocal, string Cliente, FormaPago Forma, long MontoCentavos, string Usuario, bool Cancelado, bool DeEsteTurno);
+
+/// <summary>Un renglón de la cuenta, con el saldo después de él.</summary>
+public sealed record MovimientoCreditoDto(
+    Guid Id, DateTime FechaLocal, TipoMovimientoCredito Tipo, string Concepto, string? Folio, long MontoCentavos, long SaldoCentavos, DateOnly? Vence,
+    bool EnContingencia);
+
+/// <summary>La cuenta con sus últimos movimientos (del más reciente al más viejo).</summary>
+public sealed record CuentaClienteDto(CreditoClienteDto Credito, IReadOnlyList<MovimientoCreditoDto> Movimientos);
