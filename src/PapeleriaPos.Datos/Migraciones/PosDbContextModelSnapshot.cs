@@ -2453,6 +2453,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<DateTime>("FechaUtc")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("FueraDeCorteUtc")
+                        .HasColumnType("TEXT");
+
                     b.Property<long>("MontoCentavos")
                         .HasColumnType("INTEGER");
 
@@ -2747,6 +2750,9 @@ namespace PapeleriaPos.Datos.Migraciones
 
                     b.Property<int?>("Folio")
                         .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("FueraDeCorteUtc")
+                        .HasColumnType("TEXT");
 
                     b.Property<long>("IvaCentavos")
                         .HasColumnType("INTEGER");

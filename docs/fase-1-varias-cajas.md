@@ -98,6 +98,11 @@ de color y la caja pasa a contingencia.
 inventario no choca porque son movimientos. Si algo no se puede aplicar (por ejemplo, un producto dado de baja
 mientras tanto), queda marcado para que el encargado lo revise; no se pierde.
 
+Lo que ya se cobró nunca se rechaza por llegar tarde: si una venta o una entrada/salida de efectivo no subió la primera
+vez y el corte Z de su turno sí, al reintentarla se guarda con su turno marcada «fuera de corte». El corte cerrado no
+se cambia; al dueño le llega un aviso por Telegram con el efectivo que ese corte no tomó en cuenta, y el resumen del
+día dice cuántas llegaron así.
+
 **Límites:** en contingencia una caja no ve las ventas de las demás, y las existencias pueden estar desfasadas. Cada
 venta en contingencia queda marcada para que se vea en el corte y en la bitácora.
 

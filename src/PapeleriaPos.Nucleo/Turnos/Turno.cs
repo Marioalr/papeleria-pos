@@ -102,6 +102,12 @@ public class MovimientoCaja
 
     /// <summary>Hecho en una caja sin conexión con la caja principal; llegó después con la bandeja.</summary>
     public bool EnContingencia { get; set; }
+
+    /// <summary>
+    /// Cuándo llegó con la bandeja, si su turno ya tenía corte Z: no entró a ese corte (que no se cambia) y queda para
+    /// revisarlo. El efectivo ya entró o salió del cajón, así que no se rechaza.
+    /// </summary>
+    public DateTime? FueraDeCorteUtc { get; set; }
 }
 
 public enum MotivoApertura
