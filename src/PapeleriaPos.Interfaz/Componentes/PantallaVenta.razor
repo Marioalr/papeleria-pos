@@ -204,7 +204,7 @@
             break;
         case Ventanas.Buscar:
             <Ventana Titulo="Buscar producto" Clase="buscar" AlCerrar="Cerrar">
-                <BuscarProducto SucursalId="Caja.SucursalId" AlElegir="AgregarVarianteAsync" />
+                <BuscarProducto SucursalId="Caja.SucursalId" TextoInicial="@_buscarTexto" AlElegir="AgregarVarianteAsync" />
             </Ventana>
             break;
         case Ventanas.Comun:
@@ -494,6 +494,14 @@
         try
         {
             var producto = await Cliente.PorCodigoAsync(texto, Caja.SucursalId);
+            if (producto is null && asterisco < 0 && PareceNombre(texto))
+            {
+                // Como en eleventa, se escribe el nombre donde va el código: se busca por nombre en vez de ofrecer el alta.
+                _buscarTexto = texto;
+                _codigo = "";
+                await Abrir(Ventanas.Buscar);
+                return;
+            }
             if (producto is null)
             {
                 Avisar($"No existe el código «{texto}». F10 para buscar por nombre, o dalo de alta.");
@@ -1023,6 +1031,12 @@
 
     private string? _codigoNuevo;
 
+    /// <summary>Lo que se escribió en el código y se busca por nombre al abrir F10.</summary>
+    private string _buscarTexto = "";
+
+    /// <summary>Un código no lleva espacios y casi siempre trae números: «pluma» o «pluma azul» son un nombre; «LAP01», un código.</summary>
+    private static bool PareceNombre(string texto) => texto.Contains(' ') || !texto.Any(char.IsDigit);
+
     private async Task DadoDeAltaAsync(ProductoVentaDto producto)
     {
         _codigoNuevo = null;
@@ -1154,6 +1168,7 @@
         if (_ventana == Ventanas.ElegirCliente)
             _elegirCliente?.Cancelar();
         _ventana = Ventanas.Ninguna;
+        _buscarTexto = "";
         await Js.VentanaAbiertaAsync(false);
         StateHasChanged();
         await Js.EnfocarAsync("#codigo");

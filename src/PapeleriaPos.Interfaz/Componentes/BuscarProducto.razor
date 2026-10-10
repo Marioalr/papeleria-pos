@@ -7,9 +7,9 @@
        @bind="_texto" @bind:event="oninput" @bind:after="Programar" @onkeydown="AlTeclear" />
 
 <div class="resultados">
-    @if (_resultados.Count == 0 && _texto.Trim().Length >= 2 && !_buscando)
+    @if (_resultados.Count == 0 && _texto.Trim().Length >= 2)
     {
-        <p class="vacia">Nada coincide con «@_texto».</p>
+        <p class="vacia">@(_buscando ? "Buscando…" : $"Nada coincide con «{_texto}».")</p>
     }
     <table>
         @for (var i = 0; i < _resultados.Count; i++)
@@ -29,6 +29,8 @@
 @code {
     [Parameter, EditorRequired] public Guid SucursalId { get; set; }
     [Parameter] public EventCallback<Guid> AlElegir { get; set; }
+    /// <summary>Lo que se escribió en el código de la venta: abre ya buscándolo.</summary>
+    [Parameter] public string TextoInicial { get; set; } = "";
 
     private string _texto = "";
     private List<ResultadoBusquedaDto> _resultados = [];
@@ -36,23 +38,36 @@
     private bool _buscando;
     private CancellationTokenSource? _espera;
 
+    protected override async Task OnInitializedAsync()
+    {
+        if (TextoInicial.Trim().Length >= 2)
+        {
+            _texto = TextoInicial.Trim();
+            await Programar();
+        }
+    }
+
     protected override async Task OnAfterRenderAsync(bool primera)
     {
         if (primera)
             await Js.EnfocarAsync("#buscar");
     }
 
-    /// <summary>Espera a que se deje de teclear un momento antes de buscar.</summary>
+    /// <summary>
+    /// Espera a que se deje de teclear un momento antes de buscar. Desde la primera tecla cuenta como buscando, para no
+    /// decir «Nada coincide» mientras espera o mientras busca (la primera búsqueda tarda más); una búsqueda que ya
+    /// reemplazó otra más nueva no lo apaga.
+    /// </summary>
     private async Task Programar()
     {
         _espera?.Cancel();
         _espera = new CancellationTokenSource();
         var token = _espera.Token;
+        var texto = _texto.Trim();
+        _buscando = texto.Length >= 2;
         try
         {
             await Task.Delay(150, token);
-            _buscando = true;
-            var texto = _texto.Trim();
             var resultados = texto.Length >= 2 ? await Cliente.BuscarAsync(texto, SucursalId) : [];
             if (!token.IsCancellationRequested)
             {
@@ -66,11 +81,13 @@
         }
         catch (ErrorCaja)
         {
-            _resultados = [];
+            if (!token.IsCancellationRequested)
+                _resultados = [];
         }
         finally
         {
-            _buscando = false;
+            if (!token.IsCancellationRequested)
+                _buscando = false;
         }
     }
 

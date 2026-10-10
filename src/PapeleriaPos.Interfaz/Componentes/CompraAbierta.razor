@@ -22,23 +22,23 @@ else
     @switch (c.Estado)
     {
         case EstadoCompra.Recibiendo:
-            <ElegirProducto SucursalId="Caja.SucursalId" Accion="Contar uno" AlElegir="ContarUnoAsync" AlNoExiste="NoExiste" />
+            <ElegirProducto SucursalId="Caja.SucursalId" Accion="Contar" AlContar="ContarAsync" AlNoExiste="NoExiste" />
             @if (_desconocido is { } desconocido)
             {
                 <fieldset class="variante">
                     <legend>El código «@desconocido.Codigo» no está en el catálogo</legend>
                     <p class="nota">Cuéntalo aquí: cuando el encargado capture la nota, lo da de alta con ese código.</p>
                     <div class="ficha-producto">
-                        <label class="ancho">¿Qué es? <input @bind="desconocido.Descripcion" placeholder="Opcional: cuaderno rojo, pluma…" autocomplete="off" /></label>
-                        <label>¿Cuántos llegaron? <input id="cantidad-desconocido" class="umbral" inputmode="numeric" @bind="desconocido.Cantidad" autocomplete="off" /></label>
+                        <label class="ancho">¿Qué es? <input @bind="desconocido.Descripcion" @bind:event="oninput" @onkeydown="AlTeclearDesconocido" placeholder="Opcional: cuaderno rojo, pluma…" autocomplete="off" /></label>
+                        <label>¿Cuántos llegaron? <input id="cantidad-desconocido" class="umbral" inputmode="numeric" @bind="desconocido.Cantidad" @bind:event="oninput" @onkeydown="AlTeclearDesconocido" autocomplete="off" /></label>
                     </div>
                     <div class="acciones izquierda">
-                        <button class="boton" @onclick="() => _desconocido = null">Cancelar</button>
+                        <button class="boton" @onclick="CancelarDesconocidoAsync">Cancelar</button>
                         <button class="boton principal" disabled="@_ocupado" @onclick="ContarDesconocidoAsync">Contar</button>
                     </div>
                 </fieldset>
             }
-            <p class="nota">Cada código escaneado suma uno de esa presentación (el de la caja cuenta una caja). La cantidad se corrige en la tabla.</p>
+            <p class="nota">Cada código escaneado suma uno de esa presentación (el de la caja cuenta una caja); «12*código» suma doce. La cantidad se corrige en la tabla.</p>
             <TablaConteo Conteo="c.Conteo" Editable="true" AlCambiar="CambiarConteoAsync" />
             @if (_confirmar == Confirmar.TerminarConteo)
             {
@@ -256,16 +256,16 @@ else
     private Confirmar _confirmar;
     private string _motivo = "";
     private bool _ocupado;
-    private bool _enfocarCantidad;
+    private string? _enfocar;
     private string? _error;
     private string? _aviso;
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
-        if (!_enfocarCantidad)
+        if (_enfocar is not { } selector)
             return;
-        _enfocarCantidad = false;
-        await Js.EnfocarAsync("#cantidad-renglon");
+        _enfocar = null;
+        await Js.EnfocarAsync(selector);
     }
 
     protected override async Task OnInitializedAsync()
@@ -309,11 +309,11 @@ else
         }
     }
 
-    private Task ContarUnoAsync((ProductoVentaDto Producto, PresentacionDto Presentacion) elegido)
+    private Task ContarAsync((ProductoVentaDto Producto, PresentacionDto Presentacion, long Piezas) elegido)
     {
         var actual = _compra!.Conteo.FirstOrDefault(x => x.PresentacionId == elegido.Presentacion.Id)?.CantidadMilesimas ?? 0;
         return HacerAsync(() => Cliente.ContarAsync(CompraId,
-            new SolicitudConteo(Sesion.UsuarioId, elegido.Producto.VarianteId, elegido.Presentacion.Id, actual + 1000)));
+            new SolicitudConteo(Sesion.UsuarioId, elegido.Producto.VarianteId, elegido.Presentacion.Id, actual + elegido.Piezas * 1000)));
     }
 
     private Task CambiarConteoAsync((ConteoCompraDto Linea, long CantidadMilesimas) cambio) =>
@@ -322,15 +322,28 @@ else
             : HacerAsync(() => Cliente.ContarDesconocidoAsync(CompraId,
                 new SolicitudConteoDesconocido(Sesion.UsuarioId, cambio.Linea.Codigo!, null, cambio.CantidadMilesimas)));
 
-    private void NoExiste(string codigo)
+    private void NoExiste((string Codigo, long Piezas) escaneado)
     {
         (_error, _aviso) = (null, null);
-        var actual = _compra?.Conteo.FirstOrDefault(c => c.VarianteId is null && string.Equals(c.Codigo, codigo, StringComparison.OrdinalIgnoreCase));
-        _desconocido = new Desconocido(codigo)
+        var actual = _compra?.Conteo.FirstOrDefault(c => c.VarianteId is null && string.Equals(c.Codigo, escaneado.Codigo, StringComparison.OrdinalIgnoreCase));
+        _desconocido = new Desconocido(escaneado.Codigo)
         {
             Descripcion = actual?.Producto.StartsWith("Código ", StringComparison.Ordinal) == false ? actual.Producto : "",
-            Cantidad = ((actual?.CantidadMilesimas ?? 0) / 1000 + 1).ToString(CultureInfo.InvariantCulture),
+            Cantidad = ((actual?.CantidadMilesimas ?? 0) / 1000 + escaneado.Piezas).ToString(CultureInfo.InvariantCulture),
         };
+        _enfocar = "#cantidad-desconocido";
+    }
+
+    private async Task AlTeclearDesconocido(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await ContarDesconocidoAsync();
+    }
+
+    private async Task CancelarDesconocidoAsync()
+    {
+        _desconocido = null;
+        await Js.EnfocarAsync("#codigo-compra");
     }
 
     private async Task ContarDesconocidoAsync()
@@ -345,7 +358,10 @@ else
         await HacerAsync(() => Cliente.ContarDesconocidoAsync(CompraId,
             new SolicitudConteoDesconocido(Sesion.UsuarioId, d.Codigo, d.Descripcion, piezas * 1000)));
         if (_error is null)
+        {
             _desconocido = null;
+            await Js.EnfocarAsync("#codigo-compra");
+        }
     }
 
     private void Actualizar(CompraDto compra) => (_compra, _error, _aviso) = (compra, null, null);
@@ -359,7 +375,7 @@ else
     private void ElegirParaRenglon((ProductoVentaDto Producto, PresentacionDto Presentacion) elegido)
     {
         _renglon = new RenglonEditable(elegido.Producto, elegido.Presentacion.Id);
-        _enfocarCantidad = true;
+        _enfocar = "#cantidad-renglon";
     }
 
     /// <summary>Del documento: el renglón sin ligar pide el producto; uno ya ligado se corrige con el suyo.</summary>
@@ -402,7 +418,7 @@ else
             Importe = (renglon.ImporteCentavos / 100m).ToString("0.00", CultureInfo.InvariantCulture),
             Clave = renglon.CodigoProveedor ?? "",
         };
-        _enfocarCantidad = true;
+        _enfocar = "#cantidad-renglon";
     }
 
     private async Task CargarDocumentoAsync(InputFileChangeEventArgs e)

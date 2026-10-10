@@ -94,6 +94,8 @@ tr { cursor: default; }
 .cerrar { background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; line-height: 1; }
 .ventana-cuerpo { padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .resultados { max-height: 420px; overflow-y: auto; border: 1px solid var(--borde); }
+/* Alto fijo en F10: la ventana no se mueve cuando llegan los resultados (el clic caía en otro renglón). */
+.ventana.buscar .resultados { height: 420px; }
 .buscar-texto { width: 100%; }
 
 .cobrar-total { font-size: 44px; color: var(--azul); text-align: center; font-variant-numeric: tabular-nums; }
