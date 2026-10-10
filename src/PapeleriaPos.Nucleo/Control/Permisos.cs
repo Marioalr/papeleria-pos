@@ -48,6 +48,12 @@ public enum AccionControlada
 
     /// <summary>Abrir un paquete: sale el paquete y entran sus piezas (cuando son productos distintos).</summary>
     AbrirPaquete,
+
+    /// <summary>Corregir una existencia a la que se encontró (entrega 3 de la fase 2). El umbral es el costo de la diferencia.</summary>
+    AjustarInventario,
+
+    /// <summary>Sacar del inventario lo dañado, caducado o perdido. El umbral es su costo.</summary>
+    Merma,
 }
 
 public enum NivelPermiso
@@ -118,6 +124,10 @@ public static class Permisos
         Regla(AccionControlada.PedirCompra, Rol.Cajero, NivelPermiso.NoPermitido),
         Regla(AccionControlada.PedirCompra, Rol.Encargado, NivelPermiso.Permitido),
         .. Ambos(AccionControlada.AbrirPaquete, NivelPermiso.Permitido),
+        Regla(AccionControlada.AjustarInventario, Rol.Cajero, NivelPermiso.RequiereAutorizacion),
+        Regla(AccionControlada.AjustarInventario, Rol.Encargado, NivelPermiso.Permitido),
+        Regla(AccionControlada.Merma, Rol.Cajero, NivelPermiso.Permitido, umbral: 20000),
+        Regla(AccionControlada.Merma, Rol.Encargado, NivelPermiso.Permitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Cajero, NivelPermiso.NoPermitido),
         Regla(AccionControlada.ConsultarBitacora, Rol.Encargado, NivelPermiso.Permitido),
     ];

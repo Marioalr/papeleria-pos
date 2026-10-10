@@ -153,6 +153,7 @@ internal sealed class ConfiguracionSucursalConfiguracion : IEntityTypeConfigurat
         b.Property(c => c.UmbralCorteCentavos).HasDefaultValue(5000L).ValueGeneratedNever();
         b.Property(c => c.UmbralDevolucionCentavos).HasDefaultValue(20000L).ValueGeneratedNever();
         b.Property(c => c.UmbralSalidaCentavos).HasDefaultValue(50000L).ValueGeneratedNever();
+        b.Property(c => c.UmbralAjusteCentavos).HasDefaultValue(20000L).ValueGeneratedNever();
         b.Property(c => c.MinutosSinConexion).HasDefaultValue(10).ValueGeneratedNever();
         b.Property(c => c.HoraApertura).HasDefaultValue(new TimeOnly(8, 0)).ValueGeneratedNever();
         b.Property(c => c.HoraCierre).HasDefaultValue(new TimeOnly(21, 0)).ValueGeneratedNever();

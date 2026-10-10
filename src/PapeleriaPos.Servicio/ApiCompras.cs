@@ -98,6 +98,15 @@ public static class ApiCompras
         api.MapGet("/variantes/{varianteId:guid}/ultima-apertura", async (Guid varianteId, PosDbContext db) =>
             await new RegistroAperturas(db).UltimaAsync(varianteId) is { } ultima ? Results.Ok(ultima) : Results.NoContent());
 
+        // ── Ajustes y mermas (entrega 3) ──
+
+        api.MapPost("/inventario/ajustes", (SolicitudAjuste s, PosDbContext db) => new RegistroAjustes(db).AjustarAsync(s));
+
+        api.MapPost("/inventario/mermas", (SolicitudMerma s, PosDbContext db) => new RegistroAjustes(db).MermaAsync(s));
+
+        api.MapGet("/sucursales/{sucursalId:guid}/ajustes", (Guid sucursalId, Guid usuarioId, PosDbContext db) =>
+            new RegistroAjustes(db).RecientesAsync(sucursalId, usuarioId));
+
         api.MapGet("/sucursales/{sucursalId:guid}/margenes", (Guid sucursalId, PosDbContext db) => new RegistroCompras(db).MargenesAsync(sucursalId));
 
         api.MapPut("/sucursales/{sucursalId:guid}/margenes", (Guid sucursalId, SolicitudMargenes s, PosDbContext db) =>

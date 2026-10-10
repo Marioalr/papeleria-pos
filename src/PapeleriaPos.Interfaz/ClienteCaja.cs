@@ -298,6 +298,15 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task CambiarMenudeoAsync(SolicitudPrecioMenudeo solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<object>("api/catalogo/precio-menudeo", solicitud, sinRespuesta: true));
 
+    public Task<AjusteInventarioDto> AjustarAsync(SolicitudAjuste solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<AjusteInventarioDto>("api/inventario/ajustes", solicitud));
+
+    public Task<AjusteInventarioDto> MermaAsync(SolicitudMerma solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<AjusteInventarioDto>("api/inventario/mermas", solicitud));
+
+    public Task<List<AjusteInventarioDto>> AjustesAsync(Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<AjusteInventarioDto>>($"api/sucursales/{sucursalId}/ajustes?usuarioId={usuarioId}") ?? []);
+
     public Task<MargenesDto> MargenesAsync(Guid sucursalId) =>
         ConRespaldoAsync(async () => (await _http.GetAsync<MargenesDto>($"api/sucursales/{sucursalId}/margenes"))!);
 

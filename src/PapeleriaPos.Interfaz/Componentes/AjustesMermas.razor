@@ -1,0 +1,182 @@
+@* Ajustes y mermas (F4): corregir la existencia a la que se encontró, o sacar lo dañado, caducado o perdido. Pasan por
+   las reglas: si piden al encargado, autoriza en la misma caja. *@
+@inject ClienteCaja Cliente
+
+@if (_autorizar is { } pendiente)
+{
+    <AutorizarAccion Accion="pendiente.Accion" Detalle="@pendiente.Detalle" Caja="Caja" Sesion="Sesion"
+                     AlAutorizar="a => GuardarAsync(a.Id)" AlCancelar="() => _autorizar = null" />
+}
+else if (_producto is null)
+{
+    <p>Escanea o busca el producto.</p>
+    <ElegirProducto SucursalId="Caja.SucursalId" Accion="Este" AlElegir="Elegir" />
+}
+else
+{
+    var p = _producto;
+    <p>
+        <strong>@p.Descripcion</strong>
+        <span class="nota"> · existencia en el sistema: @(p.Existencia is { } e ? Formato.Numero(e) : "0") @Unidad(p.Unidad)</span>
+    </p>
+    <nav class="pestanas">
+        <button class="pestana @(_merma ? "" : "activa")" @onclick="() => _merma = false">Corregir la existencia</button>
+        <button class="pestana @(_merma ? "activa" : "")" @onclick="() => _merma = true">Merma</button>
+    </nav>
+    @if (_merma)
+    {
+        <div class="ficha-producto">
+            <label>¿Cuántos (@Unidad(p.Unidad))? <input id="cantidad-ajuste" class="umbral" inputmode="decimal" @bind="_cantidad" @bind:event="oninput" /></label>
+            <label>Causa
+                <select @bind="_causa">
+                    @foreach (var c in Enum.GetValues<CausaMerma>())
+                    {
+                        <option value="@c">@Causa(c)</option>
+                    }
+                </select>
+            </label>
+            <label class="ancho">Qué pasó <input @bind="_motivo" @bind:event="oninput" placeholder="@(_causa == CausaMerma.Otro ? "Obligatorio" : "Opcional")" autocomplete="off" /></label>
+        </div>
+        <p class="nota">Sale del inventario a su costo: es pérdida y sale en el resumen del día.</p>
+    }
+    else
+    {
+        <div class="ficha-producto">
+            <label>Existencia real (@Unidad(p.Unidad)) <input id="cantidad-ajuste" class="umbral" inputmode="decimal" @bind="_cantidad" @bind:event="oninput" /></label>
+            <label class="ancho">Motivo <input @bind="_motivo" @bind:event="oninput" placeholder="Obligatorio: lo conté, estaba en otro lugar…" autocomplete="off" /></label>
+        </div>
+        @if (Leer(_cantidad) is { } real)
+        {
+            var diferencia = real - (p.Existencia ?? 0);
+            <p class="nota">@(diferencia == 0 ? "No cambia nada." : $"{(diferencia > 0 ? "Entran" : "Salen")} {Formato.Numero(Math.Abs(diferencia))} {Unidad(p.Unidad)}.")</p>
+        }
+    }
+    <div class="acciones izquierda">
+        <button class="boton" @onclick="Otro">Otro producto</button>
+        <button class="boton principal" disabled="@_ocupado" @onclick="() => GuardarAsync(null)">@(_merma ? "Registrar la merma" : "Ajustar")</button>
+    </div>
+}
+@if (_error is not null)
+{
+    <p class="error">@_error</p>
+}
+@if (_aviso is not null)
+{
+    <p class="aviso">@_aviso</p>
+}
+
+@if (_recientes is { Count: > 0 } recientes)
+{
+    <h5>Últimos ajustes y mermas</h5>
+    <div class="resultados">
+        <table>
+            <thead><tr><th>Fecha</th><th></th><th>Producto</th><th class="num">Cantidad</th><th class="num">Costo</th><th>Motivo</th><th>Quién</th><th>Autorizó</th></tr></thead>
+            @foreach (var a in recientes)
+            {
+                <tr>
+                    <td>@a.FechaLocal.ToString("dd/MM/yyyy HH:mm")</td>
+                    <td>@(a.Tipo == TipoMovimiento.Merma ? "Merma" : "Ajuste")</td>
+                    <td>@a.Producto</td>
+                    <td class="num">@((a.Cantidad > 0 ? "+" : "") + Formato.Numero(a.Cantidad))</td>
+                    <td class="num">@(a.CostoCentavos is { } c ? Formato.Dinero(c) : "")</td>
+                    <td>@a.Motivo</td>
+                    <td>@a.Usuario</td>
+                    <td>@a.Autorizo</td>
+                </tr>
+            }
+        </table>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    private sealed record Pendiente(AccionControlada Accion, string Detalle);
+
+    private ProductoVentaDto? _producto;
+    private bool _merma;
+    private string _cantidad = "";
+    private CausaMerma _causa = CausaMerma.Danado;
+    private string _motivo = "";
+    private Pendiente? _autorizar;
+    private List<AjusteInventarioDto>? _recientes;
+    private bool _ocupado;
+    private string? _error;
+    private string? _aviso;
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            _recientes = await Cliente.AjustesAsync(Caja.SucursalId, Sesion.UsuarioId);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void Elegir((ProductoVentaDto Producto, PresentacionDto Presentacion) elegido) =>
+        (_producto, _cantidad, _motivo, _error, _aviso) = (elegido.Producto, "", "", null, null);
+
+    private void Otro() => (_producto, _error) = (null, null);
+
+    private static decimal? Leer(string texto) =>
+        decimal.TryParse(texto.Replace(",", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) && n >= 0 ? n : null;
+
+    /// <summary>Si la regla pide autorización, el encargado autoriza y se vuelve a mandar con ella.</summary>
+    private async Task GuardarAsync(Guid? autorizacion)
+    {
+        if (_producto is not { } p || Leer(_cantidad) is not { } cantidad)
+        {
+            _error = "Escribe la cantidad.";
+            return;
+        }
+        _ocupado = true;
+        (_error, _aviso) = (null, null);
+        var milesimas = (long)Math.Round(cantidad * 1000);
+        try
+        {
+            var hecho = _merma
+                ? await Cliente.MermaAsync(new SolicitudMerma(Sesion.UsuarioId, Caja.SucursalId, p.VarianteId, milesimas, _causa, _motivo, autorizacion))
+                : await Cliente.AjustarAsync(new SolicitudAjuste(Sesion.UsuarioId, Caja.SucursalId, p.VarianteId, milesimas, _motivo, autorizacion));
+            _autorizar = null;
+            _aviso = $"{(hecho.Tipo == TipoMovimiento.Merma ? "Merma registrada" : "Existencia ajustada")}: {hecho.Producto} ({(hecho.Cantidad > 0 ? "+" : "")}{Formato.Numero(hecho.Cantidad)}).";
+            _producto = null;
+            await CargarAsync();
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "requiere-autorizacion")
+        {
+            _autorizar = new Pendiente(_merma ? AccionControlada.Merma : AccionControlada.AjustarInventario,
+                _merma ? $"Merma de {Formato.Numero(cantidad)} «{p.Descripcion}»" : $"Ajustar «{p.Descripcion}» a {Formato.Numero(cantidad)}");
+        }
+        catch (ErrorCaja ex)
+        {
+            _autorizar = null;
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private static string Causa(CausaMerma c) => c switch
+    {
+        CausaMerma.Danado => "Dañado",
+        CausaMerma.Caducado => "Caducado",
+        CausaMerma.Perdido => "Perdido",
+        _ => "Otro",
+    };
+
+    private static string Unidad(UnidadBase u) => u switch
+    {
+        UnidadBase.Metro => "metros",
+        UnidadBase.Kilogramo => "kilos",
+        UnidadBase.Litro => "litros",
+        _ => "piezas",
+    };
+}

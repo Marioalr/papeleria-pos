@@ -36,6 +36,8 @@ public static class Textos
         AccionControlada.ConfigurarMargen => "Configurar el margen mínimo",
         AccionControlada.PedirCompra => "Hacer órdenes de compra",
         AccionControlada.AbrirPaquete => "Abrir un paquete (sale el paquete, entran sus piezas)",
+        AccionControlada.AjustarInventario => "Ajustar una existencia",
+        AccionControlada.Merma => "Registrar una merma (dañado, caducado, perdido)",
         _ => accion.ToString(),
     };
 

@@ -66,6 +66,7 @@ else
         <label>Diferencia en el corte desde <input inputmode="decimal" @bind="_corte" /></label>
         <label>Devolución desde <input inputmode="decimal" @bind="_devolucion" /></label>
         <label>Salida de efectivo desde <input inputmode="decimal" @bind="_salida" /></label>
+        <label>Ajuste o merma desde <input inputmode="decimal" @bind="_ajuste" /></label>
         <label>Caja sin conexión después de (minutos) <input inputmode="numeric" @bind="_minutos" /></label>
         <label>La tienda abre <input type="time" @bind="_apertura" /></label>
         <label>La tienda cierra <input type="time" @bind="_cierre" /></label>
@@ -92,6 +93,7 @@ else
     private string _corte = "";
     private string _devolucion = "";
     private string _salida = "";
+    private string _ajuste = "";
     private int _minutos;
     private TimeOnly _apertura;
     private TimeOnly _cierre;
@@ -123,6 +125,7 @@ else
         _corte = Pesos(a.UmbralCorteCentavos);
         _devolucion = Pesos(a.UmbralDevolucionCentavos);
         _salida = Pesos(a.UmbralSalidaCentavos);
+        _ajuste = Pesos(a.UmbralAjusteCentavos);
         _minutos = a.MinutosSinConexion;
         _apertura = a.HoraApertura;
         _cierre = a.HoraCierre;
@@ -183,12 +186,13 @@ else
 
     private Task GuardarAsync() => HacerAsync(async c =>
     {
-        if (Formato.LeerPesos(_corte) is not { } corte || Formato.LeerPesos(_devolucion) is not { } devolucion || Formato.LeerPesos(_salida) is not { } salida)
+        if (Formato.LeerPesos(_corte) is not { } corte || Formato.LeerPesos(_devolucion) is not { } devolucion || Formato.LeerPesos(_salida) is not { } salida
+            || Formato.LeerPesos(_ajuste) is not { } ajuste)
         {
             _error = "Revisa los montos.";
             return;
         }
-        var ajustes = new AjustesAlertasDto(_apagadas.ToList(), corte, devolucion, salida, _minutos, _apertura, _cierre);
+        var ajustes = new AjustesAlertasDto(_apagadas.ToList(), corte, devolucion, salida, _minutos, _apertura, _cierre, ajuste);
         Mostrar(await Cliente.GuardarAlertasAsync(Caja.SucursalId, new SolicitudAlertas(c.Usuario, c.Pin, ajustes)));
         _aviso = "Alertas guardadas.";
     });
@@ -210,6 +214,7 @@ else
         TipoAlerta.Descuento => "Descuento arriba de lo que el cajero da solo",
         TipoAlerta.CambioPrecioCatalogo => "Precio del catálogo cambiado (no avisa los tuyos)",
         TipoAlerta.Compra => "Compra con diferencias contra la nota o con margen bajo",
+        TipoAlerta.AjusteInventario => "Ajuste o merma de inventario (no avisa los tuyos)",
         _ => "Resumen del día (con el último corte)",
     };
 }

@@ -32,6 +32,9 @@ public enum TipoAlerta
 
     /// <summary>Una compra cerrada con diferencias contra la nota o con productos que quedaron debajo del margen mínimo.</summary>
     Compra,
+
+    /// <summary>Un ajuste o una merma desde el umbral (los del dueño no se le avisan).</summary>
+    AjusteInventario,
 }
 
 /// <summary>Un chat de Telegram vinculado a un usuario (solo el dueño): recibe alertas y contesta autorizaciones.</summary>

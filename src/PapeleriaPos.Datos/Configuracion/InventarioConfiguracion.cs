@@ -166,6 +166,19 @@ internal sealed class AperturaPaqueteConfiguracion : IEntityTypeConfiguration<Ap
     }
 }
 
+internal sealed class AjusteInventarioConfiguracion : IEntityTypeConfiguration<AjusteInventario>
+{
+    public void Configure(EntityTypeBuilder<AjusteInventario> b)
+    {
+        b.ToTable("AjustesInventario");
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(a => a.SucursalId);
+        b.HasOne<Variante>().WithMany().HasForeignKey(a => a.VarianteId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(a => a.UsuarioId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(a => a.AutorizoId);
+        b.HasIndex(a => new { a.SucursalId, a.FechaUtc });
+    }
+}
+
 internal sealed class SecuenciaConfiguracion : IEntityTypeConfiguration<Secuencia>
 {
     public void Configure(EntityTypeBuilder<Secuencia> b) => b.HasKey(s => s.Nombre);
