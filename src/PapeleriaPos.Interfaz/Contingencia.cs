@@ -494,7 +494,7 @@ public sealed class Contingencia
         var subida = new VentaContingenciaDto(venta.Id, caja.Id, turno.Id, s.CajeroId, folio, ahora,
             venta.Lineas.Select(x => new LineaContingenciaDto(x.VarianteId, x.PresentacionId, x.Descripcion, x.Cantidad.Milesimas, x.PrecioCentavos,
                 x.DescuentoCentesimas, x.DescuentoCentesimas is null && x.TieneDescuento ? x.DescuentoCentavos : null, x.MotivoDescuento)).ToList(),
-            s.Cobros, venta.ClienteEspecialId);
+            s.Cobros, venta.ClienteEspecialId, venta.RedondeoCentavos);
 
         using (var lote = _almacen.Lote())
         {
@@ -533,7 +533,7 @@ public sealed class Contingencia
             if (resumen is not null)
                 lote.Guardar("base", new BaseTurno(turno.Id, resumen.FondoCentavos, new AnotacionDiario(Guid.Empty, turno.Id, resumen.Ventas,
                     resumen.EfectivoVentasCentavos, resumen.TarjetaCentavos, resumen.TransferenciaCentavos, resumen.EntradasCentavos,
-                    resumen.SalidasCentavos, resumen.DevolucionesCentavos, resumen.Cancelaciones))).LimpiarDiario();
+                    resumen.SalidasCentavos, resumen.DevolucionesCentavos, resumen.Cancelaciones, resumen.RedondeoCentavos))).LimpiarDiario();
             lote.Confirmar();
         }
     }
@@ -572,7 +572,7 @@ public sealed class Contingencia
             return;
         using var lote = _almacen.Lote();
         lote.Anotar(new AnotacionDiario(Ids.Nuevo(), turno.Id, Ventas: d.EsCancelacion ? -1 : 0, Devoluciones: d.ReembolsoEfectivoCentavos,
-            Cancelaciones: d.EsCancelacion ? 1 : 0)).Confirmar();
+            Cancelaciones: d.EsCancelacion ? 1 : 0, Redondeo: -d.RedondeoCentavos)).Confirmar();
     }
 
     // ── Apoyo ───────────────────────────────────────────────────────────────
@@ -594,14 +594,15 @@ public sealed class Contingencia
         long? contado = conteo?.Sum(c => c.Key * c.Value);
         return new CorteDto(tipo, HoraMexico.ALocal(Ahora), turno.Cajero, realizadoPor, t.Ventas + d.Ventas, base_.FondoCentavos, efectivo, entradas, salidas,
             t.Tarjeta + d.Tarjeta, t.Transferencia + d.Transferencia, esperado, contado, contado - esperado, devoluciones, t.Cancelaciones + d.Cancelaciones,
-            EnContingencia: true);
+            EnContingencia: true, RedondeoCentavos: t.Redondeo + d.Redondeo);
     }
 
     private static AnotacionDiario Anotacion(Guid turnoId, TicketDto ticket) =>
         new(ticket.VentaId ?? Ids.Nuevo(), turnoId, Ventas: 1,
             Efectivo: ticket.Cobros.Where(c => c.Forma == FormaPago.Efectivo).Sum(c => c.MontoCentavos),
             Tarjeta: ticket.Cobros.Where(c => c.Forma == FormaPago.Tarjeta).Sum(c => c.MontoCentavos),
-            Transferencia: ticket.Cobros.Where(c => c.Forma == FormaPago.Transferencia).Sum(c => c.MontoCentavos));
+            Transferencia: ticket.Cobros.Where(c => c.Forma == FormaPago.Transferencia).Sum(c => c.MontoCentavos),
+            Redondeo: ticket.RedondeoCentavos);
 
     private long PrecioMenudeo(ProductoVentaDto p)
     {

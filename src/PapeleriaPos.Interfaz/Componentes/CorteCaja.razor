@@ -17,6 +17,10 @@
             <tr><td>Devoluciones y cancelaciones@(_resultado.Cancelaciones > 0 ? $" ({_resultado.Cancelaciones} {(_resultado.Cancelaciones == 1 ? "cancelado" : "cancelados")})" : "")</td><td>− @Formato.Dinero(_resultado.DevolucionesCentavos)</td></tr>
         }
         <tr class="total"><td>Efectivo esperado</td><td>@Formato.Dinero(_resultado.EsperadoCentavos)</td></tr>
+        @if (_resultado.RedondeoCentavos != 0)
+        {
+            <tr><td class="nota">Incluye el redondeo al peso</td><td class="nota">@(_resultado.RedondeoCentavos > 0 ? "+" : "−") @Formato.Dinero(Math.Abs(_resultado.RedondeoCentavos))</td></tr>
+        }
         @if (_resultado.ContadoCentavos is { } contado)
         {
             <tr><td>Contado</td><td>@Formato.Dinero(contado)</td></tr>

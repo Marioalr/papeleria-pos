@@ -304,3 +304,8 @@ td.acciones-renglon { white-space: nowrap; text-align: right; }
 .sugerido tr.urgente td:nth-child(2) { font-weight: 600; }
 .sugerido tr.urgente td:nth-child(3) { color: var(--error); font-weight: 600; }
 .sugerido input.umbral { width: 70px; }
+
+/* Fase 3, entrega 1: redondeo al peso del efectivo */
+.cobrar-redondeo { text-align: center; margin: 0; color: var(--suave); }
+.cobrar-redondeo strong { color: var(--azul); font-size: 22px; }
+.total-efectivo { text-align: right; color: var(--suave); font-size: 14px; }

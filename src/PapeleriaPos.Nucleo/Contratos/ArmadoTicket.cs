@@ -22,7 +22,7 @@ public static class ArmadoTicket
         return new TicketDto(v.FolioTexto!, HoraMexico.ALocal(v.PagadaUtc!.Value), caja, cajero, lineas, v.NumeroDeArticulos, v.TotalCentavos,
             v.IvaCentavos,
             v.Cobros.OrderBy(c => c.Forma).Select(c => new CobroTicketDto(c.Forma, c.MontoCentavos, c.RecibidoCentavos, c.CambioCentavos, c.Referencia)).ToList(),
-            encabezado, pie, logo, v.Id);
+            encabezado, pie, logo, v.Id, v.RedondeoCentavos);
     }
 
     /// <summary>"2" piezas; "1.5 m", "0.25 kg", "0.5 l" a granel.</summary>

@@ -56,6 +56,8 @@ public static class DisenoComprobante
         if (c.DevolucionesCentavos > 0)
             Linea("Devoluciones y cancelaciones", -c.DevolucionesCentavos);
         Linea("Efectivo esperado", c.EsperadoCentavos, negrita: true);
+        if (c.RedondeoCentavos != 0)
+            Linea("(incluye redondeo al peso)", c.RedondeoCentavos);
         if (c.ContadoCentavos is { } contado)
         {
             Linea("Contado", contado, negrita: true);
@@ -93,9 +95,11 @@ public static class DisenoComprobante
         }
         e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
         e.Add(new Renglon($"Total: {DisenoTicket.Dinero(c.TotalCentavos)}", Alineacion.Derecha, Negrita: true, Grande: true));
+        if (c.RedondeoCentavos != 0)
+            e.Add(new Renglon($"Redondeo: {(c.RedondeoCentavos > 0 ? "+" : "-")}{DisenoTicket.Dinero(Math.Abs(c.RedondeoCentavos))}", Alineacion.Derecha));
         e.Add(new Renglon($"Efectivo devuelto: {DisenoTicket.Dinero(c.ReembolsoEfectivoCentavos)}", Alineacion.Derecha));
-        if (c.ReembolsoEfectivoCentavos < c.TotalCentavos)
-            e.Add(new Renglon("El resto se reembolsa por el mismo medio de pago", Alineacion.Derecha));
+        if (c.CobradoSinEfectivoCentavos > 0)
+            e.Add(new Renglon($"Se regresa por su medio de pago: {DisenoTicket.Dinero(c.CobradoSinEfectivoCentavos)}", Alineacion.Derecha));
         foreach (var parte in DisenoTicket.Partir($"Motivo: {c.Motivo}", DisenoTicket.Columnas))
             e.Add(new Renglon(parte));
         e.Add(new Renglon(""));

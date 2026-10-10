@@ -88,6 +88,7 @@ internal sealed class VentaConfiguracion : IEntityTypeConfiguration<Venta>
         b.Ignore(v => v.EsEditable);
         b.Ignore(v => v.CambioCentavos);
         b.Ignore(v => v.LlevaEfectivo);
+        b.Ignore(v => v.TotalCobradoCentavos);
     }
 }
 

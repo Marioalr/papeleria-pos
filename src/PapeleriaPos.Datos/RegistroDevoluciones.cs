@@ -38,7 +38,8 @@ public sealed class RegistroDevoluciones(PosDbContext db)
     {
         var venta = await VentaAsync(ventaId, ct);
         var turno = await TurnoAbiertoAsync(cajaId, ct);
-        var devolucion = CalculoDevolucion.Armar(venta, lineas, cajaId, turno.Id, usuarioId, motivo, Ahora);
+        var anteriores = await db.Devoluciones.Include(d => d.Lineas).Where(d => d.VentaId == venta.Id).ToListAsync(ct);
+        var devolucion = CalculoDevolucion.Armar(venta, lineas, cajaId, turno.Id, usuarioId, motivo, Ahora, anteriores);
         return await GuardarAsync(venta, devolucion, AccionControlada.Devolucion, $"Devolución del ticket {venta.FolioTexto}", autorizacionId, ct);
     }
 

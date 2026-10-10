@@ -35,6 +35,36 @@ public class TicketTests
     }
 
     [Fact]
+    public void Con_redondeo_sale_el_total_exacto_el_redondeo_y_lo_que_se_paga()
+    {
+        var ticket = Ticket(new CobroTicketDto(FormaPago.Efectivo, 16800, 20000, 3200, null)) with { RedondeoCentavos = -100 };
+
+        var renglones = TicketTexto.Generar(ticket).Split(Environment.NewLine);
+
+        Assert.Contains(renglones, r => r.Contains("Total: $169.00"));
+        Assert.Contains(renglones, r => r.Contains("Redondeo: -$1.00"));
+        Assert.Contains(renglones, r => r.Contains("Total a pagar: $168.00"));
+        Assert.Contains(renglones, r => r.Contains("Efectivo: $200.00  Cambio: $32.00"));
+        Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
+        Assert.DoesNotContain("Redondeo", TicketTexto.Generar(Ticket()));
+    }
+
+    [Fact]
+    public void La_cancelacion_redondeada_cuadra_en_el_comprobante()
+    {
+        var comprobante = new ComprobanteDevolucionDto("A-000123", true, 5049, 3000, "Se arrepintió", new DateTime(2026, 10, 7, 12, 0, 0), "Caja 1", "Ana", null,
+            [new LineaTicketDto("1", "Mochila", 5049, 5049)], ["PAPELERÍA"], RedondeoCentavos: -49, CobradoSinEfectivoCentavos: 2000);
+
+        var texto = TicketTexto.Generar(DisenoComprobante.Devolucion(comprobante));
+
+        // $50.49 = $30 en efectivo + $20 por la tarjeta + $0.49 de redondeo.
+        Assert.Contains("Redondeo: -$0.49", texto);
+        Assert.Contains("Efectivo devuelto: $30.00", texto);
+        Assert.Contains("Se regresa por su medio de pago: $20.00", texto);
+        Assert.All(texto.Split(Environment.NewLine), r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
+    }
+
+    [Fact]
     public void El_texto_cabe_en_48_columnas_y_trae_lo_importante()
     {
         var texto = TicketTexto.Generar(Ticket());

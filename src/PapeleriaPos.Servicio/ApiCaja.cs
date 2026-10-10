@@ -183,7 +183,7 @@ public static class ApiCaja
         var nombres = await db.Usuarios.Where(u => u.Id == turno!.CajeroId || u.Id == c.RealizadoPorId).ToDictionaryAsync(u => u.Id, u => u.Nombre);
         return new CorteDto(c.Tipo, HoraMexico.ALocal(c.FechaUtc), nombres[turno!.CajeroId], nombres[c.RealizadoPorId], c.Ventas, c.FondoCentavos,
             c.EfectivoVentasCentavos, c.EntradasCentavos, c.SalidasCentavos, c.TarjetaCentavos, c.TransferenciaCentavos, c.EsperadoCentavos,
-            c.ContadoCentavos, c.DiferenciaCentavos, c.DevolucionesCentavos, c.Cancelaciones, c.EnContingencia);
+            c.ContadoCentavos, c.DiferenciaCentavos, c.DevolucionesCentavos, c.Cancelaciones, c.EnContingencia, c.RedondeoCentavos);
     }
 
     internal static async Task<TicketDto> TicketAsync(PosDbContext db, Venta v, OpcionesTicket opciones)

@@ -81,11 +81,15 @@ public sealed record CobroTicketDto(FormaPago Forma, long MontoCentavos, long Re
 /// <summary>Logo en blanco y negro listo para la impresora: un bit por punto, renglones de (Ancho + 7) / 8 bytes.</summary>
 public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 
+/// <param name="TotalCentavos">Exacto: la suma de las líneas, con el IVA incluido.</param>
+/// <param name="RedondeoCentavos">El del efectivo al peso (fase 3): lo que pagó el cliente es el total más esto.</param>
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
     long TotalCentavos, long IvaCentavos, IReadOnlyList<CobroTicketDto> Cobros, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie,
-    LogoTicketDto? Logo = null, Guid? VentaId = null)
+    LogoTicketDto? Logo = null, Guid? VentaId = null, long RedondeoCentavos = 0)
 {
+    public long TotalCobradoCentavos => TotalCentavos + RedondeoCentavos;
+
     public long CambioCentavos => Cobros.Sum(c => c.CambioCentavos);
     public long PagoConCentavos => Cobros.Sum(c => c.Forma == FormaPago.Efectivo ? c.RecibidoCentavos : c.MontoCentavos);
     public bool AbreCajon => Cobros.Any(c => c.Forma == FormaPago.Efectivo);
@@ -100,7 +104,8 @@ public sealed record SolicitudCorteZ(string EncargadoUsuario, string EncargadoPi
 public sealed record CorteDto(
     TipoCorte Tipo, DateTime FechaLocal, string Cajero, string RealizadoPor, int Ventas, long FondoCentavos, long EfectivoVentasCentavos,
     long EntradasCentavos, long SalidasCentavos, long TarjetaCentavos, long TransferenciaCentavos, long EsperadoCentavos,
-    long? ContadoCentavos, long? DiferenciaCentavos, long DevolucionesCentavos = 0, int Cancelaciones = 0, bool EnContingencia = false);
+    long? ContadoCentavos, long? DiferenciaCentavos, long DevolucionesCentavos = 0, int Cancelaciones = 0, bool EnContingencia = false,
+    long RedondeoCentavos = 0);
 
 /// <param name="Codigo">"requiere-autorizacion" o "no-permitido" cuando lo detiene una regla.</param>
 public sealed record ErrorDto(string Mensaje, string? Codigo = null);
@@ -165,9 +170,12 @@ public sealed record LineaDevolucionSolicitada(Guid LineaId, long CantidadMilesi
 public sealed record SolicitudDevolucion(Guid UsuarioId, Guid CajaId, string Motivo, IReadOnlyList<LineaDevolucionSolicitada> Lineas, Guid? AutorizacionId = null);
 
 /// <summary>Comprobante que se imprime al reembolsar.</summary>
+/// <param name="RedondeoCentavos">El del efectivo al peso: lo que sale en efectivo de lo devuelto (o, al cancelar, el de la venta).</param>
+/// <param name="CobradoSinEfectivoCentavos">En una cancelación, lo que se pagó con tarjeta o transferencia: se regresa por ese medio.</param>
 public sealed record ComprobanteDevolucionDto(
     string Folio, bool EsCancelacion, long TotalCentavos, long ReembolsoEfectivoCentavos, string Motivo, DateTime FechaLocal, string Caja,
-    string Usuario, string? Autorizo, IReadOnlyList<LineaTicketDto> Lineas, IReadOnlyList<string> Encabezado);
+    string Usuario, string? Autorizo, IReadOnlyList<LineaTicketDto> Lineas, IReadOnlyList<string> Encabezado, long RedondeoCentavos = 0,
+    long CobradoSinEfectivoCentavos = 0);
 
 public sealed record TransferenciaDto(Guid CobroId, string Folio, DateTime FechaLocal, long MontoCentavos, string? Referencia, string Cajero, Verificacion Verificacion);
 
@@ -223,9 +231,10 @@ public sealed record LineaContingenciaDto(
     Guid? VarianteId, Guid? PresentacionId, string Descripcion, long CantidadMilesimas, long PrecioCentavos, int? DescuentoCentesimas = null,
     long? DescuentoCentavos = null, string? MotivoDescuento = null);
 
+/// <param name="RedondeoCentavos">El que cobró la caja. Vacío en lo que se cobró antes de que existiera el redondeo: eso se vuelve a cobrar exacto.</param>
 public sealed record VentaContingenciaDto(
     Guid Id, Guid CajaId, Guid TurnoId, Guid CajeroId, int Folio, DateTime PagadaUtc, IReadOnlyList<LineaContingenciaDto> Lineas,
-    IReadOnlyList<CobroSolicitado> Cobros, Guid? ClienteEspecialId = null);
+    IReadOnlyList<CobroSolicitado> Cobros, Guid? ClienteEspecialId = null, long? RedondeoCentavos = null);
 
 public sealed record MovimientoContingenciaDto(Guid Id, TipoMovimientoCaja Tipo, long MontoCentavos, string Motivo, Guid UsuarioId, DateTime FechaUtc);
 

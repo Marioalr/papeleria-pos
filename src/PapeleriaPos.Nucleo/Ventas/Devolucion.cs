@@ -2,7 +2,8 @@ namespace PapeleriaPos.Nucleo.Ventas;
 
 /// <summary>
 /// Dinero que regresa al cliente por una venta: una cancelación (todo el ticket, en su mismo turno) o una devolución
-/// (algunos artículos, con ticket y hasta 7 días). El reembolso sale en efectivo de la caja donde se hace.
+/// (algunos artículos, con ticket y hasta 7 días). El reembolso sale en efectivo de la caja donde se hace, redondeado al
+/// peso como el cobro.
 /// </summary>
 public class Devolucion
 {
@@ -24,6 +25,12 @@ public class Devolucion
 
     /// <summary>Lo que salió de la caja en efectivo. En una cancelación pagada con tarjeta o transferencia es menos que el total.</summary>
     public long ReembolsoEfectivoCentavos { get; set; }
+
+    /// <summary>
+    /// El redondeo al peso de lo que salió en efectivo (fase 3): en una cancelación, el de la venta (se regresa lo
+    /// cobrado); en una devolución, el reembolso menos el total. Informativo, como el de la venta.
+    /// </summary>
+    public long RedondeoCentavos { get; set; }
 
     public DateTime FechaUtc { get; set; }
 
@@ -49,13 +56,41 @@ public class DevolucionLinea
 /// <summary>Lo que el cajero pide devolver de una línea.</summary>
 public sealed record LineaPorDevolver(Guid VentaLineaId, Cantidad Cantidad, bool RegresaAlInventario = true);
 
+/// <summary>
+/// Lo que ya pasó con un ticket antes de esta devolución: lo que pagó el cliente y lo que ya se devolvió y se
+/// reembolsó. Con esto se redondea lo que sale en efectivo sin regresar centavos sueltos (fase 3).
+/// </summary>
+/// <param name="DevueltoCentavos">El total de las devoluciones anteriores, impresiones incluidas.</param>
+/// <param name="ImpresionesCentavos">Lo que llevó el ticket de impresiones: eso se regresa exacto.</param>
+public sealed record ResumenReembolsos(
+    long PagadoCentavos, long DevueltoCentavos, long ImpresionesDevueltasCentavos, long ReembolsadoCentavos, long ImpresionesCentavos = 0)
+{
+    /// <summary>
+    /// Lo más que se regresa en efectivo de todo el ticket: lo que pagó el cliente, con la mercancía en pesos (si una
+    /// parte se pagó con tarjeta o transferencia, lo pagado trae centavos que en efectivo no se pueden dar).
+    /// </summary>
+    public long TopeCentavos => Redondeo.AlPeso(PagadoCentavos - ImpresionesCentavos) + ImpresionesCentavos;
+
+    public static ResumenReembolsos De(Venta venta, IEnumerable<Devolucion> anteriores)
+    {
+        var lista = anteriores.Where(d => d.VentaId == venta.Id).ToList();
+        var impresiones = venta.Lineas.Where(l => l.EsImpresiones).Select(l => l.Id).ToHashSet();
+        return new ResumenReembolsos(venta.TotalCobradoCentavos, lista.Sum(d => d.TotalCentavos),
+            lista.SelectMany(d => d.Lineas).Where(l => impresiones.Contains(l.VentaLineaId)).Sum(l => l.ImporteCentavos),
+            lista.Sum(d => d.ReembolsoEfectivoCentavos), venta.Lineas.Where(l => l.EsImpresiones).Sum(l => l.ImporteCentavos));
+    }
+}
+
 public static class CalculoDevolucion
 {
     /// <summary>
     /// Arma la devolución de una venta: revisa plazo y cantidades, y calcula importe y costo de cada línea en
     /// proporción a lo vendido. No cambia la venta; eso lo hace <see cref="Aplicar"/>.
     /// </summary>
-    public static Devolucion Armar(Venta venta, IReadOnlyList<LineaPorDevolver> lineas, Guid cajaId, Guid turnoId, Guid usuarioId, string motivo, DateTime ahoraUtc)
+    /// <param name="anteriores">Las devoluciones que ya tiene el ticket: con ellas se redondea lo que sale en efectivo.</param>
+    public static Devolucion Armar(
+        Venta venta, IReadOnlyList<LineaPorDevolver> lineas, Guid cajaId, Guid turnoId, Guid usuarioId, string motivo, DateTime ahoraUtc,
+        IEnumerable<Devolucion>? anteriores = null)
     {
         if (venta.Estado != EstadoVenta.Pagada)
             throw new InvalidOperationException("Solo se devuelve de un ticket cobrado y no cancelado.");
@@ -94,8 +129,27 @@ public static class CalculoDevolucion
             });
         }
         devolucion.TotalCentavos = devolucion.Lineas.Sum(l => l.ImporteCentavos);
-        devolucion.ReembolsoEfectivoCentavos = devolucion.TotalCentavos;
+        var impresiones = devolucion.Lineas.Where(d => venta.Lineas.Single(l => l.Id == d.VentaLineaId).EsImpresiones).Sum(d => d.ImporteCentavos);
+        var completa = venta.Lineas.All(l => l.CantidadDevuelta + devolucion.Lineas.Where(d => d.VentaLineaId == l.Id)
+            .Aggregate(Cantidad.Cero, (suma, d) => suma + d.Cantidad) >= l.Cantidad);
+        devolucion.ReembolsoEfectivoCentavos = ReembolsoEnEfectivo(ResumenReembolsos.De(venta, anteriores ?? []), devolucion.TotalCentavos, impresiones, completa);
+        devolucion.RedondeoCentavos = devolucion.ReembolsoEfectivoCentavos - devolucion.TotalCentavos;
         return devolucion;
+    }
+
+    /// <summary>
+    /// Lo que sale en efectivo, redondeado al peso y acumulado por ticket: lo devuelto hasta ahora (sin impresiones,
+    /// que van exactas) al peso más cercano, menos lo que ya se reembolsó. Al devolver lo último se completa lo que pagó
+    /// el cliente, en pesos (<see cref="ResumenReembolsos.TopeCentavos"/>). Así no salen centavos sueltos, partir la
+    /// devolución no gana nada y la suma de los reembolsos es lo cobrado; si una parte se pagó con tarjeta, lo cobrado
+    /// al peso (la diferencia queda en el redondeo de la devolución).
+    /// </summary>
+    public static long ReembolsoEnEfectivo(ResumenReembolsos antes, long totalCentavos, long impresionesCentavos, bool completaElTicket)
+    {
+        var mercancia = antes.DevueltoCentavos - antes.ImpresionesDevueltasCentavos + totalCentavos - impresionesCentavos;
+        var impresiones = antes.ImpresionesDevueltasCentavos + impresionesCentavos;
+        var objetivo = completaElTicket ? antes.TopeCentavos : Math.Min(Redondeo.AlPeso(mercancia) + impresiones, antes.TopeCentavos);
+        return Math.Max(0, objetivo - antes.ReembolsadoCentavos);
     }
 
     /// <summary>Cancelación: todo lo que queda por devolver; se reembolsa en efectivo solo lo que se pagó en efectivo.</summary>
@@ -110,7 +164,9 @@ public static class CalculoDevolucion
 
         var devolucion = Armar(venta, venta.Lineas.Select(l => new LineaPorDevolver(l.Id, l.Cantidad)).ToList(), venta.CajaId, turnoId, usuarioId, motivo, ahoraUtc);
         devolucion.EsCancelacion = true;
-        devolucion.ReembolsoEfectivoCentavos = Math.Min(devolucion.TotalCentavos, venta.Cobros.Where(c => c.Forma == FormaPago.Efectivo).Sum(c => c.MontoCentavos));
+        // Sale lo que entró en efectivo, ya redondeado: el redondeo de la venta se revierte completo.
+        devolucion.ReembolsoEfectivoCentavos = venta.Cobros.Where(c => c.Forma == FormaPago.Efectivo).Sum(c => c.MontoCentavos);
+        devolucion.RedondeoCentavos = venta.RedondeoCentavos;
         return devolucion;
     }
 
