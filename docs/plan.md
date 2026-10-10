@@ -253,13 +253,13 @@ para esos días ([forma de trabajar](notas.md#forma-de-trabajar), [guía de los 
 | **La impresora de tickets compartida:** reintento si las dos cajas imprimen a la vez y botón «Reintentar». No hay cajón | [Notas](notas.md#impresoras) | Falta (chico) |
 | **Reportes de ventas:** día contra hace un año (el mismo día de la semana o la misma fecha: por decidir), mes y año a la fecha contra el año anterior, meses cerrados; venta neta, tickets, ticket promedio, costo, utilidad y margen; por departamento, caja, cajero y forma de pago; exportar a Excel y líneas en el resumen de Telegram; la utilidad solo la ve el dueño. El año anterior sale del historial de eleventa (su utilidad, con el costo capturado en eleventa) | [Notas](notas.md#reportes) | Pospuesto: después de la prueba con una persona real y su aprobación (2026-10-09) |
 | **Ganancia real del mes:** el reporte (gastos fijos, consumibles del mes, recibo de luz, equipo con su depreciación y comisión de la tarjeta; utilidad bruta − mermas y faltantes − gastos = ganancia; punto de equilibrio y cierre del mes por Telegram). La captura de cada gasto cuando se paga no se pospone: propuesta, por aprobar, hacerla con la entrega 3 de la fase 3 (consumibles del mes), para todos los gastos | [Administración](#administración-y-punto-de-equilibrio), [servicios](servicios.md#tres-niveles-de-costo) | El reporte, pospuesto: después de la prueba con una persona real y su aprobación (2026-10-09) |
-| Fusionar a `main`, en orden, los PR abiertos (#27 en adelante) | Hoy `main` llega hasta la entrega 1 de la fase 2 | Lo fusiona el dueño. Ojo: el #45 no está en la pila (sale de la rama del #43): decidir si se pasa encima de la punta o se cierra |
+| Fusionar a `main`, en orden, los PR abiertos (#27 en adelante) | `main` llega hasta la entrega 2 de la fase 3 | Hecho el 2026-10-10: del #27 al #52, con el #45. En Windows pasan todas las pruebas |
 | Probar en Windows con las dos cajas reales: servicio, alta de la caja 2, contingencia, respaldos, ventana de la caja y ticket desde las dos (el cajón, cuando lo haya) | Fase 1, entregas 1 y 3 | Falta: un sábado o domingo, sin tocar los datos de eleventa ([guía](pruebas-en-tienda.md#después-las-dos-cajas-con-el-pos)) |
 | Crear el bot de Telegram de verdad y probarlo | Fase 1, entrega 4 | Falta |
 | Probar la impresión con la cola de laboratorio y después con la real | Fase 1, entrega 5 | Falta |
-| Prueba con una persona real | [Ver arriba](#prueba-con-una-persona-real) | Hecha en el PR #31; falta fusionarla, instalarla en una PC con Windows limpia y dársela a quien prueba. Su hito ya pasó |
+| Prueba con una persona real | [Ver arriba](#prueba-con-una-persona-real) | Hecha en el PR #31, ya en `main`; falta instalarla en una PC con Windows limpia y dársela a quien prueba. Su hito ya pasó |
 | Medir un día pico (~120 tickets) con las dos cajas, en la caja principal real | Hace falta el simulador de cajas (no existe; [descrito aquí](prueba-sucursales-linux.md#lo-que-hay-que-arreglar-o-construir)) | Falta |
-| Precios y clientes | [Fase 3](fase-3-precios-clientes.md) | Las entregas 1 y 2 están en PR abiertos. Propuesta, por aprobar: que la entrega 3 (consumibles del mes) capture todos los gastos del mes cuando se pagan; el reporte de la ganancia va con los reportes |
+| Precios y clientes | [Fase 3](fase-3-precios-clientes.md) | Las entregas 1 y 2 ya están en `main`. Propuesta, por aprobar: que la entrega 3 (consumibles del mes) capture todos los gastos del mes cuando se pagan; el reporte de la ganancia va con los reportes |
 | Servicios con costo real (engargolado y enmicado con depreciación, luz y consumibles; impresiones por impresora), pedidos y WhatsApp desde la PC. Apartados y cotizaciones guardadas quedan como mejora: el eleventa de la tienda no los tiene | Fase 4 ([servicios](servicios.md), [pedidos](pedidos.md), [WhatsApp](whatsapp.md)) | Falta su plan |
 | Instalador de la tienda, soporte a distancia (NetBird gratis u otro) y cómo se actualiza | [Por definir](#pendientes) | Falta |
 | Respaldo cifrado fuera de la tienda y vigilancia de la caja principal: se reporta a Healthchecks.io cada pocos minutos en horario, y si no abre o se apaga, Healthchecks.io avisa por Telegram (el bot del POS no puede avisar de su propia caja) | Fase 5 ([notas](notas.md#respaldo-fuera-de-la-tienda-y-aviso-de-apertura)) | Falta (chico) |
@@ -329,18 +329,18 @@ Fase 2:
 
 - [x] Revisar el [plan de la fase 2](fase-2-inventario.md) (inventario) y contestar sus preguntas
 - [x] Entrega 1: catálogo (F3 Productos) y depuración
-- [ ] Entrega 2: compras con recepción ciega y el documento del proveedor
-- [ ] Entrega 3: ajustes, mermas y conteos
-- [ ] Entrega 4: etiquetas y sugerido de compra
+- [x] Entrega 2: compras con recepción ciega y el documento del proveedor
+- [x] Entrega 3: ajustes, mermas y conteos
+- [x] Entrega 4: etiquetas y sugerido de compra
 
 Prueba con una persona real (al cerrar la entrega 2 de la fase 2, [ver arriba](#prueba-con-una-persona-real);
 hecha en el PR #31):
 
-- [ ] Instalador de prueba de la caja principal (servicio, caja, base ficticia y usuarios), armado en GitHub Actions
-- [ ] La caja principal se da de alta sola en la prueba
-- [ ] Guía de prueba dentro de la caja, con las respuestas en un archivo
-- [ ] Simular lo que no hay: ticket en pantalla, avisos de Telegram en una lista, impresiones de ejemplo
-- [ ] Franja de prueba y botón para empezar de cero
+- [x] Instalador de prueba de la caja principal (servicio, caja, base ficticia y usuarios), armado en GitHub Actions
+- [x] La caja principal se da de alta sola en la prueba
+- [x] Guía de prueba dentro de la caja, con las respuestas en un archivo
+- [x] Simular lo que no hay: ticket en pantalla, avisos de Telegram en una lista, impresiones de ejemplo
+- [x] Franja de prueba y botón para empezar de cero
 - [ ] Instalarlo en una PC con Windows limpia antes de dárselo a quien prueba
 
 Fase 3:
@@ -348,8 +348,8 @@ Fase 3:
 - [x] Revisar el [plan de la fase 3](fase-3-precios-clientes.md) (precios y clientes) y contestar sus preguntas
 - [x] Mayoreo: el F11 de eleventa vende el paquete a su precio; pasa a escalas por cantidad que se aplican solas
   ([decisión](fase-3-precios-clientes.md#decisiones-de-la-revisión))
-- [ ] Entrega 1: mayoreo y redondeo al peso
-- [ ] Entrega 2: clientes registrados y crédito
+- [x] Entrega 1: mayoreo y redondeo al peso
+- [x] Entrega 2: clientes registrados y crédito
 - [ ] Entrega 3: consumibles del mes
 - [ ] Promociones y kits: antes del próximo regreso a clases
 
@@ -380,8 +380,8 @@ Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
 - [ ] Soporte a distancia para instalar las actualizaciones (NetBird gratis u otro, [notas](notas.md#cuentas-y-pagos))
 - [ ] Ya, sin costo: configurar los grabadores de las dos sucursales por seguridad
   ([lista](camaras.md#configurar-el-grabador))
-- [ ] Correr las pruebas en Windows en cada PR (hoy solo corren si cambia `instalacion/`) y arreglar las 8 que fallan en
-  Linux ([notas](notas.md#código-y-pruebas))
+- [x] Correr las pruebas en cada PR, en Windows y en Linux, y arreglar las 8 que fallaban en Linux
+  ([notas](notas.md#código-y-pruebas))
 - [ ] Escribir el plan de la fase 4 (primero, servicios con costo real) y revisarlo con el dueño
 
 Varias sucursales ([pospuesto](#varias-sucursales-pospuesto)):

@@ -61,14 +61,16 @@ Propuesta para cumplirlo ([guía](pruebas-en-tienda.md)):
 
 ### Código y pruebas
 
-- **Las 8 pruebas que fallan en Linux** son por SkiaSharp sin su biblioteca para Linux (logo del ticket). Se arreglan
-  con el paquete `SkiaSharp.NativeAssets.Linux.NoDependencies` 4.153.1. Vender e imprimir no lo usan.
-- **Las pruebas en Windows de GitHub Actions** solo corren cuando cambia `instalacion/`: la mayoría de los PR no tienen
-  ningún check. Conviene correrlas en cada PR.
-- **El PR #45** (mensajes sin «(Parameter …)») quedó fuera de la pila de PR encadenados: al fusionar en orden no entra
-  solo.
-- **Al fusionar los PR:** en la rama de código, `fase-1-varias-cajas.md` dice que el respaldo fuera de la tienda llega
-  con el central; debe quedar «desde el piloto, en Backblaze B2», como en el plan.
+- **Las 8 pruebas que fallaban en Linux** eran por SkiaSharp sin su biblioteca para Linux (logo del ticket). Las
+  pruebas llevan el paquete `SkiaSharp.NativeAssets.Linux.NoDependencies` 4.153.1; el servicio no, porque la tienda es
+  Windows. Vender e imprimir no lo usan.
+- **Las pruebas corren en cada PR** (`.github/workflows/pruebas.yml`): todas en Windows y las de
+  `PapeleriaPos.Pruebas` en Linux, también en los PR apilados. Los que solo cambian documentación no las corren: el
+  repositorio es privado y los minutos de Windows cuentan doble.
+- **Fusionar una pila de PR:** el repositorio no borra la rama al fusionar, así que GitHub no reapunta el siguiente PR
+  a `main`. Antes de fusionar cada uno hay que cambiarle la base a `main`. Si GitHub marca conflicto pero la fusión en
+  local sale limpia, suele ser porque hay dos bases comunes (un PR que entró por separado y también dentro de la pila).
+  Se arregla fusionando `main` en la rama del PR. Pasó con el #49 y el #44 el 2026-10-10.
 - **No hay simulador de cajas** para medir el día pico ni la contingencia, y la única medición de búsquedas (18 ms, 19
   de cada 20) es de la PC de desarrollo (i9): falta medir en una PC como las de caja.
 - **Una sola impresora de inyección por sucursal:** el servicio vigila una sola dirección (`ImpresoraHost`); la matriz
