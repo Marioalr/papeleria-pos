@@ -39,6 +39,7 @@ else
                     </td>
                     <td>@Telefono(c.Telefono)</td>
                     <td>@c.TextoPrivilegios()</td>
+                    <td class="num @(_cuentas.GetValueOrDefault(c.Id)?.Vencido(Hoy) > 0 ? "error" : "")">@Debe(c)</td>
                 </tr>
             }
         </table>
@@ -77,6 +78,9 @@ else
         List<(VentaLinea Linea, int? Centesimas, long Centavos, string? Motivo)> Lineas, Guid? Cliente, bool Mayoreo, Guid? AutDescuento, Guid? AutCosto);
 
     private List<ClienteRegistradoDto>? _clientes;
+
+    /// <summary>Las cuentas de los que tienen crédito o deben (sin conexión, ninguna: no se muestra lo que debe).</summary>
+    private Dictionary<Guid, CreditoClienteDto> _cuentas = [];
     private string _texto = "";
     private int _seleccion;
     private bool _ocupado;
@@ -109,8 +113,27 @@ else
         catch (ErrorCaja ex)
         {
             _error = ex.Message;
+            return;
+        }
+        try
+        {
+            _cuentas = (await Cliente.CreditosAsync(Caja.SucursalId)).ToDictionary(c => c.ClienteId);
+        }
+        catch (ErrorCaja)
+        {
+            // Sin las cuentas, se elige igual.
         }
     }
+
+    private static DateOnly Hoy => DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
+
+    /// <summary>"debe $350.00" o "$50.00 a favor"; vacío si no debe.</summary>
+    private string Debe(ClienteRegistradoDto c) => _cuentas.GetValueOrDefault(c.Id)?.SaldoCentavos switch
+    {
+        > 0 and var saldo => $"debe {Formato.Dinero(saldo)}",
+        < 0 and var saldo => $"{Formato.Dinero(-saldo)} a favor",
+        _ => "",
+    };
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {

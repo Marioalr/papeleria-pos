@@ -103,6 +103,26 @@ public static class DisenoTicket
         if (t.IvaCentavos > 0)
             e.Add(new Renglon($"Incluye IVA: {Dinero(t.IvaCentavos)}", Alineacion.Derecha));
         e.Add(new Renglon("(precios con IVA incluido)", Alineacion.Centro));
+        if (t.Credito is { } credito)
+        {
+            // Lo fiado (fase 3): lo que quedó a deber, el saldo de su cuenta con esto y hasta cuándo se paga esta compra (lo de
+            // antes vence cuando decía su ticket).
+            e.Add(Linea('-'));
+            e.Add(new Renglon("SU CUENTA", Alineacion.Centro, Negrita: true));
+            // Si lo cubrió su saldo a favor, no debe nada: no hay fecha que pagar.
+            var saldo = credito.SaldoCentavos;
+            e.Add(new Renglon(DosColumnas(saldo > 0 ? "Fiado en esta compra" : "De su saldo a favor", Dinero(credito.FiadoCentavos))));
+            e.Add(new Renglon(saldo switch
+            {
+                > 0 => DosColumnas("Saldo de su cuenta", Dinero(saldo)),
+                < 0 => DosColumnas("Le quedan a favor", Dinero(-saldo)),
+                _ => "Al corriente",
+            }, saldo == 0 ? Alineacion.Centro : Alineacion.Izquierda, Negrita: true));
+            if (saldo > 0 && credito.Vence is { } vence)
+                e.Add(new Renglon($"Paga esta compra antes del {vence.ToString("dd/MM/yyyy", Mexico)}", Alineacion.Centro));
+            if (credito.Estimado)
+                e.Add(new Renglon("(saldo según esta caja; se confirma al volver)", Alineacion.Centro));
+        }
         e.Add(Linea('-'));
         e.Add(new Qr(t.Folio));
         foreach (var renglon in t.Pie)

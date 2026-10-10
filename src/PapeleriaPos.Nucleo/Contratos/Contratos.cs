@@ -859,15 +859,19 @@ public sealed record SolicitudAjusteCredito(Guid Id, Guid UsuarioId, Guid Sucurs
 /// <summary>Un abono. El Id lo pone la caja: si llega dos veces, se guarda una.</summary>
 /// <param name="MontoCentavos">Vacío: liquidar.</param>
 /// <param name="RecibidoCentavos">En efectivo, lo que entregó el cliente.</param>
+/// <param name="SaldoVistoCentavos">El saldo que vio la caja: si cambió mientras tanto, no se guarda (lo cobrado sería otro).</param>
 public sealed record SolicitudAbono(
     Guid Id, Guid CajaId, Guid TurnoId, Guid UsuarioId, Guid ClienteId, FormaPago Forma, long? MontoCentavos, long RecibidoCentavos = 0,
-    string? Referencia = null);
+    string? Referencia = null, long? SaldoVistoCentavos = null);
 
 /// <summary>El comprobante de un abono (o de su cancelación).</summary>
+/// <param name="SaldoCentavos">Lo que quedó a deber con el abono.</param>
+/// <param name="SaldoTrasCancelarCentavos">Si se canceló, lo que quedó a deber al cancelarlo.</param>
 public sealed record ComprobanteAbonoDto(
     Guid AbonoId, string Folio, DateTime FechaLocal, string Caja, string Usuario, Guid ClienteId, string Cliente, FormaPago Forma, long MontoCentavos,
     long RedondeoCentavos, long RecibidoCentavos, long CambioCentavos, string? Referencia, long SaldoAnteriorCentavos, long SaldoCentavos,
-    DateOnly? Vence, IReadOnlyList<string> Encabezado, bool Cancelado = false, bool Estimado = false, string? MotivoCancelacion = null)
+    DateOnly? Vence, IReadOnlyList<string> Encabezado, bool Cancelado = false, bool Estimado = false, string? MotivoCancelacion = null,
+    long? SaldoTrasCancelarCentavos = null)
 {
     public long CobradoCentavos => MontoCentavos + RedondeoCentavos;
     public bool AbreCajon => Forma == FormaPago.Efectivo;

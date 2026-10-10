@@ -311,3 +311,9 @@ td.acciones-renglon { white-space: nowrap; text-align: right; }
 .total-efectivo { text-align: right; color: var(--suave); font-size: 14px; }
 .escalas-mayoreo td, .escalas-mayoreo th { font-size: 15px; }
 .titulo-venta .cliente-ticket { font-size: 15px; font-weight: 400; margin-left: 16px; }
+.franja-credito { background: #fff4d6; border-bottom: 1px solid #e8c766; padding: 4px 10px; display: flex; gap: 12px; align-items: center; }
+.franja-credito.vencido { background: #fde2e1; border-bottom-color: #e39b98; color: #8a1c17; font-weight: 600; }
+.cobrar-credito { border: 1px solid #c9d3e0; border-radius: 6px; padding: 6px 10px; margin: 8px 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.cobrar-credito .acciones { margin-top: 0; flex-wrap: wrap; }
+.cobrar-credito legend { font-weight: 600; padding: 0 4px; }
+.movimientos-credito td.debe { color: #8a1c17; }

@@ -26,7 +26,7 @@ else
             {
                 var transferencia = t;
                 <tr>
-                    <td>@t.Folio</td>
+                    <td>@t.Folio@(t.Cliente is { } cliente ? $" · {cliente}" : "")</td>
                     <td>@t.FechaLocal.ToString("dd/MM HH:mm")</td>
                     <td>@t.Cajero</td>
                     <td>@t.Referencia</td>
@@ -79,7 +79,11 @@ else
         _error = null;
         try
         {
-            await Cliente.VerificarTransferenciaAsync(t.CobroId, new SolicitudVerificacion(_usuario, _pin, llego));
+            // Las de los abonos de clientes (fase 3) se verifican por su ruta: si no llegó, vuelve a deberse.
+            if (t.EsAbono)
+                await Cliente.VerificarAbonoAsync(t.CobroId, new SolicitudVerificacion(_usuario, _pin, llego));
+            else
+                await Cliente.VerificarTransferenciaAsync(t.CobroId, new SolicitudVerificacion(_usuario, _pin, llego));
             await CargarAsync();
         }
         catch (ErrorCaja ex)

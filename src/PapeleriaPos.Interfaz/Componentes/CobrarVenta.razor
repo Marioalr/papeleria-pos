@@ -1,79 +1,164 @@
-@* F12. "Pagó con" es lo que entregó el cliente en efectivo; tarjeta y transferencia no dan cambio. El efectivo se cobra
-   al peso con la misma regla que aplica el servicio (Venta.Efectivo); las impresiones van exactas. *@
+@* F12. "Pagó con" es lo que entregó el cliente en efectivo; tarjeta, transferencia y crédito no dan cambio. El efectivo se
+   cobra al peso con la misma regla que aplica el servicio (Venta.Efectivo); las impresiones van exactas. Con un cliente que
+   tiene crédito (o saldo a favor), una parte o todo se fía a su cuenta (fase 3, entrega 2); pasar su límite lo autoriza
+   el encargado o el dueño. *@
 @inject ModuloCaja Js
+@inject ClienteCaja Servicio
 
-<div class="cobrar-total">@Formato.Dinero(TotalCentavos)</div>
-@if (ACobrar.RedondeoCentavos != 0)
+@if (_autorizar is { } exceso)
 {
-    <p class="cobrar-redondeo">En efectivo: <strong>@Formato.Dinero(ACobrar.ACobrarCentavos)</strong>
-        (redondeo @(ACobrar.RedondeoCentavos > 0 ? "+" : "−")@Formato.Dinero(Math.Abs(ACobrar.RedondeoCentavos)))</p>
+    <AutorizarAccion Accion="AccionControlada.ExcederLimiteCredito" Detalle="@($"Fiar {Formato.Dinero(Credito)} a «{Cliente!.Nombre}» pasando el límite por {Formato.Dinero(exceso)}")"
+                     MontoCentavos="exceso" Caja="Caja" Sesion="Sesion" AlAutorizar="a => AutorizadoAsync(a.Id)" AlCancelar="() => _autorizar = null" />
 }
+else
+{
+    <div class="cobrar-total">@Formato.Dinero(TotalCentavos)</div>
+    @if (ACobrar.RedondeoCentavos != 0)
+    {
+        <p class="cobrar-redondeo">En efectivo: <strong>@Formato.Dinero(ACobrar.ACobrarCentavos)</strong>
+            (redondeo @(ACobrar.RedondeoCentavos > 0 ? "+" : "−")@Formato.Dinero(Math.Abs(ACobrar.RedondeoCentavos)))</p>
+    }
 
-<label>Pagó con (efectivo)
-    <input id="pago-efectivo" inputmode="decimal" @bind="_efectivo" @bind:event="oninput" @onkeydown="AlTeclear" />
-</label>
+    <label>Pagó con (efectivo)
+        <input id="pago-efectivo" inputmode="decimal" @bind="_efectivo" @bind:event="oninput" @onkeydown="AlTeclear" />
+    </label>
 
-<details>
-    <summary>Tarjeta o transferencia</summary>
-    <div class="dos-columnas">
-        <label>Tarjeta
-            <input inputmode="decimal" @bind="_tarjeta" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
-        </label>
-        <label>Referencia de la terminal
-            <input @bind="_refTarjeta" @onkeydown="AlTeclear" />
-        </label>
-        <label>Transferencia
-            <input inputmode="decimal" @bind="_transferencia" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
-        </label>
-        <label>Referencia
-            <input @bind="_refTransferencia" @onkeydown="AlTeclear" />
-        </label>
+    @if (PuedeFiar && Cuenta is { } cuenta)
+    {
+        <fieldset class="cobrar-credito">
+            <legend>@(ConCredito ? "A crédito" : "De su saldo a favor")</legend>
+            <p class="nota">
+                @if (ConCredito)
+                {
+                    <span>@Cliente!.Nombre debe @Formato.Dinero(Math.Max(0, cuenta.SaldoCentavos)) · límite @Formato.Dinero(cuenta.LimiteCentavos) · le quedan @Formato.Dinero(Disponible)</span>
+                }
+                else
+                {
+                    <span>@Cliente!.Nombre tiene @Formato.Dinero(cuenta.AFavorCentavos) a favor@(cuenta.PorVerificarCentavos > 0 ? $"; puede usar {Formato.Dinero(Disponible)} (lo demás viene de una transferencia por verificar)" : "").</span>
+                }
+                @if (cuenta.Vencido(Hoy) is > 0 and var vencido)
+                {
+                    <span class="error"> · vencido @Formato.Dinero(vencido)</span>
+                }
+                @if (cuenta.Estimado)
+                {
+                    <span> (según esta caja)</span>
+                }
+            </p>
+            <label>@(ConCredito ? "Fiar" : "Usar de su saldo a favor")
+                <input id="pago-credito" inputmode="decimal" @bind="_credito" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+            </label>
+            <div class="acciones izquierda">
+                <button class="boton chico" @onclick="ElRestoACredito">El resto a crédito</button>
+                <button class="boton chico" @onclick="TodoACredito">Todo a crédito</button>
+            </div>
+            @if (Credito > 0)
+            {
+                var despues = cuenta.SaldoCentavos + Credito;
+                <p class="nota">@(despues switch
+                {
+                    > 0 => $"Quedará a deber {Formato.Dinero(despues)} · esta compra vence el {Hoy.AddDays(cuenta.PlazoDias):dd/MM}",
+                    < 0 => $"Le quedarán {Formato.Dinero(-despues)} a favor",
+                    _ => "Queda al corriente",
+                })</p>
+            }
+            @if (Exceso > 0)
+            {
+                <p class="aviso">@(ConCredito
+                    ? $"Pasa el límite por {Formato.Dinero(Exceso)}: lo autoriza el encargado o el dueño."
+                    : $"No tiene crédito: solo puede usar su saldo a favor ({Formato.Dinero(Disponible)}).")</p>
+            }
+        </fieldset>
+    }
+
+    <details>
+        <summary>Tarjeta o transferencia</summary>
+        <div class="dos-columnas">
+            <label>Tarjeta
+                <input inputmode="decimal" @bind="_tarjeta" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+            </label>
+            <label>Referencia de la terminal
+                <input @bind="_refTarjeta" @onkeydown="AlTeclear" />
+            </label>
+            <label>Transferencia
+                <input inputmode="decimal" @bind="_transferencia" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+            </label>
+            <label>Referencia
+                <input @bind="_refTransferencia" @onkeydown="AlTeclear" />
+            </label>
+        </div>
+        <p class="nota">La transferencia queda por verificar hasta que el encargado confirme que llegó el dinero.</p>
+    </details>
+
+    <div class="cobrar-resumen">
+        @if (Faltante > 0)
+        {
+            <span class="falta">Falta: @Formato.Dinero(Faltante)</span>
+        }
+        else
+        {
+            <span class="cambio">Cambio: @Formato.Dinero(Cambio)</span>
+        }
     </div>
-    <p class="nota">La transferencia queda por verificar hasta que el encargado confirme que llegó el dinero.</p>
-</details>
 
-<div class="cobrar-resumen">
-    @if (Faltante > 0)
+    @if (_error is not null)
     {
-        <span class="falta">Falta: @Formato.Dinero(Faltante)</span>
+        <p class="error">@_error</p>
     }
-    else
-    {
-        <span class="cambio">Cambio: @Formato.Dinero(Cambio)</span>
-    }
-</div>
 
-@if (_error is not null)
-{
-    <p class="error">@_error</p>
+    <div class="acciones">
+        <button class="boton principal" disabled="@(_ocupado || Faltante > 0)" @onclick="CobrarAsync">Cobrar (Enter)</button>
+    </div>
 }
-
-<div class="acciones">
-    <button class="boton principal" disabled="@(_ocupado || Faltante > 0)" @onclick="CobrarAsync">Cobrar (Enter)</button>
-</div>
 
 @code {
     /// <summary>La venta que se cobra: de ella sale cuánto pedir en efectivo, ya redondeado.</summary>
     [Parameter, EditorRequired] public Venta Venta { get; set; } = null!;
 
-    private long TotalCentavos => Venta.TotalCentavos;
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
-    /// <summary>Devuelve el error a mostrar, o null si se cobró.</summary>
-    [Parameter] public Func<IReadOnlyList<CobroSolicitado>, Task<string?>> AlCobrar { get; set; } = null!;
+    /// <summary>El cliente registrado del ticket y su cuenta: con crédito (o saldo a favor) se puede fiar.</summary>
+    [Parameter] public ClienteRegistradoDto? Cliente { get; set; }
+
+    [Parameter] public CreditoClienteDto? Cuenta { get; set; }
+
+    /// <summary>Recibe los cobros y la autorización para pasar el límite (si hizo falta). Devuelve el error a mostrar, o null si se cobró.</summary>
+    [Parameter] public Func<IReadOnlyList<CobroSolicitado>, Guid?, Task<string?>> AlCobrar { get; set; } = null!;
+
+    private long TotalCentavos => Venta.TotalCentavos;
 
     private string _efectivo = "";
     private string _tarjeta = "";
     private string _transferencia = "";
+    private string _credito = "";
     private string _refTarjeta = "";
     private string _refTransferencia = "";
     private string? _error;
     private bool _ocupado;
+    private long? _autorizar;
+    private Guid? _autorizacion;
+    private long _autorizadoHasta;
+
+    private static DateOnly Hoy => DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
 
     private long Efectivo => Formato.LeerPesos(_efectivo) ?? 0;
     private long Tarjeta => Formato.LeerPesos(_tarjeta) ?? 0;
     private long Transferencia => Formato.LeerPesos(_transferencia) ?? 0;
-    /// <summary>Lo que falta en efectivo después de la tarjeta y la transferencia, al peso.</summary>
-    private EfectivoACobrar ACobrar => Venta.Efectivo(Tarjeta + Transferencia);
+    private long Credito => PuedeFiar ? Formato.LeerPesos(_credito) ?? 0 : 0;
+
+    /// <summary>Con crédito, o con saldo a favor que se puede usar.</summary>
+    private bool PuedeFiar => Cliente is not null && Cuenta is not null && (ConCredito || Cuenta.AFavorCentavos > 0);
+
+    /// <summary>Lo dice la cuenta recién pedida (igual que el servicio), no el cliente que se eligió con CTRL+L.</summary>
+    private bool ConCredito => Cuenta is { LimiteCentavos: > 0 };
+
+    /// <summary>Lo que se le puede fiar sin pasar el límite (lo que tiene a favor ya viene ahí: su saldo es negativo).</summary>
+    private long Disponible => Cuenta?.DisponibleCentavos ?? 0;
+    private long Exceso => Cuenta?.Exceso(Credito) ?? 0;
+
+    /// <summary>Lo que falta en efectivo después de la tarjeta, la transferencia y lo fiado, al peso.</summary>
+    private EfectivoACobrar ACobrar => Venta.Efectivo(Tarjeta + Transferencia + Credito);
     private long Faltante => Math.Max(0, ACobrar.ACobrarCentavos - Efectivo);
     private long Cambio => Math.Max(0, Efectivo - ACobrar.ACobrarCentavos);
 
@@ -91,26 +176,90 @@
             await CobrarAsync();
     }
 
+    /// <summary>Lo que da en efectivo se queda; el resto (con sus centavos) va a su cuenta.</summary>
+    private void ElRestoACredito()
+    {
+        var resto = Math.Max(0, TotalCentavos - Tarjeta - Transferencia - Efectivo);
+        _credito = Pesos(resto);
+    }
+
+    private void TodoACredito()
+    {
+        _credito = Pesos(Math.Max(0, TotalCentavos - Tarjeta - Transferencia));
+        _efectivo = "0";
+    }
+
+    private static string Pesos(long centavos) => (centavos / 100m).ToString("0.00", CultureInfo.InvariantCulture);
+
     private async Task CobrarAsync()
     {
         if (_ocupado || Faltante > 0)
             return;
+        _error = null;
+        if (Tarjeta + Transferencia + Credito > TotalCentavos)
+        {
+            _error = "Tarjeta, transferencia y crédito no pueden pasar del total: no dan cambio.";
+            return;
+        }
+        // Pasar el límite: el cajero lo pide; el encargado y el dueño pueden solos. Sin crédito, no hay autorización que valga.
+        if (Exceso > 0 && (_autorizacion is null || Exceso > _autorizadoHasta))
+        {
+            if (!ConCredito)
+            {
+                _error = $"No tiene crédito: solo puede usar su saldo a favor ({Formato.Dinero(Disponible)}).";
+                return;
+            }
+            _ocupado = true;
+            try
+            {
+                var decision = await Servicio.PermisoAsync(new SolicitudPermiso(Sesion.UsuarioId, Caja.SucursalId, AccionControlada.ExcederLimiteCredito, Exceso));
+                switch (decision.Nivel)
+                {
+                    case NivelPermiso.RequiereAutorizacion:
+                        _autorizar = Exceso;
+                        return;
+                    case NivelPermiso.NoPermitido:
+                        _error = "No tienes permiso para fiar arriba del límite.";
+                        return;
+                }
+            }
+            catch (ErrorCaja ex)
+            {
+                _error = ex.Message;
+                return;
+            }
+            finally
+            {
+                _ocupado = false;
+            }
+        }
+        await MandarAsync();
+    }
 
+    private async Task AutorizadoAsync(Guid autorizacionId)
+    {
+        (_autorizacion, _autorizadoHasta, _autorizar) = (autorizacionId, _autorizar ?? 0, null);
+        await MandarAsync();
+    }
+
+    private async Task MandarAsync()
+    {
         var cobros = new List<CobroSolicitado>();
         if (Tarjeta > 0)
             cobros.Add(new CobroSolicitado(FormaPago.Tarjeta, Tarjeta, Vacio(_refTarjeta)));
         if (Transferencia > 0)
             cobros.Add(new CobroSolicitado(FormaPago.Transferencia, Transferencia, Vacio(_refTransferencia)));
-        if (Tarjeta + Transferencia > TotalCentavos)
-        {
-            _error = "Tarjeta y transferencia no pueden pasar del total: no dan cambio.";
-            return;
-        }
+        if (Credito > 0)
+            cobros.Add(new CobroSolicitado(FormaPago.Credito, Credito));
         if (ACobrar.ACobrarCentavos > 0)
             cobros.Add(new CobroSolicitado(FormaPago.Efectivo, Efectivo));
 
         _ocupado = true;
-        _error = await AlCobrar(cobros);
+        var autorizacion = Exceso > 0 ? _autorizacion : null;
+        _error = await AlCobrar(cobros, autorizacion);
+        // Si no se cobró, esa autorización ya no sirve (venció, era por menos o el saldo cambió): se vuelve a pedir.
+        if (_error is not null && autorizacion is not null)
+            (_autorizacion, _autorizadoHasta) = (null, 0);
         _ocupado = false;
     }
 
