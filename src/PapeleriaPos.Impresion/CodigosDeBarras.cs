@@ -60,7 +60,7 @@ public static class CodigosDeBarras
     public static bool[] CodificarEan13(string codigo)
     {
         if (!Ean13.EsValido(codigo))
-            throw new ArgumentException($"«{codigo}» no es un EAN-13 válido.", nameof(codigo));
+            throw new ArgumentException($"«{codigo}» no es un EAN-13 válido.");
         var franjas = new System.Text.StringBuilder("101");
         var paridad = Paridad[codigo[0] - '0'];
         for (var i = 1; i <= 6; i++)
@@ -96,7 +96,7 @@ public static class CodigosDeBarras
     public static List<int> Simbolos(string texto)
     {
         if (texto.Length == 0 || texto.Any(c => c < ' ' || c > '~'))
-            throw new ArgumentException($"«{texto}» no se puede poner en Code 128: solo letras, números y signos sin acento.", nameof(texto));
+            throw new ArgumentException($"«{texto}» no se puede poner en Code 128: solo letras, números y signos sin acento.");
 
         static int Digitos(string t, int desde)
         {

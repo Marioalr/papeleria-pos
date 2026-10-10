@@ -33,7 +33,7 @@ public static class HojaEtiquetas
         FormatoEtiquetas formato, IReadOnlyList<Etiqueta> etiquetas, int empezarEn = 1, decimal ajusteXMm = 0, decimal ajusteYMm = 0, bool soloBordes = false)
     {
         if (formato.Problema() is { } problema)
-            throw new ArgumentException(problema, nameof(formato));
+            throw new ArgumentException(problema);
         var saltar = Math.Clamp(empezarEn, 1, formato.PorHoja) - 1;
         var lugares = soloBordes ? Enumerable.Repeat<Etiqueta?>(null, formato.PorHoja).ToList() : [.. Enumerable.Repeat<Etiqueta?>(null, saltar), .. etiquetas];
 

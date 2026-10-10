@@ -114,10 +114,10 @@ public class Venta
     {
         RequerirEditable();
         if (!cantidad.EsPositiva)
-            throw new ArgumentOutOfRangeException(nameof(cantidad), "La cantidad debe ser positiva.");
+            throw new ArgumentException("La cantidad debe ser positiva.");
         var cantidadBase = cantidad.Por(presentacion.Factor);
         if (linea.Unidad == UnidadBase.Pieza && !cantidadBase.EsEntera)
-            throw new ArgumentException("Este producto se vende por pieza: no admite fracciones.", nameof(cantidad));
+            throw new ArgumentException("Este producto se vende por pieza: no admite fracciones.");
 
         var aplicado = CalculoPrecio.Calcular(precios, SucursalId, presentacion, cantidad, MayoreoDeCliente)
             ?? throw new InvalidOperationException($"«{linea.Descripcion}» no tiene precio.");
@@ -195,14 +195,14 @@ public class Venta
         if (linea.EsImpresiones)
             throw new InvalidOperationException("Las impresiones no llevan descuento: su precio especial va aparte.");
         if (string.IsNullOrWhiteSpace(motivo))
-            throw new ArgumentException("El descuento lleva motivo.", nameof(motivo));
+            throw new ArgumentException("El descuento lleva motivo.");
         if ((centesimas is null) == (montoCentavos is null))
             throw new ArgumentException("El descuento va en porcentaje o en monto.");
         if (centesimas is <= 0 or > 10000)
-            throw new ArgumentOutOfRangeException(nameof(centesimas), "El porcentaje va de más de 0 a 100 %.");
+            throw new ArgumentException("El porcentaje va de más de 0 a 100 %.");
         var bruto = linea.ImporteSinDescuentoCentavos;
         if (montoCentavos is { } monto && (monto <= 0 || monto > bruto))
-            throw new ArgumentOutOfRangeException(nameof(montoCentavos), $"El descuento de «{linea.Descripcion}» va de más de $0 a {bruto / 100m:C2}.");
+            throw new ArgumentException($"El descuento de «{linea.Descripcion}» va de más de $0 a {bruto / 100m:C2}.");
         (linea.DescuentoCentesimas, linea.DescuentoCentavos, linea.MotivoDescuento) = (centesimas, montoCentavos ?? 0, motivo.Trim());
         AplicarDescuento(linea, bruto);
         Recalcular();
@@ -228,9 +228,9 @@ public class Venta
             throw new ArgumentException("El descuento va en porcentaje o en monto.");
         var total = lineas.Sum(l => l.ImporteSinDescuentoCentavos);
         if (monto <= 0 || monto > total)
-            throw new ArgumentOutOfRangeException(nameof(montoCentavos), $"El descuento va de más de $0 a {total / 100m:C2}.");
+            throw new ArgumentException($"El descuento va de más de $0 a {total / 100m:C2}.");
         if (string.IsNullOrWhiteSpace(motivo))
-            throw new ArgumentException("El descuento lleva motivo.", nameof(motivo));
+            throw new ArgumentException("El descuento lleva motivo.");
         var partes = lineas.ToDictionary(l => l, l => (long)(Int128.CreateTruncating(monto) * l.ImporteSinDescuentoCentavos / total));
         partes[lineas.MaxBy(l => l.ImporteSinDescuentoCentavos)!] += monto - partes.Values.Sum();
         foreach (var (l, parte) in partes)
@@ -293,7 +293,7 @@ public class Venta
     {
         RequerirEditable();
         if (precioCentavos <= 0)
-            throw new ArgumentOutOfRangeException(nameof(precioCentavos), "El precio debe ser mayor a cero.");
+            throw new ArgumentException("El precio debe ser mayor a cero.");
         if (linea.VarianteId is null)
             throw new InvalidOperationException("El artículo común ya lleva el precio que se escribió: bórralo y agrégalo de nuevo.");
         linea.PrecioOriginalCentavos ??= linea.PrecioCentavos;
@@ -310,7 +310,7 @@ public class Venta
         if (Estado != EstadoVenta.Pagada)
             throw new InvalidOperationException("Solo se cancela un ticket cobrado.");
         if (string.IsNullOrWhiteSpace(motivo))
-            throw new ArgumentException("La cancelación lleva motivo.", nameof(motivo));
+            throw new ArgumentException("La cancelación lleva motivo.");
         Estado = EstadoVenta.Cancelada;
         CanceladaUtc = ahoraUtc;
         CanceladaPorId = usuarioId;
@@ -354,9 +354,9 @@ public class Venta
     {
         RequerirEditable();
         if (string.IsNullOrWhiteSpace(descripcion))
-            throw new ArgumentException("El artículo común necesita una descripción.", nameof(descripcion));
+            throw new ArgumentException("El artículo común necesita una descripción.");
         if (precioCentavos <= 0 || !cantidad.EsPositiva)
-            throw new ArgumentOutOfRangeException(nameof(precioCentavos), "Precio y cantidad deben ser positivos.");
+            throw new ArgumentException("Precio y cantidad deben ser positivos.");
 
         var linea = new VentaLinea
         {
@@ -448,11 +448,11 @@ public class Venta
         if (Lineas.Count == 0)
             throw new InvalidOperationException("No hay nada que cobrar.");
         if (cobros.Any(c => c.MontoCentavos <= 0))
-            throw new ArgumentException("Cada cobro debe ser mayor a cero.", nameof(cobros));
+            throw new ArgumentException("Cada cobro debe ser mayor a cero.");
         if (cobros.Count(c => c.Forma == FormaPago.Efectivo) > 1)
-            throw new ArgumentException("El efectivo va en un solo cobro.", nameof(cobros));
+            throw new ArgumentException("El efectivo va en un solo cobro.");
         if (cobros.Count(c => c.Forma == FormaPago.Credito) > 1)
-            throw new ArgumentException("El crédito va en un solo cobro.", nameof(cobros));
+            throw new ArgumentException("El crédito va en un solo cobro.");
         if (cobros.Any(c => c.Forma == FormaPago.Credito) && ClienteId is null)
             throw new InvalidOperationException("El crédito es para un cliente registrado: elígelo con CTRL+L.");
 

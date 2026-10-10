@@ -43,7 +43,7 @@ public class ConteoCiclicoRenglon
         if (Contado is not null)
             throw new InvalidOperationException("Ya se contó hoy: si hubo un error, se corrige con un ajuste.");
         if (contado.Milesimas < 0)
-            throw new ArgumentOutOfRangeException(nameof(contado), "Lo contado no puede ser negativo.");
+            throw new ArgumentException("Lo contado no puede ser negativo.");
         (Contado, Esperado, CostoDiferenciaCentavos, ContadoPorId, ContadoUtc) = (contado, esperado, costoDiferenciaCentavos, usuarioId, ahoraUtc);
     }
 }

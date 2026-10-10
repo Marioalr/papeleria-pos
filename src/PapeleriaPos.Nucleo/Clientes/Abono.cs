@@ -77,7 +77,7 @@ public static class CalculoAbono
         if (saldoCentavos <= 0)
             throw new InvalidOperationException("No debe nada: no hay qué abonar.");
         if (montoCentavos is <= 0)
-            throw new ArgumentException("El abono debe ser mayor a cero.", nameof(montoCentavos));
+            throw new ArgumentException("El abono debe ser mayor a cero.");
         switch (forma)
         {
             case FormaPago.Efectivo:
@@ -103,7 +103,7 @@ public static class CalculoAbono
                 return new AbonoCalculado(monto, monto, 0, 0, monto == saldoCentavos);
             }
             default:
-                throw new ArgumentException("Un abono se paga en efectivo, con tarjeta o con transferencia.", nameof(forma));
+                throw new ArgumentException("Un abono se paga en efectivo, con tarjeta o con transferencia.");
         }
     }
 

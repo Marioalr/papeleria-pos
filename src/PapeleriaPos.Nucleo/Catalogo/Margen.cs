@@ -15,7 +15,7 @@ public static class Margen
     public static int Calcular(long precioCentavos, decimal costoCentavos)
     {
         if (precioCentavos <= 0)
-            throw new ArgumentOutOfRangeException(nameof(precioCentavos), "El precio debe ser mayor a cero.");
+            throw new ArgumentException("El precio debe ser mayor a cero.");
         return (int)Math.Round((precioCentavos - costoCentavos) * 10000 / precioCentavos, MidpointRounding.AwayFromZero);
     }
 
@@ -23,7 +23,7 @@ public static class Margen
     public static long PrecioSugerido(decimal costoCentavos, int margenMinimoCentesimas)
     {
         if (margenMinimoCentesimas is < 0 or >= 10000)
-            throw new ArgumentOutOfRangeException(nameof(margenMinimoCentesimas), "El margen va de 0 a 99.99 %.");
+            throw new ArgumentException("El margen va de 0 a 99.99 %.");
         var exacto = costoCentavos * 10000 / (10000 - margenMinimoCentesimas);
         return Math.Max(RedondeoSugeridoCentavos, (long)Math.Ceiling(exacto / RedondeoSugeridoCentavos) * RedondeoSugeridoCentavos);
     }
