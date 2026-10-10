@@ -77,7 +77,8 @@ Se pueden poner umbrales. Ejemplos de reglas (todas editables):
 
 **Cómo se autoriza:**
 - con el PIN del encargado o del dueño en la misma caja, o
-- a distancia por Telegram: llega la solicitud con el detalle y botones para aprobar o rechazar.
+- a distancia por Telegram: llega la solicitud con el detalle y botones para aprobar o rechazar. Pedir además un PIN
+  está por decidir; no necesita el central ([pendientes](plan.md#pendientes)).
 
 Cada autorización guarda quién, cuándo y desde dónde. Es la idea de los permisos del invitado de Control Print,
 extendida a todo el POS.
@@ -98,6 +99,8 @@ Queda registrado, con quién y cuándo:
 - cambios de precio y descuentos
 - aperturas del cajón sin venta
 - ajustes de inventario
+- acciones a distancia (bloqueos, cortes X sorpresa, conteos pedidos) y lo que decida el piloto automático, cuando
+  existan
 - ventas bajo costo
 - reimpresiones
 - autorizaciones dadas y negadas
@@ -105,9 +108,17 @@ Queda registrado, con quién y cuándo:
 
 ## Alertas al dueño (Telegram)
 
+Con el [central](servidor-remoto.md) (pospuesto): tres niveles; lo urgente llegaría con la foto de la cámara de esa
+caja y botones, y si el dueño no lo ve, sonaría aunque el celular esté en silencio y después habría llamada. Desde el
+aviso se podría actuar: bloquear lo sensible o toda la caja, pedir un corte X o un conteo ([cámaras](camaras.md)).
+
 - Diferencia en el corte mayor a lo configurado
 - Cancelaciones, descuentos y precios fuera de regla
-- Sucursal sin conexión o caja principal apagada (latido cada minuto)
+- Caja principal apagada o sin internet en horario: el bot del POS vive en ella y no puede avisar de su propia caja;
+  lo avisa la vigilancia de Healthchecks.io, a la que la caja principal se reporta cada pocos minutos
+  ([plan](plan.md#para-el-piloto-con-dos-cajas))
+- Con las cámaras y el contador (pospuesto): personas en la tienda después del corte Z, y mucha gente con pocos
+  tickets
 - Caja abierta fuera de horario
 - Existencia negativa y diferencias en conteos y recepciones
 - Transferencias sin verificar al cierre

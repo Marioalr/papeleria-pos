@@ -144,12 +144,16 @@ Los datos reales del negocio (como la base de eleventa) nunca se guardan en el r
 | [Fase 1: impresión](docs/fase-1-impresion.md) | Entrega 5: lo de Control Print dentro del POS, y los descuentos |
 | [Fase 2: inventario](docs/fase-2-inventario.md) | Catálogo, compras con recepción ciega y el documento del proveedor, ajustes y conteos, etiquetas y sugerido de compra |
 | [Arquitectura](docs/arquitectura.md) | Componentes, datos, contingencia, varias sucursales, red, respaldos y hardware |
-| [Administrar desde fuera](docs/servidor-remoto.md) | Central en servidor virtual, gestión por excepción y costos |
+| [Central y administración ante un suceso](docs/servidor-remoto.md) | Pospuesto: el central para varias sucursales (sincronización, precios por sucursal, mercancía, avisos que escalan, acciones a distancia, opciones y costos) |
+| [Cámaras, puente y contador](docs/camaras.md) | El grabador Dahua con el POS (pospuesto) y cómo configurarlo por seguridad (ya) |
+| [Prueba de varias sucursales en Linux](docs/prueba-sucursales-linux.md) | Pospuesto: las máquinas, las etapas, las fallas a provocar y las metas |
+| [Notas de investigación](docs/notas.md) | La forma de trabajar y lo descubierto el 2026-10-08 y el 2026-10-09: lo que aplica ya con una sucursal (incluida la falla de la red de la tienda) y lo que sirve al retomar la multisucursal |
+| [Pruebas en la tienda](docs/pruebas-en-tienda.md) | Guía para los sábados y domingos en la matriz: qué se prepara entre semana y qué se hace cada fin de semana |
 | [Caja y control](docs/caja-y-control.md) | Venta, cobro, cortes, autorizaciones configurables, bitácora y alertas |
 | [Catálogo e inventario](docs/inventario.md) | Variantes, presentaciones, códigos, kardex, compras, conteos y precios |
-| [Servicios y costeo](docs/servicios.md) | Recetas, servicios con parámetros, utilidad directa y neta |
+| [Servicios y costeo](docs/servicios.md) | Recetas, servicios con parámetros y tres niveles de costo |
 | [Pedidos](docs/pedidos.md) | Trabajos que esperan: cola compartida, charolas, recogida, clientes registrados y duplicados |
 | [WhatsApp](docs/whatsapp.md) | Cómo llegan los archivos de WhatsApp a los pedidos |
 | [Módulo de impresión](docs/impresion.md) | Costo real de cada impresión (reescritura de Control Print) |
 | [Migración desde eleventa](docs/migracion-eleventa.md) | Importación, diagnóstico y arranque |
-| [Ideas a evaluar](docs/ideas.md) | Dispositivos propios (contador de clientes, presencia, vigilancia) y otras ideas |
+| [Ideas a evaluar](docs/ideas.md) | La multisucursal pospuesta, cámaras con una sola sucursal, dispositivos propios y otras ideas |

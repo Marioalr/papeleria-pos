@@ -47,11 +47,12 @@
                                                                        └─────────────────────┘
 ```
 
-- La caja encuentra al servicio por la **IP fija** reservada en el router; si cambia, lo busca sola en la red (un
-  aviso por difusión que el servicio contesta).
-- Cada caja imprime en su propia impresora de tickets (la de la red o la conectada a esa PC).
-- Todas las cajas de una sucursal llevan la misma versión del programa (las actualizaciones llegan después, con el
-  central).
+- La caja encuentra al servicio por la **IP fija** reservada en el router. Hoy solo lo busca en la red al darla de alta:
+  si después cambia la IP de la caja principal, hay que reconfigurarla (pendiente: que la vuelva a buscar sola).
+- En la matriz hay **una sola impresora de tickets** en la red para las dos cajas (respuesta del dueño, 2026-10-08),
+  y no hay cajón (2026-10-09, [notas](notas.md#impresoras)).
+- Todas las cajas de una sucursal llevan la misma versión del programa (las actualizaciones las instala soporte a
+  distancia; con el central, se reparten solas).
 
 ## Alta de una caja
 
@@ -72,7 +73,8 @@ de color y la caja pasa a contingencia.
 
 **Qué sigue funcionando:**
 
-- Escanear, buscar, varios tickets, cobro mixto, ticket impreso y cajón.
+- Escanear, buscar, varios tickets, cobro mixto, ticket impreso y cajón (si la impresora de tickets responde por la
+  red; si se cayó la red local, la venta queda guardada para reimprimir y el cajón se abre con la llave).
 - **Folios:** la serie es de la caja (A, B…), así que la caja continúa su propio consecutivo sin chocar con las
   demás. Al volver, el servicio acepta esos folios.
 - **Precios y catálogo:** la última copia que recibió. La caja la actualiza en cuanto cambia algo (cada producto y
@@ -110,8 +112,9 @@ venta en contingencia queda marcada para que se vea en el corte y en la bitácor
 
 - Copia diaria de la base en la caja principal (y otra al hacer el corte Z), con los últimos 30 días.
 - Se hace con la copia en línea de SQLite: no detiene la venta.
-- La copia fuera de la tienda (en la nube) llega con el central (fase 6). Mientras tanto, opcional: copiar también a
-  una memoria USB o a otra carpeta.
+- La copia fuera de la tienda: desde el piloto la caja principal la sube a Backblaze B2, cifrada y con una llave que no
+  puede borrar ([notas](notas.md#respaldo-fuera-de-la-tienda-y-aviso-de-apertura)). Antes del piloto, opcional: copiar
+  también a una memoria USB o a otra carpeta.
 
 ## Cómo se arma
 
@@ -134,7 +137,7 @@ folios, inventario y corte correctos.
 
 | Pregunta | Respuesta | Efecto |
 |---|---|---|
-| Cajas | 3 cajas en la matriz; la principal es otra PC (no la de desarrollo) | El servicio se instala en esa PC; las otras dos se dan de alta por la red |
+| Cajas | 3 cajas en la matriz (hoy son 2, la principal y la secundaria; se planea una 3.ª); la principal es otra PC (no la de desarrollo) | El servicio se instala en esa PC; las otras dos se dan de alta por la red |
 | Autorizaciones sin servidor | Se permiten | Copia local de los PIN cifrados; marcadas "en contingencia" en la bitácora |
 | Corte Z sin servidor | Se permite, con ticket | La caja cierra el turno e imprime el corte; se cuadra al volver |
 | Respaldos | 30 días de historia | Copia diaria y al corte Z |
