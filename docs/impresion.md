@@ -32,7 +32,8 @@ Pendientes que vienen de Control Print:
 - Que los costos solo los vea quien tiene permiso, aplicado en el servidor y no solo en la pantalla.
 - Cotizar PDF y detector de documentos comunes (CURP, recibo de luz).
 - Impresiones desde el celular y copias hechas en el panel de la impresora.
-- Varias impresoras (otra WF-6590 o la L5590), sobre todo pensando en la sucursal 2.
+- Varias impresoras: la matriz tiene **dos WF-6590 y una EcoTank L5590**, todas por red. Hoy el POS mide y cobra una
+  sola; las tres hacen falta antes del piloto ([plan](plan.md#para-el-piloto-con-dos-cajas)).
 
 ## Transición
 

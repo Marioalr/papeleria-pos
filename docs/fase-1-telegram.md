@@ -1,7 +1,8 @@
 # Fase 1, entrega 4 — Telegram
 
 > **Revisado.** El dueño se entera de lo importante y autoriza sin estar en la tienda. Parte de las
-> [alertas](caja-y-control.md#alertas-al-dueño-telegram) y de la [gestión por excepción](servidor-remoto.md#gestión-por-excepción).
+> [alertas](caja-y-control.md#alertas-al-dueño-telegram) y de la
+> [administración ante un suceso](servidor-remoto.md#la-propuesta).
 
 **Avance:** ya funciona todo, probado con un Telegram simulado (sin internet):
 
@@ -42,9 +43,13 @@ Falta probarlo con el bot de verdad.
 
 - **Solo conexiones de salida.** El servicio le pregunta a Telegram cada pocos segundos si hay respuestas (no
   necesita IP pública ni abrir puertos). Telegram solo deja un receptor por bot, así que el bot vive en la caja
-  principal; cuando llegue el central (fase 6), se muda ahí y reparte a cada sucursal.
+  principal. Con el [central](servidor-remoto.md) (pospuesto con la multisucursal), un solo bot en el central que
+  reparte a cada sucursal, con el nombre de la sucursal, la foto del suceso y, para lo urgente, una alerta que suena
+  aunque el celular esté en silencio y una llamada si el dueño no lo ve.
 - **Cola de salida.** Cada mensaje se guarda antes de mandarse; si no hay internet, sale cuando vuelva, sin repetirse.
-- **Solo chats vinculados.** El bot ignora a cualquiera que no se haya vinculado, aunque encuentre el bot.
+- **Solo chats vinculados.** El bot ignora a cualquiera que no se haya vinculado, aunque encuentre el bot. Hoy, si
+  se vincula un grupo, cualquiera del grupo puede usarlo ([decisión](#decisiones-de-la-revisión) y
+  [notas](notas.md#reportes)).
 
 ### Vincular un celular
 
@@ -52,7 +57,7 @@ Falta probarlo con el bot de verdad.
    (vale 10 minutos).
 2. En Telegram, le escribe al bot `/vincular 123456`.
 3. El bot contesta "Listo, Ana: aquí te llegarán las alertas". Desde ahí, ese chat es de ese usuario: si autoriza,
-   queda en la bitácora con su nombre.
+   queda en la bitácora con su nombre (en un grupo vinculado, hoy quedaría con su nombre aunque apriete otro).
 
 El dueño puede desvincular un chat desde la misma pantalla (por ejemplo, si cambia de celular).
 
@@ -115,7 +120,7 @@ Al hacer el último corte Z del día (cuando ya no queda ningún turno abierto e
 
 | Pregunta | Respuesta | Efecto |
 |---|---|---|
-| Quién recibe y autoriza | Solo el dueño | Solo se vinculan chats del dueño; las autorizaciones remotas las contesta él |
+| Quién recibe y autoriza | Solo el dueño | Solo se vinculan chats del dueño; las autorizaciones remotas las contesta él. Falta en el código: hoy se puede vincular un grupo y se autoriza por chat, no por persona ([notas](notas.md#reportes)) |
 | Umbrales | Los propuestos | Corte $50, devolución $200, salida $500, caja sin conexión 10 min; todos configurables |
 | Resumen diario | Con el último corte Z del día | Sale cuando ya no queda turno abierto en la sucursal |
 | Horario | Simulado y configurable | 8:00 a 21:00 por omisión; se cambia en Configuración → Telegram |

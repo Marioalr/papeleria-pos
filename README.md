@@ -67,8 +67,9 @@ Usuarios de prueba que crea `preparar-caja` (solo para bases de prueba):
 
 ### Instalar en la tienda (varias cajas)
 
-Instala el administrador de cada PC; después todo se usa desde un usuario común de Windows, sin administrador
-([plan](docs/plan.md#instalación-y-usuarios-de-windows)).
+Instala el administrador de cada PC; después todo se usa desde una cuenta común de Windows, sin administrador
+(el cajero, el encargado y el dueño entran con su usuario y PIN del POS desde esa misma cuenta;
+[plan](docs/plan.md#instalación-y-usuarios-de-windows)).
 
 1. Publicar, en la PC de desarrollo:
 
@@ -87,7 +88,7 @@ Instala el administrador de cada PC; después todo se usa desde un usuario comú
 3. **Cada caja** (también la principal): como administrador, correr `instalar-caja.ps1` desde `publicar/caja` (con
    `-ColaImpresion "<cola>"` en la PC de la WF-6590). La copia a Archivos de programa, deja
    `C:\ProgramData\PapeleriaPos\Caja` con escritura para los usuarios y pone el acceso en el escritorio de todos.
-   Después, con el usuario de todos los días, se abre la caja: la primera vez pide la dirección de la caja principal
+   Después, con la cuenta de Windows de todos los días, se abre la caja: la primera vez pide la dirección de la caja principal
    (o la busca en la red) y el PIN del dueño, y queda dada de alta.
 
 Para probar en el navegador lo que hace la ventana de Windows:
@@ -104,7 +105,7 @@ Para que alguien de la tienda pruebe lo que ya funciona, solo y sin tocar eleven
 - **El instalador** `PapeleriaPos-Prueba.exe` lo arma GitHub Actions en Windows (flujo «Instalador de prueba»). Se lanza a
   mano desde la pestaña Actions, con una etiqueta `prueba-*` o en un PR que toque `instalacion/`, y queda como artefacto
   de la corrida.
-- **Lo instala el administrador, para todos los usuarios;** quien prueba la usa con su usuario común. En el escritorio
+- **Lo instala el administrador, para todas las cuentas de Windows;** quien prueba la usa con una cuenta común. En el escritorio
   deja «Papelería POS (prueba)» y la carpeta «Ejemplos de la prueba»: el Léeme con los usuarios y PIN, y una factura
   XML y una nota PDF de un proveedor de la base.
 - **La caja arranca su propio servicio** en el puerto 5180 y lo apaga al cerrarse. No hay servicio de Windows ni
@@ -143,12 +144,16 @@ Los datos reales del negocio (como la base de eleventa) nunca se guardan en el r
 | [Fase 1: impresión](docs/fase-1-impresion.md) | Entrega 5: lo de Control Print dentro del POS, y los descuentos |
 | [Fase 2: inventario](docs/fase-2-inventario.md) | Catálogo, compras con recepción ciega y el documento del proveedor, ajustes y conteos, etiquetas y sugerido de compra |
 | [Arquitectura](docs/arquitectura.md) | Componentes, datos, contingencia, varias sucursales, red, respaldos y hardware |
-| [Administrar desde fuera](docs/servidor-remoto.md) | Central en servidor virtual, gestión por excepción y costos |
+| [Central y administración ante un suceso](docs/servidor-remoto.md) | Pospuesto: el central para varias sucursales (sincronización, precios por sucursal, mercancía, avisos que escalan, acciones a distancia, opciones y costos) |
+| [Cámaras, puente y contador](docs/camaras.md) | El grabador Dahua con el POS (pospuesto) y cómo configurarlo por seguridad (ya) |
+| [Prueba de varias sucursales en Linux](docs/prueba-sucursales-linux.md) | Pospuesto: las máquinas, las etapas, las fallas a provocar y las metas |
+| [Notas de investigación](docs/notas.md) | La forma de trabajar y lo descubierto el 2026-10-08 y el 2026-10-09: lo que aplica ya con una sucursal (incluida la falla de la red de la tienda) y lo que sirve al retomar la multisucursal |
+| [Pruebas en la tienda](docs/pruebas-en-tienda.md) | Guía para los sábados y domingos en la matriz: qué se prepara entre semana y qué se hace cada fin de semana |
 | [Caja y control](docs/caja-y-control.md) | Venta, cobro, cortes, autorizaciones configurables, bitácora y alertas |
 | [Catálogo e inventario](docs/inventario.md) | Variantes, presentaciones, códigos, kardex, compras, conteos y precios |
-| [Servicios y costeo](docs/servicios.md) | Recetas, servicios con parámetros, utilidad directa y neta |
+| [Servicios y costeo](docs/servicios.md) | Recetas, servicios con parámetros y tres niveles de costo |
 | [Pedidos](docs/pedidos.md) | Trabajos que esperan: cola compartida, charolas, recogida, clientes registrados y duplicados |
 | [WhatsApp](docs/whatsapp.md) | Cómo llegan los archivos de WhatsApp a los pedidos |
 | [Módulo de impresión](docs/impresion.md) | Costo real de cada impresión (reescritura de Control Print) |
 | [Migración desde eleventa](docs/migracion-eleventa.md) | Importación, diagnóstico y arranque |
-| [Ideas a evaluar](docs/ideas.md) | Dispositivos propios (contador de clientes, presencia, vigilancia) y otras ideas |
+| [Ideas a evaluar](docs/ideas.md) | La multisucursal pospuesta, cámaras con una sola sucursal, dispositivos propios y otras ideas |

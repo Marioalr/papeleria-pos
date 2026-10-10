@@ -63,7 +63,7 @@ public class Compra
     {
         RequerirEstado(EstadoCompra.Recibiendo, "El conteo ya se cerró.");
         if (cantidad.Milesimas < 0)
-            throw new ArgumentOutOfRangeException(nameof(cantidad), "La cantidad no puede ser negativa.");
+            throw new ArgumentException("La cantidad no puede ser negativa.");
         var linea = Conteo.FirstOrDefault(c => c.PresentacionId == presentacionId);
         if (cantidad.Milesimas == 0)
         {
@@ -90,7 +90,7 @@ public class Compra
         if (string.IsNullOrWhiteSpace(codigo))
             throw new ArgumentException("Escanea o escribe el código.");
         if (cantidad.Milesimas < 0)
-            throw new ArgumentOutOfRangeException(nameof(cantidad), "La cantidad no puede ser negativa.");
+            throw new ArgumentException("La cantidad no puede ser negativa.");
         var limpio = codigo.Trim();
         var linea = Conteo.FirstOrDefault(c => c.VarianteId is null && string.Equals(c.Codigo, limpio, StringComparison.OrdinalIgnoreCase));
         if (cantidad.Milesimas == 0)
@@ -153,9 +153,9 @@ public class Compra
     {
         RequerirEstado(EstadoCompra.PorCostear, "La nota se captura cuando termina el conteo.");
         if (!cantidad.EsPositiva)
-            throw new ArgumentOutOfRangeException(nameof(cantidad), "La cantidad de la nota va mayor a cero.");
+            throw new ArgumentException("La cantidad de la nota va mayor a cero.");
         if (importeCentavos < 0)
-            throw new ArgumentOutOfRangeException(nameof(importeCentavos), "El importe no puede ser negativo.");
+            throw new ArgumentException("El importe no puede ser negativo.");
         var renglon = renglonId is { } id
             ? Renglones.FirstOrDefault(r => r.Id == id) ?? throw new InvalidOperationException("El renglón ya no existe.")
             : null;
@@ -236,9 +236,9 @@ public class Compra
         if (renglon.Ligado)
             throw new InvalidOperationException("Ese renglón es de un producto: corrígelo con su presentación.");
         if (!cantidad.EsPositiva)
-            throw new ArgumentOutOfRangeException(nameof(cantidad), "La cantidad de la nota va mayor a cero.");
+            throw new ArgumentException("La cantidad de la nota va mayor a cero.");
         if (importeCentavos < 0)
-            throw new ArgumentOutOfRangeException(nameof(importeCentavos), "El importe no puede ser negativo.");
+            throw new ArgumentException("El importe no puede ser negativo.");
         renglon.Cantidad = cantidad;
         renglon.ImporteCentavos = importeCentavos;
     }

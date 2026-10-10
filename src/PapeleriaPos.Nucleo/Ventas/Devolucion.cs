@@ -109,9 +109,9 @@ public static class CalculoDevolucion
         if (ahoraUtc - venta.PagadaUtc > TimeSpan.FromDays(Devolucion.DiasParaDevolver))
             throw new InvalidOperationException($"El ticket tiene más de {Devolucion.DiasParaDevolver} días: ya no admite devoluciones.");
         if (string.IsNullOrWhiteSpace(motivo))
-            throw new ArgumentException("La devolución lleva motivo.", nameof(motivo));
+            throw new ArgumentException("La devolución lleva motivo.");
         if (lineas.Count == 0 || lineas.Any(l => !l.Cantidad.EsPositiva))
-            throw new ArgumentException("Indica qué se devuelve y cuánto.", nameof(lineas));
+            throw new ArgumentException("Indica qué se devuelve y cuánto.");
 
         var devolucion = new Devolucion
         {
@@ -126,7 +126,7 @@ public static class CalculoDevolucion
         foreach (var pedida in lineas.GroupBy(l => l.VentaLineaId))
         {
             var linea = venta.Lineas.SingleOrDefault(l => l.Id == pedida.Key)
-                ?? throw new ArgumentException("Esa línea no es de este ticket.", nameof(lineas));
+                ?? throw new ArgumentException("Esa línea no es de este ticket.");
             var cantidad = new Cantidad(pedida.Sum(p => p.Cantidad.Milesimas));
             if (cantidad > linea.CantidadPorDevolver)
                 throw new InvalidOperationException($"De «{linea.Descripcion}» solo quedan {linea.CantidadPorDevolver} por devolver.");

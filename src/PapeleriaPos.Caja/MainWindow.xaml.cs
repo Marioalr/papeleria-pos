@@ -13,7 +13,7 @@ namespace PapeleriaPos.Caja;
 /// <summary>
 /// Configuración de esta PC. La primera vez sale de caja.json, junto al programa; al dar de alta la caja se guarda en
 /// ProgramData\PapeleriaPos\Caja con la llave cifrada por Windows. Esa carpeta la deja el instalador (administrador) con
-/// escritura para los usuarios: la caja se usa desde un usuario común y sirve igual para cualquiera que entre a la PC
+/// escritura para los usuarios: la caja se usa desde una cuenta común de Windows y sirve igual para cualquier cuenta de la PC
 /// (docs/plan.md, instalación y usuarios de Windows).
 /// </summary>
 /// <param name="Impresora">"tcp://ip:9100" (impresora de red), el nombre de una impresora de Windows, o vacío para ver el ticket en pantalla.</param>
