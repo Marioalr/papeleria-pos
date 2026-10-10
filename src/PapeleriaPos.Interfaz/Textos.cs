@@ -45,6 +45,7 @@ public static class Textos
         AccionControlada.ExcederLimiteCredito => "Fiar arriba del límite del cliente",
         AccionControlada.AjustarCredito => "Ajustar el saldo de un cliente",
         AccionControlada.CancelarAbono => "Cancelar un abono (en su turno)",
+        AccionControlada.DevolverSaldoAFavor => "Devolver en efectivo el saldo a favor de un cliente",
         _ => accion.ToString(),
     };
 

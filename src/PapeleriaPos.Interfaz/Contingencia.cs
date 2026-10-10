@@ -751,6 +751,20 @@ public sealed class Contingencia
         lote.Credito(s.Id, s.ClienteId, -monto, Ahora, null, s.Forma == FormaPago.Transferencia).Confirmar();
     }
 
+    /// <summary>
+    /// Un saldo a favor que se devuelve en línea (sube la cuenta): se anota antes de mandarlo, así si se pierde la respuesta
+    /// esta caja ya no cuenta con ese saldo a favor; se corrige con el comprobante.
+    /// </summary>
+    public void AnotarSaldoDevuelto(Guid id, Guid clienteId, long montoCentavos)
+    {
+        var plazo = Credito(clienteId)?.PlazoDias ?? ClienteRegistrado.PlazoPorOmision;
+        using var lote = _almacen.Lote();
+        lote.Credito(id, clienteId, montoCentavos, Ahora, CuentaCredito.Vence(Ahora, plazo)).Confirmar();
+    }
+
+    /// <summary>Si esta caja tiene algo del cliente sin subir: sus saldos del servicio todavía no lo incluyen.</summary>
+    public bool CreditoSinSubir(Guid clienteId) => _almacen.CreditoSinSubir(clienteId);
+
     /// <summary>El servicio rechazó lo que se le mandó (por una regla): no pasó, ya no se cuenta.</summary>
     public void QuitarCredito(Guid id)
     {
@@ -785,7 +799,8 @@ public sealed class Contingencia
                 lote.Guardar("base", new BaseTurno(turno.Id, resumen.FondoCentavos, new AnotacionDiario(Guid.Empty, turno.Id, resumen.Ventas,
                     resumen.EfectivoVentasCentavos, resumen.TarjetaCentavos, resumen.TransferenciaCentavos, resumen.EntradasCentavos,
                     resumen.SalidasCentavos, resumen.DevolucionesCentavos, resumen.Cancelaciones, resumen.RedondeoCentavos, resumen.CreditoCentavos,
-                    resumen.Abonos, resumen.AbonosEfectivoCentavos, resumen.AbonosTarjetaCentavos, resumen.AbonosTransferenciaCentavos))).LimpiarDiario();
+                    resumen.Abonos, resumen.AbonosEfectivoCentavos, resumen.AbonosTarjetaCentavos, resumen.AbonosTransferenciaCentavos,
+                    resumen.SaldoDevueltoCentavos))).LimpiarDiario();
             lote.Confirmar();
         }
     }
@@ -854,6 +869,19 @@ public sealed class Contingencia
         lote.Anotar(AnotacionAbono(Ids.Nuevo(), turnoId, c, -1)).Confirmar();
     }
 
+    /// <summary>
+    /// Un saldo a favor que se devolvió en línea (parte 3; sin conexión no se devuelve): sale del efectivo del turno, se
+    /// corrige lo anotado en la cuenta propia y los saldos se vuelven a pedir.
+    /// </summary>
+    public void SaldoDevueltoEnLinea(Guid turnoId, ComprobanteAbonoDto c)
+    {
+        using var lote = _almacen.Lote();
+        // Ya estaba anotado en la cuenta propia: con lo que de verdad subió, y que el siguiente latido confirme que ya lo tiene.
+        lote.CorregirCredito(c.AbonoId, c.MontoCentavos, null)
+            .Anotar(new AnotacionDiario(c.AbonoId, turnoId, Redondeo: -c.RedondeoCentavos, SaldoDevuelto: c.CobradoCentavos)).Confirmar();
+        _refrescarCredito = true;
+    }
+
     private static AnotacionDiario AnotacionAbono(Guid id, Guid turnoId, ComprobanteAbonoDto c, int signo) =>
         new(id, turnoId, Abonos: signo, Redondeo: signo * c.RedondeoCentavos,
             AbonosEfectivo: c.Forma == FormaPago.Efectivo ? signo * c.CobradoCentavos : 0,
@@ -876,13 +904,14 @@ public sealed class Contingencia
         var salidas = t.Salidas + d.Salidas;
         var devoluciones = t.Devoluciones + d.Devoluciones;
         var abonosEfectivo = t.AbonosEfectivo + d.AbonosEfectivo;
-        var esperado = base_.FondoCentavos + efectivo + abonosEfectivo + entradas - salidas - devoluciones;
+        var saldoDevuelto = t.SaldoDevuelto + d.SaldoDevuelto;
+        var esperado = base_.FondoCentavos + efectivo + abonosEfectivo + entradas - salidas - devoluciones - saldoDevuelto;
         long? contado = conteo?.Sum(c => c.Key * c.Value);
         return new CorteDto(tipo, HoraMexico.ALocal(Ahora), turno.Cajero, realizadoPor, t.Ventas + d.Ventas, base_.FondoCentavos, efectivo, entradas, salidas,
             t.Tarjeta + d.Tarjeta, t.Transferencia + d.Transferencia, esperado, contado, contado - esperado, devoluciones, t.Cancelaciones + d.Cancelaciones,
             EnContingencia: true, RedondeoCentavos: t.Redondeo + d.Redondeo, CreditoCentavos: t.Credito + d.Credito, Abonos: t.Abonos + d.Abonos,
             AbonosEfectivoCentavos: abonosEfectivo, AbonosTarjetaCentavos: t.AbonosTarjeta + d.AbonosTarjeta,
-            AbonosTransferenciaCentavos: t.AbonosTransferencia + d.AbonosTransferencia);
+            AbonosTransferenciaCentavos: t.AbonosTransferencia + d.AbonosTransferencia, SaldoDevueltoCentavos: saldoDevuelto);
     }
 
     private static AnotacionDiario Anotacion(Guid turnoId, TicketDto ticket) =>

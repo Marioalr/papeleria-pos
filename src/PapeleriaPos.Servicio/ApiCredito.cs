@@ -9,8 +9,9 @@ using PapeleriaPos.Nucleo.Control;
 namespace PapeleriaPos.Servicio;
 
 /// <summary>
-/// El crédito de los clientes registrados (fase 3, entrega 2, parte 2): su cuenta, sus condiciones y ajustes (el dueño),
-/// y los abonos en cualquier caja con su comprobante, su cancelación y la verificación de las transferencias.
+/// El crédito de los clientes registrados (fase 3, entrega 2): su cuenta, sus condiciones y ajustes (el dueño), los
+/// abonos en cualquier caja con su comprobante, su cancelación y la verificación de las transferencias; y desde la parte
+/// 3, su estado de cuenta y devolverle en efectivo lo que tiene a favor.
 /// </summary>
 public static class ApiCredito
 {
@@ -28,6 +29,19 @@ public static class ApiCredito
 
         api.MapGet("/sucursales/{sucursalId:guid}/creditos", (Guid sucursalId, PosDbContext db) => new RegistroCredito(db).CuentasDeLaSucursalAsync(sucursalId));
 
+        // El estado de cuenta (parte 3), con el encabezado del ticket de la sucursal de la caja que lo pide.
+        api.MapGet("/clientes/{clienteId:guid}/estado-de-cuenta", async (Guid clienteId, Guid sucursalId, DateOnly? desde, PosDbContext db,
+            IOptions<OpcionesTicket> opciones) =>
+        {
+            var estado = await new RegistroCredito(db).EstadoDeCuentaAsync(clienteId, desde);
+            return estado with { Encabezado = (await ApiConfiguracion.ConfiguracionAsync(db, sucursalId, opciones.Value)).RenglonesEncabezado };
+        });
+
+        // Devolverle en efectivo lo que tiene a favor (parte 3): sale el mismo comprobante que el de un abono, con su tipo.
+        api.MapPost("/clientes/{clienteId:guid}/saldo-devuelto", async (Guid clienteId, SolicitudDevolverSaldo s, PosDbContext db,
+            IOptions<OpcionesTicket> opciones) =>
+            await ComprobanteAsync(db, await new RegistroCredito(db).DevolverSaldoAsync(clienteId, s), opciones.Value));
+
         api.MapPost("/abonos", async (SolicitudAbono s, PosDbContext db, IOptions<OpcionesTicket> opciones) =>
             await ComprobanteAsync(db, await new RegistroCredito(db).AbonarAsync(s), opciones.Value));
 
@@ -39,7 +53,7 @@ public static class ApiCredito
         {
             var abono = await db.Abonos.FindAsync(abonoId) ?? throw new InvalidOperationException("El abono no existe.");
             await new ServicioControl(db).RequerirAsync(s.UsuarioId, abono.SucursalId, s.CajaId, AccionControlada.Reimprimir, abono.MontoCentavos,
-                $"Reimpresión del abono {abono.Folio}", motivo: s.Motivo);
+                $"Reimpresión {(abono.Tipo == TipoAbono.SaldoDevuelto ? "del saldo a favor devuelto" : "del abono")} {abono.Folio}", motivo: s.Motivo);
             await db.SaveChangesAsync();
             return await ComprobanteAsync(db, abono, opciones.Value);
         });
@@ -82,6 +96,6 @@ public static class ApiCredito
                 .Select(m => (long?)m.SaldoCentavos).SingleOrDefaultAsync();
         return new ComprobanteAbonoDto(a.Id, a.Folio, HoraMexico.ALocal(a.FechaUtc), caja!.Nombre, usuario!.Nombre, a.ClienteId, cliente!.Nombre, a.Forma,
             a.MontoCentavos, a.RedondeoCentavos, a.RecibidoCentavos, a.CambioCentavos, a.Referencia, a.SaldoAnteriorCentavos, a.SaldoCentavos, a.Vence,
-            encabezado, a.CanceladoUtc is not null, a.EnContingencia, a.MotivoCancelacion, trasCancelar);
+            encabezado, a.CanceladoUtc is not null, a.EnContingencia, a.MotivoCancelacion, trasCancelar, a.Tipo);
     }
 }

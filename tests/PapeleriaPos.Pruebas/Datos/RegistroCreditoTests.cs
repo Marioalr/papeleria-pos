@@ -3,6 +3,7 @@ using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Nucleo.Ventas;
@@ -183,5 +184,118 @@ public class RegistroCreditoTests : IAsyncLifetime
         Assert.Equal([abono.Id], saldos.Incluidos);
         Assert.Equal(20000, saldos.Cuentas.Single(c => c.ClienteId == _cliente.Id).SaldoCentavos);
         Assert.Equal(await VersionAsync(Secuencia.Credito), saldos.Version);
+    }
+
+    // ── Devolver el saldo a favor (parte 3) ──────────────────────────────────
+
+    private async Task<Abono> DevolverAsync(Usuario quien, long? monto = null, long? visto = null, Guid? id = null)
+    {
+        await using var db = _base.Contexto();
+        return await new RegistroCredito(db).DevolverSaldoAsync(_cliente.Id,
+            new SolicitudDevolverSaldo(id ?? Ids.Nuevo(), _caja.Id, _turno.Id, quien.Id, monto, visto));
+    }
+
+    [Fact]
+    public async Task Devolver_el_saldo_a_favor_lo_deja_en_cero_sale_de_la_caja_y_queda_en_la_bitacora()
+    {
+        await AjustarAsync(-15040);
+        var id = Ids.Nuevo();
+
+        var devuelto = await DevolverAsync(_dueno, visto: -15040, id: id);
+        var otraVez = await DevolverAsync(_dueno, visto: -15040, id: id);
+
+        Assert.Equal((TipoAbono.SaldoDevuelto, 15040L, -40L, 15000L), (devuelto.Tipo, devuelto.MontoCentavos, devuelto.RedondeoCentavos, devuelto.CobradoCentavos));
+        Assert.Equal((-15040L, 0L), (devuelto.SaldoAnteriorCentavos, devuelto.SaldoCentavos));
+        Assert.StartsWith("DS-", devuelto.Folio);
+        Assert.Equal(devuelto.Id, otraVez.Id);
+        Assert.Equal(0, await SumaDelLibroAsync());
+        await using var db = _base.Contexto();
+        var movimiento = await db.MovimientosCredito.SingleAsync(m => m.Id == devuelto.Id);
+        Assert.Equal((TipoMovimientoCredito.SaldoDevuelto, Hoy.AddDays(30)), (movimiento.Tipo, movimiento.Vence));
+        Assert.Single(await db.AperturasCajon.Where(a => a.TurnoId == _turno.Id && a.Motivo == MotivoApertura.Abono).ToListAsync());
+        Assert.Contains("Devolvió $150.00 en efectivo del saldo a favor de «Arq. Ramírez» (tenía $150.40 a favor)",
+            await db.Bitacora.Where(b => b.Accion == AccionControlada.DevolverSaldoAFavor).Select(b => b.Detalle).ToListAsync());
+        var corte = await new RegistroCaja(db).CorteXAsync(_turno.Id, _dueno.Id);
+        Assert.Equal((15000L, 50000L - 15000L, 0), (corte.SaldoDevueltoCentavos, corte.EsperadoCentavos, corte.Abonos));
+    }
+
+    [Fact]
+    public async Task El_cajero_necesita_la_autorizacion_del_encargado_para_devolver_el_saldo()
+    {
+        await AjustarAsync(-15000);
+
+        var error = await Assert.ThrowsAsync<PermisoRequerido>(() => DevolverAsync(_cajera));
+
+        Assert.Equal(NivelPermiso.RequiereAutorizacion, error.Nivel);
+        Assert.Equal(-15000, await SumaDelLibroAsync());
+    }
+
+    [Fact]
+    public async Task No_se_devuelve_lo_que_viene_de_una_transferencia_por_verificar_ni_si_la_cuenta_cambio()
+    {
+        await AjustarAsync(5000);
+        await AbonarAsync(FormaPago.Transferencia, 5000);
+        await AjustarAsync(-3000);
+
+        var porVerificar = await Assert.ThrowsAsync<InvalidOperationException>(() => DevolverAsync(_dueno));
+        var cambio = await Assert.ThrowsAsync<InvalidOperationException>(() => DevolverAsync(_dueno, visto: -1000));
+
+        Assert.Equal("Su saldo a favor viene de transferencias por verificar ($50.00): se le devuelve cuando se verifiquen.", porVerificar.Message);
+        Assert.Equal("La cuenta cambió mientras tanto: ahora tiene $30.00 a favor. Revísalo y devuelve otra vez.", cambio.Message);
+        Assert.Equal(-3000, await SumaDelLibroAsync());
+    }
+
+    [Fact]
+    public async Task Lo_devuelto_de_un_saldo_a_favor_no_se_cancela()
+    {
+        await AjustarAsync(-15000);
+        var devuelto = await DevolverAsync(_dueno);
+
+        await using var db = _base.Contexto();
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new RegistroCredito(db).CancelarAbonoAsync(devuelto.Id, new SolicitudCancelacion(_dueno.Id, _caja.Id, "Error")));
+
+        Assert.StartsWith("Lo que se devolvió de un saldo a favor no se cancela", error.Message);
+        Assert.Equal(0, await SumaDelLibroAsync());
+    }
+
+    // ── Estado de cuenta (parte 3) ───────────────────────────────────────────
+
+    private async Task<EstadoCuentaDto> EstadoAsync(DateOnly? desde = null)
+    {
+        await using var db = _base.Contexto();
+        return await new RegistroCredito(db).EstadoDeCuentaAsync(_cliente.Id, desde);
+    }
+
+    [Fact]
+    public async Task El_estado_de_cuenta_empieza_en_lo_mas_viejo_que_debe_y_dice_lo_que_falta_de_cada_cosa()
+    {
+        await AjustarAsync(35000, Hoy.AddDays(-40));
+        await AbonarAsync(FormaPago.Efectivo, 10000);
+
+        var estado = await EstadoAsync();
+
+        Assert.Equal((Hoy.AddDays(-40), 0L, 25000L, 25000L), (estado.Desde, estado.SaldoAnteriorCentavos, estado.SaldoCentavos, estado.VencidoCentavos));
+        Assert.Equal([(TipoMovimientoCredito.Ajuste, 35000L), (TipoMovimientoCredito.Abono, 25000L)],
+            estado.Movimientos.Select(m => (m.Tipo, m.SaldoCentavos)));
+        var pendiente = Assert.Single(estado.Pendientes);
+        Assert.Equal(new PendienteEstadoDto(Hoy.AddDays(-40), "Ajuste: Saldo inicial de la libreta", null, 35000, 25000, Hoy.AddDays(-10)), pendiente);
+        Assert.Equal(("Arq. Ramírez", 100000L, 30), (estado.Cliente, estado.LimiteCentavos, estado.PlazoDias));
+    }
+
+    [Fact]
+    public async Task Al_corriente_el_estado_de_cuenta_trae_los_ultimos_30_dias_con_lo_que_debia_antes()
+    {
+        await AjustarAsync(10000, Hoy.AddDays(-60));
+        await AbonarAsync(FormaPago.Efectivo, 10000);
+
+        var reciente = await EstadoAsync();
+        var desdeAntes = await EstadoAsync(Hoy.AddDays(-90));
+
+        Assert.Equal((Hoy.AddDays(-30), 10000L, 0L), (reciente.Desde, reciente.SaldoAnteriorCentavos, reciente.SaldoCentavos));
+        Assert.Equal([TipoMovimientoCredito.Abono], reciente.Movimientos.Select(m => m.Tipo));
+        Assert.Empty(reciente.Pendientes);
+        Assert.Equal((0L, 2), (desdeAntes.SaldoAnteriorCentavos, desdeAntes.Movimientos.Count));
+        await Assert.ThrowsAsync<ArgumentException>(() => EstadoAsync(Hoy.AddDays(1)));
     }
 }

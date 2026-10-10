@@ -7,6 +7,7 @@ using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Pruebas.Servicio;
@@ -449,4 +450,83 @@ public sealed class CreditoApiTests(ServicioDePrueba servicio) : IClassFixture<S
         Assert.Equal("La cuenta cambió mientras tanto: ahora debe $337.45. Revísalo y abona otra vez.", await Error(r));
         Assert.Equal(33745, (await CuentaAsync(c, cliente)).Credito.SaldoCentavos);
     }
+
+    // ── Estado de cuenta, puntualidad y saldo a favor (parte 3) ──────────────
+
+    [Fact]
+    public async Task El_estado_de_cuenta_trae_el_encabezado_y_se_puede_pedir_desde_una_fecha()
+    {
+        var c = await CajaAsync();
+        var cliente = await ClienteAsync(c, "Crédito: Estado de cuenta", 100000);
+        await Leer<CuentaClienteDto>(await AjustarAsync(c, cliente, 35000, desde: Hoy.AddDays(-40)));
+        var ticket = await Leer<TicketDto>(await CobrarAsync(c, cliente, 12000, [new CobroSolicitado(FormaPago.Credito, 12000)]));
+        await Leer<ComprobanteAbonoDto>(await AbonarAsync(c, cliente, FormaPago.Efectivo, 10000, 10000));
+
+        var estado = await Leer<EstadoCuentaDto>(await c.Http.GetAsync($"api/clientes/{cliente.Id}/estado-de-cuenta?sucursalId={c.Datos.SucursalId}"));
+        var reciente = await Leer<EstadoCuentaDto>(await c.Http.GetAsync(
+            $"api/clientes/{cliente.Id}/estado-de-cuenta?sucursalId={c.Datos.SucursalId}&desde={Hoy:yyyy-MM-dd}"));
+
+        Assert.NotEmpty(estado.Encabezado);
+        Assert.Equal((Hoy.AddDays(-40), 37000L, 25000L), (estado.Desde, estado.SaldoCentavos, estado.VencidoCentavos));
+        Assert.Equal([(25000L, (string?)null), (12000L, ticket.Folio)], estado.Pendientes.Select(p => (p.PendienteCentavos, p.Folio)));
+        Assert.Equal((35000L, 2), (reciente.SaldoAnteriorCentavos, reciente.Movimientos.Count));
+    }
+
+    [Fact]
+    public async Task La_ficha_y_la_lista_dicen_que_tan_puntual_paga()
+    {
+        var c = await CajaAsync();
+        var cliente = await ClienteAsync(c, "Crédito: Puntual", 100000);
+        await Leer<TicketDto>(await CobrarAsync(c, cliente, 5000, [new CobroSolicitado(FormaPago.Credito, 5000)]));
+        await Leer<ComprobanteAbonoDto>(await AbonarAsync(c, cliente, FormaPago.Tarjeta, 5000));
+        await Leer<TicketDto>(await CobrarAsync(c, cliente, 3000, [new CobroSolicitado(FormaPago.Credito, 3000)]));
+
+        var ficha = await Leer<FichaClienteDto>(await c.Http.GetAsync($"api/clientes/{cliente.Id}"));
+        var lista = await Leer<List<ClienteResumenDto>>(await c.Http.GetAsync($"api/sucursales/{c.Datos.SucursalId}/clientes"));
+
+        Assert.Equal(new PuntualidadDto(2, 1, 1, 0, 0), ficha.Puntualidad);
+        Assert.Equal(ficha.Puntualidad, lista.Single(r => r.Cliente.Id == cliente.Id).Puntualidad);
+    }
+
+    [Fact]
+    public async Task Devolver_el_saldo_a_favor_pide_autorizacion_al_cajero_resta_del_corte_y_se_avisa()
+    {
+        var c = await CajaAsync();
+        AvisosAlDueno();
+        var cliente = await ClienteAsync(c, "Crédito: Pagó de más");
+        await Leer<CuentaClienteDto>(await AjustarAsync(c, cliente, -15000));
+        var antes = await Leer<CorteDto>(await c.Http.PostAsync($"api/turnos/{c.Turno.Id}/corte-x?usuarioId={c.Cajero.UsuarioId}", null));
+        var id = Ids.Nuevo();
+        Task<HttpResponseMessage> Devolver(Guid? autorizacion) => c.Http.PostAsJsonAsync($"api/clientes/{cliente.Id}/saldo-devuelto",
+            new SolicitudDevolverSaldo(id, c.Datos.Id, c.Turno.Id, c.Cajero.UsuarioId, null, -15000, autorizacion));
+
+        var sinAutorizacion = await Devolver(null);
+        var autorizacion = await Leer<AutorizacionDto>(await c.Http.PostAsJsonAsync("api/autorizaciones", new SolicitudAutorizacion(
+            AccionControlada.DevolverSaldoAFavor, c.Datos.SucursalId, c.Datos.Id, c.Cajero.UsuarioId, "encargado", "2222", 15000, "Devolver")));
+        var comprobante = await Leer<ComprobanteAbonoDto>(await Devolver(autorizacion.Id));
+        var despues = await Leer<CorteDto>(await c.Http.PostAsync($"api/turnos/{c.Turno.Id}/corte-x?usuarioId={c.Cajero.UsuarioId}", null));
+        var deHoy = await Leer<List<AbonoDelDiaDto>>(await c.Http.GetAsync($"api/cajas/{c.Datos.Id}/abonos-del-dia"));
+
+        Assert.Equal("requiere-autorizacion", (await sinAutorizacion.Content.ReadFromJsonAsync<ErrorDto>())!.Codigo);
+        Assert.Equal((TipoAbono.SaldoDevuelto, 15000L, -15000L, 0L, true), (comprobante.Tipo, comprobante.CobradoCentavos, comprobante.SaldoAnteriorCentavos,
+            comprobante.SaldoCentavos, comprobante.AbreCajon));
+        Assert.StartsWith("DS-", comprobante.Folio);
+        Assert.Equal((15000L, -15000L), (despues.SaldoDevueltoCentavos - antes.SaldoDevueltoCentavos, despues.EsperadoCentavos - antes.EsperadoCentavos));
+        Assert.Equal(TipoAbono.SaldoDevuelto, deHoy.Single(a => a.AbonoId == comprobante.AbonoId).Tipo);
+        Assert.Equal(0, (await CuentaAsync(c, cliente)).Credito.SaldoCentavos);
+        var registro = EnLaBase(db => db.Bitacora.Single(b => b.Accion == AccionControlada.DevolverSaldoAFavor && b.Detalle.Contains("Pagó de más")));
+        Assert.Equal(ResultadoBitacora.Autorizado, registro.Resultado);
+        Assert.Equal(TipoAlerta.Credito, EnLaBase(db => db.MensajesTelegram.Single(m => m.ChatId == ChatDelDueno && m.Clave == $"bitacora:{registro.Id}")).Tipo);
+    }
+
+    private const long ChatDelDueno = 9595;
+
+    /// <summary>Un chat del dueño, para ver los avisos que le llegarían.</summary>
+    private void AvisosAlDueno() => EnLaBase(db =>
+    {
+        if (db.ChatsTelegram.Any(c => c.ChatId == ChatDelDueno))
+            return 0;
+        db.ChatsTelegram.Add(new ChatTelegram { UsuarioId = db.Usuarios.First(u => u.NombreUsuario == "dueno").Id, ChatId = ChatDelDueno, VinculadoUtc = DateTime.UtcNow });
+        return db.SaveChanges();
+    });
 }

@@ -20,6 +20,10 @@
         {
             <tr><td>Devoluciones y cancelaciones@(_resultado.Cancelaciones > 0 ? $" ({_resultado.Cancelaciones} {(_resultado.Cancelaciones == 1 ? "cancelado" : "cancelados")})" : "")</td><td>− @Formato.Dinero(_resultado.DevolucionesCentavos)</td></tr>
         }
+        @if (_resultado.SaldoDevueltoCentavos != 0)
+        {
+            <tr><td>Saldo a favor devuelto a clientes</td><td>− @Formato.Dinero(_resultado.SaldoDevueltoCentavos)</td></tr>
+        }
         <tr class="total"><td>Efectivo esperado</td><td>@Formato.Dinero(_resultado.EsperadoCentavos)</td></tr>
         @if (_resultado.RedondeoCentavos != 0)
         {

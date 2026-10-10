@@ -80,6 +80,17 @@ public static class GuiaPrueba
             + "a 15 días. Vuelve a la lista, quita «Solo los que deben» y dale crédito de $500 a «Papelería La Esquina».",
             "La lista dice cuánto debe cada quien (en rojo, si tiene algo vencido). En su cuenta están el saldo inicial, lo fiado, el abono y la "
             + "devolución, cada uno con el saldo que dejó. El cajero y el encargado ven la cuenta, pero no pueden cambiar el crédito."),
+        new("credito-estado-cuenta", "Crédito",
+            "En «Clientes», abre al «Arq. Ramírez» y oprime «Estado de cuenta». Imprímelo, luego oprime «Copiar para WhatsApp» y pégalo en el Bloc "
+            + "de notas. Cambia «Desde» a una fecha de hace dos meses.",
+            "Dice lo que debía al empezar, cada compra a crédito y cada abono con el saldo que dejó, lo que debe y lo que falta pagar de cada compra "
+            + "con su vencimiento (lo vencido, en rojo). El texto pegado dice lo mismo. Arriba, en su ficha, «Qué tan puntual paga» cuenta sus compras "
+            + "a crédito liquidadas y las vencidas; en la lista, la columna «Paga a tiempo»."),
+        new("credito-saldo-a-favor", "Crédito",
+            "Como «cajero» (1111), en «Clientes» abre a «Papelería La Esquina» (tiene $150 a favor) y oprime «Devolver saldo a favor». Deja vacío "
+            + "«Cuánto» (todo) y oprime «Devolver». Luego haz un corte X.",
+            "Pide la autorización del encargado (2222). Se abre el cajón y sale un comprobante para que el cliente firme que recibió el efectivo; su "
+            + "cuenta queda al corriente. En el corte, «Saldo a favor devuelto» resta de lo esperado. En «Avisos al dueño» llega que se devolvió."),
         new("credito-sin-conexion", "Crédito",
             "En la caja de Windows, oprime «Simular sin conexión» en la franja de prueba. Con Ctrl+L elige a la «Escuela Primaria Benito Juárez», "
             + "fíale unos $300 con «Todo a crédito» y luego otra venta de unos $2,000. Con Ctrl+B abónale $100 en efectivo. Oprime «Volver a conectar» "

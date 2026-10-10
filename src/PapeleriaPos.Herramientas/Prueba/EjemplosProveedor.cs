@@ -167,9 +167,11 @@ public static class EjemplosProveedor
                 + (credito > 0 ? $" · crédito hasta {AlertasTelegram.Dinero(credito)} a 30 días" : "")
                 + (nombre == PreparacionPrueba.ConDeuda
                     ? $" · debe {AlertasTelegram.Dinero(PreparacionPrueba.DeudaCentavos)} de hace {PreparacionPrueba.DiasDeLaDeuda} días (vencido)" : "")
+                + (nombre == PreparacionPrueba.ConSaldoAFavor ? $" · tiene {AlertasTelegram.Dinero(PreparacionPrueba.SaldoAFavorCentavos)} a favor" : "")
                 + (porRevisar ? " · venía de los clientes especiales: por revisar" : ""));
         }
         t.AppendLine("  Para fiar: elige al cliente con CTRL+L y en F12 usa «A crédito». Para abonar: CTRL+B.");
+        t.AppendLine("  Su estado de cuenta y devolver un saldo a favor: en «Clientes», en la cuenta de cada uno.");
         t.AppendLine();
         t.AppendLine("La guía de la prueba está dentro de la caja: botón «Guía de la prueba» en la franja de arriba.");
         t.AppendLine();

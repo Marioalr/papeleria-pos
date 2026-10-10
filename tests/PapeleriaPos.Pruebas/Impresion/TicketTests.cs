@@ -1,4 +1,5 @@
 using PapeleriaPos.Impresion;
+using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Ventas;
@@ -225,6 +226,95 @@ public class TicketTests
     }
 
     [Fact]
+    public void El_saldo_devuelto_dice_lo_que_tenia_lo_que_se_le_entrega_y_lo_firma_el_cliente()
+    {
+        var devuelto = Abono(FormaPago.Efectivo, 12345, redondeo: -45) with
+        {
+            Folio = "DS-1A2B3C", Tipo = TipoAbono.SaldoDevuelto, SaldoAnteriorCentavos = -12345, SaldoCentavos = 0, Vence = null,
+        };
+
+        var texto = TicketTexto.Generar(DisenoComprobante.Abono(devuelto));
+        var renglones = texto.Split(Environment.NewLine);
+        var crudos = DisenoComprobante.Abono(devuelto).OfType<Renglon>().Select(r => r.Texto).ToList();
+        var parte = TicketTexto.Generar(DisenoComprobante.Abono(devuelto with { MontoCentavos = 10000, RedondeoCentavos = 0, SaldoCentavos = -2345 }));
+
+        Assert.Contains("SALDO A FAVOR DEVUELTO", texto);
+        Assert.Contains("Comprobante DS-1A2B3C", texto);
+        Assert.Contains(renglones, r => r.StartsWith("Tenía a favor") && r.EndsWith("$123.45"));
+        Assert.Contains(renglones, r => r.StartsWith("Se le entregan en efectivo") && r.EndsWith("$123.00"));
+        Assert.Contains("(redondeo al peso: -$0.45)", texto);
+        Assert.Contains("Al corriente", texto);
+        Assert.Contains("Firma del cliente", texto);
+        Assert.DoesNotContain("ABONO", texto);
+        Assert.Contains("Le quedan a favor: $23.45", parte);
+        Assert.All(crudos, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
+    }
+
+    private static EstadoCuentaDto Estado() => new(Guid.NewGuid(), "Arquitecto Ramírez Hernández de la Constructora del Valle", "5522334455",
+        new DateTime(2026, 10, 8, 17, 5, 0), new DateOnly(2026, 8, 29), 0,
+        [
+            new MovimientoCreditoDto(Guid.NewGuid(), new DateTime(2026, 8, 29, 12, 0, 0), TipoMovimientoCredito.Ajuste, "Ajuste: Saldo inicial de la libreta", null,
+                35000, 35000, new DateOnly(2026, 9, 28), false),
+            new MovimientoCreditoDto(Guid.NewGuid(), new DateTime(2026, 10, 1, 13, 0, 0), TipoMovimientoCredito.Cargo, "Compra a crédito", "A-000123",
+                12000, 47000, new DateOnly(2026, 10, 31), false),
+            new MovimientoCreditoDto(Guid.NewGuid(), new DateTime(2026, 10, 8, 17, 0, 0), TipoMovimientoCredito.Abono, "Abono", "AB-1A2B3C",
+                -10000, 37000, null, false),
+        ],
+        37000, 25000, 0,
+        [
+            new PendienteEstadoDto(new DateOnly(2026, 8, 29), "Ajuste: Saldo inicial de la libreta", null, 35000, 25000, new DateOnly(2026, 9, 28)),
+            new PendienteEstadoDto(new DateOnly(2026, 10, 1), "Compra a crédito", "A-000123", 12000, 12000, new DateOnly(2026, 10, 31)),
+        ],
+        100000, 30, ["PAPELERÍA DE PRUEBA", "Av. Juárez 10"]);
+
+    [Fact]
+    public void El_estado_de_cuenta_impreso_cabe_en_el_ticket_y_dice_lo_que_falta_pagar()
+    {
+        var texto = TicketTexto.Generar(DisenoComprobante.EstadoCuenta(Estado()));
+        var renglones = texto.Split(Environment.NewLine);
+        // Lo que se manda a la impresora (el texto de vista previa ya viene recortado a lo ancho).
+        var grande = Estado() with
+        {
+            Movimientos = [.. Estado().Movimientos, new MovimientoCreditoDto(Guid.NewGuid(), new DateTime(2026, 10, 8, 18, 0, 0), TipoMovimientoCredito.Cargo,
+                "Compra a crédito", "A-000124", 15_000_000, -15_000_000, null, false)],
+        };
+        var crudos = DisenoComprobante.EstadoCuenta(grande).OfType<Renglon>().Select(r => r.Texto).ToList();
+
+        Assert.Contains("ESTADO DE CUENTA", texto);
+        Assert.Contains("Av. Juárez 10", texto);
+        Assert.Contains("Crédito de $1,000.00 a 30 días, sin recargos", texto);
+        Assert.Contains(renglones, r => r.StartsWith("Saldo antes del 29/08/2026") && r.EndsWith("$0.00"));
+        Assert.Contains(renglones, r => r.StartsWith("01/10 Compra a") && r.Contains("+$120.00") && r.EndsWith("$470.00"));
+        Assert.Contains(renglones, r => r.StartsWith("08/10 Abono AB-1A2B3C") && r.Contains("-$100.00") && r.EndsWith("$370.00"));
+        Assert.Contains("Debe: $370.00", texto);
+        Assert.Contains("Vencido: $250.00", texto);
+        Assert.Contains("(de $350.00) VENCIÓ EL 28/09/2026", texto);
+        Assert.Contains("vence el 31/10/2026", texto);
+        Assert.Contains("Sin recargos.", texto);
+        Assert.All(crudos, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
+        Assert.Contains(crudos, r => r.Contains("+$150,000.00 -$150,000.00"));
+        // Si empieza en otro año, cada fecha lo dice.
+        Assert.Contains("29/08/25 Ajuste", TicketTexto.Generar(DisenoComprobante.EstadoCuenta(Estado() with { Desde = new DateOnly(2025, 8, 29),
+            Movimientos = [Estado().Movimientos[0] with { FechaLocal = new DateTime(2025, 8, 29, 12, 0, 0) }] })));
+    }
+
+    [Fact]
+    public void El_estado_de_cuenta_para_whatsapp_dice_lo_mismo_en_texto()
+    {
+        var texto = DisenoComprobante.EstadoCuentaTexto(Estado());
+        var alCorriente = DisenoComprobante.EstadoCuentaTexto(Estado() with { SaldoCentavos = 0, VencidoCentavos = 0, Pendientes = [] });
+
+        Assert.StartsWith("*PAPELERÍA DE PRUEBA*\nEstado de cuenta de *Arquitecto Ramírez", texto);
+        Assert.Contains("Saldo antes del 29/08/2026: $0.00", texto);
+        Assert.Contains("01/10 Compra a crédito A-000123: +$120.00 (saldo $470.00)", texto);
+        Assert.Contains("*Debe: $370.00*", texto);
+        Assert.Contains("- Ajuste: Saldo inicial de la libreta del 29/08/2026: $250.00 de $350.00, *venció el 28/09/2026*", texto);
+        Assert.Contains("- Compra a crédito A-000123 del 01/10/2026: $120.00, vence el 31/10/2026", texto);
+        Assert.Contains("*Al corriente*", alCorriente);
+        Assert.DoesNotContain("falta pagar", alCorriente);
+    }
+
+    [Fact]
     public void Si_lo_fiado_lo_cubre_su_saldo_a_favor_el_ticket_no_pide_pagar()
     {
         var ticket = Ticket(new CobroTicketDto(FormaPago.Credito, 6000, 0, 0, null)) with { Credito = new CreditoTicketDto(6000, -4000, new DateOnly(2026, 11, 7)) };
@@ -278,6 +368,9 @@ public class TicketTests
         Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
         Assert.DoesNotContain("Abonos", sinCredito);
         Assert.DoesNotContain("Fiado", sinCredito);
+        Assert.DoesNotContain("Saldo a favor devuelto", texto);
+        Assert.Contains(TicketTexto.Generar(DisenoComprobante.Corte(corte with { SaldoDevueltoCentavos = 12300 }, "Caja 1")).Split(Environment.NewLine),
+            r => r.StartsWith("Saldo a favor devuelto") && r.EndsWith("-$123.00"));
     }
 
     [Fact]

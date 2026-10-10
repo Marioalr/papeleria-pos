@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
@@ -481,6 +482,59 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
             l.AbonoCanceladoEnLinea(turnoId, c);
             return Task.CompletedTask;
         });
+
+    /// <summary>El estado de cuenta (parte 3), con el encabezado del ticket de esta sucursal: solo con la caja principal.</summary>
+    /// <param name="desde">Vacío: desde la compra más vieja que sigue sin pagarse (y al menos los últimos 30 días).</param>
+    public Task<EstadoCuentaDto> EstadoDeCuentaAsync(Guid clienteId, Guid sucursalId, DateOnly? desde = null) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<EstadoCuentaDto>($"api/clientes/{clienteId}/estado-de-cuenta?sucursalId={sucursalId}"
+            + (desde is { } d ? $"&desde={d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}" : "")))!);
+
+    /// <summary>
+    /// Devolverle en efectivo lo que tiene a favor (parte 3): solo en línea, porque se decide con el saldo de la caja
+    /// principal, y no si esta caja todavía tiene algo del cliente sin subir. El Id lo pone la caja: si se pierde la
+    /// respuesta y se manda otra vez, sale el mismo comprobante. Se anota en la cuenta propia antes de mandarlo, para que
+    /// sin conexión ya no se cuente con ese saldo a favor.
+    /// </summary>
+    /// <param name="montoCentavos">Lo que va a subir la cuenta (el mismo cálculo que el servicio).</param>
+    public Task<ComprobanteAbonoDto> DevolverSaldoAsync(Guid clienteId, SolicitudDevolverSaldo s, long montoCentavos) =>
+        ConRespaldoAsync(async () =>
+            {
+                if (contingencia?.CreditoSinSubir(clienteId) == true)
+                    throw new ErrorCaja("Esta caja todavía tiene lo fiado o abonado de este cliente sin subir a la caja principal: "
+                        + "espera a que suba para devolverle su saldo.");
+                contingencia?.AnotarSaldoDevuelto(s.Id, clienteId, montoCentavos);
+                try
+                {
+                    var comprobante = await _http.PostAsync<ComprobanteAbonoDto>($"api/clientes/{clienteId}/saldo-devuelto", s);
+                    _devolucionesSinConfirmar.TryRemove(clienteId, out _);
+                    return comprobante;
+                }
+                catch (ErrorCaja ex) when (ex.Codigo != "sin-conexion")
+                {
+                    // No quedó: ya no se cuenta, y si había una sin confirmar, ya se sabe que no pasó.
+                    contingencia?.QuitarCredito(s.Id);
+                    if (ex.Codigo != "requiere-autorizacion")
+                        _devolucionesSinConfirmar.TryRemove(clienteId, out _);
+                    throw;
+                }
+            }, null, (l, c) => l.SaldoDevueltoEnLinea(s.TurnoId, c), siSePierde: () =>
+            {
+                _devolucionesSinConfirmar[clienteId] = (s, montoCentavos);
+                return SaldoDevueltoSinConfirmar();
+            });
+
+    /// <summary>
+    /// La devolución de saldo que se mandó y no se sabe si quedó (se perdió la respuesta): aunque se cierre la ventana, al
+    /// volver a su cuenta se reintenta con el mismo Id hasta saberlo.
+    /// </summary>
+    public (SolicitudDevolverSaldo Solicitud, long MontoCentavos)? DevolucionSinConfirmar(Guid clienteId) =>
+        _devolucionesSinConfirmar.TryGetValue(clienteId, out var pendiente) ? pendiente : null;
+
+    private readonly ConcurrentDictionary<Guid, (SolicitudDevolverSaldo Solicitud, long MontoCentavos)> _devolucionesSinConfirmar = new();
+
+    private static ErrorCaja SaldoDevueltoSinConfirmar() => new(
+        "Se perdió la conexión al devolver el saldo y no se sabe si quedó. No entregues el efectivo todavía: cuando vuelva la conexión, "
+        + "oprime «Devolver» otra vez (si ya quedó, sale el mismo comprobante).", "saldo-sin-confirmar");
 
     public Task<ComprobanteAbonoDto> ReimprimirAbonoAsync(Guid abonoId, SolicitudReimpresion s) =>
         ConRespaldoAsync(() => _http.PostAsync<ComprobanteAbonoDto>($"api/abonos/{abonoId}/reimpresion", s));

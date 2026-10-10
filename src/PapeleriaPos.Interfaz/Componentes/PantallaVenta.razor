@@ -297,7 +297,7 @@
         case Ventanas.Clientes:
             <Ventana Titulo="Clientes" Clase="configuracion" AlCerrar="Cerrar">
                 <Clientes Caja="Caja" Sesion="Sesion" Turno="Turno" AlGuardar="ClienteGuardadoAsync" AlAbonar="AbonoRegistradoAsync"
-                          AlReimprimir="AbonoReimpresoAsync" />
+                          AlReimprimir="AbonoReimpresoAsync" AlImprimirEstado="EstadoDeCuentaAsync" />
             </Ventana>
             break;
         case Ventanas.Abono:
@@ -927,30 +927,40 @@
     }
 
     /// <summary>
-    /// Un abono o su cancelación: se imprime su comprobante (en efectivo se abre el cajón: entra o sale dinero, y el
-    /// servicio lo registra) y se pone al día la cuenta del ticket.
+    /// Un abono o su cancelación, o un saldo a favor devuelto: se imprime su comprobante (en efectivo se abre el cajón:
+    /// entra o sale dinero, y el servicio lo registra) y se pone al día la cuenta del ticket.
     /// </summary>
     private async Task AbonoRegistradoAsync(ComprobanteAbonoDto comprobante)
     {
         await Cerrar();
-        Avisar(comprobante.Cancelado
-            ? $"Se canceló el abono {comprobante.Folio}"
-              + (comprobante.Forma == FormaPago.Efectivo ? $": entrega {Formato.Dinero(comprobante.CobradoCentavos)} en efectivo" : "")
-              + $". «{comprobante.Cliente}» vuelve a deber {Formato.Dinero(comprobante.MontoCentavos)}."
-            : $"Abono de {Formato.Dinero(comprobante.MontoCentavos)} de «{comprobante.Cliente}». Saldo: {Formato.Dinero(comprobante.SaldoCentavos)}"
-              + (comprobante.Forma == FormaPago.Efectivo ? $". Cambio: {Formato.Dinero(comprobante.CambioCentavos)}." : "."), error: false);
+        if (comprobante.EsSaldoDevuelto)
+            Avisar($"Entrega {Formato.Dinero(comprobante.CobradoCentavos)} en efectivo a «{comprobante.Cliente}» (su saldo a favor) y que firme el comprobante.",
+                error: false);
+        else
+            Avisar(comprobante.Cancelado
+                ? $"Se canceló el abono {comprobante.Folio}"
+                  + (comprobante.Forma == FormaPago.Efectivo ? $": entrega {Formato.Dinero(comprobante.CobradoCentavos)} en efectivo" : "")
+                  + $". «{comprobante.Cliente}» vuelve a deber {Formato.Dinero(comprobante.MontoCentavos)}."
+                : $"Abono de {Formato.Dinero(comprobante.MontoCentavos)} de «{comprobante.Cliente}». Saldo: {Formato.Dinero(comprobante.SaldoCentavos)}"
+                  + (comprobante.Forma == FormaPago.Efectivo ? $". Cambio: {Formato.Dinero(comprobante.CambioCentavos)}." : "."), error: false);
         foreach (var ticket in _tickets.Where(t => t.Cliente?.Id == comprobante.ClienteId))
             await CargarCuentaAsync(ticket);
-        await ImprimirDocumentoAsync($"Abono {comprobante.Folio}", DisenoComprobante.Abono(comprobante), abrirCajon: comprobante.AbreCajon);
+        await ImprimirDocumentoAsync($"{(comprobante.EsSaldoDevuelto ? "Saldo devuelto" : "Abono")} {comprobante.Folio}", DisenoComprobante.Abono(comprobante),
+            abrirCajon: comprobante.AbreCajon);
         await RevisarEfectivoAsync();
     }
+
+    /// <summary>El estado de cuenta de un cliente: solo el papel (no entra ni sale dinero).</summary>
+    private Task EstadoDeCuentaAsync(EstadoCuentaDto estado) =>
+        ImprimirDocumentoAsync($"Estado de cuenta de {estado.Cliente}", DisenoComprobante.EstadoCuenta(estado), abrirCajon: false);
 
     /// <summary>Una reimpresión: solo el papel; el cajón no se abre (no entra ni sale dinero).</summary>
     private async Task AbonoReimpresoAsync(ComprobanteAbonoDto comprobante)
     {
         await Cerrar();
         Avisar($"Se reimprimió el abono {comprobante.Folio}.", error: false);
-        await ImprimirDocumentoAsync($"Abono {comprobante.Folio}", DisenoComprobante.Abono(comprobante), abrirCajon: false);
+        await ImprimirDocumentoAsync($"{(comprobante.EsSaldoDevuelto ? "Saldo devuelto" : "Abono")} {comprobante.Folio}", DisenoComprobante.Abono(comprobante),
+            abrirCajon: false);
     }
 
     /// <summary>

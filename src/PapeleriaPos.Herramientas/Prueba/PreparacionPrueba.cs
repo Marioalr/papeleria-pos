@@ -85,9 +85,17 @@ public static class PreparacionPrueba
                         + $"límite de {AlertasTelegram.Dinero(credito)} por {AlertasTelegram.Dinero(DeudaCentavos + 90000 - credito)} (se autorizaron $0.00).",
                 });
             }
+            // Para practicar «Devolver saldo a favor» (parte 3): uno sin crédito al que la libreta le debe.
+            var conSaldo = await db.ClientesRegistrados.FirstAsync(c => c.Nombre == ConSaldoAFavor, ct);
+            db.MovimientosCredito.Add(new MovimientoCredito
+            {
+                Id = Ids.Nuevo(), ClienteId = conSaldo.Id, SucursalId = sucursal, UsuarioId = dueno.Id, Tipo = TipoMovimientoCredito.Ajuste,
+                MontoCentavos = -SaldoAFavorCentavos, FechaUtc = HoraMexico.AUtc(HoraMexico.ALocal(ahora).Date.AddDays(-3).AddHours(12)),
+                SaldoCentavos = -SaldoAFavorCentavos, Motivo = "Pagó de más (libreta)",
+            });
             await db.SaveChangesAsync(ct);
             hecho.Add($"Crédito para {ClientesDePrueba.Count(c => c.Credito > 0)} clientes; «{ConDeuda}» debe {AlertasTelegram.Dinero(DeudaCentavos)} (vencido) "
-                + "y tiene un ejemplo «por revisar»");
+                + $"y tiene un ejemplo «por revisar»; «{ConSaldoAFavor}» tiene {AlertasTelegram.Dinero(SaldoAFavorCentavos)} a favor");
         }
 
         hecho.AddRange(await EjemplosProveedor.EscribirAsync(db, carpetaEjemplos, ct));
@@ -111,6 +119,11 @@ public static class PreparacionPrueba
 
     public const long DeudaCentavos = 35000;
     public const int DiasDeLaDeuda = 40;
+
+    /// <summary>El que tiene saldo a favor (sin crédito), para practicar devolvérselo en efectivo.</summary>
+    public const string ConSaldoAFavor = "Papelería La Esquina";
+
+    public const long SaldoAFavorCentavos = 15000;
 
     private static TrabajoMedidoDto Trabajo(Guid cajaId, string documento, int paginas, bool color, DateTime impresoUtc) =>
         new(Ids.Nuevo(), cajaId, null, "PC-MOSTRADOR", "WF-6590 (prueba)", 100 + paginas, documento, "mostrador", impresoUtc, EstadoTrabajo.Impreso,

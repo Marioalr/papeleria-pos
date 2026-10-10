@@ -1,9 +1,89 @@
 @* La cuenta de un cliente en su ficha (fase 3, entrega 2): lo que debe, lo vencido y sus últimos movimientos. Sus
    condiciones (límite y plazo) y los ajustes del saldo los hace quien tiene la regla (al empezar, el dueño). Con un turno
-   abierto, desde aquí se le recibe un abono. *@
+   abierto, desde aquí se le recibe un abono o se le devuelve en efectivo lo que tiene a favor. Su estado de cuenta se
+   imprime o se copia para mandarlo por WhatsApp (parte 3). *@
+@using PapeleriaPos.Nucleo.Clientes
 @inject ClienteCaja Servicio
+@inject ModuloCaja Js
 
-@if (_abonando && Turno is not null)
+@if (_autorizar && _cuenta is not null && Turno is not null)
+{
+    <AutorizarAccion Accion="AccionControlada.DevolverSaldoAFavor" Detalle="@($"Devolverle a «{Cliente.Nombre}» {Formato.Dinero(AEntregar ?? 0)} en efectivo de su saldo a favor")"
+                     MontoCentavos="AEntregar" Caja="Caja" Sesion="Sesion" AlAutorizar="a => DevolverAsync(a.Id)"
+                     AlCancelar="() => _autorizar = false" />
+}
+else if (_estado is { } estado)
+{
+    <h3>Estado de cuenta</h3>
+    <div class="filtros-catalogo">
+        <label class="en-linea">Desde <input type="date" @bind="_desdeEstado" @bind:after="EstadoAsync" /></label>
+        <button class="boton" disabled="@_ocupado" @onclick="ImprimirEstadoAsync">Imprimir</button>
+        <button class="boton" disabled="@_ocupado" @onclick="CopiarEstadoAsync">Copiar para WhatsApp</button>
+        <button class="boton" @onclick="VolverACuenta">Volver a su cuenta</button>
+    </div>
+    @if (Cliente.Telefono is { Length: > 0 } telefono)
+    {
+        <p class="nota">Su teléfono: @ElegirCliente.Telefono(telefono)</p>
+    }
+    <p class="nota">
+        Saldo antes del @estado.Desde.ToString("dd/MM/yyyy"): <strong>@Saldo(estado.SaldoAnteriorCentavos)</strong>
+        · ahora: <strong>@Saldo(estado.SaldoCentavos)</strong>
+        @if (estado.VencidoCentavos > 0)
+        {
+            <span class="error"> · vencido @Formato.Dinero(estado.VencidoCentavos)</span>
+        }
+    </p>
+    @if (estado.Movimientos.Count == 0)
+    {
+        <p class="vacia">Sin movimientos desde esa fecha.</p>
+    }
+    else
+    {
+        <div class="resultados movimientos-credito">
+            <table>
+                <thead><tr><th>Fecha</th><th>Concepto</th><th>Folio</th><th class="num">Monto</th><th class="num">Saldo</th></tr></thead>
+                @foreach (var m in estado.Movimientos)
+                {
+                    <tr>
+                        <td>@m.FechaLocal.ToString("dd/MM/yyyy HH:mm")</td>
+                        <td>@m.Concepto</td>
+                        <td>@m.Folio</td>
+                        <td class="num">@(m.MontoCentavos > 0 ? "+" : "−")@Formato.Dinero(Math.Abs(m.MontoCentavos))</td>
+                        <td class="num">@Formato.Dinero(m.SaldoCentavos)</td>
+                    </tr>
+                }
+            </table>
+        </div>
+    }
+    @if (estado.Pendientes.Count > 0)
+    {
+        <h4>Lo que falta pagar</h4>
+        <div class="resultados">
+            <table>
+                <thead><tr><th>Fecha</th><th>Concepto</th><th>Folio</th><th class="num">Falta</th><th>Vence</th></tr></thead>
+                @foreach (var p in estado.Pendientes)
+                {
+                    <tr>
+                        <td>@p.Fecha.ToString("dd/MM/yyyy")</td>
+                        <td>@p.Concepto</td>
+                        <td>@p.Folio</td>
+                        <td class="num">@Formato.Dinero(p.PendienteCentavos)@(p.PendienteCentavos < p.MontoCentavos ? $" de {Formato.Dinero(p.MontoCentavos)}" : "")</td>
+                        <td class="@(p.Vence < Hoy ? "error" : "")">@p.Vence.ToString("dd/MM/yyyy")</td>
+                    </tr>
+                }
+            </table>
+        </div>
+    }
+    @if (_aviso is not null)
+    {
+        <p class="aviso">@_aviso</p>
+    }
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+}
+else if (_abonando && Turno is not null)
 {
     <Abonar Caja="Caja" Sesion="Sesion" Turno="Turno" ClienteInicial="Cliente" AlTerminar="AbonadoAsync" AlReimprimir="AlReimprimir" />
     <div class="acciones izquierda">
@@ -52,11 +132,63 @@ else
                 : "Sin crédito.")
         </p>
 
-        @if (Turno is not null && credito.SaldoCentavos > 0)
-        {
-            <div class="acciones izquierda">
+        <div class="acciones izquierda">
+            @if (Turno is not null && credito.SaldoCentavos > 0)
+            {
                 <button class="boton principal" @onclick="() => _abonando = true">Recibir abono</button>
-            </div>
+            }
+            @if (Turno is not null && credito.DevolvibleCentavos > 0 && !_devolviendo && _sinConfirmar is null)
+            {
+                <button class="boton" @onclick="EmpezarDevolucion">Devolver saldo a favor</button>
+            }
+            <button class="boton" disabled="@_ocupado" @onclick="EstadoAsync">Estado de cuenta</button>
+        </div>
+        @if (credito.AFavorCentavos > 0 && credito.DevolvibleCentavos == 0)
+        {
+            <p class="nota">Su saldo a favor viene de transferencias por verificar: se le puede devolver cuando se verifiquen.</p>
+        }
+
+        @if (Turno is not null && _sinConfirmar is { } pendiente)
+        {
+            <fieldset class="cobrar-credito">
+                <legend>Devolver saldo a favor (en efectivo)</legend>
+                <p class="aviso">
+                    Se perdió la conexión al devolverle @Formato.Dinero(pendiente.Solicitud.MontoCentavos ?? 0) y no se sabe si quedó. No entregues el
+                    efectivo todavía: cuando vuelva la conexión, oprime «Devolver» (si ya quedó, sale el mismo comprobante).
+                </p>
+                <div class="acciones izquierda">
+                    <button class="boton principal" disabled="@_ocupado" @onclick="() => DevolverAsync(null)">Devolver</button>
+                </div>
+            </fieldset>
+        }
+        else if (_devolviendo && Turno is not null && credito.DevolvibleCentavos > 0)
+        {
+            <fieldset class="cobrar-credito">
+                <legend>Devolver saldo a favor (en efectivo)</legend>
+                @if (credito.PorVerificarCentavos > 0)
+                {
+                    <p class="nota">No incluye @Formato.Dinero(Math.Min(credito.AFavorCentavos, credito.PorVerificarCentavos)) de transferencias por verificar.</p>
+                }
+                <label>Cuánto (vacío: todo)
+                    <input id="devolver-monto" inputmode="decimal" @bind="_devolver" @bind:event="oninput" autocomplete="off"
+                           placeholder="@($"Todo: {Formato.Dinero(Redondeo.AlPeso(credito.DevolvibleCentavos))}")" />
+                </label>
+                @if (Devolucion is { } devolucion)
+                {
+                    <p class="cobrar-resumen">
+                        Se le entregan <strong>@Formato.Dinero(devolucion.EntregaCentavos)</strong> en efectivo
+                        · @(credito.AFavorCentavos - devolucion.MontoCentavos is > 0 and var queda ? $"le quedan {Formato.Dinero(queda)} a favor" : "queda al corriente")
+                    </p>
+                }
+                else if (_problema is not null)
+                {
+                    <p class="aviso">@_problema</p>
+                }
+                <div class="acciones izquierda">
+                    <button class="boton principal" disabled="@(_ocupado || Devolucion is null)" @onclick="() => DevolverAsync(null)">Devolver</button>
+                    <button class="boton" @onclick="CancelarDevolucion">Cancelar</button>
+                </div>
+            </fieldset>
         }
 
         @if (_puedeDar)
@@ -80,9 +212,9 @@ else
                 <legend>Ajustar el saldo</legend>
                 <div class="dos-columnas">
                     <label>
-                        <select @bind="_sube">
-                            <option value="@true">Debe más</option>
-                            <option value="@false">Debe menos</option>
+                        <select @bind="_sentido">
+                            <option value="@DebeMas">Debe más</option>
+                            <option value="@DebeMenos">Debe menos</option>
                         </select>
                     </label>
                     <label>Cuánto <input inputmode="decimal" @bind="_ajuste" autocomplete="off" placeholder="$0.00" /></label>
@@ -144,6 +276,9 @@ else
     /// <summary>Se reimprimió un abono: solo se imprime.</summary>
     [Parameter] public EventCallback<ComprobanteAbonoDto> AlReimprimir { get; set; }
 
+    /// <summary>Imprimir su estado de cuenta (en la impresora de tickets).</summary>
+    [Parameter] public EventCallback<EstadoCuentaDto> AlImprimirEstado { get; set; }
+
     private CuentaClienteDto? _cuenta;
     private bool _puedeDar;
     private bool _puedeAjustar;
@@ -153,7 +288,10 @@ else
     private string? _aviso;
     private string _limite = "";
     private string _plazo = "";
-    private bool _sube = true;
+    // Con texto y no con bool: un <option value="@false"> no lleva valor y «Debe menos» nunca llegaba.
+    private const string DebeMas = "mas", DebeMenos = "menos";
+    private string _sentido = DebeMas;
+    private bool Sube => _sentido == DebeMas;
     private string _ajuste = "";
     private string _motivo = "";
     private DateOnly? _desde;
@@ -161,10 +299,56 @@ else
     /// <summary>El Id del ajuste que se está mandando: si se manda dos veces, se guarda uno.</summary>
     private Guid? _idAjuste;
 
+    private EstadoCuentaDto? _estado;
+    private DateOnly? _desdeEstado;
+
+    // Devolver el saldo a favor: lo capturado, el Id que se manda (el mismo si se reintenta) y si hay que pedir autorización.
+    private bool _devolviendo;
+    private string _devolver = "";
+    private string? _problema;
+    private Guid? _idDevolucion;
+    private bool _autorizar;
+
+    /// <summary>
+    /// La que se mandó y se perdió la respuesta: puede que ya esté guardada. Hasta saberlo se manda otra vez igual (el mismo
+    /// Id, lo mismo y con el saldo que se vio); la recuerda <see cref="ClienteCaja"/> aunque se cierre la ventana.
+    /// </summary>
+    private (SolicitudDevolverSaldo Solicitud, long MontoCentavos)? _sinConfirmar;
+
+    /// <summary>Lo que se le va a devolver con lo capturado, con la misma regla que el servicio; si no se puede, por qué.</summary>
+    private SaldoDevueltoCalculado? Devolucion
+    {
+        get
+        {
+            _problema = null;
+            if (_cuenta?.Credito is not { DevolvibleCentavos: > 0 } credito)
+                return null;
+            long? monto = string.IsNullOrWhiteSpace(_devolver) ? null : Formato.LeerPesos(_devolver);
+            if (!string.IsNullOrWhiteSpace(_devolver) && monto is null)
+            {
+                _problema = "Escribe cuánto se le devuelve.";
+                return null;
+            }
+            try
+            {
+                return CalculoAbono.DevolverSaldo(credito.DevolvibleCentavos, monto);
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+            {
+                _problema = ex.Message;
+                return null;
+            }
+        }
+    }
+
+    /// <summary>Lo que se le entrega en efectivo: lo que se mandó sin confirmar, o lo capturado.</summary>
+    private long? AEntregar => _sinConfirmar?.Solicitud.MontoCentavos ?? Devolucion?.EntregaCentavos;
+
     private static DateOnly Hoy => DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
 
     protected override async Task OnInitializedAsync()
     {
+        _sinConfirmar = Servicio.DevolucionSinConfirmar(Cliente.Id);
         (_limite, _plazo) = (Pesos(Cliente.LimiteCreditoCentavos), Cliente.PlazoCreditoDias.ToString(CultureInfo.InvariantCulture));
         try
         {
@@ -230,13 +414,139 @@ else
         try
         {
             _cuenta = await Servicio.AjustarCreditoAsync(Cliente.Id,
-                new SolicitudAjusteCredito(_idAjuste.Value, Sesion.UsuarioId, Caja.SucursalId, _sube ? monto : -monto, _motivo.Trim(), _desde));
-            _aviso = $"Ajuste de {(_sube ? "+" : "−")}{Formato.Dinero(monto)} guardado.";
+                new SolicitudAjusteCredito(_idAjuste.Value, Sesion.UsuarioId, Caja.SucursalId, Sube ? monto : -monto, _motivo.Trim(), _desde));
+            _aviso = $"Ajuste de {(Sube ? "+" : "−")}{Formato.Dinero(monto)} guardado.";
             (_idAjuste, _ajuste, _motivo, _desde) = (null, "", "", null);
         }
         catch (ErrorCaja ex)
         {
             _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    // ── Estado de cuenta (parte 3) ───────────────────────────────────────────
+
+    /// <summary>Lo trae del servicio: la primera vez, desde lo más viejo que debe; luego, desde la fecha elegida.</summary>
+    private async Task EstadoAsync()
+    {
+        (_error, _aviso) = (null, null);
+        _ocupado = true;
+        try
+        {
+            _estado = await Servicio.EstadoDeCuentaAsync(Cliente.Id, Caja.SucursalId, _estado is null ? null : _desdeEstado);
+            _desdeEstado = _estado.Desde;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Codigo == "sin-conexion" ? "Sin conexión con la caja principal: el estado de cuenta se saca cuando vuelva." : ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private void VolverACuenta() => (_estado, _error, _aviso) = (null, null, null);
+
+    private async Task ImprimirEstadoAsync()
+    {
+        if (_estado is { } estado)
+            await AlImprimirEstado.InvokeAsync(estado);
+    }
+
+    private async Task CopiarEstadoAsync()
+    {
+        if (_estado is not { } estado)
+            return;
+        (_error, _aviso) = (null, null);
+        try
+        {
+            await Js.CopiarAsync(DisenoComprobante.EstadoCuentaTexto(estado));
+            _aviso = Cliente.Telefono is { Length: > 0 } telefono
+                ? $"Estado de cuenta copiado: pégalo en WhatsApp ({ElegirCliente.Telefono(telefono)})."
+                : "Estado de cuenta copiado: pégalo en WhatsApp o en un correo.";
+        }
+        catch (JSException ex)
+        {
+            _error = "No se pudo copiar: " + ex.Message;
+        }
+    }
+
+    // ── Devolver el saldo a favor (parte 3) ──────────────────────────────────
+
+    private void EmpezarDevolucion() =>
+        (_devolviendo, _devolver, _idDevolucion, _enfocar, _error, _aviso) = (true, "", null, true, null, null);
+
+    private void CancelarDevolucion() => (_devolviendo, _devolver, _idDevolucion) = (false, "", null);
+
+    /// <summary>Al empezar a devolver: el cursor va a cuánto.</summary>
+    private bool _enfocar;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!_enfocar || !_devolviendo)
+            return;
+        _enfocar = false;
+        await Js.EnfocarAsync("#devolver-monto");
+    }
+
+    /// <summary>
+    /// Con lo que se vio: lo que se le entrega (no «todo», que podría ser otra cosa si mientras tanto se verificó una
+    /// transferencia) y su saldo. Si la regla pide autorización, se pide y se vuelve a intentar con ella.
+    /// </summary>
+    private async Task DevolverAsync(Guid? autorizacion)
+    {
+        _autorizar = false;
+        if (_ocupado || Turno is null || _cuenta is null)
+            return;
+        var envio = _sinConfirmar;
+        if (envio is null)
+        {
+            if (Devolucion is not { } calculo)
+                return;
+            _idDevolucion ??= Ids.Nuevo();
+            envio = (new SolicitudDevolverSaldo(_idDevolucion.Value, Caja.Id, Turno.Id, Sesion.UsuarioId, calculo.EntregaCentavos,
+                _cuenta.Credito.SaldoCentavos), calculo.MontoCentavos);
+        }
+        var (solicitud, monto) = envio.Value;
+        solicitud = solicitud with { AutorizacionId = autorizacion ?? solicitud.AutorizacionId };
+        (_error, _aviso) = (null, null);
+        _ocupado = true;
+        try
+        {
+            var comprobante = await Servicio.DevolverSaldoAsync(Cliente.Id, solicitud, monto);
+            (_devolviendo, _devolver, _idDevolucion, _sinConfirmar) = (false, "", null, null);
+            await AlAbonar.InvokeAsync(comprobante);
+            _cuenta = await Servicio.CuentaClienteAsync(Cliente.Id);
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "requiere-autorizacion" && autorizacion is null)
+        {
+            _autorizar = true;
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
+        {
+            _error = "Sin conexión con la caja principal: el saldo a favor se devuelve cuando vuelva.";
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "saldo-sin-confirmar")
+        {
+            // Se perdió la respuesta: hasta saber si quedó, se manda otra vez lo mismo.
+            _sinConfirmar = (solicitud, monto);
+        }
+        catch (ErrorCaja ex)
+        {
+            // Una respuesta del servicio: no quedó (si hubiera quedado, habría salido su comprobante). Se ve el saldo de ahora.
+            (_error, _sinConfirmar) = (ex.Message, null);
+            try
+            {
+                _cuenta = await Servicio.CuentaClienteAsync(Cliente.Id);
+            }
+            catch (ErrorCaja)
+            {
+            }
         }
         finally
         {
@@ -257,6 +567,9 @@ else
             _error = ex.Message;
         }
     }
+
+    /// <summary>Lo que debe, o lo que tiene a favor.</summary>
+    private static string Saldo(long centavos) => centavos < 0 ? $"{Formato.Dinero(-centavos)} a favor" : Formato.Dinero(centavos);
 
     private static string Pesos(long centavos) => (centavos / 100m).ToString("0.##", CultureInfo.InvariantCulture);
 }

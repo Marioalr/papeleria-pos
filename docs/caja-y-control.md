@@ -58,6 +58,22 @@ El centro del proyecto: que la sucursal funcione bien y con control aunque el du
   - **Su cuenta** está en su ficha del módulo «Clientes»: lo que debe, lo vencido y sus movimientos, cada uno con el
     saldo que dejó. Ahí el dueño cambia sus condiciones y ajusta el saldo (por ejemplo, para pasar lo que ya debía en la
     libreta, con la fecha de entonces). La lista dice cuánto debe cada quien. No se deja inactivo a quien debe.
+  - **Qué tan puntual paga** (su evaluación, en la ficha y en la columna «Paga a tiempo» de la lista): de sus compras a
+    crédito de los últimos seis meses (y las más viejas que todavía debe), cuántas liquidó a más tardar el día que
+    vencían, en cuántos días en promedio y cuántas ya vencieron sin pagarse. Sale de aplicar lo pagado a lo más viejo; no
+    cuentan los ajustes ni lo que se devolvió completo.
+  - **Estado de cuenta** (en su cuenta): desde la compra más vieja que sigue sin pagarse (y al menos los últimos 30 días;
+    la fecha se cambia), lo que debía al empezar, cada compra a crédito y cada abono con el saldo que dejó, lo que debe y
+    lo que falta pagar de cada compra con su vencimiento. Se imprime en la impresora de tickets o se copia como texto
+    para mandarlo por WhatsApp. Solo con la caja principal.
+  - **Devolver saldo a favor** (en su cuenta, con un turno abierto): se le entrega en efectivo lo que tiene a favor, todo
+    (al peso, y la cuenta queda en cero exacto) o una parte en pesos. No se devuelve lo que viene de transferencias por
+    verificar. El cajero necesita la autorización del encargado (regla «Devolver en efectivo el saldo a favor»), sale un
+    comprobante que firma el cliente, se le avisa al dueño y en el corte resta de lo esperado. Solo en línea (y no si esa
+    caja todavía tiene algo del cliente sin subir), y no se cancela: si fue un error, el efectivo regresa como entrada
+    (F7) y el dueño ajusta su saldo. Si se pierde la respuesta, la caja ya no cuenta con ese saldo a favor y no se entrega
+    el efectivo hasta saber si quedó. Otra caja que esté sin conexión todavía conoce el saldo de antes: si le fía contra
+    él, al volver queda a deber y por revisar.
   - **Sin conexión** se fía y se abona con el saldo que conoce la caja; el ticket y el comprobante dicen «(saldo según
     esta caja)». Lo que no cuadró al volver (pasó el límite más de lo autorizado, ya no tenía crédito, o un abono lo
     dejó a favor) queda en «Clientes → Por revisar», para el encargado y el dueño, y le llega al dueño. Sin conexión no
@@ -73,7 +89,7 @@ El centro del proyecto: que la sucursal funcione bien y con control aunque el du
   avisa al dueño.
 - Corte parcial (X) y de cierre (Z).
 - Los abonos de los clientes van aparte, por forma de pago; los de efectivo suman a lo esperado. Lo fiado también sale
-  aparte, solo para saberlo: no entró dinero.
+  aparte, solo para saberlo: no entró dinero. El saldo a favor que se les devolvió a los clientes resta de lo esperado.
 
 ## Autorizaciones configurables
 
@@ -99,6 +115,7 @@ Se pueden poner umbrales. Ejemplos de reglas (todas editables):
 | Reimprimir un documento ya impreso | Permitido con motivo |
 | Verificar una transferencia | Solo encargado o dueño |
 | Dar de alta y editar clientes registrados | Encargado o dueño (los privilegios que da el encargado se le avisan al dueño) |
+| Devolver en efectivo el saldo a favor de un cliente | Requiere encargado (se le avisa al dueño) |
 
 **Cómo se autoriza:**
 - con el PIN del encargado o del dueño en la misma caja, o
@@ -147,7 +164,8 @@ aviso se podría actuar: bloquear lo sensible o toda la caja, pedir un corte X o
 - Caja abierta fuera de horario
 - Existencia negativa y diferencias en conteos y recepciones
 - Transferencias sin verificar al cierre
-- Crédito: pasar el límite, ajustes del saldo y lo del crédito sin conexión que quedó por revisar
+- Crédito: pasar el límite, ajustes del saldo, saldo a favor devuelto en efectivo y lo del crédito sin conexión que quedó
+  por revisar
 - Lo hecho sin conexión que llegó después del corte Z de su turno (ventas, abonos, entradas y salidas)
 - **Resumen diario** al cierre: ventas, utilidad, corte y alertas del día
 
