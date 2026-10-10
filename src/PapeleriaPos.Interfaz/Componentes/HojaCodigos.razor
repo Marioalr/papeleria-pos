@@ -1,0 +1,168 @@
+@* F4 → Hoja de códigos (fase 2, entrega 4, parte 2): la hoja enmicada del mostrador con lo diminuto que no lleva
+   etiqueta (gomas, clips sueltos), para escanearlo desde ahí. La lista se guarda por sucursal en el orden que la deja
+   el encargado; a lo que no tiene código se le da uno interno al preparar la hoja. *@
+@using PapeleriaPos.Impresion
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<p class="nota">
+    Lo diminuto que no lleva etiqueta (gomas, clips sueltos, botones) se cobra escaneando su código desde esta hoja: imprímela,
+    enmícala y déjala en el mostrador. Cuando cambie la lista, vuelve a imprimirla.
+</p>
+<ElegirProducto SucursalId="Caja.SucursalId" Accion="Agregar a la hoja" AlElegir="AgregarAsync" />
+
+@if (_lista is null)
+{
+    <p class="@(_error is null ? "" : "error")">@(_error ?? "Cargando…")</p>
+}
+else
+{
+    @if (_lista.Count == 0)
+    {
+        <p class="vacia">La hoja está vacía: agrega lo que no lleva etiqueta.</p>
+    }
+    else
+    {
+        <div class="resultados revision">
+            <table>
+                <thead><tr><th>#</th><th>Producto</th><th>Departamento</th><th>Código</th><th></th></tr></thead>
+                @for (var i = 0; i < _lista.Count; i++)
+                {
+                    var indice = i;
+                    var r = _lista[i];
+                    <tr>
+                        <td>@(i + 1)</td>
+                        <td>@r.Producto</td>
+                        <td>@r.Departamento</td>
+                        <td>@(r.Codigo ?? "le daremos uno interno")</td>
+                        <td class="acciones-renglon">
+                            <button class="boton chico" disabled="@(_ocupado || indice == 0)" title="Subir" @onclick="() => MoverAsync(indice, -1)">↑</button>
+                            <button class="boton chico" disabled="@(_ocupado || indice == _lista.Count - 1)" title="Bajar" @onclick="() => MoverAsync(indice, 1)">↓</button>
+                            <button class="boton chico" disabled="@_ocupado" @onclick="() => QuitarAsync(indice)">Quitar</button>
+                        </td>
+                    </tr>
+                }
+            </table>
+        </div>
+    }
+
+    <div class="acciones izquierda">
+        <label class="en-linea opcion"><input type="checkbox" @bind="_porDepartamento" /> Separar por departamento</label>
+        <label class="en-linea opcion"><input type="checkbox" @bind="_conPrecio" /> Con precio de menudeo</label>
+        <button class="boton" disabled="@(_ocupado || _lista.Count == 0)" @onclick="VistaPreviaAsync">Vista previa</button>
+        <button class="boton principal" disabled="@(_ocupado || _lista.Count == 0)" @onclick="ImprimirAsync">Imprimir</button>
+    </div>
+    <p class="nota">Imprime al <strong>100 % (tamaño real)</strong>: así las barras salen del ancho que el lector lee bien.</p>
+}
+@if (_mensaje is not null)
+{
+    <p class="aviso">@_mensaje</p>
+}
+@if (_error is not null && _lista is not null)
+{
+    <p class="error">@_error</p>
+}
+<div class="vista-etiquetas @(_vista ? "" : "oculto")">
+    <iframe id="marco-hoja-codigos" title="Vista previa de la hoja de códigos"></iframe>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    private const string Marco = "#marco-hoja-codigos";
+
+    private List<RenglonHojaCodigosDto>? _lista;
+    private bool _porDepartamento = true;
+    private bool _conPrecio;
+    private bool _vista;
+    private bool _ocupado;
+    private string? _mensaje;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _lista = await Cliente.HojaCodigosAsync(Caja.SucursalId);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task AgregarAsync((ProductoVentaDto Producto, PresentacionDto Presentacion) elegido)
+    {
+        if (_lista is null || _ocupado)
+            return;
+        if (_lista.Any(r => r.VarianteId == elegido.Producto.VarianteId))
+        {
+            _mensaje = $"«{elegido.Producto.Descripcion}» ya está en la hoja.";
+            return;
+        }
+        await GuardarAsync([.. _lista.Select(r => r.VarianteId), elegido.Producto.VarianteId], $"Agregado: «{elegido.Producto.Descripcion}».");
+    }
+
+    private async Task MoverAsync(int indice, int hacia)
+    {
+        var ids = _lista!.Select(r => r.VarianteId).ToList();
+        (ids[indice], ids[indice + hacia]) = (ids[indice + hacia], ids[indice]);
+        await GuardarAsync(ids, null);
+    }
+
+    private async Task QuitarAsync(int indice)
+    {
+        var quitado = _lista![indice];
+        await GuardarAsync(_lista.Where((_, i) => i != indice).Select(r => r.VarianteId).ToList(), $"Quitado: «{quitado.Producto}».");
+    }
+
+    /// <summary>Cada cambio se guarda de una vez: la lista es la de la sucursal, no la de esta caja.</summary>
+    private async Task GuardarAsync(List<Guid> ids, string? mensaje) =>
+        await HacerAsync(async () =>
+        {
+            _lista = await Cliente.GuardarHojaCodigosAsync(Caja.SucursalId, new SolicitudHojaCodigos(Sesion.UsuarioId, ids));
+            _mensaje = mensaje;
+        });
+
+    private async Task VistaPreviaAsync() => await HacerAsync(PrepararAsync);
+
+    private async Task ImprimirAsync() =>
+        await HacerAsync(async () =>
+        {
+            await PrepararAsync();
+            await Js.ImprimirMarcoAsync(Marco);
+        });
+
+    private async Task PrepararAsync()
+    {
+        var hoja = await Cliente.PrepararHojaCodigosAsync(Caja.SucursalId, new SolicitudPrepararHojaCodigos(Sesion.UsuarioId, _conPrecio));
+        if (hoja.CodigosNuevos > 0)
+            _lista = await Cliente.HojaCodigosAsync(Caja.SucursalId);
+        var productos = hoja.Productos.Select(p => new ProductoEnHoja(p.Departamento, p.Producto, p.Codigo, p.PrecioCentavos)).ToList();
+        _vista = true;
+        StateHasChanged();
+        await Js.MostrarEnMarcoAsync(Marco, HojaDeCodigos.Html($"Códigos del mostrador · {hoja.Sucursal} · {DateTime.Now:dd/MM/yyyy}", productos, _porDepartamento));
+        _mensaje = hoja.CodigosNuevos == 0
+            ? $"{productos.Count} productos en la hoja."
+            : $"{productos.Count} productos en la hoja. A {hoja.CodigosNuevos} se les dio código interno: ya se pueden cobrar escaneándolo.";
+    }
+
+    private async Task HacerAsync(Func<Task> accion)
+    {
+        _ocupado = true;
+        (_mensaje, _error) = (null, null);
+        try
+        {
+            await accion();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

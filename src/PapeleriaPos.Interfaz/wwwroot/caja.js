@@ -92,7 +92,14 @@ export function mostrarEnMarco(selector, html) {
     const marco = document.querySelector(selector);
     if (!marco) return Promise.resolve();
     return new Promise(listo => {
-        marco.addEventListener('load', () => listo(), { once: true });
+        marco.addEventListener('load', () => {
+            // El marco crece a lo que mide la página (ya acomodada): se recorre con la barra de la vista previa.
+            requestAnimationFrame(() => {
+                const documento = marco.contentDocument;
+                if (documento) marco.style.height = (documento.documentElement.scrollHeight + 4) + 'px';
+                listo();
+            });
+        }, { once: true });
         marco.srcdoc = html;
     });
 }

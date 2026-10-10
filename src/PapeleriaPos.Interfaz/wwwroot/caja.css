@@ -291,3 +291,4 @@ ul.revision-celular .cifras { color: var(--suave); font-size: 14px; display: fle
 .vista-etiquetas iframe { display: block; width: 216mm; border: none; margin: 0 auto; background: #fff; }
 .etiquetas .captura { flex-wrap: wrap; padding: 0; background: none; }
 @media (max-width: 1100px) { .etiquetas { grid-template-columns: 1fr; } }
+td.acciones-renglon { white-space: nowrap; text-align: right; }

@@ -240,6 +240,17 @@ internal sealed class ConteoDepartamentoRenglonConfiguracion : IEntityTypeConfig
     }
 }
 
+internal sealed class RenglonHojaCodigosConfiguracion : IEntityTypeConfiguration<RenglonHojaCodigos>
+{
+    public void Configure(EntityTypeBuilder<RenglonHojaCodigos> b)
+    {
+        b.ToTable("HojaCodigos");
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(r => r.SucursalId);
+        b.HasOne<Variante>().WithMany().HasForeignKey(r => r.VarianteId);
+        b.HasIndex(r => new { r.SucursalId, r.VarianteId }).IsUnique();
+    }
+}
+
 internal sealed class SecuenciaConfiguracion : IEntityTypeConfiguration<Secuencia>
 {
     public void Configure(EntityTypeBuilder<Secuencia> b) => b.HasKey(s => s.Nombre);

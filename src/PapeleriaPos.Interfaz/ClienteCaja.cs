@@ -353,6 +353,15 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<EtiquetasDto> PrepararEtiquetasAsync(SolicitudEtiquetas solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<EtiquetasDto>("api/etiquetas", solicitud));
 
+    public Task<List<RenglonHojaCodigosDto>> HojaCodigosAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<RenglonHojaCodigosDto>>($"api/sucursales/{sucursalId}/hoja-codigos") ?? []);
+
+    public Task<List<RenglonHojaCodigosDto>> GuardarHojaCodigosAsync(Guid sucursalId, SolicitudHojaCodigos solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<List<RenglonHojaCodigosDto>>($"api/sucursales/{sucursalId}/hoja-codigos", solicitud));
+
+    public Task<HojaCodigosDto> PrepararHojaCodigosAsync(Guid sucursalId, SolicitudPrepararHojaCodigos solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<HojaCodigosDto>($"api/sucursales/{sucursalId}/hoja-codigos/preparar", solicitud));
+
     public Task<MargenesDto> MargenesAsync(Guid sucursalId) =>
         ConRespaldoAsync(async () => (await _http.GetAsync<MargenesDto>($"api/sucursales/{sucursalId}/margenes"))!);
 

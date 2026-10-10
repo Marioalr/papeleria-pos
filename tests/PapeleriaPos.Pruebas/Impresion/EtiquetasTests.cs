@@ -184,3 +184,36 @@ public class HojaEtiquetasTests
         Assert.Contains(">80</div>", html);
     }
 }
+
+public class HojaDeCodigosTests
+{
+    private static readonly List<ProductoEnHoja> Productos =
+    [
+        new("Escolar", "Goma blanca <chica>", Ean13.Completar("200000000011")),
+        new("Oficina", "Clip mariposa", "P000190", 150),
+        new("Escolar", "Botón dorado", Ean13.Completar("200000000012")),
+    ];
+
+    [Fact]
+    public void Separa_por_departamento_en_el_orden_en_que_aparecen()
+    {
+        var html = HojaDeCodigos.Html("Códigos del mostrador · Matriz", Productos, porDepartamento: true);
+
+        Assert.Equal(2, Regex.Count(html, "<h2>"));
+        Assert.True(html.IndexOf("<h2>Escolar</h2>", StringComparison.Ordinal) < html.IndexOf("<h2>Oficina</h2>", StringComparison.Ordinal));
+        // Los de Escolar quedan juntos aunque en la lista estén separados.
+        Assert.True(html.IndexOf("Botón dorado", StringComparison.Ordinal) < html.IndexOf("Clip mariposa", StringComparison.Ordinal));
+        Assert.Equal(3, Regex.Count(html, "<svg class=\"barras\""));
+        Assert.Contains("Goma blanca &lt;chica&gt;", html);
+        Assert.Contains("$1.50", html);
+    }
+
+    [Fact]
+    public void Sin_separar_respeta_el_orden_de_la_lista()
+    {
+        var html = HojaDeCodigos.Html("Hoja", Productos, porDepartamento: false);
+
+        Assert.DoesNotContain("<h2>", html);
+        Assert.True(html.IndexOf("Clip mariposa", StringComparison.Ordinal) < html.IndexOf("Botón dorado", StringComparison.Ordinal));
+    }
+}
