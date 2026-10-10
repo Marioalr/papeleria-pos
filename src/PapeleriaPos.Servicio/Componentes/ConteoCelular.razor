@@ -1,0 +1,103 @@
+@* El conteo completo desde el celular (fase 2, entrega 3, parte 3): cada quien entra con su usuario y PIN, y el
+   celular lo recuerda un turno para no pedirlo cada vez que la página se recarga. *@
+@using PapeleriaPos.Interfaz
+@using PapeleriaPos.Nucleo.Contratos
+@inject ClienteCaja Cliente
+@inject ConexionCaja Conexion
+@inject ModuloCaja Js
+@inject SesionesCelular Sesiones
+
+<div class="pagina-celular celular">
+    @if (_error is not null)
+    {
+        <div class="centrado">
+            <div class="tarjeta">
+                <h2>Conteo de inventario</h2>
+                <p class="error">@_error</p>
+                <button class="boton principal" @onclick="IniciarAsync">Reintentar</button>
+            </div>
+        </div>
+    }
+    else if (_caja is null || !_listo)
+    {
+        <div class="centrado"><p>Conectando…</p></div>
+    }
+    else if (_sesion is null)
+    {
+        <Entrada Caja="_caja" Titulo="@($"Conteo de inventario · {_caja.Sucursal}")" AlEntrar="EntrarAsync" />
+    }
+    else
+    {
+        <div class="barra-celular">
+            <span>Conteo · @_sesion.Nombre</span>
+            <button class="boton chico" @onclick="SalirAsync">Salir</button>
+        </div>
+        <div class="cuerpo-celular">
+            <ConteoCompleto Caja="_caja" Sesion="_sesion" EnCelular="true" ConteoInicial="_conteoInicial" AlCambiarConteo="RecordarConteoAsync" />
+        </div>
+    }
+</div>
+
+@code {
+    private const string ClaveSesion = "papeleria-pos.conteo.sesion";
+    private const string ClaveConteo = "papeleria-pos.conteo.actual";
+
+    private CajaDto? _caja;
+    private SesionDto? _sesion;
+    private string? _llave;
+    private Guid? _conteoInicial;
+    private bool _listo;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => IniciarAsync();
+
+    /// <summary>La sucursal es la de la caja principal: la de esta PC.</summary>
+    private async Task IniciarAsync()
+    {
+        _error = null;
+        try
+        {
+            await Conexion.Listo;
+            var cajas = await Cliente.CajasAsync();
+            _caja = Conexion.CajaId is { } id ? cajas.SingleOrDefault(c => c.Id == id) : cajas.FirstOrDefault();
+            if (_caja is null)
+                _error = "El servicio todavía no tiene cajas dadas de alta.";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    /// <summary>Si este celular ya entró en este turno, sigue donde estaba.</summary>
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!primera)
+            return;
+        _llave = await Js.LeerAsync(ClaveSesion);
+        _sesion = Sesiones.Recuperar(_llave);
+        if (_sesion is not null && Guid.TryParse(await Js.LeerAsync(ClaveConteo), out var conteo))
+            _conteoInicial = conteo;
+        _listo = true;
+        StateHasChanged();
+    }
+
+    private async Task EntrarAsync(SesionDto sesion)
+    {
+        _sesion = sesion;
+        _conteoInicial = null;
+        _llave = Sesiones.Recordar(sesion);
+        await Js.GuardarAsync(ClaveSesion, _llave);
+        await Js.GuardarAsync(ClaveConteo, null);
+    }
+
+    private async Task RecordarConteoAsync(Guid? conteoId) => await Js.GuardarAsync(ClaveConteo, conteoId?.ToString());
+
+    private async Task SalirAsync()
+    {
+        Sesiones.Olvidar(_llave);
+        (_sesion, _llave, _conteoInicial) = (null, null, null);
+        await Js.GuardarAsync(ClaveSesion, null);
+        await Js.GuardarAsync(ClaveConteo, null);
+    }
+}

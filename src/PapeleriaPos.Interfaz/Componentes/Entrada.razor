@@ -3,7 +3,7 @@
 
 <div class="centrado">
     <div class="tarjeta">
-        <h2>@Caja.Nombre · @Caja.Sucursal</h2>
+        <h2>@(Titulo ?? $"{Caja.Nombre} · {Caja.Sucursal}")</h2>
         @if (Turno is not null)
         {
             <p class="nota">Turno abierto de @Turno.Cajero desde las @Turno.AbiertoLocal.ToString("HH:mm")</p>
@@ -25,6 +25,9 @@
 @code {
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter] public TurnoDto? Turno { get; set; }
+
+    /// <summary>En lugar de la caja y la sucursal (el conteo desde el celular).</summary>
+    [Parameter] public string? Titulo { get; set; }
     [Parameter] public EventCallback<SesionDto> AlEntrar { get; set; }
 
     private string _usuario = "";

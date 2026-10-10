@@ -1,6 +1,6 @@
-@* F4 Inventario: las compras (recibir a ciegas y capturar la nota), las órdenes de compra (el dueño y el encargado), abrir
-   paquete, los proveedores y el margen mínimo (solo el dueño). Los ajustes, conteos y etiquetas llegan en las siguientes
-   entregas de la fase 2. *@
+@* F4 Inventario: las compras (recibir a ciegas y capturar la nota), las órdenes de compra (el dueño y el encargado), el
+   conteo del día y el completo por departamento, ajustes y mermas, abrir paquete, los proveedores y el margen mínimo
+   (solo el dueño). Las etiquetas llegan en la entrega 4 de la fase 2. *@
 
 <nav class="pestanas config-pestanas">
     @foreach (var p in Enum.GetValues<Pestanas>().Where(Visible))
@@ -21,6 +21,9 @@
     case Pestanas.Conteo:
         <ConteoDelDia Caja="Caja" Sesion="Sesion" />
         break;
+    case Pestanas.ConteoCompleto:
+        <ConteoCompleto Caja="Caja" Sesion="Sesion" />
+        break;
     case Pestanas.Ajustes:
         <AjustesMermas Caja="Caja" Sesion="Sesion" />
         break;
@@ -39,7 +42,7 @@
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
-    private enum Pestanas { Compras, Ordenes, Conteo, Ajustes, Paquete, Proveedores, Margen }
+    private enum Pestanas { Compras, Ordenes, Conteo, ConteoCompleto, Ajustes, Paquete, Proveedores, Margen }
 
     private bool Visible(Pestanas p) => p switch
     {
@@ -55,6 +58,7 @@
         Pestanas.Compras => "Compras",
         Pestanas.Ordenes => "Órdenes de compra",
         Pestanas.Conteo => "Conteo del día",
+        Pestanas.ConteoCompleto => "Conteo completo",
         Pestanas.Ajustes => "Ajustes y mermas",
         Pestanas.Paquete => "Abrir paquete",
         Pestanas.Proveedores => "Proveedores",

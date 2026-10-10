@@ -202,6 +202,44 @@ internal sealed class ConteoCiclicoRenglonConfiguracion : IEntityTypeConfigurati
     }
 }
 
+internal sealed class ConteoDepartamentoConfiguracion : IEntityTypeConfiguration<ConteoDepartamento>
+{
+    public void Configure(EntityTypeBuilder<ConteoDepartamento> b)
+    {
+        b.ToTable("ConteosDepartamento");
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(c => c.SucursalId);
+        b.HasOne<Departamento>().WithMany().HasForeignKey(c => c.DepartamentoId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(c => c.AbiertoPorId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(c => c.TerminadoPorId);
+        b.HasMany(c => c.Capturas).WithOne().HasForeignKey(c => c.ConteoId);
+        b.HasMany(c => c.Renglones).WithOne().HasForeignKey(r => r.ConteoId);
+        // Un solo conteo abierto por departamento en la sucursal.
+        b.HasIndex(c => new { c.SucursalId, c.DepartamentoId }).IsUnique().HasFilter($"\"Estado\" = '{EstadoConteoDepartamento.Abierto}'");
+    }
+}
+
+internal sealed class CapturaConteoConfiguracion : IEntityTypeConfiguration<CapturaConteo>
+{
+    public void Configure(EntityTypeBuilder<CapturaConteo> b)
+    {
+        b.ToTable("ConteosDepartamentoCapturas");
+        b.HasOne<Variante>().WithMany().HasForeignKey(c => c.VarianteId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(c => c.UsuarioId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(c => c.QuitadaPorId);
+        b.Ignore(c => c.Vigente);
+    }
+}
+
+internal sealed class ConteoDepartamentoRenglonConfiguracion : IEntityTypeConfiguration<ConteoDepartamentoRenglon>
+{
+    public void Configure(EntityTypeBuilder<ConteoDepartamentoRenglon> b)
+    {
+        b.ToTable("ConteosDepartamentoRenglones");
+        b.HasOne<Variante>().WithMany().HasForeignKey(r => r.VarianteId);
+        b.Ignore(r => r.Diferencia);
+    }
+}
+
 internal sealed class SecuenciaConfiguracion : IEntityTypeConfiguration<Secuencia>
 {
     public void Configure(EntityTypeBuilder<Secuencia> b) => b.HasKey(s => s.Nombre);

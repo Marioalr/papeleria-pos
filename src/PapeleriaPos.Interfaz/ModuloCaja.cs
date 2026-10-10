@@ -4,7 +4,7 @@ using PapeleriaPos.Impresion;
 
 namespace PapeleriaPos.Interfaz;
 
-/// <summary>El JavaScript de la caja (wwwroot/caja.js): teclas de función y foco.</summary>
+/// <summary>El JavaScript de la caja (wwwroot/caja.js): teclas de función, foco y lo que recuerda el celular.</summary>
 public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
 {
     private Task<IJSObjectReference>? _modulo;
@@ -23,6 +23,11 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     public async Task MostrarAsync(string selector) => await (await Modulo).InvokeVoidAsync("mostrar", selector);
 
     public async Task CopiarAsync(string texto) => await (await Modulo).InvokeVoidAsync("copiar", texto);
+
+    /// <summary>Guarda en el navegador (vacío: lo borra).</summary>
+    public async Task GuardarAsync(string clave, string? valor) => await (await Modulo).InvokeVoidAsync("guardar", clave, valor);
+
+    public async Task<string?> LeerAsync(string clave) => await (await Modulo).InvokeAsync<string?>("leer", clave);
 
     public async ValueTask DisposeAsync()
     {

@@ -149,7 +149,27 @@ Entrega 3, parte 2, el conteo cíclico diario:
   ajustes ($200) se le avisa al dueño (alerta «Diferencia en el conteo del día»), y el resumen del día dice cuántos se
   contaron y cuánto no cuadró. Queda en la bitácora (regla «Contar el conteo del día», permitida a todos).
 
-Lo que sigue de la entrega 3: el conteo completo por departamento desde el celular (parte 3).
+Entrega 3, parte 3, el conteo completo por departamento (F4 → Conteo completo y el celular):
+
+- **Desde el celular:** la pestaña muestra la dirección de la caja principal en la red de la tienda
+  (`http://<ip>:5080/conteo`) y su código QR. Con el celular en el mismo wifi se abre en el navegador, sin instalar
+  nada; cada quien entra con su usuario y PIN, y el celular lo recuerda un turno. La caja del navegador ya no se abre
+  desde otros aparatos de la red: solo el conteo.
+- **Abrir:** el encargado (o el dueño) abre el departamento que van a contar (regla «Abrir y cerrar el conteo
+  completo», el cajero no). Puede haber varios departamentos abiertos a la vez, uno de cada uno.
+- **Contar:** quienes estén presentes escanean (con lector) o buscan cada producto y escriben lo que hay en ese lugar,
+  por cajas y sueltas. Cada captura se suma a lo que ya contaron los demás (anaquel, mostrador, bodega) y se ve quién
+  contó qué; nadie ve lo que dice el sistema. Una captura equivocada se quita (las de otros, solo el encargado). Lo de
+  otro departamento no se captura ahí: se cuenta con el suyo.
+- **Revisar y cerrar:** el encargado ve lo contado contra lo que decía el sistema cuando se contó cada producto, lo
+  que nadie contó y lo que vale la diferencia. Al cerrar, lo contado reemplaza la existencia y **lo que nadie contó
+  queda en cero**. Lo que se vendió o llegó después de contar un producto sigue contando, así que se puede vender
+  mientras se cuenta. También se puede cancelar: se descarta lo contado y la existencia no cambia.
+- **Después:** la diferencia entra al kardex como movimiento de conteo, a su costo promedio, y queda en la bitácora.
+  Al dueño le llega «Conteo completo de un departamento» (los suyos no) y el resumen del día lo menciona. Lo contado
+  ya no vuelve a salir pronto en el conteo del día, y el último conteo de cada departamento queda como reporte.
+
+Lo que sigue: la entrega 4 (etiquetas y sugerido de compra).
 
 ## 1. Catálogo (F3 Productos)
 

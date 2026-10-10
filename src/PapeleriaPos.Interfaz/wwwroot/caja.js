@@ -69,3 +69,20 @@ export function mostrar(selector) {
 export async function copiar(texto) {
     await navigator.clipboard.writeText(texto);
 }
+
+// Lo que recuerda el celular entre recargas (la sesión del conteo). Si el navegador no deja guardar, no pasa nada.
+export function guardar(clave, valor) {
+    try {
+        if (valor === null) localStorage.removeItem(clave);
+        else localStorage.setItem(clave, valor);
+    } catch {
+    }
+}
+
+export function leer(clave) {
+    try {
+        return localStorage.getItem(clave);
+    } catch {
+        return null;
+    }
+}

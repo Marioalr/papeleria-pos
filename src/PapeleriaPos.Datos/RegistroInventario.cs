@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Inventario;
 
 namespace PapeleriaPos.Datos;
@@ -28,6 +29,37 @@ public sealed class RegistroInventario(PosDbContext db)
         }
         existencia.Aplicar(movimiento);
         db.MovimientosInventario.Add(movimiento);
+    }
+
+    /// <summary>
+    /// El movimiento de la diferencia de un conteo (cíclico o completo), sin agregarlo: lo que sobró entra a su costo
+    /// promedio (o al último costo si no hay existencia) y lo que faltó sale a su costo promedio. Sin diferencia, nada.
+    /// </summary>
+    public async Task<MovimientoInventario?> DiferenciaDeConteoAsync(
+        Guid sucursalId, Variante variante, Cantidad diferencia, DateTime ahoraUtc, string documentoTipo, Guid documentoId, CancellationToken ct = default)
+    {
+        if (diferencia.Milesimas == 0)
+            return null;
+        var existencia = await ExistenciaAsync(sucursalId, variante.Id, ct);
+        var ultimo = await new RegistroCaja(db).UltimoCostoAsync(variante.Id, ct);
+        return diferencia.EsPositiva
+            ? Kardex.Entrada(sucursalId, variante, TipoMovimiento.Conteo, diferencia,
+                existencia.CostoPromedio is { } promedio && promedio > 0
+                    ? (long)Math.Round(promedio * diferencia.Milesimas / Cantidad.Escala, MidpointRounding.AwayFromZero)
+                    : diferencia.Importe(ultimo),
+                ahoraUtc, documentoTipo: documentoTipo, documentoId: documentoId)
+            : Kardex.Salida(sucursalId, variante, TipoMovimiento.Conteo, diferencia.Abs(), existencia, ultimo, ahoraUtc,
+                documentoTipo: documentoTipo, documentoId: documentoId);
+    }
+
+    /// <summary>Agrega la diferencia de un conteo, sin guardar. Devuelve lo que vale, con signo.</summary>
+    public async Task<long> AgregarDiferenciaDeConteoAsync(
+        Guid sucursalId, Variante variante, Cantidad diferencia, DateTime ahoraUtc, string documentoTipo, Guid documentoId, CancellationToken ct = default)
+    {
+        if (await DiferenciaDeConteoAsync(sucursalId, variante, diferencia, ahoraUtc, documentoTipo, documentoId, ct) is not { } movimiento)
+            return 0;
+        await AgregarAsync(movimiento, ct);
+        return movimiento.CostoCentavos;
     }
 
     public async Task RegistrarAsync(MovimientoInventario movimiento, CancellationToken ct = default)

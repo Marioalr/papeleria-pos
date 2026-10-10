@@ -623,3 +623,46 @@ public sealed record ConteoCiclicoDto(Guid Id, DateOnly Fecha, int Total, int Co
 
 /// <param name="CantidadMilesimas">En unidad base.</param>
 public sealed record SolicitudContar(Guid UsuarioId, Guid VarianteId, long CantidadMilesimas);
+
+// ── Conteo completo por departamento (fase 2, entrega 3, parte 3) ───────────
+
+/// <param name="FechaLocal">Cuándo se abrió (si está abierto) o se cerró.</param>
+/// <param name="Usuario">Quien lo abrió o lo cerró.</param>
+/// <param name="Contados">Productos con al menos una captura.</param>
+/// <param name="Personas">Quienes han capturado.</param>
+public sealed record ConteoResumenDto(Guid Id, DateTime FechaLocal, string Usuario, int Contados, IReadOnlyList<string> Personas);
+
+/// <summary>Un departamento en el conteo completo: si se está contando y cuándo se cerró el último.</summary>
+/// <param name="Productos">Los de inventario activos: lo que hay que contar.</param>
+public sealed record DepartamentoConteoDto(Guid DepartamentoId, string Departamento, int Productos, ConteoResumenDto? Abierto, ConteoResumenDto? UltimoCerrado);
+
+/// <summary>Cómo abrir la página del conteo en un celular conectado al wifi de la tienda.</summary>
+/// <param name="QrSvg">La primera dirección como código QR, para abrirla con la cámara.</param>
+public sealed record DireccionCelularDto(IReadOnlyList<string> Direcciones, string? QrSvg);
+
+/// <summary>Una presentación para contar por cajas o paquetes, con sus códigos para reconocer lo escaneado.</summary>
+public sealed record PresentacionConteoDto(string Nombre, long FactorMilesimas, bool EsBase, IReadOnlyList<string> Codigos);
+
+/// <summary>Un producto del departamento. Lo que decía el sistema y la diferencia solo vienen en la revisión.</summary>
+/// <param name="Contado">La suma de lo que capturaron todos; vacío si nadie lo ha contado.</param>
+public sealed record ProductoConteoDto(
+    Guid VarianteId, string Producto, string? Codigo, UnidadBase Unidad, IReadOnlyList<PresentacionConteoDto> Presentaciones,
+    decimal? Contado, decimal? Sistema, decimal? Diferencia, long? CostoDiferenciaCentavos);
+
+public sealed record CapturaConteoDto(Guid Id, Guid VarianteId, decimal Cantidad, Guid UsuarioId, string Usuario, DateTime CapturadoLocal);
+
+/// <param name="Revision">Si trae lo que decía el sistema: solo el dueño y el encargado, al revisar antes de cerrar o ya cerrado.</param>
+/// <param name="NetoCentavos">En la revisión: lo que vale la diferencia de todo el departamento (+ sobró, − faltó).</param>
+/// <param name="Capturas">Las vigentes, de la más reciente a la más vieja.</param>
+public sealed record ConteoDepartamentoDto(
+    Guid Id, Guid DepartamentoId, string Departamento, EstadoConteoDepartamento Estado, string AbiertoPor, DateTime AbiertoLocal,
+    string? TerminadoPor, DateTime? TerminadoLocal, int Productos, int Contados, bool Revision, long? NetoCentavos,
+    IReadOnlyList<ProductoConteoDto> Renglones, IReadOnlyList<CapturaConteoDto> Capturas);
+
+public sealed record SolicitudAbrirConteo(Guid UsuarioId, Guid DepartamentoId);
+
+/// <param name="Id">Lo genera quien captura: si llega dos veces, cuenta una.</param>
+/// <param name="CantidadMilesimas">En unidad base.</param>
+public sealed record SolicitudCaptura(Guid Id, Guid UsuarioId, Guid VarianteId, long CantidadMilesimas);
+
+public sealed record SolicitudConteoCompleto(Guid UsuarioId);

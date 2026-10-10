@@ -46,7 +46,8 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
    ```
 
 2. El servicio de la sucursal, apuntando a esa base (en desarrollo también muestra la caja en el navegador, en
-   <http://localhost:5080>, con vista previa del ticket en lugar de imprimir):
+   <http://localhost:5080>, con vista previa del ticket en lugar de imprimir; solo en la misma PC: desde otro aparato
+   de la red solo se abre el conteo, en <http://localhost:5080/conteo>):
 
    ```
    dotnet run --project src/PapeleriaPos.Servicio -- --environment Development --ConnectionStrings:Pos="Data Source=ficticios.db"
@@ -81,6 +82,8 @@ Instala el administrador de cada PC; después todo se usa desde una cuenta comú
    administrador, correr ahí `instalar-servicio.ps1`. El servicio arranca con Windows, deja la base en
    `C:\ProgramData\PapeleriaPos\pos.db`, los respaldos en `C:\ProgramData\PapeleriaPos\respaldos` y abre el firewall
    solo para la red local. Mientras no haya datos reales, se copia ahí una base de prueba antes de instalar.
+   Por esa misma puerta entran los celulares del conteo completo (`http://<ip>:5080/conteo`, en F4 → Conteo
+   completo salen la dirección y el QR): tienen que estar en el wifi de la misma red que la caja principal.
 
 3. **Cada caja** (también la principal): como administrador, correr `instalar-caja.ps1` desde `publicar/caja` (con
    `-ColaImpresion "<cola>"` en la PC de la WF-6590). La copia a Archivos de programa, deja
@@ -106,7 +109,8 @@ Para que alguien de la tienda pruebe lo que ya funciona, solo y sin tocar eleven
   deja «Papelería POS (prueba)» y la carpeta «Ejemplos de la prueba»: el Léeme con los usuarios y PIN, y una factura
   XML y una nota PDF de un proveedor de la base.
 - **La caja arranca su propio servicio** en el puerto 5180 y lo apaga al cerrarse. No hay servicio de Windows ni
-  segunda caja. La base ficticia de trabajo va en `C:\ProgramData\PapeleriaPos-Prueba`.
+  segunda caja. La base ficticia de trabajo va en `C:\ProgramData\PapeleriaPos-Prueba`. El instalador abre el 5180
+  a la red local para probar el conteo completo desde un celular en el mismo wifi.
 - **La franja de prueba,** arriba, tiene la guía de tareas (las respuestas se guardan en un archivo en el escritorio),
   los avisos que le llegarían al dueño por Telegram y «Empezar de cero».
 - Necesita Windows 10 u 11 de 64 bits con WebView2 (viene con Windows 11 y con Windows 10 actualizado).

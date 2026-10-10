@@ -313,6 +313,31 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<ConteoCiclicoDto> ContarDelDiaAsync(Guid conteoId, SolicitudContar solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<ConteoCiclicoDto>($"api/conteos/{conteoId}/contar", solicitud));
 
+    public Task<List<DepartamentoConteoDto>> ConteosCompletosAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<DepartamentoConteoDto>>($"api/sucursales/{sucursalId}/conteos-completos") ?? []);
+
+    public Task<ConteoDepartamentoDto> AbrirConteoAsync(Guid sucursalId, SolicitudAbrirConteo solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<ConteoDepartamentoDto>($"api/sucursales/{sucursalId}/conteos-completos", solicitud));
+
+    public Task<ConteoDepartamentoDto> ConteoCompletoAsync(Guid conteoId, Guid usuarioId, bool revision = false) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<ConteoDepartamentoDto>($"api/conteos-completos/{conteoId}?usuarioId={usuarioId}&revision={revision}"))!);
+
+    public Task<ConteoDepartamentoDto> CapturarConteoAsync(Guid conteoId, SolicitudCaptura solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<ConteoDepartamentoDto>($"api/conteos-completos/{conteoId}/capturas", solicitud));
+
+    public Task<ConteoDepartamentoDto> QuitarCapturaAsync(Guid conteoId, Guid capturaId, Guid usuarioId) =>
+        ConRespaldoAsync(() => _http.PostAsync<ConteoDepartamentoDto>($"api/conteos-completos/{conteoId}/capturas/{capturaId}/quitar",
+            new SolicitudConteoCompleto(usuarioId)));
+
+    public Task<ConteoDepartamentoDto> CerrarConteoAsync(Guid conteoId, Guid usuarioId) =>
+        ConRespaldoAsync(() => _http.PostAsync<ConteoDepartamentoDto>($"api/conteos-completos/{conteoId}/cerrar", new SolicitudConteoCompleto(usuarioId)));
+
+    public Task<ConteoDepartamentoDto> CancelarConteoAsync(Guid conteoId, Guid usuarioId) =>
+        ConRespaldoAsync(() => _http.PostAsync<ConteoDepartamentoDto>($"api/conteos-completos/{conteoId}/cancelar", new SolicitudConteoCompleto(usuarioId)));
+
+    public Task<DireccionCelularDto> DireccionCelularAsync() =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<DireccionCelularDto>("api/conteo-celular"))!);
+
     public Task<MargenesDto> MargenesAsync(Guid sucursalId) =>
         ConRespaldoAsync(async () => (await _http.GetAsync<MargenesDto>($"api/sucursales/{sucursalId}/margenes"))!);
 

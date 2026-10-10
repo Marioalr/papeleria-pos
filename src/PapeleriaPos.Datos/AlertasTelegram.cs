@@ -39,7 +39,8 @@ public static class AlertasTelegram
             if (Tipo(b, configuracion) is not { } tipo || !configuracion.Avisa(tipo))
                 continue;
             // Lo que cambia el dueño en el catálogo o en el inventario no se le avisa a él mismo.
-            if (tipo is TipoAlerta.CambioPrecioCatalogo or TipoAlerta.AjusteInventario or TipoAlerta.DiferenciaConteo && b.UsuarioId is { } quien
+            if (tipo is TipoAlerta.CambioPrecioCatalogo or TipoAlerta.AjusteInventario or TipoAlerta.DiferenciaConteo or TipoAlerta.ConteoCompleto
+                && b.UsuarioId is { } quien
                 && db.Usuarios.Find(quien)?.Rol == Rol.Dueno)
                 continue;
             Agregar(db, chats, tipo, Texto(db, b, tipo), $"bitacora:{b.Id}");
@@ -92,6 +93,8 @@ public static class AlertasTelegram
             AccionControlada.SalidaEfectivo when b.MontoCentavos > c.UmbralSalidaCentavos => TipoAlerta.SalidaEfectivo,
             AccionControlada.AjustarInventario or AccionControlada.Merma when b.MontoCentavos >= c.UmbralAjusteCentavos => TipoAlerta.AjusteInventario,
             AccionControlada.ContarInventario when b.MontoCentavos >= c.UmbralAjusteCentavos => TipoAlerta.DiferenciaConteo,
+            // RegistroConteoCompleto.CerrarAsync escribe "Cerró el conteo de…"; abrir y cancelar no se avisan.
+            AccionControlada.ConteoCompleto when b.Detalle.StartsWith("Cerró", StringComparison.Ordinal) => TipoAlerta.ConteoCompleto,
             // RegistroCaja.VerificarTransferenciaAsync escribe "Verificó…" o "Rechazó…".
             AccionControlada.VerificarTransferencia when b.Detalle.StartsWith("Rechazó", StringComparison.Ordinal) => TipoAlerta.TransferenciaRechazada,
             _ => null,
@@ -117,6 +120,7 @@ public static class AlertasTelegram
         TipoAlerta.Compra => "Compra con diferencias o margen bajo",
         TipoAlerta.AjusteInventario => "Ajuste o merma de inventario",
         TipoAlerta.DiferenciaConteo => "Diferencia en el conteo del día",
+        TipoAlerta.ConteoCompleto => "Conteo completo de un departamento",
         _ => "Resumen del día",
     };
 
@@ -131,7 +135,12 @@ public static class AlertasTelegram
         texto.AppendLine();
         texto.AppendLine(usuario is null ? b.Detalle : $"{usuario}: {b.Detalle}");
         if (b.MontoCentavos is { } monto)
-            texto.AppendLine(tipo == TipoAlerta.DiferenciaCorte ? $"{(monto < 0 ? "Faltante" : "Sobrante")}: {Dinero(Math.Abs(monto))}" : Dinero(monto));
+            texto.AppendLine(tipo switch
+            {
+                TipoAlerta.DiferenciaCorte => $"{(monto < 0 ? "Faltante" : "Sobrante")}: {Dinero(Math.Abs(monto))}",
+                TipoAlerta.ConteoCompleto => monto == 0 ? "Cuadra a costo" : $"{(monto < 0 ? "Faltó" : "Sobró")} a costo: {Dinero(Math.Abs(monto))}",
+                _ => Dinero(monto),
+            });
         if (autorizo is not null)
             texto.AppendLine(tipo == TipoAlerta.AutorizacionNegada ? $"Intentó autorizar: {autorizo}" : $"Autorizó: {autorizo}");
         if (b.EnContingencia)
@@ -228,6 +237,15 @@ public static class AlertasTelegram
             var conDiferencia = contados.Where(r => r.CostoDiferenciaCentavos is not (null or 0)).ToList();
             t.AppendLine($"Conteo del día: {contados.Count} de {conteo.Renglones.Count}"
                 + (conDiferencia.Count > 0 ? $" · con diferencia {conDiferencia.Count} (neto {Dinero(conDiferencia.Sum(r => r.CostoDiferenciaCentavos ?? 0))})" : " · todo cuadra"));
+        }
+        foreach (var cerrado in await (from c in db.ConteosDepartamento.AsNoTracking()
+                                       join d in db.Departamentos on c.DepartamentoId equals d.Id
+                                       where c.SucursalId == sucursalId && c.Estado == EstadoConteoDepartamento.Cerrado
+                                           && c.TerminadoUtc >= desde && c.TerminadoUtc < hasta
+                                       select new { c.Id, d.Nombre }).ToListAsync(ct))
+        {
+            var neto = await db.ConteosDepartamentoRenglones.Where(r => r.ConteoId == cerrado.Id).SumAsync(r => (long?)r.CostoDiferenciaCentavos, ct) ?? 0;
+            t.AppendLine($"Conteo completo de «{cerrado.Nombre}» cerrado · neto {(neto < 0 ? "-" : "+")}{Dinero(Math.Abs(neto))}");
         }
         if (porVerificar.Count > 0)
             t.AppendLine($"Transferencias por verificar: {porVerificar.Count} · {Dinero(porVerificar.Sum())}");

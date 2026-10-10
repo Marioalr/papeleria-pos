@@ -38,6 +38,9 @@ public enum TipoAlerta
 
     /// <summary>Una diferencia del conteo cíclico desde el umbral de ajustes.</summary>
     DiferenciaConteo,
+
+    /// <summary>Se cerró el conteo completo de un departamento: lo contado reemplazó la existencia (los del dueño no).</summary>
+    ConteoCompleto,
 }
 
 /// <summary>Un chat de Telegram vinculado a un usuario (solo el dueño): recibe alertas y contesta autorizaciones.</summary>

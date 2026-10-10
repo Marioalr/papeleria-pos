@@ -44,24 +44,9 @@ public sealed class RegistroConteoCiclico(PosDbContext db)
             throw new ArgumentException($"«{RegistroCompras.Nombre(variante)}» se cuenta en piezas enteras.");
 
         var inventario = new RegistroInventario(db);
-        var existencia = await inventario.ExistenciaAsync(conteo.SucursalId, variante.Id, ct);
-        var esperado = existencia.Cantidad;
+        var esperado = (await inventario.ExistenciaAsync(conteo.SucursalId, variante.Id, ct)).Cantidad;
         var diferencia = contado - esperado;
-        var costo = 0L;
-        if (diferencia.Milesimas != 0)
-        {
-            var ultimo = await new RegistroCaja(db).UltimoCostoAsync(variante.Id, ct);
-            var movimiento = diferencia.EsPositiva
-                ? Kardex.Entrada(conteo.SucursalId, variante, TipoMovimiento.Conteo, diferencia,
-                    existencia.CostoPromedio is { } promedio && promedio > 0
-                        ? (long)Math.Round(promedio * diferencia.Milesimas / Cantidad.Escala, MidpointRounding.AwayFromZero)
-                        : diferencia.Importe(ultimo),
-                    Ahora, documentoTipo: nameof(ConteoCiclico), documentoId: conteo.Id)
-                : Kardex.Salida(conteo.SucursalId, variante, TipoMovimiento.Conteo, diferencia.Abs(), existencia, ultimo, Ahora,
-                    documentoTipo: nameof(ConteoCiclico), documentoId: conteo.Id);
-            costo = movimiento.CostoCentavos;
-            await inventario.AgregarAsync(movimiento, ct);
-        }
+        var costo = await inventario.AgregarDiferenciaDeConteoAsync(conteo.SucursalId, variante, diferencia, Ahora, nameof(ConteoCiclico), conteo.Id, ct);
         renglon.Contar(contado, esperado, costo, s.UsuarioId, Ahora);
         new ServicioControl(db).Registrar(conteo.SucursalId, null, s.UsuarioId, AccionControlada.ContarInventario,
             diferencia.Milesimas == 0
@@ -127,6 +112,13 @@ public sealed class RegistroConteoCiclico(PosDbContext db)
                      .Where(r => r.ContadoUtc != null).Select(r => new { r.VarianteId, r.ContadoUtc }).ToListAsync(ct))
             if (!contados.TryGetValue(r.VarianteId, out var antes) || r.ContadoUtc > antes)
                 contados[r.VarianteId] = r.ContadoUtc!.Value;
+        // Lo del conteo completo de un departamento, igual.
+        foreach (var r in await (from r in db.ConteosDepartamentoRenglones
+                                 join c in db.ConteosDepartamento on r.ConteoId equals c.Id
+                                 where c.SucursalId == sucursalId && c.Estado == EstadoConteoDepartamento.Cerrado
+                                 select new { r.VarianteId, c.TerminadoUtc }).ToListAsync(ct))
+            if (!contados.TryGetValue(r.VarianteId, out var antes) || r.TerminadoUtc > antes)
+                contados[r.VarianteId] = r.TerminadoUtc!.Value;
 
         return variantes.Select(v =>
             {

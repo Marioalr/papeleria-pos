@@ -1,0 +1,379 @@
+@* Contar un departamento del conteo completo: se escanea o se busca el producto y se escribe lo que hay en ese lugar
+   (por cajas y sueltas). Cada captura se suma a lo que ya contaron los demás; nadie ve lo que dice el sistema. Se
+   actualiza solo para ver lo que van contando los demás. *@
+@implements IDisposable
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+@if (_conteo is null)
+{
+    <p class="@(_error is null ? "" : "error")">@(_error ?? "Cargando…")</p>
+    <button class="boton" @onclick="AlVolver">Volver a los departamentos</button>
+}
+else
+{
+    var c = _conteo;
+    <div class="barra-conteo">
+        <button class="boton chico" @onclick="AlVolver">← Departamentos</button>
+        <strong>@c.Departamento</strong>
+        @if (c.Estado == EstadoConteoDepartamento.Abierto)
+        {
+            <span class="avance">@c.Contados de @c.Productos</span>
+            @if (PuedeAdministrar)
+            {
+                <button class="boton chico" @onclick="AlRevisar">Revisar y cerrar</button>
+            }
+        }
+    </div>
+
+    @if (c.Estado != EstadoConteoDepartamento.Abierto)
+    {
+        <p class="aviso">@(c.Estado == EstadoConteoDepartamento.Cerrado ? $"{c.TerminadoPor} cerró este conteo: lo contado ya es la existencia." : $"{c.TerminadoPor} canceló este conteo.")</p>
+    }
+    else
+    {
+        @if (_elegido is { } e)
+        {
+            <div class="captura-conteo">
+                <div class="producto-elegido">
+                    <strong>@e.Producto</strong>
+                    @if (e.Codigo is { } codigo)
+                    {
+                        <span class="nota">@codigo</span>
+                    }
+                </div>
+                @if (CapturasDe(e.VarianteId) is { Count: > 0 } previas)
+                {
+                    <p class="nota">Ya van @Formato.Numero(e.Contado ?? 0): @string.Join(" · ", previas.Select(p => $"{Quien(p)} {Formato.Numero(p.Cantidad)}"))</p>
+                }
+                <p class="nota">Escribe lo que hay en este lugar; se suma a lo que ya contaron.</p>
+                @for (var i = 0; i < e.Presentaciones.Count; i++)
+                {
+                    var indice = i;
+                    var p = e.Presentaciones[i];
+                    <label>
+                        @Etiqueta(e, p)
+                        <input id="cantidad-@indice" inputmode="@(p.EsBase && e.Unidad != UnidadBase.Pieza ? "decimal" : "numeric")"
+                               value="@_cantidades.GetValueOrDefault(indice)" @oninput="ev => _cantidades[indice] = ev.Value?.ToString() ?? string.Empty"
+                               @onkeydown="AlTeclearCantidadAsync" />
+                    </label>
+                }
+                <p class="total-conteo">
+                    @if (Total(out var total, out _))
+                    {
+                        <span>Total: <strong>@Formato.Numero(total)</strong> @(Unidad(e.Unidad).ToLowerInvariant())</span>
+                    }
+                </p>
+                <div class="acciones">
+                    <button class="boton" @onclick="Soltar">Cancelar</button>
+                    <button class="boton principal" disabled="@_ocupado" @onclick="GuardarAsync">Guardar</button>
+                </div>
+            </div>
+        }
+
+        <div class="buscar-conteo">
+            <input id="buscar-conteo" placeholder="Escanea o escribe el nombre o el código" autocomplete="off" @bind="_busqueda" @bind:event="oninput"
+                   @onkeydown="AlTeclearBusquedaAsync" />
+            <label class="en-linea"><input type="checkbox" @bind="_soloFaltan" /> Solo lo que falta</label>
+        </div>
+    }
+
+    @if (_mensaje is not null)
+    {
+        <p class="aviso">@_mensaje</p>
+    }
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+
+    @if (c.Estado == EstadoConteoDepartamento.Abierto)
+    {
+        var filtrados = Filtrados().ToList();
+        <ul class="productos-conteo">
+            @foreach (var r in filtrados.Take(Maximo))
+            {
+                var renglon = r;
+                <li class="@(r.Contado is null ? "" : "contado") @(r.VarianteId == _elegido?.VarianteId ? "elegido" : "")" @onclick="() => ElegirAsync(renglon)">
+                    <span class="nombre">@r.Producto<small>@r.Codigo</small></span>
+                    <span class="cuenta">@(r.Contado is { } contado ? Formato.Numero(contado) : "falta")</span>
+                </li>
+            }
+        </ul>
+        @if (filtrados.Count > Maximo)
+        {
+            <p class="nota">Y @(filtrados.Count - Maximo) más: escribe para encontrarlos.</p>
+        }
+        else if (filtrados.Count == 0)
+        {
+            <p class="vacia">@(_soloFaltan && string.IsNullOrWhiteSpace(_busqueda) ? "Ya se contó todo el departamento." : "Nada coincide.")</p>
+        }
+
+        var mias = c.Capturas.Where(x => x.UsuarioId == Sesion.UsuarioId).Take(15).ToList();
+        @if (mias.Count > 0)
+        {
+            <h3 class="subtitulo">Lo que capturaste</h3>
+            <ul class="capturas">
+                @foreach (var x in mias)
+                {
+                    var captura = x;
+                    <li>
+                        <span>@x.CapturadoLocal.ToString("HH:mm") · @Nombre(x.VarianteId)</span>
+                        <strong>@Formato.Numero(x.Cantidad)</strong>
+                        <button class="boton chico" disabled="@_ocupado" @onclick="() => QuitarAsync(captura)">Quitar</button>
+                    </li>
+                }
+            </ul>
+        }
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid ConteoId { get; set; }
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter] public bool EnCelular { get; set; }
+    [Parameter] public bool PuedeAdministrar { get; set; }
+    [Parameter] public EventCallback AlRevisar { get; set; }
+    [Parameter] public EventCallback AlVolver { get; set; }
+
+    private const int Maximo = 60;
+    private static readonly TimeSpan CadaCuanto = TimeSpan.FromSeconds(10);
+
+    private ConteoDepartamentoDto? _conteo;
+    private ProductoConteoDto? _elegido;
+    private readonly Dictionary<int, string> _cantidades = [];
+    private Guid _capturaId = Ids.Nuevo();
+    private string _busqueda = "";
+    private bool _soloFaltan;
+    private bool _ocupado;
+    private string? _mensaje;
+    private string? _error;
+    private string? _enfocar;
+    private readonly CancellationTokenSource _fin = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAsync();
+        _enfocar = "#buscar-conteo";
+        _ = ActualizarSoloAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_enfocar is { } selector)
+        {
+            _enfocar = null;
+            await Js.EnfocarAsync(selector);
+        }
+    }
+
+    /// <summary>Lo que van contando los demás, cada 10 segundos mientras el conteo siga abierto.</summary>
+    private async Task ActualizarSoloAsync()
+    {
+        using var reloj = new PeriodicTimer(CadaCuanto);
+        try
+        {
+            while (await reloj.WaitForNextTickAsync(_fin.Token))
+            {
+                if (_ocupado || _conteo?.Estado != EstadoConteoDepartamento.Abierto)
+                    continue;
+                await InvokeAsync(async () =>
+                {
+                    await CargarAsync(silencioso: true);
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task CargarAsync(bool silencioso = false)
+    {
+        try
+        {
+            _conteo = await Cliente.ConteoCompletoAsync(ConteoId, Sesion.UsuarioId);
+            if (_elegido is { } e)
+                _elegido = _conteo.Renglones.FirstOrDefault(r => r.VarianteId == e.VarianteId) ?? e;
+        }
+        catch (ErrorCaja ex) when (!silencioso)
+        {
+            _error = ex.Message;
+        }
+        catch (ErrorCaja)
+        {
+            // Se vuelve a intentar en la siguiente vuelta.
+        }
+    }
+
+    private IEnumerable<ProductoConteoDto> Filtrados()
+    {
+        var palabras = Texto.Normalizar(_busqueda).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return _conteo!.Renglones.Where(r => (!_soloFaltan || r.Contado is null)
+            && (palabras.Length == 0 || palabras.All(Texto.Normalizar($"{r.Producto} {r.Codigo}").Contains) || TieneCodigo(r, _busqueda.Trim())));
+    }
+
+    private static bool TieneCodigo(ProductoConteoDto r, string codigo) =>
+        codigo.Length > 0 && r.Presentaciones.Any(p => p.Codigos.Contains(codigo, StringComparer.OrdinalIgnoreCase));
+
+    /// <summary>Con Enter: un código escaneado suma uno de esa presentación; un nombre que solo da un producto, lo elige.</summary>
+    private async Task AlTeclearBusquedaAsync(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || _conteo is null)
+            return;
+        var texto = _busqueda.Trim();
+        if (texto.Length == 0)
+            return;
+        _error = null;
+        foreach (var r in _conteo.Renglones)
+        {
+            var indice = r.Presentaciones.ToList().FindIndex(p => p.Codigos.Contains(texto, StringComparer.OrdinalIgnoreCase));
+            if (indice < 0)
+                continue;
+            if (_elegido?.VarianteId != r.VarianteId)
+                Elegir(r);
+            _cantidades[indice] = ((Leer(_cantidades.GetValueOrDefault(indice)) ?? 0) + 1).ToString(CultureInfo.InvariantCulture);
+            _busqueda = "";
+            _mensaje = $"Escaneado: {Etiqueta(r, r.Presentaciones[indice])} +1. Escanea otro igual para sumar, o guarda.";
+            _enfocar = "#buscar-conteo";
+            return;
+        }
+        var coinciden = Filtrados().Take(2).ToList();
+        if (coinciden.Count == 1)
+            await ElegirAsync(coinciden[0]);
+        else if (coinciden.Count == 0)
+            _error = $"«{texto}» no está en «{_conteo.Departamento}». Si es de otro departamento, se cuenta con ese.";
+    }
+
+    private Task ElegirAsync(ProductoConteoDto r)
+    {
+        if (_conteo?.Estado != EstadoConteoDepartamento.Abierto)
+            return Task.CompletedTask;
+        Elegir(r);
+        _enfocar = "#cantidad-0";
+        return Task.CompletedTask;
+    }
+
+    private void Elegir(ProductoConteoDto r)
+    {
+        _elegido = r;
+        _cantidades.Clear();
+        _capturaId = Ids.Nuevo();
+        (_mensaje, _error) = (null, null);
+    }
+
+    private void Soltar()
+    {
+        _elegido = null;
+        _cantidades.Clear();
+        _enfocar = "#buscar-conteo";
+    }
+
+    private async Task AlTeclearCantidadAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await GuardarAsync();
+    }
+
+    private static decimal? Leer(string? texto) =>
+        decimal.TryParse(texto?.Replace(",", "").Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) ? n : null;
+
+    /// <summary>Cajas y paquetes por lo que traen, más las sueltas. Falso si nada está escrito o algo no es un número.</summary>
+    private bool Total(out decimal total, out string? problema)
+    {
+        (total, problema) = (0, null);
+        var algo = false;
+        for (var i = 0; i < _elegido!.Presentaciones.Count; i++)
+        {
+            var texto = _cantidades.GetValueOrDefault(i);
+            if (string.IsNullOrWhiteSpace(texto))
+                continue;
+            var p = _elegido.Presentaciones[i];
+            if (Leer(texto) is not { } n || n < 0 || (!p.EsBase && n != Math.Floor(n)))
+            {
+                problema = $"Revisa «{Etiqueta(_elegido, p)}»: {(p.EsBase ? "un número" : "cuántas, enteras")}.";
+                return false;
+            }
+            total += n * p.FactorMilesimas / 1000m;
+            algo = true;
+        }
+        return algo;
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_elegido is not { } e || _ocupado)
+            return;
+        if (!Total(out var total, out var problema))
+        {
+            _error = problema ?? $"Escribe cuántos hay de «{e.Producto}» en este lugar (0 si no hay).";
+            return;
+        }
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            _conteo = await Cliente.CapturarConteoAsync(ConteoId, new SolicitudCaptura(_capturaId, Sesion.UsuarioId, e.VarianteId, (long)Math.Round(total * 1000)));
+            var ahora = _conteo.Renglones.FirstOrDefault(r => r.VarianteId == e.VarianteId);
+            _mensaje = $"Guardado: {Formato.Numero(total)} de «{e.Producto}» (van {Formato.Numero(ahora?.Contado ?? total)}).";
+            _elegido = null;
+            _cantidades.Clear();
+            _capturaId = Ids.Nuevo();
+            _busqueda = "";
+            _enfocar = "#buscar-conteo";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task QuitarAsync(CapturaConteoDto captura)
+    {
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            _conteo = await Cliente.QuitarCapturaAsync(ConteoId, captura.Id, Sesion.UsuarioId);
+            _mensaje = $"Quitado: {Formato.Numero(captura.Cantidad)} de «{Nombre(captura.VarianteId)}».";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private List<CapturaConteoDto> CapturasDe(Guid varianteId) => _conteo!.Capturas.Where(x => x.VarianteId == varianteId).Reverse().ToList();
+
+    private string Quien(CapturaConteoDto x) => x.UsuarioId == Sesion.UsuarioId ? "tú" : x.Usuario;
+
+    private string Nombre(Guid varianteId) => _conteo!.Renglones.FirstOrDefault(r => r.VarianteId == varianteId)?.Producto ?? "";
+
+    private static string Etiqueta(ProductoConteoDto r, PresentacionConteoDto p) =>
+        p.EsBase
+            ? r.Presentaciones.Count > 1 ? $"{Unidad(r.Unidad)} {(r.Unidad == UnidadBase.Pieza ? "sueltas" : "sueltos")}" : Unidad(r.Unidad)
+            : $"{p.Nombre} (de {Formato.Numero(p.FactorMilesimas / 1000m)})";
+
+    private static string Unidad(UnidadBase unidad) => unidad switch
+    {
+        UnidadBase.Metro => "Metros",
+        UnidadBase.Kilogramo => "Kilos",
+        UnidadBase.Litro => "Litros",
+        _ => "Piezas",
+    };
+
+    public void Dispose()
+    {
+        _fin.Cancel();
+        _fin.Dispose();
+    }
+}
