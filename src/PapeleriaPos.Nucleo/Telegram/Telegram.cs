@@ -35,6 +35,9 @@ public enum TipoAlerta
 
     /// <summary>Un ajuste o una merma desde el umbral (los del dueño no se le avisan).</summary>
     AjusteInventario,
+
+    /// <summary>Una diferencia del conteo cíclico desde el umbral de ajustes.</summary>
+    DiferenciaConteo,
 }
 
 /// <summary>Un chat de Telegram vinculado a un usuario (solo el dueño): recibe alertas y contesta autorizaciones.</summary>

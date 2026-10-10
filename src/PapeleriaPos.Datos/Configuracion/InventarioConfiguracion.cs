@@ -179,6 +179,29 @@ internal sealed class AjusteInventarioConfiguracion : IEntityTypeConfiguration<A
     }
 }
 
+internal sealed class ConteoCiclicoConfiguracion : IEntityTypeConfiguration<ConteoCiclico>
+{
+    public void Configure(EntityTypeBuilder<ConteoCiclico> b)
+    {
+        b.ToTable("ConteosCiclicos");
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(c => c.SucursalId);
+        b.HasMany(c => c.Renglones).WithOne().HasForeignKey(r => r.ConteoId);
+        // Uno por sucursal y día: si dos cajas lo piden a la vez, vale el primero.
+        b.HasIndex(c => new { c.SucursalId, c.Fecha }).IsUnique();
+    }
+}
+
+internal sealed class ConteoCiclicoRenglonConfiguracion : IEntityTypeConfiguration<ConteoCiclicoRenglon>
+{
+    public void Configure(EntityTypeBuilder<ConteoCiclicoRenglon> b)
+    {
+        b.ToTable("ConteosCiclicosRenglones");
+        b.HasOne<Variante>().WithMany().HasForeignKey(r => r.VarianteId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(r => r.ContadoPorId);
+        b.Ignore(r => r.Diferencia);
+    }
+}
+
 internal sealed class SecuenciaConfiguracion : IEntityTypeConfiguration<Secuencia>
 {
     public void Configure(EntityTypeBuilder<Secuencia> b) => b.HasKey(s => s.Nombre);

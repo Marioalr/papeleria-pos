@@ -610,3 +610,16 @@ public sealed record SolicitudMerma(
 public sealed record AjusteInventarioDto(
     DateTime FechaLocal, TipoMovimiento Tipo, string Producto, decimal Cantidad, long? CostoCentavos, CausaMerma? Causa, string Motivo, string Usuario,
     string? Autorizo);
+
+// ── Conteo cíclico (fase 2, entrega 3, parte 2) ─────────────────────────────
+
+/// <summary>Un producto del conteo del día. Lo que decía el sistema y la diferencia solo los ven el dueño y el encargado.</summary>
+/// <param name="Presentaciones">Para contar cajas y piezas: "Caja 12 = 12".</param>
+public sealed record RenglonConteoDto(
+    Guid VarianteId, string Producto, string? Codigo, UnidadBase Unidad, string? Presentaciones, decimal? Contado, DateTime? ContadoLocal,
+    string? ContadoPor, decimal? Esperado, decimal? Diferencia, long? CostoDiferenciaCentavos);
+
+public sealed record ConteoCiclicoDto(Guid Id, DateOnly Fecha, int Total, int Contados, IReadOnlyList<RenglonConteoDto> Renglones);
+
+/// <param name="CantidadMilesimas">En unidad base.</param>
+public sealed record SolicitudContar(Guid UsuarioId, Guid VarianteId, long CantidadMilesimas);

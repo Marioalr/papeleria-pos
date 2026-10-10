@@ -66,7 +66,7 @@ else
         <label>Diferencia en el corte desde <input inputmode="decimal" @bind="_corte" /></label>
         <label>Devolución desde <input inputmode="decimal" @bind="_devolucion" /></label>
         <label>Salida de efectivo desde <input inputmode="decimal" @bind="_salida" /></label>
-        <label>Ajuste o merma desde <input inputmode="decimal" @bind="_ajuste" /></label>
+        <label>Ajuste, merma o diferencia de conteo desde <input inputmode="decimal" @bind="_ajuste" /></label>
         <label>Caja sin conexión después de (minutos) <input inputmode="numeric" @bind="_minutos" /></label>
         <label>La tienda abre <input type="time" @bind="_apertura" /></label>
         <label>La tienda cierra <input type="time" @bind="_cierre" /></label>
@@ -215,6 +215,7 @@ else
         TipoAlerta.CambioPrecioCatalogo => "Precio del catálogo cambiado (no avisa los tuyos)",
         TipoAlerta.Compra => "Compra con diferencias contra la nota o con margen bajo",
         TipoAlerta.AjusteInventario => "Ajuste o merma de inventario (no avisa los tuyos)",
+        TipoAlerta.DiferenciaConteo => "Diferencia en el conteo del día",
         _ => "Resumen del día (con el último corte)",
     };
 }
