@@ -1,0 +1,227 @@
+@* F4 → Sugerido de compra (fase 2, entrega 4, parte 3): lo que hay que pedir hoy, por proveedor, con lo que se vende al
+   día (el POS y el historial de eleventa) y la temporada (lo de estas semanas el año pasado). Se ajustan las cantidades y
+   cada proveedor se vuelve una orden de compra abierta, que se revisa y se manda en «Órdenes de compra». *@
+@inject ClienteCaja Cliente
+
+<div class="sugerido">
+    <div class="parametros-sugerido">
+        <label>Cada cuánto compras (días) <input inputmode="numeric" value="@_cobertura" @onchange="e => _cobertura = Entero(e.Value, _cobertura)" /></label>
+        <label>Colchón (días) <input inputmode="numeric" value="@_colchon" @onchange="e => _colchon = Entero(e.Value, _colchon)" /></label>
+        <button class="boton principal" disabled="@_ocupado" @onclick="CalcularAsync">Calcular</button>
+        <span class="nota">
+            Lo vendido en 90 días (con el historial de eleventa) y lo de estas semanas el año pasado. Se pide hasta cubrir
+            @(_cobertura + _colchon) días; debajo del colchón urge.
+        </span>
+    </div>
+
+    @if (_sugerido is null)
+    {
+        <p class="@(_error is null ? "" : "error")">@(_error ?? "Calculando…")</p>
+    }
+    else if (_sugerido.Proveedores.Count == 0)
+    {
+        <p class="vacia">Con lo que hay y lo que viene en órdenes abiertas, hoy no hace falta pedir nada.</p>
+    }
+    else
+    {
+        <p>
+            Al @_sugerido.Fecha.ToString("dd/MM/yyyy"): @_sugerido.Proveedores.Sum(p => p.Renglones.Count) productos por pedir,
+            @_sugerido.Proveedores.Sum(p => p.Renglones.Count(r => r.Urgente)) urgentes.
+        </p>
+        @foreach (var grupo in _sugerido.Proveedores)
+        {
+            var g = grupo;
+            var clave = Clave(g);
+            <section class="proveedor-sugerido">
+                <div class="encabezado-conteo">
+                    <h3 class="subtitulo">@g.Proveedor</h3>
+                    <span class="nota">@g.Renglones.Count productos · @Formato.Dinero(Total(g)) aprox.</span>
+                    @if (_hechas.TryGetValue(clave, out var folio))
+                    {
+                        <span class="aviso">Orden @folio armada: está en «Órdenes de compra».</span>
+                    }
+                    else
+                    {
+                        @if (g.ProveedorId is null)
+                        {
+                            <select @bind="_proveedorSinLigar">
+                                <option value="">¿A qué proveedor?</option>
+                                @foreach (var p in _proveedores)
+                                {
+                                    <option value="@p.Id">@p.Nombre</option>
+                                }
+                            </select>
+                        }
+                        <button class="boton" disabled="@(_ocupado || !Elegidos(g).Any() || (g.ProveedorId is null && string.IsNullOrEmpty(_proveedorSinLigar)))"
+                                @onclick="() => OrdenAsync(g)">Hacer orden de compra</button>
+                    }
+                </div>
+                <div class="resultados revision">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th></th><th>Producto</th><th class="num">Hay</th><th class="num">En camino</th><th class="num">Vende al día</th>
+                                <th class="num">Mínimo</th><th class="num">Máximo</th><th class="num">Pedir</th><th></th><th class="num">Costo</th>
+                            </tr>
+                        </thead>
+                        @foreach (var renglon in g.Renglones)
+                        {
+                            var r = renglon;
+                            <tr class="@(r.Urgente ? "urgente" : "")">
+                                <td><input type="checkbox" checked="@(!_fuera.Contains(r.VarianteId))" @onchange="e => Elegir(r, e.Value is true)" /></td>
+                                <td>
+                                    @r.Producto
+                                    @if (r.CodigoProveedor is { } cp)
+                                    {
+                                        <span class="nota"> · @cp</span>
+                                    }
+                                    @if (r.Temporada >= 1.2m || r.Temporada <= 0.8m)
+                                    {
+                                        <span class="etiqueta">temporada ×@Formato.Numero(r.Temporada)</span>
+                                    }
+                                </td>
+                                <td class="num">@Formato.Numero(r.Existencia)</td>
+                                <td class="num">@(r.EnCamino == 0 ? "" : Formato.Numero(r.EnCamino))</td>
+                                <td class="num">@Formato.Numero(Math.Round(r.VentaDiaria, r.VentaDiaria < 1 ? 2 : 1))</td>
+                                <td class="num">@Formato.Numero(r.Minimo)</td>
+                                <td class="num">@Formato.Numero(r.Maximo)</td>
+                                <td class="num">
+                                    <input class="umbral" type="number" min="0" value="@Paquetes(r)" @onchange="e => CambiarPaquetes(r, e.Value)" />
+                                </td>
+                                <td>@(r.Factor == 1 ? r.Presentacion : $"{r.Presentacion} ({Formato.Numero(r.Factor)})")</td>
+                                <td class="num">@(r.CostoPaqueteCentavos is { } c ? Formato.Dinero(c * Paquetes(r)) : "")</td>
+                            </tr>
+                        }
+                    </table>
+                </div>
+            </section>
+        }
+    }
+    @if (_mensaje is not null)
+    {
+        <p class="aviso">@_mensaje</p>
+    }
+    @if (_error is not null && _sugerido is not null)
+    {
+        <p class="error">@_error</p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    private SugeridoDto? _sugerido;
+    private List<ProveedorDto> _proveedores = [];
+    private int _cobertura = 14, _colchon = 7;
+    private readonly Dictionary<Guid, int> _paquetes = [];
+    private readonly HashSet<Guid> _fuera = [];
+    private readonly Dictionary<string, string> _hechas = [];
+    private string _proveedorSinLigar = "";
+    private bool _ocupado;
+    private string? _mensaje;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _proveedores = await Cliente.ProveedoresAsync();
+        }
+        catch (ErrorCaja)
+        {
+            // Sin la lista de proveedores, solo no se puede pedir lo que no tiene proveedor.
+        }
+        await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            _sugerido = await Cliente.SugeridoAsync(Caja.SucursalId, Sesion.UsuarioId);
+            (_cobertura, _colchon) = (_sugerido.Parametros.CoberturaDias, _sugerido.Parametros.ColchonDias);
+            _paquetes.Clear();
+            _fuera.Clear();
+            _hechas.Clear();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    /// <summary>Si cambiaron los días, se guardan para la sucursal y se vuelve a calcular.</summary>
+    private async Task CalcularAsync()
+    {
+        _mensaje = null;
+        if (_sugerido is { } s && (s.Parametros.CoberturaDias != _cobertura || s.Parametros.ColchonDias != _colchon))
+        {
+            try
+            {
+                await Cliente.GuardarParametrosSugeridoAsync(Caja.SucursalId,
+                    new SolicitudParametrosSugerido(Sesion.UsuarioId, new ParametrosSugeridoDto(_cobertura, _colchon)));
+            }
+            catch (ErrorCaja ex)
+            {
+                _error = ex.Message;
+                return;
+            }
+        }
+        await CargarAsync();
+    }
+
+    private static string Clave(ProveedorSugeridoDto g) => g.ProveedorId?.ToString() ?? "sin-proveedor";
+
+    private int Paquetes(RenglonSugeridoDto r) => _paquetes.TryGetValue(r.VarianteId, out var n) ? n : r.Paquetes;
+
+    private void CambiarPaquetes(RenglonSugeridoDto r, object? valor)
+    {
+        if (int.TryParse(valor?.ToString(), out var n) && n >= 0)
+            _paquetes[r.VarianteId] = n;
+    }
+
+    private void Elegir(RenglonSugeridoDto r, bool elegido)
+    {
+        if (elegido)
+            _fuera.Remove(r.VarianteId);
+        else
+            _fuera.Add(r.VarianteId);
+    }
+
+    private IEnumerable<RenglonSugeridoDto> Elegidos(ProveedorSugeridoDto g) => g.Renglones.Where(r => !_fuera.Contains(r.VarianteId) && Paquetes(r) > 0);
+
+    private long Total(ProveedorSugeridoDto g) => Elegidos(g).Sum(r => (r.CostoPaqueteCentavos ?? 0) * Paquetes(r));
+
+    private async Task OrdenAsync(ProveedorSugeridoDto g)
+    {
+        var proveedor = g.ProveedorId ?? (Guid.TryParse(_proveedorSinLigar, out var elegido) ? elegido : null);
+        if (proveedor is null)
+            return;
+        _ocupado = true;
+        (_mensaje, _error) = (null, null);
+        try
+        {
+            var orden = await Cliente.OrdenDelSugeridoAsync(Caja.SucursalId, new SolicitudOrdenSugerida(Sesion.UsuarioId, proveedor.Value,
+                Elegidos(g).Select(r => new RenglonOrdenSugeridaDto(r.VarianteId, r.PresentacionId, Paquetes(r))).ToList()));
+            _hechas[Clave(g)] = orden.Folio;
+            _mensaje = $"Listo: {orden.Folio} para {orden.Proveedor} con {orden.Renglones.Count} productos. Revísala y mándala desde «Órdenes de compra».";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private static int Entero(object? valor, int antes) => int.TryParse(valor?.ToString(), out var n) ? n : antes;
+}

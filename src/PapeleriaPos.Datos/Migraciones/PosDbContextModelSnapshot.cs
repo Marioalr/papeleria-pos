@@ -557,6 +557,14 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<DateTime>("ModificadoUtc")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("SugeridoCoberturaDias")
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(14);
+
+                    b.Property<int>("SugeridoColchonDias")
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(7);
+
                     b.Property<long>("UmbralAjusteCentavos")
                         .HasColumnType("INTEGER")
                         .HasDefaultValue(20000L);

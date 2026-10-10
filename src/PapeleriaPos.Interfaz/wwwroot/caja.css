@@ -292,3 +292,15 @@ ul.revision-celular .cifras { color: var(--suave); font-size: 14px; display: fle
 .etiquetas .captura { flex-wrap: wrap; padding: 0; background: none; }
 @media (max-width: 1100px) { .etiquetas { grid-template-columns: 1fr; } }
 td.acciones-renglon { white-space: nowrap; text-align: right; }
+
+/* Fase 2, entrega 4, parte 3: sugerido de compra */
+.parametros-sugerido { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 8px; }
+.parametros-sugerido input { width: 90px; }
+.parametros-sugerido .nota { flex: 1; min-width: 260px; }
+.proveedor-sugerido { margin-bottom: 14px; }
+.proveedor-sugerido .encabezado-conteo { justify-content: flex-start; flex-wrap: wrap; }
+.proveedor-sugerido .encabezado-conteo h3 { margin: 0; }
+.proveedor-sugerido select { font-size: 14px; padding: 3px 6px; }
+.sugerido tr.urgente td:nth-child(2) { font-weight: 600; }
+.sugerido tr.urgente td:nth-child(3) { color: var(--error); font-weight: 600; }
+.sugerido input.umbral { width: 70px; }

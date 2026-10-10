@@ -709,3 +709,30 @@ public sealed record SolicitudPrepararHojaCodigos(Guid UsuarioId, bool ConPrecio
 public sealed record HojaCodigosDto(string Sucursal, IReadOnlyList<ProductoHojaCodigosDto> Productos, int CodigosNuevos);
 
 public sealed record ProductoHojaCodigosDto(string Departamento, string Producto, string Codigo, long? PrecioCentavos);
+
+// ── Sugerido de compra (fase 2, entrega 4, parte 3) ──────────────────────────
+
+/// <param name="CoberturaDias">Cada cuánto se compra: lo que tiene que alcanzar un pedido.</param>
+/// <param name="ColchonDias">Lo que se guarda de más (es el mínimo).</param>
+public sealed record ParametrosSugeridoDto(int CoberturaDias, int ColchonDias);
+
+public sealed record SolicitudParametrosSugerido(Guid UsuarioId, ParametrosSugeridoDto Parametros);
+
+/// <summary>Un producto por pedir. Cantidades en unidad base, salvo <paramref name="Paquetes"/>.</summary>
+/// <param name="VentaDiaria">Ya con la temporada.</param>
+/// <param name="Temporada">Cuánto cambia la venta en estas semanas según el año pasado (1 = igual).</param>
+/// <param name="Paquetes">Cuántos de <paramref name="Presentacion"/> pedir.</param>
+/// <param name="CostoPaqueteCentavos">Con el último costo de este proveedor (o el promedio).</param>
+public sealed record RenglonSugeridoDto(
+    Guid VarianteId, string Producto, string? CodigoProveedor, UnidadBase Unidad, decimal Existencia, decimal EnCamino, decimal VentaDiaria,
+    decimal Temporada, decimal Minimo, decimal Maximo, Guid PresentacionId, string Presentacion, decimal Factor, int Paquetes, long? CostoPaqueteCentavos,
+    bool Urgente);
+
+/// <param name="ProveedorId">Vacío: productos sin proveedor ligado (se elige al hacer la orden).</param>
+public sealed record ProveedorSugeridoDto(Guid? ProveedorId, string Proveedor, IReadOnlyList<RenglonSugeridoDto> Renglones, long TotalCentavos);
+
+public sealed record SugeridoDto(DateOnly Fecha, ParametrosSugeridoDto Parametros, IReadOnlyList<ProveedorSugeridoDto> Proveedores);
+
+public sealed record RenglonOrdenSugeridaDto(Guid VarianteId, Guid PresentacionId, int Paquetes);
+
+public sealed record SolicitudOrdenSugerida(Guid UsuarioId, Guid ProveedorId, IReadOnlyList<RenglonOrdenSugeridaDto> Renglones);

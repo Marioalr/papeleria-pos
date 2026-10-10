@@ -362,6 +362,15 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<HojaCodigosDto> PrepararHojaCodigosAsync(Guid sucursalId, SolicitudPrepararHojaCodigos solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<HojaCodigosDto>($"api/sucursales/{sucursalId}/hoja-codigos/preparar", solicitud));
 
+    public Task<SugeridoDto> SugeridoAsync(Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<SugeridoDto>($"api/sucursales/{sucursalId}/sugerido?usuarioId={usuarioId}"))!);
+
+    public Task<ParametrosSugeridoDto> GuardarParametrosSugeridoAsync(Guid sucursalId, SolicitudParametrosSugerido solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<ParametrosSugeridoDto>($"api/sucursales/{sucursalId}/sugerido/parametros", solicitud));
+
+    public Task<OrdenDto> OrdenDelSugeridoAsync(Guid sucursalId, SolicitudOrdenSugerida solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<OrdenDto>($"api/sucursales/{sucursalId}/sugerido/orden", solicitud));
+
     public Task<MargenesDto> MargenesAsync(Guid sucursalId) =>
         ConRespaldoAsync(async () => (await _http.GetAsync<MargenesDto>($"api/sucursales/{sucursalId}/margenes"))!);
 

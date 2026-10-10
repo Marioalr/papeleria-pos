@@ -91,6 +91,17 @@ public static class ApiCompras
         api.MapPost("/ordenes/{ordenId:guid}/cancelar", (Guid ordenId, SolicitudCompra s, PosDbContext db) =>
             new RegistroOrdenes(db).CancelarAsync(ordenId, s.UsuarioId));
 
+        // ── Sugerido de compra (entrega 4, parte 3) ──
+
+        api.MapGet("/sucursales/{sucursalId:guid}/sugerido", (Guid sucursalId, Guid usuarioId, PosDbContext db) =>
+            new RegistroSugerido(db).CalcularAsync(sucursalId, usuarioId));
+
+        api.MapPut("/sucursales/{sucursalId:guid}/sugerido/parametros", (Guid sucursalId, SolicitudParametrosSugerido s, PosDbContext db) =>
+            new RegistroSugerido(db).GuardarParametrosAsync(sucursalId, s));
+
+        api.MapPost("/sucursales/{sucursalId:guid}/sugerido/orden", (Guid sucursalId, SolicitudOrdenSugerida s, PosDbContext db) =>
+            new RegistroSugerido(db).OrdenAsync(sucursalId, s));
+
         api.MapPost("/aperturas", (SolicitudAbrirPaquete s, PosDbContext db) => new RegistroAperturas(db).AbrirAsync(s));
 
         api.MapGet("/sucursales/{sucursalId:guid}/aperturas", (Guid sucursalId, PosDbContext db) => new RegistroAperturas(db).RecientesAsync(sucursalId));
