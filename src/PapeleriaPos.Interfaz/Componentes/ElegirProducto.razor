@@ -24,8 +24,14 @@
     /// <summary>El producto y la presentación del código (la base si se buscó por nombre).</summary>
     [Parameter] public EventCallback<(ProductoVentaDto Producto, PresentacionDto Presentacion)> AlElegir { get; set; }
 
+    /// <summary>
+    /// Al recibir mercancía, en lugar de <see cref="AlElegir"/>: con las piezas, porque «12*7501…» cuenta doce de una vez,
+    /// como en la venta.
+    /// </summary>
+    [Parameter] public EventCallback<(ProductoVentaDto Producto, PresentacionDto Presentacion, long Piezas)> AlContar { get; set; }
+
     /// <summary>Al recibir mercancía: un código que no está en el catálogo se cuenta aparte (sin esto, es un error).</summary>
-    [Parameter] public EventCallback<string> AlNoExiste { get; set; }
+    [Parameter] public EventCallback<(string Codigo, long Piezas)> AlNoExiste { get; set; }
 
     private string _codigo = "";
     private bool _buscando;
@@ -49,12 +55,30 @@
         if (codigo.Length == 0)
             return;
         _error = null;
+        long piezas = 1;
+        var asterisco = codigo.IndexOf('*');
+        if (asterisco > 0 && AlContar.HasDelegate)
+        {
+            if (!long.TryParse(codigo[..asterisco], NumberStyles.Integer, CultureInfo.InvariantCulture, out piezas) || piezas <= 0)
+            {
+                _error = $"Cantidad inválida: «{codigo[..asterisco]}». Escribe piezas enteras, por ejemplo 12*7501….";
+                return;
+            }
+            codigo = codigo[(asterisco + 1)..].Trim();
+            if (codigo.Length == 0)
+                return;
+        }
         try
         {
             if (await Cliente.PorCodigoAsync(codigo, SucursalId) is { } producto)
-                await ElegirAsync(producto);
+                await ElegirAsync(producto, piezas);
             else if (AlNoExiste.HasDelegate)
-                await AlNoExiste.InvokeAsync(codigo);
+            {
+                // Quien lo recibe pregunta cuántos llegaron y pone ahí el cursor.
+                await AlNoExiste.InvokeAsync((codigo, piezas));
+                _codigo = "";
+                return;
+            }
             else
                 _error = $"El código «{codigo}» no existe: dalo de alta en F3 Productos.";
             _codigo = "";
@@ -72,7 +96,7 @@
         try
         {
             if (await Cliente.PorVarianteAsync(varianteId, SucursalId) is { } producto)
-                await ElegirAsync(producto);
+                await ElegirAsync(producto, 1);
             _buscando = false;
         }
         catch (ErrorCaja ex)
@@ -82,14 +106,17 @@
         await Js.EnfocarAsync("#codigo-compra");
     }
 
-    private async Task ElegirAsync(ProductoVentaDto producto)
+    private async Task ElegirAsync(ProductoVentaDto producto, long piezas)
     {
         if (!producto.LlevaInventario)
         {
             _error = $"«{producto.Descripcion}» es un servicio: no lleva inventario.";
             return;
         }
-        await AlElegir.InvokeAsync((producto, producto.Presentacion));
+        if (AlContar.HasDelegate)
+            await AlContar.InvokeAsync((producto, producto.Presentacion, piezas));
+        else
+            await AlElegir.InvokeAsync((producto, producto.Presentacion));
     }
 
     private async Task AlternarBusquedaAsync()
