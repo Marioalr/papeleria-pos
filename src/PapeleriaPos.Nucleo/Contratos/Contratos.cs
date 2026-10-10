@@ -468,9 +468,19 @@ public sealed record ConteoCompraDto(Guid VarianteId, Guid PresentacionId, strin
 public sealed record SolicitudRenglonCompra(
     Guid UsuarioId, Guid? RenglonId, Guid VarianteId, Guid PresentacionId, long CantidadMilesimas, long ImporteCentavos, string? CodigoProveedor = null);
 
+/// <summary>Un renglón de la nota. Los que vienen del documento traen su descripción y unidad tal cual.</summary>
+/// <param name="VarianteId">Vacío mientras un renglón del documento no se liga a su producto.</param>
+/// <param name="CantidadMilesimas">En la presentación ligada (o en la unidad del documento, si no está ligado).</param>
 public sealed record RenglonCompraDto(
-    Guid Id, int Orden, string? CodigoProveedor, Guid VarianteId, Guid PresentacionId, string Producto, string Presentacion, long CantidadMilesimas,
-    long ImporteCentavos);
+    Guid Id, int Orden, string? CodigoProveedor, string Descripcion, string? Unidad, bool DelDocumento, Guid? VarianteId, Guid? PresentacionId,
+    string? Producto, string? Presentacion, long CantidadMilesimas, long ImporteCentavos);
+
+/// <param name="Avisos">Lo que hay que revisar de la lectura.</param>
+public sealed record DocumentoCompraDto(
+    Guid Id, string Nombre, TipoDocumentoProveedor Tipo, string? Folio, long? TotalCentavos, IReadOnlyList<string> Avisos, DateTime CargadoLocal);
+
+/// <summary>El XML de la factura o el PDF de la nota, tal cual.</summary>
+public sealed record SolicitudDocumentoCompra(Guid UsuarioId, string Nombre, string ContenidoBase64);
 
 /// <summary>Una variante de la compra: lo de la nota contra lo contado (en unidad base), el costo y el margen.</summary>
 /// <param name="CostoUnitarioCentavos">Por unidad base, según la nota.</param>
@@ -483,10 +493,11 @@ public sealed record ComparacionCompraDto(
 
 /// <param name="Renglones">La nota: solo para quien captura costos, y cuando el conteo ya se cerró (quien cuenta no la ve).</param>
 /// <param name="Comparacion">Igual que los renglones.</param>
+/// <param name="Documentos">Los documentos del proveedor que se cargaron; igual que los renglones.</param>
 public sealed record CompraDto(
     Guid Id, string Folio, Guid ProveedorId, string Proveedor, string? Documento, EstadoCompra Estado, DateTime AbiertaLocal, string Recibio,
     string? Costeo, DateTime? CerradaLocal, string? Motivo, IReadOnlyList<ConteoCompraDto> Conteo, IReadOnlyList<RenglonCompraDto>? Renglones,
-    IReadOnlyList<ComparacionCompraDto>? Comparacion, long? TotalCentavos);
+    IReadOnlyList<ComparacionCompraDto>? Comparacion, long? TotalCentavos, IReadOnlyList<DocumentoCompraDto>? Documentos = null);
 
 public sealed record SolicitudCompra(Guid UsuarioId);
 

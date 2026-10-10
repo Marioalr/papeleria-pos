@@ -247,6 +247,73 @@ public class ComprasApiTests(ServicioDePrueba servicio) : IClassFixture<Servicio
     }
 
     [Fact]
+    public async Task La_factura_llena_la_nota_lo_que_no_reconoce_se_liga_una_vez_y_no_se_carga_dos_veces()
+    {
+        var e = await PrepararAsync();
+        var conCodigo = await ProductoAsync(e, "Marcador de prueba documento");
+        var otro = await ProductoAsync(e, "Pegamento de prueba documento");
+        string codigoDe(Articulo a)
+        {
+            using var alcance = servicio.Fabrica.Services.CreateScope();
+            return alcance.ServiceProvider.GetRequiredService<PosDbContext>().CodigosBarras.Single(c => c.PresentacionId == a.Pieza).Codigo;
+        }
+        var clave = $"PROV-{Guid.NewGuid():N}"[..14];
+        var uuid = Guid.NewGuid().ToString();
+        var factura = Datos.DocumentoProveedorTests.Factura(uuid, rfc: "DPA010101AAA", conceptos:
+        [
+            Datos.DocumentoProveedorTests.Concepto(codigoDe(conCodigo), "MARCADOR NEGRO", "4", "PIEZA", "40.00", "6.40"),
+            Datos.DocumentoProveedorTests.Concepto(clave, "PEGAMENTO BARRA C/12", "1", "CAJA", "100.00", "16.00"),
+        ]);
+        async Task<CompraDto> ContadaAsync()
+        {
+            var compra = await AbrirAsync(e, e.Cajero, documento: null);
+            await Leer<CompraDto>(await ContarAsync(e, compra, e.Cajero, conCodigo, conCodigo.Pieza, 4));
+            await Leer<CompraDto>(await ContarAsync(e, compra, e.Cajero, otro, otro.Caja, 1));
+            return await Leer<CompraDto>(await AccionAsync(e, compra, "terminar-conteo", e.Cajero));
+        }
+        Task<HttpResponseMessage> CargarAsync(CompraDto compra, byte[] contenido) =>
+            e.Http.PostAsJsonAsync($"api/compras/{compra.Id}/documentos", new SolicitudDocumentoCompra(e.Encargado.UsuarioId, "factura.xml", Convert.ToBase64String(contenido)));
+
+        var compra = await ContadaAsync();
+        var porCajero = await e.Http.PostAsJsonAsync($"api/compras/{compra.Id}/documentos", new SolicitudDocumentoCompra(e.Cajero.UsuarioId, "f.xml", Convert.ToBase64String(factura)));
+        var cargada = await Leer<CompraDto>(await CargarAsync(compra, factura));
+        var sinLigar = await AccionAsync(e, compra, "cerrar", e.Encargado);
+        var pendiente = cargada.Renglones!.Single(r => r.VarianteId is null);
+        var ligada = await Leer<CompraDto>(await e.Http.PostAsJsonAsync($"api/compras/{compra.Id}/renglones",
+            new SolicitudRenglonCompra(e.Encargado.UsuarioId, pendiente.Id, otro.Variante, otro.Caja, pendiente.CantidadMilesimas, pendiente.ImporteCentavos)));
+        var cerrada = await Leer<CompraDto>(await AccionAsync(e, compra, "cerrar", e.Encargado));
+        var proveedor = (await e.Http.GetFromJsonAsync<List<ProveedorDto>>("api/proveedores"))!.Single(p => p.Id == e.Proveedor.Id);
+
+        var siguiente = await ContadaAsync();
+        var repetida = await CargarAsync(siguiente, factura);
+        var otraFactura = Datos.DocumentoProveedorTests.Factura(Guid.NewGuid().ToString(), rfc: "OTR020202BB2", conceptos:
+            [Datos.DocumentoProveedorTests.Concepto(clave, "PEGAMENTO BARRA C/12", "1", "CAJA", "110.00", "17.60")]);
+        var aprendida = await Leer<CompraDto>(await CargarAsync(siguiente, otraFactura));
+
+        Assert.Equal(HttpStatusCode.Forbidden, porCajero.StatusCode);
+        Assert.Equal("F1234", cargada.Documento);
+        var documento = Assert.Single(cargada.Documentos!);
+        Assert.DoesNotContain(documento.Avisos, a => a.Contains("RFC"));
+        var reconocido = cargada.Renglones!.Single(r => r.VarianteId is not null);
+        Assert.Equal((conCodigo.Pieza, "MARCADOR NEGRO", 4640L), (reconocido.PresentacionId!.Value, reconocido.Descripcion, reconocido.ImporteCentavos));
+        Assert.Equal(("PEGAMENTO BARRA C/12", "CAJA", (string?)null), (pendiente.Descripcion, pendiente.Unidad, pendiente.Producto));
+        Assert.Equal(HttpStatusCode.BadRequest, sinLigar.StatusCode);
+        Assert.Contains("«PEGAMENTO BARRA C/12»", (await sinLigar.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+        Assert.All(ligada.Comparacion!, c => Assert.Equal(DiferenciaCompra.Ninguna, c.Diferencia));
+        Assert.Equal("PEGAMENTO BARRA C/12", ligada.Renglones!.Single(r => r.Id == pendiente.Id).Descripcion);
+        Assert.Equal((EstadoCompra.Cerrada, 16240L), (cerrada.Estado, cerrada.TotalCentavos!.Value));
+        Assert.Equal("DPA010101AAA", proveedor.Rfc);
+
+        Assert.Equal(HttpStatusCode.BadRequest, repetida.StatusCode);
+        Assert.Contains($"ya se cargó en la compra {compra.Folio}", (await repetida.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+        var recordado = Assert.Single(aprendida.Renglones!);
+        Assert.Equal((otro.Caja, 12760L), (recordado.PresentacionId!.Value, recordado.ImporteCentavos));
+        Assert.Contains(Assert.Single(aprendida.Documentos!).Avisos, a => a.Contains("RFC OTR020202BB2") && a.Contains("RFC DPA010101AAA"));
+        // El marcador se contó, pero esta factura no lo trae.
+        Assert.Equal(DiferenciaCompra.NoVieneEnLaNota, aprendida.Comparacion!.Single(c => c.VarianteId == conCodigo.Variante).Diferencia);
+    }
+
+    [Fact]
     public async Task Contar_cero_quita_la_presentacion_y_un_renglon_de_la_nota_se_quita()
     {
         var e = await PrepararAsync();

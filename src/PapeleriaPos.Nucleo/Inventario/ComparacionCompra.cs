@@ -48,11 +48,11 @@ public sealed record ComparacionVariante(Guid VarianteId, Cantidad Nota, Cantida
 
 public static class ComparacionCompra
 {
-    /// <summary>Junta por variante lo contado (en cualquier presentación) y lo que dice la nota.</summary>
+    /// <summary>Junta por variante lo contado (en cualquier presentación) y lo que dice la nota (lo ya ligado).</summary>
     public static List<ComparacionVariante> Comparar(IEnumerable<CompraConteo> conteo, IEnumerable<CompraRenglon> renglones)
     {
         var contado = conteo.GroupBy(c => c.VarianteId).ToDictionary(g => g.Key, g => g.Aggregate(Cantidad.Cero, (s, c) => s + c.CantidadBase));
-        var nota = renglones.GroupBy(r => r.VarianteId).ToDictionary(g => g.Key,
+        var nota = renglones.Where(r => r.VarianteId is not null).GroupBy(r => r.VarianteId!.Value).ToDictionary(g => g.Key,
             g => (Cantidad: g.Aggregate(Cantidad.Cero, (s, r) => s + r.CantidadBase), Importe: g.Sum(r => r.ImporteCentavos)));
         return nota.Keys.Union(contado.Keys)
             .Select(v => new ComparacionVariante(v, nota.TryGetValue(v, out var n) ? n.Cantidad : Cantidad.Cero,

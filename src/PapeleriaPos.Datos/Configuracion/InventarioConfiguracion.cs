@@ -70,6 +70,7 @@ internal sealed class CompraConfiguracion : IEntityTypeConfiguration<Compra>
         b.HasOne<Usuario>().WithMany().HasForeignKey(c => c.CosteoId);
         b.HasMany(c => c.Conteo).WithOne().HasForeignKey(c => c.CompraId);
         b.HasMany(c => c.Renglones).WithOne().HasForeignKey(r => r.CompraId);
+        b.HasMany(c => c.Documentos).WithOne().HasForeignKey(d => d.CompraId);
         b.HasIndex(c => new { c.SucursalId, c.Folio }).IsUnique();
         b.HasIndex(c => new { c.SucursalId, c.Estado });
         b.Ignore(c => c.FolioTexto);
@@ -94,6 +95,28 @@ internal sealed class CompraRenglonConfiguracion : IEntityTypeConfiguration<Comp
         b.ToTable("ComprasRenglones");
         b.HasOne<Variante>().WithMany().HasForeignKey(r => r.VarianteId);
         b.HasOne<Presentacion>().WithMany().HasForeignKey(r => r.PresentacionId);
+        b.Ignore(r => r.Ligado);
+    }
+}
+
+internal sealed class CompraDocumentoConfiguracion : IEntityTypeConfiguration<CompraDocumento>
+{
+    public void Configure(EntityTypeBuilder<CompraDocumento> b)
+    {
+        b.ToTable("ComprasDocumentos");
+        b.HasOne<Usuario>().WithMany().HasForeignKey(d => d.UsuarioId);
+        b.HasIndex(d => d.Uuid);
+    }
+}
+
+internal sealed class LigaProveedorConfiguracion : IEntityTypeConfiguration<LigaProveedor>
+{
+    public void Configure(EntityTypeBuilder<LigaProveedor> b)
+    {
+        b.ToTable("LigasProveedor");
+        b.HasOne<Proveedor>().WithMany().HasForeignKey(l => l.ProveedorId);
+        b.HasOne<Presentacion>().WithMany().HasForeignKey(l => l.PresentacionId);
+        b.HasIndex(l => new { l.ProveedorId, l.Clave }).IsUnique();
     }
 }
 

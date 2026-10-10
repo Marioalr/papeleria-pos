@@ -48,11 +48,44 @@ else
 
         case EstadoCompra.PorCostear:
             <h5>Nota del proveedor</h5>
-            <TablaNota Renglones="c.Renglones!" Comparacion="c.Comparacion!" AlQuitar="QuitarRenglonAsync" />
-            @if (_renglon is { } r)
+            <div class="acciones izquierda">
+                <label class="boton archivo">
+                    Cargar el XML o PDF del proveedor…
+                    <InputFile accept=".xml,.pdf,application/pdf,text/xml,application/xml" OnChange="CargarDocumentoAsync" />
+                </label>
+                <span class="nota">El XML de la factura trae todo exacto; del PDF de una nota hay que revisar cada renglón.</span>
+            </div>
+            @foreach (var documento in c.Documentos ?? [])
+            {
+                <p class="nota">
+                    <strong>@documento.Nombre</strong>@(documento.Folio is { } folio ? $" · folio {folio}" : "")@(documento.TotalCentavos is { } total ? $" · total {Formato.Dinero(total)}" : "")
+                    @foreach (var aviso in documento.Avisos)
+                    {
+                        <br />@aviso
+                    }
+                </p>
+            }
+            <TablaNota Renglones="c.Renglones!" Comparacion="c.Comparacion!" AlQuitar="QuitarRenglonAsync" AlLigar="LigarAsync" />
+            @if (c.Renglones!.Count(x => x.VarianteId is null) is var sinLigar and > 0 && _ligando is null && _renglon is null)
+            {
+                <p class="aviso-autorizacion">@sinLigar @(sinLigar == 1 ? "renglón no se reconoció" : "renglones no se reconocieron"): dile al sistema qué producto es cada uno con «Ligar» (la próxima vez ya lo sabe) o quítalo si no es mercancía.</p>
+            }
+            @if (_ligando is { } ligando)
             {
                 <fieldset class="variante">
-                    <legend>@r.Producto.Descripcion</legend>
+                    <legend>¿Qué producto es «@ligando.Descripcion»?</legend>
+                    <p class="nota">
+                        En el documento: @Formato.Numero(ligando.CantidadMilesimas / 1000m) @ligando.Unidad por @Formato.Dinero(ligando.ImporteCentavos)@(ligando.CodigoProveedor is { } clave ? $" · clave {clave}" : "").
+                        Escanea o busca el producto.
+                    </p>
+                    <ElegirProducto SucursalId="Caja.SucursalId" Accion="Es este" AlElegir="ElegirParaLigar" />
+                    <div class="acciones izquierda"><button class="boton" @onclick="() => _ligando = null">Cancelar</button></div>
+                </fieldset>
+            }
+            else if (_renglon is { } r)
+            {
+                <fieldset class="variante">
+                    <legend>@r.Producto.Descripcion@(r.DelDocumento is { } doc ? $" · en el documento: «{doc}»" : "")</legend>
                     <div class="ficha-producto">
                         <label>Viene por
                             <select @bind="r.PresentacionId">
@@ -64,11 +97,12 @@ else
                         </label>
                         <label>Cantidad <input id="cantidad-renglon" class="umbral" inputmode="decimal" @bind="r.Cantidad" @bind:event="oninput" @onkeydown="AlTeclearRenglon" autocomplete="off" /></label>
                         <label>Importe del renglón (con IVA) <input class="umbral" inputmode="decimal" @bind="r.Importe" @bind:event="oninput" @onkeydown="AlTeclearRenglon" autocomplete="off" /></label>
-                        <label>Clave del proveedor <input @bind="r.Clave" @bind:event="oninput" @onkeydown="AlTeclearRenglon" placeholder="Si la trae" autocomplete="off" /></label>
+                        <label>Clave del proveedor <input @bind="r.Clave" @bind:event="oninput" @onkeydown="AlTeclearRenglon" placeholder="Si la trae" autocomplete="off"
+                                                          readonly="@(r.DelDocumento is not null)" /></label>
                     </div>
                     <div class="acciones izquierda">
                         <button class="boton" @onclick="() => _renglon = null">Cancelar</button>
-                        <button class="boton principal" disabled="@_ocupado" @onclick="AgregarRenglonAsync">Agregar a la nota</button>
+                        <button class="boton principal" disabled="@_ocupado" @onclick="AgregarRenglonAsync">@(r.RenglonId is null ? "Agregar a la nota" : "Guardar el renglón")</button>
                     </div>
                 </fieldset>
             }
@@ -94,7 +128,8 @@ else
             {
                 <div class="acciones izquierda">
                     <span class="nota">Total de la nota: <strong>@Formato.Dinero(c.TotalCentavos ?? 0)</strong></span>
-                    <button class="boton principal" disabled="@(c.Renglones!.Count == 0)" @onclick="() => _confirmar = Confirmar.Cerrar">Cerrar la compra</button>
+                    <button class="boton principal" disabled="@(c.Renglones!.Count == 0 || c.Renglones.Any(x => x.VarianteId is null))"
+                            @onclick="() => _confirmar = Confirmar.Cerrar">Cerrar la compra</button>
                 </div>
             }
             break;
@@ -158,10 +193,17 @@ else
 
     private enum Confirmar { Nada, TerminarConteo, Cerrar, Cancelar }
 
-    private sealed class RenglonEditable(ProductoVentaDto producto, PresentacionDto presentacion)
+    private sealed class RenglonEditable(ProductoVentaDto producto, Guid presentacionId)
     {
         public ProductoVentaDto Producto { get; } = producto;
-        public Guid PresentacionId { get; set; } = presentacion.Id;
+        public Guid PresentacionId { get; set; } = presentacionId;
+
+        /// <summary>Al corregir o ligar un renglón que ya está en la nota.</summary>
+        public Guid? RenglonId { get; init; }
+
+        /// <summary>Cómo lo escribe el documento del proveedor, si de ahí vino.</summary>
+        public string? DelDocumento { get; init; }
+
         public string Cantidad { get; set; } = "1";
         public string Importe { get; set; } = "";
         public string Clave { get; set; } = "";
@@ -169,6 +211,7 @@ else
 
     private CompraDto? _compra;
     private RenglonEditable? _renglon;
+    private RenglonCompraDto? _ligando;
     private Confirmar _confirmar;
     private string _motivo = "";
     private bool _ocupado;
@@ -225,8 +268,73 @@ else
 
     private void ElegirParaRenglon((ProductoVentaDto Producto, PresentacionDto Presentacion) elegido)
     {
-        _renglon = new RenglonEditable(elegido.Producto, elegido.Presentacion);
+        _renglon = new RenglonEditable(elegido.Producto, elegido.Presentacion.Id);
         _enfocarCantidad = true;
+    }
+
+    /// <summary>Del documento: el renglón sin ligar pide el producto; uno ya ligado se corrige con el suyo.</summary>
+    private async Task LigarAsync(RenglonCompraDto renglon)
+    {
+        (_error, _aviso, _renglon, _ligando) = (null, null, null, null);
+        if (renglon.VarianteId is not { } varianteId)
+        {
+            _ligando = renglon;
+            return;
+        }
+        try
+        {
+            if (await Cliente.PorVarianteAsync(varianteId, Caja.SucursalId) is { } producto)
+                Corregir(renglon, producto, renglon.PresentacionId ?? producto.Presentacion.Id);
+            else
+                _ligando = renglon;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void ElegirParaLigar((ProductoVentaDto Producto, PresentacionDto Presentacion) elegido)
+    {
+        if (_ligando is not { } renglon)
+            return;
+        _ligando = null;
+        Corregir(renglon, elegido.Producto, elegido.Presentacion.Id);
+    }
+
+    private void Corregir(RenglonCompraDto renglon, ProductoVentaDto producto, Guid presentacionId)
+    {
+        _renglon = new RenglonEditable(producto, presentacionId)
+        {
+            RenglonId = renglon.Id,
+            DelDocumento = renglon.DelDocumento ? renglon.Descripcion : null,
+            Cantidad = (renglon.CantidadMilesimas / 1000m).ToString("0.###", CultureInfo.InvariantCulture),
+            Importe = (renglon.ImporteCentavos / 100m).ToString("0.00", CultureInfo.InvariantCulture),
+            Clave = renglon.CodigoProveedor ?? "",
+        };
+        _enfocarCantidad = true;
+    }
+
+    private async Task CargarDocumentoAsync(InputFileChangeEventArgs e)
+    {
+        (_error, _aviso, _renglon, _ligando) = (null, null, null, null);
+        string contenido;
+        try
+        {
+            await using var archivo = e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            using var memoria = new MemoryStream();
+            await archivo.CopyToAsync(memoria);
+            contenido = Convert.ToBase64String(memoria.ToArray());
+        }
+        catch (IOException)
+        {
+            _error = "El archivo pesa más de 10 MB.";
+            return;
+        }
+        var antes = _compra?.Renglones?.Count ?? 0;
+        await HacerAsync(() => Cliente.CargarDocumentoCompraAsync(CompraId, new SolicitudDocumentoCompra(Sesion.UsuarioId, e.File.Name, contenido)));
+        if (_error is null && _compra?.Renglones is { } renglones)
+            _aviso = $"Se leyeron {renglones.Count - antes} renglones de «{e.File.Name}».";
     }
 
     private async Task AlTeclearRenglon(KeyboardEventArgs e)
@@ -249,7 +357,7 @@ else
             _error = "Escribe el importe del renglón.";
             return;
         }
-        await HacerAsync(() => Cliente.RenglonCompraAsync(CompraId, new SolicitudRenglonCompra(Sesion.UsuarioId, null, r.Producto.VarianteId, r.PresentacionId,
+        await HacerAsync(() => Cliente.RenglonCompraAsync(CompraId, new SolicitudRenglonCompra(Sesion.UsuarioId, r.RenglonId, r.Producto.VarianteId, r.PresentacionId,
             (long)Math.Round(cantidad * 1000), importe, string.IsNullOrWhiteSpace(r.Clave) ? null : r.Clave)));
         if (_error is null)
             _renglon = null;
