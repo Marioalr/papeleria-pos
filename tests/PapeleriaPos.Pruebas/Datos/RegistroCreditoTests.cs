@@ -4,6 +4,7 @@ using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Nucleo.Ventas;
@@ -297,5 +298,68 @@ public class RegistroCreditoTests : IAsyncLifetime
         Assert.Empty(reciente.Pendientes);
         Assert.Equal((0L, 2), (desdeAntes.SaldoAnteriorCentavos, desdeAntes.Movimientos.Count));
         await Assert.ThrowsAsync<ArgumentException>(() => EstadoAsync(Hoy.AddDays(1)));
+    }
+
+    // ── Lo vencido por Telegram (parte 3.2) ──────────────────────────────────
+
+    private async Task<List<MensajeTelegram>> AvisosDeVencidoAsync()
+    {
+        await using var db = _base.Contexto();
+        if (!await db.ChatsTelegram.AnyAsync())
+            db.ChatsTelegram.Add(new ChatTelegram { UsuarioId = _dueno.Id, ChatId = 9696, VinculadoUtc = _base.Reloj.Ahora.UtcDateTime });
+        await AlertasTelegram.RevisarVencidosAsync(db);
+        await db.SaveChangesAsync();
+        return await db.MensajesTelegram.Where(m => m.Tipo == TipoAlerta.CreditoVencido).OrderBy(m => m.CreadoUtc).ToListAsync();
+    }
+
+    [Fact]
+    public async Task Lo_vencido_se_avisa_una_vez_por_cargo_en_horario_y_solo_lo_de_la_ultima_semana()
+    {
+        _cliente.Telefono = "5522334455";
+        await using (var db = _base.Contexto())
+        {
+            db.Update(_cliente);
+            await db.SaveChangesAsync();
+        }
+        await AjustarAsync(35000, Hoy.AddDays(-35));
+        await AjustarAsync(20000, Hoy.AddDays(-60));
+        await AjustarAsync(10000, Hoy.AddDays(-30));
+        // Paga parte de lo más viejo: el de hace 60 días sigue debiéndose, pero venció hace un mes (lo dice el resumen).
+        await AbonarAsync(FormaPago.Efectivo, 5000);
+        // A las 6 de la mañana la tienda no ha abierto: se avisa al abrir.
+        var ahora = _base.Reloj.Ahora;
+        _base.Reloj.Ahora = ahora.AddHours(-3);
+        var temprano = await AvisosDeVencidoAsync();
+        _base.Reloj.Ahora = ahora;
+
+        var avisos = await AvisosDeVencidoAsync();
+        var otraVez = await AvisosDeVencidoAsync();
+
+        Assert.Empty(temprano);
+        // El de hace 30 días vence hoy: todavía no.
+        var aviso = Assert.Single(avisos);
+        Assert.Equal(aviso.Id, Assert.Single(otraVez).Id);
+        Assert.Equal($"Crédito vencido · «Arq. Ramírez»\nLo que debía (Saldo inicial de la libreta) del {Hoy.AddDays(-35):dd/MM/yyyy}: faltan $350.00 "
+            + $"y vencía el {Hoy.AddDays(-5):dd/MM/yyyy}.\nDebe en total $600.00, vencido $500.00. Tel. 5522334455", aviso.Texto);
+    }
+
+    [Fact]
+    public async Task Por_cobrar_en_el_resumen_dice_si_junta_a_los_clientes_de_varias_sucursales()
+    {
+        await AjustarAsync(35000, Hoy.AddDays(-40));
+        string resumen;
+        await using (var db = _base.Contexto())
+            resumen = await AlertasTelegram.ResumenAsync(db, _catalogo.Matriz.Id, Hoy);
+        await using (var db = _base.Contexto())
+        {
+            db.Sucursales.Add(new PapeleriaPos.Nucleo.Catalogo.Sucursal { Clave = "NOR", Nombre = "Norte" });
+            await db.SaveChangesAsync();
+        }
+        string conVarias;
+        await using (var db = _base.Contexto())
+            conVarias = await AlertasTelegram.ResumenAsync(db, _catalogo.Matriz.Id, Hoy);
+
+        Assert.Contains("Por cobrar: $350.00 de 1 cliente · vencido $350.00 de 1 cliente", resumen);
+        Assert.Contains("Por cobrar (con los clientes de todas las sucursales): $350.00 de 1 cliente", conVarias);
     }
 }

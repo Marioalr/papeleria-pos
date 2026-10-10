@@ -166,8 +166,12 @@ aviso se podría actuar: bloquear lo sensible o toda la caja, pedir un corte X o
 - Transferencias sin verificar al cierre
 - Crédito: pasar el límite, ajustes del saldo, saldo a favor devuelto en efectivo y lo del crédito sin conexión que quedó
   por revisar
+- Crédito vencido: lo fiado (o lo que debía de la libreta) que pasó su plazo sin pagarse, una vez por compra y en el
+  horario de la sucursal (lo que vence en la noche se avisa al abrir); solo lo que venció en la última semana
 - Lo hecho sin conexión que llegó después del corte Z de su turno (ventas, abonos, entradas y salidas)
-- **Resumen diario** al cierre: ventas, utilidad, corte y alertas del día
+- **Resumen diario** al cierre: ventas, utilidad, corte y alertas del día; con crédito, lo fiado, los abonos por forma de
+  pago, el saldo a favor devuelto y lo que hay por cobrar con lo vencido (las transferencias por verificar incluyen las
+  de los abonos)
 
 ## Transferencias
 

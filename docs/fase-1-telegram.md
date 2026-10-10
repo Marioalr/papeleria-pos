@@ -91,6 +91,7 @@ Sin conexión con la caja principal (contingencia) no se puede pedir por Telegra
 | Transferencias sin verificar | En el resumen del cierre | Siempre |
 | Caja sin conexión | Una caja lleva más de N minutos en contingencia, o algo no pudo subir | 10 minutos |
 | Caja abierta fuera de horario | Un turno abierto antes o después del horario de la sucursal | 8:00 a 21:00 (configurable) |
+| Crédito vencido (fase 3) | Lo fiado que pasó su plazo sin pagarse: una vez por compra, en horario, si venció en la última semana | Siempre |
 
 Cada alerta se puede apagar o cambiar su umbral desde Configuración → Telegram (solo el dueño). Las de inventario
 (existencia negativa, conteos) llegan con la fase 2.
@@ -102,8 +103,10 @@ Al hacer el último corte Z del día (cuando ya no queda ningún turno abierto e
 - Ventas y número de tickets, por caja; utilidad bruta (venta − costo de lo vendido).
 - Cada corte: esperado, contado y diferencia.
 - Cancelaciones, devoluciones, cambios de precio y salidas de efectivo del día.
-- Transferencias por verificar.
+- Transferencias por verificar (también las de los abonos).
 - Ventas hechas sin conexión y lo que no pudo subir.
+- Con crédito (fase 3): lo fiado, los abonos por forma de pago, el saldo a favor devuelto, lo que hay por cobrar con lo
+  vencido y lo del crédito por revisar.
 
 ## Cómo se arma
 

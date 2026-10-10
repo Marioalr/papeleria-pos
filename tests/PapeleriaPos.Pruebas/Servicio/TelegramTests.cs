@@ -277,3 +277,44 @@ public sealed class TelegramClientesTests(ServicioDePrueba servicio) : PruebaTel
         Assert.Contains("Privilegios de «Cliente de Telegram» (alta): descuento 15 %", aviso);
     }
 }
+
+public sealed class TelegramCreditoTests(ServicioDePrueba servicio) : PruebaTelegram(servicio)
+{
+    [Fact]
+    public async Task Lo_vencido_se_avisa_una_vez_y_el_resumen_dice_lo_fiado_los_abonos_y_lo_que_se_debe()
+    {
+        await VincularAsync(7301);
+        var http = Http();
+        var (caja, cajero, turno) = await TurnoAsync();
+        // Abierta todo el día: el aviso de lo vencido sale en horario.
+        await Leer<AjustesAlertasDto>(await http.PutAsJsonAsync($"api/sucursales/{caja.SucursalId}/telegram/alertas",
+            new SolicitudAlertas("dueno", "3333", new AjustesAlertasDto([], 5000, 20000, 50000, 10, new TimeOnly(0, 0), new TimeOnly(23, 59, 59)))));
+        var dueno = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+        var cliente = await Leer<ClienteRegistradoDto>(await http.PostAsJsonAsync("api/clientes", new SolicitudGuardarCliente(dueno.UsuarioId,
+            caja.SucursalId, new ClienteRegistradoDto(Guid.Empty, "Telegram: Arq. Vencido", 0, null, true))));
+        await Leer<ClienteRegistradoDto>(await http.PutAsJsonAsync($"api/clientes/{cliente.Id}/credito",
+            new SolicitudCreditoCliente(dueno.UsuarioId, caja.SucursalId, 100000, 30)));
+        var hoy = DateOnly.FromDateTime(PapeleriaPos.Nucleo.HoraMexico.ALocal(DateTime.UtcNow));
+        await Leer<CuentaClienteDto>(await http.PostAsJsonAsync($"api/clientes/{cliente.Id}/ajustes",
+            new SolicitudAjusteCredito(Guid.NewGuid(), dueno.UsuarioId, caja.SucursalId, 35000, "Libreta", hoy.AddDays(-35))));
+
+        await Motor.RevisarAsync();
+        await Motor.RevisarAsync();
+        await Leer<TicketDto>(await http.PostAsJsonAsync("api/ventas", new SolicitudCobro(caja.Id, turno.Id, cajero.UsuarioId,
+            [new LineaSolicitada(null, null, 1000, "Mercancía", 12000)], [new CobroSolicitado(FormaPago.Credito, 12000)], Guid.NewGuid(), ClienteId: cliente.Id)));
+        foreach (var (forma, monto) in new[] { (FormaPago.Efectivo, 5000L), (FormaPago.Transferencia, 2000L) })
+            await Leer<ComprobanteAbonoDto>(await http.PostAsJsonAsync("api/abonos", new SolicitudAbono(Guid.NewGuid(), caja.Id, turno.Id, cajero.UsuarioId,
+                cliente.Id, forma, monto, forma == FormaPago.Efectivo ? monto : 0, forma == FormaPago.Efectivo ? null : "R-1")));
+        await EscribirAsync(7301, "/resumen");
+        var mensajes = MensajesA(7301);
+
+        var vencido = Assert.Single(mensajes, t => t.StartsWith("Crédito vencido · «Telegram: Arq. Vencido»"));
+        Assert.Contains("faltan $350.00 y vencía el", vencido);
+        var resumen = mensajes.Last(t => t.StartsWith("Resumen del día"));
+        Assert.Contains("Fiado: $120.00 en 1 ticket", resumen);
+        Assert.Contains("Abonos: $70.00 en 2 abonos (efectivo $50.00, transferencia $20.00)", resumen);
+        // Debía $350 (vencido) y $120 de hoy; lo abonado pagó primero lo vencido.
+        Assert.Contains("Por cobrar: $400.00 de 1 cliente · vencido $280.00 de 1 cliente", resumen);
+        Assert.Contains("Transferencias por verificar: 1 · $20.00", resumen);
+    }
+}
