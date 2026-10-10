@@ -80,6 +80,7 @@ app.MapearApiDescuentos();
 app.MapearApiCatalogo();
 app.MapearApiCompras();
 app.MapearApiConteos();
+app.MapearApiEtiquetas();
 app.MapearApiPrueba();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 

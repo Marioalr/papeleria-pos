@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using PapeleriaPos.Nucleo.Catalogo;
@@ -158,7 +159,14 @@ internal sealed class ConfiguracionSucursalConfiguracion : IEntityTypeConfigurat
         b.Property(c => c.HoraApertura).HasDefaultValue(new TimeOnly(8, 0)).ValueGeneratedNever();
         b.Property(c => c.HoraCierre).HasDefaultValue(new TimeOnly(21, 0)).ValueGeneratedNever();
         b.Property(c => c.MargenMinimoCentesimas).HasDefaultValue(Margen.MinimoInicial).ValueGeneratedNever();
+        b.Property(c => c.EtiquetasFormato).HasDefaultValue(FormatoEtiquetas.PorOmision.Id).ValueGeneratedNever();
+        // Las medidas de una hoja propia van como JSON: se leen y se guardan juntas.
+        b.Property(c => c.EtiquetasPropio).HasConversion(
+            f => f == null ? null : JsonSerializer.Serialize(f, JsonOpciones),
+            j => j == null ? null : JsonSerializer.Deserialize<FormatoEtiquetas>(j, JsonOpciones));
     }
+
+    private static readonly JsonSerializerOptions JsonOpciones = new(JsonSerializerDefaults.Web);
 }
 
 internal sealed class ChatTelegramConfiguracion : IEntityTypeConfiguration<ChatTelegram>

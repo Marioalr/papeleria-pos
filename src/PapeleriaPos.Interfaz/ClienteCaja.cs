@@ -338,6 +338,21 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<DireccionCelularDto> DireccionCelularAsync() =>
         ConRespaldoAsync(async () => (await _http.GetAsync<DireccionCelularDto>("api/conteo-celular"))!);
 
+    public Task<ConfiguracionEtiquetasDto> ConfiguracionEtiquetasAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<ConfiguracionEtiquetasDto>($"api/sucursales/{sucursalId}/etiquetas/configuracion"))!);
+
+    public Task<ConfiguracionEtiquetasDto> GuardarConfiguracionEtiquetasAsync(Guid sucursalId, SolicitudConfiguracionEtiquetas solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<ConfiguracionEtiquetasDto>($"api/sucursales/{sucursalId}/etiquetas/configuracion", solicitud));
+
+    public Task<List<ProductoEtiquetaDto>> EtiquetasDeCompraAsync(Guid compraId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<ProductoEtiquetaDto>>($"api/compras/{compraId}/etiquetas") ?? []);
+
+    public Task<List<ProductoEtiquetaDto>> SinCodigoAsync(Guid departamentoId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<ProductoEtiquetaDto>>($"api/etiquetas/sin-codigo?departamentoId={departamentoId}") ?? []);
+
+    public Task<EtiquetasDto> PrepararEtiquetasAsync(SolicitudEtiquetas solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<EtiquetasDto>("api/etiquetas", solicitud));
+
     public Task<MargenesDto> MargenesAsync(Guid sucursalId) =>
         ConRespaldoAsync(async () => (await _http.GetAsync<MargenesDto>($"api/sucursales/{sucursalId}/margenes"))!);
 

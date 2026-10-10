@@ -96,6 +96,10 @@ public static class GuiaPrueba
             + "productos, uno de ellos en dos partes (anaquel y bodega). Luego, como encargado, «Revisar y cerrar».",
             "En el celular no se ve lo que dice el sistema y las dos partes se suman. En la revisión salen las diferencias; al cerrar, "
             + "lo contado queda como existencia, lo que nadie contó queda en 0 y sale en «Avisos al dueño»."),
+        new("etiquetas", "Inventario (F4)",
+            "Como «encargado», en F4 → Etiquetas agrega lo que llegó en la compra que cerraste (quita «Solo lo que no trae código de fábrica») "
+            + "y da «Vista previa». Luego imprime la hoja de prueba (si no hay impresora, elige «Microsoft Print to PDF»).",
+            "Sale una etiqueta por pieza con el nombre y su código de barras, en hojas carta. La hoja de prueba marca dónde cae cada etiqueta."),
         new("merma", "Inventario (F4)",
             "Como «cajero», en F4 → Ajustes y mermas, registra una merma de 1 producto dañado. Luego intenta una de 30 piezas de algo caro.",
             "La chica entra sola; la grande (más de $200 de costo) pide al encargado. Las dos salen del inventario y quedan en la lista."),

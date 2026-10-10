@@ -386,6 +386,14 @@ public sealed class RegistroCatalogo(PosDbContext db)
     /// </summary>
     public async Task<string> CodigoInternoAsync(CancellationToken ct = default)
     {
+        var codigo = await SiguienteCodigoInternoAsync(ct);
+        await db.SaveChangesAsync(ct);
+        return codigo;
+    }
+
+    /// <summary>El siguiente código interno libre, sin guardar: sirve para dar varios de una vez.</summary>
+    internal async Task<string> SiguienteCodigoInternoAsync(CancellationToken ct = default)
+    {
         var secuencia = await db.Secuencias.FindAsync([SecuenciaCodigoInterno], ct);
         if (secuencia is null)
         {
@@ -399,7 +407,6 @@ public sealed class RegistroCatalogo(PosDbContext db)
             codigo = Ean13.Completar($"20{secuencia.Valor:D10}");
         }
         while (await db.CodigosBarras.AnyAsync(c => c.Codigo == codigo, ct));
-        await db.SaveChangesAsync(ct);
         return codigo;
     }
 

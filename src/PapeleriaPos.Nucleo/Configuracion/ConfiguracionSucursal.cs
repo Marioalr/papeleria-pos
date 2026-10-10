@@ -38,6 +38,25 @@ public class ConfiguracionSucursal : IVersionado
     /// </summary>
     public int MargenMinimoCentesimas { get; set; } = Catalogo.Margen.MinimoInicial;
 
+    // ── Etiquetas (fase 2, entrega 4) ──
+
+    /// <summary>La hoja de etiquetas que se compra: una de <see cref="Catalogo.FormatoEtiquetas.Comunes"/> o la propia.</summary>
+    public string EtiquetasFormato { get; set; } = Catalogo.FormatoEtiquetas.PorOmision.Id;
+
+    /// <summary>Las medidas de una hoja que no es de las comunes.</summary>
+    public Catalogo.FormatoEtiquetas? EtiquetasPropio { get; set; }
+
+    /// <summary>Cuánto mover todo para que caiga en las etiquetas (décimas de milímetro): + a la derecha, + hacia abajo.</summary>
+    public int EtiquetasAjusteXDecimas { get; set; }
+
+    public int EtiquetasAjusteYDecimas { get; set; }
+
+    /// <summary>La hoja que se usa, con sus medidas.</summary>
+    public Catalogo.FormatoEtiquetas FormatoDeEtiquetas() =>
+        EtiquetasFormato == Catalogo.FormatoEtiquetas.Propio && EtiquetasPropio is { } propio
+            ? propio
+            : Catalogo.FormatoEtiquetas.Comunes.FirstOrDefault(f => f.Id == EtiquetasFormato) ?? Catalogo.FormatoEtiquetas.PorOmision;
+
     public long Version { get; set; }
     public DateTime ModificadoUtc { get; set; }
 
