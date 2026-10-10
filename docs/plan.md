@@ -57,6 +57,7 @@
 | Impresora de tickets | POS-8360, térmica de 80 mm, ESC/POS; el ticket conserva el formato y el logo del de eleventa |
 | Administración | Inversión de apertura, gastos fijos e insumos del mes por sucursal: la ganancia mensual real y el punto de equilibrio ([detalle](#administración-y-punto-de-equilibrio)) |
 | Git | Ramas cortas por tema, fusionadas a `main` |
+| Instalación | La hace el administrador de la PC, una vez y en cada actualización; el día a día corre en un usuario común de Windows, sin privilegios de administrador ([detalle](#instalación-y-usuarios-de-windows)) |
 
 ### Cómo han cambiado
 
@@ -150,6 +151,63 @@ Con eso, un reporte por sucursal:
 - Si la sucursal 2 abre antes de que el POS llegue a la fase 7, hay que **guardar desde ya la lista de gastos de
   apertura con sus comprobantes** para capturarla después; si no, el cálculo empieza incompleto.
 
+### Prueba con una persona real
+
+Alguien de la tienda (no quien programa) prueba solo lo que ya funciona, sin ayuda, en una PC con Windows y sin tocar
+eleventa. Sirve para encontrar lo que estorba al usarlo de verdad, mucho antes del piloto.
+
+**Hito: al cerrar la entrega 2 de la fase 2 (compras completas), antes de empezar la entrega 3.** Es lo más pronto en
+que tiene sentido:
+
+- Ahí el día de la tienda ya se hace completo en el POS: abrir turno, vender y cobrar, cancelar y devolver, cortes,
+  corregir el catálogo y recibir mercancía con el documento del proveedor.
+- Antes no conviene: sin la parte 2 de compras, quien prueba capturaría la nota a mano, justo lo que esa parte
+  reemplaza, y sus observaciones serían de algo que va a cambiar.
+- Esperar a toda la fase 2 tampoco: lo que más importa probar (la venta y el control) ya está, y los conteos y las
+  etiquetas se suman después.
+
+La preparación (instalador, guía, simulaciones) se hace al cerrar esa entrega. Desde ahí, cada entrega agrega sus
+tareas a la guía y la prueba se puede repetir con la versión nueva (con los conteos de la entrega 3, por ejemplo).
+
+- **Solo la caja principal:** el servicio y la caja en la misma PC; no hace falta una segunda caja ni la red. La caja
+  se da de alta sola, sin pedir la dirección ni el PIN del dueño.
+- **Un instalador:** un solo archivo (`PapeleriaPos-Prueba.exe`) que deja todo listo: el servicio, la caja, una base
+  ficticia con los usuarios de prueba y un acceso en el escritorio; se desinstala sin dejar nada. Se arma en GitHub
+  Actions (Windows), porque la PC de desarrollo es Linux. Como en la tienda, lo instala el administrador para todos
+  los usuarios de la PC y quien prueba lo usa con una cuenta común de Windows ([instalación](#instalación-y-usuarios-de-windows)).
+- **Autoconclusiva:** trae su guía dentro de la caja: tareas cortas (vender, cobro mixto, cancelar, devolver, corte X
+  y Z, F3 Productos, alta rápida, recibir una compra…) con lo que debe pasar en cada una. Quien prueba marca si salió
+  bien y escribe lo que vio; al final queda un archivo con sus respuestas para mandarlo.
+- **Simula lo que no hay:** sin impresora de tickets, el ticket se ve en pantalla; sin Telegram, los avisos que le
+  llegarían al dueño se ven en una lista; sin la WF-6590, hay impresiones de ejemplo para cobrar.
+- **Se nota que es prueba:** una franja "Prueba: datos ficticios" en la caja y un botón para empezar de cero con la
+  base ficticia.
+- **Aparte de eleventa:** su propio puerto y su propia carpeta; no lee ni toca la base de eleventa.
+
+### Instalación y usuarios de Windows
+
+El sistema lo instala el administrador de la PC; después, la gran mayoría de las veces se usa desde una cuenta común
+de Windows, sin privilegios de administrador. Nada de lo diario puede pedir administrador.
+
+Aquí "usuario" es la **cuenta de Windows** de la PC, no el usuario del POS: el cajero, el encargado y el dueño entran a
+la caja con su usuario y PIN del POS, todos desde la misma cuenta común de Windows.
+
+- **Lo que hace el administrador** (al instalar y al actualizar):
+  - El servicio de la caja principal como servicio de Windows: arranca con la PC, sin que nadie inicie sesión.
+  - Las cajas en Archivos de programa, con su acceso para todos los usuarios.
+  - Las reglas del firewall para la red local.
+  - La carpeta de datos de la caja, con permiso de escritura para los usuarios.
+  - En la PC de la WF-6590, su cola con "Conservar documentos impresos" (cambiarlo pide administrador).
+- **Lo que se hace desde la cuenta común de Windows:** vender y todo lo de la caja, dar de alta la caja (pide el PIN
+  del dueño, no administrador), trabajar sin conexión, cotizar e imprimir.
+- **Dónde se escribe:** la base de la sucursal la escribe solo el servicio. Lo de cada caja (su configuración y la
+  copia para trabajar sin conexión) va en `C:\ProgramData\PapeleriaPos\Caja`, que el instalador deja con escritura para
+  las cuentas de Windows: sirve igual si la dio de alta el administrador o si la PC tiene otra cuenta común.
+- **La WF-6590:** el agente lee los trabajos del usuario que tiene abierta la caja. Si alguien imprime desde otra
+  cuenta de Windows, esa cuenta necesita "Administrar documentos" en la cola (lo da el administrador).
+- **La prueba con una persona real** se instala igual: el administrador la instala para todas las cuentas de Windows
+  y quien prueba la usa con una cuenta común.
+
 ## Pendientes
 
 Fase 0:
@@ -184,6 +242,15 @@ Fase 2:
 - [ ] Entrega 3: ajustes, mermas y conteos
 - [ ] Entrega 4: etiquetas y sugerido de compra
 
+Prueba con una persona real (al cerrar la entrega 2 de la fase 2, [ver arriba](#prueba-con-una-persona-real)):
+
+- [ ] Instalador de prueba de la caja principal (servicio, caja, base ficticia y usuarios), armado en GitHub Actions
+- [ ] La caja principal se da de alta sola en la prueba
+- [ ] Guía de prueba dentro de la caja, con las respuestas en un archivo
+- [ ] Simular lo que no hay: ticket en pantalla, avisos de Telegram en una lista, impresiones de ejemplo
+- [ ] Franja de prueba y botón para empezar de cero
+- [ ] Instalarlo en una PC con Windows limpia antes de dárselo a quien prueba
+
 Fase 3:
 
 - [ ] Mayoreo: en eleventa es un precio que el cajero activa a mano; decidir si pasa a escalas por cantidad (¿desde
@@ -199,6 +266,9 @@ Depuración del inventario (antes del piloto, [ver abajo](#depuración-del-inven
 - [ ] Conteo físico completo: reemplaza todas las existencias de eleventa
 
 Por definir:
+
+- [ ] Instalador de la tienda para el administrador: servicio, cajas, firewall, carpeta de la caja con permisos y la
+  cola de la WF-6590 ([detalle](#instalación-y-usuarios-de-windows)). Hoy son los scripts de `instalacion/`
 
 - [ ] Si la sucursal 2 abre antes de la fase 7: guardar la lista de gastos de apertura con comprobantes
 - [ ] Administración: insumos del mes (papel térmico, cinta, limpieza…) para la ganancia mensual
