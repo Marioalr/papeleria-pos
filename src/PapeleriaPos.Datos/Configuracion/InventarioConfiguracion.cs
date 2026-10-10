@@ -71,6 +71,7 @@ internal sealed class CompraConfiguracion : IEntityTypeConfiguration<Compra>
         b.HasMany(c => c.Conteo).WithOne().HasForeignKey(c => c.CompraId);
         b.HasMany(c => c.Renglones).WithOne().HasForeignKey(r => r.CompraId);
         b.HasMany(c => c.Documentos).WithOne().HasForeignKey(d => d.CompraId);
+        b.HasOne<OrdenCompra>().WithMany().HasForeignKey(c => c.OrdenId);
         b.HasIndex(c => new { c.SucursalId, c.Folio }).IsUnique();
         b.HasIndex(c => new { c.SucursalId, c.Estado });
         b.Ignore(c => c.FolioTexto);
@@ -117,6 +118,44 @@ internal sealed class LigaProveedorConfiguracion : IEntityTypeConfiguration<Liga
         b.HasOne<Proveedor>().WithMany().HasForeignKey(l => l.ProveedorId);
         b.HasOne<Presentacion>().WithMany().HasForeignKey(l => l.PresentacionId);
         b.HasIndex(l => new { l.ProveedorId, l.Clave }).IsUnique();
+    }
+}
+
+internal sealed class OrdenCompraConfiguracion : IEntityTypeConfiguration<OrdenCompra>
+{
+    public void Configure(EntityTypeBuilder<OrdenCompra> b)
+    {
+        b.ToTable("OrdenesCompra");
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(o => o.SucursalId);
+        b.HasOne<Proveedor>().WithMany().HasForeignKey(o => o.ProveedorId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(o => o.UsuarioId);
+        b.HasMany(o => o.Renglones).WithOne().HasForeignKey(r => r.OrdenId);
+        b.HasIndex(o => new { o.SucursalId, o.Folio }).IsUnique();
+        b.HasIndex(o => new { o.SucursalId, o.Estado });
+        b.Ignore(o => o.FolioTexto);
+    }
+}
+
+internal sealed class OrdenRenglonConfiguracion : IEntityTypeConfiguration<OrdenRenglon>
+{
+    public void Configure(EntityTypeBuilder<OrdenRenglon> b)
+    {
+        b.ToTable("OrdenesRenglones");
+        b.HasOne<Variante>().WithMany().HasForeignKey(r => r.VarianteId);
+        b.HasOne<Presentacion>().WithMany().HasForeignKey(r => r.PresentacionId);
+    }
+}
+
+internal sealed class AperturaPaqueteConfiguracion : IEntityTypeConfiguration<AperturaPaquete>
+{
+    public void Configure(EntityTypeBuilder<AperturaPaquete> b)
+    {
+        b.ToTable("AperturasPaquete");
+        b.HasOne<Sucursal>().WithMany().HasForeignKey(a => a.SucursalId);
+        b.HasOne<Variante>().WithMany().HasForeignKey(a => a.OrigenId);
+        b.HasOne<Variante>().WithMany().HasForeignKey(a => a.DestinoId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(a => a.UsuarioId);
+        b.HasIndex(a => new { a.OrigenId, a.FechaUtc });
     }
 }
 

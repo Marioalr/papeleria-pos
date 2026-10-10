@@ -5,8 +5,8 @@
 > fase le da al POS el control del inventario: qué hay, qué llega, qué se pierde y qué comprar. Parte del diseño de
 > [catálogo e inventario](inventario.md) y de la [depuración](plan.md#depuración-del-inventario) que va antes del piloto.
 
-**Avance:** la entrega 1 (catálogo) está completa; de la entrega 2 (compras) están la parte 1 (recibir a ciegas y
-capturar la nota) y la parte 2 (el documento del proveedor llena la nota).
+**Avance:** las entregas 1 (catálogo) y 2 (compras) están completas. Sigue la
+[prueba con una persona real](plan.md#prueba-con-una-persona-real) y después la entrega 3.
 
 Entrega 1, parte 1:
 
@@ -75,10 +75,18 @@ Entrega 2, parte 2, el documento del proveedor (en la misma pantalla, quien capt
 - **Corregir:** cualquier renglón del documento se puede corregir (otra presentación, cantidad o importe); lo que dice
   el documento se queda a la vista.
 
-Lo que sigue de la entrega 2:
+Entrega 2, parte 3, la orden de compra y abrir paquete (F4):
 
-- **Parte 3:** la orden de compra opcional y abrir paquete.
-- **Al cerrarla:** se prepara la [prueba con una persona real](plan.md#prueba-con-una-persona-real), antes de la entrega 3.
+- **Órdenes de compra** (el dueño y el encargado, regla "Hacer órdenes de compra"): se elige el proveedor y se escanea o
+  busca cada producto, con su último costo con ese proveedor y la existencia. Abajo queda el texto del pedido, con las
+  claves del proveedor, para copiarlo a WhatsApp o a un correo.
+- **Son opcionales:** al capturar la nota se dice de qué orden viene (una abierta del mismo proveedor). La comparación
+  muestra también lo pedido; lo que se pidió y no vino aparece como "no llegó" y entra en las diferencias. Al cerrar la
+  compra, la orden queda recibida. Quien cuenta no ve la orden.
+- **Abrir paquete:** cuando el paquete y la pieza son productos distintos (como vienen de eleventa), sale el paquete a
+  su costo y entran sus piezas con ese mismo costo, en dos movimientos del kardex con el mismo documento. La siguiente
+  vez se propone la misma pieza y cuántas trae. Lo puede hacer el cajero (queda en la bitácora). Si el paquete y la
+  pieza son presentaciones del mismo producto no hace falta: la existencia ya está en piezas.
 
 ## Qué ya existe
 

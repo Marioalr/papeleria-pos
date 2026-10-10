@@ -145,6 +145,22 @@ public sealed class RegistroCompras(PosDbContext db)
         return (await DetalleAsync(compraId, s.UsuarioId, ct))!;
     }
 
+    /// <summary>De qué orden de compra viene (o de ninguna): una abierta del mismo proveedor. La comparación muestra lo pedido.</summary>
+    public async Task<CompraDto> OrdenAsync(Guid compraId, SolicitudOrdenDeCompra s, CancellationToken ct = default)
+    {
+        var compra = await CompraAsync(compraId, ct);
+        await RequerirCosteoAsync(s.UsuarioId, compra.SucursalId, ct);
+        if (s.OrdenId is { } id && await db.OrdenesCompra.AsNoTracking().SingleOrDefaultAsync(o => o.Id == id, ct) is var orden
+            && (orden is null || orden.ProveedorId != compra.ProveedorId || orden.SucursalId != compra.SucursalId || orden.Estado != EstadoOrden.Abierta))
+            throw new InvalidOperationException("Esa orden no está abierta o es de otro proveedor.");
+        compra.DeLaOrden(s.OrdenId);
+        await db.SaveChangesAsync(ct);
+        return (await DetalleAsync(compraId, s.UsuarioId, ct))!;
+    }
+
+    private async Task<List<OrdenRenglon>?> PedidoAsync(Compra compra, CancellationToken ct) =>
+        compra.OrdenId is { } id ? await db.OrdenesRenglones.AsNoTracking().Where(r => r.OrdenId == id).ToListAsync(ct) : null;
+
     /// <summary>
     /// El documento del proveedor (XML de la factura o PDF de la nota) llena los renglones. Los que el POS reconoce (por
     /// la clave que ya se ligó con este proveedor, o por código de barras) llegan ligados; los demás se ligan a mano.
@@ -258,6 +274,8 @@ public sealed class RegistroCompras(PosDbContext db)
         var resumen = (await DetalleAsync(compraId, usuarioId, ct))!;
         compra.Cerrar(usuarioId, Ahora);
 
+        if (compra.OrdenId is { } ordenId)
+            (await db.OrdenesCompra.FindAsync([ordenId], ct))?.Recibir(compra.Id);
         var comparacion = ComparacionCompra.Comparar(compra.Conteo, compra.Renglones);
         var ids = comparacion.Select(c => c.VarianteId).ToList();
         var variantes = await db.Variantes.Include(v => v.Producto).ThenInclude(p => p!.Marca).Where(v => ids.Contains(v.Id)).ToDictionaryAsync(v => v.Id, ct);
@@ -372,13 +390,21 @@ public sealed class RegistroCompras(PosDbContext db)
         return new CompraDto(compra.Id, compra.FolioTexto, compra.ProveedorId, await NombreProveedorAsync(compra.ProveedorId, ct), compra.Documento,
             compra.Estado, HoraMexico.ALocal(compra.AbiertaUtc), usuarios.GetValueOrDefault(compra.RecibioId, "?"),
             compra.CosteoId is { } c ? usuarios.GetValueOrDefault(c) : null, compra.CerradaUtc is { } cerrada ? HoraMexico.ALocal(cerrada) : null, compra.Motivo,
-            conteo, renglones, comparacion, veNota ? compra.TotalNotaCentavos : null, documentos);
+            conteo, renglones, comparacion, veNota ? compra.TotalNotaCentavos : null, documentos, veNota ? compra.OrdenId : null,
+            veNota && compra.OrdenId is { } orden
+                ? await db.OrdenesCompra.AsNoTracking().Where(o => o.Id == orden).Select(o => (int?)o.Folio).FirstOrDefaultAsync(ct) is { } f ? $"OC-{f:D6}" : null
+                : null);
     }
 
     private async Task<List<ComparacionCompraDto>> CompararAsync(Compra compra, Dictionary<Guid, Variante> variantes, CancellationToken ct)
     {
-        var comparacion = ComparacionCompra.Comparar(compra.Conteo, compra.Renglones);
+        var comparacion = ComparacionCompra.Comparar(compra.Conteo, compra.Renglones, await PedidoAsync(compra, ct));
         var ids = comparacion.Select(c => c.VarianteId).ToList();
+        var faltantes = ids.Where(id => !variantes.ContainsKey(id)).ToList();
+        if (faltantes.Count > 0)
+            foreach (var v in await db.Variantes.AsNoTracking().Include(v => v.Producto).ThenInclude(p => p!.Marca).Include(v => v.Presentaciones)
+                         .Where(v => faltantes.Contains(v.Id)).AsSplitQuery().ToListAsync(ct))
+                variantes[v.Id] = v;
         var precios = (await db.Precios.AsNoTracking()
                 .Where(p => ids.Contains(p.VarianteId) && p.PresentacionId == null && (p.SucursalId == null || p.SucursalId == compra.SucursalId))
                 .ToListAsync(ct))
@@ -401,7 +427,7 @@ public sealed class RegistroCompras(PosDbContext db)
                 long? sugerido = margen < minimo ? Margen.PrecioSugerido(c.CostoUnitario!.Value, minimo) : null;
                 return new ComparacionCompraDto(c.VarianteId, variante is null ? "?" : Nombre(variante), variante?.UnidadBase ?? UnidadBase.Pieza,
                     c.Nota.EnUnidades, c.Contado.EnUnidades, c.Tipo, c.CostoUnitario, anteriores.GetValueOrDefault(c.VarianteId), menudeo, margen, minimo,
-                    sugerido);
+                    sugerido, c.Pedido?.EnUnidades);
             })
             .OrderBy(c => c.Producto, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
@@ -460,12 +486,8 @@ public sealed class RegistroCompras(PosDbContext db)
     private Task RequerirCosteoAsync(Guid usuarioId, Guid sucursalId, CancellationToken ct) =>
         RequerirAsync(usuarioId, sucursalId, AccionControlada.CostearCompra, "La nota y los costos los capturan el dueño y el encargado.", ct);
 
-    private async Task RequerirAsync(Guid usuarioId, Guid sucursalId, AccionControlada accion, string mensaje, CancellationToken ct)
-    {
-        var decision = await new ServicioControl(db).EvaluarAsync(usuarioId, sucursalId, accion, ct: ct);
-        if (decision.Nivel != NivelPermiso.Permitido)
-            throw new PermisoRequerido(accion, NivelPermiso.NoPermitido, mensaje);
-    }
+    private Task RequerirAsync(Guid usuarioId, Guid sucursalId, AccionControlada accion, string mensaje, CancellationToken ct) =>
+        new ServicioControl(db).ExigirAsync(usuarioId, sucursalId, accion, mensaje, ct);
 
     /// <summary>
     /// Lo que llegó sin estar en la nota: el último costo de este proveedor, si no el costo promedio de la sucursal, si
@@ -487,6 +509,7 @@ public sealed class RegistroCompras(PosDbContext db)
     {
         DiferenciaCompra.Falto => $"faltó {Formato(c.Nota - c.Contado)} de «{c.Producto}»",
         DiferenciaCompra.Sobro => $"sobró {Formato(c.Contado - c.Nota)} de «{c.Producto}»",
+        DiferenciaCompra.NoLlego when c.Nota == 0 => $"no llegó «{c.Producto}» (se pidieron {Formato(c.Pedido ?? 0)})",
         DiferenciaCompra.NoLlego => $"no llegó «{c.Producto}» ({Formato(c.Nota)} en la nota)",
         _ => $"llegó «{c.Producto}» ({Formato(c.Contado)}) sin estar en la nota",
     };
@@ -510,7 +533,8 @@ public sealed class RegistroCompras(PosDbContext db)
         await db.Compras.Include(c => c.Conteo).Include(c => c.Renglones).AsSplitQuery().SingleOrDefaultAsync(c => c.Id == compraId, ct)
         ?? throw new InvalidOperationException("La compra ya no existe.");
 
-    private async Task<Presentacion> PresentacionAsync(Guid varianteId, Guid presentacionId, CancellationToken ct)
+    /// <summary>La presentación de una variante que lleva inventario (para contar, la nota o una orden).</summary>
+    internal async Task<Presentacion> PresentacionAsync(Guid varianteId, Guid presentacionId, CancellationToken ct)
     {
         var presentacion = await db.Presentaciones.Include(p => p.Variante).ThenInclude(v => v!.Producto).ThenInclude(p => p!.Marca)
             .SingleOrDefaultAsync(p => p.Id == presentacionId && p.VarianteId == varianteId, ct)
@@ -520,17 +544,7 @@ public sealed class RegistroCompras(PosDbContext db)
         return presentacion;
     }
 
-    private async Task<int> SiguienteFolioAsync(Guid sucursalId, CancellationToken ct)
-    {
-        var nombre = $"compras:{sucursalId}";
-        var secuencia = await db.Secuencias.FindAsync([nombre], ct);
-        if (secuencia is null)
-        {
-            secuencia = new Secuencia { Nombre = nombre };
-            db.Secuencias.Add(secuencia);
-        }
-        return checked((int)++secuencia.Valor);
-    }
+    private Task<int> SiguienteFolioAsync(Guid sucursalId, CancellationToken ct) => Secuencia.SiguienteAsync(db, $"compras:{sucursalId}", ct);
 
     private async Task<string> NombreProveedorAsync(Guid proveedorId, CancellationToken ct) =>
         await db.Proveedores.AsNoTracking().Where(p => p.Id == proveedorId).Select(p => p.Nombre).FirstOrDefaultAsync(ct) ?? "?";
@@ -539,10 +553,10 @@ public sealed class RegistroCompras(PosDbContext db)
         await db.Usuarios.AsNoTracking().Where(u => u.Id == usuarioId).Select(u => u.Nombre).FirstOrDefaultAsync(ct) ?? "?";
 
     /// <summary>Como lo muestra la caja: producto, marca y variante.</summary>
-    private static string Nombre(Variante v) =>
+    internal static string Nombre(Variante v) =>
         string.Join(" ", new[] { v.Producto?.Nombre, v.Producto?.Marca?.Nombre, v.Descripcion }.Where(p => !string.IsNullOrWhiteSpace(p)));
 
-    private static string? Limpio(string? texto) => string.IsNullOrWhiteSpace(texto) ? null : texto.Trim();
+    internal static string? Limpio(string? texto) => string.IsNullOrWhiteSpace(texto) ? null : texto.Trim();
 
     private static ProveedorDto Dto(Proveedor p) => new(p.Id, p.Nombre, p.Telefono, p.Rfc, p.Notas, p.Activo);
 }

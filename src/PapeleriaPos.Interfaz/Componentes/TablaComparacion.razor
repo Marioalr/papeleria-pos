@@ -5,7 +5,7 @@
     <table>
         <thead>
             <tr>
-                <th>Producto</th><th class="num">Nota</th><th class="num">Llegó</th><th>Diferencia</th><th class="num">Costo</th><th class="num">Antes</th>
+                <th>Producto</th>@if (ConPedido) { <th class="num">Pedido</th> }<th class="num">Nota</th><th class="num">Llegó</th><th>Diferencia</th><th class="num">Costo</th><th class="num">Antes</th>
                 <th class="num">Precio</th><th class="num">Margen</th><th></th>
             </tr>
         </thead>
@@ -14,6 +14,10 @@
             var comparada = c;
             <tr class="@(c.Diferencia == DiferenciaCompra.Ninguna ? "" : "diferencia")">
                 <td>@c.Producto</td>
+                @if (ConPedido)
+                {
+                    <td class="num">@(c.Pedido is { } pedido ? Formato.Numero(pedido) : "")</td>
+                }
                 <td class="num">@Formato.Numero(c.Nota)</td>
                 <td class="num">@Formato.Numero(c.Contado)</td>
                 <td>@Textos.Diferencia(c.Diferencia)@(c.Diferencia is DiferenciaCompra.Falto or DiferenciaCompra.Sobro ? $" {Formato.Numero(Math.Abs(c.Contado - c.Nota))}" : "")</td>
@@ -45,4 +49,7 @@
     [Parameter, EditorRequired] public IReadOnlyList<ComparacionCompraDto> Comparacion { get; set; } = [];
     [Parameter] public EventCallback<ComparacionCompraDto> AlPonerPrecio { get; set; }
     [Parameter] public bool Ocupado { get; set; }
+
+    /// <summary>La compra viene de una orden: se muestra también lo pedido.</summary>
+    private bool ConPedido => Comparacion.Any(c => c.Pedido is not null);
 }

@@ -1,0 +1,139 @@
+@* Órdenes de compra: lo que se le pide a un proveedor. Son opcionales; al capturar la nota de una compra se dice de qué
+   orden viene y la comparación muestra lo pedido. *@
+@inject ClienteCaja Cliente
+
+@if (_abierta is { } abierta)
+{
+    <OrdenAbierta Caja="Caja" Sesion="Sesion" OrdenId="abierta" AlVolver="VolverAsync" />
+}
+else if (_nueva)
+{
+    <div class="dos-columnas">
+        <label>Proveedor
+            <select @bind="_proveedor">
+                <option value="">Elige el proveedor…</option>
+                @foreach (var p in _proveedores)
+                {
+                    <option value="@p.Id">@p.Nombre</option>
+                }
+            </select>
+        </label>
+        <label>Notas para el proveedor <input @bind="_notas" placeholder="Entrega, forma de pago…" autocomplete="off" /></label>
+    </div>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    <div class="acciones izquierda">
+        <button class="boton" @onclick="() => _nueva = false">Cancelar</button>
+        <button class="boton principal" disabled="@_ocupado" @onclick="AbrirAsync">Armar la orden</button>
+    </div>
+}
+else
+{
+    <div class="filtros-catalogo">
+        <button class="boton principal" @onclick="NuevaAsync">Nueva orden</button>
+        <button class="boton" @onclick="CargarAsync">Actualizar</button>
+    </div>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_ordenes is { Count: 0 })
+    {
+        <p class="vacia">No hay órdenes. Son opcionales: sirven para comparar lo que se pidió con lo que llegó.</p>
+    }
+    else if (_ordenes is not null)
+    {
+        <div class="resultados catalogo">
+            <table>
+                <thead><tr><th>Folio</th><th>Fecha</th><th>Proveedor</th><th>Estado</th><th class="num">Productos</th><th>Compra</th></tr></thead>
+                @foreach (var o in _ordenes)
+                {
+                    var orden = o;
+                    <tr class="@(o.Estado == EstadoOrden.Cancelada ? "inactivo" : "")" @onclick="() => _abierta = orden.Id">
+                        <td>@o.Folio</td>
+                        <td>@o.CreadaLocal.ToString("dd/MM/yyyy HH:mm")</td>
+                        <td>@o.Proveedor</td>
+                        <td>@Textos.Estado(o.Estado)</td>
+                        <td class="num">@o.Productos</td>
+                        <td>@o.Compra</td>
+                    </tr>
+                }
+            </table>
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    private List<OrdenResumenDto>? _ordenes;
+    private List<ProveedorDto> _proveedores = [];
+    private Guid? _abierta;
+    private bool _nueva;
+    private string _proveedor = "";
+    private string _notas = "";
+    private bool _ocupado;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _error = null;
+        try
+        {
+            _ordenes = await Cliente.OrdenesAsync(Caja.SucursalId);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task NuevaAsync()
+    {
+        _error = null;
+        try
+        {
+            _proveedores = await Cliente.ProveedoresAsync();
+            (_proveedor, _notas, _nueva) = ("", "", true);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task AbrirAsync()
+    {
+        if (!Guid.TryParse(_proveedor, out var proveedor))
+        {
+            _error = "Elige el proveedor.";
+            return;
+        }
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            var orden = await Cliente.AbrirOrdenAsync(new SolicitudAbrirOrden(Sesion.UsuarioId, Caja.SucursalId, proveedor, _notas));
+            (_nueva, _abierta) = (false, orden.Id);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task VolverAsync()
+    {
+        _abierta = null;
+        await CargarAsync();
+    }
+}

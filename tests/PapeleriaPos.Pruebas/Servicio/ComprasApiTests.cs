@@ -314,6 +314,77 @@ public class ComprasApiTests(ServicioDePrueba servicio) : IClassFixture<Servicio
     }
 
     [Fact]
+    public async Task La_orden_de_compra_se_compara_al_recibir_y_queda_recibida()
+    {
+        var e = await PrepararAsync();
+        var a = await ProductoAsync(e, "Crayolas de prueba orden");
+        var b = await ProductoAsync(e, "Acuarelas de prueba orden");
+        var porCajero = await e.Http.PostAsJsonAsync("api/ordenes", new SolicitudAbrirOrden(e.Cajero.UsuarioId, e.Sucursal, e.Proveedor.Id!.Value, null));
+        var orden = await Leer<OrdenDto>(await e.Http.PostAsJsonAsync("api/ordenes", new SolicitudAbrirOrden(e.Encargado.UsuarioId, e.Sucursal, e.Proveedor.Id!.Value, "Entregar en la mañana")));
+        await Leer<OrdenDto>(await e.Http.PostAsJsonAsync($"api/ordenes/{orden.Id}/renglones", new SolicitudPedido(e.Encargado.UsuarioId, a.Variante, a.Caja, 2000)));
+        var pedida = await Leer<OrdenDto>(await e.Http.PostAsJsonAsync($"api/ordenes/{orden.Id}/renglones", new SolicitudPedido(e.Encargado.UsuarioId, b.Variante, b.Pieza, 5000)));
+
+        var compra = await AbrirAsync(e, e.Cajero);
+        await Leer<CompraDto>(await ContarAsync(e, compra, e.Cajero, a, a.Caja, 2));
+        await Leer<CompraDto>(await AccionAsync(e, compra, "terminar-conteo", e.Cajero));
+        await Leer<CompraDto>(await RenglonAsync(e, compra, e.Encargado, a, a.Caja, 2, 24000));
+        var conOrden = await Leer<CompraDto>(await e.Http.PostAsJsonAsync($"api/compras/{compra.Id}/orden", new SolicitudOrdenDeCompra(e.Encargado.UsuarioId, orden.Id)));
+        var vistaDelCajero = await Leer<CompraDto>(await e.Http.GetAsync($"api/compras/{compra.Id}?usuarioId={e.Cajero.UsuarioId}"));
+        await Leer<CompraDto>(await AccionAsync(e, compra, "cerrar", e.Encargado));
+        var recibida = await Leer<OrdenDto>(await e.Http.GetAsync($"api/ordenes/{orden.Id}"));
+        var otraVez = await e.Http.PostAsJsonAsync($"api/ordenes/{orden.Id}/renglones", new SolicitudPedido(e.Encargado.UsuarioId, b.Variante, b.Pieza, 1000));
+
+        Assert.Equal(HttpStatusCode.Forbidden, porCajero.StatusCode);
+        Assert.Equal(2, pedida.Renglones.Count);
+        Assert.Contains("• 2 Caja 12 de Crayolas de prueba orden", pedida.Texto);
+        Assert.Contains("Notas: Entregar en la mañana", pedida.Texto);
+        Assert.Equal(orden.Folio, conOrden.Orden);
+        Assert.Equal(24m, conOrden.Comparacion!.Single(c => c.VarianteId == a.Variante).Pedido);
+        var noVino = conOrden.Comparacion!.Single(c => c.VarianteId == b.Variante);
+        Assert.Equal((5m, DiferenciaCompra.NoLlego), (noVino.Pedido!.Value, noVino.Diferencia));
+        Assert.Null(vistaDelCajero.OrdenId);
+        Assert.Equal((EstadoOrden.Recibida, compra.Folio), (recibida.Estado, recibida.Compra));
+        Assert.Equal(HttpStatusCode.BadRequest, otraVez.StatusCode);
+        using var alcance = servicio.Fabrica.Services.CreateScope();
+        var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
+        Assert.True(await db.Bitacora.AnyAsync(x => x.Detalle.Contains(compra.Folio) && x.Detalle.Contains("no llegó «Acuarelas de prueba orden» (se pidieron 5)")));
+    }
+
+    [Fact]
+    public async Task Abrir_un_paquete_saca_el_paquete_y_mete_sus_piezas_con_el_mismo_costo()
+    {
+        var e = await PrepararAsync();
+        var paquete = await ProductoAsync(e, "Paquete de lápices de prueba");
+        var lapiz = await ProductoAsync(e, "Lápiz suelto de prueba");
+        var compra = await AbrirAsync(e, e.Encargado);
+        await Leer<CompraDto>(await ContarAsync(e, compra, e.Encargado, paquete, paquete.Pieza, 2));
+        await Leer<CompraDto>(await AccionAsync(e, compra, "terminar-conteo", e.Encargado));
+        await Leer<CompraDto>(await RenglonAsync(e, compra, e.Encargado, paquete, paquete.Pieza, 2, 24000));
+        await Leer<CompraDto>(await AccionAsync(e, compra, "cerrar", e.Encargado));
+
+        var mismo = await e.Http.PostAsJsonAsync("api/aperturas", new SolicitudAbrirPaquete(e.Cajero.UsuarioId, e.Sucursal, paquete.Variante, 1000, paquete.Variante, 12000));
+        var abierta = await Leer<AperturaDto>(await e.Http.PostAsJsonAsync("api/aperturas",
+            new SolicitudAbrirPaquete(e.Cajero.UsuarioId, e.Sucursal, paquete.Variante, 1000, lapiz.Variante, 12000)));
+        var ultima = await Leer<UltimaAperturaDto>(await e.Http.GetAsync($"api/variantes/{paquete.Variante}/ultima-apertura"));
+        var fichaPaquete = await FichaAsync(e, paquete);
+        var fichaLapiz = await FichaAsync(e, lapiz);
+
+        Assert.Equal(HttpStatusCode.BadRequest, mismo.StatusCode);
+        Assert.Equal(("Paquete de lápices de prueba", 1m, "Lápiz suelto de prueba", 12m, "Cajero de prueba"),
+            (abierta.Origen, abierta.Cantidad, abierta.Destino, abierta.CantidadDestino, abierta.Usuario));
+        Assert.Equal((lapiz.Variante, 12m), (ultima.DestinoId, ultima.PiezasPorPaquete));
+        Assert.Equal((1m, 12000m), (fichaPaquete.Variantes[0].Existencia, fichaPaquete.Variantes[0].CostoPromedioCentavos));
+        Assert.Equal((12m, 1000m), (fichaLapiz.Variantes[0].Existencia, fichaLapiz.Variantes[0].CostoPromedioCentavos));
+        using var alcance = servicio.Fabrica.Services.CreateScope();
+        var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
+        var movimientos = await db.MovimientosInventario.AsNoTracking().Where(m => m.Tipo == TipoMovimiento.AperturaPaquete
+            && (m.VarianteId == paquete.Variante || m.VarianteId == lapiz.Variante)).ToListAsync();
+        Assert.Equal(2, movimientos.Count);
+        Assert.Equal(0, movimientos.Sum(m => m.CostoCentavos));
+        Assert.Single(movimientos.Select(m => m.DocumentoId).Distinct());
+    }
+
+    [Fact]
     public async Task Contar_cero_quita_la_presentacion_y_un_renglon_de_la_nota_se_quita()
     {
         var e = await PrepararAsync();

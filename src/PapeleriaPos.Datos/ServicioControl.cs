@@ -23,6 +23,16 @@ public sealed class ServicioControl(PosDbContext db)
     }
 
     /// <summary>
+    /// Para lo que no se autoriza en el momento (catálogo, compras, inventario): o el usuario lo puede hacer o no. La
+    /// bitácora la escribe quien llama, junto con la operación.
+    /// </summary>
+    public async Task ExigirAsync(Guid usuarioId, Guid sucursalId, AccionControlada accion, string mensaje, CancellationToken ct = default)
+    {
+        if ((await EvaluarAsync(usuarioId, sucursalId, accion, ct: ct)).Nivel != NivelPermiso.Permitido)
+            throw new PermisoRequerido(accion, NivelPermiso.NoPermitido, mensaje);
+    }
+
+    /// <summary>
     /// El encargado (o el dueño) se identifica con usuario y PIN para una acción. Si no puede autorizarla, queda en
     /// la bitácora como negada.
     /// </summary>

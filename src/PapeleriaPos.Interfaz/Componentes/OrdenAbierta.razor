@@ -1,0 +1,138 @@
+@* Una orden de compra: se arma escaneando o buscando cada producto, con su último costo con ese proveedor y la
+   existencia; el texto de abajo se copia para mandárselo. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+@if (_orden is null)
+{
+    <p class="@(_error is null ? "" : "error")">@(_error ?? "Cargando…")</p>
+    <div class="acciones izquierda"><button class="boton" @onclick="AlVolver">Volver</button></div>
+}
+else
+{
+    var o = _orden;
+    <p>
+        <strong>@o.Folio</strong> · @o.Proveedor · <span class="etiqueta">@Textos.Estado(o.Estado)</span>
+        <span class="nota">La hizo @o.Usuario el @o.CreadaLocal.ToString("dd/MM/yyyy HH:mm")@(o.Compra is { } c ? $" · la recibió la compra {c}" : "")</span>
+    </p>
+    @if (o.Estado == EstadoOrden.Abierta)
+    {
+        <ElegirProducto SucursalId="Caja.SucursalId" Accion="Pedir uno" AlElegir="PedirUnoAsync" />
+        <p class="nota">Cada código suma uno de esa presentación (el de la caja pide una caja). La cantidad se corrige en la tabla.</p>
+    }
+    @if (o.Renglones.Count == 0)
+    {
+        <p class="vacia">La orden está vacía.</p>
+    }
+    else
+    {
+        <div class="resultados compra">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Producto</th><th>Presentación</th><th class="num">Cantidad</th><th class="num">En unidades</th><th class="num">Último costo</th>
+                        <th class="num">Existencia</th>@if (o.Estado == EstadoOrden.Abierta) { <th></th> }
+                    </tr>
+                </thead>
+                @foreach (var r in o.Renglones)
+                {
+                    var renglon = r;
+                    <tr>
+                        <td>@r.Producto</td>
+                        <td>@r.Presentacion</td>
+                        <td class="num">
+                            @if (o.Estado == EstadoOrden.Abierta)
+                            {
+                                <input class="umbral" inputmode="decimal" value="@Formato.Numero(r.CantidadMilesimas / 1000m)" @onchange="e => CambiarAsync(renglon, e.Value)" />
+                            }
+                            else
+                            {
+                                @Formato.Numero(r.CantidadMilesimas / 1000m)
+                            }
+                        </td>
+                        <td class="num">@Formato.Numero(r.CantidadBase)</td>
+                        <td class="num">@(r.UltimoCostoCentavos is { } costo ? Formato.Dinero(costo) : "")</td>
+                        <td class="num">@(r.Existencia is { } e ? Formato.Numero(e) : "—")</td>
+                        @if (o.Estado == EstadoOrden.Abierta)
+                        {
+                            <td><button class="boton chico" @onclick="() => PedirAsync(renglon.VarianteId, renglon.PresentacionId, 0)">Quitar</button></td>
+                        }
+                    </tr>
+                }
+            </table>
+        </div>
+        <h5>Para mandar al proveedor</h5>
+        <pre class="ticket">@o.Texto</pre>
+        <div class="acciones izquierda"><button class="boton" @onclick="CopiarAsync">Copiar el texto</button></div>
+    }
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_aviso is not null)
+    {
+        <p class="aviso">@_aviso</p>
+    }
+    <div class="acciones izquierda">
+        <button class="boton" @onclick="AlVolver">Volver a las órdenes</button>
+        @if (o.Estado == EstadoOrden.Abierta)
+        {
+            <button class="boton" disabled="@_ocupado" @onclick="CancelarAsync">Cancelar la orden</button>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter, EditorRequired] public Guid OrdenId { get; set; }
+    [Parameter] public EventCallback AlVolver { get; set; }
+
+    private OrdenDto? _orden;
+    private bool _ocupado;
+    private string? _error;
+    private string? _aviso;
+
+    protected override Task OnInitializedAsync() => HacerAsync(() => Cliente.OrdenAsync(OrdenId));
+
+    private async Task HacerAsync(Func<Task<OrdenDto>> operacion)
+    {
+        _ocupado = true;
+        (_error, _aviso) = (null, null);
+        try
+        {
+            _orden = await operacion();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private Task PedirAsync(Guid varianteId, Guid presentacionId, long milesimas) =>
+        HacerAsync(() => Cliente.PedirAsync(OrdenId, new SolicitudPedido(Sesion.UsuarioId, varianteId, presentacionId, milesimas)));
+
+    private Task PedirUnoAsync((ProductoVentaDto Producto, PresentacionDto Presentacion) elegido)
+    {
+        var actual = _orden!.Renglones.FirstOrDefault(r => r.PresentacionId == elegido.Presentacion.Id)?.CantidadMilesimas ?? 0;
+        return PedirAsync(elegido.Producto.VarianteId, elegido.Presentacion.Id, actual + 1000);
+    }
+
+    private async Task CambiarAsync(OrdenRenglonDto renglon, object? valor)
+    {
+        if (decimal.TryParse(valor?.ToString()?.Replace(",", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var cantidad) && cantidad >= 0)
+            await PedirAsync(renglon.VarianteId, renglon.PresentacionId, (long)Math.Round(cantidad * 1000));
+    }
+
+    private Task CancelarAsync() => HacerAsync(() => Cliente.CancelarOrdenAsync(OrdenId, Sesion.UsuarioId));
+
+    private async Task CopiarAsync()
+    {
+        await Js.CopiarAsync(_orden!.Texto);
+        _aviso = "Texto copiado: pégalo en WhatsApp o en un correo para el proveedor.";
+    }
+}

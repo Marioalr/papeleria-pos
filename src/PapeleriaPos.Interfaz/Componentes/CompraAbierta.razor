@@ -47,6 +47,24 @@ else
             break;
 
         case EstadoCompra.PorCostear:
+            @if (_ordenes is { Count: > 0 } || c.OrdenId is not null)
+            {
+                <div class="filtros-catalogo">
+                    <label class="en-linea">¿Viene de una orden de compra?
+                        <select value="@(c.OrdenId?.ToString() ?? "")" @onchange="CambiarOrdenAsync">
+                            <option value="">No</option>
+                            @if (c.OrdenId is { } actual && _ordenes?.All(x => x.Id != actual) != false)
+                            {
+                                <option value="@actual">@c.Orden</option>
+                            }
+                            @foreach (var orden in _ordenes ?? [])
+                            {
+                                <option value="@orden.Id">@orden.Folio del @orden.CreadaLocal.ToString("dd/MM/yyyy") (@orden.Productos productos)</option>
+                            }
+                        </select>
+                    </label>
+                </div>
+            }
             <h5>Nota del proveedor</h5>
             <div class="acciones izquierda">
                 <label class="boton archivo">
@@ -212,6 +230,9 @@ else
     private CompraDto? _compra;
     private RenglonEditable? _renglon;
     private RenglonCompraDto? _ligando;
+
+    /// <summary>Las órdenes abiertas de este proveedor, para decir de cuál viene (solo quien captura la nota).</summary>
+    private List<OrdenResumenDto>? _ordenes;
     private Confirmar _confirmar;
     private string _motivo = "";
     private bool _ocupado;
@@ -227,7 +248,26 @@ else
         await Js.EnfocarAsync("#cantidad-renglon");
     }
 
-    protected override Task OnInitializedAsync() => HacerAsync(() => Cliente.CompraAsync(CompraId, Sesion.UsuarioId));
+    protected override async Task OnInitializedAsync()
+    {
+        await HacerAsync(() => Cliente.CompraAsync(CompraId, Sesion.UsuarioId));
+        if (_compra is { Estado: EstadoCompra.PorCostear, Renglones: not null } compra && Sesion.Rol is Rol.Dueno or Rol.Encargado)
+        {
+            try
+            {
+                _ordenes = (await Cliente.OrdenesAsync(Caja.SucursalId))
+                    .Where(o => o.Estado == EstadoOrden.Abierta && o.ProveedorId == compra.ProveedorId).ToList();
+            }
+            catch (ErrorCaja)
+            {
+                // Sin la lista de órdenes se sigue: la orden es opcional.
+            }
+        }
+    }
+
+    private Task CambiarOrdenAsync(ChangeEventArgs e) =>
+        HacerAsync(() => Cliente.OrdenDeCompraAsync(CompraId,
+            new SolicitudOrdenDeCompra(Sesion.UsuarioId, Guid.TryParse(e.Value?.ToString(), out var orden) ? orden : null)));
 
     /// <summary>Cada operación regresa la compra como la ve este usuario.</summary>
     private async Task HacerAsync(Func<Task<CompraDto>> operacion, string? aviso = null)

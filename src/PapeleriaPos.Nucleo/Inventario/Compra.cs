@@ -42,6 +42,9 @@ public class Compra
     /// <summary>Por qué se canceló.</summary>
     public string? Motivo { get; private set; }
 
+    /// <summary>La orden de compra de la que viene, si se dijo (es opcional).</summary>
+    public Guid? OrdenId { get; private set; }
+
     /// <summary>Lo que se contó, por presentación (la caja de 12 se cuenta por cajas).</summary>
     public List<CompraConteo> Conteo { get; init; } = [];
 
@@ -136,6 +139,13 @@ public class Compra
                 CantidadBase = r.Liga is { } liga ? r.Cantidad.Por(liga.Factor) : Cantidad.Cero, ImporteCentavos = r.ImporteCentavos,
             });
         }
+    }
+
+    /// <summary>Dice de qué orden viene (o ninguna). Lo hace quien captura la nota: quien cuenta no ve la orden.</summary>
+    public void DeLaOrden(Guid? ordenId)
+    {
+        RequerirEstado(EstadoCompra.PorCostear, "La orden se indica al capturar la nota.");
+        OrdenId = ordenId;
     }
 
     public void QuitarRenglon(Guid renglonId)
