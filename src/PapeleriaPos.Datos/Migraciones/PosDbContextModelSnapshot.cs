@@ -1161,13 +1161,22 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<long>("CantidadBase")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Codigo")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid>("CompraId")
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid>("PresentacionId")
+                    b.Property<bool>("DelEncargado")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Descripcion")
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid>("VarianteId")
+                    b.Property<Guid?>("PresentacionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("VarianteId")
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -1262,10 +1271,16 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<long>("ImporteCentavos")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Nuevo")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("Orden")
                         .HasColumnType("INTEGER");
 
                     b.Property<Guid?>("PresentacionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("SugerenciaId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Unidad")
@@ -2537,14 +2552,12 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasOne("PapeleriaPos.Nucleo.Catalogo.Presentacion", null)
                         .WithMany()
                         .HasForeignKey("PresentacionId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
                         .WithMany()
                         .HasForeignKey("VarianteId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Inventario.CompraDocumento", b =>

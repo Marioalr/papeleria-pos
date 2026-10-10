@@ -71,6 +71,33 @@ public static class NombresParecidos
     }
 
     /// <summary>
+    /// Qué tanto se parecen dos nombres, de 0 a 1, para sugerir el producto de un renglón del documento del proveedor
+    /// ("PLUMA BIC P/FINO ROJA" se parece a "Pluma punto fino Bic Rojo"). A diferencia de <see cref="SonElMismo"/>, no
+    /// exige las mismas palabras: cuenta las que coinciden (iguales, abreviadas o con otra terminación, como rojo y
+    /// roja) entre todas las de los dos.
+    /// </summary>
+    public static double Parecido(IReadOnlyList<string> a, IReadOnlyList<string> b)
+    {
+        if (a.Count == 0 || b.Count == 0)
+            return 0;
+        var resto = b.ToList();
+        var coinciden = 0;
+        foreach (var palabra in a)
+        {
+            var pareja = resto.FirstOrDefault(otra => otra == palabra) ?? resto.FirstOrDefault(otra => SeParecen(palabra, otra));
+            if (pareja is null)
+                continue;
+            resto.Remove(pareja);
+            coinciden++;
+        }
+        return 2.0 * coinciden / (a.Count + b.Count);
+    }
+
+    private static bool SeParecen(string a, string b) =>
+        EsAbreviatura(a, b) || EsAbreviatura(b, a)
+        || (a.Length >= 4 && b.Length >= 4 && !a.Any(char.IsDigit) && a.Length == b.Length && a[..^1] == b[..^1]);
+
+    /// <summary>
     /// Una abreviatura quita al menos dos letras ("p" por "punto", "cuad" por "cuaderno"): así "AA" no se confunde
     /// con "AAA". Los números no se abrevian: "1" no es "12" ni "100".
     /// </summary>

@@ -13,8 +13,9 @@ namespace PapeleriaPos.Herramientas.Prueba;
 
 /// <summary>
 /// Una factura (XML) y una nota (PDF) de un proveedor de la base, con sus productos, para probar las compras sin
-/// documentos reales. La factura trae códigos de barras (llegan ligados) y una clave del proveedor (se liga una vez); la
-/// nota repite esa clave (ya llega ligada) y trae los precios sin IVA, como muchas notas.
+/// documentos reales. La factura trae códigos de barras (llegan ligados), una clave del proveedor (llega como «¿Es…?» y
+/// se confirma una vez) y un producto que no está en el catálogo (llega precargado como nuevo); la nota repite esa clave
+/// (ya llega ligada) y trae los precios sin IVA, como muchas notas.
 /// </summary>
 public static class EjemplosProveedor
 {
@@ -45,8 +46,12 @@ public static class EjemplosProveedor
         if (productos.Count < 4)
             throw new InvalidOperationException("Hacen falta al menos cuatro productos del mismo proveedor para los ejemplos.");
 
-        // Factura: tres con código de barras y uno con la clave del proveedor (ese se liga a mano la primera vez).
-        var factura = new (Producto P, int Cantidad, bool PorClave)[] { (productos[0], 12, false), (productos[1], 24, false), (productos[2], 6, false), (productos[3], 10, true) };
+        // Factura: tres con código de barras, uno con la clave del proveedor (se confirma la primera vez) y uno nuevo.
+        var nuevo = new Producto(Guid.Empty, "Sobre de burbuja 12x18", NuevoCodigo(codigos.Values), null, 950);
+        var factura = new (Producto P, int Cantidad, bool PorClave)[]
+        {
+            (productos[0], 12, false), (productos[1], 24, false), (productos[2], 6, false), (productos[3], 10, true), (nuevo, 8, false),
+        };
         await File.WriteAllTextAsync(Path.Combine(carpeta, "Factura de ejemplo.xml"), Factura(proveedor.Nombre, factura), Encoding.UTF8, ct);
 
         // Nota: repite la clave que se ligó con la factura (ya llega ligada) y trae precios sin IVA.
@@ -55,6 +60,18 @@ public static class EjemplosProveedor
 
         await File.WriteAllTextAsync(Path.Combine(carpeta, "Léeme.txt"), Leeme(proveedor.Nombre, factura, nota), Encoding.UTF8, ct);
         return [$"Factura de ejemplo.xml, Nota de ejemplo.pdf y Léeme.txt de «{proveedor.Nombre}» en {Path.GetFullPath(carpeta)}"];
+    }
+
+    /// <summary>Un código de barras de fábrica que no está en la base, para el producto nuevo de la factura.</summary>
+    private static string NuevoCodigo(IEnumerable<string> existentes)
+    {
+        var ocupados = existentes.ToHashSet();
+        for (var i = 1; ; i++)
+        {
+            var codigo = Nucleo.Catalogo.Ean13.Completar($"750999{i:D6}");
+            if (!ocupados.Contains(codigo))
+                return codigo;
+        }
     }
 
     private static decimal SinIva(long costoCentavos) => Math.Round(costoCentavos / 116m, 2);
@@ -148,8 +165,10 @@ public static class EjemplosProveedor
         t.AppendLine();
         t.AppendLine("1) «Factura de ejemplo.xml»: como cajero, recibe esta mercancía (escanea o busca cada producto y cuenta):");
         foreach (var (p, cantidad, _) in factura)
-            t.AppendLine($"     {cantidad,3} piezas de {p.Nombre}{(p.Codigo is { } c ? $" (código {c})" : "")}");
-        t.AppendLine("   Si quieres ver una diferencia, cuenta uno menos de alguno. Después, como encargado, carga el XML en la compra.");
+            t.AppendLine($"     {cantidad,3} piezas de {p.Nombre}{(p.Codigo is { } c ? $" (código {c})" : "")}"
+                + (p.VarianteId == Guid.Empty ? "  ← no está en el catálogo: al escribir su código, cuéntalo como nuevo" : ""));
+        t.AppendLine("   Si quieres ver una diferencia, cuenta uno menos de alguno. Después, como encargado, carga el XML en la compra:");
+        t.AppendLine("   revisa lo precargado (confirma el que dice «¿Es…?», corrige el producto nuevo), dalo de alta y cierra la compra.");
         t.AppendLine();
         t.AppendLine("2) «Nota de ejemplo.pdf»: en otra compra, recibe:");
         foreach (var (p, cantidad, _) in nota)

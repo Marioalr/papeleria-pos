@@ -22,7 +22,22 @@ else
     @switch (c.Estado)
     {
         case EstadoCompra.Recibiendo:
-            <ElegirProducto SucursalId="Caja.SucursalId" Accion="Contar uno" AlElegir="ContarUnoAsync" />
+            <ElegirProducto SucursalId="Caja.SucursalId" Accion="Contar uno" AlElegir="ContarUnoAsync" AlNoExiste="NoExiste" />
+            @if (_desconocido is { } desconocido)
+            {
+                <fieldset class="variante">
+                    <legend>El código «@desconocido.Codigo» no está en el catálogo</legend>
+                    <p class="nota">Cuéntalo aquí: cuando el encargado capture la nota, lo da de alta con ese código.</p>
+                    <div class="ficha-producto">
+                        <label class="ancho">¿Qué es? <input @bind="desconocido.Descripcion" placeholder="Opcional: cuaderno rojo, pluma…" autocomplete="off" /></label>
+                        <label>¿Cuántos llegaron? <input id="cantidad-desconocido" class="umbral" inputmode="numeric" @bind="desconocido.Cantidad" autocomplete="off" /></label>
+                    </div>
+                    <div class="acciones izquierda">
+                        <button class="boton" @onclick="() => _desconocido = null">Cancelar</button>
+                        <button class="boton principal" disabled="@_ocupado" @onclick="ContarDesconocidoAsync">Contar</button>
+                    </div>
+                </fieldset>
+            }
             <p class="nota">Cada código escaneado suma uno de esa presentación (el de la caja cuenta una caja). La cantidad se corrige en la tabla.</p>
             <TablaConteo Conteo="c.Conteo" Editable="true" AlCambiar="CambiarConteoAsync" />
             @if (_confirmar == Confirmar.TerminarConteo)
@@ -83,11 +98,7 @@ else
                     }
                 </p>
             }
-            <TablaNota Renglones="c.Renglones!" Comparacion="c.Comparacion!" AlQuitar="QuitarRenglonAsync" AlLigar="LigarAsync" />
-            @if (c.Renglones!.Count(x => x.VarianteId is null) is var sinLigar and > 0 && _ligando is null && _renglon is null)
-            {
-                <p class="aviso-autorizacion">@sinLigar @(sinLigar == 1 ? "renglón no se reconoció" : "renglones no se reconocieron"): dile al sistema qué producto es cada uno con «Ligar» (la próxima vez ya lo sabe) o quítalo si no es mercancía.</p>
-            }
+            <RevisionNota Compra="c" Sesion="Sesion" AlCambiar="Actualizar" AlLigar="LigarAsync" AlQuitar="QuitarRenglonAsync" />
             @if (_ligando is { } ligando)
             {
                 <fieldset class="variante">
@@ -229,6 +240,15 @@ else
 
     private CompraDto? _compra;
     private RenglonEditable? _renglon;
+
+    private sealed class Desconocido(string codigo)
+    {
+        public string Codigo { get; } = codigo;
+        public string Descripcion { get; set; } = "";
+        public string Cantidad { get; set; } = "1";
+    }
+
+    private Desconocido? _desconocido;
     private RenglonCompraDto? _ligando;
 
     /// <summary>Las órdenes abiertas de este proveedor, para decir de cuál viene (solo quien captura la nota).</summary>
@@ -297,8 +317,38 @@ else
     }
 
     private Task CambiarConteoAsync((ConteoCompraDto Linea, long CantidadMilesimas) cambio) =>
-        HacerAsync(() => Cliente.ContarAsync(CompraId,
-            new SolicitudConteo(Sesion.UsuarioId, cambio.Linea.VarianteId, cambio.Linea.PresentacionId, cambio.CantidadMilesimas)));
+        cambio.Linea is { VarianteId: { } variante, PresentacionId: { } presentacion }
+            ? HacerAsync(() => Cliente.ContarAsync(CompraId, new SolicitudConteo(Sesion.UsuarioId, variante, presentacion, cambio.CantidadMilesimas)))
+            : HacerAsync(() => Cliente.ContarDesconocidoAsync(CompraId,
+                new SolicitudConteoDesconocido(Sesion.UsuarioId, cambio.Linea.Codigo!, null, cambio.CantidadMilesimas)));
+
+    private void NoExiste(string codigo)
+    {
+        (_error, _aviso) = (null, null);
+        var actual = _compra?.Conteo.FirstOrDefault(c => c.VarianteId is null && string.Equals(c.Codigo, codigo, StringComparison.OrdinalIgnoreCase));
+        _desconocido = new Desconocido(codigo)
+        {
+            Descripcion = actual?.Producto.StartsWith("Código ", StringComparison.Ordinal) == false ? actual.Producto : "",
+            Cantidad = ((actual?.CantidadMilesimas ?? 0) / 1000 + 1).ToString(CultureInfo.InvariantCulture),
+        };
+    }
+
+    private async Task ContarDesconocidoAsync()
+    {
+        if (_desconocido is not { } d)
+            return;
+        if (!long.TryParse(d.Cantidad, NumberStyles.Integer, CultureInfo.InvariantCulture, out var piezas) || piezas < 0)
+        {
+            _error = "Escribe cuántos llegaron (piezas enteras).";
+            return;
+        }
+        await HacerAsync(() => Cliente.ContarDesconocidoAsync(CompraId,
+            new SolicitudConteoDesconocido(Sesion.UsuarioId, d.Codigo, d.Descripcion, piezas * 1000)));
+        if (_error is null)
+            _desconocido = null;
+    }
+
+    private void Actualizar(CompraDto compra) => (_compra, _error, _aviso) = (compra, null, null);
 
     private async Task TerminarConteoAsync()
     {

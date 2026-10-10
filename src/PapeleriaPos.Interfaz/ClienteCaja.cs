@@ -241,6 +241,24 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<CompraDto> CargarDocumentoCompraAsync(Guid compraId, SolicitudDocumentoCompra solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<CompraDto>($"api/compras/{compraId}/documentos", solicitud));
 
+    public Task<CompraDto> ContarDesconocidoAsync(Guid compraId, SolicitudConteoDesconocido solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<CompraDto>($"api/compras/{compraId}/conteo/desconocido", solicitud));
+
+    public Task<CompraDto> CorregirRenglonAsync(Guid compraId, Guid renglonId, SolicitudCorregirRenglon solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<CompraDto>($"api/compras/{compraId}/renglones/{renglonId}/corregir", solicitud));
+
+    public Task<CompraDto> ProductoNuevoAsync(Guid compraId, Guid renglonId, SolicitudProductoNuevo solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<CompraDto>($"api/compras/{compraId}/renglones/{renglonId}/nuevo", solicitud));
+
+    public Task<CompraDto> NoEsNuevoAsync(Guid compraId, Guid renglonId, Guid usuarioId) =>
+        ConRespaldoAsync(() => _http.PostAsync<CompraDto>($"api/compras/{compraId}/renglones/{renglonId}/no-es-nuevo", new SolicitudCompra(usuarioId)));
+
+    public Task<CompraDto> ProponerNuevosAsync(Guid compraId, Guid usuarioId) =>
+        ConRespaldoAsync(() => _http.PostAsync<CompraDto>($"api/compras/{compraId}/nuevos/proponer", new SolicitudCompra(usuarioId)));
+
+    public Task<CompraDto> DarDeAltaNuevosAsync(Guid compraId, Guid usuarioId) =>
+        ConRespaldoAsync(() => _http.PostAsync<CompraDto>($"api/compras/{compraId}/nuevos/alta", new SolicitudCompra(usuarioId)));
+
     public Task<CompraDto> QuitarRenglonCompraAsync(Guid compraId, Guid renglonId, Guid usuarioId) =>
         ConRespaldoAsync(() => _http.PostAsync<CompraDto>($"api/compras/{compraId}/renglones/{renglonId}/quitar", new SolicitudCompra(usuarioId)));
 

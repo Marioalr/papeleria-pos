@@ -70,12 +70,14 @@ public static class GuiaPrueba
             "Se guarda y se puede vender escaneando su código."),
         new("recibir", "Compras (F4)",
             "Como «cajero», en F4 Inventario → Compras → «Recibir mercancía»: elige el proveedor de «Léeme.txt» y cuenta lo que dice "
-            + "ahí para la factura (puedes contar uno menos de algo). Termina el conteo.",
-            "Mientras cuentas no ves la nota ni los costos. Al terminar, dice que falta que el encargado capture la nota."),
+            + "ahí para la factura (puedes contar uno menos de algo). El producto nuevo no está en el catálogo: cuéntalo con su código. Termina el conteo.",
+            "Mientras cuentas no ves la nota ni los costos. Lo que no está en el catálogo se cuenta aparte. Al terminar, dice que falta que el encargado capture la nota."),
         new("factura", "Compras (F4)",
             "Como «encargado» (Productos e inventario), abre esa compra y carga «Factura de ejemplo.xml» (carpeta «Ejemplos de la prueba» "
-            + "del escritorio). Liga el renglón que no reconoce y cierra la compra.",
-            "Los productos con código llegan solos; el otro se liga una vez. La comparación marca lo que faltó y al cerrar entra al inventario."),
+            + "del escritorio). Revisa lo que se precargó: confirma el que pregunta «¿Es…?», corrige lo que quieras del producto nuevo "
+            + "(nombre, precio, piezas) y dalo de alta. Cierra la compra.",
+            "Todo el pedido queda cargado y se puede corregir renglón por renglón. Los productos con código llegan solos; el nuevo se da de "
+            + "alta con lo que contaste. La comparación marca lo que faltó y al cerrar entra al inventario."),
         new("nota-pdf", "Compras (F4)",
             "Haz otra compra con lo que dice «Léeme.txt» para la nota y carga «Nota de ejemplo.pdf».",
             "Lee los renglones del PDF, avisa que repartió el IVA y el producto que ligaste antes ya llega ligado."),

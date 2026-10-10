@@ -38,6 +38,26 @@ public static class ApiCompras
         api.MapPost("/compras/{compraId:guid}/documentos", (Guid compraId, SolicitudDocumentoCompra s, PosDbContext db) =>
             new RegistroCompras(db).CargarDocumentoAsync(compraId, s));
 
+        // ── Todo el pedido desde el documento: lo que no está en el catálogo ──
+
+        api.MapPost("/compras/{compraId:guid}/conteo/desconocido", (Guid compraId, SolicitudConteoDesconocido s, PosDbContext db) =>
+            new RegistroCompras(db).ContarDesconocidoAsync(compraId, s));
+
+        api.MapPost("/compras/{compraId:guid}/renglones/{renglonId:guid}/corregir", (Guid compraId, Guid renglonId, SolicitudCorregirRenglon s, PosDbContext db) =>
+            new RegistroCompras(db).CorregirRenglonAsync(compraId, renglonId, s));
+
+        api.MapPost("/compras/{compraId:guid}/renglones/{renglonId:guid}/nuevo", (Guid compraId, Guid renglonId, SolicitudProductoNuevo s, PosDbContext db) =>
+            new RegistroCompras(db).ProponerNuevoAsync(compraId, renglonId, s));
+
+        api.MapPost("/compras/{compraId:guid}/renglones/{renglonId:guid}/no-es-nuevo", (Guid compraId, Guid renglonId, SolicitudCompra s, PosDbContext db) =>
+            new RegistroCompras(db).NoEsNuevoAsync(compraId, renglonId, s.UsuarioId));
+
+        api.MapPost("/compras/{compraId:guid}/nuevos/proponer", (Guid compraId, SolicitudCompra s, PosDbContext db) =>
+            new RegistroCompras(db).ProponerNuevosAsync(compraId, s.UsuarioId));
+
+        api.MapPost("/compras/{compraId:guid}/nuevos/alta", (Guid compraId, SolicitudCompra s, PosDbContext db) =>
+            new RegistroCompras(db).DarDeAltaNuevosAsync(compraId, s.UsuarioId));
+
         api.MapPost("/compras/{compraId:guid}/renglones/{renglonId:guid}/quitar", (Guid compraId, Guid renglonId, SolicitudCompra s, PosDbContext db) =>
             new RegistroCompras(db).QuitarRenglonAsync(compraId, renglonId, s.UsuarioId));
 

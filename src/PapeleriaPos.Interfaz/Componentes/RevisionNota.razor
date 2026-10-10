@@ -1,0 +1,292 @@
+@* La nota precargada (con el documento del proveedor o a mano), para revisarla antes de cerrar la compra: cada renglón se
+   corrige ahí mismo (presentación, cantidad, importe). Lo que no reconoció el documento llega con el producto que se
+   parece (se confirma con un clic) o como producto nuevo en borrador con todo precargado (nombre, departamento, piezas,
+   precio, código y cuántos llegaron); se corrige y se da de alta. *@
+@inject ClienteCaja Cliente
+
+@if (Compra.Renglones is { Count: > 0 } renglones)
+{
+    var nuevos = renglones.Count(r => r.Nuevo is not null);
+    var parecidos = renglones.Count(r => r.VarianteId is null && r.Nuevo is null && r.SugerenciaId is not null);
+    var sinLigar = renglones.Count(r => r.VarianteId is null && r.Nuevo is null && r.SugerenciaId is null);
+    <p class="nota">
+        @Cuantos(renglones.Count, "renglón", "renglones"): @renglones.Count(r => r.VarianteId is not null) del catálogo@(parecidos > 0 ? $", {Cuantos(parecidos, "parecido", "parecidos")} por confirmar" : "")@(sinLigar > 0 ? $", {sinLigar} sin ligar" : "")@(nuevos > 0 ? $", {Cuantos(nuevos, "nuevo", "nuevos")} por dar de alta" : "").
+        Revisa y corrige lo que haga falta: todo se puede cambiar hasta cerrar la compra.
+    </p>
+    @if (nuevos > 0 || sinLigar > 0)
+    {
+        <div class="acciones izquierda">
+            @if (sinLigar > 0)
+            {
+                <button class="boton" disabled="@_ocupado" @onclick="ProponerNuevosAsync">Los que faltan son nuevos</button>
+            }
+            @if (nuevos > 0)
+            {
+                <button class="boton principal" disabled="@_ocupado" @onclick="DarDeAltaAsync">Dar de alta @(nuevos == 1 ? "el producto nuevo" : $"los {nuevos} productos nuevos")</button>
+            }
+        </div>
+    }
+    <div class="resultados compra revision">
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th><th>Clave</th><th>En el documento</th><th>Producto</th><th>Presentación</th><th class="num">Cantidad</th><th class="num">Importe</th>
+                    <th class="num">Costo por pieza</th><th></th>
+                </tr>
+            </thead>
+            @foreach (var r in renglones)
+            {
+                var renglon = r;
+                var costo = r.VarianteId is { } v ? Compra.Comparacion?.FirstOrDefault(c => c.VarianteId == v)?.CostoUnitarioCentavos : r.Nuevo?.CostoUnitarioCentavos;
+                <tr class="@(r.Nuevo is not null ? "nuevo" : r.VarianteId is null ? "sin-ligar" : "")">
+                    <td>@r.Orden</td>
+                    <td>@r.CodigoProveedor</td>
+                    <td>@(r.DelDocumento ? r.Descripcion : "")</td>
+                    <td>
+                        @if (r.Producto is { } producto)
+                        {
+                            @producto
+                        }
+                        else if (r.Nuevo is { } n)
+                        {
+                            <span class="etiqueta">Nuevo</span> @n.Nombre
+                        }
+                        else if (r.Sugerencia is { } sugerencia)
+                        {
+                            <span>¿Es «@sugerencia»?</span>
+                            <button class="boton chico" disabled="@_ocupado" @onclick="() => ConfirmarAsync(renglon)">Sí</button>
+                        }
+                        else
+                        {
+                            <span class="etiqueta">Sin ligar</span>
+                        }
+                    </td>
+                    <td>
+                        @if (r.Presentaciones is { Count: > 1 } presentaciones)
+                        {
+                            <select value="@r.PresentacionId" @onchange="e => CambiarPresentacionAsync(renglon, e.Value)">
+                                @foreach (var p in presentaciones)
+                                {
+                                    <option value="@p.Id">@p.Nombre@(p.EsBase ? "" : $" ({Formato.Numero(p.FactorMilesimas / 1000m)})")</option>
+                                }
+                            </select>
+                        }
+                        else
+                        {
+                            @(r.Presentacion ?? r.Unidad)
+                        }
+                    </td>
+                    <td class="num"><input class="umbral" inputmode="decimal" value="@Formato.Numero(r.CantidadMilesimas / 1000m)" @onchange="e => CorregirAsync(renglon, e.Value, null)" /></td>
+                    <td class="num"><input class="umbral" inputmode="decimal" value="@((r.ImporteCentavos / 100m).ToString("0.00", CultureInfo.InvariantCulture))" @onchange="e => CorregirAsync(renglon, null, e.Value)" /></td>
+                    <td class="num">@(costo is { } x ? Formato.Dinero((long)Math.Round(x, MidpointRounding.AwayFromZero)) : "")</td>
+                    <td>
+                        @if (r.Nuevo is not null)
+                        {
+                            <button class="boton chico" disabled="@_ocupado" @onclick="() => NoEsNuevoAsync(renglon)">No es nuevo</button>
+                        }
+                        else
+                        {
+                            <button class="boton chico" @onclick="() => AlLigar.InvokeAsync(renglon)">@(r.VarianteId is null ? (r.SugerenciaId is null ? "Ligar" : "Es otro") : "Otro producto")</button>
+                            @if (r.VarianteId is null && r.DelDocumento)
+                            {
+                                <button class="boton chico" disabled="@_ocupado" @onclick="() => EsNuevoAsync(renglon)">Es nuevo</button>
+                            }
+                        }
+                        <button class="boton chico" @onclick="() => AlQuitar.InvokeAsync(renglon.Id)">Quitar</button>
+                    </td>
+                </tr>
+                @if (r.Nuevo is { } nuevo && _nuevos.TryGetValue(r.Id, out var e))
+                {
+                    var editable = e;
+                    <tr class="nuevo">
+                        <td></td>
+                        <td colspan="8">
+                            <div class="producto-nuevo">
+                                <label class="ancho">Nombre <input @bind="editable.Nombre" @bind:after="() => GuardarNuevoAsync(renglon, editable)" autocomplete="off" /></label>
+                                <label>Departamento
+                                    <select @bind="editable.Departamento" @bind:after="() => GuardarNuevoAsync(renglon, editable)">
+                                        @foreach (var d in _departamentos)
+                                        {
+                                            <option value="@d.Id">@d.Nombre</option>
+                                        }
+                                    </select>
+                                </label>
+                                <label>@(EsPieza(r.Unidad) ? "Piezas en cada una" : $"Piezas en cada {r.Unidad!.ToLowerInvariant()}") <input class="umbral" inputmode="numeric" @bind="editable.Contiene" @bind:after="() => GuardarNuevoAsync(renglon, editable)" /></label>
+                                <label>@(EsPieza(r.Unidad) ? "¿Cuántas llegaron?" : $"¿Cuántas ({r.Unidad!.ToLowerInvariant()}) llegaron?")
+                                    <input class="umbral" inputmode="decimal" @bind="editable.Llego" @bind:after="() => GuardarNuevoAsync(renglon, editable)"
+                                           placeholder="@(nuevo.ContadoPorCodigo is { } contado ? $"Contó {Formato.Numero(contado)}" : "¿Cuántas?")" />
+                                </label>
+                                <label>Precio por pieza <input class="umbral" inputmode="decimal" @bind="editable.Precio" @bind:after="() => GuardarNuevoAsync(renglon, editable)" /></label>
+                                <label>Código de barras <input @bind="editable.Codigo" @bind:after="() => GuardarNuevoAsync(renglon, editable)" placeholder="Sin código" autocomplete="off" /></label>
+                            </div>
+                            <span class="nota">
+                                Costo por pieza @Formato.Dinero((long)Math.Round(nuevo.CostoUnitarioCentavos ?? 0, MidpointRounding.AwayFromZero))
+                                @(nuevo.MargenCentesimas is { } m ? $" · margen {Margen.Texto(m)}" : "")
+                                @if (nuevo.PrecioSugeridoCentavos is { } sugerido && sugerido != nuevo.PrecioCentavos)
+                                {
+                                    <span> · sugerido @Formato.Dinero(sugerido)</span>
+                                    <button class="boton chico" disabled="@_ocupado" @onclick="() => UsarSugeridoAsync(renglon, editable, sugerido)">Usar</button>
+                                }
+                                @(nuevo.ContadoPorCodigo is { } c && nuevo.LlegoMilesimas is null ? $" · quien recibió contó {Formato.Numero(c)} con su código" : "")
+                            </span>
+                        </td>
+                    </tr>
+                }
+            }
+        </table>
+    </div>
+}
+else
+{
+    <p class="vacia">La nota está vacía: carga el XML o PDF del proveedor, o agrega sus renglones (escanea o busca cada producto).</p>
+}
+@if (Compra.Conteo.Where(c => c.VarianteId is null).ToList() is { Count: > 0 } sinCatalogo)
+{
+    <p class="nota">
+        Quien recibió contó códigos que no están en el catálogo:
+        @string.Join("; ", sinCatalogo.Select(x => $"{x.Codigo} ({x.Producto}, {Formato.Numero(x.CantidadMilesimas / 1000m)})")).
+        Se asignan al ligar o dar de alta el renglón con ese código.
+    </p>
+}
+@if (_error is not null)
+{
+    <p class="error">@_error</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public CompraDto Compra { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>La compra como quedó después de cada cambio.</summary>
+    [Parameter] public EventCallback<CompraDto> AlCambiar { get; set; }
+
+    /// <summary>Elegir el producto de un renglón (ligar o cambiarlo).</summary>
+    [Parameter] public EventCallback<RenglonCompraDto> AlLigar { get; set; }
+
+    [Parameter] public EventCallback<Guid> AlQuitar { get; set; }
+
+    private sealed class NuevoEditable
+    {
+        public string Nombre { get; set; } = "";
+        public string Departamento { get; set; } = "";
+        public string Contiene { get; set; } = "1";
+        public string Llego { get; set; } = "";
+        public string Precio { get; set; } = "";
+        public string Codigo { get; set; } = "";
+    }
+
+    private readonly Dictionary<Guid, NuevoEditable> _nuevos = [];
+    private IReadOnlyList<OpcionCatalogoDto> _departamentos = [];
+    private bool _ocupado;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _departamentos = (await Cliente.OpcionesCatalogoAsync()).Departamentos;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    /// <summary>Lo editable de cada producto nuevo sale de lo guardado cada vez que cambia la compra.</summary>
+    protected override void OnParametersSet()
+    {
+        _nuevos.Clear();
+        foreach (var r in Compra.Renglones ?? [])
+        {
+            if (r.Nuevo is not { } n)
+                continue;
+            _nuevos[r.Id] = new NuevoEditable
+            {
+                Nombre = n.Nombre, Departamento = n.DepartamentoId.ToString(), Contiene = (n.ContieneMilesimas / 1000m).ToString("0.###", CultureInfo.InvariantCulture),
+                Llego = n.LlegoMilesimas is { } l ? (l / 1000m).ToString("0.###", CultureInfo.InvariantCulture) : "",
+                Precio = (n.PrecioCentavos / 100m).ToString("0.00", CultureInfo.InvariantCulture), Codigo = n.Codigo ?? "",
+            };
+        }
+    }
+
+    private async Task HacerAsync(Func<Task<CompraDto>> operacion)
+    {
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            await AlCambiar.InvokeAsync(await operacion());
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private static string Cuantos(int n, string uno, string varios) => $"{n} {(n == 1 ? uno : varios)}";
+
+    /// <summary>La unidad del documento es la pieza (o no dice): no hay contenido que preguntar con su nombre.</summary>
+    private static bool EsPieza(string? unidad) =>
+        unidad is null || unidad.Trim().ToUpperInvariant().TrimEnd('.') is "PZA" or "PZ" or "PZS" or "PIEZA" or "PIEZAS" or "H87" or "UND" or "UNIDAD" or "E48" or "ACT";
+
+    private static decimal? Numero(object? valor) =>
+        decimal.TryParse(valor?.ToString()?.Replace(",", "").Replace("$", "").Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var n) ? n : null;
+
+    private Task CorregirAsync(RenglonCompraDto r, object? cantidad, object? importe)
+    {
+        var nuevaCantidad = cantidad is null ? r.CantidadMilesimas / 1000m : Numero(cantidad);
+        var nuevoImporte = importe is null ? r.ImporteCentavos / 100m : Numero(importe);
+        if (nuevaCantidad is not > 0 || nuevoImporte is not >= 0)
+        {
+            _error = "Revisa la cantidad y el importe.";
+            return Task.CompletedTask;
+        }
+        return HacerAsync(() => Cliente.CorregirRenglonAsync(Compra.Id, r.Id,
+            new SolicitudCorregirRenglon(Sesion.UsuarioId, (long)Math.Round(nuevaCantidad.Value * 1000), (long)Math.Round(nuevoImporte.Value * 100))));
+    }
+
+    private Task CambiarPresentacionAsync(RenglonCompraDto r, object? valor) =>
+        Guid.TryParse(valor?.ToString(), out var presentacion) && r.VarianteId is { } variante
+            ? HacerAsync(() => Cliente.RenglonCompraAsync(Compra.Id,
+                new SolicitudRenglonCompra(Sesion.UsuarioId, r.Id, variante, presentacion, r.CantidadMilesimas, r.ImporteCentavos)))
+            : Task.CompletedTask;
+
+    /// <summary>Sí es el producto que se parece: queda ligado con su presentación base (y la próxima vez llega ligado).</summary>
+    private Task ConfirmarAsync(RenglonCompraDto r) =>
+        r is { SugerenciaId: { } variante, SugerenciaPresentacionId: { } presentacion }
+            ? HacerAsync(() => Cliente.RenglonCompraAsync(Compra.Id,
+                new SolicitudRenglonCompra(Sesion.UsuarioId, r.Id, variante, presentacion, r.CantidadMilesimas, r.ImporteCentavos)))
+            : Task.CompletedTask;
+
+    private Task EsNuevoAsync(RenglonCompraDto r) =>
+        HacerAsync(() => Cliente.ProductoNuevoAsync(Compra.Id, r.Id, new SolicitudProductoNuevo(Sesion.UsuarioId)));
+
+    private Task NoEsNuevoAsync(RenglonCompraDto r) => HacerAsync(() => Cliente.NoEsNuevoAsync(Compra.Id, r.Id, Sesion.UsuarioId));
+
+    private Task ProponerNuevosAsync() => HacerAsync(() => Cliente.ProponerNuevosAsync(Compra.Id, Sesion.UsuarioId));
+
+    private Task DarDeAltaAsync() => HacerAsync(() => Cliente.DarDeAltaNuevosAsync(Compra.Id, Sesion.UsuarioId));
+
+    private Task UsarSugeridoAsync(RenglonCompraDto r, NuevoEditable e, long sugerido)
+    {
+        e.Precio = (sugerido / 100m).ToString("0.00", CultureInfo.InvariantCulture);
+        return GuardarNuevoAsync(r, e);
+    }
+
+    /// <summary>Se guarda todo lo del producto nuevo cada vez que se cambia un dato.</summary>
+    private Task GuardarNuevoAsync(RenglonCompraDto r, NuevoEditable e)
+    {
+        if (!Guid.TryParse(e.Departamento, out var departamento) || Numero(e.Contiene) is not { } contiene || Numero(e.Precio) is not { } precio)
+        {
+            _error = "Revisa el departamento, las piezas y el precio.";
+            return Task.CompletedTask;
+        }
+        var llego = Numero(e.Llego);
+        return HacerAsync(() => Cliente.ProductoNuevoAsync(Compra.Id, r.Id, new SolicitudProductoNuevo(Sesion.UsuarioId, e.Nombre, departamento,
+            (long)Math.Round(precio * 100), e.Codigo, (long)Math.Round(contiene * 1000), llego is { } l ? (long)Math.Round(l * 1000) : null)));
+    }
+}

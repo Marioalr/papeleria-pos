@@ -24,6 +24,9 @@
     /// <summary>El producto y la presentación del código (la base si se buscó por nombre).</summary>
     [Parameter] public EventCallback<(ProductoVentaDto Producto, PresentacionDto Presentacion)> AlElegir { get; set; }
 
+    /// <summary>Al recibir mercancía: un código que no está en el catálogo se cuenta aparte (sin esto, es un error).</summary>
+    [Parameter] public EventCallback<string> AlNoExiste { get; set; }
+
     private string _codigo = "";
     private bool _buscando;
     private string? _error;
@@ -50,6 +53,8 @@
         {
             if (await Cliente.PorCodigoAsync(codigo, SucursalId) is { } producto)
                 await ElegirAsync(producto);
+            else if (AlNoExiste.HasDelegate)
+                await AlNoExiste.InvokeAsync(codigo);
             else
                 _error = $"El código «{codigo}» no existe: dalo de alta en F3 Productos.";
             _codigo = "";
