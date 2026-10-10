@@ -44,7 +44,7 @@
         <div class="franja-credito @(vencido > 0 ? "vencido" : "")">
             @if (cuenta.SaldoCentavos > 0)
             {
-                <span>@conCuenta.Nombre debe @Formato.Dinero(cuenta.SaldoCentavos)@(cuenta.VenceMasAntiguo is { } vence ? $" · vence {vence:dd/MM}" : "")@(vencido > 0 ? $" · vencido {Formato.Dinero(vencido)}" : "")</span>
+                <span>@conCuenta.Nombre debe @Formato.Dinero(cuenta.SaldoCentavos)@(cuenta.VenceMasAntiguo is { } vence ? $" · vence {vence:dd/MM}" : "")@(vencido > 0 ? $" · vencido {Formato.Dinero(vencido)}" : "")@(cuenta.Estimado ? " (según esta caja)" : "")</span>
                 <button class="boton chico" @onclick="() => Abrir(Ventanas.Abono)">CTRL+B Abonar</button>
             }
             else
@@ -908,7 +908,7 @@
         await Abrir(Ventanas.Cobrar);
     }
 
-    /// <summary>La cuenta del cliente del ticket (lo que debe y su límite). Sin conexión no se conoce: no se fía.</summary>
+    /// <summary>La cuenta del cliente del ticket (lo que debe y su límite). Sin conexión, la que conoce esta caja; sin los saldos, no se fía.</summary>
     private async Task CargarCuentaAsync(TicketAbierto ticket)
     {
         if (ticket.Cliente is not { } cliente)
@@ -918,7 +918,7 @@
         }
         try
         {
-            ticket.Cuenta = (await Cliente.CuentaClienteAsync(cliente.Id)).Credito;
+            ticket.Cuenta = await Cliente.CreditoAsync(cliente.Id);
         }
         catch (ErrorCaja)
         {

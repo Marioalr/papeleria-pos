@@ -102,6 +102,10 @@ else
             {
                 <span> · @Formato.Dinero(cuenta.PorVerificarCentavos) en transferencias por verificar</span>
             }
+            @if (cuenta.Estimado)
+            {
+                <span> (según esta caja: sin conexión)</span>
+            }
             @if (ClienteInicial is null)
             {
                 <button class="boton chico" @onclick="OtroCliente">Otro cliente</button>
@@ -206,6 +210,9 @@ else
     /// <summary>El Id del abono que se está mandando: si se manda dos veces (o se pierde la respuesta), se guarda uno.</summary>
     private Guid? _id;
 
+    /// <summary>Se perdió la respuesta de ese abono: puede que ya esté guardado.</summary>
+    private bool _sinConfirmar;
+
     private static DateOnly Hoy => DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
 
     private List<(ClienteRegistradoDto Cliente, CreditoClienteDto Cuenta)> Encontrados
@@ -262,7 +269,7 @@ else
         try
         {
             var clientes = (await Servicio.ClientesRegistradosAsync(Caja.SucursalId)).ToDictionary(c => c.Id);
-            _deudores = (await Servicio.CreditosEnLineaAsync(Caja.SucursalId))
+            _deudores = (await Servicio.CreditosAsync(Caja.SucursalId))
                 .Where(c => c.SaldoCentavos > 0 && clientes.ContainsKey(c.ClienteId))
                 .Select(c => (clientes[c.ClienteId], c))
                 .OrderBy(d => d.Item1.Nombre, StringComparer.CurrentCultureIgnoreCase)
@@ -294,10 +301,10 @@ else
 
     private async Task ElegirAsync(ClienteRegistradoDto cliente)
     {
-        (_cliente, _cuenta, _error, _id, _enfocar) = (cliente, null, null, null, true);
+        (_cliente, _cuenta, _error, _id, _enfocar, _sinConfirmar) = (cliente, null, null, null, true, false);
         try
         {
-            _cuenta = (await Servicio.CuentaClienteAsync(cliente.Id)).Credito;
+            _cuenta = await Servicio.CreditoAsync(cliente.Id);
             _recibido = "";
         }
         catch (ErrorCaja ex)
@@ -306,7 +313,7 @@ else
         }
     }
 
-    private void OtroCliente() => (_cliente, _cuenta, _monto, _referencia, _enfocar) = (null, null, "", "", true);
+    private void OtroCliente() => (_cliente, _cuenta, _monto, _referencia, _enfocar, _sinConfirmar) = (null, null, "", "", true, false);
 
     private void Liquidar() => _monto = "";
 
@@ -329,8 +336,8 @@ else
             long? monto = string.IsNullOrWhiteSpace(_monto) ? null : Formato.LeerPesos(_monto);
             var comprobante = await Servicio.AbonarAsync(new SolicitudAbono(_id.Value, Caja.Id, Turno.Id, Sesion.UsuarioId, _cliente.Id, _forma, monto,
                 _forma == FormaPago.Efectivo ? calculo.ACobrarCentavos + calculo.CambioCentavos : 0,
-                string.IsNullOrWhiteSpace(_referencia) ? null : _referencia.Trim(), _cuenta.SaldoCentavos));
-            _id = null;
+                string.IsNullOrWhiteSpace(_referencia) ? null : _referencia.Trim(), _cuenta.SaldoCentavos), soloEnLinea: _sinConfirmar);
+            (_id, _sinConfirmar) = (null, false);
             await AlTerminar.InvokeAsync(comprobante);
         }
         catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
@@ -340,10 +347,14 @@ else
         catch (ErrorCaja ex)
         {
             _error = ex.Message;
-            // Lo que se muestre después, con el saldo de ahora.
+            // Se perdió la respuesta: hasta saber si quedó, este abono (el mismo Id) solo se manda en línea y la pantalla
+            // se queda con lo que se vio. Si no, lo que se muestre después, con el saldo de ahora.
+            if (ex.Codigo == "abono-sin-confirmar")
+                _sinConfirmar = true;
             try
             {
-                _cuenta = (await Servicio.CuentaClienteAsync(_cliente.Id)).Credito;
+                if (!_sinConfirmar)
+                    _cuenta = await Servicio.CreditoAsync(_cliente.Id);
             }
             catch (ErrorCaja)
             {

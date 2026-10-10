@@ -271,13 +271,21 @@ public static class AlertasTelegram
         var movimientosFuera = await db.MovimientosCaja.AsNoTracking()
             .Where(m => idsTurnos.Contains(m.TurnoId) && m.FueraDeCorteUtc >= desde && m.FueraDeCorteUtc < hasta)
             .Select(m => new { m.Tipo, m.MontoCentavos }).ToListAsync(ct);
+        var abonosFuera = await db.Abonos.AsNoTracking()
+            .Where(a => a.SucursalId == sucursalId && a.FueraDeCorteUtc >= desde && a.FueraDeCorteUtc < hasta)
+            .Select(a => a.MontoCentavos + a.RedondeoCentavos).ToListAsync(ct);
         var fueraDeCorte = new List<string>();
         if (ventasFuera.Count > 0)
             fueraDeCorte.Add($"{Cuantas(ventasFuera.Count, "venta")} · {Dinero(ventasFuera.Sum())}");
         foreach (var g in movimientosFuera.GroupBy(m => m.Tipo).OrderBy(g => g.Key))
             fueraDeCorte.Add($"{Cuantas(g.Count(), g.Key == TipoMovimientoCaja.Entrada ? "entrada" : "salida")} · {Dinero(g.Sum(m => m.MontoCentavos))}");
+        if (abonosFuera.Count > 0)
+            fueraDeCorte.Add($"{Cuantas(abonosFuera.Count, "abono")} · {Dinero(abonosFuera.Sum())}");
         if (fueraDeCorte.Count > 0)
             t.AppendLine($"Llegaron después de su corte: {string.Join("; ", fueraDeCorte)} (esos cortes no los incluyen)");
+        // Lo del crédito sin conexión que no cuadró y nadie ha revisado (cada una ya se avisó al llegar).
+        if (await db.RevisionesCredito.CountAsync(r => r.SucursalId == sucursalId && r.RevisadaUtc == null, ct) is var porRevisar and > 0)
+            t.AppendLine($"Crédito por revisar (en Clientes): {porRevisar}");
         var noVendidas = await db.TrabajosImpresion.AsNoTracking()
             .Where(i => i.SucursalId == sucursalId && i.Cobro == EstadoCobroImpresion.NoVendida && i.CobroUtc >= desde && i.CobroUtc < hasta)
             .Select(i => i.CostoCentavos).ToListAsync(ct);

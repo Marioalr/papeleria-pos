@@ -40,6 +40,9 @@ public sealed class ConexionCaja
     public Task Listo { get; init; } = Task.CompletedTask;
 
     public bool Lista => !PideAlta || (CajaId is not null && Llave is not null);
+
+    /// <summary>Solo en la prueba con una persona real: la caja hace como si la caja principal no contestara.</summary>
+    public bool SimularSinConexion { get; set; }
 }
 
 /// <summary>
@@ -118,19 +121,33 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
             $"api/productos/buscar?q={Uri.EscapeDataString(texto)}&sucursalId={sucursalId}") ?? [], l => l.Buscar(texto));
 
     /// <summary>
-    /// La venta lleva su ID desde la caja: si la respuesta no llega y se cobra sin conexión, al subir no se duplica. Con
-    /// crédito no se cae a sin conexión: si la respuesta se perdió, puede que ya esté en la cuenta del cliente, y
-    /// cobrarla de otra forma la dejaría fiada y pagada. Entonces el ticket espera la conexión (<paramref name="soloEnLinea"/>)
-    /// y se manda otra vez con el mismo ID: si ya se guardó, regresa el mismo ticket.
+    /// La venta lleva su ID desde la caja: si la respuesta no llega y se cobra sin conexión, al subir no se duplica. Lo
+    /// fiado se anota en la cuenta propia antes de mandarlo (si la respuesta se pierde, ya cuenta). Si se pierde y sin
+    /// conexión no se puede fiar (no conoce los saldos, o pasa el límite sin autorización en la copia), puede que ya esté
+    /// en la cuenta del cliente: cobrarlo de otra forma lo dejaría fiado y pagado. Entonces el ticket espera la conexión
+    /// (<paramref name="soloEnLinea"/>) y se manda otra vez con el mismo ID: si ya se guardó, regresa el mismo ticket.
     /// </summary>
     public Task<TicketDto> CobrarAsync(SolicitudCobro solicitud, bool soloEnLinea = false)
     {
         solicitud = solicitud with { VentaId = solicitud.VentaId ?? Ids.Nuevo() };
         if (soloEnLinea && contingencia is { EnLinea: false })
             return Task.FromException<TicketDto>(FiadoSinConfirmar());
-        var fiado = solicitud.Cobros.Any(c => c.Forma == FormaPago.Credito);
-        return ConRespaldoAsync(() => _http.PostAsync<TicketDto>("api/ventas", solicitud), l => l.Cobrar(solicitud),
-            (l, ticket) => l.CobroEnLinea(solicitud.TurnoId, ticket), siSePierde: fiado ? FiadoSinConfirmar : null);
+        var fiado = solicitud.Cobros.Where(c => c.Forma == FormaPago.Credito).Sum(c => c.MontoCentavos);
+        return ConRespaldoAsync(async () =>
+            {
+                if (fiado > 0 && solicitud.ClienteId is { } cliente)
+                    contingencia?.AnotarFiado(solicitud.VentaId.Value, cliente, fiado);
+                try
+                {
+                    return await _http.PostAsync<TicketDto>("api/ventas", solicitud);
+                }
+                catch (ErrorCaja ex) when (fiado > 0 && ex.Codigo != "sin-conexion")
+                {
+                    // Lo rechazó por una regla: no se fió.
+                    contingencia?.QuitarCredito(solicitud.VentaId.Value);
+                    throw;
+                }
+            }, l => l.Cobrar(solicitud), (l, ticket) => l.CobroEnLinea(solicitud.TurnoId, ticket), siSePierde: fiado > 0 ? FiadoSinConfirmar : null);
     }
 
     private static ErrorCaja FiadoSinConfirmar() => new(
@@ -415,17 +432,18 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     // ── Crédito y abonos (fase 3, entrega 2, parte 2): con la caja principal ──
 
-    /// <summary>La cuenta del cliente con sus últimos movimientos.</summary>
+    /// <summary>La cuenta del cliente con sus últimos movimientos (solo con la caja principal).</summary>
     public Task<CuentaClienteDto> CuentaClienteAsync(Guid clienteId) =>
         ConRespaldoAsync(async () => (await _http.GetAsync<CuentaClienteDto>($"api/clientes/{clienteId}/credito"))!);
 
-    /// <summary>Las cuentas de los que tienen crédito o deben algo. Sin conexión, ninguna (la caja todavía no conoce los saldos).</summary>
-    public Task<List<CreditoClienteDto>> CreditosAsync(Guid sucursalId) =>
-        ConRespaldoAsync(async () => await _http.GetAsync<List<CreditoClienteDto>>($"api/sucursales/{sucursalId}/creditos") ?? [], _ => []);
+    /// <summary>Lo que debe y sus condiciones; sin conexión, lo que sabe esta caja (marcado como estimado).</summary>
+    public Task<CreditoClienteDto> CreditoAsync(Guid clienteId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<CuentaClienteDto>($"api/clientes/{clienteId}/credito"))!.Credito,
+            l => l.Credito(clienteId) ?? throw new InvalidOperationException("Esta caja todavía no conoce los saldos del crédito: espera a que vuelva la conexión."));
 
-    /// <summary>Las mismas, pero sin conexión es un error («sin-conexion»), no una lista vacía: para no decir que nadie debe.</summary>
-    public Task<List<CreditoClienteDto>> CreditosEnLineaAsync(Guid sucursalId) =>
-        ConRespaldoAsync(async () => await _http.GetAsync<List<CreditoClienteDto>>($"api/sucursales/{sucursalId}/creditos") ?? []);
+    /// <summary>Las cuentas de los que tienen crédito o deben algo; sin conexión, las que conoce esta caja (sin los saldos, un error).</summary>
+    public Task<List<CreditoClienteDto>> CreditosAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<CreditoClienteDto>>($"api/sucursales/{sucursalId}/creditos") ?? [], l => l.Creditos());
 
     public Task<ClienteRegistradoDto> GuardarCondicionesAsync(Guid clienteId, SolicitudCreditoCliente s) =>
         ConRespaldoAsync(() => _http.PutAsync<ClienteRegistradoDto>($"api/clientes/{clienteId}/credito", s));
@@ -433,13 +451,29 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<CuentaClienteDto> AjustarCreditoAsync(Guid clienteId, SolicitudAjusteCredito s) =>
         ConRespaldoAsync(() => _http.PostAsync<CuentaClienteDto>($"api/clientes/{clienteId}/ajustes", s));
 
-    /// <summary>El Id lo pone la caja: si la respuesta se pierde y se manda otra vez, se guarda uno.</summary>
-    public Task<ComprobanteAbonoDto> AbonarAsync(SolicitudAbono s) =>
-        ConRespaldoAsync(() => _http.PostAsync<ComprobanteAbonoDto>("api/abonos", s), trasEnLinea: (l, c) =>
-        {
-            l.AbonoEnLinea(s.TurnoId, c);
-            return Task.CompletedTask;
-        });
+    /// <summary>
+    /// El Id lo pone la caja: si la respuesta se pierde y se manda otra vez (o se hace sin conexión), se guarda uno. Se
+    /// anota en la cuenta propia antes de mandarlo; sin conexión, con el saldo que conoce esta caja.
+    /// </summary>
+    /// <param name="soloEnLinea">Se perdió la respuesta de este mismo abono: hasta saber si quedó, solo se manda en línea.</param>
+    public Task<ComprobanteAbonoDto> AbonarAsync(SolicitudAbono s, bool soloEnLinea = false) =>
+        soloEnLinea && contingencia is { EnLinea: false } ? Task.FromException<ComprobanteAbonoDto>(AbonoSinConfirmar()) : ConRespaldoAsync(async () =>
+            {
+                contingencia?.AnotarAbono(s);
+                try
+                {
+                    return await _http.PostAsync<ComprobanteAbonoDto>("api/abonos", s);
+                }
+                catch (ErrorCaja ex) when (ex.Codigo != "sin-conexion")
+                {
+                    contingencia?.QuitarCredito(s.Id);
+                    throw;
+                }
+            }, l => l.Abonar(s), (l, c) => l.AbonoEnLinea(s.TurnoId, c), siSePierde: AbonoSinConfirmar);
+
+    private static ErrorCaja AbonoSinConfirmar() => new(
+        "Se perdió la conexión al abonar y no se sabe si quedó. Cuando vuelva la conexión, abona otra vez sin cerrar esta ventana "
+        + "(si ya quedó, sale el mismo comprobante); mientras, no lo cobres de nuevo.", "abono-sin-confirmar");
 
     public Task<ComprobanteAbonoDto> CancelarAbonoAsync(Guid abonoId, Guid turnoId, SolicitudCancelacion s) =>
         ConRespaldoAsync(() => _http.PostAsync<ComprobanteAbonoDto>($"api/abonos/{abonoId}/cancelacion", s), trasEnLinea: (l, c) =>
@@ -453,6 +487,13 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     public Task<List<AbonoDelDiaDto>> AbonosDelDiaAsync(Guid cajaId) =>
         ConRespaldoAsync(async () => await _http.GetAsync<List<AbonoDelDiaDto>>($"api/cajas/{cajaId}/abonos-del-dia") ?? []);
+
+    /// <summary>Lo del crédito sin conexión que no cuadró y nadie ha revisado (solo con la caja principal).</summary>
+    public Task<List<RevisionCreditoDto>> RevisionesCreditoAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<RevisionCreditoDto>>($"api/sucursales/{sucursalId}/creditos/por-revisar") ?? []);
+
+    public Task MarcarRevisadaAsync(Guid revisionId, SolicitudRevision s) =>
+        ConRespaldoAsync(() => _http.PostAsync<object>($"api/creditos/revisiones/{revisionId}", s, sinRespuesta: true));
 
     public Task VerificarAbonoAsync(Guid abonoId, SolicitudVerificacion s) =>
         ConRespaldoAsync(() => _http.PostAsync<object>($"api/abonos/{abonoId}/verificacion", s, sinRespuesta: true));
@@ -535,21 +576,28 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         ConRespaldoAsync(() => _http.PostAsync<object>($"api/autorizaciones/remotas/{solicitudId}/cancelar", null, sinRespuesta: true));
 
     // ── La prueba con una persona real (solo existe en el servicio de prueba) ──
+    // Van directo a su servicio (en esta misma PC), sin pasar por sin conexión: también contestan mientras se simula que
+    // no hay conexión con la caja principal.
 
-    public Task<List<AvisoPruebaDto>> AvisosPruebaAsync() =>
-        ConRespaldoAsync(async () => await _http.GetAsync<List<AvisoPruebaDto>>("api/prueba/avisos") ?? []);
+    public async Task<List<AvisoPruebaDto>> AvisosPruebaAsync() => await _http.GetAsync<List<AvisoPruebaDto>>("api/prueba/avisos") ?? [];
 
-    public Task<RespuestasPruebaDto> RespuestasPruebaAsync() =>
-        ConRespaldoAsync(async () => (await _http.GetAsync<RespuestasPruebaDto>("api/prueba/respuestas"))!);
+    public async Task<RespuestasPruebaDto> RespuestasPruebaAsync() => (await _http.GetAsync<RespuestasPruebaDto>("api/prueba/respuestas"))!;
 
     public Task<RespuestasPruebaDto> GuardarRespuestasPruebaAsync(RespuestasPruebaDto respuestas) =>
-        ConRespaldoAsync(() => _http.PutAsync<RespuestasPruebaDto>("api/prueba/respuestas", respuestas));
+        _http.PutAsync<RespuestasPruebaDto>("api/prueba/respuestas", respuestas);
 
     public Task<ArchivoGuardadoDto> ExportarRespuestasPruebaAsync(string texto) =>
-        ConRespaldoAsync(() => _http.PostAsync<ArchivoGuardadoDto>("api/prueba/respuestas/exportar", new SolicitudExportarRespuestas(texto)));
+        _http.PostAsync<ArchivoGuardadoDto>("api/prueba/respuestas/exportar", new SolicitudExportarRespuestas(texto));
 
-    public Task EmpezarDeCeroAsync() =>
-        ConRespaldoAsync(() => _http.PostAsync<object>("api/prueba/empezar-de-cero", null, sinRespuesta: true));
+    public async Task EmpezarDeCeroAsync()
+    {
+        // Lo que falta subir es de la base que se va a quitar: primero que suba.
+        if (conexion.SimularSinConexion || contingencia is { Pendientes: > 0 })
+            throw new ErrorCaja("Primero vuelve a conectar y espera a que suba lo que se hizo sin conexión.");
+        await _http.PostAsync<object>("api/prueba/empezar-de-cero", null, sinRespuesta: true);
+        // Lo de la caja (el crédito propio, los saldos, el turno y el folio) era de la base anterior.
+        contingencia?.OlvidarCredito();
+    }
 
     // ── Alta de la caja (antes de tener llave; el servicio todavía no es el guardado) ──
 
@@ -567,7 +615,10 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// En línea, va a la caja principal y le avisa a la contingencia lo que pasó (para su cuenta del turno). Sin
     /// conexión, usa la copia local si esa operación se puede hacer sin la caja principal.
     /// </summary>
-    /// <param name="siSePierde">Si la caja principal no contesta a media operación: el error en lugar de hacerla sin conexión.</param>
+    /// <param name="siSePierde">
+    /// Si la caja principal no contesta a media operación (puede que ya la haya guardado) y sin conexión tampoco se puede
+    /// hacer: el error que lo dice, en lugar del de sin conexión.
+    /// </param>
     private async Task<T> ConRespaldoAsync<T>(
         Func<Task<T>> enLinea, Func<Contingencia, T>? sinConexion = null, Func<Contingencia, T, Task>? trasEnLinea = null,
         Func<ErrorCaja>? siSePierde = null)
@@ -584,9 +635,16 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
         {
             contingencia.MarcarSinConexion();
-            if (siSePierde is not null)
+            if (siSePierde is null)
+                return Local(contingencia, sinConexion);
+            try
+            {
+                return Local(contingencia, sinConexion);
+            }
+            catch (ErrorCaja)
+            {
                 throw siSePierde();
-            return Local(contingencia, sinConexion);
+            }
         }
         if (trasEnLinea is not null)
             await trasEnLinea(contingencia, resultado);

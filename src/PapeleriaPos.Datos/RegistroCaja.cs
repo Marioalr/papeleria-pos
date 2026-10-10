@@ -79,13 +79,15 @@ public sealed class RegistroCaja(PosDbContext db)
     /// si su turno ya tiene corte Z (la primera vez no subió y el corte sí), se guarda igual, fuera de ese corte.
     /// </summary>
     /// <param name="redondear">Falso para lo que la caja cobró antes de que existiera el redondeo al peso: se cobra exacto.</param>
+    /// <param name="fiado">Si fió: lo que sabía la caja (el cargo guarda lo que se imprimió y lo que no cuadre queda por revisar).</param>
     public Task<Venta> CobroDeContingenciaAsync(
-        Venta venta, IReadOnlyList<CobroSolicitado> cobros, int folio, DateTime pagadaUtc, CancellationToken ct = default, bool redondear = true) =>
-        GuardarCobroAsync(venta, cobros, folio, pagadaUtc, ct, redondear: redondear);
+        Venta venta, IReadOnlyList<CobroSolicitado> cobros, int folio, DateTime pagadaUtc, CancellationToken ct = default, bool redondear = true,
+        FiadoSinConexion? fiado = null) =>
+        GuardarCobroAsync(venta, cobros, folio, pagadaUtc, ct, redondear: redondear, fiado: fiado);
 
     private async Task<Venta> GuardarCobroAsync(
         Venta venta, IReadOnlyList<CobroSolicitado> cobros, int? folioDeLaCaja, DateTime ahora, CancellationToken ct, IReadOnlyList<TrabajoImpresion>? impresiones = null,
-        bool redondear = true)
+        bool redondear = true, FiadoSinConexion? fiado = null)
     {
         var turno = folioDeLaCaja is null ? await TurnoAbiertoPorIdAsync(venta.TurnoId, ct) : await TurnoPorIdAsync(venta.TurnoId, ct);
         if (turno.CajaId != venta.CajaId || turno.SucursalId != venta.SucursalId)
@@ -115,8 +117,8 @@ public sealed class RegistroCaja(PosDbContext db)
                         cambiada.AutorizacionPrecioId, ventaId: venta.Id, ct: ct);
                 await RevisarDescuentosAsync(venta, control, ct);
                 // Lo fiado: el límite se revisa con el saldo de dentro de esta transacción.
-                if (cobros.Where(c => c.Forma == FormaPago.Credito).Sum(c => c.MontoCentavos) is var fiado and > 0)
-                    await new RegistroCredito(db).RevisarFiadoAsync(venta, fiado, control, ct);
+                if (cobros.Where(c => c.Forma == FormaPago.Credito).Sum(c => c.MontoCentavos) is var aCredito and > 0)
+                    await new RegistroCredito(db).RevisarFiadoAsync(venta, aCredito, control, ct);
                 folio = await SiguienteFolioAsync(venta.SucursalId, venta.Serie, ct);
             }
 
@@ -133,7 +135,7 @@ public sealed class RegistroCaja(PosDbContext db)
             }
 
             venta.Pagar(folio, cobros, ahora, redondear);
-            await new RegistroCredito(db).CargarAsync(venta, ct);
+            await new RegistroCredito(db).CargarAsync(venta, turno, fiado, ct);
             foreach (var trabajo in impresiones ?? [])
                 trabajo.Cobrar(venta.Id, ahora);
             foreach (var comun in venta.Lineas.Where(l => l.VarianteId is null && !l.EsImpresiones))
@@ -350,7 +352,7 @@ public sealed class RegistroCaja(PosDbContext db)
     /// efectivo movió que ese corte no tomó en cuenta. Quien llama guarda.
     /// </summary>
     /// <param name="efectivoCentavos">Lo que entró al cajón (negativo, lo que salió).</param>
-    private async Task AvisarFueraDeCorteAsync(Turno turno, Guid id, string que, long efectivoCentavos, CancellationToken ct)
+    internal async Task AvisarFueraDeCorteAsync(Turno turno, Guid id, string que, long efectivoCentavos, CancellationToken ct)
     {
         var caja = await db.Cajas.FindAsync([turno.CajaId], ct);
         var cajero = await db.Usuarios.FindAsync([turno.CajeroId], ct);

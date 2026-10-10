@@ -104,15 +104,45 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     {
         AlertasTelegram.RevisarBitacora(this);
         PrepararCambios(ObtenerSecuencia());
-        return base.SaveChanges(acceptAllChangesOnSuccess);
+        if (!HayCambiosDeCredito())
+            return base.SaveChanges(acceptAllChangesOnSuccess);
+        using var propia = Database.CurrentTransaction is null ? Database.BeginTransaction() : null;
+        Database.ExecuteSqlRaw(SubirVersionCredito);
+        var cambios = base.SaveChanges(acceptAllChangesOnSuccess);
+        propia?.Commit();
+        return cambios;
     }
 
     public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
         AlertasTelegram.RevisarBitacora(this);
         PrepararCambios(await ObtenerSecuenciaAsync(cancellationToken));
-        return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        if (!HayCambiosDeCredito())
+            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        await using var propia = Database.CurrentTransaction is null ? await Database.BeginTransactionAsync(cancellationToken) : null;
+        await Database.ExecuteSqlRawAsync(SubirVersionCredito, cancellationToken);
+        var cambios = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        if (propia is not null)
+            await propia.CommitAsync(cancellationToken);
+        return cambios;
     }
+
+    /// <summary>
+    /// La versión del crédito sube en la base, en la misma transacción que el cambio (que tiene el candado de escritura):
+    /// dos cambios a la vez dan dos versiones, y ninguna caja ve el cambio sin la versión nueva.
+    /// </summary>
+    private const string SubirVersionCredito =
+        $"INSERT INTO \"Secuencias\" (\"Nombre\", \"Valor\") VALUES ('{Secuencia.Credito}', 1) ON CONFLICT (\"Nombre\") DO UPDATE SET \"Valor\" = \"Valor\" + 1";
+
+    /// <summary>
+    /// Lo que cambia los saldos que conocen las cajas: un movimiento de la cuenta, un abono (verificar o cancelar cambia lo
+    /// que está por verificar) o el límite y el plazo de un cliente.
+    /// </summary>
+    private bool HayCambiosDeCredito() =>
+        ChangeTracker.Entries<MovimientoCredito>().Any(e => e.State == EntityState.Added)
+        || ChangeTracker.Entries<Abono>().Any(e => e.State is EntityState.Added or EntityState.Modified)
+        || ChangeTracker.Entries<ClienteRegistrado>().Any(e => e.State == EntityState.Added && e.Entity.LimiteCreditoCentavos > 0
+            || e.State == EntityState.Modified && (e.Property(c => c.LimiteCreditoCentavos).IsModified || e.Property(c => c.PlazoCreditoDias).IsModified));
 
     private bool HayCambiosDeCatalogo() =>
         ChangeTracker.Entries<IVersionado>().Any(e => e.State is EntityState.Added or EntityState.Modified);

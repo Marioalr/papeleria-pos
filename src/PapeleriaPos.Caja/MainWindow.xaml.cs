@@ -95,7 +95,8 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         var configuracion = ConfiguracionCaja.Leer();
-        // La prueba con una persona real: su propio servicio en esta PC, sin alta ni copia para trabajar sin conexión.
+        // La prueba con una persona real: su propio servicio en esta PC, sin alta. También trabaja sin conexión (con su
+        // copia y su bandeja junto a los datos de la prueba), para probar el crédito sin conexión con «Simular sin conexión».
         var prueba = configuracion.Prueba ? ServicioDePrueba.Iniciar(configuracion) : null;
         if (prueba is not null)
             Closed += (_, _) => prueba.Dispose();
@@ -117,12 +118,14 @@ public partial class MainWindow : Window
         // "tcp://192.168.1.100:9100" imprime directo por la red; un nombre (como "Tickets") usa la impresora de Windows.
         var impresora = Impresoras.Crear(configuracion.Impresora, nombre => new ImpresoraWindows(nombre));
         // La copia para vender sin la caja principal y la bandeja de salida, junto a la configuración de la caja.
-        servicios.AgregarInterfazCaja(conexion, impresora, prueba is null ? ConfiguracionCaja.BaseLocal : null);
+        servicios.AgregarInterfazCaja(conexion, impresora,
+            prueba is null ? ConfiguracionCaja.BaseLocal : Path.Combine(ServicioDePrueba.CarpetaDatos(configuracion), "caja-local.db"));
         // Cotizar: el PDF se mide aquí, en la PC donde está; el precio lo pone la caja principal.
         servicios.AddSingleton<IMedidorPdf, MedidorPdfWindows>();
         var proveedor = servicios.BuildServiceProvider();
         Vista.Services = proveedor;
-        IniciarAgente(configuracion, conexion, proveedor.GetRequiredService<Contingencia>());
+        if (proveedor.GetService<Contingencia>() is { } contingencia)
+            IniciarAgente(configuracion, conexion, contingencia);
     }
 
     private AgenteImpresion? _agente;

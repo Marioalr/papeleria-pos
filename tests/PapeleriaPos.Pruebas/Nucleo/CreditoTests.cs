@@ -1,5 +1,6 @@
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Clientes;
+using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
@@ -377,5 +378,57 @@ public class CreditoTests
         Assert.Equal(NivelPermiso.NoPermitido, Para(Rol.Encargado, AccionControlada.AjustarCredito).Nivel);
         Assert.True(Para(Rol.Encargado, AccionControlada.CancelarAbono).PideMotivo);
         Assert.False(Permisos.SoloDelDueno(AccionControlada.DarCredito));
+    }
+
+    // ── Sin conexión: la cuenta que conoce la caja (parte 2.4) ──────────────
+
+    private static CreditoClienteDto DelServicio(long saldo, params CargoPendienteDto[] pendientes) =>
+        new(Guid.NewGuid(), saldo, 0, 50000, 30, pendientes);
+
+    [Fact]
+    public void Estimar_suma_lo_local_en_orden_y_lo_abonado_paga_lo_mas_viejo()
+    {
+        var cuenta = CuentaCredito.Estimar(DelServicio(10000, new CargoPendienteDto(new DateOnly(2026, 10, 1), 10000)),
+            [new CreditoLocal(5000, new DateOnly(2026, 11, 7)), new CreditoLocal(-3000)]);
+
+        Assert.Equal(12000, cuenta.SaldoCentavos);
+        Assert.Equal([new CargoPendienteDto(new DateOnly(2026, 10, 1), 7000), new CargoPendienteDto(new DateOnly(2026, 11, 7), 5000)], cuenta.Pendientes);
+        Assert.Equal(7000, cuenta.Vencido(new DateOnly(2026, 10, 8)));
+        Assert.Equal(12000, cuenta.Vencido(new DateOnly(2026, 11, 8)));
+        Assert.True(cuenta.Estimado);
+        Assert.Equal(cuenta.SaldoCentavos, cuenta.Pendientes.Sum(p => p.PendienteCentavos) - cuenta.AFavorCentavos);
+    }
+
+    [Fact]
+    public void Estimar_deja_a_favor_lo_que_sobra_y_lo_fiado_despues_se_lo_come()
+    {
+        var aFavor = CuentaCredito.Estimar(DelServicio(10000, new CargoPendienteDto(new DateOnly(2026, 10, 1), 10000)), [new CreditoLocal(-15000)]);
+        var despues = CuentaCredito.Estimar(aFavor with { Estimado = false }, [new CreditoLocal(2000, new DateOnly(2026, 11, 7))]);
+        var debeOtraVez = CuentaCredito.Estimar(aFavor with { Estimado = false }, [new CreditoLocal(8000, new DateOnly(2026, 11, 7))]);
+
+        Assert.Equal((-5000L, 5000L), (aFavor.SaldoCentavos, aFavor.AFavorCentavos));
+        Assert.Empty(aFavor.Pendientes);
+        Assert.Equal((-3000L, 0), (despues.SaldoCentavos, despues.Pendientes.Count));
+        Assert.Equal([new CargoPendienteDto(new DateOnly(2026, 11, 7), 3000)], debeOtraVez.Pendientes);
+    }
+
+    [Fact]
+    public void Estimar_un_abono_por_transferencia_baja_el_saldo_pero_queda_por_verificar()
+    {
+        var cuenta = CuentaCredito.Estimar(DelServicio(50000, new CargoPendienteDto(new DateOnly(2026, 10, 1), 50000)),
+            [new CreditoLocal(-20000, PorVerificar: true)]);
+
+        Assert.Equal((30000L, 20000L, 0L), (cuenta.SaldoCentavos, cuenta.PorVerificarCentavos, cuenta.DisponibleCentavos));
+        Assert.Equal(10000, cuenta.Exceso(10000));
+    }
+
+    [Fact]
+    public void Sin_nada_propio_la_cuenta_es_la_del_servicio()
+    {
+        var delServicio = DelServicio(10000, new CargoPendienteDto(new DateOnly(2026, 10, 1), 10000));
+
+        var cuenta = CuentaCredito.Estimar(delServicio, []);
+
+        Assert.Equal((delServicio.SaldoCentavos, delServicio.Pendientes.Single()), (cuenta.SaldoCentavos, cuenta.Pendientes.Single()));
     }
 }

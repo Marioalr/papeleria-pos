@@ -61,6 +61,8 @@
   carpeta compartida no es confiable con varios escritores).
 - **Kardex:** cada venta, compra, ajuste, merma, traspaso o consumo de un servicio es un movimiento nuevo. La
   existencia es la suma. No hay que "pisar" cantidades, así que sincronizar no genera conflictos.
+- **Crédito:** la cuenta de cada cliente es un libro de movimientos que solo se agregan, cada uno con el ID de la venta,
+  el abono o la devolución que lo originó; el saldo es la suma, así que lo que llega dos veces o tarde no descuadra.
 - **IDs UUIDv7** generados donde nace el registro: no chocan entre cajas ni sucursales.
 - **Dinero en centavos enteros** (sin errores de redondeo). Fechas en UTC; se muestran en hora de México.
 - **Folios por caja:** serie + consecutivo (A-000123), legibles para el ticket.

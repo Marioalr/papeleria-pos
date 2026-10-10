@@ -1,3 +1,4 @@
+using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Usuarios;
@@ -45,6 +46,16 @@ public static class Textos
         AccionControlada.AjustarCredito => "Ajustar el saldo de un cliente",
         AccionControlada.CancelarAbono => "Cancelar un abono (en su turno)",
         _ => accion.ToString(),
+    };
+
+    /// <summary>Por qué quedó por revisar lo del crédito que se hizo sin conexión.</summary>
+    public static string Motivo(MotivoRevisionCredito motivo) => motivo switch
+    {
+        MotivoRevisionCredito.PasoLimite => "Pasó su límite sin conexión",
+        MotivoRevisionCredito.SinCredito => "Se le fió sin conexión sin tener crédito",
+        MotivoRevisionCredito.SaldoAFavor => "Un abono sin conexión lo dejó a favor",
+        MotivoRevisionCredito.FueraDeSuCorte => "Un abono llegó después de su corte",
+        _ => motivo.ToString(),
     };
 
     public static string Nivel(NivelPermiso nivel) => nivel switch

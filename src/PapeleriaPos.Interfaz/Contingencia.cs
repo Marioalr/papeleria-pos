@@ -1,5 +1,6 @@
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Turnos;
@@ -22,6 +23,16 @@ public sealed class Contingencia
     private static readonly TimeSpan EsperaLatido = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan PaqueteViejo = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan ReintentoErrores = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan RefrescoCredito = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan EsperaCreditos = TimeSpan.FromSeconds(10);
+
+    /// <summary>Lo anotado que el servicio no tiene después de esto (y no pasó por la bandeja), ya no lo va a tener.</summary>
+    private static readonly TimeSpan CreditoHuerfano = TimeSpan.FromMinutes(2);
+
+    /// <summary>Cuánto se recuerda lo ya confirmado (por si se vuelve a mandar con el mismo Id).</summary>
+    private static readonly TimeSpan RecordarConfirmado = TimeSpan.FromDays(1);
+
+    private const string SinSaldos = "Esta caja todavía no conoce los saldos del crédito: fiar y abonar esperan a que vuelva la conexión.";
 
     private sealed record AutorizacionLocal(Guid AutorizadorId, AccionControlada Accion, long? MontoCentavos, DateTime VenceUtc);
 
@@ -62,6 +73,7 @@ public sealed class Contingencia
     private readonly ConexionCaja _conexion;
     private readonly TimeProvider _reloj;
     private readonly SemaphoreSlim _subida = new(1, 1);
+    private readonly SemaphoreSlim _creditos = new(1, 1);
     private readonly Lock _candado = new();
     private readonly Dictionary<Guid, AutorizacionLocal> _autorizaciones = [];
     private readonly Dictionary<string, (int Fallos, DateTime? Hasta)> _intentos = [];
@@ -70,6 +82,11 @@ public sealed class Contingencia
     private DateTime _ultimoReintentoUtc = DateTime.MinValue;
     private bool _responde = true;
     private CancellationTokenSource? _alto;
+    private SaldosCreditoDto? _saldos;
+    private long? _creditosPedidos;
+
+    /// <summary>Algo del crédito pasó en línea en esta caja (o se anotó mientras se pedían): el siguiente latido pide los saldos.</summary>
+    private volatile bool _refrescarCredito;
 
     public Contingencia(AlmacenLocal almacen, HttpClient http, ConexionCaja conexion, TimeProvider? reloj = null)
     {
@@ -79,6 +96,7 @@ public sealed class Contingencia
         _reloj = reloj ?? TimeProvider.System;
         if (almacen.Leer<PaqueteContingenciaDto>("paquete") is { } paquete)
             _copia = new Copia(paquete);
+        _saldos = almacen.Leer<SaldosCreditoDto>("saldos");
         (Pendientes, ConError, UltimoError, ImpresionesPorSubir) = almacen.Contar();
     }
 
@@ -97,6 +115,9 @@ public sealed class Contingencia
     /// <summary>Trabajos de impresión medidos en esta PC que todavía no llegan a la caja principal.</summary>
     public int ImpresionesPorSubir { get; private set; }
     public PaqueteContingenciaDto? Paquete => _copia?.Paquete;
+
+    /// <summary>Los últimos saldos del crédito que mandó la caja principal (sin ellos, no se fía ni se abona sin conexión).</summary>
+    public SaldosCreditoDto? Saldos => _saldos;
     public int UltimoFolio => _almacen.Leer<int?>("folio") ?? 0;
 
     private DateTime Ahora => _reloj.GetUtcNow().UtcDateTime;
@@ -118,6 +139,15 @@ public sealed class Contingencia
         using var reloj = new PeriodicTimer(Latido);
         try
         {
+            // La caja de la prueba arranca su propio servicio: hasta que conteste, no se pasa a sin conexión.
+            try
+            {
+                await _conexion.Listo.WaitAsync(ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Si no arrancó, la pantalla lo dice; el latido sigue intentando.
+            }
             do
             {
                 try
@@ -140,7 +170,7 @@ public sealed class Contingencia
     /// <summary>Pregunta si la caja principal contesta; si sí, sube lo pendiente y renueva la copia si cambió.</summary>
     public async Task LatidoAsync()
     {
-        if (!_conexion.Lista || _conexion.CajaId is null)
+        if (!_conexion.Lista || (_conexion.CajaId is null && _conexion.PideAlta))
             return;
         EstadoServicioDto? estado;
         try
@@ -153,8 +183,27 @@ public sealed class Contingencia
             return;
         }
         Fijar(responde: true);
+        // Sin alta (la caja de la prueba): es la primera caja de la sucursal, la misma que toma la pantalla.
+        if (_conexion.CajaId is null)
+        {
+            try
+            {
+                _conexion.CajaId = (await _http.GetAsync<List<CajaDto>>("api/cajas"))?.FirstOrDefault()?.Id;
+            }
+            catch (ErrorCaja)
+            {
+            }
+            if (_conexion.CajaId is null)
+                return;
+        }
+        var subio = Pendientes > 0;
         if (Pendientes > 0 || ImpresionesPorSubir > 0 || (ConError > 0 && Ahora - _ultimoReintentoUtc > ReintentoErrores))
             await SubirAsync();
+        // Los saldos del crédito: cuando cambiaron, cuando acaba de subir lo suyo, o cada tanto si tiene algo por confirmar.
+        var tocaCredito = _refrescarCredito || _creditosPedidos is not { } pedidos || _reloj.GetElapsedTime(pedidos) > RefrescoCredito;
+        if (_responde && (_saldos is null ? tocaCredito
+                : estado!.VersionCredito != _saldos.Version || ((subio || tocaCredito) && _almacen.CuentaPropia().Count > 0)))
+            await ActualizarCreditosAsync();
         if (_responde && (Paquete is null || Paquete.Version != estado!.VersionDatos || Ahora - _paqueteBajadoUtc > PaqueteViejo))
             await ActualizarPaqueteAsync();
     }
@@ -227,6 +276,63 @@ public sealed class Contingencia
         {
             // Se intenta otra vez con el siguiente latido.
         }
+    }
+
+    /// <summary>
+    /// Pide los saldos del crédito y pregunta cuáles de lo suyo sin confirmar ya están en ellos: esos los borra (en el
+    /// mismo paso que guarda los saldos, así nada se cuenta dos veces ni se pierde).
+    /// </summary>
+    public async Task ActualizarCreditosAsync()
+    {
+        if (_conexion.CajaId is not { } caja || !await _creditos.WaitAsync(0))
+            return;
+        _refrescarCredito = false;
+        try
+        {
+            var enviados = _almacen.CuentaPropia().Select(f => f.Id).ToList();
+            if (await _http.PostAsync<SaldosCreditoDto>($"api/cajas/{caja}/creditos", new SolicitudSaldosCredito(enviados), espera: EsperaCreditos)
+                is not { } saldos)
+                return;
+            var incluidos = saldos.Incluidos.ToHashSet();
+            using (var lote = _almacen.Lote())
+            {
+                lote.Guardar("saldos", saldos).ConfirmarCredito(saldos.Incluidos, Ahora - RecordarConfirmado)
+                    .QuitarCreditoHuerfano(enviados.Where(id => !incluidos.Contains(id)), Ahora - CreditoHuerfano)
+                    .Confirmar();
+            }
+            _saldos = saldos;
+            // Lo que se anotó mientras se pedían (un cobro en línea a la par) puede venir ya en esta foto sin estar en
+            // Incluidos: se pregunta otra vez en el siguiente latido, ya con eso.
+            var enviadosSet = enviados.ToHashSet();
+            if (_almacen.CuentaPropia().Any(f => !enviadosSet.Contains(f.Id)))
+                _refrescarCredito = true;
+            Cambio?.Invoke();
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
+        {
+            Fijar(responde: false);
+        }
+        catch (ErrorCaja)
+        {
+            // Una caja principal de antes (sin la ruta) u otro error: se intenta otra vez en un rato.
+        }
+        finally
+        {
+            _creditosPedidos = _reloj.GetTimestamp();
+            _creditos.Release();
+        }
+    }
+
+    /// <summary>
+    /// Empezar de cero (la prueba): lo de la base anterior ya no corresponde (lo propio del crédito, los saldos, el turno,
+    /// su diario y el último folio).
+    /// </summary>
+    public void OlvidarCredito()
+    {
+        using (var lote = _almacen.Lote())
+            lote.LimpiarCredito().Borrar("saldos").Borrar("turno").Borrar("base").Borrar("folio").LimpiarDiario().Confirmar();
+        _saldos = null;
+        _creditosPedidos = null;
     }
 
     private void Fijar(bool responde)
@@ -336,6 +442,31 @@ public sealed class Contingencia
     /// <summary>Los clientes registrados de la copia local, para elegir uno sin conexión.</summary>
     public List<ClienteRegistradoDto> Clientes() => (Datos.Paquete.Registrados ?? Datos.Paquete.Clientes)?.Where(c => c.Activo).ToList() ?? [];
 
+    /// <summary>
+    /// La cuenta de un cliente según esta caja: la última que mandó el servicio más lo suyo sin confirmar (sin la operación
+    /// <paramref name="sin"/>, la que se está haciendo). Sin los saldos, no se sabe: null.
+    /// </summary>
+    public CreditoClienteDto? Credito(Guid clienteId, Guid? sin = null)
+    {
+        if (_saldos is not { } saldos)
+            return null;
+        // Si no viene en los saldos, no debe nada: sus condiciones salen de la copia.
+        var delServicio = saldos.Cuentas.FirstOrDefault(c => c.ClienteId == clienteId);
+        if (delServicio is null && _copia is not null && Clientes().FirstOrDefault(c => c.Id == clienteId) is { } cliente)
+            delServicio = new CreditoClienteDto(clienteId, 0, 0, cliente.LimiteCreditoCentavos, cliente.PlazoCreditoDias, []);
+        return delServicio is null ? null
+            : CuentaCredito.Estimar(delServicio, _almacen.CuentaPropia(clienteId).Where(f => f.Id != sin).Select(f => f.Local));
+    }
+
+    /// <summary>Las cuentas que conoce esta caja: las de los saldos y las de lo suyo sin confirmar.</summary>
+    public List<CreditoClienteDto> Creditos()
+    {
+        if (_saldos is not { } saldos)
+            throw new InvalidOperationException(SinSaldos);
+        var ids = saldos.Cuentas.Select(c => c.ClienteId).Concat(_almacen.CuentaPropia().Select(f => f.ClienteId)).Distinct();
+        return ids.Select(id => Credito(id)).OfType<CreditoClienteDto>().ToList();
+    }
+
     public DecisionDto Permiso(SolicitudPermiso s)
     {
         var decision = Evaluar(s.UsuarioId, s.Accion, s.MontoCentavos);
@@ -411,8 +542,9 @@ public sealed class Contingencia
     }
 
     /// <summary>
-    /// Cobra con la copia del catálogo y el siguiente folio de la caja. Los precios cambiados se revisan con las reglas
-    /// locales y las autorizaciones que se dieron sin conexión.
+    /// Cobra con la copia del catálogo y el siguiente folio de la caja. Los precios cambiados, los descuentos y pasar el
+    /// límite del crédito se revisan con las reglas locales y las autorizaciones que se dieron sin conexión (se gastan
+    /// cuando la venta quedó guardada). Lo fiado, con el saldo que conoce esta caja.
     /// </summary>
     public TicketDto Cobrar(SolicitudCobro s)
     {
@@ -421,8 +553,6 @@ public sealed class Contingencia
         var turno = TurnoRequerido(s.TurnoId);
         if (s.Impresiones is { Count: > 0 })
             throw new InvalidOperationException("Las impresiones se cobran con conexión con la caja principal: quítalas del ticket o espera a que vuelva.");
-        if (s.Cobros.Any(c => c.Forma == FormaPago.Credito))
-            throw new InvalidOperationException("Sin conexión todavía no se fía: cóbralo de otra forma o espera a que vuelva la conexión.");
         var ahora = Ahora;
         // El cliente va antes que las líneas: con mayoreo siempre, sus precios son otros.
         ClienteRegistradoDto? cliente = null;
@@ -453,12 +583,13 @@ public sealed class Contingencia
         venta.ValidarCobros(s.Cobros);
 
         var bitacora = new List<BitacoraContingenciaDto>();
+        var usadas = new List<Guid>();
         foreach (var cambiada in venta.Lineas.Where(x => x.PrecioCambiado))
         {
             var decision = Evaluar(s.CajeroId, AccionControlada.CambiarPrecio, cambiada.ImporteCentavos);
             Guid? autorizo = null;
             if (decision.Nivel == NivelPermiso.RequiereAutorizacion)
-                autorizo = UsarAutorizacion(cambiada.AutorizacionPrecioId, AccionControlada.CambiarPrecio, cambiada.ImporteCentavos)
+                autorizo = Autorizada(cambiada.AutorizacionPrecioId, AccionControlada.CambiarPrecio, cambiada.ImporteCentavos, usadas)
                     ?? throw new ErrorCaja("Esto requiere la autorización del encargado.", "requiere-autorizacion");
             else
                 Requerir(decision);
@@ -476,7 +607,7 @@ public sealed class Contingencia
             {
                 var decision = Evaluar(s.CajeroId, AccionControlada.Descuento, revisar);
                 if (decision.Nivel == NivelPermiso.RequiereAutorizacion)
-                    autorizo = UsarAutorizacion(s.AutorizacionDescuentoId, AccionControlada.Descuento, revisar)
+                    autorizo = Autorizada(s.AutorizacionDescuentoId, AccionControlada.Descuento, revisar, usadas)
                         ?? throw new ErrorCaja("Este descuento requiere la autorización del encargado.", "requiere-autorizacion");
                 else
                     Requerir(decision);
@@ -487,26 +618,144 @@ public sealed class Contingencia
                 venta.DescuentoCentavos, autorizo, autorizo is null ? ResultadoBitacora.Hecho : ResultadoBitacora.Autorizado, venta.Id));
         }
 
+        // Lo fiado: con el saldo que conoce esta caja (sin esta misma venta, si ya se había anotado al mandarla en línea).
+        var aCredito = s.Cobros.Where(c => c.Forma == FormaPago.Credito).Sum(c => c.MontoCentavos);
+        CreditoClienteDto? cuenta = null;
+        long excesoAutorizado = 0;
+        DateOnly? vence = null;
+        if (aCredito > 0)
+        {
+            if (_almacen.CreditoConfirmado(venta.Id))
+                throw new InvalidOperationException("Ese ticket ya se fió en la caja principal: espera a que vuelva la conexión y cóbralo otra vez (sale el mismo).");
+            cuenta = Credito(cliente!.Id, sin: venta.Id) ?? throw new InvalidOperationException(SinSaldos);
+            if (cuenta.Exceso(aCredito) is var exceso and > 0)
+            {
+                if (cuenta.LimiteCentavos == 0)
+                    throw new InvalidOperationException(cuenta.DisponibleCentavos > 0
+                        ? $"«{cliente.Nombre}» no tiene crédito: solo puede usar su saldo a favor ({Formato.Dinero(cuenta.DisponibleCentavos)})."
+                        : $"«{cliente.Nombre}» no tiene crédito.");
+                var decision = Evaluar(s.CajeroId, AccionControlada.ExcederLimiteCredito, exceso);
+                Guid? autorizo = null;
+                if (decision.Nivel == NivelPermiso.RequiereAutorizacion)
+                    autorizo = Autorizada(s.AutorizacionCreditoId, AccionControlada.ExcederLimiteCredito, exceso, usadas)
+                        ?? throw new ErrorCaja("Pasar el límite requiere la autorización del encargado.", "requiere-autorizacion");
+                else
+                    Requerir(decision);
+                excesoAutorizado = exceso;
+                bitacora.Add(Registro(s.CajeroId, AccionControlada.ExcederLimiteCredito,
+                    $"Fió {Formato.Dinero(aCredito)} a «{cliente.Nombre}» pasando el límite por {Formato.Dinero(exceso)} "
+                    + $"(según esta caja debía {Formato.Dinero(cuenta.SaldoCentavos)}, límite {Formato.Dinero(cuenta.LimiteCentavos)})",
+                    exceso, autorizo, autorizo is null ? ResultadoBitacora.Hecho : ResultadoBitacora.Autorizado, venta.Id));
+            }
+            vence = CuentaCredito.Vence(ahora, cuenta.PlazoDias);
+        }
+
         var folio = UltimoFolio + 1;
         venta.Pagar(folio, s.Cobros, ahora);
         venta.EnContingencia = true;
         var ticket = ArmadoTicket.Desde(venta, caja.Nombre, Nombre(s.CajeroId),
             id => datos.Presentaciones.TryGetValue(id, out var p) ? (p.Nombre, p.EsBase) : null,
-            datos.Paquete.Encabezado, datos.Paquete.Pie, datos.Paquete.Logo, cliente);
+            datos.Paquete.Encabezado, datos.Paquete.Pie, datos.Paquete.Logo, cliente,
+            cuenta is null ? null : new CreditoTicketDto(aCredito, cuenta.SaldoCentavos + aCredito, vence, Estimado: true));
         var subida = new VentaContingenciaDto(venta.Id, caja.Id, turno.Id, s.CajeroId, folio, ahora,
             venta.Lineas.Select(x => new LineaContingenciaDto(x.VarianteId, x.PresentacionId, x.Descripcion, x.Cantidad.Milesimas, x.PrecioCentavos,
                 x.DescuentoCentesimas, x.DescuentoCentesimas is null && x.TieneDescuento ? x.DescuentoCentavos : null, x.MotivoDescuento)).ToList(),
-            s.Cobros, venta.ClienteId, venta.RedondeoCentavos, venta.MayoreoDeCliente);
+            s.Cobros, venta.ClienteId, venta.RedondeoCentavos, venta.MayoreoDeCliente, cuenta?.SaldoCentavos, excesoAutorizado, vence);
 
         using (var lote = _almacen.Lote())
         {
             lote.Encolar(venta.Id, "api/bandeja/ventas", subida);
             foreach (var registro in bitacora)
                 lote.Encolar(registro.Id, "api/bandeja/bitacora", registro);
+            if (cuenta is not null)
+                lote.Credito(venta.Id, cliente!.Id, aCredito, ahora, vence);
             lote.Anotar(Anotacion(turno.Id, ticket)).Guardar("folio", folio).Confirmar();
         }
+        Gastar(usadas);
         Recontar();
         return ticket;
+    }
+
+    /// <summary>
+    /// Un abono sin conexión, con el saldo que conoce esta caja: el mismo cálculo que en línea. Sube con la bandeja (el
+    /// servicio lo guarda tal cual) y su comprobante dice que el saldo es el de esta caja.
+    /// </summary>
+    public ComprobanteAbonoDto Abonar(SolicitudAbono s)
+    {
+        var datos = Datos;
+        var caja = Caja;
+        var turno = TurnoRequerido(s.TurnoId);
+        if (s.CajaId != caja.Id)
+            throw new InvalidOperationException("El abono va en el turno abierto de esta caja.");
+        var cliente = Clientes().FirstOrDefault(c => c.Id == s.ClienteId)
+            ?? throw new InvalidOperationException("Ese cliente no está en la copia de esta caja: el abono espera a que vuelva la conexión.");
+        if (_almacen.CreditoConfirmado(s.Id))
+            throw new InvalidOperationException("Ese abono ya quedó en la caja principal: su comprobante se reimprime cuando vuelva la conexión.");
+        var cuenta = Credito(cliente.Id, sin: s.Id) ?? throw new InvalidOperationException(SinSaldos);
+        if (s.SaldoVistoCentavos is { } visto && visto != cuenta.SaldoCentavos)
+            throw new InvalidOperationException($"La cuenta cambió mientras tanto: según esta caja debe {Formato.Dinero(cuenta.SaldoCentavos)}. Revísalo y abona otra vez.");
+        var referencia = string.IsNullOrWhiteSpace(s.Referencia) ? null : s.Referencia.Trim();
+        if (referencia is { Length: > 60 })
+            throw new ArgumentException("La referencia va de hasta 60 letras.");
+        var calculo = CalculoAbono.Calcular(cuenta.SaldoCentavos, s.Forma, s.MontoCentavos, s.RecibidoCentavos);
+        var ahora = Ahora;
+        var recibido = s.Forma == FormaPago.Efectivo ? s.RecibidoCentavos : calculo.ACobrarCentavos;
+        var transferencia = s.Forma == FormaPago.Transferencia;
+        var despues = CuentaCredito.Estimar(cuenta, [new CreditoLocal(-calculo.MontoCentavos, PorVerificar: transferencia)]);
+        var vence = despues.SaldoCentavos > 0 ? despues.VenceMasAntiguo : null;
+        var comprobante = new ComprobanteAbonoDto(s.Id, Abono.FolioDe(s.Id), HoraMexico.ALocal(ahora), caja.Nombre, Nombre(s.UsuarioId), cliente.Id,
+            cliente.Nombre, s.Forma, calculo.MontoCentavos, calculo.RedondeoCentavos, recibido, calculo.CambioCentavos, referencia, cuenta.SaldoCentavos,
+            despues.SaldoCentavos, vence, datos.Paquete.Encabezado, Estimado: true);
+        using (var lote = _almacen.Lote())
+        {
+            lote.Encolar(s.Id, "api/bandeja/abonos", new AbonoContingenciaDto(s.Id, caja.Id, turno.Id, s.UsuarioId, cliente.Id, s.Forma, calculo.MontoCentavos,
+                    calculo.RedondeoCentavos, recibido, calculo.CambioCentavos, referencia, ahora, cuenta.SaldoCentavos, vence))
+                .Credito(s.Id, cliente.Id, -calculo.MontoCentavos, ahora, null, transferencia)
+                .Anotar(AnotacionAbono(s.Id, turno.Id, comprobante, 1))
+                .Confirmar();
+        }
+        Recontar();
+        return comprobante;
+    }
+
+    // ── Lo del crédito que se manda en línea: se anota antes, por si la respuesta se pierde ──
+
+    /// <summary>Lo fiado que se manda en línea; si el servicio lo rechaza, se quita (<see cref="QuitarCredito"/>).</summary>
+    public void AnotarFiado(Guid ventaId, Guid clienteId, long creditoCentavos)
+    {
+        var plazo = Credito(clienteId)?.PlazoDias ?? (_copia is null ? null : Clientes().FirstOrDefault(c => c.Id == clienteId)?.PlazoCreditoDias)
+            ?? ClienteRegistrado.PlazoPorOmision;
+        using var lote = _almacen.Lote();
+        lote.Credito(ventaId, clienteId, creditoCentavos, Ahora, CuentaCredito.Vence(Ahora, plazo)).Confirmar();
+    }
+
+    /// <summary>
+    /// Un abono que se manda en línea, con lo que de verdad baja (el mismo cálculo que el servicio con el saldo que vio la
+    /// caja: en efectivo, lo de más es cambio); se corrige con el comprobante.
+    /// </summary>
+    public void AnotarAbono(SolicitudAbono s)
+    {
+        long monto;
+        try
+        {
+            monto = CalculoAbono.Calcular(s.SaldoVistoCentavos ?? Credito(s.ClienteId)?.SaldoCentavos ?? 0, s.Forma, s.MontoCentavos, s.RecibidoCentavos)
+                .MontoCentavos;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return;
+        }
+        if (monto <= 0)
+            return;
+        using var lote = _almacen.Lote();
+        lote.Credito(s.Id, s.ClienteId, -monto, Ahora, null, s.Forma == FormaPago.Transferencia).Confirmar();
+    }
+
+    /// <summary>El servicio rechazó lo que se le mandó (por una regla): no pasó, ya no se cuenta.</summary>
+    public void QuitarCredito(Guid id)
+    {
+        using var lote = _almacen.Lote();
+        lote.QuitarCredito([id]).Confirmar();
     }
 
     // ── Lo que pasó en línea, para la cuenta del turno ──────────────────────
@@ -558,6 +807,12 @@ public sealed class Contingencia
     {
         var folio = int.TryParse(ticket.Folio[(ticket.Folio.LastIndexOf('-') + 1)..], out var f) ? f : 0;
         using var lote = _almacen.Lote();
+        // Lo fiado ya estaba anotado: con el vencimiento que puso el servicio, y que el siguiente latido confirme que ya lo tiene.
+        if (ticket.VentaId is { } ventaId && ticket.Credito is { } credito)
+        {
+            lote.CorregirCredito(ventaId, null, credito.Vence);
+            _refrescarCredito = true;
+        }
         lote.Anotar(Anotacion(turnoId, ticket)).Guardar("folio", Math.Max(UltimoFolio, folio)).Confirmar();
     }
 
@@ -587,7 +842,9 @@ public sealed class Contingencia
     public void AbonoEnLinea(Guid turnoId, ComprobanteAbonoDto c)
     {
         using var lote = _almacen.Lote();
-        lote.Anotar(AnotacionAbono(c.AbonoId, turnoId, c, 1)).Confirmar();
+        // Ya estaba anotado en la cuenta propia: con lo que de verdad bajó, y que el siguiente latido confirme que ya lo tiene.
+        lote.CorregirCredito(c.AbonoId, -c.MontoCentavos, null).Anotar(AnotacionAbono(c.AbonoId, turnoId, c, 1)).Confirmar();
+        _refrescarCredito = true;
     }
 
     /// <summary>Un abono cancelado en línea sale de la cuenta del turno (con su propio renglón: el del abono se queda).</summary>
@@ -660,16 +917,28 @@ public sealed class Contingencia
         }
     }
 
-    /// <summary>La gasta: de esa acción, sin usar, vigente y por un monto que alcance. Devuelve quién autorizó.</summary>
-    private Guid? UsarAutorizacion(Guid? id, AccionControlada accion, long monto)
+    /// <summary>
+    /// De esa acción, sin usar, vigente y por un monto que alcance: devuelve quién autorizó y la aparta en
+    /// <paramref name="usadas"/>. Se gasta (<see cref="Gastar"/>) cuando la operación quedó guardada: si algo más la
+    /// detiene, sigue valiendo.
+    /// </summary>
+    private Guid? Autorizada(Guid? id, AccionControlada accion, long monto, List<Guid> usadas)
     {
         lock (_candado)
         {
-            if (id is not { } clave || !_autorizaciones.TryGetValue(clave, out var a) || a.Accion != accion || Ahora > a.VenceUtc || monto > a.MontoCentavos)
+            if (id is not { } clave || usadas.Contains(clave) || !_autorizaciones.TryGetValue(clave, out var a) || a.Accion != accion
+                || Ahora > a.VenceUtc || monto > a.MontoCentavos)
                 return null;
-            _autorizaciones.Remove(clave);
+            usadas.Add(clave);
             return a.AutorizadorId;
         }
+    }
+
+    private void Gastar(IEnumerable<Guid> usadas)
+    {
+        lock (_candado)
+            foreach (var id in usadas)
+                _autorizaciones.Remove(id);
     }
 
     /// <summary>Usuario y PIN contra la copia local, con el mismo bloqueo por intentos que en el servicio.</summary>

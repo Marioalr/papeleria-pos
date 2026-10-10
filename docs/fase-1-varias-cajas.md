@@ -81,11 +81,18 @@ de color y la caja pasa a contingencia.
   precio lleva un número de versión, ya existe desde la fase 0).
 - Entradas y salidas de efectivo, con su comprobante.
 - El turno abierto sigue igual.
+- **Crédito** (fase 3): fiar y recibir abonos de los clientes registrados con el saldo que conoce la caja: los últimos
+  saldos que le mandó la caja principal (los pide en cuanto cambia algo del crédito, sin bajar el catálogo) más lo que
+  ella fió o cobró y la caja principal todavía no le confirma. Pasar el límite lo autoriza el encargado con su PIN, como
+  en línea. El ticket y el comprobante dicen «(saldo según esta caja)». Una caja que todavía no conoce los saldos
+  (recién dada de alta, o contra una caja principal sin actualizar) no fía ni recibe abonos hasta que vuelva la conexión.
 
 **Qué espera a que vuelva la conexión:**
 
 - Cancelar y devolver: necesitan la venta original y el inventario al día.
 - Verificar transferencias y la configuración.
+- Del crédito: cancelar abonos, ajustar saldos, cambiar límites y plazos, abonar a un cliente dado de alta después de la
+  última copia y revisar lo que no cuadró.
 
 **También en contingencia:**
 
@@ -100,12 +107,21 @@ de color y la caja pasa a contingencia.
 inventario no choca porque son movimientos. Si algo no se puede aplicar (por ejemplo, un producto dado de baja
 mientras tanto), queda marcado para que el encargado lo revise; no se pierde.
 
-Lo que ya se cobró nunca se rechaza por llegar tarde: si una venta o una entrada/salida de efectivo no subió la primera
-vez y el corte Z de su turno sí, al reintentarla se guarda con su turno marcada «fuera de corte». El corte cerrado no
-se cambia; al dueño le llega un aviso por Telegram con el efectivo que ese corte no tomó en cuenta, y el resumen del
-día dice cuántas llegaron así.
+Lo que ya se cobró nunca se rechaza por llegar tarde: si una venta, un abono o una entrada/salida de efectivo no subió
+la primera vez y el corte Z de su turno sí, al reintentarla se guarda con su turno marcada «fuera de corte». El corte
+cerrado no se cambia; al dueño le llega un aviso por Telegram con el efectivo que ese corte no tomó en cuenta, y el
+resumen del día dice cuántas llegaron así.
 
-**Límites:** en contingencia una caja no ve las ventas de las demás, y las existencias pueden estar desfasadas. Cada
+Lo fiado y los abonos que suben con la bandeja también se aceptan siempre (la mercancía ya se entregó y el dinero ya se
+recibió). Si no cuadró con lo que sabía la caja (otra caja le fió antes y pasó del límite más de lo autorizado, ya no
+tenía crédito, o el abono lo dejó con saldo a favor), queda «por revisar» en Clientes (para el encargado y el dueño) y al
+dueño le llega un aviso. Nada se cuenta dos veces: la caja principal le dice a la caja cuáles de los suyos ya están en
+sus saldos, y solo entonces la caja los borra de su cuenta propia. Si se pierde la respuesta al fiar en línea, la caja
+lo hace sin conexión con el mismo ID (el servicio guarda uno); si sin conexión no puede (no conoce los saldos o pasa el
+límite sin autorización), el ticket no se cobra de otra forma hasta que vuelva la conexión.
+
+**Límites:** en contingencia una caja no ve las ventas de las demás (ni lo que les fiaron o abonaron después de sus
+últimos saldos), y las existencias pueden estar desfasadas. Cada
 venta en contingencia queda marcada para que se vea en el corte y en la bitácora.
 
 ## Respaldos
@@ -122,9 +138,9 @@ venta en contingencia queda marcada para que se vea en el corte y en la bitácor
 |---|---|
 | `PapeleriaPos.Servicio` | Corre como servicio de Windows, escucha en la red, responde al descubrimiento, revisa la llave de cada caja, recibe la bandeja y hace los respaldos |
 | `PapeleriaPos.Caja` | Configuración inicial (encontrar el servicio y pedir el alta); la base local va en `C:\ProgramData\PapeleriaPos\caja-local.db` |
-| `PapeleriaPos.Interfaz` | `Contingencia` (latido, copia local, bandeja y diario del turno en `AlmacenLocal`) y la franja; el cliente de la caja decide si va a la API o a la copia local |
+| `PapeleriaPos.Interfaz` | `Contingencia` (latido, copia local, bandeja, diario del turno, saldos del crédito y la cuenta propia —lo fiado y abonado sin confirmar— en `AlmacenLocal`) y la franja; el cliente de la caja decide si va a la API o a la copia local |
 | `instalacion/instalar-servicio.ps1` | Instalar y quitar el servicio de Windows y las reglas del firewall (va junto al servicio publicado) |
-| Datos nuevos | Caja: llave (solo su huella), equipo y alta. Venta, movimiento, corte y bitácora: "en contingencia"; turno: "abierto en contingencia" |
+| Datos nuevos | Caja: llave (solo su huella), equipo y alta. Venta, movimiento, corte, bitácora y abono: "en contingencia" (y "fuera de corte"); turno: "abierto en contingencia"; revisiones del crédito |
 
 Se hace en dos partes: **parte 1,** servicio de Windows, cajas por la red, alta con llave y respaldos; **parte 2,**
 contingencia (copia local, bandeja, latido, autorizaciones y corte sin servidor).

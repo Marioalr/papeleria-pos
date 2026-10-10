@@ -58,7 +58,10 @@ El centro del proyecto: que la sucursal funcione bien y con control aunque el du
   - **Su cuenta** está en su ficha del módulo «Clientes»: lo que debe, lo vencido y sus movimientos, cada uno con el
     saldo que dejó. Ahí el dueño cambia sus condiciones y ajusta el saldo (por ejemplo, para pasar lo que ya debía en la
     libreta, con la fecha de entonces). La lista dice cuánto debe cada quien. No se deja inactivo a quien debe.
-  - Sin conexión todavía no se fía ni se abona (parte 2.4).
+  - **Sin conexión** se fía y se abona con el saldo que conoce la caja; el ticket y el comprobante dicen «(saldo según
+    esta caja)». Lo que no cuadró al volver (pasó el límite más de lo autorizado, ya no tenía crédito, o un abono lo
+    dejó a favor) queda en «Clientes → Por revisar», para el encargado y el dueño, y le llega al dueño. Sin conexión no
+    se cancelan abonos ni se cambian condiciones o saldos.
 - Ticket con QR del folio: sirve para devoluciones y para encontrar pedidos.
 - Devoluciones escaneando el ticket.
 
@@ -144,6 +147,8 @@ aviso se podría actuar: bloquear lo sensible o toda la caja, pedir un corte X o
 - Caja abierta fuera de horario
 - Existencia negativa y diferencias en conteos y recepciones
 - Transferencias sin verificar al cierre
+- Crédito: pasar el límite, ajustes del saldo y lo del crédito sin conexión que quedó por revisar
+- Lo hecho sin conexión que llegó después del corte Z de su turno (ventas, abonos, entradas y salidas)
 - **Resumen diario** al cierre: ventas, utilidad, corte y alertas del día
 
 ## Transferencias

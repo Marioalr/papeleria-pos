@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using PapeleriaPos.Nucleo.Clientes;
 
 namespace PapeleriaPos.Interfaz;
 
@@ -19,9 +20,13 @@ public sealed record AnotacionDiario(
     long Devoluciones = 0, int Cancelaciones = 0, long Redondeo = 0, long Credito = 0, int Abonos = 0, long AbonosEfectivo = 0, long AbonosTarjeta = 0,
     long AbonosTransferencia = 0);
 
+/// <summary>Un renglón de la cuenta propia de la caja: lo que fió o abonó y el servicio todavía no le confirma.</summary>
+public sealed record CreditoPorConfirmar(Guid Id, Guid ClienteId, CreditoLocal Local);
+
 /// <summary>
 /// La base local de la caja (una SQLite propia, junto a su configuración): la copia del catálogo y demás datos para vender
-/// sin conexión, la bandeja de salida y el diario del turno.
+/// sin conexión, la bandeja de salida, el diario del turno y la cuenta propia del crédito (lo fiado y abonado en esta
+/// caja que la caja principal todavía no le confirma; no es del turno: el corte no la toca).
 /// </summary>
 public sealed class AlmacenLocal
 {
@@ -44,6 +49,10 @@ public sealed class AlmacenLocal
                 Id TEXT PRIMARY KEY, TurnoId TEXT NOT NULL, Ventas INTEGER NOT NULL, Efectivo INTEGER NOT NULL, Tarjeta INTEGER NOT NULL,
                 Transferencia INTEGER NOT NULL, Entradas INTEGER NOT NULL, Salidas INTEGER NOT NULL, Devoluciones INTEGER NOT NULL,
                 Cancelaciones INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS Credito (
+                Id TEXT PRIMARY KEY, ClienteId TEXT NOT NULL, Monto INTEGER NOT NULL, FechaUtc TEXT NOT NULL, Vence TEXT,
+                PorVerificar INTEGER NOT NULL DEFAULT 0, Confirmado INTEGER NOT NULL DEFAULT 0);
+            CREATE INDEX IF NOT EXISTS IX_Credito_Cliente ON Credito (ClienteId);
             """);
         // Bases creadas antes de las impresiones (entrega 5): sin la columna, todo bloquea.
         using (var columnas = Comando(conexion, null, "SELECT COUNT(*) FROM pragma_table_info('Bandeja') WHERE name = 'Bloquea'"))
@@ -135,6 +144,30 @@ public sealed class AlmacenLocal
             lector.GetInt64(11), lector.GetInt64(12), lector.GetInt64(13));
     }
 
+    /// <summary>Lo propio sin confirmar de un cliente (o de todos), en el orden en que pasó.</summary>
+    public List<CreditoPorConfirmar> CuentaPropia(Guid? clienteId = null)
+    {
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, null,
+            $"SELECT Id, ClienteId, Monto, Vence, PorVerificar FROM Credito WHERE Confirmado = 0 {(clienteId is null ? "" : "AND ClienteId = $cliente")} ORDER BY FechaUtc, Id",
+            ("$cliente", clienteId?.ToString()));
+        using var lector = comando.ExecuteReader();
+        var filas = new List<CreditoPorConfirmar>();
+        while (lector.Read())
+            filas.Add(new CreditoPorConfirmar(Guid.Parse(lector.GetString(0)), Guid.Parse(lector.GetString(1)),
+                new CreditoLocal(lector.GetInt64(2), lector.IsDBNull(3) ? null : DateOnly.ParseExact(lector.GetString(3), "yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    lector.GetInt64(4) != 0)));
+        return filas;
+    }
+
+    /// <summary>Si el servicio ya dijo que eso está en sus saldos: con el mismo Id no se vuelve a hacer ni a contar.</summary>
+    public bool CreditoConfirmado(Guid id)
+    {
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, null, "SELECT COUNT(*) FROM Credito WHERE Id = $id AND Confirmado = 1", ("$id", id.ToString()));
+        return Convert.ToInt32(comando.ExecuteScalar()) > 0;
+    }
+
     private SqliteConnection Abrir()
     {
         var conexion = new SqliteConnection(_cadena);
@@ -209,6 +242,78 @@ public sealed class Lote : IDisposable
             ("$transferencia", a.Transferencia), ("$entradas", a.Entradas), ("$salidas", a.Salidas), ("$devoluciones", a.Devoluciones),
             ("$cancelaciones", a.Cancelaciones), ("$redondeo", a.Redondeo), ("$credito", a.Credito), ("$abonos", a.Abonos),
             ("$abonosEfectivo", a.AbonosEfectivo), ("$abonosTarjeta", a.AbonosTarjeta), ("$abonosTransferencia", a.AbonosTransferencia));
+        return this;
+    }
+
+    /// <summary>
+    /// A la cuenta propia: lo fiado (+) o abonado (−) que el servicio todavía no le confirma. Con el mismo Id se reemplaza
+    /// (lo anotado antes de mandarlo, y otra vez si se hizo sin conexión), salvo que ya esté confirmado: mandarlo otra vez
+    /// no lo vuelve a guardar en el servicio, así que tampoco se vuelve a contar aquí.
+    /// </summary>
+    public Lote Credito(Guid id, Guid clienteId, long montoCentavos, DateTime fechaUtc, DateOnly? vence, bool porVerificar = false)
+    {
+        AlmacenLocal.Ejecutar(_conexion, _transaccion, """
+            INSERT INTO Credito (Id, ClienteId, Monto, FechaUtc, Vence, PorVerificar) VALUES ($id, $cliente, $monto, $fecha, $vence, $verificar)
+            ON CONFLICT(Id) DO UPDATE SET ClienteId = excluded.ClienteId, Monto = excluded.Monto, FechaUtc = excluded.FechaUtc, Vence = excluded.Vence,
+                PorVerificar = excluded.PorVerificar
+            WHERE Credito.Confirmado = 0
+            """,
+            ("$id", id.ToString()), ("$cliente", clienteId.ToString()), ("$monto", montoCentavos), ("$fecha", fechaUtc.ToString("O", CultureInfo.InvariantCulture)),
+            ("$vence", vence?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), ("$verificar", porVerificar ? 1 : 0));
+        return this;
+    }
+
+    /// <summary>Con lo que dijo el servicio (el monto real del abono, el vencimiento del cargo). Si ya se confirmó, no revive.</summary>
+    public Lote CorregirCredito(Guid id, long? montoCentavos, DateOnly? vence)
+    {
+        AlmacenLocal.Ejecutar(_conexion, _transaccion, """
+            UPDATE Credito SET Monto = COALESCE($monto, Monto), Vence = COALESCE($vence, Vence) WHERE Id = $id
+            """,
+            ("$id", id.ToString()), ("$monto", montoCentavos), ("$vence", vence?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+        return this;
+    }
+
+    /// <summary>Lo que el servicio rechazó (por una regla): no pasó, deja de contarse aquí.</summary>
+    public Lote QuitarCredito(IEnumerable<Guid> ids)
+    {
+        foreach (var id in ids)
+            AlmacenLocal.Ejecutar(_conexion, _transaccion, "DELETE FROM Credito WHERE Id = $id AND Confirmado = 0", ("$id", id.ToString()));
+        return this;
+    }
+
+    /// <summary>
+    /// Lo que el servicio ya tiene sumado en sus saldos: deja de contarse aquí, pero se recuerda un día (si se vuelve a
+    /// mandar con el mismo Id, el servicio regresa lo que ya tenía: no se debe volver a contar).
+    /// </summary>
+    public Lote ConfirmarCredito(IEnumerable<Guid> ids, DateTime olvidarAntesUtc)
+    {
+        foreach (var id in ids)
+            AlmacenLocal.Ejecutar(_conexion, _transaccion, "UPDATE Credito SET Confirmado = 1 WHERE Id = $id", ("$id", id.ToString()));
+        AlmacenLocal.Ejecutar(_conexion, _transaccion, "DELETE FROM Credito WHERE Confirmado = 1 AND FechaUtc < $antes",
+            ("$antes", olvidarAntesUtc.ToString("O", CultureInfo.InvariantCulture)));
+        return this;
+    }
+
+    /// <summary>
+    /// Lo que el servicio no tiene, ni va a tener: nunca pasó por la bandeja (lo que pasa por ella el servicio lo acepta
+    /// siempre, aunque tarde en subir) y lleva un rato sin aparecer en sus saldos: un fiado que se mandó en línea y nunca
+    /// se guardó, de un ticket que ya no se cobró.
+    /// </summary>
+    public Lote QuitarCreditoHuerfano(IEnumerable<Guid> ids, DateTime anotadoAntesUtc)
+    {
+        foreach (var id in ids)
+            AlmacenLocal.Ejecutar(_conexion, _transaccion, """
+                DELETE FROM Credito WHERE Id = $id AND FechaUtc < $antes AND Confirmado = 0
+                    AND NOT EXISTS (SELECT 1 FROM Bandeja WHERE Bandeja.Id = Credito.Id)
+                """,
+                ("$id", id.ToString()), ("$antes", anotadoAntesUtc.ToString("O", CultureInfo.InvariantCulture)));
+        return this;
+    }
+
+    /// <summary>Empezar de cero (la prueba): la cuenta propia ya no corresponde a ninguna base.</summary>
+    public Lote LimpiarCredito()
+    {
+        AlmacenLocal.Ejecutar(_conexion, _transaccion, "DELETE FROM Credito");
         return this;
     }
 

@@ -22,6 +22,13 @@ internal sealed class ServicioDePrueba : IDisposable
 
     public static ServicioDePrueba Iniciar(ConfiguracionCaja configuracion) => new(configuracion);
 
+    private static string BaseInicial(ConfiguracionCaja configuracion) =>
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, configuracion.BaseInicial ?? @"..\datos\prueba.db"));
+
+    /// <summary>Donde van la base de trabajo, las respuestas y la base local de la caja (para trabajar sin conexión).</summary>
+    public static string CarpetaDatos(ConfiguracionCaja configuracion) =>
+        configuracion.CarpetaDatos is { Length: > 0 } c ? Environment.ExpandEnvironmentVariables(c) : Path.GetDirectoryName(BaseInicial(configuracion))!;
+
     private async Task ArrancarAsync(ConfiguracionCaja configuracion)
     {
         var url = new Uri(configuracion.Servicio);
@@ -31,8 +38,8 @@ internal sealed class ServicioDePrueba : IDisposable
 
         var carpeta = AppContext.BaseDirectory;
         var exe = Path.GetFullPath(Path.Combine(carpeta, configuracion.ServicioLocal ?? @"..\Servicio\PapeleriaPos.Servicio.exe"));
-        var inicial = Path.GetFullPath(Path.Combine(carpeta, configuracion.BaseInicial ?? @"..\datos\prueba.db"));
-        var datos = configuracion.CarpetaDatos is { Length: > 0 } c ? Environment.ExpandEnvironmentVariables(c) : Path.GetDirectoryName(inicial)!;
+        var inicial = BaseInicial(configuracion);
+        var datos = CarpetaDatos(configuracion);
         Directory.CreateDirectory(datos);
         if (!File.Exists(exe))
             throw new InvalidOperationException($"No se encontró el servicio de la prueba ({exe}): reinstala la prueba.");

@@ -49,7 +49,7 @@ public enum TipoAlerta
     Credito,
 
     /// <summary>
-    /// Una venta o una entrada/salida de efectivo de una caja sin conexión llegó cuando su turno ya tenía corte Z: se
+    /// Una venta, un abono o una entrada/salida de efectivo de una caja sin conexión llegó cuando su turno ya tenía corte Z: se
     /// guardó, pero no entró a ese corte.
     /// </summary>
     FueraDeCorte,

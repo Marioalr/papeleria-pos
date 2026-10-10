@@ -381,6 +381,8 @@ internal sealed class RevisionCreditoConfiguracion : IEntityTypeConfiguration<Re
         b.HasOne<ClienteRegistrado>().WithMany().HasForeignKey(r => r.ClienteId);
         b.Property(r => r.Detalle).HasMaxLength(300);
         b.Property(r => r.Nota).HasMaxLength(200);
+        // Una revisión por motivo de cada movimiento: lo que sube dos veces no se revisa dos veces.
+        b.HasIndex(r => new { r.MovimientoId, r.Motivo }).IsUnique();
         b.HasIndex(r => new { r.SucursalId, r.RevisadaUtc });
         b.HasIndex(r => r.ClienteId);
     }

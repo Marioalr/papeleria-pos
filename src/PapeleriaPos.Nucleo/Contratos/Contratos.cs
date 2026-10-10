@@ -216,7 +216,9 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// <summary>Lo que contesta el servicio sin llave: para encontrarlo en la red y saber que está vivo.</summary>
 /// <param name="VersionDatos">Cambia con el catálogo, los usuarios o las reglas: la caja vuelve a bajar su copia.</param>
 /// <param name="Prueba">El servicio es el de la prueba con una persona real: datos ficticios, guía y avisos simulados.</param>
-public sealed record EstadoServicioDto(string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false);
+/// <param name="VersionCredito">Cambia con cada fiado, abono o cambio de crédito: la caja vuelve a pedir los saldos.</param>
+public sealed record EstadoServicioDto(
+    string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false, long VersionCredito = 0);
 
 /// <summary>Usuario y PIN de quien autoriza (el dueño para dar de alta o quitar cajas).</summary>
 public sealed record SolicitudCredenciales(string Usuario, string Pin);
@@ -260,10 +262,13 @@ public sealed record LineaContingenciaDto(
     long? DescuentoCentavos = null, string? MotivoDescuento = null);
 
 /// <param name="RedondeoCentavos">El que cobró la caja. Vacío en lo que se cobró antes de que existiera el redondeo: eso se vuelve a cobrar exacto.</param>
+/// <param name="SaldoConocidoCentavos">Si fió: lo que la caja creía que debía (con eso imprimió el ticket).</param>
+/// <param name="ExcesoAutorizadoCentavos">Si fió: lo que pasó del límite con permiso en la caja.</param>
+/// <param name="VenceCredito">Si fió: el vencimiento que se imprimió.</param>
 public sealed record VentaContingenciaDto(
     Guid Id, Guid CajaId, Guid TurnoId, Guid CajeroId, int Folio, DateTime PagadaUtc, IReadOnlyList<LineaContingenciaDto> Lineas,
     IReadOnlyList<CobroSolicitado> Cobros, [property: JsonPropertyName("clienteEspecialId")] Guid? ClienteId = null, long? RedondeoCentavos = null,
-    bool? MayoreoDeCliente = null);
+    bool? MayoreoDeCliente = null, long? SaldoConocidoCentavos = null, long ExcesoAutorizadoCentavos = 0, DateOnly? VenceCredito = null);
 
 public sealed record MovimientoContingenciaDto(Guid Id, TipoMovimientoCaja Tipo, long MontoCentavos, string Motivo, Guid UsuarioId, DateTime FechaUtc);
 
@@ -887,3 +892,27 @@ public sealed record MovimientoCreditoDto(
 
 /// <summary>La cuenta con sus últimos movimientos (del más reciente al más viejo).</summary>
 public sealed record CuentaClienteDto(CreditoClienteDto Credito, IReadOnlyList<MovimientoCreditoDto> Movimientos);
+
+// ── Crédito sin conexión (fase 3, entrega 2, parte 2.4) ─────────────────────
+
+/// <summary>La caja pide los saldos y pregunta cuáles de los suyos (fiados y abonos sin confirmar) ya están en ellos.</summary>
+public sealed record SolicitudSaldosCredito(IReadOnlyList<Guid> Pendientes);
+
+/// <summary>
+/// Los saldos de la sucursal en una sola foto: los que tienen crédito, deben o tienen algo por verificar (los demás, en
+/// cero). <paramref name="Incluidos"/> son los de la caja que ya están sumados: esos los borra de su cuenta propia.
+/// </summary>
+public sealed record SaldosCreditoDto(long Version, IReadOnlyList<CreditoClienteDto> Cuentas, IReadOnlyList<Guid> Incluidos);
+
+/// <summary>Un abono hecho sin conexión: el servicio lo guarda tal cual (ya se cobró) y revisa lo que no cuadre.</summary>
+/// <param name="SaldoConocidoCentavos">Lo que la caja creía que debía (con eso imprimió el comprobante).</param>
+public sealed record AbonoContingenciaDto(
+    Guid Id, Guid CajaId, Guid TurnoId, Guid UsuarioId, Guid ClienteId, FormaPago Forma, long MontoCentavos, long RedondeoCentavos,
+    long RecibidoCentavos, long CambioCentavos, string? Referencia, DateTime FechaUtc, long SaldoConocidoCentavos, DateOnly? Vence = null);
+
+/// <summary>Lo de crédito que no cuadró al volver la conexión, para que el encargado o el dueño lo revisen.</summary>
+public sealed record RevisionCreditoDto(
+    Guid Id, Guid ClienteId, string Cliente, DateTime CreadaLocal, MotivoRevisionCredito Motivo, string Detalle, long MontoCentavos);
+
+/// <summary>Quien revisó, con una nota (qué se hizo).</summary>
+public sealed record SolicitudRevision(Guid UsuarioId, string? Nota);

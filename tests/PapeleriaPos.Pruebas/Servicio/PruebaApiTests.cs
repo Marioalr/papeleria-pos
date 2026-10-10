@@ -144,6 +144,35 @@ public class PruebaApiTests(ServicioEnPrueba prueba) : IClassFixture<ServicioEnP
         Assert.DoesNotContain(proveedores!, p => p.Nombre == "Proveedor creado en la prueba");
         Assert.NotEmpty(buscados!);
     }
+
+    [Fact]
+    public async Task La_caja_de_la_prueba_trabaja_sin_conexion_simulada_y_la_guia_sigue_contestando()
+    {
+        // Como la arma la caja de Windows de la prueba: sin alta (la primera caja) y con su base local junto a los datos.
+        var http = new HttpClient(prueba.Fabrica.Server.CreateHandler());
+        var conexion = new PapeleriaPos.Interfaz.ConexionCaja { Servicio = new Uri("http://localhost/") };
+        var contingencia = new PapeleriaPos.Interfaz.Contingencia(
+            new PapeleriaPos.Interfaz.AlmacenLocal(Path.Combine(prueba.Carpeta, $"caja-local-{Guid.NewGuid():N}.db")), http, conexion);
+        var cliente = new PapeleriaPos.Interfaz.ClienteCaja(http, conexion, contingencia);
+        await contingencia.LatidoAsync();
+        var caja = (await cliente.CajasAsync()).First();
+        var ramirez = (await cliente.ClientesRegistradosAsync(caja.SucursalId)).Single(c => c.Nombre == PreparacionPrueba.ConDeuda);
+
+        conexion.SimularSinConexion = true;
+        await contingencia.LatidoAsync();
+        var cuenta = await cliente.CreditoAsync(ramirez.Id);
+        var avisos = await cliente.AvisosPruebaAsync();
+        var respuestas = await cliente.RespuestasPruebaAsync();
+        var reiniciar = await Assert.ThrowsAsync<PapeleriaPos.Interfaz.ErrorCaja>(() => cliente.EmpezarDeCeroAsync());
+
+        Assert.Equal(caja.Id, conexion.CajaId);
+        Assert.False(contingencia.EnLinea);
+        Assert.Equal((PreparacionPrueba.DeudaCentavos, true), (cuenta.SaldoCentavos, cuenta.Estimado));
+        Assert.NotNull(avisos);
+        Assert.NotNull(respuestas);
+        Assert.StartsWith("Primero vuelve a conectar", reiniciar.Message);
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+    }
 }
 
 public class SinPruebaTests(ServicioDePrueba servicio) : IClassFixture<ServicioDePrueba>
