@@ -4,9 +4,11 @@ Punto de venta a la medida para una papelería con varias sucursales: venta, inv
 copias, engargolado, trámites…), pedidos y control de cada sucursal sin que el dueño tenga que estar presente.
 Reemplaza a eleventa multicaja e incorpora lo que hoy hace [Control Print](https://github.com/Marioalr/control-print).
 
-> **Estado: fase 2.** La caja vende, cobra e imprime, con control (reglas, autorizaciones y bitácora) y varias cajas
-> en red; el catálogo (F3) y las compras (F4) ya se manejan en el POS. Todo se prueba con datos ficticios. Lo demás
-> sigue en planeación; las decisiones se cierran en el [plan](docs/plan.md).
+> **Estado: fase 3.** La caja vende, cobra e imprime, con control (reglas, autorizaciones y bitácora) y varias cajas
+> en red. El inventario ya se maneja en el POS: catálogo (F3), compras con el documento del proveedor, ajustes,
+> mermas, conteos, etiquetas y sugerido de compra. También hay mayoreo por escalas, redondeo al peso, clientes
+> registrados y crédito. Todo se prueba con datos ficticios. Lo demás sigue en planeación; las decisiones se cierran en
+> el [plan](docs/plan.md).
 
 ## Desarrollo
 
@@ -119,7 +121,7 @@ Lo mismo en desarrollo, en el navegador:
 
 ```
 dotnet run --project src/PapeleriaPos.Herramientas -- preparar-prueba --salida prueba/datos/prueba.db --ejemplos prueba/Ejemplos
-dotnet run --project src/PapeleriaPos.Servicio -- --environment Development --Urls=http://localhost:5180 --ConnectionStrings:Pos="Data Source=prueba/datos/pos.db" --Prueba:Activa=true --Prueba:BaseInicial=prueba/datos/prueba.db --Telegram:Activo=false
+dotnet run --project src/PapeleriaPos.Servicio -- --environment Development --Urls=http://localhost:5180 --Caja:Servicio=http://localhost:5180 --ConnectionStrings:Pos="Data Source=prueba/datos/pos.db" --Prueba:Activa=true --Prueba:BaseInicial=prueba/datos/prueba.db --Telegram:Activo=false
 ```
 
 Migraciones de la base (EF Core):
