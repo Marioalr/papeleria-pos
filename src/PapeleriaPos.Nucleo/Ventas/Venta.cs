@@ -113,7 +113,7 @@ public class Venta
         if (linea.Unidad == UnidadBase.Pieza && !cantidadBase.EsEntera)
             throw new ArgumentException("Este producto se vende por pieza: no admite fracciones.", nameof(cantidad));
 
-        var aplicado = CalculoPrecio.Calcular(precios, SucursalId, presentacion, cantidad)
+        var aplicado = CalculoPrecio.Calcular(precios, SucursalId, presentacion, cantidad, MayoreoDeCliente)
             ?? throw new InvalidOperationException($"«{linea.Descripcion}» no tiene precio.");
 
         linea.Cantidad = cantidad;
@@ -138,8 +138,32 @@ public class Venta
         Recalcular();
     }
 
-    /// <summary>Quien la atiende como cliente especial (maestros, negocios vecinos): su descuento ya lo aprobó el dueño.</summary>
-    public Guid? ClienteEspecialId { get; set; }
+    /// <summary>
+    /// El cliente registrado del ticket (fase 3, entrega 2), con descuento o sin él. Su descuento fijo ya lo aprobó quien
+    /// le dio el privilegio.
+    /// </summary>
+    public Guid? ClienteId { get; set; }
+
+    /// <summary>
+    /// El cliente del ticket paga mayoreo siempre: cada línea toma al menos la primera escala de mayoreo. No se guarda: lo
+    /// pone quien arma la venta (la caja, la caja sin conexión o el servicio), antes de agregar las líneas.
+    /// </summary>
+    public bool MayoreoDeCliente { get; set; }
+
+    /// <summary>
+    /// Cambia si el ticket va con el mayoreo del cliente y vuelve a buscar el precio de cada producto (los de precio
+    /// cambiado se quedan como están). <paramref name="catalogo"/> da la presentación y los precios de una línea.
+    /// </summary>
+    public void CambiarMayoreoDeCliente(bool mayoreo, Func<VentaLinea, (Presentacion Presentacion, IReadOnlyList<Precio> Precios)?> catalogo)
+    {
+        RequerirEditable();
+        MayoreoDeCliente = mayoreo;
+        foreach (var linea in Lineas.Where(l => l.VarianteId is not null && !l.EsImpresiones).ToList())
+        {
+            if (catalogo(linea) is { } c)
+                CambiarCantidad(linea, linea.Cantidad, c.Presentacion, c.Precios);
+        }
+    }
 
     /// <summary>La autorización del descuento más alto del ticket (la regla se revisa al cobrar).</summary>
     public Guid? AutorizacionDescuentoId { get; set; }
@@ -224,17 +248,17 @@ public class Venta
             DescontarLinea(linea, null, montoCentavos, motivo ?? "");
     }
 
-    /// <summary>Quita todos los descuentos, el cliente especial y sus autorizaciones.</summary>
-    public void QuitarDescuentos()
+    /// <summary>Quita los descuentos (todos, o los que no tienen <paramref name="salvoMotivo"/>) y su autorización. El cliente se queda.</summary>
+    public void QuitarDescuentos(string? salvoMotivo = null)
     {
-        foreach (var l in Lineas.Where(l => l.TieneDescuento))
+        foreach (var l in Lineas.Where(l => l.TieneDescuento && (salvoMotivo is null || l.MotivoDescuento != salvoMotivo)))
             QuitarDescuento(l);
-        (ClienteEspecialId, AutorizacionDescuentoId) = (null, null);
+        AutorizacionDescuentoId = null;
     }
 
     /// <summary>
     /// El descuento más alto del ticket en centésimas de porcentaje, sin contar las líneas que llevan exactamente el del
-    /// cliente especial (<paramref name="preaprobado"/>): ese ya lo aprobó el dueño. Cero si no hay nada que revisar.
+    /// cliente registrado (<paramref name="preaprobado"/>): ese ya está aprobado. Cero si no hay nada que revisar.
     /// </summary>
     public int DescuentoARevisar(int? preaprobado) =>
         Lineas.Where(l => l.TieneDescuento && (preaprobado is null || l.DescuentoCentesimas != preaprobado))
@@ -514,6 +538,9 @@ public class VentaLinea
 
     public bool TieneMayoreo => MayoreoDesde is not null;
 
+    /// <summary>El mayoreo se aplicó antes de llegar a la cantidad: es el «mayoreo siempre» del cliente registrado.</summary>
+    public bool MayoreoDeCliente => MayoreoDesde is { } desde && CantidadBase < desde;
+
     public long ImporteSinDescuentoCentavos => ImporteCentavos + DescuentoCentavos;
 
     /// <summary>El descuento como porcentaje del importe, en centésimas (redondeado hacia arriba: 10.001 % cuenta como más de 10 %).</summary>
@@ -521,22 +548,3 @@ public class VentaLinea
         DescuentoCentesimas ?? (ImporteSinDescuentoCentavos == 0 ? 0 : (int)Math.Ceiling(DescuentoCentavos * 10000m / ImporteSinDescuentoCentavos));
 }
 
-/// <summary>
-/// Un cliente con descuento fijo (maestros, negocios vecinos). Lo da de alta el dueño; en la caja se elige de la lista,
-/// nunca se escribe a mano, y su descuento no pide autorización.
-/// </summary>
-public class ClienteEspecial : IVersionado
-{
-    public Guid Id { get; set; } = Ids.Nuevo();
-    public Guid? SucursalId { get; set; }
-    public required string Nombre { get; set; }
-
-    /// <summary>Centésimas de porcentaje (1000 = 10 %).</summary>
-    public int DescuentoCentesimas { get; set; }
-
-    public string? Nota { get; set; }
-    public bool Activo { get; set; } = true;
-
-    public long Version { get; set; }
-    public DateTime ModificadoUtc { get; set; }
-}

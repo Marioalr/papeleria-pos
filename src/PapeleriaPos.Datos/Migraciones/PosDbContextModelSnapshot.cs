@@ -560,6 +560,59 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("Variantes");
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Clientes.ClienteRegistrado", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("ApartarSinPagar")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("DescuentoCentesimas")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("MayoreoSiempre")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("ModificadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Nota")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("PedidoSinAnticipo")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("PorRevisar")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Telefono")
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SucursalId");
+
+                    b.ToTable("ClientesRegistrados", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Configuracion.ConfiguracionSucursal", b =>
                 {
                     b.Property<Guid>("SucursalId")
@@ -2278,42 +2331,6 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("Usuarios");
                 });
 
-            modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.ClienteEspecial", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("Activo")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("DescuentoCentesimas")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("ModificadoUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Nombre")
-                        .IsRequired()
-                        .HasMaxLength(80)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Nota")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("SucursalId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("Version")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SucursalId");
-
-                    b.ToTable("ClientesEspeciales", (string)null);
-                });
-
             modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.Cobro", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2471,7 +2488,7 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<DateTime?>("CanceladaUtc")
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid?>("ClienteEspecialId")
+                    b.Property<Guid?>("ClienteId")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreadaUtc")
@@ -2518,11 +2535,11 @@ namespace PapeleriaPos.Datos.Migraciones
 
                     b.HasIndex("CajeroId");
 
-                    b.HasIndex("ClienteEspecialId");
-
                     b.HasIndex("PagadaUtc");
 
                     b.HasIndex("TurnoId");
+
+                    b.HasIndex("ClienteId", "PagadaUtc");
 
                     b.HasIndex("SucursalId", "Serie", "Folio")
                         .IsUnique();
@@ -2733,6 +2750,14 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired();
 
                     b.Navigation("Producto");
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Clientes.ClienteRegistrado", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Configuracion.ConfiguracionSucursal", b =>
@@ -3302,14 +3327,6 @@ namespace PapeleriaPos.Datos.Migraciones
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
-            modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.ClienteEspecial", b =>
-                {
-                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
-                        .WithMany()
-                        .HasForeignKey("SucursalId")
-                        .OnDelete(DeleteBehavior.Restrict);
-                });
-
             modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.Cobro", b =>
                 {
                     b.HasOne("PapeleriaPos.Nucleo.Ventas.Venta", null)
@@ -3374,9 +3391,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("PapeleriaPos.Nucleo.Ventas.ClienteEspecial", null)
+                    b.HasOne("PapeleriaPos.Nucleo.Clientes.ClienteRegistrado", null)
                         .WithMany()
-                        .HasForeignKey("ClienteEspecialId")
+                        .HasForeignKey("ClienteId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)

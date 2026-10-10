@@ -10,6 +10,7 @@
         <button class="modulo activo">F1 Ventas</button>
         <button class="modulo" @onclick="() => Abrir(Ventanas.Productos)">F3 Productos</button>
         <button class="modulo" @onclick="() => Abrir(Ventanas.Inventario)">F4 Inventario</button>
+        <button class="modulo" @onclick="() => Abrir(Ventanas.Clientes)">Clientes</button>
         <button class="modulo" @onclick="() => Abrir(Ventanas.Configuracion)">Configuración</button>
         <button class="modulo" @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
         <span class="espacio"></span>
@@ -29,7 +30,13 @@
             <button class="boton chico" @onclick="() => Abrir(Ventanas.Conteo)">Contar ahora</button>
         </div>
     }
-    <div class="titulo-venta">VENTA - Ticket @Actual.Numero</div>
+    <div class="titulo-venta">
+        VENTA - Ticket @Actual.Numero
+        @if (Actual.Cliente is { } delTicket)
+        {
+            <span class="cliente-ticket">Cliente: @delTicket.Nombre@(delTicket.TextoPrivilegios() is { Length: > 0 } privilegios ? $" · {privilegios}" : "")</span>
+        }
+    </div>
 
     <div class="captura">
         <label for="codigo">Código del producto:</label>
@@ -46,6 +53,7 @@
         <button class="boton" @onclick="BorrarSeleccion">DEL Borrar art.</button>
         <button class="boton" @onclick="AbrirCambioPrecio">CTRL+E Cambiar precio</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Descuento)">CTRL+D Descuento</button>
+        <button class="boton" title="El cliente registrado del ticket, por nombre o teléfono" @onclick="() => Abrir(Ventanas.ElegirCliente)">CTRL+L Cliente</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Verificador)">F9 Verificador</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Impresiones)">F2 Impresiones</button>
         @* Cotizar a un botón: la etiqueta abre el selector de archivos; al elegir el PDF se abre la cotización. *@
@@ -144,7 +152,7 @@
         </div>
         <div class="pie-derecha">
             <div class="cobro">
-                <button class="boton cobrar" disabled="@(Actual.Venta.Lineas.Count == 0)" @onclick="() => Abrir(Ventanas.Cobrar)">F12 - Cobrar</button>
+                <button class="boton cobrar" disabled="@(Actual.Venta.Lineas.Count == 0)" @onclick="AbrirCobroAsync">F12 - Cobrar</button>
                 <div class="total">@Formato.Dinero(Actual.Venta.TotalCentavos)</div>
                 @if (Actual.Venta.Lineas.Count > 0 && Actual.Venta.Efectivo(0) is { RedondeoCentavos: not 0 } enEfectivo)
                 {
@@ -152,7 +160,7 @@
                 }
                 @if (Actual.Venta.DescuentoCentavos > 0)
                 {
-                    <div class="descuento-total">Descuento: −@Formato.Dinero(Actual.Venta.DescuentoCentavos)@(Actual.Cliente is { } cliente ? $" · {cliente.Nombre}" : "")</div>
+                    <div class="descuento-total">Descuento: −@Formato.Dinero(Actual.Venta.DescuentoCentavos)</div>
                 }
             </div>
             <div class="botones-pie">
@@ -169,6 +177,12 @@
         case Ventanas.Cobrar:
             <Ventana Titulo="Cobrar" Clase="cobrar" AlCerrar="Cerrar">
                 <CobrarVenta Venta="Actual.Venta" AlCobrar="CobrarAsync" />
+            </Ventana>
+            break;
+        case Ventanas.AutorizarCosto when _costoPorAutorizar is { } costo:
+            <Ventana Titulo="Debajo del costo" AlCerrar="Cerrar">
+                <AutorizarAccion Accion="AccionControlada.VenderBajoCosto" Detalle="@costo.Detalle" MontoCentavos="costo.Monto" Caja="Caja" Sesion="Sesion"
+                                 AlAutorizar="a => CostoAutorizadoAsync(a.Id)" AlCancelar="Cerrar" />
             </Ventana>
             break;
         case Ventanas.Buscar:
@@ -192,6 +206,7 @@
                                    && Actual.Productos.TryGetValue(varianteMayoreo, out var productoMayoreo):
             <Ventana Titulo="Mayoreo" AlCerrar="Cerrar">
                 <EscalasMayoreo Producto="productoMayoreo" SucursalId="Caja.SucursalId" PresentacionId="lineaMayoreo.PresentacionId" Cantidad="lineaMayoreo.Cantidad"
+                                MayoreoDeCliente="Actual.Venta.MayoreoDeCliente"
                                 PrecioCambiadoCentavos="@(lineaMayoreo.PrecioCambiado ? lineaMayoreo.PrecioCentavos : null)" />
             </Ventana>
             break;
@@ -252,7 +267,19 @@
             break;
         case Ventanas.Descuento:
             <Ventana Titulo="Descuento" AlCerrar="Cerrar">
-                <Descuento Venta="Actual.Venta" Linea="LineaSeleccionada" Caja="Caja" Sesion="Sesion" AlTerminar="DescuentoAplicadoAsync" />
+                <Descuento Venta="Actual.Venta" Linea="LineaSeleccionada" Caja="Caja" Sesion="Sesion" ClienteDelTicket="Actual.Cliente"
+                           AlTerminar="DescuentoAplicadoAsync" />
+            </Ventana>
+            break;
+        case Ventanas.ElegirCliente:
+            <Ventana Titulo="Cliente del ticket" Clase="buscar" AlCerrar="Cerrar">
+                <ElegirCliente @ref="_elegirCliente" Venta="Actual.Venta" Caja="Caja" Sesion="Sesion" Actual="Actual.Cliente" Catalogo="CatalogoDe"
+                               AlTerminar="ClienteElegidoAsync" />
+            </Ventana>
+            break;
+        case Ventanas.Clientes:
+            <Ventana Titulo="Clientes" Clase="configuracion" AlCerrar="Cerrar">
+                <Clientes Caja="Caja" Sesion="Sesion" AlGuardar="ClienteGuardado" />
             </Ventana>
             break;
         case Ventanas.Cotizar:
@@ -294,7 +321,8 @@
     private enum Ventanas
     {
         Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
-        CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, Productos, AltaRapida, Inventario, Conteo, Mayoreo,
+        CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, Productos, AltaRapida, Inventario, Conteo, Mayoreo, ElegirCliente, Clientes,
+        AutorizarCosto,
     }
 
     /// <summary>El conteo cíclico de hoy: cuántos faltan, para pedirlo en la franja.</summary>
@@ -321,8 +349,8 @@
         /// <summary>Los trabajos de impresión que van en la línea "Impresiones" de este ticket.</summary>
         public List<ImpresionPorCobrarDto> Impresiones { get; } = [];
 
-        /// <summary>El cliente especial del ticket: lo que se agregue después también lleva su descuento.</summary>
-        public ClienteEspecialDto? Cliente { get; set; }
+        /// <summary>El cliente registrado del ticket: lo que se agregue después también lleva su descuento y su mayoreo.</summary>
+        public ClienteRegistradoDto? Cliente { get; set; }
     }
 
     private readonly List<TicketAbierto> _tickets = [];
@@ -365,7 +393,7 @@
         switch (tecla)
         {
             case "F10": await Abrir(Ventanas.Buscar); break;
-            case "F12" when Actual.Venta.Lineas.Count > 0: await Abrir(Ventanas.Cobrar); break;
+            case "F12" when Actual.Venta.Lineas.Count > 0: await AbrirCobroAsync(); break;
             case "F5": CambiarSiguiente(); break;
             case "F6": NuevoTicket(); break;
             case "F7": await Abrir(Ventanas.Entrada); break;
@@ -375,6 +403,7 @@
             case "Insert" or "Ctrl+P": await Abrir(Ventanas.Comun); break;
             case "Ctrl+E": await AbrirCambioPrecio(); break;
             case "Ctrl+D": await Abrir(Ventanas.Descuento); break;
+            case "Ctrl+L": await Abrir(Ventanas.ElegirCliente); break;
             case "Delete": await BorrarSeleccion(); break;
             case "ArrowUp": await MoverSeleccion(-1); break;
             case "ArrowDown": await MoverSeleccion(1); break;
@@ -586,7 +615,8 @@
 
     /// <summary>"Mayoreo desde 12", o "desde 24 pzas" en un renglón de paquetes, o "desde 10 m" a granel.</summary>
     private static string MayoreoTexto(VentaLinea linea, ProductoVentaDto? producto) =>
-        $"Mayoreo desde {ArmadoTicket.MayoreoTexto(linea.MayoreoDesde!.Value, linea.Unidad, producto?.PresentacionModelo(linea.PresentacionId).EsBase ?? true)}";
+        linea.MayoreoDeCliente ? "Mayoreo de cliente"
+            : $"Mayoreo desde {ArmadoTicket.MayoreoTexto(linea.MayoreoDesde!.Value, linea.Unidad, producto?.PresentacionModelo(linea.PresentacionId).EsBase ?? true)}";
 
     /// <summary>Si se cambió la cantidad; si no, ya avisó por qué.</summary>
     private async Task<bool> FijarCantidadSeleccion(Cantidad cantidad)
@@ -679,8 +709,8 @@
         {
             var ticket = await Cliente.CobrarAsync(new SolicitudCobro(Caja.Id, Turno.Id, Sesion.UsuarioId, ArmadoSolicitud.Lineas(venta), cobros,
                 Impresiones: Actual.Impresiones.Count > 0 ? Actual.Impresiones.Select(i => i.Id).ToList() : null,
-                ClienteEspecialId: venta.ClienteEspecialId, AutorizacionDescuentoId: venta.AutorizacionDescuentoId,
-                AutorizacionBajoCostoId: venta.AutorizacionBajoCostoId));
+                ClienteId: venta.ClienteId, AutorizacionDescuentoId: venta.AutorizacionDescuentoId,
+                AutorizacionBajoCostoId: venta.AutorizacionBajoCostoId, MayoreoDeCliente: venta.MayoreoDeCliente));
             _tickets.RemoveAt(_actual);
             if (_tickets.Count == 0)
                 NuevoTicket();
@@ -772,20 +802,113 @@
 
     // ── Descuento (Ctrl+D) ──────────────────────────────────────────────────
 
-    private async Task DescuentoAplicadoAsync(ClienteEspecialDto? cliente)
+    private async Task DescuentoAplicadoAsync()
+    {
+        await Cerrar();
+        Avisar(Actual.Venta.DescuentoCentavos > 0 ? $"Descuento de {Formato.Dinero(Actual.Venta.DescuentoCentavos)}." : "Se quitaron los descuentos.", error: false);
+    }
+
+    private ElegirCliente? _elegirCliente;
+
+    /// <summary>Lo que dejan los descuentos debajo del costo y falta autorizar antes de cobrar.</summary>
+    private sealed record CostoPorAutorizar(string Detalle, long Monto);
+
+    private CostoPorAutorizar? _costoPorAutorizar;
+
+    /// <summary>
+    /// F12: si el ticket lleva descuentos (el del cliente se pone solo al agregar), antes de cobrar se revisa que nada quede
+    /// debajo del costo sin autorización; si falta, se pide aquí y no hasta que el cobro falle.
+    /// </summary>
+    private async Task AbrirCobroAsync()
+    {
+        var venta = Actual.Venta;
+        if (venta.Lineas.Count == 0)
+            return;
+        if (venta.Lineas.Any(l => l.TieneDescuento || l.PrecioCambiado) && venta.AutorizacionBajoCostoId is null)
+        {
+            try
+            {
+                var bajoCosto = await Cliente.BajoCostoAsync(new SolicitudBajoCosto(Caja.Id, ArmadoSolicitud.Lineas(venta), venta.ClienteId, venta.MayoreoDeCliente));
+                if (bajoCosto.FaltanteCentavos > 0)
+                {
+                    var decision = await Cliente.PermisoAsync(new SolicitudPermiso(Sesion.UsuarioId, Caja.SucursalId, AccionControlada.VenderBajoCosto,
+                        bajoCosto.FaltanteCentavos));
+                    if (decision.Nivel == NivelPermiso.NoPermitido)
+                    {
+                        Avisar($"Quedan debajo del costo ({string.Join(", ", bajoCosto.Lineas)}) y no tienes permiso para venderlos así.");
+                        return;
+                    }
+                    if (decision.Nivel == NivelPermiso.RequiereAutorizacion)
+                    {
+                        _costoPorAutorizar = new CostoPorAutorizar($"Con descuento quedan debajo del costo: {string.Join(", ", bajoCosto.Lineas)}",
+                            bajoCosto.FaltanteCentavos);
+                        await Abrir(Ventanas.AutorizarCosto);
+                        return;
+                    }
+                }
+            }
+            catch (ErrorCaja ex)
+            {
+                Avisar(ex.Message);
+                return;
+            }
+        }
+        await Abrir(Ventanas.Cobrar);
+    }
+
+    private async Task CostoAutorizadoAsync(Guid autorizacionId)
+    {
+        Actual.Venta.AutorizacionBajoCostoId = autorizacionId;
+        _costoPorAutorizar = null;
+        await Abrir(Ventanas.Cobrar);
+    }
+
+    /// <summary>
+    /// Se editó un cliente en el módulo Clientes: los tickets abiertos que lo tienen se ponen al día (su descuento y su
+    /// mayoreo); si quedó inactivo, sale del ticket.
+    /// </summary>
+    private void ClienteGuardado(ClienteRegistradoDto guardado)
+    {
+        foreach (var ticket in _tickets.Where(t => t.Cliente?.Id == guardado.Id))
+        {
+            var nuevo = guardado.Activo ? guardado : null;
+            try
+            {
+                ClienteEnTicket.Cambiar(ticket.Venta, ticket.Cliente, nuevo, l => CatalogoDe(ticket, l));
+                ticket.Cliente = nuevo;
+                // El costo se vuelve a revisar al cobrar.
+                ticket.Venta.AutorizacionBajoCostoId = null;
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+            {
+                Avisar($"El ticket {ticket.Numero} no se pudo poner al día con el cliente: {ex.Message}");
+                continue;
+            }
+            Avisar(nuevo is null ? $"«{guardado.Nombre}» quedó inactivo: salió del ticket {ticket.Numero}."
+                : $"El ticket {ticket.Numero} ya va con lo nuevo de «{guardado.Nombre}».", error: false);
+        }
+    }
+
+    private async Task ClienteElegidoAsync(ClienteRegistradoDto? cliente)
     {
         Actual.Cliente = cliente;
         await Cerrar();
-        Avisar(Actual.Venta.DescuentoCentavos > 0
-            ? $"Descuento de {Formato.Dinero(Actual.Venta.DescuentoCentavos)}" + (cliente is null ? "." : $" para {cliente.Nombre}.")
-            : "Se quitaron los descuentos.", error: false);
+        Avisar(cliente is null ? "El ticket ya no tiene cliente." : $"Cliente: {ArmadoTicket.ClienteTexto(cliente)}.", error: false);
     }
 
-    /// <summary>Con cliente especial, lo que se agrega al ticket lleva su descuento.</summary>
+    /// <summary>La presentación y los precios de un renglón, de la copia que ya tiene el ticket (funciona sin conexión).</summary>
+    private (Presentacion Presentacion, IReadOnlyList<Precio> Precios)? CatalogoDe(VentaLinea linea) => CatalogoDe(Actual, linea);
+
+    private static (Presentacion Presentacion, IReadOnlyList<Precio> Precios)? CatalogoDe(TicketAbierto ticket, VentaLinea linea) =>
+        linea.VarianteId is { } varianteId && ticket.Productos.TryGetValue(varianteId, out var producto)
+            ? (producto.PresentacionModelo(linea.PresentacionId), producto.PreciosModelo())
+            : null;
+
+    /// <summary>Con cliente con descuento, lo que se agrega al ticket lleva el suyo (el mayoreo ya sale solo del precio).</summary>
     private void DescuentoDelCliente(VentaLinea linea)
     {
-        if (Actual.Cliente is { } cliente && !linea.EsImpresiones && linea.DescuentoCentesimas != cliente.DescuentoCentesimas)
-            Actual.Venta.DescontarLinea(linea, cliente.DescuentoCentesimas, null, $"Cliente especial: {cliente.Nombre}");
+        if (Actual.Cliente is { DescuentoCentesimas: > 0 } cliente && !linea.EsImpresiones && linea.DescuentoCentesimas != cliente.DescuentoCentesimas)
+            Actual.Venta.DescontarLinea(linea, cliente.DescuentoCentesimas, null, cliente.MotivoDescuento());
     }
 
     // ── Alta rápida de un código que no existe ──────────────────────────────
@@ -918,6 +1041,9 @@
 
     private async Task Cerrar()
     {
+        // Si CTRL+L se queda a medio camino (pidiendo la autorización del costo), el ticket regresa a como estaba.
+        if (_ventana == Ventanas.ElegirCliente)
+            _elegirCliente?.Cancelar();
         _ventana = Ventanas.Ninguna;
         await Js.VentanaAbiertaAsync(false);
         StateHasChanged();

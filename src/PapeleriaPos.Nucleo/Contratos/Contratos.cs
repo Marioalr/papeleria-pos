@@ -1,4 +1,6 @@
+using System.Text.Json.Serialization;
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Inventario;
@@ -68,9 +70,15 @@ public sealed record LineaSolicitada(
 /// <param name="Impresiones">Los trabajos de impresión que se cobran: el servicio los junta en la línea "Impresiones".</param>
 /// <param name="AutorizacionDescuentoId">La del descuento más alto, si pasó de lo que el cajero da solo.</param>
 /// <param name="AutorizacionBajoCostoId">Si un descuento o un precio cambiado deja líneas debajo del costo.</param>
+/// <param name="ClienteId">El cliente registrado del ticket. En el JSON conserva el nombre de cuando eran «clientes especiales».</param>
+/// <param name="MayoreoDeCliente">
+/// La caja calculó el ticket con el mayoreo siempre del cliente. Vacío en las cajas de antes, que no lo conocen: el servicio
+/// calcula igual que ellas.
+/// </param>
 public sealed record SolicitudCobro(
     Guid CajaId, Guid TurnoId, Guid CajeroId, IReadOnlyList<LineaSolicitada> Lineas, IReadOnlyList<CobroSolicitado> Cobros, Guid? VentaId = null,
-    IReadOnlyList<Guid>? Impresiones = null, Guid? ClienteEspecialId = null, Guid? AutorizacionDescuentoId = null, Guid? AutorizacionBajoCostoId = null);
+    IReadOnlyList<Guid>? Impresiones = null, [property: JsonPropertyName("clienteEspecialId")] Guid? ClienteId = null,
+    Guid? AutorizacionDescuentoId = null, Guid? AutorizacionBajoCostoId = null, bool? MayoreoDeCliente = null);
 
 /// <param name="ImporteCentavos">Ya con el descuento.</param>
 /// <param name="Descuento">Cómo se lee el descuento ("10 %" o vacío si fue un monto).</param>
@@ -87,10 +95,11 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 
 /// <param name="TotalCentavos">Exacto: la suma de las líneas, con el IVA incluido.</param>
 /// <param name="RedondeoCentavos">El del efectivo al peso (fase 3): lo que pagó el cliente es el total más esto.</param>
+/// <param name="Cliente">El cliente registrado con sus privilegios: "Escuela Benito Juárez (descuento 10 %)".</param>
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
     long TotalCentavos, long IvaCentavos, IReadOnlyList<CobroTicketDto> Cobros, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie,
-    LogoTicketDto? Logo = null, Guid? VentaId = null, long RedondeoCentavos = 0)
+    LogoTicketDto? Logo = null, Guid? VentaId = null, long RedondeoCentavos = 0, string? Cliente = null)
 {
     public long TotalCobradoCentavos => TotalCentavos + RedondeoCentavos;
 
@@ -223,11 +232,13 @@ public sealed record CodigoLocalDto(string Codigo, Guid VarianteId, Guid Present
 /// <summary>Lo que la caja guarda para vender sin la caja principal.</summary>
 /// <param name="Version">La <see cref="EstadoServicioDto.VersionDatos"/> con que se armó.</param>
 /// <param name="UltimoFolio">El último folio de la serie de la caja que conoce el servicio.</param>
+/// <param name="Clientes">Para las cajas de antes (CTRL+D): solo los activos con descuento, que es lo único que saben usar.</param>
+/// <param name="Registrados">Todos los clientes registrados activos, con sus privilegios.</param>
 public sealed record PaqueteContingenciaDto(
     long Version, CajaDto Caja, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<UsuarioLocalDto> Usuarios,
     IReadOnlyList<ReglaDto> Reglas,
     IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, int UltimoFolio, long? LimiteEfectivoCentavos,
-    IReadOnlyList<ClienteEspecialDto>? Clientes = null);
+    IReadOnlyList<ClienteRegistradoDto>? Clientes = null, IReadOnlyList<ClienteRegistradoDto>? Registrados = null);
 
 // Lo que sube con la bandeja. Cada cosa lleva el ID que le dio la caja: si llega dos veces, se guarda una.
 
@@ -241,7 +252,8 @@ public sealed record LineaContingenciaDto(
 /// <param name="RedondeoCentavos">El que cobró la caja. Vacío en lo que se cobró antes de que existiera el redondeo: eso se vuelve a cobrar exacto.</param>
 public sealed record VentaContingenciaDto(
     Guid Id, Guid CajaId, Guid TurnoId, Guid CajeroId, int Folio, DateTime PagadaUtc, IReadOnlyList<LineaContingenciaDto> Lineas,
-    IReadOnlyList<CobroSolicitado> Cobros, Guid? ClienteEspecialId = null, long? RedondeoCentavos = null);
+    IReadOnlyList<CobroSolicitado> Cobros, [property: JsonPropertyName("clienteEspecialId")] Guid? ClienteId = null, long? RedondeoCentavos = null,
+    bool? MayoreoDeCliente = null);
 
 public sealed record MovimientoContingenciaDto(Guid Id, TipoMovimientoCaja Tipo, long MontoCentavos, string Motivo, Guid UsuarioId, DateTime FechaUtc);
 
@@ -385,16 +397,45 @@ public sealed record CalibracionDto(
     DateTime? DesdeLocal, DateTime? HastaLocal, IReadOnlyList<CanalCalibradoDto> Canales, long CarasImpresora, long CarasRegistradas,
     int? PaginasPorCaja, int PaginasPorCajaActual, IReadOnlyList<string> Cambios, DateTime? AplicadaLocal);
 
-// ── Descuentos (entrega 5, parte 3) ─────────────────────────────────────────
+// ── Descuentos (entrega 5, parte 3) y clientes registrados (fase 3, entrega 2) ──
 
-/// <param name="DescuentoCentesimas">Su descuento en centésimas de porcentaje (1000 = 10 %).</param>
-public sealed record ClienteEspecialDto(Guid Id, string Nombre, int DescuentoCentesimas, string? Nota, bool Activo);
+/// <summary>
+/// Un cliente registrado con sus privilegios. Los primeros cinco campos son los de cuando eran «clientes especiales»:
+/// así la copia de una caja que todavía no se actualiza los sigue leyendo.
+/// </summary>
+/// <param name="DescuentoCentesimas">Su descuento en centésimas de porcentaje (1000 = 10 %); cero, sin descuento.</param>
+/// <param name="Telefono">Solo dígitos.</param>
+/// <param name="PedidoSinAnticipo">Fase 4 (pedidos).</param>
+/// <param name="ApartarSinPagar">Fase 4 (pedidos).</param>
+/// <param name="PorRevisar">Venía de los clientes especiales: falta revisar sus datos.</param>
+public sealed record ClienteRegistradoDto(
+    Guid Id, string Nombre, int DescuentoCentesimas, string? Nota, bool Activo, string? Telefono = null, bool MayoreoSiempre = false,
+    bool PedidoSinAnticipo = false, bool ApartarSinPagar = false, bool PorRevisar = false)
+{
+    /// <summary>"descuento 10 % · mayoreo siempre" (vacío si no tiene privilegios de venta).</summary>
+    public string TextoPrivilegios() => ClienteRegistrado.Privilegios(DescuentoCentesimas, MayoreoSiempre);
 
-/// <summary>El dueño guarda la lista completa de clientes especiales de la sucursal.</summary>
-public sealed record SolicitudClientesEspeciales(string Usuario, string Pin, IReadOnlyList<ClienteEspecialDto> Clientes);
+    /// <summary>El motivo con que su descuento queda en cada línea: así se distingue de un descuento a mano.</summary>
+    public string MotivoDescuento() => ClienteRegistrado.MotivoDescuento(Nombre);
+}
+
+/// <summary>El dueño o el encargado dan de alta o editan un cliente (sin Id: alta).</summary>
+public sealed record SolicitudGuardarCliente(Guid UsuarioId, Guid SucursalId, ClienteRegistradoDto Cliente);
+
+/// <summary>Un renglón de la lista de clientes, con lo que compra.</summary>
+/// <param name="PromedioMensualCentavos">Lo que compra al mes: el promedio de los últimos tres meses completos.</param>
+public sealed record ClienteResumenDto(ClienteRegistradoDto Cliente, long PromedioMensualCentavos, DateTime? UltimaCompraLocal);
+
+/// <summary>Lo que compró en un mes (sin lo cancelado ni lo devuelto).</summary>
+public sealed record CompraMesDto(int Anio, int Mes, int Tickets, long TotalCentavos);
+
+/// <summary>La ficha del cliente con su evaluación: cuánto compra por mes.</summary>
+public sealed record FichaClienteDto(ClienteRegistradoDto Cliente, IReadOnlyList<CompraMesDto> Meses, long PromedioMensualCentavos, DateTime? UltimaCompraLocal);
 
 /// <summary>¿Este ticket, con sus descuentos y precios cambiados, deja líneas debajo del costo? El costo no viaja a la caja.</summary>
-public sealed record SolicitudBajoCosto(Guid CajaId, IReadOnlyList<LineaSolicitada> Lineas);
+/// <param name="ClienteId">El cliente del ticket.</param>
+/// <param name="MayoreoDeCliente">La caja calculó los precios con el mayoreo siempre del cliente.</param>
+public sealed record SolicitudBajoCosto(Guid CajaId, IReadOnlyList<LineaSolicitada> Lineas, Guid? ClienteId = null, bool? MayoreoDeCliente = null);
 
 /// <param name="FaltanteCentavos">Cuánto queda debajo del costo en total (cero: nada).</param>
 /// <param name="Lineas">Las descripciones de las líneas que quedan debajo del costo.</param>

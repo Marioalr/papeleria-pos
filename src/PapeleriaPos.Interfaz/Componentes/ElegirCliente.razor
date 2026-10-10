@@ -1,0 +1,274 @@
+@* CTRL+L (fase 3, entrega 2): el cliente registrado del ticket, por nombre o teléfono. Queda en el ticket aunque no lleve
+   descuento; con descuento, todo el ticket lo lleva (sin autorización: ya está aprobado), y con mayoreo siempre cada
+   producto sale al precio de mayoreo. Si el descuento deja algo debajo del costo, se pide como en CTRL+D. Sin conexión,
+   los de la copia de la caja. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+@if (_autorizar is { } faltante)
+{
+    <AutorizarAccion Accion="AccionControlada.VenderBajoCosto" Detalle="@faltante.Detalle" MontoCentavos="faltante.Monto" Caja="Caja" Sesion="Sesion"
+                     AlAutorizar="a => AutorizadoAsync(a.Id)" AlCancelar="Deshacer" />
+}
+else
+{
+    <input id="buscar-cliente" class="buscar-texto" placeholder="Nombre o teléfono…" autocomplete="off"
+           @bind="_texto" @bind:event="oninput" @bind:after="() => _seleccion = 0" @onkeydown="AlTeclear" />
+
+    <div class="resultados">
+        @if (_clientes is null)
+        {
+            <p>@(_error ?? "Cargando…")</p>
+        }
+        else if (Encontrados.Count == 0)
+        {
+            <p class="vacia">@(_clientes.Count == 0 ? "Todavía no hay clientes registrados: se dan de alta en el módulo Clientes." : $"Nadie coincide con «{_texto}».")</p>
+        }
+        <table>
+            @for (var i = 0; i < Encontrados.Count; i++)
+            {
+                var c = Encontrados[i];
+                var indice = i;
+                <tr id="cliente-@i" class="@(i == _seleccion ? "seleccionada" : "")" @onclick="() => ElegirAsync(indice)">
+                    <td>
+                        @c.Nombre
+                        @if (c.Id == Actual?.Id)
+                        {
+                            <span class="etiqueta">En el ticket</span>
+                        }
+                    </td>
+                    <td>@Telefono(c.Telefono)</td>
+                    <td>@c.TextoPrivilegios()</td>
+                </tr>
+            }
+        </table>
+    </div>
+    @if (_error is not null && _clientes is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    <div class="acciones">
+        @if (Actual is not null)
+        {
+            <button class="boton" disabled="@_ocupado" @onclick="QuitarAsync">Quitar a @Actual.Nombre del ticket</button>
+        }
+        <button class="boton principal" disabled="@(_ocupado || Encontrados.Count == 0)" @onclick="() => ElegirAsync(_seleccion)">Elegir (Enter)</button>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Venta Venta { get; set; } = null!;
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>El cliente que ya tiene el ticket, si hay.</summary>
+    [Parameter] public ClienteRegistradoDto? Actual { get; set; }
+
+    /// <summary>La presentación y los precios de un renglón (para volver a calcular con el mayoreo del cliente).</summary>
+    [Parameter, EditorRequired] public ClienteEnTicket.Catalogo Catalogo { get; set; } = null!;
+
+    /// <summary>El cliente quedó en el ticket (o se quitó: null).</summary>
+    [Parameter] public EventCallback<ClienteRegistradoDto?> AlTerminar { get; set; }
+
+    private sealed record Faltante(string Detalle, long Monto);
+
+    /// <summary>Cómo estaba el ticket: si se cancela la autorización del costo, vuelve a quedar así.</summary>
+    private sealed record Estado(
+        List<(VentaLinea Linea, int? Centesimas, long Centavos, string? Motivo)> Lineas, Guid? Cliente, bool Mayoreo, Guid? AutDescuento, Guid? AutCosto);
+
+    private List<ClienteRegistradoDto>? _clientes;
+    private string _texto = "";
+    private int _seleccion;
+    private bool _ocupado;
+    private string? _error;
+    private Faltante? _autorizar;
+    private Estado? _antes;
+    private ClienteRegistradoDto? _elegido;
+
+    /// <summary>Por nombre (sin acentos ni mayúsculas) o por teléfono (los dígitos que se escriban, en cualquier parte).</summary>
+    private List<ClienteRegistradoDto> Encontrados
+    {
+        get
+        {
+            if (_clientes is null)
+                return [];
+            var texto = Texto.Normalizar(_texto.Trim());
+            var digitos = new string(_texto.Where(char.IsAsciiDigit).ToArray());
+            return texto.Length == 0 ? _clientes
+                : _clientes.Where(c => Texto.Normalizar(c.Nombre).Contains(texto)
+                    || (digitos.Length >= 3 && c.Telefono is { } t && t.Contains(digitos))).ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _clientes = await Cliente.ClientesRegistradosAsync(Caja.SucursalId);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+            await Js.EnfocarAsync("#buscar-cliente");
+    }
+
+    private async Task AlTeclear(KeyboardEventArgs e)
+    {
+        var cuantos = Encontrados.Count;
+        switch (e.Key)
+        {
+            case "ArrowDown" when cuantos > 0:
+                _seleccion = Math.Min(_seleccion + 1, cuantos - 1);
+                await Js.MostrarAsync($"#cliente-{_seleccion}");
+                break;
+            case "ArrowUp" when cuantos > 0:
+                _seleccion = Math.Max(_seleccion - 1, 0);
+                await Js.MostrarAsync($"#cliente-{_seleccion}");
+                break;
+            case "Enter":
+                await ElegirAsync(_seleccion);
+                break;
+        }
+    }
+
+    private async Task ElegirAsync(int indice)
+    {
+        if (_ocupado || indice < 0 || indice >= Encontrados.Count)
+            return;
+        var cliente = Encontrados[indice];
+        _error = null;
+        _antes = Guardar();
+        try
+        {
+            ClienteEnTicket.Cambiar(Venta, Actual, cliente, Catalogo);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Fallar(ex.Message);
+            return;
+        }
+        _elegido = cliente;
+        if (cliente.DescuentoCentesimas > 0 && Venta.Lineas.Any(l => l.TieneDescuento))
+            await RevisarCostoAsync();
+        else
+            await TerminarAsync();
+    }
+
+    private async Task QuitarAsync()
+    {
+        _antes = Guardar();
+        try
+        {
+            ClienteEnTicket.Cambiar(Venta, Actual, null, Catalogo);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Fallar(ex.Message);
+            return;
+        }
+        _antes = null;
+        await AlTerminar.InvokeAsync(null);
+    }
+
+    /// <summary>
+    /// La ventana se cierra (Escape o ×) con la autorización del costo pendiente: el ticket regresa a como estaba, para que
+    /// la venta y la pantalla no queden con clientes distintos.
+    /// </summary>
+    public void Cancelar()
+    {
+        if (_antes is not null)
+            Deshacer();
+    }
+
+    private Task TerminarAsync()
+    {
+        _antes = null;
+        return AlTerminar.InvokeAsync(_elegido);
+    }
+
+    /// <summary>Como en CTRL+D: si el descuento deja algo debajo del costo, se pide (o no se puede).</summary>
+    private async Task RevisarCostoAsync()
+    {
+        _ocupado = true;
+        try
+        {
+            var bajoCosto = await Cliente.BajoCostoAsync(new SolicitudBajoCosto(Caja.Id, ArmadoSolicitud.Lineas(Venta), Venta.ClienteId, Venta.MayoreoDeCliente));
+            if (bajoCosto.FaltanteCentavos <= 0)
+            {
+                Venta.AutorizacionBajoCostoId = null;
+                await TerminarAsync();
+                return;
+            }
+            var decision = await Cliente.PermisoAsync(new SolicitudPermiso(Sesion.UsuarioId, Caja.SucursalId, AccionControlada.VenderBajoCosto,
+                bajoCosto.FaltanteCentavos));
+            switch (decision.Nivel)
+            {
+                case NivelPermiso.Permitido:
+                    Venta.AutorizacionBajoCostoId = null;
+                    await TerminarAsync();
+                    break;
+                case NivelPermiso.RequiereAutorizacion:
+                    _autorizar = new Faltante($"Con el descuento del cliente quedan debajo del costo: {string.Join(", ", bajoCosto.Lineas)}",
+                        bajoCosto.FaltanteCentavos);
+                    break;
+                default:
+                    Fallar("Con el descuento de este cliente quedan artículos debajo del costo y no tienes permiso para eso.");
+                    break;
+            }
+        }
+        catch (ErrorCaja ex)
+        {
+            Fallar(ex.Message);
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task AutorizadoAsync(Guid autorizacionId)
+    {
+        _autorizar = null;
+        Venta.AutorizacionBajoCostoId = autorizacionId;
+        await TerminarAsync();
+    }
+
+    private void Fallar(string mensaje)
+    {
+        _error = mensaje;
+        Deshacer();
+    }
+
+    private Estado Guardar() => new(
+        Venta.Lineas.Select(l => (l, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento)).ToList(),
+        Venta.ClienteId, Venta.MayoreoDeCliente, Venta.AutorizacionDescuentoId, Venta.AutorizacionBajoCostoId);
+
+    /// <summary>Se canceló la autorización (o falló): el ticket queda como estaba, con sus precios y descuentos.</summary>
+    private void Deshacer()
+    {
+        _autorizar = null;
+        _elegido = null;
+        if (_antes is not { } antes)
+            return;
+        if (Venta.MayoreoDeCliente != antes.Mayoreo)
+            Venta.CambiarMayoreoDeCliente(antes.Mayoreo, l => Catalogo(l));
+        foreach (var (linea, centesimas, centavos, motivo) in antes.Lineas)
+        {
+            Venta.QuitarDescuento(linea);
+            if (centesimas is not null || centavos > 0)
+                Venta.AplicarDescuentoSolicitado(linea, centesimas, centesimas is null ? centavos : null, motivo);
+        }
+        (Venta.ClienteId, Venta.AutorizacionDescuentoId, Venta.AutorizacionBajoCostoId) = (antes.Cliente, antes.AutDescuento, antes.AutCosto);
+        _antes = null;
+    }
+
+    /// <summary>"55 1234 5678" para leerlo; como venga si no son 10 dígitos.</summary>
+    internal static string Telefono(string? telefono) =>
+        telefono is { Length: 10 } t ? $"{t[..2]} {t[2..6]} {t[6..]}" : telefono ?? "";
+}

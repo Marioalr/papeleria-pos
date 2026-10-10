@@ -25,6 +25,10 @@ else
     {
         <p class="nota">El precio de este renglón se cambió a mano (@Formato.Dinero(cambiado)): no aplica el mayoreo.</p>
     }
+    else if (MayoreoDeCliente && _aplicada is { EsMayoreo: true } && Siguiente is null)
+    {
+        <p class="nota">El cliente del ticket paga mayoreo siempre: ya sale al precio de mayoreo desde la primera pieza.</p>
+    }
     else if (Siguiente is { } siguiente)
     {
         var (escribir, enUnidades) = ParaLlegar(siguiente);
@@ -46,6 +50,9 @@ else
     /// <summary>El precio que se puso a mano al renglón: con él no aplica el mayoreo.</summary>
     [Parameter] public long? PrecioCambiadoCentavos { get; set; }
 
+    /// <summary>El cliente del ticket paga mayoreo siempre: la primera escala de mayoreo ya aplica.</summary>
+    [Parameter] public bool MayoreoDeCliente { get; set; }
+
     private EscalasDePrecio _escalas = new(false, []);
     private PrecioAplicado? _aplicada;
 
@@ -54,7 +61,9 @@ else
     /// <summary>La cantidad con que se buscan las escalas: en presentaciones si son propias, si no en unidades base.</summary>
     private Cantidad CantidadEnEscala => _escalas.DePresentacion ? Cantidad : Cantidad.Por(Presentacion.Factor);
 
-    private Precio? Siguiente => _escalas.Escalas.FirstOrDefault(e => e.CantidadMinima > CantidadEnEscala);
+    /// <summary>La próxima escala que bajaría el precio: arriba de la cantidad y de la que ya aplica (con el mayoreo del cliente).</summary>
+    private Precio? Siguiente => _escalas.Escalas.FirstOrDefault(e => e.CantidadMinima > CantidadEnEscala
+        && (_aplicada is null || e.CantidadMinima > _aplicada.Precio.CantidadMinima));
 
     /// <summary>En qué se cuentan las escalas: la presentación (sus precios propios) o la unidad base.</summary>
     private string EnEscala => _escalas.DePresentacion ? Presentacion.Nombre.ToLowerInvariant() : Unidades;
@@ -93,6 +102,6 @@ else
     {
         var precios = Producto.PreciosModelo();
         _escalas = CalculoPrecio.Escalas(precios, SucursalId, Presentacion);
-        _aplicada = CalculoPrecio.Calcular(precios, SucursalId, Presentacion, Cantidad);
+        _aplicada = CalculoPrecio.Calcular(precios, SucursalId, Presentacion, Cantidad, MayoreoDeCliente);
     }
 }

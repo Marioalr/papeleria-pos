@@ -41,6 +41,9 @@ public enum TipoAlerta
 
     /// <summary>Se cerró el conteo completo de un departamento: lo contado reemplazó la existencia (los del dueño no).</summary>
     ConteoCompleto,
+
+    /// <summary>Se dieron o cambiaron los privilegios de un cliente registrado (los del dueño no).</summary>
+    PrivilegiosCliente,
 }
 
 /// <summary>Un chat de Telegram vinculado a un usuario (solo el dueño): recibe alertas y contesta autorizaciones.</summary>

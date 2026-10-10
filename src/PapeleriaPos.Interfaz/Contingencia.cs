@@ -333,8 +333,8 @@ public sealed class Contingencia
         Encolar(registro);
     }
 
-    /// <summary>Los clientes especiales de la copia local, para elegir uno sin conexión.</summary>
-    public List<ClienteEspecialDto> ClientesEspeciales() => Datos.Paquete.Clientes?.Where(c => c.Activo).ToList() ?? [];
+    /// <summary>Los clientes registrados de la copia local, para elegir uno sin conexión.</summary>
+    public List<ClienteRegistradoDto> Clientes() => (Datos.Paquete.Registrados ?? Datos.Paquete.Clientes)?.Where(c => c.Activo).ToList() ?? [];
 
     public DecisionDto Permiso(SolicitudPermiso s)
     {
@@ -422,10 +422,15 @@ public sealed class Contingencia
         if (s.Impresiones is { Count: > 0 })
             throw new InvalidOperationException("Las impresiones se cobran con conexión con la caja principal: quítalas del ticket o espera a que vuelva.");
         var ahora = Ahora;
+        // El cliente va antes que las líneas: con mayoreo siempre, sus precios son otros.
+        ClienteRegistradoDto? cliente = null;
+        if (s.ClienteId is { } clienteId && (cliente = Clientes().FirstOrDefault(c => c.Id == clienteId)) is null)
+            throw new InvalidOperationException("Ese cliente no está en la copia de esta caja: quítalo del ticket (CTRL+L).");
+        // Los mismos precios que calculó la pantalla: con el mayoreo del cliente si ella lo usó.
         var venta = new Venta
         {
             Id = s.VentaId ?? Ids.Nuevo(), SucursalId = caja.SucursalId, CajaId = caja.Id, TurnoId = turno.Id, CajeroId = s.CajeroId, Serie = caja.Serie,
-            CreadaUtc = ahora,
+            CreadaUtc = ahora, ClienteId = cliente?.Id, MayoreoDeCliente = cliente is not null && s.MayoreoDeCliente == true,
         };
         foreach (var l in s.Lineas)
         {
@@ -463,12 +468,7 @@ public sealed class Contingencia
         // Descuentos: la misma regla con la copia local. Sin conexión no se sabe el costo: eso no se revisa aquí.
         if (venta.DescuentoCentavos > 0)
         {
-            ClienteEspecialDto? cliente = null;
-            if (s.ClienteEspecialId is { } clienteId
-                && (cliente = datos.Paquete.Clientes?.FirstOrDefault(c => c.Id == clienteId && c.Activo)) is null)
-                throw new InvalidOperationException("Ese cliente especial no está en la copia de esta caja: quita su descuento.");
-            venta.ClienteEspecialId = cliente?.Id;
-            var revisar = venta.DescuentoARevisar(cliente?.DescuentoCentesimas);
+            var revisar = venta.DescuentoARevisar(cliente?.DescuentoCentesimas is > 0 and var d ? d : null);
             Guid? autorizo = null;
             if (revisar > 0)
             {
@@ -480,7 +480,7 @@ public sealed class Contingencia
                     Requerir(decision);
             }
             bitacora.Add(Registro(s.CajeroId, AccionControlada.Descuento,
-                $"Descuento de {Formato.Dinero(venta.DescuentoCentavos)}" + (cliente is null ? "" : $" a {cliente.Nombre}, cliente especial")
+                $"Descuento de {Formato.Dinero(venta.DescuentoCentavos)}" + (cliente is null ? "" : $" a {cliente.Nombre}, cliente registrado")
                 + $": {string.Join("; ", venta.Lineas.Where(l => l.TieneDescuento).Select(l => l.MotivoDescuento).Distinct())}",
                 venta.DescuentoCentavos, autorizo, autorizo is null ? ResultadoBitacora.Hecho : ResultadoBitacora.Autorizado, venta.Id));
         }
@@ -490,11 +490,11 @@ public sealed class Contingencia
         venta.EnContingencia = true;
         var ticket = ArmadoTicket.Desde(venta, caja.Nombre, Nombre(s.CajeroId),
             id => datos.Presentaciones.TryGetValue(id, out var p) ? (p.Nombre, p.EsBase) : null,
-            datos.Paquete.Encabezado, datos.Paquete.Pie, datos.Paquete.Logo);
+            datos.Paquete.Encabezado, datos.Paquete.Pie, datos.Paquete.Logo, cliente);
         var subida = new VentaContingenciaDto(venta.Id, caja.Id, turno.Id, s.CajeroId, folio, ahora,
             venta.Lineas.Select(x => new LineaContingenciaDto(x.VarianteId, x.PresentacionId, x.Descripcion, x.Cantidad.Milesimas, x.PrecioCentavos,
                 x.DescuentoCentesimas, x.DescuentoCentesimas is null && x.TieneDescuento ? x.DescuentoCentavos : null, x.MotivoDescuento)).ToList(),
-            s.Cobros, venta.ClienteEspecialId, venta.RedondeoCentavos);
+            s.Cobros, venta.ClienteId, venta.RedondeoCentavos, venta.MayoreoDeCliente);
 
         using (var lote = _almacen.Lote())
         {

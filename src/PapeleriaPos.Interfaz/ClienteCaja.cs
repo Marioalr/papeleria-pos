@@ -383,15 +383,24 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<MargenesDto> GuardarMargenesAsync(Guid sucursalId, SolicitudMargenes solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<MargenesDto>($"api/sucursales/{sucursalId}/margenes", solicitud));
 
+    // ── Clientes registrados (fase 3, entrega 2) ──
+
+    /// <summary>Los activos, para elegir uno en la venta. Sin conexión, los de la copia local.</summary>
+    public Task<List<ClienteRegistradoDto>> ClientesRegistradosAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<ClienteRegistradoDto>>($"api/sucursales/{sucursalId}/clientes-registrados") ?? [],
+            l => l.Clientes());
+
+    /// <summary>La pantalla de clientes, con lo que compra cada uno (solo con la caja principal).</summary>
+    public Task<List<ClienteResumenDto>> ListaClientesAsync(Guid sucursalId, bool inactivos) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<ClienteResumenDto>>($"api/sucursales/{sucursalId}/clientes?inactivos={inactivos}") ?? []);
+
+    public Task<FichaClienteDto?> FichaClienteAsync(Guid clienteId) =>
+        ConRespaldoAsync(() => _http.GetAsync<FichaClienteDto>($"api/clientes/{clienteId}", noEncontradoEsNulo: true));
+
+    public Task<ClienteRegistradoDto> GuardarClienteAsync(SolicitudGuardarCliente solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<ClienteRegistradoDto>("api/clientes", solicitud));
+
     // ── Descuentos ──
-
-    /// <summary>Sin conexión, los de la copia local (solo los activos).</summary>
-    public Task<List<ClienteEspecialDto>> ClientesEspecialesAsync(Guid sucursalId) =>
-        ConRespaldoAsync(async () => await _http.GetAsync<List<ClienteEspecialDto>>($"api/sucursales/{sucursalId}/clientes-especiales") ?? [],
-            l => l.ClientesEspeciales());
-
-    public Task<List<ClienteEspecialDto>> GuardarClientesEspecialesAsync(Guid sucursalId, SolicitudClientesEspeciales solicitud) =>
-        ConRespaldoAsync(() => _http.PutAsync<List<ClienteEspecialDto>>($"api/sucursales/{sucursalId}/clientes-especiales", solicitud));
 
     /// <summary>Solo con la caja principal (ahí está el costo); sin conexión, el costo no se revisa.</summary>
     public Task<BajoCostoDto> BajoCostoAsync(SolicitudBajoCosto solicitud) =>

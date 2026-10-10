@@ -1,6 +1,6 @@
-@* Ctrl+D: descuento al renglón seleccionado o a todo el ticket, en porcentaje o en monto, siempre con motivo; o el de un
-   cliente especial de la lista (ese no pide autorización). El cajero da hasta 10 % solo; más, con autorización. Si el
-   descuento deja algo debajo del costo, también se pide. Las impresiones no llevan descuento. *@
+@* Ctrl+D: descuento al renglón seleccionado o a todo el ticket, en porcentaje o en monto, siempre con motivo. El cajero
+   da hasta 10 % solo; más, con autorización. Si el descuento deja algo debajo del costo, también se pide. Las impresiones
+   no llevan descuento. El del cliente registrado se pone al elegirlo (CTRL+L) y no pide autorización. *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
@@ -25,45 +25,29 @@ else
         </label>
     </div>
 
-    @if (_todoElTicket && _clientes.Count > 0)
+    @if (ClienteDelTicket is { DescuentoCentesimas: > 0 } cliente)
     {
-        <label>Cliente especial
-            <select @bind="ClienteId">
-                <option value="">— Ninguno (descuento a mano) —</option>
-                @foreach (var c in _clientes)
-                {
-                    <option value="@c.Id">@c.Nombre (@Permisos.TextoMonto(AccionControlada.Descuento, c.DescuentoCentesimas))</option>
-                }
+        <p class="nota">El ticket es de @cliente.Nombre, con @Permisos.TextoMonto(AccionControlada.Descuento, cliente.DescuentoCentesimas) de descuento ya puesto (CTRL+L para cambiarlo).</p>
+    }
+    <div class="dos-columnas">
+        <label>Descuento
+            <select @bind="_enPorcentaje">
+                <option value="true">Porcentaje (%)</option>
+                <option value="false">Monto ($)</option>
             </select>
         </label>
-    }
-
-    @if (Cliente_ is { } cliente)
-    {
-        <p>Descuento de <strong>@Permisos.TextoMonto(AccionControlada.Descuento, cliente.DescuentoCentesimas)</strong> para @cliente.Nombre@(cliente.Nota is { } n ? $" ({n})" : ""). Lo aprobó el dueño: no pide autorización.</p>
-    }
-    else
-    {
-        <div class="dos-columnas">
-            <label>Descuento
-                <select @bind="_enPorcentaje">
-                    <option value="true">Porcentaje (%)</option>
-                    <option value="false">Monto ($)</option>
-                </select>
-            </label>
-            <label>@(_enPorcentaje ? "Cuánto (%)" : "Cuánto ($)") <input id="descuento-valor" inputmode="decimal" @bind="_valor" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" /></label>
-        </div>
-        <label>Motivo <input @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" placeholder="Cliente frecuente, producto con detalle…" /></label>
-    }
+        <label>@(_enPorcentaje ? "Cuánto (%)" : "Cuánto ($)") <input id="descuento-valor" inputmode="decimal" @bind="_valor" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" /></label>
+    </div>
+    <label>Motivo <input @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" placeholder="Cliente frecuente, producto con detalle…" /></label>
 
     @if (_error is not null)
     {
         <p class="error">@_error</p>
     }
     <div class="acciones">
-        @if (Venta.DescuentoCentavos > 0)
+        @if (Venta.Lineas.Any(l => l.TieneDescuento && l.MotivoDescuento != MotivoDelCliente))
         {
-            <button class="boton" disabled="@_ocupado" @onclick="QuitarAsync">Quitar los descuentos del ticket</button>
+            <button class="boton" disabled="@_ocupado" @onclick="QuitarAsync">Quitar los descuentos a mano</button>
         }
         <button class="boton principal" disabled="@_ocupado" @onclick="AplicarAsync">Aplicar (Enter)</button>
     </div>
@@ -78,17 +62,18 @@ else
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
-    /// <summary>El descuento quedó en el ticket (con sus autorizaciones) o se quitó. Recibe el cliente especial, si hay.</summary>
-    [Parameter] public EventCallback<ClienteEspecialDto?> AlTerminar { get; set; }
+    /// <summary>El cliente registrado del ticket: su descuento ya está aprobado.</summary>
+    [Parameter] public ClienteRegistradoDto? ClienteDelTicket { get; set; }
+
+    /// <summary>El descuento quedó en el ticket (con sus autorizaciones) o se quitó.</summary>
+    [Parameter] public EventCallback AlTerminar { get; set; }
 
     private sealed record Pendiente(AccionControlada Accion, string Detalle, long Monto);
 
     /// <summary>Cómo estaba el ticket antes de aplicar: si se cancela la autorización, vuelve a quedar así.</summary>
-    private sealed record Estado(List<(VentaLinea Linea, int? Centesimas, long Centavos, string? Motivo)> Lineas, Guid? Cliente, Guid? AutDescuento, Guid? AutCosto);
+    private sealed record Estado(List<(VentaLinea Linea, int? Centesimas, long Centavos, string? Motivo)> Lineas, Guid? AutDescuento, Guid? AutCosto);
 
-    private List<ClienteEspecialDto> _clientes = [];
     private bool _todoElTicket;
-    private string ClienteId { get; set; } = "";
     private bool _enPorcentaje = true;
     private string _valor = "";
     private string _motivo = "";
@@ -97,21 +82,12 @@ else
     private Pendiente? _autorizar;
     private Estado? _antes;
 
-    private ClienteEspecialDto? Cliente_ => _todoElTicket && Guid.TryParse(ClienteId, out var id) ? _clientes.FirstOrDefault(c => c.Id == id) : null;
+    /// <summary>El motivo del descuento del cliente: ese no se quita aquí ni se revisa con la regla.</summary>
+    private string? MotivoDelCliente => ClienteDelTicket is { DescuentoCentesimas: > 0 } c ? c.MotivoDescuento() : null;
 
-    protected override async Task OnInitializedAsync()
-    {
-        _todoElTicket = Linea is null or { EsImpresiones: true };
-        ClienteId = Venta.ClienteEspecialId?.ToString() ?? "";
-        try
-        {
-            _clientes = (await Cliente.ClientesEspecialesAsync(Caja.SucursalId)).Where(c => c.Activo).ToList();
-        }
-        catch (ErrorCaja)
-        {
-            // Sin la lista se puede seguir con un descuento a mano.
-        }
-    }
+    private int? Preaprobado => ClienteDelTicket is { DescuentoCentesimas: > 0 and var d } ? d : null;
+
+    protected override void OnInitialized() => _todoElTicket = Linea is null or { EsImpresiones: true };
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
@@ -128,12 +104,9 @@ else
     private async Task AplicarAsync()
     {
         _error = null;
-        var cliente = Cliente_;
         int? centesimas = null;
         long? monto = null;
-        if (cliente is not null)
-            centesimas = cliente.DescuentoCentesimas;
-        else if (_enPorcentaje)
+        if (_enPorcentaje)
         {
             if (!decimal.TryParse(_valor.Trim().TrimEnd('%'), System.Globalization.NumberStyles.Number, CultureInfo.InvariantCulture, out var porcentaje)
                 || porcentaje <= 0 || porcentaje > 100)
@@ -150,7 +123,7 @@ else
             _error = "Escribe cuánto se descuenta.";
             return;
         }
-        var motivo = cliente is null ? _motivo.Trim() : $"Cliente especial: {cliente.Nombre}";
+        var motivo = _motivo.Trim();
         if (motivo.Length == 0)
         {
             _error = "Escribe el motivo del descuento.";
@@ -161,10 +134,7 @@ else
         try
         {
             if (_todoElTicket)
-            {
                 Venta.DescontarTicket(centesimas, monto, motivo);
-                Venta.ClienteEspecialId = cliente?.Id;
-            }
             else
                 Venta.DescontarLinea(Linea!, centesimas, monto, motivo);
         }
@@ -183,8 +153,7 @@ else
         _ocupado = true;
         try
         {
-            var preaprobado = _clientes.FirstOrDefault(c => c.Id == Venta.ClienteEspecialId)?.DescuentoCentesimas;
-            var revisar = Venta.DescuentoARevisar(preaprobado);
+            var revisar = Venta.DescuentoARevisar(Preaprobado);
             if (revisar == 0)
                 Venta.AutorizacionDescuentoId = null;
             else if (Venta.AutorizacionDescuentoId is null || !_autorizadoDescuento.TryGetValue(Venta.AutorizacionDescuentoId.Value, out var hasta) || revisar > hasta)
@@ -217,7 +186,7 @@ else
 
     private async Task RevisarCostoAsync()
     {
-        var bajoCosto = await Cliente.BajoCostoAsync(new SolicitudBajoCosto(Caja.Id, ArmadoSolicitud.Lineas(Venta)));
+        var bajoCosto = await Cliente.BajoCostoAsync(new SolicitudBajoCosto(Caja.Id, ArmadoSolicitud.Lineas(Venta), Venta.ClienteId, Venta.MayoreoDeCliente));
         if (bajoCosto.FaltanteCentavos <= 0)
         {
             Venta.AutorizacionBajoCostoId = null;
@@ -274,14 +243,18 @@ else
         }
     }
 
+    /// <summary>Los descuentos a mano se van; el del cliente se queda (para quitarlo, se quita al cliente con CTRL+L).</summary>
     private async Task QuitarAsync()
     {
-        Venta.QuitarDescuentos();
-        Venta.AutorizacionBajoCostoId = null;
-        await AlTerminar.InvokeAsync(null);
+        Venta.QuitarDescuentos(salvoMotivo: MotivoDelCliente);
+        // Donde el descuento a mano había reemplazado al del cliente, vuelve el del cliente.
+        ClienteEnTicket.DevolverDescuento(Venta, ClienteDelTicket);
+        if (!Venta.Lineas.Any(l => l.TieneDescuento))
+            Venta.AutorizacionBajoCostoId = null;
+        await AlTerminar.InvokeAsync();
     }
 
-    private Task TerminarAsync() => AlTerminar.InvokeAsync(_clientes.FirstOrDefault(c => c.Id == Venta.ClienteEspecialId));
+    private Task TerminarAsync() => AlTerminar.InvokeAsync();
 
     private string Detalle() =>
         $"Descuento de {Formato.Dinero(Venta.DescuentoCentavos)}: {string.Join("; ", Venta.Lineas.Where(l => l.TieneDescuento).Select(l => l.MotivoDescuento).Distinct())}";
@@ -294,7 +267,7 @@ else
 
     private Estado Guardar() => new(
         Venta.Lineas.Select(l => (l, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento)).ToList(),
-        Venta.ClienteEspecialId, Venta.AutorizacionDescuentoId, Venta.AutorizacionBajoCostoId);
+        Venta.AutorizacionDescuentoId, Venta.AutorizacionBajoCostoId);
 
     /// <summary>Se canceló la autorización (o falló): el ticket queda como estaba.</summary>
     private void Deshacer()
@@ -308,7 +281,7 @@ else
             if (centesimas is not null || centavos > 0)
                 Venta.AplicarDescuentoSolicitado(linea, centesimas, centesimas is null ? centavos : null, motivo);
         }
-        (Venta.ClienteEspecialId, Venta.AutorizacionDescuentoId, Venta.AutorizacionBajoCostoId) = (antes.Cliente, antes.AutDescuento, antes.AutCosto);
+        (Venta.AutorizacionDescuentoId, Venta.AutorizacionBajoCostoId) = (antes.AutDescuento, antes.AutCosto);
         _antes = null;
     }
 }

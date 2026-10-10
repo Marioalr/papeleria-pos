@@ -28,7 +28,7 @@ public static class Textos
         AccionControlada.ConfigurarTelegram => "Configurar Telegram",
         AccionControlada.ConfigurarImpresora => "Configurar la impresora",
         AccionControlada.Descuento => "Hacer un descuento",
-        AccionControlada.AdministrarClientes => "Administrar los clientes especiales",
+        AccionControlada.AdministrarClientes => "Dar de alta y editar los clientes registrados",
         AccionControlada.EditarCatalogo => "Editar el catálogo (productos y precios)",
         AccionControlada.AltaRapida => "Dar de alta un código desde la caja",
         AccionControlada.RecibirMercancia => "Recibir mercancía (contar lo que llegó)",

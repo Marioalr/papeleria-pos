@@ -159,6 +159,14 @@ public static class EjemplosProveedor
         foreach (var (usuario, nombre, _, pin) in PreparacionCaja.UsuariosDePrueba)
             t.AppendLine($"  {usuario} / {pin}  ({nombre})");
         t.AppendLine();
+        t.AppendLine("Clientes registrados de prueba (CTRL+L en la venta, por nombre o teléfono):");
+        foreach (var (nombre, telefono, _, descuento, mayoreo, porRevisar) in PreparacionPrueba.ClientesDePrueba)
+        {
+            var privilegios = Nucleo.Clientes.ClienteRegistrado.Privilegios(descuento, mayoreo);
+            t.AppendLine($"  {nombre}{(telefono.Length > 0 ? $" · tel. {telefono}" : "")}{(privilegios.Length > 0 ? $" · {privilegios}" : "")}"
+                + (porRevisar ? " · venía de los clientes especiales: por revisar" : ""));
+        }
+        t.AppendLine();
         t.AppendLine("La guía de la prueba está dentro de la caja: botón «Guía de la prueba» en la franja de arriba.");
         t.AppendLine();
         t.AppendLine($"Para las tareas de compras, el proveedor es «{proveedor}».");

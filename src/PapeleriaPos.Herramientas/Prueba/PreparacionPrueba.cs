@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Telegram;
@@ -11,7 +12,7 @@ namespace PapeleriaPos.Herramientas.Prueba;
 /// <summary>
 /// La base de la prueba con una persona real (docs/plan.md): sobre la papelería ficticia, la caja y los usuarios de
 /// prueba, un chat de Telegram simulado del dueño (sus avisos se ven en la caja), impresiones por cobrar como si
-/// vinieran de la WF-6590, y una factura y una nota de un proveedor con productos de esta base.
+/// vinieran de la WF-6590, unos clientes registrados, y una factura y una nota de un proveedor con productos de esta base.
 /// </summary>
 public static class PreparacionPrueba
 {
@@ -42,9 +43,29 @@ public static class PreparacionPrueba
             hecho.Add("4 impresiones por cobrar (como si vinieran de la WF-6590)");
         }
 
+        if (!await db.ClientesRegistrados.AnyAsync(ct))
+        {
+            db.ClientesRegistrados.AddRange(ClientesDePrueba.Select(c => new ClienteRegistrado
+            {
+                Nombre = c.Nombre, Telefono = ClienteRegistrado.SoloDigitos(c.Telefono), Nota = c.Nota, DescuentoCentesimas = c.Descuento, MayoreoSiempre = c.Mayoreo,
+                PorRevisar = c.PorRevisar,
+            }));
+            await db.SaveChangesAsync(ct);
+            hecho.Add($"{ClientesDePrueba.Length} clientes registrados de prueba");
+        }
+
         hecho.AddRange(await EjemplosProveedor.EscribirAsync(db, carpetaEjemplos, ct));
         return hecho;
     }
+
+    /// <summary>Uno con descuento, uno con mayoreo siempre, uno sin privilegios y uno que venía de los clientes especiales.</summary>
+    public static readonly (string Nombre, string Telefono, string? Nota, int Descuento, bool Mayoreo, bool PorRevisar)[] ClientesDePrueba =
+    [
+        ("Escuela Primaria Benito Juárez", "5512345678", "Recoge la maestra Laura", 1000, false, false),
+        ("Papelería La Esquina", "5587654321", "Revende: compra por paquete", 0, true, false),
+        ("Arq. Ramírez", "5522334455", "Paga en su siguiente compra", 0, false, false),
+        ("Maestra Carmen (cliente especial)", "", null, 500, false, true),
+    ];
 
     private static TrabajoMedidoDto Trabajo(Guid cajaId, string documento, int paginas, bool color, DateTime impresoUtc) =>
         new(Ids.Nuevo(), cajaId, null, "PC-MOSTRADOR", "WF-6590 (prueba)", 100 + paginas, documento, "mostrador", impresoUtc, EstadoTrabajo.Impreso,

@@ -1,10 +1,11 @@
-@* Productos e inventario sin vender: el encargado o el dueño entran aquí cuando la caja tiene el turno de otro (o ninguno)
-   y no hace falta cortar ni abrir turno para capturar una nota o corregir el catálogo. *@
+@* Productos, inventario y clientes sin vender: el encargado o el dueño entran aquí cuando la caja tiene el turno de otro (o
+   ninguno) y no hace falta cortar ni abrir turno para capturar una nota, corregir el catálogo o dar de alta un cliente. *@
 
 <div class="venta">
     <header class="barra-modulos">
         <button class="modulo @(_modulo == Modulo.Productos ? "activo" : "")" @onclick="() => _modulo = Modulo.Productos">F3 Productos</button>
         <button class="modulo @(_modulo == Modulo.Inventario ? "activo" : "")" @onclick="() => _modulo = Modulo.Inventario">F4 Inventario</button>
+        <button class="modulo @(_modulo == Modulo.Clientes ? "activo" : "")" @onclick="() => _modulo = Modulo.Clientes">Clientes</button>
         <span class="espacio"></span>
         <div class="atiende">
             <small>Administra:</small>
@@ -14,13 +15,17 @@
         <button class="modulo" @onclick="AlSalir">Salir</button>
     </header>
     <div class="administracion">
-        @if (_modulo == Modulo.Productos)
+        @switch (_modulo)
         {
-            <Productos Caja="Caja" Sesion="Sesion" />
-        }
-        else
-        {
-            <Inventario Caja="Caja" Sesion="Sesion" />
+            case Modulo.Productos:
+                <Productos Caja="Caja" Sesion="Sesion" />
+                break;
+            case Modulo.Clientes:
+                <Clientes Caja="Caja" Sesion="Sesion" />
+                break;
+            default:
+                <Inventario Caja="Caja" Sesion="Sesion" />
+                break;
         }
     </div>
 </div>
@@ -30,7 +35,7 @@
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
     [Parameter] public EventCallback AlSalir { get; set; }
 
-    private enum Modulo { Productos, Inventario }
+    private enum Modulo { Productos, Inventario, Clientes }
 
     private Modulo _modulo = Modulo.Inventario;
 }
