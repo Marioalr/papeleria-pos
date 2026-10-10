@@ -65,6 +65,15 @@ public static class ApiCatalogo
             return Results.NoContent();
         });
 
+        // El mayoreo de eleventa que la importación no pudo pasar a escala (fase 3): se captura o se descarta.
+        api.MapGet("/depuracion/mayoreo", (PosDbContext db) => new RegistroDepuracion(db).MayoreoPorRevisarAsync());
+
+        api.MapPost("/depuracion/mayoreo", async (SolicitudMayoreo s, PosDbContext db) =>
+        {
+            await new RegistroDepuracion(db).MayoreoAsync(s.UsuarioId, s.SucursalId, s.VarianteId, s.DesdeMilesimas, s.PrecioCentavos);
+            return Results.NoContent();
+        });
+
         api.MapGet("/depuracion", async (PosDbContext db) =>
             (await new RegistroDepuracion(db).DecisionesAsync())
             .Select(d => new DecisionDepuracionDto(HoraMexico.ALocal(d.FechaUtc), d.Tipo, d.Descripcion, d.OrigenEleventa is not null)).ToList());

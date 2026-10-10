@@ -16,13 +16,27 @@ public static class ArmadoTicket
         {
             var descripcion = l.PresentacionId is { } pid && presentacion(pid) is { EsBase: false } p ? $"{l.Descripcion} ({p.Nombre})" : l.Descripcion;
             return new LineaTicketDto(CantidadTexto(l, esBase: descripcion == l.Descripcion), descripcion, l.PrecioCentavos, l.ImporteCentavos,
-                l.DescuentoCentavos, l.DescuentoCentesimas is { } c ? Control.Permisos.TextoMonto(Control.AccionControlada.Descuento, c) : null);
+                l.DescuentoCentavos, l.DescuentoCentesimas is { } c ? Control.Permisos.TextoMonto(Control.AccionControlada.Descuento, c) : null,
+                l.AhorroMayoreoCentavos, l.MayoreoDesde is { } desde ? $"Mayoreo desde {MayoreoTexto(desde, l.Unidad, esBase: descripcion == l.Descripcion)}" : null);
         }).ToList();
 
         return new TicketDto(v.FolioTexto!, HoraMexico.ALocal(v.PagadaUtc!.Value), caja, cajero, lineas, v.NumeroDeArticulos, v.TotalCentavos,
             v.IvaCentavos,
             v.Cobros.OrderBy(c => c.Forma).Select(c => new CobroTicketDto(c.Forma, c.MontoCentavos, c.RecibidoCentavos, c.CambioCentavos, c.Referencia)).ToList(),
             encabezado, pie, logo, v.Id, v.RedondeoCentavos);
+    }
+
+    /// <summary>"12" piezas (o "12 pzas" en un paquete, para no confundirlas con paquetes); "10 m", "5 kg", "2 l" a granel.</summary>
+    public static string MayoreoTexto(Cantidad desde, UnidadBase unidad, bool esBase)
+    {
+        var numero = desde.EnUnidades.ToString("#,##0.###", CultureInfo.InvariantCulture);
+        return unidad switch
+        {
+            UnidadBase.Metro => $"{numero} m",
+            UnidadBase.Kilogramo => $"{numero} kg",
+            UnidadBase.Litro => $"{numero} l",
+            _ => esBase ? numero : $"{numero} pzas",
+        };
     }
 
     /// <summary>"2" piezas; "1.5 m", "0.25 kg", "0.5 l" a granel.</summary>

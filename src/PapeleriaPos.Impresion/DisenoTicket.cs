@@ -58,10 +58,13 @@ public static class DisenoTicket
             for (var i = 0; i < partes.Count; i++)
             {
                 var cantidad = i == 0 ? l.Cantidad : "";
-                // Con descuento, el renglón lleva el importe completo y abajo va lo que se descontó.
-                var importe = i == 0 ? Dinero(l.ImporteCentavos + l.DescuentoCentavos) : "";
+                // Con mayoreo o descuento, el renglón lleva el importe a menudeo y abajo va lo que se ahorró.
+                var importe = i == 0 ? Dinero(l.ImporteCentavos + l.DescuentoCentavos + l.AhorroMayoreoCentavos) : "";
                 e.Add(new Renglon(Columna(cantidad, AnchoCantidad) + Columna(partes[i], AnchoDescripcion + 1) + importe.PadLeft(AnchoImporte)));
             }
+            if (l.AhorroMayoreoCentavos > 0)
+                e.Add(new Renglon(new string(' ', AnchoCantidad) + Columna(l.Mayoreo ?? "Mayoreo", AnchoDescripcion + 1)
+                    + $"-{Dinero(l.AhorroMayoreoCentavos)}".PadLeft(AnchoImporte)));
             if (l.DescuentoCentavos > 0)
                 e.Add(new Renglon(new string(' ', AnchoCantidad) + Columna(l.Descuento is { } p ? $"Descuento {p}" : "Descuento", AnchoDescripcion + 1)
                     + $"-{Dinero(l.DescuentoCentavos)}".PadLeft(AnchoImporte)));
@@ -69,8 +72,8 @@ public static class DisenoTicket
 
         e.Add(Linea('-'));
         e.Add(new Renglon($"No. de artículos: {t.NumeroDeArticulos.ToString("0.###", Mexico),5}", Alineacion.Derecha));
-        if (t.DescuentoCentavos > 0)
-            e.Add(new Renglon($"Usted ahorró: {Dinero(t.DescuentoCentavos)}", Alineacion.Derecha));
+        if (t.AhorroCentavos > 0)
+            e.Add(new Renglon($"Usted ahorró: {Dinero(t.AhorroCentavos)}", Alineacion.Derecha));
         if (t.RedondeoCentavos == 0)
             e.Add(new Renglon($"Total: {Dinero(t.TotalCentavos)}", Alineacion.Derecha, Negrita: true, Grande: true));
         else

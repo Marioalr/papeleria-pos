@@ -105,6 +105,7 @@ internal sealed class VentaLineaConfiguracion : IEntityTypeConfiguration<VentaLi
         b.Ignore(l => l.TieneDescuento);
         b.Ignore(l => l.ImporteSinDescuentoCentavos);
         b.Ignore(l => l.PorcentajeDescuento);
+        b.Ignore(l => l.TieneMayoreo);
     }
 }
 
@@ -322,5 +323,15 @@ internal sealed class DecisionDepuracionConfiguracion : IEntityTypeConfiguration
     {
         b.ToTable("DecisionesDepuracion");
         b.HasIndex(d => d.VarianteId);
+    }
+}
+
+internal sealed class MayoreoPorRevisarConfiguracion : IEntityTypeConfiguration<MayoreoPorRevisar>
+{
+    public void Configure(EntityTypeBuilder<MayoreoPorRevisar> b)
+    {
+        b.ToTable("MayoreoPorRevisar");
+        b.HasOne<Variante>().WithMany().HasForeignKey(m => m.VarianteId);
+        b.HasIndex(m => m.VarianteId);
     }
 }

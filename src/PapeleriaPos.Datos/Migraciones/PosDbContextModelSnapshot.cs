@@ -175,6 +175,54 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("Marcas");
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.MayoreoPorRevisar", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Cantidades")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CostoCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("Escala")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("MenudeoCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Motivo")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("PrecioMayoreoCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Resolucion")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ResueltoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("Sugerida")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("VarianteId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("VentasConMayoreo")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VarianteId");
+
+                    b.ToTable("MayoreoPorRevisar", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Precio", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2488,6 +2536,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<long>("AhorroMayoreoCentavos")
+                        .HasColumnType("INTEGER");
+
                     b.Property<Guid?>("AutorizacionPrecioId")
                         .HasColumnType("TEXT");
 
@@ -2527,6 +2578,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("LlevaInventario")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("MayoreoDesde")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("MotivoDescuento")
@@ -2571,6 +2625,15 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired();
 
                     b.Navigation("Presentacion");
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.MayoreoPorRevisar", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
+                        .WithMany()
+                        .HasForeignKey("VarianteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Precio", b =>

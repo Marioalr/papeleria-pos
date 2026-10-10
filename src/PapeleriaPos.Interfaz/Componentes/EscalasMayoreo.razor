@@ -1,0 +1,98 @@
+@* F11 (fase 3, entrega 1): las escalas de mayoreo del producto seleccionado. En eleventa F11 cambiaba el precio a mano;
+   aquí el mayoreo se aplica solo al llegar a la cantidad, y esta ventana solo dice desde cuánto y a qué precio. Usa la
+   copia del producto que ya tiene la venta, así que funciona igual sin conexión. *@
+
+@if (_escalas.Escalas.Count <= 1)
+{
+    <p>«@Producto.Descripcion» no tiene mayoreo: se vende a @Formato.Dinero(_escalas.Escalas.FirstOrDefault()?.PrecioCentavos ?? 0) @Unidad.</p>
+}
+else
+{
+    <p><strong>@Producto.Descripcion</strong></p>
+    <table class="escalas-mayoreo">
+        <thead><tr><th>Desde</th><th class="num">Precio</th><th></th></tr></thead>
+        @foreach (var escala in _escalas.Escalas)
+        {
+            var esta = PrecioCambiadoCentavos is null && escala.Id == _aplicada?.Precio.Id;
+            <tr class="@(esta ? "seleccionada" : "")">
+                <td>@Formato.Numero(escala.CantidadMinima.EnUnidades) @(_escalas.DePresentacion ? Presentacion.Nombre.ToLowerInvariant() : Unidades)</td>
+                <td class="num">@Formato.Dinero(escala.PrecioCentavos) @Unidad</td>
+                <td>@(esta ? "← así va ahora" : "")</td>
+            </tr>
+        }
+    </table>
+    @if (PrecioCambiadoCentavos is { } cambiado)
+    {
+        <p class="nota">El precio de este renglón se cambió a mano (@Formato.Dinero(cambiado)): no aplica el mayoreo.</p>
+    }
+    else if (Siguiente is { } siguiente)
+    {
+        var (escribir, enUnidades) = ParaLlegar(siguiente);
+        <p class="nota">
+            Lleva @Formato.Numero(CantidadEnEscala.EnUnidades) @EnEscala: desde @Formato.Numero(siguiente.CantidadMinima.EnUnidades) sale a
+            @Formato.Dinero(siguiente.PrecioCentavos) @Unidad. Para llevar esa cantidad, escribe «@Formato.Numero(escribir)*» y Enter@(enUnidades)
+        </p>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public ProductoVentaDto Producto { get; set; } = null!;
+    [Parameter, EditorRequired] public Guid SucursalId { get; set; }
+    [Parameter, EditorRequired] public Guid? PresentacionId { get; set; }
+
+    /// <summary>Lo que lleva el renglón, en su presentación.</summary>
+    [Parameter, EditorRequired] public Cantidad Cantidad { get; set; }
+
+    /// <summary>El precio que se puso a mano al renglón: con él no aplica el mayoreo.</summary>
+    [Parameter] public long? PrecioCambiadoCentavos { get; set; }
+
+    private EscalasDePrecio _escalas = new(false, []);
+    private PrecioAplicado? _aplicada;
+
+    private Presentacion Presentacion => Producto.PresentacionModelo(PresentacionId);
+
+    /// <summary>La cantidad con que se buscan las escalas: en presentaciones si son propias, si no en unidades base.</summary>
+    private Cantidad CantidadEnEscala => _escalas.DePresentacion ? Cantidad : Cantidad.Por(Presentacion.Factor);
+
+    private Precio? Siguiente => _escalas.Escalas.FirstOrDefault(e => e.CantidadMinima > CantidadEnEscala);
+
+    /// <summary>En qué se cuentan las escalas: la presentación (sus precios propios) o la unidad base.</summary>
+    private string EnEscala => _escalas.DePresentacion ? Presentacion.Nombre.ToLowerInvariant() : Unidades;
+
+    /// <summary>
+    /// «N*» pone la cantidad del renglón en su presentación. Si las escalas van por unidad base y el renglón es un paquete,
+    /// se escriben los paquetes que llegan a la escala (hacia arriba): desde 24 piezas en cajas de 12 son «2*».
+    /// </summary>
+    private (decimal Escribir, string EnUnidades) ParaLlegar(Precio escala)
+    {
+        var desde = escala.CantidadMinima.EnUnidades;
+        if (_escalas.DePresentacion || Presentacion.EsBase)
+            return (desde, ".");
+        var factor = Presentacion.Factor.EnUnidades;
+        var paquetes = Math.Ceiling(desde / factor);
+        return (paquetes, $" ({Formato.Numero(paquetes)} {Presentacion.Nombre.ToLowerInvariant()} = {Formato.Numero(paquetes * factor)} {Unidades}).");
+    }
+
+    private string Unidad => _escalas.DePresentacion ? $"c/{Presentacion.Nombre.ToLowerInvariant()}" : Producto.Unidad switch
+    {
+        UnidadBase.Metro => "el metro",
+        UnidadBase.Kilogramo => "el kilo",
+        UnidadBase.Litro => "el litro",
+        _ => "c/u",
+    };
+
+    private string Unidades => Producto.Unidad switch
+    {
+        UnidadBase.Metro => "m",
+        UnidadBase.Kilogramo => "kg",
+        UnidadBase.Litro => "l",
+        _ => "piezas",
+    };
+
+    protected override void OnParametersSet()
+    {
+        var precios = Producto.PreciosModelo();
+        _escalas = CalculoPrecio.Escalas(precios, SucursalId, Presentacion);
+        _aplicada = CalculoPrecio.Calcular(precios, SucursalId, Presentacion, Cantidad);
+    }
+}

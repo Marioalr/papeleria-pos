@@ -1,0 +1,152 @@
+@* F3 → Mayoreo por revisar (fase 3, entrega 1): el mayoreo de eleventa (el F11) del que la importación no pudo saber
+   el paquete. Se captura desde cuántas piezas aplica (y a qué precio), o se deja sin mayoreo. Cada decisión se repite
+   en la importación final, como las demás de la depuración. *@
+@inject ClienteCaja Cliente
+
+@if (_lista is null)
+{
+    <p class="@(_error is null ? "" : "error")">@(_error ?? "Cargando…")</p>
+}
+else if (_lista.Count == 0)
+{
+    <p class="vacia">No queda mayoreo de eleventa por revisar.</p>
+}
+else
+{
+    <p class="nota">
+        En eleventa el mayoreo se activaba con F11 al vender el paquete. Aquí es una escala: desde cierta cantidad, el precio baja
+        solo. De estos no se pudo saber el paquete por sus ventas. Escribe desde cuántas aplica, o déjalos sin mayoreo.
+    </p>
+    <div class="resultados revision">
+        <table>
+            <thead>
+                <tr>
+                    <th>Producto</th><th class="num">Menudeo</th><th class="num">Mayoreo</th><th class="num">Costo</th><th>Vendido con F11</th>
+                    <th class="num">Desde</th><th class="num">A</th><th></th>
+                </tr>
+            </thead>
+            @foreach (var m in _lista)
+            {
+                var renglon = m;
+                <tr>
+                    <td>
+                        <a href="" @onclick="() => AlAbrir.InvokeAsync(renglon.ProductoId)" @onclick:preventDefault>@m.Producto</a>
+                        <div class="nota">@m.Codigo · @m.Motivo</div>
+                    </td>
+                    <td class="num">@Formato.Dinero(m.MenudeoCentavos)@Por(m.Unidad)</td>
+                    <td class="num">@Formato.Dinero(m.PrecioMayoreoCentavos)@Por(m.Unidad)</td>
+                    <td class="num">@(m.CostoCentavos > 0 ? Formato.Dinero(m.CostoCentavos) : "")</td>
+                    <td>@(m.VentasConMayoreo == 0 ? "—" : m.Cantidades)</td>
+                    <td class="num"><input class="umbral" inputmode="decimal" value="@Desde(m)" @onchange="@(e => _desde[renglon.Id] = e.Value?.ToString() ?? string.Empty)" /> @Unidades(m.Unidad)</td>
+                    <td class="num"><input class="umbral" inputmode="decimal" value="@Precio(m)" @onchange="@(e => _precio[renglon.Id] = e.Value?.ToString() ?? string.Empty)" /></td>
+                    <td class="acciones-renglon">
+                        <button class="boton chico" disabled="@_ocupado" @onclick="() => GuardarAsync(renglon)">Guardar</button>
+                        <button class="boton chico" disabled="@_ocupado" @onclick="() => SinMayoreoAsync(renglon)">Sin mayoreo</button>
+                    </td>
+                </tr>
+            }
+        </table>
+    </div>
+}
+@if (_mensaje is not null)
+{
+    <p class="aviso">@_mensaje</p>
+}
+@if (_error is not null && _lista is not null)
+{
+    <p class="error">@_error</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Abrir la ficha del producto.</summary>
+    [Parameter] public EventCallback<Guid> AlAbrir { get; set; }
+
+    /// <summary>Lo escrito y sin guardar, por renglón; lo guarda quien abre la revisión para no perderlo al ir a la ficha.</summary>
+    [Parameter] public Capturado Captura { get; set; } = new();
+
+    public sealed class Capturado
+    {
+        public Dictionary<Guid, string> Desde { get; } = [];
+        public Dictionary<Guid, string> Precio { get; } = [];
+    }
+
+    private List<MayoreoPorRevisarDto>? _lista;
+    private Dictionary<Guid, string> _desde => Captura.Desde;
+    private Dictionary<Guid, string> _precio => Captura.Precio;
+    private bool _ocupado;
+    private string? _mensaje;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            _lista = await Cliente.MayoreoPorRevisarAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private static string Por(UnidadBase unidad) => unidad switch
+    {
+        UnidadBase.Metro => " /m",
+        UnidadBase.Kilogramo => " /kg",
+        UnidadBase.Litro => " /l",
+        _ => "",
+    };
+
+    private static string Unidades(UnidadBase unidad) => unidad switch
+    {
+        UnidadBase.Metro => "m",
+        UnidadBase.Kilogramo => "kg",
+        UnidadBase.Litro => "l",
+        _ => "pzas",
+    };
+
+    private string Desde(MayoreoPorRevisarDto m) =>
+        _desde.TryGetValue(m.Id, out var texto) ? texto : m.SugeridaMilesimas is { } s ? Formato.Numero(s / 1000m) : "";
+
+    private string Precio(MayoreoPorRevisarDto m) =>
+        _precio.TryGetValue(m.Id, out var texto) ? texto : (m.PrecioMayoreoCentavos / 100m).ToString("0.00", CultureInfo.InvariantCulture);
+
+    private async Task GuardarAsync(MayoreoPorRevisarDto m)
+    {
+        var desde = decimal.TryParse(Desde(m).Replace(",", ""), NumberStyles.Number, CultureInfo.InvariantCulture, out var d) && d > 1 ? d : (decimal?)null;
+        var precio = Formato.LeerPesos(Precio(m));
+        if (desde is null || precio is null)
+        {
+            _error = $"«{m.Producto}»: escribe desde cuántas (más de 1) y el precio de mayoreo.";
+            return;
+        }
+        await DecidirAsync(m, (long)Math.Round(desde.Value * 1000), precio, $"«{m.Producto}»: mayoreo desde {Formato.Numero(desde.Value)} a {Formato.Dinero(precio.Value)}.");
+    }
+
+    private Task SinMayoreoAsync(MayoreoPorRevisarDto m) => DecidirAsync(m, null, null, $"«{m.Producto}» quedó sin mayoreo.");
+
+    private async Task DecidirAsync(MayoreoPorRevisarDto m, long? desde, long? precio, string mensaje)
+    {
+        _ocupado = true;
+        (_mensaje, _error) = (null, null);
+        try
+        {
+            await Cliente.DecidirMayoreoAsync(new SolicitudMayoreo(Sesion.UsuarioId, Caja.SucursalId, m.VarianteId, desde, precio));
+            _lista!.Remove(m);
+            _mensaje = mensaje;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

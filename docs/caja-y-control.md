@@ -14,6 +14,9 @@ El centro del proyecto: que la sucursal funcione bien y con control aunque el du
   - transferencia (queda **por verificar**, ver abajo)
   - crédito (solo clientes registrados)
   - anticipos de pedidos
+- **Mayoreo por escalas** (fase 3): el precio baja solo al llegar a la cantidad (o al escanear el paquete); el
+  renglón y el ticket dicen desde cuánto y cuánto se ahorró. F11 ya no cambia el precio: muestra las escalas del
+  producto, o con las piezas escritas antes (como en eleventa) pone esa cantidad.
 - **Redondeo al peso** del cobro en efectivo (fase 3): al peso más cercano y al menos $1; la tarjeta y la transferencia
   van exactas y las impresiones no se redondean. El total y el IVA quedan exactos; el redondeo va aparte en el ticket
   («Total a pagar») y en el corte. Lo que se regresa en efectivo también sale en pesos, y al cancelar se regresa lo

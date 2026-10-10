@@ -40,7 +40,7 @@
         <button class="boton" @onclick="() => Abrir(Ventanas.Comun)">INS Varios</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Comun)">CTRL+P Art. común</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Buscar)">F10 Buscar</button>
-        <button class="boton" disabled title="Mayoreo: pendiente de decidir (fase 3)">F11 Mayoreo</button>
+        <button class="boton" title="Las escalas de mayoreo del producto seleccionado" @onclick="MayoreoAsync">F11 Mayoreo</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Entrada)">F7 Entradas</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Salida)">F8 Salidas</button>
         <button class="boton" @onclick="BorrarSeleccion">DEL Borrar art.</button>
@@ -84,6 +84,10 @@
                         <td class="col-codigo">@(producto?.Codigo ?? "—")</td>
                         <td>
                             @(linea.EsImpresiones ? $"Impresiones ({Actual.Impresiones.Count})" : Descripcion(linea, producto))
+                            @if (linea.TieneMayoreo)
+                            {
+                                <small class="descuento">@MayoreoTexto(linea, producto) · ahorra @Formato.Dinero(linea.AhorroMayoreoCentavos)</small>
+                            }
                             @if (linea.TieneDescuento)
                             {
                                 <small class="descuento">Descuento @(linea.DescuentoCentesimas is { } c ? Permisos.TextoMonto(AccionControlada.Descuento, c) + " " : "")−@Formato.Dinero(linea.DescuentoCentavos) · @linea.MotivoDescuento</small>
@@ -182,6 +186,13 @@
             var tipo = _ventana == Ventanas.Entrada ? TipoMovimientoCaja.Entrada : TipoMovimientoCaja.Salida;
             <Ventana Titulo="@(tipo == TipoMovimientoCaja.Entrada ? "Entrada de efectivo" : "Salida de efectivo")" AlCerrar="Cerrar">
                 <MovimientoEfectivo Tipo="tipo" TurnoId="Turno.Id" UsuarioId="Sesion.UsuarioId" AlTerminar="MovimientoRegistrado" />
+            </Ventana>
+            break;
+        case Ventanas.Mayoreo when LineaSeleccionada is { VarianteId: { } varianteMayoreo } lineaMayoreo
+                                   && Actual.Productos.TryGetValue(varianteMayoreo, out var productoMayoreo):
+            <Ventana Titulo="Mayoreo" AlCerrar="Cerrar">
+                <EscalasMayoreo Producto="productoMayoreo" SucursalId="Caja.SucursalId" PresentacionId="lineaMayoreo.PresentacionId" Cantidad="lineaMayoreo.Cantidad"
+                                PrecioCambiadoCentavos="@(lineaMayoreo.PrecioCambiado ? lineaMayoreo.PrecioCentavos : null)" />
             </Ventana>
             break;
         case Ventanas.Verificador:
@@ -283,7 +294,7 @@
     private enum Ventanas
     {
         Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
-        CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, Productos, AltaRapida, Inventario, Conteo,
+        CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, Productos, AltaRapida, Inventario, Conteo, Mayoreo,
     }
 
     /// <summary>El conteo cíclico de hoy: cuántos faltan, para pedirlo en la franja.</summary>
@@ -369,7 +380,7 @@
             case "ArrowDown": await MoverSeleccion(1); break;
             case "+": await CambiarCantidadSeleccion(1); break;
             case "-": await CambiarCantidadSeleccion(-1); break;
-            case "F11": Avisar("El mayoreo está pendiente de decidir (fase 3).", error: false); break;
+            case "F11": await MayoreoAsync(); break;
             case "F3": await Abrir(Ventanas.Productos); break;
             case "F4": await Abrir(Ventanas.Inventario); break;
             case "Escape": _codigo = ""; _mensaje = null; break;
@@ -539,23 +550,62 @@
         }
     }
 
-    private async Task FijarCantidadSeleccion(Cantidad cantidad)
+    /// <summary>
+    /// F11: el mayoreo ya se aplica solo al llegar a la cantidad. Como en eleventa, si se escribieron las piezas (el
+    /// paquete) y luego F11, esa es la cantidad del renglón seleccionado; si no, muestra sus escalas.
+    /// </summary>
+    private async Task MayoreoAsync()
+    {
+        if (LineaSeleccionada is not { VarianteId: { } varianteId, EsImpresiones: false } linea || !Actual.Productos.ContainsKey(varianteId))
+        {
+            Avisar("Selecciona un producto (flechas) para ver su mayoreo.");
+            return;
+        }
+        var texto = _codigo.Trim().TrimEnd('*');
+        if (texto.Length > 0)
+        {
+            if (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out var piezas) || piezas <= 0)
+            {
+                Avisar($"Escribe cuántas lleva antes de F11: «{texto}» no es una cantidad.");
+                return;
+            }
+            // Si no se pudo (una fracción en algo por pieza), se queda el error y lo escrito.
+            if (!await FijarCantidadSeleccion(Cantidad.Unidades(Math.Round(piezas, 3))))
+                return;
+            _codigo = "";
+            if (linea.TieneMayoreo)
+                Avisar($"{MayoreoTexto(linea, Actual.Productos[varianteId])}: ahorra {Formato.Dinero(linea.AhorroMayoreoCentavos)}.", error: false);
+            else if (linea.PrecioCambiado)
+                Avisar("El precio de este renglón se cambió a mano: no aplica el mayoreo.", error: false);
+            else if (_mensaje is null)
+                Avisar("A esa cantidad no hay mayoreo: F11 sin escribir nada muestra desde cuánto.", error: false);
+            return;
+        }
+        await Abrir(Ventanas.Mayoreo);
+    }
+
+    /// <summary>"Mayoreo desde 12", o "desde 24 pzas" en un renglón de paquetes, o "desde 10 m" a granel.</summary>
+    private static string MayoreoTexto(VentaLinea linea, ProductoVentaDto? producto) =>
+        $"Mayoreo desde {ArmadoTicket.MayoreoTexto(linea.MayoreoDesde!.Value, linea.Unidad, producto?.PresentacionModelo(linea.PresentacionId).EsBase ?? true)}";
+
+    /// <summary>Si se cambió la cantidad; si no, ya avisó por qué.</summary>
+    private async Task<bool> FijarCantidadSeleccion(Cantidad cantidad)
     {
         if (_seleccion < 0 || _seleccion >= Actual.Venta.Lineas.Count)
         {
             Avisar("Selecciona un renglón (flechas) para cambiar su cantidad.");
-            return;
+            return false;
         }
         var linea = Actual.Venta.Lineas[_seleccion];
         if (linea.EsImpresiones)
         {
             Avisar("Las impresiones se eligen con F2.");
-            return;
+            return false;
         }
         if (linea.VarianteId is not { } varianteId || !Actual.Productos.TryGetValue(varianteId, out var producto))
         {
             Avisar("La cantidad del artículo común no se cambia: bórralo y agrégalo de nuevo.");
-            return;
+            return false;
         }
         var (antes, importeAntes) = (linea.Cantidad, linea.ImporteCentavos);
         try
@@ -566,10 +616,11 @@
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
             Avisar(ex.Message);
-            return;
+            return false;
         }
         if (cantidad < antes)
             await RegistrarQuitadoAsync($"Bajó «{linea.Descripcion}» de {antes} a {cantidad} en el ticket {Actual.Numero}", importeAntes - linea.ImporteCentavos);
+        return true;
     }
 
     // ── Tickets ─────────────────────────────────────────────────────────────

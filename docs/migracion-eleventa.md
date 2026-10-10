@@ -36,7 +36,7 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
 | Existencias | `INVENTARIO_BALANCES.CANTIDAD_ACTUAL`; `PRODUCTOS.DINVENTARIO` está desactualizado |
 | Tickets | `VENTATICKETS`: `VENDIDO_EN` (hora local; vacío si el ticket quedó abierto), `ESTA_CANCELADO` 't'/'f'. Solo efectivo |
 | Líneas | `VENTATICKETS_ARTICULOS`: `GANANCIA` es la utilidad de toda la línea (costo = importe − ganancia). `TOTAL_ARTICULO` **está vacío en las líneas viejas**: ahí el importe es `PRECIO_FINAL × CANTIDAD`, y así todos los tickets cuadran |
-| Mayoreo | `PMAYOREOFINAL`: un segundo precio que el cajero **activa a mano** en la venta (`USA_MAYOREO`), no por cantidad. Las escalas por cantidad están en `PROMOCIONES_POR_CANTIDAD` |
+| Mayoreo | `PMAYOREOFINAL`: un segundo precio por pieza que el cajero **activa a mano** en la venta (`USA_MAYOREO`): se escriben las piezas del paquete y F11. Las escalas por cantidad están en `PROMOCIONES_POR_CANTIDAD` |
 | Texto | Charset NONE con texto en **Windows-1252** (la ñ es el byte F1): se lee con la conexión en WIN1252 |
 | Proveedores | `PROVEEDORES` está vacía; `PROVEEDORES_BASE` y `PRODUCTOS_BASE` son catálogos que trae eleventa, no de la tienda |
 | Servicios | Impresiones, copias, engargolado y escaneo son productos a granel con fracciones ("0.8 a $10" = 8 impresiones de $1) |
@@ -51,10 +51,23 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
   del conteo físico). Las negativas no entran.
 - **Historial de ventas** completo, con cancelados marcados: alimenta el análisis ABC, el sugerido de compra y la
   temporada.
-- **No se importa** el precio de mayoreo manual (el modelo usa escalas por cantidad) y se avisa cuántos hay.
+- **El mayoreo de F11 pasa a escala por cantidad** (fase 3): en eleventa, al vender un paquete se escribían sus piezas
+  y se oprimía F11. De esas ventas sale el paquete: la cantidad que, junto con sus múltiplos (dos o tres paquetes),
+  explica más ventas con F11, siempre que ella sola se haya vendido al menos 3 veces y explique la mitad. Con 12 ×3 y
+  24 ×4 el paquete es 12, no 24. La escala queda desde ahí al precio de mayoreo. No cuentan las ventas del regreso a
+  clases (F11 dejaba al costo los productos estratégicos) ni las vendidas sin ganancia. Si el paquete es el de una
+  promoción por cantidad, se queda la promoción. Lo deducido también queda anotado, ya resuelto.
+- **Lo que no se puede deducir queda en «Mayoreo por revisar» (F3):** pocas ventas, ninguna cantidad que domine, a
+  granel, al costo, que choque con una promoción o con el código repetido en eleventa (sus ventas con F11 no se pueden
+  separar). Ahí se ve el precio de mayoreo de eleventa (por pieza, metro o kilo) y lo más vendido con F11; el
+  encargado captura desde cuántas o lo deja sin mayoreo. No se acepta una escala que haga subir el precio por pieza al
+  subir la cantidad, ni una que tape una promoción con otro precio. Lo que se junta, se da de baja o cambia de unidad
+  sale de la lista (con otra unidad, el mayoreo se captura en la ficha).
+- **Al repetir el mayoreo en la importación final** vale la última decisión de cada producto, y cambia o quita la
+  escala que esa importación haya deducido en vez de sumar otra: «sin mayoreo» la quita y «desde 10» la mueve a 10.
 
 El importador termina con una lista de lo que hubo que interpretar ("para revisar"): unidades dudosas, códigos
-inexistentes, mayoreo no importado, existencias negativas y tickets abiertos.
+inexistentes, mayoreo deducido y por revisar, promociones repetidas, existencias negativas y tickets abiertos.
 
 ## Diagnóstico: primer entregable
 

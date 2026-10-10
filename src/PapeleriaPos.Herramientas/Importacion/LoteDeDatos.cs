@@ -26,6 +26,9 @@ public class LoteDeDatos
     public List<MovimientoInventario> Movimientos { get; } = [];
     public List<MapeoImportacion> Mapeos { get; } = [];
 
+    /// <summary>El mayoreo de eleventa del que no se pudo deducir el paquete: se revisa en F3.</summary>
+    public List<MayoreoPorRevisar> MayoreoPorRevisar { get; } = [];
+
     /// <summary>De dónde salen los IDs al guardar; vacío para IDs nuevos al azar.</summary>
     public virtual Func<Guid>? GeneradorIds => null;
 

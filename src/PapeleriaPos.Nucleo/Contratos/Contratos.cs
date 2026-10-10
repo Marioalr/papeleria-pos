@@ -74,7 +74,11 @@ public sealed record SolicitudCobro(
 
 /// <param name="ImporteCentavos">Ya con el descuento.</param>
 /// <param name="Descuento">Cómo se lee el descuento ("10 %" o vacío si fue un monto).</param>
-public sealed record LineaTicketDto(string Cantidad, string Descripcion, long PrecioCentavos, long ImporteCentavos, long DescuentoCentavos = 0, string? Descuento = null);
+/// <param name="AhorroMayoreoCentavos">Lo que se ahorró por el mayoreo contra el menudeo (fase 3).</param>
+/// <param name="Mayoreo">Cómo se lee: "Mayoreo desde 12".</param>
+public sealed record LineaTicketDto(
+    string Cantidad, string Descripcion, long PrecioCentavos, long ImporteCentavos, long DescuentoCentavos = 0, string? Descuento = null,
+    long AhorroMayoreoCentavos = 0, string? Mayoreo = null);
 
 public sealed record CobroTicketDto(FormaPago Forma, long MontoCentavos, long RecibidoCentavos, long CambioCentavos, string? Referencia);
 
@@ -94,6 +98,9 @@ public sealed record TicketDto(
     public long PagoConCentavos => Cobros.Sum(c => c.Forma == FormaPago.Efectivo ? c.RecibidoCentavos : c.MontoCentavos);
     public bool AbreCajon => Cobros.Any(c => c.Forma == FormaPago.Efectivo);
     public long DescuentoCentavos => Lineas.Sum(l => l.DescuentoCentavos);
+
+    /// <summary>"Usted ahorró": los descuentos y el mayoreo.</summary>
+    public long AhorroCentavos => Lineas.Sum(l => l.DescuentoCentavos + l.AhorroMayoreoCentavos);
 }
 
 public sealed record VentaDelDiaDto(Guid Id, string Folio, DateTime FechaLocal, long TotalCentavos, int Articulos, string Cajero, bool Cancelada = false);
@@ -745,3 +752,18 @@ public sealed record SugeridoDto(DateOnly Fecha, ParametrosSugeridoDto Parametro
 public sealed record RenglonOrdenSugeridaDto(Guid VarianteId, Guid PresentacionId, int Paquetes);
 
 public sealed record SolicitudOrdenSugerida(Guid UsuarioId, Guid ProveedorId, IReadOnlyList<RenglonOrdenSugeridaDto> Renglones);
+
+// ── Mayoreo de eleventa por revisar (fase 3, entrega 1) ─────────────────────
+
+/// <summary>Un mayoreo de eleventa (F11) que la importación no pudo pasar a escala.</summary>
+/// <param name="PrecioMayoreoCentavos">El de eleventa, por pieza (o metro, kilo).</param>
+/// <param name="Cantidades">Lo más vendido con F11: "12 ×5 · 24 ×2".</param>
+/// <param name="SugeridaMilesimas">La cantidad más vendida con F11, para proponerla.</param>
+public sealed record MayoreoPorRevisarDto(
+    Guid Id, Guid VarianteId, Guid ProductoId, string Producto, string? Codigo, UnidadBase Unidad, long MenudeoCentavos, long PrecioMayoreoCentavos,
+    long CostoCentavos, int VentasConMayoreo, string Cantidades, string Motivo, long? SugeridaMilesimas);
+
+/// <summary>La decisión sobre el mayoreo de eleventa: una escala, o sin mayoreo (las dos vacías).</summary>
+/// <param name="DesdeMilesimas">Desde cuántas, en unidad base.</param>
+/// <param name="PrecioCentavos">Por unidad base.</param>
+public sealed record SolicitudMayoreo(Guid UsuarioId, Guid SucursalId, Guid VarianteId, long? DesdeMilesimas, long? PrecioCentavos);
