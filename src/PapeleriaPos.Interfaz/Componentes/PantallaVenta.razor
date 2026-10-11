@@ -302,120 +302,169 @@
                 </div>
             </section>
 
-            <aside class="vn-der">
-                @* El cliente: una flecha chica que apunta al ticket; se jala (Ctrl+L) para elegirlo. A su izquierda, lo que debe. *@
-                <div class="vn-cliente">
-                    @if (Actual.Cliente is not null && Actual.Cuenta is { } cuenta && cuenta.SaldoCentavos != 0)
+            <aside class="vn-der @(VaEnPanel ? "con-panel" : "")">
+                @if (VaEnPanel)
+                {
+                    <CascadingValue Name="VentanaEnPanel" Value="true">@ContenidoDeVentana</CascadingValue>
+                }
+                else if (MostrarCambio && _cobrado is { } cobrado)
+                {
+                    @* Al cobrar: el cambio en grande hasta que se escanea al siguiente cliente (docs/propuesta-interfaz.md, «El panel del total»). *@
+                    <div class="vn-cambio">
+                        <span>@(cobrado.CambioCentavos > 0 ? "Entrega de cambio" : "Cobrado")</span>
+                        <strong>@Formato.Dinero(cobrado.CambioCentavos > 0 ? cobrado.CambioCentavos : cobrado.TotalCobradoCentavos)</strong>
+                        <p>@PagoTexto(cobrado)</p>
+                    </div>
+                    @if (_noSalio is { } noSalio)
                     {
-                        <span class="vn-cli-dato">
-                            @if (cuenta.SaldoCentavos > 0)
-                            {
-                                <span class="debe" title="@(cuenta.VenceMasAntiguo is { } vence ? $"Lo más antiguo vence el {vence:dd/MM}" : "")">
-                                    Debe @Formato.Dinero(cuenta.SaldoCentavos)@(VencidoDelTicket > 0 ? $" · vencido {Formato.Dinero(VencidoDelTicket)}" : "")
-                                </span>
-                                <button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Abono)">Abonar <kbd>Ctrl+B</kbd></button>
-                            }
-                            else
-                            {
-                                <span>@Formato.Dinero(cuenta.AFavorCentavos) a favor</span>
-                            }
-                        </span>
-                    }
-                    <button class="vn-flecha-cli" title="Elegir el cliente del ticket (Ctrl+L)" @onclick="() => Abrir(Ventanas.ElegirCliente)">
-                        <Ico Nombre="usuario" /><span>@(Actual.Cliente?.Nombre ?? "Público en general")</span>
-                    </button>
-                </div>
-                <div class="vn-total">
-                    <div class="vn-total-cab"><span>Total</span><span>@ArticulosTexto(Actual.Venta)</span></div>
-                    <div class="vn-cifra @(Actual.Venta.Lineas.Count == 0 ? "vacio" : "")">@Formato.Dinero(Actual.Venta.TotalCentavos)</div>
-                    <div class="vn-tecla"><kbd>F12</kbd><span>cobrar</span></div>
-                    @if (Actual.Venta.Lineas.Sum(l => l.AhorroMayoreoCentavos) is var ahorro and > 0)
-                    {
-                        <div class="vn-linea verde"><span>Ahorro por mayoreo</span><span>@Formato.Dinero(ahorro)</span></div>
-                    }
-                    @if (Actual.Venta.DescuentoCentavos > 0)
-                    {
-                        <div class="vn-linea verde"><span>Descuentos</span><span>−@Formato.Dinero(Actual.Venta.DescuentoCentavos)</span></div>
-                    }
-                    @if (Actual.Venta.Lineas.Count > 0)
-                    {
-                        var aCobrar = EnEfectivo.ACobrarCentavos;
-                        <div class="vn-separa"></div>
-                        @if (EnEfectivo.RedondeoCentavos != 0)
-                        {
-                            <div class="vn-linea"><span>En efectivo, al peso</span><strong>@Formato.Dinero(aCobrar)</strong></div>
-                        }
-                        @if (Actual.Cliente is null)
-                        {
-                            <div class="vn-pago-cab">
-                                <label for="pago-nuevo">Pagó con</label>
-                                <span class="vn-formas">
-                                    <button class="vn-forma" title="Con tarjeta, o una parte: abre el cobro de hoy" @onclick="AbrirCobroAsync"><Ico Nombre="tarjeta" />Tarjeta</button>
-                                    <button class="vn-forma" title="Por transferencia, o una parte: abre el cobro de hoy" @onclick="AbrirCobroAsync"><Ico Nombre="transferir" />Transf.</button>
+                        <div class="vn-alerta">
+                            <Ico Nombre="impresora" />
+                            <div>
+                                <span>El ticket <strong>@cobrado.FolioImpreso</strong> no salió: @noSalio La venta ya quedó guardada.</span>
+                                <span class="vn-botonera">
+                                    <button class="vn-boton chico" @onclick="() => ImprimirCobradoAsync(cobrado)">Reintentar</button>
+                                    <button class="vn-boton chico" @onclick="VerCobradoEnPantallaAsync">Verlo en pantalla</button>
                                 </span>
                             </div>
-                            <input id="pago-nuevo" data-pago inputmode="decimal" autocomplete="off" placeholder="@Formato.Dinero(aCobrar)"
-                                   @bind="_pagoCon" @bind:event="oninput" @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
-                            @if (_pagoCon.Trim().Length > 0)
-                            {
-                                @if (PagoConCentavos is null)
-                                {
-                                    <div class="vn-vivo falta"><span>«@_pagoCon» no es una cantidad</span></div>
-                                }
-                                else if (Recibido >= aCobrar)
-                                {
-                                    <div class="vn-vivo"><span>Cambio</span><strong>@Formato.Dinero(Recibido - aCobrar)</strong></div>
-                                }
-                                else
-                                {
-                                    <div class="vn-vivo falta"><span>Faltan</span><strong>@Formato.Dinero(aCobrar - Recibido)</strong></div>
-                                }
-                            }
-                            <button class="vn-cobrar" disabled="@(_cobrando || PagoConCentavos is null && _pagoCon.Trim().Length > 0 || Recibido < aCobrar)" @onclick="CobrarEnPanelAsync">
-                                @(Recibido < aCobrar ? "Falta dinero" : _pagoCon.Trim().Length == 0 ? $"Cobrar exacto {Formato.Dinero(aCobrar)}" : $"Cobrar · cambio {Formato.Dinero(Recibido - aCobrar)}")
-                            </button>
-                        }
-                        else
-                        {
-                            <p class="nota">Con cliente registrado se cobra en la ventana de hoy, con su crédito o su saldo a favor.</p>
-                            <button class="vn-cobrar" @onclick="AbrirCobroAsync">Cobrar <kbd>F12</kbd></button>
-                        }
-                    }
-                </div>
-                @if (_efectivo is { PideRetiro: true } efectivoN)
-                {
-                    <div class="vn-alerta">
-                        <Ico Nombre="efectivo" />
-                        <div>
-                            <span>Hay <strong>@Formato.Dinero(efectivoN.EsperadoCentavos)</strong> en efectivo y el límite es @Formato.Dinero(efectivoN.LimiteCentavos ?? 0): haz un retiro.</span>
-                            @if (Ve(AccionControlada.SalidaEfectivo))
-                            {
-                                <span><button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Salida)">Retiro <kbd>F8</kbd></button></span>
-                            }
                         </div>
-                    </div>
-                }
-                <div class="vn-ultimo">
-                    @if (_ultimo is { } ultimo)
+                    }
+                    else if (Impresora.MuestraVistaPrevia)
                     {
-                        <span>Último: <strong>@ultimo.FolioImpreso</strong> · @Formato.Dinero(ultimo.TotalCobradoCentavos) · cambio <strong>@Formato.Dinero(ultimo.CambioCentavos)</strong></span>
+                        <div class="vn-folio-ok"><Ico Nombre="monitor" />Ticket <code>@cobrado.FolioImpreso</code> · <button class="vn-enlace" @onclick="VerCobradoEnPantallaAsync">verlo en pantalla</button></div>
                     }
                     else
                     {
-                        <span>Todavía no hay ventas en este turno.</span>
+                        <div class="vn-folio-ok"><Ico Nombre="check" />Ticket <code>@cobrado.FolioImpreso</code> impreso</div>
                     }
-                    @if (Ve(AccionControlada.Reimprimir))
+                    <div class="vn-alerta info">
+                        <Ico Nombre="escaner" />
+                        <div><span>Listo para el siguiente cliente: lo que escanees empieza su ticket. El cambio se queda aquí hasta entonces.</span></div>
+                    </div>
+                    @if (_efectivo is { PideRetiro: true } efectivoC)
                     {
-                        <button class="vn-enlace" @onclick="ReimprimirUltimoAsync">Reimprimir</button>
+                        <div class="vn-alerta">
+                            <Ico Nombre="efectivo" />
+                            <div><span>Hay <strong>@Formato.Dinero(efectivoC.EsperadoCentavos)</strong> en efectivo y el límite es @Formato.Dinero(efectivoC.LimiteCentavos ?? 0): haz un retiro.</span></div>
+                        </div>
                     }
-                </div>
+                    <div class="vn-ultimo"><span></span><button class="vn-enlace" @onclick="() => _cobrado = null">Volver al total</button></div>
+                }
+                else
+                {
+                    @* El cliente: una flecha chica que apunta al ticket; se jala (Ctrl+L) para elegirlo. A su izquierda, lo que debe. *@
+                    <div class="vn-cliente">
+                        @if (Actual.Cliente is not null && Actual.Cuenta is { } cuenta && cuenta.SaldoCentavos != 0)
+                        {
+                            <span class="vn-cli-dato">
+                                @if (cuenta.SaldoCentavos > 0)
+                                {
+                                    <span class="debe" title="@(cuenta.VenceMasAntiguo is { } vence ? $"Lo más antiguo vence el {vence:dd/MM}" : "")">
+                                        Debe @Formato.Dinero(cuenta.SaldoCentavos)@(VencidoDelTicket > 0 ? $" · vencido {Formato.Dinero(VencidoDelTicket)}" : "")
+                                    </span>
+                                    <button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Abono)">Abonar <kbd>Ctrl+B</kbd></button>
+                                }
+                                else
+                                {
+                                    <span>@Formato.Dinero(cuenta.AFavorCentavos) a favor</span>
+                                }
+                            </span>
+                        }
+                        <button class="vn-flecha-cli" title="Elegir el cliente del ticket (Ctrl+L)" @onclick="() => Abrir(Ventanas.ElegirCliente)">
+                            <Ico Nombre="usuario" /><span>@(Actual.Cliente?.Nombre ?? "Público en general")</span>
+                        </button>
+                    </div>
+                    <div class="vn-total">
+                        <div class="vn-total-cab"><span>Total</span><span>@ArticulosTexto(Actual.Venta)</span></div>
+                        <div class="vn-cifra @(Actual.Venta.Lineas.Count == 0 ? "vacio" : "")">@Formato.Dinero(Actual.Venta.TotalCentavos)</div>
+                        <div class="vn-tecla"><kbd>F12</kbd><span>cobrar</span></div>
+                        @if (Actual.Venta.Lineas.Sum(l => l.AhorroMayoreoCentavos) is var ahorro and > 0)
+                        {
+                            <div class="vn-linea verde"><span>Ahorro por mayoreo</span><span>@Formato.Dinero(ahorro)</span></div>
+                        }
+                        @if (Actual.Venta.DescuentoCentavos > 0)
+                        {
+                            <div class="vn-linea verde"><span>Descuentos</span><span>−@Formato.Dinero(Actual.Venta.DescuentoCentavos)</span></div>
+                        }
+                        @if (Actual.Venta.Lineas.Count > 0)
+                        {
+                            var aCobrar = EnEfectivo.ACobrarCentavos;
+                            <div class="vn-separa"></div>
+                            @if (EnEfectivo.RedondeoCentavos != 0)
+                            {
+                                <div class="vn-linea"><span>En efectivo, al peso</span><strong>@Formato.Dinero(aCobrar)</strong></div>
+                            }
+                            @if (Actual.Cliente is null)
+                            {
+                                <div class="vn-pago-cab">
+                                    <label for="pago-nuevo">Pagó con</label>
+                                    <span class="vn-formas">
+                                        <button class="vn-forma" title="Con tarjeta, o una parte: abre el cobro de hoy" @onclick="() => AbrirCobroAsync(FormaPago.Tarjeta)"><Ico Nombre="tarjeta" />Tarjeta</button>
+                                        <button class="vn-forma" title="Por transferencia, o una parte: abre el cobro de hoy" @onclick="() => AbrirCobroAsync(FormaPago.Transferencia)"><Ico Nombre="transferir" />Transf.</button>
+                                    </span>
+                                </div>
+                                <input id="pago-nuevo" data-pago inputmode="decimal" autocomplete="off" placeholder="@Formato.Dinero(aCobrar)"
+                                       @bind="_pagoCon" @bind:event="oninput" @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
+                                @if (_pagoCon.Trim().Length > 0)
+                                {
+                                    @if (PagoConCentavos is null)
+                                    {
+                                        <div class="vn-vivo falta"><span>«@_pagoCon» no es una cantidad</span></div>
+                                    }
+                                    else if (Recibido >= aCobrar)
+                                    {
+                                        <div class="vn-vivo"><span>Cambio</span><strong>@Formato.Dinero(Recibido - aCobrar)</strong></div>
+                                    }
+                                    else
+                                    {
+                                        <div class="vn-vivo falta"><span>Faltan</span><strong>@Formato.Dinero(aCobrar - Recibido)</strong></div>
+                                    }
+                                }
+                                <button class="vn-cobrar" disabled="@(_cobrando || PagoConCentavos is null && _pagoCon.Trim().Length > 0 || Recibido < aCobrar)" @onclick="CobrarEnPanelAsync">
+                                    @(Recibido < aCobrar ? "Falta dinero" : _pagoCon.Trim().Length == 0 ? $"Cobrar exacto {Formato.Dinero(aCobrar)}" : $"Cobrar · cambio {Formato.Dinero(Recibido - aCobrar)}")
+                                </button>
+                            }
+                            else
+                            {
+                                <p class="nota">Con cliente registrado se cobra en la ventana de hoy, con su crédito o su saldo a favor.</p>
+                                <button class="vn-cobrar" @onclick="() => AbrirCobroAsync()">Cobrar <kbd>F12</kbd></button>
+                            }
+                        }
+                    </div>
+                    @if (_efectivo is { PideRetiro: true } efectivoN)
+                    {
+                        <div class="vn-alerta">
+                            <Ico Nombre="efectivo" />
+                            <div>
+                                <span>Hay <strong>@Formato.Dinero(efectivoN.EsperadoCentavos)</strong> en efectivo y el límite es @Formato.Dinero(efectivoN.LimiteCentavos ?? 0): haz un retiro.</span>
+                                @if (Ve(AccionControlada.SalidaEfectivo))
+                                {
+                                    <span><button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Salida)">Retiro <kbd>F8</kbd></button></span>
+                                }
+                            </div>
+                        </div>
+                    }
+                    <div class="vn-ultimo">
+                        @if (_ultimo is { } ultimo)
+                        {
+                            <span>Último: <strong>@ultimo.FolioImpreso</strong> · @Formato.Dinero(ultimo.TotalCobradoCentavos) · cambio <strong>@Formato.Dinero(ultimo.CambioCentavos)</strong></span>
+                        }
+                        else
+                        {
+                            <span>Todavía no hay ventas en este turno.</span>
+                        }
+                        @if (Ve(AccionControlada.Reimprimir))
+                        {
+                            <button class="vn-enlace" @onclick="ReimprimirUltimoAsync">Reimprimir</button>
+                        }
+                    </div>
+                }
             </aside>
         </div>
 
         @* Lo de todos los días; lo demás, en «/» (docs/propuesta-interfaz.md, «La pantalla de venta»). *@
         <footer class="vn-teclas">
             <button @onclick="IrAlCobroAsync"><kbd>F12</kbd>Cobrar</button>
-            <button @onclick="() => Abrir(Ventanas.Buscar)"><kbd>F10</kbd>Buscar</button>
+            <button @onclick="Buscar"><kbd>F10</kbd>Buscar</button>
             <button @onclick="() => Abrir(Ventanas.Verificador)"><kbd>F9</kbd>Verificar</button>
             <button @onclick="() => Abrir(Ventanas.Impresiones)"><kbd>F2</kbd>Impresiones</button>
             @if (Ve(AccionControlada.ArticuloComun))
@@ -596,7 +645,7 @@ else
         </div>
         <div class="pie-derecha">
             <div class="cobro">
-                <button class="boton cobrar" disabled="@(Actual.Venta.Lineas.Count == 0)" @onclick="AbrirCobroAsync">F12 - Cobrar</button>
+                <button class="boton cobrar" disabled="@(Actual.Venta.Lineas.Count == 0)" @onclick="() => AbrirCobroAsync()">F12 - Cobrar</button>
                 <div class="total">@Formato.Dinero(Actual.Venta.TotalCentavos)</div>
                 @if (Actual.Venta.Lineas.Count > 0 && Actual.Venta.Efectivo(0) is { RedondeoCentavos: not 0 } enEfectivo)
                 {
@@ -618,150 +667,10 @@ else
 </div>
 }
 
-    @switch (_ventana)
-    {
-        case Ventanas.Cobrar:
-            <Ventana Titulo="Cobrar" Clase="cobrar" AlCerrar="Cerrar">
-                <CobrarVenta Venta="Actual.Venta" Caja="Caja" Sesion="Sesion" Cliente="Actual.Cliente" Cuenta="Actual.Cuenta" AlCobrar="CobrarAsync" />
-            </Ventana>
-            break;
-        case Ventanas.AutorizarCosto when _costoPorAutorizar is { } costo:
-            <Ventana Titulo="Debajo del costo" AlCerrar="Cerrar">
-                <AutorizarAccion Accion="AccionControlada.VenderBajoCosto" Detalle="@costo.Detalle" MontoCentavos="costo.Monto" Caja="Caja" Sesion="Sesion"
-                                 AlAutorizar="a => CostoAutorizadoAsync(a.Id)" AlCancelar="Cerrar" />
-            </Ventana>
-            break;
-        case Ventanas.Buscar:
-            <Ventana Titulo="Buscar producto" Clase="buscar" AlCerrar="Cerrar">
-                <BuscarProducto SucursalId="Caja.SucursalId" TextoInicial="@_buscarTexto" AlElegir="AgregarVarianteAsync" />
-            </Ventana>
-            break;
-        case Ventanas.Comun:
-            <Ventana Titulo="Artículo varios / común" AlCerrar="Cerrar">
-                <ArticuloComun AlAgregar="AgregarComun" />
-            </Ventana>
-            break;
-        case Ventanas.Entrada:
-        case Ventanas.Salida:
-            var tipo = _ventana == Ventanas.Entrada ? TipoMovimientoCaja.Entrada : TipoMovimientoCaja.Salida;
-            <Ventana Titulo="@(tipo == TipoMovimientoCaja.Entrada ? "Entrada de efectivo" : "Salida de efectivo")" AlCerrar="Cerrar">
-                <MovimientoEfectivo Tipo="tipo" TurnoId="Turno.Id" UsuarioId="Sesion.UsuarioId" AlTerminar="MovimientoRegistrado" />
-            </Ventana>
-            break;
-        case Ventanas.Mayoreo when LineaSeleccionada is { VarianteId: { } varianteMayoreo } lineaMayoreo
-                                   && Actual.Productos.TryGetValue(varianteMayoreo, out var productoMayoreo):
-            <Ventana Titulo="Mayoreo" AlCerrar="Cerrar">
-                <EscalasMayoreo Producto="productoMayoreo" SucursalId="Caja.SucursalId" PresentacionId="lineaMayoreo.PresentacionId" Cantidad="lineaMayoreo.Cantidad"
-                                MayoreoDeCliente="Actual.Venta.MayoreoDeCliente"
-                                PrecioCambiadoCentavos="@(lineaMayoreo.PrecioCambiado ? lineaMayoreo.PrecioCentavos : null)" />
-            </Ventana>
-            break;
-        case Ventanas.Verificador:
-            <Ventana Titulo="Verificador de precios" AlCerrar="Cerrar">
-                <Verificador SucursalId="Caja.SucursalId" />
-            </Ventana>
-            break;
-        case Ventanas.Corte:
-            <Ventana Titulo="Corte" Clase="corte" AlCerrar="Cerrar">
-                @if (_tickets.Count(t => t.Venta.Lineas.Count > 0) is var sinCobrar and > 0)
-                {
-                    <p class="error">Hay @sinCobrar @(sinCobrar == 1 ? "ticket" : "tickets") sin cobrar: si se cierra el turno, se pierden.</p>
-                }
-                <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="AlCerrarTurno" />
-            </Ventana>
-            break;
-        case Ventanas.VentasDelDia:
-            <Ventana Titulo="Ventas del día" Clase="ventas-dia" AlCerrar="Cerrar">
-                <VentasDelDia CajaId="Caja.Id" AlReimprimir="(Guid id) => PedirReimpresion(id)" AlDevolver="(string folio) => AbrirDevolucion(folio)" />
-            </Ventana>
-            break;
-        case Ventanas.Devolucion:
-            <Ventana Titulo="Devoluciones y cancelaciones" Clase="ventas-dia" AlCerrar="Cerrar">
-                <DevolverCancelar Caja="Caja" Sesion="Sesion" FolioInicial="@_folioDevolucion" AlTerminar="DevolucionHechaAsync" />
-            </Ventana>
-            break;
-        case Ventanas.CambiarPrecio when LineaSeleccionada is { } seleccionada:
-            <Ventana Titulo="Cambiar precio" AlCerrar="Cerrar">
-                <CambiarPrecio Descripcion="@seleccionada.Descripcion" PrecioActualCentavos="seleccionada.PrecioCentavos" Cantidad="seleccionada.Cantidad"
-                               Caja="Caja" Sesion="Sesion" AlCambiar="PrecioCambiadoAsync" />
-            </Ventana>
-            break;
-        case Ventanas.Impresiones:
-            <Ventana Titulo="Impresiones por cobrar" Clase="ventas-dia" AlCerrar="Cerrar">
-                <ImpresionesPorCobrar Caja="Caja" Sesion="Sesion" EnElTicket="@Actual.Impresiones.Select(i => i.Id).ToList()" AlAgregar="ImpresionesElegidasAsync" />
-            </Ventana>
-            break;
-        case Ventanas.Productos:
-            <Ventana Titulo="Productos" Clase="configuracion" AlCerrar="Cerrar">
-                <Productos Caja="Caja" Sesion="Sesion" />
-            </Ventana>
-            break;
-        case Ventanas.Conteo:
-            <Ventana Titulo="Conteo del día" Clase="configuracion" AlCerrar="Cerrar">
-                <ConteoDelDia Caja="Caja" Sesion="Sesion" AlContar="c => _conteo = c" />
-            </Ventana>
-            break;
-        case Ventanas.Inventario:
-            <Ventana Titulo="Inventario" Clase="configuracion" AlCerrar="Cerrar">
-                <Inventario Caja="Caja" Sesion="Sesion" />
-            </Ventana>
-            break;
-        case Ventanas.AltaRapida when _codigoNuevo is { } codigoNuevo:
-            <Ventana Titulo="Dar de alta" AlCerrar="Cerrar">
-                <AltaRapida Codigo="@codigoNuevo" Caja="Caja" Sesion="Sesion" AlDarDeAlta="DadoDeAltaAsync" />
-            </Ventana>
-            break;
-        case Ventanas.Descuento:
-            <Ventana Titulo="Descuento" AlCerrar="Cerrar">
-                <Descuento Venta="Actual.Venta" Linea="LineaSeleccionada" Caja="Caja" Sesion="Sesion" ClienteDelTicket="Actual.Cliente"
-                           AlTerminar="DescuentoAplicadoAsync" />
-            </Ventana>
-            break;
-        case Ventanas.ElegirCliente:
-            <Ventana Titulo="Cliente del ticket" Clase="buscar" AlCerrar="Cerrar">
-                <ElegirCliente @ref="_elegirCliente" Venta="Actual.Venta" Caja="Caja" Sesion="Sesion" Actual="Actual.Cliente" Catalogo="CatalogoDe"
-                               AlTerminar="ClienteElegidoAsync" />
-            </Ventana>
-            break;
-        case Ventanas.Clientes:
-            <Ventana Titulo="Clientes" Clase="configuracion" AlCerrar="Cerrar">
-                <Clientes Caja="Caja" Sesion="Sesion" Turno="Turno" AlGuardar="ClienteGuardadoAsync" AlAbonar="AbonoRegistradoAsync"
-                          AlReimprimir="AbonoReimpresoAsync" AlImprimirEstado="EstadoDeCuentaAsync" />
-            </Ventana>
-            break;
-        case Ventanas.Abono:
-            <Ventana Titulo="Abono a cuenta" Clase="buscar" AlCerrar="Cerrar">
-                <Abonar Caja="Caja" Sesion="Sesion" Turno="Turno" ClienteInicial="Actual.Cliente" AlTerminar="AbonoRegistradoAsync"
-                        AlReimprimir="AbonoReimpresoAsync" />
-            </Ventana>
-            break;
-        case Ventanas.Cotizar:
-            <Ventana Titulo="Cotizar PDF" Clase="ventas-dia" AlCerrar="Cerrar">
-                <Cotizar Caja="Caja" Sesion="Sesion" Archivo="_pdfACotizar" />
-            </Ventana>
-            break;
-        case Ventanas.Transferencias:
-            <Ventana Titulo="Verificar transferencias" Clase="ventas-dia" AlCerrar="Cerrar">
-                <VerificarTransferencias Caja="Caja" />
-            </Ventana>
-            break;
-        case Ventanas.Configuracion:
-            <Ventana Titulo="Configuración" Clase="configuracion" AlCerrar="Cerrar">
-                <Configuracion Caja="Caja" Sesion="Sesion" AntesDeInstalar="GuardarEspera" />
-            </Ventana>
-            break;
-        case Ventanas.Motivo:
-            <Ventana Titulo="Reimprimir ticket" AlCerrar="Cerrar">
-                <PedirMotivo Etiqueta="Motivo de la reimpresión" Error="@_errorMotivo" Ocupado="_ocupadoMotivo" AlAceptar="ConfirmarReimpresionAsync" />
-            </Ventana>
-            break;
-        case Ventanas.VistaPrevia when _vistaPrevia is { } vista:
-            <Ventana Titulo="@vista.Titulo" Clase="vista-previa" AlCerrar="Cerrar">
-                <pre class="ticket">@vista.Texto</pre>
-                <p class="nota">Sin impresora conectada: así saldrá impreso en la de 80 mm.</p>
-            </Ventana>
-            break;
-    }
+@if (!VaEnPanel)
+{
+    @ContenidoDeVentana
+}
 
 @code {
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
@@ -775,6 +684,30 @@ else
         Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
         CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, Productos, AltaRapida, Inventario, Conteo, Mayoreo, ElegirCliente, Clientes,
         AutorizarCosto, Abono,
+    }
+
+    /// <summary>
+    /// Lo de la venta que en la pantalla nueva va como panel a la derecha (docs/propuesta-interfaz.md, «Los demás
+    /// paneles»): el ticket queda a la vista. Los módulos de arriba (productos, inventario, clientes, corte,
+    /// configuración) y el conteo siguen encima.
+    /// </summary>
+    private static readonly HashSet<Ventanas> VentanasEnPanel =
+    [
+        Ventanas.Cobrar, Ventanas.AutorizarCosto, Ventanas.Comun, Ventanas.Entrada, Ventanas.Salida, Ventanas.Mayoreo, Ventanas.Verificador,
+        Ventanas.VentasDelDia, Ventanas.Devolucion, Ventanas.CambiarPrecio, Ventanas.Impresiones, Ventanas.AltaRapida, Ventanas.Descuento,
+        Ventanas.ElegirCliente, Ventanas.Abono, Ventanas.Cotizar, Ventanas.Motivo, Ventanas.VistaPrevia, Ventanas.Transferencias,
+    ];
+
+    private bool VaEnPanel => _pantallaNueva && VentanasEnPanel.Contains(_ventana);
+
+    /// <summary>Con qué forma abre el cobro de hoy (null: en efectivo).</summary>
+    private FormaPago? _cobroEmpieza;
+
+    /// <summary>F10 en la pantalla nueva: el cursor al cuadro, donde salen los resultados al escribir.</summary>
+    private void Buscar()
+    {
+        _enfocar = "#codigo";
+        Avisar("Escribe el nombre aquí: los resultados salen abajo, y con ↓ y Enter se agrega.", error: false);
     }
 
     /// <summary>El conteo cíclico de hoy: cuántos faltan, para pedirlo en la franja.</summary>
@@ -918,7 +851,11 @@ else
     private IEnumerable<AccionDeVenta> TodasLasAcciones()
     {
         yield return new("Cobrar", "efectivo", "F12", null, IrAlCobroAsync);
-        yield return new("Buscar producto por nombre", "buscar", "F10", null, () => Abrir(Ventanas.Buscar));
+        yield return new("Buscar producto por nombre", "buscar", "F10", null, () =>
+        {
+            Buscar();
+            return Task.CompletedTask;
+        });
         yield return new("Verificar precio sin vender", "ojo", "F9", null, () => Abrir(Ventanas.Verificador));
         yield return new("Impresiones por cobrar", "impresora", "F2", null, () => Abrir(Ventanas.Impresiones));
         yield return new("Artículo común (sin inventario)", "etiqueta", "Ins", AccionControlada.ArticuloComun, () => Abrir(Ventanas.Comun));
@@ -1114,6 +1051,8 @@ else
     /// <summary>Retomar un ticket en espera: el que se atendía pasa a la espera (si estaba vacío, se descarta).</summary>
     private void Retomar(TicketAbierto ticket)
     {
+        // Ya empezó el siguiente cliente: el cambio del anterior deja el panel.
+        _cobrado = null;
         if (Actual.Venta.Lineas.Count == 0 && Actual != ticket)
             _tickets.Remove(Actual);
         Cambiar(ticket);
@@ -1582,7 +1521,10 @@ else
                 Avisar("Eso no está entre lo que puedes hacer: «/» muestra todo lo que sí.");
                 break;
             case "Ctrl+U" when _pantallaNueva: await AlSalir.InvokeAsync(); break;
+            case "F10" when _pantallaNueva: Buscar(); break;
             case "F10": await Abrir(Ventanas.Buscar); break;
+            // caja.js ya movió el cursor a «Pagó con» (sin esperar esta vuelta): no cobra todavía.
+            case "F12-pago": break;
             case "F12" when _pantallaNueva: await IrAlCobroAsync(); break;
             case "F12" when Actual.Venta.Lineas.Count > 0: await AbrirCobroAsync(); break;
             case "F5" when _pantallaNueva: RetomarPrimero(); break;
@@ -1608,6 +1550,7 @@ else
             case "F3": await Abrir(Ventanas.Productos); break;
             case "F4": await Abrir(Ventanas.Inventario); break;
             case "Escape":
+                _cobrado = null;
                 VaciarCaptura();
                 _mensaje = null;
                 if (_pantallaNueva)
@@ -1708,6 +1651,8 @@ else
 
     private void Agregar(ProductoVentaDto producto, Guid? presentacionId, Cantidad cantidad)
     {
+        // Ya empezó el siguiente cliente: el cambio del anterior deja el panel.
+        _cobrado = null;
         try
         {
             var linea = Actual.Venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(presentacionId), cantidad, producto.PreciosModelo());
@@ -1725,6 +1670,8 @@ else
 
     private async Task AgregarComun((string Descripcion, long Precio, Cantidad Cantidad) articulo)
     {
+        // Ya empezó el siguiente cliente: el cambio del anterior deja el panel.
+        _cobrado = null;
         await Cerrar();
         try
         {
@@ -1993,7 +1940,10 @@ else
                 Cambiar(_tickets[^1]);
             Avisar($"Venta {ticket.FolioImpreso} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: false);
             _ultimo = ticket;
-            await ImprimirAsync(ticket, abrirCajon: ticket.AbreCajon);
+            if (_pantallaNueva)
+                await ImprimirCobradoAsync(ticket);
+            else
+                await ImprimirAsync(ticket, abrirCajon: ticket.AbreCajon);
             await RevisarEfectivoAsync();
             if (abierto.Impresiones.Count > 0 && _estado is not null)
                 await _estado.ActualizarAsync();
@@ -2012,6 +1962,62 @@ else
             }
             return ex.Message;
         }
+    }
+
+    // ── Al cobrar en la pantalla nueva: el cambio en grande hasta el siguiente cliente ──
+
+    /// <summary>La venta que se acaba de cobrar: su cambio se queda en el panel hasta que se agrega algo o con Esc.</summary>
+    private TicketDto? _cobrado;
+
+    /// <summary>Si el ticket de esa venta no salió: lo que dijo la impresora.</summary>
+    private string? _noSalio;
+
+    private bool MostrarCambio => _pantallaNueva && _cobrado is not null && Actual.Venta.Lineas.Count == 0;
+
+    /// <summary>
+    /// La venta ya quedó guardada: se imprime aparte y el panel dice si salió. Sin impresora (en el navegador), el ticket
+    /// no se abre solo: el panel ofrece verlo; si la impresora no responde, ahí mismo «Reintentar» y «Verlo en pantalla».
+    /// </summary>
+    private async Task ImprimirCobradoAsync(TicketDto ticket)
+    {
+        (_cobrado, _noSalio) = (ticket, null);
+        await Cerrar();
+        if (Impresora.MuestraVistaPrevia)
+            return;
+        try
+        {
+            await Impresora.ImprimirAsync(DisenoTicket.Armar(ticket), ticket.AbreCajon);
+        }
+        catch (Exception ex)
+        {
+            _noSalio = ex.Message;
+        }
+        StateHasChanged();
+    }
+
+    private async Task VerCobradoEnPantallaAsync()
+    {
+        if (_cobrado is not { } ticket)
+            return;
+        _vistaPrevia = ($"Ticket {ticket.FolioImpreso}", TicketTexto.Generar(DisenoTicket.Armar(ticket)));
+        await Abrir(Ventanas.VistaPrevia);
+    }
+
+    /// <summary>«Pagó con $200.00 · total $137.00», y las otras formas si las hubo.</summary>
+    private static string PagoTexto(TicketDto ticket)
+    {
+        var recibido = ticket.Cobros.Where(c => c.Forma == FormaPago.Efectivo).Sum(c => c.RecibidoCentavos);
+        var partes = new List<string>();
+        if (recibido > 0)
+            partes.Add($"Pagó con {Formato.Dinero(recibido)}");
+        partes.Add($"total {Formato.Dinero(ticket.TotalCobradoCentavos)}");
+        partes.AddRange(ticket.Cobros.Where(c => c.Forma != FormaPago.Efectivo).Select(c => c.Forma switch
+        {
+            FormaPago.Tarjeta => $"tarjeta {Formato.Dinero(c.MontoCentavos)}",
+            FormaPago.Transferencia => $"transferencia {Formato.Dinero(c.MontoCentavos)}",
+            _ => $"a crédito {Formato.Dinero(c.MontoCentavos)}",
+        }));
+        return string.Join(" · ", partes);
     }
 
     private Task ImprimirAsync(TicketDto ticket, bool abrirCajon) =>
@@ -2078,6 +2084,8 @@ else
     /// <summary>Las elegidas reemplazan a las que había: van juntas en la línea "Impresiones".</summary>
     private async Task ImpresionesElegidasAsync(IReadOnlyList<ImpresionPorCobrarDto> elegidas)
     {
+        // Ya empezó el siguiente cliente: el cambio del anterior deja el panel.
+        _cobrado = null;
         await Cerrar();
         Actual.Impresiones.Clear();
         Actual.Impresiones.AddRange(elegidas);
@@ -2105,8 +2113,10 @@ else
     /// F12: si el ticket lleva descuentos (el del cliente se pone solo al agregar), antes de cobrar se revisa que nada quede
     /// debajo del costo sin autorización; si falta, se pide aquí y no hasta que el cobro falle.
     /// </summary>
-    private async Task AbrirCobroAsync()
+    /// <param name="empieza">«Tarjeta» o «Transf.» de la pantalla nueva: el cobro abre con esa forma y el total en ella.</param>
+    private async Task AbrirCobroAsync(FormaPago? empieza = null)
     {
+        _cobroEmpieza = empieza;
         if (Actual.Venta.Lineas.Count == 0 || !await RevisarCostoAsync())
             return;
         await CargarCuentaAsync(Actual);
@@ -2398,6 +2408,157 @@ else
         // Lo llaman callbacks de las ventanas que no vuelven a dibujar esta pantalla.
         StateHasChanged();
     }
+
+    /// <summary>
+    /// La ventana abierta. En la pantalla nueva, lo de la venta va como panel a la derecha (VaEnPanel), sin tapar el ticket;
+    /// lo demás (y todo en la pantalla de hoy) va encima.
+    /// </summary>
+    private RenderFragment ContenidoDeVentana => @<text>
+    @switch (_ventana)
+    {
+        case Ventanas.Cobrar:
+            <Ventana Titulo="Cobrar" Clase="cobrar" AlCerrar="Cerrar">
+                <CobrarVenta Venta="Actual.Venta" Caja="Caja" Sesion="Sesion" Cliente="Actual.Cliente" Cuenta="Actual.Cuenta" Empieza="_cobroEmpieza" AlCobrar="CobrarAsync" />
+            </Ventana>
+            break;
+        case Ventanas.AutorizarCosto when _costoPorAutorizar is { } costo:
+            <Ventana Titulo="Debajo del costo" AlCerrar="Cerrar">
+                <AutorizarAccion Accion="AccionControlada.VenderBajoCosto" Detalle="@costo.Detalle" MontoCentavos="costo.Monto" Caja="Caja" Sesion="Sesion"
+                                 AlAutorizar="a => CostoAutorizadoAsync(a.Id)" AlCancelar="Cerrar" />
+            </Ventana>
+            break;
+        case Ventanas.Buscar:
+            <Ventana Titulo="Buscar producto" Clase="buscar" AlCerrar="Cerrar">
+                <BuscarProducto SucursalId="Caja.SucursalId" TextoInicial="@_buscarTexto" AlElegir="AgregarVarianteAsync" />
+            </Ventana>
+            break;
+        case Ventanas.Comun:
+            <Ventana Titulo="Artículo varios / común" AlCerrar="Cerrar">
+                <ArticuloComun AlAgregar="AgregarComun" />
+            </Ventana>
+            break;
+        case Ventanas.Entrada:
+        case Ventanas.Salida:
+            var tipo = _ventana == Ventanas.Entrada ? TipoMovimientoCaja.Entrada : TipoMovimientoCaja.Salida;
+            <Ventana Titulo="@(tipo == TipoMovimientoCaja.Entrada ? "Entrada de efectivo" : "Salida de efectivo")" AlCerrar="Cerrar">
+                <MovimientoEfectivo Tipo="tipo" TurnoId="Turno.Id" UsuarioId="Sesion.UsuarioId" AlTerminar="MovimientoRegistrado" />
+            </Ventana>
+            break;
+        case Ventanas.Mayoreo when LineaSeleccionada is { VarianteId: { } varianteMayoreo } lineaMayoreo
+                                   && Actual.Productos.TryGetValue(varianteMayoreo, out var productoMayoreo):
+            <Ventana Titulo="Mayoreo" AlCerrar="Cerrar">
+                <EscalasMayoreo Producto="productoMayoreo" SucursalId="Caja.SucursalId" PresentacionId="lineaMayoreo.PresentacionId" Cantidad="lineaMayoreo.Cantidad"
+                                MayoreoDeCliente="Actual.Venta.MayoreoDeCliente"
+                                PrecioCambiadoCentavos="@(lineaMayoreo.PrecioCambiado ? lineaMayoreo.PrecioCentavos : null)" />
+            </Ventana>
+            break;
+        case Ventanas.Verificador:
+            <Ventana Titulo="Verificador de precios" AlCerrar="Cerrar">
+                <Verificador SucursalId="Caja.SucursalId" />
+            </Ventana>
+            break;
+        case Ventanas.Corte:
+            <Ventana Titulo="Corte" Clase="corte" AlCerrar="Cerrar">
+                @if (_tickets.Count(t => t.Venta.Lineas.Count > 0) is var sinCobrar and > 0)
+                {
+                    <p class="error">Hay @sinCobrar @(sinCobrar == 1 ? "ticket" : "tickets") sin cobrar: si se cierra el turno, se pierden.</p>
+                }
+                <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="AlCerrarTurno" />
+            </Ventana>
+            break;
+        case Ventanas.VentasDelDia:
+            <Ventana Titulo="Ventas del día" Clase="ventas-dia tarjetas ventas-del-dia" AlCerrar="Cerrar">
+                <VentasDelDia CajaId="Caja.Id" AlReimprimir="(Guid id) => PedirReimpresion(id)" AlDevolver="(string folio) => AbrirDevolucion(folio)" />
+            </Ventana>
+            break;
+        case Ventanas.Devolucion:
+            <Ventana Titulo="Devoluciones y cancelaciones" Clase="ventas-dia tarjetas devolver" AlCerrar="Cerrar">
+                <DevolverCancelar Caja="Caja" Sesion="Sesion" FolioInicial="@_folioDevolucion" AlTerminar="DevolucionHechaAsync" />
+            </Ventana>
+            break;
+        case Ventanas.CambiarPrecio when LineaSeleccionada is { } seleccionada:
+            <Ventana Titulo="Cambiar precio" AlCerrar="Cerrar">
+                <CambiarPrecio Descripcion="@seleccionada.Descripcion" PrecioActualCentavos="seleccionada.PrecioCentavos" Cantidad="seleccionada.Cantidad"
+                               Caja="Caja" Sesion="Sesion" AlCambiar="PrecioCambiadoAsync" />
+            </Ventana>
+            break;
+        case Ventanas.Impresiones:
+            <Ventana Titulo="Impresiones por cobrar" Clase="ventas-dia tarjetas" AlCerrar="Cerrar">
+                <ImpresionesPorCobrar Caja="Caja" Sesion="Sesion" EnElTicket="@Actual.Impresiones.Select(i => i.Id).ToList()" AlAgregar="ImpresionesElegidasAsync" />
+            </Ventana>
+            break;
+        case Ventanas.Productos:
+            <Ventana Titulo="Productos" Clase="configuracion" AlCerrar="Cerrar">
+                <Productos Caja="Caja" Sesion="Sesion" />
+            </Ventana>
+            break;
+        case Ventanas.Conteo:
+            <Ventana Titulo="Conteo del día" Clase="configuracion" AlCerrar="Cerrar">
+                <ConteoDelDia Caja="Caja" Sesion="Sesion" AlContar="c => _conteo = c" />
+            </Ventana>
+            break;
+        case Ventanas.Inventario:
+            <Ventana Titulo="Inventario" Clase="configuracion" AlCerrar="Cerrar">
+                <Inventario Caja="Caja" Sesion="Sesion" />
+            </Ventana>
+            break;
+        case Ventanas.AltaRapida when _codigoNuevo is { } codigoNuevo:
+            <Ventana Titulo="Dar de alta" AlCerrar="Cerrar">
+                <AltaRapida Codigo="@codigoNuevo" Caja="Caja" Sesion="Sesion" AlDarDeAlta="DadoDeAltaAsync" />
+            </Ventana>
+            break;
+        case Ventanas.Descuento:
+            <Ventana Titulo="Descuento" AlCerrar="Cerrar">
+                <Descuento Venta="Actual.Venta" Linea="LineaSeleccionada" Caja="Caja" Sesion="Sesion" ClienteDelTicket="Actual.Cliente"
+                           AlTerminar="DescuentoAplicadoAsync" />
+            </Ventana>
+            break;
+        case Ventanas.ElegirCliente:
+            <Ventana Titulo="Cliente del ticket" Clase="buscar tarjetas clientes" AlCerrar="Cerrar">
+                <ElegirCliente @ref="_elegirCliente" Venta="Actual.Venta" Caja="Caja" Sesion="Sesion" Actual="Actual.Cliente" Catalogo="CatalogoDe"
+                               AlTerminar="ClienteElegidoAsync" />
+            </Ventana>
+            break;
+        case Ventanas.Clientes:
+            <Ventana Titulo="Clientes" Clase="configuracion" AlCerrar="Cerrar">
+                <Clientes Caja="Caja" Sesion="Sesion" Turno="Turno" AlGuardar="ClienteGuardadoAsync" AlAbonar="AbonoRegistradoAsync"
+                          AlReimprimir="AbonoReimpresoAsync" AlImprimirEstado="EstadoDeCuentaAsync" />
+            </Ventana>
+            break;
+        case Ventanas.Abono:
+            <Ventana Titulo="Abono a cuenta" Clase="buscar tarjetas clientes" AlCerrar="Cerrar">
+                <Abonar Caja="Caja" Sesion="Sesion" Turno="Turno" ClienteInicial="Actual.Cliente" AlTerminar="AbonoRegistradoAsync"
+                        AlReimprimir="AbonoReimpresoAsync" />
+            </Ventana>
+            break;
+        case Ventanas.Cotizar:
+            <Ventana Titulo="Cotizar PDF" Clase="ventas-dia" AlCerrar="Cerrar">
+                <Cotizar Caja="Caja" Sesion="Sesion" Archivo="_pdfACotizar" />
+            </Ventana>
+            break;
+        case Ventanas.Transferencias:
+            <Ventana Titulo="Verificar transferencias" Clase="ventas-dia" AlCerrar="Cerrar">
+                <VerificarTransferencias Caja="Caja" />
+            </Ventana>
+            break;
+        case Ventanas.Configuracion:
+            <Ventana Titulo="Configuración" Clase="configuracion" AlCerrar="Cerrar">
+                <Configuracion Caja="Caja" Sesion="Sesion" AntesDeInstalar="GuardarEspera" />
+            </Ventana>
+            break;
+        case Ventanas.Motivo:
+            <Ventana Titulo="Reimprimir ticket" AlCerrar="Cerrar">
+                <PedirMotivo Etiqueta="Motivo de la reimpresión" Error="@_errorMotivo" Ocupado="_ocupadoMotivo" AlAceptar="ConfirmarReimpresionAsync" />
+            </Ventana>
+            break;
+        case Ventanas.VistaPrevia when _vistaPrevia is { } vista:
+            <Ventana Titulo="@vista.Titulo" Clase="vista-previa" AlCerrar="Cerrar">
+                <pre class="ticket">@vista.Texto</pre>
+                <p class="nota">Sin impresora conectada: así saldrá impreso en la de 80 mm.</p>
+            </Ventana>
+            break;
+    }
+    </text>;
 
     // ── Ventanas y avisos ───────────────────────────────────────────────────
 
