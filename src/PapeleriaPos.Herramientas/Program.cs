@@ -48,8 +48,8 @@ static int Ayuda()
                                 | --servidor <PC> --ruta <C:\...\PDVDATA.FDB> [--puerto 3050] --usuario <usuario>)
               Pone al día una base ya importada con lo que dice eleventa ahora (altas, precios, promociones,
               existencias), como lo hará la caja 2 del piloto cada pocos minutos. Con --fdb lee una copia; con
-              --servidor, el Firebird de la caja principal por la red, solo leyendo. La clave va en la variable
-              ELEVENTA_CLAVE. Con --simular dice qué cambiaría, sin guardar nada.
+              --servidor, el Firebird de la caja principal por la red, solo leyendo. La clave se pide al correrlo
+              (o va en la variable ELEVENTA_CLAVE). Con --simular dice qué cambiaría, sin guardar nada.
 
           importar-control-print --base pos.db [--control-print controlprint.db]
               Copia la configuración de costos de Control Print (tinta, papel, márgenes, calibración) a todas las
@@ -144,10 +144,11 @@ static async Task<int> SincronizarEleventaAsync(string[] args)
     }
     else if (Opcion(args, "--servidor") is { } servidor && Opcion(args, "--ruta") is { } rutaEleventa && Opcion(args, "--usuario") is { } usuario)
     {
-        // La clave no va en la línea de comandos (se queda en el historial y en la lista de procesos).
-        if (Environment.GetEnvironmentVariable("ELEVENTA_CLAVE") is not { Length: > 0 } clave)
+        // La clave no va en la línea de comandos (se queda en el historial y en la lista de procesos): la variable
+        // ELEVENTA_CLAVE, o se pide aquí sin mostrarla.
+        if ((Environment.GetEnvironmentVariable("ELEVENTA_CLAVE") is { Length: > 0 } variable ? variable : PedirClave()) is not { } clave)
         {
-            Console.Error.WriteLine("Pon la clave del Firebird de eleventa en la variable ELEVENTA_CLAVE.");
+            Console.Error.WriteLine("Falta la clave del Firebird de eleventa (escríbela, o ponla en la variable ELEVENTA_CLAVE).");
             return 1;
         }
         var conexion = new ServidorEleventa(servidor, rutaEleventa, usuario, clave, int.Parse(Opcion(args, "--puerto") ?? "3050", CultureInfo.InvariantCulture));
@@ -184,6 +185,33 @@ static async Task<int> SincronizarEleventaAsync(string[] args)
     foreach (var (aviso, veces) in resultado.Avisos)
         Console.WriteLine($"  {veces,6:N0}  {aviso}");
     return 0;
+}
+
+/// <summary>La clave, tecleada sin que se vea (asteriscos). Sin teclado (la entrada redirigida), null.</summary>
+static string? PedirClave()
+{
+    if (Console.IsInputRedirected)
+        return null;
+    Console.Write("Clave del Firebird de eleventa: ");
+    var clave = new System.Text.StringBuilder();
+    while (Console.ReadKey(intercept: true) is var tecla && tecla.Key != ConsoleKey.Enter)
+    {
+        if (tecla.Key == ConsoleKey.Backspace)
+        {
+            if (clave.Length > 0)
+            {
+                clave.Length--;
+                Console.Write("\b \b");
+            }
+        }
+        else if (!char.IsControl(tecla.KeyChar))
+        {
+            clave.Append(tecla.KeyChar);
+            Console.Write('*');
+        }
+    }
+    Console.WriteLine();
+    return clave.Length > 0 ? clave.ToString() : null;
 }
 
 static async Task<int> PrepararPruebaAsync(string[] args)

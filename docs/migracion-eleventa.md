@@ -164,21 +164,23 @@ nunca aquí; la clave puede ir en la variable de entorno `Eleventa__Clave`.
 "Eleventa": { "Activo": true, "Servidor": "<la caja principal>", "Base": "C:\\…\\PDVDATA.FDB", "Usuario": "SYSDBA", "Clave": "…", "Minutos": 5 }
 ```
 
-Para probarla una vez a mano, sobre una base ya importada (con `--simular` solo dice qué cambiaría):
+Para probarla una vez a mano, sobre una base ya importada (con `--simular` solo dice qué cambiaría). Por la red, la
+clave se pide al correrlo, sin que se vea (o va en la variable `ELEVENTA_CLAVE`):
 
 ```
 dotnet run --project src/PapeleriaPos.Herramientas -- sincronizar-eleventa --base eleventa.db --fdb C:\ruta\PDVDATA.FDB --simular
-set ELEVENTA_CLAVE=…
 dotnet run --project src/PapeleriaPos.Herramientas -- sincronizar-eleventa --base eleventa.db --servidor <la caja principal> --ruta C:\…\PDVDATA.FDB --usuario SYSDBA --simular
 ```
 
-Se probó con la base real, toda local:
+Se probó primero con la base real, toda local:
 1. Se importó la copia y se leyó la misma copia: sin cambios ni avisos.
 2. Se leyó por la red desde un Firebird 2.5 local con otra copia: la misma respuesta en 0.2 s.
 3. Se cambiaron un precio y una existencia en esa copia: llegaron, y la lectura siguiente salió sin cambios.
 4. Se apagó ese Firebird: la caja siguió contestando y el error quedó en el estado.
 
-Falta probarlo contra el Firebird 2.0 de la caja principal, desde la caja 2.
+Después, desde la caja 2 y contra el Firebird 2.0 de la caja principal (2026-10-11, con `--simular`): leyó todo el
+catálogo por Wi-Fi en menos de un segundo, sin errores ni avisos, y encontró lo que cambió en eleventa desde la copia
+(precios, costos y existencias).
 
 ## Arranque (fase 5)
 

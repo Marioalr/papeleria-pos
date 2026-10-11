@@ -324,8 +324,8 @@ visual (entrega 2). Para el piloto hace falta, en este orden:
 
 **Avance (2026-10-10):** el paso 1 está hecho ([cómo funciona](migracion-eleventa.md#la-lectura-de-cada-pocos-minutos-paso-1)).
 El servicio de la caja 2 lee eleventa por la red cada pocos minutos, solo leyendo, y pone al día su base: altas,
-precios, promociones, costos y existencias. Se probó con la base real, toda local, con un Firebird 2.5 propio. Falta
-la primera lectura contra el Firebird 2.0 de la caja principal, desde la caja 2, con `sincronizar-eleventa --simular`.
+precios, promociones, costos y existencias. Se probó con la base real, primero toda local con un Firebird 2.5 propio y
+después (2026-10-11) desde la caja 2 contra el Firebird 2.0 de la caja principal: lee todo en menos de un segundo.
 
 #### Al terminar el piloto
 
