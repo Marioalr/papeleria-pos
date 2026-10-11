@@ -101,7 +101,7 @@ public static class ApiCaja
         api.MapGet("/sucursales/{sucursalId:guid}/rapidos", async (Guid sucursalId, PosDbContext db) =>
             await db.ConfiguracionesSucursal.AsNoTracking().Where(c => c.SucursalId == sucursalId).Select(c => c.Rapidos).FirstOrDefaultAsync() ?? []);
 
-        api.MapPost("/ventas", async (SolicitudCobro s, PosDbContext db, CatalogoEnMemoria catalogo, IOptions<OpcionesTicket> ticket) =>
+        api.MapPost("/ventas", async (SolicitudCobro s, PosDbContext db, CatalogoEnMemoria catalogo, IOptions<OpcionesTicket> ticket, EnvioVentasEleventa eleventa) =>
         {
             // La caja manda otra vez la misma venta si no le llegó la respuesta: se regresa el ticket que ya se cobró.
             if (s.VentaId is { } ventaId && await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleOrDefaultAsync(v => v.Id == ventaId) is { } cobrada)
@@ -117,7 +117,11 @@ public static class ApiCaja
             var impresiones = s.Impresiones is { Count: > 0 } ids ? await new RegistroImpresiones(db).ParaCobrarAsync(caja.SucursalId, ids) : [];
             if (impresiones.Count > 0)
                 venta.FijarImpresiones(impresiones.Sum(t => t.PrecioCentavos), impresiones.Sum(t => t.CostoCentavos));
+            // El piloto en la caja 2: la venta entra a la bandeja hacia eleventa junto con el cobro, y se intenta
+            // mandar ya, para que el ticket salga con el folio de eleventa.
+            eleventa.Encolar(db, venta.Id);
             await new RegistroCaja(db).CobrarAsync(venta, s.Cobros, impresiones: impresiones);
+            await eleventa.MandarAlCobrarAsync(venta.Id);
             return await TicketAsync(db, venta, ticket.Value);
         });
 
@@ -221,8 +225,9 @@ public static class ApiCaja
         var presentaciones = await db.Presentaciones.Where(p => ids.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => (p.Nombre, p.EsBase));
         var configuracion = await ApiConfiguracion.ConfiguracionAsync(db, v.SucursalId, opciones);
         var cliente = v.ClienteId is { } clienteId && await db.ClientesRegistrados.FindAsync(clienteId) is { } c ? RegistroClientes.Dto(c) : null;
+        var folioEleventa = await db.EnviosAEleventa.AsNoTracking().Where(e => e.VentaId == v.Id).Select(e => e.FolioEleventa).FirstOrDefaultAsync();
         return ArmadoTicket.Desde(v, caja!.Nombre, cajero, id => presentaciones.TryGetValue(id, out var p) ? p : null,
             configuracion.RenglonesEncabezado, configuracion.RenglonesPie, ApiConfiguracion.Logo(configuracion), cliente,
-            await new RegistroCredito(db).TicketAsync(v.Id));
+            await new RegistroCredito(db).TicketAsync(v.Id)) with { FolioEleventa = folioEleventa };
     }
 }

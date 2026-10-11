@@ -298,12 +298,41 @@ Se probó así:
 dotnet run --project src/PapeleriaPos.Herramientas -- probar-envio-eleventa --servidor 127.0.0.1 --ruta C:\…\copia.fdb --usuario SYSDBA --caja <ID> --cajero <ID> --articulo <ID>:<cantidad> --comun Recuerdo:15
 ```
 
-**Falta:**
-- la bandeja de salida: al cobrar, la venta queda en la bandeja en la misma transacción, y un trabajo de fondo la manda,
-  reintenta y avisa;
-- el folio de eleventa en el ticket de la caja 2, y qué folio lleva cuando la caja principal no contesta;
-- la configuración de la caja 2 (su caja y su cajero en eleventa) y lo que no es efectivo;
-- el redondeo del efectivo, si se usa: el total de eleventa debe ser lo que entró a la caja.
+**La bandeja de salida** (`EnvioVentasEleventa`, tabla `EnviosAEleventa`). Así viaja cada venta de la caja 2:
+- **Al cobrar** entra a la bandeja en la misma transacción que la venta: aunque la caja se apague justo después, no queda
+  una venta cobrada sin mandar. También las que suben de la bandeja de contingencia.
+- **Enseguida se intenta mandar**, hasta 2 s (`SegundosAlCobrar`). Si eleventa contesta, el ticket se imprime con su
+  folio (decidido por el dueño, 2026-10-10 y 2026-10-11), para devolver en cualquiera de las dos cajas.
+- **Si no contesta a tiempo** (la principal apagada, el Wi-Fi caído o lento), el ticket sale con el folio de la caja 2
+  (A-000123) y la venta se manda después. Su devolución se hace en la caja 2.
+  - Tras una falla de red, o si va otro envío, el cobro no espera: solo el primer cobro sin red tarda los 2 s; los
+    demás, lo normal.
+- **Una vuelta de fondo** manda lo pendiente cada 30 s (`SegundosEntreEnvios`), de la más vieja a la más nueva. Si es la
+  red, deja el resto para la siguiente vuelta. Al volver la red, cada venta toma el siguiente folio de eleventa, y su
+  reimpresión ya lo lleva.
+- **El ticket** imprime «Folio 4521» (el de eleventa) cuando lo hay. El QR sigue con el de la caja 2, que abre la
+  devolución al escanearlo, y en la ventana de devolución también se puede escribir el folio de eleventa.
+- **Lo que eleventa no entendería** queda por revisar y no se manda solo: lo que no fue en efectivo (la tienda solo
+  cobra en efectivo) o lo que se canceló antes de mandarse.
+- **El redondeo del efectivo** va en la línea más grande, para que el total de eleventa sea lo que entró a la caja.
+- **Cómo va:** `GET /api/eleventa/envios` dice cuántas ventas están pendientes y por revisar, el último error («No
+  contesta el eleventa de…») y los folios repetidos. `POST /api/eleventa/enviar` hace la vuelta ya.
+
+Se configura en el servicio de la caja 2, junto con la lectura. La caja y el cajero son los `ID` de eleventa
+(`CAJAS.ID` de la caja 2, y el cajero a cuyo nombre van las ventas):
+
+```json
+"Eleventa": { "Activo": true, "Escribir": true, "Servidor": "<la caja principal>", "Base": "C:\\…\\PDVDATA.FDB", "Usuario": "SYSDBA", "Clave": "…", "Caja": 0, "Cajero": 0 }
+```
+
+Se probó de punta a punta en esta PC, con una base importada de la copia y otra copia servida por un Firebird de
+prueba:
+- se cobró una venta y el ticket salió con el siguiente folio de eleventa;
+- se apagó ese Firebird: los tickets salieron con el folio de la caja, con una espera solo en el primer cobro;
+- al prenderlo, las pendientes entraron en orden, sin repetirse, y el turno de eleventa cuadró con sus tickets.
+
+**Falta** (paso 4): cancelar, devolver, entradas y salidas, y cerrar el turno y el corte en eleventa. Mientras tanto,
+una venta cancelada o devuelta en la caja 2 que ya estaba en eleventa sigue allá: se arregla a mano en eleventa.
 
 ## Arranque (fase 5)
 

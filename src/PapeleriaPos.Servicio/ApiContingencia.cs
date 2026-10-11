@@ -54,7 +54,7 @@ public static class ApiContingencia
         bandeja.MapPost("/turnos", async (TurnoContingenciaDto t, PosDbContext db) =>
             await ApiCaja.TurnoDtoAsync(db, await new RegistroCaja(db).TurnoDeContingenciaAsync(t)));
 
-        bandeja.MapPost("/ventas", async (VentaContingenciaDto v, PosDbContext db, CatalogoEnMemoria catalogo) =>
+        bandeja.MapPost("/ventas", async (VentaContingenciaDto v, PosDbContext db, CatalogoEnMemoria catalogo, EnvioVentasEleventa eleventa) =>
         {
             if (await db.Ventas.AnyAsync(x => x.Id == v.Id))
                 return Results.NoContent();
@@ -64,9 +64,12 @@ public static class ApiContingencia
             // El precio que se cobró manda; el mayoreo del cliente (el que usó la caja) solo sirve para que el ticket diga el ahorro.
             var venta = await ApiCaja.ArmarVentaAsync(db, catalogo, caja, v.TurnoId, v.CajeroId, v.Id, lineas, v.MayoreoDeCliente == true);
             venta.ClienteId = v.ClienteId;
+            // También va a eleventa (el piloto); su ticket ya salió con el folio de la caja, así que se manda en la vuelta.
+            eleventa.Encolar(db, venta.Id);
             // Si fió: con lo que sabía la caja (una caja de antes no fía sin conexión; si llegara, se revisa con el saldo real).
             await new RegistroCaja(db).CobroDeContingenciaAsync(venta, v.Cobros, v.Folio, v.PagadaUtc, redondear: v.RedondeoCentavos is not null,
                 fiado: v.SaldoConocidoCentavos is { } conocido ? new FiadoSinConexion(conocido, v.ExcesoAutorizadoCentavos, v.VenceCredito) : null);
+            eleventa.Despertar();
             return Results.NoContent();
         });
 

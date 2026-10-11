@@ -99,11 +99,17 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 /// <param name="TotalCentavos">Exacto: la suma de las líneas, con el IVA incluido.</param>
 /// <param name="RedondeoCentavos">El del efectivo al peso (fase 3): lo que pagó el cliente es el total más esto.</param>
 /// <param name="Cliente">El cliente registrado con sus privilegios: "Escuela Benito Juárez (descuento 10 %)".</param>
+/// <param name="Folio">El de esta caja (A-000123): va en el QR, que abre la devolución en la caja nueva.</param>
+/// <param name="FolioEleventa">En el piloto, el que le dio eleventa si llegó a tiempo: es el que se imprime, para devolver en cualquier caja.</param>
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
     long TotalCentavos, long IvaCentavos, IReadOnlyList<CobroTicketDto> Cobros, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie,
-    LogoTicketDto? Logo = null, Guid? VentaId = null, long RedondeoCentavos = 0, string? Cliente = null, CreditoTicketDto? Credito = null)
+    LogoTicketDto? Logo = null, Guid? VentaId = null, long RedondeoCentavos = 0, string? Cliente = null, CreditoTicketDto? Credito = null,
+    int? FolioEleventa = null)
 {
+    /// <summary>El folio que se lee en el ticket y en la pantalla.</summary>
+    public string FolioImpreso => FolioEleventa?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? Folio;
+
     public long TotalCobradoCentavos => TotalCentavos + RedondeoCentavos;
 
     public long CambioCentavos => Cobros.Sum(c => c.CambioCentavos);
@@ -1004,3 +1010,15 @@ public sealed record SolicitudRevision(Guid UsuarioId, string? Nota);
 public sealed record EstadoEleventaDto(
     bool Activa, string? Origen, DateTime? UltimaLocal, bool Bien, string? Resultado, string? Error, DateTime? ProximaLocal, int Lecturas,
     IReadOnlyDictionary<string, int> Avisos);
+
+/// <summary>La bandeja de salida hacia eleventa de la caja 2 en el piloto (docs/plan.md, paso 3).</summary>
+/// <param name="Destino">A dónde y como qué caja de eleventa (sin la clave).</param>
+/// <param name="Problema">Por qué no está mandando (falta configuración); vacío si todo está.</param>
+/// <param name="UltimoError">El de la última venta que no entró, dicho para la tienda.</param>
+/// <param name="PorAtender">Lo pendiente y lo que hay que revisar, de la más vieja a la más nueva.</param>
+public sealed record EstadoEnviosEleventaDto(
+    bool Activo, string? Destino, string? Problema, int Pendientes, int PorRevisar, int FoliosRepetidos, DateTime? UltimoEnvioLocal,
+    string? UltimoError, IReadOnlyList<EnvioEleventaDto> PorAtender);
+
+public sealed record EnvioEleventaDto(
+    Guid VentaId, string Folio, DateTime CobradaLocal, long TotalCentavos, EstadoEnvioEleventa Estado, int Intentos, string? Error, int? FolioEleventa);

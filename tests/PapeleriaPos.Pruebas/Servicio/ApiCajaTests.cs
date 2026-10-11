@@ -12,10 +12,28 @@ using PapeleriaPos.Nucleo.Ventas;
 namespace PapeleriaPos.Pruebas.Servicio;
 
 /// <summary>El servicio de verdad, sobre una base temporal con 30 días de datos ficticios, la Caja 1 y los usuarios de prueba.</summary>
-public sealed class ServicioDePrueba : IAsyncLifetime
+public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
 {
     private readonly string _ruta = Path.Combine(Path.GetTempPath(), $"pos-prueba-{Guid.NewGuid():N}.db");
+    private readonly (string Clave, string Valor)[] _ajustes;
     public WebApplicationFactory<Program> Fabrica { get; private set; } = null!;
+
+    public ServicioDePrueba() : this([])
+    {
+    }
+
+    private ServicioDePrueba((string Clave, string Valor)[] ajustes) => _ajustes = ajustes;
+
+    /// <summary>Uno propio para una prueba, con su configuración (por ejemplo, la de eleventa).</summary>
+    public static async Task<ServicioDePrueba> CrearAsync(params (string Clave, string Valor)[] ajustes)
+    {
+        var servicio = new ServicioDePrueba(ajustes);
+        await servicio.InitializeAsync();
+        return servicio;
+    }
+
+    /// <summary>La base del servicio, para preparar o revisar lo que la API no muestra.</summary>
+    public PosDbContext Base() => new(BaseDeDatos.Opciones($"Data Source={_ruta};Pooling=False"));
 
     public async Task InitializeAsync()
     {
@@ -26,8 +44,14 @@ public sealed class ServicioDePrueba : IAsyncLifetime
             await PreparacionCaja.PrepararAsync(db);
         }
         Fabrica = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
-            b.UseSetting("ConnectionStrings:Pos", $"Data Source={_ruta};Pooling=False").UseSetting("Respaldos:Activo", "false").UseSetting("Telegram:Activo", "false"));
+        {
+            b.UseSetting("ConnectionStrings:Pos", $"Data Source={_ruta};Pooling=False").UseSetting("Respaldos:Activo", "false").UseSetting("Telegram:Activo", "false");
+            foreach (var (clave, valor) in _ajustes)
+                b.UseSetting(clave, valor);
+        });
     }
+
+    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsync());
 
     public async Task DisposeAsync()
     {

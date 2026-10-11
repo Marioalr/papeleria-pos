@@ -18,6 +18,14 @@ public sealed class RegistroDevoluciones(PosDbContext db)
     /// <summary>Busca un ticket por su folio ("A-000123"), como viene en el QR.</summary>
     public async Task<Venta?> PorFolioAsync(Guid sucursalId, string folio, CancellationToken ct = default)
     {
+        // En el piloto, el ticket impreso lleva el folio de eleventa (solo número); el QR, el de la caja (A-000123).
+        if (folio.Trim() is { Length: > 0 } soloNumero && soloNumero.All(char.IsAsciiDigit) && int.TryParse(soloNumero, out var deEleventa))
+        {
+            var ventaId = await db.EnviosAEleventa.Where(e => e.FolioEleventa == deEleventa).Select(e => (Guid?)e.VentaId).FirstOrDefaultAsync(ct);
+            return ventaId is null ? null : await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros)
+                .SingleOrDefaultAsync(v => v.Id == ventaId && v.SucursalId == sucursalId, ct);
+        }
+
         var partes = folio.Trim().ToUpperInvariant().Split('-');
         if (partes.Length != 2 || !int.TryParse(partes[1], out var numero))
             return null;

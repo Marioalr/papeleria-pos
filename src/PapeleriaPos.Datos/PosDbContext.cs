@@ -41,6 +41,7 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<MovimientoCaja> MovimientosCaja => Set<MovimientoCaja>();
     public DbSet<AperturaCajon> AperturasCajon => Set<AperturaCajon>();
     public DbSet<Venta> Ventas => Set<Venta>();
+    public DbSet<EnvioAEleventa> EnviosAEleventa => Set<EnvioAEleventa>();
     public DbSet<ClienteRegistrado> ClientesRegistrados => Set<ClienteRegistrado>();
     public DbSet<MovimientoCredito> MovimientosCredito => Set<MovimientoCredito>();
     public DbSet<Abono> Abonos => Set<Abono>();
