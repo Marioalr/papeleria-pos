@@ -30,6 +30,9 @@ public sealed record FirebirdLocal(string Carpeta32, string Carpeta64)
 /// </summary>
 public sealed record ServidorEleventa(string Servidor, string Base, string Usuario, string Clave, int Puerto = 3050)
 {
+    // WIN1252 no viene en .NET: sin esto, Firebird no abre la conexión («Invalid character set specified»).
+    static ServidorEleventa() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
     public string Cadena() => new FbConnectionStringBuilder
     {
         DataSource = Servidor,

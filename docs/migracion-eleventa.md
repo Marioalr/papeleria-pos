@@ -182,6 +182,64 @@ Después, desde la caja 2 y contra el Firebird 2.0 de la caja principal (2026-10
 catálogo por Wi-Fi en menos de un segundo, sin errores ni avisos, y encontró lo que cambió en eleventa desde la copia
 (precios, costos y existencias).
 
+### Cómo escribe eleventa una venta (paso 2)
+
+Sacado de una copia de la base (esquema, triggers y ventas ya guardadas); los ejemplos son inventados.
+
+**La base no tiene lógica.** Sus triggers solo ponen el ID desde su contador (`GEN_<TABLA>_ID`) y sus procedimientos solo
+consultan. El folio, la existencia, el turno y el corte los escribe el programa de eleventa: la caja 2 nueva tiene
+que escribir lo mismo.
+
+**Una venta en efectivo** (la tienda solo cobra en efectivo) deja:
+
+1. **El ticket** (`VENTATICKETS`).
+   - Ya existía: cada caja con turno abierto tiene siempre un ticket abierto, con `ESTA_ABIERTO = 't'`, sin folio,
+     `NOMBRE` «Ticket N», `CREADO_EN`, `CAJA_ID`, `CAJERO_ID`, `TURNO_ID` y `OPERACION_ID = -1`.
+   - Al cobrar se llenan `FOLIO`, `VENDIDO_EN` y `PAGADO_EN` (la misma hora), `ESTA_ABIERTO = 'f'`, `SUBTOTAL`,
+     `IMPUESTOS`, `TOTAL`, `GANANCIA`, `PAGO_CON`, `FORMA_PAGO = 'e'`, `NUMERO_ARTICULOS` y `TOTAL_FACTURABLE`.
+   - Enseguida se crea el ticket abierto siguiente.
+2. **Un renglón por artículo** (`VENTATICKETS_ARTICULOS`).
+   - Lleva el código, el nombre, la cantidad, el departamento, `PRECIO_USADO` y `PRECIO_FINAL`, `TOTAL_ARTICULO`,
+     `GANANCIA` y `USA_MAYOREO`.
+   - `AGREGADO_EN` es cuando se escaneó y `PAGADO_EN`, cuando se cobró.
+   - Siempre `PORCENTAJE_PAGADO = 1000000` e `IMPUESTOS_USADOS = ','`.
+3. **El inventario.**
+   - Un renglón por producto en `INVENTARIO_HISTORIAL`: «Venta #<folio>», `CANTIDAD_ANTERIOR`, `CANTIDAD`,
+     `COSTO_UNITARIO`, `COSTO_DESPUES`, `VENTA_ID`, `CAJA_ID`, `USUARIO_ID` y `ALMACEN_ID = 1`.
+   - La existencia baja en `INVENTARIO_BALANCES`. Su historial forma una cadena exacta, por ejemplo 12 → 10 → 9.
+4. **Los acumulados**, en cada venta y no al cerrar (un turno abierto ya cuadra con sus ventas):
+   - en `TURNOS`: `ACUMULADO_VENTAS`, `ACUMULADO_GANANCIA`, `VENTAS_EFECTIVO` y `NUMERO_VENTAS`;
+   - en `CORTE_OPERACIONES`, el renglón del día y la caja (el turno apunta a él con `ID_OPERACION_INICIO`);
+   - en `CORTE_VENTAS_POR_DEPTO`, el renglón del turno y el departamento.
+
+Lo demás:
+- Sin impuestos desglosados no hay `VENTATICKETS_IMPUESTOS`, y sin pago mixto no hay `PAGOS_MIXTOS`. Las tablas viejas
+  `VENTAS` y `OPERACIONES` ya no se usan.
+- **La ganancia** del ticket, del turno y del departamento es la venta menos la cantidad por el costo del inventario. La
+  de cada artículo puede salir distinta (usa el costo del producto).
+- **El folio** es uno solo para todas las cajas y va en el orden en que se cobra. No sale de un contador de Firebird: el
+  programa toma el último y le suma uno.
+  - Ya pasó que dos cajas cobraran con dos segundos de diferencia y se repitiera un folio.
+  - La caja 2 nueva tendrá el mismo riesgo mientras conviva con eleventa: hay que tomarlo justo antes de guardar, en la
+    misma transacción, y revisar después que no se repitió.
+- **Turnos:** uno abierto por caja (`UNIQUE (ID_CAJA, TERMINO_EN)`). La caja 2 nueva va a necesitar abrir y cerrar el
+  suyo en eleventa (paso 4).
+- **Las otras operaciones del corte** van en `CORTE_MOVIMIENTOS`, de tipo `Entrada`, `Salida` y `Devolucion` (paso 4).
+
+**Lo que falta confirmar mirando cómo trabaja**, porque una copia no lo dice:
+- si los artículos se escriben al escanearlos o hasta cobrar (si es al escanear, eso explicaría las pausas de eleventa
+  por Wi-Fi);
+- en qué orden y si todo va en una sola transacción;
+- cancelar, devolver, entradas y salidas, abrir y cerrar el turno, y el corte.
+
+Para eso está `observar-eleventa`. Toma una foto de toda la base, solo leyendo (alrededor de un segundo); después de
+hacer algo en eleventa toma otra y dice qué renglones aparecieron o cambiaron y qué contadores avanzaron. Cada
+comparación se guarda fuera del repositorio, porque son datos reales.
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- observar-eleventa --servidor <la caja principal> --ruta C:\…\PDVDATA.FDB --usuario SYSDBA
+```
+
 ## Arranque (fase 5)
 
 1. Depuración del catálogo sobre la base importada ([plan](plan.md#depuración-del-inventario)): bajas, duplicados,

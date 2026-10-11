@@ -327,6 +327,12 @@ El servicio de la caja 2 lee eleventa por la red cada pocos minutos, solo leyend
 precios, promociones, costos y existencias. Se probó con la base real, primero toda local con un Firebird 2.5 propio y
 después (2026-10-11) desde la caja 2 contra el Firebird 2.0 de la caja principal: lee todo en menos de un segundo.
 
+**Avance (2026-10-11):** el paso 2 va a la mitad ([lo que se sabe](migracion-eleventa.md#cómo-escribe-eleventa-una-venta-paso-2)).
+De una copia ya se sabe qué deja una venta en efectivo: el ticket, sus artículos, el inventario y los acumulados del
+turno, del día y del departamento. También que el folio lo calcula el programa (último + 1) y que alguna vez se
+repitió. Falta mirar cómo trabaja con `observar-eleventa`: si escribe al escanear o al cobrar, el orden, cancelar,
+devolver, el turno y el corte.
+
 #### Al terminar el piloto
 
 Cada parte entra sin detener a la caja 2:
