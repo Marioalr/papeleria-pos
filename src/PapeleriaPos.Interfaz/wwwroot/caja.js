@@ -8,13 +8,54 @@ export function registrar(referencia) {
     pantalla = referencia;
     document.addEventListener('keydown', alPresionar, true);
     document.addEventListener('input', alEscribir, true);
+    document.addEventListener('mouseover', alPasarFlecha, true);
+    document.addEventListener('click', alTocarFlecha, true);
+    document.addEventListener('scroll', alRodarLista, true);
 }
 
 export function quitar() {
     document.removeEventListener('keydown', alPresionar, true);
     document.removeEventListener('input', alEscribir, true);
+    document.removeEventListener('mouseover', alPasarFlecha, true);
+    document.removeEventListener('click', alTocarFlecha, true);
+    document.removeEventListener('scroll', alRodarLista, true);
     clearTimeout(escribiendo);
+    clearInterval(rodando);
+    rodando = null;
     pantalla = null;
+}
+
+// «Más» de los tickets en espera: con muchos, sus flechas deslizan la lista al pasar el mouse (o un renglón con un
+// clic) y se apagan al llegar a la orilla. La rueda del mouse también la recorre.
+let rodando = null;
+
+function alPasarFlecha(e) {
+    const flecha = e.target.closest?.('.vn-menu-flecha');
+    if (!flecha || rodando) return;
+    const paso = Number(flecha.dataset.rodar) * 3;
+    rodando = setInterval(() => {
+        const lista = document.getElementById('lista-espera');
+        if (!lista || !flecha.isConnected || !flecha.matches(':hover')) {
+            clearInterval(rodando);
+            rodando = null;
+            return;
+        }
+        lista.scrollTop += paso;
+    }, 16);
+}
+
+function alTocarFlecha(e) {
+    const flecha = e.target.closest?.('.vn-menu-flecha');
+    if (!flecha) return;
+    document.getElementById('lista-espera')?.scrollBy({ top: Number(flecha.dataset.rodar) * 42, behavior: 'smooth' });
+}
+
+function alRodarLista(e) {
+    const lista = e.target;
+    if (!(lista instanceof HTMLElement) || lista.id !== 'lista-espera') return;
+    const [arriba, abajo] = lista.parentElement.querySelectorAll('.vn-menu-flecha');
+    arriba?.classList.toggle('apagada', lista.scrollTop <= 1);
+    abajo?.classList.toggle('apagada', lista.scrollTop + lista.clientHeight >= lista.scrollHeight - 1);
 }
 
 // El cuadro de captura de la pantalla nueva no avisa a .NET en cada tecla: al Enter, el texto se lee y el cuadro se

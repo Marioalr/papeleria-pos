@@ -71,17 +71,17 @@ else
         </fieldset>
     }
 
-    <details open="@(Empieza is FormaPago.Tarjeta or FormaPago.Transferencia)">
+    <details>
         <summary>Tarjeta o transferencia</summary>
         <div class="dos-columnas">
             <label>Tarjeta
-                <input id="pago-tarjeta" inputmode="decimal" @bind="_tarjeta" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+                <input inputmode="decimal" @bind="_tarjeta" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
             </label>
             <label>Referencia de la terminal
                 <input @bind="_refTarjeta" @bind:event="oninput" @onkeydown="AlTeclear" />
             </label>
             <label>Transferencia
-                <input id="pago-transferencia" inputmode="decimal" @bind="_transferencia" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+                <input inputmode="decimal" @bind="_transferencia" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
             </label>
             <label>Referencia
                 <input @bind="_refTransferencia" @bind:event="oninput" @onkeydown="AlTeclear" />
@@ -162,37 +162,12 @@ else
     private long Faltante => Math.Max(0, ACobrar.ACobrarCentavos - Efectivo);
     private long Cambio => Math.Max(0, Efectivo - ACobrar.ACobrarCentavos);
 
-    /// <summary>
-    /// Desde «Tarjeta» o «Transf.» de la pantalla nueva: esa forma trae el total (se cambia si es solo una parte) y el
-    /// efectivo empieza en cero.
-    /// </summary>
-    [Parameter] public FormaPago? Empieza { get; set; }
-
-    protected override void OnInitialized()
-    {
-        switch (Empieza)
-        {
-            case FormaPago.Tarjeta:
-                (_tarjeta, _efectivo) = (Pesos(TotalCentavos), "0");
-                break;
-            case FormaPago.Transferencia:
-                (_transferencia, _efectivo) = (Pesos(TotalCentavos), "0");
-                break;
-            default:
-                _efectivo = Pesos(Venta.Efectivo(0).ACobrarCentavos);
-                break;
-        }
-    }
+    protected override void OnInitialized() => _efectivo = (Venta.Efectivo(0).ACobrarCentavos / 100m).ToString("0.00", CultureInfo.InvariantCulture);
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
         if (primera)
-            await Js.EnfocarAsync(Empieza switch
-            {
-                FormaPago.Tarjeta => "#pago-tarjeta",
-                FormaPago.Transferencia => "#pago-transferencia",
-                _ => "#pago-efectivo",
-            });
+            await Js.EnfocarAsync("#pago-efectivo");
     }
 
     private async Task AlTeclear(KeyboardEventArgs e)

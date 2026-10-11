@@ -452,6 +452,23 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-ficha { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 13px; color: var(--vn-texto); border: 1px dashed var(--vn-borde); background: var(--vn-renglon); border-radius: 8px; padding: 3px 10px; cursor: pointer; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .vn-ficha:hover { border-style: solid; border-color: var(--vn-tinta); background: var(--vn-tinta-claro); }
 .vn-ficha .ico { width: 14px; height: 14px; color: var(--vn-suave); }
+/* «Más»: los tickets en espera que no caben a la vista, en un menú con flechas arriba y abajo si son muchos */
+.vn-mas-espera { position: relative; display: inline-flex; }
+.vn-mas-espera > .vn-boton .ico { width: 13px; height: 13px; }
+.vn-mas-espera > .vn-boton.on { border-color: var(--vn-tinta); background: var(--vn-tinta-claro); }
+.vn-menu-espera { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; width: 268px; display: flex; flex-direction: column; gap: 2px; padding: 4px; background: var(--vn-hoja); border: 1px solid var(--vn-borde); border-radius: 10px; box-shadow: 0 10px 28px rgba(20, 30, 60, .2); }
+.vn-menu-lista { max-height: 214px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; display: flex; flex-direction: column; gap: 2px; }
+.vn-menu-lista::-webkit-scrollbar { display: none; }
+.vn-menu-flecha { flex: none; display: grid; place-items: center; height: 22px; border: 0; border-radius: 6px; background: var(--vn-renglon); color: var(--vn-tinta); cursor: pointer; }
+.vn-menu-flecha .ico { width: 16px; height: 16px; }
+.vn-menu-flecha:hover { background: var(--vn-tinta-claro); }
+.vn-menu-flecha.apagada { opacity: .25; pointer-events: none; }
+.vn-fila-espera { flex: none; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 40px; font: inherit; font-size: 13px; color: var(--vn-texto); border: 0; background: none; border-radius: 7px; padding: 4px 9px; cursor: pointer; text-align: left; }
+.vn-fila-espera:hover { background: var(--vn-tinta-claro); }
+.vn-fila-espera .ico { width: 15px; height: 15px; color: var(--vn-suave); }
+.vn-fila-espera span { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.vn-fila-espera small { font-size: 11.5px; color: var(--vn-suave); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vn-fila-espera em { font: 700 14px var(--vn-f-cifras); font-style: normal; font-variant-numeric: tabular-nums; }
 
 /* La lista del ticket */
 .vn-ticket { flex: 1; min-height: 0; overflow-y: auto; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; }
@@ -531,6 +548,18 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-vivo { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 12px; border-radius: 10px; background: var(--vn-cobro-claro); color: var(--vn-cobro); font-weight: 600; font-size: 14px; }
 .vn-vivo strong { font: 700 30px var(--vn-f-cifras); font-variant-numeric: tabular-nums; }
 .vn-vivo.falta { background: var(--vn-aviso-fondo); color: var(--vn-aviso); }
+/* El cobro mixto: tarjeta, transferencia o crédito, cada una en su renglón; el efectivo cubre lo que falta */
+.vn-pago-fila { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: end; background: var(--vn-renglon); border: 1px solid var(--vn-linea); border-radius: 10px; padding: 8px 10px; }
+.vn-pago-fila .forma { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 600; font-size: 13.5px; color: var(--vn-texto); }
+.vn-pago-fila .forma small { font-weight: 400; font-size: 12px; color: var(--vn-suave); }
+.vn-pago-fila label { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 12.5px; color: var(--vn-suave); }
+.vn-pago-fila input { width: 100%; min-width: 0; font: 600 15px var(--vn-f-cifras); color: var(--vn-texto); padding: 6px 9px; border: 1px solid var(--vn-borde); border-radius: 8px; background: var(--vn-hoja); font-variant-numeric: tabular-nums; }
+.vn-pago-fila input:focus { outline: 2px solid var(--vn-cobro); outline-offset: -1px; border-color: var(--vn-cobro); }
+.vn-pago-fila .nota { margin: 0; align-self: center; font-size: 12px; line-height: 1.35; color: var(--vn-suave); }
+.vn-pago-fila .x { border: 0; background: none; cursor: pointer; color: var(--vn-tenue); padding: 8px 4px; }
+.vn-pago-fila .x:hover { color: var(--vn-error); }
+.vn-pago-fila .x .ico { width: 16px; height: 16px; }
+.vn-pago-cab .nota { margin: 0; font-size: 13px; }
 .vn-cobrar { margin-top: 6px; display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; border: 0; border-radius: 10px; background: var(--vn-cobro); color: #fff; padding: 13px 16px; font: 700 19px var(--vn-f-cifras); text-align: left; cursor: pointer; }
 .vn-cobrar:hover:not(:disabled) { background: var(--vn-cobro-hover); }
 .vn-cobrar:disabled { background: #a9c9b8; cursor: default; }

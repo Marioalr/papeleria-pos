@@ -341,10 +341,22 @@ panel de la derecha y vuelve con Esc.
 - **F12 mueve el cursor a «Pagó con» en el navegador mismo,** sin esperar al servicio: lo que se teclea enseguida ya no
   cae en el cuadro de captura.
 
+**Avance (2026-10-11), tercera parte: el cobro mixto y «Más».** En la pantalla nueva todo el cobro va en el panel del
+total, también con cliente registrado; la ventana de cobro queda solo en la pantalla de hoy.
+- **«Tarjeta», «Transf.» y «Crédito»** (o «A favor», con saldo a favor) agregan cada uno su renglón con lo que falta:
+  - el monto se cambia si es solo una parte, y «Pagó con» cubre el resto en efectivo, al peso;
+  - tarjeta y transferencia llevan su referencia, y la transferencia queda por verificar;
+  - el crédito dice lo que debe y lo que le queda. Si pasa el límite, el panel lo avisa con quién lo autoriza, y al
+    cobrar se autoriza ahí mismo;
+  - si las otras formas cubren todo, F12 lleva el cursor a «Cobrar» y otro F12 (o Enter) cobra.
+- **Si al cobrar algo queda debajo del costo,** después de autorizarlo se sigue con el cobro, sin volver a pedirlo.
+- **Los tickets en espera:** 3 fichas a la vista y los demás en «Más (N)», con la hora, los artículos y el total. Con
+  más de 5, el menú lleva flechas que lo deslizan al pasar el mouse; se cierra con Esc, con un clic fuera o al elegir uno.
+
 Falta, en este orden:
-1. el cobro mixto dentro del panel del total y «Más» en los tickets en espera;
-2. la autorización con las fichas de quien puede autorizar (hoy se escribe su usuario);
-3. la búsqueda con familias de colores, fichas para afinar, el error de dedo y los sinónimos de la tienda.
+1. la autorización con las fichas de quien puede autorizar (hoy se escribe su usuario);
+2. la búsqueda con familias de colores, fichas para afinar, el error de dedo y los sinónimos de la tienda;
+3. cuántas fichas de espera se ven, en Configuración (hoy son 3).
 
 #### Después: el piloto en la caja 2
 
