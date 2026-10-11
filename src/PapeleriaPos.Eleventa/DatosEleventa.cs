@@ -1,4 +1,4 @@
-namespace PapeleriaPos.Herramientas.Eleventa;
+namespace PapeleriaPos.Eleventa;
 
 // Las filas tal como vienen de eleventa (esquema 216). Los montos son pesos con IVA incluido y las fechas, hora local.
 

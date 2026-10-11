@@ -50,6 +50,11 @@ builder.Services.AddSingleton<VigilanciaImpresora>();
 if (builder.Configuration.GetValue("Impresora:Vigilar", true))
     builder.Services.AddHostedService(proveedor => proveedor.GetRequiredService<VigilanciaImpresora>());
 
+// El piloto en la caja 2: lee el catálogo y las existencias de eleventa cada pocos minutos (solo si Eleventa:Activo).
+builder.Services.AddSingleton(builder.Configuration.GetSection("Eleventa").Get<OpcionesEleventa>() ?? new OpcionesEleventa());
+builder.Services.AddSingleton<LecturaEleventa>();
+builder.Services.AddHostedService(proveedor => proveedor.GetRequiredService<LecturaEleventa>());
+
 // Un celular que apaga la pantalla mientras cuenta se desconecta: al volver retoma donde estaba si no pasó media hora.
 builder.Services.AddRazorComponents().AddInteractiveServerComponents(o => o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(30));
 builder.Services.AddSingleton<SesionesCelular>();
@@ -87,6 +92,7 @@ app.MapearApiCompras();
 app.MapearApiConteos();
 app.MapearApiEtiquetas();
 app.MapearApiPrueba();
+app.MapearApiEleventa();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Run();

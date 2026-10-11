@@ -127,6 +127,59 @@ Lo que hay que resolver antes:
 **El primer paso es solo leer** de eleventa (catálogo, precios y existencias cada pocos minutos), para que la caja 2
 trabaje con datos al día sin escribir nada en eleventa. Cuando eso funcione, se agrega la escritura.
 
+### La lectura de cada pocos minutos (paso 1)
+
+La base de la caja 2 se arma una vez con `importar-eleventa`, desde una copia. Desde ahí, su servicio lee el eleventa de
+la caja principal por la red, como lo abre una caja de eleventa, y se pone al día:
+
+- **Qué lee:** departamentos, productos (nombre, código, precio, costo, mayoreo, borrados), existencias y promociones
+  por cantidad. Las ventas no, porque pesan y no hacen falta cada pocos minutos.
+- **Cómo:** en una transacción de solo lectura y con foto fija, así todo es del mismo momento. No escribe nada en
+  eleventa. Con la base real tarda menos de un segundo.
+- **Qué cambia aquí** (eleventa manda):
+  - las altas, con su código, precio, costo y existencia;
+  - el nombre, el departamento, el código y si está activo;
+  - el precio de menudeo y las promociones por cantidad: se agregan, cambian y se quitan;
+  - el costo;
+  - la existencia, con un ajuste en el kardex al costo promedio y a nombre de `lectura-eleventa`.
+- **Qué no toca:**
+  - lo dado de alta aquí;
+  - las escalas de mayoreo deducidas del F11 o capturadas en F3;
+  - la unidad (si cambia allá, da un aviso);
+  - el nombre de un producto que la depuración ya agrupó;
+  - lo juntado en la depuración.
+- **Lo que necesita revisarse** queda como aviso, por ejemplo un código que aquí ya tiene otro producto. El mayoreo de
+  un producto nuevo queda en F3 por revisar, porque todavía no tiene ventas con F11.
+- **Si eleventa no contesta** (la PC apagada, la red caída), la caja sigue vendiendo con lo último que se leyó y vuelve
+  a intentar en la siguiente vuelta. El error se ve en `GET /api/eleventa`; `POST /api/eleventa/leer` lee ya, sin
+  esperar la vuelta.
+- **La existencia y una venta a la vez:** el ajuste se guarda con la base apartada para escribir, así una venta que se
+  cobre en ese momento espera unos milisegundos y no se pierde. Entre dos ventas a la vez el riesgo sigue como antes, y
+  `VerificarExistenciasAsync` lo detecta.
+
+Se configura en el servicio de la caja 2, sección `Eleventa`. Los datos reales van en la configuración de esa PC,
+nunca aquí; la clave puede ir en la variable de entorno `Eleventa__Clave`.
+
+```json
+"Eleventa": { "Activo": true, "Servidor": "<la caja principal>", "Base": "C:\\…\\PDVDATA.FDB", "Usuario": "SYSDBA", "Clave": "…", "Minutos": 5 }
+```
+
+Para probarla una vez a mano, sobre una base ya importada (con `--simular` solo dice qué cambiaría):
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- sincronizar-eleventa --base eleventa.db --fdb C:\ruta\PDVDATA.FDB --simular
+set ELEVENTA_CLAVE=…
+dotnet run --project src/PapeleriaPos.Herramientas -- sincronizar-eleventa --base eleventa.db --servidor <la caja principal> --ruta C:\…\PDVDATA.FDB --usuario SYSDBA --simular
+```
+
+Se probó con la base real, toda local:
+1. Se importó la copia y se leyó la misma copia: sin cambios ni avisos.
+2. Se leyó por la red desde un Firebird 2.5 local con otra copia: la misma respuesta en 0.2 s.
+3. Se cambiaron un precio y una existencia en esa copia: llegaron, y la lectura siguiente salió sin cambios.
+4. Se apagó ese Firebird: la caja siguió contestando y el error quedó en el estado.
+
+Falta probarlo contra el Firebird 2.0 de la caja principal, desde la caja 2.
+
 ## Arranque (fase 5)
 
 1. Depuración del catálogo sobre la base importada ([plan](plan.md#depuración-del-inventario)): bajas, duplicados,

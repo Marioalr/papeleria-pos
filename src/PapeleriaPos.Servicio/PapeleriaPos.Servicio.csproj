@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\PapeleriaPos.Nucleo\PapeleriaPos.Nucleo.csproj" />
     <ProjectReference Include="..\PapeleriaPos.Datos\PapeleriaPos.Datos.csproj" />
+    <ProjectReference Include="..\PapeleriaPos.Eleventa\PapeleriaPos.Eleventa.csproj" />
     <ProjectReference Include="..\PapeleriaPos.Interfaz\PapeleriaPos.Interfaz.csproj" />
     <ProjectReference Include="..\PapeleriaPos.Impresion\PapeleriaPos.Impresion.csproj" />
   </ItemGroup>
