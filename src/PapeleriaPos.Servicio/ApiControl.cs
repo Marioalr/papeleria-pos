@@ -45,6 +45,16 @@ public static class ApiControl
             return new DecisionDto(decision.Nivel, decision.PideMotivo);
         });
 
+        // Todo lo que puede quien entró, en una sola consulta: la caja pinta sus pestañas, teclas y candados con esto.
+        api.MapGet("/usuarios/{usuarioId:guid}/permisos", async (Guid usuarioId, Guid sucursalId, PosDbContext db) =>
+        {
+            var usuarios = await db.Usuarios.AsNoTracking().Where(u => u.Activo && (u.SucursalId == null || u.SucursalId == sucursalId))
+                .Select(u => new { u.Id, u.Nombre, u.Rol }).ToListAsync();
+            var usuario = usuarios.SingleOrDefault(u => u.Id == usuarioId) ?? throw new ArgumentException("Ese usuario no está activo en esta sucursal.");
+            return Permisos.DeLaSesion(await new ServicioControl(db).ReglasAsync(sucursalId), usuarios.Select(u => (u.Id, u.Nombre, u.Rol)),
+                usuario.Id, usuario.Rol, sucursalId);
+        });
+
         api.MapPost("/autorizaciones", async (SolicitudAutorizacion s, PosDbContext db) =>
         {
             var autorizacion = await new ServicioControl(db).AutorizarAsync(s.Accion, s.SucursalId, s.CajaId, s.SolicitanteId, s.Usuario, s.Pin, s.MontoCentavos, s.Detalle);

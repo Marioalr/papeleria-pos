@@ -1,0 +1,104 @@
+@* El estado de arriba en la pantalla nueva (docs/propuesta-interfaz.md, «Caja principal y secundarias»): dónde está el
+   servicio o si se perdió la caja principal, la impresora de tickets y las impresiones que faltan por cobrar. *@
+@implements IAsyncDisposable
+@inject ClienteCaja Cliente
+@inject ConexionCaja Conexion
+@inject IImpresora Impresora
+@inject IServiceProvider Servicios
+
+<div class="vn-estado">
+    @if (Conexion.Servicio.IsLoopback)
+    {
+        <span class="vn-chip-estado" title="El servicio y la base están en esta PC."><span class="punto"></span>Servicio aquí</span>
+    }
+    else if (_contingencia is { ServidorResponde: false } sin)
+    {
+        <span class="vn-chip-estado aviso" title="Se vende con la copia de esta caja; lo que se cobra sube al volver la conexión.">
+            <span class="punto"></span>Sin la principal@(sin.Pendientes > 0 ? $" · {sin.Pendientes} por subir" : "")
+        </span>
+    }
+    else if (_contingencia is { Pendientes: > 0 } subiendo)
+    {
+        <span class="vn-chip-estado aviso"><span class="punto"></span>Subiendo @subiendo.Pendientes…</span>
+    }
+    else
+    {
+        <span class="vn-chip-estado" title="El catálogo está en esta caja; lo que se cobra va a la caja principal."><span class="punto"></span>Conectada a la principal</span>
+    }
+    @if (Impresora.MuestraVistaPrevia)
+    {
+        <span class="vn-chip-estado" title="Sin impresora de tickets en esta PC: el ticket se ve en pantalla."><Ico Nombre="monitor" />Ticket en pantalla</span>
+    }
+    else
+    {
+        <span class="vn-chip-estado" title="La impresora de tickets de esta caja."><Ico Nombre="impresora" />Tickets</span>
+    }
+    @if (_porCobrar > 0)
+    {
+        <button class="vn-chip-estado" title="Lo impreso que falta cobrar, de todas las PC (F2)" @onclick="AlImpresiones">
+            Impresiones por cobrar <span class="cuenta">@_porCobrar</span>
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter] public EventCallback AlImpresiones { get; set; }
+
+    /// <summary>Cada cuánto se vuelven a contar las impresiones por cobrar (también al cobrar y al cerrar F2).</summary>
+    private static readonly TimeSpan CadaCuanto = TimeSpan.FromSeconds(45);
+
+    private Contingencia? _contingencia;
+    private int _porCobrar;
+    private readonly CancellationTokenSource _alto = new();
+
+    protected override void OnInitialized()
+    {
+        // Solo la ventana de Windows trabaja sin conexión; en el navegador de la caja principal no hay contingencia.
+        _contingencia = Servicios.GetService<Contingencia>();
+        if (_contingencia is not null)
+            _contingencia.Cambio += AlCambiar;
+        _ = VigilarAsync();
+    }
+
+    private void AlCambiar() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task VigilarAsync()
+    {
+        using var reloj = new PeriodicTimer(CadaCuanto);
+        try
+        {
+            do
+                await InvokeAsync(ActualizarAsync);
+            while (await reloj.WaitForNextTickAsync(_alto.Token));
+        }
+        catch (OperationCanceledException)
+        {
+            // Se cerró la pantalla.
+        }
+    }
+
+    /// <summary>Cuenta otra vez lo que falta por cobrar (después de cobrar o de cerrar F2).</summary>
+    public async Task ActualizarAsync()
+    {
+        try
+        {
+            _porCobrar = (await Cliente.ImpresionesPorCobrarAsync(Caja.SucursalId, Sesion.UsuarioId)).Count;
+        }
+        catch (ErrorCaja)
+        {
+            // Sin la caja principal no se sabe: el chip se oculta hasta que vuelva.
+            _porCobrar = 0;
+        }
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_contingencia is not null)
+            _contingencia.Cambio -= AlCambiar;
+        await _alto.CancelAsync();
+        _alto.Dispose();
+    }
+}

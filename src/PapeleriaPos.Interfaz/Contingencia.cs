@@ -484,6 +484,13 @@ public sealed class Contingencia
         return new DecisionDto(decision.Nivel, decision.PideMotivo);
     }
 
+    public IReadOnlyList<PermisoDeSesion> PermisosDeSesion(Guid usuarioId)
+    {
+        var usuario = Datos.UsuariosPorId.GetValueOrDefault(usuarioId) ?? throw new InvalidOperationException("Ese usuario no está en la copia de esta caja.");
+        return Permisos.DeLaSesion(Datos.Reglas, Datos.UsuariosPorId.Values.Where(u => u.Activo).Select(u => (u.Id, u.Nombre, u.Rol)), usuario.Id, usuario.Rol,
+            Caja.SucursalId);
+    }
+
     /// <summary>Con la copia local de los PIN. Vale una vez, como en línea; queda en la bitácora al usarse.</summary>
     public AutorizacionDto Autorizar(SolicitudAutorizacion s)
     {

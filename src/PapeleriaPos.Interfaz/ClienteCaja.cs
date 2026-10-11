@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Interfaz;
@@ -93,6 +94,12 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     public Task<DecisionDto> PermisoAsync(SolicitudPermiso solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<DecisionDto>("api/permisos", solicitud), l => l.Permiso(solicitud));
+
+    /// <summary>Todo lo que puede quien entró, con quién autoriza cada cosa. Sin conexión, de la copia local.</summary>
+    public Task<IReadOnlyList<PermisoDeSesion>> PermisosDeSesionAsync(Guid usuarioId, Guid sucursalId) =>
+        ConRespaldoAsync<IReadOnlyList<PermisoDeSesion>>(
+            async () => await _http.GetAsync<List<PermisoDeSesion>>($"api/usuarios/{usuarioId}/permisos?sucursalId={sucursalId}") ?? [],
+            l => l.PermisosDeSesion(usuarioId));
 
     public Task<AutorizacionDto> AutorizarAsync(SolicitudAutorizacion solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<AutorizacionDto>("api/autorizaciones", solicitud), l => l.Autorizar(solicitud));
