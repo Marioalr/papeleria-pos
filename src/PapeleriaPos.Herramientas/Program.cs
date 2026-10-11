@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
+using PapeleriaPos.Eleventa;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Herramientas;
 using PapeleriaPos.Herramientas.Diagnostico;
@@ -17,6 +18,7 @@ return args switch
     ["generar-ficticios", .. var resto] => await GenerarFicticiosAsync(resto),
     ["diagnostico", .. var resto] => await DiagnosticoAsync(resto),
     ["importar-eleventa", .. var resto] => await ImportarEleventaAsync(resto),
+    ["sincronizar-eleventa", .. var resto] => await SincronizarEleventaAsync(resto),
     ["preparar-caja", .. var resto] => await PrepararCajaAsync(resto),
     ["importar-control-print", .. var resto] => await ImportarControlPrintAsync(resto),
     ["aplicar-depuracion", .. var resto] => await AplicarDepuracionAsync(resto),
@@ -40,6 +42,14 @@ static int Ayuda()
                             [--firebird32 <carpeta>] [--firebird64 <carpeta>]
               Importa una copia de la base de eleventa (catálogo, ventas y existencias). La original no se abre.
               Por omisión busca Firebird en firebird25-32\embed y firebird25, junto a la carpeta de la base.
+
+          sincronizar-eleventa --base pos.db [--simular]
+                               (--fdb PDVDATA.FDB [--firebird32 <carpeta>] [--firebird64 <carpeta>]
+                                | --servidor <PC> --ruta <C:\...\PDVDATA.FDB> [--puerto 3050] --usuario <usuario>)
+              Pone al día una base ya importada con lo que dice eleventa ahora (altas, precios, promociones,
+              existencias), como lo hará la caja 2 del piloto cada pocos minutos. Con --fdb lee una copia; con
+              --servidor, el Firebird de la caja principal por la red, solo leyendo. La clave va en la variable
+              ELEVENTA_CLAVE. Con --simular dice qué cambiaría, sin guardar nada.
 
           importar-control-print --base pos.db [--control-print controlprint.db]
               Copia la configuración de costos de Control Print (tinta, papel, márgenes, calibración) a todas las
@@ -114,6 +124,65 @@ static async Task<int> ImportarEleventaAsync(string[] args)
         foreach (var (aviso, veces) in datos.Avisos)
             Console.WriteLine($"  {veces,6:N0}  {aviso}");
     }
+    return 0;
+}
+
+static async Task<int> SincronizarEleventaAsync(string[] args)
+{
+    if (Opcion(args, "--base") is not { } ruta || !File.Exists(ruta))
+    {
+        Console.Error.WriteLine("Indica con --base la base ya importada de eleventa (importar-eleventa).");
+        return 1;
+    }
+    DatosEleventa eleventa;
+    if (Opcion(args, "--fdb") is { } fdb)
+    {
+        var carpeta = Path.GetDirectoryName(Path.GetFullPath(fdb))!;
+        eleventa = await LectorEleventa.LeerAsync(fdb, new FirebirdLocal(
+            Opcion(args, "--firebird32") ?? Path.Combine(carpeta, "firebird25-32", "embed"),
+            Opcion(args, "--firebird64") ?? Path.Combine(carpeta, "firebird25")), Console.WriteLine);
+    }
+    else if (Opcion(args, "--servidor") is { } servidor && Opcion(args, "--ruta") is { } rutaEleventa && Opcion(args, "--usuario") is { } usuario)
+    {
+        // La clave no va en la línea de comandos (se queda en el historial y en la lista de procesos).
+        if (Environment.GetEnvironmentVariable("ELEVENTA_CLAVE") is not { Length: > 0 } clave)
+        {
+            Console.Error.WriteLine("Pon la clave del Firebird de eleventa en la variable ELEVENTA_CLAVE.");
+            return 1;
+        }
+        var conexion = new ServidorEleventa(servidor, rutaEleventa, usuario, clave, int.Parse(Opcion(args, "--puerto") ?? "3050", CultureInfo.InvariantCulture));
+        Console.WriteLine($"Leyendo {conexion} (solo lectura)…");
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            eleventa = await LectorEleventa.LeerCatalogoAsync(conexion);
+        }
+        catch (System.Data.Common.DbException ex)
+        {
+            Console.Error.WriteLine(LectorEleventa.Explicar(ex, conexion));
+            return 1;
+        }
+        Console.WriteLine($"Leído en {reloj.Elapsed.TotalSeconds:N1} s.");
+    }
+    else
+    {
+        Console.Error.WriteLine("Indica de dónde leer: --fdb (una copia) o --servidor, --ruta y --usuario (la caja principal).");
+        return 1;
+    }
+    Console.WriteLine($"Eleventa: {eleventa.Productos.Count:N0} productos, {eleventa.Existencias.Count:N0} existencias, {eleventa.Promociones.Count:N0} promociones.");
+
+    var simular = args.Contains("--simular");
+    await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={ruta}"));
+    await BaseDeDatos.PrepararAsync(db);
+    await using var transaccion = await db.Database.BeginTransactionAsync();
+    var resultado = await SincronizacionEleventa.AplicarAsync(db, eleventa, DateTime.UtcNow);
+    if (simular)
+        await transaccion.RollbackAsync();
+    else
+        await transaccion.CommitAsync();
+    Console.WriteLine($"{(simular ? "Cambiaría" : "Cambió")}: {resultado}.");
+    foreach (var (aviso, veces) in resultado.Avisos)
+        Console.WriteLine($"  {veces,6:N0}  {aviso}");
     return 0;
 }
 

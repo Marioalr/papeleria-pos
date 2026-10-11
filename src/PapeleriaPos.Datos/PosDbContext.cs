@@ -145,8 +145,9 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
         || ChangeTracker.Entries<ClienteRegistrado>().Any(e => e.State == EntityState.Added && e.Entity.LimiteCreditoCentavos > 0
             || e.State == EntityState.Modified && (e.Property(c => c.LimiteCreditoCentavos).IsModified || e.Property(c => c.PlazoCreditoDias).IsModified));
 
+    /// <summary>También lo borrado (una escala de mayoreo que se quitó): las cajas vuelven a bajar el catálogo.</summary>
     private bool HayCambiosDeCatalogo() =>
-        ChangeTracker.Entries<IVersionado>().Any(e => e.State is EntityState.Added or EntityState.Modified);
+        ChangeTracker.Entries<IVersionado>().Any(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
 
     private Secuencia? ObtenerSecuencia() =>
         HayCambiosDeCatalogo() ? Secuencias.Find(Secuencia.Catalogo) ?? NuevaSecuencia() : null;

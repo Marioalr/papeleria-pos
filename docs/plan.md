@@ -322,6 +322,11 @@ visual (entrega 2). Para el piloto hace falta, en este orden:
   haciendo en eleventa y llegan a la caja 2 con la lectura; y el ticket de la caja 2 lleva el folio de eleventa, para
   que una devolución se pueda hacer en cualquiera de las dos cajas.
 
+**Avance (2026-10-10):** el paso 1 está hecho ([cómo funciona](migracion-eleventa.md#la-lectura-de-cada-pocos-minutos-paso-1)).
+El servicio de la caja 2 lee eleventa por la red cada pocos minutos, solo leyendo, y pone al día su base: altas,
+precios, promociones, costos y existencias. Se probó con la base real, toda local, con un Firebird 2.5 propio. Falta
+la primera lectura contra el Firebird 2.0 de la caja principal, desde la caja 2, con `sincronizar-eleventa --simular`.
+
 #### Al terminar el piloto
 
 Cada parte entra sin detener a la caja 2:

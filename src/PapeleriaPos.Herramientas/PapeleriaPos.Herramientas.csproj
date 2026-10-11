@@ -3,11 +3,11 @@
   <ItemGroup>
     <ProjectReference Include="..\PapeleriaPos.Nucleo\PapeleriaPos.Nucleo.csproj" />
     <ProjectReference Include="..\PapeleriaPos.Datos\PapeleriaPos.Datos.csproj" />
+    <ProjectReference Include="..\PapeleriaPos.Eleventa\PapeleriaPos.Eleventa.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.105.1" />
-    <PackageReference Include="FirebirdSql.Data.FirebirdClient" Version="10.3.4" />
   </ItemGroup>
 
   <PropertyGroup>

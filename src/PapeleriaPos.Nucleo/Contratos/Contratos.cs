@@ -996,3 +996,11 @@ public sealed record RevisionCreditoDto(
 
 /// <summary>Quien revisó, con una nota (qué se hizo).</summary>
 public sealed record SolicitudRevision(Guid UsuarioId, string? Nota);
+
+/// <summary>La lectura de eleventa de la caja 2 en el piloto (docs/plan.md, paso 1).</summary>
+/// <param name="Origen">De dónde lee (la PC, el puerto y la base; sin la clave).</param>
+/// <param name="Bien">Si la última lectura salió bien; si no, <paramref name="Error"/> dice por qué y se vende con lo de antes.</param>
+/// <param name="Resultado">Lo que cambió en la última lectura que salió bien.</param>
+public sealed record EstadoEleventaDto(
+    bool Activa, string? Origen, DateTime? UltimaLocal, bool Bien, string? Resultado, string? Error, DateTime? ProximaLocal, int Lecturas,
+    IReadOnlyDictionary<string, int> Avisos);

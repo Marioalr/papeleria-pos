@@ -1,3 +1,4 @@
+using PapeleriaPos.Eleventa;
 using PapeleriaPos.Herramientas.Importacion;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
@@ -33,8 +34,8 @@ public static class ImportadorEleventa
     public const string MotivoGranel = "Se vende a granel: captura la escala en metros o kilos";
     public const string MotivoChoca = "Choca con una promoción por cantidad de eleventa (el precio subiría con la cantidad)";
     public const string MotivoCodigoRepetido = "Su código está repetido en eleventa: sus ventas con F11 no se pueden separar";
-    public const string AvisoUnidadKilo = "Granel con medida KG en eleventa (la medida está desactivada): revisar la unidad";
-    public const string AvisoFraccionEnPieza = "Por pieza en eleventa pero vendido o contado con fracciones: se importó a granel";
+    public const string AvisoUnidadKilo = ReglasEleventa.AvisoUnidadKilo;
+    public const string AvisoFraccionEnPieza = ReglasEleventa.AvisoFraccionEnPieza;
     public const string AvisoExistenciaNegativa = "Existencia negativa en eleventa: no se importó";
     public const string AvisoTicketAbierto = "Ticket sin terminar (sin fecha de venta): no se importó";
     public const string AvisoCodigoInexistente = "Vendido con un código que ya no existe en el catálogo: se creó como producto inactivo";
@@ -310,40 +311,14 @@ public static class ImportadorEleventa
         return variante;
     }
 
-    /// <summary>
-    /// 'U' es por pieza; 'D' (granel) según la medida: metro, litro o kilo. Muchos productos a granel de eleventa
-    /// tienen la medida KG aunque se venden por metro o por pieza suelta; si el nombre dice metro, se toma metro.
-    /// </summary>
-    private static UnidadBase Unidad(FilaProducto p, bool conFracciones, ResultadoImportacion r)
-    {
-        if (p.TipoVenta != 'D' && !conFracciones)
-            return UnidadBase.Pieza;
-        if (p.TipoVenta != 'D')
-            r.Avisar(AvisoFraccionEnPieza);
+    // Las mismas reglas que la lectura de cada pocos minutos (SincronizacionEleventa).
+    private static UnidadBase Unidad(FilaProducto p, bool conFracciones, ResultadoImportacion r) => ReglasEleventa.Unidad(p, conFracciones, aviso => r.Avisar(aviso));
 
-        if (p.MedidaId == 3 || PareceMetro(p.Descripcion))
-            return UnidadBase.Metro;
-        if (p.MedidaId == 5)
-            return UnidadBase.Litro;
-        if (p.TipoVenta == 'D')
-            r.Avisar(AvisoUnidadKilo);
-        return UnidadBase.Kilogramo;
-    }
+    private static OrigenCodigo OrigenDe(string codigo) => ReglasEleventa.OrigenDe(codigo);
 
-    private static bool PareceMetro(string descripcion)
-    {
-        var palabras = Texto.Normalizar(descripcion).Replace(".", " ").Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return palabras.Any(p => p is "METRO" or "METROS" or "MT" or "MTS" or "XM" or "XMT" or "XMETRO");
-    }
+    private static bool EsEntero(double cantidad) => ReglasEleventa.EsEntero(cantidad);
 
-    /// <summary>Numéricos de 8, 12, 13 o 14 dígitos son de fábrica (EAN, UPC); los demás, claves que puso la tienda.</summary>
-    private static OrigenCodigo OrigenDe(string codigo) =>
-        codigo.Length is 8 or 12 or 13 or 14 && codigo.All(char.IsAsciiDigit) ? OrigenCodigo.Fabrica : OrigenCodigo.Interno;
-
-    private static bool EsEntero(double cantidad) => Math.Abs(cantidad - Math.Round(cantidad)) < 0.0005;
-
-    /// <summary>Eleventa guarda los montos como FLOAT: se redondean al centavo.</summary>
-    private static long Centavos(double pesos) => (long)Math.Round((decimal)pesos * 100, MidpointRounding.AwayFromZero);
+    private static long Centavos(double pesos) => ReglasEleventa.Centavos(pesos);
 
     private static void Mapear(ResultadoImportacion r, string entidad, string idOrigen, Guid idNuevo) =>
         r.Mapeos.Add(new MapeoImportacion { Origen = Origen, Entidad = entidad, IdOrigen = idOrigen, IdNuevo = idNuevo });

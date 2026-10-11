@@ -4,7 +4,7 @@ using System.Text;
 using FirebirdSql.Data.FirebirdClient;
 using FirebirdSql.Data.Services;
 
-namespace PapeleriaPos.Herramientas.Eleventa;
+namespace PapeleriaPos.Eleventa;
 
 /// <summary>Dónde están las dos versiones de Firebird 2.5 que hacen falta (ver docs/migracion-eleventa.md).</summary>
 /// <param name="Carpeta32">Firebird 2.5 embebido de 32 bits con gbak.exe y fbembed.dll copiado como fbclient.dll.</param>
@@ -22,6 +22,30 @@ public sealed record FirebirdLocal(string Carpeta32, string Carpeta64)
                 throw new FileNotFoundException($"Falta {archivo}. Ver «Leer la base» en docs/migracion-eleventa.md.", archivo);
         }
     }
+}
+
+/// <summary>
+/// El Firebird de la caja principal de eleventa (el que abren sus cajas por la red). La base es la ruta en esa PC
+/// («C:\…\PDVDATA.FDB»). Los datos reales van en la configuración de la caja, nunca en el repositorio.
+/// </summary>
+public sealed record ServidorEleventa(string Servidor, string Base, string Usuario, string Clave, int Puerto = 3050)
+{
+    public string Cadena() => new FbConnectionStringBuilder
+    {
+        DataSource = Servidor,
+        Port = Puerto,
+        Database = Base,
+        UserID = Usuario,
+        Password = Clave,
+        // Como la copia: charset NONE con texto en Windows-1252.
+        Charset = "WIN1252",
+        Pooling = false,
+        ConnectionTimeout = 10,
+        // Firebird 2.0 no cifra la conexión.
+        WireCrypt = FbWireCrypt.Disabled,
+    }.ToString();
+
+    public override string ToString() => $"{Servidor}:{Puerto}/{Base}";
 }
 
 /// <summary>
@@ -120,30 +144,79 @@ public static class LectorEleventa
             throw new InvalidOperationException($"No se pudo restaurar el respaldo de eleventa:\n{string.Join('\n', errores)}");
     }
 
-    public static async Task<DatosEleventa> LeerAsync(FbConnection c, CancellationToken ct = default) => new()
+    public static async Task<DatosEleventa> LeerAsync(FbConnection c, CancellationToken ct = default)
     {
-        Departamentos = await Leer(c, "SELECT ID, NOMBRE, ACTIVO FROM DEPARTAMENTOS",
-            r => new FilaDepartamento(Entero(r, 0), Texto(r, 1), Texto(r, 2) is "1" or "t" or "T"), ct),
-        Productos = await Leer(c,
-            "SELECT ID, CODIGO, DESCRIPCION, TVENTA, MEDIDA_ID, PCOSTO, PFINAL, PMAYOREOFINAL, DEPT, ELIMINADO_EN FROM PRODUCTOS",
-            r => new FilaProducto(Entero(r, 0), Texto(r, 1), Texto(r, 2), Texto(r, 3) is { Length: > 0 } tv ? tv[0] : 'U',
-                EnteroONulo(r, 4), Doble(r, 5), Doble(r, 6), Doble(r, 7), EnteroONulo(r, 8), !r.IsDBNull(9)), ct),
-        Existencias = await Leer(c, "SELECT PRODUCTO_ID, CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES",
-            r => new FilaExistencia(Entero(r, 0), Doble(r, 1)), ct),
-        Promociones = await Leer(c, "SELECT PRODUCTO_CODIGO, DESDE, PRECIO_PROMOCION_CON_IMPUESTOS FROM PROMOCIONES_POR_CANTIDAD",
-            r => new FilaPromocion(Texto(r, 0), Doble(r, 1), Doble(r, 2)), ct),
-        Tickets = await Leer(c, "SELECT ID, FOLIO, VENDIDO_EN, TOTAL, ESTA_CANCELADO FROM VENTATICKETS",
-            r => new FilaTicket(Entero(r, 0), EnteroONulo(r, 1), r.IsDBNull(2) ? null : r.GetDateTime(2), Doble(r, 3),
-                Texto(r, 4) is "t" or "T"), ct),
-        Lineas = await Leer(c,
-            "SELECT TICKET_ID, PRODUCTO_CODIGO, PRODUCTO_NOMBRE, CANTIDAD, TOTAL_ARTICULO, PRECIO_FINAL, GANANCIA, DEPARTAMENTO_ID, USA_MAYOREO FROM VENTATICKETS_ARTICULOS",
-            r => new FilaLinea(Entero(r, 0), Texto(r, 1), Texto(r, 2), Doble(r, 3), r.IsDBNull(4) ? null : Doble(r, 4), Doble(r, 5),
-                Doble(r, 6), EnteroONulo(r, 7), Texto(r, 8) is "t" or "T"), ct),
+        var datos = await LeerCatalogoAsync(c, ct);
+        return new DatosEleventa
+        {
+            Departamentos = datos.Departamentos,
+            Productos = datos.Productos,
+            Existencias = datos.Existencias,
+            Promociones = datos.Promociones,
+            Tickets = await Leer(c, null, "SELECT ID, FOLIO, VENDIDO_EN, TOTAL, ESTA_CANCELADO FROM VENTATICKETS",
+                r => new FilaTicket(Entero(r, 0), EnteroONulo(r, 1), r.IsDBNull(2) ? null : r.GetDateTime(2), Doble(r, 3),
+                    Texto(r, 4) is "t" or "T"), ct),
+            Lineas = await Leer(c, null,
+                "SELECT TICKET_ID, PRODUCTO_CODIGO, PRODUCTO_NOMBRE, CANTIDAD, TOTAL_ARTICULO, PRECIO_FINAL, GANANCIA, DEPARTAMENTO_ID, USA_MAYOREO FROM VENTATICKETS_ARTICULOS",
+                r => new FilaLinea(Entero(r, 0), Texto(r, 1), Texto(r, 2), Doble(r, 3), r.IsDBNull(4) ? null : Doble(r, 4), Doble(r, 5),
+                    Doble(r, 6), EnteroONulo(r, 7), Texto(r, 8) is "t" or "T"), ct),
+        };
+    }
+
+    /// <summary>
+    /// El eleventa de la caja principal, por la red, como lo abre una caja de eleventa: solo para leer el catálogo cada
+    /// pocos minutos (docs/migracion-eleventa.md, «El piloto»). No escribe nada.
+    /// </summary>
+    public static async Task<DatosEleventa> LeerCatalogoAsync(ServidorEleventa servidor, CancellationToken ct = default)
+    {
+        await using var conexion = new FbConnection(servidor.Cadena());
+        await conexion.OpenAsync(ct);
+        return await LeerCatalogoAsync(conexion, ct);
+    }
+
+    /// <summary>
+    /// Lo que cambia durante el día y hace falta para vender: departamentos, productos (con precios y costo), existencias
+    /// y promociones; sin las ventas, que pesan y no hacen falta cada pocos minutos. En una transacción de solo lectura y
+    /// con foto fija: todo es del mismo momento, y eleventa ni lo nota.
+    /// </summary>
+    public static async Task<DatosEleventa> LeerCatalogoAsync(FbConnection c, CancellationToken ct = default)
+    {
+        await using var tx = await c.BeginTransactionAsync(new FbTransactionOptions
+        {
+            TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
+        }, ct);
+        var datos = new DatosEleventa
+        {
+            Departamentos = await Leer(c, tx, "SELECT ID, NOMBRE, ACTIVO FROM DEPARTAMENTOS",
+                r => new FilaDepartamento(Entero(r, 0), Texto(r, 1), Texto(r, 2) is "1" or "t" or "T"), ct),
+            Productos = await Leer(c, tx,
+                "SELECT ID, CODIGO, DESCRIPCION, TVENTA, MEDIDA_ID, PCOSTO, PFINAL, PMAYOREOFINAL, DEPT, ELIMINADO_EN FROM PRODUCTOS",
+                r => new FilaProducto(Entero(r, 0), Texto(r, 1), Texto(r, 2), Texto(r, 3) is { Length: > 0 } tv ? tv[0] : 'U',
+                    EnteroONulo(r, 4), Doble(r, 5), Doble(r, 6), Doble(r, 7), EnteroONulo(r, 8), !r.IsDBNull(9)), ct),
+            Existencias = await Leer(c, tx, "SELECT PRODUCTO_ID, CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES",
+                r => new FilaExistencia(Entero(r, 0), Doble(r, 1)), ct),
+            Promociones = await Leer(c, tx, "SELECT PRODUCTO_CODIGO, DESDE, PRECIO_PROMOCION_CON_IMPUESTOS FROM PROMOCIONES_POR_CANTIDAD",
+                r => new FilaPromocion(Texto(r, 0), Doble(r, 1), Doble(r, 2)), ct),
+        };
+        await tx.CommitAsync(ct);
+        return datos;
+    }
+
+    /// <summary>Por qué no se pudo leer, dicho para la tienda (Firebird lo dice en inglés y con códigos).</summary>
+    public static string Explicar(Exception ex, ServidorEleventa servidor) => ex switch
+    {
+        // isc_network_error: la PC apagada, otro nombre o IP, el firewall, o la red caída.
+        FbException { ErrorCode: 335544721 } => $"No contesta el eleventa de {servidor.Servidor}: revisa que la caja principal esté prendida y en la red.",
+        // isc_login
+        FbException { ErrorCode: 335544472 } => "Eleventa no aceptó el usuario o la clave de Firebird.",
+        // isc_io_error: la ruta de la base no existe en esa PC.
+        FbException { ErrorCode: 335544344 } => $"En {servidor.Servidor} no está la base {servidor.Base}.",
+        _ => ex.Message,
     };
 
-    private static async Task<List<T>> Leer<T>(FbConnection c, string sql, Func<DbDataReader, T> fila, CancellationToken ct)
+    private static async Task<List<T>> Leer<T>(FbConnection c, FbTransaction? tx, string sql, Func<DbDataReader, T> fila, CancellationToken ct)
     {
-        await using var comando = new FbCommand(sql, c);
+        await using var comando = new FbCommand(sql, c, tx);
         await using var lector = await comando.ExecuteReaderAsync(ct);
         var filas = new List<T>();
         while (await lector.ReadAsync(ct))
