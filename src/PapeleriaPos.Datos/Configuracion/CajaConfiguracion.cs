@@ -101,9 +101,14 @@ internal sealed class EnvioAEleventaConfiguracion : IEntityTypeConfiguration<Env
     public void Configure(EntityTypeBuilder<EnvioAEleventa> b)
     {
         b.ToTable("EnviosAEleventa");
-        b.HasKey(e => e.VentaId);
-        b.HasOne<Venta>().WithOne().HasForeignKey<EnvioAEleventa>(e => e.VentaId);
-        // La bandeja se recorre por estado; una devolución busca el ticket por el folio de eleventa.
+        b.HasOne<Venta>().WithMany().HasForeignKey(e => e.VentaId);
+        b.HasOne<Devolucion>().WithMany().HasForeignKey(e => e.DevolucionId);
+        b.HasOne<Turno>().WithMany().HasForeignKey(e => e.TurnoId);
+        // Una venta, una devolución o un cierre van una sola vez.
+        b.HasIndex(e => e.VentaId).IsUnique().HasFilter("\"Tipo\" = 'Venta'");
+        b.HasIndex(e => e.DevolucionId).IsUnique();
+        b.HasIndex(e => e.TurnoId).IsUnique();
+        // La bandeja se recorre por estado y en orden; una devolución busca el ticket por el folio de eleventa.
         b.HasIndex(e => new { e.Estado, e.CreadoUtc });
         b.HasIndex(e => e.FolioEleventa);
         b.Property(e => e.Error).HasMaxLength(500);

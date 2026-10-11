@@ -109,6 +109,11 @@ eleventa multicaja** y manda cada venta a la caja principal, igual que hoy: la v
 eleventa sigue siendo el sistema oficial (existencias, cortes, reportes de siempre) mientras el POS nuevo se prueba en
 la tienda, y después se deja eleventa con las dos cajas.
 
+> **Aclarado por el dueño (2026-10-11):** la base nueva se concentra en sus propias metas (el máximo rendimiento, etc.) y
+> no se adapta a eleventa. La caja 2 guarda todo en su base y a la principal le manda solo lo que su eleventa necesita
+> para registrarlo como una venta más; todo lo de eleventa vive en el puente (`PapeleriaPos.Eleventa` y la bandeja). Más
+> adelante, una opción aparte exportará la base a una versión de eleventa.
+
 Lo que hay que resolver antes:
 
 - **Entender cómo escribe eleventa** una venta: qué tablas toca (venta, líneas, existencias, folios, turno o corte),
@@ -251,8 +256,9 @@ Lo demás:
 
 **Lo que falta confirmar mirando cómo trabaja:**
 - en qué orden escribe al cobrar y si todo va en una sola transacción (la caja nueva lo escribe todo en una);
-- cancelar, devolver, entradas y salidas, cerrar el turno y el corte. Se miran cuando pasen de verdad, sin hacer
-  operaciones de prueba en la tienda.
+- cancelar, devolver, entradas y salidas, cerrar el turno y el corte: lo que se sabe sale de la copia («Cancelar,
+  devolver y cerrar el turno», abajo); falta verlos en vivo cuando pasen de verdad, sin hacer operaciones de prueba en
+  la tienda.
 
 Para eso está `observar-eleventa`. Toma una foto de toda la base, solo leyendo; después de hacer algo en eleventa toma
 otra y dice qué renglones aparecieron o cambiaron y qué contadores avanzaron.
@@ -313,7 +319,7 @@ dotnet run --project src/PapeleriaPos.Herramientas -- probar-envio-eleventa --se
 - **El ticket** imprime «Folio 4521» (el de eleventa) cuando lo hay. El QR sigue con el de la caja 2, que abre la
   devolución al escanearlo, y en la ventana de devolución también se puede escribir el folio de eleventa.
 - **Lo que eleventa no entendería** queda por revisar y no se manda solo: lo que no fue en efectivo (la tienda solo
-  cobra en efectivo) o lo que se canceló antes de mandarse.
+  cobra en efectivo). Lo que se canceló antes de mandarse se descarta: allá nunca existió.
 - **El redondeo del efectivo** va en la línea más grande, para que el total de eleventa sea lo que entró a la caja.
 - **Cómo va:** `GET /api/eleventa/envios` dice cuántas ventas están pendientes y por revisar, el último error («No
   contesta el eleventa de…») y los folios repetidos. `POST /api/eleventa/enviar` hace la vuelta ya.
@@ -331,8 +337,62 @@ prueba:
 - se apagó ese Firebird: los tickets salieron con el folio de la caja, con una espera solo en el primer cobro;
 - al prenderlo, las pendientes entraron en orden, sin repetirse, y el turno de eleventa cuadró con sus tickets.
 
-**Falta** (paso 4): cancelar, devolver, entradas y salidas, y cerrar el turno y el corte en eleventa. Mientras tanto,
-una venta cancelada o devuelta en la caja 2 que ya estaba en eleventa sigue allá: se arregla a mano en eleventa.
+### Cancelar, devolver y cerrar el turno (paso 4)
+
+**Cómo lo hace eleventa**, sacado de una copia (sus cancelaciones, devoluciones y turnos cerrados). Los ejemplos son
+inventados.
+
+- **Cada devolución** deja un renglón en `DEVOLUCIONES`:
+  - `TIPO_DEVOLUCION` es `C` (cancelación del ticket) o `P` (parcial);
+  - lleva el turno, el ticket, `PAGADO_EN` del ticket y `DEVUELTO_EN`;
+  - `CAJERO` y `CAJA` van como texto: `USUARIOS.USUARIO` y `CAJAS.NOMBRE`;
+  - `TOTAL_DEVUELTO` es lo que salió de la caja.
+- **La cancelación** deja el ticket con `ESTA_CANCELADO = 't'`, su total, ganancia y artículos en cero (`NUMERO_ARTICULOS`)
+  y sus renglones de artículos sin tocar. No lleva `DEVOLUCIONES_ARTICULOS`.
+- **La parcial** cambia el ticket original:
+  - el artículo baja su `CANTIDAD` y su `TOTAL_ARTICULO`;
+  - si se devolvió completo, el renglón se borra (eleventa no deja artículos en cero);
+  - el ticket baja `TOTAL`, `SUBTOTAL`, `TOTAL_FACTURABLE` y `GANANCIA`;
+  - lleva un renglón de `DEVOLUCIONES_ARTICULOS` por artículo;
+  - `CANTIDAD_DEVUELTA` y `FUE_DEVUELTO` del artículo, y `TOTAL_DEVUELTO` del ticket, no se usan.
+- **En las dos:**
+  - un movimiento del corte por artículo (`CORTE_MOVIMIENTOS`, tipo `Devolucion`, `FORMA_PAGO = 'E'`,
+    `RAZON_DEVOLUCION = 'V'`), por ejemplo «Devolución "Cuaderno profesional", Ticket #4521»;
+  - una entrada al inventario por producto: «Devolución de venta #4521», con la cantidad en negativo y el costo del producto.
+- **Los acumulados:** en el turno, el día y el departamento, `ACUMULADO_VENTAS` y la ganancia bajan, y
+  `DEVOLUCIONES_VENTAS_EFECTIVO` sube. `VENTAS_EFECTIVO` no se toca. La cancelación también baja `NUMERO_VENTAS`.
+- **Al cerrar el turno:**
+  - se anotan `TERMINO_EN` y `EFECTIVO_AL_CIERRE`, que es el fondo más el efectivo, menos lo devuelto, más entradas y
+    menos salidas;
+  - se borra su ticket abierto;
+  - si faltó o sobró al contar, queda un movimiento `Salida` («Efectivo faltante al cerrar turno de <cajero> del
+    <día que abrió>») o `Entrada` («…sobrante…») y entra a las salidas o entradas del turno, no del día. Así
+    `EFECTIVO_AL_CIERRE` es lo que se contó;
+  - `ID_OPERACION_FIN` no se usa.
+- En la copia todas las devoluciones son del mismo turno que su venta.
+
+**La caja 2 hace lo mismo**, con la misma bandeja y en orden: una devolución nunca llega antes que su venta, ni un turno
+se cierra antes que sus ventas.
+- **Qué entra a la bandeja:**
+  - la cancelación o devolución de una venta que fue a eleventa, en la misma transacción;
+  - el corte Z de un turno que mandó algo, como el cierre del turno de eleventa;
+  - lo que dependía de una venta descartada también se descarta; lo de una venta por revisar, también queda por revisar.
+- **Dónde se aplica:** lo devuelto va al turno y al día en que se devuelve, que es cuando sale el dinero de la caja.
+  Eleventa no lo ha hecho entre turnos, pero así cuadran sus cortes.
+- **Lo que no se puede mandar solo:**
+  - si algo no entra, lo que sigue espera en la bandeja;
+  - si ya se arregló a mano en eleventa, `POST /api/eleventa/envios/{id}/revisar` lo deja por revisar y lo demás pasa;
+  - lo que volvió dañado no regresa al inventario de eleventa.
+- **El cierre** usa la diferencia del corte Z de la caja 2 (contado menos esperado).
+- **Las entradas y salidas de dinero de la caja 2 todavía no van a eleventa:** su corte las tendrá de menos (o de más)
+  hasta que se agreguen.
+
+Se probó como el paso 3, con pruebas contra el Firebird de prueba y de punta a punta contra copias: se cobraron dos
+ventas, se canceló una y se devolvió parte de la otra (un artículo completo), y se hizo el corte Z con un faltante. En la
+copia quedaron:
+- la cancelación y la devolución como las deja eleventa;
+- el inventario de vuelta;
+- el turno cerrado con lo contado, el faltante como salida y sin ticket abierto.
 
 ## Arranque (fase 5)
 

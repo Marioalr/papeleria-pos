@@ -21,7 +21,7 @@ public sealed class RegistroDevoluciones(PosDbContext db)
         // En el piloto, el ticket impreso lleva el folio de eleventa (solo número); el QR, el de la caja (A-000123).
         if (folio.Trim() is { Length: > 0 } soloNumero && soloNumero.All(char.IsAsciiDigit) && int.TryParse(soloNumero, out var deEleventa))
         {
-            var ventaId = await db.EnviosAEleventa.Where(e => e.FolioEleventa == deEleventa).Select(e => (Guid?)e.VentaId).FirstOrDefaultAsync(ct);
+            var ventaId = await db.EnviosAEleventa.Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.FolioEleventa == deEleventa).Select(e => e.VentaId).FirstOrDefaultAsync(ct);
             return ventaId is null ? null : await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros)
                 .SingleOrDefaultAsync(v => v.Id == ventaId && v.SucursalId == sucursalId, ct);
         }
@@ -94,6 +94,13 @@ public sealed class RegistroDevoluciones(PosDbContext db)
 
             CalculoDevolucion.Aplicar(venta, devolucion);
             db.Devoluciones.Add(devolucion);
+            // El piloto en la caja 2: si la venta va a eleventa, su cancelación o devolución también, después de ella.
+            if (await db.EnviosAEleventa.AnyAsync(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == venta.Id, ct))
+                db.EnviosAEleventa.Add(new EnvioAEleventa
+                {
+                    Tipo = devolucion.EsCancelacion ? TipoEnvioEleventa.Cancelacion : TipoEnvioEleventa.Devolucion,
+                    VentaId = venta.Id, DevolucionId = devolucion.Id, CreadoUtc = Ahora,
+                });
             // De una venta fiada, lo devuelto baja primero la cuenta del cliente.
             await new RegistroCredito(db).RevertirAsync(venta, devolucion, ct);
             if (devolucion.ReembolsoEfectivoCentavos > 0)

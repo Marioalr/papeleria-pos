@@ -28,16 +28,21 @@ public static class ApiDevoluciones
                 turnoAbierto && venta.Estado == EstadoVenta.Pagada, Math.Max(0, dias), venta.CreditoCentavos, cliente));
         });
 
-        api.MapPost("/ventas/{ventaId:guid}/cancelacion", async (Guid ventaId, SolicitudCancelacion s, PosDbContext db, IOptions<OpcionesTicket> opciones) =>
+        // Si la venta pasó a eleventa, la cancelación o devolución ya está en la bandeja: que vaya ya.
+        api.MapPost("/ventas/{ventaId:guid}/cancelacion", async (Guid ventaId, SolicitudCancelacion s, PosDbContext db, IOptions<OpcionesTicket> opciones,
+            EnvioVentasEleventa eleventa) =>
         {
             var devolucion = await new RegistroDevoluciones(db).CancelarAsync(ventaId, s.UsuarioId, s.CajaId, s.Motivo, s.AutorizacionId);
+            eleventa.Despertar();
             return await ComprobanteAsync(db, devolucion, opciones.Value);
         });
 
-        api.MapPost("/ventas/{ventaId:guid}/devoluciones", async (Guid ventaId, SolicitudDevolucion s, PosDbContext db, IOptions<OpcionesTicket> opciones) =>
+        api.MapPost("/ventas/{ventaId:guid}/devoluciones", async (Guid ventaId, SolicitudDevolucion s, PosDbContext db, IOptions<OpcionesTicket> opciones,
+            EnvioVentasEleventa eleventa) =>
         {
             var lineas = s.Lineas.Select(l => new LineaPorDevolver(l.LineaId, new Cantidad(l.CantidadMilesimas), l.RegresaAlInventario)).ToList();
             var devolucion = await new RegistroDevoluciones(db).DevolverAsync(ventaId, lineas, s.UsuarioId, s.CajaId, s.Motivo, s.AutorizacionId);
+            eleventa.Despertar();
             return await ComprobanteAsync(db, devolucion, opciones.Value);
         });
 

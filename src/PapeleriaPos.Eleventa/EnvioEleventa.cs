@@ -40,7 +40,7 @@ public sealed record VentaEnEleventa(int TicketId, int Folio, bool YaEstaba, boo
 /// no entra. La caja nueva escanea contra su propia base, así que no deja los apartados que eleventa pone al escanear
 /// (al cobrar ya no queda ninguno).
 /// </summary>
-public static class EnvioEleventa
+public static partial class EnvioEleventa
 {
     /// <summary>El departamento donde eleventa pone sus artículos comunes.</summary>
     public const string DepartamentoComunes = "Productos Comunes";
@@ -166,8 +166,8 @@ public static class EnvioEleventa
     /// </summary>
     private static async Task<int> TurnoAbiertoAsync(Sql sql, CajaEnEleventa caja, TurnoParaEleventa nuevo)
     {
-        if (await sql.ValorAsync("SELECT ID FROM TURNOS WHERE ID_CAJA = @caja AND TERMINO_EN IS NULL", [("caja", caja.CajaId)]) is { } abierto)
-            return Convert.ToInt32(abierto);
+        if (await TurnoDeLaCajaAsync(sql, caja.CajaId) is { } abierto)
+            return abierto;
 
         var inicio = new DateTime(nuevo.AbiertoLocal.Ticks - nuevo.AbiertoLocal.Ticks % 10000);
         await sql.EjecutarAsync(caja.Ip is null
@@ -188,6 +188,15 @@ public static class EnvioEleventa
             [("caja", caja.CajaId), ("cajero", caja.CajeroId), ("inicio", inicio), ("turno", turno)]);
         return turno;
     }
+
+    /// <summary>
+    /// El turno abierto de la caja; si alguna vez quedó más de uno (eleventa no lo impide), el más reciente, que es el
+    /// que usa.
+    /// </summary>
+    private static async Task<int?> TurnoDeLaCajaAsync(Sql sql, int caja) =>
+        await sql.ValorAsync("SELECT FIRST 1 ID FROM TURNOS WHERE ID_CAJA = @caja AND TERMINO_EN IS NULL ORDER BY ID DESC", [("caja", caja)]) is { } id
+            ? Convert.ToInt32(id)
+            : null;
 
     /// <summary>El renglón del día y la caja en <c>CORTE_OPERACIONES</c>: lo vendido se suma al día en que se cobró.</summary>
     private static async Task<int> DiaAsync(Sql sql, int caja, DateTime dia)
@@ -331,6 +340,20 @@ public static class EnvioEleventa
             var fila = new object[lector.FieldCount];
             lector.GetValues(fila);
             return fila;
+        }
+
+        public async Task<List<object[]>> FilasAsync(string texto, (string Nombre, object? Valor)[] parametros)
+        {
+            await using var comando = Comando(texto, parametros);
+            await using var lector = await comando.ExecuteReaderAsync(ct);
+            var filas = new List<object[]>();
+            while (await lector.ReadAsync(ct))
+            {
+                var fila = new object[lector.FieldCount];
+                lector.GetValues(fila);
+                filas.Add(fila);
+            }
+            return filas;
         }
 
         /// <summary>El ID se toma del contador antes de insertar, como lo haría el trigger: así se sabe sin RETURNING.</summary>

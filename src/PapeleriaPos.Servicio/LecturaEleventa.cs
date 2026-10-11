@@ -173,5 +173,11 @@ public static class ApiEleventa
             envios.Despertar();
             return Results.Accepted();
         });
+
+        // Lo que no entra y ya se arregló a mano en eleventa: se deja por revisar para que lo demás pase.
+        api.MapPost("/envios/{id:guid}/revisar", async (Guid id, EnvioVentasEleventa envios, PosDbContext db) =>
+            await envios.DejarPorRevisarAsync(db, id)
+                ? Results.Ok(await envios.EstadoAsync(db))
+                : Results.BadRequest(new ErrorDto("Solo se deja por revisar lo que está pendiente.")));
     }
 }

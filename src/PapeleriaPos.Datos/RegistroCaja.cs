@@ -252,11 +252,30 @@ public sealed class RegistroCaja(PosDbContext db)
         new ServicioControl(db).Registrar(turno.SucursalId, turno.CajaId, encargadoId, AccionControlada.CorteZ,
             $"Corte de cierre: esperado {corte.EsperadoCentavos / 100m:N2}, contado {corte.ContadoCentavos / 100m:N2}", corte.DiferenciaCentavos);
         db.Cortes.Add(corte);
+        await CerrarEnEleventaAsync(turno, ct);
         await db.SaveChangesAsync(ct);
         // Si era el último turno abierto de la sucursal, sale el resumen del día por Telegram.
         await AlertasTelegram.ResumenSiEsElUltimoAsync(db, corte, turno.SucursalId, ct);
         await db.SaveChangesAsync(ct);
         return corte;
+    }
+
+    /// <summary>
+    /// El piloto en la caja 2: si algo del turno fue a eleventa (una venta, o una devolución que salió de esta caja), el
+    /// corte también cierra el turno de eleventa, después de que lleguen.
+    /// </summary>
+    private async Task CerrarEnEleventaAsync(Turno turno, CancellationToken ct)
+    {
+        var ventas = from e in db.EnviosAEleventa
+                     join v in db.Ventas on e.VentaId equals v.Id
+                     where e.Tipo == TipoEnvioEleventa.Venta && v.TurnoId == turno.Id
+                     select e.Id;
+        var devoluciones = from e in db.EnviosAEleventa
+                           join d in db.Devoluciones on e.DevolucionId equals d.Id
+                           where d.TurnoId == turno.Id
+                           select e.Id;
+        if (await ventas.AnyAsync(ct) || await devoluciones.AnyAsync(ct))
+            db.EnviosAEleventa.Add(new EnvioAEleventa { Tipo = TipoEnvioEleventa.CierreDeTurno, TurnoId = turno.Id, CreadoUtc = Ahora });
     }
 
     /// <summary>Lo que debería haber en efectivo en la caja ahora, y si ya pasó del límite de la sucursal.</summary>
@@ -392,6 +411,7 @@ public sealed class RegistroCaja(PosDbContext db)
             MontoCentavos = corte.DiferenciaCentavos, Resultado = ResultadoBitacora.Hecho, FechaUtc = c.FechaUtc, EnContingencia = true,
         });
         db.Cortes.Add(corte);
+        await CerrarEnEleventaAsync(turno, ct);
         await db.SaveChangesAsync(ct);
         // Si era el último turno abierto de la sucursal, sale el resumen del día por Telegram.
         await AlertasTelegram.ResumenSiEsElUltimoAsync(db, corte, turno.SucursalId, ct);
