@@ -45,10 +45,10 @@ public static class GuiaPrueba
             "Escribe un código que no existe (por ejemplo 7500000000017) y Enter. Dalo de alta con nombre, precio y departamento.",
             "Queda en la venta enseguida. En F3 Productos aparece como «Por completar»."),
         new("cambiar-precio", "Control",
-            "Cambia el precio de un producto de la venta con Ctrl+E. Cuando lo pida, autoriza con «encargado» y 2222.",
-            "Sin la autorización no deja; con ella, el precio cambia solo en esta venta."),
+            "Cambia el precio de un producto de la venta con Ctrl+E. Cuando lo pida, intenta autorizar con «encargado» (2222) y luego con «dueno» (3333).",
+            "Sin la autorización no deja, y el encargado tampoco puede: el cambio de precio lo autoriza el dueño. Con él, el precio cambia solo en esta venta."),
         new("descuento", "Control",
-            "Haz un descuento de 5 % a un producto con Ctrl+D. Luego intenta uno de 20 %.",
+            "Haz un descuento de 5 % a un producto con Ctrl+D, con su motivo. Luego intenta uno de 20 %.",
             "El de 5 % entra solo; el de 20 % pide la autorización del encargado."),
         new("cliente-venta", "Clientes",
             "En una venta, oprime Ctrl+L y busca a la «Escuela Primaria Benito Juárez» por su teléfono (escribe 1234). Agrega productos y cóbrala. "
@@ -70,8 +70,8 @@ public static class GuiaPrueba
         new("credito-abono", "Crédito",
             "Oprime Ctrl+B, busca al «Arq. Ramírez» y abona $300 en efectivo pagando con $500. Vuelve a oprimir Ctrl+B y en «Abonos de hoy» "
             + "escribe un motivo y reimprime el comprobante. Haz un corte X.",
-            "Sale el comprobante con lo que debía, lo que abonó, el cambio ($200) y lo que queda, y se abre el cajón (la reimpresión sale igual y "
-            + "no lo abre). En el corte salen «Abonos en efectivo» (suman a lo esperado) y lo fiado aparte, que no suma."),
+            "Sale el comprobante con lo que debía, lo que abonó, el cambio ($200) y lo que queda (la reimpresión sale igual). En el corte salen "
+            + "«Abonos de clientes en efectivo» (suman a lo esperado) y lo fiado aparte, que no suma."),
         new("credito-devolucion", "Crédito",
             "En «Devoluciones», devuelve un producto de una de las ventas fiadas.",
             "No sale efectivo: el comprobante dice cuánto se descuenta de su cuenta y cuánto debe ahora."),
@@ -89,7 +89,7 @@ public static class GuiaPrueba
         new("credito-saldo-a-favor", "Crédito",
             "Como «cajero» (1111), en «Clientes» abre a «Papelería La Esquina» (tiene $150 a favor) y oprime «Devolver saldo a favor». Deja vacío "
             + "«Cuánto» (todo) y oprime «Devolver». Luego haz un corte X.",
-            "Pide la autorización del encargado (2222). Se abre el cajón y sale un comprobante para que el cliente firme que recibió el efectivo; su "
+            "Pide la autorización del encargado (2222). Sale un comprobante para que el cliente firme que recibió el efectivo; su "
             + "cuenta queda al corriente. En el corte, «Saldo a favor devuelto» resta de lo esperado. En «Avisos al dueño» llega que se devolvió."),
         new("credito-sin-conexion", "Crédito",
             "En la caja de Windows, oprime «Simular sin conexión» en la franja de prueba. Con Ctrl+L elige a la «Escuela Primaria Benito Juárez», "

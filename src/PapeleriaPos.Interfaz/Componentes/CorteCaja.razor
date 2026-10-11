@@ -95,7 +95,7 @@ else
                 <td class="num">@Formato.Dinero(d)</td>
                 <td>×</td>
                 <td><input inputmode="numeric" value="@(_conteo.GetValueOrDefault(d) is var n && n > 0 ? n : "")"
-                           @onchange="e => Contar(denominacion, e.Value?.ToString())" /></td>
+                           @oninput="e => Contar(denominacion, e.Value?.ToString())" /></td>
                 <td class="num">@Formato.Dinero(d * _conteo.GetValueOrDefault(d))</td>
             </tr>
         }
