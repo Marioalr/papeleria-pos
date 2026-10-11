@@ -63,7 +63,7 @@ bitácora.
 
 | # | Necesidad | Qué tan seguido | Cómo queda |
 |---|---|---|---|
-| 1 | Agregar un producto con el lector | En casi cada venta | Cuadro de captura con el cursor siempre ahí. Pitido, la línea se ilumina y, si ya estaba, suma uno. Sin red de por medio |
+| 1 | Agregar un producto con el lector | En casi cada venta | Cuadro de captura con el cursor siempre ahí. La línea se ilumina (sin sonidos por ahora) y, si ya estaba, suma uno. Sin red de por medio |
 | 2 | Agregar servicios sin código: copias, engargolado, enmicado | Muchas veces al día | **Rápidos** en una fila, con Alt+1 a Alt+6. Un número antes es la cantidad: `20` y Alt+1 son veinte copias |
 | 3 | Cobrar en efectivo y dar el cambio | En cada venta | **El panel del total es el cobro.** F12 apaga lo demás y deja el cursor en «Pagó con», con el exacto en gris: Enter cobra exacto; si se escribe lo que dio, Enter cobra y muestra el cambio |
 | 4 | Ver el total mientras se agregan cosas | Todo el tiempo | El total grande a la derecha, con el ahorro por mayoreo y el redondeo al peso |
@@ -91,14 +91,14 @@ según los permisos de quien entró.
 │ ┌──────────────────────────────────────────────────────────┐ │          ◀ Público en general │
 │ │ ▥  Escanea o escribe: código, nombre, 3*código o folio  /│ │ ╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲  │
 │ └──────────────────────────────────────────────────────────┘ │ Total                 35 art. │
-│ ✓ Sacapuntas metálico · 1 × $9.00                            │ $187.00                       │
-│ RÁPIDOS [Alt+1 Copia B/N] [Alt+2 Copia color] [⏸ 12:25] [F6] │ [F12] cobrar                  │
+│ ✓ Sacapuntas metálico · 1 × $9.00                            │ $207.00                       │
+│ RÁPIDOS [Alt+1 Copia B/N] [Alt+2 CURP]        [⏸ 12:25] [F6] │ [F12] cobrar                  │
 │ CANTIDAD   DESCRIPCIÓN                       PRECIO  IMPORTE │ Ahorro por mayoreo     $18.00 │
 │ [− 2 +]   Cuaderno profesional cuadro chico  $46.00  $92.00  │ - - - - - - - - - - - - - - - │
 │ [− 12 +]  Lápiz HB No. 2  ·Mayoreo desde 12·  $5.50  $66.00  │ Pagó con  [Tarjeta] [Transf.] │
-│ [− 20 +]  Copia blanco y negro carta          $1.00  $20.00  │ [ $187.00 (gris)            ] │
-│ [− 1 +]   Goma blanca M40                     $5.00   $5.00  │ [$200] [$500] [$1,000]        │
-│▌[− 1 +]   Sacapuntas metálico  ·Quedan 1·     $9.00   $9.00  │ [ Cobrar exacto $187.00     ] │
+│ [− 20 +]  Copia blanco y negro carta          $2.00  $40.00  │ [ $207.00 (gris)            ] │
+│ [− 1 +]   Goma blanca M40                     $5.00   $5.00  │                               │
+│▌[− 1 +]   Sacapuntas metálico  ·Quedan 1·     $9.00   $9.00  │ [ Cobrar exacto $207.00     ] │
 │▌          [Precio 🔒 Luis] [Descuento hasta 10 %] [Quitar]   │ ┌ Sin cobrar aquí · 4 · $45 ┐ │
 │                                                              │ │ 14:50–14:51 · Mónica R.   │ │
 │                                                              │ │ [▤ tarea_hist] [▥ portada]│ │
@@ -120,7 +120,7 @@ según los permisos de quien entró.
 | Texto (`cuaderno estrella`) | Los resultados salen debajo del cuadro, mientras se escribe: nombre, marca, código, precio y existencia. ↑ ↓ y Enter agregan. F10 se queda y solo pone el cursor ahí |
 | Un folio (`A-000118`) o su QR | Abre ese ticket en el panel para devolver o cancelar |
 | `/` | La lista de todas las acciones que tiene ese usuario, con su tecla; lo que pide autorización lleva candado y el nombre de quien autoriza |
-| Un código que no existe | Lo dice bajo el cuadro, con un pitido distinto, y ofrece lo que sus permisos dejan: darlo de alta ahí o venderlo como artículo común |
+| Un código que no existe | Lo dice bajo el cuadro, en rojo, y ofrece lo que sus permisos dejan: darlo de alta ahí o venderlo como artículo común |
 | `+` / `−` con el cuadro vacío | Cambia la cantidad del artículo seleccionado; ↑ ↓ eligen otro; Supr lo quita |
 
 - **El lector se reconoce por su ritmo:** teclea más rápido que una persona y termina en Enter. Mientras llega una
@@ -142,9 +142,15 @@ según los permisos de quien entró.
 
 ### Rápidos
 
-Los servicios que no tienen código de barras y se venden todo el día (copia blanco y negro, copia a color, engargolado,
-enmicado, escaneo, impresión de CURP) se eligen en Configuración › Venta y cobro, hasta 6. Salen en una fila bajo el
-cuadro, con su precio y Alt+1 a Alt+6. Escribir un número antes los agrega en esa cantidad.
+Los servicios que no tienen código de barras y se venden todo el día se eligen en Configuración › Venta y cobro, hasta
+6. Salen en una fila bajo el cuadro, con su precio y Alt+1 a Alt+6. Escribir un número antes los agrega en esa
+cantidad.
+
+**Para empezar (decisión del dueño, 2026-10-10):** dos rápidos.
+
+- **Copia B/N, $2.**
+- **CURP, $10:** vende 10 impresiones. La impresión toca el módulo que reemplaza a Control Print; mientras Control
+  Print siga aparte, el botón solo equivale a vender 10 de impresiones.
 
 ### Lo que no se escanea y casi no se vende
 
@@ -258,7 +264,7 @@ La preventa de la [fase 8](plan.md#fases): quien atiende en el piso arma el tick
 buscando, y **elige a qué caja mandarlo**. El celular muestra cada caja con quién atiende y cuántos tickets esperan.
 
 - **En la caja llega como un ticket en espera más,** con quien lo mandó en lugar de la hora («📱 Beto · $187»). Entra
-  deslizándose, con un pitido suave, y brilla unos segundos para que se note que acaba de llegar. El aviso bajo el
+  deslizándose y brilla unos segundos para que se note que acaba de llegar. El aviso bajo el
   cuadro dice quién lo mandó, cuántos artículos trae y el total.
 - **No interrumpe:** el ticket que se está cobrando sigue igual. Se retoma como cualquier otro, tocándolo o con F5, y el
   cliente llega a la caja con todo ya escaneado. Si las fichas a la vista ya están ocupadas, entra en «Más» y es «Más»
@@ -285,7 +291,7 @@ guarda esa miniatura (`TrabajoImpresion.Miniatura`); la propuesta la pone en pri
   porque casi siempre es de un mismo cliente. Un lote va en su recuadro, a lo ancho, con su botón «Los 2 · $17». Los
   trabajos sueltos van de dos en dos. **F2 agrega el lote más nuevo**.
 - **No se va sola.** El cajero suele estar en la impresora cuando sale el trabajo; por eso la bandeja se queda hasta
-  que se cobra y no avisa con algo que desaparece. Lo nuevo entra con un pitido suave y se ilumina. Se puede plegar a
+  que se cobra y no avisa con algo que desaparece. Lo nuevo entra iluminado. Se puede plegar a
   una línea («Sin cobrar aquí · 2 · $17 · Agregar F2»).
 - **F2 sin nada en la bandeja** abre el panel con todas las PC, con las mismas miniaturas y lotes, para cobrar lo que se
   imprimió en otra computadora.
@@ -308,9 +314,9 @@ un solo panel, siempre listo:**
   hacer clic, el panel del cliente entra desde la derecha (lo mismo que Ctrl+L). Con cliente, la flecha lleva su
   nombre, y a su izquierda va lo que debe con «Abonar», o «Quitar».
 - Luego el total grande y, **justo debajo, F12**, con el ahorro y los descuentos.
-- Debajo, separado como el corte de un ticket, **«Pagó con» siempre a la vista**, con los billetes rápidos ($200, $500,
-  $1,000; se configuran) y el cambio, que aparece al teclear. Sin textos de ayuda: el exacto en gris dentro del cuadro y
-  el botón «Cobrar exacto $187.00» ya dicen qué pasa.
+- Debajo, separado como el corte de un ticket, **«Pagó con» siempre a la vista**: se escribe lo que dio el cliente,
+  sin botones de billetes (decisión del dueño, 2026-10-10), y el cambio aparece al teclear. Sin textos de ayuda: el
+  exacto en gris dentro del cuadro y el botón «Cobrar exacto $207.00» ya dicen qué pasa.
 - **Tarjeta, transferencia y crédito, chicos junto a «Pagó con»**, sin renglón propio. Cada uno agrega su renglón con
   lo que falta.
 - Bajo el cobro, la [bandeja de impresiones](#las-impresiones-por-cobrar-la-bandeja).
@@ -320,7 +326,7 @@ un solo panel, siempre listo:**
 **F12:**
 
 1. La atención se va al cobro: el ticket y lo demás se apagan, y el panel del total queda resaltado en verde.
-2. El cursor queda en «Pagó con», con **el exacto escrito en gris** («$187.00»).
+2. El cursor queda en «Pagó con», con **el exacto escrito en gris** («$207.00»).
 3. **Enter** cobra exacto.
 4. **Si se teclea un número**, reemplaza al gris, el cambio se ve al momento y Enter cobra.
 5. **Esc** borra lo escrito y regresa el cursor al cuadro de captura, sin cobrar.
@@ -509,7 +515,7 @@ lo demás; se programan cuando toque.
 
 Con muchas más opciones, se ordena para encontrarlas:
 
-- **Un buscador** arriba: «billetes», «fondo» o «impresora» llevan al ajuste aunque no se sepa en qué grupo está.
+- **Un buscador** arriba: «redondeo», «fondo» o «impresora» llevan al ajuste aunque no se sepa en qué grupo está.
 - **Grupos a la izquierda**, cada uno visible solo con su permiso.
 - **Cada ajuste dice su alcance:** «Toda la tienda» o «Solo esta caja».
 - **Se guarda solo,** sin botón de guardar; arriba dice a qué hora fue el último cambio.
@@ -519,7 +525,7 @@ Opciones propuestas (las que ya existen en el POS y las comunes en una caja):
 | Grupo | Ajustes |
 |---|---|
 | Tienda | Nombre, dirección, teléfono, horario (para avisar si no abre o no se cerró el día), logotipo |
-| Venta y cobro | Cobrar el efectivo al peso, billetes rápidos, formas de pago, comisión de la tarjeta, pedir la referencia de la terminal, si avisa al vender sin existencia (la venta nunca se detiene), sinónimos de la búsqueda, existencia en el ticket cuando queden pocas, tickets en espera, rápidos, días para devolver |
+| Venta y cobro | Cobrar el efectivo al peso, formas de pago, comisión de la tarjeta, pedir la referencia de la terminal, si avisa al vender sin existencia (la venta nunca se detiene), sinónimos de la búsqueda, existencia en el ticket cuando queden pocas, tickets en espera, rápidos, días para devolver |
 | Efectivo y corte | Límite de efectivo en caja, fondo sugerido, umbral de diferencia que avisa, para qué son las salidas, comprobante de salidas, hora para recordar cerrar el día |
 | Ticket | Encabezado y pie, QR del folio, ahorro por mayoreo, qué hacer al cobrar (imprimir, preguntar, no imprimir), ticket de prueba, vista previa |
 | Impresoras e impresiones | Impresora de tickets, precio por hoja (blanco y negro y color), cómo se avisa lo impreso en esa PC (bandeja con miniaturas, tarjeta con tiempo o solo el contador; por caja), recordarlo al cobrar, impresoras de inyección |
@@ -531,14 +537,14 @@ Opciones propuestas (las que ya existen en el POS y las comunes en una caja):
 | WhatsApp | La lista «Escribieron por WhatsApp hace poco», de dónde sale, cuántas horas se muestran, a los cuántos días se borra el número de quien no es cliente registrado, el aviso «su trabajo está listo» |
 | Cajas | Las cajas dadas de alta, su serie de folios y su conexión; dar de alta una |
 | Respaldos | Cada cuánto, cuántos días se guardan, la copia fuera de la tienda, el último respaldo, respaldar ahora, restaurar |
-| Esta caja | Panel del total (A o B), tamaño de letra, pitido, pantalla táctil, reconocer el lector |
+| Esta caja | Panel del total (A o B), tamaño de letra, sonidos (apagados por ahora), pantalla táctil, reconocer el lector |
 | Teclas | Las de eleventa, con la opción de cambiarlas por caja |
 | Bitácora | Lo sensible: quitar, descuentos, autorizaciones, reimpresiones, cortes |
 | Acerca de | Versión, buscar actualización, soporte a distancia |
 
-En el prototipo, los ajustes marcados «cambia el prototipo» se aplican al momento: el redondeo, los billetes, las formas
-de pago, los tickets en espera, los rápidos, el límite de efectivo, el aviso de impresión, el panel del total, la letra
-y el pitido, entre otros.
+En el prototipo, los ajustes marcados «cambia el prototipo» se aplican al momento: el redondeo, las formas de pago, los
+tickets en espera, los rápidos, el límite de efectivo, el aviso de impresión, el panel del total, la letra y los
+sonidos, entre otros.
 
 ## Caja principal y secundarias
 
@@ -702,21 +708,22 @@ Ajustes:
 Cada entrega se prueba en el navegador y en la ventana de Windows, y la guía de la prueba con una persona real se
 actualiza con ella.
 
-**El orden (2026-10-10):** primero la caja nueva vendiendo en una sola caja, como eleventa unicaja, aunque tenga
-errores o le falten detalles: probarla vendiendo es lo que más ayuda a terminarla ([plan](plan.md#la-prueba-real-con-una-caja)).
-Por eso va primero la entrega 0, hecha sobre lo que ya funciona, y antes de vender de verdad, la 10. Lo demás entra
-por partes sobre la caja nueva ya en uso. Los números de siempre se quedan; la tabla va en el orden nuevo.
+**El orden (2026-10-10):** primero la versión unicaja (entrega 0): la caja nueva vendiendo sola en una PC, con datos de
+prueba, para ver cómo avanza y cómo se comporta; puede tener errores o faltarle detalles. Las entregas que siguen se
+ven en esa misma versión. El piloto es en la caja 2: vende con la caja nueva y manda cada venta a eleventa, como hoy;
+además de la 0, pide el puente con eleventa y la 10 ([plan](plan.md#la-versión-unicaja-y-el-piloto-en-la-caja-2)). Los
+números de siempre se quedan; la tabla va en el orden nuevo.
 
 | # | Entrega | Tamaño | Cuándo |
 |---|---|---|---|
-| 0 | Vender en una caja: la pantalla de venta nueva sobre el mismo servicio, cobro, ticket y base. El cuadro de captura con el lector en una sola llamada y las teclas que esperan al último escaneo; `12*código` y el folio; la búsqueda por pedazos de palabra con el nombre de eleventa como sinónimo, lo elegido antes y lo más vendido; la lista con + − y Supr; los rápidos; el panel del total con F12, el exacto en gris, los billetes y el cambio; los tickets en espera con F6 y F5; guardar lo que se busca. Lo demás abre lo de hoy. Se elige por caja frente a la pantalla de hoy | Mediano a grande | Primero |
-| 10 | Ajustes de la base (`synchronous`, revisión al arrancar) | Chico | Antes de vender de verdad |
-| 3 | Venta, lo que falta después de la 0: «/» y el alta; el cobro mixto y la autorización dentro del panel; la flecha del cliente; «Más» en los tickets en espera; las familias, las fichas para afinar, el error de dedo y los sinónimos de la tienda, con lo que se guardó de las búsquedas reales; la lista con etiquetas y acciones en la fila; sonidos | Grande | Sobre la caja nueva en uso |
+| 0 | La versión unicaja, vender en una caja: la pantalla de venta nueva sobre el mismo servicio, cobro, ticket y base. El cuadro de captura con el lector en una sola llamada y las teclas que esperan al último escaneo; `12*código` y el folio; la búsqueda por pedazos de palabra con el nombre de eleventa como sinónimo, lo elegido antes y lo más vendido; la lista con + − y Supr; los rápidos (Copia B/N y CURP); el panel del total con F12, el exacto en gris y el cambio, sin billetes; los tickets en espera con F6 y F5; guardar lo que se busca; sin sonidos. Lo demás abre lo de hoy. Se elige por caja frente a la pantalla de hoy | Mediano a grande | Primero, para desarrollo |
+| 10 | Ajustes de la base (`synchronous`, revisión al arrancar) | Chico | Antes del piloto |
+| 3 | Venta, lo que falta después de la 0: «/» y el alta; el cobro mixto y la autorización dentro del panel; la flecha del cliente; «Más» en los tickets en espera; las familias, las fichas para afinar, el error de dedo y los sinónimos de la tienda, con lo que se guardó de las búsquedas reales; la lista con etiquetas y acciones en la fila; sonidos, si se quieren | Grande | Sobre la versión unicaja, mientras se arma el puente con eleventa |
 | 2 | Base visual: colores, letras, botones, etiquetas, panel y barra de teclas; estado de arriba. Permisos de la sesión en una consulta y pantalla según lo que tiene cada quien | Mediano | Con la 3 |
 | 1 | Permisos por usuario: el modelo, la migración desde los roles, la primera cuenta, «Conectar a servidor», los de defecto y la pantalla de usuarios y permisos | Mediano | Después de la 3 |
 | 6 | Entrada con fichas y PIN; Ctrl+U; el corte del turno con solo el total y sin volver a pedir el PIN; el corte del día | Mediano | Con la 1 |
-| 5 | Rendimiento para la caja 2: escanear contra la copia local, con su versión en el cobro; la base de la caja fuera del hilo de la pantalla; solo lo que cambió, avisado por SSE; plazos y estados de la red; imprimir aparte; menos repintado; la prueba de la ráfaga. El lector en una sola llamada ya va en la 0, y no perder escaneos en ráfaga ya está en `main` (#56) | Grande | Con la segunda caja |
-| 9 | Reportes, los que el dueño usa hoy en eleventa | Grande | Con la segunda caja, antes de dejar eleventa |
+| 5 | Rendimiento para la caja 2: escanear contra la copia local, con su versión en el cobro; la base de la caja fuera del hilo de la pantalla; solo lo que cambió, avisado por SSE; plazos y estados de la red; imprimir aparte; menos repintado; la prueba de la ráfaga. El lector en una sola llamada ya va en la 0, y no perder escaneos en ráfaga ya está en `main` (#56) | Grande | Para dejar eleventa: la caja 2 con el servicio nuevo |
+| 9 | Reportes, los que el dueño usa hoy en eleventa | Grande | Para dejar eleventa |
 | 7 | Configuración nueva: buscador, grupos, alcance y guardado al momento | Mediano | Después |
 | 8 | Las pantallas de atrás con el mismo patrón de lista y detalle: Productos (abre con la lista, no vacío), Inventario por tareas, Clientes | Grande | Después |
 | 13 | Lo que se señala: el mostrador y la temporada con fotos en su acomodo (Ctrl+M), las fotos desde el celular, la hoja de la temporada y las tarjetas de precio, empezar y terminar la temporada, lo más preguntado | Mediano | Después |
@@ -724,14 +731,14 @@ por partes sobre la caja nueva ya en uso. Los números de siempre se quedan; la 
 | 11 | WhatsApp: la lista «Escribieron hace poco» y la liga con las impresiones, con la etapa 2 de WhatsApp | Mediano | Lo que eleventa no tiene |
 | 12 | Ticket desde el celular, con la app Android (fase 8): armarlo, elegir la caja, el aviso a esa caja, la ficha que llega con su efecto y el QR sin red | Mediano | Lo que eleventa no tiene |
 
-**La prueba con una persona real** ya empezó con la pantalla de hoy; se repite con la entrega 0 antes de vender con
-ella, y lo que enseñe la prueba real se suma a la entrega 3.
+**La prueba con una persona real** ya empezó con la pantalla de hoy; se repite con la entrega 0, y lo que enseñen esa
+prueba y el piloto se suma a la entrega 3.
 
 ## Preguntas para el dueño
 
 - [ ] ¿El orden de las necesidades de la vista principal se parece a lo que pasa en la tienda? En especial: ¿cuántas
   veces al día se cobra una impresión recién hecha y cuántas copias se venden?
-- [ ] ¿Cuáles son los rápidos? Propuesta: copia blanco y negro, copia a color, engargolado y enmicado.
+- [x] ¿Cuáles son los rápidos? Copia B/N ($2) y CURP ($10, que vende 10 impresiones) (2026-10-10).
 - [ ] ¿Qué cajones, ganchos y cajas llevarían etiqueta? Propuesta: empezar por lo suelto que más se busca por nombre.
 - [ ] ¿Qué exhibidores hay y qué temporadas se venden en el año? Propuesta: empezar con la vitrina del mostrador y con la
   siguiente temporada. ¿Quién toma las fotos al empezar cada una?
@@ -740,11 +747,11 @@ ella, y lo que enseñe la prueba real se suma a la entrega 3.
 - [ ] ¿Cada cajero puede hacer el corte de su propio turno, o solo quien tenga el permiso? Propuesta: solo con el
   permiso, como hoy el encargado.
 - [ ] ¿El corte del día lo cierra solo la primera cuenta? ¿A qué hora se recuerda cerrarlo?
-- [ ] ¿Qué billetes salen como botones en el cobro? Propuesta: $200, $500 y $1,000, además de «Exacto».
+- [x] ¿Qué billetes salen como botones en el cobro? Ninguno: se escribe lo que dio (2026-10-10).
 - [ ] WhatsApp: ¿se prueba la lista con Kapso (gratis si su plan admite coexistencia; si no, 25 USD al mes)? ¿Se pone el
   aviso de privacidad simplificado en el mensaje de bienvenida?
 - [ ] Ticket desde el celular: ¿quién lo arma (alguien que atiende en el piso, el encargado)? ¿El lector de las cajas
   lee QR, para cuando no hay red?
-- [ ] ¿Pitido al escanear y al fallar?
+- [x] ¿Pitido al escanear y al fallar? Sin sonidos por ahora (2026-10-10).
 - [ ] ¿Alguna caja tiene o tendrá pantalla táctil?
 - [ ] ¿Pedir el PIN otra vez tras unos minutos sin usar la caja? Por ejemplo, 10.

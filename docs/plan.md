@@ -5,8 +5,8 @@
 > **Foco actual (2026-10-08):** completar el POS para tener en la matriz lo que hoy se tiene con eleventa, con una caja
 > principal y una secundaria, más las funciones ya planeadas: servicios y pedidos, WhatsApp y el módulo de impresión
 > que reemplaza a Control Print, y **saber exactamente cuánto se gana** ([qué falta](#para-el-piloto-con-dos-cajas)).
-> **Primero (2026-10-10): la caja nueva vendiendo en una sola caja,** como eleventa unicaja, lo antes posible y
-> aunque le falten detalles ([camino](#la-prueba-real-con-una-caja)).
+> **Primero (2026-10-10): la versión unicaja de la caja nueva,** para desarrollo, y después **el piloto en la caja 2**,
+> que vende con la caja nueva y manda cada venta a eleventa ([camino](#la-versión-unicaja-y-el-piloto-en-la-caja-2)).
 > **La multisucursal queda pospuesta, no
 > retirada:** su propuesta y lo investigado están en [notas](notas.md) e [ideas](ideas.md#varias-sucursales-pospuesto).
 
@@ -64,7 +64,7 @@
 | Acceso a datos | EF Core con migraciones; SQL directo donde convenga (kardex, reportes) |
 | Pruebas | xUnit |
 | Datos reales | Nunca entran al repositorio. Viven fuera de él, en `Documents\TPV` de la máquina de desarrollo |
-| Migración | El inventario **se depura** al pasar al POS nuevo: el catálogo y las existencias de eleventa son punto de partida, no se conservan tal cual. Si un producto cambia de nombre, el de eleventa queda como su sinónimo, para que el que se recuerda lo siga encontrando (2026-10-10). Las existencias de arranque salen del conteo físico |
+| Migración | El inventario **se depura** al pasar al POS nuevo: el catálogo y las existencias de eleventa son punto de partida, no se conservan tal cual. Si un producto cambia de nombre, el de eleventa queda como su sinónimo, para que el que se recuerda lo siga encontrando (2026-10-10). Las existencias de arranque salen del conteo físico. Antes, el piloto: la caja 2 vende con el POS nuevo y manda cada venta a eleventa, que sigue siendo el oficial (2026-10-10, [convivencia](migracion-eleventa.md#el-piloto-convivencia-con-eleventa)) |
 | Diagnóstico | Se entrega en Excel, una hoja por análisis |
 | Precios | Precio al público con IVA incluido; el desglose de impuestos se guarda aparte. Precio por unidad base: el paquete cuesta las piezas que trae, salvo excepción. Por sucursal: pospuesto con la multisucursal (el modelo ya lo permite) |
 | Impuestos | IVA 16 %, 0 % o exento; sin IEPS |
@@ -107,7 +107,7 @@ Sin tiempos: se avanza cuando la fase anterior funciona en la tienda. **Foco:** 
 | 2. Inventario | Compras, recepción ciega, presentaciones, conteos cíclicos, etiquetas, sugerido de compra |
 | 3. Precios y clientes | Mayoreo, promociones, kits, clientes registrados, crédito |
 | 4. Servicios y pedidos | Primero, servicios con costo real: recetas con los consumibles del servicio (micas, espirales, portadas), depreciación del equipo y luz (engargolado y enmicado). Después pedidos, cola compartida, charolas, recogida por celular, duplicados, apartados, listas escolares, captura manual desde WhatsApp |
-| 5. Piloto en la matriz | Primero con una caja, la principal, con la caja nueva vendiendo como eleventa unicaja ([la prueba real](#la-prueba-real-con-una-caja)); después con la secundaria: depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo. Antes: la red de la tienda arreglada y las tres impresoras de inyección; los reportes, después de la prueba con una persona real y su aprobación. Desde el arranque, respaldo cifrado fuera de la tienda (Backblaze B2) y vigilancia de la caja principal (Healthchecks.io) ([qué falta](#para-el-piloto-con-dos-cajas)) |
+| 5. Piloto en la matriz | Primero el piloto en la caja 2: vende con la caja nueva y manda cada venta a eleventa, que sigue siendo el oficial ([piloto](#la-versión-unicaja-y-el-piloto-en-la-caja-2)). Después, dejar eleventa con las dos cajas: depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo. Antes: la red de la tienda arreglada y las tres impresoras de inyección; los reportes, después de la prueba con una persona real y su aprobación. Desde el arranque, respaldo cifrado fuera de la tienda (Backblaze B2) y vigilancia de la caja principal (Healthchecks.io) ([qué falta](#para-el-piloto-con-dos-cajas)) |
 | 6. WhatsApp y central | La API de WhatsApp → pedidos cuando el dueño la quiera, con un receptor aparte ([WhatsApp](whatsapp.md)). **Pospuesto:** el central, con sus entregas 6.1 a 6.6 ([propuesta](servidor-remoto.md#entregas)) |
 | 7. Sucursal 2 | **Pospuesta.** Precios por sucursal, traspasos, compras que se reparten, inversión de apertura y punto de equilibrio ([propuesta](servidor-remoto.md)). Si abre antes, abre con eleventa |
 | 8. App Android | Preventa y pedidos desde el celular. Preventa: el ticket se arma en el celular, se elige a qué caja mandarlo y ahí llega en espera, con un efecto para que se note ([propuesta](propuesta-interfaz.md#desde-el-celular)) |
@@ -242,73 +242,74 @@ la caja con su usuario y PIN del POS, todos desde la misma cuenta común de Wind
 - **La prueba con una persona real** se instala igual: el administrador la instala para todas las cuentas de Windows
   y quien prueba la usa con una cuenta común.
 
-### La prueba real, con una caja
+### La versión unicaja y el piloto en la caja 2
 
-**Decisión del dueño (2026-10-10):** tener cuanto antes la [caja nueva](propuesta-interfaz.md) lista para vender en una
-sola caja, como eleventa unicaja. Puede tener errores o faltarle detalles y adornos: probarla vendiendo es lo que más
-ayuda a terminarla. La segunda caja y lo que eleventa no tiene van después.
+**Decisiones del dueño (2026-10-10):**
 
-- **Una primera versión que ya venda** ([entrega 0](propuesta-interfaz.md#entregas)), hecha sobre lo que ya funciona:
-  el mismo servicio, el mismo cobro, el mismo ticket y la misma base. Cambia la pantalla de venta; lo que todavía no
-  se rediseña abre lo de hoy, con sus mismas teclas.
-- **Convive con la pantalla de hoy:** cada caja elige cuál usa (Configuración › Esta caja). Si algo falla en la nueva,
-  se cambia a la de hoy y se sigue vendiendo.
-- **Con una caja, la red casi no estorba:** el servicio y la caja están en la misma PC, así que el escaneo no pasa por
-  el Wi-Fi ni compite con otra caja. Lo de la caja 2 ([entrega 5](propuesta-interfaz.md#entregas)) puede esperar.
+- **La versión unicaja es para desarrollo.** La [caja nueva](propuesta-interfaz.md) corre sola en una PC, con su
+  servicio y una base de prueba, para ver cómo avanza y cómo se comporta. No es para vender con productos ni clientes
+  reales: no le hacen falta respaldos ni importación, y lo que se capture no importa. Va aparte de eleventa, con su
+  propio puerto y su propia carpeta, como la [prueba con una persona real](#prueba-con-una-persona-real).
+- **El piloto es en la caja 2,** la secundaria de la matriz. Durante un tiempo vende con el sistema nuevo y guarda en su
+  propia base, pero manda cada venta a la caja principal igual que hoy lo hace eleventa multicaja: la venta queda en los
+  dos lados. Eleventa sigue siendo el sistema oficial en la caja principal
+  ([convivencia](migracion-eleventa.md#el-piloto-convivencia-con-eleventa)).
 
-**La entrega 0: vender en una caja.**
+#### Primero: la versión unicaja (entrega 0)
+
+Una primera versión que ya venda, hecha sobre lo que ya funciona: el mismo servicio, el mismo cobro, el mismo ticket y
+la misma base. Cambia la pantalla de venta; lo que todavía no se rediseña abre lo de hoy, con sus mismas teclas. Cada
+caja elige si usa la pantalla nueva o la de hoy (Configuración › Esta caja). Se instala con el instalador de prueba que
+ya existe, y cada entrega que sigue se ve en esa misma versión.
 
 | Qué | Cómo, por ahora |
 |---|---|
 | El cuadro de captura | El lector en una sola llamada y en orden; las teclas esperan a que termine el último escaneo (lo anotado en el #56). El código, `12*código`, y el folio, que abre la devolución de hoy |
 | Buscar por nombre | Los resultados debajo del cuadro: pedazos de palabra en cualquier orden, el nombre de eleventa como sinónimo, primero lo elegido antes con ese texto y luego lo más vendido; hasta 30, con ↓ |
-| La lista del ticket | La cantidad con + y −, Supr para quitar y la línea que se ilumina al agregarse |
-| Los rápidos | Alt+1 a Alt+6, con la cantidad antes |
-| El panel del total | El total, F12 al «Pagó con» con el exacto en gris, los billetes, el cambio y cobrar. Tarjeta, transferencia y crédito abren el cobro de hoy |
+| La lista del ticket | La cantidad con + y −, Supr para quitar y la línea que se ilumina al agregarse. Sin sonidos por ahora |
+| Los rápidos | Copia B/N ($2) y CURP ($10, que vende 10 impresiones mientras Control Print siga aparte), con Alt+1 y Alt+2 y la cantidad antes |
+| El panel del total | El total, F12 al «Pagó con» con el exacto en gris, el cambio y cobrar. Sin billetes: se escribe lo que dio. Tarjeta, transferencia y crédito abren el cobro de hoy |
 | Tickets en espera | F6 y F5 con sus fichas, guardados en la caja |
 | Lo demás | Descuento, precio, artículo común, mayoreo, cliente, verificador, impresiones, entradas y salidas, corte, productos e inventario: lo de hoy |
 | Para aprender | Guarda lo que se busca: el texto, cuántos resultados hubo y qué se eligió |
 
 No trae, a propósito: los colores y detalles finales, los permisos por usuario (siguen los roles de hoy), el cliente
 como flecha, el cobro mixto dentro del panel, las familias de colores, las fichas para afinar, la bandeja de
-impresiones, ni el mostrador y la temporada.
+impresiones, ni el mostrador y la temporada. Llegan con las entregas que siguen.
 
-**Antes de vender de verdad con ella,** en este orden. Entre semana se prepara; en la tienda se prueba sábado o domingo.
+#### Después: el piloto en la caja 2
+
+Mientras se arma el puente con eleventa, la versión unicaja sigue creciendo con la venta completa (entrega 3) y la base
+visual (entrega 2). Para el piloto hace falta, en este orden:
 
 | # | Qué | Por qué | Tamaño |
 |---|---|---|---|
-| 1 | La entrega 0, probada en el navegador, en la ventana de Windows y con la guía de la prueba con una persona real | Lo que reporte quien prueba se corrige antes de vender | Mediano a grande |
-| 2 | Ajustes de la base: `synchronous=FULL` comprobado y revisión al arrancar si se apagó de golpe ([entrega 10](propuesta-interfaz.md#entregas)) | Con datos reales y sin no-break, cada venta guardada tiene que sobrevivir a un apagón | Chico |
-| 3 | Respaldo cifrado fuera de la tienda y vigilancia de la caja principal ([notas](notas.md#respaldo-fuera-de-la-tienda-y-aviso-de-apertura)) | Desde el primer día con datos reales | Chico |
-| 4 | Cómo se actualiza la caja en la tienda con un arreglo: publicar y volver a correr el instalador, sin tocar los datos | Durante la prueba van a salir arreglos | Chico |
-| 5 | En la tienda, un sábado o domingo: instalar en la caja principal, probar la impresora de tickets real con su formato y el lector (si lee QR, qué manda con los códigos de 11 cifras y su ritmo al teclear) | Lo que no se puede simular ([guía](pruebas-en-tienda.md)) | Un fin de semana |
-| 6 | La víspera: la importación final de eleventa (catálogo con sus nombres, precios, mayoreo, existencias e historial) | Arrancar con los datos de ese día. Los nombres de eleventa ya son los sinónimos | Chico: el importador ya está |
-| 7 | Enseñar a quien atiende, con la base de prueba | — | Una tarde |
+| 1 | **Leer de eleventa** el catálogo, los precios, el mayoreo y las existencias, cada pocos minutos, y con eso armar la base de la caja 2 | La caja 2 vende con lo mismo que la principal; eleventa sigue mandando | Mediano |
+| 2 | **Entender cómo escribe eleventa una venta,** en un eleventa de pruebas con una copia de la base (nunca en la tienda): qué tablas toca, en qué orden, los folios, el turno y el corte | Para escribir como lo hace hoy la caja 2 de eleventa | Mediano |
+| 3 | **Mandar cada venta a eleventa,** por la red, como una caja más (Firebird en la caja principal). Con bandeja de salida: si la principal o la red no contestan, la caja 2 sigue vendiendo y manda lo pendiente al volver, sin duplicar | La venta queda en los dos lados aunque se caiga la red de la tienda | Grande |
+| 4 | **Cancelaciones, devoluciones, turno y corte** de la caja 2, también en eleventa | Que los cortes y las existencias de eleventa sigan cuadrando | Mediano |
+| 5 | **Semanas de prueba contra una copia de eleventa,** comparando la base antes y después de cada venta | Escribir en una base ajena puede descuadrarla | — |
+| 6 | **La base de la caja 2 contra apagones** (entrega 10), su respaldo y cómo se actualiza con un arreglo | Desde el primer día de ventas reales | Chico |
+| 7 | **En la tienda, un sábado o domingo:** la impresora de tickets que comparten las dos cajas y el lector (si lee QR, qué manda con los códigos de 11 cifras y su ritmo al teclear) | Lo que no se puede simular ([guía](pruebas-en-tienda.md)) | Un fin de semana |
+| 8 | **Enseñar** a quien atiende la caja 2 | — | Una tarde |
 
-**Lo que decide el dueño antes de poner la fecha:**
+- **A eleventa va lo que entiende:** la venta, el cobro y lo que descuenta de la existencia. Lo que eleventa no tiene
+  (servicios con receta, pedidos, lo que se buscó) se queda solo en la caja nueva.
+- **Decidido por el dueño (2026-10-10):** durante el piloto, las altas de productos y los cambios de precio se siguen
+  haciendo en eleventa y llegan a la caja 2 con la lectura; y el ticket de la caja 2 lleva el folio de eleventa, para
+  que una devolución se pueda hacer en cualquiera de las dos cajas.
 
-- **Cómo convive con eleventa.** Propuesta: la prueba es el arranque con una caja, en días tranquilos; eleventa queda
-  instalado para consulta y como respaldo, con un plan para regresar. Las otras dos opciones:
-  - Unos días de prueba y de vuelta a eleventa: al cerrar cada día, el POS da lo vendido para descontarlo en eleventa.
-  - La caja 2 sigue con eleventa mientras tanto. No conviene: las existencias de los dos sistemas se separan.
-- **Las existencias de arranque.** Propuesta: las de eleventa tal cual, porque la existencia nunca detiene la venta, y
-  el conteo físico por departamentos en las semanas siguientes. La otra: esperar al conteo físico completo, como decía
-  el plan, que retrasa la prueba.
-- **La depuración del catálogo:** después de arrancar y por partes; antes, solo lo que estorba al vender (duplicados
-  exactos, productos dados de baja). Los nombres de eleventa siguen encontrando cada producto.
-- **Las impresiones:** se cobran como hoy en eleventa y Control Print sigue aparte; el módulo de impresión entra
-  después.
+#### Al terminar el piloto
 
-**Después, sobre la caja nueva ya en uso,** cada parte entra sin detener la prueba:
+Cada parte entra sin detener a la caja 2:
 
-1. **Terminar la venta** (lo que falta de la entrega 3: el cobro mixto en el panel, la flecha del cliente, «Más» en los
-   tickets en espera, las familias, las fichas para afinar, el error de dedo, los sinónimos de la tienda y los sonidos)
-   y **la base visual** (entrega 2), con lo que enseñen la prueba y las búsquedas guardadas.
+1. **Terminar la venta** (lo que falta de la entrega 3) y **la base visual** (entrega 2), con lo que enseñen el piloto y
+   las búsquedas guardadas.
 2. **Los permisos por usuario** (entrega 1) y **la entrada y el corte** (entrega 6).
-3. **La segunda caja y dejar eleventa,** para igualar a eleventa multicaja: la red de la tienda arreglada; el
-   rendimiento para la caja 2 (entrega 5: escaneo contra la copia local, cambios avisados, plazos y estados de la red);
-   la impresora de tickets compartida con reintento; el alta, la contingencia y los respaldos con las dos cajas; el día
-   pico con el simulador; los reportes de ventas (entrega 9), que el dueño usa hoy en eleventa; y el conteo físico.
+3. **Dejar eleventa:** el servicio nuevo en la caja principal y la caja 2 conectada a él, con su rendimiento (entrega 5:
+   escaneo contra la copia local, cambios avisados, plazos y estados de la red); la red de la tienda arreglada; la
+   impresora de tickets compartida con reintento; el día pico con el simulador; los reportes de ventas (entrega 9), que
+   el dueño usa hoy en eleventa; la depuración del catálogo y el conteo físico. Eleventa queda de consulta.
 4. **El resto del rediseño:** la configuración (7), las pantallas de atrás (8) y lo que se señala (13).
 5. **Lo que eleventa no tiene:** el módulo de impresión con las tres impresoras de inyección y la bandeja (entrega 4),
    que retira Control Print; servicios con costo real y pedidos (fase 4); la ganancia real del mes; WhatsApp
@@ -319,7 +320,8 @@ impresiones, ni el mostrador y la temporada.
 
 Lo que falta para tener en la matriz lo que hoy hace eleventa, con la caja principal y la secundaria, más lo ya
 planeado. Revisado el 2026-10-08 contra el plan, el código y los PR abiertos. **El orden ahora lo da
-[la prueba real con una caja](#la-prueba-real-con-una-caja) (2026-10-10):** esta tabla queda como la lista completa.
+[la versión unicaja y el piloto en la caja 2](#la-versión-unicaja-y-el-piloto-en-la-caja-2) (2026-10-10):** esta tabla
+queda como la lista completa.
 
 **Las pruebas en la tienda solo se pueden sábado y domingo:** entre semana se programa, se simula y se deja todo listo
 para esos días ([forma de trabajar](notas.md#forma-de-trabajar), [guía de los fines de semana](pruebas-en-tienda.md)).
@@ -484,12 +486,13 @@ Depuración del inventario (antes del piloto, [ver arriba](#depuración-del-inve
 Por definir:
 
 - [x] Revisar la [propuesta de rediseño de la interfaz](propuesta-interfaz.md) con su prototipo: aprobada el 2026-10-10
-- [ ] Antes de poner la fecha de la prueba real: cómo convive con eleventa, las existencias de arranque y qué se depura
-  antes ([la prueba real](#la-prueba-real-con-una-caja))
-- [ ] Contestar las [preguntas de la propuesta](propuesta-interfaz.md#preguntas-para-el-dueño) antes de cada entrega:
-  antes de la 0, las de la venta (cuáles son los rápidos, qué billetes salen como botones, si suena al escanear); antes
-  de la 1, las de los permisos (el corte del turno, el PIN tras unos minutos); antes de la 4, bandeja o tarjeta para
-  las impresiones
+- [x] Las preguntas de la venta para la entrega 0 (2026-10-10): rápidos Copia B/N ($2) y CURP ($10, 10 impresiones);
+  sin billetes rápidos (se escribe lo que dio); sin sonidos por ahora
+- [x] Para el piloto en la caja 2 (2026-10-10): las altas y los cambios de precio se siguen haciendo en eleventa, y el
+  ticket de la caja 2 lleva el folio de eleventa ([piloto](#la-versión-unicaja-y-el-piloto-en-la-caja-2))
+- [ ] Contestar las demás [preguntas de la propuesta](propuesta-interfaz.md#preguntas-para-el-dueño) antes de cada
+  entrega: antes de la 1, las de los permisos (el corte del turno, el PIN tras unos minutos); antes de la 4, bandeja o
+  tarjeta para las impresiones
 - [ ] Probar el lector en la tienda: si lee QR, qué manda con los códigos de 11 cifras y su ritmo al teclear
 - [ ] Instalador de la tienda para el administrador: servicio, cajas, firewall, carpeta de la caja con permisos y las
   colas de las impresoras de inyección ([detalle](#instalación-y-usuarios-de-windows)). Hoy son los scripts de
@@ -501,8 +504,8 @@ Por definir:
   [entrega 3](fase-3-precios-clientes.md#3-consumibles-del-mes), «Consumibles del mes»). Propuesta, por aprobar: que
   esa entrega capture todos los gastos del mes cuando se pagan (renta, luz, insumos, sueldos y lo demás); el reporte de
   la ganancia, después de la prueba con una persona real
-- [ ] Módulo de convivencia: el POS nuevo como una caja más de eleventa durante la adaptación
-  ([idea](migracion-eleventa.md#convivencia-con-eleventa-idea-a-evaluar))
+- [ ] Módulo de convivencia: el POS nuevo como una caja más de eleventa. Decidido el 2026-10-10: es el piloto en la
+  caja 2 ([convivencia](migracion-eleventa.md#el-piloto-convivencia-con-eleventa))
 - [ ] Demás funciones a la medida (las describe el dueño)
 - [x] Privilegios de los clientes registrados: descuento, mayoreo, crédito, pedido sin anticipo y apartar sin pagar;
   nada más ([decisión](fase-3-precios-clientes.md#decisiones-de-la-revisión))

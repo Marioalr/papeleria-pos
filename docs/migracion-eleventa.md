@@ -99,14 +99,15 @@ hoja por análisis:
   como códigos.
 - **Servicios:** se convierten en servicios con receta (ver [servicios](servicios.md)).
 
-## Convivencia con eleventa (idea a evaluar)
+## El piloto: convivencia con eleventa
 
-> Propuesta del dueño, todavía sin decidir. Se evalúa antes del piloto (fase 5).
+> **Decidido por el dueño (2026-10-10):** es el piloto, en la caja 2. Los pasos están en el
+> [plan](plan.md#la-versión-unicaja-y-el-piloto-en-la-caja-2).
 
-Un módulo pequeño para la adaptación: el POS nuevo **se hace pasar por una caja más de eleventa multicaja** y
-escribe cada venta también en la base de eleventa. Así eleventa sigue siendo el sistema oficial (existencias, cortes,
-reportes de siempre) mientras el POS nuevo se prueba en la tienda, y se pasa de uno a otro poco a poco: primero una
-caja, luego todas, hasta que eleventa ya no haga falta.
+Durante un tiempo, la caja 2 vende con el POS nuevo y guarda en su propia base, pero **se hace pasar por una caja más de
+eleventa multicaja** y manda cada venta a la caja principal, igual que hoy: la venta queda en los dos lados. Así
+eleventa sigue siendo el sistema oficial (existencias, cortes, reportes de siempre) mientras el POS nuevo se prueba en
+la tienda, y después se deja eleventa con las dos cajas.
 
 Lo que hay que resolver antes:
 
@@ -117,11 +118,14 @@ Lo que hay que resolver antes:
   existencias o cortes. Hace falta respaldo diario y probarlo semanas en una copia.
 - **Firebird 2.0.1 de 32 bits con una base ODS 10.1:** para leer ya sabemos cómo (ver «Leer la base»), pero
   escribir en la base viva requiere hablarle al servidor de la tienda por red, como hace una caja de eleventa.
-- **Qué pasa con lo que eleventa no tiene:** servicios con receta, pedidos, fracciones o códigos nuevos. Se mandaría
+- **Qué pasa con lo que eleventa no tiene:** servicios con receta, pedidos, fracciones o códigos nuevos. Se manda
   solo lo que eleventa entiende (venta, cobro, existencia) y lo demás vive solo en el POS nuevo.
+- **Si la red o la caja principal no contestan:** la caja 2 sigue vendiendo con su base y manda lo pendiente al volver,
+  sin duplicar (una bandeja de salida, como la de la contingencia). En la tienda la red se cae cuando se va el internet
+  ([red de la matriz](arquitectura.md#la-red-de-la-matriz)).
 
-Una variante más segura para empezar: **solo leer** de eleventa (catálogo, precios y existencias cada pocos minutos)
-para que el POS nuevo trabaje con datos al día sin escribir nada en eleventa. Si eso funciona, se agrega la escritura.
+**El primer paso es solo leer** de eleventa (catálogo, precios y existencias cada pocos minutos), para que la caja 2
+trabaje con datos al día sin escribir nada en eleventa. Cuando eso funcione, se agrega la escritura.
 
 ## Arranque (fase 5)
 

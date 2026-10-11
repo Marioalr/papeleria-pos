@@ -812,18 +812,20 @@ const PRODUCTOS = [
   { id: 19, codigo: '7509990000192', nombre: 'Mapa de México con división política', marca: '', depto: 'Escolar', precio: 300, costo: 110, exist: 60 },
   { id: 20, codigo: '7509990000208', nombre: 'Cinta adhesiva transparente 18 mm', marca: 'Diurex', depto: 'Adhesivos', precio: 1400, costo: 780, exist: 22 },
   { id: 21, codigo: 'LIS25R', nombre: 'Listón 2.5 cm rojo', marca: '', depto: 'Mercería', precio: 800, costo: 300, exist: 46.5, unidad: 'm' },
-  { id: 22, codigo: 'COPIA', nombre: 'Copia blanco y negro carta', marca: '', depto: 'Servicios', precio: 100, costo: 35, exist: null, rapido: 'Copia B/N' },
+  { id: 22, codigo: 'COPIA', nombre: 'Copia blanco y negro carta', marca: '', depto: 'Servicios', precio: 200, costo: 35, exist: null, rapido: 'Copia B/N' },
   { id: 23, codigo: 'COPIAC', nombre: 'Copia a color carta', marca: '', depto: 'Servicios', precio: 500, costo: 180, exist: null, rapido: 'Copia color' },
   { id: 24, codigo: 'ENG', nombre: 'Engargolado hasta 100 hojas', marca: '', depto: 'Servicios', precio: 3500, costo: 1400, exist: null, rapido: 'Engargolado' },
   { id: 25, codigo: 'ENM', nombre: 'Enmicado tamaño credencial', marca: '', depto: 'Servicios', precio: 1000, costo: 300, exist: null, rapido: 'Enmicado' },
   { id: 26, codigo: 'ESC', nombre: 'Escaneo por hoja', marca: '', depto: 'Servicios', precio: 300, costo: 40, exist: null, rapido: 'Escaneo' },
-  { id: 27, codigo: 'CURP', nombre: 'Impresión de CURP', marca: '', depto: 'Servicios', precio: 1000, costo: 120, exist: null, rapido: 'CURP' },
+  { id: 27, codigo: 'CURP', nombre: 'CURP (10 impresiones)', marca: '', depto: 'Servicios', precio: 1000, costo: 300, exist: null, rapido: 'CURP', equivale: { codigo: 'IMP', cant: 10 } },
 ];
 
 /* La cola larga: lo que se vende poco, suelto y sin código del fabricante. Vive en un cajón o gancho con su etiqueta
    (códigos internos 200…, que el POS imprime); algunos tienen un código corto que la tienda inventó. */
 const COLOR = { rojo: '#d23c3c', azul: '#2b5cd6', verde: '#2e9b4f', amarillo: '#f2c200', negro: '#2a2a2a', blanco: '#ffffff', rosa: '#f29ac0', naranja: '#f2801b', dorado: '#c9a227', plateado: '#b8bec6', crema: '#efe3c2', cafe: '#8a5a33' };
 let sigId = 28;
+// La impresión suelta: el rápido CURP vende 10 de estas mientras Control Print siga aparte.
+PRODUCTOS.push({ id: sigId++, codigo: 'IMP', nombre: 'Impresión blanco y negro', marca: '', depto: 'Servicios', precio: 100, costo: 30, exist: null });
 const variante = (familia, color, extra) => ({ id: sigId++, familia, color, nombre: `${familia} ${color}`, marca: '', exist: 30, ...extra });
 PRODUCTOS.push(
   ...['rojo', 'azul', 'verde', 'amarillo', 'negro', 'blanco', 'rosa', 'naranja'].map((c, k) => variante('Papel lustre', c, { codigo: `20000000010${String(k + 1).padStart(2, '0')}`, depto: 'Papel', precio: 300, costo: 120, etiqueta: true, vendidos: [38, 26, 22, 18, 15, 12, 9, 6][k] })),
@@ -973,14 +975,13 @@ const AJUSTES = [
   ] },
   { id: 'venta', nombre: 'Venta y cobro', icono: 'i-efectivo', desc: 'Cómo se vende y se cobra en todas las cajas.', ajustes: [
     { id: 'redondeo', t: 'Cobrar el efectivo al peso', d: '$37.49 → $37 y $37.50 → $38. Tarjeta y transferencia van exactas.', tipo: 'si', v: true, vivo: true },
-    { id: 'billetes', t: 'Billetes rápidos en el cobro', d: 'Además de «Exacto».', tipo: 'multi', opciones: ['$50', '$100', '$200', '$500', '$1,000'], v: ['$200', '$500', '$1,000'], vivo: true },
     { id: 'formas', t: 'Otras formas de pago', tipo: 'multi', opciones: ['Tarjeta', 'Transferencia', 'Crédito'], v: ['Tarjeta', 'Transferencia', 'Crédito'], vivo: true },
     { id: 'comision', t: 'Comisión de la terminal de tarjeta', d: 'Se resta en la ganancia real del mes.', tipo: 'numero', sufijo: '%', v: 3.5 },
     { id: 'refTarjeta', t: 'Pedir la referencia de la terminal', tipo: 'si', v: true },
     { id: 'sinExistencia', t: 'Si el sistema dice que no hay existencia', d: 'La venta nunca se detiene: si alguien lo trae a la caja, el producto existe y la base es la que está mal (por ejemplo, si las dos cajas venden el último a la vez). Queda para revisar en el conteo.', tipo: 'opcion', opciones: ['Vender y avisar', 'Vender sin avisar'], v: 'Vender y avisar', vivo: true },
     { id: 'existenciaLinea', t: 'Mostrar la existencia en el ticket cuando queden', tipo: 'numero', sufijo: 'o menos', v: 3, vivo: true },
     { id: 'fichasEspera', t: 'Tickets en espera a la vista', d: 'Cuántas fichas junto a los rápidos; los demás van en «Más». No hay límite, y se guardan en la caja: sobreviven a un apagón.', tipo: 'numero', v: 3, vivo: true },
-    { id: 'rapidos', t: 'Rápidos', d: 'Servicios sin código de barras, con Alt+1 a Alt+6. Con un número en el cuadro, agregan esa cantidad.', tipo: 'multi', opciones: RAPIDOS, v: ['Copia B/N', 'Copia color', 'Engargolado', 'Enmicado'], vivo: true },
+    { id: 'rapidos', t: 'Rápidos', d: 'Servicios sin código de barras, con Alt+1 a Alt+6. Con un número en el cuadro, agregan esa cantidad.', tipo: 'multi', opciones: RAPIDOS, v: ['Copia B/N', 'CURP'], vivo: true },
     { id: 'sinonimos', t: 'Sinónimos de la búsqueda', d: 'Lo que la gente pide con otro nombre: cualquiera de un grupo encuentra a los demás. Grupos separados por «·». Cada uno lo decide la tienda: aquí «pluma» es la decorativa y «pegamento» el líquido blanco, no el silicón. El nombre que cada producto tenía en eleventa ya es su sinónimo. Lo que se buscó y no se encontró se ve en Productos.', tipo: 'texto', v: 'bolígrafo, lapicero · borrador, goma · marcador, plumón · foami, foamy · carpeta, folder' },
     { id: 'diasDevolucion', t: 'Días para devolver con ticket', tipo: 'numero', sufijo: 'días', v: 7, vivo: true },
   ] },
@@ -1054,7 +1055,7 @@ const AJUSTES = [
   { id: 'estacaja', nombre: 'Esta caja', icono: 'i-teclado', desc: 'Solo cambia en esta PC.', ajustes: [
     { id: 'panel', t: 'Panel del total', d: 'B: el cobro siempre listo. A: el cobro en un panel aparte.', tipo: 'opcion', opciones: ['B', 'A'], v: 'B', vivo: true },
     { id: 'letra', t: 'Tamaño de letra del ticket', tipo: 'opcion', opciones: ['Normal', 'Grande'], v: 'Normal', vivo: true },
-    { id: 'sonido', t: 'Pitido al escanear y al fallar', tipo: 'si', v: true, vivo: true },
+    { id: 'sonido', t: 'Sonidos al escanear y al fallar', d: 'Apagados por ahora: la línea que se ilumina y el aviso bajo el cuadro bastan.', tipo: 'si', v: false, vivo: true },
     { id: 'tactil', t: 'Pantalla táctil', d: 'Botones más grandes.', tipo: 'si', v: false },
     { id: 'lector', t: 'Reconocer el lector', d: 'Mientras llega un código del lector no se abren resultados de búsqueda.', tipo: 'si', v: true },
   ] },
@@ -1801,6 +1802,8 @@ function usarProducto(p, cant) {
 }
 
 function agregar(p, cant = 1) {
+  // Lo que equivale a otro producto (CURP = 10 impresiones) se vende como ese otro, por el rápido, el código o la búsqueda.
+  if (p.equivale) return agregar(porCodigo(p.equivale.codigo), +(cant * p.equivale.cant).toFixed(3));
   // La existencia nunca detiene la venta: la de la copia local puede ir atrasada, y si alguien trae el producto a la
   // caja, existe aunque la base diga que no.
   const t = S.ticket;
@@ -2215,14 +2218,6 @@ function cuentas(src) {
   return { tot, otros, resto, enEfectivo, recibido, exacto, cambio: recibido - enEfectivo };
 }
 
-function billetes(n) {
-  if (!n) return [];
-  const de = { '$50': 5000, '$100': 10000, '$200': 20000, '$500': 50000, '$1,000': 100000 };
-  const lista = S.config.billetes.map(b => de[b]).filter(b => b > n).sort((a, b) => a - b);
-  if (!lista.length) lista.push(Math.ceil((n + 1) / 10000) * 10000);
-  return [...new Set(lista)].slice(0, 4);
-}
-
 /* Lo que comparten el panel B y el cobro aparte del panel A */
 function htmlCobro(src, nombre) {
   const k = cuentas(src);
@@ -2250,8 +2245,7 @@ function htmlCobro(src, nombre) {
   const etiqueta = !listo ? 'Falta dinero' : k.enEfectivo === 0 ? `Cobrar ${dinero(k.tot.total)}` : k.exacto ? `Cobrar exacto ${dinero(k.enEfectivo + k.otros)}` : `Cobrar · cambio ${dinero(k.cambio)}`;
   return `${k.enEfectivo && k.enEfectivo !== k.resto ? `<div class="tt-linea"><span>En efectivo, al peso</span><strong>${dinero(k.enEfectivo)}</strong></div>` : ''}
     ${filas}
-    ${k.enEfectivo ? `<div class="campo grande"><div class="campo-cab"><label for="${idRecibido}">Pagó con</label>${formas ? `<span class="formas">${formas}</span>` : ''}</div><input id="${idRecibido}" data-in="cobro-recibido" data-src="${nombre}" inputmode="decimal" value="${esc(src.recibido)}" placeholder="${dinero(k.enEfectivo)}"></div>
-    <div class="botonera">${billetes(k.enEfectivo).map(b => `<button class="pastilla" data-act="billete" data-src="${nombre}" data-arg="${b}">${pesos(b)}</button>`).join('')}</div>`
+    ${k.enEfectivo ? `<div class="campo grande"><div class="campo-cab"><label for="${idRecibido}">Pagó con</label>${formas ? `<span class="formas">${formas}</span>` : ''}</div><input id="${idRecibido}" data-in="cobro-recibido" data-src="${nombre}" inputmode="decimal" value="${esc(src.recibido)}" placeholder="${dinero(k.enEfectivo)}"></div>`
       : formas ? `<div class="campo-cab"><span class="nota">Otra forma</span><span class="formas">${formas}</span></div>` : ''}
     ${vivo}
     ${src.error ? `<p class="error-txt">${src.error}</p>` : ''}
@@ -3084,7 +3078,6 @@ document.addEventListener('click', e => {
     case 'cerrar-panel': return cerrarPanel();
     case 'menu': S.menu = !S.menu; return render();
     case 'cambiar-usuario': return cambiarUsuario();
-    case 'billete': fuente.recibido = (arg / 100).toFixed(2); fuente.error = null; return render({ foco: src === 'pago' ? 'pago-b' : 'recibido' });
     case 'forma': {
       const k = cuentas(fuente);
       fuente.pagos.push({ forma: arg, monto: (k.resto / 100).toFixed(2), ref: '' });
