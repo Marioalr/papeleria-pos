@@ -49,9 +49,10 @@ static int Ayuda()
                             [--carpeta <carpeta>]
               Para entender qué escribe eleventa (el piloto, paso 2): toma una foto de toda su base, solo leyendo;
               después de hacer algo en eleventa (cobrar, cancelar, un corte) toma otra y dice qué renglones aparecieron
-              o cambiaron y qué contadores avanzaron. Cada comparación queda en un archivo de --carpeta (por omisión,
-              AppData\Local\PapeleriaPos\observaciones-eleventa, que no se sincroniza con OneDrive): son datos
-              reales, no van al repositorio.
+              o cambiaron y qué contadores avanzaron. Si fue una cancelación, una devolución o un cierre de turno, dice
+              también si eleventa hizo lo mismo que escribe la caja 2. Cada comparación queda en un archivo de --carpeta
+              (por omisión, AppData\Local\PapeleriaPos\observaciones-eleventa, que no se sincroniza con OneDrive):
+              son datos reales, no van al repositorio. scripts\observar-en-vivo.cmd lo abre ya configurado.
 
           probar-envio-eleventa --ruta <copia.fdb> [--puerto 3050] --usuario <usuario> --caja <ID> --cajero <ID>
                                 --articulo <ID de eleventa>:<cantidad> [--comun <nombre>:<importe>] [--pago <pesos>]
@@ -250,6 +251,9 @@ static async Task<int> ObservarEleventaAsync(string[] args)
         if (await FotoAsync() is not { } actual)
             continue;
         var diferencia = ComparacionEleventa.Comparar(anterior, actual);
+        // Si fue una cancelación, una devolución o un cierre de turno, ¿hizo eleventa lo mismo que escribe la caja 2?
+        if (RevisionEnVivo.Revisar(anterior, actual) is { Count: > 0 } revision)
+            diferencia += $"\nComparado con lo que escribe la caja 2 (✓ igual, ✗ distinto, · no se ve):\n{string.Join('\n', revision)}\n";
         Console.WriteLine(diferencia);
         var nombre = $"{HoraMexico.ALocal(actual.TomadaUtc):yyyy-MM-dd HH-mm-ss} {numero:00}{(nota.Length > 0 ? " " + string.Concat(nota.Where(c => !Path.GetInvalidFileNameChars().Contains(c))) : "")}.txt";
         await File.WriteAllTextAsync(Path.Combine(carpeta, nombre), $"{nota}\n{HoraMexico.ALocal(anterior.TomadaUtc):HH:mm:ss} → {HoraMexico.ALocal(actual.TomadaUtc):HH:mm:ss}\n\n{diferencia}");
