@@ -59,6 +59,9 @@ var urlPropia = new Uri(builder.Configuration["Caja:Servicio"] ?? "http://localh
 // (una ruta) la deja vender sin la caja principal de Caja:Servicio.
 var conexion = new ConexionCaja { Servicio = urlPropia, PideAlta = builder.Configuration.GetValue("Caja:PideAlta", false) };
 builder.Services.AgregarInterfazCaja(conexion, Impresoras.Crear(builder.Configuration["Caja:Impresora"]), builder.Configuration["Caja:BaseLocal"]);
+// Caja:ActualizacionPrueba=true muestra Configuración › Actualización en el navegador: busca y baja, pero no instala.
+if (builder.Configuration.GetValue("Caja:ActualizacionPrueba", false))
+    builder.Services.AgregarActualizacionPrueba(new EquipoDeNavegador(), GitHubPrueba.RepositorioPorOmision);
 
 var app = builder.Build();
 

@@ -122,6 +122,9 @@ public partial class MainWindow : Window
             prueba is null ? ConfiguracionCaja.BaseLocal : Path.Combine(ServicioDePrueba.CarpetaDatos(configuracion), "caja-local.db"));
         // Cotizar: el PDF se mide aquí, en la PC donde está; el precio lo pone la caja principal.
         servicios.AddSingleton<IMedidorPdf, MedidorPdfWindows>();
+        // La prueba se actualiza desde Configuración con los instaladores que arma GitHub.
+        if (prueba is not null)
+            servicios.AgregarActualizacionPrueba(new EquipoPrueba(ServicioDePrueba.CarpetaDatos(configuracion)), GitHubPrueba.RepositorioPorOmision);
         var proveedor = servicios.BuildServiceProvider();
         Vista.Services = proveedor;
         if (proveedor.GetService<Contingencia>() is { } contingencia)

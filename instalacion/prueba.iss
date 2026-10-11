@@ -8,6 +8,8 @@
 ;   {commonappdata}\PapeleriaPos-Prueba, con escritura para los usuarios.
 ; - En el escritorio de todos: el acceso a la caja y la carpeta «Ejemplos de la prueba» (Léeme, factura XML y nota PDF).
 ; - Al desinstalar se borra todo, menos las respuestas que quien probó guardó en su escritorio.
+; - Se actualiza encima, sin perder los datos: a mano o desde la caja (Configuración › Actualización), que lo abre con
+;   /SILENT: cierra la caja y su servicio, reemplaza y la vuelve a abrir.
 
 #define Version GetEnv("VERSION_PRUEBA")
 #if Version == ""
@@ -51,11 +53,15 @@ Name: "{commondesktop}\Papelería POS (prueba)"; Filename: "{app}\Caja\Papeleria
 Name: "{commonprograms}\Papelería POS (prueba)"; Filename: "{app}\Caja\PapeleriaPos.Caja.exe"; WorkingDir: "{app}\Caja"
 
 [Run]
-; El conteo desde el celular: el servicio de la prueba recibe a los aparatos de la red local en el 5180.
+; El conteo desde el celular: el servicio de la prueba recibe a los aparatos de la red local en el 5180. Se quita antes la
+; de una instalación anterior, para no juntar una regla por cada actualización.
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Papeleria POS (prueba) - celulares"""; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Papeleria POS (prueba) - celulares"" dir=in action=allow program=""{app}\Servicio\PapeleriaPos.Servicio.exe"" protocol=TCP localport=5180 remoteip=localsubnet profile=any"; Flags: runhidden
 ; Como el usuario que lanzó el instalador, no como administrador.
 Filename: "{commondesktop}\Ejemplos de la prueba\Léeme.txt"; Description: "Leer las instrucciones (usuarios y PIN)"; Flags: postinstall shellexec skipifsilent runasoriginaluser
 Filename: "{app}\Caja\PapeleriaPos.Caja.exe"; Description: "Abrir la caja de prueba"; Flags: postinstall nowait skipifsilent runasoriginaluser
+; La actualización desde Configuración instala en silencio (el instalador cierra la caja): al terminar, la vuelve a abrir.
+Filename: "{app}\Caja\PapeleriaPos.Caja.exe"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [UninstallRun]
 ; Si la caja se cerró mal, su servicio puede seguir abierto.
