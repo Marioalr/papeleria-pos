@@ -14,9 +14,13 @@ public sealed record VentaArmada(VentaParaEleventa? Venta, string? PorRevisar, b
 /// <summary>Lo que se le manda a eleventa de una cancelación o devolución, o por qué no se manda sola.</summary>
 public sealed record DevolucionArmada(DevolucionParaEleventa? Devolucion, string? PorRevisar, bool Descartada = false);
 
+/// <summary>Lo que se le manda a eleventa de una entrada o salida de efectivo, o por qué no se manda sola.</summary>
+public sealed record MovimientoArmado(MovimientoParaEleventa? Movimiento, string? PorRevisar);
+
 /// <summary>
 /// Pasa una venta de la caja nueva a lo que entiende eleventa (docs/migracion-eleventa.md, «Mandar cada venta»): cada
 /// línea con el producto de eleventa del que vino (el de la importación o la lectura), y lo demás como artículo común.
+/// También sus cancelaciones y devoluciones, y las entradas y salidas de efectivo.
 /// </summary>
 public static class VentasParaEleventa
 {
@@ -73,6 +77,25 @@ public static class VentasParaEleventa
 
         return new(new DevolucionParaEleventa(ticketEleventa, devolucion.EsCancelacion, HoraMexico.ALocal(devolucion.FechaUtc),
             new TurnoParaEleventa(HoraMexico.ALocal(turno.AbiertoUtc), turno.FondoCentavos / 100m), articulos), null);
+    }
+
+    public static async Task<MovimientoArmado> ArmarMovimientoAsync(PosDbContext db, Guid movimientoId, CancellationToken ct = default)
+    {
+        var movimiento = await db.MovimientosCaja.AsNoTracking().SingleAsync(m => m.Id == movimientoId, ct);
+        var turno = await db.Turnos.AsNoTracking().SingleAsync(t => t.Id == movimiento.TurnoId, ct);
+        return ArmarMovimiento(movimiento, turno);
+    }
+
+    /// <summary>
+    /// Una entrada o salida de efectivo (F7 o F8) va con su motivo, su hora y su turno. La que llegó sin conexión cuando su
+    /// turno ya tenía corte Z no se manda sola: en eleventa ese turno ya se cerró, y mandarla abriría otro.
+    /// </summary>
+    public static MovimientoArmado ArmarMovimiento(MovimientoCaja movimiento, Turno turno)
+    {
+        if (movimiento.FueraDeCorteUtc is not null)
+            return new(null, "Llegó cuando su turno ya tenía corte: en eleventa hay que anotarla a mano.");
+        return new(new MovimientoParaEleventa(movimiento.Tipo == TipoMovimientoCaja.Entrada, movimiento.MontoCentavos / 100m, movimiento.Motivo,
+            HoraMexico.ALocal(movimiento.FechaUtc), new TurnoParaEleventa(HoraMexico.ALocal(turno.AbiertoUtc), turno.FondoCentavos / 100m)), null);
     }
 
     /// <summary>El <c>PRODUCTOS.ID</c> de eleventa de cada variante de la venta que vino de allá (la importación o la lectura).</summary>

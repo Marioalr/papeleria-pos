@@ -298,11 +298,79 @@ public class EnvioEleventaTests
         var faltante = (await e.FilasAsync("SELECT * FROM CORTE_MOVIMIENTOS WHERE TIPO = 'Salida'")).Single();
         Assert.Equal((12.5m, "Efectivo faltante al cerrar turno de Ana Ruiz del 09/03/2026", 4), ((decimal)faltante["MONTO"]!,
             (string)faltante["DESCRIPCION"]!, Convert.ToInt32(faltante["ID_CAJA"])));
-        // El día no lo lleva.
-        Assert.Equal(0m, (decimal)(await e.ValorAsync("SELECT ACUMULADO_SALIDAS FROM CORTE_OPERACIONES"))!);
+        // Cerró el mismo día que abrió: el día también lo lleva, como una salida.
+        Assert.Equal(12.5m, (decimal)(await e.ValorAsync("SELECT ACUMULADO_SALIDAS FROM CORTE_OPERACIONES"))!);
         Assert.Equal(0, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE ESTA_ABIERTO = 't'")));
         // La siguiente venta abre otro turno.
         await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cierre.AddHours(11), new ArticuloParaEleventa(10, "Cuaderno", 1, 30)));
         Assert.Equal(2, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM TURNOS")));
+    }
+
+    private static MovimientoParaEleventa Movimiento(bool entrada, decimal monto, string motivo, DateTime cuando) => new(entrada, monto, motivo, cuando, Turno);
+
+    [FactConFirebird]
+    public async Task Una_entrada_y_una_salida_quedan_en_el_corte_del_turno_y_del_dia_y_no_se_duplican()
+    {
+        await using var e = await TiendaAsync();
+        // Antes de la primera venta: eleventa también abre el turno para una entrada.
+        var hora = new DateTime(2026, 3, 9, 8, 5, 12).AddTicks(3456789);
+        var entrada = await EnvioEleventa.MoverEfectivoAsync(e.Conexion, Caja, Movimiento(true, 200, " Cambio del banco ", hora));
+        await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(new DateTime(2026, 3, 9, 10, 0, 0), new ArticuloParaEleventa(10, "Cuaderno", 1, 30)));
+        var salida = await EnvioEleventa.MoverEfectivoAsync(e.Conexion, Caja, Movimiento(false, 150.5m, "Garrafón de agua", new DateTime(2026, 3, 9, 12, 30, 0)));
+        var otraVez = await EnvioEleventa.MoverEfectivoAsync(e.Conexion, Caja, Movimiento(true, 200, "Cambio del banco", hora));
+
+        Assert.Equal((entrada.MovimientoId, false, true), (otraVez.MovimientoId, entrada.YaEstaba, otraVez.YaEstaba));
+        Assert.False(salida.YaEstaba);
+        var turno = await TurnoAsync(e);
+        Assert.Equal((Abierto, 500m), ((DateTime)turno["INICIO_EN"]!, (decimal)turno["DINERO_INICIAL"]!));
+        // Un movimiento del corte por cada una, con el motivo como descripción y sin forma de pago ni razón.
+        var movimientos = await e.FilasAsync("SELECT * FROM CORTE_MOVIMIENTOS ORDER BY ID");
+        Assert.Equal([("Entrada", 200m, "Cambio del banco"), ("Salida", 150.5m, "Garrafón de agua")],
+            movimientos.Select(m => ((string)m["TIPO"]!, (decimal)m["MONTO"]!, (string)m["DESCRIPCION"]!)));
+        Assert.All(movimientos, m =>
+        {
+            Assert.Equal((turno["ID"], 4), (m["ID_TURNO"], Convert.ToInt32(m["ID_CAJA"])));
+            Assert.Equal([null, null, null], new[] { m["FORMA_PAGO"], m["RAZON_DEVOLUCION"], m["BORRADO_EL"] });
+        });
+        // La hora con sus diezmilésimas de segundo, como la anota eleventa.
+        Assert.Equal(new DateTime(2026, 3, 9, 8, 5, 12).AddTicks(3456000), (DateTime)movimientos[0]["CUANDO_FUE"]!);
+        // Las entradas y salidas, en el turno y en el día; lo vendido no cambia.
+        foreach (var tabla in new[] { "TURNOS", "CORTE_OPERACIONES" })
+        {
+            var a = (await e.FilasAsync($"SELECT * FROM {tabla}")).Single();
+            Assert.Equal((200m, 150.5m, 30m, 30m, 1), ((decimal)a["ACUMULADO_ENTRADAS"]!, (decimal)a["ACUMULADO_SALIDAS"]!, (decimal)a["ACUMULADO_VENTAS"]!,
+                (decimal)a["VENTAS_EFECTIVO"]!, Convert.ToInt32(a["NUMERO_VENTAS"])));
+        }
+        Assert.Equal(1, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE ESTA_ABIERTO = 't'")));
+
+        // Al cerrar faltaron $10: el fondo, más lo cobrado, más lo que entró, menos lo que salió y lo que faltó.
+        await EnvioEleventa.CerrarTurnoAsync(e.Conexion, Caja, new DateTime(2026, 3, 9, 21, 0, 0), diferencia: -10);
+        var cerrado = await TurnoAsync(e);
+        Assert.Equal((569.5m, 160.5m), ((decimal)cerrado["EFECTIVO_AL_CIERRE"]!, (decimal)cerrado["ACUMULADO_SALIDAS"]!));
+    }
+
+    [FactConFirebird]
+    public async Task Despues_de_medianoche_solo_suma_al_dia_si_ese_dia_ya_tiene_renglon()
+    {
+        await using var e = await TiendaAsync();
+        var noche = new DateTime(2026, 3, 9, 23, 50, 0);
+        await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(noche, new ArticuloParaEleventa(10, "Cuaderno", 1, 30)));
+
+        // Pasada la medianoche, antes de vender ese día: eleventa no crea el renglón del día para una salida.
+        await EnvioEleventa.MoverEfectivoAsync(e.Conexion, Caja, Movimiento(false, 40, "Pago al de la basura", noche.AddMinutes(40)));
+        Assert.Equal(1, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM CORTE_OPERACIONES")));
+        Assert.Equal(0m, (decimal)(await e.ValorAsync("SELECT ACUMULADO_SALIDAS FROM CORTE_OPERACIONES"))!);
+
+        // Con una venta ese día ya tiene renglón: lo que entra después, y lo que sobró al cerrar, suman ahí.
+        await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(noche.AddMinutes(70), new ArticuloParaEleventa(10, "Cuaderno", 2, 60)));
+        await EnvioEleventa.MoverEfectivoAsync(e.Conexion, Caja, Movimiento(true, 100, "Cambio", noche.AddMinutes(90)));
+        await EnvioEleventa.CerrarTurnoAsync(e.Conexion, Caja, noche.AddHours(7), diferencia: 5);
+
+        var dias = await e.FilasAsync("SELECT DIA, ACUMULADO_ENTRADAS, ACUMULADO_SALIDAS FROM CORTE_OPERACIONES ORDER BY DIA");
+        Assert.Equal([(noche.Date, 0m, 0m), (noche.Date.AddDays(1), 105m, 0m)],
+            dias.Select(d => ((DateTime)d["DIA"]!, (decimal)d["ACUMULADO_ENTRADAS"]!, (decimal)d["ACUMULADO_SALIDAS"]!)));
+        // El turno lleva todo: 500 + 90 cobrados + 105 que entraron − 40 que salieron.
+        var turno = await TurnoAsync(e);
+        Assert.Equal((105m, 40m, 655m), ((decimal)turno["ACUMULADO_ENTRADAS"]!, (decimal)turno["ACUMULADO_SALIDAS"]!, (decimal)turno["EFECTIVO_AL_CIERRE"]!));
     }
 }

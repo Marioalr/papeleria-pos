@@ -19,14 +19,16 @@ public enum TipoEnvioEleventa
     Devolucion,
     /// <summary>El corte Z de la caja nueva: cierra el turno de eleventa.</summary>
     CierreDeTurno,
+    /// <summary>Una entrada (F7) o salida (F8) de efectivo.</summary>
+    MovimientoDeCaja,
 }
 
 /// <summary>
 /// La bandeja de salida hacia eleventa durante el piloto en la caja 2 (docs/migracion-eleventa.md, «Mandar cada
-/// venta» y «Cancelar, devolver y cerrar el turno»): un renglón por venta, cancelación, devolución o cierre de turno,
-/// guardado en la misma transacción que la operación, así nada se queda sin mandar aunque se apague la caja justo
-/// después. Se mandan en el orden en que pasaron: una devolución nunca llega antes que su venta, ni un turno se cierra
-/// antes de que lleguen sus ventas.
+/// venta», «Cancelar, devolver y cerrar el turno» y «Entradas y salidas de dinero»): un renglón por venta, cancelación,
+/// devolución, entrada o salida de efectivo o cierre de turno, guardado en la misma transacción que la operación, así
+/// nada se queda sin mandar aunque se apague la caja justo después. Se mandan en el orden en que pasaron: una devolución
+/// nunca llega antes que su venta, ni un turno se cierra antes de que lleguen sus ventas, entradas y salidas.
 /// </summary>
 public class EnvioAEleventa
 {
@@ -40,6 +42,9 @@ public class EnvioAEleventa
 
     /// <summary>El turno de la caja nueva que se cerró (solo el cierre).</summary>
     public Guid? TurnoId { get; set; }
+
+    /// <summary>La entrada o salida de efectivo.</summary>
+    public Guid? MovimientoId { get; set; }
 
     public EstadoEnvioEleventa Estado { get; set; }
     public DateTime CreadoUtc { get; set; }
@@ -61,6 +66,9 @@ public class EnvioAEleventa
     /// <summary>Otra caja de eleventa cobró con el mismo folio en el mismo instante: queda para revisarlo.</summary>
     public bool FolioRepetido { get; set; }
 
-    /// <summary>Lo que quedó en eleventa: <c>DEVOLUCIONES.ID</c> de una cancelación o devolución, <c>TURNOS.ID</c> de un cierre.</summary>
+    /// <summary>
+    /// Lo que quedó en eleventa: <c>DEVOLUCIONES.ID</c> de una cancelación o devolución, <c>CORTE_MOVIMIENTOS.ID</c> de
+    /// una entrada o salida, <c>TURNOS.ID</c> de un cierre.
+    /// </summary>
     public int? IdEleventa { get; set; }
 }

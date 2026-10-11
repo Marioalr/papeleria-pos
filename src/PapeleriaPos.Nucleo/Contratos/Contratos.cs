@@ -1020,8 +1020,8 @@ public sealed record EstadoEnviosEleventaDto(
     bool Activo, string? Destino, string? Problema, int Pendientes, int PorRevisar, int FoliosRepetidos, DateTime? UltimoEnvioLocal,
     string? UltimoError, IReadOnlyList<EnvioEleventaDto> PorAtender);
 
-/// <param name="Descripcion">«Venta A-000123», «Devolución de A-000123», «Cierre del turno».</param>
-/// <param name="TotalCentavos">Lo cobrado o lo que salió de la caja.</param>
+/// <param name="Descripcion">«Venta A-000123», «Devolución de A-000123», «Salida de efectivo: Garrafón de agua», «Cierre del turno».</param>
+/// <param name="TotalCentavos">Lo cobrado, o lo que entró o salió de la caja.</param>
 public sealed record EnvioEleventaDto(
     Guid Id, TipoEnvioEleventa Tipo, string Descripcion, DateTime FechaLocal, long TotalCentavos, EstadoEnvioEleventa Estado, int Intentos, string? Error,
     int? FolioEleventa);

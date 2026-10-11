@@ -80,9 +80,11 @@ public static class ApiContingencia
             return Results.NoContent();
         });
 
-        bandeja.MapPost("/turnos/{turnoId:guid}/movimientos", async (Guid turnoId, MovimientoContingenciaDto m, PosDbContext db) =>
+        bandeja.MapPost("/turnos/{turnoId:guid}/movimientos", async (Guid turnoId, MovimientoContingenciaDto m, PosDbContext db, EnvioVentasEleventa eleventa) =>
         {
-            await new RegistroCaja(db).MovimientoDeContingenciaAsync(turnoId, m);
+            // También va a eleventa (el piloto), como la que se hace en línea.
+            await new RegistroCaja(db).MovimientoDeContingenciaAsync(turnoId, m, aEleventa: eleventa.Activo);
+            eleventa.Despertar();
             return Results.NoContent();
         });
 

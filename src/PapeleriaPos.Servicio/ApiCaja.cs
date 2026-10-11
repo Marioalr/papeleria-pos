@@ -55,8 +55,8 @@ public static class ApiCaja
         api.MapPost("/turnos", async (SolicitudTurno s, PosDbContext db) =>
             await TurnoDtoAsync(db, await new RegistroCaja(db).AbrirTurnoAsync(s.CajaId, s.CajeroId, s.FondoCentavos, s.Id)));
 
-        api.MapPost("/turnos/{turnoId:guid}/movimientos", async (Guid turnoId, SolicitudMovimiento s, PosDbContext db, IOptions<OpcionesTicket> ticket) =>
-            await ApiControl.MovimientoAsync(turnoId, s, db, ticket.Value));
+        api.MapPost("/turnos/{turnoId:guid}/movimientos", async (Guid turnoId, SolicitudMovimiento s, PosDbContext db, IOptions<OpcionesTicket> ticket, EnvioVentasEleventa eleventa) =>
+            await ApiControl.MovimientoAsync(turnoId, s, db, ticket.Value, eleventa));
 
         api.MapPost("/turnos/{turnoId:guid}/corte-x", async (Guid turnoId, Guid usuarioId, PosDbContext db) =>
             await CorteDtoAsync(db, await new RegistroCaja(db).CorteXAsync(turnoId, usuarioId)));

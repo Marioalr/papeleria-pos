@@ -117,10 +117,16 @@ public static class ApiControl
         });
     }
 
-    /// <summary>Movimiento de efectivo: lo valida el control, se guarda y regresa el comprobante para imprimir.</summary>
-    public static async Task<ComprobanteMovimientoDto> MovimientoAsync(Guid turnoId, SolicitudMovimiento s, PosDbContext db, OpcionesTicket opciones)
+    /// <summary>
+    /// Movimiento de efectivo: lo valida el control, se guarda y regresa el comprobante para imprimir. En el piloto de la
+    /// caja 2 también entra a la bandeja hacia eleventa, junto con el movimiento, y se manda ya.
+    /// </summary>
+    public static async Task<ComprobanteMovimientoDto> MovimientoAsync(
+        Guid turnoId, SolicitudMovimiento s, PosDbContext db, OpcionesTicket opciones, EnvioVentasEleventa eleventa)
     {
-        var movimiento = await new RegistroCaja(db).RegistrarMovimientoAsync(turnoId, s.Tipo, s.MontoCentavos, s.Motivo, s.UsuarioId, s.Id);
+        var movimiento = await new RegistroCaja(db).RegistrarMovimientoAsync(turnoId, s.Tipo, s.MontoCentavos, s.Motivo, s.UsuarioId, s.Id,
+            aEleventa: eleventa.Activo);
+        eleventa.Despertar();
         var turno = await db.Turnos.FindAsync(turnoId);
         var caja = await db.Cajas.FindAsync(turno!.CajaId);
         var usuario = await db.Usuarios.Where(u => u.Id == s.UsuarioId).Select(u => u.Nombre).SingleAsync();

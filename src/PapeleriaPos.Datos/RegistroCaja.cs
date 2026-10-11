@@ -43,8 +43,10 @@ public sealed class RegistroCaja(PosDbContext db)
     }
 
     /// <summary>F7 y F8: entrada o salida de efectivo, siempre con motivo.</summary>
+    /// <param name="aEleventa">El piloto en la caja 2: esta caja manda a eleventa (ver <see cref="EncolarParaEleventaAsync"/>).</param>
     public async Task<MovimientoCaja> RegistrarMovimientoAsync(
-        Guid turnoId, TipoMovimientoCaja tipo, long montoCentavos, string motivo, Guid usuarioId, Guid? id = null, CancellationToken ct = default)
+        Guid turnoId, TipoMovimientoCaja tipo, long montoCentavos, string motivo, Guid usuarioId, Guid? id = null, CancellationToken ct = default,
+        bool aEleventa = false)
     {
         if (id is { } yaPedido && await db.MovimientosCaja.FindAsync([yaPedido], ct) is { } existente)
             return existente;
@@ -60,8 +62,21 @@ public sealed class RegistroCaja(PosDbContext db)
         var movimiento = new MovimientoCaja { Id = id ?? Ids.Nuevo(), TurnoId = turno.Id, Tipo = tipo, MontoCentavos = montoCentavos, Motivo = motivo.Trim(), UsuarioId = usuarioId, FechaUtc = Ahora };
         db.MovimientosCaja.Add(movimiento);
         db.AperturasCajon.Add(new AperturaCajon { CajaId = turno.CajaId, TurnoId = turno.Id, UsuarioId = usuarioId, Motivo = MotivoApertura.SinVenta, Nota = $"{tipo}: {motivo.Trim()}", FechaUtc = Ahora });
+        await EncolarParaEleventaAsync(movimiento, aEleventa, ct);
         await db.SaveChangesAsync(ct);
         return movimiento;
+    }
+
+    /// <summary>
+    /// El piloto en la caja 2 (docs/migracion-eleventa.md, «Entradas y salidas de dinero»): la entrada o salida también
+    /// va a eleventa, en la misma transacción, si esta caja manda a eleventa o si su turno ya mandó algo. También la que
+    /// se hace antes de la primera venta: eleventa abre el turno para una entrada, igual que para una venta. Quien llama
+    /// guarda.
+    /// </summary>
+    private async Task EncolarParaEleventaAsync(MovimientoCaja movimiento, bool aEleventa, CancellationToken ct)
+    {
+        if (aEleventa || await TurnoVaAEleventaAsync(movimiento.TurnoId, ct))
+            db.EnviosAEleventa.Add(new EnvioAEleventa { Tipo = TipoEnvioEleventa.MovimientoDeCaja, MovimientoId = movimiento.Id, CreadoUtc = Ahora });
     }
 
     /// <summary>
@@ -261,21 +276,31 @@ public sealed class RegistroCaja(PosDbContext db)
     }
 
     /// <summary>
-    /// El piloto en la caja 2: si algo del turno fue a eleventa (una venta, o una devolución que salió de esta caja), el
-    /// corte también cierra el turno de eleventa, después de que lleguen.
+    /// El piloto en la caja 2: si algo del turno fue a eleventa (una venta, una devolución que salió de esta caja o una
+    /// entrada o salida de efectivo), el corte también cierra el turno de eleventa, después de que lleguen.
     /// </summary>
     private async Task CerrarEnEleventaAsync(Turno turno, CancellationToken ct)
     {
+        if (await TurnoVaAEleventaAsync(turno.Id, ct))
+            db.EnviosAEleventa.Add(new EnvioAEleventa { Tipo = TipoEnvioEleventa.CierreDeTurno, TurnoId = turno.Id, CreadoUtc = Ahora });
+    }
+
+    /// <summary>Si algo del turno está en la bandeja hacia eleventa: una venta, una devolución o una entrada o salida.</summary>
+    private async Task<bool> TurnoVaAEleventaAsync(Guid turnoId, CancellationToken ct)
+    {
         var ventas = from e in db.EnviosAEleventa
                      join v in db.Ventas on e.VentaId equals v.Id
-                     where e.Tipo == TipoEnvioEleventa.Venta && v.TurnoId == turno.Id
+                     where e.Tipo == TipoEnvioEleventa.Venta && v.TurnoId == turnoId
                      select e.Id;
         var devoluciones = from e in db.EnviosAEleventa
                            join d in db.Devoluciones on e.DevolucionId equals d.Id
-                           where d.TurnoId == turno.Id
+                           where d.TurnoId == turnoId
                            select e.Id;
-        if (await ventas.AnyAsync(ct) || await devoluciones.AnyAsync(ct))
-            db.EnviosAEleventa.Add(new EnvioAEleventa { Tipo = TipoEnvioEleventa.CierreDeTurno, TurnoId = turno.Id, CreadoUtc = Ahora });
+        var movimientos = from e in db.EnviosAEleventa
+                          join m in db.MovimientosCaja on e.MovimientoId equals m.Id
+                          where m.TurnoId == turnoId
+                          select e.Id;
+        return await ventas.AnyAsync(ct) || await devoluciones.AnyAsync(ct) || await movimientos.AnyAsync(ct);
     }
 
     /// <summary>Lo que debería haber en efectivo en la caja ahora, y si ya pasó del límite de la sucursal.</summary>
@@ -342,8 +367,11 @@ public sealed class RegistroCaja(PosDbContext db)
         return turno;
     }
 
-    /// <summary>Un F7 o F8 de la caja sin conexión. Como la venta, si su turno ya tiene corte Z se guarda fuera de ese corte.</summary>
-    public async Task<MovimientoCaja> MovimientoDeContingenciaAsync(Guid turnoId, MovimientoContingenciaDto m, CancellationToken ct = default)
+    /// <summary>
+    /// Un F7 o F8 de la caja sin conexión. Como la venta, si su turno ya tiene corte Z se guarda fuera de ese corte. En
+    /// el piloto también va a eleventa, como la que se hace en línea.
+    /// </summary>
+    public async Task<MovimientoCaja> MovimientoDeContingenciaAsync(Guid turnoId, MovimientoContingenciaDto m, CancellationToken ct = default, bool aEleventa = false)
     {
         if (await db.MovimientosCaja.FindAsync([m.Id], ct) is { } existente)
             return existente;
@@ -362,6 +390,7 @@ public sealed class RegistroCaja(PosDbContext db)
                 $"La {(entrada ? "entrada" : "salida")} de efectivo de las {HoraMexico.ALocal(m.FechaUtc):HH:mm} por {AlertasTelegram.Dinero(m.MontoCentavos)} ({movimiento.Motivo})",
                 entrada ? m.MontoCentavos : -m.MontoCentavos, ct);
         }
+        await EncolarParaEleventaAsync(movimiento, aEleventa, ct);
         await db.SaveChangesAsync(ct);
         return movimiento;
     }

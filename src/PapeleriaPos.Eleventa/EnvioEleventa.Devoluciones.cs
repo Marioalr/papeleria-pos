@@ -54,7 +54,7 @@ public static partial class EnvioEleventa
     /// El corte de la caja nueva cierra el turno de eleventa como lo cierra eleventa:
     /// <list type="bullet">
     /// <item>lo que faltó o sobró al contar queda como una salida o entrada del corte («Efectivo faltante al cerrar turno
-    /// de…») y en el acumulado del turno (no en el del día);</item>
+    /// de…»), en el acumulado del turno y, si ese día ya tiene renglón, en el del día (como una entrada o salida);</item>
     /// <item>la hora de término y el efectivo al cierre, que eleventa calcula: el fondo más el efectivo, menos lo devuelto,
     /// más entradas y menos salidas (con la diferencia, es lo que se contó);</item>
     /// <item>se borra su ticket abierto.</item>
@@ -311,17 +311,8 @@ public static partial class EnvioEleventa
             var nombre = quien?[0] is string completo && completo.Trim().Length > 0 ? completo.Trim() : (quien?[1] as string)?.Trim() ?? "";
             var inicio = quien?[2] is DateTime abierto ? abierto : cerrado;
             var falto = diferencia < 0;
-            await sql.EjecutarAsync("""
-                INSERT INTO CORTE_MOVIMIENTOS (ID, CUANDO_FUE, MONTO, DESCRIPCION, TIPO, ID_TURNO, ID_CAJA)
-                VALUES (@id, @cuando, @monto, @descripcion, @tipo, @turno, @caja)
-                """,
-                [("id", await sql.NuevoIdAsync("GEN_CORTE_MOVIMIENTOS_ID")), ("cuando", cerrado), ("monto", Math.Abs(diferencia)),
-                 ("descripcion", Recortar($"Efectivo {(falto ? "faltante" : "sobrante")} al cerrar turno de {nombre} del {inicio:dd/MM/yyyy}", 255)),
-                 ("tipo", falto ? "Salida" : "Entrada"), ("turno", turno), ("caja", caja.CajaId)]);
-            await sql.EjecutarAsync(falto
-                    ? "UPDATE TURNOS SET ACUMULADO_SALIDAS = COALESCE(ACUMULADO_SALIDAS, 0) + @monto WHERE ID = @turno"
-                    : "UPDATE TURNOS SET ACUMULADO_ENTRADAS = COALESCE(ACUMULADO_ENTRADAS, 0) + @monto WHERE ID = @turno",
-                [("turno", turno), ("monto", Math.Abs(diferencia))]);
+            await AnotarEntradaOSalidaAsync(sql, caja.CajaId, turno, esEntrada: !falto, Math.Abs(diferencia),
+                $"Efectivo {(falto ? "faltante" : "sobrante")} al cerrar turno de {nombre} del {inicio:dd/MM/yyyy}", cerrado);
         }
 
         await sql.EjecutarAsync("""

@@ -257,8 +257,8 @@ Lo demás:
 **Lo que falta confirmar mirando cómo trabaja:**
 - en qué orden escribe al cobrar y si todo va en una sola transacción (la caja nueva lo escribe todo en una);
 - cancelar, devolver, entradas y salidas, cerrar el turno y el corte: lo que se sabe sale de la copia («Cancelar,
-  devolver y cerrar el turno», abajo); falta verlos en vivo cuando pasen de verdad, sin hacer operaciones de prueba en
-  la tienda.
+  devolver y cerrar el turno» y «Entradas y salidas de dinero», abajo); falta verlos en vivo cuando pasen de verdad,
+  sin hacer operaciones de prueba en la tienda.
 
 Para eso está `observar-eleventa`. Toma una foto de toda la base, solo leyendo; después de hacer algo en eleventa toma
 otra y dice qué renglones aparecieron o cambiaron y qué contadores avanzaron.
@@ -386,7 +386,8 @@ inventados.
     menos salidas;
   - se borra su ticket abierto;
   - si faltó o sobró al contar, queda un movimiento `Salida` («Efectivo faltante al cerrar turno de <cajero> del
-    <día que abrió>») o `Entrada` («…sobrante…») y entra a las salidas o entradas del turno, no del día. Así
+    <día que abrió>») o `Entrada` («…sobrante…»), que entra a las salidas o entradas del turno y, como cualquier
+    entrada o salida, a las del día solo si ese día ya tiene renglón («Entradas y salidas de dinero», abajo). Así
     `EFECTIVO_AL_CIERRE` es lo que se contó;
   - `ID_OPERACION_FIN` no se usa.
 - En la copia todas las devoluciones son del mismo turno que su venta.
@@ -403,9 +404,8 @@ se cierra antes que sus ventas.
   - si algo no entra, lo que sigue espera en la bandeja;
   - si ya se arregló a mano en eleventa, `POST /api/eleventa/envios/{id}/revisar` lo deja por revisar y lo demás pasa;
   - lo que volvió dañado no regresa al inventario de eleventa.
-- **El cierre** usa la diferencia del corte Z de la caja 2 (contado menos esperado).
-- **Las entradas y salidas de dinero de la caja 2 todavía no van a eleventa:** su corte las tendrá de menos (o de más)
-  hasta que se agreguen.
+- **El cierre** usa la diferencia del corte Z de la caja 2 (contado menos esperado). Con las entradas y salidas ya en
+  eleventa (abajo), su efectivo al cierre queda en lo contado.
 
 Se probó como el paso 3, con pruebas contra el Firebird de prueba y de punta a punta contra copias: se cobraron dos
 ventas, se canceló una y se devolvió parte de la otra (un artículo completo), y se hizo el corte Z con un faltante. En la
@@ -413,6 +413,68 @@ copia quedaron:
 - la cancelación y la devolución como las deja eleventa;
 - el inventario de vuelta;
 - el turno cerrado con lo contado, el faltante como salida y sin ticket abierto.
+
+### Entradas y salidas de dinero (paso 4)
+
+**Cómo lo hace eleventa**, sacado de una copia. Ahí casi todas las `Salida` son faltantes al cerrar el turno y casi todas
+las `Entrada`, sobrantes; a mano hay muy pocas (unas tres entradas y ninguna salida). Se distinguen por la descripción:
+la del cierre dice «Efectivo faltante al cerrar turno de…», la de una a mano es el comentario que se escribió. Los
+ejemplos son inventados.
+
+- **Cada una deja un renglón en `CORTE_MOVIMIENTOS`:**
+  - `TIPO` es `Entrada` o `Salida` y `MONTO`, lo que entró o salió, en positivo;
+  - `DESCRIPCION` es el comentario tal cual, por ejemplo «Cambio del banco»;
+  - `CUANDO_FUE` va con sus diezmilésimas de segundo, y lleva `ID_TURNO` e `ID_CAJA`;
+  - sin `FORMA_PAGO` ni `RAZON_DEVOLUCION`, que son de las devoluciones.
+- **Los acumulados**, en el momento y no al cerrar: `ACUMULADO_ENTRADAS` o `ACUMULADO_SALIDAS` del turno y del día
+  (`CORTE_OPERACIONES`). Al cerrar, `EFECTIVO_AL_CIERRE` las cuenta (fondo + efectivo − devuelto + entradas − salidas).
+- **Nada más:** ni ticket ni inventario. Las tablas viejas `MOVIMIENTOS` y `OPERACIONES` ya no se usan (sus últimos
+  renglones son de 2024) y `HISTORIAL_USUARIOS` está vacía.
+- **Un turno se puede abrir solo para meter dinero:** en la copia hay uno que se abrió, tuvo una entrada y se cerró, sin
+  ventas.
+- **El día solo si ya tiene renglón.** En la copia:
+  - los turnos que abrieron y cerraron el mismo día llevan todo también en el día: las entradas a mano, los faltantes y
+    los sobrantes;
+  - los que cerraron al día siguiente (o días después) llevan su faltante solo en el turno, y en ninguno de esos casos
+    ese día tenía todavía renglón: lo creó el turno siguiente al abrir;
+  - o sea, eleventa suma al renglón de ese día y esa caja si ya existe, y no lo crea (una venta, en cambio, sí lo crea).
+  - Esto corrige lo que se había dicho del cierre en el paso 4 («al turno, no al día»): los faltantes recientes de la
+    copia son todos de turnos que cerraron otro día.
+
+**Lo que no se puede saber de la copia** y queda por ver en vivo:
+- una entrada o salida, o un cierre con diferencia, en un turno que ya pasó de la medianoche y ya vendió ese día (así
+  ese día ya tiene renglón): si va al día, como lo hace la caja 2, o a ninguno. En la copia no hay ninguno así;
+- que el eleventa de hoy siga sumando al día: los turnos de la copia que cerraron el mismo día con entradas, salidas o
+  diferencia son todos de un mismo mes de 2025, y no se puede descartar que una versión posterior ya no lo haga;
+- si eleventa pone un texto cuando no se escribe comentario (la caja 2 siempre lleva motivo);
+- en qué orden escribe y si va en una sola transacción (la caja 2 lo escribe todo en una).
+
+**La caja 2 hace lo mismo**, por la misma bandeja y en orden (`Tipo = MovimientoDeCaja`, con `MovimientoId`):
+- **Qué entra a la bandeja:** cada F7 y F8, en la misma transacción que el movimiento, si esta caja manda a eleventa
+  (`Eleventa:Escribir`) o si su turno ya mandó algo. También los que suben con la bandeja de contingencia.
+- **Antes de la primera venta del turno** también va: si en eleventa no hay turno abierto, lo abre con el fondo, como lo
+  abre eleventa (y como el turno de la copia que solo metió dinero). Así el corte de eleventa tiene todo lo que pasó por
+  el cajón.
+- **Se manda ya:** al guardarla se pide la vuelta, sin esperar los 30 s.
+- **Sin duplicar:** su marca es la hora en que se hizo en la caja 2 (`CUANDO_FUE`, en diezmilésimas de segundo), con la
+  caja y el tipo. Si se manda otra vez, no se escribe de nuevo.
+- **La descripción** es el motivo que se escribió en la caja 2.
+- **El día:** suma al de la hora en que se hizo, solo si ya tiene renglón, como eleventa. Lo mismo el faltante o
+  sobrante del cierre.
+- **Lo que sube sin conexión cuando su turno ya tenía corte Z** queda por revisar: en eleventa ese turno ya se cerró, y
+  mandarla abriría otro. Se anota a mano.
+- **El corte Z** cierra el turno de eleventa también si el turno solo tuvo entradas o salidas.
+- **El cierre cuadra:** lo esperado del corte de la caja 2 ya cuenta entradas y salidas, así que con su diferencia
+  (contado menos esperado) `EFECTIVO_AL_CIERRE` de eleventa queda en lo contado. No cuadra con lo que eleventa no tiene:
+  los abonos de clientes, el saldo a favor que se devuelve y las ventas que quedaron por revisar (lo que no fue en
+  efectivo, o fue mixto).
+
+Se probó con pruebas contra el Firebird de prueba (una entrada antes de vender, una salida, sin duplicar, el día y la
+medianoche), sin Firebird (la bandeja, también la de contingencia) y de punta a punta contra copias:
+- una entrada antes de la primera venta abrió el turno de eleventa; después, una venta, una salida y el corte Z con
+  sobrante. Eleventa cerró con lo contado, con las entradas y salidas en el turno y en el día;
+- una salida que subió con la bandeja de contingencia también llegó, y el turno cerró con lo contado;
+- una entrada que subió después del corte Z quedó por revisar.
 
 ## Arranque (fase 5)
 
