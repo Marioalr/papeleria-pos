@@ -271,6 +271,26 @@ otra y dice qué renglones aparecieron o cambiaron y qué contadores avanzaron.
 dotnet run --project src/PapeleriaPos.Herramientas -- observar-eleventa --servidor <la caja principal> --ruta C:\…\PDVDATA.FDB --usuario SYSDBA
 ```
 
+#### Verlo en vivo
+
+Lo que la caja 2 escribe al cancelar, devolver y cerrar el turno salió de la copia (paso 4). Para confirmarlo cuando pase
+de verdad, en la caja 2 se abre `scripts\observar-en-vivo.cmd`:
+- **Se conecta solo:** toma la caja principal del eleventa de esa PC (`pdventa.ini`, `[EnRed] IPServidor`) y la ruta de una
+  instalación normal. Pide la clave sin que se vea y abre `observar-eleventa`, solo leyendo.
+- **Las notas** van en `Documents\TPV\observaciones-eleventa`, con los demás datos de la tienda.
+- **Cuando pase una cancelación, una devolución o un cierre de turno** (en cualquier caja), se escribe qué fue. Además de lo
+  que cambió, dice si eleventa hizo lo mismo que la caja 2 (`RevisionEnVivo`):
+  - **✓** coincide, por ejemplo «el ticket quedó cancelado» o «el faltante quedó como Salida y en ACUMULADO_SALIDAS del turno»;
+  - **✗** eleventa lo hizo distinto, o tocó una tabla que la caja 2 no escribe;
+  - **·** no se alcanza a ver en la foto, como un ticket de hace mucho o ventas en el mismo rato.
+- **No se hacen operaciones de prueba en la tienda:** se espera a que pasen.
+- **Las entradas y salidas de dinero** no se revisan aquí.
+- **Para probarlo contra una copia** en un Firebird de prueba están `ELEVENTA_SERVIDOR`, `ELEVENTA_PUERTO`, `ELEVENTA_RUTA` y
+  `ELEVENTA_CLAVE`.
+
+Lo que la caja 2 escribe pasa esa revisión sin una sola ✗: hay una prueba que lo fotografía antes y después de cancelar,
+devolver y cerrar.
+
 ### Mandar cada venta (paso 3)
 
 **Ya está la escritura** (`EnvioEleventa.MandarAsync`): una venta en efectivo de la caja nueva entra a eleventa como la
