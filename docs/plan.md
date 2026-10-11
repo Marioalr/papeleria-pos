@@ -324,6 +324,11 @@ visual (entrega 2). Para el piloto hace falta, en este orden:
 - **Decidido por el dueño (2026-10-11):** si la caja principal o el Wi-Fi no contestan en unos 2 segundos, el ticket sale
   con el folio propio de la caja 2 y la venta se manda a eleventa cuando vuelva la red; su devolución se hace en la
   caja 2. La caja no deja de vender por esperar a eleventa.
+- **Aclarado por el dueño (2026-10-11):** la compatibilidad con eleventa hace falta porque es el POS que se usa hoy, pero
+  la base nueva se concentra en sus propias metas (el máximo rendimiento, etc.) y no se adapta a eleventa. Durante el
+  piloto, la caja 2 guarda todo en su propia base y a la caja principal le manda solo lo necesario para que su eleventa
+  lo registre como una venta más. Lo de eleventa vive en el puente (`PapeleriaPos.Eleventa` y la bandeja de salida).
+  Más adelante habrá una opción para exportar la base a una versión de eleventa.
 
 **Avance (2026-10-10):** el paso 1 está hecho ([cómo funciona](migracion-eleventa.md#la-lectura-de-cada-pocos-minutos-paso-1)).
 El servicio de la caja 2 lee eleventa por la red cada pocos minutos, solo leyendo, y pone al día su base: altas,
@@ -347,6 +352,13 @@ Después, el mismo día, la bandeja de salida: cada venta cobrada entra a la ban
 mandar enseguida. El ticket sale con el folio de eleventa si contestó a tiempo; si no, con el de la caja 2, y la venta
 se manda en la siguiente vuelta. Con eso queda el paso 3. Se probó de punta a punta contra copias, apagando y prendiendo
 el Firebird de prueba. Lo siguiente es el paso 4: cancelaciones, devoluciones, turno y corte.
+
+**Avance (2026-10-11):** el paso 4, sin las entradas y salidas de dinero, que quedan para después (lo pidió el dueño)
+([cómo](migracion-eleventa.md#cancelar-devolver-y-cerrar-el-turno-paso-4)). De una copia se sacó cómo escribe eleventa
+una cancelación, una devolución parcial y el cierre del turno con su faltante o sobrante. La caja 2 los manda por la
+misma bandeja, en orden. Se probó contra copias: los cortes de eleventa cuadran con los de la caja 2. Mientras no vayan
+las entradas y salidas de la caja 2, el corte de eleventa no las tiene. Falta verlos en vivo en la tienda cuando pasen de
+verdad.
 
 #### Al terminar el piloto
 
@@ -555,6 +567,8 @@ Por definir:
   la ganancia, después de la prueba con una persona real
 - [ ] Módulo de convivencia: el POS nuevo como una caja más de eleventa. Decidido el 2026-10-10: es el piloto en la
   caja 2 ([convivencia](migracion-eleventa.md#el-piloto-convivencia-con-eleventa))
+- [ ] Exportar la base a una versión de eleventa (pedido por el dueño el 2026-10-11), como opción aparte: la base nueva
+  no se adapta a eleventa
 - [ ] Demás funciones a la medida (las describe el dueño)
 - [x] Privilegios de los clientes registrados: descuento, mayoreo, crédito, pedido sin anticipo y apartar sin pagar;
   nada más ([decisión](fase-3-precios-clientes.md#decisiones-de-la-revisión))

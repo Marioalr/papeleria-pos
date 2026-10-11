@@ -2762,10 +2762,14 @@ namespace PapeleriaPos.Datos.Migraciones
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.EnvioAEleventa", b =>
                 {
-                    b.Property<Guid>("VentaId")
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("DevolucionId")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("EnviadaUtc")
@@ -2785,18 +2789,41 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<bool>("FolioRepetido")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int?>("IdEleventa")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Intentos")
                         .HasColumnType("INTEGER");
 
                     b.Property<int?>("TicketEleventa")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("TurnoId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("UltimoIntentoUtc")
                         .HasColumnType("TEXT");
 
-                    b.HasKey("VentaId");
+                    b.Property<Guid?>("VentaId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DevolucionId")
+                        .IsUnique();
 
                     b.HasIndex("FolioEleventa");
+
+                    b.HasIndex("TurnoId")
+                        .IsUnique();
+
+                    b.HasIndex("VentaId")
+                        .IsUnique()
+                        .HasFilter("\"Tipo\" = 'Venta'");
 
                     b.HasIndex("Estado", "CreadoUtc");
 
@@ -3832,11 +3859,20 @@ namespace PapeleriaPos.Datos.Migraciones
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.EnvioAEleventa", b =>
                 {
+                    b.HasOne("PapeleriaPos.Nucleo.Ventas.Devolucion", null)
+                        .WithMany()
+                        .HasForeignKey("DevolucionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PapeleriaPos.Nucleo.Turnos.Turno", null)
+                        .WithMany()
+                        .HasForeignKey("TurnoId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("PapeleriaPos.Nucleo.Ventas.Venta", null)
-                        .WithOne()
-                        .HasForeignKey("PapeleriaPos.Nucleo.Ventas.EnvioAEleventa", "VentaId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .WithMany()
+                        .HasForeignKey("VentaId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.Venta", b =>

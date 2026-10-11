@@ -61,11 +61,13 @@ public static class ApiCaja
         api.MapPost("/turnos/{turnoId:guid}/corte-x", async (Guid turnoId, Guid usuarioId, PosDbContext db) =>
             await CorteDtoAsync(db, await new RegistroCaja(db).CorteXAsync(turnoId, usuarioId)));
 
-        api.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, SolicitudCorteZ s, PosDbContext db, ServicioRespaldos respaldos) =>
+        api.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, SolicitudCorteZ s, PosDbContext db, ServicioRespaldos respaldos, EnvioVentasEleventa eleventa) =>
         {
             var turno = await db.Turnos.FindAsync(turnoId) ?? throw new InvalidOperationException("El turno no existe.");
             var encargado = await new ServicioControl(db).IdentificarAsync(s.EncargadoUsuario, s.EncargadoPin, turno.SucursalId, AccionControlada.CorteZ);
             var corte = await CorteDtoAsync(db, await new RegistroCaja(db).CorteZAsync(turnoId, encargado.Id, s.Conteo));
+            // Si el turno pasó a eleventa, su cierre ya está en la bandeja: que vaya ya.
+            eleventa.Despertar();
             // Con cada cierre, una copia de la base (además de la diaria); si falla, el corte ya quedó guardado.
             _ = Task.Run(() => respaldos.Hacer($"z-{corte.FechaLocal:HHmm}"));
             return corte;
@@ -225,7 +227,7 @@ public static class ApiCaja
         var presentaciones = await db.Presentaciones.Where(p => ids.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => (p.Nombre, p.EsBase));
         var configuracion = await ApiConfiguracion.ConfiguracionAsync(db, v.SucursalId, opciones);
         var cliente = v.ClienteId is { } clienteId && await db.ClientesRegistrados.FindAsync(clienteId) is { } c ? RegistroClientes.Dto(c) : null;
-        var folioEleventa = await db.EnviosAEleventa.AsNoTracking().Where(e => e.VentaId == v.Id).Select(e => e.FolioEleventa).FirstOrDefaultAsync();
+        var folioEleventa = await db.EnviosAEleventa.AsNoTracking().Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == v.Id).Select(e => e.FolioEleventa).FirstOrDefaultAsync();
         return ArmadoTicket.Desde(v, caja!.Nombre, cajero, id => presentaciones.TryGetValue(id, out var p) ? p : null,
             configuracion.RenglonesEncabezado, configuracion.RenglonesPie, ApiConfiguracion.Logo(configuracion), cliente,
             await new RegistroCredito(db).TicketAsync(v.Id)) with { FolioEleventa = folioEleventa };

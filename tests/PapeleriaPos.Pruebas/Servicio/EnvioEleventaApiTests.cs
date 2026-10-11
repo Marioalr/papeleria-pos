@@ -188,6 +188,82 @@ public class EnvioEleventaApiTests
         Assert.Equal((false, 0, null), (envios.Activo, envios.Pendientes, envios.Problema));
     }
 
+    private static async Task<SesionDto> EncargadoAsync(Caja c) =>
+        await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("encargado", "2222")));
+
+    [FactConFirebird]
+    public async Task La_cancelacion_la_devolucion_y_el_corte_z_llegan_a_eleventa_en_orden()
+    {
+        await using var e = await EleventaAsync();
+        await e.EjecutarAsync("INSERT INTO USUARIOS (ID, USUARIO) VALUES (7, 'cajera2')");
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor));
+        var c = await AbrirAsync(servicio);
+        await MapearAsync(servicio, c.Producto.VarianteId);
+        var encargado = await EncargadoAsync(c);
+
+        var primero = await CobrarAsync(c);
+        var segundo = await CobrarAsync(c);
+        await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{primero.VentaId}/cancelacion",
+            new SolicitudCancelacion(encargado.UsuarioId, c.Datos.Id, "Se arrepintió")));
+        var paraDevolver = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/sucursales/{c.Datos.SucursalId}/ventas/folio/{segundo.FolioEleventa}"));
+        var pluma = paraDevolver.Lineas.Single(l => l.LlevaInventario);
+        var devolucion = await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{segundo.VentaId}/devoluciones",
+            new SolicitudDevolucion(encargado.UsuarioId, c.Datos.Id, "No era la que buscaba", [new LineaDevolucionSolicitada(pluma.LineaId, 1000)])));
+        Assert.True((await c.Http.PostAsJsonAsync($"api/turnos/{c.Turno.Id}/corte-z",
+            new SolicitudCorteZ("encargado", "2222", new Dictionary<long, int> { [50000] = 1 }))).IsSuccessStatusCode);
+        var envios = await EsperarAsync(c, x => x.Pendientes == 0);
+
+        Assert.Equal((0, 0), (envios.Pendientes, envios.PorRevisar));
+        Assert.Equal((42, 43), (primero.FolioEleventa, segundo.FolioEleventa));
+        Assert.Equal("t", (string)(await e.ValorAsync("SELECT ESTA_CANCELADO FROM VENTATICKETS WHERE FOLIO = 42"))!);
+        Assert.Equal(["C", "P"], (await e.FilasAsync("SELECT TIPO_DEVOLUCION FROM DEVOLUCIONES ORDER BY ID")).Select(d => (string)d["TIPO_DEVOLUCION"]!));
+        // 50 − 2 − 2 + 2 de la cancelación + 1 de la devolución.
+        Assert.Equal(49, Convert.ToDouble(await e.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = 10")), 3);
+        // Se contó solo el billete de 500: faltó lo de la segunda venta menos lo devuelto, y eleventa cierra con lo contado.
+        var turno = (await e.FilasAsync("SELECT * FROM TURNOS")).Single();
+        Assert.NotNull(turno["TERMINO_EN"]);
+        var falto = (segundo.TotalCobradoCentavos - devolucion.ReembolsoEfectivoCentavos) / 100m;
+        Assert.Equal((500m, falto), ((decimal)turno["EFECTIVO_AL_CIERRE"]!, (decimal)turno["ACUMULADO_SALIDAS"]!));
+        Assert.StartsWith("Efectivo faltante al cerrar turno de ", (string)(await e.ValorAsync("SELECT DESCRIPCION FROM CORTE_MOVIMIENTOS WHERE TIPO = 'Salida'"))!);
+        Assert.Equal(0, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE ESTA_ABIERTO = 't'")));
+    }
+
+    [Fact]
+    public async Task Lo_cancelado_antes_de_llegar_a_eleventa_ya_no_se_manda()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
+        var c = await AbrirAsync(servicio);
+        var encargado = await EncargadoAsync(c);
+        var ticket = await CobrarAsync(c);
+        Assert.Equal(1, (await EnviosAsync(c)).Pendientes);
+
+        await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/cancelacion",
+            new SolicitudCancelacion(encargado.UsuarioId, c.Datos.Id, "Se arrepintió")));
+        var envios = await EsperarAsync(c, x => x.Pendientes == 0);
+
+        // La venta y su cancelación se descartan sin buscar a eleventa: allá nunca existió.
+        Assert.Equal((0, 0), (envios.Pendientes, envios.PorRevisar));
+        await using var db = servicio.Base();
+        Assert.All(db.EnviosAEleventa.ToList(), x => Assert.Equal(EstadoEnvioEleventa.Descartada, x.Estado));
+        Assert.Equal([TipoEnvioEleventa.Venta, TipoEnvioEleventa.Cancelacion], db.EnviosAEleventa.Select(x => x.Tipo).AsEnumerable().Order());
+    }
+
+    [Fact]
+    public async Task Lo_que_no_entra_se_puede_dejar_por_revisar_para_que_lo_demas_pase()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
+        var c = await AbrirAsync(servicio);
+        await CobrarAsync(c);
+        var pendiente = (await EnviosAsync(c)).PorAtender.Single();
+
+        var dejado = await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsync($"api/eleventa/envios/{pendiente.Id}/revisar", null));
+        var otraVez = await c.Http.PostAsync($"api/eleventa/envios/{pendiente.Id}/revisar", null);
+
+        Assert.Equal((0, 1), (dejado.Pendientes, dejado.PorRevisar));
+        Assert.StartsWith("Se dejó para revisar a mano.", dejado.PorAtender.Single().Error);
+        Assert.Equal(HttpStatusCode.BadRequest, otraVez.StatusCode);
+    }
+
     private static async Task<EstadoEnviosEleventaDto> EsperarAsync(Caja c, Func<EstadoEnviosEleventaDto, bool> listo)
     {
         for (var intento = 0; ; intento++)

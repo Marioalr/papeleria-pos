@@ -92,9 +92,10 @@ public static class ApiContingencia
             return Results.NoContent();
         });
 
-        bandeja.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, CorteContingenciaDto c, PosDbContext db, ServicioRespaldos respaldos) =>
+        bandeja.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, CorteContingenciaDto c, PosDbContext db, ServicioRespaldos respaldos, EnvioVentasEleventa eleventa) =>
         {
             var corte = await ApiCaja.CorteDtoAsync(db, await new RegistroCaja(db).CorteZDeContingenciaAsync(turnoId, c));
+            eleventa.Despertar();
             _ = Task.Run(() => respaldos.Hacer($"z-{corte.FechaLocal:HHmm}"));
             return corte;
         });

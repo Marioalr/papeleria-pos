@@ -17,6 +17,7 @@ public class EnvioEleventaTests
         var e = await EleventaDePrueba.CrearAsync();
         await e.EjecutarAsync("INSERT INTO CAJAS (ID, NOMBRE, ULTIMA_IP) VALUES (1, 'Principal', '10.0.0.10')");
         await e.EjecutarAsync("INSERT INTO CAJAS (ID, NOMBRE, ULTIMA_IP) VALUES (4, 'Caja 2', '10.0.0.19')");
+        await e.EjecutarAsync("INSERT INTO USUARIOS (ID, NOMBRE_COMPLETO, USUARIO) VALUES (7, 'Ana Ruiz', 'cajera2')");
         foreach (var (id, nombre) in new[] { (5, "Papelería"), (9, EnvioEleventa.DepartamentoComunes), (14, "Impresiones") })
             await e.EjecutarAsync("INSERT INTO DEPARTAMENTOS (ID, NOMBRE) VALUES (@id, @nombre)", ("id", id), ("nombre", nombre));
         await e.ProductoAsync(10, "CUAD-PRO", "Cuaderno profesional", depto: 5, costo: 18.3017, precio: 30, existencia: 12);
@@ -171,5 +172,137 @@ public class EnvioEleventaTests
         // Un solo renglón de kardex para el cuaderno; el borrado no se toca.
         Assert.Equal(1, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM INVENTARIO_HISTORIAL")));
         Assert.Equal(3, Doble(await e.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = 12")), 3);
+    }
+
+    private static DevolucionParaEleventa Devolucion(int ticket, bool cancelacion, DateTime cuando, params ArticuloDevuelto[] articulos) =>
+        new(ticket, cancelacion, cuando.AddTicks(4321), Turno, articulos);
+
+    private static async Task<Dictionary<string, object?>> TurnoAsync(EleventaDePrueba e) => (await e.FilasAsync("SELECT * FROM TURNOS")).Single();
+
+    [FactConFirebird]
+    public async Task Cancelar_deja_el_ticket_cancelado_regresa_todo_y_lo_saca_del_turno()
+    {
+        await using var e = await TiendaAsync();
+        var cobrada = new DateTime(2026, 3, 9, 10, 15, 42);
+        var venta = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cobrada,
+            new(10, "Cuaderno", 2, 60), new(11, "Impresiones", 0.3m, 3), new(null, "Recuerdo", 1, 15)));
+        var cuando = cobrada.AddMinutes(5);
+
+        var r = await EnvioEleventa.DevolverAsync(e.Conexion, Caja, Devolucion(venta.TicketId, cancelacion: true, cuando));
+        var otraVez = await EnvioEleventa.DevolverAsync(e.Conexion, Caja, Devolucion(venta.TicketId, cancelacion: true, cuando));
+
+        Assert.Equal((r.DevolucionId, true), (otraVez.DevolucionId, otraVez.YaEstaba));
+        // El ticket conserva su total; queda cancelado, sin ganancia ni artículos, y sus artículos no cambian.
+        var t = (await e.FilasAsync("SELECT * FROM VENTATICKETS WHERE ID = @id", ("id", venta.TicketId))).Single();
+        Assert.Equal(("t", 0, 78d), ((string)t["ESTA_CANCELADO"]!, Convert.ToInt32(t["NUMERO_ARTICULOS"]), Math.Round(Doble(t["TOTAL"]), 3)));
+        Assert.Equal(0, Doble(t["GANANCIA"]), 3);
+        Assert.Equal(3, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS_ARTICULOS WHERE TICKET_ID = @id", ("id", venta.TicketId))));
+        // La devolución «C», sin renglones de artículos, a nombre del cajero y la caja de eleventa.
+        var d = (await e.FilasAsync("SELECT * FROM DEVOLUCIONES")).Single();
+        Assert.Equal(("C", "cajera2", "Caja 2", 78d, cobrada), ((string)d["TIPO_DEVOLUCION"]!, (string)d["CAJERO"]!, (string)d["CAJA"]!,
+            Math.Round(Doble(d["TOTAL_DEVUELTO"]), 3), (DateTime)d["PAGADO_EN"]!));
+        Assert.Equal(0, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM DEVOLUCIONES_ARTICULOS")));
+        // Un movimiento del corte por artículo.
+        var movimientos = await e.FilasAsync("SELECT * FROM CORTE_MOVIMIENTOS ORDER BY ID");
+        Assert.Equal([60m, 3m, 15m], movimientos.Select(m => (decimal)m["MONTO"]!));
+        Assert.Equal("Devolución \"Cuaderno profesional\", Ticket #42", (string)movimientos[0]["DESCRIPCION"]!);
+        Assert.All(movimientos, m => Assert.Equal(("Devolucion", "E", "V", 4), ((string)m["TIPO"]!, (string)m["FORMA_PAGO"]!,
+            (string)m["RAZON_DEVOLUCION"]!, Convert.ToInt32(m["ID_CAJA"]))));
+        // Lo vendido regresa al inventario; el común no lleva.
+        Assert.Equal(12, Doble(await e.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = 10")), 3);
+        Assert.Equal(500, Doble(await e.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = 11")), 3);
+        var entradas = await e.FilasAsync("SELECT * FROM INVENTARIO_HISTORIAL WHERE DESCRIPCION = 'Devolución de venta #42' ORDER BY PRODUCTO_ID");
+        Assert.Equal([-2d, -0.3], entradas.Select(k => Math.Round(Doble(k["CANTIDAD"]), 3)));
+        Assert.Equal([10d, 499.7], entradas.Select(k => Math.Round(Doble(k["CANTIDAD_ANTERIOR"]), 3)));
+        // El turno y el día: lo vendido y su ganancia bajan, lo devuelto sube, y la venta ya no cuenta.
+        foreach (var tabla in new[] { "TURNOS", "CORTE_OPERACIONES" })
+        {
+            var a = (await e.FilasAsync($"SELECT * FROM {tabla}")).Single();
+            Assert.Equal((0m, 0m, 78m, 78m, 0), ((decimal)a["ACUMULADO_VENTAS"]!, (decimal)a["ACUMULADO_GANANCIA"]!, (decimal)a["VENTAS_EFECTIVO"]!,
+                (decimal)a["DEVOLUCIONES_VENTAS_EFECTIVO"]!, Convert.ToInt32(a["NUMERO_VENTAS"])));
+        }
+        Assert.All(await e.FilasAsync("SELECT * FROM CORTE_VENTAS_POR_DEPTO"), x => Assert.Equal(0m, (decimal)x["ACUMULADO_GANANCIAS"]!));
+        Assert.All(await e.FilasAsync("SELECT * FROM CORTE_VENTAS_DEPTO_OPERACIONES"), x => Assert.Equal(0, Doble(x["ACUMULADO_VENTAS"]), 3));
+    }
+
+    [FactConFirebird]
+    public async Task Devolver_una_parte_baja_el_articulo_borra_el_que_se_devolvio_completo_y_respeta_lo_danado()
+    {
+        await using var e = await TiendaAsync();
+        var cobrada = new DateTime(2026, 3, 9, 11, 0, 0);
+        var venta = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cobrada, new(10, "Cuaderno", 4, 120), new(null, "Recuerdo", 1, 15)));
+
+        // Un cuaderno bueno, otro dañado y el recuerdo.
+        await EnvioEleventa.DevolverAsync(e.Conexion, Caja, Devolucion(venta.TicketId, cancelacion: false, cobrada.AddMinutes(10),
+            new(10, "Cuaderno", 1, 30), new(10, "Cuaderno", 1, 30, RegresaAlInventario: false), new(null, "Recuerdo", 1, 15)));
+
+        var articulos = await e.FilasAsync("SELECT * FROM VENTATICKETS_ARTICULOS WHERE TICKET_ID = @id", ("id", venta.TicketId));
+        var cuaderno = Assert.Single(articulos);
+        Assert.Equal((2d, 60d), (Math.Round(Doble(cuaderno["CANTIDAD"]), 3), Math.Round(Doble(cuaderno["TOTAL_ARTICULO"]), 3)));
+        var t = (await e.FilasAsync("SELECT * FROM VENTATICKETS WHERE ID = @id", ("id", venta.TicketId))).Single();
+        Assert.Equal(("f", 60d, 60d, 60d), ((string)t["ESTA_CANCELADO"]!, Math.Round(Doble(t["TOTAL"]), 3), Math.Round(Doble(t["SUBTOTAL"]), 3),
+            Math.Round(Doble(t["TOTAL_FACTURABLE"]), 3)));
+        // Quedan dos cuadernos que ganan 30 − 18.3017 cada uno.
+        Assert.Equal(23.3966, Doble(t["GANANCIA"]), 3);
+
+        var d = (await e.FilasAsync("SELECT * FROM DEVOLUCIONES")).Single();
+        Assert.Equal(("P", 75d), ((string)d["TIPO_DEVOLUCION"]!, Math.Round(Doble(d["TOTAL_DEVUELTO"]), 3)));
+        var renglones = await e.FilasAsync("SELECT * FROM DEVOLUCIONES_ARTICULOS ORDER BY ID");
+        Assert.Equal(["Cuaderno profesional", "Recuerdo"], renglones.Select(x => (string)x["DESCRIPCION_PRODUCTO"]!));
+        Assert.Equal([2d, 1d], renglones.Select(x => Math.Round(Doble(x["CANTIDAD_DEVUELTA"]), 3)));
+        Assert.Equal([60d, 15d], renglones.Select(x => Math.Round(Doble(x["DINERO_DEVUELTO"]), 3)));
+        Assert.Equal([60m, 15m], (await e.FilasAsync("SELECT MONTO FROM CORTE_MOVIMIENTOS ORDER BY ID")).Select(m => (decimal)m["MONTO"]!));
+        // Solo el cuaderno bueno regresa: 12 − 4 + 1.
+        Assert.Equal(9, Doble(await e.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = 10")), 3);
+        Assert.Equal(-1, Doble(await e.ValorAsync("SELECT CANTIDAD FROM INVENTARIO_HISTORIAL WHERE DESCRIPCION STARTING WITH 'Devoluci'")), 3);
+
+        var turno = await TurnoAsync(e);
+        Assert.Equal((60m, 135m, 75m, 1), ((decimal)turno["ACUMULADO_VENTAS"]!, (decimal)turno["VENTAS_EFECTIVO"]!,
+            (decimal)turno["DEVOLUCIONES_VENTAS_EFECTIVO"]!, Convert.ToInt32(turno["NUMERO_VENTAS"])));
+        Assert.Equal(23.3966m, (decimal)turno["ACUMULADO_GANANCIA"]!);
+    }
+
+    [FactConFirebird]
+    public async Task Lo_que_no_esta_en_el_ticket_de_eleventa_no_se_devuelve()
+    {
+        await using var e = await TiendaAsync();
+        var venta = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(new DateTime(2026, 3, 9, 11, 0, 0), new ArticuloParaEleventa(10, "Cuaderno", 1, 30)));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => EnvioEleventa.DevolverAsync(e.Conexion, Caja,
+            Devolucion(venta.TicketId, cancelacion: false, new DateTime(2026, 3, 9, 11, 30, 0), new ArticuloDevuelto(10, "Cuaderno", 2, 60))));
+
+        Assert.Contains("Cuaderno", error.Message);
+        Assert.Equal(0, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM DEVOLUCIONES")));
+        Assert.Equal(11, Doble(await e.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = 10")), 3);
+    }
+
+    [FactConFirebird]
+    public async Task Cerrar_el_turno_anota_lo_que_falto_y_el_efectivo_que_calcula_eleventa_y_borra_su_ticket_abierto()
+    {
+        await using var e = await TiendaAsync();
+        var cobrada = new DateTime(2026, 3, 9, 11, 0, 0);
+        var venta = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cobrada, new(10, "Cuaderno", 3, 90), new(null, "Recuerdo", 1, 15)));
+        await EnvioEleventa.DevolverAsync(e.Conexion, Caja, Devolucion(venta.TicketId, cancelacion: false, cobrada.AddMinutes(10), new ArticuloDevuelto(null, "Recuerdo", 1, 15)));
+        var cierre = new DateTime(2026, 3, 9, 21, 45, 0);
+
+        // Al contar faltaron $12.50.
+        var r = await EnvioEleventa.CerrarTurnoAsync(e.Conexion, Caja, cierre, diferencia: -12.5m);
+        var otraVez = await EnvioEleventa.CerrarTurnoAsync(e.Conexion, Caja, cierre);
+
+        Assert.False(r.YaEstaba);
+        Assert.Equal((null, true), (otraVez.TurnoId, otraVez.YaEstaba));
+        var turno = await TurnoAsync(e);
+        Assert.Equal(r.TurnoId, Convert.ToInt32(turno["ID"]));
+        // El fondo de 500, más 105 cobrados, menos 15 devueltos y los 12.50 que faltaron: lo que se contó.
+        Assert.Equal((cierre, 577.5m, 12.5m), ((DateTime)turno["TERMINO_EN"]!, (decimal)turno["EFECTIVO_AL_CIERRE"]!, (decimal)turno["ACUMULADO_SALIDAS"]!));
+        var faltante = (await e.FilasAsync("SELECT * FROM CORTE_MOVIMIENTOS WHERE TIPO = 'Salida'")).Single();
+        Assert.Equal((12.5m, "Efectivo faltante al cerrar turno de Ana Ruiz del 09/03/2026", 4), ((decimal)faltante["MONTO"]!,
+            (string)faltante["DESCRIPCION"]!, Convert.ToInt32(faltante["ID_CAJA"])));
+        // El día no lo lleva.
+        Assert.Equal(0m, (decimal)(await e.ValorAsync("SELECT ACUMULADO_SALIDAS FROM CORTE_OPERACIONES"))!);
+        Assert.Equal(0, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE ESTA_ABIERTO = 't'")));
+        // La siguiente venta abre otro turno.
+        await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cierre.AddHours(11), new ArticuloParaEleventa(10, "Cuaderno", 1, 30)));
+        Assert.Equal(2, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM TURNOS")));
     }
 }

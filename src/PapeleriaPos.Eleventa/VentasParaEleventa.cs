@@ -8,7 +8,11 @@ using PapeleriaPos.Nucleo.Ventas;
 namespace PapeleriaPos.Eleventa;
 
 /// <summary>Lo que se le manda a eleventa de una venta, o por qué no se manda sola.</summary>
-public sealed record VentaArmada(VentaParaEleventa? Venta, string? PorRevisar);
+/// <param name="Descartada">Ya no hace falta mandarla (se canceló antes de llegar a eleventa); <paramref name="PorRevisar"/> dice por qué.</param>
+public sealed record VentaArmada(VentaParaEleventa? Venta, string? PorRevisar, bool Descartada = false);
+
+/// <summary>Lo que se le manda a eleventa de una cancelación o devolución, o por qué no se manda sola.</summary>
+public sealed record DevolucionArmada(DevolucionParaEleventa? Devolucion, string? PorRevisar, bool Descartada = false);
 
 /// <summary>
 /// Pasa una venta de la caja nueva a lo que entiende eleventa (docs/migracion-eleventa.md, «Mandar cada venta»): cada
@@ -20,21 +24,74 @@ public static class VentasParaEleventa
     {
         var venta = await db.Ventas.AsNoTracking().Include(v => v.Lineas).Include(v => v.Cobros).SingleAsync(v => v.Id == ventaId, ct);
         var turno = await db.Turnos.AsNoTracking().SingleAsync(t => t.Id == venta.TurnoId, ct);
+        return Armar(venta, turno, await ProductosDeAsync(db, venta, ct));
+    }
+
+    /// <summary>
+    /// Una cancelación o devolución de una venta que ya está en eleventa. Si la venta no llegó (se descartó o quedó por
+    /// revisar), lo que depende de ella tampoco va.
+    /// </summary>
+    public static async Task<DevolucionArmada> ArmarDevolucionAsync(PosDbContext db, Guid devolucionId, CancellationToken ct = default)
+    {
+        var devolucion = await db.Devoluciones.AsNoTracking().Include(d => d.Lineas).SingleAsync(d => d.Id == devolucionId, ct);
+        var deLaVenta = await db.EnviosAEleventa.AsNoTracking()
+            .SingleAsync(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == devolucion.VentaId, ct);
+        switch (deLaVenta.Estado)
+        {
+            case EstadoEnvioEleventa.Descartada:
+                return new(null, "Su venta no llegó a eleventa: no hay nada que devolver allá.", Descartada: true);
+            case EstadoEnvioEleventa.PorRevisar:
+                return new(null, $"Su venta quedó por revisar ({deLaVenta.Error}).");
+            case EstadoEnvioEleventa.Pendiente:
+                throw new InvalidOperationException("Su venta todavía no llega a eleventa.");
+        }
+        if (devolucion.AlCreditoCentavos > 0)
+            return new(null, "Bajó la cuenta de un cliente: a eleventa solo pasan solas las devoluciones en efectivo.");
+
+        var venta = await db.Ventas.AsNoTracking().Include(v => v.Lineas).SingleAsync(v => v.Id == devolucion.VentaId, ct);
+        var turno = await db.Turnos.AsNoTracking().SingleAsync(t => t.Id == devolucion.TurnoId, ct);
+        return ArmarDevolucion(devolucion, venta, turno, deLaVenta.TicketEleventa!.Value, await ProductosDeAsync(db, venta, ct));
+    }
+
+    public static DevolucionArmada ArmarDevolucion(Devolucion devolucion, Venta venta, Turno turno, int ticketEleventa, IReadOnlyDictionary<Guid, int> productoDe)
+    {
+        var articulos = devolucion.Lineas.Select(d =>
+        {
+            var linea = venta.Lineas.Single(l => l.Id == d.VentaLineaId);
+            // Lo devuelto viene en presentaciones (2 paquetes); a eleventa va en su unidad, como se le mandó la venta.
+            var cantidad = linea.CantidadBase.EnUnidades * d.Cantidad.Milesimas / linea.Cantidad.Milesimas;
+            return new ArticuloDevuelto(linea.VarianteId is { } v && productoDe.TryGetValue(v, out var id) ? id : null,
+                linea.Descripcion, cantidad, d.ImporteCentavos / 100m, d.RegresaAlInventario && linea.LlevaInventario);
+        }).ToList();
+
+        // Como en la venta: el redondeo del efectivo va en lo más grande, para que eleventa devuelva lo que salió de la caja.
+        if (!devolucion.EsCancelacion && devolucion.RedondeoCentavos != 0 && articulos.Count > 0)
+        {
+            var mayor = articulos.IndexOf(articulos.MaxBy(a => a.Importe)!);
+            articulos[mayor] = articulos[mayor] with { Importe = articulos[mayor].Importe + devolucion.RedondeoCentavos / 100m };
+        }
+
+        return new(new DevolucionParaEleventa(ticketEleventa, devolucion.EsCancelacion, HoraMexico.ALocal(devolucion.FechaUtc),
+            new TurnoParaEleventa(HoraMexico.ALocal(turno.AbiertoUtc), turno.FondoCentavos / 100m), articulos), null);
+    }
+
+    /// <summary>El <c>PRODUCTOS.ID</c> de eleventa de cada variante de la venta que vino de allá (la importación o la lectura).</summary>
+    private static async Task<Dictionary<Guid, int>> ProductosDeAsync(PosDbContext db, Venta venta, CancellationToken ct)
+    {
         var variantes = venta.Lineas.Where(l => l.VarianteId is not null).Select(l => l.VarianteId!.Value).Distinct().ToList();
         var mapeos = await db.MapeosImportacion.AsNoTracking()
             .Where(m => m.Origen == SincronizacionEleventa.Origen && m.Entidad == nameof(Variante) && variantes.Contains(m.IdNuevo))
             .ToListAsync(ct);
         // Si la depuración juntó dos productos de eleventa en uno, se usa el primero que se dio de alta allá.
-        var productoDe = mapeos.Where(m => int.TryParse(m.IdOrigen, out _)).GroupBy(m => m.IdNuevo)
+        return mapeos.Where(m => int.TryParse(m.IdOrigen, out _)).GroupBy(m => m.IdNuevo)
             .ToDictionary(g => g.Key, g => g.Min(m => int.Parse(m.IdOrigen)));
-        return Armar(venta, turno, productoDe);
     }
 
     /// <param name="productoDe">El <c>PRODUCTOS.ID</c> de eleventa de cada variante que vino de allá.</param>
     public static VentaArmada Armar(Venta venta, Turno turno, IReadOnlyDictionary<Guid, int> productoDe)
     {
         if (venta.Estado == EstadoVenta.Cancelada)
-            return new(null, "Se canceló antes de pasar a eleventa.");
+            return new(null, "Se canceló antes de pasar a eleventa: ya no hace falta mandarla.", Descartada: true);
         if (venta.Estado != EstadoVenta.Pagada || venta.PagadaUtc is not { } pagada)
             return new(null, "No está cobrada.");
         if (venta.Cobros.FirstOrDefault(c => c.Forma != FormaPago.Efectivo) is { } otra)
