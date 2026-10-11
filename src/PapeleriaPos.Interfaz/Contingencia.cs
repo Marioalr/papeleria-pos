@@ -487,7 +487,7 @@ public sealed class Contingencia
     public IReadOnlyList<PermisoDeSesion> PermisosDeSesion(Guid usuarioId)
     {
         var usuario = Datos.UsuariosPorId.GetValueOrDefault(usuarioId) ?? throw new InvalidOperationException("Ese usuario no está en la copia de esta caja.");
-        return Permisos.DeLaSesion(Datos.Reglas, Datos.UsuariosPorId.Values.Where(u => u.Activo).Select(u => (u.Id, u.Nombre, u.Rol)), usuario.Id, usuario.Rol,
+        return Permisos.DeLaSesion(Datos.Reglas, Datos.UsuariosPorId.Values.Where(u => u.Activo).Select(u => (u.Id, u.Usuario, u.Nombre, u.Rol)), usuario.Id, usuario.Rol,
             Caja.SucursalId);
     }
 

@@ -100,19 +100,20 @@ public class PermisosTests
     public void La_sesion_trae_cada_accion_con_quien_la_autoriza()
     {
         var (ana, carmen, luis) = (Ids.Nuevo(), Ids.Nuevo(), Ids.Nuevo());
-        (Guid, string, Rol)[] usuarios = [(luis, "Luis", Rol.Dueno), (ana, "Ana", Rol.Cajero), (carmen, "Carmen", Rol.Encargado)];
+        (Guid, string, string, Rol)[] usuarios = [(luis, "luis", "Luis", Rol.Dueno), (ana, "ana", "Ana", Rol.Cajero), (carmen, "carmen", "Carmen", Rol.Encargado)];
 
         var permisos = Permisos.DeLaSesion([], usuarios, ana, Rol.Cajero, Matriz).ToDictionary(p => p.Accion);
 
         Assert.Equal(Enum.GetValues<AccionControlada>().Length, permisos.Count);
-        // Con autorización: quien la tiene permitida, primero el encargado y al final el dueño; quien entró, no.
+        // Con autorización: quien la tiene permitida, primero el encargado y al final el dueño; quien entró, no. Con su
+        // usuario, para que la caja le pida solo el PIN.
         Assert.Equal(NivelPermiso.RequiereAutorizacion, permisos[AccionControlada.CancelarTicket].Nivel);
-        Assert.Equal(["Carmen", "Luis"], permisos[AccionControlada.CancelarTicket].Autorizan);
+        Assert.Equal([new QuienAutoriza("carmen", "Carmen"), new QuienAutoriza("luis", "Luis")], permisos[AccionControlada.CancelarTicket].Autorizan);
         // El cambio de precio, solo el dueño (el encargado también lo pide).
-        Assert.Equal(["Luis"], permisos[AccionControlada.CambiarPrecio].Autorizan);
+        Assert.Equal(["Luis"], permisos[AccionControlada.CambiarPrecio].Autorizan.Select(a => a.Nombre));
         // Con umbral: hasta ahí puede, y lo que pasa lo autoriza quien puede más.
         Assert.Equal((NivelPermiso.Permitido, 1000L), (permisos[AccionControlada.Descuento].Nivel, permisos[AccionControlada.Descuento].UmbralCentavos!.Value));
-        Assert.Equal(["Carmen", "Luis"], permisos[AccionControlada.Descuento].Autorizan);
+        Assert.Equal(["Carmen", "Luis"], permisos[AccionControlada.Descuento].Autorizan.Select(a => a.Nombre));
         // Lo que puede sin límite y lo que no puede: nadie autoriza.
         Assert.Empty(permisos[AccionControlada.ArticuloComun].Autorizan);
         Assert.Equal(NivelPermiso.NoPermitido, permisos[AccionControlada.CorteZ].Nivel);
@@ -124,7 +125,7 @@ public class PermisosTests
     {
         var luis = Ids.Nuevo();
 
-        var permisos = Permisos.DeLaSesion([], [(luis, "Luis", Rol.Dueno), (Ids.Nuevo(), "Carmen", Rol.Encargado)], luis, Rol.Dueno, Matriz);
+        var permisos = Permisos.DeLaSesion([], [(luis, "luis", "Luis", Rol.Dueno), (Ids.Nuevo(), "carmen", "Carmen", Rol.Encargado)], luis, Rol.Dueno, Matriz);
 
         Assert.All(permisos, p => Assert.Equal((NivelPermiso.Permitido, (long?)null, 0), (p.Nivel, p.UmbralCentavos, p.Autorizan.Count)));
     }

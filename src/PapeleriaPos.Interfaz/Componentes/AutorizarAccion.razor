@@ -1,12 +1,21 @@
 @* "Requiere autorización": el encargado (o el dueño) escribe su usuario y PIN en la misma caja, o se le pide al dueño
-   por Telegram. Vale una sola vez. *@
+   por Telegram. Vale una sola vez. En la pantalla nueva, quien puede autorizar se ve por su nombre: se toca su ficha y
+   solo se escribe su PIN (docs/propuesta-interfaz.md, «Usuarios y permisos»). *@
 @implements IAsyncDisposable
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
-<div class="autorizacion">
-    <p class="aviso-autorizacion">🔒 @Textos.Accion(Accion) requiere autorización</p>
-    <p>@Detalle@(MontoCentavos is { } m ? $" · {Permisos.TextoMonto(Accion, m)}" : "")</p>
+<div class="autorizacion @(Fichas is null ? "" : "con-fichas")">
+    @if (Fichas is { } fichas)
+    {
+        <p class="aviso-autorizacion">🔒 Lo autoriza @Textos.Quien(fichas)</p>
+        <p class="autorizacion-detalle">@Detalle@(MontoCentavos is { } m ? $" · {Permisos.TextoMonto(Accion, m)}" : "")</p>
+    }
+    else
+    {
+        <p class="aviso-autorizacion">🔒 @Textos.Accion(Accion) requiere autorización</p>
+        <p>@Detalle@(MontoCentavos is { } m ? $" · {Permisos.TextoMonto(Accion, m)}" : "")</p>
+    }
     @if (_remota is { } remota)
     {
         <p class="esperando">Se le pidió al dueño por Telegram. Esperando su respuesta… (vence a las @HoraMexico.ALocal(remota.VenceUtc).ToString("HH:mm"))</p>
@@ -17,6 +26,33 @@
         <div class="acciones">
             <button class="boton" @onclick="CancelarRemotaAsync">Ya no la necesito</button>
         </div>
+    }
+    else if (Fichas is { } quienes)
+    {
+        @if (quienes.Count > 1)
+        {
+            <div class="quien" role="radiogroup" aria-label="Quién autoriza">
+                @foreach (var ficha in quienes)
+                {
+                    var esta = ficha;
+                    <button class="ficha @(esta.Usuario == _usuario ? "activa" : "")" role="radio" aria-checked="@(esta.Usuario == _usuario ? "true" : "false")"
+                            @onclick="() => Elegir(esta)"><span class="avatar">@Inicial(esta.Nombre)</span>@esta.Nombre</button>
+                }
+            </div>
+        }
+        <label>PIN de @(quienes.FirstOrDefault(f => f.Usuario == _usuario)?.Nombre ?? quienes[0].Nombre)
+            <input id="autoriza-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="off" @bind="_pin" @bind:event="oninput" @onkeydown="AlTeclear" />
+        </label>
+        @if (_error is not null)
+        {
+            <p class="error">@_error</p>
+        }
+        <div class="acciones">
+            <button class="boton" @onclick="AlCancelar">Cancelar</button>
+            <button class="boton" disabled="@_ocupado" @onclick="PedirPorTelegramAsync">Pedir por Telegram</button>
+            <button class="boton principal" disabled="@_ocupado" @onclick="AutorizarAsync">Autorizar (Enter)</button>
+        </div>
+        <p class="nota">Vale una sola vez, para esta acción, y queda en la bitácora.</p>
     }
     else
     {
@@ -47,18 +83,42 @@
     [Parameter] public EventCallback<AutorizacionDto> AlAutorizar { get; set; }
     [Parameter] public EventCallback AlCancelar { get; set; }
 
+    /// <summary>Lo que puede quien entró, con quién autoriza cada acción. Solo lo pasa la pantalla nueva.</summary>
+    [CascadingParameter(Name = "PermisosDeSesion")] public IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? PermisosDeSesion { get; set; }
+
+    /// <summary>Quienes pueden autorizar, por su nombre; sin ellos (la pantalla de hoy, o sin los permisos), se escribe el usuario.</summary>
+    private IReadOnlyList<QuienAutoriza>? Fichas => PermisosDeSesion?.GetValueOrDefault(Accion)?.Autorizan is { Count: > 0 } autorizan ? autorizan : null;
+
     private string _usuario = "";
     private string _pin = "";
     private string? _error;
     private bool _ocupado;
+    private bool _enfocarPin;
     private SolicitudRemotaDto? _remota;
     private CancellationTokenSource? _espera;
 
+    /// <summary>Empieza con el primero (el encargado antes que el dueño).</summary>
+    protected override void OnParametersSet()
+    {
+        if (Fichas is { } fichas && fichas.All(f => f.Usuario != _usuario))
+            _usuario = fichas[0].Usuario;
+    }
+
     protected override async Task OnAfterRenderAsync(bool primera)
     {
-        if (primera)
-            await Js.EnfocarAsync("#autoriza-usuario");
+        if (primera || _enfocarPin)
+        {
+            _enfocarPin = false;
+            await Js.EnfocarAsync(Fichas is null ? "#autoriza-usuario" : "#autoriza-pin");
+        }
     }
+
+    private void Elegir(QuienAutoriza ficha)
+    {
+        (_usuario, _pin, _error, _enfocarPin) = (ficha.Usuario, "", null, true);
+    }
+
+    private static string Inicial(string nombre) => nombre.Trim() is [var letra, ..] ? char.ToUpperInvariant(letra).ToString() : "?";
 
     private async Task AlTeclear(KeyboardEventArgs e)
     {

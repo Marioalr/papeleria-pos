@@ -342,7 +342,9 @@
             <aside class="vn-der @(VaEnPanel ? "con-panel" : "")">
                 @if (VaEnPanel)
                 {
-                    <CascadingValue Name="VentanaEnPanel" Value="true">@ContenidoDeVentana</CascadingValue>
+                    <CascadingValue Name="VentanaEnPanel" Value="true">
+                        <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada">@ContenidoDeVentana</CascadingValue>
+                    </CascadingValue>
                 }
                 else if (MostrarCambio && _cobrado is { } cobrado)
                 {
@@ -746,7 +748,7 @@ else
 
 @if (!VaEnPanel)
 {
-    @ContenidoDeVentana
+    <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada">@ContenidoDeVentana</CascadingValue>
 }
 
 @code {
@@ -852,6 +854,9 @@ else
 
     private PermisoDeSesion? Permiso(AccionControlada accion) => _permisos?.GetValueOrDefault(accion);
 
+    /// <summary>Para la autorización: en la pantalla nueva se toca la ficha de quien autoriza (en la de hoy, se escribe su usuario).</summary>
+    private IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? PermisosEnCascada => _pantallaNueva ? _permisos : null;
+
     /// <summary>Lo que no puede no aparece: ni botón, ni tecla, ni en «/», ni la pestaña.</summary>
     private bool Ve(AccionControlada accion) => Permiso(accion)?.Nivel != NivelPermiso.NoPermitido;
 
@@ -883,18 +888,7 @@ else
         }
     }
 
-    /// <summary>«Luis», «Carmen o Luis», «Ana, Carmen o Luis»; si son más, los dos primeros y cuántos más.</summary>
-    private static string Quien(PermisoDeSesion permiso)
-    {
-        var nombres = permiso.Autorizan;
-        return nombres.Count switch
-        {
-            0 => "quien tenga el permiso",
-            1 => nombres[0],
-            <= 3 => $"{string.Join(", ", nombres.Take(nombres.Count - 1))} o {nombres[^1]}",
-            _ => $"{nombres[0]}, {nombres[1]} o {nombres.Count - 2} más",
-        };
-    }
+    private static string Quien(PermisoDeSesion permiso) => Textos.Quien(permiso.Autorizan);
 
     /// <summary>En «/»: «Lo autoriza Luis», o «Tú: hasta 10 %; más, lo autoriza Carmen o Luis».</summary>
     private string? DetallePermiso(AccionControlada accion) => Permiso(accion) switch
