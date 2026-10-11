@@ -19,6 +19,7 @@ return args switch
     ["diagnostico", .. var resto] => await DiagnosticoAsync(resto),
     ["importar-eleventa", .. var resto] => await ImportarEleventaAsync(resto),
     ["sincronizar-eleventa", .. var resto] => await SincronizarEleventaAsync(resto),
+    ["observar-eleventa", .. var resto] => await ObservarEleventaAsync(resto),
     ["preparar-caja", .. var resto] => await PrepararCajaAsync(resto),
     ["importar-control-print", .. var resto] => await ImportarControlPrintAsync(resto),
     ["aplicar-depuracion", .. var resto] => await AplicarDepuracionAsync(resto),
@@ -42,6 +43,14 @@ static int Ayuda()
                             [--firebird32 <carpeta>] [--firebird64 <carpeta>]
               Importa una copia de la base de eleventa (catálogo, ventas y existencias). La original no se abre.
               Por omisión busca Firebird en firebird25-32\embed y firebird25, junto a la carpeta de la base.
+
+          observar-eleventa --servidor <PC> --ruta <C:\...\PDVDATA.FDB> [--puerto 3050] --usuario <usuario>
+                            [--carpeta <carpeta>]
+              Para entender qué escribe eleventa (el piloto, paso 2): toma una foto de toda su base, solo leyendo;
+              después de hacer algo en eleventa (cobrar, cancelar, un corte) toma otra y dice qué renglones aparecieron
+              o cambiaron y qué contadores avanzaron. Cada comparación queda en un archivo de --carpeta (por omisión,
+              AppData\Local\PapeleriaPos\observaciones-eleventa, que no se sincroniza con OneDrive): son datos
+              reales, no van al repositorio.
 
           sincronizar-eleventa --base pos.db [--simular]
                                (--fdb PDVDATA.FDB [--firebird32 <carpeta>] [--firebird64 <carpeta>]
@@ -185,6 +194,60 @@ static async Task<int> SincronizarEleventaAsync(string[] args)
     foreach (var (aviso, veces) in resultado.Avisos)
         Console.WriteLine($"  {veces,6:N0}  {aviso}");
     return 0;
+}
+
+static async Task<int> ObservarEleventaAsync(string[] args)
+{
+    if (Opcion(args, "--servidor") is not { } servidor || Opcion(args, "--ruta") is not { } ruta || Opcion(args, "--usuario") is not { } usuario)
+    {
+        Console.Error.WriteLine("Indica --servidor, --ruta y --usuario del Firebird de eleventa.");
+        return 1;
+    }
+    if ((Environment.GetEnvironmentVariable("ELEVENTA_CLAVE") is { Length: > 0 } variable ? variable : PedirClave()) is not { } clave)
+    {
+        Console.Error.WriteLine("Falta la clave del Firebird de eleventa.");
+        return 1;
+    }
+    var conexion = new ServidorEleventa(servidor, ruta, usuario, clave, int.Parse(Opcion(args, "--puerto") ?? "3050", CultureInfo.InvariantCulture));
+    var carpeta = Opcion(args, "--carpeta")
+        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PapeleriaPos", "observaciones-eleventa");
+    Directory.CreateDirectory(carpeta);
+
+    async Task<FotoEleventa?> FotoAsync()
+    {
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var foto = await FotoEleventa.TomarAsync(conexion);
+            Console.WriteLine($"Foto tomada ({foto.Tablas.Count} tablas, {reloj.Elapsed.TotalSeconds:N1} s).");
+            return foto;
+        }
+        catch (System.Data.Common.DbException ex)
+        {
+            Console.Error.WriteLine(LectorEleventa.Explicar(ex, conexion));
+            return null;
+        }
+    }
+
+    Console.WriteLine($"Observando {conexion} (solo lectura). Las comparaciones van a {carpeta}.");
+    if (await FotoAsync() is not { } anterior)
+        return 1;
+    for (var numero = 1; ; numero++)
+    {
+        Console.WriteLine();
+        Console.WriteLine("Haz algo en eleventa, vuelve aquí y escribe qué hiciste (Enter: otra foto sin nota; «fin»: terminar).");
+        Console.Write("> ");
+        var nota = Console.ReadLine()?.Trim();
+        if (nota is null || nota.Equals("fin", StringComparison.OrdinalIgnoreCase))
+            return 0;
+        if (await FotoAsync() is not { } actual)
+            continue;
+        var diferencia = ComparacionEleventa.Comparar(anterior, actual);
+        Console.WriteLine(diferencia);
+        var nombre = $"{HoraMexico.ALocal(actual.TomadaUtc):yyyy-MM-dd HH-mm-ss} {numero:00}{(nota.Length > 0 ? " " + string.Concat(nota.Where(c => !Path.GetInvalidFileNameChars().Contains(c))) : "")}.txt";
+        await File.WriteAllTextAsync(Path.Combine(carpeta, nombre), $"{nota}\n{HoraMexico.ALocal(anterior.TomadaUtc):HH:mm:ss} → {HoraMexico.ALocal(actual.TomadaUtc):HH:mm:ss}\n\n{diferencia}");
+        anterior = actual;
+    }
 }
 
 /// <summary>La clave, tecleada sin que se vea (asteriscos). Sin teclado (la entrada redirigida), null.</summary>
