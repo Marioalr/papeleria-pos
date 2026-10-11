@@ -291,6 +291,15 @@ de verdad, en la caja 2 se abre `scripts\observar-en-vivo.cmd`:
 Lo que la caja 2 escribe pasa esa revisión sin una sola ✗: hay una prueba que lo fotografía antes y después de cancelar,
 devolver y cerrar.
 
+**Lo primero que se vio en vivo (2026-10-11):** en eleventa, una devolución parcial de algo a granel, la cancelación de
+lo que quedó de ese ticket y un cierre de turno que cuadró, con una venta en el mismo rato.
+- La devolución salió igual en todo.
+- La cancelación tuvo dos ✗ que la copia ya tenía y no se habían visto: el subtotal también baja lo devuelto (queda en
+  cero) y `NUMERO_ARTICULOS` baja las piezas, no lo de granel («Cancelar, devolver y cerrar el turno», abajo). La caja 2
+  ya lo escribe así.
+- En el cierre, la ✗ del ticket abierto era de la revisión: eleventa cobró con el ticket abierto y abrió otro, que el
+  cierre borró. La revisión ya lo distingue.
+
 ### Mandar cada venta (paso 3)
 
 **Ya está la escritura** (`EnvioEleventa.MandarAsync`): una venta en efectivo de la caja nueva entra a eleventa como la
@@ -367,8 +376,10 @@ inventados.
   - lleva el turno, el ticket, `PAGADO_EN` del ticket y `DEVUELTO_EN`;
   - `CAJERO` y `CAJA` van como texto: `USUARIOS.USUARIO` y `CAJAS.NOMBRE`;
   - `TOTAL_DEVUELTO` es lo que salió de la caja.
-- **La cancelación** deja el ticket con `ESTA_CANCELADO = 't'`, su total, ganancia y artículos en cero (`NUMERO_ARTICULOS`)
-  y sus renglones de artículos sin tocar. No lleva `DEVOLUCIONES_ARTICULOS`.
+- **La cancelación** deja el ticket con `ESTA_CANCELADO = 't'` y su total. A `SUBTOTAL` y a la ganancia les resta lo
+  devuelto, así que quedan en cero, y sus renglones de artículos no se tocan. No lleva `DEVOLUCIONES_ARTICULOS`.
+  - Si antes hubo una parcial, se cancela lo que quedó en el ticket.
+  - Las cancelaciones de 2024 conservan subtotal, ganancia y artículos: era otra versión de eleventa.
 - **La parcial** cambia el ticket original:
   - el artículo baja su `CANTIDAD` y su `TOTAL_ARTICULO`;
   - si se devolvió completo, el renglón se borra (eleventa no deja artículos en cero);
@@ -376,6 +387,9 @@ inventados.
   - lleva un renglón de `DEVOLUCIONES_ARTICULOS` por artículo;
   - `CANTIDAD_DEVUELTA` y `FUE_DEVUELTO` del artículo, y `TOTAL_DEVUELTO` del ticket, no se usan.
 - **En las dos:**
+  - `NUMERO_ARTICULOS` baja las piezas devueltas. Lo de granel contó uno al vender y no baja, aunque se devuelva todo y
+    su renglón se borre; cuenta el tipo de venta que el producto tiene hoy. Así salen en la copia casi todas las
+    cancelaciones y parciales desde 2025; las pocas que no, ya no cuadraban desde la venta;
   - un movimiento del corte por artículo (`CORTE_MOVIMIENTOS`, tipo `Devolucion`, `FORMA_PAGO = 'E'`,
     `RAZON_DEVOLUCION = 'V'`), por ejemplo «Devolución "Cuaderno profesional", Ticket #4521»;
   - una entrada al inventario por producto: «Devolución de venta #4521», con la cantidad en negativo y el costo del producto.

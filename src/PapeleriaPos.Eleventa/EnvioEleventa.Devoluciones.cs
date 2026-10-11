@@ -29,8 +29,9 @@ public static partial class EnvioEleventa
     /// y cerrar el turno»), en una sola transacción:
     /// <list type="bullet">
     /// <item>el renglón de <c>DEVOLUCIONES</c> (C o P) y, en la parcial, uno de <c>DEVOLUCIONES_ARTICULOS</c> por artículo;</item>
-    /// <item>en la cancelación, el ticket queda cancelado, sin ganancia ni artículos; en la parcial, el artículo baja su
-    /// cantidad y su importe (o se borra si se devolvió completo) y el ticket, su total y su ganancia;</item>
+    /// <item>en la cancelación, el ticket queda cancelado con su total, sin subtotal ni ganancia; en la parcial, el artículo
+    /// baja su cantidad y su importe (o se borra si se devolvió completo) y el ticket, su total, subtotal y ganancia;</item>
+    /// <item>en las dos, <c>NUMERO_ARTICULOS</c> baja las piezas devueltas; lo de granel contó uno al vender y no baja;</item>
     /// <item>un movimiento <c>Devolucion</c> del corte por artículo;</item>
     /// <item>la entrada al inventario («Devolución de venta #folio»), salvo lo que volvió dañado;</item>
     /// <item>los acumulados del turno y del día en que se devuelve (que es cuando sale el dinero) y de sus departamentos.</item>
@@ -90,12 +91,15 @@ public static partial class EnvioEleventa
     }
 
     /// <summary>Un artículo del ticket en eleventa.</summary>
-    private sealed record EnElTicket(int Id, string Codigo, string Nombre, decimal Cantidad, decimal Total, decimal GananciaPorPieza, int DepartamentoId);
+    private sealed record EnElTicket(int Id, string Codigo, string Nombre, decimal Cantidad, decimal Total, decimal GananciaPorPieza, int DepartamentoId, bool AGranel);
 
     /// <summary>Lo que se devuelve de un artículo del ticket, y cuánto de eso regresa al inventario (lo dañado no).</summary>
     private sealed record Devuelto(EnElTicket Articulo, decimal Cantidad, decimal Monto, decimal ARegresar)
     {
         public decimal Ganancia => Math.Round(Cantidad * Articulo.GananciaPorPieza, 4, MidpointRounding.AwayFromZero);
+
+        /// <summary>Lo que baja de <c>NUMERO_ARTICULOS</c>: las piezas; lo de granel no, aunque se devuelva todo.</summary>
+        public int Piezas => Articulo.AGranel ? 0 : (int)Math.Round(Cantidad, MidpointRounding.AwayFromZero);
     }
 
     private static async Task<DevolucionEnEleventa> EscribirDevolucionAsync(FbConnection c, CajaEnEleventa caja, DevolucionParaEleventa d, CancellationToken ct)
@@ -126,13 +130,19 @@ public static partial class EnvioEleventa
         var devueltos = d.EsCancelacion ? await TodoAsync(sql, articulos, d.Articulos) : await LoDevueltoAsync(sql, articulos, d.Articulos);
         var total = devueltos.Sum(x => x.Monto);
         var ganancia = devueltos.Sum(x => x.Ganancia);
+        var piezas = devueltos.Sum(x => x.Piezas);
 
         var turno = await TurnoAbiertoAsync(sql, caja, d.Turno);
         var dia = await DiaAsync(sql, caja.CajaId, devuelta.Date);
 
         if (d.EsCancelacion)
         {
-            await sql.EjecutarAsync("UPDATE VENTATICKETS SET ESTA_CANCELADO = 't', GANANCIA = 0, NUMERO_ARTICULOS = 0 WHERE ID = @ticket", [("ticket", d.TicketEleventa)]);
+            // Eleventa le resta lo devuelto al subtotal y a la ganancia (quedan en cero), pero no al total.
+            await sql.EjecutarAsync("""
+                UPDATE VENTATICKETS SET ESTA_CANCELADO = 't', SUBTOTAL = SUBTOTAL - @total, GANANCIA = 0, NUMERO_ARTICULOS = NUMERO_ARTICULOS - @piezas
+                WHERE ID = @ticket
+                """,
+                [("ticket", d.TicketEleventa), ("total", (double)total), ("piezas", piezas)]);
         }
         else
         {
@@ -147,10 +157,10 @@ public static partial class EnvioEleventa
             }
             await sql.EjecutarAsync("""
                 UPDATE VENTATICKETS SET TOTAL = TOTAL - @total, SUBTOTAL = SUBTOTAL - @total, TOTAL_FACTURABLE = TOTAL_FACTURABLE - @total,
-                    GANANCIA = GANANCIA - @ganancia
+                    GANANCIA = GANANCIA - @ganancia, NUMERO_ARTICULOS = NUMERO_ARTICULOS - @piezas
                 WHERE ID = @ticket
                 """,
-                [("ticket", d.TicketEleventa), ("total", (double)total), ("ganancia", (double)ganancia)]);
+                [("ticket", d.TicketEleventa), ("total", (double)total), ("ganancia", (double)ganancia), ("piezas", piezas)]);
         }
 
         var id = await sql.NuevoIdAsync("GEN_DEVOLUCIONES_ID");
@@ -207,8 +217,9 @@ public static partial class EnvioEleventa
     private static async Task<List<EnElTicket>> ArticulosDelTicketAsync(Sql sql, int ticket)
     {
         var filas = await sql.FilasAsync("""
-            SELECT ID, PRODUCTO_CODIGO, PRODUCTO_NOMBRE, CANTIDAD, PRECIO_FINAL, TOTAL_ARTICULO, GANANCIA, DEPARTAMENTO_ID
-            FROM VENTATICKETS_ARTICULOS WHERE TICKET_ID = @ticket ORDER BY ID
+            SELECT a.ID, a.PRODUCTO_CODIGO, a.PRODUCTO_NOMBRE, a.CANTIDAD, a.PRECIO_FINAL, a.TOTAL_ARTICULO, a.GANANCIA, a.DEPARTAMENTO_ID,
+                (SELECT MAX(p.TVENTA) FROM PRODUCTOS p WHERE p.CODIGO = a.PRODUCTO_CODIGO)
+            FROM VENTATICKETS_ARTICULOS a WHERE a.TICKET_ID = @ticket ORDER BY a.ID
             """, [("ticket", ticket)]);
         return filas.Select(f =>
         {
@@ -216,7 +227,9 @@ public static partial class EnvioEleventa
             // En las líneas viejas el total va vacío: es precio por cantidad.
             var total = f[5] is DBNull ? (decimal)Convert.ToSingle(f[4]) * cantidad : (decimal)Convert.ToSingle(f[5]);
             return new EnElTicket(Convert.ToInt32(f[0]), ((string)f[1]).Trim(), ((string)f[2]).Trim(), cantidad, total,
-                f[6] is DBNull ? 0 : (decimal)Convert.ToSingle(f[6]), f[7] is DBNull ? 0 : Convert.ToInt32(f[7]));
+                f[6] is DBNull ? 0 : (decimal)Convert.ToSingle(f[6]), f[7] is DBNull ? 0 : Convert.ToInt32(f[7]),
+                // Con el tipo de venta que el producto tiene hoy, como eleventa; un común cuenta por piezas.
+                AGranel: f[8] is string tipo && tipo.Trim() == "D");
         }).ToList();
     }
 

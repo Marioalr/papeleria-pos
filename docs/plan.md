@@ -367,6 +367,11 @@ había dicho del faltante al cerrar). La caja 2 las manda por la misma bandeja, 
 de la primera venta, y con eso eleventa cierra el turno con lo contado. Se probó contra copias. Falta ver en vivo una
 entrada o salida después de medianoche en un turno que ya vendió ese día.
 
+**En vivo (2026-10-11):** se vieron en eleventa una devolución parcial, una cancelación y un cierre de turno
+([qué salió](migracion-eleventa.md#verlo-en-vivo)). La devolución y el cierre salieron como los escribe la caja 2. La
+cancelación también le resta lo devuelto al subtotal, y `NUMERO_ARTICULOS` baja solo las piezas, no lo de granel (también
+al devolver una parte); la copia lo confirma y la caja 2 ya lo hace igual. Faltan por ver en vivo las entradas y salidas.
+
 #### Al terminar el piloto
 
 Cada parte entra sin detener a la caja 2:
