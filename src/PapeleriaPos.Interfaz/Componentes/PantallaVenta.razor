@@ -37,11 +37,46 @@
 
         <div class="vn-cuerpo">
             <section class="vn-izq">
-                <div class="vn-captura">
-                    <span class="vn-captura-ico" aria-hidden="true">▥</span>
-                    @* Sin @bind: caja.js lo lee al Enter y lo vacía al momento (un escaneo nunca se pega al siguiente). *@
-                    <input id="codigo" data-codigo data-captura autocomplete="off" spellcheck="false" aria-label="Código del producto"
-                           placeholder="Escanea o escribe: código, nombre, 3*código o folio de un ticket" />
+                <div class="vn-captura-caja">
+                    <div class="vn-captura">
+                        <span class="vn-captura-ico" aria-hidden="true">▥</span>
+                        @* Sin @bind: caja.js lo lee al Enter y lo vacía al momento (un escaneo nunca se pega al siguiente). *@
+                        <input id="codigo" data-codigo data-captura autocomplete="off" spellcheck="false" aria-label="Código del producto"
+                               placeholder="Escanea o escribe: código, nombre, 3*código o folio de un ticket" />
+                    </div>
+                    @if (_resultados is { } resultados)
+                    {
+                        @* Lo que se escribe a mano busca aquí mismo, sin otra ventana; el lector no (no espera a dejar de teclear). *@
+                        <div class="vn-resultados" role="listbox">
+                            @if (resultados.Count == 0)
+                            {
+                                <div class="vn-res-vacio">Nada coincide con «@_textoBuscado». Revisa cómo se escribe, o véndelo como artículo común (<kbd>Ins</kbd>).</div>
+                            }
+                            else
+                            {
+                                <div class="vn-res-grupo">Productos · @resultados.Count@(resultados.Count >= MaximoResultados ? " o más" : ""): primero lo que se eligió aquí con este texto, luego lo más vendido</div>
+                                @for (var k = 0; k < resultados.Count; k++)
+                                {
+                                    var indiceRes = k;
+                                    var r = resultados[k];
+                                    <div id="res-@k" class="vn-res @(k == _indiceResultado ? "activa" : "")" role="option" @onclick="() => ElegirResultadoAsync(indiceRes)">
+                                        <div class="vn-res-texto">
+                                            <div class="vn-res-nombre">@Marcado(r.Descripcion)</div>
+                                            @if (r.Codigo is { } codigoRes)
+                                            {
+                                                <div class="vn-res-sub"><code>@Marcado(codigoRes)</code></div>
+                                            }
+                                        </div>
+                                        <div class="vn-res-precio">@Formato.Dinero(r.PrecioCentavos)</div>
+                                        <div class="vn-res-exist @(r.Existencia is <= 0 ? "nada" : r.Existencia is <= 3 ? "poca" : "")">
+                                            @ExistenciaTexto(r.Existencia)
+                                        </div>
+                                    </div>
+                                }
+                            }
+                            <div class="vn-res-ayuda"><span><kbd>↑</kbd> <kbd>↓</kbd> elegir</span><span><kbd>Enter</kbd> agregar</span><span><kbd>Esc</kbd> cerrar</span><span><kbd>3*</kbd> antes del texto = cantidad</span></div>
+                        </div>
+                    }
                 </div>
                 <div class="vn-aviso @(_mensajeEsError ? "error" : "")">
                     @if (_mensaje is not null)
@@ -87,7 +122,7 @@
                         <div class="vn-vacio">
                             <h3>Escanea el primer producto</h3>
                             <p>El cuadro de arriba entiende el código del lector, <code>12*código</code> para doce de una vez, el nombre
-                                (abre la búsqueda) y el folio de un ticket para devolverlo. Un número y un rápido agregan esa cantidad.</p>
+                                (lo busca aquí abajo; Enter agrega el primero) y el folio de un ticket para devolverlo. Un número y un rápido agregan esa cantidad.</p>
                         </div>
                     }
                     else
@@ -889,6 +924,17 @@ else
     {
         if (_ventana != Ventanas.Ninguna)
             return;
+        // Con ↑ ↓ se eligió uno de la lista de resultados: Enter agrega ese.
+        if (_resultados is { Count: > 0 } resultados && _navegado && SepararCantidad(texto).Texto == _textoBuscado)
+        {
+            var (elegido, cantidad, buscado) = (resultados[_indiceResultado], _cantidadBuscada, _textoBuscado);
+            CerrarResultados();
+            await _captura.EsperarAsync();
+            await AgregarResultadoAsync(elegido, cantidad, buscado, resultados.Count);
+            StateHasChanged();
+            return;
+        }
+        CerrarResultados();
         _captura.Texto = texto;
         var escaneo = AgregarCodigoAsync();
         StateHasChanged();
@@ -896,9 +942,192 @@ else
         StateHasChanged();
     }
 
-    /// <summary>Lo que se escribe a mano en el cuadro de la pantalla nueva, al dejar de teclear: la cantidad de un rápido o de F11.</summary>
+    /// <summary>
+    /// Lo que se escribe a mano en el cuadro de la pantalla nueva, al dejar de teclear: la cantidad de un rápido o de
+    /// F11, o un nombre, que se busca aquí mismo.
+    /// </summary>
     [JSInvokable]
-    public void Escribiendo(string texto) => _captura.Texto = texto;
+    public async Task Escribiendo(string texto)
+    {
+        _captura.Texto = texto;
+        if (_pantallaNueva && _ventana == Ventanas.Ninguna)
+            await BuscarMientrasEscribeAsync(texto);
+    }
+
+    // ── La búsqueda debajo del cuadro (pantalla nueva) ──────────────────────
+
+    private const int MaximoResultados = 30;
+
+    /// <summary>Lo que sale al escribir; null: la lista está cerrada.</summary>
+    private List<ResultadoBusquedaDto>? _resultados;
+
+    private string _textoBuscado = "";
+    private string[] _partesBuscadas = [];
+    private Cantidad _cantidadBuscada = Cantidad.Piezas(1);
+    private int _indiceResultado;
+
+    /// <summary>Se movió con ↑ ↓: Enter agrega el elegido y no busca el texto como código.</summary>
+    private bool _navegado;
+
+    /// <summary>Cada búsqueda lleva su número: si llega tarde (ya se escribió otra cosa), no se muestra.</summary>
+    private int _secuenciaBusqueda;
+
+    /// <summary>«3*cuad» → 3 y «cuad»: lo de antes del asterisco es la cantidad.</summary>
+    private static (Cantidad Cantidad, string Texto) SepararCantidad(string texto)
+    {
+        texto = texto.Trim();
+        var asterisco = texto.IndexOf('*');
+        return asterisco > 0 && decimal.TryParse(texto[..asterisco], NumberStyles.Number, CultureInfo.InvariantCulture, out var n) && n > 0
+            ? (Cantidad.Unidades(Math.Round(n, 3)), texto[(asterisco + 1)..].Trim())
+            : (Cantidad.Piezas(1), texto);
+    }
+
+    /// <summary>Un nombre (o un código corto con letras), no un código del lector ni un folio.</summary>
+    private static bool EsTextoDeBusqueda(string texto) => texto.Length >= 2 && texto.Any(char.IsLetter) && !FolioTicket.IsMatch(texto);
+
+    private async Task BuscarMientrasEscribeAsync(string texto)
+    {
+        var (cantidad, resto) = SepararCantidad(texto);
+        var secuencia = ++_secuenciaBusqueda;
+        if (!EsTextoDeBusqueda(resto))
+        {
+            if (_resultados is not null)
+            {
+                _resultados = null;
+                StateHasChanged();
+            }
+            return;
+        }
+        try
+        {
+            var resultados = await Cliente.BuscarAsync(resto, Caja.SucursalId, Caja.Id);
+            if (secuencia != _secuenciaBusqueda)
+                return;
+            (_resultados, _textoBuscado, _cantidadBuscada, _indiceResultado, _navegado) = (resultados, resto, cantidad, 0, false);
+            _partesBuscadas = Texto.Normalizar(resto).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        }
+        catch (ErrorCaja ex)
+        {
+            Avisar(ex.Message);
+        }
+        StateHasChanged();
+    }
+
+    private void CerrarResultados()
+    {
+        _resultados = null;
+        _navegado = false;
+        _secuenciaBusqueda++;
+    }
+
+    private void MoverResultado(int paso)
+    {
+        if (_resultados is not { Count: > 0 } resultados)
+            return;
+        _indiceResultado = Math.Clamp(_indiceResultado + paso, 0, resultados.Count - 1);
+        _navegado = true;
+        _ = Js.MostrarAsync($"#res-{_indiceResultado}");
+    }
+
+    /// <summary>Un clic en un resultado.</summary>
+    private async Task ElegirResultadoAsync(int indice)
+    {
+        if (_resultados is not { } resultados || indice < 0 || indice >= resultados.Count)
+            return;
+        var (elegido, cantidad, buscado) = (resultados[indice], _cantidadBuscada, _textoBuscado);
+        CerrarResultados();
+        VaciarCaptura();
+        _enfocar = "#codigo";
+        await _captura.EsperarAsync();
+        await AgregarResultadoAsync(elegido, cantidad, buscado, resultados.Count);
+    }
+
+    /// <summary>
+    /// Agrega lo elegido y anota qué se eligió con ese texto: la próxima vez, en esta caja, sale primero. Fuera de la cola
+    /// de escaneos, quien llama espera antes a que termine el último (dentro de la cola se esperaría a sí mismo).
+    /// </summary>
+    private async Task AgregarResultadoAsync(ResultadoBusquedaDto resultado, Cantidad cantidad, string buscado, int resultados)
+    {
+        _ = Cliente.RegistrarBusquedaAsync(new SolicitudBusqueda(Caja.Id, buscado, resultados, resultado.VarianteId));
+        try
+        {
+            if (await Cliente.PorVarianteAsync(resultado.VarianteId, Caja.SucursalId) is { } producto)
+                Agregar(producto, null, cantidad);
+            else
+                Avisar("Ese producto ya no está en el catálogo.");
+        }
+        catch (ErrorCaja ex)
+        {
+            Avisar(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Enter con un nombre que no es código, sin elegir de la lista: agrega el primero (lo elegido antes o lo más vendido).
+    /// Si no sale nada, lo dice y lo anota, para darlo de alta o hacerlo sinónimo después.
+    /// </summary>
+    private async Task AgregarPrimeroAsync(string texto, Cantidad cantidad)
+    {
+        var resultados = await Cliente.BuscarAsync(texto, Caja.SucursalId, Caja.Id);
+        if (resultados.Count == 0)
+        {
+            _ = Cliente.RegistrarBusquedaAsync(new SolicitudBusqueda(Caja.Id, texto, 0, null));
+            Avisar($"Nada coincide con «{texto}». Revisa cómo se escribe, o véndelo como artículo común (Ins).");
+            return;
+        }
+        await AgregarResultadoAsync(resultados[0], cantidad, texto, resultados.Count);
+    }
+
+    private static string ExistenciaTexto(decimal? existencia) => existencia switch
+    {
+        null => "Servicio",
+        <= 0 => "Sin existencia",
+        <= 3 => $"Quedan {Formato.Numero(existencia.Value)}",
+        _ => $"{Formato.Numero(existencia.Value)} en tienda",
+    };
+
+    /// <summary>El texto con el principio de cada palabra que coincide con lo escrito, resaltado.</summary>
+    private RenderFragment Marcado(string texto) => @<span>@foreach (var (parte, marcada) in Segmentos(texto, _partesBuscadas))
+        {
+            if (marcada)
+            {
+                <mark>@parte</mark>
+            }
+            else
+            {
+                @parte
+            }
+        }</span>;
+
+    private static IEnumerable<(string Parte, bool Marcada)> Segmentos(string texto, string[] partes)
+    {
+        if (texto.Length == 0)
+            yield break;
+        // Cada carácter normalizado por separado: la misma longitud que el texto, para marcar en su lugar.
+        var plano = string.Concat(texto.Select(c => char.IsWhiteSpace(c) ? " " : Texto.Normalizar(c.ToString()) is { Length: 1 } n ? n : "·"));
+        var marca = new bool[texto.Length];
+        for (var i = 0; i < texto.Length; i++)
+        {
+            if (i > 0 && char.IsLetterOrDigit(texto[i - 1]))
+                continue;
+            foreach (var parte in partes)
+            {
+                if (!plano.AsSpan(i).StartsWith(parte, StringComparison.Ordinal))
+                    continue;
+                for (var k = i; k < i + parte.Length; k++)
+                    marca[k] = true;
+                break;
+            }
+        }
+        var inicio = 0;
+        for (var i = 1; i <= texto.Length; i++)
+        {
+            if (i < texto.Length && marca[i] == marca[inicio])
+                continue;
+            yield return (texto[inicio..i], marca[inicio]);
+            inicio = i;
+        }
+    }
 
     /// <summary>Vacía el cuadro de captura, también en la pantalla nueva, donde no está enlazado.</summary>
     private void VaciarCaptura()
@@ -921,6 +1150,19 @@ else
                 await Cerrar();
             return;
         }
+
+        // Con un nombre en el cuadro, ↑ ↓ recorren los resultados (si se teclearon antes de que salieran, se busca ya).
+        if (_pantallaNueva && tecla is "ArrowUp" or "ArrowDown" && texto is not null && EsTextoDeBusqueda(SepararCantidad(texto).Texto))
+        {
+            if (_resultados is null || SepararCantidad(texto).Texto != _textoBuscado)
+                await BuscarMientrasEscribeAsync(texto);
+            MoverResultado(tecla == "ArrowUp" ? -1 : 1);
+            StateHasChanged();
+            return;
+        }
+        // Cualquier otra tecla (Esc, F12, F6…) cierra la lista.
+        if (_resultados is not null)
+            CerrarResultados();
 
         // Las teclas que actúan sobre el ticket esperan a que termine el último escaneo: F12 no abre el cobro sin la
         // última línea, ni F6 manda un escaneo al ticket nuevo.
@@ -1012,6 +1254,12 @@ else
         try
         {
             var producto = await Cliente.PorCodigoAsync(texto, Caja.SucursalId);
+            if (producto is null && _pantallaNueva && PareceNombre(texto))
+            {
+                // En la pantalla nueva el nombre se busca aquí mismo: Enter agrega el primero de la lista («3*cuad» también).
+                await AgregarPrimeroAsync(texto, cantidad);
+                return;
+            }
             if (producto is null && asterisco < 0 && PareceNombre(texto))
             {
                 // Como en eleventa, se escribe el nombre donde va el código: se busca por nombre en vez de ofrecer el alta.

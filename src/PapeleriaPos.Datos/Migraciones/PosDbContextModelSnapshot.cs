@@ -30,6 +30,39 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("Secuencias");
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Busqueda", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CajaId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("FechaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Resultados")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Texto")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("VarianteId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FechaUtc");
+
+                    b.HasIndex("VarianteId");
+
+                    b.HasIndex("CajaId", "Texto");
+
+                    b.ToTable("Busquedas", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.CodigoBarras", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2900,6 +2933,20 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasIndex("VentaId");
 
                     b.ToTable("VentasLineas", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Busqueda", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Turnos.Caja", null)
+                        .WithMany()
+                        .HasForeignKey("CajaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
+                        .WithMany()
+                        .HasForeignKey("VarianteId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.CodigoBarras", b =>

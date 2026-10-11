@@ -80,6 +80,7 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<CapturaConteo> CapturasConteo => Set<CapturaConteo>();
     public DbSet<ConteoDepartamentoRenglon> ConteosDepartamentoRenglones => Set<ConteoDepartamentoRenglon>();
     public DbSet<RenglonHojaCodigos> HojaCodigos => Set<RenglonHojaCodigos>();
+    public DbSet<Busqueda> Busquedas => Set<Busqueda>();
 
     /// <summary>Reloj para <see cref="IVersionado.ModificadoUtc"/> y el historial de precios; las pruebas lo fijan.</summary>
     public TimeProvider Reloj { get; init; } = TimeProvider.System;

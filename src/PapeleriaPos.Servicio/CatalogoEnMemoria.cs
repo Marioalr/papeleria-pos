@@ -3,6 +3,7 @@ using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Servicio;
 
@@ -14,15 +15,81 @@ public sealed class CatalogoEnMemoria
 {
     private sealed record Articulo(
         Guid VarianteId, string Descripcion, string? Codigo, string Normalizado, Impuesto Impuesto, UnidadBase Unidad, bool LlevaInventario,
-        List<PresentacionDto> Presentaciones, List<PrecioDto> Precios);
+        List<PresentacionDto> Presentaciones, List<PrecioDto> Precios)
+    {
+        /// <summary>
+        /// Las palabras del nombre, la marca y los códigos: cada pedazo escrito tiene que ser el principio de una. Van
+        /// tal cual («3/4», «LIB-01») y también partidas en lo que no es letra ni número («(azul)» → «azul»).
+        /// </summary>
+        public string[] Palabras { get; } = Normalizado.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Concat(System.Text.RegularExpressions.Regex.Split(Normalizado, @"[^\p{L}\p{N}]+"))
+            .Where(p => p.Length > 0).Distinct().ToArray();
+    }
 
     private sealed record Indice(long Version, Dictionary<Guid, Articulo> PorVariante, Dictionary<string, (Guid Variante, Guid Presentacion)> PorCodigo);
 
     private Indice _indice = new(-1, [], []);
     private readonly SemaphoreSlim _recarga = new(1, 1);
 
+    /// <summary>
+    /// Cuántas veces se vendió cada variante en los últimos 90 días (lo de eleventa y lo del POS): ordena la búsqueda
+    /// cuando el texto no distingue. Se calcula una vez al día, para que el orden no cambie a cada rato.
+    /// </summary>
+    private (DateTime Hasta, Dictionary<Guid, int> Veces) _vendidos = (DateTime.MinValue, []);
+
+    /// <summary>Lo último que eligió cada caja con cada texto (normalizado): sale primero la vez siguiente.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(Guid Caja, string Texto), Guid> _elegido = new();
+    private bool _elegidoCargado;
+
     /// <summary>La base cambió entera (la prueba empezó de cero): se vuelve a cargar aunque la versión coincida.</summary>
-    public void Invalidar() => _indice = new(-1, [], []);
+    public void Invalidar()
+    {
+        _indice = new(-1, [], []);
+        _vendidos = (DateTime.MinValue, []);
+        _elegido.Clear();
+        _elegidoCargado = false;
+    }
+
+    /// <summary>La clave de «lo elegido antes»: lo escrito sin acentos, mayúsculas ni espacios de más.</summary>
+    public static string ClaveDeBusqueda(string texto) => Texto.Normalizar(texto);
+
+    /// <summary>Lo que eligió una caja con un texto: la próxima vez sale primero.</summary>
+    public void Aprender(Guid cajaId, string texto, Guid varianteId) => _elegido[(cajaId, ClaveDeBusqueda(texto))] = varianteId;
+
+    private async Task CargarElegidoAsync(PosDbContext db, CancellationToken ct)
+    {
+        if (_elegidoCargado)
+            return;
+        // Lo más reciente de cada caja y texto gana: se recorre en orden de fecha.
+        var elegidas = await db.Busquedas.AsNoTracking().Where(b => b.VarianteId != null).OrderBy(b => b.FechaUtc)
+            .Select(b => new { b.CajaId, b.Texto, b.VarianteId }).ToListAsync(ct);
+        foreach (var b in elegidas)
+            _elegido[(b.CajaId, b.Texto)] = b.VarianteId!.Value;
+        _elegidoCargado = true;
+    }
+
+    private async Task<Dictionary<Guid, int>> VendidosAsync(PosDbContext db, CancellationToken ct)
+    {
+        var ahora = DateTime.UtcNow;
+        if (ahora < _vendidos.Hasta)
+            return _vendidos.Veces;
+        var desde = ahora.AddDays(-90);
+        var historicas = await (from l in db.VentasHistoricasLineas
+                                join v in db.VentasHistoricas on l.VentaHistoricaId equals v.Id
+                                where !v.Cancelada && v.FechaUtc >= desde
+                                group l by l.VarianteId into g
+                                select new { Variante = g.Key, Veces = g.Count() }).ToListAsync(ct);
+        var delPos = await (from l in db.VentasLineas
+                            join v in db.Ventas on l.VentaId equals v.Id
+                            where v.Estado == EstadoVenta.Pagada && v.CreadaUtc >= desde && l.VarianteId != null
+                            group l by l.VarianteId into g
+                            select new { Variante = g.Key!.Value, Veces = g.Count() }).ToListAsync(ct);
+        var veces = historicas.ToDictionary(x => x.Variante, x => x.Veces);
+        foreach (var x in delPos)
+            veces[x.Variante] = veces.GetValueOrDefault(x.Variante) + x.Veces;
+        _vendidos = (ahora.AddDays(1), veces);
+        return veces;
+    }
 
     private async Task<Indice> ActualAsync(PosDbContext db, CancellationToken ct)
     {
@@ -101,21 +168,32 @@ public sealed class CatalogoEnMemoria
     }
 
     /// <summary>
-    /// Por nombre, código o marca, sin importar acentos ni el orden de las palabras: cada palabra tiene que aparecer.
-    /// Primero el código exacto, luego lo que empieza con lo escrito.
+    /// Por nombre, código o marca, sin importar acentos ni el orden de las palabras: cada pedazo escrito es el principio
+    /// de una palabra («lus az» = Papel lustre azul). El orden: el código exacto; lo que esa caja eligió antes con el
+    /// mismo texto; lo que empieza con lo escrito; lo más vendido en 90 días (docs/propuesta-interfaz.md).
     /// </summary>
-    public async Task<List<ResultadoBusquedaDto>> BuscarAsync(PosDbContext db, string texto, Guid sucursalId, int maximo = 30, CancellationToken ct = default)
+    public async Task<List<ResultadoBusquedaDto>> BuscarAsync(PosDbContext db, string texto, Guid sucursalId, int maximo = 30, CancellationToken ct = default,
+        Guid? cajaId = null)
     {
-        var palabras = Texto.Normalizar(texto).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var consulta = ClaveDeBusqueda(texto);
+        var palabras = consulta.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (palabras.Length == 0)
             return [];
 
         var indice = await ActualAsync(db, ct);
-        var consulta = Texto.Normalizar(texto);
+        var vendidos = await VendidosAsync(db, ct);
+        Guid? elegido = null;
+        if (cajaId is { } caja)
+        {
+            await CargarElegidoAsync(db, ct);
+            elegido = _elegido.TryGetValue((caja, consulta), out var v) ? v : null;
+        }
         var encontrados = indice.PorVariante.Values
-            .Where(a => palabras.All(a.Normalizado.Contains))
+            .Where(a => palabras.All(p => a.Palabras.Any(w => w.StartsWith(p, StringComparison.Ordinal))))
             .OrderByDescending(a => a.Codigo is not null && string.Equals(a.Codigo, texto.Trim(), StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(a => a.VarianteId == elegido)
             .ThenByDescending(a => a.Normalizado.StartsWith(consulta, StringComparison.Ordinal))
+            .ThenByDescending(a => vendidos.GetValueOrDefault(a.VarianteId))
             .ThenBy(a => a.Descripcion, StringComparer.CurrentCultureIgnoreCase)
             .Take(maximo)
             .ToList();

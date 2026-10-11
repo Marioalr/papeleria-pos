@@ -284,8 +284,15 @@ impresiones, ni el mostrador y la temporada. Llegan con las entregas que siguen.
 - el panel del total con F12 y el cobro en efectivo;
 - los tickets en espera con sus fichas, F6 y F5.
 
-Falta la búsqueda debajo del cuadro (pedazos de palabra, lo más vendido y lo elegido antes), guardar lo que se busca y
-que los tickets en espera sobrevivan a un reinicio de la caja.
+La segunda parte, la búsqueda debajo del cuadro, también:
+- pedazos de palabra en cualquier orden, con lo escrito resaltado;
+- primero lo que esa caja eligió antes con el mismo texto, luego lo más vendido en 90 días;
+- ↑ ↓ y Enter, o clic, y `3*texto` para la cantidad;
+- Enter sin elegir agrega el primero;
+- cada búsqueda se guarda (tabla `Busquedas`), también las que no encontraron nada.
+
+Falta que los tickets en espera sobrevivan a un reinicio de la caja. El nombre de eleventa como sinónimo llega cuando
+la limpieza del catálogo cambie nombres; mientras tanto, los nombres son los mismos de eleventa.
 
 #### Después: el piloto en la caja 2
 
