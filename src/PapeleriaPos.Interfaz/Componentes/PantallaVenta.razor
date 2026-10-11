@@ -174,11 +174,48 @@
                             }
                         </span>
                     }
+                    @* Los tickets en espera, sin límite: unas fichas a la vista y los demás en «Más», en orden de llegada (F5 retoma el primero). *@
                     <span class="vn-espera">
-                        @foreach (var enEspera in EnEspera)
+                        @{
+                            var esperan = EnEspera.ToList();
+                        }
+                        @for (var k = 0; k < Math.Min(FichasEnEspera, esperan.Count); k++)
                         {
-                            <button class="vn-ficha" title="En espera desde las @Desde(enEspera), @Formato.Numero(enEspera.Venta.NumeroDeArticulos) artículos. Al retomarlo, el ticket actual pasa a la espera"
-                                    @onclick="() => Retomar(enEspera)"><Ico Nombre="reloj" />@Desde(enEspera) · @Formato.Dinero(enEspera.Venta.TotalCentavos)</button>
+                            var enEspera = esperan[k];
+                            <button class="vn-ficha" title="@TituloEspera(enEspera, k == 0)" @onclick="() => Retomar(enEspera)"><Ico Nombre="pausa" />@Desde(enEspera) · @Formato.Dinero(enEspera.Venta.TotalCentavos)</button>
+                        }
+                        @if (esperan.Count > FichasEnEspera)
+                        {
+                            var resto = esperan.Skip(FichasEnEspera).ToList();
+                            <span class="vn-mas-espera">
+                                <button class="vn-boton chico @(_menuEspera ? "on" : "")" aria-expanded="@(_menuEspera ? "true" : "false")" title="Los otros @resto.Count tickets en espera"
+                                        @onclick="() => _menuEspera = !_menuEspera">Más (@resto.Count) <Ico Nombre="abajo" /></button>
+                                @if (_menuEspera)
+                                {
+                                    <div class="vn-fondo-menu" @onclick="() => _menuEspera = false"></div>
+                                    <div class="vn-menu-espera" role="menu">
+                                        @* Con muchos, flechas arriba y abajo: deslizan la lista al pasar el mouse o con un clic (caja.js). *@
+                                        @if (resto.Count > FilasDelMenu)
+                                        {
+                                            <button class="vn-menu-flecha apagada" data-rodar="-1" aria-label="Más arriba" title="Más arriba: pasa el mouse o haz clic"><Ico Nombre="arriba" /></button>
+                                        }
+                                        <div class="vn-menu-lista" id="lista-espera">
+                                            @foreach (var enEspera in resto)
+                                            {
+                                                <button class="vn-fila-espera" role="menuitem" title="@TituloEspera(enEspera, false)" @onclick="() => Retomar(enEspera)">
+                                                    <Ico Nombre="pausa" />
+                                                    <span><strong>@Desde(enEspera)</strong><small>@ArticulosTexto(enEspera.Venta)</small></span>
+                                                    <em>@Formato.Dinero(enEspera.Venta.TotalCentavos)</em>
+                                                </button>
+                                            }
+                                        </div>
+                                        @if (resto.Count > FilasDelMenu)
+                                        {
+                                            <button class="vn-menu-flecha" data-rodar="1" aria-label="Más abajo" title="Más abajo: pasa el mouse o haz clic"><Ico Nombre="abajo" /></button>
+                                        }
+                                    </div>
+                                }
+                            </span>
                         }
                         <button class="vn-boton chico" disabled="@(Actual.Venta.Lineas.Count == 0)" title="Guarda este ticket y empieza otro" @onclick="PonerEnEspera"><Ico Nombre="pausa" />Poner en espera <kbd>F6</kbd></button>
                     </span>
@@ -389,45 +426,85 @@
                         {
                             var aCobrar = EnEfectivo.ACobrarCentavos;
                             <div class="vn-separa"></div>
-                            @if (EnEfectivo.RedondeoCentavos != 0)
+                            @if (aCobrar > 0 && EnEfectivo.RedondeoCentavos != 0)
                             {
                                 <div class="vn-linea"><span>En efectivo, al peso</span><strong>@Formato.Dinero(aCobrar)</strong></div>
                             }
-                            @if (Actual.Cliente is null)
+                            @* Tarjeta, transferencia o crédito: cada una en su renglón, con lo que faltaba; el efectivo cubre el resto. *@
+                            @for (var k = 0; k < _otras.Count; k++)
                             {
-                                <div class="vn-pago-cab">
-                                    <label for="pago-nuevo">Pagó con</label>
-                                    <span class="vn-formas">
-                                        <button class="vn-forma" title="Con tarjeta, o una parte: abre el cobro de hoy" @onclick="() => AbrirCobroAsync(FormaPago.Tarjeta)"><Ico Nombre="tarjeta" />Tarjeta</button>
-                                        <button class="vn-forma" title="Por transferencia, o una parte: abre el cobro de hoy" @onclick="() => AbrirCobroAsync(FormaPago.Transferencia)"><Ico Nombre="transferir" />Transf.</button>
-                                    </span>
-                                </div>
-                                <input id="pago-nuevo" data-pago inputmode="decimal" autocomplete="off" placeholder="@Formato.Dinero(aCobrar)"
-                                       @bind="_pagoCon" @bind:event="oninput" @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
-                                @if (_pagoCon.Trim().Length > 0)
-                                {
-                                    @if (PagoConCentavos is null)
+                                var otra = _otras[k];
+                                <div class="vn-pago-fila" @key="otra">
+                                    <div class="forma">
+                                        <span>@NombreDeForma(otra.Forma)</span>
+                                        @if (otra.Forma == FormaPago.Transferencia)
+                                        {
+                                            <small>queda por verificar</small>
+                                        }
+                                    </div>
+                                    <label>Monto
+                                        <input id="pago-monto-@k" data-pago inputmode="decimal" autocomplete="off" @bind="otra.Monto" @bind:event="oninput"
+                                               @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
+                                    </label>
+                                    @if (otra.Forma == FormaPago.Credito)
                                     {
-                                        <div class="vn-vivo falta"><span>«@_pagoCon» no es una cantidad</span></div>
-                                    }
-                                    else if (Recibido >= aCobrar)
-                                    {
-                                        <div class="vn-vivo"><span>Cambio</span><strong>@Formato.Dinero(Recibido - aCobrar)</strong></div>
+                                        <span class="nota">@NotaDeCredito</span>
                                     }
                                     else
                                     {
-                                        <div class="vn-vivo falta"><span>Faltan</span><strong>@Formato.Dinero(aCobrar - Recibido)</strong></div>
+                                        <label>Referencia
+                                            <input data-pago autocomplete="off" title="@(otra.Forma == FormaPago.Tarjeta ? "La de la terminal" : "La de la transferencia")" @bind="otra.Referencia" @bind:event="oninput"
+                                                   @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
+                                        </label>
                                     }
-                                }
-                                <button class="vn-cobrar" disabled="@(_cobrando || PagoConCentavos is null && _pagoCon.Trim().Length > 0 || Recibido < aCobrar)" @onclick="CobrarEnPanelAsync">
-                                    @(Recibido < aCobrar ? "Falta dinero" : _pagoCon.Trim().Length == 0 ? $"Cobrar exacto {Formato.Dinero(aCobrar)}" : $"Cobrar · cambio {Formato.Dinero(Recibido - aCobrar)}")
-                                </button>
+                                    <button class="x" title="Quitar" aria-label="Quitar" @onclick="() => QuitarForma(otra)"><Ico Nombre="cerrar" /></button>
+                                </div>
                             }
-                            else
+                            @if (aCobrar > 0)
                             {
-                                <p class="nota">Con cliente registrado se cobra en la ventana de hoy, con su crédito o su saldo a favor.</p>
-                                <button class="vn-cobrar" @onclick="() => AbrirCobroAsync()">Cobrar <kbd>F12</kbd></button>
+                                <div class="vn-pago-cab">
+                                    <label for="pago-nuevo">Pagó con</label>
+                                    @FormasDePago
+                                </div>
+                                <input id="pago-nuevo" data-pago inputmode="decimal" autocomplete="off" placeholder="@Formato.Dinero(aCobrar)"
+                                       @bind="_pagoCon" @bind:event="oninput" @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
                             }
+                            else if (FormasQueFaltan.Any())
+                            {
+                                <div class="vn-pago-cab"><span class="nota">Otra forma</span>@FormasDePago</div>
+                            }
+                            @if (ErrorDeLasFormas is { } errorFormas)
+                            {
+                                <div class="vn-vivo falta"><span>@errorFormas</span></div>
+                            }
+                            else if (aCobrar == 0)
+                            {
+                                <div class="vn-vivo"><span>Cubierto con @(_otras.Count == 1 ? "otra forma" : "otras formas")</span><strong>@Formato.Dinero(0)</strong></div>
+                            }
+                            else if (_pagoCon.Trim().Length > 0)
+                            {
+                                @if (PagoConCentavos is null)
+                                {
+                                    <div class="vn-vivo falta"><span>«@_pagoCon» no es una cantidad</span></div>
+                                }
+                                else if (Recibido >= aCobrar)
+                                {
+                                    <div class="vn-vivo"><span>Cambio</span><strong>@Formato.Dinero(Recibido - aCobrar)</strong></div>
+                                }
+                                else
+                                {
+                                    <div class="vn-vivo falta"><span>Faltan</span><strong>@Formato.Dinero(aCobrar - Recibido)</strong></div>
+                                }
+                            }
+                            @if (ExcesoDeCredito > 0 && ConCredito)
+                            {
+                                <div class="vn-alerta">
+                                    <Ico Nombre="candado" />
+                                    <div><span>Pasa su límite de crédito por <strong>@Formato.Dinero(ExcesoDeCredito)</strong>@AutorizaExceso</span></div>
+                                </div>
+                            }
+                            <button id="cobrar-nuevo" class="vn-cobrar" disabled="@(_cobrando || ErrorDelCobro is not null)" @onclick="CobrarEnPanelAsync"
+                                    @onfocus="() => _enPago = true" @onblur="() => _enPago = false">@EtiquetaDeCobrar</button>
                         }
                     </div>
                     @if (_efectivo is { PideRetiro: true } efectivoN)
@@ -683,7 +760,7 @@ else
     {
         Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
         CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, Productos, AltaRapida, Inventario, Conteo, Mayoreo, ElegirCliente, Clientes,
-        AutorizarCosto, Abono,
+        AutorizarCosto, Abono, AutorizarCredito,
     }
 
     /// <summary>
@@ -696,12 +773,10 @@ else
         Ventanas.Cobrar, Ventanas.AutorizarCosto, Ventanas.Comun, Ventanas.Entrada, Ventanas.Salida, Ventanas.Mayoreo, Ventanas.Verificador,
         Ventanas.VentasDelDia, Ventanas.Devolucion, Ventanas.CambiarPrecio, Ventanas.Impresiones, Ventanas.AltaRapida, Ventanas.Descuento,
         Ventanas.ElegirCliente, Ventanas.Abono, Ventanas.Cotizar, Ventanas.Motivo, Ventanas.VistaPrevia, Ventanas.Transferencias,
+        Ventanas.AutorizarCredito,
     ];
 
     private bool VaEnPanel => _pantallaNueva && VentanasEnPanel.Contains(_ventana);
-
-    /// <summary>Con qué forma abre el cobro de hoy (null: en efectivo).</summary>
-    private FormaPago? _cobroEmpieza;
 
     /// <summary>F10 en la pantalla nueva: el cursor al cuadro, donde salen los resultados al escribir.</summary>
     private void Buscar()
@@ -1033,7 +1108,18 @@ else
     /// <summary>Los tickets en espera: los que tienen algo y no son el que se atiende, en el orden en que se apartaron.</summary>
     private IEnumerable<TicketAbierto> EnEspera => _tickets.Where(t => t != Actual && t.Venta.Lineas.Count > 0);
 
+    /// <summary>Cuántos se ven como ficha junto a «Poner en espera»; los demás van en «Más».</summary>
+    private const int FichasEnEspera = 3;
+
+    /// <summary>Con más de estos en «Más», el menú lleva flechas arriba y abajo.</summary>
+    private const int FilasDelMenu = 5;
+
+    private bool _menuEspera;
+
     private static string Desde(TicketAbierto ticket) => HoraMexico.ALocal(ticket.Venta.CreadaUtc).ToString("HH:mm");
+
+    private static string TituloEspera(TicketAbierto ticket, bool primero) =>
+        $"En espera desde las {Desde(ticket)}, {ArticulosTexto(ticket.Venta)}. Retomar{(primero ? " (F5)" : "")}: el ticket actual pasa a la espera";
 
     /// <summary>F6: guarda este ticket y deja la caja lista para el siguiente cliente.</summary>
     private void PonerEnEspera()
@@ -1044,7 +1130,6 @@ else
             return;
         }
         NuevoTicket();
-        _pagoCon = "";
         Avisar("Ticket en espera. Atiende al siguiente; lo retomas arriba o con F5.", error: false);
     }
 
@@ -1053,10 +1138,10 @@ else
     {
         // Ya empezó el siguiente cliente: el cambio del anterior deja el panel.
         _cobrado = null;
+        _menuEspera = false;
         if (Actual.Venta.Lineas.Count == 0 && Actual != ticket)
             _tickets.Remove(Actual);
         Cambiar(ticket);
-        _pagoCon = "";
         _enfocar = "#codigo";
         Avisar($"Retomaste el ticket de las {Desde(ticket)}.", error: false);
     }
@@ -1086,26 +1171,201 @@ else
     private bool _enPago;
     private bool _cobrando;
 
-    private EfectivoACobrar EnEfectivo => Actual.Venta.Efectivo(0);
+    /// <summary>Tarjeta, transferencia o crédito en el panel del total: cada una en su renglón.</summary>
+    private sealed class OtraForma(FormaPago forma, string monto)
+    {
+        public FormaPago Forma { get; } = forma;
+        public string Monto { get; set; } = monto;
+        public string Referencia { get; set; } = "";
+
+        /// <summary>Vacío cuenta como cero; lo que no es una cantidad, null.</summary>
+        public long? Centavos => Monto.Trim().Length == 0 ? 0 : Formato.LeerPesos(Monto);
+    }
+
+    private readonly List<OtraForma> _otras = [];
+
+    /// <summary>Lo que va con tarjeta, transferencia y crédito: no da cambio.</summary>
+    private long Otros => _otras.Sum(o => o.Centavos ?? 0);
+
+    private long CreditoDelPanel => _otras.Where(o => o.Forma == FormaPago.Credito).Sum(o => o.Centavos ?? 0);
+
+    /// <summary>Lo que falta en efectivo después de las otras formas, al peso.</summary>
+    private EfectivoACobrar EnEfectivo => Actual.Venta.Efectivo(Otros);
 
     private long? PagoConCentavos => _pagoCon.Trim().Length == 0 ? EnEfectivo.ACobrarCentavos : Formato.LeerPesos(_pagoCon);
 
     private long Recibido => PagoConCentavos ?? 0;
 
+    /// <summary>Con crédito, o con saldo a favor que se puede usar. Lo dice la cuenta (igual que el servicio), no el cliente.</summary>
+    private bool PuedeFiar => Actual.Cliente is not null && Actual.Cuenta is { } cuenta && (cuenta.LimiteCentavos > 0 || cuenta.AFavorCentavos > 0);
+
+    private bool ConCredito => Actual.Cliente is not null && Actual.Cuenta is { LimiteCentavos: > 0 };
+
+    private long ExcesoDeCredito => PuedeFiar ? Actual.Cuenta!.Exceso(CreditoDelPanel) : 0;
+
+    private void LimpiarCobro()
+    {
+        _pagoCon = "";
+        _otras.Clear();
+        _enPago = false;
+    }
+
+    /// <summary>Las otras formas que todavía no tienen renglón: una de cada una; el crédito, solo con quien puede fiar.</summary>
+    private IEnumerable<FormaPago> FormasQueFaltan =>
+        new[] { FormaPago.Tarjeta, FormaPago.Transferencia, FormaPago.Credito }
+            .Where(f => f != FormaPago.Credito || PuedeFiar)
+            .Where(f => _otras.All(o => o.Forma != f));
+
+    /// <summary>Tarjeta, transferencia y crédito, chicos junto a «Pagó con»: cada uno agrega su renglón con lo que falta.</summary>
+    private RenderFragment FormasDePago => @<span class="vn-formas">
+        @foreach (var forma in FormasQueFaltan)
+        {
+            var esta = forma;
+            <button class="vn-forma" title="@TituloDeForma(esta)" @onclick="() => AgregarFormaAsync(esta)"><Ico Nombre="@IconoDeForma(esta)" />@EtiquetaDeForma(esta)</button>
+        }
+    </span>;
+
+    private string EtiquetaDeForma(FormaPago forma) => forma switch
+    {
+        FormaPago.Tarjeta => "Tarjeta",
+        FormaPago.Transferencia => "Transf.",
+        _ => ConCredito ? "Crédito" : "A favor",
+    };
+
+    private string TituloDeForma(FormaPago forma) => forma switch
+    {
+        FormaPago.Tarjeta => "Todo o una parte con tarjeta (terminal)",
+        FormaPago.Transferencia => "Todo o una parte por transferencia",
+        _ => ConCredito ? $"Todo o una parte a crédito de {Actual.Cliente?.Nombre}" : "Todo o una parte de su saldo a favor",
+    };
+
+    private static string IconoDeForma(FormaPago forma) => forma switch
+    {
+        FormaPago.Tarjeta => "tarjeta",
+        FormaPago.Transferencia => "transferir",
+        _ => "reloj",
+    };
+
+    private string NombreDeForma(FormaPago forma) => forma switch
+    {
+        FormaPago.Tarjeta => "Tarjeta (terminal)",
+        FormaPago.Transferencia => "Transferencia",
+        _ => ConCredito ? $"A crédito de {Actual.Cliente?.Nombre}" : "De su saldo a favor",
+    };
+
+    /// <summary>Junto a lo que se fía: lo que debe y lo que le queda, o lo que tiene a favor.</summary>
+    private string NotaDeCredito
+    {
+        get
+        {
+            if (Actual.Cuenta is not { } cuenta)
+                return "";
+            var nota = ConCredito
+                ? $"Debe {Formato.Dinero(Math.Max(0, cuenta.SaldoCentavos))} · le quedan {Formato.Dinero(Math.Max(0, cuenta.DisponibleCentavos))}"
+                : $"Tiene {Formato.Dinero(cuenta.AFavorCentavos)} a favor"
+                  + (cuenta.PorVerificarCentavos > 0 ? $"; puede usar {Formato.Dinero(Math.Max(0, cuenta.DisponibleCentavos))}" : "");
+            return cuenta.Estimado ? nota + " (según esta caja)" : nota;
+        }
+    }
+
+    /// <summary>«: lo autoriza Luis.», según lo que puede quien entró.</summary>
+    private string AutorizaExceso => Permiso(AccionControlada.ExcederLimiteCredito) switch
+    {
+        { Nivel: NivelPermiso.RequiereAutorizacion } p => $": lo autoriza {Quien(p)}.",
+        { Nivel: NivelPermiso.NoPermitido } => ": no tienes permiso para fiar arriba del límite.",
+        { Nivel: NivelPermiso.Permitido, UmbralCentavos: { } umbral } p when ExcesoDeCredito > umbral => $": lo autoriza {Quien(p)}.",
+        _ => ".",
+    };
+
+    /// <summary>La forma nueva trae lo que falta (del saldo a favor, hasta lo que puede usar); se cambia si es solo una parte.</summary>
+    private async Task AgregarFormaAsync(FormaPago forma)
+    {
+        if (forma == FormaPago.Credito)
+        {
+            // La cuenta al día antes de fiar: otra caja pudo fiarle o recibirle un abono.
+            await CargarCuentaAsync(Actual);
+            if (!PuedeFiar)
+            {
+                Avisar("Ya no tiene crédito ni saldo a favor que usar: se cobra con otra forma.");
+                return;
+            }
+        }
+        var falta = Math.Max(0, Actual.Venta.TotalCentavos - Otros);
+        if (forma == FormaPago.Credito && !ConCredito)
+            falta = Math.Min(falta, Math.Max(0, Actual.Cuenta!.DisponibleCentavos));
+        _otras.Add(new OtraForma(forma, (falta / 100m).ToString("0.00", CultureInfo.InvariantCulture)));
+        _pagoCon = "";
+        _enfocar = $"#pago-monto-{_otras.Count - 1}";
+    }
+
+    private void QuitarForma(OtraForma otra)
+    {
+        _otras.Remove(otra);
+        _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
+    }
+
+    /// <summary>Lo que impide cobrar en los renglones de las otras formas.</summary>
+    private string? ErrorDeLasFormas
+    {
+        get
+        {
+            if (_otras.FirstOrDefault(o => o.Centavos is null) is { } mala)
+                return $"«{mala.Monto}» no es una cantidad";
+            if (_otras.Any(o => o.Forma == FormaPago.Credito) && !PuedeFiar)
+                return "Sin un cliente con crédito o saldo a favor no se fía: quita ese renglón";
+            if (Otros > Actual.Venta.TotalCentavos)
+                return "Tarjeta, transferencia y crédito no pueden pasar del total: no dan cambio";
+            if (ExcesoDeCredito > 0 && !ConCredito)
+                return $"No tiene crédito: solo puede usar su saldo a favor ({Formato.Dinero(Math.Max(0, Actual.Cuenta!.DisponibleCentavos))})";
+            return null;
+        }
+    }
+
+    /// <summary>Lo que impide cobrar ya, o null.</summary>
+    private string? ErrorDelCobro
+    {
+        get
+        {
+            if (ErrorDeLasFormas is { } error)
+                return error + ".";
+            var aCobrar = EnEfectivo.ACobrarCentavos;
+            if (aCobrar == 0)
+                return null;
+            if (PagoConCentavos is null)
+                return $"«{_pagoCon}» no es una cantidad.";
+            return Recibido < aCobrar ? $"Faltan {Formato.Dinero(aCobrar - Recibido)}." : null;
+        }
+    }
+
+    private string EtiquetaDeCobrar
+    {
+        get
+        {
+            var aCobrar = EnEfectivo.ACobrarCentavos;
+            if (ErrorDeLasFormas is not null)
+                return "Cobrar";
+            if (aCobrar == 0)
+                return $"Cobrar {Formato.Dinero(Otros)}";
+            if (PagoConCentavos is not { } recibido)
+                return "Cobrar";
+            if (recibido < aCobrar)
+                return "Falta dinero";
+            return _pagoCon.Trim().Length == 0 ? $"Cobrar exacto {Formato.Dinero(aCobrar + Otros)}" : $"Cobrar · cambio {Formato.Dinero(recibido - aCobrar)}";
+        }
+    }
+
     /// <summary>
-    /// F12: el cursor va a «Pagó con» y lo demás se apaga. Con un cliente registrado (su crédito, su saldo a favor), el
-    /// cobro de hoy. Con el cursor ya en «Pagó con», F12 cobra como Enter.
+    /// F12: el cursor va a «Pagó con» y lo demás se apaga; si las otras formas ya lo cubren todo, a «Cobrar». Con el
+    /// cursor ya en el cobro, F12 cobra como Enter.
     /// </summary>
     private async Task IrAlCobroAsync()
     {
         if (Actual.Venta.Lineas.Count == 0)
             return;
-        if (Actual.Cliente is not null)
-            await AbrirCobroAsync();
-        else if (_enPago)
+        if (_enPago)
             await CobrarEnPanelAsync();
         else
-            _enfocar = "#pago-nuevo";
+            _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
     }
 
     private async Task AlTeclearPago(KeyboardEventArgs e)
@@ -1114,39 +1374,76 @@ else
             await CobrarEnPanelAsync();
     }
 
-    /// <summary>Enter en «Pagó con»: sin escribir nada, exacto; con lo que dio, da el cambio. Todo en efectivo.</summary>
+    /// <summary>
+    /// Enter en el cobro: sin escribir nada, exacto; con lo que dio, da el cambio. Con tarjeta, transferencia o crédito,
+    /// cada una con su monto y el efectivo por lo que falta. Fiar arriba del límite se autoriza en el panel.
+    /// </summary>
     private async Task CobrarEnPanelAsync()
     {
         if (_cobrando || Actual.Venta.Lineas.Count == 0)
             return;
-        if (Actual.Cliente is not null)
+        if (ErrorDelCobro is { } error)
         {
-            await AbrirCobroAsync();
-            return;
-        }
-        var aCobrar = EnEfectivo.ACobrarCentavos;
-        if (PagoConCentavos is null)
-        {
-            Avisar($"«{_pagoCon}» no es una cantidad.");
-            return;
-        }
-        if (Recibido < aCobrar)
-        {
-            Avisar($"Faltan {Formato.Dinero(aCobrar - Recibido)}.");
+            Avisar(error);
             return;
         }
         if (!await RevisarCostoAsync())
             return;
+        // Pasar el límite: el cajero lo pide; el encargado y el dueño pueden solos. Sin crédito no hay autorización que valga.
+        if (ExcesoDeCredito is > 0 and var exceso)
+        {
+            try
+            {
+                var decision = await Cliente.PermisoAsync(new SolicitudPermiso(Sesion.UsuarioId, Caja.SucursalId, AccionControlada.ExcederLimiteCredito, exceso));
+                switch (decision.Nivel)
+                {
+                    case NivelPermiso.RequiereAutorizacion:
+                        _creditoPorAutorizar = exceso;
+                        await Abrir(Ventanas.AutorizarCredito);
+                        return;
+                    case NivelPermiso.NoPermitido:
+                        Avisar("No tienes permiso para fiar arriba del límite.");
+                        return;
+                }
+            }
+            catch (ErrorCaja ex)
+            {
+                Avisar(ex.Message);
+                return;
+            }
+        }
+        await MandarCobroAsync(null);
+    }
+
+    /// <summary>Lo que se fía arriba del límite y falta autorizar.</summary>
+    private long? _creditoPorAutorizar;
+
+    private async Task CreditoAutorizadoAsync(Guid autorizacionId)
+    {
+        _creditoPorAutorizar = null;
+        await Cerrar();
+        await MandarCobroAsync(autorizacionId);
+        StateHasChanged();
+    }
+
+    private async Task MandarCobroAsync(Guid? autorizacionCredito)
+    {
+        var cobros = new List<CobroSolicitado>();
+        foreach (var otra in _otras)
+            if (otra.Centavos is > 0 and var monto)
+                cobros.Add(otra.Forma == FormaPago.Credito
+                    ? new CobroSolicitado(FormaPago.Credito, monto)
+                    : new CobroSolicitado(otra.Forma, monto, otra.Referencia.Trim().Length == 0 ? null : otra.Referencia.Trim()));
+        if (EnEfectivo.ACobrarCentavos > 0)
+            cobros.Add(new CobroSolicitado(FormaPago.Efectivo, Recibido));
         _cobrando = true;
         try
         {
-            if (await CobrarAsync([new CobroSolicitado(FormaPago.Efectivo, Recibido)], null) is { } error)
+            // Si se cobró, el ticket nuevo ya dejó el cobro en blanco.
+            if (await CobrarAsync(cobros, autorizacionCredito) is { } error)
                 Avisar(error);
             else
-            {
-                _pagoCon = "";
                 _enfocar = "#codigo";
-            }
         }
         finally
         {
@@ -1499,11 +1796,12 @@ else
             StateHasChanged();
             return;
         }
-        // Cualquier otra tecla (Esc, F12, F6…) cierra la lista y el menú del usuario.
+        // Cualquier otra tecla (Esc, F12, F6…) cierra la lista, el menú del usuario y «Más».
         if (_resultados is not null)
             CerrarResultados();
         CerrarAcciones();
         _menuUsuario = false;
+        _menuEspera = false;
 
         // Las teclas que actúan sobre el ticket esperan a que termine el último escaneo: F12 no abre el cobro sin la
         // última línea, ni F6 manda un escaneo al ticket nuevo.
@@ -1831,6 +2129,7 @@ else
         _tickets.Add(new TicketAbierto { Numero = _siguienteNumero++, Venta = VentaVacia() });
         _actual = _tickets.Count - 1;
         _seleccion = -1;
+        LimpiarCobro();
         _ = Js.EnfocarAsync("#codigo");
         GuardarEspera();
     }
@@ -1839,6 +2138,7 @@ else
     {
         _actual = _tickets.IndexOf(ticket);
         _seleccion = Actual.Venta.Lineas.Count - 1;
+        LimpiarCobro();
         GuardarEspera();
     }
 
@@ -2113,10 +2413,8 @@ else
     /// F12: si el ticket lleva descuentos (el del cliente se pone solo al agregar), antes de cobrar se revisa que nada quede
     /// debajo del costo sin autorización; si falta, se pide aquí y no hasta que el cobro falle.
     /// </summary>
-    /// <param name="empieza">«Tarjeta» o «Transf.» de la pantalla nueva: el cobro abre con esa forma y el total en ella.</param>
-    private async Task AbrirCobroAsync(FormaPago? empieza = null)
+    private async Task AbrirCobroAsync()
     {
-        _cobroEmpieza = empieza;
         if (Actual.Venta.Lineas.Count == 0 || !await RevisarCostoAsync())
             return;
         await CargarCuentaAsync(Actual);
@@ -2161,11 +2459,11 @@ else
     {
         Actual.Venta.AutorizacionBajoCostoId = autorizacionId;
         _costoPorAutorizar = null;
-        // En la pantalla nueva, de regreso a «Pagó con» del panel: ahí se termina el cobro.
-        if (_pantallaNueva && Actual.Cliente is null)
+        // En la pantalla nueva, de regreso al panel del total, y se sigue con el cobro que se pidió (con lo que ya se escribió).
+        if (_pantallaNueva)
         {
             await Cerrar();
-            _enfocar = "#pago-nuevo";
+            await CobrarEnPanelAsync();
             StateHasChanged();
             return;
         }
@@ -2264,6 +2562,8 @@ else
     private async Task ClienteElegidoAsync(ClienteRegistradoDto? cliente)
     {
         Actual.Cliente = cliente;
+        // Lo que se iba a fiar era del cliente de antes.
+        _otras.RemoveAll(o => o.Forma == FormaPago.Credito);
         await Cerrar();
         await CargarCuentaAsync(Actual);
         Avisar(cliente is null ? "El ticket ya no tiene cliente." : $"Cliente: {ArmadoTicket.ClienteTexto(cliente)}.", error: false);
@@ -2418,7 +2718,14 @@ else
     {
         case Ventanas.Cobrar:
             <Ventana Titulo="Cobrar" Clase="cobrar" AlCerrar="Cerrar">
-                <CobrarVenta Venta="Actual.Venta" Caja="Caja" Sesion="Sesion" Cliente="Actual.Cliente" Cuenta="Actual.Cuenta" Empieza="_cobroEmpieza" AlCobrar="CobrarAsync" />
+                <CobrarVenta Venta="Actual.Venta" Caja="Caja" Sesion="Sesion" Cliente="Actual.Cliente" Cuenta="Actual.Cuenta" AlCobrar="CobrarAsync" />
+            </Ventana>
+            break;
+        case Ventanas.AutorizarCredito when _creditoPorAutorizar is { } exceso && Actual.Cliente is { } fiado:
+            <Ventana Titulo="Fiar arriba del límite" AlCerrar="Cerrar">
+                <AutorizarAccion Accion="AccionControlada.ExcederLimiteCredito" MontoCentavos="exceso" Caja="Caja" Sesion="Sesion"
+                                 Detalle="@($"Fiar {Formato.Dinero(CreditoDelPanel)} a «{fiado.Nombre}»; lo que pasa de su límite")"
+                                 AlAutorizar="a => CreditoAutorizadoAsync(a.Id)" AlCancelar="Cerrar" />
             </Ventana>
             break;
         case Ventanas.AutorizarCosto when _costoPorAutorizar is { } costo:
@@ -2565,6 +2872,7 @@ else
     private async Task Abrir(Ventanas ventana)
     {
         _menuUsuario = false;
+        _menuEspera = false;
         CerrarAcciones();
         _ventana = ventana;
         await Js.VentanaAbiertaAsync(true);
