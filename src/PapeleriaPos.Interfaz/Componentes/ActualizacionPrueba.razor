@@ -1,0 +1,346 @@
+@* Configuración › Actualización, solo en la caja de prueba: instalar otra versión de las que arma GitHub (.github/workflows/prueba.yml) sin ir a buscar el instalador. *@
+@implements IDisposable
+@inject GitHubPrueba GitHub
+@inject IEquipoPrueba Equipo
+
+<div class="actualizacion">
+    <p class="nota">
+        Esta es la caja de prueba. Aquí se instala otra de las versiones que arma GitHub, sin buscar el instalador a mano.
+        Los datos de la prueba y los tickets en espera se quedan.
+    </p>
+
+    <h4>Instalada</h4>
+    <p>@InstaladaTexto</p>
+
+    <h4>Token de GitHub</h4>
+    <p class="nota">
+        El repositorio es privado: hace falta un token «fine-grained» de GitHub (github.com › Settings › Developer settings ›
+        Personal access tokens) con acceso solo a <strong>papeleria-pos</strong> y estos permisos: <strong>Actions</strong> de
+        lectura (de lectura y escritura para armar versiones) y <strong>Contents</strong> de lectura (para ver qué cambió).
+        Se guarda cifrado en esta PC, solo para tu usuario de Windows.
+    </p>
+    <div class="actualizacion-token">
+        <label>Token
+            <input type="password" autocomplete="off" spellcheck="false" @bind="_tokenNuevo" @bind:event="oninput"
+                   placeholder="@(_hayToken ? "Ya hay uno guardado (escribe otro para cambiarlo)" : "github_pat_…")" />
+        </label>
+        <button class="boton" disabled="@(_tokenNuevo.Trim().Length == 0 || Ocupado)" @onclick="GuardarToken">Guardar token</button>
+        @if (_hayToken)
+        {
+            <button class="boton" disabled="@Ocupado" @onclick="QuitarToken">Quitar el token</button>
+        }
+    </div>
+    <div class="acciones izquierda">
+        <button class="boton principal" disabled="@(Ocupado || (!_hayToken && _tokenNuevo.Trim().Length == 0))" @onclick="BuscarAsync">
+            @(_fase == Fase.Buscando ? "Buscando…" : "Buscar actualización")
+        </button>
+    </div>
+
+    @if (_estado is { } estado)
+    {
+        @foreach (var armandose in estado.Armandose)
+        {
+            <p class="aviso-autorizacion">
+                Se está armando una versión de @armandose.Rama desde las @Hora(armandose.DesdeUtc) (tarda unos 15 minutos): vuelve a buscar después.
+            </p>
+        }
+        @if (MainSinArmar(estado))
+        {
+            <p class="actualizacion-armar">
+                main tiene cambios que todavía no están en un instalador.
+                <button class="boton chico" disabled="@Ocupado" @onclick="ArmarAsync">Armar una con lo último de main</button>
+            </p>
+        }
+        @if (estado.Versiones.Count == 0)
+        {
+            <p class="nota">No hay instaladores armados en GitHub (vencen a los 30 días).</p>
+        }
+        else
+        {
+            <table class="resultados actualizacion-versiones">
+                <thead>
+                    <tr><th>Versión</th><th>Armada</th><th>Cambio</th><th class="num">Tamaño</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var v in estado.Versiones)
+                    {
+                        var version = v;
+                        <tr class="@(v == _elegida ? "seleccionada" : "")">
+                            <td>@v.Nombre</td>
+                            <td>@Fecha(v.ArmadaUtc)</td>
+                            <td><code>@v.CommitCorto</code></td>
+                            <td class="num">@Megas(v.Bytes)</td>
+                            <td>
+                                @if (EsLaInstalada(v))
+                                {
+                                    <span class="nota">Instalada</span>
+                                }
+                                else
+                                {
+                                    <button class="boton chico" disabled="@Ocupado" @onclick="() => ElegirAsync(version)">Ver e instalar</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        @if (_elegida is null && estado.Versiones.FirstOrDefault(v => v.Rama == "main") is { } nueva && EsLaInstalada(nueva))
+        {
+            <p class="aviso">Ya tienes la versión más nueva de main.</p>
+        }
+    }
+
+    @if (_elegida is { } elegida)
+    {
+        <h4>@elegida.Nombre</h4>
+        @if (_cambios is { } cambios)
+        {
+            @if (cambios.Anterior)
+            {
+                <p class="aviso-autorizacion">
+                    Es anterior a la instalada o de otra rama: la caja vuelve a como estaba en esa versión. Si algo falla con la base, usa «Empezar de cero».
+                </p>
+            }
+            else if (cambios.Cambios.Count > 0)
+            {
+                <p>Lo que trae respecto a la instalada:</p>
+                <ul class="actualizacion-cambios">
+                    @foreach (var cambio in cambios.Cambios)
+                    {
+                        <li>@(cambio.Pr is { } pr ? $"#{pr} " : "")@cambio.Titulo</li>
+                    }
+                </ul>
+            }
+        }
+        <p>
+            Se bajan @Megas(elegida.Bytes), se revisa que lleguen completos y se instala. Windows pide permiso de administrador;
+            la caja se cierra sola y vuelve a abrir con la versión nueva. Si no das el permiso, todo sigue como estaba.
+        </p>
+        @if (_progreso is { } p)
+        {
+            <p>
+                <progress max="@p.Total" value="@p.Bajado"></progress>
+                Bajando… @(p.Total > 0 ? p.Bajado * 100 / p.Total : 0) % (@Megas(p.Bajado) de @Megas(p.Total))
+            </p>
+        }
+        <div class="acciones izquierda">
+            <button class="boton principal" disabled="@Ocupado" @onclick="InstalarAsync">Bajar e instalar @elegida.Nombre</button>
+            <button class="boton" @onclick="CancelarEleccion">@(_fase == Fase.Bajando ? "Cancelar la descarga" : "Cancelar")</button>
+        </div>
+    }
+
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_aviso is not null)
+    {
+        <p class="aviso">@_aviso</p>
+    }
+</div>
+
+@code {
+    /// <summary>Lo que hay que guardar antes de que el instalador cierre la caja (los tickets en espera).</summary>
+    [Parameter] public EventCallback AntesDeInstalar { get; set; }
+
+    private enum Fase { Nada, Buscando, Armando, Bajando, Instalando }
+
+    private readonly string? _instalado = GitHubPrueba.CommitInstalado();
+    private string _tokenNuevo = "";
+    private bool _hayToken;
+    private EstadoVersiones? _estado;
+    private VersionArmada? _elegida;
+    private CambiosEntre? _cambios;
+    private (long Bajado, long Total)? _progreso;
+    private Fase _fase;
+    private string? _error;
+    private string? _aviso;
+    private CancellationTokenSource? _descarga;
+
+    private bool Ocupado => _fase != Fase.Nada;
+
+    protected override void OnInitialized() => _hayToken = Equipo.LeerToken() is not null;
+
+    private string InstaladaTexto =>
+        _instalado is null ? "Sin dato de versión (compilada a mano)."
+        : _estado?.Versiones.FirstOrDefault(EsLaInstalada) is { } v ? $"{v.Nombre} · armada el {Fecha(v.ArmadaUtc)} · cambio {v.CommitCorto}"
+        : $"Compilada del cambio {_instalado[..Math.Min(7, _instalado.Length)]}.";
+
+    private bool EsLaInstalada(VersionArmada v) => _instalado is not null && string.Equals(v.Commit, _instalado, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>El último cambio de main no tiene instalador, y no se está armando ninguno de main.</summary>
+    private static bool MainSinArmar(EstadoVersiones e) =>
+        e.UltimoDeMain is { } main && e.Versiones.All(v => v.Commit != main) && e.Armandose.All(a => a.Rama != "main");
+
+    private static string Hora(DateTime utc) => HoraMexico.ALocal(utc).ToString("HH:mm");
+
+    private static string Fecha(DateTime utc) => HoraMexico.ALocal(utc).ToString("dd/MM HH:mm");
+
+    private static string Megas(long bytes) => $"{bytes / 1048576m:0} MB";
+
+    /// <summary>El que se escribió (y se guarda) o el guardado.</summary>
+    private string? Token()
+    {
+        if (_tokenNuevo.Trim().Length > 0)
+            GuardarToken();
+        return Equipo.LeerToken();
+    }
+
+    private void GuardarToken()
+    {
+        try
+        {
+            Equipo.GuardarToken(_tokenNuevo.Trim());
+            _tokenNuevo = "";
+            _hayToken = true;
+            (_error, _aviso) = (null, "Token guardado en esta PC.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException)
+        {
+            _error = $"No se pudo guardar el token: {ex.Message}";
+        }
+    }
+
+    private void QuitarToken()
+    {
+        try
+        {
+            Equipo.GuardarToken(null);
+            _hayToken = false;
+            (_estado, _elegida, _cambios, _error, _aviso) = (null, null, null, null, "Se quitó el token de esta PC.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _error = $"No se pudo quitar el token: {ex.Message}";
+        }
+    }
+
+    private async Task BuscarAsync()
+    {
+        if (Token() is not { } token)
+            return;
+        (_fase, _error, _aviso, _elegida, _cambios) = (Fase.Buscando, null, null, null, null);
+        try
+        {
+            _estado = await GitHub.BuscarAsync(token);
+            // Lo de siempre: la más nueva de main, si no es la instalada.
+            if (_estado.Versiones.FirstOrDefault(v => v.Rama == "main") is { } nueva && !EsLaInstalada(nueva))
+                await CargarCambiosAsync(token, nueva);
+        }
+        catch (ErrorActualizacion ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _fase = Fase.Nada;
+        }
+    }
+
+    private async Task ElegirAsync(VersionArmada version)
+    {
+        if (Token() is not { } token)
+            return;
+        (_error, _aviso) = (null, null);
+        _fase = Fase.Buscando;
+        try
+        {
+            await CargarCambiosAsync(token, version);
+        }
+        finally
+        {
+            _fase = Fase.Nada;
+        }
+    }
+
+    private async Task CargarCambiosAsync(string token, VersionArmada version)
+    {
+        (_elegida, _cambios) = (version, null);
+        if (_instalado is null)
+            return;
+        try
+        {
+            _cambios = await GitHub.CambiosAsync(token, _instalado, version.Commit);
+        }
+        catch (ErrorActualizacion)
+        {
+            // Sin permiso para leer el código (o la instalada no está en GitHub): se instala igual, sin la lista.
+        }
+    }
+
+    private async Task ArmarAsync()
+    {
+        if (Token() is not { } token)
+            return;
+        (_fase, _error, _aviso) = (Fase.Armando, null, null);
+        try
+        {
+            await GitHub.ArmarAsync(token);
+            _aviso = "Listo: GitHub está armando la versión con lo último de main. Tarda unos 15 minutos; después vuelve a buscar.";
+        }
+        catch (ErrorActualizacion ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _fase = Fase.Nada;
+        }
+    }
+
+    private async Task InstalarAsync()
+    {
+        if (_elegida is not { } version || Token() is not { } token)
+            return;
+        (_fase, _error, _aviso, _progreso) = (Fase.Bajando, null, null, (0, version.Bytes));
+        _descarga = new CancellationTokenSource();
+        var ultimo = -1L;
+        var progreso = new Progress<(long Bajado, long Total)>(p =>
+        {
+            // Se redibuja con cada punto de avance, no con cada pedazo.
+            var punto = p.Total > 0 ? p.Bajado * 100 / p.Total : 0;
+            if (punto == ultimo)
+                return;
+            ultimo = punto;
+            _progreso = p;
+            _ = InvokeAsync(StateHasChanged);
+        });
+        try
+        {
+            var instalador = await GitHub.DescargarAsync(token, version, Equipo.CarpetaDescargas, progreso, _descarga.Token);
+            _fase = Fase.Instalando;
+            _progreso = null;
+            await AntesDeInstalar.InvokeAsync();
+            Equipo.Instalar(instalador);
+            _aviso = "Instalando: acepta el permiso de administrador de Windows. La caja se cierra sola y vuelve a abrir con la versión nueva.";
+        }
+        catch (OperationCanceledException)
+        {
+            _aviso = "Se canceló la descarga.";
+        }
+        catch (Exception ex) when (ex is ErrorActualizacion or IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _progreso = null;
+            _fase = Fase.Nada;
+            _descarga?.Dispose();
+            _descarga = null;
+        }
+    }
+
+    private void CancelarEleccion()
+    {
+        if (_descarga is { } descarga)
+        {
+            descarga.Cancel();
+            return;
+        }
+        (_elegida, _cambios) = (null, null);
+    }
+
+    public void Dispose() => _descarga?.Cancel();
+}

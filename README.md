@@ -117,6 +117,14 @@ Para que alguien de la tienda pruebe lo que ya funciona, solo y sin tocar eleven
 - **La caja arranca su propio servicio** en el puerto 5180 y lo apaga al cerrarse. No hay servicio de Windows ni
   segunda caja. La base ficticia de trabajo va en `C:\ProgramData\PapeleriaPos-Prueba`. El instalador abre el 5180
   a la red local para probar el conteo completo desde un celular en el mismo wifi.
+- **Se actualiza desde la caja:** Configuración › Actualización (solo en la caja de prueba).
+  - Lista los instaladores que hay en GitHub, con lo que trae cada uno respecto a la instalada.
+  - Lo baja, revisa su huella e instala encima en silencio. Windows pide el permiso de administrador; el instalador
+    cierra la caja y la vuelve a abrir. Los datos de la prueba y los tickets en espera se quedan.
+  - Si `main` tiene cambios sin instalador, «Armar una con lo último de main» lo pide a GitHub (tarda unos 15 minutos).
+  - Hace falta un token «fine-grained» de GitHub con acceso solo a este repositorio: Actions de lectura (de lectura y
+    escritura para armar) y Contents de lectura (para ver los cambios). Se guarda cifrado por Windows para ese usuario.
+  - La primera versión con esto se instala a mano; desde ahí, las siguientes desde la caja.
 - **La franja de prueba,** arriba, tiene la guía de tareas (las respuestas se guardan en un archivo en el escritorio),
   los avisos que le llegarían al dueño por Telegram y «Empezar de cero».
 - Necesita Windows 10 u 11 de 64 bits con WebView2 (viene con Windows 11 y con Windows 10 actualizado).
