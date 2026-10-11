@@ -103,4 +103,13 @@ public static class Textos
         ResultadoBitacora.Autorizado => "Autorizado",
         _ => "Negado",
     };
+
+    /// <summary>Quién autoriza: «Luis», «Carmen o Luis», «Ana, Carmen o Luis»; si son más, los dos primeros y cuántos más.</summary>
+    public static string Quien(IReadOnlyList<QuienAutoriza> autorizan) => autorizan.Count switch
+    {
+        0 => "quien tenga el permiso",
+        1 => autorizan[0].Nombre,
+        <= 3 => $"{string.Join(", ", autorizan.Take(autorizan.Count - 1).Select(a => a.Nombre))} o {autorizan[^1].Nombre}",
+        _ => $"{autorizan[0].Nombre}, {autorizan[1].Nombre} o {autorizan.Count - 2} más",
+    };
 }

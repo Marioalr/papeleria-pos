@@ -619,6 +619,16 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 /* La autorización, ahí mismo en el panel */
 .vn-panel .autorizacion { gap: 9px; padding: 12px; border: 1px solid var(--vn-aviso-borde); background: #fffaf0; border-radius: 10px; }
 .vn-panel .aviso-autorizacion { padding: 0; background: none; color: #6b4000; font-size: 14.5px; font-weight: 700; }
+/* En la pantalla nueva, quien puede autorizar va por su nombre: se toca su ficha y solo se escribe su PIN. También en lo
+   que se abre encima (fuera de .venta-nueva), por eso cada color lleva su respaldo. */
+.autorizacion .autorizacion-detalle { margin: 0; font-size: 13.5px; color: var(--vn-texto, #15202c); background: var(--vn-hoja, #fff); border: 1px solid var(--vn-linea, #dfe4ea); border-radius: 8px; padding: 7px 9px; }
+.autorizacion .quien { display: flex; flex-wrap: wrap; gap: 6px; }
+.autorizacion .ficha { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 13.5px; color: var(--vn-texto, #15202c); border: 1px solid var(--vn-borde, #c6cfda); background: var(--vn-hoja, #fff); border-radius: 999px; padding: 3px 12px 3px 3px; cursor: pointer; }
+.autorizacion .ficha:hover { border-color: var(--vn-tinta, #23439b); }
+.autorizacion .ficha.activa { border-color: var(--vn-tinta, #23439b); background: var(--vn-tinta-claro, #e8edf9); font-weight: 600; }
+.autorizacion .ficha .avatar { display: grid; place-items: center; width: 26px; height: 26px; flex: none; border-radius: 50%; background: var(--vn-tinta-claro, #e8edf9); color: var(--vn-tinta, #23439b); font-weight: 700; font-size: 12px; }
+.autorizacion .ficha.activa .avatar { background: var(--vn-tinta, #23439b); color: #fff; }
+.autorizacion.con-fichas > .nota { margin: 0; font-size: 12.5px; color: var(--vn-suave, #556375); }
 .vn-panel label:has(> input[type="radio"]), .vn-panel label:has(> input[type="checkbox"]) { display: block; font-size: 14px; line-height: 1.35; color: var(--vn-texto); }
 .vn-panel label > input[type="radio"], .vn-panel label > input[type="checkbox"] { margin: 0 8px 0 0; vertical-align: -2px; }
 .vn-panel .pestanas { display: flex; gap: 2px; padding: 3px; background: var(--vn-renglon); border: 1px solid var(--vn-linea); border-radius: 9px; }

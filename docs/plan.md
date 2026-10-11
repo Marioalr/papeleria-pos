@@ -353,10 +353,19 @@ total, también con cliente registrado; la ventana de cobro queda solo en la pan
 - **Los tickets en espera:** 3 fichas a la vista y los demás en «Más (N)», con la hora, los artículos y el total. Con
   más de 5, el menú lleva flechas que lo deslizan al pasar el mouse; se cierra con Esc, con un clic fuera o al elegir uno.
 
+**Avance (2026-10-11), cuarta parte: quién autoriza, por su nombre.** En la pantalla nueva la autorización ya no pide
+escribir el usuario de quien autoriza:
+- **arriba dice quién lo autoriza** («Lo autoriza Encargado de prueba o Dueño de prueba») y, debajo, qué se autoriza;
+- **si son varios, una ficha por cada uno** (primero el encargado, al final el dueño). Se toca la de quien está ahí y
+  el cursor pasa a «PIN de …»; si es uno solo, el cursor ya está en su PIN;
+- **vale igual en el panel y en lo que se abre encima** (inventario, clientes…), con Telegram como antes;
+- **los permisos de la sesión traen el usuario** de cada quien autoriza, no solo su nombre
+  (`PermisoDeSesion.Autorizan`, también sin conexión). El servicio sigue revisando el PIN y el monto.
+- La pantalla de hoy sigue igual: se escribe el usuario.
+
 Falta, en este orden:
-1. la autorización con las fichas de quien puede autorizar (hoy se escribe su usuario);
-2. la búsqueda con familias de colores, fichas para afinar, el error de dedo y los sinónimos de la tienda;
-3. cuántas fichas de espera se ven, en Configuración (hoy son 3).
+1. la búsqueda con familias de colores, fichas para afinar, el error de dedo y los sinónimos de la tienda;
+2. cuántas fichas de espera se ven, en Configuración (hoy son 3).
 
 #### Después: el piloto en la caja 2
 

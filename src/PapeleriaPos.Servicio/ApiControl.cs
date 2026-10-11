@@ -49,9 +49,9 @@ public static class ApiControl
         api.MapGet("/usuarios/{usuarioId:guid}/permisos", async (Guid usuarioId, Guid sucursalId, PosDbContext db) =>
         {
             var usuarios = await db.Usuarios.AsNoTracking().Where(u => u.Activo && (u.SucursalId == null || u.SucursalId == sucursalId))
-                .Select(u => new { u.Id, u.Nombre, u.Rol }).ToListAsync();
+                .Select(u => new { u.Id, u.NombreUsuario, u.Nombre, u.Rol }).ToListAsync();
             var usuario = usuarios.SingleOrDefault(u => u.Id == usuarioId) ?? throw new ArgumentException("Ese usuario no está activo en esta sucursal.");
-            return Permisos.DeLaSesion(await new ServicioControl(db).ReglasAsync(sucursalId), usuarios.Select(u => (u.Id, u.Nombre, u.Rol)),
+            return Permisos.DeLaSesion(await new ServicioControl(db).ReglasAsync(sucursalId), usuarios.Select(u => (u.Id, u.NombreUsuario, u.Nombre, u.Rol)),
                 usuario.Id, usuario.Rol, sucursalId);
         });
 

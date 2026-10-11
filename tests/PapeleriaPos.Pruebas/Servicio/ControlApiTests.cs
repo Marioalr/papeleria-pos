@@ -102,10 +102,14 @@ public class ControlApiTests(ServicioDePrueba servicio) : IClassFixture<Servicio
             .ToDictionary(p => p.Accion);
 
         Assert.Equal(NivelPermiso.RequiereAutorizacion, permisos[AccionControlada.CancelarTicket].Nivel);
-        Assert.Contains("Encargado de prueba", permisos[AccionControlada.CancelarTicket].Autorizan);
-        Assert.DoesNotContain("Cajero de prueba", permisos[AccionControlada.CancelarTicket].Autorizan);
-        Assert.Contains("Dueño de prueba", permisos[AccionControlada.CambiarPrecio].Autorizan);
-        Assert.DoesNotContain("Encargado de prueba", permisos[AccionControlada.CambiarPrecio].Autorizan);
+        var cancelar = permisos[AccionControlada.CancelarTicket].Autorizan.Select(a => a.Nombre).ToList();
+        Assert.Contains("Encargado de prueba", cancelar);
+        Assert.DoesNotContain("Cajero de prueba", cancelar);
+        var precio = permisos[AccionControlada.CambiarPrecio].Autorizan;
+        Assert.Contains("Dueño de prueba", precio.Select(a => a.Nombre));
+        Assert.DoesNotContain("Encargado de prueba", precio.Select(a => a.Nombre));
+        // Con su usuario: la caja le pide a quien autoriza solo su PIN.
+        Assert.All(precio, a => Assert.False(string.IsNullOrWhiteSpace(a.Usuario)));
         Assert.Equal(NivelPermiso.NoPermitido, permisos[AccionControlada.CorteZ].Nivel);
     }
 

@@ -113,7 +113,10 @@ public sealed record DecisionPermiso(NivelPermiso Nivel, bool PideMotivo);
 /// </summary>
 /// <param name="UmbralCentavos">Hasta dónde puede sin autorización (en las de porcentaje, centésimas de porcentaje).</param>
 /// <param name="Autorizan">Quién lo autoriza: lo que pide autorización, o lo que pasa del umbral.</param>
-public sealed record PermisoDeSesion(AccionControlada Accion, NivelPermiso Nivel, long? UmbralCentavos, bool PideMotivo, IReadOnlyList<string> Autorizan);
+public sealed record PermisoDeSesion(AccionControlada Accion, NivelPermiso Nivel, long? UmbralCentavos, bool PideMotivo, IReadOnlyList<QuienAutoriza> Autorizan);
+
+/// <summary>Quien puede autorizar: su nombre, para decirlo, y su usuario, para pedirle solo el PIN.</summary>
+public sealed record QuienAutoriza(string Usuario, string Nombre);
 
 public static class Permisos
 {
@@ -221,7 +224,7 @@ public static class Permisos
     /// permitida (por encima del umbral, si lo hay), primero los encargados y al final el dueño.
     /// </summary>
     public static IReadOnlyList<PermisoDeSesion> DeLaSesion(
-        IEnumerable<ReglaPermiso> reglas, IEnumerable<(Guid Id, string Nombre, Rol Rol)> usuarios, Guid usuarioId, Rol rol, Guid sucursalId)
+        IEnumerable<ReglaPermiso> reglas, IEnumerable<(Guid Id, string Usuario, string Nombre, Rol Rol)> usuarios, Guid usuarioId, Rol rol, Guid sucursalId)
     {
         var lista = reglas.ToList();
         var otros = usuarios.Where(u => u.Id != usuarioId).OrderBy(u => u.Rol).ThenBy(u => u.Nombre, StringComparer.CurrentCulture).ToList();
@@ -231,7 +234,7 @@ public static class Permisos
             var umbral = decision.Nivel == NivelPermiso.Permitido && rol != Rol.Dueno ? Efectiva(lista, rol, sucursalId, accion)?.UmbralCentavos : null;
             long? monto = decision.Nivel == NivelPermiso.RequiereAutorizacion ? null : umbral + 1;
             var autorizan = decision.Nivel == NivelPermiso.RequiereAutorizacion || umbral is not null
-                ? otros.Where(u => PuedeAutorizar(lista, u.Rol, sucursalId, accion, monto)).Select(u => u.Nombre).ToList()
+                ? otros.Where(u => PuedeAutorizar(lista, u.Rol, sucursalId, accion, monto)).Select(u => new QuienAutoriza(u.Usuario, u.Nombre)).ToList()
                 : [];
             return new PermisoDeSesion(accion, decision.Nivel, umbral, decision.PideMotivo, autorizan);
         }).ToList();
