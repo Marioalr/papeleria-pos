@@ -291,8 +291,14 @@ La segunda parte, la búsqueda debajo del cuadro, también:
 - Enter sin elegir agrega el primero;
 - cada búsqueda se guarda (tabla `Busquedas`), también las que no encontraron nada.
 
-Falta que los tickets en espera sobrevivan a un reinicio de la caja. El nombre de eleventa como sinónimo llega cuando
-la limpieza del catálogo cambie nombres; mientras tanto, los nombres son los mismos de eleventa.
+Y la tercera, los tickets en espera que sobreviven a un reinicio o a un apagón:
+- se guardan en `caja-local.db` cada vez que cambia el ticket que se atiende (F6, F5, retomar, cobrar);
+- también el que se atiende, como estaba en ese momento;
+- al entrar a la venta vuelven a esperar, armados con los precios de cuando se agregó cada producto;
+- «Empezar de cero» los borra.
+
+Con eso, la entrega 0 queda completa. El nombre de eleventa como sinónimo llega cuando la limpieza del catálogo cambie
+nombres; mientras tanto, los nombres son los mismos de eleventa.
 
 #### Después: el piloto en la caja 2
 

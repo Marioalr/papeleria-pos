@@ -330,9 +330,20 @@ public sealed class Contingencia
     public void OlvidarCredito()
     {
         using (var lote = _almacen.Lote())
-            lote.LimpiarCredito().Borrar("saldos").Borrar("turno").Borrar("base").Borrar("folio").LimpiarDiario().Confirmar();
+            lote.LimpiarCredito().Borrar("saldos").Borrar("turno").Borrar("base").Borrar("folio").Borrar(ClaveEspera).LimpiarDiario().Confirmar();
         _saldos = null;
         _creditosPedidos = null;
+    }
+
+    private const string ClaveEspera = "espera";
+
+    /// <summary>Los tickets en espera de esta caja, en el orden en que se apartaron.</summary>
+    public List<TicketGuardado> TicketsEnEspera() => _almacen.Leer<List<TicketGuardado>>(ClaveEspera) ?? [];
+
+    public void GuardarEnEspera(IReadOnlyList<TicketGuardado> tickets)
+    {
+        using var lote = _almacen.Lote();
+        (tickets.Count == 0 ? lote.Borrar(ClaveEspera) : lote.Guardar(ClaveEspera, tickets)).Confirmar();
     }
 
     private void Fijar(bool responde)
