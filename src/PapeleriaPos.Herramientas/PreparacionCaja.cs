@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
 
@@ -42,7 +43,34 @@ public static class PreparacionCaja
             hecho.Add($"{UsuariosDePrueba.Length} usuarios de prueba (ver README)");
         }
 
+        // Los rápidos que decidió el dueño (2026-10-10): la copia y la CURP, que vende 10 impresiones mientras Control
+        // Print siga aparte. Solo si la base trae esos servicios (la ficticia sí; una importada, con otros nombres, no).
+        var configuracion = await db.ConfiguracionesSucursal.FindAsync([sucursal.Id], ct);
+        if (configuracion?.Rapidos is null)
+        {
+            var rapidos = new List<Rapido>();
+            if (await VarianteDeAsync(db, "Copia blanco y negro", "Carta", ct) is { } copia)
+                rapidos.Add(new Rapido("Copia B/N", copia));
+            if (await VarianteDeAsync(db, "Impresión blanco y negro", "Carta", ct) is { } impresion)
+                rapidos.Add(new Rapido("CURP", impresion, 10));
+            if (rapidos.Count > 0)
+            {
+                if (configuracion is null)
+                {
+                    configuracion = new ConfiguracionSucursal { SucursalId = sucursal.Id };
+                    db.ConfiguracionesSucursal.Add(configuracion);
+                }
+                configuracion.Rapidos = rapidos;
+                hecho.Add($"Rápidos: {string.Join(", ", rapidos.Select(r => r.Nombre))}");
+            }
+        }
+
         await db.SaveChangesAsync(ct);
         return hecho;
     }
+
+    /// <summary>La variante activa de un producto (por su nombre y el de la variante), si existe.</summary>
+    private static Task<Guid?> VarianteDeAsync(PosDbContext db, string producto, string variante, CancellationToken ct) =>
+        db.Variantes.Where(v => v.Activa && v.Producto!.Activo && v.Producto.Nombre == producto && v.Descripcion == variante)
+            .Select(v => (Guid?)v.Id).FirstOrDefaultAsync(ct);
 }

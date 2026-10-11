@@ -59,6 +59,14 @@ public class ConfiguracionSucursal : IVersionado
     /// <summary>Lo que se guarda de más por si el proveedor tarda o se vende más: el mínimo.</summary>
     public int SugeridoColchonDias { get; set; } = Inventario.SugeridoCompra.Parametros.PorOmision.ColchonDias;
 
+    // ── Venta (rediseño, entrega 0) ──
+
+    /// <summary>
+    /// Los rápidos: botones de la venta para lo que no tiene código de barras y se vende todo el día (Alt+1 a Alt+6).
+    /// Vacío: sin rápidos.
+    /// </summary>
+    public List<Rapido>? Rapidos { get; set; }
+
     /// <summary>La hoja que se usa, con sus medidas.</summary>
     public Catalogo.FormatoEtiquetas FormatoDeEtiquetas() =>
         EtiquetasFormato == Catalogo.FormatoEtiquetas.Propio && EtiquetasPropio is { } propio

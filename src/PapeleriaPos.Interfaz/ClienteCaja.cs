@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Ventas;
 
@@ -120,6 +121,10 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<List<ResultadoBusquedaDto>> BuscarAsync(string texto, Guid sucursalId) =>
         ConRespaldoAsync(async () => await _http.GetAsync<List<ResultadoBusquedaDto>>(
             $"api/productos/buscar?q={Uri.EscapeDataString(texto)}&sucursalId={sucursalId}") ?? [], l => l.Buscar(texto));
+
+    /// <summary>Los rápidos de la sucursal. Sin conexión no hay: la fila queda vacía hasta que vuelva.</summary>
+    public Task<List<Rapido>> RapidosAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<Rapido>>($"api/sucursales/{sucursalId}/rapidos") ?? [], _ => []);
 
     /// <summary>
     /// La venta lleva su ID desde la caja: si la respuesta no llega y se cobra sin conexión, al subir no se duplica. Lo

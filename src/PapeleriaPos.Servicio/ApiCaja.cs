@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Turnos;
@@ -78,6 +79,10 @@ public static class ApiCaja
 
         api.MapGet("/productos/buscar", async (string q, Guid sucursalId, PosDbContext db, CatalogoEnMemoria catalogo) =>
             await catalogo.BuscarAsync(db, q, sucursalId));
+
+        // Los rápidos de la venta (docs/propuesta-interfaz.md, «Rápidos»): lo que no tiene código de barras y se vende todo el día.
+        api.MapGet("/sucursales/{sucursalId:guid}/rapidos", async (Guid sucursalId, PosDbContext db) =>
+            await db.ConfiguracionesSucursal.AsNoTracking().Where(c => c.SucursalId == sucursalId).Select(c => c.Rapidos).FirstOrDefaultAsync() ?? []);
 
         api.MapPost("/ventas", async (SolicitudCobro s, PosDbContext db, CatalogoEnMemoria catalogo, IOptions<OpcionesTicket> ticket) =>
         {

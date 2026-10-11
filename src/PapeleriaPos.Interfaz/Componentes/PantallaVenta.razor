@@ -1,10 +1,254 @@
-@* La pantalla de venta: misma distribución y mismas teclas que eleventa. *@
+@* La pantalla de venta. La de hoy tiene la misma distribución y las mismas teclas que eleventa; la nueva es la del
+   rediseño (docs/propuesta-interfaz.md, entrega 0) y cada caja elige cuál usa. Las dos comparten los tickets, el cobro,
+   las ventanas y las teclas: solo cambia cómo se ve. *@
 @implements IAsyncDisposable
 @using System.Text.RegularExpressions
+@using PapeleriaPos.Nucleo.Configuracion
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 @inject IImpresora Impresora
 
+@if (_pantallaNueva)
+{
+    <div class="venta-nueva">
+        <header class="vn-arriba">
+            <span class="vn-marca">@Caja.Nombre<small>@Caja.Sucursal</small></span>
+            <nav class="vn-pestanas">
+                <button class="activa">Venta <kbd>F1</kbd></button>
+                <button @onclick="() => Abrir(Ventanas.Productos)">Productos <kbd>F3</kbd></button>
+                <button @onclick="() => Abrir(Ventanas.Inventario)">Inventario <kbd>F4</kbd></button>
+                <button @onclick="() => Abrir(Ventanas.Clientes)">Clientes</button>
+                <button @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
+                <button @onclick="() => Abrir(Ventanas.Configuracion)">Configuración</button>
+            </nav>
+            <span class="espacio"></span>
+            <button class="vn-chip" title="Vuelve a la pantalla de venta de hoy; se recuerda en esta PC" @onclick="CambiarPantallaAsync">Pantalla de hoy</button>
+            <div class="vn-atiende"><strong>@Sesion.Nombre</strong><small>turno desde @Turno.AbiertoLocal.ToString("HH:mm")</small></div>
+            <button class="vn-chip" @onclick="AlSalir">Salir</button>
+        </header>
+        @if (HayConteoPendiente)
+        {
+            @FranjaConteo
+        }
+        @if (Actual.Cliente is not null && Actual.Cuenta is { SaldoCentavos: not 0 })
+        {
+            @FranjaCredito
+        }
+
+        <div class="vn-cuerpo">
+            <section class="vn-izq">
+                <div class="vn-captura">
+                    <span class="vn-captura-ico" aria-hidden="true">▥</span>
+                    @* Sin @bind: caja.js lo lee al Enter y lo vacía al momento (un escaneo nunca se pega al siguiente). *@
+                    <input id="codigo" data-codigo data-captura autocomplete="off" spellcheck="false" aria-label="Código del producto"
+                           placeholder="Escanea o escribe: código, nombre, 3*código o folio de un ticket" />
+                </div>
+                <div class="vn-aviso @(_mensajeEsError ? "error" : "")">
+                    @if (_mensaje is not null)
+                    {
+                        <span>@_mensaje</span>
+                        @if (_codigoNuevo is { } nuevoN)
+                        {
+                            <button class="boton chico" @onclick="() => Abrir(Ventanas.AltaRapida)">Dar de alta «@nuevoN»</button>
+                        }
+                    }
+                </div>
+                <div class="vn-barra">
+                    @if (_rapidos.Count > 0)
+                    {
+                        <span class="vn-rapidos">
+                            <span class="vn-tit">Rápidos</span>
+                            @for (var k = 0; k < _rapidos.Count; k++)
+                            {
+                                var indiceRapido = k;
+                                var listo = _rapidos[k];
+                                <button class="vn-rapido" title="Con un número en el cuadro, agrega esa cantidad" @onclick="() => RapidoAsync(indiceRapido)">
+                                    <kbd>Alt+@(k + 1)</kbd>@listo.Rapido.Nombre
+                                    @if (listo.PrecioCentavos is { } precioRapido)
+                                    {
+                                        <small>@Formato.Dinero(precioRapido)</small>
+                                    }
+                                </button>
+                            }
+                        </span>
+                    }
+                    <span class="vn-espera">
+                        @foreach (var enEspera in EnEspera)
+                        {
+                            <button class="vn-ficha" title="En espera desde las @Desde(enEspera), @Formato.Numero(enEspera.Venta.NumeroDeArticulos) productos. Al retomarlo, el ticket actual pasa a la espera"
+                                    @onclick="() => Retomar(enEspera)">⏸ @Desde(enEspera) · @Formato.Dinero(enEspera.Venta.TotalCentavos)</button>
+                        }
+                        <button class="boton chico" disabled="@(Actual.Venta.Lineas.Count == 0)" title="Guarda este ticket y empieza otro" @onclick="PonerEnEspera">Poner en espera <kbd>F6</kbd></button>
+                    </span>
+                </div>
+                <div class="vn-ticket">
+                    @if (Actual.Venta.Lineas.Count == 0)
+                    {
+                        <div class="vn-vacio">
+                            <h3>Escanea el primer producto</h3>
+                            <p>El cuadro de arriba entiende el código del lector, <code>12*código</code> para doce de una vez, el nombre
+                                (abre la búsqueda) y el folio de un ticket para devolverlo. Un número y un rápido agregan esa cantidad.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <table>
+                            <thead>
+                                <tr><th class="vn-col-cant">Cantidad</th><th>Descripción</th><th class="num">Precio</th><th class="num">Importe</th></tr>
+                            </thead>
+                            <tbody>
+                                @for (var i = 0; i < Actual.Venta.Lineas.Count; i++)
+                                {
+                                    var indice = i;
+                                    var linea = Actual.Venta.Lineas[i];
+                                    var producto = linea.VarianteId is { } v ? Actual.Productos.GetValueOrDefault(v) : null;
+                                    <tr id="linea-@i" class="@(i == _seleccion ? "seleccionada" : "")" @onclick="() => Seleccionar(indice)">
+                                        <td class="vn-col-cant">
+                                            @if (producto is not null && !linea.EsImpresiones)
+                                            {
+                                                <span class="vn-paso">
+                                                    <button tabindex="-1" title="Uno menos" @onclick="() => PasoCantidadAsync(indice, -1)" @onclick:stopPropagation="true">−</button>
+                                                    <span>@Formato.Numero(linea.Cantidad.EnUnidades)</span>
+                                                    <button tabindex="-1" title="Uno más" @onclick="() => PasoCantidadAsync(indice, 1)" @onclick:stopPropagation="true">+</button>
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span class="vn-paso-fijo">@Formato.Numero(linea.Cantidad.EnUnidades)</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <div class="vn-nombre">@(linea.EsImpresiones ? $"Impresiones ({Actual.Impresiones.Count})" : Descripcion(linea, producto))</div>
+                                            <div class="vn-sub">
+                                                @if (producto?.Codigo is { } codigoLinea)
+                                                {
+                                                    <code>@codigoLinea</code>
+                                                }
+                                                @if (linea.TieneMayoreo)
+                                                {
+                                                    <span class="vn-etiq">@MayoreoTexto(linea, producto) · ahorra @Formato.Dinero(linea.AhorroMayoreoCentavos)</span>
+                                                }
+                                                @if (linea.TieneDescuento)
+                                                {
+                                                    <span class="vn-etiq">Descuento −@Formato.Dinero(linea.DescuentoCentavos) · @linea.MotivoDescuento</span>
+                                                }
+                                                @if (producto?.Existencia is { } quedan && quedan <= 3)
+                                                {
+                                                    <span class="vn-etiq ambar">@(quedan <= 0 ? "Sin existencia en el sistema" : $"Quedan {Formato.Numero(quedan)}")</span>
+                                                }
+                                            </div>
+                                        </td>
+                                        <td class="num">
+                                            @if (linea.PrecioCambiado)
+                                            {
+                                                <s class="precio-original">@Formato.Dinero(linea.PrecioOriginalCentavos ?? 0)</s>
+                                            }
+                                            @Formato.Dinero(linea.PrecioCentavos)
+                                        </td>
+                                        <td class="num vn-importe">@Formato.Dinero(linea.ImporteCentavos)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </section>
+
+            <aside class="vn-der">
+                <div class="vn-cliente">
+                    <span>@(Actual.Cliente?.Nombre ?? "Público en general")</span>
+                    <button class="vn-chip" title="Elegir el cliente del ticket" @onclick="() => Abrir(Ventanas.ElegirCliente)">Cliente <kbd>Ctrl+L</kbd></button>
+                </div>
+                <div class="vn-total">
+                    <div class="vn-total-cab"><span>Total</span><span>@(Actual.Venta.Lineas.Count == 0 ? "sin productos" : $"{Formato.Numero(Actual.Venta.NumeroDeArticulos)} productos")</span></div>
+                    <div class="vn-cifra @(Actual.Venta.Lineas.Count == 0 ? "vacio" : "")">@Formato.Dinero(Actual.Venta.TotalCentavos)</div>
+                    <div class="vn-tecla"><kbd>F12</kbd><span>cobrar</span></div>
+                    @if (Actual.Venta.DescuentoCentavos > 0)
+                    {
+                        <div class="vn-linea verde"><span>Descuentos</span><span>−@Formato.Dinero(Actual.Venta.DescuentoCentavos)</span></div>
+                    }
+                    @if (Actual.Venta.Lineas.Count > 0)
+                    {
+                        var aCobrar = EnEfectivo.ACobrarCentavos;
+                        <div class="vn-separa"></div>
+                        @if (EnEfectivo.RedondeoCentavos != 0)
+                        {
+                            <div class="vn-linea"><span>En efectivo, al peso</span><strong>@Formato.Dinero(aCobrar)</strong></div>
+                        }
+                        @if (Actual.Cliente is null)
+                        {
+                            <div class="vn-pago-cab">
+                                <label for="pago-nuevo">Pagó con</label>
+                                <button class="vn-chip" title="Tarjeta, transferencia o una parte de cada una: abre el cobro de hoy" @onclick="AbrirCobroAsync">Tarjeta o transferencia</button>
+                            </div>
+                            <input id="pago-nuevo" data-pago inputmode="decimal" autocomplete="off" placeholder="@Formato.Dinero(aCobrar)"
+                                   @bind="_pagoCon" @bind:event="oninput" @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
+                            @if (_pagoCon.Trim().Length > 0)
+                            {
+                                @if (PagoConCentavos is null)
+                                {
+                                    <div class="vn-vivo falta"><span>«@_pagoCon» no es una cantidad</span></div>
+                                }
+                                else if (Recibido >= aCobrar)
+                                {
+                                    <div class="vn-vivo"><span>Cambio</span><strong>@Formato.Dinero(Recibido - aCobrar)</strong></div>
+                                }
+                                else
+                                {
+                                    <div class="vn-vivo falta"><span>Faltan</span><strong>@Formato.Dinero(aCobrar - Recibido)</strong></div>
+                                }
+                            }
+                            <button class="vn-cobrar" disabled="@(_cobrando || PagoConCentavos is null && _pagoCon.Trim().Length > 0 || Recibido < aCobrar)" @onclick="CobrarEnPanelAsync">
+                                @(Recibido < aCobrar ? "Falta dinero" : _pagoCon.Trim().Length == 0 ? $"Cobrar exacto {Formato.Dinero(aCobrar)}" : $"Cobrar · cambio {Formato.Dinero(Recibido - aCobrar)}")
+                            </button>
+                        }
+                        else
+                        {
+                            <p class="nota">Con cliente registrado se cobra en la ventana de hoy, con su crédito o su saldo a favor.</p>
+                            <button class="vn-cobrar" @onclick="AbrirCobroAsync">Cobrar <kbd>F12</kbd></button>
+                        }
+                    }
+                </div>
+                @if (_efectivo is { PideRetiro: true } efectivoN)
+                {
+                    <div class="vn-alerta">Hay @Formato.Dinero(efectivoN.EsperadoCentavos) en efectivo y el límite es @Formato.Dinero(efectivoN.LimiteCentavos ?? 0): haz un retiro con F8.</div>
+                }
+                <div class="vn-ultimo">
+                    @if (_ultimo is { } ultimo)
+                    {
+                        <span>Último: <strong>@ultimo.Folio</strong> · @Formato.Dinero(ultimo.TotalCobradoCentavos) · cambio <strong>@Formato.Dinero(ultimo.CambioCentavos)</strong></span>
+                    }
+                    else
+                    {
+                        <span>Todavía no hay ventas en este turno.</span>
+                    }
+                    <button class="vn-enlace" @onclick="ReimprimirUltimoAsync">Reimprimir</button>
+                </div>
+            </aside>
+        </div>
+
+        <footer class="vn-teclas">
+            <button @onclick="IrAlCobroAsync"><kbd>F12</kbd>Cobrar</button>
+            <button @onclick="() => Abrir(Ventanas.Buscar)"><kbd>F10</kbd>Buscar</button>
+            <button @onclick="() => Abrir(Ventanas.Verificador)"><kbd>F9</kbd>Verificar</button>
+            <button @onclick="() => Abrir(Ventanas.Impresiones)"><kbd>F2</kbd>Impresiones</button>
+            <button @onclick="() => Abrir(Ventanas.Comun)"><kbd>Ins</kbd>Art. común</button>
+            <button @onclick="() => Abrir(Ventanas.Descuento)"><kbd>Ctrl+D</kbd>Descuento</button>
+            <button @onclick="AbrirCambioPrecio"><kbd>Ctrl+E</kbd>Precio</button>
+            <button @onclick="MayoreoAsync"><kbd>F11</kbd>Mayoreo</button>
+            <button @onclick="() => Abrir(Ventanas.Entrada)"><kbd>F7</kbd>Entrada</button>
+            <button @onclick="() => Abrir(Ventanas.Salida)"><kbd>F8</kbd>Salida</button>
+            <label for="pdf-cotizar" title="Elige un PDF y te dice cuánto cobrar"><kbd>Ctrl+Q</kbd>Cotizar</label>
+            <InputFile id="pdf-cotizar" class="oculto" accept=".pdf,application/pdf" onclick="this.value = ''" OnChange="PdfElegidoAsync" />
+            <span class="espacio"></span>
+            <button @onclick="() => Abrir(Ventanas.VentasDelDia)">Ventas del día</button>
+            <button @onclick="() => AbrirDevolucion(null)">Devoluciones</button>
+            <button @onclick="() => Abrir(Ventanas.Transferencias)">Transferencias</button>
+        </footer>
+    </div>
+}
+else
+{
 <div class="venta">
     <header class="barra-modulos">
         <button class="modulo activo">F1 Ventas</button>
@@ -14,6 +258,7 @@
         <button class="modulo" @onclick="() => Abrir(Ventanas.Configuracion)">Configuración</button>
         <button class="modulo" @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
         <span class="espacio"></span>
+        <button class="modulo" title="La pantalla del rediseño (en desarrollo); se recuerda en esta PC" @onclick="CambiarPantallaAsync">Probar la pantalla nueva</button>
         <div class="atiende">
             <small>Le atiende:</small>
             <strong>@Sesion.Nombre</strong>
@@ -22,13 +267,9 @@
         <button class="modulo" @onclick="AlSalir">Salir</button>
     </header>
 
-    @if (_conteo is { } conteo && conteo.Contados < conteo.Total)
+    @if (HayConteoPendiente)
     {
-        @* Se pide al abrir el turno; se cuenta cuando haya calma. *@
-        <div class="franja-conteo">
-            Conteo del día: faltan @(conteo.Total - conteo.Contados) de @conteo.Total productos por contar.
-            <button class="boton chico" @onclick="() => Abrir(Ventanas.Conteo)">Contar ahora</button>
-        </div>
+        @FranjaConteo
     }
     <div class="titulo-venta">
         VENTA - Ticket @Actual.Numero
@@ -37,21 +278,9 @@
             <span class="cliente-ticket">Cliente: @delTicket.Nombre@(delTicket.TextoPrivilegios() is { Length: > 0 } privilegios ? $" · {privilegios}" : "")</span>
         }
     </div>
-    @if (Actual.Cliente is { } conCuenta && Actual.Cuenta is { SaldoCentavos: not 0 } cuenta)
+    @if (Actual.Cliente is not null && Actual.Cuenta is { SaldoCentavos: not 0 })
     {
-        @* Si debe, la caja lo dice al elegirlo, para cobrarlo en esta compra (fase 3). *@
-        var vencido = cuenta.Vencido(DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow)));
-        <div class="franja-credito @(vencido > 0 ? "vencido" : "")">
-            @if (cuenta.SaldoCentavos > 0)
-            {
-                <span>@conCuenta.Nombre debe @Formato.Dinero(cuenta.SaldoCentavos)@(cuenta.VenceMasAntiguo is { } vence ? $" · vence {vence:dd/MM}" : "")@(vencido > 0 ? $" · vencido {Formato.Dinero(vencido)}" : "")@(cuenta.Estimado ? " (según esta caja)" : "")</span>
-                <button class="boton chico" @onclick="() => Abrir(Ventanas.Abono)">CTRL+B Abonar</button>
-            }
-            else
-            {
-                <span>@conCuenta.Nombre tiene @Formato.Dinero(cuenta.AFavorCentavos) a favor: se usa con «A crédito» al cobrar.</span>
-            }
-        </div>
+        @FranjaCredito
     }
 
     <div class="captura">
@@ -188,6 +417,8 @@
             </div>
         </div>
     </footer>
+</div>
+}
 
     @switch (_ventana)
     {
@@ -333,7 +564,6 @@
             </Ventana>
             break;
     }
-</div>
 
 @code {
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
@@ -351,6 +581,238 @@
 
     /// <summary>El conteo cíclico de hoy: cuántos faltan, para pedirlo en la franja.</summary>
     private ConteoCiclicoDto? _conteo;
+
+    private bool HayConteoPendiente => _conteo is { } conteo && conteo.Contados < conteo.Total;
+
+    // ── Las franjas de arriba: las mismas en las dos pantallas ──────────────
+
+    /// <summary>Se pide al abrir el turno; se cuenta cuando haya calma.</summary>
+    private RenderFragment FranjaConteo => @<div class="franja-conteo">
+        Conteo del día: faltan @(_conteo!.Total - _conteo.Contados) de @_conteo.Total productos por contar.
+        <button class="boton chico" @onclick="() => Abrir(Ventanas.Conteo)">Contar ahora</button>
+    </div>;
+
+    /// <summary>Si el cliente del ticket debe, la caja lo dice al elegirlo, para cobrarlo en esta compra (fase 3).</summary>
+    private RenderFragment FranjaCredito => @<div class="franja-credito @(VencidoDelTicket > 0 ? "vencido" : "")">
+        @if (Actual.Cuenta!.SaldoCentavos > 0)
+        {
+            <span>@Actual.Cliente!.Nombre debe @Formato.Dinero(Actual.Cuenta.SaldoCentavos)@(Actual.Cuenta.VenceMasAntiguo is { } vence ? $" · vence {vence:dd/MM}" : "")@(VencidoDelTicket > 0 ? $" · vencido {Formato.Dinero(VencidoDelTicket)}" : "")@(Actual.Cuenta.Estimado ? " (según esta caja)" : "")</span>
+            <button class="boton chico" @onclick="() => Abrir(Ventanas.Abono)">CTRL+B Abonar</button>
+        }
+        else
+        {
+            <span>@Actual.Cliente!.Nombre tiene @Formato.Dinero(Actual.Cuenta.AFavorCentavos) a favor: se usa con «A crédito» al cobrar.</span>
+        }
+    </div>;
+
+    private long VencidoDelTicket => Actual.Cuenta?.Vencido(DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow))) ?? 0;
+
+    // ── La pantalla nueva (docs/propuesta-interfaz.md, entrega 0) ───────────
+
+    /// <summary>Cada caja elige su pantalla; se recuerda en el navegador de esta PC.</summary>
+    private const string ClavePantalla = "pantalla-venta";
+
+    private bool _pantallaNueva;
+
+    /// <summary>Lo que se enfoca después de dibujar (el cuadro del código, o «Pagó con» con F12).</summary>
+    private string? _enfocar;
+
+    private async Task CambiarPantallaAsync()
+    {
+        _pantallaNueva = !_pantallaNueva;
+        // El cuadro de la otra pantalla empieza vacío.
+        _captura.Texto = "";
+        await Js.GuardarAsync(ClavePantalla, _pantallaNueva ? "nueva" : null);
+        if (_pantallaNueva && _rapidos.Count == 0)
+            await CargarRapidosAsync();
+        _enfocar = "#codigo";
+    }
+
+    /// <summary>Un rápido con el producto al que apunta (para su precio); sin conexión al cargar, el producto se pide al usarlo.</summary>
+    private sealed record RapidoListo(Rapido Rapido, ProductoVentaDto? Producto, long? PrecioCentavos);
+
+    private List<RapidoListo> _rapidos = [];
+
+    private async Task CargarRapidosAsync()
+    {
+        try
+        {
+            var listos = new List<RapidoListo>();
+            foreach (var rapido in (await Cliente.RapidosAsync(Caja.SucursalId)).Take(Rapido.Maximo))
+            {
+                var producto = await Cliente.PorVarianteAsync(rapido.VarianteId, Caja.SucursalId);
+                listos.Add(new RapidoListo(rapido, producto, producto is null ? null : (long)Math.Round(PrecioMenudeo(producto) * rapido.Cantidad)));
+            }
+            _rapidos = listos;
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión, la fila queda sin rápidos; al volver a entrar se cargan.
+            _rapidos = [];
+        }
+    }
+
+    /// <summary>El precio por pieza de menudeo: el de la sucursal si tiene, si no el general.</summary>
+    private long PrecioMenudeo(ProductoVentaDto producto)
+    {
+        var porUnidad = producto.Precios.Where(p => p.PresentacionId is null).ToList();
+        var deSucursal = porUnidad.Where(p => p.SucursalId == Caja.SucursalId).ToList();
+        return (deSucursal.Count > 0 ? deSucursal : porUnidad.Where(p => p.SucursalId is null)).MinBy(p => p.CantidadMinimaMilesimas)?.PrecioCentavos ?? 0;
+    }
+
+    /// <summary>Alt+1 a Alt+6 o el botón. Un número en el cuadro es cuántos: «20» y Alt+1 son veinte copias.</summary>
+    private async Task RapidoAsync(int indice)
+    {
+        if (indice < 0 || indice >= _rapidos.Count)
+            return;
+        var (rapido, producto, _) = _rapidos[indice];
+        var texto = _captura.Texto.Trim();
+        var veces = 1m;
+        if (texto.Length > 0 && (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out veces) || veces <= 0))
+        {
+            Avisar($"Antes de un rápido solo va la cantidad: «{texto}» no lo es.");
+            return;
+        }
+        VaciarCaptura();
+        _enfocar = "#codigo";
+        try
+        {
+            producto ??= await Cliente.PorVarianteAsync(rapido.VarianteId, Caja.SucursalId);
+        }
+        catch (ErrorCaja ex)
+        {
+            Avisar(ex.Message);
+            return;
+        }
+        if (producto is null)
+        {
+            Avisar($"El producto del rápido «{rapido.Nombre}» ya no está en el catálogo: hay que elegirlo otra vez en Configuración.");
+            return;
+        }
+        Agregar(producto, null, Cantidad.Unidades(Math.Round(veces * rapido.Cantidad, 3)));
+    }
+
+    /// <summary>Los tickets en espera: los que tienen algo y no son el que se atiende, en el orden en que se apartaron.</summary>
+    private IEnumerable<TicketAbierto> EnEspera => _tickets.Where(t => t != Actual && t.Venta.Lineas.Count > 0);
+
+    private static string Desde(TicketAbierto ticket) => HoraMexico.ALocal(ticket.Venta.CreadaUtc).ToString("HH:mm");
+
+    /// <summary>F6: guarda este ticket y deja la caja lista para el siguiente cliente.</summary>
+    private void PonerEnEspera()
+    {
+        if (Actual.Venta.Lineas.Count == 0)
+        {
+            Avisar("El ticket está vacío: no hay nada que poner en espera.", error: false);
+            return;
+        }
+        NuevoTicket();
+        _pagoCon = "";
+        Avisar("Ticket en espera. Atiende al siguiente; lo retomas arriba o con F5.", error: false);
+    }
+
+    /// <summary>Retomar un ticket en espera: el que se atendía pasa a la espera (si estaba vacío, se descarta).</summary>
+    private void Retomar(TicketAbierto ticket)
+    {
+        if (Actual.Venta.Lineas.Count == 0 && Actual != ticket)
+            _tickets.Remove(Actual);
+        Cambiar(ticket);
+        _pagoCon = "";
+        _enfocar = "#codigo";
+        Avisar($"Retomaste el ticket de las {Desde(ticket)}.", error: false);
+    }
+
+    /// <summary>F5: el que lleva más tiempo esperando.</summary>
+    private void RetomarPrimero()
+    {
+        if (EnEspera.FirstOrDefault() is { } ticket)
+            Retomar(ticket);
+        else
+            Avisar("No hay tickets en espera.", error: false);
+    }
+
+    /// <summary>Los botones − y + de la fila: cambian la cantidad de ese renglón.</summary>
+    private async Task PasoCantidadAsync(int indice, int paso)
+    {
+        _seleccion = indice;
+        await CambiarCantidadSeleccion(paso);
+        _enfocar = "#codigo";
+    }
+
+    // ── El cobro en el panel: «Pagó con» siempre a la vista ─────────────────
+
+    /// <summary>Lo que dio el cliente. Vacío: se cobra exacto (el exacto se ve en gris en el cuadro).</summary>
+    private string _pagoCon = "";
+
+    private bool _enPago;
+    private bool _cobrando;
+
+    private EfectivoACobrar EnEfectivo => Actual.Venta.Efectivo(0);
+
+    private long? PagoConCentavos => _pagoCon.Trim().Length == 0 ? EnEfectivo.ACobrarCentavos : Formato.LeerPesos(_pagoCon);
+
+    private long Recibido => PagoConCentavos ?? 0;
+
+    /// <summary>
+    /// F12: el cursor va a «Pagó con» y lo demás se apaga. Con un cliente registrado (su crédito, su saldo a favor), el
+    /// cobro de hoy. Con el cursor ya en «Pagó con», F12 cobra como Enter.
+    /// </summary>
+    private async Task IrAlCobroAsync()
+    {
+        if (Actual.Venta.Lineas.Count == 0)
+            return;
+        if (Actual.Cliente is not null)
+            await AbrirCobroAsync();
+        else if (_enPago)
+            await CobrarEnPanelAsync();
+        else
+            _enfocar = "#pago-nuevo";
+    }
+
+    private async Task AlTeclearPago(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await CobrarEnPanelAsync();
+    }
+
+    /// <summary>Enter en «Pagó con»: sin escribir nada, exacto; con lo que dio, da el cambio. Todo en efectivo.</summary>
+    private async Task CobrarEnPanelAsync()
+    {
+        if (_cobrando || Actual.Venta.Lineas.Count == 0)
+            return;
+        if (Actual.Cliente is not null)
+        {
+            await AbrirCobroAsync();
+            return;
+        }
+        var aCobrar = EnEfectivo.ACobrarCentavos;
+        if (PagoConCentavos is null)
+        {
+            Avisar($"«{_pagoCon}» no es una cantidad.");
+            return;
+        }
+        if (Recibido < aCobrar)
+        {
+            Avisar($"Faltan {Formato.Dinero(aCobrar - Recibido)}.");
+            return;
+        }
+        if (!await RevisarCostoAsync())
+            return;
+        _cobrando = true;
+        try
+        {
+            if (await CobrarAsync([new CobroSolicitado(FormaPago.Efectivo, Recibido)], null) is { } error)
+                Avisar(error);
+            else
+            {
+                _pagoCon = "";
+                _enfocar = "#codigo";
+            }
+        }
+        finally
+        {
+            _cobrando = false;
+        }
+    }
 
     private async Task RevisarConteoAsync()
     {
@@ -400,19 +862,59 @@
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
+        if (_enfocar is { } selector)
+        {
+            _enfocar = null;
+            await Js.EnfocarAsync(selector);
+        }
         if (!primera)
             return;
         _referencia = DotNetObjectReference.Create(this);
         await Js.RegistrarTeclasAsync(_referencia);
         await Js.EnfocarAsync("#codigo");
+        if (await Js.LeerAsync(ClavePantalla) == "nueva")
+        {
+            _pantallaNueva = true;
+            _enfocar = "#codigo";
+        }
+        await CargarRapidosAsync();
         await RevisarEfectivoAsync();
         await RevisarConteoAsync();
         StateHasChanged();
     }
 
+    /// <summary>El Enter del cuadro de captura de la pantalla nueva: caja.js ya tomó el texto y vació el cuadro.</summary>
     [JSInvokable]
-    public async Task Tecla(string tecla)
+    public async Task Escaneado(string texto)
     {
+        if (_ventana != Ventanas.Ninguna)
+            return;
+        _captura.Texto = texto;
+        var escaneo = AgregarCodigoAsync();
+        StateHasChanged();
+        await escaneo;
+        StateHasChanged();
+    }
+
+    /// <summary>Lo que se escribe a mano en el cuadro de la pantalla nueva, al dejar de teclear: la cantidad de un rápido o de F11.</summary>
+    [JSInvokable]
+    public void Escribiendo(string texto) => _captura.Texto = texto;
+
+    /// <summary>Vacía el cuadro de captura, también en la pantalla nueva, donde no está enlazado.</summary>
+    private void VaciarCaptura()
+    {
+        _captura.Texto = "";
+        if (_pantallaNueva)
+            _ = Js.LimpiarCapturaAsync();
+    }
+
+    /// <param name="tecla">La tecla, como la nombra caja.js.</param>
+    /// <param name="texto">En la pantalla nueva, lo que había en el cuadro de captura (no está enlazado); si no, null.</param>
+    [JSInvokable]
+    public async Task Tecla(string tecla, string? texto)
+    {
+        if (_pantallaNueva && texto is not null)
+            _captura.Texto = texto;
         if (_ventana != Ventanas.Ninguna)
         {
             if (tecla == "Escape")
@@ -420,12 +922,21 @@
             return;
         }
 
+        // Las teclas que actúan sobre el ticket esperan a que termine el último escaneo: F12 no abre el cobro sin la
+        // última línea, ni F6 manda un escaneo al ticket nuevo.
+        if (tecla is "F12" or "F6" or "F5" or "+" or "-" or "Delete" or "F11" || tecla.StartsWith("Alt+", StringComparison.Ordinal))
+            await _captura.EsperarAsync();
+
         switch (tecla)
         {
             case "F10": await Abrir(Ventanas.Buscar); break;
+            case "F12" when _pantallaNueva: await IrAlCobroAsync(); break;
             case "F12" when Actual.Venta.Lineas.Count > 0: await AbrirCobroAsync(); break;
+            case "F5" when _pantallaNueva: RetomarPrimero(); break;
             case "F5": CambiarSiguiente(); break;
+            case "F6" when _pantallaNueva: PonerEnEspera(); break;
             case "F6": NuevoTicket(); break;
+            case ['A', 'l', 't', '+', var numero] when _pantallaNueva && numero is >= '1' and <= '6': await RapidoAsync(numero - '1'); break;
             case "F7": await Abrir(Ventanas.Entrada); break;
             case "F8": await Abrir(Ventanas.Salida); break;
             case "F9": await Abrir(Ventanas.Verificador); break;
@@ -443,7 +954,16 @@
             case "F11": await MayoreoAsync(); break;
             case "F3": await Abrir(Ventanas.Productos); break;
             case "F4": await Abrir(Ventanas.Inventario); break;
-            case "Escape": _captura.Texto = ""; _mensaje = null; break;
+            case "Escape":
+                VaciarCaptura();
+                _mensaje = null;
+                if (_pantallaNueva)
+                {
+                    // Desde «Pagó con», Esc borra lo escrito y regresa al cuadro del código sin cobrar.
+                    _pagoCon = "";
+                    _enfocar = "#codigo";
+                }
+                break;
         }
         StateHasChanged();
     }
@@ -636,7 +1156,7 @@
             // Si no se pudo (una fracción en algo por pieza), se queda el error y lo escrito.
             if (!await FijarCantidadSeleccion(Cantidad.Unidades(Math.Round(piezas, 3))))
                 return;
-            _captura.Texto = "";
+            VaciarCaptura();
             if (linea.TieneMayoreo)
                 Avisar($"{MayoreoTexto(linea, Actual.Productos[varianteId])}: ahorra {Formato.Dinero(linea.AhorroMayoreoCentavos)}.", error: false);
             else if (linea.PrecioCambiado)
@@ -750,7 +1270,8 @@
                 AutorizacionBajoCostoId: venta.AutorizacionBajoCostoId, MayoreoDeCliente: venta.MayoreoDeCliente,
                 AutorizacionCreditoId: autorizacionCredito), soloEnLinea: abierto.FiadoSinConfirmar);
             _tickets.RemoveAt(_actual);
-            if (_tickets.Count == 0)
+            // En la pantalla nueva los que esperan se quedan esperando: lo siguiente es un ticket vacío para el siguiente cliente.
+            if (_tickets.Count == 0 || _pantallaNueva)
                 NuevoTicket();
             else
                 Cambiar(_tickets[^1]);
@@ -868,46 +1389,58 @@
     /// </summary>
     private async Task AbrirCobroAsync()
     {
-        var venta = Actual.Venta;
-        if (venta.Lineas.Count == 0)
+        if (Actual.Venta.Lineas.Count == 0 || !await RevisarCostoAsync())
             return;
-        if (venta.Lineas.Any(l => l.TieneDescuento || l.PrecioCambiado) && venta.AutorizacionBajoCostoId is null)
-        {
-            try
-            {
-                var bajoCosto = await Cliente.BajoCostoAsync(new SolicitudBajoCosto(Caja.Id, ArmadoSolicitud.Lineas(venta), venta.ClienteId, venta.MayoreoDeCliente));
-                if (bajoCosto.FaltanteCentavos > 0)
-                {
-                    var decision = await Cliente.PermisoAsync(new SolicitudPermiso(Sesion.UsuarioId, Caja.SucursalId, AccionControlada.VenderBajoCosto,
-                        bajoCosto.FaltanteCentavos));
-                    if (decision.Nivel == NivelPermiso.NoPermitido)
-                    {
-                        Avisar($"Quedan debajo del costo ({string.Join(", ", bajoCosto.Lineas)}) y no tienes permiso para venderlos así.");
-                        return;
-                    }
-                    if (decision.Nivel == NivelPermiso.RequiereAutorizacion)
-                    {
-                        _costoPorAutorizar = new CostoPorAutorizar($"Con descuento quedan debajo del costo: {string.Join(", ", bajoCosto.Lineas)}",
-                            bajoCosto.FaltanteCentavos);
-                        await Abrir(Ventanas.AutorizarCosto);
-                        return;
-                    }
-                }
-            }
-            catch (ErrorCaja ex)
-            {
-                Avisar(ex.Message);
-                return;
-            }
-        }
         await CargarCuentaAsync(Actual);
         await Abrir(Ventanas.Cobrar);
+    }
+
+    /// <summary>Si se puede cobrar ya. Si algo queda debajo del costo y hace falta autorizarlo, abre su ventana y devuelve false.</summary>
+    private async Task<bool> RevisarCostoAsync()
+    {
+        var venta = Actual.Venta;
+        if (!venta.Lineas.Any(l => l.TieneDescuento || l.PrecioCambiado) || venta.AutorizacionBajoCostoId is not null)
+            return true;
+        try
+        {
+            var bajoCosto = await Cliente.BajoCostoAsync(new SolicitudBajoCosto(Caja.Id, ArmadoSolicitud.Lineas(venta), venta.ClienteId, venta.MayoreoDeCliente));
+            if (bajoCosto.FaltanteCentavos <= 0)
+                return true;
+            var decision = await Cliente.PermisoAsync(new SolicitudPermiso(Sesion.UsuarioId, Caja.SucursalId, AccionControlada.VenderBajoCosto,
+                bajoCosto.FaltanteCentavos));
+            switch (decision.Nivel)
+            {
+                case NivelPermiso.NoPermitido:
+                    Avisar($"Quedan debajo del costo ({string.Join(", ", bajoCosto.Lineas)}) y no tienes permiso para venderlos así.");
+                    return false;
+                case NivelPermiso.RequiereAutorizacion:
+                    _costoPorAutorizar = new CostoPorAutorizar($"Con descuento quedan debajo del costo: {string.Join(", ", bajoCosto.Lineas)}",
+                        bajoCosto.FaltanteCentavos);
+                    await Abrir(Ventanas.AutorizarCosto);
+                    return false;
+                default:
+                    return true;
+            }
+        }
+        catch (ErrorCaja ex)
+        {
+            Avisar(ex.Message);
+            return false;
+        }
     }
 
     private async Task CostoAutorizadoAsync(Guid autorizacionId)
     {
         Actual.Venta.AutorizacionBajoCostoId = autorizacionId;
         _costoPorAutorizar = null;
+        // En la pantalla nueva, de regreso a «Pagó con» del panel: ahí se termina el cobro.
+        if (_pantallaNueva && Actual.Cliente is null)
+        {
+            await Cerrar();
+            _enfocar = "#pago-nuevo";
+            StateHasChanged();
+            return;
+        }
         await CargarCuentaAsync(Actual);
         await Abrir(Ventanas.Cobrar);
     }

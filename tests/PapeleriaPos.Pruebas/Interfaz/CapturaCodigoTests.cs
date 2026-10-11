@@ -84,4 +84,37 @@ public class CapturaCodigoTests
         await _enCurso[1];
         Assert.Equal(["7500000000028"], lineas);
     }
+
+    [Fact]
+    public async Task F12_justo_despues_del_ultimo_escaneo_espera_a_que_llegue_su_linea()
+    {
+        var lineas = new List<string>();
+        async Task AgregarAsync(string codigo)
+        {
+            await Task.Delay(150);
+            lineas.Add(codigo);
+        }
+
+        await EscanearAsync("7500000000011", AgregarAsync);
+        await EscanearAsync("7500000000028", AgregarAsync);
+        // La tecla llega mientras las dos consultas siguen en vuelo: espera, y al abrir el cobro ya están las dos líneas.
+        await _blazor.InvokeAsync(() => _captura.EsperarAsync());
+
+        Assert.Equal(["7500000000011", "7500000000028"], lineas);
+    }
+
+    [Fact]
+    public async Task Esperar_no_falla_si_un_escaneo_fallo()
+    {
+        async Task FallarAsync(string _)
+        {
+            await Task.Delay(20);
+            throw new InvalidOperationException("Falla de prueba");
+        }
+
+        await EscanearAsync("7500000000011", FallarAsync);
+        await _blazor.InvokeAsync(() => _captura.EsperarAsync());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _enCurso[0]);
+    }
 }

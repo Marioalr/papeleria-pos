@@ -5,6 +5,7 @@ using PapeleriaPos.Datos;
 using PapeleriaPos.Herramientas;
 using PapeleriaPos.Herramientas.Ficticios;
 using PapeleriaPos.Herramientas.Importacion;
+using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Ventas;
 
@@ -63,6 +64,22 @@ public class ApiCajaTests(ServicioDePrueba servicio) : IClassFixture<ServicioDeP
     private static async Task<ResultadoBusquedaDto> UnProductoConCodigoAsync(HttpClient http, Guid sucursalId) =>
         (await http.GetFromJsonAsync<List<ResultadoBusquedaDto>>($"api/productos/buscar?q=pluma%20punto%20fino&sucursalId={sucursalId}"))!
             .First(r => r.Codigo is not null);
+
+    [Fact]
+    public async Task Los_rapidos_de_la_base_de_prueba_son_la_copia_y_la_curp_que_vende_diez_impresiones()
+    {
+        var http = Cliente();
+        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+
+        var rapidos = (await http.GetFromJsonAsync<List<Rapido>>($"api/sucursales/{caja.SucursalId}/rapidos"))!;
+
+        Assert.Equal(["Copia B/N", "CURP"], rapidos.Select(r => r.Nombre));
+        Assert.Equal([1m, 10m], rapidos.Select(r => r.Cantidad));
+        var impresion = (await http.GetFromJsonAsync<ProductoVentaDto>($"api/productos/{rapidos[1].VarianteId}?sucursalId={caja.SucursalId}"))!;
+        Assert.StartsWith("Impresión blanco y negro", impresion.Descripcion);
+        // Una sucursal sin rápidos configurados: la fila queda vacía.
+        Assert.Empty((await http.GetFromJsonAsync<List<Rapido>>($"api/sucursales/{Guid.NewGuid()}/rapidos"))!);
+    }
 
     [Fact]
     public async Task Un_pin_incorrecto_no_entra()

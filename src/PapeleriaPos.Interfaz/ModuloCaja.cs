@@ -18,6 +18,9 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
 
     public async Task VentanaAbiertaAsync(bool abierta) => await (await Modulo).InvokeVoidAsync("ventanaAbierta", abierta);
 
+    /// <summary>Vacía el cuadro de captura de la pantalla nueva (no está enlazado: lo maneja caja.js).</summary>
+    public async Task LimpiarCapturaAsync() => await (await Modulo).InvokeVoidAsync("limpiarCaptura");
+
     public async Task EnfocarAsync(string selector) => await (await Modulo).InvokeVoidAsync("enfocar", selector);
 
     public async Task MostrarAsync(string selector) => await (await Modulo).InvokeVoidAsync("mostrar", selector);

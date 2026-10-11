@@ -894,6 +894,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<DateTime>("ModificadoUtc")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Rapidos")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("SugeridoCoberturaDias")
                         .HasColumnType("INTEGER")
                         .HasDefaultValue(14);
