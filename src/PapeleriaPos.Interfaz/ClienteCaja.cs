@@ -118,9 +118,29 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         ConRespaldoAsync(() => _http.GetAsync<ProductoVentaDto>($"api/productos/{varianteId}?sucursalId={sucursalId}", noEncontradoEsNulo: true),
             l => l.PorVariante(varianteId));
 
-    public Task<List<ResultadoBusquedaDto>> BuscarAsync(string texto, Guid sucursalId) =>
+    /// <param name="cajaId">Con la caja, lo que ella eligió antes con ese texto sale primero.</param>
+    public Task<List<ResultadoBusquedaDto>> BuscarAsync(string texto, Guid sucursalId, Guid? cajaId = null) =>
         ConRespaldoAsync(async () => await _http.GetAsync<List<ResultadoBusquedaDto>>(
-            $"api/productos/buscar?q={Uri.EscapeDataString(texto)}&sucursalId={sucursalId}") ?? [], l => l.Buscar(texto));
+            $"api/productos/buscar?q={Uri.EscapeDataString(texto)}&sucursalId={sucursalId}{(cajaId is { } caja ? $"&cajaId={caja}" : "")}") ?? [],
+            l => l.Buscar(texto));
+
+    /// <summary>
+    /// Lo que se buscó y qué se eligió. Es para aprender (el orden, lo que falta en el catálogo): sin conexión no se
+    /// guarda, y si falla no estorba la venta.
+    /// </summary>
+    public async Task RegistrarBusquedaAsync(SolicitudBusqueda busqueda)
+    {
+        if (contingencia is { EnLinea: false })
+            return;
+        try
+        {
+            await _http.PostAsync<object>("api/busquedas", busqueda, sinRespuesta: true);
+        }
+        catch (ErrorCaja)
+        {
+            // Se pierde esta: la siguiente sí queda.
+        }
+    }
 
     /// <summary>Los rápidos de la sucursal. Sin conexión no hay: la fila queda vacía hasta que vuelva.</summary>
     public Task<List<Rapido>> RapidosAsync(Guid sucursalId) =>

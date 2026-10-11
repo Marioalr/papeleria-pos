@@ -45,6 +45,9 @@ public sealed record ProductoVentaDto(
 
 public sealed record ResultadoBusquedaDto(Guid VarianteId, string Descripcion, string? Codigo, long PrecioCentavos, decimal? Existencia);
 
+/// <summary>Lo que se buscó en una caja y qué se eligió (vacío: no salió nada o no se eligió nada).</summary>
+public sealed record SolicitudBusqueda(Guid CajaId, string Texto, int Resultados, Guid? VarianteId);
+
 public sealed record SolicitudEntrada(string Usuario, string Pin);
 
 public sealed record SesionDto(Guid UsuarioId, string Nombre, Rol Rol);

@@ -5,6 +5,7 @@ using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Historico;
 using PapeleriaPos.Nucleo.Importacion;
 using PapeleriaPos.Nucleo.Inventario;
+using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
 
 namespace PapeleriaPos.Datos.Configuracion;
@@ -248,6 +249,19 @@ internal sealed class RenglonHojaCodigosConfiguracion : IEntityTypeConfiguration
         b.HasOne<Sucursal>().WithMany().HasForeignKey(r => r.SucursalId);
         b.HasOne<Variante>().WithMany().HasForeignKey(r => r.VarianteId);
         b.HasIndex(r => new { r.SucursalId, r.VarianteId }).IsUnique();
+    }
+}
+
+internal sealed class BusquedaConfiguracion : IEntityTypeConfiguration<Busqueda>
+{
+    public void Configure(EntityTypeBuilder<Busqueda> b)
+    {
+        b.ToTable("Busquedas");
+        b.HasOne<Caja>().WithMany().HasForeignKey(x => x.CajaId);
+        b.HasOne<Variante>().WithMany().HasForeignKey(x => x.VarianteId);
+        // «Lo elegido antes» se busca por caja y texto; lo que no se encontró, por fecha.
+        b.HasIndex(x => new { x.CajaId, x.Texto });
+        b.HasIndex(x => x.FechaUtc);
     }
 }
 

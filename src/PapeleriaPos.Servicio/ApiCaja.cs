@@ -77,8 +77,25 @@ public static class ApiCaja
         api.MapGet("/productos/{varianteId:guid}", async (Guid varianteId, Guid sucursalId, PosDbContext db, CatalogoEnMemoria catalogo) =>
             await catalogo.PorVarianteAsync(db, varianteId, sucursalId) is { } p ? Results.Ok(p) : Results.NotFound(new ErrorDto("El producto ya no está en el catálogo.")));
 
-        api.MapGet("/productos/buscar", async (string q, Guid sucursalId, PosDbContext db, CatalogoEnMemoria catalogo) =>
-            await catalogo.BuscarAsync(db, q, sucursalId));
+        api.MapGet("/productos/buscar", async (string q, Guid sucursalId, Guid? cajaId, PosDbContext db, CatalogoEnMemoria catalogo) =>
+            await catalogo.BuscarAsync(db, q, sucursalId, cajaId: cajaId));
+
+        // Lo que se buscó y qué se eligió: lo elegido sale primero la próxima vez en esa caja; lo que no salió se revisa en Productos.
+        api.MapPost("/busquedas", async (SolicitudBusqueda s, PosDbContext db, CatalogoEnMemoria catalogo) =>
+        {
+            var texto = CatalogoEnMemoria.ClaveDeBusqueda(s.Texto);
+            if (texto.Length == 0)
+                return Results.NoContent();
+            if (texto.Length > 100)
+                texto = texto[..100].TrimEnd();
+            if (!await db.Cajas.AnyAsync(c => c.Id == s.CajaId) || (s.VarianteId is { } v && !await db.Variantes.AnyAsync(x => x.Id == v)))
+                return Results.BadRequest(new ErrorDto("La caja o el producto de la búsqueda no existen."));
+            db.Busquedas.Add(new Busqueda { CajaId = s.CajaId, FechaUtc = DateTime.UtcNow, Texto = texto, Resultados = s.Resultados, VarianteId = s.VarianteId });
+            await db.SaveChangesAsync();
+            if (s.VarianteId is { } elegida)
+                catalogo.Aprender(s.CajaId, texto, elegida);
+            return Results.NoContent();
+        });
 
         // Los rápidos de la venta (docs/propuesta-interfaz.md, «Rápidos»): lo que no tiene código de barras y se vende todo el día.
         api.MapGet("/sucursales/{sucursalId:guid}/rapidos", async (Guid sucursalId, PosDbContext db) =>
