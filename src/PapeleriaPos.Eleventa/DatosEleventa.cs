@@ -18,7 +18,7 @@ public sealed record FilaPromocion(string Codigo, double Desde, double PrecioCon
 public sealed record FilaTicket(int Id, int? Folio, DateTime? VendidoEn, double Total, bool Cancelado);
 
 /// <param name="TotalArticulo">Vacío en las líneas viejas: entonces el importe es precio × cantidad.</param>
-/// <param name="Ganancia">Utilidad de toda la línea.</param>
+/// <param name="Ganancia">Utilidad por pieza (precio menos costo): la de la línea es la cantidad por esta.</param>
 public sealed record FilaLinea(
     int TicketId, string Codigo, string Nombre, double Cantidad, double? TotalArticulo, double PrecioFinal, double Ganancia,
     int? DepartamentoId, bool UsaMayoreo);

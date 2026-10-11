@@ -175,7 +175,7 @@ public static class ImportadorEleventa
                     Cantidad = cantidad,
                     PrecioCentavos = Centavos(l.PrecioFinal),
                     ImporteCentavos = importe,
-                    CostoCentavos = importe - Centavos(l.Ganancia),
+                    CostoCentavos = importe - Centavos(l.Ganancia * l.Cantidad),
                 });
             }
 
