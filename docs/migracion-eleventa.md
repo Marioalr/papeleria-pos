@@ -85,13 +85,18 @@ hoja por análisis:
 | Temporada | Venta por mes y lo que mueve el regreso a clases (15 de julio a 15 de septiembre) |
 
 - **Duplicados:** mismo nombre con las palabras en otro orden, otras mayúsculas o acentos, o abreviadas ("p." por
-  "punto"). Es estricto a propósito: "Pluma Bic azul" y "Pluma Bic negra" no se marcan.
+  "punto"). Es estricto a propósito: "Lapicero Bic azul" y "Lapicero Bic negro" no se marcan.
 - **Costo para comparar precios:** el promedio de la existencia; si no hay existencia, el último costo de compra.
 
 ## Limpieza
 
-- **Variantes:** en eleventa probablemente son productos sueltos ("Pluma azul", "Pluma roja"). Se agrupan de forma
+- **Variantes:** en eleventa probablemente son productos sueltos ("Lapicero azul", "Lapicero rojo"). Se agrupan de forma
   semiautomática por parecido del nombre y una persona revisa.
+- **El nombre de eleventa queda como sinónimo** (2026-10-10). Si la depuración le cambia el nombre a un producto
+  (abreviaturas expandidas, variantes juntas, otro orden de las palabras), el de eleventa se guarda como sinónimo suyo.
+  Así, el nombre que cada cajero recuerda lo sigue encontrando mientras se acostumbra al nuevo, y la búsqueda le enseña
+  el nombre nuevo ([propuesta](propuesta-interfaz.md#el-camino-de-siempre)). Los códigos cortos de eleventa se quedan
+  como códigos.
 - **Servicios:** se convierten en servicios con receta (ver [servicios](servicios.md)).
 
 ## Convivencia con eleventa (idea a evaluar)

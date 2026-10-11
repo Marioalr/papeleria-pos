@@ -36,17 +36,18 @@
 | Servicio POS | ASP.NET Core como servicio de Windows | Caja principal de cada sucursal |
 | Central | El mismo servicio en modo central (pospuesto) | Servidor virtual ([por qué](servidor-remoto.md)) |
 | Caja | Ventana de Windows (WPF) que muestra la interfaz compartida | Todas las cajas |
-| App Android | .NET MAUI con la interfaz compartida | Celulares de la sucursal, por Wi-Fi |
+| App Android | Kotlin nativo, con la API del servicio (2026-10-10) | Celulares de la sucursal, por Wi-Fi |
 | Panel del dueño | La interfaz compartida, servida por el central (pospuesto) | Navegador, en internet con llave de acceso (passkey) |
 | Puente | Servicio .NET en Linux, siempre prendido: cámaras, reloj de la tienda y contador (pospuesto, [cámaras](camaras.md)) | Raspberry Pi en cada tienda |
 | Receptor de WhatsApp | Un Cloudflare Worker o un proveedor (Kapso) que guarda los mensajes ([WhatsApp](whatsapp.md)) | Fuera de la tienda, mientras no haya central |
 | Módulo de impresión | Agente en cada PC que imprime ([detalle](impresion.md)) | PCs con impresora |
 | Núcleo | Biblioteca .NET sin dependencias de Windows | Compartido por todo; sus pruebas corren en cualquier máquina |
 
-- **Una sola interfaz.** Componentes Blazor (HTML/CSS + C#) en una biblioteca compartida: la caja los muestra en una
-  ventana de Windows (con WebView2, que ya trae Windows 11), la app Android en MAUI y el panel en el navegador. Se
-  escriben una vez para los tres. .NET ya trae una plantilla para este esquema (MAUI Blazor Hybrid + Web). En la caja
-  todo corre en la misma PC, sin red de por medio, así que la velocidad no se sacrifica.
+- **La interfaz de la caja.** Componentes Blazor (HTML/CSS + C#) en una biblioteca: la caja los muestra en una
+  ventana de Windows (con WebView2, que ya trae Windows 11) y el panel del dueño (pospuesto) los mostraría en el
+  navegador. La app Android es nativa en Kotlin y usa la misma API del servicio (2026-10-10), así que la interfaz se
+  diseña solo para la caja: el [rediseño](propuesta-interfaz.md) se aprobó el 2026-10-10. En la caja el código
+  corre en la misma PC, sin WebAssembly.
 - **Cada sucursal funciona sola.** Internet se usa para Telegram, el respaldo en Backblaze B2, Healthchecks.io y, con
   la API de WhatsApp, pedir los mensajes a su receptor; con el central (pospuesto), también para hablar con él. Si se
   cae, se vende igual.

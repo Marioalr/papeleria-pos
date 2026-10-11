@@ -34,7 +34,9 @@
 | Conteo | Diferencia encontrada al contar |
 
 - La existencia es la suma de movimientos. El **costo promedio** se actualiza con cada compra.
-- **Nunca se bloquea una venta por falta de existencia:** se vende y se genera una alerta para revisar.
+- **Nunca se bloquea una venta por falta de existencia:** se vende y se genera una alerta para revisar. Si el
+  sistema dice que queda una y las dos cajas la escanean a la vez, el producto existe y la base es la que está mal; las
+  dos ventas pasan y la diferencia sale en el conteo. Tampoco hay opción para bloquearla.
 - **Apartados y pedidos:** la mercancía separada se descuenta del disponible, no de la existencia.
 
 ## Compras
