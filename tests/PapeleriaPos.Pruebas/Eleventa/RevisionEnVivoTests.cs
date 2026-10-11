@@ -55,6 +55,8 @@ public class RevisionEnVivoTests
         }
         Assert.Contains(devolucion, l => l.Contains("se devolvió completo y su renglón se borró"));
         Assert.Contains(cierre, l => l.Contains("faltante de $5.00 quedó como Salida"));
+        // Ese día ya tenía renglón (hubo ventas): lo lleva también.
+        Assert.Contains(cierre, l => l.Contains("el día también lo lleva"));
         // Sin cancelaciones, devoluciones ni cierres, no hay nada que revisar.
         Assert.Empty(RevisionEnVivo.Revisar(cerrada, await FotoEleventa.TomarAsync(e.Conexion)));
     }
@@ -131,6 +133,6 @@ public class RevisionEnVivoTests
         Assert.Contains(lineas, l => l.StartsWith("  ✓ el efectivo al cierre ($600.00)"));
         Assert.Contains("  ✓ su ticket abierto se borró", lineas);
         Assert.Contains("  ✗ el sobrante de $20.00 quedó como «Entrada» y ACUMULADO_ENTRADAS del turno cambió $0.00", lineas);
-        Assert.Contains("  ✓ el día no lleva el faltante ni el sobrante", lineas);
+        Assert.Contains("  ✓ ese día no tenía renglón: no lo lleva", lineas);
     }
 }

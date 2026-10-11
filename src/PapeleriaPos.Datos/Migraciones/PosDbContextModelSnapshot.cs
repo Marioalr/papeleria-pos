@@ -2795,6 +2795,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<int>("Intentos")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid?>("MovimientoId")
+                        .HasColumnType("TEXT");
+
                     b.Property<int?>("TicketEleventa")
                         .HasColumnType("INTEGER");
 
@@ -2817,6 +2820,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsUnique();
 
                     b.HasIndex("FolioEleventa");
+
+                    b.HasIndex("MovimientoId")
+                        .IsUnique();
 
                     b.HasIndex("TurnoId")
                         .IsUnique();
@@ -3862,6 +3868,11 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasOne("PapeleriaPos.Nucleo.Ventas.Devolucion", null)
                         .WithMany()
                         .HasForeignKey("DevolucionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PapeleriaPos.Nucleo.Turnos.MovimientoCaja", null)
+                        .WithMany()
+                        .HasForeignKey("MovimientoId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("PapeleriaPos.Nucleo.Turnos.Turno", null)

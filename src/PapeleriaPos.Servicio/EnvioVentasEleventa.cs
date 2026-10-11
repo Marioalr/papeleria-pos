@@ -9,12 +9,13 @@ using PapeleriaPos.Nucleo.Ventas;
 namespace PapeleriaPos.Servicio;
 
 /// <summary>
-/// El piloto, pasos 3 y 4 (docs/migracion-eleventa.md, «Mandar cada venta» y «Cancelar, devolver y cerrar el turno»):
-/// manda a eleventa la bandeja de salida (ventas, cancelaciones, devoluciones y cierres de turno), en el orden en que
-/// pasaron. Si algo no entra, lo que sigue espera: una devolución nunca llega antes que su venta ni un turno se cierra
-/// antes de que lleguen sus ventas. Al cobrar se intenta la venta enseguida, para que el ticket salga con el folio de
-/// eleventa; si no contesta a tiempo, o hay algo antes en la bandeja, el ticket sale con el folio de esta caja. Uno a la
-/// vez: la marca que evita duplicar en eleventa no aguanta dos envíos de lo mismo al mismo tiempo.
+/// El piloto, pasos 3 y 4 (docs/migracion-eleventa.md, «Mandar cada venta», «Cancelar, devolver y cerrar el turno» y
+/// «Entradas y salidas de dinero»): manda a eleventa la bandeja de salida (ventas, cancelaciones, devoluciones, entradas
+/// y salidas de efectivo y cierres de turno), en el orden en que pasaron. Si algo no entra, lo que sigue espera: una
+/// devolución nunca llega antes que su venta ni un turno se cierra antes de que lleguen sus ventas, entradas y salidas.
+/// Al cobrar se intenta la venta enseguida, para que el ticket salga con el folio de eleventa; si no contesta a tiempo, o
+/// hay algo antes en la bandeja, el ticket sale con el folio de esta caja. Uno a la vez: la marca que evita duplicar en
+/// eleventa no aguanta dos envíos de lo mismo al mismo tiempo.
 /// </summary>
 public sealed class EnvioVentasEleventa(
     IServiceScopeFactory alcances, OpcionesEleventa opciones, TimeProvider reloj, IHostApplicationLifetime vida, ILogger<EnvioVentasEleventa> log)
@@ -34,7 +35,8 @@ public sealed class EnvioVentasEleventa(
 
     /// <summary>
     /// Pone la venta en la bandeja antes de cobrarla: se guarda en la misma transacción que la venta, así no hay venta
-    /// cobrada que se quede sin mandar. Sus cancelaciones, devoluciones y el cierre de su turno se encolan solos.
+    /// cobrada que se quede sin mandar. Sus cancelaciones, devoluciones y el cierre de su turno se encolan solos, y las
+    /// entradas y salidas, en <c>RegistroCaja</c> si esta caja manda a eleventa (<see cref="Activo"/>).
     /// </summary>
     public void Encolar(PosDbContext db, Guid ventaId)
     {
@@ -101,18 +103,25 @@ public sealed class EnvioVentasEleventa(
         var devolucionIds = porAtender.Where(e => e.DevolucionId is not null).Select(e => e.DevolucionId!.Value).ToList();
         var devoluciones = await db.Devoluciones.AsNoTracking().Where(d => devolucionIds.Contains(d.Id))
             .Select(d => new { d.Id, d.FechaUtc, d.ReembolsoEfectivoCentavos }).ToDictionaryAsync(d => d.Id);
+        var movimientoIds = porAtender.Where(e => e.MovimientoId is not null).Select(e => e.MovimientoId!.Value).ToList();
+        var movimientos = await db.MovimientosCaja.AsNoTracking().Where(m => movimientoIds.Contains(m.Id))
+            .Select(m => new { m.Id, m.Tipo, m.MontoCentavos, m.Motivo, m.FechaUtc }).ToDictionaryAsync(m => m.Id);
         var conteo = await db.EnviosAEleventa.AsNoTracking().GroupBy(e => e.Estado).Select(g => new { g.Key, Cuantos = g.Count() }).ToListAsync();
 
         EnvioEleventaDto Dto(EnvioAEleventa e)
         {
             var venta = e.VentaId is { } v && ventas.TryGetValue(v, out var x) ? x : null;
             var devolucion = e.DevolucionId is { } d && devoluciones.TryGetValue(d, out var y) ? y : null;
+            var movimiento = e.MovimientoId is { } m && movimientos.TryGetValue(m, out var z) ? z : null;
             var folio = venta is null ? "" : $"{venta.Serie}-{venta.Folio:000000}";
             var (descripcion, fecha, total) = e.Tipo switch
             {
                 TipoEnvioEleventa.Venta => ($"Venta {folio}", venta?.PagadaUtc ?? e.CreadoUtc, venta?.Total ?? 0),
                 TipoEnvioEleventa.Cancelacion => ($"Cancelación de {folio}", devolucion?.FechaUtc ?? e.CreadoUtc, devolucion?.ReembolsoEfectivoCentavos ?? 0),
                 TipoEnvioEleventa.Devolucion => ($"Devolución de {folio}", devolucion?.FechaUtc ?? e.CreadoUtc, devolucion?.ReembolsoEfectivoCentavos ?? 0),
+                TipoEnvioEleventa.MovimientoDeCaja => (
+                    $"{(movimiento?.Tipo == Nucleo.Turnos.TipoMovimientoCaja.Salida ? "Salida" : "Entrada")} de efectivo: {movimiento?.Motivo}",
+                    movimiento?.FechaUtc ?? e.CreadoUtc, movimiento?.MontoCentavos ?? 0),
                 _ => ("Cierre del turno", e.CreadoUtc, 0L),
             };
             return new EnvioEleventaDto(e.Id, e.Tipo, descripcion, HoraMexico.ALocal(fecha), total, e.Estado, e.Intentos, e.Error, e.FolioEleventa);
@@ -241,6 +250,12 @@ public sealed class EnvioVentasEleventa(
                 (porRevisar, descartada) = (devolucion.PorRevisar, devolucion.Descartada);
                 if (devolucion.Devolucion is { } paraDevolver)
                     escribir = async () => envio.IdEleventa = (await EnvioEleventa.DevolverAsync(servidor, caja, paraDevolver, ct)).DevolucionId;
+                break;
+            case TipoEnvioEleventa.MovimientoDeCaja:
+                var movimiento = await VentasParaEleventa.ArmarMovimientoAsync(db, envio.MovimientoId!.Value, ct);
+                porRevisar = movimiento.PorRevisar;
+                if (movimiento.Movimiento is { } paraMover)
+                    escribir = async () => envio.IdEleventa = (await EnvioEleventa.MoverEfectivoAsync(servidor, caja, paraMover, ct)).MovimientoId;
                 break;
             case TipoEnvioEleventa.CierreDeTurno:
                 var turno = await db.Turnos.AsNoTracking().SingleAsync(t => t.Id == envio.TurnoId, ct);

@@ -360,6 +360,13 @@ misma bandeja, en orden. Se probó contra copias: los cortes de eleventa cuadran
 las entradas y salidas de la caja 2, el corte de eleventa no las tiene. Falta verlos en vivo en la tienda cuando pasen de
 verdad.
 
+**Avance (2026-10-11):** con las entradas y salidas de dinero (F7 y F8), el paso 4 queda completo
+([cómo](migracion-eleventa.md#entradas-y-salidas-de-dinero-paso-4)). De la copia se sacó cómo las escribe eleventa: un
+movimiento del corte con el comentario, que suma al turno y al día si ese día ya tiene renglón (eso corrige lo que se
+había dicho del faltante al cerrar). La caja 2 las manda por la misma bandeja, también las de contingencia y las de antes
+de la primera venta, y con eso eleventa cierra el turno con lo contado. Se probó contra copias. Falta ver en vivo una
+entrada o salida después de medianoche en un turno que ya vendió ese día.
+
 #### Al terminar el piloto
 
 Cada parte entra sin detener a la caja 2:

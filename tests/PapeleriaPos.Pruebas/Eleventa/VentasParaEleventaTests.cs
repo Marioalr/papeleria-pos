@@ -82,4 +82,28 @@ public class VentasParaEleventaTests
         Assert.Null(deCancelada.Venta);
         Assert.Contains("canceló", deCancelada.PorRevisar);
     }
+
+    [Fact]
+    public void Una_entrada_o_salida_va_con_su_motivo_y_su_hora_y_la_que_llego_despues_del_corte_queda_por_revisar()
+    {
+        var salida = new MovimientoCaja
+        {
+            TurnoId = _turno.Id, Tipo = TipoMovimientoCaja.Salida, MontoCentavos = 12550, Motivo = "Garrafón de agua", FechaUtc = Cobrada.AddTicks(1234567),
+        };
+        var tarde = new MovimientoCaja
+        {
+            TurnoId = _turno.Id, Tipo = TipoMovimientoCaja.Entrada, MontoCentavos = 20000, Motivo = "Cambio del banco", FechaUtc = Cobrada,
+            EnContingencia = true, FueraDeCorteUtc = Cobrada.AddHours(2),
+        };
+
+        var r = VentasParaEleventa.ArmarMovimiento(salida, _turno);
+        var fuera = VentasParaEleventa.ArmarMovimiento(tarde, _turno);
+
+        Assert.Null(r.PorRevisar);
+        Assert.Equal(new MovimientoParaEleventa(false, 125.5m, "Garrafón de agua", new DateTime(2026, 3, 9, 11, 30, 0).AddTicks(1234567),
+            new TurnoParaEleventa(new DateTime(2026, 3, 9, 8, 0, 0), 500m)), r.Movimiento);
+        // En eleventa su turno ya se cerró: mandarla abriría otro.
+        Assert.Null(fuera.Movimiento);
+        Assert.Contains("corte", fuera.PorRevisar);
+    }
 }

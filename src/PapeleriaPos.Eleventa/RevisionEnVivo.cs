@@ -195,9 +195,25 @@ public static class RevisionEnVivo
                 $"el {(falto ? "faltante" : "sobrante")} de {Dinero(Numero(m["MONTO"]))} quedó como {m["TIPO"]} y en {columna} del turno",
                 $"el {(falto ? "faltante" : "sobrante")} de {Dinero(Numero(m["MONTO"]))} quedó como «{m["TIPO"]}» y {columna} del turno cambió {Dinero(Delta(columna))}");
         }
-        var dias = f.Cambiados("CORTE_OPERACIONES").Where(o => o.Antes["ACUMULADO_SALIDAS"] != o.Despues["ACUMULADO_SALIDAS"] || o.Antes["ACUMULADO_ENTRADAS"] != o.Despues["ACUMULADO_ENTRADAS"]).ToList();
+        // El día lo lleva solo si ya tenía renglón al cerrar (eleventa no lo crea para esto), como una entrada o salida.
         if (diferencias.Count > 0)
-            yield return Si(dias.Count == 0, "el día no lleva el faltante ni el sobrante", "el día también cambió sus entradas o salidas (la caja 2 no se las suma)");
+        {
+            var fecha = t["TERMINO_EN"].Length >= 10 ? t["TERMINO_EN"][..10] : "";
+            var delDia = f.TodosAntes("CORTE_OPERACIONES").FirstOrDefault(o => o["ID_CAJA"] == t["ID_CAJA"] && o["DIA"].StartsWith(fecha, StringComparison.Ordinal));
+            var cambiados = f.Cambiados("CORTE_OPERACIONES")
+                .Where(o => o.Antes["ACUMULADO_SALIDAS"] != o.Despues["ACUMULADO_SALIDAS"] || o.Antes["ACUMULADO_ENTRADAS"] != o.Despues["ACUMULADO_ENTRADAS"]).ToList();
+            if (delDia is null)
+                yield return Si(cambiados.Count == 0, "ese día no tenía renglón: no lo lleva", "ese día no tenía renglón, pero algún día cambió sus entradas o salidas");
+            else
+            {
+                var despues = f.Despues("CORTE_OPERACIONES", delDia.Clave);
+                var neto = diferencias.Sum(m => m["DESCRIPCION"].StartsWith("Efectivo faltante", StringComparison.Ordinal) ? -Numero(m["MONTO"]) : Numero(m["MONTO"]));
+                var cambio = despues is null ? 0
+                    : Numero(despues["ACUMULADO_ENTRADAS"]) - Numero(delDia["ACUMULADO_ENTRADAS"]) - (Numero(despues["ACUMULADO_SALIDAS"]) - Numero(delDia["ACUMULADO_SALIDAS"]));
+                yield return Si(Igual(cambio, neto), "el día también lo lleva (ya tenía renglón)",
+                    $"el día ya tenía renglón y sus entradas menos salidas cambiaron {Dinero(cambio)} (la caja 2: {Dinero(neto)})");
+            }
+        }
     }
 
     private static string FolioDeLosMovimientos(Fotos f, string ticketId) =>

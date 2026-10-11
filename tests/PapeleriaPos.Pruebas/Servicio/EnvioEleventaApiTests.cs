@@ -6,14 +6,16 @@ using PapeleriaPos.Eleventa;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Importacion;
+using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Pruebas.Eleventa;
 
 namespace PapeleriaPos.Pruebas.Servicio;
 
 /// <summary>
-/// El piloto, paso 3 (docs/migracion-eleventa.md, «Mandar cada venta»): cada venta cobrada entra a la bandeja hacia
-/// eleventa; al cobrar se intenta ya, y el ticket sale con el folio de eleventa si contestó a tiempo.
+/// El piloto, pasos 3 y 4 (docs/migracion-eleventa.md, «Mandar cada venta» y lo que sigue): cada venta cobrada entra a la
+/// bandeja hacia eleventa; al cobrar se intenta ya, y el ticket sale con el folio de eleventa si contestó a tiempo. Detrás
+/// van sus cancelaciones y devoluciones, las entradas y salidas de efectivo y el cierre del turno.
 /// </summary>
 public class EnvioEleventaApiTests
 {
@@ -182,10 +184,84 @@ public class EnvioEleventaApiTests
         var c = await AbrirAsync(servicio);
 
         var ticket = await CobrarAsync(c);
+        await MovimientoAsync(c, TipoMovimientoCaja.Salida, 10000, "Garrafón de agua");
 
         Assert.Null(ticket.FolioEleventa);
         var envios = await EnviosAsync(c);
         Assert.Equal((false, 0, null), (envios.Activo, envios.Pendientes, envios.Problema));
+        await using var db = servicio.Base();
+        Assert.Empty(db.EnviosAEleventa);
+    }
+
+    private static async Task<ComprobanteMovimientoDto> MovimientoAsync(Caja c, TipoMovimientoCaja tipo, long montoCentavos, string motivo) =>
+        await Leer<ComprobanteMovimientoDto>(await c.Http.PostAsJsonAsync($"api/turnos/{c.Turno.Id}/movimientos",
+            new SolicitudMovimiento(tipo, montoCentavos, motivo, c.Sesion.UsuarioId)));
+
+    [Fact]
+    public async Task Las_entradas_y_salidas_entran_a_la_bandeja_con_el_movimiento_tambien_las_de_contingencia()
+    {
+        // Nadie escucha en ese puerto: como la caja principal apagada.
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
+        var c = await AbrirAsync(servicio);
+
+        // Antes de la primera venta: eleventa también abre el turno para una entrada.
+        await MovimientoAsync(c, TipoMovimientoCaja.Entrada, 20000, "Cambio del banco");
+        var sinConexion = await c.Http.PostAsJsonAsync($"api/bandeja/turnos/{c.Turno.Id}/movimientos",
+            new MovimientoContingenciaDto(Guid.NewGuid(), TipoMovimientoCaja.Salida, 10000, "Garrafón de agua", c.Sesion.UsuarioId, DateTime.UtcNow));
+        // Sin ventas, el corte también cierra el turno de eleventa: lo abrió la entrada.
+        var corte = await c.Http.PostAsJsonAsync($"api/turnos/{c.Turno.Id}/corte-z",
+            new SolicitudCorteZ("encargado", "2222", new Dictionary<long, int> { [50000] = 1 }));
+        // Se intentó ya, sin esperar la vuelta de fondo.
+        var envios = await EsperarAsync(c, x => x.PorAtender.Count > 0 && x.PorAtender[0].Intentos >= 1);
+
+        Assert.True(sinConexion.IsSuccessStatusCode, await sinConexion.Content.ReadAsStringAsync());
+        Assert.True(corte.IsSuccessStatusCode, await corte.Content.ReadAsStringAsync());
+        Assert.Equal(3, envios.Pendientes);
+        Assert.Equal([TipoEnvioEleventa.MovimientoDeCaja, TipoEnvioEleventa.MovimientoDeCaja, TipoEnvioEleventa.CierreDeTurno], envios.PorAtender.Select(x => x.Tipo));
+        Assert.Equal(["Entrada de efectivo: Cambio del banco", "Salida de efectivo: Garrafón de agua", "Cierre del turno"], envios.PorAtender.Select(x => x.Descripcion));
+        Assert.Equal([20000L, 10000, 0], envios.PorAtender.Select(x => x.TotalCentavos));
+        Assert.StartsWith("No contesta el eleventa de 127.0.0.1", envios.UltimoError);
+    }
+
+    [FactConFirebird]
+    public async Task Las_entradas_y_salidas_llegan_a_eleventa_y_el_corte_z_lo_cierra_con_lo_contado()
+    {
+        await using var e = await EleventaAsync();
+        await e.EjecutarAsync("INSERT INTO USUARIOS (ID, USUARIO) VALUES (7, 'cajera2')");
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor));
+        var c = await AbrirAsync(servicio);
+        await MapearAsync(servicio, c.Producto.VarianteId);
+
+        // La entrada, antes de la primera venta, abre el turno de eleventa y se manda ya, sin esperar la vuelta.
+        await MovimientoAsync(c, TipoMovimientoCaja.Entrada, 20000, "Cambio del banco");
+        var trasLaEntrada = await EsperarAsync(c, x => x.Pendientes == 0);
+        var ticket = await CobrarAsync(c);
+        await MovimientoAsync(c, TipoMovimientoCaja.Salida, 10000, "Garrafón de agua");
+        // Se cuentan $700: un billete de 500 y uno de 200.
+        var corte = await Leer<CorteDto>(await c.Http.PostAsJsonAsync($"api/turnos/{c.Turno.Id}/corte-z",
+            new SolicitudCorteZ("encargado", "2222", new Dictionary<long, int> { [50000] = 1, [20000] = 1 })));
+        var envios = await EsperarAsync(c, x => x.Pendientes == 0);
+
+        Assert.Equal(0, trasLaEntrada.Pendientes);
+        Assert.Equal((0, 0), (envios.Pendientes, envios.PorRevisar));
+        Assert.Equal((20000L, 10000L), (corte.EntradasCentavos, corte.SalidasCentavos));
+        // Un solo turno en eleventa: el que abrió la entrada, con la venta, la salida y el cierre.
+        var turno = (await e.FilasAsync("SELECT * FROM TURNOS")).Single();
+        var venta = (await e.FilasAsync("SELECT TOTAL, TURNO_ID FROM VENTATICKETS WHERE CAJA_ID = 4 AND ESTA_ABIERTO = 'f'")).Single();
+        Assert.Equal((ticket.TotalCobradoCentavos / 100.0, turno["ID"]), (Math.Round(Convert.ToDouble(venta["TOTAL"]), 2), venta["TURNO_ID"]));
+        var manuales = await e.FilasAsync("SELECT TIPO, MONTO, DESCRIPCION, ID_TURNO FROM CORTE_MOVIMIENTOS WHERE DESCRIPCION NOT STARTING WITH 'Efectivo ' ORDER BY ID");
+        Assert.Equal([("Entrada", 200m, "Cambio del banco"), ("Salida", 100m, "Garrafón de agua")],
+            manuales.Select(m => ((string)m["TIPO"]!, (decimal)m["MONTO"]!, (string)m["DESCRIPCION"]!)));
+        Assert.All(manuales, m => Assert.Equal(turno["ID"], m["ID_TURNO"]));
+
+        // Lo esperado de la caja nueva ya cuenta la entrada y la salida: con su diferencia, eleventa cierra con lo contado.
+        var diferencia = corte.DiferenciaCentavos!.Value / 100m;
+        Assert.NotEqual(0m, diferencia);
+        Assert.Equal((70000L, 700m), (corte.ContadoCentavos, (decimal)turno["EFECTIVO_AL_CIERRE"]!));
+        Assert.Equal((200m + Math.Max(diferencia, 0), 100m + Math.Max(-diferencia, 0)),
+            ((decimal)turno["ACUMULADO_ENTRADAS"]!, (decimal)turno["ACUMULADO_SALIDAS"]!));
+        var alCerrar = (await e.FilasAsync("SELECT TIPO, MONTO FROM CORTE_MOVIMIENTOS WHERE DESCRIPCION STARTING WITH 'Efectivo '")).Single();
+        Assert.Equal((diferencia < 0 ? "Salida" : "Entrada", Math.Abs(diferencia)), ((string)alCerrar["TIPO"]!, (decimal)alCerrar["MONTO"]!));
     }
 
     private static async Task<SesionDto> EncargadoAsync(Caja c) =>
