@@ -56,7 +56,7 @@
 
     <div class="captura">
         <label for="codigo">Código del producto:</label>
-        <input id="codigo" data-codigo autocomplete="off" @bind="_codigo" @bind:event="oninput" @onkeydown="AlTeclearCodigo" />
+        <input id="codigo" data-codigo autocomplete="off" @bind="_captura.Texto" @bind:event="oninput" @onkeydown="AlTeclearCodigo" />
         <button class="boton" @onclick="AgregarCodigoAsync">ENTER - Agregar producto</button>
     </div>
     <div class="botones-venta">
@@ -388,7 +388,7 @@
     private int _actual;
     private int _seleccion = -1;
     private int _siguienteNumero = 1;
-    private string _codigo = "";
+    private readonly CapturaCodigo _captura = new();
     private string? _mensaje;
     private bool _mensajeEsError;
     private TicketDto? _ultimo;
@@ -443,7 +443,7 @@
             case "F11": await MayoreoAsync(); break;
             case "F3": await Abrir(Ventanas.Productos); break;
             case "F4": await Abrir(Ventanas.Inventario); break;
-            case "Escape": _codigo = ""; _mensaje = null; break;
+            case "Escape": _captura.Texto = ""; _mensaje = null; break;
         }
         StateHasChanged();
     }
@@ -456,18 +456,17 @@
             await AgregarCodigoAsync();
     }
 
+    /// <summary>El cuadro se vacía al momento y el escaneo espera su turno: el lector no espera a la red.</summary>
+    private Task AgregarCodigoAsync() => _captura.EnterAsync(ProcesarCodigoAsync);
+
     /// <summary>
     /// "7501…" agrega una pieza; "3*7501…" agrega tres; "5*" cambia la cantidad del renglón seleccionado. El QR de un
     /// ticket ("A-000123") abre la devolución.
     /// </summary>
-    private async Task AgregarCodigoAsync()
+    private async Task ProcesarCodigoAsync(string texto)
     {
-        var texto = _codigo.Trim();
-        if (texto.Length == 0)
-            return;
         if (FolioTicket.IsMatch(texto))
         {
-            _codigo = "";
             await AbrirDevolucion(texto.ToUpperInvariant());
             return;
         }
@@ -486,7 +485,6 @@
             if (texto.Length == 0)
             {
                 await FijarCantidadSeleccion(cantidad);
-                _codigo = "";
                 return;
             }
         }
@@ -498,7 +496,6 @@
             {
                 // Como en eleventa, se escribe el nombre donde va el código: se busca por nombre en vez de ofrecer el alta.
                 _buscarTexto = texto;
-                _codigo = "";
                 await Abrir(Ventanas.Buscar);
                 return;
             }
@@ -509,7 +506,6 @@
                 return;
             }
             Agregar(producto, null, cantidad);
-            _codigo = "";
         }
         catch (ErrorCaja ex)
         {
@@ -629,7 +625,7 @@
             Avisar("Selecciona un producto (flechas) para ver su mayoreo.");
             return;
         }
-        var texto = _codigo.Trim().TrimEnd('*');
+        var texto = _captura.Texto.Trim().TrimEnd('*');
         if (texto.Length > 0)
         {
             if (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out var piezas) || piezas <= 0)
@@ -640,7 +636,7 @@
             // Si no se pudo (una fracción en algo por pieza), se queda el error y lo escrito.
             if (!await FijarCantidadSeleccion(Cantidad.Unidades(Math.Round(piezas, 3))))
                 return;
-            _codigo = "";
+            _captura.Texto = "";
             if (linea.TieneMayoreo)
                 Avisar($"{MayoreoTexto(linea, Actual.Productos[varianteId])}: ahorra {Formato.Dinero(linea.AhorroMayoreoCentavos)}.", error: false);
             else if (linea.PrecioCambiado)
@@ -1042,7 +1038,6 @@
         _codigoNuevo = null;
         await Cerrar();
         Agregar(producto, null, Cantidad.Piezas(1));
-        _codigo = "";
         Avisar($"«{producto.Descripcion}» quedó dado de alta (por completar en F3).", error: false);
     }
 
