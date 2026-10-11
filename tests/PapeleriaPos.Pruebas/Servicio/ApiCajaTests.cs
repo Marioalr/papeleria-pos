@@ -34,7 +34,31 @@ public sealed class ServicioDePrueba : IAsyncLifetime
         await Fabrica.DisposeAsync();
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         foreach (var archivo in new[] { _ruta, _ruta + "-wal", _ruta + "-shm" })
-            File.Delete(archivo);
+            await BorrarAsync(archivo);
+    }
+
+    /// <summary>
+    /// En Windows, el archivo puede seguir abierto un instante después de parar el servicio (un trabajo de fondo que
+    /// terminaba): se reintenta, y si no, se queda en la carpeta temporal. Una limpieza fallida no tumba la corrida.
+    /// </summary>
+    private static async Task BorrarAsync(string archivo)
+    {
+        for (var intento = 1; ; intento++)
+        {
+            try
+            {
+                File.Delete(archivo);
+                return;
+            }
+            catch (IOException) when (intento < 20)
+            {
+                await Task.Delay(100);
+            }
+            catch (IOException)
+            {
+                return;
+            }
+        }
     }
 }
 
