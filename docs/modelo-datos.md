@@ -55,10 +55,10 @@ tipo `Cantidad` hace la conversión para que nadie multiplique por 1000 a mano.
 **Departamento**: `Id`, `Nombre`, `Activo`. Plano, como en eleventa.
 
 **Marca**: `Id`, `Nombre` (único, sin importar mayúsculas ni acentos), `Activa`. Tabla propia y no texto libre:
-distingue productos parecidos ("Pluma punto fino" de Bic y de Pelikan), se busca por ella y evita tener "Bic",
+distingue productos parecidos ("Lapicero punto fino" de Bic y de Pelikan), se busca por ella y evita tener "Bic",
 "BIC" y "bic" como tres marcas distintas.
 
-**Producto** es el modelo que se ve en la búsqueda ("Pluma Bic punto fino"):
+**Producto** es el modelo que se ve en la búsqueda ("Lapicero Bic punto fino"):
 
 | Campo | Notas |
 |---|---|
@@ -79,7 +79,7 @@ componentes y recetas llegan en las fases 3 y 4.
 | `ManejaCaducidad` | Para los pocos productos que caducan |
 | `Activa` | |
 
-Más adelante las variantes llevarán **atributos** (Color = Azul, Tamaño = Carta) para filtrar ("todas las plumas
+Más adelante las variantes llevarán **atributos** (Color = Azul, Tamaño = Carta) para filtrar ("todos los lapiceros
 azules"). Se agregan como una tabla aparte sin tocar lo de aquí, y la `Descripcion` queda como respaldo.
 
 **Presentacion**: `VarianteId`, `Nombre` ("Pieza", "Paquete 12", "Rollo 50 m"), `Factor` (en milésimas de la unidad

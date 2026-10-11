@@ -37,23 +37,24 @@
 
 | Tema | Decisión |
 |---|---|
-| Lenguaje | C# / .NET 10 en todo: Windows (impresoras, spooler), Android y web con un solo lenguaje |
-| Interfaz | Una sola, en componentes Blazor: la caja (ventana de Windows), la app Android (MAUI) y el panel del dueño. Todo operable con teclado; diseño para 1366×768 |
+| Lenguaje | C# / .NET 10 en Windows (impresoras, spooler), el servicio y la web; la app Android, en Kotlin (2026-10-10) |
+| Interfaz | Componentes Blazor para la caja (ventana de Windows) y el panel del dueño. Todo operable con teclado; diseño para 1366×768. Rediseño aprobado (2026-10-10) ([propuesta](propuesta-interfaz.md)); sus preguntas se contestan antes de cada entrega |
 | Servidor de sucursal | Vive en la **caja principal**, como en eleventa, como servicio de Windows (corre sin sesión iniciada y se reinicia solo) |
 | Central | **Pospuesto** (2026-10-08) con la multisucursal. La propuesta: un servidor virtual siempre prendido (Vultr Ciudad de México) para administrar ante un suceso, precios por sucursal y cualquier flujo de mercancía, ensayado antes en una máquina propia con Linux ([propuesta](servidor-remoto.md), [prueba](prueba-sucursales-linux.md)) |
 | Base de datos | SQLite en todas partes; en cada lugar el servicio es el único que escribe |
-| Núcleo | Sin dependencias de Windows: lo comparten la caja, los servidores y la app Android |
-| Inventario | Kardex: solo se agregan movimientos y la existencia es la suma |
+| Núcleo | Sin dependencias de Windows: lo comparten la caja y los servidores; la app Android usa la API del servicio |
+| Inventario | Kardex: solo se agregan movimientos y la existencia es la suma. La existencia nunca detiene una venta: si alguien trae el producto a la caja, existe y la base es la que está mal (2026-10-10, [inventario](inventario.md)) |
 | IDs, dinero y fechas | UUIDv7, centavos enteros, UTC; folios legibles por caja (A-000123) |
 | Contingencia | Cada caja guarda copia del catálogo y una bandeja de salida: si la caja principal se apaga, las demás siguen vendiendo |
-| Roles | Dueño, encargado y cajero; lo que puede hacer cada uno es **configurable** |
+| Escaneo | Siempre contra la copia local del catálogo, también en línea (2026-10-10): la red no entra en el escaneo. Los productos nuevos se dan de alta pocos días a la semana, así que la copia casi siempre está al día; el cobro lleva su versión para que los precios coincidan ([propuesta](propuesta-interfaz.md#rendimiento)) |
+| Roles | Sin roles (2026-10-10): cada usuario tiene sus **permisos**, cada uno en «puede», «con autorización» o «no». Al instalar se ponen los de defecto y la primera cuenta tiene todos ([propuesta](propuesta-interfaz.md#usuarios-y-permisos)) |
 | Clientes | El celular solo identifica un **pedido** al recogerlo. **Clientes registrados**: pocos, los de confianza |
 | Impresión | Lo que hace Control Print se reescribe como módulo del POS ([detalle](impresion.md)), para las tres impresoras de inyección de la matriz (dos WF-6590 y una L5590) |
 | WhatsApp | API oficial en modo coexistencia; nunca librerías no oficiales. Antes de eso, captura manual desde la PC. Sin central, la API recibe los mensajes en un receptor aparte, nunca con un túnel en la caja principal ([WhatsApp](whatsapp.md)) |
 | Alertas y autorización remota | Bot de Telegram en la caja principal, desde el piloto. Con el central (pospuesto): un solo bot con foto del suceso y botones, alerta que suena aunque el celular esté en silencio, llamada y acciones a distancia con PIN o huella ([propuesta](servidor-remoto.md)) |
 | Panel del dueño | Pospuesto con el central ([propuesta](servidor-remoto.md)). Mientras, Telegram: el resumen diario y `/resumen` |
 | Cámaras | Cruzarlas con el sistema queda pospuesto ([cámaras](camaras.md); con una sola sucursal, [idea](ideas.md#cámaras-con-una-sola-sucursal)). Ya, sin costo: configurar los grabadores por seguridad ([lista](camaras.md#configurar-el-grabador)) |
-| App Android | .NET MAUI con la misma interfaz, sin publicar en la tienda |
+| App Android | Nativa en Kotlin (2026-10-10), con la misma API del servicio; sin publicar en la tienda |
 | Fiscal | Fuera de alcance (hoy no se factura nada), pero se guardan clave SAT, unidad y desglose de impuestos para poder facturar después |
 | Nube | Por ahora: el respaldo cifrado fuera de la tienda (Backblaze B2), la vigilancia de la caja principal (Healthchecks.io) y, con la API de WhatsApp, su receptor aparte. El central, al retomar la multisucursal ([propuesta](servidor-remoto.md)). Azure for Students no sirve: es solo para estudiantes y para uso educativo no comercial |
 | Código | La fase 0 ya se programa; las demás fases, hasta cerrar su parte del plan |
@@ -61,7 +62,7 @@
 | Acceso a datos | EF Core con migraciones; SQL directo donde convenga (kardex, reportes) |
 | Pruebas | xUnit |
 | Datos reales | Nunca entran al repositorio. Viven fuera de él, en `Documents\TPV` de la máquina de desarrollo |
-| Migración | El inventario **se depura** al pasar al POS nuevo: el catálogo y las existencias de eleventa son punto de partida, no se conservan tal cual. Las existencias de arranque salen del conteo físico |
+| Migración | El inventario **se depura** al pasar al POS nuevo: el catálogo y las existencias de eleventa son punto de partida, no se conservan tal cual. Si un producto cambia de nombre, el de eleventa queda como su sinónimo, para que el que se recuerda lo siga encontrando (2026-10-10). Las existencias de arranque salen del conteo físico |
 | Diagnóstico | Se entrega en Excel, una hoja por análisis |
 | Precios | Precio al público con IVA incluido; el desglose de impuestos se guarda aparte. Precio por unidad base: el paquete cuesta las piezas que trae, salvo excepción. Por sucursal: pospuesto con la multisucursal (el modelo ya lo permite) |
 | Impuestos | IVA 16 %, 0 % o exento; sin IEPS |
@@ -83,6 +84,8 @@
 |---|---|---|
 | Go + Tauri + Svelte | .NET 10 | Un lenguaje para Windows, Android y web, con acceso nativo a impresoras y spooler |
 | WPF (caja) + Blazor (panel) + MAUI (Android): tres interfaces | Una sola interfaz Blazor | Control Print ya no condiciona: se escribe una vez para los tres |
+| Roles de dueño, encargado y cajero, con reglas por rol | Permisos por usuario; la primera cuenta, con todos | Decisión del 2026-10-10 ([propuesta](propuesta-interfaz.md#usuarios-y-permisos)) |
+| App Android en MAUI con la interfaz Blazor | Kotlin nativo, con la misma API | Decisión del 2026-10-10: la interfaz Blazor se diseña solo para la caja, con la mayor rapidez ([propuesta](propuesta-interfaz.md)) |
 | PostgreSQL en cada sucursal | SQLite | Cero administración en un sitio sin técnico; el volumen es bajo |
 | Mini PC dedicado como servidor | Caja principal | Decisión del negocio (como eleventa); la contingencia de las cajas cubre que se apague |
 | Central en la nube con PostgreSQL, luego en la caja principal de la matriz | Servidor virtual con SQLite (pospuesto con la multisucursal) | Las cajas se apagan de noche, los horarios serán distintos y podría haber vigilancia nocturna |
@@ -105,7 +108,7 @@ Sin tiempos: se avanza cuando la fase anterior funciona en la tienda. **Foco:** 
 | 5. Piloto en la matriz | Con la caja principal y la secundaria: depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo. Antes: la red de la tienda arreglada y las tres impresoras de inyección; los reportes, después de la prueba con una persona real y su aprobación. Desde el arranque, respaldo cifrado fuera de la tienda (Backblaze B2) y vigilancia de la caja principal (Healthchecks.io) ([qué falta](#para-el-piloto-con-dos-cajas)) |
 | 6. WhatsApp y central | La API de WhatsApp → pedidos cuando el dueño la quiera, con un receptor aparte ([WhatsApp](whatsapp.md)). **Pospuesto:** el central, con sus entregas 6.1 a 6.6 ([propuesta](servidor-remoto.md#entregas)) |
 | 7. Sucursal 2 | **Pospuesta.** Precios por sucursal, traspasos, compras que se reparten, inversión de apertura y punto de equilibrio ([propuesta](servidor-remoto.md)). Si abre antes, abre con eleventa |
-| 8. App Android | Preventa y pedidos desde el celular |
+| 8. App Android | Preventa y pedidos desde el celular. Preventa: el ticket se arma en el celular, se elige a qué caja mandarlo y ahí llega en espera, con un efecto para que se note ([propuesta](propuesta-interfaz.md#desde-el-celular)) |
 | 9. A la medida | Listas escolares avanzadas, dispositivos propios, [piloto automático](ideas.md#asistente-inteligente-piloto-automático) (se apoyaría en el central, pospuesto) y lo que se vaya describiendo |
 
 ### Fase 0
@@ -117,7 +120,7 @@ Sin tiempos: se avanza cuando la fase anterior funciona en la tienda. **Foco:** 
      la fase 1.
    - El historial de eleventa va en tablas propias de "histórico importado", sin mezclarse con las ventas del POS
      (no tiene folios por caja, turnos ni cortes).
-   - Los productos se importan como variantes sueltas; agruparlas ("Pluma azul" + "Pluma roja") se hace después.
+   - Los productos se importan como variantes sueltas; agruparlas ("Lapicero azul" + "Lapicero rojo") se hace después.
 2. **Diagnóstico en Excel**, primero sobre los datos ficticios.
 3. **Al final, prueba con datos reales:** importación desde una copia de eleventa y el diagnóstico con esos datos.
    - Fechas de eleventa: vienen en hora local; se pasan a UTC con la zona de Ciudad de México (con horario de verano
@@ -404,6 +407,11 @@ Depuración del inventario (antes del piloto, [ver arriba](#depuración-del-inve
 
 Por definir:
 
+- [x] Revisar la [propuesta de rediseño de la interfaz](propuesta-interfaz.md) con su prototipo: aprobada el 2026-10-10
+- [ ] Contestar las [preguntas de la propuesta](propuesta-interfaz.md#preguntas-para-el-dueño) antes de cada entrega;
+  primero las de los permisos (el corte del turno, el PIN tras unos minutos) y las de la venta (rápidos, billetes,
+  pitido, bandeja o tarjeta para las impresiones)
+- [ ] Probar el lector en la tienda: si lee QR, qué manda con los códigos de 11 cifras y su ritmo al teclear
 - [ ] Instalador de la tienda para el administrador: servicio, cajas, firewall, carpeta de la caja con permisos y las
   colas de las impresoras de inyección ([detalle](#instalación-y-usuarios-de-windows)). Hoy son los scripts de
   `instalacion/`

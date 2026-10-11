@@ -59,6 +59,24 @@ cada mensaje y archivo. Disponible en México desde 2025.
 - **Celulares:** el número que manda WhatsApp para México puede no coincidir con el que se marca. Se guarda tal como
   llega, para responder, y se normaliza a 10 dígitos para que coincida con el de mostrador.
 
+## La lista de quién escribió (propuesta, 2026-10-10)
+
+En la caja, Ctrl+L mostraría «Escribieron por WhatsApp hace poco» para usar a esa persona como cliente genérico del
+ticket o del pedido, sin leer los chats ([propuesta de la interfaz](propuesta-interfaz.md#whatsapp-quién-escribió-hace-poco)).
+Sale de la etapa 2: de cada mensaje se guarda el remitente, la hora y los datos del archivo, sin el texto.
+
+Lo que cambió desde la investigación anterior (consultado el 2026-10-10):
+
+- **Identificador por negocio (BSUID)** en cada mensaje desde abril de 2026, y **nombres de usuario** desde junio:
+  quien use uno puede llegar sin número. Se identifica al contacto por ese identificador.
+- Los mensajes de clientes que escriben desde **WhatsApp para Windows** no llegan al webhook, según Meta: hay que medir
+  cuántos son.
+- Los **dispositivos vinculados** se desconectan a los ~30 días sin uso (el celular, a los ~14).
+- **Kapso** dice cobrar la tarifa de Meta sin margen y tiene un plan gratis (1 número, 2,000 mensajes al mes); su API de
+  conversaciones da el número, el nombre y la última actividad. Falta confirmar que el plan gratis admita coexistencia.
+- **Sin API:** las notificaciones del celular (en la futura app Kotlin) dan solo el nombre; las de Windows piden
+  empaquetar la caja con identidad y pierden los chats abiertos.
+
 ## Descartado
 
 Las librerías no oficiales que automatizan WhatsApp Web (Baileys, whatsapp-web.js y similares). Son gratis, pero Meta
@@ -73,3 +91,5 @@ banea esos números, y perder el número de una sucursal sería un golpe serio.
 - [x] Cuánto reintenta Meta si el receptor no responde: hasta 7 días.
 - [ ] Probar en la etapa 1 si se puede arrastrar el archivo directo desde WhatsApp en la PC, o solo desde la carpeta de
       descargas.
+- [ ] La lista de quién escribió: ¿el plan gratis de Kapso admite coexistencia? ¿La huella del archivo que manda Meta
+      coincide con el que baja WhatsApp Web? ¿Cuántos clientes escriben desde WhatsApp para Windows?
