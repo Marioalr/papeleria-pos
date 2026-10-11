@@ -165,8 +165,7 @@ sube. Para eso, de lo más rápido a lo de respaldo:
   escrito; al final, lo más vendido en 90 días (para arrancar, el historial de eleventa).
 - **Se aprende de lo que se busca:** cada búsqueda se guarda en `caja-local.db` con el texto, cuántos resultados hubo y
   qué se eligió. En Productos, quien edita el catálogo ve lo que se buscó y no se encontró, y desde ahí lo hace
-  sinónimo, le da un código corto o lo da de alta. Conviene guardarlo desde la entrega 3, aunque esa pantalla llegue
-  después.
+  sinónimo, le da un código corto o lo da de alta. Se guarda desde la entrega 0, aunque esa pantalla llegue después.
 - **El nombre de eleventa de cada producto ya es su sinónimo** (decisión del 2026-10-10). Si la depuración del
   catálogo le cambia el nombre, el de siempre lo sigue encontrando, y la lista muestra en letra chica «en eleventa: …»
   junto al nombre nuevo, para irlo aprendiendo sin perder tiempo.
@@ -703,24 +702,30 @@ Ajustes:
 Cada entrega se prueba en el navegador y en la ventana de Windows, y la guía de la prueba con una persona real se
 actualiza con ella.
 
-| # | Entrega | Tamaño |
-|---|---|---|
-| 1 | Permisos por usuario: el modelo, la migración desde los roles, la primera cuenta, «Conectar a servidor», los de defecto y la pantalla de usuarios y permisos | Mediano |
-| 2 | Base visual: colores, letras, botones, etiquetas, panel y barra de teclas; estado de arriba. Permisos de la sesión en una consulta y pantalla según lo que tiene cada quien | Mediano |
-| 3 | Venta: cuadro de captura con resultados, «/», folio y alta; la búsqueda por pedazos de palabra, con sinónimos, error de dedo, familias, fichas para afinar, lo elegido antes y el registro de lo buscado; rápidos; lista con etiquetas y acciones en la fila; panel B con el cobro, el cambio y la autorización; sonidos; tickets en espera guardados en la caja | Grande |
-| 4 | Impresiones: la bandeja con miniaturas y lotes por PC, el panel F2 de todas las PC, las miniaturas en el ticket y el recordatorio al cobrar | Mediano |
-| 5 | Rendimiento: el lector en una sola llamada; escanear contra la copia local, con su versión en el cobro; la base de la caja fuera del hilo de la pantalla; solo lo que cambió, avisado por SSE; plazos y estados de la red; imprimir aparte; menos repintado; la prueba de la ráfaga | Grande |
-| 6 | Entrada con fichas y PIN; Ctrl+U; el corte del turno con solo el total y sin volver a pedir el PIN; el corte del día | Mediano |
-| 7 | Configuración nueva: buscador, grupos, alcance y guardado al momento | Mediano |
-| 8 | Las pantallas de atrás con el mismo patrón de lista y detalle: Productos (abre con la lista, no vacío), Inventario por tareas, Clientes | Grande |
-| 9 | Reportes, cuando toque según el plan | Grande |
-| 10 | Ajustes de la base (`synchronous`, revisión al arrancar) | Chico |
-| 11 | WhatsApp: la lista «Escribieron hace poco» y la liga con las impresiones, con la etapa 2 de WhatsApp | Mediano |
-| 12 | Ticket desde el celular, con la app Android (fase 8): armarlo, elegir la caja, el aviso a esa caja, la ficha que llega con su efecto y el QR sin red | Mediano |
-| 13 | Lo que se señala: el mostrador y la temporada con fotos en su acomodo (Ctrl+M), las fotos desde el celular, la hoja de la temporada y las tarjetas de precio, empezar y terminar la temporada, lo más preguntado | Mediano |
+**El orden (2026-10-10):** primero la caja nueva vendiendo en una sola caja, como eleventa unicaja, aunque tenga
+errores o le falten detalles: probarla vendiendo es lo que más ayuda a terminarla ([plan](plan.md#la-prueba-real-con-una-caja)).
+Por eso va primero la entrega 0, hecha sobre lo que ya funciona, y antes de vender de verdad, la 10. Lo demás entra
+por partes sobre la caja nueva ya en uso. Los números de siempre se quedan; la tabla va en el orden nuevo.
 
-**La prueba con una persona real** ya empezó y sigue con la pantalla de hoy: lo que reporte se suma aquí antes de
-programar la entrega 3.
+| # | Entrega | Tamaño | Cuándo |
+|---|---|---|---|
+| 0 | Vender en una caja: la pantalla de venta nueva sobre el mismo servicio, cobro, ticket y base. El cuadro de captura con el lector en una sola llamada y las teclas que esperan al último escaneo; `12*código` y el folio; la búsqueda por pedazos de palabra con el nombre de eleventa como sinónimo, lo elegido antes y lo más vendido; la lista con + − y Supr; los rápidos; el panel del total con F12, el exacto en gris, los billetes y el cambio; los tickets en espera con F6 y F5; guardar lo que se busca. Lo demás abre lo de hoy. Se elige por caja frente a la pantalla de hoy | Mediano a grande | Primero |
+| 10 | Ajustes de la base (`synchronous`, revisión al arrancar) | Chico | Antes de vender de verdad |
+| 3 | Venta, lo que falta después de la 0: «/» y el alta; el cobro mixto y la autorización dentro del panel; la flecha del cliente; «Más» en los tickets en espera; las familias, las fichas para afinar, el error de dedo y los sinónimos de la tienda, con lo que se guardó de las búsquedas reales; la lista con etiquetas y acciones en la fila; sonidos | Grande | Sobre la caja nueva en uso |
+| 2 | Base visual: colores, letras, botones, etiquetas, panel y barra de teclas; estado de arriba. Permisos de la sesión en una consulta y pantalla según lo que tiene cada quien | Mediano | Con la 3 |
+| 1 | Permisos por usuario: el modelo, la migración desde los roles, la primera cuenta, «Conectar a servidor», los de defecto y la pantalla de usuarios y permisos | Mediano | Después de la 3 |
+| 6 | Entrada con fichas y PIN; Ctrl+U; el corte del turno con solo el total y sin volver a pedir el PIN; el corte del día | Mediano | Con la 1 |
+| 5 | Rendimiento para la caja 2: escanear contra la copia local, con su versión en el cobro; la base de la caja fuera del hilo de la pantalla; solo lo que cambió, avisado por SSE; plazos y estados de la red; imprimir aparte; menos repintado; la prueba de la ráfaga. El lector en una sola llamada ya va en la 0, y no perder escaneos en ráfaga ya está en `main` (#56) | Grande | Con la segunda caja |
+| 9 | Reportes, los que el dueño usa hoy en eleventa | Grande | Con la segunda caja, antes de dejar eleventa |
+| 7 | Configuración nueva: buscador, grupos, alcance y guardado al momento | Mediano | Después |
+| 8 | Las pantallas de atrás con el mismo patrón de lista y detalle: Productos (abre con la lista, no vacío), Inventario por tareas, Clientes | Grande | Después |
+| 13 | Lo que se señala: el mostrador y la temporada con fotos en su acomodo (Ctrl+M), las fotos desde el celular, la hoja de la temporada y las tarjetas de precio, empezar y terminar la temporada, lo más preguntado | Mediano | Después |
+| 4 | Impresiones: la bandeja con miniaturas y lotes por PC, el panel F2 de todas las PC, las miniaturas en el ticket y el recordatorio al cobrar | Mediano | Lo que eleventa no tiene, con el módulo de impresión |
+| 11 | WhatsApp: la lista «Escribieron hace poco» y la liga con las impresiones, con la etapa 2 de WhatsApp | Mediano | Lo que eleventa no tiene |
+| 12 | Ticket desde el celular, con la app Android (fase 8): armarlo, elegir la caja, el aviso a esa caja, la ficha que llega con su efecto y el QR sin red | Mediano | Lo que eleventa no tiene |
+
+**La prueba con una persona real** ya empezó con la pantalla de hoy; se repite con la entrega 0 antes de vender con
+ella, y lo que enseñe la prueba real se suma a la entrega 3.
 
 ## Preguntas para el dueño
 
