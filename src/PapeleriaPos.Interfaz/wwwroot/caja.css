@@ -555,3 +555,115 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-teclas > button { display: flex; align-items: center; gap: 6px; font: inherit; font-size: 13px; color: var(--vn-suave); border: 0; background: none; border-radius: 6px; padding: 4px 7px; cursor: pointer; white-space: nowrap; }
 .vn-teclas > button:hover { background: var(--vn-renglon); color: var(--vn-texto); }
 .vn-teclas > button.vn-chip-estado { font-size: 12px; padding: 2px 9px; border: 1px solid var(--vn-linea); background: var(--vn-renglon); border-radius: 999px; }
+
+/* Los paneles de la derecha: lo de la venta (cliente, descuento, precio, entradas y salidas…) sin tapar el ticket. Lo de
+   adentro son los mismos componentes de la ventana de hoy; aquí toman los campos y botones del prototipo. */
+.vn-der.con-panel { padding: 12px 14px; }
+.vn-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; animation: vn-entra .2s cubic-bezier(.2, .8, .3, 1); }
+@keyframes vn-entra { from { transform: translateX(40px); opacity: .3; } to { transform: none; opacity: 1; } }
+.vn-panel-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.vn-panel-cab h2 { margin: 0; font-size: 19px; text-wrap: balance; }
+.vn-panel-x { display: flex; align-items: center; gap: 6px; font: inherit; font-size: 12px; color: var(--vn-suave); border: 1px solid var(--vn-linea); background: var(--vn-hoja); border-radius: 6px; padding: 4px 8px; cursor: pointer; }
+.vn-panel-x:hover { border-color: var(--vn-tinta-medio); }
+.vn-panel-x .ico { width: 14px; height: 14px; }
+.vn-panel-cuerpo { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 2px 2px 8px; }
+.vn-panel h3 { margin: 4px 0 0; font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--vn-tenue); font-weight: 600; }
+.vn-panel p { margin: 0; }
+.vn-panel label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--vn-suave); }
+.vn-panel input, .vn-panel select, .vn-panel textarea { width: 100%; min-width: 0; font: 500 16px var(--vn-f-texto); color: var(--vn-texto); padding: 8px 10px; border: 1px solid var(--vn-borde); border-radius: 8px; background: var(--vn-hoja); }
+.vn-panel input:focus, .vn-panel select:focus, .vn-panel textarea:focus { outline: 2px solid var(--vn-tinta); outline-offset: -1px; border-color: var(--vn-tinta); }
+.vn-panel input[type="radio"], .vn-panel input[type="checkbox"] { width: auto; }
+.vn-panel .boton { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font: inherit; font-size: 14px; color: var(--vn-texto); background: var(--vn-hoja); border: 1px solid var(--vn-borde); border-radius: 8px; padding: 8px 13px; white-space: normal; }
+.vn-panel .boton:hover:not(:disabled) { border-color: var(--vn-tinta); }
+.vn-panel .boton.principal { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; font-weight: 600; font-size: 15px; }
+.vn-panel .boton.principal:hover:not(:disabled) { background: var(--vn-tinta-hover); }
+.vn-panel .boton.chico { padding: 4px 9px; font-size: 13px; }
+.vn-panel .acciones { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; margin-top: 2px; }
+.vn-panel .acciones .boton.principal { flex: 1 1 100%; padding: 11px; font-size: 16px; }
+.vn-panel .dos-columnas { gap: 8px; }
+.vn-panel .nota { font-size: 12.5px; color: var(--vn-suave); line-height: 1.4; }
+.vn-panel .error { color: var(--vn-error); font-weight: 600; font-size: 13.5px; }
+.vn-panel table { font-size: 13.5px; }
+.vn-panel th { position: sticky; top: 0; background: var(--vn-hoja); color: var(--vn-tenue); font-size: 11.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--vn-linea); }
+.vn-panel td { font-size: 13.5px; padding: 6px 8px; border-bottom: 1px solid var(--vn-renglon); }
+.vn-panel .resultados { max-height: none; border: 1px solid var(--vn-linea); border-radius: 8px; background: var(--vn-hoja); overflow-x: auto; }
+/* La autorización, ahí mismo en el panel */
+.vn-panel .autorizacion { gap: 9px; padding: 12px; border: 1px solid var(--vn-aviso-borde); background: #fffaf0; border-radius: 10px; }
+.vn-panel .aviso-autorizacion { padding: 0; background: none; color: #6b4000; font-size: 14.5px; font-weight: 700; }
+.vn-panel label:has(> input[type="radio"]), .vn-panel label:has(> input[type="checkbox"]) { display: block; font-size: 14px; line-height: 1.35; color: var(--vn-texto); }
+.vn-panel label > input[type="radio"], .vn-panel label > input[type="checkbox"] { margin: 0 8px 0 0; vertical-align: -2px; }
+.vn-panel .pestanas { display: flex; gap: 2px; padding: 3px; background: var(--vn-renglon); border: 1px solid var(--vn-linea); border-radius: 9px; }
+.vn-panel .pestana { flex: 1; font: inherit; font-size: 13.5px; color: var(--vn-suave); border: 0; background: none; border-radius: 7px; padding: 6px 10px; cursor: pointer; }
+.vn-panel .pestana.activa { background: var(--vn-hoja); color: var(--vn-texto); font-weight: 600; box-shadow: 0 1px 2px rgba(20, 30, 60, .12); }
+.vn-panel tr.seleccionada td { background: var(--vn-tinta-claro); }
+/* En el panel, las listas anchas van como tarjetas (Clase «tarjetas» en su ventana): lo principal arriba, lo demás en chico. */
+.vn-panel.tarjetas .resultados table, .vn-panel.tarjetas .resultados tbody { display: block; }
+.vn-panel.tarjetas .resultados thead { display: none; }
+.vn-panel.tarjetas .resultados tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; row-gap: 2px; align-items: baseline; padding: 8px 10px; border-bottom: 1px solid var(--vn-renglon); }
+.vn-panel.tarjetas .resultados tr:hover { background: #fafbfd; }
+.vn-panel.tarjetas .resultados tr.seleccionada { background: var(--vn-tinta-claro); box-shadow: inset 3px 0 0 var(--vn-tinta); }
+.vn-panel.tarjetas .resultados tr.seleccionada td { background: none; }
+.vn-panel.tarjetas .resultados td { display: block; grid-column: 1; padding: 0; border: 0; font-size: 12.5px; color: var(--vn-suave); text-align: left; }
+.vn-panel.tarjetas .resultados td:first-child { font-size: 14.5px; font-weight: 600; color: var(--vn-texto); overflow-wrap: anywhere; }
+.vn-panel.tarjetas .resultados td.error { color: var(--vn-error); }
+.vn-panel.tarjetas .resultados .cifra-derecha { grid-column: 2; grid-row: 1; font-size: 14px; font-weight: 700; color: var(--vn-texto); text-align: right; }
+.vn-panel.tarjetas .resultados .botones-abajo { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; margin-top: 4px; }
+/* Clientes (Ctrl+L) y quién abona (Ctrl+B): lo que debe a la derecha. Los abonos de hoy: el monto a la derecha y los botones abajo. */
+.vn-panel.tarjetas.clientes .resultados td.num:last-child, .vn-panel.tarjetas.clientes .resultados td.num:nth-child(5) { grid-column: 2; grid-row: 1; font-size: 14px; font-weight: 700; color: var(--vn-texto); text-align: right; }
+.vn-panel.tarjetas.clientes .resultados td:nth-child(6) { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+/* Ventas del día: folio y total arriba, la hora y el cajero abajo, y reimprimir o devolver. */
+.vn-panel.tarjetas.ventas-del-dia .resultados td:nth-child(2) { grid-column: 2; grid-row: 2; text-align: right; }
+.vn-panel.tarjetas.ventas-del-dia .resultados td:nth-child(3) { grid-row: 2; }
+.vn-panel.tarjetas.ventas-del-dia .resultados td:nth-child(4) { display: none; }
+.vn-panel.tarjetas.ventas-del-dia .resultados td:nth-child(5) { grid-column: 2; grid-row: 1; font-size: 14px; font-weight: 700; color: var(--vn-texto); text-align: right; }
+.vn-panel.tarjetas.ventas-del-dia .resultados td:nth-child(6) { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; margin-top: 4px; }
+.vn-panel.tarjetas.ventas-del-dia .resultados tr.negado td:first-child { color: var(--vn-tenue); text-decoration: line-through; }
+/* Devolver: cada artículo con lo vendido y lo ya devuelto, y cuánto se devuelve y si volvió dañado. */
+.vn-panel.tarjetas.devolver .resultados td:nth-child(1) { grid-column: 1 / -1; grid-row: 1; }
+.vn-panel.tarjetas.devolver .resultados td:nth-child(2) { grid-row: 2; }
+.vn-panel.tarjetas.devolver .resultados td:nth-child(2)::before { content: "Vendido: "; }
+.vn-panel.tarjetas.devolver .resultados td:nth-child(3) { grid-row: 3; }
+.vn-panel.tarjetas.devolver .resultados td:nth-child(3)::before { content: "Ya devuelto: "; }
+.vn-panel.tarjetas.devolver .resultados td:nth-child(4) { grid-column: 2; grid-row: 2; font-weight: 600; color: var(--vn-texto); text-align: right; }
+.vn-panel.tarjetas.devolver .resultados td:nth-child(5) { grid-row: 4; display: flex; align-items: center; gap: 6px; }
+.vn-panel.tarjetas.devolver .resultados td:nth-child(5):has(input)::before { content: "Devolver"; }
+.vn-panel.tarjetas.devolver .resultados td:nth-child(5) input { width: 80px; }
+.vn-panel.tarjetas.devolver .resultados td:nth-child(6) { grid-column: 2; grid-row: 4; display: flex; align-items: center; gap: 6px; }
+.vn-panel.tarjetas.devolver .resultados td:nth-child(6):has(input)::before { content: "Dañado"; }
+/* Impresiones por cobrar (F2): la casilla y la miniatura a la izquierda; el documento, la PC y el precio a su lado. */
+.vn-panel.tarjetas .resultados.impresiones tr { grid-template-columns: 20px 46px minmax(0, 1fr) auto; cursor: pointer; }
+.vn-panel.tarjetas .resultados.impresiones td:nth-child(1) { grid-column: 1; grid-row: 1 / span 3; align-self: center; }
+.vn-panel.tarjetas .resultados.impresiones td:nth-child(2) { grid-column: 2; grid-row: 1 / span 3; align-self: center; font-size: 0; }
+.vn-panel.tarjetas .resultados.impresiones td:nth-child(3) { grid-column: 3; grid-row: 1; font-size: 14px; }
+.vn-panel.tarjetas .resultados.impresiones td:nth-child(4) { grid-column: 3; grid-row: 2; }
+.vn-panel.tarjetas .resultados.impresiones td:nth-child(5) { grid-column: 4; grid-row: 2; text-align: right; }
+.vn-panel.tarjetas .resultados.impresiones td:nth-child(6) { grid-column: 3; grid-row: 3; }
+.vn-panel.tarjetas .resultados.impresiones td:nth-child(7) { grid-column: 4; grid-row: 1; font-size: 14px; font-weight: 700; color: var(--vn-texto); text-align: right; }
+.vn-panel.tarjetas .resultados.impresiones td:nth-child(8):not(:last-child) { grid-column: 4; grid-row: 3; text-align: right; }
+.vn-panel.tarjetas .resultados.impresiones td:last-child { grid-column: 3 / -1; grid-row: 4; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; margin-top: 4px; }
+.vn-panel.tarjetas .resultados.impresiones img.miniatura { width: 44px; border-radius: 3px; }
+.vn-panel .total-elegido { margin-right: auto; align-self: center; font-size: 13.5px; font-weight: 600; }
+/* El cobro de hoy (tarjeta, transferencia, crédito), con las cifras de la pantalla nueva */
+.vn-panel .cobrar-total { font: 700 44px/1.05 var(--vn-f-cifras); color: var(--vn-texto); text-align: left; }
+.vn-panel .cobrar-redondeo { text-align: left; color: var(--vn-suave); font-size: 13.5px; }
+.vn-panel .cobrar-redondeo strong { color: var(--vn-texto); font-size: 18px; }
+.vn-panel .cobrar-resumen { text-align: left; font: 700 24px var(--vn-f-cifras); }
+.vn-panel .cobrar-resumen .cambio { color: var(--vn-cobro); }
+.vn-panel .cobrar-resumen .falta { color: var(--vn-aviso); }
+.vn-panel details { border: 1px solid var(--vn-linea); border-radius: 10px; background: var(--vn-hoja); padding: 8px 10px; }
+.vn-panel details[open] { display: flex; flex-direction: column; gap: 8px; }
+.vn-panel summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--vn-tinta); }
+.vn-panel .cobrar-credito { border-color: var(--vn-linea); border-radius: 10px; background: var(--vn-hoja); }
+.vn-panel.tarjetas .resultados.impresiones td:nth-child(5)::after { content: " pág."; }
+/* El ticket en pantalla (sin impresora): cabe en el panel */
+.vn-panel pre.ticket { margin: 0; font-size: 11px; line-height: 1.35; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 8px; padding: 10px; overflow-x: auto; }
+/* Al cobrar: el cambio en grande hasta el siguiente cliente */
+.vn-cambio { display: flex; flex-direction: column; gap: 6px; padding: 18px; text-align: center; background: var(--vn-hoja); border: 2px solid var(--vn-cobro); border-radius: 12px; animation: vn-entra .2s cubic-bezier(.2, .8, .3, 1); }
+.vn-cambio span { font-size: 15px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--vn-cobro); }
+.vn-cambio strong { font: 700 64px/1.05 var(--vn-f-cifras); color: var(--vn-cobro); font-variant-numeric: tabular-nums; }
+.vn-cambio p { margin: 0; color: var(--vn-suave); font-variant-numeric: tabular-nums; }
+.vn-folio-ok { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 13.5px; color: var(--vn-suave); }
+.vn-folio-ok code { color: var(--vn-texto); font-weight: 600; }
+.vn-folio-ok .ico { width: 16px; height: 16px; color: var(--vn-cobro); }
+.vn-alerta.info { background: var(--vn-tinta-claro); color: var(--vn-tinta-hover); border-color: var(--vn-tinta-medio); }
+.vn-botonera { display: flex; flex-wrap: wrap; gap: 6px; }

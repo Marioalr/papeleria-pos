@@ -99,8 +99,19 @@ function alPresionar(e) {
         texto = campo.value;
         if (rapido || tecla === 'Escape' || (tecla === 'F11' && texto !== '')) campo.value = '';
     }
-    pantalla.invokeMethodAsync('Tecla', ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlU ? 'Ctrl+U'
-        : rapido ? 'Alt+' + tecla : tecla, texto);
+    let nombre = ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlU ? 'Ctrl+U'
+        : rapido ? 'Alt+' + tecla : tecla;
+    // F12 en la pantalla nueva: el cursor pasa a «Pagó con» aquí mismo, sin esperar la vuelta a .NET, para que lo que se
+    // teclee enseguida (lo que dio el cliente) caiga ahí y no en el cuadro de captura. .NET sabe que ya se movió.
+    if (tecla === 'F12' && !hayVentana && !enPago) {
+        const pago = document.getElementById('pago-nuevo');
+        if (pago) {
+            pago.focus();
+            pago.select();
+            nombre = 'F12-pago';
+        }
+    }
+    pantalla.invokeMethodAsync('Tecla', nombre, texto);
 }
 
 // «/ Más acciones»: deja el texto en el cuadro de captura, con el cursor al final.

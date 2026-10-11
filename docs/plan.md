@@ -322,9 +322,28 @@ nombres; mientras tanto, los nombres son los mismos de eleventa.
   - el ahorro por mayoreo.
 - **La barra de teclas** de la propuesta, con el conteo del día a la derecha.
 
+**Avance (2026-10-11), segunda parte: los paneles.** En la pantalla nueva, lo de la venta ya no tapa el ticket: va en el
+panel de la derecha y vuelve con Esc.
+- **Qué va en el panel:**
+  - cliente (Ctrl+L) y abono (Ctrl+B);
+  - descuento (Ctrl+D) y precio (Ctrl+E);
+  - artículo común (Ins), entrada y salida (F7 y F8);
+  - mayoreo (F11) y verificador (F9);
+  - impresiones por cobrar (F2), ventas del día, devolución y cotizar;
+  - el cobro con tarjeta, transferencia o crédito, el alta rápida, la reimpresión y el ticket en pantalla.
+- **Lo que pide autorización la pide ahí mismo,** en el mismo panel.
+- **Las listas anchas van como tarjetas,** para que quepan: clientes, impresiones, ventas del día y lo que se devuelve.
+- **Los módulos de arriba** (productos, inventario, clientes, corte y configuración) y el conteo siguen encima.
+- **F10** solo pone el cursor en el cuadro, donde salen los resultados.
+- **«Tarjeta» y «Transf.»** abren el cobro con esa forma y el total en ella.
+- **Al cobrar, el cambio en grande** se queda en el panel hasta que se escanea al siguiente cliente. Si el ticket no
+  salió, ahí mismo están «Reintentar» y «Verlo en pantalla».
+- **F12 mueve el cursor a «Pagó con» en el navegador mismo,** sin esperar al servicio: lo que se teclea enseguida ya no
+  cae en el cuadro de captura.
+
 Falta, en este orden:
-1. los paneles a la derecha en lugar de las ventanas que tapan el ticket, con la autorización dentro;
-2. el cobro mixto en el panel y «Más» en los tickets en espera;
+1. el cobro mixto dentro del panel del total y «Más» en los tickets en espera;
+2. la autorización con las fichas de quien puede autorizar (hoy se escribe su usuario);
 3. la búsqueda con familias de colores, fichas para afinar, el error de dedo y los sinónimos de la tienda.
 
 #### Después: el piloto en la caja 2
