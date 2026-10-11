@@ -674,9 +674,17 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         if (conexion.SimularSinConexion || contingencia is { Pendientes: > 0 })
             throw new ErrorCaja("Primero vuelve a conectar y espera a que suba lo que se hizo sin conexión.");
         await _http.PostAsync<object>("api/prueba/empezar-de-cero", null, sinRespuesta: true);
-        // Lo de la caja (el crédito propio, los saldos, el turno y el folio) era de la base anterior.
+        // Lo de la caja (el crédito propio, los saldos, el turno, el folio y los tickets en espera) era de la base anterior.
         contingencia?.OlvidarCredito();
     }
+
+    /// <summary>
+    /// Los tickets en espera, en la base local de la caja (caja-local.db): un apagón o un reinicio no los borra. Sin base
+    /// local (el navegador de desarrollo sin Caja:BaseLocal) no se guardan, como antes.
+    /// </summary>
+    public List<TicketGuardado> TicketsEnEspera() => contingencia?.TicketsEnEspera() ?? [];
+
+    public void GuardarEnEspera(IReadOnlyList<TicketGuardado> tickets) => contingencia?.GuardarEnEspera(tickets);
 
     // ── Alta de la caja (antes de tener llave; el servicio todavía no es el guardado) ──
 

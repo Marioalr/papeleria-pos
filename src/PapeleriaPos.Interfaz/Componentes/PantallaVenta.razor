@@ -893,7 +893,11 @@ else
     private Ventanas _ventana;
     private DotNetObjectReference<PantallaVenta>? _referencia;
 
-    protected override void OnInitialized() => NuevoTicket();
+    protected override void OnInitialized()
+    {
+        RecuperarEspera();
+        NuevoTicket();
+    }
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
@@ -1458,31 +1462,88 @@ else
 
     // ── Tickets ─────────────────────────────────────────────────────────────
 
+    private Venta VentaVacia() => new()
+    {
+        SucursalId = Caja.SucursalId,
+        CajaId = Caja.Id,
+        TurnoId = Turno.Id,
+        CajeroId = Sesion.UsuarioId,
+        Serie = Caja.Serie,
+        CreadaUtc = DateTime.UtcNow,
+    };
+
     private void NuevoTicket()
     {
-        _tickets.Add(new TicketAbierto
-        {
-            Numero = _siguienteNumero++,
-            Venta = new Venta
-            {
-                SucursalId = Caja.SucursalId,
-                CajaId = Caja.Id,
-                TurnoId = Turno.Id,
-                CajeroId = Sesion.UsuarioId,
-                Serie = Caja.Serie,
-                CreadaUtc = DateTime.UtcNow,
-            },
-        });
+        _tickets.Add(new TicketAbierto { Numero = _siguienteNumero++, Venta = VentaVacia() });
         _actual = _tickets.Count - 1;
         _seleccion = -1;
         _ = Js.EnfocarAsync("#codigo");
+        GuardarEspera();
     }
 
     private void Cambiar(TicketAbierto ticket)
     {
         _actual = _tickets.IndexOf(ticket);
         _seleccion = Actual.Venta.Lineas.Count - 1;
+        GuardarEspera();
     }
+
+    /// <summary>
+    /// Cada vez que cambia el ticket que se atiende (F6, F5, retomar, cobrar, eliminar), los que tienen algo quedan
+    /// guardados en la caja. También el que se atiende, como estaba en ese momento: si se va la luz, vuelve en espera.
+    /// </summary>
+    private void GuardarEspera()
+    {
+        var conAlgo = _tickets.Where(t => t.Venta.Lineas.Count > 0).ToList();
+        // Sin tickets con algo, ni antes ni ahora (lo de casi siempre al cobrar): no hay nada que escribir.
+        if (conAlgo.Count == 0 && !_hayEsperaGuardada)
+            return;
+        try
+        {
+            Cliente.GuardarEnEspera(conAlgo.Select(t => TicketsEnEspera.Guardar(t.Venta, t.Productos, t.Impresiones, t.Cliente, t.Cuenta, t.FiadoSinConfirmar)).ToList());
+            _hayEsperaGuardada = conAlgo.Count > 0;
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException)
+        {
+            Avisar($"No se pudieron guardar los tickets en espera en esta caja: {ex.Message}");
+        }
+    }
+
+    /// <summary>Al entrar a la venta, los que quedaron guardados (de antes de un reinicio o un apagón) vuelven a esperar.</summary>
+    private void RecuperarEspera()
+    {
+        List<TicketGuardado> guardados;
+        try
+        {
+            guardados = Cliente.TicketsEnEspera();
+        }
+        catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException or System.Text.Json.JsonException)
+        {
+            Avisar($"No se pudieron leer los tickets en espera de esta caja: {ex.Message}");
+            return;
+        }
+        var perdidas = 0;
+        foreach (var guardado in guardados)
+        {
+            var ticket = new TicketAbierto
+            {
+                Numero = _siguienteNumero++, Venta = VentaVacia(), Cliente = guardado.Cliente, Cuenta = guardado.Cuenta,
+                FiadoSinConfirmar = guardado.FiadoSinConfirmar,
+            };
+            perdidas += TicketsEnEspera.Rearmar(guardado, ticket.Venta);
+            foreach (var producto in guardado.Productos)
+                ticket.Productos[producto.VarianteId] = producto;
+            ticket.Impresiones.AddRange(guardado.Impresiones);
+            if (ticket.Venta.Lineas.Count > 0)
+                _tickets.Add(ticket);
+        }
+        if (_tickets.Count > 0)
+            Avisar((_tickets.Count == 1 ? "Volvió el ticket que estaba en espera." : $"Volvieron los {_tickets.Count} tickets que estaban en espera.")
+                + (perdidas > 0 ? $" {perdidas} productos ya no se pudieron armar: revísalos." : ""), error: perdidas > 0);
+    }
+
+    /// <summary>Si lo último que se guardó tenía tickets: al entrar puede haber de antes, por eso empieza en sí.</summary>
+    private bool _hayEsperaGuardada = true;
 
     private void CambiarSiguiente()
     {
