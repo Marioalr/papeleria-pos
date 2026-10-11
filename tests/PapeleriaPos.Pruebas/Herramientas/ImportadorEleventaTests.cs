@@ -107,7 +107,7 @@ public class ImportadorEleventaTests
     }
 
     [Fact]
-    public void Las_lineas_viejas_sin_total_usan_precio_por_cantidad_y_el_costo_sale_de_la_ganancia()
+    public void Las_lineas_viejas_sin_total_usan_precio_por_cantidad_y_el_costo_sale_de_la_ganancia_por_pieza()
     {
         var r = ImportadorEleventa.Importar(Datos(
             [Producto(1, "N10", "Nylon C10 X Metro", 'D', 3), Producto(2, "IMP", "Impresiones", 'D', 1)],
@@ -118,10 +118,12 @@ public class ImportadorEleventaTests
         Assert.Equal("7", venta.FolioOrigen);
         Assert.Equal(12800, venta.TotalCentavos);
         Assert.Equal(HoraMexico.AUtc(Vendido), venta.FechaUtc);
+        // eleventa guarda la ganancia de cada pieza: 2 metros que ganan $20.04 cada uno cuestan $79.92.
         var nylon = venta.Lineas.Single(l => l.Cantidad == Cantidad.Unidades(2));
-        Assert.Equal((12000L, 9996L, 6000L), (nylon.ImporteCentavos, nylon.CostoCentavos, nylon.PrecioCentavos));
+        Assert.Equal((12000L, 7992L, 6000L), (nylon.ImporteCentavos, nylon.CostoCentavos, nylon.PrecioCentavos));
+        // 0.8 a $10 que gana $8: cada impresión cuesta $0.20.
         var impresiones = venta.Lineas.Single(l => l.Cantidad == Cantidad.Unidades(0.8m));
-        Assert.Equal((800L, 0L), (impresiones.ImporteCentavos, impresiones.CostoCentavos));
+        Assert.Equal((800L, 160L), (impresiones.ImporteCentavos, impresiones.CostoCentavos));
     }
 
     [Fact]

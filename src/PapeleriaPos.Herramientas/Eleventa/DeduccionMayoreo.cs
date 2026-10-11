@@ -4,7 +4,7 @@ using PapeleriaPos.Nucleo;
 
 namespace PapeleriaPos.Herramientas.Eleventa;
 
-/// <summary>Una venta con F11 de un producto: cuántas piezas, cuándo (hora local) y cuánto ganó la línea.</summary>
+/// <summary>Una venta con F11 de un producto: cuántas piezas, cuándo (hora local) y cuánto ganó cada pieza.</summary>
 public sealed record VentaConMayoreo(double Cantidad, DateTime VendidoEn, double Ganancia);
 
 /// <param name="Paquete">Desde cuántas piezas aplica el mayoreo; vacío si no se pudo deducir (va a revisar).</param>
