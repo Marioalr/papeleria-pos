@@ -277,6 +277,16 @@ No trae, a propósito: los colores y detalles finales, los permisos por usuario 
 como flecha, el cobro mixto dentro del panel, las familias de colores, las fichas para afinar, la bandeja de
 impresiones, ni el mostrador y la temporada. Llegan con las entregas que siguen.
 
+**Avance (2026-10-10):** la primera parte ya está:
+- la pantalla nueva junto a la de hoy («Probar la pantalla nueva»);
+- el cuadro de captura leído en JavaScript, con las teclas que esperan al último escaneo;
+- los rápidos, configurables por sucursal (la base de prueba trae Copia B/N y CURP);
+- el panel del total con F12 y el cobro en efectivo;
+- los tickets en espera con sus fichas, F6 y F5.
+
+Falta la búsqueda debajo del cuadro (pedazos de palabra, lo más vendido y lo elegido antes), guardar lo que se busca y
+que los tickets en espera sobrevivan a un reinicio de la caja.
+
 #### Después: el piloto en la caja 2
 
 Mientras se arma el puente con eleventa, la versión unicaja sigue creciendo con la venta completa (entrega 3) y la base

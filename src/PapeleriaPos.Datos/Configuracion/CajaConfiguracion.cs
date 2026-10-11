@@ -174,6 +174,14 @@ internal sealed class ConfiguracionSucursalConfiguracion : IEntityTypeConfigurat
         b.Property(c => c.EtiquetasPropio).HasConversion(
             f => f == null ? null : JsonSerializer.Serialize(f, JsonOpciones),
             j => j == null ? null : JsonSerializer.Deserialize<FormatoEtiquetas>(j, JsonOpciones));
+        // Los rápidos, en orden, también como JSON: se configuran y se leen juntos.
+        b.Property(c => c.Rapidos).HasConversion(
+            r => r == null ? null : JsonSerializer.Serialize(r, JsonOpciones),
+            j => j == null ? null : JsonSerializer.Deserialize<List<Rapido>>(j, JsonOpciones),
+            new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<List<Rapido>?>(
+                (x, y) => x == null ? y == null : y != null && x.SequenceEqual(y),
+                l => l == null ? 0 : l.Aggregate(0, (h, r) => HashCode.Combine(h, r)),
+                l => l == null ? null : l.ToList()));
     }
 
     private static readonly JsonSerializerOptions JsonOpciones = new(JsonSerializerDefaults.Web);

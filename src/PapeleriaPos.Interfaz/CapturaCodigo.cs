@@ -26,6 +26,13 @@ public sealed class CapturaCodigo
         return _anterior = EnOrdenAsync(_anterior, texto, procesar);
     }
 
+    /// <summary>
+    /// Termina cuando terminan los escaneos en cola. Las teclas que actúan sobre el ticket (F12, F6, F5, + y −, Supr,
+    /// F11) lo esperan: F12 no abre el cobro antes de que llegue la última línea, ni F6 manda un escaneo al ticket nuevo.
+    /// </summary>
+    public async Task EsperarAsync() =>
+        await _anterior.ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+
     private static async Task EnOrdenAsync(Task anterior, string texto, Func<string, Task> procesar)
     {
         // Si el anterior falló, su error ya le llegó a su propio Enter: este escaneo sigue.

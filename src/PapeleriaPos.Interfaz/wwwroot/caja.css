@@ -319,3 +319,108 @@ td.acciones-renglon { white-space: nowrap; text-align: right; }
 .cobrar-credito .acciones { margin-top: 0; flex-wrap: wrap; }
 .cobrar-credito legend { font-weight: 600; padding: 0 4px; }
 .movimientos-credito td.debe { color: #8a1c17; }
+
+/* ── La pantalla de venta nueva (docs/propuesta-interfaz.md, entrega 0) ── */
+.venta-nueva {
+    --vn-tinta: #23439b;
+    --vn-tinta-claro: #e8eefb;
+    --vn-tinta-medio: #c7d3f1;
+    --vn-cobro: #0f7a4a;
+    --vn-cobro-hover: #0c663e;
+    --vn-cobro-claro: #e3f4ea;
+    --vn-aviso: #a35a00;
+    --vn-aviso-fondo: #fff4e0;
+    --vn-linea: #e3e7ee;
+    --vn-papel: #f4f6fa;
+    --vn-renglon: #f6f8fb;
+    --vn-tenue: #8a96a6;
+    flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--vn-papel);
+}
+.venta-nueva kbd { font: 600 10px ui-monospace, Consolas, monospace; border: 1px solid var(--borde); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: #fff; color: var(--suave); }
+.venta-nueva code { font-size: 12px; color: var(--suave); }
+
+.vn-arriba { display: flex; align-items: center; gap: 10px; padding: 4px 14px; background: #fff; border-bottom: 1px solid var(--vn-linea); }
+.vn-marca { display: flex; flex-direction: column; font-weight: 700; line-height: 1.15; padding-right: 8px; }
+.vn-marca small { font-weight: 400; font-size: 11px; color: var(--suave); }
+.vn-pestanas { display: flex; gap: 2px; }
+.vn-pestanas button { font: inherit; font-size: 14px; border: 0; border-bottom: 2px solid transparent; background: none; padding: 9px 10px; color: var(--suave); cursor: pointer; display: inline-flex; gap: 5px; align-items: center; }
+.vn-pestanas button:hover { color: var(--texto); }
+.vn-pestanas button.activa { color: var(--vn-tinta); border-bottom-color: var(--vn-tinta); font-weight: 600; }
+.vn-chip { font: inherit; font-size: 12.5px; border: 1px solid var(--vn-linea); background: #fff; border-radius: 999px; padding: 3px 10px; cursor: pointer; color: var(--suave); display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; }
+.vn-chip:hover { border-color: var(--vn-tinta); color: var(--vn-tinta); }
+.vn-atiende { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; }
+.vn-atiende small { font-size: 11px; color: var(--suave); }
+
+.vn-cuerpo { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 384px; min-height: 0; }
+.vn-izq { display: flex; flex-direction: column; gap: 6px; padding: 10px 14px 10px 16px; min-height: 0; transition: opacity .15s, filter .15s; }
+.vn-captura { display: flex; align-items: center; gap: 10px; height: 56px; padding: 0 14px; background: #fff; border: 2px solid var(--vn-tinta); border-radius: 12px; box-shadow: 0 0 0 4px var(--vn-tinta-claro); }
+.vn-captura-ico { color: var(--vn-tinta); font-size: 20px; }
+.vn-captura input { flex: 1; border: 0; outline: 0; padding: 0; font-size: 21px; background: transparent; }
+.vn-captura input::placeholder { color: var(--vn-tenue); font-size: 17px; }
+.vn-aviso { min-height: 22px; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--vn-cobro); }
+.vn-aviso.error { color: var(--error); font-weight: 600; }
+.vn-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 30px; }
+.vn-rapidos { display: flex; align-items: center; gap: 4px; }
+.vn-tit { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--vn-tenue); margin-right: 2px; }
+.vn-rapido { font: inherit; font-size: 13px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--vn-linea); background: #fff; border-radius: 999px; padding: 3px 9px 3px 4px; cursor: pointer; white-space: nowrap; }
+.vn-rapido:hover { border-color: var(--vn-tinta-medio); }
+.vn-rapido small { color: var(--suave); font-variant-numeric: tabular-nums; }
+.vn-espera { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.vn-ficha { font: inherit; font-size: 13px; border: 1px dashed var(--borde); background: var(--vn-renglon); border-radius: 8px; padding: 3px 10px; cursor: pointer; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.vn-ficha:hover { border-style: solid; border-color: var(--vn-tinta); background: var(--vn-tinta-claro); }
+
+.vn-ticket { flex: 1; min-height: 0; overflow-y: auto; background: #fff; border: 1px solid var(--vn-linea); border-radius: 10px; }
+.vn-ticket th { background: #fff; color: var(--vn-tenue); font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; padding: 8px 10px; border-bottom: 1px solid var(--vn-linea); }
+.vn-ticket td { padding: 7px 10px; border-bottom: 1px solid var(--vn-linea); vertical-align: middle; }
+.vn-ticket tbody tr { cursor: pointer; }
+.venta-nueva tr.seleccionada td { background: var(--vn-tinta-claro); }
+.venta-nueva tr.seleccionada td:first-child { box-shadow: inset 4px 0 0 var(--vn-tinta); }
+.vn-col-cant { width: 120px; }
+.vn-paso { display: inline-flex; align-items: center; border: 1px solid var(--vn-linea); border-radius: 8px; overflow: hidden; background: #fff; }
+.vn-paso button { width: 26px; height: 28px; border: 0; background: var(--vn-renglon); cursor: pointer; font-size: 16px; color: var(--suave); }
+.vn-paso button:hover { background: var(--vn-tinta-claro); color: var(--vn-tinta); }
+.vn-paso span, .vn-paso-fijo { min-width: 40px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; display: inline-block; }
+.vn-nombre { font-size: 16px; font-weight: 600; }
+.vn-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 1px; }
+.vn-etiq { font-size: 11.5px; font-weight: 600; border-radius: 999px; padding: 1px 7px; background: var(--vn-cobro-claro); color: var(--vn-cobro); }
+.vn-etiq.ambar { background: var(--vn-aviso-fondo); color: var(--vn-aviso); }
+.vn-importe { font-weight: 700; font-size: 17px; }
+.vn-vacio { height: 100%; display: grid; place-content: center; text-align: center; gap: 6px; padding: 30px; color: var(--suave); max-width: 560px; margin: 0 auto; }
+.vn-vacio h3 { margin: 0; font-size: 21px; color: var(--texto); }
+.vn-vacio p { margin: 0; line-height: 1.5; }
+
+.vn-der { display: flex; flex-direction: column; gap: 10px; padding: 12px 16px; border-left: 1px solid var(--vn-linea); background: var(--vn-papel); overflow-y: auto; min-height: 0; }
+.vn-cliente { display: flex; justify-content: flex-end; align-items: center; gap: 8px; font-size: 13.5px; color: var(--vn-tinta); font-weight: 600; }
+.vn-total { position: relative; margin-top: 6px; padding: 14px 16px 16px; background: #fff; border-radius: 0 0 10px 10px; box-shadow: 0 1px 0 var(--vn-linea); display: flex; flex-direction: column; gap: 4px; transition: box-shadow .15s; }
+.vn-total::before { content: ""; position: absolute; left: 0; right: 0; top: -7px; height: 7px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='7'%3E%3Cpath d='M0 7 L7 0 L14 7 Z' fill='%23ffffff'/%3E%3C/svg%3E") repeat-x left bottom; }
+.vn-total-cab { display: flex; justify-content: space-between; font-size: 13px; color: var(--suave); }
+.vn-cifra { font-size: 54px; font-weight: 700; line-height: 1.05; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.vn-cifra.vacio { color: var(--vn-tenue); }
+.vn-tecla { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--suave); }
+.vn-linea { display: flex; justify-content: space-between; font-size: 13.5px; color: var(--suave); font-variant-numeric: tabular-nums; }
+.vn-linea strong { color: var(--texto); }
+.vn-linea.verde { color: var(--vn-cobro); }
+.vn-separa { border-top: 2px dashed var(--vn-linea); margin: 8px -16px 6px; }
+.vn-pago-cab { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.vn-pago-cab label { display: inline; font-size: 13px; }
+#pago-nuevo { width: 100%; font-size: 28px; font-weight: 700; padding: 7px 12px; border-radius: 8px; font-variant-numeric: tabular-nums; }
+#pago-nuevo::placeholder { color: #b3bbc5; font-weight: 700; }
+.vn-vivo { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 12px; border-radius: 10px; background: var(--vn-cobro-claro); color: var(--vn-cobro); font-weight: 600; }
+.vn-vivo strong { font-size: 28px; font-variant-numeric: tabular-nums; }
+.vn-vivo.falta { background: var(--vn-aviso-fondo); color: var(--vn-aviso); }
+.vn-cobrar { margin-top: 6px; width: 100%; border: 0; border-radius: 10px; background: var(--vn-cobro); color: #fff; padding: 13px 16px; font: inherit; font-size: 19px; font-weight: 700; text-align: left; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+.vn-cobrar:hover:not(:disabled) { background: var(--vn-cobro-hover); }
+.vn-cobrar:disabled { background: #a9c9b8; cursor: default; }
+.vn-cobrar kbd { background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .35); color: #fff; }
+/* F12: la atención se va al cobro; lo demás se apaga. */
+.vn-total:focus-within { box-shadow: 0 0 0 3px var(--vn-cobro), 0 16px 36px rgba(15, 122, 74, .22); }
+.venta-nueva:has(.vn-total:focus-within) .vn-izq { opacity: .35; filter: grayscale(.5); }
+#pago-nuevo:focus { outline: none; border: 2px solid var(--vn-cobro); font-size: 34px; }
+.vn-alerta { background: var(--vn-aviso-fondo); color: #6b4000; border: 1px solid #f3d29a; border-radius: 10px; padding: 10px 12px; font-size: 13.5px; }
+.vn-ultimo { margin-top: auto; display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; color: var(--suave); }
+.vn-ultimo strong { color: var(--texto); font-variant-numeric: tabular-nums; }
+.vn-enlace { border: 0; background: none; padding: 0; color: var(--vn-tinta); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font: inherit; font-size: 13px; }
+
+.vn-teclas { display: flex; flex-wrap: wrap; align-items: center; gap: 0; padding: 4px 8px; background: #fff; border-top: 1px solid var(--vn-linea); }
+.vn-teclas button, .vn-teclas label { flex-direction: row; font: inherit; font-size: 12.5px; color: var(--texto); border: 0; background: none; border-radius: 6px; padding: 4px 6px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap; }
+.vn-teclas button:hover, .vn-teclas label:hover { background: var(--vn-renglon); }

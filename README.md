@@ -59,6 +59,10 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
    `tcp://192.168.1.100:9100` para una impresora de red, el nombre de una impresora de Windows, o vacío para ver el
    ticket en pantalla. El servicio acepta lo mismo en `Caja:Impresora` para la caja del navegador.
 
+La venta tiene dos pantallas: la de hoy y la nueva del [rediseño](docs/propuesta-interfaz.md) (entrega 0, en
+desarrollo). «Probar la pantalla nueva» cambia de una a otra, y cada PC recuerda la suya. `preparar-caja` deja en la
+base de prueba los rápidos Copia B/N y CURP (10 impresiones).
+
 Usuarios de prueba que crea `preparar-caja` (solo para bases de prueba):
 
 | Usuario | Rol | PIN |
