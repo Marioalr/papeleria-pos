@@ -94,6 +94,22 @@ public class ControlApiTests(ServicioDePrueba servicio) : IClassFixture<Servicio
     }
 
     [Fact]
+    public async Task La_caja_pide_en_una_consulta_todo_lo_que_puede_quien_entro()
+    {
+        var (http, caja, cajero, _) = await PrepararAsync();
+
+        var permisos = (await http.GetFromJsonAsync<List<PermisoDeSesion>>($"api/usuarios/{cajero.UsuarioId}/permisos?sucursalId={caja.SucursalId}"))!
+            .ToDictionary(p => p.Accion);
+
+        Assert.Equal(NivelPermiso.RequiereAutorizacion, permisos[AccionControlada.CancelarTicket].Nivel);
+        Assert.Contains("Encargado de prueba", permisos[AccionControlada.CancelarTicket].Autorizan);
+        Assert.DoesNotContain("Cajero de prueba", permisos[AccionControlada.CancelarTicket].Autorizan);
+        Assert.Contains("Dueño de prueba", permisos[AccionControlada.CambiarPrecio].Autorizan);
+        Assert.DoesNotContain("Encargado de prueba", permisos[AccionControlada.CambiarPrecio].Autorizan);
+        Assert.Equal(NivelPermiso.NoPermitido, permisos[AccionControlada.CorteZ].Nivel);
+    }
+
+    [Fact]
     public async Task El_dueno_cambia_las_reglas_y_el_cambio_se_aplica()
     {
         var (http, caja, cajero, _) = await PrepararAsync();

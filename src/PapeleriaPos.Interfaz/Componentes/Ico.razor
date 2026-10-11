@@ -1,0 +1,7 @@
+@* Un ícono de Iconos.razor. *@
+<svg class="ico @Clase" aria-hidden="true"><use href="#i-@Nombre" /></svg>
+
+@code {
+    [Parameter, EditorRequired] public string Nombre { get; set; } = "";
+    [Parameter] public string? Clase { get; set; }
+}

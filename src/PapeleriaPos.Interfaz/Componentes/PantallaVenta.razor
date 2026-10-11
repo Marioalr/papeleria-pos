@@ -7,44 +7,106 @@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 @inject IImpresora Impresora
+@inject ConexionCaja Conexion
+@inject IServiceProvider Servicios
 
 @if (_pantallaNueva)
 {
     <div class="venta-nueva">
+        <Iconos />
         <header class="vn-arriba">
-            <span class="vn-marca">@Caja.Nombre<small>@Caja.Sucursal</small></span>
+            <div class="vn-marca">
+                <span class="vn-logo">P</span>
+                <div><strong>@Caja.Nombre</strong><small>@(Conexion.Servicio.IsLoopback ? "principal" : "secundaria") · @Caja.Sucursal</small></div>
+            </div>
+            @* Cada quien ve lo que sus permisos le dejan: lo que no puede no aparece (docs/propuesta-interfaz.md, «Usuarios y permisos»). *@
             <nav class="vn-pestanas">
                 <button class="activa">Venta <kbd>F1</kbd></button>
-                <button @onclick="() => Abrir(Ventanas.Productos)">Productos <kbd>F3</kbd></button>
-                <button @onclick="() => Abrir(Ventanas.Inventario)">Inventario <kbd>F4</kbd></button>
-                <button @onclick="() => Abrir(Ventanas.Clientes)">Clientes</button>
+                @if (Ve(AccionControlada.EditarCatalogo))
+                {
+                    <button @onclick="() => Abrir(Ventanas.Productos)">Productos <kbd>F3</kbd></button>
+                }
+                @if (VeInventario)
+                {
+                    <button @onclick="() => Abrir(Ventanas.Inventario)">Inventario <kbd>F4</kbd></button>
+                }
+                @if (Ve(AccionControlada.AdministrarClientes))
+                {
+                    <button @onclick="() => Abrir(Ventanas.Clientes)">Clientes</button>
+                }
                 <button @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
-                <button @onclick="() => Abrir(Ventanas.Configuracion)">Configuración</button>
+                @if (VeConfiguracion)
+                {
+                    <button @onclick="() => Abrir(Ventanas.Configuracion)">Configuración</button>
+                }
             </nav>
             <span class="espacio"></span>
-            <button class="vn-chip" title="Vuelve a la pantalla de venta de hoy; se recuerda en esta PC" @onclick="CambiarPantallaAsync">Pantalla de hoy</button>
-            <div class="vn-atiende"><strong>@Sesion.Nombre</strong><small>turno desde @Turno.AbiertoLocal.ToString("HH:mm")</small></div>
-            <button class="vn-chip" @onclick="AlSalir">Salir</button>
+            <EstadoCaja @ref="_estado" Caja="Caja" Sesion="Sesion" AlImpresiones="() => Abrir(Ventanas.Impresiones)" />
+            <div class="vn-usuario-caja">
+                <button class="vn-usuario" title="Cambiar de usuario o volver a la pantalla de hoy" @onclick="() => _menuUsuario = !_menuUsuario">
+                    <span class="vn-avatar">@Inicial(Sesion.Nombre)</span>
+                    <span><strong>@Sesion.Nombre</strong><small>turno desde @Turno.AbiertoLocal.ToString("HH:mm")</small></span>
+                </button>
+                @if (_menuUsuario)
+                {
+                    <div class="vn-fondo-menu" @onclick="() => _menuUsuario = false"></div>
+                    <div class="vn-menu-usuario">
+                        <p>@Sesion.Nombre · @Textos.Rol(Sesion.Rol).ToLowerInvariant()</p>
+                        <button @onclick="AlSalir">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
+                        <button @onclick="CambiarPantallaAsync">Volver a la pantalla de hoy</button>
+                    </div>
+                }
+            </div>
         </header>
-        @if (HayConteoPendiente)
-        {
-            @FranjaConteo
-        }
-        @if (Actual.Cliente is not null && Actual.Cuenta is { SaldoCentavos: not 0 })
-        {
-            @FranjaCredito
-        }
 
         <div class="vn-cuerpo">
             <section class="vn-izq">
                 <div class="vn-captura-caja">
                     <div class="vn-captura">
-                        <span class="vn-captura-ico" aria-hidden="true">▥</span>
+                        <Ico Nombre="escaner" Clase="vn-captura-ico" />
                         @* Sin @bind: caja.js lo lee al Enter y lo vacía al momento (un escaneo nunca se pega al siguiente). *@
                         <input id="codigo" data-codigo data-captura autocomplete="off" spellcheck="false" aria-label="Código del producto"
                                placeholder="Escanea o escribe: código, nombre, 3*código o folio de un ticket" />
+                        <span class="vn-captura-modo"><kbd>/</kbd> todas las acciones</span>
                     </div>
-                    @if (_resultados is { } resultados)
+                    @if (_accionesVistas is { } acciones)
+                    {
+                        @* «/»: todo lo que puede hacer quien entró, con su tecla; lo que pide autorización dice quién autoriza. *@
+                        <div class="vn-resultados" role="listbox">
+                            <div class="vn-res-grupo">Acciones que tienes</div>
+                            @if (acciones.Count == 0)
+                            {
+                                <div class="vn-res-vacio">Ninguna acción se llama así: borra lo escrito después de «/» para verlas todas.</div>
+                            }
+                            @for (var k = 0; k < acciones.Count; k++)
+                            {
+                                var indiceAccion = k;
+                                var accion = acciones[k];
+                                <div id="acc-@k" class="vn-res vn-res-accion @(k == _indiceAccion ? "activa" : "")" role="option" @onclick="() => HacerAccionAsync(indiceAccion)">
+                                    <Ico Nombre="@accion.Icono" />
+                                    <div class="vn-res-texto">
+                                        <div class="vn-res-nombre">@accion.Nombre</div>
+                                        @if (accion.Regla is { } regla && DetallePermiso(regla) is { } detalle)
+                                        {
+                                            <div class="vn-res-sub">
+                                                @if (Permiso(regla)?.Nivel == NivelPermiso.RequiereAutorizacion)
+                                                {
+                                                    <Ico Nombre="candado" />
+                                                }
+                                                @detalle
+                                            </div>
+                                        }
+                                    </div>
+                                    @if (accion.Tecla is { } teclaAccion)
+                                    {
+                                        <kbd>@teclaAccion</kbd>
+                                    }
+                                </div>
+                            }
+                            <div class="vn-res-ayuda"><span><kbd>↑</kbd> <kbd>↓</kbd> elegir</span><span><kbd>Enter</kbd> hacerla</span><span><kbd>Esc</kbd> cerrar</span><span>«/desc» deja solo las que dicen «desc»</span></div>
+                        </div>
+                    }
+                    else if (_resultados is { } resultados)
                     {
                         @* Lo que se escribe a mano busca aquí mismo, sin otra ventana; el lector no (no espera a dejar de teclear). *@
                         <div class="vn-resultados" role="listbox">
@@ -78,14 +140,19 @@
                         </div>
                     }
                 </div>
-                <div class="vn-aviso @(_mensajeEsError ? "error" : "")">
+                <div class="vn-aviso @(_mensaje is null ? "info" : _mensajeEsError ? "error" : "")">
                     @if (_mensaje is not null)
                     {
                         <span>@_mensaje</span>
                         @if (_codigoNuevo is { } nuevoN)
                         {
-                            <button class="boton chico" @onclick="() => Abrir(Ventanas.AltaRapida)">Dar de alta «@nuevoN»</button>
+                            <button class="vn-boton chico" @onclick="() => Abrir(Ventanas.AltaRapida)">Dar de alta «@nuevoN»</button>
                         }
+                    }
+                    else
+                    {
+                        <Ico Nombre="info" />
+                        <span>El cursor siempre vuelve aquí: escanea, escribe un nombre o «/» para ver todo lo que puedes hacer.</span>
                     }
                 </div>
                 <div class="vn-barra">
@@ -110,10 +177,10 @@
                     <span class="vn-espera">
                         @foreach (var enEspera in EnEspera)
                         {
-                            <button class="vn-ficha" title="En espera desde las @Desde(enEspera), @Formato.Numero(enEspera.Venta.NumeroDeArticulos) productos. Al retomarlo, el ticket actual pasa a la espera"
-                                    @onclick="() => Retomar(enEspera)">⏸ @Desde(enEspera) · @Formato.Dinero(enEspera.Venta.TotalCentavos)</button>
+                            <button class="vn-ficha" title="En espera desde las @Desde(enEspera), @Formato.Numero(enEspera.Venta.NumeroDeArticulos) artículos. Al retomarlo, el ticket actual pasa a la espera"
+                                    @onclick="() => Retomar(enEspera)"><Ico Nombre="reloj" />@Desde(enEspera) · @Formato.Dinero(enEspera.Venta.TotalCentavos)</button>
                         }
-                        <button class="boton chico" disabled="@(Actual.Venta.Lineas.Count == 0)" title="Guarda este ticket y empieza otro" @onclick="PonerEnEspera">Poner en espera <kbd>F6</kbd></button>
+                        <button class="vn-boton chico" disabled="@(Actual.Venta.Lineas.Count == 0)" title="Guarda este ticket y empieza otro" @onclick="PonerEnEspera"><Ico Nombre="pausa" />Poner en espera <kbd>F6</kbd></button>
                     </span>
                 </div>
                 <div class="vn-ticket">
@@ -121,15 +188,22 @@
                     {
                         <div class="vn-vacio">
                             <h3>Escanea el primer producto</h3>
-                            <p>El cuadro de arriba entiende el código del lector, <code>12*código</code> para doce de una vez, el nombre
-                                (lo busca aquí abajo; Enter agrega el primero) y el folio de un ticket para devolverlo. Un número y un rápido agregan esa cantidad.</p>
+                            <p>El cuadro de arriba entiende todo esto, sin abrir otra ventana:</p>
+                            <ul>
+                                <li><code>7501234567890</code></li><li>el código del lector</li>
+                                <li><code>cuaderno estrella</code></li><li>busca por nombre o código; Enter agrega el primero</li>
+                                <li><code>12*7501234567890</code></li><li>doce de una vez</li>
+                                <li><code>20</code> y <kbd>Alt+1</kbd></li><li>veinte del primer rápido</li>
+                                <li><code>A-000118</code></li><li>el folio: devolver o cancelar</li>
+                                <li><code>/</code></li><li>todas las acciones que tienes</li>
+                            </ul>
                         </div>
                     }
                     else
                     {
                         <table>
                             <thead>
-                                <tr><th class="vn-col-cant">Cantidad</th><th>Descripción</th><th class="num">Precio</th><th class="num">Importe</th></tr>
+                                <tr><th class="vn-col-cant">Cantidad</th><th>Descripción</th><th class="num vn-col-precio">Precio</th><th class="num vn-col-importe">Importe</th></tr>
                             </thead>
                             <tbody>
                                 @for (var i = 0; i < Actual.Venta.Lineas.Count; i++)
@@ -167,21 +241,60 @@
                                                 {
                                                     <span class="vn-etiq">Descuento −@Formato.Dinero(linea.DescuentoCentavos) · @linea.MotivoDescuento</span>
                                                 }
+                                                @if (linea.PrecioCambiado)
+                                                {
+                                                    <span class="vn-etiq azul">Precio cambiado</span>
+                                                }
                                                 @if (producto?.Existencia is { } quedan && quedan <= 3)
                                                 {
                                                     <span class="vn-etiq ambar">@(quedan <= 0 ? "Sin existencia en el sistema" : $"Quedan {Formato.Numero(quedan)}")</span>
                                                 }
                                             </div>
                                         </td>
-                                        <td class="num">
+                                        <td class="num vn-precio">
                                             @if (linea.PrecioCambiado)
                                             {
-                                                <s class="precio-original">@Formato.Dinero(linea.PrecioOriginalCentavos ?? 0)</s>
+                                                <s>@Formato.Dinero(linea.PrecioOriginalCentavos ?? 0)</s>
                                             }
                                             @Formato.Dinero(linea.PrecioCentavos)
                                         </td>
                                         <td class="num vn-importe">@Formato.Dinero(linea.ImporteCentavos)</td>
                                     </tr>
+                                    @if (i == _seleccion)
+                                    {
+                                        @* Las acciones del artículo, pegadas a su fila: así el panel de la derecha queda solo para el dinero. *@
+                                        <tr class="vn-acciones-fila">
+                                            <td></td>
+                                            <td colspan="3">
+                                                <div class="vn-tira">
+                                                    @if (producto is not null && !linea.EsImpresiones && Ve(AccionControlada.CambiarPrecio))
+                                                    {
+                                                        <button class="vn-accion" @onclick="() => EnLaFilaAsync(AbrirCambioPrecio)" @onclick:stopPropagation="true">
+                                                            <Ico Nombre="etiqueta" />Precio @Marca(AccionControlada.CambiarPrecio, "Ctrl+E")
+                                                        </button>
+                                                    }
+                                                    @if (Ve(AccionControlada.Descuento))
+                                                    {
+                                                        <button class="vn-accion" @onclick="() => EnLaFilaAsync(() => Abrir(Ventanas.Descuento))" @onclick:stopPropagation="true">
+                                                            <Ico Nombre="porcentaje" />Descuento @Limite(AccionControlada.Descuento) @Marca(AccionControlada.Descuento, "Ctrl+D")
+                                                        </button>
+                                                    }
+                                                    @if (producto is not null && !linea.EsImpresiones && TieneEscalas(producto))
+                                                    {
+                                                        <button class="vn-accion" @onclick="() => EnLaFilaAsync(MayoreoAsync)" @onclick:stopPropagation="true">
+                                                            <Ico Nombre="capas" />Mayoreo <kbd>F11</kbd>
+                                                        </button>
+                                                    }
+                                                    @if (Ve(AccionControlada.QuitarProducto))
+                                                    {
+                                                        <button class="vn-accion peligro" @onclick="() => EnLaFilaAsync(BorrarSeleccion)" @onclick:stopPropagation="true">
+                                                            <Ico Nombre="basura" />Quitar <kbd>Supr</kbd>
+                                                        </button>
+                                                    }
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
                                 }
                             </tbody>
                         </table>
@@ -190,14 +303,36 @@
             </section>
 
             <aside class="vn-der">
+                @* El cliente: una flecha chica que apunta al ticket; se jala (Ctrl+L) para elegirlo. A su izquierda, lo que debe. *@
                 <div class="vn-cliente">
-                    <span>@(Actual.Cliente?.Nombre ?? "Público en general")</span>
-                    <button class="vn-chip" title="Elegir el cliente del ticket" @onclick="() => Abrir(Ventanas.ElegirCliente)">Cliente <kbd>Ctrl+L</kbd></button>
+                    @if (Actual.Cliente is not null && Actual.Cuenta is { } cuenta && cuenta.SaldoCentavos != 0)
+                    {
+                        <span class="vn-cli-dato">
+                            @if (cuenta.SaldoCentavos > 0)
+                            {
+                                <span class="debe" title="@(cuenta.VenceMasAntiguo is { } vence ? $"Lo más antiguo vence el {vence:dd/MM}" : "")">
+                                    Debe @Formato.Dinero(cuenta.SaldoCentavos)@(VencidoDelTicket > 0 ? $" · vencido {Formato.Dinero(VencidoDelTicket)}" : "")
+                                </span>
+                                <button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Abono)">Abonar <kbd>Ctrl+B</kbd></button>
+                            }
+                            else
+                            {
+                                <span>@Formato.Dinero(cuenta.AFavorCentavos) a favor</span>
+                            }
+                        </span>
+                    }
+                    <button class="vn-flecha-cli" title="Elegir el cliente del ticket (Ctrl+L)" @onclick="() => Abrir(Ventanas.ElegirCliente)">
+                        <Ico Nombre="usuario" /><span>@(Actual.Cliente?.Nombre ?? "Público en general")</span>
+                    </button>
                 </div>
                 <div class="vn-total">
-                    <div class="vn-total-cab"><span>Total</span><span>@(Actual.Venta.Lineas.Count == 0 ? "sin productos" : $"{Formato.Numero(Actual.Venta.NumeroDeArticulos)} productos")</span></div>
+                    <div class="vn-total-cab"><span>Total</span><span>@ArticulosTexto(Actual.Venta)</span></div>
                     <div class="vn-cifra @(Actual.Venta.Lineas.Count == 0 ? "vacio" : "")">@Formato.Dinero(Actual.Venta.TotalCentavos)</div>
                     <div class="vn-tecla"><kbd>F12</kbd><span>cobrar</span></div>
+                    @if (Actual.Venta.Lineas.Sum(l => l.AhorroMayoreoCentavos) is var ahorro and > 0)
+                    {
+                        <div class="vn-linea verde"><span>Ahorro por mayoreo</span><span>@Formato.Dinero(ahorro)</span></div>
+                    }
                     @if (Actual.Venta.DescuentoCentavos > 0)
                     {
                         <div class="vn-linea verde"><span>Descuentos</span><span>−@Formato.Dinero(Actual.Venta.DescuentoCentavos)</span></div>
@@ -214,7 +349,10 @@
                         {
                             <div class="vn-pago-cab">
                                 <label for="pago-nuevo">Pagó con</label>
-                                <button class="vn-chip" title="Tarjeta, transferencia o una parte de cada una: abre el cobro de hoy" @onclick="AbrirCobroAsync">Tarjeta o transferencia</button>
+                                <span class="vn-formas">
+                                    <button class="vn-forma" title="Con tarjeta, o una parte: abre el cobro de hoy" @onclick="AbrirCobroAsync"><Ico Nombre="tarjeta" />Tarjeta</button>
+                                    <button class="vn-forma" title="Por transferencia, o una parte: abre el cobro de hoy" @onclick="AbrirCobroAsync"><Ico Nombre="transferir" />Transf.</button>
+                                </span>
                             </div>
                             <input id="pago-nuevo" data-pago inputmode="decimal" autocomplete="off" placeholder="@Formato.Dinero(aCobrar)"
                                    @bind="_pagoCon" @bind:event="oninput" @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
@@ -246,7 +384,16 @@
                 </div>
                 @if (_efectivo is { PideRetiro: true } efectivoN)
                 {
-                    <div class="vn-alerta">Hay @Formato.Dinero(efectivoN.EsperadoCentavos) en efectivo y el límite es @Formato.Dinero(efectivoN.LimiteCentavos ?? 0): haz un retiro con F8.</div>
+                    <div class="vn-alerta">
+                        <Ico Nombre="efectivo" />
+                        <div>
+                            <span>Hay <strong>@Formato.Dinero(efectivoN.EsperadoCentavos)</strong> en efectivo y el límite es @Formato.Dinero(efectivoN.LimiteCentavos ?? 0): haz un retiro.</span>
+                            @if (Ve(AccionControlada.SalidaEfectivo))
+                            {
+                                <span><button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Salida)">Retiro <kbd>F8</kbd></button></span>
+                            }
+                        </div>
+                    </div>
                 }
                 <div class="vn-ultimo">
                     @if (_ultimo is { } ultimo)
@@ -257,28 +404,44 @@
                     {
                         <span>Todavía no hay ventas en este turno.</span>
                     }
-                    <button class="vn-enlace" @onclick="ReimprimirUltimoAsync">Reimprimir</button>
+                    @if (Ve(AccionControlada.Reimprimir))
+                    {
+                        <button class="vn-enlace" @onclick="ReimprimirUltimoAsync">Reimprimir</button>
+                    }
                 </div>
             </aside>
         </div>
 
+        @* Lo de todos los días; lo demás, en «/» (docs/propuesta-interfaz.md, «La pantalla de venta»). *@
         <footer class="vn-teclas">
             <button @onclick="IrAlCobroAsync"><kbd>F12</kbd>Cobrar</button>
             <button @onclick="() => Abrir(Ventanas.Buscar)"><kbd>F10</kbd>Buscar</button>
             <button @onclick="() => Abrir(Ventanas.Verificador)"><kbd>F9</kbd>Verificar</button>
             <button @onclick="() => Abrir(Ventanas.Impresiones)"><kbd>F2</kbd>Impresiones</button>
-            <button @onclick="() => Abrir(Ventanas.Comun)"><kbd>Ins</kbd>Art. común</button>
-            <button @onclick="() => Abrir(Ventanas.Descuento)"><kbd>Ctrl+D</kbd>Descuento</button>
-            <button @onclick="AbrirCambioPrecio"><kbd>Ctrl+E</kbd>Precio</button>
-            <button @onclick="MayoreoAsync"><kbd>F11</kbd>Mayoreo</button>
-            <button @onclick="() => Abrir(Ventanas.Entrada)"><kbd>F7</kbd>Entrada</button>
-            <button @onclick="() => Abrir(Ventanas.Salida)"><kbd>F8</kbd>Salida</button>
-            <label for="pdf-cotizar" title="Elige un PDF y te dice cuánto cobrar"><kbd>Ctrl+Q</kbd>Cotizar</label>
+            @if (Ve(AccionControlada.ArticuloComun))
+            {
+                <button @onclick="() => Abrir(Ventanas.Comun)"><kbd>Ins</kbd>Art. común</button>
+            }
+            <button @onclick="() => Abrir(Ventanas.ElegirCliente)"><kbd>Ctrl+L</kbd>Cliente</button>
+            @if (Ve(AccionControlada.EntradaEfectivo))
+            {
+                <button @onclick="() => Abrir(Ventanas.Entrada)"><kbd>F7</kbd>Entrada</button>
+            }
+            @if (Ve(AccionControlada.SalidaEfectivo))
+            {
+                <button @onclick="() => Abrir(Ventanas.Salida)"><kbd>F8</kbd>Salida</button>
+            }
+            <button @onclick="PonerEnEspera"><kbd>F6</kbd>En espera</button>
+            <button @onclick="AbrirAccionesAsync"><kbd>/</kbd>Más acciones</button>
+            @* Ctrl+Q (o «Cotizar un PDF» en «/») abre el selector de archivos de aquí. *@
             <InputFile id="pdf-cotizar" class="oculto" accept=".pdf,application/pdf" onclick="this.value = ''" OnChange="PdfElegidoAsync" />
             <span class="espacio"></span>
-            <button @onclick="() => Abrir(Ventanas.VentasDelDia)">Ventas del día</button>
-            <button @onclick="() => AbrirDevolucion(null)">Devoluciones</button>
-            <button @onclick="() => Abrir(Ventanas.Transferencias)">Transferencias</button>
+            @if (HayConteoPendiente)
+            {
+                <button class="vn-chip-estado" title="Los productos que hay que contar hoy" @onclick="() => Abrir(Ventanas.Conteo)">
+                    <Ico Nombre="contar" />Conteo del día @_conteo!.Contados/@_conteo.Total
+                </button>
+            }
         </footer>
     </div>
 }
@@ -652,6 +815,209 @@ else
     /// <summary>Lo que se enfoca después de dibujar (el cuadro del código, o «Pagó con» con F12).</summary>
     private string? _enfocar;
 
+    private EstadoCaja? _estado;
+    private bool _menuUsuario;
+
+    private static string Inicial(string nombre) => nombre.Trim() is { Length: > 0 } n ? char.ToUpper(n[0], CultureInfo.CurrentCulture).ToString() : "?";
+
+    private static string ArticulosTexto(Venta venta) =>
+        venta.Lineas.Count == 0 ? "sin artículos" : venta.NumeroDeArticulos == 1 ? "1 artículo" : $"{Formato.Numero(venta.NumeroDeArticulos)} artículos";
+
+    /// <summary>Con mayoreo (un precio por pieza desde más de una), la fila ofrece F11.</summary>
+    private static bool TieneEscalas(ProductoVentaDto producto) => producto.Precios.Any(p => p.PresentacionId is null && p.CantidadMinimaMilesimas > 1000);
+
+    /// <summary>Un botón de la fila hace lo mismo que su tecla; el cursor vuelve al cuadro si no se abrió una ventana.</summary>
+    private async Task EnLaFilaAsync(Func<Task> hacer)
+    {
+        await hacer();
+        if (_ventana == Ventanas.Ninguna)
+            _enfocar = "#codigo";
+    }
+
+    // ── Lo que puede quien entró (docs/propuesta-interfaz.md, «Usuarios y permisos») ──
+
+    /// <summary>
+    /// Se piden al entrar, en una sola consulta, para pintar sin preguntar en cada clic. Sin ellos (sin conexión ni copia),
+    /// todo se ve y el servicio decide al hacerlo, como hoy.
+    /// </summary>
+    private Dictionary<AccionControlada, PermisoDeSesion>? _permisos;
+
+    private PermisoDeSesion? Permiso(AccionControlada accion) => _permisos?.GetValueOrDefault(accion);
+
+    /// <summary>Lo que no puede no aparece: ni botón, ni tecla, ni en «/», ni la pestaña.</summary>
+    private bool Ve(AccionControlada accion) => Permiso(accion)?.Nivel != NivelPermiso.NoPermitido;
+
+    private bool VeInventario =>
+        new[]
+        {
+            AccionControlada.RecibirMercancia, AccionControlada.ContarInventario, AccionControlada.ConteoCompleto, AccionControlada.Merma,
+            AccionControlada.AjustarInventario, AccionControlada.AbrirPaquete, AccionControlada.CostearCompra, AccionControlada.PedirCompra,
+        }.Any(Ve);
+
+    /// <summary>La caja de prueba se actualiza desde Configuración: ahí la ve cualquiera.</summary>
+    private bool VeConfiguracion =>
+        Servicios.GetService<GitHubPrueba>() is not null
+        || new[]
+        {
+            AccionControlada.ConfigurarTicket, AccionControlada.EditarReglas, AccionControlada.ConsultarBitacora, AccionControlada.AdministrarCajas,
+            AccionControlada.ConfigurarTelegram, AccionControlada.ConfigurarImpresora, AccionControlada.ConfigurarMargen,
+        }.Any(Ve);
+
+    private async Task CargarPermisosAsync()
+    {
+        try
+        {
+            _permisos = (await Cliente.PermisosDeSesionAsync(Sesion.UsuarioId, Caja.SucursalId)).ToDictionary(p => p.Accion);
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión y sin copia: todo se ve, como hoy.
+        }
+    }
+
+    /// <summary>«Luis», «Carmen o Luis», «Ana, Carmen o Luis»; si son más, los dos primeros y cuántos más.</summary>
+    private static string Quien(PermisoDeSesion permiso)
+    {
+        var nombres = permiso.Autorizan;
+        return nombres.Count switch
+        {
+            0 => "quien tenga el permiso",
+            1 => nombres[0],
+            <= 3 => $"{string.Join(", ", nombres.Take(nombres.Count - 1))} o {nombres[^1]}",
+            _ => $"{nombres[0]}, {nombres[1]} o {nombres.Count - 2} más",
+        };
+    }
+
+    /// <summary>En «/»: «Lo autoriza Luis», o «Tú: hasta 10 %; más, lo autoriza Carmen o Luis».</summary>
+    private string? DetallePermiso(AccionControlada accion) => Permiso(accion) switch
+    {
+        { Nivel: NivelPermiso.RequiereAutorizacion } p => $"Lo autoriza {Quien(p)}",
+        { Nivel: NivelPermiso.Permitido, UmbralCentavos: { } umbral } p => $"Tú: hasta {Permisos.TextoMonto(accion, umbral)}; más, lo autoriza {Quien(p)}",
+        _ => null,
+    };
+
+    /// <summary>La tecla, o el candado con quién autoriza.</summary>
+    private RenderFragment Marca(AccionControlada accion, string tecla) => Permiso(accion) is { Nivel: NivelPermiso.RequiereAutorizacion } p
+        ? @<small class="vn-candado" title="Lo autoriza @Quien(p)"><Ico Nombre="candado" />@Quien(p)</small>
+        : @<kbd>@tecla</kbd>;
+
+    private RenderFragment Limite(AccionControlada accion) => Permiso(accion) is { Nivel: NivelPermiso.Permitido, UmbralCentavos: { } umbral }
+        ? @<small class="vn-limite">hasta @Permisos.TextoMonto(accion, umbral)</small>
+        : _ => { };
+
+    // ── «/»: todas las acciones de quien entró ──────────────────────────────
+
+    private sealed record AccionDeVenta(string Nombre, string Icono, string? Tecla, AccionControlada? Regla, Func<Task> Hacer);
+
+    /// <summary>Lo que sale al escribir «/»; null: la lista está cerrada.</summary>
+    private List<AccionDeVenta>? _accionesVistas;
+
+    private string _textoAcciones = "";
+    private int _indiceAccion;
+
+    private IEnumerable<AccionDeVenta> TodasLasAcciones()
+    {
+        yield return new("Cobrar", "efectivo", "F12", null, IrAlCobroAsync);
+        yield return new("Buscar producto por nombre", "buscar", "F10", null, () => Abrir(Ventanas.Buscar));
+        yield return new("Verificar precio sin vender", "ojo", "F9", null, () => Abrir(Ventanas.Verificador));
+        yield return new("Impresiones por cobrar", "impresora", "F2", null, () => Abrir(Ventanas.Impresiones));
+        yield return new("Artículo común (sin inventario)", "etiqueta", "Ins", AccionControlada.ArticuloComun, () => Abrir(Ventanas.Comun));
+        yield return new("Elegir cliente del ticket", "clientes", "Ctrl+L", null, () => Abrir(Ventanas.ElegirCliente));
+        yield return new("Abono a la cuenta de un cliente", "efectivo", "Ctrl+B", null, () => Abrir(Ventanas.Abono));
+        yield return new("Cambiar precio del artículo", "etiqueta", "Ctrl+E", AccionControlada.CambiarPrecio, AbrirCambioPrecio);
+        yield return new("Descuento", "porcentaje", "Ctrl+D", AccionControlada.Descuento, () => Abrir(Ventanas.Descuento));
+        yield return new("Ver el mayoreo del artículo", "capas", "F11", null, MayoreoAsync);
+        yield return new("Quitar el artículo", "basura", "Supr", AccionControlada.QuitarProducto, BorrarSeleccion);
+        yield return new("Poner el ticket en espera", "pausa", "F6", null, () =>
+        {
+            PonerEnEspera();
+            return Task.CompletedTask;
+        });
+        yield return new("Retomar un ticket en espera", "ticket", "F5", null, () =>
+        {
+            RetomarPrimero();
+            return Task.CompletedTask;
+        });
+        yield return new("Entrada de efectivo", "entrada", "F7", AccionControlada.EntradaEfectivo, () => Abrir(Ventanas.Entrada));
+        yield return new("Salida de efectivo", "salida", "F8", AccionControlada.SalidaEfectivo, () => Abrir(Ventanas.Salida));
+        yield return new("Devolver o cancelar un ticket", "volver", "folio", AccionControlada.Devolucion, () => AbrirDevolucion(null));
+        yield return new("Reimprimir el último ticket", "impresora", null, AccionControlada.Reimprimir, ReimprimirUltimoAsync);
+        yield return new("Ventas del día", "lista", null, null, () => Abrir(Ventanas.VentasDelDia));
+        yield return new("Cotizar un PDF", "impresora", "Ctrl+Q", null, () => Js.ClicAsync("#pdf-cotizar"));
+        yield return new("Verificar transferencias", "check", null, AccionControlada.VerificarTransferencia, () => Abrir(Ventanas.Transferencias));
+        yield return new("Corte", "contar", null, null, () => Abrir(Ventanas.Corte));
+        yield return new("Conteo del día", "contar", null, AccionControlada.ContarInventario, () => Abrir(Ventanas.Conteo));
+        yield return new("Productos", "cajas", "F3", AccionControlada.EditarCatalogo, () => Abrir(Ventanas.Productos));
+        if (VeInventario)
+            yield return new("Inventario: recibir, contar y mermas", "recibir", "F4", null, () => Abrir(Ventanas.Inventario));
+        yield return new("Clientes", "clientes", null, AccionControlada.AdministrarClientes, () => Abrir(Ventanas.Clientes));
+        if (VeConfiguracion)
+            yield return new("Configuración", "engrane", null, null, () => Abrir(Ventanas.Configuracion));
+        yield return new("Cambiar de usuario", "usuario", "Ctrl+U", null, () => AlSalir.InvokeAsync());
+        yield return new("Volver a la pantalla de hoy", "monitor", null, null, CambiarPantallaAsync);
+    }
+
+    /// <summary>Las que puede (lo que no, no sale) y se llaman como lo escrito después de «/», sin acentos.</summary>
+    private void MostrarAcciones(string filtro)
+    {
+        var buscado = Texto.Normalizar(filtro);
+        _accionesVistas = TodasLasAcciones()
+            .Where(a => a.Regla is not { } regla || Ve(regla))
+            .Where(a => buscado.Length == 0 || Texto.Normalizar(a.Nombre).Contains(buscado, StringComparison.Ordinal))
+            .ToList();
+        (_textoAcciones, _indiceAccion) = (filtro, 0);
+    }
+
+    private void CerrarAcciones() => _accionesVistas = null;
+
+    private void MoverAccion(int paso)
+    {
+        if (_accionesVistas is not { Count: > 0 } acciones)
+            return;
+        _indiceAccion = Math.Clamp(_indiceAccion + paso, 0, acciones.Count - 1);
+        _ = Js.MostrarAsync($"#acc-{_indiceAccion}");
+    }
+
+    /// <summary>«/ Más acciones» en la barra de teclas: el «/» queda en el cuadro y la lista abierta.</summary>
+    private async Task AbrirAccionesAsync()
+    {
+        CerrarResultados();
+        _captura.Texto = "/";
+        await Js.EscribirCapturaAsync("/");
+        MostrarAcciones("");
+    }
+
+    private async Task HacerAccionAsync(int indice)
+    {
+        if (_accionesVistas is not { } acciones || indice < 0 || indice >= acciones.Count)
+            return;
+        var accion = acciones[indice];
+        CerrarAcciones();
+        VaciarCaptura();
+        _enfocar = "#codigo";
+        await accion.Hacer();
+        // Si abrió una ventana, el cursor se queda en ella.
+        if (_ventana != Ventanas.Ninguna)
+            _enfocar = null;
+    }
+
+    /// <summary>Enter con «/algo»: la elegida con ↑ ↓, o la primera que se llama así.</summary>
+    private async Task HacerAccionDeTextoAsync(string filtro)
+    {
+        if (_accionesVistas is null || filtro != _textoAcciones)
+            MostrarAcciones(filtro);
+        if (_accionesVistas is { Count: > 0 })
+            await HacerAccionAsync(_indiceAccion);
+        else
+        {
+            CerrarAcciones();
+            Avisar($"Ninguna acción se llama «{filtro}».");
+        }
+    }
+
+    /// <summary>Lo que se escribió después de «/», o null si no empieza con «/».</summary>
+    private static string? FiltroDeAcciones(string texto) => texto.TrimStart() is ['/', .. var resto] ? resto.Trim() : null;
+
     private async Task CambiarPantallaAsync()
     {
         _pantallaNueva = !_pantallaNueva;
@@ -917,6 +1283,7 @@ else
             _enfocar = "#codigo";
         }
         await CargarRapidosAsync();
+        await CargarPermisosAsync();
         await RevisarEfectivoAsync();
         await RevisarConteoAsync();
         StateHasChanged();
@@ -928,6 +1295,14 @@ else
     {
         if (_ventana != Ventanas.Ninguna)
             return;
+        // «/algo» y Enter: la acción elegida, o la primera que se llama así.
+        if (_pantallaNueva && FiltroDeAcciones(texto) is { } filtro)
+        {
+            CerrarResultados();
+            await HacerAccionDeTextoAsync(filtro);
+            StateHasChanged();
+            return;
+        }
         // Con ↑ ↓ se eligió uno de la lista de resultados: Enter agrega ese.
         if (_resultados is { Count: > 0 } resultados && _navegado && SepararCantidad(texto).Texto == _textoBuscado)
         {
@@ -991,6 +1366,18 @@ else
 
     private async Task BuscarMientrasEscribeAsync(string texto)
     {
+        if (FiltroDeAcciones(texto) is { } filtro)
+        {
+            CerrarResultados();
+            MostrarAcciones(filtro);
+            StateHasChanged();
+            return;
+        }
+        if (_accionesVistas is not null)
+        {
+            CerrarAcciones();
+            StateHasChanged();
+        }
         var (cantidad, resto) = SepararCantidad(texto);
         var secuencia = ++_secuenciaBusqueda;
         if (!EsTextoDeBusqueda(resto))
@@ -1155,6 +1542,15 @@ else
             return;
         }
 
+        // Con «/» en el cuadro, ↑ ↓ recorren las acciones.
+        if (_pantallaNueva && tecla is "ArrowUp" or "ArrowDown" && texto is not null && FiltroDeAcciones(texto) is { } filtro)
+        {
+            if (_accionesVistas is null || filtro != _textoAcciones)
+                MostrarAcciones(filtro);
+            MoverAccion(tecla == "ArrowUp" ? -1 : 1);
+            StateHasChanged();
+            return;
+        }
         // Con un nombre en el cuadro, ↑ ↓ recorren los resultados (si se teclearon antes de que salieran, se busca ya).
         if (_pantallaNueva && tecla is "ArrowUp" or "ArrowDown" && texto is not null && EsTextoDeBusqueda(SepararCantidad(texto).Texto))
         {
@@ -1164,9 +1560,11 @@ else
             StateHasChanged();
             return;
         }
-        // Cualquier otra tecla (Esc, F12, F6…) cierra la lista.
+        // Cualquier otra tecla (Esc, F12, F6…) cierra la lista y el menú del usuario.
         if (_resultados is not null)
             CerrarResultados();
+        CerrarAcciones();
+        _menuUsuario = false;
 
         // Las teclas que actúan sobre el ticket esperan a que termine el último escaneo: F12 no abre el cobro sin la
         // última línea, ni F6 manda un escaneo al ticket nuevo.
@@ -1175,6 +1573,15 @@ else
 
         switch (tecla)
         {
+            // En la pantalla nueva, lo que no está entre sus permisos no tiene tecla.
+            case "F3" when _pantallaNueva && !Ve(AccionControlada.EditarCatalogo):
+            case "F4" when _pantallaNueva && !VeInventario:
+            case "Insert" or "Ctrl+P" when _pantallaNueva && !Ve(AccionControlada.ArticuloComun):
+            case "F7" when _pantallaNueva && !Ve(AccionControlada.EntradaEfectivo):
+            case "F8" when _pantallaNueva && !Ve(AccionControlada.SalidaEfectivo):
+                Avisar("Eso no está entre lo que puedes hacer: «/» muestra todo lo que sí.");
+                break;
+            case "Ctrl+U" when _pantallaNueva: await AlSalir.InvokeAsync(); break;
             case "F10": await Abrir(Ventanas.Buscar); break;
             case "F12" when _pantallaNueva: await IrAlCobroAsync(); break;
             case "F12" when Actual.Venta.Lineas.Count > 0: await AbrirCobroAsync(); break;
@@ -1588,6 +1995,8 @@ else
             _ultimo = ticket;
             await ImprimirAsync(ticket, abrirCajon: ticket.AbreCajon);
             await RevisarEfectivoAsync();
+            if (abierto.Impresiones.Count > 0 && _estado is not null)
+                await _estado.ActualizarAsync();
             return null;
         }
         catch (ErrorCaja ex)
@@ -1994,6 +2403,8 @@ else
 
     private async Task Abrir(Ventanas ventana)
     {
+        _menuUsuario = false;
+        CerrarAcciones();
         _ventana = ventana;
         await Js.VentanaAbiertaAsync(true);
         StateHasChanged();

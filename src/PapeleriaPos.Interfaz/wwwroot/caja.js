@@ -66,6 +66,8 @@ function alPresionar(e) {
     const ctrlD = e.ctrlKey && (tecla === 'd' || tecla === 'D');
     const ctrlL = e.ctrlKey && (tecla === 'l' || tecla === 'L');
     const ctrlB = e.ctrlKey && (tecla === 'b' || tecla === 'B');
+    // Ctrl+U: cambiar de usuario (en el navegador sería ver el código de la página).
+    const ctrlU = e.ctrlKey && (tecla === 'u' || tecla === 'U');
     const funcion = /^F([1-9]|1[0-2])$/.test(tecla);
 
     // Ctrl+Q: cotizar a una tecla. El selector de archivos solo se abre desde la tecla misma, no después.
@@ -78,9 +80,9 @@ function alPresionar(e) {
 
     let atrapar;
     if (hayVentana) {
-        atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB;
+        atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlU;
     } else {
-        atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || rapido || tecla === 'Escape' || tecla === 'Insert'
+        atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlU || rapido || tecla === 'Escape' || tecla === 'Insert'
             || (tecla === 'Delete' && vacio && !enPago)
             || ((tecla === 'ArrowUp' || tecla === 'ArrowDown') && (campo === null || enCodigo))
             || ((tecla === '+' || tecla === '-') && vacio && (campo === null || enCodigo));
@@ -97,8 +99,22 @@ function alPresionar(e) {
         texto = campo.value;
         if (rapido || tecla === 'Escape' || (tecla === 'F11' && texto !== '')) campo.value = '';
     }
-    pantalla.invokeMethodAsync('Tecla', ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : rapido ? 'Alt+' + tecla : tecla,
-        texto);
+    pantalla.invokeMethodAsync('Tecla', ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlU ? 'Ctrl+U'
+        : rapido ? 'Alt+' + tecla : tecla, texto);
+}
+
+// «/ Más acciones»: deja el texto en el cuadro de captura, con el cursor al final.
+export function escribirCaptura(texto) {
+    const campo = document.querySelector('[data-captura]');
+    if (!campo) return;
+    campo.value = texto;
+    campo.focus();
+    campo.setSelectionRange(texto.length, texto.length);
+}
+
+// «Cotizar un PDF» desde «/»: el selector de archivos, como con Ctrl+Q.
+export function clic(selector) {
+    document.querySelector(selector)?.click();
 }
 
 export function enfocar(selector) {

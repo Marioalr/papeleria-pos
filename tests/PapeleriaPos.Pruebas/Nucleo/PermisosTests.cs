@@ -97,6 +97,39 @@ public class PermisosTests
     }
 
     [Fact]
+    public void La_sesion_trae_cada_accion_con_quien_la_autoriza()
+    {
+        var (ana, carmen, luis) = (Ids.Nuevo(), Ids.Nuevo(), Ids.Nuevo());
+        (Guid, string, Rol)[] usuarios = [(luis, "Luis", Rol.Dueno), (ana, "Ana", Rol.Cajero), (carmen, "Carmen", Rol.Encargado)];
+
+        var permisos = Permisos.DeLaSesion([], usuarios, ana, Rol.Cajero, Matriz).ToDictionary(p => p.Accion);
+
+        Assert.Equal(Enum.GetValues<AccionControlada>().Length, permisos.Count);
+        // Con autorización: quien la tiene permitida, primero el encargado y al final el dueño; quien entró, no.
+        Assert.Equal(NivelPermiso.RequiereAutorizacion, permisos[AccionControlada.CancelarTicket].Nivel);
+        Assert.Equal(["Carmen", "Luis"], permisos[AccionControlada.CancelarTicket].Autorizan);
+        // El cambio de precio, solo el dueño (el encargado también lo pide).
+        Assert.Equal(["Luis"], permisos[AccionControlada.CambiarPrecio].Autorizan);
+        // Con umbral: hasta ahí puede, y lo que pasa lo autoriza quien puede más.
+        Assert.Equal((NivelPermiso.Permitido, 1000L), (permisos[AccionControlada.Descuento].Nivel, permisos[AccionControlada.Descuento].UmbralCentavos!.Value));
+        Assert.Equal(["Carmen", "Luis"], permisos[AccionControlada.Descuento].Autorizan);
+        // Lo que puede sin límite y lo que no puede: nadie autoriza.
+        Assert.Empty(permisos[AccionControlada.ArticuloComun].Autorizan);
+        Assert.Equal(NivelPermiso.NoPermitido, permisos[AccionControlada.CorteZ].Nivel);
+        Assert.Empty(permisos[AccionControlada.CorteZ].Autorizan);
+    }
+
+    [Fact]
+    public void El_dueno_tiene_todo_sin_umbral_y_sin_pedir_autorizacion()
+    {
+        var luis = Ids.Nuevo();
+
+        var permisos = Permisos.DeLaSesion([], [(luis, "Luis", Rol.Dueno), (Ids.Nuevo(), "Carmen", Rol.Encargado)], luis, Rol.Dueno, Matriz);
+
+        Assert.All(permisos, p => Assert.Equal((NivelPermiso.Permitido, (long?)null, 0), (p.Nivel, p.UmbralCentavos, p.Autorizan.Count)));
+    }
+
+    [Fact]
     public void El_cambio_de_precio_se_autoriza_al_capturar_y_dura_hasta_cobrar()
     {
         Assert.Equal(TimeSpan.FromMinutes(2), PapeleriaPos.Nucleo.Control.Autorizacion.VigenciaDe(AccionControlada.CancelarTicket));

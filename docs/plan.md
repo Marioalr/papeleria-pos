@@ -300,6 +300,33 @@ Y la tercera, los tickets en espera que sobreviven a un reinicio o a un apagón:
 Con eso, la entrega 0 queda completa. El nombre de eleventa como sinónimo llega cuando la limpieza del catálogo cambie
 nombres; mientras tanto, los nombres son los mismos de eleventa.
 
+**Avance (2026-10-11), entregas 2 y 3, primera parte:** lo que se ve en la pantalla de venta ya es como el
+[prototipo](propuesta-interfaz/prototipo.html):
+- **La base visual:** sus colores, letras, medidas e íconos.
+- **Arriba:**
+  - la caja, principal o secundaria;
+  - los módulos que tiene quien entró;
+  - el estado: el servicio aquí o la conexión con la principal, la impresora de tickets y las impresiones por cobrar;
+  - el usuario, con su menú (Ctrl+U para cambiar de usuario).
+- **Los permisos de la sesión en una sola consulta** (`GET /api/usuarios/{id}/permisos`, también sin conexión, con la
+  copia de la caja):
+  - lo que no puede no aparece, ni su tecla;
+  - lo que pide autorización lleva el candado con el nombre de quien autoriza;
+  - lo que tiene límite lo dice («Descuento hasta 10 %»).
+  Siguen los roles de hoy: los permisos por usuario son la entrega 1.
+- **«/»:** todas las acciones que tiene, con su tecla, y se filtran escribiendo («/desc»).
+- **Las acciones del artículo,** pegadas a su fila: precio, descuento, mayoreo y quitar.
+- **El panel del total:**
+  - el cliente como flecha, con lo que debe y «Abonar»;
+  - tarjeta y transferencia junto a «Pagó con»;
+  - el ahorro por mayoreo.
+- **La barra de teclas** de la propuesta, con el conteo del día a la derecha.
+
+Falta, en este orden:
+1. los paneles a la derecha en lugar de las ventanas que tapan el ticket, con la autorización dentro;
+2. el cobro mixto en el panel y «Más» en los tickets en espera;
+3. la búsqueda con familias de colores, fichas para afinar, el error de dedo y los sinónimos de la tienda.
+
 #### Después: el piloto en la caja 2
 
 Mientras se arma el puente con eleventa, la versión unicaja sigue creciendo con la venta completa (entrega 3) y la base

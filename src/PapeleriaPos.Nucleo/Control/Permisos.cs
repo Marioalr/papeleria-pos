@@ -107,6 +107,14 @@ public class ReglaPermiso : IVersionado
 
 public sealed record DecisionPermiso(NivelPermiso Nivel, bool PideMotivo);
 
+/// <summary>
+/// Lo que puede hacer quien entró, para que la caja pinte sus pestañas, teclas y candados sin preguntar en cada clic. El
+/// servicio vuelve a revisar cada operación.
+/// </summary>
+/// <param name="UmbralCentavos">Hasta dónde puede sin autorización (en las de porcentaje, centésimas de porcentaje).</param>
+/// <param name="Autorizan">Quién lo autoriza: lo que pide autorización, o lo que pasa del umbral.</param>
+public sealed record PermisoDeSesion(AccionControlada Accion, NivelPermiso Nivel, long? UmbralCentavos, bool PideMotivo, IReadOnlyList<string> Autorizan);
+
 public static class Permisos
 {
     /// <summary>Las reglas con que arranca el sistema (docs/fase-1-control.md). El dueño siempre puede todo.</summary>
@@ -199,17 +207,43 @@ public static class Permisos
         if (SoloDelDueno(accion))
             return new DecisionPermiso(NivelPermiso.NoPermitido, false);
 
-        var candidatas = reglas.Where(r => r.Accion == accion && r.Rol == rol).ToList();
-        var regla = candidatas.FirstOrDefault(r => r.SucursalId == sucursalId)
-            ?? candidatas.FirstOrDefault(r => r.SucursalId is null)
-            ?? Iniciales.FirstOrDefault(r => r.Accion == accion && r.Rol == rol);
-        if (regla is null)
+        if (Efectiva(reglas, rol, sucursalId, accion) is not { } regla)
             return new DecisionPermiso(NivelPermiso.RequiereAutorizacion, false);
 
         var nivel = regla.Nivel == NivelPermiso.Permitido && regla.UmbralCentavos is { } umbral && montoCentavos > umbral
             ? NivelPermiso.RequiereAutorizacion
             : regla.Nivel;
         return new DecisionPermiso(nivel, regla.PideMotivo);
+    }
+
+    /// <summary>
+    /// Todas las acciones para quien entró, cada una con quién la autoriza: los demás usuarios activos que la tienen
+    /// permitida (por encima del umbral, si lo hay), primero los encargados y al final el dueño.
+    /// </summary>
+    public static IReadOnlyList<PermisoDeSesion> DeLaSesion(
+        IEnumerable<ReglaPermiso> reglas, IEnumerable<(Guid Id, string Nombre, Rol Rol)> usuarios, Guid usuarioId, Rol rol, Guid sucursalId)
+    {
+        var lista = reglas.ToList();
+        var otros = usuarios.Where(u => u.Id != usuarioId).OrderBy(u => u.Rol).ThenBy(u => u.Nombre, StringComparer.CurrentCulture).ToList();
+        return Enum.GetValues<AccionControlada>().Select(accion =>
+        {
+            var decision = Evaluar(lista, rol, sucursalId, accion);
+            var umbral = decision.Nivel == NivelPermiso.Permitido && rol != Rol.Dueno ? Efectiva(lista, rol, sucursalId, accion)?.UmbralCentavos : null;
+            long? monto = decision.Nivel == NivelPermiso.RequiereAutorizacion ? null : umbral + 1;
+            var autorizan = decision.Nivel == NivelPermiso.RequiereAutorizacion || umbral is not null
+                ? otros.Where(u => PuedeAutorizar(lista, u.Rol, sucursalId, accion, monto)).Select(u => u.Nombre).ToList()
+                : [];
+            return new PermisoDeSesion(accion, decision.Nivel, umbral, decision.PideMotivo, autorizan);
+        }).ToList();
+    }
+
+    /// <summary>La regla que vale: la de la sucursal gana sobre la general, y la general sobre la inicial.</summary>
+    private static ReglaPermiso? Efectiva(IEnumerable<ReglaPermiso> reglas, Rol rol, Guid sucursalId, AccionControlada accion)
+    {
+        var candidatas = reglas.Where(r => r.Accion == accion && r.Rol == rol).ToList();
+        return candidatas.FirstOrDefault(r => r.SucursalId == sucursalId)
+            ?? candidatas.FirstOrDefault(r => r.SucursalId is null)
+            ?? Iniciales.FirstOrDefault(r => r.Accion == accion && r.Rol == rol);
     }
 
     /// <summary>Puede autorizar quien tiene la acción permitida por ese monto (el encargado cancela; cambiar precio, solo el dueño).</summary>
