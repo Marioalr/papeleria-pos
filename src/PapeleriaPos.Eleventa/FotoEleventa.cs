@@ -38,30 +38,62 @@ public sealed record FotoEleventa(DateTime TomadaUtc, IReadOnlyDictionary<string
         }, ct);
         var tomada = DateTime.UtcNow;
 
-        var nombres = await ColumnaAsync(c, tx, "SELECT TRIM(RDB$GENERATOR_NAME) FROM RDB$GENERATORS WHERE COALESCE(RDB$SYSTEM_FLAG, 0) = 0", ct);
-        var contadores = new Dictionary<string, long>(StringComparer.Ordinal);
-        foreach (var nombre in nombres)
-        {
-            await using var comando = new FbCommand($"SELECT GEN_ID(\"{nombre}\", 0) FROM RDB$DATABASE", c, tx);
-            contadores[nombre] = Convert.ToInt64(await comando.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
-        }
+        // Por la red (el Wi-Fi de la tienda) cada consulta es un viaje de ida y vuelta: lo que se puede, va junto.
+        var generadores = await ColumnaAsync(c, tx, "SELECT TRIM(RDB$GENERATOR_NAME) FROM RDB$GENERATORS WHERE COALESCE(RDB$SYSTEM_FLAG, 0) = 0", ct);
+        var valores = await UnRenglonAsync(c, tx, generadores.Select(g => $"GEN_ID(\"{g}\", 0)"), ct);
+        var contadores = generadores.Zip(valores).ToDictionary(x => x.First, x => x.Second, StringComparer.Ordinal);
 
+        var nombres = await ColumnaAsync(c, tx,
+            "SELECT TRIM(RDB$RELATION_NAME) FROM RDB$RELATIONS WHERE COALESCE(RDB$SYSTEM_FLAG, 0) = 0 AND RDB$VIEW_BLR IS NULL ORDER BY 1", ct);
+        var filas = await UnRenglonAsync(c, tx, nombres.Select(t => $"(SELECT COUNT(*) FROM \"{t}\")"), ct);
+        var llaves = await LlavesAsync(c, tx, ct);
         var tablas = new Dictionary<string, TablaEnFoto>(StringComparer.Ordinal);
-        foreach (var tabla in await ColumnaAsync(c, tx,
-                     "SELECT TRIM(RDB$RELATION_NAME) FROM RDB$RELATIONS WHERE COALESCE(RDB$SYSTEM_FLAG, 0) = 0 AND RDB$VIEW_BLR IS NULL ORDER BY 1", ct))
-            tablas[tabla] = await TablaAsync(c, tx, tabla, ct);
+        for (var i = 0; i < nombres.Count; i++)
+            tablas[nombres[i]] = await TablaAsync(c, tx, nombres[i], llaves.GetValueOrDefault(nombres[i]) ?? [], filas[i], ct);
 
         await tx.CommitAsync(ct);
         return new FotoEleventa(tomada, contadores, tablas);
     }
 
-    private static async Task<TablaEnFoto> TablaAsync(FbConnection c, FbTransaction tx, string tabla, CancellationToken ct)
+    /// <summary>Varias expresiones en una sola consulta (un solo viaje): <c>SELECT a, b, c FROM RDB$DATABASE</c>.</summary>
+    private static async Task<long[]> UnRenglonAsync(FbConnection c, FbTransaction tx, IEnumerable<string> expresiones, CancellationToken ct)
     {
-        var llave = await LlaveAsync(c, tx, tabla, ct);
-        long filas;
-        await using (var contar = new FbCommand($"SELECT COUNT(*) FROM \"{tabla}\"", c, tx))
-            filas = Convert.ToInt64(await contar.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+        var lista = expresiones.ToList();
+        if (lista.Count == 0)
+            return [];
+        await using var comando = new FbCommand($"SELECT {string.Join(", ", lista)} FROM RDB$DATABASE", c, tx);
+        await using var lector = await comando.ExecuteReaderAsync(ct);
+        await lector.ReadAsync(ct);
+        return Enumerable.Range(0, lista.Count).Select(i => Convert.ToInt64(lector.GetValue(i), CultureInfo.InvariantCulture)).ToArray();
+    }
 
+    /// <summary>La llave de cada tabla: la primaria o, si no tiene, su primera restricción única. Todas en una consulta.</summary>
+    private static async Task<Dictionary<string, List<string>>> LlavesAsync(FbConnection c, FbTransaction tx, CancellationToken ct)
+    {
+        await using var comando = new FbCommand("""
+            SELECT TRIM(r.RDB$RELATION_NAME), TRIM(r.RDB$CONSTRAINT_NAME), TRIM(s.RDB$FIELD_NAME)
+            FROM RDB$RELATION_CONSTRAINTS r
+            JOIN RDB$INDEX_SEGMENTS s ON s.RDB$INDEX_NAME = r.RDB$INDEX_NAME
+            WHERE r.RDB$CONSTRAINT_TYPE IN ('PRIMARY KEY', 'UNIQUE')
+            ORDER BY 1, r.RDB$CONSTRAINT_TYPE, 2, s.RDB$FIELD_POSITION
+            """, c, tx);
+        await using var lector = await comando.ExecuteReaderAsync(ct);
+        var llaves = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var restriccion = new Dictionary<string, string>(StringComparer.Ordinal);
+        while (await lector.ReadAsync(ct))
+        {
+            var (tabla, nombre, columna) = (lector.GetString(0), lector.GetString(1), lector.GetString(2));
+            // «PRIMARY KEY» va antes que «UNIQUE»: la primera restricción de cada tabla es la que queda.
+            if (restriccion.TryAdd(tabla, nombre))
+                llaves[tabla] = [];
+            if (restriccion[tabla] == nombre)
+                llaves[tabla].Add(columna);
+        }
+        return llaves;
+    }
+
+    private static async Task<TablaEnFoto> TablaAsync(FbConnection c, FbTransaction tx, string tabla, List<string> llave, long filas, CancellationToken ct)
+    {
         var completa = filas <= LimiteCompleta || llave.Count != 1;
         // Sin llave, o con una de varias columnas, una tabla grande solo se cuenta.
         var sql = completa
@@ -71,7 +103,8 @@ public sealed record FotoEleventa(DateTime TomadaUtc, IReadOnlyDictionary<string
         var renglones = new Dictionary<string, string[]>(StringComparer.Ordinal);
         if (sql is not null)
         {
-            await using var comando = new FbCommand(sql, c, tx);
+            // De a muchos renglones por viaje (el cliente pide 200 si no se le dice).
+            await using var comando = new FbCommand(sql, c, tx) { FetchSize = 2000 };
             await using var lector = await comando.ExecuteReaderAsync(ct);
             for (var i = 0; i < lector.FieldCount; i++)
                 columnas.Add(lector.GetName(i));
@@ -91,27 +124,6 @@ public sealed record FotoEleventa(DateTime TomadaUtc, IReadOnlyDictionary<string
         return new TablaEnFoto(tabla, columnas, llave, filas, completa && sql is not null, renglones);
     }
 
-    private static async Task<List<string>> LlaveAsync(FbConnection c, FbTransaction tx, string tabla, CancellationToken ct)
-    {
-        foreach (var tipo in new[] { "PRIMARY KEY", "UNIQUE" })
-        {
-            await using var comando = new FbCommand("""
-                SELECT TRIM(s.RDB$FIELD_NAME) FROM RDB$RELATION_CONSTRAINTS r
-                JOIN RDB$INDEX_SEGMENTS s ON s.RDB$INDEX_NAME = r.RDB$INDEX_NAME
-                WHERE r.RDB$RELATION_NAME = @tabla AND r.RDB$CONSTRAINT_TYPE = @tipo
-                ORDER BY r.RDB$CONSTRAINT_NAME, s.RDB$FIELD_POSITION
-                """, c, tx);
-            comando.Parameters.AddWithValue("@tabla", tabla);
-            comando.Parameters.AddWithValue("@tipo", tipo);
-            var columnas = new List<string>();
-            await using var lector = await comando.ExecuteReaderAsync(ct);
-            while (await lector.ReadAsync(ct))
-                columnas.Add(lector.GetString(0));
-            if (columnas.Count > 0)
-                return columnas;
-        }
-        return [];
-    }
 
     private static async Task<List<string>> ColumnaAsync(FbConnection c, FbTransaction tx, string sql, CancellationToken ct)
     {

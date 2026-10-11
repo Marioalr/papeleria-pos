@@ -184,7 +184,8 @@ catálogo por Wi-Fi en menos de un segundo, sin errores ni avisos, y encontró l
 
 ### Cómo escribe eleventa una venta (paso 2)
 
-Sacado de una copia de la base (esquema, triggers y ventas ya guardadas); los ejemplos son inventados.
+Sacado de una copia de la base (esquema, triggers y ventas ya guardadas) y confirmado mirando a eleventa trabajar en la
+caja 2 con `observar-eleventa` (2026-10-11: abrir la caja, escanear, borrar y cobrar). Los ejemplos son inventados.
 
 **La base no tiene lógica.** Sus triggers solo ponen el ID desde su contador (`GEN_<TABLA>_ID`) y sus procedimientos solo
 consultan. El folio, la existencia, el turno y el corte los escribe el programa de eleventa: la caja 2 nueva tiene
@@ -198,11 +199,14 @@ que escribir lo mismo.
    - Al cobrar se llenan `FOLIO`, `VENDIDO_EN` y `PAGADO_EN` (la misma hora), `ESTA_ABIERTO = 'f'`, `SUBTOTAL`,
      `IMPUESTOS`, `TOTAL`, `GANANCIA`, `PAGO_CON`, `FORMA_PAGO = 'e'`, `NUMERO_ARTICULOS` y `TOTAL_FACTURABLE`.
    - Enseguida se crea el ticket abierto siguiente.
-2. **Un renglón por artículo** (`VENTATICKETS_ARTICULOS`).
+2. **Un renglón por artículo** (`VENTATICKETS_ARTICULOS`), **que se escribe al escanear**, no al cobrar.
+   - Al escanear, eleventa agrega en la base de la caja principal el renglón y un apartado de inventario
+     (`INVENTARIO_APARTADO`: producto, cantidad, ticket y caja). Al borrar el artículo, quita los dos.
+   - O sea, cada escaneo es un viaje de ida y vuelta por la red a la caja principal: eso explica las pausas de eleventa
+     por Wi-Fi. La caja 2 nueva no lo hace: escanea contra su copia y escribe en eleventa al cobrar (paso 3).
    - Lleva el código, el nombre, la cantidad, el departamento, `PRECIO_USADO` y `PRECIO_FINAL`, `TOTAL_ARTICULO`,
-     `GANANCIA` y `USA_MAYOREO`.
-   - `AGREGADO_EN` es cuando se escaneó y `PAGADO_EN`, cuando se cobró.
-   - Siempre `PORCENTAJE_PAGADO = 1000000` e `IMPUESTOS_USADOS = ','`.
+     `GANANCIA` y `USA_MAYOREO`. `AGREGADO_EN` es cuando se escaneó.
+   - Al cobrar se llenan `PAGADO_EN` y `PORCENTAJE_PAGADO` (de 0 a 1000000). Siempre `IMPUESTOS_USADOS = ','`.
 3. **El inventario.**
    - Un renglón por producto en `INVENTARIO_HISTORIAL`: «Venta #<folio>», `CANTIDAD_ANTERIOR`, `CANTIDAD`,
      `COSTO_UNITARIO`, `COSTO_DESPUES`, `VENTA_ID`, `CAJA_ID`, `USUARIO_ID` y `ALMACEN_ID = 1`.
@@ -210,13 +214,23 @@ que escribir lo mismo.
 4. **Los acumulados**, en cada venta y no al cerrar (un turno abierto ya cuadra con sus ventas):
    - en `TURNOS`: `ACUMULADO_VENTAS`, `ACUMULADO_GANANCIA`, `VENTAS_EFECTIVO` y `NUMERO_VENTAS`;
    - en `CORTE_OPERACIONES`, el renglón del día y la caja (el turno apunta a él con `ID_OPERACION_INICIO`);
-   - en `CORTE_VENTAS_POR_DEPTO`, el renglón del turno y el departamento.
+   - en `CORTE_VENTAS_POR_DEPTO`, el renglón del turno y el departamento, y en `CORTE_VENTAS_DEPTO_OPERACIONES`, el del
+     día y el departamento (`ID_OPERACION`). Si no hay renglón para ese departamento, se crea con la primera venta.
+
+**Al abrir la caja** (antes de la primera venta), eleventa:
+1. anota la IP y la hora en `CAJAS` (`ULTIMA_IP`, `ULTIMO_INGRESO`);
+2. crea el renglón del día de esa caja en `CORTE_OPERACIONES`, en ceros, si no existe;
+3. abre el turno en `TURNOS`, con la caja, el cajero, `INICIO_EN`, `DINERO_INICIAL` y el renglón del día;
+4. abre el primer ticket.
 
 Lo demás:
 - Sin impuestos desglosados no hay `VENTATICKETS_IMPUESTOS`, y sin pago mixto no hay `PAGOS_MIXTOS`. Las tablas viejas
   `VENTAS` y `OPERACIONES` ya no se usan.
-- **La ganancia** del ticket, del turno y del departamento es la venta menos la cantidad por el costo del inventario. La
-  de cada artículo puede salir distinta (usa el costo del producto).
+- **La ganancia:**
+  - la `GANANCIA` de cada artículo es por pieza: precio menos costo;
+  - la del ticket es la suma de la cantidad por esa ganancia. Por ejemplo, 0.5 a $8 con costo $3: el artículo dice 5 y
+    el ticket, 2.5;
+  - la del turno, la del día y la del departamento suman la de los tickets.
 - **El folio** es uno solo para todas las cajas y va en el orden en que se cobra. No sale de un contador de Firebird: el
   programa toma el último y le suma uno.
   - Ya pasó que dos cajas cobraran con dos segundos de diferencia y se repitiera un folio.
@@ -226,15 +240,18 @@ Lo demás:
   suyo en eleventa (paso 4).
 - **Las otras operaciones del corte** van en `CORTE_MOVIMIENTOS`, de tipo `Entrada`, `Salida` y `Devolucion` (paso 4).
 
-**Lo que falta confirmar mirando cómo trabaja**, porque una copia no lo dice:
-- si los artículos se escriben al escanearlos o hasta cobrar (si es al escanear, eso explicaría las pausas de eleventa
-  por Wi-Fi);
-- en qué orden y si todo va en una sola transacción;
-- cancelar, devolver, entradas y salidas, abrir y cerrar el turno, y el corte.
+**Lo que falta confirmar mirando cómo trabaja:**
+- si el apartado de cada artículo se quita al cobrar;
+- en qué orden escribe al cobrar y si todo va en una sola transacción;
+- cancelar, devolver, entradas y salidas, cerrar el turno y el corte. Se miran cuando pasen de verdad, sin hacer
+  operaciones de prueba en la tienda.
 
-Para eso está `observar-eleventa`. Toma una foto de toda la base, solo leyendo (alrededor de un segundo); después de
-hacer algo en eleventa toma otra y dice qué renglones aparecieron o cambiaron y qué contadores avanzaron. Cada
-comparación se guarda fuera del repositorio, porque son datos reales.
+Para eso está `observar-eleventa`. Toma una foto de toda la base, solo leyendo; después de hacer algo en eleventa toma
+otra y dice qué renglones aparecieron o cambiaron y qué contadores avanzaron.
+- Cada comparación se guarda fuera del repositorio y fuera de OneDrive (`AppData\Local\PapeleriaPos\observaciones-eleventa`),
+  porque son datos reales.
+- La primera vez, por el Wi-Fi de la caja 2, cada foto tardó unos 20 s: casi todo eran idas y vueltas. Ahora los
+  contadores, los conteos y las llaves van juntos, y los renglones se piden de a 2,000.
 
 ```
 dotnet run --project src/PapeleriaPos.Herramientas -- observar-eleventa --servidor <la caja principal> --ruta C:\…\PDVDATA.FDB --usuario SYSDBA

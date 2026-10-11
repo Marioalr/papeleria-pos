@@ -49,7 +49,8 @@ static int Ayuda()
               Para entender qué escribe eleventa (el piloto, paso 2): toma una foto de toda su base, solo leyendo;
               después de hacer algo en eleventa (cobrar, cancelar, un corte) toma otra y dice qué renglones aparecieron
               o cambiaron y qué contadores avanzaron. Cada comparación queda en un archivo de --carpeta (por omisión,
-              Documentos\observaciones-eleventa): son datos reales, no van al repositorio.
+              AppData\Local\PapeleriaPos\observaciones-eleventa, que no se sincroniza con OneDrive): son datos
+              reales, no van al repositorio.
 
           sincronizar-eleventa --base pos.db [--simular]
                                (--fdb PDVDATA.FDB [--firebird32 <carpeta>] [--firebird64 <carpeta>]
@@ -209,7 +210,7 @@ static async Task<int> ObservarEleventaAsync(string[] args)
     }
     var conexion = new ServidorEleventa(servidor, ruta, usuario, clave, int.Parse(Opcion(args, "--puerto") ?? "3050", CultureInfo.InvariantCulture));
     var carpeta = Opcion(args, "--carpeta")
-        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "observaciones-eleventa");
+        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PapeleriaPos", "observaciones-eleventa");
     Directory.CreateDirectory(carpeta);
 
     async Task<FotoEleventa?> FotoAsync()
