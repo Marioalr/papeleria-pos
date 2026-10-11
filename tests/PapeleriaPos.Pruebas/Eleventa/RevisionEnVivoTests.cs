@@ -18,6 +18,7 @@ public class RevisionEnVivoTests
         foreach (var (id, nombre) in new[] { (5, "Papelería"), (9, EnvioEleventa.DepartamentoComunes) })
             await e.EjecutarAsync("INSERT INTO DEPARTAMENTOS (ID, NOMBRE) VALUES (@id, @nombre)", ("id", id), ("nombre", nombre));
         await e.ProductoAsync(10, "CUAD-PRO", "Cuaderno profesional", depto: 5, costo: 18, precio: 30, existencia: 12);
+        await e.ProductoAsync(11, "IMP-BN", "Impresiones", depto: 5, costo: 2, precio: 10, existencia: 500, tipoVenta: 'D');
         return e;
     }
 
@@ -29,31 +30,42 @@ public class RevisionEnVivoTests
     {
         await using var e = await TiendaAsync();
         var cobrada = new DateTime(2026, 3, 9, 11, 0, 0);
-        var primera = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cobrada, new(10, "Cuaderno", 2, 60), new(null, "Recuerdo", 1, 15)));
-        var segunda = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cobrada.AddMinutes(5), new(10, "Cuaderno", 3, 90), new(null, "Recuerdo", 1, 15)));
+        var primera = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cobrada,
+            new(10, "Cuaderno", 2, 60), new(null, "Recuerdo", 1, 15), new(11, "Impresiones", 0.3m, 3)));
+        var segunda = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cobrada.AddMinutes(5),
+            new(10, "Cuaderno", 3, 90), new(null, "Recuerdo", 1, 15), new(11, "Impresiones", 0.5m, 5)));
 
         var antes = await FotoEleventa.TomarAsync(e.Conexion);
         await EnvioEleventa.DevolverAsync(e.Conexion, Caja, new DevolucionParaEleventa(primera.TicketId, true, cobrada.AddMinutes(10), Turno, []));
         var cancelada = await FotoEleventa.TomarAsync(e.Conexion);
         await EnvioEleventa.DevolverAsync(e.Conexion, Caja, new DevolucionParaEleventa(segunda.TicketId, false, cobrada.AddMinutes(20), Turno,
-            [new ArticuloDevuelto(10, "Cuaderno", 1, 30), new ArticuloDevuelto(null, "Recuerdo", 1, 15)]));
+            [new ArticuloDevuelto(10, "Cuaderno", 1, 30), new ArticuloDevuelto(null, "Recuerdo", 1, 15), new ArticuloDevuelto(11, "Impresiones", 0.2m, 2)]));
         var devuelta = await FotoEleventa.TomarAsync(e.Conexion);
+        // Y después se cancela lo que quedó de ese ticket.
+        await EnvioEleventa.DevolverAsync(e.Conexion, Caja, new DevolucionParaEleventa(segunda.TicketId, true, cobrada.AddMinutes(30), Turno, []));
+        var recancelada = await FotoEleventa.TomarAsync(e.Conexion);
         await EnvioEleventa.CerrarTurnoAsync(e.Conexion, Caja, cobrada.AddHours(10), diferencia: -5);
         var cerrada = await FotoEleventa.TomarAsync(e.Conexion);
 
         var cancelacion = RevisionEnVivo.Revisar(antes, cancelada);
         var devolucion = RevisionEnVivo.Revisar(cancelada, devuelta);
-        var cierre = RevisionEnVivo.Revisar(devuelta, cerrada);
+        var despuesDeDevolver = RevisionEnVivo.Revisar(devuelta, recancelada);
+        var cierre = RevisionEnVivo.Revisar(recancelada, cerrada);
 
         Assert.StartsWith("Cancelación del ticket #", cancelacion[0]);
         Assert.StartsWith("Devolución del ticket #", devolucion[0]);
+        Assert.StartsWith("Cancelación del ticket #", despuesDeDevolver[0]);
         Assert.StartsWith("Cierre del turno", cierre[0]);
-        foreach (var lineas in new[] { cancelacion, devolucion, cierre })
+        foreach (var lineas in new[] { cancelacion, devolucion, despuesDeDevolver, cierre })
         {
             Assert.DoesNotContain(lineas, l => l.Contains('✗'));
             Assert.Contains(lineas, l => l.Contains('✓'));
         }
+        // De 4 artículos bajan las 3 piezas; las impresiones, a granel, siguen contando uno.
+        Assert.Contains("  ✓ NUMERO_ARTICULOS bajó las piezas (lo de granel no): quedó en 1", cancelacion);
         Assert.Contains(devolucion, l => l.Contains("se devolvió completo y su renglón se borró"));
+        Assert.Contains("  ✓ NUMERO_ARTICULOS bajó las piezas (lo de granel no): quedó en 3", devolucion);
+        Assert.Contains("  ✓ NUMERO_ARTICULOS bajó las piezas (lo de granel no): quedó en 1", despuesDeDevolver);
         Assert.Contains(cierre, l => l.Contains("faltante de $5.00 quedó como Salida"));
         // Ese día ya tenía renglón (hubo ventas): lo lleva también.
         Assert.Contains(cierre, l => l.Contains("el día también lo lleva"));
@@ -70,7 +82,8 @@ public class RevisionEnVivoTests
         new(DateTime.UtcNow, new Dictionary<string, long>(), tablas.ToDictionary(t => t.Nombre, t => t));
 
     private static readonly string[] Devoluciones = ["ID", "TURNO_ID", "TICKET_ID", "TIPO_DEVOLUCION", "TOTAL_DEVUELTO"];
-    private static readonly string[] Tickets = ["ID", "FOLIO", "TURNO_ID", "TOTAL", "GANANCIA", "ESTA_CANCELADO", "ESTA_ABIERTO", "NUMERO_ARTICULOS"];
+    private static readonly string[] Tickets = ["ID", "FOLIO", "TURNO_ID", "TOTAL", "GANANCIA", "ESTA_CANCELADO", "ESTA_ABIERTO", "NUMERO_ARTICULOS", "SUBTOTAL"];
+    private static readonly string[] Productos = ["ID", "CODIGO", "TVENTA"];
     private static readonly string[] Articulos = ["ID", "TICKET_ID", "PRODUCTO_CODIGO", "CANTIDAD"];
     private static readonly string[] Movimientos = ["ID", "TIPO", "MONTO", "DESCRIPCION", "ID_TURNO", "FORMA_PAGO", "RAZON_DEVOLUCION"];
     private static readonly string[] Kardex = ["ID", "DESCRIPCION", "CANTIDAD"];
@@ -83,7 +96,7 @@ public class RevisionEnVivoTests
     {
         var antes = Foto(
             Tabla("DEVOLUCIONES", Devoluciones),
-            Tabla("VENTATICKETS", Tickets, ["50", "4521", "3", "30", "12", "f", "f", "2"]),
+            Tabla("VENTATICKETS", Tickets, ["50", "4521", "3", "30", "12", "f", "f", "2", "30"]),
             Tabla("VENTATICKETS_ARTICULOS", Articulos, ["70", "50", "CUAD-PRO", "1"], ["71", "50", "LAP-01", "1"]),
             Tabla("CORTE_MOVIMIENTOS", Movimientos),
             Tabla("INVENTARIO_HISTORIAL", Kardex),
@@ -93,7 +106,7 @@ public class RevisionEnVivoTests
         // Eleventa canceló, pero dejó la ganancia y anotó algo en una tabla que la caja 2 no toca.
         var despues = Foto(
             Tabla("DEVOLUCIONES", Devoluciones, ["90", "3", "50", "C", "30"]),
-            Tabla("VENTATICKETS", Tickets, ["50", "4521", "3", "30", "12", "t", "f", "0"]),
+            Tabla("VENTATICKETS", Tickets, ["50", "4521", "3", "30", "12", "t", "f", "0", "0"]),
             Tabla("VENTATICKETS_ARTICULOS", Articulos, ["70", "50", "CUAD-PRO", "1"], ["71", "50", "LAP-01", "1"]),
             Tabla("CORTE_MOVIMIENTOS", Movimientos,
                 ["1", "Devolucion", "20", "Devolución \"Cuaderno profesional\", Ticket #4521", "3", "E", "V"],
@@ -108,6 +121,8 @@ public class RevisionEnVivoTests
         Assert.Equal("Cancelación del ticket #4521 (DEVOLUCIONES 90, $30.00):", lineas[0]);
         Assert.Contains("  ✓ el ticket quedó cancelado", lineas);
         Assert.Contains("  ✗ su ganancia quedó en 12 (la caja 2 la deja en cero)", lineas);
+        Assert.Contains("  ✓ su subtotal bajó lo devuelto", lineas);
+        Assert.Contains("  ✓ NUMERO_ARTICULOS bajó las piezas (lo de granel no): quedó en 0", lineas);
         Assert.Contains(lineas, l => l.StartsWith("  ✓ 2 movimientos «Devolucion» del corte"));
         Assert.Contains(lineas, l => l.StartsWith("  ✓ el turno 3: lo vendido bajó $30.00 y el número de ventas 1"));
         Assert.Contains("✗ Eleventa también tocó BITACORA, que la caja 2 no escribe: hay que ver qué es.", lineas);
@@ -134,5 +149,53 @@ public class RevisionEnVivoTests
         Assert.Contains("  ✓ su ticket abierto se borró", lineas);
         Assert.Contains("  ✗ el sobrante de $20.00 quedó como «Entrada» y ACUMULADO_ENTRADAS del turno cambió $0.00", lineas);
         Assert.Contains("  ✓ ese día no tenía renglón: no lo lleva", lineas);
+    }
+
+    [Fact]
+    public void Al_cancelar_lo_de_granel_sigue_contando_uno_y_el_subtotal_queda_en_cero()
+    {
+        var antes = Foto(
+            Tabla("DEVOLUCIONES", Devoluciones),
+            Tabla("VENTATICKETS", Tickets, ["50", "4521", "3", "33", "11.2", "f", "f", "2", "33"]),
+            Tabla("VENTATICKETS_ARTICULOS", Articulos, ["70", "50", "CUAD-PRO", "1"], ["71", "50", "IMP-BN", "0.3"]),
+            Tabla("PRODUCTOS", Productos, ["10", "CUAD-PRO", "U"], ["11", "IMP-BN", "D"]));
+        // Como lo dejó eleventa en vivo: la ganancia con su residuo de FLOAT, el total intacto y el artículo a granel contando.
+        var despues = Foto(
+            Tabla("DEVOLUCIONES", Devoluciones, ["90", "3", "50", "C", "33"]),
+            Tabla("VENTATICKETS", Tickets, ["50", "4521", "3", "33", "1.1920929E-08", "t", "f", "1", "0"]),
+            Tabla("VENTATICKETS_ARTICULOS", Articulos, ["70", "50", "CUAD-PRO", "1"], ["71", "50", "IMP-BN", "0.3"]),
+            Tabla("PRODUCTOS", Productos, ["10", "CUAD-PRO", "U"], ["11", "IMP-BN", "D"]));
+
+        var lineas = RevisionEnVivo.Revisar(antes, despues);
+
+        Assert.Contains("  ✓ su ganancia quedó en cero", lineas);
+        Assert.Contains("  ✓ conserva su total", lineas);
+        Assert.Contains("  ✓ su subtotal bajó lo devuelto", lineas);
+        Assert.Contains("  ✓ NUMERO_ARTICULOS bajó las piezas (lo de granel no): quedó en 1", lineas);
+    }
+
+    [Fact]
+    public void Si_se_cobro_en_el_mismo_rato_que_se_cerro_el_ticket_abierto_ya_es_una_venta()
+    {
+        var antes = Foto(
+            Tabla("TURNOS", Turnos, ["3", "4", "100", "40", "40", "0", "2", "0", "0", "0", "∅", "∅"]),
+            Tabla("VENTATICKETS", Tickets, ["60", "∅", "3", "0", "0", "f", "t", "0", "0"]),
+            Tabla("CORTE_MOVIMIENTOS", Movimientos),
+            Tabla("CORTE_OPERACIONES", Dias, ["8", "40", "0", "0", "0"]));
+        // Eleventa cobró con el ticket abierto (ahora es la venta) y abrió otro, que el cierre borró.
+        var turnoCerrado = Tabla("TURNOS", Turnos, ["3", "4", "100", "70", "70", "0", "3", "0", "0", "170", "2026-03-09 21:00:00.000", "∅"]);
+        var venta = new[] { "60", "4522", "3", "30", "12", "f", "f", "1", "30" };
+        var despues = Foto(turnoCerrado, Tabla("VENTATICKETS", Tickets, venta), Tabla("CORTE_MOVIMIENTOS", Movimientos),
+            Tabla("CORTE_OPERACIONES", Dias, ["8", "70", "0", "0", "0"]));
+        // Y si el que abrió después no se borró.
+        var sinBorrar = Foto(turnoCerrado, Tabla("VENTATICKETS", Tickets, venta, ["61", "∅", "3", "0", "0", "f", "t", "0", "0"]),
+            Tabla("CORTE_MOVIMIENTOS", Movimientos), Tabla("CORTE_OPERACIONES", Dias, ["8", "70", "0", "0", "0"]));
+
+        var lineas = RevisionEnVivo.Revisar(antes, despues);
+
+        Assert.Contains(lineas, l => l.StartsWith("  ✓ el efectivo al cierre ($170.00)"));
+        Assert.Contains("  ✓ no le quedó ticket abierto: el que tenía se cobró en el mismo rato y el siguiente se borró", lineas);
+        Assert.Contains("  ✓ cuadró: sin faltante ni sobrante", lineas);
+        Assert.Contains("  ✗ su ticket abierto sigue ahí (la caja 2 lo borra)", RevisionEnVivo.Revisar(antes, sinBorrar));
     }
 }

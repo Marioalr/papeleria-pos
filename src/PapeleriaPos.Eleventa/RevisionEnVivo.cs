@@ -61,9 +61,16 @@ public static class RevisionEnVivo
             {
                 yield return Si(ticket["ESTA_CANCELADO"] is "t" or "T", "el ticket quedó cancelado", $"ESTA_CANCELADO quedó en «{ticket["ESTA_CANCELADO"]}»");
                 yield return Si(Math.Abs(Numero(ticket["GANANCIA"])) < 0.01m, "su ganancia quedó en cero", $"su ganancia quedó en {ticket["GANANCIA"]} (la caja 2 la deja en cero)");
-                yield return Si(ticket["NUMERO_ARTICULOS"] == "0", "sus artículos quedaron en cero", $"NUMERO_ARTICULOS quedó en {ticket["NUMERO_ARTICULOS"]} (la caja 2 lo deja en cero)");
                 if (ticketAntes is not null)
+                {
                     yield return Si(Numero(ticketAntes["TOTAL"]) == Numero(ticket["TOTAL"]), "conserva su total", $"su total pasó de {ticketAntes["TOTAL"]} a {ticket["TOTAL"]} (la caja 2 no lo cambia)");
+                    yield return Si(Igual(Numero(ticketAntes["SUBTOTAL"]) - Numero(ticket["SUBTOTAL"]), total), "su subtotal bajó lo devuelto",
+                        $"su subtotal pasó de {ticketAntes["SUBTOTAL"]} a {ticket["SUBTOTAL"]} (la caja 2 lo baja {Dinero(total)})");
+                    // Se devuelve lo que queda en el ticket: sus renglones, que la cancelación no toca.
+                    var lineas = f.TodosDespues("VENTATICKETS_ARTICULOS").Where(a => a["TICKET_ID"] == ticketId).Select(a => (a["PRODUCTO_CODIGO"], Numero(a["CANTIDAD"]))).ToList();
+                    yield return lineas.Count == 0 ? "  · sus artículos no salen en la foto: no se ve cuánto debía bajar NUMERO_ARTICULOS"
+                        : NumeroDeArticulos(f, ticketAntes, ticket, lineas);
+                }
             }
             yield return Si(articulos.Count == 0, "sin renglones en DEVOLUCIONES_ARTICULOS", $"dejó {articulos.Count} renglones en DEVOLUCIONES_ARTICULOS (la caja 2 no deja ninguno)");
         }
@@ -75,8 +82,11 @@ public static class RevisionEnVivo
             if (ticket is null || ticketAntes is null)
                 yield return "  · el ticket no sale en las dos fotos: no se ve cuánto bajó su total";
             else
+            {
                 yield return Si(Igual(Numero(ticketAntes["TOTAL"]) - Numero(ticket["TOTAL"]), total), "el total del ticket bajó lo devuelto",
                     $"el total del ticket pasó de {ticketAntes["TOTAL"]} a {ticket["TOTAL"]} (la caja 2 lo baja {Dinero(total)})");
+                yield return NumeroDeArticulos(f, ticketAntes, ticket, articulos.Select(a => (a["CODIGO_PRODUCTO"], Numero(a["CANTIDAD_DEVUELTA"]))));
+            }
             foreach (var a in articulos)
                 yield return ArticuloDevuelto(f, ticketId, a);
         }
@@ -94,6 +104,19 @@ public static class RevisionEnVivo
         yield return Si(entradas.Count > 0 && entradas.All(h => Numero(h["CANTIDAD"]) < 0),
             $"{entradas.Count} entradas al inventario «Devolución de venta #{folio}», en negativo",
             entradas.Count == 0 ? "no hubo entrada al inventario (¿todo era común o volvió dañado?)" : "alguna entrada al inventario no va en negativo");
+    }
+
+    /// <summary>
+    /// <c>NUMERO_ARTICULOS</c> baja las piezas devueltas; lo de granel (<c>TVENTA = 'D'</c> en <c>PRODUCTOS</c>) contó uno al
+    /// vender y no baja.
+    /// </summary>
+    private static string NumeroDeArticulos(Fotos f, Renglon antes, Renglon despues, IEnumerable<(string Codigo, decimal Cantidad)> devuelto)
+    {
+        var granel = f.TodosDespues("PRODUCTOS").Where(p => p["TVENTA"].Trim() == "D").Select(p => p["CODIGO"].Trim()).ToHashSet(StringComparer.Ordinal);
+        var piezas = devuelto.Where(a => !granel.Contains(a.Codigo.Trim())).Sum(a => Math.Round(a.Cantidad, MidpointRounding.AwayFromZero));
+        var queda = Numero(antes["NUMERO_ARTICULOS"]) - piezas;
+        return Si(Numero(despues["NUMERO_ARTICULOS"]) == queda, $"NUMERO_ARTICULOS bajó las piezas (lo de granel no): quedó en {queda:0}",
+            $"NUMERO_ARTICULOS pasó de {antes["NUMERO_ARTICULOS"]} a {despues["NUMERO_ARTICULOS"]} (la caja 2 lo deja en {queda:0}: baja las piezas, lo de granel no)");
     }
 
     /// <summary>En la parcial, el artículo baja su cantidad, o se borra si se devolvió completo.</summary>
@@ -174,11 +197,17 @@ public static class RevisionEnVivo
             $"el efectivo al cierre es {Dinero(Numero(t["EFECTIVO_AL_CIERRE"]))} y la cuenta de la caja 2 da {Dinero(esperado)}");
         yield return Si(t["ID_OPERACION_FIN"] == "∅", "ID_OPERACION_FIN sigue vacío", $"ID_OPERACION_FIN quedó en {t["ID_OPERACION_FIN"]} (la caja 2 no lo llena)");
 
-        var abiertos = f.TodosAntes("VENTATICKETS").Where(v => v["TURNO_ID"] == id && v["ESTA_ABIERTO"] is "t" or "T").ToList();
-        if (abiertos.Count == 0)
+        // Al cobrar, eleventa usa el ticket abierto para la venta y abre otro: si se cobró en el mismo rato, el de antes ya
+        // es una venta y el que se borró no alcanza a salir en ninguna foto.
+        bool Abierto(Renglon v) => v["TURNO_ID"] == id && v["ESTA_ABIERTO"] is "t" or "T";
+        var abiertos = f.TodosAntes("VENTATICKETS").Where(Abierto).ToList();
+        var siguen = f.TodosDespues("VENTATICKETS").Where(Abierto).ToList();
+        if (abiertos.Count == 0 && siguen.Count == 0)
             yield return "  · su ticket abierto no sale en la foto de antes";
         else
-            yield return Si(abiertos.All(v => f.Despues("VENTATICKETS", v.Clave) is null), "su ticket abierto se borró",
+            yield return Si(siguen.Count == 0,
+                abiertos.All(v => f.Despues("VENTATICKETS", v.Clave) is null) ? "su ticket abierto se borró"
+                    : "no le quedó ticket abierto: el que tenía se cobró en el mismo rato y el siguiente se borró",
                 "su ticket abierto sigue ahí (la caja 2 lo borra)");
 
         var diferencias = f.NuevosDonde("CORTE_MOVIMIENTOS", m => m["ID_TURNO"] == id
@@ -251,6 +280,8 @@ public static class RevisionEnVivo
         public Renglon? Despues(string tabla, string clave) => Buscar(despues, tabla, clave);
 
         public IEnumerable<Renglon> TodosAntes(string tabla) => Todos(antes, tabla);
+
+        public IEnumerable<Renglon> TodosDespues(string tabla) => Todos(despues, tabla);
 
         /// <summary>Lo que aparece en la foto de después y no estaba antes (si la de antes lo alcanzaba a ver).</summary>
         public IEnumerable<Renglon> Nuevos(string tabla)

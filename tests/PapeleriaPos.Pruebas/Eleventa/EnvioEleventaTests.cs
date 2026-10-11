@@ -192,10 +192,11 @@ public class EnvioEleventaTests
         var otraVez = await EnvioEleventa.DevolverAsync(e.Conexion, Caja, Devolucion(venta.TicketId, cancelacion: true, cuando));
 
         Assert.Equal((r.DevolucionId, true), (otraVez.DevolucionId, otraVez.YaEstaba));
-        // El ticket conserva su total; queda cancelado, sin ganancia ni artículos, y sus artículos no cambian.
+        // El ticket conserva su total; queda cancelado, sin subtotal ni ganancia, y sus artículos no cambian. De sus 4 artículos
+        // bajan las 3 piezas: las impresiones, a granel, siguen contando uno.
         var t = (await e.FilasAsync("SELECT * FROM VENTATICKETS WHERE ID = @id", ("id", venta.TicketId))).Single();
-        Assert.Equal(("t", 0, 78d), ((string)t["ESTA_CANCELADO"]!, Convert.ToInt32(t["NUMERO_ARTICULOS"]), Math.Round(Doble(t["TOTAL"]), 3)));
-        Assert.Equal(0, Doble(t["GANANCIA"]), 3);
+        Assert.Equal(("t", 1, 78d), ((string)t["ESTA_CANCELADO"]!, Convert.ToInt32(t["NUMERO_ARTICULOS"]), Math.Round(Doble(t["TOTAL"]), 3)));
+        Assert.Equal((0d, 0d), (Math.Round(Doble(t["SUBTOTAL"]), 3), Math.Round(Doble(t["GANANCIA"]), 3)));
         Assert.Equal(3, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS_ARTICULOS WHERE TICKET_ID = @id", ("id", venta.TicketId))));
         // La devolución «C», sin renglones de artículos, a nombre del cajero y la caja de eleventa.
         var d = (await e.FilasAsync("SELECT * FROM DEVOLUCIONES")).Single();
@@ -242,6 +243,8 @@ public class EnvioEleventaTests
         var t = (await e.FilasAsync("SELECT * FROM VENTATICKETS WHERE ID = @id", ("id", venta.TicketId))).Single();
         Assert.Equal(("f", 60d, 60d, 60d), ((string)t["ESTA_CANCELADO"]!, Math.Round(Doble(t["TOTAL"]), 3), Math.Round(Doble(t["SUBTOTAL"]), 3),
             Math.Round(Doble(t["TOTAL_FACTURABLE"]), 3)));
+        // Eran 5 piezas y se devolvieron 3.
+        Assert.Equal(2, Convert.ToInt32(t["NUMERO_ARTICULOS"]));
         // Quedan dos cuadernos que ganan 30 − 18.3017 cada uno.
         Assert.Equal(23.3966, Doble(t["GANANCIA"]), 3);
 
@@ -260,6 +263,32 @@ public class EnvioEleventaTests
         Assert.Equal((60m, 135m, 75m, 1), ((decimal)turno["ACUMULADO_VENTAS"]!, (decimal)turno["VENTAS_EFECTIVO"]!,
             (decimal)turno["DEVOLUCIONES_VENTAS_EFECTIVO"]!, Convert.ToInt32(turno["NUMERO_VENTAS"])));
         Assert.Equal(23.3966m, (decimal)turno["ACUMULADO_GANANCIA"]!);
+    }
+
+    [FactConFirebird]
+    public async Task Cancelar_despues_de_devolver_una_parte_cancela_lo_que_queda_y_lo_de_granel_sigue_contando_uno()
+    {
+        await using var e = await TiendaAsync();
+        var cobrada = new DateTime(2026, 3, 9, 12, 0, 0);
+        var venta = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(cobrada, new(10, "Cuaderno", 1, 30), new(11, "Impresiones", 0.5m, 5)));
+
+        await EnvioEleventa.DevolverAsync(e.Conexion, Caja, Devolucion(venta.TicketId, cancelacion: false, cobrada.AddMinutes(10), new ArticuloDevuelto(11, "Impresiones", 0.2m, 2)));
+        var t = (await e.FilasAsync("SELECT * FROM VENTATICKETS WHERE ID = @id", ("id", venta.TicketId))).Single();
+        // Las impresiones siguen en el ticket, y de todos modos lo de granel no baja NUMERO_ARTICULOS.
+        Assert.Equal((33d, 33d, 2), (Math.Round(Doble(t["TOTAL"]), 3), Math.Round(Doble(t["SUBTOTAL"]), 3), Convert.ToInt32(t["NUMERO_ARTICULOS"])));
+
+        await EnvioEleventa.DevolverAsync(e.Conexion, Caja, Devolucion(venta.TicketId, cancelacion: true, cobrada.AddMinutes(20)));
+
+        // Se cancela lo que quedaba: el total se queda como estaba, el subtotal en cero y solo baja la pieza del cuaderno.
+        t = (await e.FilasAsync("SELECT * FROM VENTATICKETS WHERE ID = @id", ("id", venta.TicketId))).Single();
+        Assert.Equal(("t", 33d, 0d, 1), ((string)t["ESTA_CANCELADO"]!, Math.Round(Doble(t["TOTAL"]), 3), Math.Round(Doble(t["SUBTOTAL"]), 3),
+            Convert.ToInt32(t["NUMERO_ARTICULOS"])));
+        var cancelacion = (await e.FilasAsync("SELECT * FROM DEVOLUCIONES WHERE TIPO_DEVOLUCION = 'C'")).Single();
+        Assert.Equal(33, Doble(cancelacion["TOTAL_DEVUELTO"]), 3);
+        Assert.Equal(500, Doble(await e.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = 11")), 3);
+        var turno = await TurnoAsync(e);
+        Assert.Equal((0m, 35m, 35m, 0), ((decimal)turno["ACUMULADO_VENTAS"]!, (decimal)turno["VENTAS_EFECTIVO"]!,
+            (decimal)turno["DEVOLUCIONES_VENTAS_EFECTIVO"]!, Convert.ToInt32(turno["NUMERO_VENTAS"])));
     }
 
     [FactConFirebird]
