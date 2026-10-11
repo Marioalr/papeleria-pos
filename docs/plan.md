@@ -335,6 +335,11 @@ caja principal al escanearlo (con su apartado de inventario), y eso explica sus 
 escribe al abrir la caja y al cobrar. Falta mirar cancelar, devolver, entradas y salidas, cerrar el turno y el corte,
 cuando pasen de verdad.
 
+**Avance (2026-10-11):** del paso 3 ya está la escritura ([cómo](migracion-eleventa.md#mandar-cada-venta-paso-3)). Una
+venta en efectivo de la caja nueva entra a eleventa como la escribe una caja de eleventa al cobrar, en una sola
+transacción y sin duplicarse si se manda dos veces. Contra una copia de la base real deja lo mismo que dejó eleventa en
+la caja 2. Faltan la bandeja de salida, el folio de eleventa en el ticket y la configuración de la caja 2.
+
 #### Al terminar el piloto
 
 Cada parte entra sin detener a la caja 2:

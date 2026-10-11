@@ -239,10 +239,18 @@ Lo demás:
 - **Turnos:** uno abierto por caja (`UNIQUE (ID_CAJA, TERMINO_EN)`). La caja 2 nueva va a necesitar abrir y cerrar el
   suyo en eleventa (paso 4).
 - **Las otras operaciones del corte** van en `CORTE_MOVIMIENTOS`, de tipo `Entrada`, `Salida` y `Devolucion` (paso 4).
+- **El día es el del cobro:** el acumulado de `CORTE_OPERACIONES` es lo vendido ese día en esa caja (cuadra en todos
+  los días de la copia). Si un turno pasa de la medianoche, lo cobrado después suma al renglón del día siguiente.
+- **Un producto va una sola vez por ticket:** si se escanea otra vez, sube la cantidad.
+- **`NUMERO_ARTICULOS`** cuenta las piezas, y uno por cada producto a granel (`TVENTA = 'D'`).
+- **El artículo común** lleva el código `COMUN-<número al azar>-<el contador de artículos antes de su renglón>`, el
+  departamento «Productos Comunes», ganancia igual al precio y nada de inventario.
+- Todos los productos de la tienda llevan inventario (`USA_INVENTARIO`) y no hay kits.
+- Las cantidades y los montos son `FLOAT` (unas 7 cifras); los acumulados del corte, `NUMERIC(18,4)`.
+- Al cobrar no queda ningún apartado: se quitan los de ese ticket.
 
 **Lo que falta confirmar mirando cómo trabaja:**
-- si el apartado de cada artículo se quita al cobrar;
-- en qué orden escribe al cobrar y si todo va en una sola transacción;
+- en qué orden escribe al cobrar y si todo va en una sola transacción (la caja nueva lo escribe todo en una);
 - cancelar, devolver, entradas y salidas, cerrar el turno y el corte. Se miran cuando pasen de verdad, sin hacer
   operaciones de prueba en la tienda.
 
@@ -256,6 +264,46 @@ otra y dice qué renglones aparecieron o cambiaron y qué contadores avanzaron.
 ```
 dotnet run --project src/PapeleriaPos.Herramientas -- observar-eleventa --servidor <la caja principal> --ruta C:\…\PDVDATA.FDB --usuario SYSDBA
 ```
+
+### Mandar cada venta (paso 3)
+
+**Ya está la escritura** (`EnvioEleventa.MandarAsync`): una venta en efectivo de la caja nueva entra a eleventa como la
+escribe una caja de eleventa al cobrar. Deja el ticket con su folio, sus artículos, la salida de inventario y los
+acumulados del turno, del día y del departamento.
+- **Todo o nada:** va en una sola transacción. Si choca con otra caja que escribe lo mismo en ese instante (la misma
+  existencia), lo vuelve a intentar unas veces.
+- **Sin duplicar:** la marca de cada venta es la hora en que se empezó en la caja nueva (`CREADO_EN`, en diezmilésimas de
+  segundo, de esa caja). Si se manda otra vez, por ejemplo porque se cortó la red justo al confirmar, regresa el folio
+  que ya tenía y no escribe nada.
+- **El folio** es el último más uno, tomado dentro de la transacción. Después revisa que otra caja no haya cobrado con
+  el mismo; si pasó, lo dice, para revisarlo.
+- **Lo de cada producto lo toma de eleventa:** su código, nombre, departamento y costo de ese momento. La caja nueva
+  manda el ID de eleventa, la cantidad y el importe.
+- **Lo que eleventa no tiene** (un artículo común, un producto dado de alta solo en la caja nueva o borrado en eleventa)
+  va como artículo común. Así el total de eleventa es lo que entró a la caja.
+- **Si eleventa no tiene un turno abierto para esa caja,** lo abre como lo abre eleventa: la hora y la IP en `CAJAS`, el
+  renglón del día, el turno en ceros con el fondo y su ticket abierto. Cerrarlo es del paso 4.
+- No pone los apartados que eleventa pone al escanear: la caja nueva escanea contra su propia base, y al cobrar ya no
+  quedaría ninguno.
+
+Se probó así:
+- Con pruebas contra un Firebird de prueba en la misma PC: una base vacía con las mismas tablas, tipos, contadores y
+  triggers de eleventa. Corren donde está la variable `PRUEBAS_FIREBIRD` («servidor:puerto»); en el CI no hay Firebird y
+  se saltan.
+- Contra una copia de la base real, con `probar-envio-eleventa`: lo que deja coincide campo por campo con lo que dejó
+  eleventa en la caja 2 al cobrar, y tarda menos de 0.1 s en la misma PC. Esa herramienta escribe, así que solo acepta
+  un Firebird en esta misma PC:
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- probar-envio-eleventa --servidor 127.0.0.1 --ruta C:\…\copia.fdb --usuario SYSDBA --caja <ID> --cajero <ID> --articulo <ID>:<cantidad> --comun Recuerdo:15
+```
+
+**Falta:**
+- la bandeja de salida: al cobrar, la venta queda en la bandeja en la misma transacción, y un trabajo de fondo la manda,
+  reintenta y avisa;
+- el folio de eleventa en el ticket de la caja 2, y qué folio lleva cuando la caja principal no contesta;
+- la configuración de la caja 2 (su caja y su cajero en eleventa) y lo que no es efectivo;
+- el redondeo del efectivo, si se usa: el total de eleventa debe ser lo que entró a la caja.
 
 ## Arranque (fase 5)
 

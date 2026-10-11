@@ -20,6 +20,7 @@ return args switch
     ["importar-eleventa", .. var resto] => await ImportarEleventaAsync(resto),
     ["sincronizar-eleventa", .. var resto] => await SincronizarEleventaAsync(resto),
     ["observar-eleventa", .. var resto] => await ObservarEleventaAsync(resto),
+    ["probar-envio-eleventa", .. var resto] => await ProbarEnvioEleventaAsync(resto),
     ["preparar-caja", .. var resto] => await PrepararCajaAsync(resto),
     ["importar-control-print", .. var resto] => await ImportarControlPrintAsync(resto),
     ["aplicar-depuracion", .. var resto] => await AplicarDepuracionAsync(resto),
@@ -51,6 +52,12 @@ static int Ayuda()
               o cambiaron y qué contadores avanzaron. Cada comparación queda en un archivo de --carpeta (por omisión,
               AppData\Local\PapeleriaPos\observaciones-eleventa, que no se sincroniza con OneDrive): son datos
               reales, no van al repositorio.
+
+          probar-envio-eleventa --ruta <copia.fdb> [--puerto 3050] --usuario <usuario> --caja <ID> --cajero <ID>
+                                --articulo <ID de eleventa>:<cantidad> [--comun <nombre>:<importe>] [--pago <pesos>]
+              Manda una venta de prueba a una copia de eleventa como la mandará la caja 2 del piloto (paso 3) y dice
+              qué cambió en la base, como observar-eleventa. Solo contra un Firebird en esta misma PC, nunca contra la
+              caja principal. --articulo y --comun se pueden repetir; el artículo va al precio de eleventa.
 
           sincronizar-eleventa --base pos.db [--simular]
                                (--fdb PDVDATA.FDB [--firebird32 <carpeta>] [--firebird64 <carpeta>]
@@ -248,6 +255,72 @@ static async Task<int> ObservarEleventaAsync(string[] args)
         await File.WriteAllTextAsync(Path.Combine(carpeta, nombre), $"{nota}\n{HoraMexico.ALocal(anterior.TomadaUtc):HH:mm:ss} → {HoraMexico.ALocal(actual.TomadaUtc):HH:mm:ss}\n\n{diferencia}");
         anterior = actual;
     }
+}
+
+static async Task<int> ProbarEnvioEleventaAsync(string[] args)
+{
+    if (Opcion(args, "--ruta") is not { } ruta || Opcion(args, "--usuario") is not { } usuario
+        || !int.TryParse(Opcion(args, "--caja"), out var cajaId) || !int.TryParse(Opcion(args, "--cajero"), out var cajeroId))
+    {
+        Console.Error.WriteLine("Indica --ruta de la copia, --usuario, --caja y --cajero (los ID de eleventa).");
+        return 1;
+    }
+    // Escribe: mientras eleventa sea el oficial, solo en una copia servida en esta PC.
+    if (Opcion(args, "--servidor") is { } otro && otro is not ("localhost" or "127.0.0.1" or "::1"))
+    {
+        Console.Error.WriteLine("Esta prueba escribe: solo va contra un Firebird en esta misma PC con una copia, nunca contra la caja principal.");
+        return 1;
+    }
+    if ((Environment.GetEnvironmentVariable("ELEVENTA_CLAVE") is { Length: > 0 } variable ? variable : PedirClave()) is not { } clave)
+    {
+        Console.Error.WriteLine("Falta la clave del Firebird de prueba.");
+        return 1;
+    }
+    var servidor = new ServidorEleventa("127.0.0.1", ruta, usuario, clave, int.Parse(Opcion(args, "--puerto") ?? "3050", CultureInfo.InvariantCulture));
+
+    var articulos = new List<ArticuloParaEleventa>();
+    await using (var c = new FirebirdSql.Data.FirebirdClient.FbConnection(servidor.Cadena()))
+    {
+        await c.OpenAsync();
+        for (var i = 0; i < args.Length - 1; i++)
+        {
+            if (args[i] == "--articulo" && args[i + 1].Split(':') is [var id, var cantidad])
+            {
+                await using var precio = new FirebirdSql.Data.FirebirdClient.FbCommand("SELECT DESCRIPCION, PFINAL FROM PRODUCTOS WHERE ID = @id", c);
+                precio.Parameters.AddWithValue("id", int.Parse(id, CultureInfo.InvariantCulture));
+                await using var lector = await precio.ExecuteReaderAsync();
+                if (!await lector.ReadAsync())
+                {
+                    Console.Error.WriteLine($"En la copia no hay producto con ID {id}.");
+                    return 1;
+                }
+                var piezas = decimal.Parse(cantidad, CultureInfo.InvariantCulture);
+                articulos.Add(new ArticuloParaEleventa(int.Parse(id, CultureInfo.InvariantCulture), lector.GetString(0).Trim(), piezas,
+                    Math.Round((decimal)Convert.ToDouble(lector.GetValue(1)) * piezas, 2)));
+            }
+            else if (args[i] == "--comun" && args[i + 1].Split(':') is [var nombre, var importe])
+                articulos.Add(new ArticuloParaEleventa(null, nombre, 1, decimal.Parse(importe, CultureInfo.InvariantCulture)));
+        }
+    }
+    if (articulos.Count == 0)
+    {
+        Console.Error.WriteLine("Indica al menos un --articulo <ID>:<cantidad> o un --comun <nombre>:<importe>.");
+        return 1;
+    }
+
+    var ahora = DateTime.Now;
+    var total = articulos.Sum(a => a.Importe);
+    var pago = Opcion(args, "--pago") is { } p ? decimal.Parse(p, CultureInfo.InvariantCulture) : Math.Ceiling(total);
+    var venta = new VentaParaEleventa(ahora.AddMinutes(-1), ahora, pago, new TurnoParaEleventa(ahora.Date.AddHours(8), 0), articulos);
+
+    var antes = await FotoEleventa.TomarAsync(servidor);
+    var reloj = System.Diagnostics.Stopwatch.StartNew();
+    var resultado = await EnvioEleventa.MandarAsync(servidor, new CajaEnEleventa(cajaId, cajeroId), venta);
+    Console.WriteLine($"Mandada en {reloj.Elapsed.TotalMilliseconds:N0} ms: ticket {resultado.TicketId}, folio {resultado.Folio}, total {total:C}" +
+        (resultado.FolioRepetido ? " (¡folio repetido!)" : "") + ".");
+    Console.WriteLine();
+    Console.WriteLine(ComparacionEleventa.Comparar(antes, await FotoEleventa.TomarAsync(servidor)));
+    return 0;
 }
 
 /// <summary>La clave, tecleada sin que se vea (asteriscos). Sin teclado (la entrada redirigida), null.</summary>
