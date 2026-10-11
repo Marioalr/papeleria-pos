@@ -96,6 +96,20 @@ internal sealed class VentaConfiguracion : IEntityTypeConfiguration<Venta>
     }
 }
 
+internal sealed class EnvioAEleventaConfiguracion : IEntityTypeConfiguration<EnvioAEleventa>
+{
+    public void Configure(EntityTypeBuilder<EnvioAEleventa> b)
+    {
+        b.ToTable("EnviosAEleventa");
+        b.HasKey(e => e.VentaId);
+        b.HasOne<Venta>().WithOne().HasForeignKey<EnvioAEleventa>(e => e.VentaId);
+        // La bandeja se recorre por estado; una devolución busca el ticket por el folio de eleventa.
+        b.HasIndex(e => new { e.Estado, e.CreadoUtc });
+        b.HasIndex(e => e.FolioEleventa);
+        b.Property(e => e.Error).HasMaxLength(500);
+    }
+}
+
 internal sealed class VentaLineaConfiguracion : IEntityTypeConfiguration<VentaLinea>
 {
     public void Configure(EntityTypeBuilder<VentaLinea> b)

@@ -46,7 +46,7 @@ public static class DisenoTicket
             e.Add(new Renglon(t.Encabezado[i], Alineacion.Centro, Negrita: i == 0, Grande: i == 0));
 
         e.Add(Linea('-'));
-        e.Add(new Renglon(DosColumnas($"Folio {t.Folio}", t.FechaLocal.ToString("dd/MM/yyyy  HH:mm", Mexico))));
+        e.Add(new Renglon(DosColumnas($"Folio {t.FolioImpreso}", t.FechaLocal.ToString("dd/MM/yyyy  HH:mm", Mexico))));
         e.Add(new Renglon(DosColumnas(t.Caja, $"Atendió: {t.Cajero}")));
         if (t.Cliente is { } cliente)
         {

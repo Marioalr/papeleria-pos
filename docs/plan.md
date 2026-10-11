@@ -321,6 +321,9 @@ visual (entrega 2). Para el piloto hace falta, en este orden:
 - **Decidido por el dueño (2026-10-10):** durante el piloto, las altas de productos y los cambios de precio se siguen
   haciendo en eleventa y llegan a la caja 2 con la lectura; y el ticket de la caja 2 lleva el folio de eleventa, para
   que una devolución se pueda hacer en cualquiera de las dos cajas.
+- **Decidido por el dueño (2026-10-11):** si la caja principal o el Wi-Fi no contestan en unos 2 segundos, el ticket sale
+  con el folio propio de la caja 2 y la venta se manda a eleventa cuando vuelva la red; su devolución se hace en la
+  caja 2. La caja no deja de vender por esperar a eleventa.
 
 **Avance (2026-10-10):** el paso 1 está hecho ([cómo funciona](migracion-eleventa.md#la-lectura-de-cada-pocos-minutos-paso-1)).
 El servicio de la caja 2 lee eleventa por la red cada pocos minutos, solo leyendo, y pone al día su base: altas,
@@ -338,7 +341,12 @@ cuando pasen de verdad.
 **Avance (2026-10-11):** del paso 3 ya está la escritura ([cómo](migracion-eleventa.md#mandar-cada-venta-paso-3)). Una
 venta en efectivo de la caja nueva entra a eleventa como la escribe una caja de eleventa al cobrar, en una sola
 transacción y sin duplicarse si se manda dos veces. Contra una copia de la base real deja lo mismo que dejó eleventa en
-la caja 2. Faltan la bandeja de salida, el folio de eleventa en el ticket y la configuración de la caja 2.
+la caja 2.
+
+Después, el mismo día, la bandeja de salida: cada venta cobrada entra a la bandeja junto con el cobro y se intenta
+mandar enseguida. El ticket sale con el folio de eleventa si contestó a tiempo; si no, con el de la caja 2, y la venta
+se manda en la siguiente vuelta. Con eso queda el paso 3. Se probó de punta a punta contra copias, apagando y prendiendo
+el Firebird de prueba. Lo siguiente es el paso 4: cancelaciones, devoluciones, turno y corte.
 
 #### Al terminar el piloto
 

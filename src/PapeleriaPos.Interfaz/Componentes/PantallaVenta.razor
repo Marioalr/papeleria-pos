@@ -251,7 +251,7 @@
                 <div class="vn-ultimo">
                     @if (_ultimo is { } ultimo)
                     {
-                        <span>Último: <strong>@ultimo.Folio</strong> · @Formato.Dinero(ultimo.TotalCobradoCentavos) · cambio <strong>@Formato.Dinero(ultimo.CambioCentavos)</strong></span>
+                        <span>Último: <strong>@ultimo.FolioImpreso</strong> · @Formato.Dinero(ultimo.TotalCobradoCentavos) · cambio <strong>@Formato.Dinero(ultimo.CambioCentavos)</strong></span>
                     }
                     else
                     {
@@ -1584,7 +1584,7 @@ else
                 NuevoTicket();
             else
                 Cambiar(_tickets[^1]);
-            Avisar($"Venta {ticket.Folio} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: false);
+            Avisar($"Venta {ticket.FolioImpreso} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: false);
             _ultimo = ticket;
             await ImprimirAsync(ticket, abrirCajon: ticket.AbreCajon);
             await RevisarEfectivoAsync();
@@ -1606,7 +1606,7 @@ else
     }
 
     private Task ImprimirAsync(TicketDto ticket, bool abrirCajon) =>
-        ImprimirDocumentoAsync($"Ticket {ticket.Folio}", DisenoTicket.Armar(ticket), abrirCajon);
+        ImprimirDocumentoAsync($"Ticket {ticket.FolioImpreso}", DisenoTicket.Armar(ticket), abrirCajon);
 
     private async Task ImprimirDocumentoAsync(string titulo, IReadOnlyList<Elemento> documento, bool abrirCajon)
     {

@@ -2760,6 +2760,49 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("DevolucionesLineas", (string)null);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.EnvioAEleventa", b =>
+                {
+                    b.Property<Guid>("VentaId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("EnviadaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Estado")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("FolioEleventa")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("FolioRepetido")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Intentos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("TicketEleventa")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("UltimoIntentoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("VentaId");
+
+                    b.HasIndex("FolioEleventa");
+
+                    b.HasIndex("Estado", "CreadoUtc");
+
+                    b.ToTable("EnviosAEleventa", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.Venta", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3783,6 +3826,15 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasOne("PapeleriaPos.Nucleo.Ventas.VentaLinea", null)
                         .WithMany()
                         .HasForeignKey("VentaLineaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.EnvioAEleventa", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Ventas.Venta", null)
+                        .WithOne()
+                        .HasForeignKey("PapeleriaPos.Nucleo.Ventas.EnvioAEleventa", "VentaId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

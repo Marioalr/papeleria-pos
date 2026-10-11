@@ -54,6 +54,9 @@ if (builder.Configuration.GetValue("Impresora:Vigilar", true))
 builder.Services.AddSingleton(builder.Configuration.GetSection("Eleventa").Get<OpcionesEleventa>() ?? new OpcionesEleventa());
 builder.Services.AddSingleton<LecturaEleventa>();
 builder.Services.AddHostedService(proveedor => proveedor.GetRequiredService<LecturaEleventa>());
+// Y manda cada venta a eleventa (solo si Eleventa:Escribir), con su bandeja de salida.
+builder.Services.AddSingleton<EnvioVentasEleventa>();
+builder.Services.AddHostedService(proveedor => proveedor.GetRequiredService<EnvioVentasEleventa>());
 
 // Un celular que apaga la pantalla mientras cuenta se desconecta: al volver retoma donde estaba si no pasó media hora.
 builder.Services.AddRazorComponents().AddInteractiveServerComponents(o => o.DisconnectedCircuitRetentionPeriod = TimeSpan.FromMinutes(30));
