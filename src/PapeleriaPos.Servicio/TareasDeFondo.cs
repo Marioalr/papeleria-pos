@@ -36,10 +36,23 @@ public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int
 
     public bool Activo { get; init; } = true;
 
+    /// <summary>
+    /// La base contra apagones (entrega 10): si la base no pasó la revisión al arrancar, no se hacen copias. Saldrían
+    /// dañadas, quedarían como la más reciente encima de la buena de antes del apagón y, pasados los días de historia,
+    /// la limpieza borraría la buena.
+    /// </summary>
+    public RevisionAlArrancar? Revision { get; init; }
+
     public void Hacer(string? etiqueta = null)
     {
         if (!Activo)
             return;
+        if (Revision is { BaseDanada: true } revision)
+        {
+            log.LogWarning("No se hace el respaldo {Etiqueta}: la base no pasó la revisión al arrancar y la copia saldría dañada. Se guarda el de antes del apagón ({Respaldo}).",
+                etiqueta ?? "del día", revision.Respaldo ?? "no hay ninguno");
+            return;
+        }
         try
         {
             lock (_candado)

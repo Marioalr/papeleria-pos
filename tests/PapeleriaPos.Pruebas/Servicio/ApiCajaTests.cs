@@ -35,6 +35,9 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
     /// <summary>La base del servicio, para preparar o revisar lo que la API no muestra.</summary>
     public PosDbContext Base() => new(BaseDeDatos.Opciones($"Data Source={_ruta};Pooling=False"));
 
+    /// <summary>El archivo de la base (junto a él quedan sus marcas, como la de un apagón).</summary>
+    public string Ruta => _ruta;
+
     public async Task InitializeAsync()
     {
         await using (var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={_ruta}")))
@@ -57,7 +60,7 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
     {
         await Fabrica.DisposeAsync();
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _ruta, _ruta + "-wal", _ruta + "-shm" })
+        foreach (var archivo in new[] { _ruta, _ruta + "-wal", _ruta + "-shm", _ruta + ".en-uso", _ruta + ".danada" })
             await BorrarAsync(archivo);
     }
 

@@ -1,4 +1,4 @@
-@* Avisa en toda la caja cuando trabaja sin la caja principal, y lo que falta por subir. *@
+@* Avisa en toda la caja cuando trabaja sin la caja principal, lo que falta por subir y si la base (la del servicio o la de esta caja) no está lista contra apagones. *@
 @implements IDisposable
 @inject IServiceProvider Servicios
 
@@ -17,6 +17,14 @@
     else if (c.Pendientes > 0)
     {
         <div class="franja-contingencia subiendo">Volvió la conexión: subiendo @c.Pendientes pendientes…</div>
+    }
+    @if (c.AvisoBase is { } aviso)
+    {
+        <div class="franja-contingencia con-error">@aviso</div>
+    }
+    @if (c.AvisoBaseLocal is { } avisoLocal)
+    {
+        <div class="franja-contingencia con-error">@avisoLocal</div>
     }
     @if (c.ConError > 0)
     {

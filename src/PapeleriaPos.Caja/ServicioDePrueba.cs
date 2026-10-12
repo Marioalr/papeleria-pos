@@ -6,13 +6,16 @@ namespace PapeleriaPos.Caja;
 
 /// <summary>
 /// La prueba con una persona real (docs/plan.md): no hay servicio de Windows. La caja arranca su propio servicio en su
-/// puerto y lo apaga al cerrarse; si ya estaba corriendo (la caja se cerró mal), usa ese. La instaló el administrador en
+/// puerto y lo detiene al cerrarse; si ya estaba corriendo, usa ese. La instaló el administrador en
 /// Archivos de programa, así que la base de trabajo va en la carpeta de datos (ProgramData, con escritura para los
 /// usuarios) y la inicial se lee de la instalación.
 /// </summary>
 internal sealed class ServicioDePrueba : IDisposable
 {
     private static readonly TimeSpan Espera = TimeSpan.FromMinutes(1);
+
+    /// <summary>Lo que se espera a que el servicio se detenga bien al cerrar la caja; después, se cierra a la fuerza.</summary>
+    private static readonly TimeSpan EsperaAlCerrar = TimeSpan.FromSeconds(5);
     private Process? _proceso;
 
     private ServicioDePrueba(ConfiguracionCaja configuracion) => Listo = ArrancarAsync(configuracion);
@@ -44,13 +47,17 @@ internal sealed class ServicioDePrueba : IDisposable
         if (!File.Exists(exe))
             throw new InvalidOperationException($"No se encontró el servicio de la prueba ({exe}): reinstala la prueba.");
         var origen = url.GetLeftPart(UriPartial.Authority);
-        var info = new ProcessStartInfo(exe) { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(exe)! };
+        // La entrada queda conectada a la caja: al cerrarse (aunque sea a la fuerza), se cierra y el servicio se detiene bien.
+        var info = new ProcessStartInfo(exe)
+        {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, WorkingDirectory = Path.GetDirectoryName(exe)!,
+        };
         foreach (var argumento in new[]
                  {
                      // Escucha en la red para el conteo desde el celular; el instalador abrió el firewall solo a la red local.
                      $"--Urls=http://*:{url.Port}", $"--Caja:Servicio={origen}", $"--ConnectionStrings:Pos=Data Source={Path.Combine(datos, "pos.db")}",
                      "--Prueba:Activa=true", $"--Prueba:BaseInicial={inicial}", "--Telegram:Activo=false", "--Descubrimiento:Activo=false",
-                     "--Impresora:Vigilar=false", "--Respaldos:Activo=false",
+                     "--Impresora:Vigilar=false", "--Respaldos:Activo=false", "--Prueba:DetenerAlCerrarEntrada=true",
                  })
             info.ArgumentList.Add(argumento);
         _proceso = Process.Start(info) ?? throw new InvalidOperationException("No se pudo arrancar el servicio de la prueba.");
@@ -80,12 +87,27 @@ internal sealed class ServicioDePrueba : IDisposable
         }
     }
 
+    /// <summary>
+    /// Le cierra la entrada al servicio para que se detenga bien: así quita la marca de la base contra apagones y, al
+    /// volver a abrir la caja, no revisa la base como después de un apagón. Si no termina a tiempo, a la fuerza.
+    /// </summary>
     public void Dispose()
     {
         try
         {
             if (_proceso is { HasExited: false })
-                _proceso.Kill(entireProcessTree: true);
+            {
+                try
+                {
+                    _proceso.StandardInput.Close();
+                }
+                catch (IOException)
+                {
+                    // Ya se estaba cerrando.
+                }
+                if (!_proceso.WaitForExit(EsperaAlCerrar))
+                    _proceso.Kill(entireProcessTree: true);
+            }
         }
         catch (InvalidOperationException)
         {

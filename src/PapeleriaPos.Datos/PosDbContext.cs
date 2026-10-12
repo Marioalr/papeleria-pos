@@ -87,6 +87,12 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     /// <summary>Reloj para <see cref="IVersionado.ModificadoUtc"/> y el historial de precios; las pruebas lo fijan.</summary>
     public TimeProvider Reloj { get; init; } = TimeProvider.System;
 
+    /// <summary>
+    /// Cada conexión que abre, con <c>synchronous=FULL</c> y <c>busy_timeout</c> (<see cref="AjustesContraApagones"/>),
+    /// la cree quien la cree: el servicio, las herramientas o las pruebas.
+    /// </summary>
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) => optionsBuilder.AddInterceptors(AjustesAlAbrir.Instancia);
+
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         configurationBuilder.Properties<Cantidad>().HaveConversion<CantidadConverter>();

@@ -53,7 +53,8 @@ else
 
     <h4>Alertas</h4>
     <div class="alertas">
-        @foreach (var tipo in Enum.GetValues<TipoAlerta>())
+        @* La base dañada después de un apagón siempre se avisa: no se ofrece apagarla. *@
+        @foreach (var tipo in Enum.GetValues<TipoAlerta>().Where(t => t != TipoAlerta.BaseDanada))
         {
             var t = tipo;
             <label class="en-linea opcion">
@@ -221,6 +222,7 @@ else
         TipoAlerta.Credito => "Crédito: fiar arriba del límite, ajustes de saldo y lo de sin conexión que no cuadró (no avisa los tuyos)",
         TipoAlerta.FueraDeCorte => "Venta, abono o entrada/salida sin conexión que llegó cuando su turno ya tenía corte",
         TipoAlerta.CreditoVencido => "Crédito vencido: lo fiado que pasó su plazo sin pagarse (una vez por compra, en horario)",
+        TipoAlerta.BaseDanada => "La base no pasó la revisión después de un apagón (siempre se avisa)",
         _ => "Resumen del día (con el último corte)",
     };
 }
