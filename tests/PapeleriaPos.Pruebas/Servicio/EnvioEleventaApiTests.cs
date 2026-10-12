@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.Extensions.DependencyInjection;
 using PapeleriaPos.Eleventa;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
@@ -9,6 +10,7 @@ using PapeleriaPos.Nucleo.Importacion;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Pruebas.Eleventa;
+using PapeleriaPos.Servicio;
 
 namespace PapeleriaPos.Pruebas.Servicio;
 
@@ -130,12 +132,18 @@ public class EnvioEleventaApiTests
         var antes = await EnviosAsync(c);
         Assert.Equal(1, antes.Pendientes);
         Assert.Contains(EnvioEleventa.DepartamentoComunes, antes.PorAtender.Single().Error);
+        // Eleventa la rechazó: allá no está, y la lectura la descuenta como lo pendiente.
+        var enCurso = servicio.Fabrica.Services.GetRequiredService<EnvioVentasEleventa>().EnCurso;
+        using (var vigilancia = enCurso.Vigilar())
+            Assert.Equal([antes.PorAtender.Single().Id], vigilancia.Rechazados());
 
         await e.EjecutarAsync("INSERT INTO DEPARTAMENTOS (ID, NOMBRE) VALUES (9, @nombre)", ("nombre", EnvioEleventa.DepartamentoComunes));
         Assert.Equal(HttpStatusCode.Accepted, (await c.Http.PostAsync("api/eleventa/enviar", null)).StatusCode);
         var despues = await EsperarAsync(c, x => x.Pendientes == 0);
 
         Assert.Empty(despues.PorAtender);
+        using (var vigilancia = enCurso.Vigilar())
+            Assert.Empty(vigilancia.Rechazados());
         Assert.Equal(42, (await Leer<TicketDto>(await c.Http.GetAsync($"api/ventas/{ticket.VentaId}/ticket"))).FolioEleventa);
         Assert.Equal(1, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE CAJA_ID = 4 AND ESTA_ABIERTO = 'f'")));
     }
@@ -338,6 +346,71 @@ public class EnvioEleventaApiTests
         Assert.Equal((0, 1), (dejado.Pendientes, dejado.PorRevisar));
         Assert.StartsWith("Se dejó para revisar a mano.", dejado.PorAtender.Single().Error);
         Assert.Equal(HttpStatusCode.BadRequest, otraVez.StatusCode);
+    }
+
+    [Fact]
+    public async Task Lo_que_ya_quedo_en_eleventa_a_mano_ya_no_se_manda_y_su_devolucion_tambien_va_a_mano()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
+        var c = await AbrirAsync(servicio);
+        var encargado = await EncargadoAsync(c);
+        var ticket = await CobrarAsync(c);
+        var pendiente = (await EnviosAsync(c)).PorAtender.Single();
+
+        var aMano = await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsync($"api/eleventa/envios/{pendiente.Id}/a-mano", null));
+        var otraVez = await c.Http.PostAsync($"api/eleventa/envios/{pendiente.Id}/a-mano", null);
+        var paraDevolver = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/sucursales/{c.Datos.SucursalId}/ventas/folio/{ticket.Folio}"));
+        await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/devoluciones",
+            new SolicitudDevolucion(encargado.UsuarioId, c.Datos.Id, "No era la que buscaba",
+                [new LineaDevolucionSolicitada(paraDevolver.Lineas.Single(l => l.LlevaInventario).LineaId, 1000)])));
+
+        Assert.Equal((0, 0), (aMano.Pendientes, aMano.PorRevisar));
+        Assert.Empty(aMano.PorAtender);
+        Assert.Equal(HttpStatusCode.BadRequest, otraVez.StatusCode);
+        await using var db = servicio.Base();
+        Assert.Equal(EstadoEnvioEleventa.AMano, db.EnviosAEleventa.Single(x => x.Id == pendiente.Id).Estado);
+        // Su ticket en eleventa no se conoce aquí: la devolución no va sola, también se anota a mano.
+        var devolucion = await VentasParaEleventa.ArmarDevolucionAsync(db, db.EnviosAEleventa.Single(x => x.Tipo == TipoEnvioEleventa.Devolucion).DevolucionId!.Value);
+        Assert.Equal((null, false), (devolucion.Devolucion, devolucion.Descartada));
+        Assert.Contains("a mano", devolucion.PorRevisar);
+    }
+
+    [Fact]
+    public async Task La_lectura_de_eleventa_ve_lo_que_la_bandeja_manda_mientras_lee()
+    {
+        // Nadie escucha en ese puerto: el intento al cobrar falla enseguida, pero sí se intentó.
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
+        var c = await AbrirAsync(servicio);
+        var envios = servicio.Fabrica.Services.GetRequiredService<EnvioVentasEleventa>();
+
+        using var vigilancia = envios.EnCurso.Vigilar();
+        await CobrarAsync(c);
+
+        Assert.Equal([(await EnviosAsync(c)).PorAtender.Single().Id], vigilancia.Mandados());
+        // Fue la red: no se sabe si entró, no es que eleventa la rechazara.
+        Assert.Empty(vigilancia.Rechazados());
+    }
+
+    [Fact]
+    public async Task Lo_que_quedo_por_revisar_se_anota_a_mano_y_la_lectura_en_curso_lo_ve()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
+        var c = await AbrirAsync(servicio);
+        await CobrarAsync(c);
+        var pendiente = (await EnviosAsync(c)).PorAtender.Single();
+        // Se dejó por revisar; después alguien la registra en eleventa a mano mientras se lee eleventa.
+        await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsync($"api/eleventa/envios/{pendiente.Id}/revisar", null));
+        var envios = servicio.Fabrica.Services.GetRequiredService<EnvioVentasEleventa>();
+
+        using var vigilancia = envios.EnCurso.Vigilar();
+        var aMano = await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsync($"api/eleventa/envios/{pendiente.Id}/a-mano", null));
+
+        Assert.Equal((0, 0), (aMano.Pendientes, aMano.PorRevisar));
+        Assert.Equal([pendiente.Id], vigilancia.Mandados());
+        await using var db = servicio.Base();
+        var envio = db.EnviosAEleventa.Single(x => x.Id == pendiente.Id);
+        Assert.Equal(EstadoEnvioEleventa.AMano, envio.Estado);
+        Assert.StartsWith("Se anotó a mano en eleventa. Se dejó para revisar a mano.", envio.Error);
     }
 
     private static async Task<EstadoEnviosEleventaDto> EsperarAsync(Caja c, Func<EstadoEnviosEleventaDto, bool> listo)
