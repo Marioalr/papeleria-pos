@@ -257,6 +257,14 @@ public sealed class EnvioVentasEleventa(
                 if (movimiento.Movimiento is { } paraMover)
                     escribir = async () => envio.IdEleventa = (await EnvioEleventa.MoverEfectivoAsync(servidor, caja, paraMover, ct)).MovimientoId;
                 break;
+            case TipoEnvioEleventa.CierreDeTurno when opciones.CorteEnEleventa:
+                // El piloto: el corte se hace en eleventa y el puente no cierra su turno. Un cierre en la bandeja (de antes
+                // del piloto, o de un corte Z que subió de la contingencia) no se manda: queda por revisar, y lo que sigue
+                // pasa al turno de eleventa, que sigue abierto. Mientras dure el piloto este puente siempre manda en el
+                // piloto (Escribir), así que el caso de abajo no corre; se queda para cuando la caja tome el corte de
+                // eleventa (lo prueba CorteEnElPilotoTests: el corte Z lo sigue encolando fuera del piloto).
+                porRevisar = CorteEnElPiloto.NoSeCierraEleventa;
+                break;
             case TipoEnvioEleventa.CierreDeTurno:
                 var turno = await db.Turnos.AsNoTracking().SingleAsync(t => t.Id == envio.TurnoId, ct);
                 var cerrado = HoraMexico.ALocal(turno.CerradoUtc ?? envio.CreadoUtc);

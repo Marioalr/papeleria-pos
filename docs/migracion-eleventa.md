@@ -421,6 +421,15 @@ se cierra antes que sus ventas.
 - **El cierre** usa la diferencia del corte Z de la caja 2 (contado menos esperado). Con las entradas y salidas ya en
   eleventa (abajo), su efectivo al cierre queda en lo contado.
 
+**Mientras dure el piloto el corte de la caja 2 se hace en eleventa** (decisión del dueño, 2026-10-12; `CorteEnElPiloto`,
+solo para convivir con eleventa):
+- el servicio rechaza el corte Z de esa caja, y la caja lo avisa al intentar el corte y al salir;
+- el turno de eleventa lo abre eleventa con su fondo y lo cierra su corte: el puente no lo abre ni lo cierra. Si allá no
+  hay turno abierto, lo que se manda espera en la bandeja («Abre la caja en eleventa…») y entra en cuanto lo abran;
+- un cierre que ya estaba en la bandeja, o el de un corte Z que sube de la contingencia, queda por revisar;
+- el turno de la caja nueva no se cierra, así que solo se cancela un ticket del mismo día (después es devolución) y no
+  sale el aviso de retiro (el cajón es de las dos).
+
 Se probó como el paso 3, con pruebas contra el Firebird de prueba y de punta a punta contra copias: se cobraron dos
 ventas, se canceló una y se devolvió parte de la otra (un artículo completo), y se hizo el corte Z con un faltante. En la
 copia quedaron:

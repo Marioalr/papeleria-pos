@@ -203,7 +203,10 @@ public sealed record SolicitudReglas(string Usuario, string Pin, IReadOnlyList<R
 
 public sealed record LineaDevolucionDto(Guid LineaId, string Descripcion, long CantidadMilesimas, long CantidadDevueltaMilesimas, long ImporteCentavos, bool LlevaInventario);
 
-/// <param name="PuedeCancelar">Si su turno sigue abierto (después, solo devolución).</param>
+/// <param name="PuedeCancelar">
+/// Si su turno sigue abierto (después, solo devolución). En el piloto con eleventa, además, si se cobró hoy: el turno de
+/// esa caja no se cierra ahí (su corte se hace en eleventa).
+/// </param>
 /// <param name="NoSeDevuelveEnElPiloto">
 /// El piloto con eleventa (2026-10-12): por qué este ticket no se cancela ni se devuelve en esta caja (no se cobró todo
 /// en efectivo); vacío si sí, o fuera del piloto. Solo para convivir con eleventa: se quita al dejarlo.
@@ -245,8 +248,8 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// <param name="Prueba">El servicio es el de la prueba con una persona real: datos ficticios, guía y avisos simulados.</param>
 /// <param name="VersionCredito">Cambia con cada fiado, abono o cambio de crédito: la caja vuelve a pedir los saldos.</param>
 /// <param name="PilotoEleventa">
-/// El piloto con eleventa: el servicio manda sus ventas a eleventa (<c>Eleventa:Escribir</c>) y la caja solo cobra y
-/// devuelve en efectivo (2026-10-12). Solo para convivir con eleventa: se quita al dejarlo.
+/// El piloto con eleventa: el servicio manda sus ventas a eleventa (<c>Eleventa:Escribir</c>), la caja solo cobra y
+/// devuelve en efectivo y su corte se hace en eleventa (2026-10-12). Solo para convivir con eleventa: se quita al dejarlo.
 /// </param>
 /// <param name="AvisoBase">
 /// La base contra apagones (entrega 10): el servicio se apagó de golpe y la base no pasó la revisión al arrancar. La caja

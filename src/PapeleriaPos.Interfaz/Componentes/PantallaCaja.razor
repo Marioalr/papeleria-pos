@@ -1,6 +1,7 @@
 @* Raíz de la caja: conecta con el servicio (o da de alta la PC), pide entrar con PIN, abre el turno y muestra la venta. *@
 @inject ClienteCaja Cliente
 @inject ConexionCaja Conexion
+@inject IServiceProvider Servicios
 
 <div class="caja">
     <FranjaPrueba />
@@ -27,6 +28,17 @@
     {
         <div class="centrado"><p>Conectando con el servicio…</p></div>
     }
+    else if (_sesion is null && _recordarCorte)
+    {
+        @* El piloto con eleventa: al salir, recuerda que el corte se hace en eleventa (se quita al dejarlo). *@
+        <div class="centrado">
+            <div class="tarjeta">
+                <h2>@_caja.Nombre</h2>
+                <p class="aviso">@PilotoConEleventa.CorteEnEleventa</p>
+                <button class="boton principal" @ref="_entendido" @onclick="() => _recordarCorte = false">Entendido</button>
+            </div>
+        </div>
+    }
     else if (_sesion is null)
     {
         <Entrada Caja="_caja" Turno="_turno" AlEntrar="Entrar" />
@@ -46,8 +58,17 @@
         <div class="centrado">
             <div class="tarjeta ancha">
                 <h2>@_caja.Nombre tiene abierto el turno de @_turno.Cajero</h2>
-                <p>Antes de que entre otro cajero, el encargado hace el corte de cierre de ese turno.</p>
-                @if (_corte)
+                @if (PilotoEleventa)
+                {
+                    @* El piloto con eleventa: aquí no se cierra el turno (se quita al dejarlo). *@
+                    <p class="aviso">@PilotoConEleventa.CorteEnEleventa</p>
+                }
+                else
+                {
+                    <p>Antes de que entre otro cajero, el encargado hace el corte de cierre de ese turno.</p>
+                }
+                @* En el piloto, ni a medio corte (si el servicio cambió mientras): quedan el aviso y las acciones. *@
+                @if (_corte && !PilotoEleventa)
                 {
                     <CorteCaja Turno="_turno" Sesion="_sesion" Caja="@_caja.Nombre" SoloCierre="true" AlTerminar="CorteTerminado" />
                 }
@@ -58,7 +79,10 @@
                         {
                             <button class="boton" @onclick="() => _administrar = true">Productos e inventario (sin cortar)</button>
                         }
-                        <button class="boton principal" @onclick="() => _corte = true">Hacer el corte</button>
+                        @if (!PilotoEleventa)
+                        {
+                            <button class="boton principal" @onclick="() => _corte = true">Hacer el corte</button>
+                        }
                         <button class="boton" @onclick="Salir">Salir</button>
                     </div>
                 }
@@ -130,7 +154,10 @@
     {
         _sesion = sesion;
         Conexion.UsuarioEnCaja = sesion.UsuarioId;
+        // El piloto, a la par del turno: entrar no espera una consulta más.
+        var piloto = CargarPilotoEleventaAsync();
         _turno = await Cliente.TurnoAsync(_caja!.Id);
+        await piloto;
     }
 
     private void TurnoAbierto(TurnoDto turno) => _turno = turno;
@@ -141,6 +168,48 @@
         Conexion.UsuarioEnCaja = null;
         _corte = false;
         _administrar = false;
+        // El piloto con eleventa: el turno sigue abierto aquí, y su corte se hace en eleventa.
+        _recordarCorte = _enfocarEntendido = _turno is not null && PilotoEleventa;
+    }
+
+    // ── El piloto con eleventa: el corte se hace allá (se quita al dejar eleventa) ──
+
+    /// <summary>
+    /// El servicio manda las ventas a eleventa: el corte de esta caja se hace en eleventa (decisión del dueño,
+    /// 2026-10-12). En la ventana de Windows lo dice la contingencia, que lo vuelve a saber en cada latido y lo recuerda
+    /// sin conexión; en el navegador, que no la tiene, se pregunta al entrar.
+    /// </summary>
+    private bool _pilotoEleventa;
+
+    private bool PilotoEleventa => Servicios.GetService<Contingencia>()?.PilotoEleventa ?? _pilotoEleventa;
+
+    /// <summary>Al salir con el turno abierto: el aviso, que la cajera cierra con Enter o con «Entendido».</summary>
+    private bool _recordarCorte;
+
+    private ElementReference _entendido;
+    private bool _enfocarEntendido;
+
+    private async Task CargarPilotoEleventaAsync()
+    {
+        if (Servicios.GetService<Contingencia>() is not null)
+            return;
+        try
+        {
+            _pilotoEleventa = await Cliente.PilotoEleventaAsync();
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión y sin contingencia (el navegador): el servicio rechaza el corte de todos modos.
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_enfocarEntendido && _recordarCorte)
+        {
+            _enfocarEntendido = false;
+            await _entendido.FocusAsync();
+        }
     }
 
     private async Task CorteTerminado()

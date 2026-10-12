@@ -154,8 +154,8 @@ public sealed class Contingencia
 
     /// <summary>
     /// El piloto con eleventa (<see cref="PilotoConEleventa"/>): lo dice el servicio en cada latido y se guarda en la
-    /// base local, para que sin conexión (también si la caja arranca sin ella) se siga cobrando solo en efectivo. Solo para
-    /// convivir con eleventa: se quita al dejarlo.
+    /// base local, para que sin conexión (también si la caja arranca sin ella) se siga cobrando solo en efectivo y el corte
+    /// se siga haciendo en eleventa. Solo para convivir con eleventa: se quita al dejarlo.
     /// </summary>
     public bool PilotoEleventa { get; private set; }
 
@@ -568,6 +568,10 @@ public sealed class Contingencia
     /// <summary>El encargado cuenta y la caja cierra el turno con su propia cuenta; se cuadra al subir.</summary>
     public CorteDto CorteZ(Guid turnoId, SolicitudCorteZ s)
     {
+        // El piloto con eleventa: el corte de esta caja se hace en eleventa, también sin conexión (al subir, el servicio ya
+        // no lo podría rechazar: ya pasó).
+        if (PilotoEleventa)
+            throw new InvalidOperationException(PilotoConEleventa.CorteEnEleventa);
         var turno = TurnoRequerido(turnoId);
         var encargado = Identificar(s.EncargadoUsuario, s.EncargadoPin);
         if (Permisos.Evaluar(Datos.Reglas, encargado.Rol, Caja.SucursalId, AccionControlada.CorteZ).Nivel != NivelPermiso.Permitido)

@@ -91,6 +91,7 @@ else
         @if (PilotoEleventa)
         {
             <p class="nota">@PilotoConEleventa.SoloSeDevuelveEfectivo</p>
+            <p class="nota">@PilotoConEleventa.SoloSeCancelaElMismoDia</p>
         }
     }
 }
@@ -101,7 +102,7 @@ else
     [Parameter] public string? FolioInicial { get; set; }
     [Parameter] public EventCallback<ComprobanteDevolucionDto> AlTerminar { get; set; }
 
-    /// <summary>El piloto con eleventa: solo se devuelve en efectivo (se quita al dejar eleventa).</summary>
+    /// <summary>El piloto con eleventa: solo se devuelve en efectivo y solo se cancela lo del mismo día (se quita al dejar eleventa).</summary>
     [CascadingParameter(Name = PilotoConEleventa.Cascada)] public bool PilotoEleventa { get; set; }
 
     private sealed record Pendiente(AccionControlada Accion, string Detalle, long Monto, Func<Guid, Task> Reintentar);

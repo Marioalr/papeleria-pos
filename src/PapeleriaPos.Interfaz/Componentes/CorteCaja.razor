@@ -1,8 +1,13 @@
-@* Corte X (parcial) y corte Z (cierre): el encargado cuenta el efectivo sin ver cuánto debería haber. *@
+@* Corte X (parcial) y corte Z (cierre): el encargado cuenta el efectivo sin ver cuánto debería haber. En el piloto con
+   eleventa no hay corte aquí: se hace en eleventa. *@
 @inject ClienteCaja Cliente
 @inject IImpresora Impresora
 
-@if (_resultado is not null)
+@if (PilotoEleventa && _resultado is null)
+{
+    <p class="aviso">@PilotoConEleventa.CorteEnEleventa</p>
+}
+else if (_resultado is not null)
 {
     <h3>Corte @(_resultado.Tipo == TipoCorte.Z ? "de cierre (Z)" : "parcial (X)") · @_resultado.FechaLocal.ToString("dd/MM/yyyy HH:mm")</h3>
     <table class="resumen-corte">
@@ -125,6 +130,13 @@ else
     /// <summary>Nombre de la caja, para el corte impreso.</summary>
     [Parameter] public string Caja { get; set; } = "";
     [Parameter] public EventCallback AlTerminar { get; set; }
+
+    /// <summary>
+    /// El piloto con eleventa (2026-10-12): el corte de esta caja se hace en eleventa, el de cierre y también el parcial
+    /// (lo vendido aquí ya está en el turno de eleventa, con el efectivo de las dos; el parcial de esta caja contaría solo
+    /// una parte del cajón). En su lugar, el aviso. Se quita al dejar eleventa.
+    /// </summary>
+    [CascadingParameter(Name = PilotoConEleventa.Cascada)] public bool PilotoEleventa { get; set; }
 
     private bool _cierre;
     private string _usuario = "";

@@ -128,8 +128,24 @@ public partial class MainWindow : Window
         var proveedor = servicios.BuildServiceProvider();
         Vista.Services = proveedor;
         if (proveedor.GetService<Contingencia>() is { } contingencia)
+        {
             IniciarAgente(configuracion, conexion, contingencia);
+            RecordarElCorteAlCerrar(contingencia);
+        }
     }
+
+    /// <summary>
+    /// El piloto con eleventa (decisión del dueño, 2026-10-12): al cerrar la ventana, la caja recuerda que el corte se hace
+    /// en eleventa. Solo avisa: con «Aceptar» la ventana se cierra como siempre (el aviso no cambia qué se guarda ni cómo).
+    /// Lo sabe por la contingencia, también sin conexión. Al apagar Windows no sale (WPF no pasa por Closing). Solo para
+    /// convivir con eleventa: se quita al dejarlo.
+    /// </summary>
+    private void RecordarElCorteAlCerrar(Contingencia contingencia) =>
+        Closing += (_, _) =>
+        {
+            if (contingencia.PilotoEleventa)
+                MessageBox.Show(this, PilotoConEleventa.CorteEnEleventa, Title, MessageBoxButton.OK, MessageBoxImage.Information);
+        };
 
     private AgenteImpresion? _agente;
 

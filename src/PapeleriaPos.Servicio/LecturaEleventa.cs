@@ -27,6 +27,14 @@ public sealed class OpcionesEleventa
     /// </summary>
     public bool SoloEfectivo => Escribir;
 
+    /// <summary>
+    /// El piloto: mientras esta caja manda sus ventas a eleventa, su corte se hace en eleventa (decisión del dueño,
+    /// 2026-10-12; <see cref="CorteEnElPiloto"/>): el servicio no hace el corte Z, el puente no abre ni cierra el turno de
+    /// eleventa (lo abre y lo cierra eleventa) y solo se cancela un ticket del mismo día. Lo marca <see cref="Escribir"/>,
+    /// como <see cref="SoloEfectivo"/>. Solo para convivir con eleventa: se quita al dejarlo.
+    /// </summary>
+    public bool CorteEnEleventa => Escribir;
+
     /// <summary>La caja de eleventa como la que vende esta caja (<c>CAJAS.ID</c>).</summary>
     public int? Caja { get; set; }
 
@@ -56,10 +64,13 @@ public sealed class OpcionesEleventa
 
     public ServidorEleventa? Conexion() => Activo ? Destino() : null;
 
-    /// <summary>A dónde y como qué caja escribir; vacío si no se escribe o falta algo.</summary>
+    /// <summary>
+    /// A dónde y como qué caja escribir; vacío si no se escribe o falta algo. En el piloto (<see cref="CorteEnEleventa"/>)
+    /// el puente no abre el turno de eleventa: lo abre eleventa.
+    /// </summary>
     public (ServidorEleventa Servidor, CajaEnEleventa Caja)? ParaEscribir() =>
         Escribir && Destino() is { } servidor && Caja is { } caja && Cajero is { } cajero
-            ? (servidor, new CajaEnEleventa(caja, cajero, IpLocal()))
+            ? (servidor, new CajaEnEleventa(caja, cajero, IpLocal(), AbreTurno: !CorteEnEleventa))
             : null;
 
     private ServidorEleventa? Destino() =>
