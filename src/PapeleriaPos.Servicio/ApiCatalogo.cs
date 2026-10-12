@@ -17,6 +17,11 @@ public static class ApiCatalogo
 
         api.MapGet("/opciones", (PosDbContext db) => new RegistroCatalogo(db).OpcionesAsync());
 
+        // Los sinónimos de la tienda para la búsqueda: los dan de alta el dueño y el encargado.
+        api.MapGet("/sinonimos", (PosDbContext db) => new RegistroSinonimos(db).ListarAsync());
+        api.MapPost("/sinonimos", (SolicitudSinonimo s, PosDbContext db) => new RegistroSinonimos(db).AgregarAsync(s));
+        api.MapPost("/sinonimos/{id:guid}/quitar", (Guid id, SolicitudQuitarSinonimo s, PosDbContext db) => new RegistroSinonimos(db).QuitarAsync(id, s));
+
         // El costo y los proveedores solo van para el dueño y el encargado.
         api.MapGet("/productos/{productoId:guid}", async (Guid productoId, Guid sucursalId, Guid usuarioId, PosDbContext db) =>
         {

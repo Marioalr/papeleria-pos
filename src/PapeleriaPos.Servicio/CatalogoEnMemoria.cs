@@ -29,9 +29,10 @@ public sealed class CatalogoEnMemoria
             .Where(p => p.Length > 0).Distinct().ToArray();
     }
 
-    private sealed record Indice(long Version, Dictionary<Guid, Articulo> PorVariante, Dictionary<string, (Guid Variante, Guid Presentacion)> PorCodigo);
+    private sealed record Indice(long Version, Dictionary<Guid, Articulo> PorVariante, Dictionary<string, (Guid Variante, Guid Presentacion)> PorCodigo,
+        SinonimosDeBusqueda Sinonimos);
 
-    private Indice _indice = new(-1, [], []);
+    private Indice _indice = new(-1, [], [], SinonimosDeBusqueda.Ninguno);
     private readonly SemaphoreSlim _recarga = new(1, 1);
 
     /// <summary>
@@ -47,7 +48,7 @@ public sealed class CatalogoEnMemoria
     /// <summary>La base cambió entera (la prueba empezó de cero): se vuelve a cargar aunque la versión coincida.</summary>
     public void Invalidar()
     {
-        _indice = new(-1, [], []);
+        _indice = new(-1, [], [], SinonimosDeBusqueda.Ninguno);
         _vendidos = (DateTime.MinValue, []);
         _elegido.Clear();
         _elegidoCargado = false;
@@ -160,7 +161,8 @@ public sealed class CatalogoEnMemoria
         foreach (var c in codigos.Where(c => porVariante.ContainsKey(c.VarianteId)))
             porCodigo.TryAdd(c.Codigo, (c.VarianteId, c.PresentacionId));
 
-        return new Indice(version, porVariante, porCodigo);
+        var sinonimos = await db.Sinonimos.AsNoTracking().Where(s => s.Activo).Select(s => new { s.Palabra, s.Equivale }).ToListAsync(ct);
+        return new Indice(version, porVariante, porCodigo, new SinonimosDeBusqueda(sinonimos.Select(s => (s.Palabra, s.Equivale))));
     }
 
     public async Task<ProductoVentaDto?> PorCodigoAsync(PosDbContext db, string codigo, Guid sucursalId, CancellationToken ct = default)
@@ -198,21 +200,34 @@ public sealed class CatalogoEnMemoria
             await CargarElegidoAsync(db, ct);
             elegido = _elegido.TryGetValue((caja, consulta), out var v) ? v : null;
         }
+        // Cada pedazo vale por sí mismo o por los sinónimos de la tienda («bolig» → lapicero).
+        var pedazos = palabras.Select(p => (Pedazo: p, Sinonimos: indice.Sinonimos.De(p))).ToList();
+        static bool Directo(Articulo a, string p) => a.Palabras.Any(w => w.StartsWith(p, StringComparison.Ordinal));
+        // La palabra de la tienda por la que salió, si algún pedazo no estaba en el nombre.
+        static string? PorSinonimo(Articulo a, List<(string Pedazo, IReadOnlyList<(string Palabra, string Equivale)> Sinonimos)> pedazos) =>
+            pedazos.Where(x => !Directo(a, x.Pedazo)).SelectMany(x => x.Sinonimos).Where(s => Directo(a, s.Equivale))
+                .Select(s => s.Palabra.ToLowerInvariant()).FirstOrDefault();
+
         var candidatos = indice.PorVariante.Values
-            .Where(a => palabras.All(p => a.Palabras.Any(w => w.StartsWith(p, StringComparison.Ordinal))))
+            .Where(a => pedazos.All(x => Directo(a, x.Pedazo) || x.Sinonimos.Any(s => Directo(a, s.Equivale))))
             .ToList();
         // Si nada coincide exacto, un error de dedo: lo parecido, en lugar de «no existe».
         var parecido = false;
         if (candidatos.Count == 0)
         {
-            candidatos = indice.PorVariante.Values.Where(a => palabras.All(p => ErrorDeDedo.Coincide(p, a.Palabras))).ToList();
+            candidatos = indice.PorVariante.Values
+                .Where(a => pedazos.All(x => ErrorDeDedo.Coincide(x.Pedazo, a.Palabras) || x.Sinonimos.Any(s => Directo(a, s.Equivale))))
+                .ToList();
             parecido = candidatos.Count > 0;
         }
+        var porSinonimo = candidatos.ToDictionary(a => a.VarianteId, a => PorSinonimo(a, pedazos));
         var encontrados = candidatos
             .OrderByDescending(a => a.Codigo is not null && string.Equals(a.Codigo, texto.Trim(), StringComparison.OrdinalIgnoreCase))
             // Entre los parecidos, primero los que coinciden exacto en más palabras («pluma pumto» antes que el plumón).
-            .ThenByDescending(a => parecido ? palabras.Count(p => a.Palabras.Any(w => w.StartsWith(p, StringComparison.Ordinal))) : 0)
+            .ThenByDescending(a => parecido ? palabras.Count(p => Directo(a, p)) : 0)
             .ThenByDescending(a => a.VarianteId == elegido)
+            // Lo que se llama como se escribió, antes de lo que salió por un sinónimo.
+            .ThenBy(a => porSinonimo[a.VarianteId] is not null)
             .ThenByDescending(a => a.Normalizado.StartsWith(consulta, StringComparison.Ordinal))
             .ThenByDescending(a => vendidos.GetValueOrDefault(a.VarianteId))
             .ThenBy(a => a.Descripcion, StringComparer.CurrentCultureIgnoreCase)
@@ -223,7 +238,7 @@ public sealed class CatalogoEnMemoria
         return encontrados.Select(a => new ResultadoBusquedaDto(
             a.VarianteId, a.Descripcion, a.Codigo, PrecioMenudeo(a, sucursalId),
             a.LlevaInventario ? existencias.GetValueOrDefault(a.VarianteId) : null,
-            vendidos.GetValueOrDefault(a.VarianteId), a.Partes, parecido)).ToList();
+            vendidos.GetValueOrDefault(a.VarianteId), a.Partes, parecido, porSinonimo[a.VarianteId])).ToList();
     }
 
     /// <summary>Todo el catálogo vendible de una sucursal, con existencias: la copia de una caja para vender sin conexión.</summary>

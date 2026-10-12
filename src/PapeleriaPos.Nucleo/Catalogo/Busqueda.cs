@@ -2,8 +2,8 @@ namespace PapeleriaPos.Nucleo.Catalogo;
 
 /// <summary>
 /// Lo que se buscó por nombre en una caja y qué se eligió (docs/propuesta-interfaz.md, «Lo que no se escanea»). Con esto,
-/// lo que esa caja eligió antes con el mismo texto sale primero la vez siguiente, y en Productos se ve lo que se buscó y
-/// no se encontró. No guarda nada de clientes.
+/// lo que esa caja eligió antes con el mismo texto sale primero la vez siguiente. Lo que no se encontró queda anotado,
+/// pero no arma los sinónimos: esos los da de alta la tienda (decisión del dueño, 2026-10-11). No guarda nada de clientes.
 /// </summary>
 public class Busqueda
 {

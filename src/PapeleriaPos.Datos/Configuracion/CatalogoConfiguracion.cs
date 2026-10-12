@@ -27,6 +27,15 @@ internal sealed class MarcaConfiguracion : IEntityTypeConfiguration<Marca>
     }
 }
 
+internal sealed class SinonimoConfiguracion : IEntityTypeConfiguration<Sinonimo>
+{
+    public void Configure(EntityTypeBuilder<Sinonimo> b)
+    {
+        b.HasIndex(s => new { s.Palabra, s.Equivale }).IsUnique();
+        b.HasIndex(s => s.Version);
+    }
+}
+
 internal sealed class ProductoConfiguracion : IEntityTypeConfiguration<Producto>
 {
     public void Configure(EntityTypeBuilder<Producto> b)

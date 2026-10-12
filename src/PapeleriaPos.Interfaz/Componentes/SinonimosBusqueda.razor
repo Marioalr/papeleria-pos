@@ -1,0 +1,112 @@
+@* Los sinónimos de la tienda para la búsqueda: al escribir una palabra, también sale lo que se llama con otra. Los da de
+   alta quien edita el catálogo, uno por uno; ninguno viene puesto (docs/propuesta-interfaz.md). *@
+@inject ClienteCaja Cliente
+
+<p class="nota">
+    Al escribir una palabra en la caja también sale lo que se llama con otra: «boligrafo» → lo que dice «lapicero». Pon
+    solo los que la tienda usa de verdad: uno mal puesto mezcla productos distintos.
+</p>
+
+<div class="sinonimos-alta">
+    <label>Al escribir <input id="sinonimo-palabra" @bind="_palabra" @bind:event="oninput" autocomplete="off" @onkeydown="AlTeclear" /></label>
+    <label>también busca <input @bind="_equivale" @bind:event="oninput" autocomplete="off" @onkeydown="AlTeclear" /></label>
+    <label class="en-linea opcion"><input type="checkbox" @bind="_alReves" /> y al revés</label>
+    <button class="boton principal" disabled="@_ocupado" @onclick="AgregarAsync">Agregar</button>
+</div>
+@if (_error is not null)
+{
+    <p class="error">@_error</p>
+}
+
+@if (_sinonimos is null)
+{
+    <p>Cargando…</p>
+}
+else if (_sinonimos.Count == 0)
+{
+    <p class="nota">Todavía no hay sinónimos.</p>
+}
+else
+{
+    <table class="resultados">
+        <thead><tr><th>Al escribir</th><th>también busca</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var s in _sinonimos)
+            {
+                var este = s;
+                <tr>
+                    <td>@s.Palabra.ToLowerInvariant()</td>
+                    <td>@s.Equivale.ToLowerInvariant()</td>
+                    <td><button class="boton chico" disabled="@_ocupado" @onclick="() => QuitarAsync(este)">Quitar</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    private List<SinonimoDto>? _sinonimos;
+    private string _palabra = "";
+    private string _equivale = "";
+    private bool _alReves = true;
+    private bool _ocupado;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _sinonimos = await Cliente.SinonimosAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task AlTeclear(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await AgregarAsync();
+    }
+
+    private async Task AgregarAsync()
+    {
+        if (_ocupado)
+            return;
+        (_ocupado, _error) = (true, null);
+        try
+        {
+            _sinonimos = await Cliente.AgregarSinonimoAsync(new SolicitudSinonimo(Sesion.UsuarioId, Caja.SucursalId, _palabra, _equivale, _alReves));
+            (_palabra, _equivale) = ("", "");
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task QuitarAsync(SinonimoDto sinonimo)
+    {
+        (_ocupado, _error) = (true, null);
+        try
+        {
+            _sinonimos = await Cliente.QuitarSinonimoAsync(sinonimo.Id, new SolicitudQuitarSinonimo(Sesion.UsuarioId, Caja.SucursalId));
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

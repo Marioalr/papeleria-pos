@@ -169,15 +169,17 @@ sube. Para eso, de lo más rápido a lo de respaldo:
 
 - **El orden:** el código exacto; luego lo que esta caja eligió antes con ese mismo texto; luego lo que empieza con lo
   escrito; al final, lo más vendido en 90 días (para arrancar, el historial de eleventa).
-- **Se aprende de lo que se busca:** cada búsqueda se guarda en `caja-local.db` con el texto, cuántos resultados hubo y
-  qué se eligió. En Productos, quien edita el catálogo ve lo que se buscó y no se encontró, y desde ahí lo hace
-  sinónimo, le da un código corto o lo da de alta. Se guarda desde la entrega 0, aunque esa pantalla llegue después.
+- **Se aprende de lo que se busca:** cada búsqueda se guarda con el texto, cuántos resultados hubo y qué se eligió, y lo
+  elegido sale primero la vez siguiente. Lo que se buscó y no se encontró queda anotado, pero no arma los sinónimos
+  (decisión del dueño, 2026-10-11).
 - **El nombre de eleventa de cada producto ya es su sinónimo** (decisión del 2026-10-10). Si la depuración del
   catálogo le cambia el nombre, el de siempre lo sigue encontrando, y la lista muestra en letra chica «en eleventa: …»
   junto al nombre nuevo, para irlo aprendiendo sin perder tiempo.
-- **Los demás sinónimos los decide la tienda** en Configuración, y la lista no viene llena: se arma con lo que se buscó
-  y no se encontró. Un sinónimo mal puesto estorba más de lo que ayuda: en esta tienda «pluma» es la pluma decorativa (no
-  el lapicero) y «pegamento» es solo el líquido blanco (el silicón, de barra para pistola o líquido, es otro producto).
+- **Los demás sinónimos los decide la tienda** en Configuración › Sinónimos: quien edita el catálogo los da de alta uno
+  por uno («al escribir *boligrafo*, también busca *lapicero*», y al revés si se quiere), y la lista no viene llena. En la
+  búsqueda, lo que salió por un sinónimo lo dice («por «boligrafo»»). Un sinónimo mal puesto estorba más de lo que
+  ayuda: en esta tienda «pluma» es la pluma decorativa (no el lapicero) y «pegamento» es solo el líquido blanco (el
+  silicón, de barra para pistola o líquido, es otro producto).
   Las variantes de escritura (foami y foamy) y las abreviaturas de los nombres que vienen de eleventa (V/, C/, P/) se
   confirman con la tienda antes de usarlas.
 - **La etiqueta del cajón** sale del mismo módulo de etiquetas del inventario (fase 2): se elige el producto, se imprime

@@ -402,11 +402,20 @@ cambia más entre productos casi iguales: la medida, el color y la marca, y meno
   los «V/Colores» y «1mm» el «1.0 Mm». Así una ficha de medida afina aunque la medida esté escrita distinto.
 - **Esc y escribir enseguida** ya no pierde las primeras letras: el cuadro se vaciaba otra vez desde el servicio.
 
+**Avance (2026-10-11), séptima parte: los sinónimos de la tienda.**
+- **Configuración › Sinónimos:** quien edita el catálogo (el dueño y el encargado) los da de alta uno por uno: «al
+  escribir *boligrafo*, también busca *pluma*», con «y al revés» marcado de entrada; una sola palabra de cada lado, sin
+  acentos. Quitarlos los desactiva. Queda en la bitácora. Ninguno viene puesto, y lo que se buscó y no se encontró no los
+  arma (decisión del dueño).
+- **Viajan con el catálogo:** suben la versión, así que el servicio y la copia sin conexión de cada caja los tienen al
+  momento (`Sinonimo`, `SinonimosDeBusqueda`, `PaqueteContingenciaDto.Sinonimos`).
+- **En la búsqueda:** cada palabra escrita vale por sí misma o por sus sinónimos; desde 4 letras también vale el
+  principio («bolig»). Lo que salió por un sinónimo va después de lo que se llama así y lo dice: «por «boligrafo»».
+
 Falta, en este orden:
-1. los sinónimos de la tienda: dónde se guardan, cómo se dan de alta y que lleguen a las cajas. Lo que se buscó y no se
-   encontró no entra (decisión del dueño, 2026-10-11);
-2. cuántas fichas de espera se ven, en Configuración (hoy son 3);
-3. que un surtido se pueda vender por color, como opción del producto (decisión del dueño, 2026-10-11).
+1. cuántas fichas de espera se ven, en Configuración (hoy son 3);
+2. que un surtido se pueda vender por color, como opción del producto (decisión del dueño, 2026-10-11);
+3. el nombre de eleventa como sinónimo de cada producto, cuando la depuración cambie nombres.
 
 #### Después: el piloto en la caja 2
 
