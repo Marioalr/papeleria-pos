@@ -145,8 +145,9 @@ causas posibles y qué se junta en la próxima caída están en [notas](notas.md
   - todos los equipos de la tienda en el switch que ya hay, con un solo cable del switch al Tenda; la caja 2 también,
     si hay un cable que llegue (si no, con eleventa no puede vender mientras el router esté trabado);
   - en Windows, cada cola de impresión con puerto TCP/IP estándar, sin cambiarle el nombre, y sin WSD; en el firewall,
-    el ping y los puertos 3050 y 3309 (los de eleventa) permitidos en todos los perfiles de red, solo desde la red
-    local; en el POS, todo por IP;
+    el ping y los puertos 3050 y 3309, los que pide [eleventa](https://eleventa.com/aprender/conexion-multicaja) para
+    que se comuniquen sus cajas, permitidos en todos los perfiles de red, solo desde la red local; en el POS, todo por
+    IP;
   - el módem solo al puerto de internet del Tenda, y nada más conectado al módem ni a su Wi-Fi;
   - el Tenda en modo router, con UPnP e IPv6 apagados, concesiones largas y el reinicio programado de madrugada; el
     firmware, solo si trae un arreglo para su versión de hardware.

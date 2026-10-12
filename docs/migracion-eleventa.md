@@ -490,6 +490,74 @@ medianoche), sin Firebird (la bandeja, también la de contingencia) y de punta a
 - una salida que subió con la bandeja de contingencia también llegó, y el turno cerró con lo contado;
 - una entrada que subió después del corte Z quedó por revisar.
 
+### Lo que falta para el piloto: diseño (2026-10-12, por aprobar)
+
+Con las decisiones del dueño del 2026-10-12 ([plan](plan.md#la-versión-unicaja-y-el-piloto-en-la-caja-2)): solo
+efectivo en la caja 2, eleventa abierto en la caja 2, devoluciones de ida y vuelta, la regla de adaptación y, al aprobar
+el piloto, el modo multicaja. Va después de la pantalla nueva para la prueba del 17 y 18 de octubre; lo que se puede ver
+antes en la tienda está en la [guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-octubre). Todo lo de abajo es
+puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al dejar eleventa.
+
+- **Primero, los riesgos verificados** (en curso, un PR por cada uno): el cobro que no espera el último escaneo y el
+  escaneo que se toma como dinero en «Pagó con»; solo efectivo mientras se escribe en eleventa; la lectura de cada 5
+  minutos que deshace lo que sigue en la bandeja; y la entrega 10 (la base contra apagones).
+- **Eleventa abierto en la caja 2, en el mismo turno.** Hay una sola persona en la caja 2: vende en uno o en el otro.
+  - La caja nueva adopta el turno abierto de esa caja en eleventa y guarda su `TURNOS.ID`; si no hay, lo abre al
+    mandar lo primero, como hoy. Nunca deja de vender por esperar a eleventa.
+  - El puente no abre un segundo turno ni cierra «el que esté abierto»: cierra por `TURNOS.ID`, y si el turno adoptado
+    ya no está abierto o hay dos, lo que llegue queda por revisar, con aviso.
+  - Al cerrar, nunca borra un ticket abierto de eleventa que tenga artículos: espera y avisa (hoy el cierre borra los
+    tickets abiertos del turno, `EnvioEleventa.Devoluciones.cs`).
+  - El cierre le dice a eleventa lo contado y calcula el faltante o sobrante contra lo que eleventa espera de ese
+    turno, que ya trae lo vendido en los dos; el corte de la caja nueva muestra aparte «eleventa en esta caja».
+  - Si se cae la red, se sigue en la caja nueva (contingencia): el eleventa de la caja 2 escribe en el Firebird de la
+    principal y no vende sin red. Si falla la caja nueva, se cambia a eleventa.
+- **Devoluciones de ida y vuelta.**
+  - Ida: si el folio no es de la caja 2, se lee el ticket en vivo en eleventa (el ticket, sus artículos y sus
+    devoluciones). Solo efectivo, 7 días y las reglas de la caja nueva. Si eleventa no contesta, se espera a que
+    vuelva la red. El ticket leído se guarda en tablas del puente, no como venta en el núcleo.
+  - Vuelta: la lectura de cada 5 minutos trae, en la misma foto que las existencias, las devoluciones y cancelaciones
+    de los tickets que mandó la caja 2, y las aplica antes de las existencias. Lo que vino de eleventa no entra a la
+    bandeja. Lo propio se reconoce por `DEVOLUCIONES.ID` y por la marca `TICKET_ID` + `DEVUELTO_EN`; la lectura y el
+    envío usan el mismo candado. Las listas `IN` van en grupos de menos de 1500 (límite de Firebird 2.0).
+  - Antes de devolver un ticket de la caja 2 que ya está en eleventa, se revisa en vivo que allá no esté devuelto; si
+    eleventa no contesta, se deja pasar (decisión del 2026-10-11) y un choque queda por revisar.
+  - Un choque con eleventa («ya está cancelado») queda por revisar y no detiene la bandeja; solo la falla de red se
+    reintenta. Lo que quede por revisar se ve en la pantalla de la caja 2 (el bot de Telegram todavía no existe).
+  - Falta ver en la copia cómo anota eleventa una devolución de otra caja o de otro turno: mientras, eso queda por
+    revisar.
+- **Folios repetidos.** Justo después de guardar, el puente revisa si el folio ya lo tiene otro ticket; si todavía no
+  se entregó, toma el siguiente y corrige solo su propio ticket y su kardex. Si ya salió impreso, no se cambia: ese
+  ticket se devuelve en la caja 2 por su QR y sus reimpresiones salen con el folio de la caja 2, como cuando eleventa no
+  contesta. La revisión tardía va en su propio paso, aunque la bandeja esté atorada.
+- **Los respaldos de eleventa.** Según sus páginas (consultadas el 2026-10-12): el [respaldo
+  automático](https://eleventa.com/aprender/respaldo-automatico) se configura en Configuración ➜ Mantenimiento y puede
+  respaldar al salir; en multicaja queda en `AbarrotesMultiCaja\respaldos` de la PC servidor;
+  [restaurar](https://eleventa.com/aprender/restaurar-eleventa) regresa a la fecha del respaldo y pierde lo de después;
+  la principal debe tener eleventa abierto para que las otras se conecten
+  ([multicaja](https://eleventa.com/aprender/conexion-multicaja)). Su [historial de
+  cambios](https://descargas.eleventa.com/HistorialCambios-Produccion.html) dice que, si el respaldo automático detecta
+  la base dañada, «intenta restaurar de tu respaldo más reciente de forma automática», y que hubo avisos falsos de base
+  dañada con el punto de venta o cajas secundarias abiertas. Si eso pasa con la caja 2 escribiendo, se pierde lo del día
+  en eleventa. Por eso:
+  - el puente detecta una restauración (tickets o turnos que mandó y ya no están, o números que regresan) y entonces
+    deja de escribir y avisa; se reanuda a mano;
+  - el puente hace su propio respaldo diario de eleventa con `gbak` (sirve en Firebird 2.0), antes de la primera
+    escritura del día;
+  - en la tienda se mira, sin cambiar nada: la versión de eleventa, su respaldo automático, la carpeta de respaldos y
+    si existe `gbak.exe` ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-octubre)).
+
+  Sin verificar: si eleventa respalda con `gbak` o copiando el archivo, si saca a las otras cajas mientras respalda, y
+  si la versión de la tienda sigue restaurando sola.
+- **El modo multicaja, al aprobar el piloto (propuesta):** un solo servicio en la caja principal, como quedará al final;
+  la base de la caja 2 se muda ahí y la caja 2 se conecta a él. El puente se muda con él y escribe en el Firebird de la
+  misma PC, una venta a la vez, con el `CAJAS.ID` y el cajero de cada caja. Eleventa sigue abierto en las dos cajas.
+  Al final del día: el corte de la caja 2 y salir de su eleventa, luego el de la principal; el puente cierra el turno de
+  la principal cuando ya no ve eleventa ni su respaldo corriendo. Falta medir que la principal aguante eleventa,
+  Firebird y el servicio juntos.
+- **Para la importación final:** las ventas que mandó el puente ya están en la base nueva; la importación de eleventa
+  las excluye por `VENTATICKETS.ID`, para no contarlas dos veces.
+
 ## Arranque (fase 5)
 
 1. Depuración del catálogo sobre la base importada ([plan](plan.md#depuración-del-inventario)): bajas, duplicados,

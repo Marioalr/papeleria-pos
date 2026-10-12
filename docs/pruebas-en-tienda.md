@@ -2,8 +2,10 @@
 
 > Las pruebas reales en la matriz solo se pueden hacer **sábado y domingo** ([forma de
 > trabajar](notas.md#forma-de-trabajar)). Aquí se junta lo que necesita la tienda, en orden, para prepararlo entre
-> semana y no perder tiempo ahí. Sin tocar los datos de eleventa; su configuración de red solo se cambia en el segundo
-> fin de semana, si el dueño lo aprueba, con respaldo y la forma de regresar.
+> semana y no perder tiempo ahí. Sin tocar los datos de eleventa: en la tienda solo se lee, y escribir en el eleventa
+> real va después de las semanas de prueba contra una copia y con el visto bueno del dueño
+> ([piloto](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)). Su configuración de red
+> solo se cambia en el fin de semana de la red, si el dueño lo aprueba, con respaldo y la forma de regresar.
 
 ## Entre semana, antes de cada fin de semana
 
@@ -14,6 +16,31 @@
 - **Una herramienta de prueba,** probada antes en la PC de desarrollo: lee por SNMP las tres impresoras de inyección y
   manda dos tickets a la vez al puerto 9100 de la impresora de tickets.
 - **Sin compras** (2026-10-09): todo se hace con lo que ya hay en la tienda.
+
+## Fin de semana del 17 y 18 de octubre
+
+Para la siguiente prueba con una persona real y el piloto en la caja 2
+([plan](plan.md#la-versión-unicaja-y-el-piloto-en-la-caja-2)). En la tienda solo se mira y se prueba sin tocar los
+datos de eleventa.
+
+1. **La prueba con una persona real, con la pantalla nueva:** el instalador de prueba armado entre semana con lo último
+   de `main` (su propio puerto y su base de prueba, aparte de eleventa) y la guía al día, en una PC con Windows.
+2. **El paso 7 del piloto:** la pantalla nueva en la ventana de Windows a 1366×768; dos tickets a la vez desde las dos
+   cajas a la impresora de tickets; y el lector: si lee QR, qué manda con los códigos de 11 cifras y su ritmo al
+   teclear.
+3. **Solo mirar, por eleventa**
+   ([por qué](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)):
+   - la versión de eleventa en las dos cajas;
+   - su respaldo automático: si está activo, si respalda al salir, en qué carpeta, y la hora, el tamaño y el tipo de los
+     últimos respaldos;
+   - si existe `gbak.exe` en la carpeta de Firebird (`FirebirdSQL20\bin`) y si Firebird corre como servicio de Windows;
+   - en la caja principal, con `netstat -ano`, qué programa escucha en los puertos 3050 y 3309;
+   - la hora de cada caja contra la del celular;
+   - si OneDrive sincroniza Documentos en la caja 2 (las notas de `observar-en-vivo` son datos reales);
+   - con `observar-en-vivo` en la caja 2: entradas y salidas de dinero, un cierre con diferencia y, si se da, algo
+     después de medianoche.
+4. **Lo que siga pendiente de conocer la tienda** ([abajo](#primer-fin-de-semana-conocer-la-tienda)), si da tiempo y
+   el dueño lo aprueba.
 
 ## Primer fin de semana: conocer la tienda
 
@@ -87,8 +114,9 @@ hora algo no funciona, se regresa todo.
   - en cada cola de impresión, cambiar solo su puerto a «TCP/IP estándar» con la IP de la impresora, sin cambiarle el
     nombre; imprimir una página de prueba y, solo entonces, apagar el WSD en la impresora. Nunca borrar una cola:
     eleventa y Control Print la buscan por su nombre;
-  - en el firewall de Windows de cada caja, permitir el ping y los puertos 3050 y 3309 (los de eleventa) en todos los
-    perfiles de red, solo desde la red local;
+  - en el firewall de Windows de cada caja, permitir el ping y los puertos 3050 y 3309 (los que pide
+    [eleventa](https://eleventa.com/aprender/conexion-multicaja) para que se comuniquen sus cajas) en todos los perfiles
+    de red, solo desde la red local;
   - en el Tenda: UPnP e IPv6 apagados, concesiones largas y el reinicio diario de madrugada (anotar su hora: borra el
     registro). El firmware, al final y solo si sus notas para esa versión de hardware traen un arreglo de seguridad o
     de estabilidad, después del respaldo de su configuración;
@@ -110,7 +138,7 @@ hora algo no funciona, se regresa todo.
   cuatro impresoras impriman y que Control Print cuente. Si el Tenda queda inservible, se vuelve a como estaba antes de
   él: el módem como router y Wi-Fi.
 
-## Después: las dos cajas con el POS
+## Después, al dejar eleventa: las dos cajas con el POS
 
 - **Al llegar, antes de tocar nada:** respaldar eleventa con su propia función y Control Print, y correr el script de
   configuración.

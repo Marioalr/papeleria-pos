@@ -198,6 +198,11 @@ que tiene sentido:
 - Esperar a toda la fase 2 tampoco: lo que más importa probar (la venta y el control) ya está, y los conteos y las
   etiquetas se suman después.
 
+**Avance (2026-10-12):** la primera prueba fue el 2026-10-10 con la pantalla de hoy. Según el dueño fue precaria: la
+pantalla era muy mala, y por eso se rediseñó la interfaz; la propuesta lo convenció. Antes del siguiente fin de semana
+(17 y 18 de octubre) la pantalla nueva tiene que estar lista para la siguiente prueba
+([propuesta](propuesta-interfaz.md)).
+
 La preparación (instalador, guía, simulaciones) se hace al cerrar esa entrega. Desde ahí, cada entrega agrega sus
 tareas a la guía y la prueba se puede repetir con la versión nueva (con los conteos de la entrega 3, por ejemplo).
 
@@ -446,6 +451,17 @@ visual (entrega 2). Para el piloto hace falta, en este orden:
   piloto, la caja 2 guarda todo en su propia base y a la caja principal le manda solo lo necesario para que su eleventa
   lo registre como una venta más. Lo de eleventa vive en el puente (`PapeleriaPos.Eleventa` y la bandeja de salida).
   Más adelante habrá una opción para exportar la base a una versión de eleventa.
+- **Decidido por el dueño (2026-10-12):**
+  - **Solo efectivo en la caja 2 durante el piloto:** tarjeta, transferencia, crédito, saldo a favor y cobro mixto se
+    desactivan mientras la caja 2 manda sus ventas a eleventa.
+  - **Eleventa no se cierra en la caja 2:** si algo falla, se cambia a eleventa de inmediato. Las dos venden en el mismo
+    turno de esa caja.
+  - **Devoluciones y cancelaciones de ida y vuelta:** la caja 2 devuelve tickets cobrados en eleventa, y lo que se
+    devuelve o cancela en eleventa de un ticket de la caja 2 regresa a su base.
+  - **La regla de adaptación:** lo que solo sirve para convivir con eleventa se distingue de lo que se queda cuando se
+    apruebe todo; lo primero vive en el puente y se quita al dejar eleventa.
+  - **Al aprobar el piloto, el modo multicaja:** las dos cajas con la caja nueva, para que las dos se sigan
+    acostumbrando. Antes hay que revisar las copias de seguridad que eleventa suele hacer al cerrarse.
 
 **Avance (2026-10-10):** el paso 1 está hecho ([cómo funciona](migracion-eleventa.md#la-lectura-de-cada-pocos-minutos-paso-1)).
 El servicio de la caja 2 lee eleventa por la red cada pocos minutos, solo leyendo, y pone al día su base: altas,
@@ -525,10 +541,10 @@ para esos días ([forma de trabajar](notas.md#forma-de-trabajar), [guía de los 
 | **Reportes de ventas:** día contra hace un año (el mismo día de la semana o la misma fecha: por decidir), mes y año a la fecha contra el año anterior, meses cerrados; venta neta, tickets, ticket promedio, costo, utilidad y margen; por departamento, caja, cajero y forma de pago; exportar a Excel y líneas en el resumen de Telegram; la utilidad solo la ve el dueño. El año anterior sale del historial de eleventa (su utilidad, con el costo capturado en eleventa) | [Notas](notas.md#reportes) | Pospuesto: después de la prueba con una persona real y su aprobación (2026-10-09) |
 | **Ganancia real del mes:** el reporte (gastos fijos, consumibles del mes, recibo de luz, equipo con su depreciación y comisión de la tarjeta; utilidad bruta − mermas y faltantes − gastos = ganancia; punto de equilibrio y cierre del mes por Telegram). La captura de cada gasto cuando se paga no se pospone: propuesta, por aprobar, hacerla con la entrega 3 de la fase 3 (consumibles del mes), para todos los gastos | [Administración](#administración-y-punto-de-equilibrio), [servicios](servicios.md#tres-niveles-de-costo) | El reporte, pospuesto: después de la prueba con una persona real y su aprobación (2026-10-09) |
 | Fusionar a `main`, en orden, los PR abiertos (#27 en adelante) | `main` llega hasta la entrega 2 de la fase 3 | Hecho el 2026-10-10: del #27 al #52, con el #45. En Windows pasan todas las pruebas |
-| Probar en Windows con las dos cajas reales: servicio, alta de la caja 2, contingencia, respaldos, ventana de la caja y ticket desde las dos (el cajón, cuando lo haya) | Fase 1, entregas 1 y 3 | Falta: un sábado o domingo, sin tocar los datos de eleventa ([guía](pruebas-en-tienda.md#después-las-dos-cajas-con-el-pos)) |
+| Probar en Windows con las dos cajas reales: servicio, alta de la caja 2, contingencia, respaldos, ventana de la caja y ticket desde las dos (el cajón, cuando lo haya) | Fase 1, entregas 1 y 3 | Falta: un sábado o domingo, sin tocar los datos de eleventa ([guía](pruebas-en-tienda.md#después-al-dejar-eleventa-las-dos-cajas-con-el-pos)) |
 | Crear el bot de Telegram de verdad y probarlo | Fase 1, entrega 4 | Falta |
 | Probar la impresión con la cola de laboratorio y después con la real | Fase 1, entrega 5 | Falta |
-| Prueba con una persona real | [Ver arriba](#prueba-con-una-persona-real) | Hecha en el PR #31, ya en `main`; falta instalarla en una PC con Windows limpia y dársela a quien prueba. Su hito ya pasó |
+| Prueba con una persona real | [Ver arriba](#prueba-con-una-persona-real) | La primera fue el 2026-10-10, con la pantalla de hoy, y fue precaria (por eso el rediseño). La siguiente es el fin de semana del 17 y 18 de octubre, con la pantalla nueva lista; de su aprobación dependen los reportes |
 | Medir un día pico (~120 tickets) con las dos cajas, en la caja principal real | Hace falta el simulador de cajas (no existe; [descrito aquí](prueba-sucursales-linux.md#lo-que-hay-que-arreglar-o-construir)) | Falta |
 | Precios y clientes | [Fase 3](fase-3-precios-clientes.md) | Las entregas 1 y 2 ya están en `main`. Propuesta, por aprobar: que la entrega 3 (consumibles del mes) capture todos los gastos del mes cuando se pagan; el reporte de la ganancia va con los reportes |
 | Servicios con costo real (engargolado y enmicado con depreciación, luz y consumibles; impresiones por impresora), pedidos y WhatsApp desde la PC. Apartados y cotizaciones guardadas quedan como mejora: el eleventa de la tienda no los tiene | Fase 4 ([servicios](servicios.md), [pedidos](pedidos.md), [WhatsApp](whatsapp.md)) | Falta su plan |
@@ -612,7 +628,9 @@ hecha en el PR #31):
 - [x] Guía de prueba dentro de la caja, con las respuestas en un archivo
 - [x] Simular lo que no hay: ticket en pantalla, avisos de Telegram en una lista, impresiones de ejemplo
 - [x] Franja de prueba y botón para empezar de cero
-- [ ] Instalarlo en una PC con Windows limpia antes de dárselo a quien prueba
+- [x] Instalarlo y dárselo a quien prueba: la primera prueba fue el 2026-10-10, con la pantalla de hoy
+- [ ] La siguiente prueba, con la pantalla nueva lista, el fin de semana del 17 y 18 de octubre (decisión del dueño,
+  2026-10-12)
 
 Fase 3:
 
@@ -623,6 +641,26 @@ Fase 3:
 - [x] Entrega 2: clientes registrados y crédito
 - [ ] Entrega 3: consumibles del mes
 - [ ] Promociones y kits: antes del próximo regreso a clases
+
+Piloto en la caja 2 ([ver arriba](#la-versión-unicaja-y-el-piloto-en-la-caja-2)):
+
+- [x] Paso 1: leer eleventa cada pocos minutos (PR #64 y #65; probado en la tienda, solo leyendo, el 2026-10-11)
+- [x] Paso 2: cómo escribe eleventa una venta (PR #66; visto en vivo en la tienda, solo leyendo)
+- [x] Paso 3: mandar cada venta con la bandeja de salida (PR #67 y #69), en código; todavía no se escribe en el eleventa
+  real
+- [x] Paso 4: cancelaciones, devoluciones, turno, corte y entradas y salidas (PR #70, #72 y #73), en código
+- [ ] Los riesgos verificados el 2026-10-12: el cobro espera el último escaneo y «Pagó con» no toma escaneos como
+  dinero; solo efectivo en la caja 2; la lectura de eleventa respeta lo que sigue en la bandeja
+- [ ] Paso 6, la entrega 10: la base de la caja 2 contra apagones y su respaldo
+- [ ] Lo que falta del diseño, por aprobar: eleventa abierto en la caja 2 en el mismo turno, devoluciones de ida y
+  vuelta, folios repetidos, y los respaldos de eleventa y su restauración automática
+  ([diseño](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))
+- [ ] Paso 5: semanas de prueba contra una copia servida por un Firebird 2.0.1 como el de la tienda
+- [ ] Paso 7: el fin de semana del 17 y 18 de octubre
+  ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-octubre))
+- [ ] La primera escritura en el eleventa real, con el visto bueno del dueño
+- [ ] Paso 8: enseñar a quien atiende la caja 2
+- [ ] Al aprobar el piloto: el modo multicaja (decisión del dueño, 2026-10-12)
 
 Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
 
@@ -683,6 +721,9 @@ Depuración del inventario (antes del piloto, [ver arriba](#depuración-del-inve
 
 Por definir:
 
+- [ ] Corte Z de la caja 2 durante el piloto, con eleventa abierto en la misma caja: ¿un solo conteo a ciegas en la
+  caja nueva, que cierra el turno de eleventa con lo contado (propuesta), o se sigue haciendo en eleventa como hoy y la
+  caja nueva toma ese corte? ([diseño](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))
 - [x] Revisar la [propuesta de rediseño de la interfaz](propuesta-interfaz.md) con su prototipo: aprobada el 2026-10-10
 - [x] Las preguntas de la venta para la entrega 0 (2026-10-10): rápidos Copia B/N ($2) y CURP ($10, 10 impresiones);
   sin billetes rápidos (se escribe lo que dio); sin sonidos por ahora
