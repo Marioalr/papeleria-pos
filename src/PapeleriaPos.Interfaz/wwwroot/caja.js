@@ -119,6 +119,25 @@ function alPresionar(e) {
         return;
     }
 
+    // La lista con familias (pantalla nueva): → despliega la elegida (solo con el cursor al final del texto, para no
+    // estorbar al corregir), ← y Esc la cierran y Tab despliega por otra cosa. Sin la lista, hacen lo de siempre.
+    const lista = !hayVentana && esCaptura(campo) ? document.querySelector('[data-familias]') : null;
+    if (lista && !e.ctrlKey && !e.altKey) {
+        const abierta = lista.querySelector('.vn-res-valor') !== null;
+        const alFinal = campo.selectionStart === campo.value.length && campo.selectionEnd === campo.value.length;
+        const familia = tecla === 'ArrowRight' && alFinal && !e.shiftKey ? 'ArrowRight'
+            : tecla === 'ArrowLeft' && abierta && !e.shiftKey ? 'ArrowLeft'
+                : tecla === 'Tab' ? (e.shiftKey ? 'Shift+Tab' : 'Tab')
+                    : tecla === 'Escape' && abierta ? 'Escape-familia'
+                        : null;
+        if (familia) {
+            e.preventDefault();
+            e.stopPropagation();
+            pantalla.invokeMethodAsync('Tecla', familia, campo.value);
+            return;
+        }
+    }
+
     let atrapar;
     if (hayVentana) {
         atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlU;

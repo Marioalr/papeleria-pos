@@ -13,9 +13,10 @@ namespace PapeleriaPos.Servicio;
 /// </summary>
 public sealed class CatalogoEnMemoria
 {
+    /// <param name="Partes">El nombre en pedazos (color, medida, marca…): la caja junta con eso las familias de la lista.</param>
     private sealed record Articulo(
         Guid VarianteId, string Descripcion, string? Codigo, string Normalizado, Impuesto Impuesto, UnidadBase Unidad, bool LlevaInventario,
-        List<PresentacionDto> Presentaciones, List<PrecioDto> Precios)
+        List<PresentacionDto> Presentaciones, List<PrecioDto> Precios, IReadOnlyList<ParteDeNombre> Partes)
     {
         /// <summary>
         /// Las palabras del nombre, la marca y los códigos: cada pedazo escrito tiene que ser el principio de una. Van
@@ -132,10 +133,16 @@ public sealed class CatalogoEnMemoria
             .ToListAsync(ct);
         var codigosPorVariante = codigos.ToLookup(c => c.VarianteId);
 
+        static string Descripcion(string producto, string? marca, string? descripcion) =>
+            string.Join(" ", new[] { producto, marca, descripcion }.Where(p => !string.IsNullOrWhiteSpace(p)));
+        // Las marcas se aprenden de todo el catálogo; también valen las dadas de alta.
+        var nombres = new LectorDeNombres(variantes.Select(v => Descripcion(v.Producto, v.Marca, v.Descripcion)),
+            variantes.Select(v => v.Marca).OfType<string>().Distinct());
+
         var porVariante = new Dictionary<Guid, Articulo>();
         foreach (var v in variantes)
         {
-            var descripcion = string.Join(" ", new[] { v.Producto, v.Marca, v.Descripcion }.Where(p => !string.IsNullOrWhiteSpace(p)));
+            var descripcion = Descripcion(v.Producto, v.Marca, v.Descripcion);
             var codigo = codigosPorVariante[v.Id].OrderByDescending(c => c.EsBase).Select(c => c.Codigo).FirstOrDefault();
             var todosLosCodigos = string.Join(" ", codigosPorVariante[v.Id].Select(c => c.Codigo));
             porVariante[v.Id] = new Articulo(
@@ -143,7 +150,8 @@ public sealed class CatalogoEnMemoria
                 v.Tipo == TipoProducto.Mercancia,
                 presentaciones[v.Id].OrderByDescending(p => p.EsBase).ThenBy(p => p.Factor)
                     .Select(p => new PresentacionDto(p.Id, p.Nombre, p.Factor.Milesimas, p.EsBase)).ToList(),
-                precios[v.Id].Select(p => new PrecioDto(p.Id, p.PresentacionId, p.SucursalId, p.CantidadMinima.Milesimas, p.PrecioCentavos)).ToList());
+                precios[v.Id].Select(p => new PrecioDto(p.Id, p.PresentacionId, p.SucursalId, p.CantidadMinima.Milesimas, p.PrecioCentavos)).ToList(),
+                nombres.Leer(descripcion));
         }
 
         var porCodigo = new Dictionary<string, (Guid, Guid)>(StringComparer.OrdinalIgnoreCase);
@@ -201,7 +209,8 @@ public sealed class CatalogoEnMemoria
         var existencias = await ExistenciasAsync(db, encontrados.Select(a => a.VarianteId).ToList(), sucursalId, ct);
         return encontrados.Select(a => new ResultadoBusquedaDto(
             a.VarianteId, a.Descripcion, a.Codigo, PrecioMenudeo(a, sucursalId),
-            a.LlevaInventario ? existencias.GetValueOrDefault(a.VarianteId) : null)).ToList();
+            a.LlevaInventario ? existencias.GetValueOrDefault(a.VarianteId) : null,
+            vendidos.GetValueOrDefault(a.VarianteId), a.Partes)).ToList();
     }
 
     /// <summary>Todo el catálogo vendible de una sucursal, con existencias: la copia de una caja para vender sin conexión.</summary>

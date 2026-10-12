@@ -50,6 +50,9 @@ public sealed class Contingencia
             Normalizado = p.Productos.ToDictionary(x => x.VarianteId,
                 x => Texto.Normalizar($"{x.Descripcion} {string.Join(" ", codigos[x.VarianteId].Select(c => c.Codigo))}"));
             Presentaciones = p.Productos.SelectMany(x => x.Presentaciones).GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First());
+            // Las familias de la búsqueda, igual que en línea: las marcas salen de esta copia del catálogo.
+            var nombres = new LectorDeNombres(p.Productos.Select(x => x.Descripcion), p.Marcas);
+            Partes = p.Productos.ToDictionary(x => x.VarianteId, x => nombres.Leer(x.Descripcion));
             Usuarios = p.Usuarios.ToDictionary(u => u.Usuario.Trim().ToLowerInvariant());
             UsuariosPorId = p.Usuarios.ToDictionary(u => u.Id);
             Reglas = p.Reglas.Select(r => new ReglaPermiso
@@ -63,6 +66,7 @@ public sealed class Contingencia
         public Dictionary<string, CodigoLocalDto> PorCodigo { get; }
         public Dictionary<Guid, string> Normalizado { get; }
         public Dictionary<Guid, PresentacionDto> Presentaciones { get; }
+        public Dictionary<Guid, IReadOnlyList<ParteDeNombre>> Partes { get; }
         public Dictionary<string, UsuarioLocalDto> Usuarios { get; }
         public Dictionary<Guid, UsuarioLocalDto> UsuariosPorId { get; }
         public List<ReglaPermiso> Reglas { get; }
@@ -555,7 +559,7 @@ public sealed class Contingencia
             .ThenByDescending(p => datos.Normalizado[p.VarianteId].StartsWith(consulta, StringComparison.Ordinal))
             .ThenBy(p => p.Descripcion, StringComparer.CurrentCultureIgnoreCase)
             .Take(maximo)
-            .Select(p => new ResultadoBusquedaDto(p.VarianteId, p.Descripcion, p.Codigo, PrecioMenudeo(p), p.Existencia))
+            .Select(p => new ResultadoBusquedaDto(p.VarianteId, p.Descripcion, p.Codigo, PrecioMenudeo(p), p.Existencia, Partes: datos.Partes[p.VarianteId]))
             .ToList();
     }
 
