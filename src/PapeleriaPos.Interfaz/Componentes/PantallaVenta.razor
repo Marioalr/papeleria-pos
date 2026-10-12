@@ -169,7 +169,7 @@
                                     {
                                         <div id="res-@idRenglon" class="vn-res @(activo ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, -1)">
                                             <div class="vn-res-texto">
-                                                <div class="vn-res-nombre">@Marcado(r.Descripcion)</div>
+                                                <div class="vn-res-nombre">@Marcado(r.Descripcion)@PorSinonimo(r)</div>
                                                 @if (r.Codigo is { } codigoRes)
                                                 {
                                                     <div class="vn-res-sub"><code>@Marcado(codigoRes)</code></div>
@@ -184,7 +184,7 @@
                                     var eje = renglon.Eje!.Value;
                                     <div id="res-@idRenglon" class="vn-res vn-fam @(activo ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, -1)">
                                         <div class="vn-res-texto">
-                                            <div class="vn-res-nombre">@Marcado(renglon.Titulo!)</div>
+                                            <div class="vn-res-nombre">@Marcado(renglon.Titulo!)@PorSinonimo(r)</div>
                                             <div class="vn-valores">
                                                 @for (var v = 0; v < Math.Min(renglon.Valores.Count, ValoresALaVista); v++)
                                                 {
@@ -1834,6 +1834,11 @@ else
             : @<span class="vn-punto surtido"></span>;
 
     private static string ExistenciaClase(decimal? existencia) => existencia is <= 0 ? "nada" : existencia is <= 3 ? "poca" : "";
+
+    /// <summary>Si salió por un sinónimo de la tienda, por cuál: así se va aprendiendo cómo se llama.</summary>
+    private static RenderFragment PorSinonimo(ResultadoBusquedaDto r) => r.PorSinonimo is { } palabra
+        ? @<span class="vn-via" title="Sinónimo de la tienda (Configuración › Sinónimos)">por «@palabra»</span>
+        : _ => { };
 
     /// <summary>Cuántas fichas para afinar se ven.</summary>
     private const int FichasParaAfinar = 7;

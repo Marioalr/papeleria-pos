@@ -519,6 +519,39 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("HojaCodigos", (string)null);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Sinonimo", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Equivale")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ModificadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Palabra")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Version");
+
+                    b.HasIndex("Palabra", "Equivale")
+                        .IsUnique();
+
+                    b.ToTable("Sinonimos");
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Sucursal", b =>
                 {
                     b.Property<Guid>("Id")

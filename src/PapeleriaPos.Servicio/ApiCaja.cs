@@ -83,7 +83,7 @@ public static class ApiCaja
         api.MapGet("/productos/buscar", async (string q, Guid sucursalId, Guid? cajaId, int? maximo, PosDbContext db, CatalogoEnMemoria catalogo) =>
             await catalogo.BuscarAsync(db, q, sucursalId, Math.Clamp(maximo ?? 30, 1, 300), cajaId: cajaId));
 
-        // Lo que se buscó y qué se eligió: lo elegido sale primero la próxima vez en esa caja; lo que no salió se revisa en Productos.
+        // Lo que se buscó y qué se eligió: lo elegido sale primero la próxima vez en esa caja.
         api.MapPost("/busquedas", async (SolicitudBusqueda s, PosDbContext db, CatalogoEnMemoria catalogo) =>
         {
             var texto = CatalogoEnMemoria.ClaveDeBusqueda(s.Texto);

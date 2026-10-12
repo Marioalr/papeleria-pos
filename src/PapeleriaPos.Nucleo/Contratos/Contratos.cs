@@ -46,9 +46,18 @@ public sealed record ProductoVentaDto(
 /// <param name="Vendidos">Cuántas veces se vendió en 90 días: en una familia, Enter agrega el más vendido.</param>
 /// <param name="Partes">El nombre en pedazos (color, medida, marca…), para juntar las familias en la lista.</param>
 /// <param name="Parecido">Nada coincidía exacto: salió por un error de dedo («sobre manial»).</param>
+/// <param name="PorSinonimo">La palabra de la tienda por la que salió («boligrafo», si su nombre dice «Lapicero»).</param>
 public sealed record ResultadoBusquedaDto(
     Guid VarianteId, string Descripcion, string? Codigo, long PrecioCentavos, decimal? Existencia, int Vendidos = 0,
-    IReadOnlyList<ParteDeNombre>? Partes = null, bool Parecido = false);
+    IReadOnlyList<ParteDeNombre>? Partes = null, bool Parecido = false, string? PorSinonimo = null);
+
+/// <summary>Un sinónimo de la tienda: al escribir <paramref name="Palabra"/> también sale lo que se llama <paramref name="Equivale"/>.</summary>
+public sealed record SinonimoDto(Guid Id, string Palabra, string Equivale);
+
+/// <param name="AlReves">También al revés: al escribir lo que equivale, sale lo de la palabra.</param>
+public sealed record SolicitudSinonimo(Guid UsuarioId, Guid SucursalId, string Palabra, string Equivale, bool AlReves);
+
+public sealed record SolicitudQuitarSinonimo(Guid UsuarioId, Guid SucursalId);
 
 /// <summary>Lo que se buscó en una caja y qué se eligió (vacío: no salió nada o no se eligió nada).</summary>
 public sealed record SolicitudBusqueda(Guid CajaId, string Texto, int Resultados, Guid? VarianteId);
@@ -265,7 +274,7 @@ public sealed record PaqueteContingenciaDto(
     IReadOnlyList<ReglaDto> Reglas,
     IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, int UltimoFolio, long? LimiteEfectivoCentavos,
     IReadOnlyList<ClienteRegistradoDto>? Clientes = null, IReadOnlyList<ClienteRegistradoDto>? Registrados = null,
-    IReadOnlyList<string>? Marcas = null);
+    IReadOnlyList<string>? Marcas = null, IReadOnlyList<SinonimoDto>? Sinonimos = null);
 
 // Lo que sube con la bandeja. Cada cosa lleva el ID que le dio la caja: si llega dos veces, se guarda una.
 

@@ -330,6 +330,10 @@ td.acciones-renglon { white-space: nowrap; text-align: right; }
 .cobrar-credito legend { font-weight: 600; padding: 0 4px; }
 .movimientos-credito td.debe { color: #8a1c17; }
 
+/* Configuración › Sinónimos: el alta en una fila */
+.sinonimos-alta { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin: 8px 0; }
+.sinonimos-alta label { display: flex; flex-direction: column; gap: 3px; }
+
 /* ── La pantalla de venta nueva (docs/propuesta-interfaz.md): los colores, letras y medidas del prototipo ── */
 .venta-nueva {
     --vn-papel: #eceff3;
@@ -441,6 +445,7 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-ejes > button:hover { border-color: var(--vn-tinta); }
 .vn-ejes > button.activo { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; font-weight: 600; }
 .vn-ejes > small { margin-left: 6px; font-size: 12px; color: var(--vn-tenue); }
+.vn-via { margin-left: 8px; font-size: 11.5px; font-weight: 600; color: var(--vn-tinta); background: var(--vn-tinta-claro); border-radius: 999px; padding: 1px 7px; vertical-align: 2px; white-space: nowrap; }
 .vn-afinar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 0 10px 6px; }
 .vn-afinar > span { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--vn-tenue); margin-right: 4px; }
 .vn-afinar > button { font: inherit; font-size: 12.5px; color: var(--vn-tinta-hover); border: 1px dashed var(--vn-tinta-medio); background: var(--vn-hoja); border-radius: 999px; padding: 2px 9px; cursor: pointer; }

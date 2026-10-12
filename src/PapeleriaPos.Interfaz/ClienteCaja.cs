@@ -239,6 +239,15 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
             $"api/catalogo/productos?sucursalId={sucursalId}&q={Uri.EscapeDataString(texto ?? "")}"
             + (departamentoId is { } d ? $"&departamentoId={d}" : "") + $"&porCompletar={porCompletar}&inactivos={inactivos}") ?? []);
 
+    public Task<List<SinonimoDto>> SinonimosAsync() =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<List<SinonimoDto>>("api/catalogo/sinonimos"))!);
+
+    public Task<List<SinonimoDto>> AgregarSinonimoAsync(SolicitudSinonimo solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<List<SinonimoDto>>("api/catalogo/sinonimos", solicitud));
+
+    public Task<List<SinonimoDto>> QuitarSinonimoAsync(Guid id, SolicitudQuitarSinonimo solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<List<SinonimoDto>>($"api/catalogo/sinonimos/{id}/quitar", solicitud));
+
     public Task<OpcionesCatalogoDto> OpcionesCatalogoAsync() =>
         ConRespaldoAsync(async () => (await _http.GetAsync<OpcionesCatalogoDto>("api/catalogo/opciones"))!);
 

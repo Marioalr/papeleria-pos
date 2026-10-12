@@ -55,6 +55,7 @@ public sealed class Contingencia
                 x => Texto.Normalizar($"{x.Descripcion} {string.Join(" ", codigos[x.VarianteId].Select(c => c.Codigo))} "
                     + string.Join(" ", Partes[x.VarianteId].Select(parte => parte.Clave))));
             Palabras = Normalizado.ToDictionary(x => x.Key, x => x.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+            Sinonimos = new SinonimosDeBusqueda((p.Sinonimos ?? []).Select(s => (s.Palabra, s.Equivale)));
             Presentaciones = p.Productos.SelectMany(x => x.Presentaciones).GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First());
             Usuarios = p.Usuarios.ToDictionary(u => u.Usuario.Trim().ToLowerInvariant());
             UsuariosPorId = p.Usuarios.ToDictionary(u => u.Id);
@@ -71,6 +72,8 @@ public sealed class Contingencia
 
         /// <summary>Las palabras de cada producto, para el error de dedo.</summary>
         public Dictionary<Guid, string[]> Palabras { get; }
+
+        public SinonimosDeBusqueda Sinonimos { get; }
 
         public Dictionary<Guid, PresentacionDto> Presentaciones { get; }
         public Dictionary<Guid, IReadOnlyList<ParteDeNombre>> Partes { get; }
@@ -560,22 +563,32 @@ public sealed class Contingencia
             return [];
         var datos = Datos;
         var consulta = Texto.Normalizar(texto);
-        var candidatos = datos.Paquete.Productos.Where(p => palabras.All(datos.Normalizado[p.VarianteId].Contains)).ToList();
+        // Cada pedazo vale por sí mismo o por los sinónimos de la tienda, como en línea.
+        var pedazos = palabras.Select(w => (Pedazo: w, Sinonimos: datos.Sinonimos.De(w))).ToList();
+        bool Directo(ProductoVentaDto p, string w) => datos.Normalizado[p.VarianteId].Contains(w, StringComparison.Ordinal);
+        var candidatos = datos.Paquete.Productos
+            .Where(p => pedazos.All(x => Directo(p, x.Pedazo) || x.Sinonimos.Any(s => Directo(p, s.Equivale)))).ToList();
         // Si nada coincide, un error de dedo, como en línea.
         var parecido = false;
         if (candidatos.Count == 0)
         {
-            candidatos = datos.Paquete.Productos.Where(p => palabras.All(w => ErrorDeDedo.Coincide(w, datos.Palabras[p.VarianteId]))).ToList();
+            candidatos = datos.Paquete.Productos
+                .Where(p => pedazos.All(x => ErrorDeDedo.Coincide(x.Pedazo, datos.Palabras[p.VarianteId]) || x.Sinonimos.Any(s => Directo(p, s.Equivale))))
+                .ToList();
             parecido = candidatos.Count > 0;
         }
+        string? PorSinonimo(ProductoVentaDto p) =>
+            pedazos.Where(x => !Directo(p, x.Pedazo)).SelectMany(x => x.Sinonimos).Where(s => Directo(p, s.Equivale))
+                .Select(s => s.Palabra.ToLowerInvariant()).FirstOrDefault();
         return candidatos
             .OrderByDescending(p => p.Codigo is not null && string.Equals(p.Codigo, texto.Trim(), StringComparison.OrdinalIgnoreCase))
-            .ThenByDescending(p => parecido ? palabras.Count(datos.Normalizado[p.VarianteId].Contains) : 0)
+            .ThenByDescending(p => parecido ? palabras.Count(w => Directo(p, w)) : 0)
+            .ThenBy(p => PorSinonimo(p) is not null)
             .ThenByDescending(p => datos.Normalizado[p.VarianteId].StartsWith(consulta, StringComparison.Ordinal))
             .ThenBy(p => p.Descripcion, StringComparer.CurrentCultureIgnoreCase)
             .Take(maximo)
             .Select(p => new ResultadoBusquedaDto(p.VarianteId, p.Descripcion, p.Codigo, PrecioMenudeo(p), p.Existencia,
-                Partes: datos.Partes[p.VarianteId], Parecido: parecido))
+                Partes: datos.Partes[p.VarianteId], Parecido: parecido, PorSinonimo: PorSinonimo(p)))
             .ToList();
     }
 
