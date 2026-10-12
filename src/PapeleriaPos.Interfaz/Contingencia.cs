@@ -47,12 +47,15 @@ public sealed class Contingencia
             foreach (var c in p.Codigos)
                 PorCodigo.TryAdd(c.Codigo, c);
             var codigos = p.Codigos.ToLookup(c => c.VarianteId);
-            Normalizado = p.Productos.ToDictionary(x => x.VarianteId,
-                x => Texto.Normalizar($"{x.Descripcion} {string.Join(" ", codigos[x.VarianteId].Select(c => c.Codigo))}"));
-            Presentaciones = p.Productos.SelectMany(x => x.Presentaciones).GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First());
             // Las familias de la búsqueda, igual que en línea: las marcas salen de esta copia del catálogo.
             var nombres = new LectorDeNombres(p.Productos.Select(x => x.Descripcion), p.Marcas);
             Partes = p.Productos.ToDictionary(x => x.VarianteId, x => nombres.Leer(x.Descripcion));
+            // También se busca por lo que lee la caja del nombre: «negro» encuentra «Negra», «surtido» los «V/Colores».
+            Normalizado = p.Productos.ToDictionary(x => x.VarianteId,
+                x => Texto.Normalizar($"{x.Descripcion} {string.Join(" ", codigos[x.VarianteId].Select(c => c.Codigo))} "
+                    + string.Join(" ", Partes[x.VarianteId].Select(parte => parte.Clave))));
+            Palabras = Normalizado.ToDictionary(x => x.Key, x => x.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+            Presentaciones = p.Productos.SelectMany(x => x.Presentaciones).GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First());
             Usuarios = p.Usuarios.ToDictionary(u => u.Usuario.Trim().ToLowerInvariant());
             UsuariosPorId = p.Usuarios.ToDictionary(u => u.Id);
             Reglas = p.Reglas.Select(r => new ReglaPermiso
@@ -65,6 +68,10 @@ public sealed class Contingencia
         public Dictionary<Guid, ProductoVentaDto> PorVariante { get; }
         public Dictionary<string, CodigoLocalDto> PorCodigo { get; }
         public Dictionary<Guid, string> Normalizado { get; }
+
+        /// <summary>Las palabras de cada producto, para el error de dedo.</summary>
+        public Dictionary<Guid, string[]> Palabras { get; }
+
         public Dictionary<Guid, PresentacionDto> Presentaciones { get; }
         public Dictionary<Guid, IReadOnlyList<ParteDeNombre>> Partes { get; }
         public Dictionary<string, UsuarioLocalDto> Usuarios { get; }
@@ -553,13 +560,22 @@ public sealed class Contingencia
             return [];
         var datos = Datos;
         var consulta = Texto.Normalizar(texto);
-        return datos.Paquete.Productos
-            .Where(p => palabras.All(datos.Normalizado[p.VarianteId].Contains))
+        var candidatos = datos.Paquete.Productos.Where(p => palabras.All(datos.Normalizado[p.VarianteId].Contains)).ToList();
+        // Si nada coincide, un error de dedo, como en línea.
+        var parecido = false;
+        if (candidatos.Count == 0)
+        {
+            candidatos = datos.Paquete.Productos.Where(p => palabras.All(w => ErrorDeDedo.Coincide(w, datos.Palabras[p.VarianteId]))).ToList();
+            parecido = candidatos.Count > 0;
+        }
+        return candidatos
             .OrderByDescending(p => p.Codigo is not null && string.Equals(p.Codigo, texto.Trim(), StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(p => parecido ? palabras.Count(datos.Normalizado[p.VarianteId].Contains) : 0)
             .ThenByDescending(p => datos.Normalizado[p.VarianteId].StartsWith(consulta, StringComparison.Ordinal))
             .ThenBy(p => p.Descripcion, StringComparer.CurrentCultureIgnoreCase)
             .Take(maximo)
-            .Select(p => new ResultadoBusquedaDto(p.VarianteId, p.Descripcion, p.Codigo, PrecioMenudeo(p), p.Existencia, Partes: datos.Partes[p.VarianteId]))
+            .Select(p => new ResultadoBusquedaDto(p.VarianteId, p.Descripcion, p.Codigo, PrecioMenudeo(p), p.Existencia,
+                Partes: datos.Partes[p.VarianteId], Parecido: parecido))
             .ToList();
     }
 

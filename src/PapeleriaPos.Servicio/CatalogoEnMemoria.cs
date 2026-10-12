@@ -20,10 +20,12 @@ public sealed class CatalogoEnMemoria
     {
         /// <summary>
         /// Las palabras del nombre, la marca y los códigos: cada pedazo escrito tiene que ser el principio de una. Van
-        /// tal cual («3/4», «LIB-01») y también partidas en lo que no es letra ni número («(azul)» → «azul»).
+        /// tal cual («3/4», «LIB-01») y también partidas en lo que no es letra ni número («(azul)» → «azul»). También lo
+        /// que lee la caja del nombre: «negro» encuentra «Negra», «surtido» los «V/Colores» y «1mm» el «1.0 Mm».
         /// </summary>
         public string[] Palabras { get; } = Normalizado.Split(' ', StringSplitOptions.RemoveEmptyEntries)
             .Concat(System.Text.RegularExpressions.Regex.Split(Normalizado, @"[^\p{L}\p{N}]+"))
+            .Concat(Partes.SelectMany(p => p.Clave.Split(' ')))
             .Where(p => p.Length > 0).Distinct().ToArray();
     }
 
@@ -196,9 +198,20 @@ public sealed class CatalogoEnMemoria
             await CargarElegidoAsync(db, ct);
             elegido = _elegido.TryGetValue((caja, consulta), out var v) ? v : null;
         }
-        var encontrados = indice.PorVariante.Values
+        var candidatos = indice.PorVariante.Values
             .Where(a => palabras.All(p => a.Palabras.Any(w => w.StartsWith(p, StringComparison.Ordinal))))
+            .ToList();
+        // Si nada coincide exacto, un error de dedo: lo parecido, en lugar de «no existe».
+        var parecido = false;
+        if (candidatos.Count == 0)
+        {
+            candidatos = indice.PorVariante.Values.Where(a => palabras.All(p => ErrorDeDedo.Coincide(p, a.Palabras))).ToList();
+            parecido = candidatos.Count > 0;
+        }
+        var encontrados = candidatos
             .OrderByDescending(a => a.Codigo is not null && string.Equals(a.Codigo, texto.Trim(), StringComparison.OrdinalIgnoreCase))
+            // Entre los parecidos, primero los que coinciden exacto en más palabras («pluma pumto» antes que el plumón).
+            .ThenByDescending(a => parecido ? palabras.Count(p => a.Palabras.Any(w => w.StartsWith(p, StringComparison.Ordinal))) : 0)
             .ThenByDescending(a => a.VarianteId == elegido)
             .ThenByDescending(a => a.Normalizado.StartsWith(consulta, StringComparison.Ordinal))
             .ThenByDescending(a => vendidos.GetValueOrDefault(a.VarianteId))
@@ -210,7 +223,7 @@ public sealed class CatalogoEnMemoria
         return encontrados.Select(a => new ResultadoBusquedaDto(
             a.VarianteId, a.Descripcion, a.Codigo, PrecioMenudeo(a, sucursalId),
             a.LlevaInventario ? existencias.GetValueOrDefault(a.VarianteId) : null,
-            vendidos.GetValueOrDefault(a.VarianteId), a.Partes)).ToList();
+            vendidos.GetValueOrDefault(a.VarianteId), a.Partes, parecido)).ToList();
     }
 
     /// <summary>Todo el catálogo vendible de una sucursal, con existencias: la copia de una caja para vender sin conexión.</summary>

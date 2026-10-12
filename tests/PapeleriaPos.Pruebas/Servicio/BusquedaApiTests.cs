@@ -38,8 +38,9 @@ public class BusquedaApiTests(ServicioDePrueba servicio) : IClassFixture<Servici
 
         Assert.NotEmpty(resultados);
         Assert.All(resultados, r => Assert.StartsWith("Pluma de gel", r.Descripcion));
-        // «unto» está dentro de «punto», pero no es el principio de ninguna palabra.
-        Assert.Empty(await BuscarAsync(http, "unto fino", caja.SucursalId));
+        // «unto» está dentro de «punto», pero no es el principio de ninguna palabra: no coincide exacto, solo como
+        // parecido (le falta una letra).
+        Assert.All(await BuscarAsync(http, "unto fino", caja.SucursalId), r => Assert.True(r.Parecido));
     }
 
     [Fact]
@@ -115,6 +116,35 @@ public class BusquedaApiTests(ServicioDePrueba servicio) : IClassFixture<Servici
         Assert.Equal(["Engargolado orden beta", "Engargolado orden alfa"], despues.Select(r => r.Descripcion));
         // Cuántas veces se vendió viaja con el resultado: en una familia, Enter agrega el más vendido.
         Assert.Equal((1, 0), (despues[0].Vendidos, despues[1].Vendidos));
+    }
+
+    [Fact]
+    public async Task Si_nada_coincide_exacto_salen_los_parecidos_por_un_error_de_dedo()
+    {
+        var (http, caja) = await CajaAsync();
+
+        var parecidos = await BuscarAsync(http, "pluma pumto fino", caja.SucursalId);
+        var exactos = await BuscarAsync(http, "pluma punto fino", caja.SucursalId);
+
+        Assert.NotEmpty(parecidos);
+        Assert.All(parecidos, r => Assert.True(r.Parecido));
+        Assert.All(parecidos, r => Assert.Contains("punto fino", r.Descripcion));
+        // Primero los que coinciden exacto en más palabras: las plumas antes que los plumones.
+        Assert.StartsWith("Pluma punto fino", parecidos[0].Descripcion);
+        Assert.All(exactos, r => Assert.False(r.Parecido));
+    }
+
+    [Fact]
+    public async Task Tambien_se_busca_por_lo_que_lee_la_caja_del_nombre()
+    {
+        var (http, caja) = await CajaAsync();
+
+        // «Plata» es como la caja lee «Plateado»: sale exacto, no como parecido.
+        var plata = await BuscarAsync(http, "lustre plata", caja.SucursalId);
+
+        Assert.NotEmpty(plata);
+        Assert.All(plata, r => Assert.Contains("Plateado", r.Descripcion));
+        Assert.All(plata, r => Assert.False(r.Parecido));
     }
 
     [Fact]
