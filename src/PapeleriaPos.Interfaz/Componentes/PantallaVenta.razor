@@ -511,7 +511,10 @@
                                     <span class="debe" title="@(cuenta.VenceMasAntiguo is { } vence ? $"Lo más antiguo vence el {vence:dd/MM}" : "")">
                                         Debe @Formato.Dinero(cuenta.SaldoCentavos)@(VencidoDelTicket > 0 ? $" · vencido {Formato.Dinero(VencidoDelTicket)}" : "")
                                     </span>
-                                    <button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Abono)">Abonar <kbd>Ctrl+B</kbd></button>
+                                    @if (!_pilotoEleventa)
+                                    {
+                                        <button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Abono)">Abonar <kbd>Ctrl+B</kbd></button>
+                                    }
                                 }
                                 else
                                 {
@@ -757,7 +760,10 @@ else
         <button class="boton" @onclick="AbrirCambioPrecio">CTRL+E Cambiar precio</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Descuento)">CTRL+D Descuento</button>
         <button class="boton" title="El cliente registrado del ticket, por nombre o teléfono" @onclick="() => Abrir(Ventanas.ElegirCliente)">CTRL+L Cliente</button>
-        <button class="boton" title="Un abono a la cuenta de un cliente" @onclick="() => Abrir(Ventanas.Abono)">CTRL+B Abono</button>
+        @if (!_pilotoEleventa)
+        {
+            <button class="boton" title="Un abono a la cuenta de un cliente" @onclick="() => Abrir(Ventanas.Abono)">CTRL+B Abono</button>
+        }
         <button class="boton" @onclick="() => Abrir(Ventanas.Verificador)">F9 Verificador</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Impresiones)">F2 Impresiones</button>
         @* Cotizar a un botón: la etiqueta abre el selector de archivos; al elegir el PDF se abre la cotización. *@
@@ -937,7 +943,14 @@ else
         @if (Actual.Cuenta!.SaldoCentavos > 0)
         {
             <span>@Actual.Cliente!.Nombre debe @Formato.Dinero(Actual.Cuenta.SaldoCentavos)@(Actual.Cuenta.VenceMasAntiguo is { } vence ? $" · vence {vence:dd/MM}" : "")@(VencidoDelTicket > 0 ? $" · vencido {Formato.Dinero(VencidoDelTicket)}" : "")@(Actual.Cuenta.Estimado ? " (según esta caja)" : "")</span>
-            <button class="boton chico" @onclick="() => Abrir(Ventanas.Abono)">CTRL+B Abonar</button>
+            @if (!_pilotoEleventa)
+            {
+                <button class="boton chico" @onclick="() => Abrir(Ventanas.Abono)">CTRL+B Abonar</button>
+            }
+        }
+        else if (_pilotoEleventa)
+        {
+            <span>@Actual.Cliente!.Nombre tiene @Formato.Dinero(Actual.Cuenta.AFavorCentavos) a favor: en el piloto con eleventa no se usa, solo se cobra en efectivo.</span>
         }
         else
         {
@@ -1020,6 +1033,45 @@ else
         }
     }
 
+    // ── El piloto con eleventa: solo efectivo (se quita al dejar eleventa) ──
+
+    /// <summary>
+    /// El servicio manda las ventas a eleventa: solo se cobra y se devuelve en efectivo (decisión del dueño, 2026-10-12).
+    /// Las ventanas lo reciben en cascada (<see cref="PilotoConEleventa.Cascada"/>). Cambia con la configuración del
+    /// servicio: se pregunta al entrar y, en la ventana de Windows, la contingencia lo vuelve a saber en cada latido, así
+    /// que si el servicio se reinicia con otra configuración la pantalla cambia sin salir de ella. En el navegador no hay
+    /// contingencia, pero al reiniciarse el servicio la pantalla se vuelve a cargar.
+    /// </summary>
+    private bool _pilotoEleventa;
+
+    private Contingencia? _contingencia;
+
+    private async Task CargarPilotoEleventaAsync()
+    {
+        _contingencia = Servicios.GetService<Contingencia>();
+        if (_contingencia is not null)
+            _contingencia.Cambio += AlCambiarContingencia;
+        try
+        {
+            _pilotoEleventa = await Cliente.PilotoEleventaAsync();
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión y sin contingencia (el navegador): no se puede cobrar de ninguna forma; el servicio lo revisa.
+        }
+    }
+
+    /// <summary>La contingencia avisa de muchas cosas: solo se vuelve a pintar si cambió el piloto.</summary>
+    private void AlCambiarContingencia()
+    {
+        if (_contingencia is { } contingencia && contingencia.PilotoEleventa != _pilotoEleventa)
+            _ = InvokeAsync(() =>
+            {
+                _pilotoEleventa = contingencia.PilotoEleventa;
+                StateHasChanged();
+            });
+    }
+
     private static string Quien(PermisoDeSesion permiso) => Textos.Quien(permiso.Autorizan);
 
     /// <summary>En «/»: «Lo autoriza Luis», o «Tú: hasta 10 %; más, lo autoriza Carmen o Luis».</summary>
@@ -1061,7 +1113,8 @@ else
         yield return new("Impresiones por cobrar", "impresora", "F2", null, () => Abrir(Ventanas.Impresiones));
         yield return new("Artículo común (sin inventario)", "etiqueta", "Ins", AccionControlada.ArticuloComun, () => Abrir(Ventanas.Comun));
         yield return new("Elegir cliente del ticket", "clientes", "Ctrl+L", null, () => Abrir(Ventanas.ElegirCliente));
-        yield return new("Abono a la cuenta de un cliente", "efectivo", "Ctrl+B", null, () => Abrir(Ventanas.Abono));
+        if (!_pilotoEleventa)
+            yield return new("Abono a la cuenta de un cliente", "efectivo", "Ctrl+B", null, () => Abrir(Ventanas.Abono));
         yield return new("Cambiar precio del artículo", "etiqueta", "Ctrl+E", AccionControlada.CambiarPrecio, AbrirCambioPrecio);
         yield return new("Descuento", "porcentaje", "Ctrl+D", AccionControlada.Descuento, () => Abrir(Ventanas.Descuento));
         yield return new("Ver el mayoreo del artículo", "capas", "F11", null, MayoreoAsync);
@@ -1351,14 +1404,25 @@ else
         _avisoDelCobro = null;
     }
 
-    /// <summary>Las otras formas que todavía no tienen renglón: una de cada una; el crédito, solo con quien puede fiar.</summary>
+    /// <summary>
+    /// Las otras formas que todavía no tienen renglón: una de cada una; el crédito, solo con quien puede fiar. En el piloto
+    /// con eleventa, ninguna: solo efectivo.
+    /// </summary>
     private IEnumerable<FormaPago> FormasQueFaltan =>
         new[] { FormaPago.Tarjeta, FormaPago.Transferencia, FormaPago.Credito }
+            .Where(_ => !_pilotoEleventa)
             .Where(f => f != FormaPago.Credito || PuedeFiar)
             .Where(f => _otras.All(o => o.Forma != f));
 
-    /// <summary>Tarjeta, transferencia y crédito, chicos junto a «Pagó con»: cada uno agrega su renglón con lo que falta.</summary>
+    /// <summary>
+    /// Tarjeta, transferencia y crédito, chicos junto a «Pagó con»: cada uno agrega su renglón con lo que falta. En el
+    /// piloto con eleventa, en su lugar, que solo es efectivo.
+    /// </summary>
     private RenderFragment FormasDePago => @<span class="vn-formas">
+        @if (_pilotoEleventa)
+        {
+            <span class="nota" title="@PilotoConEleventa.NoSeCobra">@PilotoConEleventa.SoloEfectivo</span>
+        }
         @foreach (var forma in FormasQueFaltan)
         {
             var esta = forma;
@@ -1421,6 +1485,11 @@ else
     /// <summary>La forma nueva trae lo que falta (del saldo a favor, hasta lo que puede usar); se cambia si es solo una parte.</summary>
     private async Task AgregarFormaAsync(FormaPago forma)
     {
+        if (_pilotoEleventa)
+        {
+            Avisar(PilotoConEleventa.NoSeCobra);
+            return;
+        }
         if (forma == FormaPago.Credito)
         {
             // La cuenta al día antes de fiar: otra caja pudo fiarle o recibirle un abono.
@@ -1450,6 +1519,8 @@ else
     {
         get
         {
+            if (_pilotoEleventa && _otras.Count > 0)
+                return "En el piloto con eleventa solo se cobra en efectivo: quita las otras formas";
             if (_otras.FirstOrDefault(o => o.Centavos is null) is { } mala)
                 return $"«{mala.Monto}» no es una cantidad";
             if (_otras.Any(o => o.Forma == FormaPago.Credito) && !PuedeFiar)
@@ -1718,6 +1789,7 @@ else
         }
         await CargarRapidosAsync();
         await CargarPermisosAsync();
+        await CargarPilotoEleventaAsync();
         await RevisarEfectivoAsync();
         await RevisarConteoAsync();
         StateHasChanged();
@@ -3178,7 +3250,7 @@ else
     /// La ventana abierta. En la pantalla nueva, lo de la venta va como panel a la derecha (VaEnPanel), sin tapar el ticket;
     /// lo demás (y todo en la pantalla de hoy) va encima.
     /// </summary>
-    private RenderFragment ContenidoDeVentana => @<text>
+    private RenderFragment ContenidoDeVentana => @<CascadingValue Name="@PilotoConEleventa.Cascada" Value="_pilotoEleventa">
     @switch (_ventana)
     {
         case Ventanas.Cobrar:
@@ -3330,7 +3402,7 @@ else
             </Ventana>
             break;
     }
-    </text>;
+    </CascadingValue>;
 
     // ── Ventanas y avisos ───────────────────────────────────────────────────
 
@@ -3371,6 +3443,8 @@ else
 
     public async ValueTask DisposeAsync()
     {
+        if (_contingencia is not null)
+            _contingencia.Cambio -= AlCambiarContingencia;
         try
         {
             await Js.QuitarTeclasAsync();

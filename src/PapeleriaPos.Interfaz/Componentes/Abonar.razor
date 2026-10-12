@@ -2,7 +2,8 @@
    turno y al corte como ingreso aparte. En efectivo se abona en pesos, o se liquida al peso; con tarjeta o transferencia,
    exacto. Con la caja principal (sin conexión, los abonos esperan). También los abonos de hoy: reimprimir y cancelar
    (solo los de este turno, con motivo). Como al cobrar una venta, lo que no es dinero no se abona y un cambio grande se
-   confirma con otro Enter (TopeDeCambio); si el lector escribe en el abono, caja.js manda el código al ticket. *@
+   confirma con otro Enter (TopeDeCambio); si el lector escribe en el abono, caja.js manda el código al ticket. En el
+   piloto con eleventa no se reciben abonos: el aviso y los abonos de hoy (reimprimir, y cancelar solo los de efectivo). *@
 @using PapeleriaPos.Nucleo.Clientes
 @inject ClienteCaja Servicio
 @inject ModuloCaja Js
@@ -15,12 +16,19 @@
 }
 else
 {
-    <nav class="pestanas">
-        <button class="pestana @(_deHoy ? "" : "activa")" @onclick="() => _deHoy = false">Abonar</button>
-        <button class="pestana @(_deHoy ? "activa" : "")" @onclick="AbonosDeHoyAsync">Abonos de hoy</button>
-    </nav>
+    @if (SoloLosDeHoy)
+    {
+        <p class="aviso">@PilotoConEleventa.NoSeAbona</p>
+    }
+    else
+    {
+        <nav class="pestanas">
+            <button class="pestana @(_deHoy ? "" : "activa")" @onclick="() => _deHoy = false">Abonar</button>
+            <button class="pestana @(_deHoy ? "activa" : "")" @onclick="AbonosDeHoyAsync">Abonos de hoy</button>
+        </nav>
+    }
 
-    @if (_deHoy)
+    @if (_deHoy || SoloLosDeHoy)
     {
         @if (_hoy is null)
         {
@@ -53,7 +61,7 @@ else
                                 else
                                 {
                                     <button class="boton chico" disabled="@_ocupado" @onclick="() => ReimprimirAsync(abono)">Reimprimir</button>
-                                    @if (a.DeEsteTurno && a.Tipo == TipoAbono.Abono)
+                                    @if (a.DeEsteTurno && a.Tipo == TipoAbono.Abono && (!PilotoEleventa || a.Forma == FormaPago.Efectivo))
                                     {
                                         <button class="boton chico" disabled="@_ocupado" @onclick="() => CancelarAsync(abono, null)">Cancelar</button>
                                     }
@@ -188,6 +196,15 @@ else
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
     [Parameter, EditorRequired] public TurnoDto Turno { get; set; } = null!;
 
+    /// <summary>
+    /// El piloto con eleventa: no se reciben abonos; de los de hoy, se reimprimen y se cancelan los de efectivo (sale lo
+    /// mismo que entró y el corte de eleventa, que no los tiene, cuadra). Se quita al dejar eleventa.
+    /// </summary>
+    [CascadingParameter(Name = PilotoConEleventa.Cascada)] public bool PilotoEleventa { get; set; }
+
+    /// <summary>En el piloto, solo los abonos de hoy; salvo uno que se mandó y no se sabe si quedó: se puede mandar otra vez.</summary>
+    private bool SoloLosDeHoy => PilotoEleventa && !_sinConfirmar;
+
     /// <summary>El cliente del ticket (o el de la ficha): si viene, se abona a él.</summary>
     [Parameter] public ClienteRegistradoDto? ClienteInicial { get; set; }
 
@@ -285,6 +302,12 @@ else
         {
             _error = ex.Codigo == "sin-conexion" ? "Sin conexión con la caja principal: los abonos esperan a que vuelva." : ex.Message;
         }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (SoloLosDeHoy && _hoy is null)
+            await AbonosDeHoyAsync();
     }
 
     /// <summary>Al abrir, o al elegir a quien abona: el cursor va donde sigue escribir.</summary>

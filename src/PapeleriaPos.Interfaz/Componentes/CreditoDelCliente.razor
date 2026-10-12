@@ -1,7 +1,7 @@
 @* La cuenta de un cliente en su ficha (fase 3, entrega 2): lo que debe, lo vencido y sus últimos movimientos. Sus
    condiciones (límite y plazo) y los ajustes del saldo los hace quien tiene la regla (al empezar, el dueño). Con un turno
-   abierto, desde aquí se le recibe un abono o se le devuelve en efectivo lo que tiene a favor. Su estado de cuenta se
-   imprime o se copia para mandarlo por WhatsApp (parte 3). *@
+   abierto, desde aquí se le recibe un abono o se le devuelve en efectivo lo que tiene a favor (en el piloto con eleventa,
+   ninguno de los dos). Su estado de cuenta se imprime o se copia para mandarlo por WhatsApp (parte 3). *@
 @using PapeleriaPos.Nucleo.Clientes
 @inject ClienteCaja Servicio
 @inject ModuloCaja Js
@@ -133,16 +133,24 @@ else
         </p>
 
         <div class="acciones izquierda">
-            @if (Turno is not null && credito.SaldoCentavos > 0)
+            @if (Turno is not null && credito.SaldoCentavos > 0 && !PilotoEleventa)
             {
                 <button class="boton principal" @onclick="() => _abonando = true">Recibir abono</button>
             }
-            @if (Turno is not null && credito.DevolvibleCentavos > 0 && !_devolviendo && _sinConfirmar is null)
+            @if (Turno is not null && credito.DevolvibleCentavos > 0 && !_devolviendo && _sinConfirmar is null && !PilotoEleventa)
             {
                 <button class="boton" @onclick="EmpezarDevolucion">Devolver saldo a favor</button>
             }
             <button class="boton" disabled="@_ocupado" @onclick="EstadoAsync">Estado de cuenta</button>
         </div>
+        @if (PilotoEleventa && credito.SaldoCentavos > 0)
+        {
+            <p class="nota">@PilotoConEleventa.NoSeAbona</p>
+        }
+        else if (PilotoEleventa && credito.DevolvibleCentavos > 0)
+        {
+            <p class="nota">@PilotoConEleventa.NoSeDevuelveSaldo</p>
+        }
         @if (credito.AFavorCentavos > 0 && credito.DevolvibleCentavos == 0)
         {
             <p class="nota">Su saldo a favor viene de transferencias por verificar: se le puede devolver cuando se verifiquen.</p>
@@ -266,6 +274,9 @@ else
 
     /// <summary>El turno abierto de la caja: sin él no se reciben abonos.</summary>
     [Parameter] public TurnoDto? Turno { get; set; }
+
+    /// <summary>El piloto con eleventa: ni abonos ni devolver el saldo a favor (se quita al dejar eleventa).</summary>
+    [CascadingParameter(Name = PilotoConEleventa.Cascada)] public bool PilotoEleventa { get; set; }
 
     /// <summary>Cambiaron sus condiciones: el cliente como quedó (quien lo muestra lo pone al día).</summary>
     [Parameter] public EventCallback<ClienteRegistradoDto> AlCambiar { get; set; }

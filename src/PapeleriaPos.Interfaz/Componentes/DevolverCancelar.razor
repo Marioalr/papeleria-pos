@@ -1,4 +1,6 @@
-@* Devoluciones y cancelaciones con el folio del ticket (el QR lo escribe solo). Si la regla lo pide, autoriza el encargado. *@
+@* Devoluciones y cancelaciones con el folio del ticket (el QR lo escribe solo). Si la regla lo pide, autoriza el encargado.
+   En el piloto con eleventa solo se devuelve en efectivo lo que se cobró en efectivo: de un ticket fiado, o con tarjeta o
+   transferencia, el servicio dice por qué no se devuelve aquí y no se ofrece (también lo rechaza). *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
@@ -29,7 +31,11 @@ else
                 <span class="error"> · ya pasaron 7 días: no admite devoluciones</span>
             }
         </p>
-        @if (v.CreditoCentavos > 0)
+        @if (v.NoSeDevuelveEnElPiloto is { } noSeDevuelve)
+        {
+            <p class="aviso">@noSeDevuelve</p>
+        }
+        else if (v.CreditoCentavos > 0)
         {
             <p class="aviso">Este ticket se fió (@Formato.Dinero(v.CreditoCentavos) a «@v.Cliente»): lo devuelto baja primero su cuenta, y solo sale en efectivo lo que pagó.</p>
         }
@@ -46,14 +52,14 @@ else
                         <td class="num">@Formato.Numero(l.CantidadDevueltaMilesimas / 1000m)</td>
                         <td class="num">@Formato.Dinero(l.ImporteCentavos)</td>
                         <td class="num">
-                            @if (queda > 0 && v.Estado == EstadoVenta.Pagada)
+                            @if (queda > 0 && v is { Estado: EstadoVenta.Pagada, NoSeDevuelveEnElPiloto: null })
                             {
                                 <input class="cantidad-devolver" inputmode="decimal" placeholder="0" value="@_cantidades.GetValueOrDefault(l.LineaId)"
                                        @onchange="e => _cantidades[linea.LineaId] = e.Value?.ToString() ?? string.Empty" />
                             }
                         </td>
                         <td>
-                            @if (l.LlevaInventario && queda > 0)
+                            @if (l.LlevaInventario && queda > 0 && v.NoSeDevuelveEnElPiloto is null)
                             {
                                 <input type="checkbox" checked="@_danados.Contains(l.LineaId)" @onchange="e => Marcar(linea.LineaId, e.Value is true)" />
                             }
@@ -62,14 +68,17 @@ else
                 }
             </table>
         </div>
-        <label>Motivo <input @bind="_motivo" @bind:event="oninput" autocomplete="off" /></label>
+        @if (v.NoSeDevuelveEnElPiloto is null)
+        {
+            <label>Motivo <input @bind="_motivo" @bind:event="oninput" autocomplete="off" /></label>
+        }
     }
 
     @if (_error is not null)
     {
         <p class="error">@_error</p>
     }
-    @if (_venta is { Estado: EstadoVenta.Pagada } venta)
+    @if (_venta is { Estado: EstadoVenta.Pagada, NoSeDevuelveEnElPiloto: null } venta)
     {
         <div class="acciones">
             @if (venta.PuedeCancelar)
@@ -79,6 +88,10 @@ else
             <button class="boton principal" disabled="@(_ocupado || venta.DiasParaDevolver == 0)" @onclick="() => DevolverAsync(null)">Devolver lo marcado</button>
         </div>
         <p class="nota">Cancelar es todo el ticket y solo en el mismo turno; después es devolución (con ticket y hasta 7 días). El reembolso sale en efectivo.</p>
+        @if (PilotoEleventa)
+        {
+            <p class="nota">@PilotoConEleventa.SoloSeDevuelveEfectivo</p>
+        }
     }
 }
 
@@ -87,6 +100,9 @@ else
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
     [Parameter] public string? FolioInicial { get; set; }
     [Parameter] public EventCallback<ComprobanteDevolucionDto> AlTerminar { get; set; }
+
+    /// <summary>El piloto con eleventa: solo se devuelve en efectivo (se quita al dejar eleventa).</summary>
+    [CascadingParameter(Name = PilotoConEleventa.Cascada)] public bool PilotoEleventa { get; set; }
 
     private sealed record Pendiente(AccionControlada Accion, string Detalle, long Monto, Func<Guid, Task> Reintentar);
 

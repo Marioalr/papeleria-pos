@@ -707,6 +707,27 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     public Task<EstadoServicioDto?> EstadoAsync(Uri servicio) => _http.GetAsync<EstadoServicioDto>("api/estado", servicio: servicio);
 
+    /// <summary>
+    /// Si el servicio está en el piloto con eleventa (<see cref="PilotoConEleventa"/>): entonces la caja solo cobra y
+    /// devuelve en efectivo. Sin conexión, lo último que se supo (la contingencia lo guarda). Solo para convivir con
+    /// eleventa: se quita al dejarlo.
+    /// </summary>
+    public async Task<bool> PilotoEleventaAsync()
+    {
+        if (contingencia is { EnLinea: false })
+            return contingencia.PilotoEleventa;
+        try
+        {
+            var piloto = (await _http.GetAsync<EstadoServicioDto>("api/estado"))?.PilotoEleventa == true;
+            contingencia?.RecordarPilotoEleventa(piloto);
+            return piloto;
+        }
+        catch (ErrorCaja) when (contingencia is not null)
+        {
+            return contingencia.PilotoEleventa;
+        }
+    }
+
     public Task<List<SucursalAltaDto>> OpcionesAltaAsync(Uri servicio, SolicitudCredenciales credenciales) =>
         _http.PostAsync<List<SucursalAltaDto>>("api/alta/opciones", credenciales, servicio: servicio);
 
