@@ -451,6 +451,25 @@ public sealed class CreditoApiTests(ServicioDePrueba servicio) : IClassFixture<S
         Assert.Equal(33745, (await CuentaAsync(c, cliente)).Credito.SaldoCentavos);
     }
 
+    [Fact]
+    public async Task Un_codigo_escaneado_en_el_abono_no_se_guarda()
+    {
+        var c = await CajaAsync();
+        var cliente = await ClienteAsync(c, "Crédito: Le escanearon el abono", 100000);
+        await Leer<CuentaClienteDto>(await AjustarAsync(c, cliente, 23745));
+        var antes = await Leer<CorteDto>(await c.Http.GetAsync($"api/turnos/{c.Turno.Id}/resumen"));
+
+        // 7501234567890 en «Pagó con» (billones de cambio) y en «Abona» (liquidaría la cuenta cobrando lo exacto).
+        var enPagoCon = await AbonarAsync(c, cliente, FormaPago.Efectivo, null, 750123456789000);
+        var enAbona = await AbonarAsync(c, cliente, FormaPago.Efectivo, 750123456789000, 23700);
+
+        Assert.Equal((HttpStatusCode.BadRequest, HttpStatusCode.BadRequest), (enPagoCon.StatusCode, enAbona.StatusCode));
+        Assert.StartsWith("«Pagó con» $7,501,234,567,890.00 no puede ser", await Error(enPagoCon));
+        Assert.StartsWith("«Abona» $7,501,234,567,890.00 no puede ser", await Error(enAbona));
+        Assert.Equal(23745, (await CuentaAsync(c, cliente)).Credito.SaldoCentavos);
+        Assert.Equal(antes.Abonos, (await Leer<CorteDto>(await c.Http.GetAsync($"api/turnos/{c.Turno.Id}/resumen"))).Abonos);
+    }
+
     // ── Estado de cuenta, puntualidad y saldo a favor (parte 3) ──────────────
 
     [Fact]

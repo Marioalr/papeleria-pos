@@ -150,6 +150,40 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
     }
 
     [Fact]
+    public async Task Sin_conexion_un_codigo_escaneado_en_pago_con_no_se_cobra_ni_gasta_folio()
+    {
+        var local = servicio.Fabrica.CreateClient();
+        var caja = (await local.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        var interruptor = new Interruptor(servicio.Fabrica.Server.CreateHandler());
+        var http = new HttpClient(interruptor);
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
+        var contingencia = new Contingencia(new AlmacenLocal(_baseLocal), http, conexion);
+        var cliente = new ClienteCaja(http, conexion, contingencia);
+        await contingencia.LatidoAsync();
+        var cajero = await cliente.EntrarAsync("cajero", "1111");
+        var turno = await cliente.TurnoAsync(caja.Id) ?? await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
+        var busqueda = (await cliente.BuscarAsync("pluma punto fino", caja.SucursalId)).First(r => r.Codigo is not null);
+        var pluma = (await cliente.PorCodigoAsync(busqueda.Codigo!, caja.SucursalId))!;
+        var enLinea = await cliente.CobrarAsync(Cobro(caja, turno, cajero, pluma, 1));
+
+        // Se va la conexión (la caja 2 cuando se cae el Wi-Fi) y el lector escribe 7501234567890 en «Pagó con».
+        interruptor.Caido = true;
+        await contingencia.LatidoAsync();
+        var pendientes = contingencia.Pendientes;
+        var error = await Assert.ThrowsAsync<ErrorCaja>(() => cliente.CobrarAsync(Cobro(caja, turno, cajero, pluma, 1,
+            cobros: new CobroSolicitado(FormaPago.Efectivo, 750123456789000))));
+        var enPendientes = contingencia.Pendientes;
+        var siguiente = await cliente.CobrarAsync(Cobro(caja, turno, cajero, pluma, 1));
+
+        Assert.StartsWith("«Pagó con» $7,501,234,567,890.00 no puede ser", error.Message);
+        Assert.Equal(pendientes, enPendientes);
+        Assert.Equal(Folio(enLinea) + 1, Folio(siguiente));
+        interruptor.Caido = false;
+        await contingencia.LatidoAsync();
+        Assert.Equal((0, 0), (contingencia.Pendientes, contingencia.ConError));
+    }
+
+    [Fact]
     public async Task Lo_cobrado_sin_conexion_que_llega_despues_del_corte_Z_se_guarda_con_su_turno_fuera_de_ese_corte()
     {
         var local = servicio.Fabrica.CreateClient();

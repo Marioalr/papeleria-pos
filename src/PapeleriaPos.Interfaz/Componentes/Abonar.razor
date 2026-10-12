@@ -1,7 +1,8 @@
 @* CTRL+B (fase 3, entrega 2): un abono a la cuenta de un cliente, en cualquier caja con su turno; el dinero entra a este
    turno y al corte como ingreso aparte. En efectivo se abona en pesos, o se liquida al peso; con tarjeta o transferencia,
    exacto. Con la caja principal (sin conexión, los abonos esperan). También los abonos de hoy: reimprimir y cancelar
-   (solo los de este turno, con motivo). *@
+   (solo los de este turno, con motivo). Como al cobrar una venta, lo que no es dinero no se abona y un cambio grande se
+   confirma con otro Enter (TopeDeCambio); si el lector escribe en el abono, caja.js manda el código al ticket. *@
 @using PapeleriaPos.Nucleo.Clientes
 @inject ClienteCaja Servicio
 @inject ModuloCaja Js
@@ -125,23 +126,24 @@ else
                         <option value="@FormaPago.Transferencia">Transferencia</option>
                     </select>
                 </label>
+                @* data-cobro: lo que el lector teclee aquí va al ticket (caja.js), no se abona. *@
                 <label>Abona (vacío: liquida)
-                    <input id="abono-monto" inputmode="decimal" @bind="_monto" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="Liquidar" autocomplete="off" />
+                    <input id="abono-monto" data-cobro inputmode="decimal" @bind="_monto" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="Liquidar" autocomplete="off" />
                 </label>
                 @if (_forma == FormaPago.Efectivo)
                 {
                     <label>Pagó con (efectivo)
-                        <input inputmode="decimal" @bind="_recibido" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off"
+                        <input data-cobro inputmode="decimal" @bind="_recibido" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off"
                                placeholder="@(Calculo is { } exacto ? $"Exacto: {Formato.Dinero(exacto.ACobrarCentavos)}" : "Exacto")" />
                     </label>
                 }
                 else
                 {
-                    <label>Referencia <input @bind="_referencia" @bind:event="oninput" @onkeydown="AlTeclear" maxlength="60" autocomplete="off" /></label>
+                    <label>Referencia <input data-cobro @bind="_referencia" @bind:event="oninput" @onkeydown="AlTeclear" maxlength="60" autocomplete="off" /></label>
                 }
             </div>
             <div class="acciones izquierda">
-                <button class="boton chico" @onclick="Liquidar">Liquidar (@Formato.Dinero(Liquidacion.ACobrarCentavos)@(Liquidacion.RedondeoCentavos != 0 ? $", redondeo {(Liquidacion.RedondeoCentavos > 0 ? "+" : "−")}{Formato.Dinero(Math.Abs(Liquidacion.RedondeoCentavos))}" : ""))</button>
+                <button class="boton chico" data-cobro @onclick="Liquidar">Liquidar (@Formato.Dinero(Liquidacion.ACobrarCentavos)@(Liquidacion.RedondeoCentavos != 0 ? $", redondeo {(Liquidacion.RedondeoCentavos > 0 ? "+" : "−")}{Formato.Dinero(Math.Abs(Liquidacion.RedondeoCentavos))}" : ""))</button>
             </div>
             @if (Calculo is { } calculo)
             {
@@ -150,6 +152,10 @@ else
                     @if (_forma == FormaPago.Efectivo)
                     {
                         <span> · se cobran @Formato.Dinero(calculo.ACobrarCentavos) · cambio <strong>@Formato.Dinero(calculo.CambioCentavos)</strong></span>
+                        @if (CambioPorConfirmar(calculo))
+                        {
+                            <span class="error"> · ¿te dio @Formato.Dinero(calculo.ACobrarCentavos + calculo.CambioCentavos)?</span>
+                        }
                     }
                     else if (_forma == FormaPago.Transferencia)
                     {
@@ -162,7 +168,7 @@ else
                 <p class="aviso">@_problema</p>
             }
             <div class="acciones">
-                <button class="boton principal" disabled="@(_ocupado || Calculo is null)" @onclick="AbonarAsync">Abonar (Enter)</button>
+                <button class="boton principal" data-cobro disabled="@(_ocupado || Calculo is null)" @onclick="AbonarAsync">Abonar (Enter)</button>
             </div>
         }
     }
@@ -227,7 +233,7 @@ else
     }
 
     private AbonoCalculado Liquidacion => _cuenta is { SaldoCentavos: > 0 } c
-        ? CalculoAbono.Calcular(c.SaldoCentavos, _forma, null, long.MaxValue / 2) with { CambioCentavos = 0 }
+        ? CalculoAbono.Exacto(c.SaldoCentavos, _forma, null)
         : new AbonoCalculado(0, 0, 0, 0, false);
 
     /// <summary>Lo que va a pasar con lo capturado, con la misma regla que el servicio; si no se puede, por qué.</summary>
@@ -246,10 +252,10 @@ else
             }
             try
             {
-                // «Pagó con» vacío: lo exacto.
-                var exacto = CalculoAbono.Calcular(cuenta.SaldoCentavos, _forma, monto, long.MaxValue / 2).ACobrarCentavos;
-                return CalculoAbono.Calcular(cuenta.SaldoCentavos, _forma, monto,
-                    _forma == FormaPago.Efectivo ? Formato.LeerPesos(_recibido) ?? exacto : 0);
+                // «Pagó con» vacío (o tarjeta o transferencia): lo exacto. Lo que no es dinero no se calcula: dice por qué.
+                return _forma == FormaPago.Efectivo && Formato.LeerPesos(_recibido) is { } recibido
+                    ? CalculoAbono.Calcular(cuenta.SaldoCentavos, _forma, monto, recibido)
+                    : CalculoAbono.Exacto(cuenta.SaldoCentavos, _forma, monto);
             }
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
             {
@@ -323,10 +329,24 @@ else
             await AbonarAsync();
     }
 
+    /// <summary>El cambio grande que ya se enseñó (lo que se cobra y lo que dio): el siguiente Enter con lo mismo abona.</summary>
+    private (long ACobrar, long Recibido)? _cambioEnsenado;
+
+    /// <summary>Un cambio grande en efectivo (desde $500): se confirma, como en una venta (<see cref="TopeDeCambio"/>).</summary>
+    private bool CambioPorConfirmar(AbonoCalculado calculo) => _forma == FormaPago.Efectivo
+        && TopeDeCambio.Revisar(calculo.ACobrarCentavos, calculo.ACobrarCentavos + calculo.CambioCentavos) == RevisionDelCambio.PorConfirmar;
+
     private async Task AbonarAsync()
     {
         if (_ocupado || _cliente is null || _cuenta is null || Calculo is not { } calculo)
             return;
+        var recibido = calculo.ACobrarCentavos + calculo.CambioCentavos;
+        if (CambioPorConfirmar(calculo) && _cambioEnsenado != (calculo.ACobrarCentavos, recibido))
+        {
+            _cambioEnsenado = (calculo.ACobrarCentavos, recibido);
+            _error = $"El cambio es de {Formato.Dinero(calculo.CambioCentavos)}: revisa que te haya dado {Formato.Dinero(recibido)}. Enter otra vez para abonar.";
+            return;
+        }
         _ocupado = true;
         _error = null;
         _id ??= Ids.Nuevo();
@@ -335,7 +355,7 @@ else
             // Con el saldo que se vio: si cambió mientras tanto (otra caja le fió o le abonó), el servicio no lo guarda.
             long? monto = string.IsNullOrWhiteSpace(_monto) ? null : Formato.LeerPesos(_monto);
             var comprobante = await Servicio.AbonarAsync(new SolicitudAbono(_id.Value, Caja.Id, Turno.Id, Sesion.UsuarioId, _cliente.Id, _forma, monto,
-                _forma == FormaPago.Efectivo ? calculo.ACobrarCentavos + calculo.CambioCentavos : 0,
+                _forma == FormaPago.Efectivo ? recibido : 0,
                 string.IsNullOrWhiteSpace(_referencia) ? null : _referencia.Trim(), _cuenta.SaldoCentavos), soloEnLinea: _sinConfirmar);
             (_id, _sinConfirmar) = (null, false);
             await AlTerminar.InvokeAsync(comprobante);

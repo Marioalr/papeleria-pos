@@ -22,6 +22,7 @@ export function quitar() {
     clearTimeout(escribiendo);
     clearInterval(rodando);
     rodando = null;
+    rafaga = null;
     pantalla = null;
 }
 
@@ -83,10 +84,69 @@ export function ventanaAbierta(abierta) {
     hayVentana = abierta;
 }
 
+// El cobro (data-cobro: «Pagó con», los montos y referencias de tarjeta, transferencia y crédito, los botones como
+// Cobrar; en la pantalla nueva, todo el panel del total; también la ventana de cobro de la pantalla de hoy y la del
+// abono): el lector se reconoce por su ritmo, más rápido que una persona y con Enter al final (docs/propuesta-interfaz.md,
+// «El cuadro de captura»). Si escribe ahí, lo que tecleó se quita del campo, su Enter no cobra (ni oprime el botón) y el
+// código va a la captura: un escaneo nunca se toma como dinero ni se cobra sin él. Una persona no baja de unos 80 ms
+// entre tecla y tecla ni con el teclado numérico; un lector USB teclea cada carácter en pocos milisegundos. El ritmo del
+// lector de la tienda falta medirlo allá (docs/plan.md, paso 7): si no se reconoce, el tope del cambio igual detiene un
+// código largo en un campo de dinero.
+const RAFAGA_MS = 50;
+// Menos caracteres no se distinguen de alguien que teclea rápido «200» y Enter.
+const RAFAGA_MINIMO = 4;
+// La ráfaga en curso: dónde se teclea, lo que tenía antes de empezar, lo que va tecleando y la hora de la última tecla.
+let rafaga = null;
+
+// Un campo o un botón marcado, o lo que esté dentro de algo marcado (el panel del total).
+function esDelCobro(elemento) {
+    return elemento instanceof HTMLElement && elemento.closest('[data-cobro]') !== null;
+}
+
+// Cada tecla en el cobro. Devuelve true si era el Enter de una ráfaga del lector: ya se mandó a la captura.
+// La hora es la del teclado (timeStamp), no la de atenderla: si la página estuvo ocupada, lo que tecleó una persona no
+// se junta en una ráfaga.
+function rafagaDelLector(e) {
+    const donde = e.target;
+    if (!esDelCobro(donde)) {
+        rafaga = null;
+        return false;
+    }
+    const hora = e.timeStamp;
+    if (e.key === 'Enter') {
+        const r = rafaga;
+        rafaga = null;
+        if (!r || r.donde !== donde || r.texto.length < RAFAGA_MINIMO || hora - r.ultima > RAFAGA_MS) return false;
+        e.preventDefault();
+        e.stopPropagation();
+        // Un campo vuelve a lo que tenía (lo que se tecleó antes a mano se queda) y .NET se entera por su @bind; un botón
+        // no tiene qué devolver.
+        if (donde instanceof HTMLInputElement) {
+            donde.value = r.antes;
+            donde.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        pantalla.invokeMethodAsync('EscaneoEnPago', r.texto);
+        return true;
+    }
+    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (rafaga && rafaga.donde === donde && hora - rafaga.ultima <= RAFAGA_MS) {
+            rafaga.texto += e.key;
+            rafaga.ultima = hora;
+        } else {
+            rafaga = { donde, antes: donde instanceof HTMLInputElement ? donde.value : '', texto: e.key, ultima: hora };
+        }
+    } else if (e.key !== 'Shift') {
+        // Las mayúsculas del lector llegan con Shift; cualquier otra tecla (borrar, flechas) es de una persona.
+        rafaga = null;
+    }
+    return false;
+}
+
 function alPresionar(e) {
     if (!pantalla) return;
     const tecla = e.key;
     const campo = e.target instanceof HTMLInputElement ? e.target : null;
+    if (rafagaDelLector(e)) return;
 
     if (tecla === 'Enter' && !hayVentana && esCaptura(campo)) {
         e.preventDefault();

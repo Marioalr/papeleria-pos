@@ -25,6 +25,13 @@ public class CapturaCodigoTests
         await _blazor.InvokeAsync(() => _enCurso.Add(_captura.EnterAsync(procesar)));
     }
 
+    /// <summary>Un escaneo completo de una vez, desde el hilo de Blazor (a media operación).</summary>
+    private Task Enter(string codigo, Func<string, Task> procesar)
+    {
+        _captura.Texto = codigo;
+        return _captura.EnterAsync(procesar);
+    }
+
     [Fact]
     public async Task Una_rafaga_del_lector_con_la_red_lenta_deja_las_cinco_lineas_en_orden()
     {
@@ -101,6 +108,138 @@ public class CapturaCodigoTests
         await _blazor.InvokeAsync(() => _captura.EsperarAsync());
 
         Assert.Equal(["7500000000011", "7500000000028"], lineas);
+    }
+
+    [Fact]
+    public async Task El_cobro_espera_el_ultimo_escaneo_y_sabe_que_llego()
+    {
+        var lineas = new List<string>();
+        async Task AgregarAsync(string codigo)
+        {
+            await Task.Delay(150);
+            lineas.Add(codigo);
+        }
+
+        // Enter en «Pagó con» justo después de escanear, con el Wi-Fi lento: la última línea sigue en camino.
+        await EscanearAsync("7500000000011", AgregarAsync);
+        var apartado = await _blazor.InvokeAsync(() => _captura.ApartarAsync(() => lineas.Count));
+        apartado.Dispose();
+
+        Assert.Equal(["7500000000011"], lineas);
+        Assert.True(apartado.LlegoAlgo);
+    }
+
+    [Fact]
+    public async Task Sin_escaneos_en_camino_el_cobro_sigue_sin_esperar()
+    {
+        var lineas = new List<string> { "7500000000011" };
+
+        var apartado = await _blazor.InvokeAsync(() => _captura.ApartarAsync(() => lineas.Count));
+        apartado.Dispose();
+
+        Assert.False(apartado.LlegoAlgo);
+    }
+
+    [Fact]
+    public async Task Lo_que_se_escanea_mientras_se_cobra_cae_en_el_ticket_siguiente()
+    {
+        var cobrado = new List<string> { "7500000000011" };
+        var siguiente = new List<string>();
+        var actual = cobrado;
+        async Task AgregarAsync(string codigo)
+        {
+            await Task.Delay(20);
+            actual.Add(codigo);
+        }
+
+        await _blazor.InvokeAsync(async () =>
+        {
+            using var apartado = await _captura.ApartarAsync(() => actual.Count);
+            // Mientras el cobro va y viene por el Wi-Fi, el lector ya escanea lo del siguiente cliente.
+            _enCurso.Add(Enter("7500000000028", AgregarAsync));
+            await Task.Delay(100);
+            Assert.Single(cobrado);
+            // Se cobró: queda el ticket del siguiente cliente y se suelta la cola.
+            actual = siguiente;
+        });
+        await Task.WhenAll(_enCurso);
+
+        Assert.Equal(["7500000000011"], cobrado);
+        Assert.Equal(["7500000000028"], siguiente);
+    }
+
+    [Fact]
+    public async Task Si_el_cobro_falla_lo_escaneado_mientras_tanto_va_al_mismo_ticket()
+    {
+        var lineas = new List<string> { "7500000000011" };
+        async Task AgregarAsync(string codigo)
+        {
+            await Task.Delay(20);
+            lineas.Add(codigo);
+        }
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _blazor.InvokeAsync(async () =>
+        {
+            using var apartado = await _captura.ApartarAsync(() => lineas.Count);
+            _enCurso.Add(Enter("7500000000028", AgregarAsync));
+            await Task.Delay(50);
+            throw new InvalidOperationException("La caja principal no contestó");
+        }));
+        await Task.WhenAll(_enCurso);
+
+        Assert.Equal(["7500000000011", "7500000000028"], lineas);
+    }
+
+    [Fact]
+    public async Task Las_teclas_esperan_a_que_termine_el_cobro()
+    {
+        var pasos = new List<string>();
+        var soltar = new TaskCompletionSource();
+
+        await _blazor.InvokeAsync(async () =>
+        {
+            var apartado = await _captura.ApartarAsync(() => 0);
+            _enCurso.Add(Task.Run(async () =>
+            {
+                await soltar.Task;
+                await _blazor.InvokeAsync(() =>
+                {
+                    pasos.Add("cobrado");
+                    apartado.Dispose();
+                });
+            }));
+        });
+        // F6 llega a medio cobro: no aparta el ticket que se está cobrando.
+        var f6 = _blazor.InvokeAsync(async () =>
+        {
+            await _captura.EsperarAsync();
+            pasos.Add("F6");
+        });
+        await Task.Delay(50);
+        Assert.Empty(pasos);
+        soltar.SetResult();
+        await f6;
+        await Task.WhenAll(_enCurso);
+
+        Assert.Equal(["cobrado", "F6"], pasos);
+    }
+
+    [Fact]
+    public async Task Un_renglon_de_la_lista_queda_en_orden_con_los_escaneos()
+    {
+        var lineas = new List<string>();
+        async Task AgregarAsync(string codigo)
+        {
+            await Task.Delay(codigo == "7500000000011" ? 150 : 10);
+            lineas.Add(codigo);
+        }
+
+        await EscanearAsync("7500000000011", AgregarAsync);
+        // Un clic en la lista de resultados mientras el escaneo anterior sigue en camino.
+        await _blazor.InvokeAsync(() => _enCurso.Add(_captura.EnTurnoAsync(() => AgregarAsync("Cuaderno elegido de la lista"))));
+        await Task.WhenAll(_enCurso);
+
+        Assert.Equal(["7500000000011", "Cuaderno elegido de la lista"], lineas);
     }
 
     [Fact]

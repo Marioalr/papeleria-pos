@@ -1,7 +1,9 @@
 @* F12. "Pagó con" es lo que entregó el cliente en efectivo; tarjeta, transferencia y crédito no dan cambio. El efectivo se
    cobra al peso con la misma regla que aplica el servicio (Venta.Efectivo); las impresiones van exactas. Con un cliente que
    tiene crédito (o saldo a favor), una parte o todo se fía a su cuenta (fase 3, entrega 2); pasar su límite lo autoriza
-   el encargado o el dueño. *@
+   el encargado o el dueño. Un cambio grande se confirma con otro Enter y lo que no es dinero no se cobra
+   (TopeDeCambio); si el lector escribe en un campo o un botón del cobro (data-cobro), caja.js manda el código a la
+   captura y su Enter no cobra. *@
 @inject ModuloCaja Js
 @inject ClienteCaja Servicio
 
@@ -20,7 +22,7 @@ else
     }
 
     <label>Pagó con (efectivo)
-        <input id="pago-efectivo" inputmode="decimal" @bind="_efectivo" @bind:event="oninput" @onkeydown="AlTeclear" />
+        <input id="pago-efectivo" data-cobro inputmode="decimal" @bind="_efectivo" @bind:event="oninput" @onkeydown="AlTeclear" />
     </label>
 
     @if (PuedeFiar && Cuenta is { } cuenta)
@@ -46,11 +48,11 @@ else
                 }
             </p>
             <label>@(ConCredito ? "Fiar" : "Usar de su saldo a favor")
-                <input id="pago-credito" inputmode="decimal" @bind="_credito" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+                <input id="pago-credito" data-cobro inputmode="decimal" @bind="_credito" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
             </label>
             <div class="acciones izquierda">
-                <button class="boton chico" @onclick="ElRestoACredito">El resto a crédito</button>
-                <button class="boton chico" @onclick="TodoACredito">Todo a crédito</button>
+                <button class="boton chico" data-cobro @onclick="ElRestoACredito">El resto a crédito</button>
+                <button class="boton chico" data-cobro @onclick="TodoACredito">Todo a crédito</button>
             </div>
             @if (Credito > 0)
             {
@@ -75,16 +77,16 @@ else
         <summary>Tarjeta o transferencia</summary>
         <div class="dos-columnas">
             <label>Tarjeta
-                <input inputmode="decimal" @bind="_tarjeta" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+                <input data-cobro inputmode="decimal" @bind="_tarjeta" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
             </label>
             <label>Referencia de la terminal
-                <input @bind="_refTarjeta" @bind:event="oninput" @onkeydown="AlTeclear" />
+                <input data-cobro @bind="_refTarjeta" @bind:event="oninput" @onkeydown="AlTeclear" />
             </label>
             <label>Transferencia
-                <input inputmode="decimal" @bind="_transferencia" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+                <input data-cobro inputmode="decimal" @bind="_transferencia" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
             </label>
             <label>Referencia
-                <input @bind="_refTransferencia" @bind:event="oninput" @onkeydown="AlTeclear" />
+                <input data-cobro @bind="_refTransferencia" @bind:event="oninput" @onkeydown="AlTeclear" />
             </label>
         </div>
         <p class="nota">La transferencia queda por verificar hasta que el encargado confirme que llegó el dinero.</p>
@@ -94,6 +96,14 @@ else
         @if (Faltante > 0)
         {
             <span class="falta">Falta: @Formato.Dinero(Faltante)</span>
+        }
+        else if (Revision == RevisionDelCambio.NoEsDinero)
+        {
+            <span class="falta">No es dinero: el cambio pasaría de @Formato.Dinero(TopeDeCambio.MaximoCentavos)</span>
+        }
+        else if (Revision == RevisionDelCambio.PorConfirmar)
+        {
+            <span class="falta">Cambio: @Formato.Dinero(Cambio) · ¿te dio @Formato.Dinero(Efectivo)?</span>
         }
         else
         {
@@ -107,7 +117,7 @@ else
     }
 
     <div class="acciones">
-        <button class="boton principal" disabled="@(_ocupado || Faltante > 0)" @onclick="CobrarAsync">Cobrar (Enter)</button>
+        <button class="boton principal" data-cobro disabled="@(_ocupado || Faltante > 0 || Revision == RevisionDelCambio.NoEsDinero)" @onclick="CobrarAsync">Cobrar (Enter)</button>
     </div>
 }
 
@@ -162,6 +172,12 @@ else
     private long Faltante => Math.Max(0, ACobrar.ACobrarCentavos - Efectivo);
     private long Cambio => Math.Max(0, Efectivo - ACobrar.ACobrarCentavos);
 
+    /// <summary>Lo que dice el cambio: grande, se confirma; lo que no es dinero, no se cobra.</summary>
+    private RevisionDelCambio Revision => ACobrar.ACobrarCentavos > 0 ? TopeDeCambio.Revisar(ACobrar.ACobrarCentavos, Efectivo) : RevisionDelCambio.Normal;
+
+    /// <summary>El cambio grande que ya se enseñó: el siguiente Enter con lo mismo cobra.</summary>
+    private (long ACobrar, long Recibido)? _cambioEnsenado;
+
     protected override void OnInitialized() => _efectivo = (Venta.Efectivo(0).ACobrarCentavos / 100m).ToString("0.00", CultureInfo.InvariantCulture);
 
     protected override async Task OnAfterRenderAsync(bool primera)
@@ -200,6 +216,17 @@ else
         {
             _error = "Tarjeta, transferencia y crédito no pueden pasar del total: no dan cambio.";
             return;
+        }
+        switch (Revision)
+        {
+            case RevisionDelCambio.NoEsDinero:
+                _error = TopeDeCambio.NoEsDinero(Efectivo);
+                return;
+            case RevisionDelCambio.PorConfirmar when _cambioEnsenado != (ACobrar.ACobrarCentavos, Efectivo):
+                _cambioEnsenado = (ACobrar.ACobrarCentavos, Efectivo);
+                _error = $"El cambio es de {Formato.Dinero(Cambio)}: revisa que te haya dado {Formato.Dinero(Efectivo)}. Enter otra vez para cobrar.";
+                await Js.EnfocarAsync("#pago-efectivo");
+                return;
         }
         // Pasar el límite: el cajero lo pide; el encargado y el dueño pueden solos. Sin crédito, no hay autorización que valga.
         if (Exceso > 0 && (_autorizacion is null || Exceso > _autorizadoHasta))
