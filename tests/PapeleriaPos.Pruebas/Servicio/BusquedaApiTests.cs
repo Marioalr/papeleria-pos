@@ -111,6 +111,28 @@ public class BusquedaApiTests(ServicioDePrueba servicio) : IClassFixture<Servici
         // Lo vendido se cuenta una vez al día; aquí, como si fuera otro día.
         servicio.Fabrica.Services.GetRequiredService<CatalogoEnMemoria>().Invalidar();
 
-        Assert.Equal(["Engargolado orden beta", "Engargolado orden alfa"], (await BuscarAsync(http, "engar orden", caja.SucursalId)).Select(r => r.Descripcion));
+        var despues = await BuscarAsync(http, "engar orden", caja.SucursalId);
+        Assert.Equal(["Engargolado orden beta", "Engargolado orden alfa"], despues.Select(r => r.Descripcion));
+        // Cuántas veces se vendió viaja con el resultado: en una familia, Enter agrega el más vendido.
+        Assert.Equal((1, 0), (despues[0].Vendidos, despues[1].Vendidos));
+    }
+
+    [Fact]
+    public async Task Cada_resultado_trae_su_nombre_en_pedazos_para_juntar_las_familias()
+    {
+        var (http, caja) = await CajaAsync();
+
+        var todos = (await http.GetFromJsonAsync<List<ResultadoBusquedaDto>>(
+            $"api/productos/buscar?q=pluma%20punto%20fino&sucursalId={caja.SucursalId}&maximo=200"))!;
+        var pocos = (await http.GetFromJsonAsync<List<ResultadoBusquedaDto>>(
+            $"api/productos/buscar?q=pluma%20punto%20fino&sucursalId={caja.SucursalId}&maximo=3"))!;
+
+        Assert.Equal(3, pocos.Count);
+        Assert.All(todos, r => Assert.NotEmpty(r.Partes!));
+        // Las plumas de la base de prueba cambian en el color y en la marca: se juntan por color.
+        var familias = Familias.Agrupar(todos, r => r.Partes!, r => r.Vendidos);
+        Assert.Equal(EjeFamilia.Color, familias.Eje);
+        Assert.Contains(EjeFamilia.Marca, familias.Ejes);
+        Assert.True(familias.Renglones.Count < todos.Count);
     }
 }

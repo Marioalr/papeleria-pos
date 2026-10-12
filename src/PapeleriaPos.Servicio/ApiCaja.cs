@@ -79,8 +79,9 @@ public static class ApiCaja
         api.MapGet("/productos/{varianteId:guid}", async (Guid varianteId, Guid sucursalId, PosDbContext db, CatalogoEnMemoria catalogo) =>
             await catalogo.PorVarianteAsync(db, varianteId, sucursalId) is { } p ? Results.Ok(p) : Results.NotFound(new ErrorDto("El producto ya no está en el catálogo.")));
 
-        api.MapGet("/productos/buscar", async (string q, Guid sucursalId, Guid? cajaId, PosDbContext db, CatalogoEnMemoria catalogo) =>
-            await catalogo.BuscarAsync(db, q, sucursalId, cajaId: cajaId));
+        // La pantalla nueva pide más (hasta 300) para juntar las familias completas; la lista muestra 30 renglones.
+        api.MapGet("/productos/buscar", async (string q, Guid sucursalId, Guid? cajaId, int? maximo, PosDbContext db, CatalogoEnMemoria catalogo) =>
+            await catalogo.BuscarAsync(db, q, sucursalId, Math.Clamp(maximo ?? 30, 1, 300), cajaId: cajaId));
 
         // Lo que se buscó y qué se eligió: lo elegido sale primero la próxima vez en esa caja; lo que no salió se revisa en Productos.
         api.MapPost("/busquedas", async (SolicitudBusqueda s, PosDbContext db, CatalogoEnMemoria catalogo) =>

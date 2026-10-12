@@ -363,9 +363,38 @@ escribir el usuario de quien autoriza:
   (`PermisoDeSesion.Autorizan`, también sin conexión). El servicio sigue revisando el PIN y el monto.
 - La pantalla de hoy sigue igual: se escribe el usuario.
 
+**Avance (2026-10-11), quinta parte: las familias en la búsqueda.** Lo que solo cambia en una cosa va en un renglón, con
+el nombre sin eso y los valores como fichas. Un análisis de los nombres del catálogo, con la copia local, mostró qué
+cambia más entre productos casi iguales: la medida, el color y la marca, y menos el contenido y, en cuadernos, el rayado
+(los números se comentaron en el chat).
+- **Qué se despliega:** lo primero que cambia entre los resultados, en este orden: color, tamaño, marca, contenido (en
+  cuadernos, el rayado primero). Con «lapicero negro» el color ya no cambia y se despliega el tamaño. **Tab** (o un clic
+  arriba de la lista) despliega por otra cosa, y la caja lo recuerda para ese texto.
+- **El renglón:** el nombre de eleventa sin lo que cambia, las fichas (el color con un punto de referencia, no el tono
+  exacto) y el precio, «desde» si cambia según el valor (el costo de compra es distinto, decisión del dueño). Un clic en
+  una ficha la agrega.
+- **Enter agrega siempre el más vendido de la familia** (decisión del dueño, 2026-10-11), que va marcado. **→** (con el
+  cursor al final del texto) o la flecha del renglón la despliegan: cada valor con su código, precio y existencia, y el
+  cursor en el más vendido; **↑ ↓** y Enter eligen otro; **←** o **Esc** la cierran. El Enter del lector nunca se
+  aplica a la lista.
+- **Cómo se lee el nombre** (`LectorDeNombres`, en el núcleo; igual en línea y sin conexión):
+  - la primera palabra es el producto; los colores, con su tono («Azul Rey»), sin género ni plural;
+  - el surtido («V/Colores», «Colores Surt.») es un color más, al final, con un punto de varios colores;
+  - las medidas se comparan igual aunque se escriban distinto («1.0 Mm», «1mm», «1.0»), y lo que acompaña a los
+    milímetros («P/Fino», «P/Mediano») va con la medida;
+  - la marca es lo último del nombre que no es color, medida ni contenido; se aprende de lo que se repite al final de
+    nombres de varios productos, y valen las dadas de alta;
+  - los juegos y paquetes no se juntan con la pieza; el tipo (gel, push, borrable) va en otro renglón, porque casi
+    siempre cambia el precio.
+- **Vocabulario confirmado con el dueño:** en los nombres de eleventa, «P/» es «para»; Kilométrico, Magistral, Tatoo,
+  Colorella y Diurex se tratan como marca. Los surtidos siguen como un solo producto.
+- **La búsqueda** manda con cada resultado cuántas veces se vendió en 90 días y el nombre en pedazos; la pantalla nueva
+  pide hasta 200 productos para que las familias salgan completas y muestra 30 renglones.
+
 Falta, en este orden:
-1. la búsqueda con familias de colores, fichas para afinar, el error de dedo y los sinónimos de la tienda;
-2. cuántas fichas de espera se ven, en Configuración (hoy son 3).
+1. afinar con fichas, el error de dedo y los sinónimos de la tienda;
+2. cuántas fichas de espera se ven, en Configuración (hoy son 3);
+3. que un surtido se pueda vender por color, como opción del producto (decisión del dueño, 2026-10-11).
 
 #### Después: el piloto en la caja 2
 
@@ -622,6 +651,14 @@ Depuración del inventario (antes del piloto, [ver arriba](#depuración-del-inve
 - [ ] Marcar las recargas y los pagos de servicios como cobro a terceros, antes de comparar contra el año anterior
   (falta esa decisión en la depuración y la opción en la ficha; tampoco existe todavía la decisión «es equipo»)
 - [ ] Conteo físico completo: reemplaza todas las existencias de eleventa
+- [ ] Revisar los productos con el mismo nombre: pueden ser el mismo dado de alta dos veces o productos distintos, y
+  varios tienen precio distinto (la lista, con los datos reales, está fuera del repositorio, junto a la copia de
+  eleventa, en `depuracion-pendientes.md`)
+- [ ] Para que las familias de la búsqueda salgan completas (análisis de los nombres, 2026-10-11):
+  - corregir los errores de dedo (la lista está en el mismo archivo);
+  - escribir el surtido de una sola forma (hoy hay más de diez) y las medidas igual («1.0 mm», «250 ml», «#9», «C/12»);
+  - llenar la marca de cada producto, con una sola escritura;
+  - pasar «pieza o paquete» y «por metro» del nombre a presentaciones y mayoreo.
 
 Por definir:
 

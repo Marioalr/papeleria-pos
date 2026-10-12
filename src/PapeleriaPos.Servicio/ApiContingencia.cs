@@ -33,10 +33,12 @@ public static class ApiContingencia
             var ticket = await ApiConfiguracion.ConfiguracionAsync(db, caja.SucursalId, opciones.Value);
             var limite = await db.ConfiguracionesSucursal.Where(c => c.SucursalId == caja.SucursalId).Select(c => c.LimiteEfectivoCentavos).FirstOrDefaultAsync();
             var clientes = await ApiClientes.ParaLaCajaAsync(db, caja.SucursalId);
+            // Las marcas dadas de alta: sin conexión, la búsqueda junta las familias igual que en línea.
+            var marcas = await db.Marcas.AsNoTracking().Where(m => m.Activa).Select(m => m.Nombre).ToListAsync();
             return new PaqueteContingenciaDto(version, new CajaDto(caja.Id, caja.Nombre, caja.Serie, caja.SucursalId, sucursal!.Nombre, caja.Equipo),
                 productos, codigos, usuarios, reglas, ticket.RenglonesEncabezado, ticket.RenglonesPie, ApiConfiguracion.Logo(ticket),
                 await new RegistroCaja(db).UltimoFolioAsync(caja.SucursalId, caja.Serie), limite,
-                ApiClientes.ParaCajasDeAntes(clientes), clientes);
+                ApiClientes.ParaCajasDeAntes(clientes), clientes, marcas);
         });
 
         // Lo que lleva el turno, sin guardar un corte: la base de la cuenta que la caja lleva por su lado.

@@ -106,37 +106,127 @@
                             <div class="vn-res-ayuda"><span><kbd>↑</kbd> <kbd>↓</kbd> elegir</span><span><kbd>Enter</kbd> hacerla</span><span><kbd>Esc</kbd> cerrar</span><span>«/desc» deja solo las que dicen «desc»</span></div>
                         </div>
                     }
-                    else if (_resultados is { } resultados)
+                    else if (_resultados is { } resultados && _familias is { } familias)
                     {
-                        @* Lo que se escribe a mano busca aquí mismo, sin otra ventana; el lector no (no espera a dejar de teclear). *@
-                        <div class="vn-resultados" role="listbox">
+                        @* Lo que se escribe a mano busca aquí mismo, sin otra ventana; el lector no (no espera a dejar de teclear). Lo que
+                           solo cambia en el color, la medida o la marca va en un renglón: una familia (docs/propuesta-interfaz.md). *@
+                        <div class="vn-resultados" role="listbox" data-familias="@familias.Ejes.Count">
                             @if (resultados.Count == 0)
                             {
                                 <div class="vn-res-vacio">Nada coincide con «@_textoBuscado». Revisa cómo se escribe, o véndelo como artículo común (<kbd>Ins</kbd>).</div>
                             }
                             else
                             {
-                                <div class="vn-res-grupo">Productos · @resultados.Count@(resultados.Count >= MaximoResultados ? " o más" : ""): primero lo que se eligió aquí con este texto, luego lo más vendido</div>
-                                @for (var k = 0; k < resultados.Count; k++)
+                                var vistos = Math.Min(familias.Renglones.Count, MaximoResultados);
+                                <div class="vn-res-grupo">
+                                    Productos · @resultados.Count@(resultados.Count >= ParaFamilias ? " o más" : "")@(familias.Renglones.Count < resultados.Count ? $" en {familias.Renglones.Count} renglones" : ""): primero lo que se eligió aquí con este texto, luego lo más vendido
+                                </div>
+                                @if (familias.Ejes.Count > 0)
                                 {
-                                    var indiceRes = k;
-                                    var r = resultados[k];
-                                    <div id="res-@k" class="vn-res @(k == _indiceResultado ? "activa" : "")" role="option" @onclick="() => ElegirResultadoAsync(indiceRes)">
-                                        <div class="vn-res-texto">
-                                            <div class="vn-res-nombre">@Marcado(r.Descripcion)</div>
-                                            @if (r.Codigo is { } codigoRes)
-                                            {
-                                                <div class="vn-res-sub"><code>@Marcado(codigoRes)</code></div>
-                                            }
-                                        </div>
-                                        <div class="vn-res-precio">@Formato.Dinero(r.PrecioCentavos)</div>
-                                        <div class="vn-res-exist @(r.Existencia is <= 0 ? "nada" : r.Existencia is <= 3 ? "poca" : "")">
-                                            @ExistenciaTexto(r.Existencia)
-                                        </div>
+                                    <div class="vn-ejes">
+                                        <span>Desplegar por</span>
+                                        @foreach (var eje in familias.Ejes)
+                                        {
+                                            var este = eje;
+                                            <button class="@(eje == familias.Eje ? "activo" : "")" @onclick="() => ElegirEje(este)" @onclick:preventDefault="true">@NombreDeEje(eje)</button>
+                                        }
+                                        @if (familias.Ejes.Count > 1)
+                                        {
+                                            <small><kbd>Tab</kbd> cambia</small>
+                                        }
                                     </div>
                                 }
+                                var n = 0;
+                                for (var k = 0; k < vistos; k++)
+                                {
+                                    var indiceRenglon = k;
+                                    var renglon = familias.Renglones[k];
+                                    var r = renglon.Elegido;
+                                    var activo = n == _indiceResultado;
+                                    var idRenglon = n++;
+                                    if (!renglon.EsFamilia)
+                                    {
+                                        <div id="res-@idRenglon" class="vn-res @(activo ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, -1)">
+                                            <div class="vn-res-texto">
+                                                <div class="vn-res-nombre">@Marcado(r.Descripcion)</div>
+                                                @if (r.Codigo is { } codigoRes)
+                                                {
+                                                    <div class="vn-res-sub"><code>@Marcado(codigoRes)</code></div>
+                                                }
+                                            </div>
+                                            <div class="vn-res-precio">@Formato.Dinero(r.PrecioCentavos)</div>
+                                            <div class="vn-res-exist @ExistenciaClase(r.Existencia)">@ExistenciaTexto(r.Existencia)</div>
+                                        </div>
+                                        continue;
+                                    }
+                                    var abierta = indiceRenglon == _abierta;
+                                    var eje = renglon.Eje!.Value;
+                                    <div id="res-@idRenglon" class="vn-res vn-fam @(activo ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, -1)">
+                                        <div class="vn-res-texto">
+                                            <div class="vn-res-nombre">@Marcado(renglon.Titulo!)</div>
+                                            <div class="vn-valores">
+                                                @for (var v = 0; v < Math.Min(renglon.Valores.Count, ValoresALaVista); v++)
+                                                {
+                                                    var indiceValor = v;
+                                                    <button class="vn-valor @(v == renglon.MasVendido ? "mas" : "")" tabindex="-1" title="@ValorTitulo(renglon, v)"
+                                                            @onclick="() => AgregarDeLaListaAsync(indiceRenglon, indiceValor)" @onclick:stopPropagation="true" @onclick:preventDefault="true">
+                                                        @Punto(eje, renglon.Valores[v].Clave)@Marcado(ValorTexto(renglon, v))
+                                                    </button>
+                                                }
+                                                @if (renglon.Valores.Count > ValoresALaVista)
+                                                {
+                                                    <span class="vn-mas-valores">y @(renglon.Valores.Count - ValoresALaVista) más <kbd>→</kbd></span>
+                                                }
+                                            </div>
+                                            <div class="vn-res-sub">@renglon.Valores.Count @PluralDeEje(eje) · Enter agrega @ValorTexto(renglon, renglon.MasVendido), el más vendido</div>
+                                        </div>
+                                        <div class="vn-res-precio">@PrecioDeFamilia(renglon)</div>
+                                        <button class="vn-fam-flecha" tabindex="-1" title="@(abierta ? "Cerrar (←)" : "Ver cada uno con su precio y existencia (→)")"
+                                                @onclick="() => AlternarFamilia(indiceRenglon)" @onclick:stopPropagation="true" @onclick:preventDefault="true">
+                                            <Ico Nombre="@(abierta ? "abajo" : "derecha")" />
+                                        </button>
+                                    </div>
+                                    @if (abierta)
+                                    {
+                                        for (var v = 0; v < renglon.Valores.Count; v++)
+                                        {
+                                            var indiceValor = v;
+                                            var valor = renglon.Valores[v].Elemento;
+                                            var activoValor = n == _indiceResultado;
+                                            var idValor = n++;
+                                            <div id="res-@idValor" class="vn-res vn-res-valor @(activoValor ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, indiceValor)">
+                                                <div class="vn-res-texto">
+                                                    <div class="vn-res-nombre">
+                                                        @Punto(eje, renglon.Valores[v].Clave)@Marcado(ValorTexto(renglon, v))
+                                                        @if (v == renglon.MasVendido)
+                                                        {
+                                                            <span class="vn-etiq verde">más vendido</span>
+                                                        }
+                                                    </div>
+                                                    @if (valor.Codigo is { } codigoValor)
+                                                    {
+                                                        <div class="vn-res-sub"><code>@Marcado(codigoValor)</code></div>
+                                                    }
+                                                </div>
+                                                <div class="vn-res-precio">@Formato.Dinero(valor.PrecioCentavos)</div>
+                                                <div class="vn-res-exist @ExistenciaClase(valor.Existencia)">@ExistenciaTexto(valor.Existencia)</div>
+                                            </div>
+                                        }
+                                    }
+                                }
+                                if (familias.Renglones.Count > vistos)
+                                {
+                                    <div class="vn-res-vacio">Y @(familias.Renglones.Count - vistos) renglones más: escribe otra palabra para afinar.</div>
+                                }
                             }
-                            <div class="vn-res-ayuda"><span><kbd>↑</kbd> <kbd>↓</kbd> elegir</span><span><kbd>Enter</kbd> agregar</span><span><kbd>Esc</kbd> cerrar</span><span><kbd>3*</kbd> antes del texto = cantidad</span></div>
+                            <div class="vn-res-ayuda">
+                                <span><kbd>↑</kbd> <kbd>↓</kbd> elegir</span>
+                                @if (familias.Ejes.Count > 0)
+                                {
+                                    <span><kbd>→</kbd> desplegar · <kbd>←</kbd> cerrar</span>
+                                }
+                                <span><kbd>Enter</kbd> agregar</span><span><kbd>Esc</kbd> cerrar</span><span><kbd>3*</kbd> antes del texto = cantidad</span>
+                            </div>
                         </div>
                     }
                 </div>
@@ -1533,10 +1623,10 @@ else
             StateHasChanged();
             return;
         }
-        // Con ↑ ↓ se eligió uno de la lista de resultados: Enter agrega ese.
-        if (_resultados is { Count: > 0 } resultados && _navegado && SepararCantidad(texto).Texto == _textoBuscado)
+        // Con ↑ ↓ (o → y Tab) se eligió de la lista de resultados: Enter agrega ese; en una familia, su más vendido.
+        if (_resultados is { Count: > 0 } resultados && _navegado && SepararCantidad(texto).Texto == _textoBuscado && Seleccionado() is { } elegido)
         {
-            var (elegido, cantidad, buscado) = (resultados[_indiceResultado], _cantidadBuscada, _textoBuscado);
+            var (cantidad, buscado) = (_cantidadBuscada, _textoBuscado);
             CerrarResultados();
             await _captura.EsperarAsync();
             await AgregarResultadoAsync(elegido, cantidad, buscado, resultados.Count);
@@ -1565,10 +1655,164 @@ else
 
     // ── La búsqueda debajo del cuadro (pantalla nueva) ──────────────────────
 
+    /// <summary>Cuántos renglones muestra la lista.</summary>
     private const int MaximoResultados = 30;
+
+    /// <summary>Cuántos productos se piden: con más, las familias salen completas aunque la lista muestre 30 renglones.</summary>
+    private const int ParaFamilias = 200;
+
+    /// <summary>Cuántos valores se ven en el renglón de una familia; los demás, al desplegarla.</summary>
+    private const int ValoresALaVista = 8;
 
     /// <summary>Lo que sale al escribir; null: la lista está cerrada.</summary>
     private List<ResultadoBusquedaDto>? _resultados;
+
+    /// <summary>Los resultados en renglones: lo que solo cambia en el color, la medida o la marca va junto.</summary>
+    private AgrupacionDeFamilias<ResultadoBusquedaDto>? _familias;
+
+    /// <summary>El renglón de la familia desplegada, o -1.</summary>
+    private int _abierta = -1;
+
+    /// <summary>Lo que se eligió desplegar con Tab para cada texto: la próxima vez con ese texto se despliega igual.</summary>
+    private readonly Dictionary<string, EjeFamilia> _ejePorTexto = [];
+
+    private void Agrupar()
+    {
+        if (_resultados is not { } resultados)
+        {
+            (_familias, _abierta) = (null, -1);
+            return;
+        }
+        EjeFamilia? preferido = _ejePorTexto.TryGetValue(Texto.Normalizar(_textoBuscado), out var eje) ? eje : null;
+        _familias = Familias.Agrupar(resultados, r => r.Partes ?? [], r => r.Vendidos, preferido);
+        _abierta = -1;
+    }
+
+    /// <summary>Lo que se recorre con ↑ ↓: cada renglón y, en la familia desplegada, cada valor (-1: el renglón).</summary>
+    private List<(int Renglon, int Valor)> Navegables()
+    {
+        var lista = new List<(int, int)>();
+        if (_familias is not { } familias)
+            return lista;
+        for (var k = 0; k < Math.Min(familias.Renglones.Count, MaximoResultados); k++)
+        {
+            lista.Add((k, -1));
+            if (k == _abierta)
+                lista.AddRange(Enumerable.Range(0, familias.Renglones[k].Valores.Count).Select(v => (k, v)));
+        }
+        return lista;
+    }
+
+    /// <summary>El producto de un renglón (el más vendido, si es familia) o de uno de sus valores.</summary>
+    private ResultadoBusquedaDto? DeLaLista(int renglon, int valor) =>
+        _familias is { } familias && renglon >= 0 && renglon < familias.Renglones.Count
+            ? valor < 0 ? familias.Renglones[renglon].Elegido : familias.Renglones[renglon].Valores[valor].Elemento
+            : null;
+
+    private ResultadoBusquedaDto? Seleccionado() =>
+        Navegables() is var lista && _indiceResultado >= 0 && _indiceResultado < lista.Count
+            ? DeLaLista(lista[_indiceResultado].Renglon, lista[_indiceResultado].Valor)
+            : null;
+
+    /// <summary>→ (o la flecha del renglón): despliega la familia con el cursor en el más vendido.</summary>
+    private void AbrirSeleccionada()
+    {
+        var lista = Navegables();
+        if (_familias is not { } familias || _indiceResultado >= lista.Count || lista[_indiceResultado] is not (var renglon, -1)
+            || !familias.Renglones[renglon].EsFamilia)
+            return;
+        _abierta = renglon;
+        _indiceResultado = Navegables().IndexOf((renglon, familias.Renglones[renglon].MasVendido));
+        _navegado = true;
+        _ = Js.MostrarAsync($"#res-{_indiceResultado}");
+    }
+
+    /// <summary>← o Esc: cierra la familia y el cursor vuelve a su renglón.</summary>
+    private void CerrarFamilia()
+    {
+        if (_abierta < 0)
+            return;
+        var renglon = _abierta;
+        _abierta = -1;
+        _indiceResultado = Navegables().IndexOf((renglon, -1));
+    }
+
+    private void AlternarFamilia(int renglon)
+    {
+        if (_abierta == renglon)
+        {
+            CerrarFamilia();
+        }
+        else
+        {
+            _abierta = -1;
+            _indiceResultado = Navegables().IndexOf((renglon, -1));
+            AbrirSeleccionada();
+        }
+        _enfocar = "#codigo";
+    }
+
+    /// <summary>Tab y Mayús+Tab: despliega por lo siguiente que cambia (color, medida, marca…). Se recuerda para ese texto.</summary>
+    private void CambiarEje(int paso)
+    {
+        if (_familias is not { Ejes.Count: > 1 } familias)
+            return;
+        var actual = familias.Eje is { } eje ? familias.Ejes.ToList().IndexOf(eje) : -1;
+        ElegirEje(familias.Ejes[(actual + paso + familias.Ejes.Count) % familias.Ejes.Count]);
+    }
+
+    private void ElegirEje(EjeFamilia eje)
+    {
+        _ejePorTexto[Texto.Normalizar(_textoBuscado)] = eje;
+        Agrupar();
+        (_indiceResultado, _navegado) = (0, true);
+        _enfocar = "#codigo";
+    }
+
+    private static string NombreDeEje(EjeFamilia eje) => eje switch
+    {
+        EjeFamilia.Color => "Color",
+        EjeFamilia.Medida => "Tamaño",
+        EjeFamilia.Marca => "Marca",
+        EjeFamilia.Contenido => "Contenido",
+        _ => "Rayado",
+    };
+
+    private static string PluralDeEje(EjeFamilia eje) => eje switch
+    {
+        EjeFamilia.Color => "colores",
+        EjeFamilia.Medida => "tamaños",
+        EjeFamilia.Marca => "marcas",
+        EjeFamilia.Contenido => "contenidos",
+        _ => "rayados",
+    };
+
+    /// <summary>El valor como se escribió; si dos se llaman igual (un producto repetido en el catálogo), con su precio.</summary>
+    private static string ValorTexto(RenglonDeFamilia<ResultadoBusquedaDto> renglon, int v)
+    {
+        var valor = renglon.Valores[v];
+        var repetido = renglon.Valores.Count(x => x.Clave == valor.Clave) > 1;
+        return repetido ? $"{valor.Texto} · {Formato.Dinero(valor.Elemento.PrecioCentavos)}" : valor.Texto;
+    }
+
+    private static string ValorTitulo(RenglonDeFamilia<ResultadoBusquedaDto> renglon, int v) =>
+        $"{renglon.Valores[v].Elemento.Descripcion} · {Formato.Dinero(renglon.Valores[v].Elemento.PrecioCentavos)} · {ExistenciaTexto(renglon.Valores[v].Elemento.Existencia)}";
+
+    /// <summary>Si el precio cambia según el valor (el costo de compra es distinto), «desde» el más bajo.</summary>
+    private static string PrecioDeFamilia(RenglonDeFamilia<ResultadoBusquedaDto> renglon)
+    {
+        var precios = renglon.Valores.Select(v => v.Elemento.PrecioCentavos).Distinct().ToList();
+        return precios.Count == 1 ? Formato.Dinero(precios[0]) : $"desde {Formato.Dinero(precios.Min())}";
+    }
+
+    /// <summary>El punto de color de referencia (el surtido, de varios colores); en otros ejes, nada.</summary>
+    private static RenderFragment Punto(EjeFamilia eje, string clave) => eje != EjeFamilia.Color
+        ? _ => { }
+        : MuestraDeColor.Css(clave) is { } css
+            ? @<span class="vn-punto" style="background:@css"></span>
+            : @<span class="vn-punto surtido"></span>;
+
+    private static string ExistenciaClase(decimal? existencia) => existencia is <= 0 ? "nada" : existencia is <= 3 ? "poca" : "";
 
     private string _textoBuscado = "";
     private string[] _partesBuscadas = [];
@@ -1615,17 +1859,19 @@ else
             if (_resultados is not null)
             {
                 _resultados = null;
+                Agrupar();
                 StateHasChanged();
             }
             return;
         }
         try
         {
-            var resultados = await Cliente.BuscarAsync(resto, Caja.SucursalId, Caja.Id);
+            var resultados = await Cliente.BuscarAsync(resto, Caja.SucursalId, Caja.Id, ParaFamilias);
             if (secuencia != _secuenciaBusqueda)
                 return;
             (_resultados, _textoBuscado, _cantidadBuscada, _indiceResultado, _navegado) = (resultados, resto, cantidad, 0, false);
             _partesBuscadas = Texto.Normalizar(resto).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            Agrupar();
         }
         catch (ErrorCaja ex)
         {
@@ -1637,25 +1883,27 @@ else
     private void CerrarResultados()
     {
         _resultados = null;
+        Agrupar();
         _navegado = false;
         _secuenciaBusqueda++;
     }
 
     private void MoverResultado(int paso)
     {
-        if (_resultados is not { Count: > 0 } resultados)
+        var lista = Navegables();
+        if (lista.Count == 0)
             return;
-        _indiceResultado = Math.Clamp(_indiceResultado + paso, 0, resultados.Count - 1);
+        _indiceResultado = Math.Clamp(_indiceResultado + paso, 0, lista.Count - 1);
         _navegado = true;
         _ = Js.MostrarAsync($"#res-{_indiceResultado}");
     }
 
-    /// <summary>Un clic en un resultado.</summary>
-    private async Task ElegirResultadoAsync(int indice)
+    /// <summary>Un clic en un renglón (en una familia, su más vendido), en uno de sus valores o en su ficha.</summary>
+    private async Task AgregarDeLaListaAsync(int renglon, int valor)
     {
-        if (_resultados is not { } resultados || indice < 0 || indice >= resultados.Count)
+        if (_resultados is not { } resultados || DeLaLista(renglon, valor) is not { } elegido)
             return;
-        var (elegido, cantidad, buscado) = (resultados[indice], _cantidadBuscada, _textoBuscado);
+        var (cantidad, buscado) = (_cantidadBuscada, _textoBuscado);
         CerrarResultados();
         VaciarCaptura();
         _enfocar = "#codigo";
@@ -1684,19 +1932,22 @@ else
     }
 
     /// <summary>
-    /// Enter con un nombre que no es código, sin elegir de la lista: agrega el primero (lo elegido antes o lo más vendido).
-    /// Si no sale nada, lo dice y lo anota, para darlo de alta o hacerlo sinónimo después.
+    /// Enter con un nombre que no es código, sin elegir de la lista: agrega el primer renglón (lo elegido antes o lo más
+    /// vendido); si es una familia, su más vendido. Si no sale nada, lo dice y lo anota, para darlo de alta o hacerlo
+    /// sinónimo después.
     /// </summary>
     private async Task AgregarPrimeroAsync(string texto, Cantidad cantidad)
     {
-        var resultados = await Cliente.BuscarAsync(texto, Caja.SucursalId, Caja.Id);
+        var resultados = await Cliente.BuscarAsync(texto, Caja.SucursalId, Caja.Id, _pantallaNueva ? ParaFamilias : MaximoResultados);
         if (resultados.Count == 0)
         {
             _ = Cliente.RegistrarBusquedaAsync(new SolicitudBusqueda(Caja.Id, texto, 0, null));
             Avisar($"Nada coincide con «{texto}». Revisa cómo se escribe, o véndelo como artículo común (Ins).");
             return;
         }
-        await AgregarResultadoAsync(resultados[0], cantidad, texto, resultados.Count);
+        EjeFamilia? preferido = _ejePorTexto.TryGetValue(Texto.Normalizar(texto), out var eje) ? eje : null;
+        var primero = Familias.Agrupar(resultados, r => r.Partes ?? [], r => r.Vendidos, preferido).Renglones[0].Elegido;
+        await AgregarResultadoAsync(primero, cantidad, texto, resultados.Count);
     }
 
     private static string ExistenciaTexto(decimal? existencia) => existencia switch
@@ -1778,6 +2029,22 @@ else
             if (_accionesVistas is null || filtro != _textoAcciones)
                 MostrarAcciones(filtro);
             MoverAccion(tecla == "ArrowUp" ? -1 : 1);
+            StateHasChanged();
+            return;
+        }
+        // Las familias de la lista (caja.js solo manda estas teclas con la lista abierta): → despliega, ← y Esc cierran, Tab
+        // despliega por otra cosa. Sin familia abierta, Esc hace lo de siempre.
+        if (tecla == "Escape-familia" && _abierta < 0)
+            tecla = "Escape";
+        if (_pantallaNueva && _familias is not null && tecla is "ArrowRight" or "ArrowLeft" or "Tab" or "Shift+Tab" or "Escape-familia")
+        {
+            switch (tecla)
+            {
+                case "ArrowRight": AbrirSeleccionada(); break;
+                case "ArrowLeft" or "Escape-familia": CerrarFamilia(); break;
+                case "Tab": CambiarEje(1); break;
+                case "Shift+Tab": CambiarEje(-1); break;
+            }
             StateHasChanged();
             return;
         }

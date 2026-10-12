@@ -43,7 +43,11 @@ public sealed record ProductoVentaDto(
     }).ToList();
 }
 
-public sealed record ResultadoBusquedaDto(Guid VarianteId, string Descripcion, string? Codigo, long PrecioCentavos, decimal? Existencia);
+/// <param name="Vendidos">Cuántas veces se vendió en 90 días: en una familia, Enter agrega el más vendido.</param>
+/// <param name="Partes">El nombre en pedazos (color, medida, marca…), para juntar las familias en la lista.</param>
+public sealed record ResultadoBusquedaDto(
+    Guid VarianteId, string Descripcion, string? Codigo, long PrecioCentavos, decimal? Existencia, int Vendidos = 0,
+    IReadOnlyList<ParteDeNombre>? Partes = null);
 
 /// <summary>Lo que se buscó en una caja y qué se eligió (vacío: no salió nada o no se eligió nada).</summary>
 public sealed record SolicitudBusqueda(Guid CajaId, string Texto, int Resultados, Guid? VarianteId);
@@ -259,7 +263,8 @@ public sealed record PaqueteContingenciaDto(
     long Version, CajaDto Caja, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<UsuarioLocalDto> Usuarios,
     IReadOnlyList<ReglaDto> Reglas,
     IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, int UltimoFolio, long? LimiteEfectivoCentavos,
-    IReadOnlyList<ClienteRegistradoDto>? Clientes = null, IReadOnlyList<ClienteRegistradoDto>? Registrados = null);
+    IReadOnlyList<ClienteRegistradoDto>? Clientes = null, IReadOnlyList<ClienteRegistradoDto>? Registrados = null,
+    IReadOnlyList<string>? Marcas = null);
 
 // Lo que sube con la bandeja. Cada cosa lleva el ID que le dio la caja: si llega dos veces, se guarda una.
 
