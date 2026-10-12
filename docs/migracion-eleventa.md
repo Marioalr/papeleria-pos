@@ -504,12 +504,14 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
 - **Eleventa abierto en la caja 2, en el mismo turno.** Hay una sola persona en la caja 2: vende en uno o en el otro.
   - La caja nueva adopta el turno abierto de esa caja en eleventa y guarda su `TURNOS.ID`; si no hay, lo abre al
     mandar lo primero, como hoy. Nunca deja de vender por esperar a eleventa.
-  - El puente no abre un segundo turno ni cierra «el que esté abierto»: cierra por `TURNOS.ID`, y si el turno adoptado
-    ya no está abierto o hay dos, lo que llegue queda por revisar, con aviso.
-  - Al cerrar, nunca borra un ticket abierto de eleventa que tenga artículos: espera y avisa (hoy el cierre borra los
-    tickets abiertos del turno, `EnvioEleventa.Devoluciones.cs`).
-  - El cierre le dice a eleventa lo contado y calcula el faltante o sobrante contra lo que eleventa espera de ese
-    turno, que ya trae lo vendido en los dos; el corte de la caja nueva muestra aparte «eleventa en esta caja».
+  - El puente no abre un segundo turno: si el turno adoptado ya no está abierto o hay dos, lo que llegue queda por
+    revisar, con aviso.
+  - **El corte se hace en eleventa** (decisión del dueño, 2026-10-12): mientras dure el piloto, el puente no cierra el
+    turno de eleventa (hoy el corte Z de la caja nueva lo cierra y borra los tickets abiertos del turno,
+    `EnvioEleventa.Devoluciones.cs`). Por ahora, al intentar el corte o al salir, la caja nueva avisa que el corte se
+    hace en eleventa. Después, la caja nueva toma ese corte: al ver cerrado el turno adoptado, cierra el suyo como
+    «corte hecho en eleventa», sin conteo y con lo contado allá; lo que siga en la bandeja de ese turno queda por
+    revisar, porque allá ya se contó.
   - Si se cae la red, se sigue en la caja nueva (contingencia): el eleventa de la caja 2 escribe en el Firebird de la
     principal y no vende sin red. Si falla la caja nueva, se cambia a eleventa.
 - **Devoluciones de ida y vuelta.**

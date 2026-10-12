@@ -456,6 +456,8 @@ visual (entrega 2). Para el piloto hace falta, en este orden:
     desactivan mientras la caja 2 manda sus ventas a eleventa.
   - **Eleventa no se cierra en la caja 2:** si algo falla, se cambia a eleventa de inmediato. Las dos venden en el mismo
     turno de esa caja.
+  - **El corte de la caja 2 se hace en eleventa** y la caja nueva toma ese corte. Por ahora, al intentar el corte o al
+    salir, la caja nueva avisa que el corte se hace en eleventa.
   - **Devoluciones y cancelaciones de ida y vuelta:** la caja 2 devuelve tickets cobrados en eleventa, y lo que se
     devuelve o cancela en eleventa de un ticket de la caja 2 regresa a su base.
   - **La regla de adaptación:** lo que solo sirve para convivir con eleventa se distingue de lo que se queda cuando se
@@ -721,9 +723,9 @@ Depuración del inventario (antes del piloto, [ver arriba](#depuración-del-inve
 
 Por definir:
 
-- [ ] Corte Z de la caja 2 durante el piloto, con eleventa abierto en la misma caja: ¿un solo conteo a ciegas en la
-  caja nueva, que cierra el turno de eleventa con lo contado (propuesta), o se sigue haciendo en eleventa como hoy y la
-  caja nueva toma ese corte? ([diseño](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))
+- [x] Corte Z de la caja 2 durante el piloto: se hace en eleventa y la caja nueva toma ese corte; por ahora, al
+  intentar el corte o al salir, la caja nueva avisa que el corte se hace en eleventa (2026-10-12,
+  [diseño](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))
 - [x] Revisar la [propuesta de rediseño de la interfaz](propuesta-interfaz.md) con su prototipo: aprobada el 2026-10-10
 - [x] Las preguntas de la venta para la entrega 0 (2026-10-10): rápidos Copia B/N ($2) y CURP ($10, 10 impresiones);
   sin billetes rápidos (se escribe lo que dio); sin sonidos por ahora
