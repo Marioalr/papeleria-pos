@@ -94,7 +94,7 @@ public sealed class ClientesApiTests(ServicioDePrueba servicio) : IClassFixture<
         var (variante, presentacion, menudeo, _) = await ConMayoreoAsync();
 
         var ticket = await Leer<TicketDto>(await http.PostAsJsonAsync("api/ventas", new SolicitudCobro(caja.Id, turno.Id, cajero.UsuarioId,
-            [new LineaSolicitada(variante, presentacion, 2000, "x")], [new CobroSolicitado(FormaPago.Efectivo, 10_000_000)], Ids.Nuevo(),
+            [new LineaSolicitada(variante, presentacion, 2000, "x")], [new CobroSolicitado(FormaPago.Efectivo, 100_000)], Ids.Nuevo(),
             ClienteId: arquitecto.Id)));
         var reimpreso = await Leer<TicketDto>(await http.GetAsync($"api/ventas/{ticket.VentaId}/ticket"));
         var ficha = await Leer<FichaClienteDto>(await http.GetAsync($"api/clientes/{arquitecto.Id}"));
@@ -116,7 +116,7 @@ public sealed class ClientesApiTests(ServicioDePrueba servicio) : IClassFixture<
 
         // La caja solo manda el precio si se cambió: el servicio tiene que llegar al mismo precio de mayoreo.
         var ticket = await Leer<TicketDto>(await http.PostAsJsonAsync("api/ventas", new SolicitudCobro(caja.Id, turno.Id, cajero.UsuarioId,
-            [new LineaSolicitada(variante, presentacion, 1000, "x")], [new CobroSolicitado(FormaPago.Efectivo, 10_000_000)], Ids.Nuevo(),
+            [new LineaSolicitada(variante, presentacion, 1000, "x")], [new CobroSolicitado(FormaPago.Efectivo, 100_000)], Ids.Nuevo(),
             ClienteId: revende.Id, MayoreoDeCliente: true)));
         var bajoCosto = await Leer<BajoCostoDto>(await http.PostAsJsonAsync("api/descuentos/bajo-costo",
             new SolicitudBajoCosto(caja.Id, [new LineaSolicitada(variante, presentacion, 1000)], revende.Id, MayoreoDeCliente: true)));
@@ -153,7 +153,7 @@ public sealed class ClientesApiTests(ServicioDePrueba servicio) : IClassFixture<
         await contingencia.LatidoAsync();
         var copia = await cliente.ClientesRegistradosAsync(caja.SucursalId);
         var ticket = await cliente.CobrarAsync(new SolicitudCobro(caja.Id, turno.Id, cajero.UsuarioId,
-            [new LineaSolicitada(variante, presentacion, 1000, "x")], [new CobroSolicitado(FormaPago.Efectivo, 10_000_000)], ClienteId: revende.Id,
+            [new LineaSolicitada(variante, presentacion, 1000, "x")], [new CobroSolicitado(FormaPago.Efectivo, 100_000)], ClienteId: revende.Id,
             MayoreoDeCliente: true));
         interruptor.Caido = false;
         await contingencia.LatidoAsync();
@@ -205,7 +205,7 @@ public sealed class ClientesApiTests(ServicioDePrueba servicio) : IClassFixture<
         var (variante, presentacion, _, _) = await ConMayoreoAsync();
         SolicitudCobro Cobro(bool mayoreo, int? descuento) => new(caja.Id, turno.Id, cajero.UsuarioId,
             [new LineaSolicitada(variante, presentacion, 1000, "x", DescuentoCentesimas: descuento, MotivoDescuento: descuento is null ? null : cliente.MotivoDescuento())],
-            [new CobroSolicitado(FormaPago.Efectivo, 10_000_000)], Ids.Nuevo(), ClienteId: cliente.Id, MayoreoDeCliente: mayoreo);
+            [new CobroSolicitado(FormaPago.Efectivo, 100_000)], Ids.Nuevo(), ClienteId: cliente.Id, MayoreoDeCliente: mayoreo);
 
         await Leer<ClienteRegistradoDto>(await GuardarAsync(http, encargado, caja, cliente with { DescuentoCentesimas = 500, MayoreoSiempre = false }));
         var sinMayoreo = await http.PostAsJsonAsync("api/ventas", Cobro(mayoreo: true, descuento: null));

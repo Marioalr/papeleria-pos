@@ -86,6 +86,37 @@ public class RegistroCajaTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Un_codigo_escaneado_en_pago_con_no_se_cobra_ni_gasta_folio()
+    {
+        await using var db = _base.Contexto();
+        var registro = new RegistroCaja(db);
+        var turno = await registro.AbrirTurnoAsync(_caja.Id, _cajera.Id, 0);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            registro.CobrarAsync(VentaDe(turno, 3), [new CobroSolicitado(FormaPago.Efectivo, 750123456789000)]));
+        var despues = await registro.CobrarAsync(VentaDe(turno, 1), [new CobroSolicitado(FormaPago.Efectivo, 2000)]);
+
+        Assert.Contains("no puede ser", error.Message);
+        Assert.Equal("A-000001", despues.FolioTexto);
+        await using var lectura = _base.Contexto();
+        Assert.Equal(1, await lectura.Ventas.CountAsync());
+    }
+
+    [Fact]
+    public async Task Lo_cobrado_sin_conexion_sube_aunque_el_cambio_pase_del_tope()
+    {
+        await using var db = _base.Contexto();
+        var registro = new RegistroCaja(db);
+        var turno = await registro.AbrirTurnoAsync(_caja.Id, _cajera.Id, 0);
+
+        // Ya se cobró en la caja sin conexión: si se rechazara, la bandeja se atoraría con una venta que ya pasó.
+        var venta = await registro.CobroDeContingenciaAsync(VentaDe(turno, 3), [new CobroSolicitado(FormaPago.Efectivo, 500000)], 5,
+            _base.Reloj.Ahora.UtcDateTime);
+
+        Assert.Equal(("A-000005", 497000L), (venta.FolioTexto, venta.CambioCentavos));
+    }
+
+    [Fact]
     public async Task Una_caja_no_abre_dos_turnos()
     {
         await using var db = _base.Contexto();

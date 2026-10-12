@@ -149,8 +149,9 @@ public sealed class RedondeoApiTests(ServicioDePrueba servicio) : IClassFixture<
             presentacion = await db.Presentaciones.Where(p => p.VarianteId == variante && p.EsBase).Select(p => p.Id).SingleAsync();
         }
 
+        // Lo que cuesta en la escala y $10 más: el cambio no pasa del tope.
         var ticket = await Leer<TicketDto>(await http.PostAsJsonAsync("api/ventas", new SolicitudCobro(caja.Id, turno.Id, cajero.UsuarioId,
-            [new LineaSolicitada(variante, presentacion, desde, "x")], [new CobroSolicitado(FormaPago.Efectivo, 10_000_000)])));
+            [new LineaSolicitada(variante, presentacion, desde, "x")], [new CobroSolicitado(FormaPago.Efectivo, desde / 1000 * mayoreo + 1000)])));
         var reimpreso = await Leer<TicketDto>(await http.GetAsync($"api/ventas/{ticket.VentaId}/ticket"));
 
         var piezas = desde / 1000;

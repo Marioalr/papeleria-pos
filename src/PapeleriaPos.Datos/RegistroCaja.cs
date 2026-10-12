@@ -108,7 +108,10 @@ public sealed class RegistroCaja(PosDbContext db)
         if (turno.CajaId != venta.CajaId || turno.SucursalId != venta.SucursalId)
             throw new InvalidOperationException("La venta no es del turno abierto de esta caja.");
 
-        venta.ValidarCobros(cobros, redondear);
+        // Lo que ya se cobró sin conexión no se rechaza por el cambio: la caja lo revisó con la misma regla al cobrar, y
+        // rechazarlo atoraría la bandeja con una venta que ya pasó.
+        var topeDeCambio = folioDeLaCaja is null;
+        venta.ValidarCobros(cobros, redondear, topeDeCambio);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         try
@@ -149,7 +152,7 @@ public sealed class RegistroCaja(PosDbContext db)
                 await inventario.AgregarAsync(salida, ct);
             }
 
-            venta.Pagar(folio, cobros, ahora, redondear);
+            venta.Pagar(folio, cobros, ahora, redondear, topeDeCambio);
             await new RegistroCredito(db).CargarAsync(venta, turno, fiado, ct);
             foreach (var trabajo in impresiones ?? [])
                 trabajo.Cobrar(venta.Id, ahora);
