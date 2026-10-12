@@ -45,9 +45,10 @@ public sealed record ProductoVentaDto(
 
 /// <param name="Vendidos">Cuántas veces se vendió en 90 días: en una familia, Enter agrega el más vendido.</param>
 /// <param name="Partes">El nombre en pedazos (color, medida, marca…), para juntar las familias en la lista.</param>
+/// <param name="Parecido">Nada coincidía exacto: salió por un error de dedo («sobre manial»).</param>
 public sealed record ResultadoBusquedaDto(
     Guid VarianteId, string Descripcion, string? Codigo, long PrecioCentavos, decimal? Existencia, int Vendidos = 0,
-    IReadOnlyList<ParteDeNombre>? Partes = null);
+    IReadOnlyList<ParteDeNombre>? Partes = null, bool Parecido = false);
 
 /// <summary>Lo que se buscó en una caja y qué se eligió (vacío: no salió nada o no se eligió nada).</summary>
 public sealed record SolicitudBusqueda(Guid CajaId, string Texto, int Resultados, Guid? VarianteId);

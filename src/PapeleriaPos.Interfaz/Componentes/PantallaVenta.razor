@@ -118,8 +118,16 @@
                             else
                             {
                                 var vistos = Math.Min(familias.Renglones.Count, MaximoResultados);
+                                var cuantos = $"{resultados.Count}{(resultados.Count >= ParaFamilias ? " o más" : "")}{(familias.Renglones.Count < resultados.Count ? $" en {familias.Renglones.Count} renglones" : "")}";
                                 <div class="vn-res-grupo">
-                                    Productos · @resultados.Count@(resultados.Count >= ParaFamilias ? " o más" : "")@(familias.Renglones.Count < resultados.Count ? $" en {familias.Renglones.Count} renglones" : ""): primero lo que se eligió aquí con este texto, luego lo más vendido
+                                    @if (resultados[0].Parecido)
+                                    {
+                                        @($"Parecidos a «{_textoBuscado}» · {cuantos}: nada coincide exacto, ¿será un error de dedo?")
+                                    }
+                                    else
+                                    {
+                                        @($"Productos · {cuantos}: primero lo que se eligió aquí con este texto, luego lo más vendido")
+                                    }
                                 </div>
                                 @if (familias.Ejes.Count > 0)
                                 {
@@ -134,6 +142,19 @@
                                         {
                                             <small><kbd>Tab</kbd> cambia</small>
                                         }
+                                    </div>
+                                }
+                                @if (ParaAfinar() is { Count: > 0 } afinar)
+                                {
+                                    @* Con un texto general, las palabras que separan los resultados: un clic las agrega a lo escrito. *@
+                                    <div class="vn-afinar">
+                                        <span>Afinar</span>
+                                        @foreach (var (palabra, veces) in afinar)
+                                        {
+                                            var esta = palabra;
+                                            <button tabindex="-1" @onclick="() => AfinarAsync(esta)" @onclick:preventDefault="true">@esta.ToLowerInvariant() <small>@veces</small></button>
+                                        }
+                                        <small>o escribe el principio de otra palabra</small>
                                     </div>
                                 }
                                 var n = 0;
@@ -1814,6 +1835,45 @@ else
 
     private static string ExistenciaClase(decimal? existencia) => existencia is <= 0 ? "nada" : existencia is <= 3 ? "poca" : "";
 
+    /// <summary>Cuántas fichas para afinar se ven.</summary>
+    private const int FichasParaAfinar = 7;
+
+    /// <summary>
+    /// Con un texto general («folder»), las palabras que separan los resultados, de la que más separa a la que menos: la
+    /// marca, la medida, otra palabra del nombre. Lo que ya sale como ficha de los renglones (el eje desplegado) no se
+    /// repite (docs/propuesta-interfaz.md, «Afinar con fichas»).
+    /// </summary>
+    private List<(string Palabra, int Veces)> ParaAfinar()
+    {
+        if (_resultados is not { Count: >= 4 } resultados)
+            return [];
+        var desplegado = _familias?.Eje;
+        var cuenta = new Dictionary<string, int>();
+        foreach (var r in resultados)
+        {
+            var delProducto = (r.Partes ?? [])
+                .Where(p => p.Clave.Length >= 2 && !p.Clave.All(char.IsDigit) && (desplegado is null || p.Eje != desplegado))
+                .Where(p => !_partesBuscadas.Any(b => p.Clave.StartsWith(b, StringComparison.Ordinal)))
+                .Select(p => p.Clave)
+                .ToHashSet();
+            foreach (var palabra in delProducto)
+                cuenta[palabra] = cuenta.GetValueOrDefault(palabra) + 1;
+        }
+        var lista = cuenta.Where(x => x.Value < resultados.Count)
+            .OrderByDescending(x => x.Value).ThenBy(x => x.Key, StringComparer.Ordinal)
+            .Take(FichasParaAfinar).Select(x => (x.Key, x.Value)).ToList();
+        return lista.Count >= 2 ? lista : [];
+    }
+
+    /// <summary>Una ficha para afinar: la palabra se agrega a lo escrito y se busca otra vez.</summary>
+    private async Task AfinarAsync(string palabra)
+    {
+        var texto = $"{_captura.Texto.TrimEnd()} {palabra.ToLowerInvariant()}";
+        _captura.Texto = texto;
+        await Js.EscribirCapturaAsync(texto);
+        await BuscarMientrasEscribeAsync(texto);
+    }
+
     private string _textoBuscado = "";
     private string[] _partesBuscadas = [];
     private Cantidad _cantidadBuscada = Cantidad.Piezas(1);
@@ -2034,7 +2094,9 @@ else
         }
         // Las familias de la lista (caja.js solo manda estas teclas con la lista abierta): → despliega, ← y Esc cierran, Tab
         // despliega por otra cosa. Sin familia abierta, Esc hace lo de siempre.
-        if (tecla == "Escape-familia" && _abierta < 0)
+        // caja.js no vació el cuadro si creyó que había una familia abierta.
+        var cuadroSinVaciar = tecla == "Escape-familia";
+        if (cuadroSinVaciar && _abierta < 0)
             tecla = "Escape";
         if (_pantallaNueva && _familias is not null && tecla is "ArrowRight" or "ArrowLeft" or "Tab" or "Shift+Tab" or "Escape-familia")
         {
@@ -2110,7 +2172,12 @@ else
             case "F4": await Abrir(Ventanas.Inventario); break;
             case "Escape":
                 _cobrado = null;
-                VaciarCaptura();
+                // Desde el cuadro de captura, caja.js ya lo vació: vaciarlo otra vez desde aquí borraría lo que se
+                // empezó a escribir enseguida.
+                if (_pantallaNueva && texto is not null && !cuadroSinVaciar)
+                    _captura.Texto = "";
+                else
+                    VaciarCaptura();
                 _mensaje = null;
                 if (_pantallaNueva)
                 {

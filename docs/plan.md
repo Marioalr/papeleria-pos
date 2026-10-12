@@ -391,8 +391,20 @@ cambia más entre productos casi iguales: la medida, el color y la marca, y meno
 - **La búsqueda** manda con cada resultado cuántas veces se vendió en 90 días y el nombre en pedazos; la pantalla nueva
   pide hasta 200 productos para que las familias salgan completas y muestra 30 renglones.
 
+**Avance (2026-10-11), sexta parte: afinar y el error de dedo.**
+- **Afinar con fichas:** con un texto general, arriba de la lista salen las palabras que separan los resultados, de
+  la que más separa a la que menos («folder» → carta, oficio, la marca). Un clic la agrega a lo escrito; también se
+  puede escribir su principio. Lo que ya sale como ficha en los renglones no se repite.
+- **El error de dedo** (`ErrorDeDedo`, igual en línea y sin conexión): si nada coincide exacto, cada pedazo de 4 letras o
+  más puede diferir en una letra (cambiada, de más, de menos o dos volteadas). La lista lo dice: «Parecidos a «sobre
+  manial»: nada coincide exacto». Primero los que coinciden exacto en más palabras.
+- **Se busca también por lo que lee la caja del nombre:** «negro» encuentra «Negra», «plata» el «Plateado», «surtido»
+  los «V/Colores» y «1mm» el «1.0 Mm». Así una ficha de medida afina aunque la medida esté escrita distinto.
+- **Esc y escribir enseguida** ya no pierde las primeras letras: el cuadro se vaciaba otra vez desde el servicio.
+
 Falta, en este orden:
-1. afinar con fichas, el error de dedo y los sinónimos de la tienda;
+1. los sinónimos de la tienda: dónde se guardan, cómo se dan de alta y que lleguen a las cajas. Lo que se buscó y no se
+   encontró no entra (decisión del dueño, 2026-10-11);
 2. cuántas fichas de espera se ven, en Configuración (hoy son 3);
 3. que un surtido se pueda vender por color, como opción del producto (decisión del dueño, 2026-10-11).
 
