@@ -2,7 +2,7 @@
    cobra al peso con la misma regla que aplica el servicio (Venta.Efectivo); las impresiones van exactas. Con un cliente que
    tiene crédito (o saldo a favor), una parte o todo se fía a su cuenta (fase 3, entrega 2); pasar su límite lo autoriza
    el encargado o el dueño. Si el lector escribe en un campo o un botón del cobro (data-cobro), caja.js manda el código
-   a la captura y su Enter no cobra. *@
+   a la captura y su Enter no cobra. En el piloto con eleventa, solo efectivo: lo demás no aparece. *@
 @inject ModuloCaja Js
 @inject ClienteCaja Servicio
 
@@ -24,7 +24,11 @@ else
         <input id="pago-efectivo" data-cobro inputmode="decimal" @bind="_efectivo" @bind:event="oninput" @onkeydown="AlTeclear" />
     </label>
 
-    @if (PuedeFiar && Cuenta is { } cuenta)
+    @if (PilotoEleventa)
+    {
+        <p class="nota">@PilotoConEleventa.NoSeCobra</p>
+    }
+    else if (PuedeFiar && Cuenta is { } cuenta)
     {
         <fieldset class="cobrar-credito">
             <legend>@(ConCredito ? "A crédito" : "De su saldo a favor")</legend>
@@ -72,24 +76,27 @@ else
         </fieldset>
     }
 
-    <details>
-        <summary>Tarjeta o transferencia</summary>
-        <div class="dos-columnas">
-            <label>Tarjeta
-                <input data-cobro inputmode="decimal" @bind="_tarjeta" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
-            </label>
-            <label>Referencia de la terminal
-                <input data-cobro @bind="_refTarjeta" @bind:event="oninput" @onkeydown="AlTeclear" />
-            </label>
-            <label>Transferencia
-                <input data-cobro inputmode="decimal" @bind="_transferencia" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
-            </label>
-            <label>Referencia
-                <input data-cobro @bind="_refTransferencia" @bind:event="oninput" @onkeydown="AlTeclear" />
-            </label>
-        </div>
-        <p class="nota">La transferencia queda por verificar hasta que el encargado confirme que llegó el dinero.</p>
-    </details>
+    @if (!PilotoEleventa)
+    {
+        <details>
+            <summary>Tarjeta o transferencia</summary>
+            <div class="dos-columnas">
+                <label>Tarjeta
+                    <input data-cobro inputmode="decimal" @bind="_tarjeta" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+                </label>
+                <label>Referencia de la terminal
+                    <input data-cobro @bind="_refTarjeta" @bind:event="oninput" @onkeydown="AlTeclear" />
+                </label>
+                <label>Transferencia
+                    <input data-cobro inputmode="decimal" @bind="_transferencia" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+                </label>
+                <label>Referencia
+                    <input data-cobro @bind="_refTransferencia" @bind:event="oninput" @onkeydown="AlTeclear" />
+                </label>
+            </div>
+            <p class="nota">La transferencia queda por verificar hasta que el encargado confirme que llegó el dinero.</p>
+        </details>
+    }
 
     <div class="cobrar-resumen">
         @if (Faltante > 0)
@@ -127,6 +134,9 @@ else
     /// <summary>Recibe los cobros y la autorización para pasar el límite (si hizo falta). Devuelve el error a mostrar, o null si se cobró.</summary>
     [Parameter] public Func<IReadOnlyList<CobroSolicitado>, Guid?, Task<string?>> AlCobrar { get; set; } = null!;
 
+    /// <summary>El piloto con eleventa: solo efectivo (se quita al dejar eleventa).</summary>
+    [CascadingParameter(Name = PilotoConEleventa.Cascada)] public bool PilotoEleventa { get; set; }
+
     private long TotalCentavos => Venta.TotalCentavos;
 
     private string _efectivo = "";
@@ -144,12 +154,12 @@ else
     private static DateOnly Hoy => DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
 
     private long Efectivo => Formato.LeerPesos(_efectivo) ?? 0;
-    private long Tarjeta => Formato.LeerPesos(_tarjeta) ?? 0;
-    private long Transferencia => Formato.LeerPesos(_transferencia) ?? 0;
+    private long Tarjeta => PilotoEleventa ? 0 : Formato.LeerPesos(_tarjeta) ?? 0;
+    private long Transferencia => PilotoEleventa ? 0 : Formato.LeerPesos(_transferencia) ?? 0;
     private long Credito => PuedeFiar ? Formato.LeerPesos(_credito) ?? 0 : 0;
 
-    /// <summary>Con crédito, o con saldo a favor que se puede usar.</summary>
-    private bool PuedeFiar => Cliente is not null && Cuenta is not null && (ConCredito || Cuenta.AFavorCentavos > 0);
+    /// <summary>Con crédito, o con saldo a favor que se puede usar (en el piloto con eleventa, no).</summary>
+    private bool PuedeFiar => !PilotoEleventa && Cliente is not null && Cuenta is not null && (ConCredito || Cuenta.AFavorCentavos > 0);
 
     /// <summary>Lo dice la cuenta recién pedida (igual que el servicio), no el cliente que se eligió con CTRL+L.</summary>
     private bool ConCredito => Cuenta is { LimiteCentavos: > 0 };

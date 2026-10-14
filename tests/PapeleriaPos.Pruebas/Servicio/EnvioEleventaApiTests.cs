@@ -54,12 +54,12 @@ public class EnvioEleventaApiTests
     }
 
     /// <summary>Dos del producto y un artículo común de $15, en efectivo.</summary>
-    private static async Task<TicketDto> CobrarAsync(Caja c, FormaPago forma = FormaPago.Efectivo)
+    private static async Task<TicketDto> CobrarAsync(Caja c)
     {
         var total = 2 * c.Producto.PrecioCentavos + 1500;
         return await Leer<TicketDto>(await c.Http.PostAsJsonAsync("api/ventas", new SolicitudCobro(c.Datos.Id, c.Turno.Id, c.Sesion.UsuarioId,
             [new LineaSolicitada(c.Producto.VarianteId, null, 2000), new LineaSolicitada(null, null, 1000, "Recuerdo", 1500)],
-            [new CobroSolicitado(forma, forma == FormaPago.Efectivo ? total + 10000 : total, forma == FormaPago.Tarjeta ? "4821" : null)])));
+            [new CobroSolicitado(FormaPago.Efectivo, total + 10000)])));
     }
 
     private static async Task<EstadoEnviosEleventaDto> EnviosAsync(Caja c) => (await c.Http.GetFromJsonAsync<EstadoEnviosEleventaDto>("api/eleventa/envios"))!;
@@ -168,10 +168,15 @@ public class EnvioEleventaApiTests
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB"));
         var c = await AbrirAsync(servicio);
 
-        var ticket = await CobrarAsync(c, FormaPago.Tarjeta);
+        // En el piloto la caja solo cobra en efectivo (SoloEfectivoEnElPilotoTests); con tarjeta solo llega lo que se cobró
+        // sin conexión antes de saberlo, y eso ya pasó: se guarda y va a la bandeja.
+        var paquete = (await c.Http.GetFromJsonAsync<PaqueteContingenciaDto>($"api/cajas/{c.Datos.Id}/paquete"))!;
+        var venta = new VentaContingenciaDto(Guid.NewGuid(), c.Datos.Id, c.Turno.Id, c.Sesion.UsuarioId, paquete.UltimoFolio + 1, DateTime.UtcNow,
+            [new LineaContingenciaDto(null, null, "Recuerdo", 1000, 1500)], [new CobroSolicitado(FormaPago.Tarjeta, 1500, "4821")]);
+        Assert.True((await c.Http.PostAsJsonAsync("api/bandeja/ventas", venta)).IsSuccessStatusCode);
+        // La vuelta de fondo la revisa (el estado se lee en dos consultas: se espera a que las dos lo digan).
+        var envios = await EsperarAsync(c, x => x.PorRevisar == 1 && x.PorAtender.All(e => e.Estado == EstadoEnvioEleventa.PorRevisar));
 
-        Assert.Null(ticket.FolioEleventa);
-        var envios = await EnviosAsync(c);
         Assert.Equal((0, 1), (envios.Pendientes, envios.PorRevisar));
         Assert.Equal((EstadoEnvioEleventa.PorRevisar, 0), (envios.PorAtender.Single().Estado, envios.PorAtender.Single().Intentos));
         Assert.Contains("tarjeta", envios.PorAtender.Single().Error);

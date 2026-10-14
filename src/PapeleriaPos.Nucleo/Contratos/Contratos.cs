@@ -204,9 +204,13 @@ public sealed record SolicitudReglas(string Usuario, string Pin, IReadOnlyList<R
 public sealed record LineaDevolucionDto(Guid LineaId, string Descripcion, long CantidadMilesimas, long CantidadDevueltaMilesimas, long ImporteCentavos, bool LlevaInventario);
 
 /// <param name="PuedeCancelar">Si su turno sigue abierto (después, solo devolución).</param>
+/// <param name="NoSeDevuelveEnElPiloto">
+/// El piloto con eleventa (2026-10-12): por qué este ticket no se cancela ni se devuelve en esta caja (no se cobró todo
+/// en efectivo); vacío si sí, o fuera del piloto. Solo para convivir con eleventa: se quita al dejarlo.
+/// </param>
 public sealed record VentaParaDevolverDto(
     Guid Id, string Folio, DateTime FechaLocal, EstadoVenta Estado, long TotalCentavos, IReadOnlyList<LineaDevolucionDto> Lineas,
-    bool PuedeCancelar, int DiasParaDevolver, long CreditoCentavos = 0, string? Cliente = null);
+    bool PuedeCancelar, int DiasParaDevolver, long CreditoCentavos = 0, string? Cliente = null, string? NoSeDevuelveEnElPiloto = null);
 
 public sealed record SolicitudCancelacion(Guid UsuarioId, Guid CajaId, string Motivo, Guid? AutorizacionId = null);
 
@@ -240,8 +244,13 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// <param name="VersionDatos">Cambia con el catálogo, los usuarios o las reglas: la caja vuelve a bajar su copia.</param>
 /// <param name="Prueba">El servicio es el de la prueba con una persona real: datos ficticios, guía y avisos simulados.</param>
 /// <param name="VersionCredito">Cambia con cada fiado, abono o cambio de crédito: la caja vuelve a pedir los saldos.</param>
+/// <param name="PilotoEleventa">
+/// El piloto con eleventa: el servicio manda sus ventas a eleventa (<c>Eleventa:Escribir</c>) y la caja solo cobra y
+/// devuelve en efectivo (2026-10-12). Solo para convivir con eleventa: se quita al dejarlo.
+/// </param>
 public sealed record EstadoServicioDto(
-    string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false, long VersionCredito = 0);
+    string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false, long VersionCredito = 0,
+    bool PilotoEleventa = false);
 
 /// <summary>Usuario y PIN de quien autoriza (el dueño para dar de alta o quitar cajas).</summary>
 public sealed record SolicitudCredenciales(string Usuario, string Pin);

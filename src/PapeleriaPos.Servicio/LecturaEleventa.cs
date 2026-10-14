@@ -19,6 +19,14 @@ public sealed class OpcionesEleventa
     /// <summary>Mandar cada venta a eleventa (paso 3). Necesita <see cref="Caja"/> y <see cref="Cajero"/>.</summary>
     public bool Escribir { get; set; }
 
+    /// <summary>
+    /// El piloto: mientras esta caja manda sus ventas a eleventa, solo cobra y devuelve en efectivo (decisión del dueño,
+    /// 2026-10-12; <see cref="SoloEfectivoEnElPiloto"/>). Lo marca <see cref="Escribir"/> y no <see cref="Activo"/>: solo
+    /// leer el catálogo no manda nada a eleventa. Basta la bandera, aunque falte algo de la configuración: una caja del
+    /// piloto mal configurada tampoco cobra con tarjeta. Solo para convivir con eleventa: se quita al dejarlo.
+    /// </summary>
+    public bool SoloEfectivo => Escribir;
+
     /// <summary>La caja de eleventa como la que vende esta caja (<c>CAJAS.ID</c>).</summary>
     public int? Caja { get; set; }
 

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Eleventa;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Contratos;
@@ -38,15 +39,31 @@ public static class ApiCredito
         });
 
         // Devolverle en efectivo lo que tiene a favor (parte 3): sale el mismo comprobante que el de un abono, con su tipo.
+        // En el piloto con eleventa, ni esto ni los abonos nuevos: eleventa no los tiene y su corte no cuadraría. Lo que
+        // llega otra vez con el mismo Id ya pasó: regresa su comprobante (SoloEfectivoEnElPiloto.RevisarAbonoNuevoAsync).
         api.MapPost("/clientes/{clienteId:guid}/saldo-devuelto", async (Guid clienteId, SolicitudDevolverSaldo s, PosDbContext db,
-            IOptions<OpcionesTicket> opciones) =>
-            await ComprobanteAsync(db, await new RegistroCredito(db).DevolverSaldoAsync(clienteId, s), opciones.Value));
+            IOptions<OpcionesTicket> opciones, OpcionesEleventa eleventa) =>
+        {
+            if (eleventa.SoloEfectivo)
+                await SoloEfectivoEnElPiloto.RevisarAbonoNuevoAsync(db, s.Id, SoloEfectivoEnElPiloto.NoSeDevuelveSaldo);
+            return await ComprobanteAsync(db, await new RegistroCredito(db).DevolverSaldoAsync(clienteId, s), opciones.Value);
+        });
 
-        api.MapPost("/abonos", async (SolicitudAbono s, PosDbContext db, IOptions<OpcionesTicket> opciones) =>
-            await ComprobanteAsync(db, await new RegistroCredito(db).AbonarAsync(s), opciones.Value));
+        api.MapPost("/abonos", async (SolicitudAbono s, PosDbContext db, IOptions<OpcionesTicket> opciones, OpcionesEleventa eleventa) =>
+        {
+            if (eleventa.SoloEfectivo)
+                await SoloEfectivoEnElPiloto.RevisarAbonoNuevoAsync(db, s.Id, SoloEfectivoEnElPiloto.NoSeAbona);
+            return await ComprobanteAsync(db, await new RegistroCredito(db).AbonarAsync(s), opciones.Value);
+        });
 
-        api.MapPost("/abonos/{abonoId:guid}/cancelacion", async (Guid abonoId, SolicitudCancelacion s, PosDbContext db, IOptions<OpcionesTicket> opciones) =>
-            await ComprobanteAsync(db, await new RegistroCredito(db).CancelarAbonoAsync(abonoId, s), opciones.Value));
+        // En el piloto con eleventa, solo el abono que fue en efectivo: lo devuelto sale en efectivo.
+        api.MapPost("/abonos/{abonoId:guid}/cancelacion", async (Guid abonoId, SolicitudCancelacion s, PosDbContext db, IOptions<OpcionesTicket> opciones,
+            OpcionesEleventa eleventa) =>
+        {
+            if (eleventa.SoloEfectivo)
+                await SoloEfectivoEnElPiloto.RevisarCancelacionDeAbonoAsync(db, abonoId);
+            return await ComprobanteAsync(db, await new RegistroCredito(db).CancelarAbonoAsync(abonoId, s), opciones.Value);
+        });
 
         // Reimprimir el comprobante: con motivo si la regla lo pide, y queda en la bitácora (como el ticket).
         api.MapPost("/abonos/{abonoId:guid}/reimpresion", async (Guid abonoId, SolicitudReimpresion s, PosDbContext db, IOptions<OpcionesTicket> opciones) =>

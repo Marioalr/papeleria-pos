@@ -111,6 +111,7 @@ public sealed class Contingencia
         if (almacen.Leer<PaqueteContingenciaDto>("paquete") is { } paquete)
             _copia = new Copia(paquete);
         _saldos = almacen.Leer<SaldosCreditoDto>("saldos");
+        PilotoEleventa = almacen.Leer<bool?>(ClavePilotoEleventa) ?? false;
         (Pendientes, ConError, UltimoError, ImpresionesPorSubir) = almacen.Contar();
     }
 
@@ -133,6 +134,26 @@ public sealed class Contingencia
     /// <summary>Los últimos saldos del crédito que mandó la caja principal (sin ellos, no se fía ni se abona sin conexión).</summary>
     public SaldosCreditoDto? Saldos => _saldos;
     public int UltimoFolio => _almacen.Leer<int?>("folio") ?? 0;
+
+    private const string ClavePilotoEleventa = "piloto-eleventa";
+
+    /// <summary>
+    /// El piloto con eleventa (<see cref="PilotoConEleventa"/>): lo dice el servicio en cada latido y se guarda en la
+    /// base local, para que sin conexión (también si la caja arranca sin ella) se siga cobrando solo en efectivo. Solo para
+    /// convivir con eleventa: se quita al dejarlo.
+    /// </summary>
+    public bool PilotoEleventa { get; private set; }
+
+    /// <summary>Lo que dijo el servicio del piloto con eleventa; se guarda solo si cambió.</summary>
+    public void RecordarPilotoEleventa(bool piloto)
+    {
+        if (piloto == PilotoEleventa)
+            return;
+        PilotoEleventa = piloto;
+        using (var lote = _almacen.Lote())
+            lote.Guardar(ClavePilotoEleventa, piloto).Confirmar();
+        Cambio?.Invoke();
+    }
 
     private DateTime Ahora => _reloj.GetUtcNow().UtcDateTime;
 
@@ -197,6 +218,7 @@ public sealed class Contingencia
             return;
         }
         Fijar(responde: true);
+        RecordarPilotoEleventa(estado?.PilotoEleventa == true);
         // Sin alta (la caja de la prueba): es la primera caja de la sucursal, la misma que toma la pantalla.
         if (_conexion.CajaId is null)
         {
@@ -604,6 +626,9 @@ public sealed class Contingencia
         var turno = TurnoRequerido(s.TurnoId);
         if (s.Impresiones is { Count: > 0 })
             throw new InvalidOperationException("Las impresiones se cobran con conexión con la caja principal: quítalas del ticket o espera a que vuelva.");
+        // El piloto con eleventa: solo efectivo también sin conexión (al subir, el servicio ya no lo puede rechazar).
+        if (PilotoEleventa && s.Cobros.Any(c => c.Forma != FormaPago.Efectivo))
+            throw new InvalidOperationException(PilotoConEleventa.NoSeCobra);
         var ahora = Ahora;
         // El cliente va antes que las líneas: con mayoreo siempre, sus precios son otros.
         ClienteRegistradoDto? cliente = null;
@@ -738,6 +763,8 @@ public sealed class Contingencia
         var turno = TurnoRequerido(s.TurnoId);
         if (s.CajaId != caja.Id)
             throw new InvalidOperationException("El abono va en el turno abierto de esta caja.");
+        if (PilotoEleventa)
+            throw new InvalidOperationException(PilotoConEleventa.NoSeAbona);
         var cliente = Clientes().FirstOrDefault(c => c.Id == s.ClienteId)
             ?? throw new InvalidOperationException("Ese cliente no está en la copia de esta caja: el abono espera a que vuelva la conexión.");
         if (_almacen.CreditoConfirmado(s.Id))
