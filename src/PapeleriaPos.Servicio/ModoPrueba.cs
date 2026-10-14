@@ -10,6 +10,11 @@ namespace PapeleriaPos.Servicio;
 /// base empieza como copia de la base de prueba (<c>Prueba:BaseInicial</c>, la que arma <c>preparar-prueba</c>) y se
 /// puede volver a ella; las respuestas de la guía se guardan junto a la base y se exportan al escritorio.
 /// </summary>
+/// <remarks>
+/// Las respuestas de cada versión de la guía van en su propio archivo: las de otra versión no se cargan (el mismo Id puede
+/// ser otra tarea, y la guía nueva saldría ya contestada) y su archivo se queda como estaba. Las de la primera prueba
+/// (2026-10-10, versión 1) se guardaron sin versión en respuestas-prueba.json, y ahí siguen.
+/// </remarks>
 /// <param name="carpetaRespuestas">Dónde se guardan las respuestas exportadas; vacío, el escritorio de quien prueba.</param>
 public sealed class ModoPrueba(bool activo, string? baseInicial, string cadenaConexion, string? carpetaRespuestas = null)
 {
@@ -20,7 +25,8 @@ public sealed class ModoPrueba(bool activo, string? baseInicial, string cadenaCo
 
     private string RutaBase => Path.GetFullPath(new SqliteConnectionStringBuilder(cadenaConexion).DataSource);
 
-    private string RutaRespuestas => Path.Combine(Path.GetDirectoryName(RutaBase)!, "respuestas-prueba.json");
+    private string RutaRespuestas(int version) =>
+        Path.Combine(Path.GetDirectoryName(RutaBase)!, version <= 1 ? "respuestas-prueba.json" : $"respuestas-prueba-guia-{version}.json");
 
     public static ModoPrueba Crear(IConfiguration configuracion, string cadenaConexion) =>
         new(configuracion.GetValue("Prueba:Activa", false), configuracion["Prueba:BaseInicial"] is { Length: > 0 } b ? b : null, cadenaConexion,
@@ -48,30 +54,112 @@ public sealed class ModoPrueba(bool activo, string? baseInicial, string cadenaCo
         origen.BackupDatabase(destino);
     }
 
-    public RespuestasPruebaDto Respuestas()
+    /// <summary>
+    /// Las de esa versión de la guía; sin ellas (o si el archivo es de otra), en blanco. Un archivo dañado se aparta con la
+    /// hora, no se borra: si se quedara, la guía no cargaría y lo primero que se marcara lo taparía con unas cuantas
+    /// respuestas.
+    /// </summary>
+    public RespuestasPruebaDto Respuestas(int version)
     {
         lock (_candado)
         {
-            return File.Exists(RutaRespuestas)
-                ? JsonSerializer.Deserialize<RespuestasPruebaDto>(File.ReadAllText(RutaRespuestas), Json) ?? Vacias()
-                : Vacias();
+            var ruta = RutaRespuestas(version);
+            if (!File.Exists(ruta))
+                return Vacias(version);
+            try
+            {
+                var guardadas = JsonSerializer.Deserialize<RespuestasPruebaDto>(File.ReadAllText(ruta), Json);
+                return guardadas is not null && guardadas.Version == version ? guardadas : Vacias(version);
+            }
+            catch (JsonException)
+            {
+                File.Move(ruta, Path.Combine(Path.GetDirectoryName(ruta)!,
+                    $"{Path.GetFileNameWithoutExtension(ruta)} (dañadas {DateTime.Now:yyyy-MM-dd HH.mm.ss}).json"));
+                return Vacias(version);
+            }
         }
     }
 
+    /// <summary>
+    /// Se escriben aparte, ya en el disco, y luego se renombran (como los respaldos): si se va la luz a media escritura, se
+    /// quedan las de antes y no un archivo a medias.
+    /// </summary>
     public void Guardar(RespuestasPruebaDto respuestas)
     {
         lock (_candado)
-            File.WriteAllText(RutaRespuestas, JsonSerializer.Serialize(respuestas, Json));
+        {
+            var ruta = RutaRespuestas(respuestas.Version);
+            var temporal = ruta + ".nuevo";
+            using (var archivo = new FileStream(temporal, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                JsonSerializer.Serialize(archivo, respuestas, Json);
+                archivo.Flush(flushToDisk: true);
+            }
+            File.Move(temporal, ruta, overwrite: true);
+        }
     }
 
-    /// <summary>Las respuestas como documento en el escritorio de quien prueba (o junto a la base, si no hay escritorio).</summary>
+    /// <summary>
+    /// Las respuestas como documento en el escritorio de quien prueba (o junto a la base, si no hay escritorio). Nunca encima
+    /// de otro: dos en el mismo minuto (guardar y luego dejar la guía en blanco, o una guía ya en blanco) llevan un número.
+    /// Junto al documento va una carpeta con los registros de la caja y del servicio de la prueba («registros», junto a la
+    /// base, en una carpeta oculta de Windows que se borra al desinstalar): si algo falló o se cerró solo, ahí está por qué,
+    /// y así llega con las respuestas.
+    /// </summary>
     public string Exportar(string texto)
     {
         var escritorio = carpetaRespuestas ?? Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
         var carpeta = escritorio.Length > 0 && Directory.Exists(escritorio) ? escritorio : Path.GetDirectoryName(RutaBase)!;
-        var ruta = Path.Combine(carpeta, $"Respuestas de la prueba {DateTime.Now:yyyy-MM-dd HH.mm}.md");
+        var nombre = $"Respuestas de la prueba {DateTime.Now:yyyy-MM-dd HH.mm}";
+        var ruta = Path.Combine(carpeta, $"{nombre}.md");
+        for (var n = 2; File.Exists(ruta); n++)
+            ruta = Path.Combine(carpeta, $"{nombre} ({n}).md");
         File.WriteAllText(ruta, texto);
+        CopiarRegistros(Path.Combine(carpeta, $"{Path.GetFileNameWithoutExtension(ruta)} - registros"));
         return ruta;
+    }
+
+    /// <summary>
+    /// Los registros que haya, de todos los días que guarda la caja. La caja y el servicio pueden tenerlos abiertos: se leen
+    /// sin estorbarles, y uno que no se puede leer se salta (las respuestas importan más que su registro).
+    /// </summary>
+    private void CopiarRegistros(string destino)
+    {
+        var registros = Path.Combine(Path.GetDirectoryName(RutaBase)!, "registros");
+        if (!Directory.Exists(registros))
+            return;
+        foreach (var archivo in Directory.EnumerateFiles(registros, "*.log"))
+        {
+            try
+            {
+                Directory.CreateDirectory(destino);
+                using var origen = new FileStream(archivo, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                using var copia = File.Create(Path.Combine(destino, Path.GetFileName(archivo)));
+                origen.CopyTo(copia);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Sigue con los demás.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Para que pruebe otra persona (el sábado una y el domingo otra): el documento queda en el escritorio, como al
+    /// exportar, y el archivo de las respuestas de esa versión se aparta con la hora en el nombre (no se borra), así que
+    /// la guía vuelve a abrir en blanco. Devuelve dónde quedó el documento.
+    /// </summary>
+    public string DejarEnBlanco(int version, string texto)
+    {
+        lock (_candado)
+        {
+            var documento = Exportar(texto);
+            var ruta = RutaRespuestas(version);
+            var apartadas = $"{Path.GetFileNameWithoutExtension(ruta)} (guardadas {DateTime.Now:yyyy-MM-dd HH.mm.ss}).json";
+            if (File.Exists(ruta))
+                File.Move(ruta, Path.Combine(Path.GetDirectoryName(ruta)!, apartadas));
+            return documento;
+        }
     }
 
     /// <summary>
@@ -104,5 +192,5 @@ public sealed class ModoPrueba(bool activo, string? baseInicial, string cadenaCo
         return hilo;
     }
 
-    private static RespuestasPruebaDto Vacias() => new(null, new Dictionary<string, RespuestaTareaDto>(), null);
+    private static RespuestasPruebaDto Vacias(int version) => new(null, new Dictionary<string, RespuestaTareaDto>(), null, version);
 }

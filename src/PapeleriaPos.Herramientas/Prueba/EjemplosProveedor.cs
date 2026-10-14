@@ -15,7 +15,8 @@ namespace PapeleriaPos.Herramientas.Prueba;
 /// Una factura (XML) y una nota (PDF) de un proveedor de la base, con sus productos, para probar las compras sin
 /// documentos reales. La factura trae códigos de barras (llegan ligados), una clave del proveedor (llega como «¿Es…?» y
 /// se confirma una vez) y un producto que no está en el catálogo (llega precargado como nuevo); la nota repite esa clave
-/// (ya llega ligada) y trae los precios sin IVA, como muchas notas.
+/// (ya llega ligada) y trae los precios sin IVA, como muchas notas. El Léeme da, además, los códigos de la factura que
+/// ya están en el catálogo para escribirlos en la venta como si se escanearan.
 /// </summary>
 public static class EjemplosProveedor
 {
@@ -170,10 +171,20 @@ public static class EjemplosProveedor
                 + (nombre == PreparacionPrueba.ConSaldoAFavor ? $" · tiene {AlertasTelegram.Dinero(PreparacionPrueba.SaldoAFavorCentavos)} a favor" : "")
                 + (porRevisar ? " · venía de los clientes especiales: por revisar" : ""));
         }
-        t.AppendLine("  Para fiar: elige al cliente con CTRL+L y en F12 usa «A crédito». Para abonar: CTRL+B.");
+        t.AppendLine("  Para fiar: elige al cliente con CTRL+L (o la flecha «Público en general», arriba del total), oprime F12 y toca");
+        t.AppendLine("  «Crédito» junto a «Pagó con». Para abonar: CTRL+B.");
         t.AppendLine("  Su estado de cuenta y devolver un saldo a favor: en «Clientes», en la cuenta de cada uno.");
         t.AppendLine();
-        t.AppendLine("La guía de la prueba está dentro de la caja: botón «Guía de la prueba» en la franja de arriba.");
+        t.AppendLine("En la venta, el cuadro de captura entiende un código, 3*código, un nombre (dos pedazos de palabra en cualquier");
+        t.AppendLine("orden) o el folio de un ticket para devolverlo o cancelarlo. «/» muestra todo lo que puedes hacer.");
+        t.AppendLine("Códigos para vender (escríbelos en el cuadro de captura y Enter, como si los escanearas):");
+        foreach (var (p, _, _) in factura.Where(f => f.P.VarianteId != Guid.Empty && f.P.Codigo is not null))
+            t.AppendLine($"     {p.Codigo}  {p.Nombre}");
+        t.AppendLine();
+        t.AppendLine("La guía de la prueba está dentro de la caja: botón «Guía de la prueba» en la franja de arriba. Al terminar, ahí");
+        t.AppendLine("mismo: «Guardar respuestas y dejar la guía en blanco», para que pruebe la siguiente persona. Junto al");
+        t.AppendLine("documento de las respuestas, en el escritorio, queda una carpeta «… - registros»: mándala con ellas. Si la caja");
+        t.AppendLine("dice «Algo falló», oprime «Volver a cargar» y anota en la tarea qué estabas haciendo.");
         t.AppendLine();
         t.AppendLine($"Para las tareas de compras, el proveedor es «{proveedor}».");
         t.AppendLine();

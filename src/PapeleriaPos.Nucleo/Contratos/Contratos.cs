@@ -750,10 +750,17 @@ public sealed record AvisoPruebaDto(DateTime FechaLocal, TipoAlerta? Tipo, strin
 public sealed record RespuestaTareaDto(bool? SalioBien, string? Nota);
 
 /// <summary>Lo que contestó quien prueba, por tarea de la guía.</summary>
-public sealed record RespuestasPruebaDto(string? Nombre, IReadOnlyDictionary<string, RespuestaTareaDto> Tareas, string? Comentarios);
+/// <param name="Version">
+/// La de la guía que se contestó: con otra versión, el mismo Id puede ser otra tarea. Las de la primera prueba
+/// (2026-10-10) se guardaron sin ella: son la 1.
+/// </param>
+public sealed record RespuestasPruebaDto(string? Nombre, IReadOnlyDictionary<string, RespuestaTareaDto> Tareas, string? Comentarios, int Version = 1);
 
 /// <summary>Las respuestas ya escritas como documento, para guardarlas en un archivo.</summary>
 public sealed record SolicitudExportarRespuestas(string Texto);
+
+/// <summary>Para la siguiente persona: las respuestas de esa versión de la guía se guardan como documento y la guía queda en blanco.</summary>
+public sealed record SolicitudGuiaEnBlanco(int Version, string Texto);
 
 public sealed record ArchivoGuardadoDto(string Ruta);
 

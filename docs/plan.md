@@ -211,6 +211,10 @@ tareas a la guía y la prueba se puede repetir con la versión nueva (con los co
 - **Autoconclusiva:** trae su guía dentro de la caja: tareas cortas (vender, cobro mixto, cancelar, devolver, corte X
   y Z, F3 Productos, alta rápida, recibir una compra…) con lo que debe pasar en cada una. Quien prueba marca si salió
   bien y escribe lo que vio; al final queda un archivo con sus respuestas para mandarlo.
+- **Una guía por versión (2026-10-14):** la segunda prueba (17 y 18 de octubre) es con la pantalla nueva y su guía
+  empieza por vender en ella; al final va lo que todavía abre las pantallas de hoy. Las respuestas se guardan con la
+  versión de la guía y las de otra no se cargan (su archivo se queda). Al terminar una persona, «Guardar respuestas y
+  dejar la guía en blanco» deja su archivo en el escritorio y la guía en blanco para la siguiente.
 - **Simula lo que no hay:** sin impresora de tickets, el ticket se ve en pantalla; sin Telegram, los avisos que le
   llegarían al dueño se ven en una lista; sin la WF-6590, hay impresiones de ejemplo para cobrar.
 - **Se nota que es prueba:** una franja "Prueba: datos ficticios" en la caja y un botón para empezar de cero con la
