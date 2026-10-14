@@ -454,6 +454,10 @@
             <aside class="vn-der @(VaEnPanel ? "con-panel" : "")">
                 @if (VaEnPanel)
                 {
+                    @if (_avisoDelPanel is { } avisoDelPanel)
+                    {
+                        <div class="vn-alerta" role="status"><Ico Nombre="info" /><div><span>@avisoDelPanel</span></div></div>
+                    }
                     <CascadingValue Name="VentanaEnPanel" Value="true">
                         <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada">@ContenidoDeVentana</CascadingValue>
                     </CascadingValue>
@@ -664,26 +668,27 @@
             </aside>
         </div>
 
-        @* Lo de todos los días; lo demás, en «/» (docs/propuesta-interfaz.md, «La pantalla de venta»). *@
+        @* Lo de todos los días; lo demás, en «/» (docs/propuesta-interfaz.md, «La pantalla de venta»). Cada botón hace lo
+           que su tecla, también con un panel abierto: el suyo lo cierra y otro lo cambia. *@
         <footer class="vn-teclas">
-            <button @onclick="IrAlCobroAsync"><kbd>F12</kbd>Cobrar</button>
-            <button @onclick="Buscar"><kbd>F10</kbd>Buscar</button>
-            <button @onclick="() => Abrir(Ventanas.Verificador)"><kbd>F9</kbd>Verificar</button>
-            <button @onclick="() => Abrir(Ventanas.Impresiones)"><kbd>F2</kbd>Impresiones</button>
+            <button @onclick="@(() => ComoSuTecla("F12"))"><kbd>F12</kbd>Cobrar</button>
+            <button @onclick="@(() => ComoSuTecla("F10"))"><kbd>F10</kbd>Buscar</button>
+            <button @onclick="@(() => ComoSuTecla("F9"))"><kbd>F9</kbd>Verificar</button>
+            <button @onclick="@(() => ComoSuTecla("F2"))"><kbd>F2</kbd>Impresiones</button>
             @if (Ve(AccionControlada.ArticuloComun))
             {
-                <button @onclick="() => Abrir(Ventanas.Comun)"><kbd>Ins</kbd>Art. común</button>
+                <button @onclick="@(() => ComoSuTecla("Insert"))"><kbd>Ins</kbd>Art. común</button>
             }
-            <button @onclick="() => Abrir(Ventanas.ElegirCliente)"><kbd>Ctrl+L</kbd>Cliente</button>
+            <button @onclick="@(() => ComoSuTecla("Ctrl+L"))"><kbd>Ctrl+L</kbd>Cliente</button>
             @if (Ve(AccionControlada.EntradaEfectivo))
             {
-                <button @onclick="() => Abrir(Ventanas.Entrada)"><kbd>F7</kbd>Entrada</button>
+                <button @onclick="@(() => ComoSuTecla("F7"))"><kbd>F7</kbd>Entrada</button>
             }
             @if (Ve(AccionControlada.SalidaEfectivo))
             {
-                <button @onclick="() => Abrir(Ventanas.Salida)"><kbd>F8</kbd>Salida</button>
+                <button @onclick="@(() => ComoSuTecla("F8"))"><kbd>F8</kbd>Salida</button>
             }
-            <button @onclick="PonerEnEspera"><kbd>F6</kbd>En espera</button>
+            <button @onclick="@(() => ComoSuTecla("F6"))"><kbd>F6</kbd>En espera</button>
             <button @onclick="AbrirAccionesAsync"><kbd>/</kbd>Más acciones</button>
             @* Ctrl+Q (o «Cotizar un PDF» en «/») abre el selector de archivos de aquí. *@
             <InputFile id="pdf-cotizar" class="oculto" accept=".pdf,application/pdf" onclick="this.value = ''" OnChange="PdfElegidoAsync" />
@@ -907,6 +912,42 @@ else
 
     private bool VaEnPanel => _pantallaNueva && VentanasEnPanel.Contains(_ventana);
 
+    /// <summary>
+    /// Los paneles que se dejan con la tecla de otra cosa (F12, Ctrl+L, F6…) sin perder nada: solo enseñan algo, o lo que
+    /// tienen a medias no va a la venta ni al cajón (el verificador, el mayoreo, las ventas del día, el ticket en pantalla,
+    /// el cliente, cotizar y las transferencias). Los demás tienen campos que van a la venta o al cajón (artículo común, descuento, precio,
+    /// entrada y salida, abono, devolución, alta rápida, impresiones por cobrar, el motivo de la reimpresión): se terminan
+    /// con Enter o se cierran con Esc o con su misma tecla, como dice la propuesta («Cada uno con sus campos y Enter para
+    /// terminar»). Con otra tecla lo escrito se perdería sin decirlo y, con F12, se cobraría sin ello: Ins, «Engargolado»
+    /// $35 y F12 por costumbre en lugar de Enter dejaría el cursor en «Pagó con» con el total de antes. Un panel nuevo no
+    /// se deja hasta agregarlo aquí.
+    /// </summary>
+    private static readonly HashSet<Ventanas> PanelesQueSeDejan =
+    [
+        Ventanas.Verificador, Ventanas.Mayoreo, Ventanas.VentasDelDia, Ventanas.VistaPrevia, Ventanas.ElegirCliente, Ventanas.Cotizar,
+        Ventanas.Transferencias,
+    ];
+
+    private bool PanelQueSeDeja => VaEnPanel && PanelesQueSeDejan.Contains(_ventana);
+
+    /// <summary>Por qué el panel abierto no se deja con otra tecla ni con «/ Más acciones»; null si se deja o no hay panel.</summary>
+    private string? PorQueNoSeDeja =>
+        !VaEnPanel || PanelQueSeDeja ? null
+        // Fiar arriba del límite o vender debajo del costo: el cobro está a medias y espera el PIN de quien autoriza. Con
+        // otra tecla se quedaría a medias sin decirlo.
+        : _ventana is Ventanas.AutorizarCosto or Ventanas.AutorizarCredito ? "El cobro espera la autorización: que la den aquí, o Esc para regresar a la venta."
+        // Con campos (artículo común, descuento, entrada…): ver PanelesQueSeDejan.
+        : "Primero termina aquí con Enter (o su botón), o Esc para regresar a la venta.";
+
+    /// <summary>Le dice a caja.js que hay una ventana abierta y si es un panel (con él a la vista, Ins y Ctrl+Q también son de la venta).</summary>
+    private Task AvisarVentanaAbiertaAsync() => Js.VentanaAbiertaAsync(true, VaEnPanel);
+
+    /// <summary>
+    /// Por qué una tecla no hizo nada con el panel abierto. Va en el panel, donde se está mirando: el aviso de siempre
+    /// sale bajo el cuadro de captura, a la izquierda.
+    /// </summary>
+    private string? _avisoDelPanel;
+
     /// <summary>F10 en la pantalla nueva: el cursor al cuadro, donde salen los resultados al escribir.</summary>
     private void Buscar()
     {
@@ -1015,6 +1056,17 @@ else
     /// no se sabe: hace lo de siempre y el servicio decide, como sin ellos.
     /// </summary>
     private bool SinTecla(bool ve) => _pantallaNueva && _permisosPedidos && !ve;
+
+    /// <summary>Las teclas de lo que tiene permiso: en la pantalla nueva, la de lo que no ve solo avisa.</summary>
+    private bool SinTecla(string tecla) => tecla switch
+    {
+        "F3" => SinTecla(Ve(AccionControlada.EditarCatalogo)),
+        "F4" => SinTecla(VeInventario),
+        "Insert" or "Ctrl+P" => SinTecla(Ve(AccionControlada.ArticuloComun)),
+        "F7" => SinTecla(Ve(AccionControlada.EntradaEfectivo)),
+        "F8" => SinTecla(Ve(AccionControlada.SalidaEfectivo)),
+        _ => false,
+    };
 
     private bool VeInventario =>
         new[]
@@ -1185,6 +1237,15 @@ else
     /// <summary>«/ Más acciones» en la barra de teclas: el «/» queda en el cuadro y la lista abierta.</summary>
     private async Task AbrirAccionesAsync()
     {
+        // Con un panel abierto, se cierra: la lista y su Enter son del cuadro de captura. Si espera su Enter (o una
+        // autorización), lo dice, como con las teclas.
+        if (PorQueNoSeDeja is { } espera)
+        {
+            AvisarEnElPanel(espera);
+            return;
+        }
+        if (_ventana != Ventanas.Ninguna)
+            await Cerrar();
         CerrarResultados();
         _captura.Texto = "/";
         await Js.EscribirCapturaAsync("/");
@@ -1227,6 +1288,9 @@ else
     {
         _pantallaNueva = !_pantallaNueva;
         _menuUsuario = false;
+        // Lo abierto pasa de panel a ventana encima (o al revés): caja.js lo sabe.
+        if (_ventana != Ventanas.Ninguna)
+            await AvisarVentanaAbiertaAsync();
         // El cuadro de la otra pantalla empieza vacío.
         _captura.Texto = "";
         await Js.GuardarAsync(ClavePantalla, _pantallaNueva ? null : PantallaDeHoy);
@@ -1819,6 +1883,8 @@ else
         {
             var (cantidad, buscado) = (_cantidadBuscada, _textoBuscado);
             CerrarResultados();
+            // caja.js ya vació el cuadro: el nombre buscado no se queda como la cantidad de lo que sigue (F11, un rápido).
+            _captura.Texto = "";
             await _captura.EnTurnoAsync(() => AgregarResultadoAsync(elegido, cantidad, buscado, resultados.Count));
             StateHasChanged();
             return;
@@ -2273,18 +2339,17 @@ else
     }
 
     /// <param name="tecla">La tecla, como la nombra caja.js.</param>
-    /// <param name="texto">En la pantalla nueva, lo que había en el cuadro de captura (no está enlazado); si no, null.</param>
+    /// <param name="texto">
+    /// En la pantalla nueva, lo que había en el cuadro de captura (no está enlazado); null si se oprimió en otro lado o es
+    /// un botón de la barra de teclas.
+    /// </param>
     [JSInvokable]
     public async Task Tecla(string tecla, string? texto)
     {
         if (_pantallaNueva && texto is not null)
             _captura.Texto = texto;
-        if (_ventana != Ventanas.Ninguna)
-        {
-            if (tecla == "Escape")
-                await Cerrar();
+        if (_ventana != Ventanas.Ninguna && !await TeclaConVentanaAsync(tecla, desdeLaCaptura: texto is not null))
             return;
-        }
 
         // Con «/» en el cuadro, ↑ ↓ recorren las acciones.
         if (_pantallaNueva && tecla is "ArrowUp" or "ArrowDown" && texto is not null && FiltroDeAcciones(texto) is { } filtro)
@@ -2338,11 +2403,7 @@ else
         switch (tecla)
         {
             // En la pantalla nueva, lo que no está entre sus permisos no tiene tecla.
-            case "F3" when SinTecla(Ve(AccionControlada.EditarCatalogo)):
-            case "F4" when SinTecla(VeInventario):
-            case "Insert" or "Ctrl+P" when SinTecla(Ve(AccionControlada.ArticuloComun)):
-            case "F7" when SinTecla(Ve(AccionControlada.EntradaEfectivo)):
-            case "F8" when SinTecla(Ve(AccionControlada.SalidaEfectivo)):
+            case var _ when SinTecla(tecla):
                 Avisar("Eso no está entre lo que puedes hacer: «/» muestra todo lo que sí.");
                 break;
             case "Ctrl+U" when _pantallaNueva: await AlSalir.InvokeAsync(); break;
@@ -2394,6 +2455,112 @@ else
         }
         StateHasChanged();
     }
+
+    /// <summary>
+    /// Una tecla con una ventana abierta; devuelve si sigue a hacer lo suyo. Esc la cierra. En la pantalla nueva, con un
+    /// panel a la derecha (el ticket a la vista), las teclas de la barra y de «/» siguen funcionando
+    /// (docs/propuesta-interfaz.md, «Los demás paneles»): la del mismo panel lo cierra («F9 o Esc regresan a vender») y,
+    /// si el panel se deja (<see cref="PanelesQueSeDejan"/>), las demás lo cierran y hacen lo suyo, como sin él: abrir
+    /// otro panel, F12 al cobro, F6 a la espera. Un panel con campos espera su Enter o Esc, y con otra tecla lo dice. Antes
+    /// solo respondía Esc. caja.js solo manda las que no escriben en los campos del panel (Esc, las F, las Ctrl de la caja
+    /// e Ins); Supr, las flechas, + y − se quedan en el panel.
+    /// </summary>
+    /// <param name="desdeLaCaptura">Se oprimió en el cuadro de captura de la pantalla nueva: caja.js mandó su texto.</param>
+    private async Task<bool> TeclaConVentanaAsync(string tecla, bool desdeLaCaptura)
+    {
+        if (tecla == "Escape")
+        {
+            // Desde el cuadro de captura, caja.js ya lo vació.
+            if (desdeLaCaptura)
+                _captura.Texto = "";
+            await Cerrar();
+            return false;
+        }
+        // caja.js no manda estas con una ventana abierta: si llegan, perdió la cuenta porque otra parte de la caja le dijo
+        // que ya no había ventana (la franja de la prueba lo hacía al cerrar su guía encima de un panel). Se le vuelve a
+        // decir y la tecla no hace nada: Supr no quita un renglón, + no cambia una cantidad ni Alt+1 agrega un rápido
+        // detrás del panel.
+        if (EsTeclaSinVentana(tecla))
+        {
+            await AvisarVentanaAbiertaAsync();
+            return false;
+        }
+        // Lo que va encima del ticket (los módulos de arriba y el conteo; en la pantalla de hoy, todo) solo se cierra con
+        // Esc: puede tener algo a medio escribir. F1 (la venta, donde ya está) no hace nada.
+        if (!VaEnPanel || tecla == "F1")
+            return false;
+        if (PanelDeLaTecla(tecla) == _ventana)
+        {
+            await Cerrar();
+            return false;
+        }
+        // Una autorización a mitad del cobro, o un panel con campos: espera su Enter o Esc, y lo dice.
+        if (PorQueNoSeDeja is { } espera)
+        {
+            AvisarEnElPanel(espera);
+            return false;
+        }
+        // La tecla de algo que no puede solo lo avisa: el panel se queda.
+        if (SinTecla(tecla))
+        {
+            AvisarEnElPanel("Eso no está entre lo que puedes hacer: «/» muestra todo lo que sí.");
+            return false;
+        }
+        if (tecla == "Ctrl+Q")
+        {
+            // El PDF a cotizar: el selector se abre ya (la tecla se acaba de oprimir) y, al elegir el PDF, el panel cambia al
+            // de cotizar. Si no se elige ninguno, el panel se queda.
+            await Js.ClicAsync("#pdf-cotizar");
+            return false;
+        }
+        if (tecla == "F12")
+        {
+            // Al cobro: el cursor va directo a «Pagó con» (IrAlCobroAsync), sin pasar por el cuadro de captura, donde lo
+            // que se teclee enseguida se tomaría como un código. No estaba en el cobro (el panel lo tapaba): no cobra todavía.
+            await QuitarVentanaAsync();
+            _enPago = false;
+            if (Actual.Venta.Lineas.Count == 0)
+                _enfocar = "#codigo";
+            return true;
+        }
+        await Cerrar();
+        return true;
+    }
+
+    /// <summary>
+    /// Las que caja.js deja en los campos de una ventana abierta (Supr, las flechas, + y −, Alt+1 a Alt+6) y las que solo
+    /// manda sin ventana: F12 que ya movió el cursor a «Pagó con» y las de la lista de familias (→, ←, Tab y su Esc).
+    /// </summary>
+    private static bool EsTeclaSinVentana(string tecla) =>
+        tecla is "Delete" or "ArrowUp" or "ArrowDown" or "ArrowLeft" or "ArrowRight" or "+" or "-" or "Tab" or "Shift+Tab" or "Escape-familia"
+            or "F12-pago"
+        || tecla.StartsWith("Alt+", StringComparison.Ordinal);
+
+    private void AvisarEnElPanel(string aviso)
+    {
+        _avisoDelPanel = aviso;
+        StateHasChanged();
+    }
+
+    /// <summary>El panel que abre la tecla en la pantalla nueva, para que la misma lo cierre; null si no abre uno.</summary>
+    private Ventanas? PanelDeLaTecla(string tecla) => tecla switch
+    {
+        "F9" => Ventanas.Verificador,
+        "F2" => Ventanas.Impresiones,
+        "F7" => Ventanas.Entrada,
+        "F8" => Ventanas.Salida,
+        "Insert" or "Ctrl+P" => Ventanas.Comun,
+        "Ctrl+E" => Ventanas.CambiarPrecio,
+        "Ctrl+D" => Ventanas.Descuento,
+        "Ctrl+L" => Ventanas.ElegirCliente,
+        "Ctrl+B" => Ventanas.Abono,
+        // Con las piezas escritas en el cuadro, F11 las pone en el renglón (MayoreoAsync): ahí no cierra el mayoreo.
+        "F11" when _captura.Texto.Trim().TrimEnd('*').Length == 0 => Ventanas.Mayoreo,
+        _ => null,
+    };
+
+    /// <summary>Un botón de la barra de teclas hace lo mismo que su tecla, también con un panel abierto (el suyo lo cierra).</summary>
+    private Task ComoSuTecla(string tecla) => Tecla(tecla, null);
 
     // ── Captura ─────────────────────────────────────────────────────────────
 
@@ -3150,6 +3317,12 @@ else
 
     private async Task PdfElegidoAsync(InputFileChangeEventArgs e)
     {
+        // Con un panel que espera su Enter (o una autorización) Ctrl+Q no abre el selector: por si se abrió antes de abrirse el panel.
+        if (PorQueNoSeDeja is { } espera)
+        {
+            AvisarEnElPanel(espera);
+            return;
+        }
         if (_ventana != Ventanas.Ninguna)
             await Cerrar();
         _pdfACotizar = e.File;
@@ -3303,7 +3476,8 @@ else
         case Ventanas.Entrada:
         case Ventanas.Salida:
             var tipo = _ventana == Ventanas.Entrada ? TipoMovimientoCaja.Entrada : TipoMovimientoCaja.Salida;
-            <Ventana Titulo="@(tipo == TipoMovimientoCaja.Entrada ? "Entrada de efectivo" : "Salida de efectivo")" AlCerrar="Cerrar">
+            @* @key: de la entrada a la salida (o al revés) empieza en blanco, no con lo que se escribió en la otra. *@
+            <Ventana @key="tipo" Titulo="@(tipo == TipoMovimientoCaja.Entrada ? "Entrada de efectivo" : "Salida de efectivo")" AlCerrar="Cerrar">
                 <MovimientoEfectivo Tipo="tipo" TurnoId="Turno.Id" UsuarioId="Sesion.UsuarioId" AlTerminar="MovimientoRegistrado" />
             </Ventana>
             break;
@@ -3431,21 +3605,38 @@ else
         _menuUsuario = false;
         _menuEspera = false;
         CerrarAcciones();
+        // Encima de otra (un botón del renglón o una pestaña con un panel abierto): la de antes se deja como al cerrarla.
+        if (_ventana != ventana)
+            DejarVentana();
         _ventana = ventana;
-        await Js.VentanaAbiertaAsync(true);
+        _avisoDelPanel = null;
+        await AvisarVentanaAbiertaAsync();
         StateHasChanged();
     }
 
     private async Task Cerrar()
     {
-        // Si CTRL+L se queda a medio camino (pidiendo la autorización del costo), el ticket regresa a como estaba.
-        if (_ventana == Ventanas.ElegirCliente)
-            _elegirCliente?.Cancelar();
+        await QuitarVentanaAsync();
+        await Js.EnfocarAsync("#codigo");
+    }
+
+    /// <summary>Cierra la ventana sin mover el cursor (<see cref="Cerrar"/> lo regresa al cuadro de captura; F12, al cobro).</summary>
+    private async Task QuitarVentanaAsync()
+    {
+        DejarVentana();
         _ventana = Ventanas.Ninguna;
+        _avisoDelPanel = null;
         _buscarTexto = "";
         await Js.VentanaAbiertaAsync(false);
         StateHasChanged();
-        await Js.EnfocarAsync("#codigo");
+    }
+
+    /// <summary>Lo que la ventana deja a medias al cerrarla o al cambiarla por otra.</summary>
+    private void DejarVentana()
+    {
+        // Si CTRL+L se queda a medio camino (pidiendo la autorización del costo), el ticket regresa a como estaba.
+        if (_ventana == Ventanas.ElegirCliente)
+            _elegirCliente?.Cancelar();
     }
 
     private void Avisar(string mensaje, bool error = true)
@@ -3467,6 +3658,10 @@ else
             _contingencia.Cambio -= AlCambiarContingencia;
         try
         {
+            // Si se va con una ventana abierta (el corte Z, o «Cambiar de usuario» del menú con un panel), caja.js seguiría
+            // creyendo que está ahí: en la pantalla nueva del que entra después, el cuadro de captura no tomaría los escaneos.
+            if (_ventana != Ventanas.Ninguna)
+                await Js.VentanaAbiertaAsync(false);
             await Js.QuitarTeclasAsync();
         }
         catch (JSDisconnectedException)

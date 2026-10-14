@@ -1,5 +1,7 @@
 using System.Net.Http.Json;
+using Microsoft.Data.Sqlite;
 using PapeleriaPos.Herramientas.Prueba;
+using PapeleriaPos.Interfaz;
 using PapeleriaPos.Interfaz.Componentes;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
@@ -9,7 +11,8 @@ namespace PapeleriaPos.Pruebas.Servicio;
 
 /// <summary>
 /// Lo que la pantalla nueva le enseña a quien prueba, con la base de <c>preparar-prueba</c> (la segunda prueba con una
-/// persona real, 17 y 18 de octubre de 2026): la fila de rápidos y lo que el cajero hace en Clientes.
+/// persona real, 17 y 18 de octubre de 2026): la fila de rápidos, lo que el cajero hace en Clientes y el estado de arriba
+/// con «Simular sin conexión».
 /// </summary>
 public class PantallaDeLaPruebaTests(ServicioEnPrueba prueba) : IClassFixture<ServicioEnPrueba>
 {
@@ -72,5 +75,41 @@ public class PantallaDeLaPruebaTests(ServicioEnPrueba prueba) : IClassFixture<Se
         // En la pantalla de hoy (sin permisos), como siempre: sin candado, y el servicio decide al intentarlo.
         Assert.True(CreditoDelCliente.PuedeDevolverConPermisos(null));
         Assert.Null(CreditoDelCliente.QuienAutorizaDevolverConPermisos(null));
+    }
+
+    [Fact]
+    public async Task Al_simular_sin_conexion_el_estado_de_arriba_dice_sin_la_principal_aunque_el_servicio_este_en_esta_pc()
+    {
+        // Como la arma la caja de Windows de la prueba: su servicio en esta PC y sin alta (la primera caja).
+        var http = new HttpClient(prueba.Fabrica.Server.CreateHandler());
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost:5180/") };
+        var contingencia = new Contingencia(new AlmacenLocal(Path.Combine(prueba.Carpeta, $"caja-local-{Guid.NewGuid():N}.db")), http, conexion);
+        await contingencia.LatidoAsync();
+        var enLinea = EstadoCaja.QueDice(contingencia, conexion);
+
+        // Lo que hace «Simular sin conexión» en la franja de la prueba, y luego «Volver a conectar».
+        conexion.SimularSinConexion = true;
+        await contingencia.LatidoAsync();
+        var simulando = EstadoCaja.QueDice(contingencia, conexion);
+        conexion.SimularSinConexion = false;
+        await contingencia.LatidoAsync();
+        var deVuelta = EstadoCaja.QueDice(contingencia, conexion);
+
+        // Sin simular, si el servicio de esta PC no contesta un momento (la caja principal de verdad, al actualizarlo):
+        // «Sin la principal» no aplica ahí. En otra PC, sí.
+        contingencia.MarcarSinConexion();
+        var sinSuServicio = EstadoCaja.QueDice(contingencia, conexion);
+        var secundariaSinLaPrincipal = EstadoCaja.QueDice(contingencia, new ConexionCaja { Servicio = new Uri("http://192.168.1.10:5080/") });
+
+        Assert.Equal(EstadoCaja.ChipConexion.ServicioAqui, enLinea);
+        Assert.Equal(EstadoCaja.ChipConexion.SinLaPrincipal, simulando);
+        Assert.Equal(EstadoCaja.ChipConexion.ServicioAqui, deVuelta);
+        Assert.Equal(EstadoCaja.ChipConexion.ServicioAqui, sinSuServicio);
+        Assert.Equal(EstadoCaja.ChipConexion.SinLaPrincipal, secundariaSinLaPrincipal);
+        // Sin contingencia (el navegador en la PC del servicio, o el de otra PC), solo dónde está el servicio.
+        Assert.Equal(EstadoCaja.ChipConexion.ServicioAqui, EstadoCaja.QueDice(null, conexion));
+        Assert.Equal(EstadoCaja.ChipConexion.ConectadaALaPrincipal,
+            EstadoCaja.QueDice(null, new ConexionCaja { Servicio = new Uri("http://192.168.1.10:5080/") }));
+        SqliteConnection.ClearAllPools();
     }
 }

@@ -343,6 +343,15 @@ panel de la derecha y vuelve con Esc.
   salió, ahí mismo están «Reintentar» y «Verlo en pantalla».
 - **F12 mueve el cursor a «Pagó con» en el navegador mismo,** sin esperar al servicio: lo que se teclea enseguida ya no
   cae en el cuadro de captura.
+- **Con un panel abierto, las teclas siguen** (2026-10-14, antes solo Esc): la del mismo panel lo cierra (F9 o Esc
+  regresan a vender); los botones de la barra, igual. Supr, las flechas, + y − son del panel.
+  - Los que se dejan sin perder nada (verificador, mayoreo, cliente, ventas del día, el ticket en pantalla, cotizar y
+    transferencias) se dejan con cualquier tecla: la de otro panel cambia a ese, F12 va al cobro y las demás hacen lo de
+    siempre.
+  - Los que tienen campos (artículo común, descuento, precio, entrada y salida, abono, devolución, alta rápida,
+    impresiones por cobrar) esperan su Enter o Esc, y con otra tecla lo dicen en el panel: lo escrito no se pierde ni
+    se cobra sin ello. Igual la autorización de un cobro (fiar arriba del límite, debajo del costo).
+  - Lo que va encima, solo con Esc.
 
 **Avance (2026-10-11), tercera parte: el cobro mixto y «Más».** En la pantalla nueva todo el cobro va en el panel del
 total, también con cliente registrado; la ventana de cobro queda solo en la pantalla de hoy.

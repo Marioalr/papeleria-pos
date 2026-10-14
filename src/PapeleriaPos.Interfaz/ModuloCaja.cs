@@ -16,7 +16,12 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
 
     public async Task QuitarTeclasAsync() => await (await Modulo).InvokeVoidAsync("quitar");
 
-    public async Task VentanaAbiertaAsync(bool abierta) => await (await Modulo).InvokeVoidAsync("ventanaAbierta", abierta);
+    /// <summary>
+    /// Con una ventana abierta, caja.js solo atrapa las teclas que no escriben en sus campos. <paramref name="enPanel"/>: es
+    /// un panel de la pantalla nueva (el ticket y la barra de teclas a la vista), y también Ins y Ctrl+Q son de la venta.
+    /// </summary>
+    public async Task VentanaAbiertaAsync(bool abierta, bool enPanel = false) =>
+        await (await Modulo).InvokeVoidAsync("ventanaAbierta", abierta, enPanel);
 
     /// <summary>Vacía el cuadro de captura de la pantalla nueva (no está enlazado: lo maneja caja.js).</summary>
     public async Task LimpiarCapturaAsync() => await (await Modulo).InvokeVoidAsync("limpiarCaptura");
