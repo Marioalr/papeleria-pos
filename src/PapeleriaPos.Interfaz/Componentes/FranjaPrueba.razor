@@ -35,7 +35,8 @@
             @if (_anotando)
             {
                 <input class="nota-tarea" placeholder="¿Qué falló o qué viste? (Enter para seguir)" autocomplete="off" @ref="_nota"
-                       @bind="_notaFalla" @bind:event="oninput" @onkeydown="AlTeclearNota" />
+                       @bind="_notaFalla" @bind:event="oninput" @onkeydown="AlTeclearNota" @onfocus="() => NotaConCursorAsync(true)"
+                       @onblur="() => NotaConCursorAsync(false)" />
             }
             else
             {
@@ -199,6 +200,8 @@
 
     private bool _enfocarNota;
 
+    private bool _notaConCursor;
+
     private TareaPrueba? Actual => _actual >= 0 && _actual < GuiaPrueba.Tareas.Count ? GuiaPrueba.Tareas[_actual] : null;
 
     /// <summary>Si en la guía se contestó la que se veía (o se dejó en blanco), la franja pasa a la que sigue sin contestar.</summary>
@@ -234,10 +237,31 @@
     {
         if (_anotando && Actual is { } tarea)
             await AnotarAsync(tarea.Id, _notaFalla);
-        _anotando = false;
+        // El cuadro de la nota se quita: puede que el navegador no avise que dejó de tener el cursor.
+        (_anotando, _notaConCursor) = (false, false);
+        await AvisarVentanaAsync();
         _actual = GuiaPrueba.Siguiente(_respuestas.Tareas, _actual);
         await Js.EnfocarAsync("#codigo");
     }
+
+    /// <summary>
+    /// El cursor entra o sale de la nota. Con él ahí, la venta de atrás no se queda con Supr, Ins ni Alt+1 (borraría un
+    /// renglón del ticket o agregaría un rápido). Al salir (Esc, que regresa al cuadro de captura, o un clic en la venta), lo
+    /// escrito se guarda y el renglón sigue pidiendo la nota hasta «Siguiente».
+    /// </summary>
+    private async Task NotaConCursorAsync(bool conCursor)
+    {
+        _notaConCursor = conCursor;
+        await AvisarVentanaAsync();
+        if (!conCursor && _anotando && Actual is { } tarea)
+            await AnotarAsync(tarea.Id, _notaFalla);
+    }
+
+    /// <summary>
+    /// Con la guía (o sus avisos, o «Empezar de cero») abierta, o el cursor en la nota de la tarea, la pantalla de venta de
+    /// atrás no atrapa las teclas que se escriben aquí. Al quitarse, vuelve lo que la venta tenga abierto (ModuloCaja).
+    /// </summary>
+    private Task AvisarVentanaAsync() => Js.VentanaDeLaFranjaAsync(_panel != Panel.Ninguno || _notaConCursor);
 
     private async Task AlTeclearNota(KeyboardEventArgs e)
     {
@@ -270,18 +294,17 @@
 
     private RespuestaTareaDto Respuesta(string id) => _respuestas.Tareas.GetValueOrDefault(id) ?? new RespuestaTareaDto(null, null);
 
-    /// <summary>Con la guía abierta, la pantalla de venta de atrás no atrapa las teclas que se escriben aquí.</summary>
     private async Task AbrirAsync(Panel panel)
     {
         (_panel, _error, _aviso, _confirmarEnBlanco) = (panel, null, null, false);
-        await Js.VentanaAbiertaAsync(true);
+        await AvisarVentanaAsync();
     }
 
     private async Task CerrarAsync()
     {
         _panel = Panel.Ninguno;
         SeguirConLaQueFalta();
-        await Js.VentanaAbiertaAsync(false);
+        await AvisarVentanaAsync();
     }
 
     private async Task AbrirGuiaAsync()
@@ -380,7 +403,7 @@
             await Cliente.GuardarRespuestasPruebaAsync(dto);
             var archivo = await Cliente.DejarGuiaEnBlancoAsync(GuiaPrueba.Version, GuiaPrueba.Documento(dto, DateTime.Now));
             _respuestas = new Respuestas();
-            (_confirmarEnBlanco, _actual, _anotando) = (false, 0, false);
+            (_confirmarEnBlanco, _actual, _anotando, _notaConCursor) = (false, 0, false, false);
             _aviso = $"Listo: las respuestas{(string.IsNullOrWhiteSpace(dto.Nombre) ? "" : $" de {dto.Nombre.Trim()}")} quedaron en «{archivo.Ruta}». "
                 + "La guía quedó en blanco para la siguiente persona.";
         }
@@ -418,7 +441,7 @@
         try
         {
             await Cliente.EmpezarDeCeroAsync();
-            await Js.VentanaAbiertaAsync(false);
+            await Js.VentanaDeLaFranjaAsync(false);
             // Todo lo que la caja tenía en memoria (sesión, turno, tickets) era de la base anterior.
             Navegacion.NavigateTo(Navegacion.Uri, forceLoad: true);
         }
