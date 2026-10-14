@@ -182,7 +182,9 @@ public static class EjemplosProveedor
             t.AppendLine($"     {p.Codigo}  {p.Nombre}");
         t.AppendLine();
         t.AppendLine("La guía de la prueba está dentro de la caja: botón «Guía de la prueba» en la franja de arriba. Al terminar, ahí");
-        t.AppendLine("mismo: «Guardar respuestas y dejar la guía en blanco», para que pruebe la siguiente persona.");
+        t.AppendLine("mismo: «Guardar respuestas y dejar la guía en blanco», para que pruebe la siguiente persona. Junto al");
+        t.AppendLine("documento de las respuestas, en el escritorio, queda una carpeta «… - registros»: mándala con ellas. Si la caja");
+        t.AppendLine("dice «Algo falló», oprime «Volver a cargar» y anota en la tarea qué estabas haciendo.");
         t.AppendLine();
         t.AppendLine($"Para las tareas de compras, el proveedor es «{proveedor}».");
         t.AppendLine();

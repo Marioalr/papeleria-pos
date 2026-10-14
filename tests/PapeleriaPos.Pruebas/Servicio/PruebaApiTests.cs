@@ -142,6 +142,36 @@ public class PruebaApiTests(ServicioEnPrueba prueba) : IClassFixture<ServicioEnP
     }
 
     [Fact]
+    public void Los_registros_de_la_caja_salen_con_las_respuestas()
+    {
+        // Como en la PC de prueba: la base y sus registros en una carpeta, las respuestas en el escritorio.
+        var datos = Path.Combine(Path.GetTempPath(), $"pos-prueba-registros-{Guid.NewGuid():N}");
+        var escritorio = Path.Combine(datos, "Escritorio");
+        Directory.CreateDirectory(Path.Combine(datos, "registros"));
+        Directory.CreateDirectory(escritorio);
+        try
+        {
+            File.WriteAllText(Path.Combine(datos, "registros", "caja-2026-10-17.log"), "Algo falló al cobrar");
+            // La caja lo tiene abierto mientras se exporta.
+            using var abierto = new FileStream(Path.Combine(datos, "registros", "servicio-2026-10-17.log"), FileMode.Create, FileAccess.Write, FileShare.Read);
+            abierto.Write("Arrancó"u8);
+            abierto.Flush();
+            var modo = new PapeleriaPos.Servicio.ModoPrueba(true, null, $"Data Source={Path.Combine(datos, "pos.db")}", escritorio);
+
+            var documento = modo.Exportar("Respuestas");
+
+            var copiados = Path.Combine(escritorio, $"{Path.GetFileNameWithoutExtension(documento)} - registros");
+            Assert.Equal(["caja-2026-10-17.log", "servicio-2026-10-17.log"], Directory.GetFiles(copiados).Select(Path.GetFileName).Order());
+            Assert.Equal("Algo falló al cobrar", File.ReadAllText(Path.Combine(copiados, "caja-2026-10-17.log")));
+            Assert.Equal("Arrancó", File.ReadAllText(Path.Combine(copiados, "servicio-2026-10-17.log")));
+        }
+        finally
+        {
+            Directory.Delete(datos, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Las_respuestas_de_otra_version_de_la_guia_no_se_cargan_y_su_archivo_se_queda()
     {
         // Como las dejó la caja de la primera prueba (2026-10-10): sin versión y con los Id de la guía de entonces.

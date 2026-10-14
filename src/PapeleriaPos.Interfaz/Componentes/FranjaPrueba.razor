@@ -8,6 +8,7 @@
 @inject ModuloCaja Js
 @inject NavigationManager Navegacion
 @inject IServiceProvider Servicios
+@implements IAsyncDisposable
 
 @if (_prueba)
 {
@@ -449,6 +450,24 @@
         {
             _error = ex.Message;
             _ocupado = false;
+        }
+    }
+
+    /// <summary>
+    /// Si la franja se va con algo encima de la venta (la guía, o el cursor en la nota de la tarea; también si truena y la
+    /// cambia «Algo falló»), caja.js seguiría creyendo que hay una ventana y la venta no tendría sus teclas.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        if (_panel == Panel.Ninguno && !_notaConCursor)
+            return;
+        try
+        {
+            await Js.VentanaDeLaFranjaAsync(false);
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException)
+        {
+            // El navegador ya se cerró, o la página se está volviendo a cargar.
         }
     }
 }

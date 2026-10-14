@@ -102,6 +102,9 @@ public sealed class ModoPrueba(bool activo, string? baseInicial, string cadenaCo
     /// <summary>
     /// Las respuestas como documento en el escritorio de quien prueba (o junto a la base, si no hay escritorio). Nunca encima
     /// de otro: dos en el mismo minuto (guardar y luego dejar la guía en blanco, o una guía ya en blanco) llevan un número.
+    /// Junto al documento va una carpeta con los registros de la caja y del servicio de la prueba («registros», junto a la
+    /// base, en una carpeta oculta de Windows que se borra al desinstalar): si algo falló o se cerró solo, ahí está por qué,
+    /// y así llega con las respuestas.
     /// </summary>
     public string Exportar(string texto)
     {
@@ -112,7 +115,33 @@ public sealed class ModoPrueba(bool activo, string? baseInicial, string cadenaCo
         for (var n = 2; File.Exists(ruta); n++)
             ruta = Path.Combine(carpeta, $"{nombre} ({n}).md");
         File.WriteAllText(ruta, texto);
+        CopiarRegistros(Path.Combine(carpeta, $"{Path.GetFileNameWithoutExtension(ruta)} - registros"));
         return ruta;
+    }
+
+    /// <summary>
+    /// Los registros que haya, de todos los días que guarda la caja. La caja y el servicio pueden tenerlos abiertos: se leen
+    /// sin estorbarles, y uno que no se puede leer se salta (las respuestas importan más que su registro).
+    /// </summary>
+    private void CopiarRegistros(string destino)
+    {
+        var registros = Path.Combine(Path.GetDirectoryName(RutaBase)!, "registros");
+        if (!Directory.Exists(registros))
+            return;
+        foreach (var archivo in Directory.EnumerateFiles(registros, "*.log"))
+        {
+            try
+            {
+                Directory.CreateDirectory(destino);
+                using var origen = new FileStream(archivo, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                using var copia = File.Create(Path.Combine(destino, Path.GetFileName(archivo)));
+                origen.CopyTo(copia);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Sigue con los demás.
+            }
+        }
     }
 
     /// <summary>
