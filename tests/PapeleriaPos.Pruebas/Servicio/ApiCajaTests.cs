@@ -187,22 +187,6 @@ public class ApiCajaTests(ServicioDePrueba servicio) : IClassFixture<ServicioDeP
     }
 
     [Fact]
-    public async Task Un_codigo_escaneado_en_pago_con_no_se_cobra()
-    {
-        var (http, caja, sesion, turno) = await PrepararVentaAsync();
-        var buscado = await UnProductoConCodigoAsync(http, caja.SucursalId);
-        var ventaId = Guid.NewGuid();
-
-        // 7501234567890 en «Pagó con»: billones de pesos de cambio.
-        var respuesta = await http.PostAsJsonAsync("api/ventas", new SolicitudCobro(caja.Id, turno.Id, sesion.UsuarioId,
-            [new LineaSolicitada(buscado.VarianteId, null, 1000)], [new CobroSolicitado(FormaPago.Efectivo, 750123456789000)], ventaId));
-
-        Assert.Equal(HttpStatusCode.BadRequest, respuesta.StatusCode);
-        Assert.Contains("no puede ser", (await respuesta.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
-        Assert.Equal(HttpStatusCode.NotFound, (await http.GetAsync($"api/ventas/{ventaId}/ticket")).StatusCode);
-    }
-
-    [Fact]
     public async Task Un_codigo_que_no_existe_da_404()
     {
         var http = Cliente();

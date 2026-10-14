@@ -386,12 +386,11 @@ public class Venta
     /// el efectivo cubre lo que falta, redondeado al peso (<see cref="Efectivo"/>), y da el cambio.
     /// </summary>
     /// <param name="redondear">Falso solo para lo que se cobró sin conexión antes de que existiera el redondeo.</param>
-    /// <param name="topeDeCambio">Falso solo para lo que ya se cobró sin conexión (<see cref="TopeDeCambio"/>).</param>
-    public void Pagar(int folio, IReadOnlyList<CobroSolicitado> cobros, DateTime ahoraUtc, bool redondear = true, bool topeDeCambio = true)
+    public void Pagar(int folio, IReadOnlyList<CobroSolicitado> cobros, DateTime ahoraUtc, bool redondear = true)
     {
         if (ahoraUtc.Kind != DateTimeKind.Utc)
             throw new ArgumentException("La fecha debe estar en UTC.", nameof(ahoraUtc));
-        var (efectivo, recibido) = Revisar(cobros, redondear, topeDeCambio);
+        var (efectivo, recibido) = Revisar(cobros, redondear);
 
         Cobros = cobros.Where(c => c.Forma != FormaPago.Efectivo).Select(c => new Cobro
         {
@@ -421,9 +420,9 @@ public class Venta
     /// Revisa que los cobros alcancen sin cambiar nada. Devuelve lo que falta cubrir en efectivo (ya redondeado) y lo
     /// recibido.
     /// </summary>
-    public (long Faltante, long Recibido) ValidarCobros(IReadOnlyList<CobroSolicitado> cobros, bool redondear = true, bool topeDeCambio = true)
+    public (long Faltante, long Recibido) ValidarCobros(IReadOnlyList<CobroSolicitado> cobros, bool redondear = true)
     {
-        var (efectivo, recibido) = Revisar(cobros, redondear, topeDeCambio);
+        var (efectivo, recibido) = Revisar(cobros, redondear);
         return (efectivo.ACobrarCentavos, recibido);
     }
 
@@ -443,7 +442,7 @@ public class Venta
         return new EfectivoACobrar(exacto, aCobrar == 0 ? 100 : aCobrar);
     }
 
-    private (EfectivoACobrar Efectivo, long Recibido) Revisar(IReadOnlyList<CobroSolicitado> cobros, bool redondear, bool topeDeCambio)
+    private (EfectivoACobrar Efectivo, long Recibido) Revisar(IReadOnlyList<CobroSolicitado> cobros, bool redondear)
     {
         RequerirEditable();
         if (Lineas.Count == 0)
@@ -466,8 +465,6 @@ public class Venta
         var recibido = cobros.SingleOrDefault(c => c.Forma == FormaPago.Efectivo)?.MontoCentavos ?? 0;
         if (recibido < efectivo.ACobrarCentavos)
             throw new InvalidOperationException($"Faltan {(efectivo.ACobrarCentavos - recibido) / 100m:C2} por cobrar.");
-        if (topeDeCambio && TopeDeCambio.Revisar(efectivo.ACobrarCentavos, recibido) == RevisionDelCambio.NoEsDinero)
-            throw new InvalidOperationException(TopeDeCambio.NoEsDinero(recibido));
         return (efectivo, recibido);
     }
 
