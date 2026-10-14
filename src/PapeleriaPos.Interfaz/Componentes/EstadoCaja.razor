@@ -7,23 +7,23 @@
 @inject IServiceProvider Servicios
 
 <div class="vn-estado">
-    @if (Conexion.Servicio.IsLoopback)
+    @switch (QueDice(_contingencia, Conexion))
     {
-        <span class="vn-chip-estado" title="El servicio y la base están en esta PC."><span class="punto"></span>Servicio aquí</span>
-    }
-    else if (_contingencia is { ServidorResponde: false } sin)
-    {
-        <span class="vn-chip-estado aviso" title="Se vende con la copia de esta caja; lo que se cobra sube al volver la conexión.">
-            <span class="punto"></span>Sin la principal@(sin.Pendientes > 0 ? $" · {sin.Pendientes} por subir" : "")
-        </span>
-    }
-    else if (_contingencia is { Pendientes: > 0 } subiendo)
-    {
-        <span class="vn-chip-estado aviso"><span class="punto"></span>Subiendo @subiendo.Pendientes…</span>
-    }
-    else
-    {
-        <span class="vn-chip-estado" title="El catálogo está en esta caja; lo que se cobra va a la caja principal."><span class="punto"></span>Conectada a la principal</span>
+        case ChipConexion.SinLaPrincipal:
+            <span class="vn-chip-estado aviso"
+                  title="@(Conexion.SimularSinConexion ? "Simulado en la prueba («Volver a conectar» en la franja). " : "")Se vende con la copia de esta caja; lo que se cobra sube al volver la conexión.">
+                <span class="punto"></span>Sin la principal@(_contingencia!.Pendientes > 0 ? $" · {_contingencia.Pendientes} por subir" : "")
+            </span>
+            break;
+        case ChipConexion.Subiendo:
+            <span class="vn-chip-estado aviso"><span class="punto"></span>Subiendo @_contingencia!.Pendientes…</span>
+            break;
+        case ChipConexion.ServicioAqui:
+            <span class="vn-chip-estado" title="El servicio y la base están en esta PC."><span class="punto"></span>Servicio aquí</span>
+            break;
+        default:
+            <span class="vn-chip-estado" title="El catálogo está en esta caja; lo que se cobra va a la caja principal."><span class="punto"></span>Conectada a la principal</span>
+            break;
     }
     @if (Impresora.MuestraVistaPrevia)
     {
@@ -48,6 +48,27 @@
 
     /// <summary>Cada cuánto se vuelven a contar las impresiones por cobrar (también al cobrar y al cerrar F2).</summary>
     private static readonly TimeSpan CadaCuanto = TimeSpan.FromSeconds(45);
+
+    /// <summary>Lo que dice el chip de la conexión.</summary>
+    public enum ChipConexion
+    {
+        ServicioAqui, ConectadaALaPrincipal, SinLaPrincipal, Subiendo,
+    }
+
+    /// <summary>
+    /// Primero lo que sabe la contingencia (la ventana de Windows): si la caja principal no contesta, o si falta subir lo
+    /// que se hizo sin ella. Luego, dónde está el servicio. La caja de la prueba tiene el suyo en esta PC y «Simular sin
+    /// conexión» en la franja: antes el chip miraba primero dónde está el servicio y seguía diciendo «Servicio aquí»
+    /// mientras se simulaba; solo la franja de arriba lo decía. En la caja principal de verdad (su servicio también en esta
+    /// PC) «Sin la principal» no aplica (docs/propuesta-interfaz.md, «Caja principal y secundarias»): si su servicio no
+    /// contesta un momento (al actualizarlo), sigue diciendo «Servicio aquí», como antes; solo la prueba lo simula.
+    /// </summary>
+    public static ChipConexion QueDice(Contingencia? contingencia, ConexionCaja conexion) => contingencia switch
+    {
+        { ServidorResponde: false } when !conexion.Servicio.IsLoopback || conexion.SimularSinConexion => ChipConexion.SinLaPrincipal,
+        { Pendientes: > 0 } => ChipConexion.Subiendo,
+        _ => conexion.Servicio.IsLoopback ? ChipConexion.ServicioAqui : ChipConexion.ConectadaALaPrincipal,
+    };
 
     private Contingencia? _contingencia;
     private int _porCobrar;
