@@ -18,6 +18,19 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     ContentRootPath = AppContext.BaseDirectory,
 });
 builder.Host.UseWindowsService(o => o.ServiceName = "PapeleriaPos");
+// La caja de la prueba (la que pasa esta opción) guarda lo que escribe este servicio en su registro
+// (registros\servicio-….log): en UTF-8, para que lleguen los acentos; si no, sale en la página de códigos de la consola.
+if (builder.Configuration.GetValue("Prueba:DetenerAlCerrarEntrada", false))
+{
+    try
+    {
+        Console.OutputEncoding = new System.Text.UTF8Encoding(false);
+    }
+    catch (IOException)
+    {
+        // Sin consola ya escribe en UTF-8.
+    }
+}
 
 var cadena = RutasServicio.CadenaConexion(builder.Configuration);
 // La prueba con una persona real: la base empieza como copia de la de prueba (docs/plan.md).
