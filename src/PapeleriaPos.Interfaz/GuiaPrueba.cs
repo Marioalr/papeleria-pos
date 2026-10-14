@@ -280,6 +280,32 @@ public static class GuiaPrueba
             + "que le habrían llegado por Telegram: cancelaciones, cortes con diferencia, compras…"),
     ];
 
+    /// <summary>
+    /// La primera tarea sin contestar después de <paramref name="desde"/> (-1: desde el principio), dando la vuelta; -1 si
+    /// ya están todas. Es la que la franja de prueba enseña mientras se hace.
+    /// </summary>
+    public static int SinContestarDespuesDe(IReadOnlyDictionary<string, RespuestaTareaDto> respuestas, int desde)
+    {
+        var total = Tareas.Count;
+        for (var k = 1; k <= total; k++)
+        {
+            var i = ((desde + k) % total + total) % total;
+            if (respuestas.GetValueOrDefault(Tareas[i].Id)?.SalioBien is null)
+                return i;
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// «Siguiente» en la franja: la que sigue sin contestar (la que se saltó vuelve al dar la vuelta); si las demás ya
+    /// están, la que sigue en orden; -1 si ya están todas.
+    /// </summary>
+    public static int Siguiente(IReadOnlyDictionary<string, RespuestaTareaDto> respuestas, int actual)
+    {
+        var siguiente = SinContestarDespuesDe(respuestas, actual);
+        return siguiente == actual ? (actual + 1) % Tareas.Count : siguiente;
+    }
+
     /// <summary>Las respuestas como documento: lo que se guarda en el escritorio para mandarlo.</summary>
     public static string Documento(RespuestasPruebaDto respuestas, DateTime ahora)
     {

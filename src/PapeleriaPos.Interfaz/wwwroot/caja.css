@@ -223,6 +223,11 @@ input.codigos { width: 100%; font-size: 14px; }
 .tarea-prueba.bien { border-color: var(--exito); background: var(--verde-claro); }
 .tarea-prueba.mal { border-color: var(--error); background: #fdecea; }
 .tarea-prueba input.nota-tarea { flex: 1; font-size: 14px; padding: 3px 8px; }
+/* La tarea que toca, bajo la franja de prueba: hasta dos renglones de texto; lo demás, al pasar el mouse. */
+.franja-tarea { display: flex; gap: 8px; align-items: center; padding: 4px 12px; background: #fffaf0; border-bottom: 1px solid #e8c766; font-size: 14px; }
+.franja-tarea .num { font-weight: 600; white-space: nowrap; }
+.franja-tarea .hacer { flex: 1; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.franja-tarea input.nota-tarea { flex: 1; font-size: 14px; padding: 3px 8px; }
 pre.aviso-telegram { white-space: pre-wrap; margin: 0; font-family: inherit; }
 .compra tr.nuevo td { background: #eef4ff; }
 .producto-nuevo { display: grid; grid-template-columns: 2fr 1.4fr 1fr 1fr 1fr 1.3fr; gap: 6px 10px; align-items: end; }

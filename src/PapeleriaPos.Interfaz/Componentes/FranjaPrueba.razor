@@ -2,7 +2,7 @@
    avisos que le habrían llegado al dueño por Telegram, empezar de cero y (en la caja de Windows, la que sigue sin la caja
    principal) simular que no hay conexión: el servicio de la prueba corre en la misma PC y no hay cable que desconectar.
    Las respuestas van con la versión de la guía, y al terminar una persona se guardan y la guía queda en blanco para la
-   siguiente (el sábado una y el domingo otra). *@
+   siguiente (el sábado una y el domingo otra). La tarea que toca se ve en un renglón debajo, mientras se hace. *@
 @inject ClienteCaja Cliente
 @inject ConexionCaja Conexion
 @inject ModuloCaja Js
@@ -24,6 +24,32 @@
             </button>
         }
     </div>
+    @if (Actual is { } actual)
+    {
+        @* La tarea que toca, a la vista mientras se hace y sin tapar el ticket (la guía completa sigue en su botón). Los botones
+           no se quedan con el cursor: lo que se escanea después va al cuadro de captura, y su Enter no oprime «Siguiente». Una
+           ya contestada (se llega a ella con «Siguiente» cuando solo falta otra) se ve marcada, como en la guía. *@
+        var ya = Respuesta(actual.Id).SalioBien;
+        <div class="franja-tarea">
+            <span class="num">Tarea @(_actual + 1) de @GuiaPrueba.Tareas.Count@(ya is null ? "" : " · ya contestada")</span>
+            @if (_anotando)
+            {
+                <input class="nota-tarea" placeholder="¿Qué falló o qué viste? (Enter para seguir)" autocomplete="off" @ref="_nota"
+                       @bind="_notaFalla" @bind:event="oninput" @onkeydown="AlTeclearNota" />
+            }
+            else
+            {
+                <span class="hacer" title="@($"{actual.Hacer}\nDebe pasar: {actual.Esperado}")">@actual.Hacer</span>
+                <button class="boton chico @(ya == true ? "principal" : "")" @onmousedown:preventDefault="true" @onclick="() => MarcarActualAsync(true)">Salió bien</button>
+                <button class="boton chico @(ya == false ? "principal" : "")" @onmousedown:preventDefault="true" @onclick="() => MarcarActualAsync(false)">Algo falló</button>
+            }
+            <button class="boton chico" @onmousedown:preventDefault="true" @onclick="SiguienteAsync">Siguiente</button>
+        </div>
+    }
+    else if (Contestadas == GuiaPrueba.Tareas.Count)
+    {
+        <div class="franja-tarea"><span class="hacer">Contestaste todas las tareas: en «Guía de la prueba» guarda tus respuestas.</span></div>
+    }
 
     @switch (_panel)
     {
@@ -155,6 +181,70 @@
 
     private int Contestadas => GuiaPrueba.Tareas.Count(t => _respuestas.Tareas.GetValueOrDefault(t.Id)?.SalioBien is not null);
 
+    // ── La tarea que toca, en la franja ────────────────────────────────────
+
+    /// <summary>La que se ve en la franja: empieza en la primera sin contestar; -1 si ya están todas.</summary>
+    private int _actual;
+
+    /// <summary>Después de «Algo falló»: el renglón pide qué pasó (opcional) antes de seguir.</summary>
+    private bool _anotando;
+
+    private string _notaFalla = "";
+
+    /// <summary>
+    /// El cuadro de la nota. Recibe el cursor al aparecer: los botones no se lo quedan, así que seguiría en el cuadro de
+    /// captura, y lo que se escribiera de lo que falló sería una búsqueda, y su Enter agregaría un producto al ticket.
+    /// </summary>
+    private ElementReference _nota;
+
+    private bool _enfocarNota;
+
+    private TareaPrueba? Actual => _actual >= 0 && _actual < GuiaPrueba.Tareas.Count ? GuiaPrueba.Tareas[_actual] : null;
+
+    /// <summary>Si en la guía se contestó la que se veía (o se dejó en blanco), la franja pasa a la que sigue sin contestar.</summary>
+    private void SeguirConLaQueFalta()
+    {
+        if (!_anotando && (Actual is not { } tarea || Respuesta(tarea.Id).SalioBien is not null))
+            _actual = GuiaPrueba.SinContestarDespuesDe(_respuestas.Tareas, Math.Max(_actual, 0) - 1);
+    }
+
+    private async Task MarcarActualAsync(bool salioBien)
+    {
+        if (Actual is not { } tarea)
+            return;
+        _respuestas.Tareas[tarea.Id] = Respuesta(tarea.Id) with { SalioBien = salioBien };
+        if (salioBien)
+            _actual = GuiaPrueba.SinContestarDespuesDe(_respuestas.Tareas, _actual);
+        else
+            (_anotando, _notaFalla, _enfocarNota) = (true, Respuesta(tarea.Id).Nota ?? "", true);
+        await GuardarAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_enfocarNota && _anotando)
+        {
+            _enfocarNota = false;
+            await _nota.FocusAsync();
+        }
+    }
+
+    /// <summary>Con lo que haya escrito de lo que falló, a la siguiente (<see cref="GuiaPrueba.Siguiente"/>); el cursor vuelve al cuadro de captura.</summary>
+    private async Task SiguienteAsync()
+    {
+        if (_anotando && Actual is { } tarea)
+            await AnotarAsync(tarea.Id, _notaFalla);
+        _anotando = false;
+        _actual = GuiaPrueba.Siguiente(_respuestas.Tareas, _actual);
+        await Js.EnfocarAsync("#codigo");
+    }
+
+    private async Task AlTeclearNota(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await SiguienteAsync();
+    }
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -175,6 +265,7 @@
     {
         var r = await Cliente.RespuestasPruebaAsync(GuiaPrueba.Version);
         _respuestas = new Respuestas { Nombre = r.Nombre, Tareas = r.Tareas.ToDictionary(), Comentarios = r.Comentarios };
+        SeguirConLaQueFalta();
     }
 
     private RespuestaTareaDto Respuesta(string id) => _respuestas.Tareas.GetValueOrDefault(id) ?? new RespuestaTareaDto(null, null);
@@ -189,6 +280,7 @@
     private async Task CerrarAsync()
     {
         _panel = Panel.Ninguno;
+        SeguirConLaQueFalta();
         await Js.VentanaAbiertaAsync(false);
     }
 
@@ -288,7 +380,7 @@
             await Cliente.GuardarRespuestasPruebaAsync(dto);
             var archivo = await Cliente.DejarGuiaEnBlancoAsync(GuiaPrueba.Version, GuiaPrueba.Documento(dto, DateTime.Now));
             _respuestas = new Respuestas();
-            _confirmarEnBlanco = false;
+            (_confirmarEnBlanco, _actual, _anotando) = (false, 0, false);
             _aviso = $"Listo: las respuestas{(string.IsNullOrWhiteSpace(dto.Nombre) ? "" : $" de {dto.Nombre.Trim()}")} quedaron en «{archivo.Ruta}». "
                 + "La guía quedó en blanco para la siguiente persona.";
         }

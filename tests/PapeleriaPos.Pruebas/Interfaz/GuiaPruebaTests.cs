@@ -73,6 +73,31 @@ public class GuiaPruebaTests
         Assert.DoesNotContain(GuiaPrueba.Tareas, t => t.Hacer.Contains(loQueSeQuito) || t.Esperado.Contains(loQueSeQuito));
 
     [Fact]
+    public void La_franja_ensena_la_primera_sin_contestar_y_siguiente_no_se_atora()
+    {
+        var tareas = GuiaPrueba.Tareas;
+        var respuestas = new Dictionary<string, RespuestaTareaDto>
+        {
+            [tareas[0].Id] = new(true, null),
+            [tareas[1].Id] = new(false, "Se trabó"),
+            [tareas[3].Id] = new(null, "Solo una nota: sigue sin contestar"),
+        };
+
+        Assert.Equal(2, GuiaPrueba.SinContestarDespuesDe(respuestas, -1));
+        Assert.Equal(3, GuiaPrueba.SinContestarDespuesDe(respuestas, 2));
+        // Al llegar al final da la vuelta: la que se saltó vuelve.
+        Assert.Equal(2, GuiaPrueba.SinContestarDespuesDe(respuestas, tareas.Count - 1));
+        Assert.Equal(3, GuiaPrueba.Siguiente(respuestas, 2));
+
+        var todas = tareas.ToDictionary(t => t.Id, _ => new RespuestaTareaDto(true, null));
+        Assert.Equal(-1, GuiaPrueba.SinContestarDespuesDe(todas, -1));
+        // Si solo falta la de ahora, «Siguiente» pasa a la que sigue en orden y luego regresa a ella.
+        todas[tareas[5].Id] = new RespuestaTareaDto(null, null);
+        Assert.Equal(6, GuiaPrueba.Siguiente(todas, 5));
+        Assert.Equal(5, GuiaPrueba.Siguiente(todas, 6));
+    }
+
+    [Fact]
     public void El_documento_dice_la_version_de_la_guia_y_avisa_si_es_otra()
     {
         var actual = GuiaPrueba.Documento(new RespuestasPruebaDto("Ana", new Dictionary<string, RespuestaTareaDto>(), null, GuiaPrueba.Version),
