@@ -258,9 +258,12 @@ la caja con su usuario y PIN del POS, todos desde la misma cuenta común de Wind
 #### Primero: la versión unicaja (entrega 0)
 
 Una primera versión que ya venda, hecha sobre lo que ya funciona: el mismo servicio, el mismo cobro, el mismo ticket y
-la misma base. Cambia la pantalla de venta; lo que todavía no se rediseña abre lo de hoy, con sus mismas teclas. Cada
-caja elige si usa la pantalla nueva o la de hoy (Configuración › Esta caja). Se instala con el instalador de prueba que
-ya existe, y cada entrega que sigue se ve en esa misma versión.
+la misma base. Cambia la pantalla de venta; lo que todavía no se rediseña abre lo de hoy, con sus mismas teclas. Desde
+la segunda prueba con una persona real (17 y 18 de octubre de 2026) todas las cajas entran a la pantalla nueva; la de
+hoy queda en el menú del usuario («Volver a la pantalla de hoy») y cada PC recuerda si se volvió a ella. Se instala con
+el instalador de prueba que ya existe, y cada entrega que sigue se ve en esa misma versión. Al actualizar, la base de
+trabajo de la prueba se queda: en la PC de la primera prueba, «Empezar de cero» (en la franja) antes de la segunda, o
+los rápidos seguirán con los precios que inventó la papelería ficticia ($2.30 y $27.00), no con los de abajo.
 
 | Qué | Cómo, por ahora |
 |---|---|

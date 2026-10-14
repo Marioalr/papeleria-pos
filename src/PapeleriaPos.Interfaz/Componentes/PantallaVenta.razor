@@ -1,6 +1,6 @@
-@* La pantalla de venta. La de hoy tiene la misma distribución y las mismas teclas que eleventa; la nueva es la del
-   rediseño (docs/propuesta-interfaz.md, entrega 0) y cada caja elige cuál usa. Las dos comparten los tickets, el cobro,
-   las ventanas y las teclas: solo cambia cómo se ve. *@
+@* La pantalla de venta. La nueva es la del rediseño (docs/propuesta-interfaz.md, entrega 0) y es con la que se entra en
+   todas las cajas; la de hoy, con la misma distribución y las mismas teclas que eleventa, queda para volver a ella desde
+   el menú del usuario. Las dos comparten los tickets, el cobro, las ventanas y las teclas: solo cambia cómo se ve. *@
 @implements IAsyncDisposable
 @using System.Text.RegularExpressions
 @using PapeleriaPos.Nucleo.Configuracion
@@ -19,7 +19,8 @@
                 <span class="vn-logo">P</span>
                 <div><strong>@Caja.Nombre</strong><small>@(Conexion.Servicio.IsLoopback ? "principal" : "secundaria") · @Caja.Sucursal</small></div>
             </div>
-            @* Cada quien ve lo que sus permisos le dejan: lo que no puede no aparece (docs/propuesta-interfaz.md, «Usuarios y permisos»). *@
+            @* Cada quien ve lo que sus permisos le dejan: lo que no puede no aparece (docs/propuesta-interfaz.md, «Usuarios y permisos»).
+               Mientras llegan, solo lo que es de todos. *@
             <nav class="vn-pestanas">
                 <button class="activa">Venta <kbd>F1</kbd></button>
                 @if (Ve(AccionControlada.EditarCatalogo))
@@ -30,10 +31,9 @@
                 {
                     <button @onclick="() => Abrir(Ventanas.Inventario)">Inventario <kbd>F4</kbd></button>
                 }
-                @if (Ve(AccionControlada.AdministrarClientes))
-                {
-                    <button @onclick="() => Abrir(Ventanas.Clientes)">Clientes</button>
-                }
+                @* Clientes es de todos, como en la pantalla de hoy: quien no los administra los consulta (sin «Nuevo cliente» ni
+                   editar) y en su cuenta recibe abonos y devuelve el saldo a favor, con candado si lo autoriza otro. *@
+                <button @onclick="() => Abrir(Ventanas.Clientes)">Clientes</button>
                 <button @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
                 @if (VeConfiguracion)
                 {
@@ -53,6 +53,7 @@
                     <div class="vn-menu-usuario">
                         <p>@Sesion.Nombre · @Textos.Rol(Sesion.Rol).ToLowerInvariant()</p>
                         <button @onclick="AlSalir">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
+                        @* Solo aquí, no en «/»: un Enter con «/pan…» no deja la de hoy guardada en esta PC sin querer. *@
                         <button @onclick="CambiarPantallaAsync">Volver a la pantalla de hoy</button>
                     </div>
                 }
@@ -707,7 +708,7 @@ else
         <button class="modulo" @onclick="() => Abrir(Ventanas.Configuracion)">Configuración</button>
         <button class="modulo" @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
         <span class="espacio"></span>
-        <button class="modulo" title="La pantalla del rediseño (en desarrollo); se recuerda en esta PC" @onclick="CambiarPantallaAsync">Probar la pantalla nueva</button>
+        <button class="modulo" title="La pantalla del rediseño, con la que se entra en todas las cajas; esta PC deja de recordar la de hoy" @onclick="CambiarPantallaAsync">Probar la pantalla nueva</button>
         <div class="atiende">
             <small>Le atiende:</small>
             <strong>@Sesion.Nombre</strong>
@@ -950,10 +951,20 @@ else
 
     // ── La pantalla nueva (docs/propuesta-interfaz.md, entrega 0) ───────────
 
-    /// <summary>Cada caja elige su pantalla; se recuerda en el navegador de esta PC.</summary>
+    /// <summary>
+    /// Dónde recuerda el navegador de esta PC si se volvió a la pantalla de hoy. Solo se guarda eso
+    /// (<see cref="PantallaDeHoy"/>): sin nada, o con el «nueva» que guardaba «Probar la pantalla nueva», se entra a la nueva.
+    /// </summary>
     private const string ClavePantalla = "pantalla-venta";
 
-    private bool _pantallaNueva;
+    private const string PantallaDeHoy = "hoy";
+
+    /// <summary>
+    /// La nueva desde el primer dibujo, en todas las cajas, de prueba y de verdad (para la segunda prueba con una persona
+    /// real, 17 y 18 de octubre de 2026: la de hoy no le gustó al dueño en la primera). Así, al entrar (también con
+    /// Ctrl+U) no se asoma la de hoy ni sus teclas mientras se lee lo guardado.
+    /// </summary>
+    private bool _pantallaNueva = true;
 
     /// <summary>Lo que se enfoca después de dibujar (el cuadro del código, o «Pagó con» con F12).</summary>
     private string? _enfocar;
@@ -985,13 +996,25 @@ else
     /// </summary>
     private Dictionary<AccionControlada, PermisoDeSesion>? _permisos;
 
+    /// <summary>
+    /// Ya se pidieron, con respuesta o sin ella. Antes, lo que depende de ellos no se pinta (ni en «/»): sin ellos todo
+    /// se ve, y el cajero vería un instante las pestañas del encargado.
+    /// </summary>
+    private bool _permisosPedidos;
+
     private PermisoDeSesion? Permiso(AccionControlada accion) => _permisos?.GetValueOrDefault(accion);
 
     /// <summary>Para la autorización: en la pantalla nueva se toca la ficha de quien autoriza (en la de hoy, se escribe su usuario).</summary>
     private IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? PermisosEnCascada => _pantallaNueva ? _permisos : null;
 
-    /// <summary>Lo que no puede no aparece: ni botón, ni tecla, ni en «/», ni la pestaña.</summary>
-    private bool Ve(AccionControlada accion) => Permiso(accion)?.Nivel != NivelPermiso.NoPermitido;
+    /// <summary>Lo que no puede no aparece: ni botón, ni tecla, ni en «/», ni la pestaña. Mientras se piden, tampoco.</summary>
+    private bool Ve(AccionControlada accion) => _permisosPedidos && Permiso(accion)?.Nivel != NivelPermiso.NoPermitido;
+
+    /// <summary>
+    /// La tecla de algo que no ve (<paramref name="ve"/> en false) solo avisa que no puede. Mientras se piden los permisos
+    /// no se sabe: hace lo de siempre y el servicio decide, como sin ellos.
+    /// </summary>
+    private bool SinTecla(bool ve) => _pantallaNueva && _permisosPedidos && !ve;
 
     private bool VeInventario =>
         new[]
@@ -1019,6 +1042,7 @@ else
         {
             // Sin conexión y sin copia: todo se ve, como hoy.
         }
+        _permisosPedidos = true;
     }
 
     // ── El piloto con eleventa: solo efectivo y el corte allá (se quita al dejar eleventa) ──
@@ -1129,11 +1153,12 @@ else
         yield return new("Productos", "cajas", "F3", AccionControlada.EditarCatalogo, () => Abrir(Ventanas.Productos));
         if (VeInventario)
             yield return new("Inventario: recibir, contar y mermas", "recibir", "F4", null, () => Abrir(Ventanas.Inventario));
-        yield return new("Clientes", "clientes", null, AccionControlada.AdministrarClientes, () => Abrir(Ventanas.Clientes));
+        // Para todos, como la pestaña: quien no los administra solo los consulta.
+        yield return new("Clientes", "clientes", null, null, () => Abrir(Ventanas.Clientes));
         if (VeConfiguracion)
             yield return new("Configuración", "engrane", null, null, () => Abrir(Ventanas.Configuracion));
         yield return new("Cambiar de usuario", "usuario", "Ctrl+U", null, () => AlSalir.InvokeAsync());
-        yield return new("Volver a la pantalla de hoy", "monitor", null, null, CambiarPantallaAsync);
+        // «Volver a la pantalla de hoy» no va aquí: solo en el menú del usuario.
     }
 
     /// <summary>Las que puede (lo que no, no sale) y se llaman como lo escrito después de «/», sin acentos.</summary>
@@ -1197,12 +1222,14 @@ else
     /// <summary>Lo que se escribió después de «/», o null si no empieza con «/».</summary>
     private static string? FiltroDeAcciones(string texto) => texto.TrimStart() is ['/', .. var resto] ? resto.Trim() : null;
 
+    /// <summary>«Volver a la pantalla de hoy» (en el menú del usuario) y «Probar la pantalla nueva» (en la de hoy).</summary>
     private async Task CambiarPantallaAsync()
     {
         _pantallaNueva = !_pantallaNueva;
+        _menuUsuario = false;
         // El cuadro de la otra pantalla empieza vacío.
         _captura.Texto = "";
-        await Js.GuardarAsync(ClavePantalla, _pantallaNueva ? "nueva" : null);
+        await Js.GuardarAsync(ClavePantalla, _pantallaNueva ? null : PantallaDeHoy);
         if (_pantallaNueva && _rapidos.Count == 0)
             await CargarRapidosAsync();
         _enfocar = "#codigo";
@@ -1221,7 +1248,7 @@ else
             foreach (var rapido in (await Cliente.RapidosAsync(Caja.SucursalId)).Take(Rapido.Maximo))
             {
                 var producto = await Cliente.PorVarianteAsync(rapido.VarianteId, Caja.SucursalId);
-                listos.Add(new RapidoListo(rapido, producto, producto is null ? null : (long)Math.Round(PrecioMenudeo(producto) * rapido.Cantidad)));
+                listos.Add(new RapidoListo(rapido, producto, producto is null ? null : PrecioDelRapido(rapido, producto, Caja.SucursalId)));
             }
             _rapidos = listos;
         }
@@ -1232,12 +1259,16 @@ else
         }
     }
 
-    /// <summary>El precio por pieza de menudeo: el de la sucursal si tiene, si no el general.</summary>
-    private long PrecioMenudeo(ProductoVentaDto producto)
+    /// <summary>
+    /// Lo que dice la fila de rápidos: el precio por pieza de menudeo (el de la sucursal si tiene, si no el general) por la
+    /// cantidad del rápido. Público para que las pruebas revisen los de la base de la prueba con la misma cuenta.
+    /// </summary>
+    public static long PrecioDelRapido(Rapido rapido, ProductoVentaDto producto, Guid sucursalId)
     {
         var porUnidad = producto.Precios.Where(p => p.PresentacionId is null).ToList();
-        var deSucursal = porUnidad.Where(p => p.SucursalId == Caja.SucursalId).ToList();
-        return (deSucursal.Count > 0 ? deSucursal : porUnidad.Where(p => p.SucursalId is null)).MinBy(p => p.CantidadMinimaMilesimas)?.PrecioCentavos ?? 0;
+        var deSucursal = porUnidad.Where(p => p.SucursalId == sucursalId).ToList();
+        var menudeo = (deSucursal.Count > 0 ? deSucursal : porUnidad.Where(p => p.SucursalId is null)).MinBy(p => p.CantidadMinimaMilesimas)?.PrecioCentavos ?? 0;
+        return (long)Math.Round(menudeo * rapido.Cantidad);
     }
 
     /// <summary>Alt+1 a Alt+6 o el botón. Un número en el cuadro es cuántos: «20» y Alt+1 son veinte copias.</summary>
@@ -1751,13 +1782,18 @@ else
         _referencia = DotNetObjectReference.Create(this);
         await Js.RegistrarTeclasAsync(_referencia);
         await Js.EnfocarAsync("#codigo");
-        if (await Js.LeerAsync(ClavePantalla) == "nueva")
+        // Quien volvió a la de hoy en esta PC la ve en cuanto se lee, sin esperar los permisos (sin conexión, en el
+        // navegador, tardan lo que tarda en fallar): sus teclas ya son las de la de hoy. Los demás ya están en la nueva.
+        if (await Js.LeerAsync(ClavePantalla) == PantallaDeHoy)
         {
-            _pantallaNueva = true;
+            _pantallaNueva = false;
             _enfocar = "#codigo";
+            StateHasChanged();
         }
-        await CargarRapidosAsync();
+        // Primero los permisos: lo de quien entró sale en cuanto llegan, sin esperar a los rápidos ni a lo demás.
         await CargarPermisosAsync();
+        StateHasChanged();
+        await CargarRapidosAsync();
         await CargarPilotoEleventaAsync();
         await RevisarEfectivoAsync();
         await RevisarConteoAsync();
@@ -2302,11 +2338,11 @@ else
         switch (tecla)
         {
             // En la pantalla nueva, lo que no está entre sus permisos no tiene tecla.
-            case "F3" when _pantallaNueva && !Ve(AccionControlada.EditarCatalogo):
-            case "F4" when _pantallaNueva && !VeInventario:
-            case "Insert" or "Ctrl+P" when _pantallaNueva && !Ve(AccionControlada.ArticuloComun):
-            case "F7" when _pantallaNueva && !Ve(AccionControlada.EntradaEfectivo):
-            case "F8" when _pantallaNueva && !Ve(AccionControlada.SalidaEfectivo):
+            case "F3" when SinTecla(Ve(AccionControlada.EditarCatalogo)):
+            case "F4" when SinTecla(VeInventario):
+            case "Insert" or "Ctrl+P" when SinTecla(Ve(AccionControlada.ArticuloComun)):
+            case "F7" when SinTecla(Ve(AccionControlada.EntradaEfectivo)):
+            case "F8" when SinTecla(Ve(AccionControlada.SalidaEfectivo)):
                 Avisar("Eso no está entre lo que puedes hacer: «/» muestra todo lo que sí.");
                 break;
             case "Ctrl+U" when _pantallaNueva: await AlSalir.InvokeAsync(); break;
