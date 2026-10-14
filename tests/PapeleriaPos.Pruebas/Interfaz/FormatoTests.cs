@@ -7,7 +7,7 @@ public class FormatoTests
     [Theory]
     [InlineData("$1,234.50", 123450L)]
     [InlineData("200", 20000L)]
-    [InlineData("7501234567890", 750123456789000L)] // un EAN-13 cabe: el tope del cambio lo detiene
+    [InlineData("7501234567890", 750123456789000L)] // un EAN-13 cabe
     public void Lee_pesos_a_centavos(string texto, long centavos) => Assert.Equal(centavos, Formato.LeerPesos(texto));
 
     [Theory]

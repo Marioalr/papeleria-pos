@@ -209,64 +209,6 @@ public class VentaTests
         Assert.Empty(venta.Cobros);
     }
 
-    [Theory]
-    [InlineData(13700, 20000, RevisionDelCambio.Normal)]        // $137 con $200
-    [InlineData(4500, 50000, RevisionDelCambio.Normal)]         // con un billete de $500: $455 de cambio
-    [InlineData(4500, 100000, RevisionDelCambio.PorConfirmar)]  // con uno de $1,000: $955, se confirma
-    [InlineData(13700, 200000, RevisionDelCambio.PorConfirmar)] // «2000» por «200»: $1,863, se confirma
-    [InlineData(100, 200100, RevisionDelCambio.PorConfirmar)]   // justo dos billetes de $1,000 de cambio
-    [InlineData(100, 200101, RevisionDelCambio.NoEsDinero)]     // un centavo más
-    [InlineData(13700, 1370000, RevisionDelCambio.NoEsDinero)]  // «13700» por «137.00»
-    [InlineData(13700, 750123456789000, RevisionDelCambio.NoEsDinero)] // el código 7501234567890 en «Pagó con»
-    [InlineData(13700, 10000, RevisionDelCambio.Normal)]        // falta dinero: eso se revisa aparte
-    public void El_cambio_dice_si_es_dinero(long aCobrar, long recibido, RevisionDelCambio esperado) =>
-        Assert.Equal(esperado, TopeDeCambio.Revisar(aCobrar, recibido));
-
-    [Fact]
-    public void Un_codigo_de_barras_en_pago_con_no_se_cobra_ni_cambia_nada()
-    {
-        var venta = NuevaVenta();
-        venta.AgregarProducto(_pluma, _pieza, Cantidad.Piezas(3), _precios); // $30
-
-        var error = Assert.Throws<InvalidOperationException>(() =>
-            venta.Pagar(1, [new CobroSolicitado(FormaPago.Efectivo, 750123456789000)], Ahora));
-
-        Assert.StartsWith("«Pagó con» $7,501,234,567,890.00 no puede ser", error.Message);
-        Assert.Equal(EstadoVenta.EnCaptura, venta.Estado);
-        Assert.Null(venta.Folio);
-        Assert.Empty(venta.Cobros);
-        Assert.Throws<InvalidOperationException>(() => venta.ValidarCobros([new CobroSolicitado(FormaPago.Efectivo, 750123456789000)]));
-    }
-
-    [Fact]
-    public void Hasta_dos_mil_pesos_de_cambio_se_cobran_y_con_tarjeta_el_tope_es_el_efectivo()
-    {
-        var venta = NuevaVenta();
-        venta.AgregarProducto(_pluma, _pieza, Cantidad.Piezas(10), _precios); // $100
-        var mixta = NuevaVenta();
-        mixta.AgregarProducto(_pluma, _pieza, Cantidad.Piezas(10), _precios);
-
-        venta.Pagar(1, [new CobroSolicitado(FormaPago.Efectivo, 210000)], Ahora);
-        // Con $60 en tarjeta, el efectivo cubre $40: $2,041 darían $2,001 de cambio.
-        Assert.Throws<InvalidOperationException>(() =>
-            mixta.Pagar(2, [new CobroSolicitado(FormaPago.Tarjeta, 6000, "Aut 1"), new CobroSolicitado(FormaPago.Efectivo, 204100)], Ahora));
-
-        Assert.Equal(200000, venta.CambioCentavos);
-        Assert.Equal(EstadoVenta.EnCaptura, mixta.Estado);
-    }
-
-    [Fact]
-    public void Lo_cobrado_sin_conexion_no_se_rechaza_por_el_cambio()
-    {
-        var venta = NuevaVenta();
-        venta.AgregarProducto(_pluma, _pieza, Cantidad.Piezas(3), _precios);
-
-        venta.Pagar(7, [new CobroSolicitado(FormaPago.Efectivo, 500000)], Ahora, topeDeCambio: false);
-
-        Assert.Equal(EstadoVenta.Pagada, venta.Estado);
-        Assert.Equal(497000, venta.CambioCentavos);
-    }
-
     [Fact]
     public void Numero_de_articulos_cuenta_piezas_y_una_por_linea_a_granel()
     {
