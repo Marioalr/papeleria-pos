@@ -4,7 +4,10 @@
 @inject IServiceProvider Servicios
 
 <div class="caja">
-    <FranjaPrueba />
+    @* La franja de la prueba cambia mucho esta semana: si falla, se quita ella sola y la venta sigue con su ticket. *@
+    <AlgoFallo Parte="la franja de la prueba">
+        <FranjaPrueba />
+    </AlgoFallo>
     <FranjaContingencia />
     @if (_alta || !Conexion.Lista)
     {

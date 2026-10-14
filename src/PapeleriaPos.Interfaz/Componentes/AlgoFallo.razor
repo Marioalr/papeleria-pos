@@ -1,0 +1,107 @@
+@* Si algo de la pantalla truena (un null, un error de JavaScript al dibujar o en un botón), la caja ya no se cierra: dice
+   «Algo falló», lo anota en el registro (RegistroDiario) y deja volver a cargar. Sin esto, en la ventana de Windows ese
+   error se volvía a lanzar en el hilo de WPF (WebViewRenderer.HandleException) y cerraba la caja sin dejar rastro. Lo
+   que falla en un método que llama caja.js (las teclas y el escáner de la pantalla nueva) no pasa por aquí: lo anota
+   RaizCaja. Con Parte, solo cuida esa parte (la franja de la prueba): si falla, se quita ella con un renglón y la venta
+   sigue. *@
+@using Microsoft.Extensions.Logging
+@inherits ErrorBoundaryBase
+@implements IDisposable
+@inject IServiceProvider Servicios
+
+@if (_volviendo)
+{
+    @* La ventana de Windows va a volver a cargar la página: la pantalla ya se quitó en esta (RecargaDeLaCaja). *@
+    <div class="caja"><div class="centrado"><p>Volviendo a cargar…</p></div></div>
+}
+else if (CurrentException is not { } error)
+{
+    @ChildContent
+}
+else if (Parte is not null)
+{
+    @* Sin tomar el foco: la cajera sigue escaneando. La ventana quita antes la pantalla (RecargaDeLaCaja). *@
+    <div class="franja-contingencia con-error" role="alert">
+        Algo falló en @Parte y quedó anotado; la venta sigue igual. Cuando termines el ticket, vuelve a cargar para que regrese.
+        <button class="boton chico" onclick="location.reload()">Volver a cargar</button>
+    </div>
+}
+else
+{
+    <div class="caja">
+        <div class="centrado">
+            <div class="tarjeta ancha">
+                <h2>Algo falló</h2>
+                <p>La caja no se cerró y lo que pasó quedó anotado para revisarlo.</p>
+                <p>@QueHacer</p>
+                @* Sin pasar por .NET: vuelve a cargar aunque lo que falló sea la conexión con la página (en la ventana de
+                   Windows, MainWindow la detiene un momento para quitar antes la pantalla: RecargaDeLaCaja). *@
+                <div class="acciones">
+                    <button class="boton principal" @ref="_volver" onclick="location.reload()">Volver a cargar</button>
+                </div>
+                <p class="nota">Para quien lo revise: @error.GetType().Name: @error.Message@(Registro is { } r ? $" · {r.ArchivoDeHoy}" : "")</p>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>
+    /// La parte que cuida, para el renglón y el registro («la franja de la prueba»). Sin ella es el de toda la pantalla:
+    /// la tarjeta grande, y el que quita la pantalla antes de volver a cargar en la ventana de Windows.
+    /// </summary>
+    [Parameter] public string? Parte { get; set; }
+
+    private ElementReference _volver;
+    private Exception? _enfocadoPara;
+    private bool _volviendo;
+
+    private RegistroDiario? Registro => Servicios.GetService<RegistroDiario>();
+
+    private RecargaDeLaCaja? Recarga => Parte is null ? Servicios.GetService<RecargaDeLaCaja>() : null;
+
+    /// <summary>
+    /// Lo que sobrevive al volver a cargar: los tickets en espera se guardan en la base de la caja (la contingencia), con el
+    /// que se atiende como estaba la última vez que se cambió de ticket; lo que se pasó después de eso se pierde.
+    /// </summary>
+    private string QueHacer => Servicios.GetService<Contingencia>() is not null
+        ? "Vuelve a cargar y entra con tu PIN: los tickets en espera regresan solos. Revisa el ticket que estabas atendiendo: puede regresar sin los últimos productos que pasaste, o no regresar."
+        : "Vuelve a cargar y entra con tu PIN. Revisa el ticket que estabas atendiendo: puede que tengas que pasarlo otra vez.";
+
+    protected override void OnInitialized() => Recarga?.Conectar(SoltarAsync);
+
+    /// <summary>Antes de volver a cargar en la ventana de Windows: lo de adentro se desecha mientras esta página sigue ahí.</summary>
+    private Task SoltarAsync() => InvokeAsync(() =>
+    {
+        _volviendo = true;
+        StateHasChanged();
+    });
+
+    protected override Task OnErrorAsync(Exception exception)
+    {
+        var donde = Parte is null ? "Algo falló en la pantalla" : $"Algo falló en {Parte} (la venta siguió)";
+        if (Registro is { } registro)
+            registro.AnotarError(donde, exception);
+        else
+            Servicios.GetService<ILogger<AlgoFallo>>()?.LogError(exception, "{Donde}", donde);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>«Volver a cargar» con Enter, como los demás avisos de la caja (solo la tarjeta: el renglón no quita el foco).</summary>
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (Parte is not null || _volviendo || CurrentException is not { } error || error == _enfocadoPara)
+            return;
+        _enfocadoPara = error;
+        try
+        {
+            await _volver.FocusAsync();
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or OperationCanceledException)
+        {
+            // Sin el foco, se vuelve a cargar con el ratón; y aquí un error más ya no tendría quién lo atrape.
+        }
+    }
+
+    public void Dispose() => Recarga?.Desconectar(SoltarAsync);
+}
