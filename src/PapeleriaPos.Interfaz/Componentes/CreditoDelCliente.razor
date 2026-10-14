@@ -137,9 +137,11 @@ else
             {
                 <button class="boton principal" @onclick="() => _abonando = true">Recibir abono</button>
             }
-            @if (Turno is not null && credito.DevolvibleCentavos > 0 && !_devolviendo && _sinConfirmar is null && !PilotoEleventa)
+            @if (Turno is not null && credito.DevolvibleCentavos > 0 && !_devolviendo && _sinConfirmar is null && !PilotoEleventa && PuedeDevolver)
             {
-                <button class="boton" @onclick="EmpezarDevolucion">Devolver saldo a favor</button>
+                <button class="boton" title="@(QuienAutorizaDevolver is { } quien ? $"Lo autoriza {quien}" : null)" @onclick="EmpezarDevolucion">
+                    Devolver saldo a favor@(QuienAutorizaDevolver is { } autoriza ? $" · 🔒 {autoriza}" : "")
+                </button>
             }
             <button class="boton" disabled="@_ocupado" @onclick="EstadoAsync">Estado de cuenta</button>
         </div>
@@ -277,6 +279,26 @@ else
 
     /// <summary>El piloto con eleventa: ni abonos ni devolver el saldo a favor (se quita al dejar eleventa).</summary>
     [CascadingParameter(Name = PilotoConEleventa.Cascada)] public bool PilotoEleventa { get; set; }
+
+    /// <summary>
+    /// Lo que puede quien entró; solo lo pasa la pantalla nueva. Con ellos, «Devolver saldo a favor» va como lo demás de la
+    /// pantalla nueva (docs/propuesta-interfaz.md, «Usuarios y permisos»): con candado y quién lo autoriza si lo autoriza
+    /// otro (al cajero, de entrada, el encargado), y no aparece si no puede. Sin ellos (la pantalla de hoy), como siempre:
+    /// el servicio decide al intentarlo.
+    /// </summary>
+    [CascadingParameter(Name = "PermisosDeSesion")] public IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? PermisosDeSesion { get; set; }
+
+    private bool PuedeDevolver => PuedeDevolverConPermisos(PermisosDeSesion);
+
+    private string? QuienAutorizaDevolver => QuienAutorizaDevolverConPermisos(PermisosDeSesion);
+
+    /// <summary>Si sale «Devolver saldo a favor»: sin permisos (la pantalla de hoy) sale siempre. Pública para las pruebas.</summary>
+    public static bool PuedeDevolverConPermisos(IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? permisos) =>
+        permisos?.GetValueOrDefault(AccionControlada.DevolverSaldoAFavor)?.Nivel != NivelPermiso.NoPermitido;
+
+    /// <summary>Quién lo autoriza («Encargado de prueba o Dueño de prueba»), si lo autoriza otro; si no, null.</summary>
+    public static string? QuienAutorizaDevolverConPermisos(IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? permisos) =>
+        permisos?.GetValueOrDefault(AccionControlada.DevolverSaldoAFavor) is { Nivel: NivelPermiso.RequiereAutorizacion } p ? Textos.Quien(p.Autorizan) : null;
 
     /// <summary>Cambiaron sus condiciones: el cliente como quedó (quien lo muestra lo pone al día).</summary>
     [Parameter] public EventCallback<ClienteRegistradoDto> AlCambiar { get; set; }
