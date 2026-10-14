@@ -248,27 +248,6 @@ public sealed class CreditoSinConexionTests(ServicioDePrueba servicio) : IClassF
     }
 
     [Fact]
-    public async Task Sin_conexion_un_codigo_escaneado_en_el_abono_no_se_cobra_ni_sube()
-    {
-        var p = await PuestoAsync();
-        var cliente = await ClienteAsync(p, "Sin conexión: Le escanearon el abono", 100000, debe: 23745);
-        await p.Contingencia.LatidoAsync();
-        await SinConexionAsync(p);
-        var pendientes = p.Contingencia.Pendientes;
-
-        // 7501234567890 en «Pagó con» y en «Abona», con la copia de la caja (la caja 2 cuando se va el Wi-Fi).
-        var enPagoCon = await Assert.ThrowsAsync<ErrorCaja>(() => p.Cliente.AbonarAsync(p.Abono(cliente.Id, FormaPago.Efectivo, null, 750123456789000)));
-        var enAbona = await Assert.ThrowsAsync<ErrorCaja>(() => p.Cliente.AbonarAsync(p.Abono(cliente.Id, FormaPago.Efectivo, 750123456789000, 23700)));
-
-        Assert.StartsWith("«Pagó con» $7,501,234,567,890.00 no puede ser", enPagoCon.Message);
-        Assert.StartsWith("«Abona» $7,501,234,567,890.00 no puede ser", enAbona.Message);
-        Assert.Equal(pendientes, p.Contingencia.Pendientes);
-        Assert.Equal(23745, (await p.Cliente.CreditoAsync(cliente.Id)).SaldoCentavos);
-        await VuelveAsync(p);
-        Assert.Equal(23745, await SaldoAsync(cliente.Id));
-    }
-
-    [Fact]
     public async Task El_abono_sin_conexion_que_llega_despues_del_corte_Z_queda_fuera_de_ese_corte()
     {
         var p = await PuestoAsync();

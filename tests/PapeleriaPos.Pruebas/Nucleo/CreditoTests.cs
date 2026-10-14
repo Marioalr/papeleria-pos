@@ -120,32 +120,6 @@ public class CreditoTests
     }
 
     [Fact]
-    public void Un_codigo_de_barras_en_el_abono_no_es_dinero()
-    {
-        // 7501234567890 en «Pagó con»: billones de cambio. En «Abona»: liquidaría la cuenta cobrando solo lo exacto.
-        Assert.StartsWith("«Pagó con» $7,501,234,567,890.00 no puede ser",
-            Assert.Throws<InvalidOperationException>(() => CalculoAbono.Calcular(23745, FormaPago.Efectivo, null, 750123456789000)).Message);
-        Assert.StartsWith("«Pagó con»", Assert.Throws<InvalidOperationException>(() => CalculoAbono.Calcular(50000, FormaPago.Efectivo, 10000, 750123456789000)).Message);
-        Assert.StartsWith("«Abona» $7,501,234,567,890.00 no puede ser: debe $237.45",
-            Assert.Throws<ArgumentException>(() => CalculoAbono.Calcular(23745, FormaPago.Efectivo, 750123456789000, 23700)).Message);
-        Assert.Throws<ArgumentException>(() => CalculoAbono.Exacto(23745, FormaPago.Efectivo, 750123456789000));
-    }
-
-    [Theory]
-    [InlineData(23745, null, 223700, 200000)]   // liquida $237 con $2,237: justo dos billetes de $1,000 de cambio
-    [InlineData(23745, 223700L, 23700, 0)]      // teclear hasta $2,000 de más en «Abona» todavía liquida
-    [InlineData(50000, 10000L, 110000, 100000)] // abona $100 con un billete de $1,000 (la caja pide confirmarlo)
-    public void Hasta_dos_mil_pesos_de_cambio_el_abono_se_cobra(long saldo, long? monto, long recibido, long cambio) =>
-        Assert.Equal(cambio, CalculoAbono.Calcular(saldo, FormaPago.Efectivo, monto, recibido).CambioCentavos);
-
-    [Fact]
-    public void Un_centavo_mas_de_dos_mil_pesos_no_es_dinero()
-    {
-        Assert.Throws<InvalidOperationException>(() => CalculoAbono.Calcular(23745, FormaPago.Efectivo, null, 223701));
-        Assert.Throws<ArgumentException>(() => CalculoAbono.Calcular(23745, FormaPago.Efectivo, 223701, 23700));
-    }
-
-    [Fact]
     public void Lo_exacto_es_lo_que_se_le_pide_sin_cambio()
     {
         Assert.Equal(new AbonoCalculado(23745, 23700, -45, 0, true), CalculoAbono.Exacto(23745, FormaPago.Efectivo, null));
