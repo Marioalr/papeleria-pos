@@ -523,7 +523,9 @@
                             <Ico Nombre="usuario" /><span>@(Actual.Cliente?.Nombre ?? "Público en general")</span>
                         </button>
                     </div>
-                    <div class="vn-total">
+                    @* data-cobro: lo que el lector teclee en el cobro («Pagó con», montos, referencias, botones) va a la captura y su
+                       Enter no cobra (caja.js). *@
+                    <div class="vn-total" data-cobro>
                         <div class="vn-total-cab"><span>Total</span><span>@ArticulosTexto(Actual.Venta)</span></div>
                         <div class="vn-cifra @(Actual.Venta.Lineas.Count == 0 ? "vacio" : "")">@Formato.Dinero(Actual.Venta.TotalCentavos)</div>
                         <div class="vn-tecla"><kbd>F12</kbd><span>cobrar</span></div>
@@ -614,6 +616,13 @@
                                 <div class="vn-alerta">
                                     <Ico Nombre="candado" />
                                     <div><span>Pasa su límite de crédito por <strong>@Formato.Dinero(ExcesoDeCredito)</strong>@AutorizaExceso</span></div>
+                                </div>
+                            }
+                            @if (_avisoDelCobro is { } avisoCobro)
+                            {
+                                <div class="vn-alerta">
+                                    <Ico Nombre="escaner" />
+                                    <div><span>@avisoCobro</span></div>
                                 </div>
                             }
                             <button id="cobrar-nuevo" class="vn-cobrar" disabled="@(_cobrando || ErrorDelCobro is not null)" @onclick="CobrarEnPanelAsync"
@@ -1193,21 +1202,25 @@ else
         }
         VaciarCaptura();
         _enfocar = "#codigo";
-        try
+        // En la cola, como un escaneo: en orden con ellos, y no cae en un ticket que se está cobrando.
+        await _captura.EnTurnoAsync(async () =>
         {
-            producto ??= await Cliente.PorVarianteAsync(rapido.VarianteId, Caja.SucursalId);
-        }
-        catch (ErrorCaja ex)
-        {
-            Avisar(ex.Message);
-            return;
-        }
-        if (producto is null)
-        {
-            Avisar($"El producto del rápido «{rapido.Nombre}» ya no está en el catálogo: hay que elegirlo otra vez en Configuración.");
-            return;
-        }
-        Agregar(producto, null, Cantidad.Unidades(Math.Round(veces * rapido.Cantidad, 3)));
+            try
+            {
+                producto ??= await Cliente.PorVarianteAsync(rapido.VarianteId, Caja.SucursalId);
+            }
+            catch (ErrorCaja ex)
+            {
+                Avisar(ex.Message);
+                return;
+            }
+            if (producto is null)
+            {
+                Avisar($"El producto del rápido «{rapido.Nombre}» ya no está en el catálogo: hay que elegirlo otra vez en Configuración.");
+                return;
+            }
+            Agregar(producto, null, Cantidad.Unidades(Math.Round(veces * rapido.Cantidad, 3)));
+        });
     }
 
     /// <summary>Los tickets en espera: los que tienen algo y no son el que se atiende, en el orden en que se apartaron.</summary>
@@ -1301,6 +1314,9 @@ else
 
     private long Recibido => PagoConCentavos ?? 0;
 
+    /// <summary>Lo que el cobro tiene que decir en el panel, donde está el cajero (lo de la izquierda se apaga al cobrar).</summary>
+    private string? _avisoDelCobro;
+
     /// <summary>Con crédito, o con saldo a favor que se puede usar. Lo dice la cuenta (igual que el servicio), no el cliente.</summary>
     private bool PuedeFiar => Actual.Cliente is not null && Actual.Cuenta is { } cuenta && (cuenta.LimiteCentavos > 0 || cuenta.AFavorCentavos > 0);
 
@@ -1313,6 +1329,7 @@ else
         _pagoCon = "";
         _otras.Clear();
         _enPago = false;
+        _avisoDelCobro = null;
     }
 
     /// <summary>Las otras formas que todavía no tienen renglón: una de cada una; el crédito, solo con quien puede fiar.</summary>
@@ -1461,15 +1478,19 @@ else
 
     /// <summary>
     /// F12: el cursor va a «Pagó con» y lo demás se apaga; si las otras formas ya lo cubren todo, a «Cobrar». Con el
-    /// cursor ya en el cobro, F12 cobra como Enter.
+    /// cursor ya en el cobro, F12 cobra como Enter (y el cobro espera el último escaneo).
     /// </summary>
     private async Task IrAlCobroAsync()
     {
-        if (Actual.Venta.Lineas.Count == 0)
-            return;
         if (_enPago)
+        {
             await CobrarEnPanelAsync();
-        else
+            return;
+        }
+        // caja.js no encontró «Pagó con»: el ticket estaba vacío, o el escaneo de su primera línea sigue en camino (con el
+        // Wi-Fi lento). Se espera, como las demás teclas del ticket, y entonces el cursor va al cobro: el F12 no se pierde.
+        await _captura.EsperarAsync();
+        if (Actual.Venta.Lineas.Count > 0)
             _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
     }
 
@@ -1480,12 +1501,23 @@ else
     }
 
     /// <summary>
-    /// Enter en el cobro: sin escribir nada, exacto; con lo que dio, da el cambio. Con tarjeta, transferencia o crédito,
-    /// cada una con su monto y el efectivo por lo que falta. Fiar arriba del límite se autoriza en el panel.
+    /// Enter en el cobro (o F12, o el botón): sin escribir nada, exacto; con lo que dio, da el cambio. Con tarjeta,
+    /// transferencia o crédito, cada una con su monto y el efectivo por lo que falta. Fiar arriba del límite se autoriza en
+    /// el panel. Primero espera el último escaneo: si llegó algo, no cobra y el panel dice el total nuevo.
     /// </summary>
     private async Task CobrarEnPanelAsync()
     {
-        if (_cobrando || Actual.Venta.Lineas.Count == 0)
+        if (await EnTurnoDeCobroAsync(CobrarConLaColaAsync) is not { } aviso)
+            return;
+        _avisoDelCobro = aviso;
+        _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
+    }
+
+    private async Task CobrarConLaColaAsync(CapturaCodigo.Apartado apartado)
+    {
+        _avisoDelCobro = null;
+        // Un escaneo de la cola pudo abrir algo (el folio de un ticket abre su devolución): no se cobra encima.
+        if (_ventana != Ventanas.Ninguna || Actual.Venta.Lineas.Count == 0)
             return;
         if (ErrorDelCobro is { } error)
         {
@@ -1517,7 +1549,7 @@ else
                 return;
             }
         }
-        await MandarCobroAsync(null);
+        await MandarCobroAsync(null, apartado);
     }
 
     /// <summary>Lo que se fía arriba del límite y falta autorizar.</summary>
@@ -1527,11 +1559,12 @@ else
     {
         _creditoPorAutorizar = null;
         await Cerrar();
-        await MandarCobroAsync(autorizacionId);
+        if (await EnTurnoDeCobroAsync(apartado => MandarCobroAsync(autorizacionId, apartado)) is { } aviso)
+            _avisoDelCobro = aviso;
         StateHasChanged();
     }
 
-    private async Task MandarCobroAsync(Guid? autorizacionCredito)
+    private async Task MandarCobroAsync(Guid? autorizacionCredito, CapturaCodigo.Apartado apartado)
     {
         var cobros = new List<CobroSolicitado>();
         foreach (var otra in _otras)
@@ -1541,19 +1574,48 @@ else
                     : new CobroSolicitado(otra.Forma, monto, otra.Referencia.Trim().Length == 0 ? null : otra.Referencia.Trim()));
         if (EnEfectivo.ACobrarCentavos > 0)
             cobros.Add(new CobroSolicitado(FormaPago.Efectivo, Recibido));
+        // Si se cobró, el ticket nuevo ya dejó el cobro en blanco.
+        if (await CobrarAsync(cobros, autorizacionCredito, apartado) is { } error)
+            Avisar(error);
+        else
+            _enfocar = "#codigo";
+    }
+
+    /// <summary>
+    /// Todo cobro pasa por aquí (el panel, el crédito ya autorizado y la ventana de la pantalla de hoy): aparta la cola de
+    /// escaneos, que espera los que venían y detiene los que llegan mientras se cobra; esos caen en el ticket del siguiente
+    /// cliente. Si mientras esperaba llegó algo al ticket, no cobra y devuelve el aviso: el cajero ve el total nuevo antes
+    /// de cobrarlo. Con un cobro en curso, no hace nada.
+    /// </summary>
+    private async Task<string?> EnTurnoDeCobroAsync(Func<CapturaCodigo.Apartado, Task> cobrar)
+    {
+        if (_cobrando)
+            return null;
         _cobrando = true;
         try
         {
-            // Si se cobró, el ticket nuevo ya dejó el cobro en blanco.
-            if (await CobrarAsync(cobros, autorizacionCredito) is { } error)
-                Avisar(error);
-            else
-                _enfocar = "#codigo";
+            using var apartado = await _captura.ApartarAsync(FotoDelTicket);
+            if (apartado.LlegoAlgo)
+                return $"Llegó lo último que escaneaste: el total ahora es {Formato.Dinero(Actual.Venta.TotalCentavos)}. Revisa lo que te dio y vuelve a cobrar.";
+            await cobrar(apartado);
+            return null;
         }
         finally
         {
             _cobrando = false;
         }
+    }
+
+    /// <summary>Lo que cambia si llega una línea mientras se espera para cobrar: el ticket, su total y lo que lleva.</summary>
+    private (TicketAbierto Ticket, long Total, decimal Articulos, int Lineas) FotoDelTicket() =>
+        (Actual, Actual.Venta.TotalCentavos, Actual.Venta.NumeroDeArticulos, Actual.Venta.Lineas.Count);
+
+    /// <summary>La ventana de cobro de la pantalla de hoy: el mismo turno en la cola que el panel.</summary>
+    private async Task<string?> CobrarDeLaVentanaAsync(IReadOnlyList<CobroSolicitado> cobros, Guid? autorizacionCredito)
+    {
+        string? error = null;
+        var aviso = await EnTurnoDeCobroAsync(async apartado => error = await CobrarAsync(cobros, autorizacionCredito, apartado));
+        return aviso ?? error;
     }
 
     private async Task RevisarConteoAsync()
@@ -1649,8 +1711,7 @@ else
         {
             var (cantidad, buscado) = (_cantidadBuscada, _textoBuscado);
             CerrarResultados();
-            await _captura.EsperarAsync();
-            await AgregarResultadoAsync(elegido, cantidad, buscado, resultados.Count);
+            await _captura.EnTurnoAsync(() => AgregarResultadoAsync(elegido, cantidad, buscado, resultados.Count));
             StateHasChanged();
             return;
         }
@@ -1659,6 +1720,36 @@ else
         var escaneo = AgregarCodigoAsync();
         StateHasChanged();
         await escaneo;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// El lector escribió en el cobro («Pagó con», un monto, una referencia o un botón; data-cobro) o en un abono, y caja.js
+    /// lo reconoció por su ritmo: ya quitó del campo lo que tecleó y su Enter no cobró. Un escaneo nunca se toma como
+    /// dinero (docs/propuesta-interfaz.md, «El cuadro de captura»): el código va a la cola de captura como cualquier otro y
+    /// el cursor vuelve al cuadro. La ventana donde estaba (el cobro de la pantalla de hoy, un abono) se cierra, para ver el
+    /// ticket. Si se está cobrando, espera al cobro y cae en el ticket del siguiente cliente.
+    /// </summary>
+    [JSInvokable]
+    public async Task EscaneoEnPago(string codigo)
+    {
+        var cobrando = _cobrando;
+        var enAbono = _ventana is Ventanas.Abono or Ventanas.Clientes;
+        if (!cobrando)
+        {
+            if (_ventana != Ventanas.Ninguna)
+                await Cerrar();
+            _enfocar = "#codigo";
+        }
+        var antes = FotoDelTicket();
+        _captura.Texto = codigo;
+        var escaneo = AgregarCodigoAsync();
+        StateHasChanged();
+        await escaneo;
+        if (!cobrando && !antes.Equals(FotoDelTicket()))
+            Avisar(enAbono
+                ? $"«{codigo}» se leyó en el abono: se agregó al ticket, no se tomó como dinero. El abono, otra vez con Ctrl+B."
+                : $"«{codigo}» se leyó en el cobro: se agregó al ticket, no se tomó como dinero. Cobra cuando esté completo.", error: false);
         StateHasChanged();
     }
 
@@ -1972,13 +2063,12 @@ else
         CerrarResultados();
         VaciarCaptura();
         _enfocar = "#codigo";
-        await _captura.EsperarAsync();
-        await AgregarResultadoAsync(elegido, cantidad, buscado, resultados.Count);
+        await _captura.EnTurnoAsync(() => AgregarResultadoAsync(elegido, cantidad, buscado, resultados.Count));
     }
 
     /// <summary>
     /// Agrega lo elegido y anota qué se eligió con ese texto: la próxima vez, en esta caja, sale primero. Fuera de la cola
-    /// de escaneos, quien llama espera antes a que termine el último (dentro de la cola se esperaría a sí mismo).
+    /// de escaneos, quien llama lo forma en ella (<see cref="CapturaCodigo.EnTurnoAsync"/>); dentro, se llama directo.
     /// </summary>
     private async Task AgregarResultadoAsync(ResultadoBusquedaDto resultado, Cantidad cantidad, string buscado, int resultados)
     {
@@ -2131,9 +2221,10 @@ else
         _menuUsuario = false;
         _menuEspera = false;
 
-        // Las teclas que actúan sobre el ticket esperan a que termine el último escaneo: F12 no abre el cobro sin la
-        // última línea, ni F6 manda un escaneo al ticket nuevo.
-        if (tecla is "F12" or "F6" or "F5" or "+" or "-" or "Delete" or "F11" || tecla.StartsWith("Alt+", StringComparison.Ordinal))
+        // Las teclas que actúan sobre el ticket esperan a que termine el último escaneo (y el cobro en curso): F6 no manda
+        // un escaneo al ticket nuevo, ni + cambia el que se está cobrando. F12 espera en IrAlCobroAsync: dentro del cobro,
+        // que además dice si llegó algo mientras, o antes de pasar el cursor al cobro.
+        if (tecla is "F6" or "F5" or "+" or "-" or "Delete" or "F11" || tecla.StartsWith("Alt+", StringComparison.Ordinal))
             await _captura.EsperarAsync();
 
         switch (tecla)
@@ -2149,10 +2240,11 @@ else
             case "Ctrl+U" when _pantallaNueva: await AlSalir.InvokeAsync(); break;
             case "F10" when _pantallaNueva: Buscar(); break;
             case "F10": await Abrir(Ventanas.Buscar); break;
-            // caja.js ya movió el cursor a «Pagó con» (sin esperar esta vuelta): no cobra todavía.
+            // caja.js ya movió el cursor a «Pagó con» (sin esperar esta vuelta): no cobra todavía, y el cobro espera el
+            // último escaneo al dar Enter.
             case "F12-pago": break;
             case "F12" when _pantallaNueva: await IrAlCobroAsync(); break;
-            case "F12" when Actual.Venta.Lineas.Count > 0: await AbrirCobroAsync(); break;
+            case "F12": await AbrirCobroAsync(); break;
             case "F5" when _pantallaNueva: RetomarPrimero(); break;
             case "F5": CambiarSiguiente(); break;
             case "F6" when _pantallaNueva: PonerEnEspera(); break;
@@ -2187,7 +2279,7 @@ else
                 if (_pantallaNueva)
                 {
                     // Desde «Pagó con», Esc borra lo escrito y regresa al cuadro del código sin cobrar.
-                    _pagoCon = "";
+                    (_pagoCon, _avisoDelCobro) = ("", null);
                     _enfocar = "#codigo";
                 }
                 break;
@@ -2283,7 +2375,7 @@ else
     private void Agregar(ProductoVentaDto producto, Guid? presentacionId, Cantidad cantidad)
     {
         // Ya empezó el siguiente cliente: el cambio del anterior deja el panel.
-        _cobrado = null;
+        (_cobrado, _avisoDelCobro) = (null, null);
         try
         {
             var linea = Actual.Venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(presentacionId), cantidad, producto.PreciosModelo());
@@ -2552,35 +2644,24 @@ else
 
     // ── Cobro e impresión ───────────────────────────────────────────────────
 
-    /// <summary>Lo llama la ventana de cobro. Devuelve el error para mostrarlo ahí, o null si se cobró.</summary>
-    private async Task<string?> CobrarAsync(IReadOnlyList<CobroSolicitado> cobros, Guid? autorizacionCredito)
+    /// <summary>
+    /// Cobra el ticket que se atiende. Quien llama ya apartó la cola (<see cref="EnTurnoDeCobroAsync"/>): se suelta en
+    /// cuanto está el ticket del siguiente cliente, antes de imprimir, y lo que se escaneó mientras se cobraba cae ahí. La
+    /// ventana de cobro muestra el error que devuelve; null si se cobró.
+    /// </summary>
+    private async Task<string?> CobrarAsync(IReadOnlyList<CobroSolicitado> cobros, Guid? autorizacionCredito, CapturaCodigo.Apartado apartado)
     {
         var abierto = Actual;
         var venta = abierto.Venta;
+        TicketDto ticket;
         try
         {
             // Con el Id del ticket: si la respuesta se pierde, el siguiente intento (en línea o sin conexión) es la misma venta.
-            var ticket = await Cliente.CobrarAsync(new SolicitudCobro(Caja.Id, Turno.Id, Sesion.UsuarioId, ArmadoSolicitud.Lineas(venta), cobros,
+            ticket = await Cliente.CobrarAsync(new SolicitudCobro(Caja.Id, Turno.Id, Sesion.UsuarioId, ArmadoSolicitud.Lineas(venta), cobros,
                 VentaId: venta.Id, Impresiones: abierto.Impresiones.Count > 0 ? abierto.Impresiones.Select(i => i.Id).ToList() : null,
                 ClienteId: venta.ClienteId, AutorizacionDescuentoId: venta.AutorizacionDescuentoId,
                 AutorizacionBajoCostoId: venta.AutorizacionBajoCostoId, MayoreoDeCliente: venta.MayoreoDeCliente,
                 AutorizacionCreditoId: autorizacionCredito), soloEnLinea: abierto.FiadoSinConfirmar);
-            _tickets.RemoveAt(_actual);
-            // En la pantalla nueva los que esperan se quedan esperando: lo siguiente es un ticket vacío para el siguiente cliente.
-            if (_tickets.Count == 0 || _pantallaNueva)
-                NuevoTicket();
-            else
-                Cambiar(_tickets[^1]);
-            Avisar($"Venta {ticket.FolioImpreso} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: false);
-            _ultimo = ticket;
-            if (_pantallaNueva)
-                await ImprimirCobradoAsync(ticket);
-            else
-                await ImprimirAsync(ticket, abrirCajon: ticket.AbreCajon);
-            await RevisarEfectivoAsync();
-            if (abierto.Impresiones.Count > 0 && _estado is not null)
-                await _estado.ActualizarAsync();
-            return null;
         }
         catch (ErrorCaja ex)
         {
@@ -2595,6 +2676,24 @@ else
             }
             return ex.Message;
         }
+        // Sale el que se cobró, aunque mientras se haya tocado otro (una ficha en espera).
+        _tickets.Remove(abierto);
+        // En la pantalla nueva los que esperan se quedan esperando: lo siguiente es un ticket vacío para el siguiente cliente.
+        if (_tickets.Count == 0 || _pantallaNueva)
+            NuevoTicket();
+        else
+            Cambiar(_tickets[^1]);
+        apartado.Dispose();
+        Avisar($"Venta {ticket.FolioImpreso} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: false);
+        _ultimo = ticket;
+        if (_pantallaNueva)
+            await ImprimirCobradoAsync(ticket);
+        else
+            await ImprimirAsync(ticket, abrirCajon: ticket.AbreCajon);
+        await RevisarEfectivoAsync();
+        if (abierto.Impresiones.Count > 0 && _estado is not null)
+            await _estado.ActualizarAsync();
+        return null;
     }
 
     // ── Al cobrar en la pantalla nueva: el cambio en grande hasta el siguiente cliente ──
@@ -2748,6 +2847,8 @@ else
     /// </summary>
     private async Task AbrirCobroAsync()
     {
+        // La ventana se abre con la última línea: el exacto que trae ya la cuenta.
+        await _captura.EsperarAsync();
         if (Actual.Venta.Lineas.Count == 0 || !await RevisarCostoAsync())
             return;
         await CargarCuentaAsync(Actual);
@@ -3051,7 +3152,7 @@ else
     {
         case Ventanas.Cobrar:
             <Ventana Titulo="Cobrar" Clase="cobrar" AlCerrar="Cerrar">
-                <CobrarVenta Venta="Actual.Venta" Caja="Caja" Sesion="Sesion" Cliente="Actual.Cliente" Cuenta="Actual.Cuenta" AlCobrar="CobrarAsync" />
+                <CobrarVenta Venta="Actual.Venta" Caja="Caja" Sesion="Sesion" Cliente="Actual.Cliente" Cuenta="Actual.Cuenta" AlCobrar="CobrarDeLaVentanaAsync" />
             </Ventana>
             break;
         case Ventanas.AutorizarCredito when _creditoPorAutorizar is { } exceso && Actual.Cliente is { } fiado:

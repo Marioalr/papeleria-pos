@@ -119,6 +119,15 @@ public class CreditoTests
         Assert.Equal(new AbonoCalculado(23745, 23745, 0, 0, true), CalculoAbono.Calcular(23745, FormaPago.Tarjeta, null, 0));
     }
 
+    [Fact]
+    public void Lo_exacto_es_lo_que_se_le_pide_sin_cambio()
+    {
+        Assert.Equal(new AbonoCalculado(23745, 23700, -45, 0, true), CalculoAbono.Exacto(23745, FormaPago.Efectivo, null));
+        Assert.Equal(new AbonoCalculado(10000, 10000, 0, 0, false), CalculoAbono.Exacto(23745, FormaPago.Efectivo, 10000));
+        Assert.Equal(new AbonoCalculado(23745, 23745, 0, 0, true), CalculoAbono.Exacto(23745, FormaPago.Tarjeta, null));
+        Assert.Throws<ArgumentException>(() => CalculoAbono.Exacto(23745, FormaPago.Efectivo, 10050));
+    }
+
     // ── La cuenta ────────────────────────────────────────────────────────────
 
     private static MovimientoCredito Movimiento(TipoMovimientoCredito tipo, long monto, int dia, Guid? venta = null, Guid? abono = null) => new()

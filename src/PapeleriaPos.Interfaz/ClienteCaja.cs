@@ -793,12 +793,18 @@ public static class Formato
 
     public static string Numero(decimal valor) => valor.ToString("#,##0.###", Mexico);
 
-    /// <summary>"$1,234.50", "1234.5" o "1234" a centavos. Vacío o inválido: null.</summary>
+    /// <summary>
+    /// "$1,234.50", "1234.5" o "1234" a centavos. Vacío o inválido: null. También lo que no cabe en centavos (un código
+    /// largo del lector en un campo de dinero): antes tumbaba la pantalla al dibujarla.
+    /// </summary>
     public static long? LeerPesos(string? texto)
     {
         var limpio = (texto ?? "").Replace("$", "").Replace(",", "").Trim();
-        return decimal.TryParse(limpio, NumberStyles.Number, CultureInfo.InvariantCulture, out var pesos) && pesos >= 0
+        return decimal.TryParse(limpio, NumberStyles.Number, CultureInfo.InvariantCulture, out var pesos) && pesos >= 0 && pesos <= MaximoPesos
             ? (long)Math.Round(pesos * 100, MidpointRounding.AwayFromZero)
             : null;
     }
+
+    /// <summary>Lo más que cabe en centavos (<see cref="long"/>).</summary>
+    private const decimal MaximoPesos = long.MaxValue / 100m - 1;
 }
