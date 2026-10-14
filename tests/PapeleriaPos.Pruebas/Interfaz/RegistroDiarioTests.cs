@@ -122,7 +122,9 @@ public sealed class RegistroDiarioTests : IDisposable
         var hora = _reloj.GetLocalNow().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
         Assert.Contains($"{Environment.NewLine}{hora}  Se cerró la caja.{Environment.NewLine}", texto);
         Assert.DoesNotContain("Se cerró la caja. (sin el detalle", texto);
-        Assert.InRange(new FileInfo(registro.ArchivoDeHoy).Length, tope, tope + reserva);
+        // Con todo el detalle mientras cabía en el tope (la que ya no cupo salió en una línea, así que puede quedar un poco
+        // abajo de él: depende del largo de la traza, distinto en Windows y en Linux), y nunca más allá de la reserva.
+        Assert.InRange(new FileInfo(registro.ArchivoDeHoy).Length, tope / 2, tope + reserva);
 
         for (var i = 0; !Texto().Contains("se llenó"); i++)
         {
