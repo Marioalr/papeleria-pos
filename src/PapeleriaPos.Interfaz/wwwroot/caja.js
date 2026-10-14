@@ -2,6 +2,8 @@
 // Ctrl+E no busca, Ctrl+D no guarda un marcador).
 let pantalla = null;
 let hayVentana = false;
+// La ventana abierta es un panel de la pantalla nueva: el ticket y la barra de teclas siguen a la vista.
+let hayPanel = false;
 let escribiendo = null;
 
 export function registrar(referencia) {
@@ -22,6 +24,7 @@ export function quitar() {
     clearTimeout(escribiendo);
     clearInterval(rodando);
     rodando = null;
+    rafaga = null;
     pantalla = null;
 }
 
@@ -78,15 +81,77 @@ export function limpiarCaptura() {
     if (campo) campo.value = '';
 }
 
-// Con una ventana abierta (cobrar, buscar…) solo se atrapa Escape; lo demás lo maneja la ventana.
-export function ventanaAbierta(abierta) {
+// Con una ventana abierta solo se atrapan las teclas que no escriben en sus campos: Esc, las F y las Ctrl de la caja (la
+// pantalla de venta decide qué hacen; con un panel, las de la barra siguen funcionando). Supr, las flechas, + y −, Enter
+// y Alt+1 a Alt+6 son de la ventana. Con un panel de la pantalla nueva, también Ins (como Ctrl+P) y Ctrl+Q.
+export function ventanaAbierta(abierta, enPanel = false) {
     hayVentana = abierta;
+    hayPanel = abierta && enPanel;
+}
+
+// El cobro (data-cobro: «Pagó con», los montos y referencias de tarjeta, transferencia y crédito, los botones como
+// Cobrar; en la pantalla nueva, todo el panel del total; también la ventana de cobro de la pantalla de hoy y la del
+// abono): el lector se reconoce por su ritmo, más rápido que una persona y con Enter al final (docs/propuesta-interfaz.md,
+// «El cuadro de captura»). Si escribe ahí, lo que tecleó se quita del campo, su Enter no cobra (ni oprime el botón) y el
+// código va a la captura: un escaneo nunca se toma como dinero ni se cobra sin él. Una persona no baja de unos 80 ms
+// entre tecla y tecla ni con el teclado numérico; un lector USB teclea cada carácter en pocos milisegundos. El ritmo del
+// lector de la tienda falta medirlo allá (docs/plan.md, paso 7): si no se reconoce, se ajustan RAFAGA_MS y
+// RAFAGA_MINIMO (el cambio no lleva tope: lo decidió el dueño el 2026-10-14).
+const RAFAGA_MS = 50;
+// Menos caracteres no se distinguen de alguien que teclea rápido «200» y Enter.
+const RAFAGA_MINIMO = 4;
+// La ráfaga en curso: dónde se teclea, lo que tenía antes de empezar, lo que va tecleando y la hora de la última tecla.
+let rafaga = null;
+
+// Un campo o un botón marcado, o lo que esté dentro de algo marcado (el panel del total).
+function esDelCobro(elemento) {
+    return elemento instanceof HTMLElement && elemento.closest('[data-cobro]') !== null;
+}
+
+// Cada tecla en el cobro. Devuelve true si era el Enter de una ráfaga del lector: ya se mandó a la captura.
+// La hora es la del teclado (timeStamp), no la de atenderla: si la página estuvo ocupada, lo que tecleó una persona no
+// se junta en una ráfaga.
+function rafagaDelLector(e) {
+    const donde = e.target;
+    if (!esDelCobro(donde)) {
+        rafaga = null;
+        return false;
+    }
+    const hora = e.timeStamp;
+    if (e.key === 'Enter') {
+        const r = rafaga;
+        rafaga = null;
+        if (!r || r.donde !== donde || r.texto.length < RAFAGA_MINIMO || hora - r.ultima > RAFAGA_MS) return false;
+        e.preventDefault();
+        e.stopPropagation();
+        // Un campo vuelve a lo que tenía (lo que se tecleó antes a mano se queda) y .NET se entera por su @bind; un botón
+        // no tiene qué devolver.
+        if (donde instanceof HTMLInputElement) {
+            donde.value = r.antes;
+            donde.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        pantalla.invokeMethodAsync('EscaneoEnPago', r.texto);
+        return true;
+    }
+    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (rafaga && rafaga.donde === donde && hora - rafaga.ultima <= RAFAGA_MS) {
+            rafaga.texto += e.key;
+            rafaga.ultima = hora;
+        } else {
+            rafaga = { donde, antes: donde instanceof HTMLInputElement ? donde.value : '', texto: e.key, ultima: hora };
+        }
+    } else if (e.key !== 'Shift') {
+        // Las mayúsculas del lector llegan con Shift; cualquier otra tecla (borrar, flechas) es de una persona.
+        rafaga = null;
+    }
+    return false;
 }
 
 function alPresionar(e) {
     if (!pantalla) return;
     const tecla = e.key;
     const campo = e.target instanceof HTMLInputElement ? e.target : null;
+    if (rafagaDelLector(e)) return;
 
     if (tecla === 'Enter' && !hayVentana && esCaptura(campo)) {
         e.preventDefault();
@@ -111,11 +176,14 @@ function alPresionar(e) {
     const ctrlU = e.ctrlKey && (tecla === 'u' || tecla === 'U');
     const funcion = /^F([1-9]|1[0-2])$/.test(tecla);
 
-    // Ctrl+Q: cotizar a una tecla. El selector de archivos solo se abre desde la tecla misma, no después.
+    // Ctrl+Q: cotizar a una tecla. Sin ventana, el selector de archivos se abre aquí mismo, desde la tecla. Con un panel
+    // abierto lo decide la pantalla de venta: si el panel se deja, abre el selector enseguida (al elegir el PDF, el panel
+    // cambia al de cotizar); si espera su Enter (artículo común, descuento…) o una autorización, lo dice.
     if (e.ctrlKey && (tecla === 'q' || tecla === 'Q')) {
         e.preventDefault();
         e.stopPropagation();
         if (!hayVentana) document.getElementById('pdf-cotizar')?.click();
+        else if (hayPanel) pantalla.invokeMethodAsync('Tecla', 'Ctrl+Q', null);
         return;
     }
 
@@ -140,7 +208,7 @@ function alPresionar(e) {
 
     let atrapar;
     if (hayVentana) {
-        atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlU;
+        atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlU || (hayPanel && tecla === 'Insert');
     } else {
         atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlU || rapido || tecla === 'Escape' || tecla === 'Insert'
             || (tecla === 'Delete' && vacio && !enPago)

@@ -23,7 +23,8 @@ public static class ApiPrueba
             (await db.MensajesTelegram.AsNoTracking().Where(m => m.ChatId == ChatTelegram.Simulado).OrderByDescending(m => m.CreadoUtc).Take(100).ToListAsync())
             .Select(m => new AvisoPruebaDto(HoraMexico.ALocal(m.CreadoUtc), m.Tipo, m.Texto)).ToList());
 
-        api.MapGet("/respuestas", (ModoPrueba prueba) => prueba.Respuestas());
+        // Las de esa versión de la guía; sin versión, la 1 (la caja de la primera prueba no la mandaba).
+        api.MapGet("/respuestas", (ModoPrueba prueba, int? version) => prueba.Respuestas(version ?? 1));
 
         api.MapPut("/respuestas", (RespuestasPruebaDto respuestas, ModoPrueba prueba) =>
         {
@@ -32,6 +33,9 @@ public static class ApiPrueba
         });
 
         api.MapPost("/respuestas/exportar", (SolicitudExportarRespuestas s, ModoPrueba prueba) => new ArchivoGuardadoDto(prueba.Exportar(s.Texto)));
+
+        // Para la siguiente persona: el documento al escritorio y la guía en blanco.
+        api.MapPost("/respuestas/en-blanco", (SolicitudGuiaEnBlanco s, ModoPrueba prueba) => new ArchivoGuardadoDto(prueba.DejarEnBlanco(s.Version, s.Texto)));
 
         // Vuelve a la base con que se instaló: lo hecho en la prueba se pierde, las respuestas de la guía se quedan.
         api.MapPost("/empezar-de-cero", (ModoPrueba prueba, CatalogoEnMemoria catalogo) =>

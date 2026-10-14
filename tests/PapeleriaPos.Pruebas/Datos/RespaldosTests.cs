@@ -52,6 +52,21 @@ public sealed class RespaldosTests : IDisposable
     }
 
     [Fact]
+    public void La_ultima_copia_es_la_mas_reciente_aunque_sea_de_un_corte()
+    {
+        Assert.Null(Respaldos.Ultima(_carpeta));
+        Directory.CreateDirectory(_carpeta);
+        foreach (var (nombre, hora) in new[] { ("pos-2026-10-11.db", 9), ("pos-2026-10-11-z-2105.db", 21), ("pos-2026-10-12.db", 8), ("otro.db", 23) })
+        {
+            var ruta = Path.Combine(_carpeta, nombre);
+            File.WriteAllText(ruta, "");
+            File.SetLastWriteTimeUtc(ruta, new DateTime(2026, 10, nombre.Contains("10-12") ? 12 : 11, hora, 0, 0, DateTimeKind.Utc));
+        }
+
+        Assert.Equal("pos-2026-10-12.db", Path.GetFileName(Respaldos.Ultima(_carpeta)));
+    }
+
+    [Fact]
     public void La_llave_de_la_caja_solo_se_guarda_como_huella()
     {
         var caja = new Caja { Nombre = "Caja 2", Serie = "B" };

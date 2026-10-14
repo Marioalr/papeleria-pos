@@ -46,6 +46,8 @@ public static class VentasParaEleventa
                 return new(null, "Su venta no llegó a eleventa: no hay nada que devolver allá.", Descartada: true);
             case EstadoEnvioEleventa.PorRevisar:
                 return new(null, $"Su venta quedó por revisar ({deLaVenta.Error}).");
+            case EstadoEnvioEleventa.AMano:
+                return new(null, "Su venta se anotó a mano en eleventa: no se sabe su ticket allá, también va a mano.");
             case EstadoEnvioEleventa.Pendiente:
                 throw new InvalidOperationException("Su venta todavía no llega a eleventa.");
         }

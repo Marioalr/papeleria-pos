@@ -4,6 +4,7 @@ using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Importacion;
 using PapeleriaPos.Nucleo.Inventario;
+using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Eleventa;
 
@@ -24,7 +25,7 @@ public sealed class ResultadoSincronizacion
 
     public int Costos { get; set; }
 
-    /// <summary>Existencias ajustadas a lo que dice eleventa.</summary>
+    /// <summary>Existencias ajustadas a lo que dice eleventa (con lo que esta caja movió y allá todavía no está).</summary>
     public int Existencias { get; set; }
 
     public int Departamentos { get; set; }
@@ -50,7 +51,8 @@ public sealed class ResultadoSincronizacion
 /// Pone al día la base de la caja 2 con lo que dice eleventa (docs/plan.md, el piloto, paso 1). Durante el piloto
 /// eleventa manda: las altas, los cambios de precio y las existencias se hacen allá y llegan aquí con cada lectura. La
 /// base ya se armó con importar-eleventa; esto la sigue, con los mismos mapeos (el Id de eleventa de cada producto).
-/// Lo que se dio de alta aquí y no viene de eleventa no se toca. No lee ni escribe nada en eleventa: recibe las filas.
+/// Lo que se dio de alta aquí y no viene de eleventa no se toca, ni lo que esta caja vendió o devolvió y todavía no está
+/// en eleventa. No lee ni escribe nada en eleventa: recibe las filas.
 /// </summary>
 public static class SincronizacionEleventa
 {
@@ -72,8 +74,15 @@ public static class SincronizacionEleventa
     public const string AvisoPrecioCero = "Producto nuevo de eleventa sin precio";
     public const string AvisoMayoreoNuevo = "Producto nuevo de eleventa con mayoreo (F11): revisar en F3 desde cuántas piezas";
     public const string MotivoMayoreoNuevo = "Nuevo en eleventa: todavía no hay ventas con F11 para saber desde cuántas piezas";
+    public const string AvisoEnCamino = "Existencia sin ajustar: una venta o devolución de esta caja va a eleventa y no se sabe si ya llegó (se ajusta en otra lectura)";
 
-    public static async Task<ResultadoSincronizacion> AplicarAsync(PosDbContext db, DatosEleventa e, DateTime ahoraUtc, CancellationToken ct = default)
+    /// <param name="mandados">
+    /// Lo que la bandeja mandó a eleventa mientras se leía (o se estaba mandando), o se anotó a mano en ese rato: pudo
+    /// haber entrado allá sin que aquí se sepa todavía, y la existencia de sus productos se ajusta en otra lectura. También
+    /// dice qué rechazó eleventa en su último intento. Sin ella, de lo pendiente que ya se intentó no se sabe si entró.
+    /// </param>
+    public static async Task<ResultadoSincronizacion> AplicarAsync(PosDbContext db, DatosEleventa e, DateTime ahoraUtc,
+        EnviosEnCurso.Vigilancia? mandados = null, CancellationToken ct = default)
     {
         var r = new ResultadoSincronizacion();
         var sucursal = await db.Sucursales.OrderBy(s => s.Clave != "M").ThenBy(s => s.Nombre).FirstAsync(ct);
@@ -254,10 +263,13 @@ public static class SincronizacionEleventa
         await db.SaveChangesAsync(ct);
 
         // Las existencias, con la base apartada para escribir desde antes de leerlas (SQLite: BEGIN IMMEDIATE): una venta que
-        // se cobre en ese momento espera unos milisegundos y no se pierde ni el ajuste ni la venta.
+        // se cobre en ese momento espera unos milisegundos y no se pierde ni el ajuste ni la venta. La bandeja se lee en el
+        // mismo momento que las existencias, y lo que se mandó mientras se leía eleventa, hasta aquí.
         await using (var propia = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null)
         {
-            await ExistenciasAsync(db, r, sucursal.Id, activas, nuevas, existenciaDe, productos, ahoraUtc, ct);
+            var bandeja = await BandejaAsync(db, sucursal.Id, mandados?.Mandados() ?? new HashSet<Guid>(),
+                mandados?.Rechazados() ?? new HashSet<Guid>(), ct);
+            await ExistenciasAsync(db, r, sucursal.Id, activas, nuevas, existenciaDe, productos, bandeja, ahoraUtc, ct);
             await db.SaveChangesAsync(ct);
             if (propia is not null)
                 await propia.CommitAsync(ct);
@@ -394,12 +406,14 @@ public static class SincronizacionEleventa
     }
 
     /// <summary>
-    /// La existencia de cada producto queda en lo que dice eleventa, con un ajuste en el kardex (al costo promedio, como
-    /// la diferencia de un conteo) a nombre de «eleventa». Lo que eleventa no lleva en inventario cuenta como cero. Un
-    /// producto nuevo entra como inventario inicial, al costo de eleventa (como al importar).
+    /// La existencia de cada producto queda en lo que dice eleventa, más lo que esta caja movió y eleventa todavía no tiene
+    /// (<see cref="BandejaAsync"/>), con un ajuste en el kardex (al costo promedio, como la diferencia de un conteo) a
+    /// nombre de «eleventa». Lo que eleventa no lleva en inventario cuenta como cero. Un producto nuevo entra como
+    /// inventario inicial, al costo de eleventa (como al importar).
     /// </summary>
     private static async Task ExistenciasAsync(PosDbContext db, ResultadoSincronizacion r, Guid sucursalId, Dictionary<int, Variante> activas,
-        Dictionary<Guid, long> nuevas, Dictionary<int, double> existenciaDe, Dictionary<Guid, Producto> productos, DateTime ahoraUtc, CancellationToken ct)
+        Dictionary<Guid, long> nuevas, Dictionary<int, double> existenciaDe, Dictionary<Guid, Producto> productos, Bandeja bandeja, DateTime ahoraUtc,
+        CancellationToken ct)
     {
         var registro = new RegistroInventario(db);
         var actuales = await db.Existencias.Where(x => x.SucursalId == sucursalId).ToDictionaryAsync(x => x.VarianteId, ct);
@@ -408,7 +422,12 @@ public static class SincronizacionEleventa
         {
             if (!productos.TryGetValue(variante.ProductoId, out var producto) || !producto.LlevaInventario)
                 continue;
-            var deseada = ReglasEleventa.CantidadDe(existenciaDe.GetValueOrDefault(idEleventa));
+            if (bandeja.EnCamino.Contains(variante.Id))
+            {
+                r.Avisar(AvisoEnCamino);
+                continue;
+            }
+            var deseada = ReglasEleventa.CantidadDe(existenciaDe.GetValueOrDefault(idEleventa)) + bandeja.SinLlegar.GetValueOrDefault(variante.Id);
             var diferencia = deseada - (actuales.TryGetValue(variante.Id, out var actual) ? actual.Cantidad : Cantidad.Cero);
             if (diferencia.Milesimas == 0)
                 continue;
@@ -424,5 +443,56 @@ public static class SincronizacionEleventa
                 await registro.AgregarDiferenciaDeConteoAsync(sucursalId, variante, diferencia, ahoraUtc, Documento, corrida, ct);
             r.Existencias++;
         }
+    }
+
+    /// <param name="SinLlegar">Lo que esta caja movió de cada variante y eleventa no tiene, con su signo (una venta resta).</param>
+    /// <param name="EnCamino">Las variantes de algo que pudo haber entrado a eleventa sin que aquí se sepa todavía.</param>
+    private sealed record Bandeja(Dictionary<Guid, Cantidad> SinLlegar, HashSet<Guid> EnCamino);
+
+    /// <summary>
+    /// Lo que eleventa no tiene de esta caja, para que la lectura no lo deshaga: las ventas, cancelaciones y devoluciones
+    /// de la bandeja que siguen pendientes (todavía no llegan), las que quedaron por revisar (no van solas: hasta que
+    /// alguien las anote a mano allá) y las descartadas (una venta que se canceló antes de llegar, y su cancelación: allá
+    /// nunca existieron). Lo que movieron es lo de su kardex: lo vendido y lo devuelto, también lo que volvió dañado.
+    /// Lo enviado y lo anotado a mano ya está en eleventa.
+    /// <para>
+    /// No se sabe si ya está allá lo que se mandó o se anotó a mano mientras se leía eleventa (<paramref name="mandados"/>),
+    /// ni lo pendiente cuyo último intento falló por la red (se pudo cortar justo después de que eleventa lo guardó; el
+    /// siguiente intento lo encuentra por su marca), o del que no se sabe cómo falló (al arrancar el servicio, hasta que
+    /// se vuelve a intentar): sus variantes se ajustan en otra lectura. Lo que eleventa rechazó (<paramref name="rechazados"/>)
+    /// no está allá, aunque la bandeja siga detenida en eso.
+    /// </para>
+    /// </summary>
+    private static async Task<Bandeja> BandejaAsync(PosDbContext db, Guid sucursalId, IReadOnlySet<Guid> mandados, IReadOnlySet<Guid> rechazados,
+        CancellationToken ct)
+    {
+        var vistos = mandados.ToList();
+        var envios = await db.EnviosAEleventa.AsNoTracking()
+            .Where(x => x.Tipo == TipoEnvioEleventa.Venta || x.Tipo == TipoEnvioEleventa.Cancelacion || x.Tipo == TipoEnvioEleventa.Devolucion)
+            .Where(x => x.Estado == EstadoEnvioEleventa.Pendiente || x.Estado == EstadoEnvioEleventa.PorRevisar || x.Estado == EstadoEnvioEleventa.Descartada
+                || vistos.Contains(x.Id))
+            .Select(x => new { x.Id, x.Estado, x.Intentos, Documento = x.Tipo == TipoEnvioEleventa.Venta ? x.VentaId : x.DevolucionId })
+            .ToListAsync(ct);
+        var bandeja = new Bandeja([], []);
+        if (envios.Count == 0)
+            return bandeja;
+
+        var enCamino = envios.Where(x => mandados.Contains(x.Id)
+                || x.Estado == EstadoEnvioEleventa.Pendiente && x.Intentos > 0 && !rechazados.Contains(x.Id))
+            .Select(x => x.Documento).ToHashSet();
+        var documentos = envios.Where(x => x.Documento is not null).Select(x => x.Documento!.Value).Distinct().ToList();
+        var movimientos = await db.MovimientosInventario.AsNoTracking()
+            .Where(m => m.SucursalId == sucursalId && (m.DocumentoTipo == nameof(Venta) || m.DocumentoTipo == nameof(Devolucion))
+                && m.DocumentoId != null && documentos.Contains(m.DocumentoId.Value))
+            .Select(m => new { m.DocumentoId, m.VarianteId, m.Cantidad })
+            .ToListAsync(ct);
+        foreach (var m in movimientos)
+        {
+            if (enCamino.Contains(m.DocumentoId))
+                bandeja.EnCamino.Add(m.VarianteId);
+            else
+                bandeja.SinLlegar[m.VarianteId] = bandeja.SinLlegar.GetValueOrDefault(m.VarianteId) + m.Cantidad;
+        }
+        return bandeja;
     }
 }

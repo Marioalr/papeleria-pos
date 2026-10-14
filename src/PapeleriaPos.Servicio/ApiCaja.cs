@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Eleventa;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Configuracion;
@@ -61,8 +62,12 @@ public static class ApiCaja
         api.MapPost("/turnos/{turnoId:guid}/corte-x", async (Guid turnoId, Guid usuarioId, PosDbContext db) =>
             await CorteDtoAsync(db, await new RegistroCaja(db).CorteXAsync(turnoId, usuarioId)));
 
-        api.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, SolicitudCorteZ s, PosDbContext db, ServicioRespaldos respaldos, EnvioVentasEleventa eleventa) =>
+        api.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, SolicitudCorteZ s, PosDbContext db, ServicioRespaldos respaldos, EnvioVentasEleventa eleventa,
+            OpcionesEleventa opcionesEleventa) =>
         {
+            // El piloto en la caja 2: el corte se hace en eleventa, aunque la pantalla ya no lo ofrezca (una caja de antes).
+            if (opcionesEleventa.CorteEnEleventa)
+                throw new InvalidOperationException(CorteEnElPiloto.CorteEnEleventa);
             var turno = await db.Turnos.FindAsync(turnoId) ?? throw new InvalidOperationException("El turno no existe.");
             var encargado = await new ServicioControl(db).IdentificarAsync(s.EncargadoUsuario, s.EncargadoPin, turno.SucursalId, AccionControlada.CorteZ);
             var corte = await CorteDtoAsync(db, await new RegistroCaja(db).CorteZAsync(turnoId, encargado.Id, s.Conteo));
@@ -104,11 +109,15 @@ public static class ApiCaja
         api.MapGet("/sucursales/{sucursalId:guid}/rapidos", async (Guid sucursalId, PosDbContext db) =>
             await db.ConfiguracionesSucursal.AsNoTracking().Where(c => c.SucursalId == sucursalId).Select(c => c.Rapidos).FirstOrDefaultAsync() ?? []);
 
-        api.MapPost("/ventas", async (SolicitudCobro s, PosDbContext db, CatalogoEnMemoria catalogo, IOptions<OpcionesTicket> ticket, EnvioVentasEleventa eleventa) =>
+        api.MapPost("/ventas", async (SolicitudCobro s, PosDbContext db, CatalogoEnMemoria catalogo, IOptions<OpcionesTicket> ticket, EnvioVentasEleventa eleventa,
+            OpcionesEleventa opcionesEleventa) =>
         {
             // La caja manda otra vez la misma venta si no le llegó la respuesta: se regresa el ticket que ya se cobró.
             if (s.VentaId is { } ventaId && await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleOrDefaultAsync(v => v.Id == ventaId) is { } cobrada)
                 return await TicketAsync(db, cobrada, ticket.Value);
+            // El piloto en la caja 2: solo efectivo, aunque la pantalla ya no ofrezca lo demás.
+            if (opcionesEleventa.SoloEfectivo)
+                SoloEfectivoEnElPiloto.RevisarCobro(s.Cobros);
 
             var turno = await db.Turnos.FindAsync(s.TurnoId) ?? throw new InvalidOperationException("El turno no existe.");
             var caja = await db.Cajas.FindAsync(s.CajaId) ?? throw new InvalidOperationException("La caja no existe.");

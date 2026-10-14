@@ -161,6 +161,16 @@ la caja principal por la red, como lo abre una caja de eleventa, y se pone al d�
 - **La existencia y una venta a la vez:** el ajuste se guarda con la base apartada para escribir, así una venta que se
   cobre en ese momento espera unos milisegundos y no se pierde. Entre dos ventas a la vez el riesgo sigue como antes, y
   `VerificarExistenciasAsync` lo detecta.
+- **Lo que eleventa todavía no tiene de la caja 2** (solo del piloto, vive en el puente): la existencia queda en la de
+  eleventa más lo que movieron, según su kardex, las ventas, cancelaciones y devoluciones de la bandeja que siguen
+  pendientes, quedaron por revisar o se descartaron. Así la lectura no regresa una venta que todavía no llega ni la
+  vuelve a quitar cuando llega. Lo enviado ya está allá. Lo que alguien dejó en eleventa a mano se anota con
+  `POST /api/eleventa/envios/{id}/a-mano` (si está pendiente o por revisar): ya no se manda ni se descuenta. En
+  cambio, `…/revisar` solo deja pasar lo demás: lo que queda por revisar no está allá y se sigue descontando. Lo que se
+  mandó o se anotó a mano mientras se leía, o lo pendiente cuyo último intento falló por la red (se pudo cortar justo
+  cuando eleventa ya lo había guardado), puede estar allá o no: esa vez sus productos no se ajustan («Existencia sin
+  ajustar…» en los avisos) y se ajustan en otra lectura. Lo que eleventa rechazó no está allá y se descuenta, aunque la
+  bandeja siga detenida en eso.
 
 Se configura en el servicio de la caja 2, sección `Eleventa`. Los datos reales van en la configuración de esa PC,
 nunca aquí; la clave puede ir en la variable de entorno `Eleventa__Clave`.
@@ -416,10 +426,21 @@ se cierra antes que sus ventas.
   Eleventa no lo ha hecho entre turnos, pero así cuadran sus cortes.
 - **Lo que no se puede mandar solo:**
   - si algo no entra, lo que sigue espera en la bandeja;
-  - si ya se arregló a mano en eleventa, `POST /api/eleventa/envios/{id}/revisar` lo deja por revisar y lo demás pasa;
+  - si ya se arregló a mano en eleventa, `POST /api/eleventa/envios/{id}/a-mano` lo anota y lo demás pasa; si todavía
+    falta revisarlo, `POST …/revisar` lo deja por revisar, lo demás pasa y la lectura lo sigue descontando hasta
+    anotarlo a mano;
   - lo que volvió dañado no regresa al inventario de eleventa.
 - **El cierre** usa la diferencia del corte Z de la caja 2 (contado menos esperado). Con las entradas y salidas ya en
   eleventa (abajo), su efectivo al cierre queda en lo contado.
+
+**Mientras dure el piloto el corte de la caja 2 se hace en eleventa** (decisión del dueño, 2026-10-12; `CorteEnElPiloto`,
+solo para convivir con eleventa):
+- el servicio rechaza el corte Z de esa caja, y la caja lo avisa al intentar el corte y al salir;
+- el turno de eleventa lo abre eleventa con su fondo y lo cierra su corte: el puente no lo abre ni lo cierra. Si allá no
+  hay turno abierto, lo que se manda espera en la bandeja («Abre la caja en eleventa…») y entra en cuanto lo abran;
+- un cierre que ya estaba en la bandeja, o el de un corte Z que sube de la contingencia, queda por revisar;
+- el turno de la caja nueva no se cierra, así que solo se cancela un ticket del mismo día (después es devolución) y no
+  sale el aviso de retiro (el cajón es de las dos).
 
 Se probó como el paso 3, con pruebas contra el Firebird de prueba y de punta a punta contra copias: se cobraron dos
 ventas, se canceló una y se devolvió parte de la otra (un artículo completo), y se hizo el corte Z con un faltante. En la

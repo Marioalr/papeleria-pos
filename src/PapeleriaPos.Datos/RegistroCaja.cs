@@ -277,7 +277,9 @@ public sealed class RegistroCaja(PosDbContext db)
 
     /// <summary>
     /// El piloto en la caja 2: si algo del turno fue a eleventa (una venta, una devolución que salió de esta caja o una
-    /// entrada o salida de efectivo), el corte también cierra el turno de eleventa, después de que lleguen.
+    /// entrada o salida de efectivo), el corte también cierra el turno de eleventa, después de que lleguen. Mientras dure
+    /// el piloto (2026-10-12) el corte de la caja 2 se hace en eleventa: el servicio no hace el corte Z, y el cierre que
+    /// encola un corte Z de la contingencia no se manda (CorteEnElPiloto).
     /// </summary>
     private async Task CerrarEnEleventaAsync(Turno turno, CancellationToken ct)
     {

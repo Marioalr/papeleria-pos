@@ -677,13 +677,19 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     public async Task<List<AvisoPruebaDto>> AvisosPruebaAsync() => await _http.GetAsync<List<AvisoPruebaDto>>("api/prueba/avisos") ?? [];
 
-    public async Task<RespuestasPruebaDto> RespuestasPruebaAsync() => (await _http.GetAsync<RespuestasPruebaDto>("api/prueba/respuestas"))!;
+    /// <summary>Las de esa versión de la guía (<see cref="GuiaPrueba.Version"/>): las de otra no se cargan.</summary>
+    public async Task<RespuestasPruebaDto> RespuestasPruebaAsync(int version) =>
+        (await _http.GetAsync<RespuestasPruebaDto>($"api/prueba/respuestas?version={version}"))!;
 
     public Task<RespuestasPruebaDto> GuardarRespuestasPruebaAsync(RespuestasPruebaDto respuestas) =>
         _http.PutAsync<RespuestasPruebaDto>("api/prueba/respuestas", respuestas);
 
     public Task<ArchivoGuardadoDto> ExportarRespuestasPruebaAsync(string texto) =>
         _http.PostAsync<ArchivoGuardadoDto>("api/prueba/respuestas/exportar", new SolicitudExportarRespuestas(texto));
+
+    /// <summary>El documento al escritorio y la guía en blanco para la siguiente persona; devuelve dónde quedó el documento.</summary>
+    public Task<ArchivoGuardadoDto> DejarGuiaEnBlancoAsync(int version, string texto) =>
+        _http.PostAsync<ArchivoGuardadoDto>("api/prueba/respuestas/en-blanco", new SolicitudGuiaEnBlanco(version, texto));
 
     public async Task EmpezarDeCeroAsync()
     {
@@ -706,6 +712,27 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     // ── Alta de la caja (antes de tener llave; el servicio todavía no es el guardado) ──
 
     public Task<EstadoServicioDto?> EstadoAsync(Uri servicio) => _http.GetAsync<EstadoServicioDto>("api/estado", servicio: servicio);
+
+    /// <summary>
+    /// Si el servicio está en el piloto con eleventa (<see cref="PilotoConEleventa"/>): entonces la caja solo cobra y
+    /// devuelve en efectivo. Sin conexión, lo último que se supo (la contingencia lo guarda). Solo para convivir con
+    /// eleventa: se quita al dejarlo.
+    /// </summary>
+    public async Task<bool> PilotoEleventaAsync()
+    {
+        if (contingencia is { EnLinea: false })
+            return contingencia.PilotoEleventa;
+        try
+        {
+            var piloto = (await _http.GetAsync<EstadoServicioDto>("api/estado"))?.PilotoEleventa == true;
+            contingencia?.RecordarPilotoEleventa(piloto);
+            return piloto;
+        }
+        catch (ErrorCaja) when (contingencia is not null)
+        {
+            return contingencia.PilotoEleventa;
+        }
+    }
 
     public Task<List<SucursalAltaDto>> OpcionesAltaAsync(Uri servicio, SolicitudCredenciales credenciales) =>
         _http.PostAsync<List<SucursalAltaDto>>("api/alta/opciones", credenciales, servicio: servicio);
@@ -793,12 +820,18 @@ public static class Formato
 
     public static string Numero(decimal valor) => valor.ToString("#,##0.###", Mexico);
 
-    /// <summary>"$1,234.50", "1234.5" o "1234" a centavos. Vacío o inválido: null.</summary>
+    /// <summary>
+    /// "$1,234.50", "1234.5" o "1234" a centavos. Vacío o inválido: null. También lo que no cabe en centavos (un código
+    /// largo del lector en un campo de dinero): antes tumbaba la pantalla al dibujarla.
+    /// </summary>
     public static long? LeerPesos(string? texto)
     {
         var limpio = (texto ?? "").Replace("$", "").Replace(",", "").Trim();
-        return decimal.TryParse(limpio, NumberStyles.Number, CultureInfo.InvariantCulture, out var pesos) && pesos >= 0
+        return decimal.TryParse(limpio, NumberStyles.Number, CultureInfo.InvariantCulture, out var pesos) && pesos >= 0 && pesos <= MaximoPesos
             ? (long)Math.Round(pesos * 100, MidpointRounding.AwayFromZero)
             : null;
     }
+
+    /// <summary>Lo más que cabe en centavos (<see cref="long"/>).</summary>
+    private const decimal MaximoPesos = long.MaxValue / 100m - 1;
 }

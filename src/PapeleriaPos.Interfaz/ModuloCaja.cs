@@ -14,9 +14,44 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     public async Task RegistrarTeclasAsync<T>(DotNetObjectReference<T> pantalla) where T : class =>
         await (await Modulo).InvokeVoidAsync("registrar", pantalla);
 
-    public async Task QuitarTeclasAsync() => await (await Modulo).InvokeVoidAsync("quitar");
+    /// <summary>La pantalla de venta se va, y sus ventanas con ella.</summary>
+    public async Task QuitarTeclasAsync()
+    {
+        _deLaVenta = default;
+        await (await Modulo).InvokeVoidAsync("quitar");
+    }
 
-    public async Task VentanaAbiertaAsync(bool abierta) => await (await Modulo).InvokeVoidAsync("ventanaAbierta", abierta);
+    /// <summary>Lo último que dijo la pantalla de venta de sus ventanas.</summary>
+    private (bool Abierta, bool EnPanel) _deLaVenta;
+
+    /// <summary>Si la franja de la prueba tiene algo encima de la venta (<see cref="VentanaDeLaFranjaAsync"/>).</summary>
+    private bool _deLaFranja;
+
+    /// <summary>
+    /// Con una ventana abierta, caja.js solo atrapa las teclas que no escriben en sus campos. <paramref name="enPanel"/>: es
+    /// un panel de la pantalla nueva (el ticket y la barra de teclas a la vista), y también Ins y Ctrl+Q son de la venta.
+    /// </summary>
+    public async Task VentanaAbiertaAsync(bool abierta, bool enPanel = false)
+    {
+        _deLaVenta = (abierta, enPanel);
+        await MandarVentanaAsync();
+    }
+
+    /// <summary>
+    /// La franja de la prueba con algo encima de la venta (la guía, sus avisos, el cuadro de la nota de la tarea): mientras,
+    /// caja.js lo trata como una ventana, y la venta de atrás no se queda con las teclas que se escriben ahí. Al quitarlo
+    /// vuelve lo que dijo la pantalla de venta, que puede tener un panel abierto: la franja se puede tocar con un panel de la
+    /// pantalla nueva a la vista. Antes la franja mandaba «sin ventana» al cerrar la guía, y con el panel abierto caja.js
+    /// mandaba a la venta, como teclas del ticket, Supr en un campo vacío del panel o las flechas fuera de sus campos.
+    /// </summary>
+    public async Task VentanaDeLaFranjaAsync(bool abierta)
+    {
+        _deLaFranja = abierta;
+        await MandarVentanaAsync();
+    }
+
+    private async Task MandarVentanaAsync() =>
+        await (await Modulo).InvokeVoidAsync("ventanaAbierta", _deLaFranja || _deLaVenta.Abierta, !_deLaFranja && _deLaVenta.EnPanel);
 
     /// <summary>Vacía el cuadro de captura de la pantalla nueva (no está enlazado: lo maneja caja.js).</summary>
     public async Task LimpiarCapturaAsync() => await (await Modulo).InvokeVoidAsync("limpiarCaptura");

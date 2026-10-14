@@ -8,7 +8,12 @@ namespace PapeleriaPos.Eleventa;
 /// de la tienda: van en la configuración de esa PC, nunca en el repositorio.
 /// </summary>
 /// <param name="Ip">La IP de esta PC, para <c>CAJAS.ULTIMA_IP</c> al abrir el turno, como lo anota eleventa.</param>
-public sealed record CajaEnEleventa(int CajaId, int CajeroId, string? Ip = null);
+/// <param name="AbreTurno">
+/// Si eleventa no tiene turno abierto para esa caja, el puente lo abre con el turno de la caja nueva. Falso en el piloto
+/// (<see cref="CorteEnElPiloto"/>): el turno lo abre eleventa con su fondo y lo cierra su corte; sin turno, lo que se
+/// manda espera (<see cref="CorteEnElPiloto.AbreLaCajaEnEleventa"/>). Solo para convivir con eleventa: se quita al dejarlo.
+/// </param>
+public sealed record CajaEnEleventa(int CajaId, int CajeroId, string? Ip = null, bool AbreTurno = true);
 
 /// <summary>Una venta cobrada en efectivo, como la entiende eleventa.</summary>
 /// <param name="CreadaLocal">Cuándo se empezó en la caja nueva (hora local). También es su marca en eleventa: así no se manda dos veces.</param>
@@ -162,12 +167,15 @@ public static partial class EnvioEleventa
 
     /// <summary>
     /// El turno abierto de la caja en eleventa. Si no hay, se abre como lo abre eleventa: la hora en <c>CAJAS</c>, el
-    /// renglón del día, el turno en ceros y su primer ticket abierto, que eleventa siempre tiene mientras hay turno.
+    /// renglón del día, el turno en ceros y su primer ticket abierto, que eleventa siempre tiene mientras hay turno. En el
+    /// piloto no (<see cref="CajaEnEleventa.AbreTurno"/>): no se escribe nada y lo que se manda espera a que eleventa lo abra.
     /// </summary>
     private static async Task<int> TurnoAbiertoAsync(Sql sql, CajaEnEleventa caja, TurnoParaEleventa nuevo)
     {
         if (await TurnoDeLaCajaAsync(sql, caja.CajaId) is { } abierto)
             return abierto;
+        if (!caja.AbreTurno)
+            throw new InvalidOperationException(CorteEnElPiloto.AbreLaCajaEnEleventa);
 
         var inicio = new DateTime(nuevo.AbiertoLocal.Ticks - nuevo.AbiertoLocal.Ticks % 10000);
         await sql.EjecutarAsync(caja.Ip is null

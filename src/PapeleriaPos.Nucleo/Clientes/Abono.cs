@@ -103,7 +103,14 @@ public static class CalculoAbono
     /// </summary>
     /// <param name="montoCentavos">Vacío: liquidar.</param>
     /// <param name="recibidoCentavos">En efectivo, lo que entregó el cliente.</param>
-    public static AbonoCalculado Calcular(long saldoCentavos, FormaPago forma, long? montoCentavos, long recibidoCentavos)
+    public static AbonoCalculado Calcular(long saldoCentavos, FormaPago forma, long? montoCentavos, long recibidoCentavos) =>
+        Calcular(saldoCentavos, forma, montoCentavos, (long?)recibidoCentavos);
+
+    /// <summary>Lo mismo, pagado exacto: lo que se le pide antes de saber con cuánto paga (la caja lo enseña así).</summary>
+    public static AbonoCalculado Exacto(long saldoCentavos, FormaPago forma, long? montoCentavos) =>
+        Calcular(saldoCentavos, forma, montoCentavos, null);
+
+    private static AbonoCalculado Calcular(long saldoCentavos, FormaPago forma, long? montoCentavos, long? recibidoCentavos)
     {
         if (saldoCentavos <= 0)
             throw new InvalidOperationException("No debe nada: no hay qué abonar.");
@@ -163,11 +170,13 @@ public static class CalculoAbono
         return new SaldoDevueltoCalculado(montoCentavos.Value, montoCentavos.Value, 0, Todo: false);
     }
 
-    private static AbonoCalculado Recibir(long monto, long aCobrar, long recibido, bool liquida)
+    /// <param name="recibido">Vacío: exacto.</param>
+    private static AbonoCalculado Recibir(long monto, long aCobrar, long? recibido, bool liquida)
     {
-        if (recibido < aCobrar)
-            throw new InvalidOperationException($"Faltan {Pesos(aCobrar - recibido)}: el abono es de {Pesos(aCobrar)}.");
-        return new AbonoCalculado(monto, aCobrar, aCobrar - monto, recibido - aCobrar, liquida);
+        var dado = recibido ?? aCobrar;
+        if (dado < aCobrar)
+            throw new InvalidOperationException($"Faltan {Pesos(aCobrar - dado)}: el abono es de {Pesos(aCobrar)}.");
+        return new AbonoCalculado(monto, aCobrar, aCobrar - monto, dado - aCobrar, liquida);
     }
 
     private static string Pesos(long centavos) => (centavos / 100m).ToString("$#,##0.00", System.Globalization.CultureInfo.GetCultureInfo("es-MX"));

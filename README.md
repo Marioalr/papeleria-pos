@@ -59,9 +59,12 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
    `tcp://192.168.1.100:9100` para una impresora de red, el nombre de una impresora de Windows, o vacío para ver el
    ticket en pantalla. El servicio acepta lo mismo en `Caja:Impresora` para la caja del navegador.
 
-La venta tiene dos pantallas: la de hoy y la nueva del [rediseño](docs/propuesta-interfaz.md) (entrega 0, en
-desarrollo). «Probar la pantalla nueva» cambia de una a otra, y cada PC recuerda la suya. `preparar-caja` deja en la
-base de prueba los rápidos Copia B/N y CURP (10 impresiones).
+La venta tiene dos pantallas: la nueva del [rediseño](docs/propuesta-interfaz.md), con la que se entra en todas las
+cajas, y la de hoy. «Volver a la pantalla de hoy», en el menú del usuario (arriba a la derecha), y «Probar la pantalla
+nueva», en la de hoy, cambian de una a otra; cada PC recuerda solo si se volvió a la de hoy. `preparar-caja` deja en la
+base de prueba los rápidos Copia B/N y CURP (10 impresiones); `preparar-prueba`, además, con los precios que decidió el
+dueño ($2 y $10). La caja de prueba se actualiza sin tocar su base de trabajo: en una PC donde ya se probó, esos precios
+salen hasta oprimir «Empezar de cero» en la franja de prueba.
 
 Usuarios de prueba que crea `preparar-caja` (solo para bases de prueba):
 
@@ -127,6 +130,11 @@ Para que alguien de la tienda pruebe lo que ya funciona, solo y sin tocar eleven
   - La primera versión con esto se instala a mano; desde ahí, las siguientes desde la caja.
 - **La franja de prueba,** arriba, tiene la guía de tareas (las respuestas se guardan en un archivo en el escritorio),
   los avisos que le llegarían al dueño por Telegram y «Empezar de cero».
+  - La guía es la de la pantalla nueva: primero vender, al final lo que todavía abre las pantallas de hoy.
+  - Las respuestas van con la versión de la guía; las de otra versión no se cargan y su archivo se queda en
+    `C:\ProgramData\PapeleriaPos-Prueba`.
+  - Al terminar una persona, «Guardar respuestas y dejar la guía en blanco» deja su archivo en el escritorio y la guía
+    lista para la siguiente.
 - Necesita Windows 10 u 11 de 64 bits con WebView2 (viene con Windows 11 y con Windows 10 actualizado).
 
 Lo mismo en desarrollo, en el navegador:

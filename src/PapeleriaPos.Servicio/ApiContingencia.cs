@@ -69,6 +69,7 @@ public static class ApiContingencia
             var venta = await ApiCaja.ArmarVentaAsync(db, catalogo, caja, v.TurnoId, v.CajeroId, v.Id, lineas, v.MayoreoDeCliente == true);
             venta.ClienteId = v.ClienteId;
             // También va a eleventa (el piloto); su ticket ya salió con el folio de la caja, así que se manda en la vuelta.
+            // Aunque el piloto sea solo en efectivo, no se rechaza: ya se cobró. Si no fue en efectivo, queda por revisar.
             eleventa.Encolar(db, venta.Id);
             // Si fió: con lo que sabía la caja (una caja de antes no fía sin conexión; si llegara, se revisa con el saldo real).
             await new RegistroCaja(db).CobroDeContingenciaAsync(venta, v.Cobros, v.Folio, v.PagadaUtc, redondear: v.RedondeoCentavos is not null,
@@ -77,7 +78,8 @@ public static class ApiContingencia
             return Results.NoContent();
         });
 
-        // Un abono sin conexión: se guarda siempre (ya se cobró); lo que no cuadre queda por revisar.
+        // Un abono sin conexión: se guarda siempre (ya se cobró, también en el piloto con eleventa); lo que no cuadre queda
+        // por revisar.
         bandeja.MapPost("/abonos", async (AbonoContingenciaDto a, PosDbContext db) =>
         {
             await new RegistroCredito(db).AbonoDeContingenciaAsync(a);
@@ -100,6 +102,9 @@ public static class ApiContingencia
 
         bandeja.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, CorteContingenciaDto c, PosDbContext db, ServicioRespaldos respaldos, EnvioVentasEleventa eleventa) =>
         {
+            // En el piloto con eleventa la caja ya no hace el corte sin conexión (se hace en eleventa). Si llega uno (una caja
+            // de antes, o de antes del piloto), ya pasó: se guarda, porque lo que la caja hizo después va en otro turno y no
+            // entraría. El cierre del turno de eleventa que encola, el puente no lo manda: queda por revisar (CorteEnElPiloto).
             var corte = await ApiCaja.CorteDtoAsync(db, await new RegistroCaja(db).CorteZDeContingenciaAsync(turnoId, c));
             eleventa.Despertar();
             _ = Task.Run(() => respaldos.Hacer($"z-{corte.FechaLocal:HHmm}"));

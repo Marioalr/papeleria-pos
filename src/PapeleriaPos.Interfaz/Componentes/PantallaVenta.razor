@@ -1,6 +1,6 @@
-@* La pantalla de venta. La de hoy tiene la misma distribución y las mismas teclas que eleventa; la nueva es la del
-   rediseño (docs/propuesta-interfaz.md, entrega 0) y cada caja elige cuál usa. Las dos comparten los tickets, el cobro,
-   las ventanas y las teclas: solo cambia cómo se ve. *@
+@* La pantalla de venta. La nueva es la del rediseño (docs/propuesta-interfaz.md, entrega 0) y es con la que se entra en
+   todas las cajas; la de hoy, con la misma distribución y las mismas teclas que eleventa, queda para volver a ella desde
+   el menú del usuario. Las dos comparten los tickets, el cobro, las ventanas y las teclas: solo cambia cómo se ve. *@
 @implements IAsyncDisposable
 @using System.Text.RegularExpressions
 @using PapeleriaPos.Nucleo.Configuracion
@@ -19,7 +19,8 @@
                 <span class="vn-logo">P</span>
                 <div><strong>@Caja.Nombre</strong><small>@(Conexion.Servicio.IsLoopback ? "principal" : "secundaria") · @Caja.Sucursal</small></div>
             </div>
-            @* Cada quien ve lo que sus permisos le dejan: lo que no puede no aparece (docs/propuesta-interfaz.md, «Usuarios y permisos»). *@
+            @* Cada quien ve lo que sus permisos le dejan: lo que no puede no aparece (docs/propuesta-interfaz.md, «Usuarios y permisos»).
+               Mientras llegan, solo lo que es de todos. *@
             <nav class="vn-pestanas">
                 <button class="activa">Venta <kbd>F1</kbd></button>
                 @if (Ve(AccionControlada.EditarCatalogo))
@@ -30,10 +31,9 @@
                 {
                     <button @onclick="() => Abrir(Ventanas.Inventario)">Inventario <kbd>F4</kbd></button>
                 }
-                @if (Ve(AccionControlada.AdministrarClientes))
-                {
-                    <button @onclick="() => Abrir(Ventanas.Clientes)">Clientes</button>
-                }
+                @* Clientes es de todos, como en la pantalla de hoy: quien no los administra los consulta (sin «Nuevo cliente» ni
+                   editar) y en su cuenta recibe abonos y devuelve el saldo a favor, con candado si lo autoriza otro. *@
+                <button @onclick="() => Abrir(Ventanas.Clientes)">Clientes</button>
                 <button @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
                 @if (VeConfiguracion)
                 {
@@ -53,6 +53,7 @@
                     <div class="vn-menu-usuario">
                         <p>@Sesion.Nombre · @Textos.Rol(Sesion.Rol).ToLowerInvariant()</p>
                         <button @onclick="AlSalir">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
+                        @* Solo aquí, no en «/»: un Enter con «/pan…» no deja la de hoy guardada en esta PC sin querer. *@
                         <button @onclick="CambiarPantallaAsync">Volver a la pantalla de hoy</button>
                     </div>
                 }
@@ -453,6 +454,10 @@
             <aside class="vn-der @(VaEnPanel ? "con-panel" : "")">
                 @if (VaEnPanel)
                 {
+                    @if (_avisoDelPanel is { } avisoDelPanel)
+                    {
+                        <div class="vn-alerta" role="status"><Ico Nombre="info" /><div><span>@avisoDelPanel</span></div></div>
+                    }
                     <CascadingValue Name="VentanaEnPanel" Value="true">
                         <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada">@ContenidoDeVentana</CascadingValue>
                     </CascadingValue>
@@ -490,7 +495,7 @@
                         <Ico Nombre="escaner" />
                         <div><span>Listo para el siguiente cliente: lo que escanees empieza su ticket. El cambio se queda aquí hasta entonces.</span></div>
                     </div>
-                    @if (_efectivo is { PideRetiro: true } efectivoC)
+                    @if (Retiro is { } efectivoC)
                     {
                         <div class="vn-alerta">
                             <Ico Nombre="efectivo" />
@@ -511,7 +516,10 @@
                                     <span class="debe" title="@(cuenta.VenceMasAntiguo is { } vence ? $"Lo más antiguo vence el {vence:dd/MM}" : "")">
                                         Debe @Formato.Dinero(cuenta.SaldoCentavos)@(VencidoDelTicket > 0 ? $" · vencido {Formato.Dinero(VencidoDelTicket)}" : "")
                                     </span>
-                                    <button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Abono)">Abonar <kbd>Ctrl+B</kbd></button>
+                                    @if (!_pilotoEleventa)
+                                    {
+                                        <button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Abono)">Abonar <kbd>Ctrl+B</kbd></button>
+                                    }
                                 }
                                 else
                                 {
@@ -523,7 +531,9 @@
                             <Ico Nombre="usuario" /><span>@(Actual.Cliente?.Nombre ?? "Público en general")</span>
                         </button>
                     </div>
-                    <div class="vn-total">
+                    @* data-cobro: lo que el lector teclee en el cobro («Pagó con», montos, referencias, botones) va a la captura y su
+                       Enter no cobra (caja.js). *@
+                    <div class="vn-total" data-cobro>
                         <div class="vn-total-cab"><span>Total</span><span>@ArticulosTexto(Actual.Venta)</span></div>
                         <div class="vn-cifra @(Actual.Venta.Lineas.Count == 0 ? "vacio" : "")">@Formato.Dinero(Actual.Venta.TotalCentavos)</div>
                         <div class="vn-tecla"><kbd>F12</kbd><span>cobrar</span></div>
@@ -616,11 +626,18 @@
                                     <div><span>Pasa su límite de crédito por <strong>@Formato.Dinero(ExcesoDeCredito)</strong>@AutorizaExceso</span></div>
                                 </div>
                             }
+                            @if (_avisoDelCobro is { } avisoCobro)
+                            {
+                                <div class="vn-alerta">
+                                    <Ico Nombre="escaner" />
+                                    <div><span>@avisoCobro</span></div>
+                                </div>
+                            }
                             <button id="cobrar-nuevo" class="vn-cobrar" disabled="@(_cobrando || ErrorDelCobro is not null)" @onclick="CobrarEnPanelAsync"
                                     @onfocus="() => _enPago = true" @onblur="() => _enPago = false">@EtiquetaDeCobrar</button>
                         }
                     </div>
-                    @if (_efectivo is { PideRetiro: true } efectivoN)
+                    @if (Retiro is { } efectivoN)
                     {
                         <div class="vn-alerta">
                             <Ico Nombre="efectivo" />
@@ -651,26 +668,27 @@
             </aside>
         </div>
 
-        @* Lo de todos los días; lo demás, en «/» (docs/propuesta-interfaz.md, «La pantalla de venta»). *@
+        @* Lo de todos los días; lo demás, en «/» (docs/propuesta-interfaz.md, «La pantalla de venta»). Cada botón hace lo
+           que su tecla, también con un panel abierto: el suyo lo cierra y otro lo cambia. *@
         <footer class="vn-teclas">
-            <button @onclick="IrAlCobroAsync"><kbd>F12</kbd>Cobrar</button>
-            <button @onclick="Buscar"><kbd>F10</kbd>Buscar</button>
-            <button @onclick="() => Abrir(Ventanas.Verificador)"><kbd>F9</kbd>Verificar</button>
-            <button @onclick="() => Abrir(Ventanas.Impresiones)"><kbd>F2</kbd>Impresiones</button>
+            <button @onclick="@(() => ComoSuTecla("F12"))"><kbd>F12</kbd>Cobrar</button>
+            <button @onclick="@(() => ComoSuTecla("F10"))"><kbd>F10</kbd>Buscar</button>
+            <button @onclick="@(() => ComoSuTecla("F9"))"><kbd>F9</kbd>Verificar</button>
+            <button @onclick="@(() => ComoSuTecla("F2"))"><kbd>F2</kbd>Impresiones</button>
             @if (Ve(AccionControlada.ArticuloComun))
             {
-                <button @onclick="() => Abrir(Ventanas.Comun)"><kbd>Ins</kbd>Art. común</button>
+                <button @onclick="@(() => ComoSuTecla("Insert"))"><kbd>Ins</kbd>Art. común</button>
             }
-            <button @onclick="() => Abrir(Ventanas.ElegirCliente)"><kbd>Ctrl+L</kbd>Cliente</button>
+            <button @onclick="@(() => ComoSuTecla("Ctrl+L"))"><kbd>Ctrl+L</kbd>Cliente</button>
             @if (Ve(AccionControlada.EntradaEfectivo))
             {
-                <button @onclick="() => Abrir(Ventanas.Entrada)"><kbd>F7</kbd>Entrada</button>
+                <button @onclick="@(() => ComoSuTecla("F7"))"><kbd>F7</kbd>Entrada</button>
             }
             @if (Ve(AccionControlada.SalidaEfectivo))
             {
-                <button @onclick="() => Abrir(Ventanas.Salida)"><kbd>F8</kbd>Salida</button>
+                <button @onclick="@(() => ComoSuTecla("F8"))"><kbd>F8</kbd>Salida</button>
             }
-            <button @onclick="PonerEnEspera"><kbd>F6</kbd>En espera</button>
+            <button @onclick="@(() => ComoSuTecla("F6"))"><kbd>F6</kbd>En espera</button>
             <button @onclick="AbrirAccionesAsync"><kbd>/</kbd>Más acciones</button>
             @* Ctrl+Q (o «Cotizar un PDF» en «/») abre el selector de archivos de aquí. *@
             <InputFile id="pdf-cotizar" class="oculto" accept=".pdf,application/pdf" onclick="this.value = ''" OnChange="PdfElegidoAsync" />
@@ -695,7 +713,7 @@ else
         <button class="modulo" @onclick="() => Abrir(Ventanas.Configuracion)">Configuración</button>
         <button class="modulo" @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
         <span class="espacio"></span>
-        <button class="modulo" title="La pantalla del rediseño (en desarrollo); se recuerda en esta PC" @onclick="CambiarPantallaAsync">Probar la pantalla nueva</button>
+        <button class="modulo" title="La pantalla del rediseño, con la que se entra en todas las cajas; esta PC deja de recordar la de hoy" @onclick="CambiarPantallaAsync">Probar la pantalla nueva</button>
         <div class="atiende">
             <small>Le atiende:</small>
             <strong>@Sesion.Nombre</strong>
@@ -736,7 +754,10 @@ else
         <button class="boton" @onclick="AbrirCambioPrecio">CTRL+E Cambiar precio</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Descuento)">CTRL+D Descuento</button>
         <button class="boton" title="El cliente registrado del ticket, por nombre o teléfono" @onclick="() => Abrir(Ventanas.ElegirCliente)">CTRL+L Cliente</button>
-        <button class="boton" title="Un abono a la cuenta de un cliente" @onclick="() => Abrir(Ventanas.Abono)">CTRL+B Abono</button>
+        @if (!_pilotoEleventa)
+        {
+            <button class="boton" title="Un abono a la cuenta de un cliente" @onclick="() => Abrir(Ventanas.Abono)">CTRL+B Abono</button>
+        }
         <button class="boton" @onclick="() => Abrir(Ventanas.Verificador)">F9 Verificador</button>
         <button class="boton" @onclick="() => Abrir(Ventanas.Impresiones)">F2 Impresiones</button>
         @* Cotizar a un botón: la etiqueta abre el selector de archivos; al elegir el PDF se abre la cotización. *@
@@ -804,7 +825,7 @@ else
         }
     </div>
 
-    @if (_efectivo is { PideRetiro: true } efectivo)
+    @if (Retiro is { } efectivo)
     {
         <div class="mensaje retiro">Hay @Formato.Dinero(efectivo.EsperadoCentavos) en efectivo y el límite es @Formato.Dinero(efectivo.LimiteCentavos ?? 0): haz un retiro con F8.</div>
     }
@@ -891,6 +912,42 @@ else
 
     private bool VaEnPanel => _pantallaNueva && VentanasEnPanel.Contains(_ventana);
 
+    /// <summary>
+    /// Los paneles que se dejan con la tecla de otra cosa (F12, Ctrl+L, F6…) sin perder nada: solo enseñan algo, o lo que
+    /// tienen a medias no va a la venta ni al cajón (el verificador, el mayoreo, las ventas del día, el ticket en pantalla,
+    /// el cliente, cotizar y las transferencias). Los demás tienen campos que van a la venta o al cajón (artículo común, descuento, precio,
+    /// entrada y salida, abono, devolución, alta rápida, impresiones por cobrar, el motivo de la reimpresión): se terminan
+    /// con Enter o se cierran con Esc o con su misma tecla, como dice la propuesta («Cada uno con sus campos y Enter para
+    /// terminar»). Con otra tecla lo escrito se perdería sin decirlo y, con F12, se cobraría sin ello: Ins, «Engargolado»
+    /// $35 y F12 por costumbre en lugar de Enter dejaría el cursor en «Pagó con» con el total de antes. Un panel nuevo no
+    /// se deja hasta agregarlo aquí.
+    /// </summary>
+    private static readonly HashSet<Ventanas> PanelesQueSeDejan =
+    [
+        Ventanas.Verificador, Ventanas.Mayoreo, Ventanas.VentasDelDia, Ventanas.VistaPrevia, Ventanas.ElegirCliente, Ventanas.Cotizar,
+        Ventanas.Transferencias,
+    ];
+
+    private bool PanelQueSeDeja => VaEnPanel && PanelesQueSeDejan.Contains(_ventana);
+
+    /// <summary>Por qué el panel abierto no se deja con otra tecla ni con «/ Más acciones»; null si se deja o no hay panel.</summary>
+    private string? PorQueNoSeDeja =>
+        !VaEnPanel || PanelQueSeDeja ? null
+        // Fiar arriba del límite o vender debajo del costo: el cobro está a medias y espera el PIN de quien autoriza. Con
+        // otra tecla se quedaría a medias sin decirlo.
+        : _ventana is Ventanas.AutorizarCosto or Ventanas.AutorizarCredito ? "El cobro espera la autorización: que la den aquí, o Esc para regresar a la venta."
+        // Con campos (artículo común, descuento, entrada…): ver PanelesQueSeDejan.
+        : "Primero termina aquí con Enter (o su botón), o Esc para regresar a la venta.";
+
+    /// <summary>Le dice a caja.js que hay una ventana abierta y si es un panel (con él a la vista, Ins y Ctrl+Q también son de la venta).</summary>
+    private Task AvisarVentanaAbiertaAsync() => Js.VentanaAbiertaAsync(true, VaEnPanel);
+
+    /// <summary>
+    /// Por qué una tecla no hizo nada con el panel abierto. Va en el panel, donde se está mirando: el aviso de siempre
+    /// sale bajo el cuadro de captura, a la izquierda.
+    /// </summary>
+    private string? _avisoDelPanel;
+
     /// <summary>F10 en la pantalla nueva: el cursor al cuadro, donde salen los resultados al escribir.</summary>
     private void Buscar()
     {
@@ -916,7 +973,14 @@ else
         @if (Actual.Cuenta!.SaldoCentavos > 0)
         {
             <span>@Actual.Cliente!.Nombre debe @Formato.Dinero(Actual.Cuenta.SaldoCentavos)@(Actual.Cuenta.VenceMasAntiguo is { } vence ? $" · vence {vence:dd/MM}" : "")@(VencidoDelTicket > 0 ? $" · vencido {Formato.Dinero(VencidoDelTicket)}" : "")@(Actual.Cuenta.Estimado ? " (según esta caja)" : "")</span>
-            <button class="boton chico" @onclick="() => Abrir(Ventanas.Abono)">CTRL+B Abonar</button>
+            @if (!_pilotoEleventa)
+            {
+                <button class="boton chico" @onclick="() => Abrir(Ventanas.Abono)">CTRL+B Abonar</button>
+            }
+        }
+        else if (_pilotoEleventa)
+        {
+            <span>@Actual.Cliente!.Nombre tiene @Formato.Dinero(Actual.Cuenta.AFavorCentavos) a favor: en el piloto con eleventa no se usa, solo se cobra en efectivo.</span>
         }
         else
         {
@@ -928,10 +992,20 @@ else
 
     // ── La pantalla nueva (docs/propuesta-interfaz.md, entrega 0) ───────────
 
-    /// <summary>Cada caja elige su pantalla; se recuerda en el navegador de esta PC.</summary>
+    /// <summary>
+    /// Dónde recuerda el navegador de esta PC si se volvió a la pantalla de hoy. Solo se guarda eso
+    /// (<see cref="PantallaDeHoy"/>): sin nada, o con el «nueva» que guardaba «Probar la pantalla nueva», se entra a la nueva.
+    /// </summary>
     private const string ClavePantalla = "pantalla-venta";
 
-    private bool _pantallaNueva;
+    private const string PantallaDeHoy = "hoy";
+
+    /// <summary>
+    /// La nueva desde el primer dibujo, en todas las cajas, de prueba y de verdad (para la segunda prueba con una persona
+    /// real, 17 y 18 de octubre de 2026: la de hoy no le gustó al dueño en la primera). Así, al entrar (también con
+    /// Ctrl+U) no se asoma la de hoy ni sus teclas mientras se lee lo guardado.
+    /// </summary>
+    private bool _pantallaNueva = true;
 
     /// <summary>Lo que se enfoca después de dibujar (el cuadro del código, o «Pagó con» con F12).</summary>
     private string? _enfocar;
@@ -963,13 +1037,36 @@ else
     /// </summary>
     private Dictionary<AccionControlada, PermisoDeSesion>? _permisos;
 
+    /// <summary>
+    /// Ya se pidieron, con respuesta o sin ella. Antes, lo que depende de ellos no se pinta (ni en «/»): sin ellos todo
+    /// se ve, y el cajero vería un instante las pestañas del encargado.
+    /// </summary>
+    private bool _permisosPedidos;
+
     private PermisoDeSesion? Permiso(AccionControlada accion) => _permisos?.GetValueOrDefault(accion);
 
     /// <summary>Para la autorización: en la pantalla nueva se toca la ficha de quien autoriza (en la de hoy, se escribe su usuario).</summary>
     private IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? PermisosEnCascada => _pantallaNueva ? _permisos : null;
 
-    /// <summary>Lo que no puede no aparece: ni botón, ni tecla, ni en «/», ni la pestaña.</summary>
-    private bool Ve(AccionControlada accion) => Permiso(accion)?.Nivel != NivelPermiso.NoPermitido;
+    /// <summary>Lo que no puede no aparece: ni botón, ni tecla, ni en «/», ni la pestaña. Mientras se piden, tampoco.</summary>
+    private bool Ve(AccionControlada accion) => _permisosPedidos && Permiso(accion)?.Nivel != NivelPermiso.NoPermitido;
+
+    /// <summary>
+    /// La tecla de algo que no ve (<paramref name="ve"/> en false) solo avisa que no puede. Mientras se piden los permisos
+    /// no se sabe: hace lo de siempre y el servicio decide, como sin ellos.
+    /// </summary>
+    private bool SinTecla(bool ve) => _pantallaNueva && _permisosPedidos && !ve;
+
+    /// <summary>Las teclas de lo que tiene permiso: en la pantalla nueva, la de lo que no ve solo avisa.</summary>
+    private bool SinTecla(string tecla) => tecla switch
+    {
+        "F3" => SinTecla(Ve(AccionControlada.EditarCatalogo)),
+        "F4" => SinTecla(VeInventario),
+        "Insert" or "Ctrl+P" => SinTecla(Ve(AccionControlada.ArticuloComun)),
+        "F7" => SinTecla(Ve(AccionControlada.EntradaEfectivo)),
+        "F8" => SinTecla(Ve(AccionControlada.SalidaEfectivo)),
+        _ => false,
+    };
 
     private bool VeInventario =>
         new[]
@@ -997,6 +1094,46 @@ else
         {
             // Sin conexión y sin copia: todo se ve, como hoy.
         }
+        _permisosPedidos = true;
+    }
+
+    // ── El piloto con eleventa: solo efectivo y el corte allá (se quita al dejar eleventa) ──
+
+    /// <summary>
+    /// El servicio manda las ventas a eleventa: solo se cobra y se devuelve en efectivo, y el corte se hace en eleventa
+    /// (decisión del dueño, 2026-10-12). Las ventanas lo reciben en cascada (<see cref="PilotoConEleventa.Cascada"/>).
+    /// Cambia con la configuración del servicio: se pregunta al entrar y, en la ventana de Windows, la contingencia lo
+    /// vuelve a saber en cada latido, así que si el servicio se reinicia con otra configuración la pantalla cambia sin
+    /// salir de ella. En el navegador no hay contingencia, pero al reiniciarse el servicio la pantalla se vuelve a cargar.
+    /// </summary>
+    private bool _pilotoEleventa;
+
+    private Contingencia? _contingencia;
+
+    private async Task CargarPilotoEleventaAsync()
+    {
+        _contingencia = Servicios.GetService<Contingencia>();
+        if (_contingencia is not null)
+            _contingencia.Cambio += AlCambiarContingencia;
+        try
+        {
+            _pilotoEleventa = await Cliente.PilotoEleventaAsync();
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión y sin contingencia (el navegador): no se puede cobrar de ninguna forma; el servicio lo revisa.
+        }
+    }
+
+    /// <summary>La contingencia avisa de muchas cosas: solo se vuelve a pintar si cambió el piloto.</summary>
+    private void AlCambiarContingencia()
+    {
+        if (_contingencia is { } contingencia && contingencia.PilotoEleventa != _pilotoEleventa)
+            _ = InvokeAsync(() =>
+            {
+                _pilotoEleventa = contingencia.PilotoEleventa;
+                StateHasChanged();
+            });
     }
 
     private static string Quien(PermisoDeSesion permiso) => Textos.Quien(permiso.Autorizan);
@@ -1040,7 +1177,8 @@ else
         yield return new("Impresiones por cobrar", "impresora", "F2", null, () => Abrir(Ventanas.Impresiones));
         yield return new("Artículo común (sin inventario)", "etiqueta", "Ins", AccionControlada.ArticuloComun, () => Abrir(Ventanas.Comun));
         yield return new("Elegir cliente del ticket", "clientes", "Ctrl+L", null, () => Abrir(Ventanas.ElegirCliente));
-        yield return new("Abono a la cuenta de un cliente", "efectivo", "Ctrl+B", null, () => Abrir(Ventanas.Abono));
+        if (!_pilotoEleventa)
+            yield return new("Abono a la cuenta de un cliente", "efectivo", "Ctrl+B", null, () => Abrir(Ventanas.Abono));
         yield return new("Cambiar precio del artículo", "etiqueta", "Ctrl+E", AccionControlada.CambiarPrecio, AbrirCambioPrecio);
         yield return new("Descuento", "porcentaje", "Ctrl+D", AccionControlada.Descuento, () => Abrir(Ventanas.Descuento));
         yield return new("Ver el mayoreo del artículo", "capas", "F11", null, MayoreoAsync);
@@ -1067,11 +1205,12 @@ else
         yield return new("Productos", "cajas", "F3", AccionControlada.EditarCatalogo, () => Abrir(Ventanas.Productos));
         if (VeInventario)
             yield return new("Inventario: recibir, contar y mermas", "recibir", "F4", null, () => Abrir(Ventanas.Inventario));
-        yield return new("Clientes", "clientes", null, AccionControlada.AdministrarClientes, () => Abrir(Ventanas.Clientes));
+        // Para todos, como la pestaña: quien no los administra solo los consulta.
+        yield return new("Clientes", "clientes", null, null, () => Abrir(Ventanas.Clientes));
         if (VeConfiguracion)
             yield return new("Configuración", "engrane", null, null, () => Abrir(Ventanas.Configuracion));
         yield return new("Cambiar de usuario", "usuario", "Ctrl+U", null, () => AlSalir.InvokeAsync());
-        yield return new("Volver a la pantalla de hoy", "monitor", null, null, CambiarPantallaAsync);
+        // «Volver a la pantalla de hoy» no va aquí: solo en el menú del usuario.
     }
 
     /// <summary>Las que puede (lo que no, no sale) y se llaman como lo escrito después de «/», sin acentos.</summary>
@@ -1098,6 +1237,15 @@ else
     /// <summary>«/ Más acciones» en la barra de teclas: el «/» queda en el cuadro y la lista abierta.</summary>
     private async Task AbrirAccionesAsync()
     {
+        // Con un panel abierto, se cierra: la lista y su Enter son del cuadro de captura. Si espera su Enter (o una
+        // autorización), lo dice, como con las teclas.
+        if (PorQueNoSeDeja is { } espera)
+        {
+            AvisarEnElPanel(espera);
+            return;
+        }
+        if (_ventana != Ventanas.Ninguna)
+            await Cerrar();
         CerrarResultados();
         _captura.Texto = "/";
         await Js.EscribirCapturaAsync("/");
@@ -1135,12 +1283,17 @@ else
     /// <summary>Lo que se escribió después de «/», o null si no empieza con «/».</summary>
     private static string? FiltroDeAcciones(string texto) => texto.TrimStart() is ['/', .. var resto] ? resto.Trim() : null;
 
+    /// <summary>«Volver a la pantalla de hoy» (en el menú del usuario) y «Probar la pantalla nueva» (en la de hoy).</summary>
     private async Task CambiarPantallaAsync()
     {
         _pantallaNueva = !_pantallaNueva;
+        _menuUsuario = false;
+        // Lo abierto pasa de panel a ventana encima (o al revés): caja.js lo sabe.
+        if (_ventana != Ventanas.Ninguna)
+            await AvisarVentanaAbiertaAsync();
         // El cuadro de la otra pantalla empieza vacío.
         _captura.Texto = "";
-        await Js.GuardarAsync(ClavePantalla, _pantallaNueva ? "nueva" : null);
+        await Js.GuardarAsync(ClavePantalla, _pantallaNueva ? null : PantallaDeHoy);
         if (_pantallaNueva && _rapidos.Count == 0)
             await CargarRapidosAsync();
         _enfocar = "#codigo";
@@ -1159,7 +1312,7 @@ else
             foreach (var rapido in (await Cliente.RapidosAsync(Caja.SucursalId)).Take(Rapido.Maximo))
             {
                 var producto = await Cliente.PorVarianteAsync(rapido.VarianteId, Caja.SucursalId);
-                listos.Add(new RapidoListo(rapido, producto, producto is null ? null : (long)Math.Round(PrecioMenudeo(producto) * rapido.Cantidad)));
+                listos.Add(new RapidoListo(rapido, producto, producto is null ? null : PrecioDelRapido(rapido, producto, Caja.SucursalId)));
             }
             _rapidos = listos;
         }
@@ -1170,12 +1323,16 @@ else
         }
     }
 
-    /// <summary>El precio por pieza de menudeo: el de la sucursal si tiene, si no el general.</summary>
-    private long PrecioMenudeo(ProductoVentaDto producto)
+    /// <summary>
+    /// Lo que dice la fila de rápidos: el precio por pieza de menudeo (el de la sucursal si tiene, si no el general) por la
+    /// cantidad del rápido. Público para que las pruebas revisen los de la base de la prueba con la misma cuenta.
+    /// </summary>
+    public static long PrecioDelRapido(Rapido rapido, ProductoVentaDto producto, Guid sucursalId)
     {
         var porUnidad = producto.Precios.Where(p => p.PresentacionId is null).ToList();
-        var deSucursal = porUnidad.Where(p => p.SucursalId == Caja.SucursalId).ToList();
-        return (deSucursal.Count > 0 ? deSucursal : porUnidad.Where(p => p.SucursalId is null)).MinBy(p => p.CantidadMinimaMilesimas)?.PrecioCentavos ?? 0;
+        var deSucursal = porUnidad.Where(p => p.SucursalId == sucursalId).ToList();
+        var menudeo = (deSucursal.Count > 0 ? deSucursal : porUnidad.Where(p => p.SucursalId is null)).MinBy(p => p.CantidadMinimaMilesimas)?.PrecioCentavos ?? 0;
+        return (long)Math.Round(menudeo * rapido.Cantidad);
     }
 
     /// <summary>Alt+1 a Alt+6 o el botón. Un número en el cuadro es cuántos: «20» y Alt+1 son veinte copias.</summary>
@@ -1193,21 +1350,25 @@ else
         }
         VaciarCaptura();
         _enfocar = "#codigo";
-        try
+        // En la cola, como un escaneo: en orden con ellos, y no cae en un ticket que se está cobrando.
+        await _captura.EnTurnoAsync(async () =>
         {
-            producto ??= await Cliente.PorVarianteAsync(rapido.VarianteId, Caja.SucursalId);
-        }
-        catch (ErrorCaja ex)
-        {
-            Avisar(ex.Message);
-            return;
-        }
-        if (producto is null)
-        {
-            Avisar($"El producto del rápido «{rapido.Nombre}» ya no está en el catálogo: hay que elegirlo otra vez en Configuración.");
-            return;
-        }
-        Agregar(producto, null, Cantidad.Unidades(Math.Round(veces * rapido.Cantidad, 3)));
+            try
+            {
+                producto ??= await Cliente.PorVarianteAsync(rapido.VarianteId, Caja.SucursalId);
+            }
+            catch (ErrorCaja ex)
+            {
+                Avisar(ex.Message);
+                return;
+            }
+            if (producto is null)
+            {
+                Avisar($"El producto del rápido «{rapido.Nombre}» ya no está en el catálogo: hay que elegirlo otra vez en Configuración.");
+                return;
+            }
+            Agregar(producto, null, Cantidad.Unidades(Math.Round(veces * rapido.Cantidad, 3)));
+        });
     }
 
     /// <summary>Los tickets en espera: los que tienen algo y no son el que se atiende, en el orden en que se apartaron.</summary>
@@ -1301,6 +1462,9 @@ else
 
     private long Recibido => PagoConCentavos ?? 0;
 
+    /// <summary>Lo que el cobro tiene que decir en el panel, donde está el cajero (lo de la izquierda se apaga al cobrar).</summary>
+    private string? _avisoDelCobro;
+
     /// <summary>Con crédito, o con saldo a favor que se puede usar. Lo dice la cuenta (igual que el servicio), no el cliente.</summary>
     private bool PuedeFiar => Actual.Cliente is not null && Actual.Cuenta is { } cuenta && (cuenta.LimiteCentavos > 0 || cuenta.AFavorCentavos > 0);
 
@@ -1313,16 +1477,28 @@ else
         _pagoCon = "";
         _otras.Clear();
         _enPago = false;
+        _avisoDelCobro = null;
     }
 
-    /// <summary>Las otras formas que todavía no tienen renglón: una de cada una; el crédito, solo con quien puede fiar.</summary>
+    /// <summary>
+    /// Las otras formas que todavía no tienen renglón: una de cada una; el crédito, solo con quien puede fiar. En el piloto
+    /// con eleventa, ninguna: solo efectivo.
+    /// </summary>
     private IEnumerable<FormaPago> FormasQueFaltan =>
         new[] { FormaPago.Tarjeta, FormaPago.Transferencia, FormaPago.Credito }
+            .Where(_ => !_pilotoEleventa)
             .Where(f => f != FormaPago.Credito || PuedeFiar)
             .Where(f => _otras.All(o => o.Forma != f));
 
-    /// <summary>Tarjeta, transferencia y crédito, chicos junto a «Pagó con»: cada uno agrega su renglón con lo que falta.</summary>
+    /// <summary>
+    /// Tarjeta, transferencia y crédito, chicos junto a «Pagó con»: cada uno agrega su renglón con lo que falta. En el
+    /// piloto con eleventa, en su lugar, que solo es efectivo.
+    /// </summary>
     private RenderFragment FormasDePago => @<span class="vn-formas">
+        @if (_pilotoEleventa)
+        {
+            <span class="nota" title="@PilotoConEleventa.NoSeCobra">@PilotoConEleventa.SoloEfectivo</span>
+        }
         @foreach (var forma in FormasQueFaltan)
         {
             var esta = forma;
@@ -1385,6 +1561,11 @@ else
     /// <summary>La forma nueva trae lo que falta (del saldo a favor, hasta lo que puede usar); se cambia si es solo una parte.</summary>
     private async Task AgregarFormaAsync(FormaPago forma)
     {
+        if (_pilotoEleventa)
+        {
+            Avisar(PilotoConEleventa.NoSeCobra);
+            return;
+        }
         if (forma == FormaPago.Credito)
         {
             // La cuenta al día antes de fiar: otra caja pudo fiarle o recibirle un abono.
@@ -1414,6 +1595,8 @@ else
     {
         get
         {
+            if (_pilotoEleventa && _otras.Count > 0)
+                return "En el piloto con eleventa solo se cobra en efectivo: quita las otras formas";
             if (_otras.FirstOrDefault(o => o.Centavos is null) is { } mala)
                 return $"«{mala.Monto}» no es una cantidad";
             if (_otras.Any(o => o.Forma == FormaPago.Credito) && !PuedeFiar)
@@ -1461,15 +1644,19 @@ else
 
     /// <summary>
     /// F12: el cursor va a «Pagó con» y lo demás se apaga; si las otras formas ya lo cubren todo, a «Cobrar». Con el
-    /// cursor ya en el cobro, F12 cobra como Enter.
+    /// cursor ya en el cobro, F12 cobra como Enter (y el cobro espera el último escaneo).
     /// </summary>
     private async Task IrAlCobroAsync()
     {
-        if (Actual.Venta.Lineas.Count == 0)
-            return;
         if (_enPago)
+        {
             await CobrarEnPanelAsync();
-        else
+            return;
+        }
+        // caja.js no encontró «Pagó con»: el ticket estaba vacío, o el escaneo de su primera línea sigue en camino (con el
+        // Wi-Fi lento). Se espera, como las demás teclas del ticket, y entonces el cursor va al cobro: el F12 no se pierde.
+        await _captura.EsperarAsync();
+        if (Actual.Venta.Lineas.Count > 0)
             _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
     }
 
@@ -1480,12 +1667,23 @@ else
     }
 
     /// <summary>
-    /// Enter en el cobro: sin escribir nada, exacto; con lo que dio, da el cambio. Con tarjeta, transferencia o crédito,
-    /// cada una con su monto y el efectivo por lo que falta. Fiar arriba del límite se autoriza en el panel.
+    /// Enter en el cobro (o F12, o el botón): sin escribir nada, exacto; con lo que dio, da el cambio. Con tarjeta,
+    /// transferencia o crédito, cada una con su monto y el efectivo por lo que falta. Fiar arriba del límite se autoriza en
+    /// el panel. Primero espera el último escaneo: si llegó algo, no cobra y el panel dice el total nuevo.
     /// </summary>
     private async Task CobrarEnPanelAsync()
     {
-        if (_cobrando || Actual.Venta.Lineas.Count == 0)
+        if (await EnTurnoDeCobroAsync(CobrarConLaColaAsync) is not { } aviso)
+            return;
+        _avisoDelCobro = aviso;
+        _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
+    }
+
+    private async Task CobrarConLaColaAsync(CapturaCodigo.Apartado apartado)
+    {
+        _avisoDelCobro = null;
+        // Un escaneo de la cola pudo abrir algo (el folio de un ticket abre su devolución): no se cobra encima.
+        if (_ventana != Ventanas.Ninguna || Actual.Venta.Lineas.Count == 0)
             return;
         if (ErrorDelCobro is { } error)
         {
@@ -1517,7 +1715,7 @@ else
                 return;
             }
         }
-        await MandarCobroAsync(null);
+        await MandarCobroAsync(null, apartado);
     }
 
     /// <summary>Lo que se fía arriba del límite y falta autorizar.</summary>
@@ -1527,11 +1725,12 @@ else
     {
         _creditoPorAutorizar = null;
         await Cerrar();
-        await MandarCobroAsync(autorizacionId);
+        if (await EnTurnoDeCobroAsync(apartado => MandarCobroAsync(autorizacionId, apartado)) is { } aviso)
+            _avisoDelCobro = aviso;
         StateHasChanged();
     }
 
-    private async Task MandarCobroAsync(Guid? autorizacionCredito)
+    private async Task MandarCobroAsync(Guid? autorizacionCredito, CapturaCodigo.Apartado apartado)
     {
         var cobros = new List<CobroSolicitado>();
         foreach (var otra in _otras)
@@ -1541,19 +1740,48 @@ else
                     : new CobroSolicitado(otra.Forma, monto, otra.Referencia.Trim().Length == 0 ? null : otra.Referencia.Trim()));
         if (EnEfectivo.ACobrarCentavos > 0)
             cobros.Add(new CobroSolicitado(FormaPago.Efectivo, Recibido));
+        // Si se cobró, el ticket nuevo ya dejó el cobro en blanco.
+        if (await CobrarAsync(cobros, autorizacionCredito, apartado) is { } error)
+            Avisar(error);
+        else
+            _enfocar = "#codigo";
+    }
+
+    /// <summary>
+    /// Todo cobro pasa por aquí (el panel, el crédito ya autorizado y la ventana de la pantalla de hoy): aparta la cola de
+    /// escaneos, que espera los que venían y detiene los que llegan mientras se cobra; esos caen en el ticket del siguiente
+    /// cliente. Si mientras esperaba llegó algo al ticket, no cobra y devuelve el aviso: el cajero ve el total nuevo antes
+    /// de cobrarlo. Con un cobro en curso, no hace nada.
+    /// </summary>
+    private async Task<string?> EnTurnoDeCobroAsync(Func<CapturaCodigo.Apartado, Task> cobrar)
+    {
+        if (_cobrando)
+            return null;
         _cobrando = true;
         try
         {
-            // Si se cobró, el ticket nuevo ya dejó el cobro en blanco.
-            if (await CobrarAsync(cobros, autorizacionCredito) is { } error)
-                Avisar(error);
-            else
-                _enfocar = "#codigo";
+            using var apartado = await _captura.ApartarAsync(FotoDelTicket);
+            if (apartado.LlegoAlgo)
+                return $"Llegó lo último que escaneaste: el total ahora es {Formato.Dinero(Actual.Venta.TotalCentavos)}. Revisa lo que te dio y vuelve a cobrar.";
+            await cobrar(apartado);
+            return null;
         }
         finally
         {
             _cobrando = false;
         }
+    }
+
+    /// <summary>Lo que cambia si llega una línea mientras se espera para cobrar: el ticket, su total y lo que lleva.</summary>
+    private (TicketAbierto Ticket, long Total, decimal Articulos, int Lineas) FotoDelTicket() =>
+        (Actual, Actual.Venta.TotalCentavos, Actual.Venta.NumeroDeArticulos, Actual.Venta.Lineas.Count);
+
+    /// <summary>La ventana de cobro de la pantalla de hoy: el mismo turno en la cola que el panel.</summary>
+    private async Task<string?> CobrarDeLaVentanaAsync(IReadOnlyList<CobroSolicitado> cobros, Guid? autorizacionCredito)
+    {
+        string? error = null;
+        var aviso = await EnTurnoDeCobroAsync(async apartado => error = await CobrarAsync(cobros, autorizacionCredito, apartado));
+        return aviso ?? error;
     }
 
     private async Task RevisarConteoAsync()
@@ -1618,13 +1846,19 @@ else
         _referencia = DotNetObjectReference.Create(this);
         await Js.RegistrarTeclasAsync(_referencia);
         await Js.EnfocarAsync("#codigo");
-        if (await Js.LeerAsync(ClavePantalla) == "nueva")
+        // Quien volvió a la de hoy en esta PC la ve en cuanto se lee, sin esperar los permisos (sin conexión, en el
+        // navegador, tardan lo que tarda en fallar): sus teclas ya son las de la de hoy. Los demás ya están en la nueva.
+        if (await Js.LeerAsync(ClavePantalla) == PantallaDeHoy)
         {
-            _pantallaNueva = true;
+            _pantallaNueva = false;
             _enfocar = "#codigo";
+            StateHasChanged();
         }
-        await CargarRapidosAsync();
+        // Primero los permisos: lo de quien entró sale en cuanto llegan, sin esperar a los rápidos ni a lo demás.
         await CargarPermisosAsync();
+        StateHasChanged();
+        await CargarRapidosAsync();
+        await CargarPilotoEleventaAsync();
         await RevisarEfectivoAsync();
         await RevisarConteoAsync();
         StateHasChanged();
@@ -1649,8 +1883,9 @@ else
         {
             var (cantidad, buscado) = (_cantidadBuscada, _textoBuscado);
             CerrarResultados();
-            await _captura.EsperarAsync();
-            await AgregarResultadoAsync(elegido, cantidad, buscado, resultados.Count);
+            // caja.js ya vació el cuadro: el nombre buscado no se queda como la cantidad de lo que sigue (F11, un rápido).
+            _captura.Texto = "";
+            await _captura.EnTurnoAsync(() => AgregarResultadoAsync(elegido, cantidad, buscado, resultados.Count));
             StateHasChanged();
             return;
         }
@@ -1659,6 +1894,36 @@ else
         var escaneo = AgregarCodigoAsync();
         StateHasChanged();
         await escaneo;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// El lector escribió en el cobro («Pagó con», un monto, una referencia o un botón; data-cobro) o en un abono, y caja.js
+    /// lo reconoció por su ritmo: ya quitó del campo lo que tecleó y su Enter no cobró. Un escaneo nunca se toma como
+    /// dinero (docs/propuesta-interfaz.md, «El cuadro de captura»): el código va a la cola de captura como cualquier otro y
+    /// el cursor vuelve al cuadro. La ventana donde estaba (el cobro de la pantalla de hoy, un abono) se cierra, para ver el
+    /// ticket. Si se está cobrando, espera al cobro y cae en el ticket del siguiente cliente.
+    /// </summary>
+    [JSInvokable]
+    public async Task EscaneoEnPago(string codigo)
+    {
+        var cobrando = _cobrando;
+        var enAbono = _ventana is Ventanas.Abono or Ventanas.Clientes;
+        if (!cobrando)
+        {
+            if (_ventana != Ventanas.Ninguna)
+                await Cerrar();
+            _enfocar = "#codigo";
+        }
+        var antes = FotoDelTicket();
+        _captura.Texto = codigo;
+        var escaneo = AgregarCodigoAsync();
+        StateHasChanged();
+        await escaneo;
+        if (!cobrando && !antes.Equals(FotoDelTicket()))
+            Avisar(enAbono
+                ? $"«{codigo}» se leyó en el abono: se agregó al ticket, no se tomó como dinero. El abono, otra vez con Ctrl+B."
+                : $"«{codigo}» se leyó en el cobro: se agregó al ticket, no se tomó como dinero. Cobra cuando esté completo.", error: false);
         StateHasChanged();
     }
 
@@ -1972,13 +2237,12 @@ else
         CerrarResultados();
         VaciarCaptura();
         _enfocar = "#codigo";
-        await _captura.EsperarAsync();
-        await AgregarResultadoAsync(elegido, cantidad, buscado, resultados.Count);
+        await _captura.EnTurnoAsync(() => AgregarResultadoAsync(elegido, cantidad, buscado, resultados.Count));
     }
 
     /// <summary>
     /// Agrega lo elegido y anota qué se eligió con ese texto: la próxima vez, en esta caja, sale primero. Fuera de la cola
-    /// de escaneos, quien llama espera antes a que termine el último (dentro de la cola se esperaría a sí mismo).
+    /// de escaneos, quien llama lo forma en ella (<see cref="CapturaCodigo.EnTurnoAsync"/>); dentro, se llama directo.
     /// </summary>
     private async Task AgregarResultadoAsync(ResultadoBusquedaDto resultado, Cantidad cantidad, string buscado, int resultados)
     {
@@ -2075,18 +2339,17 @@ else
     }
 
     /// <param name="tecla">La tecla, como la nombra caja.js.</param>
-    /// <param name="texto">En la pantalla nueva, lo que había en el cuadro de captura (no está enlazado); si no, null.</param>
+    /// <param name="texto">
+    /// En la pantalla nueva, lo que había en el cuadro de captura (no está enlazado); null si se oprimió en otro lado o es
+    /// un botón de la barra de teclas.
+    /// </param>
     [JSInvokable]
     public async Task Tecla(string tecla, string? texto)
     {
         if (_pantallaNueva && texto is not null)
             _captura.Texto = texto;
-        if (_ventana != Ventanas.Ninguna)
-        {
-            if (tecla == "Escape")
-                await Cerrar();
+        if (_ventana != Ventanas.Ninguna && !await TeclaConVentanaAsync(tecla, desdeLaCaptura: texto is not null))
             return;
-        }
 
         // Con «/» en el cuadro, ↑ ↓ recorren las acciones.
         if (_pantallaNueva && tecla is "ArrowUp" or "ArrowDown" && texto is not null && FiltroDeAcciones(texto) is { } filtro)
@@ -2131,28 +2394,26 @@ else
         _menuUsuario = false;
         _menuEspera = false;
 
-        // Las teclas que actúan sobre el ticket esperan a que termine el último escaneo: F12 no abre el cobro sin la
-        // última línea, ni F6 manda un escaneo al ticket nuevo.
-        if (tecla is "F12" or "F6" or "F5" or "+" or "-" or "Delete" or "F11" || tecla.StartsWith("Alt+", StringComparison.Ordinal))
+        // Las teclas que actúan sobre el ticket esperan a que termine el último escaneo (y el cobro en curso): F6 no manda
+        // un escaneo al ticket nuevo, ni + cambia el que se está cobrando. F12 espera en IrAlCobroAsync: dentro del cobro,
+        // que además dice si llegó algo mientras, o antes de pasar el cursor al cobro.
+        if (tecla is "F6" or "F5" or "+" or "-" or "Delete" or "F11" || tecla.StartsWith("Alt+", StringComparison.Ordinal))
             await _captura.EsperarAsync();
 
         switch (tecla)
         {
             // En la pantalla nueva, lo que no está entre sus permisos no tiene tecla.
-            case "F3" when _pantallaNueva && !Ve(AccionControlada.EditarCatalogo):
-            case "F4" when _pantallaNueva && !VeInventario:
-            case "Insert" or "Ctrl+P" when _pantallaNueva && !Ve(AccionControlada.ArticuloComun):
-            case "F7" when _pantallaNueva && !Ve(AccionControlada.EntradaEfectivo):
-            case "F8" when _pantallaNueva && !Ve(AccionControlada.SalidaEfectivo):
+            case var _ when SinTecla(tecla):
                 Avisar("Eso no está entre lo que puedes hacer: «/» muestra todo lo que sí.");
                 break;
             case "Ctrl+U" when _pantallaNueva: await AlSalir.InvokeAsync(); break;
             case "F10" when _pantallaNueva: Buscar(); break;
             case "F10": await Abrir(Ventanas.Buscar); break;
-            // caja.js ya movió el cursor a «Pagó con» (sin esperar esta vuelta): no cobra todavía.
+            // caja.js ya movió el cursor a «Pagó con» (sin esperar esta vuelta): no cobra todavía, y el cobro espera el
+            // último escaneo al dar Enter.
             case "F12-pago": break;
             case "F12" when _pantallaNueva: await IrAlCobroAsync(); break;
-            case "F12" when Actual.Venta.Lineas.Count > 0: await AbrirCobroAsync(); break;
+            case "F12": await AbrirCobroAsync(); break;
             case "F5" when _pantallaNueva: RetomarPrimero(); break;
             case "F5": CambiarSiguiente(); break;
             case "F6" when _pantallaNueva: PonerEnEspera(); break;
@@ -2187,13 +2448,119 @@ else
                 if (_pantallaNueva)
                 {
                     // Desde «Pagó con», Esc borra lo escrito y regresa al cuadro del código sin cobrar.
-                    _pagoCon = "";
+                    (_pagoCon, _avisoDelCobro) = ("", null);
                     _enfocar = "#codigo";
                 }
                 break;
         }
         StateHasChanged();
     }
+
+    /// <summary>
+    /// Una tecla con una ventana abierta; devuelve si sigue a hacer lo suyo. Esc la cierra. En la pantalla nueva, con un
+    /// panel a la derecha (el ticket a la vista), las teclas de la barra y de «/» siguen funcionando
+    /// (docs/propuesta-interfaz.md, «Los demás paneles»): la del mismo panel lo cierra («F9 o Esc regresan a vender») y,
+    /// si el panel se deja (<see cref="PanelesQueSeDejan"/>), las demás lo cierran y hacen lo suyo, como sin él: abrir
+    /// otro panel, F12 al cobro, F6 a la espera. Un panel con campos espera su Enter o Esc, y con otra tecla lo dice. Antes
+    /// solo respondía Esc. caja.js solo manda las que no escriben en los campos del panel (Esc, las F, las Ctrl de la caja
+    /// e Ins); Supr, las flechas, + y − se quedan en el panel.
+    /// </summary>
+    /// <param name="desdeLaCaptura">Se oprimió en el cuadro de captura de la pantalla nueva: caja.js mandó su texto.</param>
+    private async Task<bool> TeclaConVentanaAsync(string tecla, bool desdeLaCaptura)
+    {
+        if (tecla == "Escape")
+        {
+            // Desde el cuadro de captura, caja.js ya lo vació.
+            if (desdeLaCaptura)
+                _captura.Texto = "";
+            await Cerrar();
+            return false;
+        }
+        // caja.js no manda estas con una ventana abierta: si llegan, perdió la cuenta porque otra parte de la caja le dijo
+        // que ya no había ventana (la franja de la prueba lo hacía al cerrar su guía encima de un panel). Se le vuelve a
+        // decir y la tecla no hace nada: Supr no quita un renglón, + no cambia una cantidad ni Alt+1 agrega un rápido
+        // detrás del panel.
+        if (EsTeclaSinVentana(tecla))
+        {
+            await AvisarVentanaAbiertaAsync();
+            return false;
+        }
+        // Lo que va encima del ticket (los módulos de arriba y el conteo; en la pantalla de hoy, todo) solo se cierra con
+        // Esc: puede tener algo a medio escribir. F1 (la venta, donde ya está) no hace nada.
+        if (!VaEnPanel || tecla == "F1")
+            return false;
+        if (PanelDeLaTecla(tecla) == _ventana)
+        {
+            await Cerrar();
+            return false;
+        }
+        // Una autorización a mitad del cobro, o un panel con campos: espera su Enter o Esc, y lo dice.
+        if (PorQueNoSeDeja is { } espera)
+        {
+            AvisarEnElPanel(espera);
+            return false;
+        }
+        // La tecla de algo que no puede solo lo avisa: el panel se queda.
+        if (SinTecla(tecla))
+        {
+            AvisarEnElPanel("Eso no está entre lo que puedes hacer: «/» muestra todo lo que sí.");
+            return false;
+        }
+        if (tecla == "Ctrl+Q")
+        {
+            // El PDF a cotizar: el selector se abre ya (la tecla se acaba de oprimir) y, al elegir el PDF, el panel cambia al
+            // de cotizar. Si no se elige ninguno, el panel se queda.
+            await Js.ClicAsync("#pdf-cotizar");
+            return false;
+        }
+        if (tecla == "F12")
+        {
+            // Al cobro: el cursor va directo a «Pagó con» (IrAlCobroAsync), sin pasar por el cuadro de captura, donde lo
+            // que se teclee enseguida se tomaría como un código. No estaba en el cobro (el panel lo tapaba): no cobra todavía.
+            await QuitarVentanaAsync();
+            _enPago = false;
+            if (Actual.Venta.Lineas.Count == 0)
+                _enfocar = "#codigo";
+            return true;
+        }
+        await Cerrar();
+        return true;
+    }
+
+    /// <summary>
+    /// Las que caja.js deja en los campos de una ventana abierta (Supr, las flechas, + y −, Alt+1 a Alt+6) y las que solo
+    /// manda sin ventana: F12 que ya movió el cursor a «Pagó con» y las de la lista de familias (→, ←, Tab y su Esc).
+    /// </summary>
+    private static bool EsTeclaSinVentana(string tecla) =>
+        tecla is "Delete" or "ArrowUp" or "ArrowDown" or "ArrowLeft" or "ArrowRight" or "+" or "-" or "Tab" or "Shift+Tab" or "Escape-familia"
+            or "F12-pago"
+        || tecla.StartsWith("Alt+", StringComparison.Ordinal);
+
+    private void AvisarEnElPanel(string aviso)
+    {
+        _avisoDelPanel = aviso;
+        StateHasChanged();
+    }
+
+    /// <summary>El panel que abre la tecla en la pantalla nueva, para que la misma lo cierre; null si no abre uno.</summary>
+    private Ventanas? PanelDeLaTecla(string tecla) => tecla switch
+    {
+        "F9" => Ventanas.Verificador,
+        "F2" => Ventanas.Impresiones,
+        "F7" => Ventanas.Entrada,
+        "F8" => Ventanas.Salida,
+        "Insert" or "Ctrl+P" => Ventanas.Comun,
+        "Ctrl+E" => Ventanas.CambiarPrecio,
+        "Ctrl+D" => Ventanas.Descuento,
+        "Ctrl+L" => Ventanas.ElegirCliente,
+        "Ctrl+B" => Ventanas.Abono,
+        // Con las piezas escritas en el cuadro, F11 las pone en el renglón (MayoreoAsync): ahí no cierra el mayoreo.
+        "F11" when _captura.Texto.Trim().TrimEnd('*').Length == 0 => Ventanas.Mayoreo,
+        _ => null,
+    };
+
+    /// <summary>Un botón de la barra de teclas hace lo mismo que su tecla, también con un panel abierto (el suyo lo cierra).</summary>
+    private Task ComoSuTecla(string tecla) => Tecla(tecla, null);
 
     // ── Captura ─────────────────────────────────────────────────────────────
 
@@ -2283,7 +2650,7 @@ else
     private void Agregar(ProductoVentaDto producto, Guid? presentacionId, Cantidad cantidad)
     {
         // Ya empezó el siguiente cliente: el cambio del anterior deja el panel.
-        _cobrado = null;
+        (_cobrado, _avisoDelCobro) = (null, null);
         try
         {
             var linea = Actual.Venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(presentacionId), cantidad, producto.PreciosModelo());
@@ -2552,35 +2919,24 @@ else
 
     // ── Cobro e impresión ───────────────────────────────────────────────────
 
-    /// <summary>Lo llama la ventana de cobro. Devuelve el error para mostrarlo ahí, o null si se cobró.</summary>
-    private async Task<string?> CobrarAsync(IReadOnlyList<CobroSolicitado> cobros, Guid? autorizacionCredito)
+    /// <summary>
+    /// Cobra el ticket que se atiende. Quien llama ya apartó la cola (<see cref="EnTurnoDeCobroAsync"/>): se suelta en
+    /// cuanto está el ticket del siguiente cliente, antes de imprimir, y lo que se escaneó mientras se cobraba cae ahí. La
+    /// ventana de cobro muestra el error que devuelve; null si se cobró.
+    /// </summary>
+    private async Task<string?> CobrarAsync(IReadOnlyList<CobroSolicitado> cobros, Guid? autorizacionCredito, CapturaCodigo.Apartado apartado)
     {
         var abierto = Actual;
         var venta = abierto.Venta;
+        TicketDto ticket;
         try
         {
             // Con el Id del ticket: si la respuesta se pierde, el siguiente intento (en línea o sin conexión) es la misma venta.
-            var ticket = await Cliente.CobrarAsync(new SolicitudCobro(Caja.Id, Turno.Id, Sesion.UsuarioId, ArmadoSolicitud.Lineas(venta), cobros,
+            ticket = await Cliente.CobrarAsync(new SolicitudCobro(Caja.Id, Turno.Id, Sesion.UsuarioId, ArmadoSolicitud.Lineas(venta), cobros,
                 VentaId: venta.Id, Impresiones: abierto.Impresiones.Count > 0 ? abierto.Impresiones.Select(i => i.Id).ToList() : null,
                 ClienteId: venta.ClienteId, AutorizacionDescuentoId: venta.AutorizacionDescuentoId,
                 AutorizacionBajoCostoId: venta.AutorizacionBajoCostoId, MayoreoDeCliente: venta.MayoreoDeCliente,
                 AutorizacionCreditoId: autorizacionCredito), soloEnLinea: abierto.FiadoSinConfirmar);
-            _tickets.RemoveAt(_actual);
-            // En la pantalla nueva los que esperan se quedan esperando: lo siguiente es un ticket vacío para el siguiente cliente.
-            if (_tickets.Count == 0 || _pantallaNueva)
-                NuevoTicket();
-            else
-                Cambiar(_tickets[^1]);
-            Avisar($"Venta {ticket.FolioImpreso} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: false);
-            _ultimo = ticket;
-            if (_pantallaNueva)
-                await ImprimirCobradoAsync(ticket);
-            else
-                await ImprimirAsync(ticket, abrirCajon: ticket.AbreCajon);
-            await RevisarEfectivoAsync();
-            if (abierto.Impresiones.Count > 0 && _estado is not null)
-                await _estado.ActualizarAsync();
-            return null;
         }
         catch (ErrorCaja ex)
         {
@@ -2595,6 +2951,24 @@ else
             }
             return ex.Message;
         }
+        // Sale el que se cobró, aunque mientras se haya tocado otro (una ficha en espera).
+        _tickets.Remove(abierto);
+        // En la pantalla nueva los que esperan se quedan esperando: lo siguiente es un ticket vacío para el siguiente cliente.
+        if (_tickets.Count == 0 || _pantallaNueva)
+            NuevoTicket();
+        else
+            Cambiar(_tickets[^1]);
+        apartado.Dispose();
+        Avisar($"Venta {ticket.FolioImpreso} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: false);
+        _ultimo = ticket;
+        if (_pantallaNueva)
+            await ImprimirCobradoAsync(ticket);
+        else
+            await ImprimirAsync(ticket, abrirCajon: ticket.AbreCajon);
+        await RevisarEfectivoAsync();
+        if (abierto.Impresiones.Count > 0 && _estado is not null)
+            await _estado.ActualizarAsync();
+        return null;
     }
 
     // ── Al cobrar en la pantalla nueva: el cambio en grande hasta el siguiente cliente ──
@@ -2748,6 +3122,8 @@ else
     /// </summary>
     private async Task AbrirCobroAsync()
     {
+        // La ventana se abre con la última línea: el exacto que trae ya la cuenta.
+        await _captura.EsperarAsync();
         if (Actual.Venta.Lineas.Count == 0 || !await RevisarCostoAsync())
             return;
         await CargarCuentaAsync(Actual);
@@ -2941,6 +3317,12 @@ else
 
     private async Task PdfElegidoAsync(InputFileChangeEventArgs e)
     {
+        // Con un panel que espera su Enter (o una autorización) Ctrl+Q no abre el selector: por si se abrió antes de abrirse el panel.
+        if (PorQueNoSeDeja is { } espera)
+        {
+            AvisarEnElPanel(espera);
+            return;
+        }
         if (_ventana != Ventanas.Ninguna)
             await Cerrar();
         _pdfACotizar = e.File;
@@ -3006,6 +3388,13 @@ else
 
     private EfectivoCajaDto? _efectivo;
 
+    /// <summary>
+    /// El aviso de retiro, si el efectivo llegó al límite. En el piloto con eleventa no sale (se quita al dejarlo): el
+    /// cajón es de las dos y el turno de esta caja no se cierra aquí (su corte se hace en eleventa), así que lo esperado
+    /// suma días y no dice cuánto hay; y un retiro iría a eleventa como salida y movería su corte.
+    /// </summary>
+    private EfectivoCajaDto? Retiro => !_pilotoEleventa && _efectivo is { PideRetiro: true } efectivo ? efectivo : null;
+
     private async Task MovimientoRegistrado(ComprobanteMovimientoDto comprobante)
     {
         var salida = comprobante.Tipo == TipoMovimientoCaja.Salida;
@@ -3030,6 +3419,13 @@ else
     /// <summary>Si el efectivo llegó al límite de la sucursal, aparece el aviso de retiro hasta que se haga.</summary>
     private async Task RevisarEfectivoAsync()
     {
+        // El piloto con eleventa: sin aviso de retiro (Retiro), y no se calcula lo esperado de un turno que suma días.
+        if (_pilotoEleventa)
+        {
+            _efectivo = null;
+            StateHasChanged();
+            return;
+        }
         try
         {
             _efectivo = await Cliente.EfectivoAsync(Turno.Id);
@@ -3046,12 +3442,12 @@ else
     /// La ventana abierta. En la pantalla nueva, lo de la venta va como panel a la derecha (VaEnPanel), sin tapar el ticket;
     /// lo demás (y todo en la pantalla de hoy) va encima.
     /// </summary>
-    private RenderFragment ContenidoDeVentana => @<text>
+    private RenderFragment ContenidoDeVentana => @<CascadingValue Name="@PilotoConEleventa.Cascada" Value="_pilotoEleventa">
     @switch (_ventana)
     {
         case Ventanas.Cobrar:
             <Ventana Titulo="Cobrar" Clase="cobrar" AlCerrar="Cerrar">
-                <CobrarVenta Venta="Actual.Venta" Caja="Caja" Sesion="Sesion" Cliente="Actual.Cliente" Cuenta="Actual.Cuenta" AlCobrar="CobrarAsync" />
+                <CobrarVenta Venta="Actual.Venta" Caja="Caja" Sesion="Sesion" Cliente="Actual.Cliente" Cuenta="Actual.Cuenta" AlCobrar="CobrarDeLaVentanaAsync" />
             </Ventana>
             break;
         case Ventanas.AutorizarCredito when _creditoPorAutorizar is { } exceso && Actual.Cliente is { } fiado:
@@ -3080,7 +3476,8 @@ else
         case Ventanas.Entrada:
         case Ventanas.Salida:
             var tipo = _ventana == Ventanas.Entrada ? TipoMovimientoCaja.Entrada : TipoMovimientoCaja.Salida;
-            <Ventana Titulo="@(tipo == TipoMovimientoCaja.Entrada ? "Entrada de efectivo" : "Salida de efectivo")" AlCerrar="Cerrar">
+            @* @key: de la entrada a la salida (o al revés) empieza en blanco, no con lo que se escribió en la otra. *@
+            <Ventana @key="tipo" Titulo="@(tipo == TipoMovimientoCaja.Entrada ? "Entrada de efectivo" : "Salida de efectivo")" AlCerrar="Cerrar">
                 <MovimientoEfectivo Tipo="tipo" TurnoId="Turno.Id" UsuarioId="Sesion.UsuarioId" AlTerminar="MovimientoRegistrado" />
             </Ventana>
             break;
@@ -3099,7 +3496,8 @@ else
             break;
         case Ventanas.Corte:
             <Ventana Titulo="Corte" Clase="corte" AlCerrar="Cerrar">
-                @if (_tickets.Count(t => t.Venta.Lineas.Count > 0) is var sinCobrar and > 0)
+                @* En el piloto con eleventa, CorteCaja solo dice que el corte se hace en eleventa: aquí no se cierra el turno. *@
+                @if (!_pilotoEleventa && _tickets.Count(t => t.Venta.Lineas.Count > 0) is var sinCobrar and > 0)
                 {
                     <p class="error">Hay @sinCobrar @(sinCobrar == 1 ? "ticket" : "tickets") sin cobrar: si se cierra el turno, se pierden.</p>
                 }
@@ -3198,7 +3596,7 @@ else
             </Ventana>
             break;
     }
-    </text>;
+    </CascadingValue>;
 
     // ── Ventanas y avisos ───────────────────────────────────────────────────
 
@@ -3207,21 +3605,38 @@ else
         _menuUsuario = false;
         _menuEspera = false;
         CerrarAcciones();
+        // Encima de otra (un botón del renglón o una pestaña con un panel abierto): la de antes se deja como al cerrarla.
+        if (_ventana != ventana)
+            DejarVentana();
         _ventana = ventana;
-        await Js.VentanaAbiertaAsync(true);
+        _avisoDelPanel = null;
+        await AvisarVentanaAbiertaAsync();
         StateHasChanged();
     }
 
     private async Task Cerrar()
     {
-        // Si CTRL+L se queda a medio camino (pidiendo la autorización del costo), el ticket regresa a como estaba.
-        if (_ventana == Ventanas.ElegirCliente)
-            _elegirCliente?.Cancelar();
+        await QuitarVentanaAsync();
+        await Js.EnfocarAsync("#codigo");
+    }
+
+    /// <summary>Cierra la ventana sin mover el cursor (<see cref="Cerrar"/> lo regresa al cuadro de captura; F12, al cobro).</summary>
+    private async Task QuitarVentanaAsync()
+    {
+        DejarVentana();
         _ventana = Ventanas.Ninguna;
+        _avisoDelPanel = null;
         _buscarTexto = "";
         await Js.VentanaAbiertaAsync(false);
         StateHasChanged();
-        await Js.EnfocarAsync("#codigo");
+    }
+
+    /// <summary>Lo que la ventana deja a medias al cerrarla o al cambiarla por otra.</summary>
+    private void DejarVentana()
+    {
+        // Si CTRL+L se queda a medio camino (pidiendo la autorización del costo), el ticket regresa a como estaba.
+        if (_ventana == Ventanas.ElegirCliente)
+            _elegirCliente?.Cancelar();
     }
 
     private void Avisar(string mensaje, bool error = true)
@@ -3239,13 +3654,19 @@ else
 
     public async ValueTask DisposeAsync()
     {
+        if (_contingencia is not null)
+            _contingencia.Cambio -= AlCambiarContingencia;
         try
         {
+            // Si se va con una ventana abierta (el corte Z, o «Cambiar de usuario» del menú con un panel), caja.js seguiría
+            // creyendo que está ahí: en la pantalla nueva del que entra después, el cuadro de captura no tomaría los escaneos.
+            if (_ventana != Ventanas.Ninguna)
+                await Js.VentanaAbiertaAsync(false);
             await Js.QuitarTeclasAsync();
         }
-        catch (JSDisconnectedException)
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException)
         {
-            // El navegador ya se cerró.
+            // El navegador ya se cerró, o la página ya no tiene caja.js (se está volviendo a cargar).
         }
         _referencia?.Dispose();
     }

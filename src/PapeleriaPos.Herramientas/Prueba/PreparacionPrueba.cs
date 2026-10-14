@@ -11,15 +11,19 @@ namespace PapeleriaPos.Herramientas.Prueba;
 
 /// <summary>
 /// La base de la prueba con una persona real (docs/plan.md): sobre la papelería ficticia, la caja y los usuarios de
-/// prueba, un chat de Telegram simulado del dueño (sus avisos se ven en la caja), impresiones por cobrar como si
-/// vinieran de la WF-6590, unos clientes registrados (dos con crédito, uno que ya debe y está vencido), y una factura y una
-/// nota de un proveedor con productos de esta base.
+/// prueba, los rápidos al precio que decidió el dueño, un chat de Telegram simulado del dueño (sus avisos se ven en la
+/// caja), impresiones por cobrar como si vinieran de la WF-6590, unos clientes registrados (dos con crédito, uno que ya
+/// debe y está vencido), y una factura y una nota de un proveedor con productos de esta base.
 /// </summary>
 public static class PreparacionPrueba
 {
     public static async Task<List<string>> PrepararAsync(PosDbContext db, string carpetaEjemplos, CancellationToken ct = default)
     {
+        // Si la papelería ficticia se acaba de guardar con este mismo contexto (las pruebas), GuardadoLote dejó apagada la
+        // detección de cambios: sin ella no se guardaría lo que aquí se cambia (los precios, el límite de crédito).
+        db.ChangeTracker.AutoDetectChangesEnabled = true;
         var hecho = await PreparacionCaja.PrepararAsync(db, ct);
+        hecho.AddRange(await PreciosDeLosRapidosAsync(db, ct));
         var ahora = db.Reloj.GetUtcNow().UtcDateTime;
 
         if (!await db.ChatsTelegram.AnyAsync(c => c.ChatId == ChatTelegram.Simulado, ct))
@@ -100,6 +104,42 @@ public static class PreparacionPrueba
 
         hecho.AddRange(await EjemplosProveedor.EscribirAsync(db, carpetaEjemplos, ct));
         return hecho;
+    }
+
+    /// <summary>
+    /// Lo que cobra cada rápido, como lo decidió el dueño (docs/plan.md, entrega 0, 2026-10-10): la copia, $2; la CURP,
+    /// $10, que son sus 10 impresiones a $1.
+    /// </summary>
+    public static readonly (string Rapido, long PrecioCentavos)[] PreciosDeLosRapidos = [("Copia B/N", 200), ("CURP", 1000)];
+
+    /// <summary>
+    /// El precio de un rápido sale de su producto (el de menudeo por la cantidad del rápido), y la papelería ficticia lo
+    /// inventa: en la primera prueba la fila decía «Copia B/N $2.30» y «CURP $27.00». Aquí se le pone al producto el
+    /// precio que da lo decidido, solo en la base de la prueba: el generador y <c>preparar-caja</c> siguen igual.
+    /// </summary>
+    private static async Task<List<string>> PreciosDeLosRapidosAsync(PosDbContext db, CancellationToken ct)
+    {
+        var sucursal = await db.Sucursales.OrderBy(s => s.Clave).FirstAsync(ct);
+        var rapidos = (await db.ConfiguracionesSucursal.FindAsync([sucursal.Id], ct))?.Rapidos ?? [];
+        var puestos = new List<string>();
+        foreach (var (nombre, centavos) in PreciosDeLosRapidos)
+        {
+            if (rapidos.FirstOrDefault(r => r.Nombre == nombre) is not { } rapido)
+                continue;
+            var porUnidad = (long)Math.Round(centavos / rapido.Cantidad, MidpointRounding.AwayFromZero);
+            // El de menudeo (por unidad, desde la cantidad más chica): el general y, si lo hubiera, el de cada sucursal.
+            var menudeo = (await db.Precios.Where(p => p.VarianteId == rapido.VarianteId && p.PresentacionId == null).ToListAsync(ct))
+                .GroupBy(p => p.SucursalId)
+                .Select(g => g.MinBy(p => p.CantidadMinima)!)
+                .ToList();
+            if (menudeo.All(p => p.PrecioCentavos == porUnidad))
+                continue;
+            foreach (var precio in menudeo)
+                precio.PrecioCentavos = porUnidad;
+            puestos.Add($"{nombre} {AlertasTelegram.Dinero(centavos)}");
+        }
+        await db.SaveChangesAsync(ct);
+        return puestos.Count == 0 ? [] : [$"Precios de los rápidos: {string.Join(", ", puestos)}"];
     }
 
     /// <summary>

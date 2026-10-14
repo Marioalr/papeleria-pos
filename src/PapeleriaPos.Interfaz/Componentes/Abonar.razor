@@ -1,7 +1,9 @@
 @* CTRL+B (fase 3, entrega 2): un abono a la cuenta de un cliente, en cualquier caja con su turno; el dinero entra a este
    turno y al corte como ingreso aparte. En efectivo se abona en pesos, o se liquida al peso; con tarjeta o transferencia,
    exacto. Con la caja principal (sin conexión, los abonos esperan). También los abonos de hoy: reimprimir y cancelar
-   (solo los de este turno, con motivo). *@
+   (solo los de este turno, con motivo). Como al cobrar una venta, si el lector escribe en el abono, caja.js manda el
+   código al ticket. En el piloto con eleventa no se reciben abonos: el aviso y los abonos de hoy (reimprimir, y
+   cancelar solo los de efectivo). *@
 @using PapeleriaPos.Nucleo.Clientes
 @inject ClienteCaja Servicio
 @inject ModuloCaja Js
@@ -14,12 +16,19 @@
 }
 else
 {
-    <nav class="pestanas">
-        <button class="pestana @(_deHoy ? "" : "activa")" @onclick="() => _deHoy = false">Abonar</button>
-        <button class="pestana @(_deHoy ? "activa" : "")" @onclick="AbonosDeHoyAsync">Abonos de hoy</button>
-    </nav>
+    @if (SoloLosDeHoy)
+    {
+        <p class="aviso">@PilotoConEleventa.NoSeAbona</p>
+    }
+    else
+    {
+        <nav class="pestanas">
+            <button class="pestana @(_deHoy ? "" : "activa")" @onclick="() => _deHoy = false">Abonar</button>
+            <button class="pestana @(_deHoy ? "activa" : "")" @onclick="AbonosDeHoyAsync">Abonos de hoy</button>
+        </nav>
+    }
 
-    @if (_deHoy)
+    @if (_deHoy || SoloLosDeHoy)
     {
         @if (_hoy is null)
         {
@@ -52,7 +61,7 @@ else
                                 else
                                 {
                                     <button class="boton chico" disabled="@_ocupado" @onclick="() => ReimprimirAsync(abono)">Reimprimir</button>
-                                    @if (a.DeEsteTurno && a.Tipo == TipoAbono.Abono)
+                                    @if (a.DeEsteTurno && a.Tipo == TipoAbono.Abono && (!PilotoEleventa || a.Forma == FormaPago.Efectivo))
                                     {
                                         <button class="boton chico" disabled="@_ocupado" @onclick="() => CancelarAsync(abono, null)">Cancelar</button>
                                     }
@@ -125,23 +134,24 @@ else
                         <option value="@FormaPago.Transferencia">Transferencia</option>
                     </select>
                 </label>
+                @* data-cobro: lo que el lector teclee aquí va al ticket (caja.js), no se abona. *@
                 <label>Abona (vacío: liquida)
-                    <input id="abono-monto" inputmode="decimal" @bind="_monto" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="Liquidar" autocomplete="off" />
+                    <input id="abono-monto" data-cobro inputmode="decimal" @bind="_monto" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="Liquidar" autocomplete="off" />
                 </label>
                 @if (_forma == FormaPago.Efectivo)
                 {
                     <label>Pagó con (efectivo)
-                        <input inputmode="decimal" @bind="_recibido" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off"
+                        <input data-cobro inputmode="decimal" @bind="_recibido" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off"
                                placeholder="@(Calculo is { } exacto ? $"Exacto: {Formato.Dinero(exacto.ACobrarCentavos)}" : "Exacto")" />
                     </label>
                 }
                 else
                 {
-                    <label>Referencia <input @bind="_referencia" @bind:event="oninput" @onkeydown="AlTeclear" maxlength="60" autocomplete="off" /></label>
+                    <label>Referencia <input data-cobro @bind="_referencia" @bind:event="oninput" @onkeydown="AlTeclear" maxlength="60" autocomplete="off" /></label>
                 }
             </div>
             <div class="acciones izquierda">
-                <button class="boton chico" @onclick="Liquidar">Liquidar (@Formato.Dinero(Liquidacion.ACobrarCentavos)@(Liquidacion.RedondeoCentavos != 0 ? $", redondeo {(Liquidacion.RedondeoCentavos > 0 ? "+" : "−")}{Formato.Dinero(Math.Abs(Liquidacion.RedondeoCentavos))}" : ""))</button>
+                <button class="boton chico" data-cobro @onclick="Liquidar">Liquidar (@Formato.Dinero(Liquidacion.ACobrarCentavos)@(Liquidacion.RedondeoCentavos != 0 ? $", redondeo {(Liquidacion.RedondeoCentavos > 0 ? "+" : "−")}{Formato.Dinero(Math.Abs(Liquidacion.RedondeoCentavos))}" : ""))</button>
             </div>
             @if (Calculo is { } calculo)
             {
@@ -162,7 +172,7 @@ else
                 <p class="aviso">@_problema</p>
             }
             <div class="acciones">
-                <button class="boton principal" disabled="@(_ocupado || Calculo is null)" @onclick="AbonarAsync">Abonar (Enter)</button>
+                <button class="boton principal" data-cobro disabled="@(_ocupado || Calculo is null)" @onclick="AbonarAsync">Abonar (Enter)</button>
             </div>
         }
     }
@@ -181,6 +191,15 @@ else
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
     [Parameter, EditorRequired] public TurnoDto Turno { get; set; } = null!;
+
+    /// <summary>
+    /// El piloto con eleventa: no se reciben abonos; de los de hoy, se reimprimen y se cancelan los de efectivo (sale lo
+    /// mismo que entró y el corte de eleventa, que no los tiene, cuadra). Se quita al dejar eleventa.
+    /// </summary>
+    [CascadingParameter(Name = PilotoConEleventa.Cascada)] public bool PilotoEleventa { get; set; }
+
+    /// <summary>En el piloto, solo los abonos de hoy; salvo uno que se mandó y no se sabe si quedó: se puede mandar otra vez.</summary>
+    private bool SoloLosDeHoy => PilotoEleventa && !_sinConfirmar;
 
     /// <summary>El cliente del ticket (o el de la ficha): si viene, se abona a él.</summary>
     [Parameter] public ClienteRegistradoDto? ClienteInicial { get; set; }
@@ -227,7 +246,7 @@ else
     }
 
     private AbonoCalculado Liquidacion => _cuenta is { SaldoCentavos: > 0 } c
-        ? CalculoAbono.Calcular(c.SaldoCentavos, _forma, null, long.MaxValue / 2) with { CambioCentavos = 0 }
+        ? CalculoAbono.Exacto(c.SaldoCentavos, _forma, null)
         : new AbonoCalculado(0, 0, 0, 0, false);
 
     /// <summary>Lo que va a pasar con lo capturado, con la misma regla que el servicio; si no se puede, por qué.</summary>
@@ -246,10 +265,10 @@ else
             }
             try
             {
-                // «Pagó con» vacío: lo exacto.
-                var exacto = CalculoAbono.Calcular(cuenta.SaldoCentavos, _forma, monto, long.MaxValue / 2).ACobrarCentavos;
-                return CalculoAbono.Calcular(cuenta.SaldoCentavos, _forma, monto,
-                    _forma == FormaPago.Efectivo ? Formato.LeerPesos(_recibido) ?? exacto : 0);
+                // «Pagó con» vacío (o tarjeta o transferencia): lo exacto.
+                return _forma == FormaPago.Efectivo && Formato.LeerPesos(_recibido) is { } recibido
+                    ? CalculoAbono.Calcular(cuenta.SaldoCentavos, _forma, monto, recibido)
+                    : CalculoAbono.Exacto(cuenta.SaldoCentavos, _forma, monto);
             }
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
             {
@@ -279,6 +298,12 @@ else
         {
             _error = ex.Codigo == "sin-conexion" ? "Sin conexión con la caja principal: los abonos esperan a que vuelva." : ex.Message;
         }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (SoloLosDeHoy && _hoy is null)
+            await AbonosDeHoyAsync();
     }
 
     /// <summary>Al abrir, o al elegir a quien abona: el cursor va donde sigue escribir.</summary>
@@ -327,6 +352,7 @@ else
     {
         if (_ocupado || _cliente is null || _cuenta is null || Calculo is not { } calculo)
             return;
+        var recibido = calculo.ACobrarCentavos + calculo.CambioCentavos;
         _ocupado = true;
         _error = null;
         _id ??= Ids.Nuevo();
@@ -335,7 +361,7 @@ else
             // Con el saldo que se vio: si cambió mientras tanto (otra caja le fió o le abonó), el servicio no lo guarda.
             long? monto = string.IsNullOrWhiteSpace(_monto) ? null : Formato.LeerPesos(_monto);
             var comprobante = await Servicio.AbonarAsync(new SolicitudAbono(_id.Value, Caja.Id, Turno.Id, Sesion.UsuarioId, _cliente.Id, _forma, monto,
-                _forma == FormaPago.Efectivo ? calculo.ACobrarCentavos + calculo.CambioCentavos : 0,
+                _forma == FormaPago.Efectivo ? recibido : 0,
                 string.IsNullOrWhiteSpace(_referencia) ? null : _referencia.Trim(), _cuenta.SaldoCentavos), soloEnLinea: _sinConfirmar);
             (_id, _sinConfirmar) = (null, false);
             await AlTerminar.InvokeAsync(comprobante);

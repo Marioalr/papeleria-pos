@@ -19,6 +19,22 @@ public sealed class OpcionesEleventa
     /// <summary>Mandar cada venta a eleventa (paso 3). Necesita <see cref="Caja"/> y <see cref="Cajero"/>.</summary>
     public bool Escribir { get; set; }
 
+    /// <summary>
+    /// El piloto: mientras esta caja manda sus ventas a eleventa, solo cobra y devuelve en efectivo (decisión del dueño,
+    /// 2026-10-12; <see cref="SoloEfectivoEnElPiloto"/>). Lo marca <see cref="Escribir"/> y no <see cref="Activo"/>: solo
+    /// leer el catálogo no manda nada a eleventa. Basta la bandera, aunque falte algo de la configuración: una caja del
+    /// piloto mal configurada tampoco cobra con tarjeta. Solo para convivir con eleventa: se quita al dejarlo.
+    /// </summary>
+    public bool SoloEfectivo => Escribir;
+
+    /// <summary>
+    /// El piloto: mientras esta caja manda sus ventas a eleventa, su corte se hace en eleventa (decisión del dueño,
+    /// 2026-10-12; <see cref="CorteEnElPiloto"/>): el servicio no hace el corte Z, el puente no abre ni cierra el turno de
+    /// eleventa (lo abre y lo cierra eleventa) y solo se cancela un ticket del mismo día. Lo marca <see cref="Escribir"/>,
+    /// como <see cref="SoloEfectivo"/>. Solo para convivir con eleventa: se quita al dejarlo.
+    /// </summary>
+    public bool CorteEnEleventa => Escribir;
+
     /// <summary>La caja de eleventa como la que vende esta caja (<c>CAJAS.ID</c>).</summary>
     public int? Caja { get; set; }
 
@@ -48,10 +64,13 @@ public sealed class OpcionesEleventa
 
     public ServidorEleventa? Conexion() => Activo ? Destino() : null;
 
-    /// <summary>A dónde y como qué caja escribir; vacío si no se escribe o falta algo.</summary>
+    /// <summary>
+    /// A dónde y como qué caja escribir; vacío si no se escribe o falta algo. En el piloto (<see cref="CorteEnEleventa"/>)
+    /// el puente no abre el turno de eleventa: lo abre eleventa.
+    /// </summary>
     public (ServidorEleventa Servidor, CajaEnEleventa Caja)? ParaEscribir() =>
         Escribir && Destino() is { } servidor && Caja is { } caja && Cajero is { } cajero
-            ? (servidor, new CajaEnEleventa(caja, cajero, IpLocal()))
+            ? (servidor, new CajaEnEleventa(caja, cajero, IpLocal(), AbreTurno: !CorteEnEleventa))
             : null;
 
     private ServidorEleventa? Destino() =>
@@ -79,7 +98,8 @@ public sealed class OpcionesEleventa
 /// del eleventa de la caja principal, solo leyendo, y pone al día la base de esta caja. Si eleventa no contesta, se
 /// sigue vendiendo con lo último que se leyó y se vuelve a intentar en la siguiente vuelta.
 /// </summary>
-public sealed class LecturaEleventa(IServiceScopeFactory alcances, OpcionesEleventa opciones, TimeProvider reloj, ILogger<LecturaEleventa> log)
+public sealed class LecturaEleventa(
+    IServiceScopeFactory alcances, OpcionesEleventa opciones, EnvioVentasEleventa envios, TimeProvider reloj, ILogger<LecturaEleventa> log)
     : BackgroundService
 {
     private readonly SemaphoreSlim _ahora = new(0, 1);
@@ -132,10 +152,12 @@ public sealed class LecturaEleventa(IServiceScopeFactory alcances, OpcionesEleve
         var inicio = reloj.GetUtcNow().UtcDateTime;
         try
         {
+            // Lo que la bandeja mande mientras se lee pudo entrar a eleventa sin que aquí se sepa todavía.
+            using var mandados = envios.EnCurso.Vigilar();
             var datos = await LectorEleventa.LeerCatalogoAsync(servidor, ct);
             using var alcance = alcances.CreateScope();
             var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
-            var resultado = await SincronizacionEleventa.AplicarAsync(db, datos, reloj.GetUtcNow().UtcDateTime, ct);
+            var resultado = await SincronizacionEleventa.AplicarAsync(db, datos, reloj.GetUtcNow().UtcDateTime, mandados, ct);
             _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), true, resultado.ToString(), null,
                 HoraMexico.ALocal(inicio + espera), ++_lecturas, resultado.Avisos);
             if (resultado.HuboCambios)
@@ -174,10 +196,16 @@ public static class ApiEleventa
             return Results.Accepted();
         });
 
-        // Lo que no entra y ya se arregló a mano en eleventa: se deja por revisar para que lo demás pase.
+        // Lo que no entra: se deja por revisar para que lo demás pase. Hasta anotarlo a mano, la lectura lo sigue descontando.
         api.MapPost("/envios/{id:guid}/revisar", async (Guid id, EnvioVentasEleventa envios, PosDbContext db) =>
             await envios.DejarPorRevisarAsync(db, id)
                 ? Results.Ok(await envios.EstadoAsync(db))
                 : Results.BadRequest(new ErrorDto("Solo se deja por revisar lo que está pendiente.")));
+
+        // Lo que ya quedó en eleventa a mano (pendiente o por revisar): ya no se manda ni se descuenta al leer eleventa.
+        api.MapPost("/envios/{id:guid}/a-mano", async (Guid id, EnvioVentasEleventa envios, PosDbContext db) =>
+            await envios.AnotarAManoAsync(db, id)
+                ? Results.Ok(await envios.EstadoAsync(db))
+                : Results.BadRequest(new ErrorDto("Solo se anota a mano lo que está pendiente o por revisar.")));
     }
 }

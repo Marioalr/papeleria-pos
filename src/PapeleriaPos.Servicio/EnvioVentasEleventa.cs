@@ -34,6 +34,12 @@ public sealed class EnvioVentasEleventa(
     public bool Activo => _destino is not null;
 
     /// <summary>
+    /// Solo del piloto: lo que se está mandando (o se anota a mano) y lo que eleventa rechazó, para que la lectura de
+    /// eleventa no ajuste la existencia de lo que va y sí descuente lo que no entró.
+    /// </summary>
+    public EnviosEnCurso EnCurso { get; } = new();
+
+    /// <summary>
     /// Pone la venta en la bandeja antes de cobrarla: se guarda en la misma transacción que la venta, así no hay venta
     /// cobrada que se quede sin mandar. Sus cancelaciones, devoluciones y el cierre de su turno se encolan solos, y las
     /// entradas y salidas, en <c>RegistroCaja</c> si esta caja manda a eleventa (<see cref="Activo"/>).
@@ -78,8 +84,9 @@ public sealed class EnvioVentasEleventa(
     }
 
     /// <summary>
-    /// Lo que no entra y no se puede arreglar desde aquí (por ejemplo, algo que ya se corrigió a mano en eleventa) se
-    /// deja por revisar, para que lo que sigue en la bandeja pueda pasar.
+    /// Lo que no entra y no se puede arreglar desde aquí se deja por revisar, para que lo que sigue en la bandeja pueda
+    /// pasar. Si ya se corrigió a mano en eleventa, va <see cref="AnotarAManoAsync"/>: mientras quede por revisar, la
+    /// lectura de eleventa lo sigue descontando de la existencia.
     /// </summary>
     public async Task<bool> DejarPorRevisarAsync(PosDbContext db, Guid id)
     {
@@ -87,6 +94,23 @@ public sealed class EnvioVentasEleventa(
             return false;
         envio.Estado = EstadoEnvioEleventa.PorRevisar;
         envio.Error = Recortar($"Se dejó para revisar a mano. {envio.Error}".Trim());
+        await db.SaveChangesAsync();
+        Despertar();
+        return true;
+    }
+
+    /// <summary>
+    /// Lo que ya quedó en eleventa a mano (alguien lo registró allá, o allá ya estaba), pendiente o por revisar: ya no se
+    /// manda, lo que sigue en la bandeja puede pasar, y la lectura de eleventa ya no lo descuenta de la existencia.
+    /// </summary>
+    public async Task<bool> AnotarAManoAsync(PosDbContext db, Guid id)
+    {
+        if (await db.EnviosAEleventa.FindAsync(id) is not { Estado: EstadoEnvioEleventa.Pendiente or EstadoEnvioEleventa.PorRevisar } envio)
+            return false;
+        envio.Estado = EstadoEnvioEleventa.AMano;
+        envio.Error = Recortar($"Se anotó a mano en eleventa. {envio.Error}".Trim());
+        // Antes de guardarlo: una lectura de eleventa a medias no sabe si lo leyó antes o después de que se registrara allá.
+        EnCurso.AnotadoAMano(envio.Id);
         await db.SaveChangesAsync();
         Despertar();
         return true;
@@ -257,6 +281,14 @@ public sealed class EnvioVentasEleventa(
                 if (movimiento.Movimiento is { } paraMover)
                     escribir = async () => envio.IdEleventa = (await EnvioEleventa.MoverEfectivoAsync(servidor, caja, paraMover, ct)).MovimientoId;
                 break;
+            case TipoEnvioEleventa.CierreDeTurno when opciones.CorteEnEleventa:
+                // El piloto: el corte se hace en eleventa y el puente no cierra su turno. Un cierre en la bandeja (de antes
+                // del piloto, o de un corte Z que subió de la contingencia) no se manda: queda por revisar, y lo que sigue
+                // pasa al turno de eleventa, que sigue abierto. Mientras dure el piloto este puente siempre manda en el
+                // piloto (Escribir), así que el caso de abajo no corre; se queda para cuando la caja tome el corte de
+                // eleventa (lo prueba CorteEnElPilotoTests: el corte Z lo sigue encolando fuera del piloto).
+                porRevisar = CorteEnElPiloto.NoSeCierraEleventa;
+                break;
             case TipoEnvioEleventa.CierreDeTurno:
                 var turno = await db.Turnos.AsNoTracking().SingleAsync(t => t.Id == envio.TurnoId, ct);
                 var cerrado = HoraMexico.ALocal(turno.CerradoUtc ?? envio.CreadoUtc);
@@ -279,6 +311,8 @@ public sealed class EnvioVentasEleventa(
         var ahora = reloj.GetUtcNow().UtcDateTime;
         envio.Intentos++;
         envio.UltimoIntentoUtc = ahora;
+        // Hasta que quede anotado aquí lo que pasó, la lectura de eleventa no sabe si ya está allá.
+        using var mandando = EnCurso.Mandando(envio.Id);
         try
         {
             await escribir();
@@ -288,8 +322,12 @@ public sealed class EnvioVentasEleventa(
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             envio.Error = _ultimoError = Recortar(LectorEleventa.Explicar(ex, servidor));
+            // Si no fue la red, eleventa contestó que no y deshizo lo que llevaba: no está allá, y la lectura ya lo puede
+            // descontar. De lo que se cortó por la red (o a medias) no se sabe.
             if (EsDeRed(ex))
                 _sinRedHastaUtc = ahora + SinRedPor;
+            else if (ex is not OperationCanceledException)
+                EnCurso.Rechazado(envio.Id);
             log.LogWarning(ex, "{Tipo} {Id} no entró a eleventa ({Servidor}); se vuelve a intentar.", envio.Tipo, envio.Id, servidor);
         }
         // Aunque se esté apagando el servicio: si ya entró a eleventa, que quede anotado (si no, al volver lo encuentra la marca).

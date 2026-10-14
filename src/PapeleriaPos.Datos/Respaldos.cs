@@ -23,12 +23,21 @@ public static class Respaldos
         {
             origen.Open();
             copia.Open();
+            // También aquí synchronous=FULL: la copia queda en el disco antes de renombrarla (entrega 10).
+            BaseDeDatos.Ajustar(origen);
+            BaseDeDatos.Ajustar(copia);
             origen.BackupDatabase(copia);
         }
         // Se escribe aparte y se renombra: una copia a medias nunca queda con el nombre bueno.
         File.Move(temporal, destino, overwrite: true);
         return destino;
     }
+
+    /// <summary>La copia más reciente (la diaria o la de un corte Z), o nada si no hay.</summary>
+    public static string? Ultima(string carpeta) =>
+        Directory.Exists(carpeta)
+            ? Directory.EnumerateFiles(carpeta, Prefijo + "*.db").OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault()
+            : null;
 
     /// <summary>Si ya está la copia diaria (sin etiqueta) de esa fecha.</summary>
     public static bool HayDelDia(string carpeta, DateOnly fecha) =>

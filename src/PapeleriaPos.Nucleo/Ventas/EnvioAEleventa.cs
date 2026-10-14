@@ -9,6 +9,11 @@ public enum EstadoEnvioEleventa
     PorRevisar,
     /// <summary>Ya no hace falta: la venta se canceló antes de llegar a eleventa (y con ella, lo que dependía de ella).</summary>
     Descartada,
+    /// <summary>
+    /// Alguien ya lo dejó en eleventa a mano (lo registró allá, o allá ya estaba): no se manda, y la lectura de eleventa ya
+    /// no lo descuenta de la existencia.
+    /// </summary>
+    AMano,
 }
 
 public enum TipoEnvioEleventa

@@ -5,9 +5,51 @@
     <title>Caja</title>
     <base href="/" />
     <link rel="stylesheet" href="_content/PapeleriaPos.Interfaz/caja.css" />
+    <style>
+        /* Blazor lo muestra cuando la página ya no responde (un error que AlgoFallo no atrapó). No se ve: lo dice el aviso
+           de arriba de la ventana, uno solo y sin tapar el total ni las teclas (registroCaja, abajo). */
+        #blazor-error-ui { display: none !important; }
+    </style>
+    <script>
+        // Lo que falla en JavaScript, o en un método de .NET que llama caja.js (las teclas y el escáner de la pantalla
+        // nueva), no pasa por AlgoFallo ni cierra la caja: se queda en la página. Aquí se manda al registro de la caja
+        // (RaizCaja.AnotarDeLaPagina); lo de antes de que RaizCaja se conecte espera. Solo se anota: la cajera no ve nada.
+        // Y le dice a la ventana (MainWindow.AlRecibirDeLaPagina) cuando Blazor ya no contesta.
+        window.registroCaja = (() => {
+            let caja = null;
+            const pendientes = [];
+            const anotar = texto => {
+                if (caja)
+                    caja.invokeMethodAsync('AnotarDeLaPagina', String(texto)).catch(() => { });
+                else if (pendientes.length < 20)
+                    pendientes.push(texto);
+            };
+            const aLaVentana = mensaje => window.chrome?.webview?.postMessage(mensaje);
+            window.addEventListener('error', e =>
+                anotar(`${e.message} (${e.filename}:${e.lineno}:${e.colno})${e.error?.stack ? '\n' + e.error.stack : ''}`));
+            window.addEventListener('unhandledrejection', e =>
+                anotar(e.reason?.stack ?? e.reason?.message ?? String(e.reason)));
+            // Cuando Blazor saca su aviso, la página ya no le contesta a nadie: la ventana avisa arriba que hay que volver
+            // a cargar (sin «Seguir»).
+            document.addEventListener('DOMContentLoaded', () => {
+                const aviso = document.getElementById('blazor-error-ui');
+                new MutationObserver(() => {
+                    if (aviso.style.display === 'block')
+                        aLaVentana('caja:sin-respuesta');
+                }).observe(aviso, { attributes: true, attributeFilter: ['style'] });
+            });
+            return {
+                conectar(referencia) {
+                    caja = referencia;
+                    pendientes.splice(0).forEach(anotar);
+                },
+            };
+        })();
+    </script>
 </head>
 <body>
     <div id="app">Cargando…</div>
+    <div id="blazor-error-ui" role="alert"></div>
     <script src="_framework/blazor.webview.js"></script>
 </body>
 </html>

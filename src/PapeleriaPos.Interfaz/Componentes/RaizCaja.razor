@@ -1,0 +1,46 @@
+@* La raíz de la caja en la ventana de Windows: la de siempre (PantallaCaja) dentro de AlgoFallo, para que un error de la
+   pantalla no la cierre. Y lo que falla en JavaScript, o en un método de .NET que llama caja.js (las teclas y el escáner
+   de la pantalla nueva: ese error no pasa por AlgoFallo ni por WPF, se queda en la página), va al mismo registro por
+   registroCaja, en index.html. El navegador del servicio sigue mostrando PantallaCaja directo. *@
+@implements IDisposable
+@inject IJSRuntime Js
+@inject IServiceProvider Servicios
+
+<AlgoFallo>
+    <PantallaCaja />
+</AlgoFallo>
+
+@code {
+    /// <summary>Lo más largo que se anota de un error de la página (trae la pila de .NET y la de JavaScript).</summary>
+    private const int Largo = 8000;
+
+    private DotNetObjectReference<RaizCaja>? _referencia;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!primera)
+            return;
+        // También cada vez que se vuelve a cargar: en el registro se ve cuándo.
+        Servicios.GetService<RegistroDiario>()?.Anotar("Se cargó la pantalla de la caja.");
+        _referencia = DotNetObjectReference.Create(this);
+        try
+        {
+            await Js.InvokeVoidAsync("registroCaja.conectar", _referencia);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException or OperationCanceledException)
+        {
+            // Una página sin registroCaja: solo no se anota lo de JavaScript. Aquí, fuera de AlgoFallo, un error cerraría la página.
+            Servicios.GetService<RegistroDiario>()?.AnotarError("No se conectó el registro de la página", ex);
+        }
+    }
+
+    /// <summary>
+    /// Un error de la tecla o del escáner llega cada vez que se aprietan: el mismo se anota completo una vez y después
+    /// solo cuántas van, para que no llene el registro del día.
+    /// </summary>
+    [JSInvokable]
+    public void AnotarDeLaPagina(string texto) =>
+        Servicios.GetService<RegistroDiario>()?.AnotarSinRepetir("Error en la página", texto.Length > Largo ? texto[..Largo] : texto);
+
+    public void Dispose() => _referencia?.Dispose();
+}

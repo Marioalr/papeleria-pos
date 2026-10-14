@@ -19,12 +19,14 @@ public static partial class ApiCajas
         var api = app.MapGroup("/api").ConErrores();
 
         // Abierto: la caja lo usa para encontrar el servicio en la red y, después, como latido.
-        api.MapGet("/estado", async (PosDbContext db, ModoPrueba prueba) =>
+        // Con el piloto con eleventa: la caja solo ofrece el efectivo, y el corte se hace en eleventa.
+        api.MapGet("/estado", async (PosDbContext db, ModoPrueba prueba, OpcionesEleventa eleventa, RevisionAlArrancar revision) =>
         {
             var versiones = await db.Secuencias.Where(s => s.Nombre == Secuencia.Catalogo || s.Nombre == Secuencia.Credito)
                 .ToDictionaryAsync(s => s.Nombre, s => s.Valor);
             return new EstadoServicioDto("Papelería POS", Version, await db.Sucursales.OrderBy(s => s.Nombre).Select(s => s.Nombre).ToListAsync(),
-                versiones.GetValueOrDefault(Secuencia.Catalogo), prueba.Activo, versiones.GetValueOrDefault(Secuencia.Credito));
+                versiones.GetValueOrDefault(Secuencia.Catalogo), prueba.Activo, versiones.GetValueOrDefault(Secuencia.Credito), eleventa.SoloEfectivo,
+                revision.Aviso);
         });
 
         // Abierto, pero solo contesta con el PIN del dueño: qué sucursales y cajas hay para elegir.

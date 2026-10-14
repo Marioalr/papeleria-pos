@@ -4,9 +4,22 @@
         xmlns:blazor="clr-namespace:Microsoft.AspNetCore.Components.WebView.Wpf;assembly=Microsoft.AspNetCore.Components.WebView.Wpf"
         xmlns:interfaz="clr-namespace:PapeleriaPos.Interfaz.Componentes;assembly=PapeleriaPos.Interfaz"
         Title="Caja" Width="1366" Height="768" WindowState="Maximized">
-    <blazor:BlazorWebView x:Name="Vista" HostPage="wwwroot\index.html">
-        <blazor:BlazorWebView.RootComponents>
-            <blazor:RootComponent Selector="#app" ComponentType="{x:Type interfaz:PantallaCaja}" />
-        </blazor:BlazorWebView.RootComponents>
-    </blazor:BlazorWebView>
+    <DockPanel>
+        <!-- Un error que nadie atrapó ya no cierra la caja: este aviso, arriba y sin tapar el ticket (App.xaml.cs). -->
+        <Border x:Name="Aviso" DockPanel.Dock="Top" Visibility="Collapsed" Background="#FFF4D6" Padding="16,10"
+                BorderBrush="#E0C27A" BorderThickness="0,0,0,1">
+            <DockPanel>
+                <Button x:Name="BotonSeguir" DockPanel.Dock="Right" Content="Seguir" Padding="14,6" Margin="8,0,0,0" FontSize="15"
+                        Click="AlSeguir" />
+                <Button x:Name="BotonVolverACargar" DockPanel.Dock="Right" Content="Volver a cargar" Padding="14,6" Margin="16,0,0,0"
+                        FontSize="15" FontWeight="SemiBold" Click="AlVolverACargar" />
+                <TextBlock x:Name="TextoAviso" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="15" Foreground="#8A5A00" />
+            </DockPanel>
+        </Border>
+        <blazor:BlazorWebView x:Name="Vista" HostPage="wwwroot\index.html">
+            <blazor:BlazorWebView.RootComponents>
+                <blazor:RootComponent Selector="#app" ComponentType="{x:Type interfaz:RaizCaja}" />
+            </blazor:BlazorWebView.RootComponents>
+        </blazor:BlazorWebView>
+    </DockPanel>
 </Window>
