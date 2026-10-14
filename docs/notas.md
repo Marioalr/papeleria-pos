@@ -197,7 +197,7 @@ no-break. La causa **no se conoce** todavía.
       Windows no contesta el ping si no se le permite: al arrancar se anota si la otra caja contesta, y si no, no
       cuenta como caída;
     - con conexiones de 1 s como máximo: si contesta la página del Tenda (puerto 80) y, desde la caja 2, los puertos
-      3050 y 3309 de la caja principal (eleventa);
+      3050 (el Firebird de eleventa) y 3309 de la caja principal;
     - consultas rápidas de DNS (Resolve-DnsName -QuickTimeout) al Tenda para un nombre suyo (tendawifi.com) y uno de
       internet (si no contesta ni el suyo, está trabado), y cuánto tardan en resolverse el nombre de la caja principal
       y los de las impresoras que usen las colas o eleventa;
@@ -231,8 +231,10 @@ no-break. La causa **no se conoce** todavía.
     después, y solo si el primer fin de semana muestra que choca con la del módem;
   - todos los equipos de la tienda en el switch que ya hay, no en los puertos del Tenda (causa 3); si al switch le
     faltan puertos, lo que no quepa se queda en el Tenda;
-  - impresoras y eleventa configuradas por IP, sin WSD ni nombres; en el firewall de Windows, el ping y los puertos
-    3050 y 3309 (los de eleventa) permitidos en todos los perfiles de red, solo desde la red local (causa 3);
+  - impresoras y eleventa configuradas por IP, sin WSD ni nombres; en el firewall de Windows, el ping y los puertos 3050
+    y 3309 permitidos en todos los perfiles de red, solo desde la red local (causa 3). Los dos los pide
+    [eleventa](https://eleventa.com/aprender/conexion-multicaja) para que se comuniquen sus cajas; el POS solo usa el
+    3050 (el Firebird);
   - la caja 2 por cable si ya hay uno que llegue. Si no, sigue por Wi-Fi: con eleventa, no puede vender mientras el
     router esté trabado; con el POS, pasa a contingencia y sigue vendiendo. Como la caja va por el Wi-Fi del Tenda,
     aplica la regla de que las cajas no compartan red con el público ([seguridad](#seguridad));
