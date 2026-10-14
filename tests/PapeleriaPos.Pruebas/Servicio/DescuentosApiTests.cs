@@ -34,8 +34,7 @@ public class DescuentosApiTests(ServicioDePrueba servicio) : IClassFixture<Servi
 
     private static SolicitudCobro Cobro(CajaDto caja, TurnoDto turno, SesionDto cajero, LineaSolicitada linea, Guid? cliente = null, Guid? autorizacion = null,
         Guid? bajoCosto = null) =>
-        // Un billete de $1,000 alcanza para uno o dos cuadernos (más de $2,000 de cambio no se cobra).
-        new(caja.Id, turno.Id, cajero.UsuarioId, [linea], [new CobroSolicitado(FormaPago.Efectivo, 100_000)], Guid.NewGuid(),
+        new(caja.Id, turno.Id, cajero.UsuarioId, [linea], [new CobroSolicitado(FormaPago.Efectivo, 1_000_000)], Guid.NewGuid(),
             ClienteId: cliente, AutorizacionDescuentoId: autorizacion, AutorizacionBajoCostoId: bajoCosto);
 
     private List<Bitacora> Bitacora(Guid ventaId)

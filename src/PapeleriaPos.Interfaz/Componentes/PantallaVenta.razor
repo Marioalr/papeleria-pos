@@ -605,18 +605,6 @@
                                 {
                                     <div class="vn-vivo falta"><span>«@_pagoCon» no es una cantidad</span></div>
                                 }
-                                else if (Recibido >= aCobrar && RevisionDelPago == RevisionDelCambio.NoEsDinero)
-                                {
-                                    <div class="vn-vivo falta"><span>No es dinero: el cambio pasaría de @Formato.Dinero(TopeDeCambio.MaximoCentavos)</span></div>
-                                }
-                                else if (Recibido >= aCobrar && RevisionDelPago == RevisionDelCambio.PorConfirmar)
-                                {
-                                    @* Un cambio grande se enseña antes de cobrarlo: el primer Enter lo marca y el segundo cobra. *@
-                                    <div class="vn-vivo revisar">
-                                        <span>@(_cambioEnsenado == (aCobrar, Recibido) ? $"¿Te dio {Formato.Dinero(Recibido)}? Enter otra vez cobra" : $"Cambio grande: ¿te dio {Formato.Dinero(Recibido)}?")</span>
-                                        <strong>@Formato.Dinero(Recibido - aCobrar)</strong>
-                                    </div>
-                                }
                                 else if (Recibido >= aCobrar)
                                 {
                                     <div class="vn-vivo"><span>Cambio</span><strong>@Formato.Dinero(Recibido - aCobrar)</strong></div>
@@ -1379,12 +1367,6 @@ else
 
     private long Recibido => PagoConCentavos ?? 0;
 
-    /// <summary>Lo que dice el cambio de lo que dio: un cambio grande se confirma, y lo que no es dinero no se cobra.</summary>
-    private RevisionDelCambio RevisionDelPago => TopeDeCambio.Revisar(EnEfectivo.ACobrarCentavos, Recibido);
-
-    /// <summary>El cambio grande que ya se enseñó (lo que se cobraba y lo que dio): el siguiente Enter con lo mismo cobra.</summary>
-    private (long ACobrar, long Recibido)? _cambioEnsenado;
-
     /// <summary>Lo que el cobro tiene que decir en el panel, donde está el cajero (lo de la izquierda se apaga al cobrar).</summary>
     private string? _avisoDelCobro;
 
@@ -1400,7 +1382,6 @@ else
         _pagoCon = "";
         _otras.Clear();
         _enPago = false;
-        _cambioEnsenado = null;
         _avisoDelCobro = null;
     }
 
@@ -1545,9 +1526,7 @@ else
                 return null;
             if (PagoConCentavos is null)
                 return $"«{_pagoCon}» no es una cantidad.";
-            if (Recibido < aCobrar)
-                return $"Faltan {Formato.Dinero(aCobrar - Recibido)}.";
-            return RevisionDelPago == RevisionDelCambio.NoEsDinero ? TopeDeCambio.NoEsDinero(Recibido) : null;
+            return Recibido < aCobrar ? $"Faltan {Formato.Dinero(aCobrar - Recibido)}." : null;
         }
     }
 
@@ -1564,8 +1543,6 @@ else
                 return "Cobrar";
             if (recibido < aCobrar)
                 return "Falta dinero";
-            if (RevisionDelPago == RevisionDelCambio.NoEsDinero)
-                return "No es dinero";
             return _pagoCon.Trim().Length == 0 ? $"Cobrar exacto {Formato.Dinero(aCobrar + Otros)}" : $"Cobrar · cambio {Formato.Dinero(recibido - aCobrar)}";
         }
     }
@@ -1616,14 +1593,6 @@ else
         if (ErrorDelCobro is { } error)
         {
             Avisar(error);
-            return;
-        }
-        // Un cambio grande (desde $500) se enseña antes de cobrarlo: el siguiente Enter con lo mismo cobra.
-        var aCobrar = EnEfectivo.ACobrarCentavos;
-        if (aCobrar > 0 && RevisionDelPago == RevisionDelCambio.PorConfirmar && _cambioEnsenado != (aCobrar, Recibido))
-        {
-            _cambioEnsenado = (aCobrar, Recibido);
-            _enfocar = "#pago-nuevo";
             return;
         }
         if (!await RevisarCostoAsync())
@@ -2382,7 +2351,7 @@ else
                 if (_pantallaNueva)
                 {
                     // Desde «Pagó con», Esc borra lo escrito y regresa al cuadro del código sin cobrar.
-                    (_pagoCon, _cambioEnsenado, _avisoDelCobro) = ("", null, null);
+                    (_pagoCon, _avisoDelCobro) = ("", null);
                     _enfocar = "#codigo";
                 }
                 break;
