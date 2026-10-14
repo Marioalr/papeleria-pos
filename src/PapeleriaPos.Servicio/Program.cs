@@ -28,9 +28,19 @@ builder.Services.AddDbContext<PosDbContext>(o => o.UseSqlite(cadena));
 builder.Services.AddSingleton<CatalogoEnMemoria>();
 builder.Services.Configure<OpcionesTicket>(builder.Configuration.GetSection("Ticket"));
 
+// La base contra apagones (entrega 10): si la vez anterior no se detuvo bien, se revisa la base antes de seguir. Si
+// salió dañada, se avisa (también directo por Telegram si ni se puede migrar) y no se hacen respaldos.
+builder.Services.TryAddSingleton<IRevisionRapida, RevisionRapidaSqlite>();
+builder.Services.AddSingleton(proveedor => new RevisionAlArrancar(cadena, RutasServicio.CarpetaRespaldos(builder.Configuration, cadena),
+    proveedor.GetRequiredService<IRevisionRapida>(), proveedor.GetRequiredService<ILogger<RevisionAlArrancar>>(),
+    builder.Configuration.GetValue("Telegram:Activo", true) ? proveedor.GetRequiredService<ITelegram>() : null));
 var respaldos = builder.Configuration.GetValue("Respaldos:Activo", true);
 builder.Services.AddSingleton(proveedor => new ServicioRespaldos(cadena, RutasServicio.CarpetaRespaldos(builder.Configuration, cadena),
-    builder.Configuration.GetValue("Respaldos:Dias", 30), proveedor.GetRequiredService<ILogger<ServicioRespaldos>>()) { Activo = respaldos });
+    builder.Configuration.GetValue("Respaldos:Dias", 30), proveedor.GetRequiredService<ILogger<ServicioRespaldos>>())
+    {
+        Activo = respaldos,
+        Revision = proveedor.GetRequiredService<RevisionAlArrancar>(),
+    });
 if (respaldos)
     builder.Services.AddHostedService<RespaldoDiario>();
 if (builder.Configuration.GetValue("Descubrimiento:Activo", true))
@@ -73,8 +83,15 @@ if (builder.Configuration.GetValue("Caja:ActualizacionPrueba", false))
 
 var app = builder.Build();
 
+// Antes de migrar, la revisión si se apagó de golpe; al detenerse bien (también al apagar Windows), se quita la marca.
+var revision = app.Services.GetRequiredService<RevisionAlArrancar>();
+revision.Revisar();
+app.Lifetime.ApplicationStopped.Register(revision.Detenido);
+// La caja de la prueba arranca este servicio y, al cerrarse, le cierra la entrada: se detiene bien y quita la marca.
+if (builder.Configuration.GetValue("Prueba:DetenerAlCerrarEntrada", false))
+    ModoPrueba.DetenerAlCerrarEntrada(Console.OpenStandardInput(), app.Lifetime.StopApplication);
 using (var alcance = app.Services.CreateScope())
-    await BaseDeDatos.PrepararAsync(alcance.ServiceProvider.GetRequiredService<PosDbContext>());
+    await revision.PrepararAsync(alcance.ServiceProvider.GetRequiredService<PosDbContext>());
 
 app.UseAntiforgery();
 app.UsarLlavesDeCaja();

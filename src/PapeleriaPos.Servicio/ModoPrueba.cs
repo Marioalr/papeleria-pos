@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo.Contratos;
 
 namespace PapeleriaPos.Servicio;
@@ -43,6 +44,7 @@ public sealed class ModoPrueba(bool activo, string? baseInicial, string cadenaCo
         using var destino = new SqliteConnection(cadenaConexion);
         origen.Open();
         destino.Open();
+        BaseDeDatos.Ajustar(destino);
         origen.BackupDatabase(destino);
     }
 
@@ -70,6 +72,36 @@ public sealed class ModoPrueba(bool activo, string? baseInicial, string cadenaCo
         var ruta = Path.Combine(carpeta, $"Respuestas de la prueba {DateTime.Now:yyyy-MM-dd HH.mm}.md");
         File.WriteAllText(ruta, texto);
         return ruta;
+    }
+
+    /// <summary>
+    /// La caja de la prueba arranca este servicio (con <c>Prueba:DetenerAlCerrarEntrada</c>) y le conecta la entrada. Al
+    /// cerrarse la caja, aunque sea a la fuerza, la entrada se cierra y el servicio se detiene bien: quita la marca de la
+    /// base contra apagones y, al volver a abrir la caja, no parece que se fue la luz. Devuelve el hilo que espera.
+    /// </summary>
+    public static Thread DetenerAlCerrarEntrada(Stream entrada, Action detener)
+    {
+        var hilo = new Thread(() =>
+        {
+            try
+            {
+                var bufer = new byte[256];
+                while (entrada.Read(bufer) > 0)
+                {
+                }
+            }
+            catch (IOException)
+            {
+                // La caja se cerró de golpe: es lo mismo que cerrar la entrada.
+            }
+            finally
+            {
+                entrada.Dispose();
+            }
+            detener();
+        }) { IsBackground = true, Name = "Detener al cerrar la caja de la prueba" };
+        hilo.Start();
+        return hilo;
     }
 
     private static RespuestasPruebaDto Vacias() => new(null, new Dictionary<string, RespuestaTareaDto>(), null);

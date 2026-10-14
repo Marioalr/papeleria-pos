@@ -129,6 +129,21 @@ public sealed class Contingencia
 
     /// <summary>Trabajos de impresión medidos en esta PC que todavía no llegan a la caja principal.</summary>
     public int ImpresionesPorSubir { get; private set; }
+
+    /// <summary>
+    /// La base del servicio no pasó la revisión al arrancar después de un apagón (entrega 10): la franja lo dice hasta
+    /// que se restaure el respaldo. Vacío si está bien.
+    /// </summary>
+    public string? AvisoBase { get; private set; }
+
+    /// <summary>
+    /// La base local de esta caja no quedó con los ajustes contra apagones al abrirla (entrega 10): la franja lo dice para
+    /// que se avise al dueño. Vacío si está bien.
+    /// </summary>
+    public string? AvisoBaseLocal => _almacen.ProblemaDeAjustes is { } problema
+        ? $"La base de esta caja no quedó lista contra apagones ({problema.TrimEnd('.')}): avisa al dueño."
+        : null;
+
     public PaqueteContingenciaDto? Paquete => _copia?.Paquete;
 
     /// <summary>Los últimos saldos del crédito que mandó la caja principal (sin ellos, no se fía ni se abona sin conexión).</summary>
@@ -219,6 +234,11 @@ public sealed class Contingencia
         }
         Fijar(responde: true);
         RecordarPilotoEleventa(estado?.PilotoEleventa == true);
+        if (estado?.AvisoBase != AvisoBase)
+        {
+            AvisoBase = estado?.AvisoBase;
+            Cambio?.Invoke();
+        }
         // Sin alta (la caja de la prueba): es la primera caja de la sucursal, la misma que toma la pantalla.
         if (_conexion.CajaId is null)
         {

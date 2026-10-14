@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Clientes;
 
 namespace PapeleriaPos.Interfaz;
@@ -68,6 +69,24 @@ public sealed class AlmacenLocal
             if (Convert.ToInt32(columnas.ExecuteScalar()) == 0)
                 Ejecutar(conexion, null, $"ALTER TABLE Diario ADD COLUMN {columna} INTEGER NOT NULL DEFAULT 0");
         }
+        // Se lee de vuelta al abrir la caja: si no quedó en FULL, una venta guardada aquí podría perderse en un apagón.
+        var (sincronizacion, esperaMs) = Ajustes();
+        ProblemaDeAjustes = AjustesContraApagones.Problema(sincronizacion, esperaMs);
+    }
+
+    /// <summary>
+    /// Si al abrir la caja una conexión nueva no quedó con los ajustes contra apagones (entrega 10); nada si está bien. La
+    /// franja de la caja lo muestra (<see cref="Contingencia.AvisoBaseLocal"/>): en la ventana de Windows no hay registro.
+    /// </summary>
+    public string? ProblemaDeAjustes { get; }
+
+    /// <summary>Los ajustes con que queda una conexión nueva: <c>synchronous</c> (2 es FULL) y <c>busy_timeout</c> en milisegundos.</summary>
+    public (int Sincronizacion, int EsperaMs) Ajustes()
+    {
+        using var conexion = Abrir();
+        using var sincronizacion = Comando(conexion, null, "PRAGMA synchronous");
+        using var espera = Comando(conexion, null, "PRAGMA busy_timeout");
+        return (Convert.ToInt32(sincronizacion.ExecuteScalar()), Convert.ToInt32(espera.ExecuteScalar()));
     }
 
     public T? Leer<T>(string clave)
@@ -180,11 +199,25 @@ public sealed class AlmacenLocal
         return Convert.ToInt32(comando.ExecuteScalar()) > 0;
     }
 
+    /// <summary>
+    /// Cada conexión, con los ajustes contra apagones de la base del servicio (<see cref="AjustesContraApagones"/>):
+    /// <c>synchronous=FULL</c>, porque aquí también se guardan ventas y no hay no-break, y <c>busy_timeout</c>, para que la
+    /// venta y la sincronización a la vez esperen milisegundos y no 150 ms (entrega 10).
+    /// </summary>
     private SqliteConnection Abrir()
     {
         var conexion = new SqliteConnection(_cadena);
-        conexion.Open();
-        return conexion;
+        try
+        {
+            conexion.Open();
+            Ejecutar(conexion, null, AjustesContraApagones.Pragmas);
+            return conexion;
+        }
+        catch
+        {
+            conexion.Dispose();
+            throw;
+        }
     }
 
     internal static SqliteCommand Comando(SqliteConnection conexion, SqliteTransaction? transaccion, string sql, params (string Nombre, object? Valor)[] parametros)

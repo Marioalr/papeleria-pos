@@ -248,9 +248,13 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// El piloto con eleventa: el servicio manda sus ventas a eleventa (<c>Eleventa:Escribir</c>) y la caja solo cobra y
 /// devuelve en efectivo (2026-10-12). Solo para convivir con eleventa: se quita al dejarlo.
 /// </param>
+/// <param name="AvisoBase">
+/// La base contra apagones (entrega 10): el servicio se apagó de golpe y la base no pasó la revisión al arrancar. La caja
+/// lo muestra en la franja hasta que se restaure el respaldo. Vacío si todo está bien.
+/// </param>
 public sealed record EstadoServicioDto(
     string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false, long VersionCredito = 0,
-    bool PilotoEleventa = false);
+    bool PilotoEleventa = false, string? AvisoBase = null);
 
 /// <summary>Usuario y PIN de quien autoriza (el dueño para dar de alta o quitar cajas).</summary>
 public sealed record SolicitudCredenciales(string Usuario, string Pin);

@@ -56,6 +56,12 @@ public enum TipoAlerta
 
     /// <summary>Una compra a crédito (o lo que debía de la libreta) pasó su plazo sin pagarse: una vez por cargo, en horario.</summary>
     CreditoVencido,
+
+    /// <summary>
+    /// El servicio se apagó de golpe y, al volver, la base no pasó la revisión rápida (entrega 10): hay que usar el respaldo.
+    /// Siempre se avisa, a cualquier hora: no se puede apagar.
+    /// </summary>
+    BaseDanada,
 }
 
 /// <summary>Un chat de Telegram vinculado a un usuario (solo el dueño): recibe alertas y contesta autorizaciones.</summary>
