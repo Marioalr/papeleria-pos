@@ -490,7 +490,7 @@
                         <Ico Nombre="escaner" />
                         <div><span>Listo para el siguiente cliente: lo que escanees empieza su ticket. El cambio se queda aquí hasta entonces.</span></div>
                     </div>
-                    @if (_efectivo is { PideRetiro: true } efectivoC)
+                    @if (Retiro is { } efectivoC)
                     {
                         <div class="vn-alerta">
                             <Ico Nombre="efectivo" />
@@ -632,7 +632,7 @@
                                     @onfocus="() => _enPago = true" @onblur="() => _enPago = false">@EtiquetaDeCobrar</button>
                         }
                     </div>
-                    @if (_efectivo is { PideRetiro: true } efectivoN)
+                    @if (Retiro is { } efectivoN)
                     {
                         <div class="vn-alerta">
                             <Ico Nombre="efectivo" />
@@ -819,7 +819,7 @@ else
         }
     </div>
 
-    @if (_efectivo is { PideRetiro: true } efectivo)
+    @if (Retiro is { } efectivo)
     {
         <div class="mensaje retiro">Hay @Formato.Dinero(efectivo.EsperadoCentavos) en efectivo y el límite es @Formato.Dinero(efectivo.LimiteCentavos ?? 0): haz un retiro con F8.</div>
     }
@@ -1021,14 +1021,14 @@ else
         }
     }
 
-    // ── El piloto con eleventa: solo efectivo (se quita al dejar eleventa) ──
+    // ── El piloto con eleventa: solo efectivo y el corte allá (se quita al dejar eleventa) ──
 
     /// <summary>
-    /// El servicio manda las ventas a eleventa: solo se cobra y se devuelve en efectivo (decisión del dueño, 2026-10-12).
-    /// Las ventanas lo reciben en cascada (<see cref="PilotoConEleventa.Cascada"/>). Cambia con la configuración del
-    /// servicio: se pregunta al entrar y, en la ventana de Windows, la contingencia lo vuelve a saber en cada latido, así
-    /// que si el servicio se reinicia con otra configuración la pantalla cambia sin salir de ella. En el navegador no hay
-    /// contingencia, pero al reiniciarse el servicio la pantalla se vuelve a cargar.
+    /// El servicio manda las ventas a eleventa: solo se cobra y se devuelve en efectivo, y el corte se hace en eleventa
+    /// (decisión del dueño, 2026-10-12). Las ventanas lo reciben en cascada (<see cref="PilotoConEleventa.Cascada"/>).
+    /// Cambia con la configuración del servicio: se pregunta al entrar y, en la ventana de Windows, la contingencia lo
+    /// vuelve a saber en cada latido, así que si el servicio se reinicia con otra configuración la pantalla cambia sin
+    /// salir de ella. En el navegador no hay contingencia, pero al reiniciarse el servicio la pantalla se vuelve a cargar.
     /// </summary>
     private bool _pilotoEleventa;
 
@@ -3179,6 +3179,13 @@ else
 
     private EfectivoCajaDto? _efectivo;
 
+    /// <summary>
+    /// El aviso de retiro, si el efectivo llegó al límite. En el piloto con eleventa no sale (se quita al dejarlo): el
+    /// cajón es de las dos y el turno de esta caja no se cierra aquí (su corte se hace en eleventa), así que lo esperado
+    /// suma días y no dice cuánto hay; y un retiro iría a eleventa como salida y movería su corte.
+    /// </summary>
+    private EfectivoCajaDto? Retiro => !_pilotoEleventa && _efectivo is { PideRetiro: true } efectivo ? efectivo : null;
+
     private async Task MovimientoRegistrado(ComprobanteMovimientoDto comprobante)
     {
         var salida = comprobante.Tipo == TipoMovimientoCaja.Salida;
@@ -3203,6 +3210,13 @@ else
     /// <summary>Si el efectivo llegó al límite de la sucursal, aparece el aviso de retiro hasta que se haga.</summary>
     private async Task RevisarEfectivoAsync()
     {
+        // El piloto con eleventa: sin aviso de retiro (Retiro), y no se calcula lo esperado de un turno que suma días.
+        if (_pilotoEleventa)
+        {
+            _efectivo = null;
+            StateHasChanged();
+            return;
+        }
         try
         {
             _efectivo = await Cliente.EfectivoAsync(Turno.Id);
@@ -3272,7 +3286,8 @@ else
             break;
         case Ventanas.Corte:
             <Ventana Titulo="Corte" Clase="corte" AlCerrar="Cerrar">
-                @if (_tickets.Count(t => t.Venta.Lineas.Count > 0) is var sinCobrar and > 0)
+                @* En el piloto con eleventa, CorteCaja solo dice que el corte se hace en eleventa: aquí no se cierra el turno. *@
+                @if (!_pilotoEleventa && _tickets.Count(t => t.Venta.Lineas.Count > 0) is var sinCobrar and > 0)
                 {
                     <p class="error">Hay @sinCobrar @(sinCobrar == 1 ? "ticket" : "tickets") sin cobrar: si se cierra el turno, se pierden.</p>
                 }

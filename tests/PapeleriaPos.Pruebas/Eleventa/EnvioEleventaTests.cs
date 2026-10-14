@@ -115,6 +115,41 @@ public class EnvioEleventaTests
     }
 
     [FactConFirebird]
+    public async Task En_el_piloto_no_abre_el_turno_espera_a_que_lo_abra_eleventa_y_entra_al_suyo()
+    {
+        // El piloto (CorteEnElPiloto): el turno lo abre y lo cierra eleventa. El de la caja nueva (Turno: 9 de marzo, $500)
+        // no se cierra cada día; si el puente abriera con él, eleventa tendría los del primer día del piloto.
+        var piloto = Caja with { AbreTurno = false };
+        await using var e = await TiendaAsync();
+        var manana = new DateTime(2026, 3, 12, 9, 0, 0);
+        var cuaderno = new ArticuloParaEleventa(10, "Cuaderno", 1, 30);
+
+        // Antes de que abran la caja en eleventa: no escribe nada y la venta espera en la bandeja.
+        var sinTurno = await Assert.ThrowsAsync<InvalidOperationException>(() => EnvioEleventa.MandarAsync(e.Conexion, piloto, Venta(manana, cuaderno)));
+        Assert.Equal(CorteEnElPiloto.AbreLaCajaEnEleventa, sinTurno.Message);
+        Assert.Equal((0, 0), (Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM TURNOS")),
+            Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE CAJA_ID = 4"))));
+        Assert.Equal("10.0.0.19", (string)(await e.ValorAsync("SELECT ULTIMA_IP FROM CAJAS WHERE ID = 4"))!);
+
+        // Eleventa abre la caja con su hora y su fondo: la venta entra a ese turno, que no cambia.
+        var apertura = new DateTime(2026, 3, 12, 8, 30, 0);
+        var turno = await e.AbrirCajaAsync(4, 7, apertura, fondo: 300);
+        var r = await EnvioEleventa.MandarAsync(e.Conexion, piloto, Venta(manana, cuaderno));
+        var t = (await e.FilasAsync("SELECT * FROM TURNOS")).Single();
+        Assert.Equal((turno, apertura, 300m, 30m), (Convert.ToInt32(t["ID"]), (DateTime)t["INICIO_EN"]!, (decimal)t["DINERO_INICIAL"]!,
+            (decimal)t["ACUMULADO_VENTAS"]!));
+        Assert.Equal(turno, Convert.ToInt32(await e.ValorAsync("SELECT TURNO_ID FROM VENTATICKETS WHERE ID = @id", ("id", r.TicketId))));
+
+        // Después del corte en eleventa, lo que sigue (también una salida) espera otra vez a que la abran.
+        await e.CortarAsync(turno, new DateTime(2026, 3, 12, 20, 0, 0));
+        var salida = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            EnvioEleventa.MoverEfectivoAsync(e.Conexion, piloto, Movimiento(false, 50, "Garrafón de agua", new DateTime(2026, 3, 12, 20, 30, 0))));
+        Assert.Equal(CorteEnElPiloto.AbreLaCajaEnEleventa, salida.Message);
+        Assert.Equal(1, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM TURNOS")));
+        Assert.Equal(0, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM CORTE_MOVIMIENTOS")));
+    }
+
+    [FactConFirebird]
     public async Task Mandarla_otra_vez_no_la_duplica()
     {
         await using var e = await TiendaAsync();

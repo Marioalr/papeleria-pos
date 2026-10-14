@@ -19,7 +19,7 @@ public static partial class ApiCajas
         var api = app.MapGroup("/api").ConErrores();
 
         // Abierto: la caja lo usa para encontrar el servicio en la red y, después, como latido.
-        // Con el piloto con eleventa: la caja solo ofrece el efectivo.
+        // Con el piloto con eleventa: la caja solo ofrece el efectivo, y el corte se hace en eleventa.
         api.MapGet("/estado", async (PosDbContext db, ModoPrueba prueba, OpcionesEleventa eleventa, RevisionAlArrancar revision) =>
         {
             var versiones = await db.Secuencias.Where(s => s.Nombre == Secuencia.Catalogo || s.Nombre == Secuencia.Credito)

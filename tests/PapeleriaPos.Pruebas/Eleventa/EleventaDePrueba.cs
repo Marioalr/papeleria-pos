@@ -82,6 +82,50 @@ public sealed class EleventaDePrueba : IAsyncDisposable
         await EjecutarAsync("INSERT INTO INVENTARIO_BALANCES (PRODUCTO_ID, CANTIDAD_ACTUAL, ALMACEN_ID) VALUES (@id, @c, 1)", ("id", id), ("c", existencia));
     }
 
+    /// <summary>
+    /// Eleventa abre la caja (docs/migracion-eleventa.md, «Al abrir la caja»): la hora en <c>CAJAS</c>, el renglón del día
+    /// en ceros si no existe, el turno con su fondo y su primer ticket abierto. En el piloto el turno lo abre eleventa y la
+    /// caja nueva escribe en él (CorteEnElPiloto). Regresa el <c>TURNOS.ID</c>.
+    /// </summary>
+    public async Task<int> AbrirCajaAsync(int caja, int cajero, DateTime inicio, decimal fondo)
+    {
+        await EjecutarAsync("UPDATE CAJAS SET ULTIMO_INGRESO = @inicio WHERE ID = @caja", ("inicio", inicio), ("caja", caja));
+        if (await ValorAsync("SELECT ID FROM CORTE_OPERACIONES WHERE DIA = @dia AND ID_CAJA = @caja", ("dia", inicio.Date), ("caja", caja)) is null)
+            await EjecutarAsync($"INSERT INTO CORTE_OPERACIONES (DIA, ID_CAJA, {string.Join(", ", AcumuladosDelDia)}) VALUES (@dia, @caja, {Ceros(AcumuladosDelDia)})",
+                ("dia", inicio.Date), ("caja", caja));
+        var dia = Convert.ToInt32(await ValorAsync("SELECT ID FROM CORTE_OPERACIONES WHERE DIA = @dia AND ID_CAJA = @caja", ("dia", inicio.Date), ("caja", caja)));
+        await EjecutarAsync($"""
+            INSERT INTO TURNOS (ID_CAJA, ID_OPERACION_INICIO, ID_CAJERO, INICIO_EN, DINERO_INICIAL, SOSPECHOSO, {string.Join(", ", AcumuladosDelTurno)})
+            VALUES (@caja, @dia, @cajero, @inicio, @fondo, 'F', {Ceros(AcumuladosDelTurno)})
+            """, ("caja", caja), ("dia", dia), ("cajero", cajero), ("inicio", inicio), ("fondo", fondo));
+        var turno = Convert.ToInt32(await ValorAsync("SELECT ID FROM TURNOS WHERE ID_CAJA = @caja AND TERMINO_EN IS NULL", ("caja", caja)));
+        await EjecutarAsync("INSERT INTO VENTATICKETS (CAJA_ID, CAJERO_ID, NOMBRE, CREADO_EN, OPERACION_ID, TURNO_ID) VALUES (@caja, @cajero, 'Ticket 1', @inicio, -1, @turno)",
+            ("caja", caja), ("cajero", cajero), ("inicio", inicio), ("turno", turno));
+        return turno;
+    }
+
+    /// <summary>El corte en eleventa, lo que importa aquí: el turno termina y se borra su ticket abierto.</summary>
+    public async Task CortarAsync(int turno, DateTime termino)
+    {
+        await EjecutarAsync("UPDATE TURNOS SET TERMINO_EN = @termino WHERE ID = @turno", ("termino", termino), ("turno", turno));
+        await EjecutarAsync("DELETE FROM VENTATICKETS WHERE TURNO_ID = @turno AND ESTA_ABIERTO = 't'", ("turno", turno));
+    }
+
+    /// <summary>Los acumulados que eleventa deja en ceros al abrir un turno (los mismos que el puente, EnvioEleventa).</summary>
+    private static readonly string[] AcumuladosDelTurno =
+    [
+        "ACUMULADO_VENTAS", "ACUMULADO_ENTRADAS", "ACUMULADO_SALIDAS", "ACUMULADO_GANANCIA", "VENTAS_EFECTIVO", "VENTAS_TARJETA",
+        "VENTAS_VALES", "VENTAS_CREDITO", "EFECTIVO_AL_CIERRE", "ABONOS_EFECTIVO", "DEVOLUCIONES_VENTAS_EFECTIVO",
+        "DEVOLUCIONES_VENTAS_CREDITO", "DEVOLUCIONES_ABONOS_EFECTIVO", "NUMERO_VENTAS", "DEVOLUCIONES_VENTAS_VALES", "ABONOS_TARJETA",
+        "ABONOS_VALES", "COMISIONES_TARJETA", "DEVOLUCIONES_VENTAS_TARJETA", "VENTAS_TRANSFERENCIA", "ABONOS_TRANSFERENCIA",
+        "VENTAS_CHEQUE", "ABONOS_CHEQUE", "DEVOLUCIONES_VENTAS_TRANS", "DEVOLUCIONES_VENTAS_CHEQUE",
+    ];
+
+    /// <summary>Los del día y la caja: los mismos, menos el efectivo al cierre.</summary>
+    private static readonly string[] AcumuladosDelDia = [.. AcumuladosDelTurno.Where(c => c != "EFECTIVO_AL_CIERRE")];
+
+    private static string Ceros(string[] columnas) => string.Join(", ", columnas.Select(_ => "0"));
+
     public async ValueTask DisposeAsync()
     {
         await Conexion.DisposeAsync();

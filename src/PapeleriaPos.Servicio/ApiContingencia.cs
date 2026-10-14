@@ -102,6 +102,9 @@ public static class ApiContingencia
 
         bandeja.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, CorteContingenciaDto c, PosDbContext db, ServicioRespaldos respaldos, EnvioVentasEleventa eleventa) =>
         {
+            // En el piloto con eleventa la caja ya no hace el corte sin conexión (se hace en eleventa). Si llega uno (una caja
+            // de antes, o de antes del piloto), ya pasó: se guarda, porque lo que la caja hizo después va en otro turno y no
+            // entraría. El cierre del turno de eleventa que encola, el puente no lo manda: queda por revisar (CorteEnElPiloto).
             var corte = await ApiCaja.CorteDtoAsync(db, await new RegistroCaja(db).CorteZDeContingenciaAsync(turnoId, c));
             eleventa.Despertar();
             _ = Task.Run(() => respaldos.Hacer($"z-{corte.FechaLocal:HHmm}"));

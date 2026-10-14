@@ -62,8 +62,12 @@ public static class ApiCaja
         api.MapPost("/turnos/{turnoId:guid}/corte-x", async (Guid turnoId, Guid usuarioId, PosDbContext db) =>
             await CorteDtoAsync(db, await new RegistroCaja(db).CorteXAsync(turnoId, usuarioId)));
 
-        api.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, SolicitudCorteZ s, PosDbContext db, ServicioRespaldos respaldos, EnvioVentasEleventa eleventa) =>
+        api.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, SolicitudCorteZ s, PosDbContext db, ServicioRespaldos respaldos, EnvioVentasEleventa eleventa,
+            OpcionesEleventa opcionesEleventa) =>
         {
+            // El piloto en la caja 2: el corte se hace en eleventa, aunque la pantalla ya no lo ofrezca (una caja de antes).
+            if (opcionesEleventa.CorteEnEleventa)
+                throw new InvalidOperationException(CorteEnElPiloto.CorteEnEleventa);
             var turno = await db.Turnos.FindAsync(turnoId) ?? throw new InvalidOperationException("El turno no existe.");
             var encargado = await new ServicioControl(db).IdentificarAsync(s.EncargadoUsuario, s.EncargadoPin, turno.SucursalId, AccionControlada.CorteZ);
             var corte = await CorteDtoAsync(db, await new RegistroCaja(db).CorteZAsync(turnoId, encargado.Id, s.Conteo));
