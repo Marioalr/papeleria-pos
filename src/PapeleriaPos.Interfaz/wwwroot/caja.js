@@ -95,8 +95,8 @@ export function ventanaAbierta(abierta, enPanel = false) {
 // «El cuadro de captura»). Si escribe ahí, lo que tecleó se quita del campo, su Enter no cobra (ni oprime el botón) y el
 // código va a la captura: un escaneo nunca se toma como dinero ni se cobra sin él. Una persona no baja de unos 80 ms
 // entre tecla y tecla ni con el teclado numérico; un lector USB teclea cada carácter en pocos milisegundos. El ritmo del
-// lector de la tienda falta medirlo allá (docs/plan.md, paso 7): si no se reconoce, el tope del cambio igual detiene un
-// código largo en un campo de dinero.
+// lector de la tienda falta medirlo allá (docs/plan.md, paso 7): si no se reconoce, se ajustan RAFAGA_MS y
+// RAFAGA_MINIMO (el cambio no lleva tope: lo decidió el dueño el 2026-10-14).
 const RAFAGA_MS = 50;
 // Menos caracteres no se distinguen de alguien que teclea rápido «200» y Enter.
 const RAFAGA_MINIMO = 4;
