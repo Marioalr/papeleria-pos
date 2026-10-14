@@ -6,6 +6,9 @@ using PapeleriaPos.Herramientas.Importacion;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Inventario;
+using PapeleriaPos.Nucleo.Turnos;
+using PapeleriaPos.Nucleo.Usuarios;
+using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Pruebas.Datos;
 
 namespace PapeleriaPos.Pruebas.Herramientas;
@@ -43,10 +46,10 @@ public sealed class SincronizacionEleventaTests : IAsyncDisposable
         return _base;
     }
 
-    private async Task<ResultadoSincronizacion> SincronizarAsync(DatosEleventa e)
+    private async Task<ResultadoSincronizacion> SincronizarAsync(DatosEleventa e, EnviosEnCurso.Vigilancia? mandados = null)
     {
         await using var db = _base!.Contexto();
-        return await SincronizacionEleventa.AplicarAsync(db, e, _base.Reloj.GetUtcNow().UtcDateTime);
+        return await SincronizacionEleventa.AplicarAsync(db, e, _base.Reloj.GetUtcNow().UtcDateTime, mandados);
     }
 
     private static async Task<Variante> VarianteAsync(PosDbContext db, string codigo) =>
@@ -212,5 +215,316 @@ public sealed class SincronizacionEleventaTests : IAsyncDisposable
         await using var db = _base!.Contexto();
         Assert.Equal("Goma", (await VarianteAsync(db, "A1")).Producto!.Nombre);
         Assert.Equal("Sacapuntas", (await VarianteAsync(db, "B2")).Producto!.Nombre);
+    }
+
+    // El piloto: la caja 2 vende y lo manda a eleventa por la bandeja. La lectura no deshace lo que eleventa todavía no tiene.
+
+    private sealed record Mostrador(Caja Caja, Usuario Cajera, Usuario Encargado, Turno Turno);
+
+    /// <summary>La caja 2 con su turno abierto, sobre la base importada.</summary>
+    private async Task<Mostrador> AbrirCajaAsync()
+    {
+        await using var db = _base!.Contexto();
+        var caja = new Caja { Nombre = "Caja 2", Serie = "A", SucursalId = (await db.Sucursales.SingleAsync()).Id };
+        var cajera = new Usuario { Nombre = "Ana", NombreUsuario = "ana" };
+        var encargado = new Usuario { Nombre = "Luis", NombreUsuario = "luis", Rol = Rol.Encargado };
+        cajera.EstablecerPin("1111");
+        encargado.EstablecerPin("2222");
+        db.AddRange(caja, cajera, encargado);
+        await db.SaveChangesAsync();
+        return new Mostrador(caja, cajera, encargado, await new RegistroCaja(db).AbrirTurnoAsync(caja.Id, cajera.Id, 50000));
+    }
+
+    /// <summary>Una venta en efectivo que entra a la bandeja hacia eleventa junto con el cobro, como en la caja 2.</summary>
+    private async Task<(Venta Venta, Guid Envio)> VenderAsync(Mostrador m, string codigo, int piezas)
+    {
+        await using var db = _base!.Contexto();
+        var variante = await VarianteAsync(db, codigo);
+        var venta = new Venta { SucursalId = m.Caja.SucursalId, CajaId = m.Caja.Id, TurnoId = m.Turno.Id, CajeroId = m.Cajera.Id, Serie = "A" };
+        venta.AgregarProducto(new ProductoEnVenta(variante.Id, variante.Producto!.Nombre, Impuesto.Iva16, UnidadBase.Pieza, true),
+            await db.Presentaciones.SingleAsync(p => p.VarianteId == variante.Id && p.EsBase), Cantidad.Piezas(piezas),
+            await db.Precios.Where(p => p.VarianteId == variante.Id).ToListAsync());
+        var envio = new EnvioAEleventa { Tipo = TipoEnvioEleventa.Venta, VentaId = venta.Id, CreadoUtc = _base.Reloj.Ahora.UtcDateTime };
+        db.EnviosAEleventa.Add(envio);
+        await new RegistroCaja(db).CobrarAsync(venta, [new CobroSolicitado(FormaPago.Efectivo, venta.TotalCentavos)]);
+        return (venta, envio.Id);
+    }
+
+    /// <summary>Lo que hace la bandeja (o quien la revisa) con un envío.</summary>
+    private async Task MarcarAsync(Guid envio, EstadoEnvioEleventa estado, int intentos = 0)
+    {
+        await using var db = _base!.Contexto();
+        var x = await db.EnviosAEleventa.SingleAsync(e => e.Id == envio);
+        (x.Estado, x.Intentos) = (estado, intentos);
+        await db.SaveChangesAsync();
+    }
+
+    private async Task<Guid> EnvioDeAsync(Guid devolucionId)
+    {
+        await using var db = _base!.Contexto();
+        return await db.EnviosAEleventa.Where(e => e.DevolucionId == devolucionId).Select(e => e.Id).SingleAsync();
+    }
+
+    private async Task<Cantidad> ExistenciaAsync(string codigo)
+    {
+        await using var db = _base!.Contexto();
+        var variante = await VarianteAsync(db, codigo);
+        return (await new RegistroInventario(db).ExistenciaAsync((await db.Sucursales.SingleAsync()).Id, variante.Id)).Cantidad;
+    }
+
+    private async Task<List<long>> AjustesAsync(string codigo)
+    {
+        await using var db = _base!.Contexto();
+        var variante = await VarianteAsync(db, codigo);
+        return await db.MovimientosInventario.Where(m => m.VarianteId == variante.Id && m.DocumentoTipo == SincronizacionEleventa.Documento)
+            .OrderBy(m => m.FechaUtc).Select(m => m.Cantidad.Milesimas).ToListAsync();
+    }
+
+    private static DatosEleventa Gomas(double existencia) => Datos([Producto(1, "A1", "Goma", costo: 2)], existencias: [new(1, existencia)]);
+
+    [Fact]
+    public async Task Una_venta_que_no_ha_llegado_a_eleventa_no_se_deshace_ni_se_repite_al_llegar()
+    {
+        await ImportadaAsync(Gomas(10));
+        var caja = await AbrirCajaAsync();
+        var (_, envio) = await VenderAsync(caja, "A1", 2);
+
+        // Eleventa todavía no la tiene: la lectura no regresa las 2 gomas.
+        var antes = await SincronizarAsync(Gomas(10));
+        // Mientras, en la caja 1 de eleventa se vendió una: eso sí llega.
+        var otraCaja = await SincronizarAsync(Gomas(9));
+        Assert.Equal(Cantidad.Piezas(7), await ExistenciaAsync("A1"));
+        // Llega a eleventa: ya la descuenta allá, y aquí no se descuenta otra vez.
+        await MarcarAsync(envio, EstadoEnvioEleventa.Enviada, intentos: 1);
+        var despues = await SincronizarAsync(Gomas(7));
+
+        Assert.Equal((0, 1, 0), (antes.Existencias, otraCaja.Existencias, despues.Existencias));
+        Assert.Empty(antes.Avisos);
+        Assert.Equal(Cantidad.Piezas(7), await ExistenciaAsync("A1"));
+        // Solo el ajuste de lo que vendió la caja 1: sin ida y vuelta en el kardex.
+        Assert.Equal([-1000L], await AjustesAsync("A1"));
+        await using var db = _base!.Contexto();
+        Assert.Empty(await new RegistroInventario(db).VerificarExistenciasAsync());
+    }
+
+    [Fact]
+    public async Task Lo_que_quedo_por_revisar_se_sigue_descontando_hasta_que_se_anota_a_mano_en_eleventa()
+    {
+        await ImportadaAsync(Gomas(10));
+        var caja = await AbrirCajaAsync();
+        var (_, envio) = await VenderAsync(caja, "A1", 2);
+        // Eleventa no la entendería (o se dejó para revisar): no va sola.
+        await MarcarAsync(envio, EstadoEnvioEleventa.PorRevisar);
+
+        var primera = await SincronizarAsync(Gomas(10));
+        var segunda = await SincronizarAsync(Gomas(10));
+        // Alguien la registra a mano en eleventa y la anota en la bandeja.
+        await MarcarAsync(envio, EstadoEnvioEleventa.AMano);
+        var aMano = await SincronizarAsync(Gomas(8));
+
+        Assert.Equal((0, 0, 0), (primera.Existencias, segunda.Existencias, aMano.Existencias));
+        Assert.Equal(Cantidad.Piezas(8), await ExistenciaAsync("A1"));
+        Assert.Empty(await AjustesAsync("A1"));
+    }
+
+    [Fact]
+    public async Task Las_devoluciones_que_no_han_llegado_cuentan_y_lo_danado_no_regresa_en_ningun_lado()
+    {
+        await ImportadaAsync(Gomas(10));
+        var caja = await AbrirCajaAsync();
+        var (venta, envio) = await VenderAsync(caja, "A1", 3);
+        await MarcarAsync(envio, EstadoEnvioEleventa.Enviada, intentos: 1);
+        Guid buena, danada;
+        await using (var db = _base!.Contexto())
+        {
+            var linea = venta.Lineas.Single().Id;
+            var devoluciones = new RegistroDevoluciones(db);
+            buena = (await devoluciones.DevolverAsync(venta.Id, [new LineaPorDevolver(linea, Cantidad.Piezas(1))], caja.Cajera.Id, caja.Caja.Id, "No era", null)).Id;
+            danada = (await devoluciones.DevolverAsync(venta.Id, [new LineaPorDevolver(linea, Cantidad.Piezas(1), RegresaAlInventario: false)],
+                caja.Cajera.Id, caja.Caja.Id, "Llegó rota", null)).Id;
+        }
+        Assert.Equal(Cantidad.Piezas(8), await ExistenciaAsync("A1"));
+
+        // Eleventa tiene la venta, todavía no las devoluciones.
+        var sinDevoluciones = await SincronizarAsync(Gomas(7));
+        // Llegan: la buena regresa al inventario de eleventa y la dañada no.
+        await MarcarAsync(await EnvioDeAsync(buena), EstadoEnvioEleventa.Enviada, intentos: 1);
+        await MarcarAsync(await EnvioDeAsync(danada), EstadoEnvioEleventa.Enviada, intentos: 1);
+        var conDevoluciones = await SincronizarAsync(Gomas(8));
+
+        Assert.Equal((0, 0), (sinDevoluciones.Existencias, conDevoluciones.Existencias));
+        Assert.Equal(Cantidad.Piezas(8), await ExistenciaAsync("A1"));
+        Assert.Empty(await AjustesAsync("A1"));
+    }
+
+    [Fact]
+    public async Task Lo_cancelado_antes_de_llegar_a_eleventa_no_mueve_la_existencia()
+    {
+        await ImportadaAsync(Gomas(10));
+        var caja = await AbrirCajaAsync();
+        var (venta, envio) = await VenderAsync(caja, "A1", 2);
+        Guid cancelacion;
+        await using (var db = _base!.Contexto())
+            cancelacion = await EnvioDeAsync((await new RegistroDevoluciones(db).CancelarAsync(venta.Id, caja.Encargado.Id, caja.Caja.Id, "Se arrepintió", null)).Id);
+
+        // La bandeja descarta la venta y enseguida su cancelación: entre una y otra, y después, nada cambia.
+        await MarcarAsync(envio, EstadoEnvioEleventa.Descartada);
+        var entreLasDos = await SincronizarAsync(Gomas(10));
+        await MarcarAsync(cancelacion, EstadoEnvioEleventa.Descartada);
+        var descartadas = await SincronizarAsync(Gomas(10));
+
+        Assert.Equal((0, 0), (entreLasDos.Existencias, descartadas.Existencias));
+        Assert.Equal(Cantidad.Piezas(10), await ExistenciaAsync("A1"));
+        Assert.Empty(await AjustesAsync("A1"));
+    }
+
+    [Fact]
+    public void La_lectura_junta_lo_que_se_estaba_mandando_al_empezar_y_lo_que_se_mando_despues()
+    {
+        var enCurso = new EnviosEnCurso();
+        Guid antes = Guid.NewGuid(), aMedias = Guid.NewGuid(), despues = Guid.NewGuid(), yaNo = Guid.NewGuid();
+        // Lo que terminó de mandarse (y quedó anotado) antes de empezar a leer, no.
+        using (enCurso.Mandando(antes))
+        {
+        }
+        var mandando = enCurso.Mandando(aMedias);
+        var vigilancia = enCurso.Vigilar();
+        mandando.Dispose();
+        using (enCurso.Mandando(despues))
+        {
+        }
+        var mandados = vigilancia.Mandados();
+        vigilancia.Dispose();
+        using (enCurso.Mandando(yaNo))
+        {
+        }
+
+        Assert.Equal(new[] { aMedias, despues }.Order(), mandados.Order());
+    }
+
+    [Fact]
+    public void Lo_que_eleventa_rechazo_vale_hasta_el_siguiente_intento_y_lo_anotado_a_mano_tambien_se_junta()
+    {
+        var enCurso = new EnviosEnCurso();
+        Guid rechazado = Guid.NewGuid(), deRed = Guid.NewGuid(), aMano = Guid.NewGuid();
+        using (enCurso.Mandando(rechazado))
+            enCurso.Rechazado(rechazado);
+        using (enCurso.Mandando(deRed))
+        {
+        }
+        var vigilancia = enCurso.Vigilar();
+        var antes = vigilancia.Rechazados();
+        enCurso.AnotadoAMano(aMano);
+        // Otro intento: hasta que termine, no se sabe cómo le fue.
+        using (enCurso.Mandando(rechazado))
+        {
+        }
+        var despues = vigilancia.Rechazados();
+        var mandados = vigilancia.Mandados();
+        vigilancia.Dispose();
+
+        Assert.Equal([rechazado], antes);
+        Assert.Empty(despues);
+        Assert.Equal(new[] { rechazado, aMano }.Order(), mandados.Order());
+    }
+
+    [Fact]
+    public async Task Lo_que_se_mando_mientras_se_leia_eleventa_o_no_se_sabe_si_entro_se_ajusta_en_otra_lectura()
+    {
+        await ImportadaAsync(Datos([Producto(1, "A1", "Goma", costo: 2), Producto(2, "B2", "Sacapuntas")], existencias: [new(1, 10), new(2, 4)]));
+        var caja = await AbrirCajaAsync();
+        var (_, envio) = await VenderAsync(caja, "A1", 2);
+        DatosEleventa Eleventa(double gomas) =>
+            Datos([Producto(1, "A1", "Goma", costo: 2), Producto(2, "B2", "Sacapuntas")], existencias: [new(1, gomas), new(2, 3)]);
+
+        // Se lee eleventa (todavía sin la venta) y, antes de aplicarlo, la venta entra allá y aquí se anota enviada.
+        var enCurso = new EnviosEnCurso();
+        ResultadoSincronizacion mientras;
+        using (var vigilancia = enCurso.Vigilar())
+        {
+            using (enCurso.Mandando(envio))
+                await MarcarAsync(envio, EstadoEnvioEleventa.Enviada, intentos: 1);
+            mientras = await SincronizarAsync(Eleventa(10), vigilancia);
+        }
+        var siguiente = await SincronizarAsync(Eleventa(8));
+
+        // Las gomas no se tocan esa vez (hubieran subido a 10 y bajado otra vez); los sacapuntas sí.
+        Assert.Equal(1, mientras.Existencias);
+        Assert.Contains(SincronizacionEleventa.AvisoEnCamino, mientras.Avisos.Keys);
+        Assert.Equal(0, siguiente.Existencias);
+        Assert.Empty(siguiente.Avisos);
+        Assert.Equal(Cantidad.Piezas(8), await ExistenciaAsync("A1"));
+        Assert.Empty(await AjustesAsync("A1"));
+        Assert.Equal(Cantidad.Piezas(3), await ExistenciaAsync("B2"));
+
+        // Pendiente con un intento que falló: pudo haber entrado (la red se cortó justo al confirmar) o no.
+        var (_, otraVenta) = await VenderAsync(caja, "A1", 1);
+        await MarcarAsync(otraVenta, EstadoEnvioEleventa.Pendiente, intentos: 1);
+        var sinSaber = await SincronizarAsync(Eleventa(7));
+        var sinSaberTampoco = await SincronizarAsync(Eleventa(8));
+        Assert.Equal((0, 0), (sinSaber.Existencias, sinSaberTampoco.Existencias));
+        Assert.Contains(SincronizacionEleventa.AvisoEnCamino, sinSaber.Avisos.Keys);
+        Assert.Equal(Cantidad.Piezas(7), await ExistenciaAsync("A1"));
+    }
+
+    [Fact]
+    public async Task Lo_que_eleventa_rechazo_se_descuenta_aunque_la_bandeja_siga_detenida_en_eso()
+    {
+        await ImportadaAsync(Gomas(10));
+        var caja = await AbrirCajaAsync();
+        var (_, envio) = await VenderAsync(caja, "A1", 2);
+        // La bandeja se detuvo en esta venta: ya lleva varios intentos.
+        await MarcarAsync(envio, EstadoEnvioEleventa.Pendiente, intentos: 7);
+        var enCurso = new EnviosEnCurso();
+
+        async Task<ResultadoSincronizacion> LeerAsync(double gomas)
+        {
+            using var vigilancia = enCurso.Vigilar();
+            return await SincronizarAsync(Gomas(gomas), vigilancia);
+        }
+
+        // En la caja 1 entraron 10 de compra. Recién arrancado el servicio no se sabe cómo fallaron sus intentos: esa vez
+        // las gomas no se ajustan.
+        var alArrancar = await LeerAsync(20);
+        // Se vuelve a intentar y eleventa la rechaza (no es la red): allá no está, y la compra sí llega.
+        using (enCurso.Mandando(envio))
+        {
+            enCurso.Rechazado(envio);
+            await MarcarAsync(envio, EstadoEnvioEleventa.Pendiente, intentos: 8);
+        }
+        var rechazada = await LeerAsync(20);
+        var otraVez = await LeerAsync(20);
+
+        Assert.Equal((0, 1, 0), (alArrancar.Existencias, rechazada.Existencias, otraVez.Existencias));
+        Assert.Contains(SincronizacionEleventa.AvisoEnCamino, alArrancar.Avisos.Keys);
+        Assert.Empty(rechazada.Avisos);
+        Assert.Equal(Cantidad.Piezas(18), await ExistenciaAsync("A1"));
+        Assert.Equal([10000L], await AjustesAsync("A1"));
+    }
+
+    [Fact]
+    public async Task Lo_que_se_anota_a_mano_mientras_se_lee_eleventa_se_ajusta_en_otra_lectura()
+    {
+        await ImportadaAsync(Gomas(10));
+        var caja = await AbrirCajaAsync();
+        var (_, envio) = await VenderAsync(caja, "A1", 2);
+        await MarcarAsync(envio, EstadoEnvioEleventa.PorRevisar);
+
+        // Se lee eleventa (todavía sin la venta) y, antes de aplicarlo, alguien la registra allá y la anota a mano.
+        var enCurso = new EnviosEnCurso();
+        ResultadoSincronizacion mientras;
+        using (var vigilancia = enCurso.Vigilar())
+        {
+            enCurso.AnotadoAMano(envio);
+            await MarcarAsync(envio, EstadoEnvioEleventa.AMano);
+            mientras = await SincronizarAsync(Gomas(10), vigilancia);
+        }
+        var siguiente = await SincronizarAsync(Gomas(8));
+
+        // Sin ida y vuelta: las gomas no suben a 10 para volver a bajar.
+        Assert.Equal((0, 0), (mientras.Existencias, siguiente.Existencias));
+        Assert.Contains(SincronizacionEleventa.AvisoEnCamino, mientras.Avisos.Keys);
+        Assert.Equal(Cantidad.Piezas(8), await ExistenciaAsync("A1"));
+        Assert.Empty(await AjustesAsync("A1"));
     }
 }
