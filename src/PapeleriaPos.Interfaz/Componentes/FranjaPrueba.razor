@@ -1,6 +1,8 @@
 @* Solo en la prueba con una persona real (docs/plan.md): avisa que son datos ficticios y da la guía de la prueba, los
    avisos que le habrían llegado al dueño por Telegram, empezar de cero y (en la caja de Windows, la que sigue sin la caja
-   principal) simular que no hay conexión: el servicio de la prueba corre en la misma PC y no hay cable que desconectar. *@
+   principal) simular que no hay conexión: el servicio de la prueba corre en la misma PC y no hay cable que desconectar.
+   Las respuestas van con la versión de la guía, y al terminar una persona se guardan y la guía queda en blanco para la
+   siguiente (el sábado una y el domingo otra). *@
 @inject ClienteCaja Cliente
 @inject ConexionCaja Conexion
 @inject ModuloCaja Js
@@ -30,6 +32,8 @@
                 <p class="nota">
                     Haz cada tarea en la caja (puedes cerrar esta ventana y volver) y marca si salió lo que debía pasar. Si algo
                     estorbó, fue lento o confuso, escríbelo aunque haya salido bien. Los usuarios y PIN están en «Léeme.txt».
+                    Primero va lo de vender en la pantalla nueva; al final, lo que todavía abre las pantallas de hoy (dice
+                    «@GuiaPrueba.PantallaDeHoy»).
                 </p>
                 <label>Tu nombre <input @bind="_respuestas.Nombre" @bind:after="GuardarAsync" autocomplete="off" /></label>
                 @foreach (var grupo in GuiaPrueba.Tareas.GroupBy(t => t.Tema))
@@ -65,6 +69,24 @@
                     <button class="boton principal" disabled="@_ocupado" @onclick="ExportarAsync">Guardar mis respuestas en el escritorio</button>
                     <span class="nota">Se guardan solas mientras contestas; este botón deja el archivo para mandarlo.</span>
                 </div>
+                @if (_confirmarEnBlanco)
+                {
+                    <p>
+                        Tus respuestas se guardan en el escritorio, como con el botón de arriba, y la guía queda en blanco para la
+                        siguiente persona. Lo que hiciste en la caja se queda (para eso es «Empezar de cero»).
+                    </p>
+                    <div class="acciones izquierda">
+                        <button class="boton" @onclick="() => _confirmarEnBlanco = false">No</button>
+                        <button class="boton principal" disabled="@_ocupado" @onclick="DejarEnBlancoAsync">Sí, guardarlas y dejar la guía en blanco</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="acciones izquierda">
+                        <button class="boton" disabled="@_ocupado" @onclick="PedirEnBlanco">Guardar respuestas y dejar la guía en blanco</button>
+                        <span class="nota">Cuando termines, para que pruebe otra persona.</span>
+                    </div>
+                }
             </Ventana>
             break;
 
@@ -87,7 +109,10 @@
 
         case Panel.EmpezarDeCero:
             <Ventana Titulo="Empezar de cero" AlCerrar="CerrarAsync">
-                <p>La caja vuelve a como se instaló: se pierde lo que hiciste en la prueba (ventas, compras, turnos). Tus respuestas de la guía se quedan.</p>
+                <p>
+                    La caja vuelve a como se instaló: se pierde lo que hiciste en la prueba (ventas, compras, turnos). Tus respuestas
+                    de la guía se quedan; para que pruebe otra persona, en la guía: «Guardar respuestas y dejar la guía en blanco».
+                </p>
                 @if (_error is not null)
                 {
                     <p class="error">@_error</p>
@@ -110,7 +135,7 @@
         public Dictionary<string, RespuestaTareaDto> Tareas { get; set; } = [];
         public string? Comentarios { get; set; }
 
-        public RespuestasPruebaDto Dto() => new(Nombre, Tareas, Comentarios);
+        public RespuestasPruebaDto Dto() => new(Nombre, Tareas, Comentarios, GuiaPrueba.Version);
     }
 
     private bool _prueba;
@@ -120,6 +145,13 @@
     private bool _ocupado;
     private string? _error;
     private string? _aviso;
+    private bool _confirmarEnBlanco;
+
+    /// <summary>
+    /// Las respuestas suben una tras otra: una nota que se guarda al dejar su cuadro no llega después de dejar la guía en
+    /// blanco (y la llenaría otra vez con lo de la persona anterior).
+    /// </summary>
+    private readonly SemaphoreSlim _subiendo = new(1, 1);
 
     private int Contestadas => GuiaPrueba.Tareas.Count(t => _respuestas.Tareas.GetValueOrDefault(t.Id)?.SalioBien is not null);
 
@@ -141,7 +173,7 @@
 
     private async Task CargarRespuestasAsync()
     {
-        var r = await Cliente.RespuestasPruebaAsync();
+        var r = await Cliente.RespuestasPruebaAsync(GuiaPrueba.Version);
         _respuestas = new Respuestas { Nombre = r.Nombre, Tareas = r.Tareas.ToDictionary(), Comentarios = r.Comentarios };
     }
 
@@ -150,7 +182,7 @@
     /// <summary>Con la guía abierta, la pantalla de venta de atrás no atrapa las teclas que se escriben aquí.</summary>
     private async Task AbrirAsync(Panel panel)
     {
-        (_panel, _error, _aviso) = (panel, null, null);
+        (_panel, _error, _aviso, _confirmarEnBlanco) = (panel, null, null, false);
         await Js.VentanaAbiertaAsync(true);
     }
 
@@ -202,6 +234,7 @@
     private async Task GuardarAsync()
     {
         _error = null;
+        await _subiendo.WaitAsync();
         try
         {
             await Cliente.GuardarRespuestasPruebaAsync(_respuestas.Dto());
@@ -210,12 +243,17 @@
         {
             _error = ex.Message;
         }
+        finally
+        {
+            _subiendo.Release();
+        }
     }
 
     private async Task ExportarAsync()
     {
         _ocupado = true;
         (_error, _aviso) = (null, null);
+        await _subiendo.WaitAsync();
         try
         {
             await Cliente.GuardarRespuestasPruebaAsync(_respuestas.Dto());
@@ -228,6 +266,39 @@
         }
         finally
         {
+            _subiendo.Release();
+            _ocupado = false;
+        }
+    }
+
+    private void PedirEnBlanco() => (_confirmarEnBlanco, _error, _aviso) = (true, null, null);
+
+    /// <summary>
+    /// Al terminar una persona: sus respuestas quedan en el escritorio (como al exportar) y la guía, en blanco para la
+    /// siguiente. En el servicio su archivo se aparta con la hora, no se borra.
+    /// </summary>
+    private async Task DejarEnBlancoAsync()
+    {
+        _ocupado = true;
+        (_error, _aviso) = (null, null);
+        await _subiendo.WaitAsync();
+        try
+        {
+            var dto = _respuestas.Dto();
+            await Cliente.GuardarRespuestasPruebaAsync(dto);
+            var archivo = await Cliente.DejarGuiaEnBlancoAsync(GuiaPrueba.Version, GuiaPrueba.Documento(dto, DateTime.Now));
+            _respuestas = new Respuestas();
+            _confirmarEnBlanco = false;
+            _aviso = $"Listo: las respuestas{(string.IsNullOrWhiteSpace(dto.Nombre) ? "" : $" de {dto.Nombre.Trim()}")} quedaron en «{archivo.Ruta}». "
+                + "La guía quedó en blanco para la siguiente persona.";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _subiendo.Release();
             _ocupado = false;
         }
     }

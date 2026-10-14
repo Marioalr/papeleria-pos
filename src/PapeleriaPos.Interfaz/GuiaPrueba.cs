@@ -12,174 +12,272 @@ public sealed record TareaPrueba(string Id, string Tema, string Hacer, string Es
 /// La guía de la prueba con una persona real (docs/plan.md): tareas cortas de lo que ya funciona, con lo que debe pasar.
 /// Quien prueba marca si salió bien y escribe lo que vio; al final se guardan sus respuestas en un archivo.
 /// </summary>
+/// <remarks>
+/// Es la de la pantalla nueva (docs/propuesta-interfaz.md), para la segunda prueba (17 y 18 de octubre de 2026): la
+/// primera (2026-10-10) fue con la pantalla de hoy, y al dueño le pareció horrible. Primero va lo de vender en la
+/// pantalla nueva, para probar lo importante antes de que quien prueba se canse; luego la tarjeta, la transferencia y el
+/// crédito, que siguen (el solo efectivo es del piloto con eleventa, y la prueba va sin eleventa); al final, lo que
+/// todavía abre las pantallas de hoy, con el tema marcado «Pantalla de hoy». Los temas van seguidos: la guía los agrupa.
+/// </remarks>
 public static class GuiaPrueba
 {
+    /// <summary>
+    /// Las respuestas se guardan con la versión de la guía, y las de otra versión no se cargan: el mismo Id puede ser otra
+    /// tarea, y la guía nueva saldría ya contestada. La 1 fue la de la primera prueba (2026-10-10, la pantalla de hoy); la
+    /// 2, la de la pantalla nueva. Se sube cuando las tareas cambian de sentido.
+    /// </summary>
+    public const int Version = 2;
+
+    /// <summary>Lo que va antes del tema de lo que todavía abre las pantallas de hoy.</summary>
+    public const string PantallaDeHoy = "Pantalla de hoy";
+
     public static readonly IReadOnlyList<TareaPrueba> Tareas =
     [
         new("entrar", "Empezar",
-            "Entra con el usuario «cajero» y el PIN 1111. Abre el turno con un fondo de $500.",
-            "Aparece la pantalla de venta y arriba dice «Le atiende: Cajero de prueba»."),
-        new("vender", "Vender",
-            "Agrega productos escribiendo su código (en «Léeme.txt» hay algunos) o buscándolos con F10 (por ejemplo «pluma»). "
-            + "Cobra con F12 en efectivo y paga con un billete más grande.",
-            "El ticket sale en pantalla con los productos, el total y el cambio correcto."),
+            "Entra con el usuario «cajero» y el PIN 1111 y abre el turno con un fondo de $500. (Entrar y abrir el turno todavía son de la "
+            + "pantalla de hoy: se revisan al final.)",
+            "Se abre la pantalla de venta nueva, sin pasar por la de antes. Arriba a la derecha estás tú («Cajero de prueba») con la hora del "
+            + "turno, y el cursor está en el cuadro de captura."),
+
+        // ── Vender en la pantalla nueva ──
+        new("escanear", "Vender",
+            "Escribe en el cuadro de captura uno de los códigos para vender de «Léeme.txt» y Enter, como si lo escanearas. Escribe otra vez el "
+            + "mismo. Luego escribe 3* antes de otro de esos códigos (3*7501…) y Enter.",
+            "El producto entra al ticket y queda marcado; el mismo código otra vez suma uno en su renglón. Con 3* entran tres de una vez. El "
+            + "total grande de la derecha cambia cada vez y el cursor se queda en el cuadro."),
+        new("buscar", "Vender",
+            "Escribe en el cuadro de captura, sin oprimir F10, dos pedazos de palabra: «cua pro», y luego al revés: «pro cua». Baja con ↓ hasta "
+            + "uno y oprime Enter. Después oprime F10 y escribe «pl gel».",
+            "La lista sale debajo del cuadro mientras escribes, sin abrir otra ventana, con lo escrito resaltado, el precio y la existencia; el "
+            + "orden de los pedazos no importa. ↑ ↓ eligen, Enter agrega y Esc cierra la lista. F10 solo pone el cursor en el cuadro."),
+        new("familias", "Vender",
+            "Escribe «pluma gel». En el renglón de la familia oprime → (flecha derecha), baja a uno y oprime Enter. Escribe otra vez «pluma gel» "
+            + "y oprime Tab.",
+            "Lo que solo cambia en el color, el tamaño o la marca va en un solo renglón, con una ficha por cada uno (el color con su punto). → "
+            + "despliega cada uno con su precio y existencia; ← o Esc lo cierran. Enter en el renglón agrega el más vendido. Tab despliega por "
+            + "otra cosa (por ejemplo, la marca) y la próxima vez con ese texto se despliega igual."),
+        new("afinar", "Vender",
+            "Escribe «folder» y toca una de las fichas de «Afinar» (por ejemplo «oficio»). Después escribe con un error de dedo: «sobre manial» "
+            + "y luego «cuadreno».",
+            "Con un texto general salen fichas con las palabras que separan los resultados, cada una con cuántos tiene; al tocar una se agrega "
+            + "a lo escrito y la lista se achica. Con el error de dedo, la lista dice «Parecidos a …: nada coincide exacto, ¿será un error de "
+            + "dedo?» y trae los sobres manila y los cuadernos."),
+        new("rapidos", "Vender",
+            "Escribe 20 en el cuadro y oprime Alt+1 (o toca «Copia B/N» en la fila de los rápidos). Luego oprime Alt+2 (CURP).",
+            "Entran 20 copias a $2.00 ($40.00) sin buscar nada. La CURP agrega $10.00 (vende 10 impresiones)."),
         new("cantidades", "Vender",
-            "En una venta, cambia la cantidad de un producto con + y −, y quita uno con la tecla Supr (DEL).",
-            "El total cambia cada vez; quitar un producto no deja rastro en el ticket."),
-        new("dos-tickets", "Vender",
-            "Empieza una venta, déjala pendiente con F6, atiende otra y cóbrala. Vuelve a la primera con F5 y cóbrala.",
-            "Las dos ventas se cobran por separado y ninguna pierde sus productos."),
+            "Escribe «3*cua pro» y Enter. Con el cuadro vacío, elige un renglón del ticket con ↑ ↓, escribe 5* y Enter. Cambia su cantidad con "
+            + "los botones − y + del renglón (o con las teclas − y +, con el cuadro vacío) y quita otro renglón con Supr.",
+            "Lo de antes del asterisco es la cantidad: entran tres del primero de la lista, y 5* solo deja ese renglón en cinco. − y + cambian "
+            + "de uno en uno y el total cambia cada vez; Supr quita el renglón sin dejar rastro en el ticket."),
         new("mayoreo", "Vender",
-            "Agrega unas hojas o folders (tienen mayoreo) y escribe la cantidad del paquete con «100*» y Enter, o escribe 100 y oprime F11. Luego oprime F11 sin escribir nada.",
-            "Al llegar a la cantidad el precio baja solo y el renglón dice «Mayoreo desde…» con lo que se ahorra; F11 muestra las escalas. El ticket lo dice en «Usted ahorró»."),
-        new("redondeo", "Vender",
-            "Vende algo que cueste con centavos (unas hojas sueltas o algo de $x.50) y cóbralo en efectivo. Luego cobra otro igual una parte con tarjeta.",
-            "En efectivo se cobra al peso: la ventana dice cuánto pedir y el ticket trae Total, Redondeo y Total a pagar. Lo de la tarjeta va exacto."),
-        new("cobro-mixto", "Vender",
-            "Cobra una venta una parte en efectivo y otra con tarjeta.",
-            "El ticket muestra las dos formas de pago y el cambio solo del efectivo."),
-        new("comun", "Vender",
-            "Agrega un artículo común con la tecla Insert: escribe la descripción y el precio a mano.",
-            "Entra a la venta con lo que escribiste."),
-        new("alta-rapida", "Vender",
-            "Escribe un código que no existe (por ejemplo 7500000000017) y Enter. Dalo de alta con nombre, precio y departamento.",
-            "Queda en la venta enseguida. En F3 Productos aparece como «Por completar»."),
-        new("cambiar-precio", "Control",
-            "Cambia el precio de un producto de la venta con Ctrl+E. Cuando lo pida, intenta autorizar con «encargado» (2222) y luego con «dueno» (3333).",
-            "Sin la autorización no deja, y el encargado tampoco puede: el cambio de precio lo autoriza el dueño. Con él, el precio cambia solo en esta venta."),
-        new("descuento", "Control",
-            "Haz un descuento de 5 % a un producto con Ctrl+D, con su motivo. Luego intenta uno de 20 %.",
-            "El de 5 % entra solo; el de 20 % pide la autorización del encargado."),
-        new("cliente-venta", "Clientes",
-            "En una venta, oprime Ctrl+L y busca a la «Escuela Primaria Benito Juárez» por su teléfono (escribe 1234). Agrega productos y cóbrala. "
-            + "En otra venta elige a «Papelería La Esquina» y agrega un solo folder (todos tienen mayoreo desde 100).",
-            "La escuela lleva su 10 % en todo el ticket sin pedir autorización y el ticket dice «Cliente: …». La papelería paga el folder a precio "
-            + "de mayoreo aunque sea uno: el renglón dice «Mayoreo de cliente». Si el descuento deja algo debajo del costo, F12 pide la autorización."),
-        new("cliente-alta", "Clientes",
-            "Como «encargado» (2222), entra al módulo «Clientes», da de alta un cliente con su teléfono y 5 % de descuento, y revisa a «Maestra Carmen», "
-            + "que dice «Por revisar».",
-            "El cliente queda en la lista y ya se puede elegir con Ctrl+L. En «Avisos al dueño» llega que el encargado le dio privilegios. "
-            + "Al guardar a Maestra Carmen se quita «Por revisar». Abre a la escuela: dice cuánto compra al mes."),
-        new("credito-fiar", "Crédito",
-            "En una venta, elige con Ctrl+L al «Arq. Ramírez». Agrega productos por unos $200, oprime F12 y usa «Todo a crédito».",
-            "Al elegirlo, arriba aparece que debe $350 y que está vencido (no impide fiarle). Se cobra sin efectivo y el ticket trae «SU CUENTA»: "
-            + "lo fiado, cuánto debe ahora y hasta cuándo paga."),
-        new("credito-limite", "Crédito",
-            "Al mismo cliente fíale otra venta de unos $600 (su límite es $1,000). Prueba también pagar una parte en efectivo y «El resto a crédito».",
-            "La ventana de cobro avisa que pasa el límite y al cobrar pide la autorización del encargado (2222). La autorización aparece en «Avisos al dueño»."),
-        new("credito-abono", "Crédito",
-            "Oprime Ctrl+B, busca al «Arq. Ramírez» y abona $300 en efectivo pagando con $500. Vuelve a oprimir Ctrl+B y en «Abonos de hoy» "
-            + "escribe un motivo y reimprime el comprobante. Haz un corte X.",
-            "Sale el comprobante con lo que debía, lo que abonó, el cambio ($200) y lo que queda (la reimpresión sale igual). En el corte salen "
-            + "«Abonos de clientes en efectivo» (suman a lo esperado) y lo fiado aparte, que no suma."),
-        new("credito-devolucion", "Crédito",
-            "En «Devoluciones», devuelve un producto de una de las ventas fiadas.",
-            "No sale efectivo: el comprobante dice cuánto se descuenta de su cuenta y cuánto debe ahora."),
-        new("credito-cuenta", "Crédito",
-            "Como «dueno» (3333), entra a «Clientes» y marca «Solo los que deben». Abre al «Arq. Ramírez»: revisa sus movimientos y cambia su plazo "
-            + "a 15 días. Vuelve a la lista, quita «Solo los que deben» y dale crédito de $500 a «Papelería La Esquina».",
-            "La lista dice cuánto debe cada quien (en rojo, si tiene algo vencido). En su cuenta están el saldo inicial, lo fiado, el abono y la "
-            + "devolución, cada uno con el saldo que dejó. El cajero y el encargado ven la cuenta, pero no pueden cambiar el crédito."),
-        new("credito-estado-cuenta", "Crédito",
-            "En «Clientes», abre al «Arq. Ramírez» y oprime «Estado de cuenta». Imprímelo, luego oprime «Copiar para WhatsApp» y pégalo en el Bloc "
-            + "de notas. Cambia «Desde» a una fecha de hace dos meses.",
-            "Dice lo que debía al empezar, cada compra a crédito y cada abono con el saldo que dejó, lo que debe y lo que falta pagar de cada compra "
-            + "con su vencimiento (lo vencido, en rojo). El texto pegado dice lo mismo. Arriba, en su ficha, «Qué tan puntual paga» cuenta sus compras "
-            + "a crédito liquidadas y las vencidas; en la lista, la columna «Paga a tiempo»."),
-        new("credito-saldo-a-favor", "Crédito",
-            "Como «cajero» (1111), en «Clientes» abre a «Papelería La Esquina» (tiene $150 a favor) y oprime «Devolver saldo a favor». Deja vacío "
-            + "«Cuánto» (todo) y oprime «Devolver». Luego haz un corte X.",
-            "Pide la autorización del encargado (2222). Sale un comprobante para que el cliente firme que recibió el efectivo; su "
-            + "cuenta queda al corriente. En el corte, «Saldo a favor devuelto» resta de lo esperado. En «Avisos al dueño» llega que se devolvió."),
-        new("credito-sin-conexion", "Crédito",
-            "En la caja de Windows, oprime «Simular sin conexión» en la franja de prueba. Con Ctrl+L elige a la «Escuela Primaria Benito Juárez», "
-            + "fíale unos $300 con «Todo a crédito» y luego otra venta de unos $2,000. Con Ctrl+B abónale $100 en efectivo. Oprime «Volver a conectar» "
-            + "y espera unos segundos.",
-            "Sin conexión se fía y se abona con el saldo que conoce la caja: el ticket y el comprobante dicen «(saldo según esta caja)». La segunda venta "
-            + "pasa su límite de $2,000 y pide la autorización del encargado (2222). Al volver, la franja deja de avisar y en «Clientes» su cuenta "
-            + "tiene las dos ventas y el abono una sola vez, marcados «(sin conexión)»."),
-        new("credito-por-revisar", "Crédito",
-            "Como «encargado» (2222), entra a «Clientes» → «Por revisar». Lee lo del «Arq. Ramírez» (es un ejemplo de la prueba), escribe una nota y "
-            + "márcalo «Revisado». Luego entra como «cajero» y busca la pestaña.",
-            "Dice qué pasó, cuándo y por cuánto; al marcarlo sale de la lista. El cajero no ve la pestaña «Por revisar»."),
-        new("efectivo", "Control",
-            "Haz una salida de efectivo con F8 (con motivo) y una entrada con F7.",
-            "Las dos piden motivo y salen en el corte."),
-        new("cancelar", "Control",
-            "En «Devoluciones», cancela un ticket que ya cobraste. Autoriza con el encargado.",
-            "El ticket queda cancelado y la cancelación aparece en «Avisos al dueño» (arriba, en la franja de prueba)."),
-        new("devolver", "Control",
-            "En «Devoluciones», devuelve solo un producto de otra venta.",
-            "Se devuelve el importe de ese producto y vuelve al inventario."),
-        new("verificador", "Vender",
-            "Consulta un precio con F9 (verificador).",
-            "Muestra el producto y su precio sin agregarlo a la venta."),
-        new("impresiones", "Impresiones",
-            "Abre F2 (impresiones por cobrar): agrega una a la venta y cóbrala; marca otra como «no vendida» con su motivo.",
-            "La cobrada entra en la línea «Impresiones» del ticket; la no vendida ya no aparece por cobrar."),
-        new("corte", "Corte",
-            "Haz un corte X (parcial). Después haz el corte Z: entra el encargado, cuenta el efectivo sin ver cuánto debería haber.",
-            "El corte X no cierra el turno. El Z lo cierra y muestra si sobró o faltó; con diferencia, sale en «Avisos al dueño», y también el "
-            + "resumen del día (con lo fiado, los abonos y lo que deben los clientes, si hubo crédito)."),
-        new("productos", "Productos (F3)",
-            "Entra como «encargado» (2222) y elige «Productos e inventario». En F3 busca un producto, cámbiale el precio y mira su kardex.",
-            "El precio nuevo queda guardado y el kardex muestra sus movimientos (ventas, compras…)."),
-        new("producto-nuevo", "Productos (F3)",
-            "Da de alta un producto nuevo con su presentación «Caja 12» y un código interno (botón «Código interno»).",
-            "Se guarda y se puede vender escaneando su código."),
-        new("recibir", "Compras (F4)",
-            "Como «cajero», en F4 Inventario → Compras → «Recibir mercancía»: elige el proveedor de «Léeme.txt» y cuenta lo que dice "
-            + "ahí para la factura (puedes contar uno menos de algo). El producto nuevo no está en el catálogo: cuéntalo con su código. Termina el conteo.",
-            "Mientras cuentas no ves la nota ni los costos. Lo que no está en el catálogo se cuenta aparte. Al terminar, dice que falta que el encargado capture la nota."),
-        new("factura", "Compras (F4)",
-            "Como «encargado» (Productos e inventario), abre esa compra y carga «Factura de ejemplo.xml» (carpeta «Ejemplos de la prueba» "
-            + "del escritorio). Revisa lo que se precargó: confirma el que pregunta «¿Es…?», corrige lo que quieras del producto nuevo "
-            + "(nombre, precio, piezas) y dalo de alta. Cierra la compra.",
-            "Todo el pedido queda cargado y se puede corregir renglón por renglón. Los productos con código llegan solos; el nuevo se da de "
-            + "alta con lo que contaste. La comparación marca lo que faltó y al cerrar entra al inventario."),
-        new("nota-pdf", "Compras (F4)",
-            "Haz otra compra con lo que dice «Léeme.txt» para la nota y carga «Nota de ejemplo.pdf».",
+            "Agrega un folder (tienen mayoreo desde 100), escribe 100 y oprime F11. Luego oprime F11 sin escribir nada.",
+            "Al llegar a la cantidad el precio baja solo: el renglón dice «Mayoreo desde … · ahorra $…» y bajo el total sale «Ahorro por "
+            + "mayoreo». F11 sin nada muestra sus escalas en el panel de la derecha, sin tapar el ticket. El ticket lo dice en «Usted ahorró»."),
+
+        // ── El cobro en el panel del total ──
+        new("cobrar", "Cobrar",
+            "Agrega un producto y unas hojas blancas sueltas, para que el total lleve centavos. Oprime F12 y luego Esc. Oprime F12 otra vez, "
+            + "escribe lo que te dio el cliente (por ejemplo 200) y Enter. En la siguiente venta oprime F12 y Enter, sin escribir nada.",
+            "F12 apaga lo demás y deja el cursor en «Pagó con» con el total en gris, ya al peso («En efectivo, al peso»); Esc regresa al cuadro "
+            + "sin cobrar. Al escribir, el cambio sale al momento; Enter cobra y el panel deja el cambio en grande hasta que agregas lo del "
+            + "siguiente cliente. Sin impresora, el panel dice «Ticket A-… · verlo en pantalla»: el ticket no se abre solo, y ese enlace lo "
+            + "muestra con Total, Redondeo y Total a pagar. F12 y Enter cobra exacto."),
+        new("cambio-grande", "Cobrar",
+            "Cobra algo de menos de $100 como si te pagaran con un billete de $1,000: oprime F12, escribe 1000 y Enter.",
+            "Antes del Enter, el panel ya dice el cambio en grande, y el botón, «Cobrar · cambio $…». Un solo Enter cobra, sin preguntar otra "
+            + "vez (F12 ya es la confirmación), y el cambio se queda en grande para darlo."),
+
+        // ── Lo demás de la venta ──
+        new("acciones", "Más en la venta",
+            "Escribe / en el cuadro y recorre la lista. Escribe «/sal» y Enter: haz una salida de efectivo de $100 con su motivo. Después oprime "
+            + "F7 y haz una entrada.",
+            "«/» muestra todo lo que puedes hacer, con su tecla; lo que pide autorización lleva candado y dice quién la da (por ejemplo «Lo "
+            + "autoriza Dueño de prueba»), y lo que no puedes no sale. «/sal» deja solo las que dicen «sal» y Enter la abre. La salida y la "
+            + "entrada se capturan en el panel de la derecha, piden motivo y salen en el corte."),
+        new("verificador", "Más en la venta",
+            "Oprime F9 y escribe (o escanea) un código. Oprime F9 otra vez. Vuelve a abrirlo y ciérralo con Esc.",
+            "El verificador sale en el panel de la derecha: muestra el producto, su precio y su existencia sin agregarlo a la venta. F9 o Esc "
+            + "regresan a vender, con el cursor en el cuadro."),
+        new("alta-rapida", "Más en la venta",
+            "Escribe un código que no existe (por ejemplo 7500000000017) y Enter, y dalo de alta con el botón que sale bajo el cuadro (nombre, "
+            + "precio y departamento). Luego oprime Ins y agrega un artículo común escribiendo su descripción y su precio.",
+            "Bajo el cuadro, en rojo, dice que no existe y ofrece «Dar de alta «…»». El alta y el artículo común se llenan en el panel de la "
+            + "derecha y entran a la venta. El encargado verá el producto nuevo en Productos (F3) como «Por completar»."),
+        new("impresiones", "Más en la venta",
+            "Oprime F2 (impresiones por cobrar): agrega una a la venta y cóbrala; marca otra como «no vendida» con su motivo.",
+            "Las impresiones salen en el panel de la derecha. La cobrada entra en la línea «Impresiones» del ticket; la no vendida ya no "
+            + "aparece por cobrar."),
+
+        // ── Los tickets en espera ──
+        new("en-espera", "Tickets en espera",
+            "Empieza una venta y oprime F6. Atiende otra y cóbrala. Deja en espera cuatro más, cada una con algo. Retoma una tocando su ficha, "
+            + "otra con F5 y otra desde «Más».",
+            "Cada ticket en espera queda como una ficha con su hora y su total, junto a «Poner en espera»; desde el cuarto van en «Más (…)». "
+            + "F5 retoma el que lleva más tiempo esperando. Si el ticket que atiendes tiene algo, pasa a la espera: nunca se pierde nada y "
+            + "ninguno pierde sus productos."),
+        new("espera-al-cerrar", "Tickets en espera",
+            "Deja un ticket en espera y cierra la caja con la X de la ventana. Ábrela otra vez desde el escritorio y entra como «cajero» (1111).",
+            "Vuelves a la venta con tu mismo turno; dice «Volvió el ticket que estaba en espera» (si eran varios, «Volvieron los … tickets "
+            + "que estaban en espera») y sus fichas están ahí, con sus productos."),
+
+        // ── Devolver y autorizar ──
+        new("devolver", "Devolver y autorizar",
+            "Escribe en el cuadro el folio de un ticket que ya cobraste (sale en el panel al cobrar y abajo, en «Último: A-…») y Enter. "
+            + "Devuelve solo un producto: escribe 1 en «Devolver», el motivo y oprime «Devolver lo marcado».",
+            "Ya no hay botón «Devoluciones»: el folio abre ese ticket en el panel de la derecha. Se devuelve el importe de ese producto y vuelve "
+            + "al inventario."),
+        new("descuento", "Devolver y autorizar",
+            "Elige un renglón (con ↑ ↓ o tocándolo): debajo salen sus acciones. Haz un descuento de 5 % con «Descuento» (o Ctrl+D) y su "
+            + "motivo. Luego, a otro renglón, uno de 20 %: cuando pida la autorización, toca la ficha de «Dueño de prueba» y escribe su PIN "
+            + "(3333).",
+            "La fila dice «Descuento hasta 10 %». El de 5 % entra solo. El de 20 % pide la autorización en el mismo panel: salen las fichas de "
+            + "quienes pueden darla (Encargado de prueba y Dueño de prueba) y solo se escribe el PIN del que se toca. Vale una vez."),
+        new("cambiar-precio", "Devolver y autorizar",
+            "Elige un renglón y oprime «Precio» debajo de él (o Ctrl+E). Escribe un precio nuevo y autoriza.",
+            "En la fila, «Precio» lleva un candado con «Dueño de prueba»: el cambio de precio solo lo autoriza el dueño, y el panel pide solo "
+            + "su PIN (3333). Con él, el precio cambia solo en esta venta y el renglón dice «Precio cambiado», con el de antes tachado."),
+        new("cancelar", "Devolver y autorizar",
+            "Escribe / y elige «Devolver o cancelar un ticket». Escribe el folio de otro ticket cobrado, escribe el motivo y oprime «Cancelar "
+            + "todo el ticket». Autoriza tocando la ficha de «Encargado de prueba» (2222).",
+            "La cancelación pide la autorización en el panel, con las fichas de quienes pueden darla. El ticket queda cancelado y la "
+            + "cancelación aparece en «Avisos al dueño» (arriba, en la franja de prueba)."),
+        new("cliente-venta", "Cliente del ticket",
+            "Toca la flecha «Público en general» arriba del total (o Ctrl+L) y busca a la «Escuela Primaria Benito Juárez» por su teléfono "
+            + "(escribe 1234). Agrega productos y cóbrala. En otra venta elige a «Papelería La Esquina» y agrega un solo folder.",
+            "El panel del cliente entra por la derecha y la flecha lleva su nombre. La escuela lleva su 10 % en todo el ticket sin pedir "
+            + "autorización. La papelería paga el folder a precio de mayoreo aunque sea uno: el renglón dice «Mayoreo de cliente». Si un "
+            + "descuento deja algo debajo del costo, la autorización se pide al cobrar, en el panel, y luego sigue el cobro."),
+
+        // ── Tarjeta, transferencia y crédito: siguen (el solo efectivo es del piloto con eleventa) ──
+        new("tarjeta-transferencia", "Tarjeta, transferencia y crédito",
+            "Cobra con tarjeta: F12 y toca «Tarjeta» junto a «Pagó con»; su monto ya trae el total. La referencia va en «Referencia» "
+            + "(opcional); Enter cobra. En otra, deja la tarjeta en la mitad y paga el resto en «Pagó con». En otra, usa «Transf.».",
+            "Cada forma agrega su renglón con lo que falta, en el mismo panel. La tarjeta va exacta, sin redondeo al peso. En la mixta el "
+            + "efectivo cubre el resto, el cambio es solo del efectivo y el ticket muestra las dos formas. La transferencia dice «queda por "
+            + "verificar»."),
+        new("credito-fiar", "Tarjeta, transferencia y crédito",
+            "Con Ctrl+L elige al «Arq. Ramírez». Agrega productos por unos $200, oprime F12, toca «Crédito» junto a «Pagó con» y Enter.",
+            "Al elegirlo, arriba del total dice que debe $350 y que está vencido, con «Abonar» (no impide fiarle). «Crédito» agrega su renglón "
+            + "con todo el total y dice lo que debe y lo que le queda. Se cobra sin efectivo y el ticket trae «SU CUENTA»: lo fiado, cuánto debe "
+            + "ahora y hasta cuándo paga."),
+        new("credito-limite", "Tarjeta, transferencia y crédito",
+            "Al mismo cliente fíale otra venta de unos $600 (su límite es $1,000). En otra, baja el monto del crédito y paga el resto en «Pagó "
+            + "con».",
+            "El panel avisa, con candado, que pasa su límite y quién lo autoriza; al cobrar pide la autorización ahí mismo, con la ficha del "
+            + "encargado o del dueño. La autorización aparece en «Avisos al dueño». Con una parte en efectivo, el cambio es solo de lo que dio."),
+        new("credito-abono", "Tarjeta, transferencia y crédito",
+            "Oprime Ctrl+B, busca al «Arq. Ramírez» y abónale $300 en efectivo pagando con $500. Vuelve a oprimir Ctrl+B y en «Abonos de hoy» "
+            + "escribe un motivo y reimprime el comprobante.",
+            "El abono se hace en el panel de la derecha. Sale el comprobante con lo que debía, lo que abonó, el cambio ($200) y lo que queda; "
+            + "la reimpresión sale igual."),
+        new("credito-devolucion", "Tarjeta, transferencia y crédito",
+            "Escribe en el cuadro el folio de una de las ventas fiadas y devuelve un producto.",
+            "Dice que ese ticket se fió. No sale efectivo: el comprobante dice cuánto se descuenta de su cuenta y cuánto debe ahora."),
+        new("credito-sin-conexion", "Tarjeta, transferencia y crédito",
+            "En la caja de Windows, oprime «Simular sin conexión» en la franja de prueba. Con Ctrl+L elige a la «Escuela Primaria Benito "
+            + "Juárez» y fíale unos $300 con «Crédito»; luego, otra venta de unos $2,500. Con Ctrl+B abónale $100. Oprime «Volver a conectar».",
+            "Arriba, el estado dice «Sin la principal» y una franja avisa que se vende con la copia de esta caja. Se fía y se abona con el saldo "
+            + "que conoce la caja: el ticket y el comprobante dicen «(saldo según esta caja)». La segunda venta (aun con su 10 %) pasa su límite "
+            + "de $2,000 y pide la autorización con la ficha del encargado. Unos segundos después de volver, el aviso se quita y en «Clientes» "
+            + "su cuenta tiene las dos ventas y el abono una sola vez, marcados «(sin conexión)»."),
+
+        // ── Lo que todavía abre las pantallas de hoy ──
+        new("otro-turno", $"{PantallaDeHoy} · Entrar con tu turno abierto",
+            "Oprime Ctrl+U (o tu nombre arriba a la derecha → «Cambiar de usuario») y entra como «encargado» (2222). Elige «Productos e "
+            + "inventario (sin cortar)» y mira Productos, Inventario y Clientes. Luego oprime «Salir» y entra otra vez como «cajero» (1111).",
+            "La entrada es la de hoy: se escribe el usuario y el PIN. Como el turno es del cajero, dice «Caja 1 tiene abierto el turno de "
+            + "Cajero de prueba», con «Productos e inventario (sin cortar)», «Hacer el corte» y «Salir»: por ahí entran el encargado y el dueño "
+            + "en las tareas que siguen. Al volver como cajero sigues en la venta nueva, con tu turno y tus tickets en espera."),
+        new("productos", $"{PantallaDeHoy} · Productos (F3)",
+            "Como «encargado» (Productos e inventario), en F3 busca un producto, cámbiale el precio y mira su kardex. Da de alta uno nuevo con "
+            + "su presentación «Caja 12» y un código interno (botón «Código interno»). Vuelve como cajero y escribe ese código en la venta.",
+            "El precio nuevo queda guardado y el kardex muestra sus movimientos (ventas, compras…). El producto nuevo se guarda y se vende con "
+            + "su código."),
+        new("recibir", $"{PantallaDeHoy} · Compras (F4)",
+            "Como «cajero», en Inventario (arriba, o F4) → Compras → «Recibir mercancía»: elige el proveedor de «Léeme.txt» y cuenta lo que dice "
+            + "ahí para la factura (puedes contar uno menos de algo; el nuevo, con su código). Termina el conteo.",
+            "Mientras cuentas no ves la nota ni los costos. Lo que no está en el catálogo se cuenta aparte. Al terminar, dice que falta que el "
+            + "encargado capture la nota."),
+        new("factura", $"{PantallaDeHoy} · Compras (F4)",
+            "Como «encargado» (Productos e inventario), abre esa compra y carga «Factura de ejemplo.xml» (en «Ejemplos de la prueba», en el "
+            + "escritorio). Confirma el que pregunta «¿Es…?», corrige lo que quieras del producto nuevo y dalo de alta. Cierra la compra.",
+            "Todo el pedido queda precargado y se puede corregir renglón por renglón (del nuevo: nombre, precio, piezas). Los productos con "
+            + "código llegan solos; el nuevo se da de alta con lo que contaste. La comparación marca lo que faltó y al cerrar entra al "
+            + "inventario."),
+        new("nota-pdf", $"{PantallaDeHoy} · Compras (F4)",
+            "Haz otra compra con lo que dice «Léeme.txt» para la nota (el cajero cuenta, el encargado la captura) y carga «Nota de ejemplo.pdf».",
             "Lee los renglones del PDF, avisa que repartió el IVA y el producto que ligaste antes ya llega ligado."),
-        new("orden", "Compras (F4)",
-            "Arma una orden de compra en F4 → Órdenes de compra y copia su texto.",
-            "El texto del pedido se pega en otro lado (WhatsApp, Bloc de notas) con cantidades y claves."),
-        new("paquete", "Compras (F4)",
+        new("sugerido", $"{PantallaDeHoy} · Compras (F4)",
+            "Como «encargado», abre F4 → Sugerido de compra. Cambia la cantidad de un producto, quita otro y da «Hacer orden de compra» en un "
+            + "proveedor. En «Órdenes de compra» abre esa orden y oprime «Copiar el texto».",
+            "Sale lo que hay que pedir por proveedor, lo urgente marcado. La orden tiene lo que dejaste, y su texto se pega en otro lado "
+            + "(WhatsApp, Bloc de notas) con cantidades y claves."),
+        new("paquete", $"{PantallaDeHoy} · Inventario (F4)",
             "En F4 → Abrir paquete, abre un producto en otro (por ejemplo, un paquete en sus piezas).",
             "Sale uno y entran sus piezas; aparece en la lista de abajo con tu nombre."),
-        new("sugerido", "Compras (F4)",
-            "Como «encargado», abre F4 → Sugerido de compra. Cambia la cantidad de un producto, quita otro y da «Hacer orden de compra» en un proveedor.",
-            "Sale lo que hay que pedir por proveedor, lo urgente marcado. La orden aparece en «Órdenes de compra» con lo que dejaste."),
-        new("conteo", "Inventario (F4)",
-            "Al abrir el turno aparece «Conteo del día». Cuenta dos o tres de esos productos (en la prueba, inventa la cantidad) con «Contar ahora».",
-            "No ves cuánto dice el sistema. Como encargado, en F4 → Conteo del día ves la diferencia; si vale $200 o más, sale en «Avisos al dueño»."),
-        new("conteo-completo", "Inventario (F4)",
-            "Como «encargado», en F4 → Conteo completo abre un departamento chico. Con un celular en el mismo wifi, escanea el código QR "
-            + "de esa pantalla (o abre en el navegador de esta PC la dirección que muestra) y entra como «cajero» (1111). Cuenta tres "
-            + "productos, uno de ellos en dos partes (anaquel y bodega). Luego, como encargado, «Revisar y cerrar».",
-            "En el celular no se ve lo que dice el sistema y las dos partes se suman. En la revisión salen las diferencias; al cerrar, "
-            + "lo contado queda como existencia, lo que nadie contó queda en 0 y sale en «Avisos al dueño»."),
-        new("etiquetas", "Inventario (F4)",
-            "Como «encargado», en F4 → Etiquetas agrega lo que llegó en la compra que cerraste (quita «Solo lo que no trae código de fábrica») "
-            + "y da «Vista previa». Luego imprime la hoja de prueba (si no hay impresora, elige «Microsoft Print to PDF»).",
-            "Sale una etiqueta por pieza con el nombre y su código de barras, en hojas carta. La hoja de prueba marca dónde cae cada etiqueta."),
-        new("hoja-codigos", "Inventario (F4)",
-            "Como «encargado», en F4 → Hoja de códigos agrega tres productos chicos (por ejemplo, gomas) y da «Vista previa».",
-            "Sale una hoja con el nombre y el código de barras de cada uno, separada por departamento. Al volver a entrar, la lista sigue ahí."),
-        new("merma", "Inventario (F4)",
-            "Como «cajero», en F4 → Ajustes y mermas, registra una merma de 1 producto dañado. Luego intenta una de 30 piezas de algo caro.",
-            "La chica entra sola; la grande (más de $200 de costo) pide al encargado. Las dos salen del inventario y quedan en la lista."),
-        new("ajuste", "Inventario (F4)",
-            "Como «encargado», corrige la existencia de un producto a la que cuentes en el anaquel, con su motivo.",
-            "La existencia queda en lo que escribiste; si la diferencia vale $200 o más, sale en «Avisos al dueño»."),
-        new("margen", "Dueño",
-            "Entra como «dueno» (3333). En F4 → Margen mínimo, sube el margen general a 50 % y cierra otra compra.",
+        new("conteo", $"{PantallaDeHoy} · Inventario (F4)",
+            "Como «cajero», toca «Conteo del día» abajo a la derecha, en la barra de teclas. Cuenta dos o tres de esos productos (en la prueba, "
+            + "inventa la cantidad).",
+            "El chip dice cuántos llevas de cuántos. No ves cuánto dice el sistema. Como encargado, en F4 → Conteo del día ves la diferencia; si "
+            + "vale $200 o más, sale en «Avisos al dueño»."),
+        new("conteo-completo", $"{PantallaDeHoy} · Inventario (F4)",
+            "Como «encargado», en F4 → Conteo completo abre un departamento chico. Con un celular en el mismo wifi, escanea su código QR, entra "
+            + "como «cajero» (1111) y cuenta tres productos, uno en dos partes (anaquel y bodega). Luego, en la PC, «Revisar y cerrar».",
+            "Sin celular, la dirección que muestra se abre en el navegador de esta PC. En el celular no se ve lo que dice el sistema y las dos "
+            + "partes se suman. En la revisión salen las diferencias; al cerrar, lo contado queda como existencia, lo que nadie contó queda en "
+            + "0 y sale en «Avisos al dueño»."),
+        new("etiquetas", $"{PantallaDeHoy} · Inventario (F4)",
+            "Como «encargado», en F4 → Etiquetas agrega la compra que cerraste (quita «Solo lo que no trae código de fábrica») e imprime la "
+            + "hoja de prueba desde «Vista previa» (o a «Microsoft Print to PDF»). En F4 → Hoja de códigos, agrega tres gomas y da «Vista "
+            + "previa».",
+            "Sale una etiqueta por pieza con el nombre y su código de barras, en hojas carta; la hoja de prueba marca dónde cae cada una. La "
+            + "hoja de códigos trae el nombre y el código de cada producto, por departamento, y al volver a entrar la lista sigue ahí."),
+        new("mermas-ajustes", $"{PantallaDeHoy} · Inventario (F4)",
+            "Como «cajero», en Inventario (F4) → Ajustes y mermas, registra una merma de 1 producto dañado y luego una de 30 piezas de algo "
+            + "caro. Después corrige la existencia de un producto a la que cuentes en el anaquel, con su motivo.",
+            "La merma chica entra sola; la grande (más de $200 de costo) y la corrección piden la autorización: se toca la ficha del encargado "
+            + "y se escribe su PIN. Todo queda en la lista y en la existencia; si la corrección vale $200 o más, sale en «Avisos al dueño»."),
+        new("cliente-alta", $"{PantallaDeHoy} · Clientes",
+            "Como «encargado» (Productos e inventario → Clientes), da de alta un cliente con teléfono y 5 % de descuento; abre a «Maestra "
+            + "Carmen» («Por revisar») y guárdala. En la pestaña «Por revisar», lee lo del «Arq. Ramírez», anota algo y márcalo «Revisado».",
+            "El cliente queda en la lista y ya se puede elegir con Ctrl+L. En «Avisos al dueño» llega que el encargado le dio privilegios. Al "
+            + "guardar a Maestra Carmen se quita «Por revisar». Lo del Arq. Ramírez dice qué pasó, cuándo y por cuánto; al marcarlo sale de la "
+            + "lista."),
+        new("credito-saldo-a-favor", $"{PantallaDeHoy} · Clientes",
+            "Como «cajero», abre «Clientes» (arriba) → «Papelería La Esquina» (tiene $150 a favor) y oprime «Devolver saldo a favor». Deja "
+            + "vacío «Cuánto» (todo) y oprime «Devolver».",
+            "El cajero ve los clientes y sus cuentas, pero no los cambia. «Devolver saldo a favor» lleva candado: pide la autorización con la "
+            + "ficha del encargado (2222). Sale un comprobante para que el cliente firme que recibió el efectivo; su cuenta queda al corriente y "
+            + "en «Avisos al dueño» llega que se devolvió."),
+        new("corte", $"{PantallaDeHoy} · Corte",
+            "Como «cajero», en «Corte» (arriba) haz un corte X (parcial). Luego «Corte de cierre (Z)»: el encargado escribe su usuario y PIN y "
+            + "cuenta el efectivo sin ver cuánto debería haber.",
+            "El corte X no cierra el turno; trae los abonos en efectivo (suman a lo esperado), el saldo a favor devuelto (resta), las entradas y "
+            + "salidas, y lo fiado aparte, que no suma. Si quedan tickets en espera, avisa que se pierden. El Z cierra el turno y muestra si "
+            + "sobró o faltó; con diferencia sale en «Avisos al dueño», y también el resumen del día. Después la caja vuelve a la entrada: para "
+            + "seguir hay que entrar y abrir otro turno."),
+        new("credito-cuenta", $"{PantallaDeHoy} · El dueño, después del corte",
+            "Entra como «dueno» (3333) con un turno de $500. En «Clientes» → «Solo los que deben», abre al «Arq. Ramírez»: ponle plazo de 15 "
+            + "días, imprime su «Estado de cuenta» y oprime «Copiar para WhatsApp». Sin el filtro, dale $500 de crédito a «Papelería La "
+            + "Esquina».",
+            "Con el turno nuevo vuelve la venta nueva, ahora con todas las pestañas. La lista dice cuánto debe cada quien (en rojo, si tiene "
+            + "algo vencido). En su cuenta están el saldo inicial, lo fiado, los abonos y la devolución, cada uno con el saldo que dejó; el "
+            + "estado de cuenta y el texto copiado (pégalo en el Bloc de notas) dicen lo mismo, con lo que falta pagar de cada compra y su "
+            + "vencimiento. Solo el dueño cambia el crédito."),
+        new("margen", $"{PantallaDeHoy} · El dueño, después del corte",
+            "Como dueño, en Inventario (F4) → Margen mínimo, sube el margen general a 50 % y cierra otra compra.",
             "Los productos debajo del 50 % sugieren precio y se avisa al dueño. Regrésalo a 30 % al terminar."),
-        new("configuracion", "Dueño",
-            "Como dueño, en Configuración mira las reglas, la bitácora y el ticket.",
-            "La bitácora tiene lo que hiciste en la prueba (cancelaciones, precios, compras…)."),
-        new("avisos", "Dueño",
-            "Abre «Avisos al dueño» en la franja de prueba.",
-            "Están los avisos que le habrían llegado por Telegram: cancelaciones, cortes con diferencia, compras…"),
+        new("sinonimos", $"{PantallaDeHoy} · El dueño, después del corte",
+            "Como dueño, escribe «lapicero» en el cuadro de captura. Luego, en Configuración → Sinónimos, agrega: al escribir «lapicero» también "
+            + "busca «pluma». Vuelve a escribir «lapicero» en el cuadro.",
+            "La primera vez no sale ninguna pluma: solo «Parecidos a «lapicero»…» (lapiceras y estuches). Con el sinónimo salen las plumas, y "
+            + "cada renglón dice «por «lapicero»». Los sinónimos solo los dan de alta el dueño y el encargado; uno mal puesto mezcla "
+            + "productos, y se quita ahí mismo."),
+        new("configuracion", $"{PantallaDeHoy} · El dueño, después del corte",
+            "Como dueño, en Configuración mira las reglas, la bitácora y el ticket. Abre «Avisos al dueño» en la franja de prueba.",
+            "La bitácora tiene lo que hiciste en la prueba (cancelaciones, precios, autorizaciones, compras…). En «Avisos al dueño» están los "
+            + "que le habrían llegado por Telegram: cancelaciones, cortes con diferencia, compras…"),
     ];
 
     /// <summary>Las respuestas como documento: lo que se guarda en el escritorio para mandarlo.</summary>
@@ -190,6 +288,7 @@ public static class GuiaPrueba
         t.AppendLine();
         t.AppendLine($"- Quién probó: {(string.IsNullOrWhiteSpace(respuestas.Nombre) ? "(sin nombre)" : respuestas.Nombre.Trim())}");
         t.AppendLine($"- Fecha: {ahora:dd/MM/yyyy HH:mm}");
+        t.AppendLine($"- Guía: versión {respuestas.Version}{(respuestas.Version == Version ? "" : $" (la de esta caja es la {Version})")}");
         var contestadas = Tareas.Count(x => respuestas.Tareas.GetValueOrDefault(x.Id)?.SalioBien is not null);
         var fallas = Tareas.Count(x => respuestas.Tareas.GetValueOrDefault(x.Id)?.SalioBien == false);
         t.AppendLine($"- Contestadas: {contestadas} de {Tareas.Count} · con problemas: {fallas}");

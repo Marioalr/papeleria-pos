@@ -86,6 +86,15 @@ public class PruebaApiTests(ServicioEnPrueba prueba) : IClassFixture<ServicioEnP
         Assert.Contains("cajero / 1111", leeme);
         Assert.Contains(factura.Lineas[0].Codigo!, leeme);
         Assert.Contains("no está en el catálogo", leeme);
+        // Fiar es con «Crédito» junto a «Pagó con» en la pantalla nueva; «A crédito» era la ventana de cobro de la de hoy.
+        Assert.Contains("«Crédito» junto a «Pagó con»", leeme);
+        Assert.DoesNotContain("«A crédito»", leeme);
+        Assert.Contains("dejar la guía en blanco", leeme);
+        // Los códigos para vender (la tarea «escanear») son los de la factura que ya están en el catálogo, no el nuevo.
+        var paraVender = leeme.ReplaceLineEndings("\n").Split('\n').SkipWhile(l => !l.StartsWith("Códigos para vender", StringComparison.Ordinal))
+            .Skip(1).TakeWhile(l => l.StartsWith("     ", StringComparison.Ordinal)).Select(l => l.Trim().Split(' ')[0]).ToList();
+        Assert.Equal(4, paraVender.Count);
+        Assert.Equal(4, await db.CodigosBarras.CountAsync(c => paraVender.Contains(c.Codigo)));
     }
 
     [Fact]
@@ -109,22 +118,108 @@ public class PruebaApiTests(ServicioEnPrueba prueba) : IClassFixture<ServicioEnP
         var http = prueba.Fabrica.CreateClient();
         var respuestas = new RespuestasPruebaDto("Ana", new Dictionary<string, RespuestaTareaDto>
         {
-            ["vender"] = new(true, null),
+            ["cobrar"] = new(true, null),
             ["corte"] = new(false, "No encontré dónde se cuenta el efectivo"),
-        }, "Todo claro");
+        }, "Todo claro", GuiaPrueba.Version);
 
         await Leer<RespuestasPruebaDto>(await http.PutAsJsonAsync("api/prueba/respuestas", respuestas));
-        var leidas = await Leer<RespuestasPruebaDto>(await http.GetAsync("api/prueba/respuestas"));
+        var leidas = await Leer<RespuestasPruebaDto>(await http.GetAsync($"api/prueba/respuestas?version={GuiaPrueba.Version}"));
         var texto = GuiaPrueba.Documento(leidas, new DateTime(2026, 10, 7, 12, 0, 0));
         var archivo = await Leer<ArchivoGuardadoDto>(await http.PostAsJsonAsync("api/prueba/respuestas/exportar", new SolicitudExportarRespuestas(texto)));
+        var otraVez = await Leer<ArchivoGuardadoDto>(await http.PostAsJsonAsync("api/prueba/respuestas/exportar", new SolicitudExportarRespuestas("otra")));
 
-        Assert.Equal("Ana", leidas.Nombre);
+        Assert.Equal(("Ana", GuiaPrueba.Version), (leidas.Nombre, leidas.Version));
         Assert.False(leidas.Tareas["corte"].SalioBien);
         Assert.Contains("Contestadas: 2 de", texto);
+        Assert.Contains($"- Guía: versión {GuiaPrueba.Version}\n", texto.ReplaceLineEndings("\n"));
         Assert.Contains("- Lo que vio: No encontré dónde se cuenta el efectivo", texto);
         Assert.Equal(prueba.Carpeta, Path.GetDirectoryName(archivo.Ruta));
         Assert.Equal(texto, await File.ReadAllTextAsync(archivo.Ruta));
+        // Otro en el mismo minuto no se encima en el primero.
+        Assert.NotEqual(archivo.Ruta, otraVez.Ruta);
         File.Delete(archivo.Ruta);
+        File.Delete(otraVez.Ruta);
+    }
+
+    [Fact]
+    public async Task Las_respuestas_de_otra_version_de_la_guia_no_se_cargan_y_su_archivo_se_queda()
+    {
+        // Como las dejó la caja de la primera prueba (2026-10-10): sin versión y con los Id de la guía de entonces.
+        var deAntes = Path.Combine(prueba.Carpeta, "respuestas-prueba.json");
+        const string json = """
+            { "nombre": "Quien probó primero", "tareas": { "vender": { "salioBien": false, "nota": "La pantalla de hoy" } }, "comentarios": "Horrible" }
+            """;
+        await File.WriteAllTextAsync(deAntes, json);
+        var http = prueba.Fabrica.CreateClient();
+
+        var nueva = await Leer<RespuestasPruebaDto>(await http.GetAsync($"api/prueba/respuestas?version={GuiaPrueba.Version}"));
+        await Leer<RespuestasPruebaDto>(await http.PutAsJsonAsync("api/prueba/respuestas",
+            new RespuestasPruebaDto("Beto", new Dictionary<string, RespuestaTareaDto> { ["entrar"] = new(true, null) }, null, GuiaPrueba.Version)));
+        var laPrimera = await Leer<RespuestasPruebaDto>(await http.GetAsync("api/prueba/respuestas"));
+
+        Assert.True(GuiaPrueba.Version > 1);
+        Assert.Equal(GuiaPrueba.Version, nueva.Version);
+        Assert.NotEqual("Quien probó primero", nueva.Nombre);
+        Assert.DoesNotContain("vender", nueva.Tareas.Keys);
+        // Las de la primera guía siguen en su archivo, tal cual: guardar las nuevas no las toca.
+        Assert.Equal(json, await File.ReadAllTextAsync(deAntes));
+        Assert.Equal((1, "Quien probó primero", "La pantalla de hoy"), (laPrimera.Version, laPrimera.Nombre, laPrimera.Tareas["vender"].Nota));
+    }
+
+    [Fact]
+    public async Task Al_dejar_la_guia_en_blanco_se_guardan_las_respuestas_y_la_siguiente_persona_empieza_sin_ellas()
+    {
+        var cliente = new PapeleriaPos.Interfaz.ClienteCaja(new HttpClient(prueba.Fabrica.Server.CreateHandler()),
+            new PapeleriaPos.Interfaz.ConexionCaja { Servicio = new Uri("http://localhost/") });
+        var delSabado = new RespuestasPruebaDto("Persona del sábado", new Dictionary<string, RespuestaTareaDto>
+        {
+            ["buscar"] = new(true, null),
+            ["familias"] = new(false, "No supe cómo abrir los colores"),
+        }, null, GuiaPrueba.Version);
+        await cliente.GuardarRespuestasPruebaAsync(delSabado);
+        var texto = GuiaPrueba.Documento(await cliente.RespuestasPruebaAsync(GuiaPrueba.Version), new DateTime(2026, 10, 17, 18, 0, 0));
+
+        var archivo = await cliente.DejarGuiaEnBlancoAsync(GuiaPrueba.Version, texto);
+        var delDomingo = await cliente.RespuestasPruebaAsync(GuiaPrueba.Version);
+        // La guía ya en blanco, en el mismo minuto: no se encima en el documento del sábado.
+        var enBlanco = await cliente.DejarGuiaEnBlancoAsync(GuiaPrueba.Version, GuiaPrueba.Documento(delDomingo, new DateTime(2026, 10, 17, 18, 1, 0)));
+        var apartadas = Directory.GetFiles(prueba.Carpeta, $"respuestas-prueba-guia-{GuiaPrueba.Version} (guardadas *).json");
+
+        Assert.Equal(prueba.Carpeta, Path.GetDirectoryName(archivo.Ruta));
+        Assert.Equal(texto, await File.ReadAllTextAsync(archivo.Ruta));
+        Assert.Contains("Persona del sábado", texto);
+        Assert.Contains("- Lo que vio: No supe cómo abrir los colores", texto);
+        Assert.Equal((null, 0, GuiaPrueba.Version), (delDomingo.Nombre, delDomingo.Tareas.Count, delDomingo.Version));
+        Assert.NotEqual(archivo.Ruta, enBlanco.Ruta);
+        Assert.Equal(texto, await File.ReadAllTextAsync(archivo.Ruta));
+        // El archivo de las respuestas no se borra: se aparta con la hora.
+        Assert.Contains(apartadas, a => System.Text.Json.JsonSerializer.Deserialize<RespuestasPruebaDto>(File.ReadAllText(a),
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!.Nombre == "Persona del sábado");
+        File.Delete(archivo.Ruta);
+        File.Delete(enBlanco.Ruta);
+    }
+
+    [Fact]
+    public async Task Un_archivo_de_respuestas_danado_se_aparta_y_la_guia_abre_en_blanco()
+    {
+        // Una versión que no usa otra prueba: el archivo es solo de esta. Así quedaba si se iba la luz a media escritura.
+        const int version = 99;
+        const string aMedias = """{ "nombre": "Se fue la luz", "tareas": { "entr""";
+        await File.WriteAllTextAsync(Path.Combine(prueba.Carpeta, $"respuestas-prueba-guia-{version}.json"), aMedias);
+        var http = prueba.Fabrica.CreateClient();
+
+        var leidas = await Leer<RespuestasPruebaDto>(await http.GetAsync($"api/prueba/respuestas?version={version}"));
+        var apartado = Assert.Single(Directory.GetFiles(prueba.Carpeta, $"respuestas-prueba-guia-{version} (dañadas *).json"));
+        await Leer<RespuestasPruebaDto>(await http.PutAsJsonAsync("api/prueba/respuestas",
+            new RespuestasPruebaDto("Ana", new Dictionary<string, RespuestaTareaDto> { ["entrar"] = new(true, null) }, null, version)));
+        var guardadas = await Leer<RespuestasPruebaDto>(await http.GetAsync($"api/prueba/respuestas?version={version}"));
+
+        Assert.Equal((null, 0, version), (leidas.Nombre, leidas.Tareas.Count, leidas.Version));
+        // No se borra: lo que se alcance a leer de ahí sigue en el archivo apartado.
+        Assert.Equal(aMedias, await File.ReadAllTextAsync(apartado));
+        Assert.Equal(("Ana", true), (guardadas.Nombre, guardadas.Tareas["entrar"].SalioBien));
+        // Se escriben aparte y se renombran: no queda el temporal.
+        Assert.Empty(Directory.GetFiles(prueba.Carpeta, "*.nuevo"));
     }
 
     [Fact]
@@ -162,7 +257,7 @@ public class PruebaApiTests(ServicioEnPrueba prueba) : IClassFixture<ServicioEnP
         await contingencia.LatidoAsync();
         var cuenta = await cliente.CreditoAsync(ramirez.Id);
         var avisos = await cliente.AvisosPruebaAsync();
-        var respuestas = await cliente.RespuestasPruebaAsync();
+        var respuestas = await cliente.RespuestasPruebaAsync(GuiaPrueba.Version);
         var reiniciar = await Assert.ThrowsAsync<PapeleriaPos.Interfaz.ErrorCaja>(() => cliente.EmpezarDeCeroAsync());
 
         Assert.Equal(caja.Id, conexion.CajaId);

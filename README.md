@@ -127,6 +127,11 @@ Para que alguien de la tienda pruebe lo que ya funciona, solo y sin tocar eleven
   - La primera versión con esto se instala a mano; desde ahí, las siguientes desde la caja.
 - **La franja de prueba,** arriba, tiene la guía de tareas (las respuestas se guardan en un archivo en el escritorio),
   los avisos que le llegarían al dueño por Telegram y «Empezar de cero».
+  - La guía es la de la pantalla nueva: primero vender, al final lo que todavía abre las pantallas de hoy.
+  - Las respuestas van con la versión de la guía; las de otra versión no se cargan y su archivo se queda en
+    `C:\ProgramData\PapeleriaPos-Prueba`.
+  - Al terminar una persona, «Guardar respuestas y dejar la guía en blanco» deja su archivo en el escritorio y la guía
+    lista para la siguiente.
 - Necesita Windows 10 u 11 de 64 bits con WebView2 (viene con Windows 11 y con Windows 10 actualizado).
 
 Lo mismo en desarrollo, en el navegador:

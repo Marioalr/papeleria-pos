@@ -677,13 +677,19 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     public async Task<List<AvisoPruebaDto>> AvisosPruebaAsync() => await _http.GetAsync<List<AvisoPruebaDto>>("api/prueba/avisos") ?? [];
 
-    public async Task<RespuestasPruebaDto> RespuestasPruebaAsync() => (await _http.GetAsync<RespuestasPruebaDto>("api/prueba/respuestas"))!;
+    /// <summary>Las de esa versión de la guía (<see cref="GuiaPrueba.Version"/>): las de otra no se cargan.</summary>
+    public async Task<RespuestasPruebaDto> RespuestasPruebaAsync(int version) =>
+        (await _http.GetAsync<RespuestasPruebaDto>($"api/prueba/respuestas?version={version}"))!;
 
     public Task<RespuestasPruebaDto> GuardarRespuestasPruebaAsync(RespuestasPruebaDto respuestas) =>
         _http.PutAsync<RespuestasPruebaDto>("api/prueba/respuestas", respuestas);
 
     public Task<ArchivoGuardadoDto> ExportarRespuestasPruebaAsync(string texto) =>
         _http.PostAsync<ArchivoGuardadoDto>("api/prueba/respuestas/exportar", new SolicitudExportarRespuestas(texto));
+
+    /// <summary>El documento al escritorio y la guía en blanco para la siguiente persona; devuelve dónde quedó el documento.</summary>
+    public Task<ArchivoGuardadoDto> DejarGuiaEnBlancoAsync(int version, string texto) =>
+        _http.PostAsync<ArchivoGuardadoDto>("api/prueba/respuestas/en-blanco", new SolicitudGuiaEnBlanco(version, texto));
 
     public async Task EmpezarDeCeroAsync()
     {
