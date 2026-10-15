@@ -148,10 +148,12 @@ public sealed class UsuariosYPermisosTests(ServicioDePrueba servicio) : IClassFi
     private static Control DeLaLista(Pantalla p, string nombre) => p.Controles().First(c => c.Elemento == "button" && c.Texto.Contains(nombre));
 
     /// <summary>Los tres botones de «Puede / Con autorización / No» del renglón de esa acción (los renglones van en el orden de la pantalla).</summary>
+    /// <summary>Los botones del renglón de una acción: tres, o dos en Administración (solo «Puede» y «No»).</summary>
     private static List<Control> Segmento(Pantalla p, AccionControlada accion)
     {
-        var renglon = Permisos.EnPantalla.ToList().IndexOf(accion);
-        return [.. p.Controles().Where(c => c.Elemento == "button" && c.Texto is "Puede" or "Con autorización" or "No").Skip(renglon * 3).Take(3)];
+        static int Botones(AccionControlada a) => Permisos.SoloPuedeONo(a) ? 2 : 3;
+        var antes = Permisos.EnPantalla.TakeWhile(a => a != accion).Sum(Botones);
+        return [.. p.Controles().Where(c => c.Elemento == "button" && c.Texto is "Puede" or "Con autorización" or "No").Skip(antes).Take(Botones(accion))];
     }
 
     /// <summary>Los campos del límite («hasta $…», «hasta …%»), en el orden de la pantalla.</summary>
@@ -175,8 +177,11 @@ public sealed class UsuariosYPermisosTests(ServicioDePrueba servicio) : IClassFi
         Assert.Contains("Al instalar se ponen estos (los de un cajero). Cambiarlos no toca a los usuarios que ya existen.", texto);
         foreach (var grupo in new[] { "Venta", "Efectivo y corte", "Inventario", "Clientes y crédito", "Reportes", "Administración" })
             Assert.Contains($"\n{grupo}", texto);
-        // Un renglón por acción de la pantalla, cada uno con sus tres niveles, y el elegido marcado.
-        Assert.Equal(Permisos.EnPantalla.Count * 3, p.Controles().Count(c => c.Texto is "Puede" or "Con autorización" or "No"));
+        // Un renglón por acción de la pantalla, cada uno con sus tres niveles (en Administración solo «Puede» y «No», dueño
+        // 2026-10-15), y el elegido marcado.
+        var administracion = Permisos.EnPantalla.Count(Permisos.SoloPuedeONo);
+        Assert.Equal(Permisos.EnPantalla.Count * 3 - administracion, p.Controles().Count(c => c.Texto is "Puede" or "Con autorización" or "No"));
+        Assert.Equal(["Puede", "No"], Segmento(p, AccionControlada.ConfigurarTicket).Select(b => b.Texto));
         Assert.Equal("on p", Segmento(p, AccionControlada.Descuento)[0].Clase);
         Assert.Equal("on a", Segmento(p, AccionControlada.CambiarPrecio)[1].Clase);
         Assert.Equal("on n", Segmento(p, AccionControlada.CorteZ)[2].Clase);

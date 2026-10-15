@@ -132,7 +132,7 @@ public class RegistroUsuariosTests : IAsyncLifetime
     {
         // Mario es el único: no se lo puede quitar, ni con «Los de defecto» o copiando los de Ana, ni darse de baja.
         var quitarselo = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            CambiarAsync(_mario.Id, _mario.Id, AccionControlada.EditarReglas, NivelPermiso.RequiereAutorizacion));
+            CambiarAsync(_mario.Id, _mario.Id, AccionControlada.EditarReglas, NivelPermiso.NoPermitido));
         await Assert.ThrowsAsync<InvalidOperationException>(() => ConAsync(r => r.DeDefectoAsync(_caja.Id, _mario.Id, new SolicitudUsuarios(_mario.Id))));
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             ConAsync(r => r.CopiarAsync(_caja.Id, _mario.Id, new SolicitudCopiarPermisos(_mario.Id, _ana.Id))));

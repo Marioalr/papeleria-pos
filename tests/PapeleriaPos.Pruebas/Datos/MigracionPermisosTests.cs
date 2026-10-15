@@ -148,4 +148,32 @@ public class MigracionPermisosTests : IAsyncLifetime
         Assert.All(await datos.PermisosUsuario.GroupBy(p => p.UsuarioId).Select(g => g.Count()).ToListAsync(),
             n => Assert.Equal(Permisos.Acciones.Count, n));
     }
+
+    [Fact]
+    public async Task En_administracion_lo_que_pedia_autorizacion_queda_en_no()
+    {
+        // Una regla de antes con «Con autorización» en Administración, y un permiso que ya estaba guardado así.
+        await using (var db = _base.Contexto())
+        {
+            db.ReglasPermiso.Add(new ReglaPermiso { Accion = AccionControlada.ConfigurarTicket, Rol = Rol.Cajero, Nivel = NivelPermiso.RequiereAutorizacion });
+            db.Usuarios.AddRange(_cajera, _encargado);
+            await db.SaveChangesAsync();
+            await MigracionPermisos.AplicarAsync(db);
+            var guardado = await db.PermisosUsuario.SingleAsync(p => p.UsuarioId == _encargado.Id && p.Accion == AccionControlada.ConsultarBitacora);
+            guardado.Nivel = NivelPermiso.RequiereAutorizacion;
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = _base.Contexto())
+            await MigracionPermisos.AplicarAsync(db);
+
+        await using var datos = _base.Contexto();
+        Assert.False(await datos.PermisosUsuario.AnyAsync(p => p.Nivel == NivelPermiso.RequiereAutorizacion
+            && (p.Accion == AccionControlada.ConfigurarTicket || p.Accion == AccionControlada.ConsultarBitacora)));
+        var permisos = await PermisosAsync();
+        Assert.Equal(NivelPermiso.NoPermitido, permisos[_cajera.Id].De(AccionControlada.ConfigurarTicket).Nivel);
+        Assert.Equal(NivelPermiso.NoPermitido, permisos[_encargado.Id].De(AccionControlada.ConsultarBitacora).Nivel);
+        // En la venta, «Con autorización» se queda.
+        Assert.Equal(NivelPermiso.RequiereAutorizacion, permisos[_cajera.Id].De(AccionControlada.CambiarPrecio).Nivel);
+    }
 }

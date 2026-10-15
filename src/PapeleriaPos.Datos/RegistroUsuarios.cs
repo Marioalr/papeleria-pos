@@ -51,6 +51,8 @@ public sealed class RegistroUsuarios(PosDbContext db)
             throw new ArgumentException("Ese permiso no existe.");
         if (!Enum.IsDefined(s.Nivel))
             throw new ArgumentException("Elige «Puede», «Con autorización» o «No».");
+        if (s.Nivel == NivelPermiso.RequiereAutorizacion && Permisos.SoloPuedeONo(s.Accion))
+            throw new ArgumentException("En Administración, cada permiso es «Puede» o «No»: quien no puede le pide a quien sí que entre a la caja.");
         var puede = s.Nivel == NivelPermiso.Permitido;
         if (puede && s.UmbralCentavos <= 0)
             throw new ArgumentException("El límite tiene que ser mayor a cero; para que no tenga límite, déjalo vacío.");

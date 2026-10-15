@@ -144,4 +144,19 @@ public class PermisosPorUsuarioTests
         Assert.Equal(NivelPermiso.RequiereAutorizacion, new PermisosDeUsuario(PermisosDeRoles.De(Rol.Cajero, reglas, otra)).De(AccionControlada.Reimprimir).Nivel);
         Assert.Equal(NivelPermiso.RequiereAutorizacion, new PermisosDeUsuario(PermisosDeRoles.PorDefecto(reglas)).De(AccionControlada.Reimprimir).Nivel);
     }
+
+    [Fact]
+    public void En_administracion_solo_hay_puede_o_no_y_con_autorizacion_vale_no()
+    {
+        // Dueño, 2026-10-15: en Administración no hay paso para pedir la autorización; en la venta sigue como siempre.
+        var administracion = Permisos.Grupos.Single(g => g.Nombre == "Administración").Acciones;
+        var cajero = Con(
+            new Permiso(AccionControlada.ConfigurarTicket, NivelPermiso.RequiereAutorizacion),
+            new Permiso(AccionControlada.CambiarPrecio, NivelPermiso.RequiereAutorizacion));
+
+        Assert.Equal(administracion.Order(), Permisos.Acciones.Where(Permisos.SoloPuedeONo).Order());
+        Assert.Equal(NivelPermiso.NoPermitido, Permisos.Evaluar(cajero, AccionControlada.ConfigurarTicket).Nivel);
+        Assert.Equal(NivelPermiso.NoPermitido, cajero.De(AccionControlada.ConfigurarTicket).Nivel);
+        Assert.Equal(NivelPermiso.RequiereAutorizacion, Permisos.Evaluar(cajero, AccionControlada.CambiarPrecio).Nivel);
+    }
 }

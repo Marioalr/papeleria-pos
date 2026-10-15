@@ -64,6 +64,14 @@ public static class MigracionPermisos
         }
         db.PermisosUsuario.AddRange(nuevos);
 
+        // En Administración solo hay «Puede» o «No» (2026-10-15): lo que quedó en «Con autorización» (de una regla de antes)
+        // pasa a «No», que es como ya valía (Permisos.Normalizado).
+        var administracion = Permisos.Acciones.Where(Permisos.SoloPuedeONo).ToList();
+        var corregidos = await db.PermisosUsuario
+            .Where(p => p.Nivel == NivelPermiso.RequiereAutorizacion && administracion.Contains(p.Accion)).ToListAsync(ct);
+        foreach (var permiso in corregidos)
+            permiso.Nivel = NivelPermiso.NoPermitido;
+
         // La primera cuenta: la del dueño que se dio de alta primero (los Id llevan la fecha de alta).
         var primera = false;
         if (!usuarios.Any(u => u.PrimeraCuenta) && usuarios.Where(u => u.Rol == Rol.Dueno).OrderBy(u => u.Id).FirstOrDefault() is { } dueno
@@ -74,17 +82,22 @@ public static class MigracionPermisos
             db.Entry(cuenta).Property(u => u.PrimeraCuenta).IsModified = true;
         }
 
-        if (nuevos.Count > 0 || primera)
+        if (nuevos.Count > 0 || primera || corregidos.Count > 0)
             await db.SaveChangesAsync(ct);
         return nuevos.Count;
     }
 
-    private static PermisoUsuario Nuevo(Guid? usuarioId, Permiso permiso) => new()
+    /// <summary>El renglón de un permiso, como vale (en Administración, sin «Con autorización»).</summary>
+    private static PermisoUsuario Nuevo(Guid? usuarioId, Permiso permiso)
     {
-        UsuarioId = usuarioId,
-        Accion = permiso.Accion,
-        Nivel = permiso.Nivel,
-        UmbralCentavos = permiso.UmbralCentavos,
-        PideMotivo = permiso.PideMotivo,
-    };
+        permiso = Permisos.Normalizado(permiso);
+        return new PermisoUsuario
+        {
+            UsuarioId = usuarioId,
+            Accion = permiso.Accion,
+            Nivel = permiso.Nivel,
+            UmbralCentavos = permiso.UmbralCentavos,
+            PideMotivo = permiso.PideMotivo,
+        };
+    }
 }
