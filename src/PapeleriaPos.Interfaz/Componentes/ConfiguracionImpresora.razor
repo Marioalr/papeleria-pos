@@ -1,5 +1,6 @@
-@* La impresora vista desde la caja principal: niveles, contador contra lo registrado, cómo se lee (solo el dueño), la
-   calibración de la tinta y el desglose de las impresiones del día (dueño y encargado; el costo, solo el dueño). *@
+@* La impresora vista desde la caja principal: niveles, contador contra lo registrado, cómo se lee y la calibración de la
+   tinta (con el usuario y el PIN de quien tiene «Configurar la impresora»), y el desglose de las impresiones del día (para
+   quien tiene «Consultar la bitácora»; el costo, con «Ver costos, utilidad y margen»). *@
 @inject ClienteCaja Cliente
 
 @if (_estado is null)
@@ -53,13 +54,13 @@ else
         <button class="boton" disabled="@(_ocupado || _estado.Configuracion.Host is null)" @onclick="LeerAsync">Leer ahora</button>
     </div>
 
-    <h4>Cómo se lee (solo el dueño)</h4>
+    <h4>Cómo se lee (quien tiene «Configurar la impresora»)</h4>
     <div class="dos-columnas">
         <label>IP de la impresora <input @bind="_host" placeholder="192.168.1.50" autocomplete="off" /></label>
         <label>Avisar por Telegram con tinta en (%) o menos <input type="number" min="0" max="100" @bind="_aviso" /></label>
         <label>Leer cada (minutos) <input type="number" min="1" max="120" @bind="_minutos" /></label>
         <span></span>
-        <label>Usuario del dueño <input @bind="_usuario" autocomplete="off" /></label>
+        <label>Usuario <input @bind="_usuario" autocomplete="off" /></label>
         <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" /></label>
     </div>
     <div class="acciones">
@@ -98,11 +99,11 @@ else
         }
         <p class="nota">Mientras el agente vigile la cola de laboratorio, lo registrado no sale de la impresora: no apliques la calibración hasta usar la cola real.</p>
         <div class="acciones">
-            <button class="boton" disabled="@_ocupado" @onclick="AplicarCalibracionAsync">Aplicar la corrección (usuario y PIN del dueño)</button>
+            <button class="boton" disabled="@_ocupado" @onclick="AplicarCalibracionAsync">Aplicar la corrección (con el usuario y el PIN de arriba)</button>
         </div>
     }
 
-    @if (Sesion.Rol is Rol.Dueno or Rol.Encargado)
+    @if (VeElDia)
     {
         <h4>Impresiones del día</h4>
         <div class="acciones izquierda">
@@ -114,14 +115,14 @@ else
                 Cobradas @Formato.Dinero(dia.Where(t => t.Cobro == EstadoCobroImpresion.Cobrada).Sum(t => t.PrecioCentavos))
                 · por cobrar @Formato.Dinero(dia.Where(t => t.Cobro == EstadoCobroImpresion.PorCobrar).Sum(t => t.PrecioCentavos))
                 · no vendidas @dia.Count(t => t.Cobro == EstadoCobroImpresion.NoVendida)
-                @if (Sesion.Rol == Rol.Dueno)
+                @if (VeCosto)
                 {
                     <span> · costo de todo @Formato.Dinero(dia.Sum(t => t.Costo?.TotalCentavos ?? 0))</span>
                 }
             </p>
             <div class="resultados">
                 <table>
-                    <thead><tr><th>Hora</th><th>Documento</th><th>PC</th><th class="num">Caras</th><th class="num">Precio</th><th>Cobro</th>@if (Sesion.Rol == Rol.Dueno) {<th class="num">Costo</th>}</tr></thead>
+                    <thead><tr><th>Hora</th><th>Documento</th><th>PC</th><th class="num">Caras</th><th class="num">Precio</th><th>Cobro</th>@if (VeCosto) {<th class="num">Costo</th>}</tr></thead>
                     @foreach (var t in dia)
                     {
                         <tr>
@@ -185,9 +186,15 @@ else
         (_host, _aviso, _minutos) = (estado.Configuracion.Host ?? "", estado.Configuracion.AvisoTintaPorcentaje, estado.Configuracion.MinutosEntreLecturas);
     }
 
+    /// <summary>El desglose del día: con «Consultar la bitácora» (al migrar, el dueño y el encargado). El servicio lo vuelve a revisar.</summary>
+    private bool VeElDia => Sesion.Puede(AccionControlada.ConsultarBitacora);
+
+    /// <summary>El costo de cada impresión: con «Ver costos, utilidad y margen» (al migrar, el dueño). El servicio solo lo manda a quien lo ve.</summary>
+    private bool VeCosto => Sesion.Puede(AccionControlada.VerUtilidad);
+
     private async Task CargarDiaAsync()
     {
-        if (Sesion.Rol is not (Rol.Dueno or Rol.Encargado))
+        if (!VeElDia)
             return;
         await HacerAsync(async () => _dia = await Cliente.ImpresionesDelDiaAsync(Caja.SucursalId, _fecha, Sesion.UsuarioId));
     }

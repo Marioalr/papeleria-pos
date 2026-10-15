@@ -23,7 +23,7 @@ public sealed record TrabajoMedidoDto(
     EstadoTrabajo Estado, AjustesTrabajoDto Ajustes, IReadOnlyList<CoberturaPaginaDto> Paginas, bool Medido, string? Nota, string? MiniaturaBase64,
     DateTime? EnviadoUtc = null);
 
-/// <summary>Solo el dueño lo recibe.</summary>
+/// <summary>Solo lo recibe quien tiene «Ver costos, utilidad y margen» (lo revisa la API).</summary>
 public sealed record CostoImpresionDto(long TintaCentavos, long PapelCentavos, long OtrosCentavos, long TotalCentavos, decimal MargenPorcentaje);
 
 /// <param name="CarasContadas">Las que contó la impresora (vacío mientras no se verifica).</param>
@@ -52,7 +52,7 @@ public sealed record OpcionesCotizacionDto(
     int PaginasPorHoja = 1, string? Rango = null);
 
 /// <summary>Cotizar un PDF: la caja lo midió y la caja principal le pone precio, igual que a una impresión.</summary>
-/// <param name="UsuarioId">Quien cotiza: si es el dueño, la respuesta trae el costo.</param>
+/// <param name="UsuarioId">Quien cotiza: si tiene «Ver costos, utilidad y margen», la respuesta trae el costo.</param>
 public sealed record SolicitudCotizacion(Guid SucursalId, Guid? UsuarioId, IReadOnlyList<CoberturaPaginaDto> Paginas, OpcionesCotizacionDto Opciones);
 
 /// <param name="Pagina">El número de página del documento.</param>
@@ -74,7 +74,10 @@ public sealed record PrecioCopiasDto(long PrecioCentavos, string Descripcion);
 public sealed record SolicitudCopias(
     Guid Id, Guid CajaId, Guid? AtendioId, int Cantidad, bool Color, string Tamano, bool Duplex, long? CobradoCentavos, string? Nota);
 
-/// <summary>Lo que hizo cada impresión de un día, con su cobro: el desglose de la línea "Impresiones" (dueño y encargado).</summary>
+/// <summary>
+/// Lo que hizo cada impresión de un día, con su cobro: el desglose de la línea "Impresiones", para quien tiene «Consultar
+/// la bitácora» (el costo, con «Ver costos, utilidad y margen»).
+/// </summary>
 public sealed record ImpresionDelDiaDto(
     Guid Id, TipoTrabajoImpresion Tipo, string Documento, string Pc, DateTime FechaLocal, int Caras, int? CarasContadas, bool Color,
     long PrecioCentavos, EstadoCobroImpresion Cobro, MotivoNoVendida? Motivo, string? Atendio, CostoImpresionDto? Costo);
