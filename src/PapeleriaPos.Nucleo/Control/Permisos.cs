@@ -2,7 +2,12 @@ using PapeleriaPos.Nucleo.Usuarios;
 
 namespace PapeleriaPos.Nucleo.Control;
 
-/// <summary>Lo que se controla con reglas. Los descuentos llegan con el módulo de impresión (entrega 5).</summary>
+/// <summary>
+/// Lo que se controla: cada usuario tiene un permiso por acción (entrega 1, docs/propuesta-interfaz.md «Usuarios y
+/// permisos»). En la base se guardan por su nombre (la bitácora, las autorizaciones, los permisos) y entre la caja y el
+/// servicio viajan por su número (el JSON y la bandeja de la caja sin conexión): nunca se reordenan ni se renombran, y las
+/// nuevas van al final.
+/// </summary>
 public enum AccionControlada
 {
     QuitarProducto,
@@ -13,11 +18,18 @@ public enum AccionControlada
     Devolucion,
     SalidaEfectivo,
     EntradaEfectivo,
+
+    /// <summary>No lo usa nada: no hay cajón (2026-10-09). No sale en «Usuarios y permisos».</summary>
     AbrirCajonSinVenta,
     Reimprimir,
     VerificarTransferencia,
     CorteZ,
     ConfigurarTicket,
+
+    /// <summary>
+    /// «Usuarios y permisos» (antes, editar las reglas de cada rol): dar de alta usuarios y cambiarles los permisos y el PIN.
+    /// Se llama como antes porque la bitácora lo guarda por su nombre. Siempre queda alguien que lo tiene en «Puede».
+    /// </summary>
     EditarReglas,
     ConsultarBitacora,
     AdministrarCajas,
@@ -81,12 +93,25 @@ public enum AccionControlada
 
     /// <summary>
     /// Ver y cerrar el corte del día: todas las cajas y turnos de la sucursal (docs/propuesta-interfaz.md, «Corte»,
-    /// 2026-10-14). Al empezar, solo el dueño; se le puede dar al encargado en las reglas. Va al final: las cajas guardan
-    /// las acciones por su número en la bandeja.
+    /// 2026-10-14). Al migrar, solo el dueño; se le puede dar a otro en «Usuarios y permisos».
     /// </summary>
     CorteDelDia,
+
+    /// <summary>
+    /// Ver costos, utilidad y margen (entrega 1): el costo de las impresiones, la utilidad y el margen. El costo de lo que se
+    /// cuenta y de los productos lo ve también quien captura las compras («Compras: la nota y los costos»), como en el
+    /// prototipo. Al migrar, solo el dueño (2026-10-09: la utilidad solo la ve el dueño).
+    /// </summary>
+    VerUtilidad,
+
+    /// <summary>Ver los reportes de ventas (entrega 9: todavía no hay pantalla). Al migrar, solo el dueño.</summary>
+    VerReportes,
+
+    /// <summary>La configuración de la tienda: hoy, el límite de efectivo en caja. Al migrar, solo el dueño.</summary>
+    ConfigurarTienda,
 }
 
+/// <summary>En pantalla: «Puede», «Con autorización» (con candado y quién autoriza) y «No» (no aparece).</summary>
 public enum NivelPermiso
 {
     Permitido,
@@ -95,8 +120,83 @@ public enum NivelPermiso
 }
 
 /// <summary>
-/// Qué puede hacer un rol en una acción, en una sucursal (vacía: todas). Con umbral, arriba de ese monto pasa de
-/// permitido a requerir autorización (devoluciones de más de $200).
+/// Lo que puede alguien en una acción. En «Puede», con umbral: arriba de ese monto pide autorización (en las de
+/// porcentaje, el umbral va en centésimas: 1000 = 10 %). El umbral solo se guarda en «Puede».
+/// </summary>
+public sealed record Permiso(AccionControlada Accion, NivelPermiso Nivel, long? UmbralCentavos = null, bool PideMotivo = false)
+{
+    /// <summary>«Puede», sin límite: como los tiene la primera cuenta.</summary>
+    public bool SinLimite => Nivel == NivelPermiso.Permitido && UmbralCentavos is null;
+
+    /// <summary>Lo que se ve en «Usuarios y permisos»: el nivel y el límite (el motivo no se ve ahí).</summary>
+    public bool SeVeIgual(Permiso otro) => Nivel == otro.Nivel && UmbralCentavos == otro.UmbralCentavos;
+
+    /// <summary>Todo «Puede», sin límite y sin pedir motivo: los de la primera cuenta y los de «Todos».</summary>
+    public static Permiso Todo(AccionControlada accion) => new(accion, NivelPermiso.Permitido);
+}
+
+/// <summary>Los permisos de un usuario (o los de defecto), uno por acción. La acción que no tiene, no la puede hacer.</summary>
+public sealed class PermisosDeUsuario
+{
+    private readonly Dictionary<AccionControlada, Permiso> _porAccion = [];
+
+    public PermisosDeUsuario(IEnumerable<Permiso> permisos)
+    {
+        foreach (var permiso in permisos)
+            _porAccion[permiso.Accion] = permiso;
+    }
+
+    public Permiso De(AccionControlada accion) => _porAccion.TryGetValue(accion, out var p) ? p : new Permiso(accion, NivelPermiso.NoPermitido);
+
+    /// <summary>Todas las acciones, en su orden.</summary>
+    public IReadOnlyList<Permiso> Lista() => Permisos.Acciones.Select(De).ToList();
+
+    /// <summary>Cuántas puede hacer: quien autoriza va de quien puede menos a quien puede todo.</summary>
+    public int CuantasPuede => Permisos.Acciones.Count(a => De(a).Nivel == NivelPermiso.Permitido);
+
+    /// <summary>«Todos los permisos»: todo lo de «Usuarios y permisos» en «Puede», sin límite.</summary>
+    public bool TieneTodos => Permisos.EnPantalla.All(a => De(a).SinLimite);
+}
+
+/// <summary>Un usuario con sus permisos: para decir quién autoriza y quién puede, por su nombre y su usuario.</summary>
+public sealed record UsuarioConPermisos(Guid Id, string Usuario, string Nombre, PermisosDeUsuario Permisos);
+
+/// <summary>
+/// Lo que puede un usuario en una acción, guardado (entrega 1). Cada usuario tiene uno por acción, y los de defecto (sin
+/// usuario) son con los que empieza cada usuario nuevo: cambiarlos no toca a los que ya existen.
+/// </summary>
+public class PermisoUsuario : IVersionado
+{
+    public Guid Id { get; set; } = Ids.Nuevo();
+
+    /// <summary>Vacío: los permisos por defecto.</summary>
+    public Guid? UsuarioId { get; set; }
+
+    public AccionControlada Accion { get; set; }
+    public NivelPermiso Nivel { get; set; }
+    public long? UmbralCentavos { get; set; }
+    public bool PideMotivo { get; set; }
+
+    public long Version { get; set; }
+    public DateTime ModificadoUtc { get; set; }
+
+    public Permiso Permiso => new(Accion, Nivel, Nivel == NivelPermiso.Permitido ? UmbralCentavos : null, PideMotivo);
+
+    /// <summary>Lo pone como <paramref name="permiso"/>; dice si cambió algo.</summary>
+    public bool Poner(Permiso permiso)
+    {
+        var umbral = permiso.Nivel == NivelPermiso.Permitido ? permiso.UmbralCentavos : null;
+        if (Nivel == permiso.Nivel && UmbralCentavos == umbral && PideMotivo == permiso.PideMotivo)
+            return false;
+        (Nivel, UmbralCentavos, PideMotivo) = (permiso.Nivel, umbral, permiso.PideMotivo);
+        return true;
+    }
+}
+
+/// <summary>
+/// De antes de la entrega 1: qué podía hacer un rol en una acción, en una sucursal (vacía: todas). Ya nada decide con
+/// esto: solo lo lee la migración a los permisos por usuario (<see cref="PermisosDeRoles"/>), una vez, y la tabla se
+/// queda como estaba.
 /// </summary>
 public class ReglaPermiso : IVersionado
 {
@@ -125,8 +225,157 @@ public sealed record PermisoDeSesion(AccionControlada Accion, NivelPermiso Nivel
 /// <summary>Quien puede autorizar: su nombre, para decirlo, y su usuario, para pedirle solo el PIN.</summary>
 public sealed record QuienAutoriza(string Usuario, string Nombre);
 
+/// <summary>Un grupo de «Usuarios y permisos» (Venta, Efectivo y corte…) con sus acciones en orden.</summary>
+public sealed record GrupoDePermisos(string Nombre, IReadOnlyList<AccionControlada> Acciones);
+
 public static class Permisos
 {
+    // ── Los permisos por usuario (entrega 1) ────────────────────────────────
+
+    public static IReadOnlyList<AccionControlada> Acciones { get; } = Enum.GetValues<AccionControlada>();
+
+    /// <summary>
+    /// «Usuarios y permisos», como en el prototipo (docs/propuesta-interfaz.md): los grupos con sus acciones, en orden. Abrir
+    /// el cajón sin venta no sale: no hay cajón y nada lo usa.
+    /// </summary>
+    public static IReadOnlyList<GrupoDePermisos> Grupos { get; } =
+    [
+        new("Venta",
+        [
+            AccionControlada.QuitarProducto, AccionControlada.ArticuloComun, AccionControlada.Descuento, AccionControlada.CambiarPrecio,
+            AccionControlada.VenderBajoCosto, AccionControlada.Devolucion, AccionControlada.CancelarTicket, AccionControlada.Reimprimir,
+            AccionControlada.AltaRapida,
+        ]),
+        new("Efectivo y corte",
+        [
+            AccionControlada.EntradaEfectivo, AccionControlada.SalidaEfectivo, AccionControlada.VerificarTransferencia, AccionControlada.CorteZ,
+            AccionControlada.CorteDelDia,
+        ]),
+        new("Inventario",
+        [
+            AccionControlada.RecibirMercancia, AccionControlada.ContarInventario, AccionControlada.Merma, AccionControlada.AjustarInventario,
+            AccionControlada.AbrirPaquete, AccionControlada.EditarCatalogo, AccionControlada.CostearCompra, AccionControlada.PedirCompra,
+            AccionControlada.ConteoCompleto, AccionControlada.ConfigurarMargen,
+        ]),
+        new("Clientes y crédito",
+        [
+            AccionControlada.AdministrarClientes, AccionControlada.ExcederLimiteCredito, AccionControlada.CancelarAbono, AccionControlada.DarCredito,
+            AccionControlada.AjustarCredito, AccionControlada.DevolverSaldoAFavor,
+        ]),
+        new("Reportes", [AccionControlada.VerReportes, AccionControlada.VerUtilidad]),
+        new("Administración",
+        [
+            AccionControlada.ConfigurarTienda, AccionControlada.ConfigurarTicket, AccionControlada.ConfigurarImpresora,
+            AccionControlada.ConfigurarTelegram, AccionControlada.EditarReglas, AccionControlada.AdministrarCajas, AccionControlada.ConsultarBitacora,
+        ]),
+    ];
+
+    /// <summary>Las acciones de «Usuarios y permisos», en su orden.</summary>
+    public static IReadOnlyList<AccionControlada> EnPantalla { get; } = [.. Grupos.SelectMany(g => g.Acciones)];
+
+    /// <summary>Cómo se llama cada permiso en pantalla, en la bitácora y en los mensajes (los del prototipo).</summary>
+    public static string Nombre(AccionControlada accion) => accion switch
+    {
+        AccionControlada.QuitarProducto => "Quitar un producto ya escaneado",
+        AccionControlada.ArticuloComun => "Artículo común (sin inventario)",
+        AccionControlada.Descuento => "Descuento",
+        AccionControlada.CambiarPrecio => "Cambiar un precio en la venta",
+        AccionControlada.VenderBajoCosto => "Vender debajo del costo",
+        AccionControlada.Devolucion => "Devolución",
+        AccionControlada.CancelarTicket => "Cancelar un ticket cobrado",
+        AccionControlada.Reimprimir => "Reimprimir un ticket",
+        AccionControlada.AltaRapida => "Dar de alta un código desde la caja",
+        AccionControlada.EntradaEfectivo => "Entrada de efectivo",
+        AccionControlada.SalidaEfectivo => "Salida de efectivo",
+        AccionControlada.AbrirCajonSinVenta => "Abrir el cajón sin venta",
+        AccionControlada.VerificarTransferencia => "Verificar transferencias",
+        AccionControlada.CorteZ => "Hacer el corte de un turno",
+        AccionControlada.CorteDelDia => "Ver y cerrar el corte del día",
+        AccionControlada.RecibirMercancia => "Recibir mercancía a ciegas",
+        AccionControlada.ContarInventario => "Contar inventario",
+        AccionControlada.Merma => "Merma",
+        AccionControlada.AjustarInventario => "Ajustar una existencia",
+        AccionControlada.AbrirPaquete => "Abrir un paquete",
+        AccionControlada.EditarCatalogo => "Productos, precios y etiquetas",
+        AccionControlada.CostearCompra => "Compras: la nota y los costos",
+        AccionControlada.PedirCompra => "Órdenes y sugerido de compra",
+        AccionControlada.ConteoCompleto => "Conteo completo de un departamento",
+        AccionControlada.ConfigurarMargen => "Margen mínimo",
+        AccionControlada.AdministrarClientes => "Dar de alta y editar clientes",
+        AccionControlada.ExcederLimiteCredito => "Fiar arriba del límite",
+        AccionControlada.CancelarAbono => "Cancelar un abono",
+        AccionControlada.DarCredito => "Dar crédito: límite y plazo",
+        AccionControlada.AjustarCredito => "Ajustar el saldo de un cliente",
+        AccionControlada.DevolverSaldoAFavor => "Devolver en efectivo un saldo a favor",
+        AccionControlada.VerReportes => "Ver reportes de ventas",
+        AccionControlada.VerUtilidad => "Ver costos, utilidad y margen",
+        AccionControlada.ConfigurarTienda => "Configuración de la tienda",
+        AccionControlada.ConfigurarTicket => "Configurar el ticket",
+        AccionControlada.ConfigurarImpresora => "Configurar la impresora",
+        AccionControlada.ConfigurarTelegram => "Configurar Telegram",
+        AccionControlada.EditarReglas => "Usuarios y permisos",
+        AccionControlada.AdministrarCajas => "Dar de alta y quitar cajas",
+        AccionControlada.ConsultarBitacora => "Consultar la bitácora",
+        _ => accion.ToString(),
+    };
+
+    /// <summary>
+    /// Las que en «Puede» llevan el campo «hasta $…» (o «hasta …%»), como en el prototipo: las que tienen límite en los de
+    /// defecto. Un límite que ya tenga otra (de las reglas de antes) también se ve y se cambia.
+    /// </summary>
+    public static bool LlevaLimite(AccionControlada accion) =>
+        accion is AccionControlada.Descuento or AccionControlada.Devolucion or AccionControlada.Merma;
+
+    /// <summary>Con umbral, arriba de ese monto lo que puede pasa a pedir autorización.</summary>
+    public static DecisionPermiso Evaluar(Permiso permiso, long? montoCentavos = null)
+    {
+        var nivel = permiso.Nivel == NivelPermiso.Permitido && permiso.UmbralCentavos is { } umbral && montoCentavos > umbral
+            ? NivelPermiso.RequiereAutorizacion
+            : permiso.Nivel;
+        return new DecisionPermiso(nivel, permiso.PideMotivo);
+    }
+
+    /// <summary>Lo que dicen los permisos del usuario, y nada más: nadie puede todo por ser quien es.</summary>
+    public static DecisionPermiso Evaluar(PermisosDeUsuario permisos, AccionControlada accion, long? montoCentavos = null) =>
+        Evaluar(permisos.De(accion), montoCentavos);
+
+    /// <summary>Puede autorizar quien puede hacerlo por ese monto.</summary>
+    public static bool PuedeAutorizar(PermisosDeUsuario permisos, AccionControlada accion, long? montoCentavos) =>
+        Evaluar(permisos, accion, montoCentavos).Nivel == NivelPermiso.Permitido;
+
+    /// <summary>
+    /// Todas las acciones para quien entró, cada una con quién la autoriza: los demás <paramref name="usuarios"/> (los
+    /// activos que entran en esa caja) que la pueden hacer por ese monto, en el orden de <see cref="EnOrden"/>.
+    /// </summary>
+    public static IReadOnlyList<PermisoDeSesion> DeLaSesion(PermisosDeUsuario propios, IEnumerable<UsuarioConPermisos> usuarios, Guid usuarioId)
+    {
+        var otros = EnOrden(usuarios.Where(u => u.Id != usuarioId)).ToList();
+        return Acciones.Select(accion =>
+        {
+            var permiso = propios.De(accion);
+            var umbral = permiso.Nivel == NivelPermiso.Permitido ? permiso.UmbralCentavos : null;
+            long? monto = permiso.Nivel == NivelPermiso.RequiereAutorizacion ? null : umbral + 1;
+            var autorizan = permiso.Nivel == NivelPermiso.RequiereAutorizacion || umbral is not null
+                ? otros.Where(u => PuedeAutorizar(u.Permisos, accion, monto)).Select(u => new QuienAutoriza(u.Usuario, u.Nombre)).ToList()
+                : [];
+            return new PermisoDeSesion(accion, permiso.Nivel, umbral, permiso.PideMotivo, autorizan);
+        }).ToList();
+    }
+
+    /// <summary>Los usuarios que pueden hacer una acción sin pedir autorización (el corte del turno), en el orden de <see cref="EnOrden"/>.</summary>
+    public static List<QuienAutoriza> QuienesPueden(IEnumerable<UsuarioConPermisos> usuarios, AccionControlada accion) =>
+        EnOrden(usuarios.Where(u => Evaluar(u.Permisos, accion).Nivel == NivelPermiso.Permitido))
+            .Select(u => new QuienAutoriza(u.Usuario, u.Nombre)).ToList();
+
+    /// <summary>
+    /// Quien autoriza se dice de quien puede menos a quien puede todo, y luego por nombre: primero quien está en el piso
+    /// (antes, el encargado) y al final la primera cuenta (antes, el dueño), como lo decían los roles.
+    /// </summary>
+    public static IEnumerable<UsuarioConPermisos> EnOrden(IEnumerable<UsuarioConPermisos> usuarios) =>
+        usuarios.OrderBy(u => u.Permisos.CuantasPuede).ThenBy(u => u.Nombre, StringComparer.CurrentCulture).ThenBy(u => u.Id);
+
+    // ── Lo de antes: reglas por rol ─────────────────────────────────────────
+
     /// <summary>Las reglas con que arranca el sistema (docs/fase-1-control.md). El dueño siempre puede todo.</summary>
     public static readonly IReadOnlyList<ReglaPermiso> Iniciales =
     [
@@ -198,7 +447,9 @@ public static class Permisos
     /// <summary>Acciones que no se pueden dar a otro rol: no aparecen en el editor de reglas.</summary>
     public static bool SoloDelDueno(AccionControlada accion) =>
         accion is AccionControlada.EditarReglas or AccionControlada.AdministrarCajas or AccionControlada.ConfigurarTelegram
-            or AccionControlada.ConfigurarImpresora or AccionControlada.ConfigurarMargen;
+            or AccionControlada.ConfigurarImpresora or AccionControlada.ConfigurarMargen
+            // Las de la entrega 1: con los roles, eran solo del dueño (el costo de las impresiones, el límite de efectivo).
+            or AccionControlada.VerUtilidad or AccionControlada.VerReportes or AccionControlada.ConfigurarTienda;
 
     /// <summary>Acciones cuyo umbral (y el monto que se revisa) es un porcentaje en centésimas, no dinero.</summary>
     public static bool EnPorcentaje(AccionControlada accion) => accion == AccionControlada.Descuento;
