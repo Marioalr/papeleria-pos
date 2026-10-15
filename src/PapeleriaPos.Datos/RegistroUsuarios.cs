@@ -40,8 +40,9 @@ public sealed class RegistroUsuarios(PosDbContext db)
     }
 
     /// <summary>
-    /// Un permiso de un usuario o de los de defecto (sin usuario), al momento. El límite solo vale en «Puede»; cambiar los de
-    /// defecto no toca a los usuarios que ya existen.
+    /// Un permiso de un usuario o de los de defecto (sin usuario), al momento. El límite solo vale en «Puede»: al pasar a «Con
+    /// autorización» o a «No» se queda guardado, sin contar, y la pantalla lo regresa al volver a «Puede» (como en el
+    /// prototipo). Cambiar los de defecto no toca a los usuarios que ya existen.
     /// </summary>
     public async Task<UsuariosYPermisosDto> CambiarAsync(Guid cajaId, Guid? usuarioId, SolicitudPermisoUsuario s, CancellationToken ct = default)
     {
@@ -50,20 +51,25 @@ public sealed class RegistroUsuarios(PosDbContext db)
             throw new ArgumentException("Ese permiso no existe.");
         if (!Enum.IsDefined(s.Nivel))
             throw new ArgumentException("Elige «Puede», «Con autorización» o «No».");
-        var umbral = s.Nivel == NivelPermiso.Permitido ? s.UmbralCentavos : null;
-        if (umbral <= 0)
+        var puede = s.Nivel == NivelPermiso.Permitido;
+        if (puede && s.UmbralCentavos <= 0)
             throw new ArgumentException("El límite tiene que ser mayor a cero; para que no tenga límite, déjalo vacío.");
-        if (umbral > 10000 && Permisos.EnPorcentaje(s.Accion))
+        if (puede && s.UmbralCentavos > 10000 && Permisos.EnPorcentaje(s.Accion))
             throw new ArgumentException("El descuento llega hasta 100 %.");
-        var usuario = usuarioId is { } id ? await UsuarioAsync(id, ct) : null;
-        var filas = await FilasAsync(usuarioId, ct);
-        var nuevo = new Permiso(s.Accion, s.Nivel, umbral, s.PideMotivo ?? filas.GetValueOrDefault(s.Accion)?.PideMotivo ?? false);
-        if (usuario is { Activo: true } && s.Accion == AccionControlada.EditarReglas && s.Nivel != NivelPermiso.Permitido)
-            await QuedaAlguienAsync(usuario.Id, ct);
-        if (Poner(usuarioId, filas, nuevo))
+        await using (var turno = await db.Database.BeginTransactionAsync(ct))
         {
-            Registrar(caja, s.UsuarioId, $"{usuario?.Nombre ?? "Permisos por defecto"}: «{Permisos.Nombre(s.Accion)}» → {Describir(nuevo)}");
-            await db.SaveChangesAsync(ct);
+            var usuario = usuarioId is { } id ? await UsuarioAsync(id, ct) : null;
+            var filas = await FilasAsync(usuarioId, ct);
+            var antes = filas.GetValueOrDefault(s.Accion);
+            var nuevo = new Permiso(s.Accion, s.Nivel, puede ? s.UmbralCentavos : antes?.UmbralCentavos, s.PideMotivo ?? antes?.PideMotivo ?? false);
+            if (usuario is { Activo: true } && s.Accion == AccionControlada.EditarReglas && s.Nivel != NivelPermiso.Permitido)
+                await QuedaAlguienAsync(usuario.Id, ct);
+            if (Poner(usuarioId, filas, nuevo))
+            {
+                Registrar(caja, s.UsuarioId, $"{usuario?.Nombre ?? "Permisos por defecto"}: «{Permisos.Nombre(s.Accion)}» → {Describir(nuevo)}");
+                await db.SaveChangesAsync(ct);
+            }
+            await turno.CommitAsync(ct);
         }
         return await ListaAsync(null, ct);
     }
@@ -110,20 +116,25 @@ public sealed class RegistroUsuarios(PosDbContext db)
             throw new ArgumentException("Escribe su nombre.");
         if (nombre.Length > FichasEntrada.LargoNombre)
             throw new ArgumentException($"El nombre va hasta {FichasEntrada.LargoNombre} letras: con el nombre y una inicial basta.");
-        var usuarios = await db.Usuarios.AsNoTracking().Select(u => new { u.Nombre, u.NombreUsuario, u.Activo }).ToListAsync(ct);
-        if (usuarios.FirstOrDefault(u => Texto.Normalizar(u.Nombre) == Texto.Normalizar(nombre)) is { } igual)
-            throw new InvalidOperationException(igual.Activo
-                ? $"Ya hay un usuario que se llama {igual.Nombre.Trim()}: agrégale el apellido o una inicial."
-                : $"Ya hay un usuario que se llama {igual.Nombre.Trim()}, dado de baja: vuélvelo a dar de alta.");
-        ValidarPin(s.Pin);
+        Usuario usuario;
+        await using (var turno = await db.Database.BeginTransactionAsync(ct))
+        {
+            var usuarios = await db.Usuarios.AsNoTracking().Select(u => new { u.Nombre, u.NombreUsuario, u.Activo }).ToListAsync(ct);
+            if (usuarios.FirstOrDefault(u => Texto.Normalizar(u.Nombre) == Texto.Normalizar(nombre)) is { } igual)
+                throw new InvalidOperationException(igual.Activo
+                    ? $"Ya hay un usuario que se llama {igual.Nombre.Trim()}: agrégale el apellido o una inicial."
+                    : $"Ya hay un usuario que se llama {igual.Nombre.Trim()}, dado de baja: vuélvelo a dar de alta.");
+            ValidarPin(s.Pin);
 
-        var usuario = new Usuario { Nombre = nombre, NombreUsuario = NombreUsuario(nombre, usuarios.Select(u => u.NombreUsuario)), SucursalId = caja.SucursalId };
-        usuario.EstablecerPin(s.Pin);
-        db.Usuarios.Add(usuario);
-        var defecto = await new ServicioControl(db).DefectoAsync(ct);
-        db.PermisosUsuario.AddRange(Permisos.Acciones.Select(a => Fila(usuario.Id, defecto.De(a))));
-        Registrar(caja, s.UsuarioId, $"Dio de alta a {nombre} (usuario «{usuario.NombreUsuario}»), con los permisos por defecto");
-        await db.SaveChangesAsync(ct);
+            usuario = new Usuario { Nombre = nombre, NombreUsuario = NombreUsuario(nombre, usuarios.Select(u => u.NombreUsuario)), SucursalId = caja.SucursalId };
+            usuario.EstablecerPin(s.Pin);
+            db.Usuarios.Add(usuario);
+            var defecto = await new ServicioControl(db).DefectoAsync(ct);
+            db.PermisosUsuario.AddRange(Permisos.Acciones.Select(a => Fila(usuario.Id, defecto.De(a))));
+            Registrar(caja, s.UsuarioId, $"Dio de alta a {nombre} (usuario «{usuario.NombreUsuario}»), con los permisos por defecto");
+            await db.SaveChangesAsync(ct);
+            await turno.CommitAsync(ct);
+        }
         return await ListaAsync(usuario.Id, ct);
     }
 
@@ -146,18 +157,22 @@ public sealed class RegistroUsuarios(PosDbContext db)
     public async Task<UsuariosYPermisosDto> ActivarAsync(Guid cajaId, Guid usuarioId, SolicitudActivarUsuario s, CancellationToken ct = default)
     {
         var caja = await ExigirAsync(cajaId, s.UsuarioId, registrar: true, ct);
-        var usuario = await UsuarioAsync(usuarioId, ct);
-        if (usuario.Activo != s.Activo)
+        await using (var turno = await db.Database.BeginTransactionAsync(ct))
         {
-            if (!s.Activo)
+            var usuario = await UsuarioAsync(usuarioId, ct);
+            if (usuario.Activo != s.Activo)
             {
-                if (usuarioId == s.UsuarioId)
-                    throw new InvalidOperationException("No puedes darte de baja tú: pídeselo a otro usuario con «Usuarios y permisos».");
-                await QuedaAlguienAsync(usuarioId, ct);
+                if (!s.Activo)
+                {
+                    if (usuarioId == s.UsuarioId)
+                        throw new InvalidOperationException("No puedes darte de baja tú: pídeselo a otro usuario con «Usuarios y permisos».");
+                    await QuedaAlguienAsync(usuarioId, ct);
+                }
+                usuario.Activo = s.Activo;
+                Registrar(caja, s.UsuarioId, s.Activo ? $"Volvió a dar de alta a {usuario.Nombre}" : $"Dio de baja a {usuario.Nombre}");
+                await db.SaveChangesAsync(ct);
             }
-            usuario.Activo = s.Activo;
-            Registrar(caja, s.UsuarioId, s.Activo ? $"Volvió a dar de alta a {usuario.Nombre}" : $"Dio de baja a {usuario.Nombre}");
-            await db.SaveChangesAsync(ct);
+            await turno.CommitAsync(ct);
         }
         return await ListaAsync(null, ct);
     }
@@ -210,7 +225,12 @@ public sealed class RegistroUsuarios(PosDbContext db)
     private async Task<Usuario> UsuarioAsync(Guid usuarioId, CancellationToken ct) =>
         await db.Usuarios.FindAsync([usuarioId], ct) ?? throw new InvalidOperationException("Ese usuario no existe.");
 
-    /// <summary>Si sin <paramref name="sin"/> (o sin su «Usuarios y permisos») no queda nadie activo con él en «Puede», no se puede.</summary>
+    /// <summary>
+    /// Si sin <paramref name="sin"/> (o sin su «Usuarios y permisos») no queda nadie activo con él en «Puede», no se puede. Se
+    /// revisa dentro del turno de lo que se va a guardar (la transacción, que en SQLite toma la escritura desde el principio):
+    /// dos cambios al mismo tiempo en dos cajas no se quitan «Usuarios y permisos» uno al otro, porque el segundo espera y ya
+    /// ve el primero.
+    /// </summary>
     private async Task QuedaAlguienAsync(Guid sin, CancellationToken ct)
     {
         var otros = await db.Usuarios.AsNoTracking().Where(u => u.Activo && u.Id != sin).Select(u => (Guid?)u.Id).ToListAsync(ct);
@@ -243,16 +263,20 @@ public sealed class RegistroUsuarios(PosDbContext db)
     private async Task<UsuariosYPermisosDto> PonerTodosAsync(
         Caja caja, Guid sesionId, Usuario usuario, Func<AccionControlada, Permiso> permiso, string detalle, CancellationToken ct)
     {
-        if (usuario.Activo && permiso(AccionControlada.EditarReglas).Nivel != NivelPermiso.Permitido)
-            await QuedaAlguienAsync(usuario.Id, ct);
-        var filas = await FilasAsync(usuario.Id, ct);
-        var cambio = false;
-        foreach (var accion in Permisos.Acciones)
-            cambio |= Poner(usuario.Id, filas, permiso(accion) with { Accion = accion });
-        if (cambio)
+        await using (var turno = await db.Database.BeginTransactionAsync(ct))
         {
-            Registrar(caja, sesionId, detalle);
-            await db.SaveChangesAsync(ct);
+            if (usuario.Activo && permiso(AccionControlada.EditarReglas).Nivel != NivelPermiso.Permitido)
+                await QuedaAlguienAsync(usuario.Id, ct);
+            var filas = await FilasAsync(usuario.Id, ct);
+            var cambio = false;
+            foreach (var accion in Permisos.Acciones)
+                cambio |= Poner(usuario.Id, filas, permiso(accion) with { Accion = accion });
+            if (cambio)
+            {
+                Registrar(caja, sesionId, detalle);
+                await db.SaveChangesAsync(ct);
+            }
+            await turno.CommitAsync(ct);
         }
         return await ListaAsync(null, ct);
     }
@@ -262,7 +286,7 @@ public sealed class RegistroUsuarios(PosDbContext db)
         UsuarioId = usuarioId,
         Accion = permiso.Accion,
         Nivel = permiso.Nivel,
-        UmbralCentavos = permiso.Nivel == NivelPermiso.Permitido ? permiso.UmbralCentavos : null,
+        UmbralCentavos = permiso.UmbralCentavos,
         PideMotivo = permiso.PideMotivo,
     };
 

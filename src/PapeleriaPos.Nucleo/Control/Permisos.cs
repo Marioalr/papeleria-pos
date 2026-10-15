@@ -121,15 +121,17 @@ public enum NivelPermiso
 
 /// <summary>
 /// Lo que puede alguien en una acción. En «Puede», con umbral: arriba de ese monto pide autorización (en las de
-/// porcentaje, el umbral va en centésimas: 1000 = 10 %). El umbral solo se guarda en «Puede».
+/// porcentaje, el umbral va en centésimas: 1000 = 10 %). El umbral solo cuenta en «Puede»: en «Con autorización» y en
+/// «No» se queda el que tenía, sin contar, y vuelve con «Puede» (como en el prototipo).
 /// </summary>
 public sealed record Permiso(AccionControlada Accion, NivelPermiso Nivel, long? UmbralCentavos = null, bool PideMotivo = false)
 {
     /// <summary>«Puede», sin límite: como los tiene la primera cuenta.</summary>
     public bool SinLimite => Nivel == NivelPermiso.Permitido && UmbralCentavos is null;
 
-    /// <summary>Lo que se ve en «Usuarios y permisos»: el nivel y el límite (el motivo no se ve ahí).</summary>
-    public bool SeVeIgual(Permiso otro) => Nivel == otro.Nivel && UmbralCentavos == otro.UmbralCentavos;
+    /// <summary>Lo que se ve en «Usuarios y permisos»: el nivel y, en «Puede», el límite (el motivo no se ve ahí).</summary>
+    public bool SeVeIgual(Permiso otro) =>
+        Nivel == otro.Nivel && (Nivel != NivelPermiso.Permitido || UmbralCentavos == otro.UmbralCentavos);
 
     /// <summary>Todo «Puede», sin límite y sin pedir motivo: los de la primera cuenta y los de «Todos».</summary>
     public static Permiso Todo(AccionControlada accion) => new(accion, NivelPermiso.Permitido);
@@ -180,15 +182,14 @@ public class PermisoUsuario : IVersionado
     public long Version { get; set; }
     public DateTime ModificadoUtc { get; set; }
 
-    public Permiso Permiso => new(Accion, Nivel, Nivel == NivelPermiso.Permitido ? UmbralCentavos : null, PideMotivo);
+    public Permiso Permiso => new(Accion, Nivel, UmbralCentavos, PideMotivo);
 
-    /// <summary>Lo pone como <paramref name="permiso"/>; dice si cambió algo.</summary>
+    /// <summary>Lo pone como <paramref name="permiso"/>, también el límite que se queda fuera de «Puede»; dice si cambió algo.</summary>
     public bool Poner(Permiso permiso)
     {
-        var umbral = permiso.Nivel == NivelPermiso.Permitido ? permiso.UmbralCentavos : null;
-        if (Nivel == permiso.Nivel && UmbralCentavos == umbral && PideMotivo == permiso.PideMotivo)
+        if (Nivel == permiso.Nivel && UmbralCentavos == permiso.UmbralCentavos && PideMotivo == permiso.PideMotivo)
             return false;
-        (Nivel, UmbralCentavos, PideMotivo) = (permiso.Nivel, umbral, permiso.PideMotivo);
+        (Nivel, UmbralCentavos, PideMotivo) = (permiso.Nivel, permiso.UmbralCentavos, permiso.PideMotivo);
         return true;
     }
 }

@@ -260,7 +260,7 @@
         var actual = PermisoDe(accion);
         if (actual.Nivel == nivel)
             return Task.CompletedTask;
-        // Al pasar a «Puede», con el límite que tenía (si lo tenía).
+        // Al volver a «Puede», con el límite que tenía (si lo tenía): fuera de «Puede» se queda guardado, sin contar.
         return GuardarAsync(() => Cliente.CambiarPermisoAsync(Caja.Id, _elegido,
             new SolicitudPermisoUsuario(Sesion.UsuarioId, accion, nivel, nivel == NivelPermiso.Permitido ? actual.UmbralCentavos : null)));
     }

@@ -121,6 +121,44 @@ public class CatalogoApiTests(ServicioDePrueba servicio) : IClassFixture<Servici
         Assert.Equal(2, await base_.PreciosHistorial.CountAsync(h => h.PrecioAnteriorCentavos != null && h.VarianteId == ficha.Variantes[0].Id));
     }
 
+    /// <summary>
+    /// Con los permisos por usuario también vincula su chat quien no es el dueño («Configurar Telegram»): lo que cambia el
+    /// encargado le llega al dueño y no a él, y lo que cambia el dueño, al revés.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_cambia_cada_quien_no_se_le_avisa_a_el_pero_si_a_los_demas_chats()
+    {
+        var (http, caja, _, encargado, dueno, departamento) = await PrepararAsync();
+        using (var alcance = servicio.Fabrica.Services.CreateScope())
+        {
+            var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
+            if (!db.ChatsTelegram.Any(c => c.ChatId == 4242))
+                db.ChatsTelegram.Add(new ChatTelegram { UsuarioId = dueno.UsuarioId, ChatId = 4242, VinculadoUtc = DateTime.UtcNow });
+            if (!db.ChatsTelegram.Any(c => c.ChatId == 4343))
+                db.ChatsTelegram.Add(new ChatTelegram { UsuarioId = encargado.UsuarioId, ChatId = 4343, VinculadoUtc = DateTime.UtcNow });
+            await db.SaveChangesAsync();
+        }
+        var ficha = await Leer<FichaProductoDto>(await http.PostAsJsonAsync("api/catalogo/productos",
+            new SolicitudGuardarProducto(encargado.UsuarioId, caja.SucursalId, Ficha(departamento, "Marcatextos verde", $"MARCA-{Guid.NewGuid():N}"[..18]))));
+        FichaProductoDto ConPrecio(FichaProductoDto f, long menudeo) =>
+            f with { Variantes = [f.Variantes[0] with { Precios = [new PrecioFichaDto(null, 1000, menudeo), new PrecioFichaDto(null, 12000, 1200)] }] };
+
+        await Leer<FichaProductoDto>(await http.PostAsJsonAsync("api/catalogo/productos",
+            new SolicitudGuardarProducto(encargado.UsuarioId, caja.SucursalId, ConPrecio(ficha, 1700))));
+        await Leer<FichaProductoDto>(await http.PostAsJsonAsync("api/catalogo/productos",
+            new SolicitudGuardarProducto(dueno.UsuarioId, caja.SucursalId, ConPrecio(ficha, 1600))));
+
+        using var otro = servicio.Fabrica.Services.CreateScope();
+        var base_ = otro.ServiceProvider.GetRequiredService<PosDbContext>();
+        var mensajes = await base_.MensajesTelegram.AsNoTracking()
+            .Where(m => m.Tipo == TipoAlerta.CambioPrecioCatalogo && m.Texto.Contains("Marcatextos verde"))
+            .Select(m => new { m.ChatId, m.Texto }).ToListAsync();
+        Assert.Single(mensajes, m => m.Texto.Contains("15.00 → 17.00") && m.ChatId == 4242);
+        Assert.DoesNotContain(mensajes, m => m.Texto.Contains("15.00 → 17.00") && m.ChatId == 4343);
+        Assert.Single(mensajes, m => m.Texto.Contains("17.00 → 16.00") && m.ChatId == 4343);
+        Assert.DoesNotContain(mensajes, m => m.Texto.Contains("17.00 → 16.00") && m.ChatId == 4242);
+    }
+
     [Fact]
     public async Task El_cajero_da_de_alta_desde_la_caja_lo_que_no_existe_y_queda_por_completar()
     {

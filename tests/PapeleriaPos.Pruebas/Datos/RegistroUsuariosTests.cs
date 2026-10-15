@@ -91,17 +91,27 @@ public class RegistroUsuariosTests : IAsyncLifetime
         var lista = await CambiarAsync(_mario.Id, _ana.Id, AccionControlada.Devolucion, NivelPermiso.Permitido, 50000);
         // Lo mismo otra vez: no cambia nada ni se anota.
         await CambiarAsync(_mario.Id, _ana.Id, AccionControlada.Devolucion, NivelPermiso.Permitido, 50000);
-        // «Con autorización» no lleva límite.
+        // En «Con autorización» el límite no cuenta (ni el que se mande): el que tenía, $200, se queda sin contar.
         var conAutorizacion = await CambiarAsync(_mario.Id, _ana.Id, AccionControlada.Merma, NivelPermiso.RequiereAutorizacion, 30000);
 
         Assert.Equal(new Permiso(AccionControlada.Devolucion, NivelPermiso.Permitido, 50000), De(lista, _ana.Id, AccionControlada.Devolucion));
-        Assert.Equal(new Permiso(AccionControlada.Merma, NivelPermiso.RequiereAutorizacion), De(conAutorizacion, _ana.Id, AccionControlada.Merma));
+        Assert.Equal(new Permiso(AccionControlada.Merma, NivelPermiso.RequiereAutorizacion, 20000), De(conAutorizacion, _ana.Id, AccionControlada.Merma));
         Assert.Equal("Permisos propios", lista.Usuarios.Single(u => u.Id == _ana.Id).Resumen);
-        await using var db = _base.Contexto();
-        var control = new ServicioControl(db);
-        Assert.Equal(NivelPermiso.Permitido, (await control.EvaluarAsync(_ana.Id, _catalogo.Matriz.Id, AccionControlada.Devolucion, 50000)).Nivel);
-        Assert.Equal(NivelPermiso.RequiereAutorizacion, (await control.EvaluarAsync(_ana.Id, _catalogo.Matriz.Id, AccionControlada.Devolucion, 50001)).Nivel);
-        Assert.Equal(["Ana: «Devolución» → Puede, hasta $500.00", "Ana: «Merma» → Con autorización"], await BitacoraAsync());
+        await using (var db = _base.Contexto())
+        {
+            var control = new ServicioControl(db);
+            Assert.Equal(NivelPermiso.Permitido, (await control.EvaluarAsync(_ana.Id, _catalogo.Matriz.Id, AccionControlada.Devolucion, 50000)).Nivel);
+            Assert.Equal(NivelPermiso.RequiereAutorizacion, (await control.EvaluarAsync(_ana.Id, _catalogo.Matriz.Id, AccionControlada.Devolucion, 50001)).Nivel);
+            Assert.Equal(NivelPermiso.RequiereAutorizacion, (await control.EvaluarAsync(_ana.Id, _catalogo.Matriz.Id, AccionControlada.Merma, 100)).Nivel);
+        }
+
+        // De vuelta en «Puede», con el límite que tenía (la pantalla lo manda): no queda sin límite.
+        var otraVez = await CambiarAsync(_mario.Id, _ana.Id, AccionControlada.Merma, NivelPermiso.Permitido,
+            De(conAutorizacion, _ana.Id, AccionControlada.Merma).UmbralCentavos);
+
+        Assert.Equal(new Permiso(AccionControlada.Merma, NivelPermiso.Permitido, 20000), De(otraVez, _ana.Id, AccionControlada.Merma));
+        Assert.Equal(["Ana: «Devolución» → Puede, hasta $500.00", "Ana: «Merma» → Con autorización", "Ana: «Merma» → Puede, hasta $200.00"],
+            await BitacoraAsync());
     }
 
     [Fact]

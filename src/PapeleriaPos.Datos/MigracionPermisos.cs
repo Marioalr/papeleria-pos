@@ -52,7 +52,8 @@ public static class MigracionPermisos
                 continue;
             if (propios.Count == 0)
             {
-                // Uno de antes de la entrega 1: lo que valía para su rol. Sin sucursal (el dueño), la única que haya.
+                // Uno de antes de la entrega 1: lo que valía para su rol. Sin sucursal (el dueño), la única que haya; con
+                // varias, las reglas generales (los permisos de cada quien ya no cambian de una sucursal a otra).
                 var sucursal = usuario.SucursalId ?? (sucursales.Count == 1 ? sucursales[0] : null);
                 nuevos.AddRange(PermisosDeRoles.De(usuario.Rol, await reglas.Value, sucursal).Select(p => Nuevo(usuario.Id, p)));
                 continue;
@@ -83,7 +84,7 @@ public static class MigracionPermisos
         UsuarioId = usuarioId,
         Accion = permiso.Accion,
         Nivel = permiso.Nivel,
-        UmbralCentavos = permiso.Nivel == NivelPermiso.Permitido ? permiso.UmbralCentavos : null,
+        UmbralCentavos = permiso.UmbralCentavos,
         PideMotivo = permiso.PideMotivo,
     };
 }

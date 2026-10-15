@@ -288,8 +288,9 @@ public sealed class Contingencia
         if (_responde && (_saldos is null ? tocaCredito
                 : estado!.VersionCredito != _saldos.Version || ((subio || tocaCredito) && _almacen.CuentaPropia().Count > 0)))
             await ActualizarCreditosAsync();
-        // Una copia de antes de la entrega 1 (sin los permisos por usuario) se vuelve a bajar en cuanto se puede.
-        if (_responde && (Paquete is null || Paquete.Permisos is null || Paquete.Version != estado!.VersionDatos || Ahora - _paqueteBajadoUtc > PaqueteViejo))
+        // La copia se vuelve a bajar en el primer latido con conexión (también la de antes de la entrega 1, sin los permisos por
+        // usuario, que mientras tanto se lee como la leería la migración), cuando cambia y cada tanto.
+        if (_responde && (Paquete is null || Paquete.Version != estado!.VersionDatos || Ahora - _paqueteBajadoUtc > PaqueteViejo))
             await ActualizarPaqueteAsync();
     }
 

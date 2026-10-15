@@ -80,6 +80,11 @@ public class FichasEntradaTests
         // Con los de defecto, pero con otro límite: ya no son los de defecto.
         var otroLimite = new PermisosDeUsuario(Defecto.Lista().Select(p => p.Accion == AccionControlada.Descuento ? p with { UmbralCentavos = 1500 } : p));
         Assert.Equal("Permisos propios", FichasEntrada.Resumen(otroLimite, Defecto));
+        // Fuera de «Puede» el límite que se quedó guardado no cuenta ni se ve: siguen siendo los de defecto.
+        var guardado = new PermisosDeUsuario(Defecto.Lista().Select(p => p.Accion == AccionControlada.CambiarPrecio ? p with { UmbralCentavos = 5000 } : p));
+        Assert.Equal(NivelPermiso.RequiereAutorizacion, Defecto.De(AccionControlada.CambiarPrecio).Nivel);
+        Assert.Equal("Permisos por defecto", FichasEntrada.Resumen(guardado, Defecto));
+        Assert.Equal(NivelPermiso.RequiereAutorizacion, Permisos.Evaluar(guardado, AccionControlada.CambiarPrecio, 100).Nivel);
     }
 
     [Fact]

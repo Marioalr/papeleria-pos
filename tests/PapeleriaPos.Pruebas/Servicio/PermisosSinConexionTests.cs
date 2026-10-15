@@ -146,4 +146,51 @@ public sealed class CopiaDeAntesTests(ServicioDePrueba servicio) : IClassFixture
         await deAntes.LatidoAsync();
         Assert.NotNull(deAntes.Paquete!.Permisos);
     }
+
+    /// <summary>Lo que contesta un servicio de antes de la entrega 1: la copia, sin los permisos.</summary>
+    private sealed class ServicioDeAntes(HttpMessageHandler interno) : DelegatingHandler(interno)
+    {
+        public int Copias { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var respuesta = await base.SendAsync(request, cancellationToken);
+            if (!request.RequestUri!.AbsolutePath.EndsWith("/paquete", StringComparison.Ordinal))
+                return respuesta;
+            Copias++;
+            var json = System.Text.Json.Nodes.JsonNode.Parse(await respuesta.Content.ReadAsStringAsync(cancellationToken))!.AsObject();
+            json.Remove("permisos");
+            respuesta.Content = new StringContent(json.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
+            return respuesta;
+        }
+    }
+
+    /// <summary>
+    /// Una caja ya actualizada con la caja principal todavía de antes: su copia no trae los permisos y la caja decide con las
+    /// reglas, sin volverla a bajar en cada latido (solo cuando cambia, como siempre).
+    /// </summary>
+    [Fact]
+    public async Task Con_un_servicio_de_antes_no_baja_la_copia_en_cada_latido()
+    {
+        var caja = (await servicio.Fabrica.CreateClient().GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        var deAntes = new ServicioDeAntes(servicio.Fabrica.Server.CreateHandler());
+        var interruptor = new Interruptor(deAntes);
+        var http = new HttpClient(interruptor);
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
+        var contingencia = new Contingencia(new AlmacenLocal(_baseLocal), http, conexion);
+
+        for (var i = 0; i < 3; i++)
+            await contingencia.LatidoAsync();
+
+        Assert.Equal(1, deAntes.Copias);
+        Assert.Null(contingencia.Paquete!.Permisos);
+
+        // Sin la caja principal decide con las reglas de esa copia, como antes: el encargado hace el corte y el cajero no.
+        interruptor.Caido = true;
+        await contingencia.LatidoAsync();
+        Assert.False(contingencia.EnLinea);
+        var cliente = new ClienteCaja(http, conexion, contingencia);
+        Assert.Equal(NivelPermiso.NoPermitido, (await cliente.EntrarAsync("cajero", "1111")).Permiso(AccionControlada.CorteZ)!.Nivel);
+        Assert.Equal(NivelPermiso.Permitido, (await cliente.EntrarAsync("encargado", "2222")).Permiso(AccionControlada.CorteZ)!.Nivel);
+    }
 }

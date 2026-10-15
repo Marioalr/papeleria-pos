@@ -38,14 +38,17 @@ public static class AlertasTelegram
             var configuracion = Configuracion(db, b.SucursalId);
             if (Tipo(b, configuracion) is not { } tipo || !configuracion.Avisa(tipo))
                 continue;
-            // Lo que cambia en el catálogo, el inventario o los clientes quien recibe los avisos (el del chat vinculado) no se
-            // le avisa a él mismo.
+            // Lo que cambia alguien en el catálogo, el inventario o los clientes no se le avisa a él mismo (a los chats que
+            // vinculó); a los demás chats, sí.
+            var para = chats;
             if (tipo is TipoAlerta.CambioPrecioCatalogo or TipoAlerta.AjusteInventario or TipoAlerta.DiferenciaConteo or TipoAlerta.ConteoCompleto
                     or TipoAlerta.PrivilegiosCliente or TipoAlerta.Credito
-                && b.UsuarioId is { } quien
-                && db.ChatsTelegram.Any(c => c.Activo && c.UsuarioId == quien))
-                continue;
-            Agregar(db, chats, tipo, Texto(db, b, tipo), $"bitacora:{b.Id}");
+                && b.UsuarioId is { } quien)
+            {
+                var suyos = db.ChatsTelegram.AsNoTracking().Where(c => c.Activo && c.UsuarioId == quien).Select(c => c.ChatId).ToList();
+                para = [.. chats.Except(suyos)];
+            }
+            Agregar(db, para, tipo, Texto(db, b, tipo), $"bitacora:{b.Id}");
         }
     }
 
@@ -70,7 +73,7 @@ public static class AlertasTelegram
         return true;
     }
 
-    /// <summary>Los chats del dueño que están vinculados.</summary>
+    /// <summary>Los chats vinculados (los vincula quien tiene «Configurar Telegram»).</summary>
     public static List<long> Chats(PosDbContext db) =>
         db.ChatsTelegram.AsNoTracking().Where(c => c.Activo).Select(c => c.ChatId).Distinct().ToList();
 

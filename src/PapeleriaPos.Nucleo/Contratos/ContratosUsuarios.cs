@@ -16,12 +16,15 @@ public sealed record UsuariosYPermisosDto(IReadOnlyList<UsuarioYPermisosDto> Usu
 /// <param name="Usuario">Con el que se entra donde todavía se escribe (el celular, dar de alta una caja, autorizar sin las fichas).</param>
 /// <param name="Resumen">«Todos los permisos», «Permisos por defecto» o lo que tiene de más.</param>
 /// <param name="PrimeraCuenta">La que se creó al instalar con todos los permisos (al migrar, el dueño).</param>
-/// <param name="Permisos">Uno por acción, en su orden.</param>
+/// <param name="Permisos">Uno por acción, en su orden (fuera de «Puede», con el límite que tenía, que no cuenta).</param>
 public sealed record UsuarioYPermisosDto(
     Guid Id, string Nombre, string Usuario, bool Activo, string Resumen, bool PrimeraCuenta, IReadOnlyList<Permiso> Permisos);
 
 /// <summary>Un permiso de un usuario o de los de defecto, como quedó: «Puede» (con su límite o sin él), «Con autorización» o «No».</summary>
-/// <param name="UmbralCentavos">Solo en «Puede»: hasta dónde (en el descuento, centésimas de porcentaje: 1000 = 10 %). Vacío: sin límite.</param>
+/// <param name="UmbralCentavos">
+/// En «Puede»: hasta dónde (en el descuento, centésimas de porcentaje: 1000 = 10 %); vacío, sin límite. En «Con
+/// autorización» y en «No» no se toma: se queda el que tenía, sin contar, para cuando vuelva a «Puede».
+/// </param>
 /// <param name="PideMotivo">Vacío: el que ya tenía.</param>
 public sealed record SolicitudPermisoUsuario(Guid UsuarioId, AccionControlada Accion, NivelPermiso Nivel, long? UmbralCentavos = null, bool? PideMotivo = null);
 

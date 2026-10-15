@@ -99,8 +99,9 @@ pone el servicio, como en el resto de la API. Lo que es del POS lo toma la API d
 (entrega 1: ya no hay roles), los nombres de quien atendió y el PIN. El costo de cada impresión (y la ganancia y el
 margen al cotizar) solo va a quien tiene «Ver costos, utilidad y margen»; el desglose del día, a quien tiene «Consultar la
 bitácora»; y cambiar cómo se lee la impresora o aplicar la calibración lo hace quien tiene «Configurar la impresora», con
-su usuario y su PIN. Al migrar de los roles quedaron igual que antes: el costo, solo el dueño; el desglose, el dueño y el
-encargado; la impresora, el dueño. La capa de datos del módulo no revisa permisos: eso lo hace la API.
+su usuario y su PIN. Al migrar de los roles quedaron igual que antes: el costo, solo el dueño; la impresora, el dueño; el
+desglose, el dueño y el encargado (el encargado, mientras consulte la bitácora, como viene de inicio). La capa de datos del
+módulo no revisa permisos: eso lo hace la API.
 
 Los contratos (`Contratos.cs`) son lo que entienden la interfaz y las cajas, y el agente manda `TrabajoMedidoDto` por la
 bandeja de la caja (si no hay conexión, se queda guardado y se manda después, tal cual). Cambios sin riesgo: agregar un

@@ -67,11 +67,7 @@ public sealed record SolicitudEntrada(string Usuario, string Pin);
 /// Quien entró a la caja, con todo lo que puede (entrega 1): la caja pinta con esto sus pestañas, teclas y candados, sin
 /// preguntar en cada clic, y el servicio vuelve a revisar cada operación.
 /// </summary>
-/// <param name="Rol">
-/// De antes de la entrega 1: ya no decide nada aquí. Lo leen las cajas de antes y, mientras se separa el módulo de
-/// impresión, el costo de las impresiones y la pestaña de la impresora (que pasan a «Ver costos, utilidad y margen» y a
-/// «Configurar la impresora» al juntarse las dos ramas).
-/// </param>
+/// <param name="Rol">De antes de la entrega 1: ya no decide nada. Solo lo leen las cajas que no se han actualizado.</param>
 /// <param name="Permisos">
 /// Cada acción, con quién la autoriza (lo mismo que <c>api/usuarios/{id}/permisos</c>). Vacío si lo mandó un servicio de
 /// antes: la pantalla de venta los pide aparte y, sin ellos, todo se ve y el servicio decide.

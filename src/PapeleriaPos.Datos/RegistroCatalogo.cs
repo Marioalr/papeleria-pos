@@ -442,8 +442,9 @@ public sealed class RegistroCatalogo(PosDbContext db)
 
     /// <summary>
     /// ¿Ve los costos (el del producto, el de lo que se cuenta o se ajusta)? Quien captura las compras («Compras: la nota y
-    /// los costos») o quien ve la utilidad («Ver costos, utilidad y margen»), como en el prototipo. Con los usuarios de
-    /// antes, los mismos que con los roles: el dueño y el encargado.
+    /// los costos») o quien ve la utilidad («Ver costos, utilidad y margen»), como en el prototipo. Al migrar, con las
+    /// reglas como venían de inicio, los mismos que con los roles: el dueño y el encargado (si a un rol se le había dado o
+    /// quitado «Compras», ahora sigue a ese permiso).
     /// </summary>
     public async Task<bool> VeCostosAsync(Guid usuarioId, CancellationToken ct = default)
     {

@@ -185,3 +185,47 @@ public class ParidadPermisosApiTests(ServicioDePrueba servicio) : IClassFixture<
         Assert.False(corte.PuedeCortar);
     }
 }
+
+/// <summary>
+/// Dos cambios al mismo tiempo desde dos cajas: el segundo espera a que se guarde el primero y ya lo ve. Así dos que se
+/// quitan «Usuarios y permisos» uno al otro no dejan a la tienda sin nadie que lo tenga.
+/// </summary>
+public class UsuariosAlMismoTiempoTests(ServicioDePrueba servicio) : IClassFixture<ServicioDePrueba>
+{
+    [Fact]
+    public async Task Dos_que_se_quitan_usuarios_y_permisos_al_mismo_tiempo_no_dejan_a_nadie_sin_el()
+    {
+        var http = servicio.Fabrica.CreateClient();
+        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single(c => c.Serie == "A");
+        async Task<SesionDto> EntrarAsync(string usuario, string pin) =>
+            (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada(usuario, pin))).Content.ReadFromJsonAsync<SesionDto>())!;
+        var dueno = await EntrarAsync("dueno", "3333");
+        var encargado = await EntrarAsync("encargado", "2222");
+        string Url(SesionDto de) => $"api/cajas/{caja.Id}/usuarios-y-permisos/{de.UsuarioId}";
+        (await http.PutAsJsonAsync(Url(encargado), new SolicitudPermisoUsuario(dueno.UsuarioId, AccionControlada.EditarReglas, NivelPermiso.Permitido)))
+            .EnsureSuccessStatusCode();
+
+        // El dueño le quita «Usuarios y permisos» al encargado: ya revisó que queda él y está guardándolo.
+        await using var primero = servicio.Base();
+        await using (var turno = await primero.Database.BeginTransactionAsync())
+        {
+            await primero.PermisosUsuario.Where(p => p.UsuarioId == encargado.UsuarioId && p.Accion == AccionControlada.EditarReglas)
+                .ExecuteUpdateAsync(p => p.SetProperty(x => x.Nivel, NivelPermiso.NoPermitido));
+
+            // Al mismo tiempo, desde otra caja, el encargado se lo quita al dueño: espera su turno.
+            var segundo = http.PutAsJsonAsync(Url(dueno), new SolicitudPermisoUsuario(encargado.UsuarioId, AccionControlada.EditarReglas, NivelPermiso.NoPermitido));
+            await Task.Delay(500);
+            Assert.False(segundo.IsCompleted);
+            await turno.CommitAsync();
+
+            // No se puede: ya no queda nadie más con él (o, si el segundo llegó tarde, el encargado ya no lo tiene).
+            var respuesta = await segundo;
+            Assert.False(respuesta.IsSuccessStatusCode);
+            Assert.Contains((await respuesta.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje,
+                new[] { RegistroUsuarios.SiempreAlguien, "Esto lo hace quien tiene el permiso «Usuarios y permisos»: Dueño de prueba." });
+        }
+
+        await using var db = servicio.Base();
+        Assert.Equal(NivelPermiso.Permitido, (await new ServicioControl(db).EvaluarAsync(dueno.UsuarioId, caja.SucursalId, AccionControlada.EditarReglas)).Nivel);
+    }
+}

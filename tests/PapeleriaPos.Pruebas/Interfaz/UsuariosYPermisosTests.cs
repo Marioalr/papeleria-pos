@@ -241,6 +241,14 @@ public sealed class UsuariosYPermisosTests(ServicioDePrueba servicio) : IClassFi
         await p.CambiarAsync(Limites(p)[0].Cambio, "mucho");
         Assert.Contains("«mucho» no es un límite", p.Texto());
         Assert.Equal(1500, (await BetoAsync()).Permisos.Single(x => x.Accion == AccionControlada.Descuento).UmbralCentavos);
+        // A «Con autorización» el campo se va; de vuelta en «Puede» regresa con su límite, no sin límite.
+        var campos = Limites(p).Count;
+        await p.OprimirAsync(Segmento(p, AccionControlada.Descuento)[1].Clic);
+        Assert.Equal(campos - 1, Limites(p).Count);
+        await p.OprimirAsync(Segmento(p, AccionControlada.Descuento)[0].Clic);
+        Assert.Equal(campos, Limites(p).Count);
+        Assert.Equal(new Permiso(AccionControlada.Descuento, NivelPermiso.Permitido, 1500),
+            (await BetoAsync()).Permisos.Single(x => x.Accion == AccionControlada.Descuento));
 
         // «Copiar los permisos de…» el encargado de prueba.
         var encargado = (await http.GetFromJsonAsync<UsuariosYPermisosDto>($"api/cajas/{caja.Id}/usuarios-y-permisos?usuarioId={dueno.UsuarioId}"))!
