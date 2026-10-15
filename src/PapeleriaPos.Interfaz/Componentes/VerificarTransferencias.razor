@@ -1,8 +1,8 @@
-@* El encargado confirma que cada transferencia llegó a la cuenta, o la rechaza. *@
+@* Quien tiene «Verificar transferencias» confirma que cada transferencia llegó a la cuenta, o la rechaza. *@
 @inject ClienteCaja Cliente
 
 <div class="dos-columnas">
-    <label>Usuario del encargado <input @bind="_usuario" autocomplete="off" /></label>
+    <label>Usuario de quien verifica <input @bind="_usuario" autocomplete="off" /></label>
     <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" /></label>
 </div>
 @if (_error is not null)
@@ -72,7 +72,7 @@ else
     {
         if (_usuario.Trim().Length == 0 || _pin.Length == 0)
         {
-            _error = "Escribe el usuario y PIN del encargado.";
+            _error = "Escribe el usuario y el PIN de quien verifica.";
             return;
         }
         _ocupado = true;

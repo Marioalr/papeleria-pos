@@ -1,54 +1,14 @@
 using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Inventario;
-using PapeleriaPos.Nucleo.Usuarios;
 
 namespace PapeleriaPos.Interfaz;
 
 /// <summary>Cómo se llaman las cosas en pantalla.</summary>
 public static class Textos
 {
-    public static string Accion(AccionControlada accion) => accion switch
-    {
-        AccionControlada.QuitarProducto => "Quitar un producto ya escaneado",
-        AccionControlada.ArticuloComun => "Artículo varios / común",
-        AccionControlada.CambiarPrecio => "Cambiar un precio en la venta",
-        AccionControlada.VenderBajoCosto => "Vender debajo del costo",
-        AccionControlada.CancelarTicket => "Cancelar un ticket cobrado",
-        AccionControlada.Devolucion => "Devolución",
-        AccionControlada.SalidaEfectivo => "Salida de efectivo (F8)",
-        AccionControlada.EntradaEfectivo => "Entrada de efectivo (F7)",
-        AccionControlada.AbrirCajonSinVenta => "Abrir el cajón sin venta",
-        AccionControlada.Reimprimir => "Reimprimir un ticket",
-        AccionControlada.VerificarTransferencia => "Verificar una transferencia",
-        AccionControlada.CorteZ => "Hacer el corte de un turno",
-        AccionControlada.ConfigurarTicket => "Configurar el ticket",
-        AccionControlada.EditarReglas => "Editar las reglas",
-        AccionControlada.ConsultarBitacora => "Consultar la bitácora",
-        AccionControlada.AdministrarCajas => "Dar de alta o quitar cajas",
-        AccionControlada.ConfigurarTelegram => "Configurar Telegram",
-        AccionControlada.ConfigurarImpresora => "Configurar la impresora",
-        AccionControlada.Descuento => "Hacer un descuento",
-        AccionControlada.AdministrarClientes => "Dar de alta y editar los clientes registrados",
-        AccionControlada.EditarCatalogo => "Editar el catálogo (productos y precios)",
-        AccionControlada.AltaRapida => "Dar de alta un código desde la caja",
-        AccionControlada.RecibirMercancia => "Recibir mercancía (contar lo que llegó)",
-        AccionControlada.CostearCompra => "Capturar la nota del proveedor y cerrar la compra",
-        AccionControlada.ConfigurarMargen => "Configurar el margen mínimo",
-        AccionControlada.PedirCompra => "Hacer órdenes de compra",
-        AccionControlada.AbrirPaquete => "Abrir un paquete (sale el paquete, entran sus piezas)",
-        AccionControlada.AjustarInventario => "Ajustar una existencia",
-        AccionControlada.Merma => "Registrar una merma (dañado, caducado, perdido)",
-        AccionControlada.ContarInventario => "Contar (el conteo del día y el conteo completo)",
-        AccionControlada.ConteoCompleto => "Abrir y cerrar el conteo completo de un departamento",
-        AccionControlada.DarCredito => "Dar crédito a un cliente (límite y plazo)",
-        AccionControlada.ExcederLimiteCredito => "Fiar arriba del límite del cliente",
-        AccionControlada.AjustarCredito => "Ajustar el saldo de un cliente",
-        AccionControlada.CancelarAbono => "Cancelar un abono (en su turno)",
-        AccionControlada.DevolverSaldoAFavor => "Devolver en efectivo el saldo a favor de un cliente",
-        AccionControlada.CorteDelDia => "Ver y cerrar el corte del día",
-        _ => accion.ToString(),
-    };
+    /// <summary>Cómo se llama cada permiso: los mismos nombres que la bitácora y los mensajes del servicio.</summary>
+    public static string Accion(AccionControlada accion) => Permisos.Nombre(accion);
 
     /// <summary>Por qué quedó por revisar lo del crédito que se hizo sin conexión.</summary>
     public static string Motivo(MotivoRevisionCredito motivo) => motivo switch
@@ -60,18 +20,12 @@ public static class Textos
         _ => motivo.ToString(),
     };
 
+    /// <summary>Los niveles de un permiso, como en «Usuarios y permisos».</summary>
     public static string Nivel(NivelPermiso nivel) => nivel switch
     {
-        NivelPermiso.Permitido => "Permitido",
-        NivelPermiso.RequiereAutorizacion => "Requiere autorización",
-        _ => "No permitido",
-    };
-
-    public static string Rol(Rol rol) => rol switch
-    {
-        Nucleo.Usuarios.Rol.Cajero => "Cajero",
-        Nucleo.Usuarios.Rol.Encargado => "Encargado",
-        _ => "Dueño",
+        NivelPermiso.Permitido => "Puede",
+        NivelPermiso.RequiereAutorizacion => "Con autorización",
+        _ => "No",
     };
 
     public static string Estado(EstadoCompra estado) => estado switch

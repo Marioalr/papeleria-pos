@@ -1,4 +1,4 @@
-@* Primera vez en una PC: encontrar la caja principal y dar de alta esta PC como caja, con el PIN del dueño. *@
+@* Primera vez en una PC: encontrar la caja principal y dar de alta esta PC como caja, con el usuario y el PIN de quien tiene «Dar de alta y quitar cajas». *@
 @inject ClienteCaja Cliente
 @inject ConexionCaja Conexion
 
@@ -37,9 +37,9 @@
         else if (_sucursales is null)
         {
             <p>Conectado a <strong>@_servicio!.Authority</strong> · @string.Join(", ", _estado.Sucursales) · versión @_estado.Version</p>
-            <p class="nota">Lo autoriza el dueño.</p>
+            <p class="nota">Lo autoriza quien tiene «Dar de alta y quitar cajas».</p>
             <div class="dos-columnas">
-                <label>Usuario del dueño <input @bind="_usuario" autocomplete="off" /></label>
+                <label>Usuario <input @bind="_usuario" autocomplete="off" /></label>
                 <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" @bind:event="oninput" @onkeydown="AlTeclearPin" /></label>
             </div>
             <div class="acciones">

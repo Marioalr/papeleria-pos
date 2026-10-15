@@ -15,7 +15,7 @@ namespace PapeleriaPos.Interfaz;
 public sealed class ErrorCaja(string mensaje, string? codigo = null) : Exception(mensaje)
 {
     /// <summary>
-    /// "requiere-autorizacion" o "no-permitido" cuando lo detiene una regla; "caja-sin-alta" si el servicio no
+    /// "requiere-autorizacion" o "no-permitido" cuando lo detiene un permiso; "caja-sin-alta" si el servicio no
     /// reconoce la llave; "sin-conexion" si no contesta.
     /// </summary>
     public string? Codigo { get; } = codigo;
@@ -126,7 +126,7 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     /// <summary>
     /// El corte X que enseña la pantalla (entrega 6): a ciegas, sin el efectivo, y si quien entró puede hacer el corte.
-    /// Sin conexión, con la cuenta y las reglas de esta caja.
+    /// Sin conexión, con la cuenta y los permisos de la copia de esta caja.
     /// </summary>
     public Task<CorteInformativoDto> CorteInformativoAsync(Guid turnoId, Guid usuarioId) =>
         ConRespaldoAsync(async () => (await _http.GetAsync<CorteInformativoDto>($"api/turnos/{turnoId}/corte-informativo?usuarioId={usuarioId}"))!,
@@ -269,6 +269,35 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     public Task<List<BitacoraDto>> ConsultarBitacoraAsync(Guid sucursalId, SolicitudConsultaBitacora solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<List<BitacoraDto>>($"api/sucursales/{sucursalId}/bitacora/consulta", solicitud));
+
+    // ── Usuarios y permisos (entrega 1, solo con la caja principal): cada cambio regresa la lista completa ──
+
+    /// <summary>Los usuarios con sus permisos y los de defecto, para quien entró con «Usuarios y permisos».</summary>
+    public Task<UsuariosYPermisosDto> UsuariosYPermisosAsync(Guid cajaId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<UsuariosYPermisosDto>($"api/cajas/{cajaId}/usuarios-y-permisos?usuarioId={usuarioId}"))!);
+
+    /// <summary>Un permiso de un usuario o, sin usuario, de los de defecto.</summary>
+    public Task<UsuariosYPermisosDto> CambiarPermisoAsync(Guid cajaId, Guid? usuarioId, SolicitudPermisoUsuario solicitud) =>
+        ConRespaldoAsync(async () => (await _http.PutAsync<UsuariosYPermisosDto>(
+            $"api/cajas/{cajaId}/usuarios-y-permisos/{(usuarioId is { } id ? id.ToString() : "defecto")}", solicitud))!);
+
+    public Task<UsuariosYPermisosDto> CopiarPermisosAsync(Guid cajaId, Guid usuarioId, SolicitudCopiarPermisos solicitud) =>
+        ConRespaldoAsync(async () => (await _http.PostAsync<UsuariosYPermisosDto>($"api/cajas/{cajaId}/usuarios-y-permisos/{usuarioId}/copiar", solicitud))!);
+
+    public Task<UsuariosYPermisosDto> TodosLosPermisosAsync(Guid cajaId, Guid usuarioId, SolicitudUsuarios solicitud) =>
+        ConRespaldoAsync(async () => (await _http.PostAsync<UsuariosYPermisosDto>($"api/cajas/{cajaId}/usuarios-y-permisos/{usuarioId}/todos", solicitud))!);
+
+    public Task<UsuariosYPermisosDto> PermisosDeDefectoAsync(Guid cajaId, Guid usuarioId, SolicitudUsuarios solicitud) =>
+        ConRespaldoAsync(async () => (await _http.PostAsync<UsuariosYPermisosDto>($"api/cajas/{cajaId}/usuarios-y-permisos/{usuarioId}/defecto", solicitud))!);
+
+    public Task<UsuariosYPermisosDto> NuevoUsuarioAsync(Guid cajaId, SolicitudNuevoUsuario solicitud) =>
+        ConRespaldoAsync(async () => (await _http.PostAsync<UsuariosYPermisosDto>($"api/cajas/{cajaId}/usuarios-y-permisos/usuarios", solicitud))!);
+
+    public Task<UsuariosYPermisosDto> CambiarPinAsync(Guid cajaId, Guid usuarioId, SolicitudPinUsuario solicitud) =>
+        ConRespaldoAsync(async () => (await _http.PutAsync<UsuariosYPermisosDto>($"api/cajas/{cajaId}/usuarios-y-permisos/{usuarioId}/pin", solicitud))!);
+
+    public Task<UsuariosYPermisosDto> ActivarUsuarioAsync(Guid cajaId, Guid usuarioId, SolicitudActivarUsuario solicitud) =>
+        ConRespaldoAsync(async () => (await _http.PutAsync<UsuariosYPermisosDto>($"api/cajas/{cajaId}/usuarios-y-permisos/{usuarioId}/activo", solicitud))!);
 
     // ── Catálogo (F3, solo con la caja principal) ──
 

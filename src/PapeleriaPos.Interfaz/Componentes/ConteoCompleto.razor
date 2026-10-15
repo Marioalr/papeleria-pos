@@ -134,8 +134,8 @@
     private bool _ocupado;
     private string? _error;
 
-    /// <summary>Por omisión, el dueño y el encargado (regla «Abrir y cerrar el conteo completo»); el servicio decide.</summary>
-    private bool PuedeAdministrar => Sesion.Rol is Rol.Dueno or Rol.Encargado;
+    /// <summary>Con «Conteo completo de un departamento» (con los usuarios de antes, el dueño y el encargado); el servicio decide.</summary>
+    private bool PuedeAdministrar => Sesion.Puede(AccionControlada.ConteoCompleto);
 
     /// <summary>Quien solo cuenta ve los departamentos abiertos.</summary>
     private IEnumerable<DepartamentoConteoDto> Visibles =>

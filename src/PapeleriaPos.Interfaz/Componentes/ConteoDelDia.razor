@@ -1,5 +1,6 @@
 @* El conteo cíclico del día: los productos que eligió el POS se cuentan a ciegas (anaquel y bodega), sin ver lo que
-   dice el sistema. Lo que esperaba el sistema y la diferencia solo los ven el dueño y el encargado. *@
+   dice el sistema. Lo que esperaba el sistema y la diferencia solo los ve quien ve los costos (con «Compras: la nota y los
+   costos» o «Ver costos, utilidad y margen»; con los usuarios de antes, el dueño y el encargado), como en el servicio. *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
@@ -112,7 +113,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _veCostos = Sesion.Rol is Rol.Dueno or Rol.Encargado;
+        _veCostos = Sesion.Puede(AccionControlada.CostearCompra) || Sesion.Puede(AccionControlada.VerUtilidad);
         try
         {
             _conteo = await Cliente.ConteoDelDiaAsync(Caja.SucursalId, Sesion.UsuarioId);

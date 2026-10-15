@@ -18,6 +18,9 @@ public static class FichasEntrada
     /// </summary>
     public const int CifrasPin = 4;
 
+    /// <summary>Lo más largo que cabe de un nombre en su ficha (y en «Usuarios y permisos»).</summary>
+    public const int LargoNombre = 40;
+
     private static readonly CultureInfo Mexico = CultureInfo.GetCultureInfo("es-MX");
 
     /// <summary>

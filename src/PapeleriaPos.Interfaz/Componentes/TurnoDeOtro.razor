@@ -1,7 +1,8 @@
 @* La caja con el turno de otro cajero (entrega 6, htmlOtroTurno del prototipo). Un turno por cajero: cada quien responde
    por su efectivo, así que antes de que venda quien entró se hace el corte del turno abierto. Quien puede hacer el corte
-   («puede» en el corte, hoy el encargado y el dueño) lo hace ahí mismo, sin volver a escribir su PIN: acaba de entrar con
-   él. Quien no, ve quién lo hace. En el piloto con eleventa no hay corte aquí: se hace en eleventa, y queda el aviso. *@
+   («Puede» en «Hacer el corte de un turno»; con los usuarios de antes, el encargado y el dueño) lo hace ahí mismo, sin
+   volver a escribir su PIN: acaba de entrar con él. Quien no, ve quién lo hace. En el piloto con eleventa no hay corte
+   aquí: se hace en eleventa, y queda el aviso. *@
 @implements IAsyncDisposable
 @inject ClienteCaja Cliente
 @inject IJSRuntime JS
@@ -66,7 +67,7 @@
     /// <summary>El piloto con eleventa: el corte de esta caja se hace en eleventa.</summary>
     [Parameter] public bool Piloto { get; set; }
 
-    /// <summary>Para quien administra (hoy, el encargado y el dueño): productos e inventario sin cortar.</summary>
+    /// <summary>Para quien administra (con «Productos, precios y etiquetas» o las compras): productos e inventario sin cortar.</summary>
     [Parameter] public EventCallback AlAdministrar { get; set; }
 
     /// <summary>«Volver» (o Ctrl+U): a «¿Quién atiende?».</summary>
@@ -97,9 +98,9 @@
         }
         catch (ErrorCaja)
         {
-            // Sin el corte X (ni la copia) no se sabe quién: como antes, el encargado y el dueño tienen el corte. El servicio lo
-            // vuelve a revisar al cerrarlo.
-            _haceCorte = Sesion.Rol is Rol.Encargado or Rol.Dueno;
+            // Sin el corte X (ni la copia) no se sabe quién: el corte lo tiene quien lo puede hacer según la sesión. El servicio
+            // lo vuelve a revisar al cerrarlo.
+            _haceCorte = Sesion.Puede(AccionControlada.CorteZ);
         }
         _cargado = true;
     }

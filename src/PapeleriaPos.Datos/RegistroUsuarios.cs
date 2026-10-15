@@ -18,9 +18,6 @@ public sealed class RegistroUsuarios(PosDbContext db)
 {
     public const string SiempreAlguien = "Siempre debe quedar alguien con «Usuarios y permisos». Dáselo a otro usuario primero.";
 
-    /// <summary>Lo más largo que cabe en la ficha de la entrada.</summary>
-    public const int LargoNombre = 40;
-
     private static readonly CultureInfo Mexico = CultureInfo.GetCultureInfo("es-MX");
 
     /// <summary>Todos los usuarios con sus permisos y su resumen, y los de defecto.</summary>
@@ -111,8 +108,8 @@ public sealed class RegistroUsuarios(PosDbContext db)
         var nombre = string.Join(' ', (s.Nombre ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         if (nombre.Length == 0)
             throw new ArgumentException("Escribe su nombre.");
-        if (nombre.Length > LargoNombre)
-            throw new ArgumentException($"El nombre va hasta {LargoNombre} letras: con el nombre y una inicial basta.");
+        if (nombre.Length > FichasEntrada.LargoNombre)
+            throw new ArgumentException($"El nombre va hasta {FichasEntrada.LargoNombre} letras: con el nombre y una inicial basta.");
         var usuarios = await db.Usuarios.AsNoTracking().Select(u => new { u.Nombre, u.NombreUsuario, u.Activo }).ToListAsync(ct);
         if (usuarios.FirstOrDefault(u => Texto.Normalizar(u.Nombre) == Texto.Normalizar(nombre)) is { } igual)
             throw new InvalidOperationException(igual.Activo

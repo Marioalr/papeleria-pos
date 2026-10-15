@@ -79,8 +79,11 @@
     private string? _error;
     private bool _administrar;
 
-    /// <summary>El encargado y el dueño pueden entrar a productos e inventario sin vender (sin cortar ni abrir turno).</summary>
-    private bool PuedeAdministrar => _sesion?.Rol is Rol.Encargado or Rol.Dueno;
+    /// <summary>
+    /// Productos e inventario sin vender (sin cortar ni abrir turno), como en el prototipo: para quien tiene «Productos,
+    /// precios y etiquetas» o «Compras: la nota y los costos» (con los usuarios de antes, el encargado y el dueño).
+    /// </summary>
+    private bool PuedeAdministrar => _sesion is { } sesion && (sesion.Puede(AccionControlada.EditarCatalogo) || sesion.Puede(AccionControlada.CostearCompra));
     private bool _alta;
     private string? _avisoAlta;
 

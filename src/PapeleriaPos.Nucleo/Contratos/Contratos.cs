@@ -361,7 +361,7 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 // ── Varias cajas (entrega 3) ────────────────────────────────────────────────
 
 /// <summary>Lo que contesta el servicio sin llave: para encontrarlo en la red y saber que está vivo.</summary>
-/// <param name="VersionDatos">Cambia con el catálogo, los usuarios o las reglas: la caja vuelve a bajar su copia.</param>
+/// <param name="VersionDatos">Cambia con el catálogo, los usuarios o sus permisos: la caja vuelve a bajar su copia.</param>
 /// <param name="Prueba">El servicio es el de la prueba con una persona real: datos ficticios, guía y avisos simulados.</param>
 /// <param name="VersionCredito">Cambia con cada fiado, abono o cambio de crédito: la caja vuelve a pedir los saldos.</param>
 /// <param name="PilotoEleventa">

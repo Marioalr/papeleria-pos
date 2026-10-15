@@ -722,8 +722,8 @@ public sealed class Contingencia
 
     /// <summary>
     /// Cobra con la copia del catálogo y el siguiente folio de la caja. Los precios cambiados, los descuentos y pasar el
-    /// límite del crédito se revisan con las reglas locales y las autorizaciones que se dieron sin conexión (se gastan
-    /// cuando la venta quedó guardada). Lo fiado, con el saldo que conoce esta caja.
+    /// límite del crédito se revisan con los permisos de la copia local y las autorizaciones que se dieron sin conexión (se
+    /// gastan cuando la venta quedó guardada). Lo fiado, con el saldo que conoce esta caja.
     /// </summary>
     public TicketDto Cobrar(SolicitudCobro s)
     {
@@ -780,7 +780,7 @@ public sealed class Contingencia
                 cambiada.ImporteCentavos, autorizo, autorizo is null ? ResultadoBitacora.Hecho : ResultadoBitacora.Autorizado, venta.Id));
         }
 
-        // Descuentos: la misma regla con la copia local. Sin conexión no se sabe el costo: eso no se revisa aquí.
+        // Descuentos: el mismo permiso con la copia local. Sin conexión no se sabe el costo: eso no se revisa aquí.
         if (venta.DescuentoCentavos > 0)
         {
             var revisar = venta.DescuentoARevisar(cliente?.DescuentoCentesimas is > 0 and var d ? d : null);

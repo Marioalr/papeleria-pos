@@ -12,6 +12,7 @@ using PapeleriaPos.Herramientas.Prueba;
 using PapeleriaPos.Impresiones;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Telegram;
 
 namespace PapeleriaPos.Pruebas.Servicio;
@@ -58,6 +59,27 @@ public class PruebaApiTests(ServicioEnPrueba prueba) : IClassFixture<ServicioEnP
     {
         Assert.True(r.IsSuccessStatusCode, await r.Content.ReadAsStringAsync());
         return (await r.Content.ReadFromJsonAsync<T>())!;
+    }
+
+    /// <summary>
+    /// La base de preparar-prueba ya trae los permisos de cada usuario (entrega 1): los de su rol de antes, como al migrar, y
+    /// al dueño como primera cuenta. «Empezar de cero» la copia tal cual, y la guía sigue igual.
+    /// </summary>
+    [Fact]
+    public async Task La_base_de_prueba_trae_los_permisos_de_cada_usuario_como_con_los_roles()
+    {
+        await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={prueba.BaseInicial};Mode=ReadOnly;Pooling=False"));
+        var usuarios = await db.Usuarios.AsNoTracking().ToListAsync();
+        var permisos = await db.PermisosUsuario.AsNoTracking().ToListAsync();
+        var reglas = await db.ReglasPermiso.AsNoTracking().ToListAsync();
+        var sucursal = (await db.Cajas.AsNoTracking().FirstAsync()).SucursalId;
+        PermisosDeUsuario De(Guid? usuarioId) => new(permisos.Where(p => p.UsuarioId == usuarioId).Select(p => p.Permiso));
+
+        Assert.Equal(["cajero", "dueno", "encargado"], usuarios.Select(u => u.NombreUsuario).Order());
+        Assert.All(usuarios, u => Assert.Equal(PermisosDeRoles.De(u.Rol, reglas, u.SucursalId ?? sucursal), De(u.Id).Lista()));
+        Assert.Equal(PermisosDeRoles.PorDefecto(reglas), De(null).Lista());
+        Assert.Equal(["dueno"], usuarios.Where(u => u.PrimeraCuenta).Select(u => u.NombreUsuario));
+        Assert.Equal(Permisos.Acciones.Count * 4, permisos.Count);
     }
 
     [Fact]
