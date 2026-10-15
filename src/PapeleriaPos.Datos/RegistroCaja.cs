@@ -1,9 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using PapeleriaPos.Impresiones;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
-using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Turnos;
@@ -151,8 +151,7 @@ public sealed class RegistroCaja(PosDbContext db)
 
             venta.Pagar(folio, cobros, ahora, redondear);
             await new RegistroCredito(db).CargarAsync(venta, turno, fiado, ct);
-            foreach (var trabajo in impresiones ?? [])
-                trabajo.Cobrar(venta.Id, ahora);
+            ImpresionesDelPos.EnLaVenta(db).Cobrar(impresiones ?? [], venta.Id, ahora);
             foreach (var comun in venta.Lineas.Where(l => l.VarianteId is null && !l.EsImpresiones))
                 control.Registrar(venta.SucursalId, venta.CajaId, venta.CajeroId, AccionControlada.ArticuloComun,
                     $"{comun.Descripcion} × {comun.Cantidad}", comun.ImporteCentavos, venta.Id);

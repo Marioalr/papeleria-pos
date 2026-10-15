@@ -16,8 +16,9 @@
   <ItemGroup>
     <ProjectReference Include="..\PapeleriaPos.Nucleo\PapeleriaPos.Nucleo.csproj" />
     <ProjectReference Include="..\PapeleriaPos.Impresion\PapeleriaPos.Impresion.csproj" />
-    <!-- IMedidorPdf: cotizar mide el PDF en la PC donde está (la ventana de Windows pone el medidor). -->
-    <ProjectReference Include="..\PapeleriaPos.Medicion\PapeleriaPos.Medicion.csproj" />
+    <!-- El módulo de impresión: sus contratos (F2, cotizar, copias, la impresora) e IMedidorPdf (cotizar mide el PDF en
+         la PC donde está; la ventana de Windows pone el medidor). -->
+    <ProjectReference Include="..\Impresiones\PapeleriaPos.Impresiones\PapeleriaPos.Impresiones.csproj" />
   </ItemGroup>
 
 </Project>

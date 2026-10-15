@@ -1,12 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using PapeleriaPos.Impresiones.Datos;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Historico;
-using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Importacion;
 using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Telegram;
@@ -63,9 +63,6 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<CodigoVinculacion> CodigosVinculacion => Set<CodigoVinculacion>();
     public DbSet<SolicitudRemota> SolicitudesRemotas => Set<SolicitudRemota>();
     public DbSet<MensajeTelegram> MensajesTelegram => Set<MensajeTelegram>();
-    public DbSet<TrabajoImpresion> TrabajosImpresion => Set<TrabajoImpresion>();
-    public DbSet<ConfiguracionImpresion> ConfiguracionesImpresion => Set<ConfiguracionImpresion>();
-    public DbSet<LecturaImpresora> LecturasImpresora => Set<LecturaImpresora>();
     public DbSet<Compra> Compras => Set<Compra>();
     public DbSet<CompraConteo> ComprasConteo => Set<CompraConteo>();
     public DbSet<CompraRenglon> ComprasRenglones => Set<CompraRenglon>();
@@ -102,6 +99,9 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        // Las tablas del módulo de impresión las mapea el módulo; sus llaves foráneas hacia el POS van en
+        // Configuracion/ImpresionesConfiguracion.cs. No tienen DbSet aquí: el POS las usa por ImpresionesDelPos.
+        ModeloImpresiones.Configurar(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(PosDbContext).Assembly);
 
         // Nada se borra en cascada: el catálogo se desactiva y el kardex nunca se toca.

@@ -9,10 +9,11 @@
 
 **Parte 1 (hecha):**
 
-- **Núcleo traído de Control Print:**
-  - `PapeleriaPos.Medicion` calcula costos y precio; lo usa el servicio.
-  - `PapeleriaPos.Medicion.Windows` lee el spool y mide la tinta.
-  - Las pruebas de Control Print vienen junto con el código.
+- **Núcleo traído de Control Print** (desde el 2026-10-15 vive aparte, en `src/Impresiones`: ver su
+  [README](../src/Impresiones/README.md)):
+  - `PapeleriaPos.Impresiones` calcula costos y precio; lo usa el servicio.
+  - `PapeleriaPos.Impresiones.Windows` lee el spool y mide la tinta.
+  - Las pruebas de Control Print vienen junto con el código, en `tests/Impresiones`.
 - **Agente en la caja de cada PC** (`ColaImpresion` en la configuración de la caja). Manda cada trabajo por la bandeja, sin que la caja pase a modo sin conexión.
 - **F2 Impresiones por cobrar:** de todas las PC, con no vendidas que llevan motivo. El costo solo lo ve el dueño.
 - **Ticket:** una sola línea "Impresiones". Si se cancela o se devuelve, los trabajos vuelven a estar por cobrar.

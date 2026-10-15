@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using PapeleriaPos.Impresiones.Contratos;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;

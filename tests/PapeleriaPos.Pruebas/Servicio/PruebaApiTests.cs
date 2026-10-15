@@ -9,9 +9,9 @@ using PapeleriaPos.Herramientas;
 using PapeleriaPos.Herramientas.Ficticios;
 using PapeleriaPos.Herramientas.Importacion;
 using PapeleriaPos.Herramientas.Prueba;
+using PapeleriaPos.Impresiones;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Contratos;
-using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Telegram;
 
 namespace PapeleriaPos.Pruebas.Servicio;
@@ -75,7 +75,7 @@ public class PruebaApiTests(ServicioEnPrueba prueba) : IClassFixture<ServicioEnP
         using var alcance = prueba.Fabrica.Services.CreateScope();
         var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
         Assert.True(await db.ChatsTelegram.AnyAsync(c => c.ChatId == ChatTelegram.Simulado));
-        Assert.Equal(4, await db.TrabajosImpresion.CountAsync(t => t.Cobro == EstadoCobroImpresion.PorCobrar && t.CajaId == caja.Id && t.PrecioCentavos > 0));
+        Assert.Equal(4, await db.Set<TrabajoImpresion>().CountAsync(t => t.Cobro == EstadoCobroImpresion.PorCobrar && t.CajaId == caja.Id && t.PrecioCentavos > 0));
         // La factura trae tres códigos de barras de la base (llegan ligados), una clave del proveedor (se confirma) y un
         // producto que no está en el catálogo (llega como nuevo).
         Assert.Equal(5, factura.Lineas.Count);

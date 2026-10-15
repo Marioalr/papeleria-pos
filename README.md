@@ -185,6 +185,7 @@ Los datos reales del negocio (como la base de eleventa) nunca se guardan en el r
 | [Pedidos](docs/pedidos.md) | Trabajos que esperan: cola compartida, charolas, recogida, clientes registrados y duplicados |
 | [WhatsApp](docs/whatsapp.md) | Cómo llegan los archivos de WhatsApp a los pedidos |
 | [Módulo de impresión](docs/impresion.md) | Costo real de cada impresión (reescritura de Control Print) |
+| [Módulo de impresión: el código](src/Impresiones/README.md) | Dónde vive, sus límites con el resto del POS (el puerto y la fachada), sus pruebas y cómo cambiar su esquema |
 | [Migración desde eleventa](docs/migracion-eleventa.md) | Importación, diagnóstico y arranque |
 | [Rediseño de la interfaz](docs/propuesta-interfaz.md) | Aprobado (2026-10-10): la caja rediseñada con permisos por usuario, el cobro, el corte, los reportes, la configuración, el rendimiento en las dos cajas, la app Android en Kotlin y la base; con un [prototipo](docs/propuesta-interfaz/prototipo.html) que se abre con doble clic |
 | [Ideas a evaluar](docs/ideas.md) | La multisucursal pospuesta, cámaras con una sola sucursal, dispositivos propios y otras ideas |
