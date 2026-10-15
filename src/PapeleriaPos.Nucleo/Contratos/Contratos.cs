@@ -142,15 +142,91 @@ public sealed record TicketDto(
 
 public sealed record VentaDelDiaDto(Guid Id, string Folio, DateTime FechaLocal, long TotalCentavos, int Articulos, string Cajero, bool Cancelada = false);
 
-/// <summary>El encargado se identifica con su usuario y PIN en la misma caja.</summary>
-public sealed record SolicitudCorteZ(string EncargadoUsuario, string EncargadoPin, IReadOnlyDictionary<long, int> Conteo);
+/// <summary>
+/// El corte del turno (entrega 6, 2026-10-14): quien ya entró con su PIN y tiene el permiso escribe el total del efectivo
+/// que contó, sin billete por billete y sin volver a escribir su PIN. El servicio revisa el permiso de ese usuario.
+/// </summary>
+/// <param name="UsuarioId">Quien hace el corte: el de la sesión.</param>
+/// <param name="ContadoCentavos">El total del efectivo que contó.</param>
+public sealed record SolicitudCorteZ(Guid UsuarioId, long ContadoCentavos);
 
+/// <param name="UmbralAvisoCentavos">
+/// En el corte Z: el umbral de la sucursal, si la diferencia pasó de él y el aviso sale por Telegram. Vacío si no.
+/// </param>
 public sealed record CorteDto(
     TipoCorte Tipo, DateTime FechaLocal, string Cajero, string RealizadoPor, int Ventas, long FondoCentavos, long EfectivoVentasCentavos,
     long EntradasCentavos, long SalidasCentavos, long TarjetaCentavos, long TransferenciaCentavos, long EsperadoCentavos,
     long? ContadoCentavos, long? DiferenciaCentavos, long DevolucionesCentavos = 0, int Cancelaciones = 0, bool EnContingencia = false,
     long RedondeoCentavos = 0, long CreditoCentavos = 0, int Abonos = 0, long AbonosEfectivoCentavos = 0, long AbonosTarjetaCentavos = 0,
-    long AbonosTransferenciaCentavos = 0, long SaldoDevueltoCentavos = 0);
+    long AbonosTransferenciaCentavos = 0, long SaldoDevueltoCentavos = 0, long? UmbralAvisoCentavos = null);
+
+/// <summary>
+/// El corte X (entrega 6, 2026-10-14): lo que la pantalla enseña del turno antes de cerrarlo. Es a ciegas: no trae el
+/// efectivo (ni el fondo, lo esperado, las entradas o las salidas), porque quien hace el corte cuenta sin saber cuánto
+/// debería haber. Tarjeta, transferencias, abonos y lo fiado son información. También dice si quien pregunta puede hacer
+/// el corte y, si no, quién puede.
+/// </summary>
+/// <param name="TransferenciasPorVerificar">Vacío sin conexión: la caja no lo sabe.</param>
+/// <param name="PuedeCortar">Quien pregunta tiene «hacer el corte de un turno»; el servicio lo vuelve a revisar al cerrar.</param>
+/// <param name="QuienesCortan">Quienes lo pueden hacer, para decírselo a quien no puede.</param>
+/// <param name="VeElDia">Quien pregunta tiene «ver y cerrar el corte del día».</param>
+public sealed record CorteInformativoDto(
+    string Cajero, DateTime AbiertoLocal, int Ventas, int Cancelaciones, long TarjetaCentavos, long TransferenciaCentavos,
+    int? TransferenciasPorVerificar, long CreditoCentavos, int Abonos, long AbonosTarjetaCentavos, long AbonosTransferenciaCentavos,
+    bool PuedeCortar, IReadOnlyList<QuienAutoriza> QuienesCortan, bool VeElDia, bool EnContingencia = false);
+
+/// <summary>
+/// El corte del día (entrega 6, 2026-10-14), para quien tiene «ver y cerrar el corte del día»: todas las cajas y turnos de
+/// la sucursal. Los turnos del día son los que se abrieron, se cerraron o siguen abiertos ese día; lo demás (lo vendido,
+/// las formas de pago, las salidas, las devoluciones, lo fiado…) es lo de esos turnos que pasó ese día: de un turno que
+/// viene de otro día, solo lo de hoy.
+/// </summary>
+/// <param name="EfectivoCentavos">Lo que se cobró en efectivo en las ventas (con su redondeo).</param>
+/// <param name="FiadoCentavos">Lo que se vendió a crédito: ya cuenta en lo vendido y no es dinero.</param>
+/// <param name="TransferenciasPorVerificar">De las ventas y los abonos de esos turnos.</param>
+/// <param name="EntradasCentavos">Las entradas de efectivo (F7), que no son venta.</param>
+/// <param name="AbonosCentavos">Lo que entró por abonos de clientes (no son venta), en todas las formas.</param>
+/// <param name="ImpresionesCentavos">Lo que se cobró de impresiones en las ventas.</param>
+/// <param name="PorQueNoSeCierra">Lo que falta para cerrar el día; vacío: se puede cerrar.</param>
+/// <param name="Avisos">Lo que conviene saber y no detiene el cierre.</param>
+/// <param name="Piloto">El piloto con eleventa: el corte del día se hace allá, aquí solo se ve.</param>
+/// <param name="Cierre">Si ya se cerró después de su último turno.</param>
+public sealed record CorteDelDiaDto(
+    DateOnly Fecha, IReadOnlyList<TurnoDelDiaDto> Turnos, long VendidoCentavos, int Tickets, long EfectivoCentavos, long TarjetaCentavos,
+    long TransferenciaCentavos, long FiadoCentavos, int TransferenciasPorVerificar, IReadOnlyList<SalidaDelDiaDto> Salidas, long EntradasCentavos,
+    int Devoluciones, long DevolucionesCentavos, int Cancelaciones, long CancelacionesCentavos, int Abonos, long AbonosCentavos,
+    long ImpresionesCentavos, IReadOnlyList<string> PorQueNoSeCierra, IReadOnlyList<string> Avisos, bool Piloto, CierreDelDiaDto? Cierre);
+
+/// <param name="Tickets">Los de ese día (de un turno que viene de otro día, solo los de hoy), como lo vendido y las formas de pago.</param>
+/// <param name="EsperadoCentavos">El efectivo que debería haber en todo el turno: el de su corte o, si sigue abierto, el de ahora. Vacío en el piloto.</param>
+/// <param name="ContadoCentavos">Vacío mientras el turno sigue abierto.</param>
+public sealed record TurnoDelDiaDto(
+    Guid Id, Guid CajaId, string Caja, string Cajero, DateTime AbiertoLocal, DateTime? CerradoLocal, int Tickets, long VendidoCentavos,
+    long TarjetaCentavos, long TransferenciaCentavos, long? EsperadoCentavos, long? ContadoCentavos, long? DiferenciaCentavos, bool EnContingencia);
+
+/// <summary>Las salidas de efectivo del día por su motivo (hoy el motivo se escribe libre: las que dicen lo mismo van juntas).</summary>
+public sealed record SalidaDelDiaDto(string Motivo, int Veces, long MontoCentavos);
+
+/// <summary>Qué pasó con el resumen del día al cerrarlo.</summary>
+public enum EnvioResumen
+{
+    /// <summary>Quedó en la cola de Telegram (sale en cuanto haya internet).</summary>
+    Enviado,
+
+    /// <summary>Ya había salido con el último corte del día: no se manda dos veces.</summary>
+    YaHabiaSalido,
+
+    /// <summary>No hay un chat del dueño vinculado.</summary>
+    SinTelegram,
+
+    /// <summary>El resumen del día está apagado en los avisos.</summary>
+    Apagado,
+}
+
+/// <param name="Resumen">Solo en la respuesta al cerrarlo.</param>
+public sealed record CierreDelDiaDto(DateTime CerradoLocal, string CerradoPor, EnvioResumen? Resumen = null);
+
+public sealed record SolicitudCierreDia(Guid UsuarioId);
 
 /// <param name="Codigo">"requiere-autorizacion" o "no-permitido" cuando lo detiene una regla.</param>
 public sealed record ErrorDto(string Mensaje, string? Codigo = null);
@@ -316,7 +392,13 @@ public sealed record BitacoraContingenciaDto(
     Guid Id, Guid SucursalId, Guid CajaId, Guid? UsuarioId, AccionControlada Accion, string Detalle, long? MontoCentavos, Guid? AutorizoId,
     ResultadoBitacora Resultado, DateTime FechaUtc, Guid? VentaId = null);
 
-public sealed record CorteContingenciaDto(Guid Id, Guid EncargadoId, IReadOnlyDictionary<long, int> Conteo, DateTime FechaUtc);
+/// <summary>El corte del turno que hizo la caja sin conexión.</summary>
+/// <param name="RealizadoPorId">Quien lo hizo («encargadoId» desde antes del 2026-10-14).</param>
+/// <param name="Conteo">Billete por billete: lo que manda una caja de antes del 2026-10-14. Las de ahora mandan <paramref name="ContadoCentavos"/>.</param>
+/// <param name="ContadoCentavos">El total que se contó.</param>
+public sealed record CorteContingenciaDto(
+    Guid Id, [property: JsonPropertyName("encargadoId")] Guid RealizadoPorId, IReadOnlyDictionary<long, int>? Conteo, DateTime FechaUtc,
+    long? ContadoCentavos = null);
 
 /// <summary>El último folio que usó la caja (aunque alguna venta no haya podido subir): la serie sigue después de él.</summary>
 public sealed record FolioUsadoDto(int Folio);

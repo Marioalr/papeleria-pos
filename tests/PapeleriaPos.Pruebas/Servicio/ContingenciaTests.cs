@@ -137,7 +137,9 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
         interruptor.Caido = true;
         await contingencia.LatidoAsync();
         var esperado = (await cliente.CorteXAsync(turno.Id, cajero.UsuarioId)).EsperadoCentavos;
-        var corteZ = await cliente.CorteZAsync(turno.Id, new SolicitudCorteZ("encargado", "2222", new Dictionary<long, int> { [10000] = 3 }));
+        // El encargado entra con su PIN (con la copia local) y escribe el total; no se lo vuelve a pedir.
+        var encargado = await cliente.EntrarAsync("encargado", "2222");
+        var corteZ = await cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(encargado.UsuarioId, 30000));
         Assert.Null(await cliente.TurnoAsync(caja.Id));
         interruptor.Caido = false;
         await contingencia.LatidoAsync();
@@ -172,12 +174,13 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
         var busqueda = (await cliente.BuscarAsync("pluma punto fino", caja.SucursalId)).First(r => r.Codigo is not null);
         var pluma = (await cliente.PorCodigoAsync(busqueda.Codigo!, caja.SucursalId))!;
 
-        // Sin conexión: una venta en efectivo, una salida (F8) y el corte Z con su conteo.
+        // Sin conexión: una venta en efectivo, una salida (F8) y el corte Z con lo que se contó.
         interruptor.Caido = true;
         await contingencia.LatidoAsync();
         var venta = await cliente.CobrarAsync(Cobro(caja, turno, cajero, pluma, 2));
         await cliente.MovimientoAsync(turno.Id, new SolicitudMovimiento(TipoMovimientoCaja.Salida, 10000, "Pago al de la basura", cajero.UsuarioId));
-        var corteLocal = await cliente.CorteZAsync(turno.Id, new SolicitudCorteZ("encargado", "2222", new Dictionary<long, int> { [10000] = 3 }));
+        var encargado = await cliente.EntrarAsync("encargado", "2222");
+        var corteLocal = await cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(encargado.UsuarioId, 30000));
 
         // Vuelve, pero la venta y la salida no se pudieron guardar esa vez; el corte Z sí sube y cierra el turno sin ellas.
         interruptor.Rechaza = r => r.RequestUri!.AbsolutePath == "/api/bandeja/ventas" || r.RequestUri.AbsolutePath.EndsWith("/movimientos");

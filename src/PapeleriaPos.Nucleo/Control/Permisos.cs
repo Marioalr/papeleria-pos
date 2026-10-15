@@ -78,6 +78,13 @@ public enum AccionControlada
 
     /// <summary>Devolverle en efectivo a un cliente lo que tiene a favor (parte 3). El monto es lo que se devuelve.</summary>
     DevolverSaldoAFavor,
+
+    /// <summary>
+    /// Ver y cerrar el corte del día: todas las cajas y turnos de la sucursal (docs/propuesta-interfaz.md, «Corte»,
+    /// 2026-10-14). Al empezar, solo el dueño; se le puede dar al encargado en las reglas. Va al final: las cajas guardan
+    /// las acciones por su número en la bandeja.
+    /// </summary>
+    CorteDelDia,
 }
 
 public enum NivelPermiso
@@ -180,6 +187,8 @@ public static class Permisos
         Regla(AccionControlada.CancelarAbono, Rol.Encargado, NivelPermiso.Permitido, motivo: true),
         Regla(AccionControlada.DevolverSaldoAFavor, Rol.Cajero, NivelPermiso.RequiereAutorizacion),
         Regla(AccionControlada.DevolverSaldoAFavor, Rol.Encargado, NivelPermiso.Permitido),
+        // El corte del día (2026-10-14): la propuesta lo deja a la primera cuenta, que hoy es el dueño.
+        .. Ambos(AccionControlada.CorteDelDia, NivelPermiso.NoPermitido),
     ];
 
     /// <summary>
@@ -248,6 +257,27 @@ public static class Permisos
             ?? candidatas.FirstOrDefault(r => r.SucursalId is null)
             ?? Iniciales.FirstOrDefault(r => r.Accion == accion && r.Rol == rol);
     }
+
+    /// <summary>
+    /// Los usuarios activos que pueden hacer una acción sin pedir autorización, primero los encargados y al final el dueño
+    /// (como en <see cref="DeLaSesion"/>): para decirle a quien no puede quién sí (el corte del turno).
+    /// </summary>
+    public static List<QuienAutoriza> QuienesPueden(
+        IEnumerable<ReglaPermiso> reglas, IEnumerable<(Guid Id, string Usuario, string Nombre, Rol Rol)> usuarios, Guid sucursalId, AccionControlada accion)
+    {
+        var lista = reglas.ToList();
+        return usuarios.Where(u => Evaluar(lista, u.Rol, sucursalId, accion).Nivel == NivelPermiso.Permitido)
+            .OrderBy(u => u.Rol).ThenBy(u => u.Nombre, StringComparer.CurrentCulture)
+            .Select(u => new QuienAutoriza(u.Usuario, u.Nombre)).ToList();
+    }
+
+    /// <summary>«Luis», «Carmen o Luis», «Ana, Carmen o Luis»: para los mensajes del servicio.</summary>
+    public static string Nombres(IReadOnlyList<QuienAutoriza> quienes) => quienes.Count switch
+    {
+        0 => "quien tenga el permiso",
+        1 => quienes[0].Nombre,
+        _ => $"{string.Join(", ", quienes.Take(quienes.Count - 1).Select(q => q.Nombre))} o {quienes[^1].Nombre}",
+    };
 
     /// <summary>Puede autorizar quien tiene la acción permitida por ese monto (el encargado cancela; cambiar precio, solo el dueño).</summary>
     public static bool PuedeAutorizar(IEnumerable<ReglaPermiso> reglas, Rol rol, Guid sucursalId, AccionControlada accion, long? montoCentavos) =>

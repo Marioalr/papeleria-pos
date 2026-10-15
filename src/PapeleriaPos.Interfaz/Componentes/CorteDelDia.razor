@@ -1,0 +1,243 @@
+@* El corte del día (entrega 6, docs/propuesta-interfaz.md «Corte», 2026-10-14), como en el prototipo (htmlCorteDia), para
+   quien tiene «ver y cerrar el corte del día»: todas las cajas y turnos de la sucursal; lo vendido, el efectivo esperado
+   y el contado de cada turno con su diferencia, las formas de pago, las salidas por motivo, las devoluciones, las
+   cancelaciones, lo fiado, los abonos y las impresiones cobradas (de un turno que viene de otro día, lo de hoy). «Cerrar el día» se habilita sin turnos abiertos ni nada
+   por subir de otra caja, y manda el resumen por Telegram (el mismo del último corte: no sale dos veces). Necesita la caja
+   principal. En el piloto con eleventa se ve, pero el día se cierra con el corte de eleventa. Va dentro del corte
+   (CorteCaja); también se puede poner donde no hay turno abierto, con la caja y la sesión. *@
+@inject ClienteCaja Cliente
+
+@if (_dia is not { } d)
+{
+    @if (_error is not null)
+    {
+        <div class="vn-alerta"><Ico Nombre="alerta" /><div><span>@_error</span><span><button class="vn-boton chico" @onclick="CargarAsync">Volver a intentar</button></span></div></div>
+    }
+    else
+    {
+        <p class="vn-corte-nota">Cargando el corte del día…</p>
+    }
+}
+else
+{
+    var cerrados = d.Turnos.Where(t => t.ContadoCentavos is not null).ToList();
+    var diferencias = cerrados.Sum(t => t.DiferenciaCentavos ?? 0);
+    var esperado = d.Turnos.Sum(t => t.EsperadoCentavos ?? 0);
+    var porVerificar = d.TransferenciasPorVerificar;
+    @if (d.Cierre is { } cierre)
+    {
+        <div class="vn-alerta info">
+            <Ico Nombre="check" />
+            <div><span><strong>Día cerrado</strong> a las @cierre.CerradoLocal.ToString("HH:mm") por @cierre.CerradoPor. @TextoResumen(_resumen) Mañana empieza otro.</span></div>
+        </div>
+    }
+    <div class="vn-corte-kpis">
+        <div class="vn-corte-kpi">
+            <span>Vendido hoy</span><strong>@Formato.Pesos(d.VendidoCentavos)</strong>
+            <small>@d.Tickets @(d.Tickets == 1 ? "ticket" : "tickets") en @d.Turnos.Count @(d.Turnos.Count == 1 ? "turno" : "turnos")</small>
+        </div>
+        <div class="vn-corte-kpi">
+            <span>Efectivo</span><strong>@Formato.Pesos(d.EfectivoCentavos)</strong>
+            <small>@(d.Piloto ? "lo esperado del piloto, en eleventa" : $"esperado en las cajas: {Formato.Pesos(esperado)}")</small>
+        </div>
+        <div class="vn-corte-kpi">
+            <span>Tarjeta y transferencia</span><strong>@Formato.Pesos(d.TarjetaCentavos + d.TransferenciaCentavos)</strong>
+            <small>@(porVerificar == 0 ? "nada por verificar" : $"{porVerificar} {(porVerificar == 1 ? "transferencia" : "transferencias")} por verificar")</small>
+        </div>
+        <div class="vn-corte-kpi">
+            <span>Diferencias de corte</span><strong class="@(diferencias < 0 ? "vn-dif-mal" : diferencias > 0 ? "" : "vn-dif-bien")">@Formato.ConSigno(diferencias)</strong>
+            <small>@cerrados.Count de @d.Turnos.Count @(d.Turnos.Count == 1 ? "turno cerrado" : "turnos cerrados")</small>
+        </div>
+    </div>
+
+    @* En angosto (la caja con el turno de otro cajero), la tabla se recorre de lado dentro de su caja. *@
+    <div class="vn-corte-desliza">
+    <table class="vn-corte-tabla">
+        <thead>
+            <tr><th>Caja</th><th>Cajero</th><th>Horario</th><th class="num">Tickets</th><th class="num">Vendido</th><th class="num">Efectivo esperado</th><th class="num">Contado</th><th class="num">Diferencia</th></tr>
+        </thead>
+        <tbody>
+            @if (d.Turnos.Count == 0)
+            {
+                <tr><td colspan="8" class="vn-corte-vacio">Hoy todavía no se abre ningún turno.</td></tr>
+            }
+            @foreach (var t in d.Turnos)
+            {
+                <tr>
+                    <td>@t.Caja</td>
+                    <td>@t.Cajero@(t.EnContingencia ? " · sin conexión" : "")</td>
+                    <td>@Hora(t.AbiertoLocal, d.Fecha)–@(t.CerradoLocal is { } hasta ? Hora(hasta, d.Fecha) : "abierto")</td>
+                    <td class="num">@t.Tickets</td>
+                    <td class="num">@Formato.Dinero(t.VendidoCentavos)</td>
+                    <td class="num">@(t.EsperadoCentavos is { } e ? Formato.Dinero(e) : "—")</td>
+                    <td class="num">
+                        @if (t.ContadoCentavos is { } contado)
+                        {
+                            @Formato.Dinero(contado)
+                        }
+                        else if (t.CerradoLocal is null)
+                        {
+                            <span class="vn-etiq ambar">@(d.Piloto ? "Corte en eleventa" : "Turno abierto")</span>
+                        }
+                        else
+                        {
+                            @("—")
+                        }
+                    </td>
+                    <td class="num @(t.DiferenciaCentavos < 0 ? "vn-dif-mal" : t.DiferenciaCentavos == 0 ? "vn-dif-bien" : "")">
+                        @(t.DiferenciaCentavos is { } dif ? Formato.ConSigno(dif) : "—")
+                    </td>
+                </tr>
+            }
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="3">Total del día</td>
+                <td class="num">@d.Tickets</td>
+                <td class="num">@Formato.Dinero(d.VendidoCentavos)</td>
+                <td class="num">@Formato.Dinero(esperado)</td>
+                <td class="num">@Formato.Dinero(cerrados.Sum(t => t.ContadoCentavos ?? 0))</td>
+                <td class="num">@Formato.ConSigno(diferencias)</td>
+            </tr>
+        </tfoot>
+    </table>
+    </div>
+    @if (d.Turnos.Any(t => DateOnly.FromDateTime(t.AbiertoLocal) < d.Fecha))
+    {
+        <p class="vn-corte-nota">Un turno que viene de otro día cuenta aquí solo lo de hoy: sus tickets, lo vendido y las formas de pago. Lo esperado, lo contado y la diferencia son de todo el turno, como en su corte.</p>
+    }
+
+    <div class="vn-corte-dos">
+        <table class="vn-corte-tabla">
+            <thead><tr><th>Formas de pago y movimientos</th><th class="num">Monto</th></tr></thead>
+            <tbody>
+                <tr><td class="grupo" colspan="2">Formas de pago</td></tr>
+                <tr><td>Efectivo</td><td class="num">@Formato.Dinero(d.EfectivoCentavos)</td></tr>
+                <tr><td>Tarjeta</td><td class="num">@Formato.Dinero(d.TarjetaCentavos)</td></tr>
+                <tr><td>Transferencia</td><td class="num">@Formato.Dinero(d.TransferenciaCentavos)</td></tr>
+                <tr><td class="grupo" colspan="2">Movimientos</td></tr>
+                @foreach (var s in d.Salidas)
+                {
+                    <tr><td>Salidas · @s.Motivo@(s.Veces > 1 ? $" ({s.Veces})" : "")</td><td class="num">@Formato.Dinero(s.MontoCentavos)</td></tr>
+                }
+                @if (d.Salidas.Count == 0)
+                {
+                    <tr><td>Salidas</td><td class="num">@Formato.Dinero(0)</td></tr>
+                }
+                @if (d.EntradasCentavos > 0)
+                {
+                    <tr><td>Entradas de efectivo</td><td class="num">@Formato.Dinero(d.EntradasCentavos)</td></tr>
+                }
+                <tr><td>Devoluciones@(d.Devoluciones > 0 ? $" ({d.Devoluciones})" : "")</td><td class="num">@Formato.Dinero(d.DevolucionesCentavos)</td></tr>
+                <tr><td>Cancelaciones@(d.Cancelaciones > 0 ? $" ({d.Cancelaciones})" : "")</td><td class="num">@Formato.Dinero(d.CancelacionesCentavos)</td></tr>
+                <tr><td>Fiado a clientes · abonos recibidos@(d.Abonos > 0 ? $" ({d.Abonos})" : "")</td><td class="num">@Formato.Dinero(d.FiadoCentavos) · @Formato.Dinero(d.AbonosCentavos)</td></tr>
+                <tr><td>Impresiones cobradas</td><td class="num">@Formato.Dinero(d.ImpresionesCentavos)</td></tr>
+            </tbody>
+        </table>
+
+        <div class="vn-corte-contar">
+            <h3>Cerrar el día</h3>
+            @if (d.Piloto)
+            {
+                <div class="vn-alerta"><Ico Nombre="info" /><div><span>@PilotoConEleventa.CorteDelDiaEnEleventa</span></div></div>
+            }
+            else if (d.Cierre is { } yaCerrado)
+            {
+                <p class="vn-corte-nota">Se cerró a las @yaCerrado.CerradoLocal.ToString("HH:mm"). Si se abre otro turno hoy, al cortarlo se puede cerrar otra vez.</p>
+            }
+            else
+            {
+                <p class="vn-corte-nota">Junta los cortes de todas las cajas, manda el resumen por Telegram y deja listo el siguiente día.</p>
+                @for (var k = 0; k < d.PorQueNoSeCierra.Count; k++)
+                {
+                    var razon = d.PorQueNoSeCierra[k];
+                    <div class="vn-alerta">
+                        <Ico Nombre="reloj" />
+                        <div>
+                            <span>@razon</span>
+                            @if (k == 0 && AlHacerElCorte.HasDelegate && d.Turnos.Any(t => t.CerradoLocal is null && t.CajaId == CajaId))
+                            {
+                                <span><button class="vn-boton chico" @onclick="AlHacerElCorte">Hacer ese corte</button></span>
+                            }
+                        </div>
+                    </div>
+                }
+                @foreach (var aviso in d.Avisos)
+                {
+                    <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@aviso</span></div></div>
+                }
+                @if (_error is not null)
+                {
+                    <p class="vn-corte-error">@_error</p>
+                }
+                <button class="vn-cobrar" disabled="@(_ocupado || d.PorQueNoSeCierra.Count > 0)" @onclick="CerrarAsync"><span>Cerrar el día</span></button>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>La caja desde la que se ve: el corte es el de su sucursal.</summary>
+    [Parameter, EditorRequired] public Guid CajaId { get; set; }
+
+    /// <summary>Quien entró: el servicio revisa que tenga «ver y cerrar el corte del día».</summary>
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Opcional: ir al corte del turno abierto de esta caja («Hacer ese corte»).</summary>
+    [Parameter] public EventCallback AlHacerElCorte { get; set; }
+
+    private CorteDelDiaDto? _dia;
+    private EnvioResumen? _resumen;
+    private string? _error;
+    private bool _ocupado;
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _error = null;
+        try
+        {
+            _dia = await Cliente.CorteDelDiaAsync(CajaId, Sesion.UsuarioId);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task CerrarAsync()
+    {
+        if (_ocupado)
+            return;
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            _resumen = (await Cliente.CerrarElDiaAsync(CajaId, Sesion.UsuarioId)).Resumen;
+            await CargarAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    /// <summary>«09:00», o con la fecha si no es del día del corte (un turno que sigue abierto desde antes).</summary>
+    private static string Hora(DateTime local, DateOnly dia) =>
+        DateOnly.FromDateTime(local) == dia ? local.ToString("HH:mm") : local.ToString("dd/MM HH:mm");
+
+    /// <summary>Qué pasó con el resumen al cerrar el día (solo justo después de cerrarlo).</summary>
+    private static string TextoResumen(EnvioResumen? resumen) => resumen switch
+    {
+        EnvioResumen.Enviado => "El resumen va por Telegram.",
+        EnvioResumen.YaHabiaSalido => "El resumen ya había salido por Telegram con el último corte: no se manda otra vez.",
+        EnvioResumen.SinTelegram => "Telegram no está vinculado: el resumen no salió.",
+        EnvioResumen.Apagado => "El resumen del día está apagado en los avisos de Telegram.",
+        _ => "",
+    };
+}

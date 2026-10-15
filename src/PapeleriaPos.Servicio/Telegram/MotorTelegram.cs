@@ -6,15 +6,32 @@ using PapeleriaPos.Nucleo.Telegram;
 
 namespace PapeleriaPos.Servicio.Telegram;
 
-/// <summary>Cuándo se supo por última vez de cada caja dada de alta (su latido trae la llave).</summary>
+/// <summary>
+/// Cuándo se supo por última vez de cada caja dada de alta (su latido trae la llave) y lo que dijo en su latido que tiene
+/// por subir de cuando estuvo sin conexión (el corte del día espera a que suba). Vive en memoria: al arrancar el servicio
+/// no se sabe nada hasta el siguiente latido.
+/// </summary>
 public sealed class PresenciaCajas
 {
     private readonly ConcurrentDictionary<Guid, DateTime> _ultimaVez = new();
+    private readonly ConcurrentDictionary<Guid, (int PorSubir, int ConError, DateTime DichoUtc)> _bandejas = new();
 
     public void Visto(Guid cajaId, DateTime ahoraUtc) => _ultimaVez[cajaId] = ahoraUtc;
 
     /// <summary>Vacío si no se ha sabido de ella desde que arrancó el servicio.</summary>
     public DateTime? UltimaVez(Guid cajaId) => _ultimaVez.TryGetValue(cajaId, out var visto) ? visto : null;
+
+    /// <summary>
+    /// Lo que la caja dijo en su latido: cuánto tiene por subir y cuánto no pudo subir (se queda para revisarlo), y cuándo
+    /// lo dijo: si deja de decirlo, el corte del día ya no espera por ella.
+    /// </summary>
+    public void Bandeja(Guid cajaId, int porSubir, int conError, DateTime ahoraUtc) => _bandejas[cajaId] = (porSubir, conError, ahoraUtc);
+
+    /// <summary>Lo que se sabe ahora de cada caja, para el corte del día.</summary>
+    public IReadOnlyDictionary<Guid, PresenciaDeCaja> Foto() =>
+        _ultimaVez.Keys.Union(_bandejas.Keys).ToDictionary(id => id, id => _bandejas.TryGetValue(id, out var b)
+            ? new PresenciaDeCaja(UltimaVez(id), b.PorSubir, b.ConError, b.DichoUtc)
+            : new PresenciaDeCaja(UltimaVez(id), null, null));
 }
 
 /// <summary>

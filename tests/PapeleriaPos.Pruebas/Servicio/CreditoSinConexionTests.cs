@@ -255,7 +255,8 @@ public sealed class CreditoSinConexionTests(ServicioDePrueba servicio) : IClassF
         await p.Contingencia.LatidoAsync();
         await SinConexionAsync(p);
         var abono = await p.Cliente.AbonarAsync(p.Abono(cliente.Id, FormaPago.Efectivo, 10000, 10000));
-        await p.Cliente.CorteZAsync(p.Turno.Id, new SolicitudCorteZ("encargado", "2222", new Dictionary<long, int> { [10000] = 6 }));
+        var encargado = await p.Cliente.EntrarAsync("encargado", "2222");
+        await p.Cliente.CorteZAsync(p.Turno.Id, new SolicitudCorteZ(encargado.UsuarioId, 60000));
         // Al volver, el abono no sube (falla una vez) pero el corte Z sí.
         p.Red.Rechaza = r => r.RequestUri!.AbsolutePath == "/api/bandeja/abonos";
         p.Red.Caido = false;

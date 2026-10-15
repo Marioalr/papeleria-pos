@@ -1,162 +1,345 @@
-@* Corte X (parcial) y corte Z (cierre): el encargado cuenta el efectivo sin ver cuánto debería haber. En el piloto con
-   eleventa no hay corte aquí: se hace en eleventa. *@
+@* El corte (entrega 6, docs/propuesta-interfaz.md «Corte», 2026-10-14), como en el prototipo (htmlCorteTurno). El del
+   turno: quien ya entró con su PIN y tiene el permiso cuenta el efectivo y escribe el total, sin billete por billete, sin
+   ver cuánto debería haber y sin volver a escribir su PIN; al cerrar ve lo esperado, lo contado y la diferencia, a nombre
+   del cajero del turno. Quien no tiene el permiso ve el corte X (sin el efectivo) y quién puede hacerlo. Con «ver y
+   cerrar el corte del día», arriba elige entre el turno y el día (CorteDelDia). En el piloto con eleventa el corte del
+   turno se hace en eleventa. Va encima de la venta (la pestaña «Corte») y en la tarjeta del turno de otro cajero. *@
+@implements IAsyncDisposable
 @inject ClienteCaja Cliente
 @inject IImpresora Impresora
+@inject IJSRuntime JS
 
-@if (PilotoEleventa && _resultado is null)
-{
-    <p class="aviso">@PilotoConEleventa.CorteEnEleventa</p>
-}
-else if (_resultado is not null)
-{
-    <h3>Corte @(_resultado.Tipo == TipoCorte.Z ? "de cierre (Z)" : "parcial (X)") · @_resultado.FechaLocal.ToString("dd/MM/yyyy HH:mm")</h3>
-    <table class="resumen-corte">
-        <tr><td>Cajero</td><td>@_resultado.Cajero</td></tr>
-        <tr><td>Ventas</td><td>@_resultado.Ventas</td></tr>
-        <tr><td>Fondo</td><td>@Formato.Dinero(_resultado.FondoCentavos)</td></tr>
-        <tr><td>Efectivo de ventas</td><td>@Formato.Dinero(_resultado.EfectivoVentasCentavos)</td></tr>
-        @if (_resultado.AbonosEfectivoCentavos != 0)
+<div class="vn-corte">
+    <div class="vn-corte-cab">
+        <h2>@(_delDia ? "Corte del día" : "Corte del turno")</h2>
+        @if (_informativo?.VeElDia == true)
         {
-            <tr><td>Abonos de clientes en efectivo</td><td>@Formato.Dinero(_resultado.AbonosEfectivoCentavos)</td></tr>
+            <span class="vn-corte-segmento" role="tablist">
+                <button role="tab" class="@(_delDia ? "" : "activo")" aria-selected="@(!_delDia)" @onclick="() => Mostrar(delDia: false)">Turno</button>
+                <button role="tab" class="@(_delDia ? "activo" : "")" aria-selected="@_delDia" @onclick="() => Mostrar(delDia: true)">Del día · todas las cajas</button>
+            </span>
         }
-        <tr><td>Entradas</td><td>@Formato.Dinero(_resultado.EntradasCentavos)</td></tr>
-        <tr><td>Salidas</td><td>− @Formato.Dinero(_resultado.SalidasCentavos)</td></tr>
-        @if (_resultado.DevolucionesCentavos > 0 || _resultado.Cancelaciones > 0)
+        @if (_delDia && _resultado is not null)
         {
-            <tr><td>Devoluciones y cancelaciones@(_resultado.Cancelaciones > 0 ? $" ({_resultado.Cancelaciones} {(_resultado.Cancelaciones == 1 ? "cancelado" : "cancelados")})" : "")</td><td>− @Formato.Dinero(_resultado.DevolucionesCentavos)</td></tr>
+            @* Ya se cerró el turno: también desde el día se sigue al siguiente turno (Esc dejaría la venta en un turno cerrado). *@
+            <button class="vn-boton primario vn-corte-listo" @onclick="AlTerminar">Listo: abrir el siguiente turno</button>
         }
-        @if (_resultado.SaldoDevueltoCentavos != 0)
-        {
-            <tr><td>Saldo a favor devuelto a clientes</td><td>− @Formato.Dinero(_resultado.SaldoDevueltoCentavos)</td></tr>
-        }
-        <tr class="total"><td>Efectivo esperado</td><td>@Formato.Dinero(_resultado.EsperadoCentavos)</td></tr>
-        @if (_resultado.RedondeoCentavos != 0)
-        {
-            <tr><td class="nota">Incluye el redondeo al peso</td><td class="nota">@(_resultado.RedondeoCentavos > 0 ? "+" : "−") @Formato.Dinero(Math.Abs(_resultado.RedondeoCentavos))</td></tr>
-        }
-        @if (_resultado.ContadoCentavos is { } contado)
-        {
-            <tr><td>Contado</td><td>@Formato.Dinero(contado)</td></tr>
-            <tr class="@(_resultado.DiferenciaCentavos < 0 ? "faltante" : "total")">
-                <td>@(_resultado.DiferenciaCentavos < 0 ? "Faltante" : _resultado.DiferenciaCentavos > 0 ? "Sobrante" : "Diferencia")</td>
-                <td>@Formato.Dinero(Math.Abs(_resultado.DiferenciaCentavos ?? 0))</td>
-            </tr>
-        }
-        <tr><td>Tarjeta</td><td>@Formato.Dinero(_resultado.TarjetaCentavos)</td></tr>
-        <tr><td>Transferencias</td><td>@Formato.Dinero(_resultado.TransferenciaCentavos)</td></tr>
-        @* Los abonos no son venta y lo fiado no es dinero: van aparte (fase 3). *@
-        @if (_resultado.AbonosTarjetaCentavos != 0)
-        {
-            <tr><td>Abonos con tarjeta</td><td>@Formato.Dinero(_resultado.AbonosTarjetaCentavos)</td></tr>
-        }
-        @if (_resultado.AbonosTransferenciaCentavos != 0)
-        {
-            <tr><td>Abonos por transferencia</td><td>@Formato.Dinero(_resultado.AbonosTransferenciaCentavos)</td></tr>
-        }
-        @if (_resultado.CreditoCentavos != 0)
-        {
-            <tr><td>Fiado (ventas a crédito, no es efectivo)</td><td>@Formato.Dinero(_resultado.CreditoCentavos)</td></tr>
-        }
-    </table>
-    @if (_resultado.EnContingencia)
+    </div>
+
+    @if (_delDia)
     {
-        <p class="nota">Sin conexión con la caja principal: es la cuenta de esta caja. Se cuadra cuando sube la bandeja.</p>
+        <CorteDelDia CajaId="Turno.CajaId" Sesion="Sesion" AlHacerElCorte="() => Mostrar(delDia: false)" />
     }
-    @if (_vistaPrevia is not null)
+    else if (PilotoEleventa && _resultado is null)
     {
-        <pre class="ticket">@_vistaPrevia</pre>
+        <div class="vn-alerta"><Ico Nombre="info" /><div><span>@PilotoConEleventa.CorteEnEleventa</span></div></div>
     }
-    <div class="acciones">
-        @if (_resultado.Tipo == TipoCorte.Z)
+    else if (_resultado is { } r)
+    {
+        var contado = r.ContadoCentavos ?? 0;
+        var diferencia = r.DiferenciaCentavos ?? 0;
+        <div class="vn-corte-turno">
+            <div class="vn-corte-contar">
+                <h3>Turno de @r.Cajero cerrado</h3>
+                <div class="vn-corte-rejilla">
+                    <div class="vn-corte-dato"><span>Contado</span><strong>@Formato.Dinero(contado)</strong></div>
+                    <div class="vn-corte-dato"><span>Esperado</span><strong>@Formato.Dinero(r.EsperadoCentavos)</strong><small>fondo + efectivo − salidas</small></div>
+                    <div class="vn-corte-dato">
+                        <span>@(diferencia == 0 ? "Cuadra" : diferencia > 0 ? "Sobrante" : "Faltante")</span>
+                        <strong class="@(diferencia < 0 ? "vn-dif-mal" : "vn-dif-bien")">@Formato.ConSigno(diferencia)</strong>
+                        <small>a nombre de @r.Cajero</small>
+                    </div>
+                </div>
+                @if (r.UmbralAvisoCentavos is { } umbral)
+                {
+                    <div class="vn-alerta"><Ico Nombre="telegram" /><div><span>Pasa de @Formato.Dinero(umbral): se avisa por Telegram.</span></div></div>
+                }
+                @if (r.EnContingencia)
+                {
+                    <div class="vn-alerta info"><Ico Nombre="info" /><div><span>Sin conexión con la caja principal: es la cuenta de esta caja. Se cuadra cuando suba lo que hizo sin conexión.</span></div></div>
+                }
+                @if (_error is not null)
+                {
+                    <p class="vn-corte-error">@_error</p>
+                }
+                <div class="vn-botonera">
+                    <button class="vn-boton primario" @ref="_listo" @onclick="AlTerminar">Listo: abrir el siguiente turno</button>
+                    @if (_informativo?.VeElDia == true)
+                    {
+                        <button class="vn-boton" @onclick="() => Mostrar(delDia: true)">Ver el corte del día</button>
+                    }
+                </div>
+            </div>
+            <div class="vn-corte-tarjeta">
+                <h3>Detalle del corte</h3>
+                <div class="vn-corte-linea"><span>Ventas del turno@(r.Cancelaciones > 0 ? $" ({r.Cancelaciones} {(r.Cancelaciones == 1 ? "cancelada" : "canceladas")})" : "")</span><strong>@r.Ventas</strong></div>
+                <div class="vn-corte-linea"><span>Fondo</span><strong>@Formato.Dinero(r.FondoCentavos)</strong></div>
+                <div class="vn-corte-linea"><span>Efectivo de ventas</span><strong>@Formato.Dinero(r.EfectivoVentasCentavos)</strong></div>
+                @if (r.AbonosEfectivoCentavos != 0)
+                {
+                    <div class="vn-corte-linea"><span>Abonos de clientes en efectivo</span><strong>@Formato.Dinero(r.AbonosEfectivoCentavos)</strong></div>
+                }
+                <div class="vn-corte-linea"><span>Entradas</span><strong>@Formato.Dinero(r.EntradasCentavos)</strong></div>
+                <div class="vn-corte-linea"><span>Salidas</span><strong>@Formato.ConSigno(-r.SalidasCentavos)</strong></div>
+                @if (r.DevolucionesCentavos > 0)
+                {
+                    <div class="vn-corte-linea"><span>Devoluciones y cancelaciones</span><strong>@Formato.ConSigno(-r.DevolucionesCentavos)</strong></div>
+                }
+                @if (r.SaldoDevueltoCentavos != 0)
+                {
+                    <div class="vn-corte-linea"><span>Saldo a favor devuelto</span><strong>@Formato.ConSigno(-r.SaldoDevueltoCentavos)</strong></div>
+                }
+                <div class="vn-corte-linea suma"><span>Esperado</span><strong>@Formato.Dinero(r.EsperadoCentavos)</strong></div>
+                @if (r.RedondeoCentavos != 0)
+                {
+                    <p class="vn-corte-nota">Incluye el redondeo al peso: @(r.RedondeoCentavos > 0 ? "+" : "−")@Formato.Dinero(Math.Abs(r.RedondeoCentavos)).</p>
+                }
+                <div class="vn-corte-linea"><span>Tarjeta</span><strong>@Formato.Dinero(r.TarjetaCentavos)</strong></div>
+                <div class="vn-corte-linea"><span>Transferencias</span><strong>@Formato.Dinero(r.TransferenciaCentavos)</strong></div>
+                @* Los abonos no son venta y lo fiado no es dinero: van aparte (fase 3). *@
+                @if (r.AbonosTarjetaCentavos != 0)
+                {
+                    <div class="vn-corte-linea"><span>Abonos con tarjeta</span><strong>@Formato.Dinero(r.AbonosTarjetaCentavos)</strong></div>
+                }
+                @if (r.AbonosTransferenciaCentavos != 0)
+                {
+                    <div class="vn-corte-linea"><span>Abonos por transferencia</span><strong>@Formato.Dinero(r.AbonosTransferenciaCentavos)</strong></div>
+                }
+                @if (r.CreditoCentavos != 0)
+                {
+                    <div class="vn-corte-linea"><span>Fiado (no es efectivo)</span><strong>@Formato.Dinero(r.CreditoCentavos)</strong></div>
+                }
+                <p class="vn-corte-nota">Lo hizo @r.RealizadoPor a las @r.FechaLocal.ToString("HH:mm").</p>
+                @if (_vistaPrevia is not null)
+                {
+                    <pre class="vn-corte-ticket">@_vistaPrevia</pre>
+                }
+            </div>
+        </div>
+    }
+    else if (_informativo is not { } i)
+    {
+        @if (_sinTurno)
         {
-            <button class="boton principal" @onclick="AlTerminar">Terminar</button>
+            @* El turno ya se cerró (con otro corte, o se volvió aquí después de cerrarlo): como en el prototipo. *@
+            <div class="vn-alerta info"><Ico Nombre="info" /><div><span>No hay turno abierto en @(string.IsNullOrEmpty(Caja) ? "esta caja" : Caja).</span><span><button class="vn-boton chico" @onclick="AlTerminar">Abrir turno</button></span></div></div>
+        }
+        else if (_error is not null)
+        {
+            <div class="vn-alerta"><Ico Nombre="alerta" /><div><span>@_error</span><span><button class="vn-boton chico" @onclick="CargarAsync">Volver a intentar</button></span></div></div>
         }
         else
         {
-            <button class="boton" @onclick="() => _resultado = null">Volver</button>
+            <p class="vn-corte-nota">Cargando el turno…</p>
         }
-    </div>
-}
-else if (!_cierre)
-{
-    <p>Turno de <strong>@Turno.Cajero</strong> desde las @Turno.AbiertoLocal.ToString("HH:mm").</p>
-    <div class="acciones">
-        <button class="boton" disabled="@_ocupado" @onclick="CorteXAsync">Corte parcial (X)</button>
-        <button class="boton principal" @onclick="() => _cierre = true">Corte de cierre (Z)</button>
-    </div>
-}
-else
-{
-    <p>El encargado cuenta el efectivo de la caja por denominación. No se muestra cuánto debería haber hasta terminar.</p>
-    <div class="dos-columnas">
-        <label>Usuario del encargado <input @bind="_usuario" autocomplete="off" /></label>
-        <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" /></label>
-    </div>
-    <table class="conteo">
-        @foreach (var d in Denominaciones.Mexico)
-        {
-            var denominacion = d;
-            <tr>
-                <td class="num">@Formato.Dinero(d)</td>
-                <td>×</td>
-                <td><input inputmode="numeric" value="@(_conteo.GetValueOrDefault(d) is var n && n > 0 ? n : "")"
-                           @oninput="e => Contar(denominacion, e.Value?.ToString())" /></td>
-                <td class="num">@Formato.Dinero(d * _conteo.GetValueOrDefault(d))</td>
-            </tr>
-        }
-        <tr class="total"><td colspan="3">Contado</td><td class="num">@Formato.Dinero(_conteo.Sum(c => c.Key * c.Value))</td></tr>
-    </table>
-    @if (_error is not null)
-    {
-        <p class="error">@_error</p>
     }
-    <div class="acciones">
-        <button class="boton principal" disabled="@_ocupado" @onclick="CorteZAsync">Cerrar el turno</button>
-        @if (!SoloCierre)
-        {
-            <button class="boton" @onclick="() => _cierre = false">Volver</button>
-        }
-    </div>
-}
-@if (_error is not null && !_cierre)
-{
-    <p class="error">@_error</p>
-}
+    else if (!i.PuedeCortar)
+    {
+        <div class="vn-corte-turno">
+            <div class="vn-alerta info">
+                <Ico Nombre="candado" />
+                <div>
+                    <span>El corte lo hace quien tiene ese permiso: <strong>@Textos.Quien(i.QuienesCortan)</strong>. Solo pide el total del efectivo, sin ver cuánto debería haber.</span>
+                    @* Nunca sin salida: sin cambiar de usuario, termina el corte sin cerrar el turno (en la tarjeta del turno de otro
+                       cajero eso regresa a la entrada, con el turno abierto, para que entre quien lo hace). *@
+                    <span><button class="vn-boton chico" @onclick="QueEntreAsync">Que entre a esta caja</button></span>
+                </div>
+            </div>
+            @Informativo(i)
+        </div>
+    }
+    else
+    {
+        <div class="vn-corte-turno">
+            <div class="vn-corte-contar">
+                <h3>Turno de @Turno.Cajero · desde @Desde(Turno.AbiertoLocal)</h3>
+                <p class="vn-corte-nota">
+                    Cuenta el efectivo de la caja y escribe el total. No se muestra cuánto debería haber hasta cerrar.@(Sesion.UsuarioId != Turno.CajeroId
+                        ? $" Entraste como {Sesion.Nombre}: no vuelve a pedir tu PIN." : "")
+                </p>
+                @* corte.js: si el lector escribe aquí, no se toma como dinero ni su Enter cierra el turno. *@
+                <label class="vn-corte-campo">Efectivo contado
+                    <input id="corte-contado" @ref="_campo" inputmode="decimal" autocomplete="off" placeholder="$0.00"
+                           @bind="_contado" @bind:event="oninput" @onkeydown="AlTeclear" />
+                </label>
+                @if (_error is not null)
+                {
+                    <p class="vn-corte-error">@_error</p>
+                }
+                <button class="vn-cobrar" disabled="@(_ocupado || Contado is null)" @onclick="CerrarAsync"><span>Cerrar el turno</span><kbd>Enter</kbd></button>
+            </div>
+            @Informativo(i)
+        </div>
+    }
+</div>
 
 @code {
     [Parameter, EditorRequired] public TurnoDto Turno { get; set; } = null!;
+
+    /// <summary>Quien entró en la caja: a su nombre queda el corte, y el servicio revisa que tenga el permiso.</summary>
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>
+    /// Lo pasa la tarjeta del turno de otro cajero. Ya no cambia nada (2026-10-14): el corte del turno es uno solo, sin
+    /// elegir entre el parcial y el de cierre.
+    /// </summary>
     [Parameter] public bool SoloCierre { get; set; }
+
     /// <summary>Nombre de la caja, para el corte impreso.</summary>
     [Parameter] public string Caja { get; set; } = "";
+
+    /// <summary>
+    /// «Listo: abrir el siguiente turno» después del corte, y «Abrir turno» si el turno ya estaba cerrado. Quien hizo el
+    /// corte sigue adentro y pasa a abrir el suyo, como en el prototipo (lo hace quien pone el corte).
+    /// </summary>
     [Parameter] public EventCallback AlTerminar { get; set; }
 
     /// <summary>
-    /// El piloto con eleventa (2026-10-12): el corte de esta caja se hace en eleventa, el de cierre y también el parcial
-    /// (lo vendido aquí ya está en el turno de eleventa, con el efectivo de las dos; el parcial de esta caja contaría solo
-    /// una parte del cajón). En su lugar, el aviso. Se quita al dejar eleventa.
+    /// En cuanto el corte cerró el turno, aunque todavía no se oprima «Listo»: quien pone el corte sabe que el turno ya no
+    /// está, por si se cierra la ventana con Esc o con la ×.
+    /// </summary>
+    [Parameter] public EventCallback AlCerrarElTurno { get; set; }
+
+    /// <summary>
+    /// Opcional: cambiar de usuario (Ctrl+U), para que quien no tiene el permiso deje entrar a quien sí («Que entre a esta
+    /// caja», como en el prototipo). Sin él, el botón termina el corte sin cerrar el turno (<see cref="AlTerminar"/>).
+    /// </summary>
+    [Parameter] public EventCallback AlCambiarUsuario { get; set; }
+
+    /// <summary>
+    /// El piloto con eleventa (2026-10-12): el corte de esta caja se hace en eleventa. En su lugar, el aviso; el corte del
+    /// día se puede ver, pero no cerrar. Se quita al dejar eleventa.
     /// </summary>
     [CascadingParameter(Name = PilotoConEleventa.Cascada)] public bool PilotoEleventa { get; set; }
 
-    private bool _cierre;
-    private string _usuario = "";
-    private string _pin = "";
-    private readonly Dictionary<long, int> _conteo = [];
+    private CorteInformativoDto? _informativo;
     private CorteDto? _resultado;
+    private string _contado = "";
     private string? _error;
+    private string? _vistaPrevia;
     private bool _ocupado;
+    private bool _delDia;
+    private bool _enfocar = true;
+    private bool _sinTurno;
+    private ElementReference _campo;
+    private ElementReference _listo;
+    private IJSObjectReference? _modulo;
 
-    protected override void OnInitialized() => _cierre = SoloCierre;
+    private long? Contado => Formato.LeerPesos(_contado);
 
-    private void Contar(long denominacion, string? texto) =>
-        _conteo[denominacion] = int.TryParse(texto, out var n) && n > 0 ? n : 0;
+    protected override Task OnInitializedAsync() => CargarAsync();
 
-    private async Task CorteXAsync()
+    /// <summary>
+    /// El corte X y los permisos de quien entró (también en el piloto: dicen si ve el corte del día). Si falla porque el
+    /// turno ya se cerró, se dice así, con «Abrir turno», y no «Volver a intentar».
+    /// </summary>
+    private async Task CargarAsync()
     {
-        _ocupado = true;
+        _error = null;
+        _sinTurno = false;
         try
         {
-            _resultado = await Cliente.CorteXAsync(Turno.Id, Sesion.UsuarioId);
+            _informativo = await Cliente.CorteInformativoAsync(Turno.Id, Sesion.UsuarioId);
+            _enfocar = true;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+            try
+            {
+                _sinTurno = (await Cliente.TurnoAsync(Turno.CajaId))?.Id != Turno.Id;
+            }
+            catch (ErrorCaja)
+            {
+                // Tampoco se sabe el turno: queda el error, con «Volver a intentar».
+            }
+        }
+    }
+
+    /// <summary>
+    /// El cursor en «Efectivo contado» (cuidado del lector, corte.js); ya cerrado, en «Listo» (Enter sigue al siguiente
+    /// turno).
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!_enfocar || _delDia)
+            return;
+        if (_resultado is not null)
+        {
+            _enfocar = false;
+            await _listo.FocusAsync();
+        }
+        else if (_informativo is { PuedeCortar: true } && !PilotoEleventa)
+        {
+            _enfocar = false;
+            await _campo.FocusAsync();
+            await ProtegerDelLectorAsync();
+        }
+    }
+
+    /// <summary>
+    /// Un escaneo en «Efectivo contado» no se toma como dinero (corte.js): el corte no se deshace. Si la página ya no
+    /// contesta, el campo sigue sirviendo; solo sin ese cuidado.
+    /// </summary>
+    private async Task ProtegerDelLectorAsync()
+    {
+        try
+        {
+            _modulo ??= await JS.InvokeAsync<IJSObjectReference>("import", "./_content/PapeleriaPos.Interfaz/corte.js");
+            await _modulo.InvokeVoidAsync("proteger", _campo);
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException or InvalidOperationException or OperationCanceledException)
+        {
+            // La página se está yendo (o volviendo a cargar): el campo se queda como cualquier otro.
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_modulo is null)
+            return;
+        try
+        {
+            await _modulo.DisposeAsync();
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException or InvalidOperationException or OperationCanceledException)
+        {
+            // La página ya no está: el módulo se fue con ella.
+        }
+    }
+
+    /// <summary>«Que entre a esta caja»: cambiar de usuario si quien pone el corte lo deja; si no, terminar sin cerrar el turno.</summary>
+    private Task QueEntreAsync() => AlCambiarUsuario.HasDelegate ? AlCambiarUsuario.InvokeAsync() : AlTerminar.InvokeAsync();
+
+    private void Mostrar(bool delDia)
+    {
+        _delDia = delDia;
+        _enfocar = !delDia;
+    }
+
+    /// <summary>«desde las 09:00», o con la fecha si el turno se abrió otro día.</summary>
+    private static string Desde(DateTime abiertoLocal) =>
+        abiertoLocal.Date == HoraMexico.ALocal(DateTime.UtcNow).Date ? $"las {abiertoLocal:HH:mm}" : $"el {abiertoLocal:dd/MM} a las {abiertoLocal:HH:mm}";
+
+    private async Task AlTeclear(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await CerrarAsync();
+    }
+
+    /// <summary>Cierra el turno con lo que se contó; F12 no cuenta aquí: Enter o el botón.</summary>
+    private async Task CerrarAsync()
+    {
+        if (_ocupado || Contado is not { } contado)
+            return;
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            _resultado = await Cliente.CorteZAsync(Turno.Id, new SolicitudCorteZ(Sesion.UsuarioId, contado));
+            _enfocar = true;
+            await ImprimirAsync(_resultado);
+            await AlCerrarElTurno.InvokeAsync();
         }
         catch (ErrorCaja ex)
         {
@@ -168,9 +351,7 @@ else
         }
     }
 
-    private string? _vistaPrevia;
-
-    /// <summary>El corte Z se imprime para guardarlo con el efectivo; si falla la impresora, el corte ya quedó.</summary>
+    /// <summary>El corte se imprime para guardarlo con el efectivo; si falla la impresora, el corte ya quedó.</summary>
     private async Task ImprimirAsync(CorteDto corte)
     {
         var documento = DisenoComprobante.Corte(corte, Caja);
@@ -189,28 +370,26 @@ else
         }
     }
 
-    private async Task CorteZAsync()
-    {
-        if (_usuario.Trim().Length == 0 || _pin.Length == 0)
+    /// <summary>El corte X: lo que se ve del turno antes de cerrarlo. El efectivo no: se cuenta a ciegas.</summary>
+    private static RenderFragment Informativo(CorteInformativoDto i) => @<div class="vn-corte-tarjeta">
+        <h3>Corte X · informativo</h3>
+        <div class="vn-corte-linea"><span>Ventas del turno@(i.Cancelaciones > 0 ? $" ({i.Cancelaciones} {(i.Cancelaciones == 1 ? "cancelada" : "canceladas")})" : "")</span><strong>@i.Ventas</strong></div>
+        <div class="vn-corte-linea"><span>Tarjeta</span><strong>@Formato.Dinero(i.TarjetaCentavos)</strong></div>
+        <div class="vn-corte-linea">
+            <span>Transferencias@(i.TransferenciasPorVerificar is > 0 and var n ? $" ({n} por verificar)" : "")</span><strong>@Formato.Dinero(i.TransferenciaCentavos)</strong>
+        </div>
+        @if (i.AbonosTarjetaCentavos != 0)
         {
-            _error = "Falta el usuario y PIN del encargado.";
-            return;
+            <div class="vn-corte-linea"><span>Abonos con tarjeta</span><strong>@Formato.Dinero(i.AbonosTarjetaCentavos)</strong></div>
         }
-        _ocupado = true;
-        try
+        @if (i.AbonosTransferenciaCentavos != 0)
         {
-            _resultado = await Cliente.CorteZAsync(Turno.Id, new SolicitudCorteZ(_usuario.Trim(), _pin, _conteo.Where(c => c.Value > 0).ToDictionary()));
-            await ImprimirAsync(_resultado);
-            _error = null;
+            <div class="vn-corte-linea"><span>Abonos por transferencia</span><strong>@Formato.Dinero(i.AbonosTransferenciaCentavos)</strong></div>
         }
-        catch (ErrorCaja ex)
+        @if (i.CreditoCentavos != 0)
         {
-            _error = ex.Message;
-            _pin = "";
+            <div class="vn-corte-linea"><span>Fiado (no es efectivo)</span><strong>@Formato.Dinero(i.CreditoCentavos)</strong></div>
         }
-        finally
-        {
-            _ocupado = false;
-        }
-    }
+        <p class="vn-corte-nota">El efectivo no se muestra: se cuenta a ciegas al cerrar el turno.@(i.EnContingencia ? " Sin conexión: es la cuenta de esta caja." : "")</p>
+    </div>;
 }

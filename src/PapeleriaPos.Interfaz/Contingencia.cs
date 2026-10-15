@@ -225,7 +225,8 @@ public sealed class Contingencia
         EstadoServicioDto? estado;
         try
         {
-            estado = await _http.GetAsync<EstadoServicioDto>("api/estado", espera: EsperaLatido);
+            // Con lo que tiene por subir: el corte del día espera a que suba (entrega 6).
+            estado = await _http.GetAsync<EstadoServicioDto>(RutaEstado, espera: EsperaLatido);
         }
         catch (ErrorCaja)
         {
@@ -255,6 +256,8 @@ public sealed class Contingencia
         var subio = Pendientes > 0;
         if (Pendientes > 0 || ImpresionesPorSubir > 0 || (ConError > 0 && Ahora - _ultimoReintentoUtc > ReintentoErrores))
             await SubirAsync();
+        if (subio && _responde)
+            await AvisarLoQueQuedaAsync();
         // Los saldos del crédito: cuando cambiaron, cuando acaba de subir lo suyo, o cada tanto si tiene algo por confirmar.
         var tocaCredito = _refrescarCredito || _creditosPedidos is not { } pedidos || _reloj.GetElapsedTime(pedidos) > RefrescoCredito;
         if (_responde && (_saldos is null ? tocaCredito
@@ -265,6 +268,25 @@ public sealed class Contingencia
     }
 
     public void MarcarSinConexion() => Fijar(responde: false);
+
+    /// <summary>El latido, con lo que esta caja tiene por subir y lo que no pudo subir (entrega 6).</summary>
+    private string RutaEstado => _conexion.CajaId is { } esta ? $"api/estado?caja={esta}&porSubir={Pendientes}&conError={ConError}" : "api/estado";
+
+    /// <summary>
+    /// Acaba de subir lo que tenía: el servicio lo sabe ya, no hasta el siguiente latido. Si la caja se apaga en esos
+    /// segundos (se reconectó al final del día y la cerraron), el corte del día no se queda esperando lo que ya subió.
+    /// </summary>
+    private async Task AvisarLoQueQuedaAsync()
+    {
+        try
+        {
+            await _http.GetAsync<EstadoServicioDto>(RutaEstado, espera: EsperaLatido);
+        }
+        catch (ErrorCaja)
+        {
+            // Lo dice el siguiente latido.
+        }
+    }
 
     /// <summary>
     /// Sube la bandeja en orden. Lo que el servicio rechaza queda marcado con su motivo (para revisarlo) y se reintenta
@@ -565,7 +587,26 @@ public sealed class Contingencia
 
     public CorteDto CorteX(Guid turnoId, Guid usuarioId) => Corte(TurnoRequerido(turnoId), TipoCorte.X, Nombre(usuarioId), null);
 
-    /// <summary>El encargado cuenta y la caja cierra el turno con su propia cuenta; se cuadra al subir.</summary>
+    /// <summary>
+    /// El corte X a ciegas, con la cuenta de esta caja y las reglas de su copia. Las transferencias por verificar no se
+    /// saben sin la caja principal.
+    /// </summary>
+    public CorteInformativoDto CorteInformativo(Guid turnoId, Guid usuarioId)
+    {
+        var turno = TurnoRequerido(turnoId);
+        var c = Corte(turno, TipoCorte.X, Nombre(usuarioId), null);
+        var activos = Datos.UsuariosPorId.Values.Where(u => u.Activo).Select(u => (u.Id, u.Usuario, u.Nombre, u.Rol)).ToList();
+        return new CorteInformativoDto(turno.Cajero, turno.AbiertoLocal, c.Ventas, c.Cancelaciones, c.TarjetaCentavos, c.TransferenciaCentavos, null,
+            c.CreditoCentavos, c.Abonos, c.AbonosTarjetaCentavos, c.AbonosTransferenciaCentavos,
+            Evaluar(usuarioId, AccionControlada.CorteZ, null).Nivel == NivelPermiso.Permitido,
+            Permisos.QuienesPueden(Datos.Reglas, activos, Caja.SucursalId, AccionControlada.CorteZ),
+            Evaluar(usuarioId, AccionControlada.CorteDelDia, null).Nivel == NivelPermiso.Permitido, EnContingencia: true);
+    }
+
+    /// <summary>
+    /// El corte del turno sin conexión (2026-10-14): quien entró, con el permiso en la copia de las reglas, escribe el total
+    /// que contó; no se le vuelve a pedir el PIN. La caja cierra el turno con su propia cuenta y se cuadra al subir.
+    /// </summary>
     public CorteDto CorteZ(Guid turnoId, SolicitudCorteZ s)
     {
         // El piloto con eleventa: el corte de esta caja se hace en eleventa, también sin conexión (al subir, el servicio ya
@@ -573,20 +614,21 @@ public sealed class Contingencia
         if (PilotoEleventa)
             throw new InvalidOperationException(PilotoConEleventa.CorteEnEleventa);
         var turno = TurnoRequerido(turnoId);
-        var encargado = Identificar(s.EncargadoUsuario, s.EncargadoPin);
-        if (Permisos.Evaluar(Datos.Reglas, encargado.Rol, Caja.SucursalId, AccionControlada.CorteZ).Nivel != NivelPermiso.Permitido)
+        if (Evaluar(s.UsuarioId, AccionControlada.CorteZ, null).Nivel != NivelPermiso.Permitido)
         {
-            Encolar(Registro(encargado.Id, AccionControlada.CorteZ, "Intento sin permiso", null, resultado: ResultadoBitacora.Negado));
-            throw new InvalidOperationException("Esto lo autoriza el encargado o el dueño.");
+            Encolar(Registro(s.UsuarioId, AccionControlada.CorteZ, "Intento sin permiso", null, resultado: ResultadoBitacora.Negado));
+            var activos = Datos.UsuariosPorId.Values.Where(u => u.Activo).Select(u => (u.Id, u.Usuario, u.Nombre, u.Rol));
+            throw new ErrorCaja($"El corte del turno lo hace quien tiene ese permiso: "
+                + $"{Permisos.Nombres(Permisos.QuienesPueden(Datos.Reglas, activos, Caja.SucursalId, AccionControlada.CorteZ))}.", "no-permitido");
         }
-        if (s.Conteo.Any(c => !Denominaciones.Mexico.Contains(c.Key) || c.Value < 0))
-            throw new InvalidOperationException("Conteo con una denominación que no existe o una cantidad negativa.");
+        if (s.ContadoCentavos < 0)
+            throw new InvalidOperationException("El efectivo contado no puede ser negativo.");
 
-        var corte = Corte(turno, TipoCorte.Z, encargado.Nombre, s.Conteo);
+        var corte = Corte(turno, TipoCorte.Z, Nombre(s.UsuarioId), s.ContadoCentavos);
         var id = Ids.Nuevo();
         using (var lote = _almacen.Lote())
         {
-            lote.Encolar(id, $"api/bandeja/turnos/{turnoId}/corte-z", new CorteContingenciaDto(id, encargado.Id, s.Conteo, Ahora))
+            lote.Encolar(id, $"api/bandeja/turnos/{turnoId}/corte-z", new CorteContingenciaDto(id, s.UsuarioId, null, Ahora, s.ContadoCentavos))
                 .Borrar("turno").Borrar("base").LimpiarDiario()
                 .Confirmar();
         }
@@ -996,7 +1038,7 @@ public sealed class Contingencia
         _almacen.Leer<TurnoDto>("turno") is { } turno && turno.Id == turnoId ? turno : throw new InvalidOperationException("El turno ya no está abierto en esta caja.");
 
     /// <summary>Base del servicio + lo anotado después; igual que <see cref="CalculoCorte"/>.</summary>
-    private CorteDto Corte(TurnoDto turno, TipoCorte tipo, string realizadoPor, IReadOnlyDictionary<long, int>? conteo)
+    private CorteDto Corte(TurnoDto turno, TipoCorte tipo, string realizadoPor, long? contado)
     {
         var base_ = _almacen.Leer<BaseTurno>("base") is { } b && b.TurnoId == turno.Id ? b : new BaseTurno(turno.Id, turno.FondoCentavos, new AnotacionDiario(Guid.Empty, turno.Id));
         var d = _almacen.Diario(turno.Id);
@@ -1008,7 +1050,6 @@ public sealed class Contingencia
         var abonosEfectivo = t.AbonosEfectivo + d.AbonosEfectivo;
         var saldoDevuelto = t.SaldoDevuelto + d.SaldoDevuelto;
         var esperado = base_.FondoCentavos + efectivo + abonosEfectivo + entradas - salidas - devoluciones - saldoDevuelto;
-        long? contado = conteo?.Sum(c => c.Key * c.Value);
         return new CorteDto(tipo, HoraMexico.ALocal(Ahora), turno.Cajero, realizadoPor, t.Ventas + d.Ventas, base_.FondoCentavos, efectivo, entradas, salidas,
             t.Tarjeta + d.Tarjeta, t.Transferencia + d.Transferencia, esperado, contado, contado - esperado, devoluciones, t.Cancelaciones + d.Cancelaciones,
             EnContingencia: true, RedondeoCentavos: t.Redondeo + d.Redondeo, CreditoCentavos: t.Credito + d.Credito, Abonos: t.Abonos + d.Abonos,

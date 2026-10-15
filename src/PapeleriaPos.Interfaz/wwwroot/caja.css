@@ -335,6 +335,101 @@ td.acciones-renglon { white-space: nowrap; text-align: right; }
 .cobrar-credito legend { font-weight: 600; padding: 0 4px; }
 .movimientos-credito td.debe { color: #8a1c17; }
 
+/* ── El corte (entrega 6, docs/propuesta-interfaz.md «Corte»): el del turno con solo el total y el del día ──
+   Como en el prototipo (.corte, .contar, .kpis, .tabla). Va encima de la venta (la ventana «corte», que ocupa la pantalla
+   como una pestaña) o en la tarjeta del turno de otro cajero: fuera de .venta-nueva, así que trae sus colores (los mismos). */
+.vn-corte {
+    --vn-papel: #eceff3;
+    --vn-hoja: #ffffff;
+    --vn-renglon: #f4f6f9;
+    --vn-linea: #dfe4ea;
+    --vn-borde: #c6cfda;
+    --vn-texto: #15202c;
+    --vn-suave: #556375;
+    --vn-tenue: #8693a3;
+    --vn-tinta: #23439b;
+    --vn-tinta-hover: #1a3682;
+    --vn-tinta-claro: #e8edf9;
+    --vn-tinta-medio: #c7d3f1;
+    --vn-cobro: #0f7a4a;
+    --vn-cobro-hover: #0b673e;
+    --vn-cobro-claro: #e3f3ea;
+    --vn-aviso: #8a5300;
+    --vn-aviso-fondo: #fff3dc;
+    --vn-aviso-borde: #efc884;
+    --vn-error: #b3261e;
+    --vn-error-fondo: #fdecea;
+    --vn-f-texto: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --vn-f-cifras: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    --vn-f-codigo: "Cascadia Mono", Consolas, ui-monospace, monospace;
+    container-type: inline-size;
+    display: flex; flex-direction: column; gap: 14px; min-width: 0;
+    color: var(--vn-texto); font: 15px/1.35 var(--vn-f-texto);
+}
+.vn-corte kbd { font: 600 11px/1 var(--vn-f-codigo); padding: 3px 5px 2px; border: 1px solid var(--vn-borde); border-bottom-width: 2px; border-radius: 4px; background: var(--vn-hoja); color: var(--vn-suave); white-space: nowrap; }
+.vn-corte svg.ico { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.vn-corte button:focus-visible, .vn-corte input:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: 2px; }
+.vn-corte .vn-boton.primario { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; font-weight: 600; }
+.vn-corte .vn-boton.primario:hover:not(:disabled) { background: var(--vn-tinta-hover); }
+.vn-corte .vn-alerta { margin: 0; }
+.vn-corte-cab { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding-right: 48px; }
+.vn-corte-cab h2 { margin: 0; font-size: 22px; color: var(--vn-texto); }
+.vn-corte-cab .vn-corte-listo { margin-left: auto; }
+.vn-corte-segmento { display: inline-flex; border: 1px solid var(--vn-borde); border-radius: 8px; overflow: hidden; background: var(--vn-hoja); flex: none; }
+.vn-corte-segmento button { font: inherit; font-size: 14px; color: var(--vn-suave); border: 0; border-right: 1px solid var(--vn-linea); background: none; padding: 8px 16px; cursor: pointer; white-space: nowrap; }
+.vn-corte-segmento button:last-child { border-right: 0; }
+.vn-corte-segmento button.activo { background: var(--vn-tinta-claro); color: var(--vn-tinta); font-weight: 700; }
+.vn-corte-turno { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; align-items: start; }
+.vn-corte-contar { background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.vn-corte-contar h3 { margin: 0; font-size: 18px; color: var(--vn-texto); }
+.vn-corte-nota { margin: 0; font-size: 12.5px; color: var(--vn-suave); line-height: 1.4; }
+.vn-corte-error { margin: 0; color: var(--vn-error); font-weight: 600; font-size: 13.5px; }
+.vn-corte-campo { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--vn-suave); }
+.vn-corte-campo input { width: 100%; min-width: 0; font: 700 44px var(--vn-f-cifras); font-variant-numeric: tabular-nums; color: var(--vn-texto); padding: 10px 14px; border: 1px solid var(--vn-borde); border-radius: 8px; background: var(--vn-hoja); }
+.vn-corte-campo input::placeholder { font-size: 18px; font-weight: 500; color: var(--vn-tenue); }
+.vn-corte-campo input:focus { outline: 2px solid var(--vn-tinta); outline-offset: -1px; border-color: var(--vn-tinta); }
+.vn-corte .vn-cobrar { margin-top: 6px; }
+.vn-corte-tarjeta { background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.vn-corte-tarjeta h3 { margin: 0; font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--vn-tenue); font-weight: 600; }
+.vn-corte-linea { display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; color: var(--vn-suave); font-variant-numeric: tabular-nums; }
+.vn-corte-linea strong { color: var(--vn-texto); white-space: nowrap; }
+.vn-corte-linea.suma { border-top: 1px solid var(--vn-linea); padding-top: 6px; font-weight: 700; color: var(--vn-texto); }
+.vn-corte-ticket { margin: 0; font-size: 11px; line-height: 1.35; background: var(--vn-renglon); border: 1px solid var(--vn-linea); border-radius: 8px; padding: 10px; overflow-x: auto; }
+.vn-corte-rejilla { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.vn-corte-dato { background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; }
+.vn-corte-dato span { font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); font-weight: 600; }
+.vn-corte-dato strong { font: 700 22px var(--vn-f-cifras); font-variant-numeric: tabular-nums; }
+.vn-corte-dato small { font-size: 12.5px; color: var(--vn-suave); }
+.vn-corte .vn-dif-mal { color: var(--vn-error); font-weight: 700; }
+.vn-corte .vn-dif-bien { color: var(--vn-cobro); font-weight: 700; }
+.vn-corte-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.vn-corte-kpi { background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; }
+.vn-corte-kpi span { font-size: 13px; color: var(--vn-suave); }
+.vn-corte-kpi strong { font: 600 28px var(--vn-f-cifras); font-variant-numeric: tabular-nums; }
+.vn-corte-kpi small { font-size: 12.5px; color: var(--vn-suave); }
+.vn-corte-tabla { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; overflow: hidden; }
+.vn-corte-tabla th { position: static; text-align: left; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); padding: 8px 12px; border-bottom: 1px solid var(--vn-linea); background: var(--vn-renglon); font-weight: 600; }
+.vn-corte-tabla td { padding: 6px 12px; border-bottom: 1px solid var(--vn-renglon); font-size: 13.5px; color: var(--vn-texto); }
+.vn-corte-tabla th.num, .vn-corte-tabla td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vn-corte-tabla tbody tr:last-child td { border-bottom: 0; }
+.vn-corte-tabla td.grupo { background: var(--vn-renglon); font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--vn-suave); font-weight: 700; padding: 5px 12px; }
+.vn-corte-tabla tfoot td { font-weight: 700; background: var(--vn-renglon); border-top: 1px solid var(--vn-linea); border-bottom: 0; }
+.vn-corte-vacio { text-align: center; color: var(--vn-suave); padding: 14px 12px; }
+.vn-corte-desliza { min-width: 0; overflow-x: auto; }
+.vn-corte-dos { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+/* Angosto (la tarjeta del turno de otro cajero): una columna. */
+@container (max-width: 760px) {
+    .vn-corte-turno, .vn-corte-dos { grid-template-columns: minmax(0, 1fr); }
+    .vn-corte-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* La ventana del corte ocupa la pantalla, como la pestaña del prototipo: el título lo pone el corte y la × queda arriba. */
+.fondo-ventana > .ventana.corte { position: relative; width: min(1340px, calc(100vw - 24px)); height: calc(100vh - 24px); max-height: none; background: #eceff3; border-radius: 12px; }
+.ventana.corte > .ventana-titulo { position: absolute; top: 16px; right: 20px; z-index: 1; padding: 0; background: none; }
+.ventana.corte > .ventana-titulo > span { display: none; }
+.ventana.corte > .ventana-titulo .cerrar { width: 34px; height: 32px; color: #556375; background: #fff; border: 1px solid #dfe4ea; border-radius: 8px; font-size: 20px; }
+.ventana.corte > .ventana-titulo .cerrar:hover { border-color: #23439b; color: #15202c; }
+.fondo-ventana > .ventana.corte > .ventana-cuerpo { flex: 1; min-height: 0; padding: 18px 24px; gap: 12px; }
+
 /* Configuración › Sinónimos: el alta en una fila */
 .sinonimos-alta { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin: 8px 0; }
 .sinonimos-alta label { display: flex; flex-direction: column; gap: 3px; }

@@ -110,12 +110,46 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<ConfiguracionSucursalDto> GuardarConfiguracionSucursalAsync(Guid sucursalId, SolicitudConfiguracionSucursal solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<ConfiguracionSucursalDto>($"api/sucursales/{sucursalId}/configuracion", solicitud));
 
+    /// <summary>La cuenta del turno (guarda un corte parcial). La pantalla no la enseña antes de cerrar: ver <see cref="CorteInformativoAsync"/>.</summary>
     public Task<CorteDto> CorteXAsync(Guid turnoId, Guid usuarioId) =>
         ConRespaldoAsync(() => _http.PostAsync<CorteDto>($"api/turnos/{turnoId}/corte-x?usuarioId={usuarioId}", null), l => l.CorteX(turnoId, usuarioId));
 
+    /// <summary>
+    /// El corte X que enseña la pantalla (entrega 6): a ciegas, sin el efectivo, y si quien entró puede hacer el corte.
+    /// Sin conexión, con la cuenta y las reglas de esta caja.
+    /// </summary>
+    public Task<CorteInformativoDto> CorteInformativoAsync(Guid turnoId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<CorteInformativoDto>($"api/turnos/{turnoId}/corte-informativo?usuarioId={usuarioId}"))!,
+            l => l.CorteInformativo(turnoId, usuarioId));
+
+    /// <summary>El corte del turno con el total que se contó, a nombre de quien entró. Sin conexión, lo hace esta caja y se cuadra al subir.</summary>
     public Task<CorteDto> CorteZAsync(Guid turnoId, SolicitudCorteZ solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<CorteDto>($"api/turnos/{turnoId}/corte-z", solicitud), l => l.CorteZ(turnoId, solicitud),
             (l, _) => l.TurnoCerradoEnLinea());
+
+    /// <summary>Lo que dice la caja cuando no hay caja principal: el corte del día junta todas las cajas.</summary>
+    public const string CorteDelDiaSinConexion = "Sin conexión con la caja principal: el corte del día junta todas las cajas y se ve cuando vuelva.";
+
+    /// <summary>El corte del día (entrega 6): todas las cajas y turnos de la sucursal. Necesita la caja principal.</summary>
+    public async Task<CorteDelDiaDto> CorteDelDiaAsync(Guid cajaId, Guid usuarioId)
+    {
+        if (contingencia is { ServidorResponde: false })
+            throw new ErrorCaja(CorteDelDiaSinConexion, "sin-conexion");
+        return (await _http.GetAsync<CorteDelDiaDto>($"api/cajas/{cajaId}/corte-del-dia?usuarioId={usuarioId}"))!;
+    }
+
+    /// <summary>
+    /// Cierra el día y manda su resumen por Telegram. Si esta caja todavía sube lo que hizo sin conexión, espera: el
+    /// servicio también lo sabe por el latido, pero con unos segundos de atraso.
+    /// </summary>
+    public async Task<CierreDelDiaDto> CerrarElDiaAsync(Guid cajaId, Guid usuarioId)
+    {
+        if (contingencia is { ServidorResponde: false })
+            throw new ErrorCaja(CorteDelDiaSinConexion, "sin-conexion");
+        if (contingencia is { Pendientes: > 0 and var pendientes })
+            throw new ErrorCaja($"Esta caja todavía sube lo que hizo sin conexión ({pendientes} por subir): el cierre espera a que termine.");
+        return await _http.PostAsync<CierreDelDiaDto>($"api/cajas/{cajaId}/corte-del-dia/cierre", new SolicitudCierreDia(usuarioId));
+    }
 
     public Task<ProductoVentaDto?> PorCodigoAsync(string codigo, Guid sucursalId) =>
         ConRespaldoAsync(() => _http.GetAsync<ProductoVentaDto>($"api/productos/codigo/{Uri.EscapeDataString(codigo)}?sucursalId={sucursalId}",
@@ -819,6 +853,13 @@ public static class Formato
     public static string Dinero(long centavos) => (centavos / 100m).ToString("$#,##0.00", Mexico);
 
     public static string Numero(decimal valor) => valor.ToString("#,##0.###", Mexico);
+
+    /// <summary>Una diferencia como en el prototipo: «−$50.00», «$12.00» (con el signo menos, no un guion).</summary>
+    public static string ConSigno(long centavos) => (centavos < 0 ? "−" : "") + Dinero(Math.Abs(centavos));
+
+    /// <summary>En pesos cerrados, para las cifras grandes del corte del día: «$12,345».</summary>
+    public static string Pesos(long centavos) =>
+        (centavos < 0 ? "−" : "") + "$" + Math.Round(Math.Abs(centavos) / 100m, MidpointRounding.AwayFromZero).ToString("#,##0", Mexico);
 
     /// <summary>
     /// "$1,234.50", "1234.5" o "1234" a centavos. Vacío o inválido: null. También lo que no cabe en centavos (un código
