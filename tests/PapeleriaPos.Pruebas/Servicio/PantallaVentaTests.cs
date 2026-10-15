@@ -177,6 +177,76 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
         Assert.False(pagina.Registrada);
     }
 
+    /// <summary>
+    /// El corte desde la venta (entrega 6): quien no tiene el permiso ve «Que entre a esta caja», que cambia de usuario
+    /// como Ctrl+U; quien lo tiene escribe el total y cierra el turno, y cerrar el corte ya hecho (Esc, la × o F1) sigue al
+    /// siguiente turno, como «Listo»: la venta no se queda en un turno cerrado.
+    /// </summary>
+    [Fact]
+    public async Task El_corte_desde_la_venta_cambia_de_usuario_o_cierra_y_sigue_al_siguiente_turno()
+    {
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost:5180/") };
+        var cliente = new ClienteCaja(new HttpClient(prueba.Fabrica.Server.CreateHandler()), conexion);
+        var caja = (await cliente.CajasAsync()).Single();
+        var cajero = await cliente.EntrarAsync("cajero", "1111");
+        var encargado = await cliente.EntrarAsync("encargado", "2222");
+        var turnoCajero = await cliente.TurnoAsync(caja.Id) ?? await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
+        var pagina = new PaginaFalsa();
+        var servicios = new ServiceCollection()
+            .AddSingleton(conexion)
+            .AddSingleton(cliente)
+            .AddSingleton<IImpresora>(new SinImpresora())
+            .AddSingleton<IJSRuntime>(pagina)
+            .AddScoped<ModuloCaja>()
+            .BuildServiceProvider();
+        await using var _ = servicios;
+        var (salidas, cerrados) = (0, 0);
+        Dictionary<string, object?> Parametros(SesionDto sesion, TurnoDto turno) => new()
+        {
+            [nameof(PantallaVenta.Caja)] = caja,
+            [nameof(PantallaVenta.Sesion)] = sesion,
+            [nameof(PantallaVenta.Turno)] = turno,
+            [nameof(PantallaVenta.AlSalir)] = new EventCallback(null, (Action)(() => salidas++)),
+            [nameof(PantallaVenta.AlCerrarTurno)] = new EventCallback(null, (Action)(() => cerrados++)),
+        };
+
+        // El cajero no tiene el corte: «Que entre a esta caja» es cambiar de usuario, y el turno sigue abierto.
+        await using (var dibujo = new Dibujo(servicios))
+        {
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.DibujarAsync<PantallaVenta>(Parametros(cajero, turnoCajero)));
+            await Esperar(() => dibujo.Textos.Contains("Copia B/N"));
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Corte")!.Value));
+            await Esperar(() => dibujo.Boton("Que entre a esta caja") is not null);
+            Assert.DoesNotContain("Efectivo contado", dibujo.Textos);
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Que entre a esta caja")!.Value));
+            Assert.Equal((1, 0), (salidas, cerrados));
+            Assert.Empty(dibujo.Errores);
+        }
+        Assert.Equal(turnoCajero.Id, (await cliente.TurnoAsync(caja.Id))?.Id);
+
+        // El encargado, con su turno, cierra el suyo con el total; Esc después del corte sigue al siguiente turno.
+        await cliente.CorteZAsync(turnoCajero.Id, new SolicitudCorteZ(encargado.UsuarioId, 50000));
+        var turnoEncargado = await cliente.AbrirTurnoAsync(caja.Id, encargado.UsuarioId, 50000);
+        await using (var dibujo = new Dibujo(servicios))
+        {
+            var pantalla = await dibujo.Dispatcher.InvokeAsync(() => dibujo.DibujarAsync<PantallaVenta>(Parametros(encargado, turnoEncargado)));
+            await Esperar(() => dibujo.Textos.Contains("Copia B/N"));
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Corte")!.Value));
+            await Esperar(() => dibujo.Evento("corte-contado", "oninput") is not null);
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.EscribirAsync(dibujo.Evento("corte-contado", "oninput")!.Value, "480"));
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Cerrar el turno")!.Value));
+            await Esperar(() => dibujo.Boton("Listo: abrir el siguiente turno") is not null);
+            Assert.Null(await cliente.TurnoAsync(caja.Id));
+            // Todavía no se oprime «Listo»: el corte se ve hasta cerrarlo.
+            Assert.Equal((1, 0), (salidas, cerrados));
+
+            await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("Escape", ""));
+            Assert.Equal((1, 1), (salidas, cerrados));
+            Assert.False(pagina.VentanaAbierta);
+            Assert.Empty(dibujo.Errores);
+        }
+    }
+
     private static async Task Esperar(Func<bool> condicion)
     {
         var limite = DateTime.UtcNow.AddSeconds(20);
@@ -256,10 +326,15 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
     /// cada botón, por su título o por su nombre.
     /// </summary>
 #pragma warning disable BL0006 // Los marcos del dibujo: así se encuentra el botón, como lo haría la página.
-    private sealed class Dibujo(IServiceProvider servicios) : Renderer(servicios, NullLoggerFactory.Instance)
+    private sealed class Dibujo : Renderer
     {
         private readonly List<(string Texto, ulong Clic)> _botones = [];
+        private readonly Dictionary<string, ulong> _eventos = [];
         private string _textos = "";
+
+        /// <summary>Enfocar un campo (FocusAsync, en el corte) va a la página falsa, que contesta todo.</summary>
+        public Dibujo(IServiceProvider servicios) : base(servicios, NullLoggerFactory.Instance) =>
+            ElementReferenceContext = new WebElementReferenceContext(servicios.GetRequiredService<IJSRuntime>());
 
         public override Dispatcher Dispatcher { get; } = Dispatcher.CreateDefault();
 
@@ -295,6 +370,16 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
 
         public Task ApretarAsync(ulong boton) => DispatchEventAsync(boton, null, new MouseEventArgs());
 
+        /// <summary>El último manejador de ese evento («oninput», «onkeydown»…) en el elemento con ese id, o null.</summary>
+        public ulong? Evento(string id, string evento)
+        {
+            lock (_botones)
+                return _eventos.TryGetValue($"{id}:{evento}", out var manejador) ? manejador : null;
+        }
+
+        /// <summary>Lo que se escribe en un campo con @bind: llega como su «oninput».</summary>
+        public Task EscribirAsync(ulong manejador, string valor) => DispatchEventAsync(manejador, null, new ChangeEventArgs { Value = valor });
+
         protected override void HandleException(Exception exception)
         {
             lock (_botones)
@@ -306,6 +391,7 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
             lock (_botones)
             {
                 string? titulo = null;
+                string? id = null;
                 ulong? clicSinNombre = null;
                 for (var i = 0; i < lote.ReferenceFrames.Count; i++)
                 {
@@ -313,10 +399,16 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
                     switch (marco.FrameType)
                     {
                         case RenderTreeFrameType.Element:
-                            titulo = null;
+                            (titulo, id) = (null, null);
                             break;
                         case RenderTreeFrameType.Attribute when marco.AttributeName == "title":
                             titulo = marco.AttributeValue as string;
+                            break;
+                        case RenderTreeFrameType.Attribute when marco.AttributeName == "id":
+                            id = marco.AttributeValue as string;
+                            break;
+                        case RenderTreeFrameType.Attribute when id is not null && marco.AttributeEventHandlerId != 0 && marco.AttributeName != "onclick":
+                            _eventos[$"{id}:{marco.AttributeName}"] = marco.AttributeEventHandlerId;
                             break;
                         case RenderTreeFrameType.Attribute when marco.AttributeName == "onclick" && marco.AttributeEventHandlerId != 0:
                             if (titulo is not null)

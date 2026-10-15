@@ -169,7 +169,7 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
             l => l.PorVariante(varianteId));
 
     /// <param name="cajaId">Con la caja, lo que ella eligió antes con ese texto sale primero.</param>
-    /// <param name="maximo">Cuántos productos: la pantalla nueva pide más, para juntar las familias completas.</param>
+    /// <param name="maximo">Cuántos productos: la pantalla de venta pide más, para juntar las familias completas.</param>
     public Task<List<ResultadoBusquedaDto>> BuscarAsync(string texto, Guid sucursalId, Guid? cajaId = null, int maximo = 30) =>
         ConRespaldoAsync(async () => await _http.GetAsync<List<ResultadoBusquedaDto>>(
             $"api/productos/buscar?q={Uri.EscapeDataString(texto)}&sucursalId={sucursalId}{(cajaId is { } caja ? $"&cajaId={caja}" : "")}&maximo={maximo}") ?? [],

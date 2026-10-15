@@ -24,7 +24,8 @@
         @if (_corte && !Piloto)
         {
             <div class="entrada-corte">
-                <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" SoloCierre="true" AlTerminar="TerminarCorteAsync" />
+                @* «Que entre a esta caja» (si el servicio dice que quien entró no tiene el corte) es «Volver», a las fichas. *@
+                <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="TerminarCorteAsync" AlCambiarUsuario="AlVolver" />
             </div>
             <div class="vn-botonera">
                 <button class="vn-boton" @onclick="AlVolver">Volver</button>

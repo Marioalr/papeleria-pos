@@ -713,8 +713,18 @@
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
     [Parameter, EditorRequired] public TurnoDto Turno { get; set; } = null!;
+
+    /// <summary>«Cambiar de usuario» (Ctrl+U) y «Salir»: a «¿Quién atiende?».</summary>
     [Parameter] public EventCallback AlSalir { get; set; }
+
+    /// <summary>El corte cerró el turno: «Listo: abrir el siguiente turno», o cerrar el corte ya hecho.</summary>
     [Parameter] public EventCallback AlCerrarTurno { get; set; }
+
+    /// <summary>
+    /// El corte Z ya cerró este turno (CorteCaja lo avisa en cuanto cierra, antes de «Listo»): aquí ya no se vende, así que
+    /// cerrar la ventana del corte sigue al siguiente turno.
+    /// </summary>
+    private bool _turnoCerrado;
 
     private enum Ventanas
     {
@@ -3194,11 +3204,13 @@
         case Ventanas.Corte:
             <Ventana Titulo="Corte" Clase="corte" AlCerrar="Cerrar">
                 @* En el piloto con eleventa, CorteCaja solo dice que el corte se hace en eleventa: aquí no se cierra el turno. *@
-                @if (!_pilotoEleventa && _tickets.Count(t => t.Venta.Lineas.Count > 0) is var sinCobrar and > 0)
+                @if (!_pilotoEleventa && !_turnoCerrado && _tickets.Count(t => t.Venta.Lineas.Count > 0) is var sinCobrar and > 0)
                 {
                     <p class="error">Hay @sinCobrar @(sinCobrar == 1 ? "ticket" : "tickets") sin cobrar: si se cierra el turno, se pierden.</p>
                 }
-                <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="AlCerrarTurno" />
+                @* «Que entre a esta caja» (quien no tiene el corte) es cambiar de usuario, como Ctrl+U. *@
+                <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="AlCerrarTurno"
+                           AlCerrarElTurno="() => _turnoCerrado = true" AlCambiarUsuario="AlSalir" />
             </Ventana>
             break;
         case Ventanas.VentasDelDia:
@@ -3314,6 +3326,13 @@
     private async Task Cerrar()
     {
         await QuitarVentanaAsync();
+        // Ya se hizo el corte: cerrarlo con Esc, la × o F1 sigue al siguiente turno, como «Listo», y no deja la venta en un
+        // turno cerrado.
+        if (_turnoCerrado)
+        {
+            await AlCerrarTurno.InvokeAsync();
+            return;
+        }
         await Js.EnfocarAsync("#codigo");
     }
 

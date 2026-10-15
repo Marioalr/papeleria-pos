@@ -392,7 +392,7 @@ td.acciones-renglon { white-space: nowrap; text-align: right; }
 .sinonimos-alta { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin: 8px 0; }
 .sinonimos-alta label { display: flex; flex-direction: column; gap: 3px; }
 
-/* ── La pantalla de venta nueva (docs/propuesta-interfaz.md): los colores, letras y medidas del prototipo. La entrada
+/* ── La pantalla de venta (docs/propuesta-interfaz.md): los colores, letras y medidas del prototipo. La entrada
    (¿quién atiende?, abrir el turno, el turno de otro) usa los mismos; su acomodo va más abajo, en «La entrada». ── */
 .venta-nueva, .entrada {
     --vn-papel: #eceff3;
