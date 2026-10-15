@@ -58,7 +58,7 @@ else
         </div>
     </div>
 
-    @if (VeConfigurar)
+    @if (PuedeConfigurar)
     {
         <h3>Cómo se lee</h3>
         <div class="vn-ajustes">
@@ -66,7 +66,7 @@ else
                 <div class="vn-ajuste-txt">
                     <strong>IP de la impresora</strong>
                     <small>La WF-6590 en la red: la lee la caja principal.</small>
-                    <span class="vn-ajuste-meta">Toda la tienda@(QuienLaCambia)</span>
+                    <span class="vn-ajuste-meta">Toda la tienda</span>
                     @if (ErrorDe(Host) is { } errorHost)
                     {
                         <span class="vn-ajuste-error" role="alert">@errorHost</span>
@@ -74,7 +74,7 @@ else
                 </div>
                 <span class="vn-ctl-texto">
                     <input id="impresora-host" placeholder="192.168.1.50" autocomplete="off" spellcheck="false" aria-label="IP de la impresora"
-                           disabled="@(!PuedeConfigurar)" value="@Escrito(Host, _estado.Configuracion.Host ?? "")"
+                           value="@Escrito(Host, _estado.Configuracion.Host ?? "")"
                            @oninput="e => Escribir(Host, e.Value, GuardarHostAsync, conPausa: false)"
                            @onblur="() => SalirAsync(Host)" @onkeydown="e => AlTeclearAsync(e, Host)" />
                 </span>
@@ -83,14 +83,14 @@ else
                 <div class="vn-ajuste-txt">
                     <strong>Avisar con tinta en</strong>
                     <small>Con la tinta o la caja de mantenimiento en este porcentaje o menos, se avisa al dueño.</small>
-                    <span class="vn-ajuste-meta">Toda la tienda@(QuienLaCambia)</span>
+                    <span class="vn-ajuste-meta">Toda la tienda</span>
                     @if (ErrorDe(Aviso) is { } errorAviso)
                     {
                         <span class="vn-ajuste-error" role="alert">@errorAviso</span>
                     }
                 </div>
                 <span class="vn-ctl-num">
-                    <input id="impresora-aviso" inputmode="numeric" autocomplete="off" aria-label="Avisar con tinta en (por ciento)" disabled="@(!PuedeConfigurar)"
+                    <input id="impresora-aviso" inputmode="numeric" autocomplete="off" aria-label="Avisar con tinta en (por ciento)"
                            value="@Escrito(Aviso, _estado.Configuracion.AvisoTintaPorcentaje.ToString(CultureInfo.InvariantCulture))"
                            @oninput="e => Escribir(Aviso, e.Value, GuardarAvisoAsync, conPausa: false)"
                            @onblur="() => SalirAsync(Aviso)" @onkeydown="e => AlTeclearAsync(e, Aviso)" />% o menos
@@ -99,14 +99,14 @@ else
             <div class="vn-ajuste">
                 <div class="vn-ajuste-txt">
                     <strong>Leer la impresora cada</strong>
-                    <span class="vn-ajuste-meta">Toda la tienda@(QuienLaCambia)</span>
+                    <span class="vn-ajuste-meta">Toda la tienda</span>
                     @if (ErrorDe(Minutos) is { } errorMinutos)
                     {
                         <span class="vn-ajuste-error" role="alert">@errorMinutos</span>
                     }
                 </div>
                 <span class="vn-ctl-num">
-                    <input id="impresora-minutos" inputmode="numeric" autocomplete="off" aria-label="Leer la impresora cada (minutos)" disabled="@(!PuedeConfigurar)"
+                    <input id="impresora-minutos" inputmode="numeric" autocomplete="off" aria-label="Leer la impresora cada (minutos)"
                            value="@Escrito(Minutos, _estado.Configuracion.MinutosEntreLecturas.ToString(CultureInfo.InvariantCulture))"
                            @oninput="e => Escribir(Minutos, e.Value, GuardarMinutosAsync, conPausa: false)"
                            @onblur="() => SalirAsync(Minutos)" @onkeydown="e => AlTeclearAsync(e, Minutos)" />minutos
@@ -151,24 +151,21 @@ else
             {
                 <p class="vn-cfg-error" role="alert">@errorCalibracion</p>
             }
-            @if (PuedeConfigurar)
-            {
-                @* Antes la confirmaba el PIN: ahora se pregunta aquí mismo, porque cambia el costo de lo que se imprima. *@
-                <div class="vn-botonera">
-                    @if (_porAplicar)
-                    {
-                        <span class="vn-cfg-pregunta">
-                            Las impresiones nuevas salen con esta corrección.
-                            <button class="vn-boton chico primario" disabled="@(_ocupado || _aplicando)" @onclick="AplicarCalibracionAsync">Aplicar</button>
-                            <button class="vn-boton chico" disabled="@(_ocupado || _aplicando)" @onclick="() => _porAplicar = false">No</button>
-                        </span>
-                    }
-                    else
-                    {
-                        <button class="vn-boton chico" disabled="@(_ocupado || _aplicando)" @onclick="() => _porAplicar = true">Aplicar la corrección</button>
-                    }
-                </div>
-            }
+            @* Antes la confirmaba el PIN: ahora se pregunta aquí mismo, porque cambia el costo de lo que se imprima. *@
+            <div class="vn-botonera">
+                @if (_porAplicar)
+                {
+                    <span class="vn-cfg-pregunta">
+                        Las impresiones nuevas salen con esta corrección.
+                        <button class="vn-boton chico primario" disabled="@(_ocupado || _aplicando)" @onclick="AplicarCalibracionAsync">Aplicar</button>
+                        <button class="vn-boton chico" disabled="@(_ocupado || _aplicando)" @onclick="() => _porAplicar = false">No</button>
+                    </span>
+                }
+                else
+                {
+                    <button class="vn-boton chico" disabled="@(_ocupado || _aplicando)" @onclick="() => _porAplicar = true">Aplicar la corrección</button>
+                }
+            </div>
         }
     }
 
@@ -272,16 +269,11 @@ else
 
     private void Mostrar(EstadoImpresoraDto estado) => _estado = estado;
 
-    /// <summary>Cómo se lee y la calibración: con «Configurar la impresora» se ven («No»: no aparecen).</summary>
-    private bool VeConfigurar => Sesion.Ve(AccionControlada.ConfigurarImpresora);
-
-    /// <summary>Los cambia quien la tiene en «Puede»; el servicio lo vuelve a revisar.</summary>
+    /// <summary>
+    /// Cómo se lee y la calibración: solo con «Configurar la impresora» en «Puede» (en Administración no hay «Con
+    /// autorización»: sin el permiso no aparecen). El servicio lo vuelve a revisar.
+    /// </summary>
     private bool PuedeConfigurar => Sesion.Puede(AccionControlada.ConfigurarImpresora);
-
-    /// <summary>Para quien la ve sin poder cambiarla: quién sí.</summary>
-    private string QuienLaCambia => !PuedeConfigurar && Sesion.Permiso(AccionControlada.ConfigurarImpresora) is { } p
-        ? $" · lo cambia {Textos.Quien(p.Autorizan)}"
-        : "";
 
     /// <summary>El desglose del día: con «Consultar la bitácora» (al migrar, el dueño y el encargado). El servicio lo vuelve a revisar.</summary>
     private bool VeElDia => Sesion.Puede(AccionControlada.ConsultarBitacora);

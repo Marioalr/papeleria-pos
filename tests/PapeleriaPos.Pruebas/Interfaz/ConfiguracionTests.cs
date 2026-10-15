@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Components;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
 using PapeleriaPos.Impresion;
@@ -80,7 +81,7 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
         await using var a = await AbrirAsync(usuario, pin);
 
         Assert.Equal(grupos.Split(','), await GruposAsync(a.Pantalla));
-        Assert.True(Configuracion.HayQueVer(a.Sesion.Ve, a.Sesion.Puede, hayActualizacion: false));
+        Assert.True(Configuracion.HayQueVer(a.Sesion.Puede, hayActualizacion: false));
         Assert.Empty(a.Pantalla.Errores);
     }
 
@@ -91,9 +92,9 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
         var cajero = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("cajero", "1111"))).Content.ReadFromJsonAsync<SesionDto>())!;
         await using var a = await AbrirAsync("encargado", "2222");
 
-        Assert.False(Configuracion.HayQueVer(cajero.Ve, cajero.Puede, hayActualizacion: false));
+        Assert.False(Configuracion.HayQueVer(cajero.Puede, hayActualizacion: false));
         // La caja de prueba se actualiza desde aquí: ahí la ve cualquiera.
-        Assert.True(Configuracion.HayQueVer(cajero.Ve, cajero.Puede, hayActualizacion: true));
+        Assert.True(Configuracion.HayQueVer(cajero.Puede, hayActualizacion: true));
         // En Tienda, el encargado solo tiene el logotipo (es del ticket); el nombre y el horario son de «Configuración de la tienda».
         var tienda = await a.Pantalla.TextoAsync();
         Assert.Contains("\nLogotipo", tienda);
@@ -111,6 +112,43 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
         var inventario = await a.Pantalla.TextoAsync();
         Assert.Contains("El sugerido de compra cubre", inventario);
         Assert.DoesNotContain("Margen mínimo", inventario);
+    }
+
+    /// <summary>
+    /// Aquí no se pide autorización (dueño, 2026-10-15): con «Con autorización» un ajuste no aparece, igual que con «No», en
+    /// lugar de verse con candado. «Pedir compra» no es de Administración, así que todavía puede estar así.
+    /// </summary>
+    [Fact]
+    public async Task Con_autorizacion_un_ajuste_no_aparece_porque_aqui_no_se_pide()
+    {
+        var antes = await CambiarPermisoAsync("encargado", AccionControlada.PedirCompra, NivelPermiso.RequiereAutorizacion);
+        try
+        {
+            await using var a = await AbrirAsync("encargado", "2222");
+
+            // Lo que cubre el sugerido era lo único suyo en Inventario: el grupo ya no está, ni lo encuentra el buscador.
+            Assert.DoesNotContain("Inventario", await GruposAsync(a.Pantalla));
+            await a.Pantalla.EscribirAsync("cfg-busca", "sugerido");
+            Assert.Contains("Ningún ajuste se llama así.", await a.Pantalla.TextoAsync());
+            Assert.DoesNotContain("autoriza", (await a.Pantalla.TextoAsync()).ToLowerInvariant());
+            Assert.Empty(a.Pantalla.Errores);
+        }
+        finally
+        {
+            await CambiarPermisoAsync("encargado", AccionControlada.PedirCompra, antes);
+        }
+    }
+
+    /// <summary>Pone el nivel de un permiso de un usuario de prueba, como en «Usuarios y permisos»; regresa el que tenía.</summary>
+    private async Task<NivelPermiso> CambiarPermisoAsync(string usuario, AccionControlada accion, NivelPermiso nivel)
+    {
+        await using var db = servicio.Base();
+        var id = (await db.Usuarios.SingleAsync(u => u.NombreUsuario == usuario)).Id;
+        var permiso = await db.PermisosUsuario.SingleAsync(p => p.UsuarioId == id && p.Accion == accion);
+        var antes = permiso.Nivel;
+        permiso.Nivel = nivel;
+        await db.SaveChangesAsync();
+        return antes;
     }
 
     [Fact]

@@ -1,9 +1,10 @@
 @* La Configuración nueva (entrega 7; docs/propuesta-interfaz.md «Configuración», htmlConfig del prototipo). A la izquierda
-   «Buscar un ajuste» y los grupos, cada uno solo para quien tiene su permiso («No»: no aparece); a la derecha el grupo con
-   su título, para qué es y «Se guarda solo» o «Guardado a las HH:MM», y cada ajuste en su renglón: su nombre, para qué
-   sirve, su alcance («Toda la tienda» o «Solo esta caja») y su control. No hay «Guardar» ni se pide usuario y PIN: cada
-   cambio se guarda al momento con los permisos de quien entró (GuardadoAlMomento), el servicio los vuelve a revisar y lo
-   deja en la bitácora. El buscador encuentra los ajustes de todos los grupos por su nombre, su ayuda o su grupo, y dice el
+   «Buscar un ajuste» y los grupos, cada uno solo para quien tiene su permiso en «Puede»: aquí no se pide autorización, así
+   que cada grupo se ve o no se ve, sin candados (en Administración solo hay «Puede» o «No», dueño 2026-10-15). A la
+   derecha el grupo con su título, para qué es y «Se guarda solo» o «Guardado a las HH:MM», y cada ajuste en su renglón:
+   su nombre, para qué sirve, su alcance («Toda la tienda» o «Solo esta caja») y su control. No hay «Guardar» ni se pide
+   usuario y PIN: cada cambio se guarda al momento con los permisos de quien entró (GuardadoAlMomento), y el servicio los
+   vuelve a revisar. El buscador encuentra los ajustes de todos los grupos por su nombre, su ayuda o su grupo, y dice el
    grupo de cada uno. Solo lo que existe de verdad: lo del prototipo que todavía no hace nada no está. Sigue siendo la
    ventana que abre la venta; Esc la cierra. *@
 @using System.Reflection
@@ -216,17 +217,15 @@
     /// Si la venta ofrece la Configuración (su pestaña y «/»): con algún grupo con su permiso, o en la caja de prueba (para
     /// actualizarla). Las mismas reglas que los grupos de aquí.
     /// </summary>
-    /// <param name="ve">Lo puede hacer o pedir («No»: no se ve).</param>
-    /// <param name="puede">Lo puede hacer sin pedir autorización.</param>
-    public static bool HayQueVer(Func<AccionControlada, bool> ve, Func<AccionControlada, bool> puede, bool hayActualizacion) =>
+    /// <param name="puede">Lo puede hacer quien entró, sin pedir autorización.</param>
+    public static bool HayQueVer(Func<AccionControlada, bool> puede, bool hayActualizacion) =>
         hayActualizacion
         || new[]
         {
             AccionControlada.ConfigurarTienda, AccionControlada.ConfigurarTicket, AccionControlada.EditarCatalogo, AccionControlada.ConfigurarImpresora,
-            AccionControlada.ConfigurarMargen, AccionControlada.PedirCompra, AccionControlada.EditarReglas, AccionControlada.ConfigurarTelegram,
-            AccionControlada.AdministrarCajas, AccionControlada.ConsultarBitacora,
-        }.Any(ve)
-        || puede(AccionControlada.VerUtilidad);
+            AccionControlada.ConfigurarMargen, AccionControlada.VerUtilidad, AccionControlada.PedirCompra, AccionControlada.EditarReglas,
+            AccionControlada.ConfigurarTelegram, AccionControlada.AdministrarCajas, AccionControlada.ConsultarBitacora,
+        }.Any(puede);
 
     protected override async Task OnInitializedAsync()
     {
@@ -235,7 +234,7 @@
             CargarAsync(async () => _tienda = await Cliente.ConfiguracionSucursalAsync(Caja.SucursalId), e => _errorTienda = e),
             CargarAsync(async () => _ticket = await Cliente.ConfiguracionTicketAsync(Caja.SucursalId), e => _errorTicket = e),
             VeMargen ? CargarAsync(async () => _margenes = await Cliente.MargenesAsync(Caja.SucursalId), e => _errorMargenes = e) : Task.CompletedTask,
-            Sesion.Ve(AccionControlada.PedirCompra)
+            Sesion.Puede(AccionControlada.PedirCompra)
                 ? CargarAsync(async () => _sugerido = await Cliente.ParametrosSugeridoAsync(Caja.SucursalId), e => _errorSugerido = e)
                 : Task.CompletedTask,
             CargarAsync(async () => _versionPrincipal = await Cliente.VersionDeLaPrincipalAsync(), _ => { }));
@@ -264,11 +263,16 @@
 
     private bool EsVisible(Grupo g) => g.Visible?.Invoke() ?? g.Ajustes.Any(a => a.Lleva is null && a.Permiso is not null && Ve(a));
 
-    private bool Ve(Ajuste a) => a.Ve?.Invoke() ?? (a.Permiso is not { } permiso || Sesion.Ve(permiso));
+    /// <summary>
+    /// Con su permiso en «Puede»: sin él no aparece, también con «Con autorización», porque aquí no se pide (en Administración
+    /// ni existe). Solo el margen se ve sin poder cambiarlo: con «Ver costos, utilidad y margen».
+    /// </summary>
+    private bool Ve(Ajuste a) => a.Ve?.Invoke() ?? (a.Permiso is not { } permiso || Sesion.Puede(permiso));
 
-    /// <summary>Lo cambia quien entró (con «Con autorización» se ve, pero lo cambia otro).</summary>
+    /// <summary>Lo cambia quien entró: con su permiso en «Puede».</summary>
     private bool Cambia(Ajuste a) => a.Permiso is { } permiso && Sesion.Puede(permiso);
 
+    /// <summary>Para lo que se ve sin poder cambiarlo (el margen): quién sí, sin ofrecer pedirle autorización.</summary>
     private string QuienLoCambia(Ajuste a)
     {
         if (a.Permiso is not { } permiso || Sesion.Puede(permiso) || a.Campos.Count == 0 && a.Control is null)
@@ -278,7 +282,7 @@
     }
 
     /// <summary>El margen lo ve quien ve la utilidad o quien lo pone.</summary>
-    private bool VeMargen => Sesion.Puede(AccionControlada.VerUtilidad) || Sesion.Ve(AccionControlada.ConfigurarMargen);
+    private bool VeMargen => Sesion.Puede(AccionControlada.VerUtilidad) || Sesion.Puede(AccionControlada.ConfigurarMargen);
 
     private void Elegir(Grupo grupo)
     {
@@ -551,7 +555,7 @@
         new("impresoras", "Impresoras e impresiones", "impresora")
         {
             Descripcion = "La impresora de inyección vista desde la caja principal: cómo se lee, la calibración de la tinta y lo impreso en el día.",
-            Visible = () => Sesion.Ve(AccionControlada.ConfigurarImpresora) || Sesion.Puede(AccionControlada.ConsultarBitacora),
+            Visible = () => Sesion.Puede(AccionControlada.ConfigurarImpresora) || Sesion.Puede(AccionControlada.ConsultarBitacora),
             Ajustes =
             [
                 Atajo("impresora-ip", "IP de la impresora", "impresoras", AccionControlada.ConfigurarImpresora, "La WF-6590 en la red; la lee la caja principal.", "red niveles tinta contador"),
@@ -621,11 +625,11 @@
         new("usuarios", "Usuarios y permisos", "usuario")
         {
             Titulo = false,
-            Visible = () => Sesion.Ve(AccionControlada.EditarReglas),
+            Visible = () => Sesion.Puede(AccionControlada.EditarReglas),
             Ajustes =
             [
                 Atajo("usuarios-lista", "Usuarios", "usuarios", AccionControlada.EditarReglas, "Dar de alta, dar de baja y cambiar el PIN.", "nuevo PIN baja"),
-                Atajo("usuarios-permisos", "Permisos de cada usuario", "usuarios", AccionControlada.EditarReglas, "Puede, con autorización o no, y hasta cuánto.", "autorizacion limite"),
+                Atajo("usuarios-permisos", "Permisos de cada usuario", "usuarios", AccionControlada.EditarReglas, "Qué puede hacer cada quien, y hasta cuánto.", "autorizacion limite"),
                 Atajo("usuarios-defecto", "Permisos por defecto", "usuarios", AccionControlada.EditarReglas, "Con los que empieza cada usuario nuevo."),
             ],
             Contenido = @<UsuariosYPermisos Caja="Caja" Sesion="Sesion" />,
@@ -634,14 +638,14 @@
         {
             Descripcion = "En pausa: Telegram no se está trabajando por ahora. Se queda como estaba, con su usuario y PIN.",
             SeGuarda = false,
-            Visible = () => Sesion.Ve(AccionControlada.ConfigurarTelegram),
+            Visible = () => Sesion.Puede(AccionControlada.ConfigurarTelegram),
             Ajustes = [Atajo("telegram-alertas", "Avisos por Telegram", "telegram", AccionControlada.ConfigurarTelegram, "En pausa.", "alertas celular bot vincular")],
             Contenido = @<div class="vn-cfg-antes"><ConfiguracionTelegram Caja="Caja" /></div>,
         },
         new("cajas", "Cajas", "monitor")
         {
             Descripcion = "Las PC que venden en esta sucursal.",
-            Visible = () => Sesion.Ve(AccionControlada.AdministrarCajas),
+            Visible = () => Sesion.Puede(AccionControlada.AdministrarCajas),
             Ajustes = [Atajo("cajas-pc", "Cajas y sus PC", "cajas", AccionControlada.AdministrarCajas, "Quitar la PC de una caja; dar de alta una.", "equipo serie folios alta quitar")],
             Contenido = @<AdministrarCajas Caja="Caja" Sesion="Sesion" AlGuardar="MarcarGuardado" />,
         },
@@ -649,7 +653,7 @@
         {
             Descripcion = "Lo sensible: quién lo hizo, quién lo autorizó y lo que se negó.",
             SeGuarda = false,
-            Visible = () => Sesion.Ve(AccionControlada.ConsultarBitacora),
+            Visible = () => Sesion.Puede(AccionControlada.ConsultarBitacora),
             Ajustes = [Atajo("bitacora-registros", "Bitácora", "bitacora", AccionControlada.ConsultarBitacora, "Quién hizo qué y quién lo autorizó.", "autorizaciones negado")],
             Contenido = @<ConsultaBitacora Caja="Caja" Sesion="Sesion" />,
         },

@@ -906,7 +906,7 @@
     /// Configuración: ahí la ve cualquiera.
     /// </summary>
     private bool VeConfiguracion =>
-        Configuracion.HayQueVer(Ve, accion => _permisosPedidos && (Permiso(accion)?.Nivel ?? NivelPermiso.Permitido) == NivelPermiso.Permitido,
+        Configuracion.HayQueVer(accion => _permisosPedidos && (Permiso(accion)?.Nivel ?? NivelPermiso.Permitido) == NivelPermiso.Permitido,
             Servicios.GetService<GitHubPrueba>() is not null);
 
     private async Task CargarPermisosAsync()

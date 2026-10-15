@@ -44,10 +44,6 @@ else
             }
         </tbody>
     </table>
-    @if (!Puede && Sesion.Permiso(AccionControlada.AdministrarCajas) is { } permiso)
-    {
-        <p class="vn-cfg-nota">Quita una PC quien tiene «@Permisos.Nombre(AccionControlada.AdministrarCajas)»: @Textos.Quien(permiso.Autorizan).</p>
-    }
     @if (_error is not null)
     {
         <p class="vn-cfg-error" role="alert">@_error</p>

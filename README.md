@@ -64,9 +64,11 @@ eleventa) ya no existe: el dueño la quitó el 2026-10-14, y una PC que había v
 olvida. Se entra como en la propuesta (entrega 6): en «¿Quién atiende?» se toca la ficha (o se oprime su letra) y se
 teclea el PIN de 4 cifras, que entra solo con la cuarta; Ctrl+U cambia de usuario. Si la caja tiene el turno de otro
 cajero, quien tiene el permiso hace ahí mismo su corte, sin volver a escribir su PIN. El corte del turno solo pide el
-total del efectivo, a ciegas, y el dueño tiene además el corte del día. Productos, inventario, clientes y la
-configuración todavía abren sus ventanas de antes, encima de la venta; sin vender («Productos e inventario, sin cortar»,
-para quien tiene productos o compras) van con la barra de arriba de la venta. `preparar-caja` deja en la base de prueba los rápidos
+total del efectivo, a ciegas, y el dueño tiene además el corte del día. Productos, inventario y clientes todavía abren
+sus ventanas de antes, encima de la venta; sin vender («Productos e inventario, sin cortar», para quien tiene productos o
+compras) van con la barra de arriba de la venta. La Configuración ya es la del rediseño (entrega 7): ocupa la pantalla,
+con «Buscar un ajuste» y solo los grupos de los permisos de quien entró, y cada cambio se guarda solo, sin «Guardar» ni
+volver a escribir el PIN (Telegram, en pausa, sigue como estaba). `preparar-caja` deja en la base de prueba los rápidos
 Copia B/N y CURP (10 impresiones); `preparar-prueba`, además, con los precios que decidió el dueño ($2 y $10). La caja
 de prueba se actualiza sin tocar su base de trabajo: en una PC donde ya se probó, esos precios salen hasta oprimir
 «Empezar de cero» en la franja de prueba.
