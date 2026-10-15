@@ -1,7 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using PapeleriaPos.Impresiones;
+using PapeleriaPos.Impresiones.Contratos;
 using PapeleriaPos.Nucleo.Contratos;
-using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Pruebas.Servicio;

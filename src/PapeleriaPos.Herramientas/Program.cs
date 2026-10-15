@@ -8,6 +8,7 @@ using PapeleriaPos.Herramientas.Eleventa;
 using PapeleriaPos.Herramientas.Ficticios;
 using PapeleriaPos.Herramientas.Importacion;
 using PapeleriaPos.Herramientas.Prueba;
+using PapeleriaPos.Impresiones.Datos;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 
@@ -519,7 +520,7 @@ static async Task<int> ImportarControlPrintAsync(string[] args)
     var costos = ImportacionControlPrint.LeerCostos(origen);
     await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={ruta}"));
     await BaseDeDatos.PrepararAsync(db);
-    var registro = new RegistroImpresiones(db);
+    var registro = ImpresionesDelPos.Registro(db);
     var sucursales = await db.Sucursales.ToListAsync();
     foreach (var sucursal in sucursales)
     {
@@ -531,7 +532,7 @@ static async Task<int> ImportarControlPrintAsync(string[] args)
     {
         if (sucursales.Count == 1)
         {
-            var configuracion = await db.ConfiguracionesImpresion.SingleAsync();
+            var configuracion = await ImpresionesDelPos.Impresora(db).ConfiguracionAsync(sucursales[0].Id);
             configuracion.ImpresoraHost = host;
             await db.SaveChangesAsync();
             Console.WriteLine($"La caja principal leerá la impresora de {sucursales[0].Nombre} (la misma que lee Control Print).");

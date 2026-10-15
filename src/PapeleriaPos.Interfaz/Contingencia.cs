@@ -1,3 +1,4 @@
+using PapeleriaPos.Impresiones.Contratos;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Clientes;

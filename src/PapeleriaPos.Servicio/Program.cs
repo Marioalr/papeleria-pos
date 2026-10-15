@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Impresion;
+using PapeleriaPos.Impresiones.Servicio;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Servicio;
 using PapeleriaPos.Servicio.Componentes;
@@ -66,12 +67,11 @@ builder.Services.AddSingleton<MotorTelegram>();
 if (builder.Configuration.GetValue("Telegram:Activo", true))
     builder.Services.AddHostedService<TrabajadorTelegram>();
 
-// La impresora de cada sucursal (su IP está en la configuración de impresión): niveles, contador, hojas que salieron.
+// La hora de los trabajos de fondo (la impresora, eleventa, los celulares); las pruebas la cambian.
 builder.Services.TryAddSingleton(TimeProvider.System);
-builder.Services.TryAddSingleton<ILectorImpresora, LectorImpresora>();
-builder.Services.AddSingleton<VigilanciaImpresora>();
-if (builder.Configuration.GetValue("Impresora:Vigilar", true))
-    builder.Services.AddHostedService(proveedor => proveedor.GetRequiredService<VigilanciaImpresora>());
+// El módulo de impresión (src/Impresiones): la impresora de cada sucursal, su IP está en la configuración de impresión
+// (niveles, contador, hojas que salieron). Sus rutas van abajo, en el grupo «/api» de siempre.
+builder.Services.AgregarImpresiones(builder.Configuration);
 
 // El piloto en la caja 2: lee el catálogo y las existencias de eleventa cada pocos minutos (solo si Eleventa:Activo).
 builder.Services.AddSingleton(builder.Configuration.GetSection("Eleventa").Get<OpcionesEleventa>() ?? new OpcionesEleventa());
@@ -117,7 +117,7 @@ app.MapearApiUsuarios();
 app.MapearApiDevoluciones();
 app.MapearApiContingencia();
 app.MapearApiTelegram();
-app.MapearApiImpresiones();
+app.MapGroup("/api").ConErrores().SoloSuCaja().MapearApiImpresiones();
 app.MapearApiDescuentos();
 app.MapearApiClientes();
 app.MapearApiCredito();

@@ -8,8 +8,9 @@ using Microsoft.AspNetCore.Components.WebView;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Web.WebView2.Core;
 using PapeleriaPos.Impresion;
+using PapeleriaPos.Impresiones.Medicion;
+using PapeleriaPos.Impresiones.Windows;
 using PapeleriaPos.Interfaz;
-using PapeleriaPos.Medicion;
 
 namespace PapeleriaPos.Caja;
 

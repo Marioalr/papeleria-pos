@@ -6,6 +6,8 @@
     <ProjectReference Include="..\PapeleriaPos.Eleventa\PapeleriaPos.Eleventa.csproj" />
     <ProjectReference Include="..\PapeleriaPos.Interfaz\PapeleriaPos.Interfaz.csproj" />
     <ProjectReference Include="..\PapeleriaPos.Impresion\PapeleriaPos.Impresion.csproj" />
+    <!-- El módulo de impresión: su API, la vigilancia de la impresora y AgregarImpresiones. -->
+    <ProjectReference Include="..\Impresiones\PapeleriaPos.Impresiones.Servicio\PapeleriaPos.Impresiones.Servicio.csproj" />
   </ItemGroup>
 
   <ItemGroup>

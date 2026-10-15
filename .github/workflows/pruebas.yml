@@ -1,5 +1,6 @@
 # Las pruebas en cada PR, también en los apilados sobre otro PR. En Windows corren todas (la tienda es Windows); en
-# Linux, las de PapeleriaPos.Pruebas (las de la medición son solo de Windows), porque ahí se programa. Los PR que solo
+# Linux, porque ahí se programa, las del POS (PapeleriaPos.Pruebas) y las del módulo de impresión que no necesitan
+# Windows (tests/Impresiones/PapeleriaPos.Impresiones.Pruebas; las de su agente son solo de Windows). Los PR que solo
 # cambian documentación no las corren, y un push nuevo cancela la corrida anterior del mismo PR: el repositorio es
 # privado y los minutos de Windows cuentan doble.
 #
@@ -80,3 +81,6 @@ jobs:
 
       - name: Pruebas
         run: dotnet test tests/PapeleriaPos.Pruebas -c Release
+
+      - name: Pruebas del módulo de impresión
+        run: dotnet test tests/Impresiones/PapeleriaPos.Impresiones.Pruebas -c Release

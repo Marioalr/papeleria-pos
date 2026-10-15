@@ -87,10 +87,7 @@ public sealed class RegistroDevoluciones(PosDbContext db)
 
             // Si se cancela o se devuelve la línea "Impresiones", esos trabajos vuelven a estar por cobrar.
             if (devolucion.EsCancelacion || devolucion.Lineas.Any(d => venta.Lineas.Single(l => l.Id == d.VentaLineaId).EsImpresiones))
-            {
-                foreach (var trabajo in await db.TrabajosImpresion.Where(t => t.VentaId == venta.Id).ToListAsync(ct))
-                    trabajo.Liberar();
-            }
+                await ImpresionesDelPos.EnLaVenta(db).LiberarAsync(venta.Id, ct);
 
             CalculoDevolucion.Aplicar(venta, devolucion);
             db.Devoluciones.Add(devolucion);

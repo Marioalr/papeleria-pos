@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- El módulo de impresión en el servicio de la caja principal (ver src/Impresiones/README.md): su API, que el
+       servicio monta sobre su grupo «/api» (con sus errores y la seguridad de las cajas ya puestos), la vigilancia de la
+       impresora de cada sucursal y AgregarImpresiones, que las registra. De la base del POS (PapeleriaPos.Datos) toma el
+       contexto con que arma los servicios del módulo y su puerto, los usuarios (quién ve el costo) y el PIN del dueño. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PapeleriaPos.Impresiones.Datos\PapeleriaPos.Impresiones.Datos.csproj" />
+    <ProjectReference Include="..\..\PapeleriaPos.Datos\PapeleriaPos.Datos.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Lo que el módulo de impresión guarda y lee en la base (ver src/Impresiones/README.md): el mapeo de sus tablas
+       (ModeloImpresiones), los trabajos con su precio, la impresora de cada sucursal, la fachada con que la venta cobra
+       las impresiones (ImpresionesEnLaVenta) y la importación de la configuración de Control Print. Trabaja sobre
+       cualquier DbContext que aplique su mapeo y le pide al POS lo demás por el puerto (IPosParaImpresiones): no depende
+       de PapeleriaPos.Datos. El esquema lo migra el POS, con sus migraciones en PapeleriaPos.Datos. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- La misma versión que PapeleriaPos.Datos. SQLite también para leer la base de Control Print al importar. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PapeleriaPos.Impresiones\PapeleriaPos.Impresiones.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -35,6 +35,14 @@ Pendientes que vienen de Control Print:
 - Varias impresoras: la matriz tiene **dos WF-6590 y una EcoTank L5590**, todas por red. Hoy el POS mide y cobra una
   sola; las tres hacen falta antes del piloto ([plan](plan.md#para-el-piloto-con-dos-cajas)).
 
+## Dónde vive el código
+
+El dueño pidió (2026-10-14) separar el núcleo de Control Print, sin retirarlo, para seguir trabajando su lógica sin
+afectar el resto del POS. Desde el 2026-10-15 vive aparte, en `src/Impresiones`, con sus pruebas en `tests/Impresiones`:
+el POS lo usa por un puerto (lo que el módulo le pide: la hora, las cajas, el horario y a quién avisar) y por una fachada
+(lo que la venta hace con las impresiones), y sus tablas siguen en la base del POS. Los proyectos, sus límites, sus
+pruebas y cómo cambiar su esquema: su [README](../src/Impresiones/README.md).
+
 ## Transición
 
 Control Print sigue en uso hasta que el POS lo reemplace en la matriz, durante el piloto.
