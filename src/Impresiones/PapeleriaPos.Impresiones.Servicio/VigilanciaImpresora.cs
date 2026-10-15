@@ -1,12 +1,13 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using PapeleriaPos.Datos;
-using PapeleriaPos.Impresiones;
+using PapeleriaPos.Impresiones.Datos;
 using PapeleriaPos.Impresiones.Medicion;
 using PapeleriaPos.Nucleo;
-using PapeleriaPos.Nucleo.Configuracion;
-using PapeleriaPos.Nucleo.Telegram;
 
-namespace PapeleriaPos.Servicio;
+namespace PapeleriaPos.Impresiones.Servicio;
 
 /// <summary>Lee la impresora por la red (SNMP y su página de estado). Se cambia en las pruebas.</summary>
 public interface ILectorImpresora
@@ -35,7 +36,7 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
     public static readonly TimeSpan TrasImprimir = TimeSpan.FromSeconds(90);
     public static readonly TimeSpan MientrasSeVerifica = TimeSpan.FromSeconds(30);
 
-    /// <summary>Sin respuesta durante este tiempo (en horario de la tienda), avisa por Telegram.</summary>
+    /// <summary>Sin respuesta durante este tiempo (en horario de la tienda), se avisa.</summary>
     public static readonly TimeSpan SinRespuesta = TimeSpan.FromMinutes(30);
 
     private sealed class Estado
@@ -70,7 +71,7 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
             return;
         var e = De(t.SucursalId);
         using var alcance = alcances.CreateScope();
-        var impresora = new ServicioImpresora(alcance.ServiceProvider.GetRequiredService<PosDbContext>());
+        var impresora = ImpresionesDelPos.Impresora(alcance.ServiceProvider.GetRequiredService<PosDbContext>());
         var antes = await impresora.AntesDeAsync(t.SucursalId, enviado - MargenDeReloj, ct);
         await e.Candado.WaitAsync(ct);
         try
@@ -98,7 +99,7 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
     public async Task<string?> LeerAhoraAsync(Guid sucursalId, CancellationToken ct = default)
     {
         using var alcance = alcances.CreateScope();
-        var configuracion = await new ServicioImpresora(alcance.ServiceProvider.GetRequiredService<PosDbContext>()).ConfiguracionAsync(sucursalId, ct);
+        var configuracion = await ImpresionesDelPos.Impresora(alcance.ServiceProvider.GetRequiredService<PosDbContext>()).ConfiguracionAsync(sucursalId, ct);
         if (string.IsNullOrWhiteSpace(configuracion.ImpresoraHost))
             return "Escribe la IP de la impresora.";
         await LeerAsync(configuracion, ct);
@@ -114,7 +115,7 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
                 using (var alcance = alcances.CreateScope())
                 {
                     var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
-                    foreach (var configuracion in await new ServicioImpresora(db).ConImpresoraAsync(ct))
+                    foreach (var configuracion in await ImpresionesDelPos.Impresora(db).ConImpresoraAsync(ct))
                     {
                         var e = De(configuracion.SucursalId);
                         if (Ahora >= e.SiguientePeriodica || e.SiguientePronto <= Ahora)
@@ -156,7 +157,7 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
 
             using var alcance = alcances.CreateScope();
             var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
-            var impresora = new ServicioImpresora(db);
+            var impresora = ImpresionesDelPos.Impresora(db);
             if (lectura.InkK is null && lectura.LifeCount is null)
             {
                 e.Error = lectura.Errors.Count > 0 ? string.Join("; ", lectura.Errors) : "La impresora no respondió.";
@@ -187,16 +188,19 @@ public sealed class VigilanciaImpresora(IServiceScopeFactory alcances, ILectorIm
         }
     }
 
-    /// <summary>Un aviso por cada vez que deja de responder, si pasa en horario de la tienda.</summary>
+    /// <summary>
+    /// Un aviso por cada vez que deja de responder, si pasa en horario de la tienda. El horario y el aviso son del POS: se
+    /// piden por el puerto, sobre la misma base, y el aviso se guarda aquí.
+    /// </summary>
     private async Task SinRespuestaAsync(PosDbContext db, ConfiguracionImpresion configuracion, Estado e, CancellationToken ct)
     {
         if (e.FallandoDesde == DateTime.MaxValue)
             e.FallandoDesde = Ahora;
-        var horario = AlertasTelegram.Configuracion(db, configuracion.SucursalId);
-        if (Ahora - e.FallandoDesde < SinRespuesta || horario.FueraDeHorario(HoraMexico.ALocal(Ahora)))
+        var pos = ImpresionesDelPos.Pos(db);
+        if (Ahora - e.FallandoDesde < SinRespuesta || pos.FueraDeHorario(configuracion.SucursalId, Ahora))
             return;
         var desde = e.UltimaRespuesta is { } u ? $"desde las {HoraMexico.ALocal(u):HH:mm}" : $"desde que arrancó el servicio";
-        if (AlertasTelegram.Avisar(db, configuracion.SucursalId, TipoAlerta.Impresora,
+        if (pos.Avisar(configuracion.SucursalId, AvisoImpresiones.Impresora,
                 $"Impresora sin responder\nNo contesta en {configuracion.ImpresoraHost} {desde}: ¿está apagada o cambió de IP?\n{e.Error}",
                 $"impresora:sin-respuesta:{configuracion.SucursalId:N}:{e.FallandoDesde:yyyyMMddHHmm}"))
             await db.SaveChangesAsync(ct);

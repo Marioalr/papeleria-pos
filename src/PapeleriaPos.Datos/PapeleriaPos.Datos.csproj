@@ -2,7 +2,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PapeleriaPos.Nucleo\PapeleriaPos.Nucleo.csproj" />
-    <ProjectReference Include="..\Impresiones\PapeleriaPos.Impresiones\PapeleriaPos.Impresiones.csproj" />
+    <!-- El módulo de impresión: la base del POS aplica su mapeo y le da su puerto (ImpresionesDelPos). -->
+    <ProjectReference Include="..\Impresiones\PapeleriaPos.Impresiones.Datos\PapeleriaPos.Impresiones.Datos.csproj" />
   </ItemGroup>
 
   <ItemGroup>

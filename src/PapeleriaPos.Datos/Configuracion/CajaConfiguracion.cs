@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using PapeleriaPos.Impresiones;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Configuracion;
@@ -303,41 +302,6 @@ internal sealed class DevolucionLineaConfiguracion : IEntityTypeConfiguration<De
     {
         b.ToTable("DevolucionesLineas");
         b.HasOne<VentaLinea>().WithMany().HasForeignKey(l => l.VentaLineaId);
-    }
-}
-
-internal sealed class TrabajoImpresionConfiguracion : IEntityTypeConfiguration<TrabajoImpresion>
-{
-    public void Configure(EntityTypeBuilder<TrabajoImpresion> b)
-    {
-        b.ToTable("TrabajosImpresion");
-        b.HasOne<Sucursal>().WithMany().HasForeignKey(t => t.SucursalId);
-        b.HasOne<Caja>().WithMany().HasForeignKey(t => t.CajaId);
-        b.HasOne<Venta>().WithMany().HasForeignKey(t => t.VentaId);
-        b.Property(t => t.MargenPorcentaje).HasPrecision(9, 2);
-        b.HasIndex(t => new { t.SucursalId, t.Cobro });
-        b.HasIndex(t => t.VentaId);
-        b.HasIndex(t => new { t.SucursalId, t.ImpresoUtc });
-    }
-}
-
-internal sealed class ConfiguracionImpresionConfiguracion : IEntityTypeConfiguration<ConfiguracionImpresion>
-{
-    public void Configure(EntityTypeBuilder<ConfiguracionImpresion> b)
-    {
-        b.ToTable("ConfiguracionesImpresion");
-        b.HasKey(c => c.SucursalId);
-        b.HasOne<Sucursal>().WithMany().HasForeignKey(c => c.SucursalId);
-    }
-}
-
-internal sealed class LecturaImpresoraConfiguracion : IEntityTypeConfiguration<LecturaImpresora>
-{
-    public void Configure(EntityTypeBuilder<LecturaImpresora> b)
-    {
-        b.ToTable("LecturasImpresora");
-        b.HasOne<Sucursal>().WithMany().HasForeignKey(l => l.SucursalId);
-        b.HasIndex(l => new { l.SucursalId, l.TomadaUtc });
     }
 }
 

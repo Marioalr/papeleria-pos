@@ -7,9 +7,9 @@ using PapeleriaPos.Datos;
 using PapeleriaPos.Impresiones;
 using PapeleriaPos.Impresiones.Contratos;
 using PapeleriaPos.Impresiones.Medicion;
+using PapeleriaPos.Impresiones.Servicio;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Telegram;
-using PapeleriaPos.Servicio;
 
 namespace PapeleriaPos.Pruebas.Servicio;
 
@@ -282,7 +282,7 @@ public class AvisosImpresoraTests(ServicioDePrueba servicio) : IClassFixture<Ser
         var dueno = db.Usuarios.Single(u => u.NombreUsuario == "dueno");
         db.ChatsTelegram.Add(new ChatTelegram { UsuarioId = dueno.Id, ChatId = 777, VinculadoUtc = DateTime.UtcNow });
         await db.SaveChangesAsync();
-        var impresora = new ServicioImpresora(db);
+        var impresora = ImpresionesDelPos.Impresora(db);
         var t0 = DateTime.UtcNow;
         PrinterStatus Nivel(int minutos, int cian) => new() { TakenUtc = t0.AddMinutes(minutos), InkK = 50, InkC = cian, InkM = 50, InkY = 50, LifeCount = 5000 };
 

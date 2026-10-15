@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
-using PapeleriaPos.Impresiones;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Configuracion;
@@ -401,12 +400,11 @@ public static class AlertasTelegram
         // Lo que se cobró de impresiones en el día (la línea «Impresiones» de cada ticket).
         if (vigentes.SelectMany(v => v.Lineas).Where(l => l.EsImpresiones).Sum(l => l.ImporteCentavos) is var impresiones and > 0)
             t.AppendLine($"Impresiones cobradas: {Dinero(impresiones)}");
-        var noVendidas = await db.TrabajosImpresion.AsNoTracking()
-            .Where(i => i.SucursalId == sucursalId && i.Cobro == EstadoCobroImpresion.NoVendida && i.CobroUtc >= desde && i.CobroUtc < hasta)
-            .Select(i => i.CostoCentavos).ToListAsync(ct);
-        if (noVendidas.Count > 0)
-            t.AppendLine($"Impresiones no vendidas: {noVendidas.Count} · costo {Dinero(noVendidas.Sum())}");
-        if (await new ServicioImpresora(db).ComparacionAsync(sucursalId, fecha, ct) is { } contador)
+        // Las no vendidas y el contador, del módulo de impresión.
+        var delDia = await ImpresionesDelPos.EnLaVenta(db).ResumenDelDiaAsync(sucursalId, fecha, ct);
+        if (delDia.NoVendidas > 0)
+            t.AppendLine($"Impresiones no vendidas: {delDia.NoVendidas} · costo {Dinero(delDia.CostoNoVendidasCentavos)}");
+        if (delDia.Contador is { } contador)
             t.AppendLine($"Impresora: contó {contador.Counted:N0} caras, registradas {contador.RegisteredTotal:N0}"
                 + (contador.Unregistered > 0 ? $" · sin registrar {contador.Unregistered:N0} (copias sin cobrar, celular, pruebas)" : " · todo registrado"));
         return t.ToString().TrimEnd();

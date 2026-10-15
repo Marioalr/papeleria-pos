@@ -34,10 +34,10 @@ public static class PreparacionPrueba
             hecho.Add("Chat de Telegram simulado del dueño");
         }
 
-        if (!await db.TrabajosImpresion.AnyAsync(ct))
+        var impresiones = ImpresionesDelPos.Registro(db);
+        if (!await impresiones.HayTrabajosAsync(ct))
         {
             var caja = await db.Cajas.FirstAsync(ct);
-            var impresiones = new RegistroImpresiones(db);
             var minuto = 0;
             foreach (var (documento, paginas, color) in new[]
                      {

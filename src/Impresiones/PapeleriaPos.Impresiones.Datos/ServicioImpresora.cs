@@ -1,51 +1,50 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using PapeleriaPos.Impresiones;
 using PapeleriaPos.Impresiones.Contratos;
 using PapeleriaPos.Impresiones.Medicion;
 using PapeleriaPos.Nucleo;
-using PapeleriaPos.Nucleo.Contratos;
-using PapeleriaPos.Nucleo.Control;
-using PapeleriaPos.Nucleo.Telegram;
 
-namespace PapeleriaPos.Datos;
+namespace PapeleriaPos.Impresiones.Datos;
 
 /// <summary>
 /// La impresora de la sucursal vista desde la caja principal (docs/fase-1-impresion.md, parte 2): sus lecturas por la
 /// red, los avisos de consumibles, las hojas que de verdad salieron, el contador contra lo cobrado y la calibración.
-/// Quien lee la impresora (la tarea de fondo del servicio) le pasa aquí cada lectura.
+/// Quien lee la impresora (la tarea de fondo del servicio) le pasa aquí cada lectura. Lo que necesita del POS (la hora
+/// y los avisos) lo pide por <paramref name="pos"/>; quién puede cambiar la configuración o aplicar la calibración lo
+/// revisa quien llama (la API).
 /// </summary>
-public sealed class ServicioImpresora(PosDbContext db)
+public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
 {
     /// <summary>Un salto hacia arriba de al menos esto (puntos) es un cartucho nuevo; en la caja de mantenimiento, 10.</summary>
     private const int CambioDeCartucho = 5;
     private const int CambioDeCaja = 10;
 
-    private DateTime Ahora => db.Reloj.GetUtcNow().UtcDateTime;
+    private DbSet<ConfiguracionImpresion> Configuraciones => db.Set<ConfiguracionImpresion>();
+    private DbSet<LecturaImpresora> Lecturas => db.Set<LecturaImpresora>();
+    private DbSet<TrabajoImpresion> Trabajos => db.Set<TrabajoImpresion>();
+    private DateTime Ahora => pos.Reloj.GetUtcNow().UtcDateTime;
 
     public async Task<ConfiguracionImpresion> ConfiguracionAsync(Guid sucursalId, CancellationToken ct = default) =>
-        await db.ConfiguracionesImpresion.FindAsync([sucursalId], ct)
+        await Configuraciones.FindAsync([sucursalId], ct)
         ?? new ConfiguracionImpresion { SucursalId = sucursalId, CostosJson = JsonSerializer.Serialize(new CostSettings(), CostSettings.Json) };
 
     /// <summary>Las sucursales con impresora configurada, para leerlas.</summary>
     public async Task<List<ConfiguracionImpresion>> ConImpresoraAsync(CancellationToken ct = default) =>
-        await db.ConfiguracionesImpresion.AsNoTracking().Where(c => c.ImpresoraHost != null && c.ImpresoraHost != "").ToListAsync(ct);
+        await Configuraciones.AsNoTracking().Where(c => c.ImpresoraHost != null && c.ImpresoraHost != "").ToListAsync(ct);
 
-    /// <summary>Solo el dueño cambia cómo se lee la impresora.</summary>
-    public async Task<ConfiguracionImpresion> GuardarConfiguracionAsync(Guid sucursalId, SolicitudConfiguracionImpresora s, CancellationToken ct = default)
+    /// <summary>Cómo se lee la impresora. Solo el dueño la cambia: quien llama ya lo revisó (la API, con su usuario y su PIN).</summary>
+    public async Task<ConfiguracionImpresion> GuardarConfiguracionAsync(Guid sucursalId, ConfiguracionImpresoraDto c, CancellationToken ct = default)
     {
-        await new ServicioControl(db).IdentificarAsync(s.Usuario, s.Pin, sucursalId, AccionControlada.ConfigurarImpresora, ct);
-        var c = s.Configuracion;
         if (c.AvisoTintaPorcentaje is < 0 or > 100)
             throw new ArgumentException("El aviso de tinta va de 0 a 100 %.");
         if (c.MinutosEntreLecturas is < 1 or > 120)
             throw new ArgumentException("Se lee cada 1 a 120 minutos.");
-        var configuracion = await db.ConfiguracionesImpresion.FindAsync([sucursalId], ct);
+        var configuracion = await Configuraciones.FindAsync([sucursalId], ct);
         if (configuracion is null)
         {
             configuracion = await ConfiguracionAsync(sucursalId, ct);
             configuracion.ModificadoUtc = Ahora;
-            db.ConfiguracionesImpresion.Add(configuracion);
+            Configuraciones.Add(configuracion);
         }
         configuracion.ImpresoraHost = string.IsNullOrWhiteSpace(c.Host) ? null : c.Host.Trim();
         configuracion.AvisoTintaPorcentaje = c.AvisoTintaPorcentaje;
@@ -55,17 +54,17 @@ public sealed class ServicioImpresora(PosDbContext db)
     }
 
     public async Task<LecturaImpresora?> UltimaAsync(Guid sucursalId, CancellationToken ct = default) =>
-        await db.LecturasImpresora.AsNoTracking().Where(l => l.SucursalId == sucursalId).OrderByDescending(l => l.TomadaUtc).FirstOrDefaultAsync(ct);
+        await Lecturas.AsNoTracking().Where(l => l.SucursalId == sucursalId).OrderByDescending(l => l.TomadaUtc).FirstOrDefaultAsync(ct);
 
     /// <summary>La última lectura con contador tomada a más tardar en ese momento (la base para verificar las hojas).</summary>
     public async Task<LecturaImpresora?> AntesDeAsync(Guid sucursalId, DateTime utc, CancellationToken ct = default) =>
-        await db.LecturasImpresora.AsNoTracking()
+        await Lecturas.AsNoTracking()
             .Where(l => l.SucursalId == sucursalId && l.Contador != null && l.TomadaUtc <= utc)
             .OrderByDescending(l => l.TomadaUtc).FirstOrDefaultAsync(ct);
 
     /// <summary>
-    /// Guarda una lectura y avisa por Telegram lo que cambió desde la anterior: una tinta o la caja de mantenimiento que
-    /// bajó al umbral, o un consumible nuevo.
+    /// Guarda una lectura y avisa lo que cambió desde la anterior: una tinta o la caja de mantenimiento que bajó al
+    /// umbral, o un consumible nuevo.
     /// </summary>
     public async Task<LecturaImpresora> GuardarLecturaAsync(Guid sucursalId, PrinterStatus s, CancellationToken ct = default)
     {
@@ -75,7 +74,7 @@ public sealed class ServicioImpresora(PosDbContext db)
             SucursalId = sucursalId, TomadaUtc = s.TakenUtc, TintaK = s.InkK, TintaC = s.InkC, TintaM = s.InkM, TintaY = s.InkY,
             Mantenimiento = s.Maintenance, Contador = s.LifeCount, ContadorColor = s.ColorCount, ContadorBN = s.MonoCount, Serie = s.Serial,
         };
-        db.LecturasImpresora.Add(lectura);
+        Lecturas.Add(lectura);
 
         var umbral = (await ConfiguracionAsync(sucursalId, ct)).AvisoTintaPorcentaje;
         foreach (var (nombre, antes, ahora, salto) in Consumibles(anterior, lectura))
@@ -83,10 +82,10 @@ public sealed class ServicioImpresora(PosDbContext db)
             if (ahora is not { } nivel)
                 continue;
             if (antes is { } previo && nivel - previo >= salto)
-                AlertasTelegram.Avisar(db, sucursalId, TipoAlerta.Impresora, $"Impresora: {nombre} nuevo\nPasó de {previo} % a {nivel} %.",
+                pos.Avisar(sucursalId, AvisoImpresiones.Impresora, $"Impresora: {nombre} nuevo\nPasó de {previo} % a {nivel} %.",
                     $"impresora:cambio:{nombre}:{lectura.Id}");
             else if (nivel <= umbral && (antes is null || antes > umbral))
-                AlertasTelegram.Avisar(db, sucursalId, TipoAlerta.Impresora,
+                pos.Avisar(sucursalId, AvisoImpresiones.Impresora,
                     $"Impresora: {nombre} {(nivel == 0 ? "agotado" : "bajo")}\nQueda {nivel} % (el aviso es desde {umbral} %).",
                     $"impresora:bajo:{nombre}:{lectura.Id}");
         }
@@ -111,11 +110,11 @@ public sealed class ServicioImpresora(PosDbContext db)
     {
         foreach (var c in conteo)
         {
-            if (await db.TrabajosImpresion.FindAsync([c.JobId], ct) is not { } trabajo || trabajo.CarasContadas is not null)
+            if (await Trabajos.FindAsync([c.JobId], ct) is not { } trabajo || trabajo.CarasContadas is not null)
                 continue;
             trabajo.AplicarCarasContadas(c.Counted);
             if (trabajo.FaltaronCaras)
-                AlertasTelegram.Avisar(db, trabajo.SucursalId, TipoAlerta.HojasFaltantes,
+                pos.Avisar(trabajo.SucursalId, AvisoImpresiones.HojasFaltantes,
                     $"Impresión incompleta · {trabajo.Pc}\n«{trabajo.Documento}»: la impresora contó {trabajo.CarasContadas} de {trabajo.Caras} caras. "
                     + "Puede ser un atasco o una cancelación en el panel.",
                     $"hojas:{trabajo.Id}");
@@ -125,7 +124,7 @@ public sealed class ServicioImpresora(PosDbContext db)
 
     /// <summary>Lo que necesita la verificación de cada trabajo del lote: caras esperadas y si salió (todos ya terminaron en Windows).</summary>
     public async Task<Dictionary<Guid, PageAuditor.JobInfo>> InfoAsync(IReadOnlyList<Guid> ids, CancellationToken ct = default) =>
-        await db.TrabajosImpresion.AsNoTracking().Where(t => ids.Contains(t.Id))
+        await Trabajos.AsNoTracking().Where(t => ids.Contains(t.Id))
             .ToDictionaryAsync(t => t.Id, t => new PageAuditor.JobInfo(t.Caras, t.Estado == EstadoTrabajo.Impreso, Finished: true), ct);
 
     // ── Contador contra lo cobrado ───────────────────────────────────────────
@@ -136,7 +135,7 @@ public sealed class ServicioImpresora(PosDbContext db)
         var desde = HoraMexico.AUtc(fecha.ToDateTime(TimeOnly.MinValue));
         var hasta = HoraMexico.AUtc(fecha.AddDays(1).ToDateTime(TimeOnly.MinValue));
         var historial = await Historial(sucursalId, desde.AddDays(-1), hasta, ct);
-        var registro = new RegistroImpresiones(db);
+        var registro = new RegistroImpresiones(db, pos);
         return CounterCheck.Compute(historial, desde, hasta, (a, b) => registro.CarasRegistradas(sucursalId, a, b));
     }
 
@@ -165,10 +164,10 @@ public sealed class ServicioImpresora(PosDbContext db)
     /// </summary>
     public async Task<(CalibrationResult Resultado, CostSettings Costos)> CalcularCalibracionAsync(Guid sucursalId, CancellationToken ct = default)
     {
-        var costos = await new RegistroImpresiones(db).CostosAsync(sucursalId, ct);
+        var costos = await new RegistroImpresiones(db, pos).CostosAsync(sucursalId, ct);
         var desde = costos.Calibration.SinceUtc ?? DateTime.MinValue;
         var historial = await Historial(sucursalId, desde, DateTime.MaxValue, ct);
-        var trabajos = await db.TrabajosImpresion.AsNoTracking()
+        var trabajos = await Trabajos.AsNoTracking()
             .Where(t => t.SucursalId == sucursalId && t.ImpresoUtc >= desde && (t.Estado == EstadoTrabajo.Impreso || t.CarasContadas > 0))
             .Select(t => new { t.ImpresoUtc, t.EnviadoUtc, t.Caras, t.CarasContadas, t.CarasColor, t.TintaC, t.TintaM, t.TintaY, t.TintaK })
             .ToListAsync(ct);
@@ -200,14 +199,14 @@ public sealed class ServicioImpresora(PosDbContext db)
     }
 
     /// <summary>
-    /// Solo el dueño: guarda los factores calculados en los costos de la sucursal; las impresiones nuevas ya salen con
-    /// ellos. Como en Control Print, el factor es la tinta real entre la del modelo (no se acumula) y la caja de
-    /// mantenimiento se corrige con datos preliminares. No es automática: mientras el agente vigila la cola de
-    /// laboratorio, lo que registra el POS no sale de la impresora y la calibración no sirve.
+    /// Solo el dueño (quien llama ya lo revisó: la API, con su usuario y su PIN): guarda los factores calculados en los
+    /// costos de la sucursal; las impresiones nuevas ya salen con ellos. Como en Control Print, el factor es la tinta real
+    /// entre la del modelo (no se acumula) y la caja de mantenimiento se corrige con datos preliminares. No es automática:
+    /// mientras el agente vigila la cola de laboratorio, lo que registra el POS no sale de la impresora y la calibración no
+    /// sirve.
     /// </summary>
-    public async Task<CalibracionDto> AplicarCalibracionAsync(Guid sucursalId, SolicitudCredenciales s, CancellationToken ct = default)
+    public async Task<CalibracionDto> AplicarCalibracionAsync(Guid sucursalId, CancellationToken ct = default)
     {
-        await new ServicioControl(db).IdentificarAsync(s.Usuario, s.Pin, sucursalId, AccionControlada.ConfigurarImpresora, ct);
         var (r, costos) = await CalcularCalibracionAsync(sucursalId, ct);
         var canales = r.Channels.Where(c => c.Quality >= CalibrationQuality.Preliminary).ToList();
         var caja = r.MaintenanceQuality >= CalibrationQuality.Preliminary ? r.MaintenancePagesPerBox : null;
@@ -228,7 +227,7 @@ public sealed class ServicioImpresora(PosDbContext db)
             costos.Maintenance.PagesPerBox = paginas;
         cal.Enabled = true;
         cal.UpdatedUtc = Ahora;
-        await new RegistroImpresiones(db).GuardarCostosAsync(sucursalId, costos, ct);
+        await new RegistroImpresiones(db, pos).GuardarCostosAsync(sucursalId, costos, ct);
         return await CalibracionAsync(sucursalId, ct);
     }
 
@@ -241,7 +240,7 @@ public sealed class ServicioImpresora(PosDbContext db)
     };
 
     private async Task<List<PrinterStatus>> Historial(Guid sucursalId, DateTime desdeUtc, DateTime hastaUtc, CancellationToken ct) =>
-        (await db.LecturasImpresora.AsNoTracking()
+        (await Lecturas.AsNoTracking()
             .Where(l => l.SucursalId == sucursalId && l.TomadaUtc >= desdeUtc && l.TomadaUtc <= hastaUtc)
             .OrderBy(l => l.TomadaUtc).ToListAsync(ct))
         .Select(l => new PrinterStatus

@@ -1,23 +1,26 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using PapeleriaPos.Impresiones;
 using PapeleriaPos.Impresiones.Contratos;
 using PapeleriaPos.Impresiones.Medicion;
 using PapeleriaPos.Nucleo;
 
-namespace PapeleriaPos.Datos;
+namespace PapeleriaPos.Impresiones.Datos;
 
 /// <summary>
 /// Los trabajos de impresión de la sucursal (docs/fase-1-impresion.md): el agente de cada caja los mide y aquí se
-/// les pone costo y precio con el modelo de Control Print y la configuración de la sucursal.
+/// les pone costo y precio con el modelo de Control Print y la configuración de la sucursal. Trabaja sobre la base que
+/// tenga el mapeo del módulo (<see cref="ModeloImpresiones"/>); lo que necesita del POS (la hora y las cajas) lo pide
+/// por <paramref name="pos"/>.
 /// </summary>
-public sealed class RegistroImpresiones(PosDbContext db)
+public sealed class RegistroImpresiones(DbContext db, IPosParaImpresiones pos)
 {
-    private DateTime Ahora => db.Reloj.GetUtcNow().UtcDateTime;
+    private DbSet<TrabajoImpresion> Trabajos => db.Set<TrabajoImpresion>();
+    private DbSet<ConfiguracionImpresion> Configuraciones => db.Set<ConfiguracionImpresion>();
+    private DateTime Ahora => pos.Reloj.GetUtcNow().UtcDateTime;
 
     /// <summary>Los costos de la sucursal; sin configurar, los valores por omisión de Control Print (WF-6590).</summary>
     public async Task<CostSettings> CostosAsync(Guid sucursalId, CancellationToken ct = default) =>
-        await db.ConfiguracionesImpresion.FindAsync([sucursalId], ct) is { } c
+        await Configuraciones.FindAsync([sucursalId], ct) is { } c
             ? JsonSerializer.Deserialize<CostSettings>(c.CostosJson, CostSettings.Json) ?? new CostSettings()
             : new CostSettings();
 
@@ -25,14 +28,14 @@ public sealed class RegistroImpresiones(PosDbContext db)
     public async Task GuardarCostosAsync(Guid sucursalId, CostSettings costos, CancellationToken ct = default)
     {
         var json = JsonSerializer.Serialize(costos, CostSettings.Json);
-        if (await db.ConfiguracionesImpresion.FindAsync([sucursalId], ct) is { } existente)
+        if (await Configuraciones.FindAsync([sucursalId], ct) is { } existente)
         {
             existente.CostosJson = json;
             existente.ModificadoUtc = Ahora;
         }
         else
         {
-            db.ConfiguracionesImpresion.Add(new ConfiguracionImpresion { SucursalId = sucursalId, CostosJson = json, ModificadoUtc = Ahora });
+            Configuraciones.Add(new ConfiguracionImpresion { SucursalId = sucursalId, CostosJson = json, ModificadoUtc = Ahora });
         }
         await db.SaveChangesAsync(ct);
     }
@@ -40,9 +43,9 @@ public sealed class RegistroImpresiones(PosDbContext db)
     /// <summary>Un trabajo que llegó del agente. Si ya estaba (el agente lo volvió a mandar), no se repite.</summary>
     public async Task<TrabajoImpresion> RegistrarAsync(TrabajoMedidoDto t, CancellationToken ct = default)
     {
-        if (await db.TrabajosImpresion.FindAsync([t.Id], ct) is { } existente)
+        if (await Trabajos.FindAsync([t.Id], ct) is { } existente)
             return existente;
-        var caja = await db.Cajas.FindAsync([t.CajaId], ct) ?? throw new InvalidOperationException("La caja no existe.");
+        var caja = await pos.CajaAsync(t.CajaId, ct) ?? throw new InvalidOperationException("La caja no existe.");
         var costo = CostCalculator.Calculate(Analisis(t), await CostosAsync(caja.SucursalId, ct));
 
         var trabajo = new TrabajoImpresion
@@ -61,7 +64,7 @@ public sealed class RegistroImpresiones(PosDbContext db)
             TintaC = costo.InkC, TintaM = costo.InkM, TintaY = costo.InkY, TintaK = costo.InkK,
             Cobro = EstadoCobroImpresion.PorCobrar,
         };
-        db.TrabajosImpresion.Add(trabajo);
+        Trabajos.Add(trabajo);
         await db.SaveChangesAsync(ct);
         return trabajo;
     }
@@ -79,24 +82,16 @@ public sealed class RegistroImpresiones(PosDbContext db)
         return new JobAnalysis(ajustes, paginas, t.Medido ? AnalysisLevel.Measured : AnalysisLevel.Estimated, null, t.Nota, TimeSpan.Zero);
     }
 
-    public async Task<List<TrabajoImpresion>> PorCobrarAsync(Guid sucursalId, CancellationToken ct = default) =>
-        await db.TrabajosImpresion.Where(t => t.SucursalId == sucursalId && t.Cobro == EstadoCobroImpresion.PorCobrar)
-            .OrderByDescending(t => t.ImpresoUtc).ToListAsync(ct);
+    /// <summary>Si ya hay algún trabajo registrado, de cualquier sucursal (la base de la prueba no los repite).</summary>
+    public Task<bool> HayTrabajosAsync(CancellationToken ct = default) => Trabajos.AnyAsync(ct);
 
-    /// <summary>Los trabajos que se van a cobrar en un ticket: todos tienen que seguir por cobrar.</summary>
-    public async Task<List<TrabajoImpresion>> ParaCobrarAsync(Guid sucursalId, IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
-    {
-        var trabajos = await db.TrabajosImpresion.Where(t => ids.Contains(t.Id) && t.SucursalId == sucursalId).ToListAsync(ct);
-        if (trabajos.Count != ids.Distinct().Count())
-            throw new InvalidOperationException("Una de las impresiones ya no existe.");
-        if (trabajos.FirstOrDefault(t => t.Cobro != EstadoCobroImpresion.PorCobrar) is { } cobrada)
-            throw new InvalidOperationException($"«{cobrada.Documento}» ya no está por cobrar: quítala del ticket.");
-        return trabajos;
-    }
+    public async Task<List<TrabajoImpresion>> PorCobrarAsync(Guid sucursalId, CancellationToken ct = default) =>
+        await Trabajos.Where(t => t.SucursalId == sucursalId && t.Cobro == EstadoCobroImpresion.PorCobrar)
+            .OrderByDescending(t => t.ImpresoUtc).ToListAsync(ct);
 
     public async Task<TrabajoImpresion> NoVendidaAsync(Guid trabajoId, SolicitudNoVendida s, CancellationToken ct = default)
     {
-        var trabajo = await db.TrabajosImpresion.FindAsync([trabajoId], ct) ?? throw new InvalidOperationException("La impresión no existe.");
+        var trabajo = await Trabajos.FindAsync([trabajoId], ct) ?? throw new InvalidOperationException("La impresión no existe.");
         trabajo.MarcarNoVendida(s.Motivo, s.Nota, s.UsuarioId, Ahora);
         await db.SaveChangesAsync(ct);
         return trabajo;
@@ -105,7 +100,7 @@ public sealed class RegistroImpresiones(PosDbContext db)
     /// <summary>Con un atasco o una cancelación: se cobra solo lo que contó la impresora.</summary>
     public async Task<TrabajoImpresion> SoloLoQueSalioAsync(Guid trabajoId, CancellationToken ct = default)
     {
-        var trabajo = await db.TrabajosImpresion.FindAsync([trabajoId], ct) ?? throw new InvalidOperationException("La impresión no existe.");
+        var trabajo = await Trabajos.FindAsync([trabajoId], ct) ?? throw new InvalidOperationException("La impresión no existe.");
         trabajo.CobrarSoloLoQueSalio(PrecioSoloLoQueSalio(trabajo, await CostosAsync(trabajo.SucursalId, ct)) ?? 0);
         await db.SaveChangesAsync(ct);
         return trabajo;
@@ -184,11 +179,11 @@ public sealed class RegistroImpresiones(PosDbContext db)
     /// <summary>Copias cobradas en el mostrador: quedan como un trabajo más, por cobrar, para la línea "Impresiones".</summary>
     public async Task<TrabajoImpresion> RegistrarCopiasAsync(SolicitudCopias s, CancellationToken ct = default)
     {
-        if (await db.TrabajosImpresion.FindAsync([s.Id], ct) is { } existente)
+        if (await Trabajos.FindAsync([s.Id], ct) is { } existente)
             return existente;
         if (s.CobradoCentavos < 0)
             throw new ArgumentException("Lo cobrado no puede ser negativo.");
-        var caja = await db.Cajas.FindAsync([s.CajaId], ct) ?? throw new InvalidOperationException("La caja no existe.");
+        var caja = await pos.CajaAsync(s.CajaId, ct) ?? throw new InvalidOperationException("La caja no existe.");
         var (costo, descripcion) = await CalcularCopiasAsync(caja.SucursalId, s.Cantidad, s.Color, s.Tamano, s.Duplex, ct);
         var sugerido = Centavos(costo.Price);
         var cobrado = s.CobradoCentavos ?? sugerido;
@@ -209,7 +204,7 @@ public sealed class RegistroImpresiones(PosDbContext db)
             TintaC = costo.InkC, TintaM = costo.InkM, TintaY = costo.InkY, TintaK = costo.InkK,
             Cobro = EstadoCobroImpresion.PorCobrar,
         };
-        db.TrabajosImpresion.Add(trabajo);
+        Trabajos.Add(trabajo);
         await db.SaveChangesAsync(ct);
         return trabajo;
     }
@@ -220,7 +215,7 @@ public sealed class RegistroImpresiones(PosDbContext db)
     {
         var desde = HoraMexico.AUtc(fecha.ToDateTime(TimeOnly.MinValue));
         var hasta = HoraMexico.AUtc(fecha.AddDays(1).ToDateTime(TimeOnly.MinValue));
-        return await db.TrabajosImpresion.AsNoTracking()
+        return await Trabajos.AsNoTracking()
             .Where(t => t.SucursalId == sucursalId && t.ImpresoUtc >= desde && t.ImpresoUtc < hasta)
             .OrderByDescending(t => t.ImpresoUtc).ToListAsync(ct);
     }
@@ -228,7 +223,7 @@ public sealed class RegistroImpresiones(PosDbContext db)
     /// <summary>Caras registradas entre dos lecturas del contador: impresiones de las PC (las que salieron) y copias cobradas.</summary>
     public RegisteredSides CarasRegistradas(Guid sucursalId, DateTime desdeUtc, DateTime hastaUtc)
     {
-        var trabajos = db.TrabajosImpresion.AsNoTracking()
+        var trabajos = Trabajos.AsNoTracking()
             .Where(t => t.SucursalId == sucursalId && t.ImpresoUtc > desdeUtc && t.ImpresoUtc <= hastaUtc)
             .Select(t => new { t.Tipo, t.Caras, t.CarasColor, t.CarasContadas, t.Estado }).ToList();
         int Salieron(int caras, int? contadas, EstadoTrabajo estado) => contadas ?? (estado == EstadoTrabajo.Impreso ? caras : 0);

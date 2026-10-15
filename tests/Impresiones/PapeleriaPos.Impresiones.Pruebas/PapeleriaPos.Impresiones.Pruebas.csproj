@@ -1,8 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Pruebas del módulo de impresión que corren en cualquier máquina (también en Linux, donde se programa): el costo,
-       el precio, la cotización, la calibración, el contador y la impresora por la red, traídas de Control Print. Las del
-       agente, que necesitan Windows, van en PapeleriaPos.Impresiones.Windows.Pruebas. -->
+       el precio, la cotización, la calibración, el contador y la impresora por la red (traídas de Control Print), y la
+       importación de su configuración. Solo dependen del módulo, no del resto del POS. Las del agente, que necesitan
+       Windows, van en PapeleriaPos.Impresiones.Windows.Pruebas. -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -21,7 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Impresiones\PapeleriaPos.Impresiones\PapeleriaPos.Impresiones.csproj" />
+    <ProjectReference Include="..\..\..\src\Impresiones\PapeleriaPos.Impresiones.Datos\PapeleriaPos.Impresiones.Datos.csproj" />
   </ItemGroup>
 
 </Project>

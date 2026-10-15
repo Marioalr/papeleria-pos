@@ -2,12 +2,12 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using PapeleriaPos.Impresiones.Medicion;
 
-namespace PapeleriaPos.Herramientas;
+namespace PapeleriaPos.Impresiones.Datos;
 
 /// <summary>
 /// Trae de Control Print solo su configuración: costos (tinta, papel, mantenimiento, luz, depreciación, márgenes y
 /// calibración) y la IP de la impresora; sus trabajos se quedan allá (docs/fase-1-impresion.md). La base de Control
-/// Print solo se lee.
+/// Print solo se lee. Lo usa <c>importar-control-print</c> de PapeleriaPos.Herramientas.
 /// </summary>
 public static class ImportacionControlPrint
 {

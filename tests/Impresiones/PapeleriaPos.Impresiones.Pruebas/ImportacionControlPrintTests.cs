@@ -1,9 +1,9 @@
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
-using PapeleriaPos.Herramientas;
+using PapeleriaPos.Impresiones.Datos;
 using PapeleriaPos.Impresiones.Medicion;
 
-namespace PapeleriaPos.Pruebas.Herramientas;
+namespace PapeleriaPos.Impresiones.Pruebas;
 
 public sealed class ImportacionControlPrintTests : IDisposable
 {

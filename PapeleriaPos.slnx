@@ -10,6 +10,8 @@
     <Project Path="src/PapeleriaPos.Servicio/PapeleriaPos.Servicio.csproj" />
   </Folder>
   <Folder Name="/src/Impresiones/">
+    <Project Path="src/Impresiones/PapeleriaPos.Impresiones.Datos/PapeleriaPos.Impresiones.Datos.csproj" />
+    <Project Path="src/Impresiones/PapeleriaPos.Impresiones.Servicio/PapeleriaPos.Impresiones.Servicio.csproj" />
     <Project Path="src/Impresiones/PapeleriaPos.Impresiones.Windows/PapeleriaPos.Impresiones.Windows.csproj" />
     <Project Path="src/Impresiones/PapeleriaPos.Impresiones/PapeleriaPos.Impresiones.csproj" />
   </Folder>
