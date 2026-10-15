@@ -94,6 +94,7 @@
 | Integrar Control Print por API | Reescribirlo como módulo del POS | Fue una prueba de concepto; así hay un solo inicio de sesión, base e instalador |
 | Niveles de confianza automáticos por celular | Celular solo para el pedido; clientes registrados a mano | No guardar números de más |
 | Central desde que abra la sucursal 2 | Multisucursal pospuesta; foco en una sucursal con 2 cajas | Decisión del dueño (2026-10-08): primero igualar lo que hoy hace eleventa, con las funciones planeadas |
+| La pantalla de venta de antes (como eleventa) junto a la del rediseño, a elegir por caja | Solo la del rediseño | Decisión del dueño (2026-10-14): «no volveremos a esa versión» |
 
 ## Fases
 
@@ -213,12 +214,14 @@ tareas a la guía y la prueba se puede repetir con la versión nueva (con los co
   Actions (Windows), porque la PC de desarrollo es Linux. Como en la tienda, lo instala el administrador para todos los
   usuarios de la PC y quien prueba lo usa con una cuenta común de Windows
   ([instalación](#instalación-y-usuarios-de-windows)).
-- **Autoconclusiva:** trae su guía dentro de la caja: tareas cortas (vender, cobro mixto, cancelar, devolver, corte X
-  y Z, F3 Productos, alta rápida, recibir una compra…) con lo que debe pasar en cada una. Quien prueba marca si salió
+- **Autoconclusiva:** trae su guía dentro de la caja: tareas cortas (entrar con la ficha, vender, cobro mixto, cancelar,
+  devolver, cambiar de usuario, el corte del turno y el del día, F3 Productos, alta rápida, recibir una compra…) con lo
+  que debe pasar en cada una. Quien prueba marca si salió
   bien y escribe lo que vio; al final queda un archivo con sus respuestas para mandarlo.
 - **Una guía por versión (2026-10-14):** la segunda prueba (17 y 18 de octubre) es con la pantalla nueva y su guía
-  empieza por vender en ella; al final va lo que todavía abre las pantallas de hoy. Las respuestas se guardan con la
-  versión de la guía y las de otra no se cargan (su archivo se queda). Al terminar una persona, «Guardar respuestas y
+  (la versión 3) empieza por entrar con la ficha y vender; siguen cambiar de usuario, el corte del turno y el del día
+  (entrega 6), y al final va lo que todavía abre sus ventanas de antes, con otro turno del cajero. Las respuestas se
+  guardan con la versión de la guía y las de otra no se cargan (su archivo se queda). Al terminar una persona, «Guardar respuestas y
   dejar la guía en blanco» deja su archivo en el escritorio y la guía en blanco para la siguiente.
 - **Simula lo que no hay:** sin impresora de tickets, el ticket se ve en pantalla; sin Telegram, los avisos que le
   llegarían al dueño se ven en una lista; sin la WF-6590, hay impresiones de ejemplo para cobrar.
@@ -268,8 +271,9 @@ la caja con su usuario y PIN del POS, todos desde la misma cuenta común de Wind
 
 Una primera versión que ya venda, hecha sobre lo que ya funciona: el mismo servicio, el mismo cobro, el mismo ticket y
 la misma base. Cambia la pantalla de venta; lo que todavía no se rediseña abre lo de hoy, con sus mismas teclas. Desde
-la segunda prueba con una persona real (17 y 18 de octubre de 2026) todas las cajas entran a la pantalla nueva; la de
-hoy queda en el menú del usuario («Volver a la pantalla de hoy») y cada PC recuerda si se volvió a ella. Se instala con
+la segunda prueba con una persona real (17 y 18 de octubre de 2026) todas las cajas entran a la pantalla nueva. La de
+antes ya no existe: el dueño la quitó el 2026-10-14 («no volveremos a esa versión»); el menú del usuario tiene «Cambiar
+de usuario» y «Salir», y una PC que había vuelto a ella la olvida al entrar a la venta. Se instala con
 el instalador de prueba que ya existe, y cada entrega que sigue se ve en esa misma versión. Al actualizar, la base de
 trabajo de la prueba se queda: en la PC de la primera prueba, «Empezar de cero» (en la franja) antes de la segunda, o
 los rápidos seguirán con los precios que inventó la papelería ficticia ($2.30 y $27.00), no con los de abajo.
@@ -290,7 +294,7 @@ como flecha, el cobro mixto dentro del panel, las familias de colores, las ficha
 impresiones, ni el mostrador y la temporada. Llegan con las entregas que siguen.
 
 **Avance (2026-10-10):** la primera parte ya está:
-- la pantalla nueva junto a la de hoy («Probar la pantalla nueva»);
+- la pantalla nueva junto a la de hoy («Probar la pantalla nueva»; la de hoy se quitó el 2026-10-14);
 - el cuadro de captura leído en JavaScript, con las teclas que esperan al último escaneo;
 - los rápidos, configurables por sucursal (la base de prueba trae Copia B/N y CURP);
 - el panel del total con F12 y el cobro en efectivo;
@@ -363,7 +367,8 @@ panel de la derecha y vuelve con Esc.
   - Lo que va encima, solo con Esc.
 
 **Avance (2026-10-11), tercera parte: el cobro mixto y «Más».** En la pantalla nueva todo el cobro va en el panel del
-total, también con cliente registrado; la ventana de cobro queda solo en la pantalla de hoy.
+total, también con cliente registrado; la ventana de cobro quedaba solo en la pantalla de hoy, y se quitó con ella
+(2026-10-14).
 - **«Tarjeta», «Transf.» y «Crédito»** (o «A favor», con saldo a favor) agregan cada uno su renglón con lo que falta:
   - el monto se cambia si es solo una parte, y «Pagó con» cubre el resto en efectivo, al peso;
   - tarjeta y transferencia llevan su referencia, y la transferencia queda por verificar;
@@ -382,7 +387,9 @@ escribir el usuario de quien autoriza:
 - **vale igual en el panel y en lo que se abre encima** (inventario, clientes…), con Telegram como antes;
 - **los permisos de la sesión traen el usuario** de cada quien autoriza, no solo su nombre
   (`PermisoDeSesion.Autorizan`, también sin conexión). El servicio sigue revisando el PIN y el monto.
-- La pantalla de hoy sigue igual: se escribe el usuario.
+- La pantalla de hoy, donde se escribía el usuario, se quitó el 2026-10-14. Escribir el usuario de quien autoriza solo
+  queda cuando no se tienen los permisos de quien entró: sin conexión y sin la copia, o en «Productos e inventario, sin
+  cortar», que no los pide.
 
 **Avance (2026-10-11), quinta parte: las familias en la búsqueda.** Lo que solo cambia en una cosa va en un renglón, con
 el nombre sin eso y los valores como fichas. Un análisis de los nombres del catálogo, con la copia local, mostró qué
@@ -437,6 +444,43 @@ Falta, en este orden:
 1. cuántas fichas de espera se ven, en Configuración (hoy son 3);
 2. que un surtido se pueda vender por color, como opción del producto (decisión del dueño, 2026-10-11);
 3. el nombre de eleventa como sinónimo de cada producto, cuando la depuración cambie nombres.
+
+**Avance (2026-10-14): la pantalla de antes se quitó.** El dueño: «quita la opción de ver la vista actual, no volveremos
+a esa versión». Todas las cajas entran a la venta del rediseño, sin «Volver a la pantalla de hoy»; con ella se fueron
+la ventana de cobro y la barra de eleventa. El menú del usuario tiene «Cambiar de usuario» (Ctrl+U) y «Salir», que llevan
+a la entrada. Ctrl+U cambia de usuario también con una ventana o un panel abiertos, y F1 regresa a vender desde lo que va
+encima del ticket. «Productos e inventario, sin cortar» lleva arriba la barra de la venta (Productos F3, Inventario F4,
+Clientes y el menú del usuario). Un código que no existe ofrece, según los permisos, «Darlo de alta aquí» y «Venderlo
+como artículo común».
+
+**Avance (2026-10-14), entrega 6: la entrada y el corte,** como en el [prototipo](propuesta-interfaz/prototipo.html):
+- **«¿Quién atiende?»:** una ficha por cada usuario activo de la sucursal (y el dueño), con su letra y lo que puede
+  hacer. La letra es la inicial; si ya es de otro, la de su apellido o la siguiente de su nombre; se reparten por fecha
+  de alta. El PIN es de 4 cifras, con el teclado de la pantalla o el de la PC, y entra solo con la cuarta; si no es, lo
+  dice con los intentos que quedan. Esc regresa a las fichas. Sin conexión, las fichas y el PIN salen de la copia de la
+  caja. A la izquierda: la caja, la hora, la conexión, la impresora y el turno abierto.
+- **Abrir el turno y el turno de otro cajero** van con el mismo acomodo. Quien tiene el corte lo hace ahí mismo, sin
+  volver a escribir su PIN; quien no, ve quién lo hace. Ctrl+U y «Volver» llevan a las fichas.
+- **El corte del turno** lo hace quien entró y tiene el permiso (hoy el encargado y el dueño): escribe el total del
+  efectivo, a ciegas, sin billete por billete ni otra vez el PIN; al cerrar ve lo esperado, lo contado y la diferencia a
+  nombre del cajero del turno, y sigue a abrir su turno. Quien no tiene el permiso ve el corte X (sin el efectivo), quién
+  lo hace y «Que entre a esta caja». Un escaneo en «Efectivo contado» no se toma como dinero.
+- **El corte del día,** para quien tiene «Ver y cerrar el corte del día» (hoy el dueño): todas las cajas y turnos del
+  día, lo vendido, el efectivo esperado y contado, las formas de pago, las salidas por motivo, las devoluciones, las
+  cancelaciones, lo fiado, los abonos y las impresiones cobradas. Un turno que viene de otro día cuenta solo lo de hoy (lo
+  esperado es de todo el turno). «Cerrar el día» espera a que no quede turno abierto ni nada por subir de otra caja; si
+  una caja deja de avisar, es solo un aviso. El resumen por Telegram sigue saliendo con cada corte Z que deja la
+  sucursal sin turno abierto; «Cerrar el día» no lo manda otra vez si ya salió con alguno de ese día. En el piloto con
+  eleventa se ve, pero el día se cierra con el corte de eleventa.
+- **API:** `GET api/cajas/{caja}/usuarios` (las fichas, sin usuario, PIN ni hash), `POST api/cajas/{caja}/sesion`,
+  `GET api/turnos/{turno}/corte-informativo`, `POST api/turnos/{turno}/corte-z` con el total,
+  `GET api/cajas/{caja}/corte-del-dia` y `POST api/cajas/{caja}/corte-del-dia/cierre`.
+- **Por ahora, la propuesta** en lo que el dueño no ha contestado: el corte del turno, solo con el permiso; el corte del
+  día, solo el dueño (el permiso se le puede dar al encargado en las reglas).
+
+Falta: el fondo sugerido, el nombre de la tienda y la hora para recordar el cierre del día (configuración, entrega 7);
+el largo del PIN y que dar de baja a alguien no mueva las letras de los demás (permisos por usuario, entrega 1). El
+conteo desde el celular sigue con el usuario escrito.
 
 #### Después: el piloto en la caja 2
 
@@ -529,7 +573,8 @@ Cada parte entra sin detener a la caja 2:
 
 1. **Terminar la venta** (lo que falta de la entrega 3) y **la base visual** (entrega 2), con lo que enseñen el piloto y
    las búsquedas guardadas.
-2. **Los permisos por usuario** (entrega 1) y **la entrada y el corte** (entrega 6).
+2. **Los permisos por usuario** (entrega 1). **La entrada y el corte** (entrega 6) ya están, desde el 2026-10-14
+   ([avance](#primero-la-versión-unicaja-entrega-0)).
 3. **Dejar eleventa:** el servicio nuevo en la caja principal y la caja 2 conectada a él, con su rendimiento (entrega 5:
    escaneo contra la copia local, cambios avisados, plazos y estados de la red); la red de la tienda arreglada; la
    impresora de tickets compartida con reintento; el día pico con el simulador; los reportes de ventas (entrega 9), que

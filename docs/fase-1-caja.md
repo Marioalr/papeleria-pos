@@ -145,11 +145,13 @@ que los cajeros no tengan que aprender otras.
 Dos turnos al día. **Cada cajero tiene su propio turno** y responde por su efectivo. **El corte lo hace el
 encargado.**
 
-1. **Abrir turno:** el cajero entra con su usuario y PIN y se cuenta el fondo, que no siempre es el mismo monto.
+1. **Abrir turno:** el cajero entra con su ficha y su PIN (2026-10-14; antes, con su usuario) y se cuenta el fondo, que
+   no siempre es el mismo monto.
 2. **Durante el turno:** entradas (F7) y salidas (F8) de efectivo, siempre con motivo.
 3. **Corte X (parcial):** informativo; no cierra el turno.
-4. **Corte Z (cierre):** el encargado entra con su PIN y cuenta el efectivo por denominación **sin ver cuánto debería
-   haber.** El sistema compara con lo esperado (fondo + efectivo cobrado − cambio + entradas − salidas), guarda la
+4. **Corte del turno (Z):** quien tiene el permiso (el encargado o el dueño) ya entró con su PIN; cuenta el efectivo y
+   escribe el total **sin ver cuánto debería haber** (2026-10-14: ya no por denominación ni otra vez el PIN; un escaneo en
+   ese campo no se toma como dinero). El sistema compara con lo esperado (fondo + efectivo cobrado − cambio + entradas − salidas), guarda la
    diferencia a nombre del cajero del turno y la marca si pasa del umbral. Tarjeta y transferencias se listan aparte.
 5. **Cambio de cajero en la misma caja:** se hace el corte del que sale y se abre el turno del que entra.
 
@@ -169,7 +171,7 @@ Se suman a los del [modelo de la fase 0](modelo-datos.md), con las mismas reglas
 | **VentaLinea** | Venta, variante (vacía en artículo varios o común), presentación, descripción tal como se vendió, cantidad, precio, importe, costo al momento de vender |
 | **Cobro** | Venta, forma (efectivo, tarjeta, transferencia), monto, recibido y cambio, referencia, verificación (por verificar, verificada, rechazada) |
 | **Corte** | Turno, tipo (X o Z), esperado por forma de pago, contado, diferencia, quién |
-| **CorteConteo** | Corte, denominación, cantidad |
+| **CorteConteo** | Corte, denominación, cantidad (ya no se llena desde el 2026-10-14; quedan los de antes) |
 | **AperturaCajon** | Caja, turno, quién, motivo (venta o sin venta), fecha |
 
 - Cada línea vendida genera su salida en el [kardex](modelo-datos.md#kardex), en la misma transacción que la venta.
@@ -181,7 +183,7 @@ Se suman a los del [modelo de la fase 0](modelo-datos.md), con las mismas reglas
 
 | Pregunta | Respuesta | Efecto |
 |---|---|---|
-| Turnos y corte | Dos turnos al día; el corte lo hace el encargado | Corte Z con el PIN del encargado, que cuenta a ciegas |
+| Turnos y corte | Dos turnos al día; el corte lo hace el encargado | Corte Z de quien tiene el permiso, con el total, a ciegas |
 | Varios cajeros en una caja | Un turno por cajero | Cambio de cajero = corte del que sale |
 | Teclas | Las de eleventa | Misma pantalla y mismas teclas ([arriba](#pantalla-de-venta)) |
 | Fondo de caja | No siempre es el mismo | Se cuenta al abrir cada turno |
