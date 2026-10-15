@@ -131,7 +131,9 @@ extendida a todo el POS.
 - **Encargado:** su sucursal.
 - **Cajero.**
 
-En la caja se entra con usuario y PIN corto para cambiar de cajero rápido, con bloqueo por intentos fallidos.
+En la caja se entra tocando su ficha (o su letra) y tecleando su PIN de 4 cifras, para cambiar de cajero rápido (Ctrl+U),
+con bloqueo por intentos fallidos. Desde el 2026-10-14 ya no se escribe el usuario (entrega 6 del
+[rediseño](propuesta-interfaz.md)).
 
 ## Bitácora
 

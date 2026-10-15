@@ -41,8 +41,8 @@ public static class GuiaPrueba
     public static readonly IReadOnlyList<TareaPrueba> Tareas =
     [
         new("entrar", "Empezar",
-            "En «¿Quién atiende?» toca la ficha «Cajero de prueba» (o oprime la C). Teclea primero un PIN equivocado, 0000, y luego el bueno, "
-            + "1111, con el teclado de la pantalla o con el de la PC. Abre el turno con un fondo de $500 y Enter.",
+            "En «¿Quién atiende?» toca la ficha «Cajero de prueba» (o oprime la C). Teclea primero un PIN equivocado, 0000; espera a que diga "
+            + "que no es y teclea el bueno, 1111, con el teclado de la pantalla o con el de la PC. Abre el turno con un fondo de $500 y Enter.",
             "A la izquierda están la caja, la hora y cómo está todo: «Servicio en esta PC», la impresora de tickets (o «Ticket en pantalla») y "
             + "«Sin turno abierto». A la derecha, una ficha por usuario con su letra y lo que puede hacer: ya no se escribe el usuario. Con "
             + "0000 dice «PIN incorrecto. Te quedan 4 intentos.» bajo los puntos y los borra; un Enter después no quita el mensaje. Con la "
@@ -198,18 +198,20 @@ public static class GuiaPrueba
 
         // ── Cambiar de usuario y el corte (entrega 6) ──
         new("otro-turno", "Cambiar de usuario",
-            "Si tienes algo en el ticket, déjalo en espera (F6). Oprime Ctrl+U (o tu nombre arriba a la derecha → «Cambiar de usuario»), "
-            + "oprime la E y teclea 2222 (Encargado de prueba). Elige «Productos e inventario, sin cortar» y mira Productos (F3), Inventario "
-            + "(F4) y Clientes. Sal con tu nombre arriba a la derecha → «Salir» (o Ctrl+U) y entra otra vez como cajero (C y 1111).",
+            "Deja algo en el ticket que atiendes, sin cobrarlo ni ponerlo en espera. Oprime Ctrl+U (o tu nombre arriba a la derecha → "
+            + "«Cambiar de usuario»), oprime la E y teclea 2222 (Encargado de prueba). Elige «Productos e inventario, sin cortar» y "
+            + "mira Productos (F3), Inventario (F4) y Clientes. Sal con tu nombre arriba a la derecha → «Salir» (o Ctrl+U) y entra otra "
+            + "vez como cajero (C y 1111).",
             "Ctrl+U regresa a «¿Quién atiende?»: la ficha del cajero dice «· turno abierto» y a la izquierda, «Turno abierto: Cajero de "
             + "prueba desde las …». Como el turno es del cajero, sale «Caja 1 tiene abierto el turno de Cajero de prueba» y «Cada cajero "
             + "responde por su efectivo: antes de que venda Encargado de prueba, se hace el corte del turno de Cajero de prueba.», con "
             + "«Hacer el corte de Cajero de prueba», «Productos e inventario, sin cortar» y «Volver» (Ctrl+U también regresa a las fichas). "
             + "Sin cortar, arriba va la misma barra que en la venta: la caja, Productos (F3), Inventario (F4), Clientes y tu nombre con «sin "
-            + "vender»; F3 y F4 cambian de pestaña. Al volver como cajero sigues en la venta, con tu turno y tus tickets en espera."),
+            + "vender»; F3 y F4 cambian de pestaña. Al volver como cajero sigues en la venta, con tu turno; dice «Volvieron los … tickets que "
+            + "estaban en espera» y lo que tenías en el ticket está en una de sus fichas, con sus productos: cambiar de usuario no lo pierde."),
         new("entrar-sin-conexion", "Cambiar de usuario",
             "En la caja de Windows, oprime «Simular sin conexión» en la franja de prueba. Oprime Ctrl+U y, sin tocar la pantalla, oprime la "
-            + "C, teclea 0000 y luego 1111, y oprime Enter de más. Al terminar, «Volver a conectar».",
+            + "C, teclea 0000, espera a que diga cuántos intentos quedan, teclea 1111 y oprime Enter de más. Al terminar, «Volver a conectar».",
             "A la izquierda dice «Sin la caja principal: vende con su copia», con el punto ámbar. Las fichas y sus letras son las mismas, y la "
             + "letra y el PIN funcionan aunque acabes de oprimir el botón de la franja. Con 0000 dice cuántos intentos quedan; con 1111 entra "
             + "con la copia de esta caja y vuelves a tu venta, con tu turno. El Enter de más no oprime «Volver a conectar»."),
@@ -219,25 +221,27 @@ public static class GuiaPrueba
             + "el lector (si hay). Luego escribe lo que cuentas (en la prueba no hay billetes: escribe, por ejemplo, 400) y oprime Enter. "
             + "Después, «Listo: abrir el siguiente turno» (ya tiene el cursor: basta Enter) y «Volver», sin abrir turno.",
             "El cajero ve el corte X: sus ventas, la tarjeta y las transferencias, sin el efectivo, y que el corte lo hace quien tiene ese "
-            + "permiso (el encargado o el dueño); si hay tickets sin cobrar, avisa que se pierden al cerrar el turno. «Que entre a esta "
-            + "caja» regresa a «¿Quién atiende?». El encargado no vuelve a escribir su PIN ni cuenta billete por billete, y no ve cuánto "
-            + "debería haber hasta oprimir Enter. El escaneo no se toma como dinero: el campo se queda como estaba y el turno no se cierra. "
-            + "Al cerrar ve lo contado, lo esperado y el sobrante o faltante a nombre de Cajero de prueba, con el detalle (fondo, efectivo "
-            + "de ventas, entradas, salidas…); si la diferencia pasa de $50 dice «se avisa por Telegram» y en «Avisos al dueño» llega "
-            + "«Diferencia en el corte». Sale el corte impreso («CORTE DEL TURNO (Z)»; sin impresora, en el detalle). «Listo» lleva a "
-            + "«Abrir turno de Encargado de prueba»."),
+            + "permiso (el encargado o el dueño); si hay tickets sin cobrar, dice que se quedan en espera en esta caja para el siguiente "
+            + "turno. «Que entre a esta caja» regresa a «¿Quién atiende?». El encargado no vuelve a escribir su PIN ni cuenta billete por "
+            + "billete, y no ve cuánto debería haber hasta oprimir Enter. El escaneo no se toma como dinero: el campo se queda como estaba y "
+            + "el turno no se cierra. Al cerrar ve lo contado, lo esperado y el sobrante o faltante a nombre de Cajero de prueba, con el "
+            + "detalle (fondo, efectivo de ventas, entradas, salidas…); si la diferencia pasa de $50 dice «se avisa por Telegram» y en "
+            + "«Avisos al dueño» llega «Diferencia en el corte». Sale el corte impreso («CORTE DEL TURNO (Z)»; sin impresora, en el "
+            + "detalle). «Listo» lleva a «Abrir turno de Encargado de prueba»."),
         new("corte-del-dia", "El corte",
             "Entra con la ficha del dueño (D) y su PIN, 3333, y abre tu turno con $500. En «Corte» elige «Del día · todas las cajas». Oprime "
             + "«Hacer ese corte», escribe un total y Enter; luego «Ver el corte del día» y «Cerrar el día». Para seguir con lo de abajo, "
             + "oprime Ctrl+U y abre otro turno del cajero (C, 1111 y $500).",
-            "Con el turno del dueño, la venta tiene todas las pestañas, y en «Corte» sale «Turno | Del día · todas las cajas» (al cajero y al "
-            + "encargado no). Arriba: lo vendido hoy, el efectivo (con lo esperado en las cajas), tarjeta y transferencia, y las diferencias "
-            + "de corte. La tabla tiene el turno del cajero (lo esperado, lo contado y su diferencia) y el tuyo como «Turno abierto»; abajo, "
-            + "las formas de pago, las salidas por motivo, las devoluciones, las cancelaciones, lo fiado y los abonos, y las impresiones "
-            + "cobradas. Mientras tu turno siga abierto, «Cerrar el día» espera: «Falta cerrar el turno de Dueño de prueba (Caja 1).». Ya "
-            + "cortado, se cierra: «Día cerrado a las … por Dueño de prueba.», y el resumen no se manda otra vez: ya salió con el último "
-            + "corte. En «Avisos al dueño» llega un «Resumen del día» con cada corte que deja la caja sin turno abierto; al cerrar el día, "
-            + "ninguno más."),
+            "Con el turno del dueño, la venta tiene todas las pestañas, y en «Corte» sale «Turno | Del día · todas las cajas» (al "
+            + "cajero y al encargado no). Si el cajero dejó tickets sin cobrar, vuelven a la espera («Volvieron los … tickets que estaban "
+            + "en espera»): son de la caja, no del turno; tu corte dice que se quedan para el siguiente turno, y vuelven en el del "
+            + "cajero. Arriba: lo vendido hoy, el efectivo (con lo esperado en las cajas), tarjeta y transferencia, y las diferencias "
+            + "de corte. La tabla tiene el turno del cajero (lo esperado, lo contado y su diferencia) y el tuyo como «Turno abierto»; "
+            + "abajo, las formas de pago, las salidas por motivo, las devoluciones, las cancelaciones, lo fiado y los abonos, y las "
+            + "impresiones cobradas. Mientras tu turno siga abierto, «Cerrar el día» espera: «Falta cerrar el turno de Dueño de prueba "
+            + "(Caja 1).». Ya cortado, se cierra: «Día cerrado a las … por Dueño de prueba.», y el resumen no se manda otra vez: ya "
+            + "salió con el último corte. En «Avisos al dueño» llega un «Resumen del día» con cada corte que deja la caja sin turno "
+            + "abierto; al cerrar el día, ninguno más."),
 
         // ── Lo que todavía abre sus ventanas de antes, con otro turno del cajero ──
         new("productos", $"{VentanaDeAntes} · Productos (F3)",

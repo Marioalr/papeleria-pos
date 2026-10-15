@@ -3,9 +3,11 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.AspNetCore.Components.Web;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.JSInterop;
+using PapeleriaPos.Herramientas.Prueba;
 using PapeleriaPos.Impresion;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Interfaz.Componentes;
@@ -244,6 +246,231 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
             Assert.Equal((1, 1), (salidas, cerrados));
             Assert.False(pagina.VentanaAbierta);
             Assert.Empty(dibujo.Errores);
+        }
+    }
+
+    /// <summary>
+    /// Lo que queda sin cobrar es de la caja, no del turno, como en el prototipo: el corte ya no dice que se pierde (no era
+    /// cierto: los tickets en espera volvían en el siguiente turno), y lo guarda con el ticket que se atendía, igual que
+    /// cambiar de usuario. Así vuelven en espera en el siguiente turno, aunque sea de otro cajero.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_queda_sin_cobrar_se_queda_en_espera_con_el_corte_y_al_cambiar_de_usuario()
+    {
+        var ruta = Path.Combine(Path.GetTempPath(), $"espera-venta-{Guid.NewGuid():N}.db");
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost:5180/") };
+        var http = new HttpClient(prueba.Fabrica.Server.CreateHandler());
+        // La caja de Windows: con su base local, donde se guardan los tickets en espera.
+        var cliente = new ClienteCaja(http, conexion, new Contingencia(new AlmacenLocal(ruta), http, conexion));
+        try
+        {
+            var caja = (await cliente.CajasAsync()).Single();
+            var cajero = await cliente.EntrarAsync("cajero", "1111");
+            var encargado = await cliente.EntrarAsync("encargado", "2222");
+            var turnoEncargado = await TurnoDeAsync(cliente, caja, encargado, encargado);
+            var pagina = new PaginaFalsa();
+            var servicios = new ServiceCollection()
+                .AddSingleton(conexion)
+                .AddSingleton(cliente)
+                .AddSingleton<IImpresora>(new SinImpresora())
+                .AddSingleton<IJSRuntime>(pagina)
+                .AddScoped<ModuloCaja>()
+                .BuildServiceProvider();
+            await using var _ = servicios;
+            var (salidas, cerrados) = (0, 0);
+            Dictionary<string, object?> Parametros(SesionDto sesion, TurnoDto turno) => new()
+            {
+                [nameof(PantallaVenta.Caja)] = caja,
+                [nameof(PantallaVenta.Sesion)] = sesion,
+                [nameof(PantallaVenta.Turno)] = turno,
+                [nameof(PantallaVenta.AlSalir)] = new EventCallback(null, (Action)(() => salidas++)),
+                [nameof(PantallaVenta.AlCerrarTurno)] = new EventCallback(null, (Action)(() => cerrados++)),
+            };
+
+            // El encargado deja uno en espera (F6) y otro a medias, sin F6: hasta aquí solo el primero está guardado.
+            await using (var dibujo = new Dibujo(servicios))
+            {
+                var pantalla = await dibujo.Dispatcher.InvokeAsync(() => dibujo.DibujarAsync<PantallaVenta>(Parametros(encargado, turnoEncargado)));
+                await Esperar(() => dibujo.Textos.Contains("Copia B/N"));
+                await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("Alt+1", ""));
+                await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("F6", ""));
+                await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("Alt+1", ""));
+                Assert.Single(cliente.TicketsEnEspera());
+
+                // El corte dice que se quedan, y al cerrar el turno se guardan los dos.
+                await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Corte")!.Value));
+                await Esperar(() => dibujo.Evento("corte-contado", "oninput") is not null);
+                Assert.True(dibujo.TieneRenglon("Hay 2 tickets sin cobrar: se quedan"));
+                Assert.DoesNotContain("se pierden", dibujo.Textos);
+                await dibujo.Dispatcher.InvokeAsync(() => dibujo.EscribirAsync(dibujo.Evento("corte-contado", "oninput")!.Value, "500"));
+                await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Cerrar el turno")!.Value));
+                await Esperar(() => dibujo.Boton("Listo: abrir el siguiente turno") is not null);
+                Assert.Equal(2, cliente.TicketsEnEspera().Count);
+                await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("Escape", ""));
+                Assert.Equal((0, 1), (salidas, cerrados));
+                Assert.Empty(dibujo.Errores);
+            }
+
+            // El siguiente turno es del cajero: le vuelven los dos. Lo que deja a medias tampoco se pierde al cambiar de usuario.
+            var turnoCajero = await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
+            await using (var dibujo = new Dibujo(servicios))
+            {
+                var pantalla = await dibujo.Dispatcher.InvokeAsync(() => dibujo.DibujarAsync<PantallaVenta>(Parametros(cajero, turnoCajero)));
+                await Esperar(() => dibujo.Textos.Contains("Copia B/N"));
+                Assert.True(dibujo.TieneRenglon("Volvieron los 2 tickets que estaban en espera."));
+                await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("Alt+1", ""));
+                await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("Ctrl+U", ""));
+                Assert.Equal((1, 1), (salidas, cerrados));
+                Assert.Equal(3, cliente.TicketsEnEspera().Count);
+                Assert.Empty(dibujo.Errores);
+            }
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            foreach (var archivo in new[] { ruta, ruta + "-wal", ruta + "-shm" })
+                File.Delete(archivo);
+        }
+    }
+
+    /// <summary>
+    /// «Imprimir» en el estado de cuenta, en «Productos e inventario, sin cortar»: como en la venta, en la impresora de
+    /// tickets o, sin ella, en pantalla. Antes ahí no hacía nada, y la guía de la prueba lo pide como dueño sin cortar.
+    /// </summary>
+    [Fact]
+    public async Task Sin_cortar_el_estado_de_cuenta_se_imprime_como_en_la_venta()
+    {
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost:5180/") };
+        var cliente = new ClienteCaja(new HttpClient(prueba.Fabrica.Server.CreateHandler()), conexion);
+        var caja = (await cliente.CajasAsync()).Single();
+        var dueno = await cliente.EntrarAsync("dueno", "3333");
+
+        async Task<string> ImprimirElEstadoAsync(IImpresora impresora)
+        {
+            var servicios = new ServiceCollection()
+                .AddSingleton(conexion)
+                .AddSingleton(cliente)
+                .AddSingleton(impresora)
+                .AddSingleton<IJSRuntime>(new PaginaFalsa())
+                .AddScoped<ModuloCaja>()
+                .BuildServiceProvider();
+            await using var _ = servicios;
+            await using var dibujo = new Dibujo(servicios);
+            var administracion = await dibujo.Dispatcher.InvokeAsync(() => dibujo.DibujarAsync<Administracion>(new Dictionary<string, object?>
+            {
+                [nameof(Administracion.Caja)] = caja,
+                [nameof(Administracion.Sesion)] = dueno,
+            }));
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Clientes")!.Value));
+            await Esperar(() => dibujo.Boton(PreparacionPrueba.ConDeuda) is not null);
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton(PreparacionPrueba.ConDeuda)!.Value));
+            await Esperar(() => dibujo.Boton("Estado de cuenta") is not null);
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Estado de cuenta")!.Value));
+            // «Imprimir» sale junto con «Copiar para WhatsApp» (antes de él puede haber otro «Imprimir…» de Inventario).
+            await Esperar(() => dibujo.Boton("Copiar para WhatsApp") is not null);
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Imprimir")!.Value));
+            // Esc cierra la vista previa (si la hay), como en la venta.
+            await dibujo.Dispatcher.InvokeAsync(() => administracion.Tecla("Escape", null));
+            Assert.Empty(dibujo.Errores);
+            return dibujo.Textos;
+        }
+
+        // Sin impresora, en pantalla.
+        var textos = await ImprimirElEstadoAsync(new SinImpresora());
+        Assert.Contains($"Estado de cuenta de {PreparacionPrueba.ConDeuda}\n", textos);
+        Assert.Contains("Sin impresora conectada: así saldrá impreso en la de 80 mm.", textos);
+
+        // Con impresora, el papel; nada en pantalla.
+        var impresora = new ImpresoraQueAnota();
+        textos = await ImprimirElEstadoAsync(impresora);
+        Assert.Equal(1, impresora.Impresos);
+        Assert.DoesNotContain("Sin impresora conectada", textos);
+    }
+
+    /// <summary>
+    /// El turno de otro cajero nombra a quien hace el corte igual que el corte: primero los encargados y al final el dueño.
+    /// Antes salía de las fichas, por nombre, y las dos pantallas los decían al revés.
+    /// </summary>
+    [Fact]
+    public async Task El_turno_de_otro_nombra_a_quien_corta_como_el_corte()
+    {
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost:5180/") };
+        var cliente = new ClienteCaja(new HttpClient(prueba.Fabrica.Server.CreateHandler()), conexion);
+        var caja = (await cliente.CajasAsync()).Single();
+        var cajero = await cliente.EntrarAsync("cajero", "1111");
+        var encargado = await cliente.EntrarAsync("encargado", "2222");
+        var servicios = new ServiceCollection()
+            .AddSingleton(conexion)
+            .AddSingleton(cliente)
+            .AddSingleton<IImpresora>(new SinImpresora())
+            .AddSingleton<IJSRuntime>(new PaginaFalsa())
+            .AddScoped<ModuloCaja>()
+            .BuildServiceProvider();
+        await using var _ = servicios;
+        Dictionary<string, object?> Parametros(SesionDto sesion, TurnoDto turno) => new()
+        {
+            [nameof(TurnoDeOtro.Caja)] = caja,
+            [nameof(TurnoDeOtro.Turno)] = turno,
+            [nameof(TurnoDeOtro.Sesion)] = sesion,
+        };
+
+        // El encargado, con el turno del cajero: el corte, ahí mismo.
+        var turnoCajero = await TurnoDeAsync(cliente, caja, cajero, encargado);
+        await using (var dibujo = new Dibujo(servicios))
+        {
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.DibujarAsync<TurnoDeOtro>(Parametros(encargado, turnoCajero)));
+            // «Hacer el corte de Cajero de prueba»: el nombre va en otro texto.
+            await Esperar(() => dibujo.Boton("Hacer el corte de") is not null);
+            Assert.DoesNotContain("El corte lo hace quien tiene ese permiso", dibujo.Textos);
+            Assert.Empty(dibujo.Errores);
+        }
+
+        // El cajero, con el turno del encargado: quién lo hace, en el orden del corte.
+        var turnoEncargado = await TurnoDeAsync(cliente, caja, encargado, encargado);
+        var delCorte = (await cliente.CorteInformativoAsync(turnoEncargado.Id, cajero.UsuarioId)).QuienesCortan;
+        Assert.Equal(["Encargado de prueba", "Dueño de prueba"], delCorte.Select(q => q.Nombre));
+        await using (var dibujo = new Dibujo(servicios))
+        {
+            await dibujo.Dispatcher.InvokeAsync(() => dibujo.DibujarAsync<TurnoDeOtro>(Parametros(cajero, turnoEncargado)));
+            await Esperar(() => dibujo.Textos.Contains("El corte lo hace quien tiene ese permiso"));
+            Assert.True(dibujo.TieneRenglon(
+                "El corte lo hace quien tiene ese permiso: Encargado de prueba o Dueño de prueba. Pídele que entre en esta caja."));
+            Assert.Null(dibujo.Boton("Hacer el corte de"));
+            Assert.Empty(dibujo.Errores);
+        }
+
+        // Como lo dejan las demás: el turno del cajero abierto.
+        await TurnoDeAsync(cliente, caja, cajero, encargado);
+    }
+
+    /// <summary>
+    /// Deja abierto el turno de <paramref name="quien"/> en la caja: si había otro, <paramref name="encargado"/> lo corta. Las
+    /// pruebas de esta clase comparten el servicio y no corren en un orden fijo.
+    /// </summary>
+    private static async Task<TurnoDto> TurnoDeAsync(ClienteCaja cliente, CajaDto caja, SesionDto quien, SesionDto encargado)
+    {
+        if (await cliente.TurnoAsync(caja.Id) is { } abierto)
+        {
+            if (abierto.CajeroId == quien.UsuarioId)
+                return abierto;
+            await cliente.CorteZAsync(abierto.Id, new SolicitudCorteZ(encargado.UsuarioId, 50000));
+        }
+        return await cliente.AbrirTurnoAsync(caja.Id, quien.UsuarioId, 50000);
+    }
+
+    /// <summary>Una impresora que solo cuenta lo que le llega: para ver que se mandó al papel y no a la pantalla.</summary>
+    private sealed class ImpresoraQueAnota : IImpresora
+    {
+        private int _impresos;
+
+        public int Impresos => Volatile.Read(ref _impresos);
+
+        public bool MuestraVistaPrevia => false;
+
+        public Task EnviarAsync(byte[] escPos, CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref _impresos);
+            return Task.CompletedTask;
         }
     }
 

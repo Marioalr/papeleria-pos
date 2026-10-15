@@ -752,6 +752,9 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     public void GuardarEnEspera(IReadOnlyList<TicketGuardado> tickets) => contingencia?.GuardarEnEspera(tickets);
 
+    /// <summary>Si los tickets en espera se guardan en esta caja: si no, al dejar la venta se pierden (el corte lo avisa).</summary>
+    public bool GuardaEspera => contingencia is not null;
+
     // ── Alta de la caja (antes de tener llave; el servicio todavía no es el guardado) ──
 
     public Task<EstadoServicioDto?> EstadoAsync(Uri servicio) => _http.GetAsync<EstadoServicioDto>("api/estado", servicio: servicio);

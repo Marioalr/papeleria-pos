@@ -235,7 +235,7 @@ El sistema lo instala el administrador de la PC; después, la gran mayoría de l
 de Windows, sin privilegios de administrador. Nada de lo diario puede pedir administrador.
 
 Aquí "usuario" es la **cuenta de Windows** de la PC, no el usuario del POS: el cajero, el encargado y el dueño entran a
-la caja con su usuario y PIN del POS, todos desde la misma cuenta común de Windows.
+la caja con su ficha y su PIN del POS, todos desde la misma cuenta común de Windows.
 
 - **Lo que hace el administrador** (al instalar y al actualizar):
   - El servicio de la caja principal como servicio de Windows: arranca con la PC, sin que nadie inicie sesión.
@@ -309,7 +309,10 @@ La segunda parte, la búsqueda debajo del cuadro, también:
 
 Y la tercera, los tickets en espera que sobreviven a un reinicio o a un apagón:
 - se guardan en `caja-local.db` cada vez que cambia el ticket que se atiende (F6, F5, retomar, cobrar);
-- también el que se atiende, como estaba en ese momento;
+- también el que se atiende, como estaba en ese momento, y otra vez al cambiar de usuario y al cerrar el turno con el
+  corte (2026-10-14);
+- son de la caja, no del turno, como en el prototipo: el corte no los borra y vuelven en el siguiente turno, sea de quien
+  sea (el corte lo dice);
 - al entrar a la venta vuelven a esperar, armados con los precios de cuando se agregó cada producto;
 - «Empezar de cero» los borra.
 
@@ -477,6 +480,10 @@ como artículo común».
   `GET api/cajas/{caja}/corte-del-dia` y `POST api/cajas/{caja}/corte-del-dia/cierre`.
 - **Por ahora, la propuesta** en lo que el dueño no ha contestado: el corte del turno, solo con el permiso; el corte del
   día, solo el dueño (el permiso se le puede dar al encargado en las reglas).
+- **Los tickets en espera son de la caja,** como en el prototipo: cambiar de usuario guarda también el que se atendía, y
+  el corte no los borra; vuelven en el siguiente turno. Antes el corte decía que se perdían, y no era cierto.
+- **«Productos e inventario, sin cortar»** imprime el estado de cuenta de un cliente igual que la venta (en la impresora
+  de tickets o en pantalla); antes ahí «Imprimir» no hacía nada.
 
 Falta: el fondo sugerido, el nombre de la tienda y la hora para recordar el cierre del día (configuración, entrega 7);
 el largo del PIN y que dar de baja a alguien no mueva las letras de los demás (permisos por usuario, entrega 1). El

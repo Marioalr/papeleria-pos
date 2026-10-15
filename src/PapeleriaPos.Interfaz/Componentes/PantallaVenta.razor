@@ -50,8 +50,8 @@
                 <div class="vn-menu-usuario">
                     <p>@Sesion.Nombre · @Textos.Rol(Sesion.Rol).ToLowerInvariant()</p>
                     @* Como en el prototipo, las dos van a la entrada; qué pasa al salir lo decide la raíz de la caja (AlSalir). *@
-                    <button @onclick="AlSalir">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
-                    <button @onclick="AlSalir">Salir</button>
+                    <button @onclick="SalirAsync">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
+                    <button @onclick="SalirAsync">Salir</button>
                 </div>
             }
         </div>
@@ -726,6 +726,28 @@
     /// </summary>
     private bool _turnoCerrado;
 
+    /// <summary>
+    /// El corte cerró el turno: lo que quedó sin cobrar (también el ticket que se atendía, como estaba) se guarda en espera
+    /// para el siguiente turno, como dijo el corte.
+    /// </summary>
+    private void TurnoCerrado()
+    {
+        _turnoCerrado = true;
+        GuardarEspera();
+    }
+
+    /// <summary>
+    /// «Cambiar de usuario» (Ctrl+U, el menú, «Que entre a esta caja») y «Salir»: el ticket que se atendía se guarda como
+    /// estaba, con los que esperan, y vuelve en espera al regresar (como en el prototipo, cambiar de usuario no lo pierde).
+    /// Antes se espera el escaneo en camino y el cobro en curso: un ticket que se está cobrando no se guarda.
+    /// </summary>
+    private async Task SalirAsync()
+    {
+        await _captura.EsperarAsync();
+        GuardarEspera();
+        await AlSalir.InvokeAsync();
+    }
+
     private enum Ventanas
     {
         Ninguna, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
@@ -1013,7 +1035,7 @@
         yield return new("Clientes", "clientes", null, null, () => Abrir(Ventanas.Clientes));
         if (VeConfiguracion)
             yield return new("Configuración", "engrane", null, null, () => Abrir(Ventanas.Configuracion));
-        yield return new("Cambiar de usuario", "usuario", "Ctrl+U", null, () => AlSalir.InvokeAsync());
+        yield return new("Cambiar de usuario", "usuario", "Ctrl+U", null, SalirAsync);
     }
 
     /// <summary>Las que puede (lo que no, no sale) y se llaman como lo escrito después de «/», sin acentos.</summary>
@@ -2179,7 +2201,7 @@
             case var _ when SinTecla(tecla):
                 Avisar("Eso no está entre lo que puedes hacer: «/» muestra todo lo que sí.");
                 break;
-            case "Ctrl+U": await AlSalir.InvokeAsync(); break;
+            case "Ctrl+U": await SalirAsync(); break;
             case "F10": Buscar(); break;
             // caja.js ya movió el cursor a «Pagó con» (sin esperar esta vuelta): no cobra todavía, y el cobro espera el
             // último escaneo al dar Enter.
@@ -3203,14 +3225,26 @@
             break;
         case Ventanas.Corte:
             <Ventana Titulo="Corte" Clase="corte" AlCerrar="Cerrar">
-                @* En el piloto con eleventa, CorteCaja solo dice que el corte se hace en eleventa: aquí no se cierra el turno. *@
+                @* En el piloto con eleventa, CorteCaja solo dice que el corte se hace en eleventa: aquí no se cierra el turno.
+                   Los tickets en espera son de la caja, no del turno (como en el prototipo): el corte no los borra y vuelven en
+                   el siguiente turno. Sin base local (el navegador) no se guardan: ahí sí se pierden. *@
                 @if (!_pilotoEleventa && !_turnoCerrado && _tickets.Count(t => t.Venta.Lineas.Count > 0) is var sinCobrar and > 0)
                 {
-                    <p class="error">Hay @sinCobrar @(sinCobrar == 1 ? "ticket" : "tickets") sin cobrar: si se cierra el turno, se pierden.</p>
+                    @if (Cliente.GuardaEspera)
+                    {
+                        <div class="vn-alerta info">
+                            <Ico Nombre="info" />
+                            <div><span>@(sinCobrar == 1 ? "Hay 1 ticket sin cobrar: se queda" : $"Hay {sinCobrar} tickets sin cobrar: se quedan") en espera en esta caja para el siguiente turno.</span></div>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="error">Hay @sinCobrar @(sinCobrar == 1 ? "ticket" : "tickets") sin cobrar: si se cierra el turno, se pierden.</p>
+                    }
                 }
                 @* «Que entre a esta caja» (quien no tiene el corte) es cambiar de usuario, como Ctrl+U. *@
                 <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="AlCerrarTurno"
-                           AlCerrarElTurno="() => _turnoCerrado = true" AlCambiarUsuario="AlSalir" />
+                           AlCerrarElTurno="TurnoCerrado" AlCambiarUsuario="SalirAsync" />
             </Ventana>
             break;
         case Ventanas.VentasDelDia:
