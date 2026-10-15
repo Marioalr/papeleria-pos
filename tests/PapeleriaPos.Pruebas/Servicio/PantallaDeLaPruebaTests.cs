@@ -10,7 +10,7 @@ using PapeleriaPos.Nucleo.Control;
 namespace PapeleriaPos.Pruebas.Servicio;
 
 /// <summary>
-/// Lo que la pantalla nueva le enseña a quien prueba, con la base de <c>preparar-prueba</c> (la segunda prueba con una
+/// Lo que la pantalla de venta le enseña a quien prueba, con la base de <c>preparar-prueba</c> (la segunda prueba con una
 /// persona real, 17 y 18 de octubre de 2026): la fila de rápidos, lo que el cajero hace en Clientes y el estado de arriba
 /// con «Simular sin conexión».
 /// </summary>
@@ -45,7 +45,7 @@ public class PantallaDeLaPruebaTests(ServicioEnPrueba prueba) : IClassFixture<Se
     }
 
     /// <summary>
-    /// Con los permisos del cajero, como los pide la pantalla nueva al entrar. La lista y la cuenta del cliente no piden
+    /// Con los permisos del cajero, como los pide la pantalla de venta al entrar. La lista y la cuenta del cliente no piden
     /// usuario (cualquier caja las lee): lo que cambia para el cajero es lo que la pantalla le enseña.
     /// </summary>
     [Fact]
@@ -72,7 +72,8 @@ public class PantallaDeLaPruebaTests(ServicioEnPrueba prueba) : IClassFixture<Se
         Assert.Equal(NivelPermiso.RequiereAutorizacion, permisos[AccionControlada.DevolverSaldoAFavor].Nivel);
         Assert.True(CreditoDelCliente.PuedeDevolverConPermisos(permisos));
         Assert.Equal("Encargado de prueba o Dueño de prueba", CreditoDelCliente.QuienAutorizaDevolverConPermisos(permisos));
-        // En la pantalla de hoy (sin permisos), como siempre: sin candado, y el servicio decide al intentarlo.
+        // Sin los permisos (sin conexión ni copia, o en Administración), como siempre: sin candado, y el servicio decide al
+        // intentarlo.
         Assert.True(CreditoDelCliente.PuedeDevolverConPermisos(null));
         Assert.Null(CreditoDelCliente.QuienAutorizaDevolverConPermisos(null));
     }

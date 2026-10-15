@@ -1,6 +1,7 @@
-@* "Requiere autorización": el encargado (o el dueño) escribe su usuario y PIN en la misma caja, o se le pide al dueño
-   por Telegram. Vale una sola vez. En la pantalla nueva, quien puede autorizar se ve por su nombre: se toca su ficha y
-   solo se escribe su PIN (docs/propuesta-interfaz.md, «Usuarios y permisos»). *@
+@* "Requiere autorización": quien puede autorizar se ve por su nombre, se toca su ficha y solo se escribe su PIN
+   (docs/propuesta-interfaz.md, «Usuarios y permisos»), o se le pide al dueño por Telegram. Vale una sola vez. Sin los
+   permisos de quien entró (sin conexión ni copia, o en Administración, que no los pide), el encargado (o el dueño)
+   escribe su usuario y PIN. *@
 @implements IAsyncDisposable
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
@@ -83,10 +84,10 @@
     [Parameter] public EventCallback<AutorizacionDto> AlAutorizar { get; set; }
     [Parameter] public EventCallback AlCancelar { get; set; }
 
-    /// <summary>Lo que puede quien entró, con quién autoriza cada acción. Solo lo pasa la pantalla nueva.</summary>
+    /// <summary>Lo que puede quien entró, con quién autoriza cada acción. Lo pasa la pantalla de venta a sus ventanas.</summary>
     [CascadingParameter(Name = "PermisosDeSesion")] public IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? PermisosDeSesion { get; set; }
 
-    /// <summary>Quienes pueden autorizar, por su nombre; sin ellos (la pantalla de hoy, o sin los permisos), se escribe el usuario.</summary>
+    /// <summary>Quienes pueden autorizar, por su nombre; sin ellos (sin los permisos), se escribe el usuario.</summary>
     private IReadOnlyList<QuienAutoriza>? Fichas => PermisosDeSesion?.GetValueOrDefault(Accion)?.Autorizan is { Count: > 0 } autorizan ? autorizan : null;
 
     private string _usuario = "";

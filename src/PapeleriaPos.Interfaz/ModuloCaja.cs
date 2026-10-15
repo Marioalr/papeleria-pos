@@ -29,7 +29,7 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
 
     /// <summary>
     /// Con una ventana abierta, caja.js solo atrapa las teclas que no escriben en sus campos. <paramref name="enPanel"/>: es
-    /// un panel de la pantalla nueva (el ticket y la barra de teclas a la vista), y también Ins y Ctrl+Q son de la venta.
+    /// un panel a la derecha (el ticket y la barra de teclas a la vista), y también Ins y Ctrl+Q son de la venta.
     /// </summary>
     public async Task VentanaAbiertaAsync(bool abierta, bool enPanel = false)
     {
@@ -40,8 +40,8 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     /// <summary>
     /// La franja de la prueba con algo encima de la venta (la guía, sus avisos, el cuadro de la nota de la tarea): mientras,
     /// caja.js lo trata como una ventana, y la venta de atrás no se queda con las teclas que se escriben ahí. Al quitarlo
-    /// vuelve lo que dijo la pantalla de venta, que puede tener un panel abierto: la franja se puede tocar con un panel de la
-    /// pantalla nueva a la vista. Antes la franja mandaba «sin ventana» al cerrar la guía, y con el panel abierto caja.js
+    /// vuelve lo que dijo la pantalla de venta, que puede tener un panel abierto: la franja se puede tocar con un panel a la
+    /// vista. Antes la franja mandaba «sin ventana» al cerrar la guía, y con el panel abierto caja.js
     /// mandaba a la venta, como teclas del ticket, Supr en un campo vacío del panel o las flechas fuera de sus campos.
     /// </summary>
     public async Task VentanaDeLaFranjaAsync(bool abierta)
@@ -53,10 +53,10 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     private async Task MandarVentanaAsync() =>
         await (await Modulo).InvokeVoidAsync("ventanaAbierta", _deLaFranja || _deLaVenta.Abierta, !_deLaFranja && _deLaVenta.EnPanel);
 
-    /// <summary>Vacía el cuadro de captura de la pantalla nueva (no está enlazado: lo maneja caja.js).</summary>
+    /// <summary>Vacía el cuadro de captura de la venta (no está enlazado: lo maneja caja.js).</summary>
     public async Task LimpiarCapturaAsync() => await (await Modulo).InvokeVoidAsync("limpiarCaptura");
 
-    /// <summary>Deja un texto en el cuadro de captura de la pantalla nueva, con el cursor al final («/» para las acciones).</summary>
+    /// <summary>Deja un texto en el cuadro de captura de la venta, con el cursor al final («/» para las acciones).</summary>
     public async Task EscribirCapturaAsync(string texto) => await (await Modulo).InvokeVoidAsync("escribirCaptura", texto);
 
     /// <summary>Un clic en un elemento, como el selector de archivos de Ctrl+Q.</summary>

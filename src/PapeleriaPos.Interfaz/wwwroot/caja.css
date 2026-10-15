@@ -1,4 +1,5 @@
-/* Caja: misma distribución que eleventa, para 1366×768 y operada con teclado. */
+/* Caja: para 1366×768 y operada con teclado. La venta (vn-…) es la del prototipo (docs/propuesta-interfaz.md); lo que
+   todavía abre encima (productos, inventario, clientes, corte, configuración) usa lo de antes. */
 :root {
     --azul: #2c5c99;
     --azul-claro: #e9f1fb;
@@ -35,73 +36,42 @@ input:focus { outline: 2px solid var(--azul); outline-offset: -1px; }
 .boton.principal { background: var(--azul); color: #fff; border-color: var(--azul); font-size: 15px; padding: 8px 16px; }
 .boton.chico { padding: 2px 8px; }
 
-/* Pantalla de venta */
-.venta { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.barra-modulos { display: flex; align-items: center; gap: 4px; padding: 4px 6px; background: #fff; border-bottom: 1px solid var(--borde); }
-.modulo { font: inherit; font-size: 13px; background: linear-gradient(#fff, #f0f2f5); border: 1px solid var(--borde); padding: 6px 14px; cursor: pointer; }
-.modulo.activo { color: var(--suave); }
-.modulo:disabled { opacity: .45; cursor: default; }
 .espacio { flex: 1; }
-.atiende { display: flex; flex-direction: column; align-items: flex-end; padding: 0 12px; line-height: 1.2; }
-.atiende small { color: var(--suave); font-size: 11px; }
 
-.titulo-venta { background: linear-gradient(90deg, var(--azul), #9bbbe3); color: #fff; font-size: 19px; font-weight: 600; padding: 4px 10px; }
 .captura { display: flex; align-items: center; gap: 8px; padding: 8px 10px 4px; background: #fff; }
 .captura label { flex-direction: row; align-items: center; font-size: 14px; color: var(--texto); }
 .captura input { flex: 0 1 600px; }
-.botones-venta { display: flex; gap: 4px; padding: 4px 10px 8px; background: #fff; flex-wrap: wrap; }
 
 .pestanas { display: flex; gap: 2px; padding: 4px 6px 0; background: #b9c0c8; }
 .pestana { font: inherit; font-size: 13px; padding: 5px 22px; border: 1px solid var(--borde); border-bottom: none; background: #dfe3e8; cursor: pointer; }
 .pestana.activa { background: #fff; font-weight: 600; }
 
-.tabla-venta { flex: 1; overflow-y: auto; background: #fff; min-height: 0; }
 table { width: 100%; border-collapse: collapse; }
 th { position: sticky; top: 0; background: #f7f8fa; font-weight: 500; font-size: 13px; text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--borde); }
 td { padding: 6px 8px; border-bottom: 1px solid #eef0f3; font-size: 15px; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .col-codigo { width: 150px; background: var(--azul-claro); color: var(--suave); font-size: 13px; }
-.col-cant { background: var(--verde-claro); width: 90px; }
-th.col-codigo, th.col-cant { background: #f7f8fa; }
+th.col-codigo { background: #f7f8fa; }
 tr.seleccionada td { background: #cfe1f7; }
 tr { cursor: default; }
 
-.mensaje { padding: 6px 12px; background: #e8f3ec; color: var(--exito); border-top: 1px solid var(--borde); }
-.mensaje.error { background: #fdecea; color: var(--error); }
-
-.pie-venta { display: flex; justify-content: space-between; gap: 12px; padding: 6px 10px; background: #fff; border-top: 1px solid var(--borde); }
-.pie-izquierda, .pie-derecha { display: flex; flex-direction: column; gap: 6px; }
-.pie-derecha { align-items: flex-end; }
+/* Eran de la pantalla de venta de antes, que ya no existe (2026-10-14); se quedan porque el corte (CorteCaja) los toma:
+   la tabla de billetes (table.conteo) en gris y sus renglones de total (tr.total) en azul. */
 .conteo { font-size: 16px; color: var(--suave); }
-.conteo .numero { color: var(--azul); font-size: 22px; margin-right: 10px; }
-.botones-pie { display: flex; gap: 4px; }
-.ultima { display: flex; gap: 32px; }
-.ultima div { display: flex; flex-direction: column; }
-.ultima small { font-weight: 600; font-size: 13px; }
-.ultima strong { color: var(--azul); font-weight: 400; }
-.ultima .cambio { color: var(--exito); font-weight: 600; }
-.cobro { display: flex; align-items: stretch; gap: 8px; }
-.boton.cobrar { font-size: 17px; color: var(--azul); padding: 10px 48px; }
 .total { font-size: 52px; color: var(--azul); background: var(--azul-claro); padding: 0 24px; min-width: 260px; text-align: right; line-height: 1.2; font-variant-numeric: tabular-nums; }
 
 /* Ventanas */
 .fondo-ventana { position: fixed; inset: 0; background: rgba(20, 30, 45, .35); display: grid; place-items: center; z-index: 10; }
 .ventana { background: #fff; border-radius: 6px; width: 460px; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0, 0, 0, .25); }
-.ventana.buscar, .ventana.ventas-dia { width: 860px; }
+.ventana.ventas-dia { width: 860px; }
 .ventana.corte { width: 560px; }
-.ventana.vista-previa { width: auto; }
 .ventana-titulo { display: flex; justify-content: space-between; align-items: center; background: var(--azul); color: #fff; padding: 8px 12px; border-radius: 6px 6px 0 0; font-weight: 600; }
 .cerrar { background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; line-height: 1; }
 .ventana-cuerpo { padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .resultados { max-height: 420px; overflow-y: auto; border: 1px solid var(--borde); }
-/* Alto fijo en F10: la ventana no se mueve cuando llegan los resultados (el clic caía en otro renglón). */
-.ventana.buscar .resultados { height: 420px; }
 .buscar-texto { width: 100%; }
 
-.cobrar-total { font-size: 44px; color: var(--azul); text-align: center; font-variant-numeric: tabular-nums; }
 .cobrar-resumen { font-size: 26px; text-align: center; }
-.cobrar-resumen .falta { color: var(--error); }
-.cobrar-resumen .cambio { color: var(--exito); }
 details summary { cursor: pointer; color: var(--azul); }
 
 .verificado { text-align: center; padding: 8px; }
@@ -127,7 +97,6 @@ textarea { font-family: Consolas, "Courier New", monospace; font-size: 14px; pad
 .boton.archivo { position: relative; overflow: hidden; display: inline-block; }
 .boton.archivo input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .aviso { color: var(--exito); margin: 4px 0; }
-.mensaje.retiro { background: #fff4d6; color: #8a5a00; font-weight: 600; }
 label.en-linea { flex: 1; }
 
 /* Entrega 2, parte 2: autorizar, devolver, cambiar precio, reglas y bitácora */
@@ -136,7 +105,6 @@ label.en-linea { flex: 1; }
 .captura-folio { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 8px; }
 .captura-folio label { flex: 1; }
 input.cantidad-devolver { width: 80px; text-align: right; font-size: 15px; padding: 3px 6px; }
-.precio-original { color: var(--suave); font-size: 12px; margin-right: 4px; }
 .config-pestanas { background: none; padding: 0 0 0; border-bottom: 1px solid var(--borde); margin-bottom: 10px; }
 .reglas select { font: inherit; font-size: 13px; padding: 2px 4px; }
 .reglas input.umbral { width: 80px; font-size: 13px; padding: 2px 6px; text-align: right; }
@@ -194,10 +162,6 @@ select { font: inherit; font-size: 15px; padding: 6px 8px; border: 1px solid var
 .actualizacion-cambios { margin: 0; padding-left: 20px; max-height: 180px; overflow-y: auto; }
 .actualizacion progress { width: 260px; vertical-align: middle; margin-right: 8px; }
 
-/* Entrega 5, parte 3: descuentos */
-.tabla-venta small.descuento { display: block; color: var(--exito); font-size: 12px; }
-.descuento-total { color: var(--exito); font-weight: 600; text-align: right; }
-
 /* Fase 2: catálogo (F3) */
 .filtros-catalogo { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
 .filtros-catalogo input#buscar-catalogo { flex: 1; min-width: 240px; }
@@ -210,12 +174,14 @@ fieldset.variante legend { color: var(--azul); font-weight: 600; padding: 0 4px;
 fieldset.variante h5 { margin: 10px 0 4px; }
 input.codigos { width: 100%; font-size: 14px; }
 .kardex { max-height: 240px; }
-.mensaje .boton.chico { margin-left: 8px; }
 .depurar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--borde); }
 .depurar > p, .depurar > .dos-columnas, .depurar > .filtros-catalogo, .depurar > table { flex-basis: 100%; }
 .compra tr.diferencia td { color: var(--error); }
 .compra td.bajo { color: var(--error); font-weight: 600; }
 .compra input.umbral, .margenes input.umbral { width: 90px; font-size: 14px; padding: 3px 6px; text-align: right; }
+/* Productos, inventario y clientes sin vender (Administración): arriba la barra de la venta, sola; abajo, lo de siempre. */
+.sin-vender { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.venta-nueva.solo-arriba { flex: none; grid-template-rows: 48px; }
 .administracion { flex: 1; overflow-y: auto; padding: 12px 16px; background: #fff; }
 .compra tr.sin-ligar td { background: #fff7e6; }
 .franja-prueba { display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 5px 12px; background: #fff4d6; border-bottom: 1px solid #e8c766; font-size: 14px; }
@@ -234,7 +200,6 @@ pre.aviso-telegram { white-space: pre-wrap; margin: 0; font-family: inherit; }
 .producto-nuevo .ancho { grid-column: span 1; }
 .producto-nuevo input, .producto-nuevo select { font-size: 14px; padding: 3px 6px; width: 100%; }
 .resultados.revision { max-height: none; }
-.franja-conteo { display: flex; gap: 10px; align-items: center; justify-content: center; padding: 4px 12px; background: var(--azul-claro); color: var(--azul); font-size: 14px; }
 
 /* Fase 2, entrega 3, parte 3: conteo completo por departamento (en F4 y en el celular) */
 .celular-qr { display: flex; gap: 16px; align-items: center; padding: 8px 12px; margin-bottom: 10px; background: var(--azul-claro); border-radius: 6px; }
@@ -322,14 +287,7 @@ td.acciones-renglon { white-space: nowrap; text-align: right; }
 .sugerido tr.urgente td:nth-child(3) { color: var(--error); font-weight: 600; }
 .sugerido input.umbral { width: 70px; }
 
-/* Fase 3, entrega 1: redondeo al peso del efectivo */
-.cobrar-redondeo { text-align: center; margin: 0; color: var(--suave); }
-.cobrar-redondeo strong { color: var(--azul); font-size: 22px; }
-.total-efectivo { text-align: right; color: var(--suave); font-size: 14px; }
 .escalas-mayoreo td, .escalas-mayoreo th { font-size: 15px; }
-.titulo-venta .cliente-ticket { font-size: 15px; font-weight: 400; margin-left: 16px; }
-.franja-credito { background: #fff4d6; border-bottom: 1px solid #e8c766; padding: 4px 10px; display: flex; gap: 12px; align-items: center; }
-.franja-credito.vencido { background: #fde2e1; border-bottom-color: #e39b98; color: #8a1c17; font-weight: 600; }
 .cobrar-credito { border: 1px solid #c9d3e0; border-radius: 6px; padding: 6px 10px; margin: 8px 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .cobrar-credito .acciones { margin-top: 0; flex-wrap: wrap; }
 .cobrar-credito legend { font-weight: 600; padding: 0 4px; }
@@ -623,7 +581,7 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-teclas > button.vn-chip-estado { font-size: 12px; padding: 2px 9px; border: 1px solid var(--vn-linea); background: var(--vn-renglon); border-radius: 999px; }
 
 /* Los paneles de la derecha: lo de la venta (cliente, descuento, precio, entradas y salidas…) sin tapar el ticket. Lo de
-   adentro son los mismos componentes de la ventana de hoy; aquí toman los campos y botones del prototipo. */
+   adentro son los componentes de las ventanas de antes; aquí toman los campos y botones del prototipo. */
 .vn-der.con-panel { padding: 12px 14px; }
 .vn-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; animation: vn-entra .2s cubic-bezier(.2, .8, .3, 1); }
 @keyframes vn-entra { from { transform: translateX(40px); opacity: .3; } to { transform: none; opacity: 1; } }
@@ -656,8 +614,8 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 /* La autorización, ahí mismo en el panel */
 .vn-panel .autorizacion { gap: 9px; padding: 12px; border: 1px solid var(--vn-aviso-borde); background: #fffaf0; border-radius: 10px; }
 .vn-panel .aviso-autorizacion { padding: 0; background: none; color: #6b4000; font-size: 14.5px; font-weight: 700; }
-/* En la pantalla nueva, quien puede autorizar va por su nombre: se toca su ficha y solo se escribe su PIN. También en lo
-   que se abre encima (fuera de .venta-nueva), por eso cada color lleva su respaldo. */
+/* Quien puede autorizar va por su nombre: se toca su ficha y solo se escribe su PIN. También en lo que se abre encima de
+   la venta (fuera de .venta-nueva), por eso cada color lleva su respaldo. */
 .autorizacion .autorizacion-detalle { margin: 0; font-size: 13.5px; color: var(--vn-texto, #15202c); background: var(--vn-hoja, #fff); border: 1px solid var(--vn-linea, #dfe4ea); border-radius: 8px; padding: 7px 9px; }
 .autorizacion .quien { display: flex; flex-wrap: wrap; gap: 6px; }
 .autorizacion .ficha { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 13.5px; color: var(--vn-texto, #15202c); border: 1px solid var(--vn-borde, #c6cfda); background: var(--vn-hoja, #fff); border-radius: 999px; padding: 3px 12px 3px 3px; cursor: pointer; }
@@ -719,13 +677,8 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-panel.tarjetas .resultados.impresiones td:last-child { grid-column: 3 / -1; grid-row: 4; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; margin-top: 4px; }
 .vn-panel.tarjetas .resultados.impresiones img.miniatura { width: 44px; border-radius: 3px; }
 .vn-panel .total-elegido { margin-right: auto; align-self: center; font-size: 13.5px; font-weight: 600; }
-/* El cobro de hoy (tarjeta, transferencia, crédito), con las cifras de la pantalla nueva */
-.vn-panel .cobrar-total { font: 700 44px/1.05 var(--vn-f-cifras); color: var(--vn-texto); text-align: left; }
-.vn-panel .cobrar-redondeo { text-align: left; color: var(--vn-suave); font-size: 13.5px; }
-.vn-panel .cobrar-redondeo strong { color: var(--vn-texto); font-size: 18px; }
+/* El abono y el saldo a favor que se devuelve (Ctrl+B, Clientes) y lo que cotizar despliega, con las cifras de la venta */
 .vn-panel .cobrar-resumen { text-align: left; font: 700 24px var(--vn-f-cifras); }
-.vn-panel .cobrar-resumen .cambio { color: var(--vn-cobro); }
-.vn-panel .cobrar-resumen .falta { color: var(--vn-aviso); }
 .vn-panel details { border: 1px solid var(--vn-linea); border-radius: 10px; background: var(--vn-hoja); padding: 8px 10px; }
 .vn-panel details[open] { display: flex; flex-direction: column; gap: 8px; }
 .vn-panel summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--vn-tinta); }

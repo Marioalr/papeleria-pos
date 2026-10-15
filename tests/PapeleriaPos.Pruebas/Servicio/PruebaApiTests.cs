@@ -86,7 +86,7 @@ public class PruebaApiTests(ServicioEnPrueba prueba) : IClassFixture<ServicioEnP
         Assert.Contains("cajero / 1111", leeme);
         Assert.Contains(factura.Lineas[0].Codigo!, leeme);
         Assert.Contains("no está en el catálogo", leeme);
-        // Fiar es con «Crédito» junto a «Pagó con» en la pantalla nueva; «A crédito» era la ventana de cobro de la de hoy.
+        // Fiar es con «Crédito» junto a «Pagó con»; «A crédito» era la ventana de cobro de la pantalla de antes, que ya no existe.
         Assert.Contains("«Crédito» junto a «Pagó con»", leeme);
         Assert.DoesNotContain("«A crédito»", leeme);
         Assert.Contains("dejar la guía en blanco", leeme);

@@ -1,7 +1,7 @@
 @* Si algo de la pantalla truena (un null, un error de JavaScript al dibujar o en un botón), la caja ya no se cierra: dice
    «Algo falló», lo anota en el registro (RegistroDiario) y deja volver a cargar. Sin esto, en la ventana de Windows ese
    error se volvía a lanzar en el hilo de WPF (WebViewRenderer.HandleException) y cerraba la caja sin dejar rastro. Lo
-   que falla en un método que llama caja.js (las teclas y el escáner de la pantalla nueva) no pasa por aquí: lo anota
+   que falla en un método que llama caja.js (las teclas y el escáner de la pantalla de venta) no pasa por aquí: lo anota
    RaizCaja. Con Parte, solo cuida esa parte (la franja de la prueba): si falla, se quita ella con un renglón y la venta
    sigue. *@
 @using Microsoft.Extensions.Logging
