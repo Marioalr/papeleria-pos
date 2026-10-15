@@ -135,7 +135,7 @@
                                         <td>@Textos.Accion(accion)</td>
                                         <td class="num">
                                             <span class="vn-segmento" role="radiogroup" aria-label="@Textos.Accion(accion)">
-                                                @foreach (var (nivel, clase) in Niveles)
+                                                @foreach (var (nivel, clase) in NivelesDe(accion))
                                                 {
                                                     var este = nivel;
                                                     <button role="radio" aria-checked="@(permiso.Nivel == este ? "true" : "false")"
@@ -173,6 +173,10 @@
 
     private static readonly (NivelPermiso Nivel, string Clase)[] Niveles =
         [(NivelPermiso.Permitido, "p"), (NivelPermiso.RequiereAutorizacion, "a"), (NivelPermiso.NoPermitido, "n")];
+
+    /// <summary>En Administración, solo «Puede» o «No» (dueño, 2026-10-15; Permisos.SoloPuedeONo).</summary>
+    private static IEnumerable<(NivelPermiso Nivel, string Clase)> NivelesDe(AccionControlada accion) =>
+        Permisos.SoloPuedeONo(accion) ? Niveles.Where(n => n.Nivel != NivelPermiso.RequiereAutorizacion) : Niveles;
 
     private UsuariosYPermisosDto? _datos;
 

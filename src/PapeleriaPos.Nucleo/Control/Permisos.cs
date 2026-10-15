@@ -145,7 +145,7 @@ public sealed class PermisosDeUsuario
     public PermisosDeUsuario(IEnumerable<Permiso> permisos)
     {
         foreach (var permiso in permisos)
-            _porAccion[permiso.Accion] = permiso;
+            _porAccion[permiso.Accion] = Permisos.Normalizado(permiso);
     }
 
     public Permiso De(AccionControlada accion) => _porAccion.TryGetValue(accion, out var p) ? p : new Permiso(accion, NivelPermiso.NoPermitido);
@@ -281,6 +281,24 @@ public static class Permisos
 
     /// <summary>Las acciones de «Usuarios y permisos», en su orden.</summary>
     public static IReadOnlyList<AccionControlada> EnPantalla { get; } = [.. Grupos.SelectMany(g => g.Acciones)];
+
+    /// <summary>
+    /// Las de Administración (la configuración, «Usuarios y permisos», las cajas y la bitácora) solo son «Puede» o «No»
+    /// (dueño, 2026-10-15): ahí no hay paso para pedir la autorización, y quien no puede le pide a quien sí que entre a la
+    /// caja (Ctrl+U). Más adelante se decide qué acciones sí pueden pedirla. Son las del grupo «Administración» de
+    /// <see cref="Grupos"/> (una prueba lo revisa).
+    /// </summary>
+    public static bool SoloPuedeONo(AccionControlada accion) =>
+        accion is AccionControlada.ConfigurarTienda or AccionControlada.ConfigurarTicket or AccionControlada.ConfigurarImpresora
+            or AccionControlada.ConfigurarTelegram or AccionControlada.EditarReglas or AccionControlada.AdministrarCajas
+            or AccionControlada.ConsultarBitacora;
+
+    /// <summary>
+    /// El permiso como vale: en las de <see cref="SoloPuedeONo"/>, «Con autorización» es «No» (una regla de antes, o la copia
+    /// de una caja que todavía no se actualiza, lo pueden traer así).
+    /// </summary>
+    public static Permiso Normalizado(Permiso permiso) =>
+        SoloPuedeONo(permiso.Accion) && permiso.Nivel == NivelPermiso.RequiereAutorizacion ? permiso with { Nivel = NivelPermiso.NoPermitido } : permiso;
 
     /// <summary>Cómo se llama cada permiso en pantalla, en la bitácora y en los mensajes (los del prototipo).</summary>
     public static string Nombre(AccionControlada accion) => accion switch

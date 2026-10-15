@@ -132,6 +132,25 @@ public class UsuariosApiTests(ServicioDePrueba servicio) : IClassFixture<Servici
         await LeerAsync<UsuariosYPermisosDto>(await c.Http.PutAsJsonAsync(Url(c, "/defecto"),
             new SolicitudPermisoUsuario(c.Dueno.UsuarioId, AccionControlada.AltaRapida, NivelPermiso.Permitido)));
     }
+
+    [Fact]
+    public async Task En_administracion_no_se_puede_poner_con_autorizacion()
+    {
+        var c = await PrepararAsync();
+        var encargado = (await LeerAsync<UsuariosYPermisosDto>(await c.Http.GetAsync(Url(c, $"?usuarioId={c.Dueno.UsuarioId}"))))
+            .Usuarios.Single(u => u.Nombre == "Encargado de prueba");
+
+        var enAdministracion = await c.Http.PutAsJsonAsync(Url(c, $"/{encargado.Id}"),
+            new SolicitudPermisoUsuario(c.Dueno.UsuarioId, AccionControlada.ConfigurarTicket, NivelPermiso.RequiereAutorizacion));
+        var enLosDeDefecto = await c.Http.PutAsJsonAsync(Url(c, "/defecto"),
+            new SolicitudPermisoUsuario(c.Dueno.UsuarioId, AccionControlada.AdministrarCajas, NivelPermiso.RequiereAutorizacion));
+
+        const string mensaje = "En Administración, cada permiso es «Puede» o «No»: quien no puede le pide a quien sí que entre a la caja.";
+        Assert.Equal(mensaje, await ErrorAsync(enAdministracion));
+        Assert.Equal(mensaje, await ErrorAsync(enLosDeDefecto));
+        var despues = await LeerAsync<List<Permiso>>(await c.Http.GetAsync(Url(c, $"/{encargado.Id}?usuarioId={c.Dueno.UsuarioId}")));
+        Assert.Equal(NivelPermiso.Permitido, despues.Single(p => p.Accion == AccionControlada.ConfigurarTicket).Nivel);
+    }
 }
 
 /// <summary>
