@@ -326,8 +326,9 @@ public static class GuiaPrueba
             + "cada renglón dice «por «lapicero»». Los sinónimos solo los dan de alta el dueño y el encargado; uno mal puesto mezcla "
             + "productos, y se quita ahí mismo."),
         new("configuracion", $"{VentanaDeAntes} · El dueño",
-            "Como dueño, en Configuración mira las reglas, la bitácora y el ticket. Abre «Avisos al dueño» en la franja de prueba.",
-            "La bitácora tiene lo que hiciste en la prueba (cancelaciones, precios, autorizaciones, compras…), los cortes del turno (quién "
+            "Como dueño, en Configuración mira «Usuarios y permisos», la bitácora y el ticket. Abre «Avisos al dueño» en la franja de prueba.",
+            "En «Usuarios y permisos», Dueño de prueba dice «Todos los permisos · primera cuenta», Encargado de prueba «Corte de turno, "
+            + "productos y clientes» y Cajero de prueba «Permisos por defecto»; cada permiso es Puede, Con autorización o No. La bitácora tiene lo que hiciste en la prueba (cancelaciones, precios, autorizaciones, compras…), los cortes del turno (quién "
             + "lo hizo y de qué turno) y el cierre del día («Cerró el día …»). En «Avisos al dueño» están los que le habrían llegado por "
             + "Telegram: cancelaciones, cortes con diferencia, el resumen del día, compras…"),
     ];
