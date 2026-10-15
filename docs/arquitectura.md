@@ -40,7 +40,7 @@
 | Panel del dueño | La interfaz compartida, servida por el central (pospuesto) | Navegador, en internet con llave de acceso (passkey) |
 | Puente | Servicio .NET en Linux, siempre prendido: cámaras, reloj de la tienda y contador (pospuesto, [cámaras](camaras.md)) | Raspberry Pi en cada tienda |
 | Receptor de WhatsApp | Un Cloudflare Worker o un proveedor (Kapso) que guarda los mensajes ([WhatsApp](whatsapp.md)) | Fuera de la tienda, mientras no haya central |
-| Módulo de impresión | Agente en cada PC que imprime ([detalle](impresion.md)) | PCs con impresora |
+| Módulo de impresión | Agente en cada PC que imprime ([detalle](impresion.md)); su código va aparte, en `src/Impresiones` ([README](../src/Impresiones/README.md)) | PCs con impresora |
 | Núcleo | Biblioteca .NET sin dependencias de Windows | Compartido por todo; sus pruebas corren en cualquier máquina |
 
 - **La interfaz de la caja.** Componentes Blazor (HTML/CSS + C#) en una biblioteca: la caja los muestra en una
