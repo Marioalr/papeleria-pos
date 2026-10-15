@@ -1,8 +1,8 @@
-@* Configuración de la sucursal en pestañas: el ticket, las reglas (solo el dueño), la bitácora, las cajas, Telegram, la impresora y los sinónimos de la búsqueda. Los clientes registrados tienen su propio módulo. En la caja de prueba, también la actualización. *@
+@* Configuración de la sucursal en pestañas: el ticket, usuarios y permisos (para quien lo tiene; entrega 1), la bitácora, las cajas, Telegram, la impresora y los sinónimos de la búsqueda. Los clientes registrados tienen su propio módulo. En la caja de prueba, también la actualización. La Configuración nueva (entrega 7) se lleva «Usuarios y permisos» tal cual. *@
 @inject IServiceProvider Servicios
 
 <nav class="pestanas config-pestanas">
-    @foreach (var p in Enum.GetValues<Pestanas>().Where(p => p != Pestanas.Actualizacion || HayActualizacion))
+    @foreach (var p in Enum.GetValues<Pestanas>().Where(Visible))
     {
         var pestana = p;
         <button class="pestana @(p == _pestana ? "activa" : "")" @onclick="() => _pestana = pestana">@Nombre(p)</button>
@@ -14,8 +14,8 @@
     case Pestanas.Ticket:
         <ConfiguracionTicket Caja="Caja" Sesion="Sesion" />
         break;
-    case Pestanas.Reglas:
-        <EditorReglas Caja="Caja" />
+    case Pestanas.Usuarios when Visible(Pestanas.Usuarios):
+        <UsuariosYPermisos Caja="Caja" Sesion="Sesion" />
         break;
     case Pestanas.Cajas:
         <AdministrarCajas Caja="Caja" />
@@ -44,17 +44,28 @@
     /// <summary>Antes de que el instalador cierre la caja (Actualización): lo que la venta tiene que guardar.</summary>
     [Parameter] public EventCallback AntesDeInstalar { get; set; }
 
-    private enum Pestanas { Ticket, Reglas, Bitacora, Cajas, Telegram, Impresora, Sinonimos, Actualizacion }
+    private enum Pestanas { Ticket, Usuarios, Bitacora, Cajas, Telegram, Impresora, Sinonimos, Actualizacion }
 
     private Pestanas _pestana;
 
     /// <summary>Solo la caja de prueba se actualiza desde aquí (la registra la ventana de Windows o Caja:ActualizacionPrueba).</summary>
     private bool HayActualizacion => Servicios.GetService<GitHubPrueba>() is not null;
 
+    /// <summary>
+    /// «Usuarios y permisos», como en el prototipo, solo para quien lo tiene («No»: no aparece); con «Con autorización» se
+    /// ve, y la pantalla dice quién hace los cambios. Las demás pestañas piden usuario y PIN, como antes.
+    /// </summary>
+    private bool Visible(Pestanas p) => p switch
+    {
+        Pestanas.Usuarios => Sesion.Ve(AccionControlada.EditarReglas),
+        Pestanas.Actualizacion => HayActualizacion,
+        _ => true,
+    };
+
     private static string Nombre(Pestanas p) => p switch
     {
         Pestanas.Ticket => "Ticket",
-        Pestanas.Reglas => "Reglas",
+        Pestanas.Usuarios => "Usuarios y permisos",
         Pestanas.Bitacora => "Bitácora",
         Pestanas.Cajas => "Cajas",
         Pestanas.Telegram => "Telegram",

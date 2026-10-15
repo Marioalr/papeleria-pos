@@ -36,6 +36,8 @@ public class RegistroCreditoTests : IAsyncLifetime
             _catalogo.Agregar(db);
             db.AddRange(_caja, _cajera, _dueno, _cliente);
             await db.SaveChangesAsync();
+            // Los usuarios de antes (con su rol) reciben sus permisos, como al arrancar el servicio.
+            await MigracionPermisos.AplicarAsync(db);
         }
         await using (var db = _base.Contexto())
             _turno = await new RegistroCaja(db).AbrirTurnoAsync(_caja.Id, _cajera.Id, 50000);

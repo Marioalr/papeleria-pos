@@ -7,24 +7,25 @@ namespace PapeleriaPos.Nucleo.Usuarios;
 /// <summary>
 /// La entrada de la caja (docs/propuesta-interfaz.md, «Usuarios y permisos»; entrega 6): una ficha por cada usuario activo
 /// de la sucursal, con su letra y lo que puede hacer, y luego solo el PIN, sin escribir el usuario. Las arman igual el
-/// servicio y la caja sin conexión (con su copia local de los usuarios y las reglas): las fichas y sus letras son las
-/// mismas con o sin la caja principal. Siguen los roles de hoy; con los permisos por usuario (entrega 1) cambia solo de
-/// dónde sale lo que puede cada quien.
+/// servicio y la caja sin conexión (con su copia local de los usuarios y sus permisos): las fichas y sus letras son las
+/// mismas con o sin la caja principal.
 /// </summary>
 public static class FichasEntrada
 {
     /// <summary>
-    /// Las cifras del PIN en la entrada: al teclear la cuarta, entra solo, como en el prototipo. Los PIN de hoy son de 4
-    /// (los usuarios salen de la preparación de la caja; la pantalla de usuarios, con el largo del PIN en Configuración ›
-    /// Seguridad, llega con la entrega 1).
+    /// Las cifras del PIN: al teclear la cuarta, entra solo, como en el prototipo. «Usuarios y permisos» da de alta y cambia
+    /// los PIN con estas cifras (el largo del PIN en Configuración › Seguridad llega con la entrega 7).
     /// </summary>
     public const int CifrasPin = 4;
+
+    /// <summary>Lo más largo que cabe de un nombre en su ficha (y en «Usuarios y permisos»).</summary>
+    public const int LargoNombre = 40;
 
     private static readonly CultureInfo Mexico = CultureInfo.GetCultureInfo("es-MX");
 
     /// <summary>
-    /// Lo que se dice de lo que tiene de más que el cajero, en este orden (de lo que más se busca a lo que menos). Con tres
-    /// basta para reconocerlo: «Corte de turno, productos y clientes».
+    /// Lo que se dice de lo que tiene de más que los de defecto, en este orden (de lo que más se busca a lo que menos). Con
+    /// tres basta para reconocerlo: «Corte de turno, productos y clientes».
     /// </summary>
     private static readonly (AccionControlada Accion, string Texto)[] Notables =
     [
@@ -34,25 +35,8 @@ public static class FichasEntrada
         (AccionControlada.CostearCompra, "compras"),
         (AccionControlada.ConteoCompleto, "conteo completo"),
         (AccionControlada.ConsultarBitacora, "bitácora"),
+        (AccionControlada.VerReportes, "reportes"),
     ];
-
-    /// <summary>
-    /// Las fichas, por nombre (como se buscan con la vista). <paramref name="usuarios"/> son los activos que entran en esa
-    /// caja: los de su sucursal y los que no tienen sucursal (el dueño).
-    /// </summary>
-    /// <param name="cajeroDelTurno">Quien tiene abierto el turno de esa caja: su ficha lo dice.</param>
-    public static List<FichaUsuarioDto> Armar(
-        IEnumerable<(Guid Id, string Nombre, Rol Rol)> usuarios, IReadOnlyList<ReglaPermiso> reglas, Guid sucursalId, Guid? cajeroDelTurno)
-    {
-        var lista = usuarios.ToList();
-        var teclas = Teclas(lista.Select(u => (u.Id, u.Nombre)));
-        return lista
-            .OrderBy(u => u.Nombre.Trim(), StringComparer.Create(Mexico, ignoreCase: true))
-            .ThenBy(u => u.Id)
-            .Select(u => new FichaUsuarioDto(u.Id, u.Nombre.Trim(), teclas.GetValueOrDefault(u.Id), Resumen(reglas, u.Rol, sucursalId),
-                u.Id == cajeroDelTurno, HaceCorte(reglas, u.Rol, sucursalId)))
-            .ToList();
-    }
 
     /// <summary>
     /// La letra de cada uno, sin repetirse en la caja: la inicial de su nombre; si ya es de otro, la de su otra palabra (el
@@ -61,10 +45,8 @@ public static class FichasEntrada
     /// nadie, y la misma lista da siempre las mismas letras. Solo letras: los números son del PIN. Con más de 26 usuarios,
     /// los que ya no alcanzan letra se tocan.
     /// <para>
-    /// Una baja sí puede mover letras: se reparten entre los activos, y la letra de quien se va queda libre para el que
-    /// seguía. Hoy nadie da de baja usuarios (no hay pantalla para eso). Cuando la pantalla de usuarios lo haga (entrega 1),
-    /// hay que repartirlas también entre los dados de baja, en el servicio y en la copia de la caja, que entonces tendría
-    /// que traerlos (sin el hash de su PIN).
+    /// Una baja tampoco mueve letras: se reparten también entre los dados de baja (<see cref="Armar"/>), en el servicio y
+    /// en la copia de la caja, que los trae sin el hash de su PIN.
     /// </para>
     /// </summary>
     public static Dictionary<Guid, string> Teclas(IEnumerable<(Guid Id, string Nombre)> usuarios)
@@ -101,21 +83,39 @@ public static class FichasEntrada
     private static bool EsLetra(char c) => c is >= 'A' and <= 'Z';
 
     /// <summary>
-    /// Lo que puede hacer, en pocas palabras, como en el prototipo: «Todos los permisos», «Permisos por defecto» (los del
-    /// cajero, con los que empieza cada usuario nuevo) o lo que tiene de más que el cajero («Corte de turno, productos y
-    /// clientes»); si lo que tiene de más no es de lo que se nombra, «Permisos propios».
+    /// Las fichas, por nombre (como se buscan con la vista). <paramref name="usuarios"/> son los activos que entran en esa
+    /// caja (los de su sucursal y los que no tienen sucursal), con sus permisos. Las letras se reparten entre
+    /// <paramref name="paraLasLetras"/>: todos los que entran en la caja, también los dados de baja, para que una baja no le
+    /// cambie la letra a nadie.
     /// </summary>
-    public static string Resumen(IReadOnlyList<ReglaPermiso> reglas, Rol rol, Guid sucursalId)
+    /// <param name="defecto">Los permisos por defecto: el resumen dice si alguien tiene esos o qué tiene de más.</param>
+    /// <param name="cajeroDelTurno">Quien tiene abierto el turno de esa caja: su ficha lo dice.</param>
+    public static List<FichaUsuarioDto> Armar(
+        IEnumerable<UsuarioConPermisos> usuarios, IEnumerable<(Guid Id, string Nombre)> paraLasLetras, PermisosDeUsuario defecto, Guid? cajeroDelTurno)
     {
-        var acciones = Enum.GetValues<AccionControlada>();
-        // Con un monto enorme, lo que tiene un límite pide autorización: así «todos» es sin límite.
-        if (acciones.All(a => Permisos.Evaluar(reglas, rol, sucursalId, a, long.MaxValue).Nivel == NivelPermiso.Permitido))
+        var lista = usuarios.ToList();
+        var teclas = Teclas(paraLasLetras.Concat(lista.Select(u => (u.Id, u.Nombre))));
+        return lista
+            .OrderBy(u => u.Nombre.Trim(), StringComparer.Create(Mexico, ignoreCase: true))
+            .ThenBy(u => u.Id)
+            .Select(u => new FichaUsuarioDto(u.Id, u.Nombre.Trim(), teclas.GetValueOrDefault(u.Id), Resumen(u.Permisos, defecto),
+                u.Id == cajeroDelTurno, HaceCorte(u.Permisos)))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Lo que puede hacer, en pocas palabras, como en el prototipo: «Todos los permisos», «Permisos por defecto» (los
+    /// mismos que <paramref name="defecto"/>, con su límite) o lo que tiene de más que los de defecto («Corte de turno,
+    /// productos y clientes»); si lo que tiene de más no es de lo que se nombra, «Permisos propios».
+    /// </summary>
+    public static string Resumen(PermisosDeUsuario permisos, PermisosDeUsuario defecto)
+    {
+        if (permisos.TieneTodos)
             return "Todos los permisos";
-        if (acciones.All(a => Nivel(reglas, rol, sucursalId, a) == Nivel(reglas, Rol.Cajero, sucursalId, a)))
+        if (Permisos.EnPantalla.All(a => permisos.De(a).SeVeIgual(defecto.De(a))))
             return "Permisos por defecto";
         var demas = Notables
-            .Where(n => Permisos.Evaluar(reglas, rol, sucursalId, n.Accion).Nivel == NivelPermiso.Permitido
-                && Permisos.Evaluar(reglas, Rol.Cajero, sucursalId, n.Accion).Nivel != NivelPermiso.Permitido)
+            .Where(n => permisos.De(n.Accion).Nivel == NivelPermiso.Permitido && defecto.De(n.Accion).Nivel != NivelPermiso.Permitido)
             .Select(n => n.Texto)
             .Take(3)
             .ToList();
@@ -125,16 +125,11 @@ public static class FichasEntrada
         return char.ToUpper(texto[0], Mexico) + texto[1..];
     }
 
-    /// <summary>El nivel y si tiene límite: dos usuarios con lo mismo, salvo el monto del límite, tienen los mismos permisos.</summary>
-    private static (NivelPermiso, NivelPermiso) Nivel(IReadOnlyList<ReglaPermiso> reglas, Rol rol, Guid sucursalId, AccionControlada accion) =>
-        (Permisos.Evaluar(reglas, rol, sucursalId, accion).Nivel, Permisos.Evaluar(reglas, rol, sucursalId, accion, long.MaxValue).Nivel);
-
     /// <summary>
-    /// Puede hacer el corte de un turno («puede» en el corte): si entra en una caja con el turno de otro cajero, lo hace
+    /// Puede hacer el corte de un turno («Puede» en el corte): si entra en una caja con el turno de otro cajero, lo hace
     /// ahí mismo, sin volver a escribir su PIN.
     /// </summary>
-    public static bool HaceCorte(IReadOnlyList<ReglaPermiso> reglas, Rol rol, Guid sucursalId) =>
-        Permisos.Evaluar(reglas, rol, sucursalId, AccionControlada.CorteZ).Nivel == NivelPermiso.Permitido;
+    public static bool HaceCorte(PermisosDeUsuario permisos) => permisos.De(AccionControlada.CorteZ).Nivel == NivelPermiso.Permitido;
 
     /// <summary>Un PIN equivocado en la entrada: cuántos intentos le quedan antes de tener que esperar unos minutos.</summary>
     public static string PinIncorrecto(int quedan) =>

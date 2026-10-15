@@ -13,7 +13,7 @@ public sealed class ServicioTelegram(PosDbContext db)
 
     // ── Vincular ────────────────────────────────────────────────────────────
 
-    /// <summary>El código para escribirle al bot. Solo el dueño vincula su chat.</summary>
+    /// <summary>El código para escribirle al bot. Vincula su chat quien tiene «Configurar Telegram».</summary>
     public async Task<CodigoVinculacion> CodigoAsync(string usuario, string pin, Guid sucursalId, CancellationToken ct = default)
     {
         var dueno = await new ServicioControl(db).IdentificarAsync(usuario, pin, sucursalId, AccionControlada.ConfigurarTelegram, ct);
@@ -28,7 +28,8 @@ public sealed class ServicioTelegram(PosDbContext db)
     {
         var ahora = Ahora;
         var vigente = await db.CodigosVinculacion.FirstOrDefaultAsync(c => c.Codigo == codigo.Trim() && c.UsadoUtc == null && c.VenceUtc > ahora, ct);
-        if (vigente is null || await db.Usuarios.FindAsync([vigente.UsuarioId], ct) is not { Activo: true, Rol: Rol.Dueno } usuario)
+        if (vigente is null || await db.Usuarios.FindAsync([vigente.UsuarioId], ct) is not { Activo: true } usuario
+            || !await new ServicioControl(db).PuedeAsync(usuario.Id, AccionControlada.ConfigurarTelegram, ct))
             return null;
         vigente.UsadoUtc = ahora;
         foreach (var anterior in await db.ChatsTelegram.Where(c => c.ChatId == chatId && c.Activo).ToListAsync(ct))
@@ -91,8 +92,8 @@ public sealed class ServicioTelegram(PosDbContext db)
             return "Venció: la caja tiene que pedirla otra vez.";
         }
         var usuario = await UsuarioDelChatAsync(chatId, ct);
-        var reglas = await new ServicioControl(db).ReglasAsync(solicitud.SucursalId, ct);
-        if (usuario is null || !Permisos.PuedeAutorizar(reglas, usuario.Rol, solicitud.SucursalId, solicitud.Accion, solicitud.MontoCentavos))
+        if (usuario is null
+            || !Permisos.PuedeAutorizar(await new ServicioControl(db).PermisosAsync(usuario.Id, ct), solicitud.Accion, solicitud.MontoCentavos))
             return "Este chat no puede autorizar.";
 
         if (aprobar)

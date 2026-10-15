@@ -66,7 +66,7 @@ teclea el PIN de 4 cifras, que entra solo con la cuarta; Ctrl+U cambia de usuari
 cajero, quien tiene el permiso hace ahí mismo su corte, sin volver a escribir su PIN. El corte del turno solo pide el
 total del efectivo, a ciegas, y el dueño tiene además el corte del día. Productos, inventario, clientes y la
 configuración todavía abren sus ventanas de antes, encima de la venta; sin vender («Productos e inventario, sin cortar»,
-del encargado y el dueño) van con la barra de arriba de la venta. `preparar-caja` deja en la base de prueba los rápidos
+para quien tiene productos o compras) van con la barra de arriba de la venta. `preparar-caja` deja en la base de prueba los rápidos
 Copia B/N y CURP (10 impresiones); `preparar-prueba`, además, con los precios que decidió el dueño ($2 y $10). La caja
 de prueba se actualiza sin tocar su base de trabajo: en una PC donde ya se probó, esos precios salen hasta oprimir
 «Empezar de cero» en la franja de prueba.
@@ -74,11 +74,14 @@ de prueba se actualiza sin tocar su base de trabajo: en una PC donde ya se prob�
 Usuarios de prueba que crea `preparar-caja` (solo para bases de prueba). En la caja se entra con la ficha y el PIN; el
 usuario se escribe solo en el conteo desde el celular:
 
-| Ficha (letra) | Usuario | Rol | PIN |
+| Ficha (letra) | Usuario | Permisos | PIN |
 |---|---|---|---|
-| Cajero de prueba (C) | `cajero` | Cajero | 1111 |
-| Encargado de prueba (E) | `encargado` | Encargado (hace el corte del turno) | 2222 |
-| Dueño de prueba (D) | `dueno` | Dueño (todos los permisos, también el corte del día) | 3333 |
+| Cajero de prueba (C) | `cajero` | Permisos por defecto | 1111 |
+| Encargado de prueba (E) | `encargado` | Corte de turno, productos y clientes | 2222 |
+| Dueño de prueba (D) | `dueno` | Todos los permisos · primera cuenta (también el corte del día) | 3333 |
+
+No hay roles: cada usuario tiene sus permisos (Puede, Con autorización o No), que se ven y se cambian en Configuración →
+«Usuarios y permisos» (entrega 1). Al actualizar una base de antes, cada quien queda con lo que podía hacer con su rol.
 
 ### Instalar en la tienda (varias cajas)
 

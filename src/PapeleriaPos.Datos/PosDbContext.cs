@@ -54,7 +54,9 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<CorteConteo> CortesConteo => Set<CorteConteo>();
     public DbSet<ConfiguracionTicket> ConfiguracionesTicket => Set<ConfiguracionTicket>();
     public DbSet<ConfiguracionSucursal> ConfiguracionesSucursal => Set<ConfiguracionSucursal>();
+    /// <summary>De antes de la entrega 1: solo la lee la migración a <see cref="PermisosUsuario"/> (<see cref="MigracionPermisos"/>).</summary>
     public DbSet<ReglaPermiso> ReglasPermiso => Set<ReglaPermiso>();
+    public DbSet<PermisoUsuario> PermisosUsuario => Set<PermisoUsuario>();
     public DbSet<Autorizacion> Autorizaciones => Set<Autorizacion>();
     public DbSet<Bitacora> Bitacora => Set<Bitacora>();
     public DbSet<Devolucion> Devoluciones => Set<Devolucion>();

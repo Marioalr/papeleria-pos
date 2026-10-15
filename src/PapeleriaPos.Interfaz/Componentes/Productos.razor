@@ -26,12 +26,10 @@ else
         <label class="en-linea opcion"><input type="checkbox" @bind="_inactivos" @bind:after="BuscarAsync" /> Con inactivos</label>
         <button class="boton" @onclick="BuscarAsync">Buscar</button>
         <button class="boton" @onclick="DecisionesAsync">Decisiones de depuración</button>
-        @if (Sesion.Rol is Rol.Dueno or Rol.Encargado)
+        @* Con «Productos, precios y etiquetas» (con los usuarios de antes, el encargado y el dueño). *@
+        @if (Sesion.Puede(AccionControlada.EditarCatalogo))
         {
             <button class="boton" @onclick="MayoreoPorRevisar">Mayoreo por revisar</button>
-        }
-        @if (Sesion.Rol is Rol.Dueno or Rol.Encargado)
-        {
             <button class="boton principal" @onclick="() => _abierto = new Abierto(null)">Nuevo producto</button>
         }
     </div>

@@ -1,5 +1,5 @@
 @* F2: lo impreso en la WF-6590 que falta cobrar, de todas las PC, y las copias del panel. Se eligen los trabajos del cliente y entran al
-   ticket en una sola línea "Impresiones". El costo solo lo ve el dueño. *@
+   ticket en una sola línea "Impresiones". El costo solo lo ve quien tiene «Ver costos, utilidad y margen». *@
 @inject ClienteCaja Cliente
 
 @if (_trabajos is null)
@@ -74,7 +74,7 @@ else
 {
     <div class="resultados impresiones">
         <table>
-            <thead><tr><th></th><th></th><th>Documento</th><th>PC · hora</th><th class="num">Págs.</th><th>Color</th><th class="num">Precio</th>@if (EsDueno) {<th class="num">Costo</th>}<th></th></tr></thead>
+            <thead><tr><th></th><th></th><th>Documento</th><th>PC · hora</th><th class="num">Págs.</th><th>Color</th><th class="num">Precio</th>@if (VeCosto) {<th class="num">Costo</th>}<th></th></tr></thead>
             @foreach (var t in _trabajos)
             {
                 var trabajo = t;
@@ -107,7 +107,7 @@ else
                             <div class="nota">@(t.Tipo == TipoTrabajoImpresion.Copia ? "sugerido" : "completo") @Formato.Dinero(completo)</div>
                         }
                     </td>
-                    @if (EsDueno)
+                    @if (VeCosto)
                     {
                         <td class="num">@(t.Costo is { } c ? Formato.Dinero(c.TotalCentavos) : "")</td>
                     }
@@ -153,7 +153,8 @@ else
     private string? _error;
     private bool _ocupado;
 
-    private bool EsDueno => Sesion.Rol == Rol.Dueno;
+    /// <summary>Con «Ver costos, utilidad y margen» (al migrar, el dueño). El servicio solo le manda el costo a quien lo ve.</summary>
+    private bool VeCosto => Sesion.Puede(AccionControlada.VerUtilidad);
 
     protected override async Task OnInitializedAsync()
     {

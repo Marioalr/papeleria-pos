@@ -12,11 +12,15 @@ public static class BaseDeDatos
     public static DbContextOptions<PosDbContext> Opciones(string cadenaConexion) =>
         new DbContextOptionsBuilder<PosDbContext>().UseSqlite(cadenaConexion).Options;
 
-    /// <summary>Aplica las migraciones pendientes y deja la base en modo WAL.</summary>
+    /// <summary>
+    /// Aplica las migraciones pendientes, deja la base en modo WAL y pasa a los permisos por usuario lo que falte
+    /// (<see cref="MigracionPermisos"/>: la primera vez, los roles de antes; después, nada o casi nada).
+    /// </summary>
     public static async Task PrepararAsync(PosDbContext db, CancellationToken ct = default)
     {
         await db.Database.MigrateAsync(ct);
         await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;", ct);
+        await MigracionPermisos.AplicarAsync(db, ct);
     }
 
     /// <summary>

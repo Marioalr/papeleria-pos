@@ -1,4 +1,4 @@
-@* Las cajas de la sucursal y qué PC usa cada una. El dueño puede quitar una PC (robada, reemplazada o que ya no se usa). *@
+@* Las cajas de la sucursal y qué PC usa cada una. Quien tiene «Dar de alta y quitar cajas» puede quitar una PC (robada, reemplazada o que ya no se usa). *@
 @inject ClienteCaja Cliente
 
 @if (_cajas is null)
@@ -7,7 +7,7 @@
 }
 else
 {
-    <p class="nota">Para agregar una caja, abre el POS en la PC nueva: pide el PIN del dueño y se da de alta sola.</p>
+    <p class="nota">Para agregar una caja, abre el POS en la PC nueva: pide el usuario y el PIN de quien tiene «Dar de alta y quitar cajas» y se da de alta sola.</p>
     <div class="resultados">
         <table>
             <thead><tr><th>Caja</th><th>Serie</th><th>PC</th><th></th></tr></thead>
@@ -29,7 +29,7 @@ else
         </table>
     </div>
     <div class="dos-columnas">
-        <label>Usuario del dueño <input @bind="_usuario" autocomplete="off" /></label>
+        <label>Usuario <input @bind="_usuario" autocomplete="off" /></label>
         <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" /></label>
     </div>
     @if (_error is not null)
@@ -71,7 +71,7 @@ else
         (_error, _aviso) = (null, null);
         if (_usuario.Trim().Length == 0 || _pin.Length == 0)
         {
-            _error = "Escribe el usuario y PIN del dueño.";
+            _error = "Escribe el usuario y el PIN.";
             return;
         }
         _ocupado = true;

@@ -63,7 +63,33 @@ public sealed record SolicitudBusqueda(Guid CajaId, string Texto, int Resultados
 
 public sealed record SolicitudEntrada(string Usuario, string Pin);
 
-public sealed record SesionDto(Guid UsuarioId, string Nombre, Rol Rol);
+/// <summary>
+/// Quien entró a la caja, con todo lo que puede (entrega 1): la caja pinta con esto sus pestañas, teclas y candados, sin
+/// preguntar en cada clic, y el servicio vuelve a revisar cada operación.
+/// </summary>
+/// <param name="Rol">De antes de la entrega 1: ya no decide nada. Solo lo leen las cajas que no se han actualizado.</param>
+/// <param name="Permisos">
+/// Cada acción, con quién la autoriza (lo mismo que <c>api/usuarios/{id}/permisos</c>). Vacío si lo mandó un servicio de
+/// antes: la pantalla de venta los pide aparte y, sin ellos, todo se ve y el servicio decide.
+/// </param>
+/// <param name="Resumen">Lo que puede, en pocas palabras («Todos los permisos», «Permisos por defecto»…): el menú del usuario.</param>
+public sealed record SesionDto(Guid UsuarioId, string Nombre, Rol Rol, IReadOnlyList<PermisoDeSesion>? Permisos = null, string? Resumen = null)
+{
+    public PermisoDeSesion? Permiso(AccionControlada accion) => Permisos?.FirstOrDefault(p => p.Accion == accion);
+
+    /// <summary>Lo puede hacer sin pedir autorización. Sin los permisos no se sabe: se ve, y el servicio decide.</summary>
+    public bool Puede(AccionControlada accion) => Permisos is null || Permiso(accion)?.Nivel == NivelPermiso.Permitido;
+
+    /// <summary>Se le enseña: lo puede hacer o lo puede pedir («No»: no aparece). Sin los permisos, también se ve.</summary>
+    public bool Ve(AccionControlada accion) => Permisos is null || Permiso(accion) is { Nivel: not NivelPermiso.NoPermitido };
+
+    /// <summary>Iguales si dicen lo mismo, también cada permiso (la de la caja principal y la de la copia de la caja).</summary>
+    public bool Equals(SesionDto? otra) =>
+        otra is not null && (UsuarioId, Nombre, Rol, Resumen) == (otra.UsuarioId, otra.Nombre, otra.Rol, otra.Resumen)
+        && (Permisos is null) == (otra.Permisos is null) && (Permisos ?? []).SequenceEqual(otra.Permisos ?? []);
+
+    public override int GetHashCode() => HashCode.Combine(UsuarioId, Nombre, Rol, Resumen);
+}
 
 /// <summary>
 /// Una ficha de la entrada de la caja (entrega 6): quien puede entrar en ella, sin su usuario, su PIN ni el hash del PIN.
@@ -274,6 +300,7 @@ public sealed record EfectivoCajaDto(long EsperadoCentavos, long? LimiteCentavos
 
 public sealed record ConfiguracionSucursalDto(long? LimiteEfectivoCentavos);
 
+/// <summary>Lo cambia quien tiene «Configuración de la tienda», con su usuario y PIN.</summary>
 public sealed record SolicitudConfiguracionSucursal(string Usuario, string Pin, long? LimiteEfectivoCentavos);
 
 /// <summary>El comprobante que se imprime al sacar efectivo de la caja.</summary>
@@ -282,10 +309,8 @@ public sealed record ComprobanteMovimientoDto(
 
 public sealed record SolicitudReimpresion(Guid UsuarioId, Guid CajaId, string? Motivo);
 
+/// <summary>De antes de la entrega 1: la regla de un rol, como la copia de la caja se la lleva a una caja que no se ha actualizado.</summary>
 public sealed record ReglaDto(AccionControlada Accion, Rol Rol, NivelPermiso Nivel, long? UmbralCentavos, bool PideMotivo);
-
-/// <summary>Solo el dueño cambia las reglas.</summary>
-public sealed record SolicitudReglas(string Usuario, string Pin, IReadOnlyList<ReglaDto> Reglas);
 
 // ── Cancelar, devolver y verificar (entrega 2, parte 2) ─────────────────────
 
@@ -332,7 +357,7 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 // ── Varias cajas (entrega 3) ────────────────────────────────────────────────
 
 /// <summary>Lo que contesta el servicio sin llave: para encontrarlo en la red y saber que está vivo.</summary>
-/// <param name="VersionDatos">Cambia con el catálogo, los usuarios o las reglas: la caja vuelve a bajar su copia.</param>
+/// <param name="VersionDatos">Cambia con el catálogo, los usuarios o sus permisos: la caja vuelve a bajar su copia.</param>
 /// <param name="Prueba">El servicio es el de la prueba con una persona real: datos ficticios, guía y avisos simulados.</param>
 /// <param name="VersionCredito">Cambia con cada fiado, abono o cambio de crédito: la caja vuelve a pedir los saldos.</param>
 /// <param name="PilotoEleventa">
@@ -362,8 +387,15 @@ public sealed record AltaCajaDto(CajaDto Caja, string Llave);
 
 // ── Contingencia (entrega 3, parte 2) ───────────────────────────────────────
 
-/// <summary>Un usuario en la copia local de la caja: el PIN va como su hash (PBKDF2), nunca en claro.</summary>
+/// <summary>
+/// Un usuario en la copia local de la caja: el PIN va como su hash (PBKDF2), nunca en claro. Los dados de baja también
+/// vienen (sin el hash), para que sus letras no se le den a otro; no entran.
+/// </summary>
+/// <param name="Rol">De antes de la entrega 1: solo para una caja que no se ha actualizado (la de ahora usa los permisos).</param>
 public sealed record UsuarioLocalDto(Guid Id, string Usuario, string Nombre, Rol Rol, string PinHash, bool Activo);
+
+/// <summary>Los permisos de un usuario en la copia de la caja; sin usuario, los de defecto.</summary>
+public sealed record PermisosLocalesDto(Guid? UsuarioId, IReadOnlyList<Permiso> Permisos);
 
 /// <summary>Cada código de barras y la presentación que vende (la caja de 12, la pieza…).</summary>
 public sealed record CodigoLocalDto(string Codigo, Guid VarianteId, Guid PresentacionId);
@@ -373,12 +405,17 @@ public sealed record CodigoLocalDto(string Codigo, Guid VarianteId, Guid Present
 /// <param name="UltimoFolio">El último folio de la serie de la caja que conoce el servicio.</param>
 /// <param name="Clientes">Para las cajas de antes (CTRL+D): solo los activos con descuento, que es lo único que saben usar.</param>
 /// <param name="Registrados">Todos los clientes registrados activos, con sus privilegios.</param>
+/// <param name="Reglas">De antes de la entrega 1: solo para una caja que no se ha actualizado.</param>
+/// <param name="Permisos">
+/// Los permisos de cada usuario activo y los de defecto (entrega 1). Vacío en una copia de antes: la caja decide con las
+/// reglas como lo dejaría la migración, y la vuelve a bajar en el siguiente latido.
+/// </param>
 public sealed record PaqueteContingenciaDto(
     long Version, CajaDto Caja, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<UsuarioLocalDto> Usuarios,
     IReadOnlyList<ReglaDto> Reglas,
     IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, int UltimoFolio, long? LimiteEfectivoCentavos,
     IReadOnlyList<ClienteRegistradoDto>? Clientes = null, IReadOnlyList<ClienteRegistradoDto>? Registrados = null,
-    IReadOnlyList<string>? Marcas = null, IReadOnlyList<SinonimoDto>? Sinonimos = null);
+    IReadOnlyList<string>? Marcas = null, IReadOnlyList<SinonimoDto>? Sinonimos = null, IReadOnlyList<PermisosLocalesDto>? Permisos = null);
 
 // Lo que sube con la bandeja. Cada cosa lleva el ID que le dio la caja: si llega dos veces, se guarda una.
 

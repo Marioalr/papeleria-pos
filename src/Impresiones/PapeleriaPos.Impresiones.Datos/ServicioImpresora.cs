@@ -32,7 +32,10 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
     public async Task<List<ConfiguracionImpresion>> ConImpresoraAsync(CancellationToken ct = default) =>
         await Configuraciones.AsNoTracking().Where(c => c.ImpresoraHost != null && c.ImpresoraHost != "").ToListAsync(ct);
 
-    /// <summary>Cómo se lee la impresora. Solo el dueño la cambia: quien llama ya lo revisó (la API, con su usuario y su PIN).</summary>
+    /// <summary>
+    /// Cómo se lee la impresora. La cambia quien tiene «Configurar la impresora»: quien llama ya lo revisó (la API, con su
+    /// usuario y su PIN).
+    /// </summary>
     public async Task<ConfiguracionImpresion> GuardarConfiguracionAsync(Guid sucursalId, ConfiguracionImpresoraDto c, CancellationToken ct = default)
     {
         if (c.AvisoTintaPorcentaje is < 0 or > 100)
@@ -199,11 +202,11 @@ public sealed class ServicioImpresora(DbContext db, IPosParaImpresiones pos)
     }
 
     /// <summary>
-    /// Solo el dueño (quien llama ya lo revisó: la API, con su usuario y su PIN): guarda los factores calculados en los
-    /// costos de la sucursal; las impresiones nuevas ya salen con ellos. Como en Control Print, el factor es la tinta real
-    /// entre la del modelo (no se acumula) y la caja de mantenimiento se corrige con datos preliminares. No es automática:
-    /// mientras el agente vigila la cola de laboratorio, lo que registra el POS no sale de la impresora y la calibración no
-    /// sirve.
+    /// Para quien tiene «Configurar la impresora» (quien llama ya lo revisó: la API, con su usuario y su PIN): guarda los
+    /// factores calculados en los costos de la sucursal; las impresiones nuevas ya salen con ellos. Como en Control Print,
+    /// el factor es la tinta real entre la del modelo (no se acumula) y la caja de mantenimiento se corrige con datos
+    /// preliminares. No es automática: mientras el agente vigila la cola de laboratorio, lo que registra el POS no sale de
+    /// la impresora y la calibración no sirve.
     /// </summary>
     public async Task<CalibracionDto> AplicarCalibracionAsync(Guid sucursalId, CancellationToken ct = default)
     {

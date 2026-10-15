@@ -43,23 +43,26 @@ public static class ApiCaja
                 return Results.BadRequest(new ErrorDto("Usuario o PIN incorrecto."));
             var resultado = usuario.VerificarPin(solicitud.Pin, db.Reloj.GetUtcNow().UtcDateTime);
             await db.SaveChangesAsync();
+            // Sin caja (el celular): quién autoriza sale de los de su sucursal; sin sucursal, de todos.
             return resultado switch
             {
-                ResultadoPin.Correcto => Results.Ok(new SesionDto(usuario.Id, usuario.Nombre, usuario.Rol)),
+                ResultadoPin.Correcto => Results.Ok(await new ServicioControl(db).SesionAsync(usuario, usuario.SucursalId)),
                 ResultadoPin.Bloqueado => Results.BadRequest(new ErrorDto("Demasiados intentos: espera unos minutos.")),
                 _ => Results.BadRequest(new ErrorDto("Usuario o PIN incorrecto.")),
             };
         });
 
         // La entrada con fichas (entrega 6): quién entra en esta caja, sin usuario, PIN ni hash; y entrar con la ficha y el PIN.
+        // Las letras se reparten también entre los dados de baja: una baja no le cambia la letra a nadie.
         api.MapGet("/cajas/{cajaId:guid}/usuarios", async (Guid cajaId, PosDbContext db) =>
         {
             var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
-            var usuarios = await db.Usuarios.AsNoTracking().Where(u => u.Activo && (u.SucursalId == null || u.SucursalId == caja.SucursalId))
-                .Select(u => new { u.Id, u.Nombre, u.Rol }).ToListAsync();
+            var control = new ServicioControl(db);
+            var todos = await db.Usuarios.AsNoTracking().Where(u => u.SucursalId == null || u.SucursalId == caja.SucursalId)
+                .Select(u => new { u.Id, u.Nombre }).ToListAsync();
             var turno = await new RegistroCaja(db).TurnoAbiertoAsync(cajaId);
-            return FichasEntrada.Armar(usuarios.Select(u => (u.Id, u.Nombre, u.Rol)), await new ServicioControl(db).ReglasAsync(caja.SucursalId),
-                caja.SucursalId, turno?.CajeroId);
+            return FichasEntrada.Armar(await control.UsuariosQueEntranAsync(caja.SucursalId), todos.Select(u => (u.Id, u.Nombre)), await control.DefectoAsync(),
+                turno?.CajeroId);
         });
 
         api.MapPost("/cajas/{cajaId:guid}/sesion", async (Guid cajaId, SolicitudEntradaFicha s, PosDbContext db) =>
@@ -75,7 +78,7 @@ public static class ApiCaja
             await db.SaveChangesAsync();
             return resultado switch
             {
-                ResultadoPin.Correcto => Results.Ok(new SesionDto(usuario.Id, usuario.Nombre, usuario.Rol)),
+                ResultadoPin.Correcto => Results.Ok(await new ServicioControl(db).SesionAsync(usuario, caja.SucursalId)),
                 ResultadoPin.Bloqueado => Results.BadRequest(new ErrorDto(FichasEntrada.DemasiadosIntentos)),
                 _ => Results.BadRequest(new ErrorDto(FichasEntrada.PinIncorrecto(Usuario.IntentosPermitidos - usuario.IntentosFallidos))),
             };

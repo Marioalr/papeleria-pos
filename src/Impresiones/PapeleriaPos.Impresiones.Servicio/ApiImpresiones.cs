@@ -9,7 +9,6 @@ using PapeleriaPos.Impresiones.Medicion;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
-using PapeleriaPos.Nucleo.Usuarios;
 
 namespace PapeleriaPos.Impresiones.Servicio;
 
@@ -22,8 +21,8 @@ public static class ApiImpresiones
     /// <summary>
     /// Las rutas del módulo, sobre el grupo que le da el servicio:
     /// <c>app.MapGroup("/api").ConErrores().SoloSuCaja().MapearApiImpresiones()</c>. Lo que vale para toda la API (los
-    /// errores para el cajero, que una caja solo opere la suya) lo pone el servicio, no el módulo. Lo que es del POS
-    /// (quién es el dueño, los nombres, el PIN) sale de su base.
+    /// errores para el cajero, que una caja solo opere la suya) lo pone el servicio, no el módulo. Lo que es del POS (los
+    /// permisos de cada usuario, los nombres, el PIN) sale de su base.
     /// </summary>
     public static RouteGroupBuilder MapearApiImpresiones(this RouteGroupBuilder api)
     {
@@ -38,15 +37,15 @@ public static class ApiImpresiones
             return new { trabajo.Id, trabajo.PrecioCentavos };
         });
 
-        // Lo que falta cobrar en la sucursal, de todas las PC. El costo solo va si quien pregunta es el dueño.
+        // Lo que falta cobrar en la sucursal, de todas las PC. El costo solo va a quien tiene «Ver costos, utilidad y margen».
         api.MapGet("/sucursales/{sucursalId:guid}/impresiones/por-cobrar", async (Guid sucursalId, Guid usuarioId, PosDbContext db) =>
         {
             var registro = ImpresionesDelPos.Registro(db);
             var trabajos = await registro.PorCobrarAsync(sucursalId);
             var costos = await registro.CostosAsync(sucursalId);
-            var esDueno = await RolAsync(db, usuarioId) == Rol.Dueno;
+            var veCosto = await VeCostoAsync(db, usuarioId);
             var nombres = await NombresAsync(db, trabajos);
-            return trabajos.Select(t => PorCobrar(t, nombres, esDueno, costos)).ToList();
+            return trabajos.Select(t => PorCobrar(t, nombres, veCosto, costos)).ToList();
         });
 
         api.MapPost("/impresiones/{id:guid}/no-vendida", async (Guid id, SolicitudNoVendida s, PosDbContext db) =>
@@ -60,22 +59,25 @@ public static class ApiImpresiones
         {
             var registro = ImpresionesDelPos.Registro(db);
             var trabajo = await registro.SoloLoQueSalioAsync(id);
-            return PorCobrar(trabajo, await NombresAsync(db, [trabajo]), await RolAsync(db, s.UsuarioId) == Rol.Dueno,
-                await registro.CostosAsync(trabajo.SucursalId));
+            return PorCobrar(trabajo, await NombresAsync(db, [trabajo]), await VeCostoAsync(db, s.UsuarioId), await registro.CostosAsync(trabajo.SucursalId));
         });
 
-        // El desglose de la línea "Impresiones": todo lo que se imprimió en un día y cómo se cobró (dueño y encargado).
+        // El desglose de la línea "Impresiones": todo lo que se imprimió en un día y cómo se cobró, para quien tiene «Consultar
+        // la bitácora» (con los usuarios de antes, el dueño y el encargado, como con los roles); el costo, con «Ver costos,
+        // utilidad y margen».
         api.MapGet("/sucursales/{sucursalId:guid}/impresiones", async (Guid sucursalId, DateOnly fecha, Guid usuarioId, PosDbContext db) =>
         {
-            var rol = await RolAsync(db, usuarioId);
-            if (rol is not (Rol.Dueno or Rol.Encargado))
+            var control = new ServicioControl(db);
+            if (!await control.PuedeAsync(usuarioId, AccionControlada.ConsultarBitacora))
                 throw new PermisoRequerido(AccionControlada.ConsultarBitacora, NivelPermiso.NoPermitido,
-                    "El desglose de las impresiones solo lo ven el dueño y el encargado.");
+                    $"El desglose de las impresiones lo ve quien tiene el permiso «{Permisos.Nombre(AccionControlada.ConsultarBitacora)}»: "
+                    + $"{Permisos.Nombres(await control.QuienesPuedenAsync(sucursalId, AccionControlada.ConsultarBitacora))}.");
+            var veCosto = await VeCostoAsync(db, usuarioId);
             var trabajos = await ImpresionesDelPos.Registro(db).DelDiaAsync(sucursalId, fecha);
             var nombres = await NombresAsync(db, trabajos);
             return trabajos.Select(t => new ImpresionDelDiaDto(t.Id, t.Tipo, t.Documento, t.Pc, HoraMexico.ALocal(t.ImpresoUtc), t.Caras,
                 t.CarasContadas, t.Color, t.PrecioCentavos, t.Cobro, t.MotivoNoVendida, t.AtendioId is { } a ? nombres.GetValueOrDefault(a) : null,
-                rol == Rol.Dueno ? RegistroImpresiones.Costo(t) : null)).ToList();
+                veCosto ? RegistroImpresiones.Costo(t) : null)).ToList();
         });
 
         // ── Cotizar y copias ─────────────────────────────────────────────────
@@ -83,9 +85,9 @@ public static class ApiImpresiones
         api.MapGet("/sucursales/{sucursalId:guid}/impresiones/opciones", (Guid sucursalId, PosDbContext db) =>
             ImpresionesDelPos.Registro(db).OpcionesAsync(sucursalId));
 
-        // La caja midió el PDF; aquí se le pone precio con la configuración de la sucursal.
+        // La caja midió el PDF; aquí se le pone precio con la configuración de la sucursal (con el costo, para quien lo ve).
         api.MapPost("/impresiones/cotizar", async (SolicitudCotizacion s, PosDbContext db) =>
-            await ImpresionesDelPos.Registro(db).CotizarAsync(s, s.UsuarioId is { } u && await RolAsync(db, u) == Rol.Dueno));
+            await ImpresionesDelPos.Registro(db).CotizarAsync(s, s.UsuarioId is { } u && await VeCostoAsync(db, u)));
 
         api.MapPost("/impresiones/copias/precio", async (SolicitudPrecioCopias s, PosDbContext db) =>
         {
@@ -105,7 +107,7 @@ public static class ApiImpresiones
         api.MapGet("/sucursales/{sucursalId:guid}/impresora", (Guid sucursalId, PosDbContext db, VigilanciaImpresora vigilancia) =>
             ImpresionesDelPos.Impresora(db).EstadoAsync(sucursalId, vigilancia.Error(sucursalId)));
 
-        // Solo el dueño cambia cómo se lee la impresora.
+        // Cambia cómo se lee la impresora quien tiene «Configurar la impresora», con su usuario y su PIN.
         api.MapPut("/sucursales/{sucursalId:guid}/impresora", async (Guid sucursalId, SolicitudConfiguracionImpresora s, PosDbContext db,
             VigilanciaImpresora vigilancia) =>
         {
@@ -124,7 +126,7 @@ public static class ApiImpresiones
         api.MapGet("/sucursales/{sucursalId:guid}/impresora/calibracion", (Guid sucursalId, PosDbContext db) =>
             ImpresionesDelPos.Impresora(db).CalibracionAsync(sucursalId));
 
-        // Solo el dueño aplica la calibración.
+        // Aplica la calibración quien tiene «Configurar la impresora», con su usuario y su PIN.
         api.MapPost("/sucursales/{sucursalId:guid}/impresora/calibracion", async (Guid sucursalId, SolicitudCredenciales s, PosDbContext db) =>
         {
             await new ServicioControl(db).IdentificarAsync(s.Usuario, s.Pin, sucursalId, AccionControlada.ConfigurarImpresora);
@@ -134,8 +136,9 @@ public static class ApiImpresiones
         return api;
     }
 
-    private static async Task<Rol?> RolAsync(PosDbContext db, Guid usuarioId) =>
-        await db.Usuarios.Where(u => u.Id == usuarioId && u.Activo).Select(u => (Rol?)u.Rol).FirstOrDefaultAsync();
+    /// <summary>El costo, la ganancia y el margen de las impresiones: solo con «Ver costos, utilidad y margen» (al migrar, el dueño).</summary>
+    private static Task<bool> VeCostoAsync(PosDbContext db, Guid usuarioId) =>
+        new ServicioControl(db).PuedeAsync(usuarioId, AccionControlada.VerUtilidad);
 
     private static async Task<Dictionary<Guid, string>> NombresAsync(PosDbContext db, IEnumerable<TrabajoImpresion> trabajos)
     {
@@ -143,9 +146,9 @@ public static class ApiImpresiones
         return await db.Usuarios.Where(u => ids.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Nombre);
     }
 
-    private static ImpresionPorCobrarDto PorCobrar(TrabajoImpresion t, Dictionary<Guid, string> nombres, bool esDueno, CostSettings costos) =>
+    private static ImpresionPorCobrarDto PorCobrar(TrabajoImpresion t, Dictionary<Guid, string> nombres, bool veCosto, CostSettings costos) =>
         new(t.Id, t.Documento, t.Pc, HoraMexico.ALocal(t.ImpresoUtc), t.Paginas, t.Caras, t.Color, t.Tamano, t.PrecioCentavos,
             t.AtendioId is { } a ? nombres.GetValueOrDefault(a) : null, t.Miniatura is { } m ? Convert.ToBase64String(m) : null, t.Nota,
-            esDueno ? RegistroImpresiones.Costo(t) : null, t.Tipo, t.CarasContadas, RegistroImpresiones.PrecioSoloLoQueSalio(t, costos),
+            veCosto ? RegistroImpresiones.Costo(t) : null, t.Tipo, t.CarasContadas, RegistroImpresiones.PrecioSoloLoQueSalio(t, costos),
             t.PrecioCompletoCentavos);
 }

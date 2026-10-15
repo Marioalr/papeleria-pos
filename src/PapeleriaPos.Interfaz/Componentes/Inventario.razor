@@ -1,6 +1,8 @@
-@* F4 Inventario: las compras (recibir a ciegas y capturar la nota), las órdenes de compra y el sugerido (el dueño y el
-   encargado), el conteo del día y el completo por departamento, ajustes y mermas, abrir paquete, los proveedores, el
-   margen mínimo (solo el dueño), y las etiquetas y la hoja de códigos del mostrador (el dueño y el encargado). *@
+@* F4 Inventario: las compras (recibir a ciegas y capturar la nota), las órdenes de compra y el sugerido (con «Órdenes y
+   sugerido de compra»), el conteo del día y el completo por departamento, ajustes y mermas, abrir paquete, los
+   proveedores, el margen mínimo (con «Margen mínimo») y las etiquetas y la hoja de códigos del mostrador (con «Productos,
+   precios y etiquetas»). Con los usuarios de antes, como con los roles: el margen, el dueño; lo demás, también el
+   encargado. *@
 
 <nav class="pestanas config-pestanas">
     @foreach (var p in Enum.GetValues<Pestanas>().Where(Visible))
@@ -55,8 +57,9 @@
 
     private bool Visible(Pestanas p) => p switch
     {
-        Pestanas.Ordenes or Pestanas.Sugerido or Pestanas.Etiquetas or Pestanas.HojaCodigos => Sesion.Rol is Rol.Dueno or Rol.Encargado,
-        Pestanas.Margen => Sesion.Rol == Rol.Dueno,
+        Pestanas.Ordenes or Pestanas.Sugerido => Sesion.Puede(AccionControlada.PedirCompra),
+        Pestanas.Etiquetas or Pestanas.HojaCodigos => Sesion.Puede(AccionControlada.EditarCatalogo),
+        Pestanas.Margen => Sesion.Puede(AccionControlada.ConfigurarMargen),
         _ => true,
     };
 

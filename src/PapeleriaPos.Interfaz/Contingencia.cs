@@ -60,11 +60,30 @@ public sealed class Contingencia
             Presentaciones = p.Productos.SelectMany(x => x.Presentaciones).GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First());
             Usuarios = p.Usuarios.ToDictionary(u => u.Usuario.Trim().ToLowerInvariant());
             UsuariosPorId = p.Usuarios.ToDictionary(u => u.Id);
-            Reglas = p.Reglas.Select(r => new ReglaPermiso
+            (PermisosPorUsuario, Defecto) = PermisosDe(p);
+            Activos = p.Usuarios.Where(u => u.Activo).Select(u => new UsuarioConPermisos(u.Id, u.Usuario, u.Nombre, PermisosDe(u.Id))).ToList();
+        }
+
+        /// <summary>
+        /// Los permisos de cada usuario y los de defecto (entrega 1). Una copia de antes (con las reglas por rol) se lee como la
+        /// leería la migración del servicio, para seguir decidiendo igual mientras baja la nueva.
+        /// </summary>
+        private static (Dictionary<Guid, PermisosDeUsuario>, PermisosDeUsuario) PermisosDe(PaqueteContingenciaDto p)
+        {
+            if (p.Permisos is { } permisos)
+                return (permisos.Where(x => x.UsuarioId is not null).ToDictionary(x => x.UsuarioId!.Value, x => new PermisosDeUsuario(x.Permisos)),
+                    new PermisosDeUsuario(permisos.FirstOrDefault(x => x.UsuarioId is null)?.Permisos ?? []));
+            var reglas = (p.Reglas ?? []).Select(r => new ReglaPermiso
             {
                 Accion = r.Accion, Rol = r.Rol, Nivel = r.Nivel, UmbralCentavos = r.UmbralCentavos, PideMotivo = r.PideMotivo, SucursalId = p.Caja.SucursalId,
             }).ToList();
+            return (p.Usuarios.ToDictionary(u => u.Id, u => new PermisosDeUsuario(PermisosDeRoles.De(u.Rol, reglas, p.Caja.SucursalId))),
+                new PermisosDeUsuario(PermisosDeRoles.De(Rol.Cajero, reglas, p.Caja.SucursalId)));
         }
+
+        /// <summary>Los permisos de un usuario de la copia (si no trae, ninguno).</summary>
+        public PermisosDeUsuario PermisosDe(Guid usuarioId) =>
+            PermisosPorUsuario.TryGetValue(usuarioId, out var permisos) ? permisos : new PermisosDeUsuario([]);
 
         public PaqueteContingenciaDto Paquete { get; }
         public Dictionary<Guid, ProductoVentaDto> PorVariante { get; }
@@ -78,9 +97,14 @@ public sealed class Contingencia
 
         public Dictionary<Guid, PresentacionDto> Presentaciones { get; }
         public Dictionary<Guid, IReadOnlyList<ParteDeNombre>> Partes { get; }
+        /// <summary>Por su usuario: también los dados de baja (no entran).</summary>
         public Dictionary<string, UsuarioLocalDto> Usuarios { get; }
         public Dictionary<Guid, UsuarioLocalDto> UsuariosPorId { get; }
-        public List<ReglaPermiso> Reglas { get; }
+        public Dictionary<Guid, PermisosDeUsuario> PermisosPorUsuario { get; }
+        public PermisosDeUsuario Defecto { get; }
+
+        /// <summary>Los que entran, con sus permisos: de entre ellos sale quién autoriza y quién puede.</summary>
+        public List<UsuarioConPermisos> Activos { get; }
     }
 
     private readonly AlmacenLocal _almacen;
@@ -264,6 +288,8 @@ public sealed class Contingencia
         if (_responde && (_saldos is null ? tocaCredito
                 : estado!.VersionCredito != _saldos.Version || ((subio || tocaCredito) && _almacen.CuentaPropia().Count > 0)))
             await ActualizarCreditosAsync();
+        // La copia se vuelve a bajar en el primer latido con conexión (también la de antes de la entrega 1, sin los permisos por
+        // usuario, que mientras tanto se lee como la leería la migración), cuando cambia y cada tanto.
         if (_responde && (Paquete is null || Paquete.Version != estado!.VersionDatos || Ahora - _paqueteBajadoUtc > PaqueteViejo))
             await ActualizarPaqueteAsync();
     }
@@ -330,7 +356,7 @@ public sealed class Contingencia
         }
     }
 
-    /// <summary>Baja la copia para vender sin conexión: catálogo, usuarios, reglas, ticket y el último folio.</summary>
+    /// <summary>Baja la copia para vender sin conexión: catálogo, usuarios con sus permisos, ticket y el último folio.</summary>
     public async Task ActualizarPaqueteAsync()
     {
         if (_conexion.CajaId is not { } caja)
@@ -461,28 +487,27 @@ public sealed class Contingencia
 
     public List<CajaDto> Cajas() => [Caja];
 
-    public SesionDto Entrar(string usuario, string pin)
-    {
-        var u = Identificar(usuario, pin);
-        return new SesionDto(u.Id, u.Nombre, u.Rol);
-    }
+    public SesionDto Entrar(string usuario, string pin) => Sesion(Identificar(usuario, pin));
 
     /// <summary>
-    /// Las fichas de la entrada sin la caja principal (entrega 6): de la copia local, que ya trae a los usuarios activos de la
-    /// sucursal y las reglas; quien tiene el turno abierto, del turno de esta caja. Iguales a las del servicio.
+    /// Las fichas de la entrada sin la caja principal (entrega 6): de la copia local, que ya trae a los usuarios de la
+    /// sucursal (los dados de baja, solo para las letras) y sus permisos; quien tiene el turno abierto, del turno de esta
+    /// caja. Iguales a las del servicio.
     /// </summary>
     public List<FichaUsuarioDto> Fichas(Guid cajaId) =>
-        FichasEntrada.Armar(Datos.UsuariosPorId.Values.Where(u => u.Activo).Select(u => (u.Id, u.Nombre, u.Rol)), Datos.Reglas, Caja.SucursalId,
-            Turno(cajaId)?.CajeroId);
+        FichasEntrada.Armar(Datos.Activos, Datos.UsuariosPorId.Values.Select(u => (u.Id, u.Nombre)), Datos.Defecto, Turno(cajaId)?.CajeroId);
 
     /// <summary>Entrar con la ficha: el PIN contra la copia local, con el mismo bloqueo por intentos que en el servicio.</summary>
     public SesionDto Entrar(Guid usuarioId, string pin)
     {
         if (Datos.UsuariosPorId.GetValueOrDefault(usuarioId) is not { Activo: true } usuario)
             throw new InvalidOperationException("Ese usuario no entra en esta caja.");
-        var u = Identificar(usuario.Usuario, pin, FichasEntrada.PinIncorrecto);
-        return new SesionDto(u.Id, u.Nombre, u.Rol);
+        return Sesion(Identificar(usuario.Usuario, pin, FichasEntrada.PinIncorrecto));
     }
+
+    /// <summary>Quien entró, con todo lo que puede y quién autoriza cada cosa, como lo manda el servicio.</summary>
+    private SesionDto Sesion(UsuarioLocalDto u) =>
+        new(u.Id, u.Nombre, u.Rol, PermisosDeSesion(u.Id), FichasEntrada.Resumen(Datos.PermisosDe(u.Id), Datos.Defecto));
 
     public TurnoDto? Turno(Guid cajaId) => _almacen.Leer<TurnoDto>("turno") is { } turno && turno.CajaId == cajaId ? turno : null;
 
@@ -582,16 +607,16 @@ public sealed class Contingencia
 
     public IReadOnlyList<PermisoDeSesion> PermisosDeSesion(Guid usuarioId)
     {
-        var usuario = Datos.UsuariosPorId.GetValueOrDefault(usuarioId) ?? throw new InvalidOperationException("Ese usuario no está en la copia de esta caja.");
-        return Permisos.DeLaSesion(Datos.Reglas, Datos.UsuariosPorId.Values.Where(u => u.Activo).Select(u => (u.Id, u.Usuario, u.Nombre, u.Rol)), usuario.Id, usuario.Rol,
-            Caja.SucursalId);
+        if (Datos.UsuariosPorId.GetValueOrDefault(usuarioId) is not { Activo: true } usuario)
+            throw new InvalidOperationException("Ese usuario no está en la copia de esta caja.");
+        return Permisos.DeLaSesion(Datos.PermisosDe(usuario.Id), Datos.Activos, usuario.Id);
     }
 
     /// <summary>Con la copia local de los PIN. Vale una vez, como en línea; queda en la bitácora al usarse.</summary>
     public AutorizacionDto Autorizar(SolicitudAutorizacion s)
     {
         var autorizador = Identificar(s.Usuario, s.Pin);
-        if (!Permisos.PuedeAutorizar(Datos.Reglas, autorizador.Rol, Caja.SucursalId, s.Accion, s.MontoCentavos))
+        if (!Permisos.PuedeAutorizar(Datos.PermisosDe(autorizador.Id), s.Accion, s.MontoCentavos))
         {
             Encolar(Registro(s.SolicitanteId, s.Accion, $"Autorización negada: {s.Detalle}", s.MontoCentavos, autorizador.Id, ResultadoBitacora.Negado));
             throw new InvalidOperationException($"{autorizador.Nombre} no puede autorizar esto.");
@@ -606,23 +631,22 @@ public sealed class Contingencia
     public CorteDto CorteX(Guid turnoId, Guid usuarioId) => Corte(TurnoRequerido(turnoId), TipoCorte.X, Nombre(usuarioId), null);
 
     /// <summary>
-    /// El corte X a ciegas, con la cuenta de esta caja y las reglas de su copia. Las transferencias por verificar no se
+    /// El corte X a ciegas, con la cuenta de esta caja y los permisos de su copia. Las transferencias por verificar no se
     /// saben sin la caja principal.
     /// </summary>
     public CorteInformativoDto CorteInformativo(Guid turnoId, Guid usuarioId)
     {
         var turno = TurnoRequerido(turnoId);
         var c = Corte(turno, TipoCorte.X, Nombre(usuarioId), null);
-        var activos = Datos.UsuariosPorId.Values.Where(u => u.Activo).Select(u => (u.Id, u.Usuario, u.Nombre, u.Rol)).ToList();
         return new CorteInformativoDto(turno.Cajero, turno.AbiertoLocal, c.Ventas, c.Cancelaciones, c.TarjetaCentavos, c.TransferenciaCentavos, null,
             c.CreditoCentavos, c.Abonos, c.AbonosTarjetaCentavos, c.AbonosTransferenciaCentavos,
             Evaluar(usuarioId, AccionControlada.CorteZ, null).Nivel == NivelPermiso.Permitido,
-            Permisos.QuienesPueden(Datos.Reglas, activos, Caja.SucursalId, AccionControlada.CorteZ),
+            Permisos.QuienesPueden(Datos.Activos, AccionControlada.CorteZ),
             Evaluar(usuarioId, AccionControlada.CorteDelDia, null).Nivel == NivelPermiso.Permitido, EnContingencia: true);
     }
 
     /// <summary>
-    /// El corte del turno sin conexión (2026-10-14): quien entró, con el permiso en la copia de las reglas, escribe el total
+    /// El corte del turno sin conexión (2026-10-14): quien entró, con el permiso en la copia de la caja, escribe el total
     /// que contó; no se le vuelve a pedir el PIN. La caja cierra el turno con su propia cuenta y se cuadra al subir.
     /// </summary>
     public CorteDto CorteZ(Guid turnoId, SolicitudCorteZ s)
@@ -635,9 +659,8 @@ public sealed class Contingencia
         if (Evaluar(s.UsuarioId, AccionControlada.CorteZ, null).Nivel != NivelPermiso.Permitido)
         {
             Encolar(Registro(s.UsuarioId, AccionControlada.CorteZ, "Intento sin permiso", null, resultado: ResultadoBitacora.Negado));
-            var activos = Datos.UsuariosPorId.Values.Where(u => u.Activo).Select(u => (u.Id, u.Usuario, u.Nombre, u.Rol));
             throw new ErrorCaja($"El corte del turno lo hace quien tiene ese permiso: "
-                + $"{Permisos.Nombres(Permisos.QuienesPueden(Datos.Reglas, activos, Caja.SucursalId, AccionControlada.CorteZ))}.", "no-permitido");
+                + $"{Permisos.Nombres(Permisos.QuienesPueden(Datos.Activos, AccionControlada.CorteZ))}.", "no-permitido");
         }
         if (s.ContadoCentavos < 0)
             throw new InvalidOperationException("El efectivo contado no puede ser negativo.");
@@ -700,8 +723,8 @@ public sealed class Contingencia
 
     /// <summary>
     /// Cobra con la copia del catálogo y el siguiente folio de la caja. Los precios cambiados, los descuentos y pasar el
-    /// límite del crédito se revisan con las reglas locales y las autorizaciones que se dieron sin conexión (se gastan
-    /// cuando la venta quedó guardada). Lo fiado, con el saldo que conoce esta caja.
+    /// límite del crédito se revisan con los permisos de la copia local y las autorizaciones que se dieron sin conexión (se
+    /// gastan cuando la venta quedó guardada). Lo fiado, con el saldo que conoce esta caja.
     /// </summary>
     public TicketDto Cobrar(SolicitudCobro s)
     {
@@ -750,7 +773,7 @@ public sealed class Contingencia
             Guid? autorizo = null;
             if (decision.Nivel == NivelPermiso.RequiereAutorizacion)
                 autorizo = Autorizada(cambiada.AutorizacionPrecioId, AccionControlada.CambiarPrecio, cambiada.ImporteCentavos, usadas)
-                    ?? throw new ErrorCaja("Esto requiere la autorización del encargado.", "requiere-autorizacion");
+                    ?? throw new ErrorCaja(RequiereAutorizacion, "requiere-autorizacion");
             else
                 Requerir(decision);
             bitacora.Add(Registro(s.CajeroId, AccionControlada.CambiarPrecio,
@@ -758,7 +781,7 @@ public sealed class Contingencia
                 cambiada.ImporteCentavos, autorizo, autorizo is null ? ResultadoBitacora.Hecho : ResultadoBitacora.Autorizado, venta.Id));
         }
 
-        // Descuentos: la misma regla con la copia local. Sin conexión no se sabe el costo: eso no se revisa aquí.
+        // Descuentos: el mismo permiso con la copia local. Sin conexión no se sabe el costo: eso no se revisa aquí.
         if (venta.DescuentoCentavos > 0)
         {
             var revisar = venta.DescuentoARevisar(cliente?.DescuentoCentesimas is > 0 and var d ? d : null);
@@ -768,7 +791,7 @@ public sealed class Contingencia
                 var decision = Evaluar(s.CajeroId, AccionControlada.Descuento, revisar);
                 if (decision.Nivel == NivelPermiso.RequiereAutorizacion)
                     autorizo = Autorizada(s.AutorizacionDescuentoId, AccionControlada.Descuento, revisar, usadas)
-                        ?? throw new ErrorCaja("Este descuento requiere la autorización del encargado.", "requiere-autorizacion");
+                        ?? throw new ErrorCaja("Este descuento requiere autorización.", "requiere-autorizacion");
                 else
                     Requerir(decision);
             }
@@ -798,7 +821,7 @@ public sealed class Contingencia
                 Guid? autorizo = null;
                 if (decision.Nivel == NivelPermiso.RequiereAutorizacion)
                     autorizo = Autorizada(s.AutorizacionCreditoId, AccionControlada.ExcederLimiteCredito, exceso, usadas)
-                        ?? throw new ErrorCaja("Pasar el límite requiere la autorización del encargado.", "requiere-autorizacion");
+                        ?? throw new ErrorCaja("Pasar el límite requiere autorización.", "requiere-autorizacion");
                 else
                     Requerir(decision);
                 excesoAutorizado = exceso;
@@ -1091,9 +1114,10 @@ public sealed class Contingencia
 
     private string Nombre(Guid usuarioId) => Datos.UsuariosPorId.TryGetValue(usuarioId, out var u) ? u.Nombre : "—";
 
+    /// <summary>Con los permisos de la copia: lo mismo que decide el servicio. Uno dado de baja no hace nada.</summary>
     private DecisionPermiso Evaluar(Guid usuarioId, AccionControlada accion, long? monto) =>
-        Datos.UsuariosPorId.TryGetValue(usuarioId, out var u)
-            ? Permisos.Evaluar(Datos.Reglas, u.Rol, Caja.SucursalId, accion, monto)
+        Datos.UsuariosPorId.TryGetValue(usuarioId, out var u) && u.Activo
+            ? Permisos.Evaluar(Datos.PermisosDe(u.Id), accion, monto)
             : throw new InvalidOperationException("El usuario no está en la copia de esta caja.");
 
     private static void Requerir(DecisionPermiso decision)
@@ -1103,9 +1127,11 @@ public sealed class Contingencia
             case NivelPermiso.NoPermitido:
                 throw new ErrorCaja("No tienes permiso para esto.", "no-permitido");
             case NivelPermiso.RequiereAutorizacion:
-                throw new ErrorCaja("Esto requiere la autorización del encargado.", "requiere-autorizacion");
+                throw new ErrorCaja(RequiereAutorizacion, "requiere-autorizacion");
         }
     }
+
+    private const string RequiereAutorizacion = "Esto requiere autorización.";
 
     /// <summary>
     /// De esa acción, sin usar, vigente y por un monto que alcance: devuelve quién autorizó y la aparta en

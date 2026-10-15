@@ -249,6 +249,7 @@ internal sealed class MensajeTelegramConfiguracion : IEntityTypeConfiguration<Me
     }
 }
 
+/// <summary>De antes de la entrega 1: se queda como estaba, y solo la lee la migración a los permisos por usuario.</summary>
 internal sealed class ReglaPermisoConfiguracion : IEntityTypeConfiguration<ReglaPermiso>
 {
     public void Configure(EntityTypeBuilder<ReglaPermiso> b)
@@ -257,6 +258,21 @@ internal sealed class ReglaPermisoConfiguracion : IEntityTypeConfiguration<Regla
         b.HasOne<Sucursal>().WithMany().HasForeignKey(r => r.SucursalId);
         b.HasIndex(r => new { r.Accion, r.Rol, r.SucursalId });
         b.HasIndex(r => r.Version);
+    }
+}
+
+/// <summary>Los permisos por usuario (entrega 1): uno por acción de cada usuario y de los de defecto (sin usuario).</summary>
+internal sealed class PermisoUsuarioConfiguracion : IEntityTypeConfiguration<PermisoUsuario>
+{
+    public void Configure(EntityTypeBuilder<PermisoUsuario> b)
+    {
+        b.ToTable("PermisosUsuario");
+        b.HasOne<Usuario>().WithMany().HasForeignKey(p => p.UsuarioId);
+        b.HasIndex(p => new { p.UsuarioId, p.Accion }).IsUnique();
+        // En SQLite dos vacíos no chocan en el índice de arriba: los de defecto, uno por acción, con su propio índice.
+        b.HasIndex(p => p.Accion).IsUnique().HasFilter("\"UsuarioId\" IS NULL").HasDatabaseName("IX_PermisosUsuario_Defecto");
+        b.HasIndex(p => p.Version);
+        b.Ignore(p => p.Permiso);
     }
 }
 

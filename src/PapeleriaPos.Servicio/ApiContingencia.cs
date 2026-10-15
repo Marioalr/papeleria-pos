@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Ventas;
 
@@ -19,17 +20,28 @@ public static class ApiContingencia
         var api = app.MapGroup("/api").ConErrores().SoloSuCaja();
         var bandeja = app.MapGroup("/api/bandeja").ConErrores().SoloSuCaja().AddEndpointFilter(AvisarSiNoSubeAsync);
 
-        // La copia local: catálogo con existencias, usuarios (PIN como hash), reglas, ticket y el último folio de la caja.
+        // La copia local: catálogo con existencias, usuarios (PIN como hash), sus permisos, ticket y el último folio de la caja.
         api.MapGet("/cajas/{cajaId:guid}/paquete", async (Guid cajaId, PosDbContext db, CatalogoEnMemoria catalogo, IOptions<OpcionesTicket> opciones) =>
         {
             var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
             var sucursal = await db.Sucursales.FindAsync(caja.SucursalId);
             var (version, productos, codigos) = await catalogo.TodosAsync(db, caja.SucursalId);
-            var usuarios = await db.Usuarios.AsNoTracking()
-                .Where(u => u.Activo && (u.SucursalId == null || u.SucursalId == caja.SucursalId))
-                .Select(u => new UsuarioLocalDto(u.Id, u.NombreUsuario, u.Nombre, u.Rol, u.PinHash, u.Activo))
-                .ToListAsync();
-            var reglas = ApiControl.ReglasEfectivas(await new ServicioControl(db).ReglasAsync(caja.SucursalId), caja.SucursalId);
+            // Los dados de baja también, sin el hash de su PIN: sus letras no se le dan a otro, y no entran.
+            var usuarios = (await db.Usuarios.AsNoTracking()
+                    .Where(u => u.SucursalId == null || u.SucursalId == caja.SucursalId)
+                    .Select(u => new UsuarioLocalDto(u.Id, u.NombreUsuario, u.Nombre, u.Rol, u.PinHash, u.Activo))
+                    .ToListAsync())
+                .Select(u => u.Activo ? u : u with { PinHash = "" })
+                .ToList();
+            // Los permisos de cada activo y los de defecto (entrega 1). Las reglas por rol, de antes, solo para una caja que
+            // todavía no se actualiza.
+            var control = new ServicioControl(db);
+            var permisos = (await control.UsuariosQueEntranAsync(caja.SucursalId))
+                .Select(u => new PermisosLocalesDto(u.Id, u.Permisos.Lista()))
+                .Append(new PermisosLocalesDto(null, (await control.DefectoAsync()).Lista()))
+                .ToList();
+            var reglas = PermisosDeRoles.Efectivas(await db.ReglasPermiso.AsNoTracking()
+                .Where(r => r.SucursalId == null || r.SucursalId == caja.SucursalId).ToListAsync(), caja.SucursalId);
             var ticket = await ApiConfiguracion.ConfiguracionAsync(db, caja.SucursalId, opciones.Value);
             var limite = await db.ConfiguracionesSucursal.Where(c => c.SucursalId == caja.SucursalId).Select(c => c.LimiteEfectivoCentavos).FirstOrDefaultAsync();
             var clientes = await ApiClientes.ParaLaCajaAsync(db, caja.SucursalId);
@@ -40,7 +52,7 @@ public static class ApiContingencia
             return new PaqueteContingenciaDto(version, new CajaDto(caja.Id, caja.Nombre, caja.Serie, caja.SucursalId, sucursal!.Nombre, caja.Equipo),
                 productos, codigos, usuarios, reglas, ticket.RenglonesEncabezado, ticket.RenglonesPie, ApiConfiguracion.Logo(ticket),
                 await new RegistroCaja(db).UltimoFolioAsync(caja.SucursalId, caja.Serie), limite,
-                ApiClientes.ParaCajasDeAntes(clientes), clientes, marcas, sinonimos);
+                ApiClientes.ParaCajasDeAntes(clientes), clientes, marcas, sinonimos, permisos);
         });
 
         // Lo que lleva el turno, sin guardar un corte: la base de la cuenta que la caja lleva por su lado.

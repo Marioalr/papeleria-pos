@@ -1,5 +1,9 @@
 namespace PapeleriaPos.Nucleo.Usuarios;
 
+/// <summary>
+/// De antes de la entrega 1: ya no hay roles, cada usuario tiene sus permisos (<see cref="Control.PermisoUsuario"/>). Nada
+/// decide con esto: solo dice qué permisos recibe, al migrar, un usuario de antes (<see cref="Control.PermisosDeRoles"/>).
+/// </summary>
 public enum Rol
 {
     Cajero,
@@ -28,9 +32,17 @@ public class Usuario : IVersionado
     public required string NombreUsuario { get; set; }
 
     public string PinHash { get; private set; } = "";
+
+    /// <summary>De antes de la entrega 1 (ver <see cref="Usuarios.Rol"/>): la columna se queda, pero ya no decide nada.</summary>
     public Rol Rol { get; set; } = Rol.Cajero;
 
-    /// <summary>Vacío para el dueño, que ve todas.</summary>
+    /// <summary>
+    /// La primera cuenta: la que se crea al instalar, con todos los permisos (al migrar, el dueño). Solo se dice en
+    /// «Usuarios y permisos»; no tiene nada que los demás no puedan tener.
+    /// </summary>
+    public bool PrimeraCuenta { get; set; }
+
+    /// <summary>Vacío: entra en todas las sucursales (el dueño de antes).</summary>
     public Guid? SucursalId { get; set; }
 
     public bool Activo { get; set; } = true;
@@ -40,7 +52,12 @@ public class Usuario : IVersionado
     public long Version { get; set; }
     public DateTime ModificadoUtc { get; set; }
 
-    public void EstablecerPin(string pin) => PinHash = Pin.Hash(pin);
+    /// <summary>Un PIN nuevo empieza sin intentos fallidos ni espera.</summary>
+    public void EstablecerPin(string pin)
+    {
+        PinHash = Pin.Hash(pin);
+        (IntentosFallidos, BloqueadoHastaUtc) = (0, null);
+    }
 
     public ResultadoPin VerificarPin(string pin, DateTime ahoraUtc)
     {

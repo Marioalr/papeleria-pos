@@ -31,7 +31,7 @@
                 {
                     <div class="vn-fondo-menu" @onclick="() => _menuUsuario = false"></div>
                     <div class="vn-menu-usuario">
-                        <p>@Sesion.Nombre · @Textos.Rol(Sesion.Rol).ToLowerInvariant()</p>
+                        <p>@Sesion.Nombre@(Sesion.Resumen is { } resumen ? $" · {resumen.ToLowerInvariant()}" : "")</p>
                         @* Como en la venta: las dos van a la entrada, y qué pasa al salir lo decide la raíz de la caja. *@
                         <button @onclick="AlSalir">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
                         <button @onclick="AlSalir">Salir</button>

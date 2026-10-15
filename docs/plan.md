@@ -49,7 +49,7 @@
 | IDs, dinero y fechas | UUIDv7, centavos enteros, UTC; folios legibles por caja (A-000123) |
 | Contingencia | Cada caja guarda copia del catálogo y una bandeja de salida: si la caja principal se apaga, las demás siguen vendiendo |
 | Escaneo | Siempre contra la copia local del catálogo, también en línea (2026-10-10): la red no entra en el escaneo. Los productos nuevos se dan de alta pocos días a la semana, así que la copia casi siempre está al día; el cobro lleva su versión para que los precios coincidan ([propuesta](propuesta-interfaz.md#rendimiento)) |
-| Roles | Sin roles (2026-10-10): cada usuario tiene sus **permisos**, cada uno en «puede», «con autorización» o «no». Al instalar se ponen los de defecto y la primera cuenta tiene todos ([propuesta](propuesta-interfaz.md#usuarios-y-permisos)) |
+| Roles | Sin roles (2026-10-10): cada usuario tiene sus **permisos**, cada uno en «puede», «con autorización» o «no». Al instalar se ponen los de defecto y la primera cuenta tiene todos ([propuesta](propuesta-interfaz.md#usuarios-y-permisos)). Casi no se pedirá autorización: o puede o no puede, y quien no puede le pide a quien sí que entre (Ctrl+U). Por ahora, en Administración solo hay «puede» o «no»; más adelante se decide qué acciones sí pueden pedir autorización (2026-10-15) |
 | Clientes | El celular solo identifica un **pedido** al recogerlo. **Clientes registrados**: pocos, los de confianza |
 | Impresión | Lo que hace Control Print se reescribe como módulo del POS ([detalle](impresion.md)), para las tres impresoras de inyección de la matriz (dos WF-6590 y una L5590) |
 | WhatsApp | API oficial en modo coexistencia; nunca librerías no oficiales. Antes de eso, captura manual desde la PC. Sin central, la API recibe los mensajes en un receptor aparte, nunca con un túnel en la caja principal ([WhatsApp](whatsapp.md)) |
@@ -486,8 +486,24 @@ como artículo común».
   de tickets o en pantalla); antes ahí «Imprimir» no hacía nada.
 
 Falta: el fondo sugerido, el nombre de la tienda y la hora para recordar el cierre del día (configuración, entrega 7);
-el largo del PIN y que dar de baja a alguien no mueva las letras de los demás (permisos por usuario, entrega 1). El
-conteo desde el celular sigue con el usuario escrito.
+el largo del PIN y que dar de baja a alguien no mueva las letras de los demás. El conteo desde el celular sigue con el
+usuario escrito.
+
+**Avance (2026-10-15), entrega 1: los permisos por usuario,** como en la [propuesta](propuesta-interfaz.md#usuarios-y-permisos):
+- **Sin roles.** Cada usuario tiene sus permisos, uno por acción: Puede (con su límite, si lo tiene), Con autorización
+  (con candado y quién autoriza) o No (no aparece). Los usuarios nuevos empiezan con los «Permisos por defecto»;
+  cambiarlos no toca a los que ya existen. La primera cuenta (el dueño más antiguo) tiene todos, y siempre debe quedar
+  alguien con «Usuarios y permisos».
+- **Al actualizar, cada quien queda con lo que podía hacer:** el dueño, todo; el encargado y el cajero, las reglas de su
+  rol (las de su sucursal, si no las generales y si no las iniciales), con sus límites. Una prueba compara las decisiones
+  de antes y de ahora acción por acción, y salen iguales. Las reglas y el rol de antes se quedan en la base, sin decidir.
+- **Permisos nuevos:** «Ver costos, utilidad y margen» (el costo de las impresiones, el margen, los costos en conteos y
+  compras), «Ver reportes de ventas» (para la entrega 9) y «Configuración de la tienda» (el límite de efectivo; con la
+  entrega 7, lo demás de la tienda).
+- **«Usuarios y permisos»** reemplaza a «Reglas» en Configuración, como en el prototipo: la lista con los de defecto y
+  cada usuario con su resumen, nuevo usuario, y en cada uno la tabla por grupos con Puede / Con autorización / No y su
+  límite, «Copiar los permisos de…», «Todos», «Los de defecto», cambiar el PIN y darlo de baja. Se guarda solo.
+- **Las pantallas deciden con los permisos de quien entró** (ya no con «dueño o encargado»), también sin conexión.
 
 #### Después: el piloto en la caja 2
 
@@ -580,8 +596,8 @@ Cada parte entra sin detener a la caja 2:
 
 1. **Terminar la venta** (lo que falta de la entrega 3) y **la base visual** (entrega 2), con lo que enseñen el piloto y
    las búsquedas guardadas.
-2. **Los permisos por usuario** (entrega 1). **La entrada y el corte** (entrega 6) ya están, desde el 2026-10-14
-   ([avance](#primero-la-versión-unicaja-entrega-0)).
+2. **Los permisos por usuario** (entrega 1) y **la entrada y el corte** (entrega 6) ya están, desde el 2026-10-15 y el
+   2026-10-14 ([avance](#primero-la-versión-unicaja-entrega-0)).
 3. **Dejar eleventa:** el servicio nuevo en la caja principal y la caja 2 conectada a él, con su rendimiento (entrega 5:
    escaneo contra la copia local, cambios avisados, plazos y estados de la red); la red de la tienda arreglada; la
    impresora de tickets compartida con reintento; el día pico con el simulador; los reportes de ventas (entrega 9), que
@@ -655,6 +671,14 @@ El 2026-10-08 el dueño pospuso la multisucursal para completar primero el POS d
   supuestos de ese tipo.
 - **Cuándo retomarla:** cuando el dueño decida pasar la sucursal 2 (o la 3.ª) al POS, unos 6 meses antes de esa fecha;
   mientras, la sucursal 2 abre con eleventa ([señales](notas.md#para-retomar-la-multisucursal)).
+
+## Recomendaciones
+
+Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin volver a preguntar lo que ya se contestó.
+
+| Recomendación | Por qué | Estado |
+|---|---|---|
+| **Pedir el PIN para administrar usuarios:** el de quien entró, una vez al abrir «Usuarios y permisos», válido mientras esa ventana siga abierta | El servicio confía en la caja para saber quién es el usuario: con la llave de una caja y el id de un usuario (las fichas lo dan) se le podría cambiar el PIN o los permisos a otro, por ejemplo al dueño, sin saber el PIN de nadie. La solución de fondo es que el servicio dé una sesión al entrar y la pida en cada llamada | No por ahora (dueño, 2026-10-15) |
 
 ## Pendientes
 

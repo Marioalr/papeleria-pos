@@ -1,4 +1,4 @@
-@* Quién hizo qué, quién lo autorizó y qué se negó. La consulta el encargado o el dueño con su usuario y PIN. *@
+@* Quién hizo qué, quién lo autorizó y qué se negó. La consulta quien tiene «Consultar la bitácora», con su usuario y PIN. *@
 @inject ClienteCaja Cliente
 
 <div class="filtros-bitacora">
@@ -52,7 +52,7 @@ else if (_registros is not null)
     {
         if (_usuario.Trim().Length == 0 || _pin.Length == 0)
         {
-            _error = "Escribe el usuario y PIN del encargado.";
+            _error = "Escribe el usuario y el PIN de quien consulta.";
             return;
         }
         _error = null;

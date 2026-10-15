@@ -520,7 +520,8 @@ public class CreditoTests
     public void El_limite_lo_da_el_dueno_y_pasarlo_lo_autoriza_el_encargado()
     {
         var sucursal = Ids.Nuevo();
-        DecisionPermiso Para(Rol rol, AccionControlada accion) => Permisos.Evaluar(Permisos.Iniciales, rol, sucursal, accion, 1000);
+        // Con los permisos que deja la migración a cada rol de antes.
+        DecisionPermiso Para(Rol rol, AccionControlada accion) => Permisos.Evaluar(new PermisosDeUsuario(PermisosDeRoles.De(rol, [], sucursal)), accion, 1000);
 
         Assert.Equal((NivelPermiso.NoPermitido, NivelPermiso.NoPermitido, NivelPermiso.Permitido),
             (Para(Rol.Cajero, AccionControlada.DarCredito).Nivel, Para(Rol.Encargado, AccionControlada.DarCredito).Nivel, Para(Rol.Dueno, AccionControlada.DarCredito).Nivel));
@@ -528,7 +529,7 @@ public class CreditoTests
             (Para(Rol.Cajero, AccionControlada.ExcederLimiteCredito).Nivel, Para(Rol.Encargado, AccionControlada.ExcederLimiteCredito).Nivel));
         Assert.Equal(NivelPermiso.NoPermitido, Para(Rol.Encargado, AccionControlada.AjustarCredito).Nivel);
         Assert.True(Para(Rol.Encargado, AccionControlada.CancelarAbono).PideMotivo);
-        Assert.False(Permisos.SoloDelDueno(AccionControlada.DarCredito));
+        Assert.False(PermisosDeRoles.SoloDelDueno(AccionControlada.DarCredito));
         Assert.Equal((NivelPermiso.RequiereAutorizacion, NivelPermiso.Permitido),
             (Para(Rol.Cajero, AccionControlada.DevolverSaldoAFavor).Nivel, Para(Rol.Encargado, AccionControlada.DevolverSaldoAFavor).Nivel));
     }

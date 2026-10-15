@@ -1131,6 +1131,50 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("Bitacora", (string)null);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Control.PermisoUsuario", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Accion")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ModificadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Nivel")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("PideMotivo")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("UmbralCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("UsuarioId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Accion")
+                        .IsUnique()
+                        .HasDatabaseName("IX_PermisosUsuario_Defecto")
+                        .HasFilter("\"UsuarioId\" IS NULL");
+
+                    b.HasIndex("Version");
+
+                    b.HasIndex("UsuarioId", "Accion")
+                        .IsUnique();
+
+                    b.ToTable("PermisosUsuario", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Control.ReglaPermiso", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2635,6 +2679,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("PrimeraCuenta")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Rol")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -3320,6 +3367,14 @@ namespace PapeleriaPos.Datos.Migraciones
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Control.PermisoUsuario", b =>
+                {
                     b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
                         .WithMany()
                         .HasForeignKey("UsuarioId")

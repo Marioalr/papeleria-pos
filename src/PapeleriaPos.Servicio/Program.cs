@@ -113,6 +113,7 @@ app.MapearApiCajas();
 app.MapearApiCaja();
 app.MapearApiConfiguracion();
 app.MapearApiControl();
+app.MapearApiUsuarios();
 app.MapearApiDevoluciones();
 app.MapearApiContingencia();
 app.MapearApiTelegram();

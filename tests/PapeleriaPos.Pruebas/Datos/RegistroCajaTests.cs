@@ -32,6 +32,8 @@ public class RegistroCajaTests : IAsyncLifetime
         _catalogo.Agregar(db);
         db.AddRange(_caja, _cajera, _encargado, _precio);
         await db.SaveChangesAsync();
+        // Los usuarios de antes (con su rol) reciben sus permisos, como al arrancar el servicio.
+        await MigracionPermisos.AplicarAsync(db);
         // 10 piezas a $4 cada una.
         await new RegistroInventario(db).RegistrarAsync(Kardex.Entrada(_catalogo.Matriz.Id, _catalogo.Azul, TipoMovimiento.Compra,
             Cantidad.Piezas(10), 4000, _base.Reloj.Ahora.UtcDateTime));

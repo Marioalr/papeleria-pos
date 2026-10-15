@@ -78,7 +78,8 @@ else
         public bool Activo { get; set; } = true;
     }
 
-    private bool PuedeEditar => Sesion.Rol is Rol.Dueno or Rol.Encargado;
+    /// <summary>Los proveedores, con «Productos, precios y etiquetas», como en el servicio (con los usuarios de antes, el encargado y el dueño).</summary>
+    private bool PuedeEditar => Sesion.Puede(AccionControlada.EditarCatalogo);
 
     private List<ProveedorDto>? _proveedores;
     private Editable? _editando;

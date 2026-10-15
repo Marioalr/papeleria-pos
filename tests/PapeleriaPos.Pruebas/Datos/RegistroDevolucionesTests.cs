@@ -35,6 +35,8 @@ public class RegistroDevolucionesTests : IAsyncLifetime
         _catalogo.Agregar(db);
         db.AddRange(_caja, _cajera, _encargado, _dueno, _precio);
         await db.SaveChangesAsync();
+        // Los usuarios de antes (con su rol) reciben sus permisos, como al arrancar el servicio.
+        await MigracionPermisos.AplicarAsync(db);
         await new RegistroInventario(db).RegistrarAsync(Kardex.Entrada(_catalogo.Matriz.Id, _catalogo.Azul, TipoMovimiento.Compra,
             Cantidad.Piezas(10), 50000, _base.Reloj.Ahora.UtcDateTime));
         _turno = await new RegistroCaja(db).AbrirTurnoAsync(_caja.Id, _cajera.Id, 100000);

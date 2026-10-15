@@ -1,0 +1,344 @@
+@* «Usuarios y permisos» (entrega 1, htmlUsuarios del prototipo): sin roles, cada usuario tiene sus permisos. A la izquierda
+   los de defecto, cada usuario (con su letra, su resumen y si es la primera cuenta) y «Nuevo usuario»; a la derecha, los
+   permisos del elegido por grupos, con «Puede», «Con autorización» o «No» y el límite («hasta $…» o «hasta …%») donde va.
+   Cada cambio se guarda al momento, sin «Guardar», y lo revisa el servicio con el usuario de la sesión (sin volver a pedir
+   su PIN); siempre queda alguien con «Usuarios y permisos». Por ahora es una pestaña de la Configuración de antes: la
+   entrega 7 la lleva a la Configuración nueva tal cual. *@
+@inject ClienteCaja Cliente
+
+<div class="vn-usuarios">
+    <div class="vn-usuarios-titulo">
+        <h2>Usuarios y permisos</h2>
+        <p>Sin roles: cada usuario tiene sus permisos. Lo que cambies aquí cambia la caja al momento.</p>
+        <span class="vn-guardado" role="status">@(_guardado is { } hora ? $"Guardado a las {hora}" : "Se guarda solo")</span>
+    </div>
+    <div class="vn-leyenda">
+        <span><span class="vn-etiq verde">Puede</span> se ve normal</span>
+        <span><span class="vn-etiq ambar"><Ico Nombre="candado" />Con autorización</span> se ve con candado y el nombre de quien autoriza</span>
+        <span><span class="vn-etiq rojo">No</span> no aparece</span>
+    </div>
+    @if (_error is not null)
+    {
+        <div class="vn-alerta error" role="alert"><Ico Nombre="alerta" /><div><span>@_error</span></div></div>
+    }
+    @if (_datos is not { } datos)
+    {
+        <p class="vn-usuarios-nota">@(_errorCarga ?? "Cargando…")</p>
+    }
+    else
+    {
+        <div class="vn-usuarios-dos">
+            <div class="vn-lista-usuarios">
+                <button class="vn-item @(_vista == Vista.Permisos && _elegido is null ? "on" : "")" @onclick="() => Elegir(null)">
+                    <span class="vn-avatar"><Ico Nombre="usuario" /></span>
+                    <div><strong>Permisos por defecto</strong><small>Los recibe cada usuario nuevo</small></div>
+                </button>
+                @foreach (var u in datos.Usuarios)
+                {
+                    var usuario = u;
+                    <button class="vn-item @(_vista != Vista.Nuevo && _elegido == u.Id ? "on" : "") @(u.Activo ? "" : "de-baja")" @onclick="() => Elegir(usuario.Id)">
+                        <span class="vn-avatar">@Inicial(u.Nombre)</span>
+                        <div>
+                            <strong>@u.Nombre</strong>
+                            <small>@u.Resumen@(u.PrimeraCuenta ? " · primera cuenta" : "")@(u.Activo ? "" : " · dado de baja")</small>
+                        </div>
+                    </button>
+                }
+                <button class="vn-item @(_vista == Vista.Nuevo ? "on" : "")" @onclick="AbrirNuevo">
+                    <span class="vn-avatar"><Ico Nombre="mas" /></span>
+                    <div><strong>Nuevo usuario</strong><small>Empieza con los de defecto</small></div>
+                </button>
+            </div>
+
+            <div class="vn-permisos">
+                @if (_vista == Vista.Nuevo)
+                {
+                    <div class="vn-permisos-cab"><h3>Nuevo usuario</h3></div>
+                    <p class="vn-usuarios-nota">Empieza con los permisos por defecto y entra en esta caja con su ficha y su PIN de @FichasEntrada.CifrasPin cifras.</p>
+                    <div class="vn-usuarios-forma">
+                        <label>Nombre <input id="usuario-nombre" maxlength="@FichasEntrada.LargoNombre" autocomplete="off" @bind="_nombre" /></label>
+                        <label>PIN (@FichasEntrada.CifrasPin cifras) <input type="password" inputmode="numeric" maxlength="@FichasEntrada.CifrasPin" autocomplete="off" @bind="_pin1" /></label>
+                        <label>El PIN otra vez <input type="password" inputmode="numeric" maxlength="@FichasEntrada.CifrasPin" autocomplete="off" @bind="_pin2" /></label>
+                    </div>
+                    <div class="vn-botonera">
+                        <button class="vn-boton primario" disabled="@_ocupado" @onclick="DarDeAltaAsync">Dar de alta</button>
+                        <button class="vn-boton" disabled="@_ocupado" @onclick="() => Elegir(_elegido)">Cancelar</button>
+                    </div>
+                }
+                else
+                {
+                    var elegido = Elegido;
+                    <div class="vn-permisos-cab">
+                        <h3>@(elegido?.Nombre ?? "Permisos por defecto")</h3>
+                        @if (elegido is not null)
+                        {
+                            @* Con @key: después de copiar vuelve a decir «Copiar los permisos de…». *@
+                            <select @key="_vuelta" aria-label="Copiar los permisos de otro usuario" disabled="@_ocupado" @onchange="CopiarAsync">
+                                <option value="">Copiar los permisos de…</option>
+                                @foreach (var otro in datos.Usuarios.Where(x => x.Id != elegido.Id))
+                                {
+                                    <option value="@otro.Id">@otro.Nombre</option>
+                                }
+                            </select>
+                            <button class="vn-boton chico" disabled="@_ocupado" @onclick="TodosAsync">Todos</button>
+                            <button class="vn-boton chico" disabled="@_ocupado" @onclick="DeDefectoAsync">Los de defecto</button>
+                            <button class="vn-boton chico" disabled="@_ocupado" @onclick="AbrirPin">Cambiar PIN</button>
+                            @if (elegido.Activo)
+                            {
+                                <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => ActivarAsync(false)">Dar de baja</button>
+                            }
+                            else
+                            {
+                                <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => ActivarAsync(true)">Volver a dar de alta</button>
+                            }
+                        }
+                    </div>
+                    @if (_vista == Vista.Pin && elegido is not null)
+                    {
+                        <div class="vn-usuarios-forma">
+                            <label>PIN nuevo de @elegido.Nombre <input id="usuario-pin" type="password" inputmode="numeric" maxlength="@FichasEntrada.CifrasPin" autocomplete="off" @bind="_pin1" /></label>
+                            <label>El PIN otra vez <input type="password" inputmode="numeric" maxlength="@FichasEntrada.CifrasPin" autocomplete="off" @bind="_pin2" /></label>
+                        </div>
+                        <div class="vn-botonera">
+                            <button class="vn-boton primario" disabled="@_ocupado" @onclick="CambiarPinAsync">Cambiar PIN</button>
+                            <button class="vn-boton" disabled="@_ocupado" @onclick="() => Elegir(_elegido)">Cancelar</button>
+                        </div>
+                    }
+                    @if (elegido is not null)
+                    {
+                        <p class="vn-usuarios-nota">
+                            Entra con su ficha y su PIN. Donde todavía se escribe el usuario (el celular, dar de alta una caja), el suyo es «@elegido.Usuario».
+                            @if (!elegido.Activo)
+                            {
+                                <span> Está dado de baja: no entra ni autoriza.</span>
+                            }
+                        </p>
+                    }
+                    @if (elegido?.PrimeraCuenta == true)
+                    {
+                        <p class="vn-usuarios-nota">La primera cuenta: se creó al instalar, con todos los permisos. Siempre debe quedar alguien con «Usuarios y permisos».</p>
+                    }
+                    @if (elegido is null)
+                    {
+                        <p class="vn-usuarios-nota">Al instalar se ponen estos (los de un cajero). Cambiarlos no toca a los usuarios que ya existen.</p>
+                    }
+                    <table class="vn-tabla-permisos">
+                        <tbody>
+                            @foreach (var grupo in Permisos.Grupos)
+                            {
+                                <tr><td class="grupo" colspan="2">@grupo.Nombre</td></tr>
+                                @foreach (var a in grupo.Acciones)
+                                {
+                                    var accion = a;
+                                    var permiso = PermisoDe(accion);
+                                    <tr>
+                                        <td>@Textos.Accion(accion)</td>
+                                        <td class="num">
+                                            <span class="vn-segmento" role="radiogroup" aria-label="@Textos.Accion(accion)">
+                                                @foreach (var (nivel, clase) in NivelesDe(accion))
+                                                {
+                                                    var este = nivel;
+                                                    <button role="radio" aria-checked="@(permiso.Nivel == este ? "true" : "false")"
+                                                            class="@(permiso.Nivel == este ? $"on {clase}" : "")" disabled="@_ocupado"
+                                                            @onclick="() => CambiarAsync(accion, este)">@Textos.Nivel(este)</button>
+                                                }
+                                            </span>
+                                            @if (permiso.Nivel == NivelPermiso.Permitido && (Permisos.LlevaLimite(accion) || permiso.UmbralCentavos is not null))
+                                            {
+                                                <span class="vn-umbral">
+                                                    hasta @(Permisos.EnPorcentaje(accion) ? "" : "$")<input @key="@($"{_elegido}-{accion}-{_vuelta}")" inputmode="decimal"
+                                                        aria-label="@($"Hasta cuánto: {Textos.Accion(accion)}")" placeholder="sin límite" value="@Umbral(permiso)"
+                                                        disabled="@_ocupado" @onchange="e => CambiarUmbralAsync(accion, e.Value?.ToString())" />@(Permisos.EnPorcentaje(accion) ? "%" : "")
+                                                </span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+
+    /// <summary>Quien entró: el servicio revisa con su «Usuarios y permisos» cada cambio.</summary>
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    private enum Vista { Permisos, Nuevo, Pin }
+
+    private static readonly (NivelPermiso Nivel, string Clase)[] Niveles =
+        [(NivelPermiso.Permitido, "p"), (NivelPermiso.RequiereAutorizacion, "a"), (NivelPermiso.NoPermitido, "n")];
+
+    /// <summary>En Administración, solo «Puede» o «No» (dueño, 2026-10-15; Permisos.SoloPuedeONo).</summary>
+    private static IEnumerable<(NivelPermiso Nivel, string Clase)> NivelesDe(AccionControlada accion) =>
+        Permisos.SoloPuedeONo(accion) ? Niveles.Where(n => n.Nivel != NivelPermiso.RequiereAutorizacion) : Niveles;
+
+    private UsuariosYPermisosDto? _datos;
+
+    /// <summary>El usuario que se ve a la derecha; vacío: los de defecto.</summary>
+    private Guid? _elegido;
+
+    private Vista _vista;
+    private string? _guardado;
+    private string? _error;
+    private string? _errorCarga;
+    private bool _ocupado;
+    private string _nombre = "";
+    private string _pin1 = "";
+    private string _pin2 = "";
+
+    /// <summary>Sube con cada guardado: los campos del límite vuelven a enseñar lo guardado (también si no se pudo guardar).</summary>
+    private int _vuelta;
+
+    private UsuarioYPermisosDto? Elegido => _datos?.Usuarios.FirstOrDefault(u => u.Id == _elegido);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _datos = await Cliente.UsuariosYPermisosAsync(Caja.Id, Sesion.UsuarioId);
+        }
+        catch (ErrorCaja ex)
+        {
+            _errorCarga = ex.Message;
+        }
+    }
+
+    private static string Inicial(string nombre) => nombre.Trim() is [var letra, ..] ? char.ToUpperInvariant(letra).ToString() : "?";
+
+    private Permiso PermisoDe(AccionControlada accion) =>
+        (Elegido?.Permisos ?? _datos!.Defecto).FirstOrDefault(p => p.Accion == accion) ?? new Permiso(accion, NivelPermiso.NoPermitido);
+
+    /// <summary>El límite como se escribe: «200» (pesos) o «10» (por ciento); vacío, sin límite.</summary>
+    private static string Umbral(Permiso p) =>
+        p.UmbralCentavos is { } u ? (u / 100m).ToString("0.##", CultureInfo.InvariantCulture) : "";
+
+    private void Elegir(Guid? usuarioId)
+    {
+        (_elegido, _vista, _error) = (usuarioId, Vista.Permisos, null);
+        (_nombre, _pin1, _pin2) = ("", "", "");
+    }
+
+    private void AbrirNuevo()
+    {
+        Elegir(_elegido);
+        _vista = Vista.Nuevo;
+    }
+
+    private void AbrirPin()
+    {
+        Elegir(_elegido);
+        _vista = Vista.Pin;
+    }
+
+    /// <summary>Cada cambio: al servicio, que regresa la lista completa; aquí se enseña con la hora en que quedó.</summary>
+    private async Task GuardarAsync(Func<Task<UsuariosYPermisosDto>> cambio, Action<UsuariosYPermisosDto>? despues = null)
+    {
+        if (_ocupado)
+            return;
+        (_ocupado, _error) = (true, null);
+        try
+        {
+            _datos = await cambio();
+            _guardado = HoraMexico.ALocal(DateTime.UtcNow).ToString("HH:mm");
+            despues?.Invoke(_datos);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+            _vuelta++;
+        }
+    }
+
+    private Task CambiarAsync(AccionControlada accion, NivelPermiso nivel)
+    {
+        var actual = PermisoDe(accion);
+        if (actual.Nivel == nivel)
+            return Task.CompletedTask;
+        // Al volver a «Puede», con el límite que tenía (si lo tenía): fuera de «Puede» se queda guardado, sin contar.
+        return GuardarAsync(() => Cliente.CambiarPermisoAsync(Caja.Id, _elegido,
+            new SolicitudPermisoUsuario(Sesion.UsuarioId, accion, nivel, nivel == NivelPermiso.Permitido ? actual.UmbralCentavos : null)));
+    }
+
+    private Task CambiarUmbralAsync(AccionControlada accion, string? texto)
+    {
+        long? umbral = null;
+        if (!string.IsNullOrWhiteSpace(texto))
+        {
+            if (Formato.LeerPesos(texto.Replace("%", "")) is not ({ } centavos and > 0))
+            {
+                (_error, _vuelta) = ($"«{texto.Trim()}» no es un límite: escribe {(Permisos.EnPorcentaje(accion) ? "el porcentaje (10)" : "los pesos (200)")} o déjalo vacío para que no tenga.", _vuelta + 1);
+                return Task.CompletedTask;
+            }
+            umbral = centavos;
+        }
+        if (PermisoDe(accion).UmbralCentavos == umbral)
+            return Task.CompletedTask;
+        return GuardarAsync(() => Cliente.CambiarPermisoAsync(Caja.Id, _elegido,
+            new SolicitudPermisoUsuario(Sesion.UsuarioId, accion, NivelPermiso.Permitido, umbral)));
+    }
+
+    private Task CopiarAsync(ChangeEventArgs e)
+    {
+        if (_elegido is not { } usuario || !Guid.TryParse(e.Value?.ToString(), out var de))
+            return Task.CompletedTask;
+        return GuardarAsync(() => Cliente.CopiarPermisosAsync(Caja.Id, usuario, new SolicitudCopiarPermisos(Sesion.UsuarioId, de)));
+    }
+
+    private Task TodosAsync() => _elegido is { } usuario
+        ? GuardarAsync(() => Cliente.TodosLosPermisosAsync(Caja.Id, usuario, new SolicitudUsuarios(Sesion.UsuarioId)))
+        : Task.CompletedTask;
+
+    private Task DeDefectoAsync() => _elegido is { } usuario
+        ? GuardarAsync(() => Cliente.PermisosDeDefectoAsync(Caja.Id, usuario, new SolicitudUsuarios(Sesion.UsuarioId)))
+        : Task.CompletedTask;
+
+    private Task ActivarAsync(bool activo) => _elegido is { } usuario
+        ? GuardarAsync(() => Cliente.ActivarUsuarioAsync(Caja.Id, usuario, new SolicitudActivarUsuario(Sesion.UsuarioId, activo)))
+        : Task.CompletedTask;
+
+    /// <summary>El PIN, dos veces: que sean iguales y de 4 cifras lo dice aquí, antes de mandarlo.</summary>
+    private string? RevisarPin()
+    {
+        if (_pin1.Length != FichasEntrada.CifrasPin || !_pin1.All(char.IsAsciiDigit))
+            return $"El PIN es de {FichasEntrada.CifrasPin} cifras.";
+        return _pin1 == _pin2 ? null : "Los dos PIN no son iguales: escríbelo otra vez.";
+    }
+
+    private Task DarDeAltaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nombre))
+        {
+            _error = "Escribe su nombre.";
+            return Task.CompletedTask;
+        }
+        if (RevisarPin() is { } mal)
+        {
+            (_error, _pin1, _pin2) = (mal, "", "");
+            return Task.CompletedTask;
+        }
+        return GuardarAsync(() => Cliente.NuevoUsuarioAsync(Caja.Id, new SolicitudNuevoUsuario(Sesion.UsuarioId, _nombre, _pin1)),
+            datos => Elegir(datos.Elegido));
+    }
+
+    private Task CambiarPinAsync()
+    {
+        if (_elegido is not { } usuario)
+            return Task.CompletedTask;
+        if (RevisarPin() is { } mal)
+        {
+            (_error, _pin1, _pin2) = (mal, "", "");
+            return Task.CompletedTask;
+        }
+        return GuardarAsync(() => Cliente.CambiarPinAsync(Caja.Id, usuario, new SolicitudPinUsuario(Sesion.UsuarioId, _pin1)), _ => Elegir(usuario));
+    }
+}

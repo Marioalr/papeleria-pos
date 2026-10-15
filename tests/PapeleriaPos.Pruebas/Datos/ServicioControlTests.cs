@@ -32,6 +32,8 @@ public class ServicioControlTests : IAsyncLifetime
         _catalogo.Agregar(db);
         db.AddRange(_caja, _cajera, _encargado, _dueno);
         await db.SaveChangesAsync();
+        // Los usuarios de antes (con su rol) reciben sus permisos, como al arrancar el servicio.
+        await MigracionPermisos.AplicarAsync(db);
     }
 
     public async Task DisposeAsync() => await _base.DisposeAsync();

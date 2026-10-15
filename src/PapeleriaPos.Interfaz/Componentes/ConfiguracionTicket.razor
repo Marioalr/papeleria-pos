@@ -10,7 +10,7 @@ else
 {
     <div class="configuracion-ticket">
         <div class="config-campos">
-            <p class="nota">Lo autoriza el encargado o el dueño.</p>
+            <p class="nota">Lo autoriza quien tiene «Configurar el ticket».</p>
             <div class="dos-columnas">
                 <label>Usuario <input @bind="_usuario" autocomplete="off" /></label>
                 <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" /></label>
@@ -28,7 +28,7 @@ else
             }
 
             <div class="logo-config">
-                <label class="en-linea">Límite de efectivo en caja (lo cambia el dueño)
+                <label class="en-linea">Límite de efectivo en caja (lo cambia quien tiene «Configuración de la tienda»)
                     <input inputmode="decimal" placeholder="Sin límite" @bind="_limite" @bind:event="oninput" />
                 </label>
                 <button class="boton" disabled="@_ocupado" @onclick="GuardarLimiteAsync">Guardar límite</button>
@@ -158,7 +158,7 @@ else
         _aviso = null;
         if (pideCredenciales && (_usuario.Trim().Length == 0 || _pin.Length == 0))
         {
-            _error = "Escribe el usuario y PIN del encargado.";
+            _error = "Escribe el usuario y el PIN.";
             return;
         }
         _ocupado = true;

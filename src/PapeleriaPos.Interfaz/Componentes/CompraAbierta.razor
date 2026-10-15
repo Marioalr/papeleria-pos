@@ -271,7 +271,8 @@ else
     protected override async Task OnInitializedAsync()
     {
         await HacerAsync(() => Cliente.CompraAsync(CompraId, Sesion.UsuarioId));
-        if (_compra is { Estado: EstadoCompra.PorCostear, Renglones: not null } compra && Sesion.Rol is Rol.Dueno or Rol.Encargado)
+        // Ligar la compra con su orden es de quien captura la nota («Compras: la nota y los costos»).
+        if (_compra is { Estado: EstadoCompra.PorCostear, Renglones: not null } compra && Sesion.Puede(AccionControlada.CostearCompra))
         {
             try
             {

@@ -252,7 +252,8 @@ else
     private string? _aviso;
     private bool _ocupado;
 
-    private bool PuedeEditar => Sesion.Rol is Rol.Dueno or Rol.Encargado;
+    /// <summary>Con «Productos, precios y etiquetas» (con los usuarios de antes, el encargado y el dueño). El servicio decide.</summary>
+    private bool PuedeEditar => Sesion.Puede(AccionControlada.EditarCatalogo);
 
     protected override async Task OnInitializedAsync()
     {

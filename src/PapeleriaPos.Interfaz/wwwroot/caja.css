@@ -863,3 +863,81 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-folio-ok .ico { width: 16px; height: 16px; color: var(--vn-cobro); }
 .vn-alerta.info { background: var(--vn-tinta-claro); color: var(--vn-tinta-hover); border-color: var(--vn-tinta-medio); }
 .vn-botonera { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ── Usuarios y permisos (entrega 1, htmlUsuarios del prototipo): por ahora, una pestaña de la Configuración de antes ──
+   Va en la ventana de la configuración, fuera de .venta-nueva, así que trae sus colores (los mismos). Con ella, la ventana
+   toma la altura de la pantalla y la lista y los permisos se recorren cada uno por su lado: cabe en 1366×697. */
+.fondo-ventana > .ventana.configuracion:has(.vn-usuarios) { height: 90vh; }
+.ventana.configuracion:has(.vn-usuarios) > .ventana-cuerpo { flex: 1; min-height: 0; }
+.vn-usuarios {
+    --vn-papel: #eceff3;
+    --vn-hoja: #ffffff;
+    --vn-renglon: #f4f6f9;
+    --vn-linea: #dfe4ea;
+    --vn-borde: #c6cfda;
+    --vn-texto: #15202c;
+    --vn-suave: #556375;
+    --vn-tenue: #8693a3;
+    --vn-tinta: #23439b;
+    --vn-tinta-hover: #1a3682;
+    --vn-tinta-claro: #e8edf9;
+    --vn-tinta-medio: #c7d3f1;
+    --vn-cobro: #0f7a4a;
+    --vn-cobro-hover: #0b673e;
+    --vn-cobro-claro: #e3f3ea;
+    --vn-aviso: #8a5300;
+    --vn-aviso-fondo: #fff3dc;
+    --vn-aviso-borde: #efc884;
+    --vn-error: #b3261e;
+    --vn-error-fondo: #fdecea;
+    --vn-f-texto: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --vn-f-cifras: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px;
+    color: var(--vn-texto); font: 15px/1.35 var(--vn-f-texto);
+}
+.vn-usuarios svg.ico { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.vn-usuarios button:focus-visible, .vn-usuarios input:focus-visible, .vn-usuarios select:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: 2px; }
+.vn-usuarios .vn-boton.primario { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; font-weight: 600; }
+.vn-usuarios .vn-boton.primario:hover:not(:disabled) { background: var(--vn-tinta-hover); }
+.vn-usuarios .vn-alerta.error { background: var(--vn-error-fondo); color: var(--vn-error); border-color: #f1c2be; }
+.vn-usuarios-titulo { display: flex; align-items: baseline; gap: 12px; }
+.vn-usuarios-titulo h2 { margin: 0; font-size: 21px; }
+.vn-usuarios-titulo p { margin: 0; flex: 1; font-size: 14px; color: var(--vn-suave); }
+.vn-guardado { font-size: 12px; color: var(--vn-cobro); white-space: nowrap; }
+.vn-leyenda { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--vn-suave); }
+.vn-leyenda > span { display: inline-flex; align-items: center; gap: 6px; }
+/* Las etiquetas de la leyenda: las de la venta (.vn-etiq, verde y ámbar), más la roja del «No». */
+.vn-usuarios .vn-etiq.rojo { color: var(--vn-error); background: var(--vn-error-fondo); }
+.vn-usuarios .vn-etiq svg.ico { width: 12px; height: 12px; }
+.vn-usuarios-nota { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--vn-suave); }
+.vn-usuarios-dos { flex: 1; min-height: 0; display: grid; grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 14px; }
+.vn-lista-usuarios { align-self: start; max-height: 100%; overflow-y: auto; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; }
+.vn-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 14px; border: 0; border-bottom: 1px solid var(--vn-renglon); background: none; font: inherit; color: var(--vn-texto); text-align: left; cursor: pointer; }
+.vn-item:last-child { border-bottom: 0; }
+.vn-item:hover { background: #fafbfd; }
+.vn-item.on { background: var(--vn-tinta-claro); box-shadow: inset 4px 0 0 var(--vn-tinta); }
+.vn-item > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.vn-item strong { font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vn-item small { font-size: 12.5px; color: var(--vn-suave); }
+.vn-item.de-baja strong, .vn-item.de-baja .vn-avatar { color: var(--vn-tenue); }
+.vn-permisos { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; }
+.vn-permisos-cab { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-bottom: 6px; background: #fff; }
+.vn-permisos-cab h3 { flex: 1; margin: 0; font-size: 19px; }
+.vn-permisos-cab select { font: 500 14px var(--vn-f-texto); padding: 5px 8px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); color: var(--vn-texto); }
+.vn-usuarios-forma { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.vn-usuarios-forma label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--vn-suave); }
+.vn-usuarios-forma input { min-width: 0; font: 500 15px var(--vn-f-texto); padding: 7px 9px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); color: var(--vn-texto); }
+.vn-tabla-permisos { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; overflow: hidden; }
+.vn-tabla-permisos td { padding: 6px 12px; border-bottom: 1px solid var(--vn-renglon); font-size: 14px; }
+.vn-tabla-permisos tr:last-child td { border-bottom: 0; }
+.vn-tabla-permisos td.grupo { padding: 5px 12px; background: var(--vn-renglon); font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--vn-suave); }
+.vn-tabla-permisos td.num { text-align: right; white-space: nowrap; }
+.vn-segmento { display: inline-flex; vertical-align: middle; border: 1px solid var(--vn-borde); border-radius: 8px; overflow: hidden; background: var(--vn-hoja); }
+.vn-segmento button { padding: 5px 10px; border: 0; border-right: 1px solid var(--vn-linea); background: none; font: inherit; font-size: 12.5px; color: var(--vn-suave); white-space: nowrap; cursor: pointer; }
+.vn-segmento button:last-child { border-right: 0; }
+.vn-segmento button:disabled { cursor: default; }
+.vn-segmento button.on.p { background: var(--vn-cobro-claro); color: var(--vn-cobro); font-weight: 700; }
+.vn-segmento button.on.a { background: var(--vn-aviso-fondo); color: var(--vn-aviso); font-weight: 700; }
+.vn-segmento button.on.n { background: var(--vn-error-fondo); color: var(--vn-error); font-weight: 700; }
+.vn-umbral { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; vertical-align: middle; font-size: 12.5px; color: var(--vn-suave); }
+.vn-umbral input { width: 72px; padding: 4px 6px; border: 1px solid var(--vn-borde); border-radius: 6px; font: 500 13px var(--vn-f-texto); text-align: right; }

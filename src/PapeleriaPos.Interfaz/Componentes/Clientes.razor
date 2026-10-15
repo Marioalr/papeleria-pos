@@ -171,7 +171,8 @@ else
         public ClienteRegistradoDto? Registrado { get; set; }
     }
 
-    private bool PuedeEditar => Sesion.Rol is Rol.Dueno or Rol.Encargado;
+    /// <summary>Con «Dar de alta y editar clientes» (con los usuarios de antes, el encargado y el dueño). El servicio decide.</summary>
+    private bool PuedeEditar => Sesion.Puede(AccionControlada.AdministrarClientes);
 
     private List<ClienteResumenDto>? _lista;
     private Ficha? _ficha;

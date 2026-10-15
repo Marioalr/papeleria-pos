@@ -48,7 +48,7 @@
             {
                 <div class="vn-fondo-menu" @onclick="() => _menuUsuario = false"></div>
                 <div class="vn-menu-usuario">
-                    <p>@Sesion.Nombre · @Textos.Rol(Sesion.Rol).ToLowerInvariant()</p>
+                    <p>@Sesion.Nombre@(Sesion.Resumen is { } resumen ? $" · {resumen.ToLowerInvariant()}" : "")</p>
                     @* Como en el prototipo, las dos van a la entrada; qué pasa al salir lo decide la raíz de la caja (AlSalir). *@
                     <button @onclick="SalirAsync">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
                     <button @onclick="SalirAsync">Salir</button>
@@ -855,8 +855,8 @@
     // ── Lo que puede quien entró (docs/propuesta-interfaz.md, «Usuarios y permisos») ──
 
     /// <summary>
-    /// Se piden al entrar, en una sola consulta, para pintar sin preguntar en cada clic. Sin ellos (sin conexión ni copia),
-    /// todo se ve y el servicio decide al hacerlo, como hoy.
+    /// Llegan con la sesión, al entrar (entrega 1), para pintar sin preguntar en cada clic; si no (un servicio de antes), se
+    /// piden en una sola consulta. Sin ellos (sin conexión ni copia), todo se ve y el servicio decide al hacerlo, como hoy.
     /// </summary>
     private Dictionary<AccionControlada, PermisoDeSesion>? _permisos;
 
@@ -907,11 +907,13 @@
         || new[]
         {
             AccionControlada.ConfigurarTicket, AccionControlada.EditarReglas, AccionControlada.ConsultarBitacora, AccionControlada.AdministrarCajas,
-            AccionControlada.ConfigurarTelegram, AccionControlada.ConfigurarImpresora, AccionControlada.ConfigurarMargen,
+            AccionControlada.ConfigurarTelegram, AccionControlada.ConfigurarImpresora, AccionControlada.ConfigurarMargen, AccionControlada.ConfigurarTienda,
         }.Any(Ve);
 
     private async Task CargarPermisosAsync()
     {
+        if (_permisos is not null)
+            return;
         try
         {
             _permisos = (await Cliente.PermisosDeSesionAsync(Sesion.UsuarioId, Caja.SucursalId)).ToDictionary(p => p.Accion);
@@ -1631,6 +1633,9 @@
 
     protected override void OnInitialized()
     {
+        // Lo que puede quien entró ya llega con la sesión (entrega 1): la pantalla sale desde el principio con sus pestañas.
+        if (Sesion.Permisos is { } permisos)
+            (_permisos, _permisosPedidos) = (permisos.ToDictionary(p => p.Accion), true);
         RecuperarEspera();
         NuevoTicket();
     }
