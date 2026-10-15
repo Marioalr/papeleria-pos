@@ -11,7 +11,7 @@ public sealed class CapturaCodigo
 {
     private Task _anterior = Task.CompletedTask;
 
-    /// <summary>Lo que hay en el cuadro: el <c>@bind</c> del input.</summary>
+    /// <summary>Lo que hay en el cuadro: no está enlazado, caja.js lo manda con el Enter, las teclas y al dejar de teclear.</summary>
     public string Texto { get; set; } = "";
 
     /// <summary>

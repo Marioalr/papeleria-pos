@@ -1,4 +1,5 @@
-@* F10. Busca mientras se escribe; flechas para moverse y Enter para agregar. *@
+@* Buscar por nombre en compras, mermas, etiquetas… (ElegirProducto): busca mientras se escribe; flechas para moverse y
+   Enter para elegir. En la venta, la búsqueda va debajo del cuadro de captura. *@
 @implements IDisposable
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
@@ -29,23 +30,12 @@
 @code {
     [Parameter, EditorRequired] public Guid SucursalId { get; set; }
     [Parameter] public EventCallback<Guid> AlElegir { get; set; }
-    /// <summary>Lo que se escribió en el código de la venta: abre ya buscándolo.</summary>
-    [Parameter] public string TextoInicial { get; set; } = "";
 
     private string _texto = "";
     private List<ResultadoBusquedaDto> _resultados = [];
     private int _seleccion;
     private bool _buscando;
     private CancellationTokenSource? _espera;
-
-    protected override async Task OnInitializedAsync()
-    {
-        if (TextoInicial.Trim().Length >= 2)
-        {
-            _texto = TextoInicial.Trim();
-            await Programar();
-        }
-    }
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {

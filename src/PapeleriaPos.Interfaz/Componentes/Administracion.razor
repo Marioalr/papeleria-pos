@@ -1,19 +1,44 @@
 @* Productos, inventario y clientes sin vender: el encargado o el dueño entran aquí cuando la caja tiene el turno de otro (o
-   ninguno) y no hace falta cortar ni abrir turno para capturar una nota, corregir el catálogo o dar de alta un cliente. *@
+   ninguno) y no hace falta cortar ni abrir turno para capturar una nota, corregir el catálogo o dar de alta un cliente.
+   Arriba va la misma barra que en la venta, como el prototipo («Productos e inventario, sin cortar» abre el inventario con
+   la barra de siempre): la caja, las pestañas y el menú del usuario con «Cambiar de usuario» (Ctrl+U) y «Salir». La
+   barra de módulos de antes, la de eleventa, ya no (el dueño, 2026-10-14: «no volveremos a esa versión»). Abajo, lo
+   mismo que se abre encima de la venta, con su aspecto de siempre (fuera de .venta-nueva, como allá). *@
+@implements IAsyncDisposable
+@inject ModuloCaja Js
+@inject ConexionCaja Conexion
 
-<div class="venta">
-    <header class="barra-modulos">
-        <button class="modulo @(_modulo == Modulo.Productos ? "activo" : "")" @onclick="() => _modulo = Modulo.Productos">F3 Productos</button>
-        <button class="modulo @(_modulo == Modulo.Inventario ? "activo" : "")" @onclick="() => _modulo = Modulo.Inventario">F4 Inventario</button>
-        <button class="modulo @(_modulo == Modulo.Clientes ? "activo" : "")" @onclick="() => _modulo = Modulo.Clientes">Clientes</button>
-        <span class="espacio"></span>
-        <div class="atiende">
-            <small>Administra:</small>
-            <strong>@Sesion.Nombre</strong>
-            <small>@Caja.Sucursal · @Caja.Nombre · sin vender</small>
-        </div>
-        <button class="modulo" @onclick="AlSalir">Salir</button>
-    </header>
+<div class="sin-vender">
+    <div class="venta-nueva solo-arriba">
+        <header class="vn-arriba">
+            <div class="vn-marca">
+                <span class="vn-logo">P</span>
+                <div><strong>@Caja.Nombre</strong><small>@(Conexion.Servicio.IsLoopback ? "principal" : "secundaria") · @Caja.Sucursal</small></div>
+            </div>
+            <nav class="vn-pestanas">
+                <button class="@Activa(Modulo.Productos)" @onclick="() => Ir(Modulo.Productos)">Productos <kbd>F3</kbd></button>
+                <button class="@Activa(Modulo.Inventario)" @onclick="() => Ir(Modulo.Inventario)">Inventario <kbd>F4</kbd></button>
+                <button class="@Activa(Modulo.Clientes)" @onclick="() => Ir(Modulo.Clientes)">Clientes</button>
+            </nav>
+            <span class="espacio"></span>
+            <div class="vn-usuario-caja">
+                <button class="vn-usuario" title="Cambiar de usuario o salir" @onclick="() => _menuUsuario = !_menuUsuario">
+                    <span class="vn-avatar">@PantallaVenta.Inicial(Sesion.Nombre)</span>
+                    <span><strong>@Sesion.Nombre</strong><small>sin vender</small></span>
+                </button>
+                @if (_menuUsuario)
+                {
+                    <div class="vn-fondo-menu" @onclick="() => _menuUsuario = false"></div>
+                    <div class="vn-menu-usuario">
+                        <p>@Sesion.Nombre · @Textos.Rol(Sesion.Rol).ToLowerInvariant()</p>
+                        @* Como en la venta: las dos van a la entrada, y qué pasa al salir lo decide la raíz de la caja. *@
+                        <button @onclick="AlSalir">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
+                        <button @onclick="AlSalir">Salir</button>
+                    </div>
+                }
+            </div>
+        </header>
+    </div>
     <div class="administracion">
         @switch (_modulo)
         {
@@ -38,4 +63,62 @@
     private enum Modulo { Productos, Inventario, Clientes }
 
     private Modulo _modulo = Modulo.Inventario;
+    private bool _menuUsuario;
+    private DotNetObjectReference<Administracion>? _referencia;
+
+    private string Activa(Modulo modulo) => _modulo == modulo ? "activa" : "";
+
+    private void Ir(Modulo modulo)
+    {
+        _modulo = modulo;
+        _menuUsuario = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!primera)
+            return;
+        // Las teclas de la barra, con caja.js como en la venta. Para caja.js es como una ventana abierta encima de la venta:
+        // solo atrapa Esc, las F y las Ctrl de la caja (F5 no recarga ni Ctrl+P imprime); Enter, las flechas y Supr
+        // siguen siendo de los campos de abajo, igual que cuando estas mismas ventanas se abren desde la venta.
+        _referencia = DotNetObjectReference.Create(this);
+        await Js.RegistrarTeclasAsync(_referencia);
+        await Js.VentanaAbiertaAsync(true);
+    }
+
+    /// <summary>
+    /// Una tecla que atrapó caja.js: F3 y F4 cambian de pestaña y Ctrl+U cambia de usuario, como en la venta. Las demás no
+    /// hacen nada aquí (Esc tampoco: lo de abajo puede tener algo a medio escribir).
+    /// </summary>
+    [JSInvokable]
+    public async Task Tecla(string tecla, string? texto)
+    {
+        switch (tecla)
+        {
+            case "F3": Ir(Modulo.Productos); break;
+            case "F4": Ir(Modulo.Inventario); break;
+            case "Ctrl+U":
+                _menuUsuario = false;
+                await AlSalir.InvokeAsync();
+                return;
+            default: return;
+        }
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            // caja.js no olvida sola la «ventana»: si se quedara, en la venta del que entra después el cuadro de captura no
+            // tomaría los escaneos (lo mismo cuida la pantalla de venta al irse con una ventana abierta).
+            await Js.VentanaAbiertaAsync(false);
+            await Js.QuitarTeclasAsync();
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException)
+        {
+            // El navegador ya se cerró, o la página ya no tiene caja.js (se está volviendo a cargar).
+        }
+        _referencia?.Dispose();
+    }
 }

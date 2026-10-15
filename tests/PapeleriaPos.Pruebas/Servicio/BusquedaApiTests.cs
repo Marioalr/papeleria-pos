@@ -10,7 +10,7 @@ using PapeleriaPos.Servicio;
 
 namespace PapeleriaPos.Pruebas.Servicio;
 
-/// <summary>La búsqueda de la pantalla nueva: por principios de palabra, lo elegido antes en esa caja y lo más vendido.</summary>
+/// <summary>La búsqueda de la pantalla de venta: por principios de palabra, lo elegido antes en esa caja y lo más vendido.</summary>
 public class BusquedaApiTests(ServicioDePrueba servicio) : IClassFixture<ServicioDePrueba>
 {
     private static async Task<T> Leer<T>(HttpResponseMessage r)

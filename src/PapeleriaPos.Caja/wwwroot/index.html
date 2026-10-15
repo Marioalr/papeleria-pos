@@ -12,7 +12,7 @@
     </style>
     <script>
         // Lo que falla en JavaScript, o en un método de .NET que llama caja.js (las teclas y el escáner de la pantalla
-        // nueva), no pasa por AlgoFallo ni cierra la caja: se queda en la página. Aquí se manda al registro de la caja
+        // de venta), no pasa por AlgoFallo ni cierra la caja: se queda en la página. Aquí se manda al registro de la caja
         // (RaizCaja.AnotarDeLaPagina); lo de antes de que RaizCaja se conecte espera. Solo se anota: la cajera no ve nada.
         // Y le dice a la ventana (MainWindow.AlRecibirDeLaPagina) cuando Blazor ya no contesta.
         window.registroCaja = (() => {

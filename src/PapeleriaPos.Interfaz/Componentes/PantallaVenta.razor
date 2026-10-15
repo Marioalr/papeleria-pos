@@ -1,6 +1,5 @@
-@* La pantalla de venta. La nueva es la del rediseño (docs/propuesta-interfaz.md, entrega 0) y es con la que se entra en
-   todas las cajas; la de hoy, con la misma distribución y las mismas teclas que eleventa, queda para volver a ella desde
-   el menú del usuario. Las dos comparten los tickets, el cobro, las ventanas y las teclas: solo cambia cómo se ve. *@
+@* La pantalla de venta, la del rediseño (docs/propuesta-interfaz.md, entrega 0), en todas las cajas. La de antes, con la
+   misma distribución que eleventa, ya no existe: el dueño la quitó el 2026-10-14 («no volveremos a esa versión»). *@
 @implements IAsyncDisposable
 @using System.Text.RegularExpressions
 @using PapeleriaPos.Nucleo.Configuracion
@@ -10,873 +9,700 @@
 @inject ConexionCaja Conexion
 @inject IServiceProvider Servicios
 
-@if (_pantallaNueva)
-{
-    <div class="venta-nueva">
-        <Iconos />
-        <header class="vn-arriba">
-            <div class="vn-marca">
-                <span class="vn-logo">P</span>
-                <div><strong>@Caja.Nombre</strong><small>@(Conexion.Servicio.IsLoopback ? "principal" : "secundaria") · @Caja.Sucursal</small></div>
-            </div>
-            @* Cada quien ve lo que sus permisos le dejan: lo que no puede no aparece (docs/propuesta-interfaz.md, «Usuarios y permisos»).
-               Mientras llegan, solo lo que es de todos. *@
-            <nav class="vn-pestanas">
-                <button class="activa">Venta <kbd>F1</kbd></button>
-                @if (Ve(AccionControlada.EditarCatalogo))
-                {
-                    <button @onclick="() => Abrir(Ventanas.Productos)">Productos <kbd>F3</kbd></button>
-                }
-                @if (VeInventario)
-                {
-                    <button @onclick="() => Abrir(Ventanas.Inventario)">Inventario <kbd>F4</kbd></button>
-                }
-                @* Clientes es de todos, como en la pantalla de hoy: quien no los administra los consulta (sin «Nuevo cliente» ni
-                   editar) y en su cuenta recibe abonos y devuelve el saldo a favor, con candado si lo autoriza otro. *@
-                <button @onclick="() => Abrir(Ventanas.Clientes)">Clientes</button>
-                <button @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
-                @if (VeConfiguracion)
-                {
-                    <button @onclick="() => Abrir(Ventanas.Configuracion)">Configuración</button>
-                }
-            </nav>
-            <span class="espacio"></span>
-            <EstadoCaja @ref="_estado" Caja="Caja" Sesion="Sesion" AlImpresiones="() => Abrir(Ventanas.Impresiones)" />
-            <div class="vn-usuario-caja">
-                <button class="vn-usuario" title="Cambiar de usuario o volver a la pantalla de hoy" @onclick="() => _menuUsuario = !_menuUsuario">
-                    <span class="vn-avatar">@Inicial(Sesion.Nombre)</span>
-                    <span><strong>@Sesion.Nombre</strong><small>turno desde @Turno.AbiertoLocal.ToString("HH:mm")</small></span>
-                </button>
-                @if (_menuUsuario)
-                {
-                    <div class="vn-fondo-menu" @onclick="() => _menuUsuario = false"></div>
-                    <div class="vn-menu-usuario">
-                        <p>@Sesion.Nombre · @Textos.Rol(Sesion.Rol).ToLowerInvariant()</p>
-                        <button @onclick="AlSalir">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
-                        @* Solo aquí, no en «/»: un Enter con «/pan…» no deja la de hoy guardada en esta PC sin querer. *@
-                        <button @onclick="CambiarPantallaAsync">Volver a la pantalla de hoy</button>
-                    </div>
-                }
-            </div>
-        </header>
+<div class="venta-nueva">
+    <Iconos />
+    <header class="vn-arriba">
+        <div class="vn-marca">
+            <span class="vn-logo">P</span>
+            <div><strong>@Caja.Nombre</strong><small>@(Conexion.Servicio.IsLoopback ? "principal" : "secundaria") · @Caja.Sucursal</small></div>
+        </div>
+        @* Cada quien ve lo que sus permisos le dejan: lo que no puede no aparece (docs/propuesta-interfaz.md, «Usuarios y permisos»).
+           Mientras llegan, solo lo que es de todos. *@
+        <nav class="vn-pestanas">
+            <button class="activa">Venta <kbd>F1</kbd></button>
+            @if (Ve(AccionControlada.EditarCatalogo))
+            {
+                <button @onclick="() => Abrir(Ventanas.Productos)">Productos <kbd>F3</kbd></button>
+            }
+            @if (VeInventario)
+            {
+                <button @onclick="() => Abrir(Ventanas.Inventario)">Inventario <kbd>F4</kbd></button>
+            }
+            @* Clientes es de todos: quien no los administra los consulta (sin «Nuevo cliente» ni editar) y en su cuenta
+               recibe abonos y devuelve el saldo a favor, con candado si lo autoriza otro. *@
+            <button @onclick="() => Abrir(Ventanas.Clientes)">Clientes</button>
+            <button @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
+            @if (VeConfiguracion)
+            {
+                <button @onclick="() => Abrir(Ventanas.Configuracion)">Configuración</button>
+            }
+        </nav>
+        <span class="espacio"></span>
+        <EstadoCaja @ref="_estado" Caja="Caja" Sesion="Sesion" AlImpresiones="() => Abrir(Ventanas.Impresiones)" />
+        <div class="vn-usuario-caja">
+            <button class="vn-usuario" title="Cambiar de usuario o salir" @onclick="() => _menuUsuario = !_menuUsuario">
+                <span class="vn-avatar">@Inicial(Sesion.Nombre)</span>
+                <span><strong>@Sesion.Nombre</strong><small>turno desde @Turno.AbiertoLocal.ToString("HH:mm")</small></span>
+            </button>
+            @if (_menuUsuario)
+            {
+                <div class="vn-fondo-menu" @onclick="() => _menuUsuario = false"></div>
+                <div class="vn-menu-usuario">
+                    <p>@Sesion.Nombre · @Textos.Rol(Sesion.Rol).ToLowerInvariant()</p>
+                    @* Como en el prototipo, las dos van a la entrada; qué pasa al salir lo decide la raíz de la caja (AlSalir). *@
+                    <button @onclick="AlSalir">Cambiar de usuario <kbd>Ctrl+U</kbd></button>
+                    <button @onclick="AlSalir">Salir</button>
+                </div>
+            }
+        </div>
+    </header>
 
-        <div class="vn-cuerpo">
-            <section class="vn-izq">
-                <div class="vn-captura-caja">
-                    <div class="vn-captura">
-                        <Ico Nombre="escaner" Clase="vn-captura-ico" />
-                        @* Sin @bind: caja.js lo lee al Enter y lo vacía al momento (un escaneo nunca se pega al siguiente). *@
-                        <input id="codigo" data-codigo data-captura autocomplete="off" spellcheck="false" aria-label="Código del producto"
-                               placeholder="Escanea o escribe: código, nombre, 3*código o folio de un ticket" />
-                        <span class="vn-captura-modo"><kbd>/</kbd> todas las acciones</span>
-                    </div>
-                    @if (_accionesVistas is { } acciones)
-                    {
-                        @* «/»: todo lo que puede hacer quien entró, con su tecla; lo que pide autorización dice quién autoriza. *@
-                        <div class="vn-resultados" role="listbox">
-                            <div class="vn-res-grupo">Acciones que tienes</div>
-                            @if (acciones.Count == 0)
-                            {
-                                <div class="vn-res-vacio">Ninguna acción se llama así: borra lo escrito después de «/» para verlas todas.</div>
-                            }
-                            @for (var k = 0; k < acciones.Count; k++)
-                            {
-                                var indiceAccion = k;
-                                var accion = acciones[k];
-                                <div id="acc-@k" class="vn-res vn-res-accion @(k == _indiceAccion ? "activa" : "")" role="option" @onclick="() => HacerAccionAsync(indiceAccion)">
-                                    <Ico Nombre="@accion.Icono" />
-                                    <div class="vn-res-texto">
-                                        <div class="vn-res-nombre">@accion.Nombre</div>
-                                        @if (accion.Regla is { } regla && DetallePermiso(regla) is { } detalle)
-                                        {
-                                            <div class="vn-res-sub">
-                                                @if (Permiso(regla)?.Nivel == NivelPermiso.RequiereAutorizacion)
-                                                {
-                                                    <Ico Nombre="candado" />
-                                                }
-                                                @detalle
-                                            </div>
-                                        }
-                                    </div>
-                                    @if (accion.Tecla is { } teclaAccion)
-                                    {
-                                        <kbd>@teclaAccion</kbd>
-                                    }
-                                </div>
-                            }
-                            <div class="vn-res-ayuda"><span><kbd>↑</kbd> <kbd>↓</kbd> elegir</span><span><kbd>Enter</kbd> hacerla</span><span><kbd>Esc</kbd> cerrar</span><span>«/desc» deja solo las que dicen «desc»</span></div>
-                        </div>
-                    }
-                    else if (_resultados is { } resultados && _familias is { } familias)
-                    {
-                        @* Lo que se escribe a mano busca aquí mismo, sin otra ventana; el lector no (no espera a dejar de teclear). Lo que
-                           solo cambia en el color, la medida o la marca va en un renglón: una familia (docs/propuesta-interfaz.md). *@
-                        <div class="vn-resultados" role="listbox" data-familias="@familias.Ejes.Count">
-                            @if (resultados.Count == 0)
-                            {
-                                <div class="vn-res-vacio">Nada coincide con «@_textoBuscado». Revisa cómo se escribe, o véndelo como artículo común (<kbd>Ins</kbd>).</div>
-                            }
-                            else
-                            {
-                                var vistos = Math.Min(familias.Renglones.Count, MaximoResultados);
-                                var cuantos = $"{resultados.Count}{(resultados.Count >= ParaFamilias ? " o más" : "")}{(familias.Renglones.Count < resultados.Count ? $" en {familias.Renglones.Count} renglones" : "")}";
-                                <div class="vn-res-grupo">
-                                    @if (resultados[0].Parecido)
-                                    {
-                                        @($"Parecidos a «{_textoBuscado}» · {cuantos}: nada coincide exacto, ¿será un error de dedo?")
-                                    }
-                                    else
-                                    {
-                                        @($"Productos · {cuantos}: primero lo que se eligió aquí con este texto, luego lo más vendido")
-                                    }
-                                </div>
-                                @if (familias.Ejes.Count > 0)
-                                {
-                                    <div class="vn-ejes">
-                                        <span>Desplegar por</span>
-                                        @foreach (var eje in familias.Ejes)
-                                        {
-                                            var este = eje;
-                                            <button class="@(eje == familias.Eje ? "activo" : "")" @onclick="() => ElegirEje(este)" @onclick:preventDefault="true">@NombreDeEje(eje)</button>
-                                        }
-                                        @if (familias.Ejes.Count > 1)
-                                        {
-                                            <small><kbd>Tab</kbd> cambia</small>
-                                        }
-                                    </div>
-                                }
-                                @if (ParaAfinar() is { Count: > 0 } afinar)
-                                {
-                                    @* Con un texto general, las palabras que separan los resultados: un clic las agrega a lo escrito. *@
-                                    <div class="vn-afinar">
-                                        <span>Afinar</span>
-                                        @foreach (var (palabra, veces) in afinar)
-                                        {
-                                            var esta = palabra;
-                                            <button tabindex="-1" @onclick="() => AfinarAsync(esta)" @onclick:preventDefault="true">@esta.ToLowerInvariant() <small>@veces</small></button>
-                                        }
-                                        <small>o escribe el principio de otra palabra</small>
-                                    </div>
-                                }
-                                var n = 0;
-                                for (var k = 0; k < vistos; k++)
-                                {
-                                    var indiceRenglon = k;
-                                    var renglon = familias.Renglones[k];
-                                    var r = renglon.Elegido;
-                                    var activo = n == _indiceResultado;
-                                    var idRenglon = n++;
-                                    if (!renglon.EsFamilia)
-                                    {
-                                        <div id="res-@idRenglon" class="vn-res @(activo ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, -1)">
-                                            <div class="vn-res-texto">
-                                                <div class="vn-res-nombre">@Marcado(r.Descripcion)@PorSinonimo(r)</div>
-                                                @if (r.Codigo is { } codigoRes)
-                                                {
-                                                    <div class="vn-res-sub"><code>@Marcado(codigoRes)</code></div>
-                                                }
-                                            </div>
-                                            <div class="vn-res-precio">@Formato.Dinero(r.PrecioCentavos)</div>
-                                            <div class="vn-res-exist @ExistenciaClase(r.Existencia)">@ExistenciaTexto(r.Existencia)</div>
-                                        </div>
-                                        continue;
-                                    }
-                                    var abierta = indiceRenglon == _abierta;
-                                    var eje = renglon.Eje!.Value;
-                                    <div id="res-@idRenglon" class="vn-res vn-fam @(activo ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, -1)">
-                                        <div class="vn-res-texto">
-                                            <div class="vn-res-nombre">@Marcado(renglon.Titulo!)@PorSinonimo(r)</div>
-                                            <div class="vn-valores">
-                                                @for (var v = 0; v < Math.Min(renglon.Valores.Count, ValoresALaVista); v++)
-                                                {
-                                                    var indiceValor = v;
-                                                    <button class="vn-valor @(v == renglon.MasVendido ? "mas" : "")" tabindex="-1" title="@ValorTitulo(renglon, v)"
-                                                            @onclick="() => AgregarDeLaListaAsync(indiceRenglon, indiceValor)" @onclick:stopPropagation="true" @onclick:preventDefault="true">
-                                                        @Punto(eje, renglon.Valores[v].Clave)@Marcado(ValorTexto(renglon, v))
-                                                    </button>
-                                                }
-                                                @if (renglon.Valores.Count > ValoresALaVista)
-                                                {
-                                                    <span class="vn-mas-valores">y @(renglon.Valores.Count - ValoresALaVista) más <kbd>→</kbd></span>
-                                                }
-                                            </div>
-                                            <div class="vn-res-sub">@renglon.Valores.Count @PluralDeEje(eje) · Enter agrega @ValorTexto(renglon, renglon.MasVendido), el más vendido</div>
-                                        </div>
-                                        <div class="vn-res-precio">@PrecioDeFamilia(renglon)</div>
-                                        <button class="vn-fam-flecha" tabindex="-1" title="@(abierta ? "Cerrar (←)" : "Ver cada uno con su precio y existencia (→)")"
-                                                @onclick="() => AlternarFamilia(indiceRenglon)" @onclick:stopPropagation="true" @onclick:preventDefault="true">
-                                            <Ico Nombre="@(abierta ? "abajo" : "derecha")" />
-                                        </button>
-                                    </div>
-                                    @if (abierta)
-                                    {
-                                        for (var v = 0; v < renglon.Valores.Count; v++)
-                                        {
-                                            var indiceValor = v;
-                                            var valor = renglon.Valores[v].Elemento;
-                                            var activoValor = n == _indiceResultado;
-                                            var idValor = n++;
-                                            <div id="res-@idValor" class="vn-res vn-res-valor @(activoValor ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, indiceValor)">
-                                                <div class="vn-res-texto">
-                                                    <div class="vn-res-nombre">
-                                                        @Punto(eje, renglon.Valores[v].Clave)@Marcado(ValorTexto(renglon, v))
-                                                        @if (v == renglon.MasVendido)
-                                                        {
-                                                            <span class="vn-etiq verde">más vendido</span>
-                                                        }
-                                                    </div>
-                                                    @if (valor.Codigo is { } codigoValor)
-                                                    {
-                                                        <div class="vn-res-sub"><code>@Marcado(codigoValor)</code></div>
-                                                    }
-                                                </div>
-                                                <div class="vn-res-precio">@Formato.Dinero(valor.PrecioCentavos)</div>
-                                                <div class="vn-res-exist @ExistenciaClase(valor.Existencia)">@ExistenciaTexto(valor.Existencia)</div>
-                                            </div>
-                                        }
-                                    }
-                                }
-                                if (familias.Renglones.Count > vistos)
-                                {
-                                    <div class="vn-res-vacio">Y @(familias.Renglones.Count - vistos) renglones más: escribe otra palabra para afinar.</div>
-                                }
-                            }
-                            <div class="vn-res-ayuda">
-                                <span><kbd>↑</kbd> <kbd>↓</kbd> elegir</span>
-                                @if (familias.Ejes.Count > 0)
-                                {
-                                    <span><kbd>→</kbd> desplegar · <kbd>←</kbd> cerrar</span>
-                                }
-                                <span><kbd>Enter</kbd> agregar</span><span><kbd>Esc</kbd> cerrar</span><span><kbd>3*</kbd> antes del texto = cantidad</span>
-                            </div>
-                        </div>
-                    }
+    <div class="vn-cuerpo">
+        <section class="vn-izq">
+            <div class="vn-captura-caja">
+                <div class="vn-captura">
+                    <Ico Nombre="escaner" Clase="vn-captura-ico" />
+                    @* Sin @bind: caja.js lo lee al Enter y lo vacía al momento (un escaneo nunca se pega al siguiente). *@
+                    <input id="codigo" data-captura autocomplete="off" spellcheck="false" aria-label="Código del producto"
+                           placeholder="Escanea o escribe: código, nombre, 3*código o folio de un ticket" />
+                    <span class="vn-captura-modo"><kbd>/</kbd> todas las acciones</span>
                 </div>
-                <div class="vn-aviso @(_mensaje is null ? "info" : _mensajeEsError ? "error" : "")">
-                    @if (_mensaje is not null)
-                    {
-                        <span>@_mensaje</span>
-                        @if (_codigoNuevo is { } nuevoN)
-                        {
-                            <button class="vn-boton chico" @onclick="() => Abrir(Ventanas.AltaRapida)">Dar de alta «@nuevoN»</button>
-                        }
-                    }
-                    else
-                    {
-                        <Ico Nombre="info" />
-                        <span>El cursor siempre vuelve aquí: escanea, escribe un nombre o «/» para ver todo lo que puedes hacer.</span>
-                    }
-                </div>
-                <div class="vn-barra">
-                    @if (_rapidos.Count > 0)
-                    {
-                        <span class="vn-rapidos">
-                            <span class="vn-tit">Rápidos</span>
-                            @for (var k = 0; k < _rapidos.Count; k++)
-                            {
-                                var indiceRapido = k;
-                                var listo = _rapidos[k];
-                                <button class="vn-rapido" title="Con un número en el cuadro, agrega esa cantidad" @onclick="() => RapidoAsync(indiceRapido)">
-                                    <kbd>Alt+@(k + 1)</kbd>@listo.Rapido.Nombre
-                                    @if (listo.PrecioCentavos is { } precioRapido)
-                                    {
-                                        <small>@Formato.Dinero(precioRapido)</small>
-                                    }
-                                </button>
-                            }
-                        </span>
-                    }
-                    @* Los tickets en espera, sin límite: unas fichas a la vista y los demás en «Más», en orden de llegada (F5 retoma el primero). *@
-                    <span class="vn-espera">
-                        @{
-                            var esperan = EnEspera.ToList();
-                        }
-                        @for (var k = 0; k < Math.Min(FichasEnEspera, esperan.Count); k++)
-                        {
-                            var enEspera = esperan[k];
-                            <button class="vn-ficha" title="@TituloEspera(enEspera, k == 0)" @onclick="() => Retomar(enEspera)"><Ico Nombre="pausa" />@Desde(enEspera) · @Formato.Dinero(enEspera.Venta.TotalCentavos)</button>
-                        }
-                        @if (esperan.Count > FichasEnEspera)
-                        {
-                            var resto = esperan.Skip(FichasEnEspera).ToList();
-                            <span class="vn-mas-espera">
-                                <button class="vn-boton chico @(_menuEspera ? "on" : "")" aria-expanded="@(_menuEspera ? "true" : "false")" title="Los otros @resto.Count tickets en espera"
-                                        @onclick="() => _menuEspera = !_menuEspera">Más (@resto.Count) <Ico Nombre="abajo" /></button>
-                                @if (_menuEspera)
-                                {
-                                    <div class="vn-fondo-menu" @onclick="() => _menuEspera = false"></div>
-                                    <div class="vn-menu-espera" role="menu">
-                                        @* Con muchos, flechas arriba y abajo: deslizan la lista al pasar el mouse o con un clic (caja.js). *@
-                                        @if (resto.Count > FilasDelMenu)
-                                        {
-                                            <button class="vn-menu-flecha apagada" data-rodar="-1" aria-label="Más arriba" title="Más arriba: pasa el mouse o haz clic"><Ico Nombre="arriba" /></button>
-                                        }
-                                        <div class="vn-menu-lista" id="lista-espera">
-                                            @foreach (var enEspera in resto)
-                                            {
-                                                <button class="vn-fila-espera" role="menuitem" title="@TituloEspera(enEspera, false)" @onclick="() => Retomar(enEspera)">
-                                                    <Ico Nombre="pausa" />
-                                                    <span><strong>@Desde(enEspera)</strong><small>@ArticulosTexto(enEspera.Venta)</small></span>
-                                                    <em>@Formato.Dinero(enEspera.Venta.TotalCentavos)</em>
-                                                </button>
-                                            }
-                                        </div>
-                                        @if (resto.Count > FilasDelMenu)
-                                        {
-                                            <button class="vn-menu-flecha" data-rodar="1" aria-label="Más abajo" title="Más abajo: pasa el mouse o haz clic"><Ico Nombre="abajo" /></button>
-                                        }
-                                    </div>
-                                }
-                            </span>
-                        }
-                        <button class="vn-boton chico" disabled="@(Actual.Venta.Lineas.Count == 0)" title="Guarda este ticket y empieza otro" @onclick="PonerEnEspera"><Ico Nombre="pausa" />Poner en espera <kbd>F6</kbd></button>
-                    </span>
-                </div>
-                <div class="vn-ticket">
-                    @if (Actual.Venta.Lineas.Count == 0)
-                    {
-                        <div class="vn-vacio">
-                            <h3>Escanea el primer producto</h3>
-                            <p>El cuadro de arriba entiende todo esto, sin abrir otra ventana:</p>
-                            <ul>
-                                <li><code>7501234567890</code></li><li>el código del lector</li>
-                                <li><code>cuaderno estrella</code></li><li>busca por nombre o código; Enter agrega el primero</li>
-                                <li><code>12*7501234567890</code></li><li>doce de una vez</li>
-                                <li><code>20</code> y <kbd>Alt+1</kbd></li><li>veinte del primer rápido</li>
-                                <li><code>A-000118</code></li><li>el folio: devolver o cancelar</li>
-                                <li><code>/</code></li><li>todas las acciones que tienes</li>
-                            </ul>
-                        </div>
-                    }
-                    else
-                    {
-                        <table>
-                            <thead>
-                                <tr><th class="vn-col-cant">Cantidad</th><th>Descripción</th><th class="num vn-col-precio">Precio</th><th class="num vn-col-importe">Importe</th></tr>
-                            </thead>
-                            <tbody>
-                                @for (var i = 0; i < Actual.Venta.Lineas.Count; i++)
-                                {
-                                    var indice = i;
-                                    var linea = Actual.Venta.Lineas[i];
-                                    var producto = linea.VarianteId is { } v ? Actual.Productos.GetValueOrDefault(v) : null;
-                                    <tr id="linea-@i" class="@(i == _seleccion ? "seleccionada" : "")" @onclick="() => Seleccionar(indice)">
-                                        <td class="vn-col-cant">
-                                            @if (producto is not null && !linea.EsImpresiones)
-                                            {
-                                                <span class="vn-paso">
-                                                    <button tabindex="-1" title="Uno menos" @onclick="() => PasoCantidadAsync(indice, -1)" @onclick:stopPropagation="true">−</button>
-                                                    <span>@Formato.Numero(linea.Cantidad.EnUnidades)</span>
-                                                    <button tabindex="-1" title="Uno más" @onclick="() => PasoCantidadAsync(indice, 1)" @onclick:stopPropagation="true">+</button>
-                                                </span>
-                                            }
-                                            else
-                                            {
-                                                <span class="vn-paso-fijo">@Formato.Numero(linea.Cantidad.EnUnidades)</span>
-                                            }
-                                        </td>
-                                        <td>
-                                            <div class="vn-nombre">@(linea.EsImpresiones ? $"Impresiones ({Actual.Impresiones.Count})" : Descripcion(linea, producto))</div>
-                                            <div class="vn-sub">
-                                                @if (producto?.Codigo is { } codigoLinea)
-                                                {
-                                                    <code>@codigoLinea</code>
-                                                }
-                                                @if (linea.TieneMayoreo)
-                                                {
-                                                    <span class="vn-etiq">@MayoreoTexto(linea, producto) · ahorra @Formato.Dinero(linea.AhorroMayoreoCentavos)</span>
-                                                }
-                                                @if (linea.TieneDescuento)
-                                                {
-                                                    <span class="vn-etiq">Descuento −@Formato.Dinero(linea.DescuentoCentavos) · @linea.MotivoDescuento</span>
-                                                }
-                                                @if (linea.PrecioCambiado)
-                                                {
-                                                    <span class="vn-etiq azul">Precio cambiado</span>
-                                                }
-                                                @if (producto?.Existencia is { } quedan && quedan <= 3)
-                                                {
-                                                    <span class="vn-etiq ambar">@(quedan <= 0 ? "Sin existencia en el sistema" : $"Quedan {Formato.Numero(quedan)}")</span>
-                                                }
-                                            </div>
-                                        </td>
-                                        <td class="num vn-precio">
-                                            @if (linea.PrecioCambiado)
-                                            {
-                                                <s>@Formato.Dinero(linea.PrecioOriginalCentavos ?? 0)</s>
-                                            }
-                                            @Formato.Dinero(linea.PrecioCentavos)
-                                        </td>
-                                        <td class="num vn-importe">@Formato.Dinero(linea.ImporteCentavos)</td>
-                                    </tr>
-                                    @if (i == _seleccion)
-                                    {
-                                        @* Las acciones del artículo, pegadas a su fila: así el panel de la derecha queda solo para el dinero. *@
-                                        <tr class="vn-acciones-fila">
-                                            <td></td>
-                                            <td colspan="3">
-                                                <div class="vn-tira">
-                                                    @if (producto is not null && !linea.EsImpresiones && Ve(AccionControlada.CambiarPrecio))
-                                                    {
-                                                        <button class="vn-accion" @onclick="() => EnLaFilaAsync(AbrirCambioPrecio)" @onclick:stopPropagation="true">
-                                                            <Ico Nombre="etiqueta" />Precio @Marca(AccionControlada.CambiarPrecio, "Ctrl+E")
-                                                        </button>
-                                                    }
-                                                    @if (Ve(AccionControlada.Descuento))
-                                                    {
-                                                        <button class="vn-accion" @onclick="() => EnLaFilaAsync(() => Abrir(Ventanas.Descuento))" @onclick:stopPropagation="true">
-                                                            <Ico Nombre="porcentaje" />Descuento @Limite(AccionControlada.Descuento) @Marca(AccionControlada.Descuento, "Ctrl+D")
-                                                        </button>
-                                                    }
-                                                    @if (producto is not null && !linea.EsImpresiones && TieneEscalas(producto))
-                                                    {
-                                                        <button class="vn-accion" @onclick="() => EnLaFilaAsync(MayoreoAsync)" @onclick:stopPropagation="true">
-                                                            <Ico Nombre="capas" />Mayoreo <kbd>F11</kbd>
-                                                        </button>
-                                                    }
-                                                    @if (Ve(AccionControlada.QuitarProducto))
-                                                    {
-                                                        <button class="vn-accion peligro" @onclick="() => EnLaFilaAsync(BorrarSeleccion)" @onclick:stopPropagation="true">
-                                                            <Ico Nombre="basura" />Quitar <kbd>Supr</kbd>
-                                                        </button>
-                                                    }
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    }
-                                }
-                            </tbody>
-                        </table>
-                    }
-                </div>
-            </section>
-
-            <aside class="vn-der @(VaEnPanel ? "con-panel" : "")">
-                @if (VaEnPanel)
+                @if (_accionesVistas is { } acciones)
                 {
-                    @if (_avisoDelPanel is { } avisoDelPanel)
-                    {
-                        <div class="vn-alerta" role="status"><Ico Nombre="info" /><div><span>@avisoDelPanel</span></div></div>
-                    }
-                    <CascadingValue Name="VentanaEnPanel" Value="true">
-                        <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada">@ContenidoDeVentana</CascadingValue>
-                    </CascadingValue>
+                    @* «/»: todo lo que puede hacer quien entró, con su tecla; lo que pide autorización dice quién autoriza. *@
+                    <div class="vn-resultados" role="listbox">
+                        <div class="vn-res-grupo">Acciones que tienes</div>
+                        @if (acciones.Count == 0)
+                        {
+                            <div class="vn-res-vacio">Ninguna acción se llama así: borra lo escrito después de «/» para verlas todas.</div>
+                        }
+                        @for (var k = 0; k < acciones.Count; k++)
+                        {
+                            var indiceAccion = k;
+                            var accion = acciones[k];
+                            <div id="acc-@k" class="vn-res vn-res-accion @(k == _indiceAccion ? "activa" : "")" role="option" @onclick="() => HacerAccionAsync(indiceAccion)">
+                                <Ico Nombre="@accion.Icono" />
+                                <div class="vn-res-texto">
+                                    <div class="vn-res-nombre">@accion.Nombre</div>
+                                    @if (accion.Regla is { } regla && DetallePermiso(regla) is { } detalle)
+                                    {
+                                        <div class="vn-res-sub">
+                                            @if (Permiso(regla)?.Nivel == NivelPermiso.RequiereAutorizacion)
+                                            {
+                                                <Ico Nombre="candado" />
+                                            }
+                                            @detalle
+                                        </div>
+                                    }
+                                </div>
+                                @if (accion.Tecla is { } teclaAccion)
+                                {
+                                    <kbd>@teclaAccion</kbd>
+                                }
+                            </div>
+                        }
+                        <div class="vn-res-ayuda"><span><kbd>↑</kbd> <kbd>↓</kbd> elegir</span><span><kbd>Enter</kbd> hacerla</span><span><kbd>Esc</kbd> cerrar</span><span>«/desc» deja solo las que dicen «desc»</span></div>
+                    </div>
                 }
-                else if (MostrarCambio && _cobrado is { } cobrado)
+                else if (_resultados is { } resultados && _familias is { } familias)
                 {
-                    @* Al cobrar: el cambio en grande hasta que se escanea al siguiente cliente (docs/propuesta-interfaz.md, «El panel del total»). *@
-                    <div class="vn-cambio">
-                        <span>@(cobrado.CambioCentavos > 0 ? "Entrega de cambio" : "Cobrado")</span>
-                        <strong>@Formato.Dinero(cobrado.CambioCentavos > 0 ? cobrado.CambioCentavos : cobrado.TotalCobradoCentavos)</strong>
-                        <p>@PagoTexto(cobrado)</p>
-                    </div>
-                    @if (_noSalio is { } noSalio)
-                    {
-                        <div class="vn-alerta">
-                            <Ico Nombre="impresora" />
-                            <div>
-                                <span>El ticket <strong>@cobrado.FolioImpreso</strong> no salió: @noSalio La venta ya quedó guardada.</span>
-                                <span class="vn-botonera">
-                                    <button class="vn-boton chico" @onclick="() => ImprimirCobradoAsync(cobrado)">Reintentar</button>
-                                    <button class="vn-boton chico" @onclick="VerCobradoEnPantallaAsync">Verlo en pantalla</button>
-                                </span>
-                            </div>
-                        </div>
-                    }
-                    else if (Impresora.MuestraVistaPrevia)
-                    {
-                        <div class="vn-folio-ok"><Ico Nombre="monitor" />Ticket <code>@cobrado.FolioImpreso</code> · <button class="vn-enlace" @onclick="VerCobradoEnPantallaAsync">verlo en pantalla</button></div>
-                    }
-                    else
-                    {
-                        <div class="vn-folio-ok"><Ico Nombre="check" />Ticket <code>@cobrado.FolioImpreso</code> impreso</div>
-                    }
-                    <div class="vn-alerta info">
-                        <Ico Nombre="escaner" />
-                        <div><span>Listo para el siguiente cliente: lo que escanees empieza su ticket. El cambio se queda aquí hasta entonces.</span></div>
-                    </div>
-                    @if (Retiro is { } efectivoC)
-                    {
-                        <div class="vn-alerta">
-                            <Ico Nombre="efectivo" />
-                            <div><span>Hay <strong>@Formato.Dinero(efectivoC.EsperadoCentavos)</strong> en efectivo y el límite es @Formato.Dinero(efectivoC.LimiteCentavos ?? 0): haz un retiro.</span></div>
-                        </div>
-                    }
-                    <div class="vn-ultimo"><span></span><button class="vn-enlace" @onclick="() => _cobrado = null">Volver al total</button></div>
-                }
-                else
-                {
-                    @* El cliente: una flecha chica que apunta al ticket; se jala (Ctrl+L) para elegirlo. A su izquierda, lo que debe. *@
-                    <div class="vn-cliente">
-                        @if (Actual.Cliente is not null && Actual.Cuenta is { } cuenta && cuenta.SaldoCentavos != 0)
+                    @* Lo que se escribe a mano busca aquí mismo, sin otra ventana; el lector no (no espera a dejar de teclear). Lo que
+                       solo cambia en el color, la medida o la marca va en un renglón: una familia (docs/propuesta-interfaz.md). *@
+                    <div class="vn-resultados" role="listbox" data-familias="@familias.Ejes.Count">
+                        @if (resultados.Count == 0)
                         {
-                            <span class="vn-cli-dato">
-                                @if (cuenta.SaldoCentavos > 0)
-                                {
-                                    <span class="debe" title="@(cuenta.VenceMasAntiguo is { } vence ? $"Lo más antiguo vence el {vence:dd/MM}" : "")">
-                                        Debe @Formato.Dinero(cuenta.SaldoCentavos)@(VencidoDelTicket > 0 ? $" · vencido {Formato.Dinero(VencidoDelTicket)}" : "")
-                                    </span>
-                                    @if (!_pilotoEleventa)
-                                    {
-                                        <button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Abono)">Abonar <kbd>Ctrl+B</kbd></button>
-                                    }
-                                }
-                                else
-                                {
-                                    <span>@Formato.Dinero(cuenta.AFavorCentavos) a favor</span>
-                                }
-                            </span>
-                        }
-                        <button class="vn-flecha-cli" title="Elegir el cliente del ticket (Ctrl+L)" @onclick="() => Abrir(Ventanas.ElegirCliente)">
-                            <Ico Nombre="usuario" /><span>@(Actual.Cliente?.Nombre ?? "Público en general")</span>
-                        </button>
-                    </div>
-                    @* data-cobro: lo que el lector teclee en el cobro («Pagó con», montos, referencias, botones) va a la captura y su
-                       Enter no cobra (caja.js). *@
-                    <div class="vn-total" data-cobro>
-                        <div class="vn-total-cab"><span>Total</span><span>@ArticulosTexto(Actual.Venta)</span></div>
-                        <div class="vn-cifra @(Actual.Venta.Lineas.Count == 0 ? "vacio" : "")">@Formato.Dinero(Actual.Venta.TotalCentavos)</div>
-                        <div class="vn-tecla"><kbd>F12</kbd><span>cobrar</span></div>
-                        @if (Actual.Venta.Lineas.Sum(l => l.AhorroMayoreoCentavos) is var ahorro and > 0)
-                        {
-                            <div class="vn-linea verde"><span>Ahorro por mayoreo</span><span>@Formato.Dinero(ahorro)</span></div>
-                        }
-                        @if (Actual.Venta.DescuentoCentavos > 0)
-                        {
-                            <div class="vn-linea verde"><span>Descuentos</span><span>−@Formato.Dinero(Actual.Venta.DescuentoCentavos)</span></div>
-                        }
-                        @if (Actual.Venta.Lineas.Count > 0)
-                        {
-                            var aCobrar = EnEfectivo.ACobrarCentavos;
-                            <div class="vn-separa"></div>
-                            @if (aCobrar > 0 && EnEfectivo.RedondeoCentavos != 0)
-                            {
-                                <div class="vn-linea"><span>En efectivo, al peso</span><strong>@Formato.Dinero(aCobrar)</strong></div>
-                            }
-                            @* Tarjeta, transferencia o crédito: cada una en su renglón, con lo que faltaba; el efectivo cubre el resto. *@
-                            @for (var k = 0; k < _otras.Count; k++)
-                            {
-                                var otra = _otras[k];
-                                <div class="vn-pago-fila" @key="otra">
-                                    <div class="forma">
-                                        <span>@NombreDeForma(otra.Forma)</span>
-                                        @if (otra.Forma == FormaPago.Transferencia)
-                                        {
-                                            <small>queda por verificar</small>
-                                        }
-                                    </div>
-                                    <label>Monto
-                                        <input id="pago-monto-@k" data-pago inputmode="decimal" autocomplete="off" @bind="otra.Monto" @bind:event="oninput"
-                                               @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
-                                    </label>
-                                    @if (otra.Forma == FormaPago.Credito)
-                                    {
-                                        <span class="nota">@NotaDeCredito</span>
-                                    }
-                                    else
-                                    {
-                                        <label>Referencia
-                                            <input data-pago autocomplete="off" title="@(otra.Forma == FormaPago.Tarjeta ? "La de la terminal" : "La de la transferencia")" @bind="otra.Referencia" @bind:event="oninput"
-                                                   @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
-                                        </label>
-                                    }
-                                    <button class="x" title="Quitar" aria-label="Quitar" @onclick="() => QuitarForma(otra)"><Ico Nombre="cerrar" /></button>
-                                </div>
-                            }
-                            @if (aCobrar > 0)
-                            {
-                                <div class="vn-pago-cab">
-                                    <label for="pago-nuevo">Pagó con</label>
-                                    @FormasDePago
-                                </div>
-                                <input id="pago-nuevo" data-pago inputmode="decimal" autocomplete="off" placeholder="@Formato.Dinero(aCobrar)"
-                                       @bind="_pagoCon" @bind:event="oninput" @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
-                            }
-                            else if (FormasQueFaltan.Any())
-                            {
-                                <div class="vn-pago-cab"><span class="nota">Otra forma</span>@FormasDePago</div>
-                            }
-                            @if (ErrorDeLasFormas is { } errorFormas)
-                            {
-                                <div class="vn-vivo falta"><span>@errorFormas</span></div>
-                            }
-                            else if (aCobrar == 0)
-                            {
-                                <div class="vn-vivo"><span>Cubierto con @(_otras.Count == 1 ? "otra forma" : "otras formas")</span><strong>@Formato.Dinero(0)</strong></div>
-                            }
-                            else if (_pagoCon.Trim().Length > 0)
-                            {
-                                @if (PagoConCentavos is null)
-                                {
-                                    <div class="vn-vivo falta"><span>«@_pagoCon» no es una cantidad</span></div>
-                                }
-                                else if (Recibido >= aCobrar)
-                                {
-                                    <div class="vn-vivo"><span>Cambio</span><strong>@Formato.Dinero(Recibido - aCobrar)</strong></div>
-                                }
-                                else
-                                {
-                                    <div class="vn-vivo falta"><span>Faltan</span><strong>@Formato.Dinero(aCobrar - Recibido)</strong></div>
-                                }
-                            }
-                            @if (ExcesoDeCredito > 0 && ConCredito)
-                            {
-                                <div class="vn-alerta">
-                                    <Ico Nombre="candado" />
-                                    <div><span>Pasa su límite de crédito por <strong>@Formato.Dinero(ExcesoDeCredito)</strong>@AutorizaExceso</span></div>
-                                </div>
-                            }
-                            @if (_avisoDelCobro is { } avisoCobro)
-                            {
-                                <div class="vn-alerta">
-                                    <Ico Nombre="escaner" />
-                                    <div><span>@avisoCobro</span></div>
-                                </div>
-                            }
-                            <button id="cobrar-nuevo" class="vn-cobrar" disabled="@(_cobrando || ErrorDelCobro is not null)" @onclick="CobrarEnPanelAsync"
-                                    @onfocus="() => _enPago = true" @onblur="() => _enPago = false">@EtiquetaDeCobrar</button>
-                        }
-                    </div>
-                    @if (Retiro is { } efectivoN)
-                    {
-                        <div class="vn-alerta">
-                            <Ico Nombre="efectivo" />
-                            <div>
-                                <span>Hay <strong>@Formato.Dinero(efectivoN.EsperadoCentavos)</strong> en efectivo y el límite es @Formato.Dinero(efectivoN.LimiteCentavos ?? 0): haz un retiro.</span>
-                                @if (Ve(AccionControlada.SalidaEfectivo))
-                                {
-                                    <span><button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Salida)">Retiro <kbd>F8</kbd></button></span>
-                                }
-                            </div>
-                        </div>
-                    }
-                    <div class="vn-ultimo">
-                        @if (_ultimo is { } ultimo)
-                        {
-                            <span>Último: <strong>@ultimo.FolioImpreso</strong> · @Formato.Dinero(ultimo.TotalCobradoCentavos) · cambio <strong>@Formato.Dinero(ultimo.CambioCentavos)</strong></span>
+                            <div class="vn-res-vacio">Nada coincide con «@_textoBuscado». Revisa cómo se escribe, o véndelo como artículo común (<kbd>Ins</kbd>).</div>
                         }
                         else
                         {
-                            <span>Todavía no hay ventas en este turno.</span>
+                            var vistos = Math.Min(familias.Renglones.Count, MaximoResultados);
+                            var cuantos = $"{resultados.Count}{(resultados.Count >= ParaFamilias ? " o más" : "")}{(familias.Renglones.Count < resultados.Count ? $" en {familias.Renglones.Count} renglones" : "")}";
+                            <div class="vn-res-grupo">
+                                @if (resultados[0].Parecido)
+                                {
+                                    @($"Parecidos a «{_textoBuscado}» · {cuantos}: nada coincide exacto, ¿será un error de dedo?")
+                                }
+                                else
+                                {
+                                    @($"Productos · {cuantos}: primero lo que se eligió aquí con este texto, luego lo más vendido")
+                                }
+                            </div>
+                            @if (familias.Ejes.Count > 0)
+                            {
+                                <div class="vn-ejes">
+                                    <span>Desplegar por</span>
+                                    @foreach (var eje in familias.Ejes)
+                                    {
+                                        var este = eje;
+                                        <button class="@(eje == familias.Eje ? "activo" : "")" @onclick="() => ElegirEje(este)" @onclick:preventDefault="true">@NombreDeEje(eje)</button>
+                                    }
+                                    @if (familias.Ejes.Count > 1)
+                                    {
+                                        <small><kbd>Tab</kbd> cambia</small>
+                                    }
+                                </div>
+                            }
+                            @if (ParaAfinar() is { Count: > 0 } afinar)
+                            {
+                                @* Con un texto general, las palabras que separan los resultados: un clic las agrega a lo escrito. *@
+                                <div class="vn-afinar">
+                                    <span>Afinar</span>
+                                    @foreach (var (palabra, veces) in afinar)
+                                    {
+                                        var esta = palabra;
+                                        <button tabindex="-1" @onclick="() => AfinarAsync(esta)" @onclick:preventDefault="true">@esta.ToLowerInvariant() <small>@veces</small></button>
+                                    }
+                                    <small>o escribe el principio de otra palabra</small>
+                                </div>
+                            }
+                            var n = 0;
+                            for (var k = 0; k < vistos; k++)
+                            {
+                                var indiceRenglon = k;
+                                var renglon = familias.Renglones[k];
+                                var r = renglon.Elegido;
+                                var activo = n == _indiceResultado;
+                                var idRenglon = n++;
+                                if (!renglon.EsFamilia)
+                                {
+                                    <div id="res-@idRenglon" class="vn-res @(activo ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, -1)">
+                                        <div class="vn-res-texto">
+                                            <div class="vn-res-nombre">@Marcado(r.Descripcion)@PorSinonimo(r)</div>
+                                            @if (r.Codigo is { } codigoRes)
+                                            {
+                                                <div class="vn-res-sub"><code>@Marcado(codigoRes)</code></div>
+                                            }
+                                        </div>
+                                        <div class="vn-res-precio">@Formato.Dinero(r.PrecioCentavos)</div>
+                                        <div class="vn-res-exist @ExistenciaClase(r.Existencia)">@ExistenciaTexto(r.Existencia)</div>
+                                    </div>
+                                    continue;
+                                }
+                                var abierta = indiceRenglon == _abierta;
+                                var eje = renglon.Eje!.Value;
+                                <div id="res-@idRenglon" class="vn-res vn-fam @(activo ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, -1)">
+                                    <div class="vn-res-texto">
+                                        <div class="vn-res-nombre">@Marcado(renglon.Titulo!)@PorSinonimo(r)</div>
+                                        <div class="vn-valores">
+                                            @for (var v = 0; v < Math.Min(renglon.Valores.Count, ValoresALaVista); v++)
+                                            {
+                                                var indiceValor = v;
+                                                <button class="vn-valor @(v == renglon.MasVendido ? "mas" : "")" tabindex="-1" title="@ValorTitulo(renglon, v)"
+                                                        @onclick="() => AgregarDeLaListaAsync(indiceRenglon, indiceValor)" @onclick:stopPropagation="true" @onclick:preventDefault="true">
+                                                    @Punto(eje, renglon.Valores[v].Clave)@Marcado(ValorTexto(renglon, v))
+                                                </button>
+                                            }
+                                            @if (renglon.Valores.Count > ValoresALaVista)
+                                            {
+                                                <span class="vn-mas-valores">y @(renglon.Valores.Count - ValoresALaVista) más <kbd>→</kbd></span>
+                                            }
+                                        </div>
+                                        <div class="vn-res-sub">@renglon.Valores.Count @PluralDeEje(eje) · Enter agrega @ValorTexto(renglon, renglon.MasVendido), el más vendido</div>
+                                    </div>
+                                    <div class="vn-res-precio">@PrecioDeFamilia(renglon)</div>
+                                    <button class="vn-fam-flecha" tabindex="-1" title="@(abierta ? "Cerrar (←)" : "Ver cada uno con su precio y existencia (→)")"
+                                            @onclick="() => AlternarFamilia(indiceRenglon)" @onclick:stopPropagation="true" @onclick:preventDefault="true">
+                                        <Ico Nombre="@(abierta ? "abajo" : "derecha")" />
+                                    </button>
+                                </div>
+                                @if (abierta)
+                                {
+                                    for (var v = 0; v < renglon.Valores.Count; v++)
+                                    {
+                                        var indiceValor = v;
+                                        var valor = renglon.Valores[v].Elemento;
+                                        var activoValor = n == _indiceResultado;
+                                        var idValor = n++;
+                                        <div id="res-@idValor" class="vn-res vn-res-valor @(activoValor ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, indiceValor)">
+                                            <div class="vn-res-texto">
+                                                <div class="vn-res-nombre">
+                                                    @Punto(eje, renglon.Valores[v].Clave)@Marcado(ValorTexto(renglon, v))
+                                                    @if (v == renglon.MasVendido)
+                                                    {
+                                                        <span class="vn-etiq verde">más vendido</span>
+                                                    }
+                                                </div>
+                                                @if (valor.Codigo is { } codigoValor)
+                                                {
+                                                    <div class="vn-res-sub"><code>@Marcado(codigoValor)</code></div>
+                                                }
+                                            </div>
+                                            <div class="vn-res-precio">@Formato.Dinero(valor.PrecioCentavos)</div>
+                                            <div class="vn-res-exist @ExistenciaClase(valor.Existencia)">@ExistenciaTexto(valor.Existencia)</div>
+                                        </div>
+                                    }
+                                }
+                            }
+                            if (familias.Renglones.Count > vistos)
+                            {
+                                <div class="vn-res-vacio">Y @(familias.Renglones.Count - vistos) renglones más: escribe otra palabra para afinar.</div>
+                            }
                         }
-                        @if (Ve(AccionControlada.Reimprimir))
-                        {
-                            <button class="vn-enlace" @onclick="ReimprimirUltimoAsync">Reimprimir</button>
-                        }
+                        <div class="vn-res-ayuda">
+                            <span><kbd>↑</kbd> <kbd>↓</kbd> elegir</span>
+                            @if (familias.Ejes.Count > 0)
+                            {
+                                <span><kbd>→</kbd> desplegar · <kbd>←</kbd> cerrar</span>
+                            }
+                            <span><kbd>Enter</kbd> agregar</span><span><kbd>Esc</kbd> cerrar</span><span><kbd>3*</kbd> antes del texto = cantidad</span>
+                        </div>
                     </div>
                 }
-            </aside>
-        </div>
+            </div>
+            <div class="vn-aviso @(_mensaje is null ? "info" : _mensajeEsError ? "error" : "")">
+                @if (_mensaje is not null)
+                {
+                    <span>@_mensaje</span>
+                    @* Un código que no existe: lo que sus permisos le dejan (docs/propuesta-interfaz.md, «El cuadro de captura»). *@
+                    @if (_codigoNuevo is not null && Ve(AccionControlada.AltaRapida))
+                    {
+                        <button class="vn-boton chico" @onclick="() => Abrir(Ventanas.AltaRapida)">Darlo de alta aquí</button>
+                    }
+                    @if (_codigoNuevo is not null && Ve(AccionControlada.ArticuloComun))
+                    {
+                        <button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Comun)">Venderlo como artículo común</button>
+                    }
+                }
+                else
+                {
+                    <Ico Nombre="info" />
+                    <span>El cursor siempre vuelve aquí: escanea, escribe un nombre o «/» para ver todo lo que puedes hacer.</span>
+                }
+            </div>
+            <div class="vn-barra">
+                @if (_rapidos.Count > 0)
+                {
+                    <span class="vn-rapidos">
+                        <span class="vn-tit">Rápidos</span>
+                        @for (var k = 0; k < _rapidos.Count; k++)
+                        {
+                            var indiceRapido = k;
+                            var listo = _rapidos[k];
+                            <button class="vn-rapido" title="Con un número en el cuadro, agrega esa cantidad" @onclick="() => RapidoAsync(indiceRapido)">
+                                <kbd>Alt+@(k + 1)</kbd>@listo.Rapido.Nombre
+                                @if (listo.PrecioCentavos is { } precioRapido)
+                                {
+                                    <small>@Formato.Dinero(precioRapido)</small>
+                                }
+                            </button>
+                        }
+                    </span>
+                }
+                @* Los tickets en espera, sin límite: unas fichas a la vista y los demás en «Más», en orden de llegada (F5 retoma el primero). *@
+                <span class="vn-espera">
+                    @{
+                        var esperan = EnEspera.ToList();
+                    }
+                    @for (var k = 0; k < Math.Min(FichasEnEspera, esperan.Count); k++)
+                    {
+                        var enEspera = esperan[k];
+                        <button class="vn-ficha" title="@TituloEspera(enEspera, k == 0)" @onclick="() => Retomar(enEspera)"><Ico Nombre="pausa" />@Desde(enEspera) · @Formato.Dinero(enEspera.Venta.TotalCentavos)</button>
+                    }
+                    @if (esperan.Count > FichasEnEspera)
+                    {
+                        var resto = esperan.Skip(FichasEnEspera).ToList();
+                        <span class="vn-mas-espera">
+                            <button class="vn-boton chico @(_menuEspera ? "on" : "")" aria-expanded="@(_menuEspera ? "true" : "false")" title="Los otros @resto.Count tickets en espera"
+                                    @onclick="() => _menuEspera = !_menuEspera">Más (@resto.Count) <Ico Nombre="abajo" /></button>
+                            @if (_menuEspera)
+                            {
+                                <div class="vn-fondo-menu" @onclick="() => _menuEspera = false"></div>
+                                <div class="vn-menu-espera" role="menu">
+                                    @* Con muchos, flechas arriba y abajo: deslizan la lista al pasar el mouse o con un clic (caja.js). *@
+                                    @if (resto.Count > FilasDelMenu)
+                                    {
+                                        <button class="vn-menu-flecha apagada" data-rodar="-1" aria-label="Más arriba" title="Más arriba: pasa el mouse o haz clic"><Ico Nombre="arriba" /></button>
+                                    }
+                                    <div class="vn-menu-lista" id="lista-espera">
+                                        @foreach (var enEspera in resto)
+                                        {
+                                            <button class="vn-fila-espera" role="menuitem" title="@TituloEspera(enEspera, false)" @onclick="() => Retomar(enEspera)">
+                                                <Ico Nombre="pausa" />
+                                                <span><strong>@Desde(enEspera)</strong><small>@ArticulosTexto(enEspera.Venta)</small></span>
+                                                <em>@Formato.Dinero(enEspera.Venta.TotalCentavos)</em>
+                                            </button>
+                                        }
+                                    </div>
+                                    @if (resto.Count > FilasDelMenu)
+                                    {
+                                        <button class="vn-menu-flecha" data-rodar="1" aria-label="Más abajo" title="Más abajo: pasa el mouse o haz clic"><Ico Nombre="abajo" /></button>
+                                    }
+                                </div>
+                            }
+                        </span>
+                    }
+                    <button class="vn-boton chico" disabled="@(Actual.Venta.Lineas.Count == 0)" title="Guarda este ticket y empieza otro" @onclick="PonerEnEspera"><Ico Nombre="pausa" />Poner en espera <kbd>F6</kbd></button>
+                </span>
+            </div>
+            <div class="vn-ticket">
+                @if (Actual.Venta.Lineas.Count == 0)
+                {
+                    <div class="vn-vacio">
+                        <h3>Escanea el primer producto</h3>
+                        <p>El cuadro de arriba entiende todo esto, sin abrir otra ventana:</p>
+                        <ul>
+                            <li><code>7501234567890</code></li><li>el código del lector</li>
+                            <li><code>cuaderno estrella</code></li><li>busca por nombre o código; Enter agrega el primero</li>
+                            <li><code>12*7501234567890</code></li><li>doce de una vez</li>
+                            <li><code>20</code> y <kbd>Alt+1</kbd></li><li>veinte del primer rápido</li>
+                            <li><code>A-000118</code></li><li>el folio: devolver o cancelar</li>
+                            <li><code>/</code></li><li>todas las acciones que tienes</li>
+                        </ul>
+                    </div>
+                }
+                else
+                {
+                    <table>
+                        <thead>
+                            <tr><th class="vn-col-cant">Cantidad</th><th>Descripción</th><th class="num vn-col-precio">Precio</th><th class="num vn-col-importe">Importe</th></tr>
+                        </thead>
+                        <tbody>
+                            @for (var i = 0; i < Actual.Venta.Lineas.Count; i++)
+                            {
+                                var indice = i;
+                                var linea = Actual.Venta.Lineas[i];
+                                var producto = linea.VarianteId is { } v ? Actual.Productos.GetValueOrDefault(v) : null;
+                                <tr id="linea-@i" class="@(i == _seleccion ? "seleccionada" : "")" @onclick="() => Seleccionar(indice)">
+                                    <td class="vn-col-cant">
+                                        @if (producto is not null && !linea.EsImpresiones)
+                                        {
+                                            <span class="vn-paso">
+                                                <button tabindex="-1" title="Uno menos" @onclick="() => PasoCantidadAsync(indice, -1)" @onclick:stopPropagation="true">−</button>
+                                                <span>@Formato.Numero(linea.Cantidad.EnUnidades)</span>
+                                                <button tabindex="-1" title="Uno más" @onclick="() => PasoCantidadAsync(indice, 1)" @onclick:stopPropagation="true">+</button>
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="vn-paso-fijo">@Formato.Numero(linea.Cantidad.EnUnidades)</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <div class="vn-nombre">@(linea.EsImpresiones ? $"Impresiones ({Actual.Impresiones.Count})" : Descripcion(linea, producto))</div>
+                                        <div class="vn-sub">
+                                            @if (producto?.Codigo is { } codigoLinea)
+                                            {
+                                                <code>@codigoLinea</code>
+                                            }
+                                            @if (linea.TieneMayoreo)
+                                            {
+                                                <span class="vn-etiq">@MayoreoTexto(linea, producto) · ahorra @Formato.Dinero(linea.AhorroMayoreoCentavos)</span>
+                                            }
+                                            @if (linea.TieneDescuento)
+                                            {
+                                                <span class="vn-etiq">Descuento −@Formato.Dinero(linea.DescuentoCentavos) · @linea.MotivoDescuento</span>
+                                            }
+                                            @if (linea.PrecioCambiado)
+                                            {
+                                                <span class="vn-etiq azul">Precio cambiado</span>
+                                            }
+                                            @if (producto?.Existencia is { } quedan && quedan <= 3)
+                                            {
+                                                <span class="vn-etiq ambar">@(quedan <= 0 ? "Sin existencia en el sistema" : $"Quedan {Formato.Numero(quedan)}")</span>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td class="num vn-precio">
+                                        @if (linea.PrecioCambiado)
+                                        {
+                                            <s>@Formato.Dinero(linea.PrecioOriginalCentavos ?? 0)</s>
+                                        }
+                                        @Formato.Dinero(linea.PrecioCentavos)
+                                    </td>
+                                    <td class="num vn-importe">@Formato.Dinero(linea.ImporteCentavos)</td>
+                                </tr>
+                                @if (i == _seleccion)
+                                {
+                                    @* Las acciones del artículo, pegadas a su fila: así el panel de la derecha queda solo para el dinero. *@
+                                    <tr class="vn-acciones-fila">
+                                        <td></td>
+                                        <td colspan="3">
+                                            <div class="vn-tira">
+                                                @if (producto is not null && !linea.EsImpresiones && Ve(AccionControlada.CambiarPrecio))
+                                                {
+                                                    <button class="vn-accion" @onclick="() => EnLaFilaAsync(AbrirCambioPrecio)" @onclick:stopPropagation="true">
+                                                        <Ico Nombre="etiqueta" />Precio @Marca(AccionControlada.CambiarPrecio, "Ctrl+E")
+                                                    </button>
+                                                }
+                                                @if (Ve(AccionControlada.Descuento))
+                                                {
+                                                    <button class="vn-accion" @onclick="() => EnLaFilaAsync(() => Abrir(Ventanas.Descuento))" @onclick:stopPropagation="true">
+                                                        <Ico Nombre="porcentaje" />Descuento @Limite(AccionControlada.Descuento) @Marca(AccionControlada.Descuento, "Ctrl+D")
+                                                    </button>
+                                                }
+                                                @if (producto is not null && !linea.EsImpresiones && TieneEscalas(producto))
+                                                {
+                                                    <button class="vn-accion" @onclick="() => EnLaFilaAsync(MayoreoAsync)" @onclick:stopPropagation="true">
+                                                        <Ico Nombre="capas" />Mayoreo <kbd>F11</kbd>
+                                                    </button>
+                                                }
+                                                @if (Ve(AccionControlada.QuitarProducto))
+                                                {
+                                                    <button class="vn-accion peligro" @onclick="() => EnLaFilaAsync(BorrarSeleccion)" @onclick:stopPropagation="true">
+                                                        <Ico Nombre="basura" />Quitar <kbd>Supr</kbd>
+                                                    </button>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </section>
 
-        @* Lo de todos los días; lo demás, en «/» (docs/propuesta-interfaz.md, «La pantalla de venta»). Cada botón hace lo
-           que su tecla, también con un panel abierto: el suyo lo cierra y otro lo cambia. *@
-        <footer class="vn-teclas">
-            <button @onclick="@(() => ComoSuTecla("F12"))"><kbd>F12</kbd>Cobrar</button>
-            <button @onclick="@(() => ComoSuTecla("F10"))"><kbd>F10</kbd>Buscar</button>
-            <button @onclick="@(() => ComoSuTecla("F9"))"><kbd>F9</kbd>Verificar</button>
-            <button @onclick="@(() => ComoSuTecla("F2"))"><kbd>F2</kbd>Impresiones</button>
-            @if (Ve(AccionControlada.ArticuloComun))
+        <aside class="vn-der @(VaEnPanel ? "con-panel" : "")">
+            @if (VaEnPanel)
             {
-                <button @onclick="@(() => ComoSuTecla("Insert"))"><kbd>Ins</kbd>Art. común</button>
+                @if (_avisoDelPanel is { } avisoDelPanel)
+                {
+                    <div class="vn-alerta" role="status"><Ico Nombre="info" /><div><span>@avisoDelPanel</span></div></div>
+                }
+                <CascadingValue Name="VentanaEnPanel" Value="true">
+                    <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada">@ContenidoDeVentana</CascadingValue>
+                </CascadingValue>
             }
-            <button @onclick="@(() => ComoSuTecla("Ctrl+L"))"><kbd>Ctrl+L</kbd>Cliente</button>
-            @if (Ve(AccionControlada.EntradaEfectivo))
+            else if (MostrarCambio && _cobrado is { } cobrado)
             {
-                <button @onclick="@(() => ComoSuTecla("F7"))"><kbd>F7</kbd>Entrada</button>
+                @* Al cobrar: el cambio en grande hasta que se escanea al siguiente cliente (docs/propuesta-interfaz.md, «El panel del total»). *@
+                <div class="vn-cambio">
+                    <span>@(cobrado.CambioCentavos > 0 ? "Entrega de cambio" : "Cobrado")</span>
+                    <strong>@Formato.Dinero(cobrado.CambioCentavos > 0 ? cobrado.CambioCentavos : cobrado.TotalCobradoCentavos)</strong>
+                    <p>@PagoTexto(cobrado)</p>
+                </div>
+                @if (_noSalio is { } noSalio)
+                {
+                    <div class="vn-alerta">
+                        <Ico Nombre="impresora" />
+                        <div>
+                            <span>El ticket <strong>@cobrado.FolioImpreso</strong> no salió: @noSalio La venta ya quedó guardada.</span>
+                            <span class="vn-botonera">
+                                <button class="vn-boton chico" @onclick="() => ImprimirCobradoAsync(cobrado)">Reintentar</button>
+                                <button class="vn-boton chico" @onclick="VerCobradoEnPantallaAsync">Verlo en pantalla</button>
+                            </span>
+                        </div>
+                    </div>
+                }
+                else if (Impresora.MuestraVistaPrevia)
+                {
+                    <div class="vn-folio-ok"><Ico Nombre="monitor" />Ticket <code>@cobrado.FolioImpreso</code> · <button class="vn-enlace" @onclick="VerCobradoEnPantallaAsync">verlo en pantalla</button></div>
+                }
+                else
+                {
+                    <div class="vn-folio-ok"><Ico Nombre="check" />Ticket <code>@cobrado.FolioImpreso</code> impreso</div>
+                }
+                <div class="vn-alerta info">
+                    <Ico Nombre="escaner" />
+                    <div><span>Listo para el siguiente cliente: lo que escanees empieza su ticket. El cambio se queda aquí hasta entonces.</span></div>
+                </div>
+                @if (Retiro is { } efectivoC)
+                {
+                    <div class="vn-alerta">
+                        <Ico Nombre="efectivo" />
+                        <div><span>Hay <strong>@Formato.Dinero(efectivoC.EsperadoCentavos)</strong> en efectivo y el límite es @Formato.Dinero(efectivoC.LimiteCentavos ?? 0): haz un retiro.</span></div>
+                    </div>
+                }
+                <div class="vn-ultimo"><span></span><button class="vn-enlace" @onclick="() => _cobrado = null">Volver al total</button></div>
             }
-            @if (Ve(AccionControlada.SalidaEfectivo))
+            else
             {
-                <button @onclick="@(() => ComoSuTecla("F8"))"><kbd>F8</kbd>Salida</button>
+                @* El cliente: una flecha chica que apunta al ticket; se jala (Ctrl+L) para elegirlo. A su izquierda, lo que debe. *@
+                <div class="vn-cliente">
+                    @if (Actual.Cliente is not null && Actual.Cuenta is { } cuenta && cuenta.SaldoCentavos != 0)
+                    {
+                        <span class="vn-cli-dato">
+                            @if (cuenta.SaldoCentavos > 0)
+                            {
+                                <span class="debe" title="@(cuenta.VenceMasAntiguo is { } vence ? $"Lo más antiguo vence el {vence:dd/MM}" : "")">
+                                    Debe @Formato.Dinero(cuenta.SaldoCentavos)@(VencidoDelTicket > 0 ? $" · vencido {Formato.Dinero(VencidoDelTicket)}" : "")
+                                </span>
+                                @if (!_pilotoEleventa)
+                                {
+                                    <button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Abono)">Abonar <kbd>Ctrl+B</kbd></button>
+                                }
+                            }
+                            else
+                            {
+                                <span>@Formato.Dinero(cuenta.AFavorCentavos) a favor</span>
+                            }
+                        </span>
+                    }
+                    <button class="vn-flecha-cli" title="Elegir el cliente del ticket (Ctrl+L)" @onclick="() => Abrir(Ventanas.ElegirCliente)">
+                        <Ico Nombre="usuario" /><span>@(Actual.Cliente?.Nombre ?? "Público en general")</span>
+                    </button>
+                </div>
+                @* data-cobro: lo que el lector teclee en el cobro («Pagó con», montos, referencias, botones) va a la captura y su
+                   Enter no cobra (caja.js). *@
+                <div class="vn-total" data-cobro>
+                    <div class="vn-total-cab"><span>Total</span><span>@ArticulosTexto(Actual.Venta)</span></div>
+                    <div class="vn-cifra @(Actual.Venta.Lineas.Count == 0 ? "vacio" : "")">@Formato.Dinero(Actual.Venta.TotalCentavos)</div>
+                    <div class="vn-tecla"><kbd>F12</kbd><span>cobrar</span></div>
+                    @if (Actual.Venta.Lineas.Sum(l => l.AhorroMayoreoCentavos) is var ahorro and > 0)
+                    {
+                        <div class="vn-linea verde"><span>Ahorro por mayoreo</span><span>@Formato.Dinero(ahorro)</span></div>
+                    }
+                    @if (Actual.Venta.DescuentoCentavos > 0)
+                    {
+                        <div class="vn-linea verde"><span>Descuentos</span><span>−@Formato.Dinero(Actual.Venta.DescuentoCentavos)</span></div>
+                    }
+                    @if (Actual.Venta.Lineas.Count > 0)
+                    {
+                        var aCobrar = EnEfectivo.ACobrarCentavos;
+                        <div class="vn-separa"></div>
+                        @if (aCobrar > 0 && EnEfectivo.RedondeoCentavos != 0)
+                        {
+                            <div class="vn-linea"><span>En efectivo, al peso</span><strong>@Formato.Dinero(aCobrar)</strong></div>
+                        }
+                        @* Tarjeta, transferencia o crédito: cada una en su renglón, con lo que faltaba; el efectivo cubre el resto. *@
+                        @for (var k = 0; k < _otras.Count; k++)
+                        {
+                            var otra = _otras[k];
+                            <div class="vn-pago-fila" @key="otra">
+                                <div class="forma">
+                                    <span>@NombreDeForma(otra.Forma)</span>
+                                    @if (otra.Forma == FormaPago.Transferencia)
+                                    {
+                                        <small>queda por verificar</small>
+                                    }
+                                </div>
+                                <label>Monto
+                                    <input id="pago-monto-@k" data-pago inputmode="decimal" autocomplete="off" @bind="otra.Monto" @bind:event="oninput"
+                                           @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
+                                </label>
+                                @if (otra.Forma == FormaPago.Credito)
+                                {
+                                    <span class="nota">@NotaDeCredito</span>
+                                }
+                                else
+                                {
+                                    <label>Referencia
+                                        <input data-pago autocomplete="off" title="@(otra.Forma == FormaPago.Tarjeta ? "La de la terminal" : "La de la transferencia")" @bind="otra.Referencia" @bind:event="oninput"
+                                               @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
+                                    </label>
+                                }
+                                <button class="x" title="Quitar" aria-label="Quitar" @onclick="() => QuitarForma(otra)"><Ico Nombre="cerrar" /></button>
+                            </div>
+                        }
+                        @if (aCobrar > 0)
+                        {
+                            <div class="vn-pago-cab">
+                                <label for="pago-nuevo">Pagó con</label>
+                                @FormasDePago
+                            </div>
+                            <input id="pago-nuevo" data-pago inputmode="decimal" autocomplete="off" placeholder="@Formato.Dinero(aCobrar)"
+                                   @bind="_pagoCon" @bind:event="oninput" @onkeydown="AlTeclearPago" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
+                        }
+                        else if (FormasQueFaltan.Any())
+                        {
+                            <div class="vn-pago-cab"><span class="nota">Otra forma</span>@FormasDePago</div>
+                        }
+                        @if (ErrorDeLasFormas is { } errorFormas)
+                        {
+                            <div class="vn-vivo falta"><span>@errorFormas</span></div>
+                        }
+                        else if (aCobrar == 0)
+                        {
+                            <div class="vn-vivo"><span>Cubierto con @(_otras.Count == 1 ? "otra forma" : "otras formas")</span><strong>@Formato.Dinero(0)</strong></div>
+                        }
+                        else if (_pagoCon.Trim().Length > 0)
+                        {
+                            @if (PagoConCentavos is null)
+                            {
+                                <div class="vn-vivo falta"><span>«@_pagoCon» no es una cantidad</span></div>
+                            }
+                            else if (Recibido >= aCobrar)
+                            {
+                                <div class="vn-vivo"><span>Cambio</span><strong>@Formato.Dinero(Recibido - aCobrar)</strong></div>
+                            }
+                            else
+                            {
+                                <div class="vn-vivo falta"><span>Faltan</span><strong>@Formato.Dinero(aCobrar - Recibido)</strong></div>
+                            }
+                        }
+                        @if (ExcesoDeCredito > 0 && ConCredito)
+                        {
+                            <div class="vn-alerta">
+                                <Ico Nombre="candado" />
+                                <div><span>Pasa su límite de crédito por <strong>@Formato.Dinero(ExcesoDeCredito)</strong>@AutorizaExceso</span></div>
+                            </div>
+                        }
+                        @if (_avisoDelCobro is { } avisoCobro)
+                        {
+                            <div class="vn-alerta">
+                                <Ico Nombre="escaner" />
+                                <div><span>@avisoCobro</span></div>
+                            </div>
+                        }
+                        <button id="cobrar-nuevo" class="vn-cobrar" disabled="@(_cobrando || ErrorDelCobro is not null)" @onclick="CobrarEnPanelAsync"
+                                @onfocus="() => _enPago = true" @onblur="() => _enPago = false">@EtiquetaDeCobrar</button>
+                    }
+                </div>
+                @if (Retiro is { } efectivoN)
+                {
+                    <div class="vn-alerta">
+                        <Ico Nombre="efectivo" />
+                        <div>
+                            <span>Hay <strong>@Formato.Dinero(efectivoN.EsperadoCentavos)</strong> en efectivo y el límite es @Formato.Dinero(efectivoN.LimiteCentavos ?? 0): haz un retiro.</span>
+                            @if (Ve(AccionControlada.SalidaEfectivo))
+                            {
+                                <span><button class="vn-boton chico" @onclick="() => Abrir(Ventanas.Salida)">Retiro <kbd>F8</kbd></button></span>
+                            }
+                        </div>
+                    </div>
+                }
+                <div class="vn-ultimo">
+                    @if (_ultimo is { } ultimo)
+                    {
+                        <span>Último: <strong>@ultimo.FolioImpreso</strong> · @Formato.Dinero(ultimo.TotalCobradoCentavos) · cambio <strong>@Formato.Dinero(ultimo.CambioCentavos)</strong></span>
+                    }
+                    else
+                    {
+                        <span>Todavía no hay ventas en este turno.</span>
+                    }
+                    @if (Ve(AccionControlada.Reimprimir))
+                    {
+                        <button class="vn-enlace" @onclick="ReimprimirUltimoAsync">Reimprimir</button>
+                    }
+                </div>
             }
-            <button @onclick="@(() => ComoSuTecla("F6"))"><kbd>F6</kbd>En espera</button>
-            <button @onclick="AbrirAccionesAsync"><kbd>/</kbd>Más acciones</button>
-            @* Ctrl+Q (o «Cotizar un PDF» en «/») abre el selector de archivos de aquí. *@
-            <InputFile id="pdf-cotizar" class="oculto" accept=".pdf,application/pdf" onclick="this.value = ''" OnChange="PdfElegidoAsync" />
-            <span class="espacio"></span>
-            @if (HayConteoPendiente)
-            {
-                <button class="vn-chip-estado" title="Los productos que hay que contar hoy" @onclick="() => Abrir(Ventanas.Conteo)">
-                    <Ico Nombre="contar" />Conteo del día @_conteo!.Contados/@_conteo.Total
-                </button>
-            }
-        </footer>
+        </aside>
     </div>
-}
-else
-{
-<div class="venta">
-    <header class="barra-modulos">
-        <button class="modulo activo">F1 Ventas</button>
-        <button class="modulo" @onclick="() => Abrir(Ventanas.Productos)">F3 Productos</button>
-        <button class="modulo" @onclick="() => Abrir(Ventanas.Inventario)">F4 Inventario</button>
-        <button class="modulo" @onclick="() => Abrir(Ventanas.Clientes)">Clientes</button>
-        <button class="modulo" @onclick="() => Abrir(Ventanas.Configuracion)">Configuración</button>
-        <button class="modulo" @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
-        <span class="espacio"></span>
-        <button class="modulo" title="La pantalla del rediseño, con la que se entra en todas las cajas; esta PC deja de recordar la de hoy" @onclick="CambiarPantallaAsync">Probar la pantalla nueva</button>
-        <div class="atiende">
-            <small>Le atiende:</small>
-            <strong>@Sesion.Nombre</strong>
-            <small>@Caja.Sucursal · @Caja.Nombre · turno desde @Turno.AbiertoLocal.ToString("HH:mm")</small>
-        </div>
-        <button class="modulo" @onclick="AlSalir">Salir</button>
-    </header>
 
-    @if (HayConteoPendiente)
-    {
-        @FranjaConteo
-    }
-    <div class="titulo-venta">
-        VENTA - Ticket @Actual.Numero
-        @if (Actual.Cliente is { } delTicket)
+    @* Lo de todos los días; lo demás, en «/» (docs/propuesta-interfaz.md, «La pantalla de venta»). Cada botón hace lo
+       que su tecla, también con un panel abierto: el suyo lo cierra y otro lo cambia. *@
+    <footer class="vn-teclas">
+        <button @onclick="@(() => ComoSuTecla("F12"))"><kbd>F12</kbd>Cobrar</button>
+        <button @onclick="@(() => ComoSuTecla("F10"))"><kbd>F10</kbd>Buscar</button>
+        <button @onclick="@(() => ComoSuTecla("F9"))"><kbd>F9</kbd>Verificar</button>
+        <button @onclick="@(() => ComoSuTecla("F2"))"><kbd>F2</kbd>Impresiones</button>
+        @if (Ve(AccionControlada.ArticuloComun))
         {
-            <span class="cliente-ticket">Cliente: @delTicket.Nombre@(delTicket.TextoPrivilegios() is { Length: > 0 } privilegios ? $" · {privilegios}" : "")</span>
+            <button @onclick="@(() => ComoSuTecla("Insert"))"><kbd>Ins</kbd>Art. común</button>
         }
-    </div>
-    @if (Actual.Cliente is not null && Actual.Cuenta is { SaldoCentavos: not 0 })
-    {
-        @FranjaCredito
-    }
-
-    <div class="captura">
-        <label for="codigo">Código del producto:</label>
-        <input id="codigo" data-codigo autocomplete="off" @bind="_captura.Texto" @bind:event="oninput" @onkeydown="AlTeclearCodigo" />
-        <button class="boton" @onclick="AgregarCodigoAsync">ENTER - Agregar producto</button>
-    </div>
-    <div class="botones-venta">
-        <button class="boton" @onclick="() => Abrir(Ventanas.Comun)">INS Varios</button>
-        <button class="boton" @onclick="() => Abrir(Ventanas.Comun)">CTRL+P Art. común</button>
-        <button class="boton" @onclick="() => Abrir(Ventanas.Buscar)">F10 Buscar</button>
-        <button class="boton" title="Las escalas de mayoreo del producto seleccionado" @onclick="MayoreoAsync">F11 Mayoreo</button>
-        <button class="boton" @onclick="() => Abrir(Ventanas.Entrada)">F7 Entradas</button>
-        <button class="boton" @onclick="() => Abrir(Ventanas.Salida)">F8 Salidas</button>
-        <button class="boton" @onclick="BorrarSeleccion">DEL Borrar art.</button>
-        <button class="boton" @onclick="AbrirCambioPrecio">CTRL+E Cambiar precio</button>
-        <button class="boton" @onclick="() => Abrir(Ventanas.Descuento)">CTRL+D Descuento</button>
-        <button class="boton" title="El cliente registrado del ticket, por nombre o teléfono" @onclick="() => Abrir(Ventanas.ElegirCliente)">CTRL+L Cliente</button>
-        @if (!_pilotoEleventa)
+        <button @onclick="@(() => ComoSuTecla("Ctrl+L"))"><kbd>Ctrl+L</kbd>Cliente</button>
+        @if (Ve(AccionControlada.EntradaEfectivo))
         {
-            <button class="boton" title="Un abono a la cuenta de un cliente" @onclick="() => Abrir(Ventanas.Abono)">CTRL+B Abono</button>
+            <button @onclick="@(() => ComoSuTecla("F7"))"><kbd>F7</kbd>Entrada</button>
         }
-        <button class="boton" @onclick="() => Abrir(Ventanas.Verificador)">F9 Verificador</button>
-        <button class="boton" @onclick="() => Abrir(Ventanas.Impresiones)">F2 Impresiones</button>
-        @* Cotizar a un botón: la etiqueta abre el selector de archivos; al elegir el PDF se abre la cotización. *@
-        <label class="boton" for="pdf-cotizar" title="Elige un PDF y te dice cuánto cobrar">CTRL+Q Cotizar PDF</label>
+        @if (Ve(AccionControlada.SalidaEfectivo))
+        {
+            <button @onclick="@(() => ComoSuTecla("F8"))"><kbd>F8</kbd>Salida</button>
+        }
+        <button @onclick="@(() => ComoSuTecla("F6"))"><kbd>F6</kbd>En espera</button>
+        <button @onclick="AbrirAccionesAsync"><kbd>/</kbd>Más acciones</button>
+        @* Ctrl+Q (o «Cotizar un PDF» en «/») abre el selector de archivos de aquí. *@
         <InputFile id="pdf-cotizar" class="oculto" accept=".pdf,application/pdf" onclick="this.value = ''" OnChange="PdfElegidoAsync" />
-    </div>
-
-    <nav class="pestanas">
-        @foreach (var t in _tickets)
+        <span class="espacio"></span>
+        @if (HayConteoPendiente)
         {
-            <button class="pestana @(t == Actual ? "activa" : "")" @onclick="() => Cambiar(t)">
-                Ticket @t.Numero @(t.Venta.Lineas.Count > 0 && t != Actual ? $"({Formato.Dinero(t.Venta.TotalCentavos)})" : "")
+            <button class="vn-chip-estado" title="Los productos que hay que contar hoy" @onclick="() => Abrir(Ventanas.Conteo)">
+                <Ico Nombre="contar" />Conteo del día @_conteo!.Contados/@_conteo.Total
             </button>
         }
-    </nav>
-
-    <div class="tabla-venta">
-        <table>
-            <thead>
-                <tr>
-                    <th class="col-codigo">Código de barras</th>
-                    <th>Descripción del producto</th>
-                    <th class="num">Precio venta</th>
-                    <th class="num col-cant">Cant.</th>
-                    <th class="num">Importe</th>
-                    <th class="num">Existencia</th>
-                </tr>
-            </thead>
-            <tbody>
-                @for (var i = 0; i < Actual.Venta.Lineas.Count; i++)
-                {
-                    var indice = i;
-                    var linea = Actual.Venta.Lineas[i];
-                    var producto = linea.VarianteId is { } v ? Actual.Productos.GetValueOrDefault(v) : null;
-                    <tr id="linea-@i" class="@(i == _seleccion ? "seleccionada" : "")" @onclick="() => Seleccionar(indice)">
-                        <td class="col-codigo">@(producto?.Codigo ?? "—")</td>
-                        <td>
-                            @(linea.EsImpresiones ? $"Impresiones ({Actual.Impresiones.Count})" : Descripcion(linea, producto))
-                            @if (linea.TieneMayoreo)
-                            {
-                                <small class="descuento">@MayoreoTexto(linea, producto) · ahorra @Formato.Dinero(linea.AhorroMayoreoCentavos)</small>
-                            }
-                            @if (linea.TieneDescuento)
-                            {
-                                <small class="descuento">Descuento @(linea.DescuentoCentesimas is { } c ? Permisos.TextoMonto(AccionControlada.Descuento, c) + " " : "")−@Formato.Dinero(linea.DescuentoCentavos) · @linea.MotivoDescuento</small>
-                            }
-                        </td>
-                        <td class="num">
-                            @if (linea.PrecioCambiado)
-                            {
-                                <s class="precio-original">@Formato.Dinero(linea.PrecioOriginalCentavos ?? 0)</s>
-                            }
-                            @Formato.Dinero(linea.PrecioCentavos)
-                        </td>
-                        <td class="num col-cant">@Formato.Numero(linea.Cantidad.EnUnidades)</td>
-                        <td class="num">@Formato.Dinero(linea.ImporteCentavos)</td>
-                        <td class="num">@(producto?.Existencia is { } e ? Formato.Numero(e) : "—")</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-        @if (Actual.Venta.Lineas.Count == 0)
-        {
-            <p class="vacia">Escanea un producto o escribe su código. F10 para buscar por nombre.</p>
-        }
-    </div>
-
-    @if (Retiro is { } efectivo)
-    {
-        <div class="mensaje retiro">Hay @Formato.Dinero(efectivo.EsperadoCentavos) en efectivo y el límite es @Formato.Dinero(efectivo.LimiteCentavos ?? 0): haz un retiro con F8.</div>
-    }
-    @if (_mensaje is not null)
-    {
-        <div class="mensaje @(_mensajeEsError ? "error" : "")">
-            @_mensaje
-            @if (_codigoNuevo is { } nuevo && _mensaje is not null)
-            {
-                <button class="boton chico" @onclick="() => Abrir(Ventanas.AltaRapida)">Dar de alta «@nuevo»</button>
-            }
-        </div>
-    }
-
-    <footer class="pie-venta">
-        <div class="pie-izquierda">
-            <div class="conteo"><span class="numero">@Formato.Numero(Actual.Venta.NumeroDeArticulos)</span> Productos en la venta actual.</div>
-            <div class="botones-pie">
-                <button class="boton" @onclick="CambiarSiguiente">F5 - Cambiar</button>
-                <button class="boton" @onclick="NuevoTicket">F6 - Pendiente</button>
-                <button class="boton" @onclick="EliminarTicket">Eliminar</button>
-            </div>
-            <div class="ultima">
-                <div><small>Total:</small> <strong>@(_ultimo is null ? "$0.00" : Formato.Dinero(_ultimo.TotalCobradoCentavos))</strong></div>
-                <div><small>Pagó con:</small> <strong>@(_ultimo is null ? "$0.00" : Formato.Dinero(_ultimo.PagoConCentavos))</strong></div>
-                <div><small>Cambio:</small> <strong class="cambio">@(_ultimo is null ? "$0.00" : Formato.Dinero(_ultimo.CambioCentavos))</strong></div>
-            </div>
-        </div>
-        <div class="pie-derecha">
-            <div class="cobro">
-                <button class="boton cobrar" disabled="@(Actual.Venta.Lineas.Count == 0)" @onclick="() => AbrirCobroAsync()">F12 - Cobrar</button>
-                <div class="total">@Formato.Dinero(Actual.Venta.TotalCentavos)</div>
-                @if (Actual.Venta.Lineas.Count > 0 && Actual.Venta.Efectivo(0) is { RedondeoCentavos: not 0 } enEfectivo)
-                {
-                    <div class="total-efectivo">En efectivo: @Formato.Dinero(enEfectivo.ACobrarCentavos)</div>
-                }
-                @if (Actual.Venta.DescuentoCentavos > 0)
-                {
-                    <div class="descuento-total">Descuento: −@Formato.Dinero(Actual.Venta.DescuentoCentavos)</div>
-                }
-            </div>
-            <div class="botones-pie">
-                <button class="boton" @onclick="ReimprimirUltimoAsync">Reimprimir último ticket</button>
-                <button class="boton" @onclick="() => Abrir(Ventanas.VentasDelDia)">Ventas del día</button>
-                <button class="boton" @onclick="() => AbrirDevolucion(null)">Devoluciones</button>
-                <button class="boton" @onclick="() => Abrir(Ventanas.Transferencias)">Transferencias</button>
-            </div>
-        </div>
     </footer>
 </div>
-}
 
 @if (!VaEnPanel)
 {
@@ -892,25 +718,24 @@ else
 
     private enum Ventanas
     {
-        Ninguna, Cobrar, Buscar, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
+        Ninguna, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
         CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, Productos, AltaRapida, Inventario, Conteo, Mayoreo, ElegirCliente, Clientes,
         AutorizarCosto, Abono, AutorizarCredito,
     }
 
     /// <summary>
-    /// Lo de la venta que en la pantalla nueva va como panel a la derecha (docs/propuesta-interfaz.md, «Los demás
-    /// paneles»): el ticket queda a la vista. Los módulos de arriba (productos, inventario, clientes, corte,
-    /// configuración) y el conteo siguen encima.
+    /// Lo de la venta, que va como panel a la derecha (docs/propuesta-interfaz.md, «Los demás paneles»): el ticket queda a
+    /// la vista. Los módulos de arriba (productos, inventario, clientes, corte, configuración) y el conteo siguen encima.
     /// </summary>
     private static readonly HashSet<Ventanas> VentanasEnPanel =
     [
-        Ventanas.Cobrar, Ventanas.AutorizarCosto, Ventanas.Comun, Ventanas.Entrada, Ventanas.Salida, Ventanas.Mayoreo, Ventanas.Verificador,
+        Ventanas.AutorizarCosto, Ventanas.Comun, Ventanas.Entrada, Ventanas.Salida, Ventanas.Mayoreo, Ventanas.Verificador,
         Ventanas.VentasDelDia, Ventanas.Devolucion, Ventanas.CambiarPrecio, Ventanas.Impresiones, Ventanas.AltaRapida, Ventanas.Descuento,
         Ventanas.ElegirCliente, Ventanas.Abono, Ventanas.Cotizar, Ventanas.Motivo, Ventanas.VistaPrevia, Ventanas.Transferencias,
         Ventanas.AutorizarCredito,
     ];
 
-    private bool VaEnPanel => _pantallaNueva && VentanasEnPanel.Contains(_ventana);
+    private bool VaEnPanel => VentanasEnPanel.Contains(_ventana);
 
     /// <summary>
     /// Los paneles que se dejan con la tecla de otra cosa (F12, Ctrl+L, F6…) sin perder nada: solo enseñan algo, o lo que
@@ -948,64 +773,29 @@ else
     /// </summary>
     private string? _avisoDelPanel;
 
-    /// <summary>F10 en la pantalla nueva: el cursor al cuadro, donde salen los resultados al escribir.</summary>
+    /// <summary>F10: el cursor al cuadro, donde salen los resultados al escribir.</summary>
     private void Buscar()
     {
         _enfocar = "#codigo";
         Avisar("Escribe el nombre aquí: los resultados salen abajo, y con ↓ y Enter se agrega.", error: false);
     }
 
-    /// <summary>El conteo cíclico de hoy: cuántos faltan, para pedirlo en la franja.</summary>
+    /// <summary>El conteo cíclico de hoy: cuántos faltan, para pedirlo abajo, junto a las teclas.</summary>
     private ConteoCiclicoDto? _conteo;
 
     private bool HayConteoPendiente => _conteo is { } conteo && conteo.Contados < conteo.Total;
 
-    // ── Las franjas de arriba: las mismas en las dos pantallas ──────────────
-
-    /// <summary>Se pide al abrir el turno; se cuenta cuando haya calma.</summary>
-    private RenderFragment FranjaConteo => @<div class="franja-conteo">
-        Conteo del día: faltan @(_conteo!.Total - _conteo.Contados) de @_conteo.Total productos por contar.
-        <button class="boton chico" @onclick="() => Abrir(Ventanas.Conteo)">Contar ahora</button>
-    </div>;
-
-    /// <summary>Si el cliente del ticket debe, la caja lo dice al elegirlo, para cobrarlo en esta compra (fase 3).</summary>
-    private RenderFragment FranjaCredito => @<div class="franja-credito @(VencidoDelTicket > 0 ? "vencido" : "")">
-        @if (Actual.Cuenta!.SaldoCentavos > 0)
-        {
-            <span>@Actual.Cliente!.Nombre debe @Formato.Dinero(Actual.Cuenta.SaldoCentavos)@(Actual.Cuenta.VenceMasAntiguo is { } vence ? $" · vence {vence:dd/MM}" : "")@(VencidoDelTicket > 0 ? $" · vencido {Formato.Dinero(VencidoDelTicket)}" : "")@(Actual.Cuenta.Estimado ? " (según esta caja)" : "")</span>
-            @if (!_pilotoEleventa)
-            {
-                <button class="boton chico" @onclick="() => Abrir(Ventanas.Abono)">CTRL+B Abonar</button>
-            }
-        }
-        else if (_pilotoEleventa)
-        {
-            <span>@Actual.Cliente!.Nombre tiene @Formato.Dinero(Actual.Cuenta.AFavorCentavos) a favor: en el piloto con eleventa no se usa, solo se cobra en efectivo.</span>
-        }
-        else
-        {
-            <span>@Actual.Cliente!.Nombre tiene @Formato.Dinero(Actual.Cuenta.AFavorCentavos) a favor: se usa con «A crédito» al cobrar.</span>
-        }
-    </div>;
-
+    /// <summary>Lo vencido de lo que debe el cliente del ticket, junto a su nombre.</summary>
     private long VencidoDelTicket => Actual.Cuenta?.Vencido(DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow))) ?? 0;
 
-    // ── La pantalla nueva (docs/propuesta-interfaz.md, entrega 0) ───────────
+    // ── La pantalla (docs/propuesta-interfaz.md, entrega 0) ─────────────────
 
     /// <summary>
-    /// Dónde recuerda el navegador de esta PC si se volvió a la pantalla de hoy. Solo se guarda eso
-    /// (<see cref="PantallaDeHoy"/>): sin nada, o con el «nueva» que guardaba «Probar la pantalla nueva», se entra a la nueva.
+    /// Donde el navegador de cada PC recordaba si se volvió a la pantalla de antes («hoy», desde el menú del usuario). Esa
+    /// pantalla ya no existe (el dueño, 2026-10-14: «no volveremos a esa versión»): lo guardado no cambia nada y se borra
+    /// al entrar a la venta, para que no quede nada de ella en la PC.
     /// </summary>
-    private const string ClavePantalla = "pantalla-venta";
-
-    private const string PantallaDeHoy = "hoy";
-
-    /// <summary>
-    /// La nueva desde el primer dibujo, en todas las cajas, de prueba y de verdad (para la segunda prueba con una persona
-    /// real, 17 y 18 de octubre de 2026: la de hoy no le gustó al dueño en la primera). Así, al entrar (también con
-    /// Ctrl+U) no se asoma la de hoy ni sus teclas mientras se lee lo guardado.
-    /// </summary>
-    private bool _pantallaNueva = true;
+    private const string ClavePantallaDeAntes = "pantalla-venta";
 
     /// <summary>Lo que se enfoca después de dibujar (el cuadro del código, o «Pagó con» con F12).</summary>
     private string? _enfocar;
@@ -1013,7 +803,8 @@ else
     private EstadoCaja? _estado;
     private bool _menuUsuario;
 
-    private static string Inicial(string nombre) => nombre.Trim() is { Length: > 0 } n ? char.ToUpper(n[0], CultureInfo.CurrentCulture).ToString() : "?";
+    /// <summary>La letra de la ficha de quien entró, arriba a la derecha (también en productos e inventario sin vender).</summary>
+    internal static string Inicial(string nombre) => nombre.Trim() is { Length: > 0 } n ? char.ToUpper(n[0], CultureInfo.CurrentCulture).ToString() : "?";
 
     private static string ArticulosTexto(Venta venta) =>
         venta.Lineas.Count == 0 ? "sin artículos" : venta.NumeroDeArticulos == 1 ? "1 artículo" : $"{Formato.Numero(venta.NumeroDeArticulos)} artículos";
@@ -1045,8 +836,11 @@ else
 
     private PermisoDeSesion? Permiso(AccionControlada accion) => _permisos?.GetValueOrDefault(accion);
 
-    /// <summary>Para la autorización: en la pantalla nueva se toca la ficha de quien autoriza (en la de hoy, se escribe su usuario).</summary>
-    private IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? PermisosEnCascada => _pantallaNueva ? _permisos : null;
+    /// <summary>
+    /// A las ventanas: en la autorización se toca la ficha de quien autoriza (sin ellos, sin conexión ni copia, se escribe
+    /// su usuario) y en la cuenta del cliente «Devolver saldo a favor» lleva su candado.
+    /// </summary>
+    private IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? PermisosEnCascada => _permisos;
 
     /// <summary>Lo que no puede no aparece: ni botón, ni tecla, ni en «/», ni la pestaña. Mientras se piden, tampoco.</summary>
     private bool Ve(AccionControlada accion) => _permisosPedidos && Permiso(accion)?.Nivel != NivelPermiso.NoPermitido;
@@ -1055,9 +849,9 @@ else
     /// La tecla de algo que no ve (<paramref name="ve"/> en false) solo avisa que no puede. Mientras se piden los permisos
     /// no se sabe: hace lo de siempre y el servicio decide, como sin ellos.
     /// </summary>
-    private bool SinTecla(bool ve) => _pantallaNueva && _permisosPedidos && !ve;
+    private bool SinTecla(bool ve) => _permisosPedidos && !ve;
 
-    /// <summary>Las teclas de lo que tiene permiso: en la pantalla nueva, la de lo que no ve solo avisa.</summary>
+    /// <summary>Las teclas de lo que tiene permiso: la de lo que no ve solo avisa.</summary>
     private bool SinTecla(string tecla) => tecla switch
     {
         "F3" => SinTecla(Ve(AccionControlada.EditarCatalogo)),
@@ -1210,7 +1004,6 @@ else
         if (VeConfiguracion)
             yield return new("Configuración", "engrane", null, null, () => Abrir(Ventanas.Configuracion));
         yield return new("Cambiar de usuario", "usuario", "Ctrl+U", null, () => AlSalir.InvokeAsync());
-        // «Volver a la pantalla de hoy» no va aquí: solo en el menú del usuario.
     }
 
     /// <summary>Las que puede (lo que no, no sale) y se llaman como lo escrito después de «/», sin acentos.</summary>
@@ -1282,22 +1075,6 @@ else
 
     /// <summary>Lo que se escribió después de «/», o null si no empieza con «/».</summary>
     private static string? FiltroDeAcciones(string texto) => texto.TrimStart() is ['/', .. var resto] ? resto.Trim() : null;
-
-    /// <summary>«Volver a la pantalla de hoy» (en el menú del usuario) y «Probar la pantalla nueva» (en la de hoy).</summary>
-    private async Task CambiarPantallaAsync()
-    {
-        _pantallaNueva = !_pantallaNueva;
-        _menuUsuario = false;
-        // Lo abierto pasa de panel a ventana encima (o al revés): caja.js lo sabe.
-        if (_ventana != Ventanas.Ninguna)
-            await AvisarVentanaAbiertaAsync();
-        // El cuadro de la otra pantalla empieza vacío.
-        _captura.Texto = "";
-        await Js.GuardarAsync(ClavePantalla, _pantallaNueva ? null : PantallaDeHoy);
-        if (_pantallaNueva && _rapidos.Count == 0)
-            await CargarRapidosAsync();
-        _enfocar = "#codigo";
-    }
 
     /// <summary>Un rápido con el producto al que apunta (para su precio); sin conexión al cargar, el producto se pide al usarlo.</summary>
     private sealed record RapidoListo(Rapido Rapido, ProductoVentaDto? Producto, long? PrecioCentavos);
@@ -1748,10 +1525,10 @@ else
     }
 
     /// <summary>
-    /// Todo cobro pasa por aquí (el panel, el crédito ya autorizado y la ventana de la pantalla de hoy): aparta la cola de
-    /// escaneos, que espera los que venían y detiene los que llegan mientras se cobra; esos caen en el ticket del siguiente
-    /// cliente. Si mientras esperaba llegó algo al ticket, no cobra y devuelve el aviso: el cajero ve el total nuevo antes
-    /// de cobrarlo. Con un cobro en curso, no hace nada.
+    /// Todo cobro pasa por aquí (el panel y el crédito ya autorizado): aparta la cola de escaneos, que espera los que
+    /// venían y detiene los que llegan mientras se cobra; esos caen en el ticket del siguiente cliente. Si mientras
+    /// esperaba llegó algo al ticket, no cobra y devuelve el aviso: el cajero ve el total nuevo antes de cobrarlo. Con
+    /// un cobro en curso, no hace nada.
     /// </summary>
     private async Task<string?> EnTurnoDeCobroAsync(Func<CapturaCodigo.Apartado, Task> cobrar)
     {
@@ -1775,14 +1552,6 @@ else
     /// <summary>Lo que cambia si llega una línea mientras se espera para cobrar: el ticket, su total y lo que lleva.</summary>
     private (TicketAbierto Ticket, long Total, decimal Articulos, int Lineas) FotoDelTicket() =>
         (Actual, Actual.Venta.TotalCentavos, Actual.Venta.NumeroDeArticulos, Actual.Venta.Lineas.Count);
-
-    /// <summary>La ventana de cobro de la pantalla de hoy: el mismo turno en la cola que el panel.</summary>
-    private async Task<string?> CobrarDeLaVentanaAsync(IReadOnlyList<CobroSolicitado> cobros, Guid? autorizacionCredito)
-    {
-        string? error = null;
-        var aviso = await EnTurnoDeCobroAsync(async apartado => error = await CobrarAsync(cobros, autorizacionCredito, apartado));
-        return aviso ?? error;
-    }
 
     private async Task RevisarConteoAsync()
     {
@@ -1846,14 +1615,9 @@ else
         _referencia = DotNetObjectReference.Create(this);
         await Js.RegistrarTeclasAsync(_referencia);
         await Js.EnfocarAsync("#codigo");
-        // Quien volvió a la de hoy en esta PC la ve en cuanto se lee, sin esperar los permisos (sin conexión, en el
-        // navegador, tardan lo que tarda en fallar): sus teclas ya son las de la de hoy. Los demás ya están en la nueva.
-        if (await Js.LeerAsync(ClavePantalla) == PantallaDeHoy)
-        {
-            _pantallaNueva = false;
-            _enfocar = "#codigo";
-            StateHasChanged();
-        }
+        // Junto con lo demás de la página, antes de esperar al servicio: después, la página ya pudo volver a cargarse (y
+        // esta pantalla ya no estar) mientras llegaba lo de abajo.
+        await Js.GuardarAsync(ClavePantallaDeAntes, null);
         // Primero los permisos: lo de quien entró sale en cuanto llegan, sin esperar a los rápidos ni a lo demás.
         await CargarPermisosAsync();
         StateHasChanged();
@@ -1864,14 +1628,14 @@ else
         StateHasChanged();
     }
 
-    /// <summary>El Enter del cuadro de captura de la pantalla nueva: caja.js ya tomó el texto y vació el cuadro.</summary>
+    /// <summary>El Enter del cuadro de captura: caja.js ya tomó el texto y vació el cuadro.</summary>
     [JSInvokable]
     public async Task Escaneado(string texto)
     {
         if (_ventana != Ventanas.Ninguna)
             return;
         // «/algo» y Enter: la acción elegida, o la primera que se llama así.
-        if (_pantallaNueva && FiltroDeAcciones(texto) is { } filtro)
+        if (FiltroDeAcciones(texto) is { } filtro)
         {
             CerrarResultados();
             await HacerAccionDeTextoAsync(filtro);
@@ -1901,8 +1665,8 @@ else
     /// El lector escribió en el cobro («Pagó con», un monto, una referencia o un botón; data-cobro) o en un abono, y caja.js
     /// lo reconoció por su ritmo: ya quitó del campo lo que tecleó y su Enter no cobró. Un escaneo nunca se toma como
     /// dinero (docs/propuesta-interfaz.md, «El cuadro de captura»): el código va a la cola de captura como cualquier otro y
-    /// el cursor vuelve al cuadro. La ventana donde estaba (el cobro de la pantalla de hoy, un abono) se cierra, para ver el
-    /// ticket. Si se está cobrando, espera al cobro y cae en el ticket del siguiente cliente.
+    /// el cursor vuelve al cuadro. La ventana donde estaba (un abono) se cierra, para ver el ticket. Si se está cobrando,
+    /// espera al cobro y cae en el ticket del siguiente cliente.
     /// </summary>
     [JSInvokable]
     public async Task EscaneoEnPago(string codigo)
@@ -1928,18 +1692,18 @@ else
     }
 
     /// <summary>
-    /// Lo que se escribe a mano en el cuadro de la pantalla nueva, al dejar de teclear: la cantidad de un rápido o de
-    /// F11, o un nombre, que se busca aquí mismo.
+    /// Lo que se escribe a mano en el cuadro de captura, al dejar de teclear: la cantidad de un rápido o de F11, o un
+    /// nombre, que se busca aquí mismo.
     /// </summary>
     [JSInvokable]
     public async Task Escribiendo(string texto)
     {
         _captura.Texto = texto;
-        if (_pantallaNueva && _ventana == Ventanas.Ninguna)
+        if (_ventana == Ventanas.Ninguna)
             await BuscarMientrasEscribeAsync(texto);
     }
 
-    // ── La búsqueda debajo del cuadro (pantalla nueva) ──────────────────────
+    // ── La búsqueda debajo del cuadro ───────────────────────────────────────
 
     /// <summary>Cuántos renglones muestra la lista.</summary>
     private const int MaximoResultados = 30;
@@ -2267,7 +2031,7 @@ else
     /// </summary>
     private async Task AgregarPrimeroAsync(string texto, Cantidad cantidad)
     {
-        var resultados = await Cliente.BuscarAsync(texto, Caja.SucursalId, Caja.Id, _pantallaNueva ? ParaFamilias : MaximoResultados);
+        var resultados = await Cliente.BuscarAsync(texto, Caja.SucursalId, Caja.Id, ParaFamilias);
         if (resultados.Count == 0)
         {
             _ = Cliente.RegistrarBusquedaAsync(new SolicitudBusqueda(Caja.Id, texto, 0, null));
@@ -2330,29 +2094,28 @@ else
         }
     }
 
-    /// <summary>Vacía el cuadro de captura, también en la pantalla nueva, donde no está enlazado.</summary>
+    /// <summary>Vacía el cuadro de captura, aquí y en la página: no está enlazado (lo maneja caja.js).</summary>
     private void VaciarCaptura()
     {
         _captura.Texto = "";
-        if (_pantallaNueva)
-            _ = Js.LimpiarCapturaAsync();
+        _ = Js.LimpiarCapturaAsync();
     }
 
     /// <param name="tecla">La tecla, como la nombra caja.js.</param>
     /// <param name="texto">
-    /// En la pantalla nueva, lo que había en el cuadro de captura (no está enlazado); null si se oprimió en otro lado o es
-    /// un botón de la barra de teclas.
+    /// Lo que había en el cuadro de captura (no está enlazado); null si se oprimió en otro lado o es un botón de la barra
+    /// de teclas.
     /// </param>
     [JSInvokable]
     public async Task Tecla(string tecla, string? texto)
     {
-        if (_pantallaNueva && texto is not null)
+        if (texto is not null)
             _captura.Texto = texto;
         if (_ventana != Ventanas.Ninguna && !await TeclaConVentanaAsync(tecla, desdeLaCaptura: texto is not null))
             return;
 
         // Con «/» en el cuadro, ↑ ↓ recorren las acciones.
-        if (_pantallaNueva && tecla is "ArrowUp" or "ArrowDown" && texto is not null && FiltroDeAcciones(texto) is { } filtro)
+        if (tecla is "ArrowUp" or "ArrowDown" && texto is not null && FiltroDeAcciones(texto) is { } filtro)
         {
             if (_accionesVistas is null || filtro != _textoAcciones)
                 MostrarAcciones(filtro);
@@ -2366,7 +2129,7 @@ else
         var cuadroSinVaciar = tecla == "Escape-familia";
         if (cuadroSinVaciar && _abierta < 0)
             tecla = "Escape";
-        if (_pantallaNueva && _familias is not null && tecla is "ArrowRight" or "ArrowLeft" or "Tab" or "Shift+Tab" or "Escape-familia")
+        if (_familias is not null && tecla is "ArrowRight" or "ArrowLeft" or "Tab" or "Shift+Tab" or "Escape-familia")
         {
             switch (tecla)
             {
@@ -2379,7 +2142,7 @@ else
             return;
         }
         // Con un nombre en el cuadro, ↑ ↓ recorren los resultados (si se teclearon antes de que salieran, se busca ya).
-        if (_pantallaNueva && tecla is "ArrowUp" or "ArrowDown" && texto is not null && EsTextoDeBusqueda(SepararCantidad(texto).Texto))
+        if (tecla is "ArrowUp" or "ArrowDown" && texto is not null && EsTextoDeBusqueda(SepararCantidad(texto).Texto))
         {
             if (_resultados is null || SepararCantidad(texto).Texto != _textoBuscado)
                 await BuscarMientrasEscribeAsync(texto);
@@ -2402,23 +2165,19 @@ else
 
         switch (tecla)
         {
-            // En la pantalla nueva, lo que no está entre sus permisos no tiene tecla.
+            // Lo que no está entre sus permisos no tiene tecla.
             case var _ when SinTecla(tecla):
                 Avisar("Eso no está entre lo que puedes hacer: «/» muestra todo lo que sí.");
                 break;
-            case "Ctrl+U" when _pantallaNueva: await AlSalir.InvokeAsync(); break;
-            case "F10" when _pantallaNueva: Buscar(); break;
-            case "F10": await Abrir(Ventanas.Buscar); break;
+            case "Ctrl+U": await AlSalir.InvokeAsync(); break;
+            case "F10": Buscar(); break;
             // caja.js ya movió el cursor a «Pagó con» (sin esperar esta vuelta): no cobra todavía, y el cobro espera el
             // último escaneo al dar Enter.
             case "F12-pago": break;
-            case "F12" when _pantallaNueva: await IrAlCobroAsync(); break;
-            case "F12": await AbrirCobroAsync(); break;
-            case "F5" when _pantallaNueva: RetomarPrimero(); break;
-            case "F5": CambiarSiguiente(); break;
-            case "F6" when _pantallaNueva: PonerEnEspera(); break;
-            case "F6": NuevoTicket(); break;
-            case ['A', 'l', 't', '+', var numero] when _pantallaNueva && numero is >= '1' and <= '6': await RapidoAsync(numero - '1'); break;
+            case "F12": await IrAlCobroAsync(); break;
+            case "F5": RetomarPrimero(); break;
+            case "F6": PonerEnEspera(); break;
+            case ['A', 'l', 't', '+', var numero] when numero is >= '1' and <= '6': await RapidoAsync(numero - '1'); break;
             case "F7": await Abrir(Ventanas.Entrada); break;
             case "F8": await Abrir(Ventanas.Salida); break;
             case "F9": await Abrir(Ventanas.Verificador); break;
@@ -2440,32 +2199,30 @@ else
                 _cobrado = null;
                 // Desde el cuadro de captura, caja.js ya lo vació: vaciarlo otra vez desde aquí borraría lo que se
                 // empezó a escribir enseguida.
-                if (_pantallaNueva && texto is not null && !cuadroSinVaciar)
+                if (texto is not null && !cuadroSinVaciar)
                     _captura.Texto = "";
                 else
                     VaciarCaptura();
                 _mensaje = null;
-                if (_pantallaNueva)
-                {
-                    // Desde «Pagó con», Esc borra lo escrito y regresa al cuadro del código sin cobrar.
-                    (_pagoCon, _avisoDelCobro) = ("", null);
-                    _enfocar = "#codigo";
-                }
+                // Desde «Pagó con», Esc borra lo escrito y regresa al cuadro del código sin cobrar.
+                (_pagoCon, _avisoDelCobro) = ("", null);
+                _enfocar = "#codigo";
                 break;
         }
         StateHasChanged();
     }
 
     /// <summary>
-    /// Una tecla con una ventana abierta; devuelve si sigue a hacer lo suyo. Esc la cierra. En la pantalla nueva, con un
-    /// panel a la derecha (el ticket a la vista), las teclas de la barra y de «/» siguen funcionando
-    /// (docs/propuesta-interfaz.md, «Los demás paneles»): la del mismo panel lo cierra («F9 o Esc regresan a vender») y,
-    /// si el panel se deja (<see cref="PanelesQueSeDejan"/>), las demás lo cierran y hacen lo suyo, como sin él: abrir
-    /// otro panel, F12 al cobro, F6 a la espera. Un panel con campos espera su Enter o Esc, y con otra tecla lo dice. Antes
-    /// solo respondía Esc. caja.js solo manda las que no escriben en los campos del panel (Esc, las F, las Ctrl de la caja
-    /// e Ins); Supr, las flechas, + y − se quedan en el panel.
+    /// Una tecla con una ventana abierta; devuelve si sigue a hacer lo suyo. Esc la cierra. Con un panel a la derecha
+    /// (el ticket a la vista), las teclas de la barra y de «/» siguen funcionando (docs/propuesta-interfaz.md, «Los
+    /// demás paneles»): la del mismo panel lo cierra («F9 o Esc regresan a vender») y, si el panel se deja
+    /// (<see cref="PanelesQueSeDejan"/>), las demás lo cierran y hacen lo suyo, como sin él: abrir otro panel, F12 al
+    /// cobro, F6 a la espera. Un panel con campos espera su Enter o Esc, y con otra tecla lo dice. Antes solo respondía
+    /// Esc. caja.js solo manda las que no escriben en los campos del panel (Esc, las F, las Ctrl de la caja e Ins);
+    /// Supr, las flechas, + y − se quedan en el panel. Ctrl+U cambia de usuario con lo que esté abierto, y F1 regresa a
+    /// vender desde lo que va encima del ticket, como en el prototipo.
     /// </summary>
-    /// <param name="desdeLaCaptura">Se oprimió en el cuadro de captura de la pantalla nueva: caja.js mandó su texto.</param>
+    /// <param name="desdeLaCaptura">Se oprimió en el cuadro de captura: caja.js mandó su texto.</param>
     private async Task<bool> TeclaConVentanaAsync(string tecla, bool desdeLaCaptura)
     {
         if (tecla == "Escape")
@@ -2485,9 +2242,26 @@ else
             await AvisarVentanaAbiertaAsync();
             return false;
         }
-        // Lo que va encima del ticket (los módulos de arriba y el conteo; en la pantalla de hoy, todo) solo se cierra con
-        // Esc: puede tener algo a medio escribir. F1 (la venta, donde ya está) no hace nada.
-        if (!VaEnPanel || tecla == "F1")
+        // Ctrl+U cambia de usuario desde donde se esté («Ctrl+U cambia de usuario», docs/propuesta-interfaz.md; el prototipo
+        // lo hace desde cualquier vista), igual que «Cambiar de usuario» del menú, que se toca con un panel abierto: lo
+        // abierto se deja como con Esc. Antes, con algo encima del ticket (productos, clientes, el corte…) no hacía nada, y
+        // el fondo de la ventana tapaba el menú: no había por dónde salir más que Esc.
+        if (tecla == "Ctrl+U")
+        {
+            await QuitarVentanaAsync();
+            return true;
+        }
+        // F1 es la pestaña «Venta»: desde lo que va encima del ticket regresa a vender, como Esc (el prototipo va a la venta
+        // desde cualquier vista). Con un panel ya se está en la venta: no hace nada.
+        if (tecla == "F1")
+        {
+            if (!VaEnPanel)
+                await Cerrar();
+            return false;
+        }
+        // Las demás no cierran lo que va encima del ticket (los módulos de arriba y el conteo): puede tener algo a medio
+        // escribir, y su tecla no es la de quitarlo.
+        if (!VaEnPanel)
             return false;
         if (PanelDeLaTecla(tecla) == _ventana)
         {
@@ -2542,7 +2316,7 @@ else
         StateHasChanged();
     }
 
-    /// <summary>El panel que abre la tecla en la pantalla nueva, para que la misma lo cierre; null si no abre uno.</summary>
+    /// <summary>El panel que abre la tecla, para que la misma lo cierre; null si no abre uno.</summary>
     private Ventanas? PanelDeLaTecla(string tecla) => tecla switch
     {
         "F9" => Ventanas.Verificador,
@@ -2563,12 +2337,6 @@ else
     private Task ComoSuTecla(string tecla) => Tecla(tecla, null);
 
     // ── Captura ─────────────────────────────────────────────────────────────
-
-    private async Task AlTeclearCodigo(KeyboardEventArgs e)
-    {
-        if (e.Key == "Enter")
-            await AgregarCodigoAsync();
-    }
 
     /// <summary>El cuadro se vacía al momento y el escaneo espera su turno: el lector no espera a la red.</summary>
     private Task AgregarCodigoAsync() => _captura.EnterAsync(ProcesarCodigoAsync);
@@ -2606,40 +2374,21 @@ else
         try
         {
             var producto = await Cliente.PorCodigoAsync(texto, Caja.SucursalId);
-            if (producto is null && _pantallaNueva && PareceNombre(texto))
+            if (producto is null && PareceNombre(texto))
             {
-                // En la pantalla nueva el nombre se busca aquí mismo: Enter agrega el primero de la lista («3*cuad» también).
+                // El nombre se busca aquí mismo: Enter agrega el primero de la lista («3*cuad» también).
                 await AgregarPrimeroAsync(texto, cantidad);
-                return;
-            }
-            if (producto is null && asterisco < 0 && PareceNombre(texto))
-            {
-                // Como en eleventa, se escribe el nombre donde va el código: se busca por nombre en vez de ofrecer el alta.
-                _buscarTexto = texto;
-                await Abrir(Ventanas.Buscar);
                 return;
             }
             if (producto is null)
             {
-                Avisar($"No existe el código «{texto}». F10 para buscar por nombre, o dalo de alta.");
+                // Como el prototipo: bajo el aviso, darlo de alta o venderlo como artículo común, si sus permisos lo dejan.
+                var elige = Ve(AccionControlada.AltaRapida) || Ve(AccionControlada.ArticuloComun);
+                Avisar($"No existe «{texto}». Revisa el código{(elige ? " o elige:" : ".")}");
                 _codigoNuevo = texto;
                 return;
             }
             Agregar(producto, null, cantidad);
-        }
-        catch (ErrorCaja ex)
-        {
-            Avisar(ex.Message);
-        }
-    }
-
-    private async Task AgregarVarianteAsync(Guid varianteId)
-    {
-        await Cerrar();
-        try
-        {
-            if (await Cliente.PorVarianteAsync(varianteId, Caja.SucursalId) is { } producto)
-                Agregar(producto, null, Cantidad.Piezas(1));
         }
         catch (ErrorCaja ex)
         {
@@ -2676,6 +2425,8 @@ else
             var linea = Actual.Venta.AgregarArticuloComun(articulo.Descripcion, articulo.Precio, articulo.Cantidad);
             DescuentoDelCliente(linea);
             _seleccion = Actual.Venta.Lineas.IndexOf(linea);
+            // Como al agregar un producto: el aviso de antes (el código que no existía, con sus botones) ya pasó.
+            _mensaje = null;
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
@@ -2843,7 +2594,7 @@ else
     }
 
     /// <summary>
-    /// Cada vez que cambia el ticket que se atiende (F6, F5, retomar, cobrar, eliminar), los que tienen algo quedan
+    /// Cada vez que cambia el ticket que se atiende (F6, F5, retomar, cobrar), los que tienen algo quedan
     /// guardados en la caja. También el que se atiende, como estaba en ese momento: si se va la luz, vuelve en espera.
     /// </summary>
     private void GuardarEspera()
@@ -2899,30 +2650,12 @@ else
     /// <summary>Si lo último que se guardó tenía tickets: al entrar puede haber de antes, por eso empieza en sí.</summary>
     private bool _hayEsperaGuardada = true;
 
-    private void CambiarSiguiente()
-    {
-        if (_tickets.Count > 1)
-            Cambiar(_tickets[(_actual + 1) % _tickets.Count]);
-    }
-
-    private async Task EliminarTicket()
-    {
-        var venta = Actual.Venta;
-        if (venta.Lineas.Count > 0)
-            await RegistrarQuitadoAsync($"Eliminó el ticket {Actual.Numero} con {Formato.Numero(venta.NumeroDeArticulos)} productos", venta.TotalCentavos);
-        _tickets.RemoveAt(_actual);
-        if (_tickets.Count == 0)
-            NuevoTicket();
-        else
-            Cambiar(_tickets[Math.Min(_actual, _tickets.Count - 1)]);
-    }
-
     // ── Cobro e impresión ───────────────────────────────────────────────────
 
     /// <summary>
     /// Cobra el ticket que se atiende. Quien llama ya apartó la cola (<see cref="EnTurnoDeCobroAsync"/>): se suelta en
-    /// cuanto está el ticket del siguiente cliente, antes de imprimir, y lo que se escaneó mientras se cobraba cae ahí. La
-    /// ventana de cobro muestra el error que devuelve; null si se cobró.
+    /// cuanto está el ticket del siguiente cliente, antes de imprimir, y lo que se escaneó mientras se cobraba cae ahí.
+    /// Devuelve el error, que el panel dice; null si se cobró.
     /// </summary>
     private async Task<string?> CobrarAsync(IReadOnlyList<CobroSolicitado> cobros, Guid? autorizacionCredito, CapturaCodigo.Apartado apartado)
     {
@@ -2942,7 +2675,7 @@ else
         {
             if (ex.Codigo == "fiado-sin-confirmar")
                 abierto.FiadoSinConfirmar = true;
-            // Si no se pudo fiar (otra caja le fió, le abonaron, venció la autorización…), la ventana sigue abierta con la
+            // Si no se pudo fiar (otra caja le fió, le abonaron, venció la autorización…), el panel del total sigue con la
             // cuenta al día; los callbacks de las ventanas no vuelven a dibujar esta pantalla.
             if (abierto.Cliente is not null && cobros.Any(c => c.Forma == FormaPago.Credito))
             {
@@ -2951,27 +2684,21 @@ else
             }
             return ex.Message;
         }
-        // Sale el que se cobró, aunque mientras se haya tocado otro (una ficha en espera).
+        // Sale el que se cobró, aunque mientras se haya tocado otro (una ficha en espera). Los que esperan se quedan
+        // esperando: lo siguiente es un ticket vacío para el siguiente cliente.
         _tickets.Remove(abierto);
-        // En la pantalla nueva los que esperan se quedan esperando: lo siguiente es un ticket vacío para el siguiente cliente.
-        if (_tickets.Count == 0 || _pantallaNueva)
-            NuevoTicket();
-        else
-            Cambiar(_tickets[^1]);
+        NuevoTicket();
         apartado.Dispose();
         Avisar($"Venta {ticket.FolioImpreso} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: false);
         _ultimo = ticket;
-        if (_pantallaNueva)
-            await ImprimirCobradoAsync(ticket);
-        else
-            await ImprimirAsync(ticket, abrirCajon: ticket.AbreCajon);
+        await ImprimirCobradoAsync(ticket);
         await RevisarEfectivoAsync();
         if (abierto.Impresiones.Count > 0 && _estado is not null)
             await _estado.ActualizarAsync();
         return null;
     }
 
-    // ── Al cobrar en la pantalla nueva: el cambio en grande hasta el siguiente cliente ──
+    // ── Al cobrar: el cambio en grande hasta el siguiente cliente ───────────
 
     /// <summary>La venta que se acaba de cobrar: su cambio se queda en el panel hasta que se agrega algo o con Esc.</summary>
     private TicketDto? _cobrado;
@@ -2979,7 +2706,7 @@ else
     /// <summary>Si el ticket de esa venta no salió: lo que dijo la impresora.</summary>
     private string? _noSalio;
 
-    private bool MostrarCambio => _pantallaNueva && _cobrado is not null && Actual.Venta.Lineas.Count == 0;
+    private bool MostrarCambio => _cobrado is not null && Actual.Venta.Lineas.Count == 0;
 
     /// <summary>
     /// La venta ya quedó guardada: se imprime aparte y el panel dice si salió. Sin impresora (en el navegador), el ticket
@@ -3117,20 +2844,10 @@ else
     private CostoPorAutorizar? _costoPorAutorizar;
 
     /// <summary>
-    /// F12: si el ticket lleva descuentos (el del cliente se pone solo al agregar), antes de cobrar se revisa que nada quede
-    /// debajo del costo sin autorización; si falta, se pide aquí y no hasta que el cobro falle.
+    /// Si se puede cobrar ya. Si el ticket lleva descuentos (el del cliente se pone solo al agregar), antes de cobrar se
+    /// revisa que nada quede debajo del costo sin autorización; si falta, se pide aquí (abre su panel y devuelve false) y no
+    /// hasta que el cobro falle.
     /// </summary>
-    private async Task AbrirCobroAsync()
-    {
-        // La ventana se abre con la última línea: el exacto que trae ya la cuenta.
-        await _captura.EsperarAsync();
-        if (Actual.Venta.Lineas.Count == 0 || !await RevisarCostoAsync())
-            return;
-        await CargarCuentaAsync(Actual);
-        await Abrir(Ventanas.Cobrar);
-    }
-
-    /// <summary>Si se puede cobrar ya. Si algo queda debajo del costo y hace falta autorizarlo, abre su ventana y devuelve false.</summary>
     private async Task<bool> RevisarCostoAsync()
     {
         var venta = Actual.Venta;
@@ -3168,16 +2885,10 @@ else
     {
         Actual.Venta.AutorizacionBajoCostoId = autorizacionId;
         _costoPorAutorizar = null;
-        // En la pantalla nueva, de regreso al panel del total, y se sigue con el cobro que se pidió (con lo que ya se escribió).
-        if (_pantallaNueva)
-        {
-            await Cerrar();
-            await CobrarEnPanelAsync();
-            StateHasChanged();
-            return;
-        }
-        await CargarCuentaAsync(Actual);
-        await Abrir(Ventanas.Cobrar);
+        // De regreso al panel del total, y se sigue con el cobro que se pidió (con lo que ya se escribió).
+        await Cerrar();
+        await CobrarEnPanelAsync();
+        StateHasChanged();
     }
 
     /// <summary>La cuenta del cliente del ticket (lo que debe y su límite). Sin conexión, la que conoce esta caja; sin los saldos, no se fía.</summary>
@@ -3296,9 +3007,6 @@ else
     // ── Alta rápida de un código que no existe ──────────────────────────────
 
     private string? _codigoNuevo;
-
-    /// <summary>Lo que se escribió en el código y se busca por nombre al abrir F10.</summary>
-    private string _buscarTexto = "";
 
     /// <summary>Un código no lleva espacios y casi siempre trae números: «pluma» o «pluma azul» son un nombre; «LAP01», un código.</summary>
     private static bool PareceNombre(string texto) => texto.Contains(' ') || !texto.Any(char.IsDigit);
@@ -3439,17 +3147,11 @@ else
     }
 
     /// <summary>
-    /// La ventana abierta. En la pantalla nueva, lo de la venta va como panel a la derecha (VaEnPanel), sin tapar el ticket;
-    /// lo demás (y todo en la pantalla de hoy) va encima.
+    /// La ventana abierta. Lo de la venta va como panel a la derecha (VaEnPanel), sin tapar el ticket; lo demás va encima.
     /// </summary>
     private RenderFragment ContenidoDeVentana => @<CascadingValue Name="@PilotoConEleventa.Cascada" Value="_pilotoEleventa">
     @switch (_ventana)
     {
-        case Ventanas.Cobrar:
-            <Ventana Titulo="Cobrar" Clase="cobrar" AlCerrar="Cerrar">
-                <CobrarVenta Venta="Actual.Venta" Caja="Caja" Sesion="Sesion" Cliente="Actual.Cliente" Cuenta="Actual.Cuenta" AlCobrar="CobrarDeLaVentanaAsync" />
-            </Ventana>
-            break;
         case Ventanas.AutorizarCredito when _creditoPorAutorizar is { } exceso && Actual.Cliente is { } fiado:
             <Ventana Titulo="Fiar arriba del límite" AlCerrar="Cerrar">
                 <AutorizarAccion Accion="AccionControlada.ExcederLimiteCredito" MontoCentavos="exceso" Caja="Caja" Sesion="Sesion"
@@ -3461,11 +3163,6 @@ else
             <Ventana Titulo="Debajo del costo" AlCerrar="Cerrar">
                 <AutorizarAccion Accion="AccionControlada.VenderBajoCosto" Detalle="@costo.Detalle" MontoCentavos="costo.Monto" Caja="Caja" Sesion="Sesion"
                                  AlAutorizar="a => CostoAutorizadoAsync(a.Id)" AlCancelar="Cerrar" />
-            </Ventana>
-            break;
-        case Ventanas.Buscar:
-            <Ventana Titulo="Buscar producto" Clase="buscar" AlCerrar="Cerrar">
-                <BuscarProducto SucursalId="Caja.SucursalId" TextoInicial="@_buscarTexto" AlElegir="AgregarVarianteAsync" />
             </Ventana>
             break;
         case Ventanas.Comun:
@@ -3552,7 +3249,7 @@ else
             </Ventana>
             break;
         case Ventanas.ElegirCliente:
-            <Ventana Titulo="Cliente del ticket" Clase="buscar tarjetas clientes" AlCerrar="Cerrar">
+            <Ventana Titulo="Cliente del ticket" Clase="tarjetas clientes" AlCerrar="Cerrar">
                 <ElegirCliente @ref="_elegirCliente" Venta="Actual.Venta" Caja="Caja" Sesion="Sesion" Actual="Actual.Cliente" Catalogo="CatalogoDe"
                                AlTerminar="ClienteElegidoAsync" />
             </Ventana>
@@ -3564,7 +3261,7 @@ else
             </Ventana>
             break;
         case Ventanas.Abono:
-            <Ventana Titulo="Abono a cuenta" Clase="buscar tarjetas clientes" AlCerrar="Cerrar">
+            <Ventana Titulo="Abono a cuenta" Clase="tarjetas clientes" AlCerrar="Cerrar">
                 <Abonar Caja="Caja" Sesion="Sesion" Turno="Turno" ClienteInicial="Actual.Cliente" AlTerminar="AbonoRegistradoAsync"
                         AlReimprimir="AbonoReimpresoAsync" />
             </Ventana>
@@ -3590,7 +3287,7 @@ else
             </Ventana>
             break;
         case Ventanas.VistaPrevia when _vistaPrevia is { } vista:
-            <Ventana Titulo="@vista.Titulo" Clase="vista-previa" AlCerrar="Cerrar">
+            <Ventana Titulo="@vista.Titulo" AlCerrar="Cerrar">
                 <pre class="ticket">@vista.Texto</pre>
                 <p class="nota">Sin impresora conectada: así saldrá impreso en la de 80 mm.</p>
             </Ventana>
@@ -3626,7 +3323,6 @@ else
         DejarVentana();
         _ventana = Ventanas.Ninguna;
         _avisoDelPanel = null;
-        _buscarTexto = "";
         await Js.VentanaAbiertaAsync(false);
         StateHasChanged();
     }
@@ -3659,7 +3355,7 @@ else
         try
         {
             // Si se va con una ventana abierta (el corte Z, o «Cambiar de usuario» del menú con un panel), caja.js seguiría
-            // creyendo que está ahí: en la pantalla nueva del que entra después, el cuadro de captura no tomaría los escaneos.
+            // creyendo que está ahí: en la venta del que entra después, el cuadro de captura no tomaría los escaneos.
             if (_ventana != Ventanas.Ninguna)
                 await Js.VentanaAbiertaAsync(false);
             await Js.QuitarTeclasAsync();

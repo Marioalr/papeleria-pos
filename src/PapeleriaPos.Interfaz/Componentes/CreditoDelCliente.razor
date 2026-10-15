@@ -281,10 +281,10 @@ else
     [CascadingParameter(Name = PilotoConEleventa.Cascada)] public bool PilotoEleventa { get; set; }
 
     /// <summary>
-    /// Lo que puede quien entró; solo lo pasa la pantalla nueva. Con ellos, «Devolver saldo a favor» va como lo demás de la
-    /// pantalla nueva (docs/propuesta-interfaz.md, «Usuarios y permisos»): con candado y quién lo autoriza si lo autoriza
-    /// otro (al cajero, de entrada, el encargado), y no aparece si no puede. Sin ellos (la pantalla de hoy), como siempre:
-    /// el servicio decide al intentarlo.
+    /// Lo que puede quien entró; lo pasa la pantalla de venta. Con ellos, «Devolver saldo a favor» va como lo demás de la
+    /// venta (docs/propuesta-interfaz.md, «Usuarios y permisos»): con candado y quién lo autoriza si lo autoriza otro (al
+    /// cajero, de entrada, el encargado), y no aparece si no puede. Sin ellos (sin conexión ni copia de los permisos, o en
+    /// Administración, donde no hay turno ni se devuelve), como siempre: el servicio decide al intentarlo.
     /// </summary>
     [CascadingParameter(Name = "PermisosDeSesion")] public IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? PermisosDeSesion { get; set; }
 
@@ -292,7 +292,7 @@ else
 
     private string? QuienAutorizaDevolver => QuienAutorizaDevolverConPermisos(PermisosDeSesion);
 
-    /// <summary>Si sale «Devolver saldo a favor»: sin permisos (la pantalla de hoy) sale siempre. Pública para las pruebas.</summary>
+    /// <summary>Si sale «Devolver saldo a favor»: sin permisos sale siempre (el servicio decide). Pública para las pruebas.</summary>
     public static bool PuedeDevolverConPermisos(IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? permisos) =>
         permisos?.GetValueOrDefault(AccionControlada.DevolverSaldoAFavor)?.Nivel != NivelPermiso.NoPermitido;
 

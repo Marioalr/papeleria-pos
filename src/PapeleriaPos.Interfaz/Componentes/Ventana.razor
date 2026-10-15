@@ -1,5 +1,5 @@
-@* Ventana sobre la pantalla de venta. Escape la cierra (lo atrapa la pantalla de venta). En la pantalla nueva, lo de la
-   venta va como panel a la derecha, sin tapar el ticket (docs/propuesta-interfaz.md, «Los demás paneles»). *@
+@* Ventana sobre la pantalla de venta. Escape la cierra (lo atrapa la pantalla de venta). Lo de la venta va como panel a
+   la derecha, sin tapar el ticket (docs/propuesta-interfaz.md, «Los demás paneles»); los módulos de arriba, encima. *@
 @if (EnPanel)
 {
     <section class="vn-panel @Clase" role="dialog" aria-label="@Titulo">
@@ -33,6 +33,6 @@ else
     [Parameter] public RenderFragment? ChildContent { get; set; }
     [Parameter] public EventCallback AlCerrar { get; set; }
 
-    /// <summary>La pone la pantalla nueva: el contenido va en el panel de la derecha, no encima del ticket.</summary>
+    /// <summary>La pone la pantalla de venta: el contenido va en el panel de la derecha, no encima del ticket.</summary>
     [CascadingParameter(Name = "VentanaEnPanel")] public bool EnPanel { get; set; }
 }

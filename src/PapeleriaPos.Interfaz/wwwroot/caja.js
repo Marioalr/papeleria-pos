@@ -2,7 +2,7 @@
 // Ctrl+E no busca, Ctrl+D no guarda un marcador).
 let pantalla = null;
 let hayVentana = false;
-// La ventana abierta es un panel de la pantalla nueva: el ticket y la barra de teclas siguen a la vista.
+// La ventana abierta es un panel a la derecha: el ticket y la barra de teclas siguen a la vista.
 let hayPanel = false;
 let escribiendo = null;
 
@@ -61,10 +61,10 @@ function alRodarLista(e) {
     abajo?.classList.toggle('apagada', lista.scrollTop + lista.clientHeight >= lista.scrollHeight - 1);
 }
 
-// El cuadro de captura de la pantalla nueva no avisa a .NET en cada tecla: al Enter, el texto se lee y el cuadro se
-// vacía aquí mismo, y el código va en una sola llamada. Así un escaneo nunca se pega al siguiente aunque lleguen sin
-// pausa, y el lector no repinta la pantalla con cada carácter. Lo que se escribe a mano se avisa al dejar de teclear
-// (para un rápido con cantidad, F11, y la búsqueda), no con cada tecla.
+// El cuadro de captura no avisa a .NET en cada tecla: al Enter, el texto se lee y el cuadro se vacía aquí mismo, y el
+// código va en una sola llamada. Así un escaneo nunca se pega al siguiente aunque lleguen sin pausa, y el lector no
+// repinta la pantalla con cada carácter. Lo que se escribe a mano se avisa al dejar de teclear (para un rápido con
+// cantidad, F11, y la búsqueda), no con cada tecla.
 function esCaptura(elemento) {
     return elemento instanceof HTMLInputElement && elemento.dataset.captura !== undefined;
 }
@@ -83,20 +83,19 @@ export function limpiarCaptura() {
 
 // Con una ventana abierta solo se atrapan las teclas que no escriben en sus campos: Esc, las F y las Ctrl de la caja (la
 // pantalla de venta decide qué hacen; con un panel, las de la barra siguen funcionando). Supr, las flechas, + y −, Enter
-// y Alt+1 a Alt+6 son de la ventana. Con un panel de la pantalla nueva, también Ins (como Ctrl+P) y Ctrl+Q.
+// y Alt+1 a Alt+6 son de la ventana. Con un panel a la derecha, también Ins (como Ctrl+P) y Ctrl+Q.
 export function ventanaAbierta(abierta, enPanel = false) {
     hayVentana = abierta;
     hayPanel = abierta && enPanel;
 }
 
-// El cobro (data-cobro: «Pagó con», los montos y referencias de tarjeta, transferencia y crédito, los botones como
-// Cobrar; en la pantalla nueva, todo el panel del total; también la ventana de cobro de la pantalla de hoy y la del
-// abono): el lector se reconoce por su ritmo, más rápido que una persona y con Enter al final (docs/propuesta-interfaz.md,
-// «El cuadro de captura»). Si escribe ahí, lo que tecleó se quita del campo, su Enter no cobra (ni oprime el botón) y el
-// código va a la captura: un escaneo nunca se toma como dinero ni se cobra sin él. Una persona no baja de unos 80 ms
-// entre tecla y tecla ni con el teclado numérico; un lector USB teclea cada carácter en pocos milisegundos. El ritmo del
-// lector de la tienda falta medirlo allá (docs/plan.md, paso 7): si no se reconoce, se ajustan RAFAGA_MS y
-// RAFAGA_MINIMO (el cambio no lleva tope: lo decidió el dueño el 2026-10-14).
+// El cobro (data-cobro: todo el panel del total, con «Pagó con», los montos y referencias de tarjeta, transferencia y
+// crédito y el botón de cobrar; también el abono): el lector se reconoce por su ritmo, más rápido que una persona y con
+// Enter al final (docs/propuesta-interfaz.md, «El cuadro de captura»). Si escribe ahí, lo que tecleó se quita del
+// campo, su Enter no cobra (ni oprime el botón) y el código va a la captura: un escaneo nunca se toma como dinero ni se
+// cobra sin él. Una persona no baja de unos 80 ms entre tecla y tecla ni con el teclado numérico; un lector USB teclea
+// cada carácter en pocos milisegundos. El ritmo del lector de la tienda falta medirlo allá (docs/plan.md, paso 7): si
+// no se reconoce, se ajustan RAFAGA_MS y RAFAGA_MINIMO (el cambio no lleva tope: lo decidió el dueño el 2026-10-14).
 const RAFAGA_MS = 50;
 // Menos caracteres no se distinguen de alguien que teclea rápido «200» y Enter.
 const RAFAGA_MINIMO = 4;
@@ -162,10 +161,10 @@ function alPresionar(e) {
         if (texto.trim() !== '') pantalla.invokeMethodAsync('Escaneado', texto);
         return;
     }
-    const enCodigo = campo !== null && campo.dataset.codigo !== undefined;
+    const enCodigo = esCaptura(campo);
     const enPago = campo !== null && campo.dataset.pago !== undefined;
     const vacio = campo === null || campo.value === '';
-    // Los rápidos de la pantalla nueva: Alt+1 a Alt+6.
+    // Los rápidos: Alt+1 a Alt+6.
     const rapido = e.altKey && !e.ctrlKey && /^[1-6]$/.test(tecla);
     const ctrlP = e.ctrlKey && (tecla === 'p' || tecla === 'P');
     const ctrlE = e.ctrlKey && (tecla === 'e' || tecla === 'E');
@@ -187,8 +186,8 @@ function alPresionar(e) {
         return;
     }
 
-    // La lista con familias (pantalla nueva): → despliega la elegida (solo con el cursor al final del texto, para no
-    // estorbar al corregir), ← y Esc la cierran y Tab despliega por otra cosa. Sin la lista, hacen lo de siempre.
+    // La lista con familias: → despliega la elegida (solo con el cursor al final del texto, para no estorbar al
+    // corregir), ← y Esc la cierran y Tab despliega por otra cosa. Sin la lista, hacen lo de siempre.
     const lista = !hayVentana && esCaptura(campo) ? document.querySelector('[data-familias]') : null;
     if (lista && !e.ctrlKey && !e.altKey) {
         const abierta = lista.querySelector('.vn-res-valor') !== null;
@@ -219,7 +218,7 @@ function alPresionar(e) {
 
     e.preventDefault();
     e.stopPropagation();
-    // Con lo que hay en el cuadro de captura de la pantalla nueva (no está enlazado): «20» y Alt+1, o las piezas y F11.
+    // Con lo que hay en el cuadro de captura (no está enlazado): «20» y Alt+1, o las piezas y F11.
     // Lo que usa ese texto (un rápido, F11, Esc) vacía el cuadro aquí mismo, para que la tecla siguiente no lo vuelva a usar.
     let texto = null;
     if (esCaptura(campo)) {
@@ -229,8 +228,8 @@ function alPresionar(e) {
     }
     let nombre = ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlU ? 'Ctrl+U'
         : rapido ? 'Alt+' + tecla : tecla;
-    // F12 en la pantalla nueva: el cursor pasa a «Pagó con» aquí mismo, sin esperar la vuelta a .NET, para que lo que se
-    // teclee enseguida (lo que dio el cliente) caiga ahí y no en el cuadro de captura. .NET sabe que ya se movió.
+    // F12: el cursor pasa a «Pagó con» aquí mismo, sin esperar la vuelta a .NET, para que lo que se teclee enseguida
+    // (lo que dio el cliente) caiga ahí y no en el cuadro de captura. .NET sabe que ya se movió.
     if (tecla === 'F12' && !hayVentana && !enPago) {
         const pago = document.getElementById('pago-nuevo');
         if (pago) {
