@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Pruebas del módulo de impresión que corren en cualquier máquina (también en Linux, donde se programa): el costo,
+       el precio, la cotización, la calibración, el contador y la impresora por la red, traídas de Control Print. Las del
+       agente, que necesitan Windows, van en PapeleriaPos.Impresiones.Windows.Pruebas. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Impresiones\PapeleriaPos.Impresiones\PapeleriaPos.Impresiones.csproj" />
+  </ItemGroup>
+
+</Project>

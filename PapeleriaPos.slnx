@@ -6,13 +6,18 @@
     <Project Path="src/PapeleriaPos.Herramientas/PapeleriaPos.Herramientas.csproj" />
     <Project Path="src/PapeleriaPos.Impresion/PapeleriaPos.Impresion.csproj" />
     <Project Path="src/PapeleriaPos.Interfaz/PapeleriaPos.Interfaz.csproj" />
-    <Project Path="src/PapeleriaPos.Medicion.Windows/PapeleriaPos.Medicion.Windows.csproj" />
-    <Project Path="src/PapeleriaPos.Medicion/PapeleriaPos.Medicion.csproj" />
     <Project Path="src/PapeleriaPos.Nucleo/PapeleriaPos.Nucleo.csproj" />
     <Project Path="src/PapeleriaPos.Servicio/PapeleriaPos.Servicio.csproj" />
   </Folder>
+  <Folder Name="/src/Impresiones/">
+    <Project Path="src/Impresiones/PapeleriaPos.Impresiones.Windows/PapeleriaPos.Impresiones.Windows.csproj" />
+    <Project Path="src/Impresiones/PapeleriaPos.Impresiones/PapeleriaPos.Impresiones.csproj" />
+  </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/PapeleriaPos.Medicion.Pruebas/PapeleriaPos.Medicion.Pruebas.csproj" />
     <Project Path="tests/PapeleriaPos.Pruebas/PapeleriaPos.Pruebas.csproj" />
+  </Folder>
+  <Folder Name="/tests/Impresiones/">
+    <Project Path="tests/Impresiones/PapeleriaPos.Impresiones.Pruebas/PapeleriaPos.Impresiones.Pruebas.csproj" />
+    <Project Path="tests/Impresiones/PapeleriaPos.Impresiones.Windows.Pruebas/PapeleriaPos.Impresiones.Windows.Pruebas.csproj" />
   </Folder>
 </Solution>

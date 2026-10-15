@@ -1,10 +1,11 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using PapeleriaPos.Medicion;
+using PapeleriaPos.Impresiones;
+using PapeleriaPos.Impresiones.Contratos;
+using PapeleriaPos.Impresiones.Medicion;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
-using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Telegram;
 
 namespace PapeleriaPos.Datos;

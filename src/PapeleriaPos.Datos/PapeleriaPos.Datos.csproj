@@ -2,7 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PapeleriaPos.Nucleo\PapeleriaPos.Nucleo.csproj" />
-    <ProjectReference Include="..\PapeleriaPos.Medicion\PapeleriaPos.Medicion.csproj" />
+    <ProjectReference Include="..\Impresiones\PapeleriaPos.Impresiones\PapeleriaPos.Impresiones.csproj" />
   </ItemGroup>
 
   <ItemGroup>

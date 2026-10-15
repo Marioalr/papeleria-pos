@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Lo que corre en la PC que imprime (el agente del módulo de impresión): vigilar la cola de Windows y medir cada
+       trabajo (spool EMF, PrintTicket y tinta por página), y medir un PDF para cotizarlo. Traído de Control Print (ver
+       src/Impresiones/README.md y docs/fase-1-impresion.md). Lo usa la caja de Windows. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- La versión de Windows da acceso a Windows.Data.Pdf (cotizar un PDF). System.Printing (PrintTicket) vive en el
+         framework de WPF. -->
+    <UseWPF>true</UseWPF>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- UseWPF quita System.IO de los using implícitos. -->
+    <Using Include="System.IO" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PapeleriaPos.Impresiones\PapeleriaPos.Impresiones.csproj" />
+  </ItemGroup>
+
+</Project>

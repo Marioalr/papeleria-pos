@@ -1,9 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Impresiones;
+using PapeleriaPos.Impresiones.Contratos;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Clientes;
-using PapeleriaPos.Nucleo.Contratos;
-using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Usuarios;
 

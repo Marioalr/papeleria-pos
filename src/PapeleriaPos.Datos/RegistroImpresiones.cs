@@ -1,9 +1,9 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using PapeleriaPos.Medicion;
+using PapeleriaPos.Impresiones;
+using PapeleriaPos.Impresiones.Contratos;
+using PapeleriaPos.Impresiones.Medicion;
 using PapeleriaPos.Nucleo;
-using PapeleriaPos.Nucleo.Contratos;
-using PapeleriaPos.Nucleo.Impresiones;
 
 namespace PapeleriaPos.Datos;
 

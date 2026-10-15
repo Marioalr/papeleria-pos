@@ -9,9 +9,9 @@ using PapeleriaPos.Herramientas;
 using PapeleriaPos.Herramientas.Ficticios;
 using PapeleriaPos.Herramientas.Importacion;
 using PapeleriaPos.Herramientas.Prueba;
+using PapeleriaPos.Impresiones;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Contratos;
-using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Telegram;
 
 namespace PapeleriaPos.Pruebas.Servicio;

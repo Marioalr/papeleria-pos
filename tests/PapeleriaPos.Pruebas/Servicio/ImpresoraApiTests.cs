@@ -4,9 +4,10 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using PapeleriaPos.Datos;
-using PapeleriaPos.Medicion;
+using PapeleriaPos.Impresiones;
+using PapeleriaPos.Impresiones.Contratos;
+using PapeleriaPos.Impresiones.Medicion;
 using PapeleriaPos.Nucleo.Contratos;
-using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Servicio;
 

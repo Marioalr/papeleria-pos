@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using PapeleriaPos.Herramientas;
-using PapeleriaPos.Medicion;
+using PapeleriaPos.Impresiones.Medicion;
 
 namespace PapeleriaPos.Pruebas.Herramientas;
 

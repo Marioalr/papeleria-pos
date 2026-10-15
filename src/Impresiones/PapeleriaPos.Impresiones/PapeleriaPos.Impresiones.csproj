@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- El costo y el precio de una impresión (y de una cotización) a partir de lo que se midió, y la impresora vista por
+       la red: niveles, contadores, verificación de hojas y calibración. Sin dependencias de Windows: lo usa el servicio
+       de la caja principal. Traído de Control Print (ver docs/fase-1-impresion.md). -->
+  <!-- Es el núcleo del módulo de impresión (src/Impresiones/README.md): con los trabajos y su cobro (el dominio) y lo
+       que viaja entre la caja y el servicio (Contratos.cs). Del resto del POS solo usa PapeleriaPos.Nucleo. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PapeleriaPos.Impresiones.Pruebas" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\PapeleriaPos.Nucleo\PapeleriaPos.Nucleo.csproj" />
+  </ItemGroup>
+
+</Project>

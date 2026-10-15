@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
 using PapeleriaPos.Datos;
-using PapeleriaPos.Medicion;
+using PapeleriaPos.Impresiones;
+using PapeleriaPos.Impresiones.Medicion;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Configuracion;
-using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Telegram;
 
 namespace PapeleriaPos.Servicio;
