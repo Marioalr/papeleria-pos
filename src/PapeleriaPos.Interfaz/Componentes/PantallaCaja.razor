@@ -1,4 +1,5 @@
-@* Raíz de la caja: conecta con el servicio (o da de alta la PC), pide entrar con PIN, abre el turno y muestra la venta. *@
+@* Raíz de la caja: conecta con el servicio (o da de alta la PC), pide entrar con la ficha y el PIN, abre el turno y muestra
+   la venta. La entrada, abrir el turno y el turno de otro cajero van con el lado de la entrada (entrega 6). *@
 @inject ClienteCaja Cliente
 @inject ConexionCaja Conexion
 @inject IServiceProvider Servicios
@@ -34,16 +35,20 @@
     else if (_sesion is null && _recordarCorte)
     {
         @* El piloto con eleventa: al salir, recuerda que el corte se hace en eleventa (se quita al dejarlo). *@
-        <div class="centrado">
-            <div class="tarjeta">
-                <h2>@_caja.Nombre</h2>
-                <p class="aviso">@PilotoConEleventa.CorteEnEleventa</p>
-                <button class="boton principal" @ref="_entendido" @onclick="() => _recordarCorte = false">Entendido</button>
-            </div>
+        <div class="entrada">
+            <LadoEntrada Caja="_caja" Turno="_turno" />
+            <section class="entrada-main">
+                <h1>@_caja.Nombre</h1>
+                <p>@PilotoConEleventa.CorteEnEleventa</p>
+                <div class="vn-botonera">
+                    <button class="vn-boton primario" @ref="_entendido" @onclick="() => _recordarCorte = false">Entendido</button>
+                </div>
+            </section>
         </div>
     }
     else if (_sesion is null)
     {
+        @* ¿Quién atiende?: las fichas y el PIN (entrega 6). Aquí llegan «Cambiar de usuario» (Ctrl+U) y «Salir». *@
         <Entrada Caja="_caja" Turno="_turno" AlEntrar="Entrar" />
     }
     else if (_administrar)
@@ -57,44 +62,13 @@
     }
     else if (_turno.CajeroId != _sesion.UsuarioId)
     {
-        @* Un turno por cajero: si entra otro, primero el corte del que sale. *@
-        <div class="centrado">
-            <div class="tarjeta ancha">
-                <h2>@_caja.Nombre tiene abierto el turno de @_turno.Cajero</h2>
-                @if (PilotoEleventa)
-                {
-                    @* El piloto con eleventa: aquí no se cierra el turno (se quita al dejarlo). *@
-                    <p class="aviso">@PilotoConEleventa.CorteEnEleventa</p>
-                }
-                else
-                {
-                    <p>Antes de que entre otro cajero, el encargado hace el corte de cierre de ese turno.</p>
-                }
-                @* En el piloto, ni a medio corte (si el servicio cambió mientras): quedan el aviso y las acciones. *@
-                @if (_corte && !PilotoEleventa)
-                {
-                    <CorteCaja Turno="_turno" Sesion="_sesion" Caja="@_caja.Nombre" SoloCierre="true" AlTerminar="CorteTerminado" />
-                }
-                else
-                {
-                    <div class="acciones">
-                        @if (PuedeAdministrar)
-                        {
-                            <button class="boton" @onclick="() => _administrar = true">Productos e inventario (sin cortar)</button>
-                        }
-                        @if (!PilotoEleventa)
-                        {
-                            <button class="boton principal" @onclick="() => _corte = true">Hacer el corte</button>
-                        }
-                        <button class="boton" @onclick="Salir">Salir</button>
-                    </div>
-                }
-            </div>
-        </div>
+        @* Un turno por cajero: si entra otro, primero el corte del que sale, ahí mismo y sin volver a pedir el PIN. *@
+        <TurnoDeOtro Caja="_caja" Turno="_turno" Sesion="_sesion" Piloto="PilotoEleventa" AlVolver="Salir" AlTerminarCorte="CorteTerminado"
+                     AlAdministrar="@(PuedeAdministrar ? EventCallback.Factory.Create(this, () => _administrar = true) : default)" />
     }
     else
     {
-        <PantallaVenta Caja="_caja" Sesion="_sesion" Turno="_turno" AlSalir="Salir" AlCerrarTurno="CorteTerminado" />
+        <PantallaVenta Caja="_caja" Sesion="_sesion" Turno="_turno" AlSalir="Salir" AlCerrarTurno="CorteDesdeLaVenta" />
     }
 </div>
 
@@ -103,7 +77,6 @@
     private SesionDto? _sesion;
     private TurnoDto? _turno;
     private string? _error;
-    private bool _corte;
     private bool _administrar;
 
     /// <summary>El encargado y el dueño pueden entrar a productos e inventario sin vender (sin cortar ni abrir turno).</summary>
@@ -165,14 +138,26 @@
 
     private void TurnoAbierto(TurnoDto turno) => _turno = turno;
 
-    private void Salir()
+    /// <summary>
+    /// A «¿Quién atiende?»: «Cambiar de usuario» (Ctrl+U) y «Salir» de la venta, y «Volver» de abrir el turno, del turno de
+    /// otro y de productos e inventario.
+    /// </summary>
+    private async Task Salir()
     {
         _sesion = null;
         Conexion.UsuarioEnCaja = null;
-        _corte = false;
         _administrar = false;
         // El piloto con eleventa: el turno sigue abierto aquí, y su corte se hace en eleventa.
         _recordarCorte = _enfocarEntendido = _turno is not null && PilotoEleventa;
+        // El lado de la entrada dice el turno abierto: al día, por si se cerró con el corte antes de «Volver».
+        try
+        {
+            _turno = await Cliente.TurnoAsync(_caja!.Id);
+        }
+        catch (ErrorCaja)
+        {
+            // Se queda el que se sabía: al entrar se vuelve a pedir.
+        }
     }
 
     // ── El piloto con eleventa: el corte se hace allá (se quita al dejar eleventa) ──
@@ -215,11 +200,40 @@
         }
     }
 
-    private async Task CorteTerminado()
+    /// <summary>
+    /// Se cerró el turno con el corte desde el turno de otro: lo hizo quien entró (tiene el corte), así que sigue adentro y
+    /// pasa a abrir el suyo, como «Listo: abrir el siguiente turno» del prototipo; si no va a vender, «Volver» lo regresa a
+    /// las fichas.
+    /// </summary>
+    private async Task CorteTerminado() => _turno = await Cliente.TurnoAsync(_caja!.Id);
+
+    /// <summary>
+    /// Se cerró el turno con el corte desde la venta. Quien entró sigue adentro y abre el suyo solo si él puede hacer el
+    /// corte. Si no, regresa a «¿Quién atiende?», como antes: el corte de la venta todavía lo cierra el encargado con su
+    /// usuario y su PIN en la sesión del cajero, y el turno siguiente no se abre a nombre del cajero sin su PIN («cada
+    /// cajero responde por su efectivo»).
+    /// </summary>
+    private async Task CorteDesdeLaVenta()
     {
-        _corte = false;
-        _sesion = null;
-        Conexion.UsuarioEnCaja = null;
+        if (!await SesionHaceCorteAsync())
+        {
+            _sesion = null;
+            Conexion.UsuarioEnCaja = null;
+        }
         _turno = await Cliente.TurnoAsync(_caja!.Id);
+    }
+
+    /// <summary>Quien entró puede hacer el corte («puede», con sus permisos de la sesión). Si no se sabe, no: vuelve a las fichas.</summary>
+    private async Task<bool> SesionHaceCorteAsync()
+    {
+        try
+        {
+            var permisos = await Cliente.PermisosDeSesionAsync(_sesion!.UsuarioId, _caja!.SucursalId);
+            return permisos.Any(p => p.Accion == AccionControlada.CorteZ && p.Nivel == NivelPermiso.Permitido);
+        }
+        catch (ErrorCaja)
+        {
+            return false;
+        }
     }
 }

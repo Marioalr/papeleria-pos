@@ -1,67 +1,186 @@
+@* La entrada de la caja (docs/propuesta-interfaz.md, «Usuarios y permisos»; entrega 6, htmlEntrada del prototipo):
+   «¿Quién atiende?», una ficha por cada usuario de esta caja con su letra; se toca o se oprime la letra y luego el PIN de 4
+   cifras, con el teclado de la pantalla o con el de la PC. Ya no se escribe el usuario. Al teclear la cuarta cifra entra
+   solo; si el PIN no es, lo dice bajo los puntos y se borra. Esc regresa a las fichas. Sin la caja principal, las fichas y
+   el PIN salen de la copia local, como antes la entrada con el usuario. *@
+@implements IAsyncDisposable
 @inject ClienteCaja Cliente
-@inject ModuloCaja Js
+@inject IJSRuntime JS
 
-<div class="centrado">
-    <div class="tarjeta">
-        <h2>@(Titulo ?? $"{Caja.Nombre} · {Caja.Sucursal}")</h2>
-        @if (Turno is not null)
+<div class="entrada">
+    <LadoEntrada Caja="Caja" Turno="Turno" />
+    <section class="entrada-main">
+        <h1>¿Quién atiende?</h1>
+        <p>Toca tu nombre o presiona su letra; luego tu PIN.</p>
+        @if (_fichas is null)
         {
-            <p class="nota">Turno abierto de @Turno.Cajero desde las @Turno.AbiertoLocal.ToString("HH:mm")</p>
+            @if (_errorFichas is not null)
+            {
+                <div class="vn-alerta">
+                    <div>
+                        <span>@_errorFichas</span>
+                        <span><button class="vn-boton chico" @onclick="CargarAsync">Reintentar</button></span>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <p class="nota">Cargando…</p>
+            }
         }
-        <label>Usuario
-            <input id="entrada-usuario" @bind="_usuario" @bind:event="oninput" @onkeydown="AlTeclearUsuario" autocomplete="off" />
-        </label>
-        <label>PIN
-            <input id="entrada-pin" type="password" inputmode="numeric" maxlength="6" @bind="_pin" @bind:event="oninput" @onkeydown="AlTeclearPin" />
-        </label>
-        @if (_error is not null)
+        else if (_fichas.Count == 0)
         {
-            <p class="error">@_error</p>
+            <p class="nota">Esta caja todavía no tiene usuarios: el dueño los da de alta.</p>
         }
-        <button class="boton principal" disabled="@_ocupado" @onclick="EntrarAsync">Entrar</button>
-    </div>
+        else
+        {
+            <div class="fichas-entrada">
+                @foreach (var ficha in _fichas)
+                {
+                    <button class="ficha-entrada @(ficha.UsuarioId == _elegida?.UsuarioId ? "on" : "")" @onclick="() => Elegir(ficha)">
+                        <span class="vn-avatar">@Inicial(ficha.Nombre)</span>
+                        <span class="ficha-nombre">
+                            <strong>@ficha.Nombre</strong>
+                            @if (ficha.Tecla is { } tecla)
+                            {
+                                <kbd>@tecla</kbd>
+                            }
+                        </span>
+                        <small>@ficha.Resumen@(ficha.TurnoAbierto ? " · turno abierto" : "")</small>
+                    </button>
+                }
+            </div>
+            @if (_elegida is { } elegida)
+            {
+                <div class="pin">
+                    <div class="pin-izq">
+                        <h2>PIN de @elegida.Nombre</h2>
+                        <div class="puntos">
+                            @for (var i = 0; i < FichasEntrada.CifrasPin; i++)
+                            {
+                                <i class="@(i < _pin.Length ? "on" : "")"></i>
+                            }
+                        </div>
+                        @if (_error is not null)
+                        {
+                            <p class="error-txt">@_error</p>
+                        }
+                        else
+                        {
+                            <p class="nota">Teclea las cifras o tócalas.</p>
+                        }
+                    </div>
+                    <div class="teclado">
+                        @foreach (var cifra in "123456789")
+                        {
+                            <button @onclick="() => CifraAsync(cifra)">@cifra</button>
+                        }
+                        <button class="borrar" @onclick="Borrar">Borrar</button>
+                        <button @onclick="() => CifraAsync('0')">0</button>
+                        <button class="ok" disabled="@_ocupado" @onclick="EntrarAsync">Entrar</button>
+                    </div>
+                </div>
+            }
+        }
+    </section>
 </div>
 
 @code {
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+
+    /// <summary>El turno abierto de esta caja, si hay: lo dice el lado.</summary>
     [Parameter] public TurnoDto? Turno { get; set; }
 
-    /// <summary>En lugar de la caja y la sucursal (el conteo desde el celular).</summary>
-    [Parameter] public string? Titulo { get; set; }
     [Parameter] public EventCallback<SesionDto> AlEntrar { get; set; }
 
-    private string _usuario = "";
+    private List<FichaUsuarioDto>? _fichas;
+    private string? _errorFichas;
+    private FichaUsuarioDto? _elegida;
     private string _pin = "";
     private string? _error;
     private bool _ocupado;
+    private TeclasEntrada? _teclas;
+    private DotNetObjectReference<Entrada>? _referencia;
+
+    /// <summary>Lo que se espera con el cuarto punto lleno antes de entrar: que se vea, como en el prototipo.</summary>
+    private static readonly TimeSpan VerElCuartoPunto = TimeSpan.FromMilliseconds(140);
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        _errorFichas = null;
+        try
+        {
+            _fichas = await Cliente.FichasAsync(Caja.Id);
+            // Si solo hay uno, ya está elegido: solo falta su PIN.
+            if (_fichas.Count == 1)
+                Elegir(_fichas[0]);
+        }
+        catch (ErrorCaja ex)
+        {
+            _errorFichas = ex.Message;
+        }
+    }
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
-        if (primera)
-            await Js.EnfocarAsync("#entrada-usuario");
+        if (!primera)
+            return;
+        _referencia = DotNetObjectReference.Create(this);
+        _teclas = new TeclasEntrada(JS);
+        await _teclas.PonerAsync(_referencia, TeclasEntrada.Fichas);
     }
 
-    private async Task AlTeclearUsuario(KeyboardEventArgs e)
+    private static string Inicial(string nombre) => nombre.Trim() is { Length: > 0 } n ? char.ToUpper(n[0], Formato.Mexico).ToString() : "?";
+
+    private void Elegir(FichaUsuarioDto ficha)
     {
-        if (e.Key == "Enter")
-            await Js.EnfocarAsync("#entrada-pin");
+        if (_ocupado)
+            return;
+        (_elegida, _pin, _error) = (ficha, "", null);
     }
 
-    private async Task AlTeclearPin(KeyboardEventArgs e)
+    private async Task CifraAsync(char cifra)
     {
-        if (e.Key == "Enter")
-            await EntrarAsync();
+        if (_elegida is null || _ocupado || _pin.Length >= FichasEntrada.CifrasPin)
+            return;
+        _pin += cifra;
+        _error = null;
+        if (_pin.Length < FichasEntrada.CifrasPin)
+            return;
+        // La cuarta cifra entra sola: primero se ve el punto lleno (sin conexión, el PIN se revisa aquí mismo y no daría tiempo).
+        _ocupado = true;
+        StateHasChanged();
+        await Task.Delay(VerElCuartoPunto);
+        _ocupado = false;
+        await EntrarAsync();
+    }
+
+    private void Borrar()
+    {
+        if (_ocupado || _pin.Length == 0)
+            return;
+        _pin = _pin[..^1];
+        _error = null;
     }
 
     private async Task EntrarAsync()
     {
-        if (_ocupado || _usuario.Length == 0 || _pin.Length == 0)
+        // Sin cifras no dice nada: es el Enter de la costumbre (antes se entraba con Enter) que llega cuando la cuarta cifra ya
+        // entró sola. Si el PIN no era, «PIN incorrecto. Te quedan…» se queda a la vista.
+        if (_elegida is not { } ficha || _ocupado || _pin.Length == 0)
             return;
+        if (_pin.Length < FichasEntrada.CifrasPin)
+        {
+            _error = $"Son {FichasEntrada.CifrasPin} cifras.";
+            return;
+        }
         _ocupado = true;
         _error = null;
         try
         {
-            await AlEntrar.InvokeAsync(await Cliente.EntrarAsync(_usuario, _pin));
+            await AlEntrar.InvokeAsync(await Cliente.EntrarAsync(Caja.Id, ficha.UsuarioId, _pin));
         }
         catch (ErrorCaja ex)
         {
@@ -72,5 +191,44 @@
         {
             _ocupado = false;
         }
+    }
+
+    /// <summary>
+    /// Las teclas de la PC (entrada.js): la letra de una ficha la elige (también con otra ya elegida), las cifras van al PIN,
+    /// Borrar quita la última, Enter entra y Esc regresa a las fichas.
+    /// </summary>
+    [JSInvokable]
+    public async Task Tecla(string tecla)
+    {
+        switch (tecla)
+        {
+            case "Enter":
+                await EntrarAsync();
+                break;
+            case "Backspace":
+                Borrar();
+                break;
+            case "Escape":
+                if (!_ocupado)
+                    (_elegida, _pin, _error) = (null, "", null);
+                break;
+            case [var cifra] when char.IsAsciiDigit(cifra):
+                await CifraAsync(cifra);
+                break;
+            case [var letra] when char.IsAsciiLetter(letra):
+                if (_fichas?.FirstOrDefault(f => f.Tecla == char.ToUpperInvariant(letra).ToString()) is { } ficha)
+                    Elegir(ficha);
+                break;
+            default:
+                return;
+        }
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_teclas is not null)
+            await _teclas.DisposeAsync();
+        _referencia?.Dispose();
     }
 }

@@ -1,52 +1,87 @@
+@* Abrir el turno (entrega 6, htmlAbrirTurno del prototipo), con el lado de la entrada: quien entró cuenta el fondo con que
+   empieza y lo escribe. Enter lo abre; «Volver» (o Esc, o Ctrl+U) regresa a «¿Quién atiende?». El fondo sugerido llega con
+   la configuración nueva (entrega 7, «Efectivo y corte»): mientras, se escribe siempre, como antes. *@
+@using System.Diagnostics
+@implements IAsyncDisposable
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
+@inject IJSRuntime JS
 
-<div class="centrado">
-    <div class="tarjeta">
-        <h2>Abrir turno · @Caja.Nombre</h2>
-        <p>Hola, @Sesion.Nombre. Cuenta el fondo de la caja antes de empezar.</p>
-        <label>Fondo de caja
-            <input id="fondo" inputmode="decimal" @bind="_fondo" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+<div class="entrada">
+    <LadoEntrada Caja="Caja" />
+    <section class="entrada-main">
+        <h1>Abrir turno de @Sesion.Nombre</h1>
+        <p>Cuenta el fondo con que empiezas; no siempre es el mismo.</p>
+        <label class="entrada-campo">Fondo
+            <input id="fondo" inputmode="decimal" autocomplete="off" @bind="_fondo" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
         </label>
         @if (_error is not null)
         {
-            <p class="error">@_error</p>
+            <p class="error-txt">@_error</p>
         }
-        <div class="acciones">
+        <div class="vn-botonera">
+            <button class="vn-boton primario" disabled="@_ocupado" @onclick="AbrirAsync">Abrir turno <kbd>Enter</kbd></button>
+            <button class="vn-boton" @onclick="AlSalir">Volver</button>
             @if (AlAdministrar.HasDelegate)
             {
-                <button class="boton" @onclick="AlAdministrar">Solo productos e inventario</button>
+                <button class="vn-boton" @onclick="AlAdministrar">Productos e inventario, sin abrir turno</button>
             }
-            <button class="boton principal" disabled="@_ocupado" @onclick="AbrirAsync">Abrir turno</button>
-            <button class="boton" @onclick="AlSalir">Salir</button>
         </div>
-    </div>
+    </section>
 </div>
 
 @code {
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
     [Parameter] public EventCallback<TurnoDto> AlAbrir { get; set; }
+
+    /// <summary>«Volver»: a «¿Quién atiende?».</summary>
     [Parameter] public EventCallback AlSalir { get; set; }
 
-    /// <summary>Para el encargado y el dueño: entrar a productos e inventario sin abrir turno.</summary>
+    /// <summary>Para quien administra (hoy, el encargado y el dueño): productos e inventario sin abrir turno.</summary>
     [Parameter] public EventCallback AlAdministrar { get; set; }
 
     private string _fondo = "";
     private string? _error;
     private bool _ocupado;
+    private TeclasEntrada? _teclas;
+    private DotNetObjectReference<AbrirTurno>? _referencia;
+
+    /// <summary>Cuándo apareció: el Enter que llega enseguida es el del PIN.</summary>
+    private readonly long _aparecio = Stopwatch.GetTimestamp();
+
+    /// <summary>
+    /// Un Enter con el fondo vacío en cuanto aparece es el de la costumbre después del PIN (antes se entraba con Enter; ahora
+    /// la cuarta cifra entra sola): no dice que falta el fondo antes de que se pueda escribir.
+    /// </summary>
+    private static readonly TimeSpan EnterDelPin = TimeSpan.FromSeconds(1);
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
-        if (primera)
-            await Js.EnfocarAsync("#fondo");
+        if (!primera)
+            return;
+        // Antes de esperar el foco: si la pantalla se va mientras tanto, sus teclas se quitan con ella.
+        _referencia = DotNetObjectReference.Create(this);
+        _teclas = new TeclasEntrada(JS);
+        await Js.EnfocarAsync("#fondo");
+        await _teclas.PonerAsync(_referencia, TeclasEntrada.SoloCambiar);
     }
 
     private async Task AlTeclear(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")
+        {
+            if (string.IsNullOrWhiteSpace(_fondo) && Stopwatch.GetElapsedTime(_aparecio) < EnterDelPin)
+                return;
             await AbrirAsync();
+        }
+        else if (e.Key == "Escape")
+            await AlSalir.InvokeAsync();
     }
+
+    /// <summary>Ctrl+U (entrada.js): cambiar de usuario, como «Volver».</summary>
+    [JSInvokable]
+    public Task Tecla(string tecla) => tecla == "Ctrl+U" ? AlSalir.InvokeAsync() : Task.CompletedTask;
 
     private async Task AbrirAsync()
     {
@@ -54,7 +89,7 @@
             return;
         if (Formato.LeerPesos(_fondo) is not { } fondo)
         {
-            _error = "Escribe el fondo contado (puede ser $0).";
+            _error = "Escribe el fondo que contaste (puede ser $0).";
             return;
         }
         _ocupado = true;
@@ -70,5 +105,12 @@
         {
             _ocupado = false;
         }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_teclas is not null)
+            await _teclas.DisposeAsync();
+        _referencia?.Dispose();
     }
 }
