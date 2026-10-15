@@ -59,9 +59,9 @@
             <Ventana Titulo="Guía de la prueba" Clase="configuracion" AlCerrar="CerrarAsync">
                 <p class="nota">
                     Haz cada tarea en la caja (puedes cerrar esta ventana y volver) y marca si salió lo que debía pasar. Si algo
-                    estorbó, fue lento o confuso, escríbelo aunque haya salido bien. Los usuarios y PIN están en «Léeme.txt».
-                    Primero va lo de vender en la pantalla nueva; al final, lo que todavía abre las pantallas de hoy (dice
-                    «@GuiaPrueba.PantallaDeHoy»).
+                    estorbó, fue lento o confuso, escríbelo aunque haya salido bien. Las fichas y los PIN de prueba están en
+                    «Léeme.txt». Primero va entrar y vender; luego, cambiar de usuario y el corte; al final, lo que todavía abre
+                    sus ventanas de antes (dice «@GuiaPrueba.VentanaDeAntes»).
                 </p>
                 <label>Tu nombre <input @bind="_respuestas.Nombre" @bind:after="GuardarAsync" autocomplete="off" /></label>
                 @foreach (var grupo in GuiaPrueba.Tareas.GroupBy(t => t.Tema))

@@ -61,24 +61,29 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
 
 La venta es la del [rediseño](docs/propuesta-interfaz.md), en todas las cajas. La de antes (la misma distribución que
 eleventa) ya no existe: el dueño la quitó el 2026-10-14, y una PC que había vuelto a ella entra a la del rediseño y lo
-olvida. Productos, inventario, clientes, el corte y la configuración todavía abren sus ventanas de antes, encima de la
-venta; sin vender («Productos e inventario (sin cortar)», del encargado y el dueño) van con la barra de arriba de la
-venta. `preparar-caja` deja en la base de prueba los rápidos Copia B/N y CURP (10 impresiones); `preparar-prueba`,
-además, con los precios que decidió el dueño ($2 y $10). La caja de prueba se actualiza sin tocar su base de trabajo: en
-una PC donde ya se probó, esos precios salen hasta oprimir «Empezar de cero» en la franja de prueba.
+olvida. Se entra como en la propuesta (entrega 6): en «¿Quién atiende?» se toca la ficha (o se oprime su letra) y se
+teclea el PIN de 4 cifras, que entra solo con la cuarta; Ctrl+U cambia de usuario. Si la caja tiene el turno de otro
+cajero, quien tiene el permiso hace ahí mismo su corte, sin volver a escribir su PIN. El corte del turno solo pide el
+total del efectivo, a ciegas, y el dueño tiene además el corte del día. Productos, inventario, clientes y la
+configuración todavía abren sus ventanas de antes, encima de la venta; sin vender («Productos e inventario, sin cortar»,
+del encargado y el dueño) van con la barra de arriba de la venta. `preparar-caja` deja en la base de prueba los rápidos
+Copia B/N y CURP (10 impresiones); `preparar-prueba`, además, con los precios que decidió el dueño ($2 y $10). La caja
+de prueba se actualiza sin tocar su base de trabajo: en una PC donde ya se probó, esos precios salen hasta oprimir
+«Empezar de cero» en la franja de prueba.
 
-Usuarios de prueba que crea `preparar-caja` (solo para bases de prueba):
+Usuarios de prueba que crea `preparar-caja` (solo para bases de prueba). En la caja se entra con la ficha y el PIN; el
+usuario se escribe solo en el conteo desde el celular:
 
-| Usuario | Rol | PIN |
-|---|---|---|
-| `cajero` | Cajero | 1111 |
-| `encargado` | Encargado (hace el corte Z) | 2222 |
-| `dueno` | Dueño | 3333 |
+| Ficha (letra) | Usuario | Rol | PIN |
+|---|---|---|---|
+| Cajero de prueba (C) | `cajero` | Cajero | 1111 |
+| Encargado de prueba (E) | `encargado` | Encargado (hace el corte del turno) | 2222 |
+| Dueño de prueba (D) | `dueno` | Dueño (todos los permisos, también el corte del día) | 3333 |
 
 ### Instalar en la tienda (varias cajas)
 
 Instala el administrador de cada PC; después todo se usa desde una cuenta común de Windows, sin administrador
-(el cajero, el encargado y el dueño entran con su usuario y PIN del POS desde esa misma cuenta;
+(el cajero, el encargado y el dueño entran con su ficha y su PIN del POS desde esa misma cuenta;
 [plan](docs/plan.md#instalación-y-usuarios-de-windows)).
 
 1. Publicar, en la PC de desarrollo:
@@ -116,7 +121,7 @@ Para que alguien de la tienda pruebe lo que ya funciona, solo y sin tocar eleven
   mano desde la pestaña Actions, con una etiqueta `prueba-*` o en un PR que toque `instalacion/`, y queda como artefacto
   de la corrida.
 - **Lo instala el administrador, para todas las cuentas de Windows;** quien prueba la usa con una cuenta común. En el escritorio
-  deja «Papelería POS (prueba)» y la carpeta «Ejemplos de la prueba»: el Léeme con los usuarios y PIN, y una factura
+  deja «Papelería POS (prueba)» y la carpeta «Ejemplos de la prueba»: el Léeme con las fichas y los PIN, y una factura
   XML y una nota PDF de un proveedor de la base.
 - **La caja arranca su propio servicio** en el puerto 5180 y lo apaga al cerrarse. No hay servicio de Windows ni
   segunda caja. La base ficticia de trabajo va en `C:\ProgramData\PapeleriaPos-Prueba`. El instalador abre el 5180
@@ -131,8 +136,9 @@ Para que alguien de la tienda pruebe lo que ya funciona, solo y sin tocar eleven
   - La primera versión con esto se instala a mano; desde ahí, las siguientes desde la caja.
 - **La franja de prueba,** arriba, tiene la guía de tareas (las respuestas se guardan en un archivo en el escritorio),
   los avisos que le llegarían al dueño por Telegram y «Empezar de cero».
-  - La guía es la de la venta del rediseño: primero vender, al final lo que todavía abre sus ventanas de antes
-    (productos, inventario, clientes, corte, configuración).
+  - La guía es la de la venta del rediseño (versión 3): primero entrar con la ficha y vender; luego cambiar de usuario,
+    el corte del turno y el del día; al final, lo que todavía abre sus ventanas de antes (productos, inventario,
+    clientes, configuración), con otro turno del cajero.
   - Las respuestas van con la versión de la guía; las de otra versión no se cargan y su archivo se queda en
     `C:\ProgramData\PapeleriaPos-Prueba`.
   - Al terminar una persona, «Guardar respuestas y dejar la guía en blanco» deja su archivo en el escritorio y la guía

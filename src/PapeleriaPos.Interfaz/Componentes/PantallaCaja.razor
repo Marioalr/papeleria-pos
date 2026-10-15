@@ -68,7 +68,7 @@
     }
     else
     {
-        <PantallaVenta Caja="_caja" Sesion="_sesion" Turno="_turno" AlSalir="Salir" AlCerrarTurno="CorteDesdeLaVenta" />
+        <PantallaVenta Caja="_caja" Sesion="_sesion" Turno="_turno" AlSalir="Salir" AlCerrarTurno="CorteTerminado" />
     }
 </div>
 
@@ -201,39 +201,10 @@
     }
 
     /// <summary>
-    /// Se cerró el turno con el corte desde el turno de otro: lo hizo quien entró (tiene el corte), así que sigue adentro y
-    /// pasa a abrir el suyo, como «Listo: abrir el siguiente turno» del prototipo; si no va a vender, «Volver» lo regresa a
-    /// las fichas.
+    /// Se cerró el turno con el corte, desde la venta o desde el turno de otro: lo hizo quien entró, con su PIN y con el
+    /// permiso (entrega 6: el corte ya no pide el PIN de otro), así que sigue adentro y pasa a abrir el suyo, como «Listo:
+    /// abrir el siguiente turno» del prototipo; si no va a vender, «Volver» lo regresa a las fichas. También «Abrir turno»
+    /// del corte, si el turno ya estaba cerrado: quien entró abre el suyo.
     /// </summary>
     private async Task CorteTerminado() => _turno = await Cliente.TurnoAsync(_caja!.Id);
-
-    /// <summary>
-    /// Se cerró el turno con el corte desde la venta. Quien entró sigue adentro y abre el suyo solo si él puede hacer el
-    /// corte. Si no, regresa a «¿Quién atiende?», como antes: el corte de la venta todavía lo cierra el encargado con su
-    /// usuario y su PIN en la sesión del cajero, y el turno siguiente no se abre a nombre del cajero sin su PIN («cada
-    /// cajero responde por su efectivo»).
-    /// </summary>
-    private async Task CorteDesdeLaVenta()
-    {
-        if (!await SesionHaceCorteAsync())
-        {
-            _sesion = null;
-            Conexion.UsuarioEnCaja = null;
-        }
-        _turno = await Cliente.TurnoAsync(_caja!.Id);
-    }
-
-    /// <summary>Quien entró puede hacer el corte («puede», con sus permisos de la sesión). Si no se sabe, no: vuelve a las fichas.</summary>
-    private async Task<bool> SesionHaceCorteAsync()
-    {
-        try
-        {
-            var permisos = await Cliente.PermisosDeSesionAsync(_sesion!.UsuarioId, _caja!.SucursalId);
-            return permisos.Any(p => p.Accion == AccionControlada.CorteZ && p.Nivel == NivelPermiso.Permitido);
-        }
-        catch (ErrorCaja)
-        {
-            return false;
-        }
-    }
 }

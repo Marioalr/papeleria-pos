@@ -42,7 +42,8 @@ Punto de partida, todas editables. "Encargado" quiere decir que lo autoriza el e
 | Abrir el cajón sin venta | Permitido con motivo | Permitido con motivo | — |
 | Reimprimir un ticket | Permitido con motivo | Permitido | — |
 | Verificar una transferencia | No permitido | Permitido | — |
-| Corte de cierre (Z) | No permitido | Permitido | — |
+| Corte del turno (con el total, 2026-10-14) | No permitido | Permitido | — |
+| Ver y cerrar el corte del día | No permitido | No permitido | Solo el dueño; se le puede dar al encargado |
 | Configurar el ticket | No permitido | Permitido | — |
 | Editar las reglas | No permitido | No permitido | Solo el dueño |
 
@@ -54,8 +55,9 @@ El dueño puede todo. Quedan para su fase: ajuste de inventario (fase 2), mayore
 
 1. El cajero intenta la acción (por ejemplo, cancelar un ticket ya cobrado).
 2. Si la regla dice "requiere autorización", aparece una ventana con el detalle: qué, cuánto, en qué ticket.
-3. El encargado escribe su usuario y PIN en la misma caja. La autorización vale **una sola vez y para esa acción**,
-   no deja la caja abierta.
+3. El encargado toca su ficha y escribe su PIN en la misma caja (desde el 2026-10-14; su usuario y PIN escritos quedan
+   solo sin conexión y sin copia de las reglas, o en «Productos e inventario, sin cortar»). La autorización vale **una
+   sola vez y para esa acción**, no deja la caja abierta.
 4. Hecha o negada, queda en la bitácora: quién la pidió, quién la autorizó, cuándo y desde qué caja.
 
 **El servicio es el que decide, no la pantalla.** La caja pregunta para mostrar la ventana a tiempo, pero cada

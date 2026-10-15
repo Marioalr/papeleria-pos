@@ -283,6 +283,9 @@ public partial class MainWindow : Window
         _registro.Anotar($"La página corre en WebView2 {e.WebView.CoreWebView2.Environment.BrowserVersionString}.");
         e.WebView.CoreWebView2.ProcessFailed += AlFallarLaPagina;
         e.WebView.CoreWebView2.WebMessageReceived += AlRecibirDeLaPagina;
+        // El teclado a la página desde que abre la caja: en «¿Quién atiende?» la letra y el PIN se teclean sin tocar antes la
+        // pantalla (entrega 6).
+        e.WebView.Focus();
     }
 
     /// <summary>

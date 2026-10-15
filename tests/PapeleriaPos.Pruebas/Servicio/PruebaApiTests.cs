@@ -83,7 +83,11 @@ public class PruebaApiTests(ServicioEnPrueba prueba) : IClassFixture<ServicioEnP
         Assert.Equal(3, await db.CodigosBarras.CountAsync(c => codigos.Contains(c.Codigo)));
         Assert.Equal(3, nota.Lineas.Count);
         Assert.Contains(nota.Avisos, a => a.Contains("repartió"));
-        Assert.Contains("cajero / 1111", leeme);
+        // Se entra con la ficha (su letra, la misma que reparte la caja) y el PIN, sin escribir el usuario (entrega 6).
+        Assert.Contains("Cajero de prueba (C) · PIN 1111", leeme);
+        Assert.Contains("Encargado de prueba (E) · PIN 2222", leeme);
+        Assert.Contains("Dueño de prueba (D) · PIN 3333", leeme);
+        Assert.DoesNotContain("cajero / 1111", leeme);
         Assert.Contains(factura.Lineas[0].Codigo!, leeme);
         Assert.Contains("no está en el catálogo", leeme);
         // Fiar es con «Crédito» junto a «Pagó con»; «A crédito» era la ventana de cobro de la pantalla de antes, que ya no existe.

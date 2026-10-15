@@ -13,33 +13,44 @@ public sealed record TareaPrueba(string Id, string Tema, string Hacer, string Es
 /// Quien prueba marca si salió bien y escribe lo que vio; al final se guardan sus respuestas en un archivo.
 /// </summary>
 /// <remarks>
-/// Es la de la pantalla nueva (docs/propuesta-interfaz.md), para la segunda prueba (17 y 18 de octubre de 2026): la
-/// primera (2026-10-10) fue con la pantalla de hoy, y al dueño le pareció horrible. Primero va lo de vender en la
-/// pantalla nueva, para probar lo importante antes de que quien prueba se canse; luego la tarjeta, la transferencia y el
-/// crédito, que siguen (el solo efectivo es del piloto con eleventa, y la prueba va sin eleventa); al final, lo que
-/// todavía abre las pantallas de hoy, con el tema marcado «Pantalla de hoy». Los temas van seguidos: la guía los agrupa.
+/// Es la de la pantalla de venta del rediseño (docs/propuesta-interfaz.md), la única desde el 2026-10-14 (el dueño quitó la
+/// de antes: «no volveremos a esa versión»), para la segunda prueba (17 y 18 de octubre de 2026): la primera (2026-10-10)
+/// fue con la pantalla de antes, y al dueño le pareció horrible. Primero va entrar con la ficha y vender, para probar lo
+/// importante antes de que quien prueba se canse; luego la tarjeta, la transferencia y el crédito, que siguen (el solo
+/// efectivo es del piloto con eleventa, y la prueba va sin eleventa), y lo de la entrega 6: cambiar de usuario y el corte,
+/// del turno y del día. Al final, lo que todavía abre sus ventanas de antes (productos, inventario, clientes,
+/// configuración), con el tema marcado «Ventana de antes»: se hace con otro turno del cajero, abierto después del corte del
+/// día. Los temas van seguidos: la guía los agrupa.
 /// </remarks>
 public static class GuiaPrueba
 {
     /// <summary>
     /// Las respuestas se guardan con la versión de la guía, y las de otra versión no se cargan: el mismo Id puede ser otra
-    /// tarea, y la guía nueva saldría ya contestada. La 1 fue la de la primera prueba (2026-10-10, la pantalla de hoy); la
-    /// 2, la de la pantalla nueva. Se sube cuando las tareas cambian de sentido.
+    /// tarea, y la guía nueva saldría ya contestada. La 1 fue la de la primera prueba (2026-10-10, la pantalla de antes); la
+    /// 2, la de la pantalla nueva; la 3 (2026-10-14), la de la entrada con fichas y el corte nuevo, donde «entrar»,
+    /// «otro-turno», «alta-rapida» y «corte» cambiaron de sentido. Se sube cuando las tareas cambian de sentido.
     /// </summary>
-    public const int Version = 2;
+    public const int Version = 3;
 
-    /// <summary>Lo que va antes del tema de lo que todavía abre las pantallas de hoy.</summary>
-    public const string PantallaDeHoy = "Pantalla de hoy";
+    /// <summary>
+    /// Lo que va antes del tema de lo que todavía abre sus ventanas de antes, encima de la venta o en «Productos e
+    /// inventario, sin cortar»: productos, inventario, clientes y configuración, que se rediseñan después (entregas 7 y 8).
+    /// </summary>
+    public const string VentanaDeAntes = "Ventana de antes";
 
     public static readonly IReadOnlyList<TareaPrueba> Tareas =
     [
         new("entrar", "Empezar",
-            "Entra con el usuario «cajero» y el PIN 1111 y abre el turno con un fondo de $500. (Entrar y abrir el turno todavía son de la "
-            + "pantalla de hoy: se revisan al final.)",
-            "Se abre la pantalla de venta nueva, sin pasar por la de antes. Arriba a la derecha estás tú («Cajero de prueba») con la hora del "
+            "En «¿Quién atiende?» toca la ficha «Cajero de prueba» (o oprime la C). Teclea primero un PIN equivocado, 0000; espera a que diga "
+            + "que no es y teclea el bueno, 1111, con el teclado de la pantalla o con el de la PC. Abre el turno con un fondo de $500 y Enter.",
+            "A la izquierda están la caja, la hora y cómo está todo: «Servicio en esta PC», la impresora de tickets (o «Ticket en pantalla») y "
+            + "«Sin turno abierto». A la derecha, una ficha por usuario con su letra y lo que puede hacer: ya no se escribe el usuario. Con "
+            + "0000 dice «PIN incorrecto. Te quedan 4 intentos.» bajo los puntos y los borra; un Enter después no quita el mensaje. Con la "
+            + "cuarta cifra buena entra solo, sin Enter: «Abrir turno de Cajero de prueba», sin ningún error en rojo aunque hayas oprimido "
+            + "Enter. Con el turno abierto se abre la pantalla de venta: arriba a la derecha estás tú («Cajero de prueba») con la hora del "
             + "turno, y el cursor está en el cuadro de captura."),
 
-        // ── Vender en la pantalla nueva ──
+        // ── Vender ──
         new("escanear", "Vender",
             "Escribe en el cuadro de captura uno de los códigos para vender de «Léeme.txt» y Enter, como si lo escanearas. Escribe otra vez el "
             + "mismo. Luego escribe 3* antes de otro de esos códigos (3*7501…) y Enter.",
@@ -100,10 +111,12 @@ public static class GuiaPrueba
             "El verificador sale en el panel de la derecha: muestra el producto, su precio y su existencia sin agregarlo a la venta. F9 o Esc "
             + "regresan a vender, con el cursor en el cuadro."),
         new("alta-rapida", "Más en la venta",
-            "Escribe un código que no existe (por ejemplo 7500000000017) y Enter, y dalo de alta con el botón que sale bajo el cuadro (nombre, "
-            + "precio y departamento). Luego oprime Ins y agrega un artículo común escribiendo su descripción y su precio.",
-            "Bajo el cuadro, en rojo, dice que no existe y ofrece «Dar de alta «…»». El alta y el artículo común se llenan en el panel de la "
-            + "derecha y entran a la venta. El encargado verá el producto nuevo en Productos (F3) como «Por completar»."),
+            "Escribe un código que no existe (por ejemplo 7500000000017) y Enter, toca «Venderlo como artículo común» y agrégalo con su "
+            + "descripción y su precio. Escribe otra vez el mismo código y Enter, y ahora dalo de alta con «Darlo de alta aquí» (nombre, "
+            + "precio y departamento). Luego oprime Ins y agrega otro artículo común.",
+            "Bajo el cuadro, en rojo: «No existe «7500000000017». Revisa el código o elige:», con «Darlo de alta aquí» y «Venderlo como "
+            + "artículo común». El artículo común (también con Ins) y el alta se llenan en el panel de la derecha y entran a la venta; al "
+            + "agregarlos, el aviso rojo se quita. El encargado verá el producto nuevo en Productos (F3) como «Por completar»."),
         new("impresiones", "Más en la venta",
             "Oprime F2 (impresiones por cobrar): agrega una a la venta y cóbrala; marca otra como «no vendida» con su motivo.",
             "Las impresiones salen en el panel de la derecha. La cobrada entra en la línea «Impresiones» del ticket; la no vendida ya no "
@@ -117,7 +130,8 @@ public static class GuiaPrueba
             + "F5 retoma el que lleva más tiempo esperando. Si el ticket que atiendes tiene algo, pasa a la espera: nunca se pierde nada y "
             + "ninguno pierde sus productos."),
         new("espera-al-cerrar", "Tickets en espera",
-            "Deja un ticket en espera y cierra la caja con la X de la ventana. Ábrela otra vez desde el escritorio y entra como «cajero» (1111).",
+            "Deja un ticket en espera y cierra la caja con la X de la ventana. Ábrela otra vez desde el escritorio y entra con tu ficha (C) y tu "
+            + "PIN, 1111.",
             "Vuelves a la venta con tu mismo turno; dice «Volvió el ticket que estaba en espera» (si eran varios, «Volvieron los … tickets "
             + "que estaban en espera») y sus fichas están ahí, con sus productos."),
 
@@ -182,102 +196,140 @@ public static class GuiaPrueba
             + "de $2,000 y pide la autorización con la ficha del encargado. Unos segundos después de volver, el aviso se quita y en «Clientes» "
             + "su cuenta tiene las dos ventas y el abono una sola vez, marcados «(sin conexión)»."),
 
-        // ── Lo que todavía abre las pantallas de hoy ──
-        new("otro-turno", $"{PantallaDeHoy} · Entrar con tu turno abierto",
-            "Oprime Ctrl+U (o tu nombre arriba a la derecha → «Cambiar de usuario») y entra como «encargado» (2222). Elige «Productos e "
-            + "inventario (sin cortar)» y mira Productos, Inventario y Clientes. Luego oprime «Salir» y entra otra vez como «cajero» (1111).",
-            "La entrada es la de hoy: se escribe el usuario y el PIN. Como el turno es del cajero, dice «Caja 1 tiene abierto el turno de "
-            + "Cajero de prueba», con «Productos e inventario (sin cortar)», «Hacer el corte» y «Salir»: por ahí entran el encargado y el dueño "
-            + "en las tareas que siguen. Al volver como cajero sigues en la venta nueva, con tu turno y tus tickets en espera."),
-        new("productos", $"{PantallaDeHoy} · Productos (F3)",
-            "Como «encargado» (Productos e inventario), en F3 busca un producto, cámbiale el precio y mira su kardex. Da de alta uno nuevo con "
-            + "su presentación «Caja 12» y un código interno (botón «Código interno»). Vuelve como cajero y escribe ese código en la venta.",
+        // ── Cambiar de usuario y el corte (entrega 6) ──
+        new("otro-turno", "Cambiar de usuario",
+            "Deja algo en el ticket que atiendes, sin cobrarlo ni ponerlo en espera. Oprime Ctrl+U (o tu nombre arriba a la derecha → "
+            + "«Cambiar de usuario»), oprime la E y teclea 2222 (Encargado de prueba). Elige «Productos e inventario, sin cortar» y "
+            + "mira Productos (F3), Inventario (F4) y Clientes. Sal con tu nombre arriba a la derecha → «Salir» (o Ctrl+U) y entra otra "
+            + "vez como cajero (C y 1111).",
+            "Ctrl+U regresa a «¿Quién atiende?»: la ficha del cajero dice «· turno abierto» y a la izquierda, «Turno abierto: Cajero de "
+            + "prueba desde las …». Como el turno es del cajero, sale «Caja 1 tiene abierto el turno de Cajero de prueba» y «Cada cajero "
+            + "responde por su efectivo: antes de que venda Encargado de prueba, se hace el corte del turno de Cajero de prueba.», con "
+            + "«Hacer el corte de Cajero de prueba», «Productos e inventario, sin cortar» y «Volver» (Ctrl+U también regresa a las fichas). "
+            + "Sin cortar, arriba va la misma barra que en la venta: la caja, Productos (F3), Inventario (F4), Clientes y tu nombre con «sin "
+            + "vender»; F3 y F4 cambian de pestaña. Al volver como cajero sigues en la venta, con tu turno; dice «Volvieron los … tickets que "
+            + "estaban en espera» y lo que tenías en el ticket está en una de sus fichas, con sus productos: cambiar de usuario no lo pierde."),
+        new("entrar-sin-conexion", "Cambiar de usuario",
+            "En la caja de Windows, oprime «Simular sin conexión» en la franja de prueba. Oprime Ctrl+U y, sin tocar la pantalla, oprime la "
+            + "C, teclea 0000, espera a que diga cuántos intentos quedan, teclea 1111 y oprime Enter de más. Al terminar, «Volver a conectar».",
+            "A la izquierda dice «Sin la caja principal: vende con su copia», con el punto ámbar. Las fichas y sus letras son las mismas, y la "
+            + "letra y el PIN funcionan aunque acabes de oprimir el botón de la franja. Con 0000 dice cuántos intentos quedan; con 1111 entra "
+            + "con la copia de esta caja y vuelves a tu venta, con tu turno. El Enter de más no oprime «Volver a conectar»."),
+        new("corte", "El corte",
+            "Como cajero, abre «Corte» (arriba) y mira lo que dice. Oprime «Que entre a esta caja» y entra con la ficha del encargado (E) y "
+            + "su PIN, 2222: «Hacer el corte de Cajero de prueba». En «Efectivo contado», antes de escribir, escanea cualquier producto con "
+            + "el lector (si hay). Luego escribe lo que cuentas (en la prueba no hay billetes: escribe, por ejemplo, 400) y oprime Enter. "
+            + "Después, «Listo: abrir el siguiente turno» (ya tiene el cursor: basta Enter) y «Volver», sin abrir turno.",
+            "El cajero ve el corte X: sus ventas, la tarjeta y las transferencias, sin el efectivo, y que el corte lo hace quien tiene ese "
+            + "permiso (el encargado o el dueño); si hay tickets sin cobrar, dice que se quedan en espera en esta caja para el siguiente "
+            + "turno. «Que entre a esta caja» regresa a «¿Quién atiende?». El encargado no vuelve a escribir su PIN ni cuenta billete por "
+            + "billete, y no ve cuánto debería haber hasta oprimir Enter. El escaneo no se toma como dinero: el campo se queda como estaba y "
+            + "el turno no se cierra. Al cerrar ve lo contado, lo esperado y el sobrante o faltante a nombre de Cajero de prueba, con el "
+            + "detalle (fondo, efectivo de ventas, entradas, salidas…); si la diferencia pasa de $50 dice «se avisa por Telegram» y en "
+            + "«Avisos al dueño» llega «Diferencia en el corte». Sale el corte impreso («CORTE DEL TURNO (Z)»; sin impresora, en el "
+            + "detalle). «Listo» lleva a «Abrir turno de Encargado de prueba»."),
+        new("corte-del-dia", "El corte",
+            "Entra con la ficha del dueño (D) y su PIN, 3333, y abre tu turno con $500. En «Corte» elige «Del día · todas las cajas». Oprime "
+            + "«Hacer ese corte», escribe un total y Enter; luego «Ver el corte del día» y «Cerrar el día». Para seguir con lo de abajo, "
+            + "oprime Ctrl+U y abre otro turno del cajero (C, 1111 y $500).",
+            "Con el turno del dueño, la venta tiene todas las pestañas, y en «Corte» sale «Turno | Del día · todas las cajas» (al "
+            + "cajero y al encargado no). Si el cajero dejó tickets sin cobrar, vuelven a la espera («Volvieron los … tickets que estaban "
+            + "en espera»): son de la caja, no del turno; tu corte dice que se quedan para el siguiente turno, y vuelven en el del "
+            + "cajero. Arriba: lo vendido hoy, el efectivo (con lo esperado en las cajas), tarjeta y transferencia, y las diferencias "
+            + "de corte. La tabla tiene el turno del cajero (lo esperado, lo contado y su diferencia) y el tuyo como «Turno abierto»; "
+            + "abajo, las formas de pago, las salidas por motivo, las devoluciones, las cancelaciones, lo fiado y los abonos, y las "
+            + "impresiones cobradas. Mientras tu turno siga abierto, «Cerrar el día» espera: «Falta cerrar el turno de Dueño de prueba "
+            + "(Caja 1).». Ya cortado, se cierra: «Día cerrado a las … por Dueño de prueba.», y el resumen no se manda otra vez: ya "
+            + "salió con el último corte. En «Avisos al dueño» llega un «Resumen del día» con cada corte que deja la caja sin turno "
+            + "abierto; al cerrar el día, ninguno más."),
+
+        // ── Lo que todavía abre sus ventanas de antes, con otro turno del cajero ──
+        new("productos", $"{VentanaDeAntes} · Productos (F3)",
+            "Como encargado (Ctrl+U, E y 2222, y «Productos e inventario, sin cortar»), en Productos (F3) busca un producto, cámbiale el "
+            + "precio y mira su kardex. Da de alta uno nuevo con su presentación «Caja 12» y un código interno (botón «Código interno»). "
+            + "Vuelve como cajero (tu nombre → «Salir», C y 1111) y escribe ese código en la venta.",
             "El precio nuevo queda guardado y el kardex muestra sus movimientos (ventas, compras…). El producto nuevo se guarda y se vende con "
             + "su código."),
-        new("recibir", $"{PantallaDeHoy} · Compras (F4)",
-            "Como «cajero», en Inventario (arriba, o F4) → Compras → «Recibir mercancía»: elige el proveedor de «Léeme.txt» y cuenta lo que dice "
+        new("recibir", $"{VentanaDeAntes} · Compras (F4)",
+            "Como cajero, en Inventario (arriba, o F4) → Compras → «Recibir mercancía»: elige el proveedor de «Léeme.txt» y cuenta lo que dice "
             + "ahí para la factura (puedes contar uno menos de algo; el nuevo, con su código). Termina el conteo.",
             "Mientras cuentas no ves la nota ni los costos. Lo que no está en el catálogo se cuenta aparte. Al terminar, dice que falta que el "
             + "encargado capture la nota."),
-        new("factura", $"{PantallaDeHoy} · Compras (F4)",
-            "Como «encargado» (Productos e inventario), abre esa compra y carga «Factura de ejemplo.xml» (en «Ejemplos de la prueba», en el "
-            + "escritorio). Confirma el que pregunta «¿Es…?», corrige lo que quieras del producto nuevo y dalo de alta. Cierra la compra.",
+        new("factura", $"{VentanaDeAntes} · Compras (F4)",
+            "Como encargado (sin cortar), abre esa compra y carga «Factura de ejemplo.xml» (en «Ejemplos de la prueba», en el escritorio). "
+            + "Confirma el que pregunta «¿Es…?», corrige lo que quieras del producto nuevo y dalo de alta. Cierra la compra.",
             "Todo el pedido queda precargado y se puede corregir renglón por renglón (del nuevo: nombre, precio, piezas). Los productos con "
             + "código llegan solos; el nuevo se da de alta con lo que contaste. La comparación marca lo que faltó y al cerrar entra al "
             + "inventario."),
-        new("nota-pdf", $"{PantallaDeHoy} · Compras (F4)",
+        new("nota-pdf", $"{VentanaDeAntes} · Compras (F4)",
             "Haz otra compra con lo que dice «Léeme.txt» para la nota (el cajero cuenta, el encargado la captura) y carga «Nota de ejemplo.pdf».",
             "Lee los renglones del PDF, avisa que repartió el IVA y el producto que ligaste antes ya llega ligado."),
-        new("sugerido", $"{PantallaDeHoy} · Compras (F4)",
-            "Como «encargado», abre F4 → Sugerido de compra. Cambia la cantidad de un producto, quita otro y da «Hacer orden de compra» en un "
-            + "proveedor. En «Órdenes de compra» abre esa orden y oprime «Copiar el texto».",
+        new("sugerido", $"{VentanaDeAntes} · Compras (F4)",
+            "Como encargado (sin cortar), abre F4 → Sugerido de compra. Cambia la cantidad de un producto, quita otro y da «Hacer orden de "
+            + "compra» en un proveedor. En «Órdenes de compra» abre esa orden y oprime «Copiar el texto».",
             "Sale lo que hay que pedir por proveedor, lo urgente marcado. La orden tiene lo que dejaste, y su texto se pega en otro lado "
             + "(WhatsApp, Bloc de notas) con cantidades y claves."),
-        new("paquete", $"{PantallaDeHoy} · Inventario (F4)",
+        new("paquete", $"{VentanaDeAntes} · Inventario (F4)",
             "En F4 → Abrir paquete, abre un producto en otro (por ejemplo, un paquete en sus piezas).",
             "Sale uno y entran sus piezas; aparece en la lista de abajo con tu nombre."),
-        new("conteo", $"{PantallaDeHoy} · Inventario (F4)",
-            "Como «cajero», toca «Conteo del día» abajo a la derecha, en la barra de teclas. Cuenta dos o tres de esos productos (en la prueba, "
+        new("conteo", $"{VentanaDeAntes} · Inventario (F4)",
+            "Como cajero, toca «Conteo del día» abajo a la derecha, en la barra de teclas. Cuenta dos o tres de esos productos (en la prueba, "
             + "inventa la cantidad).",
-            "El chip dice cuántos llevas de cuántos. No ves cuánto dice el sistema. Como encargado, en F4 → Conteo del día ves la diferencia; si "
-            + "vale $200 o más, sale en «Avisos al dueño»."),
-        new("conteo-completo", $"{PantallaDeHoy} · Inventario (F4)",
-            "Como «encargado», en F4 → Conteo completo abre un departamento chico. Con un celular en el mismo wifi, escanea su código QR, entra "
-            + "como «cajero» (1111) y cuenta tres productos, uno en dos partes (anaquel y bodega). Luego, en la PC, «Revisar y cerrar».",
+            "El chip dice cuántos llevas de cuántos. No ves cuánto dice el sistema. Como encargado (sin cortar), en F4 → Conteo del día ves la "
+            + "diferencia; si vale $200 o más, sale en «Avisos al dueño»."),
+        new("conteo-completo", $"{VentanaDeAntes} · Inventario (F4)",
+            "Como encargado (sin cortar), en F4 → Conteo completo abre un departamento chico. Con un celular en el mismo wifi, escanea su "
+            + "código QR, entra con el usuario «cajero» y el PIN 1111 (en el celular todavía se escribe el usuario) y cuenta tres productos, "
+            + "uno en dos partes (anaquel y bodega). Luego, en la PC, «Revisar y cerrar».",
             "Sin celular, la dirección que muestra se abre en el navegador de esta PC. En el celular no se ve lo que dice el sistema y las dos "
             + "partes se suman. En la revisión salen las diferencias; al cerrar, lo contado queda como existencia, lo que nadie contó queda en "
             + "0 y sale en «Avisos al dueño»."),
-        new("etiquetas", $"{PantallaDeHoy} · Inventario (F4)",
-            "Como «encargado», en F4 → Etiquetas agrega la compra que cerraste (quita «Solo lo que no trae código de fábrica») e imprime la "
-            + "hoja de prueba desde «Vista previa» (o a «Microsoft Print to PDF»). En F4 → Hoja de códigos, agrega tres gomas y da «Vista "
-            + "previa».",
+        new("etiquetas", $"{VentanaDeAntes} · Inventario (F4)",
+            "Como encargado (sin cortar), en F4 → Etiquetas agrega la compra que cerraste (quita «Solo lo que no trae código de fábrica») e "
+            + "imprime la hoja de prueba desde «Vista previa» (o a «Microsoft Print to PDF»). En F4 → Hoja de códigos, agrega tres gomas y da "
+            + "«Vista previa».",
             "Sale una etiqueta por pieza con el nombre y su código de barras, en hojas carta; la hoja de prueba marca dónde cae cada una. La "
             + "hoja de códigos trae el nombre y el código de cada producto, por departamento, y al volver a entrar la lista sigue ahí."),
-        new("mermas-ajustes", $"{PantallaDeHoy} · Inventario (F4)",
-            "Como «cajero», en Inventario (F4) → Ajustes y mermas, registra una merma de 1 producto dañado y luego una de 30 piezas de algo "
+        new("mermas-ajustes", $"{VentanaDeAntes} · Inventario (F4)",
+            "Como cajero, en Inventario (F4) → Ajustes y mermas, registra una merma de 1 producto dañado y luego una de 30 piezas de algo "
             + "caro. Después corrige la existencia de un producto a la que cuentes en el anaquel, con su motivo.",
             "La merma chica entra sola; la grande (más de $200 de costo) y la corrección piden la autorización: se toca la ficha del encargado "
             + "y se escribe su PIN. Todo queda en la lista y en la existencia; si la corrección vale $200 o más, sale en «Avisos al dueño»."),
-        new("cliente-alta", $"{PantallaDeHoy} · Clientes",
-            "Como «encargado» (Productos e inventario → Clientes), da de alta un cliente con teléfono y 5 % de descuento; abre a «Maestra "
-            + "Carmen» («Por revisar») y guárdala. En la pestaña «Por revisar», lee lo del «Arq. Ramírez», anota algo y márcalo «Revisado».",
+        new("cliente-alta", $"{VentanaDeAntes} · Clientes",
+            "Como encargado (sin cortar → Clientes), da de alta un cliente con teléfono y 5 % de descuento; abre a «Maestra Carmen» («Por "
+            + "revisar») y guárdala. En la pestaña «Por revisar», lee lo del «Arq. Ramírez», anota algo y márcalo «Revisado».",
             "El cliente queda en la lista y ya se puede elegir con Ctrl+L. En «Avisos al dueño» llega que el encargado le dio privilegios. Al "
             + "guardar a Maestra Carmen se quita «Por revisar». Lo del Arq. Ramírez dice qué pasó, cuándo y por cuánto; al marcarlo sale de la "
             + "lista."),
-        new("credito-saldo-a-favor", $"{PantallaDeHoy} · Clientes",
-            "Como «cajero», abre «Clientes» (arriba) → «Papelería La Esquina» (tiene $150 a favor) y oprime «Devolver saldo a favor». Deja "
+        new("credito-saldo-a-favor", $"{VentanaDeAntes} · Clientes",
+            "Como cajero, abre «Clientes» (arriba) → «Papelería La Esquina» (tiene $150 a favor) y oprime «Devolver saldo a favor». Deja "
             + "vacío «Cuánto» (todo) y oprime «Devolver».",
             "El cajero ve los clientes y sus cuentas, pero no los cambia. «Devolver saldo a favor» lleva candado: pide la autorización con la "
             + "ficha del encargado (2222). Sale un comprobante para que el cliente firme que recibió el efectivo; su cuenta queda al corriente y "
             + "en «Avisos al dueño» llega que se devolvió."),
-        new("corte", $"{PantallaDeHoy} · Corte",
-            "Como «cajero», en «Corte» (arriba) haz un corte X (parcial). Luego «Corte de cierre (Z)»: el encargado escribe su usuario y PIN y "
-            + "cuenta el efectivo sin ver cuánto debería haber.",
-            "El corte X no cierra el turno; trae los abonos en efectivo (suman a lo esperado), el saldo a favor devuelto (resta), las entradas y "
-            + "salidas, y lo fiado aparte, que no suma. Si quedan tickets en espera, avisa que se pierden. El Z cierra el turno y muestra si "
-            + "sobró o faltó; con diferencia sale en «Avisos al dueño», y también el resumen del día. Después la caja vuelve a la entrada: para "
-            + "seguir hay que entrar y abrir otro turno."),
-        new("credito-cuenta", $"{PantallaDeHoy} · El dueño, después del corte",
-            "Entra como «dueno» (3333) con un turno de $500. En «Clientes» → «Solo los que deben», abre al «Arq. Ramírez»: ponle plazo de 15 "
-            + "días, imprime su «Estado de cuenta» y oprime «Copiar para WhatsApp». Sin el filtro, dale $500 de crédito a «Papelería La "
-            + "Esquina».",
-            "Con el turno nuevo vuelve la venta nueva, ahora con todas las pestañas. La lista dice cuánto debe cada quien (en rojo, si tiene "
-            + "algo vencido). En su cuenta están el saldo inicial, lo fiado, los abonos y la devolución, cada uno con el saldo que dejó; el "
-            + "estado de cuenta y el texto copiado (pégalo en el Bloc de notas) dicen lo mismo, con lo que falta pagar de cada compra y su "
-            + "vencimiento. Solo el dueño cambia el crédito."),
-        new("margen", $"{PantallaDeHoy} · El dueño, después del corte",
-            "Como dueño, en Inventario (F4) → Margen mínimo, sube el margen general a 50 % y cierra otra compra.",
+        new("credito-cuenta", $"{VentanaDeAntes} · El dueño",
+            "Como dueño, sin cortar (Ctrl+U, D y 3333, y «Productos e inventario, sin cortar» → Clientes): en «Solo los que deben», abre al "
+            + "«Arq. Ramírez», ponle plazo de 15 días, imprime su «Estado de cuenta» y oprime «Copiar para WhatsApp». Sin el filtro, dale $500 "
+            + "de crédito a «Papelería La Esquina».",
+            "La lista dice cuánto debe cada quien (en rojo, si tiene algo vencido). En su cuenta están el saldo inicial, lo fiado, los abonos "
+            + "y la devolución, cada uno con el saldo que dejó; el estado de cuenta y el texto copiado (pégalo en el Bloc de notas) dicen lo "
+            + "mismo, con lo que falta pagar de cada compra y su vencimiento. Solo el dueño cambia el crédito."),
+        new("margen", $"{VentanaDeAntes} · El dueño",
+            "Como dueño (sin cortar), en Inventario (F4) → Margen mínimo, sube el margen general a 50 % y cierra otra compra.",
             "Los productos debajo del 50 % sugieren precio y se avisa al dueño. Regrésalo a 30 % al terminar."),
-        new("sinonimos", $"{PantallaDeHoy} · El dueño, después del corte",
-            "Como dueño, escribe «lapicero» en el cuadro de captura. Luego, en Configuración → Sinónimos, agrega: al escribir «lapicero» también "
-            + "busca «pluma». Vuelve a escribir «lapicero» en el cuadro.",
+        new("sinonimos", $"{VentanaDeAntes} · El dueño",
+            "Como dueño, entra a vender: sal de «sin cortar» (tu nombre → «Salir»), entra otra vez (D y 3333) y oprime «Hacer el corte de "
+            + "Cajero de prueba»; escribe cualquier total y Enter, y con «Listo» abre tu turno con $500. Escribe «lapicero» en el cuadro de "
+            + "captura. Luego, en Configuración → Sinónimos, agrega: al escribir «lapicero» también busca «pluma». Vuelve a escribir "
+            + "«lapicero» en el cuadro.",
             "La primera vez no sale ninguna pluma: solo «Parecidos a «lapicero»…» (lapiceras y estuches). Con el sinónimo salen las plumas, y "
             + "cada renglón dice «por «lapicero»». Los sinónimos solo los dan de alta el dueño y el encargado; uno mal puesto mezcla "
             + "productos, y se quita ahí mismo."),
-        new("configuracion", $"{PantallaDeHoy} · El dueño, después del corte",
+        new("configuracion", $"{VentanaDeAntes} · El dueño",
             "Como dueño, en Configuración mira las reglas, la bitácora y el ticket. Abre «Avisos al dueño» en la franja de prueba.",
-            "La bitácora tiene lo que hiciste en la prueba (cancelaciones, precios, autorizaciones, compras…). En «Avisos al dueño» están los "
-            + "que le habrían llegado por Telegram: cancelaciones, cortes con diferencia, compras…"),
+            "La bitácora tiene lo que hiciste en la prueba (cancelaciones, precios, autorizaciones, compras…), los cortes del turno (quién "
+            + "lo hizo y de qué turno) y el cierre del día («Cerró el día …»). En «Avisos al dueño» están los que le habrían llegado por "
+            + "Telegram: cancelaciones, cortes con diferencia, el resumen del día, compras…"),
     ];
 
     /// <summary>
