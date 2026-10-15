@@ -21,7 +21,7 @@ public static class Textos
         AccionControlada.AbrirCajonSinVenta => "Abrir el cajón sin venta",
         AccionControlada.Reimprimir => "Reimprimir un ticket",
         AccionControlada.VerificarTransferencia => "Verificar una transferencia",
-        AccionControlada.CorteZ => "Corte de cierre (Z)",
+        AccionControlada.CorteZ => "Hacer el corte de un turno",
         AccionControlada.ConfigurarTicket => "Configurar el ticket",
         AccionControlada.EditarReglas => "Editar las reglas",
         AccionControlada.ConsultarBitacora => "Consultar la bitácora",
@@ -46,6 +46,7 @@ public static class Textos
         AccionControlada.AjustarCredito => "Ajustar el saldo de un cliente",
         AccionControlada.CancelarAbono => "Cancelar un abono (en su turno)",
         AccionControlada.DevolverSaldoAFavor => "Devolver en efectivo el saldo a favor de un cliente",
+        AccionControlada.CorteDelDia => "Ver y cerrar el corte del día",
         _ => accion.ToString(),
     };
 

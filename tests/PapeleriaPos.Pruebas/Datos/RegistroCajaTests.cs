@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
@@ -109,26 +110,32 @@ public class RegistroCajaTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task El_corte_z_lo_hace_el_encargado_y_cierra_el_turno()
+    public async Task El_corte_z_lo_hace_quien_tiene_el_permiso_con_el_total_y_cierra_el_turno()
     {
         await using var db = _base.Contexto();
         var registro = new RegistroCaja(db);
         var turno = await registro.AbrirTurnoAsync(_caja.Id, _cajera.Id, 50000);
         await registro.CobrarAsync(VentaDe(turno, 2), [new CobroSolicitado(FormaPago.Efectivo, 2000)]);
         await registro.RegistrarMovimientoAsync(turno.Id, TipoMovimientoCaja.Salida, 5000, "Papel de baño", _cajera.Id);
-        var conteo = new Dictionary<long, int> { [20000] = 2, [5000] = 1, [1000] = 1 }; // $460 contados contra $470 esperados: faltan $10
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => registro.CorteZAsync(turno.Id, _cajera.Id, conteo));
+        // La cajera no tiene el permiso: queda negado en la bitácora y el turno sigue abierto.
+        var sinPermiso = await Assert.ThrowsAsync<PermisoRequerido>(() => registro.CorteZAsync(turno.Id, _cajera.Id, 46000));
         var x = await registro.CorteXAsync(turno.Id, _cajera.Id);
-        var z = await registro.CorteZAsync(turno.Id, _encargado.Id, conteo);
+        var z = await registro.CorteZAsync(turno.Id, _encargado.Id, 46000); // $460 contados contra $470 esperados: faltan $10
 
+        Assert.Contains(_encargado.Nombre, sinPermiso.Message);
         Assert.Equal(50000 + 2000 - 5000, x.EsperadoCentavos);
         Assert.Equal(-1000, z.DiferenciaCentavos);
         Assert.Null(await registro.TurnoAbiertoAsync(_caja.Id));
         await Assert.ThrowsAsync<InvalidOperationException>(() => registro.CobrarAsync(VentaDe(turno, 1), [new CobroSolicitado(FormaPago.Efectivo, 1000)]));
 
         await using var lectura = _base.Contexto();
-        Assert.Equal(3, await lectura.CortesConteo.CountAsync());
+        // Ya no se cuenta billete por billete: solo el total.
+        Assert.Equal(0, await lectura.CortesConteo.CountAsync());
+        var bitacora = await lectura.Bitacora.Where(b => b.Accion == AccionControlada.CorteZ).OrderBy(b => b.FechaUtc).ToListAsync();
+        Assert.Equal([ResultadoBitacora.Negado, ResultadoBitacora.Hecho], bitacora.Select(b => b.Resultado));
+        Assert.Equal((_encargado.Id, -1000L), (bitacora[1].UsuarioId!.Value, bitacora[1].MontoCentavos!.Value));
+        Assert.StartsWith($"Corte del turno de {_cajera.Nombre}", bitacora[1].Detalle);
     }
 
     [Fact]

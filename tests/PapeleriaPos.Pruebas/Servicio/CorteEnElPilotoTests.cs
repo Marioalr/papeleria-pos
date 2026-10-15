@@ -36,7 +36,7 @@ public sealed class CorteEnElPilotoTests : IDisposable
         ("Eleventa:Clave", "masterkey"), ("Eleventa:Caja", "4"), ("Eleventa:Cajero", "7"), ("Eleventa:SegundosEntreEnvios", "3600"),
     ];
 
-    /// <summary>El encargado cuenta un billete de 500.</summary>
+    /// <summary>Una caja de antes del 2026-10-14 sube el conteo billete por billete: un billete de 500.</summary>
     private static readonly Dictionary<long, int> Conteo = new() { [50000] = 1 };
 
     private static async Task<T> Leer<T>(HttpResponseMessage r)
@@ -68,8 +68,9 @@ public sealed class CorteEnElPilotoTests : IDisposable
         await Leer<TicketDto>(await c.Http.PostAsJsonAsync("api/ventas", new SolicitudCobro(c.Datos.Id, c.Turno.Id, c.Cajero.UsuarioId,
             [new LineaSolicitada(null, null, 1000, "Recuerdo", 2500)], [new CobroSolicitado(FormaPago.Efectivo, 5000)])));
 
+    /// <summary>El encargado, que ya entró, cuenta $500.</summary>
     private static Task<HttpResponseMessage> CorteZAsync(Caja c) =>
-        c.Http.PostAsJsonAsync($"api/turnos/{c.Turno.Id}/corte-z", new SolicitudCorteZ("encargado", "2222", Conteo));
+        c.Http.PostAsJsonAsync($"api/turnos/{c.Turno.Id}/corte-z", new SolicitudCorteZ(c.Encargado.UsuarioId, 50000));
 
     /// <summary>El turno abierto de la caja según el servicio; vacío si ya se cerró.</summary>
     private static async Task<Guid?> TurnoAbiertoAsync(Caja c)
@@ -183,7 +184,7 @@ public sealed class CorteEnElPilotoTests : IDisposable
         await contingencia.LatidoAsync();
         // La caja conoce su turno (sin conexión, trabaja en él).
         Assert.Equal(c.Turno.Id, (await cliente.TurnoAsync(c.Datos.Id))!.Id);
-        var solicitud = new SolicitudCorteZ("encargado", "2222", Conteo);
+        var solicitud = new SolicitudCorteZ(c.Encargado.UsuarioId, 50000);
 
         var enLinea = await Assert.ThrowsAsync<ErrorCaja>(() => cliente.CorteZAsync(c.Turno.Id, solicitud));
         // Se apaga la caja principal: la caja sigue sabiendo del piloto (también si arranca otra vez sin ella) y no cierra
@@ -263,10 +264,46 @@ public sealed class CorteEnElPilotoTests : IDisposable
     }
 
     [Fact]
+    public async Task En_el_piloto_el_corte_del_dia_se_ve_pero_no_se_cierra_ni_toca_eleventa()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(Piloto);
+        var c = await AbrirAsync(servicio);
+        await EnEfectivoAsync(c);
+        var ayer = await EnEfectivoAsync(c);
+        // El turno de la caja nueva no se cierra en el piloto: viene de ayer, con un ticket de ayer.
+        await using (var antes = servicio.Base())
+        {
+            var pagada = antes.Entry((await antes.Ventas.FindAsync(ayer.VentaId))!).Property(v => v.PagadaUtc);
+            pagada.CurrentValue = pagada.CurrentValue!.Value.AddDays(-1);
+            var abierto = antes.Entry((await antes.Turnos.FindAsync(c.Turno.Id))!).Property(t => t.AbiertoUtc);
+            abierto.CurrentValue = abierto.CurrentValue.AddDays(-1);
+            await antes.SaveChangesAsync();
+        }
+        var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+
+        var dia = await Leer<CorteDelDiaDto>(await c.Http.GetAsync($"api/cajas/{c.Datos.Id}/corte-del-dia?usuarioId={dueno.UsuarioId}"));
+        var cierre = await RechazoAsync(await c.Http.PostAsJsonAsync($"api/cajas/{c.Datos.Id}/corte-del-dia/cierre", new SolicitudCierreDia(dueno.UsuarioId)));
+
+        Assert.True(dia.Piloto);
+        var turno = Assert.Single(dia.Turnos);
+        // «Vendido hoy» es lo de hoy, no lo de todo el piloto.
+        Assert.Equal((1, 2500L), (turno.Tickets, turno.VendidoCentavos));
+        Assert.Equal((1, 2500L, 2500L), (dia.Tickets, dia.VendidoCentavos, dia.EfectivoCentavos));
+        // Su turno no se cierra aquí y suma días: lo esperado no se enseña.
+        Assert.Null(turno.EsperadoCentavos);
+        Assert.Equal(CorteEnElPiloto.CorteDelDiaEnEleventa, cierre);
+        // Ver el día o intentar cerrarlo no manda nada a eleventa: en la bandeja solo están las ventas.
+        await using var db = servicio.Base();
+        Assert.Equal([TipoEnvioEleventa.Venta, TipoEnvioEleventa.Venta], db.EnviosAEleventa.Select(e => e.Tipo).ToList());
+        Assert.False(db.Bitacora.Any(b => b.Accion == PapeleriaPos.Nucleo.Control.AccionControlada.CorteDelDia));
+    }
+
+    [Fact]
     public void La_caja_dice_lo_mismo_que_el_servicio()
     {
         // La interfaz no conoce el puente: copia sus textos. Con o sin conexión, la cajera lee lo mismo.
         Assert.Equal(CorteEnElPiloto.CorteEnEleventa, PilotoConEleventa.CorteEnEleventa);
+        Assert.Equal(CorteEnElPiloto.CorteDelDiaEnEleventa, PilotoConEleventa.CorteDelDiaEnEleventa);
         Assert.Equal(CorteEnElPiloto.SoloSeCancelaElMismoDia, PilotoConEleventa.SoloSeCancelaElMismoDia);
     }
 }

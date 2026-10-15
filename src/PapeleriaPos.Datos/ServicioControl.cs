@@ -22,6 +22,14 @@ public sealed class ServicioControl(PosDbContext db)
         return Permisos.Evaluar(await ReglasAsync(sucursalId, ct), usuario.Rol, sucursalId, accion, monto);
     }
 
+    /// <summary>Los usuarios activos de la sucursal que pueden hacer la acción, por su nombre (el corte del turno).</summary>
+    public async Task<List<QuienAutoriza>> QuienesPuedenAsync(Guid sucursalId, AccionControlada accion, CancellationToken ct = default)
+    {
+        var usuarios = await db.Usuarios.AsNoTracking().Where(u => u.Activo && (u.SucursalId == null || u.SucursalId == sucursalId))
+            .Select(u => new { u.Id, u.NombreUsuario, u.Nombre, u.Rol }).ToListAsync(ct);
+        return Permisos.QuienesPueden(await ReglasAsync(sucursalId, ct), usuarios.Select(u => (u.Id, u.NombreUsuario, u.Nombre, u.Rol)), sucursalId, accion);
+    }
+
     /// <summary>
     /// Para lo que no se autoriza en el momento (catálogo, compras, inventario): o el usuario lo puede hacer o no. La
     /// bitácora la escribe quien llama, junto con la operación.

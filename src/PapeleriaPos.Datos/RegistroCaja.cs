@@ -241,7 +241,10 @@ public sealed class RegistroCaja(PosDbContext db)
         return resultado;
     }
 
-    /// <summary>Corte parcial: informativo, el turno sigue abierto.</summary>
+    /// <summary>
+    /// Corte parcial: guarda la cuenta del turno, que sigue abierto. La pantalla ya no lo enseña (2026-10-14): antes de
+    /// cerrar, el corte es a ciegas (<see cref="InformativoAsync"/>).
+    /// </summary>
     public async Task<Corte> CorteXAsync(Guid turnoId, Guid usuarioId, CancellationToken ct = default)
     {
         var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
@@ -252,20 +255,54 @@ public sealed class RegistroCaja(PosDbContext db)
         return corte;
     }
 
-    /// <summary>Corte de cierre: lo hace el encargado contando a ciegas; el turno se cierra.</summary>
-    public async Task<Corte> CorteZAsync(Guid turnoId, Guid encargadoId, IReadOnlyDictionary<long, int> conteo, CancellationToken ct = default)
+    /// <summary>
+    /// El corte X (entrega 6, 2026-10-14): lo que se ve del turno antes de cerrarlo, sin el efectivo; y si
+    /// <paramref name="usuarioId"/> puede hacer el corte o ver el del día, y quién puede hacerlo. No guarda nada.
+    /// </summary>
+    public async Task<CorteInformativoDto> InformativoAsync(Guid turnoId, Guid usuarioId, CancellationToken ct = default)
     {
         var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
-        var decision = await new ServicioControl(db).EvaluarAsync(encargadoId, turno.SucursalId, AccionControlada.CorteZ, ct: ct);
-        if (decision.Nivel != NivelPermiso.Permitido)
-            throw new InvalidOperationException("El corte de cierre lo hace el encargado.");
+        var ventas = await VentasAsync(turno.Id, ct);
+        var corte = CalculoCorte.Calcular(turno, ventas, await MovimientosAsync(turno.Id, ct), TipoCorte.X, usuarioId, Ahora,
+            devoluciones: await DevolucionesAsync(turno.Id, ct), abonos: await AbonosAsync(turno.Id, ct));
+        var porVerificar = ventas.Where(v => v.Estado == EstadoVenta.Pagada).SelectMany(v => v.Cobros)
+            .Count(c => c.Forma == FormaPago.Transferencia && c.Verificacion == Verificacion.PorVerificar)
+            + await db.Abonos.CountAsync(a => a.TurnoId == turno.Id && a.Forma == FormaPago.Transferencia && a.Verificacion == Verificacion.PorVerificar
+                && a.CanceladoUtc == null, ct);
+        var control = new ServicioControl(db);
+        var cajero = await db.Usuarios.Where(u => u.Id == turno.CajeroId).Select(u => u.Nombre).SingleAsync(ct);
+        return new CorteInformativoDto(cajero, HoraMexico.ALocal(turno.AbiertoUtc), corte.Ventas, corte.Cancelaciones, corte.TarjetaCentavos,
+            corte.TransferenciaCentavos, porVerificar, corte.CreditoCentavos, corte.Abonos, corte.AbonosTarjetaCentavos, corte.AbonosTransferenciaCentavos,
+            (await control.EvaluarAsync(usuarioId, turno.SucursalId, AccionControlada.CorteZ, ct: ct)).Nivel == NivelPermiso.Permitido,
+            await control.QuienesPuedenAsync(turno.SucursalId, AccionControlada.CorteZ, ct),
+            (await control.EvaluarAsync(usuarioId, turno.SucursalId, AccionControlada.CorteDelDia, ct: ct)).Nivel == NivelPermiso.Permitido);
+    }
+
+    /// <summary>
+    /// El corte del turno (entrega 6, 2026-10-14): quien ya entró con su PIN y tiene el permiso escribe el total que
+    /// contó, a ciegas, sin volver a escribir su PIN. El permiso se revisa aquí, no en la caja; si no lo tiene, queda en la
+    /// bitácora como negado. La diferencia queda a nombre del cajero del turno y, si pasa del umbral, el aviso sale de la
+    /// bitácora (AlertasTelegram). El turno se cierra.
+    /// </summary>
+    public async Task<Corte> CorteZAsync(Guid turnoId, Guid usuarioId, long contadoCentavos, CancellationToken ct = default)
+    {
+        var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
+        var control = new ServicioControl(db);
+        if ((await control.EvaluarAsync(usuarioId, turno.SucursalId, AccionControlada.CorteZ, ct: ct)).Nivel != NivelPermiso.Permitido)
+        {
+            control.Registrar(turno.SucursalId, turno.CajaId, usuarioId, AccionControlada.CorteZ, "Intento sin permiso", resultado: ResultadoBitacora.Negado);
+            await db.SaveChangesAsync(ct);
+            throw new PermisoRequerido(AccionControlada.CorteZ, NivelPermiso.NoPermitido,
+                $"El corte del turno lo hace quien tiene ese permiso: {Permisos.Nombres(await control.QuienesPuedenAsync(turno.SucursalId, AccionControlada.CorteZ, ct))}.");
+        }
 
         var ahora = Ahora;
-        var corte = CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.Z, encargadoId, ahora, conteo,
-            await DevolucionesAsync(turno.Id, ct), await AbonosAsync(turno.Id, ct));
+        var corte = CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.Z, usuarioId, ahora,
+            contadoCentavos, await DevolucionesAsync(turno.Id, ct), await AbonosAsync(turno.Id, ct));
         turno.CerradoUtc = ahora;
-        new ServicioControl(db).Registrar(turno.SucursalId, turno.CajaId, encargadoId, AccionControlada.CorteZ,
-            $"Corte de cierre: esperado {corte.EsperadoCentavos / 100m:N2}, contado {corte.ContadoCentavos / 100m:N2}", corte.DiferenciaCentavos);
+        control.Registrar(turno.SucursalId, turno.CajaId, usuarioId, AccionControlada.CorteZ,
+            $"Corte del turno de {await NombreAsync(turno.CajeroId, ct)}: esperado {corte.EsperadoCentavos / 100m:N2}, contado {corte.ContadoCentavos / 100m:N2}",
+            corte.DiferenciaCentavos);
         db.Cortes.Add(corte);
         await CerrarEnEleventaAsync(turno, ct);
         await db.SaveChangesAsync(ct);
@@ -421,24 +458,26 @@ public sealed class RegistroCaja(PosDbContext db)
 
     /// <summary>
     /// El corte Z que hizo la caja sin conexión. Se recalcula con lo que ya llegó (sus ventas suben antes que el corte)
-    /// y con el conteo del encargado; si no cuadra con el ticket que imprimió la caja, aquí se ve.
+    /// y con lo que se contó; si no cuadra con el ticket que imprimió la caja, aquí se ve. Una caja de antes del
+    /// 2026-10-14 manda el conteo billete por billete: se acepta (nada se atora en la bandeja) y se guarda su total.
     /// </summary>
     public async Task<Corte> CorteZDeContingenciaAsync(Guid turnoId, CorteContingenciaDto c, CancellationToken ct = default)
     {
         if (await db.Cortes.FindAsync([c.Id], ct) is { } existente)
             return existente;
         var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
-        var corte = CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.Z, c.EncargadoId, c.FechaUtc,
-            c.Conteo, await DevolucionesAsync(turno.Id, ct), await AbonosAsync(turno.Id, ct));
+        var contado = c.ContadoCentavos
+            ?? (c.Conteo is { } conteo ? Denominaciones.Total(conteo) : throw new ArgumentException("El corte sin conexión no trae lo que se contó."));
+        var corte = CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.Z, c.RealizadoPorId, c.FechaUtc,
+            contado, await DevolucionesAsync(turno.Id, ct), await AbonosAsync(turno.Id, ct));
         corte.Id = c.Id;
         corte.EnContingencia = true;
-        foreach (var conteo in corte.Conteo)
-            conteo.CorteId = corte.Id;
         turno.CerradoUtc = c.FechaUtc;
         db.Bitacora.Add(new Bitacora
         {
-            SucursalId = turno.SucursalId, CajaId = turno.CajaId, UsuarioId = c.EncargadoId, Accion = AccionControlada.CorteZ,
-            Detalle = $"Corte de cierre sin conexión: esperado {corte.EsperadoCentavos / 100m:N2}, contado {corte.ContadoCentavos / 100m:N2}",
+            SucursalId = turno.SucursalId, CajaId = turno.CajaId, UsuarioId = c.RealizadoPorId, Accion = AccionControlada.CorteZ,
+            Detalle = $"Corte del turno de {await NombreAsync(turno.CajeroId, ct)} sin conexión: esperado {corte.EsperadoCentavos / 100m:N2}, "
+                + $"contado {corte.ContadoCentavos / 100m:N2}",
             MontoCentavos = corte.DiferenciaCentavos, Resultado = ResultadoBitacora.Hecho, FechaUtc = c.FechaUtc, EnContingencia = true,
         });
         db.Cortes.Add(corte);
@@ -470,6 +509,9 @@ public sealed class RegistroCaja(PosDbContext db)
         }
         secuencia.Valor = Math.Max(secuencia.Valor, folio);
     }
+
+    private async Task<string> NombreAsync(Guid usuarioId, CancellationToken ct) =>
+        await db.Usuarios.Where(u => u.Id == usuarioId).Select(u => u.Nombre).FirstOrDefaultAsync(ct) ?? "—";
 
     private async Task<Turno> TurnoPorIdAsync(Guid turnoId, CancellationToken ct) =>
         await db.Turnos.FindAsync([turnoId], ct) ?? throw new InvalidOperationException("El turno no existe.");

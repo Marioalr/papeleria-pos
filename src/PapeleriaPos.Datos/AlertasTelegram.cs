@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Configuracion;
+using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Impresiones;
 using PapeleriaPos.Nucleo.Inventario;
@@ -234,7 +235,44 @@ public static class AlertasTelegram
         if (!Configuracion(db, sucursalId).Avisa(TipoAlerta.ResumenDiario))
             return;
         var texto = await ResumenAsync(db, sucursalId, DateOnly.FromDateTime(HoraMexico.ALocal(corte.FechaUtc)), ct);
-        Agregar(db, Chats(db), TipoAlerta.ResumenDiario, texto, $"resumen:{corte.Id}");
+        Agregar(db, Chats(db), TipoAlerta.ResumenDiario, texto, ClaveResumen(corte.Id));
+    }
+
+    /// <summary>
+    /// El resumen del día al cerrarlo (corte del día, entrega 6). Es el mismo que sale solo con el último corte Z, con la
+    /// misma clave: si ya salió con alguno de los cortes Z del día (<paramref name="cortesZ"/>), no se manda dos veces. No
+    /// basta con ver el último por la hora: el de una caja que cortó sin conexión sube después con la hora de entonces, y
+    /// el resumen sale con él al subir. Un día sin cortes tiene su propia clave. Quien llama guarda.
+    /// </summary>
+    /// <param name="cortesZ">Los cortes Z de los turnos del día, del primero al último por su hora.</param>
+    public static async Task<EnvioResumen> ResumenAlCerrarElDiaAsync(
+        PosDbContext db, Guid sucursalId, DateOnly fecha, IReadOnlyList<Guid> cortesZ, CancellationToken ct = default)
+    {
+        if (!Configuracion(db, sucursalId).Avisa(TipoAlerta.ResumenDiario))
+            return EnvioResumen.Apagado;
+        var chats = Chats(db);
+        if (chats.Count == 0)
+            return EnvioResumen.SinTelegram;
+        var delDia = $"resumen:{sucursalId:N}:{fecha:yyyyMMdd}";
+        var claves = cortesZ.Select(ClaveResumen).Append(delDia).ToList();
+        if (await db.MensajesTelegram.AnyAsync(m => m.Clave != null && claves.Contains(m.Clave), ct))
+            return EnvioResumen.YaHabiaSalido;
+        Agregar(db, chats, TipoAlerta.ResumenDiario, await ResumenAsync(db, sucursalId, fecha, ct), cortesZ.Count > 0 ? ClaveResumen(cortesZ[^1]) : delDia);
+        return EnvioResumen.Enviado;
+    }
+
+    private static string ClaveResumen(Guid corteId) => $"resumen:{corteId}";
+
+    /// <summary>
+    /// El umbral de la sucursal si la diferencia de un corte pasa de él y el aviso sale por Telegram (está prendido y hay
+    /// un chat vinculado); vacío si no. Para que la caja lo diga al cerrar el turno.
+    /// </summary>
+    public static long? UmbralSiAvisa(PosDbContext db, Guid sucursalId, long diferenciaCentavos)
+    {
+        var configuracion = Configuracion(db, sucursalId);
+        return Math.Abs(diferenciaCentavos) > configuracion.UmbralCorteCentavos && configuracion.Avisa(TipoAlerta.DiferenciaCorte) && Chats(db).Count > 0
+            ? configuracion.UmbralCorteCentavos
+            : null;
     }
 
     /// <summary>Ventas, utilidad, cortes y lo que pasó en el día en una sucursal.</summary>
@@ -360,6 +398,9 @@ public static class AlertasTelegram
         // Lo del crédito sin conexión que no cuadró y nadie ha revisado (cada una ya se avisó al llegar).
         if (await db.RevisionesCredito.CountAsync(r => r.SucursalId == sucursalId && r.RevisadaUtc == null, ct) is var porRevisar and > 0)
             t.AppendLine($"Crédito por revisar (en Clientes): {porRevisar}");
+        // Lo que se cobró de impresiones en el día (la línea «Impresiones» de cada ticket).
+        if (vigentes.SelectMany(v => v.Lineas).Where(l => l.EsImpresiones).Sum(l => l.ImporteCentavos) is var impresiones and > 0)
+            t.AppendLine($"Impresiones cobradas: {Dinero(impresiones)}");
         var noVendidas = await db.TrabajosImpresion.AsNoTracking()
             .Where(i => i.SucursalId == sucursalId && i.Cobro == EstadoCobroImpresion.NoVendida && i.CobroUtc >= desde && i.CobroUtc < hasta)
             .Select(i => i.CostoCentavos).ToListAsync(ct);

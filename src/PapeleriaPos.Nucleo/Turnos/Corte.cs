@@ -7,7 +7,9 @@ public enum TipoCorte
 {
     /// <summary>Parcial: informativo, no cierra el turno.</summary>
     X,
-    /// <summary>Cierre: el encargado cuenta a ciegas y el turno se cierra.</summary>
+    /// <summary>
+    /// Cierre (el corte del turno): quien tiene el permiso cuenta a ciegas, escribe el total y el turno se cierra.
+    /// </summary>
     Z,
 }
 
@@ -61,16 +63,20 @@ public class Corte
     /// <summary>Fondo + efectivo de ventas + abonos en efectivo + entradas − salidas − devoluciones − saldo devuelto.</summary>
     public long EsperadoCentavos { get; set; }
 
-    /// <summary>Lo que contó el encargado (solo en el corte Z).</summary>
+    /// <summary>El total del efectivo que se contó (solo en el corte Z).</summary>
     public long? ContadoCentavos { get; set; }
 
     /// <summary>Contado − esperado: negativo es faltante, positivo sobrante.</summary>
     public long? DiferenciaCentavos { get; set; }
 
+    /// <summary>
+    /// Billete por billete, como se contaba antes del 2026-10-14. Ya no se llena: el corte del turno es con el total
+    /// (docs/propuesta-interfaz.md, «Corte»). La tabla se queda con los conteos de los cortes de antes.
+    /// </summary>
     public List<CorteConteo> Conteo { get; set; } = [];
 }
 
-/// <summary>Cuántas piezas de cada billete o moneda se contaron.</summary>
+/// <summary>Cuántas piezas de cada billete o moneda se contaron en un corte de antes del 2026-10-14.</summary>
 public class CorteConteo
 {
     public Guid Id { get; set; } = Ids.Nuevo();
@@ -83,18 +89,30 @@ public static class Denominaciones
 {
     /// <summary>Billetes y monedas de México, de mayor a menor.</summary>
     public static readonly long[] Mexico = [100000, 50000, 20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50];
+
+    /// <summary>
+    /// El total de un conteo billete por billete: lo que sube en la bandeja una caja de antes del 2026-10-14 que hizo el
+    /// corte sin conexión. Se acepta, para que nada se atore en la bandeja, y se guarda solo el total.
+    /// </summary>
+    public static long Total(IReadOnlyDictionary<long, int> conteo)
+    {
+        if (conteo.Any(c => !Mexico.Contains(c.Key) || c.Value < 0))
+            throw new ArgumentException("Conteo con una denominación que no existe o una cantidad negativa.");
+        return conteo.Sum(c => c.Key * c.Value);
+    }
 }
 
 public static class CalculoCorte
 {
     /// <summary>
     /// Arma el corte de un turno con sus ventas pagadas, sus movimientos de efectivo, los abonos de clientes que se
-    /// recibieron en él y el saldo a favor que se devolvió. Con conteo (corte Z) calcula la diferencia; el que cuenta nunca
-    /// ve lo esperado antes de terminar.
+    /// recibieron en él y el saldo a favor que se devolvió. Con lo contado (corte Z) calcula la diferencia; el que cuenta
+    /// nunca ve lo esperado antes de terminar.
     /// </summary>
+    /// <param name="contadoCentavos">En el corte Z, el total del efectivo que se contó (2026-10-14: ya no billete por billete).</param>
     public static Corte Calcular(
         Turno turno, IEnumerable<Venta> ventas, IEnumerable<MovimientoCaja> movimientos, TipoCorte tipo, Guid realizadoPorId,
-        DateTime ahoraUtc, IReadOnlyDictionary<long, int>? conteo = null, IEnumerable<Devolucion>? devoluciones = null,
+        DateTime ahoraUtc, long? contadoCentavos = null, IEnumerable<Devolucion>? devoluciones = null,
         IEnumerable<Abono>? abonos = null)
     {
         // El efectivo de un ticket que después se canceló sí entró a la caja; su reembolso se resta aparte.
@@ -137,17 +155,12 @@ public static class CalculoCorte
 
         if (tipo == TipoCorte.Z)
         {
-            if (conteo is null)
-                throw new ArgumentException("El corte Z necesita el conteo del efectivo.");
-            if (conteo.Any(c => !Denominaciones.Mexico.Contains(c.Key) || c.Value < 0))
-                throw new ArgumentException("Conteo con una denominación que no existe o una cantidad negativa.");
-
-            corte.Conteo = conteo.Where(c => c.Value > 0)
-                .Select(c => new CorteConteo { CorteId = corte.Id, DenominacionCentavos = c.Key, Cantidad = c.Value })
-                .OrderByDescending(c => c.DenominacionCentavos)
-                .ToList();
-            corte.ContadoCentavos = corte.Conteo.Sum(c => c.DenominacionCentavos * c.Cantidad);
-            corte.DiferenciaCentavos = corte.ContadoCentavos - corte.EsperadoCentavos;
+            if (contadoCentavos is not { } contado)
+                throw new ArgumentException("El corte del turno necesita el efectivo que se contó.");
+            if (contado < 0)
+                throw new ArgumentException("El efectivo contado no puede ser negativo.");
+            corte.ContadoCentavos = contado;
+            corte.DiferenciaCentavos = contado - corte.EsperadoCentavos;
         }
         return corte;
     }
