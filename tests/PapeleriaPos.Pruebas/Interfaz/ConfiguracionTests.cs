@@ -24,7 +24,8 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
         public ValueTask DisposeAsync() => ((IAsyncDisposable)Pantalla).DisposeAsync();
     }
 
-    private async Task<Abierta> AbrirAsync(string usuario, string pin)
+    /// <param name="alNoGuardar">Lo que dice la venta si al cerrar no se pudo guardar lo escrito.</param>
+    private async Task<Abierta> AbrirAsync(string usuario, string pin, Action<string>? alNoGuardar = null)
     {
         var http = servicio.Fabrica.CreateClient();
         var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
@@ -44,6 +45,7 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
             [nameof(Configuracion.Caja)] = caja,
             [nameof(Configuracion.Sesion)] = sesion,
             [nameof(Configuracion.AlCambiar)] = new EventCallback(null, (Action)(() => cambios++)),
+            [nameof(Configuracion.AlNoGuardar)] = new EventCallback<string>(null, alNoGuardar ?? (_ => { })),
         });
         await pantalla.EsperarAsync(t => !t.Contains("Cargando…"), "lo guardado");
         return new Abierta(pantalla, caja, sesion, http, () => cambios);
@@ -58,6 +60,12 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
 
     private async Task<ConfiguracionSucursalDto> TiendaAsync(Abierta a) =>
         (await a.Http.GetFromJsonAsync<ConfiguracionSucursalDto>($"api/sucursales/{a.Caja.SucursalId}/configuracion"))!;
+
+    private async Task<ConfiguracionTicketDto> TicketAsync(Abierta a) =>
+        (await a.Http.GetFromJsonAsync<ConfiguracionTicketDto>($"api/sucursales/{a.Caja.SucursalId}/ticket"))!;
+
+    private static async Task<SesionDto> DuenoAsync(HttpClient http) =>
+        (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333"))).Content.ReadFromJsonAsync<SesionDto>())!;
 
     /// <summary>
     /// Cada grupo solo con su permiso («No»: no aparece), como en el prototipo. Con los usuarios de prueba: el dueño, todos;
@@ -240,6 +248,105 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
     }
 
     [Fact]
+    public async Task Lo_que_se_guarda_tras_la_pausa_no_cambia_lo_que_se_esta_escribiendo()
+    {
+        await using var a = await AbrirAsync("dueno", "3333");
+        var antes = await TiendaAsync(a);
+        try
+        {
+            // Con el espacio de la palabra que sigue: se guarda sin él, pero el campo se queda como va.
+            await a.Pantalla.EscribirAsync("aj-nombre", "Papelería ");
+            await a.Pantalla.EsperarAsync(t => t.Contains("Guardado a las"), "«Guardado a las»");
+            Assert.Equal("Papelería", (await TiendaAsync(a)).NombreTienda);
+            Assert.Equal("Papelería ", (await a.Pantalla.PorIdAsync("aj-nombre")).Valor);
+
+            await a.Pantalla.EscribirAsync("aj-nombre", "Papelería Lupita");
+            await a.Pantalla.SalirAsync("aj-nombre");
+            Assert.Equal("Papelería Lupita", (await TiendaAsync(a)).NombreTienda);
+            Assert.Equal("Papelería Lupita", (await a.Pantalla.PorIdAsync("aj-nombre")).Valor);
+            Assert.Empty(a.Pantalla.Errores);
+        }
+        finally
+        {
+            await RegresarAsync(a, antes);
+        }
+    }
+
+    [Fact]
+    public async Task Una_hora_o_un_numero_a_medias_no_se_guardan_solos_sino_al_salir_del_campo()
+    {
+        await using var a = await AbrirAsync("dueno", "3333");
+        var antes = await TiendaAsync(a);
+        try
+        {
+            // La hora de abrir: el campo de hora cambia con cada parte (la hora, los minutos), así que se guarda al salir de él.
+            Assert.False((await a.Pantalla.PorIdAsync("aj-horario-de")).Eventos.ContainsKey("onchange"));
+            await a.Pantalla.EscribirAsync("aj-horario-de", "07:30");
+            await Task.Delay(GuardadoAlMomento.Pausa * 2);
+            Assert.Equal(antes, await TiendaAsync(a));
+            Assert.Contains("Se guarda solo", await a.Pantalla.TextoAsync());
+            await a.Pantalla.SalirAsync("aj-horario-de");
+            Assert.Equal(new TimeOnly(7, 30), (await TiendaAsync(a)).HoraApertura);
+
+            // «1500.» camino de «1500.50»: pasada la pausa, ni se guarda ni cambia lo escrito.
+            await GrupoAsync(a.Pantalla, "Efectivo y corte");
+            await a.Pantalla.EscribirAsync("aj-limite", "1500.");
+            await Task.Delay(GuardadoAlMomento.Pausa * 2);
+            Assert.Equal(antes.LimiteEfectivoCentavos, (await TiendaAsync(a)).LimiteEfectivoCentavos);
+            Assert.Equal("1500.", (await a.Pantalla.PorIdAsync("aj-limite")).Valor);
+            await a.Pantalla.SalirAsync("aj-limite");
+            Assert.Equal(150000, (await TiendaAsync(a)).LimiteEfectivoCentavos);
+            Assert.Equal("1500", (await a.Pantalla.PorIdAsync("aj-limite")).Valor);
+            Assert.Empty(a.Pantalla.Errores);
+        }
+        finally
+        {
+            await RegresarAsync(a, antes);
+        }
+    }
+
+    [Fact]
+    public async Task Lo_que_otra_caja_cambio_mientras_tanto_no_se_deshace()
+    {
+        await using var a = await AbrirAsync("dueno", "3333");
+        var antes = await TiendaAsync(a);
+        var ticket = await TicketAsync(a);
+        var dueno = await DuenoAsync(a.Http);
+        try
+        {
+            // Con la ventana abierta, en otra caja cambian el horario y el pie del ticket.
+            (await a.Http.PutAsJsonAsync($"api/cajas/{a.Caja.Id}/configuracion",
+                new SolicitudConfiguracionSucursal(dueno.UsuarioId, antes with { HoraApertura = new TimeOnly(7, 0) }))).EnsureSuccessStatusCode();
+            (await a.Http.PutAsJsonAsync($"api/cajas/{a.Caja.Id}/configuracion/ticket/textos",
+                new SolicitudTextosTicket(dueno.UsuarioId, ticket.Encabezado, ["Pie de la otra caja"]))).EnsureSuccessStatusCode();
+
+            // Aquí, sin cambiar de grupo (que vuelve a leer todo), el teléfono y, desde el buscador, el encabezado: lo de la
+            // otra caja se queda.
+            await a.Pantalla.EscribirAsync("aj-telefono", "55 2222 3333");
+            await a.Pantalla.SalirAsync("aj-telefono");
+            await a.Pantalla.EscribirAsync("cfg-busca", "encabezado");
+            await a.Pantalla.EscribirAsync("aj-encabezado", "PAPELERÍA DE PRUEBA");
+            await a.Pantalla.SalirAsync("aj-encabezado");
+
+            var tienda = await TiendaAsync(a);
+            Assert.Equal((new TimeOnly(7, 0), "55 2222 3333"), (tienda.HoraApertura, tienda.Telefono));
+            var ahora = await TicketAsync(a);
+            Assert.Equal(["PAPELERÍA DE PRUEBA"], ahora.Encabezado);
+            Assert.Equal(["Pie de la otra caja"], ahora.Pie);
+            // Y la pantalla enseña como quedó.
+            await a.Pantalla.EscribirAsync("cfg-busca", "");
+            Assert.Equal("07:00", (await a.Pantalla.PorIdAsync("aj-horario-de")).Valor);
+            Assert.Empty(a.Pantalla.Errores);
+        }
+        finally
+        {
+            await RegresarAsync(a, antes);
+            (await a.Http.PutAsJsonAsync($"api/cajas/{a.Caja.Id}/configuracion/ticket/textos",
+                new SolicitudTextosTicket(dueno.UsuarioId, ticket.Encabezado, ticket.Pie))).EnsureSuccessStatusCode();
+        }
+    }
+
+    [Fact]
     public async Task Al_cerrar_la_ventana_con_algo_escrito_se_guarda()
     {
         var a = await AbrirAsync("dueno", "3333");
@@ -259,6 +366,47 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
     }
 
     [Fact]
+    public async Task Si_al_cerrar_no_se_pudo_guardar_lo_escrito_se_dice_afuera()
+    {
+        string? dicho = null;
+        var a = await AbrirAsync("dueno", "3333", porQue => dicho = porQue);
+        var antes = await TiendaAsync(a);
+        await GrupoAsync(a.Pantalla, "Venta y cobro");
+
+        // Esc con «9» en las fichas: la ventana se va (ya no está el renglón para decirlo) y el servicio no lo deja.
+        await a.Pantalla.EscribirAsync("aj-fichas", "9");
+        await ((IAsyncDisposable)a.Pantalla).DisposeAsync();
+
+        Assert.Equal("No se guardó lo último que escribiste en la Configuración: Se ven de 0 a 6 fichas; los demás tickets en espera van en «Más».", dicho);
+        Assert.Equal(antes, await TiendaAsync(a));
+    }
+
+    [Fact]
+    public async Task Un_doble_clic_en_Quitar_quita_un_rapido()
+    {
+        await using var a = await AbrirAsync("dueno", "3333");
+        var url = $"api/sucursales/{a.Caja.SucursalId}/rapidos";
+        var antes = (await a.Http.GetFromJsonAsync<List<Rapido>>(url))!;
+        await GrupoAsync(a.Pantalla, "Venta y cobro");
+        await a.Pantalla.EsperarAsync(t => t.Contains("Alt+2"), "los rápidos");
+        try
+        {
+            // El segundo clic llega antes de que la página tome el botón desactivado.
+            a.Pantalla.AcuseDelDibujo = TimeSpan.FromSeconds(1);
+            var quitar = await a.Pantalla.BotonAsync("Quitar");
+            await Task.WhenAll(a.Pantalla.OprimirAsync(quitar), a.Pantalla.OprimirAsync(quitar));
+
+            Assert.Equal(antes.Skip(1).Select(r => r.Nombre), (await a.Http.GetFromJsonAsync<List<Rapido>>(url))!.Select(r => r.Nombre));
+            Assert.Empty(a.Pantalla.Errores);
+        }
+        finally
+        {
+            var dueno = await DuenoAsync(a.Http);
+            (await a.Http.PutAsJsonAsync($"api/cajas/{a.Caja.Id}/configuracion/rapidos", new SolicitudRapidos(dueno.UsuarioId, antes))).EnsureSuccessStatusCode();
+        }
+    }
+
+    [Fact]
     public async Task El_ticket_se_ve_como_sale_mientras_se_escribe_y_un_renglon_largo_no_se_guarda()
     {
         await using var a = await AbrirAsync("encargado", "2222");
@@ -266,10 +414,10 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
         var guardado = (await a.Http.GetFromJsonAsync<ConfiguracionTicketDto>($"api/sucursales/{a.Caja.SucursalId}/ticket"))!;
 
         Assert.Contains("Así sale", await a.Pantalla.TextoAsync());
-        await a.Pantalla.EscribirAsync("aj-encabezado", "PAPELERÍA DE PRUEBA\nCalle 5");
+        // Lo escrito sale en «Así sale» aunque no se pueda guardar (así no hay nada que se guarde tras la pausa).
+        await a.Pantalla.EscribirAsync("aj-encabezado", $"PAPELERÍA DE PRUEBA\n{new string('x', 49)}");
         Assert.Contains("PAPELERÍA DE PRUEBA", await a.Pantalla.TextoAsync());
 
-        await a.Pantalla.EscribirAsync("aj-encabezado", new string('x', 49));
         await a.Pantalla.SalirAsync("aj-encabezado");
 
         Assert.Contains($"«{new string('x', 49)}» tiene más de 48 caracteres: no cabe en el renglón.", await a.Pantalla.TextoAsync());
@@ -309,7 +457,7 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
         }
         finally
         {
-            var dueno = (await (await a.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333"))).Content.ReadFromJsonAsync<SesionDto>())!;
+            var dueno = await DuenoAsync(a.Http);
             (await a.Http.PutAsJsonAsync($"api/cajas/{a.Caja.Id}/configuracion/rapidos", new SolicitudRapidos(dueno.UsuarioId, antes))).EnsureSuccessStatusCode();
         }
     }
@@ -375,7 +523,7 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
     /// <summary>Deja la configuración de la tienda como estaba: las pruebas de esta clase comparten el servicio.</summary>
     private static async Task RegresarAsync(Abierta a, ConfiguracionSucursalDto antes)
     {
-        var dueno = (await (await a.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333"))).Content.ReadFromJsonAsync<SesionDto>())!;
+        var dueno = await DuenoAsync(a.Http);
         (await a.Http.PutAsJsonAsync($"api/cajas/{a.Caja.Id}/configuracion", new SolicitudConfiguracionSucursal(dueno.UsuarioId, antes))).EnsureSuccessStatusCode();
     }
 }

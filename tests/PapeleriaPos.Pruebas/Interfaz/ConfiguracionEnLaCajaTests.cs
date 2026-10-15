@@ -24,17 +24,23 @@ public sealed class ConfiguracionEnLaCajaTests(ServicioDePrueba servicio) : ICla
     {
         var http = servicio.Fabrica.CreateClient();
         var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        var servicios = Servicios(caja);
+        var cliente = servicios.GetRequiredService<ClienteCaja>();
+        return new Caja(http, cliente, caja, servicios, await cliente.EntrarAsync("dueno", "3333"), await cliente.EntrarAsync("cajero", "1111"),
+            await cliente.EntrarAsync("encargado", "2222"));
+    }
+
+    /// <summary>Lo de una caja recién abierta: su propio cliente, sin nada leído todavía.</summary>
+    private ServiceProvider Servicios(CajaDto caja)
+    {
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
-        var cliente = new ClienteCaja(servicio.Fabrica.CreateClient(), conexion);
-        var servicios = new ServiceCollection()
+        return new ServiceCollection()
             .AddSingleton(conexion)
-            .AddSingleton(cliente)
+            .AddSingleton(new ClienteCaja(servicio.Fabrica.CreateClient(), conexion))
             .AddSingleton<IImpresora>(new SinImpresora())
             .AddSingleton<IJSRuntime>(new PaginaQueContesta())
             .AddScoped<ModuloCaja>()
             .BuildServiceProvider();
-        return new Caja(http, cliente, caja, servicios, await cliente.EntrarAsync("dueno", "3333"), await cliente.EntrarAsync("cajero", "1111"),
-            await cliente.EntrarAsync("encargado", "2222"));
     }
 
     private static async Task ConfigurarAsync(Caja c, Func<ConfiguracionSucursalDto, ConfiguracionSucursalDto> cambio)
@@ -64,7 +70,8 @@ public sealed class ConfiguracionEnLaCajaTests(ServicioDePrueba servicio) : ICla
 
             await ConfigurarAsync(c, x => x with { NombreTienda = "Papelería La Esquina" });
 
-            await using (var p = new PantallaSinNavegador(c.Servicios))
+            // Una caja que no ha leído nada: la entrada lo pide.
+            await using (var p = new PantallaSinNavegador(Servicios(c.Datos)))
             {
                 await p.AbrirAsync<LadoEntrada>(new() { [nameof(LadoEntrada.Caja)] = c.Datos });
                 await p.EsperarAsync(t => t.Contains("\nPapelería La Esquina"), "el nombre de la tienda");
@@ -120,6 +127,32 @@ public sealed class ConfiguracionEnLaCajaTests(ServicioDePrueba servicio) : ICla
         {
             await ConfigurarAsync(c, x => x with { FondoSugeridoCentavos = null });
         }
+    }
+
+    [Fact]
+    public async Task Si_al_cerrar_la_configuracion_no_se_pudo_guardar_lo_escrito_la_venta_lo_dice()
+    {
+        var c = await PrepararAsync();
+        await SinTurnoAsync(c);
+        var turno = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Dueno.UsuarioId, 50000);
+        var antes = await c.Cliente.ConfiguracionSucursalAsync(c.Datos.SucursalId);
+        await using var p = new PantallaSinNavegador(c.Servicios);
+        var venta = await p.AbrirAsync<PantallaVenta>(new()
+        {
+            [nameof(PantallaVenta.Caja)] = c.Datos,
+            [nameof(PantallaVenta.Sesion)] = c.Dueno,
+            [nameof(PantallaVenta.Turno)] = turno,
+        });
+        await p.OprimirAsync(await p.BotonAsync("Configuración"));
+        await p.OprimirAsync(await p.EsperarElementoAsync("cfg-venta"));
+        await p.EscribirAsync((await p.EsperarElementoAsync("aj-fichas")).Id!, "9");
+
+        // Esc con el cursor en el campo: la ventana se cierra sin salir de él, y lo escrito no se puede guardar.
+        await p.Dispatcher.InvokeAsync(() => venta.Tecla("Escape", null));
+
+        await p.EsperarAsync(t => t.Contains("No se guardó lo último que escribiste en la Configuración: Se ven de 0 a 6 fichas"), "el aviso en la venta");
+        Assert.Equal(antes, await c.Cliente.ConfiguracionSucursalAsync(c.Datos.SucursalId));
+        Assert.Empty(p.Errores);
     }
 
     [Fact]

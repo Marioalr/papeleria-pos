@@ -122,6 +122,22 @@ public class RegistroConfiguracionTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Con_como_estaba_en_la_pantalla_solo_se_toma_lo_que_cambio_quien_guarda()
+    {
+        // Una caja abrió la Configuración; mientras tanto, otra cambió el horario.
+        var enLaPantalla = await LeerAsync();
+        await CambiarAsync(_mario.Id, c => c with { HoraApertura = new TimeOnly(7, 0) });
+
+        // La primera cambia el teléfono, con como lo tenía: el horario de la otra se queda.
+        var guardada = await ConAsync(r => r.GuardarAsync(_caja.Id,
+            new SolicitudConfiguracionSucursal(_mario.Id, enLaPantalla with { Telefono = "55 1111 2222" }, enLaPantalla)));
+
+        Assert.Equal((new TimeOnly(7, 0), "55 1111 2222"), (guardada.HoraApertura, guardada.Telefono));
+        Assert.Equal(guardada, await LeerAsync());
+        Assert.Equal("Configuración de la tienda: Teléfono «55 1111 2222»", (await BitacoraAsync())[^1].Detalle);
+    }
+
+    [Fact]
     public async Task Sin_configuracion_de_la_tienda_no_se_cambia_nada_y_el_intento_queda()
     {
         var cajero = await Assert.ThrowsAsync<PermisoRequerido>(() => CambiarAsync(_ana.Id, c => c with { FichasEnEspera = 1 }));

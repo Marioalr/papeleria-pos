@@ -35,6 +35,8 @@ public class ConfiguracionApiTests(ServicioDePrueba servicio) : IClassFixture<Se
         var url = $"api/sucursales/{caja.SucursalId}/configuracion";
         var antes = (await http.GetFromJsonAsync<ConfiguracionSucursalDto>(url))!;
         var nueva = antes with { NombreTienda = "Papelería La Prueba", FichasEnEspera = 4, FondoSugeridoCentavos = 50000 };
+        // Las pruebas de esta clase comparten el servicio (y su bitácora): se cuentan los negados de esta.
+        var negadosAntes = await NegadosAsync();
 
         var porCajero = await http.PutAsJsonAsync($"api/cajas/{caja.Id}/configuracion", new SolicitudConfiguracionSucursal(cajero.UsuarioId, nueva));
         var porEncargado = await http.PutAsJsonAsync($"api/cajas/{caja.Id}/configuracion", new SolicitudConfiguracionSucursal(encargado.UsuarioId, nueva));
@@ -63,7 +65,13 @@ public class ConfiguracionApiTests(ServicioDePrueba servicio) : IClassFixture<Se
         Assert.Contains(bitacora, b => b.UsuarioId == dueno.UsuarioId && b.CajaId == caja.Id && b.Resultado == ResultadoBitacora.Hecho
             && b.Detalle == "Configuración de la tienda: Nombre de la tienda «Papelería La Prueba»; Tickets en espera a la vista 4; "
             + "Fondo sugerido al abrir turno $500.00");
-        Assert.Equal(2, bitacora.Count(b => b.Resultado == ResultadoBitacora.Negado));
+        Assert.Equal(negadosAntes + 2, await NegadosAsync());
+    }
+
+    private async Task<int> NegadosAsync()
+    {
+        await using var db = servicio.Base();
+        return await db.Bitacora.CountAsync(b => b.Accion == AccionControlada.ConfigurarTienda && b.Resultado == ResultadoBitacora.Negado);
     }
 
     [Fact]

@@ -320,11 +320,17 @@ public sealed record ConfiguracionSucursalDto(
     long? FondoSugeridoCentavos, long UmbralCorteCentavos, int FichasEnEspera = ConfiguracionSucursal.FichasEnEsperaPorOmision);
 
 /// <summary>
-/// Un cambio a la configuración de la tienda: va todo lo de <see cref="ConfiguracionSucursalDto"/> como debe quedar, y en la
-/// bitácora queda solo lo que cambió. Lo hace quien entró a la caja con «Configuración de la tienda», sin volver a escribir su PIN.
+/// Un cambio a la configuración de la tienda: lo hace quien entró a la caja con «Configuración de la tienda», sin volver a
+/// escribir su PIN, y en la bitácora queda solo lo que cambió.
 /// </summary>
 /// <param name="UsuarioId">Quien entró a la caja.</param>
-public sealed record SolicitudConfiguracionSucursal(Guid UsuarioId, ConfiguracionSucursalDto Configuracion);
+/// <param name="Configuracion">Como debe quedar.</param>
+/// <param name="Antes">
+/// Como la tenía la pantalla al cambiarla: se toma solo lo que es distinto entre las dos, y lo demás se queda como esté en
+/// el servicio (lo pudo cambiar otra caja, o el horario en Telegram, mientras tanto). Vacío: todo como dice
+/// <paramref name="Configuracion"/>.
+/// </param>
+public sealed record SolicitudConfiguracionSucursal(Guid UsuarioId, ConfiguracionSucursalDto Configuracion, ConfiguracionSucursalDto? Antes = null);
 
 /// <summary>Los rápidos de la venta en su orden (Alt+1 a Alt+6), como deben quedar. Los cambia quien tiene «Configuración de la tienda».</summary>
 /// <param name="UsuarioId">Quien entró a la caja.</param>

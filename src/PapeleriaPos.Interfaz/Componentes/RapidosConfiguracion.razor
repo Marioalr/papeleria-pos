@@ -32,28 +32,28 @@ else
                     <tr>
                         <td><kbd>Alt+@(i + 1)</kbd></td>
                         <td>
-                            <input id="@nombre" class="vn-cfg-rapido-nombre" maxlength="@Rapido.LargoNombre" autocomplete="off" disabled="@(!Puede)"
+                            <input id="@nombre" class="vn-cfg-rapido-nombre" maxlength="@Rapido.LargoNombre" autocomplete="off" disabled="@(!Puede || _ocupado)"
                                    aria-label="@($"Nombre del botón de Alt+{i + 1}")" value="@Escrito(nombre, rapido.Nombre)"
-                                   @oninput="e => Escribir(nombre, e.Value, texto => CambiarNombreAsync(indice, texto), Renglon)"
-                                   @onchange="() => SalirAsync(nombre)" @onkeydown="e => AlTeclearAsync(e, nombre)" />
+                                   @oninput="e => Escribir(nombre, e.Value, texto => CambiarNombreAsync(indice, texto), Renglon, conPausa: false)"
+                                   @onblur="() => SalirAsync(nombre)" @onkeydown="e => AlTeclearAsync(e, nombre)" />
                         </td>
                         <td>@(producto?.Descripcion ?? "Ya no está en el catálogo: elige otro")</td>
                         <td class="num">
-                            <input id="@cantidad" class="vn-cfg-rapido-cantidad" inputmode="decimal" autocomplete="off" disabled="@(!Puede)"
+                            <input id="@cantidad" class="vn-cfg-rapido-cantidad" inputmode="decimal" autocomplete="off" disabled="@(!Puede || _ocupado)"
                                    aria-label="@($"Cuántos vende Alt+{i + 1}")" value="@Escrito(cantidad, Cantidad(rapido))"
-                                   @oninput="e => Escribir(cantidad, e.Value, texto => CambiarCantidadAsync(indice, texto), Renglon)"
-                                   @onchange="() => SalirAsync(cantidad)" @onkeydown="e => AlTeclearAsync(e, cantidad)" />
+                                   @oninput="e => Escribir(cantidad, e.Value, texto => CambiarCantidadAsync(indice, texto), Renglon, conPausa: false)"
+                                   @onblur="() => SalirAsync(cantidad)" @onkeydown="e => AlTeclearAsync(e, cantidad)" />
                         </td>
                         <td class="num">@(producto is null ? "—" : Formato.Dinero(PantallaVenta.PrecioDelRapido(rapido, producto, Caja.SucursalId)))</td>
                         <td class="num">
                             @if (Puede)
                             {
                                 <span class="vn-cfg-acciones">
-                                    <button class="vn-boton chico" title="Subir: la tecla de antes" aria-label="Subir" disabled="@(i == 0)"
+                                    <button class="vn-boton chico" title="Subir: la tecla de antes" aria-label="Subir" disabled="@(i == 0 || _ocupado)"
                                             @onclick="() => MoverAsync(indice, -1)"><Ico Nombre="arriba" /></button>
-                                    <button class="vn-boton chico" title="Bajar: la tecla de después" aria-label="Bajar" disabled="@(i == _rapidos.Count - 1)"
+                                    <button class="vn-boton chico" title="Bajar: la tecla de después" aria-label="Bajar" disabled="@(i == _rapidos.Count - 1 || _ocupado)"
                                             @onclick="() => MoverAsync(indice, 1)"><Ico Nombre="abajo" /></button>
-                                    <button class="vn-boton chico" @onclick="() => QuitarAsync(indice)">Quitar</button>
+                                    <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => QuitarAsync(indice)">Quitar</button>
                                 </span>
                             }
                         </td>
@@ -78,7 +78,7 @@ else
         }
         else if (_rapidos.Count < Rapido.Maximo)
         {
-            <div class="vn-botonera"><button class="vn-boton chico" @onclick="() => _agregando = true"><Ico Nombre="mas" />Agregar un rápido</button></div>
+            <div class="vn-botonera"><button class="vn-boton chico" disabled="@_ocupado" @onclick="() => _agregando = true"><Ico Nombre="mas" />Agregar un rápido</button></div>
         }
         else
         {
@@ -96,6 +96,9 @@ else
     /// <summary>Se guardó un cambio: la Configuración dice a qué hora y la venta vuelve a pedir sus rápidos.</summary>
     [Parameter] public EventCallback AlGuardar { get; set; }
 
+    /// <summary>Al cerrar no se pudo guardar lo que quedó escrito: por qué.</summary>
+    [Parameter] public EventCallback<string> AlNoGuardar { get; set; }
+
     /// <summary>Donde se dice el error de cualquiera de los rápidos.</summary>
     public const string Renglon = "rapidos";
 
@@ -103,6 +106,9 @@ else
     private readonly Dictionary<Guid, ProductoVentaDto?> _productos = [];
     private string? _errorCarga;
     private bool _agregando;
+
+    /// <summary>Mientras se mueve, se quita o se agrega uno: los renglones van por su lugar, y un doble clic quitaría dos.</summary>
+    private bool _ocupado;
 
     private bool Puede => Sesion.Puede(AccionControlada.ConfigurarTienda);
 
@@ -120,6 +126,8 @@ else
     }
 
     protected override Task AlGuardarAsync() => AlGuardar.InvokeAsync();
+
+    protected override Task NoSeGuardoAlCerrarAsync(IReadOnlyList<string> errores) => AlNoGuardar.InvokeAsync(string.Join(" ", errores));
 
     /// <summary>El producto de cada rápido, para su nombre y su precio.</summary>
     private async Task ProductosAsync()
@@ -147,22 +155,38 @@ else
         return GuardarAsync(l => l.Select((r, k) => k == indice ? r with { Cantidad = cantidad } : r).ToList());
     }
 
-    private Task MoverAsync(int indice, int hacia) => HacerAsync(Renglon, () => GuardarAsync(l =>
+    private Task MoverAsync(int indice, int hacia) => UnaVezAsync(() => GuardarAsync(l =>
     {
         (l[indice], l[indice + hacia]) = (l[indice + hacia], l[indice]);
         return l;
     }));
 
-    private Task QuitarAsync(int indice) => HacerAsync(Renglon, () => GuardarAsync(l =>
+    private Task QuitarAsync(int indice) => UnaVezAsync(() => GuardarAsync(l =>
     {
         l.RemoveAt(indice);
         return l;
     }));
 
+    /// <summary>Mover, quitar o agregar, de uno en uno: lo que llega mientras tanto (un doble clic) no se hace.</summary>
+    private async Task<bool> UnaVezAsync(Func<Task> cambio)
+    {
+        if (_ocupado)
+            return false;
+        _ocupado = true;
+        try
+        {
+            return await HacerAsync(Renglon, cambio);
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
     /// <summary>El elegido en la búsqueda, al final, con el nombre del producto (recortado para el botón) y de uno en uno.</summary>
     private async Task AgregarAsync(Guid varianteId)
     {
-        var agregado = await HacerAsync(Renglon, async () =>
+        var agregado = await UnaVezAsync(async () =>
         {
             var producto = await Cliente.PorVarianteAsync(varianteId, Caja.SucursalId) ?? throw new ArgumentException("Ese producto ya no está en el catálogo.");
             _productos[varianteId] = producto;

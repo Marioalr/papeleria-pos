@@ -54,12 +54,16 @@ else if (_error is null)
     private List<BitacoraDto>? _registros;
     private string? _error;
 
+    /// <summary>La última consulta: la fecha se cambia por partes (día, mes, año) y una respuesta vieja no tapa a la nueva.</summary>
+    private int _consulta;
+
     private static DateOnly Hoy() => DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
 
     protected override Task OnInitializedAsync() => ConsultarAsync();
 
     private async Task ConsultarAsync()
     {
+        var consulta = ++_consulta;
         _error = null;
         if (_hasta < _desde)
         {
@@ -68,11 +72,14 @@ else if (_error is null)
         }
         try
         {
-            _registros = await Cliente.ConsultarBitacoraAsync(Caja.Id, Sesion.UsuarioId, _desde, _hasta);
+            var registros = await Cliente.ConsultarBitacoraAsync(Caja.Id, Sesion.UsuarioId, _desde, _hasta);
+            if (consulta == _consulta)
+                _registros = registros;
         }
         catch (ErrorCaja ex)
         {
-            (_error, _registros) = (ex.Message, null);
+            if (consulta == _consulta)
+                (_error, _registros) = (ex.Message, null);
         }
     }
 }

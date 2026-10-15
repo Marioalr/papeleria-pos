@@ -75,8 +75,8 @@ else
                 <span class="vn-ctl-texto">
                     <input id="impresora-host" placeholder="192.168.1.50" autocomplete="off" spellcheck="false" aria-label="IP de la impresora"
                            disabled="@(!PuedeConfigurar)" value="@Escrito(Host, _estado.Configuracion.Host ?? "")"
-                           @oninput="e => Escribir(Host, e.Value, GuardarHostAsync)"
-                           @onchange="() => SalirAsync(Host)" @onkeydown="e => AlTeclearAsync(e, Host)" />
+                           @oninput="e => Escribir(Host, e.Value, GuardarHostAsync, conPausa: false)"
+                           @onblur="() => SalirAsync(Host)" @onkeydown="e => AlTeclearAsync(e, Host)" />
                 </span>
             </div>
             <div class="vn-ajuste">
@@ -92,8 +92,8 @@ else
                 <span class="vn-ctl-num">
                     <input id="impresora-aviso" inputmode="numeric" autocomplete="off" aria-label="Avisar con tinta en (por ciento)" disabled="@(!PuedeConfigurar)"
                            value="@Escrito(Aviso, _estado.Configuracion.AvisoTintaPorcentaje.ToString(CultureInfo.InvariantCulture))"
-                           @oninput="e => Escribir(Aviso, e.Value, GuardarAvisoAsync)"
-                           @onchange="() => SalirAsync(Aviso)" @onkeydown="e => AlTeclearAsync(e, Aviso)" />% o menos
+                           @oninput="e => Escribir(Aviso, e.Value, GuardarAvisoAsync, conPausa: false)"
+                           @onblur="() => SalirAsync(Aviso)" @onkeydown="e => AlTeclearAsync(e, Aviso)" />% o menos
                 </span>
             </div>
             <div class="vn-ajuste">
@@ -108,8 +108,8 @@ else
                 <span class="vn-ctl-num">
                     <input id="impresora-minutos" inputmode="numeric" autocomplete="off" aria-label="Leer la impresora cada (minutos)" disabled="@(!PuedeConfigurar)"
                            value="@Escrito(Minutos, _estado.Configuracion.MinutosEntreLecturas.ToString(CultureInfo.InvariantCulture))"
-                           @oninput="e => Escribir(Minutos, e.Value, GuardarMinutosAsync)"
-                           @onchange="() => SalirAsync(Minutos)" @onkeydown="e => AlTeclearAsync(e, Minutos)" />minutos
+                           @oninput="e => Escribir(Minutos, e.Value, GuardarMinutosAsync, conPausa: false)"
+                           @onblur="() => SalirAsync(Minutos)" @onkeydown="e => AlTeclearAsync(e, Minutos)" />minutos
                 </span>
             </div>
         </div>
@@ -153,8 +153,20 @@ else
             }
             @if (PuedeConfigurar)
             {
+                @* Antes la confirmaba el PIN: ahora se pregunta aquí mismo, porque cambia el costo de lo que se imprima. *@
                 <div class="vn-botonera">
-                    <button class="vn-boton chico" disabled="@_ocupado" @onclick="AplicarCalibracionAsync">Aplicar la corrección</button>
+                    @if (_porAplicar)
+                    {
+                        <span class="vn-cfg-pregunta">
+                            Las impresiones nuevas salen con esta corrección.
+                            <button class="vn-boton chico primario" disabled="@(_ocupado || _aplicando)" @onclick="AplicarCalibracionAsync">Aplicar</button>
+                            <button class="vn-boton chico" disabled="@(_ocupado || _aplicando)" @onclick="() => _porAplicar = false">No</button>
+                        </span>
+                    }
+                    else
+                    {
+                        <button class="vn-boton chico" disabled="@(_ocupado || _aplicando)" @onclick="() => _porAplicar = true">Aplicar la corrección</button>
+                    }
                 </div>
             }
         }
@@ -219,6 +231,9 @@ else
     /// <summary>Se guardó un cambio: la Configuración dice a qué hora.</summary>
     [Parameter] public EventCallback AlGuardar { get; set; }
 
+    /// <summary>Al cerrar no se pudo guardar lo que quedó escrito: por qué.</summary>
+    [Parameter] public EventCallback<string> AlNoGuardar { get; set; }
+
     private const string Host = "impresora-host";
     private const string Aviso = "impresora-aviso";
     private const string Minutos = "impresora-minutos";
@@ -232,6 +247,15 @@ else
     private string? _avisoTexto;
     private bool _ocupado;
 
+    /// <summary>Se preguntó si se aplica la calibración.</summary>
+    private bool _porAplicar;
+
+    /// <summary>Mientras se aplica: un doble clic la aplicaría dos veces.</summary>
+    private bool _aplicando;
+
+    /// <summary>La última consulta del desglose: una más vieja que llegue después no la tapa (al cambiar el día por partes).</summary>
+    private int _consultaDia;
+
     protected override async Task OnInitializedAsync()
     {
         await HacerAsync(async () =>
@@ -243,6 +267,8 @@ else
     }
 
     protected override Task AlGuardarAsync() => AlGuardar.InvokeAsync();
+
+    protected override Task NoSeGuardoAlCerrarAsync(IReadOnlyList<string> errores) => AlNoGuardar.InvokeAsync(string.Join(" ", errores));
 
     private void Mostrar(EstadoImpresoraDto estado) => _estado = estado;
 
@@ -268,11 +294,14 @@ else
             ? n
             : throw new ArgumentException($"Escribe {que} con número.");
 
-    /// <summary>Cómo se lee, con lo que cambió: al guardarlo, la caja principal la vuelve a leer.</summary>
+    /// <summary>
+    /// Cómo se lee, con lo que cambió sobre como está ahora en el servicio (no sobre lo que se leyó al abrir: otra caja la
+    /// pudo cambiar). Al guardarlo, la caja principal la vuelve a leer.
+    /// </summary>
     private async Task GuardarAsync(Func<ConfiguracionImpresoraDto, ConfiguracionImpresoraDto> cambio)
     {
-        Mostrar(await Cliente.GuardarImpresoraAsync(Caja.SucursalId,
-            new SolicitudConfiguracionImpresora(Sesion.UsuarioId, cambio(_estado!.Configuracion))));
+        var actual = (await Cliente.ImpresoraAsync(Caja.SucursalId)).Configuracion;
+        Mostrar(await Cliente.GuardarImpresoraAsync(Caja.SucursalId, new SolicitudConfiguracionImpresora(Sesion.UsuarioId, cambio(actual))));
         _avisoTexto = _estado!.Configuracion.Host is null || _estado.Error is null ? null : "Guardado, pero la impresora no respondió.";
     }
 
@@ -286,16 +315,33 @@ else
     {
         if (!VeElDia)
             return;
-        await HacerAsync(async () => _dia = await Cliente.ImpresionesDelDiaAsync(Caja.SucursalId, _fecha, Sesion.UsuarioId));
+        var consulta = ++_consultaDia;
+        await HacerAsync(async () =>
+        {
+            var dia = await Cliente.ImpresionesDelDiaAsync(Caja.SucursalId, _fecha, Sesion.UsuarioId);
+            if (consulta == _consultaDia)
+                _dia = dia;
+        });
     }
 
     private Task LeerAsync() => HacerAsync(async () => Mostrar(await Cliente.LeerImpresoraAsync(Caja.SucursalId)));
 
-    private Task AplicarCalibracionAsync() => HacerAsync(Calibracion, async () =>
+    private async Task AplicarCalibracionAsync()
     {
-        _calibracion = await Cliente.AplicarCalibracionAsync(Caja.SucursalId, new SolicitudCalibracion(Sesion.UsuarioId));
-        _avisoTexto = "Corrección aplicada: las impresiones nuevas ya salen con ella.";
-    });
+        if (_aplicando)
+            return;
+        _aplicando = true;
+        try
+        {
+            if (await HacerAsync(Calibracion, async () => _calibracion = await Cliente.AplicarCalibracionAsync(Caja.SucursalId,
+                    new SolicitudCalibracion(Sesion.UsuarioId))))
+                (_porAplicar, _avisoTexto) = (false, "Corrección aplicada: las impresiones nuevas ya salen con ella.");
+        }
+        finally
+        {
+            _aplicando = false;
+        }
+    }
 
     /// <summary>Lo que no se guarda (leer, cargar): el error abajo.</summary>
     private async Task HacerAsync(Func<Task> accion)

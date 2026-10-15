@@ -1210,6 +1210,12 @@
         await CargarRapidosAsync();
     }
 
+    /// <summary>
+    /// Se cerró la Configuración con algo escrito que no se pudo guardar (Esc sin salir del campo): ya no está su renglón para
+    /// decirlo, así que se dice aquí abajo.
+    /// </summary>
+    private void ConfiguracionNoGuardada(string porQue) => Avisar(porQue);
+
     /// <summary>Con más de estos en «Más», el menú lleva flechas arriba y abajo.</summary>
     private const int FilasDelMenu = 5;
 
@@ -3353,7 +3359,8 @@
         case Ventanas.Configuracion:
             @* La Configuración nueva (entrega 7) ocupa la pantalla, como el corte: Esc la cierra. *@
             <Ventana Titulo="Configuración" Clase="cfg" AlCerrar="Cerrar">
-                <Configuracion Caja="Caja" Sesion="Sesion" AntesDeInstalar="GuardarEspera" AlCambiar="ConfiguracionCambiadaAsync" />
+                <Configuracion Caja="Caja" Sesion="Sesion" AntesDeInstalar="GuardarEspera" AlCambiar="ConfiguracionCambiadaAsync"
+                               AlNoGuardar="ConfiguracionNoGuardada" />
             </Ventana>
             break;
         case Ventanas.Motivo:

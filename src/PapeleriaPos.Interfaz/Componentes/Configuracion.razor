@@ -93,6 +93,9 @@
     /// <summary>Cambió algo que usa la venta (las fichas de la espera, los rápidos): que lo vuelva a pedir.</summary>
     [Parameter] public EventCallback AlCambiar { get; set; }
 
+    /// <summary>Al cerrar no se pudo guardar lo que quedó escrito: la venta lo dice, porque la ventana ya no está.</summary>
+    [Parameter] public EventCallback<string> AlNoGuardar { get; set; }
+
     /// <summary>Un grupo de la izquierda.</summary>
     /// <param name="Icono">De Iconos.razor.</param>
     private sealed record Grupo(string Id, string Nombre, string Icono)
@@ -170,6 +173,9 @@
 
         /// <summary>Para el lector de pantalla, si no basta el nombre del ajuste («De», «A»).</summary>
         public string? Etiqueta { get; init; }
+
+        /// <summary>Texto libre (un nombre, el encabezado): también se guarda tras una pausa al escribir. Un número, al salir.</summary>
+        public bool ConPausa { get; init; }
     }
 
     private List<Grupo> _grupos = [];
@@ -274,7 +280,37 @@
     /// <summary>El margen lo ve quien ve la utilidad o quien lo pone.</summary>
     private bool VeMargen => Sesion.Puede(AccionControlada.VerUtilidad) || Sesion.Ve(AccionControlada.ConfigurarMargen);
 
-    private void Elegir(Grupo grupo) => (_elegido, _busca) = (grupo.Id, "");
+    private void Elegir(Grupo grupo)
+    {
+        (_elegido, _busca) = (grupo.Id, "");
+        _ = RefrescarAsync();
+    }
+
+    /// <summary>
+    /// Al cambiar de grupo, lo de la tienda y el ticket como están ahora en el servicio (lo pudo cambiar otra caja, o el
+    /// horario en Telegram): lo que se enseña no se queda con lo que se leyó al abrir.
+    /// </summary>
+    private Task RefrescarAsync() => EnSuTurnoAsync(async () =>
+    {
+        // Después de lo que se está guardando (al salir de un campo para elegir otro grupo): así no regresa lo de antes.
+        try
+        {
+            var tienda = await Cliente.ConfiguracionSucursalAsync(Caja.SucursalId);
+            var ticket = await Cliente.ConfiguracionTicketAsync(Caja.SucursalId);
+            (_tienda, _ticket) = (tienda, ticket ?? _ticket);
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión: se queda lo que había; al guardar se dice.
+        }
+        if (!Cerrado)
+            StateHasChanged();
+    });
+
+    protected override Task NoSeGuardoAlCerrarAsync(IReadOnlyList<string> errores) => NoGuardadoAsync(string.Join(" ", errores));
+
+    /// <summary>Lo que no se pudo guardar al cerrar, aquí o en lo de adentro (los rápidos, la impresora): lo dice la venta.</summary>
+    private Task NoGuardadoAsync(string porQue) => AlNoGuardar.InvokeAsync($"No se guardó lo último que escribiste en la Configuración: {porQue}");
 
     /// <summary>↑ ↓ (Inicio y Fin) recorren los grupos: Tab pasa del grupo a sus ajustes, sin recorrer todos los demás.</summary>
     private async Task MoverAsync(KeyboardEventArgs e, Grupo grupo)
@@ -371,14 +407,14 @@
             @if (c.Renglones > 0)
             {
                 <textarea id="aj-@c.Id" rows="@c.Renglones" spellcheck="false" aria-label="@(c.Etiqueta ?? a.Titulo)" disabled="@(!Cambia(a))"
-                          value="@Escrito(c.Id, c.Guardado())" @oninput="e => Escribir(c.Id, e.Value, c.Guardar, a.Id)"
-                          @onchange="() => SalirAsync(c.Id)"></textarea>
+                          value="@Escrito(c.Id, c.Guardado())" @oninput="e => Escribir(c.Id, e.Value, c.Guardar, a.Id, c.ConPausa)"
+                          @onblur="() => SalirAsync(c.Id)"></textarea>
             }
             else
             {
                 <input id="aj-@c.Id" type="@c.Tipo" inputmode="@c.Modo" maxlength="@c.Largo" placeholder="@c.Marcador" autocomplete="off"
                        spellcheck="false" aria-label="@(c.Etiqueta ?? a.Titulo)" disabled="@(!Cambia(a))" value="@Escrito(c.Id, c.Guardado())"
-                       @oninput="e => Escribir(c.Id, e.Value, c.Guardar, a.Id)" @onchange="() => SalirAsync(c.Id)"
+                       @oninput="e => Escribir(c.Id, e.Value, c.Guardar, a.Id, c.ConPausa)" @onblur="() => SalirAsync(c.Id)"
                        @onkeydown="e => AlTeclearAsync(e, c.Id)" />
             }
             @c.Despues
@@ -386,7 +422,11 @@
 
     private string NombreDe(string grupo) => _grupos.FirstOrDefault(g => g.Id == grupo)?.Nombre ?? grupo;
 
-    private void Ir(string grupo) => (_elegido, _busca) = (grupo, "");
+    private void Ir(string grupo)
+    {
+        (_elegido, _busca) = (grupo, "");
+        _ = RefrescarAsync();
+    }
 
     // ── Los grupos ───────────────────────────────────────────────────────────
 
@@ -443,7 +483,7 @@
                     Ayuda = $"Lo que no tiene código de barras y se vende todo el día, con Alt+1 a Alt+{Rapido.Maximo}. Con un número en el cuadro, agregan esa cantidad.",
                     Permiso = AccionControlada.ConfigurarTienda,
                     Palabras = "Alt copia CURP botones servicios",
-                    Bloque = @<RapidosConfiguracion Caja="Caja" Sesion="Sesion" AlGuardar="RapidosGuardadosAsync" />,
+                    Bloque = @<RapidosConfiguracion Caja="Caja" Sesion="Sesion" AlGuardar="RapidosGuardadosAsync" AlNoGuardar="NoGuardadoAsync" />,
                 },
                 new("sinonimos", "Sinónimos de la búsqueda")
                 {
@@ -519,7 +559,7 @@
                 Atajo("impresora-calibracion", "Calibración de la tinta", "impresoras", AccionControlada.ConfigurarImpresora, "Lo que bajaron los niveles contra lo estimado."),
                 Atajo("impresora-dia", "Impresiones del día", "impresoras", AccionControlada.ConsultarBitacora, "Lo que se imprimió y cómo se cobró.", "desglose cobradas"),
             ],
-            Contenido = @<ConfiguracionImpresora Caja="Caja" Sesion="Sesion" AlGuardar="MarcarGuardado" />,
+            Contenido = @<ConfiguracionImpresora Caja="Caja" Sesion="Sesion" AlGuardar="MarcarGuardado" AlNoGuardar="NoGuardadoAsync" />,
         },
         new("inventario", "Inventario", "cajas")
         {
@@ -650,7 +690,13 @@
             NoListo = NoListoTienda,
             Campos =
             [
-                new(id, () => valor(_tienda!) ?? "", texto => GuardarTiendaAsync(c => poner(c, texto))) { Clase = "vn-ctl-texto", Largo = largo, Modo = modo },
+                new(id, () => valor(_tienda!) ?? "", texto => GuardarTiendaAsync(c => poner(c, texto)))
+                {
+                    Clase = "vn-ctl-texto",
+                    Largo = largo,
+                    Modo = modo,
+                    ConPausa = true,
+                },
             ],
         };
 
@@ -688,6 +734,7 @@
                 {
                     Clase = "vn-ctl-area",
                     Renglones = renglones,
+                    ConPausa = true,
                 },
             ],
         };
@@ -712,24 +759,33 @@
 
     // ── Guardar ─────────────────────────────────────────────────────────────
 
-    /// <summary>La configuración de la tienda con un cambio: va completa, y el servicio deja en la bitácora solo lo que cambió.</summary>
+    /// <summary>
+    /// La configuración de la tienda con un cambio: va con como estaba en la pantalla («Antes»), y el servicio toma solo lo que
+    /// cambió; lo demás se queda como esté allá (lo pudo cambiar otra caja, o el horario en Telegram). Regresa toda, al día.
+    /// </summary>
     private async Task GuardarTiendaAsync(Func<ConfiguracionSucursalDto, ConfiguracionSucursalDto> cambio)
     {
-        _tienda = await Cliente.GuardarConfiguracionSucursalAsync(Caja.Id, new SolicitudConfiguracionSucursal(Sesion.UsuarioId, cambio(_tienda!)));
+        var antes = _tienda!;
+        _tienda = await Cliente.GuardarConfiguracionSucursalAsync(Caja.Id, new SolicitudConfiguracionSucursal(Sesion.UsuarioId, cambio(antes), antes));
         await AlCambiar.InvokeAsync();
     }
 
+    // El ticket, el margen y el sugerido se guardan completos: el cambio va sobre como están ahora en el servicio, no sobre
+    // lo que se leyó al abrir, para no deshacer lo que otra caja cambió mientras tanto.
+
     private async Task GuardarTextosAsync(Func<ConfiguracionTicketDto, (IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie)> cambio)
     {
-        var (encabezado, pie) = cambio(_ticket!);
+        var (encabezado, pie) = cambio(await Cliente.ConfiguracionTicketAsync(Caja.SucursalId) ?? _ticket!);
         _ticket = await Cliente.GuardarTextosTicketAsync(Caja.Id, new SolicitudTextosTicket(Sesion.UsuarioId, encabezado, pie));
     }
 
     private async Task GuardarMargenesAsync(Func<MargenesDto, MargenesDto> cambio) =>
-        _margenes = await Cliente.GuardarMargenesAsync(Caja.SucursalId, new SolicitudMargenes(Sesion.UsuarioId, cambio(_margenes!)));
+        _margenes = await Cliente.GuardarMargenesAsync(Caja.SucursalId,
+            new SolicitudMargenes(Sesion.UsuarioId, cambio(await Cliente.MargenesAsync(Caja.SucursalId))));
 
     private async Task GuardarSugeridoAsync(Func<ParametrosSugeridoDto, ParametrosSugeridoDto> cambio) =>
-        _sugerido = await Cliente.GuardarParametrosSugeridoAsync(Caja.SucursalId, new SolicitudParametrosSugerido(Sesion.UsuarioId, cambio(_sugerido!)));
+        _sugerido = await Cliente.GuardarParametrosSugeridoAsync(Caja.SucursalId,
+            new SolicitudParametrosSugerido(Sesion.UsuarioId, cambio(await Cliente.ParametrosSugeridoAsync(Caja.SucursalId))));
 
     private async Task RapidosGuardadosAsync()
     {
@@ -885,8 +941,8 @@
                                 <input id="aj-@campo" inputmode="decimal" placeholder="General" autocomplete="off" aria-label="@($"Margen mínimo de {d.Departamento}")"
                                        disabled="@(!Sesion.Puede(AccionControlada.ConfigurarMargen))"
                                        value="@Escrito(campo, d.MargenMinimoCentesimas is { } c ? Porcentaje(c) : "")"
-                                       @oninput="e => Escribir(campo, e.Value, texto => GuardarMargenAsync(departamento.DepartamentoId, texto), MargenDepartamento)"
-                                       @onchange="() => SalirAsync(campo)" @onkeydown="e => AlTeclearAsync(e, campo)" />%
+                                       @oninput="e => Escribir(campo, e.Value, texto => GuardarMargenAsync(departamento.DepartamentoId, texto), MargenDepartamento, conPausa: false)"
+                                       @onblur="() => SalirAsync(campo)" @onkeydown="e => AlTeclearAsync(e, campo)" />%
                             </span>
                         </td>
                     </tr>

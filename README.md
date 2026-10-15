@@ -126,7 +126,7 @@ Para que alguien de la tienda pruebe lo que ya funciona, solo y sin tocar eleven
 - **La caja arranca su propio servicio** en el puerto 5180 y lo apaga al cerrarse. No hay servicio de Windows ni
   segunda caja. La base ficticia de trabajo va en `C:\ProgramData\PapeleriaPos-Prueba`. El instalador abre el 5180
   a la red local para probar el conteo completo desde un celular en el mismo wifi.
-- **Se actualiza desde la caja:** Configuración › Actualización (solo en la caja de prueba).
+- **Se actualiza desde la caja:** Configuración › Acerca de › Actualización (solo en la caja de prueba).
   - Lista los instaladores que hay en GitHub, con lo que trae cada uno respecto a la instalada.
   - Lo baja, revisa su huella e instala encima en silencio. Windows pide el permiso de administrador; el instalador
     cierra la caja y la vuelve a abrir. Los datos de la prueba y los tickets en espera se quedan.

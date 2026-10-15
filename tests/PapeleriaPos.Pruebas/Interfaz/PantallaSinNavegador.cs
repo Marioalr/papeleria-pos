@@ -46,7 +46,13 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
             Errores.Add(exception);
     }
 
-    protected override Task UpdateDisplayAsync(in RenderBatch lote) => Task.CompletedTask;
+    /// <summary>
+    /// Lo que tarda «la página» en tomar cada dibujo; sin nada, al momento. Mientras tanto, como en el navegador, un clic
+    /// todavía llega a lo de antes: un doble clic antes de que el botón se vea desactivado.
+    /// </summary>
+    public TimeSpan AcuseDelDibujo { get; set; }
+
+    protected override Task UpdateDisplayAsync(in RenderBatch lote) => AcuseDelDibujo > TimeSpan.Zero ? Task.Delay(AcuseDelDibujo) : Task.CompletedTask;
 
     /// <summary>Todo el texto de la pantalla (cada elemento empieza renglón) y sus elementos, en orden.</summary>
     public Task<(string Texto, List<ElementoDibujado> Elementos)> LeerAsync() => Dispatcher.InvokeAsync(() =>
@@ -75,9 +81,18 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
     public async Task EscribirAsync(string id, string valor) =>
         await DispararAsync(await PorIdAsync(id), "oninput", new ChangeEventArgs { Value = valor });
 
-    /// <summary>Salir del campo (su «onchange»): lo escrito se guarda.</summary>
-    public async Task SalirAsync(string id) =>
-        await DispararAsync(await PorIdAsync(id), "onchange", new ChangeEventArgs { Value = (await PorIdAsync(id)).Valor });
+    /// <summary>Salir del campo, como en el navegador: primero su «onchange» y luego su «onblur» (los que tenga).</summary>
+    public async Task SalirAsync(string id)
+    {
+        var campo = await PorIdAsync(id);
+        if (!campo.Eventos.ContainsKey("onchange") && !campo.Eventos.ContainsKey("onblur"))
+            throw new Xunit.Sdk.XunitException($"«{campo.Etiqueta}#{id}» no hace nada al salir de él.");
+        if (campo.Eventos.ContainsKey("onchange"))
+            await DispararAsync(campo, "onchange", new ChangeEventArgs { Value = campo.Valor });
+        campo = await PorIdAsync(id);
+        if (campo.Eventos.ContainsKey("onblur"))
+            await DispararAsync(campo, "onblur", new FocusEventArgs { Type = "blur" });
+    }
 
     public async Task TeclaAsync(string id, string tecla) =>
         await DispararAsync(await PorIdAsync(id), "onkeydown", new KeyboardEventArgs { Key = tecla });
@@ -95,6 +110,20 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
         {
             if (DateTime.UtcNow > limite)
                 throw new Xunit.Sdk.XunitException($"La pantalla no llegó a {que}:\n{await TextoAsync()}");
+            await Task.Delay(20);
+        }
+    }
+
+    /// <summary>Espera a que esté el elemento (lo que se carga en segundo plano) y lo regresa.</summary>
+    public async Task<ElementoDibujado> EsperarElementoAsync(string id)
+    {
+        var limite = DateTime.UtcNow.AddSeconds(20);
+        while (true)
+        {
+            if ((await LeerAsync()).Elementos.FirstOrDefault(e => e.Id == id) is { } elemento)
+                return elemento;
+            if (DateTime.UtcNow > limite)
+                throw new Xunit.Sdk.XunitException($"No llegó «#{id}»:\n{await TextoAsync()}");
             await Task.Delay(20);
         }
     }

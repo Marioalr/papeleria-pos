@@ -28,16 +28,18 @@ public sealed class RegistroConfiguracion(PosDbContext db)
             c.UmbralCorteCentavos, c.FichasEnEspera);
 
     /// <summary>
-    /// Deja la configuración como dice la solicitud. Lo que no cambió no se toca ni va a la bitácora; si nada cambió, no se
-    /// guarda nada (las cajas no vuelven a bajar su copia).
+    /// Deja la configuración como dice la solicitud; con <see cref="SolicitudConfiguracionSucursal.Antes"/>, solo lo que
+    /// cambió quien guarda, y lo demás como está. Lo que no cambió no se toca ni va a la bitácora; si nada cambió, no se
+    /// guarda nada (las cajas no vuelven a bajar su copia). Regresa toda la configuración como quedó.
     /// </summary>
     public async Task<ConfiguracionSucursalDto> GuardarAsync(Guid cajaId, SolicitudConfiguracionSucursal s, CancellationToken ct = default)
     {
         var caja = await CajaAsync(cajaId, ct);
         var control = new ServicioControl(db);
         await control.ExigirDeLaSesionAsync(s.UsuarioId, caja.SucursalId, caja.Id, AccionControlada.ConfigurarTienda, ct);
-        var nueva = Validar(s.Configuracion ?? throw new ArgumentException("Falta la configuración."));
+        var pedida = s.Configuracion ?? throw new ArgumentException("Falta la configuración.");
         var c = await ParaCambiarAsync(caja.SucursalId, ct);
+        var nueva = Validar(s.Antes is { } antes ? Mezclar(Dto(c), antes, pedida) : pedida);
 
         var cambios = new List<string>();
         void Cambio<T>(string nombre, T antes, T despues, string texto, Action poner)
@@ -93,6 +95,25 @@ public sealed class RegistroConfiguracion(PosDbContext db)
             await db.SaveChangesAsync(ct);
         }
         return rapidos;
+    }
+
+    /// <summary>
+    /// Lo que es distinto entre <paramref name="antes"/> y <paramref name="pedida"/> (lo que cambió quien guarda), sobre como
+    /// está <paramref name="actual"/>: dos que cambian cosas distintas al mismo tiempo no se deshacen una a la otra.
+    /// </summary>
+    private static ConfiguracionSucursalDto Mezclar(ConfiguracionSucursalDto actual, ConfiguracionSucursalDto antes, ConfiguracionSucursalDto pedida)
+    {
+        T Toma<T>(T deAntes, T pedido, T esta) => EqualityComparer<T>.Default.Equals(deAntes, pedido) ? esta : pedido;
+        return new ConfiguracionSucursalDto(
+            Toma(antes.NombreTienda, pedida.NombreTienda, actual.NombreTienda),
+            Toma(antes.Direccion, pedida.Direccion, actual.Direccion),
+            Toma(antes.Telefono, pedida.Telefono, actual.Telefono),
+            Toma(antes.HoraApertura, pedida.HoraApertura, actual.HoraApertura),
+            Toma(antes.HoraCierre, pedida.HoraCierre, actual.HoraCierre),
+            Toma(antes.LimiteEfectivoCentavos, pedida.LimiteEfectivoCentavos, actual.LimiteEfectivoCentavos),
+            Toma(antes.FondoSugeridoCentavos, pedida.FondoSugeridoCentavos, actual.FondoSugeridoCentavos),
+            Toma(antes.UmbralCorteCentavos, pedida.UmbralCorteCentavos, actual.UmbralCorteCentavos),
+            Toma(antes.FichasEnEspera, pedida.FichasEnEspera, actual.FichasEnEspera));
     }
 
     private static ConfiguracionSucursalDto Validar(ConfiguracionSucursalDto c)
