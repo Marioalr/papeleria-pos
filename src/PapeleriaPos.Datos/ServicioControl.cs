@@ -6,28 +6,66 @@ using PapeleriaPos.Nucleo.Usuarios;
 namespace PapeleriaPos.Datos;
 
 /// <summary>
-/// Revisa las reglas, da y gasta autorizaciones y escribe la bitácora. Todo lo que pasa por aquí lo decide el servicio,
-/// no la pantalla: así no se puede saltar el control desde otra caja o llamando a la API directo.
+/// Revisa los permisos de cada usuario (entrega 1), da y gasta autorizaciones y escribe la bitácora. Todo lo que pasa por
+/// aquí lo decide el servicio, no la pantalla: así no se puede saltar el control desde otra caja o llamando a la API directo.
+/// Los permisos son del usuario: la sucursal que reciben los métodos ya no cambia lo que puede, solo dice qué usuarios
+/// entran en esa caja (quién autoriza) y dónde queda la bitácora.
 /// </summary>
 public sealed class ServicioControl(PosDbContext db)
 {
     private DateTime Ahora => db.Reloj.GetUtcNow().UtcDateTime;
 
-    public async Task<List<ReglaPermiso>> ReglasAsync(Guid sucursalId, CancellationToken ct = default) =>
-        await db.ReglasPermiso.AsNoTracking().Where(r => r.SucursalId == null || r.SucursalId == sucursalId).ToListAsync(ct);
+    /// <summary>Los permisos de un usuario, uno por acción (el que no esté, «No»).</summary>
+    public async Task<PermisosDeUsuario> PermisosAsync(Guid usuarioId, CancellationToken ct = default) =>
+        new(await db.PermisosUsuario.AsNoTracking().Where(p => p.UsuarioId == usuarioId)
+            .Select(p => new Permiso(p.Accion, p.Nivel, p.UmbralCentavos, p.PideMotivo)).ToListAsync(ct));
+
+    /// <summary>Los permisos por defecto: con ellos empieza cada usuario nuevo.</summary>
+    public async Task<PermisosDeUsuario> DefectoAsync(CancellationToken ct = default) =>
+        new(await db.PermisosUsuario.AsNoTracking().Where(p => p.UsuarioId == null)
+            .Select(p => new Permiso(p.Accion, p.Nivel, p.UmbralCentavos, p.PideMotivo)).ToListAsync(ct));
+
+    /// <summary>
+    /// Los usuarios activos que entran en las cajas de la sucursal (los de ella y los que no tienen sucursal), con sus
+    /// permisos: de entre ellos sale quién autoriza y quién puede. Sin sucursal, todos los activos.
+    /// </summary>
+    public async Task<List<UsuarioConPermisos>> UsuariosQueEntranAsync(Guid? sucursalId, CancellationToken ct = default)
+    {
+        var usuarios = await db.Usuarios.AsNoTracking()
+            .Where(u => u.Activo && (sucursalId == null || u.SucursalId == null || u.SucursalId == sucursalId))
+            .Select(u => new { u.Id, u.NombreUsuario, u.Nombre }).ToListAsync(ct);
+        var ids = usuarios.Select(u => (Guid?)u.Id).ToList();
+        var permisos = (await db.PermisosUsuario.AsNoTracking().Where(p => ids.Contains(p.UsuarioId))
+                .Select(p => new { p.UsuarioId, Permiso = new Permiso(p.Accion, p.Nivel, p.UmbralCentavos, p.PideMotivo) }).ToListAsync(ct))
+            .ToLookup(p => p.UsuarioId!.Value, p => p.Permiso);
+        return usuarios.Select(u => new UsuarioConPermisos(u.Id, u.NombreUsuario, u.Nombre, new PermisosDeUsuario(permisos[u.Id]))).ToList();
+    }
 
     public async Task<DecisionPermiso> EvaluarAsync(Guid usuarioId, Guid sucursalId, AccionControlada accion, long? monto = null, CancellationToken ct = default)
     {
-        var usuario = await UsuarioAsync(usuarioId, ct);
-        return Permisos.Evaluar(await ReglasAsync(sucursalId, ct), usuario.Rol, sucursalId, accion, monto);
+        await UsuarioAsync(usuarioId, ct);
+        return Permisos.Evaluar(await PermisosAsync(usuarioId, ct), accion, monto);
     }
 
+    /// <summary>Lo puede hacer sin pedir autorización (y está activo): el costo que se le enseña, una pestaña.</summary>
+    public async Task<bool> PuedeAsync(Guid usuarioId, AccionControlada accion, CancellationToken ct = default) =>
+        await db.Usuarios.AnyAsync(u => u.Id == usuarioId && u.Activo, ct)
+        && Permisos.Evaluar(await PermisosAsync(usuarioId, ct), accion).Nivel == NivelPermiso.Permitido;
+
     /// <summary>Los usuarios activos de la sucursal que pueden hacer la acción, por su nombre (el corte del turno).</summary>
-    public async Task<List<QuienAutoriza>> QuienesPuedenAsync(Guid sucursalId, AccionControlada accion, CancellationToken ct = default)
+    public async Task<List<QuienAutoriza>> QuienesPuedenAsync(Guid sucursalId, AccionControlada accion, CancellationToken ct = default) =>
+        Permisos.QuienesPueden(await UsuariosQueEntranAsync(sucursalId, ct), accion);
+
+    /// <summary>
+    /// Quien entró, con todo lo que puede y quién autoriza cada cosa (de entre los que entran en las cajas de la sucursal),
+    /// en una sola consulta: la caja pinta con esto. Sin sucursal (entró sin caja: el celular), con todos los activos.
+    /// </summary>
+    public async Task<SesionDto> SesionAsync(Usuario usuario, Guid? sucursalId, CancellationToken ct = default)
     {
-        var usuarios = await db.Usuarios.AsNoTracking().Where(u => u.Activo && (u.SucursalId == null || u.SucursalId == sucursalId))
-            .Select(u => new { u.Id, u.NombreUsuario, u.Nombre, u.Rol }).ToListAsync(ct);
-        return Permisos.QuienesPueden(await ReglasAsync(sucursalId, ct), usuarios.Select(u => (u.Id, u.NombreUsuario, u.Nombre, u.Rol)), sucursalId, accion);
+        var usuarios = await UsuariosQueEntranAsync(sucursalId, ct);
+        var propios = usuarios.FirstOrDefault(u => u.Id == usuario.Id)?.Permisos ?? await PermisosAsync(usuario.Id, ct);
+        return new SesionDto(usuario.Id, usuario.Nombre, usuario.Rol, Permisos.DeLaSesion(propios, usuarios, usuario.Id),
+            FichasEntrada.Resumen(propios, await DefectoAsync(ct)));
     }
 
     /// <summary>
@@ -41,8 +79,8 @@ public sealed class ServicioControl(PosDbContext db)
     }
 
     /// <summary>
-    /// El encargado (o el dueño) se identifica con usuario y PIN para una acción. Si no puede autorizarla, queda en
-    /// la bitácora como negada.
+    /// Quien puede autorizar se identifica con su usuario y PIN (en la caja, con su ficha) para una acción. Si no puede
+    /// autorizarla, queda en la bitácora como negada.
     /// </summary>
     public async Task<Autorizacion> AutorizarAsync(
         AccionControlada accion, Guid sucursalId, Guid? cajaId, Guid solicitanteId, string usuario, string pin, long? monto, string detalle,
@@ -50,8 +88,7 @@ public sealed class ServicioControl(PosDbContext db)
     {
         var autorizador = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == usuario.Trim().ToLower(), ct);
         var resultado = autorizador?.VerificarPin(pin, Ahora);
-        var puede = resultado == ResultadoPin.Correcto
-            && Permisos.PuedeAutorizar(await ReglasAsync(sucursalId, ct), autorizador!.Rol, sucursalId, accion, monto);
+        var puede = resultado == ResultadoPin.Correcto && Permisos.PuedeAutorizar(await PermisosAsync(autorizador!.Id, ct), accion, monto);
 
         if (!puede)
         {
@@ -108,7 +145,7 @@ public sealed class ServicioControl(PosDbContext db)
         }
 
         if (autorizacionId is not { } id || await db.Autorizaciones.FindAsync([id], ct) is not { } autorizacion)
-            throw new PermisoRequerido(accion, NivelPermiso.RequiereAutorizacion, "Esto requiere la autorización del encargado.");
+            throw new PermisoRequerido(accion, NivelPermiso.RequiereAutorizacion, await QuienAutorizaAsync(usuarioId, sucursalId, accion, monto, ct));
         autorizacion.Usar(accion, sucursalId, monto, Ahora);
         Registrar(sucursalId, cajaId, usuarioId, accion, autorizacion.PorTelegram ? $"{texto} (autorizado por Telegram)" : texto, registrado, ventaId,
             autorizacion.AutorizadorId, ResultadoBitacora.Autorizado);
@@ -146,25 +183,38 @@ public sealed class ServicioControl(PosDbContext db)
             FechaUtc = Ahora,
         });
 
-    /// <summary>Usuario y PIN de alguien con la acción permitida (corte Z, configurar el ticket, editar reglas).</summary>
+    /// <summary>
+    /// Usuario y PIN de alguien con la acción en «Puede», en las pantallas que todavía los piden (configurar el ticket,
+    /// Telegram o la impresora, las cajas, la bitácora).
+    /// </summary>
     public async Task<Usuario> IdentificarAsync(string usuario, string pin, Guid sucursalId, AccionControlada accion, CancellationToken ct = default)
     {
         var encontrado = await db.Usuarios.SingleOrDefaultAsync(u => u.NombreUsuario == usuario.Trim().ToLower(), ct);
         var resultado = encontrado?.VerificarPin(pin, Ahora);
         var puede = resultado == ResultadoPin.Correcto
-            && Permisos.Evaluar(await ReglasAsync(sucursalId, ct), encontrado!.Rol, sucursalId, accion).Nivel == NivelPermiso.Permitido;
+            && Permisos.Evaluar(await PermisosAsync(encontrado!.Id, ct), accion).Nivel == NivelPermiso.Permitido;
         if (!puede)
             Registrar(sucursalId, null, encontrado?.Id, accion, "Intento sin permiso", resultado: ResultadoBitacora.Negado);
         await db.SaveChangesAsync(ct);
         return resultado switch
         {
             ResultadoPin.Correcto when puede => encontrado!,
-            ResultadoPin.Correcto => throw new InvalidOperationException(Permisos.SoloDelDueno(accion)
-                ? "Esto lo autoriza el dueño."
-                : "Esto lo autoriza el encargado o el dueño."),
+            ResultadoPin.Correcto => throw new InvalidOperationException(Permisos.QuienLoHace(accion, await QuienesPuedenAsync(sucursalId, accion, ct))),
             ResultadoPin.Bloqueado => throw new InvalidOperationException("Demasiados intentos: espera unos minutos."),
             _ => throw new InvalidOperationException("Usuario o PIN incorrecto."),
         };
+    }
+
+    /// <summary>
+    /// A quien le falta la autorización: «Esto lo autoriza Encargado de prueba o Dueño de prueba.», con los que pueden por
+    /// ese monto (sin quien la pide).
+    /// </summary>
+    private async Task<string> QuienAutorizaAsync(Guid usuarioId, Guid sucursalId, AccionControlada accion, long? monto, CancellationToken ct)
+    {
+        var quienes = Permisos.EnOrden((await UsuariosQueEntranAsync(sucursalId, ct))
+                .Where(u => u.Id != usuarioId && Permisos.PuedeAutorizar(u.Permisos, accion, monto)))
+            .Select(u => new QuienAutoriza(u.Usuario, u.Nombre)).ToList();
+        return quienes.Count == 0 ? "Esto requiere autorización." : $"Esto lo autoriza {Permisos.Nombres(quienes)}.";
     }
 
     /// <summary>Lo que pasó en la sucursal entre dos momentos, lo más reciente primero.</summary>

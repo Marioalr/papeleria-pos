@@ -141,8 +141,10 @@ public class ClienteRegistradoTests
     [Fact]
     public void El_encargado_administra_los_clientes_y_el_cajero_no()
     {
-        Assert.False(Permisos.SoloDelDueno(AccionControlada.AdministrarClientes));
-        Assert.Equal(NivelPermiso.Permitido, Permisos.Evaluar(Permisos.Iniciales, Rol.Encargado, Matriz, AccionControlada.AdministrarClientes).Nivel);
-        Assert.Equal(NivelPermiso.NoPermitido, Permisos.Evaluar(Permisos.Iniciales, Rol.Cajero, Matriz, AccionControlada.AdministrarClientes).Nivel);
+        Assert.False(PermisosDeRoles.SoloDelDueno(AccionControlada.AdministrarClientes));
+        Assert.Equal(NivelPermiso.Permitido,
+            Permisos.Evaluar(new PermisosDeUsuario(PermisosDeRoles.De(Rol.Encargado, [], Matriz)), AccionControlada.AdministrarClientes).Nivel);
+        Assert.Equal(NivelPermiso.NoPermitido,
+            Permisos.Evaluar(new PermisosDeUsuario(PermisosDeRoles.De(Rol.Cajero, [], Matriz)), AccionControlada.AdministrarClientes).Nivel);
     }
 }

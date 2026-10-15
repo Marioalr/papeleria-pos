@@ -11,7 +11,6 @@ using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Telegram;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Ventas;
-using PapeleriaPos.Nucleo.Usuarios;
 
 namespace PapeleriaPos.Datos;
 
@@ -40,11 +39,12 @@ public static class AlertasTelegram
             var configuracion = Configuracion(db, b.SucursalId);
             if (Tipo(b, configuracion) is not { } tipo || !configuracion.Avisa(tipo))
                 continue;
-            // Lo que cambia el dueño en el catálogo, el inventario o los clientes no se le avisa a él mismo.
+            // Lo que cambia en el catálogo, el inventario o los clientes quien recibe los avisos (el del chat vinculado) no se
+            // le avisa a él mismo.
             if (tipo is TipoAlerta.CambioPrecioCatalogo or TipoAlerta.AjusteInventario or TipoAlerta.DiferenciaConteo or TipoAlerta.ConteoCompleto
                     or TipoAlerta.PrivilegiosCliente or TipoAlerta.Credito
                 && b.UsuarioId is { } quien
-                && db.Usuarios.Find(quien)?.Rol == Rol.Dueno)
+                && db.ChatsTelegram.Any(c => c.Activo && c.UsuarioId == quien))
                 continue;
             Agregar(db, chats, tipo, Texto(db, b, tipo), $"bitacora:{b.Id}");
         }

@@ -28,7 +28,7 @@ public static class PreparacionPrueba
 
         if (!await db.ChatsTelegram.AnyAsync(c => c.ChatId == ChatTelegram.Simulado, ct))
         {
-            var dueno = await db.Usuarios.FirstAsync(u => u.Rol == Rol.Dueno, ct);
+            var dueno = await db.Usuarios.FirstAsync(u => u.PrimeraCuenta, ct);
             db.ChatsTelegram.Add(new ChatTelegram { UsuarioId = dueno.Id, ChatId = ChatTelegram.Simulado, Nombre = "Prueba (sin Telegram)", VinculadoUtc = ahora });
             await db.SaveChangesAsync(ct);
             hecho.Add("Chat de Telegram simulado del dueño");
@@ -61,7 +61,7 @@ public static class PreparacionPrueba
 
         if (!await db.ClientesRegistrados.AnyAsync(c => c.LimiteCreditoCentavos > 0, ct))
         {
-            var dueno = await db.Usuarios.FirstAsync(u => u.Rol == Rol.Dueno, ct);
+            var dueno = await db.Usuarios.FirstAsync(u => u.PrimeraCuenta, ct);
             var sucursal = (await db.Cajas.FirstAsync(ct)).SucursalId;
             foreach (var (nombre, _, _, _, _, _, credito) in ClientesDePrueba.Where(c => c.Credito > 0))
             {

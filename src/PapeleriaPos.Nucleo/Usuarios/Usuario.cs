@@ -52,7 +52,12 @@ public class Usuario : IVersionado
     public long Version { get; set; }
     public DateTime ModificadoUtc { get; set; }
 
-    public void EstablecerPin(string pin) => PinHash = Pin.Hash(pin);
+    /// <summary>Un PIN nuevo empieza sin intentos fallidos ni espera.</summary>
+    public void EstablecerPin(string pin)
+    {
+        PinHash = Pin.Hash(pin);
+        (IntentosFallidos, BloqueadoHastaUtc) = (0, null);
+    }
 
     public ResultadoPin VerificarPin(string pin, DateTime ahoraUtc)
     {

@@ -1,4 +1,4 @@
-@* Configuración de la sucursal en pestañas: el ticket, las reglas (solo el dueño), la bitácora, las cajas, Telegram, la impresora y los sinónimos de la búsqueda. Los clientes registrados tienen su propio módulo. En la caja de prueba, también la actualización. *@
+@* Configuración de la sucursal en pestañas: el ticket, la bitácora, las cajas, Telegram, la impresora y los sinónimos de la búsqueda. Los clientes registrados tienen su propio módulo. En la caja de prueba, también la actualización. *@
 @inject IServiceProvider Servicios
 
 <nav class="pestanas config-pestanas">
@@ -13,9 +13,6 @@
 {
     case Pestanas.Ticket:
         <ConfiguracionTicket Caja="Caja" Sesion="Sesion" />
-        break;
-    case Pestanas.Reglas:
-        <EditorReglas Caja="Caja" />
         break;
     case Pestanas.Cajas:
         <AdministrarCajas Caja="Caja" />
@@ -44,7 +41,7 @@
     /// <summary>Antes de que el instalador cierre la caja (Actualización): lo que la venta tiene que guardar.</summary>
     [Parameter] public EventCallback AntesDeInstalar { get; set; }
 
-    private enum Pestanas { Ticket, Reglas, Bitacora, Cajas, Telegram, Impresora, Sinonimos, Actualizacion }
+    private enum Pestanas { Ticket, Bitacora, Cajas, Telegram, Impresora, Sinonimos, Actualizacion }
 
     private Pestanas _pestana;
 
@@ -54,7 +51,6 @@
     private static string Nombre(Pestanas p) => p switch
     {
         Pestanas.Ticket => "Ticket",
-        Pestanas.Reglas => "Reglas",
         Pestanas.Bitacora => "Bitácora",
         Pestanas.Cajas => "Cajas",
         Pestanas.Telegram => "Telegram",

@@ -70,7 +70,8 @@ public class CajasEnRedApiTests(ServicioDePrueba servicio) : IClassFixture<Servi
         var opciones = await DesdeOtraPc().PostAsJsonAsync("api/alta/opciones", new SolicitudCredenciales("dueno", "3333"));
 
         Assert.Equal(HttpStatusCode.BadRequest, encargado.StatusCode);
-        Assert.Equal("Esto lo autoriza el dueño.", (await alta.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+        Assert.Equal("Esto lo hace quien tiene el permiso «Dar de alta y quitar cajas»: Dueño de prueba.",
+            (await alta.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
         Assert.Contains((await opciones.Content.ReadFromJsonAsync<List<SucursalAltaDto>>())!.Single().Cajas, c => c.Serie == "A");
     }
 

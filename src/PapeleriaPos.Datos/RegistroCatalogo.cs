@@ -440,7 +440,14 @@ public sealed class RegistroCatalogo(PosDbContext db)
         return variante.Id;
     }
 
-    /// <summary>¿Puede ver costos? El dueño y el encargado.</summary>
-    public async Task<bool> VeCostosAsync(Guid usuarioId, CancellationToken ct = default) =>
-        await db.Usuarios.AnyAsync(u => u.Id == usuarioId && u.Activo && (u.Rol == Rol.Dueno || u.Rol == Rol.Encargado), ct);
+    /// <summary>
+    /// ¿Ve los costos (el del producto, el de lo que se cuenta o se ajusta)? Quien captura las compras («Compras: la nota y
+    /// los costos») o quien ve la utilidad («Ver costos, utilidad y margen»), como en el prototipo. Con los usuarios de
+    /// antes, los mismos que con los roles: el dueño y el encargado.
+    /// </summary>
+    public async Task<bool> VeCostosAsync(Guid usuarioId, CancellationToken ct = default)
+    {
+        var control = new ServicioControl(db);
+        return await control.PuedeAsync(usuarioId, AccionControlada.CostearCompra, ct) || await control.PuedeAsync(usuarioId, AccionControlada.VerUtilidad, ct);
+    }
 }

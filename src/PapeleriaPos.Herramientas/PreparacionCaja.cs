@@ -12,7 +12,12 @@ namespace PapeleriaPos.Herramientas;
 /// </summary>
 public static class PreparacionCaja
 {
-    /// <summary>Usuarios de prueba: (usuario, nombre, rol, PIN). También están en el README.</summary>
+    /// <summary>
+    /// Usuarios de prueba: (usuario, nombre, rol, PIN). También están en el README. Se dan de alta como los usuarios de antes
+    /// de la entrega 1, con su rol, y la migración les da los permisos de ese rol (<see cref="MigracionPermisos"/>): el
+    /// cajero, los de defecto; el encargado, los suyos; el dueño, todos y la primera cuenta. Así quedan igual que en la
+    /// tienda al migrar.
+    /// </summary>
     public static readonly (string Usuario, string Nombre, Rol Rol, string Pin)[] UsuariosDePrueba =
     [
         ("cajero", "Cajero de prueba", Rol.Cajero, "1111"),
@@ -66,6 +71,8 @@ public static class PreparacionCaja
         }
 
         await db.SaveChangesAsync(ct);
+        if (await MigracionPermisos.AplicarAsync(db, ct) > 0)
+            hecho.Add("Los permisos de cada usuario (los de su rol)");
         return hecho;
     }
 

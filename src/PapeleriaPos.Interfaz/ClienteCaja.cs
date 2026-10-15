@@ -269,12 +269,6 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<List<BitacoraDto>> ConsultarBitacoraAsync(Guid sucursalId, SolicitudConsultaBitacora solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<List<BitacoraDto>>($"api/sucursales/{sucursalId}/bitacora/consulta", solicitud));
 
-    public Task<List<ReglaDto>> ReglasAsync(Guid sucursalId) =>
-        ConRespaldoAsync(async () => await _http.GetAsync<List<ReglaDto>>($"api/sucursales/{sucursalId}/reglas") ?? []);
-
-    public Task<List<ReglaDto>> GuardarReglasAsync(Guid sucursalId, SolicitudReglas solicitud) =>
-        ConRespaldoAsync(() => _http.PutAsync<List<ReglaDto>>($"api/sucursales/{sucursalId}/reglas", solicitud));
-
     // ── Catálogo (F3, solo con la caja principal) ──
 
     public Task<List<ProductoCatalogoDto>> CatalogoAsync(Guid sucursalId, string? texto, Guid? departamentoId, bool porCompletar, bool inactivos) =>

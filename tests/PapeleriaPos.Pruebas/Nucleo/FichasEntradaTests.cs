@@ -62,27 +62,35 @@ public class FichasEntradaTests
         Assert.Equal("D", FichasEntrada.Teclas([(DadoDeAlta(40), "3D Copias")])[DadoDeAlta(40)]);
     }
 
+    /// <summary>Los permisos con que queda alguien de ese rol de antes (la migración), con las reglas que se den.</summary>
+    private static PermisosDeUsuario De(Rol rol, params ReglaPermiso[] reglas) => new(PermisosDeRoles.De(rol, reglas, Matriz));
+
+    private static readonly PermisosDeUsuario Defecto = new(PermisosDeRoles.PorDefecto([]));
+
     [Fact]
     public void El_resumen_dice_todos_los_de_defecto_o_lo_que_tiene_de_mas()
     {
-        Assert.Equal("Todos los permisos", FichasEntrada.Resumen([], Rol.Dueno, Matriz));
-        Assert.Equal("Permisos por defecto", FichasEntrada.Resumen([], Rol.Cajero, Matriz));
-        Assert.Equal("Corte de turno, productos y clientes", FichasEntrada.Resumen([], Rol.Encargado, Matriz));
+        Assert.Equal("Todos los permisos", FichasEntrada.Resumen(De(Rol.Dueno), Defecto));
+        Assert.Equal("Permisos por defecto", FichasEntrada.Resumen(De(Rol.Cajero), Defecto));
+        Assert.Equal("Corte de turno, productos y clientes", FichasEntrada.Resumen(De(Rol.Encargado), Defecto));
 
-        // Si en la sucursal el encargado ya no hace el corte, se dice lo que sigue.
+        // Si el encargado ya no hace el corte, se dice lo que sigue.
         var sinCorte = new ReglaPermiso { Accion = AccionControlada.CorteZ, Rol = Rol.Encargado, SucursalId = Matriz, Nivel = NivelPermiso.NoPermitido };
-        Assert.Equal("Productos, clientes y compras", FichasEntrada.Resumen([sinCorte], Rol.Encargado, Matriz));
+        Assert.Equal("Productos, clientes y compras", FichasEntrada.Resumen(De(Rol.Encargado, sinCorte), Defecto));
+        // Con los de defecto, pero con otro límite: ya no son los de defecto.
+        var otroLimite = new PermisosDeUsuario(Defecto.Lista().Select(p => p.Accion == AccionControlada.Descuento ? p with { UmbralCentavos = 1500 } : p));
+        Assert.Equal("Permisos propios", FichasEntrada.Resumen(otroLimite, Defecto));
     }
 
     [Fact]
-    public void Hace_el_corte_quien_lo_tiene_permitido()
+    public void Hace_el_corte_quien_lo_tiene_en_puede()
     {
-        Assert.False(FichasEntrada.HaceCorte([], Rol.Cajero, Matriz));
-        Assert.True(FichasEntrada.HaceCorte([], Rol.Encargado, Matriz));
-        Assert.True(FichasEntrada.HaceCorte([], Rol.Dueno, Matriz));
+        Assert.False(FichasEntrada.HaceCorte(De(Rol.Cajero)));
+        Assert.True(FichasEntrada.HaceCorte(De(Rol.Encargado)));
+        Assert.True(FichasEntrada.HaceCorte(De(Rol.Dueno)));
 
         var cajeroCorta = new ReglaPermiso { Accion = AccionControlada.CorteZ, Rol = Rol.Cajero, SucursalId = Matriz, Nivel = NivelPermiso.Permitido };
-        Assert.True(FichasEntrada.HaceCorte([cajeroCorta], Rol.Cajero, Matriz));
+        Assert.True(FichasEntrada.HaceCorte(De(Rol.Cajero, cajeroCorta)));
     }
 
     [Fact]
@@ -91,13 +99,29 @@ public class FichasEntradaTests
         var (cajero, encargado, dueno) = (DadoDeAlta(1), DadoDeAlta(2), DadoDeAlta(3));
 
         var fichas = FichasEntrada.Armar(
-            [(dueno, "Dueño de prueba", Rol.Dueno), (cajero, "Cajero de prueba", Rol.Cajero), (encargado, " Encargado de prueba ", Rol.Encargado)],
-            [], Matriz, cajeroDelTurno: cajero);
+            [new(dueno, "dueno", "Dueño de prueba", De(Rol.Dueno)), new(cajero, "cajero", "Cajero de prueba", De(Rol.Cajero)),
+                new(encargado, "encargado", " Encargado de prueba ", De(Rol.Encargado))],
+            [], Defecto, cajeroDelTurno: cajero);
 
         Assert.Equal(["Cajero de prueba", "Dueño de prueba", "Encargado de prueba"], fichas.Select(f => f.Nombre));
         Assert.Equal(["C", "D", "E"], fichas.Select(f => f.Tecla));
         Assert.Equal([true, false, false], fichas.Select(f => f.TurnoAbierto));
         Assert.Equal([false, true, true], fichas.Select(f => f.HaceCorte));
+    }
+
+    /// <summary>Dar de baja a alguien no le da su letra a otro: las letras se reparten también entre los dados de baja.</summary>
+    [Fact]
+    public void Una_baja_no_le_cambia_la_letra_a_nadie()
+    {
+        var (carmen, carlos) = (DadoDeAlta(1), DadoDeAlta(2));
+        UsuarioConPermisos Activo(Guid id, string nombre) => new(id, nombre.ToLowerInvariant(), nombre, Defecto);
+
+        var antes = FichasEntrada.Armar([Activo(carmen, "Carmen"), Activo(carlos, "Carlos")], [], Defecto, null);
+        // Carmen se da de baja: su ficha se va, pero Carlos se queda con la suya.
+        var despues = FichasEntrada.Armar([Activo(carlos, "Carlos")], [(carmen, "Carmen"), (carlos, "Carlos")], Defecto, null);
+
+        Assert.Equal(antes.Single(f => f.UsuarioId == carlos).Tecla, Assert.Single(despues).Tecla);
+        Assert.Equal("A", Assert.Single(despues).Tecla);
     }
 
     [Fact]

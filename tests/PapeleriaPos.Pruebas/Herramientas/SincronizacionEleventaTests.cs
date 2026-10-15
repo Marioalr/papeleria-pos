@@ -232,6 +232,8 @@ public sealed class SincronizacionEleventaTests : IAsyncDisposable
         encargado.EstablecerPin("2222");
         db.AddRange(caja, cajera, encargado);
         await db.SaveChangesAsync();
+        // Los usuarios de antes (con su rol) reciben sus permisos, como al arrancar el servicio.
+        await MigracionPermisos.AplicarAsync(db);
         return new Mostrador(caja, cajera, encargado, await new RegistroCaja(db).AbrirTurnoAsync(caja.Id, cajera.Id, 50000));
     }
 

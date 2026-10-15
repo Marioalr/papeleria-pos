@@ -4,17 +4,23 @@ using PapeleriaPos.Nucleo.Usuarios;
 
 namespace PapeleriaPos.Pruebas.Nucleo;
 
+/// <summary>
+/// Lo que pueden los usuarios de hoy (el cajero, el encargado y el dueño), con los permisos que les deja la migración de
+/// los roles (entrega 1), y las autorizaciones.
+/// </summary>
 public class PermisosTests
 {
     private static readonly Guid Matriz = Ids.Nuevo();
     private static readonly Guid Sucursal2 = Ids.Nuevo();
     private static readonly DateTime Ahora = new(2026, 10, 3, 18, 0, 0, DateTimeKind.Utc);
 
-    private static NivelPermiso Nivel(Rol rol, AccionControlada accion, long? monto = null, params ReglaPermiso[] reglas) =>
-        Permisos.Evaluar(reglas, rol, Matriz, accion, monto).Nivel;
+    /// <summary>Los permisos con que queda alguien de ese rol en la matriz, con las reglas iniciales (y las que se den).</summary>
+    private static PermisosDeUsuario De(Rol rol, params ReglaPermiso[] reglas) => new(PermisosDeRoles.De(rol, reglas, Matriz));
+
+    private static NivelPermiso Nivel(Rol rol, AccionControlada accion, long? monto = null) => Permisos.Evaluar(De(rol), accion, monto).Nivel;
 
     [Fact]
-    public void Las_reglas_iniciales_son_las_del_plan()
+    public void Los_permisos_de_hoy_son_los_del_plan()
     {
         Assert.Equal(NivelPermiso.RequiereAutorizacion, Nivel(Rol.Cajero, AccionControlada.CancelarTicket));
         Assert.Equal(NivelPermiso.Permitido, Nivel(Rol.Encargado, AccionControlada.CancelarTicket));
@@ -25,7 +31,7 @@ public class PermisosTests
     }
 
     [Fact]
-    public void La_devolucion_arriba_de_200_pide_encargado()
+    public void La_devolucion_arriba_de_200_pide_autorizacion()
     {
         Assert.Equal(NivelPermiso.Permitido, Nivel(Rol.Cajero, AccionControlada.Devolucion, 20000));
         Assert.Equal(NivelPermiso.RequiereAutorizacion, Nivel(Rol.Cajero, AccionControlada.Devolucion, 20001));
@@ -33,11 +39,11 @@ public class PermisosTests
     }
 
     [Fact]
-    public void El_dueno_puede_todo_y_solo_el_edita_las_reglas()
+    public void El_dueno_queda_con_todo_y_solo_el_con_usuarios_y_permisos()
     {
-        Assert.All(Enum.GetValues<AccionControlada>(), a => Assert.Equal(NivelPermiso.Permitido, Nivel(Rol.Dueno, a, 99_999_999)));
+        Assert.All(Permisos.Acciones, a => Assert.Equal(NivelPermiso.Permitido, Nivel(Rol.Dueno, a, 99_999_999)));
         var abierta = new ReglaPermiso { Accion = AccionControlada.EditarReglas, Rol = Rol.Encargado, Nivel = NivelPermiso.Permitido };
-        Assert.Equal(NivelPermiso.NoPermitido, Nivel(Rol.Encargado, AccionControlada.EditarReglas, null, abierta));
+        Assert.Equal(NivelPermiso.NoPermitido, Permisos.Evaluar(De(Rol.Encargado, abierta), AccionControlada.EditarReglas).Nivel);
     }
 
     [Fact]
@@ -46,25 +52,28 @@ public class PermisosTests
         var general = new ReglaPermiso { Accion = AccionControlada.Reimprimir, Rol = Rol.Cajero, Nivel = NivelPermiso.RequiereAutorizacion };
         var deMatriz = new ReglaPermiso { Accion = AccionControlada.Reimprimir, Rol = Rol.Cajero, SucursalId = Matriz, Nivel = NivelPermiso.NoPermitido };
 
-        Assert.Equal(NivelPermiso.NoPermitido, Permisos.Evaluar([general, deMatriz], Rol.Cajero, Matriz, AccionControlada.Reimprimir).Nivel);
-        Assert.Equal(NivelPermiso.RequiereAutorizacion, Permisos.Evaluar([general, deMatriz], Rol.Cajero, Sucursal2, AccionControlada.Reimprimir).Nivel);
-        Assert.Equal(NivelPermiso.Permitido, Permisos.Evaluar([], Rol.Cajero, Sucursal2, AccionControlada.Reimprimir).Nivel);
+        Assert.Equal(NivelPermiso.NoPermitido,
+            Permisos.Evaluar(new PermisosDeUsuario(PermisosDeRoles.De(Rol.Cajero, [general, deMatriz], Matriz)), AccionControlada.Reimprimir).Nivel);
+        Assert.Equal(NivelPermiso.RequiereAutorizacion,
+            Permisos.Evaluar(new PermisosDeUsuario(PermisosDeRoles.De(Rol.Cajero, [general, deMatriz], Sucursal2)), AccionControlada.Reimprimir).Nivel);
+        Assert.Equal(NivelPermiso.Permitido,
+            Permisos.Evaluar(new PermisosDeUsuario(PermisosDeRoles.De(Rol.Cajero, [], Sucursal2)), AccionControlada.Reimprimir).Nivel);
     }
 
     [Fact]
     public void Reimprimir_y_salidas_piden_motivo()
     {
-        Assert.True(Permisos.Evaluar([], Rol.Cajero, Matriz, AccionControlada.Reimprimir).PideMotivo);
-        Assert.True(Permisos.Evaluar([], Rol.Cajero, Matriz, AccionControlada.SalidaEfectivo).PideMotivo);
-        Assert.False(Permisos.Evaluar([], Rol.Cajero, Matriz, AccionControlada.QuitarProducto).PideMotivo);
+        Assert.True(Permisos.Evaluar(De(Rol.Cajero), AccionControlada.Reimprimir).PideMotivo);
+        Assert.True(Permisos.Evaluar(De(Rol.Cajero), AccionControlada.SalidaEfectivo).PideMotivo);
+        Assert.False(Permisos.Evaluar(De(Rol.Cajero), AccionControlada.QuitarProducto).PideMotivo);
     }
 
     [Fact]
-    public void Cambiar_precio_solo_lo_autoriza_el_dueno()
+    public void Cambiar_precio_solo_lo_autoriza_quien_lo_puede_hacer()
     {
-        Assert.False(Permisos.PuedeAutorizar([], Rol.Encargado, Matriz, AccionControlada.CambiarPrecio, null));
-        Assert.True(Permisos.PuedeAutorizar([], Rol.Dueno, Matriz, AccionControlada.CambiarPrecio, null));
-        Assert.True(Permisos.PuedeAutorizar([], Rol.Encargado, Matriz, AccionControlada.CancelarTicket, null));
+        Assert.False(Permisos.PuedeAutorizar(De(Rol.Encargado), AccionControlada.CambiarPrecio, null));
+        Assert.True(Permisos.PuedeAutorizar(De(Rol.Dueno), AccionControlada.CambiarPrecio, null));
+        Assert.True(Permisos.PuedeAutorizar(De(Rol.Encargado), AccionControlada.CancelarTicket, null));
     }
 
     private static Autorizacion Autorizacion(long? monto = 50000) => new()
@@ -100,16 +109,19 @@ public class PermisosTests
     public void La_sesion_trae_cada_accion_con_quien_la_autoriza()
     {
         var (ana, carmen, luis) = (Ids.Nuevo(), Ids.Nuevo(), Ids.Nuevo());
-        (Guid, string, string, Rol)[] usuarios = [(luis, "luis", "Luis", Rol.Dueno), (ana, "ana", "Ana", Rol.Cajero), (carmen, "carmen", "Carmen", Rol.Encargado)];
+        UsuarioConPermisos[] usuarios =
+        [
+            new(luis, "luis", "Luis", De(Rol.Dueno)), new(ana, "ana", "Ana", De(Rol.Cajero)), new(carmen, "carmen", "Carmen", De(Rol.Encargado)),
+        ];
 
-        var permisos = Permisos.DeLaSesion([], usuarios, ana, Rol.Cajero, Matriz).ToDictionary(p => p.Accion);
+        var permisos = Permisos.DeLaSesion(De(Rol.Cajero), usuarios, ana).ToDictionary(p => p.Accion);
 
-        Assert.Equal(Enum.GetValues<AccionControlada>().Length, permisos.Count);
-        // Con autorización: quien la tiene permitida, primero el encargado y al final el dueño; quien entró, no. Con su
-        // usuario, para que la caja le pida solo el PIN.
+        Assert.Equal(Permisos.Acciones.Count, permisos.Count);
+        // Con autorización: quien la puede hacer, de quien puede menos a quien puede todo; quien entró, no. Con su usuario,
+        // para que la caja le pida solo el PIN.
         Assert.Equal(NivelPermiso.RequiereAutorizacion, permisos[AccionControlada.CancelarTicket].Nivel);
         Assert.Equal([new QuienAutoriza("carmen", "Carmen"), new QuienAutoriza("luis", "Luis")], permisos[AccionControlada.CancelarTicket].Autorizan);
-        // El cambio de precio, solo el dueño (el encargado también lo pide).
+        // El cambio de precio, solo Luis (Carmen también lo pide).
         Assert.Equal(["Luis"], permisos[AccionControlada.CambiarPrecio].Autorizan.Select(a => a.Nombre));
         // Con umbral: hasta ahí puede, y lo que pasa lo autoriza quien puede más.
         Assert.Equal((NivelPermiso.Permitido, 1000L), (permisos[AccionControlada.Descuento].Nivel, permisos[AccionControlada.Descuento].UmbralCentavos!.Value));
@@ -121,11 +133,11 @@ public class PermisosTests
     }
 
     [Fact]
-    public void El_dueno_tiene_todo_sin_umbral_y_sin_pedir_autorizacion()
+    public void Quien_tiene_todo_lo_tiene_sin_umbral_y_sin_pedir_autorizacion()
     {
         var luis = Ids.Nuevo();
 
-        var permisos = Permisos.DeLaSesion([], [(luis, "luis", "Luis", Rol.Dueno), (Ids.Nuevo(), "carmen", "Carmen", Rol.Encargado)], luis, Rol.Dueno, Matriz);
+        var permisos = Permisos.DeLaSesion(De(Rol.Dueno), [new(luis, "luis", "Luis", De(Rol.Dueno)), new(Ids.Nuevo(), "carmen", "Carmen", De(Rol.Encargado))], luis);
 
         Assert.All(permisos, p => Assert.Equal((NivelPermiso.Permitido, (long?)null, 0), (p.Nivel, p.UmbralCentavos, p.Autorizan.Count)));
     }

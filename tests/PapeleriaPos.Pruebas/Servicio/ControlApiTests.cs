@@ -113,24 +113,29 @@ public class ControlApiTests(ServicioDePrueba servicio) : IClassFixture<Servicio
         Assert.Equal(NivelPermiso.NoPermitido, permisos[AccionControlada.CorteZ].Nivel);
     }
 
+    /// <summary>
+    /// Quien tiene «Usuarios y permisos» (el dueño) cambia un permiso del cajero desde la sesión de la caja, sin volver a
+    /// escribir su PIN, y el servicio decide con él al momento; quien no lo tiene, no puede.
+    /// </summary>
     [Fact]
-    public async Task El_dueno_cambia_las_reglas_y_el_cambio_se_aplica()
+    public async Task El_dueno_cambia_un_permiso_y_el_cambio_se_aplica()
     {
         var (http, caja, cajero, _) = await PrepararAsync();
-        var url = $"api/sucursales/{caja.SucursalId}/reglas";
-        var reglas = (await http.GetFromJsonAsync<List<ReglaDto>>(url))!;
-        var reimprimir = reglas.Single(r => r.Accion == AccionControlada.Reimprimir && r.Rol == Rol.Cajero);
-        Assert.Equal(NivelPermiso.Permitido, reimprimir.Nivel);
+        var dueno = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333"))).Content.ReadFromJsonAsync<SesionDto>())!;
+        var encargado = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("encargado", "2222"))).Content.ReadFromJsonAsync<SesionDto>())!;
+        var url = $"api/cajas/{caja.Id}/usuarios-y-permisos/{cajero.UsuarioId}";
+        var antes = (await http.GetFromJsonAsync<List<Permiso>>($"{url}?usuarioId={dueno.UsuarioId}"))!;
+        Assert.Equal(NivelPermiso.Permitido, antes.Single(p => p.Accion == AccionControlada.Reimprimir).Nivel);
 
-        var porEncargado = await http.PutAsJsonAsync(url, new SolicitudReglas("encargado", "2222", [reimprimir with { Nivel = NivelPermiso.NoPermitido }]));
-        var porDueno = await http.PutAsJsonAsync(url, new SolicitudReglas("dueno", "3333", [reimprimir with { Nivel = NivelPermiso.NoPermitido }]));
+        var porEncargado = await http.PutAsJsonAsync(url, new SolicitudPermisoUsuario(encargado.UsuarioId, AccionControlada.Reimprimir, NivelPermiso.NoPermitido));
+        var porDueno = await http.PutAsJsonAsync(url, new SolicitudPermisoUsuario(dueno.UsuarioId, AccionControlada.Reimprimir, NivelPermiso.NoPermitido));
         var decision = await (await http.PostAsJsonAsync("api/permisos", new SolicitudPermiso(cajero.UsuarioId, caja.SucursalId, AccionControlada.Reimprimir)))
             .Content.ReadFromJsonAsync<DecisionDto>();
 
-        Assert.Equal(HttpStatusCode.BadRequest, porEncargado.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, porEncargado.StatusCode);
         Assert.True(porDueno.IsSuccessStatusCode, await porDueno.Content.ReadAsStringAsync());
         Assert.Equal(NivelPermiso.NoPermitido, decision!.Nivel);
 
-        await http.PutAsJsonAsync(url, new SolicitudReglas("dueno", "3333", [reimprimir]));
+        (await http.PutAsJsonAsync(url, new SolicitudPermisoUsuario(dueno.UsuarioId, AccionControlada.Reimprimir, NivelPermiso.Permitido))).EnsureSuccessStatusCode();
     }
 }

@@ -152,24 +152,24 @@ public class ParidadPermisosTests
     private static ReglaPermiso Regla(AccionControlada accion, Rol rol, NivelPermiso nivel, long? umbral = null, bool motivo = false, Guid? sucursal = null) =>
         new() { Accion = accion, Rol = rol, Nivel = nivel, UmbralCentavos = umbral, PideMotivo = motivo, SucursalId = sucursal };
 
-    /// <summary>Las decisiones de antes de la entrega 1: con los roles y las reglas por rol, en la matriz.</summary>
+    /// <summary>Las decisiones de antes de la entrega 1 (<see cref="PermisosDeAntes"/>): con los roles y las reglas por rol, en la matriz.</summary>
     private static class Antes
     {
         private static IEnumerable<(Guid Id, string Usuario, string Nombre, Rol Rol)> Activos => Usuarios;
 
         public static DecisionPermiso Evaluar(List<ReglaPermiso> reglas, Rol rol, AccionControlada accion, long? monto) =>
-            Permisos.Evaluar(reglas, rol, Matriz, accion, monto);
+            PermisosDeAntes.Evaluar(reglas, rol, Matriz, accion, monto);
 
         public static bool PuedeAutorizar(List<ReglaPermiso> reglas, Rol rol, AccionControlada accion, long? monto) =>
-            Permisos.PuedeAutorizar(reglas, rol, Matriz, accion, monto);
+            PermisosDeAntes.PuedeAutorizar(reglas, rol, Matriz, accion, monto);
 
         public static IReadOnlyList<PermisoDeSesion> DeLaSesion(List<ReglaPermiso> reglas, Guid usuarioId, Rol rol) =>
-            Permisos.DeLaSesion(reglas, Activos, usuarioId, rol, Matriz);
+            PermisosDeAntes.DeLaSesion(reglas, Activos, usuarioId, rol, Matriz);
 
         public static List<QuienAutoriza> QuienesPueden(List<ReglaPermiso> reglas, AccionControlada accion) =>
-            Permisos.QuienesPueden(reglas, Activos, Matriz, accion);
+            PermisosDeAntes.QuienesPueden(reglas, Activos, Matriz, accion);
 
         public static List<PapeleriaPos.Nucleo.Contratos.FichaUsuarioDto> Fichas(List<ReglaPermiso> reglas, Guid cajeroDelTurno) =>
-            FichasEntrada.Armar(Usuarios.Select(u => (u.Id, u.Nombre, u.Rol)), reglas, Matriz, cajeroDelTurno);
+            PermisosDeAntes.Fichas(Usuarios.Select(u => (u.Id, u.Nombre, u.Rol)), reglas, Matriz, cajeroDelTurno);
     }
 }

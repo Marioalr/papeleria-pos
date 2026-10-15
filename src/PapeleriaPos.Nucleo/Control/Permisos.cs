@@ -220,7 +220,15 @@ public sealed record DecisionPermiso(NivelPermiso Nivel, bool PideMotivo);
 /// </summary>
 /// <param name="UmbralCentavos">Hasta dónde puede sin autorización (en las de porcentaje, centésimas de porcentaje).</param>
 /// <param name="Autorizan">Quién lo autoriza: lo que pide autorización, o lo que pasa del umbral.</param>
-public sealed record PermisoDeSesion(AccionControlada Accion, NivelPermiso Nivel, long? UmbralCentavos, bool PideMotivo, IReadOnlyList<QuienAutoriza> Autorizan);
+public sealed record PermisoDeSesion(AccionControlada Accion, NivelPermiso Nivel, long? UmbralCentavos, bool PideMotivo, IReadOnlyList<QuienAutoriza> Autorizan)
+{
+    /// <summary>Iguales si dicen lo mismo, también quién autoriza y en qué orden (lo del servicio y lo de la copia de la caja).</summary>
+    public bool Equals(PermisoDeSesion? otro) =>
+        otro is not null && (Accion, Nivel, UmbralCentavos, PideMotivo) == (otro.Accion, otro.Nivel, otro.UmbralCentavos, otro.PideMotivo)
+        && Autorizan.SequenceEqual(otro.Autorizan);
+
+    public override int GetHashCode() => HashCode.Combine(Accion, Nivel, UmbralCentavos, PideMotivo, Autorizan.Count);
+}
 
 /// <summary>Quien puede autorizar: su nombre, para decirlo, y su usuario, para pedirle solo el PIN.</summary>
 public sealed record QuienAutoriza(string Usuario, string Nombre);
@@ -374,82 +382,7 @@ public static class Permisos
     public static IEnumerable<UsuarioConPermisos> EnOrden(IEnumerable<UsuarioConPermisos> usuarios) =>
         usuarios.OrderBy(u => u.Permisos.CuantasPuede).ThenBy(u => u.Nombre, StringComparer.CurrentCulture).ThenBy(u => u.Id);
 
-    // ── Lo de antes: reglas por rol ─────────────────────────────────────────
-
-    /// <summary>Las reglas con que arranca el sistema (docs/fase-1-control.md). El dueño siempre puede todo.</summary>
-    public static readonly IReadOnlyList<ReglaPermiso> Iniciales =
-    [
-        .. Ambos(AccionControlada.QuitarProducto, NivelPermiso.Permitido),
-        .. Ambos(AccionControlada.ArticuloComun, NivelPermiso.Permitido),
-        .. Ambos(AccionControlada.CambiarPrecio, NivelPermiso.RequiereAutorizacion),
-        Regla(AccionControlada.VenderBajoCosto, Rol.Cajero, NivelPermiso.RequiereAutorizacion),
-        Regla(AccionControlada.VenderBajoCosto, Rol.Encargado, NivelPermiso.Permitido),
-        Regla(AccionControlada.CancelarTicket, Rol.Cajero, NivelPermiso.RequiereAutorizacion),
-        Regla(AccionControlada.CancelarTicket, Rol.Encargado, NivelPermiso.Permitido),
-        Regla(AccionControlada.Devolucion, Rol.Cajero, NivelPermiso.Permitido, umbral: 20000),
-        Regla(AccionControlada.Devolucion, Rol.Encargado, NivelPermiso.Permitido),
-        .. Ambos(AccionControlada.SalidaEfectivo, NivelPermiso.Permitido, motivo: true),
-        .. Ambos(AccionControlada.EntradaEfectivo, NivelPermiso.Permitido, motivo: true),
-        .. Ambos(AccionControlada.AbrirCajonSinVenta, NivelPermiso.Permitido, motivo: true),
-        Regla(AccionControlada.Reimprimir, Rol.Cajero, NivelPermiso.Permitido, motivo: true),
-        Regla(AccionControlada.Reimprimir, Rol.Encargado, NivelPermiso.Permitido),
-        Regla(AccionControlada.VerificarTransferencia, Rol.Cajero, NivelPermiso.NoPermitido),
-        Regla(AccionControlada.VerificarTransferencia, Rol.Encargado, NivelPermiso.Permitido),
-        Regla(AccionControlada.CorteZ, Rol.Cajero, NivelPermiso.NoPermitido),
-        Regla(AccionControlada.CorteZ, Rol.Encargado, NivelPermiso.Permitido),
-        Regla(AccionControlada.ConfigurarTicket, Rol.Cajero, NivelPermiso.NoPermitido),
-        Regla(AccionControlada.ConfigurarTicket, Rol.Encargado, NivelPermiso.Permitido),
-        .. Ambos(AccionControlada.EditarReglas, NivelPermiso.NoPermitido),
-        .. Ambos(AccionControlada.AdministrarCajas, NivelPermiso.NoPermitido),
-        .. Ambos(AccionControlada.ConfigurarTelegram, NivelPermiso.NoPermitido),
-        .. Ambos(AccionControlada.ConfigurarImpresora, NivelPermiso.NoPermitido),
-        // Los clientes registrados (fase 3): el encargado también los da de alta; lo que toca a sus privilegios se le avisa al dueño.
-        Regla(AccionControlada.AdministrarClientes, Rol.Cajero, NivelPermiso.NoPermitido),
-        Regla(AccionControlada.AdministrarClientes, Rol.Encargado, NivelPermiso.Permitido),
-        Regla(AccionControlada.Descuento, Rol.Cajero, NivelPermiso.Permitido, umbral: 1000),
-        Regla(AccionControlada.Descuento, Rol.Encargado, NivelPermiso.Permitido),
-        Regla(AccionControlada.EditarCatalogo, Rol.Cajero, NivelPermiso.NoPermitido),
-        Regla(AccionControlada.EditarCatalogo, Rol.Encargado, NivelPermiso.Permitido),
-        .. Ambos(AccionControlada.AltaRapida, NivelPermiso.Permitido),
-        .. Ambos(AccionControlada.RecibirMercancia, NivelPermiso.Permitido),
-        Regla(AccionControlada.CostearCompra, Rol.Cajero, NivelPermiso.NoPermitido),
-        Regla(AccionControlada.CostearCompra, Rol.Encargado, NivelPermiso.Permitido),
-        Regla(AccionControlada.PedirCompra, Rol.Cajero, NivelPermiso.NoPermitido),
-        Regla(AccionControlada.PedirCompra, Rol.Encargado, NivelPermiso.Permitido),
-        .. Ambos(AccionControlada.AbrirPaquete, NivelPermiso.Permitido),
-        Regla(AccionControlada.AjustarInventario, Rol.Cajero, NivelPermiso.RequiereAutorizacion),
-        Regla(AccionControlada.AjustarInventario, Rol.Encargado, NivelPermiso.Permitido),
-        Regla(AccionControlada.Merma, Rol.Cajero, NivelPermiso.Permitido, umbral: 20000),
-        Regla(AccionControlada.Merma, Rol.Encargado, NivelPermiso.Permitido),
-        .. Ambos(AccionControlada.ContarInventario, NivelPermiso.Permitido),
-        Regla(AccionControlada.ConteoCompleto, Rol.Cajero, NivelPermiso.NoPermitido),
-        Regla(AccionControlada.ConteoCompleto, Rol.Encargado, NivelPermiso.Permitido),
-        Regla(AccionControlada.ConsultarBitacora, Rol.Cajero, NivelPermiso.NoPermitido),
-        Regla(AccionControlada.ConsultarBitacora, Rol.Encargado, NivelPermiso.Permitido),
-        // El crédito (fase 3): el límite y los ajustes, al empezar, solo el dueño (se pueden dar desde el editor de reglas);
-        // pasar el límite lo autoriza el encargado.
-        .. Ambos(AccionControlada.DarCredito, NivelPermiso.NoPermitido),
-        Regla(AccionControlada.ExcederLimiteCredito, Rol.Cajero, NivelPermiso.RequiereAutorizacion),
-        Regla(AccionControlada.ExcederLimiteCredito, Rol.Encargado, NivelPermiso.Permitido),
-        .. Ambos(AccionControlada.AjustarCredito, NivelPermiso.NoPermitido),
-        Regla(AccionControlada.CancelarAbono, Rol.Cajero, NivelPermiso.RequiereAutorizacion, motivo: true),
-        Regla(AccionControlada.CancelarAbono, Rol.Encargado, NivelPermiso.Permitido, motivo: true),
-        Regla(AccionControlada.DevolverSaldoAFavor, Rol.Cajero, NivelPermiso.RequiereAutorizacion),
-        Regla(AccionControlada.DevolverSaldoAFavor, Rol.Encargado, NivelPermiso.Permitido),
-        // El corte del día (2026-10-14): la propuesta lo deja a la primera cuenta, que hoy es el dueño.
-        .. Ambos(AccionControlada.CorteDelDia, NivelPermiso.NoPermitido),
-    ];
-
-    /// <summary>
-    /// La regla de la sucursal gana sobre la general, y la general sobre la inicial. Sin ninguna, se pide autorización.
-    /// Editar las reglas y dar de alta cajas es siempre solo del dueño.
-    /// </summary>
-    /// <summary>Acciones que no se pueden dar a otro rol: no aparecen en el editor de reglas.</summary>
-    public static bool SoloDelDueno(AccionControlada accion) =>
-        accion is AccionControlada.EditarReglas or AccionControlada.AdministrarCajas or AccionControlada.ConfigurarTelegram
-            or AccionControlada.ConfigurarImpresora or AccionControlada.ConfigurarMargen
-            // Las de la entrega 1: con los roles, eran solo del dueño (el costo de las impresiones, el límite de efectivo).
-            or AccionControlada.VerUtilidad or AccionControlada.VerReportes or AccionControlada.ConfigurarTienda;
+    // ── Los montos y los mensajes ──────────────────────────────────────────
 
     /// <summary>Acciones cuyo umbral (y el monto que se revisa) es un porcentaje en centésimas, no dinero.</summary>
     public static bool EnPorcentaje(AccionControlada accion) => accion == AccionControlada.Descuento;
@@ -463,65 +396,6 @@ public static class Permisos
     /// <summary>Lo que va como monto en la bitácora: dinero; en las de porcentaje, nada (el porcentaje va en el detalle).</summary>
     public static long? MontoParaBitacora(AccionControlada accion, long? monto) => EnPorcentaje(accion) ? null : monto;
 
-    public static DecisionPermiso Evaluar(IEnumerable<ReglaPermiso> reglas, Rol rol, Guid sucursalId, AccionControlada accion, long? montoCentavos = null)
-    {
-        if (rol == Rol.Dueno)
-            return new DecisionPermiso(NivelPermiso.Permitido, false);
-        if (SoloDelDueno(accion))
-            return new DecisionPermiso(NivelPermiso.NoPermitido, false);
-
-        if (Efectiva(reglas, rol, sucursalId, accion) is not { } regla)
-            return new DecisionPermiso(NivelPermiso.RequiereAutorizacion, false);
-
-        var nivel = regla.Nivel == NivelPermiso.Permitido && regla.UmbralCentavos is { } umbral && montoCentavos > umbral
-            ? NivelPermiso.RequiereAutorizacion
-            : regla.Nivel;
-        return new DecisionPermiso(nivel, regla.PideMotivo);
-    }
-
-    /// <summary>
-    /// Todas las acciones para quien entró, cada una con quién la autoriza: los demás usuarios activos que la tienen
-    /// permitida (por encima del umbral, si lo hay), primero los encargados y al final el dueño.
-    /// </summary>
-    public static IReadOnlyList<PermisoDeSesion> DeLaSesion(
-        IEnumerable<ReglaPermiso> reglas, IEnumerable<(Guid Id, string Usuario, string Nombre, Rol Rol)> usuarios, Guid usuarioId, Rol rol, Guid sucursalId)
-    {
-        var lista = reglas.ToList();
-        var otros = usuarios.Where(u => u.Id != usuarioId).OrderBy(u => u.Rol).ThenBy(u => u.Nombre, StringComparer.CurrentCulture).ToList();
-        return Enum.GetValues<AccionControlada>().Select(accion =>
-        {
-            var decision = Evaluar(lista, rol, sucursalId, accion);
-            var umbral = decision.Nivel == NivelPermiso.Permitido && rol != Rol.Dueno ? Efectiva(lista, rol, sucursalId, accion)?.UmbralCentavos : null;
-            long? monto = decision.Nivel == NivelPermiso.RequiereAutorizacion ? null : umbral + 1;
-            var autorizan = decision.Nivel == NivelPermiso.RequiereAutorizacion || umbral is not null
-                ? otros.Where(u => PuedeAutorizar(lista, u.Rol, sucursalId, accion, monto)).Select(u => new QuienAutoriza(u.Usuario, u.Nombre)).ToList()
-                : [];
-            return new PermisoDeSesion(accion, decision.Nivel, umbral, decision.PideMotivo, autorizan);
-        }).ToList();
-    }
-
-    /// <summary>La regla que vale: la de la sucursal gana sobre la general, y la general sobre la inicial.</summary>
-    private static ReglaPermiso? Efectiva(IEnumerable<ReglaPermiso> reglas, Rol rol, Guid sucursalId, AccionControlada accion)
-    {
-        var candidatas = reglas.Where(r => r.Accion == accion && r.Rol == rol).ToList();
-        return candidatas.FirstOrDefault(r => r.SucursalId == sucursalId)
-            ?? candidatas.FirstOrDefault(r => r.SucursalId is null)
-            ?? Iniciales.FirstOrDefault(r => r.Accion == accion && r.Rol == rol);
-    }
-
-    /// <summary>
-    /// Los usuarios activos que pueden hacer una acción sin pedir autorización, primero los encargados y al final el dueño
-    /// (como en <see cref="DeLaSesion"/>): para decirle a quien no puede quién sí (el corte del turno).
-    /// </summary>
-    public static List<QuienAutoriza> QuienesPueden(
-        IEnumerable<ReglaPermiso> reglas, IEnumerable<(Guid Id, string Usuario, string Nombre, Rol Rol)> usuarios, Guid sucursalId, AccionControlada accion)
-    {
-        var lista = reglas.ToList();
-        return usuarios.Where(u => Evaluar(lista, u.Rol, sucursalId, accion).Nivel == NivelPermiso.Permitido)
-            .OrderBy(u => u.Rol).ThenBy(u => u.Nombre, StringComparer.CurrentCulture)
-            .Select(u => new QuienAutoriza(u.Usuario, u.Nombre)).ToList();
-    }
-
     /// <summary>«Luis», «Carmen o Luis», «Ana, Carmen o Luis»: para los mensajes del servicio.</summary>
     public static string Nombres(IReadOnlyList<QuienAutoriza> quienes) => quienes.Count switch
     {
@@ -530,13 +404,12 @@ public static class Permisos
         _ => $"{string.Join(", ", quienes.Take(quienes.Count - 1).Select(q => q.Nombre))} o {quienes[^1].Nombre}",
     };
 
-    /// <summary>Puede autorizar quien tiene la acción permitida por ese monto (el encargado cancela; cambiar precio, solo el dueño).</summary>
-    public static bool PuedeAutorizar(IEnumerable<ReglaPermiso> reglas, Rol rol, Guid sucursalId, AccionControlada accion, long? montoCentavos) =>
-        Evaluar(reglas, rol, sucursalId, accion, montoCentavos).Nivel == NivelPermiso.Permitido;
-
-    private static ReglaPermiso Regla(AccionControlada accion, Rol rol, NivelPermiso nivel, long? umbral = null, bool motivo = false) =>
-        new() { Accion = accion, Rol = rol, Nivel = nivel, UmbralCentavos = umbral, PideMotivo = motivo };
-
-    private static ReglaPermiso[] Ambos(AccionControlada accion, NivelPermiso nivel, bool motivo = false) =>
-        [Regla(accion, Rol.Cajero, nivel, motivo: motivo), Regla(accion, Rol.Encargado, nivel, motivo: motivo)];
+    /// <summary>
+    /// Para quien no tiene el permiso: «Esto lo hace quien tiene el permiso «Configurar el ticket»: Carmen o Luis.», con los
+    /// nombres de <paramref name="quienes"/> (si no hay nadie, sin nombres).
+    /// </summary>
+    public static string QuienLoHace(AccionControlada accion, IReadOnlyList<QuienAutoriza> quienes) =>
+        quienes.Count == 0
+            ? $"Esto lo hace quien tiene el permiso «{Nombre(accion)}»."
+            : $"Esto lo hace quien tiene el permiso «{Nombre(accion)}»: {Nombres(quienes)}.";
 }

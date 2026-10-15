@@ -32,7 +32,7 @@ public static class ErroresApi
         });
 }
 
-/// <summary>Reglas, autorizaciones, bitácora y efectivo en caja (entrega 2).</summary>
+/// <summary>Permisos, autorizaciones, bitácora y efectivo en caja (entrega 2; los permisos por usuario, entrega 1).</summary>
 public static class ApiControl
 {
     public static void MapearApiControl(this IEndpointRouteBuilder app)
@@ -45,14 +45,13 @@ public static class ApiControl
             return new DecisionDto(decision.Nivel, decision.PideMotivo);
         });
 
-        // Todo lo que puede quien entró, en una sola consulta: la caja pinta sus pestañas, teclas y candados con esto.
+        // Todo lo que puede quien entró, en una sola consulta: la caja pinta sus pestañas, teclas y candados con esto. Al entrar
+        // ya viene en la sesión; esto queda para pedirlo otra vez (y para una caja de antes).
         api.MapGet("/usuarios/{usuarioId:guid}/permisos", async (Guid usuarioId, Guid sucursalId, PosDbContext db) =>
         {
-            var usuarios = await db.Usuarios.AsNoTracking().Where(u => u.Activo && (u.SucursalId == null || u.SucursalId == sucursalId))
-                .Select(u => new { u.Id, u.NombreUsuario, u.Nombre, u.Rol }).ToListAsync();
+            var usuarios = await new ServicioControl(db).UsuariosQueEntranAsync(sucursalId);
             var usuario = usuarios.SingleOrDefault(u => u.Id == usuarioId) ?? throw new ArgumentException("Ese usuario no está activo en esta sucursal.");
-            return Permisos.DeLaSesion(await new ServicioControl(db).ReglasAsync(sucursalId), usuarios.Select(u => (u.Id, u.NombreUsuario, u.Nombre, u.Rol)),
-                usuario.Id, usuario.Rol, sucursalId);
+            return Permisos.DeLaSesion(usuario.Permisos, usuarios, usuario.Id);
         });
 
         api.MapPost("/autorizaciones", async (SolicitudAutorizacion s, PosDbContext db) =>
@@ -86,8 +85,9 @@ public static class ApiControl
         {
             if (s.LimiteEfectivoCentavos is <= 0)
                 throw new ArgumentException("El límite de efectivo debe ser mayor a cero (o vacío para no tener límite).");
+            // «Configuración de la tienda» (entrega 1): antes, solo el dueño (con la acción de las reglas).
             var control = new ServicioControl(db);
-            var dueno = await control.IdentificarAsync(s.Usuario, s.Pin, sucursalId, AccionControlada.EditarReglas);
+            var quien = await control.IdentificarAsync(s.Usuario, s.Pin, sucursalId, AccionControlada.ConfigurarTienda);
             var configuracion = await db.ConfiguracionesSucursal.FindAsync(sucursalId);
             if (configuracion is null)
             {
@@ -95,35 +95,10 @@ public static class ApiControl
                 db.ConfiguracionesSucursal.Add(configuracion);
             }
             configuracion.LimiteEfectivoCentavos = s.LimiteEfectivoCentavos;
-            control.Registrar(sucursalId, null, dueno.Id, AccionControlada.EditarReglas,
+            control.Registrar(sucursalId, null, quien.Id, AccionControlada.ConfigurarTienda,
                 s.LimiteEfectivoCentavos is { } l ? $"Límite de efectivo en caja: {l / 100m:N2}" : "Sin límite de efectivo en caja");
             await db.SaveChangesAsync();
             return new ConfiguracionSucursalDto(configuracion.LimiteEfectivoCentavos);
-        });
-
-        api.MapGet("/sucursales/{sucursalId:guid}/reglas", async (Guid sucursalId, PosDbContext db) =>
-            ReglasEfectivas(await new ServicioControl(db).ReglasAsync(sucursalId), sucursalId));
-
-        api.MapPut("/sucursales/{sucursalId:guid}/reglas", async (Guid sucursalId, SolicitudReglas s, PosDbContext db) =>
-        {
-            var control = new ServicioControl(db);
-            var dueno = await control.IdentificarAsync(s.Usuario, s.Pin, sucursalId, AccionControlada.EditarReglas);
-            var guardadas = await db.ReglasPermiso.Where(r => r.SucursalId == sucursalId).ToListAsync();
-            foreach (var r in s.Reglas.Where(r => r.Rol != Rol.Dueno && !Permisos.SoloDelDueno(r.Accion)))
-            {
-                if (r.UmbralCentavos is <= 0)
-                    throw new ArgumentException("Los umbrales deben ser mayores a cero.");
-                var regla = guardadas.FirstOrDefault(g => g.Accion == r.Accion && g.Rol == r.Rol);
-                if (regla is null)
-                {
-                    regla = new ReglaPermiso { Accion = r.Accion, Rol = r.Rol, SucursalId = sucursalId };
-                    db.ReglasPermiso.Add(regla);
-                }
-                (regla.Nivel, regla.UmbralCentavos, regla.PideMotivo) = (r.Nivel, r.UmbralCentavos, r.PideMotivo);
-            }
-            control.Registrar(sucursalId, null, dueno.Id, AccionControlada.EditarReglas, "Cambió las reglas de la sucursal");
-            await db.SaveChangesAsync();
-            return ReglasEfectivas(await control.ReglasAsync(sucursalId), sucursalId);
         });
     }
 
@@ -144,18 +119,4 @@ public static class ApiControl
         return new ComprobanteMovimientoDto(movimiento.Id.ToString()[^6..].ToUpperInvariant(), movimiento.Tipo, movimiento.MontoCentavos,
             movimiento.Motivo, HoraMexico.ALocal(movimiento.FechaUtc), caja!.Nombre, usuario, encabezado);
     }
-
-    /// <summary>Todas las combinaciones acción × rol (sin el dueño), con la regla que aplica hoy en la sucursal.</summary>
-    internal static List<ReglaDto> ReglasEfectivas(List<ReglaPermiso> reglas, Guid sucursalId) =>
-        Enum.GetValues<AccionControlada>().Where(a => !Permisos.SoloDelDueno(a))
-            .SelectMany(a => new[] { Rol.Cajero, Rol.Encargado }.Select(rol =>
-            {
-                var regla = reglas.FirstOrDefault(r => r.Accion == a && r.Rol == rol && r.SucursalId == sucursalId)
-                    ?? reglas.FirstOrDefault(r => r.Accion == a && r.Rol == rol && r.SucursalId == null)
-                    ?? Permisos.Iniciales.FirstOrDefault(r => r.Accion == a && r.Rol == rol);
-                return regla is null
-                    ? new ReglaDto(a, rol, NivelPermiso.RequiereAutorizacion, null, false)
-                    : new ReglaDto(a, rol, regla.Nivel, regla.UmbralCentavos, regla.PideMotivo);
-            }))
-            .ToList();
 }

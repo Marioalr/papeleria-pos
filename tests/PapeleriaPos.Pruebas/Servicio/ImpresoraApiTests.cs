@@ -193,7 +193,7 @@ public class ImpresoraApiTests(ServicioConImpresora servicio) : IClassFixture<Se
         var cajero = await http.PutAsJsonAsync($"api/sucursales/{caja.SucursalId}/impresora",
             new SolicitudConfiguracionImpresora("cajero", "1111", new ConfiguracionImpresoraDto("otra", 10, 5)));
         Assert.Equal(HttpStatusCode.BadRequest, cajero.StatusCode);
-        Assert.Contains("dueño", await cajero.Content.ReadAsStringAsync());
+        Assert.Contains("«Configurar la impresora»: Dueño de prueba", await cajero.Content.ReadAsStringAsync());
     }
 
     [Fact]

@@ -76,7 +76,7 @@ public sealed class CreditoApiTests(ServicioDePrueba servicio) : IClassFixture<S
 
     [Fact]
     public void Las_reglas_iniciales_se_cumplen_en_el_servicio() =>
-        Assert.False(Permisos.SoloDelDueno(AccionControlada.DarCredito));
+        Assert.False(PermisosDeRoles.SoloDelDueno(AccionControlada.DarCredito));
 
     [Fact]
     public async Task El_credito_lo_da_el_dueno_y_guardar_la_ficha_no_se_lo_quita()
