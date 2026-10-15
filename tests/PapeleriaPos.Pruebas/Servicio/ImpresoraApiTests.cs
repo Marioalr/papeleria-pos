@@ -75,7 +75,7 @@ public class ImpresoraApiTests(ServicioConImpresora servicio) : IClassFixture<Se
         var cajero = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("cajero", "1111")));
         var dueno = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
         await Leer<EstadoImpresoraDto>(await http.PutAsJsonAsync($"api/sucursales/{caja.SucursalId}/impresora",
-            new SolicitudConfiguracionImpresora("dueno", "3333", new ConfiguracionImpresoraDto("impresora-de-prueba", 10, 5))));
+            new SolicitudConfiguracionImpresora(dueno.UsuarioId, new ConfiguracionImpresoraDto("impresora-de-prueba", 10, 5))));
         return (http, caja, cajero, dueno);
     }
 
@@ -180,7 +180,7 @@ public class ImpresoraApiTests(ServicioConImpresora servicio) : IClassFixture<Se
     [Fact]
     public async Task Sin_respuesta_se_dice_por_que_y_solo_el_dueno_configura()
     {
-        var (http, caja, _, _) = await PrepararAsync();
+        var (http, caja, cajeroSesion, _) = await PrepararAsync();
         servicio.Impresora.Responde = false;
         try
         {
@@ -191,9 +191,10 @@ public class ImpresoraApiTests(ServicioConImpresora servicio) : IClassFixture<Se
         {
             servicio.Impresora.Responde = true;
         }
+        // Con la sesión de quien entró (entrega 7): el cajero no la tiene, y se le dice quién.
         var cajero = await http.PutAsJsonAsync($"api/sucursales/{caja.SucursalId}/impresora",
-            new SolicitudConfiguracionImpresora("cajero", "1111", new ConfiguracionImpresoraDto("otra", 10, 5)));
-        Assert.Equal(HttpStatusCode.BadRequest, cajero.StatusCode);
+            new SolicitudConfiguracionImpresora(cajeroSesion.UsuarioId, new ConfiguracionImpresoraDto("otra", 10, 5)));
+        Assert.Equal(HttpStatusCode.Forbidden, cajero.StatusCode);
         Assert.Contains("«Configurar la impresora»: Dueño de prueba", await cajero.Content.ReadAsStringAsync());
     }
 
@@ -255,15 +256,15 @@ public class ImpresoraApiTests(ServicioConImpresora servicio) : IClassFixture<Se
     [Fact]
     public async Task Calibrar_pide_datos_suficientes_y_al_dueno()
     {
-        var (http, caja, _, _) = await PrepararAsync();
+        var (http, caja, cajeroSesion, dueno) = await PrepararAsync();
         var calibracion = await http.GetFromJsonAsync<CalibracionDto>($"api/sucursales/{caja.SucursalId}/impresora/calibracion");
-        var sinDatos = await http.PostAsJsonAsync($"api/sucursales/{caja.SucursalId}/impresora/calibracion", new SolicitudCredenciales("dueno", "3333"));
-        var cajero = await http.PostAsJsonAsync($"api/sucursales/{caja.SucursalId}/impresora/calibracion", new SolicitudCredenciales("cajero", "1111"));
+        var sinDatos = await http.PostAsJsonAsync($"api/sucursales/{caja.SucursalId}/impresora/calibracion", new SolicitudCalibracion(dueno.UsuarioId));
+        var cajero = await http.PostAsJsonAsync($"api/sucursales/{caja.SucursalId}/impresora/calibracion", new SolicitudCalibracion(cajeroSesion.UsuarioId));
 
         Assert.Equal(4, calibracion!.Canales.Count);
         Assert.Equal(HttpStatusCode.BadRequest, sinDatos.StatusCode);
         Assert.Contains("datos suficientes", await sinDatos.Content.ReadAsStringAsync());
-        Assert.Equal(HttpStatusCode.BadRequest, cajero.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, cajero.StatusCode);
     }
 
     private static Task<List<ImpresionPorCobrarDto>> PorCobrarAsync(HttpClient http, CajaDto caja, SesionDto quien) =>

@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Clientes;
+using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Telegram;
@@ -272,11 +273,16 @@ public sealed record ErrorDto(string Mensaje, string? Codigo = null);
 /// <param name="LogoPngBase64">Cómo se ve el logo convertido, para la pantalla.</param>
 public sealed record ConfiguracionTicketDto(IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, string? LogoPngBase64);
 
-/// <summary>Cambiar el ticket lo autoriza el encargado o el dueño con su usuario y PIN.</summary>
-public sealed record SolicitudTextosTicket(string Usuario, string Pin, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie);
+/// <summary>
+/// El encabezado y el pie del ticket (la Configuración nueva, entrega 7): los cambia quien entró a la caja con «Configurar
+/// el ticket», sin volver a escribir su PIN.
+/// </summary>
+/// <param name="UsuarioId">Quien entró a la caja.</param>
+public sealed record SolicitudTextosTicket(Guid UsuarioId, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie);
 
-/// <param name="ImagenBase64">El archivo tal cual (PNG, JPG o BMP); el servicio lo pasa a blanco y negro.</param>
-public sealed record SolicitudLogo(string Usuario, string Pin, string? ImagenBase64);
+/// <param name="UsuarioId">Quien entró a la caja, con «Configurar el ticket».</param>
+/// <param name="ImagenBase64">El archivo tal cual (PNG, JPG o BMP); el servicio lo pasa a blanco y negro. Vacío: quita el logo.</param>
+public sealed record SolicitudLogo(Guid UsuarioId, string? ImagenBase64);
 
 // ── Control (entrega 2) ─────────────────────────────────────────────────────
 
@@ -298,10 +304,31 @@ public sealed record EfectivoCajaDto(long EsperadoCentavos, long? LimiteCentavos
     public bool PideRetiro => LimiteCentavos is { } limite && EsperadoCentavos >= limite;
 }
 
-public sealed record ConfiguracionSucursalDto(long? LimiteEfectivoCentavos);
+/// <summary>
+/// La configuración de la tienda (la Configuración nueva, entrega 7: Tienda, Venta y cobro y Efectivo y corte). La cambia
+/// quien tiene «Configuración de la tienda»; la leen todas las cajas: el nombre en la entrada, las fichas de la espera en
+/// la venta, el fondo que propone «Abrir turno» y el límite de efectivo.
+/// </summary>
+/// <param name="NombreTienda">Vacío: la entrada dice el de la sucursal.</param>
+/// <param name="HoraApertura">El horario de la tienda: fuera de él, abrir un turno avisa y de noche no se avisa de la impresora.</param>
+/// <param name="LimiteEfectivoCentavos">Al llegar, la caja pide un retiro. Vacío: sin límite.</param>
+/// <param name="FondoSugeridoCentavos">Lo que propone «Abrir turno». Vacío: el fondo se escribe cada vez.</param>
+/// <param name="UmbralCorteCentavos">Una diferencia mayor en el corte de un turno avisa al dueño.</param>
+/// <param name="FichasEnEspera">Los tickets en espera que se ven como ficha; los demás, en «Más». Una caja principal de antes no lo manda: 3.</param>
+public sealed record ConfiguracionSucursalDto(
+    string? NombreTienda, string? Direccion, string? Telefono, TimeOnly HoraApertura, TimeOnly HoraCierre, long? LimiteEfectivoCentavos,
+    long? FondoSugeridoCentavos, long UmbralCorteCentavos, int FichasEnEspera = ConfiguracionSucursal.FichasEnEsperaPorOmision);
 
-/// <summary>Lo cambia quien tiene «Configuración de la tienda», con su usuario y PIN.</summary>
-public sealed record SolicitudConfiguracionSucursal(string Usuario, string Pin, long? LimiteEfectivoCentavos);
+/// <summary>
+/// Un cambio a la configuración de la tienda: va todo lo de <see cref="ConfiguracionSucursalDto"/> como debe quedar, y en la
+/// bitácora queda solo lo que cambió. Lo hace quien entró a la caja con «Configuración de la tienda», sin volver a escribir su PIN.
+/// </summary>
+/// <param name="UsuarioId">Quien entró a la caja.</param>
+public sealed record SolicitudConfiguracionSucursal(Guid UsuarioId, ConfiguracionSucursalDto Configuracion);
+
+/// <summary>Los rápidos de la venta en su orden (Alt+1 a Alt+6), como deben quedar. Los cambia quien tiene «Configuración de la tienda».</summary>
+/// <param name="UsuarioId">Quien entró a la caja.</param>
+public sealed record SolicitudRapidos(Guid UsuarioId, IReadOnlyList<Rapido> Rapidos);
 
 /// <summary>El comprobante que se imprime al sacar efectivo de la caja.</summary>
 public sealed record ComprobanteMovimientoDto(
@@ -350,8 +377,6 @@ public sealed record TransferenciaDto(
 
 public sealed record SolicitudVerificacion(string Usuario, string Pin, bool Llego);
 
-public sealed record SolicitudConsultaBitacora(string Usuario, string Pin, DateOnly Desde, DateOnly Hasta);
-
 public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionControlada Accion, string Detalle, long? MontoCentavos, string? Autorizo, ResultadoBitacora Resultado);
 
 // ── Varias cajas (entrega 3) ────────────────────────────────────────────────
@@ -372,8 +397,15 @@ public sealed record EstadoServicioDto(
     string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false, long VersionCredito = 0,
     bool PilotoEleventa = false, string? AvisoBase = null);
 
-/// <summary>Usuario y PIN de quien autoriza (el dueño para dar de alta o quitar cajas).</summary>
+/// <summary>Usuario y PIN de quien autoriza: dar de alta una caja (antes de que haya sesión) y Telegram, que sigue como estaba.</summary>
 public sealed record SolicitudCredenciales(string Usuario, string Pin);
+
+/// <summary>
+/// Quitar la PC de una caja (robada, reemplazada o que ya no se usa): lo hace quien entró a la caja con «Dar de alta y
+/// quitar cajas», sin volver a escribir su PIN (la Configuración nueva, entrega 7).
+/// </summary>
+/// <param name="UsuarioId">Quien entró a la caja.</param>
+public sealed record SolicitudQuitarEquipo(Guid UsuarioId);
 
 public sealed record CajaAltaDto(Guid Id, string Nombre, string Serie, string? Equipo);
 
@@ -410,12 +442,18 @@ public sealed record CodigoLocalDto(string Codigo, Guid VarianteId, Guid Present
 /// Los permisos de cada usuario activo y los de defecto (entrega 1). Vacío en una copia de antes: la caja decide con las
 /// reglas como lo dejaría la migración, y la vuelve a bajar en el siguiente latido.
 /// </param>
+/// <param name="Configuracion">
+/// La configuración de la tienda (entrega 7): sin conexión, la entrada dice el nombre de la tienda, la venta enseña sus
+/// fichas de espera y «Abrir turno» propone el fondo. Vacía en una copia de antes: lo de siempre (3 fichas, sin fondo
+/// sugerido).
+/// </param>
 public sealed record PaqueteContingenciaDto(
     long Version, CajaDto Caja, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<UsuarioLocalDto> Usuarios,
     IReadOnlyList<ReglaDto> Reglas,
     IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, int UltimoFolio, long? LimiteEfectivoCentavos,
     IReadOnlyList<ClienteRegistradoDto>? Clientes = null, IReadOnlyList<ClienteRegistradoDto>? Registrados = null,
-    IReadOnlyList<string>? Marcas = null, IReadOnlyList<SinonimoDto>? Sinonimos = null, IReadOnlyList<PermisosLocalesDto>? Permisos = null);
+    IReadOnlyList<string>? Marcas = null, IReadOnlyList<SinonimoDto>? Sinonimos = null, IReadOnlyList<PermisosLocalesDto>? Permisos = null,
+    ConfiguracionSucursalDto? Configuracion = null);
 
 // Lo que sube con la bandeja. Cada cosa lleva el ID que le dio la caja: si llega dos veces, se guarda una.
 

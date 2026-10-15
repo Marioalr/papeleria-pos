@@ -103,12 +103,17 @@ public class CajasEnRedApiTests(ServicioDePrueba servicio) : IClassFixture<Servi
 
         var vieja = await DesdeOtraPc(primera.Llave).GetAsync("api/cajas");
         var nueva = await DesdeOtraPc(reemplazo.Llave).GetAsync("api/cajas");
-        var quitar = await Local().PostAsJsonAsync($"api/cajas/{primera.Caja.Id}/quitar-equipo", new SolicitudCredenciales("dueno", "3333"));
+        // Quien entró con «Dar de alta y quitar cajas», sin volver a escribir su PIN (entrega 7); el cajero no.
+        var dueno = (await (await Local().PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333"))).Content.ReadFromJsonAsync<SesionDto>())!;
+        var cajero = (await (await Local().PostAsJsonAsync("api/sesion", new SolicitudEntrada("cajero", "1111"))).Content.ReadFromJsonAsync<SesionDto>())!;
+        var sinPermiso = await Local().PostAsJsonAsync($"api/cajas/{primera.Caja.Id}/quitar-equipo", new SolicitudQuitarEquipo(cajero.UsuarioId));
+        var quitar = await Local().PostAsJsonAsync($"api/cajas/{primera.Caja.Id}/quitar-equipo", new SolicitudQuitarEquipo(dueno.UsuarioId));
         var despues = await DesdeOtraPc(reemplazo.Llave).GetAsync("api/cajas");
 
         Assert.Equal(primera.Caja.Id, reemplazo.Caja.Id);
         Assert.Equal(HttpStatusCode.Unauthorized, vieja.StatusCode);
         Assert.Equal(HttpStatusCode.OK, nueva.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, sinPermiso.StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, quitar.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, despues.StatusCode);
     }

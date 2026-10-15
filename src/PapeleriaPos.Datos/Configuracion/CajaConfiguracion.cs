@@ -190,6 +190,11 @@ internal sealed class ConfiguracionSucursalConfiguracion : IEntityTypeConfigurat
         b.Property(c => c.EtiquetasFormato).HasDefaultValue(FormatoEtiquetas.PorOmision.Id).ValueGeneratedNever();
         b.Property(c => c.SugeridoCoberturaDias).HasDefaultValue(SugeridoCompra.Parametros.PorOmision.CoberturaDias).ValueGeneratedNever();
         b.Property(c => c.SugeridoColchonDias).HasDefaultValue(SugeridoCompra.Parametros.PorOmision.ColchonDias).ValueGeneratedNever();
+        // La Configuración nueva (entrega 7): las sucursales que ya tenían configuración siguen con las 3 fichas de antes.
+        b.Property(c => c.FichasEnEspera).HasDefaultValue(ConfiguracionSucursal.FichasEnEsperaPorOmision).ValueGeneratedNever();
+        b.Property(c => c.NombreTienda).HasMaxLength(ConfiguracionSucursal.LargoNombreTienda);
+        b.Property(c => c.Direccion).HasMaxLength(ConfiguracionSucursal.LargoDireccion);
+        b.Property(c => c.Telefono).HasMaxLength(ConfiguracionSucursal.LargoTelefono);
         // Las medidas de una hoja propia van como JSON: se leen y se guardan juntas.
         b.Property(c => c.EtiquetasPropio).HasConversion(
             f => f == null ? null : JsonSerializer.Serialize(f, JsonOpciones),

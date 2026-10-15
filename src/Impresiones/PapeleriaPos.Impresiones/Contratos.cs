@@ -87,7 +87,13 @@ public sealed record ImpresionDelDiaDto(
 /// <param name="Host">IP o nombre de la impresora en la red; vacío, no se lee.</param>
 public sealed record ConfiguracionImpresoraDto(string? Host, int AvisoTintaPorcentaje, int MinutosEntreLecturas);
 
-public sealed record SolicitudConfiguracionImpresora(string Usuario, string Pin, ConfiguracionImpresoraDto Configuracion);
+/// <summary>Cómo se lee la impresora: lo cambia quien entró a la caja con «Configurar la impresora» (la Configuración nueva, entrega 7).</summary>
+/// <param name="UsuarioId">Quien entró a la caja.</param>
+public sealed record SolicitudConfiguracionImpresora(Guid UsuarioId, ConfiguracionImpresoraDto Configuracion);
+
+/// <summary>Aplicar la calibración de la tinta: quien entró a la caja con «Configurar la impresora».</summary>
+/// <param name="UsuarioId">Quien entró a la caja.</param>
+public sealed record SolicitudCalibracion(Guid UsuarioId);
 
 /// <summary>Niveles en porcentaje restante (vacío: la impresora no lo dijo) y contadores de caras.</summary>
 public sealed record LecturaImpresoraDto(

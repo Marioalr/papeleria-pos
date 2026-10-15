@@ -107,7 +107,11 @@ public enum AccionControlada
     /// <summary>Ver los reportes de ventas (entrega 9: todavía no hay pantalla). Al migrar, solo el dueño.</summary>
     VerReportes,
 
-    /// <summary>La configuración de la tienda: hoy, el límite de efectivo en caja. Al migrar, solo el dueño.</summary>
+    /// <summary>
+    /// La configuración de la tienda (Configuración › Tienda, Venta y cobro, y Efectivo y corte, entrega 7): el nombre, el
+    /// horario, las fichas de la espera, los rápidos, el límite de efectivo, el fondo sugerido y el aviso del corte. Al
+    /// migrar, solo el dueño.
+    /// </summary>
     ConfigurarTienda,
 }
 

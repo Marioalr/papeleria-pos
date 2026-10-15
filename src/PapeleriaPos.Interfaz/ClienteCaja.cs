@@ -114,11 +114,32 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<AutorizacionDto> AutorizarAsync(SolicitudAutorizacion solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<AutorizacionDto>("api/autorizaciones", solicitud), l => l.Autorizar(solicitud));
 
-    public Task<ConfiguracionSucursalDto?> ConfiguracionSucursalAsync(Guid sucursalId) =>
-        ConRespaldoAsync(() => _http.GetAsync<ConfiguracionSucursalDto>($"api/sucursales/{sucursalId}/configuracion"));
+    /// <summary>
+    /// La configuración de la tienda (entrega 7): el nombre de la entrada, las fichas de la espera, el fondo sugerido… Sin
+    /// conexión, la de la copia local. Se recuerda la última (<see cref="ConfiguracionConocida"/>) para pintar sin esperar.
+    /// </summary>
+    public async Task<ConfiguracionSucursalDto> ConfiguracionSucursalAsync(Guid sucursalId)
+    {
+        var configuracion = await ConRespaldoAsync(async () => (await _http.GetAsync<ConfiguracionSucursalDto>($"api/sucursales/{sucursalId}/configuracion"))!,
+            l => l.ConfiguracionSucursal());
+        ConfiguracionConocida = configuracion;
+        return configuracion;
+    }
 
-    public Task<ConfiguracionSucursalDto> GuardarConfiguracionSucursalAsync(Guid sucursalId, SolicitudConfiguracionSucursal solicitud) =>
-        ConRespaldoAsync(() => _http.PutAsync<ConfiguracionSucursalDto>($"api/sucursales/{sucursalId}/configuracion", solicitud));
+    /// <summary>La última configuración de la tienda que se leyó o se guardó en esta caja; vacía si todavía no.</summary>
+    public ConfiguracionSucursalDto? ConfiguracionConocida { get; private set; }
+
+    /// <summary>Con «Configuración de la tienda»: lo que cambió va a la bitácora.</summary>
+    public async Task<ConfiguracionSucursalDto> GuardarConfiguracionSucursalAsync(Guid cajaId, SolicitudConfiguracionSucursal solicitud)
+    {
+        var configuracion = await ConRespaldoAsync(() => _http.PutAsync<ConfiguracionSucursalDto>($"api/cajas/{cajaId}/configuracion", solicitud));
+        ConfiguracionConocida = configuracion;
+        return configuracion;
+    }
+
+    /// <summary>Los rápidos en su orden, como deben quedar (con «Configuración de la tienda»).</summary>
+    public Task<List<Rapido>> GuardarRapidosAsync(Guid cajaId, SolicitudRapidos solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<List<Rapido>>($"api/cajas/{cajaId}/configuracion/rapidos", solicitud));
 
     /// <summary>La cuenta del turno (guarda un corte parcial). La pantalla no la enseña antes de cerrar: ver <see cref="CorteInformativoAsync"/>.</summary>
     public Task<CorteDto> CorteXAsync(Guid turnoId, Guid usuarioId) =>
@@ -242,12 +263,13 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<ConfiguracionTicketDto?> ConfiguracionTicketAsync(Guid sucursalId) =>
         ConRespaldoAsync(() => _http.GetAsync<ConfiguracionTicketDto>($"api/sucursales/{sucursalId}/ticket"));
 
-    public Task<ConfiguracionTicketDto> GuardarTextosTicketAsync(Guid sucursalId, SolicitudTextosTicket solicitud) =>
-        ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/sucursales/{sucursalId}/ticket/textos", solicitud));
+    /// <summary>El encabezado y el pie, con «Configurar el ticket» de quien entró a la caja.</summary>
+    public Task<ConfiguracionTicketDto> GuardarTextosTicketAsync(Guid cajaId, SolicitudTextosTicket solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/cajas/{cajaId}/configuracion/ticket/textos", solicitud));
 
     /// <summary>Sin imagen, quita el logo.</summary>
-    public Task<ConfiguracionTicketDto> GuardarLogoTicketAsync(Guid sucursalId, SolicitudLogo solicitud) =>
-        ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/sucursales/{sucursalId}/ticket/logo", solicitud));
+    public Task<ConfiguracionTicketDto> GuardarLogoTicketAsync(Guid cajaId, SolicitudLogo solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/cajas/{cajaId}/configuracion/ticket/logo", solicitud));
 
     public Task<VentaParaDevolverDto?> VentaPorFolioAsync(Guid sucursalId, string folio) =>
         ConRespaldoAsync(() => _http.GetAsync<VentaParaDevolverDto>($"api/sucursales/{sucursalId}/ventas/folio/{Uri.EscapeDataString(folio)}",
@@ -267,8 +289,10 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task VerificarTransferenciaAsync(Guid cobroId, SolicitudVerificacion solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<object>($"api/cobros/{cobroId}/verificacion", solicitud, sinRespuesta: true));
 
-    public Task<List<BitacoraDto>> ConsultarBitacoraAsync(Guid sucursalId, SolicitudConsultaBitacora solicitud) =>
-        ConRespaldoAsync(() => _http.PostAsync<List<BitacoraDto>>($"api/sucursales/{sucursalId}/bitacora/consulta", solicitud));
+    /// <summary>La bitácora de la sucursal entre dos días, para quien entró con «Consultar la bitácora».</summary>
+    public Task<List<BitacoraDto>> ConsultarBitacoraAsync(Guid cajaId, Guid usuarioId, DateOnly desde, DateOnly hasta) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<BitacoraDto>>(
+            $"api/cajas/{cajaId}/bitacora?usuarioId={usuarioId}&desde={desde:yyyy-MM-dd}&hasta={hasta:yyyy-MM-dd}") ?? []);
 
     // ── Usuarios y permisos (entrega 1, solo con la caja principal): cada cambio regresa la lista completa ──
 
@@ -511,6 +535,9 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<SugeridoDto> SugeridoAsync(Guid sucursalId, Guid usuarioId) =>
         ConRespaldoAsync(async () => (await _http.GetAsync<SugeridoDto>($"api/sucursales/{sucursalId}/sugerido?usuarioId={usuarioId}"))!);
 
+    public Task<ParametrosSugeridoDto> ParametrosSugeridoAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<ParametrosSugeridoDto>($"api/sucursales/{sucursalId}/sugerido/parametros"))!);
+
     public Task<ParametrosSugeridoDto> GuardarParametrosSugeridoAsync(Guid sucursalId, SolicitudParametrosSugerido solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<ParametrosSugeridoDto>($"api/sucursales/{sucursalId}/sugerido/parametros", solicitud));
 
@@ -709,8 +736,8 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<CalibracionDto> CalibracionAsync(Guid sucursalId) =>
         ConRespaldoAsync(async () => (await _http.GetAsync<CalibracionDto>($"api/sucursales/{sucursalId}/impresora/calibracion"))!);
 
-    public Task<CalibracionDto> AplicarCalibracionAsync(Guid sucursalId, SolicitudCredenciales credenciales) =>
-        ConRespaldoAsync(() => _http.PostAsync<CalibracionDto>($"api/sucursales/{sucursalId}/impresora/calibracion", credenciales));
+    public Task<CalibracionDto> AplicarCalibracionAsync(Guid sucursalId, SolicitudCalibracion solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<CalibracionDto>($"api/sucursales/{sucursalId}/impresora/calibracion", solicitud));
 
     // ── Telegram (solo con la caja principal: el bot vive ahí) ──
 
@@ -804,13 +831,22 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         }
     }
 
+    /// <summary>La versión del servicio de la caja principal (Configuración › Acerca de); vacía si no contesta.</summary>
+    public async Task<string?> VersionDeLaPrincipalAsync()
+    {
+        if (contingencia is { EnLinea: false })
+            return null;
+        return (await _http.GetAsync<EstadoServicioDto>("api/estado"))?.Version;
+    }
+
     public Task<List<SucursalAltaDto>> OpcionesAltaAsync(Uri servicio, SolicitudCredenciales credenciales) =>
         _http.PostAsync<List<SucursalAltaDto>>("api/alta/opciones", credenciales, servicio: servicio);
 
     public Task<AltaCajaDto> AltaAsync(Uri servicio, SolicitudAltaCaja solicitud) => _http.PostAsync<AltaCajaDto>("api/alta", solicitud, servicio: servicio);
 
-    public Task QuitarEquipoAsync(Guid cajaId, SolicitudCredenciales credenciales) =>
-        ConRespaldoAsync(() => _http.PostAsync<object>($"api/cajas/{cajaId}/quitar-equipo", credenciales, sinRespuesta: true));
+    /// <summary>Quita la PC de una caja (con «Dar de alta y quitar cajas» de quien entró): esa PC ya no vende hasta darla de alta otra vez.</summary>
+    public Task QuitarEquipoAsync(Guid cajaId, SolicitudQuitarEquipo solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<object>($"api/cajas/{cajaId}/quitar-equipo", solicitud, sinRespuesta: true));
 
     /// <summary>
     /// En línea, va a la caja principal y le avisa a la contingencia lo que pasó (para su cuenta del turno). Sin

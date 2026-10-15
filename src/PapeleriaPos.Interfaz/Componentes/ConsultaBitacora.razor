@@ -1,29 +1,31 @@
-@* Quién hizo qué, quién lo autorizó y qué se negó. La consulta quien tiene «Consultar la bitácora», con su usuario y PIN. *@
+@* Configuración › Bitácora: quién hizo qué, quién lo autorizó y qué se negó. La ve quien entró con «Consultar la bitácora»,
+   sin volver a escribir su PIN: al abrirla sale la de hoy, y al cambiar las fechas, la de esos días. *@
 @inject ClienteCaja Cliente
 
-<div class="filtros-bitacora">
-    <label>Desde <input type="date" @bind="_desde" /></label>
-    <label>Hasta <input type="date" @bind="_hasta" /></label>
-    <label>Usuario <input @bind="_usuario" autocomplete="off" /></label>
-    <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" /></label>
-    <button class="boton principal" disabled="@_ocupado" @onclick="ConsultarAsync">Consultar</button>
+<div class="vn-cfg-filtros">
+    <label>Desde <input type="date" @bind="_desde" @bind:after="ConsultarAsync" /></label>
+    <label>Hasta <input type="date" @bind="_hasta" @bind:after="ConsultarAsync" /></label>
+    @if (_registros is not null)
+    {
+        <span class="vn-cfg-nota">@(_registros.Count == 1 ? "1 registro" : $"{_registros.Count:N0} registros")</span>
+    }
 </div>
 @if (_error is not null)
 {
-    <p class="error">@_error</p>
+    <p class="vn-cfg-error" role="alert">@_error</p>
 }
 @if (_registros is { Count: 0 })
 {
-    <p class="vacia">No hay registros en esas fechas.</p>
+    <p class="vn-cfg-nota">No hay registros en esas fechas.</p>
 }
 else if (_registros is not null)
 {
-    <div class="resultados">
-        <table>
-            <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Detalle</th><th class="num">Monto</th><th>Autorizó</th><th>Resultado</th></tr></thead>
+    <table class="vn-cfg-tabla vn-cfg-bitacora">
+        <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Detalle</th><th class="num">Monto</th><th>Autorizó</th><th>Resultado</th></tr></thead>
+        <tbody>
             @foreach (var r in _registros)
             {
-                <tr class="@(r.Resultado == ResultadoBitacora.Negado ? "negado" : "")">
+                <tr class="@(r.Resultado == ResultadoBitacora.Negado ? "negado" : null)">
                     <td>@r.FechaLocal.ToString("dd/MM HH:mm")</td>
                     <td>@r.Usuario</td>
                     <td>@Textos.Accion(r.Accion)</td>
@@ -33,42 +35,44 @@ else if (_registros is not null)
                     <td>@Textos.Resultado(r.Resultado)</td>
                 </tr>
             }
-        </table>
-    </div>
+        </tbody>
+    </table>
+}
+else if (_error is null)
+{
+    <p class="vn-cfg-nota">Cargando…</p>
 }
 
 @code {
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
 
-    private DateOnly _desde = DateOnly.FromDateTime(DateTime.Today);
-    private DateOnly _hasta = DateOnly.FromDateTime(DateTime.Today);
-    private string _usuario = "";
-    private string _pin = "";
+    /// <summary>Quien entró: el servicio revisa con su «Consultar la bitácora».</summary>
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    private DateOnly _desde = Hoy();
+    private DateOnly _hasta = Hoy();
     private List<BitacoraDto>? _registros;
     private string? _error;
-    private bool _ocupado;
+
+    private static DateOnly Hoy() => DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
+
+    protected override Task OnInitializedAsync() => ConsultarAsync();
 
     private async Task ConsultarAsync()
     {
-        if (_usuario.Trim().Length == 0 || _pin.Length == 0)
+        _error = null;
+        if (_hasta < _desde)
         {
-            _error = "Escribe el usuario y el PIN de quien consulta.";
+            (_error, _registros) = ("La fecha «hasta» va después de «desde».", null);
             return;
         }
-        _error = null;
-        _ocupado = true;
         try
         {
-            _registros = await Cliente.ConsultarBitacoraAsync(Caja.SucursalId, new SolicitudConsultaBitacora(_usuario, _pin, _desde, _hasta));
+            _registros = await Cliente.ConsultarBitacoraAsync(Caja.Id, Sesion.UsuarioId, _desde, _hasta);
         }
         catch (ErrorCaja ex)
         {
-            _error = ex.Message;
-            _registros = null;
-        }
-        finally
-        {
-            _ocupado = false;
+            (_error, _registros) = (ex.Message, null);
         }
     }
 }

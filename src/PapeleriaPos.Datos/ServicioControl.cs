@@ -184,8 +184,33 @@ public sealed class ServicioControl(PosDbContext db)
         });
 
     /// <summary>
-    /// Usuario y PIN de alguien con la acción en «Puede», en las pantallas que todavía los piden (configurar el ticket,
-    /// Telegram o la impresora, las cajas, la bitácora).
+    /// Lo que se cambia con la sesión, sin volver a escribir el PIN (la Configuración nueva, entrega 7, como «Usuarios y
+    /// permisos»): quien entró a la caja tiene que tener la acción en «Puede». Si no, el error dice quién la tiene y el
+    /// intento queda en la bitácora. Va antes de tocar nada: si no puede, guarda solo el intento.
+    /// </summary>
+    public async Task ExigirDeLaSesionAsync(Guid usuarioId, Guid sucursalId, Guid? cajaId, AccionControlada accion, CancellationToken ct = default)
+    {
+        if ((await EvaluarAsync(usuarioId, sucursalId, accion, ct: ct)).Nivel == NivelPermiso.Permitido)
+            return;
+        Registrar(sucursalId, cajaId, usuarioId, accion, "Intento sin permiso", resultado: ResultadoBitacora.Negado);
+        await db.SaveChangesAsync(ct);
+        throw await SinPermisoAsync(sucursalId, accion, ct);
+    }
+
+    /// <summary>Lo que se consulta con la sesión (la bitácora): quien entró tiene que tener la acción en «Puede». No queda en la bitácora.</summary>
+    public async Task ExigirParaVerAsync(Guid usuarioId, Guid sucursalId, AccionControlada accion, CancellationToken ct = default)
+    {
+        if ((await EvaluarAsync(usuarioId, sucursalId, accion, ct: ct)).Nivel != NivelPermiso.Permitido)
+            throw await SinPermisoAsync(sucursalId, accion, ct);
+    }
+
+    /// <summary>«Esto lo hace quien tiene el permiso «…»: Carmen o Luis.», con quienes lo tienen en la sucursal.</summary>
+    private async Task<PermisoRequerido> SinPermisoAsync(Guid sucursalId, AccionControlada accion, CancellationToken ct) =>
+        new(accion, NivelPermiso.NoPermitido, Permisos.QuienLoHace(accion, await QuienesPuedenAsync(sucursalId, accion, ct)));
+
+    /// <summary>
+    /// Usuario y PIN de alguien con la acción en «Puede», donde todavía se piden: dar de alta una caja (antes de que haya
+    /// sesión), Telegram (en pausa, se queda como estaba) y verificar una transferencia.
     /// </summary>
     public async Task<Usuario> IdentificarAsync(string usuario, string pin, Guid sucursalId, AccionControlada accion, CancellationToken ct = default)
     {

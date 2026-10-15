@@ -1,0 +1,191 @@
+@* Configuración › Venta y cobro › Rápidos (docs/propuesta-interfaz.md «Rápidos»): lo que no tiene código de barras y se
+   vende todo el día, hasta 6, en la fila bajo el cuadro de captura con Alt+1 a Alt+6. Cada uno con su nombre (el de su
+   botón), el producto o servicio que vende y cuántos (la CURP vende 10 impresiones); se suben, se bajan, se quitan y se
+   agregan buscando el producto. Se guarda al momento con «Configuración de la tienda» de quien entró, y la venta los toma
+   en cuanto se guardan. *@
+@using PapeleriaPos.Nucleo.Configuracion
+@inherits GuardadoAlMomento
+@inject ClienteCaja Cliente
+
+@if (_rapidos is null)
+{
+    <p class="@(_errorCarga is null ? "vn-cfg-nota" : "vn-cfg-error")">@(_errorCarga ?? "Cargando…")</p>
+}
+else
+{
+    @if (_rapidos.Count == 0)
+    {
+        <p class="vn-cfg-nota">Sin rápidos: la fila de la venta queda vacía.</p>
+    }
+    else
+    {
+        <table class="vn-cfg-tabla vn-cfg-rapidos">
+            <thead><tr><th>Tecla</th><th>Botón</th><th>Vende</th><th class="num">Cuántos</th><th class="num">Precio</th><th></th></tr></thead>
+            <tbody>
+                @for (var i = 0; i < _rapidos.Count; i++)
+                {
+                    var indice = i;
+                    var rapido = _rapidos[i];
+                    var producto = _productos.GetValueOrDefault(rapido.VarianteId);
+                    var nombre = $"rapido-nombre-{i}";
+                    var cantidad = $"rapido-cantidad-{i}";
+                    <tr>
+                        <td><kbd>Alt+@(i + 1)</kbd></td>
+                        <td>
+                            <input id="@nombre" class="vn-cfg-rapido-nombre" maxlength="@Rapido.LargoNombre" autocomplete="off" disabled="@(!Puede)"
+                                   aria-label="@($"Nombre del botón de Alt+{i + 1}")" value="@Escrito(nombre, rapido.Nombre)"
+                                   @oninput="e => Escribir(nombre, e.Value, texto => CambiarNombreAsync(indice, texto), Renglon)"
+                                   @onchange="() => SalirAsync(nombre)" @onkeydown="e => AlTeclearAsync(e, nombre)" />
+                        </td>
+                        <td>@(producto?.Descripcion ?? "Ya no está en el catálogo: elige otro")</td>
+                        <td class="num">
+                            <input id="@cantidad" class="vn-cfg-rapido-cantidad" inputmode="decimal" autocomplete="off" disabled="@(!Puede)"
+                                   aria-label="@($"Cuántos vende Alt+{i + 1}")" value="@Escrito(cantidad, Cantidad(rapido))"
+                                   @oninput="e => Escribir(cantidad, e.Value, texto => CambiarCantidadAsync(indice, texto), Renglon)"
+                                   @onchange="() => SalirAsync(cantidad)" @onkeydown="e => AlTeclearAsync(e, cantidad)" />
+                        </td>
+                        <td class="num">@(producto is null ? "—" : Formato.Dinero(PantallaVenta.PrecioDelRapido(rapido, producto, Caja.SucursalId)))</td>
+                        <td class="num">
+                            @if (Puede)
+                            {
+                                <span class="vn-cfg-acciones">
+                                    <button class="vn-boton chico" title="Subir: la tecla de antes" aria-label="Subir" disabled="@(i == 0)"
+                                            @onclick="() => MoverAsync(indice, -1)"><Ico Nombre="arriba" /></button>
+                                    <button class="vn-boton chico" title="Bajar: la tecla de después" aria-label="Bajar" disabled="@(i == _rapidos.Count - 1)"
+                                            @onclick="() => MoverAsync(indice, 1)"><Ico Nombre="abajo" /></button>
+                                    <button class="vn-boton chico" @onclick="() => QuitarAsync(indice)">Quitar</button>
+                                </span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    @if (ErrorDe(Renglon) is { } error)
+    {
+        <p class="vn-cfg-error" role="alert">@error</p>
+    }
+    @if (Puede)
+    {
+        @if (_agregando)
+        {
+            <div class="vn-cfg-antes vn-cfg-buscar">
+                <p class="vn-cfg-nota">Busca el producto o servicio que vende el rápido nuevo (↓ y Enter, o un clic):</p>
+                <BuscarProducto SucursalId="Caja.SucursalId" AlElegir="AgregarAsync" />
+                <div class="vn-botonera"><button class="vn-boton chico" @onclick="() => _agregando = false">Cancelar</button></div>
+            </div>
+        }
+        else if (_rapidos.Count < Rapido.Maximo)
+        {
+            <div class="vn-botonera"><button class="vn-boton chico" @onclick="() => _agregando = true"><Ico Nombre="mas" />Agregar un rápido</button></div>
+        }
+        else
+        {
+            <p class="vn-cfg-nota">Ya están los @Rapido.Maximo: para otro, quita uno.</p>
+        }
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+
+    /// <summary>Quien entró: los cambia con «Configuración de la tienda».</summary>
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Se guardó un cambio: la Configuración dice a qué hora y la venta vuelve a pedir sus rápidos.</summary>
+    [Parameter] public EventCallback AlGuardar { get; set; }
+
+    /// <summary>Donde se dice el error de cualquiera de los rápidos.</summary>
+    public const string Renglon = "rapidos";
+
+    private List<Rapido>? _rapidos;
+    private readonly Dictionary<Guid, ProductoVentaDto?> _productos = [];
+    private string? _errorCarga;
+    private bool _agregando;
+
+    private bool Puede => Sesion.Puede(AccionControlada.ConfigurarTienda);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _rapidos = await Cliente.RapidosAsync(Caja.SucursalId);
+            await ProductosAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _errorCarga = ex.Message;
+        }
+    }
+
+    protected override Task AlGuardarAsync() => AlGuardar.InvokeAsync();
+
+    /// <summary>El producto de cada rápido, para su nombre y su precio.</summary>
+    private async Task ProductosAsync()
+    {
+        foreach (var id in _rapidos!.Select(r => r.VarianteId).Where(id => !_productos.ContainsKey(id)).Distinct().ToList())
+            _productos[id] = await Cliente.PorVarianteAsync(id, Caja.SucursalId);
+    }
+
+    private static string Cantidad(Rapido r) => r.Cantidad.ToString("0.###", CultureInfo.InvariantCulture);
+
+    /// <summary>La lista como debe quedar: al servicio, que la revisa y la regresa como quedó.</summary>
+    private async Task GuardarAsync(Func<List<Rapido>, List<Rapido>> cambio)
+    {
+        _rapidos = await Cliente.GuardarRapidosAsync(Caja.Id, new SolicitudRapidos(Sesion.UsuarioId, cambio([.. _rapidos!])));
+        await ProductosAsync();
+    }
+
+    private Task CambiarNombreAsync(int indice, string texto) =>
+        GuardarAsync(l => l.Select((r, k) => k == indice ? r with { Nombre = texto } : r).ToList());
+
+    private Task CambiarCantidadAsync(int indice, string texto)
+    {
+        if (!decimal.TryParse(texto.Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var cantidad))
+            throw new ArgumentException($"Escribe cuántos vende Alt+{indice + 1}: 1, 10, 1.5…");
+        return GuardarAsync(l => l.Select((r, k) => k == indice ? r with { Cantidad = cantidad } : r).ToList());
+    }
+
+    private Task MoverAsync(int indice, int hacia) => HacerAsync(Renglon, () => GuardarAsync(l =>
+    {
+        (l[indice], l[indice + hacia]) = (l[indice + hacia], l[indice]);
+        return l;
+    }));
+
+    private Task QuitarAsync(int indice) => HacerAsync(Renglon, () => GuardarAsync(l =>
+    {
+        l.RemoveAt(indice);
+        return l;
+    }));
+
+    /// <summary>El elegido en la búsqueda, al final, con el nombre del producto (recortado para el botón) y de uno en uno.</summary>
+    private async Task AgregarAsync(Guid varianteId)
+    {
+        var agregado = await HacerAsync(Renglon, async () =>
+        {
+            var producto = await Cliente.PorVarianteAsync(varianteId, Caja.SucursalId) ?? throw new ArgumentException("Ese producto ya no está en el catálogo.");
+            _productos[varianteId] = producto;
+            await GuardarAsync(l => [.. l, new Rapido(NombreLibre(producto.Descripcion, l), varianteId)]);
+        });
+        if (agregado)
+            _agregando = false;
+    }
+
+    /// <summary>El nombre del producto, cortado en una palabra si no cabe en el botón, y con un número si ya hay uno igual.</summary>
+    private static string NombreLibre(string descripcion, List<Rapido> rapidos)
+    {
+        static string Cortar(string texto, int largo)
+        {
+            texto = texto.Trim();
+            if (texto.Length <= largo)
+                return texto;
+            var corte = texto.LastIndexOf(' ', largo);
+            return (corte > largo / 2 ? texto[..corte] : texto[..largo]).Trim();
+        }
+        var nombre = Cortar(descripcion, Rapido.LargoNombre);
+        for (var n = 2; rapidos.Any(r => Texto.Normalizar(r.Nombre) == Texto.Normalizar(nombre)); n++)
+            nombre = $"{Cortar(descripcion, Rapido.LargoNombre - 1 - n.ToString(CultureInfo.InvariantCulture).Length)} {n}";
+        return nombre;
+    }
+}

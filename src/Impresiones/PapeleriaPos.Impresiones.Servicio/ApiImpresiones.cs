@@ -22,7 +22,7 @@ public static class ApiImpresiones
     /// Las rutas del módulo, sobre el grupo que le da el servicio:
     /// <c>app.MapGroup("/api").ConErrores().SoloSuCaja().MapearApiImpresiones()</c>. Lo que vale para toda la API (los
     /// errores para el cajero, que una caja solo opere la suya) lo pone el servicio, no el módulo. Lo que es del POS (los
-    /// permisos de cada usuario, los nombres, el PIN) sale de su base.
+    /// permisos de cada usuario, los nombres) sale de su base.
     /// </summary>
     public static RouteGroupBuilder MapearApiImpresiones(this RouteGroupBuilder api)
     {
@@ -107,11 +107,11 @@ public static class ApiImpresiones
         api.MapGet("/sucursales/{sucursalId:guid}/impresora", (Guid sucursalId, PosDbContext db, VigilanciaImpresora vigilancia) =>
             ImpresionesDelPos.Impresora(db).EstadoAsync(sucursalId, vigilancia.Error(sucursalId)));
 
-        // Cambia cómo se lee la impresora quien tiene «Configurar la impresora», con su usuario y su PIN.
+        // Cambia cómo se lee la impresora quien entró a la caja con «Configurar la impresora», sin volver a escribir su PIN.
         api.MapPut("/sucursales/{sucursalId:guid}/impresora", async (Guid sucursalId, SolicitudConfiguracionImpresora s, PosDbContext db,
             VigilanciaImpresora vigilancia) =>
         {
-            await new ServicioControl(db).IdentificarAsync(s.Usuario, s.Pin, sucursalId, AccionControlada.ConfigurarImpresora);
+            await new ServicioControl(db).ExigirDeLaSesionAsync(s.UsuarioId, sucursalId, null, AccionControlada.ConfigurarImpresora);
             var configuracion = await ImpresionesDelPos.Impresora(db).GuardarConfiguracionAsync(sucursalId, s.Configuracion);
             var error = configuracion.ImpresoraHost is null ? null : await vigilancia.LeerAhoraAsync(sucursalId);
             return await ImpresionesDelPos.Impresora(db).EstadoAsync(sucursalId, error);
@@ -126,10 +126,10 @@ public static class ApiImpresiones
         api.MapGet("/sucursales/{sucursalId:guid}/impresora/calibracion", (Guid sucursalId, PosDbContext db) =>
             ImpresionesDelPos.Impresora(db).CalibracionAsync(sucursalId));
 
-        // Aplica la calibración quien tiene «Configurar la impresora», con su usuario y su PIN.
-        api.MapPost("/sucursales/{sucursalId:guid}/impresora/calibracion", async (Guid sucursalId, SolicitudCredenciales s, PosDbContext db) =>
+        // Aplica la calibración quien entró a la caja con «Configurar la impresora», sin volver a escribir su PIN.
+        api.MapPost("/sucursales/{sucursalId:guid}/impresora/calibracion", async (Guid sucursalId, SolicitudCalibracion s, PosDbContext db) =>
         {
-            await new ServicioControl(db).IdentificarAsync(s.Usuario, s.Pin, sucursalId, AccionControlada.ConfigurarImpresora);
+            await new ServicioControl(db).ExigirDeLaSesionAsync(s.UsuarioId, sucursalId, null, AccionControlada.ConfigurarImpresora);
             return await ImpresionesDelPos.Impresora(db).AplicarCalibracionAsync(sucursalId);
         });
 

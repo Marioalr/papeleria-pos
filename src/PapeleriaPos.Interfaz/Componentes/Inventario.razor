@@ -1,8 +1,8 @@
 @* F4 Inventario: las compras (recibir a ciegas y capturar la nota), las órdenes de compra y el sugerido (con «Órdenes y
    sugerido de compra»), el conteo del día y el completo por departamento, ajustes y mermas, abrir paquete, los
-   proveedores, el margen mínimo (con «Margen mínimo») y las etiquetas y la hoja de códigos del mostrador (con «Productos,
-   precios y etiquetas»). Con los usuarios de antes, como con los roles: el margen, el dueño; lo demás, también el
-   encargado. *@
+   proveedores y las etiquetas y la hoja de códigos del mostrador (con «Productos, precios y etiquetas»). Con los usuarios
+   de antes, como con los roles: también el encargado. El margen mínimo y cuánto cubre el sugerido se pasaron a
+   Configuración › Inventario (entrega 7). *@
 
 <nav class="pestanas config-pestanas">
     @foreach (var p in Enum.GetValues<Pestanas>().Where(Visible))
@@ -44,22 +44,18 @@
     case Pestanas.Proveedores:
         <Proveedores Caja="Caja" Sesion="Sesion" />
         break;
-    case Pestanas.Margen:
-        <MargenMinimo Caja="Caja" Sesion="Sesion" />
-        break;
 }
 
 @code {
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
-    private enum Pestanas { Compras, Ordenes, Sugerido, Conteo, ConteoCompleto, Ajustes, Etiquetas, HojaCodigos, Paquete, Proveedores, Margen }
+    private enum Pestanas { Compras, Ordenes, Sugerido, Conteo, ConteoCompleto, Ajustes, Etiquetas, HojaCodigos, Paquete, Proveedores }
 
     private bool Visible(Pestanas p) => p switch
     {
         Pestanas.Ordenes or Pestanas.Sugerido => Sesion.Puede(AccionControlada.PedirCompra),
         Pestanas.Etiquetas or Pestanas.HojaCodigos => Sesion.Puede(AccionControlada.EditarCatalogo),
-        Pestanas.Margen => Sesion.Puede(AccionControlada.ConfigurarMargen),
         _ => true,
     };
 
@@ -76,7 +72,6 @@
         Pestanas.Etiquetas => "Etiquetas",
         Pestanas.HojaCodigos => "Hoja de códigos",
         Pestanas.Paquete => "Abrir paquete",
-        Pestanas.Proveedores => "Proveedores",
-        _ => "Margen mínimo",
+        _ => "Proveedores",
     };
 }

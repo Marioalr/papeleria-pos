@@ -123,9 +123,9 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
         Assert.Equal(corteLocal.SalidasCentavos, resumen.SalidasCentavos);
         var delDia = (await local.GetFromJsonAsync<List<VentaDelDiaDto>>($"api/cajas/{caja.Id}/ventas-del-dia"))!;
         Assert.Contains(delDia, v => v.Folio == conPrecio.Folio && v.TotalCentavos == 1500);
-        var bitacora = await (await local.PostAsJsonAsync($"api/sucursales/{caja.SucursalId}/bitacora/consulta",
-            new SolicitudConsultaBitacora("encargado", "2222", DateOnly.FromDateTime(DateTime.Today.AddDays(-1)), DateOnly.FromDateTime(DateTime.Today.AddDays(1)))))
-            .Content.ReadFromJsonAsync<List<BitacoraDto>>();
+        var quienConsulta = (await (await local.PostAsJsonAsync("api/sesion", new SolicitudEntrada("encargado", "2222"))).Content.ReadFromJsonAsync<SesionDto>())!;
+        var bitacora = await local.GetFromJsonAsync<List<BitacoraDto>>($"api/cajas/{caja.Id}/bitacora?usuarioId={quienConsulta.UsuarioId}"
+            + $"&desde={DateTime.Today.AddDays(-1):yyyy-MM-dd}&hasta={DateTime.Today.AddDays(1):yyyy-MM-dd}");
         Assert.Contains(bitacora!, b => b.Accion == AccionControlada.CambiarPrecio && b.Autorizo == "Dueño de prueba" && b.Resultado == ResultadoBitacora.Autorizado);
         Assert.Contains(bitacora!, b => b.Accion == AccionControlada.CambiarPrecio && b.Resultado == ResultadoBitacora.Negado);
 

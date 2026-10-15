@@ -20,7 +20,8 @@ public static class ApiContingencia
         var api = app.MapGroup("/api").ConErrores().SoloSuCaja();
         var bandeja = app.MapGroup("/api/bandeja").ConErrores().SoloSuCaja().AddEndpointFilter(AvisarSiNoSubeAsync);
 
-        // La copia local: catálogo con existencias, usuarios (PIN como hash), sus permisos, ticket y el último folio de la caja.
+        // La copia local: catálogo con existencias, usuarios (PIN como hash), sus permisos, ticket, la configuración de la tienda y
+        // el último folio de la caja.
         api.MapGet("/cajas/{cajaId:guid}/paquete", async (Guid cajaId, PosDbContext db, CatalogoEnMemoria catalogo, IOptions<OpcionesTicket> opciones) =>
         {
             var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
@@ -43,7 +44,9 @@ public static class ApiContingencia
             var reglas = PermisosDeRoles.Efectivas(await db.ReglasPermiso.AsNoTracking()
                 .Where(r => r.SucursalId == null || r.SucursalId == caja.SucursalId).ToListAsync(), caja.SucursalId);
             var ticket = await ApiConfiguracion.ConfiguracionAsync(db, caja.SucursalId, opciones.Value);
-            var limite = await db.ConfiguracionesSucursal.Where(c => c.SucursalId == caja.SucursalId).Select(c => c.LimiteEfectivoCentavos).FirstOrDefaultAsync();
+            // La configuración de la tienda (entrega 7): sin conexión, el nombre en la entrada, las fichas de la espera y el
+            // fondo sugerido siguen como en línea.
+            var configuracion = await new RegistroConfiguracion(db).LeerAsync(caja.SucursalId);
             var clientes = await ApiClientes.ParaLaCajaAsync(db, caja.SucursalId);
             // Las marcas dadas de alta: sin conexión, la búsqueda junta las familias igual que en línea.
             var marcas = await db.Marcas.AsNoTracking().Where(m => m.Activa).Select(m => m.Nombre).ToListAsync();
@@ -51,8 +54,8 @@ public static class ApiContingencia
             var sinonimos = await new RegistroSinonimos(db).ListarAsync();
             return new PaqueteContingenciaDto(version, new CajaDto(caja.Id, caja.Nombre, caja.Serie, caja.SucursalId, sucursal!.Nombre, caja.Equipo),
                 productos, codigos, usuarios, reglas, ticket.RenglonesEncabezado, ticket.RenglonesPie, ApiConfiguracion.Logo(ticket),
-                await new RegistroCaja(db).UltimoFolioAsync(caja.SucursalId, caja.Serie), limite,
-                ApiClientes.ParaCajasDeAntes(clientes), clientes, marcas, sinonimos, permisos);
+                await new RegistroCaja(db).UltimoFolioAsync(caja.SucursalId, caja.Serie), configuracion.LimiteEfectivoCentavos,
+                ApiClientes.ParaCajasDeAntes(clientes), clientes, marcas, sinonimos, permisos, configuracion);
         });
 
         // Lo que lleva el turno, sin guardar un corte: la base de la cuenta que la caja lleva por su lado.

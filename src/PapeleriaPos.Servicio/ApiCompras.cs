@@ -96,6 +96,10 @@ public static class ApiCompras
         api.MapGet("/sucursales/{sucursalId:guid}/sugerido", (Guid sucursalId, Guid usuarioId, PosDbContext db) =>
             new RegistroSugerido(db).CalcularAsync(sucursalId, usuarioId));
 
+        // Cuánto cubre el sugerido: se ve y se cambia en Configuración › Inventario (entrega 7), sin calcular el sugerido.
+        api.MapGet("/sucursales/{sucursalId:guid}/sugerido/parametros", (Guid sucursalId, PosDbContext db) =>
+            new RegistroSugerido(db).ParametrosAsync(sucursalId));
+
         api.MapPut("/sucursales/{sucursalId:guid}/sugerido/parametros", (Guid sucursalId, SolicitudParametrosSugerido s, PosDbContext db) =>
             new RegistroSugerido(db).GuardarParametrosAsync(sucursalId, s));
 

@@ -138,20 +138,8 @@ public sealed class UsuariosYPermisosTests(ServicioDePrueba servicio) : IClassFi
         return (pantalla, caja, sesion);
     }
 
-    /// <summary>En la Configuración de antes, «Usuarios y permisos» toma el lugar de «Reglas», y solo para quien lo tiene.</summary>
-    [Theory]
-    [InlineData("dueno", "3333", true)]
-    [InlineData("encargado", "2222", false)]
-    [InlineData("cajero", "1111", false)]
-    public async Task La_pestana_de_usuarios_y_permisos_es_de_quien_lo_tiene(string usuario, string pin, bool laVe)
-    {
-        var (p, _, _) = await AbrirAsync<Configuracion>(usuario, pin);
-
-        var pestanas = p.Controles().Where(c => c.Clase?.StartsWith("pestana") == true).Select(c => c.Texto).ToList();
-        Assert.Equal(laVe, pestanas.Contains("Usuarios y permisos"));
-        Assert.DoesNotContain("Reglas", pestanas);
-        Assert.Contains("Bitácora", pestanas);
-    }
+    // Que el grupo «Usuarios y permisos» de la Configuración nueva es solo de quien lo tiene (y que ya no hay «Reglas») lo
+    // prueba ConfiguracionTests.Los_grupos_son_los_de_los_permisos_de_quien_entro.
 
     /// <summary>El botón cuyo texto es ese.</summary>
     private static Control Boton(Pantalla p, string texto) => p.Controles().First(c => c.Elemento == "button" && c.Texto == texto);

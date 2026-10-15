@@ -1,56 +1,82 @@
-@* Las cajas de la sucursal y qué PC usa cada una. Quien tiene «Dar de alta y quitar cajas» puede quitar una PC (robada, reemplazada o que ya no se usa). *@
+@* Configuración › Cajas: las cajas de la sucursal y qué PC usa cada una. Quien entró con «Dar de alta y quitar cajas» quita
+   una PC (robada, reemplazada o que ya no se usa) sin volver a escribir su PIN; como ya no lo pide, el botón primero
+   pregunta, ahí mismo. *@
 @inject ClienteCaja Cliente
 
 @if (_cajas is null)
 {
-    <p>@(_error ?? "Cargando…")</p>
+    <p class="@(_error is null ? "vn-cfg-nota" : "vn-cfg-error")">@(_error ?? "Cargando…")</p>
 }
 else
 {
-    <p class="nota">Para agregar una caja, abre el POS en la PC nueva: pide el usuario y el PIN de quien tiene «Dar de alta y quitar cajas» y se da de alta sola.</p>
-    <div class="resultados">
-        <table>
-            <thead><tr><th>Caja</th><th>Serie</th><th>PC</th><th></th></tr></thead>
+    <p class="vn-cfg-nota">
+        Para agregar una caja, abre el POS en la PC nueva: pide el usuario y el PIN de quien tiene «Dar de alta y quitar cajas» y se
+        da de alta sola.
+    </p>
+    <table class="vn-cfg-tabla">
+        <thead><tr><th>Caja</th><th>Serie de folios</th><th>PC</th><th></th></tr></thead>
+        <tbody>
             @foreach (var c in _cajas)
             {
                 var caja = c;
                 <tr>
-                    <td>@c.Nombre@(c.Id == Caja.Id ? " (esta)" : "")</td>
+                    <td><strong>@c.Nombre</strong>@(c.Id == Caja.Id ? " · esta" : "")</td>
                     <td>@c.Serie</td>
                     <td>@(c.Equipo ?? "—")</td>
-                    <td>
-                        @if (c.Equipo is not null)
+                    <td class="num">
+                        @if (c.Equipo is not null && Puede)
                         {
-                            <button class="boton chico" disabled="@_ocupado" @onclick="() => QuitarAsync(caja)">Quitar PC</button>
+                            @if (_porQuitar == c.Id)
+                            {
+                                <span class="vn-cfg-pregunta">
+                                    @(c.Id == Caja.Id ? "Esta PC deja de vender" : $"«{c.Equipo}» deja de vender") hasta darla de alta otra vez.
+                                    <button class="vn-boton chico peligro" disabled="@_ocupado" @onclick="() => QuitarAsync(caja)">Quitar la PC</button>
+                                    <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => _porQuitar = null">No</button>
+                                </span>
+                            }
+                            else
+                            {
+                                <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => Preguntar(caja)">Quitar PC</button>
+                            }
                         }
                     </td>
                 </tr>
             }
-        </table>
-    </div>
-    <div class="dos-columnas">
-        <label>Usuario <input @bind="_usuario" autocomplete="off" /></label>
-        <label>PIN <input type="password" inputmode="numeric" maxlength="6" @bind="_pin" /></label>
-    </div>
+        </tbody>
+    </table>
+    @if (!Puede && Sesion.Permiso(AccionControlada.AdministrarCajas) is { } permiso)
+    {
+        <p class="vn-cfg-nota">Quita una PC quien tiene «@Permisos.Nombre(AccionControlada.AdministrarCajas)»: @Textos.Quien(permiso.Autorizan).</p>
+    }
     @if (_error is not null)
     {
-        <p class="error">@_error</p>
+        <p class="vn-cfg-error" role="alert">@_error</p>
     }
     @if (_aviso is not null)
     {
-        <p class="aviso">@_aviso</p>
+        <p class="vn-cfg-aviso" role="status">@_aviso</p>
     }
 }
 
 @code {
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
 
+    /// <summary>Quien entró: el servicio revisa con su «Dar de alta y quitar cajas».</summary>
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Se quitó una PC: la Configuración dice a qué hora.</summary>
+    [Parameter] public EventCallback AlGuardar { get; set; }
+
     private List<CajaDto>? _cajas;
-    private string _usuario = "";
-    private string _pin = "";
+
+    /// <summary>La caja cuya PC se va a quitar, mientras se pregunta.</summary>
+    private Guid? _porQuitar;
+
     private string? _error;
     private string? _aviso;
     private bool _ocupado;
+
+    private bool Puede => Sesion.Puede(AccionControlada.AdministrarCajas);
 
     protected override Task OnInitializedAsync() => CargarAsync();
 
@@ -66,21 +92,18 @@ else
         }
     }
 
+    private void Preguntar(CajaDto caja) => (_porQuitar, _error, _aviso) = (caja.Id, null, null);
+
     private async Task QuitarAsync(CajaDto caja)
     {
-        (_error, _aviso) = (null, null);
-        if (_usuario.Trim().Length == 0 || _pin.Length == 0)
-        {
-            _error = "Escribe el usuario y el PIN.";
-            return;
-        }
-        _ocupado = true;
+        (_error, _aviso, _ocupado) = (null, null, true);
         try
         {
-            await Cliente.QuitarEquipoAsync(caja.Id, new SolicitudCredenciales(_usuario, _pin));
+            await Cliente.QuitarEquipoAsync(caja.Id, new SolicitudQuitarEquipo(Sesion.UsuarioId));
             _aviso = $"«{caja.Equipo}» ya no puede usar {caja.Nombre}. Para volver a usarla, se da de alta otra vez.";
-            _pin = "";
+            _porQuitar = null;
             await CargarAsync();
+            await AlGuardar.InvokeAsync();
         }
         catch (ErrorCaja ex)
         {

@@ -40,13 +40,22 @@ public class ControlApiTests(ServicioDePrueba servicio) : IClassFixture<Servicio
         Assert.Equal("Encargado de prueba", (await autorizada.Content.ReadFromJsonAsync<AutorizacionDto>())!.Autorizo);
     }
 
+    /// <summary>El límite de efectivo, con la sesión de quien entró (la Configuración nueva, entrega 7): lo demás se queda como está.</summary>
+    private static async Task<HttpResponseMessage> LimiteAsync(HttpClient http, CajaDto caja, string usuario, string pin, long? limite)
+    {
+        var sesion = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada(usuario, pin))).Content.ReadFromJsonAsync<SesionDto>())!;
+        var actual = (await http.GetFromJsonAsync<ConfiguracionSucursalDto>($"api/sucursales/{caja.SucursalId}/configuracion"))!;
+        return await http.PutAsJsonAsync($"api/cajas/{caja.Id}/configuracion",
+            new SolicitudConfiguracionSucursal(sesion.UsuarioId, actual with { LimiteEfectivoCentavos = limite }));
+    }
+
     [Fact]
     public async Task La_salida_de_efectivo_regresa_su_comprobante_y_el_aviso_de_retiro_aparece_al_limite()
     {
         var (http, caja, cajero, turno) = await PrepararAsync();
-        var porCajero = await http.PutAsJsonAsync($"api/sucursales/{caja.SucursalId}/configuracion", new SolicitudConfiguracionSucursal("encargado", "2222", 100));
-        Assert.Equal(HttpStatusCode.BadRequest, porCajero.StatusCode); // solo el dueño
-        Assert.True((await http.PutAsJsonAsync($"api/sucursales/{caja.SucursalId}/configuracion", new SolicitudConfiguracionSucursal("dueno", "3333", 100))).IsSuccessStatusCode);
+        var porEncargado = await LimiteAsync(http, caja, "encargado", "2222", 100);
+        Assert.Equal(HttpStatusCode.Forbidden, porEncargado.StatusCode); // solo el dueño, con «Configuración de la tienda»
+        Assert.True((await LimiteAsync(http, caja, "dueno", "3333", 100)).IsSuccessStatusCode);
 
         var entrada = await http.PostAsJsonAsync($"api/turnos/{turno.Id}/movimientos", new SolicitudMovimiento(TipoMovimientoCaja.Entrada, 500, "Cambio", cajero.UsuarioId));
         Assert.True(entrada.IsSuccessStatusCode, await entrada.Content.ReadAsStringAsync());
@@ -64,7 +73,7 @@ public class ControlApiTests(ServicioDePrueba servicio) : IClassFixture<Servicio
         Assert.Contains("SALIDA DE EFECTIVO", texto);
         Assert.Contains("Firma de quien recibe el efectivo", texto);
 
-        Assert.True((await http.PutAsJsonAsync($"api/sucursales/{caja.SucursalId}/configuracion", new SolicitudConfiguracionSucursal("dueno", "3333", null))).IsSuccessStatusCode);
+        Assert.True((await LimiteAsync(http, caja, "dueno", "3333", null)).IsSuccessStatusCode);
     }
 
     [Fact]

@@ -9,7 +9,7 @@ using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Servicio;
 
-/// <summary>Cancelar y devolver con el folio del ticket, verificar transferencias y consultar la bitácora.</summary>
+/// <summary>Cancelar y devolver con el folio del ticket y verificar transferencias. La bitácora se consulta en ApiControl.</summary>
 public static class ApiDevoluciones
 {
     public static void MapearApiDevoluciones(this IEndpointRouteBuilder app)
@@ -88,16 +88,6 @@ public static class ApiDevoluciones
         {
             var cobro = await new RegistroCaja(db).VerificarTransferenciaAsync(cobroId, s.Usuario, s.Pin, s.Llego);
             return new { cobro.Id, cobro.Verificacion };
-        });
-
-        api.MapPost("/sucursales/{sucursalId:guid}/bitacora/consulta", async (Guid sucursalId, SolicitudConsultaBitacora s, PosDbContext db) =>
-        {
-            var control = new ServicioControl(db);
-            await control.IdentificarAsync(s.Usuario, s.Pin, sucursalId, AccionControlada.ConsultarBitacora);
-            var registros = await control.ConsultarAsync(sucursalId,
-                HoraMexico.AUtc(s.Desde.ToDateTime(TimeOnly.MinValue)), HoraMexico.AUtc(s.Hasta.AddDays(1).ToDateTime(TimeOnly.MinValue)));
-            return registros.Select(r => new BitacoraDto(HoraMexico.ALocal(r.Registro.FechaUtc), r.Usuario, r.Registro.Accion, r.Registro.Detalle,
-                r.Registro.MontoCentavos, r.Autorizo, r.Registro.Resultado)).ToList();
         });
     }
 
