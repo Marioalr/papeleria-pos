@@ -297,8 +297,9 @@ td.acciones-renglon { white-space: nowrap; text-align: right; }
 .sinonimos-alta { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin: 8px 0; }
 .sinonimos-alta label { display: flex; flex-direction: column; gap: 3px; }
 
-/* ── La pantalla de venta nueva (docs/propuesta-interfaz.md): los colores, letras y medidas del prototipo ── */
-.venta-nueva {
+/* ── La pantalla de venta nueva (docs/propuesta-interfaz.md): los colores, letras y medidas del prototipo. La entrada
+   (¿quién atiende?, abrir el turno, el turno de otro) usa los mismos; su acomodo va más abajo, en «La entrada». ── */
+.venta-nueva, .entrada {
     --vn-papel: #eceff3;
     --vn-hoja: #ffffff;
     --vn-renglon: #f4f6f9;
@@ -573,6 +574,77 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-ultimo { margin-top: auto; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 0 2px; font-size: 13px; color: var(--vn-suave); }
 .vn-ultimo strong { color: var(--vn-texto); font-variant-numeric: tabular-nums; }
 .vn-enlace { border: 0; background: none; padding: 0; color: var(--vn-tinta); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font: inherit; font-size: 13px; }
+
+/* La entrada (entrega 6, como el prototipo): a la izquierda la caja, la hora y cómo está todo; a la derecha «¿Quién
+   atiende?» con una ficha por usuario y el PIN, abrir el turno o el turno de otro cajero. Toma los colores de la venta
+   (arriba, con .venta-nueva); aquí van su acomodo y el azul de noche del lado. Cabe en 1366×697 con la franja de la
+   prueba: con poca altura se aprietan los márgenes, y si aun así no cabe, el lado derecho se recorre. */
+.entrada {
+    --vn-noche: #16213d;
+    --vn-noche-borde: #2c3c6a;
+    --vn-noche-texto: #e8edfa;
+    --vn-noche-suave: #9fb0d6;
+    grid-template-rows: minmax(0, 1fr); grid-template-columns: 430px minmax(0, 1fr);
+}
+.entrada kbd { font: 600 11px/1 var(--vn-f-codigo); padding: 3px 5px 2px; border: 1px solid var(--vn-borde); border-bottom-width: 2px; border-radius: 4px; background: var(--vn-hoja); color: var(--vn-suave); white-space: nowrap; }
+.entrada svg.ico { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.entrada button:focus-visible, .entrada input:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: 2px; }
+.entrada-lado { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: hidden; padding: 36px 36px 30px; background: var(--vn-noche); color: var(--vn-noche-texto); }
+.entrada-lado .vn-marca strong { font-size: 16px; color: #fff; }
+.entrada-lado .vn-marca small { font-size: 13px; color: var(--vn-noche-suave); }
+.entrada-lado .vn-logo { width: 38px; height: 38px; font-size: 20px; background: var(--vn-noche-texto); color: var(--vn-noche); }
+.entrada-lado .reloj { margin-top: auto; font: 300 92px/1 var(--vn-f-cifras); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.entrada-lado .fecha { font-size: 18px; color: var(--vn-noche-suave); }
+.entrada-lado .fecha::first-letter { text-transform: uppercase; }
+.estado-lista { display: flex; flex-direction: column; gap: 8px; list-style: none; margin: 18px 0 0; padding: 14px 0 0; border-top: 1px solid var(--vn-noche-borde); font-size: 14px; color: var(--vn-noche-suave); }
+.estado-lista li { display: flex; align-items: center; gap: 8px; }
+.estado-lista .punto { width: 8px; height: 8px; flex: none; border-radius: 50%; background: #3ccf8e; }
+.estado-lista .punto.ambar { background: #f0b445; }
+.estado-lista .punto.gris { background: var(--vn-noche-suave); }
+.entrada-main { display: flex; flex-direction: column; gap: 22px; min-height: 0; overflow: auto; padding: 56px 64px; }
+.entrada-main h1 { margin: 0; font: 600 30px var(--vn-f-cifras); text-wrap: balance; }
+.entrada-main > p { margin: -12px 0 0; color: var(--vn-suave); }
+.entrada-main .nota { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--vn-suave); }
+.entrada-main .error-txt { margin: 0; font-size: 13px; font-weight: 600; color: var(--vn-error); }
+.fichas-entrada { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.ficha-entrada { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; font: inherit; color: var(--vn-texto); text-align: left; padding: 16px; border: 1px solid var(--vn-linea); border-radius: 12px; background: var(--vn-hoja); cursor: pointer; }
+.ficha-entrada:hover { border-color: var(--vn-tinta-medio); }
+.ficha-entrada.on { border-color: var(--vn-tinta); box-shadow: 0 0 0 3px var(--vn-tinta-claro); }
+.ficha-entrada .vn-avatar { width: 44px; height: 44px; font-size: 18px; }
+.ficha-entrada .ficha-nombre { display: flex; align-items: baseline; gap: 8px; width: 100%; }
+.ficha-entrada strong { font-size: 17px; }
+.ficha-entrada small { font-size: 13px; color: var(--vn-suave); }
+.ficha-entrada kbd { margin-left: auto; }
+.pin { display: flex; align-items: flex-start; gap: 40px; }
+.pin-izq { display: flex; flex-direction: column; gap: 12px; padding-top: 6px; }
+.pin-izq h2 { margin: 0; font-size: 19px; }
+.puntos { display: flex; gap: 14px; }
+.puntos i { width: 18px; height: 18px; border: 2px solid var(--vn-borde); border-radius: 50%; }
+.puntos i.on { background: var(--vn-tinta); border-color: var(--vn-tinta); }
+.teclado { display: grid; grid-template-columns: repeat(3, 72px); gap: 8px; }
+.teclado button { height: 56px; font: 600 22px var(--vn-f-cifras); color: var(--vn-texto); border: 1px solid var(--vn-linea); border-radius: 10px; background: var(--vn-hoja); cursor: pointer; }
+.teclado button:hover { border-color: var(--vn-tinta-medio); background: #fbfcff; }
+.teclado button.borrar { font-size: 15px; }
+.teclado button.ok { font-size: 15px; color: #fff; background: var(--vn-tinta); border-color: var(--vn-tinta); }
+.teclado button.ok:disabled { opacity: .6; cursor: default; }
+.entrada-campo { display: flex; flex-direction: column; gap: 4px; max-width: 320px; font-size: 13px; color: var(--vn-suave); }
+.entrada-campo input { font: 700 28px var(--vn-f-cifras); font-variant-numeric: tabular-nums; color: var(--vn-texto); padding: 7px 12px; border: 1px solid var(--vn-borde); border-radius: 8px; background: var(--vn-hoja); }
+.entrada-campo input:focus { outline: 2px solid var(--vn-tinta); outline-offset: -1px; border-color: var(--vn-tinta); }
+.entrada-campo input::placeholder { font-size: 18px; font-weight: 500; color: var(--vn-tenue); }
+.entrada .vn-boton.primario { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; font-weight: 600; }
+.entrada .vn-boton.primario:hover:not(:disabled) { background: var(--vn-tinta-hover); }
+.entrada .vn-boton.primario kbd { background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .35); color: #fff; }
+.entrada-main > .vn-alerta { max-width: 640px; }
+/* El corte del turno de otro, ahí mismo: en su tarjeta, como en la venta. */
+.entrada-corte { display: flex; flex-direction: column; gap: 10px; max-width: 640px; padding: 16px 18px; border: 1px solid var(--vn-linea); border-radius: 12px; background: var(--vn-hoja); }
+/* Con las tres franjas de la prueba sin conexión (la de la prueba, la tarea y «Sin conexión») queda menos de 600 px: las
+   fichas, el PIN y su error caben sin recorrer. */
+@media (max-height: 760px) {
+    .entrada-lado { padding: 28px 36px 24px; }
+    .entrada-main { gap: 16px; padding: 24px 64px; }
+    .ficha-entrada { gap: 8px; padding: 12px 14px; }
+    .teclado button { height: 50px; }
+}
 
 /* La barra de teclas */
 .vn-teclas { display: flex; align-items: center; gap: 2px; padding: 0 10px; background: var(--vn-hoja); border-top: 1px solid var(--vn-linea); overflow: hidden; }

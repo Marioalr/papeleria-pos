@@ -50,6 +50,36 @@ public static class ApiCaja
             };
         });
 
+        // La entrada con fichas (entrega 6): quién entra en esta caja, sin usuario, PIN ni hash; y entrar con la ficha y el PIN.
+        api.MapGet("/cajas/{cajaId:guid}/usuarios", async (Guid cajaId, PosDbContext db) =>
+        {
+            var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
+            var usuarios = await db.Usuarios.AsNoTracking().Where(u => u.Activo && (u.SucursalId == null || u.SucursalId == caja.SucursalId))
+                .Select(u => new { u.Id, u.Nombre, u.Rol }).ToListAsync();
+            var turno = await new RegistroCaja(db).TurnoAbiertoAsync(cajaId);
+            return FichasEntrada.Armar(usuarios.Select(u => (u.Id, u.Nombre, u.Rol)), await new ServicioControl(db).ReglasAsync(caja.SucursalId),
+                caja.SucursalId, turno?.CajeroId);
+        });
+
+        api.MapPost("/cajas/{cajaId:guid}/sesion", async (Guid cajaId, SolicitudEntradaFicha s, PosDbContext db) =>
+        {
+            var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
+            // Solo quien tiene ficha en esta caja: los activos de su sucursal y el dueño. Uno dado de baja (con la ficha todavía en
+            // pantalla) no suma intentos ni oye «PIN incorrecto»: lo mismo que dice la caja sin conexión.
+            var usuario = await db.Usuarios.SingleOrDefaultAsync(u =>
+                u.Id == s.UsuarioId && u.Activo && (u.SucursalId == null || u.SucursalId == caja.SucursalId));
+            if (usuario is null)
+                return Results.BadRequest(new ErrorDto("Ese usuario no entra en esta caja."));
+            var resultado = usuario.VerificarPin(s.Pin, db.Reloj.GetUtcNow().UtcDateTime);
+            await db.SaveChangesAsync();
+            return resultado switch
+            {
+                ResultadoPin.Correcto => Results.Ok(new SesionDto(usuario.Id, usuario.Nombre, usuario.Rol)),
+                ResultadoPin.Bloqueado => Results.BadRequest(new ErrorDto(FichasEntrada.DemasiadosIntentos)),
+                _ => Results.BadRequest(new ErrorDto(FichasEntrada.PinIncorrecto(Usuario.IntentosPermitidos - usuario.IntentosFallidos))),
+            };
+        });
+
         api.MapGet("/cajas/{cajaId:guid}/turno", async (Guid cajaId, PosDbContext db) =>
             await new RegistroCaja(db).TurnoAbiertoAsync(cajaId) is { } turno ? Results.Ok(await TurnoDtoAsync(db, turno)) : Results.NoContent());
 

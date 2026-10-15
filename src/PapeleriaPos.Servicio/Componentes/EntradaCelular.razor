@@ -1,0 +1,73 @@
+@* La entrada del conteo desde el celular: el usuario y el PIN, como antes en la caja. La caja ya entra con fichas (entrega
+   6); el celular sigue así hasta la app de Android (docs/propuesta-interfaz.md, «La app Android en Kotlin»), que entra con
+   el mismo usuario, PIN y permisos. *@
+@using PapeleriaPos.Interfaz
+@using PapeleriaPos.Nucleo.Contratos
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="centrado">
+    <div class="tarjeta">
+        <h2>@Titulo</h2>
+        <label>Usuario
+            <input id="entrada-usuario" @bind="_usuario" @bind:event="oninput" @onkeydown="AlTeclearUsuario" autocomplete="off" />
+        </label>
+        <label>PIN
+            <input id="entrada-pin" type="password" inputmode="numeric" maxlength="6" @bind="_pin" @bind:event="oninput" @onkeydown="AlTeclearPin" />
+        </label>
+        @if (_error is not null)
+        {
+            <p class="error">@_error</p>
+        }
+        <button class="boton principal" disabled="@_ocupado" @onclick="EntrarAsync">Entrar</button>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Titulo { get; set; } = "";
+    [Parameter] public EventCallback<SesionDto> AlEntrar { get; set; }
+
+    private string _usuario = "";
+    private string _pin = "";
+    private string? _error;
+    private bool _ocupado;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+            await Js.EnfocarAsync("#entrada-usuario");
+    }
+
+    private async Task AlTeclearUsuario(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await Js.EnfocarAsync("#entrada-pin");
+    }
+
+    private async Task AlTeclearPin(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await EntrarAsync();
+    }
+
+    private async Task EntrarAsync()
+    {
+        if (_ocupado || _usuario.Length == 0 || _pin.Length == 0)
+            return;
+        _ocupado = true;
+        _error = null;
+        try
+        {
+            await AlEntrar.InvokeAsync(await Cliente.EntrarAsync(_usuario, _pin));
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+            _pin = "";
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

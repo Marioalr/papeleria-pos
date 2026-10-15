@@ -66,6 +66,19 @@ public sealed record SolicitudEntrada(string Usuario, string Pin);
 
 public sealed record SesionDto(Guid UsuarioId, string Nombre, Rol Rol);
 
+/// <summary>
+/// Una ficha de la entrada de la caja (entrega 6): quien puede entrar en ella, sin su usuario, su PIN ni el hash del PIN.
+/// Con su letra se elige desde el teclado (<see cref="FichasEntrada"/>).
+/// </summary>
+/// <param name="Tecla">Vacía si ya no alcanzó letra (más de 26 usuarios): se toca.</param>
+/// <param name="Resumen">Lo que puede hacer, en pocas palabras: «Permisos por defecto», «Todos los permisos»…</param>
+/// <param name="TurnoAbierto">Tiene abierto el turno de esa caja.</param>
+/// <param name="HaceCorte">Puede hacer el corte de un turno: la caja con el turno de otro dice quién lo hace.</param>
+public sealed record FichaUsuarioDto(Guid UsuarioId, string Nombre, string? Tecla, string Resumen, bool TurnoAbierto, bool HaceCorte);
+
+/// <summary>Entrar con la ficha: el usuario se tocó en la caja; el PIN lo revisa el servicio (sin conexión, la caja con su copia).</summary>
+public sealed record SolicitudEntradaFicha(Guid UsuarioId, string Pin);
+
 /// <param name="Equipo">La PC dada de alta como esta caja; vacío si ninguna.</param>
 public sealed record CajaDto(Guid Id, string Nombre, string Serie, Guid SucursalId, string Sucursal, string? Equipo = null);
 

@@ -444,6 +444,23 @@ public sealed class Contingencia
         return new SesionDto(u.Id, u.Nombre, u.Rol);
     }
 
+    /// <summary>
+    /// Las fichas de la entrada sin la caja principal (entrega 6): de la copia local, que ya trae a los usuarios activos de la
+    /// sucursal y las reglas; quien tiene el turno abierto, del turno de esta caja. Iguales a las del servicio.
+    /// </summary>
+    public List<FichaUsuarioDto> Fichas(Guid cajaId) =>
+        FichasEntrada.Armar(Datos.UsuariosPorId.Values.Where(u => u.Activo).Select(u => (u.Id, u.Nombre, u.Rol)), Datos.Reglas, Caja.SucursalId,
+            Turno(cajaId)?.CajeroId);
+
+    /// <summary>Entrar con la ficha: el PIN contra la copia local, con el mismo bloqueo por intentos que en el servicio.</summary>
+    public SesionDto Entrar(Guid usuarioId, string pin)
+    {
+        if (Datos.UsuariosPorId.GetValueOrDefault(usuarioId) is not { Activo: true } usuario)
+            throw new InvalidOperationException("Ese usuario no entra en esta caja.");
+        var u = Identificar(usuario.Usuario, pin, FichasEntrada.PinIncorrecto);
+        return new SesionDto(u.Id, u.Nombre, u.Rol);
+    }
+
     public TurnoDto? Turno(Guid cajaId) => _almacen.Leer<TurnoDto>("turno") is { } turno && turno.CajaId == cajaId ? turno : null;
 
     public TurnoDto AbrirTurno(SolicitudTurno s)
@@ -1073,7 +1090,11 @@ public sealed class Contingencia
     }
 
     /// <summary>Usuario y PIN contra la copia local, con el mismo bloqueo por intentos que en el servicio.</summary>
-    private UsuarioLocalDto Identificar(string usuario, string pin)
+    /// <param name="incorrecto">
+    /// Lo que se dice si el PIN no es, con los intentos que le quedan. En la entrada con fichas ya se sabe quién es: dice
+    /// cuántos intentos quedan, como el servicio. Sin él, «Usuario o PIN incorrecto.».
+    /// </param>
+    private UsuarioLocalDto Identificar(string usuario, string pin, Func<int, string>? incorrecto = null)
     {
         var clave = usuario.Trim().ToLowerInvariant();
         lock (_candado)
@@ -1092,7 +1113,7 @@ public sealed class Contingencia
                 throw new InvalidOperationException("Demasiados intentos: espera unos minutos.");
             }
             _intentos[clave] = (fallos, null);
-            throw new InvalidOperationException("Usuario o PIN incorrecto.");
+            throw new InvalidOperationException(incorrecto?.Invoke(Usuario.IntentosPermitidos - fallos) ?? "Usuario o PIN incorrecto.");
         }
     }
 
