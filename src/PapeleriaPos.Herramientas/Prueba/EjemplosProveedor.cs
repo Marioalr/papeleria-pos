@@ -4,6 +4,7 @@ using System.Xml.Linq;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Usuarios;
 using UglyToad.PdfPig.Content;
 using UglyToad.PdfPig.Core;
 using UglyToad.PdfPig.Fonts.Standard14Fonts;
@@ -16,7 +17,8 @@ namespace PapeleriaPos.Herramientas.Prueba;
 /// documentos reales. La factura trae códigos de barras (llegan ligados), una clave del proveedor (llega como «¿Es…?» y
 /// se confirma una vez) y un producto que no está en el catálogo (llega precargado como nuevo); la nota repite esa clave
 /// (ya llega ligada) y trae los precios sin IVA, como muchas notas. El Léeme da, además, los códigos de la factura que
-/// ya están en el catálogo para escribirlos en la venta como si se escanearan.
+/// ya están en el catálogo para escribirlos en la venta como si se escanearan, y la ficha de cada usuario de prueba con su
+/// letra y su PIN (la entrada con fichas, entrega 6).
 /// </summary>
 public static class EjemplosProveedor
 {
@@ -59,8 +61,22 @@ public static class EjemplosProveedor
         var nota = new (Producto P, int Cantidad, bool PorClave)[] { (productos[3], 5, true), (productos[0], 6, false), (productos[1], 12, true) };
         await File.WriteAllBytesAsync(Path.Combine(carpeta, "Nota de ejemplo.pdf"), Nota(proveedor.Nombre, nota), ct);
 
-        await File.WriteAllTextAsync(Path.Combine(carpeta, "Léeme.txt"), Leeme(proveedor.Nombre, factura, nota), Encoding.UTF8, ct);
+        await File.WriteAllTextAsync(Path.Combine(carpeta, "Léeme.txt"), Leeme(proveedor.Nombre, await LetrasAsync(db, ct), factura, nota),
+            Encoding.UTF8, ct);
         return [$"Factura de ejemplo.xml, Nota de ejemplo.pdf y Léeme.txt de «{proveedor.Nombre}» en {Path.GetFullPath(carpeta)}"];
+    }
+
+    /// <summary>
+    /// La letra de la ficha de cada usuario (por su usuario), la misma que reparte la caja en «¿Quién atiende?»: entre los
+    /// activos que entran en la primera caja (los de su sucursal y el dueño).
+    /// </summary>
+    private static async Task<Dictionary<string, string>> LetrasAsync(PosDbContext db, CancellationToken ct)
+    {
+        var sucursal = (await db.Cajas.AsNoTracking().FirstOrDefaultAsync(ct))?.SucursalId;
+        var usuarios = await db.Usuarios.AsNoTracking().Where(u => u.Activo && (u.SucursalId == null || u.SucursalId == sucursal))
+            .Select(u => new { u.Id, u.Nombre, u.NombreUsuario }).ToListAsync(ct);
+        var letras = FichasEntrada.Teclas(usuarios.Select(u => (u.Id, u.Nombre)));
+        return usuarios.Where(u => letras.ContainsKey(u.Id)).ToDictionary(u => u.NombreUsuario, u => letras[u.Id]);
     }
 
     /// <summary>Un código de barras de fábrica que no está en la base, para el producto nuevo de la factura.</summary>
@@ -150,15 +166,23 @@ public static class EjemplosProveedor
         return builder.Build();
     }
 
-    private static string Leeme(string proveedor, IReadOnlyList<(Producto P, int Cantidad, bool PorClave)> factura,
-        IReadOnlyList<(Producto P, int Cantidad, bool PorClave)> nota)
+    private static string Leeme(string proveedor, IReadOnlyDictionary<string, string> letras,
+        IReadOnlyList<(Producto P, int Cantidad, bool PorClave)> factura, IReadOnlyList<(Producto P, int Cantidad, bool PorClave)> nota)
     {
         var t = new StringBuilder();
         t.AppendLine("PAPELERÍA POS · PRUEBA CON DATOS FICTICIOS");
         t.AppendLine();
-        t.AppendLine("Usuarios de prueba (usuario / PIN):");
-        foreach (var (usuario, nombre, _, pin) in PreparacionCaja.UsuariosDePrueba)
-            t.AppendLine($"  {usuario} / {pin}  ({nombre})");
+        t.AppendLine("Usuarios de prueba: en la caja se toca su ficha (o se oprime su letra) y se teclea su PIN; con la cuarta");
+        t.AppendLine("cifra entra solo. Ctrl+U cambia de usuario.");
+        foreach (var (usuario, nombre, rol, pin) in PreparacionCaja.UsuariosDePrueba)
+            t.AppendLine($"  {nombre}{(letras.TryGetValue(usuario, out var letra) ? $" ({letra})" : "")} · PIN {pin}" + rol switch
+            {
+                Rol.Encargado => " · hace el corte del turno",
+                Rol.Dueno => " · todos los permisos: el corte del turno y el del día",
+                _ => "",
+            });
+        t.AppendLine("  El corte del turno solo pide el total del efectivo a quien entró, sin volver a pedir su PIN.");
+        t.AppendLine("  En el conteo desde el celular todavía se escribe el usuario: cajero, encargado o dueno.");
         t.AppendLine();
         t.AppendLine("Clientes registrados de prueba (CTRL+L en la venta, por nombre o teléfono):");
         foreach (var (nombre, telefono, _, descuento, mayoreo, porRevisar, credito) in PreparacionPrueba.ClientesDePrueba)

@@ -179,12 +179,6 @@
     /// <summary>Quien entró en la caja: a su nombre queda el corte, y el servicio revisa que tenga el permiso.</summary>
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
-    /// <summary>
-    /// Lo pasa la tarjeta del turno de otro cajero. Ya no cambia nada (2026-10-14): el corte del turno es uno solo, sin
-    /// elegir entre el parcial y el de cierre.
-    /// </summary>
-    [Parameter] public bool SoloCierre { get; set; }
-
     /// <summary>Nombre de la caja, para el corte impreso.</summary>
     [Parameter] public string Caja { get; set; } = "";
 

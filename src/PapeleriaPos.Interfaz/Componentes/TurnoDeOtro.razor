@@ -24,7 +24,8 @@
         @if (_corte && !Piloto)
         {
             <div class="entrada-corte">
-                <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" SoloCierre="true" AlTerminar="TerminarCorteAsync" />
+                @* «Que entre a esta caja» (si el servicio dice que quien entró no tiene el corte) es «Volver», a las fichas. *@
+                <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="TerminarCorteAsync" AlCambiarUsuario="AlVolver" />
             </div>
             <div class="vn-botonera">
                 <button class="vn-boton" @onclick="AlVolver">Volver</button>
@@ -82,21 +83,21 @@
     private DotNetObjectReference<TurnoDeOtro>? _referencia;
 
     /// <summary>
-    /// Quién puede hacer el corte, de las fichas de esta caja (el servicio, o la copia local sin conexión): el corte lo
-    /// vuelve a revisar el servicio al cerrarlo.
+    /// Si quien entró puede hacer el corte y, si no, quién puede: lo mismo que dice el corte (el corte X del servicio, o de
+    /// la copia local sin conexión), en el mismo orden, primero los encargados y al final el dueño. Antes salía de las
+    /// fichas, por nombre, y las dos pantallas los nombraban al revés. El corte lo vuelve a revisar el servicio al cerrarlo.
     /// </summary>
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            var fichas = await Cliente.FichasAsync(Caja.Id);
-            _haceCorte = fichas.Any(f => f.UsuarioId == Sesion.UsuarioId && f.HaceCorte);
-            // Por su nombre, como quien autoriza en la venta (sin su usuario: las fichas no lo traen ni hace falta).
-            _quienes = fichas.Where(f => f.HaceCorte && f.UsuarioId != Sesion.UsuarioId).Select(f => new QuienAutoriza("", f.Nombre)).ToList();
+            var corte = await Cliente.CorteInformativoAsync(Turno.Id, Sesion.UsuarioId);
+            _haceCorte = corte.PuedeCortar;
+            _quienes = [.. corte.QuienesCortan];
         }
         catch (ErrorCaja)
         {
-            // Sin las fichas (ni la copia) no se sabe quién: como antes, el encargado y el dueño tienen el corte. El servicio lo
+            // Sin el corte X (ni la copia) no se sabe quién: como antes, el encargado y el dueño tienen el corte. El servicio lo
             // vuelve a revisar al cerrarlo.
             _haceCorte = Sesion.Rol is Rol.Encargado or Rol.Dueno;
         }

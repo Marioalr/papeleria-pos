@@ -6,7 +6,7 @@ namespace PapeleriaPos.Interfaz;
 /// Las teclas de la entrada (wwwroot/entrada.js): en «¿Quién atiende?», la letra de cada ficha, las cifras del PIN, Enter,
 /// Borrar y Esc; en abrir el turno y en la caja con el turno de otro, solo Ctrl+U. Cada pantalla de la entrada las pone al
 /// aparecer y las quita al irse. Si la página ya no contesta (se está volviendo a cargar, el navegador se cerró), no pasa
-/// nada: la pantalla nueva pone las suyas.
+/// nada: la pantalla que llega pone las suyas.
 /// </summary>
 public sealed class TeclasEntrada(IJSRuntime js) : IAsyncDisposable
 {

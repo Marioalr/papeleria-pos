@@ -98,7 +98,9 @@ Cada alerta se puede apagar o cambiar su umbral desde Configuración → Telegra
 
 ## Resumen diario
 
-Al hacer el último corte Z del día (cuando ya no queda ningún turno abierto en la sucursal):
+Al hacer el último corte Z del día (cuando ya no queda ningún turno abierto en la sucursal). «Cerrar el día», en el
+corte del día (2026-10-14), manda el mismo resumen solo si no salió ya con algún corte Z de ese día, también uno hecho
+sin conexión que sube al último:
 
 - Ventas y número de tickets, por caja; utilidad bruta (venta − costo de lo vendido).
 - Cada corte: esperado, contado y diferencia.
@@ -107,6 +109,7 @@ Al hacer el último corte Z del día (cuando ya no queda ningún turno abierto e
 - Ventas hechas sin conexión y lo que no pudo subir.
 - Con crédito (fase 3): lo fiado, los abonos por forma de pago, el saldo a favor devuelto, lo que hay por cobrar con lo
   vencido y lo del crédito por revisar.
+- Las impresiones cobradas.
 
 ## Cómo se arma
 

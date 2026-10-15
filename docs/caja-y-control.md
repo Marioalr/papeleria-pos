@@ -85,9 +85,10 @@ El centro del proyecto: que la sucursal funcione bien y con control aunque el du
 
 - Apertura con fondo de caja.
 - Retiros de efectivo y gastos de caja, siempre con motivo.
-- **Corte ciego:** el cajero cuenta por denominación sin ver cuánto debería haber. El sistema calcula la diferencia y
-  avisa al dueño.
-- Corte parcial (X) y de cierre (Z).
+- **Corte ciego:** quien tiene el permiso cuenta el efectivo y escribe el total sin ver cuánto debería haber (desde el
+  2026-10-14, sin contar por denominación ni volver a escribir su PIN). El sistema calcula la diferencia y avisa al
+  dueño.
+- Corte X informativo (sin el efectivo) y corte del turno (Z); el dueño, además, el corte del día.
 - Los abonos de los clientes van aparte, por forma de pago; los de efectivo suman a lo esperado. Lo fiado también sale
   aparte, solo para saberlo: no entró dinero. El saldo a favor que se les devolvió a los clientes resta de lo esperado.
 
@@ -130,7 +131,9 @@ extendida a todo el POS.
 - **Encargado:** su sucursal.
 - **Cajero.**
 
-En la caja se entra con usuario y PIN corto para cambiar de cajero rápido, con bloqueo por intentos fallidos.
+En la caja se entra tocando su ficha (o su letra) y tecleando su PIN de 4 cifras, para cambiar de cajero rápido (Ctrl+U),
+con bloqueo por intentos fallidos. Desde el 2026-10-14 ya no se escribe el usuario (entrega 6 del
+[rediseño](propuesta-interfaz.md)).
 
 ## Bitácora
 
