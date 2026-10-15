@@ -5,6 +5,7 @@ using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Turnos;
+using PapeleriaPos.Servicio.Telegram;
 
 namespace PapeleriaPos.Servicio;
 
@@ -20,8 +21,16 @@ public static partial class ApiCajas
 
         // Abierto: la caja lo usa para encontrar el servicio en la red y, después, como latido.
         // Con el piloto con eleventa: la caja solo ofrece el efectivo, y el corte se hace en eleventa.
-        api.MapGet("/estado", async (PosDbContext db, ModoPrueba prueba, OpcionesEleventa eleventa, RevisionAlArrancar revision) =>
+        api.MapGet("/estado", async (PosDbContext db, ModoPrueba prueba, OpcionesEleventa eleventa, RevisionAlArrancar revision, HttpContext http,
+            PresenciaCajas presencia, Guid? caja, int? porSubir, int? conError) =>
         {
+            // En su latido, la caja dice lo que tiene por subir de cuando estuvo sin conexión (entrega 6): el corte del día
+            // espera a que suba. Solo de sí misma (con su llave) o desde la PC del servicio.
+            if (caja is { } id && porSubir is { } cuantas
+                && (http.Items.TryGetValue(SeguridadCajas.CajaDeLaLlave, out var deLaLlave)
+                    ? deLaLlave is Guid propia && propia == id
+                    : SeguridadCajas.EsLaMismaPc(http.Connection.RemoteIpAddress)))
+                presencia.Bandeja(id, cuantas, conError ?? 0, db.Reloj.GetUtcNow().UtcDateTime);
             var versiones = await db.Secuencias.Where(s => s.Nombre == Secuencia.Catalogo || s.Nombre == Secuencia.Credito)
                 .ToDictionaryAsync(s => s.Nombre, s => s.Valor);
             return new EstadoServicioDto("Papelería POS", Version, await db.Sucursales.OrderBy(s => s.Nombre).Select(s => s.Nombre).ToListAsync(),

@@ -30,6 +30,13 @@ public static class CorteEnElPiloto
 {
     public const string CorteEnEleventa = "Mientras dure el piloto, el corte de esta caja se hace en eleventa.";
 
+    /// <summary>
+    /// El corte del día (2026-10-14) se ve, pero no se cierra: el turno de esta caja no se cierra aquí (seguiría «abierto»
+    /// para siempre) y el día lo cierra el corte de eleventa. Cerrarlo aquí no tocaría eleventa, pero no diría nada.
+    /// </summary>
+    public const string CorteDelDiaEnEleventa =
+        "Mientras dure el piloto, el día se cierra con el corte de eleventa: aquí solo se ve lo de esta caja.";
+
     /// <summary>Por qué un cierre del turno que está en la bandeja queda por revisar.</summary>
     public const string NoSeCierraEleventa =
         "No se manda: mientras dure el piloto, el corte de esta caja se hace en eleventa y la caja nueva no cierra el turno "

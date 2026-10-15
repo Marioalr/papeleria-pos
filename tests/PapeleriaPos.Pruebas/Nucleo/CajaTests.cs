@@ -70,19 +70,18 @@ public class CajaTests
             new() { TurnoId = turno.Id, Tipo = TipoMovimientoCaja.Salida, MontoCentavos = 20000, Motivo = "Pago a proveedor" },
             new() { TurnoId = turno.Id, Tipo = TipoMovimientoCaja.Entrada, MontoCentavos = 5000, Motivo = "Cambio" },
         ];
-        var conteo = new Dictionary<long, int> { [20000] = 1, [5000] = 2, [1000] = 2 }; // $320
-
-        var corte = CalculoCorte.Calcular(turno, [venta], movimientos, TipoCorte.Z, Ids.Nuevo(), Ahora, conteo);
+        // Se cuenta y se escribe el total (2026-10-14): ya no billete por billete.
+        var corte = CalculoCorte.Calcular(turno, [venta], movimientos, TipoCorte.Z, Ids.Nuevo(), Ahora, contadoCentavos: 32000);
 
         Assert.Equal(9000, corte.EfectivoVentasCentavos);
         Assert.Equal(50000 + 9000 + 5000 - 20000, corte.EsperadoCentavos);
         Assert.Equal(32000, corte.ContadoCentavos);
         Assert.Equal(32000 - 44000, corte.DiferenciaCentavos);
-        Assert.Equal(3, corte.Conteo.Count);
+        Assert.Empty(corte.Conteo);
     }
 
     [Fact]
-    public void Corte_x_no_lleva_conteo_y_z_lo_exige()
+    public void Corte_x_no_lleva_lo_contado_y_z_lo_exige()
     {
         var turno = new Turno { FondoCentavos = 10000 };
 
@@ -91,7 +90,15 @@ public class CajaTests
         Assert.Null(x.DiferenciaCentavos);
         Assert.Equal(10000, x.EsperadoCentavos);
         Assert.Throws<ArgumentException>(() => CalculoCorte.Calcular(turno, [], [], TipoCorte.Z, Ids.Nuevo(), Ahora));
-        Assert.Throws<ArgumentException>(() =>
-            CalculoCorte.Calcular(turno, [], [], TipoCorte.Z, Ids.Nuevo(), Ahora, new Dictionary<long, int> { [300] = 1 }));
+        Assert.Throws<ArgumentException>(() => CalculoCorte.Calcular(turno, [], [], TipoCorte.Z, Ids.Nuevo(), Ahora, contadoCentavos: -1));
+    }
+
+    [Fact]
+    public void El_conteo_de_una_caja_de_antes_se_vuelve_su_total()
+    {
+        // Lo que sube en la bandeja una caja de antes del 2026-10-14 que hizo el corte sin conexión.
+        Assert.Equal(32000, Denominaciones.Total(new Dictionary<long, int> { [20000] = 1, [5000] = 2, [1000] = 2 }));
+        Assert.Throws<ArgumentException>(() => Denominaciones.Total(new Dictionary<long, int> { [300] = 1 }));
+        Assert.Throws<ArgumentException>(() => Denominaciones.Total(new Dictionary<long, int> { [1000] = -1 }));
     }
 }

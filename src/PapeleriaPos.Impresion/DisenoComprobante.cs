@@ -32,12 +32,12 @@ public static class DisenoComprobante
         return e;
     }
 
-    /// <summary>El corte de cierre impreso, para guardarlo con el efectivo. Sin conexión, avisa que se cuadra al volver.</summary>
+    /// <summary>El corte del turno impreso, para guardarlo con el efectivo. Sin conexión, avisa que se cuadra al volver.</summary>
     public static List<Elemento> Corte(CorteDto c, string caja)
     {
         var e = new List<Elemento>
         {
-            new Renglon(c.Tipo == TipoCorte.Z ? "CORTE DE CIERRE (Z)" : "CORTE PARCIAL (X)", Alineacion.Centro, Negrita: true, Grande: true),
+            new Renglon(c.Tipo == TipoCorte.Z ? "CORTE DEL TURNO (Z)" : "CORTE PARCIAL (X)", Alineacion.Centro, Negrita: true, Grande: true),
         };
         if (c.EnContingencia)
             e.Add(new Renglon("Sin conexión: se cuadra al volver", Alineacion.Centro, Negrita: true));

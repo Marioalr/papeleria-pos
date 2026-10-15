@@ -11,6 +11,7 @@ using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Nucleo.Ventas;
+using PapeleriaPos.Servicio.Telegram;
 
 namespace PapeleriaPos.Servicio;
 
@@ -89,23 +90,49 @@ public static class ApiCaja
         api.MapPost("/turnos/{turnoId:guid}/movimientos", async (Guid turnoId, SolicitudMovimiento s, PosDbContext db, IOptions<OpcionesTicket> ticket, EnvioVentasEleventa eleventa) =>
             await ApiControl.MovimientoAsync(turnoId, s, db, ticket.Value, eleventa));
 
+        // La cuenta del turno, guardada como corte parcial. La pantalla ya no la enseña antes de cerrar (corte-informativo).
         api.MapPost("/turnos/{turnoId:guid}/corte-x", async (Guid turnoId, Guid usuarioId, PosDbContext db) =>
             await CorteDtoAsync(db, await new RegistroCaja(db).CorteXAsync(turnoId, usuarioId)));
 
+        // El corte X de la pantalla (entrega 6): a ciegas, sin el efectivo; y si quien entró puede hacer el corte.
+        api.MapGet("/turnos/{turnoId:guid}/corte-informativo", async (Guid turnoId, Guid usuarioId, PosDbContext db) =>
+            await new RegistroCaja(db).InformativoAsync(turnoId, usuarioId));
+
+        // El corte del turno (entrega 6, 2026-10-14): el usuario de la sesión, con el permiso, manda el total que contó.
         api.MapPost("/turnos/{turnoId:guid}/corte-z", async (Guid turnoId, SolicitudCorteZ s, PosDbContext db, ServicioRespaldos respaldos, EnvioVentasEleventa eleventa,
             OpcionesEleventa opcionesEleventa) =>
         {
             // El piloto en la caja 2: el corte se hace en eleventa, aunque la pantalla ya no lo ofrezca (una caja de antes).
             if (opcionesEleventa.CorteEnEleventa)
                 throw new InvalidOperationException(CorteEnElPiloto.CorteEnEleventa);
-            var turno = await db.Turnos.FindAsync(turnoId) ?? throw new InvalidOperationException("El turno no existe.");
-            var encargado = await new ServicioControl(db).IdentificarAsync(s.EncargadoUsuario, s.EncargadoPin, turno.SucursalId, AccionControlada.CorteZ);
-            var corte = await CorteDtoAsync(db, await new RegistroCaja(db).CorteZAsync(turnoId, encargado.Id, s.Conteo));
+            var corte = await CorteDtoAsync(db, await new RegistroCaja(db).CorteZAsync(turnoId, s.UsuarioId, s.ContadoCentavos));
             // Si el turno pasó a eleventa, su cierre ya está en la bandeja: que vaya ya.
             eleventa.Despertar();
             // Con cada cierre, una copia de la base (además de la diaria); si falla, el corte ya quedó guardado.
             _ = Task.Run(() => respaldos.Hacer($"z-{corte.FechaLocal:HHmm}"));
             return corte;
+        });
+
+        // El corte del día (entrega 6): todas las cajas y turnos de la sucursal de esta caja, para quien tiene el permiso.
+        // En el piloto con eleventa se ve, pero no se cierra.
+        api.MapGet("/cajas/{cajaId:guid}/corte-del-dia", async (Guid cajaId, Guid usuarioId, PosDbContext db, PresenciaCajas presencia,
+            OpcionesEleventa opcionesEleventa) =>
+        {
+            var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
+            await new ServicioControl(db).ExigirAsync(usuarioId, caja.SucursalId, AccionControlada.CorteDelDia, "El corte del día lo ve quien tiene ese permiso.");
+            var registro = new RegistroCorteDelDia(db);
+            return await registro.ArmarAsync(caja.SucursalId, registro.Hoy, presencia.Foto(), opcionesEleventa.CorteEnEleventa);
+        });
+
+        api.MapPost("/cajas/{cajaId:guid}/corte-del-dia/cierre", async (Guid cajaId, SolicitudCierreDia s, PosDbContext db, PresenciaCajas presencia,
+            OpcionesEleventa opcionesEleventa) =>
+        {
+            // El piloto: el día lo cierra el corte de eleventa. Cerrarlo aquí no tocaría eleventa, pero no diría nada.
+            if (opcionesEleventa.CorteEnEleventa)
+                throw new InvalidOperationException(CorteEnElPiloto.CorteDelDiaEnEleventa);
+            var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
+            var registro = new RegistroCorteDelDia(db);
+            return await registro.CerrarAsync(caja.SucursalId, caja.Id, s.UsuarioId, registro.Hoy, presencia.Foto());
         });
 
         api.MapGet("/productos/codigo/{codigo}", async (string codigo, Guid sucursalId, PosDbContext db, CatalogoEnMemoria catalogo) =>
@@ -253,10 +280,12 @@ public static class ApiCaja
     {
         var turno = await db.Turnos.FindAsync(c.TurnoId);
         var nombres = await db.Usuarios.Where(u => u.Id == turno!.CajeroId || u.Id == c.RealizadoPorId).ToDictionaryAsync(u => u.Id, u => u.Nombre);
-        return new CorteDto(c.Tipo, HoraMexico.ALocal(c.FechaUtc), nombres[turno!.CajeroId], nombres[c.RealizadoPorId], c.Ventas, c.FondoCentavos,
-            c.EfectivoVentasCentavos, c.EntradasCentavos, c.SalidasCentavos, c.TarjetaCentavos, c.TransferenciaCentavos, c.EsperadoCentavos,
+        return new CorteDto(c.Tipo, HoraMexico.ALocal(c.FechaUtc), nombres[turno!.CajeroId], nombres.GetValueOrDefault(c.RealizadoPorId, "—"), c.Ventas,
+            c.FondoCentavos, c.EfectivoVentasCentavos, c.EntradasCentavos, c.SalidasCentavos, c.TarjetaCentavos, c.TransferenciaCentavos, c.EsperadoCentavos,
             c.ContadoCentavos, c.DiferenciaCentavos, c.DevolucionesCentavos, c.Cancelaciones, c.EnContingencia, c.RedondeoCentavos, c.CreditoCentavos,
-            c.Abonos, c.AbonosEfectivoCentavos, c.AbonosTarjetaCentavos, c.AbonosTransferenciaCentavos, c.SaldoDevueltoCentavos);
+            c.Abonos, c.AbonosEfectivoCentavos, c.AbonosTarjetaCentavos, c.AbonosTransferenciaCentavos, c.SaldoDevueltoCentavos,
+            // Al cerrar el turno, la caja dice si la diferencia pasó del umbral y se avisa por Telegram.
+            c is { Tipo: TipoCorte.Z, DiferenciaCentavos: { } diferencia } ? AlertasTelegram.UmbralSiAvisa(db, turno.SucursalId, diferencia) : null);
     }
 
     internal static async Task<TicketDto> TicketAsync(PosDbContext db, Venta v, OpcionesTicket opciones)

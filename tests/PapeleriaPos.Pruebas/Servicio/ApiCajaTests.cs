@@ -200,30 +200,3 @@ public class ApiCajaTests(ServicioDePrueba servicio) : IClassFixture<ServicioDeP
         Assert.Equal(HttpStatusCode.NotFound, respuesta.StatusCode);
     }
 }
-
-/// <summary>El corte Z cierra el turno: va en su propia base para no estorbar a las demás pruebas.</summary>
-public class CorteApiTests(ServicioDePrueba servicio) : IClassFixture<ServicioDePrueba>
-{
-    [Fact]
-    public async Task El_corte_z_pide_el_pin_del_encargado_y_cierra_el_turno()
-    {
-        var http = servicio.Fabrica.CreateClient();
-        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
-        var cajero = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("cajero", "1111"))).Content.ReadFromJsonAsync<SesionDto>())!;
-        var turno = (await (await http.PostAsJsonAsync("api/turnos", new SolicitudTurno(caja.Id, cajero.UsuarioId, 30000))).Content.ReadFromJsonAsync<TurnoDto>())!;
-        Assert.True((await http.PostAsJsonAsync($"api/turnos/{turno.Id}/movimientos",
-            new SolicitudMovimiento(PapeleriaPos.Nucleo.Turnos.TipoMovimientoCaja.Salida, 5000, "Garrafón", cajero.UsuarioId))).IsSuccessStatusCode);
-        var conteo = new Dictionary<long, int> { [20000] = 1, [5000] = 1 };
-
-        var conCajero = await http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ("cajero", "1111", conteo));
-        var conPinMalo = await http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ("encargado", "0000", conteo));
-        var corte = await http.PostAsJsonAsync($"api/turnos/{turno.Id}/corte-z", new SolicitudCorteZ("encargado", "2222", conteo));
-
-        Assert.Equal(HttpStatusCode.BadRequest, conCajero.StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, conPinMalo.StatusCode);
-        var resultado = (await corte.Content.ReadFromJsonAsync<CorteDto>())!;
-        Assert.Equal(30000 - 5000, resultado.EsperadoCentavos);
-        Assert.Equal(0, resultado.DiferenciaCentavos);
-        Assert.Equal(HttpStatusCode.NoContent, (await http.GetAsync($"api/cajas/{caja.Id}/turno")).StatusCode);
-    }
-}
