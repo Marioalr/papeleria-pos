@@ -65,6 +65,15 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<SesionDto> EntrarAsync(string usuario, string pin) =>
         ConRespaldoAsync(() => _http.PostAsync<SesionDto>("api/sesion", new SolicitudEntrada(usuario, pin)), l => l.Entrar(usuario, pin));
 
+    /// <summary>Las fichas de la entrada: quién entra en esta caja, con su letra. Sin conexión, de la copia local.</summary>
+    public Task<List<FichaUsuarioDto>> FichasAsync(Guid cajaId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<FichaUsuarioDto>>($"api/cajas/{cajaId}/usuarios") ?? [], l => l.Fichas(cajaId));
+
+    /// <summary>Entrar con la ficha que se tocó y el PIN. Sin conexión, el PIN se revisa con la copia local.</summary>
+    public Task<SesionDto> EntrarAsync(Guid cajaId, Guid usuarioId, string pin) =>
+        ConRespaldoAsync(() => _http.PostAsync<SesionDto>($"api/cajas/{cajaId}/sesion", new SolicitudEntradaFicha(usuarioId, pin)),
+            l => l.Entrar(usuarioId, pin));
+
     public Task<TurnoDto?> TurnoAsync(Guid cajaId) =>
         ConRespaldoAsync(() => _http.GetAsync<TurnoDto>($"api/cajas/{cajaId}/turno", nadaEsNulo: true), l => l.Turno(cajaId),
             (l, turno) => l.TurnoEnLineaAsync(turno));
