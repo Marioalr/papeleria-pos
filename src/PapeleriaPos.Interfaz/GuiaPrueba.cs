@@ -38,6 +38,9 @@ public static class GuiaPrueba
     /// </summary>
     public const string VentanaDeAntes = "Ventana de antes";
 
+    /// <summary>El tema de lo último de la guía: la Configuración nueva (entrega 7), que ya no es una ventana de antes.</summary>
+    public const string ConfiguracionNueva = "Configuración";
+
     public static readonly IReadOnlyList<TareaPrueba> Tareas =
     [
         new("entrar", "Empezar",
@@ -314,23 +317,27 @@ public static class GuiaPrueba
             "La lista dice cuánto debe cada quien (en rojo, si tiene algo vencido). En su cuenta están el saldo inicial, lo fiado, los abonos "
             + "y la devolución, cada uno con el saldo que dejó; el estado de cuenta y el texto copiado (pégalo en el Bloc de notas) dicen lo "
             + "mismo, con lo que falta pagar de cada compra y su vencimiento. Solo el dueño cambia el crédito."),
-        new("margen", $"{VentanaDeAntes} · El dueño",
-            "Como dueño (sin cortar), en Inventario (F4) → Margen mínimo, sube el margen general a 50 % y cierra otra compra.",
-            "Los productos debajo del 50 % sugieren precio y se avisa al dueño. Regrésalo a 30 % al terminar."),
-        new("sinonimos", $"{VentanaDeAntes} · El dueño",
+        new("margen", $"{ConfiguracionNueva} · El dueño",
+            "Como dueño (sin cortar), abre «Configuración» (arriba) → Inventario y sube el «Margen mínimo» general a 50 (se guarda al salir "
+            + "del campo). Luego cierra otra compra (Inventario F4 → Compras).",
+            "Arriba dice «Guardado a las …», sin botón de guardar ni PIN. Los productos debajo del 50 % sugieren precio y se avisa al dueño. "
+            + "Regrésalo a 30 al terminar."),
+        new("sinonimos", $"{ConfiguracionNueva} · El dueño",
             "Como dueño, entra a vender: sal de «sin cortar» (tu nombre → «Salir»), entra otra vez (D y 3333) y oprime «Hacer el corte de "
             + "Cajero de prueba»; escribe cualquier total y Enter, y con «Listo» abre tu turno con $500. Escribe «lapicero» en el cuadro de "
-            + "captura. Luego, en Configuración → Sinónimos, agrega: al escribir «lapicero» también busca «pluma». Vuelve a escribir "
-            + "«lapicero» en el cuadro.",
+            + "captura. Luego, en Configuración → Venta y cobro → «Sinónimos de la búsqueda» (o escribe «sinónimos» en su buscador), agrega: "
+            + "al escribir «lapicero» también busca «pluma». Vuelve a escribir «lapicero» en el cuadro.",
             "La primera vez no sale ninguna pluma: solo «Parecidos a «lapicero»…» (lapiceras y estuches). Con el sinónimo salen las plumas, y "
             + "cada renglón dice «por «lapicero»». Los sinónimos solo los dan de alta el dueño y el encargado; uno mal puesto mezcla "
             + "productos, y se quita ahí mismo."),
-        new("configuracion", $"{VentanaDeAntes} · El dueño",
-            "Como dueño, en Configuración mira «Usuarios y permisos», la bitácora y el ticket. Abre «Avisos al dueño» en la franja de prueba.",
-            "En «Usuarios y permisos», Dueño de prueba dice «Todos los permisos · primera cuenta», Encargado de prueba «Corte de turno, "
-            + "productos y clientes» y Cajero de prueba «Permisos por defecto»; cada permiso es Puede, Con autorización o No. La bitácora tiene lo que hiciste en la prueba (cancelaciones, precios, autorizaciones, compras…), los cortes del turno (quién "
-            + "lo hizo y de qué turno) y el cierre del día («Cerró el día …»). En «Avisos al dueño» están los que le habrían llegado por "
-            + "Telegram: cancelaciones, cortes con diferencia, el resumen del día, compras…"),
+        new("configuracion", $"{ConfiguracionNueva} · El dueño",
+            "Como dueño, en Configuración escribe «fondo» en el buscador y pon el fondo sugerido en $500; en Ticket cambia el pie y mira «Así "
+            + "sale». Mira «Usuarios y permisos» y la Bitácora. Abre «Avisos al dueño» en la franja de prueba.",
+            "Cada cambio se guarda solo («Guardado a las …»), sin botón ni PIN, y el siguiente «Abrir turno» propone $500. En «Usuarios y "
+            + "permisos», Dueño de prueba dice «Todos los permisos · primera cuenta», Encargado de prueba «Corte de turno, productos y "
+            + "clientes» y Cajero de prueba «Permisos por defecto»; cada permiso es Puede, Con autorización o No (en Administración, solo "
+            + "Puede o No). La bitácora tiene lo de hoy: cancelaciones, precios, autorizaciones, compras, los cortes del turno y el cierre del "
+            + "día. En «Avisos al dueño» están los avisos que se habrían mandado: cancelaciones, cortes con diferencia, el resumen del día…"),
     ];
 
     /// <summary>

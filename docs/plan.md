@@ -434,7 +434,7 @@ cambia más entre productos casi iguales: la medida, el color y la marca, y meno
 - **Esc y escribir enseguida** ya no pierde las primeras letras: el cuadro se vaciaba otra vez desde el servicio.
 
 **Avance (2026-10-11), séptima parte: los sinónimos de la tienda.**
-- **Configuración › Sinónimos:** quien edita el catálogo (el dueño y el encargado) los da de alta uno por uno: «al
+- **Configuración › Sinónimos** (desde la entrega 7, Configuración → Venta y cobro → «Sinónimos de la búsqueda»): quien edita el catálogo (el dueño y el encargado) los da de alta uno por uno: «al
   escribir *boligrafo*, también busca *pluma*», con «y al revés» marcado de entrada; una sola palabra de cada lado, sin
   acentos. Quitarlos los desactiva. Queda en la bitácora. Ninguno viene puesto, y lo que se buscó y no se encontró no los
   arma (decisión del dueño).
@@ -444,7 +444,7 @@ cambia más entre productos casi iguales: la medida, el color y la marca, y meno
   principio («bolig»). Lo que salió por un sinónimo va después de lo que se llama así y lo dice: «por «boligrafo»».
 
 Falta, en este orden:
-1. cuántas fichas de espera se ven, en Configuración (hoy son 3);
+1. ~~cuántas fichas de espera se ven, en Configuración~~ (hecho con la entrega 7, 2026-10-15);
 2. que un surtido se pueda vender por color, como opción del producto (decisión del dueño, 2026-10-11);
 3. el nombre de eleventa como sinónimo de cada producto, cuando la depuración cambie nombres.
 
@@ -485,8 +485,8 @@ como artículo común».
 - **«Productos e inventario, sin cortar»** imprime el estado de cuenta de un cliente igual que la venta (en la impresora
   de tickets o en pantalla); antes ahí «Imprimir» no hacía nada.
 
-Falta: el fondo sugerido, el nombre de la tienda y la hora para recordar el cierre del día (configuración, entrega 7);
-el largo del PIN y que dar de baja a alguien no mueva las letras de los demás. El conteo desde el celular sigue con el
+Falta: la hora para recordar el cierre del día; el largo del PIN y que dar de baja a alguien no mueva las letras de los
+demás. El fondo sugerido y el nombre de la tienda ya están (entrega 7, 2026-10-15). El conteo desde el celular sigue con el
 usuario escrito.
 
 **Avance (2026-10-15), entrega 1: los permisos por usuario,** como en la [propuesta](propuesta-interfaz.md#usuarios-y-permisos):
@@ -504,6 +504,21 @@ usuario escrito.
   cada usuario con su resumen, nuevo usuario, y en cada uno la tabla por grupos con Puede / Con autorización / No y su
   límite, «Copiar los permisos de…», «Todos», «Los de defecto», cambiar el PIN y darlo de baja. Se guarda solo.
 - **Las pantallas deciden con los permisos de quien entró** (ya no con «dueño o encargado»), también sin conexión.
+
+**Avance (2026-10-15), entrega 7: la Configuración nueva,** como en el [prototipo](propuesta-interfaz/prototipo.html):
+el buscador arriba, los grupos a la izquierda (cada uno se ve solo con su permiso en «Puede», sin candados), cada ajuste
+con su alcance («Toda la tienda») y guardado solo, con «Guardado a las HH:MM», sin botón ni PIN: el servicio revisa el
+permiso de quien entró. También se abre sin cortar, desde «Productos e inventario».
+- **Tienda:** nombre (sale en la entrada), dirección, teléfono y horario.
+- **Venta y cobro:** cuántos tickets en espera se ven (3), los rápidos (hasta 6, con nombre, cantidad y orden), los
+  sinónimos de la búsqueda y los días para devolver (7, informativo).
+- **Efectivo y corte:** el límite de efectivo, el fondo sugerido (lo propone «Abrir turno») y el aviso del corte que no cuadra.
+- **Ticket:** encabezado y pie a 48 columnas con «Así sale», el logotipo y el ticket de prueba.
+- **Impresoras e impresiones:** la impresora de inyección (IP, aviso de tinta, lecturas), la calibración y el desglose.
+- **Inventario:** el margen mínimo (salió de F4) y lo que cubre el sugerido.
+- **Usuarios y permisos, Cajas, Bitácora, Teclas** (la lista) **y Acerca de.** Avisos por Telegram, como estaba, «en pausa».
+- No se pusieron los grupos sin nada real detrás (WhatsApp, Seguridad, Respaldos, Esta caja) ni los ajustes que todavía
+  no existen; se agregan cuando exista lo que configuran.
 
 #### Después: el piloto en la caja 2
 

@@ -82,7 +82,7 @@ usuario se escribe solo en el conteo desde el celular:
 | Encargado de prueba (E) | `encargado` | Corte de turno, productos y clientes | 2222 |
 | Dueño de prueba (D) | `dueno` | Todos los permisos · primera cuenta (también el corte del día) | 3333 |
 
-No hay roles: cada usuario tiene sus permisos (Puede, Con autorización o No), que se ven y se cambian en Configuración →
+No hay roles: cada usuario tiene sus permisos (Puede, Con autorización o No; en Administración, solo Puede o No), que se ven y se cambian en Configuración →
 «Usuarios y permisos» (entrega 1). Al actualizar una base de antes, cada quien queda con lo que podía hacer con su rol.
 
 ### Instalar en la tienda (varias cajas)
