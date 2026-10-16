@@ -95,10 +95,12 @@ public sealed class RafagaTests(ServicioDePrueba servicio) : IClassFixture<Servi
         // Con la red bien otra vez, la copia queda al día con lo que pasó en la caja principal (el latido de respaldo).
         foreach (var red in new[] { v.Red, v.Fondo })
             (red.Retraso, red.Perdidas) = (TimeSpan.Zero, 0);
+        // (Lo que el aviso ya estaba poniendo al día con la red lenta puede seguir en camino: se espera, con límite.)
         await v.Contingencia.LatidoAsync();
-        var foto = v.Contingencia.Foto!;
-        Assert.Equal(conPrecioNuevo.Precios[0].PrecioCentavos + 500, foto.PorCodigo(conPrecioNuevo.Codigo!)!.Precios.Single().PrecioCentavos);
-        Assert.Equal(vendidoEnLaOtra.Existencia - 2, foto.PorCodigo(vendidoEnLaOtra.Codigo!)!.Existencia);
+        await VentaConCopia.EsperarAsync(() => v.Contingencia.Foto!.PorCodigo(conPrecioNuevo.Codigo!)!.Precios.Single().PrecioCentavos
+                                               == conPrecioNuevo.Precios[0].PrecioCentavos + 500
+                                               && v.Contingencia.Foto.PorCodigo(vendidoEnLaOtra.Codigo!)!.Existencia == vendidoEnLaOtra.Existencia - 2,
+            "la copia al día con el precio nuevo y la venta de la otra caja");
         // Y la ráfaga sigue intacta.
         Assert.Equal(20, (await VentaConCopia.RenglonesAsync(v.Pantalla)).Count);
     }

@@ -680,23 +680,22 @@ public sealed class Contingencia
     /// </summary>
     public Task PonerAlDiaAsync() => Task.Run(async () =>
     {
-        if (!await _poniendoAlDia.WaitAsync(0))
+        _otraVez = true;
+        // Lo que se avise justo cuando la otra vuelta ya terminó, pero todavía no suelta, lo atiende ella al soltar.
+        while (_otraVez && await _poniendoAlDia.WaitAsync(0))
         {
-            _otraVez = true;
-            return;
-        }
-        try
-        {
-            do
+            try
             {
-                _otraVez = false;
-                await PonerAlDiaUnaVezAsync();
+                while (_otraVez)
+                {
+                    _otraVez = false;
+                    await PonerAlDiaUnaVezAsync();
+                }
             }
-            while (_otraVez);
-        }
-        finally
-        {
-            _poniendoAlDia.Release();
+            finally
+            {
+                _poniendoAlDia.Release();
+            }
         }
     });
 
