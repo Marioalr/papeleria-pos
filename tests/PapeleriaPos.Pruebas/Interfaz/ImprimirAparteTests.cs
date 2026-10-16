@@ -65,6 +65,37 @@ public sealed class ImprimirAparteTests(ServicioDePrueba servicio) : IClassFixtu
     }
 
     /// <summary>
+    /// La impresora no contesta al conectarse (la otra caja imprime): el panel y el estado de arriba dicen que espera a la
+    /// impresora y que se vuelve a intentar sola, sin «Reintentar»; cuando contesta, sale una sola vez.
+    /// </summary>
+    [Fact]
+    public async Task Si_la_impresora_no_contesta_el_panel_dice_que_espera_y_sale_sola()
+    {
+        var segundo = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var impresora = new TicketeraDePrueba
+        {
+            Falla = n => n == 1 ? new ErrorAlConectar("No responde la impresora de tickets en 192.168.1.50:9100.") : null,
+            AntesDeCadaIntento = n => n == 2 ? segundo.Task : Task.CompletedTask,
+        };
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, impresora: impresora);
+        var (a, _) = v.DosDeLaCopia();
+
+        var folio = await CobrarAsync(v, a.Codigo!);
+        await v.Pantalla.EsperarAsync(t => t.Contains($"«Ticket {folio}» espera a la impresora de tickets: no contesta (puede estar imprimiendo lo de la otra caja). Se vuelve a intentar sola."),
+            "el aviso de que espera a la impresora");
+        var texto = await v.Pantalla.TextoAsync();
+        Assert.Contains("Tickets · esperando a la impresora", texto);
+        Assert.DoesNotContain("Reintentar", texto);
+        Assert.Empty(impresora.Salieron);
+
+        segundo.SetResult();
+        await v.Pantalla.EsperarAsync(t => t.Contains($"Ticket {folio} impreso") && !t.Contains("esperando a la impresora"), "el ticket impreso");
+        Assert.Single(impresora.Salieron);
+        Assert.Equal(2, impresora.Intentos);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>
     /// Si no sale (se acabó el papel), el panel lo dice con «Reintentar» y «Verlo en pantalla», y el estado de arriba también;
     /// lo que se cobra después espera su turno y una reimpresión va por la misma cola, detrás. Con «Reintentar» sale todo, en
     /// su orden.

@@ -222,8 +222,12 @@ public sealed class ColaDeImpresion
     {
         for (var intento = 0; ; intento++)
         {
-            (trabajo.Estado, trabajo.Motivo) = (EstadoImpresion.Imprimiendo, trabajo.Motivo);
-            Avisar();
+            // Mientras se vuelve a intentar sigue diciendo que espera a la impresora: el aviso no aparece y desaparece.
+            if (intento == 0)
+            {
+                trabajo.Estado = EstadoImpresion.Imprimiendo;
+                Avisar();
+            }
             try
             {
                 await _impresora.EnviarAsync(trabajo.Datos);

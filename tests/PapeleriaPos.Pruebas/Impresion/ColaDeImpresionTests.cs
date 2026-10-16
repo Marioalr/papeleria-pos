@@ -23,6 +23,9 @@ internal sealed class TicketeraDePrueba : IImpresora
     /// <summary>Mientras está puesta, lo que llega espera a que se suelte.</summary>
     public TaskCompletionSource? Detenida { get; set; }
 
+    /// <summary>Lo que espera cada intento antes de salir o fallar (el primero es el 1).</summary>
+    public Func<int, Task>? AntesDeCadaIntento { get; set; }
+
     public int Intentos => Volatile.Read(ref _intentos);
 
     public async Task EnviarAsync(byte[] escPos, CancellationToken ct = default)
@@ -30,6 +33,8 @@ internal sealed class TicketeraDePrueba : IImpresora
         var intento = Interlocked.Increment(ref _intentos);
         if (Detenida is { } detenida)
             await detenida.Task.WaitAsync(ct);
+        if (AntesDeCadaIntento?.Invoke(intento) is { } antes)
+            await antes.WaitAsync(ct);
         if (Falla?.Invoke(intento) is { } error)
             throw error;
         Salieron.Enqueue(Encoding.UTF8.GetString(escPos));
