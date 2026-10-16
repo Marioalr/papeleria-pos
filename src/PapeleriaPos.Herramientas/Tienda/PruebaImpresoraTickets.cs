@@ -11,10 +11,10 @@ namespace PapeleriaPos.Herramientas.Tienda;
 public static class PruebaImpresoraTickets
 {
     /// <summary>
-    /// El QR de cada ticket de prueba: un folio inventado con la forma de los de la caja (serie, guion y seis cifras). Al
+    /// El QR de cada ticket de prueba: un folio inventado con la forma de los de la caja 2 (su serie, guion y seis cifras). Al
     /// escanearlo con <see cref="PruebaLector"/> se ve si el lector lo manda igual, y así es como se devuelve un ticket.
     /// </summary>
-    public const string FolioDePrueba = "C2-000123";
+    public const string FolioDePrueba = "B-000123";
 
     public sealed record Vuelta(string Nombre, TimeSpan Separacion);
 

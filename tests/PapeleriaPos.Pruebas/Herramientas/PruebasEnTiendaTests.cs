@@ -155,9 +155,9 @@ public class PruebasEnTiendaTests
     public void Si_el_QR_llega_distinto_dice_que_la_distribucion_del_teclado_no_coincide()
     {
         // Con el lector en inglés y Windows en español, el guion llega como apóstrofo.
-        var texto = string.Join('\n', PruebaLector.Describir(Escaneo("C2'000123", cadaMs: 3)));
+        var texto = string.Join('\n', PruebaLector.Describir(Escaneo("B'000123", cadaMs: 3)));
 
-        Assert.Contains("✗ Parece el QR del ticket de prueba (C2-000123), pero llegó distinto", texto);
+        Assert.Contains("✗ Parece el QR del ticket de prueba (B-000123), pero llegó distinto", texto);
     }
 
     [Fact]
