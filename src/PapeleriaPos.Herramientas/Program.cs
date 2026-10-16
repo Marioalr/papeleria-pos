@@ -93,13 +93,13 @@ static int Ayuda()
               Para el fin de semana en la tienda: qué hace la impresora de tickets que comparten las dos cajas cuando le
               llegan dos tickets a la vez. Manda dos tickets de prueba como los manda la caja (al puerto 9100), cada uno
               por su conexión: primero a la vez y después casi juntos. Dice cuándo terminó cada uno o qué error dio; en el
-              papel se ve si salieron completos. Cada ticket trae el QR de un folio de prueba para probar-lector. No toca
-              eleventa ni ninguna base. scripts\probar-impresora-tickets.cmd lo abre.
+              papel se ve si salieron completos. No toca eleventa ni ninguna base. scripts\probar-impresora-tickets.cmd
+              lo abre.
 
           probar-lector
               Para el fin de semana en la tienda: qué manda el lector y a qué ritmo. Con cada código escaneado dice qué
-              llegó y el tiempo entre tecla y tecla, si en el cobro la caja lo reconoce como el lector (caja.js,
-              RAFAGA_MS) y si el QR del ticket de prueba llegó igual. scripts\probar-lector.cmd lo abre.
+              llegó y el tiempo entre tecla y tecla, y si en el cobro la caja lo reconoce como el lector (caja.js,
+              RAFAGA_MS). scripts\probar-lector.cmd lo abre.
         """);
     return 1;
 }
@@ -545,7 +545,7 @@ static async Task<int> ProbarImpresoraTicketsAsync(string[] args)
             Console.WriteLine(linea);
     }
     Console.WriteLine();
-    Console.WriteLine("Listo. Anota en la guía qué salió en cada vuelta. El QR de los tickets sirve para probar-lector.");
+    Console.WriteLine("Listo. Anota en la guía qué salió en cada vuelta.");
     return 0;
 }
 
@@ -557,9 +557,8 @@ static int ProbarLector()
         return 1;
     }
     Console.WriteLine($"""
-        Escanea con el lector, uno por uno: códigos de barras (también uno de 11 cifras) y el QR del ticket de prueba (sale
-        con probar-impresora-tickets). Para comparar, teclea un código a mano y Enter. Aquí no se vende nada. Esc para
-        terminar.
+        Escanea con el lector códigos de barras, uno por uno, también uno de 11 cifras. Para comparar, teclea un código a
+        mano y Enter. Aquí no se vende nada. Esc para terminar.
 
         """);
     var reloj = System.Diagnostics.Stopwatch.StartNew();

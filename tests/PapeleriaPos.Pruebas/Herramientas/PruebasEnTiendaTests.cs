@@ -95,7 +95,7 @@ public class PruebasEnTiendaTests
     }
 
     [Fact]
-    public void El_ticket_dice_que_es_de_prueba_de_donde_salio_y_trae_el_QR_del_folio_de_prueba()
+    public void El_ticket_dice_que_es_de_prueba_y_de_donde_salio()
     {
         var hora = new DateTimeOffset(2026, 10, 17, 11, 5, 3, 250, TimeSpan.FromHours(-6));
         var documento = PruebaImpresoraTickets.Ticket("CAJA2", ALaVez, 1, 2, hora);
@@ -108,7 +108,8 @@ public class PruebasEnTiendaTests
         Assert.Contains("Vuelta de las 11:05:03.250", texto);
         Assert.Contains("Renglón 10 de 10 del ticket 1", texto);
         Assert.Contains("Fin del ticket 1", texto);
-        Assert.Equal(PruebaImpresoraTickets.FolioDePrueba, Assert.Single(documento.OfType<Qr>()).Datos);
+        // Sin QR, como el ticket de la caja por ahora (2026-10-16).
+        Assert.Empty(documento.OfType<Qr>());
         // Nada se corta: cada renglón cabe en los 48 caracteres del ticket.
         Assert.All(documento.OfType<Renglon>(), r => Assert.True(r.Texto.Length <= DisenoTicket.Columnas, r.Texto));
         // Y sale con su corte, como un ticket de la caja.
@@ -141,23 +142,15 @@ public class PruebasEnTiendaTests
     }
 
     [Fact]
-    public void Un_lector_rapido_lo_reconoce_la_caja_y_el_QR_del_ticket_de_prueba_llega_igual()
+    public void Un_lector_rapido_lo_reconoce_la_caja()
     {
-        var c = Escaneo(PruebaImpresoraTickets.FolioDePrueba, cadaMs: 3);
+        var c = Escaneo("7501234567890", cadaMs: 3);
         var texto = string.Join('\n', PruebaLector.Describir(c));
 
         Assert.True(PruebaLector.LoReconoceLaCaja(c));
+        Assert.Contains("«7501234567890» (13 caracteres)", texto);
         Assert.Contains("✓ En el cobro, la caja lo reconoce como el lector.", texto);
-        Assert.Contains("✓ Es el QR del ticket de prueba y llegó igual.", texto);
-    }
-
-    [Fact]
-    public void Si_el_QR_llega_distinto_dice_que_la_distribucion_del_teclado_no_coincide()
-    {
-        // Con el lector en inglés y Windows en español, el guion llega como apóstrofo.
-        var texto = string.Join('\n', PruebaLector.Describir(Escaneo("B'000123", cadaMs: 3)));
-
-        Assert.Contains("✗ Parece el QR del ticket de prueba (B-000123), pero llegó distinto", texto);
+        Assert.Contains("Son 13 cifras", texto);
     }
 
     [Fact]

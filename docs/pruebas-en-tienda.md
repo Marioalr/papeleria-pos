@@ -33,8 +33,8 @@ datos de eleventa.
      la IP de la impresora. Se anota lo que dijo de cada ticket y si salieron completos, hasta «Fin del ticket». Solo
      gasta papel: no toca eleventa.
    - `scripts\probar-lector.cmd`: escanear varios códigos, uno de 11 cifras (comparado con el de ese producto en
-     eleventa) y el QR del ticket de prueba. Dice qué llegó, si en el cobro la caja lo reconoce como el lector por su
-     ritmo y si el QR llegó igual; si no, cuánto subir `RAFAGA_MS` en `caja.js`.
+     eleventa). Dice qué llegó y si en el cobro la caja lo reconoce como el lector por su ritmo; si no, cuánto subir
+     `RAFAGA_MS` en `caja.js`. Sin QR: el ticket no lo lleva por ahora (2026-10-16).
 3. **Solo mirar, por eleventa**
    ([por qué](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)):
    - la versión de eleventa en las dos cajas;

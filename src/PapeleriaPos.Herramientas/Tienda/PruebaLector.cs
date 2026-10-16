@@ -59,12 +59,7 @@ public static class PruebaLector
             yield return $"  ✗ En el cobro se tomaría como tecleado: pasaron {Ms(c.EntreTeclas)} entre dos teclas y la caja espera "
                 + $"hasta {RafagaMs} ms.";
 
-        if (c.Texto == PruebaImpresoraTickets.FolioDePrueba)
-            yield return "  ✓ Es el QR del ticket de prueba y llegó igual.";
-        else if (c.Texto.Contains(PruebaImpresoraTickets.FolioDePrueba[^6..], StringComparison.Ordinal))
-            yield return $"  ✗ Parece el QR del ticket de prueba ({PruebaImpresoraTickets.FolioDePrueba}), pero llegó distinto: el lector y "
-                + "Windows no usan la misma distribución del teclado.";
-        else if (c.Texto.All(char.IsAsciiDigit) && c.Texto.Length is >= 11 and <= 13)
+        if (c.Texto.All(char.IsAsciiDigit) && c.Texto.Length is >= 11 and <= 13)
             yield return $"  Son {c.Texto.Length} cifras: compáralas con el código de ese producto en eleventa.";
     }
 

@@ -10,12 +10,6 @@ namespace PapeleriaPos.Herramientas.Tienda;
 /// </summary>
 public static class PruebaImpresoraTickets
 {
-    /// <summary>
-    /// El QR de cada ticket de prueba: un folio inventado con la forma de los de la caja 2 (su serie, guion y seis cifras). Al
-    /// escanearlo con <see cref="PruebaLector"/> se ve si el lector lo manda igual, y así es como se devuelve un ticket.
-    /// </summary>
-    public const string FolioDePrueba = "B-000123";
-
     public sealed record Vuelta(string Nombre, TimeSpan Separacion);
 
     /// <summary>Primero a la vez; después uno tras otro, casi juntos, como dos cajas que cobran casi al mismo tiempo.</summary>
@@ -68,7 +62,6 @@ public static class PruebaImpresoraTickets
         // Del largo de un ticket chico: si la impresora corta o revuelve dos tickets, se ve en los renglones numerados.
         .. Enumerable.Range(1, 10).Select(i => new Renglon($"Renglón {i} de 10 del ticket {numero}")),
         new Renglon(""),
-        new Qr(FolioDePrueba),
         new Renglon($"Fin del ticket {numero}", Alineacion.Centro, Negrita: true),
     ];
 
