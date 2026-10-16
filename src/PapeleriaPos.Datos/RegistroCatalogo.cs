@@ -535,11 +535,9 @@ public sealed class RegistroCatalogo(PosDbContext db)
 
     private static string Nombre(Producto p, Variante v) => string.IsNullOrWhiteSpace(v.Descripcion) ? p.Nombre : $"{p.Nombre} {v.Descripcion}";
 
-    /// <summary>Los EAN/UPC de fábrica tienen 8, 12, 13 o 14 dígitos; lo demás es interno, y también los EAN-13 que empiezan con 2.</summary>
+    /// <summary>El que llega como interno (el que dio «Código interno») lo es; los demás, según el código (<see cref="CodigoBarras.OrigenDe"/>).</summary>
     private static OrigenCodigo Origen(string codigo, OrigenCodigo indicado) =>
-        indicado == OrigenCodigo.Interno || !(codigo.Length is 8 or 12 or 13 or 14 && codigo.All(char.IsAsciiDigit)) || (codigo.Length == 13 && codigo[0] == '2')
-            ? OrigenCodigo.Interno
-            : OrigenCodigo.Fabrica;
+        indicado == OrigenCodigo.Interno ? OrigenCodigo.Interno : CodigoBarras.OrigenDe(codigo);
 
     // ── Código interno y alta rápida ─────────────────────────────────────────
 

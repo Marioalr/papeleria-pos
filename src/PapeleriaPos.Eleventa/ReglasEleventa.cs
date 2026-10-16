@@ -35,10 +35,6 @@ public static class ReglasEleventa
         return palabras.Any(p => p is "METRO" or "METROS" or "MT" or "MTS" or "XM" or "XMT" or "XMETRO");
     }
 
-    /// <summary>Numéricos de 8, 12, 13 o 14 dígitos son de fábrica (EAN, UPC); los demás, claves que puso la tienda.</summary>
-    public static OrigenCodigo OrigenDe(string codigo) =>
-        codigo.Length is 8 or 12 or 13 or 14 && codigo.All(char.IsAsciiDigit) ? OrigenCodigo.Fabrica : OrigenCodigo.Interno;
-
     public static bool EsEntero(double cantidad) => Math.Abs(cantidad - Math.Round(cantidad)) < 0.0005;
 
     /// <summary>Eleventa guarda los montos como FLOAT: se redondean al centavo.</summary>
