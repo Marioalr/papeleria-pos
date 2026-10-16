@@ -7,6 +7,11 @@ namespace PapeleriaPos.Pruebas.Eleventa;
 /// Una prueba contra un Firebird de verdad. Solo corre donde hay uno de prueba en esta misma PC (nunca el de la tienda),
 /// dicho en la variable <c>PRUEBAS_FIREBIRD</c> como «servidor:puerto» (por ejemplo «127.0.0.1:3055»); la clave va en
 /// <c>PRUEBAS_FIREBIRD_CLAVE</c> o es la de omisión de Firebird. En el CI no hay: ahí se salta.
+/// <para>
+/// Las bases de prueba las crea el servidor, en su propio disco: en la carpeta temporal de esta PC, o en la que diga
+/// <c>PRUEBAS_FIREBIRD_CARPETA</c> si el Firebird corre en un contenedor (por ejemplo «/firebird/data» con
+/// jacobalberty/firebird:2.5-ss, publicado solo en 127.0.0.1).
+/// </para>
 /// </summary>
 public sealed class FactConFirebirdAttribute : FactAttribute
 {
@@ -38,7 +43,10 @@ public sealed class EleventaDePrueba : IAsyncDisposable
     public static async Task<EleventaDePrueba> CrearAsync()
     {
         var variable = Environment.GetEnvironmentVariable("PRUEBAS_FIREBIRD")!.Split(':');
-        var archivo = Path.Combine(Path.GetTempPath(), $"eleventa-prueba-{Guid.NewGuid():N}.fdb");
+        var nombre = $"eleventa-prueba-{Guid.NewGuid():N}.fdb";
+        var archivo = Environment.GetEnvironmentVariable("PRUEBAS_FIREBIRD_CARPETA") is { Length: > 0 } carpeta
+            ? $"{carpeta.TrimEnd('/', '\\')}/{nombre}"
+            : Path.Combine(Path.GetTempPath(), nombre);
         var servidor = new ServidorEleventa(variable[0], archivo, "SYSDBA",
             Environment.GetEnvironmentVariable("PRUEBAS_FIREBIRD_CLAVE") is { Length: > 0 } clave ? clave : "masterkey",
             variable.Length > 1 ? int.Parse(variable[1]) : 3050);
