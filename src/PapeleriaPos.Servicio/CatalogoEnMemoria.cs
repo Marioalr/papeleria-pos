@@ -171,18 +171,19 @@ public sealed class CatalogoEnMemoria
         return new Indice(version, porVariante, porCodigo, new SinonimosDeBusqueda(sinonimos.Select(s => (s.Palabra, s.Equivale))));
     }
 
+    /// <summary>El producto de un código, con la versión del catálogo de la que salieron sus precios (entrega 5).</summary>
     public async Task<ProductoVentaDto?> PorCodigoAsync(PosDbContext db, string codigo, Guid sucursalId, CancellationToken ct = default)
     {
         var indice = await ActualAsync(db, ct);
         return indice.PorCodigo.TryGetValue(codigo.Trim(), out var x)
-            ? await ProductoAsync(db, indice.PorVariante[x.Variante], x.Presentacion, sucursalId, ct)
+            ? await ProductoAsync(db, indice.Version, indice.PorVariante[x.Variante], x.Presentacion, sucursalId, ct)
             : null;
     }
 
     public async Task<ProductoVentaDto?> PorVarianteAsync(PosDbContext db, Guid varianteId, Guid sucursalId, CancellationToken ct = default)
     {
         var indice = await ActualAsync(db, ct);
-        return indice.PorVariante.TryGetValue(varianteId, out var a) ? await ProductoAsync(db, a, null, sucursalId, ct) : null;
+        return indice.PorVariante.TryGetValue(varianteId, out var a) ? await ProductoAsync(db, indice.Version, a, null, sucursalId, ct) : null;
     }
 
     /// <summary>
@@ -257,7 +258,7 @@ public sealed class CatalogoEnMemoria
         var productos = indice.PorVariante.Values.Select(a => new ProductoVentaDto(
             a.VarianteId, a.Descripcion, a.Codigo, a.Impuesto, a.Unidad, a.LlevaInventario,
             a.LlevaInventario ? existencias.GetValueOrDefault(a.VarianteId) : null,
-            a.Presentaciones.First(p => p.EsBase), a.Presentaciones, a.Precios)).ToList();
+            a.Presentaciones.First(p => p.EsBase), a.Presentaciones, a.Precios, indice.Version)).ToList();
         return (indice.Version, productos, indice.PorCodigo.Select(c => new CodigoLocalDto(c.Key, c.Value.Variante, c.Value.Presentacion)).ToList());
     }
 
@@ -268,11 +269,13 @@ public sealed class CatalogoEnMemoria
         return (deSucursal.Count > 0 ? deSucursal : porUnidad.Where(p => p.SucursalId is null)).MinBy(p => p.CantidadMinimaMilesimas)?.PrecioCentavos ?? 0;
     }
 
-    private static async Task<ProductoVentaDto> ProductoAsync(PosDbContext db, Articulo a, Guid? presentacionId, Guid sucursalId, CancellationToken ct)
+    private static async Task<ProductoVentaDto> ProductoAsync(
+        PosDbContext db, long version, Articulo a, Guid? presentacionId, Guid sucursalId, CancellationToken ct)
     {
         var existencia = a.LlevaInventario ? (await ExistenciasAsync(db, [a.VarianteId], sucursalId, ct)).GetValueOrDefault(a.VarianteId) : (decimal?)null;
         var presentacion = a.Presentaciones.FirstOrDefault(p => p.Id == presentacionId) ?? a.Presentaciones.First(p => p.EsBase);
-        return new ProductoVentaDto(a.VarianteId, a.Descripcion, a.Codigo, a.Impuesto, a.Unidad, a.LlevaInventario, existencia, presentacion, a.Presentaciones, a.Precios);
+        return new ProductoVentaDto(a.VarianteId, a.Descripcion, a.Codigo, a.Impuesto, a.Unidad, a.LlevaInventario, existencia, presentacion, a.Presentaciones,
+            a.Precios, version);
     }
 
     private static async Task<Dictionary<Guid, decimal>> ExistenciasAsync(PosDbContext db, List<Guid> variantes, Guid sucursalId, CancellationToken ct) =>

@@ -339,7 +339,7 @@
                 </span>
             </div>
             <div class="vn-ticket">
-                @if (Actual.Venta.Lineas.Count == 0)
+                @if (Actual.Venta.Lineas.Count == 0 && Actual.Buscando.Count == 0)
                 {
                     <div class="vn-vacio">
                         <h3>Escanea el primer producto</h3>
@@ -361,6 +361,12 @@
                             <tr><th class="vn-col-cant">Cantidad</th><th>Descripción</th><th class="num vn-col-precio">Precio</th><th class="num vn-col-importe">Importe</th></tr>
                         </thead>
                         <tbody>
+                            @* Lo que no está en la copia de esta caja entra en su lugar como «buscando…» mientras se pregunta a la
+                               caja principal (entrega 5): los escaneos que siguen no lo esperan. *@
+                            @foreach (var buscando in BuscandoDespuesDe(null))
+                            {
+                                @RenglonBuscando(buscando)
+                            }
                             @for (var i = 0; i < Actual.Venta.Lineas.Count; i++)
                             {
                                 var indice = i;
@@ -450,6 +456,14 @@
                                         </td>
                                     </tr>
                                 }
+                                @foreach (var buscando in BuscandoDespuesDe(linea))
+                                {
+                                    @RenglonBuscando(buscando)
+                                }
+                            }
+                            @foreach (var buscando in BuscandoSinLugar())
+                            {
+                                @RenglonBuscando(buscando)
                             }
                         </tbody>
                     </table>
@@ -1364,7 +1378,8 @@
             var listos = new List<RapidoListo>();
             foreach (var rapido in (await Cliente.RapidosAsync(Caja.SucursalId)).Take(Rapido.Maximo))
             {
-                var producto = await Cliente.PorVarianteAsync(rapido.VarianteId, Caja.SucursalId);
+                // De la copia de la caja, si ya la tiene: sin una consulta por cada rápido.
+                var producto = Cliente.Foto?.PorVariante(rapido.VarianteId) ?? await Cliente.PorVarianteAsync(rapido.VarianteId, Caja.SucursalId);
                 listos.Add(new RapidoListo(rapido, producto, producto is null ? null : PrecioDelRapido(rapido, producto, Caja.SucursalId)));
             }
             _rapidos = listos;
@@ -1393,7 +1408,7 @@
     {
         if (indice < 0 || indice >= _rapidos.Count)
             return;
-        var (rapido, producto, _) = _rapidos[indice];
+        var (rapido, cargado, _) = _rapidos[indice];
         var texto = _captura.Texto.Trim();
         var veces = 1m;
         if (texto.Length > 0 && (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out veces) || veces <= 0))
@@ -1406,6 +1421,8 @@
         // En la cola, como un escaneo: en orden con ellos, y no cae en un ticket que se está cobrando.
         await _captura.EnTurnoAsync(async () =>
         {
+            // Como un escaneo: de la copia de la caja, con los precios de ahora; si no está, el que se cargó al entrar, o se pide.
+            var producto = Cliente.Foto?.PorVariante(rapido.VarianteId) ?? cargado;
             try
             {
                 producto ??= await Cliente.PorVarianteAsync(rapido.VarianteId, Caja.SucursalId);
@@ -1481,13 +1498,16 @@
         Avisar("Ticket en espera. Atiende al siguiente; lo retomas arriba o con F5.", error: false);
     }
 
-    /// <summary>Retomar un ticket en espera: el que se atendía pasa a la espera (si estaba vacío, se descarta).</summary>
+    /// <summary>
+    /// Retomar un ticket en espera: el que se atendía pasa a la espera (si estaba vacío, se descarta; no si se le pregunta
+    /// algo a la caja principal: su línea llega ahí).
+    /// </summary>
     private void Retomar(TicketAbierto ticket)
     {
         // Ya empezó el siguiente cliente: el cambio del anterior deja el panel.
         _cobrado = null;
         _menuEspera = false;
-        if (Actual.Venta.Lineas.Count == 0 && Actual != ticket)
+        if (Actual.Venta.Lineas.Count == 0 && Actual.Buscando.Count == 0 && Actual != ticket)
             _tickets.Remove(Actual);
         Cambiar(ticket);
         _enfocar = "#codigo";
@@ -1842,9 +1862,14 @@
         _cobrando = true;
         try
         {
+            var (ticket, total, _, lineas, _) = FotoDelTicket();
             using var apartado = await _captura.ApartarAsync(FotoDelTicket);
             if (apartado.LlegoAlgo)
-                return $"Llegó lo último que escaneaste: el total ahora es {Formato.Dinero(Actual.Venta.TotalCentavos)}. Revisa lo que te dio y vuelve a cobrar.";
+                // Un «buscando…» que no llegó (no existe, o la caja principal no contestó) no cambia el total: lo que pasó lo
+                // dice el aviso de la izquierda.
+                return ticket == Actual && total == Actual.Venta.TotalCentavos && lineas == Actual.Venta.Lineas.Count
+                    ? "Lo último que escaneaste no entró al ticket (el aviso de la izquierda dice por qué): cobra cuando esté completo."
+                    : $"Llegó lo último que escaneaste: el total ahora es {Formato.Dinero(Actual.Venta.TotalCentavos)}. Revisa lo que te dio y vuelve a cobrar.";
             await cobrar(apartado);
             return null;
         }
@@ -1854,9 +1879,12 @@
         }
     }
 
-    /// <summary>Lo que cambia si llega una línea mientras se espera para cobrar: el ticket, su total y lo que lleva.</summary>
-    private (TicketAbierto Ticket, long Total, decimal Articulos, int Lineas) FotoDelTicket() =>
-        (Actual, Actual.Venta.TotalCentavos, Actual.Venta.NumeroDeArticulos, Actual.Venta.Lineas.Count);
+    /// <summary>
+    /// Lo que cambia si llega una línea mientras se espera para cobrar: el ticket, su total, lo que lleva y lo que se le
+    /// pregunta a la caja principal.
+    /// </summary>
+    private (TicketAbierto Ticket, long Total, decimal Articulos, int Lineas, int Buscando) FotoDelTicket() =>
+        (Actual, Actual.Venta.TotalCentavos, Actual.Venta.NumeroDeArticulos, Actual.Venta.Lineas.Count, Actual.Buscando.Count);
 
     private async Task RevisarConteoAsync()
     {
@@ -1887,7 +1915,48 @@
 
         /// <summary>Se mandó a fiar y se perdió la respuesta: puede que ya esté guardado. Solo se cobra en línea, con el mismo Id.</summary>
         public bool FiadoSinConfirmar { get; set; }
+
+        /// <summary>
+        /// Los códigos que no están en la copia y se le preguntan a la caja principal (entrega 5): cada uno se ve en su
+        /// lugar como «buscando…». No son líneas de la venta: no cuentan en el total ni se cobran, ni se guardan en espera.
+        /// </summary>
+        public List<LineaBuscando> Buscando { get; } = [];
     }
+
+    /// <summary>
+    /// Un código que no está en la copia de esta caja, mientras se le pregunta a la caja principal: va después de
+    /// <see cref="Despues"/> (arriba de todo si no hay), y los que se escanean después van debajo de él.
+    /// </summary>
+    private sealed class LineaBuscando(string codigo, Cantidad cantidad, VentaLinea? despues, long numero)
+    {
+        public string Codigo { get; } = codigo;
+        public Cantidad Cantidad { get; } = cantidad;
+
+        /// <summary>La línea que estaba antes al escanearlo; vacío: arriba de todo.</summary>
+        public VentaLinea? Despues { get; set; } = despues;
+
+        /// <summary>En qué orden se escaneó: entre dos con la misma línea antes, el de antes va arriba.</summary>
+        public long Numero { get; } = numero;
+    }
+
+    private long _escaneosBuscados;
+
+    private IEnumerable<LineaBuscando> BuscandoDespuesDe(VentaLinea? linea) => Actual.Buscando.Where(b => b.Despues == linea);
+
+    /// <summary>Los que se quedaron sin la línea de antes (se quitó mientras se preguntaba): al final.</summary>
+    private IEnumerable<LineaBuscando> BuscandoSinLugar() =>
+        Actual.Buscando.Where(b => b.Despues is { } antes && !Actual.Venta.Lineas.Contains(antes));
+
+    private static RenderFragment RenglonBuscando(LineaBuscando buscando) =>
+        @<tr class="vn-buscando" aria-busy="true">
+            <td class="vn-col-cant"><span class="vn-paso-fijo">@Formato.Numero(buscando.Cantidad.EnUnidades)</span></td>
+            <td>
+                <div class="vn-nombre">Buscando…</div>
+                <div class="vn-sub"><code>@buscando.Codigo</code><span>no está en la copia de esta caja: se pregunta a la caja principal</span></div>
+            </td>
+            <td class="num vn-precio">—</td>
+            <td class="num vn-importe">—</td>
+        </tr>;
 
     private readonly List<TicketAbierto> _tickets = [];
     private TicketAbierto Actual => _tickets[_actual];
@@ -2670,7 +2739,9 @@
 
     /// <summary>
     /// "7501…" agrega una pieza; "3*7501…" agrega tres; "5*" cambia la cantidad del renglón seleccionado. El QR de un
-    /// ticket ("A-000123") abre la devolución.
+    /// ticket ("A-000123") abre la devolución. El código se busca en la copia de esta caja, también en línea (entrega 5): la
+    /// red no entra en el escaneo. Lo que no está en la copia entra como «buscando…» y se le pregunta a la caja principal en
+    /// segundo plano. Sin copia (el navegador sin base local), se pregunta como antes.
     /// </summary>
     private async Task ProcesarCodigoAsync(string texto)
     {
@@ -2698,6 +2769,17 @@
             }
         }
 
+        if (Cliente.Foto is { } foto)
+        {
+            if (foto.PorCodigo(texto) is { } enLaCopia)
+                Agregar(enLaCopia, null, cantidad);
+            else if (PareceNombre(texto))
+                await AgregarNombreAsync(texto, cantidad);
+            else
+                BuscarEnLaPrincipal(texto, cantidad);
+            return;
+        }
+
         try
         {
             var producto = await Cliente.PorCodigoAsync(texto, Caja.SucursalId);
@@ -2709,10 +2791,7 @@
             }
             if (producto is null)
             {
-                // Como el prototipo: bajo el aviso, darlo de alta o venderlo como artículo común, si sus permisos lo dejan.
-                var elige = Ve(AccionControlada.AltaRapida) || Ve(AccionControlada.ArticuloComun);
-                Avisar($"No existe «{texto}». Revisa el código{(elige ? " o elige:" : ".")}");
-                _codigoNuevo = texto;
+                NoExiste(texto);
                 return;
             }
             Agregar(producto, null, cantidad);
@@ -2721,6 +2800,119 @@
         {
             Avisar(ex.Message);
         }
+    }
+
+    /// <summary>Un nombre y Enter: se busca (todavía en el servicio, con la copia si no contesta) y se agrega el primero.</summary>
+    private async Task AgregarNombreAsync(string texto, Cantidad cantidad)
+    {
+        try
+        {
+            await AgregarPrimeroAsync(texto, cantidad);
+        }
+        catch (ErrorCaja ex)
+        {
+            Avisar(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Un código que no está en la copia de esta caja (un producto recién dado de alta en otra caja): entra en su lugar como
+    /// «buscando…» y se le pregunta a la caja principal en segundo plano, con medio segundo de plazo. La cola de escaneos no
+    /// lo espera; el cobro y las teclas del ticket, sí (<see cref="CapturaCodigo.EnVuelo"/>).
+    /// </summary>
+    private void BuscarEnLaPrincipal(string codigo, Cantidad cantidad)
+    {
+        var ticket = Actual;
+        var buscando = new LineaBuscando(codigo, cantidad, ticket.Venta.Lineas.LastOrDefault(), ++_escaneosBuscados);
+        ticket.Buscando.Add(buscando);
+        // Como al agregar: ya empezó el siguiente cliente, y el aviso de antes ya pasó.
+        (_cobrado, _avisoDelCobro, _mensaje) = (null, null, null);
+        _captura.EnVuelo(ResolverAsync(ticket, buscando));
+    }
+
+    /// <summary>
+    /// Lo que contestó la caja principal: el producto toma el lugar del «buscando…» (y queda en la foto de la copia); si no
+    /// existe, lo de siempre (darlo de alta o venderlo como artículo común, según los permisos); si no contestó a tiempo, el
+    /// renglón sale y se le dice al cajero que lo escanee otra vez.
+    /// </summary>
+    private async Task ResolverAsync(TicketAbierto ticket, LineaBuscando buscando)
+    {
+        var respuesta = CodigoDeLaPrincipal.NoContesto;
+        try
+        {
+            respuesta = await Cliente.BuscarEnLaPrincipalAsync(buscando.Codigo, Caja.SucursalId);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Lo que sea (una respuesta que no se entiende): como si no hubiera contestado. El renglón no se queda buscando.
+        }
+        finally
+        {
+            ticket.Buscando.Remove(buscando);
+        }
+        if (respuesta.Producto is { } producto)
+            AgregarEnSuLugar(ticket, buscando, producto);
+        else if (respuesta.Contesto)
+            NoExiste(buscando.Codigo);
+        else if (respuesta.Pregunto)
+            Avisar($"«{buscando.Codigo}» no está en la copia de esta caja y la caja principal no contestó: escanéalo otra vez en un momento.");
+        else
+        {
+            // Sin conexión: como antes, lo que sus permisos le dejan (el artículo común se vende sin conexión).
+            var elige = Ve(AccionControlada.AltaRapida) || Ve(AccionControlada.ArticuloComun);
+            Avisar($"«{buscando.Codigo}» no está en la copia de esta caja y no hay conexión con la caja principal. Revisa el código{(elige ? " o elige:" : ".")}");
+            _codigoNuevo = buscando.Codigo;
+        }
+        // Un ticket que ya no se atiende (F6 con el mouse mientras se preguntaba) se guarda en espera con su línea nueva.
+        if (ticket != Actual && respuesta.Producto is not null)
+            GuardarEspera();
+        StateHasChanged();
+    }
+
+    /// <summary>Como el prototipo: bajo el aviso, darlo de alta o venderlo como artículo común, si sus permisos lo dejan.</summary>
+    private void NoExiste(string codigo)
+    {
+        var elige = Ve(AccionControlada.AltaRapida) || Ve(AccionControlada.ArticuloComun);
+        Avisar($"No existe «{codigo}». Revisa el código{(elige ? " o elige:" : ".")}");
+        _codigoNuevo = codigo;
+    }
+
+    /// <summary>
+    /// El producto que llegó de la caja principal, donde estaba su «buscando…»: debajo de lo que se escaneó antes y arriba de
+    /// lo que se escaneó después. Si ya estaba en el ticket, suma a su línea, como cualquier escaneo. Lo seleccionado se
+    /// queda, salvo que la línea nueva quede al final (lo último que se escaneó).
+    /// </summary>
+    private void AgregarEnSuLugar(TicketAbierto ticket, LineaBuscando buscando, ProductoVentaDto producto)
+    {
+        var lineas = ticket.Venta.Lineas;
+        var seleccionada = ticket == Actual ? LineaSeleccionada : null;
+        var antes = lineas.Count;
+        VentaLinea linea;
+        try
+        {
+            linea = ticket.Venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(), buscando.Cantidad, producto.PreciosModelo());
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Avisar(ex.Message);
+            return;
+        }
+        DescuentoDelCliente(ticket, linea);
+        ticket.Productos[producto.VarianteId] = producto;
+        if (lineas.Count > antes)
+        {
+            lineas.Remove(linea);
+            var anterior = buscando.Despues is { } despues ? lineas.IndexOf(despues) : -1;
+            lineas.Insert(buscando.Despues is null ? 0 : anterior < 0 ? lineas.Count : anterior + 1, linea);
+            // Los que se escanearon después y esperaban detrás de la misma línea, ahora van detrás de esta.
+            foreach (var otro in ticket.Buscando.Where(b => b.Despues == buscando.Despues && b.Numero > buscando.Numero))
+                otro.Despues = linea;
+        }
+        if (ticket != Actual)
+            return;
+        (_cobrado, _avisoDelCobro) = (null, null);
+        _seleccion = seleccionada is null || lineas[^1] == linea ? lineas.IndexOf(linea) : lineas.IndexOf(seleccionada);
+        _ = Js.MostrarAsync($"#linea-{_seleccion}");
     }
 
     private void Agregar(ProductoVentaDto producto, Guid? presentacionId, Cantidad cantidad)
@@ -3316,10 +3508,12 @@
             : null;
 
     /// <summary>Con cliente con descuento, lo que se agrega al ticket lleva el suyo (el mayoreo ya sale solo del precio).</summary>
-    private void DescuentoDelCliente(VentaLinea linea)
+    private void DescuentoDelCliente(VentaLinea linea) => DescuentoDelCliente(Actual, linea);
+
+    private static void DescuentoDelCliente(TicketAbierto ticket, VentaLinea linea)
     {
-        if (Actual.Cliente is { DescuentoCentesimas: > 0 } cliente && !linea.EsImpresiones && linea.DescuentoCentesimas != cliente.DescuentoCentesimas)
-            Actual.Venta.DescontarLinea(linea, cliente.DescuentoCentesimas, null, cliente.MotivoDescuento());
+        if (ticket.Cliente is { DescuentoCentesimas: > 0 } cliente && !linea.EsImpresiones && linea.DescuentoCentesimas != cliente.DescuentoCentesimas)
+            ticket.Venta.DescontarLinea(linea, cliente.DescuentoCentesimas, null, cliente.MotivoDescuento());
     }
 
     // ── Alta rápida de un código que no existe ──────────────────────────────

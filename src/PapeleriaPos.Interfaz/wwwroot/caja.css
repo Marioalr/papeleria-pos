@@ -569,6 +569,10 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-paso button:hover { background: var(--vn-renglon); color: var(--vn-tinta); }
 .vn-paso span, .vn-paso-fijo { display: inline-block; min-width: 48px; text-align: center; font: 600 17px var(--vn-f-cifras); font-variant-numeric: tabular-nums; }
 .vn-nombre { font-size: 16.5px; font-weight: 600; line-height: 1.25; }
+/* Un código que no está en la copia de la caja, mientras se le pregunta a la caja principal (entrega 5). */
+.vn-ticket tr.vn-buscando { cursor: default; }
+.vn-ticket tr.vn-buscando td { color: var(--vn-tenue); background: var(--vn-hoja); }
+.vn-ticket tr.vn-buscando .vn-nombre { font-weight: 500; font-style: italic; }
 .vn-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 3px; font-size: 12.5px; color: var(--vn-tenue); }
 .vn-etiq { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; color: var(--vn-cobro); background: var(--vn-cobro-claro); }
 .vn-etiq.ambar { color: var(--vn-aviso); background: var(--vn-aviso-fondo); border-color: var(--vn-aviso-borde); }

@@ -37,16 +37,18 @@ public sealed class Contingencia
 
     private sealed record AutorizacionLocal(Guid AutorizadorId, AccionControlada Accion, long? MontoCentavos, DateTime VenceUtc);
 
-    /// <summary>El paquete con sus índices, para buscar y cobrar al instante.</summary>
+    /// <summary>
+    /// El paquete con sus índices, para buscar y cobrar al instante. Se arma fuera del hilo de la pantalla (miles de
+    /// productos): al abrir la caja y cada vez que baja una copia nueva.
+    /// </summary>
     private sealed class Copia
     {
         public Copia(PaqueteContingenciaDto p)
         {
             Paquete = p;
             PorVariante = p.Productos.ToDictionary(x => x.VarianteId);
-            PorCodigo = new Dictionary<string, CodigoLocalDto>(StringComparer.OrdinalIgnoreCase);
-            foreach (var c in p.Codigos)
-                PorCodigo.TryAdd(c.Codigo, c);
+            // Los códigos, en la foto del catálogo: el escaneo, en línea o sin conexión, resuelve igual (entrega 5).
+            Foto = FotoCatalogo.Armar(p);
             var codigos = p.Codigos.ToLookup(c => c.VarianteId);
             // Las familias de la búsqueda, igual que en línea: las marcas salen de esta copia del catálogo.
             var nombres = new LectorDeNombres(p.Productos.Select(x => x.Descripcion), p.Marcas);
@@ -87,7 +89,10 @@ public sealed class Contingencia
 
         public PaqueteContingenciaDto Paquete { get; }
         public Dictionary<Guid, ProductoVentaDto> PorVariante { get; }
-        public Dictionary<string, CodigoLocalDto> PorCodigo { get; }
+
+        /// <summary>Solo lo de esta copia: lo que llegó después de la caja principal va en la foto de la contingencia.</summary>
+        public FotoCatalogo Foto { get; }
+
         public Dictionary<Guid, string> Normalizado { get; }
 
         /// <summary>Las palabras de cada producto, para el error de dedo.</summary>
@@ -116,7 +121,14 @@ public sealed class Contingencia
     private readonly Lock _candado = new();
     private readonly Dictionary<Guid, AutorizacionLocal> _autorizaciones = [];
     private readonly Dictionary<string, (int Fallos, DateTime? Hasta)> _intentos = [];
-    private Copia? _copia;
+    private volatile Copia? _copia;
+
+    /// <summary>La foto del catálogo para escanear: la de la copia, con lo que llegó después encima (<see cref="Foto"/>).</summary>
+    private FotoCatalogo? _foto;
+
+    /// <summary>La copia guardada en la base local, que se lee y se arma fuera del hilo de la pantalla al abrir la caja.</summary>
+    private readonly Task _carga;
+
     private DateTime _paqueteBajadoUtc = DateTime.MinValue;
     private DateTime _ultimoReintentoUtc = DateTime.MinValue;
     private bool _responde = true;
@@ -133,11 +145,67 @@ public sealed class Contingencia
         _http = new Transporte(http, conexion);
         _conexion = conexion;
         _reloj = reloj ?? TimeProvider.System;
-        if (almacen.Leer<PaqueteContingenciaDto>("paquete") is { } paquete)
-            _copia = new Copia(paquete);
         _saldos = almacen.Leer<SaldosCreditoDto>("saldos");
         PilotoEleventa = almacen.Leer<bool?>(ClavePilotoEleventa) ?? false;
         (Pendientes, ConError, UltimoError, ImpresionesPorSubir) = almacen.Contar();
+        // La copia trae miles de productos: leerla y armar sus índices ya no detiene la ventana al abrir (entrega 5). Lo que
+        // la necesita antes de que esté (vender sin conexión al abrir) la espera.
+        _carga = Task.Run(CargarCopiaGuardada);
+    }
+
+    private void CargarCopiaGuardada()
+    {
+        try
+        {
+            if (_almacen.Leer<PaqueteContingenciaDto>("paquete") is { } paquete)
+                Poner(new Copia(paquete));
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or Microsoft.Data.Sqlite.SqliteException or InvalidOperationException
+                                       or ArgumentException or IOException)
+        {
+            // Una copia que no se puede leer es como no tenerla: el primer latido con conexión baja otra.
+        }
+    }
+
+    /// <summary>La copia nueva y su foto, de un jalón: lo que llegó de la caja principal y es más nuevo que ella se queda encima.</summary>
+    private void Poner(Copia copia)
+    {
+        _copia = copia;
+        FotoCatalogo? antes;
+        do
+            antes = Volatile.Read(ref _foto);
+        while (Interlocked.CompareExchange(ref _foto, copia.Foto.ConLoNuevoDe(antes), antes) != antes);
+    }
+
+    /// <summary>La copia, esperando a que termine de cargarse si la caja recién abrió.</summary>
+    private Copia? CopiaCargada()
+    {
+        if (_copia is null && !_carga.IsCompleted)
+            ((IAsyncResult)_carga).AsyncWaitHandle.WaitOne();
+        return _copia;
+    }
+
+    /// <summary>
+    /// La foto del catálogo de esta caja para escanear sin la red (entrega 5): la copia, más lo que llegó después de la caja
+    /// principal. Vacía mientras la caja no tiene copia (o mientras la lee al abrir): entonces se pregunta como antes.
+    /// </summary>
+    public FotoCatalogo? Foto => Volatile.Read(ref _foto);
+
+    /// <summary>
+    /// Un producto que la copia no tenía (recién dado de alta en otra caja) o los precios de ahora de uno que sí tenía (los
+    /// dijo el cobro): queda en la foto, encima de la copia, hasta que baje una copia que ya lo traiga.
+    /// </summary>
+    /// <param name="codigo">El código con que se escaneó, si la copia no lo tiene.</param>
+    public void AgregarALaFoto(ProductoVentaDto producto, string? codigo = null)
+    {
+        FotoCatalogo? antes;
+        do
+        {
+            antes = Volatile.Read(ref _foto);
+            if (antes is null)
+                return;
+        }
+        while (Interlocked.CompareExchange(ref _foto, antes.Con(producto, codigo), antes) != antes);
     }
 
     /// <summary>Cambió la conexión o la bandeja: la pantalla vuelve a dibujar la franja.</summary>
@@ -169,7 +237,7 @@ public sealed class Contingencia
         ? $"La base de esta caja no quedó lista contra apagones ({problema.TrimEnd('.')}): avisa al dueño."
         : null;
 
-    public PaqueteContingenciaDto? Paquete => _copia?.Paquete;
+    public PaqueteContingenciaDto? Paquete => CopiaCargada()?.Paquete;
 
     /// <summary>Los últimos saldos del crédito que mandó la caja principal (sin ellos, no se fía ni se abona sin conexión).</summary>
     public SaldosCreditoDto? Saldos => _saldos;
@@ -242,9 +310,16 @@ public sealed class Contingencia
         }
     }
 
-    /// <summary>Pregunta si la caja principal contesta; si sí, sube lo pendiente y renueva la copia si cambió.</summary>
-    public async Task LatidoAsync()
+    /// <summary>
+    /// Pregunta si la caja principal contesta; si sí, sube lo pendiente y renueva la copia si cambió. Corre fuera del hilo
+    /// de la pantalla aunque lo pida ella (la franja de la prueba): bajar la copia y armar su foto no la detiene.
+    /// </summary>
+    public Task LatidoAsync() => Task.Run(LatirUnaVezAsync);
+
+    private async Task LatirUnaVezAsync()
     {
+        // Primero la copia guardada: la que baje después es más nueva.
+        await _carga.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         if (!_conexion.Lista || (_conexion.CajaId is null && _conexion.PideAlta))
             return;
         EstadoServicioDto? estado;
@@ -356,9 +431,15 @@ public sealed class Contingencia
         }
     }
 
-    /// <summary>Baja la copia para vender sin conexión: catálogo, usuarios con sus permisos, ticket y el último folio.</summary>
-    public async Task ActualizarPaqueteAsync()
+    /// <summary>
+    /// Baja la copia para vender sin conexión: catálogo, usuarios con sus permisos, ticket y el último folio. Todo fuera del
+    /// hilo de la pantalla: leerla, guardarla y armar sus índices y su foto; al final se cambia por la anterior de un jalón.
+    /// </summary>
+    public Task ActualizarPaqueteAsync() => Task.Run(BajarCopiaAsync);
+
+    private async Task BajarCopiaAsync()
     {
+        await _carga.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         if (_conexion.CajaId is not { } caja)
             return;
         try
@@ -369,7 +450,7 @@ public sealed class Contingencia
             {
                 lote.Guardar("paquete", paquete).Guardar("folio", Math.Max(UltimoFolio, paquete.UltimoFolio)).Confirmar();
             }
-            _copia = new Copia(paquete);
+            Poner(new Copia(paquete));
             _paqueteBajadoUtc = Ahora;
             Cambio?.Invoke();
         }
@@ -480,7 +561,7 @@ public sealed class Contingencia
 
     // ── Lo que se hace sin conexión ─────────────────────────────────────────
 
-    private Copia Datos => _copia ?? throw new ErrorCaja(
+    private Copia Datos => CopiaCargada() ?? throw new ErrorCaja(
         "No hay conexión con la caja principal y esta caja todavía no tiene su copia para vender sin ella.", "sin-conexion");
 
     private CajaDto Caja => Datos.Paquete.Caja;
@@ -597,7 +678,7 @@ public sealed class Contingencia
             return null;
         // Si no viene en los saldos, no debe nada: sus condiciones salen de la copia.
         var delServicio = saldos.Cuentas.FirstOrDefault(c => c.ClienteId == clienteId);
-        if (delServicio is null && _copia is not null && Clientes().FirstOrDefault(c => c.Id == clienteId) is { } cliente)
+        if (delServicio is null && CopiaCargada() is not null && Clientes().FirstOrDefault(c => c.Id == clienteId) is { } cliente)
             delServicio = new CreditoClienteDto(clienteId, 0, 0, cliente.LimiteCreditoCentavos, cliente.PlazoCreditoDias, []);
         return delServicio is null ? null
             : CuentaCredito.Estimar(delServicio, _almacen.CuentaPropia(clienteId).Where(f => f.Id != sin).Select(f => f.Local));
@@ -690,12 +771,10 @@ public sealed class Contingencia
         return corte;
     }
 
-    public ProductoVentaDto? PorCodigo(string codigo) =>
-        Datos.PorCodigo.TryGetValue(codigo.Trim(), out var c) && Datos.PorVariante.TryGetValue(c.VarianteId, out var p)
-            ? p with { Presentacion = p.Presentaciones.FirstOrDefault(x => x.Id == c.PresentacionId) ?? p.Presentacion }
-            : null;
+    /// <summary>Sin conexión, solo con lo de la copia (cobrar sin conexión solo conoce lo de ella).</summary>
+    public ProductoVentaDto? PorCodigo(string codigo) => Datos.Foto.PorCodigo(codigo);
 
-    public ProductoVentaDto? PorVariante(Guid varianteId) => Datos.PorVariante.GetValueOrDefault(varianteId);
+    public ProductoVentaDto? PorVariante(Guid varianteId) => Datos.Foto.PorVariante(varianteId);
 
     /// <summary>Igual que en el servicio: cada palabra tiene que aparecer, sin importar acentos ni orden.</summary>
     public List<ResultadoBusquedaDto> Buscar(string texto, int maximo = 30)
@@ -921,7 +1000,7 @@ public sealed class Contingencia
     /// <summary>Lo fiado que se manda en línea; si el servicio lo rechaza, se quita (<see cref="QuitarCredito"/>).</summary>
     public void AnotarFiado(Guid ventaId, Guid clienteId, long creditoCentavos)
     {
-        var plazo = Credito(clienteId)?.PlazoDias ?? (_copia is null ? null : Clientes().FirstOrDefault(c => c.Id == clienteId)?.PlazoCreditoDias)
+        var plazo = Credito(clienteId)?.PlazoDias ?? (CopiaCargada() is null ? null : Clientes().FirstOrDefault(c => c.Id == clienteId)?.PlazoCreditoDias)
             ?? ClienteRegistrado.PlazoPorOmision;
         using var lote = _almacen.Lote();
         lote.Credito(ventaId, clienteId, creditoCentavos, Ahora, CuentaCredito.Vence(Ahora, plazo)).Confirmar();

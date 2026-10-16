@@ -20,9 +20,14 @@ public sealed record PrecioDto(Guid Id, Guid? PresentacionId, Guid? SucursalId, 
 
 /// <summary>Un producto listo para agregarse a la venta: con sus presentaciones y precios.</summary>
 /// <param name="Presentacion">La que corresponde al código escaneado (la base si se buscó por nombre).</param>
+/// <param name="Version">
+/// La versión del catálogo de la que salieron sus precios (entrega 5): la de la copia de la caja, o la del servicio cuando se
+/// lo pidió. El cobro la lleva, para que el servicio sepa si sus precios cambiaron después. Vacía en un servicio de antes.
+/// </param>
 public sealed record ProductoVentaDto(
     Guid VarianteId, string Descripcion, string? Codigo, Impuesto Impuesto, UnidadBase Unidad, bool LlevaInventario,
-    decimal? Existencia, PresentacionDto Presentacion, IReadOnlyList<PresentacionDto> Presentaciones, IReadOnlyList<PrecioDto> Precios)
+    decimal? Existencia, PresentacionDto Presentacion, IReadOnlyList<PresentacionDto> Presentaciones, IReadOnlyList<PrecioDto> Precios,
+    long? Version = null)
 {
     public ProductoEnVenta ParaVenta() => new(VarianteId, Descripcion, Impuesto, Unidad, LlevaInventario);
 

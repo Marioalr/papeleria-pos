@@ -21,6 +21,17 @@ public sealed class ErrorCaja(string mensaje, string? codigo = null) : Exception
     public string? Codigo { get; } = codigo;
 }
 
+/// <summary>Lo que dijo la caja principal de un código que no está en la copia de esta caja.</summary>
+/// <param name="Producto">El producto, si lo tiene.</param>
+/// <param name="Contesto">Contestó a tiempo (sin producto: no existe).</param>
+/// <param name="Pregunto">Se le preguntó; no, si esta caja ya sabe que la caja principal no contesta.</param>
+public sealed record CodigoDeLaPrincipal(ProductoVentaDto? Producto, bool Contesto, bool Pregunto = true)
+{
+    public static readonly CodigoDeLaPrincipal NoExiste = new(null, Contesto: true);
+    public static readonly CodigoDeLaPrincipal NoContesto = new(null, Contesto: false);
+    public static readonly CodigoDeLaPrincipal SinConexion = new(null, Contesto: false, Pregunto: false);
+}
+
 /// <summary>A qué servicio habla esta PC y como qué caja. La ventana de Windows la guarda al dar de alta la caja.</summary>
 public sealed class ConexionCaja
 {
@@ -189,6 +200,45 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<ProductoVentaDto?> PorCodigoAsync(string codigo, Guid sucursalId) =>
         ConRespaldoAsync(() => _http.GetAsync<ProductoVentaDto>($"api/productos/codigo/{Uri.EscapeDataString(codigo)}?sucursalId={sucursalId}",
             noEncontradoEsNulo: true), l => l.PorCodigo(codigo));
+
+    /// <summary>
+    /// La foto del catálogo de la copia de esta caja: el escaneo busca aquí, sin la red, también en línea (entrega 5). Vacía
+    /// en el navegador sin base local y mientras la caja no tiene copia: entonces el código se pregunta como antes.
+    /// </summary>
+    public FotoCatalogo? Foto => contingencia?.Foto;
+
+    /// <summary>
+    /// Cuánto se espera a la caja principal por un código que no está en la copia (docs/propuesta-interfaz.md,
+    /// «Rendimiento»: medio segundo). Pasado eso, la línea sale y se le dice al cajero que lo escanee otra vez.
+    /// </summary>
+    public static readonly TimeSpan PlazoPorOmision = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>El de <see cref="PlazoPorOmision"/>; las pruebas lo cambian para no depender de lo que tarda la PC.</summary>
+    public TimeSpan PlazoDeLaPrincipal { get; init; } = PlazoPorOmision;
+
+    /// <summary>
+    /// Un código que no está en la copia (un producto recién dado de alta en otra caja): se pregunta a la caja principal en
+    /// segundo plano, con <see cref="PlazoDeLaPrincipal"/>. Si lo tiene, queda en la foto para el siguiente escaneo. No
+    /// cambia a sin conexión si no contesta a tiempo: eso lo decide el latido. Sin conexión, ni pregunta.
+    /// </summary>
+    public async Task<CodigoDeLaPrincipal> BuscarEnLaPrincipalAsync(string codigo, Guid sucursalId)
+    {
+        if (contingencia is { ServidorResponde: false })
+            return CodigoDeLaPrincipal.SinConexion;
+        try
+        {
+            var producto = await _http.GetAsync<ProductoVentaDto>($"api/productos/codigo/{Uri.EscapeDataString(codigo)}?sucursalId={sucursalId}",
+                noEncontradoEsNulo: true, espera: PlazoDeLaPrincipal);
+            if (producto is null)
+                return CodigoDeLaPrincipal.NoExiste;
+            contingencia?.AgregarALaFoto(producto, codigo);
+            return new CodigoDeLaPrincipal(producto, Contesto: true);
+        }
+        catch (ErrorCaja)
+        {
+            return CodigoDeLaPrincipal.NoContesto;
+        }
+    }
 
     public Task<ProductoVentaDto?> PorVarianteAsync(Guid varianteId, Guid sucursalId) =>
         ConRespaldoAsync(() => _http.GetAsync<ProductoVentaDto>($"api/productos/{varianteId}?sucursalId={sucursalId}", noEncontradoEsNulo: true),
