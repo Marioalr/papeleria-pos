@@ -72,6 +72,12 @@ public sealed class CatalogoEnMemoria
         _elegidoCargado = true;
     }
 
+    /// <summary>
+    /// Cuántas veces se vendió cada variante en 90 días, lo mismo con que ordena la búsqueda: la página de Productos abre con
+    /// lo más vendido primero (entrega 8). Se calcula una vez al día, así que pedirlo no cuesta.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, int>> VecesVendidoAsync(PosDbContext db, CancellationToken ct = default) => await VendidosAsync(db, ct);
+
     private async Task<Dictionary<Guid, int>> VendidosAsync(PosDbContext db, CancellationToken ct)
     {
         var ahora = DateTime.UtcNow;

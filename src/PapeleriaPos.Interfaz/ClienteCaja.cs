@@ -111,6 +111,10 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
             async () => await _http.GetAsync<List<PermisoDeSesion>>($"api/usuarios/{usuarioId}/permisos?sucursalId={sucursalId}") ?? [],
             l => l.PermisosDeSesion(usuarioId));
 
+    /// <summary>Quién puede hacer algo sin pedir autorización, por su nombre: se le dice a quien no lo tiene (entrega 8).</summary>
+    public Task<List<QuienAutoriza>> QuienesPuedenAsync(Guid sucursalId, AccionControlada accion) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<QuienAutoriza>>($"api/sucursales/{sucursalId}/quienes-pueden?accion={accion}") ?? []);
+
     public Task<AutorizacionDto> AutorizarAsync(SolicitudAutorizacion solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<AutorizacionDto>("api/autorizaciones", solicitud), l => l.Autorizar(solicitud));
 
@@ -355,6 +359,18 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<List<MovimientoKardexDto>> KardexAsync(Guid varianteId, Guid sucursalId) =>
         ConRespaldoAsync(async () => await _http.GetAsync<List<MovimientoKardexDto>>($"api/catalogo/variantes/{varianteId}/kardex?sucursalId={sucursalId}") ?? []);
 
+    /// <summary>La lista de la página de Productos (entrega 8): abre llena, lo más vendido primero; los primeros <paramref name="maximo"/>.</summary>
+    public Task<ListaProductosDto> ListaProductosAsync(Guid sucursalId, Guid usuarioId, string? texto, FiltroProductos filtro, Guid? departamentoId,
+        bool inactivos, int maximo) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<ListaProductosDto>(
+            $"api/catalogo/lista?sucursalId={sucursalId}&usuarioId={usuarioId}&q={Uri.EscapeDataString(texto ?? "")}&filtro={filtro}"
+            + (departamentoId is { } d ? $"&departamentoId={d}" : "") + $"&inactivos={inactivos}&maximo={maximo}"))!);
+
+    /// <summary>Los últimos movimientos del kardex de una variante, con lo que quedó después de cada uno (el detalle de Productos).</summary>
+    public Task<List<MovimientoProductoDto>> UltimosMovimientosAsync(Guid varianteId, Guid sucursalId, int maximo = 8) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<MovimientoProductoDto>>(
+            $"api/catalogo/variantes/{varianteId}/movimientos?sucursalId={sucursalId}&maximo={maximo}") ?? []);
+
     public Task<ProductoVentaDto> AltaRapidaAsync(SolicitudAltaRapida solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<ProductoVentaDto>("api/catalogo/alta-rapida", solicitud));
 
@@ -531,6 +547,10 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     public Task<HojaCodigosDto> PrepararHojaCodigosAsync(Guid sucursalId, SolicitudPrepararHojaCodigos solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<HojaCodigosDto>($"api/sucursales/{sucursalId}/hoja-codigos/preparar", solicitud));
+
+    /// <summary>Lo pendiente de cada tarea del inventario (solo cuentas), para sus tarjetas (entrega 8).</summary>
+    public Task<PendientesInventarioDto> PendientesInventarioAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<PendientesInventarioDto>($"api/sucursales/{sucursalId}/inventario/pendientes"))!);
 
     public Task<SugeridoDto> SugeridoAsync(Guid sucursalId, Guid usuarioId) =>
         ConRespaldoAsync(async () => (await _http.GetAsync<SugeridoDto>($"api/sucursales/{sucursalId}/sugerido?usuarioId={usuarioId}"))!);

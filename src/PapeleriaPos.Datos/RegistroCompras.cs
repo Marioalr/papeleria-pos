@@ -21,6 +21,25 @@ public sealed class RegistroCompras(PosDbContext db)
 {
     private DateTime Ahora => db.Reloj.GetUtcNow().UtcDateTime;
 
+    // ── Lo pendiente de cada tarea, para las tarjetas del inventario (entrega 8) ──
+
+    /// <summary>
+    /// Cuántas compras se están contando o esperan su nota, cuántas órdenes siguen abiertas (y cuántas ya llevan productos:
+    /// lo que se espera que llegue) y cuántos departamentos se cuentan completos. Solo cuentas, sin montos.
+    /// </summary>
+    public async Task<PendientesInventarioDto> PendientesAsync(Guid sucursalId, CancellationToken ct = default)
+    {
+        var compras = await db.Compras.AsNoTracking()
+            .Where(c => c.SucursalId == sucursalId && (c.Estado == EstadoCompra.Recibiendo || c.Estado == EstadoCompra.PorCostear))
+            .GroupBy(c => c.Estado).Select(g => new { Estado = g.Key, Cuantas = g.Count() }).ToDictionaryAsync(x => x.Estado, x => x.Cuantas, ct);
+        var ordenes = await db.OrdenesCompra.AsNoTracking().Where(o => o.SucursalId == sucursalId && o.Estado == EstadoOrden.Abierta)
+            .Select(o => o.Renglones.Count).ToListAsync(ct);
+        var conteos = await db.ConteosDepartamento.AsNoTracking()
+            .CountAsync(c => c.SucursalId == sucursalId && c.Estado == EstadoConteoDepartamento.Abierto, ct);
+        return new PendientesInventarioDto(compras.GetValueOrDefault(EstadoCompra.Recibiendo), compras.GetValueOrDefault(EstadoCompra.PorCostear),
+            ordenes.Count, ordenes.Count(n => n > 0), conteos);
+    }
+
     // ── Proveedores ──────────────────────────────────────────────────────────
 
     public async Task<List<ProveedorDto>> ProveedoresAsync(bool conInactivos, CancellationToken ct = default) =>

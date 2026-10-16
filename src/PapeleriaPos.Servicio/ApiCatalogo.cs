@@ -34,6 +34,17 @@ public static class ApiCatalogo
         api.MapGet("/variantes/{varianteId:guid}/kardex", (Guid varianteId, Guid sucursalId, PosDbContext db) =>
             new RegistroCatalogo(db).KardexAsync(varianteId, sucursalId));
 
+        // La página de Productos (entrega 8): la lista que abre llena, con lo más vendido primero, y los últimos movimientos
+        // del producto elegido.
+        api.MapGet("/lista", async (Guid sucursalId, Guid usuarioId, string? q, string? filtro, Guid? departamentoId, bool? inactivos, int? maximo,
+            PosDbContext db, CatalogoEnMemoria catalogo) =>
+            await new RegistroCatalogo(db).ListaAsync(sucursalId, usuarioId, q,
+                Enum.TryParse<FiltroProductos>(filtro, ignoreCase: true, out var f) ? f : FiltroProductos.Todos, departamentoId, inactivos ?? false,
+                await catalogo.VecesVendidoAsync(db), maximo ?? 50));
+
+        api.MapGet("/variantes/{varianteId:guid}/movimientos", (Guid varianteId, Guid sucursalId, int? maximo, PosDbContext db) =>
+            new RegistroCatalogo(db).UltimosMovimientosAsync(varianteId, sucursalId, maximo ?? 8));
+
         api.MapPost("/productos", async (SolicitudGuardarProducto s, PosDbContext db) =>
         {
             var registro = new RegistroCatalogo(db);

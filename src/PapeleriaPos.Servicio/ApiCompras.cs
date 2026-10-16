@@ -10,6 +10,10 @@ public static class ApiCompras
     {
         var api = app.MapGroup("/api").ConErrores().SoloSuCaja();
 
+        // Las tarjetas del inventario (entrega 8): lo pendiente de cada tarea, solo cuentas.
+        api.MapGet("/sucursales/{sucursalId:guid}/inventario/pendientes", (Guid sucursalId, PosDbContext db) =>
+            new RegistroCompras(db).PendientesAsync(sucursalId));
+
         api.MapGet("/proveedores", (bool? inactivos, PosDbContext db) => new RegistroCompras(db).ProveedoresAsync(inactivos ?? false));
 
         api.MapPost("/proveedores", (SolicitudGuardarProveedor s, PosDbContext db) => new RegistroCompras(db).GuardarProveedorAsync(s));

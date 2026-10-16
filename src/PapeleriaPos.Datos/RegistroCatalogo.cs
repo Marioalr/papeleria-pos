@@ -3,6 +3,7 @@ using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Usuarios;
 using PapeleriaPos.Nucleo.Ventas;
 
@@ -120,6 +121,168 @@ public sealed class RegistroCatalogo(PosDbContext db)
         }
         resultado.Reverse();
         return resultado.Take(maximo).ToList();
+    }
+
+    // ── La página de Productos (entrega 8) ───────────────────────────────────
+
+    /// <summary>
+    /// La lista de la página de Productos, que abre llena (docs/propuesta-interfaz.md, «F3 Productos abre vacío hasta que se
+    /// busca»). Sin texto, primero lo más vendido en 90 días (<paramref name="vendidos"/>, lo mismo con que la búsqueda de la
+    /// venta ordena lo que el texto no distingue) y luego por nombre; con texto, antes el código exacto y lo que empieza con lo
+    /// escrito. Cada palabra escrita va en el nombre, la marca, el departamento o un código, como en el prototipo. Trae los
+    /// primeros <paramref name="maximo"/> y cuántos hay. El margen bajo y el margen de cada uno, solo para quien ve la
+    /// utilidad: el servicio lo revisa aquí.
+    /// </summary>
+    public async Task<ListaProductosDto> ListaAsync(
+        Guid sucursalId, Guid usuarioId, string? texto, FiltroProductos filtro, Guid? departamentoId, bool conInactivos,
+        IReadOnlyDictionary<Guid, int> vendidos, int maximo = 50, CancellationToken ct = default)
+    {
+        var veUtilidad = await new ServicioControl(db).PuedeAsync(usuarioId, AccionControlada.VerUtilidad, ct);
+        if (filtro == FiltroProductos.MargenBajo && !veUtilidad)
+            throw new PermisoRequerido(AccionControlada.VerUtilidad, NivelPermiso.NoPermitido,
+                "El margen lo ve quien tiene el permiso «Ver costos, utilidad y margen».");
+        maximo = Math.Clamp(maximo, 1, 500);
+
+        var consulta = db.Productos.AsNoTracking().AsQueryable();
+        if (!conInactivos)
+            consulta = consulta.Where(p => p.Activo);
+        var todos = await consulta
+            .Select(p => new
+            {
+                p.Id, p.Nombre, Marca = p.Marca == null ? null : p.Marca.Nombre, p.DepartamentoId, Departamento = p.Departamento!.Nombre,
+                p.Activo, p.PorCompletar, p.Tipo,
+                Variantes = p.Variantes.Select(v => new { v.Id, v.Descripcion, v.Activa }).ToList(),
+            })
+            .ToListAsync(ct);
+        var porCompletar = todos.Count(p => p.PorCompletar);
+
+        var codigos = (await db.CodigosBarras.AsNoTracking()
+                .Select(c => new { c.Codigo, c.Presentacion!.VarianteId, c.Presentacion.EsBase }).ToListAsync(ct))
+            .ToLookup(c => c.VarianteId);
+        var existencias = await db.Existencias.AsNoTracking().Where(e => e.SucursalId == sucursalId)
+            .ToDictionaryAsync(e => e.VarianteId, e => (e.Cantidad, e.CostoPromedio), ct);
+        // La primera variante, la que se ve en la lista: las activas primero y por nombre, como en la ficha.
+        static Guid? Primera<T>(IEnumerable<T> variantes, Func<T, Guid> id, Func<T, bool> activa, Func<T, string> descripcion) =>
+            variantes.OrderByDescending(activa).ThenBy(descripcion, StringComparer.CurrentCultureIgnoreCase).Select(v => (Guid?)id(v)).FirstOrDefault();
+
+        var productos = todos.Select(p => new
+            {
+                Producto = p,
+                Primera = Primera(p.Variantes, v => v.Id, v => v.Activa, v => v.Descripcion),
+                Codigos = p.Variantes.SelectMany(v => codigos[v.Id].Select(c => c.Codigo)).ToList(),
+                Vendidos = p.Variantes.Sum(v => vendidos.GetValueOrDefault(v.Id)),
+            })
+            .Where(x => departamentoId is not { } d || x.Producto.DepartamentoId == d)
+            .ToList();
+
+        var consultaTexto = Texto.Normalizar(texto ?? "");
+        if (consultaTexto.Length > 0)
+        {
+            var palabras = consultaTexto.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            productos = productos.Where(x =>
+            {
+                var todo = Texto.Normalizar($"{x.Producto.Nombre} {x.Producto.Marca} {x.Producto.Departamento} {string.Join(" ", x.Codigos)}");
+                return palabras.All(todo.Contains);
+            }).ToList();
+        }
+
+        // El margen de su primera variante, para el filtro y para quien lo ve: precio de menudeo contra costo promedio.
+        var primeras = productos.Where(x => x.Primera is not null).Select(x => x.Primera!.Value).ToList();
+        var menudeos = (await db.Precios.AsNoTracking()
+                .Where(x => x.PresentacionId == null && x.SucursalId == null).Select(x => new { x.VarianteId, x.CantidadMinima, x.PrecioCentavos })
+                .ToListAsync(ct))
+            .GroupBy(x => x.VarianteId).ToDictionary(g => g.Key, g => g.MinBy(x => x.CantidadMinima)!.PrecioCentavos);
+        var general = AlertasTelegram.Configuracion(db, sucursalId).MargenMinimoCentesimas;
+        var minimos = await db.Departamentos.AsNoTracking().ToDictionaryAsync(d => d.Id, d => d.MargenMinimoCentesimas, ct);
+        (int Margen, int Minimo)? MargenDe(Guid departamento, Guid? variante)
+        {
+            if (variante is not { } v || !menudeos.TryGetValue(v, out var precio) || precio <= 0
+                || !existencias.TryGetValue(v, out var e) || e.CostoPromedio is not { } costo)
+                return null;
+            return (Margen.Calcular(precio, costo), minimos.GetValueOrDefault(departamento) ?? general);
+        }
+        decimal ExistenciaDe(Guid? variante) => variante is { } v && existencias.TryGetValue(v, out var e) ? e.Cantidad.EnUnidades : 0;
+
+        productos = filtro switch
+        {
+            FiltroProductos.PorCompletar => productos.Where(x => x.Producto.PorCompletar).ToList(),
+            FiltroProductos.PocaExistencia => productos
+                .Where(x => x.Producto.Tipo == TipoProducto.Mercancia && x.Primera is not null && ExistenciaDe(x.Primera) <= PocaExistencia.Hasta).ToList(),
+            FiltroProductos.MargenBajo => productos
+                .Where(x => MargenDe(x.Producto.DepartamentoId, x.Primera) is { } m && m.Margen < m.Minimo).ToList(),
+            _ => productos,
+        };
+
+        var crudo = (texto ?? "").Trim();
+        var ordenados = productos
+            .OrderByDescending(x => crudo.Length > 0 && x.Codigos.Any(c => string.Equals(c, crudo, StringComparison.OrdinalIgnoreCase)))
+            .ThenByDescending(x => consultaTexto.Length > 0 && Texto.Normalizar(x.Producto.Nombre).StartsWith(consultaTexto, StringComparison.Ordinal))
+            .ThenByDescending(x => x.Vendidos)
+            .ThenBy(x => x.Producto.Nombre, StringComparer.CurrentCultureIgnoreCase)
+            .Take(maximo)
+            .ToList();
+
+        return new ListaProductosDto(ordenados.Select(x =>
+            {
+                var p = x.Producto;
+                var servicio = p.Tipo != TipoProducto.Mercancia;
+                var margen = veUtilidad ? MargenDe(p.DepartamentoId, x.Primera) : null;
+                var codigo = x.Primera is { } v ? codigos[v].OrderByDescending(c => c.EsBase).Select(c => c.Codigo).FirstOrDefault() : null;
+                return new ProductoEnListaDto(p.Id, p.Nombre, p.Marca, p.Departamento, p.Variantes.Count, codigo,
+                    x.Primera is { } w && menudeos.TryGetValue(w, out var precio) ? precio : null,
+                    servicio || x.Primera is null ? null : ExistenciaDe(x.Primera), servicio, p.Activo, p.PorCompletar,
+                    margen?.Margen, margen?.Minimo);
+            }).ToList(),
+            productos.Count, porCompletar, vendidos.Count > 0);
+    }
+
+    /// <summary>
+    /// Los últimos movimientos de una variante en la sucursal, para el detalle de la página de Productos: cada uno con lo
+    /// que quedó, contado hacia atrás desde la existencia de hoy (la copia del kardex que se guarda con cada movimiento),
+    /// sin leer todo el kardex. El folio de la venta o de la compra va como en sus pantallas.
+    /// </summary>
+    public async Task<List<MovimientoProductoDto>> UltimosMovimientosAsync(Guid varianteId, Guid sucursalId, int maximo = 8, CancellationToken ct = default)
+    {
+        maximo = Math.Clamp(maximo, 1, 50);
+        var queda = (await db.Existencias.AsNoTracking().SingleOrDefaultAsync(e => e.SucursalId == sucursalId && e.VarianteId == varianteId, ct))?.Cantidad
+            ?? Cantidad.Cero;
+        var ultimos = await db.MovimientosInventario.AsNoTracking()
+            .Where(m => m.VarianteId == varianteId && m.SucursalId == sucursalId)
+            .OrderByDescending(m => m.FechaUtc).ThenByDescending(m => m.Id)
+            .Take(maximo).ToListAsync(ct);
+
+        List<Guid> De(string tipo) => ultimos.Where(m => m.DocumentoTipo == tipo && m.DocumentoId is not null).Select(m => m.DocumentoId!.Value).Distinct().ToList();
+        var ventasIds = De(nameof(Venta));
+        var ventas = (await db.Ventas.AsNoTracking().Where(v => ventasIds.Contains(v.Id)).Select(v => new { v.Id, v.Serie, v.Folio }).ToListAsync(ct))
+            .ToDictionary(v => v.Id, v => v.Folio is { } f ? $"{v.Serie}-{f:000000}" : null);
+        var comprasIds = De(nameof(Compra));
+        var compras = await (from c in db.Compras.AsNoTracking()
+                             join p in db.Proveedores.AsNoTracking() on c.ProveedorId equals p.Id
+                             where comprasIds.Contains(c.Id)
+                             select new { c.Id, c.Folio, Proveedor = p.Nombre }).ToDictionaryAsync(c => c.Id, c => $"C-{c.Folio:D6} · {c.Proveedor}", ct);
+        var devolucionesIds = De(nameof(Devolucion));
+        var devoluciones = await (from d in db.Devoluciones.AsNoTracking()
+                                  join v in db.Ventas.AsNoTracking() on d.VentaId equals v.Id
+                                  where devolucionesIds.Contains(d.Id)
+                                  select new { d.Id, v.Serie, v.Folio }).ToDictionaryAsync(d => d.Id, d => d.Folio is { } f ? $"de {d.Serie}-{f:000000}" : null, ct);
+
+        string? Documento(MovimientoInventario m) => m.DocumentoTipo switch
+        {
+            nameof(Venta) when m.DocumentoId is { } id => ventas.GetValueOrDefault(id),
+            nameof(Compra) when m.DocumentoId is { } id => compras.GetValueOrDefault(id),
+            nameof(Devolucion) when m.DocumentoId is { } id => devoluciones.GetValueOrDefault(id),
+            nameof(ConteoCiclico) => "del día",
+            nameof(ConteoDepartamento) => "completo",
+            _ => null,
+        };
+
+        var resultado = new List<MovimientoProductoDto>();
+        foreach (var m in ultimos)
+        {
+            resultado.Add(new MovimientoProductoDto(HoraMexico.ALocal(m.FechaUtc), m.Tipo, m.Cantidad.EnUnidades, queda.EnUnidades, Documento(m), m.Motivo));
+            queda -= m.Cantidad;
+        }
+        return resultado;
     }
 
     // ── Guardar ──────────────────────────────────────────────────────────────
