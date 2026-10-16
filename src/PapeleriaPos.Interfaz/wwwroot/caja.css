@@ -1,5 +1,6 @@
 /* Caja: para 1366×768 y operada con teclado. La venta (vn-…) es la del prototipo (docs/propuesta-interfaz.md), y también
-   el corte y la configuración; lo que todavía abre encima (productos, inventario, clientes) usa lo de antes. */
+   el corte, la configuración y las páginas de productos, inventario y clientes (entrega 8); lo de antes que va adentro de
+   ellas (la ficha del producto, las tareas del inventario) toma sus letras y botones con .vn-adentro. */
 :root {
     --azul: #2c5c99;
     --azul-claro: #e9f1fb;
@@ -85,7 +86,7 @@ details summary { cursor: pointer; color: var(--azul); }
 
 pre.ticket { font-family: Consolas, "Courier New", monospace; font-size: 13px; background: #fffef8; border: 1px dashed var(--borde); padding: 12px; margin: 0; }
 
-/* Las ventanas de antes que se abren encima de la venta (productos, inventario, clientes, el conteo) */
+/* La ventana ancha de antes: la guía de la prueba (productos, inventario y clientes ya son páginas, entrega 8) */
 .ventana.configuracion { width: 1040px; }
 textarea { font-family: Consolas, "Courier New", monospace; font-size: 14px; padding: 6px 8px; border: 1px solid var(--borde); border-radius: 4px; resize: vertical; }
 .boton.archivo { position: relative; overflow: hidden; display: inline-block; }
@@ -171,10 +172,6 @@ input.codigos { width: 100%; font-size: 14px; }
 .compra tr.diferencia td { color: var(--error); }
 .compra td.bajo { color: var(--error); font-weight: 600; }
 .compra input.umbral { width: 90px; font-size: 14px; padding: 3px 6px; text-align: right; }
-/* Productos, inventario y clientes sin vender (Administración): arriba la barra de la venta, sola; abajo, lo de siempre. */
-.sin-vender { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.venta-nueva.solo-arriba { flex: none; grid-template-rows: 48px; }
-.administracion { flex: 1; overflow-y: auto; padding: 12px 16px; background: #fff; }
 .compra tr.sin-ligar td { background: #fff7e6; }
 .franja-prueba { display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 5px 12px; background: #fff4d6; border-bottom: 1px solid #e8c766; font-size: 14px; }
 .tarea-prueba { border: 1px solid var(--borde); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
@@ -1046,24 +1043,135 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-cfg-teclas td:first-child { width: 160px; }
 /* Lo de antes que va adentro tal cual (los sinónimos, Telegram en pausa, la impresora, la actualización de la prueba):
    con las letras, los botones y las tablas de aquí, sin cambiar su marcado. */
-.vn-cfg-antes { display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 14px; }
-.vn-cfg-antes h4 { margin: 6px 0 0; font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--vn-tenue); }
-.vn-cfg-antes p { margin: 0; }
-.vn-cfg-antes .nota, .vn-cfg-antes .vacia { margin: 0; font-size: 12.5px; color: var(--vn-suave); }
-.vn-cfg-antes .error { margin: 0; color: var(--vn-error); font-weight: 600; font-size: 13px; }
-.vn-cfg-antes .aviso { margin: 0; color: var(--vn-cobro); font-size: 13px; }
-.vn-cfg-antes label { font-size: 13px; color: var(--vn-suave); }
-.vn-cfg-antes input:not([type=checkbox]):not([type=file]), .vn-cfg-antes select { font: 500 14px var(--vn-f-texto); padding: 6px 9px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); color: var(--vn-texto); }
-.vn-cfg-antes .boton { display: inline-flex; align-items: center; justify-content: center; gap: 7px; font: inherit; font-size: 13px; color: var(--vn-texto); border: 1px solid var(--vn-borde); background: var(--vn-hoja); border-radius: 8px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
-.vn-cfg-antes .boton:hover:not(:disabled) { border-color: var(--vn-tinta); }
-.vn-cfg-antes .boton.principal { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; font-weight: 600; font-size: 14px; }
-.vn-cfg-antes .boton.chico { padding: 3px 9px; }
-.vn-cfg-antes .acciones { justify-content: flex-start; margin-top: 0; }
-.vn-cfg-antes .resultados { max-height: none; border: 1px solid var(--vn-linea); border-radius: 10px; overflow: hidden; background: var(--vn-hoja); }
-.vn-cfg-antes table.resultados, .vn-cfg-antes .resultados table { width: 100%; border-collapse: collapse; background: var(--vn-hoja); }
-.vn-cfg-antes th { position: static; font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); background: var(--vn-renglon); padding: 7px 10px; border-bottom: 1px solid var(--vn-linea); }
-.vn-cfg-antes td { font-size: 14px; padding: 6px 10px; border-bottom: 1px solid var(--vn-renglon); }
-.vn-cfg-antes .col-codigo { background: none; }
+.vn-cfg-antes, .vn-adentro { display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 14px; }
+.vn-cfg-antes h4, .vn-adentro h3, .vn-adentro h4, .vn-adentro h5 { margin: 6px 0 0; font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--vn-tenue); }
+.vn-cfg-antes p, .vn-adentro p { margin: 0; }
+.vn-cfg-antes .nota, .vn-cfg-antes .vacia, .vn-adentro .nota, .vn-adentro .vacia { margin: 0; font-size: 12.5px; color: var(--vn-suave); }
+.vn-cfg-antes .error, .vn-adentro .error { margin: 0; color: var(--vn-error); font-weight: 600; font-size: 13px; }
+.vn-cfg-antes .aviso, .vn-adentro .aviso { margin: 0; color: var(--vn-cobro); font-size: 13px; }
+.vn-cfg-antes label, .vn-adentro label { font-size: 13px; color: var(--vn-suave); }
+.vn-cfg-antes input:not([type=checkbox]):not([type=file]), .vn-cfg-antes select,
+.vn-adentro input:not([type=checkbox]):not([type=radio]):not([type=file]), .vn-adentro select { font: 500 14px var(--vn-f-texto); padding: 6px 9px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); color: var(--vn-texto); }
+.vn-cfg-antes .boton, .vn-adentro .boton { display: inline-flex; align-items: center; justify-content: center; gap: 7px; font: inherit; font-size: 13px; color: var(--vn-texto); border: 1px solid var(--vn-borde); background: var(--vn-hoja); border-radius: 8px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+.vn-cfg-antes .boton:hover:not(:disabled), .vn-adentro .boton:hover:not(:disabled) { border-color: var(--vn-tinta); }
+.vn-cfg-antes .boton.principal, .vn-adentro .boton.principal { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; font-weight: 600; font-size: 14px; }
+.vn-cfg-antes .boton.chico, .vn-adentro .boton.chico { padding: 3px 9px; }
+.vn-cfg-antes .acciones, .vn-adentro .acciones { justify-content: flex-start; margin-top: 0; flex-wrap: wrap; }
+.vn-cfg-antes .resultados, .vn-adentro .resultados { max-height: none; border: 1px solid var(--vn-linea); border-radius: 10px; overflow: hidden; background: var(--vn-hoja); }
+.vn-cfg-antes table.resultados, .vn-cfg-antes .resultados table, .vn-adentro table.resultados, .vn-adentro .resultados table { width: 100%; border-collapse: collapse; background: var(--vn-hoja); }
+.vn-cfg-antes th, .vn-adentro .resultados th { position: static; font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); background: var(--vn-renglon); padding: 7px 10px; border-bottom: 1px solid var(--vn-linea); }
+.vn-cfg-antes td, .vn-adentro .resultados td { font-size: 14px; padding: 6px 10px; border-bottom: 1px solid var(--vn-renglon); }
+.vn-cfg-antes .col-codigo, .vn-adentro .col-codigo { background: none; }
 .vn-cfg-buscar { padding: 10px 12px; border: 1px dashed var(--vn-borde); border-radius: 10px; background: var(--vn-renglon); }
 .vn-cfg-buscar .buscar-texto { width: 100%; }
 .vn-cfg-buscar .resultados { max-height: 220px; overflow-y: auto; }
+
+/* ── Las pantallas de atrás (entrega 8, htmlProductos, htmlInventario y htmlClientes del prototipo, con .modulo-pag,
+   .col-lista, .busca, .filtros, .items, .col-detalle, .det-cab, .rejilla, .dato, .hub, .tareas y .tarea): Productos y
+   Clientes con la lista a la izquierda y el detalle a la derecha, e Inventario por tareas. Van en .venta-nueva, en lugar
+   de la venta (oculta, como estaba), así que toman sus colores. Caben en 1366×697: la lista y el detalle se recorren cada
+   uno por su lado, y con la franja de la prueba también. ── */
+/* La venta oculta mientras se ve una página (su cuerpo y su barra de teclas): sigue ahí, como estaba. */
+.venta-nueva > .oculto { display: none; }
+.vn-pagina { min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--vn-papel); }
+.vn-modulo-pag { flex: 1; min-height: 0; display: grid; grid-template-columns: 420px minmax(0, 1fr); }
+.vn-col-lista { min-height: 0; display: flex; flex-direction: column; background: var(--vn-hoja); border-right: 1px solid var(--vn-linea); }
+.vn-busca { display: flex; flex-direction: column; gap: 8px; padding: 14px 14px 8px; }
+.vn-busca input[data-busca] { width: 100%; min-width: 0; font: 500 16px var(--vn-f-texto); padding: 9px 12px; border: 1px solid var(--vn-borde); border-radius: 8px; background: var(--vn-hoja); color: var(--vn-texto); }
+.vn-busca input[data-busca]:focus { outline: 2px solid var(--vn-tinta); outline-offset: -1px; border-color: var(--vn-tinta); }
+.vn-busca input[data-busca]::placeholder { color: var(--vn-tenue); }
+.vn-filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.vn-filtro { font: inherit; font-size: 12.5px; color: var(--vn-suave); border: 1px solid var(--vn-linea); background: var(--vn-renglon); border-radius: 999px; padding: 3px 10px; cursor: pointer; white-space: nowrap; }
+.vn-filtro:hover { border-color: var(--vn-tinta-medio); color: var(--vn-texto); }
+.vn-filtro.on { border-color: var(--vn-tinta); background: var(--vn-tinta-claro); color: var(--vn-tinta); font-weight: 600; }
+.vn-filtro.apagado { text-decoration: line-through; }
+.vn-filtro:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: 2px; }
+.vn-busca-mas { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--vn-suave); }
+.vn-busca-mas select { flex: 1; min-width: 0; font: 500 13px var(--vn-f-texto); padding: 4px 6px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); color: var(--vn-texto); }
+.vn-busca-mas label { flex-direction: row; align-items: center; gap: 5px; font-size: 12.5px; color: var(--vn-suave); white-space: nowrap; }
+.vn-items { flex: 1; min-height: 0; overflow-y: auto; border-top: 1px solid var(--vn-linea); }
+.vn-items .vn-item .num { flex: none; font: 600 15px var(--vn-f-cifras); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vn-items .vn-item .num.rojo { color: var(--vn-error); }
+.vn-items .vn-item .num.verde { color: var(--vn-cobro); font-size: 13px; }
+.vn-items .vn-item small { display: flex; flex-wrap: wrap; align-items: center; gap: 0 4px; }
+.vn-items .vn-item small code { font: 12px var(--vn-f-codigo); color: var(--vn-suave); }
+.vn-items .vn-item.apagado strong { color: var(--vn-tenue); text-decoration: line-through; }
+.vn-items .vn-item:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: -2px; }
+.vn-lista-nota { margin: 0; padding: 14px; font-size: 13.5px; color: var(--vn-suave); }
+.vn-lista-pie { display: flex; flex-direction: column; gap: 6px; padding: 8px 14px 10px; border-top: 1px solid var(--vn-linea); font-size: 12.5px; color: var(--vn-suave); }
+.vn-lista-pie p { margin: 0; }
+.vn-lista-pie .vn-enlace { font-size: 12.5px; margin-left: 4px; }
+.vn-col-detalle { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 18px 24px; }
+.vn-col-detalle > .nota { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--vn-suave); }
+.vn-det-cab { display: flex; align-items: flex-start; gap: 12px; }
+.vn-det-cab > div { flex: 1; min-width: 0; }
+.vn-det-cab h2 { margin: 0; font-size: 22px; text-wrap: balance; }
+.vn-det-cab p { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; margin: 4px 0 0; color: var(--vn-suave); }
+.vn-det-cab code { font-size: 13px; }
+.venta-nueva .vn-boton.primario { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; font-weight: 600; }
+.venta-nueva .vn-boton.primario:hover:not(:disabled) { background: var(--vn-tinta-hover); }
+.venta-nueva .vn-boton.on { border-color: var(--vn-tinta); background: var(--vn-tinta-claro); color: var(--vn-tinta); }
+.venta-nueva .vn-boton .vn-candado { margin-left: 2px; }
+.vn-rejilla { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.vn-dato { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; }
+.vn-dato > span { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); }
+.vn-dato > strong { font: 700 22px var(--vn-f-cifras); font-variant-numeric: tabular-nums; }
+.vn-dato > strong.bajo { color: var(--vn-error); }
+.vn-dato > small { font-size: 12.5px; line-height: 1.35; color: var(--vn-suave); }
+.vn-dato > small.rojo { color: var(--vn-error); font-weight: 600; }
+.vn-dato > small.verde { color: var(--vn-cobro); }
+.vn-dato.restringido { border-style: dashed; border-color: var(--vn-tinta-medio); }
+.vn-sub-titulo { margin: 4px 0 0; font-size: 12px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--vn-tenue); }
+/* Las tablas de las páginas, como .tabla del prototipo */
+.vn-tabla { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; overflow: hidden; }
+.vn-tabla th { position: static; text-align: left; font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); padding: 9px 12px; border-bottom: 1px solid var(--vn-linea); background: var(--vn-renglon); }
+.vn-tabla td { padding: 8px 12px; border-bottom: 1px solid var(--vn-renglon); font-size: 14px; color: var(--vn-texto); }
+.vn-tabla tbody tr:last-child td { border-bottom: 0; }
+.vn-tabla th.num, .vn-tabla td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.vn-etiq.rojo { color: var(--vn-error); background: var(--vn-error-fondo); }
+.vn-etiq.gris { color: var(--vn-suave); background: var(--vn-renglon); border-color: var(--vn-linea); }
+.vn-etiq .ico { width: 12px; height: 12px; }
+/* Lo de la cuenta del cliente, en su detalle */
+.vn-adentro .vn-rejilla, .vn-adentro .vn-botonera { font-size: 15px; }
+.vn-adentro .cobrar-credito { border-color: var(--vn-linea); border-radius: 10px; background: var(--vn-hoja); padding: 8px 12px; }
+.vn-adentro .cobrar-resumen { text-align: left; font: 700 22px var(--vn-f-cifras); }
+.vn-adentro fieldset.variante { border-color: var(--vn-linea); border-radius: 10px; background: var(--vn-hoja); }
+.vn-adentro fieldset.variante legend { color: var(--vn-tinta); }
+.vn-adentro .ficha-producto { gap: 8px 12px; }
+
+/* Inventario por tareas: una tarjeta por tarea, solo las de quien entró */
+.vn-hub { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding: 22px 26px; }
+.vn-hub h2 { margin: 0; font-size: 22px; }
+.vn-hub > p { margin: -10px 0 0; color: var(--vn-suave); }
+.vn-tareas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.vn-tarea { display: flex; align-items: flex-start; gap: 12px; font: inherit; color: var(--vn-texto); text-align: left; padding: 14px; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 12px; cursor: pointer; }
+.vn-tarea:hover { border-color: var(--vn-tinta-medio); box-shadow: 0 2px 10px rgba(20, 30, 60, .06); }
+.vn-tarea:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: 2px; }
+.vn-tarea > svg.ico { width: 24px; height: 24px; margin-top: 2px; color: var(--vn-tinta); }
+.vn-tarea > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.vn-tarea strong { font-size: 15.5px; }
+.vn-tarea small { font-size: 13px; line-height: 1.4; color: var(--vn-suave); }
+.vn-pie-tarea { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.vn-pie-tarea:empty { display: none; }
+/* Una tarea abierta: su pantalla de siempre, con «← Inventario» (o Esc) para volver a las tarjetas */
+.vn-tarea-pag { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.vn-tarea-cab { flex: none; display: flex; align-items: center; gap: 10px; padding: 10px 20px; background: var(--vn-hoja); border-bottom: 1px solid var(--vn-linea); }
+.vn-tarea-cab > svg.ico { width: 20px; height: 20px; color: var(--vn-tinta); }
+.vn-tarea-cab h2 { margin: 0; font-size: 18px; white-space: nowrap; }
+.vn-tarea-cab p { min-width: 0; margin: 0; font-size: 13px; color: var(--vn-suave); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vn-tarea-cuerpo { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 20px 20px; background: var(--vn-hoja); }
+/* La barra de teclas de las páginas: F1 y lo que hacen las teclas ahí */
+.vn-ayuda-tecla { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; font-size: 12.5px; color: var(--vn-tenue); white-space: nowrap; }
+.vn-ayuda-tecla.error { color: var(--vn-error); font-weight: 600; white-space: normal; }
+/* Un poco más angosto que la caja: la lista se achica y las tarjetas van de dos en dos. */
+@media (max-width: 1200px) {
+    .vn-modulo-pag { grid-template-columns: 340px minmax(0, 1fr); }
+    .vn-tareas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .vn-rejilla { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* Con poca altura (la franja de la prueba arriba), menos aire. */
+@media (max-height: 760px) {
+    .vn-hub { gap: 12px; padding: 16px 22px; }
+    .vn-tarea { padding: 11px 13px; }
+    .vn-col-detalle { gap: 12px; padding: 14px 20px; }
+}

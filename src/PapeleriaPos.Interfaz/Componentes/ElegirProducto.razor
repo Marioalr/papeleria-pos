@@ -1,10 +1,11 @@
-@* Para las compras: escanear un código (el de la caja de 12 elige la caja) o buscar por nombre. *@
+@* Para las compras: escanear un código (el de la caja de 12 elige la caja) o buscar por nombre. En las tareas del
+   inventario (entrega 8) es la búsqueda de la página (data-busca): lo que se escanea con el cursor en otro lado cae aquí. *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
 <div class="captura">
     <label for="codigo-compra">Código:</label>
-    <input id="codigo-compra" autocomplete="off" @bind="_codigo" @bind:event="oninput" @onkeydown="AlTeclear" />
+    <input id="codigo-compra" data-busca autocomplete="off" @bind="_codigo" @bind:event="oninput" @onkeydown="AlTeclear" />
     <button class="boton" @onclick="AgregarCodigoAsync">ENTER - @Accion</button>
     <button class="boton" @onclick="AlternarBusquedaAsync">@(_buscando ? "Cerrar búsqueda" : "Buscar por nombre")</button>
 </div>

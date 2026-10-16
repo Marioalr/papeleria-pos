@@ -14,18 +14,32 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     public async Task RegistrarTeclasAsync<T>(DotNetObjectReference<T> pantalla) where T : class =>
         await (await Modulo).InvokeVoidAsync("registrar", pantalla);
 
-    /// <summary>La pantalla de venta se va, y sus ventanas con ella.</summary>
+    /// <summary>La pantalla de venta se va, y sus ventanas y su página con ella.</summary>
     public async Task QuitarTeclasAsync()
     {
         _deLaVenta = default;
         await (await Modulo).InvokeVoidAsync("quitar");
     }
 
+    /// <summary>
+    /// Se ve una página (Productos, Inventario o Clientes, entrega 8) en lugar de la venta: caja.js deja las flechas, Enter y
+    /// lo que se escribe a la página, y lo que se escribe fuera de un campo (también el lector) va a su búsqueda. Esc, las F y
+    /// las Ctrl de la caja van a la pantalla, que decide.
+    /// </summary>
+    public async Task PaginaAbiertaAsync(bool abierta) => await (await Modulo).InvokeVoidAsync("paginaAbierta", abierta);
+
     /// <summary>Lo último que dijo la pantalla de venta de sus ventanas.</summary>
     private (bool Abierta, bool EnPanel) _deLaVenta;
 
     /// <summary>Si la franja de la prueba tiene algo encima de la venta (<see cref="VentanaDeLaFranjaAsync"/>).</summary>
     private bool _deLaFranja;
+
+    /// <summary>
+    /// La franja de la prueba tiene algo encima (la guía, sus avisos o el cursor en su nota): mientras, Esc no toca la página
+    /// de abajo (entrega 8). Si no, Esc en la guía cerraba sin que se viera lo abierto en la página (la ficha de un producto,
+    /// una tarea) o regresaba a la venta.
+    /// </summary>
+    public bool FranjaEncima => _deLaFranja;
 
     /// <summary>
     /// Con una ventana abierta, caja.js solo atrapa las teclas que no escriben en sus campos. <paramref name="enPanel"/>: es

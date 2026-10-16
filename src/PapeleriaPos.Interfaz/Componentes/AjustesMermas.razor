@@ -92,6 +92,9 @@ else
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
+    /// <summary>La tarjeta «Mermas» del inventario: empieza en la merma; «Ajustes», en corregir la existencia.</summary>
+    [Parameter] public bool EnMerma { get; set; }
+
     private sealed record Pendiente(AccionControlada Accion, string Detalle);
 
     private ProductoVentaDto? _producto;
@@ -105,7 +108,11 @@ else
     private string? _error;
     private string? _aviso;
 
-    protected override Task OnInitializedAsync() => CargarAsync();
+    protected override Task OnInitializedAsync()
+    {
+        _merma = EnMerma;
+        return CargarAsync();
+    }
 
     private async Task CargarAsync()
     {

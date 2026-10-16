@@ -1,31 +1,44 @@
 @* Clientes → Por revisar (fase 3, entrega 2, parte 2.4): lo del crédito que se hizo sin conexión y no cuadró al volver
    (pasó el límite más de lo autorizado, ya no tenía crédito o un abono lo dejó a favor). El servicio lo aceptó (ya se
    entregó la mercancía o se recibió el dinero); aquí el encargado o el dueño lo leen, lo arreglan si hace falta (un
-   ajuste, hablar con el cliente) y lo marcan revisado con una nota. *@
+   ajuste, hablar con el cliente) y lo marcan revisado con una nota. En la página de Clientes (entrega 8) va en el detalle
+   de cada cliente, solo con lo suyo. *@
 @inject ClienteCaja Cliente
 
 @if (_lista is null)
 {
     <p class="@(_error is null ? "" : "error")">@(_error ?? "Cargando…")</p>
 }
-else if (_lista.Count == 0)
+else if (_lista.Count == 0 && ClienteId is null)
 {
     <p class="vacia">No hay nada del crédito por revisar.</p>
 }
-else
+else if (_lista.Count > 0)
 {
     <p class="nota">Se hizo sin conexión y no cuadró con lo que ya había llegado. Ya está en la cuenta del cliente; revísalo y márcalo.</p>
     <div class="resultados revision">
         <table>
-            <thead><tr><th>Cuándo</th><th>Cliente</th><th>Qué pasó</th><th class="num">Monto</th><th>Nota</th><th></th></tr></thead>
+            <thead>
+                <tr>
+                    <th>Cuándo</th>
+                    @if (ClienteId is null)
+                    {
+                        <th>Cliente</th>
+                    }
+                    <th>Qué pasó</th><th class="num">Monto</th><th>Nota</th><th></th>
+                </tr>
+            </thead>
             @foreach (var r in _lista)
             {
                 var revision = r;
                 <tr>
                     <td>@r.CreadaLocal.ToString("dd/MM HH:mm")</td>
-                    <td>
-                        <a href="" @onclick="() => AlAbrir.InvokeAsync(revision.ClienteId)" @onclick:preventDefault>@r.Cliente</a>
-                    </td>
+                    @if (ClienteId is null)
+                    {
+                        <td>
+                            <a href="" @onclick="() => AlAbrir.InvokeAsync(revision.ClienteId)" @onclick:preventDefault>@r.Cliente</a>
+                        </td>
+                    }
                     <td>
                         <strong>@Textos.Motivo(r.Motivo)</strong>
                         <div class="nota">@r.Detalle</div>
@@ -54,6 +67,9 @@ else
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
+    /// <summary>Solo lo de este cliente, en su detalle (sin la columna del cliente); vacío: lo de todos.</summary>
+    [Parameter] public Guid? ClienteId { get; set; }
+
     /// <summary>Abrir la ficha del cliente (su cuenta).</summary>
     [Parameter] public EventCallback<Guid> AlAbrir { get; set; }
 
@@ -70,7 +86,7 @@ else
     {
         try
         {
-            _lista = await Cliente.RevisionesCreditoAsync(Caja.SucursalId);
+            _lista = (await Cliente.RevisionesCreditoAsync(Caja.SucursalId)).Where(r => ClienteId is not { } id || r.ClienteId == id).ToList();
             await AlCambiar.InvokeAsync(_lista.Count);
         }
         catch (ErrorCaja ex)

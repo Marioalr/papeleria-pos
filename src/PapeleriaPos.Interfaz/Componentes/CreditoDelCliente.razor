@@ -1,7 +1,9 @@
-@* La cuenta de un cliente en su ficha (fase 3, entrega 2): lo que debe, lo vencido y sus últimos movimientos. Sus
-   condiciones (límite y plazo) y los ajustes del saldo los hace quien tiene la regla (al empezar, el dueño). Con un turno
+@* La cuenta de un cliente, en su detalle de la página de Clientes (fase 3, entrega 2; con lista y detalle, entrega 8): lo
+   que debe y su vencimiento, su límite y quién lo cambia, junto con los datos que pone la página, y sus últimos
+   movimientos. «Límite y plazo» y «Ajustar el saldo» los hace quien tiene su permiso (al empezar, el dueño). Con un turno
    abierto, desde aquí se le recibe un abono o se le devuelve en efectivo lo que tiene a favor (en el piloto con eleventa,
-   ninguno de los dos). Su estado de cuenta se imprime o se copia para mandarlo por WhatsApp (parte 3). *@
+   ninguno de los dos). Su estado de cuenta se imprime o se copia para mandarlo por WhatsApp (parte 3). Esc cierra lo que
+   esté abierto (Cerrar). *@
 @using PapeleriaPos.Nucleo.Clientes
 @inject ClienteCaja Servicio
 @inject ModuloCaja Js
@@ -92,58 +94,83 @@ else if (_abonando && Turno is not null)
 }
 else
 {
-    <h3>Su cuenta</h3>
-    @if (_cuenta is null)
-    {
-        <p>@(_error ?? "Cargando…")</p>
-    }
-    else
-    {
-        var credito = _cuenta.Credito;
-        <p class="nota">
-            @if (credito.SaldoCentavos > 0)
+    var credito = _cuenta?.Credito;
+    <div class="vn-rejilla">
+        @Datos
+        <div class="vn-dato">
+            <span>Debe</span>
+            @if (credito is null)
             {
-                <span>Debe <strong>@Formato.Dinero(credito.SaldoCentavos)</strong></span>
-                @if (credito.Vencido(Hoy) is > 0 and var vencido)
-                {
-                    <span class="error"> · vencido @Formato.Dinero(vencido)</span>
-                }
-                @if (credito.VenceMasAntiguo is { } vence)
-                {
-                    <span> · lo más antiguo @(vence < Hoy ? "venció" : "vence") el @vence.ToString("dd/MM/yyyy")</span>
-                }
+                <strong>—</strong>
+                <small>@(_error ?? "Cargando…")</small>
+            }
+            else if (credito.SaldoCentavos > 0)
+            {
+                var vencido = credito.Vencido(Hoy);
+                <strong class="@(vencido > 0 ? "bajo" : "")">@Formato.Dinero(credito.SaldoCentavos)</strong>
+                <small class="@(vencido > 0 ? "rojo" : "")">
+                    @if (credito.VenceMasAntiguo is { } vence)
+                    {
+                        @($"lo más antiguo {(vence < Hoy ? "venció" : "vence")} el {vence:dd/MM/yyyy}")
+                    }
+                    @if (vencido > 0)
+                    {
+                        @($" · vencido {Formato.Dinero(vencido)}")
+                    }
+                </small>
             }
             else if (credito.SaldoCentavos < 0)
             {
-                <span>Tiene <strong>@Formato.Dinero(credito.AFavorCentavos)</strong> a favor.</span>
+                <strong>@Formato.Dinero(0)</strong>
+                <small class="verde">tiene @Formato.Dinero(credito.AFavorCentavos) a favor</small>
             }
             else
             {
-                <span>No debe nada.</span>
+                <strong>@Formato.Dinero(0)</strong>
+                <small>al corriente</small>
             }
-            @if (credito.PorVerificarCentavos > 0)
+        </div>
+        <div class="vn-dato">
+            <span>Límite de crédito</span>
+            @if (credito is { LimiteCentavos: > 0 })
             {
-                <span> · @Formato.Dinero(credito.PorVerificarCentavos) en transferencias por verificar</span>
+                <strong>@Formato.Dinero(credito.LimiteCentavos)</strong>
+                <small>a @credito.PlazoDias días · le quedan @Formato.Dinero(credito.DisponibleCentavos) · @QuienCambiaElCredito</small>
             }
-        </p>
-        <p class="nota">
-            @(credito.LimiteCentavos > 0
-                ? $"Crédito hasta {Formato.Dinero(credito.LimiteCentavos)}, a {credito.PlazoDias} días · le quedan {Formato.Dinero(credito.DisponibleCentavos)}."
-                : "Sin crédito.")
-        </p>
-
-        <div class="acciones izquierda">
+            else
+            {
+                <strong>Sin crédito</strong>
+                <small>@(_puedeDar ? "puedes darle crédito" : QuienPuede("lo da"))</small>
+            }
+        </div>
+        @MasDatos
+    </div>
+    @if (credito is not null)
+    {
+        <div class="vn-botonera">
+            <button class="vn-boton" disabled="@_ocupado" @onclick="EstadoAsync">Estado de cuenta</button>
+            @if (_puedeDar)
+            {
+                <button class="vn-boton @(_condiciones ? "on" : "")" @onclick="() => _condiciones = !_condiciones">Límite y plazo</button>
+            }
             @if (Turno is not null && credito.SaldoCentavos > 0 && !PilotoEleventa)
             {
-                <button class="boton principal" @onclick="() => _abonando = true">Recibir abono</button>
+                <button class="vn-boton primario" @onclick="() => _abonando = true">Recibir abono</button>
             }
             @if (Turno is not null && credito.DevolvibleCentavos > 0 && !_devolviendo && _sinConfirmar is null && !PilotoEleventa && PuedeDevolver)
             {
-                <button class="boton" title="@(QuienAutorizaDevolver is { } quien ? $"Lo autoriza {quien}" : null)" @onclick="EmpezarDevolucion">
-                    Devolver saldo a favor@(QuienAutorizaDevolver is { } autoriza ? $" · 🔒 {autoriza}" : "")
+                <button class="vn-boton" title="@(QuienAutorizaDevolver is { } quien ? $"Lo autoriza {quien}" : null)" @onclick="EmpezarDevolucion">
+                    Devolver saldo a favor
+                    @if (QuienAutorizaDevolver is { } autoriza)
+                    {
+                        <small class="vn-candado"><Ico Nombre="candado" />@autoriza</small>
+                    }
                 </button>
             }
-            <button class="boton" disabled="@_ocupado" @onclick="EstadoAsync">Estado de cuenta</button>
+            @if (_puedeAjustar)
+            {
+                <button class="vn-boton @(_ajustando ? "on" : "")" @onclick="() => _ajustando = !_ajustando">Ajustar el saldo</button>
+            }
         </div>
         @if (PilotoEleventa && credito.SaldoCentavos > 0)
         {
@@ -152,6 +179,10 @@ else
         else if (PilotoEleventa && credito.DevolvibleCentavos > 0)
         {
             <p class="nota">@PilotoConEleventa.NoSeDevuelveSaldo</p>
+        }
+        @if (credito.PorVerificarCentavos > 0)
+        {
+            <p class="nota">@Formato.Dinero(credito.PorVerificarCentavos) en transferencias por verificar.</p>
         }
         @if (credito.AFavorCentavos > 0 && credito.DevolvibleCentavos == 0)
         {
@@ -201,22 +232,23 @@ else
             </fieldset>
         }
 
-        @if (_puedeDar)
+        @if (_puedeDar && _condiciones)
         {
             <fieldset class="cobrar-credito">
-                <legend>Condiciones</legend>
+                <legend>Límite y plazo</legend>
                 <div class="dos-columnas">
-                    <label>Límite de crédito (0: sin crédito) <input inputmode="decimal" @bind="_limite" autocomplete="off" /></label>
+                    <label>Límite de crédito (0: sin crédito) <input id="credito-limite" inputmode="decimal" @bind="_limite" autocomplete="off" /></label>
                     <label>Plazo (días) <input inputmode="numeric" @bind="_plazo" autocomplete="off" /></label>
                 </div>
                 <p class="nota">El plazo nuevo cuenta para lo que se fíe desde hoy; lo ya fiado vence cuando decía.</p>
                 <div class="acciones izquierda">
-                    <button class="boton" disabled="@_ocupado" @onclick="GuardarCondicionesAsync">Guardar condiciones</button>
+                    <button class="boton principal" disabled="@_ocupado" @onclick="GuardarCondicionesAsync">Guardar límite y plazo</button>
+                    <button class="boton" @onclick="() => _condiciones = false">Cancelar</button>
                 </div>
             </fieldset>
         }
 
-        @if (_puedeAjustar)
+        @if (_puedeAjustar && _ajustando)
         {
             <fieldset class="cobrar-credito">
                 <legend>Ajustar el saldo</legend>
@@ -233,16 +265,31 @@ else
                 </div>
                 <p class="nota">Para pasar la libreta: «Debe más» con la fecha de lo que ya debía (desde ahí cuenta su plazo). No mueve dinero de la caja.</p>
                 <div class="acciones izquierda">
-                    <button class="boton" disabled="@_ocupado" @onclick="AjustarAsync">Ajustar</button>
+                    <button class="boton principal" disabled="@_ocupado" @onclick="AjustarAsync">Ajustar</button>
+                    <button class="boton" @onclick="() => _ajustando = false">Cancelar</button>
                 </div>
             </fieldset>
         }
 
-        @if (_cuenta.Movimientos.Count > 0)
+        @if (_aviso is not null)
         {
-            <div class="resultados movimientos-credito">
-                <table>
-                    <thead><tr><th>Fecha</th><th>Concepto</th><th>Folio</th><th class="num">Monto</th><th class="num">Saldo</th><th>Vence</th></tr></thead>
+            <p class="aviso">@_aviso</p>
+        }
+        @if (_error is not null)
+        {
+            <p class="error">@_error</p>
+        }
+
+        <h3 class="vn-sub-titulo">Movimientos de la cuenta</h3>
+        @if (_cuenta!.Movimientos.Count == 0)
+        {
+            <p class="nota">Todavía no tiene movimientos: no se le ha fiado ni ha abonado.</p>
+        }
+        else
+        {
+            <table class="vn-tabla">
+                <thead><tr><th>Fecha</th><th>Concepto</th><th>Folio</th><th class="num">Monto</th><th class="num">Saldo</th><th>Vence</th></tr></thead>
+                <tbody>
                     @foreach (var m in _cuenta.Movimientos)
                     {
                         <tr>
@@ -254,18 +301,10 @@ else
                             <td>@m.Vence?.ToString("dd/MM/yyyy")</td>
                         </tr>
                     }
-                </table>
-            </div>
+                </tbody>
+            </table>
             <p class="nota">Los últimos movimientos, del más reciente al más viejo.</p>
         }
-    }
-    @if (_aviso is not null)
-    {
-        <p class="aviso">@_aviso</p>
-    }
-    @if (_error is not null && _cuenta is not null)
-    {
-        <p class="error">@_error</p>
     }
 }
 
@@ -300,6 +339,12 @@ else
     public static string? QuienAutorizaDevolverConPermisos(IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? permisos) =>
         permisos?.GetValueOrDefault(AccionControlada.DevolverSaldoAFavor) is { Nivel: NivelPermiso.RequiereAutorizacion } p ? Textos.Quien(p.Autorizan) : null;
 
+    /// <summary>Los datos del cliente que van antes de los de su cuenta, en la misma rejilla (el mayoreo y el descuento).</summary>
+    [Parameter] public RenderFragment? Datos { get; set; }
+
+    /// <summary>Los que van después (cuánto compra, si paga a tiempo).</summary>
+    [Parameter] public RenderFragment? MasDatos { get; set; }
+
     /// <summary>Cambiaron sus condiciones: el cliente como quedó (quien lo muestra lo pone al día).</summary>
     [Parameter] public EventCallback<ClienteRegistradoDto> AlCambiar { get; set; }
 
@@ -315,6 +360,13 @@ else
     private CuentaClienteDto? _cuenta;
     private bool _puedeDar;
     private bool _puedeAjustar;
+
+    /// <summary>Quién da crédito, por su nombre, para decírselo a quien no puede (como el corte dice quién lo hace).</summary>
+    private List<QuienAutoriza>? _quienesDan;
+
+    /// <summary>«Límite y plazo» y «Ajustar el saldo» abiertos (se abren con su botón, como en el prototipo).</summary>
+    private bool _condiciones;
+    private bool _ajustando;
     private bool _abonando;
     private bool _ocupado;
     private string? _error;
@@ -390,11 +442,43 @@ else
                 == NivelPermiso.Permitido;
             _puedeAjustar = (await Servicio.PermisoAsync(new SolicitudPermiso(Sesion.UsuarioId, Caja.SucursalId, AccionControlada.AjustarCredito, 1))).Nivel
                 == NivelPermiso.Permitido;
+            if (!_puedeDar)
+                _quienesDan = await Servicio.QuienesPuedenAsync(Caja.SucursalId, AccionControlada.DarCredito);
         }
         catch (ErrorCaja ex)
         {
             _error = ex.Codigo == "sin-conexion" ? "Sin conexión con la caja principal: la cuenta se ve cuando vuelva." : ex.Message;
         }
+    }
+
+    /// <summary>«puedes cambiarlo», o «lo cambia Dueño de prueba» (sin saber quién, quien tiene el permiso).</summary>
+    private string QuienCambiaElCredito => _puedeDar ? "puedes cambiarlo" : QuienPuede("lo cambia");
+
+    private string QuienPuede(string hace) =>
+        _quienesDan is { Count: > 0 } quienes ? $"{hace} {Textos.Quien(quienes)}" : $"{hace} quien tiene «{Textos.Accion(AccionControlada.DarCredito)}»";
+
+    /// <summary>
+    /// Esc en la página: cierra lo que esté abierto aquí (la autorización, el estado de cuenta, el abono, devolver, el límite y
+    /// plazo o el ajuste), lo de más adentro primero. Devuelve si cerró algo.
+    /// </summary>
+    public bool Cerrar()
+    {
+        if (_autorizar)
+            _autorizar = false;
+        else if (_estado is not null)
+            VolverACuenta();
+        else if (_abonando)
+            _abonando = false;
+        else if (_devolviendo)
+            CancelarDevolucion();
+        else if (_condiciones)
+            _condiciones = false;
+        else if (_ajustando)
+            _ajustando = false;
+        else
+            return false;
+        StateHasChanged();
+        return true;
     }
 
     private async Task GuardarCondicionesAsync()
@@ -417,6 +501,7 @@ else
             var guardado = await Servicio.GuardarCondicionesAsync(Cliente.Id, new SolicitudCreditoCliente(Sesion.UsuarioId, Caja.SucursalId, limite.Value, plazo));
             _cuenta = await Servicio.CuentaClienteAsync(Cliente.Id);
             _aviso = guardado.TieneCredito ? $"Crédito hasta {Formato.Dinero(guardado.LimiteCreditoCentavos)}, a {guardado.PlazoCreditoDias} días." : "Quedó sin crédito.";
+            _condiciones = false;
             await AlCambiar.InvokeAsync(guardado);
         }
         catch (ErrorCaja ex)
@@ -449,6 +534,7 @@ else
             _cuenta = await Servicio.AjustarCreditoAsync(Cliente.Id,
                 new SolicitudAjusteCredito(_idAjuste.Value, Sesion.UsuarioId, Caja.SucursalId, Sube ? monto : -monto, _motivo.Trim(), _desde));
             _aviso = $"Ajuste de {(Sube ? "+" : "−")}{Formato.Dinero(monto)} guardado.";
+            _ajustando = false;
             (_idAjuste, _ajuste, _motivo, _desde) = (null, "", "", null);
         }
         catch (ErrorCaja ex)

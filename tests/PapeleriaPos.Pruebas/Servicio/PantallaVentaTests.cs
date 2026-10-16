@@ -100,17 +100,17 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
         await Esperar(() => dibujo.Textos.Contains("Cobrado"));
         Assert.Contains("verlo en pantalla", dibujo.Textos);
 
-        // Con algo encima del ticket (aquí Clientes), F1 regresa a vender y Ctrl+U cambia de usuario, como en el prototipo:
-        // el fondo de la ventana tapa el menú del usuario. Antes no hacían nada y solo se salía con Esc. (La pestaña, antes de
-        // abrir la ventana: adentro hay otro botón «Clientes».)
+        // Clientes ya no es una ventana encima del ticket: es una página (entrega 8), y para caja.js no hay ventana. F1 regresa
+        // a vender y Ctrl+U cambia de usuario, como en el prototipo. (La pestaña, antes de abrir la página.)
         var pestanaClientes = dibujo.Boton("Clientes")!.Value;
         await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(pestanaClientes));
-        Assert.True(pagina.VentanaAbierta);
-        await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("F1", null));
+        Assert.True(pagina.PaginaAbierta);
         Assert.False(pagina.VentanaAbierta);
+        await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("F1", null));
+        Assert.False(pagina.PaginaAbierta);
         Assert.Equal(2, salidas);
         await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(pestanaClientes));
-        Assert.True(pagina.VentanaAbierta);
+        Assert.True(pagina.PaginaAbierta);
         await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("Ctrl+U", null));
         Assert.Equal(3, salidas);
         Assert.False(pagina.VentanaAbierta);
@@ -148,8 +148,9 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
             [nameof(Administracion.Sesion)] = encargado,
             [nameof(Administracion.AlSalir)] = new EventCallback(null, (Action)(() => salidas++)),
         }));
-        // Para caja.js es una ventana encima de la venta: solo atrapa Esc, las F y las Ctrl de la caja.
-        await Esperar(() => pagina.Registrada && pagina.VentanaAbierta == true);
+        // Para caja.js es una página, como desde la venta (entrega 8): atrapa Esc, las F y las Ctrl de la caja, y deja a la
+        // página las flechas, Enter y lo que se escribe.
+        await Esperar(() => pagina.Registrada && pagina.PaginaAbierta == true && pagina.VentanaAbierta == false);
 
         // La barra de la venta: la caja, las pestañas y el usuario; ni «F3 Productos» ni «Administra:» de la barra de antes.
         Assert.True(dibujo.TieneRenglon(caja.Nombre));
@@ -173,9 +174,11 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
         Assert.Equal(3, salidas);
         Assert.Empty(dibujo.Errores);
 
-        // Al irse, caja.js olvida la «ventana»: si no, en la venta del que entra después el cuadro no tomaría los escaneos.
+        // Al irse, caja.js olvida la «ventana» y la página: si no, en la venta del que entra después el cuadro no tomaría los
+        // escaneos.
         await ((IAsyncDisposable)dibujo).DisposeAsync();
         Assert.False(pagina.VentanaAbierta);
+        Assert.False(pagina.PaginaAbierta);
         Assert.False(pagina.Registrada);
     }
 
@@ -364,7 +367,9 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
             await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Clientes")!.Value));
             await Esperar(() => dibujo.Boton(PreparacionPrueba.ConDeuda) is not null);
             await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton(PreparacionPrueba.ConDeuda)!.Value));
-            await Esperar(() => dibujo.Boton("Estado de cuenta") is not null);
+            // Su cuenta, con lo vencido (solo él debe algo vencido): la página abre con el primero de la lista, que puede ser
+            // otro, y el «Estado de cuenta» de la suya sale con ella.
+            await Esperar(() => dibujo.Textos.Contains("venció el"));
             await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Estado de cuenta")!.Value));
             // «Imprimir» sale junto con «Copiar para WhatsApp» (antes de él puede haber otro «Imprimir…» de Inventario).
             await Esperar(() => dibujo.Boton("Copiar para WhatsApp") is not null);
@@ -514,7 +519,18 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
             }
         }
 
+        /// <summary>Lo último que se le dijo a caja.js de las páginas (entrega 8); null si nunca se le dijo.</summary>
+        public bool? PaginaAbierta
+        {
+            get
+            {
+                lock (_candado)
+                    return _paginaAbierta;
+            }
+        }
+
         private bool? _ventanaAbierta;
+        private bool? _paginaAbierta;
         private bool _registrada;
 
         public bool Recuerda(string clave)
@@ -537,8 +553,10 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
                     "guardar" when args![1] is string valor => Guardado[(string)args[0]!] = valor,
                     "guardar" => Guardado.Remove((string)args[0]!),
                     "ventanaAbierta" => _ventanaAbierta = (bool)args![0]!,
+                    "paginaAbierta" => _paginaAbierta = (bool)args![0]!,
                     "registrar" => _registrada = true,
-                    "quitar" => _registrada = false,
+                    // Como caja.js: al quitar las teclas olvida también la página.
+                    "quitar" => (_registrada, _paginaAbierta) = (false, false),
                     _ => null,
                 };
             }

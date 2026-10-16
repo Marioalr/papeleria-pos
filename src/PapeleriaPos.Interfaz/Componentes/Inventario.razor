@@ -1,77 +1,249 @@
-@* F4 Inventario: las compras (recibir a ciegas y capturar la nota), las órdenes de compra y el sugerido (con «Órdenes y
-   sugerido de compra»), el conteo del día y el completo por departamento, ajustes y mermas, abrir paquete, los
-   proveedores y las etiquetas y la hoja de códigos del mostrador (con «Productos, precios y etiquetas»). Con los usuarios
-   de antes, como con los roles: también el encargado. El margen mínimo y cuánto cubre el sugerido se pasaron a
-   Configuración › Inventario (entrega 7). *@
+@* Inventario (F4), por tareas (entrega 8, htmlInventario del prototipo). Antes era una ventana con una fila de pestañas;
+   ahora es una página con una tarjeta por tarea: recibir, el conteo del día, mermas, ajustes, abrir un paquete, compras y
+   notas, órdenes, el sugerido, etiquetas, el conteo completo y, de lo que ya había, la hoja de códigos y los proveedores.
+   Solo salen las de quien entró («Puede» o «Con autorización»), con lo pendiente de cada una cuando se lee rápido, su
+   límite («tú: hasta $200») o quién la autoriza. Cada tarjeta abre la pantalla de siempre de esa tarea, aquí mismo, con
+   «← Inventario» (o Esc) para volver: por dentro funcionan como antes. *@
+@implements IPagina
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
 
-<nav class="pestanas config-pestanas">
-    @foreach (var p in Enum.GetValues<Pestanas>().Where(Visible))
-    {
-        var pestana = p;
-        <button class="pestana @(p == _pestana ? "activa" : "")" @onclick="() => _pestana = pestana">@Nombre(p)</button>
-    }
-</nav>
-
-@switch (_pestana)
+@if (_tarea is { } abierta)
 {
-    case Pestanas.Compras:
-        <Compras Caja="Caja" Sesion="Sesion" />
-        break;
-    case Pestanas.Ordenes:
-        <Ordenes Caja="Caja" Sesion="Sesion" />
-        break;
-    case Pestanas.Sugerido:
-        <Sugerido Caja="Caja" Sesion="Sesion" />
-        break;
-    case Pestanas.Conteo:
-        <ConteoDelDia Caja="Caja" Sesion="Sesion" />
-        break;
-    case Pestanas.ConteoCompleto:
-        <ConteoCompleto Caja="Caja" Sesion="Sesion" />
-        break;
-    case Pestanas.Ajustes:
-        <AjustesMermas Caja="Caja" Sesion="Sesion" />
-        break;
-    case Pestanas.Etiquetas:
-        <Etiquetas Caja="Caja" Sesion="Sesion" />
-        break;
-    case Pestanas.HojaCodigos:
-        <HojaCodigos Caja="Caja" Sesion="Sesion" />
-        break;
-    case Pestanas.Paquete:
-        <AbrirPaquete Caja="Caja" Sesion="Sesion" />
-        break;
-    case Pestanas.Proveedores:
-        <Proveedores Caja="Caja" Sesion="Sesion" />
-        break;
+    var tarea = PaginasDeAtras.De(abierta);
+    <div class="vn-tarea-pag">
+        <div class="vn-tarea-cab">
+            <button class="vn-boton chico" title="Volver a las tareas del inventario (Esc)" @onclick="VolverAsync">← Inventario</button>
+            <Ico Nombre="@tarea.Icono" />
+            <h2>@tarea.Nombre</h2>
+            <p>@tarea.Descripcion</p>
+        </div>
+        @* @key: de una tarea a otra (Mermas y Ajustes son la misma pantalla) empieza como nueva. *@
+        <div class="vn-tarea-cuerpo vn-adentro" @key="abierta">
+            @switch (abierta)
+            {
+                case TareaInventario.Recibir:
+                    <Compras Caja="Caja" Sesion="Sesion" EmpezarARecibir="true" />
+                    break;
+                case TareaInventario.Compras:
+                    <Compras Caja="Caja" Sesion="Sesion" />
+                    break;
+                case TareaInventario.ConteoDelDia:
+                    <ConteoDelDia Caja="Caja" Sesion="Sesion" AlContar="ContadoAsync" />
+                    break;
+                case TareaInventario.Mermas:
+                    <AjustesMermas Caja="Caja" Sesion="Sesion" EnMerma="true" />
+                    break;
+                case TareaInventario.Ajustes:
+                    <AjustesMermas Caja="Caja" Sesion="Sesion" />
+                    break;
+                case TareaInventario.Paquete:
+                    <AbrirPaquete Caja="Caja" Sesion="Sesion" />
+                    break;
+                case TareaInventario.Ordenes:
+                    <Ordenes Caja="Caja" Sesion="Sesion" />
+                    break;
+                case TareaInventario.Sugerido:
+                    <Sugerido Caja="Caja" Sesion="Sesion" />
+                    break;
+                case TareaInventario.Etiquetas:
+                    <Etiquetas Caja="Caja" Sesion="Sesion" Lista="EtiquetasPorImprimir" />
+                    break;
+                case TareaInventario.HojaCodigos:
+                    <HojaCodigos Caja="Caja" Sesion="Sesion" />
+                    break;
+                case TareaInventario.ConteoCompleto:
+                    <ConteoCompleto Caja="Caja" Sesion="Sesion" />
+                    break;
+                default:
+                    <Proveedores Caja="Caja" Sesion="Sesion" />
+                    break;
+            }
+        </div>
+    </div>
+}
+else
+{
+    <div class="vn-hub">
+        <h2>Inventario</h2>
+        <p>Solo las tareas que tienes. Las demás no aparecen.</p>
+        <div class="vn-tareas" data-rejilla>
+            @foreach (var t in PaginasDeAtras.TareasDe(Acceso))
+            {
+                <button id="tarea-@t.Id" class="vn-tarea" @onclick="AlTocar(t.Id)">
+                    <Ico Nombre="@t.Icono" />
+                    <div>
+                        <strong>@t.Nombre</strong>
+                        <small>@t.Descripcion</small>
+                        <span class="vn-pie-tarea">
+                            @foreach (var (texto, color) in Pendiente(t.Id))
+                            {
+                                <span class="vn-etiq @color">@texto</span>
+                            }
+                            @if (t.Regla is { } regla && Acceso.De(regla) is { Nivel: NivelPermiso.RequiereAutorizacion } autoriza)
+                            {
+                                <span class="vn-etiq ambar"><Ico Nombre="candado" />lo autoriza @Textos.Quien(autoriza.Autorizan)</span>
+                            }
+                            else if (t.Regla is { } conLimite && Acceso.De(conLimite) is { Nivel: NivelPermiso.Permitido, UmbralCentavos: { } umbral })
+                            {
+                                <span class="vn-etiq gris">tú: hasta @PapeleriaPos.Nucleo.Control.Permisos.TextoMonto(conLimite, umbral)</span>
+                            }
+                            @if (t.Id == TareaInventario.Proveedores && !Acceso.Puede(AccionControlada.EditarCatalogo))
+                            {
+                                <span class="vn-etiq gris">solo consulta</span>
+                            }
+                        </span>
+                    </div>
+                </button>
+            }
+        </div>
+    </div>
 }
 
 @code {
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
-    private enum Pestanas { Compras, Ordenes, Sugerido, Conteo, ConteoCompleto, Ajustes, Etiquetas, HojaCodigos, Paquete, Proveedores }
+    /// <summary>Lo que puede quien entró: las tarjetas de lo demás no aparecen.</summary>
+    [Parameter, EditorRequired] public PermisosDePagina Acceso { get; set; } = null!;
 
-    private bool Visible(Pestanas p) => p switch
+    /// <summary>Las etiquetas por imprimir: las mismas que agrega «Etiqueta» en Productos.</summary>
+    [Parameter, EditorRequired] public EtiquetasPorImprimir EtiquetasPorImprimir { get; set; } = null!;
+
+    /// <summary>El conteo del día que ya pidió la venta (para su chip, abajo); sin él, se pide aquí.</summary>
+    [Parameter] public ConteoCiclicoDto? Conteo { get; set; }
+
+    /// <summary>Se contó algo del conteo del día: la venta pone al día su chip.</summary>
+    [Parameter] public EventCallback<ConteoCiclicoDto> AlContar { get; set; }
+
+    /// <summary>La tarea con que abre (el chip «Conteo del día», «Ir a Etiquetas» en Productos); vacío: las tarjetas.</summary>
+    [Parameter] public TareaInventario? TareaInicial { get; set; }
+
+    private TareaInventario? _tarea;
+    private PendientesInventarioDto? _pendientes;
+    private ConteoCiclicoDto? _conteo;
+
+    protected override async Task OnInitializedAsync()
     {
-        Pestanas.Ordenes or Pestanas.Sugerido => Sesion.Puede(AccionControlada.PedirCompra),
-        Pestanas.Etiquetas or Pestanas.HojaCodigos => Sesion.Puede(AccionControlada.EditarCatalogo),
-        _ => true,
-    };
+        _tarea = TareaInicial is { } inicial && PaginasDeAtras.TareasDe(Acceso).Any(t => t.Id == inicial) ? inicial : null;
+        _conteo = Conteo;
+        await PendientesAsync();
+    }
 
-    private Pestanas _pestana;
-
-    private static string Nombre(Pestanas p) => p switch
+    protected override async Task OnAfterRenderAsync(bool primera)
     {
-        Pestanas.Compras => "Compras",
-        Pestanas.Ordenes => "Órdenes de compra",
-        Pestanas.Sugerido => "Sugerido de compra",
-        Pestanas.Conteo => "Conteo del día",
-        Pestanas.ConteoCompleto => "Conteo completo",
-        Pestanas.Ajustes => "Ajustes y mermas",
-        Pestanas.Etiquetas => "Etiquetas",
-        Pestanas.HojaCodigos => "Hoja de códigos",
-        Pestanas.Paquete => "Abrir paquete",
-        _ => "Proveedores",
-    };
+        if (primera && _tarea is null)
+            await EnfocarAsync();
+    }
+
+    public async Task EnfocarAsync()
+    {
+        if (_tarea is null)
+            await Js.EnfocarAsync(".vn-tarea");
+    }
+
+    public async Task<bool> CerrarAsync()
+    {
+        if (_tarea is null)
+            return false;
+        await VolverAsync();
+        return true;
+    }
+
+    /// <summary>El clic de cada tarjeta, el mismo en cada vuelta del dibujo (no un manejador nuevo cada vez).</summary>
+    private Func<Task> AlTocar(TareaInventario tarea) =>
+        _alTocar.TryGetValue(tarea, out var alTocar) ? alTocar : _alTocar[tarea] = () => AbrirAsync(tarea);
+
+    private readonly Dictionary<TareaInventario, Func<Task>> _alTocar = [];
+
+    /// <summary>Abre una tarea (si quien entró la tiene); desde fuera, el chip del conteo o «Ir a Etiquetas».</summary>
+    public Task AbrirAsync(TareaInventario tarea)
+    {
+        if (PaginasDeAtras.TareasDe(Acceso).Any(t => t.Id == tarea))
+        {
+            _tarea = tarea;
+            StateHasChanged();
+        }
+        return Task.CompletedTask;
+    }
+
+    private async Task VolverAsync()
+    {
+        _tarea = null;
+        await PendientesAsync();
+        StateHasChanged();
+        await EnfocarAsync();
+    }
+
+    /// <summary>
+    /// Lo pendiente: las compras, las órdenes y los conteos completos en una consulta de solo cuentas; el conteo del día, el
+    /// que ya tiene la venta (o se pide, como al abrirlo). El sugerido no lleva cuenta: calcularlo lee un año de ventas.
+    /// </summary>
+    private async Task PendientesAsync()
+    {
+        var tareas = PaginasDeAtras.TareasDe(Acceso).Select(t => t.Id).ToHashSet();
+        if (tareas.Overlaps([TareaInventario.Recibir, TareaInventario.Compras, TareaInventario.Ordenes, TareaInventario.ConteoCompleto]))
+        {
+            try
+            {
+                _pendientes = await Cliente.PendientesInventarioAsync(Caja.SucursalId);
+            }
+            catch (ErrorCaja)
+            {
+                // Sin conexión, las tarjetas van sin lo pendiente.
+            }
+        }
+        if (tareas.Contains(TareaInventario.ConteoDelDia) && _conteo is null)
+        {
+            try
+            {
+                _conteo = await Cliente.ConteoDelDiaAsync(Caja.SucursalId, Sesion.UsuarioId);
+            }
+            catch (ErrorCaja)
+            {
+                // Sin conexión, el conteo espera a que vuelva.
+            }
+        }
+    }
+
+    private async Task ContadoAsync(ConteoCiclicoDto conteo)
+    {
+        _conteo = conteo;
+        await AlContar.InvokeAsync(conteo);
+    }
+
+    /// <summary>Lo que va en la tarjeta: «1 contando», «2 por contar», «3 por imprimir»… con su color.</summary>
+    private IEnumerable<(string Texto, string Color)> Pendiente(TareaInventario tarea)
+    {
+        var p = _pendientes;
+        switch (tarea)
+        {
+            case TareaInventario.Recibir when p is not null:
+                if (p.ComprasContando > 0)
+                    yield return ($"{p.ComprasContando} contando", "azul");
+                if (p.OrdenesEnCamino > 0)
+                    yield return (p.OrdenesEnCamino == 1 ? "1 orden en camino" : $"{p.OrdenesEnCamino} órdenes en camino", "azul");
+                break;
+            case TareaInventario.ConteoDelDia when _conteo is { } conteo:
+                if (conteo.Total == 0)
+                    yield return ("nada que contar hoy", "gris");
+                else if (conteo.Contados < conteo.Total)
+                    yield return ($"{conteo.Total - conteo.Contados} por contar", "azul");
+                else
+                    yield return ("contado", "verde");
+                break;
+            case TareaInventario.Compras when p is { ComprasSinNota: > 0 }:
+                yield return (p.ComprasSinNota == 1 ? "1 nota por capturar" : $"{p.ComprasSinNota} notas por capturar", "azul");
+                break;
+            case TareaInventario.Ordenes when p is { OrdenesAbiertas: > 0 }:
+                yield return (p.OrdenesAbiertas == 1 ? "1 abierta" : $"{p.OrdenesAbiertas} abiertas", "azul");
+                break;
+            case TareaInventario.Etiquetas when EtiquetasPorImprimir.Total > 0:
+                yield return ($"{Formato.Numero(EtiquetasPorImprimir.Total)} por imprimir", "azul");
+                break;
+            case TareaInventario.ConteoCompleto when p is { ConteosCompletosAbiertos: > 0 }:
+                yield return (p.ConteosCompletosAbiertos == 1 ? "1 departamento abierto" : $"{p.ConteosCompletosAbiertos} departamentos abiertos", "azul");
+                break;
+        }
+    }
 }
