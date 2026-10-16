@@ -314,17 +314,18 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     /// <summary>
     /// Lo que se buscó y qué se eligió. Es para aprender (el orden, lo que falta en el catálogo): sin conexión no se
-    /// guarda, y si falla no estorba la venta. Lo elegido sale primero la vez siguiente también en la copia de esta caja.
+    /// guarda, y si falla no estorba la venta. Lo que el servicio guardó sale primero la vez siguiente también en la copia de
+    /// esta caja, como en el servicio.
     /// </summary>
     public async Task RegistrarBusquedaAsync(SolicitudBusqueda busqueda)
     {
-        if (busqueda.VarianteId is { } elegido)
-            contingencia?.Aprender(busqueda.Texto, elegido);
         if (contingencia is { EnLinea: false })
             return;
         try
         {
             await _http.PostAsync<object>("api/busquedas", busqueda, sinRespuesta: true);
+            if (busqueda.VarianteId is { } elegido)
+                contingencia?.Aprender(busqueda.Texto, elegido);
         }
         catch (ErrorCaja)
         {

@@ -371,7 +371,8 @@ public partial class MainWindow : Window
     {
         Closing += (_, e) =>
         {
-            if (e.Cancel || cola.Pendientes is not { Count: > 0 } pendientes)
+            // Cerrándose por un error, Windows no deja detenerlo: no se pregunta (queda anotado al cerrarse).
+            if (e.Cancel || Application.Current is App { SeCierraPorUnError: true } || cola.Pendientes is not { Count: > 0 } pendientes)
                 return;
             var motivo = cola.Problema is { Estado: EstadoImpresion.NoSalio, Motivo: { } m } ? $" ({m.TrimEnd('.')})" : "";
             var respuesta = MessageBox.Show(this,

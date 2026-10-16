@@ -65,6 +65,25 @@ public sealed class FotoCatalogoTests
         Assert.Null(foto.PorVariante(Ids.Nuevo()));
     }
 
+    /// <summary>
+    /// La búsqueda por nombre de la copia (entrega 5, parte 3): con lo más vendido y lo elegido antes, como el servicio; un
+    /// código repetido se encuentra en los dos productos (al escanear vale el primero). La copia de un servicio de antes no
+    /// los trae y ordenaría distinto: ahí se le pregunta al servicio.
+    /// </summary>
+    [Fact]
+    public void La_copia_busca_por_nombre_si_trae_lo_mas_vendido()
+    {
+        Assert.False(FotoCatalogo.Armar(Paquete(12, Lapicero, Cuaderno)).SeBusca);
+
+        var foto = FotoCatalogo.Armar(Paquete(12, Lapicero, Cuaderno) with { Vendidos = [new VecesVendidoDto(Cuaderno.VarianteId, 3)], Elegidos = [] });
+
+        Assert.True(foto.SeBusca);
+        Assert.Equal(["Cuaderno raya"], foto.Buscar("raya").Select(r => r.Descripcion));
+        // El código exacto primero, y el otro producto que también lo tiene.
+        Assert.Equal(["Cuaderno raya", "Lapicero azul"], foto.Buscar("750200").Select(r => r.Descripcion));
+        Assert.Equal((3, 3500L), (foto.Buscar("cuaderno")[0].Vendidos, foto.Buscar("cuaderno")[0].PrecioCentavos));
+    }
+
     /// <summary>Lo de antes (Contingencia.PorCodigo, hasta la entrega 5), para revisar que la foto resuelve igual.</summary>
     internal static ProductoVentaDto? ComoAntes(PaqueteContingenciaDto paquete, string codigo)
     {

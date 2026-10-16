@@ -3823,7 +3823,7 @@
         if (salida)
             await ImprimirDocumentoAsync($"Comprobante {comprobante.Folio}", DisenoComprobante.Movimiento(comprobante), abrirCajon: true);
         else if (!Cola.MuestraVistaPrevia)
-            Cola.Encolar($"El cajón (entrada {comprobante.Folio})", TicketEscPos.AbrirCajon());
+            Cola.AbrirCajon($"El cajón (entrada {comprobante.Folio})");
         await RevisarEfectivoAsync();
     }
 

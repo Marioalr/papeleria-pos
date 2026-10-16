@@ -156,6 +156,12 @@
         if (_fichas is { } antes && antes.SequenceEqual(fichas))
             return;
         _fichas = fichas;
+        // Mientras se entra con el PIN, la elegida se queda: si no entra, ahí mismo se dice por qué.
+        if (_ocupado)
+        {
+            StateHasChanged();
+            return;
+        }
         if (_elegida is { } elegida)
         {
             if (fichas.FirstOrDefault(f => f.UsuarioId == elegida.UsuarioId) is { } sigue)

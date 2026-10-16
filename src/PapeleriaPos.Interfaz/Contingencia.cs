@@ -213,9 +213,9 @@ public sealed class Contingencia
     }
 
     /// <summary>
-    /// Lo que esta caja eligió en la lista con cada texto desde que se abrió (entrega 5, parte 3): la búsqueda contra la copia
-    /// lo pone primero la vez siguiente, como el servicio, sin esperar a que baje otra copia. Es lo más nuevo: solo esta caja
-    /// elige lo suyo.
+    /// Lo que esta caja eligió en la lista con cada texto desde que se abrió y ya guardó el servicio (entrega 5, parte 3): la
+    /// búsqueda contra la copia lo pone primero la vez siguiente, como el servicio, sin esperar a que baje otra copia. Es lo
+    /// más nuevo: solo esta caja elige lo suyo.
     /// </summary>
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Guid> _elegidos = new(StringComparer.Ordinal);
 

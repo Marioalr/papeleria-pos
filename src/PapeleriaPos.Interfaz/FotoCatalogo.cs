@@ -134,8 +134,11 @@ public sealed class FotoCatalogo
 
     // ── La búsqueda por nombre (entrega 5, parte 3) ─────────────────────────
 
-    /// <summary>Si se puede buscar por nombre en ella: sin productos (la caja recién instalada), se le pregunta al servicio.</summary>
-    public bool SeBusca => _busqueda.Indice.Productos > 0;
+    /// <summary>
+    /// Si se busca por nombre en ella, como el servicio: sin productos (la caja recién instalada) o con una copia de un servicio
+    /// de antes (no trae lo más vendido ni lo elegido antes, y ordenaría distinto), se le pregunta al servicio.
+    /// </summary>
+    public bool SeBusca => _busqueda is { Completa: true, Indice.Productos: > 0 };
 
     /// <summary>
     /// Lo que coincide con lo escrito, como lo contestaría el servicio (<see cref="IndiceDeBusqueda"/>), sin la red: el mismo
@@ -164,8 +167,9 @@ public sealed class FotoCatalogo
     }
 
     /// <summary>Lo que hace falta para buscar en la copia: el índice y, para ordenar, lo más vendido y lo elegido antes.</summary>
+    /// <param name="Completa">La copia trae lo más vendido y lo elegido antes (la de un servicio de antes, no).</param>
     private sealed record BusquedaDeLaCopia(
-        IndiceDeBusqueda Indice, FrozenDictionary<Guid, int> Vendidos, FrozenDictionary<string, Guid> Elegidos, Guid SucursalId)
+        IndiceDeBusqueda Indice, FrozenDictionary<Guid, int> Vendidos, FrozenDictionary<string, Guid> Elegidos, Guid SucursalId, bool Completa)
     {
         /// <summary>
         /// Con lo mismo que el servicio: los productos de la copia en su orden, todos sus códigos (también los repetidos), las
@@ -182,7 +186,8 @@ public sealed class FotoCatalogo
             var elegidos = new Dictionary<string, Guid>(StringComparer.Ordinal);
             foreach (var e in paquete.Elegidos ?? [])
                 elegidos[e.Texto] = e.VarianteId;
-            return new BusquedaDeLaCopia(indice, vendidos.ToFrozenDictionary(), elegidos.ToFrozenDictionary(StringComparer.Ordinal), paquete.Caja.SucursalId);
+            return new BusquedaDeLaCopia(indice, vendidos.ToFrozenDictionary(), elegidos.ToFrozenDictionary(StringComparer.Ordinal), paquete.Caja.SucursalId,
+                Completa: paquete.Vendidos is not null && paquete.Elegidos is not null);
         }
     }
 }

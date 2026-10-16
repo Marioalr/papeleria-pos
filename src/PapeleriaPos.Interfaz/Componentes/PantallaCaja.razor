@@ -112,24 +112,34 @@
         await PreguntarAsync();
     }
 
+    /// <summary>
+    /// Cuenta lo que cambia quién atiende o el turno (entrar, salir, abrir el turno, el corte): lo que contesta la caja
+    /// principal después de salir con la copia solo se pone si mientras tanto no pasó nada de eso.
+    /// </summary>
+    private int _cambios;
+
     /// <summary>Lo de la caja principal, después de salir con la copia: si alguien ya entró, ya lo pidió él al entrar.</summary>
     private async Task PonerAlDiaAsync()
     {
         var (caja, turno, sesion) = (_caja, _turno, _sesion);
-        await PreguntarAsync(soloSiNadieEntro: true);
+        await PreguntarAsync(soloSiNoCambio: _cambios);
         if (_caja != caja || _turno != turno || _sesion != sesion || _alta || _error is not null)
             StateHasChanged();
     }
 
     /// <summary>Esta caja y su turno, de la caja principal (sin conexión, de la copia, como siempre).</summary>
-    /// <param name="soloSiNadieEntro">Ya se salió con la copia: si mientras alguien entró, su turno ya se pidió al entrar.</param>
-    private async Task PreguntarAsync(bool soloSiNadieEntro = false)
+    /// <param name="soloSiNoCambio">
+    /// Ya se salió con la copia: lo que conteste se pone solo si nadie entró ni cambió el turno desde entonces (lo cuenta
+    /// <see cref="_cambios"/>); quien entra ya pide su turno al entrar.
+    /// </param>
+    private async Task PreguntarAsync(int? soloSiNoCambio = null)
     {
+        bool SigueIgual() => soloSiNoCambio is not { } cambios || (cambios == _cambios && _sesion is null);
         try
         {
             var cajas = await Cliente.CajasAsync();
             var caja = Conexion.CajaId is { } id ? cajas.SingleOrDefault(c => c.Id == id) : cajas.FirstOrDefault();
-            if (soloSiNadieEntro && _sesion is not null)
+            if (!SigueIgual())
                 return;
             _caja = caja;
             if (_caja is null)
@@ -138,7 +148,7 @@
                 return;
             }
             var turno = await Cliente.TurnoAsync(_caja.Id);
-            if (!soloSiNadieEntro || _sesion is null)
+            if (SigueIgual())
                 _turno = turno;
         }
         catch (ErrorCaja ex) when (ex.Codigo == "caja-sin-alta" && Conexion.PideAlta)
@@ -146,7 +156,7 @@
             // El dueño quitó esta PC (o la base es otra): se vuelve a dar de alta.
             (_alta, _avisoAlta) = (true, ex.Message);
         }
-        catch (ErrorCaja) when (soloSiNadieEntro)
+        catch (ErrorCaja) when (soloSiNoCambio is not null)
         {
             // Ya se salió con la copia: se queda lo que dice ella.
         }
@@ -164,6 +174,7 @@
 
     private async Task Entrar(SesionDto sesion)
     {
+        _cambios++;
         _sesion = sesion;
         Conexion.UsuarioEnCaja = sesion.UsuarioId;
         // El piloto, a la par del turno: entrar no espera una consulta más.
@@ -172,7 +183,11 @@
         await piloto;
     }
 
-    private void TurnoAbierto(TurnoDto turno) => _turno = turno;
+    private void TurnoAbierto(TurnoDto turno)
+    {
+        _cambios++;
+        _turno = turno;
+    }
 
     /// <summary>
     /// A «¿Quién atiende?»: «Cambiar de usuario» (Ctrl+U) y «Salir» de la venta, y «Volver» de abrir el turno, del turno de
@@ -180,6 +195,7 @@
     /// </summary>
     private async Task Salir()
     {
+        _cambios++;
         _sesion = null;
         Conexion.UsuarioEnCaja = null;
         _administrar = false;
@@ -242,5 +258,9 @@
     /// abrir el siguiente turno» del prototipo; si no va a vender, «Volver» lo regresa a las fichas. También «Abrir turno»
     /// del corte, si el turno ya estaba cerrado: quien entró abre el suyo.
     /// </summary>
-    private async Task CorteTerminado() => _turno = await Cliente.TurnoAsync(_caja!.Id);
+    private async Task CorteTerminado()
+    {
+        _cambios++;
+        _turno = await Cliente.TurnoAsync(_caja!.Id);
+    }
 }

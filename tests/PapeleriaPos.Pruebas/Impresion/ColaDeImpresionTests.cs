@@ -17,6 +17,9 @@ internal sealed class TicketeraDePrueba : IImpresora
     /// <summary>Lo que salió, en orden (el texto de cada papel).</summary>
     public ConcurrentQueue<string> Salieron { get; } = new();
 
+    /// <summary>Lo que se le mandó en cada intento, haya salido o no.</summary>
+    public ConcurrentQueue<byte[]> Mandados { get; } = new();
+
     /// <summary>Con qué falla cada intento (el primero es el 1); null: sale.</summary>
     public Func<int, Exception?>? Falla { get; set; }
 
@@ -31,6 +34,7 @@ internal sealed class TicketeraDePrueba : IImpresora
     public async Task EnviarAsync(byte[] escPos, CancellationToken ct = default)
     {
         var intento = Interlocked.Increment(ref _intentos);
+        Mandados.Enqueue(escPos);
         if (Detenida is { } detenida)
             await detenida.Task.WaitAsync(ct);
         if (AntesDeCadaIntento?.Invoke(intento) is { } antes)
@@ -166,6 +170,60 @@ public sealed class ColaDeImpresionTests
         cola.Reintentar();
         Assert.True(await corte.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
         Assert.Equal(["Z"], impresora.Salieron);
+    }
+
+    /// <summary>
+    /// El cajón es para dar el cambio en ese momento: se abre con su ticket si sale a tiempo (también si antes la impresora no
+    /// contestó al conectarse: no se le había mandado nada), pero no otra vez con «Reintentar» después de mandárselo.
+    /// </summary>
+    [Fact]
+    public async Task El_cajon_se_abre_con_su_ticket_al_momento_y_no_otra_vez_al_reintentar()
+    {
+        IReadOnlyList<Elemento> ticket = [new Renglon("Venta A-1")];
+        var conCajon = TicketEscPos.Generar(ticket, abrirCajon: true);
+        var sinCajon = TicketEscPos.Generar(ticket, abrirCajon: false);
+        var impresora = new TicketeraDePrueba
+        {
+            Falla = n => n switch
+            {
+                1 => new ErrorAlConectar("No responde la impresora de tickets en 10.0.0.9:9100."),
+                2 => new IOException("Se acabó el papel de la impresora de tickets."),
+                _ => null,
+            },
+        };
+        var cola = new ColaDeImpresion(impresora, Cortas, cajonAlMomento: TimeSpan.FromHours(1));
+
+        var venta = cola.Encolar("Ticket A-1", ticket, abrirCajon: true);
+        Assert.False(await venta.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
+        cola.Reintentar();
+        Assert.True(await venta.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
+
+        // Los dos primeros intentos, con el cajón (el primero no llegó; el segundo sí, y falló después); el de «Reintentar», sin.
+        Assert.Equal([conCajon, conCajon, sinCajon], impresora.Mandados);
+    }
+
+    /// <summary>
+    /// Lo que esperó más de la cuenta (detrás de otro, o a la impresora) sale sin abrir el cajón; y si solo era abrirlo (una
+    /// entrada de efectivo), ya no se manda nada.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_espero_de_mas_sale_sin_abrir_el_cajon()
+    {
+        IReadOnlyList<Elemento> ticket = [new Renglon("Venta A-2")];
+        var impresora = new TicketeraDePrueba { Detenida = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously) };
+        var cola = new ColaDeImpresion(impresora, Cortas, cajonAlMomento: TimeSpan.Zero);
+
+        var antes = cola.Encolar("Corte del turno de Ana", Papel("Z"));
+        var venta = cola.Encolar("Ticket A-2", ticket, abrirCajon: true);
+        var cajon = cola.AbrirCajon("El cajón (entrada E-1)");
+        await TicketeraDePrueba.EsperarAsync(() => antes.Estado == EstadoImpresion.Imprimiendo, "el corte a la impresora");
+        impresora.Detenida.SetResult();
+
+        Assert.True(await cajon.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.True(await venta.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.Equal([Papel("Z"), TicketEscPos.Generar(ticket, abrirCajon: false)], impresora.Mandados);
+        Assert.Equal(EstadoImpresion.Impreso, cajon.Estado);
+        Assert.Empty(cola.Pendientes);
     }
 
     [Fact]
