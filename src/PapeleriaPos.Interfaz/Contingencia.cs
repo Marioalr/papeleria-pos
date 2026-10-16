@@ -169,6 +169,12 @@ public sealed class Contingencia
         while (Interlocked.CompareExchange(ref _foto, copia.Foto.ConLoNuevoDe(antes), antes) != antes);
     }
 
+    /// <summary>
+    /// Termina cuando ya se leyó la copia guardada al abrir la caja (fuera del hilo de la pantalla): la entrada la espera así,
+    /// sin trabar la pantalla, y sale con la copia sin esperar a la red (entrega 5, parte 3).
+    /// </summary>
+    public Task CopiaLeida => _carga;
+
     /// <summary>La copia, esperando a que termine de cargarse si la caja recién abrió.</summary>
     private Copia? CopiaCargada()
     {

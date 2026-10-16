@@ -90,6 +90,41 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         ConRespaldoAsync(() => _http.PostAsync<SesionDto>($"api/cajas/{cajaId}/sesion", new SolicitudEntradaFicha(usuarioId, pin)),
             l => l.Entrar(usuarioId, pin));
 
+    /// <summary>
+    /// Para abrir la caja sin esperar a la red (entrega 5, parte 3): esta caja y su turno como los conoce su copia, después de
+    /// leerla (fuera del hilo de la pantalla). Vacío si no hay copia de esta caja (la primera vez, o el navegador): entonces
+    /// se le pregunta al servicio. Lo que conteste el servicio después pone la pantalla al día.
+    /// </summary>
+    public async Task<(CajaDto Caja, TurnoDto? Turno)?> DeLaCopiaAsync(Guid? cajaId)
+    {
+        if (contingencia is null)
+            return null;
+        await contingencia.CopiaLeida.ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+        if (contingencia.Paquete is not { } paquete || (cajaId is { } id && paquete.Caja.Id != id))
+            return null;
+        // El nombre de la tienda en la entrada, también de la copia.
+        ConfiguracionConocida ??= contingencia.ConfiguracionSucursal();
+        return (paquete.Caja, contingencia.Turno(paquete.Caja.Id));
+    }
+
+    /// <summary>Las fichas de la entrada como las conoce la copia (iguales a las del servicio); vacío sin copia.</summary>
+    public List<FichaUsuarioDto>? FichasDeLaCopia(Guid cajaId)
+    {
+        // Sin esperar: si todavía se está leyendo la copia, se le pregunta al servicio.
+        if (contingencia is not { CopiaLeida.IsCompleted: true })
+            return null;
+        if (contingencia.Paquete is not { } paquete || paquete.Caja.Id != cajaId)
+            return null;
+        try
+        {
+            return contingencia.Fichas(cajaId);
+        }
+        catch (Exception ex) when (ex is ErrorCaja or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
     public Task<TurnoDto?> TurnoAsync(Guid cajaId) =>
         ConRespaldoAsync(() => _http.GetAsync<TurnoDto>($"api/cajas/{cajaId}/turno", nadaEsNulo: true), l => l.Turno(cajaId),
             (l, turno) => l.TurnoEnLineaAsync(turno));

@@ -25,4 +25,11 @@
     <RootNamespace>PapeleriaPos.Caja</RootNamespace>
   </PropertyGroup>
 
+  <!-- Al publicar la caja para Windows (el instalador, en GitHub Actions: -r win-x64), ya compilada (ReadyToRun): al abrirla no
+       se compila, y abre más rápido en un procesador modesto (entrega 5, parte 3; docs/propuesta-interfaz.md, «Rendimiento»).
+       Solo al publicar para win-x64: compilar y probar en Linux (dotnet build -p:EnableWindowsTargeting=true) no cambia. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <PublishReadyToRun>true</PublishReadyToRun>
+  </PropertyGroup>
+
 </Project>

@@ -28,6 +28,9 @@ internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandle
     /// <summary>Mientras está puesta, la búsqueda de un producto por código espera a que se suelte (o a que la caja se canse).</summary>
     public TaskCompletionSource? Detenida { get; set; }
 
+    /// <summary>Mientras está puesta, todo espera a que se suelte: la red tan lenta que nada contesta.</summary>
+    public TaskCompletionSource? TodoDetenido { get; set; }
+
     public int Cuantas(string ruta) => _pedidas.Count(p => p.StartsWith(ruta, StringComparison.Ordinal));
 
     public bool Respondio(string contiene) => _respondidas.Any(r => r.Contains(contiene, StringComparison.Ordinal));
@@ -42,6 +45,8 @@ internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandle
             await Task.Delay(Retraso, cancellationToken);
         if (Detenida is { } detenida && ruta.StartsWith("/api/productos/codigo/", StringComparison.Ordinal))
             await detenida.Task.WaitAsync(cancellationToken);
+        if (TodoDetenido is { } todo)
+            await todo.Task.WaitAsync(cancellationToken);
         var respuesta = await base.SendAsync(request, cancellationToken);
         _respondidas.Enqueue(ruta);
         return respuesta;
