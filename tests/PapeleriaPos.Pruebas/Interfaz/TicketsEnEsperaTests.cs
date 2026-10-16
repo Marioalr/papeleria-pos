@@ -50,7 +50,7 @@ public sealed class TicketsEnEsperaTests : IDisposable
     };
 
     [Fact]
-    public void Un_ticket_con_mayoreo_precio_cambiado_descuento_y_articulo_comun_vuelve_igual()
+    public async Task Un_ticket_con_mayoreo_precio_cambiado_descuento_y_articulo_comun_vuelve_igual()
     {
         var lapicero = Lapicero();
         var cuaderno = Lapicero() with { Descripcion = "Cuaderno raya", Codigo = "750200" };
@@ -68,7 +68,7 @@ public sealed class TicketsEnEsperaTests : IDisposable
         venta.AutorizacionDescuentoId = Ids.Nuevo();
         var productos = new Dictionary<Guid, ProductoVentaDto> { [lapicero.VarianteId] = lapicero, [cuaderno.VarianteId] = cuaderno };
 
-        CajaReiniciada().GuardarEnEspera([TicketsEnEspera.Guardar(venta, productos, [], escuela, null, fiadoSinConfirmar: true)]);
+        await CajaReiniciada().GuardarEnEsperaAsync([TicketsEnEspera.Guardar(venta, productos, [], escuela, null, fiadoSinConfirmar: true)]);
         // Se reinicia la caja: la base local se abre de nuevo.
         var guardado = Assert.Single(CajaReiniciada().TicketsEnEspera());
         var rearmada = Vacia();
@@ -105,19 +105,19 @@ public sealed class TicketsEnEsperaTests : IDisposable
     }
 
     [Fact]
-    public void Sin_tickets_o_al_empezar_de_cero_no_queda_ninguno()
+    public async Task Sin_tickets_o_al_empezar_de_cero_no_queda_ninguno()
     {
         var venta = Vacia();
         venta.AgregarArticuloComun("Recuerdo", 2500, Cantidad.Piezas(1));
         TicketGuardado[] uno = [TicketsEnEspera.Guardar(venta, new Dictionary<Guid, ProductoVentaDto>(), [], null, null, false)];
         var caja = CajaReiniciada();
 
-        caja.GuardarEnEspera(uno);
-        caja.GuardarEnEspera([]);
+        await caja.GuardarEnEsperaAsync(uno);
+        await caja.GuardarEnEsperaAsync([]);
         Assert.Empty(CajaReiniciada().TicketsEnEspera());
         Assert.Null(new AlmacenLocal(_ruta).Leer<List<TicketGuardado>>("espera"));
 
-        caja.GuardarEnEspera(uno);
+        await caja.GuardarEnEsperaAsync(uno);
         _contingencia!.OlvidarCredito();
         Assert.Empty(CajaReiniciada().TicketsEnEspera());
     }
@@ -134,11 +134,11 @@ public sealed class TicketsEnEsperaTests : IDisposable
     }
 
     [Fact]
-    public void Sin_base_local_no_se_guardan_y_no_falla()
+    public async Task Sin_base_local_no_se_guardan_y_no_falla()
     {
         var caja = new ClienteCaja(new HttpClient(), new ConexionCaja { Servicio = new Uri("http://localhost:9") });
 
-        caja.GuardarEnEspera([]);
+        await caja.GuardarEnEsperaAsync([]);
 
         Assert.Empty(caja.TicketsEnEspera());
     }

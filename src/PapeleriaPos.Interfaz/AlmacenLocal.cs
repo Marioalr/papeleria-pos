@@ -29,12 +29,52 @@ public sealed record CreditoPorConfirmar(Guid Id, Guid ClienteId, CreditoLocal L
 /// La base local de la caja (una SQLite propia, junto a su configuración): la copia del catálogo y demás datos para vender
 /// sin conexión, la bandeja de salida, el diario del turno y la cuenta propia del crédito (lo fiado y abonado en esta
 /// caja que la caja principal todavía no le confirma; no es del turno: el corte no la toca).
+/// <para>
+/// Un solo escritor (entrega 5, docs/propuesta-interfaz.md, «Rendimiento»): todo lo que se escribe pasa por una cola, en su
+/// propio hilo, una escritura tras otra (<see cref="EscribirAsync"/>). La venta y la sincronización ya no se esperan entre
+/// sí en la base: la pantalla deja su escritura en la cola y sigue (la espera sin detenerse), y la copia de la caja
+/// principal, que es grande, se escribe ahí mismo sin trabar a nadie. Las lecturas siguen a la par (WAL), cada una con su
+/// conexión, y ven todo lo que se pidió escribir antes de ellas (<see cref="AlDia"/>). Cada conexión, con
+/// <c>busy_timeout</c> y <c>synchronous=FULL</c> (entrega 10).
+/// </para>
 /// </summary>
 public sealed class AlmacenLocal
 {
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly string _cadena;
+
+    /// <summary>Lo que se escribe, en orden, y quién lo espera.</summary>
+    private sealed class Escritura(Action<Lote> escribir, long numero, string que)
+    {
+        public Action<Lote> Escribir { get; } = escribir;
+        public long Numero { get; } = numero;
+        public string Que { get; } = que;
+        public TaskCompletionSource Hecha { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    /// <summary>Sin nada que escribir este rato, el hilo del escritor se va; vuelve con lo siguiente.</summary>
+    private static readonly TimeSpan Reposo = TimeSpan.FromSeconds(10);
+
+    private readonly object _cola = new();
+    private readonly Queue<Escritura> _pendientes = new();
+    private Thread? _escritor;
+
+    /// <summary>Cuántas se han pedido, el número de la última que ya quedó (en orden) y el de la última que leen las lecturas.</summary>
+    private long _pedidas, _hechas, _ultimaQueSeLee;
+
+    /// <summary>En el hilo del escritor, el almacén de quien escribe: ahí las lecturas no esperan a la cola.</summary>
+    [ThreadStatic]
+    private static AlmacenLocal? _escribiendo;
+
+    /// <summary>
+    /// Cada escritura que tardó más de lo normal: qué era y cuánto tardó (la ve el vigía de la pantalla, que dice qué pasaba
+    /// cuando se trabó).
+    /// </summary>
+    public event Action<string, TimeSpan>? EscrituraLarga;
+
+    /// <summary>Desde cuánto una escritura cuenta como larga.</summary>
+    public static readonly TimeSpan Larga = TimeSpan.FromMilliseconds(20);
 
     public AlmacenLocal(string ruta)
     {
@@ -91,17 +131,131 @@ public sealed class AlmacenLocal
 
     public T? Leer<T>(string clave)
     {
+        AlDia();
         using var conexion = Abrir();
-        using var comando = Comando(conexion, null, "SELECT Valor FROM Ajustes WHERE Clave = $clave", ("$clave", clave));
-        return comando.ExecuteScalar() is string valor ? JsonSerializer.Deserialize<T>(valor, Json) : default;
+        return Lote.Leer<T>(conexion, null, clave);
     }
 
-    /// <summary>Varias escrituras juntas: o quedan todas o ninguna (una venta, su bitácora, su anotación y el folio).</summary>
-    public Lote Lote() => new(Abrir());
+    /// <summary>
+    /// Varias escrituras juntas, en una transacción: o quedan todas o ninguna (una venta, su bitácora, su anotación y el
+    /// folio). Va a la cola del escritor, en su hilo; termina cuando ya está en el disco. Quien la pide no se detiene mientras.
+    /// </summary>
+    /// <param name="que">Qué es, para el vigía de la pantalla si tarda.</param>
+    /// <param name="laLeen">
+    /// Si lo que se escribe se vuelve a leer de aquí mientras la caja está abierta (casi todo). La copia de la caja principal
+    /// no: se lee al abrir; las lecturas no la esperan.
+    /// </param>
+    public Task EscribirAsync(Action<Lote> escribir, string que = "la base de la caja", bool laLeen = true)
+    {
+        if (_escribiendo == this)
+            throw new InvalidOperationException("Dentro de una escritura no se pide otra: se escribiría en otra transacción.");
+        Escritura escritura;
+        lock (_cola)
+        {
+            escritura = new Escritura(escribir, ++_pedidas, que);
+            if (laLeen)
+                _ultimaQueSeLee = escritura.Numero;
+            _pendientes.Enqueue(escritura);
+            if (_escritor is null)
+            {
+                _escritor = new Thread(EscribirEnSuHilo) { IsBackground = true, Name = "Escritor de caja-local.db" };
+                _escritor.Start();
+            }
+            else
+                Monitor.PulseAll(_cola);
+        }
+        return escritura.Hecha.Task;
+    }
+
+    /// <summary>
+    /// Lo mismo, esperando aquí a que quede. Para lo que se hace sin conexión (no hay sincronización con qué toparse) y fuera
+    /// de la pantalla; la pantalla usa <see cref="EscribirAsync"/>.
+    /// </summary>
+    public void Escribir(Action<Lote> escribir, string que = "la base de la caja") => EscribirAsync(escribir, que).GetAwaiter().GetResult();
+
+    /// <summary>Termina cuando quedó todo lo que se ha pedido escribir (al cerrar la caja: nada se queda en la cola).</summary>
+    public bool Vaciar(TimeSpan espera)
+    {
+        var limite = DateTime.UtcNow + espera;
+        lock (_cola)
+        {
+            var hasta = _pedidas;
+            while (_hechas < hasta)
+            {
+                var falta = limite - DateTime.UtcNow;
+                if (falta <= TimeSpan.Zero || !Monitor.Wait(_cola, falta))
+                    return _hechas >= hasta;
+            }
+            return true;
+        }
+    }
+
+    /// <summary>El hilo del escritor: una escritura tras otra, cada una en su transacción; sin nada que hacer un rato, se va.</summary>
+    private void EscribirEnSuHilo()
+    {
+        _escribiendo = this;
+        while (true)
+        {
+            Escritura escritura;
+            lock (_cola)
+            {
+                while (_pendientes.Count == 0)
+                {
+                    if (!Monitor.Wait(_cola, Reposo) && _pendientes.Count == 0)
+                    {
+                        _escritor = null;
+                        return;
+                    }
+                }
+                escritura = _pendientes.Dequeue();
+            }
+            var reloj = System.Diagnostics.Stopwatch.StartNew();
+            Exception? error = null;
+            try
+            {
+                using var conexion = Abrir();
+                using var transaccion = conexion.BeginTransaction();
+                escritura.Escribir(new Lote(conexion, transaccion));
+                transaccion.Commit();
+            }
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+            lock (_cola)
+            {
+                _hechas = escritura.Numero;
+                Monitor.PulseAll(_cola);
+            }
+            if (error is null)
+                escritura.Hecha.SetResult();
+            else
+                escritura.Hecha.SetException(error);
+            if (reloj.Elapsed >= Larga)
+                EscrituraLarga?.Invoke(escritura.Que, reloj.Elapsed);
+        }
+    }
+
+    /// <summary>
+    /// Una lectura ve todo lo que se pidió escribir antes de ella: si algo sigue en la cola, lo espera (casi nunca: la cola
+    /// casi siempre está vacía). No espera a la copia de la caja principal, que no se lee mientras la caja está abierta.
+    /// </summary>
+    private void AlDia()
+    {
+        if (_escribiendo == this)
+            return;
+        lock (_cola)
+        {
+            var hasta = _ultimaQueSeLee;
+            while (_hechas < hasta)
+                Monitor.Wait(_cola);
+        }
+    }
 
     /// <summary>Lo que falta subir y lo que no se pudo subir (para reintentarlo), en orden.</summary>
     public List<ElementoBandeja> PorSubir(bool conErrores)
     {
+        AlDia();
         using var conexion = Abrir();
         using var comando = Comando(conexion, null,
             $"SELECT Orden, Id, Ruta, Json, Error FROM Bandeja WHERE SubidoUtc IS NULL {(conErrores ? "" : "AND Error IS NULL")} ORDER BY Orden");
@@ -113,18 +267,9 @@ public sealed class AlmacenLocal
         return elementos;
     }
 
-    public void MarcarSubido(long orden, DateTime ahoraUtc)
-    {
-        using var conexion = Abrir();
-        Ejecutar(conexion, null, "UPDATE Bandeja SET SubidoUtc = $fecha, Error = NULL WHERE Orden = $orden",
-            ("$fecha", ahoraUtc.ToString("O", CultureInfo.InvariantCulture)), ("$orden", orden));
-    }
+    public Task MarcarSubidoAsync(long orden, DateTime ahoraUtc) => EscribirAsync(l => l.Subido(orden, ahoraUtc), "la bandeja");
 
-    public void MarcarError(long orden, string error)
-    {
-        using var conexion = Abrir();
-        Ejecutar(conexion, null, "UPDATE Bandeja SET Error = $error WHERE Orden = $orden", ("$error", error), ("$orden", orden));
-    }
+    public Task MarcarErrorAsync(long orden, string error) => EscribirAsync(l => l.ConError(orden, error), "la bandeja");
 
     /// <summary>Cuántas faltan por subir, cuántas no se pudieron subir y el último motivo.</summary>
     /// <summary>
@@ -133,6 +278,7 @@ public sealed class AlmacenLocal
     /// </summary>
     public (int Pendientes, int ConError, string? UltimoError, int SinBloquear) Contar()
     {
+        AlDia();
         using var conexion = Abrir();
         using var comando = Comando(conexion, null, """
             SELECT
@@ -149,6 +295,7 @@ public sealed class AlmacenLocal
     /// <summary>Lo que se ha anotado de un turno, sumado.</summary>
     public AnotacionDiario Diario(Guid turnoId)
     {
+        AlDia();
         using var conexion = Abrir();
         using var comando = Comando(conexion, null, """
             SELECT COALESCE(SUM(Ventas), 0), COALESCE(SUM(Efectivo), 0), COALESCE(SUM(Tarjeta), 0), COALESCE(SUM(Transferencia), 0),
@@ -168,6 +315,7 @@ public sealed class AlmacenLocal
     /// <summary>Si la caja tiene algo del cliente (fiado o abonado) en la bandeja que todavía no sube.</summary>
     public bool CreditoSinSubir(Guid clienteId)
     {
+        AlDia();
         using var conexion = Abrir();
         using var comando = Comando(conexion, null, """
             SELECT EXISTS (SELECT 1 FROM Credito JOIN Bandeja ON Bandeja.Id = Credito.Id
@@ -178,6 +326,7 @@ public sealed class AlmacenLocal
 
     public List<CreditoPorConfirmar> CuentaPropia(Guid? clienteId = null)
     {
+        AlDia();
         using var conexion = Abrir();
         using var comando = Comando(conexion, null,
             $"SELECT Id, ClienteId, Monto, Vence, PorVerificar FROM Credito WHERE Confirmado = 0 {(clienteId is null ? "" : "AND ClienteId = $cliente")} ORDER BY FechaUtc, Id",
@@ -194,6 +343,7 @@ public sealed class AlmacenLocal
     /// <summary>Si el servicio ya dijo que eso está en sus saldos: con el mismo Id no se vuelve a hacer ni a contar.</summary>
     public bool CreditoConfirmado(Guid id)
     {
+        AlDia();
         using var conexion = Abrir();
         using var comando = Comando(conexion, null, "SELECT COUNT(*) FROM Credito WHERE Id = $id AND Confirmado = 1", ("$id", id.ToString()));
         return Convert.ToInt32(comando.ExecuteScalar()) > 0;
@@ -237,22 +387,52 @@ public sealed class AlmacenLocal
     }
 }
 
-/// <summary>Escrituras en una sola transacción; sin <see cref="Confirmar"/>, no queda ninguna.</summary>
-public sealed class Lote : IDisposable
+/// <summary>
+/// Escrituras en una sola transacción, en el hilo del escritor (<see cref="AlmacenLocal.EscribirAsync"/>): quedan todas al
+/// terminar, o ninguna si algo falla.
+/// </summary>
+public sealed class Lote
 {
     private readonly SqliteConnection _conexion;
     private readonly SqliteTransaction _transaccion;
 
-    internal Lote(SqliteConnection conexion)
+    internal Lote(SqliteConnection conexion, SqliteTransaction transaccion)
     {
         _conexion = conexion;
-        _transaccion = conexion.BeginTransaction();
+        _transaccion = transaccion;
     }
 
-    public Lote Guardar<T>(string clave, T valor)
+    /// <summary>Lo guardado con esa clave, dentro de esta misma transacción (el folio antes de subirlo, por ejemplo).</summary>
+    public T? Leer<T>(string clave) => Leer<T>(_conexion, _transaccion, clave);
+
+    internal static T? Leer<T>(SqliteConnection conexion, SqliteTransaction? transaccion, string clave)
+    {
+        using var comando = AlmacenLocal.Comando(conexion, transaccion, "SELECT Valor FROM Ajustes WHERE Clave = $clave", ("$clave", clave));
+        return comando.ExecuteScalar() is string valor ? JsonSerializer.Deserialize<T>(valor, AlmacenLocal.Json) : default;
+    }
+
+    public Lote Guardar<T>(string clave, T valor) => GuardarJson(clave, JsonSerializer.Serialize(valor, AlmacenLocal.Json));
+
+    /// <summary>Lo que ya viene en JSON: la copia de la caja principal se convierte antes, fuera de la cola.</summary>
+    public Lote GuardarJson(string clave, string json)
     {
         AlmacenLocal.Ejecutar(_conexion, _transaccion, "INSERT INTO Ajustes (Clave, Valor) VALUES ($clave, $valor) ON CONFLICT(Clave) DO UPDATE SET Valor = excluded.Valor",
-            ("$clave", clave), ("$valor", JsonSerializer.Serialize(valor, AlmacenLocal.Json)));
+            ("$clave", clave), ("$valor", json));
+        return this;
+    }
+
+    /// <summary>Ya subió: no se vuelve a mandar.</summary>
+    public Lote Subido(long orden, DateTime ahoraUtc)
+    {
+        AlmacenLocal.Ejecutar(_conexion, _transaccion, "UPDATE Bandeja SET SubidoUtc = $fecha, Error = NULL WHERE Orden = $orden",
+            ("$fecha", ahoraUtc.ToString("O", CultureInfo.InvariantCulture)), ("$orden", orden));
+        return this;
+    }
+
+    /// <summary>El servicio no lo aceptó: queda con su motivo y se reintenta más tarde.</summary>
+    public Lote ConError(long orden, string error)
+    {
+        AlmacenLocal.Ejecutar(_conexion, _transaccion, "UPDATE Bandeja SET Error = $error WHERE Orden = $orden", ("$error", error), ("$orden", orden));
         return this;
     }
 
@@ -373,11 +553,4 @@ public sealed class Lote : IDisposable
         return this;
     }
 
-    public void Confirmar() => _transaccion.Commit();
-
-    public void Dispose()
-    {
-        _transaccion.Dispose();
-        _conexion.Dispose();
-    }
 }

@@ -151,6 +151,8 @@ public partial class MainWindow : Window
         {
             IniciarAgente(configuracion, conexion, contingencia);
             RecordarElCorteAlCerrar(contingencia);
+            // Lo que estaba en la cola del escritor de la base local (entrega 5) queda en el disco antes de cerrar.
+            Closed += (_, _) => contingencia.Cerrar();
         }
     }
 

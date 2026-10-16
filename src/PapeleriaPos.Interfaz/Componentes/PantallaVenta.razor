@@ -801,10 +801,10 @@
     /// El corte cerró el turno: lo que quedó sin cobrar (también el ticket que se atendía, como estaba) se guarda en espera
     /// para el siguiente turno, como dijo el corte.
     /// </summary>
-    private void TurnoCerrado()
+    private async Task TurnoCerrado()
     {
         _turnoCerrado = true;
-        GuardarEspera();
+        await GuardarEsperaYEsperarAsync();
     }
 
     /// <summary>
@@ -815,7 +815,8 @@
     private async Task SalirAsync()
     {
         await _captura.EsperarAsync();
-        GuardarEspera();
+        // Ya guardados cuando entre el siguiente: los lee al abrir su venta.
+        await GuardarEsperaYEsperarAsync();
         await AlSalir.InvokeAsync();
     }
 
@@ -3126,15 +3127,34 @@
         // Sin tickets con algo, ni antes ni ahora (lo de casi siempre al cobrar): no hay nada que escribir.
         if (conAlgo.Count == 0 && !_hayEsperaGuardada)
             return;
+        // Como están ahora: se escriben en el hilo del escritor de la base local (entrega 5), y la pantalla sigue mientras.
+        var guardados = conAlgo.Select(t => TicketsEnEspera.Guardar(t.Venta, t.Productos, t.Impresiones, t.Cliente, t.Cuenta, t.FiadoSinConfirmar)).ToList();
+        _hayEsperaGuardada = conAlgo.Count > 0;
+        _esperaGuardandose = GuardarEsperaAsync(guardados);
+    }
+
+    /// <summary>Lo último que se mandó guardar de la espera: al salir, al cerrar el turno o antes de instalar, se espera.</summary>
+    private Task _esperaGuardandose = Task.CompletedTask;
+
+    private async Task GuardarEsperaAsync(List<TicketGuardado> guardados)
+    {
         try
         {
-            Cliente.GuardarEnEspera(conAlgo.Select(t => TicketsEnEspera.Guardar(t.Venta, t.Productos, t.Impresiones, t.Cliente, t.Cuenta, t.FiadoSinConfirmar)).ToList());
-            _hayEsperaGuardada = conAlgo.Count > 0;
+            await Cliente.GuardarEnEsperaAsync(guardados);
         }
         catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException)
         {
+            _hayEsperaGuardada = true;
             Avisar($"No se pudieron guardar los tickets en espera en esta caja: {ex.Message}");
+            StateHasChanged();
         }
+    }
+
+    /// <summary>Guarda la espera y termina cuando ya quedó (al salir de la venta, al cerrar el turno, antes de instalar).</summary>
+    private async Task GuardarEsperaYEsperarAsync()
+    {
+        GuardarEspera();
+        await _esperaGuardandose;
     }
 
     /// <summary>Al entrar a la venta, los que quedaron guardados (de antes de un reinicio o un apagón) vuelven a esperar.</summary>
@@ -3841,7 +3861,7 @@
         case Ventanas.Configuracion:
             @* La Configuración nueva (entrega 7) ocupa la pantalla, como el corte: Esc la cierra. *@
             <Ventana Titulo="Configuración" Clase="cfg" AlCerrar="Cerrar">
-                <Configuracion Caja="Caja" Sesion="Sesion" AntesDeInstalar="GuardarEspera" AlCambiar="ConfiguracionCambiadaAsync"
+                <Configuracion Caja="Caja" Sesion="Sesion" AntesDeInstalar="GuardarEsperaYEsperarAsync" AlCambiar="ConfiguracionCambiadaAsync"
                                AlNoGuardar="ConfiguracionNoGuardada" />
             </Ventana>
             break;
@@ -3927,6 +3947,8 @@
     {
         if (_contingencia is not null)
             _contingencia.Cambio -= AlCambiarContingencia;
+        // Lo que se mandó guardar de la espera queda antes de irse (volver a cargar, un error): la pantalla nueva lo lee.
+        await _esperaGuardandose.ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
         try
         {
             // Si se va con una ventana abierta (el corte Z, o «Cambiar de usuario» del menú con un panel) o en una página,

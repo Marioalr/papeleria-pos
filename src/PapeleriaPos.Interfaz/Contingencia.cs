@@ -1,3 +1,4 @@
+using System.Text.Json;
 using PapeleriaPos.Impresiones.Contratos;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
@@ -253,14 +254,13 @@ public sealed class Contingencia
     public bool PilotoEleventa { get; private set; }
 
     /// <summary>Lo que dijo el servicio del piloto con eleventa; se guarda solo si cambió.</summary>
-    public void RecordarPilotoEleventa(bool piloto)
+    public async Task RecordarPilotoEleventaAsync(bool piloto)
     {
         if (piloto == PilotoEleventa)
             return;
         PilotoEleventa = piloto;
-        using (var lote = _almacen.Lote())
-            lote.Guardar(ClavePilotoEleventa, piloto).Confirmar();
         Cambio?.Invoke();
+        await _almacen.EscribirAsync(l => l.Guardar(ClavePilotoEleventa, piloto), "el piloto con eleventa");
     }
 
     private DateTime Ahora => _reloj.GetUtcNow().UtcDateTime;
@@ -276,6 +276,16 @@ public sealed class Contingencia
     }
 
     public void Detener() => _alto?.Cancel();
+
+    /// <summary>
+    /// Se cierra la caja: el latido se detiene y lo que se mandó escribir en la base local queda en el disco antes de irse
+    /// (los tickets en espera, lo último de un cobro). Espera poco: una base que no responde no detiene el cierre.
+    /// </summary>
+    public void Cerrar(TimeSpan? espera = null)
+    {
+        Detener();
+        _almacen.Vaciar(espera ?? TimeSpan.FromSeconds(3));
+    }
 
     private async Task LatirAsync(CancellationToken ct)
     {
@@ -334,7 +344,7 @@ public sealed class Contingencia
             return;
         }
         Fijar(responde: true);
-        RecordarPilotoEleventa(estado?.PilotoEleventa == true);
+        await RecordarPilotoEleventaAsync(estado?.PilotoEleventa == true);
         if (estado?.AvisoBase != AvisoBase)
         {
             AvisoBase = estado?.AvisoBase;
@@ -406,11 +416,11 @@ public sealed class Contingencia
                 try
                 {
                     await _http.PostJsonAsync(elemento.Ruta, elemento.Json);
-                    _almacen.MarcarSubido(elemento.Orden, Ahora);
+                    await _almacen.MarcarSubidoAsync(elemento.Orden, Ahora);
                 }
                 catch (ErrorCaja ex) when (ex.Codigo != "sin-conexion")
                 {
-                    _almacen.MarcarError(elemento.Orden, ex.Message);
+                    await _almacen.MarcarErrorAsync(elemento.Orden, ex.Message);
                 }
             }
             if (_conexion.CajaId is { } caja && UltimoFolio > 0)
@@ -446,13 +456,14 @@ public sealed class Contingencia
         {
             if (await _http.GetAsync<PaqueteContingenciaDto>($"api/cajas/{caja}/paquete") is not { } paquete)
                 return;
-            using (var lote = _almacen.Lote())
-            {
-                lote.Guardar("paquete", paquete).Guardar("folio", Math.Max(UltimoFolio, paquete.UltimoFolio)).Confirmar();
-            }
             Poner(new Copia(paquete));
             _paqueteBajadoUtc = Ahora;
             Cambio?.Invoke();
+            // El folio, como cualquier escritura. La copia (miles de productos) se convierte aquí, fuera de la cola, y lo que se
+            // lee no la espera: solo se lee al abrir la caja.
+            await _almacen.EscribirAsync(l => l.Guardar("folio", Math.Max(l.Leer<int?>("folio") ?? 0, paquete.UltimoFolio)), "el folio de la copia");
+            var json = JsonSerializer.Serialize(paquete, AlmacenLocal.Json);
+            await _almacen.EscribirAsync(l => l.GuardarJson("paquete", json), "la copia de la caja principal", laLeen: false);
         }
         catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
         {
@@ -480,12 +491,10 @@ public sealed class Contingencia
                 is not { } saldos)
                 return;
             var incluidos = saldos.Incluidos.ToHashSet();
-            using (var lote = _almacen.Lote())
-            {
-                lote.Guardar("saldos", saldos).ConfirmarCredito(saldos.Incluidos, Ahora - RecordarConfirmado)
-                    .QuitarCreditoHuerfano(enviados.Where(id => !incluidos.Contains(id)), Ahora - CreditoHuerfano)
-                    .Confirmar();
-            }
+            var huerfanos = enviados.Where(id => !incluidos.Contains(id)).ToList();
+            var (olvidarAntes, huerfanoAntes) = (Ahora - RecordarConfirmado, Ahora - CreditoHuerfano);
+            await _almacen.EscribirAsync(l => l.Guardar("saldos", saldos).ConfirmarCredito(saldos.Incluidos, olvidarAntes)
+                .QuitarCreditoHuerfano(huerfanos, huerfanoAntes), "los saldos del crédito");
             _saldos = saldos;
             // Lo que se anotó mientras se pedían (un cobro en línea a la par) puede venir ya en esta foto sin estar en
             // Incluidos: se pregunta otra vez en el siguiente latido, ya con eso.
@@ -515,8 +524,8 @@ public sealed class Contingencia
     /// </summary>
     public void OlvidarCredito()
     {
-        using (var lote = _almacen.Lote())
-            lote.LimpiarCredito().Borrar("saldos").Borrar("turno").Borrar("base").Borrar("folio").Borrar(ClaveEspera).LimpiarDiario().Confirmar();
+        _almacen.Escribir(l => l.LimpiarCredito().Borrar("saldos").Borrar("turno").Borrar("base").Borrar("folio").Borrar(ClaveEspera).LimpiarDiario(),
+            "empezar de cero");
         _saldos = null;
         _creditosPedidos = null;
     }
@@ -526,11 +535,9 @@ public sealed class Contingencia
     /// <summary>Los tickets en espera de esta caja, en el orden en que se apartaron.</summary>
     public List<TicketGuardado> TicketsEnEspera() => _almacen.Leer<List<TicketGuardado>>(ClaveEspera) ?? [];
 
-    public void GuardarEnEspera(IReadOnlyList<TicketGuardado> tickets)
-    {
-        using var lote = _almacen.Lote();
-        (tickets.Count == 0 ? lote.Borrar(ClaveEspera) : lote.Guardar(ClaveEspera, tickets)).Confirmar();
-    }
+    /// <summary>Se guardan en la cola del escritor: la pantalla no se detiene mientras.</summary>
+    public Task GuardarEnEsperaAsync(IReadOnlyList<TicketGuardado> tickets) =>
+        _almacen.EscribirAsync(l => _ = tickets.Count == 0 ? l.Borrar(ClaveEspera) : l.Guardar(ClaveEspera, tickets), "los tickets en espera");
 
     private void Fijar(bool responde)
     {
@@ -552,8 +559,7 @@ public sealed class Contingencia
     /// </summary>
     public void EncolarImpresion(TrabajoMedidoDto trabajo)
     {
-        using (var lote = _almacen.Lote())
-            lote.Encolar(trabajo.Id, "api/impresiones", trabajo, bloquea: false).Confirmar();
+        _almacen.Escribir(l => l.Encolar(trabajo.Id, "api/impresiones", trabajo, bloquea: false), "una impresión medida");
         Recontar();
         if (_responde)
             _ = Task.Run(SubirAsync);
@@ -601,14 +607,10 @@ public sealed class Contingencia
         var ahora = Ahora;
         var id = s.Id ?? Ids.Nuevo();
         var turno = new TurnoDto(id, s.CajaId, s.CajeroId, Nombre(s.CajeroId), HoraMexico.ALocal(ahora), s.FondoCentavos);
-        using (var lote = _almacen.Lote())
-        {
-            lote.Encolar(id, "api/bandeja/turnos", new TurnoContingenciaDto(id, s.CajaId, s.CajeroId, s.FondoCentavos, ahora))
-                .Guardar("turno", turno)
-                .Guardar("base", new BaseTurno(id, s.FondoCentavos, new AnotacionDiario(Guid.Empty, id)))
-                .LimpiarDiario()
-                .Confirmar();
-        }
+        _almacen.Escribir(lote => lote.Encolar(id, "api/bandeja/turnos", new TurnoContingenciaDto(id, s.CajaId, s.CajeroId, s.FondoCentavos, ahora))
+            .Guardar("turno", turno)
+            .Guardar("base", new BaseTurno(id, s.FondoCentavos, new AnotacionDiario(Guid.Empty, id)))
+            .LimpiarDiario(), "abrir el turno sin conexión");
         Recontar();
         return turno;
     }
@@ -628,13 +630,11 @@ public sealed class Contingencia
         var id = m.Id ?? Ids.Nuevo();
         var motivo = m.Motivo.Trim();
         var bitacora = Registro(m.UsuarioId, accion, $"{(entrada ? "Entrada" : "Salida")} de efectivo. Motivo: {motivo}", m.MontoCentavos);
-        using (var lote = _almacen.Lote())
-        {
-            lote.Encolar(id, $"api/bandeja/turnos/{turnoId}/movimientos", new MovimientoContingenciaDto(id, m.Tipo, m.MontoCentavos, motivo, m.UsuarioId, ahora))
-                .Encolar(bitacora.Id, "api/bandeja/bitacora", bitacora)
-                .Anotar(new AnotacionDiario(id, turnoId, Entradas: entrada ? m.MontoCentavos : 0, Salidas: entrada ? 0 : m.MontoCentavos))
-                .Confirmar();
-        }
+        _almacen.Escribir(lote => lote
+            .Encolar(id, $"api/bandeja/turnos/{turnoId}/movimientos", new MovimientoContingenciaDto(id, m.Tipo, m.MontoCentavos, motivo, m.UsuarioId, ahora))
+            .Encolar(bitacora.Id, "api/bandeja/bitacora", bitacora)
+            .Anotar(new AnotacionDiario(id, turnoId, Entradas: entrada ? m.MontoCentavos : 0, Salidas: entrada ? 0 : m.MontoCentavos)),
+            "una entrada o salida sin conexión");
         Recontar();
         return new ComprobanteMovimientoDto(id.ToString()[^6..].ToUpperInvariant(), m.Tipo, m.MontoCentavos, motivo, HoraMexico.ALocal(ahora),
             Caja.Nombre, Nombre(m.UsuarioId), Datos.Paquete.Encabezado);
@@ -761,12 +761,9 @@ public sealed class Contingencia
 
         var corte = Corte(turno, TipoCorte.Z, Nombre(s.UsuarioId), s.ContadoCentavos);
         var id = Ids.Nuevo();
-        using (var lote = _almacen.Lote())
-        {
-            lote.Encolar(id, $"api/bandeja/turnos/{turnoId}/corte-z", new CorteContingenciaDto(id, s.UsuarioId, null, Ahora, s.ContadoCentavos))
-                .Borrar("turno").Borrar("base").LimpiarDiario()
-                .Confirmar();
-        }
+        var ahora = Ahora;
+        _almacen.Escribir(lote => lote.Encolar(id, $"api/bandeja/turnos/{turnoId}/corte-z", new CorteContingenciaDto(id, s.UsuarioId, null, ahora, s.ContadoCentavos))
+            .Borrar("turno").Borrar("base").LimpiarDiario(), "el corte sin conexión");
         Recontar();
         return corte;
     }
@@ -937,15 +934,15 @@ public sealed class Contingencia
                 x.DescuentoCentesimas, x.DescuentoCentesimas is null && x.TieneDescuento ? x.DescuentoCentavos : null, x.MotivoDescuento)).ToList(),
             s.Cobros, venta.ClienteId, venta.RedondeoCentavos, venta.MayoreoDeCliente, cuenta?.SaldoCentavos, excesoAutorizado, vence);
 
-        using (var lote = _almacen.Lote())
+        _almacen.Escribir(lote =>
         {
             lote.Encolar(venta.Id, "api/bandeja/ventas", subida);
             foreach (var registro in bitacora)
                 lote.Encolar(registro.Id, "api/bandeja/bitacora", registro);
             if (cuenta is not null)
                 lote.Credito(venta.Id, cliente!.Id, aCredito, ahora, vence);
-            lote.Anotar(Anotacion(turno.Id, ticket)).Guardar("folio", folio).Confirmar();
-        }
+            lote.Anotar(Anotacion(turno.Id, ticket)).Guardar("folio", folio);
+        }, "un cobro sin conexión");
         Gastar(usadas);
         Recontar();
         return ticket;
@@ -983,34 +980,32 @@ public sealed class Contingencia
         var comprobante = new ComprobanteAbonoDto(s.Id, Abono.FolioDe(s.Id), HoraMexico.ALocal(ahora), caja.Nombre, Nombre(s.UsuarioId), cliente.Id,
             cliente.Nombre, s.Forma, calculo.MontoCentavos, calculo.RedondeoCentavos, recibido, calculo.CambioCentavos, referencia, cuenta.SaldoCentavos,
             despues.SaldoCentavos, vence, datos.Paquete.Encabezado, Estimado: true);
-        using (var lote = _almacen.Lote())
-        {
-            lote.Encolar(s.Id, "api/bandeja/abonos", new AbonoContingenciaDto(s.Id, caja.Id, turno.Id, s.UsuarioId, cliente.Id, s.Forma, calculo.MontoCentavos,
-                    calculo.RedondeoCentavos, recibido, calculo.CambioCentavos, referencia, ahora, cuenta.SaldoCentavos, vence))
-                .Credito(s.Id, cliente.Id, -calculo.MontoCentavos, ahora, null, transferencia)
-                .Anotar(AnotacionAbono(s.Id, turno.Id, comprobante, 1))
-                .Confirmar();
-        }
+        _almacen.Escribir(lote => lote
+            .Encolar(s.Id, "api/bandeja/abonos", new AbonoContingenciaDto(s.Id, caja.Id, turno.Id, s.UsuarioId, cliente.Id, s.Forma, calculo.MontoCentavos,
+                calculo.RedondeoCentavos, recibido, calculo.CambioCentavos, referencia, ahora, cuenta.SaldoCentavos, vence))
+            .Credito(s.Id, cliente.Id, -calculo.MontoCentavos, ahora, null, transferencia)
+            .Anotar(AnotacionAbono(s.Id, turno.Id, comprobante, 1)), "un abono sin conexión");
         Recontar();
         return comprobante;
     }
 
     // ── Lo del crédito que se manda en línea: se anota antes, por si la respuesta se pierde ──
+    // Lo que se anota de lo que pasó en línea va a la cola del escritor (entrega 5): la pantalla lo espera sin detenerse.
 
-    /// <summary>Lo fiado que se manda en línea; si el servicio lo rechaza, se quita (<see cref="QuitarCredito"/>).</summary>
-    public void AnotarFiado(Guid ventaId, Guid clienteId, long creditoCentavos)
+    /// <summary>Lo fiado que se manda en línea; si el servicio lo rechaza, se quita (<see cref="QuitarCreditoAsync"/>).</summary>
+    public Task AnotarFiadoAsync(Guid ventaId, Guid clienteId, long creditoCentavos)
     {
         var plazo = Credito(clienteId)?.PlazoDias ?? (CopiaCargada() is null ? null : Clientes().FirstOrDefault(c => c.Id == clienteId)?.PlazoCreditoDias)
             ?? ClienteRegistrado.PlazoPorOmision;
-        using var lote = _almacen.Lote();
-        lote.Credito(ventaId, clienteId, creditoCentavos, Ahora, CuentaCredito.Vence(Ahora, plazo)).Confirmar();
+        var ahora = Ahora;
+        return _almacen.EscribirAsync(l => l.Credito(ventaId, clienteId, creditoCentavos, ahora, CuentaCredito.Vence(ahora, plazo)), "lo fiado");
     }
 
     /// <summary>
     /// Un abono que se manda en línea, con lo que de verdad baja (el mismo cálculo que el servicio con el saldo que vio la
     /// caja: en efectivo, lo de más es cambio); se corrige con el comprobante.
     /// </summary>
-    public void AnotarAbono(SolicitudAbono s)
+    public Task AnotarAbonoAsync(SolicitudAbono s)
     {
         long monto;
         try
@@ -1020,34 +1015,30 @@ public sealed class Contingencia
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
         {
-            return;
+            return Task.CompletedTask;
         }
         if (monto <= 0)
-            return;
-        using var lote = _almacen.Lote();
-        lote.Credito(s.Id, s.ClienteId, -monto, Ahora, null, s.Forma == FormaPago.Transferencia).Confirmar();
+            return Task.CompletedTask;
+        var ahora = Ahora;
+        return _almacen.EscribirAsync(l => l.Credito(s.Id, s.ClienteId, -monto, ahora, null, s.Forma == FormaPago.Transferencia), "un abono");
     }
 
     /// <summary>
     /// Un saldo a favor que se devuelve en línea (sube la cuenta): se anota antes de mandarlo, así si se pierde la respuesta
     /// esta caja ya no cuenta con ese saldo a favor; se corrige con el comprobante.
     /// </summary>
-    public void AnotarSaldoDevuelto(Guid id, Guid clienteId, long montoCentavos)
+    public Task AnotarSaldoDevueltoAsync(Guid id, Guid clienteId, long montoCentavos)
     {
         var plazo = Credito(clienteId)?.PlazoDias ?? ClienteRegistrado.PlazoPorOmision;
-        using var lote = _almacen.Lote();
-        lote.Credito(id, clienteId, montoCentavos, Ahora, CuentaCredito.Vence(Ahora, plazo)).Confirmar();
+        var ahora = Ahora;
+        return _almacen.EscribirAsync(l => l.Credito(id, clienteId, montoCentavos, ahora, CuentaCredito.Vence(ahora, plazo)), "un saldo devuelto");
     }
 
     /// <summary>Si esta caja tiene algo del cliente sin subir: sus saldos del servicio todavía no lo incluyen.</summary>
     public bool CreditoSinSubir(Guid clienteId) => _almacen.CreditoSinSubir(clienteId);
 
     /// <summary>El servicio rechazó lo que se le mandó (por una regla): no pasó, ya no se cuenta.</summary>
-    public void QuitarCredito(Guid id)
-    {
-        using var lote = _almacen.Lote();
-        lote.QuitarCredito([id]).Confirmar();
-    }
+    public Task QuitarCreditoAsync(Guid id) => _almacen.EscribirAsync(l => l.QuitarCredito([id]), "lo que no se fió");
 
     // ── Lo que pasó en línea, para la cuenta del turno ──────────────────────
 
@@ -1056,8 +1047,7 @@ public sealed class Contingencia
     {
         if (turno is null)
         {
-            using var lote = _almacen.Lote();
-            lote.Borrar("turno").Borrar("base").LimpiarDiario().Confirmar();
+            await _almacen.EscribirAsync(l => l.Borrar("turno").Borrar("base").LimpiarDiario(), "el turno");
             return;
         }
         CorteDto? resumen = null;
@@ -1069,7 +1059,7 @@ public sealed class Contingencia
         {
             // Sin resumen se queda la base que había: el diario sigue sumando.
         }
-        using (var lote = _almacen.Lote())
+        await _almacen.EscribirAsync(lote =>
         {
             lote.Guardar("turno", turno);
             if (resumen is not null)
@@ -1078,85 +1068,77 @@ public sealed class Contingencia
                     resumen.SalidasCentavos, resumen.DevolucionesCentavos, resumen.Cancelaciones, resumen.RedondeoCentavos, resumen.CreditoCentavos,
                     resumen.Abonos, resumen.AbonosEfectivoCentavos, resumen.AbonosTarjetaCentavos, resumen.AbonosTransferenciaCentavos,
                     resumen.SaldoDevueltoCentavos))).LimpiarDiario();
-            lote.Confirmar();
-        }
+        }, "el turno");
     }
 
-    public void TurnoAbiertoEnLinea(TurnoDto turno)
-    {
-        using var lote = _almacen.Lote();
-        lote.Guardar("turno", turno).Guardar("base", new BaseTurno(turno.Id, turno.FondoCentavos, new AnotacionDiario(Guid.Empty, turno.Id)))
-            .LimpiarDiario().Confirmar();
-    }
+    public Task TurnoAbiertoEnLineaAsync(TurnoDto turno) =>
+        _almacen.EscribirAsync(l => l.Guardar("turno", turno).Guardar("base", new BaseTurno(turno.Id, turno.FondoCentavos, new AnotacionDiario(Guid.Empty, turno.Id)))
+            .LimpiarDiario(), "el turno");
 
-    public void TurnoCerradoEnLinea()
-    {
-        using var lote = _almacen.Lote();
-        lote.Borrar("turno").Borrar("base").LimpiarDiario().Confirmar();
-    }
+    public Task TurnoCerradoEnLineaAsync() => _almacen.EscribirAsync(l => l.Borrar("turno").Borrar("base").LimpiarDiario(), "el turno");
 
-    public void CobroEnLinea(Guid turnoId, TicketDto ticket)
+    public Task CobroEnLineaAsync(Guid turnoId, TicketDto ticket)
     {
         var folio = int.TryParse(ticket.Folio[(ticket.Folio.LastIndexOf('-') + 1)..], out var f) ? f : 0;
-        using var lote = _almacen.Lote();
         // Lo fiado ya estaba anotado: con el vencimiento que puso el servicio, y que el siguiente latido confirme que ya lo tiene.
-        if (ticket.VentaId is { } ventaId && ticket.Credito is { } credito)
-        {
-            lote.CorregirCredito(ventaId, null, credito.Vence);
+        var fiado = ticket.VentaId is { } ventaId && ticket.Credito is { } credito ? (ventaId, credito.Vence) : ((Guid, DateOnly?)?)null;
+        if (fiado is not null)
             _refrescarCredito = true;
-        }
-        lote.Anotar(Anotacion(turnoId, ticket)).Guardar("folio", Math.Max(UltimoFolio, folio)).Confirmar();
+        return _almacen.EscribirAsync(lote =>
+        {
+            if (fiado is { } corregir)
+                lote.CorregirCredito(corregir.Item1, null, corregir.Item2);
+            lote.Anotar(Anotacion(turnoId, ticket)).Guardar("folio", Math.Max(lote.Leer<int?>("folio") ?? 0, folio));
+        }, "un cobro");
     }
 
-    public void MovimientoEnLinea(Guid turnoId, Guid id, ComprobanteMovimientoDto m)
+    public Task MovimientoEnLineaAsync(Guid turnoId, Guid id, ComprobanteMovimientoDto m)
     {
         var entrada = m.Tipo == TipoMovimientoCaja.Entrada;
-        using var lote = _almacen.Lote();
-        lote.Anotar(new AnotacionDiario(id, turnoId, Entradas: entrada ? m.MontoCentavos : 0, Salidas: entrada ? 0 : m.MontoCentavos)).Confirmar();
+        return _almacen.EscribirAsync(l => l.Anotar(new AnotacionDiario(id, turnoId, Entradas: entrada ? m.MontoCentavos : 0,
+            Salidas: entrada ? 0 : m.MontoCentavos)), "una entrada o salida");
     }
 
     /// <summary>
     /// El reembolso sale del efectivo del turno abierto de esta caja; una cancelación deja de contar como venta, y su
     /// tarjeta, su transferencia y lo fiado dejan de contar en el corte (como en el del servicio, que solo suma las vigentes).
     /// </summary>
-    public void DevolucionEnLinea(ComprobanteDevolucionDto d)
-    {
-        if (_almacen.Leer<TurnoDto>("turno") is not { } turno)
-            return;
-        using var lote = _almacen.Lote();
-        lote.Anotar(new AnotacionDiario(Ids.Nuevo(), turno.Id, Ventas: d.EsCancelacion ? -1 : 0, Devoluciones: d.ReembolsoEfectivoCentavos,
-            Cancelaciones: d.EsCancelacion ? 1 : 0, Redondeo: -d.RedondeoCentavos,
-            Tarjeta: d.EsCancelacion ? -d.TarjetaCentavos : 0, Transferencia: d.EsCancelacion ? -d.TransferenciaCentavos : 0,
-            Credito: d.EsCancelacion ? -d.AlCreditoCentavos : 0)).Confirmar();
-    }
+    public Task DevolucionEnLineaAsync(ComprobanteDevolucionDto d) =>
+        _almacen.EscribirAsync(lote =>
+        {
+            if (lote.Leer<TurnoDto>("turno") is not { } turno)
+                return;
+            lote.Anotar(new AnotacionDiario(Ids.Nuevo(), turno.Id, Ventas: d.EsCancelacion ? -1 : 0, Devoluciones: d.ReembolsoEfectivoCentavos,
+                Cancelaciones: d.EsCancelacion ? 1 : 0, Redondeo: -d.RedondeoCentavos,
+                Tarjeta: d.EsCancelacion ? -d.TarjetaCentavos : 0, Transferencia: d.EsCancelacion ? -d.TransferenciaCentavos : 0,
+                Credito: d.EsCancelacion ? -d.AlCreditoCentavos : 0));
+        }, "una devolución");
 
     /// <summary>Un abono recibido en línea entra a la cuenta del turno: en efectivo suma al esperado.</summary>
-    public void AbonoEnLinea(Guid turnoId, ComprobanteAbonoDto c)
+    public Task AbonoEnLineaAsync(Guid turnoId, ComprobanteAbonoDto c)
     {
-        using var lote = _almacen.Lote();
-        // Ya estaba anotado en la cuenta propia: con lo que de verdad bajó, y que el siguiente latido confirme que ya lo tiene.
-        lote.CorregirCredito(c.AbonoId, -c.MontoCentavos, null).Anotar(AnotacionAbono(c.AbonoId, turnoId, c, 1)).Confirmar();
         _refrescarCredito = true;
+        // Ya estaba anotado en la cuenta propia: con lo que de verdad bajó, y que el siguiente latido confirme que ya lo tiene.
+        return _almacen.EscribirAsync(l => l.CorregirCredito(c.AbonoId, -c.MontoCentavos, null).Anotar(AnotacionAbono(c.AbonoId, turnoId, c, 1)), "un abono");
     }
 
     /// <summary>Un abono cancelado en línea sale de la cuenta del turno (con su propio renglón: el del abono se queda).</summary>
-    public void AbonoCanceladoEnLinea(Guid turnoId, ComprobanteAbonoDto c)
+    public Task AbonoCanceladoEnLineaAsync(Guid turnoId, ComprobanteAbonoDto c)
     {
-        using var lote = _almacen.Lote();
-        lote.Anotar(AnotacionAbono(Ids.Nuevo(), turnoId, c, -1)).Confirmar();
+        var id = Ids.Nuevo();
+        return _almacen.EscribirAsync(l => l.Anotar(AnotacionAbono(id, turnoId, c, -1)), "un abono cancelado");
     }
 
     /// <summary>
     /// Un saldo a favor que se devolvió en línea (parte 3; sin conexión no se devuelve): sale del efectivo del turno, se
     /// corrige lo anotado en la cuenta propia y los saldos se vuelven a pedir.
     /// </summary>
-    public void SaldoDevueltoEnLinea(Guid turnoId, ComprobanteAbonoDto c)
+    public Task SaldoDevueltoEnLineaAsync(Guid turnoId, ComprobanteAbonoDto c)
     {
-        using var lote = _almacen.Lote();
-        // Ya estaba anotado en la cuenta propia: con lo que de verdad subió, y que el siguiente latido confirme que ya lo tiene.
-        lote.CorregirCredito(c.AbonoId, c.MontoCentavos, null)
-            .Anotar(new AnotacionDiario(c.AbonoId, turnoId, Redondeo: -c.RedondeoCentavos, SaldoDevuelto: c.CobradoCentavos)).Confirmar();
         _refrescarCredito = true;
+        // Ya estaba anotado en la cuenta propia: con lo que de verdad subió, y que el siguiente latido confirme que ya lo tiene.
+        return _almacen.EscribirAsync(l => l.CorregirCredito(c.AbonoId, c.MontoCentavos, null)
+            .Anotar(new AnotacionDiario(c.AbonoId, turnoId, Redondeo: -c.RedondeoCentavos, SaldoDevuelto: c.CobradoCentavos)), "un saldo devuelto");
     }
 
     private static AnotacionDiario AnotacionAbono(Guid id, Guid turnoId, ComprobanteAbonoDto c, int signo) =>
@@ -1284,8 +1266,7 @@ public sealed class Contingencia
 
     private void Encolar(BitacoraContingenciaDto registro)
     {
-        using (var lote = _almacen.Lote())
-            lote.Encolar(registro.Id, "api/bandeja/bitacora", registro).Confirmar();
+        _almacen.Escribir(lote => lote.Encolar(registro.Id, "api/bandeja/bitacora", registro), "la bitácora sin conexión");
         Recontar();
     }
 }
