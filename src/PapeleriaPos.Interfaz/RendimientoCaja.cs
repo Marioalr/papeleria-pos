@@ -134,13 +134,25 @@ public sealed class VigiaDeLaPantalla : IAsyncDisposable
 
     private int _trabadas;
 
-    /// <summary>Un escaneo: empieza o sigue la ráfaga.</summary>
+    /// <summary>Un escaneo: empieza o sigue la ráfaga. Con la pantalla ya yéndose, nada: el vigía solo mide.</summary>
     public void Escaneo()
     {
+        if (_parado)
+            return;
         Interlocked.Exchange(ref _ultimoEscaneo, Stopwatch.GetTimestamp());
-        if (_despertar.CurrentCount == 0)
-            _despertar.Release();
+        try
+        {
+            if (_despertar.CurrentCount == 0)
+                _despertar.Release();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Se desechó entre la revisión y el aviso.
+        }
     }
+
+    /// <summary>Ya se pidió que pare: lo que llegue después no lo despierta.</summary>
+    private volatile bool _parado;
 
     private bool EnRafaga => Stopwatch.GetElapsedTime(Interlocked.Read(ref _ultimoEscaneo)) < Rafaga;
 
@@ -190,6 +202,7 @@ public sealed class VigiaDeLaPantalla : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        _parado = true;
         await _alto.CancelAsync();
         await _vigilando.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         _alto.Dispose();

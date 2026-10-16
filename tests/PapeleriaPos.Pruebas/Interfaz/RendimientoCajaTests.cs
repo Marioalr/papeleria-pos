@@ -96,4 +96,18 @@ public sealed class RendimientoCajaTests : IDisposable
         Assert.Equal(0, vigia.Trabadas);
         Assert.False(File.Exists(registro.ArchivoDeHoy));
     }
+
+    /// <summary>Un escaneo que llega con la pantalla ya yéndose (el vigía ya se desechó) no truena: el vigía solo mide.</summary>
+    [Fact]
+    public async Task Un_escaneo_con_el_vigia_ya_desechado_no_truena()
+    {
+        var pantalla = Dispatcher.CreateDefault();
+        var vigia = new VigiaDeLaPantalla(a => pantalla.InvokeAsync(a), new RendimientoCaja(), null);
+
+        await vigia.DisposeAsync();
+        vigia.Escaneo();
+        vigia.Escaneo();
+
+        Assert.Equal(0, vigia.Trabadas);
+    }
 }

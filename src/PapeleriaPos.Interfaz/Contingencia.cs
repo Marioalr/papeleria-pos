@@ -201,6 +201,12 @@ public sealed class Contingencia
     public FotoCatalogo? Foto => Volatile.Read(ref _foto);
 
     /// <summary>
+    /// Solo la copia, sin lo que llegó después: sin conexión se escanea contra ella, que es contra lo que se cobra sin
+    /// conexión (<see cref="Cobrar"/>). Vacía mientras la caja no tiene copia.
+    /// </summary>
+    public FotoCatalogo? FotoDeLaCopia => _copia?.Foto;
+
+    /// <summary>
     /// Un producto que la copia no tenía (recién dado de alta en otra caja) o los precios de ahora de uno que sí tenía (los
     /// dijo el cobro): queda en la foto, encima de la copia, hasta que baje una copia que ya lo traiga.
     /// </summary>
@@ -533,7 +539,7 @@ public sealed class Contingencia
 
     /// <summary>
     /// Empezar de cero (la prueba): lo de la base anterior ya no corresponde (lo propio del crédito, los saldos, el turno,
-    /// su diario y el último folio).
+    /// su diario y el último folio, y lo que llegó de la caja principal encima de la copia).
     /// </summary>
     public void OlvidarCredito()
     {
@@ -541,6 +547,9 @@ public sealed class Contingencia
             "empezar de cero");
         _saldos = null;
         _creditosPedidos = null;
+        // Los productos y precios de encima eran de la base que se quitó: hasta que baje la copia nueva, solo la copia.
+        if (_copia is { } copia)
+            Volatile.Write(ref _foto, copia.Foto);
     }
 
     private const string ClaveEspera = "espera";

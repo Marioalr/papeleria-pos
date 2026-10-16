@@ -66,6 +66,53 @@ public sealed class CobroConLaVersionEnLaCajaTests(ServicioDePrueba servicio) : 
         Assert.Empty(v.Pantalla.Errores);
     }
 
+    /// <summary>Un producto de la copia con código en su pieza y en su paquete (otra presentación), con precios de la pieza.</summary>
+    private static (ProductoVentaDto Producto, string Pieza, string Paquete) ConPiezaYPaquete(VentaConCopia v)
+    {
+        var copia = v.Contingencia.Paquete!;
+        return v.DeLaCopia()
+            .Where(p => p.Precios.All(precio => precio.PresentacionId is null) && p.Precios.Count(precio => precio.CantidadMinimaMilesimas == 1000) == 1)
+            .Select(p => (Producto: p, Paquete: copia.Codigos.FirstOrDefault(c => c.VarianteId == p.VarianteId && c.PresentacionId != p.Presentacion.Id)))
+            .Where(x => x.Paquete is not null)
+            .Select(x => (x.Producto, x.Producto.Codigo!, x.Paquete!.Codigo))
+            .First();
+    }
+
+    /// <summary>
+    /// La pieza de un producto se escaneó antes de que cambiara su precio, y su paquete después, con la copia nueva: cada
+    /// línea lleva la versión de su precio. La pieza no se cobra al precio de ahora sin que el cajero lo vea: el ticket se
+    /// pone al día y el panel lo dice.
+    /// </summary>
+    [Fact]
+    public async Task Dos_presentaciones_del_mismo_producto_llevan_cada_una_la_version_de_su_precio()
+    {
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var (producto, pieza, paquete) = ConPiezaYPaquete(v);
+        var antes = producto.Precios.Single(p => p.CantidadMinimaMilesimas == 1000).PrecioCentavos;
+        var ahora = antes + 300;
+        await v.EscanearAsync(pieza);
+        var copia = v.Contingencia.Foto!.Version;
+        await CambiarPrecioAsync(v, producto, ahora);
+        await v.Contingencia.LatidoAsync();
+        Assert.True(v.Contingencia.Foto!.Version > copia);
+        await v.EscanearAsync(paquete);
+        var renglones = await VentaConCopia.RenglonesAsync(v.Pantalla);
+        Assert.Equal(2, renglones.Count);
+        Assert.Contains(Formato.Dinero(antes), renglones[0]);
+
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
+
+        var texto = await v.Pantalla.TextoAsync();
+        Assert.Contains($"Cambió el precio de «{producto.Descripcion}»: revisa el total", texto);
+        Assert.DoesNotContain("Cobrado", texto);
+        Assert.Contains(Formato.Dinero(ahora), (await VentaConCopia.RenglonesAsync(v.Pantalla))[0]);
+
+        // Enter otra vez: se cobra lo que ya se ve.
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
+        await v.Pantalla.EsperarAsync(t => t.Contains("Cobrado"), "el cobro");
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
     /// <summary>
     /// Sin conexión, el cobro sigue exactamente como antes: con la copia de la caja y su propio folio, aunque en la caja
     /// principal el precio ya sea otro; al volver, sube con el precio que se cobró.

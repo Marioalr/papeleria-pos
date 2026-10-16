@@ -104,11 +104,12 @@ public sealed class FotoCatalogo
 
     /// <summary>
     /// Esta foto (la de una copia nueva) con lo que la anterior tenía encima y sigue siendo más nuevo que la copia: lo que la
-    /// copia ya trae, ya no hace falta.
+    /// copia ya trae, ya no hace falta. Una copia más vieja que la anterior quiere decir que la base de la caja principal
+    /// cambió entera (la prueba empezó de cero): lo de encima era de la otra base y no se queda.
     /// </summary>
     public FotoCatalogo ConLoNuevoDe(FotoCatalogo? anterior)
     {
-        if (anterior is null || anterior._nuevos.IsEmpty)
+        if (anterior is null || anterior._nuevos.IsEmpty || Version < anterior.Version)
             return this;
         var nuevos = anterior._nuevos.Where(x => x.Value.Version is { } v && v > Version).ToImmutableDictionary();
         if (nuevos.IsEmpty)

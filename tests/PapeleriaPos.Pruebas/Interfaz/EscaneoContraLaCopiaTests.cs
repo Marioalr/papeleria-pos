@@ -221,6 +221,115 @@ public sealed class EscaneoContraLaCopiaTests(ServicioDePrueba servicio) : IClas
         Assert.Single(await RenglonesAsync(v.Pantalla));
     }
 
+    /// <summary>
+    /// «5*» y Enter cambia la cantidad de lo último que se escaneó: si sigue «buscando…», primero espera su línea (antes de la
+    /// copia, ese escaneo detenía la cola y era igual). No le cambia la cantidad al de antes.
+    /// </summary>
+    [Fact]
+    public async Task La_cantidad_con_asterisco_espera_lo_ultimo_que_se_escaneo_aunque_siga_buscando()
+    {
+        await using var v = await AbrirAsync();
+        var (a, _) = DosDeLaCopia(v);
+        var nuevo = await DarDeAltaEnOtraCajaAsync(v, "9900000000709", "Carpeta recién dada de alta");
+        await v.EscanearAsync(a.Codigo!);
+        v.Red.Detenida = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await v.EscanearAsync(nuevo.Codigo!);
+
+        var cinco = v.EscanearAsync("5*");
+        await v.Pantalla.Dispatcher.InvokeAsync(() => { });
+        var mientras = await RenglonesAsync(v.Pantalla);
+        Assert.False(cinco.IsCompleted);
+        Assert.StartsWith($"1 {a.Descripcion}", mientras[0]);
+        Assert.StartsWith("1 Buscando… 9900000000709", mientras[1]);
+
+        v.Red.Detenida.SetResult();
+        await cinco.WaitAsync(TimeSpan.FromSeconds(20));
+        var despues = await RenglonesAsync(v.Pantalla);
+        Assert.Equal(2, despues.Count);
+        Assert.StartsWith($"1 {a.Descripcion}", despues[0]);
+        Assert.StartsWith("5 Carpeta recién dada de alta", despues[1]);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>
+    /// «Poner en espera» con el mouse hace lo mismo que F6: primero espera lo que se le pregunta a la caja principal, y el
+    /// ticket se aparta completo. Nada de lo que se escaneó para un cliente cae en el ticket del siguiente.
+    /// </summary>
+    [Fact]
+    public async Task Poner_en_espera_con_el_mouse_espera_lo_que_se_esta_buscando()
+    {
+        await using var v = await AbrirAsync();
+        var (a, _) = DosDeLaCopia(v);
+        var nuevo = await DarDeAltaEnOtraCajaAsync(v, "9900000000808", "Folder recién dado de alta");
+        await v.EscanearAsync(a.Codigo!);
+        v.Red.Detenida = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await v.EscanearAsync(nuevo.Codigo!);
+
+        var espera = v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Poner en espera"));
+        await v.Pantalla.Dispatcher.InvokeAsync(() => { });
+        Assert.False(espera.IsCompleted);
+        Assert.Equal(2, (await RenglonesAsync(v.Pantalla)).Count);
+
+        v.Red.Detenida.SetResult();
+        await espera.WaitAsync(TimeSpan.FromSeconds(20));
+        Assert.Empty(await RenglonesAsync(v.Pantalla));
+        Assert.Contains("Ticket en espera.", await v.Pantalla.TextoAsync());
+
+        // Al retomarlo con su ficha, trae las dos líneas.
+        await v.Pantalla.OprimirAsync(await v.Pantalla.ElementoAsync(e => e.Etiqueta == "button" && e.Clase == "vn-ficha", "la ficha del ticket en espera"));
+        var renglones = await RenglonesAsync(v.Pantalla);
+        Assert.Equal(2, renglones.Count);
+        Assert.StartsWith($"1 {a.Descripcion}", renglones[0]);
+        Assert.StartsWith("1 Folder recién dado de alta", renglones[1]);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>
+    /// Sin conexión se escanea solo contra la copia, que es contra lo que se cobra sin conexión: lo que llegó después de la
+    /// caja principal (un producto recién dado de alta) no entra a un ticket que no se podría cobrar, ni se le pregunta a la
+    /// caja principal; se ofrece lo de siempre.
+    /// </summary>
+    [Fact]
+    public async Task Sin_conexion_se_escanea_solo_contra_la_copia()
+    {
+        await using var v = await AbrirAsync();
+        var nuevo = await DarDeAltaEnOtraCajaAsync(v, "9900000000907", "Sobre recién dado de alta");
+        await v.EscanearAsync(nuevo.Codigo!);
+        await v.Pantalla.EsperarAsync(t => t.Contains("Sobre recién dado de alta") && !t.Contains("Buscando…"), "la línea del producto nuevo");
+        Assert.NotNull(v.Contingencia.Foto!.PorCodigo(nuevo.Codigo!));
+
+        v.Red.Caida = true;
+        await v.Contingencia.LatidoAsync();
+        Assert.False(v.Contingencia.EnLinea);
+        var pedidas = v.Red.Cuantas("/api/productos/codigo/");
+
+        await v.EscanearAsync(nuevo.Codigo!);
+        await v.Pantalla.EsperarAsync(t => t.Contains("«9900000000907» no está en la copia de esta caja y ahora se vende sin la caja principal. Revisa el código o elige:"),
+            "el aviso de que no está en la copia");
+        Assert.Equal(pedidas, v.Red.Cuantas("/api/productos/codigo/"));
+        Assert.StartsWith("1 Sobre recién dado de alta", Assert.Single(await RenglonesAsync(v.Pantalla)));
+        Assert.NotNull(await v.Pantalla.BotonAsync("Venderlo como artículo común"));
+        Assert.Null(v.Cliente.Foto!.PorCodigo(nuevo.Codigo!));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>
+    /// Un código sin números («QXW-ZZK») de un producto recién dado de alta en otra caja: como antes de la copia, primero se
+    /// pregunta como código a la caja principal, y entra ese producto; no se busca como nombre.
+    /// </summary>
+    [Fact]
+    public async Task Un_codigo_sin_numeros_que_no_esta_en_la_copia_se_pregunta_como_codigo()
+    {
+        await using var v = await AbrirAsync();
+        await DarDeAltaEnOtraCajaAsync(v, "QXW-ZZK", "Cartulina recién dada de alta");
+
+        await v.EscanearAsync("QXW-ZZK");
+
+        Assert.StartsWith("1 Cartulina recién dada de alta", Assert.Single(await RenglonesAsync(v.Pantalla)));
+        Assert.NotNull(v.Contingencia.Foto!.PorCodigo("QXW-ZZK"));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
     /// <summary>Al bajar una copia nueva, la foto cambia de un jalón: quien tenía la de antes no ve un cambio a medias.</summary>
     [Fact]
     public async Task Una_copia_nueva_cambia_la_foto_de_un_jalon()
@@ -279,6 +388,34 @@ public sealed class EscaneoContraLaCopiaTests(ServicioDePrueba servicio) : IClas
         await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Pintados([12, 8, 30]));
         var medida = v.Servicios.GetRequiredService<RendimientoCaja>().Escaneos;
         Assert.Equal((3, 12.0, 30.0, 30.0), (medida.Cuantos, medida.Mitad, medida.P95, medida.P99));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>
+    /// Un escaneo que espera en la cola detrás de algo con red (un nombre y Enter) se mide cuando ya está su línea, con todo
+    /// lo que esperó: su hora no se le da a caja.js en un dibujo que todavía no la trae.
+    /// </summary>
+    [Fact]
+    public async Task Un_escaneo_que_espera_en_la_cola_se_mide_cuando_ya_esta_su_linea()
+    {
+        var pagina = new PaginaQueMide();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, pagina: pagina);
+        var (a, _) = DosDeLaCopia(v);
+        // Un nombre sin números ni espacios se pregunta primero como código: ahí se detiene la cola.
+        v.Red.Detenida = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var nombre = v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escaneado("cuaderno", 2000.5));
+        var escaneo = v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escaneado(a.Codigo!, 2010.25));
+        await v.Pantalla.Dispatcher.InvokeAsync(() => { });
+
+        Assert.False(escaneo.IsCompleted);
+        Assert.Empty(await RenglonesAsync(v.Pantalla));
+        Assert.Empty(pagina.Pintados);
+
+        v.Red.Detenida.SetResult();
+        await Task.WhenAll(nombre, escaneo).WaitAsync(TimeSpan.FromSeconds(20));
+        await VentaConCopia.EsperarAsync(() => pagina.Pintados.Count == 2, "las horas de los dos Enter");
+        Assert.Equal([2000.5, 2010.25], pagina.Pintados);
+        Assert.Contains(await RenglonesAsync(v.Pantalla), r => r.Contains(a.Descripcion, StringComparison.Ordinal));
         Assert.Empty(v.Pantalla.Errores);
     }
 }

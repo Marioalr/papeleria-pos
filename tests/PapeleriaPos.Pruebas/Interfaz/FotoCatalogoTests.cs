@@ -143,4 +143,27 @@ public sealed class FotoCatalogoTests
         Assert.Equal(15, nueva.PorCodigo("750100")!.Version);
         Assert.Same(nueva, nueva.ConLoNuevoDe(null));
     }
+
+    /// <summary>
+    /// Una copia más vieja que la anterior quiere decir que la base de la caja principal cambió entera (la prueba empezó de
+    /// cero): lo que estaba encima era de la otra base y no se queda, aunque su versión sea más nueva que la copia.
+    /// </summary>
+    [Fact]
+    public void Una_copia_mas_vieja_que_la_anterior_no_se_queda_con_lo_de_encima()
+    {
+        var piezaNueva = new PresentacionDto(Ids.Nuevo(), "Pieza", 1000, true);
+        var nuevo = new ProductoVentaDto(Ids.Nuevo(), "Libreta", "750300", Impuesto.Iva16, UnidadBase.Pieza, true, null, piezaNueva, [piezaNueva],
+            [new PrecioDto(Ids.Nuevo(), null, null, 1000, 2200)], Version: 16);
+        var anterior = FotoCatalogo.Armar(Paquete(15, Lapicero, Cuaderno))
+            .Con(nuevo, "750300")
+            .Con(Lapicero with { Precios = [new PrecioDto(Ids.Nuevo(), null, null, 1000, 1200)], Version = 16 });
+
+        var deCero = FotoCatalogo.Armar(Paquete(9, Lapicero, Cuaderno));
+        var nueva = deCero.ConLoNuevoDe(anterior);
+
+        Assert.Same(deCero, nueva);
+        Assert.Equal(0, nueva.Nuevos);
+        Assert.Null(nueva.PorCodigo("750300"));
+        Assert.Equal(1000, nueva.PorCodigo("750100")!.Precios[0].PrecioCentavos);
+    }
 }

@@ -44,7 +44,11 @@ public sealed class CapturaCodigo
         }
     }
 
-    private async Task EsperarEnVueloAsync()
+    /// <summary>
+    /// Termina cuando termina lo que se pregunta a la caja principal (con plazo), sin esperar la cola: lo usa lo que ya va
+    /// dentro de ella («5*» y Enter, que cambia la cantidad de lo último que se escaneó, aunque siga «buscando…»).
+    /// </summary>
+    public async Task EsperarEnVueloAsync()
     {
         Task[] enVuelo;
         lock (_enVuelo)

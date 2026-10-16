@@ -207,9 +207,16 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     /// <summary>
     /// La foto del catálogo de la copia de esta caja: el escaneo busca aquí, sin la red, también en línea (entrega 5). Vacía
-    /// en el navegador sin base local y mientras la caja no tiene copia: entonces el código se pregunta como antes.
+    /// en el navegador sin base local y mientras la caja no tiene copia: entonces el código se pregunta como antes. Sin
+    /// conexión (o mientras sube lo que hizo sin ella), solo la copia: lo que llegó después de la caja principal no se puede
+    /// cobrar sin ella, y lo que se ve en el ticket es lo que se cobra.
     /// </summary>
-    public FotoCatalogo? Foto => contingencia?.Foto;
+    public FotoCatalogo? Foto => contingencia switch
+    {
+        null => null,
+        { EnLinea: true } => contingencia.Foto,
+        _ => contingencia.FotoDeLaCopia,
+    };
 
     /// <summary>
     /// Los precios de ahora de un producto, que dijo el cobro (entrega 5): quedan en la foto de la copia, para que el
@@ -229,11 +236,12 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// <summary>
     /// Un código que no está en la copia (un producto recién dado de alta en otra caja): se pregunta a la caja principal en
     /// segundo plano, con <see cref="PlazoDeLaPrincipal"/>. Si lo tiene, queda en la foto para el siguiente escaneo. No
-    /// cambia a sin conexión si no contesta a tiempo: eso lo decide el latido. Sin conexión, ni pregunta.
+    /// cambia a sin conexión si no contesta a tiempo: eso lo decide el latido. Sin conexión, ni pregunta; mientras sube lo
+    /// que hizo sin ella, tampoco: el cobro todavía va sin conexión, y lo que no está en la copia no se podría cobrar.
     /// </summary>
     public async Task<CodigoDeLaPrincipal> BuscarEnLaPrincipalAsync(string codigo, Guid sucursalId)
     {
-        if (contingencia is { ServidorResponde: false })
+        if (contingencia is { EnLinea: false })
             return CodigoDeLaPrincipal.SinConexion;
         try
         {
