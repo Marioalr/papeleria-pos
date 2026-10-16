@@ -3,7 +3,8 @@
    izquierda, la búsqueda, los filtros y la lista; a la derecha, el producto elegido con sus datos, sus últimos movimientos
    del kardex, «Etiqueta» (a las etiquetas por imprimir) y «Editar». La ficha de siempre (variantes, presentaciones,
    códigos, precios, kardex y depurar) se abre ahí mismo, con su «Guardar»; Esc la cierra. También «Nuevo producto», el
-   mayoreo por revisar y las decisiones de la depuración, en el mismo lado. *@
+   mayoreo por revisar, los departamentos (darlos de alta, cambiarles el nombre, desactivarlos) y las decisiones de la
+   depuración, en el mismo lado. El filtro y la ficha solo ofrecen los departamentos activos. *@
 @implements IPagina
 @implements IDisposable
 @inject ClienteCaja Cliente
@@ -102,6 +103,7 @@
                     <button class="vn-boton chico" @onclick="Nuevo"><Ico Nombre="mas" />Nuevo producto</button>
                     <button class="vn-boton chico @(_vista == Vista.Mayoreo ? "on" : "")" @onclick="() => Ver(Vista.Mayoreo)">Mayoreo por revisar</button>
                 }
+                <button class="vn-boton chico @(_vista == Vista.Departamentos ? "on" : "")" @onclick="() => Ver(Vista.Departamentos)">Departamentos</button>
                 <button class="vn-boton chico @(_vista == Vista.Decisiones ? "on" : "")" @onclick="DecisionesAsync">Decisiones de depuración</button>
             </div>
         </div>
@@ -127,6 +129,10 @@
                 <div class="vn-adentro">
                     <RevisarMayoreo Caja="Caja" Sesion="Sesion" Captura="_capturaMayoreo" AlAbrir="AbrirFicha" />
                 </div>
+                break;
+            case Vista.Departamentos:
+                <Departamentos @ref="_departamentos" Caja="Caja" Sesion="Sesion" Acceso="Acceso" AlCambiar="DepartamentosCambiaronAsync"
+                               AlVerProductos="VerDelDepartamentoAsync" />
                 break;
             case Vista.Decisiones:
                 <div class="vn-det-cab"><div><h2>Decisiones de depuración</h2><p>Lo que se decidió al depurar el catálogo. Esc regresa al producto.</p></div></div>
@@ -177,7 +183,7 @@
     /// <summary>«Ir a Etiquetas»: a Inventario › Etiquetas, para imprimirlas.</summary>
     [Parameter] public EventCallback AlIrAEtiquetas { get; set; }
 
-    private enum Vista { Detalle, Ficha, Mayoreo, Decisiones }
+    private enum Vista { Detalle, Ficha, Mayoreo, Decisiones, Departamentos }
 
     /// <summary>Cuántos trae la lista de una vez; «Ver … más» trae otros tantos.</summary>
     public const int Pagina = 50;
@@ -224,6 +230,7 @@
 
     private List<DecisionDepuracionDto>? _decisiones;
     private readonly RevisarMayoreo.Capturado _capturaMayoreo = new();
+    private Departamentos? _departamentos;
 
     protected override async Task OnInitializedAsync()
     {
@@ -232,6 +239,7 @@
         try
         {
             _opciones = await Cliente.OpcionesCatalogoAsync();
+            QuitarFiltroDesactivado();
         }
         catch (ErrorCaja ex)
         {
@@ -265,6 +273,13 @@
         {
             case Vista.Ficha:
                 await VolverDeLaFichaAsync();
+                return true;
+            case Vista.Departamentos:
+                // Primero deja lo que se escribía ahí (el alta, un nombre, a dónde pasan sus productos); sin nada, al producto.
+                if (_departamentos is not null && await _departamentos.CerrarAsync())
+                    return true;
+                _vista = Vista.Detalle;
+                StateHasChanged();
                 return true;
             case Vista.Mayoreo or Vista.Decisiones:
                 _vista = Vista.Detalle;
@@ -369,6 +384,47 @@
         (Estado.Departamento, _maximo) = (Guid.TryParse(e.Value?.ToString(), out var d) ? d : null, Pagina);
         await CargarListaAsync();
     }
+
+    /// <summary>El filtro solo ofrece los departamentos activos: si el que se recordaba ya se desactivó, se quita.</summary>
+    private void QuitarFiltroDesactivado()
+    {
+        if (Estado.Departamento is { } d && _opciones is { } opciones && opciones.Departamentos.All(x => x.Id != d))
+            Estado.Departamento = null;
+    }
+
+    /// <summary>
+    /// En Departamentos se dio de alta, se renombró, se desactivó o se reactivó uno: el filtro y la ficha con los de ahora, y
+    /// la lista y el elegido al día (pudieron cambiar de departamento).
+    /// </summary>
+    private async Task DepartamentosCambiaronAsync()
+    {
+        try
+        {
+            _opciones = await Cliente.OpcionesCatalogoAsync();
+            QuitarFiltroDesactivado();
+        }
+        catch (ErrorCaja)
+        {
+            // Se queda con los de antes; la lista se pide igual.
+        }
+        var antes = _ficha?.Id;
+        await CargarListaAsync();
+        // La lista vuelve a pedir el detalle solo si cambió el elegido; si es el mismo, pudo pasar a otro departamento.
+        if (_ficha?.Id is { } elegido && elegido == antes)
+            await MostrarAsync(elegido);
+    }
+
+    /// <summary>El número de productos de un departamento, en Departamentos: la lista, solo con los suyos.</summary>
+    private async Task VerDelDepartamentoAsync(Guid departamentoId)
+    {
+        (Estado.Departamento, Estado.Texto, Estado.Filtro, _maximo) = (departamentoId, "", FiltroProductos.Todos, Pagina);
+        await CargarListaAsync();
+    }
+
+    /// <summary>El nombre del departamento de un producto; si se desactivó, lo dice (ya no se ofrece, pero es el suyo).</summary>
+    private string? NombreDepartamento(Guid departamentoId) =>
+        _opciones?.Departamentos.FirstOrDefault(d => d.Id == departamentoId)?.Nombre
+        ?? (_opciones?.Desactivados?.FirstOrDefault(d => d.Id == departamentoId)?.Nombre is { } desactivado ? $"{desactivado} (desactivado)" : null);
 
     private async Task InactivosAsync(ChangeEventArgs e)
     {
@@ -545,7 +601,7 @@
             return;
         }
         var servicio = ficha.Tipo != TipoProducto.Mercancia;
-        var departamento = _opciones?.Departamentos.FirstOrDefault(d => d.Id == ficha.DepartamentoId)?.Nombre;
+        var departamento = NombreDepartamento(ficha.DepartamentoId);
         var codigo = CodigoDe(variante);
         var menudeo = variante.Precios.Where(p => p.Presentacion is null).MinBy(p => p.CantidadMinimaMilesimas);
         <div class="vn-det-cab">

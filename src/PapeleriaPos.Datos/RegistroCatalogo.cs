@@ -70,10 +70,18 @@ public sealed class RegistroCatalogo(PosDbContext db)
         }).ToList();
     }
 
-    public async Task<OpcionesCatalogoDto> OpcionesAsync(CancellationToken ct = default) =>
-        new((await db.Departamentos.AsNoTracking().Where(d => d.Activo).ToListAsync(ct))
-                .OrderBy(d => d.Nombre, StringComparer.CurrentCultureIgnoreCase).Select(d => new OpcionCatalogoDto(d.Id, d.Nombre)).ToList(),
-            (await db.Marcas.AsNoTracking().Where(m => m.Activa).Select(m => m.Nombre).ToListAsync(ct)).Order(StringComparer.CurrentCultureIgnoreCase).ToList());
+    /// <summary>
+    /// Los departamentos que se ofrecen (los activos) y las marcas. Los desactivados van aparte, solo para decir el de un
+    /// producto que se quedó en uno (Productos › Departamentos).
+    /// </summary>
+    public async Task<OpcionesCatalogoDto> OpcionesAsync(CancellationToken ct = default)
+    {
+        var departamentos = (await db.Departamentos.AsNoTracking().ToListAsync(ct)).OrderBy(d => d.Nombre, StringComparer.CurrentCultureIgnoreCase).ToList();
+        List<OpcionCatalogoDto> Opciones(bool activos) => departamentos.Where(d => d.Activo == activos).Select(d => new OpcionCatalogoDto(d.Id, d.Nombre)).ToList();
+        return new(Opciones(activos: true),
+            (await db.Marcas.AsNoTracking().Where(m => m.Activa).Select(m => m.Nombre).ToListAsync(ct)).Order(StringComparer.CurrentCultureIgnoreCase).ToList(),
+            Opciones(activos: false));
+    }
 
     /// <summary>La ficha completa. El costo solo va si <paramref name="conCostos"/> (dueño y encargado).</summary>
     public async Task<FichaProductoDto?> FichaAsync(Guid productoId, Guid sucursalId, bool conCostos, CancellationToken ct = default)
@@ -300,8 +308,8 @@ public sealed class RegistroCatalogo(PosDbContext db)
             throw new PermisoRequerido(AccionControlada.EditarCatalogo, NivelPermiso.NoPermitido, "El catálogo lo editan el dueño y el encargado.");
         var f = s.Producto;
         Validar(f);
-        if (!await db.Departamentos.AnyAsync(d => d.Id == f.DepartamentoId, ct))
-            throw new ArgumentException("Elige el departamento.");
+        var departamento = await db.Departamentos.AsNoTracking().SingleOrDefaultAsync(d => d.Id == f.DepartamentoId, ct)
+            ?? throw new ArgumentException("Elige el departamento.");
         await RevisarCodigosAsync(f, ct);
 
         var producto = f.Id is { } id
@@ -309,6 +317,10 @@ public sealed class RegistroCatalogo(PosDbContext db)
                 .SingleOrDefaultAsync(p => p.Id == id, ct) ?? throw new InvalidOperationException("El producto ya no existe.")
             : null;
         var nuevo = producto is null;
+        // Un departamento desactivado (Productos › Departamentos) ya no se ofrece: no le llega un producto activo, ni nuevo, ni
+        // que se cambie a él o se reactive en él. El que ya estaba ahí se sigue guardando mientras no cambie de departamento.
+        if (!departamento.Activo && f.Activo && (producto is null || producto.DepartamentoId != departamento.Id || !producto.Activo))
+            throw new InvalidOperationException($"El departamento «{departamento.Nombre}» está desactivado: elige otro.");
         if (producto is null)
         {
             producto = new Producto { Nombre = "" };
@@ -583,8 +595,10 @@ public sealed class RegistroCatalogo(PosDbContext db)
             throw new ArgumentException("Escribe el nombre del producto.");
         if (s.PrecioCentavos <= 0)
             throw new ArgumentException("Escribe el precio.");
-        if (!await db.Departamentos.AnyAsync(d => d.Id == s.DepartamentoId, ct))
-            throw new ArgumentException("Elige el departamento.");
+        var departamento = await db.Departamentos.AsNoTracking().SingleOrDefaultAsync(d => d.Id == s.DepartamentoId, ct)
+            ?? throw new ArgumentException("Elige el departamento.");
+        if (!departamento.Activo)
+            throw new InvalidOperationException($"El departamento «{departamento.Nombre}» está desactivado: elige otro.");
         var codigo = s.Codigo.Trim();
         if (await db.CodigosBarras.AnyAsync(c => c.Codigo == codigo, ct))
             throw new InvalidOperationException($"El código «{codigo}» ya existe.");

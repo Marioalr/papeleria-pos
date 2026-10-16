@@ -398,6 +398,25 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         ConRespaldoAsync(async () => await _http.GetAsync<List<VarianteParaJuntarDto>>(
             $"api/catalogo/variantes?q={Uri.EscapeDataString(texto)}&sucursalId={sucursalId}") ?? []);
 
+    // ── Departamentos (Productos › Departamentos, solo con la caja principal) ──
+
+    /// <summary>Todos, con cuántos productos activos tiene cada uno, y si en el piloto con eleventa se cambian allá.</summary>
+    public Task<DepartamentosDto> DepartamentosAsync() =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<DepartamentosDto>("api/catalogo/departamentos"))!);
+
+    public Task<DepartamentosDto> DarDeAltaDepartamentoAsync(SolicitudDepartamento solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<DepartamentosDto>("api/catalogo/departamentos", solicitud));
+
+    public Task<DepartamentosDto> CambiarNombreDepartamentoAsync(Guid departamentoId, SolicitudDepartamento solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<DepartamentosDto>($"api/catalogo/departamentos/{departamentoId}/nombre", solicitud));
+
+    /// <summary>Si tiene productos activos, pasan antes al departamento de <see cref="SolicitudDesactivarDepartamento.PasarA"/>.</summary>
+    public Task<DepartamentosDto> DesactivarDepartamentoAsync(Guid departamentoId, SolicitudDesactivarDepartamento solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<DepartamentosDto>($"api/catalogo/departamentos/{departamentoId}/desactivar", solicitud));
+
+    public Task<DepartamentosDto> ReactivarDepartamentoAsync(Guid departamentoId, SolicitudReactivarDepartamento solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<DepartamentosDto>($"api/catalogo/departamentos/{departamentoId}/reactivar", solicitud));
+
     // ── Compras (F4, solo con la caja principal) ──
 
     public Task<List<ProveedorDto>> ProveedoresAsync(bool inactivos = false) =>
