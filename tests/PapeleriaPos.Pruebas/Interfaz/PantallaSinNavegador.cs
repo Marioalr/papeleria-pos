@@ -81,6 +81,19 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
             + $"{Cambios} cambios, {ManejadoresCambiados} manejadores cambiados";
     }
 
+    /// <summary>El tipo del componente; uno que se pintó y se quitó en el mismo dibujo ya no está.</summary>
+    private string Tipo(int componente)
+    {
+        try
+        {
+            return GetComponentState(componente).Component.GetType().Name;
+        }
+        catch (ArgumentException)
+        {
+            return "(quitado en el mismo dibujo)";
+        }
+    }
+
     public void ContarDesdeAhora()
     {
         lock (_candadoDibujos)
@@ -105,8 +118,7 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
             for (var i = 0; i < lote.UpdatedComponents.Count; i++)
             {
                 var diff = lote.UpdatedComponents.Array[i];
-                var tipo = GetComponentState(diff.ComponentId).Component.GetType().Name;
-                _porComponente[tipo] = _porComponente.GetValueOrDefault(tipo) + 1;
+                _porComponente[Tipo(diff.ComponentId)] = _porComponente.GetValueOrDefault(Tipo(diff.ComponentId)) + 1;
                 _cambios += diff.Edits.Count;
             }
         }
