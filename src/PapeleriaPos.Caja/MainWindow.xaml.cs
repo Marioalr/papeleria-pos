@@ -147,6 +147,8 @@ public partial class MainWindow : Window
         Vista.Services = proveedor;
         Vista.BlazorWebViewInitialized += AlIniciarLaPagina;
         Vista.UrlLoading += AlCargarUnaDireccion;
+        // Antes que el aviso del corte en eleventa: si se decide no cerrar, ese ya no sale.
+        AvisarLoQueNoSeImprimio(ColaDeImpresion.De(impresora));
         if (proveedor.GetService<Contingencia>() is { } contingencia)
         {
             IniciarAgente(configuracion, conexion, contingencia);
@@ -352,11 +354,39 @@ public partial class MainWindow : Window
     /// convivir con eleventa: se quita al dejarlo.
     /// </summary>
     private void RecordarElCorteAlCerrar(Contingencia contingencia) =>
-        Closing += (_, _) =>
+        Closing += (_, e) =>
         {
-            if (contingencia.PilotoEleventa)
+            // Si ya se decidió no cerrar (quedaba algo por imprimir), no hace falta recordarlo.
+            if (!e.Cancel && contingencia.PilotoEleventa)
                 MessageBox.Show(this, PilotoConEleventa.CorteEnEleventa, Title, MessageBoxButton.OK, MessageBoxImage.Information);
         };
+
+    /// <summary>
+    /// La cola de la impresora de tickets (entrega 5, parte 3): lo que se imprime no detiene la pantalla, así que al cerrar la
+    /// caja puede quedar algo sin imprimir (no salió, o espera a la impresora). Nada se pierde sin decirlo: se pregunta antes
+    /// de cerrar, con lo que es, y si se cierra igual queda anotado en el registro del día. No se guarda para imprimirlo al
+    /// abrir otra vez (saldría tarde, sin que nadie lo espere): lo que dice ya quedó guardado y se puede volver a imprimir.
+    /// </summary>
+    private void AvisarLoQueNoSeImprimio(ColaDeImpresion cola)
+    {
+        Closing += (_, e) =>
+        {
+            if (e.Cancel || cola.Pendientes is not { Count: > 0 } pendientes)
+                return;
+            var motivo = cola.Problema is { Estado: EstadoImpresion.NoSalio, Motivo: { } m } ? $" ({m.TrimEnd('.')})" : "";
+            var respuesta = MessageBox.Show(this,
+                $"Falta imprimir {string.Join(", ", pendientes.Select(t => $"«{t.Titulo}»"))}{motivo}.\n\n"
+                + "Si cierras la caja, no sale: lo que dice ya quedó guardado y se puede volver a imprimir. ¿Cerrar de todos modos?",
+                Title, MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+            if (respuesta != MessageBoxResult.Yes)
+                e.Cancel = true;
+        };
+        Closed += (_, _) =>
+        {
+            foreach (var trabajo in cola.Pendientes)
+                _registro.Anotar($"Se cerró la caja sin imprimir «{trabajo.Titulo}»{(trabajo.Motivo is { } motivo ? $": {motivo}" : ".")}");
+        };
+    }
 
     private AgenteImpresion? _agente;
 

@@ -1,0 +1,106 @@
+@* Cómo va un papel de la impresora de tickets (entrega 5, parte 3, «Imprimir aparte»): lo que se imprime va a la cola de
+   la caja y la pantalla no lo espera; aquí se dice si salió, si espera a la impresora (la otra caja puede estar imprimiendo)
+   o si no salió, con «Reintentar» (la cola espera ese papel, y lo que sigue espera en su orden) y, si se puede, «Verlo en
+   pantalla». Sin Trabajo, el primero de la cola que tenga un problema. *@
+@implements IDisposable
+@inject IImpresora Impresora
+
+@if (EnLinea)
+{
+    @* En una barra de abajo (sin vender): solo los problemas, en un renglón. *@
+    @if (Mostrado is { Estado: EstadoImpresion.NoSalio } noSalio)
+    {
+        <span class="vn-ayuda-tecla error">No salió «@noSalio.Titulo»: @noSalio.Motivo <button class="vn-boton chico" @onclick="Reintentar">Reintentar</button></span>
+    }
+    else if (Mostrado is { Estado: EstadoImpresion.Ocupada } ocupada)
+    {
+        <span class="vn-ayuda-tecla">«@ocupada.Titulo» espera a la impresora de tickets: se vuelve a intentar sola.</span>
+    }
+}
+else if (Mostrado is { } trabajo)
+{
+    @switch (trabajo.Estado)
+    {
+        case EstadoImpresion.NoSalio:
+            <div class="vn-alerta" role="alert">
+                <Ico Nombre="impresora" />
+                <div>
+                    <span>No salió «@trabajo.Titulo»: @trabajo.Motivo@(Nota is null ? "" : $" {Nota}")@Detras(trabajo)</span>
+                    <span class="vn-botonera">
+                        <button class="vn-boton chico" @onclick="Reintentar">Reintentar</button>
+                        @if (AlVerEnPantalla.HasDelegate && trabajo.Documento is not null)
+                        {
+                            <button class="vn-boton chico" @onclick="() => AlVerEnPantalla.InvokeAsync(trabajo)">Verlo en pantalla</button>
+                        }
+                    </span>
+                </div>
+            </div>
+            break;
+        case EstadoImpresion.Ocupada:
+            <div class="vn-alerta info" role="status">
+                <Ico Nombre="impresora" />
+                <div><span>«@trabajo.Titulo» espera a la impresora de tickets: no contesta (puede estar imprimiendo lo de la otra caja). Se vuelve a intentar sola.</span></div>
+            </div>
+            break;
+        case EstadoImpresion.EnCola when Cola.Problema is { } antes && antes != trabajo:
+            <div class="vn-alerta" role="status">
+                <Ico Nombre="impresora" />
+                <div>
+                    <span>«@trabajo.Titulo» espera su turno: antes @(antes.Estado == EstadoImpresion.NoSalio ? "no salió" : "espera a la impresora") «@antes.Titulo».</span>
+                    @if (antes.Estado == EstadoImpresion.NoSalio)
+                    {
+                        <span class="vn-botonera"><button class="vn-boton chico" @onclick="Reintentar">Reintentar</button></span>
+                    }
+                </div>
+            </div>
+            break;
+        case EstadoImpresion.Impreso:
+            <div class="vn-folio-ok"><Ico Nombre="check" />@trabajo.Titulo impreso</div>
+            break;
+        default:
+            <div class="vn-folio-ok"><Ico Nombre="impresora" />@trabajo.Titulo · imprimiendo…</div>
+            break;
+    }
+}
+
+@code {
+    /// <summary>El papel del que se dice cómo va; vacío: el primero de la cola con un problema (si no hay, nada).</summary>
+    [Parameter] public TrabajoDeImpresion? Trabajo { get; set; }
+
+    /// <summary>Sin Trabajo: este no se dice aunque sea el del problema (ya lo dice otro aviso).</summary>
+    [Parameter] public TrabajoDeImpresion? Excepto { get; set; }
+
+    /// <summary>Lo que se agrega si no salió: «La venta ya quedó guardada.»</summary>
+    [Parameter] public string? Nota { get; set; }
+
+    /// <summary>«Verlo en pantalla», si no salió (sin esto, no se ofrece).</summary>
+    [Parameter] public EventCallback<TrabajoDeImpresion> AlVerEnPantalla { get; set; }
+
+    /// <summary>En un renglón de una barra (sin el recuadro), y solo si hay un problema.</summary>
+    [Parameter] public bool EnLinea { get; set; }
+
+    private ColaDeImpresion Cola => ColaDeImpresion.De(Impresora);
+
+    private TrabajoDeImpresion? Mostrado => Trabajo ?? (Cola.Problema is { } problema && problema != Excepto ? problema : null);
+
+    protected override void OnInitialized() => Cola.Cambio += AlCambiar;
+
+    /// <summary>La cola avisa desde su hilo: se vuelve a pintar en el de la pantalla.</summary>
+    private void AlCambiar() => _ = InvokeAsync(StateHasChanged);
+
+    private void Reintentar() => Cola.Reintentar();
+
+    /// <summary>« Detrás esperan 2.»: lo que no sale hasta que este salga.</summary>
+    private string Detras(TrabajoDeImpresion trabajo)
+    {
+        var detras = Cola.Pendientes.Count(t => t != trabajo);
+        return detras switch
+        {
+            0 => "",
+            1 => " Detrás espera 1.",
+            _ => $" Detrás esperan {detras}.",
+        };
+    }
+
+    public void Dispose() => Cola.Cambio -= AlCambiar;
+}

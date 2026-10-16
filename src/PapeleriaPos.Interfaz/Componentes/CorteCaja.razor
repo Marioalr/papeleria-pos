@@ -62,6 +62,11 @@
                 {
                     <p class="vn-corte-error">@_error</p>
                 }
+                @if (_impreso is { } impreso)
+                {
+                    @* El corte va a la cola de la impresora (entrega 5, parte 3): aquí se ve si salió y, si no, «Reintentar». *@
+                    <AvisoImpresion Trabajo="impreso" Nota="El corte ya quedó." />
+                }
                 <div class="vn-botonera">
                     <button class="vn-boton primario" @ref="_listo" @onclick="AlTerminar">Listo: abrir el siguiente turno</button>
                     @if (_informativo?.VeElDia == true)
@@ -211,6 +216,9 @@
     private string _contado = "";
     private string? _error;
     private string? _vistaPrevia;
+
+    /// <summary>El corte en la cola de la impresora de tickets; vacío sin impresora (se ve aquí mismo).</summary>
+    private TrabajoDeImpresion? _impreso;
     private bool _ocupado;
     private bool _delDia;
     private bool _enfocar = true;
@@ -332,7 +340,7 @@
         {
             _resultado = await Cliente.CorteZAsync(Turno.Id, new SolicitudCorteZ(Sesion.UsuarioId, contado));
             _enfocar = true;
-            await ImprimirAsync(_resultado);
+            Imprimir(_resultado);
             await AlCerrarElTurno.InvokeAsync();
         }
         catch (ErrorCaja ex)
@@ -345,23 +353,18 @@
         }
     }
 
-    /// <summary>El corte se imprime para guardarlo con el efectivo; si falla la impresora, el corte ya quedó.</summary>
-    private async Task ImprimirAsync(CorteDto corte)
+    /// <summary>
+    /// El corte se imprime para guardarlo con el efectivo: va a la cola de la impresora, como el ticket, sin esperarla
+    /// (entrega 5, parte 3). Si no sale, el corte ya quedó: aquí mismo se ve y se reintenta.
+    /// </summary>
+    private void Imprimir(CorteDto corte)
     {
         var documento = DisenoComprobante.Corte(corte, Caja);
-        if (Impresora.MuestraVistaPrevia)
-        {
+        var cola = ColaDeImpresion.De(Impresora);
+        if (cola.MuestraVistaPrevia)
             _vistaPrevia = TicketTexto.Generar(documento);
-            return;
-        }
-        try
-        {
-            await Impresora.ImprimirAsync(documento, abrirCajon: false);
-        }
-        catch (Exception ex)
-        {
-            _error = $"El corte quedó, pero no se pudo imprimir: {ex.Message}";
-        }
+        else
+            _impreso = cola.Encolar($"Corte del turno de {corte.Cajero}", documento, abrirCajon: false);
     }
 
     /// <summary>El corte X: lo que se ve del turno antes de cerrarlo. El efectivo no: se cuenta a ciegas.</summary>

@@ -59,7 +59,9 @@ internal sealed record VentaConCopia(
     /// <summary>La caja con su copia recién bajada, la venta abierta por el cajero y todo lo que pide al entrar ya contestado.</summary>
     /// <param name="plazo">Lo que espera a la caja principal por un código que no está en la copia; sin él, un minuto.</param>
     /// <param name="pagina">La página (caja.js); sin ella, una que contesta todo sin hacer nada.</param>
-    public static async Task<VentaConCopia> AbrirAsync(ServicioDePrueba servicio, string baseLocal, TimeSpan? plazo = null, IJSRuntime? pagina = null)
+    /// <param name="impresora">La impresora de tickets; sin ella, ninguna (el ticket se ve en pantalla).</param>
+    public static async Task<VentaConCopia> AbrirAsync(ServicioDePrueba servicio, string baseLocal, TimeSpan? plazo = null, IJSRuntime? pagina = null,
+        IImpresora? impresora = null)
     {
         var red = new RedDePrueba(servicio.Fabrica.Server.CreateHandler());
         var http = new HttpClient(red);
@@ -76,7 +78,7 @@ internal sealed record VentaConCopia(
             .AddSingleton(cliente)
             .AddSingleton(contingencia)
             .AddSingleton(new RendimientoCaja())
-            .AddSingleton<IImpresora>(new SinImpresora())
+            .AddSingleton(impresora ?? new SinImpresora())
             .AddSingleton(pagina ?? new PaginaQueContesta())
             .AddScoped<ModuloCaja>()
             .BuildServiceProvider();

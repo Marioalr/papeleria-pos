@@ -547,7 +547,13 @@
                     Ayuda = "Sale con lo de arriba. Sin impresora de tickets, se ve en «Así sale».",
                     Permiso = AccionControlada.ConfigurarTicket,
                     NoListo = NoListoTicket,
-                    Control = @<button class="vn-boton chico" @onclick="ImprimirPruebaAsync">Imprimir uno de prueba</button>,
+                    Control = @<span class="vn-botonera">
+                        <button class="vn-boton chico" @onclick="ImprimirPrueba">Imprimir uno de prueba</button>
+                        @if (_prueba is { } prueba)
+                        {
+                            <AvisoImpresion Trabajo="prueba" />
+                        }
+                    </span>,
                 },
             ],
             Contenido = AsiSale,
@@ -883,20 +889,21 @@
     private Task QuitarLogotipoAsync(string renglon) =>
         HacerAsync(renglon, async () => _ticket = await Cliente.GuardarLogoTicketAsync(Caja.Id, new SolicitudLogo(Sesion.UsuarioId, null)));
 
-    private async Task ImprimirPruebaAsync()
+    /// <summary>El ticket de prueba en la cola de la impresora: junto a su botón se ve si salió y, si no, «Reintentar».</summary>
+    private TrabajoDeImpresion? _prueba;
+
+    private void ImprimirPrueba()
     {
         _avisos.Remove("prueba");
         Error("prueba", null);
-        try
+        var cola = ColaDeImpresion.De(Impresora);
+        if (cola.MuestraVistaPrevia)
         {
-            await Impresora.ImprimirAsync(Ejemplo(), abrirCajon: false);
-            _avisos["prueba"] = Impresora.MuestraVistaPrevia ? "Sin impresora de tickets: así sale, abajo." : "Salió el ticket de prueba.";
+            _avisos["prueba"] = "Sin impresora de tickets: así sale, abajo.";
+            return;
         }
-        catch (Exception ex)
-        {
-            // Como el corte: si la impresora falla, se dice por qué y la ventana sigue.
-            Error("prueba", $"No salió: {ex.Message}");
-        }
+        // Por la cola de la impresora, como todo lo que se imprime (entrega 5, parte 3): sale después de lo que ya esperaba.
+        _prueba = cola.Encolar("Ticket de prueba", DisenoTicket.Armar(Ejemplo()), abrirCajon: false);
     }
 
     private RenderFragment AsiSale =>

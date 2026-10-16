@@ -29,6 +29,17 @@
     {
         <span class="vn-chip-estado" title="Sin impresora de tickets en esta PC: el ticket se ve en pantalla."><Ico Nombre="monitor" />Ticket en pantalla</span>
     }
+    else if (Cola.Problema is { Estado: EstadoImpresion.NoSalio } noSalio)
+    {
+        @* La cola se detuvo: lo que sigue espera. Desde aquí también se reintenta, también en las páginas (entrega 5, parte 3). *@
+        <button class="vn-chip-estado aviso" title="No salió «@noSalio.Titulo»: @noSalio.Motivo Toca para reintentar." @onclick="Cola.Reintentar">
+            <Ico Nombre="impresora" />Tickets · no salió@(Cola.Pendientes.Count > 1 ? $" ({Cola.Pendientes.Count} por imprimir)" : "") · Reintentar
+        </button>
+    }
+    else if (Cola.Problema is { } ocupada)
+    {
+        <span class="vn-chip-estado aviso" title="«@ocupada.Titulo»: @ocupada.Motivo Se vuelve a intentar sola."><Ico Nombre="impresora" />Tickets · esperando a la impresora</span>
+    }
     else
     {
         <span class="vn-chip-estado" title="La impresora de tickets de esta caja."><Ico Nombre="impresora" />Tickets</span>
@@ -103,12 +114,16 @@
         StateHasChanged();
     }
 
+    /// <summary>La cola de la impresora de tickets (entrega 5, parte 3): si algo no salió, el chip lo dice.</summary>
+    private ColaDeImpresion Cola => ColaDeImpresion.De(Impresora);
+
     protected override void OnInitialized()
     {
         // Solo la ventana de Windows trabaja sin conexión; en el navegador de la caja principal no hay contingencia.
         _contingencia = Servicios.GetService<Contingencia>();
         if (_contingencia is not null)
             _contingencia.Cambio += AlCambiar;
+        Cola.Cambio += AlCambiar;
         _ = VigilarAsync();
     }
 
@@ -148,6 +163,7 @@
     {
         if (_contingencia is not null)
             _contingencia.Cambio -= AlCambiar;
+        Cola.Cambio -= AlCambiar;
         await _alto.CancelAsync();
         _alto.Dispose();
     }

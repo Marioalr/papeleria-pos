@@ -408,26 +408,15 @@
                     <strong>@Formato.Dinero(cobrado.CambioCentavos > 0 ? cobrado.CambioCentavos : cobrado.TotalCobradoCentavos)</strong>
                     <p>@PagoTexto(cobrado)</p>
                 </div>
-                @if (_noSalio is { } noSalio)
-                {
-                    <div class="vn-alerta">
-                        <Ico Nombre="impresora" />
-                        <div>
-                            <span>El ticket <strong>@cobrado.FolioImpreso</strong> no salió: @noSalio La venta ya quedó guardada.</span>
-                            <span class="vn-botonera">
-                                <button class="vn-boton chico" @onclick="() => ImprimirCobradoAsync(cobrado)">Reintentar</button>
-                                <button class="vn-boton chico" @onclick="VerCobradoEnPantallaAsync">Verlo en pantalla</button>
-                            </span>
-                        </div>
-                    </div>
-                }
-                else if (Impresora.MuestraVistaPrevia)
+                @if (Cola.MuestraVistaPrevia)
                 {
                     <div class="vn-folio-ok"><Ico Nombre="monitor" />Ticket <code>@cobrado.FolioImpreso</code> · <button class="vn-enlace" @onclick="VerCobradoEnPantallaAsync">verlo en pantalla</button></div>
                 }
-                else
+                else if (_trabajoCobrado is { } trabajoCobrado)
                 {
-                    <div class="vn-folio-ok"><Ico Nombre="check" />Ticket <code>@cobrado.FolioImpreso</code> impreso</div>
+                    @* El ticket va a la cola de la impresora y la pantalla no lo espera (entrega 5, parte 3): aquí se ve si salió, si
+                       espera a la impresora o si no salió, con «Reintentar» y «Verlo en pantalla». *@
+                    <AvisoImpresion Trabajo="trabajoCobrado" Nota="La venta ya quedó guardada." AlVerEnPantalla="VerEnPantallaAsync" />
                 }
                 <div class="vn-alerta info">
                     <Ico Nombre="escaner" />
@@ -444,6 +433,8 @@
             }
             else
             {
+                @* Lo que no salió de la impresora de tickets (o la espera): con «Reintentar», donde se está mirando. *@
+                <AvisoImpresion AlVerEnPantalla="VerEnPantallaAsync" />
                 @* El cliente: una flecha chica que apunta al ticket; se jala (Ctrl+L) para elegirlo. A su izquierda, lo que debe. *@
                 <div class="vn-cliente">
                     @if (Actual.Cliente is not null && Actual.Cuenta is { } cuenta && cuenta.SaldoCentavos != 0)
@@ -672,10 +663,6 @@
                 <span class="vn-ayuda-tecla"><kbd>Enter</kbd> abrir</span>
             }
             <span class="vn-ayuda-tecla"><kbd>Esc</kbd> cierra lo abierto; si no hay nada, a la venta</span>
-            @if (_errorDePagina is not null)
-            {
-                <span class="vn-ayuda-tecla error">@_errorDePagina</span>
-            }
             <span class="espacio"></span>
             @ChipDelConteo
         </footer>
@@ -822,9 +809,6 @@
     /// <summary>Lo que se imprimió desde una página sin impresora: se ve encima de ella.</summary>
     private (string Titulo, string Texto)? _vistaPreviaDePagina;
 
-    /// <summary>Si lo que se imprimió desde una página no salió: lo dice su barra de abajo.</summary>
-    private string? _errorDePagina;
-
     private IPagina? PaginaAbierta => _pagina switch
     {
         Pagina.Productos => _productos,
@@ -852,7 +836,7 @@
         if (_resultados is not null)
             CerrarResultados();
         var antes = _pagina;
-        (_pagina, _tareaInicial, _vistaPreviaDePagina, _errorDePagina) = (pagina, tarea, null, null);
+        (_pagina, _tareaInicial, _vistaPreviaDePagina) = (pagina, tarea, null);
         if (pagina == antes && pagina != Pagina.Venta)
         {
             // Ya estaba ahí: la tarea que se pidió (el chip del conteo) o el cursor a su búsqueda.
@@ -945,27 +929,19 @@
 
     /// <summary>
     /// Lo que se imprime desde una página, sin dejarla ni tocar lo que la venta tiene abierto: sin impresora se ve encima de
-    /// la página (Esc lo cierra); si no sale, lo dice su barra de abajo.
+    /// la página (Esc lo cierra); si no, va a la cola de la impresora (entrega 5, parte 3) y, si no sale, lo dice el estado de
+    /// arriba, con «Reintentar».
     /// </summary>
     private async Task ImprimirDesdePaginaAsync(string titulo, IReadOnlyList<Elemento> documento, bool abrirCajon)
     {
-        _errorDePagina = null;
-        if (Impresora.MuestraVistaPrevia)
+        if (Cola.MuestraVistaPrevia)
         {
             _vistaPreviaDePagina = (titulo, TicketTexto.Generar(documento));
             await AvisarTeclasAsync();
             StateHasChanged();
             return;
         }
-        try
-        {
-            await Impresora.ImprimirAsync(documento, abrirCajon);
-        }
-        catch (Exception ex)
-        {
-            _errorDePagina = $"No se pudo imprimir ({titulo}): {ex.Message} Se puede reimprimir.";
-        }
-        StateHasChanged();
+        Cola.Encolar(titulo, documento, abrirCajon);
     }
 
     private async Task CerrarVistaPreviaDePaginaAsync()
@@ -3354,11 +3330,22 @@
         apartado.Dispose();
         Avisar($"Venta {ticket.FolioImpreso} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: false);
         _ultimo = ticket;
+        // El ticket va a la cola de la impresora y la caja queda lista para el siguiente cliente sin esperarla (entrega 5,
+        // parte 3). Lo de después (el aviso de retiro, lo que falta por cobrar de impresiones) tampoco se espera.
         await ImprimirCobradoAsync(ticket);
-        await RevisarEfectivoAsync();
-        if (abierto.Impresiones.Count > 0 && _estado is not null)
-            await _estado.ActualizarAsync();
+        _ = DespuesDelCobroAsync(conImpresiones: abierto.Impresiones.Count > 0);
         return null;
+    }
+
+    /// <summary>
+    /// Lo que se revisa al cobrar y no le toca al cobro: si ya hay que hacer un retiro y lo que falta por cobrar de impresiones.
+    /// Con el Wi-Fi lento puede tardar: el siguiente cliente no lo espera (antes, otro F12 no cobraba mientras tanto).
+    /// </summary>
+    private async Task DespuesDelCobroAsync(bool conImpresiones)
+    {
+        await RevisarEfectivoAsync();
+        if (conImpresiones && _estado is not null && !_seFue)
+            await _estado.ActualizarAsync();
     }
 
     /// <summary>
@@ -3423,30 +3410,26 @@
     /// <summary>La venta que se acaba de cobrar: su cambio se queda en el panel hasta que se agrega algo o con Esc.</summary>
     private TicketDto? _cobrado;
 
-    /// <summary>Si el ticket de esa venta no salió: lo que dijo la impresora.</summary>
-    private string? _noSalio;
+    /// <summary>El ticket de esa venta en la cola de la impresora (entrega 5, parte 3); vacío sin impresora (se ve en pantalla).</summary>
+    private TrabajoDeImpresion? _trabajoCobrado;
+
+    /// <summary>La cola de la impresora de tickets de esta caja: lo que se imprime no detiene la pantalla.</summary>
+    private ColaDeImpresion Cola => ColaDeImpresion.De(Impresora);
 
     private bool MostrarCambio => _cobrado is not null && Actual.Venta.Lineas.Count == 0;
 
     /// <summary>
-    /// La venta ya quedó guardada: se imprime aparte y el panel dice si salió. Sin impresora (en el navegador), el ticket
-    /// no se abre solo: el panel ofrece verlo; si la impresora no responde, ahí mismo «Reintentar» y «Verlo en pantalla».
+    /// La venta ya quedó guardada: el ticket va a la cola de la impresora (entrega 5, parte 3) y el panel dice si salió, sin
+    /// esperarlo. Sin impresora (en el navegador), el ticket no se abre solo: el panel ofrece verlo; si la impresora no
+    /// responde, ahí mismo «Reintentar» y «Verlo en pantalla».
     /// </summary>
     private async Task ImprimirCobradoAsync(TicketDto ticket)
     {
-        (_cobrado, _noSalio) = (ticket, null);
+        (_cobrado, _trabajoCobrado) = (ticket, null);
         await Cerrar();
-        if (Impresora.MuestraVistaPrevia)
+        if (Cola.MuestraVistaPrevia)
             return;
-        try
-        {
-            await Impresora.ImprimirAsync(DisenoTicket.Armar(ticket), ticket.AbreCajon);
-        }
-        catch (Exception ex)
-        {
-            _noSalio = ex.Message;
-        }
-        StateHasChanged();
+        _trabajoCobrado = Cola.Encolar($"Ticket {ticket.FolioImpreso}", DisenoTicket.Armar(ticket), ticket.AbreCajon);
     }
 
     private async Task VerCobradoEnPantallaAsync()
@@ -3454,6 +3437,18 @@
         if (_cobrado is not { } ticket)
             return;
         _vistaPrevia = ($"Ticket {ticket.FolioImpreso}", TicketTexto.Generar(DisenoTicket.Armar(ticket)));
+        await Abrir(Ventanas.VistaPrevia);
+    }
+
+    /// <summary>«Verlo en pantalla» de lo que no salió de la impresora: como sin impresora, en el panel.</summary>
+    private async Task VerEnPantallaAsync(TrabajoDeImpresion trabajo)
+    {
+        if (trabajo.Documento is not { } documento)
+            return;
+        // Encima de una página no hay panel: primero a la venta, donde se ve.
+        if (_pagina != Pagina.Venta)
+            await IrAAsync(Pagina.Venta);
+        _vistaPrevia = (trabajo.Titulo, TicketTexto.Generar(documento));
         await Abrir(Ventanas.VistaPrevia);
     }
 
@@ -3477,9 +3472,13 @@
     private Task ImprimirAsync(TicketDto ticket, bool abrirCajon) =>
         ImprimirDocumentoAsync($"Ticket {ticket.FolioImpreso}", DisenoTicket.Armar(ticket), abrirCajon);
 
+    /// <summary>
+    /// Una reimpresión o un comprobante (devolución, abono, salida, estado de cuenta): a la cola de la impresora, como el
+    /// ticket (entrega 5, parte 3). Si no sale, lo dice el panel de la derecha, con «Reintentar».
+    /// </summary>
     private async Task ImprimirDocumentoAsync(string titulo, IReadOnlyList<Elemento> documento, bool abrirCajon)
     {
-        if (Impresora.MuestraVistaPrevia)
+        if (Cola.MuestraVistaPrevia)
         {
             _vistaPrevia = (titulo, TicketTexto.Generar(documento));
             await Abrir(Ventanas.VistaPrevia);
@@ -3488,15 +3487,7 @@
 
         // Primero se cierra la ventana y se ve la pantalla lista; la impresora tarda un par de segundos con el logo.
         await Cerrar();
-        try
-        {
-            await Impresora.ImprimirAsync(documento, abrirCajon);
-        }
-        catch (Exception ex)
-        {
-            Avisar($"No se pudo imprimir ({titulo}): {ex.Message} Se puede reimprimir.");
-            StateHasChanged();
-        }
+        Cola.Encolar(titulo, documento, abrirCajon);
     }
 
     // ── Reimprimir (con motivo, queda en la bitácora) ───────────────────────
@@ -3831,17 +3822,8 @@
         Avisar($"{(salida ? "Salida" : "Entrada")} de {Formato.Dinero(comprobante.MontoCentavos)} registrada.", error: false);
         if (salida)
             await ImprimirDocumentoAsync($"Comprobante {comprobante.Folio}", DisenoComprobante.Movimiento(comprobante), abrirCajon: true);
-        else if (!Impresora.MuestraVistaPrevia)
-        {
-            try
-            {
-                await Impresora.EnviarAsync(TicketEscPos.AbrirCajon());
-            }
-            catch (Exception ex)
-            {
-                Avisar($"No se pudo abrir el cajón: {ex.Message}");
-            }
-        }
+        else if (!Cola.MuestraVistaPrevia)
+            Cola.Encolar($"El cajón (entrada {comprobante.Folio})", TicketEscPos.AbrirCajon());
         await RevisarEfectivoAsync();
     }
 
