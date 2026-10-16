@@ -64,9 +64,11 @@ eleventa) ya no existe: el dueño la quitó el 2026-10-14, y una PC que había v
 olvida. Se entra como en la propuesta (entrega 6): en «¿Quién atiende?» se toca la ficha (o se oprime su letra) y se
 teclea el PIN de 4 cifras, que entra solo con la cuarta; Ctrl+U cambia de usuario. Si la caja tiene el turno de otro
 cajero, quien tiene el permiso hace ahí mismo su corte, sin volver a escribir su PIN. El corte del turno solo pide el
-total del efectivo, a ciegas, y el dueño tiene además el corte del día. Productos, inventario, clientes y la
-configuración todavía abren sus ventanas de antes, encima de la venta; sin vender («Productos e inventario, sin cortar»,
-para quien tiene productos o compras) van con la barra de arriba de la venta. `preparar-caja` deja en la base de prueba los rápidos
+total del efectivo, a ciegas, y el dueño tiene además el corte del día. Productos, inventario y clientes todavía abren
+sus ventanas de antes, encima de la venta; sin vender («Productos e inventario, sin cortar», para quien tiene productos o
+compras) van con la barra de arriba de la venta. La Configuración ya es la del rediseño (entrega 7): ocupa la pantalla,
+con «Buscar un ajuste» y solo los grupos de los permisos de quien entró, y cada cambio se guarda solo, sin «Guardar» ni
+volver a escribir el PIN (Telegram, en pausa, sigue como estaba). `preparar-caja` deja en la base de prueba los rápidos
 Copia B/N y CURP (10 impresiones); `preparar-prueba`, además, con los precios que decidió el dueño ($2 y $10). La caja
 de prueba se actualiza sin tocar su base de trabajo: en una PC donde ya se probó, esos precios salen hasta oprimir
 «Empezar de cero» en la franja de prueba.
@@ -80,7 +82,7 @@ usuario se escribe solo en el conteo desde el celular:
 | Encargado de prueba (E) | `encargado` | Corte de turno, productos y clientes | 2222 |
 | Dueño de prueba (D) | `dueno` | Todos los permisos · primera cuenta (también el corte del día) | 3333 |
 
-No hay roles: cada usuario tiene sus permisos (Puede, Con autorización o No), que se ven y se cambian en Configuración →
+No hay roles: cada usuario tiene sus permisos (Puede, Con autorización o No; en Administración, solo Puede o No), que se ven y se cambian en Configuración →
 «Usuarios y permisos» (entrega 1). Al actualizar una base de antes, cada quien queda con lo que podía hacer con su rol.
 
 ### Instalar en la tienda (varias cajas)
@@ -129,7 +131,7 @@ Para que alguien de la tienda pruebe lo que ya funciona, solo y sin tocar eleven
 - **La caja arranca su propio servicio** en el puerto 5180 y lo apaga al cerrarse. No hay servicio de Windows ni
   segunda caja. La base ficticia de trabajo va en `C:\ProgramData\PapeleriaPos-Prueba`. El instalador abre el 5180
   a la red local para probar el conteo completo desde un celular en el mismo wifi.
-- **Se actualiza desde la caja:** Configuración › Actualización (solo en la caja de prueba).
+- **Se actualiza desde la caja:** Configuración › Acerca de › Actualización (solo en la caja de prueba).
   - Lista los instaladores que hay en GitHub, con lo que trae cada uno respecto a la instalada.
   - Lo baja, revisa su huella e instala encima en silencio. Windows pide el permiso de administrador; el instalador
     cierra la caja y la vuelve a abrir. Los datos de la prueba y los tickets en espera se quedan.

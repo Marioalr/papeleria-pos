@@ -82,15 +82,16 @@ public static partial class ApiCajas
             return new AltaCajaDto(new CajaDto(caja.Id, caja.Nombre, caja.Serie, sucursal.Id, sucursal.Nombre, caja.Equipo), llave);
         });
 
-        // Con llave, pero desde cualquier caja: el dueño puede quitar el equipo de otra (una PC robada o reemplazada).
-        api.MapPost("/cajas/{id:guid}/quitar-equipo", async (Guid id, SolicitudCredenciales s, PosDbContext db) =>
+        // Con llave, pero desde cualquier caja: quien entró con «Dar de alta y quitar cajas» quita el equipo de otra (una PC
+        // robada o reemplazada), sin volver a escribir su PIN (la Configuración nueva, entrega 7).
+        api.MapPost("/cajas/{id:guid}/quitar-equipo", async (Guid id, SolicitudQuitarEquipo s, PosDbContext db) =>
         {
             var caja = await db.Cajas.FindAsync(id) ?? throw new InvalidOperationException("La caja no existe.");
             var control = new ServicioControl(db);
-            var dueno = await control.IdentificarAsync(s.Usuario, s.Pin, caja.SucursalId, AccionControlada.AdministrarCajas);
+            await control.ExigirDeLaSesionAsync(s.UsuarioId, caja.SucursalId, caja.Id, AccionControlada.AdministrarCajas);
             if (!caja.TieneEquipo)
                 throw new InvalidOperationException($"{caja.Nombre} no tiene equipo dado de alta.");
-            control.Registrar(caja.SucursalId, caja.Id, dueno.Id, AccionControlada.AdministrarCajas, $"Quitó el equipo «{caja.Equipo}» de {caja.Nombre}");
+            control.Registrar(caja.SucursalId, caja.Id, s.UsuarioId, AccionControlada.AdministrarCajas, $"Quitó el equipo «{caja.Equipo}» de {caja.Nombre}");
             caja.QuitarEquipo();
             await db.SaveChangesAsync();
             return Results.NoContent();

@@ -39,7 +39,11 @@ public class GuiaPruebaTests
         Assert.Equal(temas.Distinct().Count(), temas.Where((t, i) => i == 0 || temas[i - 1] != t).Count());
         Assert.Equal("entrar", GuiaPrueba.Tareas[0].Id);
         Assert.True(primeraDeAntes > 0);
-        Assert.All(temas.Skip(primeraDeAntes), t => Assert.StartsWith(GuiaPrueba.VentanaDeAntes, t));
+        // Después de las ventanas de antes, solo la Configuración nueva, al final (entrega 7).
+        var primeraDeConfiguracion = temas.FindIndex(t => t.StartsWith(GuiaPrueba.ConfiguracionNueva, StringComparison.Ordinal));
+        Assert.True(primeraDeConfiguracion > primeraDeAntes);
+        Assert.All(temas.Skip(primeraDeAntes).Take(primeraDeConfiguracion - primeraDeAntes), t => Assert.StartsWith(GuiaPrueba.VentanaDeAntes, t));
+        Assert.All(temas.Skip(primeraDeConfiguracion), t => Assert.StartsWith(GuiaPrueba.ConfiguracionNueva, t));
         // Lo de vender va antes que la tarjeta, la transferencia y el crédito.
         var ids = GuiaPrueba.Tareas.Select(t => t.Id).ToList();
         Assert.True(ids.IndexOf("cobrar") < ids.IndexOf("tarjeta-transferencia"));

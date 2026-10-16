@@ -1,7 +1,9 @@
-@* El lado de la entrada (docs/propuesta-interfaz/prototipo.html, htmlLado): la caja, la hora en grande y cómo está todo
-   antes de entrar: la conexión (lo mismo que dice el estado de arriba en la venta), la impresora de tickets y el turno
-   abierto. Va en «¿Quién atiende?», en abrir el turno y en la caja con el turno de otro. *@
+@* El lado de la entrada (docs/propuesta-interfaz/prototipo.html, htmlLado): la tienda y la caja, la hora en grande y cómo
+   está todo antes de entrar: la conexión (lo mismo que dice el estado de arriba en la venta), la impresora de tickets y el
+   turno abierto. Va en «¿Quién atiende?», en abrir el turno y en la caja con el turno de otro. La tienda se llama como dice
+   Configuración › Tienda (entrega 7); sin nombre, como la sucursal. *@
 @implements IDisposable
+@inject ClienteCaja Cliente
 @inject ConexionCaja Conexion
 @inject IImpresora Impresora
 @inject IServiceProvider Servicios
@@ -9,7 +11,7 @@
 <section class="entrada-lado">
     <div class="vn-marca">
         <span class="vn-logo">P</span>
-        <div><strong>@Caja.Sucursal</strong><small>@Caja.Nombre · @(Conexion.Servicio.IsLoopback ? "principal" : "secundaria")</small></div>
+        <div><strong>@Tienda</strong><small>@Caja.Nombre · @(Conexion.Servicio.IsLoopback ? "principal" : "secundaria")</small></div>
     </div>
     <div class="reloj">@_ahora.ToString("HH:mm", Formato.Mexico)</div>
     <div class="fecha">@_ahora.ToString("dddd, d 'de' MMMM", Formato.Mexico)</div>
@@ -50,10 +52,25 @@
 
     private Contingencia? _contingencia;
     private DateTime _ahora = Ahora();
+
+    /// <summary>El nombre de la tienda: el que ya se conocía mientras llega (sin parpadear) y, si no tiene, el de la sucursal.</summary>
+    private string Tienda => Cliente.ConfiguracionConocida?.NombreTienda ?? Caja.Sucursal;
     private readonly CancellationTokenSource _alto = new();
 
     /// <summary>La hora de la tienda, como la del turno y los tickets.</summary>
     private static DateTime Ahora() => HoraMexico.ALocal(DateTime.UtcNow);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await Cliente.ConfiguracionSucursalAsync(Caja.SucursalId);
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión y sin copia: el de la sucursal.
+        }
+    }
 
     protected override void OnInitialized()
     {

@@ -293,14 +293,14 @@
                     @{
                         var esperan = EnEspera.ToList();
                     }
-                    @for (var k = 0; k < Math.Min(FichasEnEspera, esperan.Count); k++)
+                    @for (var k = 0; k < Math.Min(_fichasEnEspera, esperan.Count); k++)
                     {
                         var enEspera = esperan[k];
                         <button class="vn-ficha" title="@TituloEspera(enEspera, k == 0)" @onclick="() => Retomar(enEspera)"><Ico Nombre="pausa" />@Desde(enEspera) · @Formato.Dinero(enEspera.Venta.TotalCentavos)</button>
                     }
-                    @if (esperan.Count > FichasEnEspera)
+                    @if (esperan.Count > _fichasEnEspera)
                     {
-                        var resto = esperan.Skip(FichasEnEspera).ToList();
+                        var resto = esperan.Skip(_fichasEnEspera).ToList();
                         <span class="vn-mas-espera">
                             <button class="vn-boton chico @(_menuEspera ? "on" : "")" aria-expanded="@(_menuEspera ? "true" : "false")" title="Los otros @resto.Count tickets en espera"
                                     @onclick="() => _menuEspera = !_menuEspera">Más (@resto.Count) <Ico Nombre="abajo" /></button>
@@ -901,14 +901,13 @@
             AccionControlada.AjustarInventario, AccionControlada.AbrirPaquete, AccionControlada.CostearCompra, AccionControlada.PedirCompra,
         }.Any(Ve);
 
-    /// <summary>La caja de prueba se actualiza desde Configuración: ahí la ve cualquiera.</summary>
+    /// <summary>
+    /// Con algún grupo de la Configuración (las reglas de sus grupos, entrega 7). La caja de prueba se actualiza desde
+    /// Configuración: ahí la ve cualquiera.
+    /// </summary>
     private bool VeConfiguracion =>
-        Servicios.GetService<GitHubPrueba>() is not null
-        || new[]
-        {
-            AccionControlada.ConfigurarTicket, AccionControlada.EditarReglas, AccionControlada.ConsultarBitacora, AccionControlada.AdministrarCajas,
-            AccionControlada.ConfigurarTelegram, AccionControlada.ConfigurarImpresora, AccionControlada.ConfigurarMargen, AccionControlada.ConfigurarTienda,
-        }.Any(Ve);
+        Configuracion.HayQueVer(accion => _permisosPedidos && (Permiso(accion)?.Nivel ?? NivelPermiso.Permitido) == NivelPermiso.Permitido,
+            Servicios.GetService<GitHubPrueba>() is not null);
 
     private async Task CargarPermisosAsync()
     {
@@ -1185,8 +1184,37 @@
     /// <summary>Los tickets en espera: los que tienen algo y no son el que se atiende, en el orden en que se apartaron.</summary>
     private IEnumerable<TicketAbierto> EnEspera => _tickets.Where(t => t != Actual && t.Venta.Lineas.Count > 0);
 
-    /// <summary>Cuántos se ven como ficha junto a «Poner en espera»; los demás van en «Más».</summary>
-    private const int FichasEnEspera = 3;
+    /// <summary>
+    /// Cuántos se ven como ficha junto a «Poner en espera»; los demás van en «Más». Se cambia en Configuración › Venta y
+    /// cobro (entrega 7); mientras llega, y sin conexión ni copia, los de siempre.
+    /// </summary>
+    private int _fichasEnEspera = ConfiguracionSucursal.FichasEnEsperaPorOmision;
+
+    /// <summary>Lo de la configuración de la tienda que usa la venta: cuántas fichas de la espera se ven.</summary>
+    private async Task CargarConfiguracionAsync()
+    {
+        try
+        {
+            _fichasEnEspera = (await Cliente.ConfiguracionSucursalAsync(Caja.SucursalId)).FichasEnEspera;
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión y sin copia: las de siempre.
+        }
+    }
+
+    /// <summary>La Configuración guardó algo que usa la venta: las fichas de la espera y los rápidos se vuelven a pedir.</summary>
+    private async Task ConfiguracionCambiadaAsync()
+    {
+        await CargarConfiguracionAsync();
+        await CargarRapidosAsync();
+    }
+
+    /// <summary>
+    /// Se cerró la Configuración con algo escrito que no se pudo guardar (Esc sin salir del campo): ya no está su renglón para
+    /// decirlo, así que se dice aquí abajo.
+    /// </summary>
+    private void ConfiguracionNoGuardada(string porQue) => Avisar(porQue);
 
     /// <summary>Con más de estos en «Más», el menú lleva flechas arriba y abajo.</summary>
     private const int FilasDelMenu = 5;
@@ -1658,6 +1686,7 @@
         // Primero los permisos: lo de quien entró sale en cuanto llegan, sin esperar a los rápidos ni a lo demás.
         await CargarPermisosAsync();
         StateHasChanged();
+        await CargarConfiguracionAsync();
         await CargarRapidosAsync();
         await CargarPilotoEleventaAsync();
         await RevisarEfectivoAsync();
@@ -3328,8 +3357,10 @@
             </Ventana>
             break;
         case Ventanas.Configuracion:
-            <Ventana Titulo="Configuración" Clase="configuracion" AlCerrar="Cerrar">
-                <Configuracion Caja="Caja" Sesion="Sesion" AntesDeInstalar="GuardarEspera" />
+            @* La Configuración nueva (entrega 7) ocupa la pantalla, como el corte: Esc la cierra. *@
+            <Ventana Titulo="Configuración" Clase="cfg" AlCerrar="Cerrar">
+                <Configuracion Caja="Caja" Sesion="Sesion" AntesDeInstalar="GuardarEspera" AlCambiar="ConfiguracionCambiadaAsync"
+                               AlNoGuardar="ConfiguracionNoGuardada" />
             </Ventana>
             break;
         case Ventanas.Motivo:

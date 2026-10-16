@@ -77,28 +77,18 @@ public static class ApiControl
             return new EfectivoCajaDto(esperado, limite);
         });
 
-        api.MapGet("/sucursales/{sucursalId:guid}/configuracion", async (Guid sucursalId, PosDbContext db) =>
-            new ConfiguracionSucursalDto(await db.ConfiguracionesSucursal.Where(c => c.SucursalId == sucursalId)
-                .Select(c => c.LimiteEfectivoCentavos).FirstOrDefaultAsync()));
-
-        api.MapPut("/sucursales/{sucursalId:guid}/configuracion", async (Guid sucursalId, SolicitudConfiguracionSucursal s, PosDbContext db) =>
+        // La bitácora de la sucursal de esa caja, para quien entró con «Consultar la bitácora» (sin volver a escribir su PIN).
+        api.MapGet("/cajas/{cajaId:guid}/bitacora", async (Guid cajaId, Guid usuarioId, DateOnly desde, DateOnly hasta, PosDbContext db) =>
         {
-            if (s.LimiteEfectivoCentavos is <= 0)
-                throw new ArgumentException("El límite de efectivo debe ser mayor a cero (o vacío para no tener límite).");
-            // «Configuración de la tienda» (entrega 1): antes, solo el dueño (con la acción de las reglas).
+            var caja = await db.Cajas.AsNoTracking().SingleOrDefaultAsync(c => c.Id == cajaId) ?? throw new InvalidOperationException("La caja no existe.");
+            if (hasta < desde)
+                throw new ArgumentException("La fecha «hasta» va después de «desde».");
             var control = new ServicioControl(db);
-            var quien = await control.IdentificarAsync(s.Usuario, s.Pin, sucursalId, AccionControlada.ConfigurarTienda);
-            var configuracion = await db.ConfiguracionesSucursal.FindAsync(sucursalId);
-            if (configuracion is null)
-            {
-                configuracion = new ConfiguracionSucursal { SucursalId = sucursalId };
-                db.ConfiguracionesSucursal.Add(configuracion);
-            }
-            configuracion.LimiteEfectivoCentavos = s.LimiteEfectivoCentavos;
-            control.Registrar(sucursalId, null, quien.Id, AccionControlada.ConfigurarTienda,
-                s.LimiteEfectivoCentavos is { } l ? $"Límite de efectivo en caja: {l / 100m:N2}" : "Sin límite de efectivo en caja");
-            await db.SaveChangesAsync();
-            return new ConfiguracionSucursalDto(configuracion.LimiteEfectivoCentavos);
+            await control.ExigirParaVerAsync(usuarioId, caja.SucursalId, AccionControlada.ConsultarBitacora);
+            var registros = await control.ConsultarAsync(caja.SucursalId,
+                HoraMexico.AUtc(desde.ToDateTime(TimeOnly.MinValue)), HoraMexico.AUtc(hasta.AddDays(1).ToDateTime(TimeOnly.MinValue)));
+            return registros.Select(r => new BitacoraDto(HoraMexico.ALocal(r.Registro.FechaUtc), r.Usuario, r.Registro.Accion, r.Registro.Detalle,
+                r.Registro.MontoCentavos, r.Autorizo, r.Registro.Resultado)).ToList();
         });
     }
 

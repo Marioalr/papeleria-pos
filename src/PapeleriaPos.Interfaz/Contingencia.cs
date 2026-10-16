@@ -565,6 +565,19 @@ public sealed class Contingencia
         return new EfectivoCajaDto(corte.EsperadoCentavos, Datos.Paquete.LimiteEfectivoCentavos);
     }
 
+    /// <summary>
+    /// La configuración de la tienda de la copia local (entrega 7). Una copia de antes no la trae: lo de siempre (3 fichas, sin
+    /// fondo sugerido), con su límite de efectivo.
+    /// </summary>
+    public ConfiguracionSucursalDto ConfiguracionSucursal()
+    {
+        if (Datos.Paquete.Configuracion is { } configuracion)
+            return configuracion;
+        var omision = new Nucleo.Configuracion.ConfiguracionSucursal();
+        return new ConfiguracionSucursalDto(null, null, null, omision.HoraApertura, omision.HoraCierre, Datos.Paquete.LimiteEfectivoCentavos, null,
+            omision.UmbralCorteCentavos, omision.FichasEnEspera);
+    }
+
     public void Bitacora(SolicitudBitacora s)
     {
         var registro = Registro(s.UsuarioId, s.Accion, s.Detalle, s.MontoCentavos);

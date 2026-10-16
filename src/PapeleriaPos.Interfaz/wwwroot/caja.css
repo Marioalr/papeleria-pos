@@ -1,5 +1,5 @@
-/* Caja: para 1366×768 y operada con teclado. La venta (vn-…) es la del prototipo (docs/propuesta-interfaz.md); lo que
-   todavía abre encima (productos, inventario, clientes, corte, configuración) usa lo de antes. */
+/* Caja: para 1366×768 y operada con teclado. La venta (vn-…) es la del prototipo (docs/propuesta-interfaz.md), y también
+   el corte y la configuración; lo que todavía abre encima (productos, inventario, clientes) usa lo de antes. */
 :root {
     --azul: #2c5c99;
     --azul-claro: #e9f1fb;
@@ -85,15 +85,9 @@ details summary { cursor: pointer; color: var(--azul); }
 
 pre.ticket { font-family: Consolas, "Courier New", monospace; font-size: 13px; background: #fffef8; border: 1px dashed var(--borde); padding: 12px; margin: 0; }
 
-/* Configuración del ticket */
+/* Las ventanas de antes que se abren encima de la venta (productos, inventario, clientes, el conteo) */
 .ventana.configuracion { width: 1040px; }
-.configuracion-ticket { display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: start; }
-.config-campos { display: flex; flex-direction: column; gap: 10px; }
-.config-vista { display: flex; flex-direction: column; align-items: center; background: #fffef8; border: 1px dashed var(--borde); padding: 12px; }
-.config-vista pre.ticket { border: none; padding: 0; background: none; }
-.logo-vista { image-rendering: pixelated; max-width: 384px; margin-bottom: 6px; }
 textarea { font-family: Consolas, "Courier New", monospace; font-size: 14px; padding: 6px 8px; border: 1px solid var(--borde); border-radius: 4px; resize: vertical; }
-.logo-config { display: flex; align-items: center; gap: 8px; }
 .boton.archivo { position: relative; overflow: hidden; display: inline-block; }
 .boton.archivo input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .aviso { color: var(--exito); margin: 4px 0; }
@@ -108,8 +102,6 @@ input.cantidad-devolver { width: 80px; text-align: right; font-size: 15px; paddi
 .config-pestanas { background: none; padding: 0 0 0; border-bottom: 1px solid var(--borde); margin-bottom: 10px; }
 .reglas select { font: inherit; font-size: 13px; padding: 2px 4px; }
 .reglas input.umbral { width: 80px; font-size: 13px; padding: 2px 6px; text-align: right; }
-.filtros-bitacora { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-.filtros-bitacora input { font-size: 14px; width: 130px; }
 tr.negado td { color: var(--error); }
 
 /* Entrega 3: alta de la caja */
@@ -178,7 +170,7 @@ input.codigos { width: 100%; font-size: 14px; }
 .depurar > p, .depurar > .dos-columnas, .depurar > .filtros-catalogo, .depurar > table { flex-basis: 100%; }
 .compra tr.diferencia td { color: var(--error); }
 .compra td.bajo { color: var(--error); font-weight: 600; }
-.compra input.umbral, .margenes input.umbral { width: 90px; font-size: 14px; padding: 3px 6px; text-align: right; }
+.compra input.umbral { width: 90px; font-size: 14px; padding: 3px 6px; text-align: right; }
 /* Productos, inventario y clientes sin vender (Administración): arriba la barra de la venta, sola; abajo, lo de siempre. */
 .sin-vender { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .venta-nueva.solo-arriba { flex: none; grid-template-rows: 48px; }
@@ -864,11 +856,9 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-alerta.info { background: var(--vn-tinta-claro); color: var(--vn-tinta-hover); border-color: var(--vn-tinta-medio); }
 .vn-botonera { display: flex; flex-wrap: wrap; gap: 6px; }
 
-/* ── Usuarios y permisos (entrega 1, htmlUsuarios del prototipo): por ahora, una pestaña de la Configuración de antes ──
-   Va en la ventana de la configuración, fuera de .venta-nueva, así que trae sus colores (los mismos). Con ella, la ventana
-   toma la altura de la pantalla y la lista y los permisos se recorren cada uno por su lado: cabe en 1366×697. */
-.fondo-ventana > .ventana.configuracion:has(.vn-usuarios) { height: 90vh; }
-.ventana.configuracion:has(.vn-usuarios) > .ventana-cuerpo { flex: 1; min-height: 0; }
+/* ── Usuarios y permisos (entrega 1, htmlUsuarios del prototipo): un grupo de la Configuración nueva (entrega 7) ──
+   Va en la ventana de la configuración, fuera de .venta-nueva, así que trae sus colores (los mismos). Toma lo que queda de
+   alto y la lista y los permisos se recorren cada uno por su lado: cabe en 1366×697. */
 .vn-usuarios {
     --vn-papel: #eceff3;
     --vn-hoja: #ffffff;
@@ -941,3 +931,139 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-segmento button.on.n { background: var(--vn-error-fondo); color: var(--vn-error); font-weight: 700; }
 .vn-umbral { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; vertical-align: middle; font-size: 12.5px; color: var(--vn-suave); }
 .vn-umbral input { width: 72px; padding: 4px 6px; border: 1px solid var(--vn-borde); border-radius: 6px; font: 500 13px var(--vn-f-texto); text-align: right; }
+
+/* ── La Configuración nueva (entrega 7, docs/propuesta-interfaz.md «Configuración»; htmlConfig del prototipo, con .cfg,
+   .cfg-nav, .cfg-main, .ajustes, .ajuste, .guardado y sus controles): el buscador y los grupos a la izquierda, el grupo a
+   la derecha con cada ajuste en su renglón. Va en la ventana «cfg», fuera de .venta-nueva, así que trae sus colores (los
+   mismos). La ventana ocupa la pantalla, como el corte (la × queda arriba a la derecha): cabe en 1366×697. ── */
+.fondo-ventana > .ventana.cfg { position: relative; width: min(1340px, calc(100vw - 24px)); height: calc(100vh - 24px); max-height: none; background: #eceff3; border-radius: 12px; overflow: hidden; }
+.ventana.cfg > .ventana-titulo { position: absolute; top: 12px; right: 18px; z-index: 2; padding: 0; background: none; }
+.ventana.cfg > .ventana-titulo > span { display: none; }
+.ventana.cfg > .ventana-titulo .cerrar { width: 34px; height: 32px; color: #556375; background: #fff; border: 1px solid #dfe4ea; border-radius: 8px; font-size: 20px; }
+.ventana.cfg > .ventana-titulo .cerrar:hover { border-color: #23439b; color: #15202c; }
+.fondo-ventana > .ventana.cfg > .ventana-cuerpo { flex: 1; min-height: 0; padding: 0; gap: 0; overflow: hidden; }
+.vn-cfg {
+    --vn-papel: #eceff3;
+    --vn-hoja: #ffffff;
+    --vn-renglon: #f4f6f9;
+    --vn-linea: #dfe4ea;
+    --vn-borde: #c6cfda;
+    --vn-texto: #15202c;
+    --vn-suave: #556375;
+    --vn-tenue: #8693a3;
+    --vn-tinta: #23439b;
+    --vn-tinta-hover: #1a3682;
+    --vn-tinta-claro: #e8edf9;
+    --vn-tinta-medio: #c7d3f1;
+    --vn-cobro: #0f7a4a;
+    --vn-cobro-hover: #0b673e;
+    --vn-cobro-claro: #e3f3ea;
+    --vn-aviso: #8a5300;
+    --vn-aviso-fondo: #fff3dc;
+    --vn-aviso-borde: #efc884;
+    --vn-error: #b3261e;
+    --vn-error-fondo: #fdecea;
+    --vn-f-texto: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --vn-f-cifras: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    --vn-f-codigo: "Cascadia Mono", Consolas, ui-monospace, monospace;
+    height: 100%; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr); background: var(--vn-papel);
+    color: var(--vn-texto); font: 15px/1.35 var(--vn-f-texto);
+}
+.vn-cfg svg.ico { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.vn-cfg kbd { font: 600 11px/1 var(--vn-f-codigo); padding: 3px 5px 2px; border: 1px solid var(--vn-borde); border-bottom-width: 2px; border-radius: 4px; background: var(--vn-hoja); color: var(--vn-suave); white-space: nowrap; }
+.vn-cfg button:focus-visible, .vn-cfg input:focus-visible, .vn-cfg select:focus-visible, .vn-cfg textarea:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: 2px; }
+.vn-cfg input:focus, .vn-cfg textarea:focus { outline-offset: 2px; }
+.vn-cfg .vn-boton.primario { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; font-weight: 600; }
+.vn-cfg .vn-boton.primario:hover:not(:disabled) { background: var(--vn-tinta-hover); }
+.vn-cfg .vn-boton.peligro { color: var(--vn-error); border-color: #f0b8b2; }
+.vn-cfg-nav { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; padding: 12px 10px; background: var(--vn-hoja); border-right: 1px solid var(--vn-linea); }
+.vn-cfg-nav h1 { margin: 2px 6px 10px; font-size: 18px; }
+.vn-cfg-nav input { margin: 0 2px 8px; font: 500 14px var(--vn-f-texto); padding: 8px 10px; border: 1px solid var(--vn-borde); border-radius: 8px; background: var(--vn-hoja); color: var(--vn-texto); }
+.vn-cfg-grupos { display: flex; flex-direction: column; gap: 1px; }
+.vn-cfg-grupos button { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border: 0; border-radius: 8px; background: none; font: inherit; font-size: 14px; color: var(--vn-suave); text-align: left; cursor: pointer; }
+.vn-cfg-grupos button:hover { background: var(--vn-renglon); color: var(--vn-texto); }
+.vn-cfg-grupos button.on { background: var(--vn-tinta-claro); color: var(--vn-tinta); font-weight: 600; }
+.vn-cfg-main { min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 16px 24px; }
+.vn-cfg-main > h3, .vn-cfg-asi-sale h3 { margin: 6px 0 0; font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--vn-tenue); }
+.vn-cfg-titulo { display: flex; align-items: baseline; gap: 12px; padding-right: 48px; }
+.vn-cfg-titulo h2 { margin: 0; font-size: 21px; }
+.vn-cfg-titulo p { margin: 0; flex: 1; font-size: 14px; color: var(--vn-suave); }
+/* «Usuarios y permisos» trae su título: la × no lo tapa. */
+.vn-cfg-main > .vn-usuarios > .vn-usuarios-titulo { padding-right: 48px; }
+.vn-cfg-nota { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--vn-suave); }
+.vn-cfg-error { margin: 0; font-size: 13px; font-weight: 600; color: var(--vn-error); }
+.vn-cfg-aviso { margin: 0; font-size: 13px; color: var(--vn-cobro); }
+.vn-ajustes { flex: none; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; }
+.vn-ajuste { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px; align-items: center; padding: 11px 16px; border-bottom: 1px solid var(--vn-renglon); }
+.vn-ajuste:last-child { border-bottom: 0; }
+.vn-ajuste.bloque { grid-template-columns: minmax(0, 1fr) auto; row-gap: 10px; }
+.vn-ajuste-bloque { grid-column: 1 / -1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.vn-ajuste-txt { min-width: 0; }
+.vn-ajuste-txt strong { display: block; font-size: 14.5px; }
+.vn-ajuste-txt small { display: block; margin-top: 2px; font-size: 12.5px; color: var(--vn-suave); }
+.vn-ajuste-meta { display: block; margin-top: 3px; font-size: 11.5px; color: var(--vn-tenue); }
+.vn-ajuste-error { display: block; margin-top: 4px; font-size: 12.5px; font-weight: 600; color: var(--vn-error); }
+.vn-ajuste-aviso { display: block; margin-top: 4px; font-size: 12.5px; color: var(--vn-cobro); }
+.vn-ajuste-ctl { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.vn-ajuste-dice { font-size: 14px; color: var(--vn-suave); text-align: right; }
+.vn-ctl-entre { font-size: 13px; color: var(--vn-suave); }
+.vn-ctl-num, .vn-ctl-texto, .vn-ctl-area { display: flex; align-items: center; gap: 6px; color: var(--vn-suave); font-size: 13px; }
+.vn-ctl-num input, .vn-ctl-texto input { font: 500 15px var(--vn-f-texto); padding: 6px 9px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); color: var(--vn-texto); }
+.vn-ctl-num input { width: 96px; text-align: right; font-variant-numeric: tabular-nums; }
+.vn-ctl-num input[type=time] { width: 132px; text-align: left; }
+.vn-ctl-texto input { width: 300px; }
+/* El encabezado y el pie del ticket: 48 columnas, como el papel de 80 mm. */
+.vn-ctl-area textarea { width: calc(48ch + 20px); font: 12.5px/1.45 var(--vn-f-codigo); padding: 7px 9px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); color: var(--vn-texto); resize: vertical; }
+.vn-cfg input:disabled, .vn-cfg textarea:disabled { background: var(--vn-renglon); color: var(--vn-suave); }
+.vn-cfg-logo { display: flex; align-items: center; gap: 8px; }
+.vn-cfg-logo img { max-height: 44px; max-width: 160px; image-rendering: pixelated; border: 1px solid var(--vn-linea); border-radius: 4px; background: #fff; }
+.vn-cfg .vn-archivo { position: relative; overflow: hidden; flex-direction: row; }
+.vn-cfg .vn-archivo input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+/* «Así sale»: el ticket de 80 mm con lo que se está escribiendo. */
+.vn-cfg-asi-sale { display: flex; flex-direction: column; gap: 8px; }
+.vn-termico { align-self: flex-start; position: relative; display: flex; flex-direction: column; align-items: center; padding: 16px 14px 22px; background: #fff; border: 1px solid var(--vn-linea); box-shadow: 0 6px 18px rgba(20, 30, 60, .08); }
+.vn-termico::after { content: ""; position: absolute; left: 0; right: 0; bottom: -7px; height: 7px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='7'%3E%3Cpath d='M0 0 L7 7 L14 0 Z' fill='%23ffffff'/%3E%3C/svg%3E") repeat-x left top; }
+.vn-termico img { max-width: 100%; margin-bottom: 8px; image-rendering: pixelated; }
+.vn-termico pre { margin: 0; font: 11.5px/1.45 var(--vn-f-codigo); white-space: pre; color: #1d1d1d; }
+/* Las tablas de la Configuración (rápidos, margen por departamento, cajas, bitácora, teclas), como .tabla del prototipo. */
+.vn-cfg-tabla { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; overflow: hidden; }
+.vn-cfg-tabla th { position: static; text-align: left; font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); padding: 8px 12px; border-bottom: 1px solid var(--vn-linea); background: var(--vn-renglon); }
+.vn-cfg-tabla td { padding: 7px 12px; border-bottom: 1px solid var(--vn-renglon); font-size: 14px; color: var(--vn-texto); vertical-align: middle; }
+.vn-cfg-tabla tbody tr:last-child td { border-bottom: 0; }
+.vn-cfg-tabla th.num, .vn-cfg-tabla td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.vn-cfg-tabla tr.negado td { color: var(--vn-error); }
+.vn-cfg-tabla input { font: 500 14px var(--vn-f-texto); padding: 5px 8px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); color: var(--vn-texto); }
+.vn-cfg-tabla .vn-ctl-num { justify-content: flex-end; }
+.vn-cfg-tabla .vn-ctl-num input { width: 80px; }
+.vn-cfg-rapido-nombre { width: 210px; }
+.vn-cfg-rapido-cantidad { width: 72px; text-align: right; font-variant-numeric: tabular-nums; }
+.vn-cfg-acciones { display: inline-flex; justify-content: flex-end; gap: 4px; }
+.vn-cfg-acciones .vn-boton .ico { width: 14px; height: 14px; }
+.vn-cfg-pregunta { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; font-size: 12.5px; color: var(--vn-aviso); white-space: normal; }
+.vn-cfg-filtros { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.vn-cfg-filtros label { flex-direction: row; align-items: center; gap: 6px; font-size: 13px; color: var(--vn-suave); }
+.vn-cfg-filtros input { font: 500 14px var(--vn-f-texto); padding: 5px 8px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); color: var(--vn-texto); }
+.vn-cfg-teclas td:first-child { width: 160px; }
+/* Lo de antes que va adentro tal cual (los sinónimos, Telegram en pausa, la impresora, la actualización de la prueba):
+   con las letras, los botones y las tablas de aquí, sin cambiar su marcado. */
+.vn-cfg-antes { display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 14px; }
+.vn-cfg-antes h4 { margin: 6px 0 0; font-size: 12px; letter-spacing: .07em; text-transform: uppercase; color: var(--vn-tenue); }
+.vn-cfg-antes p { margin: 0; }
+.vn-cfg-antes .nota, .vn-cfg-antes .vacia { margin: 0; font-size: 12.5px; color: var(--vn-suave); }
+.vn-cfg-antes .error { margin: 0; color: var(--vn-error); font-weight: 600; font-size: 13px; }
+.vn-cfg-antes .aviso { margin: 0; color: var(--vn-cobro); font-size: 13px; }
+.vn-cfg-antes label { font-size: 13px; color: var(--vn-suave); }
+.vn-cfg-antes input:not([type=checkbox]):not([type=file]), .vn-cfg-antes select { font: 500 14px var(--vn-f-texto); padding: 6px 9px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); color: var(--vn-texto); }
+.vn-cfg-antes .boton { display: inline-flex; align-items: center; justify-content: center; gap: 7px; font: inherit; font-size: 13px; color: var(--vn-texto); border: 1px solid var(--vn-borde); background: var(--vn-hoja); border-radius: 8px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+.vn-cfg-antes .boton:hover:not(:disabled) { border-color: var(--vn-tinta); }
+.vn-cfg-antes .boton.principal { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; font-weight: 600; font-size: 14px; }
+.vn-cfg-antes .boton.chico { padding: 3px 9px; }
+.vn-cfg-antes .acciones { justify-content: flex-start; margin-top: 0; }
+.vn-cfg-antes .resultados { max-height: none; border: 1px solid var(--vn-linea); border-radius: 10px; overflow: hidden; background: var(--vn-hoja); }
+.vn-cfg-antes table.resultados, .vn-cfg-antes .resultados table { width: 100%; border-collapse: collapse; background: var(--vn-hoja); }
+.vn-cfg-antes th { position: static; font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--vn-tenue); background: var(--vn-renglon); padding: 7px 10px; border-bottom: 1px solid var(--vn-linea); }
+.vn-cfg-antes td { font-size: 14px; padding: 6px 10px; border-bottom: 1px solid var(--vn-renglon); }
+.vn-cfg-antes .col-codigo { background: none; }
+.vn-cfg-buscar { padding: 10px 12px; border: 1px dashed var(--vn-borde); border-radius: 10px; background: var(--vn-renglon); }
+.vn-cfg-buscar .buscar-texto { width: 100%; }
+.vn-cfg-buscar .resultados { max-height: 220px; overflow-y: auto; }

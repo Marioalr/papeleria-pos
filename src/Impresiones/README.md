@@ -93,15 +93,16 @@ tiene que cambiar, se cambia aquí y en esos archivos a la vez.
 ## La API
 
 `MapearApiImpresiones` monta las rutas sobre el grupo que le da el servicio:
-`app.MapGroup("/api").ConErrores().SoloSuCaja().MapearApiImpresiones()` (en `src/PapeleriaPos.Servicio/Program.cs`).
-Los errores para el cajero (400 con el mensaje, 403 cuando lo detiene un permiso) y que una caja solo opere la suya los
-pone el servicio, como en el resto de la API. Lo que es del POS lo toma la API de su base: los permisos de cada usuario
-(entrega 1: ya no hay roles), los nombres de quien atendió y el PIN. El costo de cada impresión (y la ganancia y el
-margen al cotizar) solo va a quien tiene «Ver costos, utilidad y margen»; el desglose del día, a quien tiene «Consultar la
-bitácora»; y cambiar cómo se lee la impresora o aplicar la calibración lo hace quien tiene «Configurar la impresora», con
-su usuario y su PIN. Al migrar de los roles quedaron igual que antes: el costo, solo el dueño; la impresora, el dueño; el
-desglose, el dueño y el encargado (el encargado, mientras consulte la bitácora, como viene de inicio). La capa de datos del
-módulo no revisa permisos: eso lo hace la API.
+`app.MapGroup("/api").ConErrores().SoloSuCaja().MapearApiImpresiones()` (en `src/PapeleriaPos.Servicio/Program.cs`). Los
+errores para el cajero (400 con el mensaje, 403 cuando lo detiene un permiso) y que una caja solo opere la suya los pone
+el servicio, como en el resto de la API. Lo que es del POS lo toma la API de su base: los permisos de cada usuario
+(entrega 1: ya no hay roles) y los nombres de quien atendió. El costo de cada impresión (y la ganancia y el margen al
+cotizar) solo va a quien tiene «Ver costos, utilidad y margen»; el desglose del día, a quien tiene «Consultar la
+bitácora»; y cambiar cómo se lee la impresora o aplicar la calibración lo hace quien entró a la caja con «Configurar la
+impresora», sin volver a escribir su PIN (la Configuración nueva, entrega 7: lo que se cambia se guarda solo). Al migrar
+de los roles quedaron igual que antes: el costo, solo el dueño; la impresora, el dueño; el desglose, el dueño y el
+encargado (el encargado, mientras consulte la bitácora, como viene de inicio). La capa de datos del módulo no revisa
+permisos: eso lo hace la API.
 
 Los contratos (`Contratos.cs`) son lo que entienden la interfaz y las cajas, y el agente manda `TrabajoMedidoDto` por la
 bandeja de la caja (si no hay conexión, se queda guardado y se manda después, tal cual). Cambios sin riesgo: agregar un

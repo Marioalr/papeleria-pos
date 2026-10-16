@@ -5,10 +5,35 @@ namespace PapeleriaPos.Nucleo.Configuracion;
 /// <summary>Ajustes de operación de una sucursal que configura el dueño.</summary>
 public class ConfiguracionSucursal : IVersionado
 {
+    /// <summary>Los tickets en espera que se ven como ficha en la venta mientras no se cambie (antes era fijo).</summary>
+    public const int FichasEnEsperaPorOmision = 3;
+
+    /// <summary>Lo más que se ven como ficha: los demás van en «Más».</summary>
+    public const int FichasEnEsperaMaximo = 6;
+
+    public const int LargoNombreTienda = 60;
+    public const int LargoDireccion = 120;
+    public const int LargoTelefono = 30;
+
     public Guid SucursalId { get; set; }
 
     /// <summary>Al llegar a este efectivo en una caja, se pide hacer un retiro. Vacío: sin límite.</summary>
     public long? LimiteEfectivoCentavos { get; set; }
+
+    // ── La tienda (la Configuración nueva, entrega 7) ──
+
+    /// <summary>El nombre de la tienda: sale en la entrada de las cajas. Vacío: el de la sucursal.</summary>
+    public string? NombreTienda { get; set; }
+
+    public string? Direccion { get; set; }
+
+    public string? Telefono { get; set; }
+
+    /// <summary>Cuántos tickets en espera se ven como ficha junto a «Poner en espera»; los demás van en «Más».</summary>
+    public int FichasEnEspera { get; set; } = FichasEnEsperaPorOmision;
+
+    /// <summary>Lo que propone «Abrir turno» como fondo: Enter con el campo vacío lo toma. Vacío: se escribe cada vez.</summary>
+    public long? FondoSugeridoCentavos { get; set; }
 
     // ── Alertas por Telegram (entrega 4) ──
 

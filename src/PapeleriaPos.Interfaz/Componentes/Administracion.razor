@@ -8,6 +8,7 @@
 @inject ModuloCaja Js
 @inject ConexionCaja Conexion
 @inject IImpresora Impresora
+@inject IServiceProvider Servicios
 
 <div class="sin-vender">
     <div class="venta-nueva solo-arriba">
@@ -20,6 +21,10 @@
                 <button class="@Activa(Modulo.Productos)" @onclick="() => Ir(Modulo.Productos)">Productos <kbd>F3</kbd></button>
                 <button class="@Activa(Modulo.Inventario)" @onclick="() => Ir(Modulo.Inventario)">Inventario <kbd>F4</kbd></button>
                 <button class="@Activa(Modulo.Clientes)" @onclick="() => Ir(Modulo.Clientes)">Clientes</button>
+                @if (VeConfiguracion)
+                {
+                    <button class="@(_configuracion ? "activa" : "")" @onclick="AbrirConfiguracion">Configuración</button>
+                }
             </nav>
             <span class="espacio"></span>
             <div class="vn-usuario-caja">
@@ -68,6 +73,14 @@
             <p class="nota">Sin impresora conectada: así saldrá impreso en la de 80 mm.</p>
         </Ventana>
     }
+    @* La Configuración, igual que desde la venta (entrega 7): el margen y la cobertura del sugerido viven ahí, y sin cortar
+       también se cambian. *@
+    @if (_configuracion)
+    {
+        <Ventana Titulo="Configuración" Clase="cfg" AlCerrar="CerrarConfiguracion">
+            <Configuracion Caja="Caja" Sesion="Sesion" AlNoGuardar="m => _errorImpresion = m" />
+        </Ventana>
+    }
 </div>
 
 @code {
@@ -78,6 +91,20 @@
     private enum Modulo { Productos, Inventario, Clientes }
 
     private Modulo _modulo = Modulo.Inventario;
+
+    /// <summary>La Configuración abierta encima, como desde la venta.</summary>
+    private bool _configuracion;
+
+    /// <summary>Si quien entró ve algún grupo de la Configuración (con su permiso en «Puede»), como en la venta.</summary>
+    private bool VeConfiguracion =>
+        Configuracion.HayQueVer(accion => Sesion.Puede(accion), Servicios.GetService<GitHubPrueba>() is not null);
+
+    private void AbrirConfiguracion()
+    {
+        (_configuracion, _menuUsuario, _vistaPrevia, _errorImpresion) = (true, false, null, null);
+    }
+
+    private void CerrarConfiguracion() => _configuracion = false;
     private bool _menuUsuario;
     /// <summary>El estado de cuenta en pantalla, sin impresora (el texto); null si no se ve.</summary>
     private string? _vistaPrevia;
@@ -133,7 +160,8 @@
 
     /// <summary>
     /// Una tecla que atrapó caja.js: F3 y F4 cambian de pestaña y Ctrl+U cambia de usuario, como en la venta. Esc solo
-    /// cierra la vista previa del estado de cuenta; sin ella no hace nada (lo de abajo puede tener algo a medio escribir).
+    /// cierra la vista previa del estado de cuenta o la Configuración (que guarda lo escrito al cerrarse); sin ellas no hace
+    /// nada (lo de abajo puede tener algo a medio escribir).
     /// Las demás no hacen nada aquí.
     /// </summary>
     [JSInvokable]
@@ -142,6 +170,7 @@
         switch (tecla)
         {
             case "Escape" when _vistaPrevia is not null: _vistaPrevia = null; break;
+            case "Escape" when _configuracion: CerrarConfiguracion(); break;
             case "F3": Ir(Modulo.Productos); break;
             case "F4": Ir(Modulo.Inventario); break;
             case "Ctrl+U":

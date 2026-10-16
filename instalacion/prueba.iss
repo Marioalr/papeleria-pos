@@ -8,8 +8,8 @@
 ;   {commonappdata}\PapeleriaPos-Prueba, con escritura para los usuarios.
 ; - En el escritorio de todos: el acceso a la caja y la carpeta «Ejemplos de la prueba» (Léeme, factura XML y nota PDF).
 ; - Al desinstalar se borra todo, menos las respuestas que quien probó guardó en su escritorio.
-; - Se actualiza encima, sin perder los datos: a mano o desde la caja (Configuración › Actualización), que lo abre con
-;   /SILENT: cierra la caja y su servicio, reemplaza y la vuelve a abrir.
+; - Se actualiza encima, sin perder los datos: a mano o desde la caja (Configuración › Acerca de › Actualización), que lo
+;   abre con /SILENT: cierra la caja y su servicio, reemplaza y la vuelve a abrir.
 
 #define Version GetEnv("VERSION_PRUEBA")
 #if Version == ""

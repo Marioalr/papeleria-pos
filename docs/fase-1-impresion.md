@@ -24,13 +24,13 @@
 - **Cotizar a un botón (CTRL+Q):** se elige el PDF y sale el precio. La caja de Windows mide la tinta de cada página con el motor de PDF de Windows, igual que una impresión, y la caja principal pone el precio. Cada opción recalcula al instante: color, copias, páginas, tamaño, papel, calidad, páginas por hoja y doble cara. "Copiar resumen" deja el texto para WhatsApp, sin costos. El dueño ve además el costo y la ganancia. Solo funciona en la ventana de Windows: el navegador no tiene con qué medir el PDF.
 - **La impresora desde la caja principal:** lee por la red (SNMP y la página de estado) los niveles de tinta, la caja de mantenimiento y el contador.
   - Lee cada 5 minutos y poco después de cada impresión.
-  - La IP se escribe en Configuración → Impresora; `importar-control-print` la trae si hay una sola sucursal.
+  - La IP se escribe en Configuración → Impresoras e impresiones (se guarda sola, con el permiso de quien entró; antes, Configuración → Impresora con PIN); `importar-control-print` la trae si hay una sola sucursal.
 - **Verificación de hojas:** con el contador se sabe cuántas caras salieron de verdad. Si faltan (un atasco o una cancelación en el panel), F2 lo dice y ofrece "Cobrar lo que salió", y el costo baja a lo que se gastó.
   - Si la verificación tiene dudas, no marca nada: puede no ver un faltante, pero nunca inventarlo.
   - Necesita la hora en que cada trabajo entró a la cola, que manda el agente.
 - **Copias del panel (en F2):** cuántas, color, tamaño y doble cara. Se sugiere el precio con la tinta típica y se puede cobrar otro. Entran a la línea "Impresiones".
 - **Contador contra lo cobrado:** la pestaña Impresora y el resumen del día dicen cuántas caras contó la impresora sin que nadie las registrara: copias sin cobrar, el celular o páginas de prueba.
-- **Calibración:** compara lo que bajaron los niveles con lo que estimó el cálculo. El dueño la aplica con su PIN; no es automática, porque con la cola de laboratorio lo registrado no sale de la impresora.
+- **Calibración:** compara lo que bajaron los niveles con lo que estimó el cálculo. La aplica quien tiene «Configurar impresora», confirmándola ahí mismo (antes, el dueño con su PIN); no es automática, porque con la cola de laboratorio lo registrado no sale de la impresora.
 - **Avisos por Telegram:**
   - una tinta o la caja de mantenimiento en el umbral (10 % por omisión), y cuando se cambia un consumible;
   - la impresora sin responder 30 minutos en horario;

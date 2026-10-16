@@ -50,7 +50,7 @@ Entrega 2, parte 1, recibir y costear (F4 Inventario → Compras):
   estar en la nota entra a su último costo, y sin ninguno hay que agregarlo a la nota. El costo promedio se ajusta solo
   y cada proveedor guarda su último costo y su clave. Las diferencias quedan en la bitácora.
 - **El costo es lo que se paga, con IVA,** como el precio (y como el costo de eleventa): así se comparan directo.
-- **Margen mínimo:** 30 % general; el dueño lo cambia y puede poner uno por departamento (F4 → Margen mínimo). Si con
+- **Margen mínimo:** 30 % general; el dueño lo cambia y puede poner uno por departamento (Configuración → Inventario, desde la entrega 7; antes, F4 → Margen mínimo). Si con
   el costo nuevo un producto queda debajo, se sugiere el precio que lo deja en el mínimo, subido a los siguientes 50
   centavos. El precio no cambia solo: "Poner $…" lo cambia como cualquier precio del catálogo (bitácora y Telegram).
 - **Telegram:** una compra con diferencias o con margen bajo le avisa al dueño (la alerta se puede apagar).

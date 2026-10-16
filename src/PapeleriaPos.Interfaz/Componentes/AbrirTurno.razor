@@ -1,6 +1,7 @@
 @* Abrir el turno (entrega 6, htmlAbrirTurno del prototipo), con el lado de la entrada: quien entró cuenta el fondo con que
-   empieza y lo escribe. Enter lo abre; «Volver» (o Esc, o Ctrl+U) regresa a «¿Quién atiende?». El fondo sugerido llega con
-   la configuración nueva (entrega 7, «Efectivo y corte»): mientras, se escribe siempre, como antes. *@
+   empieza y lo escribe. Enter lo abre; «Volver» (o Esc, o Ctrl+U) regresa a «¿Quién atiende?». Con un fondo sugerido
+   (Configuración › Efectivo y corte, entrega 7), el campo lo enseña en gris y Enter con el campo vacío lo toma, como en el
+   prototipo; sin él, se escribe siempre. *@
 @using System.Diagnostics
 @implements IAsyncDisposable
 @inject ClienteCaja Cliente
@@ -13,8 +14,13 @@
         <h1>Abrir turno de @Sesion.Nombre</h1>
         <p>Cuenta el fondo con que empiezas; no siempre es el mismo.</p>
         <label class="entrada-campo">Fondo
-            <input id="fondo" inputmode="decimal" autocomplete="off" @bind="_fondo" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+            <input id="fondo" inputmode="decimal" autocomplete="off" @bind="_fondo" @bind:event="oninput" @onkeydown="AlTeclear"
+                   placeholder="@(_sugerido is { } sugerido ? Formato.Dinero(sugerido) : "$0.00")" />
         </label>
+        @if (_sugerido is { } fondoSugerido)
+        {
+            <p class="nota">Vacío, abre con el fondo sugerido: @Formato.Dinero(fondoSugerido).</p>
+        }
         @if (_error is not null)
         {
             <p class="error-txt">@_error</p>
@@ -42,6 +48,10 @@
     [Parameter] public EventCallback AlAdministrar { get; set; }
 
     private string _fondo = "";
+
+    /// <summary>El fondo que propone la configuración de la tienda; vacío si no hay (o no se pudo saber).</summary>
+    private long? _sugerido;
+
     private string? _error;
     private bool _ocupado;
     private TeclasEntrada? _teclas;
@@ -55,6 +65,18 @@
     /// la cuarta cifra entra sola): no dice que falta el fondo antes de que se pueda escribir.
     /// </summary>
     private static readonly TimeSpan EnterDelPin = TimeSpan.FromSeconds(1);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _sugerido = (await Cliente.ConfiguracionSucursalAsync(Caja.SucursalId)).FondoSugeridoCentavos;
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión y sin copia: se escribe, como antes.
+        }
+    }
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
@@ -87,7 +109,8 @@
     {
         if (_ocupado)
             return;
-        if (Formato.LeerPesos(_fondo) is not { } fondo)
+        // Vacío, el sugerido (si hay); si no, lo que se escribió.
+        if ((string.IsNullOrWhiteSpace(_fondo) ? _sugerido : Formato.LeerPesos(_fondo)) is not { } fondo)
         {
             _error = "Escribe el fondo que contaste (puede ser $0).";
             return;

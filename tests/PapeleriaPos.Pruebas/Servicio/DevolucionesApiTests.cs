@@ -69,11 +69,15 @@ public class DevolucionesApiTests(ServicioDePrueba servicio) : IClassFixture<Ser
         await VenderAsync(http, caja, cajero, turno, 1000);
         var hoy = DateOnly.FromDateTime(DateTime.Now);
 
-        var porCajero = await http.PostAsJsonAsync($"api/sucursales/{caja.SucursalId}/bitacora/consulta", new SolicitudConsultaBitacora("cajero", "1111", hoy.AddDays(-1), hoy.AddDays(1)));
-        var registros = await (await http.PostAsJsonAsync($"api/sucursales/{caja.SucursalId}/bitacora/consulta",
-            new SolicitudConsultaBitacora("encargado", "2222", hoy.AddDays(-1), hoy.AddDays(1)))).Content.ReadFromJsonAsync<List<BitacoraDto>>();
+        // Con la sesión, sin volver a escribir el PIN (la Configuración nueva, entrega 7).
+        var encargado = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("encargado", "2222"))).Content.ReadFromJsonAsync<SesionDto>())!;
+        string Ruta(SesionDto quien) => $"api/cajas/{caja.Id}/bitacora?usuarioId={quien.UsuarioId}&desde={hoy.AddDays(-1):yyyy-MM-dd}&hasta={hoy.AddDays(1):yyyy-MM-dd}";
+        var porCajero = await http.GetAsync(Ruta(cajero));
+        var registros = await http.GetFromJsonAsync<List<BitacoraDto>>(Ruta(encargado));
 
-        Assert.Equal(HttpStatusCode.BadRequest, porCajero.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, porCajero.StatusCode);
+        Assert.Equal("Esto lo hace quien tiene el permiso «Consultar la bitácora»: Encargado de prueba o Dueño de prueba.",
+            (await porCajero.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
         Assert.Contains(registros!, r => r.Accion == AccionControlada.ArticuloComun && r.Usuario == "Cajero de prueba");
     }
 }

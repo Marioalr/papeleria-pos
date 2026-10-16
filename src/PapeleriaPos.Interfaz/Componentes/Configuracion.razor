@@ -1,76 +1,1022 @@
-@* Configuración de la sucursal en pestañas: el ticket, usuarios y permisos (para quien lo tiene; entrega 1), la bitácora, las cajas, Telegram, la impresora y los sinónimos de la búsqueda. Los clientes registrados tienen su propio módulo. En la caja de prueba, también la actualización. La Configuración nueva (entrega 7) se lleva «Usuarios y permisos» tal cual. *@
+@* La Configuración nueva (entrega 7; docs/propuesta-interfaz.md «Configuración», htmlConfig del prototipo). A la izquierda
+   «Buscar un ajuste» y los grupos, cada uno solo para quien tiene su permiso en «Puede»: aquí no se pide autorización, así
+   que cada grupo se ve o no se ve, sin candados (en Administración solo hay «Puede» o «No», dueño 2026-10-15). A la
+   derecha el grupo con su título, para qué es y «Se guarda solo» o «Guardado a las HH:MM», y cada ajuste en su renglón:
+   su nombre, para qué sirve, su alcance («Toda la tienda» o «Solo esta caja») y su control. No hay «Guardar» ni se pide
+   usuario y PIN: cada cambio se guarda al momento con los permisos de quien entró (GuardadoAlMomento), y el servicio los
+   vuelve a revisar. El buscador encuentra los ajustes de todos los grupos por su nombre, su ayuda o su grupo, y dice el
+   grupo de cada uno. Solo lo que existe de verdad: lo del prototipo que todavía no hace nada no está. Sigue siendo la
+   ventana que abre la venta; Esc la cierra. *@
+@using System.Reflection
+@using PapeleriaPos.Nucleo.Configuracion
+@inherits GuardadoAlMomento
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+@inject IImpresora Impresora
 @inject IServiceProvider Servicios
 
-<nav class="pestanas config-pestanas">
-    @foreach (var p in Enum.GetValues<Pestanas>().Where(Visible))
-    {
-        var pestana = p;
-        <button class="pestana @(p == _pestana ? "activa" : "")" @onclick="() => _pestana = pestana">@Nombre(p)</button>
-    }
-</nav>
-
-@switch (_pestana)
-{
-    case Pestanas.Ticket:
-        <ConfiguracionTicket Caja="Caja" Sesion="Sesion" />
-        break;
-    case Pestanas.Usuarios when Visible(Pestanas.Usuarios):
-        <UsuariosYPermisos Caja="Caja" Sesion="Sesion" />
-        break;
-    case Pestanas.Cajas:
-        <AdministrarCajas Caja="Caja" />
-        break;
-    case Pestanas.Impresora:
-        <ConfiguracionImpresora Caja="Caja" Sesion="Sesion" />
-        break;
-    case Pestanas.Telegram:
-        <ConfiguracionTelegram Caja="Caja" />
-        break;
-    case Pestanas.Bitacora:
-        <ConsultaBitacora Caja="Caja" />
-        break;
-    case Pestanas.Sinonimos:
-        <SinonimosBusqueda Caja="Caja" Sesion="Sesion" />
-        break;
-    case Pestanas.Actualizacion when HayActualizacion:
-        <ActualizacionPrueba AntesDeInstalar="AntesDeInstalar" />
-        break;
-}
+<div class="vn-cfg">
+    <nav class="vn-cfg-nav" aria-label="Grupos de la configuración">
+        <h1>Configuración</h1>
+        <input id="cfg-busca" type="search" placeholder="Buscar un ajuste" aria-label="Buscar un ajuste" autocomplete="off" spellcheck="false"
+               value="@_busca" @oninput="e => _busca = e.Value?.ToString() ?? string.Empty" />
+        <div class="vn-cfg-grupos" role="tablist" aria-orientation="vertical">
+            @foreach (var g in Visibles)
+            {
+                var grupo = g;
+                var activo = !Buscando && grupo == Elegido;
+                <button id="cfg-@grupo.Id" role="tab" class="@(activo ? "on" : null)" aria-selected="@(activo ? "true" : "false")"
+                        tabindex="@(grupo == Elegido ? 0 : -1)" @onclick="() => Elegir(grupo)" @onkeydown="e => MoverAsync(e, grupo)">
+                    <Ico Nombre="@grupo.Icono" />@grupo.Nombre
+                </button>
+            }
+        </div>
+    </nav>
+    <section class="vn-cfg-main" role="tabpanel" aria-label="@(Buscando ? "Ajustes encontrados" : Elegido?.Nombre)">
+        @if (Buscando)
+        {
+            var hallados = Hallados();
+            <div class="vn-cfg-titulo">
+                <h2>Ajustes con «@_busca.Trim()»</h2>
+                <p>@(hallados.Count == 1 ? "1 encontrado" : $"{hallados.Count} encontrados")</p>
+                <span class="vn-guardado" role="status">@Guardado</span>
+            </div>
+            @if (hallados.Count == 0)
+            {
+                <p class="vn-cfg-nota">Ningún ajuste se llama así.</p>
+            }
+            else
+            {
+                <div class="vn-ajustes">
+                    @foreach (var (g, a) in hallados)
+                    {
+                        @Renglon(g, a, enBusqueda: true)
+                    }
+                </div>
+            }
+        }
+        else if (Elegido is { } grupo)
+        {
+            @if (grupo.Titulo)
+            {
+                <div class="vn-cfg-titulo">
+                    <h2>@grupo.Nombre</h2>
+                    <p>@grupo.Descripcion</p>
+                    @if (grupo.SeGuarda)
+                    {
+                        <span class="vn-guardado" role="status">@Guardado</span>
+                    }
+                </div>
+            }
+            @if (grupo.Ajustes.Any(a => a.Lleva is null && Ve(a)))
+            {
+                <div class="vn-ajustes">
+                    @foreach (var a in grupo.Ajustes.Where(a => a.Lleva is null && Ve(a)))
+                    {
+                        @Renglon(grupo, a, enBusqueda: false)
+                    }
+                </div>
+            }
+            @grupo.Contenido
+        }
+    </section>
+</div>
 
 @code {
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+
+    /// <summary>Quien entró: lo que ve y lo que cambia sale de sus permisos, y el servicio los vuelve a revisar.</summary>
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
-    /// <summary>Antes de que el instalador cierre la caja (Actualización): lo que la venta tiene que guardar.</summary>
+    /// <summary>Antes de que el instalador cierre la caja (Acerca de › Actualización): lo que la venta tiene que guardar.</summary>
     [Parameter] public EventCallback AntesDeInstalar { get; set; }
 
-    private enum Pestanas { Ticket, Usuarios, Bitacora, Cajas, Telegram, Impresora, Sinonimos, Actualizacion }
+    /// <summary>Cambió algo que usa la venta (las fichas de la espera, los rápidos): que lo vuelva a pedir.</summary>
+    [Parameter] public EventCallback AlCambiar { get; set; }
 
-    private Pestanas _pestana;
+    /// <summary>Al cerrar no se pudo guardar lo que quedó escrito: la venta lo dice, porque la ventana ya no está.</summary>
+    [Parameter] public EventCallback<string> AlNoGuardar { get; set; }
 
-    /// <summary>Solo la caja de prueba se actualiza desde aquí (la registra la ventana de Windows o Caja:ActualizacionPrueba).</summary>
+    /// <summary>Un grupo de la izquierda.</summary>
+    /// <param name="Icono">De Iconos.razor.</param>
+    private sealed record Grupo(string Id, string Nombre, string Icono)
+    {
+        public string? Descripcion { get; init; }
+
+        /// <summary>Sus ajustes, en renglones; los que llevan a otro lado (<see cref="Ajuste.Lleva"/>) solo salen al buscar.</summary>
+        public IReadOnlyList<Ajuste> Ajustes { get; init; } = [];
+
+        /// <summary>Lo que va debajo de los renglones (o en lugar de ellos): «Usuarios y permisos», las cajas, la bitácora…</summary>
+        public RenderFragment? Contenido { get; init; }
+
+        /// <summary>Sin su permiso no aparece; vacío: si se ve alguno de sus ajustes.</summary>
+        public Func<bool>? Visible { get; init; }
+
+        /// <summary>Con el título de aquí (no lo trae lo que va adentro).</summary>
+        public bool Titulo { get; init; } = true;
+
+        /// <summary>Lo de adentro se guarda solo: el título dice «Se guarda solo» o a qué hora fue el último cambio.</summary>
+        public bool SeGuarda { get; init; } = true;
+    }
+
+    /// <summary>Un renglón: el ajuste con su nombre, para qué sirve, su alcance y su control.</summary>
+    private sealed record Ajuste(string Id, string Titulo)
+    {
+        public string? Ayuda { get; init; }
+
+        /// <summary>Quien lo cambia; vacío, nadie (solo dice algo).</summary>
+        public AccionControlada? Permiso { get; init; }
+
+        /// <summary>Si se ve; vacío: con su permiso («No»: no aparece).</summary>
+        public Func<bool>? Ve { get; init; }
+
+        /// <summary>Lo que se escribe, en orden (el horario lleva dos).</summary>
+        public IReadOnlyList<Campo> Campos { get; init; } = [];
+
+        /// <summary>Entre un campo y el siguiente («a», en el horario).</summary>
+        public string? Entre { get; init; }
+
+        /// <summary>Lo que dice, sin campos (la versión, los días para devolver).</summary>
+        public Func<string>? Dice { get; init; }
+
+        /// <summary>A la derecha, en lugar de campos (el logotipo, el ticket de prueba).</summary>
+        public RenderFragment? Control { get; init; }
+
+        /// <summary>Debajo del nombre, a todo lo ancho (los rápidos, los sinónimos, el margen por departamento).</summary>
+        public RenderFragment? Bloque { get; init; }
+
+        /// <summary>Solo para el buscador: lleva a ese grupo, donde está lo que se busca (en «Usuarios y permisos», por ejemplo).</summary>
+        public string? Lleva { get; init; }
+
+        /// <summary>Mientras no se tiene lo guardado: por qué («Cargando…» o el error). Vacío: listo.</summary>
+        public Func<string?>? NoListo { get; init; }
+
+        /// <summary>Más palabras con las que lo encuentra el buscador.</summary>
+        public string? Palabras { get; init; }
+
+        public bool SoloEstaCaja { get; init; }
+    }
+
+    /// <summary>Un campo de un ajuste: lo guardado, cómo se guarda lo escrito y cómo se ve.</summary>
+    /// <param name="Guardar">Recibe el texto tal cual; si no sirve, lanza <see cref="ArgumentException"/> con el porqué.</param>
+    private sealed record Campo(string Id, Func<string> Guardado, Func<string, Task> Guardar)
+    {
+        public string Clase { get; init; } = "vn-ctl-num";
+        public string Tipo { get; init; } = "text";
+        public string? Modo { get; init; }
+        public string? Antes { get; init; }
+        public string? Despues { get; init; }
+        public string? Marcador { get; init; }
+        public int? Largo { get; init; }
+
+        /// <summary>Más de cero: un área de varios renglones (el encabezado y el pie del ticket).</summary>
+        public int Renglones { get; init; }
+
+        /// <summary>Para el lector de pantalla, si no basta el nombre del ajuste («De», «A»).</summary>
+        public string? Etiqueta { get; init; }
+
+        /// <summary>Texto libre (un nombre, el encabezado): también se guarda tras una pausa al escribir. Un número, al salir.</summary>
+        public bool ConPausa { get; init; }
+    }
+
+    private List<Grupo> _grupos = [];
+    private string _elegido = "";
+    private string _busca = "";
+
+    private ConfiguracionSucursalDto? _tienda;
+    private ConfiguracionTicketDto? _ticket;
+    private MargenesDto? _margenes;
+    private ParametrosSugeridoDto? _sugerido;
+    private string? _errorTienda;
+    private string? _errorTicket;
+    private string? _errorMargenes;
+    private string? _errorSugerido;
+    private string? _versionPrincipal;
+
+    /// <summary>Lo que salió bien y no es un cambio (el ticket de prueba), junto a su renglón.</summary>
+    private readonly Dictionary<string, string> _avisos = [];
+
+    private bool Buscando => _busca.Trim().Length > 0;
+
+    private List<Grupo> Visibles => _grupos.Where(EsVisible).ToList();
+
+    /// <summary>El grupo que se ve; si el elegido no es de quien entró (o todavía no se elige), el primero.</summary>
+    private Grupo? Elegido
+    {
+        get
+        {
+            var visibles = Visibles;
+            return visibles.FirstOrDefault(g => g.Id == _elegido) ?? visibles.FirstOrDefault();
+        }
+    }
+
+    /// <summary>La caja de prueba se actualiza desde aquí (Acerca de › Actualización).</summary>
     private bool HayActualizacion => Servicios.GetService<GitHubPrueba>() is not null;
 
     /// <summary>
-    /// «Usuarios y permisos», como en el prototipo, solo para quien lo tiene («No»: no aparece); con «Con autorización» se
-    /// ve, y la pantalla dice quién hace los cambios. Las demás pestañas piden usuario y PIN, como antes.
+    /// Si la venta ofrece la Configuración (su pestaña y «/»): con algún grupo con su permiso, o en la caja de prueba (para
+    /// actualizarla). Las mismas reglas que los grupos de aquí.
     /// </summary>
-    private bool Visible(Pestanas p) => p switch
+    /// <param name="puede">Lo puede hacer quien entró, sin pedir autorización.</param>
+    public static bool HayQueVer(Func<AccionControlada, bool> puede, bool hayActualizacion) =>
+        hayActualizacion
+        || new[]
+        {
+            AccionControlada.ConfigurarTienda, AccionControlada.ConfigurarTicket, AccionControlada.EditarCatalogo, AccionControlada.ConfigurarImpresora,
+            AccionControlada.ConfigurarMargen, AccionControlada.VerUtilidad, AccionControlada.PedirCompra, AccionControlada.EditarReglas,
+            AccionControlada.ConfigurarTelegram, AccionControlada.AdministrarCajas, AccionControlada.ConsultarBitacora,
+        }.Any(puede);
+
+    protected override async Task OnInitializedAsync()
     {
-        Pestanas.Usuarios => Sesion.Ve(AccionControlada.EditarReglas),
-        Pestanas.Actualizacion => HayActualizacion,
-        _ => true,
+        _grupos = Armar();
+        await Task.WhenAll(
+            CargarAsync(async () => _tienda = await Cliente.ConfiguracionSucursalAsync(Caja.SucursalId), e => _errorTienda = e),
+            CargarAsync(async () => _ticket = await Cliente.ConfiguracionTicketAsync(Caja.SucursalId), e => _errorTicket = e),
+            VeMargen ? CargarAsync(async () => _margenes = await Cliente.MargenesAsync(Caja.SucursalId), e => _errorMargenes = e) : Task.CompletedTask,
+            Sesion.Puede(AccionControlada.PedirCompra)
+                ? CargarAsync(async () => _sugerido = await Cliente.ParametrosSugeridoAsync(Caja.SucursalId), e => _errorSugerido = e)
+                : Task.CompletedTask,
+            CargarAsync(async () => _versionPrincipal = await Cliente.VersionDeLaPrincipalAsync(), _ => { }));
+    }
+
+    /// <summary>Al abrir, el cursor en «Buscar un ajuste»: se escribe para buscar, y con Tab se pasa a los grupos y a sus ajustes.</summary>
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (primera)
+            await Js.EnfocarAsync("#cfg-busca");
+    }
+
+    private static async Task CargarAsync(Func<Task> cargar, Action<string> error)
+    {
+        try
+        {
+            await cargar();
+        }
+        catch (ErrorCaja ex)
+        {
+            error(ex.Message);
+        }
+    }
+
+    // ── Lo que ve quien entró ───────────────────────────────────────────────
+
+    private bool EsVisible(Grupo g) => g.Visible?.Invoke() ?? g.Ajustes.Any(a => a.Lleva is null && a.Permiso is not null && Ve(a));
+
+    /// <summary>
+    /// Con su permiso en «Puede»: sin él no aparece, también con «Con autorización», porque aquí no se pide (en Administración
+    /// ni existe). Solo el margen se ve sin poder cambiarlo: con «Ver costos, utilidad y margen».
+    /// </summary>
+    private bool Ve(Ajuste a) => a.Ve?.Invoke() ?? (a.Permiso is not { } permiso || Sesion.Puede(permiso));
+
+    /// <summary>Lo cambia quien entró: con su permiso en «Puede».</summary>
+    private bool Cambia(Ajuste a) => a.Permiso is { } permiso && Sesion.Puede(permiso);
+
+    /// <summary>Para lo que se ve sin poder cambiarlo (el margen): quién sí, sin ofrecer pedirle autorización.</summary>
+    private string QuienLoCambia(Ajuste a)
+    {
+        if (a.Permiso is not { } permiso || Sesion.Puede(permiso) || a.Campos.Count == 0 && a.Control is null)
+            return "";
+        var autorizan = Sesion.Permiso(permiso)?.Autorizan ?? [];
+        return autorizan.Count > 0 ? $" · lo cambia {Textos.Quien(autorizan)}" : $" · lo cambia quien tiene «{Permisos.Nombre(permiso)}»";
+    }
+
+    /// <summary>El margen lo ve quien ve la utilidad o quien lo pone.</summary>
+    private bool VeMargen => Sesion.Puede(AccionControlada.VerUtilidad) || Sesion.Puede(AccionControlada.ConfigurarMargen);
+
+    private void Elegir(Grupo grupo)
+    {
+        (_elegido, _busca) = (grupo.Id, "");
+        _ = RefrescarAsync();
+    }
+
+    /// <summary>
+    /// Al cambiar de grupo, lo de la tienda y el ticket como están ahora en el servicio (lo pudo cambiar otra caja, o el
+    /// horario en Telegram): lo que se enseña no se queda con lo que se leyó al abrir.
+    /// </summary>
+    private Task RefrescarAsync() => EnSuTurnoAsync(async () =>
+    {
+        // Después de lo que se está guardando (al salir de un campo para elegir otro grupo): así no regresa lo de antes.
+        try
+        {
+            var tienda = await Cliente.ConfiguracionSucursalAsync(Caja.SucursalId);
+            var ticket = await Cliente.ConfiguracionTicketAsync(Caja.SucursalId);
+            (_tienda, _ticket) = (tienda, ticket ?? _ticket);
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión: se queda lo que había; al guardar se dice.
+        }
+        if (!Cerrado)
+            StateHasChanged();
+    });
+
+    protected override Task NoSeGuardoAlCerrarAsync(IReadOnlyList<string> errores) => NoGuardadoAsync(string.Join(" ", errores));
+
+    /// <summary>Lo que no se pudo guardar al cerrar, aquí o en lo de adentro (los rápidos, la impresora): lo dice la venta.</summary>
+    private Task NoGuardadoAsync(string porQue) => AlNoGuardar.InvokeAsync($"No se guardó lo último que escribiste en la Configuración: {porQue}");
+
+    /// <summary>↑ ↓ (Inicio y Fin) recorren los grupos: Tab pasa del grupo a sus ajustes, sin recorrer todos los demás.</summary>
+    private async Task MoverAsync(KeyboardEventArgs e, Grupo grupo)
+    {
+        var visibles = Visibles;
+        var i = visibles.IndexOf(grupo);
+        var destino = e.Key switch
+        {
+            "ArrowDown" => Math.Min(i + 1, visibles.Count - 1),
+            "ArrowUp" => Math.Max(i - 1, 0),
+            "Home" => 0,
+            "End" => visibles.Count - 1,
+            _ => i,
+        };
+        if (destino == i)
+            return;
+        Elegir(visibles[destino]);
+        await Js.EnfocarAsync($"#cfg-{visibles[destino].Id}");
+    }
+
+    /// <summary>
+    /// Los ajustes de los grupos que se ven cuyo nombre, ayuda o grupo dicen todas las palabras buscadas (sin importar
+    /// acentos ni mayúsculas), en el orden de los grupos.
+    /// </summary>
+    private List<(Grupo Grupo, Ajuste Ajuste)> Hallados()
+    {
+        var palabras = Texto.Normalizar(_busca).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return Visibles
+            .SelectMany(g => g.Ajustes.Where(Ve).Select(a => (Grupo: g, Ajuste: a)))
+            .Where(x => Texto.Normalizar($"{x.Ajuste.Titulo} {x.Ajuste.Ayuda} {x.Grupo.Nombre} {x.Ajuste.Palabras}") is var donde
+                && palabras.All(p => donde.Contains(p, StringComparison.Ordinal)))
+            .ToList();
+    }
+
+    // ── Un renglón ───────────────────────────────────────────────────────────
+
+    private RenderFragment Renglon(Grupo g, Ajuste a, bool enBusqueda) =>
+        @<div @key="a.Id" class="vn-ajuste @(a.Bloque is null ? null : "bloque")">
+            <div class="vn-ajuste-txt">
+                <strong>@a.Titulo</strong>
+                @if (enBusqueda || a.Ayuda is not null)
+                {
+                    <small>@(enBusqueda ? $"{g.Nombre}{(a.Ayuda is { } ayuda ? $" · {ayuda}" : "")}" : a.Ayuda)</small>
+                }
+                <span class="vn-ajuste-meta">@(a.SoloEstaCaja ? "Solo esta caja" : "Toda la tienda")@QuienLoCambia(a)</span>
+                @if (ErrorDe(a.Id) is { } error)
+                {
+                    <span class="vn-ajuste-error" role="alert">@error</span>
+                }
+                else if (_avisos.GetValueOrDefault(a.Id) is { } aviso)
+                {
+                    <span class="vn-ajuste-aviso" role="status">@aviso</span>
+                }
+            </div>
+            @if (a.Lleva is { } lleva)
+            {
+                <div><button class="vn-boton chico" @onclick="() => Ir(lleva)">Abrir «@NombreDe(lleva)»</button></div>
+            }
+            else if (a.NoListo?.Invoke() is { } noListo)
+            {
+                <span class="vn-cfg-nota">@noListo</span>
+            }
+            else if (a.Control is { } control)
+            {
+                <div class="vn-ajuste-ctl">@control</div>
+            }
+            else if (a.Dice is { } dice)
+            {
+                <span class="vn-ajuste-dice">@dice()</span>
+            }
+            else if (a.Campos.Count > 0)
+            {
+                <div class="vn-ajuste-ctl">
+                    @for (var i = 0; i < a.Campos.Count; i++)
+                    {
+                        var campo = a.Campos[i];
+                        @if (i > 0 && a.Entre is { } entre)
+                        {
+                            <span class="vn-ctl-entre">@entre</span>
+                        }
+                        @Control(a, campo)
+                    }
+                </div>
+            }
+            @if (a.Bloque is { } bloque && a.Lleva is null && a.NoListo?.Invoke() is null)
+            {
+                <div class="vn-ajuste-bloque">@bloque</div>
+            }
+        </div>;
+
+    private RenderFragment Control(Ajuste a, Campo c) =>
+        @<span class="@c.Clase">
+            @c.Antes
+            @if (c.Renglones > 0)
+            {
+                <textarea id="aj-@c.Id" rows="@c.Renglones" spellcheck="false" aria-label="@(c.Etiqueta ?? a.Titulo)" disabled="@(!Cambia(a))"
+                          value="@Escrito(c.Id, c.Guardado())" @oninput="e => Escribir(c.Id, e.Value, c.Guardar, a.Id, c.ConPausa)"
+                          @onblur="() => SalirAsync(c.Id)"></textarea>
+            }
+            else
+            {
+                <input id="aj-@c.Id" type="@c.Tipo" inputmode="@c.Modo" maxlength="@c.Largo" placeholder="@c.Marcador" autocomplete="off"
+                       spellcheck="false" aria-label="@(c.Etiqueta ?? a.Titulo)" disabled="@(!Cambia(a))" value="@Escrito(c.Id, c.Guardado())"
+                       @oninput="e => Escribir(c.Id, e.Value, c.Guardar, a.Id, c.ConPausa)" @onblur="() => SalirAsync(c.Id)"
+                       @onkeydown="e => AlTeclearAsync(e, c.Id)" />
+            }
+            @c.Despues
+        </span>;
+
+    private string NombreDe(string grupo) => _grupos.FirstOrDefault(g => g.Id == grupo)?.Nombre ?? grupo;
+
+    private void Ir(string grupo)
+    {
+        (_elegido, _busca) = (grupo, "");
+        _ = RefrescarAsync();
+    }
+
+    // ── Los grupos ───────────────────────────────────────────────────────────
+
+    private List<Grupo> Armar() =>
+    [
+        new("tienda", "Tienda", "tienda")
+        {
+            Descripcion = "Sus datos: el nombre sale en la entrada de cada caja; el logotipo, en el ticket.",
+            Ajustes =
+            [
+                TextoTienda("nombre", "Nombre de la tienda", $"Sale en la entrada de cada caja. Vacío: el de la sucursal, «{Caja.Sucursal}».",
+                    ConfiguracionSucursal.LargoNombreTienda, c => c.NombreTienda, (c, v) => c with { NombreTienda = v }),
+                TextoTienda("direccion", "Dirección", null, ConfiguracionSucursal.LargoDireccion, c => c.Direccion, (c, v) => c with { Direccion = v }),
+                TextoTienda("telefono", "Teléfono", null, ConfiguracionSucursal.LargoTelefono, c => c.Telefono, (c, v) => c with { Telefono = v }, "tel"),
+                new("horario", "Horario")
+                {
+                    Ayuda = "Abrir un turno fuera de él avisa al dueño, y de noche no se avisa que la impresora no responde.",
+                    Permiso = AccionControlada.ConfigurarTienda,
+                    NoListo = NoListoTienda,
+                    Entre = "a",
+                    Campos =
+                    [
+                        new("horario-de", () => _tienda!.HoraApertura.ToString("HH:mm", CultureInfo.InvariantCulture),
+                            texto => GuardarTiendaAsync(c => c with { HoraApertura = Hora(texto) })) { Tipo = "time", Etiqueta = "La tienda abre a las" },
+                        new("horario-a", () => _tienda!.HoraCierre.ToString("HH:mm", CultureInfo.InvariantCulture),
+                            texto => GuardarTiendaAsync(c => c with { HoraCierre = Hora(texto) })) { Tipo = "time", Etiqueta = "La tienda cierra a las" },
+                    ],
+                },
+                Logotipo("logo-tienda"),
+            ],
+        },
+        new("venta", "Venta y cobro", "efectivo")
+        {
+            Descripcion = "Cómo se vende en todas las cajas.",
+            Ajustes =
+            [
+                new("fichas", "Tickets en espera a la vista")
+                {
+                    Ayuda = "Cuántas fichas junto a «Poner en espera»; los demás van en «Más». No hay límite, y se guardan en la caja: sobreviven a un apagón.",
+                    Permiso = AccionControlada.ConfigurarTienda,
+                    NoListo = NoListoTienda,
+                    Palabras = "espera fichas F6 F5",
+                    Campos =
+                    [
+                        new("fichas", () => _tienda!.FichasEnEspera.ToString(CultureInfo.InvariantCulture),
+                            texto => GuardarTiendaAsync(c => c with { FichasEnEspera = Entero(texto, $"cuántas fichas (de 0 a {ConfiguracionSucursal.FichasEnEsperaMaximo})") }))
+                        {
+                            Modo = "numeric",
+                        },
+                    ],
+                },
+                new("rapidos", "Rápidos")
+                {
+                    Ayuda = $"Lo que no tiene código de barras y se vende todo el día, con Alt+1 a Alt+{Rapido.Maximo}. Con un número en el cuadro, agregan esa cantidad.",
+                    Permiso = AccionControlada.ConfigurarTienda,
+                    Palabras = "Alt copia CURP botones servicios",
+                    Bloque = @<RapidosConfiguracion Caja="Caja" Sesion="Sesion" AlGuardar="RapidosGuardadosAsync" AlNoGuardar="NoGuardadoAsync" />,
+                },
+                new("sinonimos", "Sinónimos de la búsqueda")
+                {
+                    Ayuda = "Lo que la gente pide con otro nombre: al escribir una palabra en la caja también sale lo que se llama con otra.",
+                    Permiso = AccionControlada.EditarCatalogo,
+                    Palabras = "buscar busqueda",
+                    Bloque = @<div class="vn-cfg-antes"><SinonimosBusqueda Caja="Caja" Sesion="Sesion" /></div>,
+                },
+                new("devolver", "Días para devolver con ticket")
+                {
+                    Ayuda = "Una devolución pide el ticket, de hace no más de estos días. Por ahora es fijo.",
+                    Palabras = "devolucion",
+                    Dice = () => $"{Devolucion.DiasParaDevolver} días",
+                },
+            ],
+        },
+        new("efectivo", "Efectivo y corte", "contar")
+        {
+            Descripcion = "El dinero de la caja y los turnos.",
+            Ajustes =
+            [
+                DineroTienda("limite", "Límite de efectivo en caja", "Al llegar, la caja pide un retiro sin detener la venta. Vacío: sin límite.", "Sin límite",
+                    c => c.LimiteEfectivoCentavos, (c, v) => c with { LimiteEfectivoCentavos = v }, "retiro"),
+                DineroTienda("fondo", "Fondo sugerido al abrir turno", "«Abrir turno» lo propone y Enter con el campo vacío lo toma. Vacío: se escribe cada vez.",
+                    "Sin fondo sugerido", c => c.FondoSugeridoCentavos, (c, v) => c with { FondoSugeridoCentavos = v }, "turno"),
+                new("corte", "Avisar si un corte no cuadra por más de")
+                {
+                    Ayuda = "Un faltante o sobrante mayor en el corte de un turno se le avisa al dueño.",
+                    Permiso = AccionControlada.ConfigurarTienda,
+                    NoListo = NoListoTienda,
+                    Palabras = "diferencia faltante sobrante umbral",
+                    Campos =
+                    [
+                        new("corte", () => Pesos(_tienda!.UmbralCorteCentavos),
+                            texto => GuardarTiendaAsync(c => c with { UmbralCorteCentavos = Centavos(texto) ?? throw new ArgumentException("Escribe cuánto: $50, por ejemplo.") }))
+                        {
+                            Antes = "$",
+                            Modo = "decimal",
+                        },
+                    ],
+                },
+            ],
+        },
+        new("ticket", "Ticket", "ticket")
+        {
+            Descripcion = "El ticket de 80 mm: lo que dice arriba y abajo, y su logotipo.",
+            Ajustes =
+            [
+                RenglonesTicket("encabezado", "Encabezado",
+                    $"Hasta {ConfiguracionTicket.RenglonesMaximos} renglones de {ConfiguracionTicket.Columnas} caracteres; el primero sale grande.", 5,
+                    t => t.Encabezado, (t, renglones) => (renglones, t.Pie)),
+                RenglonesTicket("pie", "Pie", $"Hasta {ConfiguracionTicket.RenglonesMaximos} renglones de {ConfiguracionTicket.Columnas} caracteres.", 3,
+                    t => t.Pie, (t, renglones) => (t.Encabezado, renglones)),
+                Logotipo("logo-ticket"),
+                new("prueba", "Ticket de prueba")
+                {
+                    Ayuda = "Sale con lo de arriba. Sin impresora de tickets, se ve en «Así sale».",
+                    Permiso = AccionControlada.ConfigurarTicket,
+                    NoListo = NoListoTicket,
+                    Control = @<button class="vn-boton chico" @onclick="ImprimirPruebaAsync">Imprimir uno de prueba</button>,
+                },
+            ],
+            Contenido = AsiSale,
+        },
+        new("impresoras", "Impresoras e impresiones", "impresora")
+        {
+            Descripcion = "La impresora de inyección vista desde la caja principal: cómo se lee, la calibración de la tinta y lo impreso en el día.",
+            Visible = () => Sesion.Puede(AccionControlada.ConfigurarImpresora) || Sesion.Puede(AccionControlada.ConsultarBitacora),
+            Ajustes =
+            [
+                Atajo("impresora-ip", "IP de la impresora", "impresoras", AccionControlada.ConfigurarImpresora, "La WF-6590 en la red; la lee la caja principal.", "red niveles tinta contador"),
+                Atajo("impresora-aviso", "Avisar con tinta en", "impresoras", AccionControlada.ConfigurarImpresora, "La tinta o la caja de mantenimiento bajas.", "aviso"),
+                Atajo("impresora-calibracion", "Calibración de la tinta", "impresoras", AccionControlada.ConfigurarImpresora, "Lo que bajaron los niveles contra lo estimado."),
+                Atajo("impresora-dia", "Impresiones del día", "impresoras", AccionControlada.ConsultarBitacora, "Lo que se imprimió y cómo se cobró.", "desglose cobradas"),
+            ],
+            Contenido = @<ConfiguracionImpresora Caja="Caja" Sesion="Sesion" AlGuardar="MarcarGuardado" AlNoGuardar="NoGuardadoAsync" />,
+        },
+        new("inventario", "Inventario", "cajas")
+        {
+            Descripcion = "El margen que se cuida al comprar y lo que pide el sugerido de compra.",
+            Ajustes =
+            [
+                new("margen", "Margen mínimo")
+                {
+                    Ayuda = "Una compra que deja un producto debajo de él avisa y sugiere precio; el precio no cambia solo. Es sobre el precio de venta, "
+                        + "con IVA: con 30 %, lo que cuesta $7.00 se vende desde $10.00.",
+                    Permiso = AccionControlada.ConfigurarMargen,
+                    Ve = () => VeMargen,
+                    NoListo = NoListoMargenes,
+                    Palabras = "utilidad precio compra",
+                    Campos =
+                    [
+                        new("margen", () => Porcentaje(_margenes!.MargenMinimoCentesimas),
+                            texto => GuardarMargenesAsync(m => m with { MargenMinimoCentesimas = Centesimas(texto) ?? throw new ArgumentException("Escribe el margen general: 30, por ejemplo.") }))
+                        {
+                            Modo = "decimal",
+                            Despues = "%",
+                        },
+                    ],
+                },
+                new("margen-departamento", "Margen mínimo por departamento")
+                {
+                    Ayuda = "Si un departamento necesita otro. Vacío: usa el general.",
+                    Permiso = AccionControlada.ConfigurarMargen,
+                    Ve = () => VeMargen,
+                    NoListo = NoListoMargenes,
+                    Bloque = MargenPorDepartamento,
+                },
+                new("cobertura", "El sugerido de compra cubre")
+                {
+                    Ayuda = "Cada cuánto compras: lo que tiene que alcanzar un pedido.",
+                    Permiso = AccionControlada.PedirCompra,
+                    NoListo = NoListoSugerido,
+                    Palabras = "pedido proveedor orden",
+                    Campos =
+                    [
+                        new("cobertura", () => _sugerido!.CoberturaDias.ToString(CultureInfo.InvariantCulture),
+                            texto => GuardarSugeridoAsync(p => p with { CoberturaDias = Entero(texto, "cada cuántos días compras") })) { Modo = "numeric", Despues = "días" },
+                    ],
+                },
+                new("colchon", "Más un colchón de")
+                {
+                    Ayuda = "Lo que se guarda de más por si el proveedor tarda o se vende más; debajo de él, urge pedir.",
+                    Permiso = AccionControlada.PedirCompra,
+                    NoListo = NoListoSugerido,
+                    Palabras = "sugerido compra minimo",
+                    Campos =
+                    [
+                        new("colchon", () => _sugerido!.ColchonDias.ToString(CultureInfo.InvariantCulture),
+                            texto => GuardarSugeridoAsync(p => p with { ColchonDias = Entero(texto, "los días de colchón") })) { Modo = "numeric", Despues = "días" },
+                    ],
+                },
+            ],
+        },
+        new("usuarios", "Usuarios y permisos", "usuario")
+        {
+            Titulo = false,
+            Visible = () => Sesion.Puede(AccionControlada.EditarReglas),
+            Ajustes =
+            [
+                Atajo("usuarios-lista", "Usuarios", "usuarios", AccionControlada.EditarReglas, "Dar de alta, dar de baja y cambiar el PIN.", "nuevo PIN baja"),
+                Atajo("usuarios-permisos", "Permisos de cada usuario", "usuarios", AccionControlada.EditarReglas, "Qué puede hacer cada quien, y hasta cuánto.", "autorizacion limite"),
+                Atajo("usuarios-defecto", "Permisos por defecto", "usuarios", AccionControlada.EditarReglas, "Con los que empieza cada usuario nuevo."),
+            ],
+            Contenido = @<UsuariosYPermisos Caja="Caja" Sesion="Sesion" />,
+        },
+        new("telegram", "Avisos por Telegram", "telegram")
+        {
+            Descripcion = "En pausa: Telegram no se está trabajando por ahora. Se queda como estaba, con su usuario y PIN.",
+            SeGuarda = false,
+            Visible = () => Sesion.Puede(AccionControlada.ConfigurarTelegram),
+            Ajustes = [Atajo("telegram-alertas", "Avisos por Telegram", "telegram", AccionControlada.ConfigurarTelegram, "En pausa.", "alertas celular bot vincular")],
+            Contenido = @<div class="vn-cfg-antes"><ConfiguracionTelegram Caja="Caja" /></div>,
+        },
+        new("cajas", "Cajas", "monitor")
+        {
+            Descripcion = "Las PC que venden en esta sucursal.",
+            Visible = () => Sesion.Puede(AccionControlada.AdministrarCajas),
+            Ajustes = [Atajo("cajas-pc", "Cajas y sus PC", "cajas", AccionControlada.AdministrarCajas, "Quitar la PC de una caja; dar de alta una.", "equipo serie folios alta quitar")],
+            Contenido = @<AdministrarCajas Caja="Caja" Sesion="Sesion" AlGuardar="MarcarGuardado" />,
+        },
+        new("bitacora", "Bitácora", "lista")
+        {
+            Descripcion = "Lo sensible: quién lo hizo, quién lo autorizó y lo que se negó.",
+            SeGuarda = false,
+            Visible = () => Sesion.Puede(AccionControlada.ConsultarBitacora),
+            Ajustes = [Atajo("bitacora-registros", "Bitácora", "bitacora", AccionControlada.ConsultarBitacora, "Quién hizo qué y quién lo autorizó.", "autorizaciones negado")],
+            Contenido = @<ConsultaBitacora Caja="Caja" Sesion="Sesion" />,
+        },
+        new("teclas", "Teclas", "teclado")
+        {
+            Descripcion = "Las de la caja, como en eleventa. Por ahora no se cambian.",
+            SeGuarda = false,
+            Visible = () => true,
+            Ajustes = [Atajo("teclas-lista", "Teclas de la caja", "teclas", null, "F1 a F12, Ctrl, Alt y «/».", "atajos F12 cobrar")],
+            Contenido = ListaDeTeclas,
+        },
+        new("acerca", "Acerca de", "info")
+        {
+            Descripcion = "La versión de la caja.",
+            SeGuarda = false,
+            Visible = () => true,
+            Ajustes =
+            [
+                new("version", "Versión") { Dice = () => Version, Palabras = "acerca" },
+                new("actualizacion", "Actualización")
+                {
+                    Ayuda = "Solo en la caja de prueba: instalar otra de las versiones que arma GitHub.",
+                    Ve = () => HayActualizacion,
+                    Palabras = "instalar instalador version",
+                    Bloque = @<div class="vn-cfg-antes"><ActualizacionPrueba AntesDeInstalar="AntesDeInstalar" /></div>,
+                },
+            ],
+        },
+    ];
+
+    private Ajuste TextoTienda(
+        string id, string titulo, string? ayuda, int largo, Func<ConfiguracionSucursalDto, string?> valor,
+        Func<ConfiguracionSucursalDto, string?, ConfiguracionSucursalDto> poner, string? modo = null) =>
+        new(id, titulo)
+        {
+            Ayuda = ayuda,
+            Permiso = AccionControlada.ConfigurarTienda,
+            NoListo = NoListoTienda,
+            Campos =
+            [
+                new(id, () => valor(_tienda!) ?? "", texto => GuardarTiendaAsync(c => poner(c, texto)))
+                {
+                    Clase = "vn-ctl-texto",
+                    Largo = largo,
+                    Modo = modo,
+                    ConPausa = true,
+                },
+            ],
+        };
+
+    private Ajuste DineroTienda(
+        string id, string titulo, string ayuda, string marcador, Func<ConfiguracionSucursalDto, long?> valor,
+        Func<ConfiguracionSucursalDto, long?, ConfiguracionSucursalDto> poner, string palabras) =>
+        new(id, titulo)
+        {
+            Ayuda = ayuda,
+            Permiso = AccionControlada.ConfigurarTienda,
+            NoListo = NoListoTienda,
+            Palabras = palabras,
+            Campos =
+            [
+                new(id, () => valor(_tienda!) is { } centavos ? Pesos(centavos) : "", texto => GuardarTiendaAsync(c => poner(c, Centavos(texto))))
+                {
+                    Antes = "$",
+                    Modo = "decimal",
+                    Marcador = marcador,
+                },
+            ],
+        };
+
+    private Ajuste RenglonesTicket(
+        string id, string titulo, string ayuda, int renglones, Func<ConfiguracionTicketDto, IReadOnlyList<string>> valor,
+        Func<ConfiguracionTicketDto, IReadOnlyList<string>, (IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie)> poner) =>
+        new(id, titulo)
+        {
+            Ayuda = ayuda,
+            Permiso = AccionControlada.ConfigurarTicket,
+            NoListo = NoListoTicket,
+            Campos =
+            [
+                new(id, () => string.Join('\n', valor(_ticket!)), texto => GuardarTextosAsync(t => poner(t, RenglonesDe(texto, titulo))))
+                {
+                    Clase = "vn-ctl-area",
+                    Renglones = renglones,
+                    ConPausa = true,
+                },
+            ],
+        };
+
+    /// <summary>El logotipo del ticket: sale en Tienda (como en el prototipo) y en Ticket; es el mismo.</summary>
+    private Ajuste Logotipo(string id) => new(id, "Logotipo")
+    {
+        Ayuda = "Se convierte a blanco y negro para el ticket.",
+        Permiso = AccionControlada.ConfigurarTicket,
+        NoListo = NoListoTicket,
+        Palabras = "logo imagen",
+        Control = ControlLogotipo(id),
     };
 
-    private static string Nombre(Pestanas p) => p switch
+    private static Ajuste Atajo(string id, string titulo, string grupo, AccionControlada? permiso, string ayuda, string? palabras = null) =>
+        new(id, titulo) { Ayuda = ayuda, Lleva = grupo, Palabras = palabras, Ve = permiso is null ? () => true : null, Permiso = permiso };
+
+    private string? NoListoTienda() => _tienda is null ? _errorTienda ?? "Cargando…" : null;
+    private string? NoListoTicket() => _ticket is null ? _errorTicket ?? "Cargando…" : null;
+    private string? NoListoMargenes() => _margenes is null ? _errorMargenes ?? "Cargando…" : null;
+    private string? NoListoSugerido() => _sugerido is null ? _errorSugerido ?? "Cargando…" : null;
+
+    // ── Guardar ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// La configuración de la tienda con un cambio: va con como estaba en la pantalla («Antes»), y el servicio toma solo lo que
+    /// cambió; lo demás se queda como esté allá (lo pudo cambiar otra caja, o el horario en Telegram). Regresa toda, al día.
+    /// </summary>
+    private async Task GuardarTiendaAsync(Func<ConfiguracionSucursalDto, ConfiguracionSucursalDto> cambio)
     {
-        Pestanas.Ticket => "Ticket",
-        Pestanas.Usuarios => "Usuarios y permisos",
-        Pestanas.Bitacora => "Bitácora",
-        Pestanas.Cajas => "Cajas",
-        Pestanas.Telegram => "Telegram",
-        Pestanas.Actualizacion => "Actualización",
-        Pestanas.Sinonimos => "Sinónimos",
-        _ => "Impresora",
-    };
+        var antes = _tienda!;
+        _tienda = await Cliente.GuardarConfiguracionSucursalAsync(Caja.Id, new SolicitudConfiguracionSucursal(Sesion.UsuarioId, cambio(antes), antes));
+        await AlCambiar.InvokeAsync();
+    }
+
+    // El ticket, el margen y el sugerido se guardan completos: el cambio va sobre como están ahora en el servicio, no sobre
+    // lo que se leyó al abrir, para no deshacer lo que otra caja cambió mientras tanto.
+
+    private async Task GuardarTextosAsync(Func<ConfiguracionTicketDto, (IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie)> cambio)
+    {
+        var (encabezado, pie) = cambio(await Cliente.ConfiguracionTicketAsync(Caja.SucursalId) ?? _ticket!);
+        _ticket = await Cliente.GuardarTextosTicketAsync(Caja.Id, new SolicitudTextosTicket(Sesion.UsuarioId, encabezado, pie));
+    }
+
+    private async Task GuardarMargenesAsync(Func<MargenesDto, MargenesDto> cambio) =>
+        _margenes = await Cliente.GuardarMargenesAsync(Caja.SucursalId,
+            new SolicitudMargenes(Sesion.UsuarioId, cambio(await Cliente.MargenesAsync(Caja.SucursalId))));
+
+    private async Task GuardarSugeridoAsync(Func<ParametrosSugeridoDto, ParametrosSugeridoDto> cambio) =>
+        _sugerido = await Cliente.GuardarParametrosSugeridoAsync(Caja.SucursalId,
+            new SolicitudParametrosSugerido(Sesion.UsuarioId, cambio(await Cliente.ParametrosSugeridoAsync(Caja.SucursalId))));
+
+    private async Task RapidosGuardadosAsync()
+    {
+        MarcarGuardado();
+        await AlCambiar.InvokeAsync();
+    }
+
+    // ── Lo que se escribe, como se guarda ───────────────────────────────────
+
+    private static string Pesos(long centavos) => (centavos / 100m).ToString("0.##", CultureInfo.InvariantCulture);
+
+    /// <summary>«$1,500», «1500.50» o vacío (null).</summary>
+    private static long? Centavos(string texto) =>
+        string.IsNullOrWhiteSpace(texto) ? null : Formato.LeerPesos(texto) ?? throw new ArgumentException($"«{texto.Trim()}» no es una cantidad: escribe los pesos, 500 por ejemplo.");
+
+    private static int Entero(string texto, string que) =>
+        int.TryParse(texto.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : throw new ArgumentException($"Escribe {que} con número.");
+
+    private static TimeOnly Hora(string texto) =>
+        TimeOnly.TryParseExact(texto.Trim(), ["HH:mm", "HH:mm:ss", "H:mm"], CultureInfo.InvariantCulture, DateTimeStyles.None, out var hora)
+            ? hora
+            : throw new ArgumentException("Escribe la hora: 08:00, por ejemplo.");
+
+    private static string Porcentaje(int centesimas) => (centesimas / 100m).ToString("0.##", CultureInfo.InvariantCulture);
+
+    /// <summary>«30», «30 %» o «12.5» en centésimas; vacío, null.</summary>
+    private static int? Centesimas(string texto)
+    {
+        var limpio = texto.Replace("%", "").Trim();
+        if (limpio.Length == 0)
+            return null;
+        return decimal.TryParse(limpio, NumberStyles.Number, CultureInfo.InvariantCulture, out var p) && p is >= 0 and < 100
+            ? (int)Math.Round(p * 100)
+            : throw new ArgumentException("El margen va de 0 a 99.99 %.");
+    }
+
+    /// <summary>Los renglones del encabezado o del pie, como el servicio: sin los vacíos, y lo que no cabe se dice aquí mismo.</summary>
+    private static List<string> RenglonesDe(string texto, string que)
+    {
+        var renglones = texto.Split('\n').Select(r => r.Trim()).Where(r => r.Length > 0).ToList();
+        if (renglones.Count > ConfiguracionTicket.RenglonesMaximos)
+            throw new ArgumentException($"El {que.ToLowerInvariant()} va hasta {ConfiguracionTicket.RenglonesMaximos} renglones.");
+        if (renglones.FirstOrDefault(r => r.Length > ConfiguracionTicket.Columnas) is { } largo)
+            throw new ArgumentException($"«{largo}» tiene más de {ConfiguracionTicket.Columnas} caracteres: no cabe en el renglón.");
+        return renglones;
+    }
+
+    // ── El logotipo, el ticket de prueba y «Así sale» ──────────────────────
+
+    private RenderFragment ControlLogotipo(string renglon) =>
+        @<span class="vn-cfg-logo">
+            @if (_ticket?.LogoPngBase64 is { } png)
+            {
+                <img src="data:image/png;base64,@png" alt="El logotipo como sale en el ticket" />
+            }
+            else
+            {
+                <span class="vn-cfg-nota">Sin logotipo</span>
+            }
+            @if (Sesion.Puede(AccionControlada.ConfigurarTicket))
+            {
+                <label class="vn-boton chico vn-archivo">
+                    @(_ticket?.Logo is null ? "Agregar logotipo…" : "Cambiar logotipo…")
+                    <InputFile accept="image/png,image/jpeg,image/bmp" OnChange="e => CargarLogotipoAsync(renglon, e)" />
+                </label>
+                @if (_ticket?.Logo is not null)
+                {
+                    <button class="vn-boton chico" @onclick="() => QuitarLogotipoAsync(renglon)">Quitar</button>
+                }
+            }
+        </span>;
+
+    private Task CargarLogotipoAsync(string renglon, InputFileChangeEventArgs e) => HacerAsync(renglon, async () =>
+    {
+        byte[] imagen;
+        try
+        {
+            await using var archivo = e.File.OpenReadStream(maxAllowedSize: LogoTicket.BytesMaximos);
+            using var memoria = new MemoryStream();
+            await archivo.CopyToAsync(memoria);
+            imagen = memoria.ToArray();
+        }
+        catch (IOException)
+        {
+            throw new ArgumentException($"El archivo pasa de {LogoTicket.BytesMaximos / 1024 / 1024} MB: usa una imagen más chica.");
+        }
+        _ticket = await Cliente.GuardarLogoTicketAsync(Caja.Id, new SolicitudLogo(Sesion.UsuarioId, Convert.ToBase64String(imagen)));
+    });
+
+    private Task QuitarLogotipoAsync(string renglon) =>
+        HacerAsync(renglon, async () => _ticket = await Cliente.GuardarLogoTicketAsync(Caja.Id, new SolicitudLogo(Sesion.UsuarioId, null)));
+
+    private async Task ImprimirPruebaAsync()
+    {
+        _avisos.Remove("prueba");
+        Error("prueba", null);
+        try
+        {
+            await Impresora.ImprimirAsync(Ejemplo(), abrirCajon: false);
+            _avisos["prueba"] = Impresora.MuestraVistaPrevia ? "Sin impresora de tickets: así sale, abajo." : "Salió el ticket de prueba.";
+        }
+        catch (Exception ex)
+        {
+            // Como el corte: si la impresora falla, se dice por qué y la ventana sigue.
+            Error("prueba", $"No salió: {ex.Message}");
+        }
+    }
+
+    private RenderFragment AsiSale =>
+        @<div class="vn-cfg-asi-sale">
+            <h3>Así sale</h3>
+            @if (_ticket is not null)
+            {
+                <div class="vn-termico">
+                    @if (_ticket.LogoPngBase64 is { } png)
+                    {
+                        <img src="data:image/png;base64,@png" alt="" />
+                    }
+                    <pre>@TicketTexto.Generar(Ejemplo() with { Logo = null })</pre>
+                </div>
+            }
+        </div>;
+
+    /// <summary>Un ticket de ejemplo con lo que se está escribiendo (aunque todavía no se guarde), para «Así sale» y la prueba.</summary>
+    private TicketDto Ejemplo() => new(
+        "PRUEBA", HoraMexico.ALocal(DateTime.UtcNow), Caja.Nombre, Sesion.Nombre,
+        [
+            new LineaTicketDto("2", "Pluma punto fino azul", 1200, 2400),
+            new LineaTicketDto("1.5 m", "Listón 2.5 cm rojo", 500, 750),
+            new LineaTicketDto("1", "Cuaderno profesional raya 100 hojas", 4500, 4500),
+        ],
+        4, 7650, 1055, [new CobroTicketDto(FormaPago.Efectivo, 7650, 10000, 2350, null)],
+        Vista("encabezado", _ticket?.Encabezado), Vista("pie", _ticket?.Pie), _ticket?.Logo);
+
+    /// <summary>Lo escrito, renglón por renglón, aunque todavía no se guarde (si algo no cabe, lo dice su renglón).</summary>
+    private List<string> Vista(string campo, IReadOnlyList<string>? guardado) =>
+        Escrito(campo, string.Join('\n', guardado ?? [])).Split('\n').Select(r => r.Trim()).Where(r => r.Length > 0).ToList();
+
+    // ── El margen por departamento ──────────────────────────────────────────
+
+    private RenderFragment MargenPorDepartamento =>
+        @<table class="vn-cfg-tabla vn-cfg-margenes">
+            <thead><tr><th>Departamento</th><th class="num">Margen mínimo</th></tr></thead>
+            <tbody>
+                @foreach (var d in _margenes?.Departamentos ?? [])
+                {
+                    var departamento = d;
+                    var campo = $"margen-{d.DepartamentoId}";
+                    <tr>
+                        <td>@d.Departamento</td>
+                        <td class="num">
+                            <span class="vn-ctl-num">
+                                <input id="aj-@campo" inputmode="decimal" placeholder="General" autocomplete="off" aria-label="@($"Margen mínimo de {d.Departamento}")"
+                                       disabled="@(!Sesion.Puede(AccionControlada.ConfigurarMargen))"
+                                       value="@Escrito(campo, d.MargenMinimoCentesimas is { } c ? Porcentaje(c) : "")"
+                                       @oninput="e => Escribir(campo, e.Value, texto => GuardarMargenAsync(departamento.DepartamentoId, texto), MargenDepartamento, conPausa: false)"
+                                       @onblur="() => SalirAsync(campo)" @onkeydown="e => AlTeclearAsync(e, campo)" />%
+                            </span>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>;
+
+    private const string MargenDepartamento = "margen-departamento";
+
+    private Task GuardarMargenAsync(Guid departamentoId, string texto)
+    {
+        var margen = Centesimas(texto);
+        return GuardarMargenesAsync(m => m with
+        {
+            Departamentos = m.Departamentos.Select(d => d.DepartamentoId == departamentoId ? d with { MargenMinimoCentesimas = margen } : d).ToList(),
+        });
+    }
+
+    // ── Teclas y Acerca de ──────────────────────────────────────────────────
+
+    /// <summary>Las teclas de la venta, como las atiende hoy (PantallaVenta y caja.js).</summary>
+    private static readonly (string Tecla, string Hace)[] Teclas =
+    [
+        ("F1", "Venta: regresa a vender desde lo que esté abierto"),
+        ("F2", "Impresiones por cobrar"),
+        ("F3", "Productos"),
+        ("F4", "Inventario"),
+        ("F5", "Retomar el ticket que lleva más tiempo en espera"),
+        ("F6", "Poner el ticket en espera"),
+        ("F7", "Entrada de efectivo"),
+        ("F8", "Salida de efectivo"),
+        ("F9", "Verificar un precio sin vender"),
+        ("F10", "Buscar un producto por nombre"),
+        ("F11", "Ver el mayoreo del artículo"),
+        ("F12", "Cobrar"),
+        ("Ins o Ctrl+P", "Artículo común (sin inventario)"),
+        ("Supr", "Quitar el artículo"),
+        ("+ y −", "Una pieza más o una menos del artículo"),
+        ("↑ y ↓", "Elegir el artículo del ticket"),
+        ("Ctrl+E", "Cambiar el precio del artículo"),
+        ("Ctrl+D", "Descuento"),
+        ("Ctrl+L", "Elegir el cliente del ticket"),
+        ("Ctrl+B", "Abono a la cuenta de un cliente"),
+        ("Ctrl+Q", "Cotizar un PDF"),
+        ("Ctrl+U", "Cambiar de usuario"),
+        ($"Alt+1 a Alt+{Rapido.Maximo}", "Los rápidos; con un número antes, esa cantidad"),
+        ("/", "Todo lo que puedes hacer"),
+        ("Esc", "Cerrar lo que está abierto"),
+    ];
+
+    private RenderFragment ListaDeTeclas =>
+        @<table class="vn-cfg-tabla vn-cfg-teclas">
+            <thead><tr><th>Tecla</th><th>Hace</th></tr></thead>
+            <tbody>
+                @foreach (var (tecla, hace) in Teclas)
+                {
+                    <tr><td><kbd>@tecla</kbd></td><td>@hace</td></tr>
+                }
+            </tbody>
+        </table>;
+
+    /// <summary>«Papelería POS 1.0.0 · cambio abc1234», y la de la caja principal si es otra.</summary>
+    private string Version
+    {
+        get
+        {
+            var informativa = typeof(Configuracion).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "";
+            var (numero, cambio) = informativa.Split('+') is [var n, var c, ..] ? (n, c[..Math.Min(7, c.Length)]) : (informativa, null);
+            var texto = $"Papelería POS {numero}{(cambio is null ? "" : $" · cambio {cambio}")}";
+            return _versionPrincipal is { } principal && principal != numero ? $"{texto} · la caja principal tiene la {principal}" : texto;
+        }
+    }
 }
