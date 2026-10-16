@@ -64,9 +64,12 @@ eleventa) ya no existe: el dueño la quitó el 2026-10-14, y una PC que había v
 olvida. Se entra como en la propuesta (entrega 6): en «¿Quién atiende?» se toca la ficha (o se oprime su letra) y se
 teclea el PIN de 4 cifras, que entra solo con la cuarta; Ctrl+U cambia de usuario. Si la caja tiene el turno de otro
 cajero, quien tiene el permiso hace ahí mismo su corte, sin volver a escribir su PIN. El corte del turno solo pide el
-total del efectivo, a ciegas, y el dueño tiene además el corte del día. Productos, inventario y clientes todavía abren
-sus ventanas de antes, encima de la venta; sin vender («Productos e inventario, sin cortar», para quien tiene productos o
-compras) van con la barra de arriba de la venta. La Configuración ya es la del rediseño (entrega 7): ocupa la pantalla,
+total del efectivo, a ciegas, y el dueño tiene además el corte del día. Productos (F3), Inventario (F4) y Clientes ya
+son páginas, como en el prototipo (entrega 8): bajo la barra de arriba se ve la venta o una de ellas, y F1 regresa a la
+venta como estaba. Productos y Clientes tienen la lista a la izquierda (Productos abre llena, lo más vendido primero) y el
+elegido a la derecha; Inventario, una tarjeta por tarea, solo las de quien entró. Sin vender («Productos e inventario, sin
+cortar», para quien tiene productos o compras) van las mismas páginas, con la barra de arriba de la venta. La
+Configuración ya es la del rediseño (entrega 7): ocupa la pantalla,
 con «Buscar un ajuste» y solo los grupos de los permisos de quien entró, y cada cambio se guarda solo, sin «Guardar» ni
 volver a escribir el PIN (Telegram, en pausa, sigue como estaba). `preparar-caja` deja en la base de prueba los rápidos
 Copia B/N y CURP (10 impresiones); `preparar-prueba`, además, con los precios que decidió el dueño ($2 y $10). La caja
@@ -102,8 +105,8 @@ Instala el administrador de cada PC; después todo se usa desde una cuenta comú
    administrador, correr ahí `instalar-servicio.ps1`. El servicio arranca con Windows, deja la base en
    `C:\ProgramData\PapeleriaPos\pos.db`, los respaldos en `C:\ProgramData\PapeleriaPos\respaldos` y abre el firewall
    solo para la red local. Mientras no haya datos reales, se copia ahí una base de prueba antes de instalar.
-   Por esa misma puerta entran los celulares del conteo completo (`http://<ip>:5080/conteo`, en F4 → Conteo
-   completo salen la dirección y el QR): tienen que estar en el wifi de la misma red que la caja principal.
+   Por esa misma puerta entran los celulares del conteo completo (`http://<ip>:5080/conteo`; en Inventario (F4) →
+   «Conteo completo» salen la dirección y el QR): tienen que estar en el wifi de la misma red que la caja principal.
 
 3. **Cada caja** (también la principal): como administrador, correr `instalar-caja.ps1` desde `publicar/caja` (con
    `-ColaImpresion "<cola>"` en la PC de la WF-6590). La copia a Archivos de programa, deja
@@ -142,8 +145,8 @@ Para que alguien de la tienda pruebe lo que ya funciona, solo y sin tocar eleven
 - **La franja de prueba,** arriba, tiene la guía de tareas (las respuestas se guardan en un archivo en el escritorio),
   los avisos que le llegarían al dueño por Telegram y «Empezar de cero».
   - La guía es la de la venta del rediseño (versión 3): primero entrar con la ficha y vender; luego cambiar de usuario,
-    el corte del turno y el del día; al final, lo que todavía abre sus ventanas de antes (productos, inventario,
-    clientes, configuración), con otro turno del cajero.
+    el corte del turno y el del día; después, con otro turno del cajero, las páginas de Productos, Inventario y
+    Clientes; al final, la Configuración.
   - Las respuestas van con la versión de la guía; las de otra versión no se cargan y su archivo se queda en
     `C:\ProgramData\PapeleriaPos-Prueba`.
   - Al terminar una persona, «Guardar respuestas y dejar la guía en blanco» deja su archivo en el escritorio y la guía

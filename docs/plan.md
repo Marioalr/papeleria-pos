@@ -220,7 +220,8 @@ tareas a la guía y la prueba se puede repetir con la versión nueva (con los co
   bien y escribe lo que vio; al final queda un archivo con sus respuestas para mandarlo.
 - **Una guía por versión (2026-10-14):** la segunda prueba (17 y 18 de octubre) es con la pantalla nueva y su guía
   (la versión 3) empieza por entrar con la ficha y vender; siguen cambiar de usuario, el corte del turno y el del día
-  (entrega 6), y al final va lo que todavía abre sus ventanas de antes, con otro turno del cajero. Las respuestas se
+  (entrega 6); después, con otro turno del cajero, las páginas de Productos, Inventario y Clientes (entrega 8), y al
+  final la Configuración (entrega 7). Las respuestas se
   guardan con la versión de la guía y las de otra no se cargan (su archivo se queda). Al terminar una persona, «Guardar respuestas y
   dejar la guía en blanco» deja su archivo en el escritorio y la guía en blanco para la siguiente.
 - **Simula lo que no hay:** sin impresora de tickets, el ticket se ve en pantalla; sin Telegram, los avisos que le
@@ -519,6 +520,36 @@ permiso de quien entró. También se abre sin cortar, desde «Productos e invent
 - **Usuarios y permisos, Cajas, Bitácora, Teclas** (la lista) **y Acerca de.** Avisos por Telegram, como estaba, «en pausa».
 - No se pusieron los grupos sin nada real detrás (WhatsApp, Seguridad, Respaldos, Esta caja) ni los ajustes que todavía
   no existen; se agregan cuando exista lo que configuran.
+
+**Avance (2026-10-15), entrega 8: las pantallas de atrás con lista y detalle,** como en el
+[prototipo](propuesta-interfaz/prototipo.html): Productos (F3), Inventario (F4) y Clientes ya no son ventanas encima de
+la venta, son páginas.
+- **Páginas, no ventanas:** bajo la barra de arriba (que se queda, con sus chips y el usuario) se ve la venta o una
+  página, con su pestaña marcada. La venta no se deja: se oculta con su ticket, los tickets en espera, lo escrito en el
+  cobro y el panel que tuviera, y «Venta» (F1) la regresa tal cual. Abajo, «F1 Volver a la venta» y lo que hacen las
+  teclas ahí. Esc cierra lo que esté abierto en la página (la ficha, una tarea, el estado de cuenta) y, sin nada abierto,
+  regresa a la venta, como en el prototipo. Ctrl+U cambia de usuario desde donde sea. El corte y la Configuración siguen
+  encima, como ventanas. Sin cortar van las mismas páginas, con su barra.
+- **El lector y el teclado:** en Productos y Clientes, lo que se escribe o se escanea con el cursor fuera de un campo va
+  a su búsqueda (en la venta, al cuadro de captura, como siempre); ↑ ↓ eligen de la lista, Enter abre, y al entrar el
+  cursor está en la búsqueda. En las tareas del inventario, el escaneo va a su cuadro del código.
+- **Productos abre llena** (antes, vacía hasta buscar): los 50 más vendidos en 90 días, lo mismo con que ordena la
+  búsqueda de la venta, con «Ver 50 más» y cuántos hay. Filtros: «Por completar», «Poca existencia» (3 o menos: el
+  catálogo no tiene un mínimo por producto) y, para quien ve la utilidad, «Margen bajo» (con el mínimo de Configuración ›
+  Inventario). A la derecha, el elegido: precio y mayoreo, existencia, costo promedio y margen (cada uno con su permiso),
+  sus últimos movimientos del kardex con su folio, «Etiqueta» (a las etiquetas por imprimir de Inventario) y «Editar»,
+  que abre la ficha de siempre ahí mismo. «Nuevo producto», el mayoreo por revisar y las decisiones de la depuración
+  siguen ahí.
+- **Inventario por tareas:** una tarjeta por tarea, solo las de quien entró, con lo pendiente cuando se lee rápido (lo que
+  se está recibiendo, las órdenes en camino, las notas por capturar, lo que falta del conteo del día, las etiquetas por
+  imprimir), su límite («tú: hasta $200.00») o quién la autoriza. Cada tarjeta abre la pantalla de siempre de esa tarea,
+  con «← Inventario»; por dentro no cambiaron. El sugerido no lleva cuenta: calcularlo lee un año de ventas.
+- **Clientes:** la búsqueda por nombre o teléfono, «Solo los que deben» y «Por revisar»; a la derecha, sus datos (mayoreo y
+  descuento, lo que debe y su vencimiento, su límite y quién lo cambia, cuánto compra y si paga a tiempo) y su cuenta: el
+  estado de cuenta, «Límite y plazo», abonar, devolver el saldo a favor, ajustar el saldo y los movimientos. «Editar», ahí
+  mismo. Quien no los administra los consulta, como antes.
+- **Lo nuevo del servicio, solo para leer:** la lista de Productos, los últimos movimientos de un producto, lo pendiente
+  del inventario (solo cuentas) y quién puede hacer algo, por su nombre. Sin cambios en la base.
 
 #### Después: el piloto en la caja 2
 

@@ -197,7 +197,7 @@ public static class EjemplosProveedor
         }
         t.AppendLine("  Para fiar: elige al cliente con CTRL+L (o la flecha «Público en general», arriba del total), oprime F12 y toca");
         t.AppendLine("  «Crédito» junto a «Pagó con». Para abonar: CTRL+B.");
-        t.AppendLine("  Su estado de cuenta y devolver un saldo a favor: en «Clientes», en la cuenta de cada uno.");
+        t.AppendLine("  Su estado de cuenta y devolver un saldo a favor: en «Clientes» (arriba), en el detalle de cada uno.");
         t.AppendLine();
         t.AppendLine("En la venta, el cuadro de captura entiende un código, 3*código, un nombre (dos pedazos de palabra en cualquier");
         t.AppendLine("orden) o el folio de un ticket para devolverlo o cancelarlo. «/» muestra todo lo que puedes hacer.");
@@ -212,11 +212,13 @@ public static class EjemplosProveedor
         t.AppendLine();
         t.AppendLine($"Para las tareas de compras, el proveedor es «{proveedor}».");
         t.AppendLine();
-        t.AppendLine("1) «Factura de ejemplo.xml»: como cajero, recibe esta mercancía (escanea o busca cada producto y cuenta):");
+        t.AppendLine("1) «Factura de ejemplo.xml»: como cajero, en Inventario (F4) → «Recibir mercancía», recibe esta mercancía");
+        t.AppendLine("   (escanea o busca cada producto y cuenta):");
         foreach (var (p, cantidad, _) in factura)
             t.AppendLine($"     {cantidad,3} piezas de {p.Nombre}{(p.Codigo is { } c ? $" (código {c})" : "")}"
                 + (p.VarianteId == Guid.Empty ? "  ← no está en el catálogo: al escribir su código, cuéntalo como nuevo" : ""));
-        t.AppendLine("   Si quieres ver una diferencia, cuenta uno menos de alguno. Después, como encargado, carga el XML en la compra:");
+        t.AppendLine("   Si quieres ver una diferencia, cuenta uno menos de alguno. Después, como encargado, en Inventario → «Compras y");
+        t.AppendLine("   notas», carga el XML en la compra:");
         t.AppendLine("   revisa lo precargado (confirma el que dice «¿Es…?», corrige el producto nuevo), dalo de alta y cierra la compra.");
         t.AppendLine();
         t.AppendLine("2) «Nota de ejemplo.pdf»: en otra compra, recibe:");
