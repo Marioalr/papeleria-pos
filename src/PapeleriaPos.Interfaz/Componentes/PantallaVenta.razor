@@ -2054,7 +2054,6 @@
     {
         if (_ventana != Ventanas.Ninguna || _pagina != Pagina.Venta)
             return;
-        Medir(hora);
         // «/algo» y Enter: la acción elegida, o la primera que se llama así.
         if (FiltroDeAcciones(texto) is { } filtro)
         {
@@ -2063,6 +2062,7 @@
             StateHasChanged();
             return;
         }
+        Medir(hora);
         // Con ↑ ↓ (o → y Tab) se eligió de la lista de resultados: Enter agrega ese; en una familia, su más vendido.
         if (_resultados is { Count: > 0 } resultados && _navegado && SepararCantidad(texto).Texto == _textoBuscado && Seleccionado() is { } elegido)
         {
@@ -2894,6 +2894,9 @@
         {
             ticket.Buscando.Remove(buscando);
         }
+        // La pantalla ya se fue (se volvió a cargar): sus tickets ya no son los de la caja; no se tocan ni se guardan.
+        if (_seFue)
+            return;
         if (respuesta.Producto is { } producto)
             AgregarEnSuLugar(ticket, buscando, producto);
         else if (respuesta.Contesto)
@@ -3982,8 +3985,12 @@
         return presentacion is { EsBase: false } ? $"{linea.Descripcion} ({presentacion.Nombre})" : linea.Descripcion;
     }
 
+    /// <summary>La pantalla ya se fue: lo que llegue después (lo que se le preguntaba a la caja principal) no la toca.</summary>
+    private bool _seFue;
+
     public async ValueTask DisposeAsync()
     {
+        _seFue = true;
         if (_contingencia is not null)
             _contingencia.Cambio -= AlCambiarContingencia;
         // Lo que se mandó guardar de la espera queda antes de irse (volver a cargar, un error): la pantalla nueva lo lee.

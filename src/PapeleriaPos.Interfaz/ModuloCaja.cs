@@ -71,7 +71,17 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     /// Ya se dibujó lo de esos escaneos (entrega 5): con la hora de su Enter (el reloj de la página), caja.js mide en el
     /// siguiente cuadro cuánto tardaron en verse y se lo dice a la pantalla (<c>Pintados</c>), de a varios.
     /// </summary>
-    public async Task PintadoAsync(IReadOnlyList<double> horas) => await (await Modulo).InvokeVoidAsync("pintado", horas);
+    public async Task PintadoAsync(IReadOnlyList<double> horas)
+    {
+        try
+        {
+            await (await Modulo).InvokeVoidAsync("pintado", horas);
+        }
+        catch (Exception ex) when (ex is JSDisconnectedException or JSException or TaskCanceledException or InvalidOperationException)
+        {
+            // Sin la página (se está volviendo a cargar), esos no se miden: no es un error de la venta.
+        }
+    }
 
     /// <summary>Vacía el cuadro de captura de la venta (no está enlazado: lo maneja caja.js).</summary>
     public async Task LimpiarCapturaAsync() => await (await Modulo).InvokeVoidAsync("limpiarCaptura");

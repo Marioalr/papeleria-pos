@@ -163,9 +163,9 @@ public sealed class VigiaDeLaPantalla : IAsyncDisposable
                 }
             }
         }
-        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or InvalidOperationException)
+        catch (Exception)
         {
-            // Se fue la pantalla.
+            // Se fue la pantalla (o lo que sea: el vigía solo mide, nunca tumba la caja).
         }
     }
 

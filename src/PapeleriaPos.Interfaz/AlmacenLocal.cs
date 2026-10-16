@@ -232,7 +232,16 @@ public sealed class AlmacenLocal
             else
                 escritura.Hecha.SetException(error);
             if (reloj.Elapsed >= Larga)
-                EscrituraLarga?.Invoke(escritura.Que, reloj.Elapsed);
+            {
+                try
+                {
+                    EscrituraLarga?.Invoke(escritura.Que, reloj.Elapsed);
+                }
+                catch (Exception)
+                {
+                    // Solo es para medir: el escritor sigue (un error aquí, en su propio hilo, cerraría la caja).
+                }
+            }
         }
     }
 
