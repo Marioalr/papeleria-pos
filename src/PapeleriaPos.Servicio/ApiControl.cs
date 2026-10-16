@@ -54,6 +54,13 @@ public static class ApiControl
             return Permisos.DeLaSesion(usuario.Permisos, usuarios, usuario.Id);
         });
 
+        // Quién puede hacer algo, por su nombre (de quien puede menos a quien puede todo), para decírselo a quien no lo tiene:
+        // en Clientes, «Límite de crédito: lo cambia Dueño de prueba», como el corte dice quién lo hace (entrega 8).
+        api.MapGet("/sucursales/{sucursalId:guid}/quienes-pueden", async (Guid sucursalId, string accion, PosDbContext db) =>
+            Enum.TryParse<AccionControlada>(accion, ignoreCase: true, out var a) && Enum.IsDefined(a)
+                ? Results.Ok(await new ServicioControl(db).QuienesPuedenAsync(sucursalId, a))
+                : Results.BadRequest(new ErrorDto($"No hay un permiso «{accion}».")));
+
         api.MapPost("/autorizaciones", async (SolicitudAutorizacion s, PosDbContext db) =>
         {
             var autorizacion = await new ServicioControl(db).AutorizarAsync(s.Accion, s.SucursalId, s.CajaId, s.SolicitanteId, s.Usuario, s.Pin, s.MontoCentavos, s.Detalle);

@@ -1,5 +1,6 @@
-@* La ficha de un producto en F3: sus variantes, presentaciones (con sus códigos) y precios, todo junto. Lo guardan el dueño
-   y el encargado; el costo y los proveedores solo los ven ellos. *@
+@* La ficha de un producto, en el detalle de la página de Productos (F3): sus variantes, presentaciones (con sus códigos) y
+   precios, todo junto. La guarda quien tiene «Productos, precios y etiquetas»; el costo y los proveedores solo los ve
+   quien ve los costos. *@
 @inject ClienteCaja Cliente
 
 @if (_error is not null && _producto is null)
@@ -178,7 +179,7 @@ else
         <p class="aviso">@_aviso</p>
     }
     <div class="acciones">
-        <button class="boton" @onclick="AlVolver">Volver a la lista</button>
+        <button class="boton" @onclick="AlVolver">@TextoVolver</button>
         @if (PuedeEditar)
         {
             <button class="boton principal" disabled="@_ocupado" @onclick="GuardarAsync">Guardar</button>
@@ -199,6 +200,12 @@ else
     [Parameter] public Guid? ProductoId { get; set; }
 
     [Parameter] public EventCallback AlVolver { get; set; }
+
+    /// <summary>Lo que dice el botón de regresar: en la página de Productos, al producto (o «Cancelar» si es nuevo).</summary>
+    [Parameter] public string TextoVolver { get; set; } = "Volver a la lista";
+
+    /// <summary>Se guardó: la ficha como quedó (uno nuevo ya trae su Id).</summary>
+    [Parameter] public EventCallback<FichaProductoDto> AlGuardar { get; set; }
 
     private sealed class PresentacionEditable
     {
@@ -404,8 +411,10 @@ else
         _ocupado = true;
         try
         {
-            Mostrar(await Cliente.GuardarProductoAsync(new SolicitudGuardarProducto(Sesion.UsuarioId, Caja.SucursalId, ficha)));
+            var guardada = await Cliente.GuardarProductoAsync(new SolicitudGuardarProducto(Sesion.UsuarioId, Caja.SucursalId, ficha));
+            Mostrar(guardada);
             _aviso = "Guardado: las cajas ya lo venden así.";
+            await AlGuardar.InvokeAsync(guardada);
         }
         catch (ErrorCaja ex)
         {

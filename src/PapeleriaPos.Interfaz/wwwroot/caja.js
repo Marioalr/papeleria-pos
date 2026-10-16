@@ -4,6 +4,8 @@ let pantalla = null;
 let hayVentana = false;
 // La ventana abierta es un panel a la derecha: el ticket y la barra de teclas siguen a la vista.
 let hayPanel = false;
+// Se ve una página (Productos, Inventario o Clientes) en lugar de la venta (entrega 8): la venta está oculta.
+let hayPagina = false;
 let escribiendo = null;
 
 export function registrar(referencia) {
@@ -25,6 +27,7 @@ export function quitar() {
     clearInterval(rodando);
     rodando = null;
     rafaga = null;
+    hayPagina = false;
     pantalla = null;
 }
 
@@ -89,6 +92,81 @@ export function ventanaAbierta(abierta, enPanel = false) {
     hayPanel = abierta && enPanel;
 }
 
+// Una página en lugar de la venta (entrega 8). Con algo encima de ella (el corte, la Configuración, la guía de la prueba),
+// manda la ventana, como en la venta.
+export function paginaAbierta(abierta) {
+    hayPagina = abierta;
+}
+
+// En una página: Esc, las F y las Ctrl de la caja van a la pantalla, que decide (F1 a la venta, F3 y F4 a su página, Esc
+// cierra lo abierto); así F5 no recarga ni Ctrl+P imprime. Las flechas, Enter y lo que se escribe son de la página: ↑ ↓ en
+// su búsqueda recorren la lista, y en la lista o en las tarjetas pasan a la de al lado. Lo que se escribe fuera de un campo
+// va a la búsqueda de la página (data-busca), en lugar de lo que había: así el lector, o quien empieza a escribir con el
+// cursor en la lista, busca sin poner antes el cursor ahí. Nada de esto toca a la venta, que está oculta.
+function teclaDePagina(e) {
+    const tecla = e.key;
+    const funcion = /^F([1-9]|1[0-2])$/.test(tecla);
+    const ctrlCaja = e.ctrlKey && !e.altKey && /^[pedlbuqPEDLBUQ]$/.test(tecla);
+    if (tecla === 'Escape' || funcion || ctrlCaja) {
+        e.preventDefault();
+        e.stopPropagation();
+        pantalla.invokeMethodAsync('Tecla', ctrlCaja ? 'Ctrl+' + tecla.toUpperCase() : tecla, null);
+        return;
+    }
+    const donde = e.target instanceof HTMLElement ? e.target : null;
+    if ((tecla === 'ArrowUp' || tecla === 'ArrowDown') && donde?.matches('[data-busca]')) {
+        // La página las atiende (su @onkeydown); que el cursor no brinque al principio o al final de lo escrito.
+        e.preventDefault();
+        return;
+    }
+    if (tecla.startsWith('Arrow') && !e.ctrlKey && !e.altKey && !e.shiftKey && moverEnLista(donde, tecla)) {
+        e.preventDefault();
+        return;
+    }
+    const control = donde instanceof HTMLButtonElement || donde instanceof HTMLInputElement || donde instanceof HTMLSelectElement
+        || donde instanceof HTMLAnchorElement;
+    if (tecla.length !== 1 || e.ctrlKey || e.altKey || e.metaKey || esEditable(donde) || (tecla === ' ' && control)) return;
+    const busca = [...document.querySelectorAll('[data-busca]')].find(c => c.offsetParent !== null);
+    if (!busca) return;
+    e.preventDefault();
+    busca.focus();
+    busca.select();
+    busca.setRangeText(tecla, busca.selectionStart ?? 0, busca.selectionEnd ?? 0, 'end');
+    busca.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function esEditable(elemento) {
+    if (elemento instanceof HTMLTextAreaElement || elemento instanceof HTMLSelectElement) return true;
+    if (elemento instanceof HTMLInputElement)
+        return !['button', 'checkbox', 'radio', 'submit', 'reset', 'file', 'image', 'range', 'color'].includes(elemento.type);
+    return elemento?.isContentEditable === true;
+}
+
+// ↑ ↓ en una lista (data-lista) eligen el de arriba o el de abajo, como un clic; las flechas en las tarjetas del
+// inventario (data-rejilla) pasan el cursor a la de al lado, arriba o abajo, y Enter la abre.
+function moverEnLista(donde, tecla) {
+    const renglon = donde?.closest('[data-lista] .vn-item');
+    if (renglon && (tecla === 'ArrowUp' || tecla === 'ArrowDown')) {
+        const renglones = [...renglon.closest('[data-lista]').querySelectorAll('.vn-item')];
+        const otro = renglones[renglones.indexOf(renglon) + (tecla === 'ArrowDown' ? 1 : -1)];
+        if (otro) {
+            otro.focus();
+            otro.click();
+        }
+        return true;
+    }
+    const tarjeta = donde?.closest('[data-rejilla] .vn-tarea');
+    if (tarjeta) {
+        const rejilla = tarjeta.closest('[data-rejilla]');
+        const tarjetas = [...rejilla.querySelectorAll('.vn-tarea')];
+        const columnas = getComputedStyle(rejilla).gridTemplateColumns.split(' ').filter(Boolean).length || 1;
+        const paso = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -columnas, ArrowDown: columnas }[tecla] ?? 0;
+        tarjetas[tarjetas.indexOf(tarjeta) + paso]?.focus();
+        return true;
+    }
+    return false;
+}
+
 // El cobro (data-cobro: todo el panel del total, con «Pagó con», los montos y referencias de tarjeta, transferencia y
 // crédito y el botón de cobrar; también el abono): el lector se reconoce por su ritmo, más rápido que una persona y con
 // Enter al final (docs/propuesta-interfaz.md, «El cuadro de captura»). Si escribe ahí, lo que tecleó se quita del
@@ -151,6 +229,10 @@ function alPresionar(e) {
     const tecla = e.key;
     const campo = e.target instanceof HTMLInputElement ? e.target : null;
     if (rafagaDelLector(e)) return;
+    if (hayPagina && !hayVentana) {
+        teclaDePagina(e);
+        return;
+    }
 
     if (tecla === 'Enter' && !hayVentana && esCaptura(campo)) {
         e.preventDefault();

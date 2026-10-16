@@ -30,32 +30,62 @@ public class GuiaPruebaTests
     }
 
     [Fact]
-    public void Primero_va_la_venta_y_al_final_lo_que_abre_las_ventanas_de_antes()
+    public void Primero_va_la_venta_luego_las_paginas_de_atras_y_al_final_la_configuracion()
     {
         var temas = GuiaPrueba.Tareas.Select(t => t.Tema).ToList();
-        var primeraDeAntes = temas.FindIndex(t => t.StartsWith(GuiaPrueba.VentanaDeAntes, StringComparison.Ordinal));
+        var primeraDePaginas = temas.FindIndex(GuiaPrueba.EsDeLasPaginas);
+        var primeraDeConfiguracion = temas.FindIndex(t => t.StartsWith(GuiaPrueba.ConfiguracionNueva, StringComparison.Ordinal));
 
         // La guía agrupa por tema: si uno se repitiera más abajo, sus tareas se juntarían arriba y cambiaría el orden.
         Assert.Equal(temas.Distinct().Count(), temas.Where((t, i) => i == 0 || temas[i - 1] != t).Count());
         Assert.Equal("entrar", GuiaPrueba.Tareas[0].Id);
-        Assert.True(primeraDeAntes > 0);
-        // Después de las ventanas de antes, solo la Configuración nueva, al final (entrega 7).
-        var primeraDeConfiguracion = temas.FindIndex(t => t.StartsWith(GuiaPrueba.ConfiguracionNueva, StringComparison.Ordinal));
-        Assert.True(primeraDeConfiguracion > primeraDeAntes);
-        Assert.All(temas.Skip(primeraDeAntes).Take(primeraDeConfiguracion - primeraDeAntes), t => Assert.StartsWith(GuiaPrueba.VentanaDeAntes, t));
+        // Después de vender, las páginas de atrás (entrega 8): Productos, Inventario y Clientes, seguidas; y al final, solo la
+        // Configuración nueva (entrega 7).
+        Assert.True(primeraDePaginas > 0);
+        Assert.True(primeraDeConfiguracion > primeraDePaginas);
+        Assert.All(temas.Skip(primeraDePaginas).Take(primeraDeConfiguracion - primeraDePaginas), t => Assert.True(GuiaPrueba.EsDeLasPaginas(t), t));
         Assert.All(temas.Skip(primeraDeConfiguracion), t => Assert.StartsWith(GuiaPrueba.ConfiguracionNueva, t));
+        Assert.All(temas.Take(primeraDePaginas), t => Assert.False(GuiaPrueba.EsDeLasPaginas(t), t));
         // Lo de vender va antes que la tarjeta, la transferencia y el crédito.
         var ids = GuiaPrueba.Tareas.Select(t => t.Id).ToList();
         Assert.True(ids.IndexOf("cobrar") < ids.IndexOf("tarjeta-transferencia"));
         Assert.True(ids.IndexOf("cliente-venta") < ids.IndexOf("credito-fiar"));
-        // Luego cambiar de usuario y el corte (entrega 6), antes de las ventanas de antes: lo nuevo se prueba primero, y lo
-        // de antes se hace con otro turno del cajero, abierto después del corte del día.
+        // Luego cambiar de usuario y el corte (entrega 6), antes de las páginas: lo de la venta se prueba primero, y las páginas
+        // se hacen con otro turno del cajero, abierto después del corte del día. La primera de ellas, ir y volver de la venta.
         Assert.True(ids.IndexOf("credito-sin-conexion") < ids.IndexOf("otro-turno"));
         Assert.True(ids.IndexOf("otro-turno") < ids.IndexOf("entrar-sin-conexion"));
         Assert.True(ids.IndexOf("entrar-sin-conexion") < ids.IndexOf("corte"));
         Assert.True(ids.IndexOf("corte") < ids.IndexOf("corte-del-dia"));
-        Assert.True(ids.IndexOf("corte-del-dia") < primeraDeAntes);
+        Assert.True(ids.IndexOf("corte-del-dia") < primeraDePaginas);
+        Assert.Equal("paginas", ids[primeraDePaginas]);
         Assert.True(ids.IndexOf("corte") < ids.IndexOf("credito-cuenta"));
+    }
+
+    /// <summary>
+    /// Productos, Inventario y Clientes ya son páginas (entrega 8): ya no queda nada que abra sus ventanas de antes, ni el
+    /// tema que las marcaba, ni la fila de pestañas de F4.
+    /// </summary>
+    [Theory]
+    [InlineData("Ventana de antes")]
+    [InlineData("ventanas de antes")]
+    [InlineData("F4 →")]
+    [InlineData("Ajustes y mermas")]
+    [InlineData("En la pestaña «Por revisar»")]
+    public void Las_paginas_de_atras_ya_no_se_describen_como_ventanas(string deAntes) =>
+        Assert.DoesNotContain(GuiaPrueba.Tareas, t => t.Hacer.Contains(deAntes) || t.Esperado.Contains(deAntes) || t.Tema.Contains(deAntes));
+
+    [Fact]
+    public void Las_paginas_se_prueban_como_las_dejo_la_entrega_8()
+    {
+        var tarea = (string id) => GuiaPrueba.Tareas.Single(t => t.Id == id);
+
+        Assert.Contains("F1", tarea("paginas").Hacer);
+        Assert.Contains("como estaba", tarea("paginas").Esperado);
+        Assert.Contains("ya no abre vacío", tarea("productos").Esperado);
+        Assert.Contains("tú: hasta $200.00", tarea("recibir").Esperado);
+        Assert.Contains("← Inventario", tarea("recibir").Esperado);
+        Assert.Contains("«Etiqueta»", tarea("etiquetas").Hacer);
+        Assert.Contains("puedes cambiarlo", tarea("credito-cuenta").Esperado);
     }
 
     [Theory]
@@ -149,6 +179,7 @@ public class GuiaPruebaTests
         Assert.Contains($"- Guía: versión {GuiaPrueba.Version}{Environment.NewLine}", actual);
         Assert.Contains($"- Guía: versión 1 (la de esta caja es la {GuiaPrueba.Version})", deOtra);
         Assert.Contains("## El corte", actual);
-        Assert.Contains($"## {GuiaPrueba.VentanaDeAntes} · Clientes", actual);
+        Assert.Contains("## Clientes", actual);
+        Assert.Contains("## Productos (F3)", actual);
     }
 }

@@ -1,176 +1,762 @@
-@* F3 Productos: buscar en el catálogo (también lo inactivo y lo que un cajero dio de alta y falta completar) y abrir la
-   ficha para editarla, o dar de alta uno nuevo. *@
+@* Productos (F3), una página con lista y detalle (entrega 8, htmlProductos del prototipo). Antes era una ventana encima de
+   la venta que abría vacía hasta buscar; ahora abre llena: lo más vendido primero, como la búsqueda de la venta. A la
+   izquierda, la búsqueda, los filtros y la lista; a la derecha, el producto elegido con sus datos, sus últimos movimientos
+   del kardex, «Etiqueta» (a las etiquetas por imprimir) y «Editar». La ficha de siempre (variantes, presentaciones,
+   códigos, precios, kardex y depurar) se abre ahí mismo, con su «Guardar»; Esc la cierra. También «Nuevo producto», el
+   mayoreo por revisar y las decisiones de la depuración, en el mismo lado. *@
+@implements IPagina
+@implements IDisposable
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
-@if (_opciones is null)
-{
-    <p>@(_error ?? "Cargando…")</p>
-}
-else if (_abierto is { } abierto)
-{
-    <FichaProducto Caja="Caja" Sesion="Sesion" Opciones="_opciones" ProductoId="abierto.Id" AlVolver="VolverAsync" />
-}
-else
-{
-    <div class="filtros-catalogo">
-        <input id="buscar-catalogo" placeholder="Nombre, marca o código" @bind="_texto" @bind:event="oninput" @onkeydown="AlTeclear" autocomplete="off" />
-        <select @bind="_departamento" @bind:after="BuscarAsync">
-            <option value="">Todos los departamentos</option>
-            @foreach (var d in _opciones.Departamentos)
+<div class="vn-modulo-pag">
+    <section class="vn-col-lista">
+        <div class="vn-busca">
+            <input id="busca-prod" data-busca placeholder="Nombre, marca o código" autocomplete="off" spellcheck="false" aria-label="Buscar un producto"
+                   value="@Estado.Texto" @oninput="EscribiendoAsync" @onkeydown="AlTeclearAsync" />
+            <div class="vn-filtros" role="group" aria-label="Filtros">
+                <button class="vn-filtro @(Estado.Filtro == FiltroProductos.Todos ? "on" : "")" @onclick="() => FiltrarAsync(FiltroProductos.Todos)">Todos</button>
+                <button class="vn-filtro @(Estado.Filtro == FiltroProductos.PorCompletar ? "on" : "")" title="Lo que un cajero dio de alta desde la caja"
+                        @onclick="() => FiltrarAsync(FiltroProductos.PorCompletar)">Por completar @(_lista?.PorCompletar)</button>
+                <button class="vn-filtro @(Estado.Filtro == FiltroProductos.PocaExistencia ? "on" : "")"
+                        title="@($"{PocaExistencia.Hasta} o menos en el sistema, como avisa la venta: el catálogo no tiene un mínimo por producto")"
+                        @onclick="() => FiltrarAsync(FiltroProductos.PocaExistencia)">Poca existencia</button>
+                @if (Acceso.Puede(AccionControlada.VerUtilidad))
+                {
+                    <button class="vn-filtro @(Estado.Filtro == FiltroProductos.MargenBajo ? "on" : "")" title="Deja menos que el margen mínimo de Configuración › Inventario"
+                            @onclick="() => FiltrarAsync(FiltroProductos.MargenBajo)">Margen bajo</button>
+                }
+            </div>
+            <div class="vn-busca-mas">
+                <select aria-label="Departamento" value="@(Estado.Departamento?.ToString() ?? "")" @onchange="DepartamentoAsync">
+                    <option value="">Todos los departamentos</option>
+                    @foreach (var d in _opciones?.Departamentos ?? [])
+                    {
+                        <option value="@d.Id">@d.Nombre</option>
+                    }
+                </select>
+                <label><input type="checkbox" checked="@Estado.Inactivos" @onchange="InactivosAsync" /> Con inactivos</label>
+            </div>
+        </div>
+        <div class="vn-items" data-lista>
+            @if (_lista is null)
             {
-                <option value="@d.Id">@d.Nombre</option>
+                <p class="vn-lista-nota">@(_errorLista ?? "Cargando…")</p>
             }
-        </select>
-        <label class="en-linea opcion"><input type="checkbox" @bind="_porCompletar" @bind:after="BuscarAsync" /> Por completar</label>
-        <label class="en-linea opcion"><input type="checkbox" @bind="_inactivos" @bind:after="BuscarAsync" /> Con inactivos</label>
-        <button class="boton" @onclick="BuscarAsync">Buscar</button>
-        <button class="boton" @onclick="DecisionesAsync">Decisiones de depuración</button>
-        @* Con «Productos, precios y etiquetas» (con los usuarios de antes, el encargado y el dueño). *@
-        @if (Sesion.Puede(AccionControlada.EditarCatalogo))
-        {
-            <button class="boton" @onclick="MayoreoPorRevisar">Mayoreo por revisar</button>
-            <button class="boton principal" @onclick="() => _abierto = new Abierto(null)">Nuevo producto</button>
-        }
-    </div>
-    @if (_error is not null)
-    {
-        <p class="error">@_error</p>
-    }
-    @if (_mayoreo)
-    {
-        <RevisarMayoreo Caja="Caja" Sesion="Sesion" Captura="_capturaMayoreo" AlAbrir="id => _abierto = new Abierto(id)" />
-    }
-    else if (_decisiones is { } decisiones)
-    {
-        <p class="nota">Lo que se decidió al depurar. Lo que vino de eleventa se repite en la importación final con <code>aplicar-depuracion</code>.</p>
-        <div class="resultados">
-            <table>
-                <thead><tr><th>Fecha</th><th>Decisión</th><th>De eleventa</th></tr></thead>
-                @foreach (var d in decisiones)
+            else if (_lista.Productos.Count == 0)
+            {
+                <p class="vn-lista-nota">@SinResultados</p>
+            }
+            else
+            {
+                @for (var i = 0; i < _lista.Productos.Count; i++)
                 {
-                    <tr><td>@d.FechaLocal.ToString("dd/MM/yyyy HH:mm")</td><td>@d.Descripcion</td><td>@(d.DeEleventa ? "Sí" : "No (se repite a mano)")</td></tr>
+                    var p = _lista.Productos[i];
+                    <button id="prod-@i" class="vn-item @(p.ProductoId == Estado.Elegido ? "on" : "") @(p.Activo ? "" : "apagado")" @onclick="AlTocar(p.ProductoId)">
+                        <div>
+                            <strong>@p.Nombre</strong>
+                            <small>
+                                @if (p.Codigo is { } codigo)
+                                {
+                                    <code>@codigo</code>
+                                    <span> · </span>
+                                }
+                                @p.Departamento@(p.Variantes > 1 ? $" · {p.Variantes} variantes" : "")
+                                @if (p.PorCompletar)
+                                {
+                                    <span class="vn-etiq ambar">por completar</span>
+                                }
+                                @if (!p.Activo)
+                                {
+                                    <span class="vn-etiq gris">inactivo</span>
+                                }
+                                @if (Estado.Filtro == FiltroProductos.PocaExistencia && p.Existencia is { } quedan)
+                                {
+                                    <span class="vn-etiq @(quedan <= 0 ? "rojo" : "ambar")">@(quedan <= 0 ? "Sin existencia" : $"Quedan {Formato.Numero(quedan)}")</span>
+                                }
+                                @if (Estado.Filtro == FiltroProductos.MargenBajo && p.MargenCentesimas is { } margen)
+                                {
+                                    <span class="vn-etiq rojo">margen @Margen.Texto(margen)</span>
+                                }
+                            </small>
+                        </div>
+                        <span class="num">@(p.PrecioCentavos is { } precio ? Formato.Dinero(precio) : "—")</span>
+                    </button>
                 }
-            </table>
+            }
         </div>
-        @if (decisiones.Count == 0)
-        {
-            <p class="vacia">Todavía no hay decisiones.</p>
-        }
-    }
-    else if (_productos is { Count: 0 })
-    {
-        <p class="vacia">No hay productos con esa búsqueda.</p>
-    }
-    else if (_productos is not null)
-    {
-        <div class="resultados catalogo">
-            <table>
-                <thead><tr><th>Código</th><th>Producto</th><th>Departamento</th><th class="num">Precio</th><th class="num">Existencia</th></tr></thead>
-                @foreach (var p in _productos)
+        <div class="vn-lista-pie">
+            @if (_lista is { } lista)
+            {
+                <p>
+                    @OrdenTexto(lista)
+                    @if (lista.Total > lista.Productos.Count)
+                    {
+                        <button class="vn-enlace" @onclick="VerMasAsync">Ver @Math.Min(Pagina, lista.Total - lista.Productos.Count) más</button>
+                    }
+                </p>
+            }
+            <div class="vn-botonera">
+                @if (Acceso.Puede(AccionControlada.EditarCatalogo))
                 {
-                    var producto = p;
-                    <tr class="@(p.Activo ? "" : "inactivo")" @onclick="() => _abierto = new Abierto(producto.ProductoId)">
-                        <td>@p.Codigo</td>
-                        <td>
-                            @if (p.PorCompletar)
-                            {
-                                <span class="etiqueta">Por completar</span>
-                            }
-                            @p.Nombre@(p.Marca is { } m ? $" · {m}" : "")@(p.Variantes > 1 ? $" ({p.Variantes} variantes)" : "")
-                        </td>
-                        <td>@p.Departamento</td>
-                        <td class="num">@(p.PrecioCentavos is { } precio ? Formato.Dinero(precio) : "—")</td>
-                        <td class="num">@(p.Existencia is { } e ? Formato.Numero(e) : "—")</td>
-                    </tr>
+                    <button class="vn-boton chico" @onclick="Nuevo"><Ico Nombre="mas" />Nuevo producto</button>
+                    <button class="vn-boton chico @(_vista == Vista.Mayoreo ? "on" : "")" @onclick="() => Ver(Vista.Mayoreo)">Mayoreo por revisar</button>
                 }
-            </table>
+                <button class="vn-boton chico @(_vista == Vista.Decisiones ? "on" : "")" @onclick="DecisionesAsync">Decisiones de depuración</button>
+            </div>
         </div>
-        <p class="nota">Se muestran hasta 100; escribe más para afinar la búsqueda.</p>
-    }
-}
+    </section>
+
+    <section class="vn-col-detalle">
+        @switch (_vista)
+        {
+            case Vista.Ficha when _opciones is not null:
+                <div class="vn-det-cab">
+                    <div>
+                        <h2>@TituloDeLaFicha</h2>
+                        <p>@(Acceso.Puede(AccionControlada.EditarCatalogo) ? "Guarda los cambios con «Guardar»; Esc regresa sin guardar." : "Esc regresa al producto.")</p>
+                    </div>
+                </div>
+                <div class="vn-adentro">
+                    <FichaProducto @key="@((object?)_fichaDe ?? "nuevo")" Caja="Caja" Sesion="Sesion" Opciones="_opciones" ProductoId="_fichaDe"
+                                   TextoVolver="@(_fichaDe is null && _nuevoGuardado is null ? "Cancelar" : "Volver al producto")" AlVolver="VolverDeLaFichaAsync" AlGuardar="Guardado" />
+                </div>
+                break;
+            case Vista.Mayoreo:
+                <div class="vn-det-cab"><div><h2>Mayoreo por revisar</h2><p>El mayoreo de eleventa del que no se supo el paquete. Esc regresa al producto.</p></div></div>
+                <div class="vn-adentro">
+                    <RevisarMayoreo Caja="Caja" Sesion="Sesion" Captura="_capturaMayoreo" AlAbrir="AbrirFicha" />
+                </div>
+                break;
+            case Vista.Decisiones:
+                <div class="vn-det-cab"><div><h2>Decisiones de depuración</h2><p>Lo que se decidió al depurar el catálogo. Esc regresa al producto.</p></div></div>
+                <div class="vn-adentro">
+                    @if (_decisiones is null)
+                    {
+                        <p class="nota">@(_errorDetalle ?? "Cargando…")</p>
+                    }
+                    else if (_decisiones.Count == 0)
+                    {
+                        <p class="vacia">Todavía no hay decisiones.</p>
+                    }
+                    else
+                    {
+                        <p class="nota">Lo que vino de eleventa se repite en la importación final con <code>aplicar-depuracion</code>.</p>
+                        <div class="resultados">
+                            <table>
+                                <thead><tr><th>Fecha</th><th>Decisión</th><th>De eleventa</th></tr></thead>
+                                @foreach (var d in _decisiones)
+                                {
+                                    <tr><td>@d.FechaLocal.ToString("dd/MM/yyyy HH:mm")</td><td>@d.Descripcion</td><td>@(d.DeEleventa ? "Sí" : "No (se repite a mano)")</td></tr>
+                                }
+                            </table>
+                        </div>
+                    }
+                </div>
+                break;
+            default:
+                @Detalle
+                break;
+        }
+    </section>
+</div>
 
 @code {
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
-    private sealed record Abierto(Guid? Id);
+    /// <summary>Lo que puede quien entró (con los de la venta, o los de la sesión).</summary>
+    [Parameter, EditorRequired] public PermisosDePagina Acceso { get; set; } = null!;
+
+    /// <summary>La búsqueda, el filtro y el elegido: siguen ahí al ir a la venta y volver.</summary>
+    [Parameter, EditorRequired] public ProductosVistos Estado { get; set; } = null!;
+
+    /// <summary>Las etiquetas por imprimir, las de Inventario › Etiquetas.</summary>
+    [Parameter, EditorRequired] public EtiquetasPorImprimir Etiquetas { get; set; } = null!;
+
+    /// <summary>«Ir a Etiquetas»: a Inventario › Etiquetas, para imprimirlas.</summary>
+    [Parameter] public EventCallback AlIrAEtiquetas { get; set; }
+
+    private enum Vista { Detalle, Ficha, Mayoreo, Decisiones }
+
+    /// <summary>Cuántos trae la lista de una vez; «Ver … más» trae otros tantos.</summary>
+    public const int Pagina = 50;
+
+    /// <summary>Lo que se espera al dejar de escribir antes de buscar (el lector no espera: su Enter busca ya).</summary>
+    private static readonly TimeSpan PausaAlEscribir = TimeSpan.FromMilliseconds(250);
+
+    private Vista _vista;
+
+    /// <summary>A dónde regresa la ficha: al producto, o al mayoreo por revisar si se abrió desde ahí.</summary>
+    private Vista _antesDeLaFicha;
 
     private OpcionesCatalogoDto? _opciones;
-    private List<ProductoCatalogoDto>? _productos;
+    private MargenesDto? _margenes;
+    private ListaProductosDto? _lista;
+    private string? _errorLista;
+    private int _maximo = Pagina;
+
+    /// <summary>Se movió con ↑ ↓ en la búsqueda: Enter abre la ficha del elegido en lugar de volver a buscar.</summary>
+    private bool _navegado;
+
+    private int _secuenciaLista;
+    private int _secuenciaDetalle;
+    private CancellationTokenSource? _escribiendo;
+
+    // El producto elegido: su ficha (variantes, precios, existencia y, para quien los ve, costos) y la variante que se mira.
+    private FichaProductoDto? _ficha;
+    private VarianteFichaDto? _variante;
+    private List<MovimientoProductoDto>? _movimientos;
+    private string? _errorDetalle;
+    private string? _aviso;
+
+    /// <summary>El producto de la ficha abierta; vacío: uno nuevo.</summary>
+    private Guid? _fichaDe;
+
+    /// <summary>El producto nuevo que se guardó en la ficha: al volver, queda elegido.</summary>
+    private Guid? _nuevoGuardado;
+
+    /// <summary>«Editar «Cuaderno…»» si es el elegido; desde el mayoreo por revisar puede ser otro.</summary>
+    private string TituloDeLaFicha =>
+        _fichaDe is null ? "Nuevo producto"
+        : _ficha is { } ficha && ficha.Id == _fichaDe ? Acceso.Puede(AccionControlada.EditarCatalogo) ? $"Editar «{ficha.Nombre}»" : ficha.Nombre
+        : Acceso.Puede(AccionControlada.EditarCatalogo) ? "Editar el producto" : "El producto";
+
     private List<DecisionDepuracionDto>? _decisiones;
-    private Abierto? _abierto;
-    private string _texto = "";
-    private string _departamento = "";
-    private bool _porCompletar;
-    private bool _inactivos;
-    private string? _error;
+    private readonly RevisarMayoreo.Capturado _capturaMayoreo = new();
 
     protected override async Task OnInitializedAsync()
     {
+        if (Estado.Filtro == FiltroProductos.MargenBajo && !Acceso.Puede(AccionControlada.VerUtilidad))
+            Estado.Filtro = FiltroProductos.Todos;
         try
         {
             _opciones = await Cliente.OpcionesCatalogoAsync();
         }
         catch (ErrorCaja ex)
         {
-            _error = ex.Message;
+            _errorLista = ex.Message;
         }
+        if (Acceso.Puede(AccionControlada.VerUtilidad))
+        {
+            try
+            {
+                _margenes = await Cliente.MargenesAsync(Caja.SucursalId);
+            }
+            catch (ErrorCaja)
+            {
+                // Sin el mínimo, el margen se ve igual; solo no dice si está debajo.
+            }
+        }
+        await CargarListaAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
         if (primera)
-            await Js.EnfocarAsync("#buscar-catalogo");
+            await EnfocarAsync();
     }
 
-    private async Task AlTeclear(KeyboardEventArgs e)
+    public async Task EnfocarAsync() => await Js.EnfocarAsync("#busca-prod");
+
+    public async Task<bool> CerrarAsync()
     {
-        if (e.Key == "Enter")
-            await BuscarAsync();
+        switch (_vista)
+        {
+            case Vista.Ficha:
+                await VolverDeLaFichaAsync();
+                return true;
+            case Vista.Mayoreo or Vista.Decisiones:
+                _vista = Vista.Detalle;
+                StateHasChanged();
+                return true;
+            default:
+                return false;
+        }
     }
 
-    /// <summary>El mayoreo de eleventa que la importación no pudo pasar a escala (fase 3).</summary>
-    private bool _mayoreo;
+    // ── La lista ────────────────────────────────────────────────────────────
 
-    /// <summary>Lo escrito en la revisión del mayoreo: sigue ahí al volver de la ficha de un producto.</summary>
-    private readonly RevisarMayoreo.Capturado _capturaMayoreo = new();
+    private async Task CargarListaAsync()
+    {
+        var secuencia = ++_secuenciaLista;
+        try
+        {
+            var lista = await Cliente.ListaProductosAsync(Caja.SucursalId, Sesion.UsuarioId, Estado.Texto, Estado.Filtro, Estado.Departamento,
+                Estado.Inactivos, _maximo);
+            if (secuencia != _secuenciaLista)
+                return;
+            (_lista, _errorLista, _navegado) = (lista, null, false);
+        }
+        catch (ErrorCaja ex)
+        {
+            if (secuencia == _secuenciaLista)
+                _errorLista = ex.Message;
+            return;
+        }
+        // Como en el prototipo: el elegido si sigue en la lista; si no, el primero.
+        var elegido = _lista.Productos.FirstOrDefault(p => p.ProductoId == Estado.Elegido) ?? _lista.Productos.FirstOrDefault();
+        if (elegido is null)
+        {
+            (Estado.Elegido, _ficha, _variante, _movimientos) = (null, null, null, null);
+            return;
+        }
+        if (elegido.ProductoId != _ficha?.Id || _vista == Vista.Detalle)
+            await MostrarAsync(elegido.ProductoId);
+    }
 
-    private void MayoreoPorRevisar() => (_mayoreo, _decisiones, _error) = (true, null, null);
+    private async Task EscribiendoAsync(ChangeEventArgs e)
+    {
+        Estado.Texto = e.Value?.ToString() ?? "";
+        _navegado = false;
+        _escribiendo?.Cancel();
+        var espera = _escribiendo = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(PausaAlEscribir, espera.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+        _maximo = Pagina;
+        await CargarListaAsync();
+    }
+
+    /// <summary>
+    /// En la búsqueda: ↑ ↓ eligen de la lista (el detalle cambia con cada uno); Enter busca ya (lo que el lector escanea:
+    /// el código exacto sale primero y queda elegido), o abre la ficha del elegido si se llegó a él con ↑ ↓.
+    /// </summary>
+    private async Task AlTeclearAsync(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown" or "ArrowUp":
+                if (_lista is not { Productos.Count: > 0 } lista)
+                    return;
+                var actual = lista.Productos.ToList().FindIndex(p => p.ProductoId == Estado.Elegido);
+                var nuevo = Math.Clamp(actual + (e.Key == "ArrowDown" ? 1 : -1), 0, lista.Productos.Count - 1);
+                _navegado = true;
+                await Js.MostrarAsync($"#prod-{nuevo}");
+                if (nuevo != actual)
+                    await ElegirAsync(lista.Productos[nuevo]);
+                break;
+            case "Enter":
+                if (_navegado && _ficha?.Id is { } abierto)
+                {
+                    AbrirFicha(abierto);
+                    return;
+                }
+                _escribiendo?.Cancel();
+                _maximo = Pagina;
+                Estado.Elegido = null;
+                await CargarListaAsync();
+                // Lo escrito queda seleccionado: el siguiente escaneo lo reemplaza.
+                await Js.EnfocarAsync("#busca-prod");
+                break;
+        }
+    }
+
+    private async Task FiltrarAsync(FiltroProductos filtro)
+    {
+        (Estado.Filtro, _maximo) = (filtro, Pagina);
+        await CargarListaAsync();
+        await EnfocarAsync();
+    }
+
+    private async Task DepartamentoAsync(ChangeEventArgs e)
+    {
+        (Estado.Departamento, _maximo) = (Guid.TryParse(e.Value?.ToString(), out var d) ? d : null, Pagina);
+        await CargarListaAsync();
+    }
+
+    private async Task InactivosAsync(ChangeEventArgs e)
+    {
+        (Estado.Inactivos, _maximo) = (e.Value is true, Pagina);
+        await CargarListaAsync();
+    }
+
+    private async Task VerMasAsync()
+    {
+        _maximo += Pagina;
+        await CargarListaAsync();
+    }
+
+    private string SinResultados => Estado.Filtro switch
+    {
+        FiltroProductos.PorCompletar => "No hay nada por completar.",
+        FiltroProductos.PocaExistencia => $"Nada tiene {PocaExistencia.Hasta} o menos.",
+        FiltroProductos.MargenBajo => "Nada deja menos que el margen mínimo.",
+        _ when Estado.Texto.Trim().Length > 0 => $"Nada coincide con «{Estado.Texto.Trim()}».",
+        _ => "No hay productos.",
+    };
+
+    /// <summary>«Lo más vendido primero · 50 de 2,345», para que se sepa que hay más y en qué orden van.</summary>
+    private string OrdenTexto(ListaProductosDto lista)
+    {
+        var orden = Estado.Texto.Trim().Length > 0 ? "El código exacto y lo que empieza así primero; luego lo más vendido"
+            : lista.PorLoMasVendido ? "Lo más vendido en 90 días primero" : "Por nombre";
+        var cuantos = lista.Total > lista.Productos.Count
+            ? $"{Formato.Numero(lista.Productos.Count)} de {Formato.Numero(lista.Total)}"
+            : lista.Total == 1 ? "1 producto" : $"{Formato.Numero(lista.Total)} productos";
+        return $"{orden} · {cuantos}.";
+    }
+
+    // ── El detalle ──────────────────────────────────────────────────────────
+
+    private async Task ElegirAsync(ProductoEnListaDto producto) => await ElegirAsync(producto.ProductoId);
+
+    private async Task ElegirAsync(Guid productoId)
+    {
+        Estado.Elegido = productoId;
+        _vista = Vista.Detalle;
+        await MostrarAsync(productoId);
+    }
+
+    /// <summary>
+    /// El clic de cada renglón, uno por producto y el mismo en cada vuelta del dibujo: así no se crea un manejador nuevo por
+    /// renglón cada vez que la página se vuelve a pintar (docs/propuesta-interfaz.md, «Pintar menos en Blazor»).
+    /// </summary>
+    private Func<Task> AlTocar(Guid productoId) =>
+        _alTocar.TryGetValue(productoId, out var alTocar) ? alTocar : _alTocar[productoId] = () => ElegirAsync(productoId);
+
+    private readonly Dictionary<Guid, Func<Task>> _alTocar = [];
+
+    /// <summary>La ficha del producto (lo que se ve depende de los permisos: el costo solo para quien lo ve) y sus movimientos.</summary>
+    private async Task MostrarAsync(Guid productoId)
+    {
+        Estado.Elegido = productoId;
+        _aviso = null;
+        var secuencia = ++_secuenciaDetalle;
+        try
+        {
+            var ficha = await Cliente.FichaProductoAsync(productoId, Caja.SucursalId, Sesion.UsuarioId);
+            if (secuencia != _secuenciaDetalle)
+                return;
+            (_ficha, _errorDetalle) = (ficha, ficha is null ? "Ese producto ya no existe." : null);
+            _variante = ficha?.Variantes.OrderByDescending(v => v.Activa).FirstOrDefault();
+            _movimientos = null;
+            await MovimientosAsync(secuencia);
+        }
+        catch (ErrorCaja ex)
+        {
+            if (secuencia == _secuenciaDetalle)
+                (_ficha, _variante, _errorDetalle) = (null, null, ex.Message);
+        }
+    }
+
+    private async Task MovimientosAsync(int secuencia)
+    {
+        if (_ficha is not { Tipo: TipoProducto.Mercancia } || _variante?.Id is not { } varianteId)
+            return;
+        try
+        {
+            var movimientos = await Cliente.UltimosMovimientosAsync(varianteId, Caja.SucursalId);
+            if (secuencia == _secuenciaDetalle)
+                _movimientos = movimientos;
+        }
+        catch (ErrorCaja ex)
+        {
+            if (secuencia == _secuenciaDetalle)
+                _errorDetalle = ex.Message;
+        }
+    }
+
+    private async Task ElegirVarianteAsync(VarianteFichaDto variante)
+    {
+        (_variante, _movimientos, _aviso) = (variante, null, null);
+        await MovimientosAsync(_secuenciaDetalle);
+    }
+
+    private void AbrirFicha(Guid productoId)
+    {
+        if (_vista != Vista.Ficha)
+            _antesDeLaFicha = _vista == Vista.Mayoreo ? Vista.Mayoreo : Vista.Detalle;
+        (_fichaDe, _vista) = (productoId, Vista.Ficha);
+    }
+
+    private void Nuevo()
+    {
+        _antesDeLaFicha = Vista.Detalle;
+        (_fichaDe, _nuevoGuardado, _vista) = (null, null, Vista.Ficha);
+    }
+
+    private void Ver(Vista vista) => _vista = vista;
 
     private async Task DecisionesAsync()
     {
-        _error = null;
-        _mayoreo = false;
+        (_vista, _decisiones, _errorDetalle) = (Vista.Decisiones, null, null);
         try
         {
             _decisiones = await Cliente.DecisionesDepuracionAsync();
         }
         catch (ErrorCaja ex)
         {
-            _error = ex.Message;
+            _errorDetalle = ex.Message;
         }
     }
 
-    private async Task BuscarAsync()
+    /// <summary>
+    /// De la ficha se regresa a donde se estaba, con la lista y el producto al día (pudo cambiar el nombre o el precio). El
+    /// que se editó (o el nuevo que se guardó) queda en el detalle aunque no salga en la lista (la lista trae los primeros).
+    /// </summary>
+    private async Task VolverDeLaFichaAsync()
     {
-        _error = null;
-        try
-        {
-            (_decisiones, _mayoreo) = (null, false);
-            _productos = await Cliente.CatalogoAsync(Caja.SucursalId, _texto, Guid.TryParse(_departamento, out var d) ? d : null, _porCompletar, _inactivos);
-        }
-        catch (ErrorCaja ex)
-        {
-            _error = ex.Message;
-        }
+        _vista = _antesDeLaFicha;
+        var editado = _vista == Vista.Detalle ? _fichaDe ?? _nuevoGuardado : null;
+        if (editado is { } id)
+            Estado.Elegido = id;
+        await CargarListaAsync();
+        if (editado is { } elegido && _ficha?.Id != elegido)
+            await MostrarAsync(elegido);
+        await EnfocarAsync();
     }
 
-    private async Task VolverAsync()
+    /// <summary>
+    /// Se guardó en la ficha: un producto nuevo ya tiene su Id, y al volver queda elegido. La ficha se queda como está (con su
+    /// «Guardado»), sin volver a abrirse.
+    /// </summary>
+    private void Guardado(FichaProductoDto guardado)
     {
-        _abierto = null;
-        // De la ficha abierta desde la revisión del mayoreo se vuelve a la revisión.
-        if (!_mayoreo && _productos is not null)
-            await BuscarAsync();
+        if (_fichaDe is null && guardado.Id is { } id)
+            _nuevoGuardado = id;
     }
+
+    private void AgregarEtiqueta()
+    {
+        if (_ficha is not { } ficha || _variante?.Id is not { } varianteId)
+            return;
+        Etiquetas.Agregar(varianteId, NombreDe(ficha, _variante), CodigoDe(_variante), 1);
+        _aviso = $"«{NombreDe(ficha, _variante)}» va en las etiquetas por imprimir ({Etiquetas.Total}).";
+    }
+
+    private static string NombreDe(FichaProductoDto ficha, VarianteFichaDto variante) =>
+        variante.Descripcion.Trim().Length > 0 ? $"{ficha.Nombre} {variante.Descripcion}" : ficha.Nombre;
+
+    private static string? CodigoDe(VarianteFichaDto variante) =>
+        variante.Presentaciones.Where(p => p.EsBase).SelectMany(p => p.Codigos).Select(c => c.Codigo).FirstOrDefault()
+        ?? variante.Presentaciones.SelectMany(p => p.Codigos).Select(c => c.Codigo).FirstOrDefault();
+
+    private RenderFragment Detalle => __builder =>
+    {
+        if (_ficha is not { } ficha || _variante is not { } variante)
+        {
+            <p class="nota">@(_errorDetalle ?? (_lista is { Productos.Count: 0 } ? "Nada coincide con la búsqueda." : "Cargando…"))</p>
+            return;
+        }
+        var servicio = ficha.Tipo != TipoProducto.Mercancia;
+        var departamento = _opciones?.Departamentos.FirstOrDefault(d => d.Id == ficha.DepartamentoId)?.Nombre;
+        var codigo = CodigoDe(variante);
+        var menudeo = variante.Precios.Where(p => p.Presentacion is null).MinBy(p => p.CantidadMinimaMilesimas);
+        <div class="vn-det-cab">
+            <div>
+                <h2>@ficha.Nombre</h2>
+                <p>
+                    @if (ficha.Variantes.Count == 1 && variante.Descripcion.Trim().Length > 0)
+                    {
+                        @($"{variante.Descripcion} · ")
+                    }
+                    @(ficha.Marca ?? "Sin marca") · @(departamento ?? "Sin departamento")
+                    @if (codigo is not null)
+                    {
+                        <span> · </span><code>@codigo</code>
+                    }
+                    @if (ficha.PorCompletar)
+                    {
+                        <span class="vn-etiq ambar">por completar</span>
+                    }
+                    @if (!ficha.Activo || !variante.Activa)
+                    {
+                        <span class="vn-etiq gris">inactivo</span>
+                    }
+                </p>
+            </div>
+            @if (!servicio && Acceso.Ve(AccionControlada.EditarCatalogo))
+            {
+                <button class="vn-boton" title="La agrega a las etiquetas por imprimir (Inventario › Etiquetas)" @onclick="AgregarEtiqueta">
+                    <Ico Nombre="etiqueta" />Etiqueta
+                </button>
+            }
+            <button class="vn-boton primario" @onclick="() => AbrirFicha(ficha.Id!.Value)">
+                @(Acceso.Puede(AccionControlada.EditarCatalogo) ? "Editar" : "Ver la ficha")
+            </button>
+        </div>
+        if (_aviso is { } aviso)
+        {
+            <div class="vn-alerta info">
+                <Ico Nombre="etiqueta" />
+                <div>
+                    <span>@aviso</span>
+                    <span><button class="vn-boton chico" @onclick="AlIrAEtiquetas">Ir a Etiquetas</button></span>
+                </div>
+            </div>
+        }
+        if (ficha.PorCompletar)
+        {
+            <div class="vn-alerta"><Ico Nombre="info" /><div><span>Lo dio de alta un cajero desde la caja: complétalo (departamento, marca, presentaciones) con «Editar».</span></div></div>
+        }
+        if (ficha.Variantes.Count > 1)
+        {
+            <div class="vn-filtros" role="group" aria-label="Variantes">
+                <span class="vn-tit">Variante</span>
+                @foreach (var v in ficha.Variantes)
+                {
+                    var esta = v;
+                    <button class="vn-filtro @(v.Id == variante.Id ? "on" : "") @(v.Activa ? "" : "apagado")" @onclick="() => ElegirVarianteAsync(esta)">
+                        @(v.Descripcion.Trim().Length > 0 ? v.Descripcion : "Sin nombre")
+                    </button>
+                }
+            </div>
+        }
+        <div class="vn-rejilla">
+            <div class="vn-dato">
+                <span>Precio al público</span>
+                <strong>@(menudeo is null ? "—" : Formato.Dinero(menudeo.PrecioCentavos))</strong>
+                <small>@MayoreoTexto(variante)</small>
+            </div>
+            <div class="vn-dato">
+                <span>Existencia</span>
+                <strong>@(servicio ? "—" : $"{Formato.Numero(variante.Existencia ?? 0)}{Unidad(variante.Unidad)}")</strong>
+                <small>@(servicio ? "servicio" : "según el kardex")</small>
+            </div>
+            @if (Acceso.Puede(AccionControlada.CostearCompra) || Acceso.Puede(AccionControlada.VerUtilidad))
+            {
+                <div class="vn-dato">
+                    <span>Costo promedio</span>
+                    <strong>@(variante.CostoPromedioCentavos is { } costo ? Formato.Dinero((long)Math.Round(costo)) : "—")</strong>
+                    <small>@(variante.CostoPromedioCentavos is not null ? "de las compras" : servicio ? "servicio" : "sin existencia, no hay promedio")</small>
+                </div>
+            }
+            @if (Acceso.Puede(AccionControlada.VerUtilidad))
+            {
+                var minimo = MinimoDe(ficha.DepartamentoId);
+                <div class="vn-dato restringido">
+                    <span>Margen</span>
+                    @if (menudeo is { PrecioCentavos: > 0 } precio && variante.CostoPromedioCentavos is { } costoMargen)
+                    {
+                        var margen = Margen.Calcular(precio.PrecioCentavos, costoMargen);
+                        <strong class="@(margen < minimo ? "bajo" : "")">@Margen.Texto(margen)</strong>
+                        <small>@MargenTexto(precio.PrecioCentavos, costoMargen, margen, minimo, variante.Unidad)</small>
+                    }
+                    else
+                    {
+                        <strong>—</strong>
+                        <small>sin costo todavía</small>
+                    }
+                </div>
+            }
+        </div>
+        if (servicio)
+        {
+            <p class="nota">Es un servicio: no lleva inventario ni movimientos.</p>
+        }
+        else
+        {
+            <h3 class="vn-sub-titulo">Últimos movimientos</h3>
+            if (_movimientos is null)
+            {
+                <p class="nota">@(_errorDetalle ?? "Cargando…")</p>
+            }
+            else if (_movimientos.Count == 0)
+            {
+                <p class="nota">Todavía no tiene movimientos en esta sucursal.</p>
+            }
+            else
+            {
+                <table class="vn-tabla">
+                    <thead><tr><th>Movimiento</th><th>Cuándo</th><th class="num">Cantidad</th><th class="num">Quedó</th></tr></thead>
+                    <tbody>
+                        @foreach (var m in _movimientos)
+                        {
+                            <tr>
+                                <td>@Movimiento(m)@(m.Motivo is { Length: > 0 } motivo ? $" · {motivo}" : "")</td>
+                                <td>@Cuando(m.FechaLocal)</td>
+                                <td class="num">@(m.Cantidad > 0 ? "+" : "−")@Formato.Numero(Math.Abs(m.Cantidad))</td>
+                                <td class="num">@Formato.Numero(m.Existencia)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <p class="nota">Los últimos @_movimientos.Count, del más reciente al más viejo. El kardex completo está en la ficha («Ver kardex»).</p>
+            }
+        }
+        if (!Acceso.Puede(AccionControlada.VerUtilidad))
+        {
+            <p class="nota">El margen y la utilidad los ve quien tiene el permiso «Ver costos, utilidad y margen».</p>
+        }
+    };
+
+    /// <summary>El margen mínimo del departamento, o el general (Configuración › Inventario); vacío si no se pudo leer.</summary>
+    private int? MinimoDe(Guid departamentoId) =>
+        _margenes is { } m ? m.Departamentos.FirstOrDefault(d => d.DepartamentoId == departamentoId)?.MargenMinimoCentesimas ?? m.MargenMinimoCentesimas : null;
+
+    /// <summary>«utilidad $3.20 por pieza · mínimo 30 %», o «… · debajo del mínimo 30 %».</summary>
+    private static string MargenTexto(long precio, decimal costo, int margen, int? minimo, UnidadBase unidad) =>
+        $"utilidad {Formato.Dinero(precio - (long)Math.Round(costo))} por {UnidadNombre(unidad)}"
+        + (minimo is { } min ? $" · {(margen < min ? "debajo del mínimo" : "mínimo")} {Margen.Texto(min)}" : "");
+
+    /// <summary>«desde 12: $5.50», con las presentaciones con precio propio («Caja 12: $50.00»); o «sin mayoreo».</summary>
+    private static string MayoreoTexto(VarianteFichaDto variante)
+    {
+        var partes = variante.Precios.Where(p => p.Presentacion is null && p.CantidadMinimaMilesimas > Cantidad.Escala)
+            .OrderBy(p => p.CantidadMinimaMilesimas)
+            .Select(p => $"desde {Formato.Numero(p.CantidadMinimaMilesimas / (decimal)Cantidad.Escala)}: {Formato.Dinero(p.PrecioCentavos)}")
+            .Concat(variante.Precios.Where(p => p.Presentacion is not null).Select(p =>
+                $"{p.Presentacion}{(p.CantidadMinimaMilesimas > Cantidad.Escala ? $" desde {Formato.Numero(p.CantidadMinimaMilesimas / (decimal)Cantidad.Escala)}" : "")}: {Formato.Dinero(p.PrecioCentavos)}"))
+            .ToList();
+        return partes.Count == 0 ? "sin mayoreo" : string.Join(" · ", partes);
+    }
+
+    private static string Unidad(UnidadBase unidad) => unidad switch
+    {
+        UnidadBase.Metro => " m",
+        UnidadBase.Kilogramo => " kg",
+        UnidadBase.Litro => " l",
+        _ => "",
+    };
+
+    private static string UnidadNombre(UnidadBase unidad) => unidad switch
+    {
+        UnidadBase.Metro => "metro",
+        UnidadBase.Kilogramo => "kilo",
+        UnidadBase.Litro => "litro",
+        _ => "pieza",
+    };
+
+    /// <summary>«Venta A-000123», «Compra C-000041 · Proveedor», «Conteo del día»…</summary>
+    private static string Movimiento(MovimientoProductoDto m)
+    {
+        var tipo = m.Tipo switch
+        {
+            TipoMovimiento.InventarioInicial => "Inventario inicial",
+            TipoMovimiento.Venta => "Venta",
+            TipoMovimiento.Devolucion => "Devolución",
+            TipoMovimiento.Compra => "Compra",
+            TipoMovimiento.Ajuste => "Ajuste",
+            TipoMovimiento.Merma => "Merma",
+            TipoMovimiento.TraspasoSalida => "Traspaso (salida)",
+            TipoMovimiento.TraspasoEntrada => "Traspaso (entrada)",
+            TipoMovimiento.ConsumoServicio => "Consumo de un servicio",
+            TipoMovimiento.AperturaPaquete => "Abrir un paquete",
+            _ => "Conteo",
+        };
+        return m.Documento is { Length: > 0 } documento ? $"{tipo} {documento}" : tipo;
+    }
+
+    /// <summary>«hoy 12:44», «ayer 18:02», «martes 10:15» en la semana; si no, la fecha.</summary>
+    private static string Cuando(DateTime fecha)
+    {
+        var hoy = HoraMexico.ALocal(DateTime.UtcNow).Date;
+        var dias = (hoy - fecha.Date).Days;
+        var hora = fecha.ToString("HH:mm", CultureInfo.InvariantCulture);
+        return dias switch
+        {
+            0 => $"hoy {hora}",
+            1 => $"ayer {hora}",
+            > 1 and < 7 => $"{fecha.ToString("dddd", Formato.Mexico)} {hora}",
+            _ => fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
+        };
+    }
+
+    public void Dispose() => _escribiendo?.Cancel();
 }

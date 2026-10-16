@@ -59,7 +59,11 @@ public sealed class AlgoFalloTests : IDisposable
         // La de ahora se cayó, o Blazor la dio por perdida tras un error: ya no contesta nada.
         pagina.Contesta = laDeAhoraContesta;
         await recarga.SoltarAsync(TimeSpan.FromMilliseconds(200));
-        Assert.False(recarga.HayPantalla);
+        // Con la máquina cargada (el CI), quitar la pantalla puede tardar más que la espera de la ventana: se espera a que
+        // termine, con su límite, en lugar de suponer que ya pasó.
+        await Esperar(() => !recarga.HayPantalla);
+        if (laDeAhoraContesta)
+            await Esperar(() => teclas.Quitadas == 1);
         pagina.Abrir();
         await Esperar(() => teclas.Registradas == 2);
         Assert.True(recarga.HayPantalla);

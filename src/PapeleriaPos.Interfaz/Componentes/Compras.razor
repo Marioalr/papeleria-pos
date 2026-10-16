@@ -22,7 +22,7 @@ else if (_nueva)
     </div>
     @if (_proveedores.Count == 0)
     {
-        <p class="nota">No hay proveedores: dalos de alta en la pestaña Proveedores.</p>
+        <p class="nota">No hay proveedores: dalos de alta en Inventario › Proveedores.</p>
     }
     <p class="nota">Cuenta lo que llegó sin ver la nota. La nota la captura después el encargado y el sistema compara las dos cosas.</p>
     @if (_error is not null)
@@ -89,6 +89,9 @@ else
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
+    /// <summary>La tarjeta «Recibir mercancía» del inventario: abre ya en elegir el proveedor (Cancelar regresa a la lista).</summary>
+    [Parameter] public bool EmpezarARecibir { get; set; }
+
     private List<CompraResumenDto>? _compras;
     private List<ProveedorDto> _proveedores = [];
     private Guid? _abierta;
@@ -98,7 +101,12 @@ else
     private bool _ocupado;
     private string? _error;
 
-    protected override Task OnInitializedAsync() => CargarAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarAsync();
+        if (EmpezarARecibir)
+            await NuevaAsync();
+    }
 
     private async Task CargarAsync()
     {

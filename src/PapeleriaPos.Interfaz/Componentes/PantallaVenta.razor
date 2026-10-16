@@ -1,5 +1,8 @@
 @* La pantalla de venta, la del rediseño (docs/propuesta-interfaz.md, entrega 0), en todas las cajas. La de antes, con la
-   misma distribución que eleventa, ya no existe: el dueño la quitó el 2026-10-14 («no volveremos a esa versión»). *@
+   misma distribución que eleventa, ya no existe: el dueño la quitó el 2026-10-14 («no volveremos a esa versión»).
+   Productos (F3), Inventario (F4) y Clientes son páginas, como en el prototipo (entrega 8): bajo la barra de arriba se ve
+   la venta o una de ellas. La venta no se deja: se oculta con su ticket, sus tickets en espera, el cobro y el panel que
+   tuviera, y «Venta» (F1) la regresa tal cual. El corte y la Configuración siguen encima, como ventanas. *@
 @implements IAsyncDisposable
 @using System.Text.RegularExpressions
 @using PapeleriaPos.Nucleo.Configuracion
@@ -19,18 +22,18 @@
         @* Cada quien ve lo que sus permisos le dejan: lo que no puede no aparece (docs/propuesta-interfaz.md, «Usuarios y permisos»).
            Mientras llegan, solo lo que es de todos. *@
         <nav class="vn-pestanas">
-            <button class="activa">Venta <kbd>F1</kbd></button>
+            <button class="@Activa(Pagina.Venta)" @onclick="() => IrAAsync(Pagina.Venta)">Venta <kbd>F1</kbd></button>
             @if (Ve(AccionControlada.EditarCatalogo))
             {
-                <button @onclick="() => Abrir(Ventanas.Productos)">Productos <kbd>F3</kbd></button>
+                <button class="@Activa(Pagina.Productos)" @onclick="() => IrAAsync(Pagina.Productos)">Productos <kbd>F3</kbd></button>
             }
             @if (VeInventario)
             {
-                <button @onclick="() => Abrir(Ventanas.Inventario)">Inventario <kbd>F4</kbd></button>
+                <button class="@Activa(Pagina.Inventario)" @onclick="() => IrAAsync(Pagina.Inventario)">Inventario <kbd>F4</kbd></button>
             }
             @* Clientes es de todos: quien no los administra los consulta (sin «Nuevo cliente» ni editar) y en su cuenta
                recibe abonos y devuelve el saldo a favor, con candado si lo autoriza otro. *@
-            <button @onclick="() => Abrir(Ventanas.Clientes)">Clientes</button>
+            <button class="@Activa(Pagina.Clientes)" @onclick="() => IrAAsync(Pagina.Clientes)">Clientes</button>
             <button @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
             @if (VeConfiguracion)
             {
@@ -38,7 +41,7 @@
             }
         </nav>
         <span class="espacio"></span>
-        <EstadoCaja @ref="_estado" Caja="Caja" Sesion="Sesion" AlImpresiones="() => Abrir(Ventanas.Impresiones)" />
+        <EstadoCaja @ref="_estado" Caja="Caja" Sesion="Sesion" AlImpresiones="ImpresionesDesdeArribaAsync" />
         <div class="vn-usuario-caja">
             <button class="vn-usuario" title="Cambiar de usuario o salir" @onclick="() => _menuUsuario = !_menuUsuario">
                 <span class="vn-avatar">@Inicial(Sesion.Nombre)</span>
@@ -57,7 +60,8 @@
         </div>
     </header>
 
-    <div class="vn-cuerpo">
+    @* En una página, la venta se queda como está, oculta: nada de ella se pierde ni se vuelve a cargar. *@
+    <div class="vn-cuerpo @(_pagina == Pagina.Venta ? "" : "oculto")">
         <section class="vn-izq">
             <div class="vn-captura-caja">
                 <div class="vn-captura">
@@ -670,9 +674,37 @@
         </aside>
     </div>
 
+    @if (_pagina != Pagina.Venta)
+    {
+        @* Productos, Inventario o Clientes, con lo que se recuerda de cada uno (la búsqueda, el elegido, las etiquetas). *@
+        <div class="vn-pagina">
+            <CascadingValue Name="@PilotoConEleventa.Cascada" Value="_pilotoEleventa">
+                <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada">
+                    @switch (_pagina)
+                    {
+                        case Pagina.Productos:
+                            <Productos @ref="_productos" Caja="Caja" Sesion="Sesion" Acceso="Acceso" Estado="_paginas.Productos" Etiquetas="_paginas.Etiquetas"
+                                       AlIrAEtiquetas="() => IrAAsync(Pagina.Inventario, TareaInventario.Etiquetas)" />
+                            break;
+                        case Pagina.Inventario:
+                            <Inventario @ref="_inventario" Caja="Caja" Sesion="Sesion" Acceso="Acceso" EtiquetasPorImprimir="_paginas.Etiquetas"
+                                        Conteo="_conteo" AlContar="c => _conteo = c" TareaInicial="_tareaInicial" />
+                            break;
+                        default:
+                            <Clientes @ref="_clientes" Caja="Caja" Sesion="Sesion" Turno="Turno" Acceso="Acceso" Estado="_paginas.Clientes"
+                                      AlGuardar="ClienteGuardadoAsync" AlAbonar="AbonoDesdePaginaAsync" AlReimprimir="AbonoReimpresoDesdePaginaAsync"
+                                      AlImprimirEstado="EstadoDesdePaginaAsync" />
+                            break;
+                    }
+                </CascadingValue>
+            </CascadingValue>
+        </div>
+    }
+
     @* Lo de todos los días; lo demás, en «/» (docs/propuesta-interfaz.md, «La pantalla de venta»). Cada botón hace lo
-       que su tecla, también con un panel abierto: el suyo lo cierra y otro lo cambia. *@
-    <footer class="vn-teclas">
+       que su tecla, también con un panel abierto: el suyo lo cierra y otro lo cambia. En una página se oculta (el selector
+       del PDF de Ctrl+Q sigue ahí) y va la barra de la página. *@
+    <footer class="vn-teclas @(_pagina == Pagina.Venta ? "" : "oculto")">
         <button @onclick="@(() => ComoSuTecla("F12"))"><kbd>F12</kbd>Cobrar</button>
         <button @onclick="@(() => ComoSuTecla("F10"))"><kbd>F10</kbd>Buscar</button>
         <button @onclick="@(() => ComoSuTecla("F9"))"><kbd>F9</kbd>Verificar</button>
@@ -695,14 +727,39 @@
         @* Ctrl+Q (o «Cotizar un PDF» en «/») abre el selector de archivos de aquí. *@
         <InputFile id="pdf-cotizar" class="oculto" accept=".pdf,application/pdf" onclick="this.value = ''" OnChange="PdfElegidoAsync" />
         <span class="espacio"></span>
-        @if (HayConteoPendiente)
-        {
-            <button class="vn-chip-estado" title="Los productos que hay que contar hoy" @onclick="() => Abrir(Ventanas.Conteo)">
-                <Ico Nombre="contar" />Conteo del día @_conteo!.Contados/@_conteo.Total
-            </button>
-        }
+        @ChipDelConteo
     </footer>
+    @if (_pagina != Pagina.Venta)
+    {
+        @* La de las páginas, como en el prototipo: regresar a la venta; lo demás son las teclas de la página. *@
+        <footer class="vn-teclas">
+            <button @onclick="() => IrAAsync(Pagina.Venta)"><kbd>F1</kbd>Volver a la venta</button>
+            @if (_pagina != Pagina.Inventario)
+            {
+                <span class="vn-ayuda-tecla"><kbd>↑</kbd> <kbd>↓</kbd> elegir</span>
+                <span class="vn-ayuda-tecla"><kbd>Enter</kbd> abrir</span>
+            }
+            <span class="vn-ayuda-tecla"><kbd>Esc</kbd> cierra lo abierto; si no hay nada, a la venta</span>
+            @if (_errorDePagina is not null)
+            {
+                <span class="vn-ayuda-tecla error">@_errorDePagina</span>
+            }
+            <span class="espacio"></span>
+            @ChipDelConteo
+        </footer>
+    }
 </div>
+
+@* Lo que se imprime desde una página, sin impresora: encima de la página, sin tocar lo que la venta tenga abierto. Con el
+   campo, sin una variable local: si el contenido de la ventana tomara una, cada vuelta del dibujo le daría un manejador
+   nuevo a los botones de arriba (las pestañas, el menú del usuario). *@
+@if (_pagina != Pagina.Venta && _vistaPreviaDePagina is not null)
+{
+    <Ventana Titulo="@_vistaPreviaDePagina.Value.Titulo" AlCerrar="CerrarVistaPreviaDePaginaAsync">
+        <pre class="ticket">@_vistaPreviaDePagina?.Texto</pre>
+        <p class="nota">Sin impresora conectada: así saldrá impreso en la de 80 mm.</p>
+    </Ventana>
+}
 
 @if (!VaEnPanel)
 {
@@ -748,16 +805,20 @@
         await AlSalir.InvokeAsync();
     }
 
+    /// <summary>
+    /// Los paneles de la venta (a la derecha, sin tapar el ticket) y lo que va encima de todo: el corte y la Configuración.
+    /// Productos, Inventario y Clientes ya no son ventanas: son páginas (<see cref="Pagina"/>).
+    /// </summary>
     private enum Ventanas
     {
         Ninguna, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
-        CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, Productos, AltaRapida, Inventario, Conteo, Mayoreo, ElegirCliente, Clientes,
+        CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, AltaRapida, Mayoreo, ElegirCliente,
         AutorizarCosto, Abono, AutorizarCredito,
     }
 
     /// <summary>
     /// Lo de la venta, que va como panel a la derecha (docs/propuesta-interfaz.md, «Los demás paneles»): el ticket queda a
-    /// la vista. Los módulos de arriba (productos, inventario, clientes, corte, configuración) y el conteo siguen encima.
+    /// la vista. El corte y la Configuración siguen encima.
     /// </summary>
     private static readonly HashSet<Ventanas> VentanasEnPanel =
     [
@@ -796,8 +857,191 @@
         // Con campos (artículo común, descuento, entrada…): ver PanelesQueSeDejan.
         : "Primero termina aquí con Enter (o su botón), o Esc para regresar a la venta.";
 
-    /// <summary>Le dice a caja.js que hay una ventana abierta y si es un panel (con él a la vista, Ins y Ctrl+Q también son de la venta).</summary>
-    private Task AvisarVentanaAbiertaAsync() => Js.VentanaAbiertaAsync(true, VaEnPanel);
+    /// <summary>
+    /// Le dice a caja.js qué hay: una ventana encima (y si es un panel de la venta, con el que Ins y Ctrl+Q también son de la
+    /// venta) o una página. Un panel que se quedó en la venta mientras se ve una página no cuenta: está oculto, y las teclas
+    /// son de la página. Lo que se imprime desde una página sin impresora va encima, como una ventana.
+    /// </summary>
+    private async Task AvisarTeclasAsync()
+    {
+        var enLaVenta = _pagina == Pagina.Venta;
+        var encima = (_ventana != Ventanas.Ninguna && (enLaVenta || !VaEnPanel)) || (!enLaVenta && _vistaPreviaDePagina is not null);
+        await Js.VentanaAbiertaAsync(encima, enLaVenta && VaEnPanel);
+        await Js.PaginaAbiertaAsync(!enLaVenta);
+    }
+
+    // ── Las páginas de atrás: Productos, Inventario y Clientes (entrega 8) ──
+
+    /// <summary>Lo que se ve bajo la barra de arriba: la venta, o una página.</summary>
+    private Pagina _pagina;
+
+    /// <summary>Lo que se recuerda de las páginas mientras se vende: la búsqueda y el elegido de cada una, y las etiquetas por imprimir.</summary>
+    private readonly EstadoDePaginas _paginas = new();
+
+    private Productos? _productos;
+    private Inventario? _inventario;
+    private Clientes? _clientes;
+
+    /// <summary>La tarea con que abre Inventario (el chip del conteo, «Ir a Etiquetas»); vacío: sus tarjetas.</summary>
+    private TareaInventario? _tareaInicial;
+
+    /// <summary>Lo que se imprimió desde una página sin impresora: se ve encima de ella.</summary>
+    private (string Titulo, string Texto)? _vistaPreviaDePagina;
+
+    /// <summary>Si lo que se imprimió desde una página no salió: lo dice su barra de abajo.</summary>
+    private string? _errorDePagina;
+
+    private IPagina? PaginaAbierta => _pagina switch
+    {
+        Pagina.Productos => _productos,
+        Pagina.Inventario => _inventario,
+        Pagina.Clientes => _clientes,
+        _ => null,
+    };
+
+    private string Activa(Pagina pagina) => _pagina == pagina ? "activa" : "";
+
+    /// <summary>
+    /// A una página, o de regreso a la venta (F1, F3, F4, las pestañas): la venta se queda como está, con su ticket, los
+    /// tickets en espera, el cobro y el panel que tuviera, y al volver el cursor regresa al cuadro de captura (o al panel).
+    /// Lo que no tiene, no se abre: su pestaña ni sale.
+    /// </summary>
+    private async Task IrAAsync(Pagina pagina, TareaInventario? tarea = null)
+    {
+        if ((pagina == Pagina.Productos && SinTecla(Ve(AccionControlada.EditarCatalogo))) || (pagina == Pagina.Inventario && SinTecla(VeInventario)))
+        {
+            Avisar("Eso no está entre lo que puedes hacer: «/» muestra todo lo que sí.");
+            return;
+        }
+        (_menuUsuario, _menuEspera) = (false, false);
+        CerrarAcciones();
+        if (_resultados is not null)
+            CerrarResultados();
+        var antes = _pagina;
+        (_pagina, _tareaInicial, _vistaPreviaDePagina, _errorDePagina) = (pagina, tarea, null, null);
+        if (pagina == antes && pagina != Pagina.Venta)
+        {
+            // Ya estaba ahí: la tarea que se pidió (el chip del conteo) o el cursor a su búsqueda.
+            if (tarea is { } abrir && _inventario is { } inventario)
+                await inventario.AbrirAsync(abrir);
+            else if (PaginaAbierta is { } abierta)
+                await abierta.EnfocarAsync();
+        }
+        else if (pagina == Pagina.Venta)
+            _enfocar = VaEnPanel ? null : "#codigo";
+        await AvisarTeclasAsync();
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Las teclas en una página, como en el prototipo: F1 regresa a la venta, F3 y F4 cambian de página, Ctrl+U cambia de
+    /// usuario y Esc cierra lo que esté abierto adentro (la ficha, una tarea, el estado de cuenta); sin nada abierto, regresa a
+    /// la venta. Las de la venta (F12, F2…) no hacen nada aquí. Las flechas, Enter y lo que se escribe son de la página.
+    /// </summary>
+    private async Task TeclaEnPaginaAsync(string tecla)
+    {
+        switch (tecla)
+        {
+            case "F1":
+                await IrAAsync(Pagina.Venta);
+                break;
+            case "F3" when Ve(AccionControlada.EditarCatalogo):
+                await IrAAsync(Pagina.Productos);
+                break;
+            case "F4" when VeInventario:
+                await IrAAsync(Pagina.Inventario);
+                break;
+            case "Ctrl+U":
+                await SalirAsync();
+                break;
+            case "Escape" when Js.FranjaEncima:
+                // La guía de la prueba está encima: la página de abajo no se toca.
+                break;
+            case "Escape" when _vistaPreviaDePagina is not null:
+                await CerrarVistaPreviaDePaginaAsync();
+                break;
+            case "Escape":
+                if (PaginaAbierta is not { } pagina || !await pagina.CerrarAsync())
+                    await IrAAsync(Pagina.Venta);
+                StateHasChanged();
+                break;
+        }
+    }
+
+    /// <summary>El chip del conteo del día, en la barra de abajo de la venta y de las páginas: abre su tarea en Inventario.</summary>
+    private RenderFragment ChipDelConteo => @<text>
+        @if (HayConteoPendiente && Ve(AccionControlada.ContarInventario))
+        {
+            <button class="vn-chip-estado" title="Los productos que hay que contar hoy: Inventario › Conteo del día"
+                    @onclick="() => IrAAsync(Pagina.Inventario, TareaInventario.ConteoDelDia)">
+                <Ico Nombre="contar" />Conteo del día @_conteo!.Contados/@_conteo.Total
+            </button>
+        }
+    </text>;
+
+    /// <summary>«Impresiones por cobrar», arriba: es de la venta (F2), así que desde una página regresa a ella.</summary>
+    private async Task ImpresionesDesdeArribaAsync()
+    {
+        if (_pagina != Pagina.Venta)
+            await IrAAsync(Pagina.Venta);
+        await Abrir(Ventanas.Impresiones);
+    }
+
+    /// <summary>
+    /// Un abono o un saldo a favor devuelto desde la página de Clientes: los tickets que tienen a ese cliente ponen al día su
+    /// cuenta y se imprime el comprobante (en efectivo, con el cajón). La página dice lo que hay que entregar; se sigue en ella.
+    /// </summary>
+    private async Task AbonoDesdePaginaAsync(ComprobanteAbonoDto comprobante)
+    {
+        foreach (var ticket in _tickets.Where(t => t.Cliente?.Id == comprobante.ClienteId))
+            await CargarCuentaAsync(ticket);
+        await ImprimirDesdePaginaAsync($"{(comprobante.EsSaldoDevuelto ? "Saldo devuelto" : "Abono")} {comprobante.Folio}", DisenoComprobante.Abono(comprobante),
+            comprobante.AbreCajon);
+        await RevisarEfectivoAsync();
+    }
+
+    /// <summary>Una reimpresión desde la página de Clientes: solo el papel.</summary>
+    private Task AbonoReimpresoDesdePaginaAsync(ComprobanteAbonoDto comprobante) =>
+        ImprimirDesdePaginaAsync($"{(comprobante.EsSaldoDevuelto ? "Saldo devuelto" : "Abono")} {comprobante.Folio}", DisenoComprobante.Abono(comprobante),
+            abrirCajon: false);
+
+    /// <summary>El estado de cuenta desde la página de Clientes: solo el papel.</summary>
+    private Task EstadoDesdePaginaAsync(EstadoCuentaDto estado) =>
+        ImprimirDesdePaginaAsync($"Estado de cuenta de {estado.Cliente}", DisenoComprobante.EstadoCuenta(estado), abrirCajon: false);
+
+    /// <summary>
+    /// Lo que se imprime desde una página, sin dejarla ni tocar lo que la venta tiene abierto: sin impresora se ve encima de
+    /// la página (Esc lo cierra); si no sale, lo dice su barra de abajo.
+    /// </summary>
+    private async Task ImprimirDesdePaginaAsync(string titulo, IReadOnlyList<Elemento> documento, bool abrirCajon)
+    {
+        _errorDePagina = null;
+        if (Impresora.MuestraVistaPrevia)
+        {
+            _vistaPreviaDePagina = (titulo, TicketTexto.Generar(documento));
+            await AvisarTeclasAsync();
+            StateHasChanged();
+            return;
+        }
+        try
+        {
+            await Impresora.ImprimirAsync(documento, abrirCajon);
+        }
+        catch (Exception ex)
+        {
+            _errorDePagina = $"No se pudo imprimir ({titulo}): {ex.Message} Se puede reimprimir.";
+        }
+        StateHasChanged();
+    }
+
+    private async Task CerrarVistaPreviaDePaginaAsync()
+    {
+        _vistaPreviaDePagina = null;
+        await AvisarTeclasAsync();
+        if (PaginaAbierta is { } pagina)
+            await pagina.EnfocarAsync();
+        StateHasChanged();
+    }
 
     /// <summary>
     /// Por qué una tecla no hizo nada con el panel abierto. Va en el panel, donde se está mirando: el aviso de siempre
@@ -894,12 +1138,11 @@
         _ => false,
     };
 
-    private bool VeInventario =>
-        new[]
-        {
-            AccionControlada.RecibirMercancia, AccionControlada.ContarInventario, AccionControlada.ConteoCompleto, AccionControlada.Merma,
-            AccionControlada.AjustarInventario, AccionControlada.AbrirPaquete, AccionControlada.CostearCompra, AccionControlada.PedirCompra,
-        }.Any(Ve);
+    /// <summary>Con alguna tarea del inventario (sus tarjetas): la pestaña Inventario y F4.</summary>
+    private bool VeInventario => _permisosPedidos && Acceso.VeInventario;
+
+    /// <summary>Lo que puede quien entró, para las páginas: los permisos de la venta o, sin ellos, los de la sesión.</summary>
+    private PermisosDePagina Acceso => new(Sesion, _permisos);
 
     /// <summary>
     /// Con algún grupo de la Configuración (las reglas de sus grupos, entrega 7). La caja de prueba se actualiza desde
@@ -1028,12 +1271,12 @@
         yield return new("Cotizar un PDF", "impresora", "Ctrl+Q", null, () => Js.ClicAsync("#pdf-cotizar"));
         yield return new("Verificar transferencias", "check", null, AccionControlada.VerificarTransferencia, () => Abrir(Ventanas.Transferencias));
         yield return new("Corte", "contar", null, null, () => Abrir(Ventanas.Corte));
-        yield return new("Conteo del día", "contar", null, AccionControlada.ContarInventario, () => Abrir(Ventanas.Conteo));
-        yield return new("Productos", "cajas", "F3", AccionControlada.EditarCatalogo, () => Abrir(Ventanas.Productos));
+        yield return new("Conteo del día", "contar", null, AccionControlada.ContarInventario, () => IrAAsync(Pagina.Inventario, TareaInventario.ConteoDelDia));
+        yield return new("Productos", "cajas", "F3", AccionControlada.EditarCatalogo, () => IrAAsync(Pagina.Productos));
         if (VeInventario)
-            yield return new("Inventario: recibir, contar y mermas", "recibir", "F4", null, () => Abrir(Ventanas.Inventario));
+            yield return new("Inventario: recibir, contar y mermas", "recibir", "F4", null, () => IrAAsync(Pagina.Inventario));
         // Para todos, como la pestaña: quien no los administra solo los consulta.
-        yield return new("Clientes", "clientes", null, null, () => Abrir(Ventanas.Clientes));
+        yield return new("Clientes", "clientes", null, null, () => IrAAsync(Pagina.Clientes));
         if (VeConfiguracion)
             yield return new("Configuración", "engrane", null, null, () => Abrir(Ventanas.Configuracion));
         yield return new("Cambiar de usuario", "usuario", "Ctrl+U", null, SalirAsync);
@@ -1087,8 +1330,8 @@
         VaciarCaptura();
         _enfocar = "#codigo";
         await accion.Hacer();
-        // Si abrió una ventana, el cursor se queda en ella.
-        if (_ventana != Ventanas.Ninguna)
+        // Si abrió una ventana o una página, el cursor se queda en ella.
+        if (_ventana != Ventanas.Ninguna || _pagina != Pagina.Venta)
             _enfocar = null;
     }
 
@@ -1698,7 +1941,7 @@
     [JSInvokable]
     public async Task Escaneado(string texto)
     {
-        if (_ventana != Ventanas.Ninguna)
+        if (_ventana != Ventanas.Ninguna || _pagina != Pagina.Venta)
             return;
         // «/algo» y Enter: la acción elegida, o la primera que se llama así.
         if (FiltroDeAcciones(texto) is { } filtro)
@@ -1731,16 +1974,18 @@
     /// El lector escribió en el cobro («Pagó con», un monto, una referencia o un botón; data-cobro) o en un abono, y caja.js
     /// lo reconoció por su ritmo: ya quitó del campo lo que tecleó y su Enter no cobró. Un escaneo nunca se toma como
     /// dinero (docs/propuesta-interfaz.md, «El cuadro de captura»): el código va a la cola de captura como cualquier otro y
-    /// el cursor vuelve al cuadro. La ventana donde estaba (un abono) se cierra, para ver el ticket. Si se está cobrando,
-    /// espera al cobro y cae en el ticket del siguiente cliente.
+    /// el cursor vuelve al cuadro. Donde estaba (el panel del abono, o el abono en la página de Clientes) se deja, para ver
+    /// el ticket. Si se está cobrando, espera al cobro y cae en el ticket del siguiente cliente.
     /// </summary>
     [JSInvokable]
     public async Task EscaneoEnPago(string codigo)
     {
         var cobrando = _cobrando;
-        var enAbono = _ventana is Ventanas.Abono or Ventanas.Clientes;
+        var enAbono = _ventana is Ventanas.Abono || _pagina == Pagina.Clientes;
         if (!cobrando)
         {
+            if (_pagina != Pagina.Venta)
+                await IrAAsync(Pagina.Venta);
             if (_ventana != Ventanas.Ninguna)
                 await Cerrar();
             _enfocar = "#codigo";
@@ -1765,7 +2010,7 @@
     public async Task Escribiendo(string texto)
     {
         _captura.Texto = texto;
-        if (_ventana == Ventanas.Ninguna)
+        if (_ventana == Ventanas.Ninguna && _pagina == Pagina.Venta)
             await BuscarMientrasEscribeAsync(texto);
     }
 
@@ -2177,7 +2422,16 @@
     {
         if (texto is not null)
             _captura.Texto = texto;
-        if (_ventana != Ventanas.Ninguna && !await TeclaConVentanaAsync(tecla, desdeLaCaptura: texto is not null))
+        // El corte o la Configuración encima (de la venta o de una página): lo suyo, como siempre.
+        if (_ventana != Ventanas.Ninguna && !VaEnPanel && !await TeclaConVentanaAsync(tecla, desdeLaCaptura: texto is not null))
+            return;
+        // En una página, sus teclas; la venta (y el panel que tuviera) se queda como está.
+        if (_pagina != Pagina.Venta)
+        {
+            await TeclaEnPaginaAsync(tecla);
+            return;
+        }
+        if (_ventana != Ventanas.Ninguna && VaEnPanel && !await TeclaConVentanaAsync(tecla, desdeLaCaptura: texto is not null))
             return;
 
         // Con «/» en el cuadro, ↑ ↓ recorren las acciones.
@@ -2259,8 +2513,8 @@
             case "+": await CambiarCantidadSeleccion(1); break;
             case "-": await CambiarCantidadSeleccion(-1); break;
             case "F11": await MayoreoAsync(); break;
-            case "F3": await Abrir(Ventanas.Productos); break;
-            case "F4": await Abrir(Ventanas.Inventario); break;
+            case "F3": await IrAAsync(Pagina.Productos); break;
+            case "F4": await IrAAsync(Pagina.Inventario); break;
             case "Escape":
                 _cobrado = null;
                 // Desde el cuadro de captura, caja.js ya lo vació: vaciarlo otra vez desde aquí borraría lo que se
@@ -2305,7 +2559,7 @@
         // detrás del panel.
         if (EsTeclaSinVentana(tecla))
         {
-            await AvisarVentanaAbiertaAsync();
+            await AvisarTeclasAsync();
             return false;
         }
         // Ctrl+U cambia de usuario desde donde se esté («Ctrl+U cambia de usuario», docs/propuesta-interfaz.md; el prototipo
@@ -2317,14 +2571,21 @@
             await QuitarVentanaAsync();
             return true;
         }
-        // F1 es la pestaña «Venta»: desde lo que va encima del ticket regresa a vender, como Esc (el prototipo va a la venta
-        // desde cualquier vista). Con un panel ya se está en la venta: no hace nada.
+        // F1 es la pestaña «Venta»: desde lo que va encima (el corte, la Configuración, también sobre una página) regresa a
+        // vender, como Esc (el prototipo va a la venta desde cualquier vista). Con un panel ya se está en la venta: no hace nada.
         if (tecla == "F1")
         {
             if (!VaEnPanel)
+            {
                 await Cerrar();
+                if (_pagina != Pagina.Venta)
+                    await IrAAsync(Pagina.Venta);
+            }
             return false;
         }
+        // F3 y F4 van a su página (entrega 8): el panel no se cierra, se queda en la venta como está, para cuando se regrese.
+        if (VaEnPanel && tecla is "F3" or "F4")
+            return true;
         // Las demás no cierran lo que va encima del ticket (los módulos de arriba y el conteo): puede tener algo a medio
         // escribir, y su tecla no es la de quitarlo.
         if (!VaEnPanel)
@@ -2982,16 +3243,7 @@
     private async Task AbonoRegistradoAsync(ComprobanteAbonoDto comprobante)
     {
         await Cerrar();
-        if (comprobante.EsSaldoDevuelto)
-            Avisar($"Entrega {Formato.Dinero(comprobante.CobradoCentavos)} en efectivo a «{comprobante.Cliente}» (su saldo a favor) y que firme el comprobante.",
-                error: false);
-        else
-            Avisar(comprobante.Cancelado
-                ? $"Se canceló el abono {comprobante.Folio}"
-                  + (comprobante.Forma == FormaPago.Efectivo ? $": entrega {Formato.Dinero(comprobante.CobradoCentavos)} en efectivo" : "")
-                  + $". «{comprobante.Cliente}» vuelve a deber {Formato.Dinero(comprobante.MontoCentavos)}."
-                : $"Abono de {Formato.Dinero(comprobante.MontoCentavos)} de «{comprobante.Cliente}». Saldo: {Formato.Dinero(comprobante.SaldoCentavos)}"
-                  + (comprobante.Forma == FormaPago.Efectivo ? $". Cambio: {Formato.Dinero(comprobante.CambioCentavos)}." : "."), error: false);
+        Avisar(Textos.Comprobante(comprobante), error: false);
         foreach (var ticket in _tickets.Where(t => t.Cliente?.Id == comprobante.ClienteId))
             await CargarCuentaAsync(ticket);
         await ImprimirDocumentoAsync($"{(comprobante.EsSaldoDevuelto ? "Saldo devuelto" : "Abono")} {comprobante.Folio}", DisenoComprobante.Abono(comprobante),
@@ -3302,21 +3554,6 @@
                 <ImpresionesPorCobrar Caja="Caja" Sesion="Sesion" EnElTicket="@Actual.Impresiones.Select(i => i.Id).ToList()" AlAgregar="ImpresionesElegidasAsync" />
             </Ventana>
             break;
-        case Ventanas.Productos:
-            <Ventana Titulo="Productos" Clase="configuracion" AlCerrar="Cerrar">
-                <Productos Caja="Caja" Sesion="Sesion" />
-            </Ventana>
-            break;
-        case Ventanas.Conteo:
-            <Ventana Titulo="Conteo del día" Clase="configuracion" AlCerrar="Cerrar">
-                <ConteoDelDia Caja="Caja" Sesion="Sesion" AlContar="c => _conteo = c" />
-            </Ventana>
-            break;
-        case Ventanas.Inventario:
-            <Ventana Titulo="Inventario" Clase="configuracion" AlCerrar="Cerrar">
-                <Inventario Caja="Caja" Sesion="Sesion" />
-            </Ventana>
-            break;
         case Ventanas.AltaRapida when _codigoNuevo is { } codigoNuevo:
             <Ventana Titulo="Dar de alta" AlCerrar="Cerrar">
                 <AltaRapida Codigo="@codigoNuevo" Caja="Caja" Sesion="Sesion" AlDarDeAlta="DadoDeAltaAsync" />
@@ -3332,12 +3569,6 @@
             <Ventana Titulo="Cliente del ticket" Clase="tarjetas clientes" AlCerrar="Cerrar">
                 <ElegirCliente @ref="_elegirCliente" Venta="Actual.Venta" Caja="Caja" Sesion="Sesion" Actual="Actual.Cliente" Catalogo="CatalogoDe"
                                AlTerminar="ClienteElegidoAsync" />
-            </Ventana>
-            break;
-        case Ventanas.Clientes:
-            <Ventana Titulo="Clientes" Clase="configuracion" AlCerrar="Cerrar">
-                <Clientes Caja="Caja" Sesion="Sesion" Turno="Turno" AlGuardar="ClienteGuardadoAsync" AlAbonar="AbonoRegistradoAsync"
-                          AlReimprimir="AbonoReimpresoAsync" AlImprimirEstado="EstadoDeCuentaAsync" />
             </Ventana>
             break;
         case Ventanas.Abono:
@@ -3389,7 +3620,7 @@
             DejarVentana();
         _ventana = ventana;
         _avisoDelPanel = null;
-        await AvisarVentanaAbiertaAsync();
+        await AvisarTeclasAsync();
         StateHasChanged();
     }
 
@@ -3403,7 +3634,11 @@
             await AlCerrarTurno.InvokeAsync();
             return;
         }
-        await Js.EnfocarAsync("#codigo");
+        // Encima de una página (el corte, la Configuración): el cursor regresa a ella.
+        if (_pagina != Pagina.Venta && PaginaAbierta is { } pagina)
+            await pagina.EnfocarAsync();
+        else
+            await Js.EnfocarAsync("#codigo");
     }
 
     /// <summary>Cierra la ventana sin mover el cursor (<see cref="Cerrar"/> lo regresa al cuadro de captura; F12, al cobro).</summary>
@@ -3412,7 +3647,7 @@
         DejarVentana();
         _ventana = Ventanas.Ninguna;
         _avisoDelPanel = null;
-        await Js.VentanaAbiertaAsync(false);
+        await AvisarTeclasAsync();
         StateHasChanged();
     }
 
@@ -3443,10 +3678,13 @@
             _contingencia.Cambio -= AlCambiarContingencia;
         try
         {
-            // Si se va con una ventana abierta (el corte Z, o «Cambiar de usuario» del menú con un panel), caja.js seguiría
-            // creyendo que está ahí: en la venta del que entra después, el cuadro de captura no tomaría los escaneos.
+            // Si se va con una ventana abierta (el corte Z, o «Cambiar de usuario» del menú con un panel) o en una página,
+            // caja.js seguiría creyendo que está ahí: en la venta del que entra después, el cuadro de captura no tomaría los
+            // escaneos.
             if (_ventana != Ventanas.Ninguna)
                 await Js.VentanaAbiertaAsync(false);
+            if (_pagina != Pagina.Venta)
+                await Js.PaginaAbiertaAsync(false);
             await Js.QuitarTeclasAsync();
         }
         catch (Exception ex) when (ex is JSDisconnectedException or JSException)

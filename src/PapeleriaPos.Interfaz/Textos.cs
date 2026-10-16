@@ -1,6 +1,8 @@
 using PapeleriaPos.Nucleo.Clientes;
+using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Inventario;
+using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Interfaz;
 
@@ -58,6 +60,20 @@ public static class Textos
         ResultadoBitacora.Autorizado => "Autorizado",
         _ => "Negado",
     };
+
+    /// <summary>
+    /// Lo que se dice al recibir un abono, al cancelarlo o al devolver un saldo a favor: lo que hay que entregar o el cambio,
+    /// y cómo queda su cuenta. En la venta va bajo el cuadro de captura; en la página de Clientes, en el detalle del cliente.
+    /// </summary>
+    public static string Comprobante(ComprobanteAbonoDto comprobante) =>
+        comprobante.EsSaldoDevuelto
+            ? $"Entrega {Formato.Dinero(comprobante.CobradoCentavos)} en efectivo a «{comprobante.Cliente}» (su saldo a favor) y que firme el comprobante."
+            : comprobante.Cancelado
+                ? $"Se canceló el abono {comprobante.Folio}"
+                  + (comprobante.Forma == FormaPago.Efectivo ? $": entrega {Formato.Dinero(comprobante.CobradoCentavos)} en efectivo" : "")
+                  + $". «{comprobante.Cliente}» vuelve a deber {Formato.Dinero(comprobante.MontoCentavos)}."
+                : $"Abono de {Formato.Dinero(comprobante.MontoCentavos)} de «{comprobante.Cliente}». Saldo: {Formato.Dinero(comprobante.SaldoCentavos)}"
+                  + (comprobante.Forma == FormaPago.Efectivo ? $". Cambio: {Formato.Dinero(comprobante.CambioCentavos)}." : ".");
 
     /// <summary>Quién autoriza: «Luis», «Carmen o Luis», «Ana, Carmen o Luis»; si son más, los dos primeros y cuántos más.</summary>
     public static string Quien(IReadOnlyList<QuienAutoriza> autorizan) => autorizan.Count switch
