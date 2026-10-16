@@ -67,6 +67,12 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     private async Task MandarVentanaAsync() =>
         await (await Modulo).InvokeVoidAsync("ventanaAbierta", _deLaFranja || _deLaVenta.Abierta, !_deLaFranja && _deLaVenta.EnPanel);
 
+    /// <summary>
+    /// Ya se dibujó lo de esos escaneos (entrega 5): con la hora de su Enter (el reloj de la página), caja.js mide en el
+    /// siguiente cuadro cuánto tardaron en verse y se lo dice a la pantalla (<c>Pintados</c>), de a varios.
+    /// </summary>
+    public async Task PintadoAsync(IReadOnlyList<double> horas) => await (await Modulo).InvokeVoidAsync("pintado", horas);
+
     /// <summary>Vacía el cuadro de captura de la venta (no está enlazado: lo maneja caja.js).</summary>
     public async Task LimpiarCapturaAsync() => await (await Modulo).InvokeVoidAsync("limpiarCaptura");
 
@@ -120,10 +126,15 @@ public static class RegistroInterfaz
         // Si la caja principal está apagada, la conexión falla en 3 s; si contesta pero tarda, se espera hasta 15 s. Así la
         // caja avisa (o pasa a contingencia) en lugar de quedarse congelada.
         var http = new HttpClient(new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(3) }) { Timeout = TimeSpan.FromSeconds(15) };
+        // Lo que mide la caja de su rendimiento (entrega 5): los escaneos y lo que tarda, para el vigía de la pantalla.
+        var rendimiento = new RendimientoCaja();
+        servicios.AddSingleton(rendimiento);
         Contingencia? contingencia = null;
         if (baseLocal is not null)
         {
-            contingencia = new Contingencia(new AlmacenLocal(baseLocal), http, conexion);
+            var almacen = new AlmacenLocal(baseLocal);
+            almacen.EscrituraLarga += (que, tardo) => rendimiento.Actividad($"la base de la caja ({que})", tardo);
+            contingencia = new Contingencia(almacen, http, conexion, rendimiento: rendimiento);
             servicios.AddSingleton(contingencia);
             contingencia.Iniciar();
         }

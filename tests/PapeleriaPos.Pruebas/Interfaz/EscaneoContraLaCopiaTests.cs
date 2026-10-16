@@ -1,5 +1,9 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.JSInterop;
+using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Pruebas.Servicio;
 
@@ -233,5 +237,48 @@ public sealed class EscaneoContraLaCopiaTests(ServicioDePrueba servicio) : IClas
         Assert.Null(antes.PorCodigo(nuevo.Codigo!));
         Assert.Equal(nuevo.VarianteId, despues.PorCodigo(nuevo.Codigo!)!.VarianteId);
         Assert.Equal(despues.Version, despues.PorCodigo(nuevo.Codigo!)!.Version);
+    }
+
+    /// <summary>caja.js como la página: anota las horas del Enter que le manda la pantalla para medir lo ya pintado.</summary>
+    private sealed class PaginaQueMide : IJSRuntime, IJSObjectReference
+    {
+        public ConcurrentQueue<double> Pintados { get; } = new();
+
+        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args) => InvokeAsync<TValue>(identifier, CancellationToken.None, args);
+
+        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken cancellationToken, object?[]? args)
+        {
+            if (identifier == "pintado" && args?[0] is IEnumerable<double> horas)
+            {
+                foreach (var hora in horas)
+                    Pintados.Enqueue(hora);
+            }
+            return ValueTask.FromResult(identifier == "import" ? (TValue)(object)this : default!);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Del Enter a la línea pintada, con el reloj de la página (docs/propuesta-interfaz.md, «Cómo se mide»): cuando la pantalla
+    /// ya dibujó lo de un escaneo, le da a caja.js la hora de su Enter; caja.js mide en el cuadro siguiente y le devuelve lo
+    /// que tardó, y la caja guarda la mitad, el 95 % y el 99 % de los últimos.
+    /// </summary>
+    [Fact]
+    public async Task Del_Enter_a_la_linea_pintada_se_mide_con_el_reloj_de_la_pagina()
+    {
+        var pagina = new PaginaQueMide();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, pagina: pagina);
+        var (a, b) = DosDeLaCopia(v);
+
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escaneado(a.Codigo!, 1000.5));
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escaneado(b.Codigo!, 1010.25));
+        await VentaConCopia.EsperarAsync(() => pagina.Pintados.Count == 2, "las horas de los dos escaneos");
+        Assert.Equal([1000.5, 1010.25], pagina.Pintados);
+
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Pintados([12, 8, 30]));
+        var medida = v.Servicios.GetRequiredService<RendimientoCaja>().Escaneos;
+        Assert.Equal((3, 12.0, 30.0, 30.0), (medida.Cuantos, medida.Mitad, medida.P95, medida.P99));
+        Assert.Empty(v.Pantalla.Errores);
     }
 }

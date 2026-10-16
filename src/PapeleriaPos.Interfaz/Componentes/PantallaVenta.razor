@@ -1987,6 +1987,13 @@
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
+        // Ya se dibujó lo de estos escaneos: caja.js mide cuánto tardaron en verse (entrega 5).
+        if (_porPintar.Count > 0)
+        {
+            var horas = _porPintar.ToArray();
+            _porPintar.Clear();
+            _ = Js.PintadoAsync(horas);
+        }
         if (_enfocar is { } selector)
         {
             _enfocar = null;
@@ -1995,6 +2002,8 @@
         if (!primera)
             return;
         _referencia = DotNetObjectReference.Create(this);
+        // El vigía del hilo de la pantalla (entrega 5): en una ráfaga de escaneos, anota en el registro si se traba.
+        _vigia = new VigiaDeLaPantalla(InvokeAsync, Rendimiento, Servicios.GetService<RegistroDiario>());
         await Js.RegistrarTeclasAsync(_referencia);
         await Js.EnfocarAsync("#codigo");
         // Junto con lo demás de la página, antes de esperar al servicio: después, la página ya pudo volver a cargarse (y
@@ -2011,12 +2020,41 @@
         StateHasChanged();
     }
 
-    /// <summary>El Enter del cuadro de captura: caja.js ya tomó el texto y vació el cuadro.</summary>
+    // ── Lo que se mide (entrega 5, docs/propuesta-interfaz.md, «Cómo se mide») ──
+
+    /// <summary>Lo que mide la caja; sin la de la caja (una prueba), una propia.</summary>
+    private RendimientoCaja Rendimiento => _rendimiento ??= Servicios.GetService<RendimientoCaja>() ?? new RendimientoCaja();
+
+    private RendimientoCaja? _rendimiento;
+    private VigiaDeLaPantalla? _vigia;
+
+    /// <summary>La hora del Enter (reloj de la página) de los escaneos cuya línea todavía no se dibuja.</summary>
+    private readonly List<double> _porPintar = [];
+
+    /// <summary>Un escaneo que entra a la venta: se mide del Enter a su línea y el vigía sabe que hay ráfaga.</summary>
+    private void Medir(double? hora)
+    {
+        if (hora is { } h)
+            _porPintar.Add(h);
+        _vigia?.Escaneo();
+    }
+
+    /// <summary>Lo que tardaron en verse las líneas de los últimos escaneos, medido por caja.js con el reloj de la página.</summary>
     [JSInvokable]
-    public async Task Escaneado(string texto)
+    public void Pintados(double[] milisegundos)
+    {
+        foreach (var ms in milisegundos)
+            Rendimiento.AnotarEscaneo(TimeSpan.FromMilliseconds(ms));
+    }
+
+    /// <summary>El Enter del cuadro de captura: caja.js ya tomó el texto y vació el cuadro.</summary>
+    /// <param name="hora">La del Enter, con el reloj de la página: de ahí se mide hasta que se ve la línea.</param>
+    [JSInvokable]
+    public async Task Escaneado(string texto, double? hora = null)
     {
         if (_ventana != Ventanas.Ninguna || _pagina != Pagina.Venta)
             return;
+        Medir(hora);
         // «/algo» y Enter: la acción elegida, o la primera que se llama así.
         if (FiltroDeAcciones(texto) is { } filtro)
         {
@@ -2052,8 +2090,9 @@
     /// el ticket. Si se está cobrando, espera al cobro y cae en el ticket del siguiente cliente.
     /// </summary>
     [JSInvokable]
-    public async Task EscaneoEnPago(string codigo)
+    public async Task EscaneoEnPago(string codigo, double? hora = null)
     {
+        Medir(hora);
         var cobrando = _cobrando;
         var enAbono = _ventana is Ventanas.Abono || _pagina == Pagina.Clientes;
         if (!cobrando)
@@ -3949,6 +3988,8 @@
             _contingencia.Cambio -= AlCambiarContingencia;
         // Lo que se mandó guardar de la espera queda antes de irse (volver a cargar, un error): la pantalla nueva lo lee.
         await _esperaGuardandose.ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+        if (_vigia is not null)
+            await _vigia.DisposeAsync();
         try
         {
             // Si se va con una ventana abierta (el corte Z, o «Cambiar de usuario» del menú con un panel) o en una página,

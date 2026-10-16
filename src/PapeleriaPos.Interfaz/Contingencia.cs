@@ -130,6 +130,8 @@ public sealed class Contingencia
     /// <summary>La copia guardada en la base local, que se lee y se arma fuera del hilo de la pantalla al abrir la caja.</summary>
     private readonly Task _carga;
 
+    private readonly RendimientoCaja? _rendimiento;
+
     private DateTime _paqueteBajadoUtc = DateTime.MinValue;
     private DateTime _ultimoReintentoUtc = DateTime.MinValue;
     private bool _responde = true;
@@ -140,9 +142,11 @@ public sealed class Contingencia
     /// <summary>Algo del crédito pasó en línea en esta caja (o se anotó mientras se pedían): el siguiente latido pide los saldos.</summary>
     private volatile bool _refrescarCredito;
 
-    public Contingencia(AlmacenLocal almacen, HttpClient http, ConexionCaja conexion, TimeProvider? reloj = null)
+    /// <param name="rendimiento">Para decir qué pasaba si la pantalla se traba (bajar y armar la copia); sin él, no se dice.</param>
+    public Contingencia(AlmacenLocal almacen, HttpClient http, ConexionCaja conexion, TimeProvider? reloj = null, RendimientoCaja? rendimiento = null)
     {
         _almacen = almacen;
+        _rendimiento = rendimiento;
         _http = new Transporte(http, conexion);
         _conexion = conexion;
         _reloj = reloj ?? TimeProvider.System;
@@ -156,10 +160,14 @@ public sealed class Contingencia
 
     private void CargarCopiaGuardada()
     {
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             if (_almacen.Leer<PaqueteContingenciaDto>("paquete") is { } paquete)
+            {
                 Poner(new Copia(paquete));
+                _rendimiento?.Actividad("leer la copia del catálogo al abrir la caja", reloj.Elapsed);
+            }
         }
         catch (Exception ex) when (ex is System.Text.Json.JsonException or Microsoft.Data.Sqlite.SqliteException or InvalidOperationException
                                        or ArgumentException or IOException)
@@ -454,9 +462,13 @@ public sealed class Contingencia
             return;
         try
         {
+            var reloj = System.Diagnostics.Stopwatch.StartNew();
             if (await _http.GetAsync<PaqueteContingenciaDto>($"api/cajas/{caja}/paquete") is not { } paquete)
                 return;
+            _rendimiento?.Actividad("la sincronización (bajar la copia del catálogo)", reloj.Elapsed);
+            reloj.Restart();
             Poner(new Copia(paquete));
+            _rendimiento?.Actividad("la sincronización (armar la copia y su foto)", reloj.Elapsed);
             _paqueteBajadoUtc = Ahora;
             Cambio?.Invoke();
             // El folio, como cualquier escritura. La copia (miles de productos) se convierte aquí, fuera de la cola, y lo que se
