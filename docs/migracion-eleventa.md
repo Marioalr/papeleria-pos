@@ -423,6 +423,8 @@ inventados.
 se cierra antes que sus ventas.
 - **Qué entra a la bandeja:**
   - la cancelación o devolución de una venta que fue a eleventa, en la misma transacción;
+  - la devolución en la caja 2 de un ticket que se cobró en eleventa (la ida,
+    [abajo](#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)), también en la misma transacción;
   - el corte Z de un turno que mandó algo, como el cierre del turno de eleventa;
   - lo que dependía de una venta descartada también se descarta; lo de una venta por revisar, también queda por revisar.
 - **Dónde se aplica:** lo devuelto va al turno y al día en que se devuelve, que es cuando sale el dinero de la caja.
@@ -578,6 +580,44 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
     reintenta. Lo que quede por revisar se ve en la pantalla de la caja 2 (el bot de Telegram todavía no existe).
   - Falta ver en la copia cómo anota eleventa una devolución de otra caja o de otro turno: mientras, eso queda por
     revisar.
+  - **Avance (2026-10-16), en código** (`DevolucionesConEleventa`, `TicketsDeEleventa`; tablas del puente
+    `DevolucionesDeEleventa`, la ida, y `DevolucionesDesdeEleventa`, la vuelta):
+    - **La ida.** El folio que se escribe en la ventana de devoluciones se busca también en vivo en eleventa (hasta 3
+      segundos). Si es un ticket de otra caja, o uno que se cobró en el eleventa de la caja 2, se abre ahí como uno de la
+      caja, con «(eleventa)» y su caja: lo vendido, lo ya devuelto allá y lo que queda. Se devuelve por artículo (el
+      ticket completo no se cancela aquí), si se cobró en efectivo, no está cancelado y tiene 7 días o menos, con el
+      motivo, el permiso de devolución y quien autoriza, como en la caja nueva. Sin eleventa no se devuelve: dice que se
+      espere a la red.
+    - Al devolver se vuelve a leer en vivo (otra caja pudo devolver algo mientras) y se guarda todo junto: el ticket como
+      se leyó y lo devuelto (en el puente, no como venta del núcleo); la salida de efectivo del turno de la caja nueva
+      («Devolución del ticket #4521 de eleventa (Principal): …», redondeada al peso como cualquier reembolso; no va a
+      eleventa como salida); la apertura del cajón; la entrada al kardex de lo que regresa al inventario, y el envío a la
+      bandeja, que la escribe en eleventa como eleventa escribe una parcial, renglón por renglón del ticket. Mientras no
+      llega, la lectura la sigue sumando a las existencias.
+    - Solo se escribe en eleventa si el ticket es del mismo turno de la caja 2 en eleventa. El de otra caja (la principal)
+      o de otro turno queda por revisar al mandarlo («todavía no se ha visto cómo anota eleventa esa devolución»), sin
+      detener la bandeja: el dinero ya salió de la caja nueva y el inventario ya entró aquí; falta anotarla a mano en
+      eleventa. Mientras no se vea en vivo, casi toda devolución de la ida queda así.
+    - **La vuelta.** La lectura de cada 5 minutos lee, en la misma foto que las existencias, las devoluciones y
+      cancelaciones en eleventa de los tickets que mandó la caja 2 en los últimos 31 días (listas `IN` en grupos de
+      1000). Antes de las existencias, cada una entra a su venta de aquí como una devolución del núcleo **sin efectivo**:
+      el dinero salió de la caja de eleventa, así que el corte de la caja nueva no la cuenta. Va al turno de la venta, a
+      nombre de su cajero, con la hora de eleventa y el motivo «Hecha en eleventa (Caja 2, cajera2, 16/10 12:30): no
+      salió de esta caja». La cancelación devuelve lo que queda; la parcial, cada artículo en las líneas de su producto (o,
+      si fue común, de su nombre). Lo que regresa entra al kardex al costo con que salió, así que las existencias ya
+      cuadran con eleventa y no salen como ajuste; los reportes de ventas la descuentan, y queda en la bitácora.
+    - La vuelta nunca entra a la bandeja. Lo ya pasado se reconoce por `DEVOLUCIONES.ID` (con su `DEVUELTO_EN`) y lo que
+      escribió la caja 2 por la marca `TICKET_ID` + `DEVUELTO_EN`. Si aquí ya no queda tanto (¿se devolvió en las dos
+      cajas?), queda por revisar.
+    - **Antes de devolver aquí** un ticket de la caja 2 que ya está en eleventa, se leen en vivo sus devoluciones allá
+      (con el candado de la bandeja, hasta 3 segundos) y entran primero. Si eleventa ya le devolvió algo, lo que queda se
+      devuelve en eleventa: el reembolso de aquí se redondea con lo que salió de esta caja, y lo de eleventa no salió de
+      ella. Si eleventa no contesta, se deja pasar; si al mandarla choca, queda por revisar.
+    - **Por revisar, en la pantalla de la caja 2:** arriba, junto al estado de la caja, sale «Eleventa · 2 por revisar»
+      cuando hay algo. Ahí está lo que la bandeja dejó por revisar, con el porqué, y las devoluciones de eleventa que no
+      se pudieron pasar. Quien tiene «Configuración de la tienda» marca «Ya lo anoté en eleventa» o «Ya lo revisé» (queda
+      en la bitácora). También dice lo que espera para irse a eleventa y por qué, los folios repetidos y los avisos de la
+      lectura.
 - **Folios repetidos.** Justo después de guardar, el puente revisa si el folio ya lo tiene otro ticket; si todavía no
   se entregó, toma el siguiente y corrige solo su propio ticket y su kardex. Si ya salió impreso, no se cambia: sus
   reimpresiones salen con el folio de la caja 2, como cuando eleventa no contesta, y como el ticket ya no lleva QR
@@ -590,7 +630,8 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
     cada vuelta de la bandeja antes de mandar, vuelve a ver las ventas de la última hora; si otra caja tiene el mismo
     folio, marca la venta (`FolioRepetido`) y anota el otro ticket con su caja, su hora y su total. Al escribir el folio
     en la ventana de devoluciones (`GET /api/eleventa/folio/{folio}`), si son dos, se elige con «Es este»: el de la caja
-    2 se abre ahí; el de otra caja, por ahora, se devuelve en eleventa.
+    2 se abre ahí, y el de otra caja también, leído en vivo (la ida, arriba). Si eleventa no contesta, el de otra caja se
+    devuelve en eleventa.
 - **Los respaldos de eleventa.** Según sus páginas (consultadas el 2026-10-12): el [respaldo
   automático](https://eleventa.com/aprender/respaldo-automatico) se configura en Configuración ➜ Mantenimiento y puede
   respaldar al salir; en multicaja queda en `AbarrotesMultiCaja\respaldos` de la PC servidor;

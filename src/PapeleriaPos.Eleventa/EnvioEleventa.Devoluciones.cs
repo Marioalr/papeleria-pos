@@ -14,7 +14,12 @@ public sealed record DevolucionParaEleventa(
 /// <param name="Cantidad">En la unidad de eleventa.</param>
 /// <param name="Importe">El dinero que salió de la caja por este artículo.</param>
 /// <param name="RegresaAlInventario">Falso si volvió dañado: no se suma a la existencia de eleventa.</param>
-public sealed record ArticuloDevuelto(int? ProductoId, string Nombre, decimal Cantidad, decimal Importe, bool RegresaAlInventario = true);
+/// <param name="ArticuloEleventa">
+/// <c>VENTATICKETS_ARTICULOS.ID</c>, si se sabe (la devolución de un ticket cobrado en eleventa, que se leyó allá): se busca por
+/// él y no por el código.
+/// </param>
+public sealed record ArticuloDevuelto(int? ProductoId, string Nombre, decimal Cantidad, decimal Importe, bool RegresaAlInventario = true,
+    int? ArticuloEleventa = null);
 
 /// <param name="DevolucionId"><c>DEVOLUCIONES.ID</c>.</param>
 /// <param name="Turno">El turno de eleventa donde quedó (vacío si ya estaba): el turno de la caja nueva lo adopta.</param>
@@ -37,6 +42,9 @@ public static partial class EnvioEleventa
     /// <item>la entrada al inventario («Devolución de venta #folio»), salvo lo que volvió dañado;</item>
     /// <item>los acumulados del turno y del día en que se devuelve (que es cuando sale el dinero) y de sus departamentos.</item>
     /// </list>
+    /// Va al turno de eleventa de su hora (<see cref="TurnoParaAsync"/>). Lo que choca con eleventa queda por revisar
+    /// (<see cref="ChoqueConEleventa"/>): el ticket ya no está, ya está cancelado o ya no tiene lo que se devuelve, y la
+    /// devolución de un ticket de otra caja o de otro turno de eleventa, que todavía no se ha visto cómo la anota eleventa.
     /// </summary>
     public static async Task<DevolucionEnEleventa> DevolverAsync(FbConnection c, CajaEnEleventa caja, DevolucionParaEleventa devolucion, CancellationToken ct = default)
     {
@@ -121,10 +129,11 @@ public static partial class EnvioEleventa
             return new DevolucionEnEleventa(Convert.ToInt32(ya), YaEstaba: true);
         }
 
-        var ticket = await sql.FilaAsync("SELECT FOLIO, PAGADO_EN, ESTA_CANCELADO FROM VENTATICKETS WHERE ID = @ticket", [("ticket", d.TicketEleventa)])
-            ?? throw new InvalidOperationException($"En eleventa ya no está el ticket {d.TicketEleventa}.");
+        var ticket = await sql.FilaAsync("SELECT FOLIO, PAGADO_EN, ESTA_CANCELADO, CAJA_ID, TURNO_ID FROM VENTATICKETS WHERE ID = @ticket",
+                [("ticket", d.TicketEleventa)])
+            ?? throw new ChoqueConEleventa($"En eleventa ya no está el ticket {d.TicketEleventa}.");
         if (ticket[2] is string cancelado && cancelado.Trim() is "t" or "T")
-            throw new InvalidOperationException($"En eleventa el ticket #{ticket[0]} ya está cancelado.");
+            throw new ChoqueConEleventa($"En eleventa el ticket #{ticket[0]} ya está cancelado.");
         var folio = Convert.ToInt32(ticket[0]);
 
         var articulos = await ArticulosDelTicketAsync(sql, d.TicketEleventa);
@@ -135,6 +144,10 @@ public static partial class EnvioEleventa
 
         var deEleventa = await TurnoParaAsync(sql, caja, devuelta, d.Turno);
         var turno = deEleventa.Id;
+        // En la copia y en vivo, eleventa devolvió en el mismo turno y en la misma caja en que se cobró. Lo de otra caja o de
+        // otro turno todavía no se ha visto cómo lo anota (docs/pruebas-en-tienda.md): mientras, queda por revisar.
+        if (Convert.ToInt32(ticket[3]) != caja.CajaId || ticket[4] is DBNull || Convert.ToInt32(ticket[4]) != turno)
+            throw new ChoqueConEleventa(DeOtroTurnoODeOtraCaja);
         var dia = await DiaAsync(sql, caja.CajaId, devuelta.Date);
 
         if (d.EsCancelacion)
@@ -256,10 +269,12 @@ public static partial class EnvioEleventa
         {
             var codigo = p.ProductoId is { } productoId ? await CodigoAsync(sql, productoId) : null;
             bool Alcanza(EnElTicket a) => a.Cantidad - usado.GetValueOrDefault(a.Id) >= p.Cantidad - 0.0005m;
-            // Por su código; si en la venta pasó como común (eleventa ya no lo tenía), por su nombre.
-            var articulo = (codigo is null ? null : articulos.FirstOrDefault(a => string.Equals(a.Codigo, codigo, StringComparison.OrdinalIgnoreCase) && Alcanza(a)))
-                ?? articulos.FirstOrDefault(a => EsComun(a) && string.Equals(a.Nombre, p.Nombre.Trim(), StringComparison.OrdinalIgnoreCase) && Alcanza(a))
-                ?? throw new InvalidOperationException($"En el ticket de eleventa no está «{p.Nombre}» con {p.Cantidad} por devolver.");
+            // Por su renglón si se sabe (un ticket que se leyó en eleventa); si no, por su código, o si en la venta pasó como
+            // común (eleventa ya no lo tenía), por su nombre.
+            var articulo = (p.ArticuloEleventa is { } renglon ? articulos.FirstOrDefault(a => a.Id == renglon && Alcanza(a)) : null)
+                ?? (p.ArticuloEleventa is null && codigo is not null ? articulos.FirstOrDefault(a => string.Equals(a.Codigo, codigo, StringComparison.OrdinalIgnoreCase) && Alcanza(a)) : null)
+                ?? (p.ArticuloEleventa is null ? articulos.FirstOrDefault(a => EsComun(a) && string.Equals(a.Nombre, p.Nombre.Trim(), StringComparison.OrdinalIgnoreCase) && Alcanza(a)) : null)
+                ?? throw new ChoqueConEleventa($"En el ticket de eleventa ya no está «{p.Nombre}» con {p.Cantidad} por devolver.");
             usado[articulo.Id] = usado.GetValueOrDefault(articulo.Id) + p.Cantidad;
             devueltos.Add(new Devuelto(articulo, p.Cantidad, p.Importe, p.RegresaAlInventario && !EsComun(articulo) ? p.Cantidad : 0));
         }
@@ -270,6 +285,11 @@ public static partial class EnvioEleventa
     }
 
     private static bool EsComun(EnElTicket a) => a.Codigo.StartsWith("COMUN-", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Por qué la devolución de un ticket de otra caja o de otro turno de eleventa queda por revisar.</summary>
+    public const string DeOtroTurnoODeOtraCaja =
+        "El ticket es de otra caja o de otro turno de eleventa: todavía no se ha visto cómo anota eleventa esa devolución. "
+        + "Anótala a mano en eleventa.";
 
     private static async Task<string?> CodigoAsync(Sql sql, int productoId) =>
         await sql.ValorAsync("SELECT CODIGO FROM PRODUCTOS WHERE ID = @id", [("id", productoId)]) is string codigo ? codigo.Trim() : null;

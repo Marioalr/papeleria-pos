@@ -63,3 +63,118 @@ public class FolioRepetidoEnEleventa
     public long TotalCentavos { get; set; }
     public DateTime VistoUtc { get; set; }
 }
+
+/// <summary>
+/// La ida (docs/migracion-eleventa.md, «Devoluciones de ida y vuelta»): la devolución en la caja nueva de un ticket que se
+/// cobró en eleventa (en la caja principal, o en el eleventa de la caja 2). El ticket se leyó en vivo en eleventa y se
+/// guarda aquí como se leyó, no como venta: la caja nueva no lo vendió. El dinero sale del turno de la caja nueva como
+/// una salida de efectivo (<see cref="MovimientoId"/>, que no va a eleventa como salida) y la devolución va a eleventa por
+/// la bandeja, escrita como la escribe eleventa.
+/// </summary>
+public class DevolucionDeEleventa
+{
+    public Guid Id { get; set; } = Ids.Nuevo();
+    public Guid SucursalId { get; set; }
+    public Guid CajaId { get; set; }
+
+    /// <summary>El turno de la caja nueva de donde salió el dinero.</summary>
+    public Guid TurnoId { get; set; }
+
+    public Guid UsuarioId { get; set; }
+    public Guid? AutorizoId { get; set; }
+    public required string Motivo { get; set; }
+    public DateTime FechaUtc { get; set; }
+
+    // El ticket, como se leyó en eleventa.
+
+    /// <summary><c>VENTATICKETS.ID</c>.</summary>
+    public int TicketEleventa { get; set; }
+
+    public int Folio { get; set; }
+
+    /// <summary><c>CAJAS.ID</c> y <c>CAJAS.NOMBRE</c> de la caja que lo cobró.</summary>
+    public int CajaEleventa { get; set; }
+
+    public required string CajaNombre { get; set; }
+
+    /// <summary><c>VENTATICKETS.TURNO_ID</c>: el turno de eleventa en que se cobró.</summary>
+    public int? TurnoTicketEleventa { get; set; }
+
+    public DateTime VendidoUtc { get; set; }
+
+    /// <summary>Lo que pagó el cliente (con lo que ya se había devuelto en eleventa).</summary>
+    public long TicketTotalCentavos { get; set; }
+
+    /// <summary>Sus artículos, como estaban al leerlo.</summary>
+    public List<ArticuloLeidoDeEleventa> Ticket { get; set; } = [];
+
+    // Lo que se devolvió aquí.
+
+    public List<ArticuloDevueltoDeEleventa> Articulos { get; set; } = [];
+
+    /// <summary>Lo devuelto, exacto.</summary>
+    public long TotalCentavos { get; set; }
+
+    /// <summary>Lo que salió de la caja: redondeado al peso, como el reembolso de siempre.</summary>
+    public long ReembolsoEfectivoCentavos { get; set; }
+
+    public long RedondeoCentavos { get; set; }
+
+    /// <summary>La salida de efectivo del turno de la caja nueva; vacía si al redondear no salió nada.</summary>
+    public Guid? MovimientoId { get; set; }
+}
+
+/// <summary>Un artículo de un ticket de eleventa como se leyó (<c>VENTATICKETS_ARTICULOS</c>).</summary>
+/// <param name="Id"><c>VENTATICKETS_ARTICULOS.ID</c>.</param>
+/// <param name="Cantidad">La que quedaba en eleventa al leerlo (eleventa baja lo devuelto).</param>
+/// <param name="ProductoId"><c>PRODUCTOS.ID</c>; vacío si es un artículo común.</param>
+public sealed record ArticuloLeidoDeEleventa(int Id, string Codigo, string Nombre, decimal Cantidad, decimal Precio, decimal Total, decimal GananciaPorPieza,
+    bool AGranel, int? ProductoId);
+
+/// <param name="ArticuloEleventa"><c>VENTATICKETS_ARTICULOS.ID</c>.</param>
+/// <param name="VarianteId">La de la caja nueva, si el producto vino de eleventa: a su inventario regresa lo que no vino dañado.</param>
+public sealed record ArticuloDevueltoDeEleventa(int ArticuloEleventa, string Codigo, string Nombre, decimal Cantidad, long ImporteCentavos,
+    bool RegresaAlInventario, Guid? VarianteId);
+
+/// <summary>
+/// La vuelta (docs/migracion-eleventa.md, «Devoluciones de ida y vuelta»): una devolución o cancelación que se hizo en
+/// eleventa de un ticket que mandó la caja 2. La lectura de cada pocos minutos la trae y la pasa a la venta de la caja
+/// nueva como una devolución sin efectivo (el dinero salió de la caja de eleventa), antes de las existencias. Lo que vino
+/// de eleventa no va a la bandeja. Lo que no se pudo pasar queda por revisar.
+/// </summary>
+public class DevolucionDesdeEleventa
+{
+    public Guid Id { get; set; } = Ids.Nuevo();
+
+    /// <summary><c>DEVOLUCIONES.ID</c>.</summary>
+    public int DevolucionEleventa { get; set; }
+
+    /// <summary><c>VENTATICKETS.ID</c> del ticket de la caja 2.</summary>
+    public int TicketEleventa { get; set; }
+
+    /// <summary><c>DEVOLUCIONES.DEVUELTO_EN</c>: con el ID dice que es la misma (una restauración vuelve a dar los números).</summary>
+    public DateTime DevueltaUtc { get; set; }
+
+    public bool EsCancelacion { get; set; }
+
+    /// <summary><c>TOTAL_DEVUELTO</c>: lo que salió de la caja de eleventa.</summary>
+    public long TotalCentavos { get; set; }
+
+    /// <summary><c>DEVOLUCIONES.CAJERO</c> y <c>CAJA</c>, como texto.</summary>
+    public string? Cajero { get; set; }
+
+    public string? Caja { get; set; }
+
+    public Guid VentaId { get; set; }
+
+    /// <summary>La devolución que se le hizo a la venta de la caja nueva; vacía si quedó por revisar.</summary>
+    public Guid? DevolucionId { get; set; }
+
+    /// <summary>Por qué no se pasó a la venta (ya se había devuelto aquí, no está en el ticket…).</summary>
+    public string? PorRevisar { get; set; }
+
+    /// <summary>Cuándo alguien la revisó (lo que quedó por revisar ya no se enseña).</summary>
+    public DateTime? RevisadaUtc { get; set; }
+
+    public DateTime VistaUtc { get; set; }
+}

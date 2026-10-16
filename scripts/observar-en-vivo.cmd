@@ -35,6 +35,8 @@ echo.
 echo Lo que falta ver en vivo (en cualquiera de las cajas):
 echo   - una cancelación de un ticket;
 echo   - una devolución de parte de un ticket (mejor si se devuelve un artículo completo);
+echo   - una devolución o cancelación de un ticket de otra caja o de otro turno (por ejemplo, en la caja 2 algo que se
+echo     vendió en la principal, o un ticket de ayer): dice en qué turno lo anota eleventa;
 echo   - el cierre de un turno con su corte (mejor si faltó o sobró algo al contar).
 echo Cuando pase una de verdad, vuelve aquí y escribe qué fue. No hagas operaciones de prueba en la tienda.
 echo.

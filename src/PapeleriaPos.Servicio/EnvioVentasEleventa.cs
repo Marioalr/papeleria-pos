@@ -89,6 +89,13 @@ public sealed class EnvioVentasEleventa(
         return new Soltar(_uno);
     }
 
+    /// <summary>
+    /// El candado, si se libera pronto; vacío si no. Para revisar en vivo un ticket antes de devolverlo: la cajera tiene al
+    /// cliente enfrente, y si la bandeja o la lectura van, se deja pasar.
+    /// </summary>
+    public async Task<IDisposable?> IntentarCandadoAsync(TimeSpan espera) =>
+        await _uno.WaitAsync(espera) ? new Soltar(_uno) : null;
+
     private sealed class Soltar(SemaphoreSlim candado) : IDisposable
     {
         private int _soltado;
@@ -160,6 +167,9 @@ public sealed class EnvioVentasEleventa(
         var movimientoIds = porAtender.Where(e => e.MovimientoId is not null).Select(e => e.MovimientoId!.Value).ToList();
         var movimientos = await db.MovimientosCaja.AsNoTracking().Where(m => movimientoIds.Contains(m.Id))
             .Select(m => new { m.Id, m.Tipo, m.MontoCentavos, m.Motivo, m.FechaUtc }).ToDictionaryAsync(m => m.Id);
+        var deEleventaIds = porAtender.Where(e => e.DevolucionDeEleventaId is not null).Select(e => e.DevolucionDeEleventaId!.Value).ToList();
+        var deEleventa = await db.Set<DevolucionDeEleventa>().AsNoTracking().Where(d => deEleventaIds.Contains(d.Id))
+            .Select(d => new { d.Id, d.Folio, d.CajaNombre, d.FechaUtc, d.ReembolsoEfectivoCentavos }).ToDictionaryAsync(d => d.Id);
         var conteo = await db.EnviosAEleventa.AsNoTracking().GroupBy(e => e.Estado).Select(g => new { g.Key, Cuantos = g.Count() }).ToListAsync();
 
         EnvioEleventaDto Dto(EnvioAEleventa e)
@@ -167,6 +177,7 @@ public sealed class EnvioVentasEleventa(
             var venta = e.VentaId is { } v && ventas.TryGetValue(v, out var x) ? x : null;
             var devolucion = e.DevolucionId is { } d && devoluciones.TryGetValue(d, out var y) ? y : null;
             var movimiento = e.MovimientoId is { } m && movimientos.TryGetValue(m, out var z) ? z : null;
+            var ida = e.DevolucionDeEleventaId is { } i && deEleventa.TryGetValue(i, out var w) ? w : null;
             var folio = venta is null ? "" : $"{venta.Serie}-{venta.Folio:000000}";
             var (descripcion, fecha, total) = e.Tipo switch
             {
@@ -176,6 +187,8 @@ public sealed class EnvioVentasEleventa(
                 TipoEnvioEleventa.MovimientoDeCaja => (
                     $"{(movimiento?.Tipo == Nucleo.Turnos.TipoMovimientoCaja.Salida ? "Salida" : "Entrada")} de efectivo: {movimiento?.Motivo}",
                     movimiento?.FechaUtc ?? e.CreadoUtc, movimiento?.MontoCentavos ?? 0),
+                TipoEnvioEleventa.DevolucionDeEleventa => (
+                    $"Devolución del ticket #{ida?.Folio} de eleventa ({ida?.CajaNombre})", ida?.FechaUtc ?? e.CreadoUtc, ida?.ReembolsoEfectivoCentavos ?? 0),
                 _ => ("Cierre del turno", e.CreadoUtc, 0L),
             };
             return new EnvioEleventaDto(e.Id, e.Tipo, descripcion, HoraMexico.ALocal(fecha), total, e.Estado, e.Intentos, e.Error, e.FolioEleventa);
@@ -348,6 +361,17 @@ public sealed class EnvioVentasEleventa(
                         return r.Turno;
                     };
                 break;
+            case TipoEnvioEleventa.DevolucionDeEleventa:
+                // La ida: la devolución aquí de un ticket que se cobró en eleventa, escrita como la escribe eleventa.
+                var ida = await VentasParaEleventa.ArmarDevolucionDeEleventaAsync(db, envio.DevolucionDeEleventaId!.Value, ct);
+                if (ida.Devolucion is { } paraDevolverAlla)
+                    escribir = async () =>
+                    {
+                        var r = await EnvioEleventa.DevolverAsync(servidor, caja, paraDevolverAlla, ct);
+                        envio.IdEleventa = r.DevolucionId;
+                        return r.Turno;
+                    };
+                break;
             case TipoEnvioEleventa.MovimientoDeCaja:
                 var movimiento = await VentasParaEleventa.ArmarMovimientoAsync(db, envio.MovimientoId!.Value, ct);
                 porRevisar = movimiento.PorRevisar;
@@ -450,6 +474,8 @@ public sealed class EnvioVentasEleventa(
         TipoEnvioEleventa.Cancelacion or TipoEnvioEleventa.Devolucion =>
             await db.Devoluciones.Where(d => d.Id == envio.DevolucionId).Select(d => (Guid?)d.TurnoId).FirstOrDefaultAsync(ct),
         TipoEnvioEleventa.MovimientoDeCaja => await db.MovimientosCaja.Where(m => m.Id == envio.MovimientoId).Select(m => (Guid?)m.TurnoId).FirstOrDefaultAsync(ct),
+        TipoEnvioEleventa.DevolucionDeEleventa =>
+            await db.Set<DevolucionDeEleventa>().Where(d => d.Id == envio.DevolucionDeEleventaId).Select(d => (Guid?)d.TurnoId).FirstOrDefaultAsync(ct),
         _ => null,
     };
 

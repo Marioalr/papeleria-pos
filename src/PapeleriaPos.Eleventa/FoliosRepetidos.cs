@@ -104,15 +104,19 @@ public static class FoliosRepetidos
         return nuevas;
     }
 
-    /// <summary>Por qué un ticket de otra caja de eleventa no se devuelve aquí.</summary>
-    public const string SeDevuelveEnEleventa = "Es de otra caja de eleventa: se devuelve en eleventa.";
+    /// <summary>Por qué un ticket de otra caja de eleventa no se devuelve aquí: eleventa no contestó para verlo.</summary>
+    public const string SeDevuelveEnEleventa = "Es de otra caja de eleventa y eleventa no contesta: espera a la red, o devuélvelo en eleventa.";
 
     /// <summary>
-    /// Para devolver con el folio de eleventa escrito (el ticket ya no lleva QR): las ventas de esta caja con ese folio y
-    /// los otros tickets de eleventa que la revisión tardía encontró con el mismo. Si hay más de uno, la caja los enseña y
-    /// se elige por la hora y el total.
+    /// Para devolver con el folio de eleventa escrito (el ticket ya no lleva QR): las ventas de esta caja con ese folio y los
+    /// tickets de eleventa con el mismo (en vivo, <paramref name="enEleventa"/>; o, si eleventa no contestó, los que la
+    /// revisión tardía anotó). Si hay más de uno, la caja los enseña y se elige por la hora y el total; el de otra caja se
+    /// devuelve aquí si se puede (la ida, <see cref="DevolucionesConEleventa"/>), o dice por qué no.
     /// </summary>
-    public static async Task<FolioEleventaDto> BuscarAsync(PosDbContext db, int folio, CancellationToken ct = default)
+    /// <param name="enEleventa">Los tickets de eleventa con ese folio, leídos en vivo; vacío si eleventa no contestó.</param>
+    /// <param name="conEleventa">Si esta caja manda a eleventa (si no, no se le preguntó).</param>
+    public static async Task<FolioEleventaDto> BuscarAsync(PosDbContext db, int folio, IReadOnlyList<TicketLeido>? enEleventa, bool conEleventa,
+        DateTime ahoraUtc, CancellationToken ct = default)
     {
         var propios = await (from e in db.EnviosAEleventa.AsNoTracking()
                              join v in db.Ventas.AsNoTracking() on e.VentaId equals v.Id
@@ -125,12 +129,41 @@ public static class FoliosRepetidos
                 p.Folio is { } f ? $"{p.Serie}-{f:000000}" : null, p.TicketEleventa))
             .ToList();
         var nuestros = propios.Where(p => p.TicketEleventa is not null).Select(p => p.TicketEleventa!.Value).ToHashSet();
-        var otros = await db.Set<FolioRepetidoEnEleventa>().AsNoTracking().Where(f => f.Folio == folio).ToListAsync(ct);
-        foreach (var otro in otros.Where(o => !nuestros.Contains(o.TicketEleventa)).DistinctBy(o => o.TicketEleventa))
-            tickets.Add(new TicketConFolioDto(otro.Caja, otro.VendidoUtc is { } vendido ? HoraMexico.ALocal(vendido) : null, otro.TotalCentavos, null,
-                otro.TicketEleventa, SeDevuelveEnEleventa));
-        return new FolioEleventaDto(folio, tickets.OrderBy(t => t.FechaLocal).ToList());
+        string? aviso = null;
+        if (enEleventa is not null)
+        {
+            // Una venta de esta caja que llegó a eleventa sin que aquí se supiera (se cortó la red al confirmar) lleva su marca.
+            var marcas = await MarcasSinFolioAsync(db, ct);
+            foreach (var t in enEleventa.Where(t => !nuestros.Contains(t.Id) && !(t.CreadoEn is { } creado && marcas.Contains(creado))))
+                tickets.Add(new TicketConFolioDto(t.Caja, t.VendidoEn, Centavos(t.Pagado), null, t.Id, DevolucionesConEleventa.PorQueNoSeDevuelveAqui(t, ahoraUtc)));
+        }
+        else
+        {
+            var otros = await db.Set<FolioRepetidoEnEleventa>().AsNoTracking().Where(f => f.Folio == folio).ToListAsync(ct);
+            foreach (var otro in otros.Where(o => !nuestros.Contains(o.TicketEleventa)).DistinctBy(o => o.TicketEleventa))
+                tickets.Add(new TicketConFolioDto(otro.Caja, otro.VendidoUtc is { } vendido ? HoraMexico.ALocal(vendido) : null, otro.TotalCentavos, null,
+                    otro.TicketEleventa, SeDevuelveEnEleventa));
+            if (conEleventa)
+                aviso = DevolucionesConEleventa.NoContesta;
+        }
+        return new FolioEleventaDto(folio, tickets.OrderBy(t => t.FechaLocal).ToList(), aviso);
     }
+
+    /// <summary>Las marcas (<c>CREADO_EN</c>) de las ventas de esta caja que pudieron llegar a eleventa sin que se supiera.</summary>
+    private static async Task<HashSet<DateTime>> MarcasSinFolioAsync(PosDbContext db, CancellationToken ct)
+    {
+        var creadas = await (from e in db.EnviosAEleventa.AsNoTracking()
+                             join v in db.Ventas.AsNoTracking() on e.VentaId equals v.Id
+                             where e.Tipo == TipoEnvioEleventa.Venta && e.FolioEleventa == null && e.Intentos > 0
+                             select v.CreadaUtc).ToListAsync(ct);
+        return creadas.Select(c =>
+        {
+            var local = HoraMexico.ALocal(c);
+            return new DateTime(local.Ticks - local.Ticks % 1000);
+        }).ToHashSet();
+    }
+
+    private static long Centavos(decimal pesos) => (long)Math.Round(pesos * 100, MidpointRounding.AwayFromZero);
 
     private static string Recortar(string texto, int largo) => texto.Length <= largo ? texto : texto[..largo];
 }

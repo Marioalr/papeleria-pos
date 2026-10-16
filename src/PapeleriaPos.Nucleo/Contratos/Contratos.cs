@@ -1149,3 +1149,16 @@ public sealed record FolioEleventaDto(int Folio, IReadOnlyList<TicketConFolioDto
 /// <param name="TicketEleventa"><c>VENTATICKETS.ID</c> en eleventa.</param>
 /// <param name="Nota">Lo que hay que saber de ese ticket, por ejemplo que se devuelve en eleventa.</param>
 public sealed record TicketConFolioDto(string Caja, DateTime? FechaLocal, long TotalCentavos, string? FolioCaja, int? TicketEleventa, string? Nota = null);
+
+/// <summary>
+/// Lo que la caja 2 enseña del puente con eleventa (el piloto; sin Telegram, que está en pausa): lo que quedó por revisar y
+/// lo que conviene saber. Solo para convivir con eleventa.
+/// </summary>
+/// <param name="Detenido">Por qué el puente dejó de escribir en eleventa; vacío si escribe.</param>
+/// <param name="Respaldo">Por qué la bandeja espera al respaldo de eleventa; vacío si no espera.</param>
+public sealed record PuenteEleventaDto(IReadOnlyList<PorRevisarEleventaDto> PorRevisar, IReadOnlyList<string> Avisos, string? Detenido = null,
+    string? Respaldo = null);
+
+/// <summary>Algo que quedó por revisar con eleventa: de la bandeja (<paramref name="EnvioId"/>) o una devolución hecha allá (<paramref name="VueltaId"/>).</summary>
+/// <param name="Motivo">Por qué, dicho para la tienda.</param>
+public sealed record PorRevisarEleventaDto(Guid? EnvioId, Guid? VueltaId, string Descripcion, DateTime FechaLocal, long TotalCentavos, string Motivo);

@@ -644,6 +644,12 @@ corte que no alcanzó a llegar queda por revisar sin detener lo demás; y los fo
 justo al guardar y, si otra caja lo repite después, se reimprime con el folio de la caja y al devolver se elige entre los
 dos tickets por la hora y el total (el ticket ya no lleva QR). Probado contra el Firebird de prueba.
 
+Segunda parte, en código: las devoluciones de ida y vuelta. En la caja 2 se devuelve un ticket cobrado en eleventa, leído
+en vivo (solo efectivo, 7 días y las reglas de la caja nueva): el dinero sale de la caja nueva y la devolución va a
+eleventa por la bandeja; la de un ticket de otra caja o de otro turno queda por revisar hasta ver en vivo cómo la anota
+eleventa. Lo que se devuelve o cancela en eleventa de un ticket de la caja 2 entra a su venta con la lectura, sin
+efectivo (el corte de la caja nueva no lo cuenta), y lo que quede por revisar se ve arriba en la pantalla de la caja 2.
+
 #### Al terminar el piloto
 
 Cada parte entra sin detener a la caja 2:
@@ -804,7 +810,8 @@ Piloto en la caja 2 ([ver arriba](#la-versión-unicaja-y-el-piloto-en-la-caja-2)
 - [x] Eleventa abierto en la caja 2 en el mismo turno (adoptar su turno y tomar su corte) y los folios repetidos
   (2026-10-16, en código; falta probarlo contra la copia en el paso 5)
   ([diseño](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))
-- [ ] Devoluciones y cancelaciones de ida y vuelta con eleventa
+- [x] Devoluciones y cancelaciones de ida y vuelta con eleventa (2026-10-16, en código; falta ver en vivo la de otra
+  caja o de otro turno, que mientras queda por revisar, y probarlo contra la copia en el paso 5)
 - [ ] Los respaldos de eleventa: detectar una restauración y el respaldo propio con `gbak`
 - [ ] Paso 5: semanas de prueba contra una copia servida por un Firebird 2.0.1 como el de la tienda
 - [ ] Paso 7: el fin de semana del 17 y 18 de octubre

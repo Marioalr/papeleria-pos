@@ -215,7 +215,7 @@ public static class LectorEleventa
 
     /// <summary>
     /// Lo del piloto: los turnos abiertos de la caja 2 y los que adoptó la caja nueva (si eleventa ya los cerró, con lo que
-    /// se contó y lo que faltó o sobró al cerrar). Solo lee.
+    /// se contó y lo que faltó o sobró al cerrar), y las devoluciones de los tickets que mandó la caja 2. Solo lee.
     /// </summary>
     private static async Task<DatosDelPiloto> LeerDelPilotoAsync(FbConnection c, FbTransaction tx, ConsultaDelPiloto consulta, CancellationToken ct)
     {
@@ -237,7 +237,9 @@ public static class LectorEleventa
                     OR DESCRIPCION STARTING WITH 'Efectivo sobrante al cerrar turno')
                 """,
                 r => new FilaCierreDeTurno(Entero(r, 0), Texto(r, 1) == "Salida", Convert.ToDecimal(r.GetValue(2), System.Globalization.CultureInfo.InvariantCulture)), ct));
-        return new DatosDelPiloto { Turnos = turnos, Cierres = cierres };
+        // La vuelta: lo que se devolvió o canceló en eleventa de los tickets que mandó la caja 2.
+        var devoluciones = consulta.Tickets is { Count: > 0 } tickets ? await TicketsDeEleventa.DevolucionesAsync(c, tx, tickets, ct) : [];
+        return new DatosDelPiloto { Turnos = turnos, Cierres = cierres, Devoluciones = devoluciones };
     }
 
     /// <summary>Por qué no se pudo leer, dicho para la tienda (Firebird lo dice en inglés y con códigos).</summary>

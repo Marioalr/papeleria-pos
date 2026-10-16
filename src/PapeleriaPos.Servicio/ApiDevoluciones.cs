@@ -17,18 +17,23 @@ public static class ApiDevoluciones
         var api = app.MapGroup("/api").ConErrores().SoloSuCaja();
 
         // En el piloto con eleventa dice también si el ticket no se devuelve aquí, para que la ventana no lo ofrezca, y solo
-        // ofrece cancelar el del mismo día (CorteEnElPiloto: el turno de esta caja no se cierra aquí).
-        api.MapGet("/sucursales/{sucursalId:guid}/ventas/folio/{folio}", async (Guid sucursalId, string folio, PosDbContext db, OpcionesEleventa eleventa) =>
+        // ofrece cancelar el del mismo día (CorteEnElPiloto: el turno de esta caja no se cierra aquí). Lo que se le haya
+        // devuelto en eleventa entra antes (DevolucionesConEleventa).
+        api.MapGet("/sucursales/{sucursalId:guid}/ventas/folio/{folio}", async (Guid sucursalId, string folio, PosDbContext db, OpcionesEleventa eleventa,
+            EnvioVentasEleventa envios) =>
         {
             var venta = await new RegistroDevoluciones(db).PorFolioAsync(sucursalId, folio);
             if (venta is null)
                 return Results.NotFound(new ErrorDto($"No existe el ticket «{folio}»."));
+            await RevisarEnEleventaAsync(db, venta.Id, eleventa, envios, soloRevisar: true);
             var ahora = db.Reloj.GetUtcNow().UtcDateTime;
             var seCancela = await db.Turnos.AnyAsync(t => t.Id == venta.TurnoId && t.CerradoUtc == null)
                 && (!eleventa.CorteEnEleventa || CorteEnElPiloto.SeCancela(venta.PagadaUtc!.Value, ahora));
             var dias = Devolucion.DiasParaDevolver - (int)(ahora - venta.PagadaUtc!.Value).TotalDays;
             var cliente = venta.ClienteId is { } clienteId ? (await db.ClientesRegistrados.FindAsync(clienteId))?.Nombre : null;
-            var noSeDevuelve = eleventa.SoloEfectivo ? await SoloEfectivoEnElPiloto.PorQueNoSeDevuelveAsync(db, venta.Id) : null;
+            var noSeDevuelve = eleventa.SoloEfectivo
+                ? await SoloEfectivoEnElPiloto.PorQueNoSeDevuelveAsync(db, venta.Id) ?? await DevolucionesConEleventa.PorQueNoSeDevuelveAsync(db, venta.Id)
+                : null;
             return Results.Ok(new VentaParaDevolverDto(venta.Id, venta.FolioTexto!, HoraMexico.ALocal(venta.PagadaUtc.Value), venta.Estado, venta.TotalCentavos,
                 venta.Lineas.Select(l => new LineaDevolucionDto(l.Id, l.Descripcion, l.Cantidad.Milesimas, l.CantidadDevuelta.Milesimas, l.ImporteCentavos, l.LlevaInventario)).ToList(),
                 seCancela && venta.Estado == EstadoVenta.Pagada, Math.Max(0, dias), venta.CreditoCentavos, cliente, noSeDevuelve));
@@ -44,6 +49,7 @@ public static class ApiDevoluciones
                 await SoloEfectivoEnElPiloto.RevisarDevolucionAsync(db, ventaId);
             if (opcionesEleventa.CorteEnEleventa)
                 await CorteEnElPiloto.RevisarCancelacionAsync(db, ventaId);
+            await RevisarEnEleventaAsync(db, ventaId, opcionesEleventa, eleventa);
             var devolucion = await new RegistroDevoluciones(db).CancelarAsync(ventaId, s.UsuarioId, s.CajaId, s.Motivo, s.AutorizacionId);
             eleventa.Despertar();
             return await ComprobanteAsync(db, devolucion, opciones.Value);
@@ -54,6 +60,7 @@ public static class ApiDevoluciones
         {
             if (opcionesEleventa.SoloEfectivo)
                 await SoloEfectivoEnElPiloto.RevisarDevolucionAsync(db, ventaId);
+            await RevisarEnEleventaAsync(db, ventaId, opcionesEleventa, eleventa);
             var lineas = s.Lineas.Select(l => new LineaPorDevolver(l.LineaId, new Cantidad(l.CantidadMilesimas), l.RegresaAlInventario)).ToList();
             var devolucion = await new RegistroDevoluciones(db).DevolverAsync(ventaId, lineas, s.UsuarioId, s.CajaId, s.Motivo, s.AutorizacionId);
             eleventa.Despertar();
@@ -89,6 +96,26 @@ public static class ApiDevoluciones
             var cobro = await new RegistroCaja(db).VerificarTransferenciaAsync(cobroId, s.Usuario, s.Pin, s.Llego);
             return new { cobro.Id, cobro.Verificacion };
         });
+    }
+
+    /// <summary>
+    /// El piloto (DevolucionesConEleventa): antes de devolver o cancelar aquí un ticket de la caja 2 que ya está en eleventa,
+    /// lo que se le haya devuelto allá entra antes, con el candado de la bandeja y sin esperarla mucho; si eleventa no
+    /// contesta, se deja pasar (decisión del dueño, 2026-10-11) y un choque queda por revisar. Si allá ya se le devolvió
+    /// algo, lo que queda se devuelve en eleventa.
+    /// </summary>
+    /// <param name="soloRevisar">Al buscar el ticket: la ventana lo enseña con el porqué (<c>NoSeDevuelveEnElPiloto</c>).</param>
+    private static async Task RevisarEnEleventaAsync(PosDbContext db, Guid ventaId, OpcionesEleventa opciones, EnvioVentasEleventa envios, bool soloRevisar = false)
+    {
+        if (!opciones.CorteEnEleventa || opciones.ParaEscribir() is not { } destino)
+            return;
+        using (var candado = await envios.IntentarCandadoAsync(DevolucionesConEleventa.EsperaEnVivo))
+        {
+            if (candado is not null)
+                await DevolucionesConEleventa.RevisarEnVivoAsync(db, destino.Servidor, ventaId, db.Reloj.GetUtcNow().UtcDateTime);
+        }
+        if (!soloRevisar && await DevolucionesConEleventa.PorQueNoSeDevuelveAsync(db, ventaId) is { } porque)
+            throw new InvalidOperationException(porque);
     }
 
     private static async Task<ComprobanteDevolucionDto> ComprobanteAsync(PosDbContext db, Devolucion d, OpcionesTicket opciones)

@@ -51,6 +51,11 @@ public static class RevisionEnVivo
         var ticketAntes = f.Antes("VENTATICKETS", ticketId);
         var folio = ticket?["FOLIO"] ?? FolioDeLosMovimientos(f, ticketId);
         yield return $"{(cancelacion ? "Cancelación" : "Devolución")} del ticket #{folio} (DEVOLUCIONES {id}, {Dinero(total)}):";
+        // Lo que falta ver en vivo (docs/pruebas-en-tienda.md): cómo anota eleventa la de un ticket de otro turno o de otra caja.
+        // Mientras, la caja 2 la deja por revisar; esto dice dónde quedó.
+        if ((ticket ?? f.Antes("VENTATICKETS", ticketId)) is { } delTicket && delTicket["TURNO_ID"] != d["TURNO_ID"])
+            yield return $"  · el ticket se cobró en el turno {delTicket["TURNO_ID"]} (caja {delTicket["CAJA_ID"]}) y la devolución quedó en el turno "
+                + $"{d["TURNO_ID"]} («{d["CAJA"]}»): así anota eleventa la de otro turno u otra caja; la caja 2 todavía la deja por revisar";
 
         var articulos = f.NuevosDonde("DEVOLUCIONES_ARTICULOS", r => r["DEVOLUCION_ID"] == id).ToList();
         if (cancelacion)

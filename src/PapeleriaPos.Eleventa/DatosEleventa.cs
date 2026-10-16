@@ -44,7 +44,8 @@ public sealed class DatosEleventa
 /// </summary>
 /// <param name="CajaId">La caja de eleventa de la caja 2 (<c>CAJAS.ID</c>): sus turnos abiertos.</param>
 /// <param name="Turnos">Los turnos que adoptó la caja nueva y siguen sin su corte: si eleventa ya los cerró.</param>
-public sealed record ConsultaDelPiloto(int CajaId, IReadOnlyCollection<int> Turnos);
+/// <param name="Tickets">Los tickets que mandó la caja 2 en los últimos días: lo que se les devolvió o canceló en eleventa (la vuelta).</param>
+public sealed record ConsultaDelPiloto(int CajaId, IReadOnlyCollection<int> Turnos, IReadOnlyCollection<int>? Tickets = null);
 
 /// <param name="Inicio">Hora de la tienda, como todo en eleventa.</param>
 public sealed record FilaTurno(int Id, int CajaId, DateTime Inicio, DateTime? Termino, decimal? EfectivoAlCierre);
@@ -58,6 +59,9 @@ public sealed class DatosDelPiloto
     public List<FilaTurno> Turnos { get; init; } = [];
 
     public List<FilaCierreDeTurno> Cierres { get; init; } = [];
+
+    /// <summary>Las devoluciones y cancelaciones de los tickets que mandó la caja 2 (las suyas también: la vuelta las reconoce).</summary>
+    public List<DevolucionLeida> Devoluciones { get; init; } = [];
 }
 
 /// <summary>

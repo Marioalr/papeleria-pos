@@ -26,6 +26,11 @@ public enum TipoEnvioEleventa
     CierreDeTurno,
     /// <summary>Una entrada (F7) o salida (F8) de efectivo.</summary>
     MovimientoDeCaja,
+
+    /// <summary>
+    /// La devolución en la caja nueva de un ticket que se cobró en eleventa (la ida, <see cref="DevolucionDeEleventa"/>).
+    /// </summary>
+    DevolucionDeEleventa,
 }
 
 /// <summary>
@@ -51,6 +56,9 @@ public class EnvioAEleventa
     /// <summary>La entrada o salida de efectivo.</summary>
     public Guid? MovimientoId { get; set; }
 
+    /// <summary>La devolución de un ticket de eleventa (la ida).</summary>
+    public Guid? DevolucionDeEleventaId { get; set; }
+
     public EstadoEnvioEleventa Estado { get; set; }
     public DateTime CreadoUtc { get; set; }
 
@@ -72,8 +80,8 @@ public class EnvioAEleventa
     public bool FolioRepetido { get; set; }
 
     /// <summary>
-    /// Lo que quedó en eleventa: <c>DEVOLUCIONES.ID</c> de una cancelación o devolución, <c>CORTE_MOVIMIENTOS.ID</c> de
-    /// una entrada o salida, <c>TURNOS.ID</c> de un cierre.
+    /// Lo que quedó en eleventa: <c>DEVOLUCIONES.ID</c> de una cancelación o devolución (también la de un ticket de
+    /// eleventa), <c>CORTE_MOVIMIENTOS.ID</c> de una entrada o salida, <c>TURNOS.ID</c> de un cierre.
     /// </summary>
     public int? IdEleventa { get; set; }
 }

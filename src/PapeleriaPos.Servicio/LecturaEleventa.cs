@@ -160,21 +160,32 @@ public sealed class LecturaEleventa(
             using var candado = envios.Activo ? await envios.CandadoAsync(ct) : null;
             // Lo que la bandeja mande mientras se lee pudo entrar a eleventa sin que aquí se sepa todavía.
             using var mandados = envios.EnCurso.Vigilar();
-            // En el piloto, en la misma foto: los turnos de la caja 2 en eleventa.
-            var consulta = opciones.CorteEnEleventa && opciones.Caja is { } caja ? await TurnosDelPiloto.ConsultaAsync(db, caja, ct) : null;
-            var datos = await LectorEleventa.LeerCatalogoAsync(servidor, consulta, ct);
+            // En el piloto, en la misma foto: los turnos de la caja 2 en eleventa y lo que se devolvió allá de sus tickets.
             var ahora = reloj.GetUtcNow().UtcDateTime;
+            var consulta = opciones.CorteEnEleventa && opciones.Caja is { } caja
+                ? await TurnosDelPiloto.ConsultaAsync(db, caja, ct) with { Tickets = await DevolucionesConEleventa.TicketsDeLaVueltaAsync(db, ahora, ct) }
+                : null;
+            var datos = await LectorEleventa.LeerCatalogoAsync(servidor, consulta, ct);
+            ahora = reloj.GetUtcNow().UtcDateTime;
             var turnos = consulta is not null && datos.Piloto is { } piloto ? await TurnosDelPiloto.AplicarAsync(db, consulta.CajaId, piloto, ahora, ct) : null;
+            // La vuelta, antes de las existencias: lo devuelto en eleventa entra con su devolución, no como un ajuste.
+            var vuelta = datos.Piloto is { } conDevoluciones ? await DevolucionesConEleventa.AplicarVueltaAsync(db, conDevoluciones.Devoluciones, ahora, ct) : null;
+            if (vuelta is not null)
+                await db.SaveChangesAsync(ct);
             var resultado = await SincronizacionEleventa.AplicarAsync(db, datos, ahora, mandados, ct);
             var avisos = new Dictionary<string, int>(resultado.Avisos);
             foreach (var aviso in turnos?.Avisos ?? [])
                 avisos[aviso] = avisos.GetValueOrDefault(aviso) + 1;
+            if (vuelta is { PorRevisar: > 0 } choques)
+                avisos[DevolucionesConEleventa.NoAlcanza] = avisos.GetValueOrDefault(DevolucionesConEleventa.NoAlcanza) + choques.PorRevisar;
             var texto = resultado.ToString();
             if (turnos is { Cortes: > 0 } conCorte)
                 texto += $"; {conCorte.Cortes} {(conCorte.Cortes == 1 ? "turno cerrado" : "turnos cerrados")} con el corte de eleventa";
+            if (vuelta is { Pasadas: > 0 } pasadas)
+                texto += $"; {pasadas.Pasadas} {(pasadas.Pasadas == 1 ? "devolución" : "devoluciones")} de eleventa";
             _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), true, texto, null,
                 HoraMexico.ALocal(inicio + espera), ++_lecturas, avisos);
-            if (resultado.HuboCambios || turnos is { Cortes: > 0 } or { Adoptados: > 0 })
+            if (resultado.HuboCambios || turnos is { Cortes: > 0 } or { Adoptados: > 0 } || vuelta is { Pasadas: > 0 } or { PorRevisar: > 0 })
                 log.LogInformation("Eleventa ({Servidor}): {Resultado}.", servidor, texto);
             // Lo que seguía en la bandeja de un turno que eleventa cortó: su hora dice si va al turno siguiente o queda por revisar.
             if (turnos is { Cortes: > 0 })
@@ -225,8 +236,7 @@ public static class ApiEleventa
                 ? Results.Ok(await envios.EstadoAsync(db))
                 : Results.BadRequest(new ErrorDto("Solo se anota a mano lo que está pendiente o por revisar.")));
 
-        // Devolver con el folio de eleventa escrito (el ticket ya no lleva QR): los tickets con ese folio, para elegir por la
-        // hora y el total si eleventa lo repitió en otra caja (FoliosRepetidos).
-        api.MapGet("/folio/{folio:int}", async (int folio, PosDbContext db) => await FoliosRepetidos.BuscarAsync(db, folio));
+        // Devolver con el folio de eleventa (también un ticket cobrado en eleventa) y lo que quedó por revisar (ApiPuenteEleventa).
+        api.MapearPuente();
     }
 }

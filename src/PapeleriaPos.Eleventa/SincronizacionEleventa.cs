@@ -468,10 +468,16 @@ public static class SincronizacionEleventa
     {
         var vistos = mandados.ToList();
         var envios = await db.EnviosAEleventa.AsNoTracking()
-            .Where(x => x.Tipo == TipoEnvioEleventa.Venta || x.Tipo == TipoEnvioEleventa.Cancelacion || x.Tipo == TipoEnvioEleventa.Devolucion)
+            .Where(x => x.Tipo == TipoEnvioEleventa.Venta || x.Tipo == TipoEnvioEleventa.Cancelacion || x.Tipo == TipoEnvioEleventa.Devolucion
+                || x.Tipo == TipoEnvioEleventa.DevolucionDeEleventa)
             .Where(x => x.Estado == EstadoEnvioEleventa.Pendiente || x.Estado == EstadoEnvioEleventa.PorRevisar || x.Estado == EstadoEnvioEleventa.Descartada
                 || vistos.Contains(x.Id))
-            .Select(x => new { x.Id, x.Estado, x.Intentos, Documento = x.Tipo == TipoEnvioEleventa.Venta ? x.VentaId : x.DevolucionId })
+            .Select(x => new
+            {
+                x.Id, x.Estado, x.Intentos,
+                // La devolución de un ticket de eleventa (la ida) movió el kardex con su propio documento.
+                Documento = x.Tipo == TipoEnvioEleventa.Venta ? x.VentaId : x.Tipo == TipoEnvioEleventa.DevolucionDeEleventa ? x.DevolucionDeEleventaId : x.DevolucionId,
+            })
             .ToListAsync(ct);
         var bandeja = new Bandeja([], []);
         if (envios.Count == 0)
@@ -482,7 +488,8 @@ public static class SincronizacionEleventa
             .Select(x => x.Documento).ToHashSet();
         var documentos = envios.Where(x => x.Documento is not null).Select(x => x.Documento!.Value).Distinct().ToList();
         var movimientos = await db.MovimientosInventario.AsNoTracking()
-            .Where(m => m.SucursalId == sucursalId && (m.DocumentoTipo == nameof(Venta) || m.DocumentoTipo == nameof(Devolucion))
+            .Where(m => m.SucursalId == sucursalId
+                && (m.DocumentoTipo == nameof(Venta) || m.DocumentoTipo == nameof(Devolucion) || m.DocumentoTipo == nameof(DevolucionDeEleventa))
                 && m.DocumentoId != null && documentos.Contains(m.DocumentoId.Value))
             .Select(m => new { m.DocumentoId, m.VarianteId, m.Cantidad })
             .ToListAsync(ct);

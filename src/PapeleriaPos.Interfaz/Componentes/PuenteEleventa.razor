@@ -1,0 +1,150 @@
+@* Solo del piloto con eleventa (se quita al dejarlo): en el estado de arriba de la caja 2, lo que quedó por revisar con
+   eleventa y lo que conviene saber (sin Telegram, que está en pausa). Sale solo si hay algo. Quien tiene «Configuración
+   de la tienda» marca ahí lo que ya se anotó a mano en eleventa (docs/migracion-eleventa.md, «Lo que falta para el
+   piloto»). *@
+@implements IAsyncDisposable
+@inject ClienteCaja Cliente
+@inject IServiceProvider Servicios
+
+@if (_puente is { } p && (p.PorRevisar.Count > 0 || p.Avisos.Count > 0 || p.Detenido is not null || p.Respaldo is not null))
+{
+    <div class="vn-puente">
+        <button class="vn-chip-estado aviso" title="Lo que pasa con eleventa: toca para verlo" @onclick="() => _abierto = !_abierto">
+            <Ico Nombre="alerta" />Eleventa@(p.Detenido is not null ? " · detenido" : "")@(p.PorRevisar.Count > 0 ? $" · {p.PorRevisar.Count} por revisar" : "")
+        </button>
+        @if (_abierto)
+        {
+            <div class="vn-fondo-menu" @onclick="() => _abierto = false"></div>
+            <div class="vn-puente-panel" role="dialog" aria-label="El puente con eleventa">
+                <p class="vn-puente-titulo">El puente con eleventa</p>
+                @if (p.Detenido is { } detenido)
+                {
+                    <div class="vn-alerta"><Ico Nombre="alerta" /><div><span>@detenido</span></div></div>
+                }
+                @if (p.Respaldo is { } respaldo)
+                {
+                    <div class="vn-alerta"><Ico Nombre="alerta" /><div><span>@respaldo</span></div></div>
+                }
+                @foreach (var aviso in p.Avisos)
+                {
+                    <p class="vn-puente-aviso">@aviso</p>
+                }
+                @if (p.PorRevisar.Count > 0)
+                {
+                    <p class="vn-puente-nota">Por revisar: no pasó solo a eleventa. Se anota a mano allá y después se marca aquí.</p>
+                    <ul class="vn-puente-lista">
+                        @foreach (var item in p.PorRevisar)
+                        {
+                            var revisar = item;
+                            <li>
+                                <div><strong>@item.Descripcion</strong> · @item.FechaLocal.ToString("dd/MM HH:mm") · @Formato.Dinero(item.TotalCentavos)</div>
+                                <div class="vn-puente-motivo">@item.Motivo</div>
+                                @if (PuedeMarcar)
+                                {
+                                    <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => MarcarAsync(revisar)">
+                                        @(item.EnvioId is not null ? "Ya lo anoté en eleventa" : "Ya lo revisé")
+                                    </button>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (_error is not null)
+                {
+                    <p class="error">@_error</p>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Cada cuánto se vuelve a preguntar (lo que pasa con eleventa no cambia a cada segundo).</summary>
+    private static readonly TimeSpan CadaCuanto = TimeSpan.FromSeconds(30);
+
+    private PuenteEleventaDto? _puente;
+    private bool _abierto;
+    private bool _ocupado;
+    private string? _error;
+    private readonly CancellationTokenSource _alto = new();
+
+    /// <summary>Lo que ya se anotó a mano en eleventa lo marca quien tiene «Configuración de la tienda».</summary>
+    private bool PuedeMarcar => Sesion.Permisos?.Any(x => x.Accion == AccionControlada.ConfigurarTienda && x.Nivel == NivelPermiso.Permitido) == true;
+
+    private ClientePuente? Puente => Servicios.GetService<ClientePuente>();
+
+    protected override void OnInitialized() => _ = VigilarAsync();
+
+    private async Task VigilarAsync()
+    {
+        // Solo en el piloto: la caja lo sabe por la contingencia o se lo pregunta al servicio.
+        if (Puente is null || !(Servicios.GetService<Contingencia>()?.PilotoEleventa ?? await PilotoAsync()))
+            return;
+        using var reloj = new PeriodicTimer(CadaCuanto);
+        try
+        {
+            do
+                await InvokeAsync(ActualizarAsync);
+            while (await reloj.WaitForNextTickAsync(_alto.Token));
+        }
+        catch (OperationCanceledException)
+        {
+            // Se cerró la pantalla.
+        }
+    }
+
+    private async Task<bool> PilotoAsync()
+    {
+        try
+        {
+            return await Cliente.PilotoEleventaAsync();
+        }
+        catch (ErrorCaja)
+        {
+            return false;
+        }
+    }
+
+    public async Task ActualizarAsync()
+    {
+        try
+        {
+            _puente = await Puente!.PantallaAsync();
+        }
+        catch (ErrorCaja)
+        {
+            // Sin la caja principal no se sabe: se deja lo último que se supo.
+        }
+        StateHasChanged();
+    }
+
+    private async Task MarcarAsync(PorRevisarEleventaDto item)
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            if (item.EnvioId is { } envio)
+                await Puente!.AnotarAManoAsync(envio);
+            else if (item.VueltaId is { } vuelta)
+                await Puente!.VueltaRevisadaAsync(vuelta, new SolicitudRevision(Sesion.UsuarioId, null));
+            await ActualizarAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _alto.CancelAsync();
+        _alto.Dispose();
+    }
+}

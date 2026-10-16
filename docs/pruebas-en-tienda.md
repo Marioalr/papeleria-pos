@@ -41,8 +41,11 @@ datos de eleventa.
      eleventa o se deja abierto, y si en la mañana se abre eleventa en la caja 2 antes de vender (la caja nueva adopta el
      turno que abre eleventa y toma su corte);
    - si OneDrive sincroniza Documentos en la caja 2 (las notas de `observar-en-vivo` son datos reales);
-   - con `observar-en-vivo` en la caja 2: entradas y salidas de dinero, un cierre con diferencia y, si se da, algo
-     después de medianoche.
+   - con `observar-en-vivo` en la caja 2: entradas y salidas de dinero, un cierre con diferencia y, si se dan de
+     verdad, algo después de medianoche y una devolución o cancelación de un ticket de otra caja o de otro turno (por
+     ejemplo, en la caja 2 algo que se vendió en la principal, o un ticket de ayer). Esto último es lo que más falta: el
+     script dice en qué turno y con qué caja la anota eleventa, y mientras no se vea, la caja 2 deja esas devoluciones
+     por revisar.
 4. **Lo que siga pendiente de conocer la tienda** ([abajo](#primer-fin-de-semana-conocer-la-tienda)), si da tiempo y
    el dueño lo aprueba.
 

@@ -1175,3 +1175,13 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
     .vn-tarea { padding: 11px 13px; }
     .vn-col-detalle { gap: 12px; padding: 14px 20px; }
 }
+
+/* Solo del piloto con eleventa (se quita al dejarlo): en el estado de arriba, lo que quedó por revisar con eleventa. */
+.vn-puente { position: relative; }
+.vn-puente-panel { position: absolute; right: 0; top: 34px; z-index: 30; width: 380px; max-height: 70vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 12px; background: var(--vn-hoja); border: 1px solid var(--vn-borde); border-radius: 8px; box-shadow: 0 8px 24px rgba(20, 30, 60, .16); white-space: normal; }
+.vn-puente-titulo { margin: 0; font-weight: 700; color: var(--vn-texto); }
+.vn-puente-aviso, .vn-puente-nota { margin: 0; font-size: 13px; color: var(--vn-suave); }
+.vn-puente-aviso { color: var(--vn-aviso); }
+.vn-puente-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.vn-puente-lista li { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px; border: 1px solid var(--vn-linea); border-radius: 6px; font-size: 13px; }
+.vn-puente-motivo { color: var(--vn-suave); }

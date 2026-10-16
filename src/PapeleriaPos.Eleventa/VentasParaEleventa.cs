@@ -81,6 +81,27 @@ public static class VentasParaEleventa
             new TurnoParaEleventa(HoraMexico.ALocal(turno.AbiertoUtc), turno.FondoCentavos / 100m), articulos), null);
     }
 
+    /// <summary>
+    /// La devolución de un ticket cobrado en eleventa (la ida, <see cref="DevolucionesConEleventa"/>): cada artículo por su
+    /// renglón del ticket (<c>VENTATICKETS_ARTICULOS.ID</c>), con lo que salió de la caja. Como en las demás devoluciones, el
+    /// redondeo del efectivo va en lo más grande, para que eleventa devuelva lo que salió de la caja.
+    /// </summary>
+    public static async Task<DevolucionArmada> ArmarDevolucionDeEleventaAsync(PosDbContext db, Guid devolucionId, CancellationToken ct = default)
+    {
+        var d = await db.Set<DevolucionDeEleventa>().AsNoTracking().SingleAsync(x => x.Id == devolucionId, ct);
+        var turno = await db.Turnos.AsNoTracking().SingleAsync(t => t.Id == d.TurnoId, ct);
+        var articulos = d.Articulos
+            .Select(a => new ArticuloDevuelto(null, a.Nombre, a.Cantidad, a.ImporteCentavos / 100m, a.RegresaAlInventario, a.ArticuloEleventa))
+            .ToList();
+        if (d.RedondeoCentavos != 0 && articulos.Count > 0)
+        {
+            var mayor = articulos.IndexOf(articulos.MaxBy(a => a.Importe)!);
+            articulos[mayor] = articulos[mayor] with { Importe = articulos[mayor].Importe + d.RedondeoCentavos / 100m };
+        }
+        return new(new DevolucionParaEleventa(d.TicketEleventa, EsCancelacion: false, HoraMexico.ALocal(d.FechaUtc),
+            new TurnoParaEleventa(HoraMexico.ALocal(turno.AbiertoUtc), turno.FondoCentavos / 100m), articulos), null);
+    }
+
     public static async Task<MovimientoArmado> ArmarMovimientoAsync(PosDbContext db, Guid movimientoId, CancellationToken ct = default)
     {
         var movimiento = await db.MovimientosCaja.AsNoTracking().SingleAsync(m => m.Id == movimientoId, ct);
