@@ -30,7 +30,7 @@ datos de eleventa.
    teclear.
 3. **Solo mirar, por eleventa**
    ([por qué](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)):
-   - la versión de eleventa en las dos cajas;
+   - la versión de eleventa en las dos cajas (Configuración ➜ Mantenimiento ➜ Licencia);
    - su respaldo automático: si está activo, si respalda al salir, en qué carpeta, y la hora, el tamaño y el tipo de los
      últimos respaldos;
    - si existe `gbak.exe` en la carpeta de Firebird (`FirebirdSQL20\bin`) y si Firebird corre como servicio de Windows;
@@ -38,7 +38,10 @@ datos de eleventa.
    - la hora de cada caja contra la del celular;
    - si OneDrive sincroniza Documentos en la caja 2 (las notas de `observar-en-vivo` son datos reales);
    - con `observar-en-vivo` en la caja 2: entradas y salidas de dinero, un cierre con diferencia y, si se da, algo
-     después de medianoche.
+     después de medianoche;
+   - lo que la [paridad con eleventa](paridad-eleventa.md#qué-mirar-en-la-tienda) marca «por confirmar»: si los cajeros
+     usan Ins para la cantidad y si el ticket sale siempre, cómo se hace y se imprime el corte, si se consultan ventas o
+     cortes de otros días y qué se mira del inventario.
 4. **Lo que siga pendiente de conocer la tienda** ([abajo](#primer-fin-de-semana-conocer-la-tienda)), si da tiempo y
    el dueño lo aprueba.
 
