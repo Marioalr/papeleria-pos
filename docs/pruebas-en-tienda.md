@@ -13,8 +13,9 @@
 - **Lo que se lleva listo:** el instalador probado en una PC limpia, los scripts (el de diagnóstico de red, probado en
   una PC con Windows, y el que junta la configuración de cada PC), cables de red, cinta de color y una memoria USB con
   todo.
-- **Una herramienta de prueba,** probada antes en la PC de desarrollo: lee por SNMP las tres impresoras de inyección y
-  manda dos tickets a la vez al puerto 9100 de la impresora de tickets.
+- **Las herramientas de prueba,** probadas antes en la PC de desarrollo. Las de la impresora de tickets y el lector ya
+  están (2026-10-16): `probar-impresora-tickets` y `probar-lector`. Falta la que lee por SNMP las tres impresoras de
+  inyección, con el módulo de impresión.
 - **Sin compras** (2026-10-09): todo se hace con lo que ya hay en la tienda.
 
 ## Fin de semana del 17 y 18 de octubre
@@ -25,9 +26,15 @@ datos de eleventa.
 
 1. **La prueba con una persona real, con la pantalla nueva:** el instalador de prueba armado entre semana con lo último
    de `main` (su propio puerto y su base de prueba, aparte de eleventa) y la guía al día, en una PC con Windows.
-2. **El paso 7 del piloto:** la pantalla nueva en la ventana de Windows a 1366×768; dos tickets a la vez desde las dos
-   cajas a la impresora de tickets; y el lector: si lee QR, qué manda con los códigos de 11 cifras y su ritmo al
-   teclear.
+2. **El paso 7 del piloto:** la pantalla nueva en la ventana de Windows a 1366×768, y en la caja 2, con el repositorio
+   al día (como `observar-en-vivo`):
+   - `scripts\probar-impresora-tickets.cmd`: dos tickets de prueba a la impresora de tickets, primero a la vez y después
+     casi juntos; si la caja principal también tiene el repositorio, abierto en las dos, con Enter al mismo tiempo. Pide
+     la IP de la impresora. Se anota lo que dijo de cada ticket y si salieron completos, hasta «Fin del ticket». Solo
+     gasta papel: no toca eleventa.
+   - `scripts\probar-lector.cmd`: escanear varios códigos, uno de 11 cifras (comparado con el de ese producto en
+     eleventa) y el QR del ticket de prueba. Dice qué llegó, si en el cobro la caja lo reconoce como el lector por su
+     ritmo y si el QR llegó igual; si no, cuánto subir `RAFAGA_MS` en `caja.js`.
 3. **Solo mirar, por eleventa**
    ([por qué](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)):
    - la versión de eleventa en las dos cajas;
