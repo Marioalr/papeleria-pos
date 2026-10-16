@@ -23,6 +23,12 @@ public sealed class ErrorCaja(string mensaje, string? codigo = null) : Exception
 
     /// <summary>El cobro no se hizo: estos son los precios de ahora de lo que cambió (entrega 5).</summary>
     public PreciosCambiadosDto? PreciosCambiados { get; init; }
+
+    /// <summary>
+    /// «sin-conexion» porque pasó el plazo (la caja principal está, pero no contestó a tiempo), no porque no se pudo conectar
+    /// (entrega 5, parte 2): la red cuenta como lenta, no como caída.
+    /// </summary>
+    public bool PorPlazo { get; init; }
 }
 
 /// <summary>Lo que dijo la caja principal de un código que no está en la copia de esta caja.</summary>
@@ -232,6 +238,16 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     /// <summary>El de <see cref="PlazoPorOmision"/>; las pruebas lo cambian para no depender de lo que tarda la PC.</summary>
     public TimeSpan PlazoDeLaPrincipal { get; init; } = PlazoPorOmision;
+
+    /// <summary>
+    /// Lo más que se espera una lectura de la venta que también se puede hacer con la copia (entrega 5, parte 2): la caja de
+    /// verdad lleva <see cref="Transporte.PlazoLectura"/> (<see cref="RegistroInterfaz"/>). Vacío, solo el tope del cliente
+    /// (las pruebas de lo demás: así no dependen de lo que tarda la PC).
+    /// </summary>
+    public TimeSpan? PlazoLectura { get; set; }
+
+    /// <summary>Lo más que se espera el cobro y lo demás de la venta que escribe: en la caja de verdad, <see cref="Transporte.PlazoEscritura"/>.</summary>
+    public TimeSpan? PlazoEscritura { get; set; }
 
     /// <summary>
     /// Un código que no está en la copia (un producto recién dado de alta en otra caja): se pregunta a la caja principal en
@@ -948,22 +964,37 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// Si la caja principal no contesta a media operación (puede que ya la haya guardado) y sin conexión tampoco se puede
     /// hacer: el error que lo dice, en lugar del de sin conexión.
     /// </param>
+    /// <remarks>
+    /// Los plazos (entrega 5, parte 2): lo que también se puede hacer con la copia lleva los de la venta
+    /// (<see cref="Transporte.PlazoLectura"/>, <see cref="Transporte.PlazoEscritura"/>) en lugar de 15 s; si pasa el plazo, se
+    /// hace con la copia (el cobro, a la bandeja con el mismo Id) y la red queda lenta. Con la red lenta, lo que tiene copia se
+    /// hace con ella sin preguntar; lo que no (devolver, el catálogo, los reportes) se intenta con la caja principal, con su
+    /// tope de siempre, si no hay nada por subir.
+    /// </remarks>
     private async Task<T> ConRespaldoAsync<T>(
         Func<Task<T>> enLinea, Func<Contingencia, T>? sinConexion = null, Func<Contingencia, T, Task>? trasEnLinea = null,
         Func<ErrorCaja>? siSePierde = null)
     {
         if (contingencia is null)
             return await enLinea();
-        if (!contingencia.EnLinea)
+        if (!contingencia.EnLinea && (sinConexion is not null || !contingencia.SeIntentaSinCopia))
             return Local(contingencia, sinConexion);
         T resultado;
         try
         {
+            Transporte.PlazosDeLaVenta = sinConexion is null ? null : (PlazoLectura, PlazoEscritura);
             resultado = await enLinea();
         }
         catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
         {
-            contingencia.MarcarSinConexion();
+            // Pasó el plazo de algo que el cajero esperaba: la red está lenta (ya esperó; lo siguiente va con la copia). Sin
+            // poder conectarse: caída.
+            if (!ex.PorPlazo)
+                contingencia.MarcarSinConexion();
+            else if (sinConexion is not null)
+                contingencia.MarcarLenta();
+            else
+                throw;
             if (siSePierde is null)
                 return Local(contingencia, sinConexion);
             try
@@ -990,7 +1021,9 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     private static T Local<T>(Contingencia contingencia, Func<Contingencia, T>? sinConexion)
     {
         if (sinConexion is null)
-            throw new ErrorCaja("No hay conexión con la caja principal: esto espera a que vuelva.", "sin-conexion");
+            throw contingencia.Pendientes > 0 || contingencia.EstadoDeLaRed == EstadoRed.Caida
+                ? new ErrorCaja("No hay conexión con la caja principal: esto espera a que vuelva.", "sin-conexion")
+                : new ErrorCaja("La red con la caja principal está lenta: esto espera a que mejore.", "sin-conexion");
         try
         {
             return sinConexion(contingencia);

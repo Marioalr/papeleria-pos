@@ -13,8 +13,9 @@ using PapeleriaPos.Pruebas.Servicio;
 namespace PapeleriaPos.Pruebas.Interfaz;
 
 /// <summary>
-/// La red entre la caja y el servicio de prueba, como se le pida: lenta (cada petición tarda), caída, o con la búsqueda de
-/// un producto por código detenida hasta soltarla. Anota cada petición al salir y cada respuesta al llegar.
+/// La red entre la caja y el servicio de prueba, como se le pida: lenta (cada petición tarda), caída, con pérdidas, con la
+/// búsqueda de un producto por código detenida hasta soltarla, o con la respuesta del cobro retenida (el servicio ya cobró,
+/// pero la respuesta no llega). Anota cada petición al salir y cada respuesta al llegar.
 /// </summary>
 internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandler(interno)
 {
@@ -25,10 +26,26 @@ internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandle
 
     public bool Caida { get; set; }
 
+    /// <summary>De cada cuántas peticiones se pierde una (0 a 1), con su propia semilla: así la prueba no cambia de una corrida a otra.</summary>
+    public double Perdidas { get; set; }
+
+    private readonly Random _azar = new(2026);
+
     /// <summary>Mientras está puesta, la búsqueda de un producto por código espera a que se suelte (o a que la caja se canse).</summary>
     public TaskCompletionSource? Detenida { get; set; }
 
+    /// <summary>
+    /// Mientras está puesta, el cobro (POST api/ventas) llega al servicio y se guarda, pero su respuesta espera a que se
+    /// suelte (o a que la caja deje de esperarla): como el Wi-Fi que se cae justo después de cobrar.
+    /// </summary>
+    public TaskCompletionSource? CobroRetenido { get; set; }
+
     public int Cuantas(string ruta) => _pedidas.Count(p => p.StartsWith(ruta, StringComparison.Ordinal));
+
+    /// <summary>Todas las que han salido, en orden.</summary>
+    public int Todas => _pedidas.Count;
+
+    public IReadOnlyList<string> Pedidas => [.. _pedidas];
 
     public bool Respondio(string contiene) => _respondidas.Any(r => r.Contains(contiene, StringComparison.Ordinal));
 
@@ -38,11 +55,28 @@ internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandle
         _pedidas.Enqueue(ruta);
         if (Caida)
             throw new HttpRequestException("La caja principal no contesta.");
+        bool perdida;
+        lock (_azar)
+            perdida = Perdidas > 0 && _azar.NextDouble() < Perdidas;
+        if (perdida)
+            throw new HttpRequestException("Se perdió en el Wi-Fi.");
         if (Retraso > TimeSpan.Zero)
             await Task.Delay(Retraso, cancellationToken);
         if (Detenida is { } detenida && ruta.StartsWith("/api/productos/codigo/", StringComparison.Ordinal))
             await detenida.Task.WaitAsync(cancellationToken);
         var respuesta = await base.SendAsync(request, cancellationToken);
+        if (CobroRetenido is { } retenido && request.Method == HttpMethod.Post && ruta == "/api/ventas")
+        {
+            try
+            {
+                await retenido.Task.WaitAsync(cancellationToken);
+            }
+            catch
+            {
+                respuesta.Dispose();
+                throw;
+            }
+        }
         _respondidas.Enqueue(ruta);
         return respuesta;
     }
@@ -54,18 +88,24 @@ internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandle
 /// </summary>
 internal sealed record VentaConCopia(
     PantallaSinNavegador Pantalla, PantallaVenta Venta, ClienteCaja Cliente, Contingencia Contingencia, RedDePrueba Red, CajaDto Caja,
-    SesionDto Cajero, ServiceProvider Servicios) : IAsyncDisposable
+    SesionDto Cajero, ServiceProvider Servicios, RedDePrueba Fondo) : IAsyncDisposable
 {
     /// <summary>La caja con su copia recién bajada, la venta abierta por el cajero y todo lo que pide al entrar ya contestado.</summary>
     /// <param name="plazo">Lo que espera a la caja principal por un código que no está en la copia; sin él, un minuto.</param>
     /// <param name="pagina">La página (caja.js); sin ella, una que contesta todo sin hacer nada.</param>
-    public static async Task<VentaConCopia> AbrirAsync(ServicioDePrueba servicio, string baseLocal, TimeSpan? plazo = null, IJSRuntime? pagina = null)
+    /// <param name="fondoAparte">
+    /// Lo de fondo (el latido, el aviso, la copia, la bandeja) por su propia red (<see cref="Fondo"/>), como la caja de verdad
+    /// (entrega 5, parte 2); sin esto, todo por <see cref="Red"/>.
+    /// </param>
+    public static async Task<VentaConCopia> AbrirAsync(ServicioDePrueba servicio, string baseLocal, TimeSpan? plazo = null, IJSRuntime? pagina = null,
+        bool fondoAparte = false)
     {
         var red = new RedDePrueba(servicio.Fabrica.Server.CreateHandler());
         var http = new HttpClient(red);
-        var caja = (await servicio.Fabrica.CreateClient().GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        var fondo = fondoAparte ? new RedDePrueba(servicio.Fabrica.Server.CreateHandler()) : red;
+        var caja = (await servicio.Fabrica.CreateClient().GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.First();
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
-        var contingencia = new Contingencia(new AlmacenLocal(baseLocal), http, conexion);
+        var contingencia = new Contingencia(new AlmacenLocal(baseLocal), fondoAparte ? new HttpClient(fondo) : http, conexion);
         var cliente = new ClienteCaja(http, conexion, contingencia) { PlazoDeLaPrincipal = plazo ?? TimeSpan.FromMinutes(1) };
         await contingencia.LatidoAsync();
         Assert.NotNull(contingencia.Foto);
@@ -90,7 +130,7 @@ internal sealed record VentaConCopia(
         // Lo último que pide la venta al entrar es el conteo del día.
         await EsperarAsync(() => red.Respondio("/conteo-del-dia"), "lo que pide la venta al entrar");
         await pantalla.Dispatcher.InvokeAsync(() => { });
-        return new VentaConCopia(pantalla, venta, cliente, contingencia, red, caja, cajero, servicios);
+        return new VentaConCopia(pantalla, venta, cliente, contingencia, red, caja, cajero, servicios, fondo);
     }
 
     public Task EscanearAsync(string codigo) => Pantalla.Dispatcher.InvokeAsync(() => Venta.Escaneado(codigo));
@@ -144,6 +184,8 @@ internal sealed record VentaConCopia(
     public async ValueTask DisposeAsync()
     {
         Red.Detenida?.TrySetResult();
+        Red.CobroRetenido?.TrySetResult();
+        Contingencia.Detener();
         await ((IAsyncDisposable)Pantalla).DisposeAsync();
         await Servicios.DisposeAsync();
     }
