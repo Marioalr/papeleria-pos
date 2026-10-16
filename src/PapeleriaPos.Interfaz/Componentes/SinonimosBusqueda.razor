@@ -1,6 +1,7 @@
 @* Los sinónimos de la tienda para la búsqueda: al escribir una palabra, también sale lo que se llama con otra. Los da de
    alta quien edita el catálogo, uno por uno; ninguno viene puesto (docs/propuesta-interfaz.md). *@
 @inject ClienteCaja Cliente
+@inject IServiceProvider Servicios
 
 <p class="nota">
     Al escribir una palabra en la caja también sale lo que se llama con otra: «boligrafo» → lo que dice «lapicero». Pon
@@ -82,6 +83,7 @@ else
         {
             _sinonimos = await Cliente.AgregarSinonimoAsync(new SolicitudSinonimo(Sesion.UsuarioId, Caja.SucursalId, _palabra, _equivale, _alReves));
             (_palabra, _equivale) = ("", "");
+            BajarLaCopia();
         }
         catch (ErrorCaja ex)
         {
@@ -93,12 +95,20 @@ else
         }
     }
 
+    /// <summary>
+    /// La búsqueda de la venta va contra la copia de esta caja (entrega 5, parte 3): la copia con el sinónimo se baja ya, sin
+    /// esperar al siguiente latido, para que al volver a la venta ya lo use. Las otras cajas la bajan con su latido.
+    /// </summary>
+    private void BajarLaCopia() => _ = Servicios.GetService<Contingencia>()?.ActualizarPaqueteAsync()
+        .ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+
     private async Task QuitarAsync(SinonimoDto sinonimo)
     {
         (_ocupado, _error) = (true, null);
         try
         {
             _sinonimos = await Cliente.QuitarSinonimoAsync(sinonimo.Id, new SolicitudQuitarSinonimo(Sesion.UsuarioId, Caja.SucursalId));
+            BajarLaCopia();
         }
         catch (ErrorCaja ex)
         {

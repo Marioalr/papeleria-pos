@@ -26,7 +26,7 @@ public static class ApiContingencia
         {
             var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
             var sucursal = await db.Sucursales.FindAsync(caja.SucursalId);
-            var (version, productos, codigos) = await catalogo.TodosAsync(db, caja.SucursalId);
+            var (version, productos, codigos, marcas) = await catalogo.TodosAsync(db, caja.SucursalId);
             // Los dados de baja también, sin el hash de su PIN: sus letras no se le dan a otro, y no entran.
             var usuarios = (await db.Usuarios.AsNoTracking()
                     .Where(u => u.SucursalId == null || u.SucursalId == caja.SucursalId)
@@ -48,14 +48,18 @@ public static class ApiContingencia
             // fondo sugerido siguen como en línea.
             var configuracion = await new RegistroConfiguracion(db).LeerAsync(caja.SucursalId);
             var clientes = await ApiClientes.ParaLaCajaAsync(db, caja.SucursalId);
-            // Las marcas dadas de alta: sin conexión, la búsqueda junta las familias igual que en línea.
-            var marcas = await db.Marcas.AsNoTracking().Where(m => m.Activa).Select(m => m.Nombre).ToListAsync();
-            // Y los sinónimos de la tienda: sin conexión, «boligrafo» sigue encontrando los lapiceros.
+            // La búsqueda de la caja va contra esta copia (entrega 5, parte 3) y da lo mismo que la de aquí: lleva las marcas con
+            // que se leen los nombres (las familias), los sinónimos de la tienda («boligrafo» encuentra los lapiceros), lo más
+            // vendido y lo que esta caja eligió antes con cada texto.
             var sinonimos = await new RegistroSinonimos(db).ListarAsync();
+            var enLaCopia = productos.Select(p => p.VarianteId).ToHashSet();
+            var vendidos = (await catalogo.VecesVendidoAsync(db)).Where(x => x.Value > 0 && enLaCopia.Contains(x.Key))
+                .Select(x => new VecesVendidoDto(x.Key, x.Value)).ToList();
+            var elegidos = (await catalogo.ElegidosAsync(db, caja.Id)).Where(e => enLaCopia.Contains(e.VarianteId)).ToList();
             return new PaqueteContingenciaDto(version, new CajaDto(caja.Id, caja.Nombre, caja.Serie, caja.SucursalId, sucursal!.Nombre, caja.Equipo),
                 productos, codigos, usuarios, reglas, ticket.RenglonesEncabezado, ticket.RenglonesPie, ApiConfiguracion.Logo(ticket),
                 await new RegistroCaja(db).UltimoFolioAsync(caja.SucursalId, caja.Serie), configuracion.LimiteEfectivoCentavos,
-                ApiClientes.ParaCajasDeAntes(clientes), clientes, marcas, sinonimos, permisos, configuracion);
+                ApiClientes.ParaCajasDeAntes(clientes), clientes, marcas, sinonimos, permisos, configuracion, vendidos, elegidos);
         });
 
         // Lo que lleva el turno, sin guardar un corte: la base de la cuenta que la caja lleva por su lado.

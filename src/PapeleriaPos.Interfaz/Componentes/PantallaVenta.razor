@@ -2436,7 +2436,8 @@
         }
         try
         {
-            var resultados = await Cliente.BuscarAsync(resto, Caja.SucursalId, Caja.Id, ParaFamilias);
+            // Contra la copia de esta caja, al momento y sin la red (entrega 5, parte 3); sin copia, al servicio.
+            var resultados = Cliente.BuscarEnLaCopia(resto, ParaFamilias) ?? await Cliente.BuscarAsync(resto, Caja.SucursalId, Caja.Id, ParaFamilias);
             if (secuencia != _secuenciaBusqueda)
                 return;
             (_resultados, _textoBuscado, _cantidadBuscada, _indiceResultado, _navegado) = (resultados, resto, cantidad, 0, false);
@@ -2489,7 +2490,8 @@
         _ = Cliente.RegistrarBusquedaAsync(new SolicitudBusqueda(Caja.Id, buscado, resultados, resultado.VarianteId));
         try
         {
-            if (await Cliente.PorVarianteAsync(resultado.VarianteId, Caja.SucursalId) is { } producto)
+            // Como un escaneo: de la copia de esta caja, sin la red (entrega 5); sin copia, del servicio.
+            if ((Cliente.Foto?.PorVariante(resultado.VarianteId) ?? await Cliente.PorVarianteAsync(resultado.VarianteId, Caja.SucursalId)) is { } producto)
                 Agregar(producto, null, cantidad);
             else
                 Avisar("Ese producto ya no está en el catálogo.");
@@ -2507,7 +2509,7 @@
     /// </summary>
     private async Task AgregarPrimeroAsync(string texto, Cantidad cantidad)
     {
-        var resultados = await Cliente.BuscarAsync(texto, Caja.SucursalId, Caja.Id, ParaFamilias);
+        var resultados = Cliente.BuscarEnLaCopia(texto, ParaFamilias) ?? await Cliente.BuscarAsync(texto, Caja.SucursalId, Caja.Id, ParaFamilias);
         if (resultados.Count == 0)
         {
             _ = Cliente.RegistrarBusquedaAsync(new SolicitudBusqueda(Caja.Id, texto, 0, null));
@@ -2920,7 +2922,7 @@
         }
     }
 
-    /// <summary>Un nombre y Enter: se busca (todavía en el servicio, con la copia si no contesta) y se agrega el primero.</summary>
+    /// <summary>Un nombre y Enter: se busca (en la copia de esta caja; sin ella, en el servicio) y se agrega el primero.</summary>
     private async Task AgregarNombreAsync(string texto, Cantidad cantidad)
     {
         try

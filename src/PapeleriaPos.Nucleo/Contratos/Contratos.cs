@@ -481,13 +481,23 @@ public sealed record CodigoLocalDto(string Codigo, Guid VarianteId, Guid Present
 /// fichas de espera y «Abrir turno» propone el fondo. Vacía en una copia de antes: lo de siempre (3 fichas, sin fondo
 /// sugerido).
 /// </param>
+/// <param name="Codigos">
+/// Todos los códigos de los productos de la copia, en el orden del servicio: si uno se repite (en otro producto), al
+/// escanear vale el primero, y la búsqueda por nombre lo encuentra en los dos, como en el servicio.
+/// </param>
+/// <param name="Marcas">Las que usa el servicio para leer los nombres: la búsqueda de la copia los lee igual (entrega 5, parte 3).</param>
+/// <param name="Vendidos">
+/// Cuántas veces se vendió cada producto en 90 días, y <paramref name="Elegidos"/>, lo que esta caja eligió antes con cada
+/// texto: con eso la búsqueda contra la copia ordena igual que el servicio (entrega 5, parte 3). Vacíos en una copia de
+/// antes: ordena sin ellos hasta que baje la siguiente.
+/// </param>
 public sealed record PaqueteContingenciaDto(
     long Version, CajaDto Caja, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<UsuarioLocalDto> Usuarios,
     IReadOnlyList<ReglaDto> Reglas,
     IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, int UltimoFolio, long? LimiteEfectivoCentavos,
     IReadOnlyList<ClienteRegistradoDto>? Clientes = null, IReadOnlyList<ClienteRegistradoDto>? Registrados = null,
     IReadOnlyList<string>? Marcas = null, IReadOnlyList<SinonimoDto>? Sinonimos = null, IReadOnlyList<PermisosLocalesDto>? Permisos = null,
-    ConfiguracionSucursalDto? Configuracion = null);
+    ConfiguracionSucursalDto? Configuracion = null, IReadOnlyList<VecesVendidoDto>? Vendidos = null, IReadOnlyList<ElegidoDto>? Elegidos = null);
 
 // Lo que sube con la bandeja. Cada cosa lleva el ID que le dio la caja: si llega dos veces, se guarda una.
 

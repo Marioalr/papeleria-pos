@@ -67,19 +67,28 @@ function alRodarLista(e) {
     abajo?.classList.toggle('apagada', lista.scrollTop + lista.clientHeight >= lista.scrollHeight - 1);
 }
 
-// El cuadro de captura no avisa a .NET en cada tecla: al Enter, el texto se lee y el cuadro se vacía aquí mismo, y el
-// código va en una sola llamada. Así un escaneo nunca se pega al siguiente aunque lleguen sin pausa, y el lector no
-// repinta la pantalla con cada carácter. Lo que se escribe a mano se avisa al dejar de teclear (para un rápido con
-// cantidad, F11, y la búsqueda), no con cada tecla.
+// El cuadro de captura no avisa a .NET con cada carácter del lector: al Enter, el texto se lee y el cuadro se vacía aquí
+// mismo, y el código va en una sola llamada. Así un escaneo nunca se pega al siguiente aunque lleguen sin pausa, y el
+// lector no repinta la pantalla con cada carácter. Lo que se escribe a mano con letras se avisa en cuanto se teclea: la
+// búsqueda va contra la copia de la caja y sale al momento (entrega 5, parte 3; antes se esperaban 150 ms y la red). Lo que
+// llega en ráfaga (el lector, que termina con su Enter antes de parar) y lo que no trae letras (la cantidad de un rápido o
+// de F11) se avisa al dejar de teclear.
 function esCaptura(elemento) {
     return elemento instanceof HTMLInputElement && elemento.dataset.captura !== undefined;
 }
+
+// La hora (del teclado) de lo último que se escribió en el cuadro de captura.
+let ultimaEscrita = -Infinity;
 
 function alEscribir(e) {
     if (!pantalla || !esCaptura(e.target)) return;
     clearTimeout(escribiendo);
     const campo = e.target;
-    escribiendo = setTimeout(() => pantalla?.invokeMethodAsync('Escribiendo', campo.value), 150);
+    const enRafaga = e.timeStamp - ultimaEscrita < RAFAGA_MS;
+    ultimaEscrita = e.timeStamp;
+    const avisar = () => pantalla?.invokeMethodAsync('Escribiendo', campo.value);
+    if (!enRafaga && /\p{L}/u.test(campo.value)) avisar();
+    else escribiendo = setTimeout(avisar, RAFAGA_MS);
 }
 
 export function limpiarCaptura() {
@@ -177,6 +186,7 @@ function moverEnLista(donde, tecla) {
 // cobra sin él. Una persona no baja de unos 80 ms entre tecla y tecla ni con el teclado numérico; un lector USB teclea
 // cada carácter en pocos milisegundos. El ritmo del lector de la tienda falta medirlo allá (docs/plan.md, paso 7): si
 // no se reconoce, se ajustan RAFAGA_MS y RAFAGA_MINIMO (el cambio no lleva tope: lo decidió el dueño el 2026-10-14).
+// RAFAGA_MS también dice, en el cuadro de captura, qué se escribe en ráfaga y no busca hasta que se deja de teclear.
 const RAFAGA_MS = 50;
 // Menos caracteres no se distinguen de alguien que teclea rápido «200» y Enter.
 const RAFAGA_MINIMO = 4;

@@ -270,11 +270,21 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
             l => l.Buscar(texto, maximo));
 
     /// <summary>
+    /// La búsqueda de la venta contra la copia de esta caja, sin la red (entrega 5, parte 3): la misma del servicio, con lo
+    /// que esta caja eligió antes. Vacía (null) si no hay copia todavía (la caja recién instalada, o el navegador sin base
+    /// local): entonces se le pregunta al servicio con <see cref="BuscarAsync"/>.
+    /// </summary>
+    public List<ResultadoBusquedaDto>? BuscarEnLaCopia(string texto, int maximo = 30) =>
+        Foto is { SeBusca: true } foto ? foto.Buscar(texto, maximo, elegidoAqui: contingencia?.ElegidoAqui(texto)) : null;
+
+    /// <summary>
     /// Lo que se buscó y qué se eligió. Es para aprender (el orden, lo que falta en el catálogo): sin conexión no se
-    /// guarda, y si falla no estorba la venta.
+    /// guarda, y si falla no estorba la venta. Lo elegido sale primero la vez siguiente también en la copia de esta caja.
     /// </summary>
     public async Task RegistrarBusquedaAsync(SolicitudBusqueda busqueda)
     {
+        if (busqueda.VarianteId is { } elegido)
+            contingencia?.Aprender(busqueda.Texto, elegido);
         if (contingencia is { EnLinea: false })
             return;
         try

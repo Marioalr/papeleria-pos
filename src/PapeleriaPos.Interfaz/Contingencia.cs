@@ -48,18 +48,9 @@ public sealed class Contingencia
         {
             Paquete = p;
             PorVariante = p.Productos.ToDictionary(x => x.VarianteId);
-            // Los códigos, en la foto del catálogo: el escaneo, en línea o sin conexión, resuelve igual (entrega 5).
+            // Los códigos, en la foto del catálogo: el escaneo, en línea o sin conexión, resuelve igual (entrega 5). Y la búsqueda
+            // por nombre, la misma del servicio, también sin conexión (entrega 5, parte 3).
             Foto = FotoCatalogo.Armar(p);
-            var codigos = p.Codigos.ToLookup(c => c.VarianteId);
-            // Las familias de la búsqueda, igual que en línea: las marcas salen de esta copia del catálogo.
-            var nombres = new LectorDeNombres(p.Productos.Select(x => x.Descripcion), p.Marcas);
-            Partes = p.Productos.ToDictionary(x => x.VarianteId, x => nombres.Leer(x.Descripcion));
-            // También se busca por lo que lee la caja del nombre: «negro» encuentra «Negra», «surtido» los «V/Colores».
-            Normalizado = p.Productos.ToDictionary(x => x.VarianteId,
-                x => Texto.Normalizar($"{x.Descripcion} {string.Join(" ", codigos[x.VarianteId].Select(c => c.Codigo))} "
-                    + string.Join(" ", Partes[x.VarianteId].Select(parte => parte.Clave))));
-            Palabras = Normalizado.ToDictionary(x => x.Key, x => x.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries));
-            Sinonimos = new SinonimosDeBusqueda((p.Sinonimos ?? []).Select(s => (s.Palabra, s.Equivale)));
             Presentaciones = p.Productos.SelectMany(x => x.Presentaciones).GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First());
             Usuarios = p.Usuarios.ToDictionary(u => u.Usuario.Trim().ToLowerInvariant());
             UsuariosPorId = p.Usuarios.ToDictionary(u => u.Id);
@@ -94,15 +85,7 @@ public sealed class Contingencia
         /// <summary>Solo lo de esta copia: lo que llegó después de la caja principal va en la foto de la contingencia.</summary>
         public FotoCatalogo Foto { get; }
 
-        public Dictionary<Guid, string> Normalizado { get; }
-
-        /// <summary>Las palabras de cada producto, para el error de dedo.</summary>
-        public Dictionary<Guid, string[]> Palabras { get; }
-
-        public SinonimosDeBusqueda Sinonimos { get; }
-
         public Dictionary<Guid, PresentacionDto> Presentaciones { get; }
-        public Dictionary<Guid, IReadOnlyList<ParteDeNombre>> Partes { get; }
         /// <summary>Por su usuario: también los dados de baja (no entran).</summary>
         public Dictionary<string, UsuarioLocalDto> Usuarios { get; }
         public Dictionary<Guid, UsuarioLocalDto> UsuariosPorId { get; }
@@ -222,6 +205,19 @@ public sealed class Contingencia
         }
         while (Interlocked.CompareExchange(ref _foto, antes.Con(producto, codigo), antes) != antes);
     }
+
+    /// <summary>
+    /// Lo que esta caja eligió en la lista con cada texto desde que se abrió (entrega 5, parte 3): la búsqueda contra la copia
+    /// lo pone primero la vez siguiente, como el servicio, sin esperar a que baje otra copia. Es lo más nuevo: solo esta caja
+    /// elige lo suyo.
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Guid> _elegidos = new(StringComparer.Ordinal);
+
+    /// <summary>Lo que se eligió de la lista con ese texto (con la clave con que lo guarda el servicio).</summary>
+    public void Aprender(string texto, Guid varianteId) => _elegidos[IndiceDeBusqueda.ClaveGuardada(texto)] = varianteId;
+
+    /// <summary>Lo que se eligió aquí con ese texto desde que se abrió la caja; vacío si nada.</summary>
+    public Guid? ElegidoAqui(string texto) => _elegidos.TryGetValue(IndiceDeBusqueda.Clave(texto), out var elegido) ? elegido : null;
 
     /// <summary>Cambió la conexión o la bandeja: la pantalla vuelve a dibujar la franja.</summary>
     public event Action? Cambio;
@@ -795,42 +791,11 @@ public sealed class Contingencia
 
     public ProductoVentaDto? PorVariante(Guid varianteId) => Datos.Foto.PorVariante(varianteId);
 
-    /// <summary>Igual que en el servicio: cada palabra tiene que aparecer, sin importar acentos ni orden.</summary>
-    public List<ResultadoBusquedaDto> Buscar(string texto, int maximo = 30)
-    {
-        var palabras = Texto.Normalizar(texto).Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (palabras.Length == 0)
-            return [];
-        var datos = Datos;
-        var consulta = Texto.Normalizar(texto);
-        // Cada pedazo vale por sí mismo o por los sinónimos de la tienda, como en línea.
-        var pedazos = palabras.Select(w => (Pedazo: w, Sinonimos: datos.Sinonimos.De(w))).ToList();
-        bool Directo(ProductoVentaDto p, string w) => datos.Normalizado[p.VarianteId].Contains(w, StringComparison.Ordinal);
-        var candidatos = datos.Paquete.Productos
-            .Where(p => pedazos.All(x => Directo(p, x.Pedazo) || x.Sinonimos.Any(s => Directo(p, s.Equivale)))).ToList();
-        // Si nada coincide, un error de dedo, como en línea.
-        var parecido = false;
-        if (candidatos.Count == 0)
-        {
-            candidatos = datos.Paquete.Productos
-                .Where(p => pedazos.All(x => ErrorDeDedo.Coincide(x.Pedazo, datos.Palabras[p.VarianteId]) || x.Sinonimos.Any(s => Directo(p, s.Equivale))))
-                .ToList();
-            parecido = candidatos.Count > 0;
-        }
-        string? PorSinonimo(ProductoVentaDto p) =>
-            pedazos.Where(x => !Directo(p, x.Pedazo)).SelectMany(x => x.Sinonimos).Where(s => Directo(p, s.Equivale))
-                .Select(s => s.Palabra.ToLowerInvariant()).FirstOrDefault();
-        return candidatos
-            .OrderByDescending(p => p.Codigo is not null && string.Equals(p.Codigo, texto.Trim(), StringComparison.OrdinalIgnoreCase))
-            .ThenByDescending(p => parecido ? palabras.Count(w => Directo(p, w)) : 0)
-            .ThenBy(p => PorSinonimo(p) is not null)
-            .ThenByDescending(p => datos.Normalizado[p.VarianteId].StartsWith(consulta, StringComparison.Ordinal))
-            .ThenBy(p => p.Descripcion, StringComparer.CurrentCultureIgnoreCase)
-            .Take(maximo)
-            .Select(p => new ResultadoBusquedaDto(p.VarianteId, p.Descripcion, p.Codigo, PrecioMenudeo(p), p.Existencia,
-                Partes: datos.Partes[p.VarianteId], Parecido: parecido, PorSinonimo: PorSinonimo(p)))
-            .ToList();
-    }
+    /// <summary>
+    /// La misma búsqueda del servicio, con la copia (entrega 5, parte 3): sin acentos, en cualquier orden, con los sinónimos de
+    /// la tienda y lo más vendido. Sin la caja, como el servicio sin ella: sin lo elegido antes.
+    /// </summary>
+    public List<ResultadoBusquedaDto> Buscar(string texto, int maximo = 30) => Datos.Foto.Buscar(texto, maximo, conLoElegido: false);
 
     /// <summary>
     /// Cobra con la copia del catálogo y el siguiente folio de la caja. Los precios cambiados, los descuentos y pasar el
@@ -1200,13 +1165,6 @@ public sealed class Contingencia
             Tarjeta: ticket.Cobros.Where(c => c.Forma == FormaPago.Tarjeta).Sum(c => c.MontoCentavos),
             Transferencia: ticket.Cobros.Where(c => c.Forma == FormaPago.Transferencia).Sum(c => c.MontoCentavos),
             Redondeo: ticket.RedondeoCentavos, Credito: ticket.CreditoCentavos);
-
-    private long PrecioMenudeo(ProductoVentaDto p)
-    {
-        var porUnidad = p.Precios.Where(x => x.PresentacionId is null).ToList();
-        var deSucursal = porUnidad.Where(x => x.SucursalId == Caja.SucursalId).ToList();
-        return (deSucursal.Count > 0 ? deSucursal : porUnidad.Where(x => x.SucursalId is null)).MinBy(x => x.CantidadMinimaMilesimas)?.PrecioCentavos ?? 0;
-    }
 
     private string Nombre(Guid usuarioId) => Datos.UsuariosPorId.TryGetValue(usuarioId, out var u) ? u.Nombre : "—";
 
