@@ -171,6 +171,9 @@ public sealed class CatalogoEnMemoria
         return new Indice(version, porVariante, porCodigo, new SinonimosDeBusqueda(sinonimos.Select(s => (s.Palabra, s.Equivale))));
     }
 
+    /// <summary>La versión del catálogo con que se arma lo que se contesta (la de la base, ya cargada en memoria).</summary>
+    public async Task<long> VersionAsync(PosDbContext db, CancellationToken ct = default) => (await ActualAsync(db, ct)).Version;
+
     /// <summary>El producto de un código, con la versión del catálogo de la que salieron sus precios (entrega 5).</summary>
     public async Task<ProductoVentaDto?> PorCodigoAsync(PosDbContext db, string codigo, Guid sucursalId, CancellationToken ct = default)
     {

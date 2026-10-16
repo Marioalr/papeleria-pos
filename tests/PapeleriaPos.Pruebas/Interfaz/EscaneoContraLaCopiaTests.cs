@@ -1,52 +1,9 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Net.Http.Json;
 using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.JSInterop;
-using PapeleriaPos.Impresion;
-using PapeleriaPos.Interfaz;
-using PapeleriaPos.Interfaz.Componentes;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Pruebas.Servicio;
 
 namespace PapeleriaPos.Pruebas.Interfaz;
-
-/// <summary>
-/// La red entre la caja y el servicio de prueba, como se le pida: lenta (cada petición tarda), caída, o con la búsqueda de
-/// un producto por código detenida hasta soltarla. Anota cada petición al salir y cada respuesta al llegar.
-/// </summary>
-internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandler(interno)
-{
-    private readonly ConcurrentQueue<string> _pedidas = new();
-    private readonly ConcurrentQueue<string> _respondidas = new();
-
-    public TimeSpan Retraso { get; set; }
-
-    public bool Caida { get; set; }
-
-    /// <summary>Mientras está puesta, la búsqueda de un producto por código espera a que se suelte (o a que la caja se canse).</summary>
-    public TaskCompletionSource? Detenida { get; set; }
-
-    public int Cuantas(string ruta) => _pedidas.Count(p => p.StartsWith(ruta, StringComparison.Ordinal));
-
-    public bool Respondio(string contiene) => _respondidas.Any(r => r.Contains(contiene, StringComparison.Ordinal));
-
-    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-    {
-        var ruta = request.RequestUri!.PathAndQuery;
-        _pedidas.Enqueue(ruta);
-        if (Caida)
-            throw new HttpRequestException("La caja principal no contesta.");
-        if (Retraso > TimeSpan.Zero)
-            await Task.Delay(Retraso, cancellationToken);
-        if (Detenida is { } detenida && ruta.StartsWith("/api/productos/codigo/", StringComparison.Ordinal))
-            await detenida.Task.WaitAsync(cancellationToken);
-        var respuesta = await base.SendAsync(request, cancellationToken);
-        _respondidas.Enqueue(ruta);
-        return respuesta;
-    }
-}
 
 /// <summary>
 /// El escaneo contra la copia local de la caja, siempre (entrega 5, docs/propuesta-interfaz.md, «Rendimiento»): la venta de
@@ -65,100 +22,13 @@ public sealed class EscaneoContraLaCopiaTests(ServicioDePrueba servicio) : IClas
             File.Delete(archivo);
     }
 
-    private sealed record Venta(
-        PantallaSinNavegador Pantalla, PantallaVenta Pantallita, ClienteCaja Cliente, Contingencia Contingencia, RedDePrueba Red, CajaDto Caja,
-        SesionDto Cajero, ServiceProvider Servicios) : IAsyncDisposable
-    {
-        public Task EscanearAsync(string codigo) => Pantalla.Dispatcher.InvokeAsync(() => Pantallita.Escaneado(codigo));
+    private Task<VentaConCopia> AbrirAsync(TimeSpan? plazo = null) => VentaConCopia.AbrirAsync(servicio, _baseLocal, plazo);
 
-        public async ValueTask DisposeAsync()
-        {
-            Red.Detenida?.TrySetResult();
-            await ((IAsyncDisposable)Pantalla).DisposeAsync();
-            await Servicios.DisposeAsync();
-        }
-    }
+    private static (ProductoVentaDto A, ProductoVentaDto B) DosDeLaCopia(VentaConCopia v) => v.DosDeLaCopia();
 
-    /// <summary>La caja con su copia recién bajada, la venta abierta por el cajero y todo lo que pide al entrar ya contestado.</summary>
-    private async Task<Venta> AbrirAsync(TimeSpan? plazo = null)
-    {
-        var red = new RedDePrueba(servicio.Fabrica.Server.CreateHandler());
-        var http = new HttpClient(red);
-        var caja = (await servicio.Fabrica.CreateClient().GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
-        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
-        var contingencia = new Contingencia(new AlmacenLocal(_baseLocal), http, conexion);
-        var cliente = new ClienteCaja(http, conexion, contingencia) { PlazoDeLaPrincipal = plazo ?? TimeSpan.FromMinutes(1) };
-        await contingencia.LatidoAsync();
-        Assert.NotNull(contingencia.Foto);
-        var cajero = await cliente.EntrarAsync("cajero", "1111");
-        var turno = await cliente.TurnoAsync(caja.Id) ?? await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
-        var servicios = new ServiceCollection()
-            .AddSingleton(conexion)
-            .AddSingleton(cliente)
-            .AddSingleton(contingencia)
-            .AddSingleton<IImpresora>(new SinImpresora())
-            .AddSingleton<IJSRuntime>(new PaginaQueContesta())
-            .AddScoped<ModuloCaja>()
-            .BuildServiceProvider();
-        var pantalla = new PantallaSinNavegador(servicios);
-        var venta = await pantalla.AbrirAsync<PantallaVenta>(new()
-        {
-            [nameof(PantallaVenta.Caja)] = caja,
-            [nameof(PantallaVenta.Sesion)] = cajero,
-            [nameof(PantallaVenta.Turno)] = turno,
-        });
-        // Lo último que pide la venta al entrar es el conteo del día.
-        await EsperarAsync(() => red.Respondio("/conteo-del-dia"), "lo que pide la venta al entrar");
-        await pantalla.Dispatcher.InvokeAsync(() => { });
-        return new Venta(pantalla, venta, cliente, contingencia, red, caja, cajero, servicios);
-    }
+    private static Task<ProductoVentaDto> DarDeAltaEnOtraCajaAsync(VentaConCopia v, string codigo, string nombre) => v.DarDeAltaEnOtraCajaAsync(codigo, nombre);
 
-    private static async Task EsperarAsync(Func<bool> condicion, string que)
-    {
-        var limite = DateTime.UtcNow.AddSeconds(20);
-        while (!condicion())
-        {
-            if (DateTime.UtcNow > limite)
-                throw new Xunit.Sdk.XunitException($"No llegó {que}.");
-            await Task.Delay(20);
-        }
-    }
-
-    /// <summary>Dos productos de la copia que se venden por pieza, con el código de su pieza.</summary>
-    private static (ProductoVentaDto A, ProductoVentaDto B) DosDeLaCopia(Venta v)
-    {
-        var paquete = v.Contingencia.Paquete!;
-        var porPieza = paquete.Codigos
-            .Select(c => (Codigo: c, Producto: paquete.Productos.FirstOrDefault(p => p.VarianteId == c.VarianteId)))
-            .Where(x => x.Producto is { Unidad: PapeleriaPos.Nucleo.Catalogo.UnidadBase.Pieza } p && p.Presentacion.Id == x.Codigo.PresentacionId
-                        && p.Precios.Any(precio => precio.PresentacionId is null) && p.Codigo == x.Codigo.Codigo)
-            .Select(x => x.Producto!)
-            .DistinctBy(p => p.VarianteId)
-            .Take(2)
-            .ToList();
-        return (porPieza[0], porPieza[1]);
-    }
-
-    /// <summary>Un producto dado de alta en otra caja después de que esta bajó su copia.</summary>
-    private static async Task<ProductoVentaDto> DarDeAltaEnOtraCajaAsync(Venta v, string codigo, string nombre)
-    {
-        var departamento = (await v.Cliente.OpcionesCatalogoAsync()).Departamentos[0].Id;
-        var nuevo = await v.Cliente.AltaRapidaAsync(new SolicitudAltaRapida(v.Cajero.UsuarioId, v.Caja.SucursalId, codigo, nombre, 4550, departamento));
-        Assert.Null(v.Contingencia.Foto!.PorCodigo(codigo));
-        return nuevo;
-    }
-
-    /// <summary>
-    /// Los renglones del ticket en orden: las líneas y los «buscando…», cada uno con su texto, que empieza con la cantidad
-    /// (sin los botones − y + de la línea).
-    /// </summary>
-    internal static async Task<List<string>> RenglonesAsync(PantallaSinNavegador p) =>
-        (await p.LeerAsync()).Elementos
-            .Where(e => e.Etiqueta == "tr" && (e.Id?.StartsWith("linea-", StringComparison.Ordinal) == true || e.Clase == "vn-buscando"))
-            .Select(e => System.Text.RegularExpressions.Regex.Replace(PantallaSinNavegador.Limpio(e.Texto), @"^− (\S+) \+ ", "$1 "))
-            .ToList();
-
-    private static int Lugar(List<string> renglones, string contiene) => renglones.FindIndex(r => r.Contains(contiene, StringComparison.Ordinal));
+    private static Task<List<string>> RenglonesAsync(PantallaSinNavegador p) => VentaConCopia.RenglonesAsync(p);
 
     [Fact]
     public async Task La_foto_resuelve_cada_codigo_como_la_copia_de_antes_y_como_el_servicio()

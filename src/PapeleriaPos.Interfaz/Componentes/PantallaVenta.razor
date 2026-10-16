@@ -1842,9 +1842,13 @@
                     : new CobroSolicitado(otra.Forma, monto, otra.Referencia.Trim().Length == 0 ? null : otra.Referencia.Trim()));
         if (EnEfectivo.ACobrarCentavos > 0)
             cobros.Add(new CobroSolicitado(FormaPago.Efectivo, Recibido));
-        // Si se cobró, el ticket nuevo ya dejó el cobro en blanco.
+        // Si se cobró, el ticket nuevo ya dejó el cobro en blanco. Lo que ya dice el panel del cobro (los precios que
+        // cambiaron) no se repite abajo.
         if (await CobrarAsync(cobros, autorizacionCredito, apartado) is { } error)
-            Avisar(error);
+        {
+            if (!ReferenceEquals(error, _avisoDelCobro))
+                Avisar(error);
+        }
         else
             _enfocar = "#codigo";
     }
@@ -3183,12 +3187,20 @@
         TicketDto ticket;
         try
         {
+            // Con la versión de la que salieron los precios que vio el cajero (entrega 5): si alguno cambió después, el servicio
+            // no cobra y contesta con los de ahora.
+            var (lineas, version) = ArmadoSolicitud.ParaCobrar(venta, abierto.Productos, Cliente.Foto?.Version);
             // Con el Id del ticket: si la respuesta se pierde, el siguiente intento (en línea o sin conexión) es la misma venta.
-            ticket = await Cliente.CobrarAsync(new SolicitudCobro(Caja.Id, Turno.Id, Sesion.UsuarioId, ArmadoSolicitud.Lineas(venta), cobros,
+            ticket = await Cliente.CobrarAsync(new SolicitudCobro(Caja.Id, Turno.Id, Sesion.UsuarioId, lineas, cobros,
                 VentaId: venta.Id, Impresiones: abierto.Impresiones.Count > 0 ? abierto.Impresiones.Select(i => i.Id).ToList() : null,
                 ClienteId: venta.ClienteId, AutorizacionDescuentoId: venta.AutorizacionDescuentoId,
                 AutorizacionBajoCostoId: venta.AutorizacionBajoCostoId, MayoreoDeCliente: venta.MayoreoDeCliente,
-                AutorizacionCreditoId: autorizacionCredito), soloEnLinea: abierto.FiadoSinConfirmar);
+                AutorizacionCreditoId: autorizacionCredito, VersionCatalogo: version), soloEnLinea: abierto.FiadoSinConfirmar);
+        }
+        catch (ErrorCaja ex) when (ex.PreciosCambiados is { } preciosCambiados)
+        {
+            // No se cobró: el ticket se pone al día y el cajero lo revisa; el cobro no se repite solo.
+            return PonerPreciosAlDia(abierto, preciosCambiados);
         }
         catch (ErrorCaja ex)
         {
@@ -3215,6 +3227,51 @@
         if (abierto.Impresiones.Count > 0 && _estado is not null)
             await _estado.ActualizarAsync();
         return null;
+    }
+
+    /// <summary>
+    /// El servicio no cobró (entrega 5): el precio o el mayoreo de algo del ticket cambió después de la copia con que se
+    /// pusieron sus precios. Las líneas de esos productos se vuelven a calcular con los precios de ahora (un precio cambiado a
+    /// mano se queda); lo demás del ticket ya lo revisó el servicio hasta su versión, y la foto de la caja se queda con lo de
+    /// ahora para el siguiente escaneo. El panel del cobro dice qué cambió; el cobro no se repite solo. Lo que el cliente dio
+    /// se queda escrito: el cambio se vuelve a calcular con el total nuevo.
+    /// </summary>
+    private string PonerPreciosAlDia(TicketAbierto ticket, PreciosCambiadosDto precios)
+    {
+        var venta = ticket.Venta;
+        var antes = venta.Lineas.ToDictionary(l => l, l => (l.PrecioCentavos, l.ImporteCentavos, l.AhorroMayoreoCentavos));
+        foreach (var (varianteId, producto) in ticket.Productos.ToList())
+        {
+            if (producto.Version is not { } version || version < precios.VersionCatalogo)
+                ticket.Productos[varianteId] = producto with { Version = precios.VersionCatalogo };
+        }
+        foreach (var producto in precios.Productos)
+        {
+            ticket.Productos[producto.VarianteId] = producto;
+            Cliente.PreciosAlDia(producto);
+            foreach (var linea in venta.Lineas.Where(l => l.VarianteId == producto.VarianteId && !l.EsImpresiones).ToList())
+            {
+                try
+                {
+                    venta.CambiarCantidad(linea, linea.Cantidad, producto.PresentacionModelo(linea.PresentacionId), producto.PreciosModelo());
+                }
+                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+                {
+                    // Ya no tiene esa presentación o se quedó sin precio: la línea queda como estaba y el servicio lo dice al cobrar.
+                }
+            }
+        }
+        var cambiaron = precios.Productos
+            .Where(p => venta.Lineas.Any(l => l.VarianteId == p.VarianteId && antes.TryGetValue(l, out var a)
+                                              && a != (l.PrecioCentavos, l.ImporteCentavos, l.AhorroMayoreoCentavos)))
+            .Select(p => $"«{p.Descripcion}»")
+            .ToList();
+        _avisoDelCobro = cambiaron.Count > 0
+            ? $"Cambió el precio de {Textos.Lista(cambiaron)}: revisa el total ({Formato.Dinero(venta.TotalCentavos)}) y cobra otra vez."
+            : $"Se pusieron al día los precios de {Textos.Lista(precios.Productos.Select(p => $"«{p.Descripcion}»").ToList())} con la caja principal; "
+              + "el total no cambió: cobra otra vez.";
+        _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
+        return _avisoDelCobro;
     }
 
     // ── Al cobrar: el cambio en grande hasta el siguiente cliente ───────────

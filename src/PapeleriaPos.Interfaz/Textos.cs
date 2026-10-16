@@ -75,6 +75,14 @@ public static class Textos
                 : $"Abono de {Formato.Dinero(comprobante.MontoCentavos)} de «{comprobante.Cliente}». Saldo: {Formato.Dinero(comprobante.SaldoCentavos)}"
                   + (comprobante.Forma == FormaPago.Efectivo ? $". Cambio: {Formato.Dinero(comprobante.CambioCentavos)}." : ".");
 
+    /// <summary>«A», «A y B», «A, B y C».</summary>
+    public static string Lista(IReadOnlyList<string> cosas) => cosas.Count switch
+    {
+        0 => "",
+        1 => cosas[0],
+        _ => $"{string.Join(", ", cosas.Take(cosas.Count - 1))} y {cosas[^1]}",
+    };
+
     /// <summary>Quién autoriza: «Luis», «Carmen o Luis», «Ana, Carmen o Luis»; si son más, los dos primeros y cuántos más.</summary>
     public static string Quien(IReadOnlyList<QuienAutoriza> autorizan) => autorizan.Count switch
     {

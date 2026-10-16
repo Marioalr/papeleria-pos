@@ -122,9 +122,14 @@ public sealed record SolicitudMovimiento(TipoMovimientoCaja Tipo, long MontoCent
 /// <summary>Una línea tal como la manda la caja. Sin variante es artículo común, con descripción y precio a mano.</summary>
 /// <param name="PrecioCentavos">En un producto del catálogo, el precio cambiado en la caja (con <paramref name="AutorizacionId"/>).</param>
 /// <param name="DescuentoCentesimas">Descuento en porcentaje (centésimas: 1000 = 10 %); o <paramref name="DescuentoCentavos"/> en monto. Con motivo.</param>
+/// <param name="VersionCatalogo">
+/// Al cobrar (entrega 5): la versión del catálogo de la que salieron los precios que el cajero vio en esta línea
+/// (<see cref="ProductoVentaDto.Version"/>), si no es la del ticket (<see cref="SolicitudCobro.VersionCatalogo"/>): un producto
+/// que llegó de la caja principal, o una línea de antes de que bajara la copia de ahora.
+/// </param>
 public sealed record LineaSolicitada(
     Guid? VarianteId, Guid? PresentacionId, long CantidadMilesimas, string? Descripcion = null, long? PrecioCentavos = null, Guid? AutorizacionId = null,
-    int? DescuentoCentesimas = null, long? DescuentoCentavos = null, string? MotivoDescuento = null);
+    int? DescuentoCentesimas = null, long? DescuentoCentavos = null, string? MotivoDescuento = null, long? VersionCatalogo = null);
 
 /// <summary>El servicio vuelve a armar la venta con los precios del catálogo: nunca confía en los precios de la caja.</summary>
 /// <param name="VentaId">Lo pone la caja: si la respuesta no llegó y se manda otra vez (o sube con la bandeja), no se cobra dos veces.</param>
@@ -136,10 +141,28 @@ public sealed record LineaSolicitada(
 /// La caja calculó el ticket con el mayoreo siempre del cliente. Vacío en las cajas de antes, que no lo conocen: el servicio
 /// calcula igual que ellas.
 /// </param>
+/// <param name="VersionCatalogo">
+/// La versión de la copia del catálogo con que la caja puso los precios del ticket (entrega 5; cada línea puede decir otra,
+/// <see cref="LineaSolicitada.VersionCatalogo"/>). Si el precio o el mayoreo de algo del ticket cambió después, el servicio no
+/// cobra: contesta con los de ahora (<see cref="PreciosCambiadosDto"/>), para que el ticket diga lo que vio el cajero.
+/// Vacía en las cajas de antes: se cobra como siempre.
+/// </param>
 public sealed record SolicitudCobro(
     Guid CajaId, Guid TurnoId, Guid CajeroId, IReadOnlyList<LineaSolicitada> Lineas, IReadOnlyList<CobroSolicitado> Cobros, Guid? VentaId = null,
     IReadOnlyList<Guid>? Impresiones = null, [property: JsonPropertyName("clienteEspecialId")] Guid? ClienteId = null,
-    Guid? AutorizacionDescuentoId = null, Guid? AutorizacionBajoCostoId = null, bool? MayoreoDeCliente = null, Guid? AutorizacionCreditoId = null);
+    Guid? AutorizacionDescuentoId = null, Guid? AutorizacionBajoCostoId = null, bool? MayoreoDeCliente = null, Guid? AutorizacionCreditoId = null,
+    long? VersionCatalogo = null);
+
+/// <summary>
+/// El cobro no se hizo (entrega 5): el precio o el mayoreo de algo del ticket cambió después de la versión con que la caja
+/// puso sus precios. Llega con un 409 y se lee también como <see cref="ErrorDto"/>.
+/// </summary>
+/// <param name="Productos">Los que cambiaron, como están ahora (con su versión).</param>
+/// <param name="VersionCatalogo">Hasta esta versión, lo demás del ticket no cambió.</param>
+public sealed record PreciosCambiadosDto(string Mensaje, IReadOnlyList<ProductoVentaDto> Productos, long VersionCatalogo, string Codigo = PreciosCambiadosDto.CodigoDelError)
+{
+    public const string CodigoDelError = "precios-cambiados";
+}
 
 /// <param name="ImporteCentavos">Ya con el descuento.</param>
 /// <param name="Descuento">Cómo se lee el descuento ("10 %" o vacío si fue un monto).</param>

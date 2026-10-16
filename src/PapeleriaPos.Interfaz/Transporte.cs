@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 using PapeleriaPos.Nucleo.Contratos;
 
 namespace PapeleriaPos.Interfaz;
@@ -69,14 +70,22 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
         if (respuesta.IsSuccessStatusCode)
             return;
         ErrorDto? error = null;
+        PreciosCambiadosDto? precios = null;
         try
         {
-            error = await respuesta.Content.ReadFromJsonAsync<ErrorDto>();
+            var cuerpo = await respuesta.Content.ReadAsStringAsync();
+            error = JsonSerializer.Deserialize<ErrorDto>(cuerpo, JsonSerializerOptions.Web);
+            // El cobro no se hizo porque cambió un precio (entrega 5): trae los de ahora.
+            if (error?.Codigo == PreciosCambiadosDto.CodigoDelError)
+                precios = JsonSerializer.Deserialize<PreciosCambiadosDto>(cuerpo, JsonSerializerOptions.Web);
         }
         catch (Exception)
         {
             // Sin mensaje del servicio: se usa el genérico.
         }
-        throw new ErrorCaja(error?.Mensaje ?? $"El servicio respondió con un error ({(int)respuesta.StatusCode}).", error?.Codigo);
+        throw new ErrorCaja(error?.Mensaje ?? $"El servicio respondió con un error ({(int)respuesta.StatusCode}).", error?.Codigo)
+        {
+            PreciosCambiados = precios,
+        };
     }
 }

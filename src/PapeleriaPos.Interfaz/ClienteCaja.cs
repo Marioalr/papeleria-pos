@@ -16,9 +16,13 @@ public sealed class ErrorCaja(string mensaje, string? codigo = null) : Exception
 {
     /// <summary>
     /// "requiere-autorizacion" o "no-permitido" cuando lo detiene un permiso; "caja-sin-alta" si el servicio no
-    /// reconoce la llave; "sin-conexion" si no contesta.
+    /// reconoce la llave; "sin-conexion" si no contesta; "precios-cambiados" si el cobro no se hizo porque cambió un precio
+    /// (<see cref="PreciosCambiados"/>).
     /// </summary>
     public string? Codigo { get; } = codigo;
+
+    /// <summary>El cobro no se hizo: estos son los precios de ahora de lo que cambió (entrega 5).</summary>
+    public PreciosCambiadosDto? PreciosCambiados { get; init; }
 }
 
 /// <summary>Lo que dijo la caja principal de un código que no está en la copia de esta caja.</summary>
@@ -206,6 +210,12 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// en el navegador sin base local y mientras la caja no tiene copia: entonces el código se pregunta como antes.
     /// </summary>
     public FotoCatalogo? Foto => contingencia?.Foto;
+
+    /// <summary>
+    /// Los precios de ahora de un producto, que dijo el cobro (entrega 5): quedan en la foto de la copia, para que el
+    /// siguiente escaneo ya los traiga.
+    /// </summary>
+    public void PreciosAlDia(ProductoVentaDto producto) => contingencia?.AgregarALaFoto(producto);
 
     /// <summary>
     /// Cuánto se espera a la caja principal por un código que no está en la copia (docs/propuesta-interfaz.md,
