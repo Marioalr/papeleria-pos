@@ -576,11 +576,41 @@ aprobó el dueño el 2026-10-10 ([propuesta](propuesta-interfaz.md#rendimiento))
   un escaneo que esperó en la cola cuenta todo lo que esperó), en Configuración › Acerca de › Escanear; y el vigía del
   hilo de la pantalla anota en el registro de la caja cuando se traba más de 30 ms en una ráfaga de escaneos, con lo que
   pasaba.
-- **Para la parte 2:** buscar al escribir contra la copia; bajar solo lo que cambió, avisado por SSE (y que la versión no
-  suba con un PIN mal tecleado ni al abrir un turno, que hoy obligan a bajar la copia entera); un plazo por operación y
-  los estados de la red; imprimir aparte; pintar menos; la prueba de la ráfaga con la red simulada; y medir en las PC de la
-  tienda. Mientras tanto, «Quedan 3» y «Sin existencia» al escanear salen de la copia: pueden tener hasta media hora (las
-  ventas no cambian la versión); con lo que avise el SSE se ponen al día.
+- **Para la parte 2:** ~~buscar al escribir contra la copia~~ (hecho en la parte 3, abajo); bajar solo lo que cambió,
+  avisado por SSE (y que la versión no suba con un PIN mal tecleado ni al abrir un turno, que hoy obligan a bajar la copia
+  entera); un plazo por operación y los estados de la red; ~~imprimir aparte; pintar menos~~ (en la parte 3); la prueba
+  de la ráfaga con la red simulada; y medir en las PC de la tienda. Mientras tanto, «Quedan 3» y «Sin existencia» al
+  escanear salen de la copia: pueden tener hasta media hora (las ventas no cambian la versión); con lo que avise el SSE
+  se ponen al día.
+
+**Avance (2026-10-16), entrega 5, parte 3: la pantalla,** como lo aprobó el dueño el 2026-10-10
+([propuesta](propuesta-interfaz.md#rendimiento)):
+- **Buscar al escribir, contra la copia y sin la red:** la búsqueda es una sola para el servicio y para la copia de cada
+  caja (`IndiceDeBusqueda`, en el núcleo) y, con los mismos datos, da lo mismo y en el mismo orden: lo elegido antes en
+  esa caja, lo más vendido, los sinónimos, el error de dedo y las familias. La copia lleva lo que hace falta para
+  ordenar igual (lo más vendido en 90 días, lo que esa caja eligió con cada texto, todos los códigos y las marcas con
+  que se leen los nombres). Buscar toma menos de 2 ms con 5,800 productos (antes, 150 ms de espera y una consulta por la
+  red): lo que se escribe a mano se busca en cuanto se teclea, y lo que teclea el lector no busca nada. Enter con un
+  nombre agrega el primero, también de la copia. Sin copia (la caja recién instalada, el navegador), como antes. Al
+  agregar o quitar un sinónimo, la caja baja su copia en ese momento.
+- **Pintar menos:** cada renglón del ticket es su propio componente: al escanear se pinta el renglón nuevo y el que
+  estaba elegido, y la pantalla una sola vez. Con 20 renglones, un escaneo le mandaba a la página 449 cambios y cambiaba
+  134 manejadores de eventos; ahora, unos 40 y 5.
+- **Imprimir aparte:** todo lo de la impresora de tickets (el ticket, las reimpresiones, los comprobantes, el corte y el
+  ticket de prueba) va a una cola de la caja y la pantalla queda libre al momento: cobrar ya no espera a que salga el
+  ticket, ni el aviso de retiro. Si la impresora no contesta al conectarse (puede estar imprimiendo lo de la otra caja),
+  se vuelve a intentar sola unos 15 s, sin que salga dos veces. Si no sale, la cola se detiene y lo dice con
+  «Reintentar» (en el panel del cobro, arriba del total, en el estado de arriba, en el corte y en la entrada); lo que
+  sigue espera en su orden. Si se cierra la caja con algo sin imprimir, pregunta antes y lo anota en el registro.
+- **F12** ya pasaba el cursor a «Pagó con» en la misma tecla, sin esperar a .NET (menos de 1 ms); ahora lo cuida una
+  prueba.
+- **Abrir la caja:** al publicar para Windows va ya compilada (ReadyToRun). La entrada sale con la copia, sin esperar a
+  la red (la caja, su turno y las fichas), y la caja principal la pone al día cuando contesta; el registro del día anota
+  a los cuántos segundos salió. Las letras ya eran las de Windows (Segoe UI), ninguna de internet.
+- **Falta, en la tienda (un sábado o domingo):** dos tickets a la vez desde las dos cajas a la POS-8360, para ver si
+  espera, rechaza o corta (si no conecta, la cola reintenta sola; si corta a medio ticket, dice «no salió» y espera
+  «Reintentar»); y medir allá lo que tarda escribir, escanear y abrir la caja. De la entrega 5 sigue la parte 2: la red
+  (los cambios avisados por SSE, los plazos y los estados de la red, la prueba de la ráfaga).
 
 #### Después: el piloto en la caja 2
 
@@ -700,7 +730,7 @@ para esos días ([forma de trabajar](notas.md#forma-de-trabajar), [guía de los 
 | **La red de la tienda:** diagnóstico en la próxima caída real (desconectar el módem no la reproduce), con el script de diagnóstico en las dos cajas, y el arreglo, por aprobar, con lo que ya hay: el módem solo al internet del Tenda, red local nueva, IP fijas puestas en cada equipo, los equipos de la tienda en el switch que ya hay y no en el Tenda, e impresoras por IP sin WSD | [Red de la matriz](arquitectura.md#la-red-de-la-matriz), [notas](notas.md#red-de-la-tienda) | Falta: el script (chico) y dos fines de semana ([guía](pruebas-en-tienda.md)) |
 | En el POS, por la red: que la caja 2 vuelva a buscar sola a la principal, avisos de lo configurado por nombre o con WSD, la franja «sin internet» o «sin red local» y la bitácora de red | [Red de la matriz](arquitectura.md#la-red-de-la-matriz) | Falta (chico) |
 | **Las tres impresoras de inyección** (dos WF-6590 y una L5590): cada una con sus costos, su cola en cada PC, su contador, su calibración y sus hojas por cobrar | [Impresión](impresion.md), [notas](notas.md#impresoras) | Falta (mediano); antes, leer la L5590 por SNMP |
-| **La impresora de tickets compartida:** reintento si las dos cajas imprimen a la vez y botón «Reintentar». No hay cajón | [Notas](notas.md#impresoras) | Falta (chico) |
+| **La impresora de tickets compartida:** reintento si las dos cajas imprimen a la vez y botón «Reintentar». No hay cajón | [Notas](notas.md#impresoras) | En código (entrega 5, parte 3, 2026-10-16): la cola de cada caja; falta probarla en la tienda con las dos cajas |
 | **Reportes de ventas:** día contra hace un año (el mismo día de la semana o la misma fecha: por decidir), mes y año a la fecha contra el año anterior, meses cerrados; venta neta, tickets, ticket promedio, costo, utilidad y margen; por departamento, caja, cajero y forma de pago; exportar a Excel y líneas en el resumen de Telegram; la utilidad solo la ve el dueño. El año anterior sale del historial de eleventa (su utilidad, con el costo capturado en eleventa) | [Notas](notas.md#reportes) | Pospuesto: después de la prueba con una persona real y su aprobación (2026-10-09) |
 | **Ganancia real del mes:** el reporte (gastos fijos, consumibles del mes, recibo de luz, equipo con su depreciación y comisión de la tarjeta; utilidad bruta − mermas y faltantes − gastos = ganancia; punto de equilibrio y cierre del mes por Telegram). La captura de cada gasto cuando se paga no se pospone: propuesta, por aprobar, hacerla con la entrega 3 de la fase 3 (consumibles del mes), para todos los gastos | [Administración](#administración-y-punto-de-equilibrio), [servicios](servicios.md#tres-niveles-de-costo) | El reporte, pospuesto: después de la prueba con una persona real y su aprobación (2026-10-09) |
 | Fusionar a `main`, en orden, los PR abiertos (#27 en adelante) | `main` llega hasta la entrega 2 de la fase 3 | Hecho el 2026-10-10: del #27 al #52, con el #45. En Windows pasan todas las pruebas |
@@ -846,7 +876,8 @@ Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
 - [ ] En el POS, por la red: la caja 2 vuelve a buscar a la principal, avisos de nombres o WSD, la franja de «sin
   internet» y la bitácora de red
 - [ ] Las tres impresoras de inyección en el módulo de impresión
-- [ ] Impresora de tickets compartida: reintento y botón «Reintentar»
+- [x] Impresora de tickets compartida: reintento y botón «Reintentar» (la cola de la caja, entrega 5, parte 3), en
+  código; falta probarla en la tienda con las dos cajas
 - [ ] Corregir Telegram para que cumpla «solo el dueño»: rechazar el vínculo desde un grupo y revisar quién aprieta el
   botón (hoy se autoriza por chat; [notas](notas.md#reportes))
 - [ ] Después de la prueba con una persona real y su aprobación: reportes de ventas por periodo contra el año anterior

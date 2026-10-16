@@ -290,7 +290,8 @@ no-break. La causa **no se conoce** todavía.
   se lea igual por SNMP falta probarlo.
 - **Una impresora de tickets para dos cajas, y no hay cajón:** el cajón se conecta a la impresora de tickets, así que
   con una sola las dos cajas abrirían el mismo cajón, y eso choca con el turno y el corte ciego de cada cajero. Si las
-  dos imprimen a la vez, hoy no hay reintento. No se recomienda un cajón compartido entre dos turnos. Opciones,
+  dos imprimen a la vez, la cola de cada caja reintenta sola si la impresora no contesta (entrega 5, parte 3); falta ver
+  en la tienda si la POS-8360 espera o rechaza. No se recomienda un cajón compartido entre dos turnos. Opciones,
   **referencia, por si un día se compra** (el dueño no quiere lista de compras, 2026-10-09; precios del 2026-10-08):
   1. una segunda impresora de tickets (≈1,909 la 3nStar RPT008; confirmar que tenga red) y un cajón para cada una
      (≈799 cada uno);
