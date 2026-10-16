@@ -74,6 +74,35 @@
     private int _porCobrar;
     private readonly CancellationTokenSource _alto = new();
 
+    /// <summary>
+    /// La pantalla de venta se vuelve a pintar con cada escaneo; el estado de arriba, solo cuando cambia lo suyo (entrega 5,
+    /// parte 3, «Pintar menos»): la conexión, lo que falta por cobrar, o la caja y quien entró.
+    /// </summary>
+    private bool _cambio = true;
+
+    private (CajaDto, SesionDto)? _pintadoCon;
+
+    protected override void OnParametersSet()
+    {
+        if (_pintadoCon is not { } antes || !ReferenceEquals(antes.Item1, Caja) || !ReferenceEquals(antes.Item2, Sesion))
+            _cambio = true;
+        _pintadoCon = (Caja, Sesion);
+    }
+
+    protected override bool ShouldRender()
+    {
+        var pintar = _cambio;
+        _cambio = false;
+        return pintar;
+    }
+
+    /// <summary>Cambió algo de lo suyo: se vuelve a pintar.</summary>
+    private void Pintar()
+    {
+        _cambio = true;
+        StateHasChanged();
+    }
+
     protected override void OnInitialized()
     {
         // Solo la ventana de Windows trabaja sin conexión; en el navegador de la caja principal no hay contingencia.
@@ -83,7 +112,7 @@
         _ = VigilarAsync();
     }
 
-    private void AlCambiar() => _ = InvokeAsync(StateHasChanged);
+    private void AlCambiar() => _ = InvokeAsync(Pintar);
 
     private async Task VigilarAsync()
     {
@@ -112,7 +141,7 @@
             // Sin la caja principal no se sabe: el chip se oculta hasta que vuelva.
             _porCobrar = 0;
         }
-        StateHasChanged();
+        Pintar();
     }
 
     public async ValueTask DisposeAsync()

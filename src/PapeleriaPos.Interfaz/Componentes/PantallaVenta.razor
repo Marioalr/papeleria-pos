@@ -280,9 +280,8 @@
                         <span class="vn-tit">Rápidos</span>
                         @for (var k = 0; k < _rapidos.Count; k++)
                         {
-                            var indiceRapido = k;
                             var listo = _rapidos[k];
-                            <button class="vn-rapido" title="Con un número en el cuadro, agrega esa cantidad" @onclick="() => RapidoAsync(indiceRapido)">
+                            <button class="vn-rapido" title="Con un número en el cuadro, agrega esa cantidad" @onclick="listo.Agregar">
                                 <kbd>Alt+@(k + 1)</kbd>@listo.Rapido.Nombre
                                 @if (listo.PrecioCentavos is { } precioRapido)
                                 {
@@ -300,7 +299,7 @@
                     @for (var k = 0; k < Math.Min(_fichasEnEspera, esperan.Count); k++)
                     {
                         var enEspera = esperan[k];
-                        <button class="vn-ficha" title="@TituloEspera(enEspera, k == 0)" @onclick="() => RetomarAsync(enEspera)"><Ico Nombre="pausa" />@Desde(enEspera) · @Formato.Dinero(enEspera.Venta.TotalCentavos)</button>
+                        <button class="vn-ficha" title="@TituloEspera(enEspera, k == 0)" @onclick="AlRetomar(enEspera)"><Ico Nombre="pausa" />@Desde(enEspera) · @Formato.Dinero(enEspera.Venta.TotalCentavos)</button>
                     }
                     @if (esperan.Count > _fichasEnEspera)
                     {
@@ -320,7 +319,7 @@
                                     <div class="vn-menu-lista" id="lista-espera">
                                         @foreach (var enEspera in resto)
                                         {
-                                            <button class="vn-fila-espera" role="menuitem" title="@TituloEspera(enEspera, false)" @onclick="() => RetomarAsync(enEspera)">
+                                            <button class="vn-fila-espera" role="menuitem" title="@TituloEspera(enEspera, false)" @onclick="AlRetomar(enEspera)">
                                                 <Ico Nombre="pausa" />
                                                 <span><strong>@Desde(enEspera)</strong><small>@ArticulosTexto(enEspera.Venta)</small></span>
                                                 <em>@Formato.Dinero(enEspera.Venta.TotalCentavos)</em>
@@ -367,95 +366,14 @@
                             {
                                 @RenglonBuscando(buscando)
                             }
+                            @* Cada renglón es su propio componente, con @key: al escanear se pinta el nuevo y los demás no (entrega 5,
+                               parte 3, «Pintar menos»). *@
                             @for (var i = 0; i < Actual.Venta.Lineas.Count; i++)
                             {
-                                var indice = i;
                                 var linea = Actual.Venta.Lineas[i];
-                                var producto = linea.VarianteId is { } v ? Actual.Productos.GetValueOrDefault(v) : null;
-                                <tr id="linea-@i" class="@(i == _seleccion ? "seleccionada" : "")" @onclick="() => Seleccionar(indice)">
-                                    <td class="vn-col-cant">
-                                        @if (producto is not null && !linea.EsImpresiones)
-                                        {
-                                            <span class="vn-paso">
-                                                <button tabindex="-1" title="Uno menos" @onclick="() => PasoCantidadAsync(indice, -1)" @onclick:stopPropagation="true">−</button>
-                                                <span>@Formato.Numero(linea.Cantidad.EnUnidades)</span>
-                                                <button tabindex="-1" title="Uno más" @onclick="() => PasoCantidadAsync(indice, 1)" @onclick:stopPropagation="true">+</button>
-                                            </span>
-                                        }
-                                        else
-                                        {
-                                            <span class="vn-paso-fijo">@Formato.Numero(linea.Cantidad.EnUnidades)</span>
-                                        }
-                                    </td>
-                                    <td>
-                                        <div class="vn-nombre">@(linea.EsImpresiones ? $"Impresiones ({Actual.Impresiones.Count})" : Descripcion(linea, producto))</div>
-                                        <div class="vn-sub">
-                                            @if (producto?.Codigo is { } codigoLinea)
-                                            {
-                                                <code>@codigoLinea</code>
-                                            }
-                                            @if (linea.TieneMayoreo)
-                                            {
-                                                <span class="vn-etiq">@MayoreoTexto(linea, producto) · ahorra @Formato.Dinero(linea.AhorroMayoreoCentavos)</span>
-                                            }
-                                            @if (linea.TieneDescuento)
-                                            {
-                                                <span class="vn-etiq">Descuento −@Formato.Dinero(linea.DescuentoCentavos) · @linea.MotivoDescuento</span>
-                                            }
-                                            @if (linea.PrecioCambiado)
-                                            {
-                                                <span class="vn-etiq azul">Precio cambiado</span>
-                                            }
-                                            @if (producto?.Existencia is { } quedan && quedan <= 3)
-                                            {
-                                                <span class="vn-etiq ambar">@(quedan <= 0 ? "Sin existencia en el sistema" : $"Quedan {Formato.Numero(quedan)}")</span>
-                                            }
-                                        </div>
-                                    </td>
-                                    <td class="num vn-precio">
-                                        @if (linea.PrecioCambiado)
-                                        {
-                                            <s>@Formato.Dinero(linea.PrecioOriginalCentavos ?? 0)</s>
-                                        }
-                                        @Formato.Dinero(linea.PrecioCentavos)
-                                    </td>
-                                    <td class="num vn-importe">@Formato.Dinero(linea.ImporteCentavos)</td>
-                                </tr>
-                                @if (i == _seleccion)
-                                {
-                                    @* Las acciones del artículo, pegadas a su fila: así el panel de la derecha queda solo para el dinero. *@
-                                    <tr class="vn-acciones-fila">
-                                        <td></td>
-                                        <td colspan="3">
-                                            <div class="vn-tira">
-                                                @if (producto is not null && !linea.EsImpresiones && Ve(AccionControlada.CambiarPrecio))
-                                                {
-                                                    <button class="vn-accion" @onclick="() => EnLaFilaAsync(AbrirCambioPrecio)" @onclick:stopPropagation="true">
-                                                        <Ico Nombre="etiqueta" />Precio @Marca(AccionControlada.CambiarPrecio, "Ctrl+E")
-                                                    </button>
-                                                }
-                                                @if (Ve(AccionControlada.Descuento))
-                                                {
-                                                    <button class="vn-accion" @onclick="() => EnLaFilaAsync(() => Abrir(Ventanas.Descuento))" @onclick:stopPropagation="true">
-                                                        <Ico Nombre="porcentaje" />Descuento @Limite(AccionControlada.Descuento) @Marca(AccionControlada.Descuento, "Ctrl+D")
-                                                    </button>
-                                                }
-                                                @if (producto is not null && !linea.EsImpresiones && TieneEscalas(producto))
-                                                {
-                                                    <button class="vn-accion" @onclick="() => EnLaFilaAsync(MayoreoAsync)" @onclick:stopPropagation="true">
-                                                        <Ico Nombre="capas" />Mayoreo <kbd>F11</kbd>
-                                                    </button>
-                                                }
-                                                @if (Ve(AccionControlada.QuitarProducto))
-                                                {
-                                                    <button class="vn-accion peligro" @onclick="() => EnLaFilaAsync(BorrarSeleccion)" @onclick:stopPropagation="true">
-                                                        <Ico Nombre="basura" />Quitar <kbd>Supr</kbd>
-                                                    </button>
-                                                }
-                                            </div>
-                                        </td>
-                                    </tr>
-                                }
+                                var elegida = i == _seleccion;
+                                <FilaTicket @key="linea" Indice="i" Renglon="Renglon(linea)" Seleccionada="elegida" Acciones="@(elegida ? AccionesDe(linea) : null)"
+                                            AlTocar="Seleccionar" AlPaso="PasoDeFilaAsync" AlAccion="AccionDeFilaAsync" />
                                 @foreach (var buscando in BuscandoDespuesDe(linea))
                                 {
                                     @RenglonBuscando(buscando)
@@ -775,7 +693,8 @@
     </Ventana>
 }
 
-@if (!VaEnPanel)
+@* Solo con algo encima: sin ventana no hay nada que pintar, y la venta no lo vuelve a pintar con cada escaneo. *@
+@if (!VaEnPanel && _ventana != Ventanas.Ninguna)
 {
     <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada">@ContenidoDeVentana</CascadingValue>
 }
@@ -1231,15 +1150,6 @@
         _ => null,
     };
 
-    /// <summary>La tecla, o el candado con quién autoriza.</summary>
-    private RenderFragment Marca(AccionControlada accion, string tecla) => Permiso(accion) is { Nivel: NivelPermiso.RequiereAutorizacion } p
-        ? @<small class="vn-candado" title="Lo autoriza @Quien(p)"><Ico Nombre="candado" />@Quien(p)</small>
-        : @<kbd>@tecla</kbd>;
-
-    private RenderFragment Limite(AccionControlada accion) => Permiso(accion) is { Nivel: NivelPermiso.Permitido, UmbralCentavos: { } umbral }
-        ? @<small class="vn-limite">hasta @Permisos.TextoMonto(accion, umbral)</small>
-        : _ => { };
-
     // ── «/»: todas las acciones de quien entró ──────────────────────────────
 
     private sealed record AccionDeVenta(string Nombre, string Icono, string? Tecla, AccionControlada? Regla, Func<Task> Hacer);
@@ -1364,7 +1274,11 @@
     private static string? FiltroDeAcciones(string texto) => texto.TrimStart() is ['/', .. var resto] ? resto.Trim() : null;
 
     /// <summary>Un rápido con el producto al que apunta (para su precio); sin conexión al cargar, el producto se pide al usarlo.</summary>
-    private sealed record RapidoListo(Rapido Rapido, ProductoVentaDto? Producto, long? PrecioCentavos);
+    private sealed record RapidoListo(Rapido Rapido, ProductoVentaDto? Producto, long? PrecioCentavos)
+    {
+        /// <summary>Su botón: el mismo en cada pintado, así la página no cambia su manejador con cada escaneo.</summary>
+        public Func<Task> Agregar { get; init; } = () => Task.CompletedTask;
+    }
 
     private List<RapidoListo> _rapidos = [];
 
@@ -1377,7 +1291,11 @@
             {
                 // De la copia de la caja, si ya la tiene: sin una consulta por cada rápido.
                 var producto = Cliente.Foto?.PorVariante(rapido.VarianteId) ?? await Cliente.PorVarianteAsync(rapido.VarianteId, Caja.SucursalId);
-                listos.Add(new RapidoListo(rapido, producto, producto is null ? null : PrecioDelRapido(rapido, producto, Caja.SucursalId)));
+                var indice = listos.Count;
+                listos.Add(new RapidoListo(rapido, producto, producto is null ? null : PrecioDelRapido(rapido, producto, Caja.SucursalId))
+                {
+                    Agregar = () => RapidoAsync(indice),
+                });
             }
             _rapidos = listos;
         }
@@ -1505,6 +1423,9 @@
         PonerEnEspera();
     }
 
+    /// <summary>El botón de su ficha: el mismo en cada pintado (la página no cambia su manejador con cada escaneo).</summary>
+    private Func<Task> AlRetomar(TicketAbierto ticket) => ticket.AlRetomar ??= () => RetomarAsync(ticket);
+
     /// <summary>Una ficha de la espera, con el mouse: como F5, primero espera lo que se escaneó en el ticket que se atiende.</summary>
     private async Task RetomarAsync(TicketAbierto ticket)
     {
@@ -1619,8 +1540,7 @@
         }
         @foreach (var forma in FormasQueFaltan)
         {
-            var esta = forma;
-            <button class="vn-forma" title="@TituloDeForma(esta)" @onclick="() => AgregarFormaAsync(esta)"><Ico Nombre="@IconoDeForma(esta)" />@EtiquetaDeForma(esta)</button>
+            <button class="vn-forma" title="@TituloDeForma(forma)" @onclick="AlAgregarForma(forma)"><Ico Nombre="@IconoDeForma(forma)" />@EtiquetaDeForma(forma)</button>
         }
     </span>;
 
@@ -1675,6 +1595,12 @@
         { Nivel: NivelPermiso.Permitido, UmbralCentavos: { } umbral } p when ExcesoDeCredito > umbral => $": lo autoriza {Quien(p)}.",
         _ => ".",
     };
+
+    private readonly Dictionary<FormaPago, Func<Task>> _agregarForma = [];
+
+    /// <summary>El botón de cada forma: el mismo en cada pintado (la página no cambia su manejador con cada escaneo).</summary>
+    private Func<Task> AlAgregarForma(FormaPago forma) =>
+        _agregarForma.TryGetValue(forma, out var agregar) ? agregar : _agregarForma[forma] = () => AgregarFormaAsync(forma);
 
     /// <summary>La forma nueva trae lo que falta (del saldo a favor, hasta lo que puede usar); se cambia si es solo una parte.</summary>
     private async Task AgregarFormaAsync(FormaPago forma)
@@ -1953,6 +1879,9 @@
         /// <summary>Los trabajos de impresión que van en la línea "Impresiones" de este ticket.</summary>
         public List<ImpresionPorCobrarDto> Impresiones { get; } = [];
 
+        /// <summary>Retomarlo desde su ficha de la espera (lo arma la pantalla una vez).</summary>
+        public Func<Task>? AlRetomar { get; set; }
+
         /// <summary>El cliente registrado del ticket: lo que se agregue después también lleva su descuento y su mayoreo.</summary>
         public ClienteRegistradoDto? Cliente { get; set; }
 
@@ -1994,7 +1923,7 @@
         Actual.Buscando.Where(b => b.Despues is { } antes && !Actual.Venta.Lineas.Contains(antes));
 
     private static RenderFragment RenglonBuscando(LineaBuscando buscando) =>
-        @<tr class="vn-buscando" aria-busy="true">
+        @<tr @key="buscando" class="vn-buscando" aria-busy="true">
             <td class="vn-col-cant"><span class="vn-paso-fijo">@Formato.Numero(buscando.Cantidad.EnUnidades)</span></td>
             <td>
                 <div class="vn-nombre">Buscando…</div>
@@ -2129,8 +2058,13 @@
         CerrarResultados();
         _captura.Texto = texto;
         var escaneo = AgregarCodigoAsync(hora);
-        StateHasChanged();
-        await escaneo;
+        // Casi siempre ya terminó (el código está en la copia): se pinta una sola vez (entrega 5, parte 3). Si espera algo (un
+        // nombre o un folio con la red, o un escaneo de antes), se pinta ya lo que hay y otra vez al terminar.
+        if (!escaneo.IsCompleted)
+        {
+            StateHasChanged();
+            await escaneo;
+        }
         StateHasChanged();
     }
 
@@ -3090,6 +3024,54 @@
     // ── Renglones ───────────────────────────────────────────────────────────
 
     private void Seleccionar(int indice) => _seleccion = indice;
+
+    /// <summary>Lo que dice el renglón de una línea (FilaTicket): con lo mismo que la vez pasada, no se vuelve a pintar.</summary>
+    private FilaTicket.Datos Renglon(VentaLinea linea)
+    {
+        var producto = linea.VarianteId is { } v ? Actual.Productos.GetValueOrDefault(v) : null;
+        return new FilaTicket.Datos(
+            ConPasos: producto is not null && !linea.EsImpresiones,
+            Cantidad: linea.Cantidad.EnUnidades,
+            Nombre: linea.EsImpresiones ? $"Impresiones ({Actual.Impresiones.Count})" : Descripcion(linea, producto),
+            Codigo: producto?.Codigo,
+            Mayoreo: linea.TieneMayoreo ? $"{MayoreoTexto(linea, producto)} · ahorra {Formato.Dinero(linea.AhorroMayoreoCentavos)}" : null,
+            Descuento: linea.TieneDescuento ? $"Descuento −{Formato.Dinero(linea.DescuentoCentavos)} · {linea.MotivoDescuento}" : null,
+            PrecioCambiado: linea.PrecioCambiado,
+            Existencia: producto?.Existencia is { } quedan && quedan <= 3 ? quedan <= 0 ? "Sin existencia en el sistema" : $"Quedan {Formato.Numero(quedan)}" : null,
+            PrecioOriginalCentavos: linea.PrecioOriginalCentavos ?? 0,
+            PrecioCentavos: linea.PrecioCentavos,
+            ImporteCentavos: linea.ImporteCentavos);
+    }
+
+    /// <summary>Las acciones del renglón elegido, según lo que puede quien entró: lo que no puede no sale.</summary>
+    private FilaTicket.AccionesDeFila AccionesDe(VentaLinea linea)
+    {
+        var producto = linea.VarianteId is { } v ? Actual.Productos.GetValueOrDefault(v) : null;
+        var deProducto = producto is not null && !linea.EsImpresiones;
+        return new FilaTicket.AccionesDeFila(
+            Precio: deProducto && Ve(AccionControlada.CambiarPrecio) ? MarcaDe(AccionControlada.CambiarPrecio, "Ctrl+E") : null,
+            Descuento: Ve(AccionControlada.Descuento) ? MarcaDe(AccionControlada.Descuento, "Ctrl+D") : null,
+            LimiteDeDescuento: Permiso(AccionControlada.Descuento) is { Nivel: NivelPermiso.Permitido, UmbralCentavos: { } umbral }
+                ? Permisos.TextoMonto(AccionControlada.Descuento, umbral) : null,
+            Mayoreo: deProducto && TieneEscalas(producto!),
+            Quitar: Ve(AccionControlada.QuitarProducto));
+    }
+
+    /// <summary>La tecla, o el candado con quién autoriza.</summary>
+    private FilaTicket.MarcaDeAccion MarcaDe(AccionControlada accion, string tecla) =>
+        new(tecla, Permiso(accion) is { Nivel: NivelPermiso.RequiereAutorizacion } p ? Quien(p) : null);
+
+    /// <summary>Los botones − y + de un renglón.</summary>
+    private Task PasoDeFilaAsync((int Indice, int Paso) paso) => PasoCantidadAsync(paso.Indice, paso.Paso);
+
+    /// <summary>Un botón de las acciones del renglón elegido: lo mismo que su tecla.</summary>
+    private Task AccionDeFilaAsync(FilaTicket.Accion accion) => accion switch
+    {
+        FilaTicket.Accion.Precio => EnLaFilaAsync(AbrirCambioPrecio),
+        FilaTicket.Accion.Descuento => EnLaFilaAsync(() => Abrir(Ventanas.Descuento)),
+        FilaTicket.Accion.Mayoreo => EnLaFilaAsync(MayoreoAsync),
+        _ => EnLaFilaAsync(BorrarSeleccion),
+    };
 
     private async Task MoverSeleccion(int paso)
     {

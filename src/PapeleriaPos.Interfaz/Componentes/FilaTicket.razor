@@ -1,0 +1,164 @@
+@* Un renglón del ticket de la venta (entrega 5, parte 3, docs/propuesta-interfaz.md, «Pintar menos»): cada uno es su propio
+   componente, con @key en la pantalla de venta, y solo se vuelve a pintar si cambió lo que dice (su cantidad, su precio,
+   si está elegido). Al escanear, la línea nueva se pinta y las demás no. Sus botones usan los métodos de este renglón, no
+   un manejador nuevo en cada pintado: lo que ya está en la página no se toca. Lo de la venta lo hace la pantalla
+   (AlTocar, AlPaso, AlAccion). *@
+
+<tr id="linea-@Indice" class="@(Seleccionada ? "seleccionada" : "")" @onclick="TocarAsync">
+    <td class="vn-col-cant">
+        @if (Renglon.ConPasos)
+        {
+            <span class="vn-paso">
+                <button tabindex="-1" title="Uno menos" @onclick="MenosAsync" @onclick:stopPropagation="true">−</button>
+                <span>@Formato.Numero(Renglon.Cantidad)</span>
+                <button tabindex="-1" title="Uno más" @onclick="MasAsync" @onclick:stopPropagation="true">+</button>
+            </span>
+        }
+        else
+        {
+            <span class="vn-paso-fijo">@Formato.Numero(Renglon.Cantidad)</span>
+        }
+    </td>
+    <td>
+        <div class="vn-nombre">@Renglon.Nombre</div>
+        <div class="vn-sub">
+            @if (Renglon.Codigo is { } codigo)
+            {
+                <code>@codigo</code>
+            }
+            @if (Renglon.Mayoreo is { } mayoreo)
+            {
+                <span class="vn-etiq">@mayoreo</span>
+            }
+            @if (Renglon.Descuento is { } descuento)
+            {
+                <span class="vn-etiq">@descuento</span>
+            }
+            @if (Renglon.PrecioCambiado)
+            {
+                <span class="vn-etiq azul">Precio cambiado</span>
+            }
+            @if (Renglon.Existencia is { } existencia)
+            {
+                <span class="vn-etiq ambar">@existencia</span>
+            }
+        </div>
+    </td>
+    <td class="num vn-precio">
+        @if (Renglon.PrecioCambiado)
+        {
+            <s>@Formato.Dinero(Renglon.PrecioOriginalCentavos)</s>
+        }
+        @Formato.Dinero(Renglon.PrecioCentavos)
+    </td>
+    <td class="num vn-importe">@Formato.Dinero(Renglon.ImporteCentavos)</td>
+</tr>
+@if (Seleccionada && Acciones is { } acciones)
+{
+    @* Las acciones del artículo, pegadas a su fila: así el panel de la derecha queda solo para el dinero. *@
+    <tr class="vn-acciones-fila">
+        <td></td>
+        <td colspan="3">
+            <div class="vn-tira">
+                @if (acciones.Precio is { } precio)
+                {
+                    <button class="vn-accion" @onclick="PrecioAsync" @onclick:stopPropagation="true">
+                        <Ico Nombre="etiqueta" />Precio @Marca(precio)
+                    </button>
+                }
+                @if (acciones.Descuento is { } descuentoMarca)
+                {
+                    <button class="vn-accion" @onclick="DescuentoAsync" @onclick:stopPropagation="true">
+                        <Ico Nombre="porcentaje" />Descuento
+                        @if (acciones.LimiteDeDescuento is { } limite)
+                        {
+                            <small class="vn-limite">hasta @limite</small>
+                        }
+                        @Marca(descuentoMarca)
+                    </button>
+                }
+                @if (acciones.Mayoreo)
+                {
+                    <button class="vn-accion" @onclick="MayoreoAsync" @onclick:stopPropagation="true">
+                        <Ico Nombre="capas" />Mayoreo <kbd>F11</kbd>
+                    </button>
+                }
+                @if (acciones.Quitar)
+                {
+                    <button class="vn-accion peligro" @onclick="QuitarAsync" @onclick:stopPropagation="true">
+                        <Ico Nombre="basura" />Quitar <kbd>Supr</kbd>
+                    </button>
+                }
+            </div>
+        </td>
+    </tr>
+}
+
+@code {
+    /// <summary>Lo que dice el renglón, ya armado por la pantalla de venta: si no cambia, el renglón no se vuelve a pintar.</summary>
+    /// <param name="ConPasos">Lleva − y + (un producto; no el artículo común ni las impresiones).</param>
+    /// <param name="Mayoreo">«Mayoreo desde 12 · ahorra $6.00».</param>
+    /// <param name="Descuento">«Descuento −$5.00 · motivo».</param>
+    /// <param name="Existencia">«Quedan 2» o «Sin existencia en el sistema», con 3 o menos.</param>
+    public sealed record Datos(
+        bool ConPasos, decimal Cantidad, string Nombre, string? Codigo, string? Mayoreo, string? Descuento, bool PrecioCambiado, string? Existencia,
+        long PrecioOriginalCentavos, long PrecioCentavos, long ImporteCentavos);
+
+    /// <summary>La tecla de una acción o, si la autoriza alguien más, el candado con quién.</summary>
+    public sealed record MarcaDeAccion(string Tecla, string? Autoriza);
+
+    /// <summary>Lo que se puede hacer con el renglón elegido (lo que no puede quien entró no sale); vacío: nada.</summary>
+    /// <param name="LimiteDeDescuento">«10 %»: hasta dónde llega sin autorización.</param>
+    public sealed record AccionesDeFila(MarcaDeAccion? Precio, MarcaDeAccion? Descuento, string? LimiteDeDescuento, bool Mayoreo, bool Quitar);
+
+    public enum Accion
+    {
+        Precio, Descuento, Mayoreo, Quitar,
+    }
+
+    [Parameter, EditorRequired] public Datos Renglon { get; set; } = null!;
+
+    /// <summary>Su lugar en el ticket (el id «linea-N» y lo que se le dice a la pantalla).</summary>
+    [Parameter] public int Indice { get; set; }
+
+    [Parameter] public bool Seleccionada { get; set; }
+
+    /// <summary>Sus acciones, si está elegido.</summary>
+    [Parameter] public AccionesDeFila? Acciones { get; set; }
+
+    [Parameter] public EventCallback<int> AlTocar { get; set; }
+
+    /// <summary>− o + en el renglón: su lugar y −1 o 1.</summary>
+    [Parameter] public EventCallback<(int Indice, int Paso)> AlPaso { get; set; }
+
+    /// <summary>Un botón de sus acciones (el renglón ya está elegido).</summary>
+    [Parameter] public EventCallback<Accion> AlAccion { get; set; }
+
+    /// <summary>Lo que se pintó la última vez: con lo mismo, no se vuelve a pintar.</summary>
+    private (Datos, int, bool, AccionesDeFila?) _pintado;
+
+    protected override void OnInitialized() => _pintado = Ahora;
+
+    private (Datos, int, bool, AccionesDeFila?) Ahora => (Renglon, Indice, Seleccionada, Seleccionada ? Acciones : null);
+
+    protected override bool ShouldRender()
+    {
+        var ahora = Ahora;
+        if (ahora.Equals(_pintado))
+            return false;
+        _pintado = ahora;
+        return true;
+    }
+
+    private Task TocarAsync() => AlTocar.InvokeAsync(Indice);
+    private Task MenosAsync() => AlPaso.InvokeAsync((Indice, -1));
+    private Task MasAsync() => AlPaso.InvokeAsync((Indice, 1));
+    private Task PrecioAsync() => AlAccion.InvokeAsync(Accion.Precio);
+    private Task DescuentoAsync() => AlAccion.InvokeAsync(Accion.Descuento);
+    private Task MayoreoAsync() => AlAccion.InvokeAsync(Accion.Mayoreo);
+    private Task QuitarAsync() => AlAccion.InvokeAsync(Accion.Quitar);
+
+    private static RenderFragment Marca(MarcaDeAccion marca) => marca.Autoriza is { } quien
+        ? @<small class="vn-candado" title="Lo autoriza @quien"><Ico Nombre="candado" />@quien</small>
+        : @<kbd>@marca.Tecla</kbd>;
+}
