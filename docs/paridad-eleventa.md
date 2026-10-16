@@ -44,8 +44,8 @@
 | F12, cobrar en efectivo: pagó con y cambio | La usan | F12 al «Pagó con» con el exacto en gris; redondeo al peso | — | — | — |
 | Al cobrar: F2, sin imprimir el ticket; F4, notas en el ticket | Por confirmar | Siempre imprime (o lo muestra en pantalla si no hay impresora); sin notas | Cobrar sin imprimir, y reimprimir después sin pedir motivo, si la tienda lo usa | Sin plan | Chico |
 | Otras formas de pago: tarjeta, transferencia, vales, cheque, dólares, crédito, mixto | No la usan: en su base todo va en efectivo | Tarjeta, transferencia por verificar, crédito y mixto; apagadas en el piloto | — | — | — |
-| Ventas del día y devoluciones: por folio, día, cajero o caja; imprimir copia; devolver y cancelar | La usan (devoluciones y cancelaciones vistas en vivo) | Las de hoy de esa caja (desde la lista «/»), con reimprimir. Devolver hasta 7 días y cancelar en el mismo turno, por el QR o el folio, también el de eleventa | Ver las de otro día, otro cajero u otra caja | Sin plan | Chico |
-| El ticket: logotipo, datos del negocio y notas al pie | La usan | Encabezado, pie y logotipo, con el QR del folio. En el piloto, con el folio de eleventa | — | — | — |
+| Ventas del día y devoluciones: por folio, día, cajero o caja; imprimir copia; devolver y cancelar | La usan (devoluciones y cancelaciones vistas en vivo) | Las de hoy de esa caja (desde la lista «/»), con reimprimir. Devolver hasta 7 días y cancelar en el mismo turno, por el folio, también el de eleventa | Ver las de otro día, otro cajero u otra caja | Sin plan | Chico |
+| El ticket: logotipo, datos del negocio y notas al pie | La usan | Encabezado, pie y logotipo; sin QR por ahora, como el de eleventa (2026-10-16). En el piloto, con el folio de eleventa | — | — | — |
 | Granel; báscula | Granel sí; báscula no: la medida KG está desactivada en su eleventa | Fracciones por metro, kilo y litro, sin báscula | — | — | — |
 | Clientes en la venta y facturar | No la usan: sin el módulo de clientes y sin nada fiscal | Clientes registrados (fase 3); se guardan los datos para facturar después | — | — | — |
 | Cotizaciones y apartados | Su eleventa no los tiene (dueño, 2026-10-08) | — (los apartados, con los pedidos de la fase 4) | — | — | — |
@@ -108,7 +108,7 @@
 | Configurar el ticket | La usan | Configuración › Ticket (entrega 7) | — | — | — |
 | Impresora de tickets en red, una para las dos cajas | La usan | ESC/POS por la red, configurada en cada PC; «Reintentar» si falla | Reintentar sola si la otra caja imprime e imprimir aparte de la pantalla; verla en la tienda | Piloto, paso 7; plan, pendientes; entrega 5 | Chico |
 | Cajón de dinero | No hay cajón | Manda el pulso al cobrar en efectivo | — | — | — |
-| Lector de código de barras | La usan | Reconoce su ritmo; un escaneo en «Pagó con» no se toma como dinero | Medirlo en la tienda: QR, 11 cifras y ritmo | Piloto, paso 7 | — |
+| Lector de código de barras | La usan | Reconoce su ritmo; un escaneo en «Pagó con» no se toma como dinero | Medirlo en la tienda: 11 cifras y ritmo | Piloto, paso 7 | — |
 | Respaldo al salir, respaldar ahora y restaurar | Por confirmar (ya está en la guía del 17 y 18) | Diario y en cada corte Z, 30 días, en la caja principal; si la base se daña, avisa con el respaldo de antes | La copia fuera de la tienda; restaurar desde la pantalla. En el piloto, el respaldo propio de eleventa y ver si se restauró | Plan, pendientes; piloto, diseño | Chico; mediano |
 | Licencia y actualizaciones del programa | La usan (la versión, por ver) | Acerca de; el instalador de prueba | Instalador de la tienda, actualizaciones y soporte a distancia | Plan, pendientes | Mediano |
 | Recargas, pago de servicios y terminal de tarjeta integrada | No la usan: las recargas y los pagos se cobran fuera | — (pospuestos) | — | — | — |
@@ -120,7 +120,7 @@
 | La caja principal guarda la base y tiene que estar abierta; las demás se conectan por la red (puertos 3050 y 3309) | La usan | El servicio de Windows en la caja principal, sin sesión abierta, y las cajas con su llave | Las dos cajas reales y el día pico; antes, el modo multicaja con el puente | Plan, pendientes; piloto, al aprobarlo | Mediano |
 | Las ventas de todas las cajas en una sola base | La usan | En el piloto, cada venta de la caja 2 va a eleventa: pasos 1 a 4, en código | Semanas contra una copia en un Firebird 2.0.1 y la primera escritura real | Piloto, paso 5 | Semanas |
 | Un solo folio para todas las cajas | La usan | Una serie por caja (A-, B-). En el piloto, el ticket lleva el folio de eleventa | Revisar los folios repetidos | Piloto, diseño | Chico |
-| Devolver en una caja lo vendido en la otra | La usan (por eso el folio de eleventa en el ticket, 2026-10-10) | Por folio o QR en cualquier caja, con el servicio | De ida y vuelta con eleventa | Piloto, diseño | Mediano |
+| Devolver en una caja lo vendido en la otra | La usan (por eso el folio de eleventa en el ticket, 2026-10-10) | Por folio en cualquier caja, con el servicio | De ida y vuelta con eleventa | Piloto, diseño | Mediano |
 | Sin la principal o sin red, la caja 2 no vende | — | Contingencia: sigue vendiendo y sube lo pendiente al volver | — | — | — |
 | Cada escaneo va a la principal: las pausas por Wi-Fi | — | Contra la copia de la caja (PR #100) | Lo demás de la entrega 5 | Entrega 5 | Grande |
 
@@ -137,7 +137,7 @@ caja 2; los reportes y lo demás de la tabla detienen el último paso, apagar el
 
 | # | Qué | Tamaño |
 |---|---|---|
-| 1 | **El fin de semana del 17 y 18** (paso 7): dos tickets a la vez en la impresora compartida, el lector (QR, 11 cifras y su ritmo) y lo que se mira de eleventa ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-octubre)) | Un fin de semana |
+| 1 | **El fin de semana del 17 y 18** (paso 7): dos tickets a la vez en la impresora compartida, el lector (11 cifras y su ritmo) y lo que se mira de eleventa ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-octubre)) | Un fin de semana |
 | 2 | **Eleventa abierto en la caja 2, en el mismo turno:** la caja nueva adopta el turno que abre eleventa | Mediano |
 | 3 | **Devoluciones y cancelaciones de ida y vuelta** con eleventa | Mediano |
 | 4 | **Los respaldos de eleventa:** detectar una restauración y dejar de escribir; el respaldo propio con `gbak` antes de la primera escritura del día | Mediano |
@@ -213,7 +213,6 @@ Solo para completar el cuadro:
 - **El corte del turno a ciegas:** se escribe lo contado sin ver lo esperado, y la diferencia queda a nombre del cajero.
   Eleventa muestra lo esperado o solo confirma el cierre.
 - **Permisos con límite** («descuento hasta 10 %», «devolución hasta $200») y la bitácora de lo sensible.
-- **Devolver escaneando el QR del ticket.**
 - **Recibir a ciegas** y llenar la compra con la factura XML o la nota PDF del proveedor.
 - **El conteo del día a ciegas** en la caja y el conteo completo por departamento desde el celular.
 - **Transferencias por verificar.**
