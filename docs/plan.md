@@ -582,6 +582,68 @@ aprobó el dueño el 2026-10-10 ([propuesta](propuesta-interfaz.md#rendimiento))
   tienda. Mientras tanto, «Quedan 3» y «Sin existencia» al escanear salen de la copia: pueden tener hasta media hora (las
   ventas no cambian la versión); con lo que avise el SSE se ponen al día.
 
+**Avance (2026-10-16), entrega 5, parte 2: la red y la copia al día,** como lo pide la
+[propuesta](propuesta-interfaz.md#rendimiento) (puntos 4, 5 y 6):
+- **La versión solo sube con lo que lleva la copia:** los productos, presentaciones, códigos, precios y mayoreo, las
+  marcas y los sinónimos; los usuarios (nombre, usuario, el hash del PIN, si está activo y su sucursal) y sus permisos; la
+  caja, el ticket, la configuración que se usa sin conexión y los clientes. Ya no la suben un PIN mal tecleado, entrar,
+  abrir o cerrar un turno, el último costo de un proveedor (cada compra), el margen de un departamento ni lo que la copia
+  no lleva de la configuración (los rápidos, las alertas, las etiquetas, el sugerido). Antes cada una de esas hacía que
+  las dos cajas bajaran la copia entera. Lo que se quita (un código, una presentación, una escala de mayoreo, un permiso)
+  queda anotado con su versión, y la versión sube dentro de la transacción del cambio: dos cambios a la vez ya no pueden
+  quedar con la misma.
+- **Las existencias con su propia versión:** una venta sube esa y no la del catálogo. «Quedan 3» y «Sin existencia» al
+  escanear se ponen al día en segundos (antes, hasta media hora). La existencia sigue sin detener la venta.
+- **Solo lo que cambió, avisado por SSE:** la caja principal avisa a cada caja (`api/cajas/{id}/avisos`, un canal de solo
+  ida, con la llave de la caja) sus versiones cuando cambian, y un «vivo» cada 15 s. La caja pide lo que cambió desde la
+  suya (`api/cajas/{id}/cambios`): los productos que cambiaron, completos; los que ya no van; las existencias que
+  cambiaron; y de lo demás, solo lo que cambió. Lo aplica de fondo, arma su foto como siempre y la cambia de un jalón; lo
+  del catálogo se guarda al momento en su base, lo de existencias cada 10 minutos (al abrir, pide las que cambiaron). Si
+  el aviso se corta, se vuelve a conectar sola; el latido queda de respaldo y también pide lo que cambió.
+- **Cuándo baja la copia completa, como antes:** si no tiene copia, si la caja principal se reinició o empezó de cero (otra
+  base), si cambió el formato de la copia, si son muchos cambios (una cuarta parte del catálogo), si pedir los cambios
+  falla, y por si acaso cada 4 horas. Una caja de antes funciona igual con el servicio nuevo, y una caja nueva con un
+  servicio de antes hace lo de siempre (latido y copia completa).
+- **La red con plazos:** dos conexiones aparte, una para lo que espera el cajero y otra para lo de fondo (el aviso, la copia,
+  la bandeja). Lo de la venta que también se puede hacer con la copia lleva plazo: leer, 800 ms; cobrar y lo demás que
+  escribe, 2.5 s (los 2 s que la caja principal espera el folio de eleventa en el piloto, y medio segundo para la red). Lo de
+  atrás (reportes, catálogo, inventario), hasta 15 s, como antes. Keepalive de TCP (pregunta tras 5 s sin nada, cada 2 s,
+  3 veces) y conexiones que se renuevan cada 2 minutos: una conexión medio muerta tras reconectarse el Wi-Fi se nota en
+  unos 11 s.
+- **El cobro que no llega a tiempo** se hace con la copia y va a la bandeja con el mismo Id. Si la caja principal sí lo había
+  guardado (solo se perdió la respuesta), al subir queda una venta, con el mismo folio que se imprimió (la serie de la caja
+  sigue igual por los dos caminos), una sola vez en el turno y una sola vez hacia eleventa. La pantalla enseña un solo
+  ticket. También si las dos llegan a la vez.
+- **Buena, lenta o caída:** el latido mide lo que tarda la caja principal en contestar. Lenta: dos latidos seguidos de
+  300 ms o más, o algo que el cajero esperaba y no llegó a tiempo; caída: no contesta en 2 s. Vuelve a buena con tres
+  latidos seguidos de menos de 100 ms (15 s); de una caída, en cuanto contesta bien, salvo que la red vaya y venga (otra
+  caída en menos de 2 minutos): entonces pasa por lenta. En lenta la caja trabaja como sin conexión (su copia, su folio, la
+  bandeja); lo que no se puede hacer con la copia (devolver, el catálogo) se intenta con la caja principal. Se ve donde ya
+  se veía la conexión: «Conectada a la principal · 9 ms», «Red lenta» y la franja de arriba.
+- **Nada pesado dentro de una petición del servicio:** el catálogo en memoria se recarga de fondo y mientras se contesta con
+  el vigente (lo que no tiene, como un producto recién dado de alta, sí espera la recarga), y el cobro se revisa con esa
+  misma versión. Las versiones y las llaves de las cajas, en memoria. El cobro lee los productos y su último costo antes de
+  tomar el candado de escritura.
+- **La prueba de la ráfaga:** 20 códigos (2 ms por carácter, 30 ms entre códigos) con la red lenta (300 ms) y con 30 % de
+  pérdidas, mientras sube la versión del catálogo y la otra caja cobra. Quedan las 20 líneas en orden, sin códigos cortados
+  y sin ninguna petición a la red de la venta (se cuentan en la red de prueba, no con el reloj).
+- **Medido** en la PC de desarrollo, sin red de por medio (el servicio en el mismo proceso), con el catálogo ficticio copiado
+  hasta 5,832 productos (el generador da 1,458; la propuesta midió con unos 6,000):
+
+  | | Pesa | Tarda |
+  |---|---|---|
+  | Copia completa | 4.1 MB | 60–100 ms armarla y mandarla; 90–160 ms leerla; en la caja, ~100 ms armar su foto y 130–300 ms guardarla |
+  | Un precio que cambió | 1.1 KB | ~5 ms; en la caja, 150–200 ms esperando que la caja principal recargue su catálogo y 70–130 ms aplicarlo |
+  | Una venta (existencias) | 383 bytes | ~2 ms; en la caja, 4–13 ms aplicarla |
+  | 40 precios | 29 KB | ~5 ms |
+
+  Por Wi-Fi lo que más pesa es la copia completa (4 a 6 MB), y ahora casi nunca se baja. Se repite con la prueba
+  `MedicionCopiaTests` y la variable `MEDIR_COPIA=4` (cuántas veces se copia el catálogo ficticio).
+- **Falta:** de la entrega 5, lo de la pantalla (buscar al escribir contra la copia, pintar menos, imprimir aparte y el
+  arranque), que va aparte; y medir en la tienda, un sábado o domingo: los umbrales de la red lenta con el Wi-Fi de la
+  caja 2, el plazo del cobro en el piloto con eleventa, que el aviso vuelva solo tras una caída del Wi-Fi, lo que tarda la
+  copia completa por Wi-Fi, y la ráfaga de noche en una PC como la caja 2 con un proxy que agregue retardo y pérdidas.
+
 #### Después: el piloto en la caja 2
 
 Mientras se arma el puente con eleventa, la versión unicaja sigue creciendo con la venta completa (entrega 3) y la base
