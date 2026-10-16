@@ -46,6 +46,8 @@ public sealed class SinonimosApiTests(ServicioDePrueba servicio) : IClassFixture
         Assert.Equal(HttpStatusCode.BadRequest, dosPalabras.StatusCode);
         // Sin acentos, en mayúsculas y también al revés.
         Assert.Equal([("BOLIGRAFO", "PLUMA"), ("PLUMA", "BOLIGRAFO")], lista.Select(s => (s.Palabra, s.Equivale)));
+        // El catálogo en memoria del servicio se recarga en segundo plano (entrega 5, parte 2).
+        await servicio.CatalogoAlDiaAsync();
 
         // «boligrafo» encuentra las plumas, y dice por qué; desde 4 letras también vale el principio.
         var plumas = await BuscarAsync(http, "boligrafo punto fino", caja.SucursalId);
@@ -61,6 +63,7 @@ public sealed class SinonimosApiTests(ServicioDePrueba servicio) : IClassFixture
         foreach (var s in lista)
             await Leer<List<SinonimoDto>>(await http.PostAsJsonAsync($"api/catalogo/sinonimos/{s.Id}/quitar", new SolicitudQuitarSinonimo(encargado.UsuarioId, caja.SucursalId)));
         Assert.Empty(await http.GetFromJsonAsync<List<SinonimoDto>>("api/catalogo/sinonimos") ?? []);
+        await servicio.CatalogoAlDiaAsync();
         Assert.Empty(await BuscarAsync(http, "boligrafo punto fino", caja.SucursalId));
     }
 

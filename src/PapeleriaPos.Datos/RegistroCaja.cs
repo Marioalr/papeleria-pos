@@ -110,6 +110,12 @@ public sealed class RegistroCaja(PosDbContext db)
 
         venta.ValidarCobros(cobros, redondear);
 
+        // Lo que el cobro solo lee va antes de tomar el candado de escritura (entrega 5, parte 2): dos cobros a la vez ya no se
+        // esperan mientras se leen los productos y sus costos. Dentro queda lo que se lee para escribir: el folio y la existencia.
+        var conInventario = venta.Lineas.Where(l => l.LlevaInventario && l.VarianteId is not null).Select(l => l.VarianteId!.Value).Distinct().ToList();
+        var variantes = await db.Variantes.Where(v => conInventario.Contains(v.Id)).ToDictionaryAsync(v => v.Id, ct);
+        var ultimosCostos = await UltimosCostosAsync(conInventario, ct);
+
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         try
         {
@@ -140,11 +146,11 @@ public sealed class RegistroCaja(PosDbContext db)
             var inventario = new RegistroInventario(db);
             foreach (var linea in venta.Lineas.Where(l => l.LlevaInventario && l.VarianteId is not null))
             {
-                var variante = await db.Variantes.FindAsync([linea.VarianteId!.Value], ct)
+                var variante = variantes.GetValueOrDefault(linea.VarianteId!.Value)
                     ?? throw new InvalidOperationException($"«{linea.Descripcion}» ya no está en el catálogo.");
                 var existencia = await inventario.ExistenciaAsync(venta.SucursalId, variante.Id, ct);
                 var salida = Kardex.Salida(venta.SucursalId, variante, TipoMovimiento.Venta, linea.CantidadBase, existencia,
-                    await UltimoCostoAsync(variante.Id, ct), ahora, documentoTipo: nameof(Venta), documentoId: venta.Id);
+                    ultimosCostos.GetValueOrDefault(variante.Id), ahora, documentoTipo: nameof(Venta), documentoId: venta.Id);
                 linea.CostoCentavos = -salida.CostoCentavos;
                 await inventario.AgregarAsync(salida, ct);
             }
@@ -532,6 +538,18 @@ public sealed class RegistroCaja(PosDbContext db)
         }
         secuencia.Valor++;
         return checked((int)secuencia.Valor);
+    }
+
+    /// <summary>El último costo de cada variante (el de <see cref="UltimoCostoAsync"/>), en una sola lectura.</summary>
+    private async Task<Dictionary<Guid, long>> UltimosCostosAsync(IReadOnlyCollection<Guid> variantes, CancellationToken ct)
+    {
+        if (variantes.Count == 0)
+            return [];
+        var costos = await db.ProveedoresVariantes.AsNoTracking()
+            .Where(pv => variantes.Contains(pv.VarianteId) && pv.UltimoCostoCentavos != null)
+            .Select(pv => new { pv.VarianteId, pv.UltimaCompraUtc, Costo = pv.UltimoCostoCentavos!.Value })
+            .ToListAsync(ct);
+        return costos.GroupBy(c => c.VarianteId).ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.UltimaCompraUtc).First().Costo);
     }
 
     internal async Task<long> UltimoCostoAsync(Guid varianteId, CancellationToken ct) =>

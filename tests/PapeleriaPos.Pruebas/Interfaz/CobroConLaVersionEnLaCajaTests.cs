@@ -32,6 +32,8 @@ public sealed class CobroConLaVersionEnLaCajaTests(ServicioDePrueba servicio) : 
         var dueno = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333"))).Content.ReadFromJsonAsync<SesionDto>())!;
         var respuesta = await http.PostAsJsonAsync("api/catalogo/precio-menudeo", new SolicitudPrecioMenudeo(dueno.UsuarioId, v.Caja.SucursalId, producto.VarianteId, centavos));
         Assert.True(respuesta.IsSuccessStatusCode, await respuesta.Content.ReadAsStringAsync());
+        // El catálogo en memoria del servicio se recarga en segundo plano (entrega 5, parte 2).
+        await servicio.CatalogoAlDiaAsync();
     }
 
     private async Task<VentaDelDiaDto> UltimaVentaAsync(VentaConCopia v) =>

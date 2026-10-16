@@ -38,7 +38,12 @@ var cadena = RutasServicio.CadenaConexion(builder.Configuration);
 var prueba = ModoPrueba.Crear(builder.Configuration, cadena);
 prueba.PrepararBase();
 builder.Services.AddSingleton(prueba);
-builder.Services.AddDbContext<PosDbContext>(o => o.UseSqlite(cadena));
+// Las versiones de la copia de las cajas y sus llaves, en memoria (entrega 5, parte 2): lo que se guarda en la base las
+// vuelve a leer al momento.
+builder.Services.AddSingleton<VersionesDeLaCopia>();
+builder.Services.AddSingleton<LlavesDeCajas>();
+builder.Services.AddDbContext<PosDbContext>((proveedor, o) => o.UseSqlite(cadena)
+    .AddInterceptors(new AlGuardarEnLaBase(proveedor.GetRequiredService<VersionesDeLaCopia>())));
 builder.Services.AddSingleton<CatalogoEnMemoria>();
 builder.Services.Configure<OpcionesTicket>(builder.Configuration.GetSection("Ticket"));
 
@@ -116,6 +121,7 @@ app.MapearApiControl();
 app.MapearApiUsuarios();
 app.MapearApiDevoluciones();
 app.MapearApiContingencia();
+app.MapearApiCopia();
 app.MapearApiTelegram();
 app.MapGroup("/api").ConErrores().SoloSuCaja().MapearApiImpresiones();
 app.MapearApiDescuentos();
