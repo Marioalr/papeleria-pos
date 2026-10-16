@@ -127,37 +127,69 @@ public sealed class AlmacenLocalTests : IDisposable
     }
 
     /// <summary>
-    /// La pantalla no espera a la sincronización: mientras se escribe la copia de la caja principal (grande), lo que pide
-    /// escribir la pantalla queda en la cola sin detenerla, y lo que lee no espera a la copia. Al terminar, todo quedó en
-    /// orden; al cerrar la caja, nada se queda en la cola.
+    /// La venta no espera a la sincronización: la copia de la caja principal (varios MB) se guarda en pedazos, uno por
+    /// escritura, y lo que la venta pide escribir mientras tanto entra entre un pedazo y otro, antes de que la copia quede
+    /// vigente. Lo que se lee tampoco la espera. Al terminar, la copia se lee junta otra vez, también al abrir la caja.
     /// </summary>
     [Fact]
-    public async Task La_pantalla_no_espera_a_que_se_escriba_la_copia()
+    public async Task La_copia_se_guarda_en_pedazos_y_lo_de_la_venta_entra_entre_ellos()
     {
         var almacen = new AlmacenLocal(_ruta);
         almacen.Escribir(l => l.Guardar("folio", 7));
+        var texto = new string('x', 3 * AlmacenLocal.TamanoDelPedazo + 10);
+        var utf8 = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(texto);
         using var empezo = new ManualResetEventSlim();
         using var soltar = new ManualResetEventSlim();
-        var copia = Task.Run(() => almacen.EscribirAsync(l =>
+        // El escritor, ocupado con un pedazo de una copia que tarda.
+        var ocupado = almacen.EscribirAsync(_ =>
         {
-            l.GuardarJson("paquete", "{}");
             empezo.Set();
             soltar.Wait();
-        }, "la copia de la caja principal", laLeen: false));
-        Assert.True(empezo.Wait(TimeSpan.FromSeconds(20)), "La copia no se empezó a escribir.");
+        }, "un pedazo de la copia", laLeen: false);
+        Assert.True(empezo.Wait(TimeSpan.FromSeconds(20)), "El escritor no empezó.");
 
+        var copia = almacen.GuardarCopiaAsync(utf8);
         // Lo que lee la pantalla no espera a la copia (WAL: la escritura no detiene las lecturas).
         var folio = await Task.Run(() => almacen.Leer<int?>("folio")).WaitAsync(TimeSpan.FromSeconds(20));
-        // Lo que escribe la pantalla queda en la cola: la llamada regresa enseguida y termina después de la copia.
-        var espera = almacen.EscribirAsync(l => l.Guardar("espera", new[] { "ticket" }), "los tickets en espera");
+        // Lo que escribe la venta queda en la cola y entra entre los pedazos: la copia todavía no está vigente.
+        var vigenteAlEscribir = "sin escribir";
+        var espera = almacen.EscribirAsync(l =>
+        {
+            vigenteAlEscribir = l.Leer<System.Text.Json.JsonElement?>("copia") is null ? "ninguna" : "la nueva";
+            l.Guardar("espera", new[] { "ticket" });
+        }, "los tickets en espera");
+        soltar.Set();
+        await Task.WhenAll(ocupado, copia, espera).WaitAsync(TimeSpan.FromSeconds(20));
 
         Assert.Equal(7, folio);
-        Assert.False(espera.IsCompleted);
-        soltar.Set();
-        await Task.WhenAll(copia, espera).WaitAsync(TimeSpan.FromSeconds(20));
+        Assert.Equal("ninguna", vigenteAlEscribir);
         Assert.Equal(["ticket"], almacen.Leer<string[]>("espera")!);
+        Assert.Equal(texto, almacen.LeerCopia<string>());
         Assert.True(almacen.Vaciar(TimeSpan.FromSeconds(20)));
-        Assert.Equal("{}", System.Text.Json.JsonSerializer.Serialize(new AlmacenLocal(_ruta).Leer<object>("paquete")));
+        Assert.Equal(texto, new AlmacenLocal(_ruta).LeerCopia<string>());
+    }
+
+    /// <summary>
+    /// Una caja de antes guardaba la copia entera: se sigue leyendo hasta que baja la siguiente, y entonces se quita. De las
+    /// copias que ya no están vigentes no quedan pedazos.
+    /// </summary>
+    [Fact]
+    public async Task La_copia_entera_de_antes_se_lee_y_se_quita_al_bajar_la_nueva()
+    {
+        var almacen = new AlmacenLocal(_ruta);
+        almacen.Escribir(l => l.Guardar("paquete", "la de antes"));
+        Assert.Equal("la de antes", almacen.LeerCopia<string>());
+
+        await almacen.GuardarCopiaAsync(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes("la nueva"));
+        await almacen.GuardarCopiaAsync(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes("la otra"));
+
+        Assert.Equal("la otra", new AlmacenLocal(_ruta).LeerCopia<string>());
+        Assert.Null(almacen.Leer<string>("paquete"));
+        using var conexion = new SqliteConnection($"Data Source={_ruta}");
+        conexion.Open();
+        using var comando = conexion.CreateCommand();
+        comando.CommandText = "SELECT COUNT(*) FROM CopiaPedazos";
+        Assert.Equal(1L, Convert.ToInt64(comando.ExecuteScalar()));
     }
 
     [Fact]

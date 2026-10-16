@@ -33,9 +33,9 @@ public sealed record CreditoPorConfirmar(Guid Id, Guid ClienteId, CreditoLocal L
 /// Un solo escritor (entrega 5, docs/propuesta-interfaz.md, «Rendimiento»): todo lo que se escribe pasa por una cola, en su
 /// propio hilo, una escritura tras otra (<see cref="EscribirAsync"/>). La venta y la sincronización ya no se esperan entre
 /// sí en la base: la pantalla deja su escritura en la cola y sigue (la espera sin detenerse), y la copia de la caja
-/// principal, que es grande, se escribe ahí mismo sin trabar a nadie. Las lecturas siguen a la par (WAL), cada una con su
-/// conexión, y ven todo lo que se pidió escribir antes de ellas (<see cref="AlDia"/>). Cada conexión, con
-/// <c>busy_timeout</c> y <c>synchronous=FULL</c> (entrega 10).
+/// principal, que es grande, se escribe en pedazos (<see cref="GuardarCopiaAsync"/>): lo que la venta escribe espera a lo
+/// más uno. Las lecturas siguen a la par (WAL), cada una con su conexión, y ven todo lo que se pidió escribir antes de
+/// ellas (<see cref="AlDia"/>). Cada conexión, con <c>busy_timeout</c> y <c>synchronous=FULL</c> (entrega 10).
 /// </para>
 /// </summary>
 public sealed class AlmacenLocal
@@ -76,6 +76,19 @@ public sealed class AlmacenLocal
     /// <summary>Desde cuánto una escritura cuenta como larga.</summary>
     public static readonly TimeSpan Larga = TimeSpan.FromMilliseconds(20);
 
+    /// <summary>La copia vigente de la caja principal: con qué número se guardó y en cuántos pedazos.</summary>
+    internal sealed record CopiaGuardada(string Copia, int Pedazos);
+
+    /// <summary>
+    /// Cuánto de la copia de la caja principal va en cada escritura (revisión de la entrega 5). La copia pesa varios MB (5.7
+    /// con 6,000 productos ficticios): de un jalón, lo que la venta pedía escribir detrás de ella la esperaba completa (un
+    /// cobro, los tickets en espera). En pedazos, a lo más uno.
+    /// </summary>
+    public const int TamanoDelPedazo = 256 * 1024;
+
+    /// <summary>Una copia a la vez: dos bajadas juntas no se pisan los pedazos.</summary>
+    private readonly SemaphoreSlim _guardandoCopia = new(1, 1);
+
     public AlmacenLocal(string ruta)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(ruta))!);
@@ -95,6 +108,8 @@ public sealed class AlmacenLocal
                 Id TEXT PRIMARY KEY, ClienteId TEXT NOT NULL, Monto INTEGER NOT NULL, FechaUtc TEXT NOT NULL, Vence TEXT,
                 PorVerificar INTEGER NOT NULL DEFAULT 0, Confirmado INTEGER NOT NULL DEFAULT 0);
             CREATE INDEX IF NOT EXISTS IX_Credito_Cliente ON Credito (ClienteId);
+            CREATE TABLE IF NOT EXISTS CopiaPedazos (
+                Copia TEXT NOT NULL, Indice INTEGER NOT NULL, Datos BLOB NOT NULL, PRIMARY KEY (Copia, Indice));
             """);
         // Bases creadas antes de las impresiones (entrega 5): sin la columna, todo bloquea.
         using (var columnas = Comando(conexion, null, "SELECT COUNT(*) FROM pragma_table_info('Bandeja') WHERE name = 'Bloquea'"))
@@ -259,6 +274,87 @@ public sealed class AlmacenLocal
             while (_hechas < hasta)
                 Monitor.Wait(_cola);
         }
+    }
+
+    /// <summary>
+    /// La copia de la caja principal (el catálogo, los usuarios…), en pedazos, cada uno en su escritura de la cola: lo que la
+    /// venta pide escribir mientras tanto entra entre un pedazo y otro. Al final queda vigente de un jalón; hasta entonces
+    /// vale la de antes (también si la caja se cierra a medias). Lo que ya no se usa (la copia de antes, y la de antes de los
+    /// pedazos, entera) se quita después, también de a poco. Las lecturas no esperan a nada de esto: la copia solo se lee al
+    /// abrir la caja.
+    /// </summary>
+    /// <param name="utf8">La copia en JSON (UTF-8), convertida fuera de la cola.</param>
+    public async Task GuardarCopiaAsync(byte[] utf8)
+    {
+        await _guardandoCopia.WaitAsync();
+        try
+        {
+            var copia = Guid.NewGuid().ToString("N");
+            var pedazos = Math.Max(1, (utf8.Length + TamanoDelPedazo - 1) / TamanoDelPedazo);
+            for (var i = 0; i < pedazos; i++)
+            {
+                var indice = i;
+                var datos = utf8.AsSpan(i * TamanoDelPedazo, Math.Min(TamanoDelPedazo, utf8.Length - i * TamanoDelPedazo)).ToArray();
+                await EscribirAsync(l => l.PedazoDeCopia(copia, indice, datos), "un pedazo de la copia de la caja principal", laLeen: false);
+            }
+            await EscribirAsync(l => l.Guardar("copia", new CopiaGuardada(copia, pedazos)), "la copia de la caja principal", laLeen: false);
+            foreach (var (vieja, indice) in PedazosQueSobran(copia))
+                await EscribirAsync(l => l.QuitarPedazoDeCopia(vieja, indice), "lo que sobra de la copia de antes", laLeen: false);
+            if (Existe("paquete"))
+                await EscribirAsync(l => l.Borrar("paquete"), "la copia de antes de los pedazos", laLeen: false);
+        }
+        finally
+        {
+            _guardandoCopia.Release();
+        }
+    }
+
+    /// <summary>
+    /// La copia vigente de la caja principal, junta otra vez; si no hay (una caja de antes de los pedazos), la que se guardaba
+    /// entera. Se lee de una vez, en una sola lectura de la base: la que estaba vigente al empezar, completa.
+    /// </summary>
+    public T? LeerCopia<T>()
+    {
+        AlDia();
+        using var conexion = Abrir();
+        using var lectura = conexion.BeginTransaction(deferred: true);
+        if (Lote.Leer<CopiaGuardada>(conexion, lectura, "copia") is { } vigente)
+        {
+            using var comando = Comando(conexion, lectura, "SELECT Datos FROM CopiaPedazos WHERE Copia = $copia ORDER BY Indice", ("$copia", vigente.Copia));
+            using var lector = comando.ExecuteReader();
+            using var junta = new MemoryStream();
+            var pedazos = 0;
+            while (lector.Read())
+            {
+                junta.Write(lector.GetFieldValue<byte[]>(0));
+                pedazos++;
+            }
+            if (pedazos == vigente.Pedazos)
+                return JsonSerializer.Deserialize<T>(junta.GetBuffer().AsSpan(0, (int)junta.Length), Json);
+        }
+        return Lote.Leer<T>(conexion, lectura, "paquete");
+    }
+
+    /// <summary>Si hay algo guardado con esa clave, sin leerlo.</summary>
+    private bool Existe(string clave)
+    {
+        AlDia();
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, null, "SELECT EXISTS (SELECT 1 FROM Ajustes WHERE Clave = $clave)", ("$clave", clave));
+        return Convert.ToInt64(comando.ExecuteScalar()) != 0;
+    }
+
+    /// <summary>Los pedazos de las copias que ya no están vigentes.</summary>
+    private List<(string Copia, int Indice)> PedazosQueSobran(string vigente)
+    {
+        AlDia();
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, null, "SELECT Copia, Indice FROM CopiaPedazos WHERE Copia <> $vigente ORDER BY Copia, Indice", ("$vigente", vigente));
+        using var lector = comando.ExecuteReader();
+        var sobran = new List<(string, int)>();
+        while (lector.Read())
+            sobran.Add((lector.GetString(0), lector.GetInt32(1)));
+        return sobran;
     }
 
     /// <summary>Lo que falta subir y lo que no se pudo subir (para reintentarlo), en orden.</summary>
@@ -427,6 +523,22 @@ public sealed class Lote
     {
         AlmacenLocal.Ejecutar(_conexion, _transaccion, "INSERT INTO Ajustes (Clave, Valor) VALUES ($clave, $valor) ON CONFLICT(Clave) DO UPDATE SET Valor = excluded.Valor",
             ("$clave", clave), ("$valor", json));
+        return this;
+    }
+
+    /// <summary>Un pedazo de una copia de la caja principal (<see cref="AlmacenLocal.GuardarCopiaAsync"/>).</summary>
+    public Lote PedazoDeCopia(string copia, int indice, byte[] datos)
+    {
+        AlmacenLocal.Ejecutar(_conexion, _transaccion, "INSERT OR REPLACE INTO CopiaPedazos (Copia, Indice, Datos) VALUES ($copia, $indice, $datos)",
+            ("$copia", copia), ("$indice", indice), ("$datos", datos));
+        return this;
+    }
+
+    /// <summary>Un pedazo de una copia que ya no está vigente; el de la vigente no se toca.</summary>
+    public Lote QuitarPedazoDeCopia(string copia, int indice)
+    {
+        if (Leer<AlmacenLocal.CopiaGuardada>("copia")?.Copia != copia)
+            AlmacenLocal.Ejecutar(_conexion, _transaccion, "DELETE FROM CopiaPedazos WHERE Copia = $copia AND Indice = $indice", ("$copia", copia), ("$indice", indice));
         return this;
     }
 

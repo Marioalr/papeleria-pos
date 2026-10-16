@@ -127,7 +127,7 @@ public sealed class CopiaDeAntesTests(ServicioDePrueba servicio) : IClassFixture
         var enLinea = await PermisosSinConexionTests.LoQueSabeAsync(cliente, caja, turno);
 
         // La copia como la guardaba una caja de antes: con las reglas por rol de la sucursal, sin los permisos.
-        almacen.Escribir(lote => lote.Guardar("paquete", nueva.Paquete! with { Permisos = null }));
+        await almacen.GuardarCopiaAsync(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(nueva.Paquete! with { Permisos = null }, AlmacenLocal.Json));
         interruptor.Caido = true;
         var deAntes = new Contingencia(almacen, http, conexion);
         var conCopiaDeAntes = new ClienteCaja(http, conexion, deAntes);

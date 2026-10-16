@@ -163,7 +163,7 @@ public sealed class Contingencia
         var reloj = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            if (_almacen.Leer<PaqueteContingenciaDto>("paquete") is { } paquete)
+            if (_almacen.LeerCopia<PaqueteContingenciaDto>() is { } paquete)
             {
                 Poner(new Copia(paquete));
                 _rendimiento?.Actividad("leer la copia del catálogo al abrir la caja", reloj.Elapsed);
@@ -471,11 +471,12 @@ public sealed class Contingencia
             _rendimiento?.Actividad("la sincronización (armar la copia y su foto)", reloj.Elapsed);
             _paqueteBajadoUtc = Ahora;
             Cambio?.Invoke();
-            // El folio, como cualquier escritura. La copia (miles de productos) se convierte aquí, fuera de la cola, y lo que se
-            // lee no la espera: solo se lee al abrir la caja.
+            // El folio, como cualquier escritura. La copia (miles de productos) se convierte aquí, fuera de la cola, y se guarda
+            // en pedazos: lo que escribe la venta mientras tanto no la espera completa, y lo que se lee no la espera.
             await _almacen.EscribirAsync(l => l.Guardar("folio", Math.Max(l.Leer<int?>("folio") ?? 0, paquete.UltimoFolio)), "el folio de la copia");
-            var json = JsonSerializer.Serialize(paquete, AlmacenLocal.Json);
-            await _almacen.EscribirAsync(l => l.GuardarJson("paquete", json), "la copia de la caja principal", laLeen: false);
+            reloj.Restart();
+            await _almacen.GuardarCopiaAsync(JsonSerializer.SerializeToUtf8Bytes(paquete, AlmacenLocal.Json));
+            _rendimiento?.Actividad("la sincronización (guardar la copia en la base de la caja)", reloj.Elapsed);
         }
         catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
         {
