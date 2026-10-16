@@ -17,7 +17,8 @@ public sealed record DevolucionParaEleventa(
 public sealed record ArticuloDevuelto(int? ProductoId, string Nombre, decimal Cantidad, decimal Importe, bool RegresaAlInventario = true);
 
 /// <param name="DevolucionId"><c>DEVOLUCIONES.ID</c>.</param>
-public sealed record DevolucionEnEleventa(int DevolucionId, bool YaEstaba);
+/// <param name="Turno">El turno de eleventa donde quedó (vacío si ya estaba): el turno de la caja nueva lo adopta.</param>
+public sealed record DevolucionEnEleventa(int DevolucionId, bool YaEstaba, TurnoDeEleventa? Turno = null);
 
 /// <param name="TurnoId">El turno de eleventa que se cerró; vacío si ya no había uno abierto.</param>
 public sealed record CierreEnEleventa(int? TurnoId, bool YaEstaba);
@@ -132,7 +133,8 @@ public static partial class EnvioEleventa
         var ganancia = devueltos.Sum(x => x.Ganancia);
         var piezas = devueltos.Sum(x => x.Piezas);
 
-        var turno = await TurnoAbiertoAsync(sql, caja, d.Turno);
+        var deEleventa = await TurnoParaAsync(sql, caja, devuelta, d.Turno);
+        var turno = deEleventa.Id;
         var dia = await DiaAsync(sql, caja.CajaId, devuelta.Date);
 
         if (d.EsCancelacion)
@@ -211,7 +213,7 @@ public static partial class EnvioEleventa
         }
 
         await tx.CommitAsync(ct);
-        return new DevolucionEnEleventa(id, YaEstaba: false);
+        return new DevolucionEnEleventa(id, YaEstaba: false, deEleventa);
     }
 
     private static async Task<List<EnElTicket>> ArticulosDelTicketAsync(Sql sql, int ticket)

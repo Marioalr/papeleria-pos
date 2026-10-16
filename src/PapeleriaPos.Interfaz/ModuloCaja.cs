@@ -129,6 +129,8 @@ public static class RegistroInterfaz
         }
         servicios.AddSingleton(conexion);
         servicios.AddScoped(_ => new ClienteCaja(http, conexion, contingencia));
+        // Solo del piloto con eleventa: lo que la caja 2 le pide al puente (se quita al dejarlo).
+        servicios.AddScoped(_ => new ClientePuente(http, conexion));
         servicios.AddSingleton(impresora);
         servicios.AddScoped<ModuloCaja>();
         return servicios;

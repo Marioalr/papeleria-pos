@@ -124,7 +124,9 @@ public static class ApiCaja
             var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
             await new ServicioControl(db).ExigirAsync(usuarioId, caja.SucursalId, AccionControlada.CorteDelDia, "El corte del día lo ve quien tiene ese permiso.");
             var registro = new RegistroCorteDelDia(db);
-            return await registro.ArmarAsync(caja.SucursalId, registro.Hoy, presencia.Foto(), opcionesEleventa.CorteEnEleventa);
+            var dia = await registro.ArmarAsync(caja.SucursalId, registro.Hoy, presencia.Foto(), opcionesEleventa.CorteEnEleventa);
+            // El piloto: los turnos que cerró el corte de eleventa dicen lo que se contó allá (TurnosDelPiloto).
+            return opcionesEleventa.CorteEnEleventa ? await CorteEnElPiloto.ConLoDeEleventaAsync(db, dia) : dia;
         });
 
         api.MapPost("/cajas/{cajaId:guid}/corte-del-dia/cierre", async (Guid cajaId, SolicitudCierreDia s, PosDbContext db, PresenciaCajas presencia,
@@ -299,7 +301,9 @@ public static class ApiCaja
         var presentaciones = await db.Presentaciones.Where(p => ids.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => (p.Nombre, p.EsBase));
         var configuracion = await ApiConfiguracion.ConfiguracionAsync(db, v.SucursalId, opciones);
         var cliente = v.ClienteId is { } clienteId && await db.ClientesRegistrados.FindAsync(clienteId) is { } c ? RegistroClientes.Dto(c) : null;
-        var folioEleventa = await db.EnviosAEleventa.AsNoTracking().Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == v.Id).Select(e => e.FolioEleventa).FirstOrDefaultAsync();
+        // El piloto: el folio de eleventa, si llegó; si otra caja de eleventa lo repitió, el de la caja (FoliosRepetidos).
+        var folioEleventa = await db.EnviosAEleventa.AsNoTracking().Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == v.Id)
+            .Select(e => e.FolioRepetido ? null : e.FolioEleventa).FirstOrDefaultAsync();
         return ArmadoTicket.Desde(v, caja!.Nombre, cajero, id => presentaciones.TryGetValue(id, out var p) ? p : null,
             configuracion.RenglonesEncabezado, configuracion.RenglonesPie, ApiConfiguracion.Logo(configuracion), cliente,
             await new RegistroCredito(db).TicketAsync(v.Id)) with { FolioEleventa = folioEleventa };

@@ -251,8 +251,9 @@ Lo demás:
   - Ya pasó que dos cajas cobraran con dos segundos de diferencia y se repitiera un folio.
   - La caja 2 nueva tendrá el mismo riesgo mientras conviva con eleventa: hay que tomarlo justo antes de guardar, en la
     misma transacción, y revisar después que no se repitió.
-- **Turnos:** uno abierto por caja (`UNIQUE (ID_CAJA, TERMINO_EN)`). La caja 2 nueva va a necesitar abrir y cerrar el
-  suyo en eleventa (paso 4).
+- **Turnos:** uno abierto por caja (`UNIQUE (ID_CAJA, TERMINO_EN)`, `UNQ_TURNO_ABIERTO_CAJA`: con Firebird 2.x no
+  deja dos turnos de la misma caja sin `TERMINO_EN`). En el piloto la caja 2 nueva adopta el que abre eleventa y toma
+  su corte ([abajo](#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)).
 - **Las otras operaciones del corte** van en `CORTE_MOVIMIENTOS`, de tipo `Entrada`, `Salida` y `Devolucion` (paso 4).
 - **El día es el del cobro:** el acumulado de `CORTE_OPERACIONES` es lo vendido ese día en esa caja (cuadra en todos
   los días de la copia). Si un turno pasa de la medianoche, lo cobrado después suma al renglón del día siguiente.
@@ -320,8 +321,9 @@ acumulados del turno, del día y del departamento.
 - **Sin duplicar:** la marca de cada venta es la hora en que se empezó en la caja nueva (`CREADO_EN`, en diezmilésimas de
   segundo, de esa caja). Si se manda otra vez, por ejemplo porque se cortó la red justo al confirmar, regresa el folio
   que ya tenía y no escribe nada.
-- **El folio** es el último más uno, tomado dentro de la transacción. Después revisa que otra caja no haya cobrado con
-  el mismo; si pasó, lo dice, para revisarlo.
+- **El folio** es el último más uno, tomado dentro de la transacción. Justo después revisa que otra caja no haya cobrado
+  con el mismo; si pasó, el ticket de la caja 2 toma el siguiente, porque todavía no se entrega con él
+  ([folios repetidos](#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)).
 - **Lo de cada producto lo toma de eleventa:** su código, nombre, departamento y costo de ese momento. La caja nueva
   manda el ID de eleventa, la cantidad y el importe.
 - **Lo que eleventa no tiene** (un artículo común, un producto dado de alta solo en la caja nueva o borrado en eleventa)
@@ -355,8 +357,9 @@ dotnet run --project src/PapeleriaPos.Herramientas -- probar-envio-eleventa --se
 - **Una vuelta de fondo** manda lo pendiente cada 30 s (`SegundosEntreEnvios`), de la más vieja a la más nueva. Si es la
   red, deja el resto para la siguiente vuelta. Al volver la red, cada venta toma el siguiente folio de eleventa, y su
   reimpresión ya lo lleva.
-- **El ticket** imprime «Folio 4521» (el de eleventa) cuando lo hay. El QR sigue con el de la caja 2, que abre la
-  devolución al escanearlo, y en la ventana de devolución también se puede escribir el folio de eleventa.
+- **El ticket** imprime «Folio 4521» (el de eleventa) cuando lo hay. Desde el 2026-10-16 el ticket no lleva QR
+  («primero igualar a eleventa»): para devolver se escribe el folio impreso, el de eleventa o el de la caja (B-000123).
+  Si eleventa repitió ese folio en otra caja, la caja enseña los dos tickets y se elige por la hora y el total.
 - **Lo que eleventa no entendería** queda por revisar y no se manda solo: lo que no fue en efectivo (la tienda solo
   cobra en efectivo). Lo que se canceló antes de mandarse se descarta: allá nunca existió.
 - **El redondeo del efectivo** va en la línea más grande, para que el total de eleventa sea lo que entró a la caja.
@@ -439,8 +442,10 @@ solo para convivir con eleventa):
 - el turno de eleventa lo abre eleventa con su fondo y lo cierra su corte: el puente no lo abre ni lo cierra. Si allá no
   hay turno abierto, lo que se manda espera en la bandeja («Abre la caja en eleventa…») y entra en cuanto lo abran;
 - un cierre que ya estaba en la bandeja, o el de un corte Z que sube de la contingencia, queda por revisar;
-- el turno de la caja nueva no se cierra, así que solo se cancela un ticket del mismo día (después es devolución) y no
-  sale el aviso de retiro (el cajón es de las dos).
+- la caja nueva toma el corte de eleventa: cierra su turno cuando eleventa cierra el que adoptó (2026-10-16,
+  [abajo](#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)). Mientras eleventa no lo cierre, el turno de la
+  caja nueva sigue abierto (puede durar días), así que solo se cancela un ticket del mismo día (después es devolución) y
+  no sale el aviso de retiro (el cajón es de las dos).
 
 Se probó como el paso 3, con pruebas contra el Firebird de prueba y de punta a punta contra copias: se cobraron dos
 ventas, se canceló una y se devolvió parte de la otra (un artículo completo), y se hizo el corte Z con un faltante. En la
@@ -535,6 +540,30 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
     revisar, porque allá ya se contó.
   - Si se cae la red, se sigue en la caja nueva (contingencia): el eleventa de la caja 2 escribe en el Firebird de la
     principal y no vende sin red. Si falla la caja nueva, se cambia a eleventa.
+  - **Avance (2026-10-16), en código** (`TurnosDelPiloto`, tabla del puente `TurnosEnEleventa`):
+    - **Adoptar.** El turno de la caja nueva guarda el `TURNOS.ID` (y su `INICIO_EN`) del turno que eleventa tiene
+      abierto en la caja 2: lo toma lo primero que manda, o la lectura de cada pocos minutos si allá hay uno solo. Sin
+      turno en eleventa no se abre ninguno: lo que se manda espera («Abre la caja en eleventa…»), como desde el #86. Lo
+      del diseño, «si no hay, lo abre… como hoy», se quedó como hoy: lo abre eleventa con su fondo. Con dos abiertos
+      (la base no lo deja: `UNQ_TURNO_ABIERTO_CAJA`) no adopta ninguno y avisa.
+    - **A qué turno va cada cosa: por su hora.** Lo que pasó en la caja nueva va al turno de eleventa que estaba abierto
+      a esa hora o, si no había ninguno, al siguiente que se abrió (el primero de la caja que terminó después, o sigue
+      abierto). Si ese turno ya se cortó, lo que no alcanzó a llegar ya se contó allá: queda por revisar, con el porqué,
+      y no detiene la bandeja. Lo que se cobró después del corte de eleventa (antes de que la caja nueva lo viera, por
+      ejemplo con la caja 2 apagada en la noche) entra al turno siguiente: así funciona «después del corte, la siguiente
+      venta va al turno siguiente». Por eso no se dejan por revisar todos los pendientes del turno al tomar el corte:
+      solo los de antes de la hora del corte.
+    - **Tomar el corte.** Cuando la lectura ve cerrado el turno adoptado, cierra el de la caja nueva a la hora del corte
+      de eleventa, sin corte Z ni conteo aquí, y guarda lo que se contó allá (`EFECTIVO_AL_CIERRE`) y lo que faltó o
+      sobró (el movimiento «Efectivo faltante/sobrante al cerrar turno»). Queda en la bitácora («Corte del turno de Ana
+      hecho en eleventa…»). El corte del día enseña ese turno como «En eleventa», con lo contado allá en una nota: es el
+      cajón de las dos cajas, así que no entra en lo contado ni en las diferencias del día. Después, cualquier cajero
+      abre su turno en la caja nueva, y adopta el siguiente de eleventa.
+    - **La lectura y la bandeja usan el mismo candado:** mientras la lectura lee y aplica, la bandeja no manda; el cobro
+      no la espera (el ticket sale con el folio de la caja).
+    - Antes de que eleventa cierre su turno sigue el aviso de #86: al intentar el corte o al salir, la caja dice que el
+      corte se hace en eleventa. Si el corte de eleventa cierra el turno con la caja nueva abierta, lo siguiente que se
+      cobre dice que el turno ya está cerrado: se entra otra vez (Ctrl+U) y se abre el nuevo.
 - **Devoluciones de ida y vuelta.**
   - Ida: si el folio no es de la caja 2, se lee el ticket en vivo en eleventa (el ticket, sus artículos y sus
     devoluciones). Solo efectivo, 7 días y las reglas de la caja nueva. Si eleventa no contesta, se espera a que
@@ -550,9 +579,18 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
   - Falta ver en la copia cómo anota eleventa una devolución de otra caja o de otro turno: mientras, eso queda por
     revisar.
 - **Folios repetidos.** Justo después de guardar, el puente revisa si el folio ya lo tiene otro ticket; si todavía no
-  se entregó, toma el siguiente y corrige solo su propio ticket y su kardex. Si ya salió impreso, no se cambia: ese
-  ticket se devuelve en la caja 2 por su QR y sus reimpresiones salen con el folio de la caja 2, como cuando eleventa no
-  contesta. La revisión tardía va en su propio paso, aunque la bandeja esté atorada.
+  se entregó, toma el siguiente y corrige solo su propio ticket y su kardex. Si ya salió impreso, no se cambia: sus
+  reimpresiones salen con el folio de la caja 2, como cuando eleventa no contesta, y como el ticket ya no lleva QR
+  (dueño, 2026-10-16: «primero igualar a eleventa»), al escribir ese folio para devolver la caja enseña los dos tickets
+  (el de la caja 2 y el de la otra caja) para elegir por la hora y el total. La revisión tardía va en su propio paso,
+  aunque la bandeja esté atorada.
+  - **Avance (2026-10-16), en código** (`FoliosRepetidos`, tabla del puente `FoliosRepetidosEnEleventa`): la revisión al
+    guardar toma el siguiente folio y cambia «Venta #folio» en su kardex (hasta tres veces; si sigue chocando, queda
+    marcado). La venta que se mandó en la vuelta también: su folio de eleventa no se imprimió. La revisión tardía, en
+    cada vuelta de la bandeja antes de mandar, vuelve a ver las ventas de la última hora; si otra caja tiene el mismo
+    folio, marca la venta (`FolioRepetido`) y anota el otro ticket con su caja, su hora y su total. Al escribir el folio
+    en la ventana de devoluciones (`GET /api/eleventa/folio/{folio}`), si son dos, se elige con «Es este»: el de la caja
+    2 se abre ahí; el de otra caja, por ahora, se devuelve en eleventa.
 - **Los respaldos de eleventa.** Según sus páginas (consultadas el 2026-10-12): el [respaldo
   automático](https://eleventa.com/aprender/respaldo-automatico) se configura en Configuración ➜ Mantenimiento y puede
   respaldar al salir; en multicaja queda en `AbarrotesMultiCaja\respaldos` de la PC servidor;

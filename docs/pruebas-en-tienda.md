@@ -35,7 +35,11 @@ datos de eleventa.
      últimos respaldos;
    - si existe `gbak.exe` en la carpeta de Firebird (`FirebirdSQL20\bin`) y si Firebird corre como servicio de Windows;
    - en la caja principal, con `netstat -ano`, qué programa escucha en los puertos 3050 y 3309;
-   - la hora de cada caja contra la del celular;
+   - la hora de cada caja contra la del celular (en el piloto, la caja nueva compara la hora de lo que manda con la del
+     corte de eleventa para saber si ya se contó allá);
+   - cómo se hace el corte de la caja 2 en eleventa al final del día: quién lo hace, a qué hora, si después se cierra
+     eleventa o se deja abierto, y si en la mañana se abre eleventa en la caja 2 antes de vender (la caja nueva adopta el
+     turno que abre eleventa y toma su corte);
    - si OneDrive sincroniza Documentos en la caja 2 (las notas de `observar-en-vivo` son datos reales);
    - con `observar-en-vivo` en la caja 2: entradas y salidas de dinero, un cierre con diferencia y, si se da, algo
      después de medianoche.

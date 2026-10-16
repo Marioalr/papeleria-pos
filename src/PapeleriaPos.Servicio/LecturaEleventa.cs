@@ -96,7 +96,9 @@ public sealed class OpcionesEleventa
 /// <summary>
 /// El piloto, paso 1 (docs/plan.md): cada pocos minutos lee el catálogo, los precios, las promociones y las existencias
 /// del eleventa de la caja principal, solo leyendo, y pone al día la base de esta caja. Si eleventa no contesta, se
-/// sigue vendiendo con lo último que se leyó y se vuelve a intentar en la siguiente vuelta.
+/// sigue vendiendo con lo último que se leyó y se vuelve a intentar en la siguiente vuelta. Mientras esta caja manda a
+/// eleventa, en la misma foto trae los turnos de la caja 2 (la caja nueva adopta el abierto y toma su corte,
+/// <see cref="TurnosDelPiloto"/>), y lee y aplica con el candado de la bandeja.
 /// </summary>
 public sealed class LecturaEleventa(
     IServiceScopeFactory alcances, OpcionesEleventa opciones, EnvioVentasEleventa envios, TimeProvider reloj, ILogger<LecturaEleventa> log)
@@ -152,16 +154,31 @@ public sealed class LecturaEleventa(
         var inicio = reloj.GetUtcNow().UtcDateTime;
         try
         {
-            // Lo que la bandeja mande mientras se lee pudo entrar a eleventa sin que aquí se sepa todavía.
-            using var mandados = envios.EnCurso.Vigilar();
-            var datos = await LectorEleventa.LeerCatalogoAsync(servidor, ct);
             using var alcance = alcances.CreateScope();
             var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
-            var resultado = await SincronizacionEleventa.AplicarAsync(db, datos, reloj.GetUtcNow().UtcDateTime, mandados, ct);
-            _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), true, resultado.ToString(), null,
-                HoraMexico.ALocal(inicio + espera), ++_lecturas, resultado.Avisos);
-            if (resultado.HuboCambios)
-                log.LogInformation("Eleventa ({Servidor}): {Resultado}.", servidor, resultado);
+            // El piloto: la lectura y la bandeja usan el mismo candado (mientras se lee y se aplica, no se manda nada).
+            using var candado = envios.Activo ? await envios.CandadoAsync(ct) : null;
+            // Lo que la bandeja mande mientras se lee pudo entrar a eleventa sin que aquí se sepa todavía.
+            using var mandados = envios.EnCurso.Vigilar();
+            // En el piloto, en la misma foto: los turnos de la caja 2 en eleventa.
+            var consulta = opciones.CorteEnEleventa && opciones.Caja is { } caja ? await TurnosDelPiloto.ConsultaAsync(db, caja, ct) : null;
+            var datos = await LectorEleventa.LeerCatalogoAsync(servidor, consulta, ct);
+            var ahora = reloj.GetUtcNow().UtcDateTime;
+            var turnos = consulta is not null && datos.Piloto is { } piloto ? await TurnosDelPiloto.AplicarAsync(db, consulta.CajaId, piloto, ahora, ct) : null;
+            var resultado = await SincronizacionEleventa.AplicarAsync(db, datos, ahora, mandados, ct);
+            var avisos = new Dictionary<string, int>(resultado.Avisos);
+            foreach (var aviso in turnos?.Avisos ?? [])
+                avisos[aviso] = avisos.GetValueOrDefault(aviso) + 1;
+            var texto = resultado.ToString();
+            if (turnos is { Cortes: > 0 } conCorte)
+                texto += $"; {conCorte.Cortes} {(conCorte.Cortes == 1 ? "turno cerrado" : "turnos cerrados")} con el corte de eleventa";
+            _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), true, texto, null,
+                HoraMexico.ALocal(inicio + espera), ++_lecturas, avisos);
+            if (resultado.HuboCambios || turnos is { Cortes: > 0 } or { Adoptados: > 0 })
+                log.LogInformation("Eleventa ({Servidor}): {Resultado}.", servidor, texto);
+            // Lo que seguía en la bandeja de un turno que eleventa cortó: su hora dice si va al turno siguiente o queda por revisar.
+            if (turnos is { Cortes: > 0 })
+                envios.Despertar();
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -207,5 +224,9 @@ public static class ApiEleventa
             await envios.AnotarAManoAsync(db, id)
                 ? Results.Ok(await envios.EstadoAsync(db))
                 : Results.BadRequest(new ErrorDto("Solo se anota a mano lo que está pendiente o por revisar.")));
+
+        // Devolver con el folio de eleventa escrito (el ticket ya no lleva QR): los tickets con ese folio, para elegir por la
+        // hora y el total si eleventa lo repitió en otra caja (FoliosRepetidos).
+        api.MapGet("/folio/{folio:int}", async (int folio, PosDbContext db) => await FoliosRepetidos.BuscarAsync(db, folio));
     }
 }

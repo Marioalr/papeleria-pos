@@ -2935,6 +2935,80 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("EnviosAEleventa", (string)null);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.FolioRepetidoEnEleventa", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Caja")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("EnvioId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Folio")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TicketEleventa")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("TotalCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("VendidoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("VistoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Folio");
+
+                    b.HasIndex("EnvioId", "TicketEleventa")
+                        .IsUnique();
+
+                    b.ToTable("FoliosRepetidosEnEleventa", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.TurnoEnEleventa", b =>
+                {
+                    b.Property<Guid>("TurnoId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("AdoptadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("ContadoCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("CortadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("DiferenciaCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("InicioUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("TomadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("TurnoEleventa")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("TurnoId");
+
+                    b.HasIndex("TomadoUtc");
+
+                    b.HasIndex("TurnoEleventa");
+
+                    b.ToTable("TurnosEnEleventa", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.Venta", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3991,6 +4065,24 @@ namespace PapeleriaPos.Datos.Migraciones
                         .WithMany()
                         .HasForeignKey("VentaId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.FolioRepetidoEnEleventa", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Ventas.EnvioAEleventa", null)
+                        .WithMany()
+                        .HasForeignKey("EnvioId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.TurnoEnEleventa", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Turnos.Turno", null)
+                        .WithOne()
+                        .HasForeignKey("PapeleriaPos.Nucleo.Ventas.TurnoEnEleventa", "TurnoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.Venta", b =>

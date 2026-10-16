@@ -16,6 +16,13 @@ namespace PapeleriaPos.Servicio;
 /// Al cobrar se intenta la venta enseguida, para que el ticket salga con el folio de eleventa; si no contesta a tiempo, o
 /// hay algo antes en la bandeja, el ticket sale con el folio de esta caja. Uno a la vez: la marca que evita duplicar en
 /// eleventa no aguanta dos envíos de lo mismo al mismo tiempo.
+/// <para>
+/// Lo que falta del piloto (docs/migracion-eleventa.md, «Lo que falta para el piloto»): cada cosa va al turno de eleventa
+/// de su hora y lo primero de un turno de la caja nueva le da su turno de eleventa (<see cref="TurnosDelPiloto"/>); lo que
+/// choca con eleventa (<see cref="ChoqueConEleventa"/>) queda por revisar sin detener lo demás, y solo la falla de red se
+/// reintenta; la revisión tardía de los folios va en su propio paso (<see cref="FoliosRepetidos"/>); y la lectura de
+/// eleventa usa el mismo candado (<see cref="CandadoAsync"/>).
+/// </para>
 /// </summary>
 public sealed class EnvioVentasEleventa(
     IServiceScopeFactory alcances, OpcionesEleventa opciones, TimeProvider reloj, IHostApplicationLifetime vida, ILogger<EnvioVentasEleventa> log)
@@ -67,6 +74,29 @@ public sealed class EnvioVentasEleventa(
             // Tan lenta como si no hubiera red: los siguientes cobros no esperan hasta que algo entre.
             _sinRedHastaUtc = reloj.GetUtcNow().UtcDateTime + SinRedPor;
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Solo del piloto: la lectura de eleventa usa el mismo candado que la bandeja (docs/migracion-eleventa.md, «Lo que falta
+    /// para el piloto»): mientras lee y aplica lo que trajo (el corte de eleventa, las existencias), la bandeja no manda nada;
+    /// así lo que la bandeja escribe no se cruza con lo que la lectura acaba de ver. El cobro no espera: si la lectura va, el
+    /// ticket sale con el folio de la caja y la venta se manda en la vuelta.
+    /// </summary>
+    public async Task<IDisposable> CandadoAsync(CancellationToken ct)
+    {
+        await _uno.WaitAsync(ct);
+        return new Soltar(_uno);
+    }
+
+    private sealed class Soltar(SemaphoreSlim candado) : IDisposable
+    {
+        private int _soltado;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _soltado, 1) == 0)
+                candado.Release();
         }
     }
 
@@ -171,6 +201,8 @@ public sealed class EnvioVentasEleventa(
         var espera = TimeSpan.FromSeconds(Math.Max(5, opciones.SegundosEntreEnvios));
         while (!ct.IsCancellationRequested)
         {
+            // La revisión tardía de los folios va en su propio paso: aunque la bandeja esté atorada en otra cosa.
+            await RevisarFoliosAsync(ct);
             try
             {
                 await VueltaAsync(ct);
@@ -188,6 +220,37 @@ public sealed class EnvioVentasEleventa(
                 return;
             }
         }
+    }
+
+    /// <summary>
+    /// La revisión tardía de los folios (<see cref="FoliosRepetidos"/>): otra caja pudo guardar el mismo folio un instante
+    /// después de la revisión al guardar. Si eleventa no contesta, se revisa en la siguiente vuelta.
+    /// </summary>
+    private async Task RevisarFoliosAsync(CancellationToken ct)
+    {
+        var (servidor, _) = _destino!.Value;
+        await UnoAsync(async db =>
+        {
+            var ahora = reloj.GetUtcNow().UtcDateTime;
+            // Sin red hace poco: la vuelta lo vuelve a intentar; aquí no se espera otra vez a que no conteste.
+            if (ahora < _sinRedHastaUtc || await FoliosRepetidos.PorRevisarAsync(db, ahora, ct) is not { Count: > 0 } enviadas)
+                return true;
+            try
+            {
+                await using var conexion = new FbConnection(servidor.Cadena());
+                await conexion.OpenAsync(ct);
+                if (await FoliosRepetidos.RevisarAsync(db, conexion, enviadas, ahora, ct) is > 0 and var repetidos)
+                    log.LogWarning("{Repetidos} ventas de esta caja tienen en eleventa el mismo folio que otra caja: sus reimpresiones salen con el folio de la caja.",
+                        repetidos);
+                await db.SaveChangesAsync(ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && EsDeRed(ex))
+            {
+                // Sin red: se revisa en otra vuelta, y el cobro tampoco espera a eleventa un rato.
+                _sinRedHastaUtc = ahora + SinRedPor;
+            }
+            return true;
+        }, ct);
     }
 
     /// <summary>En el orden en que pasaron; en cuanto algo no entra, lo demás espera a la siguiente vuelta.</summary>
@@ -252,7 +315,8 @@ public sealed class EnvioVentasEleventa(
     private async Task<bool> MandarAsync(PosDbContext db, EnvioAEleventa envio, CancellationToken ct)
     {
         var (servidor, caja) = _destino!.Value;
-        Func<Task>? escribir = null;
+        // Escribe en eleventa y dice en qué turno de eleventa quedó (vacío si ya estaba): el turno de la caja nueva lo adopta.
+        Func<Task<TurnoDeEleventa?>>? escribir = null;
         string? porRevisar = null;
         var descartada = false;
         switch (envio.Tipo)
@@ -265,28 +329,43 @@ public sealed class EnvioVentasEleventa(
                     {
                         var r = await EnvioEleventa.MandarAsync(servidor, caja, paraEleventa, ct);
                         (envio.TicketEleventa, envio.FolioEleventa, envio.FolioRepetido) = (r.TicketId, r.Folio, r.FolioRepetido);
+                        if (r.FolioAnterior is { } anterior)
+                            log.LogWarning("Otra caja de eleventa cobró con el folio {Anterior} al mismo tiempo que la venta {Venta}: esta tomó el {Folio}.",
+                                anterior, envio.VentaId, r.Folio);
                         if (r.FolioRepetido)
                             log.LogWarning("Eleventa le dio a la venta {Venta} el folio {Folio}, que otra caja usó al mismo tiempo: hay que revisarlo.", envio.VentaId, r.Folio);
+                        return r.Turno;
                     };
                 break;
             case TipoEnvioEleventa.Cancelacion or TipoEnvioEleventa.Devolucion:
                 var devolucion = await VentasParaEleventa.ArmarDevolucionAsync(db, envio.DevolucionId!.Value, ct);
                 (porRevisar, descartada) = (devolucion.PorRevisar, devolucion.Descartada);
                 if (devolucion.Devolucion is { } paraDevolver)
-                    escribir = async () => envio.IdEleventa = (await EnvioEleventa.DevolverAsync(servidor, caja, paraDevolver, ct)).DevolucionId;
+                    escribir = async () =>
+                    {
+                        var r = await EnvioEleventa.DevolverAsync(servidor, caja, paraDevolver, ct);
+                        envio.IdEleventa = r.DevolucionId;
+                        return r.Turno;
+                    };
                 break;
             case TipoEnvioEleventa.MovimientoDeCaja:
                 var movimiento = await VentasParaEleventa.ArmarMovimientoAsync(db, envio.MovimientoId!.Value, ct);
                 porRevisar = movimiento.PorRevisar;
                 if (movimiento.Movimiento is { } paraMover)
-                    escribir = async () => envio.IdEleventa = (await EnvioEleventa.MoverEfectivoAsync(servidor, caja, paraMover, ct)).MovimientoId;
+                    escribir = async () =>
+                    {
+                        var r = await EnvioEleventa.MoverEfectivoAsync(servidor, caja, paraMover, ct);
+                        envio.IdEleventa = r.MovimientoId;
+                        return r.Turno;
+                    };
                 break;
             case TipoEnvioEleventa.CierreDeTurno when opciones.CorteEnEleventa:
-                // El piloto: el corte se hace en eleventa y el puente no cierra su turno. Un cierre en la bandeja (de antes
-                // del piloto, o de un corte Z que subió de la contingencia) no se manda: queda por revisar, y lo que sigue
-                // pasa al turno de eleventa, que sigue abierto. Mientras dure el piloto este puente siempre manda en el
-                // piloto (Escribir), así que el caso de abajo no corre; se queda para cuando la caja tome el corte de
-                // eleventa (lo prueba CorteEnElPilotoTests: el corte Z lo sigue encolando fuera del piloto).
+                // El piloto: el corte se hace en eleventa y el puente no cierra su turno (la caja nueva toma ese corte,
+                // TurnosDelPiloto). Un cierre en la bandeja (de antes del piloto, o de un corte Z que subió de la
+                // contingencia) no se manda: queda por revisar, y lo que sigue pasa al turno de eleventa, que sigue abierto.
+                // Mientras dure el piloto este puente siempre manda en el piloto (Escribir), así que el caso de abajo no
+                // corre; se queda para cuando se deje de convivir con eleventa (lo prueba CorteEnElPilotoTests: el corte Z
+                // lo sigue encolando fuera del piloto).
                 porRevisar = CorteEnElPiloto.NoSeCierraEleventa;
                 break;
             case TipoEnvioEleventa.CierreDeTurno:
@@ -295,7 +374,11 @@ public sealed class EnvioVentasEleventa(
                 // Lo que faltó o sobró al contar en el corte de la caja nueva.
                 var diferencia = await db.Cortes.AsNoTracking().Where(x => x.TurnoId == turno.Id && x.Tipo == Nucleo.Turnos.TipoCorte.Z)
                     .Select(x => x.DiferenciaCentavos).FirstOrDefaultAsync(ct) ?? 0;
-                escribir = async () => envio.IdEleventa = (await EnvioEleventa.CerrarTurnoAsync(servidor, caja, cerrado, diferencia / 100m, ct)).TurnoId;
+                escribir = async () =>
+                {
+                    envio.IdEleventa = (await EnvioEleventa.CerrarTurnoAsync(servidor, caja, cerrado, diferencia / 100m, ct)).TurnoId;
+                    return null;
+                };
                 break;
         }
 
@@ -313,11 +396,22 @@ public sealed class EnvioVentasEleventa(
         envio.UltimoIntentoUtc = ahora;
         // Hasta que quede anotado aquí lo que pasó, la lectura de eleventa no sabe si ya está allá.
         using var mandando = EnCurso.Mandando(envio.Id);
+        TurnoDeEleventa? deEleventa = null;
         try
         {
-            await escribir();
+            deEleventa = await escribir();
             (envio.Estado, envio.EnviadaUtc, envio.Error) = (EstadoEnvioEleventa.Enviada, reloj.GetUtcNow().UtcDateTime, null);
             (_ultimoEnvioUtc, _ultimoError, _sinRedHastaUtc) = (envio.EnviadaUtc, null, default);
+        }
+        catch (ChoqueConEleventa ex)
+        {
+            // Eleventa ya tiene otra cosa (su turno se cortó, hay dos abiertos, el ticket ya está cancelado…): no es la red y
+            // reintentar no lo arregla. Queda por revisar, con el porqué, y lo demás de la bandeja sigue. No está allá.
+            (envio.Estado, envio.Error) = (EstadoEnvioEleventa.PorRevisar, Recortar(ex.Message));
+            EnCurso.Rechazado(envio.Id);
+            // Eleventa sí contestó: el cobro puede volver a esperarlo.
+            _sinRedHastaUtc = default;
+            log.LogWarning("{Tipo} {Id} queda por revisar: {Motivo}", envio.Tipo, envio.Id, ex.Message);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -330,10 +424,34 @@ public sealed class EnvioVentasEleventa(
                 EnCurso.Rechazado(envio.Id);
             log.LogWarning(ex, "{Tipo} {Id} no entró a eleventa ({Servidor}); se vuelve a intentar.", envio.Tipo, envio.Id, servidor);
         }
+        // Lo primero que manda un turno de la caja nueva le da su turno de eleventa (si la lectura no se lo dio antes). Si
+        // falla, la lectura lo adopta después: lo que se mandó ya quedó.
+        if (envio.Estado == EstadoEnvioEleventa.Enviada && deEleventa is not null)
+        {
+            try
+            {
+                if (await TurnoAquiAsync(db, envio, CancellationToken.None) is { } turnoAqui)
+                    await TurnosDelPiloto.AdoptarAsync(db, turnoAqui, deEleventa, envio.EnviadaUtc!.Value, CancellationToken.None);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                log.LogWarning(ex, "No se pudo anotar el turno de eleventa de {Tipo} {Id}.", envio.Tipo, envio.Id);
+            }
+        }
         // Aunque se esté apagando el servicio: si ya entró a eleventa, que quede anotado (si no, al volver lo encuentra la marca).
         await db.SaveChangesAsync(CancellationToken.None);
         return envio.Estado != EstadoEnvioEleventa.Pendiente;
     }
+
+    /// <summary>El turno de la caja nueva de lo que se mandó: el de la venta, el de donde salió lo devuelto o el del movimiento.</summary>
+    private static async Task<Guid?> TurnoAquiAsync(PosDbContext db, EnvioAEleventa envio, CancellationToken ct) => envio.Tipo switch
+    {
+        TipoEnvioEleventa.Venta => await db.Ventas.Where(v => v.Id == envio.VentaId).Select(v => (Guid?)v.TurnoId).FirstOrDefaultAsync(ct),
+        TipoEnvioEleventa.Cancelacion or TipoEnvioEleventa.Devolucion =>
+            await db.Devoluciones.Where(d => d.Id == envio.DevolucionId).Select(d => (Guid?)d.TurnoId).FirstOrDefaultAsync(ct),
+        TipoEnvioEleventa.MovimientoDeCaja => await db.MovimientosCaja.Where(m => m.Id == envio.MovimientoId).Select(m => (Guid?)m.TurnoId).FirstOrDefaultAsync(ct),
+        _ => null,
+    };
 
     private static string Recortar(string texto) => texto.Length > 500 ? texto[..500] : texto;
 

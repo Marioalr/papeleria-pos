@@ -3,6 +3,7 @@
    transferencia, el servicio dice por qué no se devuelve aquí y no se ofrece (también lo rechaza). *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
+@inject IServiceProvider Servicios
 
 @if (_autorizar is { } pendiente)
 {
@@ -17,6 +18,27 @@ else
         </label>
         <button class="boton" @onclick="BuscarAsync">Buscar</button>
     </div>
+
+    @if (_opciones is { } opciones)
+    {
+        @* El piloto con eleventa: el mismo folio en más de un ticket (eleventa lo repite entre cajas). *@
+        <p>El folio <strong>@_folioOpciones</strong> lo tienen @opciones.Count tickets: elige el del cliente por la hora y el total que dice su ticket.</p>
+        <div class="resultados">
+            <table>
+                <thead><tr><th>Caja</th><th>Fecha y hora</th><th class="num">Total</th><th></th></tr></thead>
+                @foreach (var t in opciones)
+                {
+                    var ticket = t;
+                    <tr>
+                        <td>@t.Caja</td>
+                        <td>@(t.FechaLocal?.ToString("dd/MM/yyyy HH:mm") ?? "—")</td>
+                        <td class="num">@Formato.Dinero(t.TotalCentavos)</td>
+                        <td><button class="boton" @onclick="() => ElegirAsync(ticket)">Es este</button></td>
+                    </tr>
+                }
+            </table>
+        </div>
+    }
 
     @if (_venta is { } v)
     {
@@ -137,16 +159,73 @@ else
             await BuscarAsync();
     }
 
+    /// <summary>
+    /// El piloto con eleventa: los tickets que llevan el folio de eleventa escrito, cuando son más de uno (eleventa lo repite
+    /// entre cajas). Se elige por la hora y el total. Vacío si no.
+    /// </summary>
+    private IReadOnlyList<TicketConFolioDto>? _opciones;
+    private string _folioOpciones = "";
+
     private async Task BuscarAsync()
     {
         _error = null;
+        _opciones = null;
         _cantidades.Clear();
         _danados.Clear();
+        var folio = _folio.Trim();
         try
         {
-            _venta = await Cliente.VentaPorFolioAsync(Caja.SucursalId, _folio.Trim());
+            // El piloto: el folio impreso puede ser el de eleventa (solo número), y otra caja de eleventa pudo repetirlo.
+            if (PilotoEleventa && folio.Length > 0 && folio.All(char.IsAsciiDigit) && int.TryParse(folio, out var deEleventa)
+                && Servicios.GetService<ClientePuente>() is { } puente && await TicketsConFolioAsync(puente, deEleventa) is { } tickets)
+            {
+                if (tickets.Count > 1 || tickets is [{ FolioCaja: null }])
+                {
+                    _venta = null;
+                    (_opciones, _folioOpciones) = (tickets, folio);
+                    return;
+                }
+                if (tickets is [{ FolioCaja: { } deLaCaja }])
+                    folio = deLaCaja;
+            }
+            _venta = await Cliente.VentaPorFolioAsync(Caja.SucursalId, folio);
             if (_venta is null)
                 _error = $"No existe el ticket «{_folio.Trim()}».";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    /// <summary>Lo que el puente sabe de ese folio; si no contesta (un servicio de antes), se busca como siempre.</summary>
+    private static async Task<IReadOnlyList<TicketConFolioDto>?> TicketsConFolioAsync(ClientePuente puente, int folio)
+    {
+        try
+        {
+            return (await puente.FolioAsync(folio)).Tickets;
+        }
+        catch (ErrorCaja)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>El que eligió el cajero de los que tienen el mismo folio: el de esta caja se abre aquí; el de otra, se dice dónde.</summary>
+    private async Task ElegirAsync(TicketConFolioDto ticket)
+    {
+        _error = null;
+        if (ticket.FolioCaja is not { } folio)
+        {
+            _error = ticket.Nota;
+            return;
+        }
+        try
+        {
+            _venta = await Cliente.VentaPorFolioAsync(Caja.SucursalId, folio);
+            _opciones = null;
+            if (_venta is null)
+                _error = $"No existe el ticket «{folio}».";
         }
         catch (ErrorCaja ex)
         {
