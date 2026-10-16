@@ -98,9 +98,38 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
         await DispararAsync(await PorIdAsync(id), "onkeydown", new KeyboardEventArgs { Key = tecla });
 
     public Task DispararAsync(ElementoDibujado elemento, string evento, EventArgs datos) =>
-        Dispatcher.InvokeAsync(() => DispatchEventAsync(elemento.Eventos.TryGetValue(evento, out var manejador)
+        Dispatcher.InvokeAsync(async () =>
+        {
+            try
+            {
+                await DispatchEventAsync(Manejador(elemento, evento), null, datos);
+            }
+            catch (ArgumentException ex) when (ex.ParamName == "eventHandlerId" && Mismo(elemento) is { } actual)
+            {
+                // Entre que se leyó el elemento y ahora, la pantalla se volvió a dibujar sola (terminó de cargar algo) y su
+                // evento ya tiene otro número: quien prueba oprime lo que ve, el mismo elemento ya dibujado otra vez. Si el
+                // número de antes todavía vale (un doble clic antes de que la página tome el dibujo), se usa ese.
+                await DispatchEventAsync(Manejador(actual, evento), null, datos);
+            }
+        });
+
+    private static ulong Manejador(ElementoDibujado elemento, string evento) =>
+        elemento.Eventos.TryGetValue(evento, out var manejador)
             ? manejador
-            : throw new Xunit.Sdk.XunitException($"«{elemento.Etiqueta}#{elemento.Id}» no tiene {evento}."), null, datos));
+            : throw new Xunit.Sdk.XunitException($"«{elemento.Etiqueta}#{elemento.Id}» no tiene {evento}.");
+
+    /// <summary>
+    /// El mismo elemento en lo que está dibujado ahora: por su id o, si no tiene, por su etiqueta y su texto, cuando hay uno
+    /// solo así. Se llama dentro del despachador, donde la pantalla no cambia mientras tanto.
+    /// </summary>
+    private ElementoDibujado? Mismo(ElementoDibujado elemento)
+    {
+        var elementos = new List<ElementoDibujado>();
+        Recorrer(_raiz, elementos, new StringBuilder());
+        var iguales = elementos.Where(e => e.Etiqueta == elemento.Etiqueta
+            && (elemento.Id is { } id ? e.Id == id : e.Texto == elemento.Texto)).ToList();
+        return iguales.Count == 1 ? iguales[0] : null;
+    }
 
     /// <summary>Espera a que la pantalla llegue a algo (lo que se carga o se guarda en segundo plano).</summary>
     public async Task EsperarAsync(Func<string, bool> condicion, string que)
