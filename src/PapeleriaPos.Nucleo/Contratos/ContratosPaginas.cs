@@ -60,3 +60,11 @@ public sealed record MovimientoProductoDto(DateTime FechaLocal, TipoMovimiento T
 /// <param name="OrdenesEnCamino">De esas, las que ya llevan productos: lo que se espera que llegue.</param>
 /// <param name="ConteosCompletosAbiertos">Departamentos que se están contando completos.</param>
 public sealed record PendientesInventarioDto(int ComprasContando, int ComprasSinNota, int OrdenesAbiertas, int OrdenesEnCamino, int ConteosCompletosAbiertos);
+
+/// <summary>
+/// Productos e Inventario en el piloto con eleventa, con su lectura prendida (decisión del dueño, 2026-10-10: las altas y
+/// los precios, en eleventa): lo que dicen esas páginas. Vacíos: fuera del piloto, todo se hace aquí.
+/// </summary>
+/// <param name="Productos">De los productos de eleventa, lo que pone la lectura no se cambia aquí (la ficha dice qué).</param>
+/// <param name="Inventario">Las tareas que mueven existencias no se ofrecen: el inventario se lleva en eleventa.</param>
+public sealed record TrastiendaEnElPilotoDto(string? Productos, string? Inventario);

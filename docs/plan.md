@@ -562,6 +562,15 @@ número los enseña en la lista). Antes solo llegaban de eleventa, y Compras ped
 - **En el piloto con eleventa** (con su lectura prendida) solo se consultan: se cambian allá, como las altas y los
   precios (2026-10-10), y llegan con la lectura. Un cambio hecho aquí, la siguiente lectura lo regresaría.
 
+**Avance (2026-10-16): Productos e Inventario en el piloto.** Con la lectura de eleventa prendida, lo que ella pone no
+se cambia en la caja 2: si no, la siguiente lectura lo regresaría sin avisar. Una nota lo dice en cada página y el
+servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-cada-pocos-minutos-paso-1)).
+- **Productos:** de un producto de eleventa, el nombre, el departamento, si se vende, el código de la pieza, el menudeo
+  y sus promociones se ven sin cambiarse, y no se depura. Las escalas del F11 o de F3, las presentaciones, la marca y
+  lo dado de alta aquí, sí.
+- **Inventario:** no se ofrece lo que mueve existencias (recibir compras, los conteos, ajustes, mermas y abrir un
+  paquete): el inventario se lleva en eleventa. Las órdenes, el sugerido, las etiquetas y la hoja de códigos, sí.
+
 #### Después: el piloto en la caja 2
 
 Mientras se arma el puente con eleventa, la versión unicaja sigue creciendo con la venta completa (entrega 3) y la base

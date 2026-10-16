@@ -12,9 +12,10 @@ namespace PapeleriaPos.Datos;
 /// departamento; quienes estén presentes capturan desde el celular lo que cuentan, a ciegas, y las capturas se suman.
 /// Al cerrarlo, lo contado reemplaza la existencia: la diferencia entra al kardex como movimiento de conteo, contra lo
 /// que decía el sistema cuando se contó cada producto (lo que se vendió después sigue contando). Lo que nadie contó
-/// queda en cero.
+/// queda en cero. En el piloto con eleventa (<paramref name="lecturaDeEleventa"/>) no se abre, no se captura ni se cierra:
+/// el inventario se lleva en eleventa (<see cref="TrastiendaEnElPiloto"/>); lo que quedó abierto se consulta y se cancela.
 /// </summary>
-public sealed class RegistroConteoCompleto(PosDbContext db)
+public sealed class RegistroConteoCompleto(PosDbContext db, bool lecturaDeEleventa = false)
 {
     private DateTime Ahora => db.Reloj.GetUtcNow().UtcDateTime;
 
@@ -55,6 +56,7 @@ public sealed class RegistroConteoCompleto(PosDbContext db)
     public async Task<ConteoDepartamentoDto> AbrirAsync(Guid sucursalId, SolicitudAbrirConteo s, CancellationToken ct = default)
     {
         await new ServicioControl(db).ExigirAsync(s.UsuarioId, sucursalId, AccionControlada.ConteoCompleto, "El conteo completo lo abre el encargado.", ct);
+        TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
         var departamento = await db.Departamentos.FindAsync([s.DepartamentoId], ct) ?? throw new InvalidOperationException("El departamento no existe.");
         await using var transaccion = await db.Database.BeginTransactionAsync(ct);
         if (await db.ConteosDepartamento.AnyAsync(c => c.SucursalId == sucursalId && c.DepartamentoId == s.DepartamentoId
@@ -82,6 +84,7 @@ public sealed class RegistroConteoCompleto(PosDbContext db)
         await using var transaccion = await db.Database.BeginTransactionAsync(ct);
         var conteo = await db.ConteosDepartamento.SingleOrDefaultAsync(c => c.Id == conteoId, ct) ?? throw new InvalidOperationException("El conteo ya no existe.");
         await new ServicioControl(db).ExigirAsync(s.UsuarioId, conteo.SucursalId, AccionControlada.ContarInventario, "No tienes permiso para contar.", ct);
+        TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
         if (!await db.CapturasConteo.AnyAsync(c => c.Id == s.Id, ct))
         {
             var variante = await db.Variantes.Include(v => v.Producto).ThenInclude(p => p!.Marca).SingleOrDefaultAsync(v => v.Id == s.VarianteId, ct)
@@ -126,6 +129,7 @@ public sealed class RegistroConteoCompleto(PosDbContext db)
         var conteo = await db.ConteosDepartamento.Include(c => c.Capturas).SingleOrDefaultAsync(c => c.Id == conteoId, ct)
             ?? throw new InvalidOperationException("El conteo ya no existe.");
         await new ServicioControl(db).ExigirAsync(usuarioId, conteo.SucursalId, AccionControlada.ConteoCompleto, "El conteo completo lo cierra el encargado.", ct);
+        TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
         var departamento = await db.Departamentos.FindAsync([conteo.DepartamentoId], ct);
         var contado = conteo.Contado();
         var variantes = await Variantes(conteo, contado.Keys, delDepartamento: true, ct);

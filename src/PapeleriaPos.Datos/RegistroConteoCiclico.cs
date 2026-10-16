@@ -11,9 +11,10 @@ namespace PapeleriaPos.Datos;
 /// <summary>
 /// El conteo cíclico diario (docs/fase-2-inventario.md, entrega 3, parte 2): 15 productos al día, elegidos por valor,
 /// rotación y tiempo sin contar, contados a ciegas en la caja. La diferencia entra al kardex como movimiento de conteo,
-/// queda en la bitácora y, desde el umbral de ajustes de la sucursal, se le avisa al dueño.
+/// queda en la bitácora y, desde el umbral de ajustes de la sucursal, se le avisa al dueño. En el piloto con eleventa
+/// (<paramref name="lecturaDeEleventa"/>) no hay conteo del día: el inventario se lleva en eleventa (<see cref="TrastiendaEnElPiloto"/>).
 /// </summary>
-public sealed class RegistroConteoCiclico(PosDbContext db)
+public sealed class RegistroConteoCiclico(PosDbContext db, bool lecturaDeEleventa = false)
 {
     private const int DiasDeVenta = 90;
 
@@ -22,6 +23,9 @@ public sealed class RegistroConteoCiclico(PosDbContext db)
     /// <summary>El conteo de hoy en la sucursal; si todavía no hay, lo arma. Lo que esperaba el sistema, solo para quien ve costos.</summary>
     public async Task<ConteoCiclicoDto> HoyAsync(Guid sucursalId, Guid usuarioId, CancellationToken ct = default)
     {
+        // En el piloto no se arma ni se pide: la venta no enseña su chip.
+        if (lecturaDeEleventa)
+            return new ConteoCiclicoDto(Guid.Empty, Hoy(), 0, 0, []);
         var conteo = await HoyOArmarAsync(sucursalId, ct);
         return await DtoAsync(conteo, usuarioId, ct);
     }
@@ -32,6 +36,7 @@ public sealed class RegistroConteoCiclico(PosDbContext db)
         var conteo = await db.ConteosCiclicos.Include(c => c.Renglones).SingleOrDefaultAsync(c => c.Id == conteoId, ct)
             ?? throw new InvalidOperationException("El conteo ya no existe.");
         await new ServicioControl(db).ExigirAsync(s.UsuarioId, conteo.SucursalId, AccionControlada.ContarInventario, "No tienes permiso para contar.", ct);
+        TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
         if (conteo.Fecha != Hoy())
             throw new InvalidOperationException("Ese conteo era de otro día.");
         var renglon = conteo.Renglones.FirstOrDefault(r => r.VarianteId == s.VarianteId)

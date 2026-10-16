@@ -4,7 +4,9 @@
    del kardex, «Etiqueta» (a las etiquetas por imprimir) y «Editar». La ficha de siempre (variantes, presentaciones,
    códigos, precios, kardex y depurar) se abre ahí mismo, con su «Guardar»; Esc la cierra. También «Nuevo producto», el
    mayoreo por revisar, los departamentos (darlos de alta, cambiarles el nombre, desactivarlos) y las decisiones de la
-   depuración, en el mismo lado. El filtro y la ficha solo ofrecen los departamentos activos. *@
+   depuración, en el mismo lado. El filtro y la ficha solo ofrecen los departamentos activos. En el piloto con eleventa, el
+   detalle y la ficha de un producto de eleventa dicen que lo que pone su lectura se cambia allá (la ficha no lo deja
+   cambiar). *@
 @implements IPagina
 @implements IDisposable
 @inject ClienteCaja Cliente
@@ -650,6 +652,11 @@
         if (ficha.PorCompletar)
         {
             <div class="vn-alerta"><Ico Nombre="info" /><div><span>Lo dio de alta un cajero desde la caja: complétalo (departamento, marca, presentaciones) con «Editar».</span></div></div>
+        }
+        if (ficha.EnEleventa is { } enEleventa)
+        {
+            @* El piloto con eleventa: lo que pone su lectura (el precio, el nombre…) se cambia allá; la ficha dice qué. *@
+            <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@enEleventa</span></div></div>
         }
         if (ficha.Variantes.Count > 1)
         {

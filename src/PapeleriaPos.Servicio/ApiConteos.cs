@@ -22,20 +22,21 @@ public static class ApiConteos
         api.MapGet("/sucursales/{sucursalId:guid}/conteos-completos", (Guid sucursalId, PosDbContext db) =>
             new RegistroConteoCompleto(db).DepartamentosAsync(sucursalId));
 
-        api.MapPost("/sucursales/{sucursalId:guid}/conteos-completos", (Guid sucursalId, SolicitudAbrirConteo s, PosDbContext db) =>
-            new RegistroConteoCompleto(db).AbrirAsync(sucursalId, s));
+        // En el piloto con eleventa no se abre, no se captura ni se cierra: el inventario se lleva en eleventa. Se cancela.
+        api.MapPost("/sucursales/{sucursalId:guid}/conteos-completos", (Guid sucursalId, SolicitudAbrirConteo s, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroConteoCompleto(db, eleventa.Activo).AbrirAsync(sucursalId, s));
 
         api.MapGet("/conteos-completos/{conteoId:guid}", (Guid conteoId, Guid usuarioId, bool? revision, PosDbContext db) =>
             new RegistroConteoCompleto(db).ConteoAsync(conteoId, usuarioId, revision ?? false));
 
-        api.MapPost("/conteos-completos/{conteoId:guid}/capturas", (Guid conteoId, SolicitudCaptura s, PosDbContext db) =>
-            new RegistroConteoCompleto(db).CapturarAsync(conteoId, s));
+        api.MapPost("/conteos-completos/{conteoId:guid}/capturas", (Guid conteoId, SolicitudCaptura s, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroConteoCompleto(db, eleventa.Activo).CapturarAsync(conteoId, s));
 
         api.MapPost("/conteos-completos/{conteoId:guid}/capturas/{capturaId:guid}/quitar",
             (Guid conteoId, Guid capturaId, SolicitudConteoCompleto s, PosDbContext db) => new RegistroConteoCompleto(db).QuitarAsync(conteoId, capturaId, s.UsuarioId));
 
-        api.MapPost("/conteos-completos/{conteoId:guid}/cerrar", (Guid conteoId, SolicitudConteoCompleto s, PosDbContext db) =>
-            new RegistroConteoCompleto(db).CerrarAsync(conteoId, s.UsuarioId));
+        api.MapPost("/conteos-completos/{conteoId:guid}/cerrar", (Guid conteoId, SolicitudConteoCompleto s, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroConteoCompleto(db, eleventa.Activo).CerrarAsync(conteoId, s.UsuarioId));
 
         api.MapPost("/conteos-completos/{conteoId:guid}/cancelar", (Guid conteoId, SolicitudConteoCompleto s, PosDbContext db) =>
             new RegistroConteoCompleto(db).CancelarAsync(conteoId, s.UsuarioId));

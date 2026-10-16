@@ -1,6 +1,8 @@
 @* La ficha de un producto, en el detalle de la página de Productos (F3): sus variantes, presentaciones (con sus códigos) y
    precios, todo junto. La guarda quien tiene «Productos, precios y etiquetas»; el costo y los proveedores solo los ve
-   quien ve los costos. *@
+   quien ve los costos. En el piloto con eleventa, de un producto de eleventa lo que pone su lectura se ve pero no se
+   cambia (el nombre, el departamento y si se vende, si está activa cada variante, los códigos de la pieza, el menudeo y
+   las promociones de eleventa) y no se depura; lo demás, sí. Lo dice una nota arriba. *@
 @inject ClienteCaja Cliente
 
 @if (_error is not null && _producto is null)
@@ -14,14 +16,18 @@ else if (_producto is null)
 else
 {
     var p = _producto;
+    @if (_enEleventa is { } enEleventa)
+    {
+        <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@enEleventa</span></div></div>
+    }
     @if (p.PorCompletar)
     {
         <p class="aviso-autorizacion">Lo dio de alta un cajero desde la caja: complétalo (departamento, marca, presentaciones) y guárdalo.</p>
     }
     <div class="ficha-producto">
-        <label class="ancho">Nombre <input @bind="p.Nombre" maxlength="150" autocomplete="off" /></label>
+        <label class="ancho">Nombre <input @bind="p.Nombre" maxlength="150" autocomplete="off" disabled="@_productoDeEleventa" /></label>
         <label>Departamento
-            <select @bind="p.DepartamentoId">
+            <select @bind="p.DepartamentoId" disabled="@_productoDeEleventa">
                 @if (_suyoDesactivado is { } suyo)
                 {
                     <option value="@suyo.Id">@suyo.Nombre (desactivado)</option>
@@ -56,7 +62,7 @@ else
                 <option value="@Impuesto.Exento">Exento</option>
             </select>
         </label>
-        <label class="en-linea opcion"><input type="checkbox" @bind="p.Activo" /> Se vende (activo)</label>
+        <label class="en-linea opcion"><input type="checkbox" @bind="p.Activo" disabled="@_productoDeEleventa" /> Se vende (activo)</label>
     </div>
 
     @foreach (var v in p.Variantes)
@@ -74,7 +80,7 @@ else
                         <option value="@UnidadBase.Litro">Litro</option>
                     </select>
                 </label>
-                <label class="en-linea opcion"><input type="checkbox" @bind="variante.Activa" /> Activa</label>
+                <label class="en-linea opcion"><input type="checkbox" @bind="variante.Activa" disabled="@variante.DeEleventa" /> Activa</label>
                 @if (variante.Id is not null)
                 {
                     <span class="nota">
@@ -96,8 +102,24 @@ else
                     <tr>
                         <td><input @bind="presentacion.Nombre" autocomplete="off" /></td>
                         <td class="num"><input class="umbral" inputmode="decimal" @bind="presentacion.Contiene" disabled="@presentacion.EsBase" /></td>
-                        <td><input type="radio" name="base-@variante.Clave" checked="@presentacion.EsBase" @onchange="() => HacerBase(variante, presentacion)" /></td>
-                        <td><input class="codigos" @bind="presentacion.Codigos" autocomplete="off" /></td>
+                        <td><input type="radio" name="base-@variante.Clave" checked="@presentacion.EsBase" disabled="@variante.DeEleventa" @onchange="() => HacerBase(variante, presentacion)" /></td>
+                        <td>
+                            @if (presentacion.Fijos.Count > 0)
+                            {
+                                @* Los de eleventa se quedan (la lectura los regresaría); se pueden agregar otros. *@
+                                <span class="codigos-fijos" title="De eleventa: mientras dure el piloto, se cambian allá">
+                                    @foreach (var fijo in presentacion.Fijos)
+                                    {
+                                        <code>@fijo</code>
+                                    }
+                                </span>
+                                <input class="codigos" @bind="presentacion.Codigos" autocomplete="off" placeholder="Otro código" aria-label="Otro código de la pieza" />
+                            }
+                            else
+                            {
+                                <input class="codigos" @bind="presentacion.Codigos" autocomplete="off" />
+                            }
+                        </td>
                         <td>
                             <button class="boton chico" disabled="@_ocupado" @onclick="() => CodigoInternoAsync(presentacion)">Código interno</button>
                             @if (!presentacion.EsBase)
@@ -118,9 +140,9 @@ else
                 @foreach (var pc in variante.Precios)
                 {
                     var precio = pc;
-                    <tr>
+                    <tr class="@(precio.DeEleventa ? "de-eleventa" : "")">
                         <td>
-                            <select @bind="precio.Presentacion">
+                            <select @bind="precio.Presentacion" disabled="@precio.DeEleventa">
                                 <option value="">Cada @Unidad(variante.Unidad)</option>
                                 @foreach (var pr in variante.Presentaciones.Where(x => !x.EsBase && x.Nombre.Trim().Length > 0))
                                 {
@@ -128,9 +150,18 @@ else
                                 }
                             </select>
                         </td>
-                        <td class="num"><input class="umbral" inputmode="decimal" @bind="precio.Desde" /></td>
-                        <td class="num"><input class="umbral" inputmode="decimal" @bind="precio.Precio" /></td>
-                        <td><button class="boton chico" @onclick="() => variante.Precios.Remove(precio)">Quitar</button></td>
+                        <td class="num"><input class="umbral" inputmode="decimal" @bind="precio.Desde" disabled="@precio.DeEleventa" /></td>
+                        <td class="num"><input class="umbral" inputmode="decimal" @bind="precio.Precio" disabled="@precio.DeEleventa" /></td>
+                        <td>
+                            @if (precio.DeEleventa)
+                            {
+                                <span class="nota">de eleventa</span>
+                            }
+                            else
+                            {
+                                <button class="boton chico" @onclick="() => variante.Precios.Remove(precio)">Quitar</button>
+                            }
+                        </td>
                     </tr>
                 }
             </table>
@@ -148,7 +179,7 @@ else
                 <div class="acciones izquierda">
                     <button class="boton chico" @onclick="() => KardexAsync(varianteId)">@(_kardexDe == varianteId ? "Ocultar kardex" : "Ver kardex")</button>
                 </div>
-                @if (PuedeEditar && variante.Activa)
+                @if (PuedeEditar && variante.Activa && !variante.DeEleventa)
                 {
                     <DepurarVariante Caja="Caja" Sesion="Sesion" VarianteId="varianteId" Unidad="variante.Unidad"
                                      Nombre="@(variante.Descripcion.Length > 0 ? $"{p.Nombre} {variante.Descripcion}" : p.Nombre)" AlTerminar="DepuradoAsync" />
@@ -221,7 +252,12 @@ else
         public string Nombre { get; set; } = "";
         public string Contiene { get; set; } = "1";
         public bool EsBase { get; set; }
+
+        /// <summary>Los que se escriben; con <see cref="Fijos"/>, los que se agregan.</summary>
         public string Codigos { get; set; } = "";
+
+        /// <summary>En el piloto, los de la pieza de una variante de eleventa: se quedan (se pueden agregar otros).</summary>
+        public IReadOnlyList<string> Fijos { get; init; } = [];
         public HashSet<string> Internos { get; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
@@ -230,6 +266,9 @@ else
         public string Presentacion { get; set; } = "";
         public string Desde { get; set; } = "1";
         public string Precio { get; set; } = "";
+
+        /// <summary>En el piloto, el menudeo o una promoción de eleventa: lo pone su lectura y no se cambia aquí.</summary>
+        public bool DeEleventa { get; init; }
     }
 
     private sealed class VarianteEditable
@@ -244,6 +283,9 @@ else
         public decimal? Existencia { get; init; }
         public decimal? Costo { get; init; }
         public IReadOnlyList<ProveedorFichaDto>? Proveedores { get; init; }
+
+        /// <summary>En el piloto, viene de eleventa: si está activa y su presentación base no se cambian aquí, ni se depura.</summary>
+        public bool DeEleventa { get; init; }
     }
 
     private sealed class ProductoEditable
@@ -267,6 +309,12 @@ else
     /// los demás. El servicio no deja reactivar el producto ahí.
     /// </summary>
     private OpcionCatalogoDto? _suyoDesactivado;
+
+    /// <summary>En el piloto con eleventa, si algo de este producto viene de eleventa: la nota de arriba.</summary>
+    private string? _enEleventa;
+
+    /// <summary>En el piloto, su nombre, su departamento y si se vende los pone la lectura de eleventa.</summary>
+    private bool _productoDeEleventa;
 
     private Guid? _kardexDe;
     private List<MovimientoKardexDto>? _kardex;
@@ -301,6 +349,7 @@ else
     private void Mostrar(FichaProductoDto f)
     {
         _suyoDesactivado = Opciones.Departamentos.Any(d => d.Id == f.DepartamentoId) ? null : Opciones.Desactivados?.FirstOrDefault(d => d.Id == f.DepartamentoId);
+        (_enEleventa, _productoDeEleventa) = (f.EnEleventa, f.ProductoDeEleventa);
         _producto = Editable(f);
     }
 
@@ -311,12 +360,16 @@ else
         Variantes = f.Variantes.Select(v => new VarianteEditable
         {
             Id = v.Id, Descripcion = v.Descripcion, Unidad = v.Unidad, Activa = v.Activa, Existencia = v.Existencia, Costo = v.CostoPromedioCentavos,
-            Proveedores = v.Proveedores,
+            Proveedores = v.Proveedores, DeEleventa = v.DeEleventa,
             Presentaciones = v.Presentaciones.Select(p =>
             {
+                // En el piloto, los códigos de la pieza de una variante de eleventa se quedan: solo se agregan otros.
+                var fijos = v.DeEleventa && p.EsBase;
                 var editable = new PresentacionEditable
                 {
-                    Id = p.Id, Nombre = p.Nombre, Contiene = Numero(p.FactorMilesimas), EsBase = p.EsBase, Codigos = string.Join(" ", p.Codigos.Select(c => c.Codigo)),
+                    Id = p.Id, Nombre = p.Nombre, Contiene = Numero(p.FactorMilesimas), EsBase = p.EsBase,
+                    Codigos = fijos ? "" : string.Join(" ", p.Codigos.Select(c => c.Codigo)),
+                    Fijos = fijos ? p.Codigos.Select(c => c.Codigo).ToList() : [],
                 };
                 editable.Internos.UnionWith(p.Codigos.Where(c => c.Origen == OrigenCodigo.Interno).Select(c => c.Codigo));
                 return editable;
@@ -324,6 +377,7 @@ else
             Precios = v.Precios.Select(p => new PrecioEditable
             {
                 Presentacion = p.Presentacion ?? "", Desde = Numero(p.CantidadMinimaMilesimas), Precio = (p.PrecioCentavos / 100m).ToString("0.00", CultureInfo.InvariantCulture),
+                DeEleventa = p.DeEleventa,
             }).ToList(),
         }).ToList(),
     };
@@ -412,7 +466,9 @@ else
                     _error = $"Revisa cuánto contiene «{pr.Nombre}».";
                     return;
                 }
-                var codigos = pr.Codigos.Split([' ', ','], StringSplitOptions.RemoveEmptyEntries)
+                var escritos = pr.Codigos.Split([' ', ','], StringSplitOptions.RemoveEmptyEntries)
+                    .Where(c => !pr.Fijos.Contains(c, StringComparer.OrdinalIgnoreCase));
+                var codigos = pr.Fijos.Concat(escritos)
                     .Select(c => new CodigoFichaDto(c, pr.Internos.Contains(c) ? OrigenCodigo.Interno : OrigenCodigo.Fabrica)).ToList();
                 presentaciones.Add(new PresentacionFichaDto(pr.Id, pr.Nombre, factor, pr.EsBase, codigos));
             }

@@ -21,7 +21,9 @@ public static class ApiCompras
         api.MapGet("/sucursales/{sucursalId:guid}/compras", (Guid sucursalId, Guid usuarioId, PosDbContext db) =>
             new RegistroCompras(db).ListaAsync(sucursalId, usuarioId));
 
-        api.MapPost("/compras", (SolicitudAbrirCompra s, PosDbContext db) => new RegistroCompras(db).AbrirAsync(s));
+        // En el piloto con eleventa no se abre, no se cuenta lo recibido ni se cierra una compra: el inventario se lleva en
+        // eleventa (TrastiendaEnElPiloto). Lo demás (la nota, los nuevos, cancelar) sigue igual con lo que quedó abierto.
+        api.MapPost("/compras", (SolicitudAbrirCompra s, PosDbContext db, OpcionesEleventa eleventa) => new RegistroCompras(db, eleventa.Activo).AbrirAsync(s));
 
         // Quien cuenta no recibe la nota ni los costos: solo quien los captura, con el conteo ya cerrado.
         api.MapGet("/compras/{compraId:guid}", async (Guid compraId, Guid usuarioId, PosDbContext db) =>
@@ -29,8 +31,8 @@ public static class ApiCompras
                 ? Results.Ok(compra)
                 : Results.NotFound(new ErrorDto("La compra ya no existe.")));
 
-        api.MapPost("/compras/{compraId:guid}/conteo", (Guid compraId, SolicitudConteo s, PosDbContext db) =>
-            new RegistroCompras(db).ContarAsync(compraId, s));
+        api.MapPost("/compras/{compraId:guid}/conteo", (Guid compraId, SolicitudConteo s, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroCompras(db, eleventa.Activo).ContarAsync(compraId, s));
 
         api.MapPost("/compras/{compraId:guid}/terminar-conteo", (Guid compraId, SolicitudCompra s, PosDbContext db) =>
             new RegistroCompras(db).TerminarConteoAsync(compraId, s.UsuarioId));
@@ -44,8 +46,8 @@ public static class ApiCompras
 
         // ── Todo el pedido desde el documento: lo que no está en el catálogo ──
 
-        api.MapPost("/compras/{compraId:guid}/conteo/desconocido", (Guid compraId, SolicitudConteoDesconocido s, PosDbContext db) =>
-            new RegistroCompras(db).ContarDesconocidoAsync(compraId, s));
+        api.MapPost("/compras/{compraId:guid}/conteo/desconocido", (Guid compraId, SolicitudConteoDesconocido s, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroCompras(db, eleventa.Activo).ContarDesconocidoAsync(compraId, s));
 
         api.MapPost("/compras/{compraId:guid}/renglones/{renglonId:guid}/corregir", (Guid compraId, Guid renglonId, SolicitudCorregirRenglon s, PosDbContext db) =>
             new RegistroCompras(db).CorregirRenglonAsync(compraId, renglonId, s));
@@ -65,16 +67,17 @@ public static class ApiCompras
         api.MapPost("/compras/{compraId:guid}/renglones/{renglonId:guid}/quitar", (Guid compraId, Guid renglonId, SolicitudCompra s, PosDbContext db) =>
             new RegistroCompras(db).QuitarRenglonAsync(compraId, renglonId, s.UsuarioId));
 
-        api.MapPost("/compras/{compraId:guid}/cerrar", (Guid compraId, SolicitudCompra s, PosDbContext db) =>
-            new RegistroCompras(db).CerrarAsync(compraId, s.UsuarioId));
+        api.MapPost("/compras/{compraId:guid}/cerrar", (Guid compraId, SolicitudCompra s, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroCompras(db, eleventa.Activo).CerrarAsync(compraId, s.UsuarioId));
 
         api.MapPost("/compras/{compraId:guid}/cancelar", (Guid compraId, SolicitudCancelarCompra s, PosDbContext db) =>
             new RegistroCompras(db).CancelarAsync(compraId, s));
 
-        // El precio sugerido después de una compra con margen bajo (o otro): como un cambio de precio del catálogo.
-        api.MapPost("/catalogo/precio-menudeo", async (SolicitudPrecioMenudeo s, PosDbContext db) =>
+        // El precio sugerido después de una compra con margen bajo (o otro): como un cambio de precio del catálogo. En el
+        // piloto con eleventa, el de un producto de eleventa se cambia allá.
+        api.MapPost("/catalogo/precio-menudeo", async (SolicitudPrecioMenudeo s, PosDbContext db, OpcionesEleventa eleventa) =>
         {
-            await new RegistroCatalogo(db).CambiarMenudeoAsync(s);
+            await new RegistroCatalogo(db, eleventa.Activo).CambiarMenudeoAsync(s);
             return Results.NoContent();
         });
 
@@ -110,29 +113,30 @@ public static class ApiCompras
         api.MapPost("/sucursales/{sucursalId:guid}/sugerido/orden", (Guid sucursalId, SolicitudOrdenSugerida s, PosDbContext db) =>
             new RegistroSugerido(db).OrdenAsync(sucursalId, s));
 
-        api.MapPost("/aperturas", (SolicitudAbrirPaquete s, PosDbContext db) => new RegistroAperturas(db).AbrirAsync(s));
+        api.MapPost("/aperturas", (SolicitudAbrirPaquete s, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroAperturas(db, eleventa.Activo).AbrirAsync(s));
 
         api.MapGet("/sucursales/{sucursalId:guid}/aperturas", (Guid sucursalId, PosDbContext db) => new RegistroAperturas(db).RecientesAsync(sucursalId));
 
         api.MapGet("/variantes/{varianteId:guid}/ultima-apertura", async (Guid varianteId, PosDbContext db) =>
             await new RegistroAperturas(db).UltimaAsync(varianteId) is { } ultima ? Results.Ok(ultima) : Results.NoContent());
 
-        // ── Ajustes y mermas (entrega 3) ──
+        // ── Ajustes y mermas (entrega 3); en el piloto con eleventa, no ──
 
-        api.MapPost("/inventario/ajustes", (SolicitudAjuste s, PosDbContext db) => new RegistroAjustes(db).AjustarAsync(s));
+        api.MapPost("/inventario/ajustes", (SolicitudAjuste s, PosDbContext db, OpcionesEleventa eleventa) => new RegistroAjustes(db, eleventa.Activo).AjustarAsync(s));
 
-        api.MapPost("/inventario/mermas", (SolicitudMerma s, PosDbContext db) => new RegistroAjustes(db).MermaAsync(s));
+        api.MapPost("/inventario/mermas", (SolicitudMerma s, PosDbContext db, OpcionesEleventa eleventa) => new RegistroAjustes(db, eleventa.Activo).MermaAsync(s));
 
         api.MapGet("/sucursales/{sucursalId:guid}/ajustes", (Guid sucursalId, Guid usuarioId, PosDbContext db) =>
             new RegistroAjustes(db).RecientesAsync(sucursalId, usuarioId));
 
-        // ── Conteo cíclico (entrega 3, parte 2) ──
+        // ── Conteo cíclico (entrega 3, parte 2); en el piloto con eleventa no hay conteo del día ──
 
-        api.MapGet("/sucursales/{sucursalId:guid}/conteo-del-dia", (Guid sucursalId, Guid usuarioId, PosDbContext db) =>
-            new RegistroConteoCiclico(db).HoyAsync(sucursalId, usuarioId));
+        api.MapGet("/sucursales/{sucursalId:guid}/conteo-del-dia", (Guid sucursalId, Guid usuarioId, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroConteoCiclico(db, eleventa.Activo).HoyAsync(sucursalId, usuarioId));
 
-        api.MapPost("/conteos/{conteoId:guid}/contar", (Guid conteoId, SolicitudContar s, PosDbContext db) =>
-            new RegistroConteoCiclico(db).ContarAsync(conteoId, s));
+        api.MapPost("/conteos/{conteoId:guid}/contar", (Guid conteoId, SolicitudContar s, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroConteoCiclico(db, eleventa.Activo).ContarAsync(conteoId, s));
 
         api.MapGet("/sucursales/{sucursalId:guid}/margenes", (Guid sucursalId, PosDbContext db) => new RegistroCompras(db).MargenesAsync(sucursalId));
 

@@ -163,5 +163,16 @@ public static class PaginasDeAtras
     public static IEnumerable<Tarea> TareasDe(PermisosDePagina permisos) =>
         Tareas.Where(t => t.Regla is { } regla ? permisos.Ve(regla) : t.Reglas?.Any(permisos.Ve) == true);
 
+    /// <summary>
+    /// Las que mueven existencias. En el piloto con eleventa (con su lectura prendida) no se ofrecen: el inventario se lleva
+    /// allá y la lectura deja la existencia en la de eleventa. Las órdenes, el sugerido, las etiquetas, la hoja de códigos y
+    /// los proveedores, sí.
+    /// </summary>
+    public static IReadOnlySet<TareaInventario> MuevenExistencias { get; } = new HashSet<TareaInventario>
+    {
+        TareaInventario.Recibir, TareaInventario.ConteoDelDia, TareaInventario.Mermas, TareaInventario.Ajustes, TareaInventario.Paquete,
+        TareaInventario.Compras, TareaInventario.ConteoCompleto,
+    };
+
     public static Tarea De(TareaInventario id) => Tareas.Single(t => t.Id == id);
 }
