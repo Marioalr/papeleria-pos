@@ -672,8 +672,8 @@
             Visible = () => true,
             Ajustes =
             [
-                new("version", "Versión") { Dice = () => Version, Palabras = "acerca" },
-                new("escaneo", "Escanear") { Dice = () => TextoDelEscaneo, Palabras = "rendimiento lector velocidad tarda copia catalogo" },
+                new("version", "Versión") { Dice = () => Version, Palabras = "acerca", SoloEstaCaja = true },
+                new("escaneo", "Escanear") { Dice = () => TextoDelEscaneo, Palabras = "rendimiento lector velocidad tarda copia catalogo", SoloEstaCaja = true },
                 new("actualizacion", "Actualización")
                 {
                     Ayuda = "Solo en la caja de prueba: instalar otra de las versiones que arma GitHub.",
