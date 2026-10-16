@@ -551,6 +551,31 @@ la venta, son páginas.
 - **Lo nuevo del servicio, solo para leer:** la lista de Productos, los últimos movimientos de un producto, lo pendiente
   del inventario (solo cuentas) y quién puede hacer algo, por su nombre. Sin cambios en la base.
 
+**Avance (2026-10-15), entrega 5, parte 1: escanear contra la copia, siempre, y el cobro con su versión,** como lo
+aprobó el dueño el 2026-10-10 ([propuesta](propuesta-interfaz.md#rendimiento)):
+- **La red ya no entra en el escaneo:** cada caja arma una foto de su copia del catálogo (un diccionario con cada código,
+  también los de las presentaciones, y la versión de la copia) fuera del hilo de la pantalla, al abrir y cada vez que baja
+  una copia, y la cambia de un jalón. Escanear es buscar ahí, también en línea. Abrir la caja ya no espera a leer la copia.
+  `12*código`, el folio que abre la devolución, el orden de los escaneos y los rápidos siguen igual.
+- **Lo que no está en la copia** (recién dado de alta en otra caja) entra en su lugar como «Buscando…» y se le pregunta a
+  la caja principal en segundo plano, con medio segundo; lo que se escanea después no lo espera. Si llega, toma su lugar;
+  si no existe, lo de siempre (darlo de alta o el artículo común, según los permisos); si no contesta a tiempo, la caja
+  lo dice y se escanea otra vez. El cobro y las teclas del ticket lo esperan: nunca se cobra un «Buscando…».
+- **El cobro lleva la versión de la copia** (y cada línea la suya). Si el precio o el mayoreo de algo del ticket cambió
+  después, el servicio no cobra y contesta con los precios de ahora; la caja pone el ticket al día y dice «Cambió el
+  precio de …: revisa el total y cobra otra vez». No se repite solo. Una caja de antes, y el cobro sin conexión, como
+  siempre. En la base, el historial de precios guarda con qué versión quedó cada cambio: una escala de mayoreo que se
+  quita solo deja rastro ahí.
+- **Un solo escritor para la base de la caja:** todo lo que se escribe en `caja-local.db` pasa por una cola en su propio
+  hilo. La venta y la sincronización ya no se esperan entre sí; las lecturas siguen a la par.
+- **Se mide:** del Enter a la línea pintada, con el reloj de la página (la mitad, el 95 % y el 99 % de los últimos 500),
+  en Configuración › Acerca de › Escanear; y el vigía del hilo de la pantalla anota en el registro de la caja cuando se
+  traba más de 30 ms en una ráfaga de escaneos, con lo que pasaba.
+- **Para la parte 2:** buscar al escribir contra la copia; bajar solo lo que cambió, avisado por SSE (y que la versión no
+  suba con un PIN mal tecleado ni al abrir un turno, que hoy obligan a bajar la copia entera); un plazo por operación y
+  los estados de la red; imprimir aparte; pintar menos; la prueba de la ráfaga con la red simulada; y medir en las PC de la
+  tienda.
+
 #### Después: el piloto en la caja 2
 
 Mientras se arma el puente con eleventa, la versión unicaja sigue creciendo con la venta completa (entrega 3) y la base
