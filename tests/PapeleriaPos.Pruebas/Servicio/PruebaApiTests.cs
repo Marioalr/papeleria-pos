@@ -49,7 +49,25 @@ public sealed class ServicioEnPrueba : IAsyncLifetime
     {
         await Fabrica.DisposeAsync();
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        Directory.Delete(Carpeta, recursive: true);
+        // Un trabajo de fondo del servicio que terminaba puede cerrar su conexión (y SQLite quitar su -wal) mientras se borra
+        // la carpeta: se reintenta, y si no, se queda en la carpeta temporal. Una limpieza fallida no tumba la corrida (salió
+        // una vez, con toda la corrida, en Linux).
+        for (var intento = 1; ; intento++)
+        {
+            try
+            {
+                Directory.Delete(Carpeta, recursive: true);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && intento < 20)
+            {
+                await Task.Delay(100);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return;
+            }
+        }
     }
 }
 
