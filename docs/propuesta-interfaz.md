@@ -745,11 +745,15 @@ prueba y el piloto se suma a la entrega 3.
 - [ ] ¿El orden de las necesidades de la vista principal se parece a lo que pasa en la tienda? En especial: ¿cuántas
   veces al día se cobra una impresión recién hecha y cuántas copias se venden?
 - [x] ¿Cuáles son los rápidos? Copia B/N ($2) y CURP ($10, que vende 10 impresiones) (2026-10-10).
-- [ ] ¿Qué cajones, ganchos y cajas llevarían etiqueta? Propuesta: empezar por lo suelto que más se busca por nombre.
-- [ ] ¿Qué exhibidores hay y qué temporadas se venden en el año? Propuesta: empezar con la vitrina del mostrador y con la
-  siguiente temporada. ¿Quién toma las fotos al empezar cada una?
-- [ ] Las impresiones: ¿la bandeja con miniaturas, siempre a la vista bajo el cobro, o la tarjeta que se va a los 20 s? En
-  las dos se recuerda al cobrar.
+- [x] ¿Qué cajones, ganchos y cajas llevarían etiqueta? Para después (2026-10-15): primero se alcanza a eleventa, que no
+  tiene esa función.
+- [x] ¿Qué exhibidores hay y qué temporadas se venden en el año? ¿Quién toma las fotos al empezar cada una? Uno principal.
+  Las fotos se suben desde la app Android (Kotlin) o desde la PC. Las temporadas principales: 15 de septiembre (del 1 al
+  16 de septiembre), Todos Santos (del 16 de septiembre al 5 de noviembre), Navidad (del 20 de noviembre al 1 de enero) y
+  Primavera (fechas por definir); se pueden crear más desde Configuración (2026-10-15).
+- [x] Las impresiones: ¿la bandeja con miniaturas, siempre a la vista bajo el cobro, o la tarjeta que se va a los 20 s? La
+  bandeja con miniaturas, que se puede recorrer, con un botón para agrandarla (como maximizar una ventana, pero sin
+  cubrir toda la pantalla), parecido a Control Print (2026-10-15).
 - [ ] ¿Cada cajero puede hacer el corte de su propio turno, o solo quien tenga el permiso? Propuesta: solo con el
   permiso, como hoy el encargado.
 - [ ] ¿El corte del día lo cierra solo la primera cuenta? ¿A qué hora se recuerda cerrarlo?
