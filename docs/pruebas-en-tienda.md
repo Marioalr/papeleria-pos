@@ -41,11 +41,23 @@ datos de eleventa.
    - su respaldo automático: si está activo, si respalda al salir, en qué carpeta, y la hora, el tamaño y el tipo de los
      últimos respaldos;
    - si existe `gbak.exe` en la carpeta de Firebird (`FirebirdSQL20\bin`) y si Firebird corre como servicio de Windows;
+   - en la caja 2, la ruta completa de un `gbak.exe` de Firebird 2.0 (con `fbclient.dll` o `gds32.dll` junto a él) y el
+     espacio libre del disco: la caja nueva lo usa para respaldar eleventa antes de escribirle cada día (va en
+     `Eleventa:Gbak`; los respaldos, unos 5 días, en `ProgramData\PapeleriaPos\respaldos-eleventa`). Solo mirar: no correr
+     gbak en la tienda;
    - en la caja principal, con `netstat -ano`, qué programa escucha en los puertos 3050 y 3309;
-   - la hora de cada caja contra la del celular;
+   - la hora de cada caja contra la del celular (en el piloto, la caja nueva compara la hora de lo que manda con la del
+     corte de eleventa para saber si ya se contó allá);
+   - cómo se hace el corte de la caja 2 en eleventa al final del día: quién lo hace, a qué hora, si después se cierra
+     eleventa o se deja abierto, y si en la mañana se abre eleventa en la caja 2 antes de vender (la caja nueva adopta el
+     turno que abre eleventa y toma su corte);
    - si OneDrive sincroniza Documentos en la caja 2 (las notas de `observar-en-vivo` son datos reales);
-   - con `observar-en-vivo` en la caja 2: entradas y salidas de dinero, un cierre con diferencia y, si se da, algo
-     después de medianoche;
+   - con `observar-en-vivo` en la caja 2: entradas y salidas de dinero, un cierre con diferencia y, si se dan de
+     verdad, algo después de medianoche y una devolución o cancelación de un ticket de otra caja o de otro turno (por
+     ejemplo, en la caja 2 algo que se vendió en la principal, o un ticket de ayer). Esto último es lo que más falta: el
+     script dice en qué turno y con qué caja la anota eleventa. Mientras no se vea, la caja 2 no hace esas devoluciones
+     (dice que se hagan en eleventa, que llegan solas con la lectura); cuando se vea, el puente puede aprender a
+     escribirlas y la caja 2 a recibirlas también;
    - lo que la [paridad con eleventa](paridad-eleventa.md#qué-mirar-en-la-tienda) marca «por confirmar»: si los cajeros
      usan Ins para la cantidad y si el ticket sale siempre, cómo se hace y se imprime el corte, si se consultan ventas o
      cortes de otros días y qué se mira del inventario.

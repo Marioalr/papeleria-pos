@@ -618,6 +618,10 @@ visual (entrega 2). Para el piloto hace falta, en este orden:
     salir, la caja nueva avisa que el corte se hace en eleventa.
   - **Devoluciones y cancelaciones de ida y vuelta:** la caja 2 devuelve tickets cobrados en eleventa, y lo que se
     devuelve o cancela en eleventa de un ticket de la caja 2 regresa a su base.
+    - *Mientras tanto (2026-10-17; decidido, por revisar con el dueño):* hasta ver cómo anota eleventa la devolución de
+      un ticket de otro turno o de otra caja, la caja 2 solo devuelve los del turno de eleventa de ahora; los demás se
+      devuelven en eleventa y llegan solos con la lectura
+      ([detalle](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)).
   - **La regla de adaptación:** lo que solo sirve para convivir con eleventa se distingue de lo que se queda cuando se
     apruebe todo; lo primero vive en el puente y se quita al dejar eleventa.
   - **Al aprobar el piloto, el modo multicaja:** las dos cajas con la caja nueva, para que las dos se sigan
@@ -664,6 +668,30 @@ entrada o salida después de medianoche en un turno que ya vendió ese día.
 ([qué salió](migracion-eleventa.md#verlo-en-vivo)). La devolución y el cierre salieron como los escribe la caja 2. La
 cancelación también le resta lo devuelto al subtotal, y `NUMERO_ARTICULOS` baja solo las piezas, no lo de granel (también
 al devolver una parte); la copia lo confirma y la caja 2 ya lo hace igual. Faltan por ver en vivo las entradas y salidas.
+
+**Avance (2026-10-16):** lo que faltaba del puente para el piloto, después del análisis de paridad
+([diseño](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)). Primera parte, en código:
+la caja nueva adopta el turno que eleventa tiene abierto en la caja 2 y toma su corte (cierra el suyo como «corte hecho
+en eleventa», con lo contado allá); lo que pasa en la caja nueva va al turno de eleventa de su hora, y lo de antes de un
+corte que no alcanzó a llegar queda por revisar sin detener lo demás; y los folios repetidos: la venta toma el siguiente
+justo al guardar y, si otra caja lo repite después, se reimprime con el folio de la caja y al devolver se elige entre los
+dos tickets por la hora y el total (el ticket ya no lleva QR). Probado contra el Firebird de prueba.
+
+Segunda parte, en código: las devoluciones de ida y vuelta. En la caja 2 se devuelve un ticket cobrado en eleventa, leído
+en vivo (solo efectivo, 7 días y las reglas de la caja nueva): el dinero sale de la caja nueva y la devolución va a
+eleventa por la bandeja. Un ticket de otra caja o de otro turno no se devuelve en la caja 2 sino en eleventa, hasta
+ver en vivo cómo lo anota eleventa (2026-10-17, por revisar con el dueño). Lo que se devuelve o cancela en eleventa de
+un ticket de la caja 2 entra a su venta con la lectura, sin efectivo (el corte de la caja nueva no lo cuenta), y lo
+que quede por revisar se ve arriba en la pantalla de la caja 2. Lo raro que no pasa solo (el turno de eleventa se
+cortó antes de mandarlo) se anota a mano allá, y al marcarlo aquí se elige cuál es su anotación: no se adivina.
+
+Tercera parte (2026-10-17), en código: los respaldos de eleventa. Antes de cada escritura y en cada lectura, el puente
+revisa que eleventa siga teniendo lo último que le mandó la caja 2 (sus tickets con su folio y su marca, el turno que
+adoptó, y que sus contadores no hayan regresado); si no, eleventa se restauró: el puente deja de escribir y de aplicar
+la lectura, la pantalla de la caja 2 lo dice, y solo se reanuda a mano, con «Configuración de la tienda» y en la
+bitácora; lo que se perdió allá queda por revisar. Y antes de lo primero que escribe cada día, su propio respaldo de
+eleventa con `gbak`, en la caja 2 y fuera de OneDrive, con 5 días de historia; sin él no se escribe (se puede quitar
+esa condición en la configuración). Probado con un gbak de mentiras y contra el Firebird de prueba.
 
 #### Al terminar el piloto
 
@@ -825,9 +853,13 @@ Piloto en la caja 2 ([ver arriba](#la-versión-unicaja-y-el-piloto-en-la-caja-2)
 - [x] Paso 6, la entrega 10: la base contra apagones (PR #84); el servicio de la caja 2 la respalda cada día
 - [ ] Paso 6, lo que falta: cómo se actualiza la caja 2 del piloto con un arreglo, sin perder su base ni la
   configuración del puente
-- [ ] Lo que falta del diseño, por aprobar: eleventa abierto en la caja 2 en el mismo turno, devoluciones de ida y
-  vuelta, folios repetidos, y los respaldos de eleventa y su restauración automática
+- [x] Eleventa abierto en la caja 2 en el mismo turno (adoptar su turno y tomar su corte) y los folios repetidos
+  (2026-10-16, en código; falta probarlo contra la copia en el paso 5)
   ([diseño](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))
+- [x] Devoluciones y cancelaciones de ida y vuelta con eleventa (2026-10-16, en código; falta ver en vivo la de otra
+  caja o de otro turno, que mientras se devuelve en eleventa, y probarlo contra la copia en el paso 5)
+- [x] Los respaldos de eleventa: detectar una restauración y el respaldo propio con `gbak` (2026-10-17, en código; falta
+  ver en la tienda dónde está `gbak.exe` en la caja 2 y probarlo contra la copia en el paso 5)
 - [ ] Antes de vender en la caja 2: revisar en F3 el «Mayoreo por revisar». El F11 de eleventa (el segundo precio que
   el cajero pone a mano) no existe en la caja nueva: lo que no tenga escala se cobra a menudeo
   ([paridad](paridad-eleventa.md#venta-y-cobro))
@@ -904,8 +936,9 @@ Depuración del inventario (antes del piloto, [ver arriba](#depuración-del-inve
 
 Por definir:
 
-- [x] Corte Z de la caja 2 durante el piloto: se hace en eleventa y la caja nueva toma ese corte; por ahora, al
-  intentar el corte o al salir, la caja nueva avisa que el corte se hace en eleventa (2026-10-12,
+- [x] Corte Z de la caja 2 durante el piloto: se hace en eleventa y la caja nueva toma ese corte; antes de que eleventa lo
+  haga, al intentar el corte o al salir, la caja nueva avisa que el corte se hace en eleventa (2026-10-12; la caja ya
+  toma ese corte desde el 2026-10-16,
   [diseño](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))
 - [x] Revisar la [propuesta de rediseño de la interfaz](propuesta-interfaz.md) con su prototipo: aprobada el 2026-10-10
 - [x] Las preguntas de la venta para la entrega 0 (2026-10-10): rápidos Copia B/N ($2) y CURP ($10, 10 impresiones);
@@ -919,6 +952,9 @@ Por definir:
 - [ ] Instalador de la tienda para el administrador: servicio, cajas, firewall, carpeta de la caja con permisos y las
   colas de las impresoras de inyección ([detalle](#instalación-y-usuarios-de-windows)). Hoy son los scripts de
   `instalacion/`
+- [ ] Si eleventa se restaura a un respaldo durante el piloto: lo que la caja 2 le había mandado y se perdió allá, ¿se
+  anota a mano en eleventa (así quedó, por revisar en la pantalla de la caja 2) o la caja 2 lo vuelve a mandar sola, con
+  folios nuevos? ([respaldos](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))
 
 - [ ] Si la sucursal 2 abre antes de la fase 7: guardar la lista de gastos de apertura con comprobantes
 - [ ] Administración: insumos del mes (papel térmico, cinta, limpieza…) para la ganancia mensual

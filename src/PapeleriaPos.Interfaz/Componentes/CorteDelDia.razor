@@ -79,6 +79,11 @@ else
                         {
                             <span class="vn-etiq ambar">@(d.Piloto ? "Corte en eleventa" : "Turno abierto")</span>
                         }
+                        else if (t.CorteEnEleventa is { } enEleventa)
+                        {
+                            @* El piloto: lo cerró el corte de eleventa; lo contado allá va abajo (es el cajón de las dos cajas). *@
+                            <span class="vn-etiq azul" title="@enEleventa">En eleventa</span>
+                        }
                         else
                         {
                             @("—")
@@ -102,6 +107,10 @@ else
         </tfoot>
     </table>
     </div>
+    @foreach (var t in d.Turnos.Where(t => t.CorteEnEleventa is not null))
+    {
+        <p class="vn-corte-nota">El turno de @t.Cajero (@t.Caja) lo cerró el corte de eleventa. @t.CorteEnEleventa: es el cajón de las dos cajas, así que no va en lo contado ni en las diferencias de aquí.</p>
+    }
     @if (d.Turnos.Any(t => DateOnly.FromDateTime(t.AbiertoLocal) < d.Fecha))
     {
         <p class="vn-corte-nota">Un turno que viene de otro día cuenta aquí solo lo de hoy: sus tickets, lo vendido y las formas de pago. Lo esperado, lo contado y la diferencia son de todo el turno, como en su corte.</p>

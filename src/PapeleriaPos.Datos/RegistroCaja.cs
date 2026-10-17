@@ -518,7 +518,8 @@ public sealed class RegistroCaja(PosDbContext db)
     private async Task<Turno> TurnoAbiertoPorIdAsync(Guid turnoId, CancellationToken ct)
     {
         var turno = await TurnoPorIdAsync(turnoId, ct);
-        return turno.Abierto ? turno : throw new InvalidOperationException("El turno ya está cerrado.");
+        // Lo pudo cerrar otra caja o, en el piloto con eleventa, el corte de eleventa: se entra otra vez y se abre otro.
+        return turno.Abierto ? turno : throw new InvalidOperationException("El turno ya está cerrado: cambia de usuario (Ctrl+U) para abrir otro.");
     }
 
     private async Task<int> SiguienteFolioAsync(Guid sucursalId, string serie, CancellationToken ct)

@@ -10,7 +10,8 @@ namespace PapeleriaPos.Eleventa;
 public sealed record MovimientoParaEleventa(bool EsEntrada, decimal Monto, string Motivo, DateTime HechaLocal, TurnoParaEleventa Turno);
 
 /// <param name="MovimientoId"><c>CORTE_MOVIMIENTOS.ID</c>.</param>
-public sealed record MovimientoEnEleventa(int MovimientoId, bool YaEstaba);
+/// <param name="Turno">El turno de eleventa donde quedó (vacío si ya estaba): el turno de la caja nueva lo adopta.</param>
+public sealed record MovimientoEnEleventa(int MovimientoId, bool YaEstaba, TurnoDeEleventa? Turno = null);
 
 public static partial class EnvioEleventa
 {
@@ -22,7 +23,8 @@ public static partial class EnvioEleventa
     /// la caja, sin forma de pago ni razón;</item>
     /// <item>lo suma a las entradas o salidas del turno y, si ese día ya tiene renglón para la caja, a las del día.</item>
     /// </list>
-    /// Si en eleventa no hay turno abierto para esa caja, lo abre: eleventa también abre el turno para una entrada.
+    /// Va al turno de eleventa de su hora (<see cref="TurnoParaAsync"/>). Fuera del piloto, si en eleventa no hay turno
+    /// abierto para esa caja, lo abre: eleventa también abre el turno para una entrada.
     /// </summary>
     public static async Task<MovimientoEnEleventa> MoverEfectivoAsync(FbConnection c, CajaEnEleventa caja, MovimientoParaEleventa movimiento, CancellationToken ct = default)
     {
@@ -49,6 +51,7 @@ public static partial class EnvioEleventa
             TransactionBehavior = FbTransactionBehavior.Write | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
         }, ct);
         var sql = new Sql(c, tx, ct);
+        await RevisarHuellaAsync(c, tx, caja, ct);
 
         if (await sql.ValorAsync("SELECT ID FROM CORTE_MOVIMIENTOS WHERE ID_CAJA = @caja AND TIPO = @tipo AND CUANDO_FUE = @cuando",
                 [("caja", caja.CajaId), ("tipo", tipo), ("cuando", cuando)]) is { } ya)
@@ -57,13 +60,13 @@ public static partial class EnvioEleventa
             return new MovimientoEnEleventa(Convert.ToInt32(ya), YaEstaba: true);
         }
 
-        var turno = await TurnoAbiertoAsync(sql, caja, m.Turno);
+        var turno = await TurnoParaAsync(sql, caja, cuando, m.Turno);
         var motivo = m.Motivo.Trim();
-        var id = await AnotarEntradaOSalidaAsync(sql, caja.CajaId, turno, m.EsEntrada, m.Monto,
+        var id = await AnotarEntradaOSalidaAsync(sql, caja.CajaId, turno.Id, m.EsEntrada, m.Monto,
             motivo.Length > 0 ? motivo : m.EsEntrada ? "Entrada de efectivo" : "Salida de efectivo", cuando);
 
         await tx.CommitAsync(ct);
-        return new MovimientoEnEleventa(id, YaEstaba: false);
+        return new MovimientoEnEleventa(id, YaEstaba: false, turno);
     }
 
     /// <summary>

@@ -238,10 +238,15 @@ public sealed record CorteDelDiaDto(
 
 /// <param name="Tickets">Los de ese día (de un turno que viene de otro día, solo los de hoy), como lo vendido y las formas de pago.</param>
 /// <param name="EsperadoCentavos">El efectivo que debería haber en todo el turno: el de su corte o, si sigue abierto, el de ahora. Vacío en el piloto.</param>
-/// <param name="ContadoCentavos">Vacío mientras el turno sigue abierto.</param>
+/// <param name="ContadoCentavos">Vacío mientras el turno sigue abierto, y en el piloto (el corte se hace en eleventa).</param>
+/// <param name="CorteEnEleventa">
+/// El piloto con eleventa: el turno lo cerró el corte de eleventa, y esto dice lo que se contó allá (el cajón de las dos,
+/// no lo de esta caja sola: por eso no va en «Contado» ni en las diferencias del día). Solo para convivir con eleventa.
+/// </param>
 public sealed record TurnoDelDiaDto(
     Guid Id, Guid CajaId, string Caja, string Cajero, DateTime AbiertoLocal, DateTime? CerradoLocal, int Tickets, long VendidoCentavos,
-    long TarjetaCentavos, long TransferenciaCentavos, long? EsperadoCentavos, long? ContadoCentavos, long? DiferenciaCentavos, bool EnContingencia);
+    long TarjetaCentavos, long TransferenciaCentavos, long? EsperadoCentavos, long? ContadoCentavos, long? DiferenciaCentavos, bool EnContingencia,
+    string? CorteEnEleventa = null);
 
 /// <summary>Las salidas de efectivo del día por su motivo (hoy el motivo se escribe libre: las que dicen lo mismo van juntas).</summary>
 public sealed record SalidaDelDiaDto(string Motivo, int Veces, long MontoCentavos);
@@ -1152,3 +1157,56 @@ public sealed record EstadoEnviosEleventaDto(
 public sealed record EnvioEleventaDto(
     Guid Id, TipoEnvioEleventa Tipo, string Descripcion, DateTime FechaLocal, long TotalCentavos, EstadoEnvioEleventa Estado, int Intentos, string? Error,
     int? FolioEleventa);
+
+/// <summary>
+/// Los tickets con un folio de eleventa que se escribió para devolver (el piloto: el ticket ya no lleva QR, 2026-10-16).
+/// Eleventa repite folios entre cajas que cobran casi al mismo tiempo: si hay más de uno, la caja los enseña y se elige el
+/// del cliente por la hora y el total. Solo para convivir con eleventa.
+/// </summary>
+/// <param name="Aviso">Lo que conviene saber, por ejemplo que eleventa no contestó.</param>
+public sealed record FolioEleventaDto(int Folio, IReadOnlyList<TicketConFolioDto> Tickets, string? Aviso = null);
+
+/// <param name="Caja">La caja que lo cobró: esta, u otra de eleventa.</param>
+/// <param name="FolioCaja">El de esta caja (B-000123): con él se abre la devolución aquí. Vacío si es de otra caja de eleventa.</param>
+/// <param name="TicketEleventa"><c>VENTATICKETS.ID</c> en eleventa.</param>
+/// <param name="Nota">Lo que hay que saber de ese ticket, por ejemplo que se devuelve en eleventa.</param>
+public sealed record TicketConFolioDto(string Caja, DateTime? FechaLocal, long TotalCentavos, string? FolioCaja, int? TicketEleventa, string? Nota = null);
+
+/// <summary>
+/// Lo que la caja 2 enseña del puente con eleventa (el piloto; sin Telegram, que está en pausa): lo que quedó por revisar y
+/// lo que conviene saber. Solo para convivir con eleventa.
+/// </summary>
+/// <param name="Detenido">Por qué el puente dejó de escribir en eleventa; vacío si escribe.</param>
+/// <param name="Respaldo">Por qué la bandeja espera al respaldo de eleventa; vacío si no espera.</param>
+public sealed record PuenteEleventaDto(IReadOnlyList<PorRevisarEleventaDto> PorRevisar, IReadOnlyList<string> Avisos, string? Detenido = null,
+    string? Respaldo = null);
+
+/// <summary>
+/// Reanudar el puente con eleventa después de que se detuvo porque eleventa ya no tenía lo que le mandó la caja 2 (se
+/// restauró un respaldo): quien tiene «Configuración de la tienda», desde la caja 2, con una nota de lo que revisó.
+/// </summary>
+public sealed record SolicitudReanudarPuente(Guid UsuarioId, Guid CajaId, string? Nota);
+
+/// <summary>Algo que quedó por revisar con eleventa: de la bandeja (<paramref name="EnvioId"/>) o una devolución hecha allá (<paramref name="VueltaId"/>).</summary>
+/// <param name="Motivo">Por qué, dicho para la tienda.</param>
+/// <param name="EligeAnotacion">
+/// Una devolución de aquí de un ticket que está en eleventa: al marcarla «Ya lo anoté en eleventa» se elige cuál de las
+/// devoluciones de eleventa de ese ticket es su anotación (<see cref="AnotacionEnEleventaDto"/>).
+/// </param>
+public sealed record PorRevisarEleventaDto(Guid? EnvioId, Guid? VueltaId, string Descripcion, DateTime FechaLocal, long TotalCentavos, string Motivo,
+    bool EligeAnotacion = false);
+
+/// <summary>
+/// Una devolución o cancelación hecha en eleventa que puede ser la anotación a mano de una devolución de aquí, leída en vivo
+/// para elegirla.
+/// </summary>
+/// <param name="Id"><c>DEVOLUCIONES.ID</c>.</param>
+/// <param name="DevueltaLocal">Hora de la tienda (la de la PC de eleventa).</param>
+/// <param name="Detalle">Lo devuelto («1 Pluma punto fino») o «Cancelación del ticket».</param>
+public sealed record AnotacionEnEleventaDto(int Id, DateTime DevueltaLocal, bool EsCancelacion, string Caja, string Cajero, long TotalCentavos, string Detalle);
+
+/// <summary>
+/// «Ya lo anoté en eleventa», de quien tiene «Configuración de la tienda», con una nota. Si es una devolución de aquí de un
+/// ticket que está en eleventa, también cuál es su anotación allá (<see cref="Anotaciones"/>: los <c>DEVOLUCIONES.ID</c>).
+/// </summary>
+public sealed record SolicitudAnotadoAMano(Guid UsuarioId, string? Nota, IReadOnlyList<int>? Anotaciones = null);
