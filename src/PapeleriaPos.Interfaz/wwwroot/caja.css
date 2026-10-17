@@ -1203,3 +1203,4 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-puente-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .vn-puente-lista li { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px; border: 1px solid var(--vn-linea); border-radius: 6px; font-size: 13px; }
 .vn-puente-motivo { color: var(--vn-suave); }
+.vn-puente-anotacion { display: flex; align-items: flex-start; gap: 6px; }

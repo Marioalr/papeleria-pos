@@ -1189,8 +1189,24 @@ public sealed record SolicitudReanudarPuente(Guid UsuarioId, Guid CajaId, string
 
 /// <summary>Algo que quedó por revisar con eleventa: de la bandeja (<paramref name="EnvioId"/>) o una devolución hecha allá (<paramref name="VueltaId"/>).</summary>
 /// <param name="Motivo">Por qué, dicho para la tienda.</param>
-/// <param name="Pregunta">
-/// Una devolución hecha allá que quizá es la de aquí anotada a mano: qué se pregunta («Sí, es la misma» / «No, es otra»).
+/// <param name="EligeAnotacion">
+/// Una devolución de aquí de un ticket que está en eleventa: al marcarla «Ya lo anoté en eleventa» se elige cuál de las
+/// devoluciones de eleventa de ese ticket es su anotación (<see cref="AnotacionEnEleventaDto"/>).
 /// </param>
 public sealed record PorRevisarEleventaDto(Guid? EnvioId, Guid? VueltaId, string Descripcion, DateTime FechaLocal, long TotalCentavos, string Motivo,
-    string? Pregunta = null);
+    bool EligeAnotacion = false);
+
+/// <summary>
+/// Una devolución o cancelación hecha en eleventa que puede ser la anotación a mano de una devolución de aquí, leída en vivo
+/// para elegirla.
+/// </summary>
+/// <param name="Id"><c>DEVOLUCIONES.ID</c>.</param>
+/// <param name="DevueltaLocal">Hora de la tienda (la de la PC de eleventa).</param>
+/// <param name="Detalle">Lo devuelto («1 Pluma punto fino») o «Cancelación del ticket».</param>
+public sealed record AnotacionEnEleventaDto(int Id, DateTime DevueltaLocal, bool EsCancelacion, string Caja, string Cajero, long TotalCentavos, string Detalle);
+
+/// <summary>
+/// «Ya lo anoté en eleventa», de quien tiene «Configuración de la tienda», con una nota. Si es una devolución de aquí de un
+/// ticket que está en eleventa, también cuál es su anotación allá (<see cref="Anotaciones"/>: los <c>DEVOLUCIONES.ID</c>).
+/// </summary>
+public sealed record SolicitudAnotadoAMano(Guid UsuarioId, string? Nota, IReadOnlyList<int>? Anotaciones = null);

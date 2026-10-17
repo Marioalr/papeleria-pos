@@ -52,6 +52,18 @@ public sealed record ServidorEleventa(string Servidor, string Base, string Usuar
 }
 
 /// <summary>
+/// Las llamadas del puente a Firebird nunca llevan con qué cancelarlas (revisión del 2026-10-17). Con el Firebird de la
+/// tienda (2.0.1, protocolo 10), FirebirdClient no sabe cancelar una llamada: si se le pide (al vencer un límite o al
+/// apagar el servicio), lanza el error desde un temporizador, fuera de todo <c>try</c>, y truena el proceso del servicio.
+/// Por eso se dejan de esperar con <c>WaitAsync</c> y siguen solas por detrás: lo que alcancen a guardar lo encuentra la
+/// marca en el siguiente intento, y la revisión del folio solo lo mueve si todavía tiene el que se revisó.
+/// </summary>
+public static class FirebirdSinCancelar
+{
+    public static CancellationToken Nunca => CancellationToken.None;
+}
+
+/// <summary>
 /// Lee la base de eleventa. Nunca abre el archivo original: lo copia a una carpeta de trabajo, lo respalda con el
 /// gbak de 32 bits (la base es de Firebird 1.5 de 32 bits y el Firebird de 64 bits no la abre) y restaura el respaldo
 /// como base de 64 bits, que es la que se lee.

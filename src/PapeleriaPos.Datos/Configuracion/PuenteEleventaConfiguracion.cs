@@ -73,9 +73,8 @@ internal sealed class DevolucionDesdeEleventaConfiguracion : IEntityTypeConfigur
     {
         b.ToTable("DevolucionesDesdeEleventa");
         b.HasOne<Venta>().WithMany().HasForeignKey(d => d.VentaId);
-        b.HasOne<Devolucion>().WithOne().HasForeignKey<DevolucionDesdeEleventa>(d => d.DevolucionId);
-        // La de aquí que quizá sea (se pregunta en la caja 2), y lo que se devolvió allá, para pasarla después.
-        b.HasOne<Devolucion>().WithMany().HasForeignKey(d => d.QuizaEsDevolucionId);
+        // La que se le hizo a la venta, o la de aquí de la que es la anotación a mano (una de aquí pudo anotarse en varias).
+        b.HasOne<Devolucion>().WithMany().HasForeignKey(d => d.DevolucionId);
         JsonDelPuente.Lista(b.Property(d => d.Articulos));
         // Cada devolución de eleventa se pasa una sola vez.
         b.HasIndex(d => new { d.DevolucionEleventa, d.DevueltaUtc }).IsUnique();

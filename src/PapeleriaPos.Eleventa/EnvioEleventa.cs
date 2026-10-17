@@ -96,6 +96,28 @@ public static partial class EnvioEleventa
     }
 
     /// <summary>
+    /// Una venta de la caja nueva que ya está en eleventa, por su marca (la caja y <c>CREADO_EN</c>, como la busca
+    /// <see cref="MandarAsync(FbConnection, CajaEnEleventa, VentaParaEleventa, CancellationToken)"/> antes de escribirla),
+    /// sin escribir nada: para saber si un intento que se cortó por tiempo o por la red alcanzó a guardarla. Vacía si no está.
+    /// </summary>
+    /// <param name="creadaLocal">Cuándo se empezó en la caja nueva (hora local): su marca.</param>
+    public static async Task<VentaEnEleventa?> BuscarVentaAsync(ServidorEleventa servidor, CajaEnEleventa caja, DateTime creadaLocal,
+        CancellationToken ct = default)
+    {
+        var creada = new DateTime(creadaLocal.Ticks - creadaLocal.Ticks % 1000);
+        await using var conexion = new FbConnection(servidor.Cadena());
+        await conexion.OpenAsync(ct);
+        await using var tx = await conexion.BeginTransactionAsync(new FbTransactionOptions
+        {
+            TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.ReadCommitted | FbTransactionBehavior.RecVersion | FbTransactionBehavior.NoWait,
+        }, ct);
+        var ya = await new Sql(conexion, tx, ct).FilaAsync("SELECT ID, FOLIO FROM VENTATICKETS WHERE CAJA_ID = @caja AND CREADO_EN = @creada AND ESTA_ABIERTO = 'f'",
+            [("caja", caja.CajaId), ("creada", creada)]);
+        await tx.CommitAsync(ct);
+        return ya is null ? null : new VentaEnEleventa(Convert.ToInt32(ya[0]), Convert.ToInt32(ya[1]), YaEstaba: true, FolioRepetido: false);
+    }
+
+    /// <summary>
     /// Si choca con otra caja que escribe lo mismo en ese instante, lo vuelve a intentar desde el principio unas
     /// veces; si sigue chocando, el error sale y la venta se queda en la bandeja para la siguiente vuelta.
     /// </summary>

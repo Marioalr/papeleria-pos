@@ -55,8 +55,9 @@ datos de eleventa.
    - con `observar-en-vivo` en la caja 2: entradas y salidas de dinero, un cierre con diferencia y, si se dan de
      verdad, algo después de medianoche y una devolución o cancelación de un ticket de otra caja o de otro turno (por
      ejemplo, en la caja 2 algo que se vendió en la principal, o un ticket de ayer). Esto último es lo que más falta: el
-     script dice en qué turno y con qué caja la anota eleventa, y mientras no se vea, la caja 2 deja esas devoluciones
-     por revisar;
+     script dice en qué turno y con qué caja la anota eleventa. Mientras no se vea, la caja 2 no hace esas devoluciones
+     (dice que se hagan en eleventa, que llegan solas con la lectura); cuando se vea, el puente puede aprender a
+     escribirlas y la caja 2 a recibirlas también;
    - lo que la [paridad con eleventa](paridad-eleventa.md#qué-mirar-en-la-tienda) marca «por confirmar»: si los cajeros
      usan Ins para la cantidad y si el ticket sale siempre, cómo se hace y se imprime el corte, si se consultan ventas o
      cortes de otros días y qué se mira del inventario.

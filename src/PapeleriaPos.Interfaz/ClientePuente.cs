@@ -24,23 +24,22 @@ public sealed class ClientePuente(HttpClient http, ConexionCaja conexion)
     /// <summary>Lo que quedó por revisar con eleventa y lo que conviene saber, para la pantalla.</summary>
     public async Task<PuenteEleventaDto> PantallaAsync() => (await _http.GetAsync<PuenteEleventaDto>("api/eleventa/pantalla"))!;
 
-    /// <summary>Lo que ya se anotó a mano en eleventa: deja de mandarse y de enseñarse. Lo hace quien tiene «Configuración de la tienda».</summary>
-    public Task AnotarAManoAsync(Guid envioId, SolicitudRevision solicitud) =>
+    /// <summary>
+    /// Lo que ya se anotó a mano en eleventa: deja de mandarse y de enseñarse. Lo hace quien tiene «Configuración de la tienda».
+    /// Una devolución de aquí de un ticket que está en eleventa lleva cuál es su anotación allá.
+    /// </summary>
+    public Task AnotarAManoAsync(Guid envioId, SolicitudAnotadoAMano solicitud) =>
         _http.PostAsync<object>($"api/eleventa/envios/{envioId}/a-mano", solicitud, sinRespuesta: true);
+
+    /// <summary>Las devoluciones de eleventa que pueden ser la anotación a mano de una devolución de aquí, para elegir la suya.</summary>
+    public async Task<List<AnotacionEnEleventaDto>> AnotacionesAsync(Guid envioId) =>
+        (await _http.GetAsync<List<AnotacionEnEleventaDto>>($"api/eleventa/envios/{envioId}/anotaciones"))!;
 
     /// <summary>
     /// Reanudar el puente después de que se detuvo porque eleventa se restauró: lo que se perdió allá queda por revisar.
     /// Regresa cómo quedó, para la pantalla.
     /// </summary>
     public Task<PuenteEleventaDto> ReanudarAsync(SolicitudReanudarPuente solicitud) => _http.PostAsync<PuenteEleventaDto>("api/eleventa/reanudar", solicitud);
-
-    /// <summary>La devolución de eleventa es la de aquí anotada a mano: se ligan.</summary>
-    public Task VueltaEsLaMismaAsync(Guid vueltaId, SolicitudRevision solicitud) =>
-        _http.PostAsync<object>($"api/eleventa/vuelta/{vueltaId}/misma", solicitud, sinRespuesta: true);
-
-    /// <summary>La devolución de eleventa no es la de aquí: se pasa a su venta.</summary>
-    public Task VueltaEsOtraAsync(Guid vueltaId, SolicitudRevision solicitud) =>
-        _http.PostAsync<object>($"api/eleventa/vuelta/{vueltaId}/otra", solicitud, sinRespuesta: true);
 
     /// <summary>Una devolución de eleventa que no se pudo pasar a su venta, ya revisada.</summary>
     public Task VueltaRevisadaAsync(Guid vueltaId, SolicitudRevision solicitud) =>

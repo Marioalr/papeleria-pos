@@ -113,10 +113,13 @@ public static class FoliosRepetidos
     /// revisión tardía anotó). Si hay más de uno, la caja los enseña y se elige por la hora y el total; el de otra caja se
     /// devuelve aquí si se puede (la ida, <see cref="DevolucionesConEleventa"/>), o dice por qué no.
     /// </summary>
-    /// <param name="enEleventa">Los tickets de eleventa con ese folio, leídos en vivo; vacío si eleventa no contestó.</param>
+    /// <param name="enEleventa">
+    /// Los tickets de eleventa con ese folio, leídos en vivo, con el turno que eleventa tiene abierto en la caja 2 (solo los de
+    /// ese turno se devuelven aquí); vacío si eleventa no contestó.
+    /// </param>
     /// <param name="conEleventa">Si esta caja manda a eleventa (si no, no se le preguntó).</param>
-    public static async Task<FolioEleventaDto> BuscarAsync(PosDbContext db, int folio, IReadOnlyList<TicketLeido>? enEleventa, bool conEleventa,
-        DateTime ahoraUtc, CancellationToken ct = default)
+    public static async Task<FolioEleventaDto> BuscarAsync(PosDbContext db, int folio, (IReadOnlyList<TicketLeido> Tickets, TurnoDelPuente Puente)? enEleventa,
+        bool conEleventa, DateTime ahoraUtc, CancellationToken ct = default)
     {
         var propios = await (from e in db.EnviosAEleventa.AsNoTracking()
                              join v in db.Ventas.AsNoTracking() on e.VentaId equals v.Id
@@ -130,12 +133,13 @@ public static class FoliosRepetidos
             .ToList();
         var nuestros = propios.Where(p => p.TicketEleventa is not null).Select(p => p.TicketEleventa!.Value).ToHashSet();
         string? aviso = null;
-        if (enEleventa is not null)
+        if (enEleventa is var (leidos, puente))
         {
             // Una venta de esta caja que llegó a eleventa sin que aquí se supiera (se cortó la red al confirmar) lleva su marca.
             var marcas = await MarcasSinFolioAsync(db, ct);
-            foreach (var t in enEleventa.Where(t => !nuestros.Contains(t.Id) && !(t.CreadoEn is { } creado && marcas.Contains(creado))))
-                tickets.Add(new TicketConFolioDto(t.Caja, t.VendidoEn, Centavos(t.Pagado), null, t.Id, DevolucionesConEleventa.PorQueNoSeDevuelveAqui(t, ahoraUtc)));
+            foreach (var t in leidos.Where(t => !nuestros.Contains(t.Id) && !(t.CreadoEn is { } creado && marcas.Contains(creado))))
+                tickets.Add(new TicketConFolioDto(t.Caja, t.VendidoEn, Centavos(t.Pagado), null, t.Id,
+                    DevolucionesConEleventa.PorQueNoSeDevuelveAqui(t, puente, ahoraUtc)));
         }
         else
         {

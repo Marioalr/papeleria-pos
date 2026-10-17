@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Components;
 using System.Data.Common;
@@ -41,7 +42,7 @@ public sealed class DevolucionesIdaYVueltaTests
     }
 
     [FactConFirebird]
-    public async Task Un_ticket_de_la_principal_se_devuelve_en_la_caja_2_sale_de_su_turno_y_queda_por_revisar_hasta_ver_como_lo_anota_eleventa()
+    public async Task Un_ticket_de_la_principal_no_se_devuelve_en_la_caja_2_se_devuelve_en_eleventa()
     {
         var (e, _) = await EleventaAsync();
         await using var eleventa = e;
@@ -49,53 +50,25 @@ public sealed class DevolucionesIdaYVueltaTests
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor));
         var c = await AbrirAsync(servicio, await MapearAsync(servicio));
 
-        // Se escribe el folio impreso: es de otra caja de eleventa, y se puede devolver aquí.
+        // Se escribe el folio impreso: es de otra caja de eleventa. Se ve, pero el puente no sabe escribir su devolución.
         var folio = await Leer<FolioEleventaDto>(await c.Http.GetAsync($"api/eleventa/folio/{principal.Folio}"));
         var deEleventa = Assert.Single(folio.Tickets);
-        Assert.Equal(("Principal", (string?)null, principal.TicketId, (string?)null, 4250L),
+        Assert.Equal(("Principal", (string?)null, principal.TicketId, DevolucionesConEleventa.DeOtroTurno, 4250L),
             (deEleventa.Caja, deEleventa.FolioCaja, deEleventa.TicketEleventa, deEleventa.Nota, deEleventa.TotalCentavos));
         var ticket = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/eleventa/tickets/{principal.TicketId}"));
         Assert.Equal($"{principal.Folio} · Principal (eleventa)", ticket.Folio);
         Assert.Equal([("Pluma punto fino", 3000L, 0L, 2700L, true), ("Recuerdo", 1000L, 0L, 1550L, false)],
             ticket.Lineas.Select(l => (l.Descripcion, l.CantidadMilesimas, l.CantidadDevueltaMilesimas, l.ImporteCentavos, l.LlevaInventario)));
-        Assert.Equal((false, 7, (string?)null), (ticket.PuedeCancelar, ticket.DiasParaDevolver, ticket.NoSeDevuelveEnElPiloto));
+        Assert.Equal((false, 7, DevolucionesConEleventa.DeOtroTurno), (ticket.PuedeCancelar, ticket.DiasParaDevolver, ticket.NoSeDevuelveEnElPiloto));
 
-        // Dos plumas y el común: $33.50. Sale exacto, al centavo, como lo regresaría eleventa (que cobró con centavos).
-        var comprobante = await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/eleventa/tickets/{principal.TicketId}/devolucion",
-            Devolver(c, "No era el color", new LineaDevolucionSolicitada(ticket.Lineas[0].LineaId, 2000), new LineaDevolucionSolicitada(ticket.Lineas[1].LineaId, 1000))));
-        const long reembolso = 3350;
-        Assert.Equal(($"{principal.Folio} (eleventa, Principal)", 3350L, reembolso), (comprobante.Folio, comprobante.TotalCentavos, comprobante.ReembolsoEfectivoCentavos));
-
-        // Eleventa todavía no dice cómo anota la devolución de otra caja: queda por revisar, a la vista de la caja 2.
-        var envios = await EsperarAsync(() => EnviosAsync(c), x => x.PorRevisar == 1 && x.PorAtender.All(p => p.Estado == EstadoEnvioEleventa.PorRevisar));
-        var porRevisar = Assert.Single(envios.PorAtender);
-        Assert.Equal((TipoEnvioEleventa.DevolucionDeEleventa, EnvioEleventa.DeOtroTurnoODeOtraCaja, reembolso),
-            (porRevisar.Tipo, porRevisar.Error, porRevisar.TotalCentavos));
-        var pantalla = await Leer<PuenteEleventaDto>(await c.Http.GetAsync("api/eleventa/pantalla"));
-        Assert.Equal($"Devolución del ticket #{principal.Folio} de eleventa (Principal)", Assert.Single(pantalla.PorRevisar).Descripcion);
-        Assert.Equal(0, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM DEVOLUCIONES")));
-
-        await using (var db = servicio.Base())
-        {
-            // El dinero salió del turno de la caja nueva: una salida de efectivo que no va a eleventa como salida.
-            var salida = await db.MovimientosCaja.SingleAsync(m => m.TurnoId == c.Turno.Id);
-            Assert.Equal((PapeleriaPos.Nucleo.Turnos.TipoMovimientoCaja.Salida, reembolso), (salida.Tipo, salida.MontoCentavos));
-            Assert.StartsWith($"Devolución del ticket #{principal.Folio} de eleventa (Principal): No era el color", salida.Motivo);
-            Assert.False(await db.EnviosAEleventa.AnyAsync(x => x.Tipo == TipoEnvioEleventa.MovimientoDeCaja));
-            // Las plumas regresan al inventario de aquí; el común no lleva.
-            var entrada = await db.MovimientosInventario.SingleAsync(m => m.DocumentoTipo == nameof(DevolucionDeEleventa));
-            Assert.Equal((c.Variante, TipoMovimiento.Devolucion, 2000L), (entrada.VarianteId, entrada.Tipo, entrada.Cantidad.Milesimas));
-            // El ticket se guardó como se leyó, aparte de las ventas.
-            var guardada = await db.Set<DevolucionDeEleventa>().SingleAsync();
-            Assert.Equal((principal.TicketId, 2, 2), (guardada.TicketEleventa, guardada.Ticket.Count, guardada.Articulos.Count));
-            Assert.False(await db.Ventas.AnyAsync(v => v.TurnoId == c.Turno.Id));
-        }
-
-        // Lo devuelto aquí (que todavía no está en eleventa) no se vuelve a devolver.
-        var otraVez = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/eleventa/tickets/{principal.TicketId}"));
-        Assert.Equal(2000, otraVez.Lineas[0].CantidadDevueltaMilesimas);
-        Assert.Equal("De «Pluma punto fino» solo quedan 1 por devolver.", await RechazoAsync(await c.Http.PostAsJsonAsync(
-            $"api/eleventa/tickets/{principal.TicketId}/devolucion", Devolver(c, "Otra vez", new LineaDevolucionSolicitada(otraVez.Lineas[0].LineaId, 2000)))));
+        // Aunque se pida, no se devuelve aquí: ni sale dinero, ni entra al inventario, ni va a la bandeja.
+        Assert.Equal(DevolucionesConEleventa.DeOtroTurno, await RechazoAsync(await c.Http.PostAsJsonAsync($"api/eleventa/tickets/{principal.TicketId}/devolucion",
+            Devolver(c, "No era el color", new LineaDevolucionSolicitada(ticket.Lineas[0].LineaId, 2000)))));
+        await using var db = servicio.Base();
+        Assert.False(await db.Set<DevolucionDeEleventa>().AnyAsync());
+        Assert.False(await db.MovimientosCaja.AnyAsync(m => m.TurnoId == c.Turno.Id));
+        Assert.False(await db.MovimientosInventario.AnyAsync(m => m.DocumentoTipo == nameof(DevolucionDeEleventa)));
+        Assert.Empty((await EnviosAsync(c)).PorAtender);
     }
 
     [FactConFirebird]
@@ -103,25 +76,106 @@ public sealed class DevolucionesIdaYVueltaTests
     {
         var (e, turno) = await EleventaAsync();
         await using var eleventa = e;
-        // La cajera cobró en el eleventa de la caja 2, en el turno que adoptó la caja nueva.
+        // La cajera cobró en el eleventa de la caja 2, en el turno que adoptó la caja nueva: plumas y un común de $15.50.
         var cobrada = HoraLocal(20);
         var enEleventa = await EnvioEleventa.MandarAsync(e.Conexion, new CajaEnEleventa(CajaEleventa, 7, AbreTurno: false),
-            new VentaParaEleventa(cobrada.AddMinutes(-1), cobrada, 100, new TurnoParaEleventa(HoraLocal(120), 300), [new ArticuloParaEleventa(10, "Pluma", 2, 18)]));
+            new VentaParaEleventa(cobrada.AddMinutes(-1), cobrada, 100, new TurnoParaEleventa(HoraLocal(120), 300),
+                [new ArticuloParaEleventa(10, "Pluma", 3, 27), new ArticuloParaEleventa(null, "Recuerdo", 1, 15.5m)]));
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor));
         var c = await AbrirAsync(servicio, await MapearAsync(servicio));
         var ticket = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/eleventa/tickets/{enEleventa.TicketId}"));
+        Assert.Equal(($"{enEleventa.Folio} · Caja 2 (eleventa)", (string?)null), (ticket.Folio, ticket.NoSeDevuelveEnElPiloto));
 
-        await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/eleventa/tickets/{enEleventa.TicketId}/devolucion",
-            Devolver(c, "Defecto", new LineaDevolucionSolicitada(ticket.Lineas[0].LineaId, 1000))));
+        // Una pluma y el común: $24.50. Sale exacto, al centavo, como lo regresaría eleventa (que cobró con centavos).
+        var comprobante = await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/eleventa/tickets/{enEleventa.TicketId}/devolucion",
+            Devolver(c, "Defecto", new LineaDevolucionSolicitada(ticket.Lineas[0].LineaId, 1000), new LineaDevolucionSolicitada(ticket.Lineas[1].LineaId, 1000))));
+        const long reembolso = 2450;
+        Assert.Equal(($"{enEleventa.Folio} (eleventa, Caja 2)", reembolso, reembolso), (comprobante.Folio, comprobante.TotalCentavos, comprobante.ReembolsoEfectivoCentavos));
+        await using (var db = servicio.Base())
+        {
+            // El dinero salió del turno de la caja nueva: una salida de efectivo que no va a eleventa como salida.
+            var salida = await db.MovimientosCaja.SingleAsync(m => m.TurnoId == c.Turno.Id);
+            Assert.Equal((PapeleriaPos.Nucleo.Turnos.TipoMovimientoCaja.Salida, reembolso), (salida.Tipo, salida.MontoCentavos));
+            Assert.StartsWith($"Devolución del ticket #{enEleventa.Folio} de eleventa (Caja 2): Defecto", salida.Motivo);
+            Assert.False(await db.EnviosAEleventa.AnyAsync(x => x.Tipo == TipoEnvioEleventa.MovimientoDeCaja));
+            // La pluma regresa al inventario de aquí; el común no lleva.
+            var entrada = await db.MovimientosInventario.SingleAsync(m => m.DocumentoTipo == nameof(DevolucionDeEleventa));
+            Assert.Equal((c.Variante, TipoMovimiento.Devolucion, 1000L), (entrada.VarianteId, entrada.Tipo, entrada.Cantidad.Milesimas));
+            // El ticket se guardó como se leyó, aparte de las ventas.
+            var guardada = await db.Set<DevolucionDeEleventa>().SingleAsync();
+            Assert.Equal((enEleventa.TicketId, 2, 2), (guardada.TicketEleventa, guardada.Ticket.Count, guardada.Articulos.Count));
+            Assert.False(await db.Ventas.AnyAsync(v => v.TurnoId == c.Turno.Id));
+        }
         var envios = await EsperarAsync(() => EnviosAsync(c), x => x.Pendientes == 0 && x.PorAtender.Count == 0);
 
         Assert.Equal((0, 0), (envios.Pendientes, envios.PorRevisar));
-        // Como la escribe eleventa: la parcial con su renglón, el artículo baja, la existencia sube y el turno lo devuelve.
+        // Como la escribe eleventa: la parcial con sus renglones, el artículo baja, la existencia sube y el turno lo devuelve.
         var devolucion = (await e.FilasAsync("SELECT * FROM DEVOLUCIONES")).Single();
-        Assert.Equal(("P", turno, 9d), ((string)devolucion["TIPO_DEVOLUCION"]!, Convert.ToInt32(devolucion["TURNO_ID"]), Math.Round(Convert.ToDouble(devolucion["TOTAL_DEVUELTO"]), 2)));
-        Assert.Equal(1, Convert.ToDouble(await e.ValorAsync("SELECT CANTIDAD FROM VENTATICKETS_ARTICULOS WHERE TICKET_ID = @t", ("t", enEleventa.TicketId))), 3);
-        Assert.Equal(49, Convert.ToDouble(await e.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = 10")), 3);
-        Assert.Equal(9m, (decimal)(await e.ValorAsync("SELECT DEVOLUCIONES_VENTAS_EFECTIVO FROM TURNOS WHERE ID = @t", ("t", turno)))!);
+        Assert.Equal(("P", turno, 24.5d), ((string)devolucion["TIPO_DEVOLUCION"]!, Convert.ToInt32(devolucion["TURNO_ID"]), Math.Round(Convert.ToDouble(devolucion["TOTAL_DEVUELTO"]), 2)));
+        Assert.Equal(2, Convert.ToDouble(await e.ValorAsync("SELECT CANTIDAD FROM VENTATICKETS_ARTICULOS WHERE TICKET_ID = @t AND PRODUCTO_NOMBRE = 'Pluma punto fino'",
+            ("t", enEleventa.TicketId))), 3);
+        Assert.Equal(48, Convert.ToDouble(await e.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = 10")), 3);
+        Assert.Equal(24.5m, (decimal)(await e.ValorAsync("SELECT DEVOLUCIONES_VENTAS_EFECTIVO FROM TURNOS WHERE ID = @t", ("t", turno)))!);
+
+        // Lo ya devuelto no se vuelve a devolver.
+        var otraVez = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/eleventa/tickets/{enEleventa.TicketId}"));
+        Assert.Equal(1000, otraVez.Lineas[0].CantidadDevueltaMilesimas);
+        Assert.Equal("De «Pluma punto fino» solo quedan 2 por devolver.", await RechazoAsync(await c.Http.PostAsJsonAsync(
+            $"api/eleventa/tickets/{enEleventa.TicketId}/devolucion", Devolver(c, "Otra vez", new LineaDevolucionSolicitada(otraVez.Lineas[0].LineaId, 3000)))));
+    }
+
+    [FactConFirebird]
+    public async Task Lo_de_otro_turno_de_eleventa_no_se_devuelve_en_la_caja_2_se_devuelve_en_eleventa_y_llega_con_la_lectura()
+    {
+        var (e, turno1) = await EleventaAsync();
+        await using var eleventa = e;
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor, leer: true));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        await EsperarPrimeraLecturaAsync(c);
+        // Una venta de la caja nueva y otra del eleventa de la caja 2, las dos en el turno 1 de eleventa.
+        var ticket = await CobrarAsync(c, plumas: 2);
+        await MandarAsync(c);
+        var ticketEleventa = await TicketEnEleventaAsync(servicio, ticket);
+        var cobrada = HoraLocal(10);
+        var cobradaAlla = await EnvioEleventa.MandarAsync(e.Conexion, new CajaEnEleventa(CajaEleventa, 7, AbreTurno: false),
+            new VentaParaEleventa(cobrada.AddMinutes(-1), cobrada, 100, new TurnoParaEleventa(HoraLocal(120), 300), [new ArticuloParaEleventa(10, "Pluma", 2, 18)]));
+
+        // Eleventa hace su corte y abre el turno siguiente; la caja nueva toma el corte y el cajero abre otro turno.
+        await e.CortarAsync(turno1!.Value, HoraLocal(0).AddSeconds(-3));
+        var turno2 = await e.AbrirCajaAsync(CajaEleventa, cajero: 7, HoraLocal(0).AddSeconds(-2), fondo: 300);
+        await LeerAsync(c);
+        await Leer<TurnoDto>(await c.Http.PostAsJsonAsync("api/turnos", new SolicitudTurno(c.Datos.Id, c.Sesion.UsuarioId, 30000)));
+
+        // Las dos son de otro turno: la ventana lo dice, no ofrece devolverlas ni cancelarlas, y no se devuelven aquí.
+        var deLaCaja = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/sucursales/{c.Datos.SucursalId}/ventas/folio/{ticket.Folio}"));
+        Assert.Equal((DevolucionesConEleventa.DeOtroTurno, false), (deLaCaja.NoSeDevuelveEnElPiloto, deLaCaja.PuedeCancelar));
+        Assert.Equal(DevolucionesConEleventa.DeOtroTurno, await RechazoAsync(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/devoluciones",
+            new SolicitudDevolucion(c.Encargado.UsuarioId, c.Datos.Id, "No pinta", [new LineaDevolucionSolicitada(deLaCaja.Lineas[0].LineaId, 1000)]))));
+        Assert.Equal(DevolucionesConEleventa.DeOtroTurno, await RechazoAsync(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/cancelacion",
+            new SolicitudCancelacion(c.Encargado.UsuarioId, c.Datos.Id, "Se arrepintió"))));
+        var deEleventa = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/eleventa/tickets/{cobradaAlla.TicketId}"));
+        Assert.Equal(DevolucionesConEleventa.DeOtroTurno, deEleventa.NoSeDevuelveEnElPiloto);
+        Assert.Equal(DevolucionesConEleventa.DeOtroTurno, await RechazoAsync(await c.Http.PostAsJsonAsync($"api/eleventa/tickets/{cobradaAlla.TicketId}/devolucion",
+            Devolver(c, "No pinta", new LineaDevolucionSolicitada(deEleventa.Lineas[0].LineaId, 1000)))));
+
+        // Se devuelve en eleventa (con su hora, sin la marca de la caja 2) y llega sola con la lectura: sin efectivo de esta caja.
+        await e.EjecutarAsync("""
+            INSERT INTO DEVOLUCIONES (TURNO_ID, TICKET_ID, TIPO_DEVOLUCION, PAGADO_EN, DEVUELTO_EN, CAJERO, CAJA, TOTAL_DEVUELTO)
+            VALUES (@turno, @ticket, 'P', @pagado, @devuelto, 'cajera2', 'Caja 2', 9)
+            """, ("turno", turno2), ("ticket", ticketEleventa), ("pagado", HoraLocal(5)), ("devuelto", HoraLocal(0)));
+        await e.EjecutarAsync("""
+            INSERT INTO DEVOLUCIONES_ARTICULOS (DEVOLUCION_ID, TICKET_ID, CODIGO_PRODUCTO, DESCRIPCION_PRODUCTO, CANTIDAD_DEVUELTA, DINERO_DEVUELTO, INVENTARIO_POST_DEVOLUCION)
+            VALUES (@dev, @ticket, 'PLU-FINA', 'Pluma punto fino', 1, 9, 0)
+            """, ("dev", Convert.ToInt32(await e.ValorAsync("SELECT MAX(ID) FROM DEVOLUCIONES"))), ("ticket", ticketEleventa));
+        await LeerAsync(c);
+
+        await using var db = servicio.Base();
+        var venta = await db.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == ticket.VentaId);
+        Assert.Equal(1000L, venta.Lineas.Single().CantidadDevuelta.Milesimas);
+        var devolucion = await db.Devoluciones.SingleAsync(d => d.VentaId == venta.Id);
+        Assert.Equal(0L, devolucion.ReembolsoEfectivoCentavos);
+        Assert.StartsWith("Hecha en eleventa (Caja 2, cajera2", devolucion.Motivo);
+        Assert.Empty((await EnviosAsync(c)).PorAtender);
     }
 
     [FactConFirebird]
@@ -219,11 +273,14 @@ public sealed class DevolucionesIdaYVueltaTests
     }
 
     [FactConFirebird]
-    public async Task En_la_ventana_de_devoluciones_el_folio_de_otra_caja_abre_su_ticket_de_eleventa_y_se_devuelve_aqui()
+    public async Task En_la_ventana_de_devoluciones_el_ticket_de_otra_caja_dice_que_se_devuelve_en_eleventa_y_el_del_turno_de_la_caja_2_se_devuelve_aqui()
     {
         var (e, _) = await EleventaAsync();
         await using var eleventa = e;
         var principal = await CobroDeLaPrincipalAsync(e, plumas: 2);
+        var cobrada = HoraLocal(20);
+        var deLaCaja2 = await EnvioEleventa.MandarAsync(e.Conexion, new CajaEnEleventa(CajaEleventa, 7, AbreTurno: false),
+            new VentaParaEleventa(cobrada.AddMinutes(-1), cobrada, 100, new TurnoParaEleventa(HoraLocal(120), 300), [new ArticuloParaEleventa(10, "Pluma", 2, 18)]));
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor));
         var c = await AbrirAsync(servicio, await MapearAsync(servicio));
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = c.Datos.Id };
@@ -250,13 +307,21 @@ public sealed class DevolucionesIdaYVueltaTests
             }),
         });
 
-        // El folio impreso es de la principal: el ticket se lee en eleventa y se ve como uno de esta caja.
+        // El folio impreso es de la principal: el ticket se lee en eleventa y se ve, pero se devuelve en eleventa.
         await pantalla.EscribirAsync("folio", principal.Folio.ToString(System.Globalization.CultureInfo.InvariantCulture));
         await pantalla.TeclaAsync("folio", "Enter");
         await pantalla.EsperarAsync(t => t.Contains("Principal (eleventa)"), "el ticket de la principal");
-        Assert.Contains("Pluma punto fino", await pantalla.TextoAsync());
-        Assert.DoesNotContain("Cancelar todo el ticket", await pantalla.TextoAsync());
+        var dePrincipal = PantallaSinNavegador.Limpio(await pantalla.TextoAsync());
+        Assert.Contains("Pluma punto fino", dePrincipal);
+        Assert.Contains(DevolucionesConEleventa.DeOtroTurno, dePrincipal);
+        Assert.DoesNotContain("Devolver lo marcado", dePrincipal);
+        Assert.DoesNotContain("Cancelar todo el ticket", dePrincipal);
 
+        // El que se cobró en el eleventa de la caja 2, en el turno que tiene abierto, sí se devuelve aquí.
+        await pantalla.EscribirAsync("folio", deLaCaja2.Folio.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        await pantalla.TeclaAsync("folio", "Enter");
+        await pantalla.EsperarAsync(t => t.Contains("Caja 2 (eleventa)"), "el ticket del eleventa de la caja 2");
+        Assert.DoesNotContain("Cancelar todo el ticket", await pantalla.TextoAsync());
         var cantidad = await pantalla.ElementoAsync(x => x.Clase == "cantidad-devolver", "la cantidad de la pluma");
         await pantalla.DispararAsync(cantidad, "onchange", new ChangeEventArgs { Value = "1" });
         var motivo = await pantalla.ElementoAsync(x => x.Etiqueta == "input" && x.Eventos.ContainsKey("oninput") && x.Id != "folio", "el motivo");
@@ -264,10 +329,10 @@ public sealed class DevolucionesIdaYVueltaTests
         await pantalla.OprimirAsync(await pantalla.BotonAsync("Devolver lo marcado"));
         await PilotoDePrueba.EsperarAsync(() => Task.FromResult(comprobante), x => x is not null);
 
-        Assert.Equal(($"{principal.Folio} (eleventa, Principal)", 900L), (comprobante!.Folio, comprobante.TotalCentavos));
+        Assert.Equal(($"{deLaCaja2.Folio} (eleventa, Caja 2)", 900L), (comprobante!.Folio, comprobante.TotalCentavos));
         Assert.Empty(pantalla.Errores);
         await using var db = servicio.Base();
-        Assert.Equal(principal.TicketId, (await db.Set<DevolucionDeEleventa>().SingleAsync()).TicketEleventa);
+        Assert.Equal(deLaCaja2.TicketId, (await db.Set<DevolucionDeEleventa>().SingleAsync()).TicketEleventa);
     }
 
     private static async Task<int> TicketEnEleventaAsync(ServicioDePrueba servicio, TicketDto ticket)
@@ -311,8 +376,71 @@ public sealed class DevolucionesIdaYVueltaTests
         return await db.MovimientosInventario.CountAsync(m => m.VarianteId == c.Variante && m.DocumentoTipo == SincronizacionEleventa.Documento);
     }
 
+    /// <summary>La existencia de la pluma aquí.</summary>
+    private static async Task<long> ExistenciaAsync(ServicioDePrueba servicio, Caja c)
+    {
+        await using var db = servicio.Base();
+        return (await db.Existencias.SingleAsync(x => x.VarianteId == c.Variante)).Cantidad.Milesimas;
+    }
+
+    /// <summary>
+    /// Eleventa hace su corte y abre el turno siguiente, y la caja nueva todavía no lo ve (la lectura no ha pasado): lo que se
+    /// devuelva aquí de una venta de ese turno se deja (para la caja su turno sigue abierto), y al mandarlo ya es de otro turno
+    /// de eleventa: queda por revisar, para anotarlo a mano. El caso raro que queda. Regresa el turno nuevo.
+    /// </summary>
+    private static async Task<int> EleventaCortaSinQueSeVeaAsync(EleventaDePrueba e, int turno)
+    {
+        await e.CortarAsync(turno, HoraLocal(0).AddSeconds(-3));
+        return await e.AbrirCajaAsync(PilotoDePrueba.CajaEleventa, cajero: 7, HoraLocal(0).AddSeconds(-2), fondo: 300);
+    }
+
+    /// <summary>Aquí se devuelven plumas de la venta y la bandeja la manda: queda por revisar («anótala a mano»). Regresa su envío.</summary>
+    private static async Task<Guid> DevueltaParaAnotarAsync(ServicioDePrueba servicio, Caja c, TicketDto ticket, int plumas)
+    {
+        var buscado = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/sucursales/{c.Datos.SucursalId}/ventas/folio/{ticket.Folio}"));
+        await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/devoluciones",
+            new SolicitudDevolucion(c.Encargado.UsuarioId, c.Datos.Id, "No pinta", [new LineaDevolucionSolicitada(buscado.Lineas[0].LineaId, plumas * 1000)])));
+        await MandarAsync(c);
+        await using var db = servicio.Base();
+        var envio = await db.EnviosAEleventa.Where(x => x.Tipo == TipoEnvioEleventa.Devolucion).OrderByDescending(x => x.CreadoUtc).FirstAsync();
+        Assert.Equal((EstadoEnvioEleventa.PorRevisar, EnvioEleventa.DeOtroTurnoODeOtraCaja, (MotivoPorRevisar?)MotivoPorRevisar.AnotarAMano),
+            (envio.Estado, envio.Error, envio.PorRevisarPorque));
+        return envio.Id;
+    }
+
+    /// <summary>
+    /// En eleventa se anota a mano una devolución de plumas de ese ticket, como la escribe eleventa: con su hora, sin la marca
+    /// de la caja 2, y la existencia sube. Regresa su <c>DEVOLUCIONES.ID</c>.
+    /// </summary>
+    private static async Task<int> AnotadaEnEleventaAsync(EleventaDePrueba e, int turno, int ticket, int plumas, DateTime devuelta)
+    {
+        await e.EjecutarAsync("""
+            INSERT INTO DEVOLUCIONES (TURNO_ID, TICKET_ID, TIPO_DEVOLUCION, PAGADO_EN, DEVUELTO_EN, CAJERO, CAJA, TOTAL_DEVUELTO)
+            VALUES (@turno, @ticket, 'P', @pagado, @devuelto, 'dueno', 'Caja 2', @total)
+            """, ("turno", turno), ("ticket", ticket), ("pagado", HoraLocal(5)), ("devuelto", devuelta), ("total", 9 * plumas));
+        var id = Convert.ToInt32(await e.ValorAsync("SELECT MAX(ID) FROM DEVOLUCIONES"));
+        await e.EjecutarAsync("""
+            INSERT INTO DEVOLUCIONES_ARTICULOS (DEVOLUCION_ID, TICKET_ID, CODIGO_PRODUCTO, DESCRIPCION_PRODUCTO, CANTIDAD_DEVUELTA, DINERO_DEVUELTO, INVENTARIO_POST_DEVOLUCION)
+            VALUES (@dev, @ticket, 'PLU-FINA', 'Pluma punto fino', @plumas, @total, 0)
+            """, ("dev", id), ("ticket", ticket), ("plumas", plumas), ("total", 9 * plumas));
+        await e.EjecutarAsync("UPDATE INVENTARIO_BALANCES SET CANTIDAD_ACTUAL = CANTIDAD_ACTUAL + @plumas WHERE PRODUCTO_ID = 10", ("plumas", plumas));
+        return id;
+    }
+
+    private static async Task<HttpResponseMessage> AnotarAsync(Caja c, SesionDto quien, Guid envio, params int[] anotaciones) =>
+        await c.Http.PostAsJsonAsync($"api/eleventa/envios/{envio}/a-mano", new SolicitudAnotadoAMano(quien.UsuarioId, null, anotaciones));
+
+    private static async Task<List<int>> AnotacionesAsync(Caja c, Guid envio) =>
+        (await Leer<List<AnotacionEnEleventaDto>>(await c.Http.GetAsync($"api/eleventa/envios/{envio}/anotaciones"))).Select(a => a.Id).ToList();
+
+    private static async Task<long> DevueltoAsync(ServicioDePrueba servicio, TicketDto ticket)
+    {
+        await using var db = servicio.Base();
+        return (await db.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == ticket.VentaId)).Lineas.Single().CantidadDevuelta.Milesimas;
+    }
+
     [FactConFirebird]
-    public async Task La_devolucion_de_aqui_que_se_anoto_a_mano_en_eleventa_no_se_aplica_otra_vez()
+    public async Task La_devolucion_de_aqui_anotada_a_mano_en_eleventa_espera_a_que_se_elija_su_anotacion_y_no_se_cuenta_dos_veces()
     {
         var (e, turno1) = await EleventaAsync();
         await using var eleventa = e;
@@ -322,48 +450,162 @@ public sealed class DevolucionesIdaYVueltaTests
         var ticket = await CobrarAsync(c, plumas: 2);
         await MandarAsync(c);
         var ticketEleventa = await TicketEnEleventaAsync(servicio, ticket);
+        var turno2 = await EleventaCortaSinQueSeVeaAsync(e, turno1!.Value);
+        var envio = await DevueltaParaAnotarAsync(servicio, c, ticket, plumas: 1);
+        var (ajustes, existencia) = (await AjustesDeLaLecturaAsync(servicio, c), await ExistenciaAsync(servicio, c));
 
-        // Eleventa hace su corte y abre el turno siguiente; la caja nueva toma el corte y el cajero abre otro turno.
-        await e.CortarAsync(turno1!.Value, HoraLocal(0).AddSeconds(-3));
-        var turno2 = await e.AbrirCajaAsync(PilotoDePrueba.CajaEleventa, cajero: 7, HoraLocal(0).AddSeconds(-2), fondo: 300);
+        // «Anótala a mano en eleventa»: allá se devuelve esa pluma y la lectura la trae antes de que alguien lo marque aquí. Puede
+        // ser su anotación: espera, sin pasarse a la venta y sin ajustar la existencia (eleventa ya la tiene; aquí todavía se suma).
+        var anotada = await AnotadaEnEleventaAsync(e, turno2, ticketEleventa, plumas: 1, HoraLocal(0));
         await LeerAsync(c);
-        await Leer<TurnoDto>(await c.Http.PostAsJsonAsync("api/turnos", new SolicitudTurno(c.Datos.Id, c.Sesion.UsuarioId, 30000)));
+        Assert.Equal(1000L, await DevueltoAsync(servicio, ticket));
+        await using (var db = servicio.Base())
+            Assert.False(await db.Set<DevolucionDesdeEleventa>().AnyAsync());
+        Assert.Equal((ajustes, existencia), (await AjustesDeLaLecturaAsync(servicio, c), await ExistenciaAsync(servicio, c)));
 
-        // Aquí se devuelve una de las dos plumas: el ticket es de un turno de eleventa ya cortado, queda por revisar.
-        var buscado = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/sucursales/{c.Datos.SucursalId}/ventas/folio/{ticket.Folio}"));
-        await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/devoluciones",
-            new SolicitudDevolucion(c.Encargado.UsuarioId, c.Datos.Id, "No pinta", [new LineaDevolucionSolicitada(buscado.Lineas[0].LineaId, 1000)])));
-        var porRevisar = Assert.Single((await MandarAsync(c)).PorAtender, x => x.Estado == EstadoEnvioEleventa.PorRevisar);
-        Assert.Equal(EnvioEleventa.DeOtroTurnoODeOtraCaja, porRevisar.Error);
-
-        // «Anótala a mano en eleventa»: allá se devuelve esa pluma (como lo escribe eleventa: con su hora, sin la marca de la
-        // caja 2, y la existencia sube) y aquí se marca «Ya lo anoté en eleventa».
-        await e.EjecutarAsync("""
-            INSERT INTO DEVOLUCIONES (TURNO_ID, TICKET_ID, TIPO_DEVOLUCION, PAGADO_EN, DEVUELTO_EN, CAJERO, CAJA, TOTAL_DEVUELTO)
-            VALUES (@turno, @ticket, 'P', @pagado, @devuelto, 'cajera2', 'Caja 2', 9)
-            """, ("turno", turno2), ("ticket", ticketEleventa), ("pagado", HoraLocal(5)), ("devuelto", HoraLocal(0)));
-        var enEleventa = Convert.ToInt32(await e.ValorAsync("SELECT MAX(ID) FROM DEVOLUCIONES"));
-        await e.EjecutarAsync("""
-            INSERT INTO DEVOLUCIONES_ARTICULOS (DEVOLUCION_ID, TICKET_ID, CODIGO_PRODUCTO, DESCRIPCION_PRODUCTO, CANTIDAD_DEVUELTA, DINERO_DEVUELTO, INVENTARIO_POST_DEVOLUCION)
-            VALUES (@dev, @ticket, 'PLU-FINA', 'Pluma punto fino', 1, 9, 0)
-            """, ("dev", enEleventa), ("ticket", ticketEleventa));
-        await e.EjecutarAsync("UPDATE INVENTARIO_BALANCES SET CANTIDAD_ACTUAL = CANTIDAD_ACTUAL + 1 WHERE PRODUCTO_ID = 10");
+        // Al marcarla se dice cuál es, de las de eleventa de ese ticket leídas en vivo: sin elegir no se puede, y el cajero no puede.
         var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
-        Assert.True((await c.Http.PostAsJsonAsync($"api/eleventa/envios/{porRevisar.Id}/a-mano", new SolicitudRevision(dueno.UsuarioId, null))).IsSuccessStatusCode);
-        var ajustes = await AjustesDeLaLecturaAsync(servicio, c);
+        var anotaciones = await Leer<List<AnotacionEnEleventaDto>>(await c.Http.GetAsync($"api/eleventa/envios/{envio}/anotaciones"));
+        Assert.Equal([(anotada, false, "Caja 2", "1 Pluma punto fino", 900L)], anotaciones.Select(a => (a.Id, a.EsCancelacion, a.Caja, a.Detalle, a.TotalCentavos)));
+        Assert.Equal(DevolucionesConEleventa.DiCualEs, await RechazoAsync(await AnotarAsync(c, dueno, envio)));
+        Assert.Equal(HttpStatusCode.Forbidden, (await AnotarAsync(c, c.Sesion, envio, anotada)).StatusCode);
 
+        // En la pantalla de la caja 2, el dueño la marca eligiendo su anotación.
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = c.Datos.Id };
+        await using var servicios = new ServiceCollection()
+            .AddSingleton(new ClienteCaja(new HttpClient(servicio.Fabrica.Server.CreateHandler()), conexion))
+            .AddSingleton(new ClientePuente(new HttpClient(servicio.Fabrica.Server.CreateHandler()), conexion))
+            .AddSingleton<IJSRuntime>(new PaginaQueContesta())
+            .BuildServiceProvider();
+        var pantalla = new PantallaSinNavegador(servicios);
+        await pantalla.AbrirAsync<PuenteEleventa>(new() { [nameof(PuenteEleventa.Caja)] = c.Datos, [nameof(PuenteEleventa.Sesion)] = dueno });
+        await pantalla.EsperarAsync(t => t.Contains("por revisar"), "el aviso de eleventa");
+        await pantalla.OprimirAsync(await pantalla.BotonAsync("Eleventa"));
+        await pantalla.OprimirAsync(await pantalla.BotonAsync("Ya lo anoté en eleventa"));
+        await pantalla.EsperarAsync(t => t.Contains("¿Cuál es su anotación en eleventa?"), "las devoluciones de eleventa para elegir");
+        Assert.Contains($"#{anotada}", await pantalla.TextoAsync());
+        var casilla = await pantalla.ElementoAsync(x => x.Etiqueta == "input" && x.Atributos.GetValueOrDefault("type")?.ToString() == "checkbox", "la devolución de eleventa");
+        await pantalla.DispararAsync(casilla, "onchange", new ChangeEventArgs { Value = true });
+        await pantalla.OprimirAsync(await pantalla.BotonAsync("Es su anotación"));
+        await pantalla.EsperarAsync(t => !t.Contains("por revisar"), "que ya no quede nada por revisar");
+        Assert.Empty(pantalla.Errores);
+
+        // Ligadas: la de eleventa no se aplica otra vez, la existencia no se mueve, y lo que queda del ticket se devuelve aquí.
+        await LeerAsync(c);
+        Assert.Equal(1000L, await DevueltoAsync(servicio, ticket));
+        Assert.Equal((ajustes, existencia), (await AjustesDeLaLecturaAsync(servicio, c), await ExistenciaAsync(servicio, c)));
+        await using var revision = servicio.Base();
+        var propia = await revision.Devoluciones.SingleAsync(d => d.VentaId == ticket.VentaId);
+        var ligada = Assert.Single(await revision.Set<DevolucionDesdeEleventa>().ToListAsync());
+        Assert.Equal((anotada, true, (Guid?)propia.Id, (string?)null), (ligada.DevolucionEleventa, ligada.Propia, ligada.DevolucionId, ligada.PorRevisar));
+        var marcado = await revision.EnviosAEleventa.SingleAsync(x => x.Id == envio);
+        Assert.Equal(EstadoEnvioEleventa.AMano, marcado.Estado);
+        Assert.StartsWith($"Se anotó a mano en eleventa (en eleventa: devolución #{anotada} del ", marcado.Error);
+        Assert.True(await revision.Bitacora.AnyAsync(b => b.Accion == AccionControlada.ConfigurarTienda && b.Detalle.Contains($"devolución #{anotada}")));
+        Assert.Null(await DevolucionesConEleventa.PorQueNoSeDevuelveAsync(revision, ticket.VentaId!.Value));
+    }
+
+    [FactConFirebird]
+    public async Task Dos_devoluciones_de_aqui_del_mismo_ticket_anotadas_a_mano_se_eligen_una_por_una_sin_perder_ni_repetir_nada()
+    {
+        var (e, turno1) = await EleventaAsync();
+        await using var eleventa = e;
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor, leer: true));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        await EsperarPrimeraLecturaAsync(c);
+        var ticket = await CobrarAsync(c, plumas: 3);
+        await MandarAsync(c);
+        var ticketEleventa = await TicketEnEleventaAsync(servicio, ticket);
+        var turno2 = await EleventaCortaSinQueSeVeaAsync(e, turno1!.Value);
+        var a = await DevueltaParaAnotarAsync(servicio, c, ticket, plumas: 1);
+        var b = await DevueltaParaAnotarAsync(servicio, c, ticket, plumas: 1);
+        // Las dos se anotan a mano en eleventa, y la lectura las trae antes de que alguien marque nada: las dos esperan.
+        var x = await AnotadaEnEleventaAsync(e, turno2, ticketEleventa, plumas: 1, HoraLocal(0));
+        var y = await AnotadaEnEleventaAsync(e, turno2, ticketEleventa, plumas: 1, HoraLocal(0).AddSeconds(20));
+        await LeerAsync(c);
+        Assert.Equal(2000L, await DevueltoAsync(servicio, ticket));
+        var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+
+        // La primera se liga con la que se elige; la otra de eleventa sigue esperando: la segunda de aquí todavía espera su anotación.
+        Assert.Equal([x, y], await AnotacionesAsync(c, a));
+        Assert.True((await AnotarAsync(c, dueno, a, x)).IsSuccessStatusCode);
+        await LeerAsync(c);
+        Assert.Equal(2000L, await DevueltoAsync(servicio, ticket));
+        // Para la segunda ya no se ofrece la que se ligó con la primera.
+        Assert.Equal([y], await AnotacionesAsync(c, b));
+        Assert.Equal(DevolucionesConEleventa.YaNoSeElige, await RechazoAsync(await AnotarAsync(c, dueno, b, x)));
+        Assert.True((await AnotarAsync(c, dueno, b, y)).IsSuccessStatusCode);
         await LeerAsync(c);
 
-        // Regresó una sola pluma: la de aquí. La de eleventa es la misma: se liga, no se aplica otra vez ni ajusta la existencia.
-        await using var revision = servicio.Base();
-        var venta = await revision.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == ticket.VentaId);
-        var propia = await revision.Devoluciones.SingleAsync(d => d.VentaId == venta.Id);
-        Assert.Equal(1000L, venta.Lineas.Single().CantidadDevuelta.Milesimas);
-        var ligada = Assert.Single(await revision.Set<DevolucionDesdeEleventa>().ToListAsync());
-        Assert.Equal((enEleventa, true, (Guid?)propia.Id, (string?)null), (ligada.DevolucionEleventa, ligada.Propia, ligada.DevolucionId, ligada.PorRevisar));
-        Assert.Equal(ajustes, await AjustesDeLaLecturaAsync(servicio, c));
-        // Lo que queda del ticket todavía se devuelve aquí: el dinero de esa devolución salió de esta caja.
-        Assert.Null(await DevolucionesConEleventa.PorQueNoSeDevuelveAsync(revision, venta.Id));
+        // Dos plumas regresaron, las dos de aquí, cada una con su anotación: nada se aplicó dos veces ni quedó sin ligar.
+        Assert.Equal(2000L, await DevueltoAsync(servicio, ticket));
+        await using var db = servicio.Base();
+        var ligadas = await db.Set<DevolucionDesdeEleventa>().ToListAsync();
+        var devoluciones = await db.EnviosAEleventa.Where(z => z.Id == a || z.Id == b).ToDictionaryAsync(z => z.Id, z => z.DevolucionId);
+        Assert.Equal([(x, true, devoluciones[a]), (y, true, devoluciones[b])],
+            ligadas.OrderBy(l => l.DevolucionEleventa).Select(l => (l.DevolucionEleventa, l.Propia, l.DevolucionId)));
+        Assert.All(await db.EnviosAEleventa.Where(z => z.Id == a || z.Id == b).ToListAsync(), z => Assert.Equal(EstadoEnvioEleventa.AMano, z.Estado));
+    }
+
+    [FactConFirebird]
+    public async Task Una_devolucion_de_aqui_anotada_en_eleventa_en_dos_partes_se_liga_con_las_dos_y_lo_que_no_es_igual_no_se_liga()
+    {
+        var (e, turno1) = await EleventaAsync();
+        await using var eleventa = e;
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor, leer: true));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        await EsperarPrimeraLecturaAsync(c);
+        var ticket = await CobrarAsync(c, plumas: 3);
+        await MandarAsync(c);
+        var ticketEleventa = await TicketEnEleventaAsync(servicio, ticket);
+        var turno2 = await EleventaCortaSinQueSeVeaAsync(e, turno1!.Value);
+        // Aquí se devolvieron dos plumas de una vez; en eleventa se anotaron en dos devoluciones de una.
+        var envio = await DevueltaParaAnotarAsync(servicio, c, ticket, plumas: 2);
+        var x = await AnotadaEnEleventaAsync(e, turno2, ticketEleventa, plumas: 1, HoraLocal(0));
+        var y = await AnotadaEnEleventaAsync(e, turno2, ticketEleventa, plumas: 1, HoraLocal(0).AddSeconds(30));
+        await LeerAsync(c);
+        var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+
+        // Una sola no es lo mismo que la de aquí: no se liga (lo que sobre o falte no se esconde en la liga).
+        Assert.Equal("No es lo mismo: aquí se devolvió 2 Pluma punto fino Bic Azul; en eleventa, 1 Pluma punto fino. Elige las que, juntas, sean lo mismo.",
+            await RechazoAsync(await AnotarAsync(c, dueno, envio, x)));
+        Assert.True((await AnotarAsync(c, dueno, envio, x, y)).IsSuccessStatusCode);
+        await LeerAsync(c);
+
+        Assert.Equal(2000L, await DevueltoAsync(servicio, ticket));
+        await using var db = servicio.Base();
+        Assert.Equal([x, y], (await db.Set<DevolucionDesdeEleventa>().Where(l => l.Propia).ToListAsync()).Select(l => l.DevolucionEleventa).Order());
+        Assert.Equal(EstadoEnvioEleventa.AMano, (await db.EnviosAEleventa.SingleAsync(z => z.Id == envio)).Estado);
+    }
+
+    [FactConFirebird]
+    public async Task Si_lo_anotado_en_eleventa_no_es_igual_a_la_de_aqui_no_se_puede_marcar_y_nada_se_pierde_ni_se_repite()
+    {
+        var (e, turno1) = await EleventaAsync();
+        await using var eleventa = e;
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor, leer: true));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        await EsperarPrimeraLecturaAsync(c);
+        var ticket = await CobrarAsync(c, plumas: 3);
+        await MandarAsync(c);
+        var ticketEleventa = await TicketEnEleventaAsync(servicio, ticket);
+        var turno2 = await EleventaCortaSinQueSeVeaAsync(e, turno1!.Value);
+        // Aquí se devolvió una pluma; en eleventa se anotaron dos.
+        var envio = await DevueltaParaAnotarAsync(servicio, c, ticket, plumas: 1);
+        var dos = await AnotadaEnEleventaAsync(e, turno2, ticketEleventa, plumas: 2, HoraLocal(0));
+        await LeerAsync(c);
+        var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+
+        Assert.StartsWith("No es lo mismo: aquí se devolvió 1 Pluma punto fino Bic Azul; en eleventa, 2 Pluma punto fino.",
+            await RechazoAsync(await AnotarAsync(c, dueno, envio, dos)));
+        await LeerAsync(c);
+
+        // La de aquí sigue por revisar, y la de eleventa sigue esperando, a la vista para elegirla: ni se ligó ni se pasó.
+        Assert.Equal(1000L, await DevueltoAsync(servicio, ticket));
+        await using var db = servicio.Base();
+        Assert.False(await db.Set<DevolucionDesdeEleventa>().AnyAsync());
+        Assert.Equal(EstadoEnvioEleventa.PorRevisar, (await db.EnviosAEleventa.SingleAsync(z => z.Id == envio)).Estado);
+        Assert.Equal([dos], await AnotacionesAsync(c, envio));
     }
 
     // ── Sin Firebird: la vuelta con filas de eleventa hechas a mano, y lo que se ve en la caja 2 ──
@@ -413,7 +655,7 @@ public sealed class DevolucionesIdaYVueltaTests
         await using var revision = servicio.Base();
         Assert.Equal(EstadoEnvioEleventa.PorRevisar, (await revision.EnviosAEleventa.SingleAsync(x => x.Id == choque.Id)).Estado);
         var vuelta = await revision.Set<DevolucionDesdeEleventa>().SingleAsync();
-        Assert.Equal((false, DevolucionesConEleventa.NoAlcanza, (Guid?)null), (vuelta.Propia, vuelta.PorRevisar, vuelta.QuizaEsDevolucionId));
+        Assert.Equal((false, DevolucionesConEleventa.NoAlcanza), (vuelta.Propia, vuelta.PorRevisar));
         Assert.Equal(2, (await Leer<PuenteEleventaDto>(await c.Http.GetAsync("api/eleventa/pantalla"))).PorRevisar.Count);
     }
 
@@ -472,14 +714,6 @@ public sealed class DevolucionesIdaYVueltaTests
         Assert.Equal((1000L, 1000L), (devueltas.SelectMany(d => d.Lineas).Sum(l => l.Cantidad.Milesimas), venta.Lineas.Single().CantidadDevuelta.Milesimas));
     }
 
-    /// <summary>Lo que la pantalla de la caja 2 tiene por revisar de la vuelta, y el dueño (que tiene «Configuración de la tienda»).</summary>
-    private static async Task<(PorRevisarEleventaDto Vuelta, SesionDto Dueno)> PreguntaAsync(Caja c)
-    {
-        var pantalla = await Leer<PuenteEleventaDto>(await c.Http.GetAsync("api/eleventa/pantalla"));
-        var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
-        return (Assert.Single(pantalla.PorRevisar, p => p.VueltaId is not null), dueno);
-    }
-
     [Fact]
     public async Task La_vuelta_no_pisa_una_devolucion_que_entro_despues_de_que_se_leyo_la_venta()
     {
@@ -502,123 +736,142 @@ public sealed class DevolucionesIdaYVueltaTests
         Assert.Equal(2000L, venta.Lineas.Single().CantidadDevuelta.Milesimas);
     }
 
+    private static DevolucionLeida Pluma(int id, DateTime devuelta, int plumas = 1) =>
+        new(id, 500, false, devuelta, 9 * plumas, "cajera2", "Caja 2", 32, [new ArticuloDevueltoLeido("PLU-FINA", "Pluma punto fino", plumas, 9 * plumas, 10)]);
+
     [Fact]
-    public async Task La_de_aqui_que_quiza_se_anoto_a_mano_sin_marcarla_se_pregunta_y_si_es_la_misma_se_liga()
+    public async Task Mientras_la_de_aqui_espera_su_anotacion_lo_que_eleventa_devuelve_despues_de_ese_ticket_espera_y_lo_que_no_se_elige_se_pasa_despues()
     {
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes());
         var c = await AbrirAsync(servicio, await MapearAsync(servicio));
         var (ticket, envio) = await DevueltaPorRevisarAsync(servicio, c);
-        // En eleventa devolvieron esa pluma (con su hora, sin la marca de la caja 2), y aquí nadie la ha marcado.
-        var alla = new DevolucionLeida(902, 500, false, HoraLocal(0), 9, "cajera2", "Caja 2", 32, [new ArticuloDevueltoLeido("PLU-FINA", "Pluma punto fino", 1, 9, 10)]);
+        // En eleventa devuelven después una pluma (quizá la anotación a mano de la de aquí) y otra cosa más tarde.
+        var pluma = Pluma(902, HoraLocal(0));
+        var otra = Pluma(903, HoraLocal(0).AddMinutes(1));
 
         await using (var db = servicio.Base())
-            Assert.Equal(new ResultadoVuelta(0, 1), await DevolucionesConEleventa.PasarVueltaAsync(db, [alla], DateTime.UtcNow));
+            Assert.Equal(new ResultadoVuelta(0, 0, 2), await DevolucionesConEleventa.PasarVueltaAsync(db, [pluma, otra], DateTime.UtcNow));
 
-        // No se marca sola: se pregunta en la caja 2, y mientras no se aplica ni se devuelve aquí lo que queda.
-        var (vuelta, dueno) = await PreguntaAsync(c);
-        Assert.Equal(DevolucionesConEleventa.QuizaEsLaDeAqui, vuelta.Motivo);
-        Assert.StartsWith("¿Es la devolución que se hizo aquí el ", vuelta.Pregunta);
-        await using (var antes = servicio.Base())
+        // Ni se pasan ni se adivina: la venta solo tiene la de aquí, y aquí no se impide devolver lo que queda.
+        await using (var revision = servicio.Base())
         {
-            Assert.Equal(EstadoEnvioEleventa.PorRevisar, (await antes.EnviosAEleventa.SingleAsync(e => e.Id == envio)).Estado);
-            Assert.Equal(DevolucionesConEleventa.YaTuvoDevolucionEnEleventa, await DevolucionesConEleventa.PorQueNoSeDevuelveAsync(antes, ticket.VentaId!.Value));
+            Assert.Equal(1000L, (await revision.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == ticket.VentaId)).Lineas.Single().CantidadDevuelta.Milesimas);
+            Assert.False(await revision.Set<DevolucionDesdeEleventa>().AnyAsync());
+            Assert.Null(await DevolucionesConEleventa.PorQueNoSeDevuelveAsync(revision, ticket.VentaId!.Value));
         }
-        // El cajero no lo decide; el dueño dice que es la misma: se ligan y la de aquí queda anotada a mano.
-        Assert.Equal(System.Net.HttpStatusCode.Forbidden,
-            (await c.Http.PostAsJsonAsync($"api/eleventa/vuelta/{vuelta.VueltaId}/misma", new SolicitudRevision(c.Sesion.UsuarioId, null))).StatusCode);
-        Assert.True((await c.Http.PostAsJsonAsync($"api/eleventa/vuelta/{vuelta.VueltaId}/misma", new SolicitudRevision(dueno.UsuarioId, "La anoté en la tarde")))
-            .IsSuccessStatusCode);
 
-        await using var revision = servicio.Base();
-        Assert.Equal(1000L, (await revision.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == ticket.VentaId)).Lineas.Single().CantidadDevuelta.Milesimas);
-        Assert.Single(await revision.Devoluciones.Where(d => d.VentaId == ticket.VentaId).ToListAsync());
-        var ligada = await revision.Set<DevolucionDesdeEleventa>().SingleAsync();
-        Assert.Equal((true, (string?)null), (ligada.Propia, ligada.PorRevisar));
-        var marcado = await revision.EnviosAEleventa.SingleAsync(e => e.Id == envio);
-        Assert.Equal(EstadoEnvioEleventa.AMano, marcado.Estado);
-        Assert.StartsWith("Se anotó a mano en eleventa (Caja 2,", marcado.Error);
-        Assert.Null(await DevolucionesConEleventa.PorQueNoSeDevuelveAsync(revision, ticket.VentaId!.Value));
-        Assert.True(await revision.Bitacora.AnyAsync(b => b.Accion == AccionControlada.ConfigurarTienda && b.Detalle.Contains("es la de aquí anotada a mano")
-            && b.Detalle.EndsWith("La anoté en la tarde")));
-        Assert.Empty((await Leer<PuenteEleventaDto>(await c.Http.GetAsync("api/eleventa/pantalla"))).PorRevisar.Where(p => p.VueltaId is not null));
-    }
-
-    [Fact]
-    public async Task Otra_devolucion_en_eleventa_mientras_la_de_aqui_espera_se_pregunta_y_si_es_otra_se_pasa_a_la_venta()
-    {
-        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes());
-        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
-        var (ticket, envio) = await DevueltaPorRevisarAsync(servicio, c);
-        // Mientras la de aquí espera a que la anoten a mano, en la principal le devuelven al cliente la otra pluma.
-        var alla = new DevolucionLeida(906, 500, false, HoraLocal(-1), 9, "cajera1", "Principal", 31, [new ArticuloDevueltoLeido("PLU-FINA", "Pluma punto fino", 1, 9, 10)]);
-
+        // Quien la anotó dice que la primera es su anotación (como lo hace «Ya lo anoté en eleventa»): la otra ya no espera y se
+        // pasa a la venta como cualquier otra de eleventa.
         await using (var db = servicio.Base())
-            Assert.Equal(new ResultadoVuelta(0, 1), await DevolucionesConEleventa.PasarVueltaAsync(db, [alla], DateTime.UtcNow));
+        {
+            var marcado = await db.EnviosAEleventa.SingleAsync(x => x.Id == envio);
+            var porAnotar = await DevolucionesConEleventa.PorAnotarAsync(db, marcado);
+            Assert.NotNull(porAnotar);
+            Assert.Null(DevolucionesConEleventa.PorQueNoEs(porAnotar.Armada, [pluma]));
+            DevolucionesConEleventa.Ligar(db, porAnotar, [pluma], DateTime.UtcNow);
+            marcado.Estado = EstadoEnvioEleventa.AMano;
+            await db.SaveChangesAsync();
+        }
+        await using (var db = servicio.Base())
+            Assert.Equal(new ResultadoVuelta(1, 0), await DevolucionesConEleventa.PasarVueltaAsync(db, [pluma, otra], DateTime.UtcNow));
 
-        // No se liga sola con la de aquí; mientras se decide, aquí no se vuelve a devolver de ese ticket.
-        var (vuelta, dueno) = await PreguntaAsync(c);
-        var otraVez = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/sucursales/{c.Datos.SucursalId}/ventas/folio/{ticket.Folio}"));
-        Assert.Equal(DevolucionesConEleventa.YaTuvoDevolucionEnEleventa, otraVez.NoSeDevuelveEnElPiloto);
-
-        // Es otra: se pasa a la venta (las dos plumas regresaron) y la de aquí sigue esperando a que la anoten a mano.
-        Assert.True((await c.Http.PostAsJsonAsync($"api/eleventa/vuelta/{vuelta.VueltaId}/otra", new SolicitudRevision(dueno.UsuarioId, null))).IsSuccessStatusCode);
-
-        await using var revision = servicio.Base();
-        Assert.Equal(2000L, (await revision.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == ticket.VentaId)).Lineas.Single().CantidadDevuelta.Milesimas);
-        var pasada = await revision.Set<DevolucionDesdeEleventa>().SingleAsync();
-        Assert.Equal((false, (string?)null, (Guid?)null), (pasada.Propia, pasada.PorRevisar, pasada.QuizaEsDevolucionId));
-        Assert.NotNull(pasada.DevolucionId);
-        Assert.Equal(EstadoEnvioEleventa.PorRevisar, (await revision.EnviosAEleventa.SingleAsync(e => e.Id == envio)).Estado);
-        Assert.Equal(DevolucionesConEleventa.YaTuvoDevolucionEnEleventa, await DevolucionesConEleventa.PorQueNoSeDevuelveAsync(revision, ticket.VentaId!.Value));
+        await using var despues = servicio.Base();
+        Assert.Equal(2000L, (await despues.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == ticket.VentaId)).Lineas.Single().CantidadDevuelta.Milesimas);
+        Assert.Equal([(902, true), (903, false)],
+            (await despues.Set<DevolucionDesdeEleventa>().ToListAsync()).OrderBy(v => v.DevolucionEleventa).Select(v => (v.DevolucionEleventa, v.Propia)));
     }
 
     [Fact]
-    public async Task Lo_que_eleventa_devuelve_de_otro_articulo_mientras_la_de_aqui_espera_se_pasa_solo()
+    public async Task Una_devolucion_de_aqui_se_marca_anotada_a_mano_diciendo_cual_es_su_anotacion_en_eleventa()
     {
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes());
         var c = await AbrirAsync(servicio, await MapearAsync(servicio));
-        var ticket = await EnviadaAsync(servicio, c, plumas: 2, comun: true);
+        var ticket = await EnviadaAsync(servicio, c, plumas: 2);
         var buscado = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/sucursales/{c.Datos.SucursalId}/ventas/folio/{ticket.Folio}"));
         await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/devoluciones",
-            new SolicitudDevolucion(c.Encargado.UsuarioId, c.Datos.Id, "No pinta",
-                [new LineaDevolucionSolicitada(buscado.Lineas.Single(l => l.Descripcion.StartsWith("Pluma")).LineaId, 1000)])));
+            new SolicitudDevolucion(c.Encargado.UsuarioId, c.Datos.Id, "No pinta", [new LineaDevolucionSolicitada(buscado.Lineas[0].LineaId, 1000)])));
         var envio = (await EnviosAsync(c)).PorAtender.Single(e => e.Tipo == TipoEnvioEleventa.Devolucion).Id;
         var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+        Task<HttpResponseMessage> AnotarSinElegirAsync() => c.Http.PostAsJsonAsync($"api/eleventa/envios/{envio}/a-mano", new SolicitudAnotadoAMano(dueno.UsuarioId, null));
+
+        // Todavía se manda sola: si ya se anotó allá, primero se deja por revisar (y desde ahí la lectura espera su anotación).
+        Assert.Equal(DevolucionesConEleventa.PrimeroPorRevisar, await RechazoAsync(await AnotarSinElegirAsync()));
         await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsJsonAsync($"api/eleventa/envios/{envio}/revisar", new SolicitudRevision(dueno.UsuarioId, null)));
-        // En eleventa devuelven el común: no tiene que ver con la pluma de aquí.
-        var alla = new DevolucionLeida(907, 500, false, HoraLocal(-1), 15, "cajera1", "Principal", 31, [new ArticuloDevueltoLeido("COMUN-1-2", "Recuerdo", 1, 15, null)]);
 
-        await using (var db = servicio.Base())
-            Assert.Equal(new ResultadoVuelta(1, 0), await DevolucionesConEleventa.PasarVueltaAsync(db, [alla], DateTime.UtcNow));
-
-        await using var revision = servicio.Base();
-        var venta = await revision.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == ticket.VentaId);
-        Assert.Equal(1000L, venta.Lineas.Single(l => l.Descripcion == "Recuerdo").CantidadDevuelta.Milesimas);
-        Assert.Equal(EstadoEnvioEleventa.PorRevisar, (await revision.EnviosAEleventa.SingleAsync(e => e.Id == envio)).Estado);
+        // Por revisar: la pantalla dice que al marcarla se elige su anotación; sin elegir no se puede, ni sin eleventa.
+        var pantalla = await Leer<PuenteEleventaDto>(await c.Http.GetAsync("api/eleventa/pantalla"));
+        Assert.True(Assert.Single(pantalla.PorRevisar, p => p.EnvioId == envio).EligeAnotacion);
+        Assert.Equal(DevolucionesConEleventa.DiCualEs, await RechazoAsync(await AnotarSinElegirAsync()));
+        Assert.Equal(DevolucionesConEleventa.NoContestaParaElegir, await RechazoAsync(await c.Http.PostAsJsonAsync($"api/eleventa/envios/{envio}/a-mano",
+            new SolicitudAnotadoAMano(dueno.UsuarioId, null, [907]))));
+        Assert.Equal(DevolucionesConEleventa.NoContestaParaElegir, await RechazoAsync(await c.Http.GetAsync($"api/eleventa/envios/{envio}/anotaciones")));
+        await using var db = servicio.Base();
+        Assert.Equal(EstadoEnvioEleventa.PorRevisar, (await db.EnviosAEleventa.SingleAsync(x => x.Id == envio)).Estado);
     }
 
     [Fact]
-    public async Task Si_lo_de_eleventa_no_es_igual_se_pregunta_y_si_es_otra_y_aqui_ya_no_queda_tanto_queda_por_revisar()
+    public async Task Lo_que_eleventa_devolvio_antes_de_la_de_aqui_no_espera_su_anotacion()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes());
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        var (ticket, _) = await DevueltaPorRevisarAsync(servicio, c);
+        // Media hora antes de la de aquí no puede ser su anotación; cinco minutos antes, sí (la hora de cada PC).
+        var antes = Pluma(904, HoraLocal(30));
+        var casi = Pluma(905, HoraLocal(5));
+
+        await using (var db = servicio.Base())
+            Assert.Equal(new ResultadoVuelta(1, 0, 1), await DevolucionesConEleventa.PasarVueltaAsync(db, [antes, casi], DateTime.UtcNow));
+
+        // La de antes se pasó a la venta (las dos plumas regresaron); la de cinco minutos antes espera.
+        await using var revision = servicio.Base();
+        var pasada = await revision.Set<DevolucionDesdeEleventa>().SingleAsync();
+        Assert.Equal((904, false, (string?)null), (pasada.DevolucionEleventa, pasada.Propia, pasada.PorRevisar));
+        Assert.Equal(2000L, (await revision.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == ticket.VentaId)).Lineas.Single().CantidadDevuelta.Milesimas);
+    }
+
+    [Fact]
+    public async Task Una_de_aqui_que_choco_porque_eleventa_ya_lo_tenia_no_retiene_lo_de_eleventa()
     {
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes());
         var c = await AbrirAsync(servicio, await MapearAsync(servicio));
         var (ticket, envio) = await DevueltaPorRevisarAsync(servicio, c);
-        // En eleventa se devolvieron las dos plumas: aquí solo una. No se sabe si es la misma: se pregunta.
-        var alla = new DevolucionLeida(903, 500, false, HoraLocal(0), 18, "cajera2", "Caja 2", 32, [new ArticuloDevueltoLeido("PLU-FINA", "Pluma punto fino", 2, 18, 10)]);
+        await using (var db = servicio.Base())
+        {
+            var choco = await db.EnviosAEleventa.SingleAsync(x => x.Id == envio);
+            choco.PorRevisarPorque = MotivoPorRevisar.EleventaYaLoTenia;
+            await db.SaveChangesAsync();
+        }
 
         await using (var db = servicio.Base())
-            Assert.Equal(new ResultadoVuelta(0, 1), await DevolucionesConEleventa.PasarVueltaAsync(db, [alla], DateTime.UtcNow));
-        var (vuelta, dueno) = await PreguntaAsync(c);
-        Assert.Equal(DevolucionesConEleventa.QuizaEsLaDeAqui, vuelta.Motivo);
-        Assert.True((await c.Http.PostAsJsonAsync($"api/eleventa/vuelta/{vuelta.VueltaId}/otra", new SolicitudRevision(dueno.UsuarioId, null))).IsSuccessStatusCode);
+            Assert.Equal(new ResultadoVuelta(1, 0), await DevolucionesConEleventa.PasarVueltaAsync(db, [Pluma(906, HoraLocal(0))], DateTime.UtcNow));
 
-        // Es otra, pero aquí ya no quedan dos plumas: queda por revisar («Ya lo revisé»), sin aplicarse.
+        // Son dos reembolsos (aquí y allá): los dos cuentan y quedan a la vista.
         await using var revision = servicio.Base();
-        Assert.Equal(1000L, (await revision.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == ticket.VentaId)).Lineas.Single().CantidadDevuelta.Milesimas);
-        Assert.Equal(DevolucionesConEleventa.NoAlcanza, (await revision.Set<DevolucionDesdeEleventa>().SingleAsync()).PorRevisar);
-        Assert.Equal(EstadoEnvioEleventa.PorRevisar, (await revision.EnviosAEleventa.SingleAsync(e => e.Id == envio)).Estado);
-        var queda = Assert.Single((await Leer<PuenteEleventaDto>(await c.Http.GetAsync("api/eleventa/pantalla"))).PorRevisar, p => p.VueltaId is not null);
-        Assert.Null(queda.Pregunta);
+        Assert.Equal(2000L, (await revision.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == ticket.VentaId)).Lineas.Single().CantidadDevuelta.Milesimas);
+    }
+
+    [Fact]
+    public void La_anotacion_que_se_elige_tiene_que_devolver_lo_mismo_que_la_de_aqui()
+    {
+        var turno = new TurnoParaEleventa(HoraLocal(120), 300);
+        DevolucionParaEleventa Aqui(int plumas) => new(500, false, HoraLocal(10), turno, [new ArticuloDevuelto(10, "Pluma punto fino", plumas, 9 * plumas)]);
+        var cancelacion = new DevolucionParaEleventa(500, true, HoraLocal(10), turno, []);
+        var cancelada = new DevolucionLeida(910, 500, true, HoraLocal(0), 27, "dueno", "Caja 2", 32, []);
+
+        // Lo mismo, en una o en varias.
+        Assert.Null(DevolucionesConEleventa.PorQueNoEs(Aqui(2), [Pluma(911, HoraLocal(0), 2)]));
+        Assert.Null(DevolucionesConEleventa.PorQueNoEs(Aqui(2), [Pluma(911, HoraLocal(0)), Pluma(912, HoraLocal(0))]));
+        Assert.Null(DevolucionesConEleventa.PorQueNoEs(cancelacion, [cancelada]));
+        // Lo que sobra o falta no se liga.
+        Assert.NotNull(DevolucionesConEleventa.PorQueNoEs(Aqui(1), [Pluma(911, HoraLocal(0), 2)]));
+        Assert.NotNull(DevolucionesConEleventa.PorQueNoEs(Aqui(2), [Pluma(911, HoraLocal(0))]));
+        Assert.NotNull(DevolucionesConEleventa.PorQueNoEs(Aqui(1), [cancelada]));
+        Assert.NotNull(DevolucionesConEleventa.PorQueNoEs(cancelacion, [Pluma(911, HoraLocal(0))]));
+        Assert.NotNull(DevolucionesConEleventa.PorQueNoEs(cancelacion, [cancelada, cancelada with { Id = 913 }]));
+        Assert.Equal(DevolucionesConEleventa.DiCualEs, DevolucionesConEleventa.PorQueNoEs(Aqui(1), []));
+        // Un común, por su nombre.
+        Assert.Null(DevolucionesConEleventa.PorQueNoEs(new DevolucionParaEleventa(500, false, HoraLocal(10), turno, [new ArticuloDevuelto(null, "Recuerdo", 1, 15)]),
+            [new DevolucionLeida(914, 500, false, HoraLocal(0), 15, "dueno", "Caja 2", 32, [new ArticuloDevueltoLeido("COMUN-1-2", "recuerdo ", 1, 15, null)])]));
     }
 
     /// <summary>Una venta de la caja 2 que ya está en eleventa como el ticket 500 (la bandeja la anotó como enviada).</summary>
@@ -661,6 +914,42 @@ public sealed class DevolucionesIdaYVueltaTests
         // Las tres plumas regresaron al inventario (una y luego dos), y nada fue a la bandeja.
         Assert.Equal(3000, (await revision.MovimientosInventario.Where(m => m.DocumentoTipo == nameof(Devolucion) && m.VarianteId == c.Variante).ToListAsync())
             .Sum(m => m.Cantidad.Milesimas));
+        Assert.Single(await revision.EnviosAEleventa.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Una_venta_de_la_caja_2_que_ya_esta_en_eleventa_se_devuelve_aqui_solo_mientras_sigue_abierto_su_turno()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes());
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        var ticket = await EnviadaAsync(servicio, c, plumas: 2);
+        var buscado = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/sucursales/{c.Datos.SucursalId}/ventas/folio/{ticket.Folio}"));
+        Assert.Null(buscado.NoSeDevuelveEnElPiloto);
+
+        // Eleventa hizo su corte y la caja nueva lo tomó: su turno se cerró (TurnosDelPiloto), y el cajero abrió otro.
+        await using (var db = servicio.Base())
+        {
+            (await db.Turnos.SingleAsync(t => t.Id == c.Turno.Id)).CerradoUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+        }
+        await Leer<TurnoDto>(await c.Http.PostAsJsonAsync("api/turnos", new SolicitudTurno(c.Datos.Id, c.Sesion.UsuarioId, 30000)));
+
+        // El ticket ya es de otro turno de eleventa: la ventana lo dice, no ofrece devolverlo ni cancelarlo, y no se devuelve aquí.
+        var otroTurno = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/sucursales/{c.Datos.SucursalId}/ventas/folio/{ticket.Folio}"));
+        Assert.Equal((DevolucionesConEleventa.DeOtroTurno, false), (otroTurno.NoSeDevuelveEnElPiloto, otroTurno.PuedeCancelar));
+        Assert.Equal(DevolucionesConEleventa.DeOtroTurno, await RechazoAsync(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/devoluciones",
+            new SolicitudDevolucion(c.Encargado.UsuarioId, c.Datos.Id, "No pinta", [new LineaDevolucionSolicitada(buscado.Lineas[0].LineaId, 1000)]))));
+        Assert.Equal(DevolucionesConEleventa.DeOtroTurno, await RechazoAsync(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/cancelacion",
+            new SolicitudCancelacion(c.Encargado.UsuarioId, c.Datos.Id, "Se arrepintió"))));
+
+        // Se devuelve en eleventa y llega con la lectura, como cualquier otra de allá: sin efectivo de esta caja.
+        var alla = new DevolucionLeida(908, 500, false, HoraLocal(0), 9, "cajera2", "Caja 2", 32, [new ArticuloDevueltoLeido("PLU-FINA", "Pluma punto fino", 1, 9, 10)]);
+        await using (var db = servicio.Base())
+            Assert.Equal(new ResultadoVuelta(1, 0), await DevolucionesConEleventa.PasarVueltaAsync(db, [alla], DateTime.UtcNow));
+        await using var revision = servicio.Base();
+        var venta = await revision.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == ticket.VentaId);
+        Assert.Equal(1000L, venta.Lineas.Single().CantidadDevuelta.Milesimas);
+        Assert.Equal(0L, (await revision.Devoluciones.SingleAsync(d => d.VentaId == venta.Id)).ReembolsoEfectivoCentavos);
         Assert.Single(await revision.EnviosAEleventa.ToListAsync());
     }
 

@@ -618,6 +618,10 @@ visual (entrega 2). Para el piloto hace falta, en este orden:
     salir, la caja nueva avisa que el corte se hace en eleventa.
   - **Devoluciones y cancelaciones de ida y vuelta:** la caja 2 devuelve tickets cobrados en eleventa, y lo que se
     devuelve o cancela en eleventa de un ticket de la caja 2 regresa a su base.
+    - *Mientras tanto (2026-10-17; decidido, por revisar con el dueño):* hasta ver cómo anota eleventa la devolución de
+      un ticket de otro turno o de otra caja, la caja 2 solo devuelve los del turno de eleventa de ahora; los demás se
+      devuelven en eleventa y llegan solos con la lectura
+      ([detalle](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)).
   - **La regla de adaptación:** lo que solo sirve para convivir con eleventa se distingue de lo que se queda cuando se
     apruebe todo; lo primero vive en el puente y se quita al dejar eleventa.
   - **Al aprobar el piloto, el modo multicaja:** las dos cajas con la caja nueva, para que las dos se sigan
@@ -675,9 +679,11 @@ dos tickets por la hora y el total (el ticket ya no lleva QR). Probado contra el
 
 Segunda parte, en código: las devoluciones de ida y vuelta. En la caja 2 se devuelve un ticket cobrado en eleventa, leído
 en vivo (solo efectivo, 7 días y las reglas de la caja nueva): el dinero sale de la caja nueva y la devolución va a
-eleventa por la bandeja; la de un ticket de otra caja o de otro turno queda por revisar hasta ver en vivo cómo la anota
-eleventa. Lo que se devuelve o cancela en eleventa de un ticket de la caja 2 entra a su venta con la lectura, sin
-efectivo (el corte de la caja nueva no lo cuenta), y lo que quede por revisar se ve arriba en la pantalla de la caja 2.
+eleventa por la bandeja. Un ticket de otra caja o de otro turno no se devuelve en la caja 2 sino en eleventa, hasta
+ver en vivo cómo lo anota eleventa (2026-10-17, por revisar con el dueño). Lo que se devuelve o cancela en eleventa de
+un ticket de la caja 2 entra a su venta con la lectura, sin efectivo (el corte de la caja nueva no lo cuenta), y lo
+que quede por revisar se ve arriba en la pantalla de la caja 2. Lo raro que no pasa solo (el turno de eleventa se
+cortó antes de mandarlo) se anota a mano allá, y al marcarlo aquí se elige cuál es su anotación: no se adivina.
 
 Tercera parte (2026-10-17), en código: los respaldos de eleventa. Antes de cada escritura y en cada lectura, el puente
 revisa que eleventa siga teniendo lo último que le mandó la caja 2 (sus tickets con su folio y su marca, el turno que
@@ -851,7 +857,7 @@ Piloto en la caja 2 ([ver arriba](#la-versión-unicaja-y-el-piloto-en-la-caja-2)
   (2026-10-16, en código; falta probarlo contra la copia en el paso 5)
   ([diseño](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))
 - [x] Devoluciones y cancelaciones de ida y vuelta con eleventa (2026-10-16, en código; falta ver en vivo la de otra
-  caja o de otro turno, que mientras queda por revisar, y probarlo contra la copia en el paso 5)
+  caja o de otro turno, que mientras se devuelve en eleventa, y probarlo contra la copia en el paso 5)
 - [x] Los respaldos de eleventa: detectar una restauración y el respaldo propio con `gbak` (2026-10-17, en código; falta
   ver en la tienda dónde está `gbak.exe` en la caja 2 y probarlo contra la copia en el paso 5)
 - [ ] Antes de vender en la caja 2: revisar en F3 el «Mayoreo por revisar». El F11 de eleventa (el segundo precio que

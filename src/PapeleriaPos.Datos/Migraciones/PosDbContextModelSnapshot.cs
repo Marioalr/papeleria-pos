@@ -2988,9 +2988,6 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<bool>("Propia")
                         .HasColumnType("INTEGER");
 
-                    b.Property<Guid?>("QuizaEsDevolucionId")
-                        .HasColumnType("TEXT");
-
                     b.Property<DateTime?>("RevisadaUtc")
                         .HasColumnType("TEXT");
 
@@ -3008,10 +3005,7 @@ namespace PapeleriaPos.Datos.Migraciones
 
                     b.HasKey("Id");
 
-                    b.HasIndex("DevolucionId")
-                        .IsUnique();
-
-                    b.HasIndex("QuizaEsDevolucionId");
+                    b.HasIndex("DevolucionId");
 
                     b.HasIndex("TicketEleventa");
 
@@ -4269,13 +4263,8 @@ namespace PapeleriaPos.Datos.Migraciones
             modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.DevolucionDesdeEleventa", b =>
                 {
                     b.HasOne("PapeleriaPos.Nucleo.Ventas.Devolucion", null)
-                        .WithOne()
-                        .HasForeignKey("PapeleriaPos.Nucleo.Ventas.DevolucionDesdeEleventa", "DevolucionId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("PapeleriaPos.Nucleo.Ventas.Devolucion", null)
                         .WithMany()
-                        .HasForeignKey("QuizaEsDevolucionId")
+                        .HasForeignKey("DevolucionId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("PapeleriaPos.Nucleo.Ventas.Venta", null)
