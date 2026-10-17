@@ -162,15 +162,34 @@ causas posibles y qué se junta en la próxima caída están en [notas](notas.md
     30 s, pregunta en la red por UDP (puerto 5081, un paquete a la difusión de cada red, sin recorrerla equipo por
     equipo) y a cada servicio que contesta le pide que pruebe que es su caja principal: un reto al azar que el servicio
     firma (HMAC-SHA256) con la huella de la llave de esa caja, el número de la caja y la IP y el puerto en que recibió
-    la pregunta. La llave no viaja; un reto nuevo cada vez evita que se repita una respuesta vieja, y la dirección, que
-    otro equipo le pase la pregunta a la caja principal de verdad y se quede en medio. Solo se cambia a uno que lo
-    prueba y guarda la dirección nueva en `caja.json`; lo que contesta sin probarlo se anota y no se usa. Si no la
-    encuentra, busca otra vez a los 30 s, al minuto, a los 2 y luego cada 5 minutos; «Volver a buscarla», en la franja,
-    busca al momento. Mientras la guardada contesta, nada, y si contesta en la red pero su servicio todavía no
-    (arranca), tampoco se cambia. El servicio contesta por UDP solo a su red local (su misma red, sin túneles como
-    NetBird; el firewall ya solo abre el 5081 a la red local), a lo más 20 veces por segundo, y solo el de la caja
-    principal (`Descubrimiento:Activo`; apagado en la prueba y en desarrollo). La prueba (`api/identidad`) va sin llave
-    y solo a la red local.
+    la pregunta, y además con su propia llave. La llave de la caja no viaja; un reto nuevo cada vez evita que se repita
+    una respuesta vieja, y la dirección, que otro equipo le pase la pregunta a la caja principal de verdad y se quede en
+    medio. Se revisa cada IP que contesta una vez (solo de la red de la caja, hasta 64, a la vez), así que respuestas
+    falsas no dejan fuera a la de verdad; la dirección guardada cuenta como «la misma» solo si prueba quién es. Se
+    cambia solo si una sola caja principal lo prueba, y guarda la dirección nueva en `caja.json`; si dos lo prueban, no
+    se cambia sola a ninguna y la franja dice «Hay dos cajas principales en la red: avisa al dueño», con «Dar de alta
+    otra vez» (abajo). Si no la encuentra, busca otra vez a los 30 s, al minuto, a los 2 y luego cada 5 minutos (con la
+    marca de tiempo de la PC: un cambio de hora de Windows no lo mueve); «Volver a buscarla», en la franja, busca al
+    momento. Mientras la guardada contesta, nada. El servicio contesta por UDP solo a su red local (su misma red, sin
+    túneles como NetBird; el firewall ya solo abre el 5081 a la red local), a lo más 5 veces por segundo a cada equipo y
+    200 entre todos, y solo el de la caja principal (`Descubrimiento:Activo`; apagado en la prueba y en desarrollo). En
+    Windows, un «puerto inalcanzable» (ICMP) no corta la búsqueda. La prueba (`api/identidad`) va sin llave y solo a la
+    red local; los clientes de la caja no usan proxy.
+  - **La llave propia de la caja principal:** el servicio tiene una llave ECDSA en su propio archivo junto a la base
+    (`pos.llave`), fuera de la base y de sus respaldos (en Windows, cifrada para esa PC con DPAPI de la máquina; en los
+    demás sistemas, solo la lee su dueño). La caja recuerda la llave pública al darse de alta o, si es de antes, la
+    primera vez que su dirección de siempre (la que puso el dueño) prueba quién es; queda en `caja.json`. Desde ahí, una
+    copia de la base en otra PC (la caja principal de antes, un respaldo abierto en una laptop) sabe la huella de la
+    llave de la caja pero no firma como su caja principal: nunca gana. Con un servicio o una caja de antes, todo sigue
+    como antes. Si se reinstala o se cambia la PC de la caja principal (también al restaurar una copia en la de
+    repuesto), su llave es otra: cada caja se da de alta otra vez.
+  - **Después de una caída (y al abrir la caja),** la llave de la caja no sale hasta que la dirección guardada pruebe
+    otra vez quién es: mientras, lo de la venta va con la copia (al abrir, se espera esa prueba unos milisegundos, a lo
+    más 3 s). Si la que sabe de la caja (en la dirección guardada o en otra IP) firma con otra llave (se reinstaló o se
+    cambió la PC de la caja principal, o es una copia de su base), no se le manda la llave y la franja ofrece «Dar de
+    alta otra vez» (lo hace el dueño, con su PIN). El botón sale solo sin nadie en la venta (con alguien, se perdería el
+    ticket que lleva), y desde ahí se puede volver sin dar de alta. Si ya no conoce a la caja (la quitaron), se da de
+    alta otra vez, como antes, en cuanto sale quien atiende; mientras, vende con la copia.
   - **Avisos de lo que está por nombre o con WSD:** la impresora de tickets por nombre (`tcp://tickets:9100`, o una cola
     de Windows con su puerto TCP/IP a un nombre), compartida desde otra PC o con un puerto WSD (la caja de Windows lee
     el puerto de la cola en el registro) dice «Tickets · configúrala por IP» en el estado de arriba y en la entrada,
@@ -181,17 +200,21 @@ causas posibles y qué se junta en la próxima caída están en [notas](notas.md
     1 s), y lo dice en su estado (el latido de las cajas). Dos revisiones seguidas sin respuesta: no hay. La caja lo
     junta con lo suyo: «Sin internet: la venta sigue. No desconectes nada.» si llega a la caja principal y no hay
     internet; «Sin red local: esta caja trabaja con su copia» si no llega (con «Volver a buscarla»); en la caja
-    principal, sin internet ni router (el router trabado), «Sin internet ni red local: esta caja sigue vendiendo», sin
+    principal, sin internet y sin saber que su router contesta (el router trabado, o la PC arrancó sin que el router le
+    diera dirección: una 169.254, sin puerta de enlace), «Sin internet ni red local: esta caja sigue vendiendo», sin
     el «no desconectes nada», porque la [guía](pruebas-en-tienda.md#durante-una-falla-de-red) pide juntar los datos y
     desconectar el cable del módem; con todo bien, nada. Arriba, el chip «Sin internet», como en el prototipo. Sin modal
     y fuera del cobro.
   - **La bitácora de red:** cada caja (`red-caja-AAAA-MM-DD.log`, junto a su registro) y el servicio
     (`red-servicio-AAAA-MM-DD.log`, en `C:\ProgramData\PapeleriaPos\registros`) anotan solos lo que cambia de la red,
-    con fecha y hora, y un resumen cada 15 minutos; se guardan 10 días. Lo que anota y cómo leerla, en [pruebas en la
-    tienda](pruebas-en-tienda.md#después-de-una-caída-la-bitácora-de-red); las últimas caídas, con desde, hasta y cuánto
-    duraron, en Configuración › Acerca de › Red. Cubre casi todo lo que el script de diagnóstico iba a juntar
-    ([notas](notas.md#red-de-la-tienda)); el script sigue haciendo falta en una PC sin el POS (la caja principal durante
-    el piloto) y para lo que el POS no ve.
+    con fecha y hora, y un resumen cada 15 minutos; se guardan 10 días (lo viejo se quita también al cambiar el día). Lo
+    que va y viene (la red lenta, el DNS del router, una caja que deja de latir) se cuenta en el resumen; lo que se
+    pierde y vuelve se anota siempre, aunque el archivo del día llegue a su tope. El Wi-Fi (nombre del perfil y señal)
+    solo con `"Red": { "DetalleWifi": true }` en `caja.json`: en Windows 11 24H2 podría pedir el permiso de ubicación.
+    Lo que anota y cómo leerla, en [pruebas en la tienda](pruebas-en-tienda.md#después-de-una-caída-la-bitácora-de-red);
+    las últimas caídas, con desde, hasta y cuánto duraron, en Configuración › Acerca de › Red. Cubre casi todo lo que el
+    script de diagnóstico iba a juntar ([notas](notas.md#red-de-la-tienda)); el script sigue haciendo falta en una PC
+    sin el POS (la caja principal durante el piloto) y para lo que el POS no ve.
 - **Cambiar la red de la tienda** afecta también a eleventa y a Control Print, que siguen en uso: se hace un sábado o
   domingo, con todo listado y la forma de regresar ([pruebas en la tienda](pruebas-en-tienda.md)).
 

@@ -457,7 +457,8 @@ public sealed class VigiaDeLaRed
 
     /// <summary>
     /// El latido de la caja (cada 5 s): lo que tardó la caja principal (vacío si no contestó) y cómo quedó la red. Se anota cuando
-    /// cambia de buena a lenta o a caída, con los últimos latidos; lo demás va al resumen de cada 15 minutos.
+    /// se pierde (con cómo estaba la red y los últimos latidos) y cuando vuelve; las veces que se puso lenta y lo demás van al
+    /// resumen de cada 15 minutos.
     /// </summary>
     /// <param name="principal">A dónde se le habló (la dirección de la caja principal).</param>
     public void Latido(TimeSpan? latencia, EstadoRed estado, Uri principal)

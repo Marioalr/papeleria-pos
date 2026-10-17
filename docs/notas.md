@@ -121,7 +121,9 @@ Propuesta para cumplirlo ([guía](pruebas-en-tienda.md)):
   --help` desde una USB de Ubuntu. .NET 10 (el del proyecto) tiene soporte hasta noviembre de 2028 y corre en cualquier
   procesador de 64 bits, pero en uno que solo llega a v1 va sin aceleración y arranca más lento (hay que medirlo).
 - **La laptop Celeron y la PC A6 del dueño:** la mejor de las dos puede quedar con Windows como caja principal de
-  repuesto (si muere una, se instala el servicio y se restaura la última copia). Casi ninguna laptop enciende sola si
+  repuesto (si muere una, se instala el servicio y se restaura la última copia; cada caja se da de alta otra vez, porque
+  la llave propia del servicio no va en las copias:
+  [cómo](pruebas-en-tienda.md#después-al-dejar-eleventa-las-dos-cajas-con-el-pos)). Casi ninguna laptop enciende sola si
   se le agotó la batería: revisar en el BIOS «Power on AC attach» y, si queda de servidor con Linux,
   HandleLidSwitch=ignore para que no se suspenda con la tapa cerrada. La PC A6 gasta de 3 a 5 veces más luz. Modelos por
   confirmar ([cómo](prueba-sucursales-linux.md#las-máquinas)).
@@ -282,11 +284,12 @@ no-break. La causa **no se conoce** todavía.
   de «sin red local»; y la bitácora de red junta sola buena parte del diagnóstico ([cómo se
   lee](pruebas-en-tienda.md#después-de-una-caída-la-bitácora-de-red)): el latido con lo que tarda, el router (ping, su
   página y su DNS), el internet (desde la caja principal), la impresora de tickets (solo ping), la IP y de dónde viene,
-  el router y su MAC, el Wi-Fi con su señal, la difusión y los descartados de la tarjeta, cuándo arrancó la PC y cuándo
-  cada caja dejó de latir. Lo que no junta, y sigue siendo del script: el perfil de red de Windows, `ipconfig /all` con
-  las fechas de la concesión, `arp -a`, `tracert`, el ping a lo que el POS no conoce (el grabador y el módem, salvo que
-  se pongan en `Red:Equipos`), los puertos 3050 y 3309 (una conexión de prueba quedaría en el registro de Firebird) y
-  los botones del personal; y en una PC sin el POS (la caja principal durante el piloto) no corre nada de esto.
+  el router y su MAC, el Wi-Fi con su señal (si se prende su detalle), la difusión y los descartados de la tarjeta,
+  cuándo arrancó la PC y cuándo cada caja dejó de latir. Lo que no junta, y sigue siendo del script: el perfil de red de
+  Windows, `ipconfig /all` con las fechas de la concesión, `arp -a`, `tracert`, el ping a lo que el POS no conoce (el
+  grabador y el módem, salvo que se pongan en `Red:Equipos`), los puertos 3050 y 3309 (una conexión de prueba quedaría
+  en el registro de Firebird) y los botones del personal; y en una PC sin el POS (la caja principal durante el piloto)
+  no corre nada de esto.
 - **Internet de respaldo:** las caídas de unas 12 horas también cortan lo que sí necesita internet (WhatsApp, recargas,
   Telegram, ver las cámaras). Queda como [idea](ideas.md#internet-de-respaldo), para después de arreglar la red local.
 
