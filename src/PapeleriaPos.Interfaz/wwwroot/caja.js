@@ -269,6 +269,9 @@ function alPresionar(e) {
     const ctrlB = e.ctrlKey && (tecla === 'b' || tecla === 'B');
     // Ctrl+U: cambiar de usuario (en el navegador sería ver el código de la página).
     const ctrlU = e.ctrlKey && (tecla === 'u' || tecla === 'U');
+    // Ctrl+I: imprimir el ticket que se ofrece al cobrar (Configuración › Ticket › «Al cobrar»: «Ofrecerlo»). Sin ventana,
+    // como los rápidos: el ticket que se ofrece está en el panel del total.
+    const ctrlI = e.ctrlKey && !e.altKey && (tecla === 'i' || tecla === 'I');
     const funcion = /^F([1-9]|1[0-2])$/.test(tecla);
 
     // Ctrl+Q: cotizar a una tecla. Sin ventana, el selector de archivos se abre aquí mismo, desde la tecla. Con un panel
@@ -305,7 +308,7 @@ function alPresionar(e) {
     if (hayVentana) {
         atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlU || (hayPanel && tecla === 'Insert');
     } else {
-        atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlU || rapido || tecla === 'Escape' || tecla === 'Insert'
+        atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlU || ctrlI || rapido || tecla === 'Escape' || tecla === 'Insert'
             || (tecla === 'Delete' && vacio && !enPago)
             || ((tecla === 'ArrowUp' || tecla === 'ArrowDown') && (campo === null || enCodigo))
             || ((tecla === '+' || tecla === '-') && vacio && (campo === null || enCodigo));
@@ -323,7 +326,7 @@ function alPresionar(e) {
         if (rapido || tecla === 'Escape' || (tecla === 'F11' && texto !== '')) campo.value = '';
     }
     let nombre = ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlU ? 'Ctrl+U'
-        : rapido ? 'Alt+' + tecla : tecla;
+        : ctrlI ? 'Ctrl+I' : rapido ? 'Alt+' + tecla : tecla;
     // F12: el cursor pasa a «Pagó con» aquí mismo, sin esperar la vuelta a .NET, para que lo que se teclee enseguida
     // (lo que dio el cliente) caiga ahí y no en el cuadro de captura. .NET sabe que ya se movió.
     if (tecla === 'F12' && !hayVentana && !enPago) {

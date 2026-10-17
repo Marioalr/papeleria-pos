@@ -533,7 +533,7 @@
         },
         new("ticket", "Ticket", "ticket")
         {
-            Descripcion = "El ticket de 80 mm: lo que dice arriba y abajo, y su logotipo.",
+            Descripcion = "El ticket de 80 mm: lo que dice arriba y abajo, su logotipo y si sale al cobrar.",
             Ajustes =
             [
                 RenglonesTicket("encabezado", "Encabezado",
@@ -542,6 +542,17 @@
                 RenglonesTicket("pie", "Pie", $"Hasta {ConfiguracionTicket.RenglonesMaximos} renglones de {ConfiguracionTicket.Columnas} caracteres.", 3,
                     t => t.Pie, (t, renglones) => (t.Encabezado, renglones)),
                 Logotipo("logo-ticket"),
+                // En todas las cajas, como lo demás del ticket: las dos comparten la impresora y atienden a los mismos clientes.
+                new(AlCobrar, "Al cobrar")
+                {
+                    Ayuda = "Nunca pregunta antes de cobrar. «Ofrecerlo»: hasta que escaneas al siguiente cliente, el panel ofrece «Imprimir "
+                        + "ticket» (Ctrl+I). «No imprimirlo»: si lo piden, se reimprime desde «Ventas del día». Lo fiado sale siempre, y los "
+                        + "comprobantes y el corte, como siempre.",
+                    Permiso = AccionControlada.ConfigurarTicket,
+                    NoListo = NoListoTicket,
+                    Palabras = "imprimir ofrecer papel",
+                    Control = ControlAlCobrar,
+                },
                 new("prueba", "Ticket de prueba")
                 {
                     Ayuda = "Sale con lo de arriba. Sin impresora de tickets, se ve en «Así sale».",
@@ -889,6 +900,32 @@
     private Task QuitarLogotipoAsync(string renglon) =>
         HacerAsync(renglon, async () => _ticket = await Cliente.GuardarLogoTicketAsync(Caja.Id, new SolicitudLogo(Sesion.UsuarioId, null)));
 
+    // ── «Al cobrar» ──────────────────────────────────────────────────────────
+
+    /// <summary>El renglón de «Al cobrar»: ahí se dice si no se pudo guardar.</summary>
+    private const string AlCobrar = "al-cobrar";
+
+    /// <summary>
+    /// Las tres opciones en un segmento, como el «opcion» del prototipo (con tres o menos): la elegida, marcada. Se guarda al
+    /// tocarla, como el logotipo; con Tab se pasa de una a otra y Enter o Espacio la eligen.
+    /// </summary>
+    private RenderFragment ControlAlCobrar =>
+        @<span class="vn-segmento" role="radiogroup" aria-label="Al cobrar">
+            @foreach (var opcion in Enum.GetValues<TicketAlCobrar>())
+            {
+                var esta = opcion;
+                var elegida = _ticket?.AlCobrar == esta;
+                <button id="@($"aj-al-cobrar-{esta.ToString().ToLowerInvariant()}")" role="radio" aria-checked="@(elegida ? "true" : "false")"
+                        class="@(elegida ? "on x" : null)" disabled="@(!Sesion.Puede(AccionControlada.ConfigurarTicket))"
+                        @onclick="() => GuardarAlCobrarAsync(esta)">@ConfiguracionTicket.Nombre(esta)</button>
+            }
+        </span>;
+
+    private Task GuardarAlCobrarAsync(TicketAlCobrar alCobrar) =>
+        _ticket?.AlCobrar == alCobrar
+            ? Task.CompletedTask
+            : HacerAsync(AlCobrar, async () => _ticket = await Cliente.GuardarAlCobrarAsync(Caja.Id, new SolicitudAlCobrar(Sesion.UsuarioId, alCobrar)));
+
     /// <summary>El ticket de prueba en la cola de la impresora: junto a su botón se ve si salió y, si no, «Reintentar».</summary>
     private TrabajoDeImpresion? _prueba;
 
@@ -1000,6 +1037,7 @@
         ("Ctrl+B", "Abono a la cuenta de un cliente"),
         ("Ctrl+Q", "Cotizar un PDF"),
         ("Ctrl+U", "Cambiar de usuario"),
+        ("Ctrl+I", "Imprimir el ticket que se ofrece al cobrar (Ticket › «Al cobrar»: «Ofrecerlo»)"),
         ($"Alt+1 a Alt+{Rapido.Maximo}", "Los rápidos; con un número antes, esa cantidad"),
         ("/", "Todo lo que puedes hacer"),
         ("Esc", "Cerrar lo que está abierto"),

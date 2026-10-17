@@ -410,7 +410,19 @@
                     <strong>@Formato.Dinero(cobrado.CambioCentavos > 0 ? cobrado.CambioCentavos : cobrado.TotalCobradoCentavos)</strong>
                     <p>@PagoTexto(cobrado)</p>
                 </div>
-                @if (Cola.MuestraVistaPrevia)
+                @if (ReferenceEquals(Ofrecido, cobrado))
+                {
+                    @* «Al cobrar»: «Ofrecerlo» (Configuración › Ticket): no salió solo; se ofrece hasta que se escanea al siguiente cliente. *@
+                    <div class="vn-folio-ok">
+                        <Ico Nombre="impresora" />Ticket <code>@cobrado.FolioImpreso</code>
+                        <button class="vn-boton chico" @onclick="ImprimirOfrecidoAsync">Imprimir ticket <kbd>Ctrl+I</kbd></button>
+                    </div>
+                }
+                else if (cobrado.LoQueSeHaceAlCobrar == TicketAlCobrar.NoImprimir)
+                {
+                    <div class="vn-folio-ok"><Ico Nombre="impresora" />Ticket <code>@cobrado.FolioImpreso</code> sin imprimir</div>
+                }
+                else if (Cola.MuestraVistaPrevia)
                 {
                     <div class="vn-folio-ok"><Ico Nombre="monitor" />Ticket <code>@cobrado.FolioImpreso</code> · <button class="vn-enlace" @onclick="VerCobradoEnPantallaAsync">verlo en pantalla</button></div>
                 }
@@ -590,7 +602,12 @@
                     {
                         <span>Todavía no hay ventas en este turno.</span>
                     }
-                    @if (Ve(AccionControlada.Reimprimir))
+                    @if (Ofrecido is not null)
+                    {
+                        @* Lo que se ofreció al cobrar sigue aquí aunque se vuelva al total (Esc), hasta el primer escaneo. *@
+                        <button class="vn-boton chico" @onclick="ImprimirOfrecidoAsync">Imprimir ticket <kbd>Ctrl+I</kbd></button>
+                    }
+                    else if (Ve(AccionControlada.Reimprimir))
                     {
                         <button class="vn-enlace" @onclick="ReimprimirUltimoAsync">Reimprimir</button>
                     }
@@ -2599,6 +2616,7 @@
             case "Ctrl+D": await AbrirDescuento(); break;
             case "Ctrl+L": await Abrir(Ventanas.ElegirCliente); break;
             case "Ctrl+B": await Abrir(Ventanas.Abono); break;
+            case "Ctrl+I": await ImprimirOfrecidoAsync(); break;
             case "Delete": await BorrarSeleccion(); break;
             case "ArrowUp": await MoverSeleccion(-1); break;
             case "ArrowDown": await MoverSeleccion(1); break;
@@ -3449,14 +3467,66 @@
     /// La venta ya quedó guardada: el ticket va a la cola de la impresora (entrega 5, parte 3) y el panel dice si salió, sin
     /// esperarlo. Sin impresora (en el navegador), el ticket no se abre solo: el panel ofrece verlo; si la impresora no
     /// responde (o el ticket ni se pudo armar para ella), ahí mismo «Reintentar», «No imprimirlo» y «Verlo en pantalla».
+    /// <para>
+    /// Según «Al cobrar» (Configuración › Ticket), que llega con el ticket: con «Ofrecerlo» no sale y se ofrece hasta que
+    /// empieza la siguiente venta (<see cref="Ofrecido"/>); con «No imprimirlo», nada. Ninguno de los dos le manda nada a la
+    /// impresora, ni el pulso del cajón (va con el papel; en la tienda no hay cajón). Lo fiado sale siempre
+    /// (<see cref="TicketDto.LoQueSeHaceAlCobrar"/>). Decidirlo no espera nada: el cobro ya terminó.
+    /// </para>
     /// </summary>
     private async Task ImprimirCobradoAsync(TicketDto ticket)
     {
         (_cobrado, _trabajoCobrado) = (ticket, null);
+        // Se ofrece mientras el ticket del siguiente cliente (el que ya se atiende) siga vacío: lo que caiga ahí, también lo que
+        // se escaneó mientras se cobraba, ya es la siguiente venta (Ofrecido).
+        (_ofrecido, _ticketDelSiguiente) = ticket.LoQueSeHaceAlCobrar == TicketAlCobrar.Ofrecer ? (ticket, Actual) : (null, null);
         await Cerrar();
-        if (Cola.MuestraVistaPrevia)
+        if (Cola.MuestraVistaPrevia || ticket.LoQueSeHaceAlCobrar != TicketAlCobrar.Imprimir)
             return;
         _trabajoCobrado = Cola.Encolar($"Ticket {ticket.FolioImpreso}", DisenoTicket.Armar(ticket), ticket.AbreCajon);
+    }
+
+    // ── «Al cobrar»: «Ofrecerlo» ────────────────────────────────────────────
+
+    /// <summary>El ticket que se cobró con «Ofrecerlo» y todavía no sale; vacío si no hay qué ofrecer.</summary>
+    private TicketDto? _ofrecido;
+
+    /// <summary>El ticket (vacío) del siguiente cliente cuando se ofreció: si se cambia a otro (F5), ya es otra venta.</summary>
+    private TicketAbierto? _ticketDelSiguiente;
+
+    /// <summary>
+    /// Lo que se ofrece con «Imprimir ticket» (Ctrl+I), en el panel del cambio y, si se volvió al total, abajo junto a
+    /// «Último». Se deja de ofrecer en cuanto empieza la siguiente venta: el primer escaneo (o algo en el ticket del siguiente
+    /// cliente, o retomar otro de la espera), y ya no vuelve aunque después se quite lo escaneado. Se revisa al dibujar y con
+    /// Ctrl+I, así que nada de lo que agrega al ticket tiene que acordarse de quitarlo.
+    /// </summary>
+    private TicketDto? Ofrecido
+    {
+        get
+        {
+            if (_ofrecido is not null && (Actual != _ticketDelSiguiente || Actual.Venta.Lineas.Count > 0 || Actual.Buscando.Count > 0))
+                (_ofrecido, _ticketDelSiguiente) = (null, null);
+            return _ofrecido;
+        }
+    }
+
+    /// <summary>
+    /// «Imprimir ticket» (Ctrl+I) del que se ofreció: sale una vez, sin pedir motivo (no es una reimpresión: no había salido),
+    /// y el panel vuelve a enseñar esa venta con cómo va su papel. Sin el pulso del cajón: al cobrar no se abrió, y abrirlo
+    /// ya con el siguiente cliente sorprendería. Sin impresora, se ve en pantalla. Sin nada que ofrecer, no hace nada.
+    /// </summary>
+    private async Task ImprimirOfrecidoAsync()
+    {
+        if (Ofrecido is not { } ticket)
+            return;
+        (_ofrecido, _ticketDelSiguiente) = (null, null);
+        (_cobrado, _trabajoCobrado) = (ticket, null);
+        if (Cola.MuestraVistaPrevia)
+        {
+            await VerCobradoEnPantallaAsync();
+            return;
+        }
+        _trabajoCobrado = Cola.Encolar($"Ticket {ticket.FolioImpreso}", DisenoTicket.Armar(ticket), abrirCajon: false);
     }
 
     private async Task VerCobradoEnPantallaAsync()
@@ -3539,6 +3609,9 @@
             var ventaId = _reimprimir ?? (await Cliente.UltimoTicketAsync(Caja.Id))?.VentaId
                 ?? throw new ErrorCaja("Esta caja todavía no tiene ventas.");
             var ticket = await Cliente.ReimprimirAsync(ventaId, new SolicitudReimpresion(Sesion.UsuarioId, Caja.Id, motivo));
+            // Si era el que se ofrecía al cobrar («Al cobrar»: «Ofrecerlo»), ya salió: no queda una copia más sin motivo.
+            if (_ofrecido is { VentaId: { } ofrecida } && ofrecida == ticket.VentaId)
+                (_ofrecido, _ticketDelSiguiente) = (null, null);
             await ImprimirAsync(ticket, abrirCajon: false);
         }
         catch (ErrorCaja ex)
