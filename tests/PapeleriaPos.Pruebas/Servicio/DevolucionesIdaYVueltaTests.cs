@@ -481,6 +481,28 @@ public sealed class DevolucionesIdaYVueltaTests
     }
 
     [Fact]
+    public async Task La_vuelta_no_pisa_una_devolucion_que_entro_despues_de_que_se_leyo_la_venta()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes());
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        var ticket = await EnviadaAsync(servicio, c, plumas: 3);
+        var alla = new DevolucionLeida(905, 500, false, HoraLocal(1), 9, "cajera2", "Caja 2", 31, [new ArticuloDevueltoLeido("PLU-FINA", "Pluma punto fino", 1, 9, 10)]);
+        // Se buscó el ticket por su folio (la venta queda leída), y antes de pasar lo de eleventa, en la caja se devuelve una pluma.
+        await using var db = servicio.Base();
+        var leida = await new RegistroDevoluciones(db).PorFolioAsync(c.Datos.SucursalId, ticket.Folio);
+        await using (var caja = servicio.Base())
+            await new RegistroDevoluciones(caja).DevolverAsync(ticket.VentaId!.Value, [new LineaPorDevolver(leida!.Lineas.Single().Id, Cantidad.Unidades(1))],
+                c.Encargado.UsuarioId, c.Datos.Id, "No pinta", null);
+
+        Assert.Equal(new ResultadoVuelta(1, 0), await DevolucionesConEleventa.PasarVueltaAsync(db, [alla], DateTime.UtcNow));
+
+        // Las dos plumas cuentan: la de la caja no se pisó con la copia vieja de la venta.
+        await using var revision = servicio.Base();
+        var venta = await revision.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == ticket.VentaId);
+        Assert.Equal(2000L, venta.Lineas.Single().CantidadDevuelta.Milesimas);
+    }
+
+    [Fact]
     public async Task La_de_aqui_que_quiza_se_anoto_a_mano_sin_marcarla_se_pregunta_y_si_es_la_misma_se_liga()
     {
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes());

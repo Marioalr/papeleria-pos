@@ -409,14 +409,19 @@ public static class DevolucionesConEleventa
     /// La vuelta, en una sola transacción, y guardada: se lee la venta, se le pasa lo de eleventa y se guarda sin que otra
     /// devolución de esa venta se cuele en medio y se pierda (una de esta caja que no esperó el candado de la bandeja; revisión
     /// del 2026-10-17). Con SQLite la transacción aparta la escritura desde el principio: la otra espera a que termine, y
-    /// entonces ve lo de aquí (y si no alcanza a esperar, no entra: el cajero la vuelve a buscar).
+    /// entonces ve lo de aquí (y si no alcanza a esperar, no entra: el cajero la vuelve a buscar). Lo que quien llama ya
+    /// tenía leído (la venta que se buscó por su folio) se suelta: pudo cambiar antes de la transacción, y con la copia vieja
+    /// se pisaría lo que cambió. Quien llama lo vuelve a leer.
     /// </summary>
     public static async Task<ResultadoVuelta> PasarVueltaAsync(PosDbContext db, IReadOnlyList<DevolucionLeida> devoluciones, DateTime ahoraUtc,
         CancellationToken ct = default)
     {
         if (devoluciones.Count == 0)
             return new ResultadoVuelta(0, 0);
+        if (db.ChangeTracker.HasChanges())
+            throw new InvalidOperationException("La vuelta de eleventa se pasa sin nada a medio guardar.");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        db.ChangeTracker.Clear();
         var resultado = await AplicarVueltaAsync(db, devoluciones, ahoraUtc, ct);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
