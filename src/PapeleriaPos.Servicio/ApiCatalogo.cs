@@ -5,7 +5,10 @@ using PapeleriaPos.Nucleo.Contratos;
 
 namespace PapeleriaPos.Servicio;
 
-/// <summary>F3 Productos (fase 2, entrega 1): buscar, la ficha, guardar, el código interno y el alta rápida desde la caja.</summary>
+/// <summary>
+/// F3 Productos (fase 2, entrega 1): buscar, la ficha, guardar, el código interno y el alta rápida desde la caja; y sus
+/// departamentos.
+/// </summary>
 public static class ApiCatalogo
 {
     public static void MapearApiCatalogo(this IEndpointRouteBuilder app)
@@ -16,6 +19,24 @@ public static class ApiCatalogo
             new RegistroCatalogo(db).BuscarAsync(sucursalId, q, departamentoId, porCompletar ?? false, inactivos ?? false));
 
         api.MapGet("/opciones", (PosDbContext db) => new RegistroCatalogo(db).OpcionesAsync());
+
+        // Productos › Departamentos: todos, con cuántos productos activos tiene cada uno. Los da de alta, les cambia el nombre,
+        // los desactiva y los reactiva quien entró a la caja con «Productos, precios y etiquetas»; nada se borra. En el piloto
+        // con eleventa (su lectura prendida) solo se consultan: se cambian allá y llegan con la lectura.
+        api.MapGet("/departamentos", (PosDbContext db, OpcionesEleventa eleventa) => new RegistroDepartamentos(db, eleventa.Activo).ListarAsync());
+
+        api.MapPost("/departamentos", (SolicitudDepartamento s, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroDepartamentos(db, eleventa.Activo).DarDeAltaAsync(s));
+
+        api.MapPut("/departamentos/{id:guid}/nombre", (Guid id, SolicitudDepartamento s, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroDepartamentos(db, eleventa.Activo).CambiarNombreAsync(id, s));
+
+        // Si tiene productos activos, pasan antes a otro departamento (PasarA): sin él no se desactiva.
+        api.MapPost("/departamentos/{id:guid}/desactivar", (Guid id, SolicitudDesactivarDepartamento s, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroDepartamentos(db, eleventa.Activo).DesactivarAsync(id, s));
+
+        api.MapPost("/departamentos/{id:guid}/reactivar", (Guid id, SolicitudReactivarDepartamento s, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroDepartamentos(db, eleventa.Activo).ReactivarAsync(id, s));
 
         // Los sinónimos de la tienda para la búsqueda: los dan de alta el dueño y el encargado.
         api.MapGet("/sinonimos", (PosDbContext db) => new RegistroSinonimos(db).ListarAsync());

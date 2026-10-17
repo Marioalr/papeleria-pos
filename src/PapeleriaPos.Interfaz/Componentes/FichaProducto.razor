@@ -22,11 +22,19 @@ else
         <label class="ancho">Nombre <input @bind="p.Nombre" maxlength="150" autocomplete="off" /></label>
         <label>Departamento
             <select @bind="p.DepartamentoId">
+                @if (_suyoDesactivado is { } suyo)
+                {
+                    <option value="@suyo.Id">@suyo.Nombre (desactivado)</option>
+                }
                 @foreach (var d in Opciones.Departamentos)
                 {
                     <option value="@d.Id">@d.Nombre</option>
                 }
             </select>
+            @if (Opciones.Departamentos.Count == 0)
+            {
+                <span class="nota">No hay departamentos activos: dalos de alta en «Departamentos», abajo de la lista.</span>
+            }
         </label>
         <label>Marca <input list="marcas" @bind="p.Marca" autocomplete="off" placeholder="Sin marca" /></label>
         <datalist id="marcas">
@@ -253,6 +261,13 @@ else
     }
 
     private ProductoEditable? _producto;
+
+    /// <summary>
+    /// Su departamento, si se desactivó (Productos › Departamentos): se sigue viendo y se puede dejar, pero no se le ofrece a
+    /// los demás. El servicio no deja reactivar el producto ahí.
+    /// </summary>
+    private OpcionCatalogoDto? _suyoDesactivado;
+
     private Guid? _kardexDe;
     private List<MovimientoKardexDto>? _kardex;
     private string? _error;
@@ -283,7 +298,13 @@ else
         }
     }
 
-    private void Mostrar(FichaProductoDto f) => _producto = new ProductoEditable
+    private void Mostrar(FichaProductoDto f)
+    {
+        _suyoDesactivado = Opciones.Departamentos.Any(d => d.Id == f.DepartamentoId) ? null : Opciones.Desactivados?.FirstOrDefault(d => d.Id == f.DepartamentoId);
+        _producto = Editable(f);
+    }
+
+    private ProductoEditable Editable(FichaProductoDto f) => new()
     {
         Id = f.Id, Nombre = f.Nombre, DepartamentoId = f.DepartamentoId, Marca = f.Marca, Tipo = f.Tipo, Impuesto = f.Impuesto, ClaveSat = f.ClaveSat,
         Activo = f.Activo, PorCompletar = f.PorCompletar,

@@ -560,6 +560,17 @@ la venta, son páginas.
 - **Lo nuevo del servicio, solo para leer:** la lista de Productos, los últimos movimientos de un producto, lo pendiente
   del inventario (solo cuentas) y quién puede hacer algo, por su nombre. Sin cambios en la base.
 
+**Avance (2026-10-16): los departamentos, en Productos.** Como en eleventa («Departamentos: nuevo, cambiar el nombre,
+eliminar»), abajo de la lista de Productos (F3) está «Departamentos», con cuántos productos activos tiene cada uno (el
+número los enseña en la lista). Antes solo llegaban de eleventa, y Compras pedía darlos de alta donde no se podía.
+- **Alta, nombre, desactivar y reactivar,** con «Productos, precios y etiquetas» de quien entró y en la bitácora. Los
+  nombres no se repiten, sin importar mayúsculas, acentos ni espacios de más.
+- **Nada se borra:** uno desactivado ya no se ofrece en el filtro, la ficha, el alta rápida ni las compras; el producto
+  que se quedó en uno lo sigue diciendo, «(desactivado)». Al desactivar uno con productos activos, pasan antes al que se
+  elija; los inactivos se quedan.
+- **En el piloto con eleventa** (con su lectura prendida) solo se consultan: se cambian allá, como las altas y los
+  precios (2026-10-10), y llegan con la lectura. Un cambio hecho aquí, la siguiente lectura lo regresaría.
+
 #### Después: el piloto en la caja 2
 
 Mientras se arma el puente con eleventa, la versión unicaja sigue creciendo con la venta completa (entrega 3) y la base

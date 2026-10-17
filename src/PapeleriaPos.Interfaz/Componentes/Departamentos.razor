@@ -1,0 +1,379 @@
+@* Productos (F3) › Departamentos: los de la tienda, con cuántos productos activos tiene cada uno, en el detalle de la página
+   como el mayoreo por revisar. Quien tiene «Productos, precios y etiquetas» los da de alta, les cambia el nombre, los
+   desactiva y los reactiva ahí mismo; nada se borra. Un departamento con productos activos no se desactiva solo: antes se
+   elige a cuál pasan (los inactivos se quedan donde estaban). El número de productos activos los enseña en la lista de la
+   izquierda. En el piloto con eleventa solo se consultan: se cambian allá y llegan con su lectura. Enter guarda lo que se
+   escribe y Esc lo deja sin guardar; sin nada abierto, Esc regresa al producto. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="vn-det-cab">
+    <div>
+        <h2>Departamentos</h2>
+        <p>Los de la tienda, con cuántos productos activos tiene cada uno. Esc regresa al producto.</p>
+    </div>
+    @if (PuedeCambiar)
+    {
+        <button class="vn-boton primario" @onclick="Nuevo"><Ico Nombre="mas" />Nuevo departamento</button>
+    }
+</div>
+<div class="vn-adentro vn-deptos">
+    @if (_lista?.EnEleventa is { } enEleventa)
+    {
+        <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@enEleventa</span></div></div>
+    }
+    @if (_aviso is not null)
+    {
+        <p class="aviso">@_aviso</p>
+    }
+    @if (_nuevo is not null)
+    {
+        <div class="vn-depto-nuevo">
+            <label>
+                Nombre del departamento nuevo
+                <input id="depto-nuevo" maxlength="@Departamento.LargoNombre" autocomplete="off" spellcheck="false" @bind="_nuevo" @bind:event="oninput"
+                       @onkeydown="AlTeclearNuevoAsync" />
+            </label>
+            <button class="vn-boton primario" disabled="@_ocupado" @onclick="DarDeAltaAsync">Guardar</button>
+            <button class="vn-boton" @onclick="Dejar">Cancelar</button>
+        </div>
+        @if (_error is not null)
+        {
+            <p class="error">@_error</p>
+        }
+    }
+    else if (_error is not null && _errorDe is null)
+    {
+        <p class="error">@_error</p>
+    }
+
+    @if (_lista is null)
+    {
+        <p class="nota">@(_errorLista ?? "Cargando…")</p>
+    }
+    else if (_lista.Departamentos.Count == 0)
+    {
+        <p class="vacia">Todavía no hay departamentos.@(PuedeCambiar ? " Da de alta el primero con «Nuevo departamento»." : "")</p>
+    }
+    else
+    {
+        <table class="vn-tabla vn-deptos-tabla">
+            <thead>
+                <tr>
+                    <th>Departamento</th>
+                    <th class="num">Productos activos</th>
+                    @if (PuedeCambiar)
+                    {
+                        <th></th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var d in _lista.Departamentos)
+                {
+                    var este = d;
+                    <tr id="depto-@d.Id" class="@(d.Activo ? "" : "apagado") @(d.Id == _resaltado ? "on" : "")">
+                        <td>
+                            @if (_renombrando == d.Id)
+                            {
+                                <input id="depto-nombre" aria-label="Nombre del departamento" maxlength="@Departamento.LargoNombre" autocomplete="off" spellcheck="false"
+                                       @bind="_nombre" @bind:event="oninput" @onkeydown="AlTeclearNombreAsync" />
+                            }
+                            else
+                            {
+                                <span class="nombre">@d.Nombre</span>
+                                @if (!d.Activo)
+                                {
+                                    <span class="vn-etiq gris">desactivado</span>
+                                }
+                            }
+                        </td>
+                        <td class="num">
+                            @if (d.Activo && d.ProductosActivos > 0 && AlVerProductos.HasDelegate)
+                            {
+                                <button class="vn-enlace" title="Verlos en la lista" @onclick="() => AlVerProductos.InvokeAsync(este.Id)">@Formato.Numero(d.ProductosActivos)</button>
+                            }
+                            else
+                            {
+                                @Formato.Numero(d.ProductosActivos)
+                            }
+                        </td>
+                        @if (PuedeCambiar)
+                        {
+                            <td class="acciones">
+                                @if (_renombrando == d.Id)
+                                {
+                                    <button class="vn-boton chico primario" disabled="@_ocupado" @onclick="GuardarNombreAsync">Guardar</button>
+                                    <button class="vn-boton chico" @onclick="Dejar">Cancelar</button>
+                                }
+                                else
+                                {
+                                    <button class="vn-boton chico" @onclick="() => CambiarNombre(este)">Cambiar el nombre</button>
+                                    @if (d.Activo)
+                                    {
+                                        <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => DesactivarAsync(este)">Desactivar</button>
+                                    }
+                                    else
+                                    {
+                                        <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => ReactivarAsync(este)">Reactivar</button>
+                                    }
+                                }
+                            </td>
+                        }
+                    </tr>
+                    @if (_desactivando == d.Id)
+                    {
+                        var uno = d.ProductosActivos == 1;
+                        <tr class="vn-depto-pasar">
+                            <td colspan="3">
+                                <div>
+                                    <span>
+                                        «@d.Nombre» tiene @(uno ? "1 producto activo" : $"{Formato.Numero(d.ProductosActivos)} productos activos").
+                                        Para desactivarlo, @(uno ? "pásalo" : "pásalos") a
+                                    </span>
+                                    <select id="depto-pasar" aria-label="Departamento al que pasan sus productos" @bind="_pasarA">
+                                        <option value="">Elige el departamento…</option>
+                                        @foreach (var otro in _lista.Departamentos.Where(x => x.Activo && x.Id != este.Id))
+                                        {
+                                            <option value="@otro.Id">@otro.Nombre</option>
+                                        }
+                                    </select>
+                                    <button class="vn-boton chico primario" disabled="@_ocupado" @onclick="PasarYDesactivarAsync">
+                                        @(uno ? "Pasarlo y desactivar" : "Pasarlos y desactivar")
+                                    </button>
+                                    <button class="vn-boton chico" @onclick="Dejar">Cancelar</button>
+                                </div>
+                                <small>Los productos inactivos se quedan en «@d.Nombre», con su historia.</small>
+                            </td>
+                        </tr>
+                    }
+                    @if (_error is not null && _errorDe == d.Id)
+                    {
+                        <tr class="vn-depto-error"><td colspan="3"><p class="error">@_error</p></td></tr>
+                    }
+                }
+            </tbody>
+        </table>
+        @if (PuedeCambiar)
+        {
+            <p class="nota">
+                Nada se borra: un departamento desactivado ya no se ofrece para los productos y «Reactivar» lo regresa. Su margen
+                mínimo se pone en Configuración › Inventario.
+            </p>
+        }
+        else if (_lista.EnEleventa is null && _quienes is { } quienes)
+        {
+            <p class="nota">@Permisos.QuienLoHace(AccionControlada.EditarCatalogo, quienes)</p>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Lo que puede quien entró: sin «Productos, precios y etiquetas» en «Puede», solo los consulta.</summary>
+    [Parameter, EditorRequired] public PermisosDePagina Acceso { get; set; } = null!;
+
+    /// <summary>Se dio de alta, se renombró, se desactivó o se reactivó uno: la página pone al día su filtro, la ficha y su lista.</summary>
+    [Parameter] public EventCallback AlCambiar { get; set; }
+
+    /// <summary>El número de productos activos: la lista de la izquierda, solo con los de ese departamento.</summary>
+    [Parameter] public EventCallback<Guid> AlVerProductos { get; set; }
+
+    private DepartamentosDto? _lista;
+    private string? _errorLista;
+
+    /// <summary>Quién los cambia, para quien solo los consulta.</summary>
+    private List<QuienAutoriza>? _quienes;
+
+    // Lo que se está haciendo, una cosa a la vez: el nombre del nuevo, el que se renombra o el que se desactiva con productos.
+    private string? _nuevo;
+    private Guid? _renombrando;
+    private string _nombre = "";
+    private Guid? _desactivando;
+    private string _pasarA = "";
+
+    private string? _error;
+
+    /// <summary>El departamento del renglón donde va el error; vacío: arriba (o en el alta, si está abierta).</summary>
+    private Guid? _errorDe;
+
+    private string? _aviso;
+
+    /// <summary>El último que cambió (o al que pasaron los productos): se ve marcado.</summary>
+    private Guid? _resaltado;
+
+    private bool _ocupado;
+
+    /// <summary>A dónde va el cursor después de dibujar: el campo que se acaba de abrir.</summary>
+    private string? _enfocar;
+
+    /// <summary>Con el permiso, y fuera del piloto con eleventa (ahí se cambian allá).</summary>
+    private bool PuedeCambiar => Acceso.Puede(AccionControlada.EditarCatalogo) && _lista is { EnEleventa: null };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _lista = await Cliente.DepartamentosAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _errorLista = ex.Message;
+            return;
+        }
+        if (!Acceso.Puede(AccionControlada.EditarCatalogo) && _lista.EnEleventa is null)
+        {
+            try
+            {
+                _quienes = await Cliente.QuienesPuedenAsync(Caja.SucursalId, AccionControlada.EditarCatalogo);
+            }
+            catch (ErrorCaja)
+            {
+                // Sin los nombres no se dice quién; los departamentos se ven igual.
+            }
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_enfocar is { } selector)
+        {
+            _enfocar = null;
+            await Js.EnfocarAsync(selector);
+        }
+    }
+
+    /// <summary>Esc: deja lo que se estaba escribiendo (el alta, el nombre o a dónde pasan). Devuelve si había algo.</summary>
+    public Task<bool> CerrarAsync()
+    {
+        if (_nuevo is null && _renombrando is null && _desactivando is null)
+            return Task.FromResult(false);
+        Dejar();
+        StateHasChanged();
+        return Task.FromResult(true);
+    }
+
+    private void Dejar() => (_nuevo, _renombrando, _nombre, _desactivando, _pasarA, _error, _errorDe) = (null, null, "", null, "", null, null);
+
+    private void Nuevo()
+    {
+        Dejar();
+        (_nuevo, _aviso, _enfocar) = ("", null, "#depto-nuevo");
+    }
+
+    private async Task AlTeclearNuevoAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await DarDeAltaAsync();
+    }
+
+    private async Task DarDeAltaAsync()
+    {
+        var nombre = _nuevo ?? "";
+        if (await HacerAsync(null, () => Cliente.DarDeAltaDepartamentoAsync(new SolicitudDepartamento(Sesion.UsuarioId, Caja.SucursalId, nombre))) is not { } lista)
+            return;
+        var alta = lista.Departamentos.FirstOrDefault(d => Departamento.MismoNombre(d.Nombre, nombre));
+        await TerminarAsync(lista, alta?.Id, $"«{alta?.Nombre ?? nombre.Trim()}» quedó dado de alta: ya se puede elegir en la ficha de los productos.");
+    }
+
+    private void CambiarNombre(DepartamentoDto departamento)
+    {
+        Dejar();
+        (_renombrando, _nombre, _aviso, _enfocar) = (departamento.Id, departamento.Nombre, null, "#depto-nombre");
+    }
+
+    private async Task AlTeclearNombreAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await GuardarNombreAsync();
+    }
+
+    private async Task GuardarNombreAsync()
+    {
+        if (_renombrando is not { } id)
+            return;
+        var nombre = _nombre;
+        if (await HacerAsync(id, () => Cliente.CambiarNombreDepartamentoAsync(id, new SolicitudDepartamento(Sesion.UsuarioId, Caja.SucursalId, nombre))) is { } lista)
+            await TerminarAsync(lista, id, $"Ahora se llama «{lista.Departamentos.FirstOrDefault(d => d.Id == id)?.Nombre ?? nombre.Trim()}».");
+    }
+
+    /// <summary>
+    /// Sin productos activos, se desactiva ya (se puede reactivar). Con productos, primero se elige a cuál pasan. Se revisa con
+    /// lo de ahora: alguien pudo dar de alta un producto en él mientras tanto.
+    /// </summary>
+    private async Task DesactivarAsync(DepartamentoDto departamento)
+    {
+        Dejar();
+        _aviso = null;
+        if (await HacerAsync(departamento.Id, Cliente.DepartamentosAsync) is not { } lista)
+            return;
+        _lista = lista;
+        if (lista.Departamentos.FirstOrDefault(d => d.Id == departamento.Id) is not { Activo: true } actual)
+            return;
+        if (actual.ProductosActivos > 0)
+        {
+            (_desactivando, _pasarA, _enfocar) = (actual.Id, "", "#depto-pasar");
+            return;
+        }
+        if (await HacerAsync(actual.Id, () => Cliente.DesactivarDepartamentoAsync(actual.Id, new SolicitudDesactivarDepartamento(Sesion.UsuarioId, Caja.SucursalId)))
+            is { } nueva)
+            await TerminarAsync(nueva, actual.Id, $"«{actual.Nombre}» quedó desactivado: ya no se ofrece para los productos.");
+    }
+
+    private async Task PasarYDesactivarAsync()
+    {
+        if (_desactivando is not { } id || _lista?.Departamentos.FirstOrDefault(d => d.Id == id) is not { } departamento)
+            return;
+        if (!Guid.TryParse(_pasarA, out var pasarA))
+        {
+            (_error, _errorDe) = (departamento.ProductosActivos == 1 ? "Elige a qué departamento pasa." : "Elige a qué departamento pasan.", id);
+            return;
+        }
+        var destino = _lista.Departamentos.FirstOrDefault(d => d.Id == pasarA)?.Nombre;
+        var cuantos = departamento.ProductosActivos;
+        if (await HacerAsync(id, () => Cliente.DesactivarDepartamentoAsync(id, new SolicitudDesactivarDepartamento(Sesion.UsuarioId, Caja.SucursalId, pasarA)))
+            is { } lista)
+            await TerminarAsync(lista, pasarA, cuantos == 1
+                ? $"«{departamento.Nombre}» quedó desactivado y su producto activo pasó a «{destino}»."
+                : $"«{departamento.Nombre}» quedó desactivado y sus {Formato.Numero(cuantos)} productos activos pasaron a «{destino}».");
+    }
+
+    private async Task ReactivarAsync(DepartamentoDto departamento)
+    {
+        Dejar();
+        _aviso = null;
+        if (await HacerAsync(departamento.Id,
+                () => Cliente.ReactivarDepartamentoAsync(departamento.Id, new SolicitudReactivarDepartamento(Sesion.UsuarioId, Caja.SucursalId))) is { } lista)
+            await TerminarAsync(lista, departamento.Id, $"«{departamento.Nombre}» se vuelve a ofrecer para los productos.");
+    }
+
+    /// <summary>Hace el cambio: si sale, la lista como quedó; si no, el error junto a <paramref name="renglon"/> (o arriba) y nada cambia.</summary>
+    private async Task<DepartamentosDto?> HacerAsync(Guid? renglon, Func<Task<DepartamentosDto>> cambio)
+    {
+        if (_ocupado)
+            return null;
+        (_ocupado, _error, _errorDe) = (true, null, null);
+        try
+        {
+            return await cambio();
+        }
+        catch (ErrorCaja ex)
+        {
+            (_error, _errorDe) = (ex.Message, renglon);
+            return null;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task TerminarAsync(DepartamentosDto lista, Guid? resaltado, string aviso)
+    {
+        Dejar();
+        (_lista, _resaltado, _aviso) = (lista, resaltado, aviso);
+        await AlCambiar.InvokeAsync();
+    }
+}

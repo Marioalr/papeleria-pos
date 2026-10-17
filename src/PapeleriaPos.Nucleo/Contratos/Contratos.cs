@@ -650,7 +650,13 @@ public sealed record SolicitudGuardarProducto(Guid UsuarioId, Guid SucursalId, F
 
 public sealed record OpcionCatalogoDto(Guid Id, string Nombre);
 
-public sealed record OpcionesCatalogoDto(IReadOnlyList<OpcionCatalogoDto> Departamentos, IReadOnlyList<string> Marcas);
+/// <param name="Departamentos">Los activos: los únicos que se ofrecen (al filtrar la lista, en la ficha, en el alta rápida y en las compras).</param>
+/// <param name="Desactivados">
+/// Los desactivados (Productos › Departamentos), solo para decir el de un producto que se quedó en uno: no se ofrecen.
+/// Vacío en un servicio de antes.
+/// </param>
+public sealed record OpcionesCatalogoDto(
+    IReadOnlyList<OpcionCatalogoDto> Departamentos, IReadOnlyList<string> Marcas, IReadOnlyList<OpcionCatalogoDto>? Desactivados = null);
 
 public sealed record MovimientoKardexDto(DateTime FechaLocal, TipoMovimiento Tipo, decimal Cantidad, decimal Existencia, string? Motivo, string? Documento);
 
