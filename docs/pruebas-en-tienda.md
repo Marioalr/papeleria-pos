@@ -34,6 +34,10 @@ datos de eleventa.
    - su respaldo automático: si está activo, si respalda al salir, en qué carpeta, y la hora, el tamaño y el tipo de los
      últimos respaldos;
    - si existe `gbak.exe` en la carpeta de Firebird (`FirebirdSQL20\bin`) y si Firebird corre como servicio de Windows;
+   - en la caja 2, la ruta completa de un `gbak.exe` de Firebird 2.0 (con `fbclient.dll` o `gds32.dll` junto a él) y el
+     espacio libre del disco: la caja nueva lo usa para respaldar eleventa antes de escribirle cada día (va en
+     `Eleventa:Gbak`; los respaldos, unos 5 días, en `ProgramData\PapeleriaPos\respaldos-eleventa`). Solo mirar: no correr
+     gbak en la tienda;
    - en la caja principal, con `netstat -ano`, qué programa escucha en los puertos 3050 y 3309;
    - la hora de cada caja contra la del celular (en el piloto, la caja nueva compara la hora de lo que manda con la del
      corte de eleventa para saber si ya se contó allá);

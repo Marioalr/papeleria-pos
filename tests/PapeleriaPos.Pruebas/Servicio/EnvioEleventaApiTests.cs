@@ -34,6 +34,8 @@ public class EnvioEleventaApiTests
         ("Eleventa:SegundosAlCobrar", segundosAlCobrar.ToString(CultureInfo.InvariantCulture)),
         // Que en la prueba solo mande el cobro o quien lo pida, no la vuelta de fondo.
         ("Eleventa:SegundosEntreEnvios", "3600"),
+        // Sin respaldo propio de eleventa (lo prueban RespaldoDeEleventaTests y RespaldoDelPilotoTests).
+        ("Eleventa:RespaldoObligatorio", "false"),
     ];
 
     private static (string, string)[] Ajustes(ServidorEleventa e) => Ajustes(e.Servidor, e.Puerto, e.Base);
@@ -441,14 +443,23 @@ public class EnvioEleventaApiTests
         Assert.StartsWith("Se anotó a mano en eleventa. Se dejó para revisar a mano.", envio.Error);
     }
 
+    /// <summary>
+    /// Espera a que la bandeja llegue a algo, hasta un minuto. El estado se lee en dos consultas (lo que está por atender y
+    /// cuántos hay de cada uno): solo vale uno en que las dos dicen lo mismo, no uno leído a la mitad de un envío.
+    /// </summary>
     private static async Task<EstadoEnviosEleventaDto> EsperarAsync(Caja c, Func<EstadoEnviosEleventaDto, bool> listo)
     {
-        for (var intento = 0; ; intento++)
+        var limite = DateTime.UtcNow.AddMinutes(1);
+        while (true)
         {
             var estado = await EnviosAsync(c);
-            if (listo(estado) || intento == 100)
+            if (listo(estado) && Cuadra(estado) || DateTime.UtcNow > limite)
                 return estado;
             await Task.Delay(100);
         }
     }
+
+    private static bool Cuadra(EstadoEnviosEleventaDto e) =>
+        e.PorAtender.Count(x => x.Estado == EstadoEnvioEleventa.Pendiente) == e.Pendientes
+        && e.PorAtender.Count(x => x.Estado == EstadoEnvioEleventa.PorRevisar) == e.PorRevisar;
 }

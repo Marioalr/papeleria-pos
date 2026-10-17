@@ -12,7 +12,8 @@ namespace PapeleriaPos.Servicio;
 
 /// <summary>
 /// Lo que la caja 2 le pide al puente con eleventa (solo del piloto: se quita al dejar eleventa): devolver con el folio
-/// de eleventa escrito (también un ticket cobrado en eleventa, la ida) y lo que quedó por revisar, para su pantalla.
+/// de eleventa escrito (también un ticket cobrado en eleventa, la ida), lo que quedó por revisar y si el puente se detuvo
+/// o espera al respaldo de eleventa, para su pantalla, y reanudarlo.
 /// </summary>
 public static class ApiPuenteEleventa
 {
@@ -76,6 +77,18 @@ public static class ApiPuenteEleventa
             await db.SaveChangesAsync();
             return Results.NoContent();
         });
+
+        // Los respaldos de eleventa: el puente se detuvo porque eleventa ya no tiene lo que le mandó la caja 2 (se restauró un
+        // respaldo). Se reanuda a mano, después de revisar eleventa, con «Configuración de la tienda»; queda en la bitácora.
+        // Lo que se perdió allá queda por revisar, para anotarlo a mano.
+        api.MapPost("/reanudar", async (SolicitudReanudarPuente s, PosDbContext db, EnvioVentasEleventa envios, LecturaEleventa lectura) =>
+        {
+            var caja = await db.Cajas.FindAsync(s.CajaId) ?? throw new InvalidOperationException("La caja no existe.");
+            await new ServicioControl(db).ExigirDeLaSesionAsync(s.UsuarioId, caja.SucursalId, caja.Id, AccionControlada.ConfigurarTienda);
+            await envios.ReanudarAsync(db, caja, s.UsuarioId, s.Nota);
+            lectura.LeerAhora();
+            return await PantallaAsync(db, envios, lectura);
+        });
     }
 
     private static ServidorEleventa Destino(OpcionesEleventa opciones) =>
@@ -131,6 +144,12 @@ public static class ApiPuenteEleventa
                 + "repitió: se reimprimen con el folio de la caja.");
         foreach (var aviso in lectura.Estado.Avisos.Keys.Where(a => a is TurnosDelPiloto.AvisoDosTurnos or TurnosDelPiloto.AvisoTurnoNoEsta))
             avisos.Add(aviso);
-        return new PuenteEleventaDto(porRevisar.OrderBy(p => p.FechaLocal).ToList(), avisos);
+        // Los respaldos de eleventa: si el puente se detuvo, y si espera al respaldo del día.
+        var detenido = await RestauracionDeEleventa.DetencionAsync(db) is { } detencion
+            ? $"Detenido desde el {HoraMexico.ALocal(detencion.DetectadaUtc):dd/MM HH:mm}: eleventa ya no tiene lo que le mandó la caja 2 (¿se restauró un "
+                + $"respaldo?): {detencion.Pruebas.Replace("\n", "; ")}. No se le manda nada ni se aplica su lectura; la caja sigue vendiendo. Revisa eleventa "
+                + "y reanuda: lo que se perdió allá queda por revisar, para anotarlo a mano."
+            : null;
+        return new PuenteEleventaDto(porRevisar.OrderBy(p => p.FechaLocal).ToList(), avisos, detenido, envios.EstadoDelRespaldo());
     }
 }

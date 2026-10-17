@@ -651,6 +651,60 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
 
   Sin verificar: si eleventa respalda con `gbak` o copiando el archivo, si saca a las otras cajas mientras respalda, y
   si la versión de la tienda sigue restaurando sola.
+  - **Avance (2026-10-17), en código** (`RestauracionDeEleventa`, `RespaldoDeEleventa`; tabla del puente
+    `DetencionesDelPuente`):
+    - **Ver la restauración, solo con lo que escribió el puente.** Antes de cada escritura, en la misma transacción, y en
+      la lectura de cada 5 minutos, en la misma foto, se revisa en eleventa:
+      - que sigan ahí los últimos tickets que mandó la caja 2, con su folio y su marca (`CREADO_EN`): si ya no están, o
+        ese número ya es de otro ticket (eleventa volvió a cobrar con los números del respaldo), se perdieron;
+      - que siga el turno que adoptó, con su inicio;
+      - y que los contadores de eleventa (tickets, turnos, devoluciones, entradas y salidas) no estén abajo de lo que ya
+        le dieron a la caja 2.
+
+      Lo que eleventa hace siempre no toca nada de eso: cancelar o devolver (también todo lo de un renglón, que lo
+      borra), cobrar en otra caja y cortar el turno (que borra su ticket abierto) no dan falsas alarmas.
+    - **Si eleventa se restauró, el puente se detiene:** lo que iba a escribir no se escribe y se queda en la bandeja,
+      no escribe nada más, la lectura no aplica nada (las existencias, los precios, los turnos y la vuelta de eleventa
+      ya no cuadran con lo que mandó la caja 2) y no se revisan folios. La caja sigue vendiendo: los tickets salen con
+      el folio de la caja. En la pantalla de la caja 2 sale «Eleventa · detenido», con lo que se vio («ya no está el
+      ticket #4522 que mandó el 16/10 10:05…»).
+    - **Se reanuda a mano:** quien tiene «Configuración de la tienda» revisa eleventa y toca «Ya revisé eleventa:
+      reanudar» (`POST /api/eleventa/reanudar`); queda en la bitácora, con lo que se vio y su nota. Al reanudar, con
+      eleventa contestando (si no, no se puede: no se sabría qué se perdió):
+      - lo que la caja 2 mandó en los últimos 31 días y ya no está allá como lo dejó (la venta por su ticket, su folio
+        y su marca; la devolución y la entrada o salida por su renglón y su marca) queda por revisar, «Eleventa ya no lo
+        tiene: se perdió al restaurar un respaldo… Anótalo a mano en eleventa». La venta conserva el folio que salió
+        impreso, para devolverla; su número de ticket en eleventa se olvida, porque ya puede ser de otro;
+      - si el turno adoptado ya no está, se suelta y la caja nueva toma el que eleventa tenga abierto;
+      - el puente vuelve a escribir (primero lo que esperaba en la bandeja) y a leer.
+
+      Decidido aquí, porque el diseño no lo decía: lo perdido no se vuelve a mandar solo, queda por revisar. Volver a
+      mandarlo le daría folios nuevos que no son los impresos, a turnos que quizá allá ya no están; lo que queda por
+      revisar sigue contando en las existencias de la caja nueva y se ve en la pantalla de la caja 2 hasta anotarlo a
+      mano (queda la pregunta para el dueño, abajo).
+    - **El respaldo propio del día, con gbak.** Antes de lo primero que escribe cada día, y en cuanto la lectura ve que
+      eleventa contesta (así el primer cobro del día no espera a gbak), el puente corre el `gbak.exe` de la caja 2 con
+      la base de la principal por la red (`gbak -b -g servidor:ruta archivo`; con Firebird 2.0, gbak escribe el
+      respaldo en la PC que lo corre). El usuario y la clave van en el entorno (`ISC_USER`, `ISC_PASSWORD`), no en la
+      línea de comandos. Queda `eleventa-AAAA-MM-DD.fbk` en `ProgramData\PapeleriaPos\respaldos-eleventa` (junto a la
+      base de la caja 2, fuera de OneDrive), primero como `.tmp` y renombrado solo si gbak terminó bien; se guardan 5
+      días. No acepta una carpeta en OneDrive. Se espera a gbak hasta 10 minutos.
+    - **Sin el respaldo del día no se escribe en eleventa:** lo que va allá espera en la bandeja (la caja sigue
+      vendiendo y el primer ticket del día sale con el folio de la caja mientras gbak termina) y la pantalla de la caja 2
+      dice por qué («No se manda nada a eleventa hasta respaldarla: …»); se vuelve a intentar cada 5 minutos. Con
+      `RespaldoObligatorio` en falso se escribe aunque no se haya podido, con aviso. Sin la ruta de gbak y con el
+      respaldo obligatorio (así viene), no se escribe nada: escribir en el eleventa real pide un respaldo.
+
+    ```json
+    "Eleventa": { …, "Gbak": "C:\\…\\bin\\gbak.exe", "CarpetaRespaldos": "C:\\ProgramData\\PapeleriaPos\\respaldos-eleventa", "DiasDeRespaldos": 5, "RespaldoObligatorio": true }
+    ```
+
+    Probado con un gbak de mentiras (nunca contra nada real) y contra el Firebird de prueba, haciendo a mano lo que deja
+    una restauración (borrar los últimos tickets, regresar el contador y volver a cobrar con esos números). Falta ver en
+    la tienda dónde está `gbak.exe` en la caja 2 y probar el respaldo contra la copia en el paso 5.
+
+    Para el dueño: al reanudar después de una restauración, ¿lo que se perdió en eleventa se anota a mano allá (como
+    quedó), o la caja 2 lo vuelve a mandar sola, con folios nuevos?
 - **El modo multicaja, al aprobar el piloto (propuesta):** un solo servicio en la caja principal, como quedará al final;
   la base de la caja 2 se muda ahí y la caja 2 se conecta a él. El puente se muda con él y escribe en el Firebird de la
   misma PC, una venta a la vez, con el `CAJAS.ID` y el cajero de cada caja. Eleventa sigue abierto en las dos cajas.

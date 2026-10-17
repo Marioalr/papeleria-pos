@@ -215,7 +215,8 @@ public static class LectorEleventa
 
     /// <summary>
     /// Lo del piloto: los turnos abiertos de la caja 2 y los que adoptó la caja nueva (si eleventa ya los cerró, con lo que
-    /// se contó y lo que faltó o sobró al cerrar), y las devoluciones de los tickets que mandó la caja 2. Solo lee.
+    /// se contó y lo que faltó o sobró al cerrar), las devoluciones de los tickets que mandó la caja 2 y si sigue ahí lo
+    /// que escribió el puente. Solo lee.
     /// </summary>
     private static async Task<DatosDelPiloto> LeerDelPilotoAsync(FbConnection c, FbTransaction tx, ConsultaDelPiloto consulta, CancellationToken ct)
     {
@@ -239,7 +240,9 @@ public static class LectorEleventa
                 r => new FilaCierreDeTurno(Entero(r, 0), Texto(r, 1) == "Salida", Convert.ToDecimal(r.GetValue(2), System.Globalization.CultureInfo.InvariantCulture)), ct));
         // La vuelta: lo que se devolvió o canceló en eleventa de los tickets que mandó la caja 2.
         var devoluciones = consulta.Tickets is { Count: > 0 } tickets ? await TicketsDeEleventa.DevolucionesAsync(c, tx, tickets, ct) : [];
-        return new DatosDelPiloto { Turnos = turnos, Cierres = cierres, Devoluciones = devoluciones };
+        // Los respaldos de eleventa: que siga ahí lo que escribió el puente (si no, no se aplica nada de esta foto).
+        var restauracion = consulta.Huella is { } huella ? await RestauracionDeEleventa.RevisarAsync(c, tx, huella, ct) : null;
+        return new DatosDelPiloto { Turnos = turnos, Cierres = cierres, Devoluciones = devoluciones, Restauracion = restauracion };
     }
 
     /// <summary>Por qué no se pudo leer, dicho para la tienda (Firebird lo dice en inglés y con códigos).</summary>

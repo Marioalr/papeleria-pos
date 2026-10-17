@@ -31,6 +31,8 @@ internal static class PilotoDePrueba
         ("Eleventa:SegundosAlCobrar", "10"),
         // Que solo mande el cobro o quien lo pida, y solo lea cuando se le pida.
         ("Eleventa:SegundosEntreEnvios", "3600"), ("Eleventa:Minutos", "600"),
+        // Sin respaldo propio de eleventa (lo prueban RespaldoDeEleventaTests y RespaldoDelPilotoTests).
+        ("Eleventa:RespaldoObligatorio", "false"),
     ];
 
     public static async Task<T> Leer<T>(HttpResponseMessage r)

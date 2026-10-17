@@ -121,6 +121,7 @@ public static partial class EnvioEleventa
             TransactionBehavior = FbTransactionBehavior.Write | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
         }, ct);
         var sql = new Sql(c, tx, ct);
+        await RevisarHuellaAsync(c, tx, caja, ct);
 
         if (await sql.ValorAsync("SELECT ID FROM DEVOLUCIONES WHERE TICKET_ID = @ticket AND DEVUELTO_EN = @devuelta",
                 [("ticket", d.TicketEleventa), ("devuelta", devuelta)]) is { } ya)
@@ -326,6 +327,7 @@ public static partial class EnvioEleventa
             TransactionBehavior = FbTransactionBehavior.Write | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
         }, ct);
         var sql = new Sql(c, tx, ct);
+        await RevisarHuellaAsync(c, tx, caja, ct);
 
         if (await TurnoDeLaCajaAsync(sql, caja.CajaId) is not { } turno)
         {

@@ -51,6 +51,7 @@ public static partial class EnvioEleventa
             TransactionBehavior = FbTransactionBehavior.Write | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
         }, ct);
         var sql = new Sql(c, tx, ct);
+        await RevisarHuellaAsync(c, tx, caja, ct);
 
         if (await sql.ValorAsync("SELECT ID FROM CORTE_MOVIMIENTOS WHERE ID_CAJA = @caja AND TIPO = @tipo AND CUANDO_FUE = @cuando",
                 [("caja", caja.CajaId), ("tipo", tipo), ("cuando", cuando)]) is { } ya)

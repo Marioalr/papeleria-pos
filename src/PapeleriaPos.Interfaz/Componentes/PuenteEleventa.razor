@@ -1,7 +1,7 @@
 @* Solo del piloto con eleventa (se quita al dejarlo): en el estado de arriba de la caja 2, lo que quedó por revisar con
-   eleventa y lo que conviene saber (sin Telegram, que está en pausa). Sale solo si hay algo. Quien tiene «Configuración
-   de la tienda» marca ahí lo que ya se anotó a mano en eleventa (docs/migracion-eleventa.md, «Lo que falta para el
-   piloto»). *@
+   eleventa y lo que conviene saber (sin Telegram, que está en pausa): también si el puente se detuvo porque eleventa se
+   restauró, o si espera a respaldarla. Sale solo si hay algo. Quien tiene «Configuración de la tienda» marca ahí lo que
+   ya se anotó a mano en eleventa y reanuda el puente (docs/migracion-eleventa.md, «Lo que falta para el piloto»). *@
 @implements IAsyncDisposable
 @inject ClienteCaja Cliente
 @inject IServiceProvider Servicios
@@ -20,6 +20,10 @@
                 @if (p.Detenido is { } detenido)
                 {
                     <div class="vn-alerta"><Ico Nombre="alerta" /><div><span>@detenido</span></div></div>
+                    @if (PuedeMarcar)
+                    {
+                        <button class="vn-boton chico" disabled="@_ocupado" @onclick="ReanudarAsync">Ya revisé eleventa: reanudar</button>
+                    }
                 }
                 @if (p.Respaldo is { } respaldo)
                 {
@@ -59,6 +63,7 @@
 }
 
 @code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 
     /// <summary>Cada cuánto se vuelve a preguntar (lo que pasa con eleventa no cambia a cada segundo).</summary>
@@ -131,6 +136,25 @@
             else if (item.VueltaId is { } vuelta)
                 await Puente!.VueltaRevisadaAsync(vuelta, new SolicitudRevision(Sesion.UsuarioId, null));
             await ActualizarAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    /// <summary>El puente se detuvo porque eleventa se restauró: quien revisó eleventa lo reanuda (queda en la bitácora).</summary>
+    private async Task ReanudarAsync()
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            _puente = await Puente!.ReanudarAsync(new SolicitudReanudarPuente(Sesion.UsuarioId, Caja.Id, null));
         }
         catch (ErrorCaja ex)
         {

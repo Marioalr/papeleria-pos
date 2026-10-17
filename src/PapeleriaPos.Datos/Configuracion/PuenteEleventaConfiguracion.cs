@@ -78,3 +78,16 @@ internal sealed class DevolucionDesdeEleventaConfiguracion : IEntityTypeConfigur
         b.Property(d => d.PorRevisar).HasMaxLength(500);
     }
 }
+
+internal sealed class DetencionDelPuenteConfiguracion : IEntityTypeConfiguration<DetencionDelPuente>
+{
+    public void Configure(EntityTypeBuilder<DetencionDelPuente> b)
+    {
+        b.ToTable("DetencionesDelPuente");
+        b.HasOne<Usuario>().WithMany().HasForeignKey(d => d.ReanudoId);
+        // La bandeja y la lectura preguntan, a cada vuelta, si hay una sin reanudar.
+        b.HasIndex(d => d.ReanudadoUtc);
+        b.Property(d => d.Pruebas).HasMaxLength(2000);
+        b.Property(d => d.Nota).HasMaxLength(500);
+    }
+}

@@ -27,6 +27,12 @@ public sealed class ClientePuente(HttpClient http, ConexionCaja conexion)
     /// <summary>Lo que ya se anotó a mano en eleventa: deja de mandarse y de enseñarse.</summary>
     public Task AnotarAManoAsync(Guid envioId) => _http.PostAsync<object>($"api/eleventa/envios/{envioId}/a-mano", null, sinRespuesta: true);
 
+    /// <summary>
+    /// Reanudar el puente después de que se detuvo porque eleventa se restauró: lo que se perdió allá queda por revisar.
+    /// Regresa cómo quedó, para la pantalla.
+    /// </summary>
+    public Task<PuenteEleventaDto> ReanudarAsync(SolicitudReanudarPuente solicitud) => _http.PostAsync<PuenteEleventaDto>("api/eleventa/reanudar", solicitud);
+
     /// <summary>Una devolución de eleventa que no se pudo pasar a su venta, ya revisada.</summary>
     public Task VueltaRevisadaAsync(Guid vueltaId, SolicitudRevision solicitud) =>
         _http.PostAsync<object>($"api/eleventa/vuelta/{vueltaId}/revisada", solicitud, sinRespuesta: true);

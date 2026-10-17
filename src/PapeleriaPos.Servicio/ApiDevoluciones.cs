@@ -109,7 +109,8 @@ public static class ApiDevoluciones
     {
         if (!opciones.CorteEnEleventa || opciones.ParaEscribir() is not { } destino)
             return;
-        using (var candado = await envios.IntentarCandadoAsync(DevolucionesConEleventa.EsperaEnVivo))
+        // Con el puente detenido (eleventa se restauró) sus números ya no dicen qué es de quién: se deja pasar.
+        using (var candado = await RestauracionDeEleventa.DetencionAsync(db) is null ? await envios.IntentarCandadoAsync(DevolucionesConEleventa.EsperaEnVivo) : null)
         {
             if (candado is not null)
                 await DevolucionesConEleventa.RevisarEnVivoAsync(db, destino.Servidor, ventaId, db.Reloj.GetUtcNow().UtcDateTime);

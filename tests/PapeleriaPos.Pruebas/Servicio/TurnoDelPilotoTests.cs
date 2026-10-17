@@ -51,6 +51,8 @@ public sealed class TurnoDelPilotoTests : IDisposable
         ("Eleventa:SegundosAlCobrar", "10"),
         // Que en la prueba solo mande el cobro o quien lo pida, y solo lea cuando se le pida.
         ("Eleventa:SegundosEntreEnvios", "3600"), ("Eleventa:Minutos", "600"),
+        // Sin respaldo propio de eleventa (lo prueban RespaldoDeEleventaTests y RespaldoDelPilotoTests).
+        ("Eleventa:RespaldoObligatorio", "false"),
     ];
 
     private static async Task<T> Leer<T>(HttpResponseMessage r)

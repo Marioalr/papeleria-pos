@@ -2769,6 +2769,45 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("Cobros");
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.DetencionDelPuente", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DesdeUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("DetectadaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Nota")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("Perdidos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Pruebas")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ReanudadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ReanudoId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReanudadoUtc");
+
+                    b.HasIndex("ReanudoId");
+
+                    b.ToTable("DetencionesDelPuente", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.Devolucion", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4157,6 +4196,14 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
                         .WithMany()
                         .HasForeignKey("VerificadoPorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Ventas.DetencionDelPuente", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("ReanudoId")
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 

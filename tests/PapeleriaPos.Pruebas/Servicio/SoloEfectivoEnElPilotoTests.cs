@@ -34,6 +34,8 @@ public sealed class SoloEfectivoEnElPilotoTests : IDisposable
     [
         ("Eleventa:Escribir", "true"), ("Eleventa:Servidor", "127.0.0.1"), ("Eleventa:Puerto", "1"), ("Eleventa:Base", @"C:\eleventa\PDVDATA.FDB"),
         ("Eleventa:Clave", "masterkey"), ("Eleventa:Caja", "4"), ("Eleventa:Cajero", "7"), ("Eleventa:SegundosEntreEnvios", "3600"),
+        // Sin respaldo propio de eleventa (lo prueban RespaldoDeEleventaTests y RespaldoDelPilotoTests).
+        ("Eleventa:RespaldoObligatorio", "false"),
     ];
 
     private static async Task<T> Leer<T>(HttpResponseMessage r)

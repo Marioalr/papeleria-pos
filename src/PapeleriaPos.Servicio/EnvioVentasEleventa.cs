@@ -4,6 +4,7 @@ using PapeleriaPos.Datos;
 using PapeleriaPos.Eleventa;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Servicio;
@@ -23,13 +24,23 @@ namespace PapeleriaPos.Servicio;
 /// reintenta; la revisión tardía de los folios va en su propio paso (<see cref="FoliosRepetidos"/>); y la lectura de
 /// eleventa usa el mismo candado (<see cref="CandadoAsync"/>).
 /// </para>
+/// <para>
+/// Los respaldos de eleventa: antes de lo primero que escribe cada día, el respaldo propio con gbak
+/// (<see cref="RespaldoDeEleventa"/>); sin él, por omisión, no se escribe. Y si eleventa ya no tiene lo que le mandó la caja
+/// 2 (se restauró un respaldo, <see cref="RestauracionDeEleventa"/>), el puente se detiene hasta que se reanude a mano
+/// (<see cref="ReanudarAsync"/>).
+/// </para>
 /// </summary>
 public sealed class EnvioVentasEleventa(
-    IServiceScopeFactory alcances, OpcionesEleventa opciones, TimeProvider reloj, IHostApplicationLifetime vida, ILogger<EnvioVentasEleventa> log)
+    IServiceScopeFactory alcances, OpcionesEleventa opciones, RespaldoDeEleventa respaldo, TimeProvider reloj, IHostApplicationLifetime vida,
+    ILogger<EnvioVentasEleventa> log)
     : BackgroundService
 {
     /// <summary>Después de una falla de red, cuánto tiempo el cobro ya no espera a eleventa (para no tardar en cada venta).</summary>
     public static readonly TimeSpan SinRedPor = TimeSpan.FromMinutes(1);
+
+    /// <summary>Después de un respaldo de eleventa que no se pudo hacer, cuánto se espera para volver a intentarlo.</summary>
+    public static readonly TimeSpan ReintentarRespaldo = TimeSpan.FromMinutes(5);
 
     private readonly (ServidorEleventa Servidor, CajaEnEleventa Caja)? _destino = opciones.ParaEscribir();
     private readonly SemaphoreSlim _uno = new(1, 1);
@@ -37,6 +48,13 @@ public sealed class EnvioVentasEleventa(
     private DateTime _sinRedHastaUtc;
     private DateTime? _ultimoEnvioUtc;
     private string? _ultimoError;
+
+    // El respaldo de eleventa del día: cuándo se intentó, por qué no se pudo y cuándo se vuelve a intentar.
+    private DateOnly? _respaldoIntentado;
+    private string? _respaldoError;
+    private DateTime _respaldoDespuesUtc;
+    private volatile bool _respaldando;
+    private volatile bool _respaldarPronto;
 
     public bool Activo => _destino is not null;
 
@@ -245,8 +263,10 @@ public sealed class EnvioVentasEleventa(
         await UnoAsync(async db =>
         {
             var ahora = reloj.GetUtcNow().UtcDateTime;
-            // Sin red hace poco: la vuelta lo vuelve a intentar; aquí no se espera otra vez a que no conteste.
-            if (ahora < _sinRedHastaUtc || await FoliosRepetidos.PorRevisarAsync(db, ahora, ct) is not { Count: > 0 } enviadas)
+            // Sin red hace poco: la vuelta lo vuelve a intentar; aquí no se espera otra vez a que no conteste. Con el puente
+            // detenido (eleventa se restauró), sus números ya no dicen qué es de quién.
+            if (ahora < _sinRedHastaUtc || await RestauracionDeEleventa.DetencionAsync(db, ct) is not null
+                || await FoliosRepetidos.PorRevisarAsync(db, ahora, ct) is not { Count: > 0 } enviadas)
                 return true;
             try
             {
@@ -266,15 +286,30 @@ public sealed class EnvioVentasEleventa(
         }, ct);
     }
 
-    /// <summary>En el orden en que pasaron; en cuanto algo no entra, lo demás espera a la siguiente vuelta.</summary>
+    /// <summary>
+    /// En el orden en que pasaron; en cuanto algo no entra, lo demás espera a la siguiente vuelta. Antes de lo primero del
+    /// día, el respaldo de eleventa; con el puente detenido (eleventa se restauró), nada.
+    /// </summary>
     private async Task VueltaAsync(CancellationToken ct)
     {
         List<Guid> pendientes;
         using (var alcance = alcances.CreateScope())
         {
-            pendientes = await alcance.ServiceProvider.GetRequiredService<PosDbContext>().EnviosAEleventa.AsNoTracking()
+            var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
+            if (await RestauracionDeEleventa.DetencionAsync(db, ct) is not null)
+                return;
+            pendientes = await db.EnviosAEleventa.AsNoTracking()
                 .Where(e => e.Estado == EstadoEnvioEleventa.Pendiente).OrderBy(e => e.CreadoUtc).Select(e => e.Id).ToListAsync(ct);
         }
+        var hoy = Hoy();
+        // El respaldo del día: antes de escribir (o en cuanto la lectura ve que eleventa contesta), y después de una falla,
+        // cada pocos minutos. Sin la ruta de gbak no hay con qué: si es obligatorio, no se escribe (la pantalla lo dice).
+        if ((pendientes.Count > 0 || _respaldarPronto) && respaldo.Configurado && !respaldo.HayDelDia(hoy)
+            && reloj.GetUtcNow().UtcDateTime >= _respaldoDespuesUtc)
+            await RespaldarAsync(hoy, ct);
+        _respaldarPronto = false;
+        if (!PuedeEscribir(hoy))
+            return;
         foreach (var id in pendientes)
         {
             if (!await UnoAsync(async db => await db.EnviosAEleventa.FindAsync([id], ct) is not { Estado: EstadoEnvioEleventa.Pendiente } envio
@@ -290,6 +325,15 @@ public sealed class EnvioVentasEleventa(
         {
             if (await db.EnviosAEleventa.SingleOrDefaultAsync(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == ventaId, ct) is not { } envio)
                 return true;
+            // Eleventa se restauró (no se escribe hasta reanudar) o falta el respaldo del día (lo hace la vuelta, que después
+            // la manda): el ticket sale con el folio de la caja.
+            if (await RestauracionDeEleventa.DetencionAsync(db, ct) is not null)
+                return true;
+            if (!PuedeEscribir(Hoy()))
+            {
+                Despertar();
+                return true;
+            }
             // Lo que estaba antes en la bandeja va primero: se pide la vuelta y el ticket sale con el folio de la caja.
             if (await db.EnviosAEleventa.AnyAsync(e => e.Estado == EstadoEnvioEleventa.Pendiente && e.CreadoUtc < envio.CreadoUtc, ct))
             {
@@ -328,6 +372,8 @@ public sealed class EnvioVentasEleventa(
     private async Task<bool> MandarAsync(PosDbContext db, EnvioAEleventa envio, CancellationToken ct)
     {
         var (servidor, caja) = _destino!.Value;
+        // Lo último que escribió el puente: si eleventa ya no lo tiene (se restauró un respaldo), no se escribe nada.
+        caja = caja with { Huella = await RestauracionDeEleventa.HuellaAsync(db, reloj.GetUtcNow().UtcDateTime, RestauracionDeEleventa.AlEscribir, ct) };
         // Escribe en eleventa y dice en qué turno de eleventa quedó (vacío si ya estaba): el turno de la caja nueva lo adopta.
         Func<Task<TurnoDeEleventa?>>? escribir = null;
         string? porRevisar = null;
@@ -437,6 +483,16 @@ public sealed class EnvioVentasEleventa(
             _sinRedHastaUtc = default;
             log.LogWarning("{Tipo} {Id} queda por revisar: {Motivo}", envio.Tipo, envio.Id, ex.Message);
         }
+        catch (EleventaRestaurada ex)
+        {
+            // Eleventa ya no tiene lo que le mandó la caja 2: no se escribió nada. El puente se detiene (no escribe ni aplica la
+            // lectura) hasta que se reanude a mano; esto se queda pendiente.
+            envio.Error = Recortar(ex.Message);
+            EnCurso.Rechazado(envio.Id);
+            _sinRedHastaUtc = default;
+            await DetenerAsync(db, ex.Restauracion, CancellationToken.None);
+            log.LogError("El puente con eleventa se detuvo: {Motivo}", ex.Message);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             envio.Error = _ultimoError = Recortar(LectorEleventa.Explicar(ex, servidor));
@@ -465,6 +521,171 @@ public sealed class EnvioVentasEleventa(
         // Aunque se esté apagando el servicio: si ya entró a eleventa, que quede anotado (si no, al volver lo encuentra la marca).
         await db.SaveChangesAsync(CancellationToken.None);
         return envio.Estado != EstadoEnvioEleventa.Pendiente;
+    }
+
+    // ── Los respaldos de eleventa ──
+
+    private DateOnly Hoy() => DateOnly.FromDateTime(HoraMexico.ALocal(reloj.GetUtcNow().UtcDateTime));
+
+    /// <summary>
+    /// Si hoy ya se puede escribir en eleventa: con el respaldo del día, sí. Sin él, solo si no es obligatorio
+    /// (<see cref="OpcionesEleventa.RespaldoObligatorio"/>) y no hay con qué respaldar, o ya se intentó hoy y no se pudo.
+    /// </summary>
+    private bool PuedeEscribir(DateOnly hoy) =>
+        respaldo.HayDelDia(hoy) || !opciones.RespaldoObligatorio && (!respaldo.Configurado || _respaldoIntentado == hoy);
+
+    /// <summary>El respaldo del día con gbak. Si no se pudo, se vuelve a intentar en unos minutos.</summary>
+    private async Task RespaldarAsync(DateOnly hoy, CancellationToken ct)
+    {
+        _respaldando = true;
+        try
+        {
+            var hecho = await respaldo.HacerAsync(_destino!.Value.Servidor, hoy, ct);
+            _respaldoIntentado = hoy;
+            if (hecho.Listo)
+            {
+                _respaldoError = null;
+                log.LogInformation("Respaldo de eleventa del día en {Archivo}.", hecho.Archivo);
+            }
+            else
+            {
+                _respaldoError = hecho.Error;
+                _respaldoDespuesUtc = reloj.GetUtcNow().UtcDateTime + ReintentarRespaldo;
+                log.LogWarning("No se pudo respaldar eleventa: {Motivo}", hecho.Error);
+            }
+        }
+        finally
+        {
+            _respaldando = false;
+        }
+    }
+
+    /// <summary>
+    /// La lectura vio que eleventa contesta: si falta el respaldo del día, que la bandeja lo haga ya, aunque no haya nada que
+    /// mandar (así lo primero que se cobre en el día no espera a gbak).
+    /// </summary>
+    public void RespaldarSiFalta()
+    {
+        if (Activo && respaldo.Configurado && !respaldo.HayDelDia(Hoy()) && reloj.GetUtcNow().UtcDateTime >= _respaldoDespuesUtc)
+        {
+            _respaldarPronto = true;
+            Despertar();
+        }
+    }
+
+    /// <summary>Lo que la pantalla de la caja 2 dice del respaldo de eleventa; vacío si no hay nada que decir.</summary>
+    public string? EstadoDelRespaldo()
+    {
+        var hoy = Hoy();
+        if (!Activo || respaldo.HayDelDia(hoy))
+            return null;
+        if (_respaldando)
+            return "Respaldando eleventa antes de mandarle lo del día…";
+        var error = _respaldoIntentado == hoy ? _respaldoError : null;
+        if (opciones.RespaldoObligatorio)
+            return !respaldo.Configurado
+                ? "No se manda nada a eleventa: falta la ruta de gbak.exe para respaldarla antes (Eleventa:Gbak)."
+                : error is null ? null
+                : $"No se manda nada a eleventa hasta respaldarla: {error} Se vuelve a intentar cada {ReintentarRespaldo.TotalMinutes:0} minutos.";
+        return error is null ? null : $"Hoy no se pudo respaldar eleventa y se le manda sin respaldo: {error}";
+    }
+
+    // ── Eleventa se restauró ──
+
+    /// <summary>
+    /// Eleventa ya no tiene lo que le mandó la caja 2 (se restauró un respaldo): el puente deja de escribir y de aplicar la
+    /// lectura hasta que alguien con «Configuración de la tienda» lo reanude (<see cref="ReanudarAsync"/>). La caja sigue
+    /// vendiendo y lo que va a eleventa espera en la bandeja. Una detención a la vez.
+    /// </summary>
+    public async Task<DetencionDelPuente> DetenerAsync(PosDbContext db, Restauracion restauracion, CancellationToken ct)
+    {
+        if (await RestauracionDeEleventa.DetencionAsync(db, ct) is { } ya)
+            return ya;
+        var pruebas = string.Join("\n", restauracion.Pruebas);
+        var detencion = new DetencionDelPuente
+        {
+            DetectadaUtc = reloj.GetUtcNow().UtcDateTime, Pruebas = pruebas.Length > 2000 ? pruebas[..2000] : pruebas, DesdeUtc = restauracion.DesdeUtc,
+        };
+        db.Set<DetencionDelPuente>().Add(detencion);
+        await db.SaveChangesAsync(ct);
+        return detencion;
+    }
+
+    /// <summary>
+    /// Reanudar a mano, después de revisar eleventa (quien llama revisa el permiso): lo que el puente había mandado y ya no
+    /// está allá queda por revisar, para anotarlo a mano (la lectura lo sigue descontando de las existencias); los turnos
+    /// adoptados que ya no están se sueltan (la caja vuelve a tomar el que eleventa tenga abierto); y el puente vuelve a
+    /// escribir y a leer. Queda en la bitácora. Sin eleventa no se puede: no se sabría qué se perdió. Regresa cuántos
+    /// envíos quedaron por revisar.
+    /// </summary>
+    public async Task<int> ReanudarAsync(PosDbContext db, Nucleo.Turnos.Caja caja, Guid usuarioId, string? nota, CancellationToken ct = default)
+    {
+        var detencion = await db.Set<DetencionDelPuente>().Where(d => d.ReanudadoUtc == null).OrderBy(d => d.DetectadaUtc).FirstOrDefaultAsync(ct)
+            ?? throw new InvalidOperationException("El puente con eleventa no está detenido.");
+        var (servidor, _) = _destino ?? throw new InvalidOperationException("Esta caja no manda a eleventa.");
+        int perdidos;
+        // Con el candado: ni la bandeja ni la lectura van mientras tanto.
+        using (await CandadoAsync(ct))
+        {
+            var ahora = reloj.GetUtcNow().UtcDateTime;
+            List<EnvioAEleventa> sinEleventa;
+            List<TurnoEnEleventa> sueltos;
+            try
+            {
+                await using var conexion = new FbConnection(servidor.Cadena());
+                await conexion.OpenAsync(ct);
+                sinEleventa = await RestauracionDeEleventa.PerdidosAsync(db, conexion, ahora, ct);
+                sueltos = await TurnosQueYaNoEstanAsync(db, conexion, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && (EsDeRed(ex) || ex is FbException))
+            {
+                throw new InvalidOperationException($"{LectorEleventa.Explicar(ex, servidor)} Sin eleventa no se sabe qué se perdió: reanuda cuando conteste.");
+            }
+            foreach (var envio in sinEleventa)
+            {
+                envio.Error = Recortar($"Eleventa ya no lo tiene: se perdió al restaurar un respaldo (se había mandado el "
+                    + $"{HoraMexico.ALocal(envio.EnviadaUtc!.Value):dd/MM HH:mm}). Anótalo a mano en eleventa.");
+                envio.Estado = EstadoEnvioEleventa.PorRevisar;
+                // Su número en eleventa ya es de otra cosa (o de nada); el folio de la venta se queda: es el que salió impreso.
+                (envio.TicketEleventa, envio.IdEleventa) = (null, null);
+            }
+            db.Set<TurnoEnEleventa>().RemoveRange(sueltos);
+            detencion.ReanudadoUtc = ahora;
+            detencion.ReanudoId = usuarioId;
+            detencion.Nota = nota?.Trim() is { Length: > 0 } texto ? (texto.Length > 500 ? texto[..500] : texto) : null;
+            detencion.Perdidos = perdidos = sinEleventa.Count;
+            new ServicioControl(db).Registrar(caja.SucursalId, caja.Id, usuarioId, AccionControlada.ConfigurarTienda,
+                Recortar($"Reanudó el puente con eleventa (detenido el {HoraMexico.ALocal(detencion.DetectadaUtc):dd/MM HH:mm}: "
+                    + $"{detencion.Pruebas.Replace("\n", "; ")}). {(perdidos == 0 ? "No se perdió nada de lo que mandó la caja 2"
+                        : $"{perdidos} {(perdidos == 1 ? "cosa que había mandado la caja 2 quedó" : "cosas que había mandado la caja 2 quedaron")} por revisar")}"
+                    + (sueltos.Count > 0 ? $"; se soltaron {sueltos.Count} turnos de eleventa que ya no están" : "")
+                    + (detencion.Nota is { } n ? $". {n}" : "")));
+            await db.SaveChangesAsync(ct);
+        }
+        log.LogWarning("Se reanudó el puente con eleventa; {Perdidos} envíos quedaron por revisar.", perdidos);
+        Despertar();
+        return perdidos;
+    }
+
+    /// <summary>Los turnos de eleventa que adoptó la caja nueva, sin su corte todavía, que ya no están en eleventa como estaban.</summary>
+    private static async Task<List<TurnoEnEleventa>> TurnosQueYaNoEstanAsync(PosDbContext db, FbConnection conexion, CancellationToken ct)
+    {
+        var adoptados = await db.Set<TurnoEnEleventa>().Where(t => t.TomadoUtc == null).ToListAsync(ct);
+        if (adoptados.Count == 0)
+            return [];
+        await using var tx = await conexion.BeginTransactionAsync(new FbTransactionOptions
+        {
+            TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
+        }, ct);
+        var sueltos = new List<TurnoEnEleventa>();
+        foreach (var adoptado in adoptados)
+        {
+            var uno = new HuellaDelPuente([], [new TurnoDeEleventa(adoptado.TurnoEleventa, HoraMexico.ALocal(adoptado.InicioUtc))], new Dictionary<string, int>());
+            if (await RestauracionDeEleventa.RevisarAsync(conexion, tx, uno, ct) is not null)
+                sueltos.Add(adoptado);
+        }
+        await tx.CommitAsync(ct);
+        return sueltos;
     }
 
     /// <summary>El turno de la caja nueva de lo que se mandó: el de la venta, el de donde salió lo devuelto o el del movimiento.</summary>

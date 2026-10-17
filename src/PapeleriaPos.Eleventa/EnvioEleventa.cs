@@ -13,7 +13,15 @@ namespace PapeleriaPos.Eleventa;
 /// (<see cref="CorteEnElPiloto"/>): el turno lo abre eleventa con su fondo y lo cierra su corte; sin turno, lo que se
 /// manda espera (<see cref="CorteEnElPiloto.AbreLaCajaEnEleventa"/>). Solo para convivir con eleventa: se quita al dejarlo.
 /// </param>
-public sealed record CajaEnEleventa(int CajaId, int CajeroId, string? Ip = null, bool AbreTurno = true);
+public sealed record CajaEnEleventa(int CajaId, int CajeroId, string? Ip = null, bool AbreTurno = true)
+{
+    /// <summary>
+    /// Lo último que escribió el puente: antes de escribir, en la misma transacción, se revisa que siga en eleventa; si no,
+    /// eleventa se restauró a un respaldo anterior y no se escribe (<see cref="EleventaRestaurada"/>). Vacía, no se revisa.
+    /// Solo del piloto (<see cref="RestauracionDeEleventa"/>).
+    /// </summary>
+    public HuellaDelPuente? Huella { get; init; }
+}
 
 /// <summary>Una venta cobrada en efectivo, como la entiende eleventa.</summary>
 /// <param name="CreadaLocal">Cuándo se empezó en la caja nueva (hora local). También es su marca en eleventa: así no se manda dos veces.</param>
@@ -112,6 +120,7 @@ public static partial class EnvioEleventa
             TransactionBehavior = FbTransactionBehavior.Write | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
         }, ct);
         var sql = new Sql(c, tx, ct);
+        await RevisarHuellaAsync(c, tx, caja, ct);
 
         if (await sql.FilaAsync("SELECT ID, FOLIO FROM VENTATICKETS WHERE CAJA_ID = @caja AND CREADO_EN = @creada AND ESTA_ABIERTO = 'f'",
                 [("caja", caja.CajaId), ("creada", creada)]) is { } ya)
@@ -420,6 +429,16 @@ public static partial class EnvioEleventa
 
     /// <summary>Los del día y la caja: los mismos, menos el efectivo al cierre.</summary>
     private static readonly string[] ColumnasDia = [.. ColumnasTurno.Where(c => c != "EFECTIVO_AL_CIERRE")];
+
+    /// <summary>
+    /// Antes de escribir, en la misma transacción: si eleventa ya no tiene lo último que escribió el puente (se restauró un
+    /// respaldo), no se escribe nada (<see cref="EleventaRestaurada"/>).
+    /// </summary>
+    private static async Task RevisarHuellaAsync(FbConnection c, FbTransaction tx, CajaEnEleventa caja, CancellationToken ct)
+    {
+        if (caja.Huella is { } huella && await RestauracionDeEleventa.RevisarAsync(c, tx, huella, ct) is { } restauracion)
+            throw new EleventaRestaurada(restauracion);
+    }
 
     private sealed class Sql(FbConnection c, FbTransaction tx, CancellationToken ct)
     {

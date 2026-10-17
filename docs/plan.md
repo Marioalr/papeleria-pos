@@ -650,6 +650,14 @@ eleventa por la bandeja; la de un ticket de otra caja o de otro turno queda por 
 eleventa. Lo que se devuelve o cancela en eleventa de un ticket de la caja 2 entra a su venta con la lectura, sin
 efectivo (el corte de la caja nueva no lo cuenta), y lo que quede por revisar se ve arriba en la pantalla de la caja 2.
 
+Tercera parte (2026-10-17), en código: los respaldos de eleventa. Antes de cada escritura y en cada lectura, el puente
+revisa que eleventa siga teniendo lo último que le mandó la caja 2 (sus tickets con su folio y su marca, el turno que
+adoptó, y que sus contadores no hayan regresado); si no, eleventa se restauró: el puente deja de escribir y de aplicar
+la lectura, la pantalla de la caja 2 lo dice, y solo se reanuda a mano, con «Configuración de la tienda» y en la
+bitácora; lo que se perdió allá queda por revisar. Y antes de lo primero que escribe cada día, su propio respaldo de
+eleventa con `gbak`, en la caja 2 y fuera de OneDrive, con 5 días de historia; sin él no se escribe (se puede quitar
+esa condición en la configuración). Probado con un gbak de mentiras y contra el Firebird de prueba.
+
 #### Al terminar el piloto
 
 Cada parte entra sin detener a la caja 2:
@@ -812,7 +820,8 @@ Piloto en la caja 2 ([ver arriba](#la-versión-unicaja-y-el-piloto-en-la-caja-2)
   ([diseño](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))
 - [x] Devoluciones y cancelaciones de ida y vuelta con eleventa (2026-10-16, en código; falta ver en vivo la de otra
   caja o de otro turno, que mientras queda por revisar, y probarlo contra la copia en el paso 5)
-- [ ] Los respaldos de eleventa: detectar una restauración y el respaldo propio con `gbak`
+- [x] Los respaldos de eleventa: detectar una restauración y el respaldo propio con `gbak` (2026-10-17, en código; falta
+  ver en la tienda dónde está `gbak.exe` en la caja 2 y probarlo contra la copia en el paso 5)
 - [ ] Paso 5: semanas de prueba contra una copia servida por un Firebird 2.0.1 como el de la tienda
 - [ ] Paso 7: el fin de semana del 17 y 18 de octubre
   ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-octubre))
@@ -895,6 +904,9 @@ Por definir:
 - [ ] Instalador de la tienda para el administrador: servicio, cajas, firewall, carpeta de la caja con permisos y las
   colas de las impresoras de inyección ([detalle](#instalación-y-usuarios-de-windows)). Hoy son los scripts de
   `instalacion/`
+- [ ] Si eleventa se restaura a un respaldo durante el piloto: lo que la caja 2 le había mandado y se perdió allá, ¿se
+  anota a mano en eleventa (así quedó, por revisar en la pantalla de la caja 2) o la caja 2 lo vuelve a mandar sola, con
+  folios nuevos? ([respaldos](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))
 
 - [ ] Si la sucursal 2 abre antes de la fase 7: guardar la lista de gastos de apertura con comprobantes
 - [ ] Administración: insumos del mes (papel térmico, cinta, limpieza…) para la ganancia mensual

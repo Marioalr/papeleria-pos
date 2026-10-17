@@ -178,3 +178,30 @@ public class DevolucionDesdeEleventa
 
     public DateTime VistaUtc { get; set; }
 }
+
+/// <summary>
+/// Los respaldos de eleventa (docs/migracion-eleventa.md, «Los respaldos de eleventa»): una vez que el puente vio que
+/// eleventa ya no tiene lo que le mandó la caja 2, o que sus números regresaron (se restauró un respaldo anterior), y dejó
+/// de escribir. Mientras no se reanude a mano (<see cref="ReanudadoUtc"/>), el puente no escribe en eleventa ni aplica su
+/// lectura de cada pocos minutos; la caja 2 sigue vendiendo.
+/// </summary>
+public class DetencionDelPuente
+{
+    public Guid Id { get; set; } = Ids.Nuevo();
+    public DateTime DetectadaUtc { get; set; }
+
+    /// <summary>Lo que se vio, dicho para la tienda: un renglón por cosa.</summary>
+    public required string Pruebas { get; set; }
+
+    /// <summary>Cuándo se mandó lo más viejo que ya no está en eleventa; vacío si solo regresaron los números.</summary>
+    public DateTime? DesdeUtc { get; set; }
+
+    /// <summary>Cuándo se reanudó: quien tiene «Configuración de la tienda» revisó eleventa y lo dijo.</summary>
+    public DateTime? ReanudadoUtc { get; set; }
+
+    public Guid? ReanudoId { get; set; }
+    public string? Nota { get; set; }
+
+    /// <summary>Lo que al reanudar ya no estaba en eleventa y quedó por revisar, para anotarlo a mano allá.</summary>
+    public int? Perdidos { get; set; }
+}

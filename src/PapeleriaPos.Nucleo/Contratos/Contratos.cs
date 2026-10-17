@@ -1159,6 +1159,12 @@ public sealed record TicketConFolioDto(string Caja, DateTime? FechaLocal, long T
 public sealed record PuenteEleventaDto(IReadOnlyList<PorRevisarEleventaDto> PorRevisar, IReadOnlyList<string> Avisos, string? Detenido = null,
     string? Respaldo = null);
 
+/// <summary>
+/// Reanudar el puente con eleventa después de que se detuvo porque eleventa ya no tenía lo que le mandó la caja 2 (se
+/// restauró un respaldo): quien tiene «Configuración de la tienda», desde la caja 2, con una nota de lo que revisó.
+/// </summary>
+public sealed record SolicitudReanudarPuente(Guid UsuarioId, Guid CajaId, string? Nota);
+
 /// <summary>Algo que quedó por revisar con eleventa: de la bandeja (<paramref name="EnvioId"/>) o una devolución hecha allá (<paramref name="VueltaId"/>).</summary>
 /// <param name="Motivo">Por qué, dicho para la tienda.</param>
 public sealed record PorRevisarEleventaDto(Guid? EnvioId, Guid? VueltaId, string Descripcion, DateTime FechaLocal, long TotalCentavos, string Motivo);

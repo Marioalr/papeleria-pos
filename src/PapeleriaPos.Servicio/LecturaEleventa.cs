@@ -62,6 +62,25 @@ public sealed class OpcionesEleventa
     /// <summary>Cada cuánto se lee.</summary>
     public int Minutos { get; set; } = 5;
 
+    /// <summary>
+    /// Los respaldos de eleventa (<see cref="RespaldoDeEleventa"/>): la ruta de <c>gbak.exe</c> en esta PC, el de Firebird
+    /// 2.0 como el de la tienda (por ejemplo, «C:\Program Files\Firebird\Firebird_2_0\bin\gbak.exe»). Vacía, no hay respaldo
+    /// propio, y con <see cref="RespaldoObligatorio"/> no se escribe en eleventa.
+    /// </summary>
+    public string? Gbak { get; set; }
+
+    /// <summary>Dónde van los respaldos de eleventa: en el disco de esta PC y fuera de OneDrive. Por omisión, junto a la base («respaldos-eleventa»).</summary>
+    public string? CarpetaRespaldos { get; set; }
+
+    /// <summary>Cuántos días de respaldos de eleventa se guardan.</summary>
+    public int DiasDeRespaldos { get; set; } = 5;
+
+    /// <summary>
+    /// Sin el respaldo del día no se escribe en eleventa: lo que va a eleventa espera en la bandeja y la pantalla de la caja
+    /// 2 dice por qué (la caja sigue vendiendo). En falso se escribe aunque no se haya podido respaldar.
+    /// </summary>
+    public bool RespaldoObligatorio { get; set; } = true;
+
     public ServidorEleventa? Conexion() => Activo ? Destino() : null;
 
     /// <summary>
@@ -98,7 +117,8 @@ public sealed class OpcionesEleventa
 /// del eleventa de la caja principal, solo leyendo, y pone al día la base de esta caja. Si eleventa no contesta, se
 /// sigue vendiendo con lo último que se leyó y se vuelve a intentar en la siguiente vuelta. Mientras esta caja manda a
 /// eleventa, en la misma foto trae los turnos de la caja 2 (la caja nueva adopta el abierto y toma su corte,
-/// <see cref="TurnosDelPiloto"/>), y lee y aplica con el candado de la bandeja.
+/// <see cref="TurnosDelPiloto"/>) y revisa que siga ahí lo que escribió el puente (si no, eleventa se restauró: no se
+/// aplica nada y el puente se detiene, <see cref="RestauracionDeEleventa"/>), y lee y aplica con el candado de la bandeja.
 /// </summary>
 public sealed class LecturaEleventa(
     IServiceScopeFactory alcances, OpcionesEleventa opciones, EnvioVentasEleventa envios, TimeProvider reloj, ILogger<LecturaEleventa> log)
@@ -158,15 +178,38 @@ public sealed class LecturaEleventa(
             var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
             // El piloto: la lectura y la bandeja usan el mismo candado (mientras se lee y se aplica, no se manda nada).
             using var candado = envios.Activo ? await envios.CandadoAsync(ct) : null;
+            // El puente detenido (eleventa se restauró): lo de eleventa ya no cuadra con lo que mandó la caja 2 (sus
+            // existencias, sus turnos, sus números), así que no se aplica nada hasta reanudarlo.
+            if (envios.Activo && await RestauracionDeEleventa.DetencionAsync(db, ct) is { } detenido)
+            {
+                _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), false, _estado?.Resultado,
+                    $"El puente con eleventa está detenido desde el {HoraMexico.ALocal(detenido.DetectadaUtc):dd/MM HH:mm}: no se aplica la lectura hasta reanudarlo.",
+                    HoraMexico.ALocal(inicio + espera), ++_lecturas, _estado?.Avisos ?? new Dictionary<string, int>());
+                return;
+            }
             // Lo que la bandeja mande mientras se lee pudo entrar a eleventa sin que aquí se sepa todavía.
             using var mandados = envios.EnCurso.Vigilar();
-            // En el piloto, en la misma foto: los turnos de la caja 2 en eleventa y lo que se devolvió allá de sus tickets.
+            // En el piloto, en la misma foto: los turnos de la caja 2 en eleventa, lo que se devolvió allá de sus tickets y si
+            // sigue ahí lo que escribió el puente.
             var ahora = reloj.GetUtcNow().UtcDateTime;
             var consulta = opciones.CorteEnEleventa && opciones.Caja is { } caja
-                ? await TurnosDelPiloto.ConsultaAsync(db, caja, ct) with { Tickets = await DevolucionesConEleventa.TicketsDeLaVueltaAsync(db, ahora, ct) }
+                ? await TurnosDelPiloto.ConsultaAsync(db, caja, ct) with
+                {
+                    Tickets = await DevolucionesConEleventa.TicketsDeLaVueltaAsync(db, ahora, ct),
+                    Huella = envios.Activo ? await RestauracionDeEleventa.HuellaAsync(db, ahora, RestauracionDeEleventa.AlLeer, ct) : null,
+                }
                 : null;
             var datos = await LectorEleventa.LeerCatalogoAsync(servidor, consulta, ct);
             ahora = reloj.GetUtcNow().UtcDateTime;
+            if (datos.Piloto?.Restauracion is { } restauracion)
+            {
+                await envios.DetenerAsync(db, restauracion, ct);
+                _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), false, _estado?.Resultado,
+                    $"{RestauracionDeEleventa.Texto(restauracion)} No se aplicó la lectura y el puente se detuvo.", HoraMexico.ALocal(inicio + espera),
+                    ++_lecturas, _estado?.Avisos ?? new Dictionary<string, int>());
+                log.LogError("El puente con eleventa se detuvo: {Motivo}", RestauracionDeEleventa.Texto(restauracion));
+                return;
+            }
             var turnos = consulta is not null && datos.Piloto is { } piloto ? await TurnosDelPiloto.AplicarAsync(db, consulta.CajaId, piloto, ahora, ct) : null;
             // La vuelta, antes de las existencias: lo devuelto en eleventa entra con su devolución, no como un ajuste.
             var vuelta = datos.Piloto is { } conDevoluciones ? await DevolucionesConEleventa.AplicarVueltaAsync(db, conDevoluciones.Devoluciones, ahora, ct) : null;
@@ -190,6 +233,8 @@ public sealed class LecturaEleventa(
             // Lo que seguía en la bandeja de un turno que eleventa cortó: su hora dice si va al turno siguiente o queda por revisar.
             if (turnos is { Cortes: > 0 })
                 envios.Despertar();
+            // Eleventa contesta: si falta su respaldo del día, que se haga antes de que haya algo que mandarle.
+            envios.RespaldarSiFalta();
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
