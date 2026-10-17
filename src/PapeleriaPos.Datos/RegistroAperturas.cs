@@ -10,15 +10,17 @@ namespace PapeleriaPos.Datos;
 /// <summary>
 /// Abrir paquete (docs/fase-2-inventario.md, entrega 2, parte 3): cuando el paquete y la pieza son productos distintos
 /// (como vienen de eleventa), sale el paquete a su costo y entran las piezas con ese mismo costo. Sin existencia del
-/// paquete también se puede (se vende sin existencia): sale a su último costo.
+/// paquete también se puede (se vende sin existencia): sale a su último costo. En el piloto con eleventa
+/// (<paramref name="lecturaDeEleventa"/>) no se abre aquí: el inventario se lleva en eleventa (<see cref="TrastiendaEnElPiloto"/>).
 /// </summary>
-public sealed class RegistroAperturas(PosDbContext db)
+public sealed class RegistroAperturas(PosDbContext db, bool lecturaDeEleventa = false)
 {
     private DateTime Ahora => db.Reloj.GetUtcNow().UtcDateTime;
 
     public async Task<AperturaDto> AbrirAsync(SolicitudAbrirPaquete s, CancellationToken ct = default)
     {
         await new ServicioControl(db).ExigirAsync(s.UsuarioId, s.SucursalId, AccionControlada.AbrirPaquete, "No tienes permiso para abrir paquetes.", ct);
+        TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
         if (s.OrigenId == s.DestinoId)
             throw new ArgumentException("El paquete y lo que trae son productos distintos.");
         var origen = await VarianteAsync(s.OrigenId, ct);

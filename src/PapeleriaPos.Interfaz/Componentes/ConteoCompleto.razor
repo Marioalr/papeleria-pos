@@ -1,10 +1,19 @@
 @* El conteo completo por departamento (fase 2, entrega 3, parte 3): el encargado abre un departamento y quienes estén
    presentes cuentan desde el celular, en la página /conteo del servicio. Al cerrarlo, lo contado reemplaza la existencia.
-   Es la pestaña de F4 en la caja y la pantalla del celular. *@
+   Es la pestaña de F4 en la caja y la pantalla del celular. En el piloto con eleventa no se cuenta aquí: solo la nota
+   (en la caja, la tarea ni se ofrece; en el celular, la página la dice). *@
 @inject ClienteCaja Cliente
 
 <div class="conteo-completo @(EnCelular ? "celular" : "")">
-    @if (_conteoId is { } id)
+    @if (_piloto is { } piloto)
+    {
+        <p class="aviso-autorizacion">@piloto</p>
+    }
+    else if (!_listo)
+    {
+        <p>Cargando…</p>
+    }
+    else if (_conteoId is { } id)
     {
         @if (_revisar)
         {
@@ -129,6 +138,12 @@
 
     private List<DepartamentoConteoDto>? _departamentos;
     private DireccionCelularDto? _direccion;
+
+    /// <summary>En el piloto con eleventa, por qué aquí no se cuenta: el inventario se lleva allá.</summary>
+    private string? _piloto;
+
+    /// <summary>Ya se sabe si es el piloto: antes no se entra a un conteo (el del celular que recarga la página).</summary>
+    private bool _listo;
     private Guid? _conteoId;
     private bool _revisar;
     private bool _ocupado;
@@ -143,6 +158,17 @@
 
     protected override async Task OnInitializedAsync()
     {
+        try
+        {
+            _piloto = (await Cliente.TrastiendaEnElPilotoAsync()).Inventario;
+        }
+        catch (ErrorCaja)
+        {
+            // Sin saberlo se ve como siempre: el servicio decide.
+        }
+        _listo = true;
+        if (_piloto is not null)
+            return;
         _conteoId = ConteoInicial;
         await CargarAsync();
         if (!EnCelular)

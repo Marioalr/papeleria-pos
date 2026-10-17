@@ -11,15 +11,18 @@ namespace PapeleriaPos.Datos;
 /// Ajustes y mermas (docs/fase-2-inventario.md, entrega 3, parte 1). Pasan por las reglas como lo de la fase 1: el
 /// monto que se revisa es el costo (lo que vale lo que entra o sale), así una merma chica la registra el cajero solo y
 /// una grande pide al encargado. Cada uno es un movimiento del kardex con su documento y queda en la bitácora; desde el
-/// umbral de la sucursal se le avisa al dueño.
+/// umbral de la sucursal se le avisa al dueño. En el piloto con eleventa (<paramref name="lecturaDeEleventa"/>) no se hacen:
+/// el inventario se lleva en eleventa (<see cref="TrastiendaEnElPiloto"/>).
 /// </summary>
-public sealed class RegistroAjustes(PosDbContext db)
+public sealed class RegistroAjustes(PosDbContext db, bool lecturaDeEleventa = false)
 {
     private DateTime Ahora => db.Reloj.GetUtcNow().UtcDateTime;
 
     /// <summary>Corrige la existencia a la que se encontró: entra o sale la diferencia, con su costo promedio.</summary>
     public async Task<AjusteInventarioDto> AjustarAsync(SolicitudAjuste s, CancellationToken ct = default)
     {
+        if (lecturaDeEleventa)
+            await TrastiendaEnElPiloto.RechazarAsync(db, s.UsuarioId, s.SucursalId, AccionControlada.AjustarInventario, ct);
         if (string.IsNullOrWhiteSpace(s.Motivo))
             throw new ArgumentException("Escribe por qué se ajusta.");
         var variante = await VarianteAsync(s.VarianteId, ct);
@@ -49,6 +52,8 @@ public sealed class RegistroAjustes(PosDbContext db)
     /// <summary>Saca lo dañado, caducado o perdido a su costo promedio: es pérdida.</summary>
     public async Task<AjusteInventarioDto> MermaAsync(SolicitudMerma s, CancellationToken ct = default)
     {
+        if (lecturaDeEleventa)
+            await TrastiendaEnElPiloto.RechazarAsync(db, s.UsuarioId, s.SucursalId, AccionControlada.Merma, ct);
         if (s.Causa == CausaMerma.Otro && string.IsNullOrWhiteSpace(s.Motivo))
             throw new ArgumentException("Escribe qué pasó.");
         var variante = await VarianteAsync(s.VarianteId, ct);

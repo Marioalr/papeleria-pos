@@ -49,17 +49,26 @@ public sealed class ServicioEnPrueba : IAsyncLifetime
     {
         await Fabrica.DisposeAsync();
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        // Un trabajo de fondo del servicio que terminaba puede cerrar su conexión (y SQLite quitar su -wal) mientras se borra
-        // la carpeta: se reintenta, y si no, se queda en la carpeta temporal. Una limpieza fallida no tumba la corrida (salió
-        // una vez, con toda la corrida, en Linux).
+        await BorrarCarpetaAsync(Carpeta);
+    }
+
+    /// <summary>
+    /// Como los archivos de <see cref="ServicioDePrueba"/>: un trabajo de fondo que terminaba puede seguir escribiendo en la
+    /// carpeta un instante después de parar el servicio (en Linux, el borrado encuentra un archivo nuevo y dice que la carpeta
+    /// no está vacía; en Windows, que un archivo sigue abierto). Se reintenta, y si no, se queda en la carpeta temporal: una
+    /// limpieza fallida no tumba la corrida.
+    /// </summary>
+    private static async Task BorrarCarpetaAsync(string carpeta)
+    {
         for (var intento = 1; ; intento++)
         {
             try
             {
-                Directory.Delete(Carpeta, recursive: true);
+                if (Directory.Exists(carpeta))
+                    Directory.Delete(carpeta, recursive: true);
                 return;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && intento < 20)
+            catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException) && intento < 20)
             {
                 await Task.Delay(100);
             }

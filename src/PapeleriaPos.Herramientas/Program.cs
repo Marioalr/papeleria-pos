@@ -8,6 +8,8 @@ using PapeleriaPos.Herramientas.Eleventa;
 using PapeleriaPos.Herramientas.Ficticios;
 using PapeleriaPos.Herramientas.Importacion;
 using PapeleriaPos.Herramientas.Prueba;
+using PapeleriaPos.Herramientas.Tienda;
+using PapeleriaPos.Impresion;
 using PapeleriaPos.Impresiones.Datos;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
@@ -26,6 +28,8 @@ return args switch
     ["importar-control-print", .. var resto] => await ImportarControlPrintAsync(resto),
     ["aplicar-depuracion", .. var resto] => await AplicarDepuracionAsync(resto),
     ["preparar-prueba", .. var resto] => await PrepararPruebaAsync(resto),
+    ["probar-impresora-tickets", .. var resto] => await ProbarImpresoraTicketsAsync(resto),
+    ["probar-lector", ..] => ProbarLector(),
     _ => Ayuda(),
 };
 
@@ -84,6 +88,18 @@ static int Ayuda()
           preparar-prueba [--salida prueba.db] [--ejemplos Ejemplos] [--reemplazar]
               La base de la prueba con una persona real: la papelería ficticia con la caja y los usuarios de prueba,
               un chat de Telegram simulado, impresiones por cobrar, y una factura XML y una nota PDF de ejemplo.
+
+          probar-impresora-tickets --impresora <IP>[:puerto]
+              Para el fin de semana en la tienda: qué hace la impresora de tickets que comparten las dos cajas cuando le
+              llegan dos tickets a la vez. Manda dos tickets de prueba como los manda la caja (al puerto 9100), cada uno
+              por su conexión: primero a la vez y después casi juntos. Dice cuándo terminó cada uno o qué error dio; en el
+              papel se ve si salieron completos. No toca eleventa ni ninguna base. scripts\probar-impresora-tickets.cmd
+              lo abre.
+
+          probar-lector
+              Para el fin de semana en la tienda: qué manda el lector y a qué ritmo. Con cada código escaneado dice qué
+              llegó y el tiempo entre tecla y tecla, y si en el cobro la caja lo reconoce como el lector (caja.js,
+              RAFAGA_MS). scripts\probar-lector.cmd lo abre.
         """);
     return 1;
 }
@@ -499,6 +515,76 @@ static async Task<int> GenerarFicticiosAsync(string[] args)
           Precio < costo  {datos.Resumen.PrecioBajoCosto.Count,8:N0}
           Duplicados      {datos.Resumen.Duplicados.Count,8:N0}
         """);
+    return 0;
+}
+
+static async Task<int> ProbarImpresoraTicketsAsync(string[] args)
+{
+    var texto = Opcion(args, "--impresora");
+    if (texto is null || !Uri.TryCreate(texto.Contains("://") ? texto : $"tcp://{texto}", UriKind.Absolute, out var uri) || uri.Host.Length == 0)
+    {
+        Console.Error.WriteLine("Indica la impresora de tickets con --impresora: su IP (por ejemplo 192.168.1.100) o IP:puerto.");
+        return 1;
+    }
+    var puerto = uri.Port > 0 ? uri.Port : 9100;
+    var pc = Environment.MachineName;
+    Console.WriteLine($"""
+        La impresora de tickets en {uri.Host}:{puerto}, desde {pc}. En cada vuelta salen dos tickets de prueba, cada uno
+        por su conexión, como los manda la caja. Para probar desde las dos cajas, abre esto también en la otra y den Enter
+        al mismo tiempo.
+        """);
+    foreach (var vuelta in PruebaImpresoraTickets.Vueltas)
+    {
+        Console.WriteLine();
+        var separacion = vuelta.Separacion > TimeSpan.Zero ? $" ({vuelta.Separacion.TotalMilliseconds:N0} ms entre uno y otro)" : "";
+        Console.Write($"Enter para mandarlos {vuelta.Nombre}{separacion}; «fin» para terminar: ");
+        if (Console.ReadLine()?.Trim() is not { } respuesta || respuesta.Equals("fin", StringComparison.OrdinalIgnoreCase))
+            return 0;
+        var resultados = await PruebaImpresoraTickets.ProbarAsync(() => new ImpresoraRed(uri.Host, puerto), pc, vuelta, 2, TimeProvider.System);
+        foreach (var linea in PruebaImpresoraTickets.Describir(resultados))
+            Console.WriteLine(linea);
+    }
+    Console.WriteLine();
+    Console.WriteLine("Listo. Anota en la guía qué salió en cada vuelta.");
+    return 0;
+}
+
+static int ProbarLector()
+{
+    if (Console.IsInputRedirected)
+    {
+        Console.Error.WriteLine("probar-lector necesita la consola: ábrelo con scripts\\probar-lector.cmd.");
+        return 1;
+    }
+    Console.WriteLine($"""
+        Escanea con el lector códigos de barras, uno por uno, también uno de 11 cifras. Para comparar, teclea un código a
+        mano y Enter. Aquí no se vende nada. Esc para terminar.
+
+        """);
+    var reloj = System.Diagnostics.Stopwatch.StartNew();
+    var codigos = new List<PruebaLector.Codigo>();
+    var teclas = new List<PruebaLector.Tecla>();
+    while (Console.ReadKey(intercept: true) is var tecla && tecla.Key != ConsoleKey.Escape)
+    {
+        var hora = reloj.Elapsed;
+        if (tecla.Key == ConsoleKey.Enter)
+        {
+            if (teclas.Count == 0)
+                continue;
+            var codigo = PruebaLector.Medir(teclas, hora);
+            teclas.Clear();
+            codigos.Add(codigo);
+            foreach (var linea in PruebaLector.Describir(codigo))
+                Console.WriteLine(linea);
+            Console.WriteLine();
+        }
+        else if (tecla.KeyChar != '\0')
+        {
+            teclas.Add(new PruebaLector.Tecla(tecla.KeyChar, hora));
+        }
+    }
+    foreach (var linea in PruebaLector.Resumen(codigos))
+        Console.WriteLine(linea);
     return 0;
 }
 
