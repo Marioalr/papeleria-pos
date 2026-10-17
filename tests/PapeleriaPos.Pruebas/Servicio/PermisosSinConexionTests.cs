@@ -42,6 +42,23 @@ public sealed class PermisosSinConexionTests(ServicioDePrueba servicio) : IClass
         return (sesiones, decisiones, fichas, [.. corte.QuienesCortan]);
     }
 
+    /// <summary>
+    /// Latidos hasta que la caja principal contesta, como los repite la caja cada 5 s. Con uno solo no basta: en una máquina
+    /// ocupada (el CI en Windows) el latido puede pasar de sus 3 s y la caja se queda sin conexión y con la copia de antes;
+    /// entonces lo «en línea» sale de esa misma copia y un cambio en «Usuarios y permisos» no se ve en ningún lado (pasó una
+    /// vez: el cajero seguía reimprimiendo, en línea y sin conexión).
+    /// </summary>
+    internal static async Task ConConexionAsync(Contingencia contingencia)
+    {
+        for (var latido = 1; ; latido++)
+        {
+            await contingencia.LatidoAsync();
+            if (contingencia.EnLinea)
+                return;
+            Assert.True(latido < 10, "La caja principal no contestó en 10 latidos.");
+        }
+    }
+
     [Fact]
     public async Task Sin_la_caja_principal_cada_quien_puede_lo_mismo_tambien_lo_que_se_cambio()
     {
@@ -51,7 +68,7 @@ public sealed class PermisosSinConexionTests(ServicioDePrueba servicio) : IClass
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
         var contingencia = new Contingencia(new AlmacenLocal(_baseLocal), http, conexion);
         var cliente = new ClienteCaja(http, conexion, contingencia);
-        await contingencia.LatidoAsync();
+        await ConConexionAsync(contingencia);
         var dueno = await cliente.EntrarAsync("dueno", "3333");
         var encargado = await cliente.EntrarAsync("encargado", "2222");
         var cajero = await cliente.EntrarAsync("cajero", "1111");
@@ -68,7 +85,7 @@ public sealed class PermisosSinConexionTests(ServicioDePrueba servicio) : IClass
             (await servicio.Fabrica.CreateClient().PutAsJsonAsync($"api/cajas/{caja.Id}/usuarios-y-permisos/{quien}",
                 new SolicitudPermisoUsuario(dueno.UsuarioId, accion, nivel))).EnsureSuccessStatusCode();
         }
-        await contingencia.LatidoAsync();
+        await ConConexionAsync(contingencia);
         Assert.NotNull(contingencia.Paquete!.Permisos);
         var enLinea = await LoQueSabeAsync(cliente, caja, turno);
 
@@ -116,7 +133,7 @@ public sealed class CopiaDeAntesTests(ServicioDePrueba servicio) : IClassFixture
         var almacen = new AlmacenLocal(_baseLocal);
         var nueva = new Contingencia(almacen, http, conexion);
         var cliente = new ClienteCaja(http, conexion, nueva);
-        await nueva.LatidoAsync();
+        await PermisosSinConexionTests.ConConexionAsync(nueva);
         var cajero = await cliente.EntrarAsync("cajero", "1111");
         var turno = await cliente.TurnoAsync(caja.Id) ?? await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
         var enLinea = await PermisosSinConexionTests.LoQueSabeAsync(cliente, caja, turno);
@@ -139,7 +156,7 @@ public sealed class CopiaDeAntesTests(ServicioDePrueba servicio) : IClassFixture
 
         // Vuelve la caja principal: baja la copia nueva.
         interruptor.Caido = false;
-        await deAntes.LatidoAsync();
+        await PermisosSinConexionTests.ConConexionAsync(deAntes);
         Assert.NotNull(deAntes.Paquete!.Permisos);
     }
 
