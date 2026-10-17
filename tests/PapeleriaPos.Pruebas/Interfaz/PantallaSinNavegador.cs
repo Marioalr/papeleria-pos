@@ -27,6 +27,9 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
 {
     private int _raiz;
 
+    /// <summary>La página de mentiras (si la hay): contesta también el foco de un elemento (FocusAsync), como en la página.</summary>
+    private readonly IJSRuntime? _pagina = (IJSRuntime?)servicios.GetService(typeof(IJSRuntime));
+
     public override Dispatcher Dispatcher { get; } = Dispatcher.CreateDefault();
 
     /// <summary>Lo que falló al dibujar o en un evento: la prueba revisa que no haya nada.</summary>
@@ -34,6 +37,9 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
 
     public Task<T> AbrirAsync<T>(Dictionary<string, object?> parametros) where T : IComponent => Dispatcher.InvokeAsync(async () =>
     {
+        // Como en la página: el foco de un elemento (FocusAsync) lo contesta la página de mentiras, sin error.
+        if (_pagina is not null)
+            ElementReferenceContext ??= new WebElementReferenceContext(_pagina);
         var componente = (T)InstantiateComponent(typeof(T));
         _raiz = AssignRootComponentId(componente);
         await RenderRootComponentAsync(_raiz, ParameterView.FromDictionary(parametros));

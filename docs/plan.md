@@ -495,9 +495,48 @@ como artículo común».
 - **«Productos e inventario, sin cortar»** imprime el estado de cuenta de un cliente igual que la venta (en la impresora
   de tickets o en pantalla); antes ahí «Imprimir» no hacía nada.
 
-Falta: la hora para recordar el cierre del día; el largo del PIN y que dar de baja a alguien no mueva las letras de los
-demás. El fondo sugerido y el nombre de la tienda ya están (entrega 7, 2026-10-15). El conteo desde el celular sigue con el
-usuario escrito.
+Falta: ~~la hora para recordar el cierre del día~~ (hecho el 2026-10-17, con la hora de cierre de la tienda); el largo
+del PIN y que dar de baja a alguien no mueva las letras de los demás. El fondo sugerido y el nombre de la tienda ya están
+(entrega 7, 2026-10-15). El conteo desde el celular sigue con el usuario escrito.
+
+**Avance (2026-10-17): el corte del día como el de eleventa** («Corte del día y de todas las cajas» en la
+[paridad](paridad-eleventa.md#efectivo-turnos-y-cortes)), para quien tiene «Ver y cerrar el corte del día»:
+- **El de otro día:** ← y → mueven de día, o se elige en la fecha; abre en el de hoy. El de un día que ya pasó solo se ve
+  (con lo que pasó ese día y si se cerró) y se imprime; «Cerrar el día» es el de hoy, con sus reglas. El corte de un turno
+  va en el día en que se hizo: el día en que se abrió dice «Corte el …», sin su diferencia, que así no se cuenta dos veces.
+  Un día del piloto se ve como tal aunque después se deje el piloto: el turno que cerró el corte de eleventa sigue en el
+  día que le toca, «En eleventa». Si pasa la medianoche con el de hoy a la vista, la caja lo nota (lo revisa cada minuto)
+  y lo deja solo para verlo; y «Cerrar el día» manda el día que se ve: si ya no es hoy, el servicio no cierra nada, ni ese
+  día ni el nuevo, y la pantalla dice por qué (revisión del 2026-10-17).
+- **Las ventas por departamento,** como en eleventa, las ve quien ve el corte del día: cada departamento con lo que vendió
+  ese día, las impresiones y el artículo común aparte; lo devuelto ese día en la tienda se resta de su departamento. En el
+  piloto también lo que se devolvió en eleventa de un ticket de la caja 2, aunque el turno de esa venta ya se haya cortado
+  (se resta el día en que se devolvió; el efectivo de los turnos no cambia: no salió de esta caja).
+- **La utilidad,** solo para quien tiene «Ver costos, utilidad y margen» (a los demás el servicio no les manda ningún
+  costo): la utilidad bruta arriba, y en las ventas por departamento la utilidad y el margen de cada uno. Es lo vendido
+  menos el costo que guardó cada venta al cobrar (el promedio del inventario; en las impresiones, el de cada trabajo).
+  Como en el resumen del día, el artículo común no entra en la utilidad, y los servicios cuentan sin costo hasta que
+  tengan receta.
+- **«Imprimir»** manda a la impresora de tickets, a 48 columnas, lo mismo que se ve, también el de otro día: el día y si se
+  cerró, lo vendido y sus formas de pago, cada turno con lo que se contó, los movimientos, las ventas por departamento y,
+  solo con el permiso, la utilidad (también la de cada departamento). Va por donde se imprime el corte del turno (la cola
+  de la impresora lo tomará después).
+- **El recordatorio:** desde la hora de cierre de Configuración › Tienda, si el día de hoy no se ha cerrado, quien lo cierra
+  ve en la venta «Falta cerrar el día», con los demás avisos del panel y con «Ir al corte»: sin ventana, sin sonido y sin un
+  paso más en el cobro. Se va al cerrar el día; si después se abre otro turno ese día, vuelve. Sin conexión con la caja
+  principal o en el piloto (el día se cierra con el corte de eleventa), no sale.
+- **API:** `GET api/cajas/{caja}/corte-del-dia?fecha=AAAA-MM-DD` (sin fecha, hoy; uno que no ha llegado se rechaza),
+  `GET api/cajas/{caja}/corte-del-dia/recordatorio` (204 si no toca) y, al cerrar, `fecha` en `SolicitudCierreDia` (el
+  día que se ve; una caja de antes no la manda y es hoy). Sin cambios en la base.
+- **Decidido mientras el dueño no estaba, por revisar:**
+  - las ventas por departamento, para todos los que ven el corte del día, como en eleventa; su utilidad y su margen, solo
+    con «Ver costos, utilidad y margen»;
+  - lo devuelto ese día se resta de la venta y la utilidad de su departamento, como en eleventa (una cancelación no: el
+    ticket cancelado ya no está en lo vendido); «Vendido hoy» sigue sin restarlo, como estaba, y la utilidad del resumen de
+    Telegram tampoco lo resta (un día con devoluciones, las dos no coinciden);
+  - la hora del recordatorio es la de cierre de Configuración › Tienda, que siempre tiene una (21:00 si no se cambia, la
+    misma del aviso de «fuera de horario»); para no tener recordatorio habría que poder dejarla vacía, y no se hizo;
+  - en el piloto no hay recordatorio, porque el día se cierra con el corte de eleventa.
 
 **Avance (2026-10-15), entrega 1: los permisos por usuario,** como en la [propuesta](propuesta-interfaz.md#usuarios-y-permisos):
 - **Sin roles.** Cada usuario tiene sus permisos, uno por acción: Puede (con su límite, si lo tiene), Con autorización
