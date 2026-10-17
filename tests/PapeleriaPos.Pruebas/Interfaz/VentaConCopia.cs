@@ -13,18 +13,27 @@ using PapeleriaPos.Pruebas.Servicio;
 namespace PapeleriaPos.Pruebas.Interfaz;
 
 /// <summary>
-/// La red entre la caja y el servicio de prueba, como se le pida: lenta (cada petición tarda), caída, con pérdidas, con la
-/// búsqueda de un producto por código detenida hasta soltarla, o con la respuesta del cobro retenida (el servicio ya cobró,
-/// pero la respuesta no llega). Anota cada petición al salir y cada respuesta al llegar.
+/// La red entre la caja y el servicio de prueba, como se le pida: lenta (cada petición, o las de una ruta, tarda), caída (no
+/// se puede conectar), con pérdidas, con la búsqueda de un producto por código detenida hasta soltarla, con la respuesta del
+/// cobro retenida (el servicio ya cobró, pero la respuesta no llega) o perdida en las rutas que se digan (el servicio ya lo
+/// guardó). Anota cada petición al salir y cada respuesta al llegar.
 /// </summary>
 internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandler(interno)
 {
     private readonly ConcurrentQueue<string> _pedidas = new();
     private readonly ConcurrentQueue<string> _respondidas = new();
+    private readonly ConcurrentQueue<(string Ruta, bool ConPlazos)> _plazos = new();
 
     public TimeSpan Retraso { get; set; }
 
+    /// <summary>Lo que tardan las de cada ruta (además de <see cref="Retraso"/>): la ruta con su consulta, como sale.</summary>
+    public Func<string, TimeSpan>? RetrasoDe { get; set; }
+
+    /// <summary>La caja principal está apagada: no se puede conectar (nada llega a ella).</summary>
     public bool Caida { get; set; }
+
+    /// <summary>Las de estas rutas llegan y el servicio las guarda, pero la respuesta se pierde (se corta antes de llegar).</summary>
+    public Func<string, bool>? PierdeRespuesta { get; set; }
 
     /// <summary>De cada cuántas peticiones se pierde una (0 a 1), con su propia semilla: así la prueba no cambia de una corrida a otra.</summary>
     public double Perdidas { get; set; }
@@ -49,12 +58,16 @@ internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandle
 
     public bool Respondio(string contiene) => _respondidas.Any(r => r.Contains(contiene, StringComparison.Ordinal));
 
+    /// <summary>Si las que salieron a esa ruta llevaban los plazos de la venta (<see cref="Transporte.PlazosDeLaVenta"/>), en orden.</summary>
+    public List<bool> ConPlazos(string contiene) => _plazos.Where(p => p.Ruta.Contains(contiene, StringComparison.Ordinal)).Select(p => p.ConPlazos).ToList();
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var ruta = request.RequestUri!.PathAndQuery;
         _pedidas.Enqueue(ruta);
+        _plazos.Enqueue((ruta, Transporte.PlazosDeLaVenta is not null));
         if (Caida)
-            throw new HttpRequestException("La caja principal no contesta.");
+            throw new HttpRequestException(HttpRequestError.ConnectionError, "La caja principal no contesta.");
         bool perdida;
         lock (_azar)
             perdida = Perdidas > 0 && _azar.NextDouble() < Perdidas;
@@ -62,6 +75,8 @@ internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandle
             throw new HttpRequestException("Se perdió en el Wi-Fi.");
         if (Retraso > TimeSpan.Zero)
             await Task.Delay(Retraso, cancellationToken);
+        if (RetrasoDe?.Invoke(ruta) is { } suyo && suyo > TimeSpan.Zero)
+            await Task.Delay(suyo, cancellationToken);
         if (Detenida is { } detenida && ruta.StartsWith("/api/productos/codigo/", StringComparison.Ordinal))
             await detenida.Task.WaitAsync(cancellationToken);
         var respuesta = await base.SendAsync(request, cancellationToken);
@@ -76,6 +91,11 @@ internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandle
                 respuesta.Dispose();
                 throw;
             }
+        }
+        if (PierdeRespuesta?.Invoke(ruta) == true)
+        {
+            respuesta.Dispose();
+            throw new HttpRequestException("Se cortó antes de la respuesta.");
         }
         _respondidas.Enqueue(ruta);
         return respuesta;
@@ -188,5 +208,7 @@ internal sealed record VentaConCopia(
         Contingencia.Detener();
         await ((IAsyncDisposable)Pantalla).DisposeAsync();
         await Servicios.DisposeAsync();
+        // Lo que la pantalla y la caja mandaron escribir queda en el disco antes de que la prueba borre la base.
+        Contingencia.Cerrar(TimeSpan.FromSeconds(10));
     }
 }

@@ -16,22 +16,33 @@ public enum EstadoRed
 /// <summary>
 /// Las reglas con que se decide el estado de la red (<see cref="CalidadDeLaRed"/>).
 /// </summary>
-/// <param name="UmbralBuena">Un latido que contesta en menos de esto es bueno; vacío: todo el que contesta.</param>
+/// <param name="UmbralBuena">
+/// Un latido que contesta en menos de esto es bueno (al volver a contestar después de caerse, vuelve de una vez); vacío: todo
+/// el que contesta.
+/// </param>
 /// <param name="UmbralLenta">Uno que tarda esto o más es lento; vacío: ninguno.</param>
 /// <param name="LentosParaBajar">Cuántos lentos seguidos para pasar de buena a lenta (uno suelto no basta).</param>
-/// <param name="BuenosParaVolver">Cuántos buenos seguidos para volver de lenta a buena.</param>
+/// <param name="BuenosParaVolver">Cuántos seguidos de menos de <paramref name="UmbralVolver"/> para volver de lenta a buena.</param>
 /// <param name="Inestable">
 /// Si la red se cae o se pone lenta otra vez antes de esto desde la vez anterior, va y viene: al volver a contestar pasa por
 /// lenta (y necesita <paramref name="BuenosParaVolver"/>) en lugar de volver de una vez.
 /// </param>
-public sealed record ReglasDeLaRed(TimeSpan? UmbralBuena, TimeSpan? UmbralLenta, int LentosParaBajar, int BuenosParaVolver, TimeSpan Inestable)
+/// <param name="UmbralVolver">
+/// Para volver de lenta, uno que contesta en menos de esto cuenta (entrega 5, parte 2, revisión): bien abajo de lo lento, pero
+/// no tanto como lo bueno; si no, una red que siempre contesta entre los dos umbrales se quedaría lenta para siempre después de
+/// un tropiezo. Vacío: el de lo bueno.
+/// </param>
+public sealed record ReglasDeLaRed(
+    TimeSpan? UmbralBuena, TimeSpan? UmbralLenta, int LentosParaBajar, int BuenosParaVolver, TimeSpan Inestable, TimeSpan? UmbralVolver = null)
 {
     /// <summary>
     /// Las de la caja de verdad. En la red de la tienda un latido (una petición chica) tarda milisegundos; 100 ms ya es una
-    /// red con problemas y 300 ms una que haría esperar cada cobro. Dos lentos seguidos (10 s) para bajar, tres buenos (15 s)
-    /// para volver: un pico suelto no la cambia, y no alterna a cada latido. Por medir en la caja 2 por Wi-Fi.
+    /// red con problemas y 300 ms una que haría esperar cada cobro. Dos lentos seguidos (10 s) para bajar; para volver, tres
+    /// seguidos de menos de 200 ms (15 s): un Wi-Fi regular (150 ms) vuelve después de un tropiezo, un pico suelto no la cambia,
+    /// y no alterna a cada latido (para bajar otra vez hacen falta dos de 300 ms o más). Por medir en la caja 2 por Wi-Fi.
     /// </summary>
-    public static readonly ReglasDeLaRed DeLaTienda = new(TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(300), 2, 3, TimeSpan.FromMinutes(2));
+    public static readonly ReglasDeLaRed DeLaTienda = new(TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(300), 2, 3, TimeSpan.FromMinutes(2),
+        TimeSpan.FromMilliseconds(200));
 
     /// <summary>
     /// Solo si contesta o no, como antes de la entrega 5, parte 2: las pruebas de lo demás de la caja no dependen de lo que
@@ -43,8 +54,8 @@ public sealed record ReglasDeLaRed(TimeSpan? UmbralBuena, TimeSpan? UmbralLenta,
 /// <summary>
 /// El estado de la red con la caja principal: buena, lenta o caída (entrega 5, parte 2, docs/propuesta-interfaz.md,
 /// «Rendimiento»). Lo decide el latido con lo que tarda en contestar, con histéresis: bajar es rápido (un latido que no
-/// contesta, dos lentos seguidos, o algo que el cajero esperaba y no llegó a tiempo) y volver es lento (tres buenos seguidos),
-/// para no alternar a cada latido. Si la red va y viene, al volver a contestar pasa por lenta.
+/// contesta, dos lentos seguidos, o algo que el cajero esperaba y no llegó a tiempo) y volver es lento (tres seguidos bien abajo
+/// de lo lento), para no alternar a cada latido. Si la red va y viene, al volver a contestar pasa por lenta.
 /// </summary>
 public sealed class CalidadDeLaRed(ReglasDeLaRed reglas, TimeProvider reloj)
 {
@@ -73,6 +84,7 @@ public sealed class CalidadDeLaRed(ReglasDeLaRed reglas, TimeProvider reloj)
             Latencia = latencia;
             var lento = reglas.UmbralLenta is { } lenta && latencia >= lenta;
             var bueno = reglas.UmbralBuena is not { } buena || latencia < buena;
+            var paraVolver = bueno || (reglas.UmbralVolver is { } volver && latencia < volver);
             if (lento && ocupada)
             {
                 // No dice nada de la red de la tienda: lo deja como estaba.
@@ -88,18 +100,18 @@ public sealed class CalidadDeLaRed(ReglasDeLaRed reglas, TimeProvider reloj)
                 else if (Estado == EstadoRed.Caida)
                     Estado = EstadoRed.Lenta;
             }
-            else if (bueno)
+            else if (paraVolver)
             {
                 _lentos = 0;
                 _buenos++;
                 if (Estado == EstadoRed.Caida)
-                    Estado = _vaYViene ? EstadoRed.Lenta : EstadoRed.Buena;
+                    Estado = bueno && !_vaYViene ? EstadoRed.Buena : EstadoRed.Lenta;
                 else if (Estado == EstadoRed.Lenta && _buenos >= reglas.BuenosParaVolver)
                     Estado = EstadoRed.Buena;
             }
             else
             {
-                // Entre los dos umbrales: ni baja ni cuenta para volver.
+                // Entre lo que cuenta para volver y lo lento: ni baja ni cuenta para volver.
                 (_lentos, _buenos) = (0, 0);
                 if (Estado == EstadoRed.Caida)
                     Estado = EstadoRed.Lenta;

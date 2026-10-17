@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
-using Microsoft.Data.Sqlite;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
@@ -19,11 +18,14 @@ public sealed class CopiaAlDiaTests(ServicioDePrueba servicio) : IClassFixture<S
 {
     private readonly string _baseLocal = Path.Combine(Path.GetTempPath(), $"caja-al-dia-{Guid.NewGuid():N}.db");
 
+    /// <summary>Las cajas que abrió la prueba: al terminar se detienen y se espera a su escritor antes de borrar su base.</summary>
+    private readonly List<Contingencia> _abiertas = [];
+
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
+        foreach (var contingencia in _abiertas)
+            contingencia.Cerrar(TimeSpan.FromSeconds(10));
+        BasesDePrueba.Borrar(_baseLocal);
     }
 
     private sealed record Caja(Contingencia Contingencia, RedDePrueba Red, CajaDto Datos, HttpClient Directo, SesionDto Dueno, SesionDto Cajero);
@@ -65,6 +67,7 @@ public sealed class CopiaAlDiaTests(ServicioDePrueba servicio) : IClassFixture<S
         var caja = (await directo.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.First();
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
         var contingencia = new Contingencia(new AlmacenLocal(_baseLocal), new HttpClient(red), conexion);
+        _abiertas.Add(contingencia);
         await contingencia.LatidoAsync();
         Assert.NotNull(contingencia.Foto);
         async Task<SesionDto> Entrar(string usuario, string pin) =>
@@ -154,6 +157,10 @@ public sealed class CopiaAlDiaTests(ServicioDePrueba servicio) : IClassFixture<S
             await CambiarPrecioAsync(c, producto, nuevo);
             await VentaConCopia.EsperarAsync(() => c.Contingencia.Foto!.PorCodigo(producto.Codigo!)!.Precios.Single().PrecioCentavos == nuevo,
                 "el precio nuevo por el aviso");
+            // La foto cambia antes de que la copia quede en la base de la caja: también eso, antes de terminar.
+            var version = c.Contingencia.Foto!.Version;
+            await VentaConCopia.EsperarAsync(() => new AlmacenLocal(_baseLocal).LeerCopia<PaqueteContingenciaDto>()?.Version >= version,
+                "la copia guardada en la base de la caja");
 
             Assert.Equal(latidos, c.Red.Cuantas("/api/estado"));
             Assert.Equal(copias, c.Red.Cuantas(Paquete(c)));
@@ -161,7 +168,7 @@ public sealed class CopiaAlDiaTests(ServicioDePrueba servicio) : IClassFixture<S
         }
         finally
         {
-            c.Contingencia.Detener();
+            c.Contingencia.Cerrar(TimeSpan.FromSeconds(10));
         }
     }
 

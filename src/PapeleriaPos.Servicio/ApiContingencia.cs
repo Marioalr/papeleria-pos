@@ -42,8 +42,10 @@ public static class ApiContingencia
 
         bandeja.MapPost("/ventas", async (VentaContingenciaDto v, PosDbContext db, CatalogoEnMemoria catalogo, EnvioVentasEleventa eleventa) =>
         {
-            if (await db.Ventas.AnyAsync(x => x.Id == v.Id))
-                return Results.NoContent();
+            // Ya está (subió antes, o se cobró en línea y la caja no supo): una vez. Si es otra con el mismo Id (la caja la cobró
+            // otra vez, cambiada, sin saber que la primera había quedado), no se descarta callada: queda por revisar.
+            if (await db.Ventas.AsNoTracking().Include(x => x.Lineas).SingleOrDefaultAsync(x => x.Id == v.Id) is { } yaEsta)
+                return MismaVenta(yaEsta, v) ? Results.NoContent() : throw new InvalidOperationException(VentaDistinta(yaEsta, v));
             var caja = await db.Cajas.FindAsync(v.CajaId) ?? throw new InvalidOperationException("La caja no existe.");
             var lineas = v.Lineas.Select(l => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.CantidadMilesimas, l.Descripcion, l.PrecioCentavos,
                 DescuentoCentesimas: l.DescuentoCentesimas, DescuentoCentavos: l.DescuentoCentavos, MotivoDescuento: l.MotivoDescuento)).ToList();
@@ -104,6 +106,26 @@ public static class ApiContingencia
             return corte;
         });
     }
+
+    /// <summary>
+    /// Lo que subió es la venta que ya está: las mismas líneas (producto, presentación, cantidad, precio y descuento; el
+    /// artículo común, por su descripción), en cualquier orden.
+    /// </summary>
+    private static bool MismaVenta(Venta yaEsta, VentaContingenciaDto v)
+    {
+        static string Clave(Guid? variante, Guid? presentacion, string descripcion, long cantidad, long precio, int? porcentaje, long? monto) =>
+            $"{variante}|{presentacion}|{(variante is null ? descripcion.Trim().ToUpperInvariant() : "")}|{cantidad}|{precio}|{porcentaje}|{monto}";
+        var alla = yaEsta.Lineas.Select(l => Clave(l.VarianteId, l.PresentacionId, l.Descripcion, l.Cantidad.Milesimas, l.PrecioCentavos,
+            l.DescuentoCentesimas, l.DescuentoCentesimas is null && l.DescuentoCentavos > 0 ? l.DescuentoCentavos : null));
+        var subio = v.Lineas.Select(l => Clave(l.VarianteId, l.PresentacionId, l.Descripcion, l.CantidadMilesimas, l.PrecioCentavos,
+            l.DescuentoCentesimas, l.DescuentoCentesimas is null && l.DescuentoCentavos > 0 ? l.DescuentoCentavos : null));
+        return alla.Order(StringComparer.Ordinal).SequenceEqual(subio.Order(StringComparer.Ordinal));
+    }
+
+    private static string VentaDistinta(Venta yaEsta, VentaContingenciaDto v) =>
+        $"La venta {yaEsta.FolioTexto} ya estaba en la caja principal ({AlertasTelegram.Dinero(yaEsta.TotalCentavos)}, "
+        + $"{yaEsta.Lineas.Count} {(yaEsta.Lineas.Count == 1 ? "línea" : "líneas")}), y esta caja la cobró otra vez sin conexión con otras "
+        + $"líneas, con el folio {yaEsta.Serie}-{v.Folio:000000}: no se guardó dos veces; hay que revisarla.";
 
     /// <summary>
     /// Si algo de la bandeja no se puede guardar, el dueño se entera por Telegram (una vez por cada cosa, aunque la caja

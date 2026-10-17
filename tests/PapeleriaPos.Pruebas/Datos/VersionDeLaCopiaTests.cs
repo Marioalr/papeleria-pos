@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo;
@@ -263,9 +262,7 @@ public class VersionDeLaCopiaTests : IAsyncLifetime
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            foreach (var archivo in new[] { ruta, ruta + "-wal", ruta + "-shm" })
-                File.Delete(archivo);
+            BasesDePrueba.Borrar(ruta, cadena);
         }
     }
 }

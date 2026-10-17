@@ -182,11 +182,15 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 /// <param name="Cliente">El cliente registrado con sus privilegios: "Escuela Benito Juárez (descuento 10 %)".</param>
 /// <param name="Folio">El de esta caja (A-000123): va en el QR, que abre la devolución en la caja nueva.</param>
 /// <param name="FolioEleventa">En el piloto, el que le dio eleventa si llegó a tiempo: es el que se imprime, para devolver en cualquier caja.</param>
+/// <param name="YaCobrada">
+/// El cobro llegó con el Id de una venta que ya estaba (se había perdido la respuesta, entrega 5, parte 2): es esa, como se
+/// cobró entonces, y la pantalla lo dice.
+/// </param>
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
     long TotalCentavos, long IvaCentavos, IReadOnlyList<CobroTicketDto> Cobros, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie,
     LogoTicketDto? Logo = null, Guid? VentaId = null, long RedondeoCentavos = 0, string? Cliente = null, CreditoTicketDto? Credito = null,
-    int? FolioEleventa = null)
+    int? FolioEleventa = null, bool YaCobrada = false)
 {
     /// <summary>El folio que se lee en el ticket y en la pantalla.</summary>
     public string FolioImpreso => FolioEleventa?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? Folio;
@@ -215,7 +219,11 @@ public sealed record VentaDelDiaDto(Guid Id, string Folio, DateTime FechaLocal, 
 /// </summary>
 /// <param name="UsuarioId">Quien hace el corte: el de la sesión.</param>
 /// <param name="ContadoCentavos">El total del efectivo que contó.</param>
-public sealed record SolicitudCorteZ(Guid UsuarioId, long ContadoCentavos);
+/// <param name="Id">
+/// El del corte, desde la caja (entrega 5, parte 2): si la caja principal lo guardó pero la respuesta no llegó, el que hace la
+/// caja sin conexión es el mismo, y al subir no choca con el turno ya cerrado. Vacío (una caja de antes): uno nuevo.
+/// </param>
+public sealed record SolicitudCorteZ(Guid UsuarioId, long ContadoCentavos, Guid? Id = null);
 
 /// <param name="UmbralAvisoCentavos">
 /// En el corte Z: el umbral de la sucursal, si la diferencia pasó de él y el aviso sale por Telegram. Vacío si no.

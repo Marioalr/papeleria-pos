@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.Data.Sqlite;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Pruebas.Servicio;
@@ -18,12 +17,7 @@ public sealed class RafagaTests(ServicioDePrueba servicio) : IClassFixture<Servi
 {
     private readonly string _baseLocal = Path.Combine(Path.GetTempPath(), $"caja-rafaga-{Guid.NewGuid():N}.db");
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
-    }
+    public void Dispose() => BasesDePrueba.Borrar(_baseLocal);
 
     private static async Task<T> Leer<T>(HttpResponseMessage r)
     {

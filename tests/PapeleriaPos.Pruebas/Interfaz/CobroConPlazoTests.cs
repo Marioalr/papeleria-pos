@@ -1,9 +1,9 @@
 using System.Net.Http.Json;
 using System.Text.RegularExpressions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Pruebas.Servicio;
 
@@ -19,12 +19,7 @@ public sealed class CobroConPlazoTests : IDisposable
 {
     private readonly string _baseLocal = Path.Combine(Path.GetTempPath(), $"caja-plazo-{Guid.NewGuid():N}.db");
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
-    }
+    public void Dispose() => BasesDePrueba.Borrar(_baseLocal);
 
     /// <summary>El piloto, con un eleventa que no contesta (nadie escucha en ese puerto): lo que va allá espera en su bandeja.</summary>
     private static readonly (string, string)[] Piloto =
@@ -78,5 +73,39 @@ public sealed class CobroConPlazoTests : IDisposable
         Assert.Single(Regex.Matches(texto, @"Ticket\s+[A-Z]+-\d+"));
         Assert.Equal(folio, Regex.Match(texto, @"Ticket\s+([A-Z]+-\d+)").Groups[1].Value);
         Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>
+    /// Con descuento (entrega 5, parte 2, revisión): la caja principal guardó el cobro con su descuento en la bitácora, y la
+    /// caja, que dejó de esperarlo, lo cobró con la copia y anotó el suyo. Al subir queda una venta y un descuento: lo de un
+    /// cobro que ya estaba en línea no se anota otra vez.
+    /// </summary>
+    [Fact]
+    public async Task Con_descuento_queda_una_vez_en_la_bitacora()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var turno = (await v.Cliente.TurnoAsync(v.Caja.Id))!;
+        var (producto, _) = v.DosDeLaCopia();
+        var ventaId = Guid.NewGuid();
+        v.Cliente.PlazoEscritura = TimeSpan.FromMilliseconds(500);
+        v.Red.CobroRetenido = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await v.Cliente.CobrarAsync(new SolicitudCobro(v.Caja.Id, turno.Id, v.Cajero.UsuarioId,
+            [new LineaSolicitada(producto.VarianteId, producto.Presentacion.Id, 1000, DescuentoCentesimas: 500, MotivoDescuento: "Cliente frecuente")],
+            [new CobroSolicitado(FormaPago.Efectivo, 10_000_000)], ventaId));
+        v.Red.CobroRetenido.SetResult();
+        v.Cliente.PlazoEscritura = null;
+        await VentaConCopia.EsperarAsync(() =>
+        {
+            using var principal = servicio.Base();
+            return principal.Ventas.Any(x => x.Id == ventaId);
+        }, "la venta en la caja principal");
+
+        await v.Contingencia.LatidoAsync();
+
+        Assert.Equal((0, 0), (v.Contingencia.Pendientes, v.Contingencia.ConError));
+        await using var db = servicio.Base();
+        Assert.Equal(1, await db.Ventas.CountAsync(x => x.Id == ventaId));
+        Assert.Equal(1, await db.Bitacora.CountAsync(b => b.VentaId == ventaId && b.Accion == AccionControlada.Descuento));
     }
 }

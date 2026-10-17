@@ -74,7 +74,7 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
     {
         // La prueba con una persona real puede simular que no hay conexión (lo suyo, la guía y los avisos, sí contesta).
         if (conexion.SimularSinConexion && !url.StartsWith("api/prueba/", StringComparison.Ordinal))
-            throw new ErrorCaja("No hay conexión con el servicio de la caja principal (simulado en la prueba).", "sin-conexion");
+            throw new ErrorCaja("No hay conexión con el servicio de la caja principal (simulado en la prueba).", "sin-conexion") { NoSeMando = true };
         using var mensaje = new HttpRequestMessage(metodo, new Uri(servicio ?? conexion.Servicio, url));
         if (conexion.Llave is { } llave)
             mensaje.Headers.Add(ClienteCaja.EncabezadoLlave, llave);
@@ -94,9 +94,12 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
             // Pasó su plazo (o el tope del cliente): la caja principal está, pero no contestó a tiempo.
             throw new ErrorCaja("La caja principal no contestó a tiempo.", "sin-conexion") { PorPlazo = true };
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException ex)
         {
-            throw new ErrorCaja("No hay conexión con el servicio de la caja principal.", "sin-conexion");
+            throw new ErrorCaja("No hay conexión con el servicio de la caja principal.", "sin-conexion")
+            {
+                NoSeMando = ex.HttpRequestError == HttpRequestError.ConnectionError,
+            };
         }
     }
 

@@ -1,5 +1,5 @@
 using System.Net.Http.Json;
-using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Pruebas.Servicio;
@@ -15,18 +15,15 @@ public sealed class CobroConLaVersionEnLaCajaTests(ServicioDePrueba servicio) : 
 {
     private readonly string _baseLocal = Path.Combine(Path.GetTempPath(), $"caja-version-{Guid.NewGuid():N}.db");
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
-    }
+    public void Dispose() => BasesDePrueba.Borrar(_baseLocal);
 
     /// <summary>Lo de la copia que se vende por pieza a un solo precio: una pieza cuesta lo que dice su precio.</summary>
     private static List<ProductoVentaDto> SinMayoreo(VentaConCopia v) => v.DeLaCopia().Where(p => p.Precios.Count == 1).ToList();
 
     /// <summary>El dueño cambia el precio en la caja principal (como desde otra caja), después de que esta bajó su copia.</summary>
-    private async Task CambiarPrecioAsync(VentaConCopia v, ProductoVentaDto producto, long centavos)
+    private Task CambiarPrecioAsync(VentaConCopia v, ProductoVentaDto producto, long centavos) => CambiarPrecioAsync(servicio, v, producto, centavos);
+
+    private static async Task CambiarPrecioAsync(ServicioDePrueba servicio, VentaConCopia v, ProductoVentaDto producto, long centavos)
     {
         var http = servicio.Fabrica.CreateClient();
         var dueno = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333"))).Content.ReadFromJsonAsync<SesionDto>())!;
@@ -36,7 +33,9 @@ public sealed class CobroConLaVersionEnLaCajaTests(ServicioDePrueba servicio) : 
         await servicio.CatalogoAlDiaAsync();
     }
 
-    private async Task<VentaDelDiaDto> UltimaVentaAsync(VentaConCopia v) =>
+    private Task<VentaDelDiaDto> UltimaVentaAsync(VentaConCopia v) => UltimaVentaAsync(servicio, v);
+
+    private static async Task<VentaDelDiaDto> UltimaVentaAsync(ServicioDePrueba servicio, VentaConCopia v) =>
         (await servicio.Fabrica.CreateClient().GetFromJsonAsync<List<VentaDelDiaDto>>($"api/cajas/{v.Caja.Id}/ventas-del-dia"))!
         .OrderByDescending(x => x.Folio, StringComparer.Ordinal).First();
 
@@ -138,6 +137,76 @@ public sealed class CobroConLaVersionEnLaCajaTests(ServicioDePrueba servicio) : 
         await v.Contingencia.LatidoAsync();
         Assert.Equal(0, v.Contingencia.Pendientes);
         Assert.Equal(antes, (await UltimaVentaAsync(v)).TotalCentavos);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>
+    /// Con la red lenta la caja cobra con su copia, que se sigue poniendo al día (entrega 5, parte 2, revisión): si mientras
+    /// tanto llegó otro precio de algo del ticket, no se cobra con un precio que el cajero no vio. Como cuando lo dice la caja
+    /// principal, el ticket se pone al día con el de la copia, el panel lo dice y el cobro no se repite solo; al cobrar otra
+    /// vez, con el que ya vio.
+    /// </summary>
+    [Fact]
+    public async Task Con_la_red_lenta_no_se_cobra_un_precio_que_llego_despues_de_lo_que_vio_el_cajero()
+    {
+        await using var propio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(propio, _baseLocal);
+        var producto = SinMayoreo(v)[0];
+        var ahora = producto.Precios[0].PrecioCentavos + 300;
+        await v.EscanearAsync($"2*{producto.Codigo}");
+        await VentaConCopia.EsperarAsync(() => VentaConCopia.RenglonesAsync(v.Pantalla).Result.Count == 1, "la línea");
+        // Algo no llegó a tiempo y la red quedó lenta; el dueño cambia el precio y el cambio llega a la copia con el latido.
+        v.Contingencia.MarcarLenta();
+        await CambiarPrecioAsync(propio, v, producto, ahora);
+        await v.Contingencia.LatidoAsync();
+        Assert.Equal(EstadoRed.Lenta, v.Contingencia.EstadoDeLaRed);
+        Assert.Equal(ahora, v.Contingencia.FotoDeLaCopia!.PorVariante(producto.VarianteId)!.Precios[0].PrecioCentavos);
+
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
+
+        var texto = await v.Pantalla.TextoAsync();
+        Assert.Contains($"Cambió el precio de «{producto.Descripcion}»: revisa el total ({Formato.Dinero(2 * ahora)}) y cobra otra vez.", texto);
+        Assert.DoesNotContain("Cobrado", texto);
+        Assert.Equal(0, v.Contingencia.Pendientes);
+
+        // Otra vez: con el precio que ya vio, con la copia; al volver la red, sube así.
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
+        await v.Pantalla.EsperarAsync(t => t.Contains("Cobrado"), "el cobro con la copia");
+        for (var i = 0; i < 5 && !v.Contingencia.EnLinea; i++)
+            await v.Contingencia.LatidoAsync();
+        Assert.Equal((0, 0), (v.Contingencia.Pendientes, v.Contingencia.ConError));
+        Assert.Equal(2 * ahora, (await UltimaVentaAsync(propio, v)).TotalCentavos);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>
+    /// Lo que llega a la copia sin cambiar precios (otro nombre del producto) no detiene el cobro con la red lenta: llegó con
+    /// otra versión, pero sus precios son los que vio el cajero.
+    /// </summary>
+    [Fact]
+    public async Task Con_la_red_lenta_lo_que_llega_sin_cambiar_el_precio_no_detiene_el_cobro()
+    {
+        await using var propio = await ServicioDePrueba.CrearAsync();
+        await using var v = await VentaConCopia.AbrirAsync(propio, _baseLocal);
+        var producto = SinMayoreo(v)[1];
+        var version = v.Contingencia.FotoDeLaCopia!.PorVariante(producto.VarianteId)!.Version;
+        await v.EscanearAsync(producto.Codigo!);
+        await VentaConCopia.EsperarAsync(() => VentaConCopia.RenglonesAsync(v.Pantalla).Result.Count == 1, "la línea");
+        v.Contingencia.MarcarLenta();
+        await using (var db = propio.Base())
+        {
+            var variante = await db.Variantes.Include(x => x.Producto).SingleAsync(x => x.Id == producto.VarianteId);
+            variante.Producto!.Nombre += " (nombre nuevo)";
+            await db.SaveChangesAsync();
+        }
+        await propio.CatalogoAlDiaAsync();
+        await v.Contingencia.LatidoAsync();
+        Assert.True(v.Contingencia.FotoDeLaCopia!.PorVariante(producto.VarianteId)!.Version > version);
+
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
+
+        await v.Pantalla.EsperarAsync(t => t.Contains("Cobrado"), "el cobro con la copia");
+        Assert.Equal(1, v.Contingencia.Pendientes);
         Assert.Empty(v.Pantalla.Errores);
     }
 }

@@ -143,6 +143,55 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
         Assert.True(cambios.Version > antes.Version && cambios.VersionExistencias > antes.VersionExistencias);
     }
 
+    /// <summary>
+    /// Más cambios que tocan a varios productos a la vez (de la revisión de la entrega 5, parte 2): juntar dos productos (el de
+    /// origen con una presentación además de la pieza), quitar una escala de mayoreo, pasar un código a otro producto (solo el
+    /// código) y dar de baja a un usuario. La copia de antes con los cambios encima queda igual que la completa. Con su propio
+    /// servicio: la baja del cajero no les toca a las demás pruebas.
+    /// </summary>
+    [Fact]
+    public async Task Juntar_quitar_una_escala_mover_un_codigo_y_dar_de_baja_un_usuario_quedan_igual_que_la_completa()
+    {
+        await using var propio = await ServicioDePrueba.CrearAsync();
+        var http = propio.Fabrica.CreateClient();
+        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.First();
+        var dueno = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+        await propio.CatalogoAlDiaAsync();
+        var antes = await Leer<PaqueteContingenciaDto>(await http.GetAsync($"api/cajas/{caja.Id}/paquete"));
+        var porPieza = DeLaCopia(antes, p => p.Unidad == PapeleriaPos.Nucleo.Catalogo.UnidadBase.Pieza);
+        var conMayoreo = DeLaCopia(antes, p => p.Precios.Any(x => x.CantidadMinimaMilesimas > 1000));
+
+        // Juntar: el de origen tiene otra presentación además de la pieza; el de destino, solo la pieza.
+        var origen = porPieza.First(p => p.Presentaciones.Count >= 2);
+        var destino = porPieza.First(p => p.VarianteId != origen.VarianteId && p.Presentaciones.Count == 1);
+        Assert.True((await http.PostAsJsonAsync("api/catalogo/depuracion/juntar",
+            new SolicitudJuntar(dueno.UsuarioId, caja.SucursalId, origen.VarianteId, destino.VarianteId))).IsSuccessStatusCode);
+        await using (var db = propio.Base())
+        {
+            // Una escala de mayoreo que se quita.
+            var conEscala = conMayoreo.First(p => p.VarianteId != origen.VarianteId && p.VarianteId != destino.VarianteId);
+            var escala = conEscala.Precios.First(x => x.CantidadMinimaMilesimas > 1000);
+            db.Precios.Remove(await db.Precios.SingleAsync(x => x.Id == escala.Id));
+            // Un código que pasa a otro producto: solo se carga el código.
+            var usados = new HashSet<Guid> { origen.VarianteId, destino.VarianteId, conEscala.VarianteId };
+            var movido = antes.Codigos.First(c => !usados.Contains(c.VarianteId) && antes.Codigos.Count(x => x.VarianteId == c.VarianteId) >= 2);
+            usados.Add(movido.VarianteId);
+            var otro = porPieza.First(p => !usados.Contains(p.VarianteId));
+            (await db.CodigosBarras.SingleAsync(x => x.Codigo == movido.Codigo)).PresentacionId = otro.Presentacion.Id;
+            // Un usuario que se da de baja.
+            (await db.Usuarios.FirstAsync(u => u.NombreUsuario == "cajero")).Activo = false;
+            await db.SaveChangesAsync();
+        }
+        await propio.CatalogoAlDiaAsync();
+
+        var cambios = await Leer<CambiosCopiaDto>(await http.GetAsync(
+            $"api/cajas/{caja.Id}/cambios?desde={antes.Version}&existencias={antes.VersionExistencias}&base={antes.Base}&formato={CopiaAlDia.Formato}"));
+        var despues = await Leer<PaqueteContingenciaDto>(await http.GetAsync($"api/cajas/{caja.Id}/paquete"));
+
+        Assert.Null(cambios.PaqueteCompleto);
+        Assert.Equal(Comparable(despues), Comparable(CopiaAlDia.Aplicar(antes, cambios)));
+    }
+
     [Fact]
     public async Task Sin_cambios_no_trae_nada_y_una_venta_solo_trae_sus_existencias()
     {

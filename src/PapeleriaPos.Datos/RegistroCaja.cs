@@ -289,8 +289,14 @@ public sealed class RegistroCaja(PosDbContext db)
     /// bitácora como negado. La diferencia queda a nombre del cajero del turno y, si pasa del umbral, el aviso sale de la
     /// bitácora (AlertasTelegram). El turno se cierra.
     /// </summary>
-    public async Task<Corte> CorteZAsync(Guid turnoId, Guid usuarioId, long contadoCentavos, CancellationToken ct = default)
+    /// <param name="id">
+    /// El que le dio la caja (entrega 5, parte 2): si ya está (la caja lo mandó otra vez, o subió el que hizo sin conexión porque
+    /// no le llegó la respuesta), es ese; no se cierra otra vez.
+    /// </param>
+    public async Task<Corte> CorteZAsync(Guid turnoId, Guid usuarioId, long contadoCentavos, Guid? id = null, CancellationToken ct = default)
     {
+        if (id is { } dado && await db.Cortes.FindAsync([dado], ct) is { } existente)
+            return existente;
         var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
         var control = new ServicioControl(db);
         if ((await control.EvaluarAsync(usuarioId, turno.SucursalId, AccionControlada.CorteZ, ct: ct)).Nivel != NivelPermiso.Permitido)
@@ -304,6 +310,8 @@ public sealed class RegistroCaja(PosDbContext db)
         var ahora = Ahora;
         var corte = CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.Z, usuarioId, ahora,
             contadoCentavos, await DevolucionesAsync(turno.Id, ct), await AbonosAsync(turno.Id, ct));
+        if (id is { } suyo)
+            corte.Id = suyo;
         turno.CerradoUtc = ahora;
         control.Registrar(turno.SucursalId, turno.CajaId, usuarioId, AccionControlada.CorteZ,
             $"Corte del turno de {await NombreAsync(turno.CajeroId, ct)}: esperado {corte.EsperadoCentavos / 100m:N2}, contado {corte.ContadoCentavos / 100m:N2}",

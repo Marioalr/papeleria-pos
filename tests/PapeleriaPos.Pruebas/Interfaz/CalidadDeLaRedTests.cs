@@ -14,7 +14,11 @@ namespace PapeleriaPos.Pruebas.Interfaz;
 public sealed class CalidadDeLaRedTests
 {
     private static readonly TimeSpan Rapido = TimeSpan.FromMilliseconds(9);
-    private static readonly TimeSpan Medio = TimeSpan.FromMilliseconds(180);
+    /// <summary>Más que lo que se pide para volver de lenta (200 ms) y menos que lo lento (300 ms).</summary>
+    private static readonly TimeSpan Medio = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>Un Wi-Fi regular: no es la red de milisegundos, pero tampoco la que hace esperar.</summary>
+    private static readonly TimeSpan Regular = TimeSpan.FromMilliseconds(150);
     private static readonly TimeSpan Lento = TimeSpan.FromMilliseconds(650);
 
     private readonly RelojFijo _reloj = new(new DateTimeOffset(2026, 10, 17, 16, 0, 0, TimeSpan.Zero));
@@ -52,6 +56,27 @@ public sealed class CalidadDeLaRedTests
         red.Contesto(Rapido);
         Assert.Equal(EstadoRed.Lenta, red.Estado);
         Assert.True(red.Contesto(Rapido));
+
+        Assert.Equal(EstadoRed.Buena, red.Estado);
+    }
+
+    /// <summary>
+    /// Con un Wi-Fi regular (150 ms) un tropiezo la pone lenta (algo no llegó a tiempo), pero no se queda así: vuelve con tres
+    /// latidos seguidos de menos de 200 ms, y no vuelve a bajar mientras siga igual.
+    /// </summary>
+    [Fact]
+    public void Con_un_wifi_regular_vuelve_de_lenta_y_no_alterna()
+    {
+        var red = Nueva();
+        red.PlazoVencido();
+
+        red.Contesto(Regular);
+        red.Contesto(Regular);
+        Assert.Equal(EstadoRed.Lenta, red.Estado);
+        Assert.True(red.Contesto(Regular));
+        Assert.Equal(EstadoRed.Buena, red.Estado);
+        for (var i = 0; i < 10; i++)
+            red.Contesto(Regular);
 
         Assert.Equal(EstadoRed.Buena, red.Estado);
     }
@@ -160,10 +185,11 @@ public sealed class CalidadDeLaRedTests
     public void La_red_lenta_se_ve_en_el_chip_y_en_la_franja()
     {
         var ruta = Path.Combine(Path.GetTempPath(), $"caja-red-{Guid.NewGuid():N}.db");
+        Contingencia? contingencia = null;
         try
         {
             var conexion = new ConexionCaja { Servicio = new Uri("http://192.0.2.10:5080/"), CajaId = Guid.NewGuid() };
-            var contingencia = new Contingencia(new AlmacenLocal(ruta), new HttpClient(), conexion, reglas: ReglasDeLaRed.DeLaTienda);
+            contingencia = new Contingencia(new AlmacenLocal(ruta), new HttpClient(), conexion, reglas: ReglasDeLaRed.DeLaTienda);
 
             Assert.Equal(EstadoCaja.ChipConexion.ConectadaALaPrincipal, EstadoCaja.QueDice(contingencia, conexion));
             contingencia.MarcarLenta();
@@ -178,9 +204,8 @@ public sealed class CalidadDeLaRedTests
         }
         finally
         {
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-            foreach (var archivo in new[] { ruta, ruta + "-wal", ruta + "-shm" })
-                File.Delete(archivo);
+            contingencia?.Cerrar(TimeSpan.FromSeconds(10));
+            BasesDePrueba.Borrar(ruta);
         }
     }
 
@@ -216,10 +241,9 @@ public sealed class CalidadDeLaRedTests
         }
         finally
         {
+            servicios.GetRequiredService<Contingencia>().Cerrar(TimeSpan.FromSeconds(10));
             servicios.Dispose();
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-            foreach (var archivo in new[] { ruta, ruta + "-wal", ruta + "-shm" })
-                File.Delete(archivo);
+            BasesDePrueba.Borrar(ruta);
         }
     }
 

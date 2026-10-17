@@ -3,7 +3,6 @@ using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Catalogo;
@@ -34,12 +33,7 @@ public sealed class MedicionCopiaTests(ITestOutputHelper salida) : IDisposable
 {
     private readonly string _baseLocal = Path.Combine(Path.GetTempPath(), $"caja-medicion-{Guid.NewGuid():N}.db");
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
-    }
+    public void Dispose() => BasesDePrueba.Borrar(_baseLocal);
 
     private static double Mediana(IEnumerable<double> valores) => valores.Order().ToList() is var l ? l[l.Count / 2] : 0;
 
@@ -188,6 +182,7 @@ public sealed class MedicionCopiaTests(ITestOutputHelper salida) : IDisposable
                 [new LineaSolicitada(conPrecio[55 + i].VarianteId, conPrecio[55 + i].Presentacion.Id, 1000)], [new CobroSolicitado(FormaPago.Efectivo, 10_000_000)]));
             await contingencia.LatidoAsync();
         }
+        contingencia.Cerrar(TimeSpan.FromSeconds(10));
         foreach (var (que, ms) in Actividades(rendimiento))
             salida.WriteLine($"En la caja: {que}: {string.Join(", ", ms.Select(x => $"{x:N0}"))} ms.");
         salida.WriteLine($"Copias completas que pidió la caja: {red.Cuantas($"/api/cajas/{caja.Id}/paquete")}; cambios: {red.Cuantas($"/api/cajas/{caja.Id}/cambios")}.");

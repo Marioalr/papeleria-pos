@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Net.ServerSentEvents;
 using System.Text.Json;
 using PapeleriaPos.Impresiones.Contratos;
@@ -87,10 +88,12 @@ public sealed class Contingencia
     /// </summary>
     private sealed class Copia
     {
-        public Copia(PaqueteContingenciaDto p)
+        /// <param name="anterior">La copia que había: de ella sale desde cuándo tiene cada producto sus precios (<see cref="PreciosDesde"/>).</param>
+        public Copia(PaqueteContingenciaDto p, Copia? anterior = null)
         {
             Paquete = p;
             PorVariante = p.Productos.ToDictionary(x => x.VarianteId);
+            PreciosDesde = DesdeCuando(p, PorVariante, anterior);
             // Los códigos, en la foto del catálogo: el escaneo, en línea o sin conexión, resuelve igual (entrega 5).
             Foto = FotoCatalogo.Armar(p);
             var codigos = p.Codigos.ToLookup(c => c.VarianteId);
@@ -115,16 +118,50 @@ public sealed class Contingencia
         /// nombres, así que lo que sale de ellos (las partes del nombre, lo normalizado para buscar, los usuarios) se queda; la
         /// foto se arma otra vez, igual que siempre (<see cref="FotoCatalogo.Armar"/>), con los productos de ahora.
         /// </summary>
-        public Copia(PaqueteContingenciaDto p, Copia anterior)
+        public static Copia ConOtrasExistencias(PaqueteContingenciaDto p, Copia anterior) => new(anterior, p);
+
+        private Copia(Copia anterior, PaqueteContingenciaDto p)
         {
             Paquete = p;
             PorVariante = p.Productos.ToDictionary(x => x.VarianteId);
+            PreciosDesde = anterior.PreciosDesde;
             Foto = FotoCatalogo.Armar(p);
             (Partes, Normalizado, Palabras, Sinonimos, Presentaciones) =
                 (anterior.Partes, anterior.Normalizado, anterior.Palabras, anterior.Sinonimos, anterior.Presentaciones);
             (Usuarios, UsuariosPorId, PermisosPorUsuario, Defecto, Activos) =
                 (anterior.Usuarios, anterior.UsuariosPorId, anterior.PermisosPorUsuario, anterior.Defecto, anterior.Activos);
         }
+
+        /// <summary>
+        /// Desde qué versión del catálogo tiene cada producto, en esta copia, los precios que tiene (entrega 5, parte 2): la de
+        /// la copia con que llegaron así. Si llega otra vez con los mismos precios y presentaciones (en una copia completa, o
+        /// porque cambió su nombre o sus códigos), se queda la de antes. Sin conexión no se cobra con precios que llegaron
+        /// después de lo que vio el cajero (<see cref="Contingencia.Cobrar"/>).
+        /// </summary>
+        public IReadOnlyDictionary<Guid, long> PreciosDesde { get; }
+
+        private static Dictionary<Guid, long> DesdeCuando(PaqueteContingenciaDto p, Dictionary<Guid, ProductoVentaDto> productos, Copia? anterior)
+        {
+            // De otra base (la prueba empezó de cero) o más nueva que esta: sus versiones no son de esta.
+            if (anterior is not null && (anterior.Paquete.Base != p.Base || anterior.Paquete.Version > p.Version))
+                anterior = null;
+            var desde = new Dictionary<Guid, long>(productos.Count);
+            foreach (var (varianteId, producto) in productos)
+            {
+                var version = producto.Version ?? p.Version;
+                if (anterior is not null && anterior.PorVariante.TryGetValue(varianteId, out var antes)
+                    && anterior.PreciosDesde.TryGetValue(varianteId, out var suya) && suya <= version && MismosPrecios(antes, producto))
+                    version = suya;
+                desde[varianteId] = version;
+            }
+            return desde;
+        }
+
+        /// <summary>Los mismos precios y presentaciones: lo que cuenta para lo que se cobra (no el nombre ni los códigos).</summary>
+        public static bool MismosPrecios(ProductoVentaDto a, ProductoVentaDto b) =>
+            ReferenceEquals(a, b)
+            || ((ReferenceEquals(a.Precios, b.Precios) || a.Precios.SequenceEqual(b.Precios))
+                && (ReferenceEquals(a.Presentaciones, b.Presentaciones) || a.Presentaciones.SequenceEqual(b.Presentaciones)));
 
         /// <summary>
         /// Los permisos de cada usuario y los de defecto (entrega 1). Una copia de antes (con las reglas por rol) se lee como la
@@ -179,6 +216,14 @@ public sealed class Contingencia
     private readonly SemaphoreSlim _subida = new(1, 1);
     private readonly SemaphoreSlim _creditos = new(1, 1);
     private readonly Lock _candado = new();
+    private readonly Lock _candadoSinConfirmar = new();
+
+    /// <summary>
+    /// Los cobros que no se sabe si quedaron (<see cref="NoSeSabeSiQuedo"/>), y si se mandaron fiados; también en la base de la
+    /// caja.
+    /// </summary>
+    private volatile ImmutableDictionary<Guid, bool> _sinConfirmar;
+
     private readonly Dictionary<Guid, AutorizacionLocal> _autorizaciones = [];
     private readonly Dictionary<string, (int Fallos, DateTime? Hasta)> _intentos = [];
     private volatile Copia? _copia;
@@ -195,6 +240,12 @@ public sealed class Contingencia
     private DateTime _ultimoReintentoUtc = DateTime.MinValue;
     private readonly CalidadDeLaRed _red;
     private CancellationTokenSource? _alto;
+
+    /// <summary>El latido y el aviso (<see cref="Iniciar"/>): al cerrar la caja se espera a que terminen lo que iban haciendo.</summary>
+    private Task _deFondo = Task.CompletedTask;
+
+    /// <summary>Se cerró la caja (<see cref="Detener"/>): ya no empieza otra vuelta de ponerse al día.</summary>
+    private bool Detenida => _alto?.IsCancellationRequested == true;
 
     /// <summary>Las versiones de la caja principal que se conocen (las del aviso o las del latido); vacías con un servicio de antes.</summary>
     private VersionesCopiaDto? _dePrincipal;
@@ -242,6 +293,7 @@ public sealed class Contingencia
         _red = new CalidadDeLaRed(reglas ?? ReglasDeLaRed.SoloSiContesta, _reloj);
         _completaDesdeUtc = Ahora;
         _saldos = almacen.Leer<SaldosCreditoDto>("saldos");
+        _sinConfirmar = (almacen.Leer<Dictionary<Guid, bool>>(ClaveSinConfirmar) ?? []).ToImmutableDictionary();
         PilotoEleventa = almacen.Leer<bool?>(ClavePilotoEleventa) ?? false;
         (Pendientes, ConError, UltimoError, ImpresionesPorSubir) = almacen.Contar();
         // La copia trae miles de productos: leerla y armar sus índices ya no detiene la ventana al abrir (entrega 5). Lo que
@@ -396,8 +448,7 @@ public sealed class Contingencia
         if (_alto is not null)
             return;
         _alto = new CancellationTokenSource();
-        _ = Task.Run(() => LatirAsync(_alto.Token));
-        _ = Task.Run(() => EscucharAvisosAsync(_alto.Token));
+        _deFondo = Task.WhenAll(Task.Run(() => LatirAsync(_alto.Token)), Task.Run(() => EscucharAvisosAsync(_alto.Token)));
     }
 
     /// <summary>
@@ -409,20 +460,29 @@ public sealed class Contingencia
         if (_alto is not null)
             return;
         _alto = new CancellationTokenSource();
-        _ = Task.Run(() => EscucharAvisosAsync(_alto.Token));
+        _deFondo = Task.Run(() => EscucharAvisosAsync(_alto.Token));
     }
 
     public void Detener() => _alto?.Cancel();
 
     /// <summary>
-    /// Se cierra la caja: el latido se detiene y lo que se mandó escribir en la base local queda en el disco antes de irse
-    /// (los tickets en espera, lo último de un cobro). Espera poco: una base que no responde no detiene el cierre.
+    /// Se cierra la caja: el latido y el aviso se detienen y lo que se mandó escribir en la base local queda en el disco antes
+    /// de irse (los tickets en espera, lo último de un cobro). Lo de fondo que iba a medias termina antes: la copia que se leía
+    /// al abrir, el latido o el aviso, y la vuelta de ponerse al día (la copia a medio guardar). Espera poco: una base o una red
+    /// que no responden no detienen el cierre.
     /// </summary>
     public void Cerrar(TimeSpan? espera = null)
     {
         Detener();
-        _almacen.Vaciar(espera ?? TimeSpan.FromSeconds(3));
+        var limite = DateTime.UtcNow + (espera ?? TimeSpan.FromSeconds(3));
+        foreach (var tarea in new[] { _carga, _deFondo })
+            ((IAsyncResult)tarea).AsyncWaitHandle.WaitOne(Restante(limite));
+        if (_poniendoAlDia.Wait(Restante(limite)))
+            _poniendoAlDia.Release();
+        _almacen.Vaciar(Restante(limite));
     }
+
+    private static TimeSpan Restante(DateTime limite) => limite - DateTime.UtcNow is var falta && falta > TimeSpan.Zero ? falta : TimeSpan.Zero;
 
     private async Task LatirAsync(CancellationToken ct)
     {
@@ -636,7 +696,7 @@ public sealed class Contingencia
                 return;
             _rendimiento?.Actividad("la sincronización (bajar la copia del catálogo)", reloj.Elapsed);
             reloj.Restart();
-            Poner(new Copia(paquete));
+            Poner(new Copia(paquete, _copia));
             _rendimiento?.Actividad("la sincronización (armar la copia y su foto)", reloj.Elapsed);
             (_paqueteBajadoUtc, _completaDesdeUtc) = (Ahora, Ahora);
             Cambio?.Invoke();
@@ -682,11 +742,11 @@ public sealed class Contingencia
     {
         _otraVez = true;
         // Lo que se avise justo cuando la otra vuelta ya terminó, pero todavía no suelta, lo atiende ella al soltar.
-        while (_otraVez && await _poniendoAlDia.WaitAsync(0))
+        while (_otraVez && !Detenida && await _poniendoAlDia.WaitAsync(0))
         {
             try
             {
-                while (_otraVez)
+                while (_otraVez && !Detenida)
                 {
                     _otraVez = false;
                     await PonerAlDiaUnaVezAsync();
@@ -777,7 +837,9 @@ public sealed class Contingencia
         var nueva = CopiaAlDia.Aplicar(copia, cambios);
         // Solo existencias (lo de cada venta): lo que sale de los nombres se queda; la foto, otra vez, como siempre.
         var anterior = _copia;
-        var armada = !cambios.CambiaCatalogo && anterior is not null && ReferenceEquals(anterior.Paquete, copia) ? new Copia(nueva, anterior) : new Copia(nueva);
+        var armada = !cambios.CambiaCatalogo && anterior is not null && ReferenceEquals(anterior.Paquete, copia)
+            ? Copia.ConOtrasExistencias(nueva, anterior)
+            : new Copia(nueva, anterior);
         // Si mientras tanto bajó otra (o empezó de cero), esta ya no.
         if (!ReferenceEquals(_copia?.Paquete, copia))
             return;
@@ -964,8 +1026,10 @@ public sealed class Contingencia
     /// </summary>
     public void OlvidarCredito()
     {
-        _almacen.Escribir(l => l.LimpiarCredito().Borrar("saldos").Borrar("turno").Borrar("base").Borrar("folio").Borrar(ClaveEspera).LimpiarDiario(),
-            "empezar de cero");
+        _almacen.Escribir(l => l.LimpiarCredito().Borrar("saldos").Borrar("turno").Borrar("base").Borrar("folio").Borrar(ClaveEspera)
+            .Borrar(ClaveSinConfirmar).LimpiarDiario(), "empezar de cero");
+        lock (_candadoSinConfirmar)
+            _sinConfirmar = ImmutableDictionary<Guid, bool>.Empty;
         _saldos = null;
         _creditosPedidos = null;
         // Los productos y precios de encima eran de la base que se quitó: hasta que baje la copia nueva, solo la copia.
@@ -1195,7 +1259,8 @@ public sealed class Contingencia
             throw new InvalidOperationException("El efectivo contado no puede ser negativo.");
 
         var corte = Corte(turno, TipoCorte.Z, Nombre(s.UsuarioId), s.ContadoCentavos);
-        var id = Ids.Nuevo();
+        // El mismo Id con que se mandó en línea: si la caja principal sí lo guardó, al subir ya está.
+        var id = s.Id ?? Ids.Nuevo();
         var ahora = Ahora;
         _almacen.Escribir(lote => lote.Encolar(id, $"api/bandeja/turnos/{turnoId}/corte-z", new CorteContingenciaDto(id, s.UsuarioId, null, ahora, s.ContadoCentavos))
             .Borrar("turno").Borrar("base").LimpiarDiario(), "el corte sin conexión");
@@ -1252,6 +1317,9 @@ public sealed class Contingencia
     /// </summary>
     public TicketDto Cobrar(SolicitudCobro s)
     {
+        // Se mandó y no se sabe si quedó: con la copia sería otra venta con el mismo Id (ClienteCaja.CobrarAsync).
+        if (s.VentaId is { } enviada && CobroSinConfirmar(enviada))
+            throw ErrorSinConfirmar(enviada, s.Cobros.Any(c => c.Forma == FormaPago.Credito));
         var datos = Datos;
         var caja = Caja;
         var turno = TurnoRequerido(s.TurnoId);
@@ -1265,6 +1333,11 @@ public sealed class Contingencia
         ClienteRegistradoDto? cliente = null;
         if (s.ClienteId is { } clienteId && (cliente = Clientes().FirstOrDefault(c => c.Id == clienteId)) is null)
             throw new InvalidOperationException("Ese cliente no está en la copia de esta caja: quítalo del ticket (CTRL+L).");
+        // Tampoco sin conexión se cobra con precios que el cajero no vio (entrega 5, parte 2): con la red lenta la copia se sigue
+        // poniendo al día. La pantalla pone el ticket al día con los de la copia y lo dice, como con lo que contesta la caja
+        // principal; el cobro no se repite solo.
+        if (PreciosCambiados(datos, s) is { } cambiados)
+            throw new ErrorCaja(cambiados.Mensaje, PreciosCambiadosDto.CodigoDelError) { PreciosCambiados = cambiados };
         // Los mismos precios que calculó la pantalla: con el mayoreo del cliente si ella lo usó.
         var venta = new Venta
         {
@@ -1384,6 +1457,34 @@ public sealed class Contingencia
     }
 
     /// <summary>
+    /// Lo del ticket cuyos precios en la copia no son los que vio el cajero: llegaron después de la versión con que se pusieron
+    /// los de su línea (<see cref="LineaSolicitada.VersionCatalogo"/>, o la del ticket). Una versión más nueva que la copia salió
+    /// de lo que llegó encima de ella (lo dijo el cobro, o la caja principal tenía el código): vale si sus precios son los de la
+    /// copia. Sin versión (una pantalla de antes), como siempre. Con los productos como están en la copia.
+    /// </summary>
+    private PreciosCambiadosDto? PreciosCambiados(Copia datos, SolicitudCobro s)
+    {
+        var foto = Foto;
+        var cambiados = new List<ProductoVentaDto>();
+        foreach (var lineas in s.Lineas.Where(l => l.VarianteId is not null).GroupBy(l => l.VarianteId!.Value))
+        {
+            if (lineas.Min(l => l.VersionCatalogo ?? s.VersionCatalogo) is not { } vista || !datos.PorVariante.TryGetValue(lineas.Key, out var enLaCopia))
+                continue;
+            var losVio = vista > datos.Paquete.Version
+                ? foto?.PorVariante(lineas.Key) is not { } visto || Copia.MismosPrecios(visto, enLaCopia)
+                : datos.PreciosDesde.GetValueOrDefault(lineas.Key, enLaCopia.Version ?? datos.Paquete.Version) <= vista;
+            if (!losVio)
+                cambiados.Add(enLaCopia);
+        }
+        if (cambiados.Count == 0)
+            return null;
+        var nombres = cambiados.Select(p => $"«{p.Descripcion}»").ToList();
+        var lista = nombres.Count == 1 ? nombres[0] : $"{string.Join(", ", nombres.Take(nombres.Count - 1))} y {nombres[^1]}";
+        return new PreciosCambiadosDto($"Cambió el precio de {lista} en la copia de esta caja: revisa el total y cobra otra vez.", cambiados,
+            datos.Paquete.Version);
+    }
+
+    /// <summary>
     /// Un abono sin conexión, con el saldo que conoce esta caja: el mismo cálculo que en línea. Sube con la bandeja (el
     /// servicio lo guarda tal cual) y su comprobante dice que el saldo es el de esta caja.
     /// </summary>
@@ -1475,6 +1576,39 @@ public sealed class Contingencia
     /// <summary>El servicio rechazó lo que se le mandó (por una regla): no pasó, ya no se cuenta.</summary>
     public Task QuitarCreditoAsync(Guid id) => _almacen.EscribirAsync(l => l.QuitarCredito([id]), "lo que no se fió");
 
+    // ── Los cobros que no se sabe si quedaron (entrega 5, parte 2) ──────────
+
+    private const string ClaveSinConfirmar = "cobros-sin-confirmar";
+
+    /// <summary>Ese cobro se mandó y no se sabe si quedó (<see cref="NoSeSabeSiQuedo"/>): solo se cobra en línea, con su mismo Id.</summary>
+    public bool CobroSinConfirmar(Guid ventaId) => _sinConfirmar.ContainsKey(ventaId);
+
+    /// <summary>Lo que se le dice al cajero de ese cobro: lo de lo fiado si se mandó fiado (o se manda así ahora).</summary>
+    public ErrorCaja ErrorSinConfirmar(Guid ventaId, bool fiado) => ClienteCaja.SinConfirmar(fiado || _sinConfirmar.GetValueOrDefault(ventaId));
+
+    /// <summary>
+    /// La caja principal no contestó a un cobro (puede que lo haya guardado, con el siguiente folio de esta caja) y sin conexión
+    /// no se pudo hacer. Ese folio se aparta: el siguiente cobro sin conexión no lo repite (si no quedó, se brinca). El ticket
+    /// solo se cobra en línea, con el mismo Id, hasta saberlo: <see cref="Cobrar"/> no lo hace y <see cref="CobroEnLineaAsync"/>
+    /// lo suelta. Queda en la base de la caja (también si se reinicia).
+    /// </summary>
+    /// <param name="fiado">Se mandó fiado: el cajero lee lo de lo fiado (<see cref="ErrorSinConfirmar"/>).</param>
+    public void NoSeSabeSiQuedo(Guid ventaId, bool fiado)
+    {
+        lock (_candadoSinConfirmar)
+        {
+            if (_sinConfirmar.ContainsKey(ventaId))
+                return;
+            _almacen.Escribir(l =>
+            {
+                var registro = l.Leer<Dictionary<Guid, bool>>(ClaveSinConfirmar) ?? [];
+                registro[ventaId] = fiado;
+                l.Guardar(ClaveSinConfirmar, registro).Guardar("folio", (l.Leer<int?>("folio") ?? 0) + 1);
+            }, "un cobro que no se sabe si quedó");
+            _sinConfirmar = _sinConfirmar.SetItem(ventaId, fiado);
+        }
+    }
+
     // ── Lo que pasó en línea, para la cuenta del turno ──────────────────────
 
     /// <summary>Al entrar en línea se toma la cuenta del servicio como base; el diario empieza de nuevo.</summary>
@@ -1519,10 +1653,20 @@ public sealed class Contingencia
         var fiado = ticket.VentaId is { } ventaId && ticket.Credito is { } credito ? (ventaId, credito.Vence) : ((Guid, DateOnly?)?)null;
         if (fiado is not null)
             _refrescarCredito = true;
+        // Si no se sabía si había quedado, ya se sabe.
+        Guid? sabido = null;
+        if (ticket.VentaId is { } id && _sinConfirmar.ContainsKey(id))
+        {
+            lock (_candadoSinConfirmar)
+                _sinConfirmar = _sinConfirmar.Remove(id);
+            sabido = id;
+        }
         return _almacen.EscribirAsync(lote =>
         {
             if (fiado is { } corregir)
                 lote.CorregirCredito(corregir.Item1, null, corregir.Item2);
+            if (sabido is { } quitar && lote.Leer<Dictionary<Guid, bool>>(ClaveSinConfirmar) is { } registro && registro.Remove(quitar))
+                _ = registro.Count == 0 ? lote.Borrar(ClaveSinConfirmar) : lote.Guardar(ClaveSinConfirmar, registro);
             lote.Anotar(Anotacion(turnoId, ticket)).Guardar("folio", Math.Max(lote.Leer<int?>("folio") ?? 0, folio));
         }, "un cobro");
     }
