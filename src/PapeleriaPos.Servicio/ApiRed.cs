@@ -118,12 +118,16 @@ public sealed class CajasQueLaten(PresenciaCajas presencia, IServiceScopeFactory
             if (_vivas.TryGetValue(id, out var antes) && antes == viva)
                 continue;
             _vivas[id] = viva;
+            // Una caja en un Wi-Fi malo puede dejar de latir y volver a cada rato: la primera vez en el periodo del resumen se anota,
+            // las demás se cuentan (el resumen dice cuántas).
             if (!viva)
-                bitacora.Anotar($"«{nombre}» dejó de latir: su último latido fue a las "
-                                + $"{TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(vista, DateTimeKind.Utc), reloj.LocalTimeZone).ToString("HH:mm:ss", CultureInfo.InvariantCulture)} "
-                                + "(se cerró o perdió la red).");
+                bitacora.AnotarOContar($"«{nombre}» dejó de latir", $"«{nombre}» dejó de latir: su último latido fue a las "
+                    + $"{TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(vista, DateTimeKind.Utc), reloj.LocalTimeZone).ToString("HH:mm:ss", CultureInfo.InvariantCulture)} "
+                    + "(se cerró o perdió la red).");
+            else if (antes is false)
+                bitacora.AnotarOContar($"«{nombre}» volvió a latir", $"«{nombre}» volvió a latir.");
             else
-                bitacora.Anotar(antes is false ? $"«{nombre}» volvió a latir." : $"«{nombre}» está conectada.");
+                bitacora.Anotar($"«{nombre}» está conectada.");
         }
     }
 }

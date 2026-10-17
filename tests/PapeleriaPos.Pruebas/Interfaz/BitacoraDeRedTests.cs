@@ -148,26 +148,101 @@ public sealed class BitacoraDeRedTests : IDisposable
         Assert.DoesNotContain(_carpeta.Lineas(), l => l.StartsWith("Se perdió", StringComparison.Ordinal));
     }
 
-    /// <summary>El DNS del router trabado se anota (lo que docs/notas.md pide ver: si no contesta ni su propio nombre, está trabado).</summary>
+    /// <summary>
+    /// El DNS del router trabado se anota (lo que docs/notas.md pide ver: si no contesta ni su propio nombre, está trabado): la
+    /// primera vez en el periodo del resumen; lo demás, contado en el resumen, aunque vaya y venga.
+    /// </summary>
     [Fact]
-    public async Task El_dns_del_router_trabado_se_anota_una_vez()
+    public async Task El_dns_del_router_trabado_se_anota_una_vez_y_lo_demas_va_al_resumen()
     {
         var vigia = Vigia();
         await VueltasAsync(vigia, 1);
-        _pruebas.Dns = (_, _) => null;
-
-        await VueltasAsync(vigia, 5);
-        _pruebas.Dns = (_, _) => TimeSpan.FromMilliseconds(3);
+        for (var i = 0; i < 5; i++)
+        {
+            _pruebas.Dns = (_, _) => null;
+            await VueltasAsync(vigia, 2);
+            _pruebas.Dns = (_, _) => TimeSpan.FromMilliseconds(3);
+            await VueltasAsync(vigia, 3);
+        }
+        // Hasta los 15 minutos (una revisión cada 30 s), cuando sale el resumen.
         await VueltasAsync(vigia, 5);
 
         var lineas = _carpeta.Lineas();
         Assert.Single(lineas, l => l == "El DNS del router no contesta («tendawifi.com» en 1 s): está trabado o se reinicia.");
-        Assert.Single(lineas, l => l == "El DNS del router volvió a contestar.");
+        var resumen = Assert.Single(lineas, l => l.StartsWith("Resumen", StringComparison.Ordinal));
+        Assert.Contains("el DNS del router no contestó 10 de 31 veces", resumen);
+        Assert.Contains("el DNS del router dejó de contestar 4 veces más", resumen);
     }
 
     /// <summary>
-    /// La caja: la red con la caja principal pasa de buena a lenta, se cae y vuelve; cada cambio una vez, con los últimos latidos, y
-    /// los latidos de en medio solo en el resumen.
+    /// Un Wi-Fi regular que pasa de buena a lenta y de vuelta muchas veces no llena la bitácora: no va una línea por cada vez, sino
+    /// cuántas veces en el resumen de cada 15 minutos. Lo que sí se pierde (la caja principal no contesta) va siempre.
+    /// </summary>
+    [Fact]
+    public async Task Un_wifi_que_va_y_viene_entre_buena_y_lenta_no_llena_la_bitacora()
+    {
+        var vigia = Vigia();
+        await vigia.RevisarAsync();
+        var principal = new Uri("http://192.168.0.10:5080/");
+        for (var i = 0; i < 180; i++)
+        {
+            vigia.Latido(TimeSpan.FromMilliseconds(i % 2 == 0 ? 340 : 9), i % 2 == 0 ? EstadoRed.Lenta : EstadoRed.Buena, principal);
+            _reloj.Avanzar(TimeSpan.FromSeconds(5));
+            if (i % 6 == 5)
+                await vigia.RevisarAsync();
+        }
+
+        var lineas = _carpeta.Lineas();
+        Assert.DoesNotContain(lineas, l => l.Contains("buena → lenta", StringComparison.Ordinal));
+        // El primer latido ya llegó lento (no venía de buena): de buena a lenta, 89 veces.
+        Assert.Contains("la red con la caja principal se puso lenta 89 veces", Assert.Single(lineas, l => l.StartsWith("Resumen", StringComparison.Ordinal)));
+        Assert.Equal(3, lineas.Count);
+    }
+
+    /// <summary>
+    /// El servicio corre días sin cerrarse: los archivos de hace más de 10 días se quitan al cambiar el día, no solo al abrir.
+    /// </summary>
+    [Fact]
+    public void Los_archivos_viejos_se_quitan_al_cambiar_el_dia_sin_cerrar()
+    {
+        var bitacora = new BitacoraDeRed(_carpeta.Ruta, "red-servicio", _reloj);
+        bitacora.Empezar("la caja principal");
+        File.WriteAllText(Path.Combine(_carpeta.Ruta, "red-servicio-2026-10-08.log"), "");
+
+        _reloj.Avanzar(TimeSpan.FromDays(1));
+        bitacora.Anotar("Resumen de 15 min: internet sí.");
+
+        Assert.Equal(["red-servicio-2026-10-17.log", "red-servicio-2026-10-18.log"],
+            Directory.EnumerateFiles(_carpeta.Ruta).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// Un día de Wi-Fi malo puede llenar el archivo del día: aun así, cuándo se perdió algo y cuándo volvió se anota siempre (lo
+    /// demás deja de anotarse en el tope, como en el registro de la caja).
+    /// </summary>
+    [Fact]
+    public void Lo_que_se_pierde_y_vuelve_se_anota_aunque_el_archivo_del_dia_este_lleno()
+    {
+        var bitacora = new BitacoraDeRed(_carpeta.Ruta, "red-caja", _reloj, tope: 4096);
+        bitacora.Empezar("esta caja");
+        for (var i = 0; i < 200; i++)
+            bitacora.Anotar($"Esta PC cambió de IP: IP 192.168.0.{i % 250}/24 por DHCP → IP 192.168.0.{(i + 1) % 250}/24 por DHCP.");
+
+        bitacora.SePerdio("la caja principal", "192.168.0.10:5080 no contesta.");
+        _reloj.Avanzar(TimeSpan.FromMinutes(3));
+        bitacora.Volvio("la caja principal", "contesta en 9 ms.");
+        bitacora.Terminar("se cerró la caja");
+
+        var lineas = _carpeta.Lineas();
+        Assert.Contains("Se perdió «la caja principal»: 192.168.0.10:5080 no contesta.", lineas);
+        Assert.Contains(lineas, l => l.StartsWith("Volvió «la caja principal» tras 3 min", StringComparison.Ordinal));
+        Assert.Equal("Termina la bitácora de red: se cerró la caja.", lineas[^1]);
+        Assert.True(new FileInfo(bitacora.ArchivoDeHoy).Length < 4096 + 1024 + 1024);
+    }
+
+    /// <summary>
+    /// La caja: la red con la caja principal pasa de buena a lenta, se cae y vuelve: que se perdió y volvió va una vez, con los
+    /// últimos latidos; lo de en medio (los latidos, que se puso lenta) solo en el resumen.
     /// </summary>
     [Fact]
     public void Los_latidos_anotan_cuando_la_red_cambia_de_buena_a_lenta_o_caida()
@@ -190,9 +265,9 @@ public sealed class BitacoraDeRedTests : IDisposable
         Latidos(1, TimeSpan.FromMilliseconds(12), EstadoRed.Buena);
         Latidos(20, TimeSpan.FromMilliseconds(8), EstadoRed.Buena);
 
+        // De buena a lenta no va en una línea (se cuenta en el resumen); que se perdió y volvió, sí.
         Assert.Equal(
         [
-            "Red con la caja principal: buena → lenta (últimos latidos: 9 ms, 340 ms y 410 ms).",
             "Se perdió «la caja principal»: 192.168.0.10:5080 no contesta; antes, la red lenta (últimos latidos: 410 ms, 410 ms y 410 ms).",
             "Volvió «la caja principal» tras 2 min (se perdió a las 14:01:20): 192.168.0.10:5080 contesta en 12 ms; la red, buena.",
         ], _carpeta.Lineas().Skip(1));

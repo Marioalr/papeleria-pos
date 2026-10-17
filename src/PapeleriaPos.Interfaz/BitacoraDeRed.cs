@@ -51,12 +51,19 @@ public sealed partial class BitacoraDeRed
     private readonly List<CaidaDeRed> _caidas = [];
     private bool _empezada;
 
+    /// <summary>El día en que se quitaron por última vez los archivos viejos: el servicio corre días sin cerrarse.</summary>
+    private DateOnly? _limpiaEl;
+
+    /// <summary>Lo que se repite en el periodo del resumen: lo primero se anota y lo demás se cuenta (<see cref="AnotarOContar"/>).</summary>
+    private readonly Dictionary<string, int> _contados = new(StringComparer.Ordinal);
+
     /// <param name="carpeta">Donde van los archivos.</param>
     /// <param name="nombre">Con qué empieza cada archivo: «red-caja» o «red-servicio».</param>
-    public BitacoraDeRed(string carpeta, string nombre, TimeProvider? reloj = null, int dias = DiasPorOmision)
+    /// <param name="tope">Hasta cuánto crece el archivo de un día (lo que se pierde y vuelve se anota aunque pase de ahí).</param>
+    public BitacoraDeRed(string carpeta, string nombre, TimeProvider? reloj = null, int dias = DiasPorOmision, long tope = RegistroDiario.TopePorOmision)
     {
         _reloj = reloj ?? TimeProvider.System;
-        _registro = new RegistroDiario(carpeta, nombre, dias, reloj: _reloj);
+        _registro = new RegistroDiario(carpeta, nombre, dias, tope, _reloj, reserva: Math.Min(RegistroDiario.ReservaPorOmision, tope / 4));
     }
 
     public string Carpeta => _registro.Carpeta;
@@ -90,19 +97,69 @@ public sealed partial class BitacoraDeRed
                 return;
             _empezada = true;
             _registro.Limpiar();
+            _limpiaEl = Hoy;
             _caidas.Clear();
             _caidas.AddRange(LeerCaidas(LineasGuardadas()).TakeLast(CaidasQueRecuerda));
             _abiertas.Clear();
         }
         var pc = arranco is { } a ? $" (la PC arrancó a las {a.ToString("HH:mm:ss", CultureInfo.InvariantCulture)} del {a.ToString("dd/MM", CultureInfo.InvariantCulture)})" : "";
-        _registro.Anotar($"{Empieza} de {quien}{pc}.");
+        _registro.AnotarSiempre($"{Empieza} de {quien}{pc}.");
     }
 
     /// <summary>Al cerrar bien: lo dice. Si la PC se apaga de golpe (o se va la luz), no hay esta línea: el hueco lo dice.</summary>
-    public void Terminar(string porque) => _registro.Anotar($"{Termina}: {porque}.");
+    public void Terminar(string porque) => _registro.AnotarSiempre($"{Termina}: {porque}.");
 
-    /// <summary>Una línea con la fecha y la hora.</summary>
-    public void Anotar(string texto) => _registro.Anotar(texto);
+    /// <summary>Una línea con la fecha y la hora (si el archivo de hoy llegó a su tope, puede no entrar: lo que importa va siempre).</summary>
+    public void Anotar(string texto)
+    {
+        LimpiarSiCambioElDia();
+        _registro.Anotar(texto);
+    }
+
+    /// <summary>
+    /// Lo que puede repetirse sin parar (una caja que deja de latir y vuelve en un Wi-Fi malo): la primera vez en el periodo del
+    /// resumen se anota; las demás se cuentan y el resumen dice cuántas (<see cref="SacarContados"/>).
+    /// </summary>
+    /// <param name="que">Cómo se dice en el resumen: ««Caja 2» dejó de latir».</param>
+    public void AnotarOContar(string que, string texto)
+    {
+        lock (_candado)
+        {
+            if (_contados.TryGetValue(que, out var veces))
+            {
+                _contados[que] = veces + 1;
+                return;
+            }
+            _contados[que] = 0;
+        }
+        Anotar(texto);
+    }
+
+    /// <summary>Lo que se repitió desde el último resumen, con cuántas veces más (y empieza otro periodo).</summary>
+    public IReadOnlyList<(string Que, int Veces)> SacarContados()
+    {
+        lock (_candado)
+        {
+            var repetidos = _contados.Where(c => c.Value > 0).Select(c => (c.Key, c.Value)).ToList();
+            _contados.Clear();
+            return repetidos;
+        }
+    }
+
+    private DateOnly Hoy => DateOnly.FromDateTime(_reloj.GetLocalNow().DateTime);
+
+    /// <summary>Al cambiar el día (el servicio no se cierra en días): quita los archivos de hace más de los días que se guardan.</summary>
+    private void LimpiarSiCambioElDia()
+    {
+        var hoy = Hoy;
+        lock (_candado)
+        {
+            if (_limpiaEl == hoy)
+                return;
+            _limpiaEl = hoy;
+        }
+        _registro.Limpiar();
+    }
 
     /// <summary>
     /// Se perdió algo (internet, la caja principal, el router…): se anota solo si no estaba ya perdido. Dice si lo anotó.
@@ -118,7 +175,9 @@ public sealed partial class BitacoraDeRed
             if (_caidas.Count > CaidasQueRecuerda)
                 _caidas.RemoveAt(0);
         }
-        _registro.Anotar($"Se perdió «{que}»: {detalle}");
+        // Siempre: aunque el archivo de hoy haya llegado a su tope (un día de Wi-Fi malo), la caída de verdad se anota.
+        LimpiarSiCambioElDia();
+        _registro.AnotarSiempre($"Se perdió «{que}»: {detalle}");
         return true;
     }
 
@@ -135,7 +194,8 @@ public sealed partial class BitacoraDeRed
             if (i >= 0)
                 _caidas[i] = _caidas[i] with { Hasta = ahora };
         }
-        _registro.Anotar($"Volvió «{que}» tras {Textos.Duracion(ahora - desde)} (se perdió a las {desde.ToString("HH:mm:ss", CultureInfo.InvariantCulture)}): {detalle}");
+        LimpiarSiCambioElDia();
+        _registro.AnotarSiempre($"Volvió «{que}» tras {Textos.Duracion(ahora - desde)} (se perdió a las {desde.ToString("HH:mm:ss", CultureInfo.InvariantCulture)}): {detalle}");
         return true;
     }
 

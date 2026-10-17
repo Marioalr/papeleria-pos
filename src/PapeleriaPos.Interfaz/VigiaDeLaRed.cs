@@ -119,6 +119,12 @@ public sealed class VigiaDeLaRed
     private int _latidosSinRespuesta;
     private readonly List<double> _routerMs = [];
     private int _routerSinRespuesta;
+
+    /// <summary>Cuántas veces se puso lenta la red con la caja principal en el periodo (se dice en el resumen, no una línea cada vez).</summary>
+    private int _vecesLenta;
+
+    /// <summary>Cuántas veces se le preguntó al DNS del router en el periodo, y cuántas no contestó.</summary>
+    private (int Preguntas, int SinRespuesta) _dnsDelRouter;
     private (long Difusion, long Descartados)? _contadoresDesde;
 
     /// <summary>Si contesta o no, con cuántas veces seguidas que no, y si ya contestó alguna vez.</summary>
@@ -365,14 +371,15 @@ public sealed class VigiaDeLaRed
             Contesto(ref _router, "el router", $"{router} contesta en {RedLocal.Ms(enCuanto)}");
         else
             Perder(ref _router, "el router", $"{router} no contesta el ping ni su página (puerto 80) en {Segundos(EsperaPing)}");
-        if (dns is { } contesta && contesta != _dnsRouter)
+        if (dns is { } contesta)
         {
-            var antes = _dnsRouter;
+            // Lo de cada revisión va al resumen; una línea solo la primera vez que deja de contestar en el periodo.
+            lock (_candado)
+                _dnsDelRouter = (_dnsDelRouter.Preguntas + 1, _dnsDelRouter.SinRespuesta + (contesta ? 0 : 1));
+            if (!contesta && _dnsRouter != false)
+                _bitacora.AnotarOContar("el DNS del router dejó de contestar",
+                    $"El DNS del router no contesta («{_opciones.NombreDelRouter}» en {Segundos(EsperaPing)}): está trabado o se reinicia.");
             _dnsRouter = contesta;
-            if (!contesta)
-                _bitacora.Anotar($"El DNS del router no contesta («{_opciones.NombreDelRouter}» en {Segundos(EsperaPing)}): está trabado o se reinicia.");
-            else if (antes is false)
-                _bitacora.Anotar("El DNS del router volvió a contestar.");
         }
     }
 
@@ -474,6 +481,13 @@ public sealed class VigiaDeLaRed
         if (antes == estado)
             return;
         var direccion = principal.Authority;
+        // De buena a lenta y de vuelta, en un Wi-Fi regular, puede pasar muchas veces: se cuentan en el resumen, no una línea cada vez.
+        if (antes is not null and not EstadoRed.Caida && estado == EstadoRed.Lenta)
+        {
+            lock (_candado)
+                _vecesLenta++;
+            return;
+        }
         if (estado == EstadoRed.Caida)
         {
             _bitacora.SePerdio("la caja principal",
@@ -483,8 +497,6 @@ public sealed class VigiaDeLaRed
         }
         else if (antes == EstadoRed.Caida)
             _bitacora.Volvio("la caja principal", $"{direccion} contesta en {(latencia is { } l ? RedLocal.Ms(l) : "?")}; la red, {Nombre(estado)}.");
-        else if (antes is { } desde)
-            _bitacora.Anotar($"Red con la caja principal: {Nombre(desde)} → {Nombre(estado)} (últimos latidos: {ultimos}).");
     }
 
     /// <summary>
@@ -530,8 +542,12 @@ public sealed class VigiaDeLaRed
             if (_latidosMs.Count + _latidosSinRespuesta > 0)
                 partes.Add($"la caja principal {Rango(_latidosMs)} ({_latidosMs.Count + _latidosSinRespuesta} latidos, "
                            + $"{(_latidosSinRespuesta == 0 ? "ninguno" : _latidosSinRespuesta.ToString(CultureInfo.InvariantCulture))} sin respuesta)");
+            if (_vecesLenta > 0)
+                partes.Add($"la red con la caja principal se puso lenta {Veces(_vecesLenta)}");
             if (_routerMs.Count + _routerSinRespuesta > 0)
                 partes.Add($"el router {Rango(_routerMs)} ({_routerMs.Count} de {_routerMs.Count + _routerSinRespuesta} contestaron)");
+            if (_dnsDelRouter.SinRespuesta > 0)
+                partes.Add($"el DNS del router no contestó {_dnsDelRouter.SinRespuesta} de {_dnsDelRouter.Preguntas} veces");
             if (_internet.Contesta is { } hay)
                 partes.Add(hay ? "internet sí" : "sin internet");
             else if (_internetDeLaPrincipal is { } segunLaPrincipal)
@@ -542,10 +558,12 @@ public sealed class VigiaDeLaRed
             if (_contadoresDesde is { } desde && foto.Difusion is { } difusion && difusion >= desde.Difusion && segundos > 0)
                 partes.Add($"difusión {((difusion - desde.Difusion) / segundos).ToString("#,##0.#", CultureInfo.InvariantCulture)} por segundo, "
                            + $"{Math.Max(0, (foto.Descartados ?? 0) - desde.Descartados).ToString("#,##0", CultureInfo.InvariantCulture)} descartados");
+            // Lo que se repitió y solo se anotó la primera vez (una caja que deja de latir y vuelve, el DNS del router).
+            partes.AddRange(_bitacora.SacarContados().Select(c => $"{c.Que} {Veces(c.Veces)} más"));
             if (partes.Count > 0)
                 texto = $"Resumen de {Textos.Duracion(ahora - _resumenDesde)}: {string.Join("; ", partes)}.";
             _resumenDesde = ahora;
-            (_latidosSinRespuesta, _routerSinRespuesta) = (0, 0);
+            (_latidosSinRespuesta, _routerSinRespuesta, _vecesLenta, _dnsDelRouter) = (0, 0, 0, (0, 0));
             _latidosMs.Clear();
             _routerMs.Clear();
             _contadoresDesde = foto.Difusion is { } d ? (d, foto.Descartados ?? 0) : null;
@@ -598,6 +616,8 @@ public sealed class VigiaDeLaRed
         if (que == "el router")
             Cambio?.Invoke();
     }
+
+    private static string Veces(int veces) => veces == 1 ? "una vez" : $"{veces} veces";
 
     private static string Segundos(TimeSpan espera) => $"{espera.TotalSeconds.ToString("0.#", CultureInfo.InvariantCulture)} s";
 }
