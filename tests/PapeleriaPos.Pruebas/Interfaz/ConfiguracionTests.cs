@@ -26,7 +26,8 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
     }
 
     /// <param name="alNoGuardar">Lo que dice la venta si al cerrar no se pudo guardar lo escrito.</param>
-    private async Task<Abierta> AbrirAsync(string usuario, string pin, Action<string>? alNoGuardar = null)
+    /// <param name="rendimiento">Lo que mide la caja (entrega 5); sin él, la Configuración dice que todavía no hay medidas.</param>
+    private async Task<Abierta> AbrirAsync(string usuario, string pin, Action<string>? alNoGuardar = null, RendimientoCaja? rendimiento = null)
     {
         var http = servicio.Fabrica.CreateClient();
         var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
@@ -38,6 +39,7 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
             .AddSingleton<IImpresora>(new SinImpresora())
             .AddSingleton<IJSRuntime>(new PaginaQueContesta())
             .AddScoped<ModuloCaja>()
+            .AddSingleton(rendimiento ?? new RendimientoCaja())
             .BuildServiceProvider();
         var pantalla = new PantallaSinNavegador(servicios);
         var cambios = 0;
@@ -544,6 +546,25 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
         await GrupoAsync(a.Pantalla, "Acerca de");
         Assert.Contains("Papelería POS", await a.Pantalla.TextoAsync());
         Assert.DoesNotContain("Actualización", await a.Pantalla.TextoAsync());
+    }
+
+    /// <summary>
+    /// Acerca de dice lo que tardan los últimos escaneos, del Enter a la línea en pantalla (entrega 5), y contra qué copia
+    /// del catálogo se escanea: para el dueño o quien instala la caja. En el navegador, sin base local, no hay copia.
+    /// </summary>
+    [Fact]
+    public async Task Acerca_de_dice_lo_que_tardan_los_escaneos()
+    {
+        var rendimiento = new RendimientoCaja();
+        foreach (var ms in new[] { 9, 11, 14, 40 })
+            rendimiento.AnotarEscaneo(TimeSpan.FromMilliseconds(ms));
+        await using var a = await AbrirAsync("dueno", "3333", rendimiento: rendimiento);
+
+        await GrupoAsync(a.Pantalla, "Acerca de");
+
+        var texto = await a.Pantalla.TextoAsync();
+        Assert.Contains("Del Enter a la línea en pantalla, los últimos 4 escaneos: la mitad en 11 ms, el 95 % en 40 ms y el 99 % en 40 ms.", texto);
+        Assert.Contains("Esta caja todavía no tiene su copia del catálogo: el escaneo le pregunta a la caja principal.", texto);
     }
 
     [Fact]

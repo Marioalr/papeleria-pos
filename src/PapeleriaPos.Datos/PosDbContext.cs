@@ -176,16 +176,16 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
         ProtegerSoloAgregar<Bitacora>();
         ProtegerSoloAgregar<Devolucion>();
         ProtegerSoloAgregar<MovimientoCredito>();
-        RegistrarCambiosDePrecio(ahora);
+        // Todo lo que se guarda junto lleva la misma versión: la sincronización baja "lo posterior a la versión N". También el
+        // historial de precios (entrega 5), aunque no se baje: con ella sabe el cobro si un precio cambió después de la copia.
+        long? version = secuenciaCatalogo is null ? null : ++secuenciaCatalogo.Valor;
+        RegistrarCambiosDePrecio(ahora, version);
 
-        if (secuenciaCatalogo is null)
+        if (version is not { } nueva)
             return;
-
-        // Todo lo que se guarda junto lleva la misma versión: la sincronización baja "lo posterior a la versión N".
-        secuenciaCatalogo.Valor++;
         foreach (var entry in ChangeTracker.Entries<IVersionado>().Where(e => e.State is EntityState.Added or EntityState.Modified))
         {
-            entry.Entity.Version = secuenciaCatalogo.Valor;
+            entry.Entity.Version = nueva;
             entry.Entity.ModificadoUtc = ahora;
         }
     }
@@ -196,7 +196,7 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
             throw new InvalidOperationException($"Los registros de {typeof(T).Name} solo se agregan: no se editan ni se borran.");
     }
 
-    private void RegistrarCambiosDePrecio(DateTime ahora)
+    private void RegistrarCambiosDePrecio(DateTime ahora, long? version)
     {
         foreach (var entry in ChangeTracker.Entries<Precio>().ToList())
         {
@@ -221,6 +221,7 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
                 PrecioAnteriorCentavos = anterior,
                 PrecioNuevoCentavos = nuevo,
                 FechaUtc = ahora,
+                VersionCatalogo = version,
             });
         }
 

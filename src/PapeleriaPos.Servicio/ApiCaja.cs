@@ -174,7 +174,7 @@ public static class ApiCaja
         {
             // La caja manda otra vez la misma venta si no le llegó la respuesta: se regresa el ticket que ya se cobró.
             if (s.VentaId is { } ventaId && await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleOrDefaultAsync(v => v.Id == ventaId) is { } cobrada)
-                return await TicketAsync(db, cobrada, ticket.Value);
+                return Results.Ok(await TicketAsync(db, cobrada, ticket.Value));
             // El piloto en la caja 2: solo efectivo, aunque la pantalla ya no ofrezca lo demás.
             if (opcionesEleventa.SoloEfectivo)
                 SoloEfectivoEnElPiloto.RevisarCobro(s.Cobros);
@@ -183,6 +183,11 @@ public static class ApiCaja
             var caja = await db.Cajas.FindAsync(s.CajaId) ?? throw new InvalidOperationException("La caja no existe.");
             var venta = await ArmarVentaAsync(db, catalogo, caja, turno.Id, s.CajeroId, s.VentaId ?? Ids.Nuevo(), s.Lineas,
                 await ApiClientes.MayoreoDelCobroAsync(db, s.ClienteId, s.MayoreoDeCliente));
+            // La caja escaneó contra su copia (entrega 5): si el precio o el mayoreo de algo del ticket cambió después, no se
+            // cobra con precios que el cajero no vio; se le contestan los de ahora y la caja pone el ticket al día. Una caja de
+            // antes no manda la versión: se cobra como siempre.
+            if (s.VersionCatalogo is { } version && await PreciosCambiadosAsync(db, catalogo, caja.SucursalId, s.Lineas, version) is { } cambiados)
+                return Results.Json(cambiados, statusCode: StatusCodes.Status409Conflict);
             (venta.ClienteId, venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId, venta.AutorizacionCreditoId) =
                 (s.ClienteId, s.AutorizacionDescuentoId, s.AutorizacionBajoCostoId, s.AutorizacionCreditoId);
             // Las impresiones van juntas en una línea; su precio y costo salen de cada trabajo, no de la caja.
@@ -194,7 +199,7 @@ public static class ApiCaja
             eleventa.Encolar(db, venta.Id);
             await new RegistroCaja(db).CobrarAsync(venta, s.Cobros, impresiones: impresiones);
             await eleventa.MandarAlCobrarAsync(venta.Id);
-            return await TicketAsync(db, venta, ticket.Value);
+            return Results.Ok(await TicketAsync(db, venta, ticket.Value));
         });
 
         api.MapGet("/cajas/{cajaId:guid}/ventas-del-dia", async (Guid cajaId, PosDbContext db) =>
@@ -271,6 +276,30 @@ public static class ApiCaja
             venta.AplicarDescuentoSolicitado(agregada, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
         }
         return venta;
+    }
+
+    /// <summary>
+    /// Los productos del ticket cuyo precio o mayoreo cambió después de la versión con que la caja puso sus precios, como
+    /// están ahora; nada si no cambió ninguno. Se revisa después de armar la venta: lo que cambie mientras tanto ya no la toca.
+    /// Una versión más nueva que la del servicio quiere decir que su base cambió entera (la prueba empezó de cero): se
+    /// revisa todo.
+    /// </summary>
+    private static async Task<PreciosCambiadosDto?> PreciosCambiadosAsync(
+        PosDbContext db, CatalogoEnMemoria catalogo, Guid sucursalId, IReadOnlyList<LineaSolicitada> lineas, long version)
+    {
+        var actual = await catalogo.VersionAsync(db);
+        long Desde(LineaSolicitada l) => (l.VersionCatalogo ?? version) is var v && v <= actual ? v : -1;
+        var cambiados = await PreciosDeLaCopia.CambiadosAsync(db, sucursalId, lineas.Select(l => l with { VersionCatalogo = Desde(l) }).ToList(),
+            version, actual);
+        if (cambiados.Count == 0)
+            return null;
+        var productos = new List<ProductoVentaDto>();
+        foreach (var varianteId in cambiados)
+        {
+            if (await catalogo.PorVarianteAsync(db, varianteId, sucursalId) is { } producto)
+                productos.Add(producto);
+        }
+        return new PreciosCambiadosDto(PreciosDeLaCopia.Mensaje(productos), productos, actual);
     }
 
     internal static async Task<TurnoDto> TurnoDtoAsync(PosDbContext db, Turno t)

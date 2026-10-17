@@ -25,6 +25,9 @@ export function quitar() {
     document.removeEventListener('scroll', alRodarLista, true);
     clearTimeout(escribiendo);
     clearInterval(rodando);
+    clearTimeout(mandarMedidos);
+    mandarMedidos = null;
+    medidos = [];
     rodando = null;
     rafaga = null;
     hayPagina = false;
@@ -207,7 +210,7 @@ function rafagaDelLector(e) {
             donde.value = r.antes;
             donde.dispatchEvent(new Event('input', { bubbles: true }));
         }
-        pantalla.invokeMethodAsync('EscaneoEnPago', r.texto);
+        pantalla.invokeMethodAsync('EscaneoEnPago', r.texto, hora);
         return true;
     }
     if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
@@ -240,7 +243,8 @@ function alPresionar(e) {
         clearTimeout(escribiendo);
         const texto = campo.value;
         campo.value = '';
-        if (texto.trim() !== '') pantalla.invokeMethodAsync('Escaneado', texto);
+        // Con la hora del Enter (el reloj de la página): se mide cuánto tarda en verse su línea (pintado, abajo).
+        if (texto.trim() !== '') pantalla.invokeMethodAsync('Escaneado', texto, e.timeStamp);
         return;
     }
     const enCodigo = esCaptura(campo);
@@ -321,6 +325,25 @@ function alPresionar(e) {
         }
     }
     pantalla.invokeMethodAsync('Tecla', nombre, texto);
+}
+
+// Del Enter a la línea pintada (entrega 5, docs/propuesta-interfaz.md, «Cómo se mide»): .NET avisa cuando ya dibujó lo de
+// esos escaneos, con la hora de cada Enter; aquí se mide con el reloj de la página en el cuadro siguiente, el que la pinta,
+// y se le manda a la pantalla de a varios (una vez por segundo), para no sumarle trabajo en plena ráfaga.
+let medidos = [];
+let mandarMedidos = null;
+
+export function pintado(horas) {
+    requestAnimationFrame(() => {
+        const ahora = performance.now();
+        for (const hora of horas) medidos.push(ahora - hora);
+        if (mandarMedidos) return;
+        mandarMedidos = setTimeout(() => {
+            mandarMedidos = null;
+            const lista = medidos.splice(0);
+            if (lista.length > 0 && pantalla) pantalla.invokeMethodAsync('Pintados', lista).catch(() => { });
+        }, 1000);
+    });
 }
 
 // «/ Más acciones»: deja el texto en el cuadro de captura, con el cursor al final.

@@ -1,5 +1,4 @@
 using System.Net.Http.Json;
-using Microsoft.Data.Sqlite;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
@@ -17,9 +16,7 @@ public sealed class PermisosSinConexionTests(ServicioDePrueba servicio) : IClass
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
+        ArchivosDePrueba.BorrarBase(_baseLocal);
     }
 
     internal static readonly long?[] Montos = [null, 0, 1000, 1001, 20000, 20001, 99_999_999];
@@ -106,9 +103,7 @@ public sealed class CopiaDeAntesTests(ServicioDePrueba servicio) : IClassFixture
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
+        ArchivosDePrueba.BorrarBase(_baseLocal);
     }
 
     [Fact]
@@ -127,8 +122,7 @@ public sealed class CopiaDeAntesTests(ServicioDePrueba servicio) : IClassFixture
         var enLinea = await PermisosSinConexionTests.LoQueSabeAsync(cliente, caja, turno);
 
         // La copia como la guardaba una caja de antes: con las reglas por rol de la sucursal, sin los permisos.
-        using (var lote = almacen.Lote())
-            lote.Guardar("paquete", nueva.Paquete! with { Permisos = null }).Confirmar();
+        await almacen.GuardarCopiaAsync(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(nueva.Paquete! with { Permisos = null }, AlmacenLocal.Json));
         interruptor.Caido = true;
         var deAntes = new Contingencia(almacen, http, conexion);
         var conCopiaDeAntes = new ClienteCaja(http, conexion, deAntes);

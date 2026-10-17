@@ -560,6 +560,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<Guid>("VarianteId")
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("VersionCatalogo")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
 
                     b.HasIndex("VarianteId", "FechaUtc");
