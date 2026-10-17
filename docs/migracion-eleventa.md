@@ -558,7 +558,10 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       solo los de antes de la hora del corte.
     - **Tomar el corte.** Cuando la lectura ve cerrado el turno adoptado, cierra el de la caja nueva a la hora del corte
       de eleventa, sin corte Z ni conteo aquí, y guarda lo que se contó allá (`EFECTIVO_AL_CIERRE`) y lo que faltó o
-      sobró (el movimiento «Efectivo faltante/sobrante al cerrar turno»). Queda en la bitácora («Corte del turno de Ana
+      sobró (el movimiento «Efectivo faltante/sobrante al cerrar turno»). Si en ese turno se cobró después del corte
+      (eleventa cortó con la caja 2 apagada y en la mañana se vendió antes de que la lectura lo viera), se cierra a la
+      hora de lo último que pasó en él, para que siga en el corte del día; la hora del corte de eleventa se guarda aparte
+      (revisión del 2026-10-17). Queda en la bitácora («Corte del turno de Ana
       hecho en eleventa…»). El corte del día enseña ese turno como «En eleventa», con lo contado allá en una nota: es el
       cajón de las dos cajas, así que no entra en lo contado ni en las diferencias del día. Después, cualquier cajero
       abre su turno en la caja nueva, y adopta el siguiente de eleventa.

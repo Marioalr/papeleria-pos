@@ -207,6 +207,41 @@ public sealed class TurnoDelPilotoTests : IDisposable
     }
 
     [Fact]
+    public async Task Si_eleventa_corto_anoche_y_en_la_manana_se_cobro_en_el_turno_viejo_lo_de_hoy_sigue_en_el_corte_del_dia()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes());
+        var c = await AbrirAsync(servicio);
+        var hoy = HoraMexico.ALocal(DateTime.UtcNow).Date;
+        var (aperturaAyer, corteAyer) = (hoy.AddDays(-1).AddHours(8), hoy.AddDays(-1).AddHours(20));
+        // El turno de la caja nueva se abrió ayer y adoptó el de eleventa.
+        await using (var db = servicio.Base())
+        {
+            (await db.Turnos.SingleAsync(t => t.Id == c.Turno.Id)).AbiertoUtc = HoraMexico.AUtc(aperturaAyer);
+            await db.SaveChangesAsync();
+            await TurnosDelPiloto.AplicarAsync(db, CajaEleventa, new DatosDelPiloto { Turnos = [new FilaTurno(31, CajaEleventa, aperturaAyer, null, null)] },
+                DateTime.UtcNow);
+        }
+        // Eleventa cortó anoche con la caja 2 apagada: en la mañana se cobra en ese turno antes de que la lectura vea el corte.
+        var ticket = await CobrarAsync(c);
+        await using (var db = servicio.Base())
+            Assert.Equal(1, (await TurnosDelPiloto.AplicarAsync(db, CajaEleventa,
+                new DatosDelPiloto { Turnos = [new FilaTurno(31, CajaEleventa, aperturaAyer, corteAyer, 500m)] }, DateTime.UtcNow)).Cortes);
+
+        var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+        var dia = await Leer<CorteDelDiaDto>(await c.Http.GetAsync($"api/cajas/{c.Datos.Id}/corte-del-dia?usuarioId={dueno.UsuarioId}"));
+
+        // Lo de hoy sigue en el corte del día de hoy: el turno se cerró con lo último que pasó en él. El corte de eleventa
+        // conserva su hora.
+        await using var revision = servicio.Base();
+        var venta = await revision.Ventas.SingleAsync(v => v.Id == ticket.VentaId);
+        Assert.Equal((1, venta.TotalCentavos), (dia.Tickets, dia.VendidoCentavos));
+        var delDia = Assert.Single(dia.Turnos);
+        Assert.Equal((c.Turno.Id, 1), (delDia.Id, delDia.Tickets));
+        Assert.Equal(venta.PagadaUtc, (await revision.Turnos.SingleAsync(t => t.Id == c.Turno.Id)).CerradoUtc);
+        Assert.Equal(HoraMexico.AUtc(corteAyer), (await revision.Set<TurnoEnEleventa>().SingleAsync()).CortadoUtc);
+    }
+
+    [Fact]
     public async Task Con_dos_turnos_abiertos_en_eleventa_no_adopta_ninguno_y_avisa()
     {
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes());

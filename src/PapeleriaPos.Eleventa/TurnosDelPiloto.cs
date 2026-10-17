@@ -20,7 +20,7 @@ public sealed record ResultadoTurnos(int Adoptados, int Cortes, IReadOnlyList<st
 /// minutos, si allá hay uno solo. Con dos abiertos no adopta ninguno y avisa. El puente no abre ni cierra el turno de
 /// eleventa;</item>
 /// <item>la caja toma el corte de eleventa: cuando la lectura ve cerrado el turno adoptado, cierra el de la caja nueva como
-/// «corte hecho en eleventa», a la hora de ese corte, sin conteo aquí (sin corte Z ni diferencia: el cajón es de las dos y
+/// «corte hecho en eleventa», a la hora de ese corte (o de lo último que pasó en él, si fue después), sin conteo aquí (sin corte Z ni diferencia: el cajón es de las dos y
 /// lo esperado de la caja nueva no lo es todo), y guarda lo que se contó allá. Queda en la bitácora. Lo que siga en la
 /// bandeja de ese turno lo decide su hora al mandarse: lo de antes del corte ya se contó allá y queda por revisar; lo de
 /// después entra al turno siguiente de eleventa (<see cref="CorteEnElPiloto.YaSeContoEnEleventa"/>).</item>
@@ -67,8 +67,11 @@ public static class TurnosDelPiloto
             adoptado.TomadoUtc = ahoraUtc;
             if (turnos.TryGetValue(adoptado.TurnoId, out var turno) && turno.Abierto)
             {
-                // A la hora del corte de eleventa (nunca antes de abrirse aquí).
-                turno.CerradoUtc = adoptado.CortadoUtc > turno.AbiertoUtc ? adoptado.CortadoUtc : turno.AbiertoUtc;
+                // A la hora del corte de eleventa, pero nunca antes de abrirse aquí ni de lo último que pasó en él: si eleventa
+                // cortó con la caja 2 apagada y en la mañana se cobró en este turno antes de que la lectura viera el corte, lo de
+                // hoy sigue en el corte del día de hoy (revisión del 2026-10-17). La hora del corte de eleventa queda en
+                // CortadoUtc.
+                turno.CerradoUtc = new[] { adoptado.CortadoUtc.Value, turno.AbiertoUtc, await UltimoMovimientoAsync(db, turno.Id, ct) ?? DateTime.MinValue }.Max();
                 var cajero = await db.Usuarios.Where(u => u.Id == turno.CajeroId).Select(u => u.Nombre).FirstOrDefaultAsync(ct) ?? "—";
                 control.Registrar(turno.SucursalId, turno.CajaId, null, AccionControlada.CorteZ,
                     $"Corte del turno de {cajero} hecho en eleventa ({termino:dd/MM HH:mm}, turno {fila.Id} de eleventa). {CorteEnElPiloto.CorteTomado(adoptado)}",
@@ -109,6 +112,19 @@ public static class TurnosDelPiloto
             return;
         db.Set<TurnoEnEleventa>().Add(Nuevo(turnoId, deEleventa.Id, deEleventa.InicioLocal, ahoraUtc));
     }
+
+    /// <summary>
+    /// Lo último que pasó en un turno de la caja nueva y cuenta en el corte del día: una venta cobrada, una devolución (no
+    /// las que se hicieron en eleventa y pasaron a la venta con la lectura), una entrada o salida, o un abono.
+    /// </summary>
+    private static async Task<DateTime?> UltimoMovimientoAsync(PosDbContext db, Guid turnoId, CancellationToken ct) => new[]
+    {
+        await db.Ventas.Where(v => v.TurnoId == turnoId && v.PagadaUtc != null).MaxAsync(v => v.PagadaUtc, ct),
+        await db.Devoluciones.Where(d => d.TurnoId == turnoId && !db.Set<DevolucionDesdeEleventa>().Any(x => x.DevolucionId == d.Id && !x.Propia))
+            .MaxAsync(d => (DateTime?)d.FechaUtc, ct),
+        await db.MovimientosCaja.Where(m => m.TurnoId == turnoId).MaxAsync(m => (DateTime?)m.FechaUtc, ct),
+        await db.Abonos.Where(a => a.TurnoId == turnoId).MaxAsync(a => (DateTime?)a.FechaUtc, ct),
+    }.Max();
 
     private static TurnoEnEleventa Nuevo(Guid turnoId, int turnoEleventa, DateTime inicioLocal, DateTime ahoraUtc) => new()
     {
