@@ -12,7 +12,6 @@ public sealed class EnviosEnCurso
     private readonly Lock _candado = new();
     private readonly List<HashSet<Guid>> _vigilancias = [];
     private readonly HashSet<Guid> _rechazados = [];
-    private readonly HashSet<Guid> _sinSalir = [];
     private Guid? _mandando;
 
     /// <summary>Un envío que sale hacia eleventa: cuenta hasta que se desecha, ya con lo que pasó anotado aquí.</summary>
@@ -23,7 +22,6 @@ public sealed class EnviosEnCurso
             _mandando = envioId;
             // Cómo le va a este intento todavía no se sabe.
             _rechazados.Remove(envioId);
-            _sinSalir.Remove(envioId);
             Ver(envioId);
         }
         return new Fin(this);
@@ -37,26 +35,6 @@ public sealed class EnviosEnCurso
     {
         lock (_candado)
             _rechazados.Add(envioId);
-    }
-
-    /// <summary>
-    /// El intento no alcanzó a conectarse con eleventa (no contestó, o no se pudo abrir la conexión): no salió, así que no
-    /// está allá. Vale hasta el siguiente intento. Solo lo usa una venta que se canceló aquí, para descartarla sin buscarla.
-    /// </summary>
-    public void SinSalir(Guid envioId)
-    {
-        lock (_candado)
-            _sinSalir.Add(envioId);
-    }
-
-    /// <summary>
-    /// Si se sabe que el último intento no dejó nada en eleventa: eleventa lo rechazó (<see cref="Rechazado"/>) o ni siquiera
-    /// se conectó (<see cref="SinSalir"/>). De lo que se cortó ya conectado, o de antes de arrancar el servicio, no se sabe.
-    /// </summary>
-    public bool NoEstaAlla(Guid envioId)
-    {
-        lock (_candado)
-            return _rechazados.Contains(envioId) || _sinSalir.Contains(envioId);
     }
 
     /// <summary>

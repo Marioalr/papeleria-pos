@@ -375,11 +375,12 @@ dotnet run --project src/PapeleriaPos.Herramientas -- probar-envio-eleventa --se
   («primero igualar a eleventa»): para devolver se escribe el folio impreso, el de eleventa o el de la caja (B-000123).
   Si eleventa repitió ese folio en otra caja, la caja enseña los dos tickets y se elige por la hora y el total.
 - **Lo que eleventa no entendería** queda por revisar y no se manda solo: lo que no fue en efectivo (la tienda solo
-  cobra en efectivo). Lo que se canceló antes de mandarse se descarta: allá nunca existió. Pero si un intento anterior
-  ya se había conectado con eleventa y se cortó (por tiempo o por la red), quizá eleventa sí la guardó: antes de
-  descartarla se busca allá por su marca, y si está, queda como enviada y se manda su cancelación (revisión del
-  2026-10-17). Si se descartara, eleventa la seguiría teniendo como vendida y la lectura no lo sabría: la existencia se
-  iría corriendo. Mientras eleventa no conteste, no se sabe y no se descarta.
+  cobra en efectivo). Lo que se canceló antes de intentar mandarlo se descarta: allá nunca existió. Pero si ya se
+  intentó mandar, cualquier intento pudo dejarla en eleventa (se cortó por tiempo o por la red después de que eleventa
+  la guardó), aunque el último ni se haya conectado: antes de descartarla se busca allá por su marca, y si está, queda
+  como enviada y se manda su cancelación (revisiones del 2026-10-17). Si se descartara, eleventa la seguiría teniendo
+  como vendida y la lectura no lo sabría: la existencia se iría corriendo. Mientras eleventa no conteste, no se sabe y
+  no se descarta.
 - **El redondeo del efectivo** va en la línea más grande, para que el total de eleventa sea lo que entró a la caja.
 - **Cómo va:** `GET /api/eleventa/envios` dice cuántas ventas están pendientes y por revisar, el último error («No
   contesta el eleventa de…») y los folios repetidos. `POST /api/eleventa/enviar` hace la vuelta ya.

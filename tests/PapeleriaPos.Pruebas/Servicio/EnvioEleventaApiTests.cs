@@ -358,23 +358,47 @@ public class EnvioEleventaApiTests
     }
 
     [Fact]
-    public async Task Lo_cancelado_antes_de_llegar_a_eleventa_ya_no_se_manda()
+    public async Task Lo_cancelado_antes_de_intentar_mandarlo_ya_no_se_manda()
     {
+        // Sin eleventa al cobrar (nunca se intentó mandar), la venta y su cancelación se descartan sin buscarla allá: nunca
+        // salió.
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
         var c = await AbrirAsync(servicio);
         var encargado = await EncargadoAsync(c);
-        var ticket = await CobrarAsync(c);
-        Assert.Equal(1, (await EnviosAsync(c)).Pendientes);
+        // La bandeja está ocupada al cobrar: el cobro no la espera ni la intenta.
+        TicketDto ticket;
+        using (await servicio.Fabrica.Services.GetRequiredService<EnvioVentasEleventa>().CandadoAsync(CancellationToken.None))
+            ticket = await CobrarAsync(c);
+        Assert.Equal(0, (await EnviosAsync(c)).PorAtender.Single().Intentos);
 
         await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/cancelacion",
             new SolicitudCancelacion(encargado.UsuarioId, c.Datos.Id, "Se arrepintió")));
         var envios = await EsperarAsync(c, x => x.Pendientes == 0);
 
-        // La venta y su cancelación se descartan sin buscar a eleventa: allá nunca existió.
         Assert.Equal((0, 0), (envios.Pendientes, envios.PorRevisar));
-        await using var db = servicio.Base();
-        Assert.All(db.EnviosAEleventa.ToList(), x => Assert.Equal(EstadoEnvioEleventa.Descartada, x.Estado));
-        Assert.Equal([TipoEnvioEleventa.Venta, TipoEnvioEleventa.Cancelacion], db.EnviosAEleventa.Select(x => x.Tipo).AsEnumerable().Order());
+        await using var revision = servicio.Base();
+        Assert.All(revision.EnviosAEleventa.ToList(), x => Assert.Equal(EstadoEnvioEleventa.Descartada, x.Estado));
+        Assert.Equal([TipoEnvioEleventa.Venta, TipoEnvioEleventa.Cancelacion], revision.EnviosAEleventa.Select(x => x.Tipo).AsEnumerable().Order());
+    }
+
+    [Fact]
+    public async Task Lo_cancelado_despues_de_intentar_mandarlo_no_se_descarta_mientras_eleventa_no_conteste()
+    {
+        // Ya se intentó mandar: cualquier intento pudo dejarla allá (aunque el último ni se haya conectado). Sin eleventa no se
+        // sabe, y no se descarta: se queda pendiente, y su cancelación detrás.
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
+        var c = await AbrirAsync(servicio);
+        var encargado = await EncargadoAsync(c);
+        var ticket = await CobrarAsync(c);
+        Assert.Equal(1, (await EnviosAsync(c)).PorAtender.Single().Intentos);
+
+        await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/cancelacion",
+            new SolicitudCancelacion(encargado.UsuarioId, c.Datos.Id, "Se arrepintió")));
+        Assert.Equal(HttpStatusCode.Accepted, (await c.Http.PostAsync("api/eleventa/enviar", null)).StatusCode);
+        var envios = await EsperarAsync(c, x => x.PorAtender.Any(p => p.Tipo == TipoEnvioEleventa.Venta && p.Intentos >= 3));
+
+        Assert.Equal([(TipoEnvioEleventa.Venta, EstadoEnvioEleventa.Pendiente), (TipoEnvioEleventa.Cancelacion, EstadoEnvioEleventa.Pendiente)],
+            envios.PorAtender.Select(p => (p.Tipo, p.Estado)));
     }
 
     [Fact]

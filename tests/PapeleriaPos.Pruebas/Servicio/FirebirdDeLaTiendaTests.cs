@@ -123,4 +123,74 @@ public sealed class FirebirdDeLaTiendaTests
         Assert.Equal("t", ((string)(await e.ValorAsync("SELECT ESTA_CANCELADO FROM VENTATICKETS WHERE ID = @t", ("t", enEleventa)))!).Trim());
         Assert.Equal(antes, await ExistenciaAsync(), 3);
     }
+
+    [FactConFirebird]
+    public async Task Un_intento_que_ni_se_conecto_no_tapa_al_anterior_que_si_guardo_la_venta_cancelada()
+    {
+        var (e, _) = await EleventaAsync();
+        await using var eleventa = e;
+        using var proxy = new ProxyFirebird(e.Servidor.Servidor, e.Servidor.Puerto) { SoloProtocolo10 = true };
+        await using var servicio = await ServicioDePrueba.CrearAsync(
+            [.. Ajustes(e.Servidor with { Servidor = "127.0.0.1", Puerto = proxy.Puerto }), ("Eleventa:SegundosMaximos", "2"), ("Eleventa:SegundosAlCobrar", "5")]);
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        async Task<double> ExistenciaAsync() => Convert.ToDouble(await e.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = 10"));
+        var antes = await ExistenciaAsync();
+
+        // El primer intento la guarda en eleventa y la red se cae justo después; el segundo ni se conecta.
+        proxy.Disparador = "SELECT COUNT(*) FROM VENTATICKETS WHERE FOLIO";
+        var ticket = await CobrarAsync(c, plumas: 2);
+        await EsperarAsync(() => EnviosAsync(c), x => x.PorAtender.Any(p => p.Tipo == TipoEnvioEleventa.Venta && p.Intentos >= 1 && p.Error is not null));
+        Assert.Equal(HttpStatusCode.Accepted, (await c.Http.PostAsync("api/eleventa/enviar", null)).StatusCode);
+        await EsperarAsync(() => EnviosAsync(c), x => x.PorAtender.Any(p => p.Tipo == TipoEnvioEleventa.Venta && p.Intentos >= 2));
+
+        // Aquí se cancela; mientras eleventa no contesta no se descarta, aunque el último intento no se haya conectado.
+        await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/cancelacion",
+            new SolicitudCancelacion(c.Encargado.UsuarioId, c.Datos.Id, "Se arrepintió")));
+        Assert.Equal(HttpStatusCode.Accepted, (await c.Http.PostAsync("api/eleventa/enviar", null)).StatusCode);
+        var sinSaber = await EsperarAsync(() => EnviosAsync(c), x => x.PorAtender.Any(p => p.Tipo == TipoEnvioEleventa.Venta && p.Intentos >= 4));
+        Assert.Equal(EstadoEnvioEleventa.Pendiente, sinSaber.PorAtender.Single(p => p.Tipo == TipoEnvioEleventa.Venta).Estado);
+
+        // Vuelve la red: la encuentra por su marca, queda enviada y su cancelación también llega.
+        proxy.Reanudar();
+        await EsperarAsync(async () =>
+        {
+            await c.Http.PostAsync("api/eleventa/enviar", null);
+            return await EnviosAsync(c);
+        }, x => x.Pendientes == 0);
+        await using var db = servicio.Base();
+        var envios = await db.EnviosAEleventa.Where(x => x.VentaId == ticket.VentaId).OrderBy(x => x.CreadoUtc).ToListAsync();
+        Assert.Equal([(TipoEnvioEleventa.Venta, EstadoEnvioEleventa.Enviada), (TipoEnvioEleventa.Cancelacion, EstadoEnvioEleventa.Enviada)],
+            envios.Select(x => (x.Tipo, x.Estado)));
+        Assert.Equal("t", ((string)(await e.ValorAsync("SELECT ESTA_CANCELADO FROM VENTATICKETS WHERE ID = @t", ("t", envios[0].TicketEleventa)))!).Trim());
+        Assert.Equal(antes, await ExistenciaAsync(), 3);
+    }
+
+    [FactConFirebird]
+    public async Task Una_venta_cancelada_que_no_alcanzo_a_guardarse_en_eleventa_se_descarta_despues_de_buscarla()
+    {
+        var (e, _) = await EleventaAsync();
+        await using var eleventa = e;
+        using var proxy = new ProxyFirebird(e.Servidor.Servidor, e.Servidor.Puerto) { SoloProtocolo10 = true };
+        await using var servicio = await ServicioDePrueba.CrearAsync(
+            [.. Ajustes(e.Servidor with { Servidor = "127.0.0.1", Puerto = proxy.Puerto }), ("Eleventa:SegundosMaximos", "2"), ("Eleventa:SegundosAlCobrar", "5")]);
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+
+        // La red se cae a media escritura, antes de que eleventa la confirme; aquí se cancela, y vuelve la red.
+        proxy.Disparador = "INSERT INTO VENTATICKETS_ARTICULOS";
+        var ticket = await CobrarAsync(c, plumas: 2);
+        await EsperarAsync(() => EnviosAsync(c), x => x.PorAtender.Any(p => p.Tipo == TipoEnvioEleventa.Venta && p.Intentos >= 1 && p.Error is not null));
+        await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/cancelacion",
+            new SolicitudCancelacion(c.Encargado.UsuarioId, c.Datos.Id, "Se arrepintió")));
+        proxy.Reanudar();
+        await EsperarAsync(async () =>
+        {
+            await c.Http.PostAsync("api/eleventa/enviar", null);
+            return await EnviosAsync(c);
+        }, x => x.Pendientes == 0);
+
+        // No estaba allá: se descartan las dos, y en eleventa no quedó nada.
+        await using var db = servicio.Base();
+        Assert.All(await db.EnviosAEleventa.Where(x => x.VentaId == ticket.VentaId).ToListAsync(), x => Assert.Equal(EstadoEnvioEleventa.Descartada, x.Estado));
+        Assert.Equal(0, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE CAJA_ID = @c AND ESTA_ABIERTO = 'f'", ("c", CajaEleventa))));
+    }
 }

@@ -479,9 +479,8 @@ public sealed class EnvioVentasEleventa(
         var descartada = false;
         // Una venta cancelada aquí que, al buscarla en eleventa, no estaba: se descarta.
         var noLlego = false;
-        // Si la venta alcanzó a conectarse con eleventa (desde ahí, si falla, no se sabe si quedó allá), y si este intento ya se
-        // dio por perdido: lo que se dejó de esperar no empieza a escribir si conecta tarde. Con Interlocked: los dos lados se ven.
-        int conectada = 0, perdido = 0;
+        // Si este intento ya se dio por perdido: lo que se dejó de esperar no empieza a escribir si conecta tarde.
+        var perdido = 0;
         // Si este intento solo busca en eleventa la venta que se canceló aquí: lo que le pase no dice nada del intento anterior.
         var buscando = false;
         switch (envio.Tipo)
@@ -489,12 +488,13 @@ public sealed class EnvioVentasEleventa(
             case TipoEnvioEleventa.Venta:
                 var venta = await VentasParaEleventa.ArmarAsync(db, envio.VentaId!.Value, ct);
                 (porRevisar, descartada) = (venta.PorRevisar, venta.Descartada);
-                if (venta.Descartada && envio.Intentos > 0 && !EnCurso.NoEstaAlla(envio.Id))
+                if (venta.Descartada && envio.Intentos > 0)
                 {
-                    // Se canceló aquí después de un intento de mandarla del que no se sabe cómo terminó (se cortó por tiempo o
-                    // por la red, quizá después de que eleventa la guardó; revisión del 2026-10-17): antes de descartarla se busca
-                    // allá por su marca. Si está, queda como enviada y su cancelación va detrás, como la de cualquier venta que
-                    // ya llegó; descartada, eleventa la seguiría teniendo como vendida y la lectura no lo sabría.
+                    // Se canceló aquí después de algún intento de mandarla: cualquiera pudo dejarla en eleventa (se cortó por
+                    // tiempo o por la red después de que eleventa la guardó), aunque el último ni se haya conectado (revisiones
+                    // del 2026-10-17). Antes de descartarla se busca allá por su marca; si eleventa no contesta, no se sabe y
+                    // espera. Si está, queda como enviada y su cancelación va detrás, como la de cualquier venta que ya llegó;
+                    // descartada, eleventa la seguiría teniendo como vendida y la lectura no lo sabría.
                     var creada = HoraMexico.ALocal(await db.Ventas.AsNoTracking().Where(v => v.Id == envio.VentaId).Select(v => v.CreadaUtc).SingleAsync(ct));
                     buscando = true;
                     escribir = async () =>
@@ -511,7 +511,6 @@ public sealed class EnvioVentasEleventa(
                     {
                         await using var conexion = new FbConnection(servidor.Cadena());
                         await conexion.OpenAsync(escritura);
-                        Interlocked.Exchange(ref conectada, 1);
                         if (Volatile.Read(ref perdido) == 1)
                             return null;
                         var r = await EnvioEleventa.MandarAsync(conexion, caja, paraEleventa, escritura);
@@ -638,10 +637,7 @@ public sealed class EnvioVentasEleventa(
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            Interlocked.Exchange(ref perdido, 1);
-            // Una venta que ni siquiera se conectó con eleventa no está allá: si se cancela aquí, se descarta sin buscarla.
-            if (envio.Tipo == TipoEnvioEleventa.Venta && !buscando && Volatile.Read(ref conectada) == 0)
-                EnCurso.SinSalir(envio.Id);
+            Volatile.Write(ref perdido, 1);
             envio.Error = _ultimoError = Recortar(LectorEleventa.Explicar(ex, servidor));
             // Si no fue la red, eleventa contestó que no y deshizo lo que llevaba: no está allá, y la lectura ya lo puede
             // descontar. De lo que se cortó por la red o por tiempo (o a medias) no se sabe. Tampoco de un choque de candados:
