@@ -691,7 +691,12 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
         liga. Sin eleventa no se puede marcar. Se ligan por `DEVOLUCIONES.ID`, no se pasan a la venta, y la de aquí queda
         anotada a mano (con lo elegido en la bitácora). Lo que esperaba y no se eligió se pasa en la siguiente lectura, que
         se pide en ese momento, como cualquier otra de eleventa;
-      - si todavía se iba a mandar sola, primero se deja por revisar: desde ahí la lectura espera su anotación.
+      - si todavía se iba a mandar sola, primero se deja por revisar: desde ahí la lectura espera su anotación;
+      - lo que sí llegó solo aunque aquí no se supo (se cortó al contestar, o se dejó por revisar mientras la bandeja lo
+        mandaba) no se anota a mano: quedaría dos veces (cuarta revisión). «Dejar por revisar» toma el candado de la
+        bandeja y, si ya se intentó mandar, lo busca antes en eleventa por su marca: si está, queda como enviado (sin
+        eleventa no se sabe, y no se deja). Y una devolución de aquí que aparece en eleventa con su marca (en la lectura,
+        o al ir a elegir su anotación) queda como enviada.
 
       Ligada, la de aquí no impide devolver aquí lo que queda: su dinero salió de esta caja.
     - **Antes de devolver aquí** un ticket de la caja 2 que ya está en eleventa, se leen en vivo sus devoluciones allá

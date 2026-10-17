@@ -505,6 +505,110 @@ public sealed class DevolucionesIdaYVueltaTests
         Assert.Null(await DevolucionesConEleventa.PorQueNoSeDevuelveAsync(revision, ticket.VentaId!.Value));
     }
 
+    /// <summary>Aquí se devuelve una pluma de la venta y la bandeja la manda a eleventa (el mismo turno: entra). Regresa su envío.</summary>
+    private static async Task<Guid> DevueltaYMandadaAsync(ServicioDePrueba servicio, Caja c, TicketDto ticket)
+    {
+        var buscado = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/sucursales/{c.Datos.SucursalId}/ventas/folio/{ticket.Folio}"));
+        await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/devoluciones",
+            new SolicitudDevolucion(c.Encargado.UsuarioId, c.Datos.Id, "No pinta", [new LineaDevolucionSolicitada(buscado.Lineas[0].LineaId, 1000)])));
+        await MandarAsync(c);
+        await using var db = servicio.Base();
+        var envio = await db.EnviosAEleventa.Where(x => x.Tipo == TipoEnvioEleventa.Devolucion).OrderByDescending(x => x.CreadoUtc).FirstAsync();
+        Assert.Equal(EstadoEnvioEleventa.Enviada, envio.Estado);
+        return envio.Id;
+    }
+
+    /// <summary>Lo que entró a eleventa pero aquí no se supo: como si la respuesta se hubiera perdido (sigue pendiente) o se hubiera dejado por revisar.</summary>
+    private static async Task<int> SinSaberQueLlegoAsync(ServicioDePrueba servicio, Guid envio, EstadoEnvioEleventa estado)
+    {
+        await using var db = servicio.Base();
+        var x = await db.EnviosAEleventa.SingleAsync(z => z.Id == envio);
+        var enEleventa = x.IdEleventa ?? x.TicketEleventa!.Value;
+        (x.Estado, x.EnviadaUtc, x.IdEleventa, x.Error) = (estado, null, null, "El eleventa de 127.0.0.1 no terminó de contestar a tiempo: se vuelve a intentar.");
+        if (x.Tipo == TipoEnvioEleventa.Venta)
+            (x.TicketEleventa, x.FolioEleventa) = (null, null);
+        if (estado == EstadoEnvioEleventa.PorRevisar)
+            (x.PorRevisarPorque, x.PorRevisarUtc) = (MotivoPorRevisar.AnotarAMano, DateTime.UtcNow);
+        await db.SaveChangesAsync();
+        return enEleventa;
+    }
+
+    [FactConFirebird]
+    public async Task Lo_que_llego_a_eleventa_sin_que_aqui_se_supiera_no_se_deja_por_revisar_queda_enviado()
+    {
+        var (e, _) = await EleventaAsync();
+        await using var eleventa = e;
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        var ticket = await CobrarAsync(c, plumas: 2);
+        await MandarAsync(c);
+        var envio = await DevueltaYMandadaAsync(servicio, c, ticket);
+        var enEleventa = await SinSaberQueLlegoAsync(servicio, envio, EstadoEnvioEleventa.Pendiente);
+        var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+
+        // Se iba a dejar por revisar (para anotarla a mano): ya estaba allá con su marca, y queda como enviada. Anotarla a
+        // mano la dejaría dos veces en eleventa.
+        await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsJsonAsync($"api/eleventa/envios/{envio}/revisar", new SolicitudRevision(dueno.UsuarioId, null)));
+
+        await using var db = servicio.Base();
+        var revisado = await db.EnviosAEleventa.SingleAsync(x => x.Id == envio);
+        Assert.Equal((EstadoEnvioEleventa.Enviada, (int?)enEleventa), (revisado.Estado, revisado.IdEleventa));
+        Assert.True(await db.Bitacora.AnyAsync(b => b.Accion == AccionControlada.ConfigurarTienda && b.Detalle.Contains("pero ya estaba en eleventa: quedó como enviado")));
+        Assert.Equal(1, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM DEVOLUCIONES")));
+    }
+
+    [FactConFirebird]
+    public async Task Una_venta_que_llego_a_eleventa_sin_que_aqui_se_supiera_no_se_deja_por_revisar_queda_enviada()
+    {
+        var (e, _) = await EleventaAsync();
+        await using var eleventa = e;
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        var ticket = await CobrarAsync(c, plumas: 2);
+        await MandarAsync(c);
+        Guid envio;
+        await using (var db = servicio.Base())
+            envio = (await db.EnviosAEleventa.SingleAsync(x => x.VentaId == ticket.VentaId)).Id;
+        var enEleventa = await SinSaberQueLlegoAsync(servicio, envio, EstadoEnvioEleventa.Pendiente);
+        var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+
+        await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsJsonAsync($"api/eleventa/envios/{envio}/revisar", new SolicitudRevision(dueno.UsuarioId, null)));
+
+        await using var revision = servicio.Base();
+        var revisado = await revision.EnviosAEleventa.SingleAsync(x => x.Id == envio);
+        Assert.Equal((EstadoEnvioEleventa.Enviada, (int?)enEleventa), (revisado.Estado, revisado.TicketEleventa));
+    }
+
+    [FactConFirebird]
+    public async Task Una_devolucion_de_aqui_que_llego_sola_y_quedo_por_revisar_se_da_por_enviada_al_marcarla_o_al_leer()
+    {
+        var (e, _) = await EleventaAsync();
+        await using var eleventa = e;
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor, leer: true));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        await EsperarPrimeraLecturaAsync(c);
+        var ticket = await CobrarAsync(c, plumas: 3);
+        await MandarAsync(c);
+        var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+
+        // Llegó con su marca, pero aquí quedó por revisar («anótala a mano»): al ir a marcarla no hay nada que elegir; queda
+        // como enviada.
+        var primera = await DevueltaYMandadaAsync(servicio, c, ticket);
+        var suya = await SinSaberQueLlegoAsync(servicio, primera, EstadoEnvioEleventa.PorRevisar);
+        Assert.Equal(DevolucionesConEleventa.LlegoSola, await RechazoAsync(await c.Http.GetAsync($"api/eleventa/envios/{primera}/anotaciones")));
+        // Y otra igual, que ve la lectura: también queda como enviada.
+        var segunda = await DevueltaYMandadaAsync(servicio, c, ticket);
+        var otraSuya = await SinSaberQueLlegoAsync(servicio, segunda, EstadoEnvioEleventa.PorRevisar);
+        await LeerAsync(c);
+
+        await using var db = servicio.Base();
+        var envios = await db.EnviosAEleventa.Where(x => x.Id == primera || x.Id == segunda).ToDictionaryAsync(x => x.Id);
+        Assert.Equal((EstadoEnvioEleventa.Enviada, (int?)suya), (envios[primera].Estado, envios[primera].IdEleventa));
+        Assert.Equal((EstadoEnvioEleventa.Enviada, (int?)otraSuya), (envios[segunda].Estado, envios[segunda].IdEleventa));
+        Assert.Equal(2000L, await DevueltoAsync(servicio, ticket));
+        Assert.Empty((await Leer<PuenteEleventaDto>(await c.Http.GetAsync("api/eleventa/pantalla"))).PorRevisar);
+    }
+
     [FactConFirebird]
     public async Task Dos_devoluciones_de_aqui_del_mismo_ticket_anotadas_a_mano_se_eligen_una_por_una_sin_perder_ni_repetir_nada()
     {
@@ -621,9 +725,21 @@ public sealed class DevolucionesIdaYVueltaTests
         await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/devoluciones",
             new SolicitudDevolucion(c.Encargado.UsuarioId, c.Datos.Id, "No pinta", [new LineaDevolucionSolicitada(buscado.Lineas[0].LineaId, 1000)])));
         var envio = (await EnviosAsync(c)).PorAtender.Single(e => e.Tipo == TipoEnvioEleventa.Devolucion).Id;
-        var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
-        await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsJsonAsync($"api/eleventa/envios/{envio}/revisar", new SolicitudRevision(dueno.UsuarioId, null)));
+        await DejadaPorRevisarAsync(servicio, envio);
         return (ticket, envio);
+    }
+
+    /// <summary>
+    /// Como cuando se deja por revisar para anotarla a mano y eleventa contesta que no está (sin eleventa no se deja: aquí
+    /// eleventa no contesta, así que se pone a mano).
+    /// </summary>
+    private static async Task DejadaPorRevisarAsync(ServicioDePrueba servicio, Guid envio)
+    {
+        await using var db = servicio.Base();
+        var dejado = await db.EnviosAEleventa.SingleAsync(e => e.Id == envio);
+        (dejado.Estado, dejado.Error, dejado.PorRevisarPorque, dejado.PorRevisarUtc) =
+            (EstadoEnvioEleventa.PorRevisar, "Se dejó para revisar a mano.", MotivoPorRevisar.AnotarAMano, DateTime.UtcNow);
+        await db.SaveChangesAsync();
     }
 
     [FactConFirebird]
@@ -796,12 +912,13 @@ public sealed class DevolucionesIdaYVueltaTests
 
         // Todavía se manda sola: si ya se anotó allá, primero se deja por revisar (y desde ahí la lectura espera su anotación).
         Assert.Equal(DevolucionesConEleventa.PrimeroPorRevisar, await RechazoAsync(await AnotarSinElegirAsync()));
-        await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsJsonAsync($"api/eleventa/envios/{envio}/revisar", new SolicitudRevision(dueno.UsuarioId, null)));
+        await DejadaPorRevisarAsync(servicio, envio);
 
-        // Por revisar: la pantalla dice que al marcarla se elige su anotación; sin elegir no se puede, ni sin eleventa.
+        // Por revisar: la pantalla dice que al marcarla se elige su anotación, de lo que se lea en vivo en eleventa: sin
+        // eleventa no se puede (elegir sin ver qué hay allá lo dice la prueba contra el Firebird).
         var pantalla = await Leer<PuenteEleventaDto>(await c.Http.GetAsync("api/eleventa/pantalla"));
         Assert.True(Assert.Single(pantalla.PorRevisar, p => p.EnvioId == envio).EligeAnotacion);
-        Assert.Equal(DevolucionesConEleventa.DiCualEs, await RechazoAsync(await AnotarSinElegirAsync()));
+        Assert.Equal(DevolucionesConEleventa.NoContestaParaElegir, await RechazoAsync(await AnotarSinElegirAsync()));
         Assert.Equal(DevolucionesConEleventa.NoContestaParaElegir, await RechazoAsync(await c.Http.PostAsJsonAsync($"api/eleventa/envios/{envio}/a-mano",
             new SolicitudAnotadoAMano(dueno.UsuarioId, null, [907]))));
         Assert.Equal(DevolucionesConEleventa.NoContestaParaElegir, await RechazoAsync(await c.Http.GetAsync($"api/eleventa/envios/{envio}/anotaciones")));
@@ -994,7 +1111,7 @@ public sealed class DevolucionesIdaYVueltaTests
         var ticket = await CobrarAsync(c);
         var pendiente = (await EnviosAsync(c)).PorAtender.Single();
         var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
-        await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsJsonAsync($"api/eleventa/envios/{pendiente.Id}/revisar", new SolicitudRevision(dueno.UsuarioId, null)));
+        await DejadaPorRevisarAsync(servicio, pendiente.Id);
 
         async Task<PantallaSinNavegador> PantallaAsync(SesionDto sesion)
         {

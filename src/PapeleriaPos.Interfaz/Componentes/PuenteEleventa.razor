@@ -191,7 +191,9 @@
         }
         catch (ErrorCaja ex)
         {
+            // También cuando llegó sola a eleventa: el servicio ya la dio por enviada, y deja de enseñarse.
             _error = ex.Message;
+            await ActualizarAsync();
         }
         finally
         {

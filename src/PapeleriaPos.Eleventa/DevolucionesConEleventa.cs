@@ -391,10 +391,15 @@ public static class DevolucionesConEleventa
             if (ventas.Where(v => v.Ticket == d.TicketId).Select(v => v.VentaId).Distinct().ToList() is not [var ventaId])
                 continue;
             var venta = await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleAsync(v => v.Id == ventaId, ct);
-            // La de la caja 2: su marca es la hora en que se hizo aquí (TICKET_ID + DEVUELTO_EN).
-            var propias = await db.Devoluciones.AsNoTracking().Where(x => x.VentaId == venta.Id).Select(x => x.FechaUtc).ToListAsync(ct);
-            if (propias.Any(f => Marca(f) == d.DevueltoEn))
+            // La de la caja 2: su marca es la hora en que se hizo aquí (TICKET_ID + DEVUELTO_EN). Si aquí no se supo que llegó
+            // (se cortó al contestar, o se dejó por revisar mientras la bandeja la mandaba), queda como enviada: anotarla a
+            // mano la dejaría dos veces en eleventa (cuarta revisión, 2026-10-17).
+            var propias = await db.Devoluciones.AsNoTracking().Where(x => x.VentaId == venta.Id).Select(x => new { x.Id, x.FechaUtc }).ToListAsync(ct);
+            if (propias.FirstOrDefault(f => Marca(f.FechaUtc) == d.DevueltoEn) is { } propia)
+            {
+                await DarPorEnviadaAsync(db, propia.Id, d.Id, ahoraUtc, ct);
                 continue;
+            }
             // Mientras una devolución de aquí de ese ticket espera su anotación a mano en eleventa, lo que eleventa le devolvió
             // después puede ser esa anotación: no se pasa ni se adivina (revisión del 2026-10-17, decidido). Lo dice quien la marca
             // «Ya lo anoté en eleventa», eligiendo cuál es; lo que no se elija se pasa después, como cualquier otra.
@@ -557,12 +562,21 @@ public static class DevolucionesConEleventa
         return new PorAnotarEnEleventa(envio, ventaId, ticket, hecha, armada);
     }
 
+    /// <summary>Lo que se leyó en vivo de un ticket para elegir la anotación de una devolución de aquí.</summary>
+    /// <param name="Candidatas">Las que pueden ser su anotación (<see cref="AnotacionesEnVivoAsync"/>).</param>
+    /// <param name="Suya">
+    /// La que escribió la propia caja 2 con la marca de esa devolución: llegó sola aunque aquí no se supo, y no hay nada que
+    /// anotar (quien llama la da por enviada).
+    /// </param>
+    public sealed record AnotacionesLeidas(List<DevolucionLeida> Candidatas, DevolucionLeida? Suya);
+
     /// <summary>
     /// Las devoluciones y cancelaciones de eleventa de ese ticket que pueden ser la anotación a mano de la de aquí, leídas en
     /// vivo (hasta 3 segundos): de después de que se hizo aquí (con unos minutos por la hora de cada PC), que no escribió la
-    /// caja 2 (su marca) y que no se han pasado a la venta ni ligado con otra. Vacío si eleventa no contestó.
+    /// caja 2 (su marca) y que no se han pasado a la venta ni ligado con otra. Si una tiene la marca de la de aquí, es que
+    /// llegó sola (<see cref="AnotacionesLeidas.Suya"/>). Vacío si eleventa no contestó.
     /// </summary>
-    public static async Task<List<DevolucionLeida>?> AnotacionesEnVivoAsync(PosDbContext db, ServidorEleventa servidor, PorAnotarEnEleventa porAnotar,
+    public static async Task<AnotacionesLeidas?> AnotacionesEnVivoAsync(PosDbContext db, ServidorEleventa servidor, PorAnotarEnEleventa porAnotar,
         CancellationToken ct = default)
     {
         if (await DevolucionesEnVivoAsync(servidor, porAnotar.TicketEleventa, ct) is not { } leidas)
@@ -572,12 +586,32 @@ public static class DevolucionesConEleventa
         var ids = leidas.Select(d => d.Id).ToList();
         var vistas = await db.Set<DevolucionDesdeEleventa>().AsNoTracking().Where(d => ids.Contains(d.DevolucionEleventa))
             .Select(d => new { d.DevolucionEleventa, d.DevueltaUtc }).ToListAsync(ct);
-        return leidas
+        var candidatas = leidas
             .Where(d => HoraMexico.AUtc(d.DevueltoEn) >= porAnotar.HechaUtc - HolguraDeHora && !propias.Contains(d.DevueltoEn)
                 && !vistas.Any(v => v.DevolucionEleventa == d.Id && v.DevueltaUtc == HoraMexico.AUtc(d.DevueltoEn)))
             .OrderBy(d => d.DevueltoEn)
             .ToList();
+        return new AnotacionesLeidas(candidatas, leidas.FirstOrDefault(d => d.DevueltoEn == Marca(porAnotar.HechaUtc)));
     }
+
+    /// <summary>
+    /// Una devolución de aquí que sí llegó a eleventa (allá está con su marca) aunque aquí no se supo: si su envío sigue
+    /// pendiente o por revisar, queda como enviada, con su número de eleventa. Quien llama guarda.
+    /// </summary>
+    public static async Task<bool> DarPorEnviadaAsync(PosDbContext db, Guid devolucionId, int devolucionEleventa, DateTime ahoraUtc, CancellationToken ct = default)
+    {
+        if (await db.EnviosAEleventa.FirstOrDefaultAsync(e => e.DevolucionId == devolucionId
+                && (e.Tipo == TipoEnvioEleventa.Devolucion || e.Tipo == TipoEnvioEleventa.Cancelacion)
+                && (e.Estado == EstadoEnvioEleventa.Pendiente || e.Estado == EstadoEnvioEleventa.PorRevisar), ct) is not { } envio)
+            return false;
+        (envio.Estado, envio.EnviadaUtc, envio.IdEleventa, envio.Error) =
+            (EstadoEnvioEleventa.Enviada, ahoraUtc, devolucionEleventa, LlegoSola);
+        return true;
+    }
+
+    /// <summary>Lo que se anota de una devolución de aquí que llegó a eleventa sin que aquí se supiera.</summary>
+    public const string LlegoSola =
+        "Llegó a eleventa aunque aquí no se supo (allá está con su marca): no hay nada que anotar a mano.";
 
     /// <summary>
     /// Por qué esas devoluciones de eleventa no son, juntas, la anotación a mano de la de aquí; vacío si lo son: las dos son la
