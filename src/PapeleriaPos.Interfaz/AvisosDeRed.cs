@@ -75,8 +75,9 @@ public static class AvisosDeRed
     /// servicio el que no contesta, lo dice así);</item>
     /// <item>llega, pero lenta: lo de siempre (la red lenta);</item>
     /// <item>llega y la caja principal dice que no hay internet: «Sin internet: la venta sigue. No desconectes nada.» En la caja
-    /// principal, si tampoco contesta su router, la red local tampoco está (el router trabado): entonces no se dice «no desconectes
-    /// nada», porque la guía de la tienda pide juntar los datos y desconectar el cable del módem;</item>
+    /// principal, si no se sabe que su router contesta (no contesta, o la PC no tiene router), la red local tampoco está (el router
+    /// trabado): entonces no se dice «no desconectes nada», porque la guía de la tienda pide juntar los datos y desconectar el cable
+    /// del módem;</item>
     /// <item>todo bien, o no se sabe (un servicio de antes): nada.</item>
     /// </list>
     /// </summary>
@@ -89,7 +90,8 @@ public static class AvisosDeRed
             (EstadoRed.Caida, true) => Franja.SinServicio,
             (EstadoRed.Lenta, false) => Franja.Lenta,
             _ when red?.Internet != false => Franja.Nada,
-            (_, true) when red?.Router == false => Franja.SinInternetNiRedLocal,
+            // En la caja principal, «no desconectes nada» solo si se sabe que su router contesta.
+            (_, true) when red?.Router != true => Franja.SinInternetNiRedLocal,
             _ => Franja.SinInternet,
         };
 

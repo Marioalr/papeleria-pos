@@ -346,9 +346,12 @@ public sealed class VigiaDeLaRed
     {
         if (foto.Router is not { } router)
         {
-            // Sin router (se desconectó el cable, se cayó el Wi-Fi): si contestaba, se perdió.
-            if (Router is true)
-                Perder(ref _router, "el router", "esta PC se quedó sin red", inmediato: true);
+            // Sin router (sin red, el cable desconectado, o una IP 169.254 porque el router no dio dirección): perdido de una vez,
+            // también si no se le había visto. Si la PC arrancó con el router trabado (después de un apagón, sin no-break), la caja
+            // principal diría «no desconectes nada» con la red local caída.
+            Perder(ref _router, "el router", foto.Adaptador is null ? "esta PC no tiene red"
+                : foto.Autoasignada ? "esta PC no tiene router: el router no le dio dirección (169.254)"
+                : "esta PC no tiene router (puerta de enlace)", inmediato: true);
             return;
         }
         lock (_candado)

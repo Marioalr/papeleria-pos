@@ -23,7 +23,8 @@ public sealed class AvisosDeRedTests
     // Sin internet, con la red local bien: «no desconectes nada», en las dos cajas.
     [InlineData(false, false, EstadoRed.Buena, false, true, AvisosDeRed.SinInternet)]
     [InlineData(true, false, EstadoRed.Buena, false, true, AvisosDeRed.SinInternet)]
-    [InlineData(true, false, EstadoRed.Buena, false, null, AvisosDeRed.SinInternet)]
+    // La caja principal sin saber de su router (no tiene, o todavía no lo revisa): no se dice «no desconectes nada».
+    [InlineData(true, false, EstadoRed.Buena, false, null, AvisosDeRed.SinInternetNiRedLocal)]
     // La caja 2 llega a la caja principal (las dos en el switch) aunque el router de la principal no conteste: la red local sirve.
     [InlineData(false, false, EstadoRed.Buena, false, false, AvisosDeRed.SinInternet)]
     // La caja principal sin internet ni router (el router trabado): no se dice «no desconectes nada».

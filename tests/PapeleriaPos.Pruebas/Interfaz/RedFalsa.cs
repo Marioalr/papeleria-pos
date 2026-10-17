@@ -29,6 +29,12 @@ internal sealed class EquipoFalso : IRedDelEquipo
         "50:2b:73:aa:bb:cc", Difusion: 1000, Descartados: 0);
 
     public FotoDeLaRed Leer(IPAddress? hacia) => Foto;
+
+    /// <summary>
+    /// Por cable, pero sin router: el router (trabado) no le dio dirección y Windows se puso una 169.254, sin puerta de enlace.
+    /// </summary>
+    public static FotoDeLaRed SinDireccionDelRouter =>
+        new("Ethernet", TipoDeConexion.Cable, IPAddress.Parse("169.254.12.34"), 16, null, true);
 }
 
 /// <summary>
@@ -52,6 +58,13 @@ internal sealed class PruebasFalsas : IPruebasDeRed
             lock (_hechas)
                 return [.. _hechas];
         }
+    }
+
+    /// <summary>Sin red: no contesta nada (ni el router, ni su DNS, ni internet).</summary>
+    public PruebasFalsas SinRed()
+    {
+        (Ping, Conectar, Dns) = (_ => null, (_, _) => null, (_, _) => null);
+        return this;
     }
 
     /// <summary>Sin internet: no conecta a nada de afuera (el router sí contesta, salvo que se diga otra cosa).</summary>

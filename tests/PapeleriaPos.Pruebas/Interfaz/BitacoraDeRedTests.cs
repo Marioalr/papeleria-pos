@@ -1,5 +1,6 @@
 using System.Net;
 using PapeleriaPos.Interfaz;
+using PapeleriaPos.Nucleo.Contratos;
 
 namespace PapeleriaPos.Pruebas.Interfaz;
 
@@ -78,6 +79,32 @@ public sealed class BitacoraDeRedTests : IDisposable
         Assert.Equal(48, lineas.Count(l => l.StartsWith("Resumen de 15 min:", StringComparison.Ordinal)));
         Assert.Equal(2 + 2 + 48, lineas.Count);
         Assert.True(vigia.Internet);
+    }
+
+    /// <summary>
+    /// La caja principal arranca con el router trabado (después de un apagón, sin no-break): el router no le dio dirección y tiene
+    /// una 169.254, sin puerta de enlace. El router cuenta como perdido de una vez (aunque nunca se le vio), así que la franja no
+    /// dice «no desconectes nada» con la red local caída; vuelve cuando el router le da dirección y contesta.
+    /// </summary>
+    [Fact]
+    public async Task La_caja_principal_que_arranca_sin_router_no_dice_no_desconectes_nada()
+    {
+        _equipo.Foto = EquipoFalso.SinDireccionDelRouter;
+        _pruebas.SinRed();
+        var vigia = Vigia(DeLaPrincipal, "red-servicio");
+
+        await VueltasAsync(vigia, 3);
+
+        Assert.Equal(new RedDeLaPrincipalDto(false, false), vigia.Estado with { DesdeUtc = null });
+        Assert.Equal(AvisosDeRed.Franja.SinInternetNiRedLocal, AvisosDeRed.QueDice(servicioEnEstaPc: true, simulando: false, EstadoRed.Buena, vigia.Estado));
+        Assert.Contains("Se perdió «el router»: esta PC no tiene router: el router no le dio dirección (169.254).", _carpeta.Lineas("red-servicio"));
+
+        _equipo.Foto = new FotoDeLaRed("Ethernet", TipoDeConexion.Cable, IPAddress.Parse("192.168.0.10"), 24, EquipoFalso.RouterDeLaTienda, true);
+        _pruebas.Ping = _ => TimeSpan.FromMilliseconds(2);
+        await VueltasAsync(vigia, 1);
+
+        Assert.True(vigia.Router);
+        Assert.Contains(_carpeta.Lineas("red-servicio"), l => l.StartsWith("Volvió «el router» tras 1 min 30 s", StringComparison.Ordinal));
     }
 
     /// <summary>Un ping perdido no es una caída: el router se da por perdido con dos revisiones seguidas sin respuesta, y vuelve con la primera.</summary>
