@@ -146,7 +146,9 @@ public static class ApiCaja
                 throw new InvalidOperationException(CorteEnElPiloto.CorteDelDiaEnEleventa);
             var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
             var registro = new RegistroCorteDelDia(db);
-            return await registro.CerrarAsync(caja.SucursalId, caja.Id, s.UsuarioId, registro.Hoy, presencia.Foto());
+            // El día que se ve en la caja: si pasó la medianoche con el corte abierto, ya no es hoy y no se cierra (tampoco el
+            // nuevo, que nadie ha visto). Una caja de antes no lo manda: hoy.
+            return await registro.CerrarAsync(caja.SucursalId, caja.Id, s.UsuarioId, s.Fecha ?? registro.Hoy, presencia.Foto());
         });
 
         // El recordatorio de cerrar el día (2026-10-17): a la hora de cierre de la tienda, mientras el día no se cierre, a quien

@@ -505,9 +505,13 @@ del PIN y que dar de baja a alguien no mueva las letras de los demás. El fondo 
   (con lo que pasó ese día y si se cerró) y se imprime; «Cerrar el día» es el de hoy, con sus reglas. El corte de un turno
   va en el día en que se hizo: el día en que se abrió dice «Corte el …», sin su diferencia, que así no se cuenta dos veces.
   Un día del piloto se ve como tal aunque después se deje el piloto: el turno que cerró el corte de eleventa sigue en el
-  día que le toca, «En eleventa».
+  día que le toca, «En eleventa». Si pasa la medianoche con el de hoy a la vista, la caja lo nota (lo revisa cada minuto)
+  y lo deja solo para verlo; y «Cerrar el día» manda el día que se ve: si ya no es hoy, el servicio no cierra nada, ni ese
+  día ni el nuevo, y la pantalla dice por qué (revisión del 2026-10-17).
 - **Las ventas por departamento,** como en eleventa, las ve quien ve el corte del día: cada departamento con lo que vendió
-  ese día, las impresiones y el artículo común aparte; lo devuelto ese día se resta de su departamento.
+  ese día, las impresiones y el artículo común aparte; lo devuelto ese día en la tienda se resta de su departamento. En el
+  piloto también lo que se devolvió en eleventa de un ticket de la caja 2, aunque el turno de esa venta ya se haya cortado
+  (se resta el día en que se devolvió; el efectivo de los turnos no cambia: no salió de esta caja).
 - **La utilidad,** solo para quien tiene «Ver costos, utilidad y margen» (a los demás el servicio no les manda ningún
   costo): la utilidad bruta arriba, y en las ventas por departamento la utilidad y el margen de cada uno. Es lo vendido
   menos el costo que guardó cada venta al cobrar (el promedio del inventario; en las impresiones, el de cada trabajo).
@@ -521,8 +525,9 @@ del PIN y que dar de baja a alguien no mueva las letras de los demás. El fondo 
   ve en la venta «Falta cerrar el día», con los demás avisos del panel y con «Ir al corte»: sin ventana, sin sonido y sin un
   paso más en el cobro. Se va al cerrar el día; si después se abre otro turno ese día, vuelve. Sin conexión con la caja
   principal o en el piloto (el día se cierra con el corte de eleventa), no sale.
-- **API:** `GET api/cajas/{caja}/corte-del-dia?fecha=AAAA-MM-DD` (sin fecha, hoy; uno que no ha llegado se rechaza) y
-  `GET api/cajas/{caja}/corte-del-dia/recordatorio` (204 si no toca). Sin cambios en la base.
+- **API:** `GET api/cajas/{caja}/corte-del-dia?fecha=AAAA-MM-DD` (sin fecha, hoy; uno que no ha llegado se rechaza),
+  `GET api/cajas/{caja}/corte-del-dia/recordatorio` (204 si no toca) y, al cerrar, `fecha` en `SolicitudCierreDia` (el
+  día que se ve; una caja de antes no la manda y es hoy). Sin cambios en la base.
 - **Decidido mientras el dueño no estaba, por revisar:**
   - las ventas por departamento, para todos los que ven el corte del día, como en eleventa; su utilidad y su margen, solo
     con «Ver costos, utilidad y margen»;

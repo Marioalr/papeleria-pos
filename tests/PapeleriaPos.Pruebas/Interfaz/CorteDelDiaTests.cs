@@ -1,11 +1,14 @@
 using System.Globalization;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.JSInterop;
+using PapeleriaPos.Datos;
 using PapeleriaPos.Impresion;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Interfaz.Componentes;
@@ -27,10 +30,14 @@ public sealed class CorteDelDiaTests
 {
     private sealed record Caja(ClienteCaja Cliente, CajaDto Datos, ServiceProvider Servicios, SesionDto Cajero, SesionDto Encargado, SesionDto Dueno);
 
-    private static async Task<Caja> PrepararAsync(ServicioDePrueba servicio, IImpresora? impresora = null)
+    /// <param name="red">Opcional: lo que se pone entre la caja y el servicio (para ver o cambiar lo que pasa).</param>
+    private static async Task<Caja> PrepararAsync(ServicioDePrueba servicio, IImpresora? impresora = null, DelegatingHandler? red = null)
     {
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/") };
-        var cliente = new ClienteCaja(new HttpClient(servicio.Fabrica.Server.CreateHandler()), conexion);
+        HttpMessageHandler alServicio = servicio.Fabrica.Server.CreateHandler();
+        if (red is not null)
+            (red.InnerHandler, alServicio) = (alServicio, red);
+        var cliente = new ClienteCaja(new HttpClient(alServicio), conexion);
         var caja = (await cliente.CajasAsync()).Single();
         conexion.CajaId = caja.Id;
         var servicios = new ServiceCollection()
@@ -67,6 +74,43 @@ public sealed class CorteDelDiaTests
             lock (_enviados)
                 _enviados.Add(escPos);
             return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// La red de la caja con una medianoche de mentiras: el siguiente «el de hoy» que se pide (sin fecha) llega con la fecha
+    /// que se le dice, como si se hubiera pedido ese día antes de las 00:00 y ya fuera el siguiente. Guarda lo que la caja
+    /// manda al cerrar el día y cuenta los cortes del día que pide.
+    /// </summary>
+    private sealed class MedianocheDeMentiras : DelegatingHandler
+    {
+        private DateOnly? _antes;
+
+        /// <summary>Lo que mandó la caja en cada «Cerrar el día».</summary>
+        public List<SolicitudCierreDia> Cierres { get; } = [];
+
+        /// <summary>Los cortes del día que pidió la caja.</summary>
+        public int Pedidos { get; private set; }
+
+        public void ElSiguienteEsDe(DateOnly dia) => _antes = dia;
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage solicitud, CancellationToken ct)
+        {
+            var ruta = solicitud.RequestUri!.AbsolutePath;
+            if (solicitud.Method == HttpMethod.Post && ruta.EndsWith("/corte-del-dia/cierre", StringComparison.Ordinal))
+                Cierres.Add(JsonSerializer.Deserialize<SolicitudCierreDia>(await solicitud.Content!.ReadAsStringAsync(ct), JsonSerializerOptions.Web)!);
+            var respuesta = await base.SendAsync(solicitud, ct);
+            if (solicitud.Method != HttpMethod.Get || !ruta.EndsWith("/corte-del-dia", StringComparison.Ordinal))
+                return respuesta;
+            Pedidos++;
+            if (_antes is { } antes && !solicitud.RequestUri.Query.Contains("fecha=", StringComparison.Ordinal) && respuesta.IsSuccessStatusCode)
+            {
+                _antes = null;
+                var dia = JsonNode.Parse(await respuesta.Content.ReadAsStringAsync(ct))!;
+                dia["fecha"] = antes.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                respuesta.Content = JsonContent.Create(dia);
+            }
+            return respuesta;
         }
     }
 
@@ -188,6 +232,87 @@ public sealed class CorteDelDiaTests
         Assert.Equal(Iso(ayer), (await p.PorIdAsync("corte-fecha")).Valor);
         Assert.Equal(Titulo(ayer), await TituloDelDiaAsync(p));
         Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// Pasada la medianoche con el corte del día a la vista, ese día ya no se cierra (revisión del 2026-10-17): al revisarlo
+    /// (cada minuto) se vuelve a pedir y queda solo para verlo, sin «Cerrar el día»; y si alguien alcanza a oprimirlo antes, la
+    /// caja manda el día que se ve, el servicio no cierra nada (ni ese día ni el nuevo) y la pantalla dice por qué y lo deja
+    /// solo para verlo. El de hoy se cierra como siempre, con su fecha. La medianoche es de mentiras: el primer «el de hoy»
+    /// llega con la fecha de ayer, como si se hubiera pedido antes de las 00:00.
+    /// </summary>
+    [Fact]
+    public async Task Pasada_la_medianoche_el_dia_que_se_ve_ya_no_se_cierra()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var red = new MedianocheDeMentiras();
+        var c = await PrepararAsync(servicio, red: red);
+        var (hoy, ayer) = (Hoy, Hoy.AddDays(-1));
+        string Iso(DateOnly dia) => dia.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        async Task<int> CierresAsync()
+        {
+            await using var db = servicio.Base();
+            return await db.Bitacora.CountAsync(b => b.Accion == AccionControlada.CorteDelDia && b.Resultado == ResultadoBitacora.Hecho);
+        }
+        // El corte del día, pedido antes de la medianoche: «hoy» es ayer, y se puede cerrar (no hay turnos abiertos).
+        async Task<(PantallaSinNavegador Pantalla, CorteDelDia Corte)> DeAntesDeLaMedianocheAsync()
+        {
+            red.ElSiguienteEsDe(ayer);
+            var p = new PantallaSinNavegador(c.Servicios);
+            var corte = await p.AbrirAsync<CorteDelDia>(new()
+            {
+                [nameof(CorteDelDia.CajaId)] = c.Datos.Id,
+                [nameof(CorteDelDia.Sesion)] = c.Dueno,
+            });
+            await p.EsperarAsync(t => t.Contains("Vendido hoy"), "el corte de «hoy»");
+            Assert.Equal(Iso(ayer), (await p.PorIdAsync("corte-fecha")).Valor);
+            Assert.False((await p.BotonAsync("Cerrar el día")).Desactivado);
+            return (p, corte);
+        }
+
+        // Al revisarlo (lo que hace cada minuto): ya no es ese día; se vuelve a pedir, solo para verlo.
+        var (p, corte) = await DeAntesDeLaMedianocheAsync();
+        await using (p)
+        {
+            await p.Dispatcher.InvokeAsync(corte.RevisarElDiaAsync);
+            await p.EsperarAsync(t => t.Contains("Es de un día que ya pasó: solo se ve y se imprime."), "el de ayer, solo para verlo");
+            Assert.Equal(Titulo(ayer), await TituloDelDiaAsync(p));
+            Assert.False(await HayBotonAsync(p, "Cerrar el día"));
+            // Con el de hoy a la vista, y todavía hoy, no se vuelve a pedir.
+            await p.OprimirAsync(await p.BotonAsync("Ver el de hoy"));
+            await p.EsperarAsync(t => t.Contains("Vendido hoy"), "el de hoy");
+            var pedidos = red.Pedidos;
+            await p.Dispatcher.InvokeAsync(corte.RevisarElDiaAsync);
+            Assert.Equal(pedidos, red.Pedidos);
+            Assert.Equal(Iso(hoy), (await p.PorIdAsync("corte-fecha")).Valor);
+            Assert.True(await HayBotonAsync(p, "Cerrar el día"));
+            Assert.Empty(red.Cierres);
+            Assert.Empty(p.Errores);
+        }
+
+        // Si alguien oprime «Cerrar el día» antes de esa revisión: la caja manda el día que se ve y el servicio no lo cierra.
+        (p, corte) = await DeAntesDeLaMedianocheAsync();
+        await using (p)
+        {
+            await p.OprimirAsync(await p.BotonAsync("Cerrar el día"));
+            await p.EsperarAsync(t => t.Contains(RegistroCorteDelDia.SoloHoySeCierra), "por qué no se cerró");
+            Assert.Equal(ayer, Assert.Single(red.Cierres).Fecha);
+            Assert.Contains("Es de un día que ya pasó: solo se ve y se imprime.", await p.TextoAsync());
+            Assert.Equal(Titulo(ayer), await TituloDelDiaAsync(p));
+            Assert.False(await HayBotonAsync(p, "Cerrar el día"));
+            // Ni ese día ni el nuevo quedaron cerrados.
+            Assert.Equal(0, await CierresAsync());
+
+            // El de hoy sí, con su fecha.
+            await p.OprimirAsync(await p.BotonAsync("Ver el de hoy"));
+            await p.EsperarAsync(t => t.Contains("Vendido hoy"), "el de hoy");
+            Assert.DoesNotContain("Día cerrado", await p.TextoAsync());
+            await p.OprimirAsync(await p.BotonAsync("Cerrar el día"));
+            await p.EsperarAsync(t => t.Contains("Día cerrado a las"), "el día cerrado");
+            Assert.Equal(hoy, red.Cierres[1].Fecha);
+            Assert.Equal(1, await CierresAsync());
+            Assert.Empty(p.Errores);
+        }
     }
 
     [Fact]

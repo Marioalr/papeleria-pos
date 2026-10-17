@@ -503,9 +503,9 @@ No está en el prototipo:
 
   «Cerrar el día» se habilita cuando no queda ningún turno abierto ni ventas por subir de otra caja, y manda el resumen
   por Telegram. Como el de eleventa (2026-10-17): abre en el de hoy y ← → (o la fecha) llevan al de otro día, que solo
-  se ve; «Imprimir» lo manda a la impresora de tickets tal como se ve, también el de otro día. Desde la hora de cierre de
-  Configuración › Tienda, si el día no se ha cerrado, quien lo cierra lo ve en la venta, con los demás avisos del panel,
-  hasta que lo cierra.
+  se ve (también el de hoy a la vista al pasar la medianoche: ya no se cierra); «Imprimir» lo manda a la impresora de
+  tickets tal como se ve, también el de otro día. Desde la hora de cierre de Configuración › Tienda, si el día no se ha
+  cerrado, quien lo cierra lo ve en la venta, con los demás avisos del panel, hasta que lo cierra.
 - El conteo por denominación (la tabla `CorteConteo`) deja de usarse.
 
 ## Reportes

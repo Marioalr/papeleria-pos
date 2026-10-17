@@ -9,6 +9,7 @@
    hoy), «Imprimir» en la impresora de tickets (lo que se ve aquí, también el de otro día), las ventas por departamento y,
    para quien tiene «Ver costos, utilidad y margen», la utilidad del día y la de cada departamento (a los demás el servicio
    no se las manda). *@
+@implements IDisposable
 @inject ClienteCaja Cliente
 @inject IImpresora Impresora
 
@@ -205,6 +206,10 @@
                         <p class="vn-corte-nota">Se cerró a las @cerrado.CerradoLocal.ToString("HH:mm"); lo cerró @cerrado.CerradoPor.</p>
                     }
                     <p class="vn-corte-nota">Es de un día que ya pasó: solo se ve y se imprime. «Cerrar el día» es el de hoy.</p>
+                    @if (_error is not null)
+                    {
+                        <p class="vn-corte-error">@_error</p>
+                    }
                     <span><button class="vn-boton" @onclick="IrAHoyAsync">Ver el de hoy</button></span>
                 }
                 else
@@ -414,7 +419,48 @@
         }
     }
 
-    protected override Task OnInitializedAsync() => CargarAsync();
+    /// <summary>Cada cuánto se revisa si ya pasó la medianoche con el de hoy a la vista.</summary>
+    public static readonly TimeSpan CadaCuanto = TimeSpan.FromMinutes(1);
+
+    private readonly CancellationTokenSource _fin = new();
+
+    protected override Task OnInitializedAsync()
+    {
+        _ = VigilarElDiaAsync();
+        return CargarAsync();
+    }
+
+    private async Task VigilarElDiaAsync()
+    {
+        using var reloj = new PeriodicTimer(CadaCuanto);
+        try
+        {
+            while (await reloj.WaitForNextTickAsync(_fin.Token))
+                await InvokeAsync(RevisarElDiaAsync);
+        }
+        catch (OperationCanceledException)
+        {
+            // Se cerró el corte.
+        }
+    }
+
+    /// <summary>
+    /// Si pasó la medianoche con el de hoy a la vista, ese día ya pasó: se vuelve a pedir, solo para verlo, sin «Cerrar el
+    /// día» (que cerraría el nuevo). Con la hora de esta caja; si la de la caja principal todavía no pasa la medianoche, sigue
+    /// siendo hoy y se vuelve a revisar al siguiente minuto.
+    /// </summary>
+    public async Task RevisarElDiaAsync()
+    {
+        if (_fin.IsCancellationRequested || _ocupado || _dia is not { DeOtroDia: false } dia
+            || DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow)) <= dia.Fecha)
+            return;
+        _pedido = dia.Fecha;
+        (_resumen, _vistaPrevia, _impreso, _errorImpresion) = (null, null, null, null);
+        await CargarAsync();
+        StateHasChanged();
+    }
+
+    public void Dispose() => _fin.Cancel();
 
     /// <summary>
     /// Al ver el día, ← y → mueven de día sin buscar el botón (las del campo de la fecha se quedan en él). Después de moverse
@@ -500,13 +546,14 @@
 
     private async Task CerrarAsync()
     {
-        if (_ocupado)
+        if (_ocupado || _dia is not { } dia)
             return;
         _ocupado = true;
         _error = null;
         try
         {
-            _resumen = (await Cliente.CerrarElDiaAsync(CajaId, Sesion.UsuarioId)).Resumen;
+            // El día que se ve: si ya no es hoy (pasó la medianoche con el corte abierto), el servicio no lo cierra.
+            _resumen = (await Cliente.CerrarElDiaAsync(CajaId, Sesion.UsuarioId, dia.Fecha)).Resumen;
             await CargarAsync();
             // «Cerrar el día» ya no está: el cursor regresa al corte.
             _enfocar = true;
@@ -514,6 +561,10 @@
         }
         catch (ErrorCaja ex)
         {
+            // Se vuelve a pedir el que se ve, con lo que dice el servicio: si ya pasó (la medianoche), queda solo para verlo,
+            // sin «Cerrar el día»; si sigue siendo hoy, con lo que falta para cerrarlo. Y por qué no se cerró.
+            _pedido = dia.Fecha;
+            await CargarAsync();
             _error = ex.Message;
         }
         finally

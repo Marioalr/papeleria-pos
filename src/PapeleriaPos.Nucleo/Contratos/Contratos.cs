@@ -217,8 +217,8 @@ public sealed record CorteInformativoDto(
 /// <summary>
 /// El corte del día (entrega 6, 2026-10-14), para quien tiene «ver y cerrar el corte del día»: todas las cajas y turnos de
 /// la sucursal. Los turnos del día son los que se abrieron, se cerraron o siguen abiertos ese día; lo demás (lo vendido,
-/// las formas de pago, las salidas, las devoluciones, lo fiado…) es lo de esos turnos que pasó ese día: de un turno que
-/// viene de otro día, solo lo de hoy.
+/// las formas de pago, las salidas, lo fiado…) es lo de esos turnos que pasó ese día: de un turno que viene de otro día,
+/// solo lo de hoy. Las devoluciones, las de la sucursal ese día (2026-10-17).
 /// </summary>
 /// <param name="EfectivoCentavos">Lo que se cobró en efectivo en las ventas (con su redondeo).</param>
 /// <param name="FiadoCentavos">Lo que se vendió a crédito: ya cuenta en lo vendido y no es dinero.</param>
@@ -351,7 +351,11 @@ public enum EnvioResumen
 /// <param name="Resumen">Solo en la respuesta al cerrarlo.</param>
 public sealed record CierreDelDiaDto(DateTime CerradoLocal, string CerradoPor, EnvioResumen? Resumen = null);
 
-public sealed record SolicitudCierreDia(Guid UsuarioId);
+/// <param name="Fecha">
+/// El día que se ve en la caja al cerrarlo (2026-10-17): si ya no es hoy (pasó la medianoche con el corte abierto), no se
+/// cierra, ni el que se ve ni el nuevo. Vacía en una caja de antes: hoy.
+/// </param>
+public sealed record SolicitudCierreDia(Guid UsuarioId, DateOnly? Fecha = null);
 
 /// <param name="Codigo">"requiere-autorizacion" o "no-permitido" cuando lo detiene una regla.</param>
 public sealed record ErrorDto(string Mensaje, string? Codigo = null);

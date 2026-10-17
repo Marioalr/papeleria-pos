@@ -19,11 +19,12 @@ public sealed record PresenciaDeCaja(DateTime? VistoUtc, int? PorSubir, int? Con
 /// El corte del día (entrega 6, docs/propuesta-interfaz.md «Corte», 2026-10-14): todas las cajas y turnos de la
 /// sucursal en un día, para quien tiene «ver y cerrar el corte del día». Los turnos del día son los que tocan ese día:
 /// los que se abrieron, los que se cerraron (uno olvidado de ayer que se corta hoy entra hoy, con su diferencia) y los que
-/// siguen abiertos. Lo vendido, las formas de pago, las salidas, las devoluciones, lo fiado, los abonos y las impresiones
-/// son lo de esos turnos que pasó ese día, como en el resumen de Telegram: un turno que viene de otro día cuenta aquí solo
-/// lo de hoy (el de la caja 2 en el piloto suma días: si no, «Vendido hoy» diría lo de todo el piloto). Lo esperado, lo
-/// contado y la diferencia de un turno son los de todo el turno, como en su corte, y van en el día en que se cortó: el día en
-/// que se abrió no los repite (2026-10-17).
+/// siguen abiertos. Lo vendido, las formas de pago, las salidas, lo fiado, los abonos y las impresiones son lo de esos
+/// turnos que pasó ese día, como en el resumen de Telegram: un turno que viene de otro día cuenta aquí solo lo de hoy (el de
+/// la caja 2 en el piloto suma días: si no, «Vendido hoy» diría lo de todo el piloto). Las devoluciones son todas las de la
+/// sucursal ese día, como en el resumen: una hecha en eleventa de un ticket de la caja 2 va en el turno de esa venta, que
+/// pudo cerrarse antes (2026-10-17). Lo esperado, lo contado y la diferencia de un turno son los de todo el turno, como en
+/// su corte, y van en el día en que se cortó: el día en que se abrió no los repite (2026-10-17).
 /// <para>
 /// «Cerrar el día» se puede cuando no queda ningún turno abierto ni nada por subir de otra caja. Lo que una caja tiene
 /// por subir solo se sabe por su latido (<see cref="PresenciaDeCaja"/>), cada 5 segundos: de una caja sin conexión, o que
@@ -79,6 +80,7 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
         var ids = turnos.Select(t => t.Id).ToList();
         var ventas = await db.Ventas.AsNoTracking().Include(v => v.Lineas).Include(v => v.Cobros).Where(v => ids.Contains(v.TurnoId)).AsSplitQuery().ToListAsync(ct);
         var movimientos = await db.MovimientosCaja.AsNoTracking().Where(m => ids.Contains(m.TurnoId)).OrderBy(m => m.FechaUtc).ToListAsync(ct);
+        // Las de los turnos, para el efectivo que se espera de cada uno (solo lo que salió de su caja).
         var devoluciones = await db.Devoluciones.AsNoTracking().Where(d => ids.Contains(d.TurnoId)).ToListAsync(ct);
         var abonos = await db.Abonos.AsNoTracking().Where(a => ids.Contains(a.TurnoId)).ToListAsync(ct);
         var cortes = (await db.Cortes.AsNoTracking().Where(c => c.Tipo == TipoCorte.Z && ids.Contains(c.TurnoId)).ToListAsync(ct))
@@ -91,7 +93,11 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
         bool DelDia(DateTime fechaUtc) => fechaUtc >= desde && fechaUtc < hasta;
         var vigentesDelDia = ventas.Where(v => v.Estado == EstadoVenta.Pagada && v.PagadaUtc is { } pagada && DelDia(pagada)).ToList();
         var movimientosDelDia = movimientos.Where(m => DelDia(m.FechaUtc)).ToList();
-        var devolucionesDelDia = devoluciones.Where(d => DelDia(d.FechaUtc)).ToList();
+        // Lo devuelto ese día en la sucursal, sea del turno que sea: una devolución que se hizo en eleventa de un ticket de la
+        // caja 2 se guarda en el turno de esa venta, que pudo cerrarse antes (el piloto), y aun así es de este día y se resta de
+        // lo vendido de este día. No cambia el efectivo de ningún turno: ese sale de las devoluciones de cada uno.
+        var devolucionesDelDia = await db.Devoluciones.AsNoTracking()
+            .Where(d => d.SucursalId == sucursalId && d.FechaUtc >= desde && d.FechaUtc < hasta).ToListAsync(ct);
         var abonosDelDia = abonos.Where(a => DelDia(a.FechaUtc)).ToList();
 
         var filas = turnos.Select(t =>

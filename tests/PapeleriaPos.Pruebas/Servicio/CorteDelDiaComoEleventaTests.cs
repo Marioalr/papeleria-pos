@@ -198,6 +198,97 @@ public sealed class CorteDelDiaComoEleventaTests
     }
 
     /// <summary>
+    /// «Cerrar el día» cierra el día que se ve en la caja, y solo si es hoy: si pasó la medianoche con el corte abierto, la
+    /// caja manda el de ayer y el servicio no cierra nada (ni ese ni el nuevo, que nadie ha visto). Antes el servicio cerraba
+    /// siempre el de hoy. Una caja de antes no manda el día: es hoy.
+    /// </summary>
+    [Fact]
+    public async Task Cerrar_el_dia_es_solo_el_de_hoy_aunque_la_caja_mande_otro()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var p = await PuestoAsync(servicio);
+        var (hoy, ayer) = (Hoy, Hoy.AddDays(-1));
+        var turno = await AbrirAsync(p, p.Cajero);
+        await Leer<CorteDto>(await CortarAsync(p, turno, p.Encargado, 50000));
+        Task<HttpResponseMessage> CerrarAsync(DateOnly? fecha) =>
+            p.Http.PostAsJsonAsync($"api/cajas/{p.Caja.Id}/corte-del-dia/cierre", new SolicitudCierreDia(p.Dueno.UsuarioId, fecha));
+        async Task<int> CierresAsync()
+        {
+            await using var db = servicio.Base();
+            return await db.Bitacora.CountAsync(b => b.Accion == AccionControlada.CorteDelDia && b.Resultado == ResultadoBitacora.Hecho);
+        }
+
+        var deAyer = await RechazoAsync(await CerrarAsync(ayer));
+        var deManana = await RechazoAsync(await CerrarAsync(hoy.AddDays(1)));
+        var antes = await CierresAsync();
+        var deHoy = await Leer<CierreDelDiaDto>(await CerrarAsync(hoy));
+
+        Assert.Equal(RegistroCorteDelDia.SoloHoySeCierra, deAyer.Mensaje);
+        Assert.Equal(RegistroCorteDelDia.SoloHoySeCierra, deManana.Mensaje);
+        Assert.Equal(0, antes);
+        Assert.Equal("Dueño de prueba", deHoy.CerradoPor);
+        Assert.Equal(1, await CierresAsync());
+        Assert.Equal("Dueño de prueba", (await Leer<CorteDelDiaDto>(await p.Http.GetAsync(p.Ruta(p.Dueno)))).Cierre?.CerradoPor);
+    }
+
+    /// <summary>
+    /// En el piloto, lo que se devolvió en eleventa de un ticket de la caja 2 entra en la venta de aquí sin efectivo y en el
+    /// turno de esa venta, que pudo cortarse antes. Se resta de lo vendido del día en que se devolvió (antes no se restaba de
+    /// ningún día: el corte buscaba las devoluciones por sus turnos), y no toca el efectivo de ningún turno.
+    /// </summary>
+    [Fact]
+    public async Task Lo_devuelto_en_eleventa_de_un_turno_ya_cortado_se_resta_del_dia_en_que_se_devolvio()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var p = await PuestoAsync(servicio);
+        var (hoy, ayer) = (Hoy, Hoy.AddDays(-1));
+        // Ayer: dos plumas en un turno que ya se cortó; la venta llegó a eleventa (su ticket 500).
+        var turno = await AbrirAsync(p, p.Cajero);
+        var pluma = await VarianteAsync(p, "pluma punto fino");
+        var ticket = await VenderAsync(p, turno, [new(pluma, null, 2000)], new CobroSolicitado(FormaPago.Efectivo, 100000));
+        await Leer<CorteDto>(await CortarAsync(p, turno, p.Encargado, 50000 + ticket.TotalCentavos));
+        await PasarAAsync(servicio, turno.Id, ayer);
+        VentaLinea linea;
+        await using (var db = servicio.Base())
+        {
+            linea = await db.VentasLineas.AsNoTracking().SingleAsync(l => l.VentaId == ticket.VentaId);
+            db.EnviosAEleventa.Add(new EnvioAEleventa
+            {
+                Tipo = TipoEnvioEleventa.Venta, VentaId = ticket.VentaId, Estado = EstadoEnvioEleventa.Enviada, CreadoUtc = A(ayer, 12), EnviadaUtc = A(ayer, 12),
+                TicketEleventa = 500, FolioEleventa = 42,
+            });
+            await db.SaveChangesAsync();
+        }
+        // Hoy, con otro turno abierto con $500: en eleventa devolvieron una pluma de ese ticket, y la vuelta la pasa aquí.
+        await AbrirAsync(p, p.Cajero);
+        var precio = linea.PrecioCentavos / 100m;
+        await using (var db = servicio.Base())
+            Assert.Equal(1, (await DevolucionesConEleventa.PasarVueltaAsync(db,
+                [new DevolucionLeida(7, 500, false, hoy.ToDateTime(new TimeOnly(10, 0)), precio, "Ana", "Principal", 31,
+                    [new ArticuloDevueltoLeido("PLUMA", linea.Descripcion, 1m, precio, null)])], DateTime.UtcNow)).Pasadas);
+        Devolucion devolucion;
+        await using (var db = servicio.Base())
+            devolucion = await db.Devoluciones.AsNoTracking().Include(d => d.Lineas).SingleAsync();
+
+        var corteDeHoy = await Leer<CorteDelDiaDto>(await p.Http.GetAsync(p.Ruta(p.Dueno)));
+        var corteDeAyer = await Leer<CorteDelDiaDto>(await p.Http.GetAsync(p.Ruta(p.Dueno, ayer)));
+
+        // Quedó en el turno de la venta, de ayer y ya cortado, sin efectivo de aquí.
+        Assert.Equal((turno.Id, 0L), (devolucion.TurnoId, devolucion.ReembolsoEfectivoCentavos));
+        var devuelta = Assert.Single(devolucion.Lineas);
+        // Hoy se resta de lo vendido de su departamento y de la utilidad, y sale en las devoluciones del día.
+        Assert.Equal((1, devolucion.TotalCentavos), (corteDeHoy.Devoluciones, corteDeHoy.DevolucionesCentavos));
+        var departamento = Assert.Single(corteDeHoy.PorDepartamento!.Departamentos);
+        Assert.Equal((-devuelta.ImporteCentavos, (long?)-devuelta.CostoCentavos), (departamento.VentaCentavos, departamento.CostoCentavos));
+        Assert.Equal(-(devuelta.ImporteCentavos - devuelta.CostoCentavos), corteDeHoy.Utilidad!.UtilidadCentavos);
+        // El efectivo del turno de hoy no cambia: esa devolución no salió de esta caja.
+        Assert.Equal(50000, Assert.Single(corteDeHoy.Turnos).EsperadoCentavos);
+        // Ayer sigue con sus dos plumas.
+        Assert.Equal(0, corteDeAyer.Devoluciones);
+        Assert.Equal(linea.ImporteCentavos, Assert.Single(corteDeAyer.PorDepartamento!.Departamentos).VentaCentavos);
+    }
+
+    /// <summary>
     /// Un turno que se abrió ayer y se corta hoy: su corte (lo contado y la diferencia) va en el día en que se hizo. Ayer cuenta
     /// lo que vendió ayer y dice que se cerró hoy, sin la diferencia, que así no se cuenta dos veces.
     /// </summary>

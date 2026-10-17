@@ -187,6 +187,19 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     }
 
     /// <summary>
+    /// Cierra el día que se ve (2026-10-17): si ya no es hoy (pasó la medianoche con el corte abierto), el servicio no lo
+    /// cierra, ni ese ni el nuevo. Lo demás, como <see cref="CerrarElDiaAsync(Guid, Guid)"/>.
+    /// </summary>
+    public async Task<CierreDelDiaDto> CerrarElDiaAsync(Guid cajaId, Guid usuarioId, DateOnly fecha)
+    {
+        if (contingencia is { ServidorResponde: false })
+            throw new ErrorCaja(CorteDelDiaSinConexion, "sin-conexion");
+        if (contingencia is { Pendientes: > 0 and var pendientes })
+            throw new ErrorCaja($"Esta caja todavía sube lo que hizo sin conexión ({pendientes} por subir): el cierre espera a que termine.");
+        return await _http.PostAsync<CierreDelDiaDto>($"api/cajas/{cajaId}/corte-del-dia/cierre", new SolicitudCierreDia(usuarioId, fecha));
+    }
+
+    /// <summary>
     /// El corte del día de una fecha (2026-10-17): hoy, o uno que ya pasó, solo para verlo e imprimirlo. Con las ventas por
     /// departamento y, si quien entró ve la utilidad, la utilidad. Necesita la caja principal.
     /// </summary>
