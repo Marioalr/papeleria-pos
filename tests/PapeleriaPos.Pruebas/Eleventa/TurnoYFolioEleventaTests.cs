@@ -119,6 +119,27 @@ public class TurnoYFolioEleventaTests
     }
 
     [FactConFirebird]
+    public async Task Si_la_revision_del_folio_corre_dos_veces_la_segunda_no_lo_mueve_otra_vez()
+    {
+        await using var e = await TiendaAsync();
+        await e.AbrirCajaAsync(4, 7, new DateTime(2026, 3, 9, 8, 0, 0), fondo: 300);
+        var r = await EnvioEleventa.MandarAsync(e.Conexion, Piloto, Venta(new DateTime(2026, 3, 9, 10, 0, 0), Cuaderno));
+        // La principal cobró casi al mismo tiempo con el mismo folio.
+        await e.EjecutarAsync("INSERT INTO VENTATICKETS (FOLIO, CAJA_ID, CAJERO_ID, OPERACION_ID, ESTA_ABIERTO, VENDIDO_EN, TOTAL) VALUES (42, 1, 1, -1, 'f', @cuando, 45)",
+            ("cuando", new DateTime(2026, 3, 9, 10, 0, 1)));
+
+        // Un intento lo revisa y toma el 43; otro que se había cortado por tiempo y siguió lo revisa otra vez con el 42.
+        var primera = await EnvioEleventa.RevisarFolioAsync(e.Conexion, r.TicketId, 42);
+        var segunda = await EnvioEleventa.RevisarFolioAsync(e.Conexion, r.TicketId, 42);
+
+        // La segunda ya no lo mueve: se queda con el 43, que es el que guardó la caja.
+        Assert.Equal(new FolioRevisado(43, false, 42), primera);
+        Assert.Equal(43, segunda.Folio);
+        Assert.Equal(43, await CuantosAsync(e, "SELECT FOLIO FROM VENTATICKETS WHERE ID = @id", ("id", r.TicketId)));
+        Assert.Equal("Venta #43", (string)(await e.ValorAsync("SELECT DESCRIPCION FROM INVENTARIO_HISTORIAL WHERE VENTA_ID = @id", ("id", r.TicketId)))!);
+    }
+
+    [FactConFirebird]
     public async Task La_revision_tardia_encuentra_el_otro_ticket_con_el_mismo_folio()
     {
         await using var e = await TiendaAsync();

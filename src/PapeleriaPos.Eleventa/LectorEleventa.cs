@@ -255,7 +255,7 @@ public static class LectorEleventa
         // isc_io_error: la ruta de la base no existe en esa PC.
         FbException { ErrorCode: 335544344 } => $"En {servidor.Servidor} no está la base {servidor.Base}.",
         // Se acabó la espera (la red se cayó a media llamada, o eleventa se quedó callado): se vuelve a intentar.
-        TimeoutException => $"El eleventa de {servidor.Servidor} no terminó de contestar a tiempo: se vuelve a intentar.",
+        TimeoutException or OperationCanceledException => $"El eleventa de {servidor.Servidor} no terminó de contestar a tiempo: se vuelve a intentar.",
         _ => ex.Message,
     };
 

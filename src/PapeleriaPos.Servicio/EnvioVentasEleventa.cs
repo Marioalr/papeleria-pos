@@ -39,6 +39,12 @@ public sealed class EnvioVentasEleventa(
     /// <summary>Después de una falla de red, cuánto tiempo el cobro ya no espera a eleventa (para no tardar en cada venta).</summary>
     public static readonly TimeSpan SinRedPor = TimeSpan.FromMinutes(1);
 
+    /// <summary>
+    /// Lo que se espera de más a una llamada a eleventa que ya se canceló por tiempo, antes de dejarla ir: Firebird no
+    /// siempre suelta al cancelar.
+    /// </summary>
+    private static readonly TimeSpan Margen = TimeSpan.FromSeconds(10);
+
     /// <summary>Después de un respaldo de eleventa que no se pudo hacer, cuánto se espera para volver a intentarlo.</summary>
     public static readonly TimeSpan ReintentarRespaldo = TimeSpan.FromMinutes(5);
 
@@ -319,15 +325,17 @@ public sealed class EnvioVentasEleventa(
             if (ahora < _sinRedHastaUtc || await RestauracionDeEleventa.DetencionAsync(db, ct) is not null
                 || await FoliosRepetidos.PorRevisarAsync(db, ahora, ct) is not { Count: > 0 } enviadas)
                 return true;
+            // Con un límite: una llamada colgada no detiene la bandeja (es como si no hubiera red), y se cancela.
+            using var limite = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            limite.CancelAfter(opciones.EsperaMaxima);
             try
             {
-                // Con un límite: una llamada colgada no detiene la bandeja (es como si no hubiera red).
-                if (await RevisarConEleventaAsync().WaitAsync(opciones.EsperaMaxima, ct) is > 0 and var repetidos)
+                if (await RevisarConEleventaAsync().WaitAsync(opciones.EsperaMaxima + Margen, ct) is > 0 and var repetidos)
                     log.LogWarning("{Repetidos} ventas de esta caja tienen en eleventa el mismo folio que otra caja: sus reimpresiones salen con el folio de la caja.",
                         repetidos);
                 await db.SaveChangesAsync(ct);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && EsDeRed(ex))
+            catch (Exception ex) when ((ex is not OperationCanceledException || !ct.IsCancellationRequested) && EsDeRed(ex))
             {
                 // Sin red: se revisa en otra vuelta, y el cobro tampoco espera a eleventa un rato.
                 _sinRedHastaUtc = ahora + SinRedPor;
@@ -337,8 +345,8 @@ public sealed class EnvioVentasEleventa(
             async Task<int> RevisarConEleventaAsync()
             {
                 await using var conexion = new FbConnection(servidor.Cadena());
-                await conexion.OpenAsync(ct);
-                return await FoliosRepetidos.RevisarAsync(db, conexion, enviadas, ahora, ct);
+                await conexion.OpenAsync(limite.Token);
+                return await FoliosRepetidos.RevisarAsync(db, conexion, enviadas, ahora, limite.Token);
             }
         }, ct);
     }
@@ -429,6 +437,10 @@ public sealed class EnvioVentasEleventa(
     private async Task<bool> MandarAsync(PosDbContext db, EnvioAEleventa envio, CancellationToken ct)
     {
         var (servidor, caja) = _destino!.Value;
+        // La escritura se cancela si tarda más de la cuenta (una llamada colgada): así no sigue sola por detrás mientras se
+        // reintenta (revisión del 2026-10-17).
+        using var limite = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var escritura = limite.Token;
         // Lo último que escribió el puente: si eleventa ya no lo tiene (se restauró un respaldo), no se escribe nada.
         caja = caja with { Huella = await RestauracionDeEleventa.HuellaAsync(db, reloj.GetUtcNow().UtcDateTime, RestauracionDeEleventa.AlEscribir, ct) };
         // Escribe en eleventa y dice en qué turno de eleventa quedó (vacío si ya estaba): el turno de la caja nueva lo adopta.
@@ -443,7 +455,7 @@ public sealed class EnvioVentasEleventa(
                 if (venta.Venta is { } paraEleventa)
                     escribir = async () =>
                     {
-                        var r = await EnvioEleventa.MandarAsync(servidor, caja, paraEleventa, ct);
+                        var r = await EnvioEleventa.MandarAsync(servidor, caja, paraEleventa, escritura);
                         (envio.TicketEleventa, envio.FolioEleventa, envio.FolioRepetido) = (r.TicketId, r.Folio, r.FolioRepetido);
                         if (r.FolioAnterior is { } anterior)
                             log.LogWarning("Otra caja de eleventa cobró con el folio {Anterior} al mismo tiempo que la venta {Venta}: esta tomó el {Folio}.",
@@ -459,7 +471,7 @@ public sealed class EnvioVentasEleventa(
                 if (devolucion.Devolucion is { } paraDevolver)
                     escribir = async () =>
                     {
-                        var r = await EnvioEleventa.DevolverAsync(servidor, caja, paraDevolver, ct);
+                        var r = await EnvioEleventa.DevolverAsync(servidor, caja, paraDevolver, escritura);
                         envio.IdEleventa = r.DevolucionId;
                         return r.Turno;
                     };
@@ -470,7 +482,7 @@ public sealed class EnvioVentasEleventa(
                 if (ida.Devolucion is { } paraDevolverAlla)
                     escribir = async () =>
                     {
-                        var r = await EnvioEleventa.DevolverAsync(servidor, caja, paraDevolverAlla, ct);
+                        var r = await EnvioEleventa.DevolverAsync(servidor, caja, paraDevolverAlla, escritura);
                         envio.IdEleventa = r.DevolucionId;
                         return r.Turno;
                     };
@@ -481,7 +493,7 @@ public sealed class EnvioVentasEleventa(
                 if (movimiento.Movimiento is { } paraMover)
                     escribir = async () =>
                     {
-                        var r = await EnvioEleventa.MoverEfectivoAsync(servidor, caja, paraMover, ct);
+                        var r = await EnvioEleventa.MoverEfectivoAsync(servidor, caja, paraMover, escritura);
                         envio.IdEleventa = r.MovimientoId;
                         return r.Turno;
                     };
@@ -503,7 +515,7 @@ public sealed class EnvioVentasEleventa(
                     .Select(x => x.DiferenciaCentavos).FirstOrDefaultAsync(ct) ?? 0;
                 escribir = async () =>
                 {
-                    envio.IdEleventa = (await EnvioEleventa.CerrarTurnoAsync(servidor, caja, cerrado, diferencia / 100m, ct)).TurnoId;
+                    envio.IdEleventa = (await EnvioEleventa.CerrarTurnoAsync(servidor, caja, cerrado, diferencia / 100m, escritura)).TurnoId;
                     return null;
                 };
                 break;
@@ -528,9 +540,10 @@ public sealed class EnvioVentasEleventa(
         TurnoDeEleventa? deEleventa = null;
         try
         {
-            // Con un límite: una llamada que se queda colgada se toma como falla de red (se reintenta y no detiene la bandeja).
-            // Si después sí entra, la marca la encuentra en el siguiente intento.
-            deEleventa = await escribir().WaitAsync(opciones.EsperaMaxima, ct);
+            // Con un límite: una llamada que se queda colgada se cancela y se toma como falla de red (se reintenta y no detiene
+            // la bandeja). Si alcanzó a entrar, la marca la encuentra en el siguiente intento.
+            limite.CancelAfter(opciones.EsperaMaxima);
+            deEleventa = await escribir().WaitAsync(opciones.EsperaMaxima + Margen, ct);
             (envio.Estado, envio.EnviadaUtc, envio.Error) = (EstadoEnvioEleventa.Enviada, reloj.GetUtcNow().UtcDateTime, null);
             (_ultimoEnvioUtc, _ultimoError, _sinRedHastaUtc) = (envio.EnviadaUtc, null, default);
         }
@@ -560,10 +573,12 @@ public sealed class EnvioVentasEleventa(
         {
             envio.Error = _ultimoError = Recortar(LectorEleventa.Explicar(ex, servidor));
             // Si no fue la red, eleventa contestó que no y deshizo lo que llevaba: no está allá, y la lectura ya lo puede
-            // descontar. De lo que se cortó por la red (o a medias) no se sabe.
+            // descontar. De lo que se cortó por la red o por tiempo (o a medias) no se sabe. Tampoco de un choque de candados:
+            // otra escritura tenía esos renglones, quizá la de un intento anterior que se cortó por tiempo y sigue abierta
+            // (revisión del 2026-10-17); se reintenta sin darlo por rechazado.
             if (EsDeRed(ex))
                 _sinRedHastaUtc = ahora + SinRedPor;
-            else if (ex is not OperationCanceledException)
+            else if (!EsChoqueDeCandados(ex))
                 EnCurso.Rechazado(envio.Id);
             log.LogWarning(ex, "{Tipo} {Id} no entró a eleventa ({Servidor}); se vuelve a intentar.", envio.Tipo, envio.Id, servidor);
         }
@@ -770,9 +785,16 @@ public sealed class EnvioVentasEleventa(
 
     private static string Recortar(string texto) => texto.Length > 500 ? texto[..500] : texto;
 
-    /// <summary>La PC apagada, la red caída o lenta: no es de lo que se manda, es de la red.</summary>
+    /// <summary>
+    /// La PC apagada, la red caída o lenta, o eleventa que no terminó de contestar a tiempo (la llamada se canceló): no es de
+    /// lo que se manda, es de la red. Quien llama ya descartó que se esté apagando el servicio.
+    /// </summary>
     private static bool EsDeRed(Exception ex) =>
         ex is FbException { ErrorCode: 335544721 /* network_error */ or 335544726 /* net_read_err */ or 335544727 /* net_write_err */ }
-            or TimeoutException or System.Net.Sockets.SocketException or IOException
+            or TimeoutException or OperationCanceledException or System.Net.Sockets.SocketException or IOException
         || ex.InnerException is { } interna && EsDeRed(interna);
+
+    /// <summary>Otra escritura tenía los mismos renglones de eleventa (el mismo producto, el mismo turno…).</summary>
+    private static bool EsChoqueDeCandados(Exception ex) =>
+        ex is FbException f && f.Errors.Any(e => e.Number is 335544345 /* lock_conflict */ or 335544336 /* deadlock */ or 335544451 /* update_conflict */);
 }

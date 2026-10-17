@@ -240,6 +240,11 @@ public static partial class EnvioEleventa
         }
     }
 
+    /// <summary>
+    /// El siguiente folio para el ticket, solo si todavía tiene el que se revisó: la misma revisión pudo correr dos veces (un
+    /// intento que se cortó por tiempo y siguió, y el que lo reintentó) y la segunda no lo mueve otra vez (revisión del
+    /// 2026-10-17). Regresa el folio que quedó.
+    /// </summary>
     private static async Task<int> CambiarFolioAsync(FbConnection c, int ticket, int folio, CancellationToken ct)
     {
         await using var tx = await c.BeginTransactionAsync(new FbTransactionOptions
@@ -248,7 +253,14 @@ public static partial class EnvioEleventa
         }, ct);
         var sql = new Sql(c, tx, ct);
         var nuevo = Convert.ToInt32(await sql.ValorAsync("SELECT MAX(FOLIO) FROM VENTATICKETS") ?? 0) + 1;
-        await sql.EjecutarAsync("UPDATE VENTATICKETS SET FOLIO = @nuevo WHERE ID = @ticket", [("nuevo", nuevo), ("ticket", ticket)]);
+        if (await sql.EjecutarAsync("UPDATE VENTATICKETS SET FOLIO = @nuevo WHERE ID = @ticket AND FOLIO = @folio",
+                [("nuevo", nuevo), ("ticket", ticket), ("folio", folio)]) == 0)
+        {
+            // Ya lo movió la otra: se queda con el que tiene.
+            var actual = Convert.ToInt32(await sql.ValorAsync("SELECT FOLIO FROM VENTATICKETS WHERE ID = @ticket", [("ticket", ticket)]) ?? folio);
+            await tx.CommitAsync(ct);
+            return actual;
+        }
         await sql.EjecutarAsync("UPDATE INVENTARIO_HISTORIAL SET DESCRIPCION = @nueva WHERE VENTA_ID = @ticket AND DESCRIPCION = @vieja",
             [("nueva", $"Venta #{nuevo}"), ("vieja", $"Venta #{folio}"), ("ticket", ticket)]);
         await tx.CommitAsync(ct);
