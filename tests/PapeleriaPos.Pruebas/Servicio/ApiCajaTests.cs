@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Herramientas;
 using PapeleriaPos.Herramientas.Ficticios;
@@ -37,6 +38,16 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
 
     /// <summary>El archivo de la base (junto a él quedan sus marcas, como la de un apagón).</summary>
     public string Ruta => _ruta;
+
+    /// <summary>
+    /// Espera a que el catálogo en memoria del servicio tenga lo último que se guardó: se recarga en segundo plano y mientras
+    /// contesta con el vigente (entrega 5, parte 2). Para lo que se revisa justo después de cambiar el catálogo.
+    /// </summary>
+    public async Task CatalogoAlDiaAsync()
+    {
+        await using var db = Base();
+        await Fabrica.Services.GetRequiredService<PapeleriaPos.Servicio.CatalogoEnMemoria>().AlDiaAsync(db);
+    }
 
     public async Task InitializeAsync()
     {

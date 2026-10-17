@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage;
 using PapeleriaPos.Impresiones.Datos;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
@@ -83,6 +84,9 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<Busqueda> Busquedas => Set<Busqueda>();
     public DbSet<Sinonimo> Sinonimos => Set<Sinonimo>();
 
+    /// <summary>Lo quitado de lo que lleva la copia de las cajas, con su versión (entrega 5, parte 2): lo escribe la base al guardar.</summary>
+    public DbSet<Borrado> Borrados => Set<Borrado>();
+
     /// <summary>Reloj para <see cref="IVersionado.ModificadoUtc"/> y el historial de precios; las pruebas lo fijan.</summary>
     public TimeProvider Reloj { get; init; } = TimeProvider.System;
 
@@ -114,11 +118,19 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         AlertasTelegram.RevisarBitacora(this);
-        PrepararCambios(ObtenerSecuencia());
-        if (!HayCambiosDeCredito())
+        var versiones = PrepararCambios();
+        if (!versiones.Alguna)
             return base.SaveChanges(acceptAllChangesOnSuccess);
+        // Lo que se lee, antes de tomar el candado de escritura.
+        if (versiones.PresentacionesPorLeer is { Count: > 0 } porLeer)
+            versiones.Variantes(Presentaciones.AsNoTracking().Where(p => porLeer.Contains(p.Id)).Select(p => new { p.Id, p.VarianteId })
+                .AsEnumerable().Select(p => (p.Id, p.VarianteId)));
         using var propia = Database.CurrentTransaction is null ? Database.BeginTransaction() : null;
-        Database.ExecuteSqlRaw(SubirVersionCredito);
+        SubirVersiones(versiones, nombre =>
+        {
+            using var comando = ComandoParaSubir(nombre);
+            return Convert.ToInt64(comando.ExecuteScalar());
+        });
         var cambios = base.SaveChanges(acceptAllChangesOnSuccess);
         propia?.Commit();
         return cambios;
@@ -127,11 +139,20 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
         AlertasTelegram.RevisarBitacora(this);
-        PrepararCambios(await ObtenerSecuenciaAsync(cancellationToken));
-        if (!HayCambiosDeCredito())
+        var versiones = PrepararCambios();
+        if (!versiones.Alguna)
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        if (versiones.PresentacionesPorLeer is { Count: > 0 } porLeer)
+            versiones.Variantes((await Presentaciones.AsNoTracking().Where(p => porLeer.Contains(p.Id)).Select(p => new { p.Id, p.VarianteId })
+                .ToListAsync(cancellationToken)).Select(p => (p.Id, p.VarianteId)));
         await using var propia = Database.CurrentTransaction is null ? await Database.BeginTransactionAsync(cancellationToken) : null;
-        await Database.ExecuteSqlRawAsync(SubirVersionCredito, cancellationToken);
+        var subidas = new Dictionary<string, long>();
+        foreach (var nombre in versiones.PorSubir)
+        {
+            await using var comando = ComandoParaSubir(nombre);
+            subidas[nombre] = Convert.ToInt64(await comando.ExecuteScalarAsync(cancellationToken));
+        }
+        SubirVersiones(versiones, nombre => subidas[nombre]);
         var cambios = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         if (propia is not null)
             await propia.CommitAsync(cancellationToken);
@@ -139,11 +160,18 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     }
 
     /// <summary>
-    /// La versión del crédito sube en la base, en la misma transacción que el cambio (que tiene el candado de escritura):
-    /// dos cambios a la vez dan dos versiones, y ninguna caja ve el cambio sin la versión nueva.
+    /// Sube un contador de versión en la base, en la transacción abierta (que tiene el candado de escritura), y regresa el
+    /// valor que quedó (<see cref="Secuencia.Subir"/>): dos cambios a la vez dan dos versiones distintas, y ninguna caja ve un
+    /// cambio sin su versión. Antes la del catálogo se leía antes de la transacción y dos guardados juntos podían quedar con
+    /// la misma; con los cambios de la copia, el segundo no le llegaría a una caja que ya pidió esa versión.
     /// </summary>
-    private const string SubirVersionCredito =
-        $"INSERT INTO \"Secuencias\" (\"Nombre\", \"Valor\") VALUES ('{Secuencia.Credito}', 1) ON CONFLICT (\"Nombre\") DO UPDATE SET \"Valor\" = \"Valor\" + 1";
+    private System.Data.Common.DbCommand ComandoParaSubir(string nombre)
+    {
+        var comando = Database.GetDbConnection().CreateCommand();
+        comando.Transaction = Database.CurrentTransaction!.GetDbTransaction();
+        comando.CommandText = Secuencia.Subir(nombre);
+        return comando;
+    }
 
     /// <summary>
     /// Lo que cambia los saldos que conocen las cajas: un movimiento de la cuenta, un abono (verificar o cancelar cambia lo
@@ -155,19 +183,47 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
         || ChangeTracker.Entries<ClienteRegistrado>().Any(e => e.State == EntityState.Added && e.Entity.LimiteCreditoCentavos > 0
             || e.State == EntityState.Modified && (e.Property(c => c.LimiteCreditoCentavos).IsModified || e.Property(c => c.PlazoCreditoDias).IsModified));
 
-    /// <summary>También lo borrado (una escala de mayoreo que se quitó): las cajas vuelven a bajar el catálogo.</summary>
-    private bool HayCambiosDeCatalogo() =>
-        ChangeTracker.Entries<IVersionado>().Any(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
+    /// <summary>Qué versiones sube este guardado y qué lleva cada una (entrega 5, parte 2).</summary>
+    private sealed class VersionesPorSubir
+    {
+        /// <summary>Lo que cambió de lo que lleva la copia de las cajas (<see cref="LoQueLlevaLaCopia"/>): sube la del catálogo.</summary>
+        public List<EntityEntry> DeLaCopia { get; } = [];
 
-    private Secuencia? ObtenerSecuencia() =>
-        HayCambiosDeCatalogo() ? Secuencias.Find(Secuencia.Catalogo) ?? NuevaSecuencia() : null;
+        /// <summary>Lo quitado (o pasado a otro producto) de lo que lleva la copia, con la variante de la que era.</summary>
+        public List<(EntityEntry Entrada, Guid? VarianteId, Guid? Presentacion)> Quitados { get; } = [];
 
-    private async Task<Secuencia?> ObtenerSecuenciaAsync(CancellationToken ct) =>
-        HayCambiosDeCatalogo() ? await Secuencias.FindAsync([Secuencia.Catalogo], ct) ?? NuevaSecuencia() : null;
+        /// <summary>Las existencias a las que les cambió la cantidad: sube la de las existencias.</summary>
+        public List<EntityEntry<Existencia>> Existencias { get; } = [];
 
-    private Secuencia NuevaSecuencia() => Secuencias.Add(new Secuencia { Nombre = Secuencia.Catalogo }).Entity;
+        public bool Credito { get; init; }
 
-    private void PrepararCambios(Secuencia? secuenciaCatalogo)
+        public bool Alguna => DeLaCopia.Count > 0 || Existencias.Count > 0 || Credito;
+
+        public IEnumerable<string> PorSubir =>
+            new[] { (DeLaCopia.Count > 0, Secuencia.Catalogo), (Existencias.Count > 0, Secuencia.Existencias), (Credito, Secuencia.Credito) }
+                .Where(x => x.Item1).Select(x => x.Item2);
+
+        /// <summary>Los códigos quitados cuya presentación no está en memoria: de qué variante eran se lee de la base.</summary>
+        public List<Guid>? PresentacionesPorLeer => Quitados.Where(q => q.VarianteId is null && q.Presentacion is not null)
+            .Select(q => q.Presentacion!.Value).Distinct().ToList() is { Count: > 0 } ids ? ids : null;
+
+        public void Variantes(IEnumerable<(Guid Presentacion, Guid Variante)> leidas)
+        {
+            var deCada = leidas.ToDictionary(x => x.Presentacion, x => x.Variante);
+            for (var i = 0; i < Quitados.Count; i++)
+            {
+                if (Quitados[i] is { VarianteId: null, Presentacion: { } p } && deCada.TryGetValue(p, out var variante))
+                    Quitados[i] = Quitados[i] with { VarianteId = variante };
+            }
+        }
+    }
+
+    /// <summary>
+    /// Lo que se revisa y se anota antes de guardar, sin leer la base: lo que solo se agrega no se toca, la hora de cada
+    /// cambio versionado, y qué versiones suben. La del catálogo sube solo con lo que lleva la copia de las cajas (antes subía
+    /// con cualquier cambio versionado: un PIN mal tecleado o abrir un turno obligaban a cada caja a bajar su copia completa).
+    /// </summary>
+    private VersionesPorSubir PrepararCambios()
     {
         var ahora = Reloj.GetUtcNow().UtcDateTime;
 
@@ -176,19 +232,80 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
         ProtegerSoloAgregar<Bitacora>();
         ProtegerSoloAgregar<Devolucion>();
         ProtegerSoloAgregar<MovimientoCredito>();
-        // Todo lo que se guarda junto lleva la misma versión: la sincronización baja "lo posterior a la versión N". También el
-        // historial de precios (entrega 5), aunque no se baje: con ella sabe el cobro si un precio cambió después de la copia.
-        long? version = secuenciaCatalogo is null ? null : ++secuenciaCatalogo.Valor;
-        RegistrarCambiosDePrecio(ahora, version);
+        ProtegerSoloAgregar<Borrado>();
 
-        if (version is not { } nueva)
-            return;
-        foreach (var entry in ChangeTracker.Entries<IVersionado>().Where(e => e.State is EntityState.Added or EntityState.Modified))
+        var versionados = ChangeTracker.Entries<IVersionado>()
+            .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted).ToList();
+        var versiones = new VersionesPorSubir { Credito = HayCambiosDeCredito() };
+        foreach (var entrada in versionados.Where(LoQueLlevaLaCopia.Cuenta))
         {
-            entry.Entity.Version = nueva;
-            entry.Entity.ModificadoUtc = ahora;
+            versiones.DeLaCopia.Add(entrada);
+            if (LoQueLlevaLaCopia.DejaOtroProducto(entrada))
+                versiones.Quitados.Add(DeQueVariante(entrada));
+        }
+        // La hora de cada cambio, vaya o no en la copia (el sugerido ordena los proveedores con ella).
+        foreach (var entrada in versionados.Where(e => e.State is EntityState.Added or EntityState.Modified))
+            entrada.Entity.ModificadoUtc = ahora;
+        versiones.Existencias.AddRange(ChangeTracker.Entries<Existencia>()
+            .Where(e => e.State == EntityState.Added || e.State == EntityState.Modified && e.Property(x => x.Cantidad).IsModified));
+        return versiones;
+    }
+
+    /// <summary>
+    /// De qué variante era lo quitado (o lo que pasó a otra): la de antes del cambio. De un código, la de su presentación
+    /// de antes; si esa presentación no está en memoria, se lee de la base al guardar.
+    /// </summary>
+    private (EntityEntry, Guid?, Guid?) DeQueVariante(EntityEntry entrada)
+    {
+        Guid? Original(string propiedad) => entrada.Property(propiedad).OriginalValue as Guid?;
+        switch (entrada.Entity)
+        {
+            case Variante:
+                return (entrada, Original(nameof(Variante.Id)), null);
+            case Presentacion:
+                return (entrada, Original(nameof(Presentacion.VarianteId)), null);
+            case Precio:
+                return (entrada, Original(nameof(Precio.VarianteId)), null);
+            case CodigoBarras when Original(nameof(CodigoBarras.PresentacionId)) is { } presentacion:
+                var enMemoria = ChangeTracker.Entries<Presentacion>().FirstOrDefault(p => p.Entity.Id == presentacion);
+                return enMemoria is null ? (entrada, null, presentacion) : (entrada, enMemoria.Property(p => p.VarianteId).OriginalValue, null);
+            default:
+                return (entrada, null, null);
         }
     }
+
+    /// <summary>
+    /// Sube las versiones que tocan y se las pone a lo que cambió (en la transacción abierta): todo lo que se guarda junto
+    /// lleva la misma, y los cambios de la copia de una caja son «lo posterior a su versión». También el historial de precios
+    /// (entrega 5): con ella sabe el cobro si un precio cambió después de la copia. Y lo quitado, para decírselo a las cajas.
+    /// </summary>
+    private void SubirVersiones(VersionesPorSubir versiones, Func<string, long> subir)
+    {
+        var ahora = Reloj.GetUtcNow().UtcDateTime;
+        long? catalogo = versiones.DeLaCopia.Count > 0 ? subir(Secuencia.Catalogo) : null;
+        RegistrarCambiosDePrecio(ahora, catalogo);
+        if (catalogo is { } version)
+        {
+            foreach (var entrada in versiones.DeLaCopia.Where(e => e.State is EntityState.Added or EntityState.Modified))
+                ((IVersionado)entrada.Entity).Version = version;
+            foreach (var (entrada, variante, _) in versiones.Quitados)
+                Borrados.Add(new Borrado
+                {
+                    Entidad = entrada.Metadata.ClrType.Name, EntidadId = LlaveGuid(entrada), VarianteId = variante, Version = version, FechaUtc = ahora,
+                });
+        }
+        if (versiones.Existencias.Count > 0)
+        {
+            var existencias = subir(Secuencia.Existencias);
+            foreach (var entrada in versiones.Existencias)
+                entrada.Entity.Version = existencias;
+        }
+        if (versiones.Credito)
+            subir(Secuencia.Credito);
+    }
+
+    private static Guid? LlaveGuid(EntityEntry entrada) =>
+        entrada.Metadata.FindPrimaryKey()?.Properties is [var unica] ? entrada.Property(unica.Name).OriginalValue as Guid? : null;
 
     private void ProtegerSoloAgregar<T>() where T : class
     {

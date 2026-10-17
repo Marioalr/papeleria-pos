@@ -11,8 +11,8 @@ namespace PapeleriaPos.Datos;
 /// («Departamentos: nuevo, cambiar el nombre, eliminar»), salvo que aquí nada se borra: el catálogo se desactiva. Lo hace
 /// quien entró a la caja con «Productos, precios y etiquetas», sin volver a escribir su PIN, y cada cambio queda en la
 /// bitácora. Un nombre no se repite, sin importar mayúsculas, acentos ni espacios de más (tampoco el de uno desactivado:
-/// ese se reactiva). Como el resto del catálogo, llevan su versión (<see cref="Nucleo.IVersionado"/>): la pone la base al
-/// guardar.
+/// ese se reactiva). Como el resto del catálogo, la base les pone la fecha de su último cambio (<see cref="Nucleo.IVersionado"/>);
+/// la versión del catálogo no sube con ellos: la copia de las cajas no los lleva (<see cref="LoQueLlevaLaCopia"/>).
 /// <para>
 /// Un departamento no se desactiva con productos activos adentro: en el mismo paso pasan a otro departamento activo, el
 /// que elige quien lo desactiva. Si se quedaran ahí, ya no saldrían al filtrar la lista por departamento, en el conteo

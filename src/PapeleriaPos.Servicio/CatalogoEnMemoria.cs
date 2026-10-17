@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo;
@@ -10,8 +11,14 @@ namespace PapeleriaPos.Servicio;
 /// <summary>
 /// El catálogo vendible en memoria, para que escanear y buscar respondan al instante. Se recarga solo cuando cambia
 /// la versión del catálogo. Las existencias no se guardan aquí: se leen al momento.
+/// <para>
+/// Nada pesado dentro de una petición (entrega 5, parte 2): cuando la versión cambia, la recarga va en segundo plano y
+/// mientras se contesta con el vigente. Solo se espera lo que no puede contestarse sin ella: la primera carga, un código o
+/// un producto que el vigente no tiene (recién dado de alta), y la copia de una caja o sus cambios, que se arman con la
+/// versión que dicen. Cada carga lee la versión y el catálogo de un mismo momento de la base.
+/// </para>
 /// </summary>
-public sealed class CatalogoEnMemoria
+public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDeLaCopia versiones)
 {
     /// <param name="Partes">El nombre en pedazos (color, medida, marca…): la caja junta con eso las familias de la lista.</param>
     private sealed record Articulo(
@@ -29,11 +36,20 @@ public sealed class CatalogoEnMemoria
             .Where(p => p.Length > 0).Distinct().ToArray();
     }
 
+    /// <param name="CodigosDe">Los códigos de cada variante (los de sus presentaciones), como van en la copia.</param>
     private sealed record Indice(long Version, Dictionary<Guid, Articulo> PorVariante, Dictionary<string, (Guid Variante, Guid Presentacion)> PorCodigo,
-        SinonimosDeBusqueda Sinonimos);
+        SinonimosDeBusqueda Sinonimos, ILookup<Guid, CodigoLocalDto> CodigosDe);
 
-    private Indice _indice = new(-1, [], [], SinonimosDeBusqueda.Ninguno);
-    private readonly SemaphoreSlim _recarga = new(1, 1);
+    private static readonly Indice Vacio = new(-1, [], [], SinonimosDeBusqueda.Ninguno, Array.Empty<CodigoLocalDto>().ToLookup(c => c.VarianteId));
+
+    private Indice _indice = Vacio;
+    private readonly Lock _candado = new();
+
+    /// <summary>La recarga en curso: una a la vez; quien la necesita la espera junto con los demás.</summary>
+    private Task<Indice>? _recargando;
+
+    /// <summary>Cambia al invalidar: una recarga que empezó antes ya no se pone.</summary>
+    private int _generacion;
 
     /// <summary>
     /// Cuántas veces se vendió cada variante en los últimos 90 días (lo de eleventa y lo del POS): ordena la búsqueda
@@ -48,7 +64,12 @@ public sealed class CatalogoEnMemoria
     /// <summary>La base cambió entera (la prueba empezó de cero): se vuelve a cargar aunque la versión coincida.</summary>
     public void Invalidar()
     {
-        _indice = new(-1, [], [], SinonimosDeBusqueda.Ninguno);
+        lock (_candado)
+        {
+            _generacion++;
+            _indice = Vacio;
+            _recargando = null;
+        }
         _vendidos = (DateTime.MinValue, []);
         _elegido.Clear();
         _elegidoCargado = false;
@@ -101,22 +122,103 @@ public sealed class CatalogoEnMemoria
         return veces;
     }
 
-    private async Task<Indice> ActualAsync(PosDbContext db, CancellationToken ct)
+    /// <summary>
+    /// El índice vigente. Si la versión de la base ya es otra (la de memoria, <see cref="VersionesDeLaCopia"/>), la recarga
+    /// va en segundo plano y se contesta con este. Solo la primera vez (al arrancar o al empezar de cero) se espera.
+    /// </summary>
+    private async Task<Indice> ActualAsync(CancellationToken ct)
     {
-        var version = await db.Secuencias.Where(s => s.Nombre == Secuencia.Catalogo).Select(s => s.Valor).FirstOrDefaultAsync(ct);
-        if (version == _indice.Version)
-            return _indice;
+        var indice = Volatile.Read(ref _indice);
+        if (indice.Version < 0)
+            return await RecargaAsync(ct);
+        if ((await versiones.ActualesAsync(ct)).Catalogo != indice.Version)
+            _ = RecargaAsync(CancellationToken.None);
+        return indice;
+    }
 
-        await _recarga.WaitAsync(ct);
+    /// <summary>
+    /// El índice de esa versión o de una más nueva: lo que se arma con la versión que dice (la copia de una caja, sus cambios)
+    /// lo espera. Si la recarga en curso empezó antes del cambio, se recarga otra vez.
+    /// </summary>
+    private async Task<Indice> AlMenosAsync(long version, CancellationToken ct)
+    {
+        var indice = Volatile.Read(ref _indice);
+        for (var intento = 0; indice.Version < version && intento < 3; intento++)
+            indice = await RecargaAsync(ct);
+        return indice;
+    }
+
+    /// <summary>
+    /// Espera a que el catálogo en memoria tenga la versión de la base de ahora (la recarga va en segundo plano): para lo que
+    /// tiene que ver un cambio recién guardado, como las pruebas de lo que se cobra después de cambiar un precio.
+    /// </summary>
+    public async Task AlDiaAsync(PosDbContext db, CancellationToken ct = default) => await AlMenosAsync(await VersionDeLaBaseAsync(db, ct), ct);
+
+    /// <summary>
+    /// Lo que el vigente no tiene (un código o un producto recién dado de alta): con la versión de la base leída ahora, si ya
+    /// es otra, el índice de esa versión. Lo que sí tiene se contesta sin esperar.
+    /// </summary>
+    private async Task<Indice> AlDiaAsync(PosDbContext db, Indice indice, CancellationToken ct)
+    {
+        var version = await VersionDeLaBaseAsync(db, ct);
+        return version == indice.Version ? indice : await AlMenosAsync(version, ct);
+    }
+
+    private static Task<long> VersionDeLaBaseAsync(PosDbContext db, CancellationToken ct) =>
+        db.Secuencias.AsNoTracking().Where(s => s.Nombre == Secuencia.Catalogo).Select(s => s.Valor).FirstOrDefaultAsync(ct);
+
+    /// <summary>La recarga en curso o una nueva, fuera de la petición que la pide (con su propio contexto de la base).</summary>
+    private Task<Indice> RecargaAsync(CancellationToken ct)
+    {
+        Task<Indice> recarga;
+        lock (_candado)
+        {
+            if (_recargando is not { IsCompleted: false })
+            {
+                var generacion = _generacion;
+                _recargando = Task.Run(() => CargarYPonerAsync(generacion));
+            }
+            recarga = _recargando;
+        }
+        return recarga.WaitAsync(ct);
+    }
+
+    private async Task<Indice> CargarYPonerAsync(int generacion)
+    {
+        using var alcance = alcances.CreateScope();
+        var nuevo = await CargarAsync(alcance.ServiceProvider.GetRequiredService<PosDbContext>(), CancellationToken.None);
+        lock (_candado)
+        {
+            if (generacion == _generacion)
+                _indice = nuevo;
+            return _indice;
+        }
+    }
+
+    /// <summary>
+    /// La versión y el catálogo de un mismo momento de la base: una lectura diferida (sin el candado de escritura) en la que
+    /// lo primero que se lee es la versión. Antes la versión se leía aparte, y una carga podía traer un cambio posterior con la
+    /// versión de antes.
+    /// </summary>
+    private static async Task<Indice> CargarAsync(PosDbContext db, CancellationToken ct)
+    {
+        await db.Database.OpenConnectionAsync(ct);
         try
         {
-            if (version != _indice.Version)
-                _indice = await CargarAsync(db, version, ct);
-            return _indice;
+            using var lectura = ((SqliteConnection)db.Database.GetDbConnection()).BeginTransaction(deferred: true);
+            await db.Database.UseTransactionAsync(lectura, ct);
+            try
+            {
+                return await CargarAsync(db, await VersionDeLaBaseAsync(db, ct), ct);
+            }
+            finally
+            {
+                await db.Database.UseTransactionAsync(null, ct);
+            }
         }
         finally
         {
-            _recarga.Release();
+            await db.Database.CloseConnectionAsync();
         }
     }
 
@@ -168,25 +270,33 @@ public sealed class CatalogoEnMemoria
             porCodigo.TryAdd(c.Codigo, (c.VarianteId, c.PresentacionId));
 
         var sinonimos = await db.Sinonimos.AsNoTracking().Where(s => s.Activo).Select(s => new { s.Palabra, s.Equivale }).ToListAsync(ct);
-        return new Indice(version, porVariante, porCodigo, new SinonimosDeBusqueda(sinonimos.Select(s => (s.Palabra, s.Equivale))));
+        return new Indice(version, porVariante, porCodigo, new SinonimosDeBusqueda(sinonimos.Select(s => (s.Palabra, s.Equivale))),
+            porCodigo.Select(c => new CodigoLocalDto(c.Key, c.Value.Item1, c.Value.Item2)).ToLookup(c => c.VarianteId));
     }
 
-    /// <summary>La versión del catálogo con que se arma lo que se contesta (la de la base, ya cargada en memoria).</summary>
-    public async Task<long> VersionAsync(PosDbContext db, CancellationToken ct = default) => (await ActualAsync(db, ct)).Version;
+    /// <summary>
+    /// La versión del catálogo con que se arma lo que se contesta: la del índice vigente (con que se armó la venta, aunque la
+    /// base ya vaya en otra y la recarga siga en camino).
+    /// </summary>
+    public async Task<long> VersionAsync(PosDbContext db, CancellationToken ct = default) => (await ActualAsync(ct)).Version;
 
     /// <summary>El producto de un código, con la versión del catálogo de la que salieron sus precios (entrega 5).</summary>
     public async Task<ProductoVentaDto?> PorCodigoAsync(PosDbContext db, string codigo, Guid sucursalId, CancellationToken ct = default)
     {
-        var indice = await ActualAsync(db, ct);
-        return indice.PorCodigo.TryGetValue(codigo.Trim(), out var x)
-            ? await ProductoAsync(db, indice.Version, indice.PorVariante[x.Variante], x.Presentacion, sucursalId, ct)
-            : null;
+        var indice = await ActualAsync(ct);
+        if (!indice.PorCodigo.TryGetValue(codigo.Trim(), out var x) && !(indice = await AlDiaAsync(db, indice, ct)).PorCodigo.TryGetValue(codigo.Trim(), out x))
+            return null;
+        return await ProductoAsync(db, indice.Version, indice.PorVariante[x.Variante], x.Presentacion, sucursalId, ct);
     }
 
-    public async Task<ProductoVentaDto?> PorVarianteAsync(PosDbContext db, Guid varianteId, Guid sucursalId, CancellationToken ct = default)
+    /// <param name="conExistencia">Sin ella, no se lee la base: para armar una venta, que no la usa.</param>
+    public async Task<ProductoVentaDto?> PorVarianteAsync(PosDbContext db, Guid varianteId, Guid sucursalId, CancellationToken ct = default,
+        bool conExistencia = true)
     {
-        var indice = await ActualAsync(db, ct);
-        return indice.PorVariante.TryGetValue(varianteId, out var a) ? await ProductoAsync(db, indice.Version, a, null, sucursalId, ct) : null;
+        var indice = await ActualAsync(ct);
+        if (!indice.PorVariante.TryGetValue(varianteId, out var a) && !(indice = await AlDiaAsync(db, indice, ct)).PorVariante.TryGetValue(varianteId, out a))
+            return null;
+        return conExistencia ? await ProductoAsync(db, indice.Version, a, null, sucursalId, ct) : Producto(a, null, indice.Version, null);
     }
 
     /// <summary>
@@ -202,7 +312,7 @@ public sealed class CatalogoEnMemoria
         if (palabras.Length == 0)
             return [];
 
-        var indice = await ActualAsync(db, ct);
+        var indice = await ActualAsync(ct);
         var vendidos = await VendidosAsync(db, ct);
         Guid? elegido = null;
         if (cajaId is { } caja)
@@ -251,19 +361,50 @@ public sealed class CatalogoEnMemoria
             vendidos.GetValueOrDefault(a.VarianteId), a.Partes, parecido, porSinonimo[a.VarianteId])).ToList();
     }
 
-    /// <summary>Todo el catálogo vendible de una sucursal, con existencias: la copia de una caja para vender sin conexión.</summary>
+    /// <summary>
+    /// Todo el catálogo vendible de una sucursal, con existencias: la copia de una caja para vender sin conexión. Con la
+    /// versión de la base de ahora (si la recarga sigue en camino, la espera: la caja la baja en segundo plano).
+    /// </summary>
+    /// <param name="existencias">Las de la sucursal, leídas por quien arma la copia (con su versión).</param>
     public async Task<(long Version, List<ProductoVentaDto> Productos, List<CodigoLocalDto> Codigos)> TodosAsync(
-        PosDbContext db, Guid sucursalId, CancellationToken ct = default)
+        PosDbContext db, IReadOnlyDictionary<Guid, decimal> existencias, CancellationToken ct = default)
     {
-        var indice = await ActualAsync(db, ct);
-        var existencias = await db.Existencias.AsNoTracking().Where(e => e.SucursalId == sucursalId)
-            .ToDictionaryAsync(e => e.VarianteId, e => e.Cantidad.EnUnidades, ct);
-        var productos = indice.PorVariante.Values.Select(a => new ProductoVentaDto(
-            a.VarianteId, a.Descripcion, a.Codigo, a.Impuesto, a.Unidad, a.LlevaInventario,
-            a.LlevaInventario ? existencias.GetValueOrDefault(a.VarianteId) : null,
-            a.Presentaciones.First(p => p.EsBase), a.Presentaciones, a.Precios, indice.Version)).ToList();
+        var indice = await AlMenosAsync(await VersionDeLaBaseAsync(db, ct), ct);
+        var productos = indice.PorVariante.Values.Select(a => Producto(a, null, indice.Version, existencias)).ToList();
         return (indice.Version, productos, indice.PorCodigo.Select(c => new CodigoLocalDto(c.Key, c.Value.Variante, c.Value.Presentacion)).ToList());
     }
+
+    /// <summary>
+    /// Los cambios de la copia de una caja (entrega 5, parte 2): esas variantes como van en la copia, con sus códigos, del
+    /// índice de esa versión o de una más nueva; las que ya no están en el catálogo vendible van aparte, para quitarlas.
+    /// </summary>
+    /// <param name="existencias">Las de esas variantes en la sucursal, leídas por quien arma los cambios.</param>
+    public async Task<(long Version, List<ProductoVentaDto> Productos, List<CodigoLocalDto> Codigos, List<Guid> Quitados)> ParaLaCopiaAsync(
+        long version, IReadOnlyCollection<Guid> variantes, IReadOnlyDictionary<Guid, decimal> existencias, CancellationToken ct = default)
+    {
+        var indice = await AlMenosAsync(version, ct);
+        var (productos, codigos, quitados) = (new List<ProductoVentaDto>(), new List<CodigoLocalDto>(), new List<Guid>());
+        foreach (var id in variantes)
+        {
+            if (indice.PorVariante.TryGetValue(id, out var a))
+            {
+                productos.Add(Producto(a, null, indice.Version, existencias));
+                codigos.AddRange(indice.CodigosDe[id]);
+            }
+            else
+                quitados.Add(id);
+        }
+        return (indice.Version, productos, codigos, quitados);
+    }
+
+    /// <summary>Cuántos productos tiene el índice vigente (para decidir si unos cambios ya son casi la copia completa).</summary>
+    public int Productos => Volatile.Read(ref _indice).PorVariante.Count;
+
+    /// <summary>Un producto como lo vende la caja; con <paramref name="existencias"/>, con la suya (sin renglón, cero).</summary>
+    private static ProductoVentaDto Producto(Articulo a, Guid? presentacionId, long version, IReadOnlyDictionary<Guid, decimal>? existencias) =>
+        new(a.VarianteId, a.Descripcion, a.Codigo, a.Impuesto, a.Unidad, a.LlevaInventario,
+            a.LlevaInventario && existencias is not null ? existencias.GetValueOrDefault(a.VarianteId) : null,
+            a.Presentaciones.FirstOrDefault(p => p.Id == presentacionId) ?? a.Presentaciones.First(p => p.EsBase), a.Presentaciones, a.Precios, version);
 
     private static long PrecioMenudeo(Articulo a, Guid sucursalId)
     {
@@ -273,13 +414,8 @@ public sealed class CatalogoEnMemoria
     }
 
     private static async Task<ProductoVentaDto> ProductoAsync(
-        PosDbContext db, long version, Articulo a, Guid? presentacionId, Guid sucursalId, CancellationToken ct)
-    {
-        var existencia = a.LlevaInventario ? (await ExistenciasAsync(db, [a.VarianteId], sucursalId, ct)).GetValueOrDefault(a.VarianteId) : (decimal?)null;
-        var presentacion = a.Presentaciones.FirstOrDefault(p => p.Id == presentacionId) ?? a.Presentaciones.First(p => p.EsBase);
-        return new ProductoVentaDto(a.VarianteId, a.Descripcion, a.Codigo, a.Impuesto, a.Unidad, a.LlevaInventario, existencia, presentacion, a.Presentaciones,
-            a.Precios, version);
-    }
+        PosDbContext db, long version, Articulo a, Guid? presentacionId, Guid sucursalId, CancellationToken ct) =>
+        Producto(a, presentacionId, version, a.LlevaInventario ? await ExistenciasAsync(db, [a.VarianteId], sucursalId, ct) : null);
 
     private static async Task<Dictionary<Guid, decimal>> ExistenciasAsync(PosDbContext db, List<Guid> variantes, Guid sucursalId, CancellationToken ct) =>
         (await db.Existencias.AsNoTracking()

@@ -23,6 +23,18 @@ public sealed class ErrorCaja(string mensaje, string? codigo = null) : Exception
 
     /// <summary>El cobro no se hizo: estos son los precios de ahora de lo que cambió (entrega 5).</summary>
     public PreciosCambiadosDto? PreciosCambiados { get; init; }
+
+    /// <summary>
+    /// «sin-conexion» porque pasó el plazo (la caja principal está, pero no contestó a tiempo), no porque no se pudo conectar
+    /// (entrega 5, parte 2): la red cuenta como lenta, no como caída.
+    /// </summary>
+    public bool PorPlazo { get; init; }
+
+    /// <summary>
+    /// «sin-conexion» sin que nada llegara a la caja principal: ni se pudo conectar (apagada, sin red). Lo que se mandaba no
+    /// quedó guardado allá; en los demás casos (pasó el plazo, se cortó a media respuesta) puede que sí.
+    /// </summary>
+    public bool NoSeMando { get; init; }
 }
 
 /// <summary>Lo que dijo la caja principal de un código que no está en la copia de esta caja.</summary>
@@ -172,10 +184,18 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         ConRespaldoAsync(async () => (await _http.GetAsync<CorteInformativoDto>($"api/turnos/{turnoId}/corte-informativo?usuarioId={usuarioId}"))!,
             l => l.CorteInformativo(turnoId, usuarioId));
 
-    /// <summary>El corte del turno con el total que se contó, a nombre de quien entró. Sin conexión, lo hace esta caja y se cuadra al subir.</summary>
-    public Task<CorteDto> CorteZAsync(Guid turnoId, SolicitudCorteZ solicitud) =>
-        ConRespaldoAsync(() => _http.PostAsync<CorteDto>($"api/turnos/{turnoId}/corte-z", solicitud), l => l.CorteZ(turnoId, solicitud),
-            (l, _) => l.TurnoCerradoEnLineaAsync());
+    /// <summary>
+    /// El corte del turno con el total que se contó, a nombre de quien entró. Sin conexión, lo hace esta caja y se cuadra al
+    /// subir. Lleva su Id desde aquí: si la caja principal lo guardó pero la respuesta no llegó, el que hace esta caja es el
+    /// mismo, y al subir ya está (no choca con el turno ya cerrado). Sin el plazo corto de la venta (entrega 5, parte 2): es el
+    /// cierre del turno, no un cliente en la fila; se espera a la caja principal con el tope de siempre.
+    /// </summary>
+    public Task<CorteDto> CorteZAsync(Guid turnoId, SolicitudCorteZ solicitud)
+    {
+        solicitud = solicitud with { Id = solicitud.Id ?? Ids.Nuevo() };
+        return ConRespaldoAsync(() => _http.PostAsync<CorteDto>($"api/turnos/{turnoId}/corte-z", solicitud), l => l.CorteZ(turnoId, solicitud),
+            (l, _) => l.TurnoCerradoEnLineaAsync(), plazoDeLaVenta: false);
+    }
 
     /// <summary>Lo que dice la caja cuando no hay caja principal: el corte del día junta todas las cajas.</summary>
     public const string CorteDelDiaSinConexion = "Sin conexión con la caja principal: el corte del día junta todas las cajas y se ve cuando vuelva.";
@@ -232,6 +252,16 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     /// <summary>El de <see cref="PlazoPorOmision"/>; las pruebas lo cambian para no depender de lo que tarda la PC.</summary>
     public TimeSpan PlazoDeLaPrincipal { get; init; } = PlazoPorOmision;
+
+    /// <summary>
+    /// Lo más que se espera una lectura de la venta que también se puede hacer con la copia (entrega 5, parte 2): la caja de
+    /// verdad lleva <see cref="Transporte.PlazoLectura"/> (<see cref="RegistroInterfaz"/>). Vacío, solo el tope del cliente
+    /// (las pruebas de lo demás: así no dependen de lo que tarda la PC).
+    /// </summary>
+    public TimeSpan? PlazoLectura { get; set; }
+
+    /// <summary>Lo más que se espera el cobro y lo demás de la venta que escribe: en la caja de verdad, <see cref="Transporte.PlazoEscritura"/>.</summary>
+    public TimeSpan? PlazoEscritura { get; set; }
 
     /// <summary>
     /// Un código que no está en la copia (un producto recién dado de alta en otra caja): se pregunta a la caja principal en
@@ -293,17 +323,23 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     /// <summary>
     /// La venta lleva su ID desde la caja: si la respuesta no llega y se cobra sin conexión, al subir no se duplica. Lo
-    /// fiado se anota en la cuenta propia antes de mandarlo (si la respuesta se pierde, ya cuenta). Si se pierde y sin
-    /// conexión no se puede fiar (no conoce los saldos, o pasa el límite sin autorización en la copia), puede que ya esté
-    /// en la cuenta del cliente: cobrarlo de otra forma lo dejaría fiado y pagado. Entonces el ticket espera la conexión
-    /// (<paramref name="soloEnLinea"/>) y se manda otra vez con el mismo ID: si ya se guardó, regresa el mismo ticket.
+    /// fiado se anota en la cuenta propia antes de mandarlo (si la respuesta se pierde, ya cuenta).
+    /// <para>
+    /// Si la caja principal no contesta (o su respuesta se pierde) y sin conexión no se puede cobrar (algo que la copia no tiene,
+    /// las impresiones; al fiar, no conoce los saldos o pasa el límite), puede que la caja principal ya lo haya guardado: cobrarlo
+    /// de otra forma, o cambiado con el mismo ID, dejaría dos cobros distintos de una venta. Entonces su folio queda apartado
+    /// (<see cref="Contingencia.NoSeSabeSiQuedo"/>) y el ticket solo se cobra en línea, con el mismo ID (también con
+    /// <paramref name="soloEnLinea"/>): si ya se guardó, regresa el mismo ticket (<see cref="TicketDto.YaCobrada"/>). Si ni se
+    /// pudo conectar, no llegó: sin conexión, lo que diga la copia.
+    /// </para>
     /// </summary>
     public Task<TicketDto> CobrarAsync(SolicitudCobro solicitud, bool soloEnLinea = false)
     {
         solicitud = solicitud with { VentaId = solicitud.VentaId ?? Ids.Nuevo() };
-        if (soloEnLinea && contingencia is { EnLinea: false })
-            return Task.FromException<TicketDto>(FiadoSinConfirmar());
+        var ventaId = solicitud.VentaId.Value;
         var fiado = solicitud.Cobros.Where(c => c.Forma == FormaPago.Credito).Sum(c => c.MontoCentavos);
+        if ((soloEnLinea || contingencia?.CobroSinConfirmar(ventaId) == true) && contingencia is { EnLinea: false })
+            return Task.FromException<TicketDto>(contingencia.ErrorSinConfirmar(ventaId, fiado > 0 || soloEnLinea));
         return ConRespaldoAsync(async () =>
             {
                 if (fiado > 0 && solicitud.ClienteId is { } cliente && contingencia is not null)
@@ -319,12 +355,22 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
                         await contingencia.QuitarCreditoAsync(solicitud.VentaId.Value);
                     throw;
                 }
-            }, l => l.Cobrar(solicitud), (l, ticket) => l.CobroEnLineaAsync(solicitud.TurnoId, ticket), siSePierde: fiado > 0 ? FiadoSinConfirmar : null);
+            }, l => l.Cobrar(solicitud), (l, ticket) => l.CobroEnLineaAsync(solicitud.TurnoId, ticket), siSePierde: error =>
+            {
+                // Ni se pudo conectar: no llegó (lo fiado ya se anotó en la cuenta propia: eso sí espera a la conexión).
+                if (error.NoSeMando && fiado == 0)
+                    return null;
+                contingencia!.NoSeSabeSiQuedo(ventaId, fiado > 0);
+                return contingencia.ErrorSinConfirmar(ventaId, fiado > 0);
+            });
     }
 
-    private static ErrorCaja FiadoSinConfirmar() => new(
-        "Se perdió la conexión al fiar y no se sabe si quedó en su cuenta. Cuando vuelva la conexión, cobra otra vez este ticket "
-        + "(si ya quedó, sale el mismo); mientras, no lo cobres de otra forma.", "fiado-sin-confirmar");
+    /// <summary>Un cobro que se mandó y no se sabe si quedó (<see cref="CobrarAsync"/>): espera la conexión.</summary>
+    public static ErrorCaja SinConfirmar(bool fiado) => fiado
+        ? new("Se perdió la conexión al fiar y no se sabe si quedó en su cuenta. Cuando vuelva la conexión, cobra otra vez este ticket "
+            + "(si ya quedó, sale el mismo); mientras, no lo cobres de otra forma.", "fiado-sin-confirmar")
+        : new("La caja principal no contestó a tiempo y no se sabe si el cobro quedó. Cuando vuelva la conexión, cobra otra vez este "
+            + "ticket tal como está (si ya quedó, sale el mismo); mientras, no lo cobres de otra forma.", "cobro-sin-confirmar");
 
     public Task<List<VentaDelDiaDto>> VentasDelDiaAsync(Guid cajaId) =>
         ConRespaldoAsync(async () => await _http.GetAsync<List<VentaDelDiaDto>>($"api/cajas/{cajaId}/ventas-del-dia") ?? []);
@@ -723,7 +769,7 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
                         await contingencia.QuitarCreditoAsync(s.Id);
                     throw;
                 }
-            }, l => l.Abonar(s), (l, c) => l.AbonoEnLineaAsync(s.TurnoId, c), siSePierde: AbonoSinConfirmar);
+            }, l => l.Abonar(s), (l, c) => l.AbonoEnLineaAsync(s.TurnoId, c), siSePierde: _ => AbonoSinConfirmar());
 
     private static ErrorCaja AbonoSinConfirmar() => new(
         "Se perdió la conexión al abonar y no se sabe si quedó. Cuando vuelva la conexión, abona otra vez sin cerrar esta ventana "
@@ -769,7 +815,7 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
                         _devolucionesSinConfirmar.TryRemove(clienteId, out _);
                     throw;
                 }
-            }, null, (l, c) => l.SaldoDevueltoEnLineaAsync(s.TurnoId, c), siSePierde: () =>
+            }, null, (l, c) => l.SaldoDevueltoEnLineaAsync(s.TurnoId, c), siSePierde: _ =>
             {
                 _devolucionesSinConfirmar[clienteId] = (s, montoCentavos);
                 return SaldoDevueltoSinConfirmar();
@@ -972,38 +1018,68 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// </summary>
     /// <param name="siSePierde">
     /// Si la caja principal no contesta a media operación (puede que ya la haya guardado) y sin conexión tampoco se puede
-    /// hacer: el error que lo dice, en lugar del de sin conexión.
+    /// hacer: el error que lo dice, en lugar del de sin conexión (con el de la red, para saber si llegó). Vacío: el de sin
+    /// conexión.
     /// </param>
+    /// <param name="plazoDeLaVenta">Con lo que tiene copia, los plazos de la venta; sin esto, el tope de siempre (el corte Z).</param>
+    /// <remarks>
+    /// Los plazos (entrega 5, parte 2): lo que también se puede hacer con la copia lleva los de la venta
+    /// (<see cref="Transporte.PlazoLectura"/>, <see cref="Transporte.PlazoEscritura"/>) en lugar de 15 s; si pasa el plazo, se
+    /// hace con la copia (el cobro, a la bandeja con el mismo Id) y la red queda lenta. Con la red lenta, lo que tiene copia se
+    /// hace con ella sin preguntar; lo que no (devolver, el catálogo, los reportes) se intenta con la caja principal, con su
+    /// tope de siempre, si no hay nada por subir. Los plazos son solo de la operación: lo que se anota después de lo que pasó
+    /// en línea (la cuenta del turno, que se pide a la caja principal) lleva los suyos.
+    /// </remarks>
     private async Task<T> ConRespaldoAsync<T>(
         Func<Task<T>> enLinea, Func<Contingencia, T>? sinConexion = null, Func<Contingencia, T, Task>? trasEnLinea = null,
-        Func<ErrorCaja>? siSePierde = null)
+        Func<ErrorCaja, ErrorCaja?>? siSePierde = null, bool plazoDeLaVenta = true)
     {
         if (contingencia is null)
             return await enLinea();
-        if (!contingencia.EnLinea)
+        if (!contingencia.EnLinea && (sinConexion is not null || !contingencia.SeIntentaSinCopia))
             return Local(contingencia, sinConexion);
         T resultado;
         try
         {
-            resultado = await enLinea();
+            resultado = await ConPlazosAsync(enLinea, sinConexion is not null && plazoDeLaVenta);
         }
         catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
         {
-            contingencia.MarcarSinConexion();
-            if (siSePierde is null)
-                return Local(contingencia, sinConexion);
-            try
+            // Pasó el plazo de algo que el cajero esperaba: la red está lenta (ya esperó; lo siguiente va con la copia). Sin
+            // poder conectarse: caída. Lo que no tiene copia y pasó su tope no dice nada de la red: su error, como está.
+            if (!ex.PorPlazo)
+                contingencia.MarcarSinConexion();
+            else if (sinConexion is not null)
+                contingencia.MarcarLenta();
+            ErrorCaja sinCopia;
+            if (sinConexion is null && ex.PorPlazo)
+                sinCopia = ex;
+            else
             {
-                return Local(contingencia, sinConexion);
+                try
+                {
+                    return Local(contingencia, sinConexion);
+                }
+                catch (ErrorCaja error)
+                {
+                    sinCopia = error;
+                }
             }
-            catch (ErrorCaja)
-            {
-                throw siSePierde();
-            }
+            throw siSePierde?.Invoke(ex) ?? sinCopia;
         }
         if (trasEnLinea is not null)
             await trasEnLinea(contingencia, resultado);
         return resultado;
+    }
+
+    /// <summary>
+    /// Lo de la caja principal con los plazos de la venta, si <paramref name="conPlazos"/>: solo esto los lleva. Al terminar,
+    /// quien llama sigue sin ellos (un método asíncrono no le cambia sus valores de <see cref="AsyncLocal{T}"/>).
+    /// </summary>
+    private async Task<T> ConPlazosAsync<T>(Func<Task<T>> enLinea, bool conPlazos)
+    {
+        Transporte.PlazosDeLaVenta = conPlazos ? (PlazoLectura, PlazoEscritura) : null;
+        return await enLinea();
     }
 
     private Task ConRespaldoAsync(Func<Task<object>> enLinea, Action<Contingencia> sinConexion) =>
@@ -1016,7 +1092,9 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     private static T Local<T>(Contingencia contingencia, Func<Contingencia, T>? sinConexion)
     {
         if (sinConexion is null)
-            throw new ErrorCaja("No hay conexión con la caja principal: esto espera a que vuelva.", "sin-conexion");
+            throw contingencia.Pendientes > 0 || contingencia.EstadoDeLaRed == EstadoRed.Caida
+                ? new ErrorCaja("No hay conexión con la caja principal: esto espera a que vuelva.", "sin-conexion")
+                : new ErrorCaja("La red con la caja principal está lenta: esto espera a que mejore.", "sin-conexion");
         try
         {
             return sinConexion(contingencia);

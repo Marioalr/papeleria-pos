@@ -133,9 +133,12 @@ public static class RegistroInterfaz
     /// </summary>
     public static IServiceCollection AgregarInterfazCaja(this IServiceCollection servicios, ConexionCaja conexion, IImpresora impresora, string? baseLocal = null)
     {
-        // Si la caja principal está apagada, la conexión falla en 3 s; si contesta pero tarda, se espera hasta 15 s. Así la
-        // caja avisa (o pasa a contingencia) en lugar de quedarse congelada.
-        var http = new HttpClient(new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(3) }) { Timeout = TimeSpan.FromSeconds(15) };
+        // La red con la caja principal (entrega 5, parte 2): un cliente para lo que espera el cajero, con un plazo por operación
+        // (lo de la venta, 800 ms leer y 2.5 s cobrar; lo de atrás, hasta 15 s), y otro para lo de fondo (el latido, el aviso
+        // por SSE, la copia, la bandeja). Con keepalive de TCP: una conexión medio muerta tras reconectarse el Wi-Fi se nota en
+        // segundos. Si la caja principal está apagada, conectar falla en 2 s.
+        var red = RedCaja.Crear();
+        servicios.AddSingleton(red);
         // Lo que mide la caja de su rendimiento (entrega 5): los escaneos y lo que tarda, para el vigía de la pantalla.
         var rendimiento = new RendimientoCaja();
         servicios.AddSingleton(rendimiento);
@@ -144,12 +147,19 @@ public static class RegistroInterfaz
         {
             var almacen = new AlmacenLocal(baseLocal);
             almacen.EscrituraLarga += (que, tardo) => rendimiento.Actividad($"la base de la caja ({que})", tardo);
-            contingencia = new Contingencia(almacen, http, conexion, rendimiento: rendimiento);
+            // Buena, lenta o caída según lo que tarda el latido (con histéresis); en lenta, como sin conexión. La caja con el
+            // servicio en la misma PC no tiene red de por medio: solo si contesta o no.
+            contingencia = new Contingencia(almacen, red.Fondo, conexion, rendimiento: rendimiento,
+                reglas: conexion.Servicio.IsLoopback ? ReglasDeLaRed.SoloSiContesta : ReglasDeLaRed.DeLaTienda);
             servicios.AddSingleton(contingencia);
             contingencia.Iniciar();
         }
         servicios.AddSingleton(conexion);
-        servicios.AddScoped(_ => new ClienteCaja(http, conexion, contingencia));
+        servicios.AddScoped(_ => new ClienteCaja(red.Interactivo, conexion, contingencia)
+        {
+            PlazoLectura = Transporte.PlazoLectura,
+            PlazoEscritura = Transporte.PlazoEscritura,
+        });
         servicios.AddSingleton(impresora);
         servicios.AddScoped<ModuloCaja>();
         return servicios;

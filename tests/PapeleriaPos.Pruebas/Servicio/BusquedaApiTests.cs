@@ -99,6 +99,8 @@ public class BusquedaApiTests(ServicioDePrueba servicio) : IClassFixture<Servici
             .Variantes[0];
         await CrearAsync("Engargolado orden alfa");
         var beta = await CrearAsync("Engargolado orden beta");
+        // El catálogo en memoria del servicio se recarga en segundo plano (entrega 5, parte 2).
+        await servicio.CatalogoAlDiaAsync();
         // Sin ventas, por nombre: alfa antes que beta.
         Assert.Equal(["Engargolado orden alfa", "Engargolado orden beta"], (await BuscarAsync(http, "engar orden", caja.SucursalId)).Select(r => r.Descripcion));
 

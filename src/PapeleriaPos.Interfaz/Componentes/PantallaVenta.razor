@@ -3390,7 +3390,11 @@
         _tickets.Remove(abierto);
         NuevoTicket();
         apartado.Dispose();
-        Avisar($"Venta {ticket.FolioImpreso} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: false);
+        // Se mandó otra vez con el mismo Id (no se sabía si había quedado): es la de entonces, como se cobró.
+        Avisar(ticket.YaCobrada
+            ? $"Ese ticket ya había quedado cobrado: venta {ticket.FolioImpreso} por {Formato.Dinero(ticket.TotalCobradoCentavos)}, como se cobró entonces. "
+              + $"Cambio: {Formato.Dinero(ticket.CambioCentavos)}"
+            : $"Venta {ticket.FolioImpreso} cobrada. Cambio: {Formato.Dinero(ticket.CambioCentavos)}", error: false);
         _ultimo = ticket;
         await ImprimirCobradoAsync(ticket);
         await RevisarEfectivoAsync();

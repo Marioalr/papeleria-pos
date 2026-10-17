@@ -17,6 +17,36 @@ namespace PapeleriaPos.Datos.Migraciones
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
 
+            modelBuilder.Entity("PapeleriaPos.Datos.Borrado", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Entidad")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("EntidadId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("FechaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("VarianteId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Version");
+
+                    b.ToTable("Borrados", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Datos.Secuencia", b =>
                 {
                     b.Property<string>("Nombre")
@@ -2068,9 +2098,14 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<long>("CostoCentavos")
                         .HasColumnType("INTEGER");
 
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("SucursalId", "VarianteId");
 
                     b.HasIndex("VarianteId");
+
+                    b.HasIndex("SucursalId", "Version");
 
                     b.ToTable("Existencias");
                 });
