@@ -1,6 +1,7 @@
 @* F9: consulta precio y existencia sin agregar a la venta. Si se lo lleva, «Agregarlo al ticket» (docs/propuesta-interfaz.md,
    «La pantalla de venta»). Desde aquí, Ctrl+M abre el mostrador y la temporada en modo verificador: tocar una pieza la enseña
-   aquí, con su lugar para la foto, sin agregarla (entrega 13). *@
+   aquí, con su foto (entrega 13, parte 2: de la base de esta caja; sin foto, sus iniciales), sin agregarla. *@
+@implements IDisposable
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
@@ -11,7 +12,14 @@
 @if (_producto is { } producto)
 {
     <div class="verificado">
-        <span class="vn-foto" aria-hidden="true">@MostradorEnPantalla.Iniciales(producto.Descripcion)</span>
+        @if (Cliente.Fotos.Direccion(producto.VarianteId) is { } foto)
+        {
+            <img class="vn-foto" src="@foto" alt="" />
+        }
+        else
+        {
+            <span class="vn-foto" aria-hidden="true">@MostradorEnPantalla.Iniciales(producto.Descripcion)</span>
+        }
         <div class="descripcion">@producto.Descripcion</div>
         <div class="precio">@Formato.Dinero(Precio(producto))</div>
         <div class="nota">Existencia: @(producto.Existencia is { } e ? Formato.Numero(e) : "no lleva inventario")</div>
@@ -55,6 +63,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        Cliente.Fotos.Cambio += AlCambiarLasFotos;
         _producto = Producto;
         if (Producto is null && Codigo?.Trim() is { Length: > 0 } codigo)
             await BuscarAsync(codigo);
@@ -86,6 +95,10 @@
             _error = ex.Message;
         }
     }
+
+    private void AlCambiarLasFotos() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Cliente.Fotos.Cambio -= AlCambiarLasFotos;
 
     private long Precio(ProductoVentaDto p) =>
         CalculoPrecio.Calcular(p.PreciosModelo(), SucursalId, p.PresentacionModelo(), Cantidad.Piezas(1))?.ImporteCentavos ?? 0;

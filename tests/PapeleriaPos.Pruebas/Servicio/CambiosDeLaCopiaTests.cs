@@ -79,12 +79,18 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
     private static List<ProductoVentaDto> DeLaCopia(PaqueteContingenciaDto p, Func<ProductoVentaDto, bool> filtro) =>
         p.Productos.Where(filtro).OrderBy(x => x.VarianteId).ToList();
 
+    /// <summary>La foto de un producto, por la API, como la pone el dueño (entrega 13, parte 2).</summary>
+    private static async Task<FotoGuardadaDto> FotoAsync(Caja c, Guid varianteId, byte[] imagen) =>
+        await Leer<FotoGuardadaDto>(await c.Http.PutAsJsonAsync($"api/fotos/{varianteId}",
+            new SolicitudFoto(c.Dueno.UsuarioId, c.Datos.SucursalId, Convert.ToBase64String(imagen))));
+
     /// <summary>
     /// Con cambios de todo tipo (precio, alta, código quitado, baja, marca, usuario, PIN mal tecleado, la tienda, un sinónimo,
-    /// un cliente, una venta, lo que la caja eligió en la búsqueda, y una temporada nueva y lo acomodado en el mostrador), la
-    /// copia de antes con los cambios encima queda igual que la copia completa de ahora, también en lo que usa su búsqueda
-    /// (todos los códigos, las marcas, lo más vendido y lo elegido: entrega 5, parte 3) y en lo que se señala (entrega 13), y los
-    /// cambios traen solo los productos que cambiaron y lo elegido después.
+    /// un cliente, una venta, lo que la caja eligió en la búsqueda, una temporada nueva y lo acomodado en el mostrador, y fotos
+    /// nuevas, cambiadas y quitadas), la copia de antes con los cambios encima queda igual que la copia completa de ahora, también
+    /// en lo que usa su búsqueda (todos los códigos, las marcas, lo más vendido y lo elegido: entrega 5, parte 3), en lo que se
+    /// señala (entrega 13) y en las fotos (parte 2), y los cambios traen solo los productos que cambiaron (una foto no trae su
+    /// producto) y lo elegido después.
     /// </summary>
     [Fact]
     public async Task La_copia_con_los_cambios_encima_queda_igual_que_la_completa()
@@ -94,8 +100,14 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
         // Lo que la caja ya había elegido con un texto: viene en la copia de antes.
         var deAntes = DeLaCopia(await CopiaAsync(c), p => p.Presentacion.EsBase)[11];
         await ElegirAsync(c, "Separador De Antes", deAntes.VarianteId);
+        // Dos fotos que ya trae la copia de antes: una va a cambiar y a la otra se le va a quitar.
+        var conFotos = DeLaCopia(await CopiaAsync(c), p => p.Presentacion.EsBase);
+        var (fotoCambiada, fotoQuitada) = (conFotos[13], conFotos[14]);
+        await FotoAsync(c, fotoCambiada.VarianteId, PapeleriaPos.Pruebas.Impresion.ImagenesDePrueba.Foto(800, 600));
+        await FotoAsync(c, fotoQuitada.VarianteId, PapeleriaPos.Pruebas.Impresion.ImagenesDePrueba.Foto(600, 800));
         var antes = await CopiaAsync(c);
         Assert.Contains(new ElegidoDto("SEPARADOR DE ANTES", deAntes.VarianteId), antes.Elegidos!);
+        Assert.Contains(antes.Fotos!, f => f.VarianteId == fotoQuitada.VarianteId);
         var sinMayoreo = DeLaCopia(antes, p => p.LlevaInventario && p.Precios.Count == 1 && p.Precios[0].PresentacionId is null && p.Presentacion.EsBase);
         var (conPrecio, vendido, deBaja) = (sinMayoreo[0], sinMayoreo[1], sinMayoreo[2]);
         var conDosCodigos = antes.Codigos.GroupBy(x => x.VarianteId).Where(g => g.Count() >= 2).Select(g => g.Key)
@@ -123,6 +135,13 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
         await Leer<MostradorDto>(await c.Http.PutAsJsonAsync("api/mostrador/acomodo", new SolicitudAcomodo(c.Dueno.UsuarioId, c.Datos.SucursalId,
             [new LugarConProductosDto(repisas[0].Id, [conPrecio.VarianteId, nuevo.VarianteId]), new LugarConProductosDto(repisas[1].Id, [vendido.VarianteId]),
              new LugarConProductosDto(mostrador.Exhibidores.Single(e => e.Nombre == "Regreso a clases").Lugares[0].Id, [deAntes.VarianteId])])));
+        // Las fotos (entrega 13, parte 2): otra para la que ya tenía, una para el producto recién dado de alta y otra para el
+        // elegido de antes; a una se le quita.
+        var otraFoto = await FotoAsync(c, fotoCambiada.VarianteId, PapeleriaPos.Pruebas.Impresion.ImagenesDePrueba.Mitades(800, 600));
+        var fotoDelNuevo = await FotoAsync(c, nuevo.VarianteId, PapeleriaPos.Pruebas.Impresion.ImagenesDePrueba.Foto(1600, 1200));
+        var fotoDeAntes = await FotoAsync(c, deAntes.VarianteId, PapeleriaPos.Pruebas.Impresion.ImagenesDePrueba.Mitades(500, 500));
+        Assert.True((await c.Http.PostAsJsonAsync($"api/fotos/{fotoQuitada.VarianteId}/quitar", new SolicitudQuitarFoto(c.Dueno.UsuarioId, c.Datos.SucursalId)))
+            .IsSuccessStatusCode);
         // Un PIN mal tecleado no cambia nada.
         Assert.Equal(HttpStatusCode.BadRequest, (await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("cajero", "9999"))).StatusCode);
         // Lo demás, en la base: un código quitado, una marca, un usuario nuevo, la tienda y un cliente nuevo.
@@ -174,6 +193,15 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
         Assert.NotNull(cambios.Exhibidores);
         Assert.Equal([conPrecio.VarianteId, nuevo.VarianteId], despues.Exhibidores!.First(e => e.Nombre == "Mostrador").Lugares[0].Productos);
         Assert.Contains(despues.Exhibidores!, e => e.Nombre == "Regreso a clases" && e.Desde == new PapeleriaPos.Nucleo.Catalogo.DiaDelAnio(7, 15));
+        // De las fotos, solo las que cambiaron y la quitada; la copia completa ya las trae así (y ninguna foto trajo su producto).
+        Assert.Equal(new[]
+            {
+                new FotoDeProductoDto(fotoCambiada.VarianteId, otraFoto.Huella), new FotoDeProductoDto(nuevo.VarianteId, fotoDelNuevo.Huella),
+                new FotoDeProductoDto(deAntes.VarianteId, fotoDeAntes.Huella),
+            }.OrderBy(f => f.VarianteId), cambios.Fotos!);
+        Assert.Equal([fotoQuitada.VarianteId], cambios.FotosQuitadas!);
+        Assert.DoesNotContain(despues.Fotos!, f => f.VarianteId == fotoQuitada.VarianteId);
+        Assert.DoesNotContain(cambios.Productos, p => p.VarianteId == fotoCambiada.VarianteId || p.VarianteId == deAntes.VarianteId);
         Assert.Null(cambios.Caja);
         Assert.Null(cambios.Ticket);
         Assert.True(cambios.Version > antes.Version && cambios.VersionExistencias > antes.VersionExistencias);

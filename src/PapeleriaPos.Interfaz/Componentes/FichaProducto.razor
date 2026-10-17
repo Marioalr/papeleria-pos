@@ -93,6 +93,17 @@ else
                 }
             </div>
 
+            @* Su foto (entrega 13, parte 2): la que sale en Ctrl+M, en la búsqueda y en el verificador. Se guarda aparte, al momento. *@
+            @if (variante.Id is { } conFoto)
+            {
+                <FotoDeLaVariante Caja="Caja" Sesion="Sesion" VarianteId="conFoto" PuedeEditar="PuedeEditar"
+                                  Nombre="@(variante.Descripcion.Length > 0 ? $"{p.Nombre} {variante.Descripcion}" : p.Nombre)" />
+            }
+            else
+            {
+                <p class="nota">La foto se le pone después de guardarlo.</p>
+            }
+
             <h5>Presentaciones y códigos</h5>
             <table class="resultados">
                 <thead><tr><th>Nombre</th><th class="num">Contiene</th><th>Base</th><th>Códigos (separados por espacio)</th><th></th></tr></thead>

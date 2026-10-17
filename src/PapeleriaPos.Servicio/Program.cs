@@ -129,6 +129,7 @@ app.MapearApiClientes();
 app.MapearApiCredito();
 app.MapearApiCatalogo();
 app.MapearApiMostrador();
+app.MapearApiFotos();
 app.MapearApiCompras();
 app.MapearApiConteos();
 app.MapearApiEtiquetas();

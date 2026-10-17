@@ -30,7 +30,8 @@ public static class CopiaDeLaCaja
     /// la tienda, los clientes y el último folio de la caja; con la base, el formato y las versiones desde las que la caja
     /// pide después lo que cambió. Y lo que necesita la búsqueda de la caja para dar lo mismo que la de aquí (entrega 5, parte
     /// 3): todos los códigos, las marcas con que se leen los nombres, los sinónimos, lo más vendido y lo que esta caja eligió
-    /// antes con cada texto, con sus versiones. Y los exhibidores y las temporadas, con lo acomodado en ellos (entrega 13).
+    /// antes con cada texto, con sus versiones. Y los exhibidores y las temporadas, con lo acomodado en ellos (entrega 13), y
+    /// de qué producto es cada foto, con su huella (entrega 13, parte 2): las fotos no, esas se bajan aparte.
     /// </summary>
     public static async Task<PaqueteContingenciaDto> PaqueteAsync(
         PosDbContext db, CatalogoEnMemoria catalogo, VersionesDeLaCopia versiones, Guid cajaId, OpcionesTicket opciones, CancellationToken ct = default)
@@ -51,8 +52,9 @@ public static class CopiaDeLaCaja
             ticket.Logo, await new RegistroCaja(db).UltimoFolioAsync(caja.SucursalId, caja.Serie, ct), configuracion.LimiteEfectivoCentavos,
             ApiClientes.ParaCajasDeAntes(clientes), clientes, marcas, await new RegistroSinonimos(db).ListarAsync(ct), permisos,
             configuracion, versiones.Base, VersionesDeLaCopia.Formato, versionExistencias, vendidos, elegidos, versionVendidos, versionElegidos,
-            // Los exhibidores y las temporadas (entrega 13): siempre, aunque no haya ninguno (el formato 3 los trae).
-            await RegistroMostrador.ListarAsync(db, ct));
+            // Los exhibidores y las temporadas (entrega 13): siempre, aunque no haya ninguno (el formato 3 los trae). Y las fotos,
+            // solo de qué producto es cada una y su huella (entrega 13, parte 2): siempre, aunque no haya ninguna (el formato 4).
+            await RegistroMostrador.ListarAsync(db, ct), await RegistroFotos.ReferenciasAsync(db, ct));
     }
 
     /// <summary>
@@ -133,6 +135,16 @@ public static class CopiaDeLaCaja
                 || await db.ProductosExhibidos.AnyAsync(p => p.Version > desde, ct)
                 || Quitado(nameof(Exhibidor), nameof(LugarExhibidor), nameof(ProductoExhibido)))
                 cambios = cambios with { Exhibidores = await RegistroMostrador.ListarAsync(db, ct) };
+            // Las fotos (entrega 13, parte 2): solo las que llegaron o cambiaron (de qué producto y su huella) y las que se
+            // quitaron; la caja baja aparte las que no tiene. Una que se quitó y se volvió a poner, va como puesta.
+            var fotos = (await db.FotosProducto.AsNoTracking().Where(f => f.Version > desde).Select(f => new { f.VarianteId, f.Huella }).ToListAsync(ct))
+                .OrderBy(f => f.VarianteId).Select(f => new FotoDeProductoDto(f.VarianteId, f.Huella)).ToList();
+            var sinFoto = quitados.Where(b => b.Entidad == nameof(FotoProducto) && b.EntidadId is { } id && fotos.All(f => f.VarianteId != id))
+                .Select(b => b.EntidadId!.Value).Distinct().Order().ToList();
+            if (fotos.Count > 0)
+                cambios = cambios with { Fotos = fotos };
+            if (sinFoto.Count > 0)
+                cambios = cambios with { FotosQuitadas = sinFoto };
             return cambios;
         }, ct);
     }

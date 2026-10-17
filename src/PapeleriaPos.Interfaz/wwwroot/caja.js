@@ -459,3 +459,37 @@ export function imprimirMarco(selector) {
     marco.contentWindow.focus();
     marco.contentWindow.print();
 }
+
+// La foto de un producto (Productos, F3; entrega 13, parte 2): con el cursor en su cuadro, Ctrl+V pega la imagen que se
+// copió (de otra página, de una captura de pantalla). Se achica aquí, a lo más 960 por lado y en JPEG, y se le pasa a la ficha
+// (ImagenPegada) para verla antes de guardarla; el servicio la deja de 240. Lo que no es una imagen se pega como siempre.
+export function pegarImagen(selector, ficha) {
+    const zona = document.querySelector(selector);
+    if (!zona) return;
+    zona.onpaste = async e => {
+        const imagen = [...(e.clipboardData?.items ?? [])].find(i => i.kind === 'file' && i.type.startsWith('image/'));
+        if (!imagen) return;
+        e.preventDefault();
+        try {
+            await ficha.invokeMethodAsync('ImagenPegada', await achicarImagen(imagen.getAsFile(), 960));
+        } catch {
+            ficha.invokeMethodAsync('ImagenPegada', null).catch(() => { });
+        }
+    };
+}
+
+async function achicarImagen(archivo, lado) {
+    const imagen = await createImageBitmap(archivo);
+    const escala = Math.min(1, lado / Math.max(imagen.width, imagen.height));
+    const lienzo = document.createElement('canvas');
+    lienzo.width = Math.max(1, Math.round(imagen.width * escala));
+    lienzo.height = Math.max(1, Math.round(imagen.height * escala));
+    const dibujo = lienzo.getContext('2d');
+    // Lo transparente (una imagen de una página) queda blanco, como en la caja principal.
+    dibujo.fillStyle = '#fff';
+    dibujo.fillRect(0, 0, lienzo.width, lienzo.height);
+    dibujo.drawImage(imagen, 0, 0, lienzo.width, lienzo.height);
+    imagen.close();
+    const jpeg = await new Promise(listo => lienzo.toBlob(listo, 'image/jpeg', 0.9));
+    return new Uint8Array(await jpeg.arrayBuffer());
+}

@@ -29,7 +29,7 @@ public sealed record TicketLocalDto(IReadOnlyList<string> Encabezado, IReadOnlyL
 /// llegaron, completos y con su existencia; los que ya no van; las existencias que cambiaron; y, de lo demás que lleva la
 /// copia, solo lo que cambió, completo (los usuarios con sus permisos, la caja, el ticket, la configuración, los clientes,
 /// las marcas, los sinónimos, lo más vendido, los exhibidores y las temporadas) o solo lo nuevo (lo que esta caja eligió en
-/// la búsqueda). Lo que no cambió viene vacío.
+/// la búsqueda, y las fotos que llegaron, cambiaron o se quitaron). Lo que no cambió viene vacío.
 /// </summary>
 /// <param name="PaqueteCompleto">
 /// Vacío: estos son los cambios. Con texto, por qué no se pueden dar desde esa versión (otra base, otro formato, una versión
@@ -59,6 +59,11 @@ public sealed record TicketLocalDto(IReadOnlyList<string> Encabezado, IReadOnlyL
 /// Los exhibidores y las temporadas (entrega 13), completos, si cambió algo de ellos: su nombre, sus fechas, sus lugares o lo
 /// acomodado en ellos.
 /// </param>
+/// <param name="Fotos">
+/// Las fotos de los productos que llegaron o cambiaron (entrega 13, parte 2): de qué producto es cada una y su huella, en el
+/// orden de las variantes. Pisan lo de la copia; la caja baja aparte las que no tiene.
+/// </param>
+/// <param name="FotosQuitadas">Los productos a los que se les quitó la foto.</param>
 public sealed record CambiosCopiaDto(
     string? PaqueteCompleto, long Version, long VersionExistencias, int UltimoFolio, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<Guid> Quitados,
     IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<ExistenciaLocalDto> Existencias,
@@ -66,14 +71,18 @@ public sealed record CambiosCopiaDto(
     IReadOnlyList<ReglaDto>? Reglas = null, TicketLocalDto? Ticket = null, ConfiguracionSucursalDto? Configuracion = null,
     IReadOnlyList<ClienteRegistradoDto>? Clientes = null, IReadOnlyList<ClienteRegistradoDto>? Registrados = null, IReadOnlyList<string>? Marcas = null,
     IReadOnlyList<SinonimoDto>? Sinonimos = null, IReadOnlyList<VecesVendidoDto>? Vendidos = null, IReadOnlyList<ElegidoDto>? Elegidos = null,
-    long? VersionVendidos = null, long? VersionElegidos = null, IReadOnlyList<ExhibidorDto>? Exhibidores = null)
+    long? VersionVendidos = null, long? VersionElegidos = null, IReadOnlyList<ExhibidorDto>? Exhibidores = null,
+    IReadOnlyList<FotoDeProductoDto>? Fotos = null, IReadOnlyList<Guid>? FotosQuitadas = null)
 {
     /// <summary>No se pueden dar los cambios desde ahí: la caja baja la copia completa.</summary>
     public static CambiosCopiaDto Completo(string motivo) => new(motivo, 0, 0, 0, [], [], [], []);
 
     /// <summary>
     /// Si trae algo del catálogo o de lo demás de la copia (no solo existencias, lo más vendido o lo elegido, que se vuelven a
-    /// pedir si se pierden): entonces la copia se guarda ya.
+    /// pedir si se pierden): entonces la copia se guarda ya. Las fotos tampoco cuentan (entrega 13, parte 2): si la caja se
+    /// cierra antes de guardar la copia, la de su base pide otra vez lo que cambió desde su versión, con ellas; y una caja que
+    /// abre sin conexión con la foto de antes no cobra distinto. Así, mientras se toman las fotos de la temporada, cada foto no
+    /// obliga a cada caja a guardar su copia entera ni a armar otra vez su búsqueda.
     /// </summary>
     public bool CambiaCatalogo =>
         Productos.Count > 0 || Quitados.Count > 0 || Caja is not null || Usuarios is not null || Permisos is not null || Reglas is not null
@@ -85,4 +94,7 @@ public sealed record CambiosCopiaDto(
     /// su índice se arma otra vez (entrega 5, parte 3). Lo más vendido y lo elegido solo ordenan: el índice sirve igual.
     /// </summary>
     public bool CambiaLaBusqueda => Productos.Count > 0 || Quitados.Count > 0 || Marcas is not null || Sinonimos is not null;
+
+    /// <summary>Si llegó, cambió o se quitó la foto de algún producto (entrega 13, parte 2): la caja baja las que le falten.</summary>
+    public bool CambianLasFotos => Fotos is not null || FotosQuitadas is not null;
 }

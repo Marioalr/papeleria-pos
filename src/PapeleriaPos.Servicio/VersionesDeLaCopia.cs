@@ -24,9 +24,10 @@ public sealed class VersionesDeLaCopia(IServiceScopeFactory alcances)
     /// de la caja: todos los códigos, las marcas con que se leen los nombres, lo más vendido y lo elegido, con sus versiones.
     /// El 3 (entrega 13) trae siempre los exhibidores y las temporadas: así una caja reconoce una copia de este formato que
     /// guardó una versión de ella que todavía no los conocía (los cambios solo los traen cuando cambian) y la baja completa
-    /// una vez.
+    /// una vez. El 4 (entrega 13, parte 2) trae siempre de qué producto es cada foto, con su huella: una caja del 4 con una caja
+    /// principal del 3 no le pide cambios (nunca le llegarían las fotos) y baja la copia completa como con una de antes.
     /// </summary>
-    public const int Formato = 3;
+    public const int Formato = 4;
 
     /// <summary>Cuánto vale lo leído de la base antes de volver a leerla.</summary>
     public static readonly TimeSpan Vigencia = TimeSpan.FromMilliseconds(250);

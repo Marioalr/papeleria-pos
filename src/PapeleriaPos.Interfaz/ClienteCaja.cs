@@ -1209,6 +1209,34 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         return mostrador;
     }
 
+    // ── Las fotos de los productos (entrega 13, parte 2) ────────────────────
+
+    private FotosDeLaCaja? _fotosSinCopia;
+
+    /// <summary>
+    /// Las fotos de los productos para la pantalla (Ctrl+M, la lista de la búsqueda, el verificador): las de esta caja, de su
+    /// base, sin la red. Sin base local (el navegador, en la misma PC de la caja principal), las del servicio.
+    /// </summary>
+    public FotosDeLaCaja Fotos => contingencia?.Fotos ?? (_fotosSinCopia ??= new FotosDeLaCaja(() => _http.GetAsync<FotosDto>("api/fotos")));
+
+    /// <summary>
+    /// La foto de un producto, tal cual (para enseñarla en el celular o en Productos): la de la caja principal; sin conexión, la
+    /// que tiene esta caja. Vacía si no tiene.
+    /// </summary>
+    public Task<byte[]?> FotoAsync(Guid varianteId) =>
+        ConRespaldoAsync(() => _http.GetBytesAsync($"api/fotos/{varianteId}", maximo: FotosDeLaCaja.BytesMaximos), l => l.Fotos.Datos(varianteId));
+
+    /// <summary>
+    /// Una foto nueva para ese producto, o en lugar de la que tenía: el servicio la revisa, la endereza, la achica y la guarda;
+    /// regresa cómo quedó. Con «Productos, precios y etiquetas»; sin conexión no se puede (se dice).
+    /// </summary>
+    public Task<FotoGuardadaDto> GuardarFotoAsync(Guid varianteId, SolicitudFoto solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<FotoGuardadaDto>($"api/fotos/{varianteId}", solicitud));
+
+    /// <summary>Quita la foto de ese producto: en las cajas vuelven a salir sus iniciales.</summary>
+    public Task QuitarFotoAsync(Guid varianteId, SolicitudQuitarFoto solicitud) =>
+        ConRespaldoAsync(async () => await _http.PostAsync<object>($"api/fotos/{varianteId}/quitar", solicitud, sinRespuesta: true));
+
     private static T Local<T>(Contingencia contingencia, Func<Contingencia, T>? sinConexion)
     {
         if (sinConexion is null)

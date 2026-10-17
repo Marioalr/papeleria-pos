@@ -776,6 +776,45 @@ servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-ca
 - **Para las partes que siguen:** las fotos (desde la app Android o la PC), la hoja de la temporada y las tarjetas de
   precio, empezar y terminar la temporada con el precio del año pasado, y lo más preguntado.
 
+**Avance (2026-10-17), entrega 13, parte 2: las fotos de los productos,** como en la
+[propuesta](propuesta-interfaz.md#lo-que-se-señala-exhibidos-y-temporada) (punto 7):
+- **Una por producto** (por variante: la de cada color o tamaño), la que sale en Ctrl+M, en la lista de la búsqueda y en el
+  verificador. Subir otra la reemplaza; también se quita. La pone o la quita quien tiene «Productos, precios y etiquetas»,
+  sin volver a escribir su PIN; el servicio lo revisa y queda en la bitácora («Puso la foto de «…» (desde el celular)»).
+- **Se guarda chica:** el servicio revisa que sea una foto (JPEG, PNG, WebP, GIF o BMP, de hasta 15 MB y 100 megapíxeles),
+  la endereza como se tomó (el celular en vertical) y la deja en un JPEG de a lo más 240 píxeles por lado, completa (sin
+  recortarla) y unos 15 KB o menos; lo transparente queda blanco. La original nunca se guarda. Medido aquí: fotos de 2 a
+  10 MB quedan de 4 a 6 KB, en 15 a 100 ms. Con 300 fotos, menos de 5 MB.
+- **En la misma base** (pos.db), y no en una carpeta aparte: el respaldo diario y el de cada corte Z las llevan, y restaurar
+  uno las regresa como estaban. Cada respaldo pesa unos 5 MB más con 300 fotos.
+- **Desde el celular,** en la página del conteo (`/conteo`), sin esperar a la app Android: quien puede ve «Contar» y
+  «Fotos». Se escanea o se busca el producto (la lista dice cuáles ya tienen foto), «Tomar la foto» abre la cámara, se ve
+  cómo quedó y se guarda; después se escanea el siguiente. El celular la achica antes de mandarla (una de 4 MB viaja como de
+  unos 150 KB por el Wi-Fi). El código QR de la página también sale en la ficha del producto («Con el celular…»): en el
+  piloto con eleventa, el conteo (donde estaba) no se ofrece.
+- **Desde la PC,** en la ficha del producto (Productos, F3), en cada variante: «Elegir una foto…» o Ctrl+V con el cursor en
+  el cuadro de la foto (una imagen copiada de una página o de una captura), se ve y «Guardar la foto», o «Quitar la foto».
+  Se guarda al momento, aparte de «Guardar» de la ficha.
+- **A las cajas, solo lo que cambia:** la copia lleva de qué producto es cada foto y su huella (unos 80 bytes por foto), no
+  la foto. Cada caja baja aparte las que no tiene (`api/fotos/{variante}`, de fondo, una a una), las guarda en su base
+  (caja-local.db) por el escritor de siempre, en lotes chicos, y quita las que ya no van. Una foto nueva, cambiada o quitada
+  sube la versión del catálogo (como acomodar) y llega con lo que cambió, por el aviso; no obliga a la caja a guardar su
+  copia entera ni a armar otra vez su búsqueda. La prueba de que la copia con los cambios encima queda igual que la
+  completa ya las incluye. La copia pasa al formato 4: cada caja la baja completa una vez después de actualizarse.
+- **En la pantalla, de la base de la caja, sin la red:** la pieza de Ctrl+M con foto la enseña en lugar de sus iniciales; la
+  lista de la búsqueda, chica a la izquierda; el verificador, grande. Sin foto (o mientras baja), las iniciales, como antes.
+  La ventana de Windows se las da a su página de lo que ya bajó; sin conexión se siguen viendo. La caja del navegador en la
+  PC de la caja principal las pide al servicio de esa misma PC.
+- **En el piloto con eleventa** se toman igual: las fotos son solo del POS.
+- **Decidido mientras tanto, por revisar con el dueño:** guardarlas en la base y no en una carpeta; JPEG (lo leen todas las
+  cajas, los celulares y la hoja de la temporada que sigue) de 240 por lado, sin recortar; el permiso «Productos, precios y
+  etiquetas» (si alguien debe tomar fotos sin poder cambiar precios, se agrega uno propio); una por variante; quitarla sin
+  confirmar (se vuelve a tomar), como el logotipo del ticket; Ctrl+V en el cuadro de la foto y no un botón «Pegar» (leer el
+  portapapeles pediría permiso al navegador); y que la foto de un producto desactivado o juntado con otro se quede.
+- **Falta:** probar en un celular de la tienda (la cámara desde la página, el Wi-Fi) y ver las fotos en la ventana de
+  Windows de la caja 2 ([guía del fin de semana](pruebas-en-tienda.md)). La hoja de la temporada y las tarjetas de precio
+  (la parte 3) ya pueden usarlas.
+
 #### Después: el piloto en la caja 2
 
 Mientras se arma el puente con eleventa, la versión unicaja sigue creciendo con la venta completa (entrega 3) y la base

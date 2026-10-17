@@ -52,6 +52,25 @@ datos de eleventa.
 4. **Lo que siga pendiente de conocer la tienda** ([abajo](#primer-fin-de-semana-conocer-la-tienda)), si da tiempo y
    el dueño lo aprueba.
 
+## Con el POS en la caja 2: las fotos de lo que se señala
+
+Las fotos de los productos ([entrega 13, parte 2](plan.md#primero-la-versión-unicaja-entrega-0)) se toman en la tienda, con
+los productos enfrente, contra el catálogo de verdad: el fin de semana del piloto en la caja 2 (el paso 7), cuando ya lee el
+catálogo de eleventa. Las fotos son solo del POS: no tocan los datos de eleventa.
+
+- **Entre semana:** acomodar en Ctrl+M el mostrador y la temporada que corra (Todos Santos, hasta el 5 de noviembre;
+  Navidad, desde el 20 de noviembre): así se sabe qué productos fotografiar. Quién las toma (con «Productos, precios y
+  etiquetas»: el dueño o el encargado) y con qué celular.
+- **En la tienda:**
+  1. El celular, en el Wi-Fi de la tienda. En la caja 2, en Productos (F3), la ficha de un producto, «Con el celular…»
+     enseña el código QR de la página (y su dirección): entrar con el usuario y el PIN y tocar «Fotos».
+  2. Por cada producto: escanear su código (o escribir su nombre), «Tomar la foto», revisar que se vea el producto y
+     «Guardar». Con buena luz, de frente, sobre algo liso y llenando la foto.
+  3. En la caja 2: Ctrl+M (cada pieza con su foto), buscar uno por su nombre (la foto chica a la izquierda) y F9 (grande).
+- **Qué anotar:** si la cámara se abre directo desde la página y en qué celulares; cuánto tarda cada foto, desde «Tomar la
+  foto» hasta «Guardada»; cuánto tarda en salir en la caja 2 y si se reconoce bien el producto en su pantalla; cuántas se
+  tomaron y en cuánto tiempo.
+
 ## Primer fin de semana: conocer la tienda
 
 Solo mirar y anotar. Lo único que se cambia es la configuración de los grabadores, por seguridad. Si el dueño lo
