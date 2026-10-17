@@ -85,7 +85,7 @@ public sealed class SinonimosApiTests(ServicioDePrueba servicio) : IClassFixture
 
         Assert.False(contingencia.EnLinea);
         Assert.NotEmpty(plumones);
-        Assert.All(plumones, r => Assert.StartsWith("Plum", r.Descripcion));
+        Assert.All(plumones, r => Assert.StartsWith("Plum", r.Descripcion, StringComparison.OrdinalIgnoreCase));
         Assert.All(plumones, r => Assert.Equal("rotulador", r.PorSinonimo));
     }
 }

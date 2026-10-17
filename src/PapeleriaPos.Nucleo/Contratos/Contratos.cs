@@ -446,9 +446,10 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// De qué base son las versiones (cambia al arrancar el servicio y al empezar de cero la prueba): con otra, los cambios
 /// desde la versión de la caja no sirven y se baja la copia completa. Vacía en un servicio de antes.
 /// </param>
+/// <param name="FormatoCopia">El de la copia que arma (<see cref="VersionesCopiaDto.Formato"/>); vacío en un servicio de antes.</param>
 public sealed record EstadoServicioDto(
     string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false, long VersionCredito = 0,
-    bool PilotoEleventa = false, string? AvisoBase = null, long? VersionExistencias = null, Guid? Base = null);
+    bool PilotoEleventa = false, string? AvisoBase = null, long? VersionExistencias = null, Guid? Base = null, int? FormatoCopia = null);
 
 /// <summary>Usuario y PIN de quien autoriza: dar de alta una caja (antes de que haya sesión) y Telegram, que sigue como estaba.</summary>
 public sealed record SolicitudCredenciales(string Usuario, string Pin);
@@ -500,6 +501,12 @@ public sealed record CodigoLocalDto(string Codigo, Guid VarianteId, Guid Present
 /// fichas de espera y «Abrir turno» propone el fondo. Vacía en una copia de antes: lo de siempre (3 fichas, sin fondo
 /// sugerido).
 /// </param>
+/// <param name="Codigos">
+/// Todos los códigos de los productos de la copia, también los que solo cambian en mayúsculas («ZZ-01» en uno y «zz-01» en
+/// otro): al escanear se lo lleva el igual tal cual o, si ninguno, el producto más antiguo (<c>CodigosDeEscaneo</c>), como en
+/// el servicio, y la búsqueda por nombre lo encuentra en los dos. El orden no cuenta.
+/// </param>
+/// <param name="Marcas">Las que usa el servicio para leer los nombres: la búsqueda de la copia los lee igual (entrega 5, parte 3).</param>
 /// <param name="Base">
 /// De qué base es la copia (<see cref="EstadoServicioDto.Base"/>), y con <paramref name="Formato"/> y
 /// <paramref name="VersionExistencias"/>, desde dónde pedir lo que cambió (entrega 5, parte 2). Vacíos en un servicio de antes:
@@ -507,13 +514,24 @@ public sealed record CodigoLocalDto(string Codigo, Guid VarianteId, Guid Present
 /// </param>
 /// <param name="Formato">Cómo está armada la copia: si la caja o el servicio cambian de formato, se baja completa.</param>
 /// <param name="VersionExistencias">La versión de las existencias con que se armó.</param>
+/// <param name="Vendidos">
+/// Cuántas veces se vendió cada producto en 90 días, y <paramref name="Elegidos"/>, lo que esta caja eligió antes con cada
+/// texto: con eso la búsqueda contra la copia ordena igual que el servicio (entrega 5, parte 3). Vacíos en una copia de
+/// antes: ordena sin ellos hasta que baje la siguiente.
+/// </param>
+/// <param name="VersionVendidos">
+/// La de lo más vendido que trae (el servicio lo calcula una vez al día): si la del servicio es otra, los cambios traen el
+/// nuevo (entrega 5, partes 2 y 3).
+/// </param>
+/// <param name="VersionElegidos">Hasta dónde trae lo elegido: los cambios traen lo que esta caja eligió después.</param>
 public sealed record PaqueteContingenciaDto(
     long Version, CajaDto Caja, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<UsuarioLocalDto> Usuarios,
     IReadOnlyList<ReglaDto> Reglas,
     IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, int UltimoFolio, long? LimiteEfectivoCentavos,
     IReadOnlyList<ClienteRegistradoDto>? Clientes = null, IReadOnlyList<ClienteRegistradoDto>? Registrados = null,
     IReadOnlyList<string>? Marcas = null, IReadOnlyList<SinonimoDto>? Sinonimos = null, IReadOnlyList<PermisosLocalesDto>? Permisos = null,
-    ConfiguracionSucursalDto? Configuracion = null, Guid? Base = null, int? Formato = null, long? VersionExistencias = null);
+    ConfiguracionSucursalDto? Configuracion = null, Guid? Base = null, int? Formato = null, long? VersionExistencias = null,
+    IReadOnlyList<VecesVendidoDto>? Vendidos = null, IReadOnlyList<ElegidoDto>? Elegidos = null, long? VersionVendidos = null, long? VersionElegidos = null);
 
 // Lo que sube con la bandeja. Cada cosa lleva el ID que le dio la caja: si llega dos veces, se guarda una.
 

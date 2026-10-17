@@ -34,7 +34,8 @@ public static partial class ApiCajas
             // Las versiones, de memoria (entrega 5, parte 2): con ellas la caja sabe si pedir lo que cambió.
             var versiones = await versionesCopia.ActualesAsync();
             return new EstadoServicioDto("Papelería POS", Version, await db.Sucursales.OrderBy(s => s.Nombre).Select(s => s.Nombre).ToListAsync(),
-                versiones.Catalogo, prueba.Activo, versiones.Credito, eleventa.SoloEfectivo, revision.Aviso, versiones.Existencias, versiones.Base);
+                versiones.Catalogo, prueba.Activo, versiones.Credito, eleventa.SoloEfectivo, revision.Aviso, versiones.Existencias, versiones.Base,
+                versiones.Formato);
         });
 
         // Abierto, pero solo contesta con el PIN del dueño: qué sucursales y cajas hay para elegir.

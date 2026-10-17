@@ -151,11 +151,10 @@ public static class ApiCaja
         // Lo que se buscó y qué se eligió: lo elegido sale primero la próxima vez en esa caja.
         api.MapPost("/busquedas", async (SolicitudBusqueda s, PosDbContext db, CatalogoEnMemoria catalogo) =>
         {
-            var texto = CatalogoEnMemoria.ClaveDeBusqueda(s.Texto);
+            // La misma clave que recuerda la copia de la caja (entrega 5, parte 3).
+            var texto = IndiceDeBusqueda.ClaveGuardada(s.Texto);
             if (texto.Length == 0)
                 return Results.NoContent();
-            if (texto.Length > 100)
-                texto = texto[..100].TrimEnd();
             if (!await db.Cajas.AnyAsync(c => c.Id == s.CajaId) || (s.VarianteId is { } v && !await db.Variantes.AnyAsync(x => x.Id == v)))
                 return Results.BadRequest(new ErrorDto("La caja o el producto de la búsqueda no existen."));
             db.Busquedas.Add(new Busqueda { CajaId = s.CajaId, FechaUtc = DateTime.UtcNow, Texto = texto, Resultados = s.Resultados, VarianteId = s.VarianteId });

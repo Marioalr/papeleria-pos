@@ -20,6 +20,11 @@
     <None Include="..\..\instalacion\instalar-servicio.ps1" Link="instalar-servicio.ps1" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Las pruebas abren y cierran el paso a lo que corre a la vez (lo elegido en la búsqueda) para revisar cada orden. -->
+    <InternalsVisibleTo Include="PapeleriaPos.Pruebas" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
