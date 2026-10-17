@@ -81,9 +81,9 @@
 |---|---|---|---|---|---|
 | Existencia por producto, que baja con cada venta | La usan | Kardex; la existencia nunca detiene la venta. En el piloto la trae la lectura de eleventa cada 5 minutos | — | — | — |
 | F4: agregar inventario y ajustes | Por confirmar cómo los usan | Compras a ciegas con la factura XML o la nota PDF, ajustes, mermas y conteos | — | — | — |
-| Movimientos (por fecha, cajero, producto, departamento y tipo) y kardex | Por confirmar | El kardex de la ficha (sus últimos 200, sin costo ni filtro de fechas) y los últimos 8 en Productos | Los movimientos por fecha, si los usan | Sin plan | Chico |
-| Productos bajos en inventario: mínimo y máximo por producto | Por confirmar | El filtro «Poca existencia» (3 o menos) y el sugerido, con mínimo y máximo calculados | Un mínimo propio por producto, si lo usan | Sin plan | Chico |
-| Reporte de inventario: lo que vale a costo, por departamento | Por confirmar | Solo en el diagnóstico en Excel | Verlo en pantalla | Sin plan | Chico |
+| Movimientos (por fecha, cajero, producto, departamento y tipo) y kardex | Por confirmar | Hecho (2026-10-17): Inventario › Movimientos, de unos días (hoy, ayer, 7 o 30 días, el mes o de una fecha a otra), por tipo, producto (también escaneado), departamento y quién, de 50 en 50; cada uno con su folio o su motivo, lo que quedó y quién; el costo, con «Ver costos, utilidad y margen». También el kardex de la ficha y los últimos 8 en Productos | Exportarlos a Excel, como eleventa, si lo usan | Sin plan | Chico |
+| Productos bajos en inventario: mínimo y máximo por producto | Por confirmar | Hecho (2026-10-17): cada variante con su mínimo y su máximo en la ficha (F3), y en el piloto también; «Poca existencia» usa el propio (sin él, 3 o menos) e Inventario › Bajos en inventario lista lo que está en su mínimo o debajo, por departamento, con cuánto pedir (hasta el máximo; sin él, lo del sugerido) | A Excel, si lo usan; pasar los mínimos que ya tenga eleventa, si los usan (la importación no los lee) | Sin plan | Chico |
+| Reporte de inventario: lo que vale a costo, por departamento | Por confirmar | Hecho (2026-10-17): Inventario › Lo que vale el inventario, a costo promedio, en total y por departamento, con cuántos están en cero, en negativo o sin costo, y los productos de cada departamento; solo con «Ver costos, utilidad y margen». También en el diagnóstico en Excel | Exportarlo a Excel desde la caja, si lo usan | Sin plan | Chico |
 | Compras y proveedores: órdenes, compras sugeridas | No la usan: sus proveedores están vacíos | Compras, órdenes, proveedores y sugerido (fase 2) | — | — | — |
 
 ### Clientes y crédito
@@ -171,7 +171,7 @@ Primero el modo multicaja, al aprobar el piloto (decisión del dueño, 2026-10-1
 | 9 | **Instalador de la tienda, actualizaciones y soporte a distancia** | Mediano |
 | 10 | **Depuración, conteo físico e importación final,** sin las ventas que ya mandó el puente | Grande: la depuración y el conteo son trabajo de la tienda; lo del puente, chico |
 | 11 | **Promociones con fechas y kits,** si se deja eleventa antes del próximo regreso a clases | Mediano |
-| 12 | **Lo «por confirmar» que sí usen:** ventas de otros días, cancelar una entrada o salida, mínimos por producto, lo que vale el inventario, los movimientos, Excel | Chico cada uno |
+| 12 | **Lo «por confirmar» que sí usen:** ventas de otros días, cancelar una entrada o salida, Excel (los mínimos por producto, lo que vale el inventario y los movimientos ya están, 2026-10-17) | Chico cada uno |
 
 Al final: enseñar a todos, eleventa de consulta unas semanas y apagar el puente.
 
@@ -236,7 +236,8 @@ cambia lo que falta ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-o
 - **Los reportes:** qué pantalla da hoy las ventas por día, mes y año (Reportes › Reporte de ventas, o F3 › Ventas por
   período), para que la entrega 9 empiece por esa.
 - **El inventario:** cómo se registra lo que llega (Agregar inventario) y si se usan los productos bajos en inventario
-  (con un mínimo por producto), el reporte de inventario o los movimientos.
+  (con un mínimo por producto), el reporte de inventario o los movimientos. El POS ya los tiene (2026-10-17): si en
+  eleventa hay mínimos puestos, anotar cuántos, para pasarlos en la importación final.
 - **Los productos:** si se importan o exportan en Excel y si se cambian precios de varios a la vez.
 
 ## Fuentes

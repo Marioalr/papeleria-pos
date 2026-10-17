@@ -4,7 +4,9 @@
    Solo salen las de quien entró («Puede» o «Con autorización»), con lo pendiente de cada una cuando se lee rápido, su
    límite («tú: hasta $200») o quién la autoriza. Cada tarjeta abre la pantalla de siempre de esa tarea, aquí mismo, con
    «← Inventario» (o Esc) para volver: por dentro funcionan como antes. En el piloto con eleventa, las que mueven
-   existencias no se ofrecen (el inventario se lleva allá) y una nota lo dice. *@
+   existencias no se ofrecen (el inventario se lleva allá) y una nota lo dice. Los reportes de eleventa (2026-10-17: bajos
+   en inventario, movimientos y lo que vale) son tarjetas de consulta: salen con su permiso en «Puede», con el acomodo
+   nuevo, y también en el piloto. *@
 @implements IPagina
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
@@ -23,8 +25,9 @@ else if (_tarea is { } abierta)
             <h2>@tarea.Nombre</h2>
             <p>@tarea.Descripcion</p>
         </div>
-        @* @key: de una tarea a otra (Mermas y Ajustes son la misma pantalla) empieza como nueva. *@
-        <div class="vn-tarea-cuerpo vn-adentro" @key="abierta">
+        @* @key: de una tarea a otra (Mermas y Ajustes son la misma pantalla) empieza como nueva. Las de antes van con sus letras
+           y botones (vn-adentro); los reportes, con el acomodo de las páginas (vn-reporte). *@
+        <div class="vn-tarea-cuerpo @(tarea.Consulta ? "vn-reporte" : "vn-adentro")" @key="abierta">
             @switch (abierta)
             {
                 case TareaInventario.Recibir:
@@ -59,6 +62,15 @@ else if (_tarea is { } abierta)
                     break;
                 case TareaInventario.ConteoCompleto:
                     <ConteoCompleto Caja="Caja" Sesion="Sesion" />
+                    break;
+                case TareaInventario.Bajos:
+                    <BajosInventario Caja="Caja" Sesion="Sesion" />
+                    break;
+                case TareaInventario.Movimientos:
+                    <MovimientosInventario Caja="Caja" Sesion="Sesion" />
+                    break;
+                case TareaInventario.Valor:
+                    <ValorInventario Caja="Caja" Sesion="Sesion" />
                     break;
                 default:
                     <Proveedores Caja="Caja" Sesion="Sesion" />
@@ -229,13 +241,14 @@ else
     }
 
     /// <summary>
-    /// Lo pendiente: las compras, las órdenes y los conteos completos en una consulta de solo cuentas; el conteo del día, el
-    /// que ya tiene la venta (o se pide, como al abrirlo). El sugerido no lleva cuenta: calcularlo lee un año de ventas.
+    /// Lo pendiente: las compras, las órdenes, los conteos completos y lo que está en su mínimo o debajo en una consulta de
+    /// solo cuentas; el conteo del día, el que ya tiene la venta (o se pide, como al abrirlo). El sugerido no lleva cuenta:
+    /// calcularlo lee un año de ventas.
     /// </summary>
     private async Task PendientesAsync()
     {
         var tareas = PaginasDeAtras.TareasDe(Acceso).Select(t => t.Id).ToHashSet();
-        if (tareas.Overlaps([TareaInventario.Recibir, TareaInventario.Compras, TareaInventario.Ordenes, TareaInventario.ConteoCompleto]))
+        if (tareas.Overlaps([TareaInventario.Recibir, TareaInventario.Compras, TareaInventario.Ordenes, TareaInventario.ConteoCompleto, TareaInventario.Bajos]))
         {
             try
             {
@@ -296,6 +309,9 @@ else
                 break;
             case TareaInventario.ConteoCompleto when p is { ConteosCompletosAbiertos: > 0 }:
                 yield return (p.ConteosCompletosAbiertos == 1 ? "1 departamento abierto" : $"{p.ConteosCompletosAbiertos} departamentos abiertos", "azul");
+                break;
+            case TareaInventario.Bajos when p is { BajosEnInventario: > 0 }:
+                yield return (p.BajosEnInventario == 1 ? "1 en su mínimo o debajo" : $"{Formato.Numero(p.BajosEnInventario)} en su mínimo o debajo", "ambar");
                 break;
         }
     }
