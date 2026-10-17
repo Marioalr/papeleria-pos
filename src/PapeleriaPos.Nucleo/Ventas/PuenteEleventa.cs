@@ -169,23 +169,17 @@ public class DevolucionDesdeEleventa
 
     /// <summary>
     /// La devolución que se le hizo a la venta de la caja nueva; vacía si quedó por revisar. Si es <see cref="Propia"/>, la
-    /// que se hizo aquí y se anotó a mano en eleventa.
+    /// que se hizo aquí y se anotó a mano en eleventa (una de aquí pudo anotarse allá en varias).
     /// </summary>
     public Guid? DevolucionId { get; set; }
 
     /// <summary>
-    /// Es una devolución que se hizo aquí, no pasó sola a eleventa (quedó por revisar) y se anotó a mano allá: eleventa la
-    /// escribe con su propia hora, sin la marca de la caja 2. Se ligó con la de aquí y no se aplicó otra vez.
+    /// Es la anotación a mano en eleventa de una devolución que se hizo aquí y no pasó sola (eleventa la escribe con su propia
+    /// hora, sin la marca de la caja 2): la eligió quien marcó la de aquí «Ya lo anoté en eleventa». No se aplicó otra vez.
     /// </summary>
     public bool Propia { get; set; }
 
-    /// <summary>
-    /// La devolución de aquí que quizá sea esta, anotada a mano en eleventa: mientras alguien no diga si es la misma o es
-    /// otra (en la pantalla de la caja 2), no se pasa a la venta.
-    /// </summary>
-    public Guid? QuizaEsDevolucionId { get; set; }
-
-    /// <summary>Lo que se devolvió allá, artículo por artículo: para pasarla a la venta cuando alguien diga que es otra.</summary>
+    /// <summary>Lo que se devolvió allá, artículo por artículo, como se leyó.</summary>
     public List<ArticuloDevueltoEnEleventa> Articulos { get; set; } = [];
 
     /// <summary>Por qué no se pasó a la venta (ya se había devuelto aquí, no está en el ticket…).</summary>

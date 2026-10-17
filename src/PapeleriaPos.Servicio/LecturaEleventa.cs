@@ -243,16 +243,16 @@ public sealed class LecturaEleventa(
                 avisos[aviso] = avisos.GetValueOrDefault(aviso) + 1;
             if (vuelta is { PorRevisar: > 0 } choques)
                 avisos[DevolucionesConEleventa.VueltaPorRevisar] = avisos.GetValueOrDefault(DevolucionesConEleventa.VueltaPorRevisar) + choques.PorRevisar;
+            if (vuelta is { Retenidas: > 0 } retenidas)
+                avisos[DevolucionesConEleventa.VueltaRetenida] = avisos.GetValueOrDefault(DevolucionesConEleventa.VueltaRetenida) + retenidas.Retenidas;
             var texto = resultado.ToString();
             if (turnos is { Cortes: > 0 } conCorte)
                 texto += $"; {conCorte.Cortes} {(conCorte.Cortes == 1 ? "turno cerrado" : "turnos cerrados")} con el corte de eleventa";
             if (vuelta is { Pasadas: > 0 } pasadas)
                 texto += $"; {pasadas.Pasadas} {(pasadas.Pasadas == 1 ? "devolución" : "devoluciones")} de eleventa";
-            if (vuelta is { Propias: > 0 } propias)
-                texto += $"; {propias.Propias} {(propias.Propias == 1 ? "devolución de aquí anotada" : "devoluciones de aquí anotadas")} a mano en eleventa";
             _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), true, texto, null,
                 HoraMexico.ALocal(inicio + espera), ++_lecturas, avisos);
-            if (resultado.HuboCambios || turnos is { Cortes: > 0 } or { Adoptados: > 0 } || vuelta is { Pasadas: > 0 } or { PorRevisar: > 0 } or { Propias: > 0 })
+            if (resultado.HuboCambios || turnos is { Cortes: > 0 } or { Adoptados: > 0 } || vuelta is { Pasadas: > 0 } or { PorRevisar: > 0 } or { Retenidas: > 0 })
                 log.LogInformation("Eleventa ({Servidor}): {Resultado}.", servidor, texto);
             // Lo que seguía en la bandeja de un turno que eleventa cortó: su hora dice si va al turno siguiente o queda por revisar.
             if (turnos is { Cortes: > 0 })
@@ -302,10 +302,20 @@ public static class ApiEleventa
 
         // Lo que ya quedó en eleventa a mano (pendiente o por revisar): ya no se manda ni se descuenta al leer eleventa. Lo
         // anota quien entró con «Configuración de la tienda», como «Ya lo revisé» y reanudar el puente; queda en la bitácora.
-        api.MapPost("/envios/{id:guid}/a-mano", async (Guid id, SolicitudRevision s, EnvioVentasEleventa envios, PosDbContext db) =>
-            await envios.AnotarAManoAsync(db, id, s)
-                ? Results.Ok(await envios.EstadoAsync(db))
-                : Results.BadRequest(new ErrorDto("Solo se anota a mano lo que está pendiente o por revisar.")));
+        // Una devolución de aquí de un ticket que está en eleventa dice además cuál es su anotación allá (se ligan): lo que la
+        // lectura retenía de ese ticket y no se eligió se pasa en la siguiente lectura, que se pide ya.
+        api.MapPost("/envios/{id:guid}/a-mano", async (Guid id, SolicitudAnotadoAMano s, EnvioVentasEleventa envios, PosDbContext db, LecturaEleventa lectura) =>
+        {
+            if (!await envios.AnotarAManoAsync(db, id, s))
+                return Results.BadRequest(new ErrorDto("Solo se anota a mano lo que está pendiente o por revisar."));
+            if (s.Anotaciones is { Count: > 0 })
+                lectura.LeerAhora();
+            return Results.Ok(await envios.EstadoAsync(db));
+        });
+
+        // Las devoluciones de eleventa que pueden ser la anotación a mano de una devolución de aquí, leídas en vivo: para elegir
+        // la suya al marcarla «Ya lo anoté en eleventa».
+        api.MapGet("/envios/{id:guid}/anotaciones", async (Guid id, EnvioVentasEleventa envios, PosDbContext db) => await envios.AnotacionesAsync(db, id));
 
         // Devolver con el folio de eleventa (también un ticket cobrado en eleventa) y lo que quedó por revisar (ApiPuenteEleventa).
         api.MapearPuente();

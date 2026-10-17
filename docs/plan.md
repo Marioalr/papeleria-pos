@@ -682,7 +682,8 @@ en vivo (solo efectivo, 7 días y las reglas de la caja nueva): el dinero sale d
 eleventa por la bandeja. Un ticket de otra caja o de otro turno no se devuelve en la caja 2 sino en eleventa, hasta
 ver en vivo cómo lo anota eleventa (2026-10-17, por revisar con el dueño). Lo que se devuelve o cancela en eleventa de
 un ticket de la caja 2 entra a su venta con la lectura, sin efectivo (el corte de la caja nueva no lo cuenta), y lo
-que quede por revisar se ve arriba en la pantalla de la caja 2.
+que quede por revisar se ve arriba en la pantalla de la caja 2. Lo raro que no pasa solo (el turno de eleventa se
+cortó antes de mandarlo) se anota a mano allá, y al marcarlo aquí se elige cuál es su anotación: no se adivina.
 
 Tercera parte (2026-10-17), en código: los respaldos de eleventa. Antes de cada escritura y en cada lectura, el puente
 revisa que eleventa siga teniendo lo último que le mandó la caja 2 (sus tickets con su folio y su marca, el turno que

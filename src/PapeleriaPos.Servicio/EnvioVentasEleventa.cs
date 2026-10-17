@@ -163,23 +163,61 @@ public sealed class EnvioVentasEleventa(
     /// Lo que ya quedó en eleventa a mano (alguien lo registró allá, o allá ya estaba), pendiente o por revisar: ya no se
     /// manda, lo que sigue en la bandeja puede pasar, y la lectura de eleventa ya no lo descuenta de la existencia. Lo anota
     /// quien entró con «Configuración de la tienda» (como «Ya lo revisé» y reanudar el puente), y queda en la bitácora.
+    /// <para>
+    /// Una devolución de aquí de un ticket que está en eleventa dice además cuál es su anotación allá (revisión del 2026-10-17,
+    /// decidido): una o varias de las devoluciones de eleventa de ese ticket, leídas en vivo, que juntas devuelven lo mismo.
+    /// Se ligan y no se pasan a la venta; si ninguna es, todavía no se puede marcar. Sin eleventa, tampoco.
+    /// </para>
     /// </summary>
-    public async Task<bool> AnotarAManoAsync(PosDbContext db, Guid id, SolicitudRevision s)
+    public async Task<bool> AnotarAManoAsync(PosDbContext db, Guid id, SolicitudAnotadoAMano s)
     {
         if (await db.EnviosAEleventa.FindAsync(id) is not { Estado: EstadoEnvioEleventa.Pendiente or EstadoEnvioEleventa.PorRevisar } envio)
             return false;
-        var control = await ConPermisoAsync(db, envio, s);
+        var control = await ConPermisoAsync(db, envio, new SolicitudRevision(s.UsuarioId, s.Nota));
         // Cómo se ve en la bandeja («Venta B-000123», «Salida de efectivo: …»), para la bitácora.
         var anotado = (await EstadoAsync(db)).PorAtender.FirstOrDefault(e => e.Id == id);
+        var anotacion = "";
+        if (await DevolucionesConEleventa.SeMandaSolaAsync(db, envio))
+            throw new InvalidOperationException(DevolucionesConEleventa.PrimeroPorRevisar);
+        if (await DevolucionesConEleventa.PorAnotarAsync(db, envio) is { } porAnotar)
+        {
+            if (s.Anotaciones is not { Count: > 0 } elegidas)
+                throw new InvalidOperationException(DevolucionesConEleventa.DiCualEs);
+            var leidas = await DevolucionesConEleventa.AnotacionesEnVivoAsync(db, Servidor(), porAnotar)
+                ?? throw new InvalidOperationException(DevolucionesConEleventa.NoContestaParaElegir);
+            var tomadas = leidas.Where(l => elegidas.Contains(l.Id)).ToList();
+            if (tomadas.Count != elegidas.Distinct().Count())
+                throw new InvalidOperationException(DevolucionesConEleventa.YaNoSeElige);
+            if (DevolucionesConEleventa.PorQueNoEs(porAnotar.Armada, tomadas) is { } porque)
+                throw new InvalidOperationException(porque);
+            DevolucionesConEleventa.Ligar(db, porAnotar, tomadas, reloj.GetUtcNow().UtcDateTime);
+            anotacion = $" (en eleventa: {string.Join(", ", tomadas.Select(t => $"{(t.EsCancelacion ? "cancelación" : "devolución")} #{t.Id} del {t.DevueltoEn:dd/MM HH:mm}"))})";
+        }
         envio.Estado = EstadoEnvioEleventa.AMano;
-        envio.Error = Recortar($"Se anotó a mano en eleventa. {envio.Error}".Trim());
-        control.Anotar($"Anotó a mano en eleventa: {anotado?.Descripcion ?? envio.Tipo.ToString()}", anotado?.TotalCentavos);
+        envio.Error = Recortar($"Se anotó a mano en eleventa{anotacion}. {envio.Error}".Trim());
+        control.Anotar($"Anotó a mano en eleventa: {anotado?.Descripcion ?? envio.Tipo.ToString()}{anotacion}", anotado?.TotalCentavos);
         // Antes de guardarlo: una lectura de eleventa a medias no sabe si lo leyó antes o después de que se registrara allá.
         EnCurso.AnotadoAMano(envio.Id);
         await db.SaveChangesAsync();
         Despertar();
         return true;
     }
+
+    /// <summary>
+    /// Las devoluciones de eleventa que pueden ser la anotación a mano de una devolución de aquí, leídas en vivo, para elegir
+    /// la suya al marcarla «Ya lo anoté en eleventa». Vacía si todavía no hay ninguna; error si eso no se marca eligiendo o si
+    /// eleventa no contesta.
+    /// </summary>
+    public async Task<List<AnotacionEnEleventaDto>> AnotacionesAsync(PosDbContext db, Guid id)
+    {
+        var envio = await db.EnviosAEleventa.FindAsync(id) ?? throw new InvalidOperationException("Eso ya no está en la bandeja.");
+        var porAnotar = await DevolucionesConEleventa.PorAnotarAsync(db, envio) ?? throw new InvalidOperationException(DevolucionesConEleventa.NoSeElige);
+        var leidas = await DevolucionesConEleventa.AnotacionesEnVivoAsync(db, Servidor(), porAnotar)
+            ?? throw new InvalidOperationException(DevolucionesConEleventa.NoContestaParaElegir);
+        return leidas.Select(DevolucionesConEleventa.ComoAnotacion).ToList();
+    }
+
+    private ServidorEleventa Servidor() => _destino?.Servidor ?? throw new InvalidOperationException("Esta caja no manda a eleventa.");
 
     /// <summary>
     /// Lo que se hace a mano con algo de la bandeja (dejarlo por revisar, anotarlo a mano) lo hace quien entró con
