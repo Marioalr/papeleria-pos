@@ -277,6 +277,16 @@ public static partial class EnvioEleventa
                 ?? (p.ArticuloEleventa is null ? articulos.FirstOrDefault(a => EsComun(a) && string.Equals(a.Nombre, p.Nombre.Trim(), StringComparison.OrdinalIgnoreCase) && Alcanza(a)) : null)
                 ?? throw new ChoqueConEleventa($"En el ticket de eleventa ya no está «{p.Nombre}» con {p.Cantidad} por devolver.");
             usado[articulo.Id] = usado.GetValueOrDefault(articulo.Id) + p.Cantidad;
+            // La de un ticket de eleventa (por su renglón) no se pasa de lo que le queda a ese renglón, y si se lo lleva todo,
+            // es exacto lo que le queda: si no, el ticket de eleventa quedaría abajo de cero o con un total sin artículos. Si
+            // eleventa cambió desde que se devolvió aquí, no se escribe (revisión del 2026-10-17).
+            if (p.ArticuloEleventa is not null)
+            {
+                var queda = articulo.Total - devueltos.Where(x => x.Articulo.Id == articulo.Id).Sum(x => x.Monto);
+                if (p.Importe > queda + 0.005m || articulo.Cantidad - usado[articulo.Id] <= 0.0005m && Math.Abs(p.Importe - queda) > 0.005m)
+                    throw new ChoqueConEleventa($"En el ticket de eleventa a «{articulo.Nombre}» le quedan {queda:0.00} y aquí se devolvieron {p.Importe:0.00}: "
+                        + "cambió desde que se devolvió aquí. Anótala a mano en eleventa.");
+            }
             devueltos.Add(new Devuelto(articulo, p.Cantidad, p.Importe, p.RegresaAlInventario && !EsComun(articulo) ? p.Cantidad : 0));
         }
         // Dos devoluciones del mismo artículo en una: se juntan, como eleventa lo tiene en un solo renglón.

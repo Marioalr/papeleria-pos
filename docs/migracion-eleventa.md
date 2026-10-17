@@ -594,10 +594,17 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       espere a la red.
     - Al devolver se vuelve a leer en vivo (otra caja pudo devolver algo mientras) y se guarda todo junto: el ticket como
       se leyó y lo devuelto (en el puente, no como venta del núcleo); la salida de efectivo del turno de la caja nueva
-      («Devolución del ticket #4521 de eleventa (Principal): …», redondeada al peso como cualquier reembolso; no va a
-      eleventa como salida); la apertura del cajón; la entrada al kardex de lo que regresa al inventario, y el envío a la
-      bandeja, que la escribe en eleventa como eleventa escribe una parcial, renglón por renglón del ticket. Mientras no
-      llega, la lectura la sigue sumando a las existencias.
+      («Devolución del ticket #4521 de eleventa (Principal): …»; no va a eleventa como salida); la apertura del cajón; la
+      entrada al kardex de lo que regresa al inventario, y el envío a la bandeja, que la escribe en eleventa como eleventa
+      escribe una parcial, renglón por renglón del ticket. Mientras no llega, la lectura la sigue sumando a las
+      existencias.
+    - **Lo que sale es exacto, al centavo** (revisión del 2026-10-17): eleventa cobró con centavos y dio el cambio con
+      centavos, así que se regresa lo que dice eleventa, como lo regresaría eleventa. De cada artículo, si se devuelve todo
+      lo que le queda, sale exacto lo que le queda en eleventa; si es una parte, en proporción a su precio, sin pasarse.
+      Así el ticket de eleventa queda en cero al devolverlo todo (nunca abajo) y lo que sale del cajón es lo que eleventa
+      anota como devuelto. Al peso, como en las ventas de la caja nueva (que se cobraron ya redondeadas), un ticket de
+      $9.50 devuelto completo salía en $10 y dejaba el de eleventa en −$0.50. Al escribirla, si eleventa cambió desde que
+      se devolvió aquí y ya no le queda tanto a ese renglón, queda por revisar.
     - Solo se escribe en eleventa si el ticket es del mismo turno de la caja 2 en eleventa. El de otra caja (la principal)
       o de otro turno queda por revisar al mandarlo («todavía no se ha visto cómo anota eleventa esa devolución»), sin
       detener la bandeja: el dinero ya salió de la caja nueva y el inventario ya entró aquí; falta anotarla a mano en

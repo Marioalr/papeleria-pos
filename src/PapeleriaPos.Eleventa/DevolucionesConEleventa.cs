@@ -97,7 +97,7 @@ public static class DevolucionesConEleventa
         {
             var (allaCantidad, allaDinero) = DevueltoAlla(t, a);
             var vendido = a.Cantidad + allaCantidad;
-            return new LineaDevolucionDto(IdDelArticulo(a.Id), a.Nombre, Milesimas(vendido), Milesimas(allaCantidad + aqui.GetValueOrDefault(a.Id)),
+            return new LineaDevolucionDto(IdDelArticulo(a.Id), a.Nombre, Milesimas(vendido), Milesimas(allaCantidad + aqui.GetValueOrDefault(a.Id).Cantidad),
                 Centavos(a.Total + allaDinero), a.ProductoId is not null);
         }).ToList();
         var dias = t.VendidoEn is { } vendidoEn ? Devolucion.DiasParaDevolver - (int)(HoraMexico.ALocal(ahoraUtc) - vendidoEn).TotalDays : 0;
@@ -116,8 +116,16 @@ public static class DevolucionesConEleventa
     /// <summary>
     /// La devolución de un ticket de eleventa en la caja nueva: con lo que se acaba de leer en vivo, las reglas de la caja
     /// nueva (motivo, permiso y quién autoriza) y el turno abierto de esta caja. Guarda el ticket como se leyó, la salida de
-    /// efectivo (redondeada al peso, como el reembolso de siempre), la entrada al kardex de lo que regresa y el envío a
-    /// eleventa, todo junto. Regresa lo guardado y la salida, para el comprobante.
+    /// efectivo, la entrada al kardex de lo que regresa y el envío a eleventa, todo junto. Regresa lo guardado y la salida,
+    /// para el comprobante.
+    /// <para>
+    /// Lo que se regresa es exacto, al centavo, como lo regresaría eleventa (revisión del 2026-10-17): eleventa cobró con
+    /// centavos y dio el cambio con centavos, sin redondear. De cada artículo, si se devuelve todo lo que queda de él, sale
+    /// exacto lo que le queda en eleventa (su <c>TOTAL_ARTICULO</c>, menos lo de aquí que todavía no llega); si es una parte,
+    /// en proporción a su precio, sin pasarse de lo que le queda. Así el ticket de eleventa nunca queda abajo de cero, queda
+    /// en cero al devolverlo todo, y lo que sale del cajón es lo que eleventa anota como devuelto. Redondear al peso, como
+    /// en las ventas de la caja nueva (que se cobraron ya redondeadas), lo dejaría en −$0.50 o con un total sin artículos.
+    /// </para>
     /// </summary>
     public static async Task<(DevolucionDeEleventa Devolucion, MovimientoCaja? Salida)> DevolverAsync(
         PosDbContext db, TicketLeido t, SolicitudDevolucion s, DateTime ahoraUtc, CancellationToken ct = default)
@@ -141,29 +149,25 @@ public static class DevolucionesConEleventa
             if (articulo is null)
                 throw new ArgumentException("Esa línea no es de este ticket.");
             var cantidad = pedida.Sum(l => l.CantidadMilesimas) / 1000m;
-            var queda = articulo.Cantidad - aqui.GetValueOrDefault(articulo.Id);
+            var (aquiCantidad, aquiDinero) = aqui.GetValueOrDefault(articulo.Id);
+            var queda = articulo.Cantidad - aquiCantidad;
             if (cantidad > queda + 0.0005m)
                 throw new InvalidOperationException($"De «{articulo.Nombre}» solo quedan {queda.ToString("0.###", CultureInfo.InvariantCulture)} por devolver.");
-            // Como la ventana: en proporción a lo vendido (con lo devuelto allá), redondeado al centavo.
+            // Todo lo que queda: exacto lo que le queda en eleventa. Una parte: como la ventana, en proporción a lo vendido (con
+            // lo devuelto allá), al centavo y sin pasarse de lo que le queda.
+            var quedaDinero = Math.Max(0, Centavos(articulo.Total) - aquiDinero);
             var (allaCantidad, allaDinero) = DevueltoAlla(t, articulo);
             var vendido = Milesimas(articulo.Cantidad + allaCantidad);
-            var importe = Redondeo.Dividir((Int128)Centavos(articulo.Total + allaDinero) * Milesimas(cantidad), vendido);
+            var importe = cantidad >= queda - 0.0005m
+                ? quedaDinero
+                : Math.Min(quedaDinero, Redondeo.Dividir((Int128)Centavos(articulo.Total + allaDinero) * Milesimas(cantidad), vendido));
             devueltos.Add(new ArticuloDevueltoDeEleventa(articulo.Id, articulo.Codigo, articulo.Nombre, cantidad, importe,
                 pedida.All(l => l.RegresaAlInventario) && articulo.ProductoId is not null,
                 articulo.ProductoId is { } producto && variantes.TryGetValue(producto, out var variante) ? variante : null));
         }
         var total = devueltos.Sum(d => d.ImporteCentavos);
-
-        // Lo que sale en efectivo, al peso y acumulado por ticket como en la caja nueva: con lo que ya se devolvió en
-        // eleventa y aquí (lo que todavía no llega allá), sin regresar centavos sueltos.
-        var anteriores = await db.Set<DevolucionDeEleventa>().AsNoTracking().Where(d => d.TicketEleventa == t.Id).ToListAsync(ct);
-        var pendientes = await NoLleganAsync(db, anteriores.Select(d => d.Id).ToList(), ct);
-        var enEleventa = Centavos(t.Devoluciones.Sum(d => d.Total));
-        var resumen = new ResumenReembolsos(Centavos(t.Pagado),
-            enEleventa + anteriores.Where(d => pendientes.Contains(d.Id)).Sum(d => d.TotalCentavos), 0,
-            enEleventa + anteriores.Where(d => pendientes.Contains(d.Id)).Sum(d => d.ReembolsoEfectivoCentavos));
-        var completa = t.Articulos.All(a => a.Cantidad - aqui.GetValueOrDefault(a.Id) - devueltos.Where(d => d.ArticuloEleventa == a.Id).Sum(d => d.Cantidad) <= 0.0005m);
-        var reembolso = CalculoDevolucion.ReembolsoEnEfectivo(resumen, total, 0, completa);
+        // Exacto, sin redondear: lo que eleventa anota como devuelto es lo que sale del cajón.
+        var reembolso = total;
 
         var control = new ServicioControl(db);
         await control.RequerirAsync(s.UsuarioId, caja.SucursalId, caja.Id, AccionControlada.Devolucion, total,
@@ -175,7 +179,7 @@ public static class DevolucionesConEleventa
             AutorizoId = s.AutorizacionId is { } autorizacion ? (await db.Autorizaciones.FindAsync([autorizacion], ct))?.AutorizadorId : null,
             TicketEleventa = t.Id, Folio = t.Folio, CajaEleventa = t.CajaId, CajaNombre = Recortar(t.Caja, 50), TurnoTicketEleventa = t.TurnoId,
             VendidoUtc = HoraMexico.AUtc(vendidoEn), TicketTotalCentavos = Centavos(t.Pagado), Ticket = [.. t.Articulos], Articulos = devueltos,
-            TotalCentavos = total, ReembolsoEfectivoCentavos = reembolso, RedondeoCentavos = reembolso - total,
+            TotalCentavos = total, ReembolsoEfectivoCentavos = reembolso, RedondeoCentavos = 0,
         };
         MovimientoCaja? salida = null;
         if (reembolso > 0)
@@ -211,13 +215,16 @@ public static class DevolucionesConEleventa
         return (devolucion, salida);
     }
 
-    /// <summary>Lo devuelto aquí de cada artículo de ese ticket que todavía no está en eleventa (pendiente o por revisar).</summary>
-    private static async Task<Dictionary<int, decimal>> DevueltoAquiAsync(PosDbContext db, int ticket, CancellationToken ct)
+    /// <summary>
+    /// Lo devuelto aquí de cada artículo de ese ticket que todavía no está en eleventa (pendiente o por revisar): cuánto y por
+    /// cuánto dinero.
+    /// </summary>
+    private static async Task<Dictionary<int, (decimal Cantidad, long Dinero)>> DevueltoAquiAsync(PosDbContext db, int ticket, CancellationToken ct)
     {
         var devoluciones = await db.Set<DevolucionDeEleventa>().AsNoTracking().Where(d => d.TicketEleventa == ticket).ToListAsync(ct);
         var noLlegan = await NoLleganAsync(db, devoluciones.Select(d => d.Id).ToList(), ct);
         return devoluciones.Where(d => noLlegan.Contains(d.Id)).SelectMany(d => d.Articulos)
-            .GroupBy(a => a.ArticuloEleventa).ToDictionary(g => g.Key, g => g.Sum(a => a.Cantidad));
+            .GroupBy(a => a.ArticuloEleventa).ToDictionary(g => g.Key, g => (g.Sum(a => a.Cantidad), g.Sum(a => a.ImporteCentavos)));
     }
 
     /// <summary>De esas devoluciones de la ida, las que eleventa todavía no tiene: su envío sigue pendiente o quedó por revisar.</summary>

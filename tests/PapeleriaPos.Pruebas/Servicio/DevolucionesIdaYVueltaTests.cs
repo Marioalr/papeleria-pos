@@ -57,10 +57,10 @@ public sealed class DevolucionesIdaYVueltaTests
             ticket.Lineas.Select(l => (l.Descripcion, l.CantidadMilesimas, l.CantidadDevueltaMilesimas, l.ImporteCentavos, l.LlevaInventario)));
         Assert.Equal((false, 7, (string?)null), (ticket.PuedeCancelar, ticket.DiasParaDevolver, ticket.NoSeDevuelveEnElPiloto));
 
-        // Dos plumas y el común: $33.50, y en efectivo sale al peso, como cualquier reembolso de la caja nueva.
+        // Dos plumas y el común: $33.50. Sale exacto, al centavo, como lo regresaría eleventa (que cobró con centavos).
         var comprobante = await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/eleventa/tickets/{principal.TicketId}/devolucion",
             Devolver(c, "No era el color", new LineaDevolucionSolicitada(ticket.Lineas[0].LineaId, 2000), new LineaDevolucionSolicitada(ticket.Lineas[1].LineaId, 1000))));
-        var reembolso = CalculoDevolucion.ReembolsoEnEfectivo(new ResumenReembolsos(4250, 0, 0, 0), 3350, 0, completaElTicket: false);
+        const long reembolso = 3350;
         Assert.Equal(($"{principal.Folio} (eleventa, Principal)", 3350L, reembolso), (comprobante.Folio, comprobante.TotalCentavos, comprobante.ReembolsoEfectivoCentavos));
 
         // Eleventa todavía no dice cómo anota la devolución de otra caja: queda por revisar, a la vista de la caja 2.
@@ -271,6 +271,34 @@ public sealed class DevolucionesIdaYVueltaTests
     {
         await using var db = servicio.Base();
         return (await db.EnviosAEleventa.SingleAsync(x => x.Tipo == TipoEnvioEleventa.Venta && x.VentaId == ticket.VentaId)).TicketEleventa!.Value;
+    }
+
+    [FactConFirebird]
+    public async Task Un_ticket_de_eleventa_con_centavos_se_devuelve_exacto_y_alla_queda_en_cero()
+    {
+        var (e, turno) = await EleventaAsync();
+        await using var eleventa = e;
+        // Eleventa cobró en la caja 2, en su turno, una pluma a $9.50: eleventa no redondea.
+        var cobrada = HoraLocal(20);
+        var enEleventa = await EnvioEleventa.MandarAsync(e.Conexion, new CajaEnEleventa(PilotoDePrueba.CajaEleventa, 7, AbreTurno: false),
+            new VentaParaEleventa(cobrada.AddMinutes(-1), cobrada, 10, new TurnoParaEleventa(HoraLocal(120), 300), [new ArticuloParaEleventa(10, "Pluma", 1, 9.5m)]));
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        var ticket = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/eleventa/tickets/{enEleventa.TicketId}"));
+
+        var comprobante = await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/eleventa/tickets/{enEleventa.TicketId}/devolucion",
+            new SolicitudDevolucion(c.Sesion.UsuarioId, c.Datos.Id, "Defecto", [new LineaDevolucionSolicitada(ticket.Lineas[0].LineaId, 1000)])));
+        await MandarAsync(c);
+
+        // Sale exacto lo que cobró eleventa, y allá el ticket y el turno quedan en cero, como los deja eleventa.
+        Assert.Equal((950L, 950L, 0L), (comprobante.TotalCentavos, comprobante.ReembolsoEfectivoCentavos, comprobante.RedondeoCentavos));
+        var fila = (await e.FilasAsync("SELECT TOTAL, SUBTOTAL, TOTAL_FACTURABLE FROM VENTATICKETS WHERE ID = @t", ("t", enEleventa.TicketId))).Single();
+        Assert.All(new[] { fila["TOTAL"], fila["SUBTOTAL"], fila["TOTAL_FACTURABLE"] }, v => Assert.Equal(0, Convert.ToDouble(v), 3));
+        Assert.Equal(9.5, Convert.ToDouble(await e.ValorAsync("SELECT TOTAL_DEVUELTO FROM DEVOLUCIONES")), 3);
+        var enElTurno = (await e.FilasAsync("SELECT ACUMULADO_VENTAS, DEVOLUCIONES_VENTAS_EFECTIVO FROM TURNOS WHERE ID = @t", ("t", turno))).Single();
+        Assert.Equal((0d, 9.5d), (Math.Round(Convert.ToDouble(enElTurno["ACUMULADO_VENTAS"]), 3), Math.Round(Convert.ToDouble(enElTurno["DEVOLUCIONES_VENTAS_EFECTIVO"]), 3)));
+        await using var db = servicio.Base();
+        Assert.Equal(950, (await db.MovimientosCaja.SingleAsync(m => m.Motivo.StartsWith("Devolución del ticket #"))).MontoCentavos);
     }
 
     /// <summary>Los ajustes de existencia que hizo la lectura de eleventa a la pluma.</summary>

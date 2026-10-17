@@ -83,8 +83,8 @@ public static class VentasParaEleventa
 
     /// <summary>
     /// La devolución de un ticket cobrado en eleventa (la ida, <see cref="DevolucionesConEleventa"/>): cada artículo por su
-    /// renglón del ticket (<c>VENTATICKETS_ARTICULOS.ID</c>), con lo que salió de la caja. Como en las demás devoluciones, el
-    /// redondeo del efectivo va en lo más grande, para que eleventa devuelva lo que salió de la caja.
+    /// renglón del ticket (<c>VENTATICKETS_ARTICULOS.ID</c>), con lo que salió de la caja. Lo que sale es exacto, artículo
+    /// por artículo, sin redondeo (revisión del 2026-10-17): nunca más de lo que le queda en eleventa a ese renglón.
     /// </summary>
     public static async Task<DevolucionArmada> ArmarDevolucionDeEleventaAsync(PosDbContext db, Guid devolucionId, CancellationToken ct = default)
     {
@@ -93,11 +93,6 @@ public static class VentasParaEleventa
         var articulos = d.Articulos
             .Select(a => new ArticuloDevuelto(null, a.Nombre, a.Cantidad, a.ImporteCentavos / 100m, a.RegresaAlInventario, a.ArticuloEleventa))
             .ToList();
-        if (d.RedondeoCentavos != 0 && articulos.Count > 0)
-        {
-            var mayor = articulos.IndexOf(articulos.MaxBy(a => a.Importe)!);
-            articulos[mayor] = articulos[mayor] with { Importe = articulos[mayor].Importe + d.RedondeoCentavos / 100m };
-        }
         return new(new DevolucionParaEleventa(d.TicketEleventa, EsCancelacion: false, HoraMexico.ALocal(d.FechaUtc),
             new TurnoParaEleventa(HoraMexico.ALocal(turno.AbiertoUtc), turno.FondoCentavos / 100m), articulos), null);
     }
