@@ -3,9 +3,7 @@ using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Interfaz;
-using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Pruebas.Servicio;
@@ -54,48 +52,11 @@ public sealed class MedicionCopiaTests(ITestOutputHelper salida) : IDisposable
         return porQue;
     }
 
-    /// <summary>
-    /// El catálogo ficticio, <paramref name="veces"/> veces: cada producto otra vez con su nombre y «· 2», «· 3»…, sus
-    /// presentaciones, sus precios y sus códigos (con «-2», «-3»… para que no se repitan).
-    /// </summary>
+    /// <summary>El catálogo ficticio, <paramref name="veces"/> veces (como el simulador de cajas con --catalogo-por).</summary>
     private static async Task MultiplicarAsync(ServicioDePrueba servicio, int veces)
     {
         await using var db = servicio.Base();
-        var productos = await db.Productos.AsNoTracking().Where(p => p.Activo)
-            .Include(p => p.Variantes).ThenInclude(v => v.Presentaciones).ThenInclude(p => p.Codigos).ToListAsync();
-        var precios = (await db.Precios.AsNoTracking().ToListAsync()).ToLookup(p => p.VarianteId);
-        for (var n = 2; n <= veces; n++)
-        {
-            foreach (var p in productos)
-            {
-                var producto = new Producto
-                {
-                    Nombre = $"{p.Nombre} · {n}", MarcaId = p.MarcaId, DepartamentoId = p.DepartamentoId, Tipo = p.Tipo, Impuesto = p.Impuesto,
-                };
-                db.Productos.Add(producto);
-                foreach (var v in p.Variantes.Where(v => v.Activa))
-                {
-                    var variante = new Variante { ProductoId = producto.Id, Descripcion = v.Descripcion, UnidadBase = v.UnidadBase };
-                    db.Variantes.Add(variante);
-                    var nuevas = new Dictionary<Guid, Guid>();
-                    foreach (var pr in v.Presentaciones)
-                    {
-                        var presentacion = new Presentacion { VarianteId = variante.Id, Nombre = pr.Nombre, Factor = pr.Factor, EsBase = pr.EsBase };
-                        db.Presentaciones.Add(presentacion);
-                        nuevas[pr.Id] = presentacion.Id;
-                        foreach (var c in pr.Codigos)
-                            db.CodigosBarras.Add(new CodigoBarras { Codigo = $"{c.Codigo}-{n}", PresentacionId = presentacion.Id, Origen = c.Origen });
-                    }
-                    foreach (var precio in precios[v.Id])
-                        db.Precios.Add(new Precio
-                        {
-                            VarianteId = variante.Id, PresentacionId = precio.PresentacionId is { } pid ? nuevas[pid] : null, SucursalId = precio.SucursalId,
-                            CantidadMinima = precio.CantidadMinima, PrecioCentavos = precio.PrecioCentavos,
-                        });
-                }
-            }
-        }
-        await db.SaveChangesAsync();
+        await PapeleriaPos.Herramientas.Simulador.BaseDePrueba.MultiplicarCatalogoAsync(db, veces);
     }
 
     [FactDeMedicion]
