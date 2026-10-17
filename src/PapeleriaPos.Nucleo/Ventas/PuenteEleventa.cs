@@ -179,6 +179,15 @@ public class DevolucionDesdeEleventa
     /// </summary>
     public bool Propia { get; set; }
 
+    /// <summary>
+    /// La devolución de aquí que quizá sea esta, anotada a mano en eleventa: mientras alguien no diga si es la misma o es
+    /// otra (en la pantalla de la caja 2), no se pasa a la venta.
+    /// </summary>
+    public Guid? QuizaEsDevolucionId { get; set; }
+
+    /// <summary>Lo que se devolvió allá, artículo por artículo: para pasarla a la venta cuando alguien diga que es otra.</summary>
+    public List<ArticuloDevueltoEnEleventa> Articulos { get; set; } = [];
+
     /// <summary>Por qué no se pasó a la venta (ya se había devuelto aquí, no está en el ticket…).</summary>
     public string? PorRevisar { get; set; }
 
@@ -187,6 +196,10 @@ public class DevolucionDesdeEleventa
 
     public DateTime VistaUtc { get; set; }
 }
+
+/// <summary>Un artículo de una devolución hecha en eleventa (<c>DEVOLUCIONES_ARTICULOS</c>), como se leyó.</summary>
+/// <param name="ProductoId"><c>PRODUCTOS.ID</c>; vacío si es un artículo común.</param>
+public sealed record ArticuloDevueltoEnEleventa(string Codigo, string Nombre, decimal Cantidad, decimal Dinero, int? ProductoId);
 
 /// <summary>
 /// Los respaldos de eleventa (docs/migracion-eleventa.md, «Los respaldos de eleventa»): una vez que el puente vio que

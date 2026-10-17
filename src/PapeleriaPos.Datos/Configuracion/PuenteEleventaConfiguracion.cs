@@ -50,11 +50,15 @@ internal sealed class DevolucionDeEleventaConfiguracion : IEntityTypeConfigurati
         b.Property(d => d.CajaNombre).HasMaxLength(50);
         b.Property(d => d.Motivo).HasMaxLength(500);
         // El ticket como se leyó y lo devuelto van como JSON: se guardan y se leen juntos, y no cambian.
-        Json(b.Property(d => d.Ticket));
-        Json(b.Property(d => d.Articulos));
+        JsonDelPuente.Lista(b.Property(d => d.Ticket));
+        JsonDelPuente.Lista(b.Property(d => d.Articulos));
     }
+}
 
-    private static void Json<T>(PropertyBuilder<List<T>> propiedad) =>
+/// <summary>Las listas que el puente guarda como JSON: se guardan y se leen juntas, y no cambian.</summary>
+internal static class JsonDelPuente
+{
+    public static void Lista<T>(PropertyBuilder<List<T>> propiedad) =>
         propiedad.HasConversion(
             l => JsonSerializer.Serialize(l, Opciones),
             j => JsonSerializer.Deserialize<List<T>>(j, Opciones) ?? new List<T>(),
@@ -70,6 +74,9 @@ internal sealed class DevolucionDesdeEleventaConfiguracion : IEntityTypeConfigur
         b.ToTable("DevolucionesDesdeEleventa");
         b.HasOne<Venta>().WithMany().HasForeignKey(d => d.VentaId);
         b.HasOne<Devolucion>().WithOne().HasForeignKey<DevolucionDesdeEleventa>(d => d.DevolucionId);
+        // La de aquí que quizá sea (se pregunta en la caja 2), y lo que se devolvió allá, para pasarla después.
+        b.HasOne<Devolucion>().WithMany().HasForeignKey(d => d.QuizaEsDevolucionId);
+        JsonDelPuente.Lista(b.Property(d => d.Articulos));
         // Cada devolución de eleventa se pasa una sola vez.
         b.HasIndex(d => new { d.DevolucionEleventa, d.DevueltaUtc }).IsUnique();
         b.HasIndex(d => d.TicketEleventa);

@@ -220,8 +220,10 @@ public sealed class LecturaEleventa(
                     Huella = envios.Activo ? await RestauracionDeEleventa.HuellaAsync(db, ahora, RestauracionDeEleventa.AlLeer, ct) : null,
                 }
                 : null;
-            // Con un límite: si eleventa se queda callado a media lectura, se vuelve a intentar en la siguiente vuelta.
-            var datos = await LectorEleventa.LeerCatalogoAsync(servidor, consulta, ct).WaitAsync(opciones.EsperaMaxima, ct);
+            // Con un límite: si eleventa se queda callado a media lectura, se cancela y se vuelve a intentar en la siguiente vuelta.
+            using var limite = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            limite.CancelAfter(opciones.EsperaMaxima);
+            var datos = await LectorEleventa.LeerCatalogoAsync(servidor, consulta, limite.Token).WaitAsync(opciones.EsperaMaxima + TimeSpan.FromSeconds(10), ct);
             ahora = reloj.GetUtcNow().UtcDateTime;
             if (datos.Piloto?.Restauracion is { } restauracion)
             {
@@ -241,7 +243,7 @@ public sealed class LecturaEleventa(
             foreach (var aviso in turnos?.Avisos ?? [])
                 avisos[aviso] = avisos.GetValueOrDefault(aviso) + 1;
             if (vuelta is { PorRevisar: > 0 } choques)
-                avisos[DevolucionesConEleventa.NoAlcanza] = avisos.GetValueOrDefault(DevolucionesConEleventa.NoAlcanza) + choques.PorRevisar;
+                avisos[DevolucionesConEleventa.VueltaPorRevisar] = avisos.GetValueOrDefault(DevolucionesConEleventa.VueltaPorRevisar) + choques.PorRevisar;
             var texto = resultado.ToString();
             if (turnos is { Cortes: > 0 } conCorte)
                 texto += $"; {conCorte.Cortes} {(conCorte.Cortes == 1 ? "turno cerrado" : "turnos cerrados")} con el corte de eleventa";

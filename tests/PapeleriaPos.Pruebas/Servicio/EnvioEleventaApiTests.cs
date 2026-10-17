@@ -516,6 +516,40 @@ public class EnvioEleventaApiTests
             (long?)pendiente.TotalCentavos), (bitacora[2].Detalle, bitacora[2].VentaId, bitacora[2].MontoCentavos));
     }
 
+    [FactConFirebird]
+    public async Task Si_otra_escritura_tiene_los_mismos_renglones_no_se_da_por_rechazada_y_se_manda_despues()
+    {
+        await using var e = await EleventaAsync();
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor));
+        var c = await AbrirAsync(servicio);
+        await MapearAsync(servicio, c.Producto.VarianteId);
+        var envios = servicio.Fabrica.Services.GetRequiredService<EnvioVentasEleventa>();
+        // Otra escritura tiene la existencia de la pluma: como un intento anterior que se cortó por tiempo y sigue abierto.
+        await using var otra = new FirebirdSql.Data.FirebirdClient.FbConnection(e.Servidor.Cadena());
+        await otra.OpenAsync();
+        await using var abierta = await otra.BeginTransactionAsync(new FirebirdSql.Data.FirebirdClient.FbTransactionOptions
+        {
+            TransactionBehavior = FirebirdSql.Data.FirebirdClient.FbTransactionBehavior.Write | FirebirdSql.Data.FirebirdClient.FbTransactionBehavior.Concurrency
+                | FirebirdSql.Data.FirebirdClient.FbTransactionBehavior.NoWait,
+        });
+        await using (var tomar = new FirebirdSql.Data.FirebirdClient.FbCommand("UPDATE INVENTARIO_BALANCES SET CANTIDAD_ACTUAL = CANTIDAD_ACTUAL WHERE PRODUCTO_ID = 10",
+            otra, abierta))
+            await tomar.ExecuteNonQueryAsync();
+        using var vigilancia = envios.EnCurso.Vigilar();
+
+        var ticket = await CobrarAsync(c);
+        var estado = await EsperarAsync(c, x => x.PorAtender.Any(p => p.Intentos >= 1 && p.Error is not null));
+
+        // No se sabe si entró: no se da por rechazada (la lectura no la descuenta como si no estuviera) y espera en la bandeja.
+        Assert.Null(ticket.FolioEleventa);
+        Assert.Empty(vigilancia.Rechazados());
+        Assert.Equal(EstadoEnvioEleventa.Pendiente, estado.PorAtender.Single().Estado);
+        // Ya sin la otra escritura, entra.
+        await abierta.RollbackAsync();
+        Assert.Equal(HttpStatusCode.Accepted, (await c.Http.PostAsync("api/eleventa/enviar", null)).StatusCode);
+        Assert.Equal(0, (await EsperarAsync(c, x => x.Pendientes == 0)).Pendientes);
+    }
+
     /// <summary>Un «eleventa» que acepta la conexión y ya no contesta, como la red que se cae a media llamada.</summary>
     private sealed class EleventaCallado : IDisposable
     {

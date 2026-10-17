@@ -25,7 +25,12 @@ public static class ApiDevoluciones
             var venta = await new RegistroDevoluciones(db).PorFolioAsync(sucursalId, folio);
             if (venta is null)
                 return Results.NotFound(new ErrorDto($"No existe el ticket «{folio}»."));
-            await RevisarEnEleventaAsync(db, venta.Id, eleventa, envios, soloRevisar: true);
+            if (eleventa.CorteEnEleventa)
+            {
+                // Lo que se le devolvió en eleventa entra antes, y la venta se vuelve a leer: pudo cambiar.
+                await RevisarEnEleventaAsync(db, venta.Id, eleventa, envios, soloRevisar: true);
+                venta = await new RegistroDevoluciones(db).PorFolioAsync(sucursalId, folio) ?? venta;
+            }
             var ahora = db.Reloj.GetUtcNow().UtcDateTime;
             var seCancela = await db.Turnos.AnyAsync(t => t.Id == venta.TurnoId && t.CerradoUtc == null)
                 && (!eleventa.CorteEnEleventa || CorteEnElPiloto.SeCancela(venta.PagadaUtc!.Value, ahora));

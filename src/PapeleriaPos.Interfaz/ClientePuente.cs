@@ -34,6 +34,14 @@ public sealed class ClientePuente(HttpClient http, ConexionCaja conexion)
     /// </summary>
     public Task<PuenteEleventaDto> ReanudarAsync(SolicitudReanudarPuente solicitud) => _http.PostAsync<PuenteEleventaDto>("api/eleventa/reanudar", solicitud);
 
+    /// <summary>La devolución de eleventa es la de aquí anotada a mano: se ligan.</summary>
+    public Task VueltaEsLaMismaAsync(Guid vueltaId, SolicitudRevision solicitud) =>
+        _http.PostAsync<object>($"api/eleventa/vuelta/{vueltaId}/misma", solicitud, sinRespuesta: true);
+
+    /// <summary>La devolución de eleventa no es la de aquí: se pasa a su venta.</summary>
+    public Task VueltaEsOtraAsync(Guid vueltaId, SolicitudRevision solicitud) =>
+        _http.PostAsync<object>($"api/eleventa/vuelta/{vueltaId}/otra", solicitud, sinRespuesta: true);
+
     /// <summary>Una devolución de eleventa que no se pudo pasar a su venta, ya revisada.</summary>
     public Task VueltaRevisadaAsync(Guid vueltaId, SolicitudRevision solicitud) =>
         _http.PostAsync<object>($"api/eleventa/vuelta/{vueltaId}/revisada", solicitud, sinRespuesta: true);

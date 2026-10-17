@@ -43,7 +43,17 @@
                             <li>
                                 <div><strong>@item.Descripcion</strong> · @item.FechaLocal.ToString("dd/MM HH:mm") · @Formato.Dinero(item.TotalCentavos)</div>
                                 <div class="vn-puente-motivo">@item.Motivo</div>
-                                @if (PuedeMarcar)
+                                @if (item.Pregunta is { } pregunta)
+                                {
+                                    @* Quizá es la de aquí anotada a mano en eleventa: lo dice quien revisó eleventa. *@
+                                    <div class="vn-puente-motivo">@pregunta</div>
+                                    @if (PuedeMarcar)
+                                    {
+                                        <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => DecidirAsync(revisar, esLaMisma: true)">Sí, es la misma</button>
+                                        <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => DecidirAsync(revisar, esLaMisma: false)">No, es otra</button>
+                                    }
+                                }
+                                else if (PuedeMarcar)
                                 {
                                     <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => MarcarAsync(revisar)">
                                         @(item.EnvioId is not null ? "Ya lo anoté en eleventa" : "Ya lo revisé")
@@ -135,6 +145,30 @@
                 await Puente!.AnotarAManoAsync(envio, new SolicitudRevision(Sesion.UsuarioId, null));
             else if (item.VueltaId is { } vuelta)
                 await Puente!.VueltaRevisadaAsync(vuelta, new SolicitudRevision(Sesion.UsuarioId, null));
+            await ActualizarAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    /// <summary>Si la devolución de eleventa es la de aquí anotada a mano (se ligan) o es otra (se pasa a su venta).</summary>
+    private async Task DecidirAsync(PorRevisarEleventaDto item, bool esLaMisma)
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            var solicitud = new SolicitudRevision(Sesion.UsuarioId, null);
+            if (esLaMisma)
+                await Puente!.VueltaEsLaMismaAsync(item.VueltaId!.Value, solicitud);
+            else
+                await Puente!.VueltaEsOtraAsync(item.VueltaId!.Value, solicitud);
             await ActualizarAsync();
         }
         catch (ErrorCaja ex)
