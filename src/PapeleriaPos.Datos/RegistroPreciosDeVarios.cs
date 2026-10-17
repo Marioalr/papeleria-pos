@@ -14,7 +14,9 @@ namespace PapeleriaPos.Datos;
 /// proveedor sube sus precios). Se eligen los productos activos de un departamento, de una marca, los que coinciden con un
 /// texto o los marcados en la lista, y la regla (<see cref="CambioDePrecios"/>): un porcentaje o una cantidad más o menos,
 /// o un precio fijo, sobre el menudeo; si se pide, el mayoreo (escalas y precios por paquete) en la misma proporción; y el
-/// redondeo. Primero se ve cómo quedan; al aplicar se vuelve a calcular y, si algo cambió desde la vista, no se aplica.
+/// redondeo. Lo que se cobra queda en orden: el mayoreo nunca más caro que el menudeo ni que una escala de menos piezas
+/// (<see cref="CambioDePrecios.Variante"/>). Primero se ve cómo quedan; al aplicar se vuelve a calcular y, si algo cambió
+/// desde la vista, no se aplica.
 /// <para>
 /// Lo hace quien entró con «Productos, precios y etiquetas», sin volver a escribir su PIN; el margen de cada uno (con el
 /// mínimo de su departamento o el general) solo lo ve quien tiene «Ver costos, utilidad y margen». Todo va en una sola
@@ -26,7 +28,8 @@ namespace PapeleriaPos.Datos;
 /// En el piloto con eleventa (<paramref name="lecturaDeEleventa"/>: su lectura prendida), de los productos de eleventa no
 /// cambia lo que pone la lectura (<see cref="TrastiendaEnElPiloto"/>): el menudeo y las promociones de eleventa se cambian
 /// allá. Su mayoreo de aquí (las escalas del F11 o de F3 y los precios por paquete) sí cambia, con la misma proporción que
-/// tendría su menudeo, y los productos dados de alta aquí cambian completos.
+/// tendría su menudeo, pero sin pasar de su menudeo ni de sus promociones de eleventa, que se quedan; los productos dados de
+/// alta aquí cambian completos.
 /// </para>
 /// </summary>
 public sealed class RegistroPreciosDeVarios(PosDbContext db, bool lecturaDeEleventa = false)
@@ -118,7 +121,9 @@ public sealed class RegistroPreciosDeVarios(PosDbContext db, bool lecturaDeEleve
         var ids = variantes.Select(v => v.Id).ToList();
         var consulta = db.Precios.Where(p => ids.Contains(p.VarianteId) && p.SucursalId == null);
         var precios = (paraCambiar ? await consulta.ToListAsync(ct) : await consulta.AsNoTracking().ToListAsync(ct)).ToLookup(p => p.VarianteId);
-        var paquetes = await db.Presentaciones.AsNoTracking().Where(p => ids.Contains(p.VarianteId) && !p.EsBase).ToDictionaryAsync(p => p.Id, p => p.Nombre, ct);
+        var paquetes = (await db.Presentaciones.AsNoTracking().Where(p => ids.Contains(p.VarianteId) && !p.EsBase)
+                .Select(p => new { p.Id, p.Nombre, p.Factor }).ToListAsync(ct))
+            .ToDictionary(p => p.Id, p => (p.Nombre, p.Factor));
 
         // El piloto con eleventa: el menudeo y las promociones de un producto de eleventa los pone su lectura.
         var deEleventa = lecturaDeEleventa ? await TrastiendaEnElPiloto.DeEleventaAsync(db, ids, ct) : [];
@@ -139,47 +144,29 @@ public sealed class RegistroPreciosDeVarios(PosDbContext db, bool lecturaDeEleve
         var cambios = new List<Cambio>();
         foreach (var (producto, varianteId, nombre) in variantes)
         {
-            PrecioQueNoCambiaDto NoCambia(PorQueNoCambia porQue) => new(producto.Id, varianteId, nombre, porQue);
+            // La regla con lo que se cobra en orden: el mayoreo nunca más caro que el menudeo (CambioDePrecios.Variante). En el
+            // piloto, lo de eleventa se queda y su mayoreo de aquí cambia en la proporción que tendría su menudeo.
             var suyos = precios[varianteId].ToList();
-            var menudeo = suyos.Where(p => p.PresentacionId is null).MinBy(p => p.CantidadMinima);
-            if (menudeo is not { PrecioCentavos: > 0 })
+            var resultado = CambioDePrecios.Variante(regla, suyos.Select(p => new PrecioDeVariante(p.Id, p.PresentacionId,
+                p.PresentacionId is { } paquete && paquetes.TryGetValue(paquete, out var datos) ? datos.Factor.Milesimas : Cantidad.Escala,
+                p.CantidadMinima.Milesimas, p.PrecioCentavos, PoneLaLectura(p))).ToList());
+            if (resultado.NoCambia is { } porQue)
             {
-                noCambian.Add(NoCambia(PorQueNoCambia.SinPrecio));
+                noCambian.Add(new PrecioQueNoCambiaDto(producto.Id, varianteId, nombre, porQue));
                 continue;
             }
-            // Su mayoreo cambia en la proporción de su menudeo, aunque en el piloto el menudeo de eleventa se cambie allá.
-            var enEleventa = PoneLaLectura(menudeo);
-            var proporcion = CambioDePrecios.ProporcionDe(regla, menudeo.PrecioCentavos);
-            var nuevoMenudeo = enEleventa ? menudeo.PrecioCentavos : CambioDePrecios.Menudeo(regla, menudeo.PrecioCentavos);
-            var mayoreo = regla.ConMayoreo
-                ? suyos.Where(p => p != menudeo && p.PrecioCentavos > 0 && !PoneLaLectura(p))
-                    .OrderBy(p => p.PresentacionId is not null).ThenBy(p => p.CantidadMinima)
-                    .Select(p => (Precio: p, Despues: CambioDePrecios.EnProporcion(p.PrecioCentavos, proporcion, regla.Redondeo)))
-                    .ToList()
-                : [];
-            if (nuevoMenudeo is not { } despues || mayoreo.Any(m => m.Despues is null))
-            {
-                noCambian.Add(NoCambia(PorQueNoCambia.QuedariaEnCero));
-                continue;
-            }
-            var deEste = new List<Cambio>();
-            if (despues != menudeo.PrecioCentavos)
-                deEste.Add(new Cambio(menudeo, despues));
-            deEste.AddRange(mayoreo.Where(m => m.Despues != m.Precio.PrecioCentavos).Select(m => new Cambio(m.Precio, m.Despues!.Value)));
-            if (deEste.Count == 0)
-            {
-                noCambian.Add(NoCambia(enEleventa ? PorQueNoCambia.EnEleventa : PorQueNoCambia.QuedaIgual));
-                continue;
-            }
+            var menudeo = suyos.Where(p => p.PresentacionId is null).MinBy(p => p.CantidadMinima)!;
+            var deEste = suyos.Where(p => resultado.Cambios.ContainsKey(p.Id)).Select(p => new Cambio(p, resultado.Cambios[p.Id])).ToList();
             cambios.AddRange(deEste);
 
             int? margenAntes = null, margenDespues = null, minimo = null;
             if (costos.TryGetValue(varianteId, out var costo))
-                (margenAntes, margenDespues, minimo) = (Margen.Calcular(menudeo.PrecioCentavos, costo), Margen.Calcular(despues, costo),
+                (margenAntes, margenDespues, minimo) = (Margen.Calcular(resultado.MenudeoAntes, costo), Margen.Calcular(resultado.MenudeoDespues, costo),
                     minimos.GetValueOrDefault(producto.DepartamentoId) ?? general);
-            cambian.Add(new PrecioQueCambiaDto(producto.Id, varianteId, nombre, menudeo.PrecioCentavos, despues,
-                deEste.Where(c => c.Precio != menudeo).Select(c => new MayoreoQueCambiaDto(Cual(c.Precio, paquetes), c.Precio.PrecioCentavos, c.Despues)).ToList(),
-                enEleventa, margenAntes, margenDespues, minimo));
+            cambian.Add(new PrecioQueCambiaDto(producto.Id, varianteId, nombre, resultado.MenudeoAntes, resultado.MenudeoDespues,
+                deEste.Where(c => c.Precio.Id != menudeo.Id).OrderBy(c => c.Precio.PresentacionId is not null).ThenBy(c => c.Precio.CantidadMinima)
+                    .Select(c => new MayoreoQueCambiaDto(Cual(c.Precio, paquetes), c.Precio.PrecioCentavos, c.Despues)).ToList(),
+                resultado.MenudeoEnEleventa, margenAntes, margenDespues, minimo, resultado.MayoreoAjustado));
         }
 
         var algunoDeEleventa = cambian.Any(c => c.MenudeoEnEleventa) || noCambian.Any(n => n.PorQue == PorQueNoCambia.EnEleventa);
@@ -220,9 +207,19 @@ public sealed class RegistroPreciosDeVarios(PosDbContext db, bool lecturaDeEleve
                 var texto = Texto.Normalizar(s.Texto ?? "");
                 if (texto.Length == 0)
                     throw new ArgumentException("Escribe qué buscar: parte del nombre, la marca, el departamento o un código.");
+                // Con un departamento (el filtro de la lista), solo los suyos.
+                string? enDepartamento = null;
+                if (s.DepartamentoId is { } soloDe)
+                {
+                    enDepartamento = (await db.Departamentos.AsNoTracking().SingleOrDefaultAsync(d => d.Id == soloDe, ct)
+                        ?? throw new ArgumentException("Ese departamento ya no existe.")).Nombre;
+                    consulta = consulta.Where(p => p.DepartamentoId == soloDe);
+                }
                 var coinciden = await CoincidenAsync(consulta, texto.Split(' ', StringSplitOptions.RemoveEmptyEntries), ct);
                 consulta = consulta.Where(p => coinciden.Contains(p.Id));
-                cuales = $"lo que coincide con «{s.Texto!.Trim()}»";
+                cuales = enDepartamento is null
+                    ? $"lo que coincide con «{s.Texto!.Trim()}»"
+                    : $"lo que coincide con «{s.Texto!.Trim()}» en «{enDepartamento}»";
                 break;
             case CualesProductos.Marcados:
                 var marcados = (s.Productos ?? []).Distinct().ToList();
@@ -266,12 +263,12 @@ public sealed class RegistroPreciosDeVarios(PosDbContext db, bool lecturaDeEleve
     }
 
     /// <summary>«desde 12», o el paquete con su precio propio: «Caja 12» (y desde cuántos, si es más de uno).</summary>
-    private static string Cual(Precio precio, IReadOnlyDictionary<Guid, string> paquetes)
+    private static string Cual(Precio precio, IReadOnlyDictionary<Guid, (string Nombre, Cantidad Factor)> paquetes)
     {
         var desde = precio.CantidadMinima > Cantidad.Unidades(1) ? $"desde {precio.CantidadMinima}" : null;
         if (precio.PresentacionId is not { } paquete)
             return desde ?? "desde 1";
-        var nombre = paquetes.GetValueOrDefault(paquete) ?? "Paquete";
+        var nombre = paquetes.TryGetValue(paquete, out var datos) ? datos.Nombre : "Paquete";
         return desde is null ? nombre : $"{nombre} {desde}";
     }
 

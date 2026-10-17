@@ -57,9 +57,13 @@ public sealed class PreciosDeVariosApiTests(ServicioDePrueba servicio) : IClassF
         return (lista.Departamentos.Single(d => d.Nombre == nombre).Id, nombre);
     }
 
-    /// <summary>Un producto con su menudeo y, si se dan, sus escalas de mayoreo y una «Caja 12» con precio propio.</summary>
+    /// <summary>
+    /// Un producto con su menudeo y, si se dan, sus escalas de mayoreo, una «Caja 12» con precio propio u otro paquete con el
+    /// suyo.
+    /// </summary>
     private static async Task<FichaProductoDto> ProductoAsync(
-        Caja c, string nombre, Guid departamento, long menudeo, string? marca = null, (long Desde, long Precio)[]? escalas = null, long? caja12 = null)
+        Caja c, string nombre, Guid departamento, long menudeo, string? marca = null, (long Desde, long Precio)[]? escalas = null, long? caja12 = null,
+        (string Nombre, long Piezas, long Precio)? paquete = null)
     {
         var presentaciones = new List<PresentacionFichaDto> { new(null, "Pieza", 1000, true, [new CodigoFichaDto($"PV{Guid.NewGuid():N}"[..16])]) };
         var precios = new List<PrecioFichaDto> { new(null, 1000, menudeo) };
@@ -68,6 +72,11 @@ public sealed class PreciosDeVariosApiTests(ServicioDePrueba servicio) : IClassF
         {
             presentaciones.Add(new PresentacionFichaDto(null, "Caja 12", 12000, false, []));
             precios.Add(new PrecioFichaDto("Caja 12", 1000, caja));
+        }
+        if (paquete is { } otro)
+        {
+            presentaciones.Add(new PresentacionFichaDto(null, otro.Nombre, otro.Piezas * 1000, false, []));
+            precios.Add(new PrecioFichaDto(otro.Nombre, 1000, otro.Precio));
         }
         return await Leer<FichaProductoDto>(await c.Http.PostAsJsonAsync("api/catalogo/productos", new SolicitudGuardarProducto(c.Encargado.UsuarioId, c.Sucursal,
             new FichaProductoDto(null, nombre, departamento, marca, TipoProducto.Mercancia, Impuesto.Iva16, null, true, false,
@@ -363,11 +372,12 @@ public sealed class PreciosDeVariosApiTests(ServicioDePrueba servicio) : IClassF
         Assert.Equal([(deEleventa.Id!.Value, PorQueNoCambia.EnEleventa)], sinMayoreo.NoCambian.Select(x => (x.ProductoId, x.PorQue)));
         Assert.Equal(TrastiendaEnElPiloto.ProductosEnEleventa, sinMayoreo.EnEleventa);
 
-        // Con el mayoreo, de lo de eleventa cambia solo su escala de aquí, en la proporción que tendría su menudeo.
+        // Con el mayoreo, de lo de eleventa cambia solo su escala de aquí, en la proporción que tendría su menudeo, pero más
+        // barata que la promoción de eleventa desde 12 ($12.00), que se queda: $12.10 no cabe, así que al paso de abajo, $11.50.
         var vista = await Leer<VistaPreciosDeVariosDto>(await VistaAsync(c, Subir(c.Encargado, conMayoreo: true)));
         var suyo = vista.Cambian.Single(x => x.ProductoId == deEleventa.Id);
-        Assert.Equal((1500L, 1500L, true), (suyo.AntesCentavos, suyo.DespuesCentavos, suyo.MenudeoEnEleventa));
-        Assert.Equal([("desde 24", 1100L, 1200L)], suyo.Mayoreo.Select(m => (m.Cual, m.AntesCentavos, m.DespuesCentavos)));
+        Assert.Equal((1500L, 1500L, true, true), (suyo.AntesCentavos, suyo.DespuesCentavos, suyo.MenudeoEnEleventa, suyo.MayoreoAjustado));
+        Assert.Equal([("desde 24", 1100L, 1150L)], suyo.Mayoreo.Select(m => (m.Cual, m.AntesCentavos, m.DespuesCentavos)));
         Assert.Equal((1650L, false), vista.Cambian.Where(x => x.ProductoId == deAqui.Id).Select(x => (x.DespuesCentavos, x.MenudeoEnEleventa)).Single());
         Assert.Equal(TrastiendaEnElPiloto.ProductosEnEleventa, vista.EnEleventa);
         // El permiso va primero: el cajero oye lo de siempre.
@@ -375,14 +385,14 @@ public sealed class PreciosDeVariosApiTests(ServicioDePrueba servicio) : IClassF
 
         var hecho = await Leer<PreciosDeVariosAplicadosDto>(await AplicarAsync(c, Subir(c.Encargado, conMayoreo: true) with { Huella = vista.Huella, Id = Guid.NewGuid() }));
         Assert.Equal((2, 3), (hecho.Productos, hecho.Precios));
-        Assert.Equal([(null, 1L, 1500L), (null, 12L, 1200L), (null, 24L, 1200L)], await PreciosAsync(c, deEleventa));
+        Assert.Equal([(null, 1L, 1500L), (null, 12L, 1200L), (null, 24L, 1150L)], await PreciosAsync(c, deEleventa));
         Assert.Equal([(null, 1L, 1650L), (null, 24L, 1200L)], await PreciosAsync(c, deAqui));
 
         // Fuera del piloto, el mismo producto cambia completo.
         var fuera = await Leer<VistaPreciosDeVariosDto>(await VistaAsync(normal, Subir(normal.Encargado, conMayoreo: true)));
         var completo = fuera.Cambian.Single(x => x.ProductoId == deEleventa.Id);
         Assert.Equal((1650L, false), (completo.DespuesCentavos, completo.MenudeoEnEleventa));
-        Assert.Equal([("desde 12", 1200L, 1300L), ("desde 24", 1200L, 1300L)], completo.Mayoreo.Select(m => (m.Cual, m.AntesCentavos, m.DespuesCentavos)));
+        Assert.Equal([("desde 12", 1200L, 1300L), ("desde 24", 1150L, 1250L)], completo.Mayoreo.Select(m => (m.Cual, m.AntesCentavos, m.DespuesCentavos)));
         Assert.Null(fuera.EnEleventa);
     }
 
@@ -419,6 +429,113 @@ public sealed class PreciosDeVariosApiTests(ServicioDePrueba servicio) : IClassF
         Assert.Equal((1100L, 2300L), (await MenudeoAsync(c, regla), await MenudeoAsync(c, compas)));
         await using var db = servicio.Base();
         Assert.Equal(1, await db.Bitacora.CountAsync(b => b.Id == id));
+    }
+
+    /// <summary>Lo que cobra la caja ahora (con sus precios de la base) por tantas piezas, o tantos paquetes de ese nombre.</summary>
+    private async Task<long> CobroAsync(Caja c, FichaProductoDto producto, int cuantos, string? paquete = null)
+    {
+        await using var db = servicio.Base();
+        var variante = producto.Variantes[0].Id!.Value;
+        var precios = await db.Precios.AsNoTracking().Where(p => p.VarianteId == variante).ToListAsync();
+        var presentacion = await db.Presentaciones.AsNoTracking()
+            .SingleAsync(p => p.VarianteId == variante && (paquete == null ? p.EsBase : p.Nombre == paquete));
+        return CalculoPrecio.Calcular(precios, c.Sucursal, presentacion, Cantidad.Piezas(cuantos))!.ImporteCentavos;
+    }
+
+    [Fact]
+    public async Task El_mayoreo_nunca_queda_igual_o_mas_caro_que_el_menudeo()
+    {
+        var c = await PrepararAsync();
+        var (departamento, _) = await DepartamentoAsync(c);
+        var ficha = Ficha();
+        // Un precio fijo de $10.90 con el mayoreo, al peso: $20.00 con desde 12 a $19.30.
+        var fijo = await ProductoAsync(c, $"Fijo {ficha}", departamento, 2000, escalas: [(12, 1930)]);
+        // Bajar 20 % sin el mayoreo: $10.00 con desde 12 a $9.00; y uno sin mayoreo, que sí cambia.
+        var conEscala = await ProductoAsync(c, $"Con escala {ficha}", departamento, 1000, escalas: [(12, 900)]);
+        var sinEscala = await ProductoAsync(c, $"Sin escala {ficha}", departamento, 1000);
+        // Subir 2 % a los 50 centavos: $10.00 con desde 12 a $9.80 y el par a $19.90.
+        var poco = await ProductoAsync(c, $"Poco {ficha}", departamento, 1000, escalas: [(12, 980)], paquete: ("Par", 2, 1990));
+        SolicitudPreciosDeVarios Marcados(FichaProductoDto[] productos, ComoCambiarPrecios como, long valor, bool conMayoreo, RedondeoDePrecios redondeo) =>
+            Pedido(c, c.Encargado, CualesProductos.Marcados, como, valor, productos: productos.Select(p => p.Id!.Value).ToList(), conMayoreo: conMayoreo,
+                redondeo: redondeo);
+
+        // El precio fijo: la escala, que al peso quedaría en $11.00 (más que el menudeo de $10.90), queda al peso de abajo.
+        var aFijo = Marcados([fijo], ComoCambiarPrecios.PrecioFijo, 1090, conMayoreo: true, RedondeoDePrecios.UnPeso);
+        var vistaFijo = await Leer<VistaPreciosDeVariosDto>(await VistaAsync(c, aFijo));
+        var suyo = vistaFijo.Cambian.Single();
+        Assert.Equal((2000L, 1090L, true), (suyo.AntesCentavos, suyo.DespuesCentavos, suyo.MayoreoAjustado));
+        Assert.Equal([("desde 12", 1930L, 1000L)], suyo.Mayoreo.Select(m => (m.Cual, m.AntesCentavos, m.DespuesCentavos)));
+        await Leer<PreciosDeVariosAplicadosDto>(await AplicarAsync(c, aFijo with { Huella = vistaFijo.Huella, Id = Guid.NewGuid() }));
+        Assert.Equal([(null, 1L, 1090L), (null, 12L, 1000L)], await PreciosAsync(c, fijo));
+        Assert.Equal((11 * 1090L, 12 * 1000L), (await CobroAsync(c, fijo, 11), await CobroAsync(c, fijo, 12)));
+
+        // Sin el mayoreo, el que tiene escala no cambia (su escala quedaría más cara) y lo dice; el otro, sí.
+        var bajar = Marcados([conEscala, sinEscala], ComoCambiarPrecios.BajarPorcentaje, 2000, conMayoreo: false, RedondeoDePrecios.CincuentaCentavos);
+        var vistaBajar = await Leer<VistaPreciosDeVariosDto>(await VistaAsync(c, bajar));
+        Assert.Equal([(sinEscala.Id!.Value, 800L)], vistaBajar.Cambian.Select(x => (x.ProductoId, x.DespuesCentavos)));
+        Assert.Equal([(conEscala.Id!.Value, PorQueNoCambia.MayoreoMasCaro)], vistaBajar.NoCambian.Select(x => (x.ProductoId, x.PorQue)));
+        await Leer<PreciosDeVariosAplicadosDto>(await AplicarAsync(c, bajar with { Huella = vistaBajar.Huella, Id = Guid.NewGuid() }));
+        Assert.Equal([(null, 1L, 1000L), (null, 12L, 900L)], await PreciosAsync(c, conEscala));
+        Assert.Equal(800, await MenudeoAsync(c, sinEscala));
+
+        // Subir poco: el menudeo se queda en $10.00, y la escala y el par no se emparejan con él (ni pasan): todo queda igual.
+        var subir = Marcados([poco], ComoCambiarPrecios.SubirPorcentaje, 200, conMayoreo: true, RedondeoDePrecios.CincuentaCentavos);
+        var vistaSubir = await Leer<VistaPreciosDeVariosDto>(await VistaAsync(c, subir));
+        Assert.Empty(vistaSubir.Cambian);
+        Assert.Equal([(poco.Id!.Value, PorQueNoCambia.QuedaIgual)], vistaSubir.NoCambian.Select(x => (x.ProductoId, x.PorQue)));
+        Assert.Equal([(null, 1L, 1000L), (null, 12L, 980L), ("Par", 1L, 1990L)], await PreciosAsync(c, poco));
+        Assert.Equal((12 * 980L, 1990L), (await CobroAsync(c, poco, 12), await CobroAsync(c, poco, 1, "Par")));
+    }
+
+    [Fact]
+    public async Task En_el_piloto_el_mayoreo_de_aqui_no_pasa_de_la_promocion_de_eleventa()
+    {
+        var normal = await PrepararAsync();
+        var (departamento, _) = await DepartamentoAsync(normal);
+        // Menudeo de eleventa a $15.00, su promoción desde 12 a $14.50 y la escala de aquí desde 24 a $14.00.
+        var lapiz = await ProductoAsync(normal, $"Lápiz {Ficha()}", departamento, 1500, escalas: [(12, 1450), (24, 1400)]);
+        var variante = lapiz.Variantes[0].Id!.Value;
+        var idEleventa = Random.Shared.Next(100_000, 999_999).ToString();
+        await using (var db = servicio.Base())
+        {
+            var promocion = await db.Precios.SingleAsync(p => p.VarianteId == variante && p.CantidadMinima == Cantidad.Unidades(12));
+            db.MapeosImportacion.AddRange(
+                new MapeoImportacion { Origen = "eleventa", Entidad = nameof(Variante), IdOrigen = idEleventa, IdNuevo = variante },
+                new MapeoImportacion { Origen = "eleventa", Entidad = "Promocion", IdOrigen = $"{idEleventa}@12000", IdNuevo = promocion.Id });
+            await db.SaveChangesAsync();
+        }
+        await using var piloto = servicio.Fabrica.WithWebHostBuilder(b => b.UseSetting("Eleventa:Activo", "true"));
+        var c = await PrepararAsync(piloto.CreateClient());
+
+        // Subir 10 %, con el mayoreo y a los 50 centavos (lo de siempre): desde 24 no sube a $15.50 (más que la promoción y que
+        // el menudeo de eleventa, que se quedan): se queda, y el producto dice que su precio se cambia allá.
+        var vista = await Leer<VistaPreciosDeVariosDto>(await VistaAsync(c,
+            Pedido(c, c.Encargado, CualesProductos.Departamento, ComoCambiarPrecios.SubirPorcentaje, 1000, departamento)));
+
+        Assert.Empty(vista.Cambian);
+        Assert.Equal([(lapiz.Id!.Value, PorQueNoCambia.EnEleventa)], vista.NoCambian.Select(x => (x.ProductoId, x.PorQue)));
+        Assert.Equal([(null, 1L, 1500L), (null, 12L, 1450L), (null, 24L, 1400L)], await PreciosAsync(c, lapiz));
+        Assert.Equal(24 * 1400L, await CobroAsync(c, lapiz, 24));
+    }
+
+    [Fact]
+    public async Task Lo_que_coincide_con_el_departamento_de_la_lista_son_solo_los_suyos()
+    {
+        var c = await PrepararAsync();
+        var (escolar, nombreEscolar) = await DepartamentoAsync(c);
+        var (oficina, _) = await DepartamentoAsync(c);
+        var ficha = Ficha();
+        var deEscolar = await ProductoAsync(c, $"Folder {ficha}", escolar, 1000);
+        var deOficina = await ProductoAsync(c, $"Folder {ficha}", oficina, 1000);
+
+        var todos = await Leer<VistaPreciosDeVariosDto>(await VistaAsync(c, Pedido(c, c.Encargado, CualesProductos.Busqueda,
+            ComoCambiarPrecios.SubirPorcentaje, 1000, texto: ficha)));
+        var soloEscolar = await Leer<VistaPreciosDeVariosDto>(await VistaAsync(c, Pedido(c, c.Encargado, CualesProductos.Busqueda,
+            ComoCambiarPrecios.SubirPorcentaje, 1000, escolar, texto: ficha)));
+
+        Assert.Equal(new[] { deEscolar.Id!.Value, deOficina.Id!.Value }.Order(), todos.Cambian.Select(x => x.ProductoId).Order());
+        Assert.Equal([deEscolar.Id!.Value], soloEscolar.Cambian.Select(x => x.ProductoId));
+        Assert.Equal($"lo que coincide con «{ficha}» en «{nombreEscolar}»", soloEscolar.Cuales);
     }
 
     [Fact]

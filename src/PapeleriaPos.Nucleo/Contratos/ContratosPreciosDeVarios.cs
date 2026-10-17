@@ -12,7 +12,10 @@ public enum CualesProductos
     Departamento,
     Marca,
 
-    /// <summary>Los que coinciden con un texto, como la búsqueda de la lista: parte del nombre, la marca, el departamento o un código.</summary>
+    /// <summary>
+    /// Los que coinciden con un texto, como la búsqueda de la lista: parte del nombre, la marca, el departamento o un código; y,
+    /// si se da, solo los de un departamento, como el filtro de la lista.
+    /// </summary>
     Busqueda,
 
     /// <summary>Los marcados en la lista de Productos.</summary>
@@ -21,7 +24,9 @@ public enum CualesProductos
 
 /// <summary>Ver cómo quedan o aplicar: lo mismo, para que lo que se aplica sea lo que se vio.</summary>
 /// <param name="UsuarioId">Quien entró a la caja: con «Productos, precios y etiquetas» en «Puede».</param>
-/// <param name="DepartamentoId">Con <see cref="CualesProductos.Departamento"/>.</param>
+/// <param name="DepartamentoId">
+/// Con <see cref="CualesProductos.Departamento"/>, cuál; con <see cref="CualesProductos.Busqueda"/>, si se da, solo los de ese.
+/// </param>
 /// <param name="Marca">Con <see cref="CualesProductos.Marca"/>, por su nombre.</param>
 /// <param name="Texto">Con <see cref="CualesProductos.Busqueda"/>.</param>
 /// <param name="Productos">Con <see cref="CualesProductos.Marcados"/>: los productos marcados.</param>
@@ -48,25 +53,14 @@ public sealed record MayoreoQueCambiaDto(string Cual, long AntesCentavos, long D
 /// <param name="MargenAntesCentesimas">El margen con el menudeo de ahora: solo para quien ve la utilidad, y si se sabe su costo.</param>
 /// <param name="MargenDespuesCentesimas">El margen con el menudeo que queda.</param>
 /// <param name="MargenMinimoCentesimas">El de su departamento o el general: si el que queda es menor, se avisa.</param>
+/// <param name="MayoreoAjustado">
+/// Algo de su mayoreo no quedó en su proporción redondeada: para seguir más barato que el menudeo, se redondeó hacia abajo o
+/// se quedó como estaba (<see cref="CambioDePrecios.Variante"/>).
+/// </param>
 public sealed record PrecioQueCambiaDto(
     Guid ProductoId, Guid VarianteId, string Producto, long AntesCentavos, long DespuesCentavos, IReadOnlyList<MayoreoQueCambiaDto> Mayoreo,
-    bool MenudeoEnEleventa = false, int? MargenAntesCentesimas = null, int? MargenDespuesCentesimas = null, int? MargenMinimoCentesimas = null);
-
-/// <summary>Por qué un producto de los elegidos no cambia.</summary>
-public enum PorQueNoCambia
-{
-    /// <summary>Con el redondeo, su precio queda como estaba.</summary>
-    QuedaIgual,
-
-    /// <summary>En el piloto con eleventa, su menudeo se cambia allá (y no tiene mayoreo de aquí que cambiar).</summary>
-    EnEleventa,
-
-    /// <summary>Su precio (o uno de su mayoreo) quedaría en $0 o menos.</summary>
-    QuedariaEnCero,
-
-    /// <summary>No tiene precio de menudeo.</summary>
-    SinPrecio,
-}
+    bool MenudeoEnEleventa = false, int? MargenAntesCentesimas = null, int? MargenDespuesCentesimas = null, int? MargenMinimoCentesimas = null,
+    bool MayoreoAjustado = false);
 
 public sealed record PrecioQueNoCambiaDto(Guid ProductoId, Guid VarianteId, string Producto, PorQueNoCambia PorQue);
 

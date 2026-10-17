@@ -104,4 +104,104 @@ public class CambioDePreciosTests
         Assert.Equal("ponerlos a $12.00, sin cambiar el mayoreo",
             CambioDePrecios.Texto(new ReglaDePrecios(ComoCambiarPrecios.PrecioFijo, 1200, false, RedondeoDePrecios.UnPeso)));
     }
+
+    // ── Lo que se cobra queda en orden: el mayoreo nunca más caro que el menudeo ──
+
+    private static readonly Guid Menudeo = Guid.NewGuid(), Doce = Guid.NewGuid(), Veinticuatro = Guid.NewGuid(), Seis = Guid.NewGuid(), Par = Guid.NewGuid(),
+        PaqueteDelPar = Guid.NewGuid();
+
+    /// <summary>Un precio por pieza desde tantas piezas (de eleventa, si se dice).</summary>
+    private static PrecioDeVariante PorPieza(Guid id, long desde, long centavos, bool eleventa = false) =>
+        new(id, null, 1000, desde * 1000, centavos, eleventa);
+
+    /// <summary>El precio propio de un paquete de tantas piezas.</summary>
+    private static PrecioDeVariante DelPaquete(long piezas, long centavos) => new(Par, PaqueteDelPar, piezas * 1000, 1000, centavos);
+
+    [Fact]
+    public void Con_el_mayoreo_en_orden_nada_se_ajusta()
+    {
+        var cambio = CambioDePrecios.Variante(Regla(ComoCambiarPrecios.SubirPorcentaje, 1000, RedondeoDePrecios.CincuentaCentavos),
+            [PorPieza(Menudeo, 1, 1250), PorPieza(Doce, 12, 1100), DelPaquete(12, 13000)]);
+
+        Assert.Null(cambio.NoCambia);
+        Assert.Equal(new Dictionary<Guid, long> { [Menudeo] = 1400, [Doce] = 1200, [Par] = 14300 }, cambio.Cambios);
+        Assert.Equal((1250L, 1400L, false), (cambio.MenudeoAntes, cambio.MenudeoDespues, cambio.MayoreoAjustado));
+    }
+
+    [Fact]
+    public void Subir_poco_con_el_redondeo_no_empareja_la_escala_con_el_menudeo_ni_el_paquete_con_sus_piezas()
+    {
+        // $10.00, desde 12 a $9.80 y el par a $19.90; 2 % más, a los 50 centavos: el menudeo se queda en $10.00 y la escala
+        // ($10.00) y el par ($20.50) ya no serían más baratos: como subir, no bajan, se quedan como estaban.
+        var cambio = CambioDePrecios.Variante(Regla(ComoCambiarPrecios.SubirPorcentaje, 200, RedondeoDePrecios.CincuentaCentavos),
+            [PorPieza(Menudeo, 1, 1000), PorPieza(Doce, 12, 980), DelPaquete(2, 1990)]);
+
+        Assert.Equal(PorQueNoCambia.QuedaIgual, cambio.NoCambia);
+        Assert.Empty(cambio.Cambios);
+    }
+
+    [Fact]
+    public void Un_precio_fijo_deja_el_mayoreo_al_paso_de_abajo_del_menudeo()
+    {
+        // $20.00 y desde 12 a $19.30; a $10.90 con el mayoreo, al peso: la escala ($10.52, al peso $11.00) pasaría del menudeo,
+        // así que al peso de abajo: $10.00.
+        var cambio = CambioDePrecios.Variante(Regla(ComoCambiarPrecios.PrecioFijo, 1090, RedondeoDePrecios.UnPeso),
+            [PorPieza(Menudeo, 1, 2000), PorPieza(Doce, 12, 1930)]);
+
+        Assert.Null(cambio.NoCambia);
+        Assert.Equal(new Dictionary<Guid, long> { [Menudeo] = 1090, [Doce] = 1000 }, cambio.Cambios);
+        Assert.True(cambio.MayoreoAjustado);
+    }
+
+    [Fact]
+    public void Bajando_el_paso_de_abajo_y_subiendo_lo_de_antes_cuando_el_redondeo_no_cabe()
+    {
+        // Bajar 20 % a $10.00 con desde 12 a $9.80: $8.00 y $7.84, a los 50 centavos $8.00, que no es más barato: $7.50.
+        var bajar = CambioDePrecios.Variante(Regla(ComoCambiarPrecios.BajarPorcentaje, 2000, RedondeoDePrecios.CincuentaCentavos),
+            [PorPieza(Menudeo, 1, 1000), PorPieza(Doce, 12, 980)]);
+        // Subir 10 % al peso a $10.00 con desde 12 a $9.90: $11.00 y $10.89, al peso $11.00: al peso de abajo, $10.00.
+        var subir = CambioDePrecios.Variante(Regla(ComoCambiarPrecios.SubirPorcentaje, 1000, RedondeoDePrecios.UnPeso),
+            [PorPieza(Menudeo, 1, 1000), PorPieza(Doce, 12, 990)]);
+
+        Assert.Equal(new Dictionary<Guid, long> { [Menudeo] = 800, [Doce] = 750 }, bajar.Cambios);
+        Assert.Equal(new Dictionary<Guid, long> { [Menudeo] = 1100, [Doce] = 1000 }, subir.Cambios);
+        Assert.True(bajar.MayoreoAjustado && subir.MayoreoAjustado);
+    }
+
+    [Fact]
+    public void Sin_el_mayoreo_un_menudeo_que_bajaria_hasta_su_mayoreo_no_cambia()
+    {
+        var sinMayoreo = (ComoCambiarPrecios como, long valor) => new ReglaDePrecios(como, valor, false, RedondeoDePrecios.CincuentaCentavos);
+
+        // Bajar 20 % a $10.00 con desde 12 a $9.00: el menudeo de $8.00 dejaría la escala más cara.
+        Assert.Equal(PorQueNoCambia.MayoreoMasCaro,
+            CambioDePrecios.Variante(sinMayoreo(ComoCambiarPrecios.BajarPorcentaje, 2000), [PorPieza(Menudeo, 1, 1000), PorPieza(Doce, 12, 900)]).NoCambia);
+        // El par de $19.00 costaría más que dos piezas de $9.00.
+        Assert.Equal(PorQueNoCambia.MayoreoMasCaro,
+            CambioDePrecios.Variante(sinMayoreo(ComoCambiarPrecios.BajarPorcentaje, 1000), [PorPieza(Menudeo, 1, 1000), DelPaquete(2, 1900)]).NoCambia);
+        // Subir, sin el mayoreo, sí: el mayoreo queda más barato todavía.
+        var subir = CambioDePrecios.Variante(sinMayoreo(ComoCambiarPrecios.SubirPorcentaje, 1000), [PorPieza(Menudeo, 1, 1000), PorPieza(Doce, 12, 900)]);
+        Assert.Equal(new Dictionary<Guid, long> { [Menudeo] = 1100 }, subir.Cambios);
+    }
+
+    [Fact]
+    public void En_el_piloto_el_mayoreo_de_aqui_no_pasa_de_lo_de_eleventa()
+    {
+        var subir10 = Regla(ComoCambiarPrecios.SubirPorcentaje, 1000, RedondeoDePrecios.CincuentaCentavos);
+        // Menudeo de eleventa $15.00 y su promoción desde 12 a $14.50, que se quedan; la escala de aquí desde 24, $14.00, no
+        // sube a $15.50: no puede pasar de la promoción. Hay que subirlo primero en eleventa.
+        var sube = CambioDePrecios.Variante(subir10,
+            [PorPieza(Menudeo, 1, 1500, eleventa: true), PorPieza(Doce, 12, 1450, eleventa: true), PorPieza(Veinticuatro, 24, 1400)]);
+        // Una escala de aquí entre las de eleventa tampoco baja de la promoción que sigue.
+        var baja = CambioDePrecios.Variante(Regla(ComoCambiarPrecios.BajarPorcentaje, 1000, RedondeoDePrecios.CincuentaCentavos),
+            [PorPieza(Menudeo, 1, 1500, eleventa: true), PorPieza(Seis, 6, 1480), PorPieza(Doce, 12, 1450, eleventa: true)]);
+        // Con lugar abajo de la promoción, sí sube, en su proporción.
+        var cabe = CambioDePrecios.Variante(subir10,
+            [PorPieza(Menudeo, 1, 1500, eleventa: true), PorPieza(Doce, 12, 1450, eleventa: true), PorPieza(Veinticuatro, 24, 1200)]);
+
+        Assert.Equal(PorQueNoCambia.EnEleventa, sube.NoCambia);
+        Assert.Equal(PorQueNoCambia.EnEleventa, baja.NoCambia);
+        Assert.Equal(new Dictionary<Guid, long> { [Veinticuatro] = 1300 }, cabe.Cambios);
+        Assert.Equal((1500L, 1500L, true), (cabe.MenudeoAntes, cabe.MenudeoDespues, cabe.MenudeoEnEleventa));
+    }
 }

@@ -1,13 +1,14 @@
 @* Productos (F3) › Cambiar precios: los de varios productos a la vez, como «Actualizar varios» de eleventa (cuando un
    proveedor sube sus precios), en el detalle de la página, como los departamentos. Cuáles: los activos de un departamento,
-   de una marca, los que coinciden con un texto (como la búsqueda de la lista) o los marcados en la lista de la izquierda;
-   mientras esto está abierto, un toque en la lista marca o desmarca, y con el cursor en su búsqueda, ↑ ↓ eligen y Enter
-   marca. Cómo: subir o bajar un porcentaje o una cantidad, o un precio fijo, sobre el menudeo; el mayoreo (escalas y
-   precios por paquete) en la misma proporción, si se quiere, y el redondeo a los 50 centavos o al peso, como pone sus
-   precios la tienda. Enter enseña cómo quedan (con el margen y el aviso de debajo del mínimo solo para quien ve la
-   utilidad), y «Aplicar» o Ctrl+Enter los cambia todos de una vez, con un renglón en la bitácora; si algo cambió desde la
-   vista, el servicio no aplica y la vista se vuelve a pedir. Esc cierra la vista y, sin ella, regresa al producto. En el
-   piloto con eleventa, una nota dice que el menudeo de lo de eleventa se cambia allá. *@
+   de una marca, los que coinciden con un texto (como la búsqueda de la lista, también con su departamento) o los marcados
+   en la lista de la izquierda; mientras esto está abierto, un toque en la lista marca o desmarca, y con el cursor en su
+   búsqueda, ↑ ↓ eligen y Enter marca. Cómo: subir o bajar un porcentaje o una cantidad, o un precio fijo, sobre el
+   menudeo; el mayoreo (escalas y precios por paquete) en la misma proporción, si se quiere, y el redondeo a los 50
+   centavos o al peso, como pone sus precios la tienda. Enter enseña cómo quedan (con el margen y el aviso de debajo del
+   mínimo solo para quien ve la utilidad; el mayoreo que se ajustó para seguir más barato que el menudeo, «ajustado»; y lo
+   que no cambia, con su porqué), y «Aplicar» o Ctrl+Enter los cambia todos de una vez, con un renglón en la bitácora; si
+   algo cambió desde la vista, el servicio no aplica y la vista se vuelve a pedir. Esc cierra la vista y, sin ella,
+   regresa al producto. En el piloto con eleventa, una nota dice que el menudeo de lo de eleventa se cambia allá. *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
@@ -67,6 +68,13 @@
             case CualesProductos.Busqueda:
                 <input id="precios-texto" aria-label="Lo que se busca" placeholder="Parte del nombre, la marca, el departamento o un código" autocomplete="off"
                        spellcheck="false" value="@_texto" @oninput="TextoEscrito" @onkeydown="AlTeclearAsync" />
+                <select id="precios-texto-depto" aria-label="En qué departamento" value="@_departamento" @onchange="DepartamentoElegido" @onkeydown="AlTeclearAsync">
+                    <option value="">En todos los departamentos</option>
+                    @foreach (var d in Opciones.Departamentos)
+                    {
+                        <option value="@d.Id">En «@d.Nombre»</option>
+                    }
+                </select>
                 break;
             default:
                 <span class="vn-precios-marcados">@MarcadosTexto</span>
@@ -170,9 +178,15 @@
                         <tr>
                             <td>
                                 @c.Producto
-                                @if (c.Mayoreo.Count > 0)
+                                @if (c.Mayoreo.Count > 0 || c.MayoreoAjustado)
                                 {
-                                    <small>Mayoreo: @MayoreoTexto(c)</small>
+                                    <small>
+                                        @(c.Mayoreo.Count > 0 ? $"Mayoreo: {MayoreoTexto(c)}" : "Mayoreo como estaba")
+                                        @if (c.MayoreoAjustado)
+                                        {
+                                            <span class="vn-etiq ambar" title="@MayoreoAjustadoTexto">ajustado</span>
+                                        }
+                                    </small>
                                 }
                             </td>
                             <td class="num">@Formato.Dinero(c.AntesCentavos)</td>
@@ -208,13 +222,19 @@
                 </tbody>
             </table>
         }
+        @if (vista.Cambian.Any(c => c.MayoreoAjustado))
+        {
+            <p class="nota">«Ajustado»: @MayoreoAjustadoTexto.</p>
+        }
         @if (vista.EnEleventa is { } enEleventa)
         {
             <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@enEleventa</span></div></div>
         }
         @foreach (var grupo in vista.NoCambian.GroupBy(n => n.PorQue).OrderBy(g => g.Key))
         {
-            <p class="nota @(grupo.Key is PorQueNoCambia.QuedariaEnCero ? "vn-precios-no" : "")">@NoCambianTexto(grupo.Key, grupo.ToList())</p>
+            <p class="nota @(grupo.Key is PorQueNoCambia.QuedariaEnCero or PorQueNoCambia.MayoreoMasCaro ? "vn-precios-no" : "")">
+                @NoCambianTexto(grupo.Key, grupo.ToList(), _pedido?.ConMayoreo == true)
+            </p>
         }
         @if (!vista.ConMargen && cambian > 0)
         {
@@ -462,7 +482,8 @@
             return null;
         }
         return new SolicitudPreciosDeVarios(Sesion.UsuarioId, Caja.SucursalId, _cuales,
-            Guid.TryParse(_departamento, out var departamento) ? departamento : null, _marca.Length > 0 ? _marca : null, _texto,
+            (_cuales is CualesProductos.Departamento or CualesProductos.Busqueda) && Guid.TryParse(_departamento, out var departamento) ? departamento : null,
+            _marca.Length > 0 ? _marca : null, _texto,
             _cuales == CualesProductos.Marcados ? Marcados.ToList() : null, _como, valor, _conMayoreo, _redondeo);
     }
 
@@ -549,8 +570,12 @@
     private static string MayoreoTexto(PrecioQueCambiaDto cambio) =>
         string.Join(" · ", cambio.Mayoreo.Select(m => $"{m.Cual}: {Formato.Dinero(m.AntesCentavos)} → {Formato.Dinero(m.DespuesCentavos)}"));
 
+    private const string MayoreoAjustadoTexto =
+        "para que su mayoreo siga más barato que el menudeo (y que la escala de menos piezas), se redondeó hacia abajo o se quedó como estaba";
+
     /// <summary>«2 quedan igual con el redondeo: Goma, Lápiz.», con los primeros nombres.</summary>
-    private static string NoCambianTexto(PorQueNoCambia porQue, IReadOnlyList<PrecioQueNoCambiaDto> productos)
+    /// <param name="conMayoreo">Si se pidió cambiar también el mayoreo: sin él, se dice cómo cambiar los que no caben.</param>
+    private static string NoCambianTexto(PorQueNoCambia porQue, IReadOnlyList<PrecioQueNoCambiaDto> productos, bool conMayoreo)
     {
         var uno = productos.Count == 1;
         var cuantos = Formato.Numero(productos.Count);
@@ -559,6 +584,12 @@
             PorQueNoCambia.QuedaIgual => uno ? "1 queda igual con el redondeo" : $"{cuantos} quedan igual con el redondeo",
             PorQueNoCambia.EnEleventa => uno ? "1 es de eleventa: su precio se cambia allá" : $"{cuantos} son de eleventa: su precio se cambia allá",
             PorQueNoCambia.QuedariaEnCero => uno ? "1 quedaría en $0 o menos y no cambia" : $"{cuantos} quedarían en $0 o menos y no cambian",
+            PorQueNoCambia.MayoreoMasCaro when !conMayoreo => uno
+                ? "1 no cambia: su mayoreo quedaría igual o más caro que el menudeo; cámbialo con «También el mayoreo»"
+                : $"{cuantos} no cambian: su mayoreo quedaría igual o más caro que el menudeo; cámbialos con «También el mayoreo»",
+            PorQueNoCambia.MayoreoMasCaro => uno
+                ? "1 no cambia: su mayoreo no cabe más barato que el menudeo"
+                : $"{cuantos} no cambian: su mayoreo no cabe más barato que el menudeo",
             _ => uno ? "1 no tiene precio de menudeo" : $"{cuantos} no tienen precio de menudeo",
         };
         const int Nombres = 8;
