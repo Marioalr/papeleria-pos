@@ -171,6 +171,20 @@ la caja principal por la red, como lo abre una caja de eleventa, y se pone al d�
   cuando eleventa ya lo había guardado), puede estar allá o no: esa vez sus productos no se ajustan («Existencia sin
   ajustar…» en los avisos) y se ajustan en otra lectura. Lo que eleventa rechazó no está allá y se descuenta, aunque la
   bandeja siga detenida en eso.
+- **Lo que no se cambia en la caja 2 mientras lee** (solo del piloto, 2026-10-16): lo que pone la lectura, si se
+  cambiara aquí, lo regresaría la siguiente sin decir nada, y en ese rato la caja vendería con lo que se escribió. Por
+  eso las páginas no lo dejan cambiar, con una nota, y el servicio lo rechaza con el mismo aviso (también a una caja de
+  antes); quien no tiene el permiso oye lo del permiso, como siempre:
+  - en Productos (F3), de un producto de eleventa (con su ID): el nombre, el departamento y si se vende, si es de una
+    sola variante; si cada variante está activa; los códigos de su pieza (se pueden agregar otros); el precio de menudeo
+    y las promociones de eleventa. Tampoco se da de baja, se junta ni se le cambia la unidad. Sí se cambian las escalas
+    del F11 o de F3 (también el mayoreo por revisar), las otras presentaciones, la marca, las variantes nuevas y lo dado
+    de alta aquí, que va a eleventa como artículo común;
+  - en Inventario (F4), lo que mueve existencias: recibir y cerrar compras, el conteo del día (la venta ya no enseña su
+    chip), el conteo completo (también en el celular), ajustes, mermas y abrir un paquete. Tampoco con lo dado de alta
+    aquí: una compra o un conteo junta los dos, y eleventa no lleva su existencia. Las órdenes, el sugerido, las
+    etiquetas y la hoja de códigos siguen; lo que quedó abierto se consulta y se cancela;
+  - los departamentos se dan de alta y se cambian en eleventa (Productos › Departamentos solo los enseña).
 
 Se configura en el servicio de la caja 2, sección `Eleventa`. Los datos reales van en la configuración de esa PC,
 nunca aquí; la clave puede ir en la variable de entorno `Eleventa__Clave`.

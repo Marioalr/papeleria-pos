@@ -14,8 +14,13 @@ namespace PapeleriaPos.Datos;
 /// importación no pudo pasar a escala (fase 3). Cada decisión se guarda con el ID de
 /// eleventa para repetirla igual en la importación final (<see cref="RepetirAsync"/>). Las existencias se mueven con
 /// ajustes del kardex: la historia nunca se reescribe.
+/// <para>
+/// Con <paramref name="lecturaDeEleventa"/> (el piloto con eleventa, con su lectura prendida), lo de eleventa no se da de
+/// baja, no se junta ni se le cambia la unidad: la lectura le regresaría si se vende y su existencia
+/// (<see cref="TrastiendaEnElPiloto"/>). El mayoreo por revisar sí: la lectura no toca esas escalas.
+/// </para>
 /// </summary>
-public sealed class RegistroDepuracion(PosDbContext db)
+public sealed class RegistroDepuracion(PosDbContext db, bool lecturaDeEleventa = false)
 {
     private const string Eleventa = "eleventa";
 
@@ -31,12 +36,20 @@ public sealed class RegistroDepuracion(PosDbContext db)
             throw new PermisoRequerido(AccionControlada.EditarCatalogo, NivelPermiso.NoPermitido, "La depuración la hacen el dueño y el encargado.");
     }
 
+    /// <summary>En el piloto con eleventa, lo de eleventa no se depura aquí (después del permiso, que va primero).</summary>
+    private async Task RevisarPilotoAsync(CancellationToken ct, params Guid[] variantes)
+    {
+        if (lecturaDeEleventa && (await TrastiendaEnElPiloto.DeEleventaAsync(db, variantes, ct)).Count > 0)
+            throw new InvalidOperationException(TrastiendaEnElPiloto.ProductosEnEleventa);
+    }
+
     // ── Dar de baja ──────────────────────────────────────────────────────────
 
     /// <summary>Ya no existe: el producto sale de la venta y su existencia queda en cero (ajuste en cada sucursal).</summary>
     public async Task DarDeBajaAsync(Guid? usuarioId, Guid sucursalId, Guid varianteId, CancellationToken ct = default)
     {
         await RequerirAsync(usuarioId, sucursalId, ct);
+        await RevisarPilotoAsync(ct, varianteId);
         var variante = await VarianteAsync(varianteId, ct);
         var nombre = Nombre(variante);
         await DejarEnCeroAsync(variante, $"Dado de baja del catálogo", ct);
@@ -57,6 +70,7 @@ public sealed class RegistroDepuracion(PosDbContext db)
     public async Task JuntarAsync(Guid? usuarioId, Guid sucursalId, Guid origenId, Guid destinoId, CancellationToken ct = default)
     {
         await RequerirAsync(usuarioId, sucursalId, ct);
+        await RevisarPilotoAsync(ct, origenId, destinoId);
         if (origenId == destinoId)
             throw new ArgumentException("Elige otro producto para juntar.");
         var origen = await VarianteAsync(origenId, ct);
@@ -141,6 +155,7 @@ public sealed class RegistroDepuracion(PosDbContext db)
         Guid? usuarioId, Guid sucursalId, Guid varianteId, UnidadBase unidad, long? factorMilesimas, long precioCentavos, CancellationToken ct = default)
     {
         await RequerirAsync(usuarioId, sucursalId, ct);
+        await RevisarPilotoAsync(ct, varianteId);
         var variante = await VarianteAsync(varianteId, ct);
         if (variante.UnidadBase == unidad)
             throw new ArgumentException("Ya se vende por esa unidad.");
