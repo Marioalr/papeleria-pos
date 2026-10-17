@@ -439,15 +439,44 @@ public sealed class EnvioVentasEleventa(
         Func<Task<TurnoDeEleventa?>>? escribir = null;
         string? porRevisar = null;
         var descartada = false;
+        // Una venta cancelada aquí que, al buscarla en eleventa, no estaba: se descarta.
+        var noLlego = false;
+        // Si la venta alcanzó a conectarse con eleventa (desde ahí, si falla, no se sabe si quedó allá), y si este intento ya se
+        // dio por perdido: lo que se dejó de esperar no empieza a escribir si conecta tarde. Con Interlocked: los dos lados se ven.
+        int conectada = 0, perdido = 0;
+        // Si este intento solo busca en eleventa la venta que se canceló aquí: lo que le pase no dice nada del intento anterior.
+        var buscando = false;
         switch (envio.Tipo)
         {
             case TipoEnvioEleventa.Venta:
                 var venta = await VentasParaEleventa.ArmarAsync(db, envio.VentaId!.Value, ct);
                 (porRevisar, descartada) = (venta.PorRevisar, venta.Descartada);
-                if (venta.Venta is { } paraEleventa)
+                if (venta.Descartada && envio.Intentos > 0 && !EnCurso.NoEstaAlla(envio.Id))
+                {
+                    // Se canceló aquí después de un intento de mandarla del que no se sabe cómo terminó (se cortó por tiempo o
+                    // por la red, quizá después de que eleventa la guardó; revisión del 2026-10-17): antes de descartarla se busca
+                    // allá por su marca. Si está, queda como enviada y su cancelación va detrás, como la de cualquier venta que
+                    // ya llegó; descartada, eleventa la seguiría teniendo como vendida y la lectura no lo sabría.
+                    var creada = HoraMexico.ALocal(await db.Ventas.AsNoTracking().Where(v => v.Id == envio.VentaId).Select(v => v.CreadaUtc).SingleAsync(ct));
+                    buscando = true;
                     escribir = async () =>
                     {
-                        var r = await EnvioEleventa.MandarAsync(servidor, caja, paraEleventa, escritura);
+                        if (await EnvioEleventa.BuscarVentaAsync(servidor, caja, creada, escritura) is { } yaEstaba)
+                            (envio.TicketEleventa, envio.FolioEleventa) = (yaEstaba.TicketId, yaEstaba.Folio);
+                        else
+                            noLlego = true;
+                        return null;
+                    };
+                }
+                else if (venta.Venta is { } paraEleventa)
+                    escribir = async () =>
+                    {
+                        await using var conexion = new FbConnection(servidor.Cadena());
+                        await conexion.OpenAsync(escritura);
+                        Interlocked.Exchange(ref conectada, 1);
+                        if (Volatile.Read(ref perdido) == 1)
+                            return null;
+                        var r = await EnvioEleventa.MandarAsync(conexion, caja, paraEleventa, escritura);
                         (envio.TicketEleventa, envio.FolioEleventa, envio.FolioRepetido) = (r.TicketId, r.Folio, r.FolioRepetido);
                         if (r.FolioAnterior is { } anterior)
                             log.LogWarning("Otra caja de eleventa cobró con el folio {Anterior} al mismo tiempo que la venta {Venta}: esta tomó el {Folio}.",
@@ -535,8 +564,17 @@ public sealed class EnvioVentasEleventa(
             // Con un límite: una llamada que se queda colgada se deja de esperar y se toma como falla de red (se reintenta y no
             // detiene la bandeja). Si alcanzó a entrar, la marca la encuentra en el siguiente intento.
             deEleventa = await escribir().WaitAsync(opciones.EsperaMaxima, ct);
-            (envio.Estado, envio.EnviadaUtc, envio.Error) = (EstadoEnvioEleventa.Enviada, reloj.GetUtcNow().UtcDateTime, null);
-            (_ultimoEnvioUtc, _ultimoError, _sinRedHastaUtc) = (envio.EnviadaUtc, null, default);
+            if (noLlego)
+                (envio.Estado, envio.Error) = (EstadoEnvioEleventa.Descartada, porRevisar);
+            else
+            {
+                (envio.Estado, envio.EnviadaUtc, envio.Error) = (EstadoEnvioEleventa.Enviada, reloj.GetUtcNow().UtcDateTime, null);
+                _ultimoEnvioUtc = envio.EnviadaUtc;
+                if (descartada)
+                    log.LogWarning("La venta {Venta} se canceló aquí y sí había llegado a eleventa (ticket {Ticket}): se manda su cancelación.",
+                        envio.VentaId, envio.TicketEleventa);
+            }
+            (_ultimoError, _sinRedHastaUtc) = (null, default);
         }
         catch (ChoqueConEleventa ex)
         {
@@ -562,6 +600,10 @@ public sealed class EnvioVentasEleventa(
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
+            Interlocked.Exchange(ref perdido, 1);
+            // Una venta que ni siquiera se conectó con eleventa no está allá: si se cancela aquí, se descarta sin buscarla.
+            if (envio.Tipo == TipoEnvioEleventa.Venta && !buscando && Volatile.Read(ref conectada) == 0)
+                EnCurso.SinSalir(envio.Id);
             envio.Error = _ultimoError = Recortar(LectorEleventa.Explicar(ex, servidor));
             // Si no fue la red, eleventa contestó que no y deshizo lo que llevaba: no está allá, y la lectura ya lo puede
             // descontar. De lo que se cortó por la red o por tiempo (o a medias) no se sabe. Tampoco de un choque de candados:
@@ -569,7 +611,7 @@ public sealed class EnvioVentasEleventa(
             // (revisión del 2026-10-17); se reintenta sin darlo por rechazado.
             if (EsDeRed(ex))
                 _sinRedHastaUtc = ahora + SinRedPor;
-            else if (!EsChoqueDeCandados(ex))
+            else if (!EsChoqueDeCandados(ex) && !buscando)
                 EnCurso.Rechazado(envio.Id);
             log.LogWarning(ex, "{Tipo} {Id} no entró a eleventa ({Servidor}); se vuelve a intentar.", envio.Tipo, envio.Id, servidor);
         }

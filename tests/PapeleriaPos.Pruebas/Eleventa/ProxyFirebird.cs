@@ -40,6 +40,24 @@ public sealed class ProxyFirebird : IDisposable
 
     public bool Callado => _callado;
 
+    /// <summary>
+    /// La red vuelve: las conexiones nuevas pasan otra vez. Las que se quedaron calladas se cortan (como cuando la red se cae
+    /// a media llamada): lo que esperaban ya se perdió.
+    /// </summary>
+    public void Reanudar()
+    {
+        List<TcpClient> callados;
+        lock (_abiertos)
+        {
+            callados = [.. _abiertos];
+            _abiertos.Clear();
+        }
+        Disparador = null;
+        _callado = false;
+        foreach (var conexion in callados)
+            conexion.Dispose();
+    }
+
     private volatile bool _callado;
 
     /// <summary>El protocolo que aceptó Firebird en cada conexión.</summary>
