@@ -49,6 +49,7 @@
 | Núcleo | Sin dependencias de Windows: lo comparten la caja y los servidores; la app Android usa la API del servicio |
 | Inventario | Kardex: solo se agregan movimientos y la existencia es la suma. La existencia nunca detiene una venta: si alguien trae el producto a la caja, existe y la base es la que está mal (2026-10-10, [inventario](inventario.md)) |
 | IDs, dinero y fechas | UUIDv7, centavos enteros, UTC; folios legibles por caja (A-000123) |
+| Ticket | Sin QR por ahora, como el de eleventa (2026-10-16): «primero igualar a eleventa». Para devolver se escribe el folio impreso: el de la caja (A-000123) o, en el piloto, el de eleventa |
 | Contingencia | Cada caja guarda copia del catálogo y una bandeja de salida: si la caja principal se apaga, las demás siguen vendiendo |
 | Escaneo | Siempre contra la copia local del catálogo, también en línea (2026-10-10): la red no entra en el escaneo. Los productos nuevos se dan de alta pocos días a la semana, así que la copia casi siempre está al día; el cobro lleva su versión para que los precios coincidan ([propuesta](propuesta-interfaz.md#rendimiento)) |
 | Roles | Sin roles (2026-10-10): cada usuario tiene sus **permisos**, cada uno en «puede», «con autorización» o «no». Al instalar se ponen los de defecto y la primera cuenta tiene todos ([propuesta](propuesta-interfaz.md#usuarios-y-permisos)). Casi no se pedirá autorización: o puede o no puede, y quien no puede le pide a quien sí que entre (Ctrl+U). Por ahora, en Administración solo hay «puede» o «no»; más adelante se decide qué acciones sí pueden pedir autorización (2026-10-15) |
@@ -572,7 +573,7 @@ visual (entrega 2). Para el piloto hace falta, en este orden:
 | 4 | **Cancelaciones, devoluciones, turno y corte** de la caja 2, también en eleventa | Que los cortes y las existencias de eleventa sigan cuadrando | Mediano |
 | 5 | **Semanas de prueba contra una copia de eleventa,** comparando la base antes y después de cada venta | Escribir en una base ajena puede descuadrarla | — |
 | 6 | **La base de la caja 2 contra apagones** (entrega 10), su respaldo y cómo se actualiza con un arreglo | Desde el primer día de ventas reales | Chico |
-| 7 | **En la tienda, un sábado o domingo:** la impresora de tickets que comparten las dos cajas y el lector (si lee QR, qué manda con los códigos de 11 cifras y su ritmo al teclear) | Lo que no se puede simular ([guía](pruebas-en-tienda.md)) | Un fin de semana |
+| 7 | **En la tienda, un sábado o domingo:** la impresora de tickets que comparten las dos cajas y el lector (qué manda con los códigos de 11 cifras y su ritmo al teclear) | Lo que no se puede simular ([guía](pruebas-en-tienda.md)) | Un fin de semana |
 | 8 | **Enseñar** a quien atiende la caja 2 | — | Una tarde |
 
 - **A eleventa va lo que entiende:** la venta, el cobro y lo que descuenta de la existencia. Lo que eleventa no tiene
@@ -894,7 +895,7 @@ Por definir:
 - [ ] Contestar las demás [preguntas de la propuesta](propuesta-interfaz.md#preguntas-para-el-dueño) antes de cada
   entrega: antes de la 1, las de los permisos (el corte del turno, el PIN tras unos minutos); antes de la 4, bandeja o
   tarjeta para las impresiones
-- [ ] Probar el lector en la tienda: si lee QR, qué manda con los códigos de 11 cifras y su ritmo al teclear
+- [ ] Probar el lector en la tienda: qué manda con los códigos de 11 cifras y su ritmo al teclear
 - [ ] Instalador de la tienda para el administrador: servicio, cajas, firewall, carpeta de la caja con permisos y las
   colas de las impresoras de inyección ([detalle](#instalación-y-usuarios-de-windows)). Hoy son los scripts de
   `instalacion/`

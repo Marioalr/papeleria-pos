@@ -124,7 +124,8 @@ public static class DisenoTicket
                 e.Add(new Renglon("(saldo según esta caja; se confirma al volver)", Alineacion.Centro));
         }
         e.Add(Linea('-'));
-        e.Add(new Qr(t.Folio));
+        // Sin QR por ahora, como el ticket de eleventa (dueño, 2026-10-16: «primero igualar a eleventa»): para devolver se
+        // escribe el folio impreso.
         foreach (var renglon in t.Pie)
             e.Add(new Renglon(renglon, Alineacion.Centro));
         return e;

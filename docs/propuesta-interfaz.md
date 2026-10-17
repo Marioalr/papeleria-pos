@@ -118,7 +118,7 @@ según los permisos de quien entró.
 | `12*código` | Agrega doce de una vez |
 | Un número y Alt+1 a Alt+6 | Agrega esa cantidad del rápido: `20` y Alt+1 son veinte copias |
 | Texto (`cuaderno estrella`) | Los resultados salen debajo del cuadro, mientras se escribe: nombre, marca, código, precio y existencia. ↑ ↓ y Enter agregan. F10 se queda y solo pone el cursor ahí |
-| Un folio (`A-000118`) o su QR | Abre ese ticket en el panel para devolver o cancelar |
+| Un folio (`A-000118`, o el de eleventa en el piloto) | Abre ese ticket en el panel para devolver o cancelar. El ticket no lleva QR por ahora, como el de eleventa (2026-10-16) |
 | `/` | La lista de todas las acciones que tiene ese usuario, con su tecla; lo que pide autorización lleva candado y el nombre de quien autoriza |
 | Un código que no existe | Lo dice bajo el cuadro, en rojo, y ofrece lo que sus permisos dejan: darlo de alta ahí o venderlo como artículo común |
 | `+` / `−` con el cuadro vacío | Cambia la cantidad del artículo seleccionado; ↑ ↓ eligen otro; Supr lo quita |
@@ -533,7 +533,7 @@ Opciones propuestas (las que ya existen en el POS y las comunes en una caja):
 | Tienda | Nombre, dirección, teléfono, horario (para avisar si no abre o no se cerró el día), logotipo |
 | Venta y cobro | Cobrar el efectivo al peso, formas de pago, comisión de la tarjeta, pedir la referencia de la terminal, si avisa al vender sin existencia (la venta nunca se detiene), sinónimos de la búsqueda, existencia en el ticket cuando queden pocas, tickets en espera, rápidos, días para devolver |
 | Efectivo y corte | Límite de efectivo en caja, fondo sugerido, umbral de diferencia que avisa, para qué son las salidas, comprobante de salidas, hora para recordar cerrar el día |
-| Ticket | Encabezado y pie, QR del folio, ahorro por mayoreo, qué hacer al cobrar (imprimir, preguntar, no imprimir), ticket de prueba, vista previa |
+| Ticket | Encabezado y pie, ahorro por mayoreo, qué hacer al cobrar (imprimir, preguntar, no imprimir), ticket de prueba, vista previa |
 | Impresoras e impresiones | Impresora de tickets, precio por hoja (blanco y negro y color), cómo se avisa lo impreso en esa PC (bandeja con miniaturas, tarjeta con tiempo o solo el contador; por caja), recordarlo al cobrar, impresoras de inyección |
 | Inventario | Margen mínimo (con el permiso de utilidad), productos del conteo del día, aviso de mínimo, días que cubre el sugerido, recibir a ciegas |
 | Clientes y crédito | Plazo y límite con que empieza cada cliente, aviso de lo vencido, comprobante de abonos |

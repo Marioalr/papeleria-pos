@@ -152,7 +152,7 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 /// <param name="TotalCentavos">Exacto: la suma de las líneas, con el IVA incluido.</param>
 /// <param name="RedondeoCentavos">El del efectivo al peso (fase 3): lo que pagó el cliente es el total más esto.</param>
 /// <param name="Cliente">El cliente registrado con sus privilegios: "Escuela Benito Juárez (descuento 10 %)".</param>
-/// <param name="Folio">El de esta caja (A-000123): va en el QR, que abre la devolución en la caja nueva.</param>
+/// <param name="Folio">El de esta caja (A-000123): con él se abre la devolución en la caja nueva.</param>
 /// <param name="FolioEleventa">En el piloto, el que le dio eleventa si llegó a tiempo: es el que se imprime, para devolver en cualquier caja.</param>
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
