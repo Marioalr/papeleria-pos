@@ -818,8 +818,8 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
     (`VENDIDO_EN`).
 
   Lo que eleventa les devolvió o canceló ya se lo bajó a esos tickets, así que tampoco entra. Las devoluciones
-  (`DEVOLUCIONES`) solo se leen para decir de quién fue cada una: de la caja 2 (su marca, `TICKET_ID` + `DEVUELTO_EN`) o de
-  eleventa (la vuelta, por su `DEVOLUCIONES.ID`).
+  (`DEVOLUCIONES`) solo se leen para decir de quién fue cada una: de la caja 2 (su marca, `TICKET_ID` + `DEVUELTO_EN`, o la
+  anotación a mano que se eligió para una de aquí) o de eleventa (la vuelta, por su `DEVOLUCIONES.ID`).
 - **Lo de eleventa entra como en una base nueva:** cada ticket con lo que eleventa le bajó al devolver (también lo que
   devolvió la caja 2 de un ticket de eleventa, la ida) y los cancelados marcados.
 - **Se puede correr más de una vez.** Lo que ya estaba igual no se toca; lo que cambió en eleventa desde la importación
@@ -844,18 +844,23 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
     como de eleventa; si se anotó, cuenta dos veces. Dice qué tickets de eleventa pueden ser (el mismo total, al peso,
     cobrados después);
   - una que se mandó y eleventa ya no tiene (¿se restauró un respaldo?), o que eleventa tiene dos veces;
-  - una que aquí se canceló antes de llegar, o que sigue pendiente, y que eleventa sí tiene (no se trae);
+  - una que aquí se canceló antes de llegar, o que sigue pendiente, y que eleventa sí tiene (no se trae). Desde el
+    2026-10-17 la bandeja busca en eleventa la cancelada antes de descartarla, así que sería de antes;
   - una devolución que se hizo en eleventa de un ticket de la caja 2 y no está en su venta (la lectura no la trajo, o quedó
-    por revisar): como ese ticket no se trae, no cuenta en ningún lado hasta pasarla;
+    por revisar): como ese ticket no se trae, no cuenta en ningún lado hasta pasarla. Si puede ser la anotación a mano de
+    una devolución de aquí que todavía nadie elige («Ya lo anoté en eleventa»; mientras, la vuelta la retiene), lo dice:
+    si es esa, aquí ya está. La que ya se eligió cuenta como de la caja 2;
   - una devolución de la caja 2 de un ticket de eleventa (la ida) que no llegó a eleventa: el ticket se trae sin ella y
-    cuenta de más, salvo que se haya anotado a mano allá.
+    cuenta de más, salvo que se haya anotado a mano allá. Desde que la caja 2 solo devuelve lo del turno de ahora es raro:
+    eleventa cortó ese turno antes de que llegara.
 
 Se probó sin Firebird (las filas de eleventa con las marcas del puente: lo reconocido por su número o solo por su marca,
 correrla dos veces, lo que cambió en eleventa, lo que ya estaba y era de la caja 2, sin la bandeja y la lista para
-revisar) y contra el Firebird de prueba: la caja 2 vendió, canceló y devolvió por el puente, en eleventa se le devolvió
-algo (la vuelta), eleventa vendió, canceló y devolvió lo suyo y la caja 2 devolvió dos tickets de eleventa (la ida, una
-llegó y la otra quedó por revisar). El historial quedó exactamente con los tickets de eleventa, suma lo mismo que eleventa
-sin los de la caja 2, y la segunda vez no cambió nada.
+revisar, también la anotación a mano de una devolución de aquí, ya elegida o por elegir) y contra el Firebird de prueba: la
+caja 2 vendió, canceló y devolvió por el puente, en eleventa se le devolvió algo (la vuelta), eleventa vendió, canceló y
+devolvió lo suyo, y la caja 2 devolvió un ticket de su eleventa del turno de ahora (la ida; el de la principal no lo deja
+devolver aquí y se devolvió en eleventa). El historial quedó exactamente con los tickets de eleventa, suma lo mismo que
+eleventa sin los de la caja 2, y la segunda vez no cambió nada.
 
 ## Arranque (fase 5)
 

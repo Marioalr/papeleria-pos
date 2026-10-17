@@ -17,7 +17,11 @@ public sealed record VentaMandada(Guid VentaId, string Folio, DateTime CreadaUtc
     EstadoEnvioEleventa Estado, int? TicketEleventa, int? FolioEleventa, MotivoPorRevisar? Porque = null);
 
 /// <summary>Una devolución o cancelación hecha aquí de una de esas ventas: su hora es su marca en eleventa (<c>DEVUELTO_EN</c>).</summary>
-public sealed record DevolucionDeAqui(Guid VentaId, DateTime FechaUtc);
+/// <param name="EsperaAnotacion">
+/// No pasó sola a eleventa y quedó para anotarse a mano allá: su anotación llega sin la marca, y la vuelta la retiene hasta que
+/// alguien la elige («Ya lo anoté en eleventa»).
+/// </param>
+public sealed record DevolucionDeAqui(Guid VentaId, DateTime FechaUtc, bool EsperaAnotacion = false);
 
 /// <summary>Una devolución de eleventa de un ticket de la caja 2 que ya leyó la vuelta (<see cref="DevolucionDesdeEleventa"/>).</summary>
 /// <param name="Pasada">
@@ -141,7 +145,12 @@ public static class LoQueMandoElPuente
         var devoluciones = await (from d in db.Devoluciones.AsNoTracking()
                                   join e in db.EnviosAEleventa.AsNoTracking() on d.VentaId equals e.VentaId
                                   where e.Tipo == TipoEnvioEleventa.Venta
-                                  select new { d.VentaId, d.FechaUtc })
+                                  select new
+                                  {
+                                      d.VentaId, d.FechaUtc,
+                                      Espera = db.EnviosAEleventa.Any(x => x.DevolucionId == d.Id && x.Estado == EstadoEnvioEleventa.PorRevisar
+                                          && x.PorRevisarPorque == MotivoPorRevisar.AnotarAMano),
+                                  })
             .ToListAsync(ct);
         var vuelta = await db.Set<DevolucionDesdeEleventa>().AsNoTracking()
             .Select(v => new { v.DevolucionEleventa, v.DevueltaUtc, Pasada = v.DevolucionId != null, v.Propia, v.PorRevisar, Revisada = v.RevisadaUtc != null })
@@ -164,7 +173,7 @@ public static class LoQueMandoElPuente
         {
             Ventas = ventas.Select(v => new VentaMandada(v.Id, v.Folio is { } f ? $"{v.Serie}-{f:000000}" : v.Serie, v.CreadaUtc, v.PagadaUtc,
                 v.TotalCentavos + v.RedondeoCentavos, v.Estado, v.TicketEleventa, v.FolioEleventa, v.PorRevisarPorque)).ToList(),
-            Devoluciones = devoluciones.Select(d => new DevolucionDeAqui(d.VentaId, d.FechaUtc)).ToList(),
+            Devoluciones = devoluciones.Select(d => new DevolucionDeAqui(d.VentaId, d.FechaUtc, d.Espera)).ToList(),
             Vuelta = vuelta.Select(v => new VueltaLeida(v.DevolucionEleventa, v.DevueltaUtc, v.Pasada, v.Propia, v.PorRevisar, v.Revisada)).ToList(),
             Idas = idas.Select(d => new IdaMandada(d.TicketEleventa, d.CajaNombre, d.FechaUtc, d.TotalCentavos, d.Estado, d.Error)).ToList(),
             Reconocidos = reconocidos.Where(m => int.TryParse(m.IdOrigen, CultureInfo.InvariantCulture, out _))
@@ -317,13 +326,16 @@ public static class LoQueMandoElPuente
 
     /// <summary>
     /// Lo devuelto o cancelado en eleventa de los tickets de la caja 2: eleventa ya se lo bajó al ticket, que no se importa. Lo
-    /// hizo la caja 2 (su marca: <c>TICKET_ID</c> + <c>DEVUELTO_EN</c>), o se hizo allá y la vuelta ya lo pasó a su venta (por
-    /// <c>DEVOLUCIONES.ID</c> y su hora). Lo demás no está aquí y, como el ticket no se importa, no contaría en ningún lado.
+    /// hizo la caja 2 (su marca: <c>TICKET_ID</c> + <c>DEVUELTO_EN</c>), o se hizo allá y la vuelta ya lo pasó a su venta o lo
+    /// ligó como la anotación a mano de una de aquí (por <c>DEVOLUCIONES.ID</c> y su hora). Lo demás no está aquí y, como el
+    /// ticket no se importa, no contaría en ningún lado; si puede ser la anotación de una de aquí que falta elegir (la vuelta
+    /// la retiene), se dice.
     /// </summary>
     private static void Devoluciones(PuenteEnLaBase puente, DatosEleventa e, Dictionary<int, FilaTicket> cobrados, LoDelPuenteEnEleventa r,
         List<(DateTime Cuando, string Texto)> porRevisar)
     {
         var deAqui = puente.Devoluciones.Select(d => (d.VentaId, RestauracionDeEleventa.Marca(d.FechaUtc))).ToHashSet();
+        var esperan = puente.Devoluciones.Where(d => d.EsperaAnotacion).ToLookup(d => d.VentaId, d => d.FechaUtc);
         var leidas = puente.Vuelta.ToLookup(v => v.DevolucionEleventa);
         var folios = puente.Ventas.ToDictionary(v => v.VentaId, v => v.Folio);
         foreach (var d in e.Devoluciones.Where(d => r.Tickets.ContainsKey(d.TicketId)).OrderBy(d => d.Id))
@@ -345,11 +357,18 @@ public static class LoQueMandoElPuente
                 continue;
             }
             r.DevolucionesSinPasar++;
-            var que = d.EsCancelacion ? "La cancelación" : $"La devolución de {Pesos(Centavos(d.Total))}";
-            porRevisar.Add((d.DevueltoEn, $"{que} que se hizo en eleventa ({d.Caja}, {d.Cajero}, {Fecha(d.DevueltoEn)}) del ticket "
-                + $"{Ticket(cobrados[d.TicketId])}, la venta {folios.GetValueOrDefault(ventaId, "?")} de la caja 2, no está en esa venta: "
-                + $"{(leida?.PorRevisar ?? "la lectura de eleventa no la trajo.").TrimEnd()}{(leida is { Revisada: true } ? " Ya se revisó en la caja 2." : "")} "
-                + "Ese ticket no se importa (es venta de aquí): si no se pasa a la venta, no cuenta en ningún lado."));
+            var que = $"{(d.EsCancelacion ? "La cancelación" : $"La devolución de {Pesos(Centavos(d.Total))}")} que se hizo en eleventa ({d.Caja}, "
+                + $"{d.Cajero}, {Fecha(d.DevueltoEn)}) del ticket {Ticket(cobrados[d.TicketId])}, la venta {folios.GetValueOrDefault(ventaId, "?")} de la caja 2,";
+            // La anotación a mano de una de aquí llega sin la marca: mientras nadie la elija, la vuelta la retiene.
+            var devueltaUtc = HoraMexico.AUtc(d.DevueltoEn);
+            if (leida is null && esperan[ventaId].Where(hecha => devueltaUtc >= hecha - DevolucionesConEleventa.HolguraDeHora).ToList() is { Count: > 0 } aqui)
+                porRevisar.Add((d.DevueltoEn, $"{que} puede ser la anotación a mano de la devolución de aquí del {Fecha(HoraMexico.ALocal(aqui.Max()))}, "
+                    + "que espera que alguien la elija en la pantalla de la caja 2 («Ya lo anoté en eleventa»). Si es esa, aquí ya está; si no, "
+                    + "como ese ticket no se importa, no cuenta en ningún lado hasta pasarla a la venta."));
+            else
+                porRevisar.Add((d.DevueltoEn, $"{que} no está en esa venta: "
+                    + $"{(leida?.PorRevisar ?? "la lectura de eleventa no la trajo.").TrimEnd()}{(leida is { Revisada: true } ? " Ya se revisó en la caja 2." : "")} "
+                    + "Ese ticket no se importa (es venta de aquí): si no se pasa a la venta, no cuenta en ningún lado."));
         }
     }
 

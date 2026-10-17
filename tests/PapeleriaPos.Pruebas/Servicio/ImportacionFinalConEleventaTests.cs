@@ -13,8 +13,9 @@ namespace PapeleriaPos.Pruebas.Servicio;
 /// <summary>
 /// La importación final contra el Firebird de prueba (docs/migracion-eleventa.md, «La importación final»): la caja 2 vende,
 /// cancela y devuelve por el puente; en eleventa se le devuelve algo a un ticket suyo (la vuelta); eleventa vende, cancela y
-/// devuelve lo suyo, y la caja 2 devuelve tickets de eleventa (la ida). Con eleventa leído como lo lee importar-eleventa, el
-/// historial de la base de la caja 2 queda exactamente con lo de eleventa, suma lo mismo y no se duplica al repetirla.
+/// devuelve lo suyo, y la caja 2 devuelve un ticket de su eleventa del turno de ahora (la ida; el de la principal se devuelve
+/// en eleventa). Con eleventa leído como lo lee importar-eleventa, el historial de la base de la caja 2 queda exactamente con
+/// lo de eleventa, suma lo mismo y no se duplica al repetirla.
 /// </summary>
 public sealed class ImportacionFinalConEleventaTests
 {
@@ -71,15 +72,17 @@ public sealed class ImportacionFinalConEleventaTests
         var enLaCaja2 = await EnvioEleventa.MandarAsync(e.Conexion, caja2, Venta(HoraLocal(15), (10, 3, 27m)));
         await EnvioEleventa.DevolverAsync(e.Conexion, caja2, Devolucion(enLaCaja2.TicketId, HoraLocal(14), new ArticuloDevuelto(10, "Pluma", 1, 9)));
 
-        // La ida: la caja 2 devuelve otra pluma del ticket de su eleventa (llega a eleventa) y una del de la principal (queda por
-        // revisar: todavía no se ha visto cómo anota eleventa la devolución de otra caja).
-        foreach (var ticket in new[] { enLaCaja2.TicketId, dePrincipal.TicketId })
-        {
-            var leido = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/eleventa/tickets/{ticket}"));
-            await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/eleventa/tickets/{ticket}/devolucion",
-                new SolicitudDevolucion(c.Sesion.UsuarioId, c.Datos.Id, "Defecto", [new LineaDevolucionSolicitada(leido.Lineas[0].LineaId, 1000)])));
-            await EsperarAsync(() => EnviosAsync(c), x => x.Pendientes == 0);
-        }
+        // La ida: la caja 2 devuelve otra pluma del ticket de su eleventa, que es del turno de ahora (llega a eleventa). Una pluma del
+        // de la principal no se devuelve aquí (es de otra caja): se devuelve en eleventa.
+        SolicitudDevolucion UnaPluma(VentaParaDevolverDto leido) =>
+            new(c.Sesion.UsuarioId, c.Datos.Id, "Defecto", [new LineaDevolucionSolicitada(leido.Lineas[0].LineaId, 1000)]);
+        var deSuEleventa = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/eleventa/tickets/{enLaCaja2.TicketId}"));
+        await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/eleventa/tickets/{enLaCaja2.TicketId}/devolucion", UnaPluma(deSuEleventa)));
+        await EsperarAsync(() => EnviosAsync(c), x => x.Pendientes == 0);
+        var deLaPrincipal = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/eleventa/tickets/{dePrincipal.TicketId}"));
+        Assert.Equal(DevolucionesConEleventa.DeOtroTurno,
+            await RechazoAsync(await c.Http.PostAsJsonAsync($"api/eleventa/tickets/{dePrincipal.TicketId}/devolucion", UnaPluma(deLaPrincipal))));
+        await EnvioEleventa.DevolverAsync(e.Conexion, principal, Devolucion(dePrincipal.TicketId, HoraLocal(10), new ArticuloDevuelto(10, "Pluma", 1, 9)));
 
         // Lo que hay en eleventa: los tickets que escribió el puente (los de la caja 2) y los demás.
         HashSet<int> delPuente;
@@ -95,6 +98,9 @@ public sealed class ImportacionFinalConEleventaTests
         Assert.Equal(4, delPuente.Count);
         // El 41 de la principal (de antes), las dos de la principal y la del eleventa de la caja 2.
         Assert.Equal(4, propios.Count);
+        // Lo de la principal solo se devolvió en eleventa: aquí nada quedó pendiente ni por revisar.
+        Assert.Equal(1, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM DEVOLUCIONES WHERE TICKET_ID = @t", ("t", dePrincipal.TicketId))));
+        Assert.Empty((await EnviosAsync(c)).PorAtender);
 
         var datos = await LectorEleventa.LeerAsync(e.Conexion);
         ResultadoImportacionFinal primera, segunda;
@@ -116,20 +122,22 @@ public sealed class ImportacionFinalConEleventaTests
         // Suma lo mismo que en eleventa: lo vendido allá, con lo que se devolvió ya bajado (también lo devuelto en la caja 2).
         Assert.Equal(Suma(propios), historial.Where(v => !v.Cancelada).Sum(v => v.TotalCentavos));
         Assert.Equal((Suma(propios), Suma(cobrados) - Suma(propios)), (primera.TotalCentavos, primera.DelPuente.TotalCentavos));
-        var deLaCaja2 = historial.Single(v => v.Id == mapeos.Single(m => m.IdOrigen == enLaCaja2.TicketId.ToString()).IdNuevo);
+        VentaHistorica Importado(int ticket) => historial.Single(v => v.Id == mapeos.Single(m => m.IdOrigen == ticket.ToString()).IdNuevo);
+        // Tres plumas del eleventa de la caja 2: una se devolvió allá y otra aquí (la ida). De la principal, una pluma se devolvió en
+        // eleventa: quedan una pluma y el común.
+        var deLaCaja2 = Importado(enLaCaja2.TicketId);
         Assert.Equal((900L, 1000L), (deLaCaja2.TotalCentavos, Assert.Single(deLaCaja2.Lineas).Cantidad.Milesimas));
-        Assert.True(historial.Single(v => v.Id == mapeos.Single(m => m.IdOrigen == canceladaAlla.TicketId.ToString()).IdNuevo).Cancelada);
+        Assert.Equal((2450L, 2), (Importado(dePrincipal.TicketId).TotalCentavos, Importado(dePrincipal.TicketId).Lineas.Count));
+        Assert.True(Importado(canceladaAlla.TicketId).Cancelada);
 
         // Lo de la caja 2 no se trajo, y dice por qué: su cancelación y su devolución las hizo aquí, y la de eleventa ya está en
         // su venta (sin efectivo).
         var p = primera.DelPuente;
         Assert.Equal(delPuente.Order(), p.Tickets.Keys.Order());
         Assert.Equal((0, 1, 3, 2, 1, 0), (p.PorSuMarca, p.Cancelados, p.ConDevoluciones, p.DevolucionesDeAqui, p.DevolucionesDeEleventa, p.DevolucionesSinPasar));
-        // La ida de la caja 2 llegó al ticket de su eleventa; la de la principal no llegó: el ticket se importó sin ella.
+        // La ida llegó al ticket del eleventa de la caja 2, y nada queda para revisar a mano.
         Assert.Equal(1, p.Idas);
-        var porRevisar = Assert.Single(p.PorRevisar);
-        Assert.Contains($"del ticket #{dePrincipal.Folio}", porRevisar);
-        Assert.EndsWith("cuenta $9.00 de más.", porRevisar);
+        Assert.Empty(p.PorRevisar);
 
         // Otra vez, con lo mismo: nada nuevo, nada cambia.
         Assert.Equal((0, 0, 0, propios.Count), (segunda.Nuevos, segunda.Actualizados, segunda.Quitados, segunda.Iguales));

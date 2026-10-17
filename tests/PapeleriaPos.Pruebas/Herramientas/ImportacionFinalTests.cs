@@ -105,16 +105,20 @@ public sealed class ImportacionFinalTests : IAsyncDisposable
         await db.SaveChangesAsync();
     }
 
-    /// <summary>La ida: en la caja 2 se devolvió algo de un ticket de la principal, y su envío a eleventa quedó como se diga.</summary>
-    private async Task<DevolucionDeEleventa> IdaAsync(Mostrador m, int ticket, int folio, long centavos, EstadoEnvioEleventa estado, string? error = null)
+    /// <summary>
+    /// La ida: en la caja 2 se devolvió algo de un ticket que se cobró en el eleventa de la caja 2, en el turno de ahora (lo único de
+    /// eleventa que la caja 2 devuelve), y su envío a eleventa quedó como se diga.
+    /// </summary>
+    private async Task<DevolucionDeEleventa> IdaAsync(Mostrador m, int ticket, int folio, DateTime vendido, long centavos, EstadoEnvioEleventa estado,
+        string? error = null)
     {
         _base!.Reloj.Ahora = _base.Reloj.Ahora.AddMinutes(3);
         await using var db = _base.Contexto();
         var ida = new DevolucionDeEleventa
         {
             SucursalId = m.Caja.SucursalId, CajaId = m.Caja.Id, TurnoId = m.Turno.Id, UsuarioId = m.Cajera.Id, Motivo = "No era",
-            FechaUtc = _base.Reloj.Ahora.UtcDateTime.AddTicks(4_321), TicketEleventa = ticket, Folio = folio, CajaEleventa = 1, CajaNombre = "Principal",
-            VendidoUtc = HoraMexico.AUtc(Antes), TicketTotalCentavos = centavos, TotalCentavos = centavos, ReembolsoEfectivoCentavos = centavos,
+            FechaUtc = _base.Reloj.Ahora.UtcDateTime.AddTicks(4_321), TicketEleventa = ticket, Folio = folio, CajaEleventa = 4, CajaNombre = "Caja 2",
+            VendidoUtc = HoraMexico.AUtc(vendido), TicketTotalCentavos = 2 * centavos, TotalCentavos = centavos, ReembolsoEfectivoCentavos = centavos,
         };
         db.Add(ida);
         db.EnviosAEleventa.Add(new EnvioAEleventa
@@ -286,19 +290,19 @@ public sealed class ImportacionFinalTests : IAsyncDisposable
         var pendiente = await VenderAsync(m, "B2", 3);
         var paraAnotar = await VenderAsync(m, "B2", 4);
         await EnvioAsync(paraAnotar, EstadoEnvioEleventa.PorRevisar, porque: MotivoPorRevisar.AnotarAMano);
-        // La ida: en la caja 2 se devolvió el lápiz del ticket 11 de la principal y quedó por revisar (no llegó a eleventa); y la goma
-        // del 10, que sí llegó.
-        await IdaAsync(m, 11, 101, 600, EstadoEnvioEleventa.PorRevisar, EnvioEleventa.DeOtroTurnoODeOtraCaja);
-        var llego = await IdaAsync(m, 10, 100, 1500, EstadoEnvioEleventa.Enviada);
+        // La ida: en el eleventa de la caja 2 se vendieron dos gomas (el 34) y dos lápices (el 35), y en la caja 2 se devolvió uno de
+        // cada uno. El del 34 llegó a eleventa; el del 35 no alcanzó: eleventa cortó ese turno antes de que se mandara y quedó para
+        // anotarse a mano allá.
+        var vendidos = Luego(-1);
+        var llego = await IdaAsync(m, 34, 109, vendidos, 1500, EstadoEnvioEleventa.Enviada);
+        await IdaAsync(m, 35, 110, vendidos, 600, EstadoEnvioEleventa.PorRevisar, EnvioEleventa.DeOtroTurnoODeOtraCaja);
 
         var e = Eleventa(
             tickets: [new(30, 106, Luego(10), 30, false, Luego(9)), new(31, 107, Luego(11), 99, false, Luego(10)), TicketDe(devuelta, 32, 105, total: 6),
-                TicketDe(descartada, 33, 108)],
-            lineas: [Linea(30, "A1", 2, 15), Linea(31, "B2", 1, 99), Linea(32, "B2", 1, 6), Linea(33, "A1", 1, 15)],
+                TicketDe(descartada, 33, 108), new(34, 109, vendidos, 15, false, vendidos.AddMinutes(-1)), new(35, 110, vendidos, 12, false, vendidos.AddMinutes(-1))],
+            lineas: [Linea(30, "A1", 2, 15), Linea(31, "B2", 1, 99), Linea(32, "B2", 1, 6), Linea(33, "A1", 1, 15), Linea(34, "A1", 1, 15), Linea(35, "B2", 2, 6)],
             devoluciones: [new(950, 32, false, Luego(12), 6, "admin", "Principal", null, []),
-                new(951, 10, false, RestauracionDeEleventa.Marca(llego.FechaUtc), 15, "cajera2", "Caja 2", null, [])]);
-        e.Tickets[0] = e.Tickets[0] with { Total = 0 };
-        e.Lineas.RemoveAt(0);
+                new(951, 34, false, RestauracionDeEleventa.Marca(llego.FechaUtc), 15, "cajera2", "Caja 2", null, [])]);
 
         var r = await ImportarAsync(e);
 
@@ -308,15 +312,60 @@ public sealed class ImportacionFinalTests : IAsyncDisposable
         Assert.Contains(revisar, x => x.Contains(perdida.FolioTexto!) && x.Contains("eleventa ya no la tiene") && x.Contains("#107"));
         Assert.Contains(revisar, x => x.StartsWith("La devolución de $6.00") && x.Contains(devuelta.FolioTexto!) && x.Contains("no la trajo"));
         Assert.Contains(revisar, x => x.Contains(descartada.FolioTexto!) && x.Contains("se canceló aquí antes de llegar"));
-        Assert.Contains(revisar, x => x.Contains("#101") && x.EndsWith("cuenta $6.00 de más."));
+        Assert.Contains(revisar, x => x.Contains("#110") && x.EndsWith("cuenta $6.00 de más."));
         Assert.Contains(revisar, x => x.Contains(paraAnotar.FolioTexto!) && x.Contains("quedó para anotarse a mano en eleventa"));
         Assert.DoesNotContain(revisar, x => x.Contains(pendiente.FolioTexto!));
         Assert.Equal((2, 1), (r.DelPuente.NoLlegaron, r.DelPuente.Idas));
-        // El que se anotó a mano y el que ocupó el número se trajeron como de eleventa; los de la caja 2, no. El 10 llega con lo que
-        // se devolvió en la caja 2.
+        // El que se anotó a mano y el que ocupó el número se trajeron como de eleventa; los de la caja 2, no. El 34 llega con lo que
+        // se devolvió en la caja 2; el 35, sin eso (no llegó).
         var historial = await HistorialAsync();
-        Assert.Equal([10, 11, 30, 31], historial.Keys.Order());
-        Assert.Equal((0L, 1, 2), (historial[10].TotalCentavos, r.Actualizados, r.Nuevos));
+        Assert.Equal([10, 11, 30, 31, 34, 35], historial.Keys.Order());
+        Assert.Equal((1500L, 1200L, 0, 4), (historial[34].TotalCentavos, historial[35].TotalCentavos, r.Actualizados, r.Nuevos));
+    }
+
+    [Fact]
+    public async Task La_anotacion_a_mano_de_una_devolucion_de_aqui_no_cuenta_como_otra_de_eleventa()
+    {
+        var m = await PilotoAsync();
+        // Dos ventas que entraron a eleventa (el 20 y el 21). A cada una se le devolvió aquí una goma que no pasó sola a eleventa (su
+        // turno allá ya se había cortado): quedaron para anotarse a mano.
+        var ligada = await VenderAsync(m, "A1", 2);
+        await EnvioAsync(ligada, EstadoEnvioEleventa.Enviada, 20, 102);
+        var esperando = await VenderAsync(m, "A1", 3);
+        await EnvioAsync(esperando, EstadoEnvioEleventa.Enviada, 21, 103);
+        foreach (var venta in new[] { ligada, esperando })
+        {
+            await using var db = _base!.Contexto();
+            var devolucion = await new RegistroDevoluciones(db).DevolverAsync(venta.Id, [new LineaPorDevolver(venta.Lineas.Single().Id, Cantidad.Piezas(1))],
+                m.Cajera.Id, m.Caja.Id, "No era", null);
+            var envio = await db.EnviosAEleventa.SingleAsync(x => x.DevolucionId == devolucion.Id);
+            (envio.Estado, envio.Error, envio.PorRevisarPorque, envio.PorRevisarUtc) =
+                (EstadoEnvioEleventa.PorRevisar, "Anótala a mano en eleventa.", MotivoPorRevisar.AnotarAMano, _base.Reloj.Ahora.UtcDateTime);
+            await db.SaveChangesAsync();
+        }
+        // Las dos se anotaron a mano en eleventa. La de la primera ya se eligió como su anotación («Ya lo anoté en eleventa»); la de la
+        // segunda todavía no: la lectura la retiene.
+        var anotada = new DevolucionLeida(960, 20, false, Luego(5), 15, "cajera2", "Caja 2", null, [new ArticuloDevueltoLeido("A1", "Goma", 1, 15, 1)]);
+        await using (var db = _base!.Contexto())
+        {
+            var envio = await db.EnviosAEleventa.SingleAsync(x => x.Tipo == TipoEnvioEleventa.Devolucion && x.VentaId == ligada.Id);
+            DevolucionesConEleventa.Ligar(db, (await DevolucionesConEleventa.PorAnotarAsync(db, envio))!, [anotada], _base.Reloj.Ahora.UtcDateTime);
+            envio.Estado = EstadoEnvioEleventa.AMano;
+            await db.SaveChangesAsync();
+        }
+        var e = Eleventa(tickets: [TicketDe(ligada, 20, 102, total: 15), TicketDe(esperando, 21, 103, total: 30)],
+            lineas: [Linea(20, "A1", 1, 15), Linea(21, "A1", 2, 15)],
+            devoluciones: [anotada, new(961, 21, false, Luego(6), 15, "cajera2", "Caja 2", null, [])]);
+
+        var r = await ImportarAsync(e);
+
+        // La elegida es la de aquí; la otra puede serlo, y se dice. Ninguno de los dos tickets se trae.
+        var p = r.DelPuente;
+        Assert.Equal((2, 1, 0, 1), (p.ConDevoluciones, p.DevolucionesDeAqui, p.DevolucionesDeEleventa, p.DevolucionesSinPasar));
+        var revisar = Assert.Single(p.PorRevisar);
+        Assert.Contains($"la venta {esperando.FolioTexto} de la caja 2, puede ser la anotación a mano de la devolución de aquí", revisar);
+        Assert.Contains("«Ya lo anoté en eleventa»", revisar);
+        Assert.Equal([10, 11], (await HistorialAsync()).Keys.Order());
     }
 
     [Fact]

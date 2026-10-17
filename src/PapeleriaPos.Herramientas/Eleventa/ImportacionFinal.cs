@@ -335,7 +335,7 @@ public static class ImportacionFinal
                 yield return $"      de la caja 2    {p.DevolucionesDeAqui,9:N0}";
                 yield return $"      de eleventa     {p.DevolucionesDeEleventa,9:N0}  (aquí ya están en su venta, sin efectivo)";
                 if (p.DevolucionesSinPasar > 0)
-                    yield return $"      sin pasar       {p.DevolucionesSinPasar,9:N0}  (de eleventa y aquí no están: abajo, para revisar)";
+                    yield return $"      sin pasar       {p.DevolucionesSinPasar,9:N0}  (hechas en eleventa que no se han pasado a su venta ni ligado: abajo)";
             }
             if (p.PorSuMarca > 0)
                 yield return $"    solo por su marca {p.PorSuMarca,9:N0}  (aquí no se supo qué número les dio eleventa)";
