@@ -720,6 +720,10 @@ ven en esa misma versión. El piloto es en la caja 2: vende con la caja nueva y 
 además de la 0, pide el puente con eleventa y la 10 ([plan](plan.md#la-versión-unicaja-y-el-piloto-en-la-caja-2)). Los
 números de siempre se quedan; la tabla va en el orden nuevo.
 
+**La meta (dueño, 2026-10-15): alcanzar a eleventa.** Lo que eleventa ya hace va antes que lo que no tiene (la 13, la 4,
+la 11 y la 12). Qué hace eleventa que el POS todavía no, en qué entrega va y en qué orden:
+[paridad con eleventa](paridad-eleventa.md).
+
 | # | Entrega | Tamaño | Cuándo |
 |---|---|---|---|
 | 0 | La versión unicaja, vender en una caja: la pantalla de venta nueva sobre el mismo servicio, cobro, ticket y base. El cuadro de captura con el lector en una sola llamada y las teclas que esperan al último escaneo; `12*código` y el folio; la búsqueda por pedazos de palabra con el nombre de eleventa como sinónimo, lo elegido antes y lo más vendido; la lista con + − y Supr; los rápidos (Copia B/N y CURP); el panel del total con F12, el exacto en gris y el cambio, sin billetes; los tickets en espera con F6 y F5; guardar lo que se busca; sin sonidos. Lo demás abre lo de hoy. La pantalla de hoy se quitó el 2026-10-14 (decisión del dueño) | Mediano a grande | Primero, para desarrollo |

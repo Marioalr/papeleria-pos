@@ -7,6 +7,8 @@
 > que reemplaza a Control Print, y **saber exactamente cuánto se gana** ([qué falta](#para-el-piloto-con-dos-cajas)).
 > **Primero (2026-10-10): la versión unicaja de la caja nueva,** para desarrollo, y después **el piloto en la caja 2**,
 > que vende con la caja nueva y manda cada venta a eleventa ([camino](#la-versión-unicaja-y-el-piloto-en-la-caja-2)).
+> **La meta (2026-10-15): alcanzar a eleventa.** Primero lo que eleventa ya hace y lo que pide dejarlo; lo que no tiene,
+> después ([paridad con eleventa](paridad-eleventa.md)).
 > **La multisucursal queda pospuesta, no
 > retirada:** su propuesta y lo investigado están en [notas](notas.md) e [ideas](ideas.md#varias-sucursales-pospuesto).
 
@@ -267,6 +269,12 @@ la caja con su ficha y su PIN del POS, todos desde la misma cuenta común de Win
   propia base, pero manda cada venta a la caja principal igual que hoy lo hace eleventa multicaja: la venta queda en los
   dos lados. Eleventa sigue siendo el sistema oficial en la caja principal
   ([convivencia](migracion-eleventa.md#el-piloto-convivencia-con-eleventa)).
+
+**La meta (dueño, 2026-10-15): alcanzar a eleventa.** Primero lo que eleventa ya hace (vender, cobrar, los cortes, el
+inventario y los reportes que usa el dueño) y lo que pide dejarlo (el piloto, el puente y el rendimiento). Lo que
+eleventa no tiene va después: las etiquetas de cajones y ganchos, WhatsApp, el ticket desde el celular, los exhibidos y
+la temporada, y el módulo de impresión. Qué hace eleventa que el POS todavía no, y en qué orden cerrarlo:
+[paridad con eleventa](paridad-eleventa.md) (2026-10-16).
 
 #### Primero: la versión unicaja (entrega 0)
 
@@ -647,7 +655,8 @@ Cada parte entra sin detener a la caja 2:
 3. **Dejar eleventa:** el servicio nuevo en la caja principal y la caja 2 conectada a él, con su rendimiento (entrega 5:
    escaneo contra la copia local, cambios avisados, plazos y estados de la red); la red de la tienda arreglada; la
    impresora de tickets compartida con reintento; el día pico con el simulador; los reportes de ventas (entrega 9), que
-   el dueño usa hoy en eleventa; la depuración del catálogo y el conteo físico. Eleventa queda de consulta.
+   el dueño usa hoy en eleventa; la depuración del catálogo y el conteo físico. Eleventa queda de consulta
+   ([lo que falta, en orden](paridad-eleventa.md#2-para-dejar-eleventa)).
 4. **El resto del rediseño:** la configuración (7), las pantallas de atrás (8) y lo que se señala (13).
 5. **Lo que eleventa no tiene:** el módulo de impresión con las tres impresoras de inyección y la bandeja (entrega 4),
    que retira Control Print; servicios con costo real y pedidos (fase 4); la ganancia real del mes; WhatsApp
@@ -790,12 +799,19 @@ Piloto en la caja 2 ([ver arriba](#la-versión-unicaja-y-el-piloto-en-la-caja-2)
 - [x] Paso 3: mandar cada venta con la bandeja de salida (PR #67 y #69), en código; todavía no se escribe en el eleventa
   real
 - [x] Paso 4: cancelaciones, devoluciones, turno, corte y entradas y salidas (PR #70, #72 y #73), en código
-- [ ] Los riesgos verificados el 2026-10-12: el cobro espera el último escaneo y «Pagó con» no toma escaneos como
-  dinero; solo efectivo en la caja 2; la lectura de eleventa respeta lo que sigue en la bandeja
-- [ ] Paso 6, la entrega 10: la base de la caja 2 contra apagones y su respaldo
+- [x] Los riesgos verificados el 2026-10-12: el cobro espera el último escaneo y «Pagó con» no toma escaneos como
+  dinero; solo efectivo en la caja 2; la lectura de eleventa respeta lo que sigue en la bandeja (PR #82, #83 y #85)
+- [x] Paso 6, la entrega 10: la base contra apagones (PR #84); el servicio de la caja 2 la respalda cada día
+- [ ] Paso 6, lo que falta: cómo se actualiza la caja 2 del piloto con un arreglo, sin perder su base ni la
+  configuración del puente
 - [ ] Lo que falta del diseño, por aprobar: eleventa abierto en la caja 2 en el mismo turno, devoluciones de ida y
   vuelta, folios repetidos, y los respaldos de eleventa y su restauración automática
   ([diseño](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))
+- [ ] Antes de vender en la caja 2: revisar en F3 el «Mayoreo por revisar». El F11 de eleventa (el segundo precio que
+  el cajero pone a mano) no existe en la caja nueva: lo que no tenga escala se cobra a menudeo
+  ([paridad](paridad-eleventa.md#venta-y-cobro))
+- [ ] En la tienda, mirar lo que la [paridad con eleventa](paridad-eleventa.md#qué-mirar-en-la-tienda) marca «por
+  confirmar»
 - [ ] Paso 5: semanas de prueba contra una copia servida por un Firebird 2.0.1 como el de la tienda
 - [ ] Paso 7: el fin de semana del 17 y 18 de octubre
   ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-octubre))
@@ -825,6 +841,11 @@ Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
 - [ ] Probar en Windows con las dos cajas reales: servicio, alta de la caja 2, contingencia, respaldos, ventana de la
   caja y ticket desde las dos (el cajón, cuando lo haya)
 - [ ] Medir un día pico (~120 tickets) con las dos cajas, en la caja principal real, con el simulador de cajas
+- [ ] Departamentos en el POS: darlos de alta, cambiarles el nombre y desactivarlos. Hoy solo llegan de eleventa, y
+  Compras pide darlos de alta «en F3 Productos», donde no se puede ([paridad](paridad-eleventa.md#productos-y-precios))
+- [ ] La importación final sin las ventas que ya mandó el puente (por `VENTATICKETS.ID`), para no contarlas dos veces
+  en los reportes ([diseño](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)); hoy el
+  importador no las distingue
 - [ ] Antes del piloto: respaldo cifrado en Backblaze B2, con una restauración de ensayo, y vigilancia de la caja
   principal en Healthchecks.io ([notas](notas.md#respaldo-fuera-de-la-tienda-y-aviso-de-apertura))
 - [ ] Soporte a distancia para instalar las actualizaciones (NetBird gratis u otro, [notas](notas.md#cuentas-y-pagos))
