@@ -53,10 +53,11 @@ public sealed record TurnoDelPuente(int CajaId, int? TurnoId)
 /// «Devoluciones de ida y vuelta»). Solo del piloto: se quita al dejar eleventa.
 /// <list type="bullet">
 /// <item><b>Solo lo del turno de ahora</b> (revisión del 2026-10-17, decidido; por revisar con el dueño): mientras dure el
-/// piloto, la caja 2 devuelve o cancela solo lo que el puente sabe escribir en eleventa: sus ventas mientras sigue abierto
-/// su turno, y los tickets cobrados en el eleventa de la caja 2 en el turno que eleventa tiene abierto ahora. Lo de otro
-/// turno, de otra caja o de la principal se devuelve en eleventa (<see cref="DeOtroTurno"/>), y su devolución llega aquí
-/// sola con la lectura (la vuelta), como cualquier otra de eleventa.</item>
+/// piloto, la caja 2 devuelve o cancela solo lo que el puente sabe escribir en eleventa: sus ventas y los tickets cobrados en
+/// el eleventa de la caja 2 cuyo ticket es del turno que eleventa tiene abierto ahora (se ve en vivo; sin eleventa, para sus
+/// ventas, mientras su turno aquí siga abierto). Lo de otro turno, de otra caja o de la principal se devuelve en eleventa
+/// (<see cref="DeOtroTurno"/>, <see cref="DeOtroTurnoEnEleventa"/>); la de una venta de aquí llega sola con la lectura (la
+/// vuelta), como cualquier otra de eleventa.</item>
 /// <item><b>La ida:</b> en la caja 2 se devuelve un ticket que se cobró en eleventa. Se lee en vivo (el ticket, sus
 /// artículos y sus devoluciones); sin eleventa no se devuelve. Solo efectivo, 7 días y los permisos de la caja nueva. El
 /// ticket leído se guarda en el puente (<see cref="DevolucionDeEleventa"/>), no como venta. El dinero sale del turno de la
@@ -94,12 +95,21 @@ public static class DevolucionesConEleventa
     public const string NoFueEnEfectivo = "Se cobró con otra forma de pago en eleventa: se devuelve en eleventa.";
 
     /// <summary>
-    /// Por qué la caja 2 no devuelve ni cancela un ticket de otro turno de eleventa, de otra caja o de la principal: el puente
-    /// todavía no sabe cómo lo anota eleventa (docs/pruebas-en-tienda.md). Se devuelve en eleventa, que sigue abierto en la caja
-    /// 2, y su devolución llega aquí sola con la lectura.
+    /// Por qué la caja 2 no devuelve ni cancela una venta suya de otro turno de eleventa: el puente todavía no sabe cómo anota
+    /// eleventa esa devolución (docs/pruebas-en-tienda.md). Se devuelve en eleventa, que sigue abierto en la caja 2, y su
+    /// devolución llega a la venta de aquí sola con la lectura.
     /// </summary>
     public const string DeOtroTurno =
         "Este ticket es de otro turno: devuélvelo en eleventa (está abierto en esta caja). La devolución llega aquí sola con la lectura.";
+
+    /// <summary>
+    /// Por qué no se devuelve aquí un ticket cobrado en eleventa de otro turno o de otra caja (la ida): se devuelve en
+    /// eleventa. No es una venta de la caja 2: aquí no llega nada (cuarta revisión: no se dice que llega).
+    /// </summary>
+    public static string DeOtroTurnoEnEleventa(TicketLeido t, TurnoDelPuente puente) =>
+        t.CajaId == puente.CajaId
+            ? "Este ticket es de otro turno de eleventa: devuélvelo en eleventa (está abierto en esta caja)."
+            : $"Este ticket es de otra caja de eleventa ({t.Caja}): devuélvelo en eleventa (está abierto en esta caja).";
     public const string CanceladoEnEleventa = "Ese ticket está cancelado en eleventa.";
     public const string Vencido = "El ticket tiene más de 7 días: ya no admite devoluciones.";
 
@@ -202,7 +212,7 @@ public static class DevolucionesConEleventa
         // Cancelado o vencido, la ventana ya lo dice.
         return new VentaParaDevolverDto(IdDelTicket(t.Id), $"{t.Folio} · {t.Caja} (eleventa)", t.VendidoEn ?? HoraMexico.ALocal(ahoraUtc),
             t.Cancelado ? EstadoVenta.Cancelada : EstadoVenta.Pagada, Centavos(t.Pagado), lineas, PuedeCancelar: false, Math.Max(0, dias),
-            NoSeDevuelveEnElPiloto: t.Cancelado || dias <= 0 ? null : !puente.Tiene(t) ? DeOtroTurno : t.EnEfectivo ? null : NoFueEnEfectivo);
+            NoSeDevuelveEnElPiloto: t.Cancelado || dias <= 0 ? null : !puente.Tiene(t) ? DeOtroTurnoEnEleventa(t, puente) : t.EnEfectivo ? null : NoFueEnEfectivo);
     }
 
     /// <summary>
@@ -212,17 +222,16 @@ public static class DevolucionesConEleventa
     public static string? PorQueNoSeDevuelveAqui(TicketLeido t, TurnoDelPuente puente, DateTime ahoraUtc) =>
         t.Cancelado ? CanceladoEnEleventa
         : t.VendidoEn is not { } vendido || ahoraUtc - HoraMexico.AUtc(vendido) > TimeSpan.FromDays(Devolucion.DiasParaDevolver) ? Vencido
-        : !puente.Tiene(t) ? DeOtroTurno
+        : !puente.Tiene(t) ? DeOtroTurnoEnEleventa(t, puente)
         : !t.EnEfectivo ? NoFueEnEfectivo
         : null;
 
     /// <summary>
-    /// Una venta de la caja 2 que ya está en eleventa se devuelve o se cancela aquí solo mientras sigue abierto su turno (revisión
-    /// del 2026-10-17, decidido): el de la caja nueva se cierra cuando eleventa hace su corte (<see cref="TurnosDelPiloto"/>), y
-    /// después el ticket es de otro turno de eleventa, donde el puente no sabe escribir su devolución. Se devuelve en eleventa
-    /// (<see cref="DeOtroTurno"/>) y llega aquí con la vuelta. Lo que todavía no llega a eleventa sí se devuelve aquí: va detrás
-    /// de su venta. Si eleventa cortó y la lectura todavía no lo ve, se deja pasar: al mandarla queda por revisar, para anotarla
-    /// a mano.
+    /// Una venta de la caja 2 que ya está en eleventa se devuelve o se cancela aquí solo si su ticket es del turno que eleventa
+    /// tiene abierto en la caja 2 (revisión del 2026-10-17, decidido): lo dice eleventa en vivo (<see cref="RevisarEnVivoAsync"/>,
+    /// cuarta revisión). Esto es lo que se usa sin eleventa: su turno aquí, que se cierra cuando la caja toma el corte de
+    /// eleventa (<see cref="TurnosDelPiloto"/>). Se devuelve en eleventa (<see cref="DeOtroTurno"/>) y llega aquí con la
+    /// vuelta. Lo que todavía no llega a eleventa sí se devuelve aquí: va detrás de su venta.
     /// </summary>
     public static async Task<string?> DeOtroTurnoAsync(PosDbContext db, Guid ventaId, CancellationToken ct = default)
     {
@@ -797,23 +806,48 @@ public static class DevolucionesConEleventa
 
     // ── Antes de devolver aquí un ticket de la caja 2 ──
 
+    /// <summary>Lo que se vio en vivo de una venta de la caja 2 que está en eleventa.</summary>
+    /// <param name="DelTurno">
+    /// Si su ticket es del turno que eleventa tiene abierto ahora en la caja 2: el único donde el puente sabe escribir su
+    /// devolución. Si no se preguntó por la caja, sí.
+    /// </param>
+    public sealed record VistaEnVivo(bool DelTurno);
+
     /// <summary>
     /// Antes de devolver o cancelar aquí una venta de la caja 2 que ya está en eleventa: lo que se le haya devuelto allá
-    /// entra antes, como en la vuelta. Si eleventa no contesta a tiempo, se deja pasar (decisión del dueño, 2026-10-11): un
-    /// choque queda por revisar al mandarla. Falso si no se pudo revisar.
+    /// entra antes, como en la vuelta, y, con la caja del puente, se ve si su ticket es del turno que eleventa tiene abierto
+    /// ahora (cuarta revisión: así no se acepta aquí lo que ya es de otro turno, ni se rechaza lo que se cobró después del
+    /// corte de eleventa aunque la lectura no lo haya visto). Vacío si la venta no está en eleventa o eleventa no contesta a
+    /// tiempo: se deja pasar (decisión del dueño, 2026-10-11) y un choque queda por revisar al mandarla.
     /// </summary>
-    public static async Task<bool> RevisarEnVivoAsync(PosDbContext db, ServidorEleventa servidor, Guid ventaId, DateTime ahoraUtc, CancellationToken ct = default)
+    /// <param name="cajaDelPuente"><c>CAJAS.ID</c> de la caja 2 en eleventa; vacío si no hace falta ver el turno.</param>
+    public static async Task<VistaEnVivo?> RevisarEnVivoAsync(PosDbContext db, ServidorEleventa servidor, Guid ventaId, DateTime ahoraUtc,
+        int? cajaDelPuente = null, CancellationToken ct = default)
     {
         var ticket = await db.EnviosAEleventa.AsNoTracking()
             .Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == ventaId && e.Estado == EstadoEnvioEleventa.Enviada && e.TicketEleventa != null)
             .Select(e => e.TicketEleventa).FirstOrDefaultAsync(ct);
         if (ticket is not { } id)
-            return true;
-        if (await DevolucionesEnVivoAsync(servidor, id, ct) is not { } devoluciones)
-            return false;
-        await PasarVueltaAsync(db, devoluciones, ahoraUtc, ct);
-        return true;
+            return null;
+        var leido = await EnVivoAsync(servidor, async c =>
+        {
+            await using var tx = await c.BeginTransactionAsync(new FbTransactionOptions
+            {
+                TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
+            }, FirebirdSinCancelar.Nunca);
+            var devoluciones = await TicketsDeEleventa.DevolucionesAsync(c, tx, [id], FirebirdSinCancelar.Nunca);
+            var delTicket = await TicketsDeEleventa.TurnoDelTicketAsync(c, tx, id, FirebirdSinCancelar.Nunca);
+            await tx.CommitAsync(FirebirdSinCancelar.Nunca);
+            var abierto = cajaDelPuente is { } caja ? await TicketsDeEleventa.TurnoAbiertoAsync(c, caja, FirebirdSinCancelar.Nunca) : null;
+            return new LeidoDeLaVenta(devoluciones, delTicket, abierto);
+        }, ct);
+        if (leido is null)
+            return null;
+        await PasarVueltaAsync(db, leido.Devoluciones, ahoraUtc, ct);
+        return new VistaEnVivo(cajaDelPuente is null || leido.TurnoDelTicket is { } turno && turno == leido.TurnoAbierto);
     }
+
+    private sealed record LeidoDeLaVenta(List<DevolucionLeida> Devoluciones, int? TurnoDelTicket, int? TurnoAbierto);
 
     /// <summary>
     /// Por qué no se devuelve aquí lo que queda de una venta de la caja 2: ya tuvo una devolución en eleventa (pasada a su
