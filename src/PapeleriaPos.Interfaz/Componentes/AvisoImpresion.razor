@@ -1,16 +1,22 @@
 @* Cómo va un papel de la impresora de tickets (entrega 5, parte 3, «Imprimir aparte»): lo que se imprime va a la cola de
    la caja y la pantalla no lo espera; aquí se dice si salió, si espera a la impresora (la otra caja puede estar imprimiendo)
-   o si no salió, con «Reintentar» (la cola espera ese papel, y lo que sigue espera en su orden) y, si se puede, «Verlo en
-   pantalla». Sin Trabajo, el primero de la cola que tenga un problema. *@
+   o si no salió, con «Reintentar» (la cola espera ese papel, y lo que sigue espera en su orden), «No imprimirlo» (lo deja
+   sin imprimir y sigue lo demás) y, si se puede, «Verlo en pantalla». Sin Trabajo, el primero de la cola que tenga un
+   problema. *@
 @implements IDisposable
 @inject IImpresora Impresora
+@inject IServiceProvider Servicios
 
 @if (EnLinea)
 {
     @* En una barra de abajo (sin vender): solo los problemas, en un renglón. *@
     @if (Mostrado is { Estado: EstadoImpresion.NoSalio } noSalio)
     {
-        <span class="vn-ayuda-tecla error">No salió «@noSalio.Titulo»: @noSalio.Motivo <button class="vn-boton chico" @onclick="Reintentar">Reintentar</button></span>
+        <span class="vn-ayuda-tecla error">
+            No salió «@noSalio.Titulo»: @noSalio.Motivo
+            <button class="vn-boton chico" @onclick="Reintentar">Reintentar</button>
+            <button class="vn-boton chico" @onclick="() => NoImprimirlo(noSalio)">No imprimirlo</button>
+        </span>
     }
     else if (Mostrado is { Estado: EstadoImpresion.Ocupada } ocupada)
     {
@@ -28,6 +34,7 @@ else if (Mostrado is { } trabajo)
                     <span>No salió «@trabajo.Titulo»: @trabajo.Motivo@(Nota is null ? "" : $" {Nota}")@Detras(trabajo)</span>
                     <span class="vn-botonera">
                         <button class="vn-boton chico" @onclick="Reintentar">Reintentar</button>
+                        <button class="vn-boton chico" @onclick="() => NoImprimirlo(trabajo)">No imprimirlo</button>
                         @if (AlVerEnPantalla.HasDelegate && trabajo.Documento is not null)
                         {
                             <button class="vn-boton chico" @onclick="() => AlVerEnPantalla.InvokeAsync(trabajo)">Verlo en pantalla</button>
@@ -49,13 +56,19 @@ else if (Mostrado is { } trabajo)
                     <span>«@trabajo.Titulo» espera su turno: antes @(antes.Estado == EstadoImpresion.NoSalio ? "no salió" : "espera a la impresora") «@antes.Titulo».</span>
                     @if (antes.Estado == EstadoImpresion.NoSalio)
                     {
-                        <span class="vn-botonera"><button class="vn-boton chico" @onclick="Reintentar">Reintentar</button></span>
+                        <span class="vn-botonera">
+                            <button class="vn-boton chico" @onclick="Reintentar">Reintentar</button>
+                            <button class="vn-boton chico" @onclick="() => NoImprimirlo(antes)">No imprimirlo</button>
+                        </span>
                     }
                 </div>
             </div>
             break;
         case EstadoImpresion.Impreso:
             <div class="vn-folio-ok"><Ico Nombre="check" />@trabajo.Titulo impreso</div>
+            break;
+        case EstadoImpresion.SinImprimir:
+            <div class="vn-folio-ok"><Ico Nombre="impresora" />@trabajo.Titulo sin imprimir</div>
             break;
         default:
             <div class="vn-folio-ok"><Ico Nombre="impresora" />@trabajo.Titulo · imprimiendo…</div>
@@ -89,6 +102,23 @@ else if (Mostrado is { } trabajo)
     private void AlCambiar() => _ = InvokeAsync(StateHasChanged);
 
     private void Reintentar() => Cola.Reintentar();
+
+    private void NoImprimirlo(TrabajoDeImpresion trabajo) => NoImprimirlo(Cola, trabajo, Servicios);
+
+    /// <summary>
+    /// «No imprimirlo»: lo que no salió se deja sin imprimir y la cola sigue con lo demás (<see cref="ColaDeImpresion.NoImprimir"/>);
+    /// queda en el registro de la caja. Sin confirmar: lo que dice ya quedó guardado y se puede volver a imprimir. También lo
+    /// usan el estado de arriba y el lado de la entrada.
+    /// </summary>
+    internal static void NoImprimirlo(ColaDeImpresion cola, TrabajoDeImpresion trabajo, IServiceProvider servicios)
+    {
+        var motivo = trabajo.Motivo;
+        if (cola.NoImprimir(trabajo))
+            servicios.GetService<RegistroDiario>()?.Anotar(
+                $"Se dejó sin imprimir «{trabajo.Titulo}» («No imprimirlo»){(motivo is null ? "." : $": no salió porque {Minuscula(motivo)}")}");
+    }
+
+    private static string Minuscula(string texto) => texto.Length > 0 ? char.ToLower(texto[0], Formato.Mexico) + texto[1..] : texto;
 
     /// <summary>« Detrás esperan 2.»: lo que no sale hasta que este salga.</summary>
     private string Detras(TrabajoDeImpresion trabajo)

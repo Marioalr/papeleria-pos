@@ -417,7 +417,7 @@
                 else if (_trabajoCobrado is { } trabajoCobrado)
                 {
                     @* El ticket va a la cola de la impresora y la pantalla no lo espera (entrega 5, parte 3): aquí se ve si salió, si
-                       espera a la impresora o si no salió, con «Reintentar» y «Verlo en pantalla». *@
+                       espera a la impresora o si no salió, con «Reintentar», «No imprimirlo» y «Verlo en pantalla». *@
                     <AvisoImpresion Trabajo="trabajoCobrado" Nota="La venta ya quedó guardada." AlVerEnPantalla="VerEnPantallaAsync" />
                 }
                 <div class="vn-alerta info">
@@ -435,7 +435,7 @@
             }
             else
             {
-                @* Lo que no salió de la impresora de tickets (o la espera): con «Reintentar», donde se está mirando. *@
+                @* Lo que no salió de la impresora de tickets (o la espera): con «Reintentar» y «No imprimirlo», donde se está mirando. *@
                 <AvisoImpresion AlVerEnPantalla="VerEnPantallaAsync" />
                 @* El cliente: una flecha chica que apunta al ticket; se jala (Ctrl+L) para elegirlo. A su izquierda, lo que debe. *@
                 <div class="vn-cliente">
@@ -3444,7 +3444,7 @@
     /// <summary>
     /// La venta ya quedó guardada: el ticket va a la cola de la impresora (entrega 5, parte 3) y el panel dice si salió, sin
     /// esperarlo. Sin impresora (en el navegador), el ticket no se abre solo: el panel ofrece verlo; si la impresora no
-    /// responde, ahí mismo «Reintentar» y «Verlo en pantalla».
+    /// responde (o el ticket ni se pudo armar para ella), ahí mismo «Reintentar», «No imprimirlo» y «Verlo en pantalla».
     /// </summary>
     private async Task ImprimirCobradoAsync(TicketDto ticket)
     {

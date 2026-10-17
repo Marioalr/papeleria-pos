@@ -67,8 +67,9 @@ internal sealed record VentaConCopia(
     /// <param name="pagina">La página (caja.js); sin ella, una que contesta todo sin hacer nada.</param>
     /// <param name="impresora">La impresora de tickets; sin ella, ninguna (el ticket se ve en pantalla).</param>
     /// <param name="quien">Quién entra a la venta, con su PIN; sin él, el cajero. El turno es del cajero.</param>
+    /// <param name="registro">El registro de la caja (registros\caja-….log); sin él, no se anota nada.</param>
     public static async Task<VentaConCopia> AbrirAsync(ServicioDePrueba servicio, string baseLocal, TimeSpan? plazo = null, IJSRuntime? pagina = null,
-        IImpresora? impresora = null, (string Usuario, string Pin)? quien = null)
+        IImpresora? impresora = null, (string Usuario, string Pin)? quien = null, RegistroDiario? registro = null)
     {
         var red = new RedDePrueba(servicio.Fabrica.Server.CreateHandler());
         var http = new HttpClient(red);
@@ -81,15 +82,17 @@ internal sealed record VentaConCopia(
         var cajero = await cliente.EntrarAsync("cajero", "1111");
         var turno = await cliente.TurnoAsync(caja.Id) ?? await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
         var sesion = quien is var (usuario, pin) ? await cliente.EntrarAsync(usuario, pin) : cajero;
-        var servicios = new ServiceCollection()
+        var coleccion = new ServiceCollection()
             .AddSingleton(conexion)
             .AddSingleton(cliente)
             .AddSingleton(contingencia)
             .AddSingleton(new RendimientoCaja())
             .AddSingleton(impresora ?? new SinImpresora())
             .AddSingleton(pagina ?? new PaginaQueContesta())
-            .AddScoped<ModuloCaja>()
-            .BuildServiceProvider();
+            .AddScoped<ModuloCaja>();
+        if (registro is not null)
+            coleccion.AddSingleton(registro);
+        var servicios = coleccion.BuildServiceProvider();
         var pantalla = new PantallaSinNavegador(servicios);
         var venta = await pantalla.AbrirAsync<PantallaVenta>(new()
         {

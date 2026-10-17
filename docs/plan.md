@@ -357,7 +357,7 @@ panel de la derecha y vuelve con Esc.
 - **F10** solo pone el cursor en el cuadro, donde salen los resultados.
 - **«Tarjeta» y «Transf.»** abren el cobro con esa forma y el total en ella.
 - **Al cobrar, el cambio en grande** se queda en el panel hasta que se escanea al siguiente cliente. Si el ticket no
-  salió, ahí mismo están «Reintentar» y «Verlo en pantalla».
+  salió, ahí mismo están «Reintentar», «No imprimirlo» y «Verlo en pantalla».
 - **F12 mueve el cursor a «Pagó con» en el navegador mismo,** sin esperar al servicio: lo que se teclea enseguida ya no
   cae en el cuadro de captura.
 - **Con un panel abierto, las teclas siguen** (2026-10-14, antes solo Esc): la del mismo panel lo cierra (F9 o Esc
@@ -602,8 +602,13 @@ aprobó el dueño el 2026-10-10 ([propuesta](propuesta-interfaz.md#rendimiento))
   ticket de prueba) va a una cola de la caja y la pantalla queda libre al momento: cobrar ya no espera a que salga el
   ticket, ni el aviso de retiro. Si la impresora no contesta al conectarse (puede estar imprimiendo lo de la otra caja),
   se vuelve a intentar sola unos 15 s, sin que salga dos veces. Si no sale, la cola se detiene y lo dice con
-  «Reintentar» (en el panel del cobro, arriba del total, en el estado de arriba, en el corte y en la entrada); lo que
-  sigue espera en su orden. Si se cierra la caja con algo sin imprimir, pregunta antes y lo anota en el registro.
+  «Reintentar» y «No imprimirlo» (en el panel del cobro, arriba del total, en el estado de arriba, en el corte y en la
+  entrada); lo que sigue espera en su orden. «No imprimirlo» lo deja sin imprimir, sin preguntar, lo anota en el
+  registro de la caja y la cola sigue: es para cuando el cliente ya se fue, o cuando no salió con «no confirmó» y pudo
+  salir ya (con «Reintentar» saldría dos veces); el ticket se reimprime desde las ventas del día. Un ticket que ni se
+  puede armar para la impresora (el logo dañado) también queda como «no salió», con «Verlo en pantalla». Si se cierra
+  la caja con algo sin imprimir, pregunta antes y lo anota en el registro. El pulso del cajón va al principio del
+  ticket: si se mandó, el cajón se abre aunque el papel no salga (en la tienda no hay cajón).
 - **F12** ya pasaba el cursor a «Pagó con» en la misma tecla, sin esperar a .NET (menos de 1 ms); ahora lo cuida una
   prueba.
 - **Abrir la caja:** al publicar para Windows va ya compilada (ReadyToRun). La entrada sale con la copia, sin esperar a
@@ -611,7 +616,7 @@ aprobó el dueño el 2026-10-10 ([propuesta](propuesta-interfaz.md#rendimiento))
   a los cuántos segundos salió. Las letras ya eran las de Windows (Segoe UI), ninguna de internet.
 - **Falta, en la tienda (un sábado o domingo):** dos tickets a la vez desde las dos cajas a la POS-8360, para ver si
   espera, rechaza o corta (si no conecta, la cola reintenta sola; si corta a medio ticket, dice «no salió» y espera
-  «Reintentar»); y medir allá lo que tarda escribir, escanear y abrir la caja. De la entrega 5 sigue la parte 2: la red
+  «Reintentar» o «No imprimirlo»); y medir allá lo que tarda escribir, escanear y abrir la caja. De la entrega 5 sigue la parte 2: la red
   (los cambios avisados por SSE, los plazos y los estados de la red, la prueba de la ráfaga).
 
 #### Después: el piloto en la caja 2

@@ -1,5 +1,10 @@
+using System.Net.Http.Json;
 using Microsoft.AspNetCore.Components.Web;
+using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Impresion;
+using PapeleriaPos.Interfaz;
+using PapeleriaPos.Nucleo.Configuracion;
+using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Pruebas.Impresion;
 using PapeleriaPos.Pruebas.Servicio;
 
@@ -135,5 +140,94 @@ public sealed class ImprimirAparteTests(ServicioDePrueba servicio) : IClassFixtu
         await v.Pantalla.EsperarAsync(t => !t.Contains("No salió") && !t.Contains("Tickets · no salió"), "el aviso fuera");
         Assert.Empty(cola.Pendientes);
         Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>
+    /// «No imprimirlo», junto a «Reintentar»: lo que no salió con «no confirmó» pudo salir ya (con «Reintentar» saldría dos
+    /// veces), o el cliente ya se fue. Se deja sin imprimir, sin preguntar (se reimprime desde las ventas del día), queda en
+    /// el registro de la caja, y la cola sigue con lo que esperaba.
+    /// </summary>
+    [Fact]
+    public async Task No_imprimirlo_deja_el_que_no_salio_y_sigue_con_lo_que_esperaba()
+    {
+        var carpeta = Path.Combine(Path.GetTempPath(), $"registros-{Guid.NewGuid():N}");
+        var registro = new RegistroDiario(carpeta, "caja");
+        var impresora = new TicketeraDePrueba { Falla = n => n == 1 ? new IOException("La impresora de tickets no confirmó que lo recibió.") : null };
+        try
+        {
+            await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, impresora: impresora, registro: registro);
+            var (a, b) = v.DosDeLaCopia();
+            var primero = await CobrarAsync(v, a.Codigo!);
+            await v.Pantalla.EsperarAsync(t => t.Contains($"No salió «Ticket {primero}»: La impresora de tickets no confirmó que lo recibió."),
+                "el aviso de que no salió");
+            var segundo = await CobrarAsync(v, b.Codigo!);
+            await v.Pantalla.EsperarAsync(t => t.Contains($"«Ticket {segundo}» espera su turno: antes no salió «Ticket {primero}»."), "el segundo en espera");
+            Assert.Equal(1, impresora.Intentos);
+
+            await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("No imprimirlo"));
+
+            await TicketeraDePrueba.EsperarAsync(() => impresora.Salieron.Count == 1, "el segundo ticket");
+            Assert.Contains(segundo, impresora.Salieron.Single());
+            Assert.Equal(2, impresora.Intentos);
+            await v.Pantalla.EsperarAsync(t => t.Contains($"Ticket {segundo} impreso") && !t.Contains("no salió") && !t.Contains("No imprimirlo"),
+                "el segundo impreso, sin aviso");
+            Assert.Empty(ColaDeImpresion.De(impresora).Pendientes);
+            Assert.Contains($"Se dejó sin imprimir «Ticket {primero}» («No imprimirlo»): no salió porque la impresora de tickets no confirmó que lo recibió.",
+                File.ReadAllText(registro.ArchivoDeHoy));
+            Assert.Empty(v.Pantalla.Errores);
+        }
+        finally
+        {
+            ArchivosDePrueba.BorrarCarpeta(carpeta);
+        }
+    }
+
+    /// <summary>
+    /// Con el logo del ticket dañado (un apagón a media escritura de la configuración), el ticket no se puede armar para la
+    /// impresora. Antes eso tronaba en la pantalla con la venta ya guardada, sin papel y sin nada que reintentar; ahora el
+    /// panel dice que no salió y por qué, y «Verlo en pantalla» lo muestra. A la impresora no se le manda nada.
+    /// </summary>
+    [Fact]
+    public async Task Si_el_ticket_no_se_puede_armar_no_salio_y_se_ve_en_pantalla()
+    {
+        var impresora = new TicketeraDePrueba();
+        // Antes de que la caja baje su copia: lo de la copia y lo del servicio, igual (si no, el cobro pide cobrar otra vez).
+        var sucursalId = (await servicio.Fabrica.CreateClient().GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single().SucursalId;
+        await LogoDanadoAsync(sucursalId);
+        try
+        {
+            await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, impresora: impresora);
+            var (a, _) = v.DosDeLaCopia();
+            var folio = await CobrarAsync(v, a.Codigo!);
+
+            await v.Pantalla.EsperarAsync(t => t.Contains($"No salió «Ticket {folio}»: No se pudo armar para la impresora. El logo del ticket está dañado"),
+                "el aviso de que no salió");
+            Assert.Contains("La venta ya quedó guardada.", await v.Pantalla.TextoAsync());
+            Assert.Equal(0, impresora.Intentos);
+            await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Verlo en pantalla"));
+            await v.Pantalla.EsperarAsync(t => t.Contains("[logo 8×3]") && t.Contains(folio), "el ticket en pantalla");
+            Assert.Empty(v.Pantalla.Errores);
+        }
+        finally
+        {
+            await using var db = servicio.Base();
+            await db.ConfiguracionesTicket.Where(c => c.SucursalId == sucursalId).ExecuteDeleteAsync();
+        }
+    }
+
+    /// <summary>
+    /// El logo del ticket de la sucursal, dañado: dice 3 renglones de 8 puntos y trae 2 (la configuración no lo deja guardar
+    /// así; se escribe directo en la base).
+    /// </summary>
+    private async Task LogoDanadoAsync(Guid sucursalId)
+    {
+        await using var db = servicio.Base();
+        Assert.False(await db.ConfiguracionesTicket.AnyAsync(c => c.SucursalId == sucursalId));
+        var configuracion = new ConfiguracionTicket { SucursalId = sucursalId };
+        configuracion.CambiarTextos(["Papelería de prueba"], []);
+        configuracion.CambiarLogo(8, 2, [0xFF, 0x81]);
+        db.ConfiguracionesTicket.Add(configuracion);
+        await db.SaveChangesAsync();
+        await db.ConfiguracionesTicket.Where(c => c.SucursalId == sucursalId).ExecuteUpdateAsync(c => c.SetProperty(x => x.LogoAlto, 3));
     }
 }

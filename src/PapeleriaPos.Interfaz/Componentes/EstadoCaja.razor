@@ -35,6 +35,10 @@
         <button class="vn-chip-estado aviso" title="No salió «@noSalio.Titulo»: @noSalio.Motivo Toca para reintentar." @onclick="Cola.Reintentar">
             <Ico Nombre="impresora" />Tickets · no salió@(Cola.Pendientes.Count > 1 ? $" ({Cola.Pendientes.Count} por imprimir)" : "") · Reintentar
         </button>
+        <button class="vn-chip-estado aviso" title="«@noSalio.Titulo» se deja sin imprimir y sigue lo demás: se puede volver a imprimir."
+                @onclick="() => AvisoImpresion.NoImprimirlo(Cola, noSalio, Servicios)">
+            No imprimirlo
+        </button>
     }
     else if (Cola.Problema is { } ocupada)
     {

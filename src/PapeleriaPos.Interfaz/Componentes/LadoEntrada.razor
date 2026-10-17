@@ -32,7 +32,7 @@
                 break;
         }
         @* La impresora no se revisa (no hay a quién preguntarle cómo está): el punto no dice «lista», como el verde. Si algo de
-           la cola no salió (entrega 5, parte 3), lo dice, con «Reintentar»: quien entra después también lo ve. *@
+           la cola no salió (entrega 5, parte 3), lo dice, con «Reintentar» y «No imprimirlo»: quien entra después también lo ve. *@
         @if (Impresora.MuestraVistaPrevia)
         {
             <li><span class="punto gris"></span>Ticket en pantalla (sin impresora de tickets)</li>
@@ -42,6 +42,7 @@
             <li>
                 <span class="punto ambar"></span>Impresora de tickets: no salió «@noSalio.Titulo» (@noSalio.Motivo)
                 <button class="vn-boton chico" @onclick="Cola.Reintentar">Reintentar</button>
+                <button class="vn-boton chico" @onclick="() => AvisoImpresion.NoImprimirlo(Cola, noSalio, Servicios)">No imprimirlo</button>
             </li>
         }
         else if (Cola.Problema is { } ocupada)

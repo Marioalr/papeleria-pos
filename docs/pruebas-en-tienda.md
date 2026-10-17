@@ -76,7 +76,8 @@ configuración y exportar el registro del Tenda (un reinicio lo borra).
 2. **Impresoras** (1 a 2 h):
    - lectura SNMP de las dos WF-6590 y de la L5590 (serie, contador y niveles), la de la L5590 por primera vez;
    - dos tickets al mismo tiempo desde las dos cajas a la impresora de tickets, para ver si espera o rechaza; con la
-     caja nueva, que el segundo diga «espera a la impresora» y salga solo después, una sola vez;
+     caja nueva, que el segundo diga «espera a la impresora» y salga solo después, una sola vez; si alguno dice «no
+     salió» pero sí salió (no confirmó), «No imprimirlo» lo deja y sigue lo demás, sin que salga dos veces;
    - qué colas tiene cada PC y en qué PC corre Control Print;
    - para qué se usa cada impresora y cuánto se cobra en cada una, con el personal y en Control Print.
 3. **Grabadores** (30 min): configurarlos por seguridad ([lista](camaras.md#configurar-el-grabador)), y anotar qué

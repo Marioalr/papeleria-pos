@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text;
 using PapeleriaPos.Impresion;
+using PapeleriaPos.Nucleo.Contratos;
 
 namespace PapeleriaPos.Pruebas.Impresion;
 
@@ -173,8 +174,9 @@ public sealed class ColaDeImpresionTests
     }
 
     /// <summary>
-    /// El cajón es para dar el cambio en ese momento: se abre con su ticket si sale a tiempo (también si antes la impresora no
-    /// contestó al conectarse: no se le había mandado nada), pero no otra vez con «Reintentar» después de mandárselo.
+    /// El cajón es para dar el cambio en ese momento: el pulso va al principio de su ticket si se manda a tiempo (también si
+    /// antes la impresora no contestó al conectarse: no se le había mandado nada), y el cajón se abre aunque luego el papel
+    /// no salga; pero no va otra vez con «Reintentar» después de mandárselo.
     /// </summary>
     [Fact]
     public async Task El_cajon_se_abre_con_su_ticket_al_momento_y_no_otra_vez_al_reintentar()
@@ -224,6 +226,68 @@ public sealed class ColaDeImpresionTests
         Assert.Equal([Papel("Z"), TicketEscPos.Generar(ticket, abrirCajon: false)], impresora.Mandados);
         Assert.Equal(EstadoImpresion.Impreso, cajon.Estado);
         Assert.Empty(cola.Pendientes);
+    }
+
+    /// <summary>
+    /// «No imprimirlo»: lo que no salió (con «no confirmó» pudo salir ya; o el cliente ya se fue) se deja sin imprimir y la
+    /// cola sigue con lo demás, en su orden. Solo lo que no salió: lo que espera su turno no se deja así.
+    /// </summary>
+    [Fact]
+    public async Task No_imprimirlo_deja_lo_que_no_salio_y_la_cola_sigue_en_orden()
+    {
+        var impresora = new TicketeraDePrueba { Falla = n => n == 1 ? new IOException("La impresora de tickets no confirmó que lo recibió.") : null };
+        var cola = new ColaDeImpresion(impresora, Cortas);
+        var a = cola.Encolar("Ticket A-1", Papel("A"));
+        Assert.False(await a.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
+        var b = cola.Encolar("Ticket A-2", Papel("B"));
+        var c = cola.Encolar("Ticket A-3", Papel("C"));
+        Assert.False(cola.NoImprimir(b));
+        Assert.True(cola.Detenida);
+
+        Assert.True(cola.NoImprimir(a));
+
+        Assert.True(await c.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.Equal(["B", "C"], impresora.Salieron);
+        Assert.Equal(EstadoImpresion.SinImprimir, a.Estado);
+        Assert.Equal(3, impresora.Intentos);
+        Assert.False(cola.Detenida);
+        Assert.Empty(cola.Pendientes);
+        // Ya no está en la cola: otra vez no hace nada.
+        Assert.False(cola.NoImprimir(a));
+    }
+
+    /// <summary>
+    /// Lo que no se puede armar para la impresora (el logo del ticket dañado) no truena al encolarlo, donde la venta ya quedó
+    /// guardada: entra como «no salió», con su motivo y su documento (para verlo en pantalla), sin mandarle nada a la
+    /// impresora. La cola se detiene en él como en lo demás; «Reintentar» lo vuelve a armar, y «No imprimirlo» lo deja.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_no_se_puede_armar_entra_como_no_salio_con_su_documento()
+    {
+        IReadOnlyList<Elemento> ticket = [new Imagen(new LogoTicketDto(8, 3, Convert.ToBase64String(new byte[] { 0xFF, 0x81 }))), new Renglon("Venta A-1")];
+        var impresora = new TicketeraDePrueba();
+        var cola = new ColaDeImpresion(impresora, Cortas);
+
+        var venta = cola.Encolar("Ticket A-1", ticket, abrirCajon: true);
+
+        Assert.Equal(EstadoImpresion.NoSalio, venta.Estado);
+        Assert.Equal("No se pudo armar para la impresora. El logo del ticket está dañado: no tiene el tamaño que dice. Vuelve a ponerlo en Configuración › Ticket.",
+            venta.Motivo);
+        Assert.Same(ticket, venta.Documento);
+        Assert.False(await venta.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
+        var siguiente = cola.Encolar("Ticket A-2", Papel("B"));
+        Assert.True(cola.Detenida);
+        Assert.Same(venta, cola.Problema);
+
+        cola.Reintentar();
+        Assert.False(await venta.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.Equal(EstadoImpresion.NoSalio, venta.Estado);
+        Assert.Equal(EstadoImpresion.EnCola, siguiente.Estado);
+        Assert.Equal(0, impresora.Intentos);
+
+        Assert.True(cola.NoImprimir(venta));
+        Assert.True(await siguiente.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.Equal(["B"], impresora.Salieron);
     }
 
     [Fact]
