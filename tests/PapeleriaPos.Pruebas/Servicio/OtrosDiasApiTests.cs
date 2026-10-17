@@ -13,9 +13,9 @@ namespace PapeleriaPos.Pruebas.Servicio;
 /// <summary>
 /// Las ventas de otros días y el historial de cortes (paridad con eleventa, 2026-10-17): solo se leen, un día a la vez, con
 /// el usuario que entró a la caja. Las de hoy de esa caja las ve cualquiera, como antes; las de otro día o de otra caja,
-/// quien tiene «Ver reportes de ventas»; el historial, quien hace el corte de un turno o ve el del día. Un folio se busca
-/// en cualquier día y caja. Cada prueba con su propia base (con la Caja 2): las ventas se mueven de día y los turnos se
-/// cierran.
+/// quien tiene «Ver reportes de ventas»; el historial, quien hace el corte de un turno o ve el del día. Un folio con su serie
+/// se busca en cualquier día y caja; solo el número, sin los reportes, en la caja desde la que se busca. Cada prueba con su
+/// propia base (con la Caja 2): las ventas se mueven de día y los turnos se cierran.
 /// </summary>
 public sealed class OtrosDiasApiTests : IDisposable
 {
@@ -185,7 +185,7 @@ public sealed class OtrosDiasApiTests : IDisposable
     }
 
     [Fact]
-    public async Task Un_folio_se_busca_en_cualquier_dia_y_caja_tambien_el_de_eleventa()
+    public async Task Un_folio_con_su_serie_sale_de_cualquier_caja_y_solo_el_numero_de_esta_si_no_ve_los_reportes()
     {
         await using var servicio = await ServicioDePrueba.CrearAsync();
         var t = await TiendaAsync(servicio);
@@ -201,14 +201,23 @@ public sealed class OtrosDiasApiTests : IDisposable
             });
             await db.SaveChangesAsync();
         }
-        Task<HttpResponseMessage> Buscar(string folio) => t.Http.GetAsync(Ventas(t, t.Cajero, $"&folio={Uri.EscapeDataString(folio)}"));
+        Task<HttpResponseMessage> Buscar(string folio, SesionDto? quien = null, CajaDto? desde = null) =>
+            t.Http.GetAsync(Ventas(t, quien ?? t.Cajero, $"&folio={Uri.EscapeDataString(folio)}", desde));
 
-        // El cajero no ve otros días ni otras cajas, pero un folio sí: es lo mismo que escribirlo para devolver.
+        // El cajero no ve otros días ni otras cajas, pero un folio con su serie sí, de cualquier día y caja: es lo mismo que
+        // escribirlo para devolver.
         var deHaceDias = await Leer<VentasDeUnDiaDto>(await Buscar(deLaSemana.Folio));
         var sinCeros = await Leer<VentasDeUnDiaDto>(await Buscar($" {deLaSemana.Folio.ToLowerInvariant().Replace("-00000", "")} "));
         var deOtraCaja = await Leer<VentasDeUnDiaDto>(await Buscar(deLaCaja2.Folio));
+        // Solo el número, en las de su caja: si no, recorriendo los números vería las ventas de la otra.
         var soloElNumero = await Leer<VentasDeUnDiaDto>(await Buscar("1"));
         var deEleventa = await Leer<VentasDeUnDiaDto>(await Buscar("4521"));
+        // El encargado tampoco ve los reportes: en la Caja 2, el número y el folio de eleventa son los de sus tickets.
+        var soloElNumeroEnLaCaja2 = await Leer<VentasDeUnDiaDto>(await Buscar("1", t.Encargado, t.Caja2));
+        var deEleventaEnLaCaja2 = await Leer<VentasDeUnDiaDto>(await Buscar("4521", t.Encargado, t.Caja2));
+        // Con «Ver reportes de ventas», como antes: solo el número, de cualquier serie, y el de eleventa desde cualquier caja.
+        var soloElNumeroDelDueno = await Leer<VentasDeUnDiaDto>(await Buscar("1", t.Dueno));
+        var deEleventaDelDueno = await Leer<VentasDeUnDiaDto>(await Buscar("4521", t.Dueno));
         var noHay = await Leer<VentasDeUnDiaDto>(await Buscar("A-999999"));
         var noEsFolio = await RechazoAsync(await Buscar("hola"), HttpStatusCode.BadRequest);
 
@@ -222,10 +231,18 @@ public sealed class OtrosDiasApiTests : IDisposable
         Assert.Equal("A1", sinCeros.Folio);
         Assert.Equal([deLaSemana.Folio], sinCeros.Ventas.Select(v => v.Folio));
         Assert.Equal(("Caja 2", "Encargado de prueba"), (Assert.Single(deOtraCaja.Ventas).Caja, deOtraCaja.Ventas[0].Cajero));
-        // Solo el número: el de cualquier serie (A-000001 y B-000001), lo más nuevo primero.
-        Assert.Equal([deLaCaja2.Folio, deLaSemana.Folio], soloElNumero.Ventas.Select(v => v.Folio));
-        var conEleventa = Assert.Single(deEleventa.Ventas);
+        Assert.False(deOtraCaja.FolioSoloDeEstaCaja);
+        // Solo el número, sin los reportes: A-000001 desde la Caja 1 y B-000001 desde la Caja 2; el 4521 es de la Caja 2.
+        Assert.Equal([deLaSemana.Folio], soloElNumero.Ventas.Select(v => v.Folio));
+        Assert.Empty(deEleventa.Ventas);
+        Assert.Equal(("1", true, "4521", true), (soloElNumero.Folio, soloElNumero.FolioSoloDeEstaCaja, deEleventa.Folio, deEleventa.FolioSoloDeEstaCaja));
+        Assert.Equal([deLaCaja2.Folio], soloElNumeroEnLaCaja2.Ventas.Select(v => v.Folio));
+        var conEleventa = Assert.Single(deEleventaEnLaCaja2.Ventas);
         Assert.Equal((deLaCaja2.Folio, 4521), (conEleventa.Folio, conEleventa.FolioEleventa));
+        // Con los reportes: el de cualquier serie (A-000001 y B-000001), lo más nuevo primero.
+        Assert.Equal([deLaCaja2.Folio, deLaSemana.Folio], soloElNumeroDelDueno.Ventas.Select(v => v.Folio));
+        Assert.Equal([deLaCaja2.Folio], deEleventaDelDueno.Ventas.Select(v => v.Folio));
+        Assert.False(soloElNumeroDelDueno.FolioSoloDeEstaCaja || deEleventaDelDueno.FolioSoloDeEstaCaja);
         Assert.Empty(noHay.Ventas);
         Assert.Equal("A-999999", noHay.Folio);
         Assert.Equal("«hola» no es un folio: escríbelo como sale en el ticket, por ejemplo A-000123.", noEsFolio.Mensaje);

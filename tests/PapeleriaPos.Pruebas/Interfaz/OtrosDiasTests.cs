@@ -21,7 +21,7 @@ namespace PapeleriaPos.Pruebas.Interfaz;
 /// Las ventas de otros días y el historial de cortes en la caja (paridad con eleventa, 2026-10-17), sin navegador, contra el
 /// servicio con datos ficticios y la Caja 2: «Ventas del día» cambia de día con ← → y de caja, filtra por cajero, busca un
 /// folio en cualquier día, reimprime con motivo y abre la devolución con el folio; el cajero ve las de hoy de su caja, como
-/// antes. El historial de cortes va en el corte y «/» lo abre ahí (al cajero no se lo ofrece): cambia de día, elige el
+/// antes, y solo el número de un folio lo busca en ella (el de otra caja, con su serie). El historial de cortes va en el corte y «/» lo abre ahí (al cajero no se lo ofrece): cambia de día, elige el
 /// turno y reimprime el corte Z como al cerrar el turno. Sin la caja principal, los dos lo dicen. Cada prueba con su propia
 /// base, y la caja se cierra antes de borrarla.
 /// </summary>
@@ -237,7 +237,7 @@ public sealed class OtrosDiasTests
     }
 
     [Fact]
-    public async Task El_cajero_ve_las_de_hoy_de_su_caja_sin_cambiar_de_dia_ni_de_caja_y_un_folio_de_cualquiera()
+    public async Task El_cajero_ve_las_de_hoy_de_su_caja_sin_cambiar_de_dia_ni_de_caja_y_el_folio_de_otra_con_su_serie()
     {
         await using var servicio = await ServicioDePrueba.CrearAsync();
         await using var c = await PrepararAsync(servicio);
@@ -269,9 +269,19 @@ public sealed class OtrosDiasTests
         Assert.NotNull(await BotonDeLaVentaAsync(p, v.DeHoy, "Devolver o cancelar"));
         Assert.NotNull(await BotonDeLaVentaAsync(p, v.DeHoy, "Reimprimir"));
 
-        // Un folio sí, de cualquier día y caja: lo mismo que escribirlo para devolver. La de la Caja 2 sale con el folio de
-        // eleventa (el del ticket) y el de la caja en chico, con su espacio; la devolución se abre con el de la caja.
+        // Solo el número busca en las de esta caja: el 4521 que eleventa le dio a la de la Caja 2 no sale, y dice cómo
+        // encontrarla; el 1 es el de esta caja (la de ayer), no el de la Caja 2.
         await p.EscribirAsync("ventas-folio", "4521");
+        await p.TeclaAsync("ventas-folio", "Enter");
+        await p.EsperarAsync(t => t.Contains("En esta caja no hay un ticket con el número «4521». Si es de otra caja, escríbelo con la "
+            + "letra de su serie (como A-000123 o B-000123)."), "el número de un ticket de la otra caja");
+        Assert.Equal(("A-000001", "B-000001"), (v.DeAyer.Folio, v.DeLaCaja2.Folio));
+        await p.EscribirAsync("ventas-folio", "1");
+        await p.TeclaAsync("ventas-folio", "Enter");
+        await EsperarTarjetasAsync(p, v.DeAyer);
+        // Con su serie, de cualquier día y caja: lo mismo que escribirlo para devolver. La de la Caja 2 sale con el folio de
+        // eleventa (el del ticket) y el de la caja en chico, con su espacio; la devolución se abre con el de la caja.
+        await p.EscribirAsync("ventas-folio", v.DeLaCaja2.Folio);
         await p.TeclaAsync("ventas-folio", "Enter");
         await EsperarTarjetasAsync(p, v.DeLaCaja2);
         var deLaCaja2 = (await p.PorIdAsync($"venta-{v.DeLaCaja2.VentaId}")).Texto;

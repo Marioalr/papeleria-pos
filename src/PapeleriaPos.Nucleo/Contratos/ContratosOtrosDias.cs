@@ -11,7 +11,8 @@ namespace PapeleriaPos.Nucleo.Contratos;
 public sealed record OpcionFiltroDto(Guid Id, string Nombre);
 
 /// <summary>
-/// Las ventas de un día, de una caja o de todas y de un cajero o de todos; o las que tienen un folio, de cualquier día y caja.
+/// Las ventas de un día, de una caja o de todas y de un cajero o de todos; o las que tienen un folio, de cualquier día: con
+/// su serie, de cualquier caja; solo el número, de cualquier serie para quien ve los reportes y, para los demás, de esta caja.
 /// </summary>
 /// <param name="Fecha">El día que se ve (hora de la tienda). En la búsqueda por folio, hoy.</param>
 /// <param name="Hoy">Hoy en la caja principal: de ahí no se pasa.</param>
@@ -20,9 +21,13 @@ public sealed record OpcionFiltroDto(Guid Id, string Nombre);
 /// <param name="Cajeros">Quienes cobraron ese día en esas cajas (y el que se eligió), para el filtro.</param>
 /// <param name="Folio">El folio que se buscó, como se leyó; vacío si es la lista de un día.</param>
 /// <param name="HayMas">Ese día tiene más de las que se mandan: se ven las más nuevas.</param>
+/// <param name="FolioSoloDeEstaCaja">
+/// Se buscó solo el número sin «Ver reportes de ventas»: solo en las de esta caja (su serie y, en el piloto, el folio de
+/// eleventa de sus tickets). El de otra caja se encuentra escrito con su serie.
+/// </param>
 public sealed record VentasDeUnDiaDto(
     DateOnly Fecha, DateOnly Hoy, IReadOnlyList<VentaDeUnDiaDto> Ventas, IReadOnlyList<OpcionFiltroDto> Cajas, IReadOnlyList<OpcionFiltroDto> Cajeros,
-    string? Folio = null, bool HayMas = false);
+    string? Folio = null, bool HayMas = false, bool FolioSoloDeEstaCaja = false);
 
 /// <summary>Una venta de la lista, con lo que enseña eleventa y su estado.</summary>
 /// <param name="Folio">El de la caja (A-000123): con él se abre la devolución.</param>

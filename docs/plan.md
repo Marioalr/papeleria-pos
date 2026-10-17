@@ -584,10 +584,11 @@ servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-ca
 «Historial de cortes» de eleventa ([paridad](paridad-eleventa.md#la-tabla)).
 - **«Ventas del día»** (en «/», el mismo panel): abre en las de hoy de esa caja, de todos los cajeros, como antes. Con
   «Ver reportes de ventas» (al migrar, solo el dueño) se cambia de día con ← → o la fecha, y de caja; cualquiera filtra
-  por cajero y busca un folio de cualquier día y caja (como al escribirlo para devolver). Cada venta dice su folio (en
-  el piloto, también el de eleventa), la hora, quién cobró, la caja, el total, cómo se pagó y si se canceló o se
-  devolvió en parte; reimprimir pide el motivo, como siempre, y «Devolver o cancelar» abre la devolución con el folio,
-  con sus reglas.
+  por cajero y busca un folio de cualquier día: con su serie («B-000123»), en cualquier caja, como al escribirlo para
+  devolver; solo el número, sin ese permiso, en las de esa caja (si no, recorriendo los números se verían las ventas de
+  las otras). Cada venta dice su folio (en el piloto, también el de eleventa), la hora, quién cobró, la caja, el total,
+  cómo se pagó y si se canceló o se devolvió en parte; reimprimir pide el motivo, como siempre, y «Devolver o cancelar»
+  abre la devolución con el folio, con sus reglas.
 - **El historial de cortes** va en el corte, junto a «Turno» y «Del día» («/» lo abre ahí): los turnos de cualquier día,
   por caja y cajero, con lo esperado, lo contado, la diferencia, quién lo hizo y cuándo, y «Reimprimir el corte», que
   sale igual que el corte Z al cerrar. Lo ve quien hace el corte de un turno o ve el del día (al migrar, el encargado y

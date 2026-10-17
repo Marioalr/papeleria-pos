@@ -10,11 +10,13 @@ namespace PapeleriaPos.Datos;
 /// <summary>
 /// Las ventas de otros días (paridad con eleventa, «Ventas del día y devoluciones», 2026-10-17): las de un día, de una caja
 /// o de todas y de un cajero o de todos, cada una con su folio, la hora, quién cobró, la caja, el total, cómo se pagó y si
-/// se canceló o se devolvió algo; o las de un folio, de cualquier día y caja. Solo se leen, un día a la vez.
+/// se canceló o se devolvió algo; o las de un folio, de cualquier día. Solo se leen, un día a la vez.
 /// <para>
 /// Las de hoy de la caja desde la que se ven las ve cualquiera que entró a ella, como antes. Las de otro día o de otra caja,
 /// quien tiene «Ver reportes de ventas» en «Puede» (al migrar, solo el dueño): es lo que vendieron los demás, lo mismo que
-/// dirán los reportes (entrega 9). Buscar un folio, cualquiera: es lo que ya hace quien lo escribe en la caja para devolver.
+/// dirán los reportes (entrega 9). Un folio con su serie («B-000123») lo busca cualquiera, en cualquier caja: es lo que ya
+/// hace quien lo escribe para devolver. Solo el número, sin ese permiso, se busca en las de esta caja: si no, recorriendo
+/// los números se verían las ventas de las otras.
 /// </para>
 /// </summary>
 public sealed partial class VentasDeOtrosDias(PosDbContext db)
@@ -67,19 +69,21 @@ public sealed partial class VentasDeOtrosDias(PosDbContext db)
     }
 
     /// <summary>
-    /// Las que tienen ese folio, de cualquier día y caja de la sucursal: «A-000123» (también «a123»), o solo el número, que
-    /// puede ser de cualquier serie o, en el piloto, el folio de eleventa que salió en el ticket.
+    /// Las que tienen ese folio, de cualquier día: «A-000123» (también «a123»), de cualquier caja de la sucursal; o solo el
+    /// número, que puede ser de cualquier serie o, en el piloto, el folio de eleventa que salió en el ticket. Solo el número,
+    /// quien no tiene «Ver reportes de ventas» lo busca en las de esta caja (su serie y el folio de eleventa de sus tickets).
     /// </summary>
     public async Task<VentasDeUnDiaDto> PorFolioAsync(Guid cajaId, Guid usuarioId, string folio, CancellationToken ct = default)
     {
         var caja = await CajaAsync(cajaId, ct);
-        if (!await db.Usuarios.AnyAsync(u => u.Id == usuarioId && u.Activo, ct))
-            throw new InvalidOperationException("El usuario no existe o está inactivo.");
+        // También dice si el usuario sigue activo.
+        var reportes = await new ServicioControl(db).EvaluarAsync(usuarioId, caja.SucursalId, AccionControlada.VerReportes, ct: ct);
         var texto = folio.Trim().ToUpperInvariant();
         if (FormaDelFolio().Match(texto) is not { Success: true } partes)
             throw new ArgumentException($"«{folio.Trim()}» no es un folio: escríbelo como sale en el ticket, por ejemplo A-000123.");
         var numero = int.Parse(partes.Groups["numero"].Value, System.Globalization.CultureInfo.InvariantCulture);
         var consulta = Cobradas(caja.SucursalId);
+        var soloEstaCaja = false;
         if (partes.Groups["serie"].Success)
         {
             var serie = partes.Groups["serie"].Value;
@@ -91,12 +95,16 @@ public sealed partial class VentasDeOtrosDias(PosDbContext db)
                 .Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.FolioEleventa == numero && e.VentaId != null)
                 .Select(e => e.VentaId!.Value).ToListAsync(ct);
             consulta = consulta.Where(v => v.Folio == numero || deEleventa.Contains(v.Id));
+            // Sin los reportes, en las de esta caja: cada venta lleva la serie de la suya.
+            soloEstaCaja = reportes.Nivel != NivelPermiso.Permitido;
+            if (soloEstaCaja)
+                consulta = consulta.Where(v => v.CajaId == caja.Id);
         }
         var ventas = await consulta.OrderByDescending(v => v.PagadaUtc).ThenBy(v => v.Id).Take(MaximoPorFolio)
             .Include(v => v.Lineas).Include(v => v.Cobros).AsSplitQuery().ToListAsync(ct);
         var hoy = Hoy;
         return new VentasDeUnDiaDto(hoy, hoy, await FilasAsync(ventas, ct), await CajasAsync(caja.SucursalId, ct),
-            await NombresAsync(ventas.Select(v => v.CajeroId).ToList(), ct), Folio: texto);
+            await NombresAsync(ventas.Select(v => v.CajeroId).ToList(), ct), Folio: texto, FolioSoloDeEstaCaja: soloEstaCaja);
     }
 
     /// <summary>«A-000123», «A123» o «123» (ya en mayúsculas).</summary>

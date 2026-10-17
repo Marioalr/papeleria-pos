@@ -314,8 +314,9 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     /// <summary>
     /// Las ventas de un día (vacío: hoy en la caja principal) de una caja (vacía: todas) y de un cajero (vacío: todos); con
-    /// <paramref name="folio"/>, las de ese folio en cualquier día y caja. Las de hoy de esta caja las ve cualquiera; las de
-    /// otro día o de otra caja, quien tiene «Ver reportes de ventas» (lo revisa el servicio).
+    /// <paramref name="folio"/>, las de ese folio en cualquier día (solo el número, sin los reportes, en esta caja). Las de
+    /// hoy de esta caja las ve cualquiera; las de otro día o de otra caja, quien tiene «Ver reportes de ventas» (lo revisa el
+    /// servicio).
     /// </summary>
     public Task<VentasDeUnDiaDto> VentasDeUnDiaAsync(Guid cajaId, Guid usuarioId, DateOnly? fecha, Guid? caja, Guid? cajero, string? folio = null) =>
         SoloConLaPrincipalAsync<VentasDeUnDiaDto>(VentasSinConexion, $"api/cajas/{cajaId}/ventas?usuarioId={usuarioId}" + Filtros(fecha, caja, cajero)
