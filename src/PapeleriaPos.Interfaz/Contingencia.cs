@@ -225,6 +225,10 @@ public sealed class Contingencia
     private DateTime _paqueteBajadoUtc = DateTime.MinValue;
     private DateTime _ultimoReintentoUtc = DateTime.MinValue;
     private readonly CalidadDeLaRed _red;
+
+    /// <summary>La red de la tienda en el POS: la bitácora de red, el vigía y volver a encontrar a la caja principal.</summary>
+    private readonly RedDeLaCaja? _redDeLaCaja;
+
     private CancellationTokenSource? _alto;
 
     /// <summary>El latido y el aviso (<see cref="Iniciar"/>): al cerrar la caja se espera a que terminen lo que iban haciendo.</summary>
@@ -268,10 +272,22 @@ public sealed class Contingencia
     /// Cómo se decide el estado de la red (<see cref="ReglasDeLaRed"/>). La caja de verdad usa
     /// <see cref="ReglasDeLaRed.DeLaTienda"/>; sin ellas, solo si contesta o no (<see cref="ReglasDeLaRed.SoloSiContesta"/>).
     /// </param>
+    /// <param name="redDeLaCaja">
+    /// La red de la tienda en el POS: la bitácora de red, su vigía y volver a encontrar a la caja principal si le cambió la IP. Cada
+    /// latido se le pasa; sin ella (las pruebas de lo demás), nada de eso.
+    /// </param>
     public Contingencia(AlmacenLocal almacen, HttpClient http, ConexionCaja conexion, TimeProvider? reloj = null, RendimientoCaja? rendimiento = null,
-        ReglasDeLaRed? reglas = null)
+        ReglasDeLaRed? reglas = null, RedDeLaCaja? redDeLaCaja = null)
     {
         _almacen = almacen;
+        _redDeLaCaja = redDeLaCaja;
+        if (redDeLaCaja is not null)
+        {
+            redDeLaCaja.Cambio += () => Cambio?.Invoke();
+            // Encontró a la caja principal en otra dirección (y probó que es ella): el latido la usa al momento.
+            if (redDeLaCaja.Reencuentro is { } reencuentro)
+                reencuentro.SeCambio += _ => LatirYa();
+        }
         _rendimiento = rendimiento;
         _http = new Transporte(http, conexion);
         _conexion = conexion;
@@ -393,6 +409,15 @@ public sealed class Contingencia
     public ReglasDeLaRed ReglasDeLaRed => _red.Reglas;
 
     /// <summary>
+    /// Lo que la caja principal dijo en el último latido que contestó: si hay internet y si contesta su router. Vacío con un
+    /// servicio de antes o mientras no lo diga. La franja lo junta con el estado de la red (<see cref="AvisosDeRed.QueDice"/>).
+    /// </summary>
+    public RedDeLaPrincipalDto? RedDeLaPrincipal { get; private set; }
+
+    /// <summary>La red de la tienda en el POS (la bitácora, el vigía, volver a encontrar a la caja principal); vacía sin ella.</summary>
+    public RedDeLaCaja? RedDeLaCaja => _redDeLaCaja;
+
+    /// <summary>
     /// Lo que no se puede hacer con la copia (devolver, el catálogo, los reportes) se intenta con la caja principal aunque la
     /// red esté lenta: no hay otra forma de hacerlo. Con algo por subir, no: primero sube (sus folios y su orden).
     /// </summary>
@@ -453,7 +478,10 @@ public sealed class Contingencia
         if (_alto is not null)
             return;
         _alto = new CancellationTokenSource();
-        _deFondo = Task.WhenAll(Task.Run(() => LatirAsync(_alto.Token)), Task.Run(() => EscucharAvisosAsync(_alto.Token)));
+        var alto = _alto.Token;
+        _deFondo = Task.WhenAll(Task.Run(() => LatirAsync(alto)), Task.Run(() => EscucharAvisosAsync(alto)),
+            // El vigía de la red: su bitácora empieza al abrir la caja y termina al cerrarla.
+            Task.Run(() => _redDeLaCaja?.VigilarAsync(alto) ?? Task.CompletedTask));
     }
 
     /// <summary>
@@ -529,6 +557,10 @@ public sealed class Contingencia
     /// </summary>
     public Task LatidoAsync() => Task.Run(LatirUnaVezAsync);
 
+    /// <summary>Un latido ya, sin esperarlo (se encontró a la caja principal en otra dirección); si falla, lo dice el siguiente.</summary>
+    private void LatirYa() =>
+        _ = LatidoAsync().ContinueWith(t => t.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+
     private async Task LatirUnaVezAsync()
     {
         // Primero la copia guardada: la que baje después es más nueva.
@@ -547,13 +579,23 @@ public sealed class Contingencia
             // No contestó, ni a tiempo: caída.
             if (_red.Fallo())
                 Cambio?.Invoke();
+            // A la bitácora de red; si no contesta un rato, se busca a la caja principal en la red (por si le cambió la IP).
+            _redDeLaCaja?.Latido(null, _red.Estado, null);
             return;
         }
         // Lo que tardó en contestar decide si la red está buena o lenta (con histéresis); el chip de arriba lo dice en ms.
         var antes = _red.Latencia;
-        if (_red.Contesto(_reloj.GetElapsedTime(desde), ocupada: _bajandoCopia)
+        var tardo = _reloj.GetElapsedTime(desde);
+        if (_red.Contesto(tardo, ocupada: _bajandoCopia)
             || Math.Round(antes?.TotalMilliseconds ?? -1) != Math.Round(_red.Latencia?.TotalMilliseconds ?? -1))
             Cambio?.Invoke();
+        // Lo que dice la caja principal del internet y de su router (la franja «Sin internet»), y a la bitácora de red.
+        if (estado?.Red != RedDeLaPrincipal)
+        {
+            RedDeLaPrincipal = estado?.Red;
+            Cambio?.Invoke();
+        }
+        _redDeLaCaja?.Latido(tardo, _red.Estado, estado?.Red);
         await RecordarPilotoEleventaAsync(estado?.PilotoEleventa == true);
         if (estado?.AvisoBase != AvisoBase)
         {

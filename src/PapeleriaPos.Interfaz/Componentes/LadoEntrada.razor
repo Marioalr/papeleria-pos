@@ -31,6 +31,10 @@
                 <li><span class="punto"></span>Conectada a la caja principal</li>
                 break;
         }
+        @if (EstadoCaja.SinInternet(_contingencia, Conexion) is { } sinInternet)
+        {
+            <li><span class="punto ambar"></span>@sinInternet</li>
+        }
         @* La impresora no se revisa (no hay a quién preguntarle cómo está): el punto no dice «lista», como el verde. Si algo de
            la cola no salió (entrega 5, parte 3), lo dice, con «Reintentar» y «No imprimirlo»: quien entra después también lo ve. *@
         @if (Impresora.MuestraVistaPrevia)
@@ -48,6 +52,10 @@
         else if (Cola.Problema is { } ocupada)
         {
             <li><span class="punto ambar"></span>Impresora de tickets: «@ocupada.Titulo» espera a que conteste</li>
+        }
+        else if (Servicios.GetService<RedDeLaCaja>()?.AvisoImpresora is { } porNombre)
+        {
+            <li title="@porNombre"><span class="punto ambar"></span>Impresora de tickets: @AvisosDeRed.ConfiguralaPorIp (por nombre o WSD, con el router trabado no se encuentra)</li>
         }
         else
         {

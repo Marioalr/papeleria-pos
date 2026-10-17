@@ -131,17 +131,28 @@ public static class RegistroInterfaz
     /// Lo que necesita la interfaz de la caja; cada anfitrión (ventana de Windows o navegador) pone su conexión e impresora.
     /// Con <paramref name="baseLocal"/> (la ventana de Windows), la caja sigue vendiendo si la caja principal no contesta.
     /// </summary>
-    public static IServiceCollection AgregarInterfazCaja(this IServiceCollection servicios, ConexionCaja conexion, IImpresora impresora, string? baseLocal = null)
+    /// <param name="red">
+    /// La red de la tienda en el POS (la ventana de Windows): la carpeta de la bitácora de red, la impresora de tickets como está en
+    /// caja.json y lo que solo sabe Windows. Sin esto, sin bitácora de red ni volver a buscar a la caja principal.
+    /// </param>
+    public static IServiceCollection AgregarInterfazCaja(this IServiceCollection servicios, ConexionCaja conexion, IImpresora impresora, string? baseLocal = null,
+        OpcionesRedDeLaCaja? red = null)
     {
         // La red con la caja principal (entrega 5, parte 2): un cliente para lo que espera el cajero, con un plazo por operación
         // (lo de la venta, 800 ms leer y 2.5 s cobrar; lo de atrás, hasta 15 s), y otro para lo de fondo (el latido, el aviso
         // por SSE, la copia, la bandeja). Con keepalive de TCP: una conexión medio muerta tras reconectarse el Wi-Fi se nota en
         // segundos. Si la caja principal está apagada, conectar falla en 2 s.
-        var red = RedCaja.Crear();
-        servicios.AddSingleton(red);
+        var redCaja = RedCaja.Crear();
+        servicios.AddSingleton(redCaja);
         // Lo que mide la caja de su rendimiento (entrega 5): los escaneos y lo que tarda, para el vigía de la pantalla.
         var rendimiento = new RendimientoCaja();
         servicios.AddSingleton(rendimiento);
+        // La red de la tienda en el POS: la bitácora de red y su vigía, volver a encontrar a la caja principal si le cambió la IP
+        // (solo con la contingencia, que es la que late) y los avisos de lo configurado por nombre o con WSD.
+        // Sin la contingencia (el navegador) no hay latido: solo los avisos de la impresora de tickets.
+        var opcionesDeRed = baseLocal is null && red is not null ? new OpcionesRedDeLaCaja { Impresora = red.Impresora, Puertos = red.Puertos } : red;
+        var redDeLaCaja = RedDeLaCaja.Crear(conexion, redCaja.Fondo, opcionesDeRed);
+        servicios.AddSingleton(redDeLaCaja);
         Contingencia? contingencia = null;
         if (baseLocal is not null)
         {
@@ -149,13 +160,13 @@ public static class RegistroInterfaz
             almacen.EscrituraLarga += (que, tardo) => rendimiento.Actividad($"la base de la caja ({que})", tardo);
             // Buena, lenta o caída según lo que tarda el latido (con histéresis); en lenta, como sin conexión. La caja con el
             // servicio en la misma PC no tiene red de por medio: solo si contesta o no.
-            contingencia = new Contingencia(almacen, red.Fondo, conexion, rendimiento: rendimiento,
-                reglas: conexion.Servicio.IsLoopback ? ReglasDeLaRed.SoloSiContesta : ReglasDeLaRed.DeLaTienda);
+            contingencia = new Contingencia(almacen, redCaja.Fondo, conexion, rendimiento: rendimiento,
+                reglas: conexion.Servicio.IsLoopback ? ReglasDeLaRed.SoloSiContesta : ReglasDeLaRed.DeLaTienda, redDeLaCaja: redDeLaCaja);
             servicios.AddSingleton(contingencia);
             contingencia.Iniciar();
         }
         servicios.AddSingleton(conexion);
-        servicios.AddScoped(_ => new ClienteCaja(red.Interactivo, conexion, contingencia)
+        servicios.AddScoped(_ => new ClienteCaja(redCaja.Interactivo, conexion, contingencia)
         {
             PlazoLectura = Transporte.PlazoLectura,
             PlazoEscritura = Transporte.PlazoEscritura,

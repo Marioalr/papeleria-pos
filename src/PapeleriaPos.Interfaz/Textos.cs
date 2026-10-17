@@ -75,6 +75,20 @@ public static class Textos
                 : $"Abono de {Formato.Dinero(comprobante.MontoCentavos)} de «{comprobante.Cliente}». Saldo: {Formato.Dinero(comprobante.SaldoCentavos)}"
                   + (comprobante.Forma == FormaPago.Efectivo ? $". Cambio: {Formato.Dinero(comprobante.CambioCentavos)}." : ".");
 
+    /// <summary>Cuánto duró algo, redondeado a lo que importa: «45 s», «17 min 28 s», «2 h 5 min», «3 d 4 h».</summary>
+    public static string Duracion(TimeSpan tiempo)
+    {
+        var segundos = (long)Math.Max(0, Math.Round(tiempo.TotalSeconds));
+        var (d, h, m, s) = (segundos / 86400, segundos / 3600 % 24, segundos / 60 % 60, segundos % 60);
+        return (d, h, m) switch
+        {
+            ( > 0, _, _) => h > 0 ? $"{d} d {h} h" : $"{d} d",
+            (_, > 0, _) => m > 0 ? $"{h} h {m} min" : $"{h} h",
+            (_, _, > 0) => s > 0 ? $"{m} min {s} s" : $"{m} min",
+            _ => $"{s} s",
+        };
+    }
+
     /// <summary>«A», «A y B», «A, B y C».</summary>
     public static string Lista(IReadOnlyList<string> cosas) => cosas.Count switch
     {

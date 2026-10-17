@@ -1041,6 +1041,24 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         }
     }
 
+    /// <summary>
+    /// La bitácora de red de la caja principal (Configuración › Acerca de): sus últimas caídas, dónde está y lo que ve ahora. Vacía
+    /// si no contesta o es un servicio de antes: no espera a una caja principal que no está.
+    /// </summary>
+    public async Task<ResumenDeRedDto?> RedDeLaPrincipalAsync()
+    {
+        if (contingencia is { EnLinea: false })
+            return null;
+        try
+        {
+            return await _http.GetAsync<ResumenDeRedDto>("api/red", noEncontradoEsNulo: true, espera: PlazoLectura);
+        }
+        catch (ErrorCaja)
+        {
+            return null;
+        }
+    }
+
     /// <summary>La versión del servicio de la caja principal (Configuración › Acerca de); vacía si no contesta.</summary>
     public async Task<string?> VersionDeLaPrincipalAsync()
     {

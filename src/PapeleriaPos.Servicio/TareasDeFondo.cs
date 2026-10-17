@@ -22,6 +22,15 @@ public static class RutasServicio
         return $"Data Source={Path.Combine(carpeta, "pos.db")}";
     }
 
+    /// <summary>
+    /// "registros", junto a la base (C:\ProgramData\PapeleriaPos\registros): ahí va la bitácora de red de la caja principal
+    /// (red-servicio-AAAA-MM-DD.log), que se abre con el Bloc de notas. Red:Carpeta la cambia.
+    /// </summary>
+    public static string CarpetaRegistros(IConfiguration configuracion, string cadenaConexion) =>
+        configuracion["Red:Carpeta"] is { Length: > 0 } carpeta
+            ? carpeta
+            : Path.Combine(Path.GetDirectoryName(Path.GetFullPath(new SqliteConnectionStringBuilder(cadenaConexion).DataSource)) ?? ".", "registros");
+
     /// <summary>"respaldos", junto a la base, salvo que se configure otra carpeta (una USB, por ejemplo).</summary>
     public static string CarpetaRespaldos(IConfiguration configuracion, string cadenaConexion) =>
         configuracion["Respaldos:Carpeta"] is { Length: > 0 } carpeta
@@ -91,9 +100,17 @@ public sealed class RespaldoDiario(ServicioRespaldos respaldos) : BackgroundServ
     }
 }
 
-/// <summary>Contesta a las cajas que buscan al servicio en la red (<see cref="Descubrimiento"/>).</summary>
-public sealed class DescubrimientoEnRed(IServer servidor, ILogger<DescubrimientoEnRed> log) : BackgroundService
+/// <summary>
+/// Contesta a las cajas que buscan al servicio en la red (<see cref="Descubrimiento"/>): solo a las de la red de la tienda (la
+/// misma red que alguna tarjeta de cable o Wi-Fi de esta PC; el firewall, además, solo abre el puerto para la red local), y solo
+/// con su puerto. Contestar no prueba nada: la caja le pide después al servicio que pruebe quién es, con la huella de su llave.
+/// Prendido solo en el servicio de la caja principal (Descubrimiento:Activo; apagado en el de la prueba y en desarrollo).
+/// </summary>
+public sealed class DescubrimientoEnRed(IServer servidor, RedLocalDelServicio redLocal, ILogger<DescubrimientoEnRed> log) : BackgroundService
 {
+    /// <summary>Lo más que contesta por segundo: una pregunta repetida sin parar (o mal intencionada) no ocupa al servicio.</summary>
+    public const int RespuestasPorSegundo = 20;
+
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
         UdpClient udp;
@@ -109,12 +126,17 @@ public sealed class DescubrimientoEnRed(IServer servidor, ILogger<Descubrimiento
 
         using (udp)
         {
+            var (segundo, contestadas) = (0L, 0);
             while (!ct.IsCancellationRequested)
             {
                 try
                 {
                     var recibido = await udp.ReceiveAsync(ct);
-                    if (Descubrimiento.EsPregunta(recibido.Buffer) && PuertoHttp() is { } puerto)
+                    if (!Descubrimiento.EsPregunta(recibido.Buffer) || PuertoHttp() is not { } puerto || !redLocal.EsDeLaRedLocal(recibido.RemoteEndPoint.Address))
+                        continue;
+                    var ahora = Environment.TickCount64 / 1000;
+                    (segundo, contestadas) = ahora == segundo ? (segundo, contestadas + 1) : (ahora, 1);
+                    if (contestadas <= RespuestasPorSegundo)
                         await udp.SendAsync(Descubrimiento.ArmarRespuesta(puerto), recibido.RemoteEndPoint, ct);
                 }
                 catch (SocketException ex)

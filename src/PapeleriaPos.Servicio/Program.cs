@@ -62,8 +62,36 @@ builder.Services.AddSingleton(proveedor => new ServicioRespaldos(cadena, RutasSe
     });
 if (respaldos)
     builder.Services.AddHostedService<RespaldoDiario>();
+// La red de la tienda en el POS (docs/arquitectura.md, «La red de la matriz»): solo se contesta a la red de la tienda.
+builder.Services.TryAddSingleton(new RedLocalDelServicio());
 if (builder.Configuration.GetValue("Descubrimiento:Activo", true))
     builder.Services.AddHostedService<DescubrimientoEnRed>();
+// El vigía de la red: si hay internet y si contesta el router (lo dice en /api/estado, para la franja de las cajas), y la bitácora
+// de red (registros\red-servicio-AAAA-MM-DD.log, junto a la base). Apagado en desarrollo (Red:Vigilar).
+if (builder.Configuration.GetValue("Red:Vigilar", true))
+{
+    builder.Services.TryAddSingleton<IPruebasDeRed, PruebasDeRed>();
+    builder.Services.TryAddSingleton<IRedDelEquipo>(new RedDelEquipo());
+    builder.Services.AddSingleton<CajasQueLaten>();
+    builder.Services.AddSingleton(proveedor =>
+    {
+        var reloj = proveedor.GetRequiredService<TimeProvider>();
+        var bitacora = new BitacoraDeRed(RutasServicio.CarpetaRegistros(builder.Configuration, cadena), "red-servicio", reloj,
+            builder.Configuration.GetValue("Red:Dias", BitacoraDeRed.DiasPorOmision));
+        var cajas = proveedor.GetRequiredService<CajasQueLaten>();
+        return new VigiaDeLaRed(bitacora, proveedor.GetRequiredService<IRedDelEquipo>(), proveedor.GetRequiredService<IPruebasDeRed>(), new OpcionesDelVigia
+        {
+            Quien = "la caja principal",
+            AlTerminar = "se detuvo el servicio",
+            Internet = ConfiguracionDeRed.Internet(builder.Configuration),
+            NombreDelRouter = builder.Configuration.GetValue<string?>("Red:NombreDelRouter", "tendawifi.com") is { Length: > 0 } nombre ? nombre : null,
+            Equipos = ConfiguracionDeRed.Equipos(builder.Configuration, proveedor.GetRequiredService<OpcionesEleventa>()),
+            AlEmpezar = () => ConfiguracionDeRed.PorNombre(proveedor.GetRequiredService<OpcionesEleventa>()),
+            Ademas = cajas.RevisarAsync,
+        }, reloj);
+    });
+    builder.Services.AddHostedService<VigiaDeRedDelServicio>();
+}
 
 // Telegram: el bot vive en la caja principal; sin token (Telegram:Token o telegram-token.txt) no hace nada.
 builder.Services.AddSingleton<PresenciaCajas>();
@@ -94,7 +122,9 @@ var urlPropia = new Uri(builder.Configuration["Caja:Servicio"] ?? "http://localh
 // Para probar en el navegador lo que hace la ventana de Windows: Caja:PideAlta=true pasa por el alta, y Caja:BaseLocal
 // (una ruta) la deja vender sin la caja principal de Caja:Servicio.
 var conexion = new ConexionCaja { Servicio = urlPropia, PideAlta = builder.Configuration.GetValue("Caja:PideAlta", false) };
-builder.Services.AgregarInterfazCaja(conexion, Impresoras.Crear(builder.Configuration["Caja:Impresora"]), builder.Configuration["Caja:BaseLocal"]);
+// La impresora de tickets por nombre («tcp://tickets:9100»): el estado de arriba avisa que se configure por IP.
+builder.Services.AgregarInterfazCaja(conexion, Impresoras.Crear(builder.Configuration["Caja:Impresora"]), builder.Configuration["Caja:BaseLocal"],
+    new OpcionesRedDeLaCaja { Impresora = builder.Configuration["Caja:Impresora"] });
 // Caja:ActualizacionPrueba=true muestra Configuración › Actualización en el navegador: busca y baja, pero no instala.
 if (builder.Configuration.GetValue("Caja:ActualizacionPrueba", false))
     builder.Services.AgregarActualizacionPrueba(new EquipoDeNavegador(), GitHubPrueba.RepositorioPorOmision);
@@ -124,6 +154,7 @@ app.MapearApiContingencia();
 app.MapearApiCopia();
 app.MapearApiTelegram();
 app.MapGroup("/api").ConErrores().SoloSuCaja().MapearApiImpresiones();
+app.MapearApiRed();
 app.MapearApiDescuentos();
 app.MapearApiClientes();
 app.MapearApiCredito();

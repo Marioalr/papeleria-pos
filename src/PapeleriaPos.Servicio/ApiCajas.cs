@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Turnos;
@@ -33,8 +34,10 @@ public static partial class ApiCajas
                 presencia.Bandeja(id, cuantas, conError ?? 0, db.Reloj.GetUtcNow().UtcDateTime);
             // Las versiones, de memoria (entrega 5, parte 2): con ellas la caja sabe si pedir lo que cambió.
             var versiones = await versionesCopia.ActualesAsync();
+            // La red vista desde aquí (si hay internet y si contesta el router): la franja de las cajas (la red de la tienda en el POS).
+            var red = http.RequestServices.GetService<VigiaDeLaRed>()?.Estado;
             return new EstadoServicioDto("Papelería POS", Version, await db.Sucursales.OrderBy(s => s.Nombre).Select(s => s.Nombre).ToListAsync(),
-                versiones.Catalogo, prueba.Activo, versiones.Credito, eleventa.SoloEfectivo, revision.Aviso, versiones.Existencias, versiones.Base);
+                versiones.Catalogo, prueba.Activo, versiones.Credito, eleventa.SoloEfectivo, revision.Aviso, versiones.Existencias, versiones.Base, red);
         });
 
         // Abierto, pero solo contesta con el PIN del dueño: qué sucursales y cajas hay para elegir.

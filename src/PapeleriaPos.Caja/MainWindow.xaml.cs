@@ -86,7 +86,11 @@ public sealed record ConfiguracionCaja(
                 : null,
         };
         Directory.CreateDirectory(Path.GetDirectoryName(Guardada)!);
-        File.WriteAllText(Guardada, JsonSerializer.Serialize(nueva, Json));
+        // Primero a un archivo aparte y después se cambia de un jalón: si se va la luz a media escritura (puede pasar cuando la
+        // caja guarda sola la dirección nueva de la caja principal, en plena falla de la red), caja.json no queda a medias.
+        var nuevoArchivo = Guardada + ".nuevo";
+        File.WriteAllText(nuevoArchivo, JsonSerializer.Serialize(nueva, Json));
+        File.Move(nuevoArchivo, Guardada, overwrite: true);
         return nueva;
     }
 }
@@ -95,6 +99,9 @@ public sealed record ConfiguracionCaja(
 public partial class MainWindow : Window
 {
     private readonly RegistroDiario _registro;
+
+    /// <summary>caja.json se guarda de uno en uno: el alta y la dirección nueva de la caja principal pueden llegar a la vez.</summary>
+    private readonly Lock _guardando = new();
 
     /// <summary>Para volver a cargar sin que la caja se quede en «Cargando…» (AlgoFallo quita antes la pantalla).</summary>
     private readonly RecargaDeLaCaja _recarga = new();
@@ -125,7 +132,9 @@ public partial class MainWindow : Window
             Listo = prueba?.Listo ?? Task.CompletedTask,
             AlGuardar = c =>
             {
-                configuracion = configuracion.Guardar(c);
+                // Lo guarda el alta (en la ventana) y también la caja sola, de fondo, al encontrar la caja principal en otra IP.
+                lock (_guardando)
+                    configuracion = configuracion.Guardar(c);
                 return Task.CompletedTask;
             },
         };
@@ -135,9 +144,18 @@ public partial class MainWindow : Window
         servicios.AddSingleton(_recarga);
         // "tcp://192.168.1.100:9100" imprime directo por la red; un nombre (como "Tickets") usa la impresora de Windows.
         var impresora = Impresoras.Crear(configuracion.Impresora, nombre => new ImpresoraWindows(nombre));
-        // La copia para vender sin la caja principal y la bandeja de salida, junto a la configuración de la caja.
+        // La copia para vender sin la caja principal y la bandeja de salida, junto a la configuración de la caja. La red de la
+        // tienda en el POS: la bitácora de red junto al registro de la caja (red-caja-AAAA-MM-DD.log), el Wi-Fi y la MAC del
+        // router, y el puerto de la impresora de tickets (si es WSD o por nombre, el estado de arriba lo dice).
         servicios.AgregarInterfazCaja(conexion, impresora,
-            prueba is null ? ConfiguracionCaja.BaseLocal : Path.Combine(ServicioDePrueba.CarpetaDatos(configuracion), "caja-local.db"));
+            prueba is null ? ConfiguracionCaja.BaseLocal : Path.Combine(ServicioDePrueba.CarpetaDatos(configuracion), "caja-local.db"),
+            new OpcionesRedDeLaCaja
+            {
+                CarpetaBitacora = registro.Carpeta,
+                Impresora = configuracion.Impresora,
+                Puertos = new PuertosDeImpresorasWindows(),
+                Detalles = new RedDeWindows(),
+            });
         // Cotizar: el PDF se mide aquí, en la PC donde está; el precio lo pone la caja principal.
         servicios.AddSingleton<IMedidorPdf, MedidorPdfWindows>();
         // La prueba se actualiza desde Configuración con los instaladores que arma GitHub.
