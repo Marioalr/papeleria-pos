@@ -1142,6 +1142,20 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-adentro fieldset.variante { border-color: var(--vn-linea); border-radius: 10px; background: var(--vn-hoja); }
 .vn-adentro fieldset.variante legend { color: var(--vn-tinta); }
 .vn-adentro .ficha-producto { gap: 8px 12px; }
+/* Productos › Departamentos: el alta arriba, lo que se hace en cada renglón y, al desactivar uno con productos, a dónde pasan */
+.vn-deptos .vn-alerta { margin: 0; }
+.vn-depto-nuevo { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding: 10px 12px; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; }
+.vn-depto-nuevo label { flex: 1 1 260px; }
+.vn-deptos-tabla td.acciones { width: 1%; white-space: nowrap; text-align: right; }
+.vn-deptos-tabla td.acciones .vn-boton + .vn-boton { margin-left: 6px; }
+.vn-deptos-tabla td input { width: 100%; min-width: 0; }
+.vn-deptos-tabla tr.apagado .nombre { color: var(--vn-tenue); }
+.vn-deptos-tabla tr.apagado .vn-etiq { margin-left: 6px; }
+.vn-deptos-tabla tr.on > td { background: var(--vn-tinta-claro); }
+.vn-depto-pasar > td { background: var(--vn-aviso-fondo); }
+.vn-depto-pasar div { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.vn-depto-pasar small { display: block; margin-top: 6px; font-size: 12.5px; color: var(--vn-suave); }
+.vn-depto-error > td { padding-top: 2px; }
 
 /* Inventario por tareas: una tarjeta por tarea, solo las de quien entró */
 .vn-hub { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding: 22px 26px; }

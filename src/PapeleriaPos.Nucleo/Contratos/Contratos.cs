@@ -180,7 +180,7 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 /// <param name="TotalCentavos">Exacto: la suma de las líneas, con el IVA incluido.</param>
 /// <param name="RedondeoCentavos">El del efectivo al peso (fase 3): lo que pagó el cliente es el total más esto.</param>
 /// <param name="Cliente">El cliente registrado con sus privilegios: "Escuela Benito Juárez (descuento 10 %)".</param>
-/// <param name="Folio">El de esta caja (A-000123): va en el QR, que abre la devolución en la caja nueva.</param>
+/// <param name="Folio">El de esta caja (A-000123): con él se abre la devolución en la caja nueva.</param>
 /// <param name="FolioEleventa">En el piloto, el que le dio eleventa si llegó a tiempo: es el que se imprime, para devolver en cualquier caja.</param>
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
@@ -678,7 +678,13 @@ public sealed record SolicitudGuardarProducto(Guid UsuarioId, Guid SucursalId, F
 
 public sealed record OpcionCatalogoDto(Guid Id, string Nombre);
 
-public sealed record OpcionesCatalogoDto(IReadOnlyList<OpcionCatalogoDto> Departamentos, IReadOnlyList<string> Marcas);
+/// <param name="Departamentos">Los activos: los únicos que se ofrecen (al filtrar la lista, en la ficha, en el alta rápida y en las compras).</param>
+/// <param name="Desactivados">
+/// Los desactivados (Productos › Departamentos), solo para decir el de un producto que se quedó en uno: no se ofrecen.
+/// Vacío en un servicio de antes.
+/// </param>
+public sealed record OpcionesCatalogoDto(
+    IReadOnlyList<OpcionCatalogoDto> Departamentos, IReadOnlyList<string> Marcas, IReadOnlyList<OpcionCatalogoDto>? Desactivados = null);
 
 public sealed record MovimientoKardexDto(DateTime FechaLocal, TipoMovimiento Tipo, decimal Cantidad, decimal Existencia, string? Motivo, string? Documento);
 

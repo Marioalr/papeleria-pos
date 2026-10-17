@@ -95,7 +95,8 @@ public class TicketTests
         Assert.Contains("Total: $169.00", texto);
         Assert.Contains("Efectivo: $200.00  Cambio: $31.00", texto);
         Assert.Contains("Incluye IVA: $23.31", texto);
-        Assert.Contains("[QR A-000123]", texto);
+        // Sin QR por ahora, como el de eleventa (2026-10-16): el folio se escribe para devolver.
+        Assert.DoesNotContain("[QR", texto);
         Assert.Contains("Español", texto);
     }
 
@@ -388,14 +389,17 @@ public class TicketTests
     }
 
     [Fact]
-    public void Escpos_usa_la_pagina_850_para_la_ñ_y_trae_el_qr()
+    public void Escpos_usa_la_pagina_850_para_la_ñ_y_el_ticket_no_trae_qr()
     {
         var bytes = TicketEscPos.Generar(Ticket(), abrirCajon: false);
+        byte[] imprimirQr = [0x1D, (byte)'(', (byte)'k', 3, 0, 49, 81, 48];
 
         Assert.True(Contiene(bytes, [0x1B, (byte)'t', 2]));
         Assert.True(Contiene(bytes, [(byte)'E', (byte)'s', (byte)'p', (byte)'a', 0xA4, (byte)'o', (byte)'l'])); // "Español"
         Assert.True(Contiene(bytes, "A-000123"u8.ToArray()));
-        Assert.True(Contiene(bytes, [0x1D, (byte)'(', (byte)'k', 3, 0, 49, 81, 48]));
+        Assert.False(Contiene(bytes, imprimirQr));
+        // La impresora sigue sabiendo imprimir uno, para cuando se quiera.
+        Assert.True(Contiene(TicketEscPos.Generar([new Qr("A-000123")], abrirCajon: false), imprimirQr));
     }
 
     private static bool Contiene(byte[] datos, byte[] buscado)

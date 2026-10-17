@@ -19,6 +19,10 @@ namespace PapeleriaPos.Datos;
 /// </summary>
 public sealed class RegistroCompras(PosDbContext db)
 {
+    /// <summary>Un producto nuevo de la nota necesita departamento: se dan de alta en Productos › Departamentos.</summary>
+    public const string SinDepartamentos =
+        "No hay ningún departamento activo: da de alta uno (o reactiva uno) en Productos (F3) › Departamentos.";
+
     private DateTime Ahora => db.Reloj.GetUtcNow().UtcDateTime;
 
     // ── Lo pendiente de cada tarea, para las tarjetas del inventario (entrega 8) ──
@@ -298,20 +302,20 @@ public sealed class RegistroCompras(PosDbContext db)
     }
 
     /// <summary>
-    /// Lo que se precarga de un producto nuevo: el nombre del documento, el departamento donde más productos tiene ese
-    /// proveedor, una pieza por unidad, el precio que deja el margen mínimo y el código si es un código de barras libre.
+    /// Lo que se precarga de un producto nuevo: el nombre del documento, el departamento (activo) donde más productos tiene
+    /// ese proveedor, una pieza por unidad, el precio que deja el margen mínimo y el código si es un código de barras libre.
     /// </summary>
     private async Task<ProductoNuevo> PropuestaAsync(Compra compra, CompraRenglon r, CancellationToken ct)
     {
         var departamento = await (from pv in db.ProveedoresVariantes
                                   join v in db.Variantes on pv.VarianteId equals v.Id
-                                  where pv.ProveedorId == compra.ProveedorId
+                                  where pv.ProveedorId == compra.ProveedorId && v.Producto!.Departamento!.Activo
                                   group v by v.Producto!.DepartamentoId into g
                                   orderby g.Count() descending
                                   select (Guid?)g.Key).FirstOrDefaultAsync(ct)
             ?? (await db.Departamentos.AsNoTracking().Where(d => d.Activo).ToListAsync(ct)).OrderBy(d => d.Nombre, StringComparer.CurrentCultureIgnoreCase)
                 .Select(d => (Guid?)d.Id).FirstOrDefault()
-            ?? throw new InvalidOperationException("Da de alta al menos un departamento en F3 Productos.");
+            ?? throw new InvalidOperationException(SinDepartamentos);
         var una = Cantidad.Piezas(1);
         var minimos = await MargenesMinimosAsync(compra.SucursalId, ct);
         var codigo = EsCodigoDeBarras(r.CodigoProveedor) && !await db.CodigosBarras.AnyAsync(c => c.Codigo == r.CodigoProveedor, ct) ? r.CodigoProveedor : null;
