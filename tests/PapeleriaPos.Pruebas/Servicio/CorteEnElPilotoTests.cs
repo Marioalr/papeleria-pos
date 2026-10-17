@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.Data.Sqlite;
 using PapeleriaPos.Eleventa;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo;
@@ -24,9 +23,7 @@ public sealed class CorteEnElPilotoTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
+        ArchivosDePrueba.BorrarBase(_baseLocal);
     }
 
     /// <summary>La caja manda a un eleventa que no contesta (nadie escucha en ese puerto): lo que va allá espera en la bandeja.</summary>

@@ -56,7 +56,7 @@ else
 @code {
     [Parameter, EditorRequired] public Venta Venta { get; set; } = null!;
 
-    /// <summary>El renglón seleccionado (si hay).</summary>
+    /// <summary>El renglón seleccionado al abrir la ventana (si había): el descuento es suyo aunque luego se seleccione otro.</summary>
     [Parameter] public VentaLinea? Linea { get; set; }
 
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
@@ -127,6 +127,12 @@ else
         if (motivo.Length == 0)
         {
             _error = "Escribe el motivo del descuento.";
+            return;
+        }
+        // Su renglón se quitó con la ventana abierta: el descuento no pasa a otro.
+        if (!_todoElTicket && !Venta.Lineas.Contains(Linea!))
+        {
+            _error = "Ese artículo ya no está en el ticket: el descuento puede ir a todo el ticket.";
             return;
         }
 

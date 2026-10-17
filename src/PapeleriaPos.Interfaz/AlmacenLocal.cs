@@ -205,6 +205,20 @@ public sealed class AlmacenLocal
         }
     }
 
+    /// <summary>
+    /// Se cierra la caja: lo que se pidió escribir queda en el disco (<see cref="Vaciar"/>) y se sueltan las conexiones que se
+    /// guardaban abiertas para la siguiente lectura (el pool de Microsoft.Data.Sqlite): caja-local.db ya no queda abierta, y
+    /// se puede mover o borrar. Lo que se lea o escriba después la vuelve a abrir.
+    /// </summary>
+    /// <returns>Si quedó todo lo que se pidió escribir.</returns>
+    public bool Cerrar(TimeSpan espera)
+    {
+        var quedo = Vaciar(espera);
+        using var conexion = new SqliteConnection(_cadena);
+        SqliteConnection.ClearPool(conexion);
+        return quedo;
+    }
+
     /// <summary>El hilo del escritor: una escritura tras otra, cada una en su transacción; sin nada que hacer un rato, se va.</summary>
     private void EscribirEnSuHilo()
     {

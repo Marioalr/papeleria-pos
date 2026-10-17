@@ -293,13 +293,19 @@ public sealed class Contingencia
 
     /// <summary>
     /// Se cierra la caja: el latido se detiene y lo que se mandó escribir en la base local queda en el disco antes de irse
-    /// (los tickets en espera, lo último de un cobro). Espera poco: una base que no responde no detiene el cierre.
+    /// (los tickets en espera, lo último de un cobro). Antes, también termina de leer la copia que se lee al abrir (si se
+    /// cierra enseguida), y al final suelta las conexiones de la base: caja-local.db no se queda abierta. Espera poco en
+    /// total: una base que no responde no detiene el cierre.
     /// </summary>
     public void Cerrar(TimeSpan? espera = null)
     {
+        var limite = DateTime.UtcNow + (espera ?? TimeSpan.FromSeconds(3));
         Detener();
-        _almacen.Vaciar(espera ?? TimeSpan.FromSeconds(3));
+        ((IAsyncResult)_carga).AsyncWaitHandle.WaitOne(Restante(limite));
+        _almacen.Cerrar(Restante(limite));
     }
+
+    private static TimeSpan Restante(DateTime limite) => limite - DateTime.UtcNow is var falta && falta > TimeSpan.Zero ? falta : TimeSpan.Zero;
 
     private async Task LatirAsync(CancellationToken ct)
     {

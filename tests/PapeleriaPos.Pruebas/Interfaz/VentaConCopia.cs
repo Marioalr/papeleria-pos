@@ -52,6 +52,7 @@ internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandle
 /// La venta de verdad de una caja con su copia (entrega 5): la pantalla, el cliente y la contingencia con su base local,
 /// contra el servicio de prueba, con la red como se le pida (<see cref="RedDePrueba"/>).
 /// </summary>
+/// <param name="Cajero">Quien entró a la venta: el cajero, salvo que se pida otro.</param>
 internal sealed record VentaConCopia(
     PantallaSinNavegador Pantalla, PantallaVenta Venta, ClienteCaja Cliente, Contingencia Contingencia, RedDePrueba Red, CajaDto Caja,
     SesionDto Cajero, ServiceProvider Servicios) : IAsyncDisposable
@@ -59,7 +60,9 @@ internal sealed record VentaConCopia(
     /// <summary>La caja con su copia recién bajada, la venta abierta por el cajero y todo lo que pide al entrar ya contestado.</summary>
     /// <param name="plazo">Lo que espera a la caja principal por un código que no está en la copia; sin él, un minuto.</param>
     /// <param name="pagina">La página (caja.js); sin ella, una que contesta todo sin hacer nada.</param>
-    public static async Task<VentaConCopia> AbrirAsync(ServicioDePrueba servicio, string baseLocal, TimeSpan? plazo = null, IJSRuntime? pagina = null)
+    /// <param name="quien">Quién entra a la venta, con su PIN; sin él, el cajero. El turno es del cajero.</param>
+    public static async Task<VentaConCopia> AbrirAsync(ServicioDePrueba servicio, string baseLocal, TimeSpan? plazo = null, IJSRuntime? pagina = null,
+        (string Usuario, string Pin)? quien = null)
     {
         var red = new RedDePrueba(servicio.Fabrica.Server.CreateHandler());
         var http = new HttpClient(red);
@@ -71,6 +74,7 @@ internal sealed record VentaConCopia(
         Assert.NotNull(contingencia.Foto);
         var cajero = await cliente.EntrarAsync("cajero", "1111");
         var turno = await cliente.TurnoAsync(caja.Id) ?? await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
+        var sesion = quien is var (usuario, pin) ? await cliente.EntrarAsync(usuario, pin) : cajero;
         var servicios = new ServiceCollection()
             .AddSingleton(conexion)
             .AddSingleton(cliente)
@@ -84,13 +88,13 @@ internal sealed record VentaConCopia(
         var venta = await pantalla.AbrirAsync<PantallaVenta>(new()
         {
             [nameof(PantallaVenta.Caja)] = caja,
-            [nameof(PantallaVenta.Sesion)] = cajero,
+            [nameof(PantallaVenta.Sesion)] = sesion,
             [nameof(PantallaVenta.Turno)] = turno,
         });
         // Lo último que pide la venta al entrar es el conteo del día.
         await EsperarAsync(() => red.Respondio("/conteo-del-dia"), "lo que pide la venta al entrar");
         await pantalla.Dispatcher.InvokeAsync(() => { });
-        return new VentaConCopia(pantalla, venta, cliente, contingencia, red, caja, cajero, servicios);
+        return new VentaConCopia(pantalla, venta, cliente, contingencia, red, caja, sesion, servicios);
     }
 
     public Task EscanearAsync(string codigo) => Pantalla.Dispatcher.InvokeAsync(() => Venta.Escaneado(codigo));
@@ -145,6 +149,8 @@ internal sealed record VentaConCopia(
     {
         Red.Detenida?.TrySetResult();
         await ((IAsyncDisposable)Pantalla).DisposeAsync();
+        // Como al cerrar la caja: lo que se escribía en su base local termina y la suelta, antes de borrarla.
+        Contingencia.Cerrar(TimeSpan.FromSeconds(20));
         await Servicios.DisposeAsync();
     }
 }
