@@ -40,7 +40,7 @@ public sealed class ServicioEnPrueba : IAsyncLifetime
             Hecho = await PreparacionPrueba.PrepararAsync(db, Ejemplos);
             await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=DELETE;");
         }
-        Fabrica = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b
+        Fabrica = new FabricaDePrueba(b => b
             .UseSetting("ConnectionStrings:Pos", $"Data Source={Path.Combine(Carpeta, "pos.db")};Pooling=False")
             .UseSetting("Prueba:Activa", "true").UseSetting("Prueba:BaseInicial", BaseInicial).UseSetting("Prueba:CarpetaRespuestas", Carpeta)
             .UseSetting("Respaldos:Activo", "false").UseSetting("Telegram:Activo", "false"));

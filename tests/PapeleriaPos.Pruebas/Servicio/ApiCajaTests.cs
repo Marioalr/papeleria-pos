@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,6 +13,19 @@ using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Pruebas.Servicio;
+
+/// <summary>
+/// El servicio de verdad con la configuración de una prueba. Es una clase propia y no
+/// <c>new WebApplicationFactory&lt;Program&gt;().WithWebHostBuilder(…)</c> para que lo que una prueba arma encima con
+/// <see cref="WebApplicationFactory{TEntryPoint}.WithWebHostBuilder"/> (el piloto, otro Telegram…) se detenga con este:
+/// WebApplicationFactory lleva la cuenta de lo que se deriva de una fábrica así, pero no de lo que se deriva de un derivado.
+/// Ese servicio seguía corriendo hasta el final de la corrida, y su vigilancia de la impresora volvía a abrir la base ya
+/// borrada (se quedaba vacía en la carpeta temporal).
+/// </summary>
+internal sealed class FabricaDePrueba(Action<IWebHostBuilder> configurar) : WebApplicationFactory<Program>
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder) => configurar(builder);
+}
 
 /// <summary>El servicio de verdad, sobre una base temporal con 30 días de datos ficticios, la Caja 1 y los usuarios de prueba.</summary>
 public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
@@ -74,7 +88,7 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
             await GuardadoLote.GuardarAsync(GeneradorFicticios.Generar(new OpcionesFicticios { Dias = 30 }), db);
             await PreparacionCaja.PrepararAsync(db);
         }
-        Fabrica = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+        Fabrica = new FabricaDePrueba(b =>
         {
             b.UseSetting("ConnectionStrings:Pos", $"Data Source={_ruta};Pooling=False").UseSetting("Respaldos:Activo", "false").UseSetting("Telegram:Activo", "false");
             foreach (var (clave, valor) in _ajustes)
@@ -87,8 +101,9 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
     ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsync());
 
     /// <summary>
-    /// Detiene el servicio, suelta la conexión guardada de su base y la borra con sus marcas. Un trabajo de fondo que terminaba
-    /// puede tener el archivo abierto un instante: se reintenta, y si no, se queda en la carpeta temporal.
+    /// Detiene el servicio (y los que las pruebas armaron encima), suelta la conexión guardada de su base y la borra con sus
+    /// marcas. Un trabajo de fondo que terminaba puede tener el archivo abierto un instante: se reintenta, y si no, se queda en
+    /// la carpeta temporal.
     /// </summary>
     public async Task DisposeAsync()
     {
