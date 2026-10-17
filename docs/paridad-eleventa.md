@@ -58,7 +58,7 @@
 | Entradas y salidas de efectivo, con comentario; se pueden cancelar | La usan (pocas a mano) | F7 y F8 con motivo; comprobante impreso de las salidas. En el piloto van a eleventa | Cancelar una equivocada, si lo usan (hoy se compensa con la contraria) | Sin plan | Chico |
 | Límite de efectivo en caja | Por confirmar | Límite con aviso de retiro (apagado en el piloto) | — | — | — |
 | Corte del turno, con faltante o sobrante | La usan | Corte del turno a ciegas, solo con el total, impreso; la diferencia a nombre del cajero | En el piloto el corte se hace en eleventa y la caja nueva todavía no lo toma: hoy solo avisa | Piloto, diseño | Mediano |
-| Corte del día y de todas las cajas: ventas, ganancia, formas de pago, ventas y ganancia por departamento, entradas, salidas, devoluciones; se imprime y se ve el de otra fecha | Por confirmar | Como el de eleventa (2026-10-17): de todas las cajas, para quien tiene el permiso, el de hoy o el de otro día (← → o la fecha; el de otro día solo se ve). Lo vendido, el efectivo, las formas de pago, las entradas y salidas, las devoluciones, lo fiado y los abonos; la utilidad y las ventas por departamento, para quien ve la utilidad. «Imprimir» en la de tickets, también el de otro día. A la hora de cierre de la tienda se le recuerda cerrarlo a quien lo cierra | — | — | — |
+| Corte del día y de todas las cajas: ventas, ganancia, formas de pago, ventas y ganancia por departamento, entradas, salidas, devoluciones; se imprime y se ve el de otra fecha | Por confirmar | Como el de eleventa (2026-10-17): de todas las cajas, para quien tiene el permiso, el de hoy o el de otro día (← → o la fecha; el de otro día solo se ve). Lo vendido, el efectivo, las formas de pago, las ventas por departamento, las entradas y salidas, las devoluciones, lo fiado y los abonos; la utilidad (también la de cada departamento), para quien ve la utilidad. «Imprimir» en la de tickets, también el de otro día. A la hora de cierre de la tienda se le recuerda cerrarlo a quien lo cierra | — | — | — |
 | Historial de cortes: por fecha, cajero, turno y caja | Por confirmar | No hay: solo el corte de hoy | Consultar y reimprimir un corte anterior | Sin plan | Chico |
 | El corte por correo al cerrar cada turno | Por confirmar | No hay (el resumen del día iba por Telegram, en pausa) | Si lo usan, que el corte le llegue al dueño sin Telegram | Sin plan | Chico |
 
@@ -202,7 +202,7 @@ Para decidir; no cambian ninguna decisión:
   puente.
 - **Con Telegram en pausa, el dueño no ve la ganancia del día:** venía en el resumen diario. El corte del día podría
   mostrarla a quien tiene «Ver costos, utilidad y margen», como el de eleventa. Hecho (2026-10-17): el corte del día la
-  muestra, con las ventas por departamento.
+  muestra, también la de cada departamento.
 - **Alinear dos líneas:** la tabla de fases del plan (fase 5) y [impresión](impresion.md) ponen las tres impresoras de
   inyección antes del piloto. Con la meta del 2026-10-15 van después, con la entrega 4: Control Print sigue aparte
   mientras tanto.

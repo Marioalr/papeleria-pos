@@ -187,8 +187,8 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     }
 
     /// <summary>
-    /// El corte del día de una fecha (2026-10-17): hoy, o uno que ya pasó, solo para verlo e imprimirlo. Con la utilidad y los
-    /// departamentos si quien entró ve la utilidad. Necesita la caja principal.
+    /// El corte del día de una fecha (2026-10-17): hoy, o uno que ya pasó, solo para verlo e imprimirlo. Con las ventas por
+    /// departamento y, si quien entró ve la utilidad, la utilidad. Necesita la caja principal.
     /// </summary>
     public async Task<CorteDelDiaDto> CorteDelDiaAsync(Guid cajaId, Guid usuarioId, DateOnly fecha)
     {

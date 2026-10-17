@@ -6,8 +6,9 @@
    principal. En el piloto con eleventa se ve, pero el día se cierra con el corte de eleventa. Va dentro del corte
    (CorteCaja); también se puede poner donde no hay turno abierto, con la caja y la sesión.
    Como el de eleventa (2026-10-17): el de otro día con ← → o la fecha (uno que ya pasó solo se ve; «Cerrar el día» es el de
-   hoy), «Imprimir» en la impresora de tickets (lo que se ve aquí, también el de otro día) y, para quien tiene «Ver costos,
-   utilidad y margen», la utilidad y las ventas por departamento (a los demás el servicio no se las manda). *@
+   hoy), «Imprimir» en la impresora de tickets (lo que se ve aquí, también el de otro día), las ventas por departamento y,
+   para quien tiene «Ver costos, utilidad y margen», la utilidad del día y la de cada departamento (a los demás el servicio
+   no se las manda). *@
 @inject ClienteCaja Cliente
 @inject IImpresora Impresora
 
@@ -82,7 +83,7 @@
                 @* Solo para quien ve la utilidad: con borde punteado, como lo que depende de un permiso en el prototipo. *@
                 <div class="vn-corte-kpi restringido">
                     <span>Utilidad bruta</span><strong class="@(utilidad.UtilidadCentavos < 0 ? "vn-dif-mal" : "")">@Formato.Pesos(utilidad.UtilidadCentavos)</strong>
-                    <small>@MargenDelDia(utilidad)</small>
+                    <small>@MargenDelDia(utilidad, d.PorDepartamento)</small>
                 </div>
             }
         </div>
@@ -254,68 +255,101 @@
             </div>
         </div>
 
-        @if (d.Utilidad is { } u)
+        @if (d.PorDepartamento is { } porDepartamento)
         {
+            @* Como en eleventa, las ventas por departamento las ve quien ve el corte del día; la utilidad y el margen de cada uno,
+               solo quien ve la utilidad (a los demás el servicio no les manda los costos). *@
+            var u = d.Utilidad;
             <div class="vn-corte-dos">
-                <table class="vn-corte-tabla restringido">
-                    <thead><tr><th>Ventas por departamento</th><th class="num">Venta</th><th class="num">Utilidad</th><th class="num">Margen</th></tr></thead>
-                    <tbody>
-                        @foreach (var departamento in u.Departamentos)
-                        {
+                <div class="vn-corte-columna">
+                    <table class="vn-corte-tabla">
+                        <thead>
                             <tr>
-                                <td>@departamento.Departamento</td>
-                                <td class="num">@Formato.ConSigno(departamento.VentaCentavos)</td>
-                                <td class="num @(departamento.UtilidadCentavos < 0 ? "vn-dif-mal" : "")">@Formato.ConSigno(departamento.UtilidadCentavos)</td>
-                                <td class="num">@TextoMargen(departamento.MargenCentesimas)</td>
+                                <th>Ventas por departamento</th><th class="num">Venta</th>
+                                @if (u is not null)
+                                {
+                                    <th class="num">Utilidad</th><th class="num">Margen</th>
+                                }
                             </tr>
-                        }
-                        @if (u.ImpresionesCentavos != 0 || u.ImpresionesCostoCentavos != 0)
-                        {
+                        </thead>
+                        <tbody>
+                            @foreach (var departamento in porDepartamento.Departamentos)
+                            {
+                                <tr>
+                                    <td>@departamento.Departamento</td>
+                                    <td class="num">@Formato.ConSigno(departamento.VentaCentavos)</td>
+                                    @if (u is not null)
+                                    {
+                                        <td class="num @(departamento.UtilidadCentavos < 0 ? "vn-dif-mal" : "")">@Formato.ConSigno(departamento.UtilidadCentavos ?? 0)</td>
+                                        <td class="num">@TextoMargen(departamento.MargenCentesimas)</td>
+                                    }
+                                </tr>
+                            }
+                            @if (porDepartamento.ImpresionesCentavos != 0 || porDepartamento.ImpresionesCostoCentavos is not (null or 0))
+                            {
+                                <tr>
+                                    <td>Impresiones</td>
+                                    <td class="num">@Formato.ConSigno(porDepartamento.ImpresionesCentavos)</td>
+                                    @if (u is not null)
+                                    {
+                                        <td class="num">@Formato.ConSigno(porDepartamento.ImpresionesUtilidadCentavos ?? 0)</td>
+                                        <td class="num">@TextoMargen(porDepartamento.ImpresionesMargenCentesimas)</td>
+                                    }
+                                </tr>
+                            }
+                            @if (porDepartamento.ArticuloComunCentavos != 0)
+                            {
+                                <tr>
+                                    <td>Artículo común</td>
+                                    <td class="num">@Formato.ConSigno(porDepartamento.ArticuloComunCentavos)</td>
+                                    @if (u is not null)
+                                    {
+                                        @* No tiene costo: no entra en la utilidad. *@
+                                        <td class="num">sin costo</td><td class="num">—</td>
+                                    }
+                                </tr>
+                            }
+                            @if (porDepartamento.Departamentos.Count == 0 && porDepartamento.ImpresionesCentavos == 0 && porDepartamento.ArticuloComunCentavos == 0)
+                            {
+                                <tr><td colspan="@(u is null ? 2 : 4)" class="vn-corte-vacio">@(d.DeOtroDia ? "Ese día no hubo ventas." : "Hoy todavía no hay ventas.")</td></tr>
+                            }
+                        </tbody>
+                        <tfoot>
                             <tr>
-                                <td>Impresiones</td>
-                                <td class="num">@Formato.ConSigno(u.ImpresionesCentavos)</td>
-                                <td class="num">@Formato.ConSigno(u.ImpresionesUtilidadCentavos)</td>
-                                <td class="num">@TextoMargen(u.ImpresionesCentavos > 0 ? Margen.Calcular(u.ImpresionesCentavos, u.ImpresionesCostoCentavos) : null)</td>
+                                <td>Total</td>
+                                <td class="num">@Formato.ConSigno(porDepartamento.TotalCentavos)</td>
+                                @if (u is not null)
+                                {
+                                    <td class="num">@Formato.ConSigno(u.UtilidadCentavos)</td>
+                                    <td class="num">@TextoMargen(u.MargenCentesimas)</td>
+                                }
                             </tr>
-                        }
-                        @if (u.ArticuloComunCentavos != 0)
-                        {
-                            <tr><td>Artículo común <small>(sin costo)</small></td><td class="num">@Formato.ConSigno(u.ArticuloComunCentavos)</td><td class="num">—</td><td class="num">—</td></tr>
-                        }
-                        @if (u.Departamentos.Count == 0 && u.ImpresionesCentavos == 0 && u.ArticuloComunCentavos == 0)
-                        {
-                            <tr><td colspan="4" class="vn-corte-vacio">@(d.DeOtroDia ? "Ese día no hubo ventas." : "Hoy todavía no hay ventas.")</td></tr>
-                        }
-                    </tbody>
-                    <tfoot>
-                        <tr>
-                            <td>Total</td>
-                            <td class="num">@Formato.ConSigno(u.VentaCentavos + u.ArticuloComunCentavos)</td>
-                            <td class="num">@Formato.ConSigno(u.UtilidadCentavos)</td>
-                            <td class="num">@TextoMargen(u.MargenCentesimas)</td>
-                        </tr>
-                    </tfoot>
-                </table>
-                <div class="vn-corte-tarjeta restringido">
-                    <h3>Utilidad del día</h3>
-                    <div class="vn-corte-linea"><span>Venta con costo</span><strong>@Formato.ConSigno(u.VentaCentavos)</strong></div>
-                    <div class="vn-corte-linea"><span>Costo de lo vendido</span><strong>@Formato.ConSigno(-u.CostoCentavos)</strong></div>
-                    <div class="vn-corte-linea suma"><span>Utilidad bruta</span><strong>@Formato.ConSigno(u.UtilidadCentavos)</strong></div>
-                    <p class="vn-corte-nota">El costo es el que guardó cada venta al cobrar (el promedio del inventario); el de las impresiones, el de cada trabajo.</p>
+                        </tfoot>
+                    </table>
                     @if (d.Devoluciones > 0)
                     {
                         <p class="vn-corte-nota">Lo devuelto @elDia ya se restó de su departamento, como en eleventa.</p>
                     }
-                    @if (u.ArticuloComunCentavos != 0)
-                    {
-                        <p class="vn-corte-nota">El artículo común (@Formato.Dinero(u.ArticuloComunCentavos)) no tiene costo: no entra en la utilidad.</p>
-                    }
-                    @if (u.ServiciosSinCostoCentavos != 0)
-                    {
-                        <p class="vn-corte-nota">Los servicios (@Formato.Dinero(u.ServiciosSinCostoCentavos)) todavía no tienen costo: cuentan completos, como hasta hoy.</p>
-                    }
-                    <p class="vn-corte-nota">Solo la ve quien tiene «Ver costos, utilidad y margen».</p>
                 </div>
+                @if (u is not null)
+                {
+                    <div class="vn-corte-tarjeta restringido">
+                        <h3>Utilidad del día</h3>
+                        <div class="vn-corte-linea"><span>Venta con costo</span><strong>@Formato.ConSigno(u.VentaCentavos)</strong></div>
+                        <div class="vn-corte-linea"><span>Costo de lo vendido</span><strong>@Formato.ConSigno(-u.CostoCentavos)</strong></div>
+                        <div class="vn-corte-linea suma"><span>Utilidad bruta</span><strong>@Formato.ConSigno(u.UtilidadCentavos)</strong></div>
+                        <p class="vn-corte-nota">El costo es el que guardó cada venta al cobrar (el promedio del inventario); el de las impresiones, el de cada trabajo.</p>
+                        @if (porDepartamento.ArticuloComunCentavos != 0)
+                        {
+                            <p class="vn-corte-nota">El artículo común (@Formato.Dinero(porDepartamento.ArticuloComunCentavos)) no tiene costo: no entra en la utilidad.</p>
+                        }
+                        @if (u.ServiciosSinCostoCentavos != 0)
+                        {
+                            <p class="vn-corte-nota">Los servicios (@Formato.Dinero(u.ServiciosSinCostoCentavos)) todavía no tienen costo: cuentan completos, como hasta hoy.</p>
+                        }
+                        <p class="vn-corte-nota">La utilidad solo la ve quien tiene «Ver costos, utilidad y margen».</p>
+                    </div>
+                }
             </div>
         }
     }
@@ -521,9 +555,9 @@
     }
 
     /// <summary>«margen de 32 %», y si quedó fuera el artículo común (no tiene costo).</summary>
-    private static string MargenDelDia(UtilidadDelDiaDto u) =>
+    private static string MargenDelDia(UtilidadDelDiaDto u, VentasPorDepartamentoDto? porDepartamento) =>
         (u.MargenCentesimas is { } margen ? $"margen de {Margen.Texto(margen)}" : "sin ventas con costo")
-        + (u.ArticuloComunCentavos != 0 ? " · sin artículo común" : "");
+        + (porDepartamento?.ArticuloComunCentavos is not (null or 0) ? " · sin artículo común" : "");
 
     private static string TextoMargen(int? centesimas) => centesimas is { } m ? Margen.Texto(m) : "—";
 

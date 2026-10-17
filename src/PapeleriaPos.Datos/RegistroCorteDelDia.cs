@@ -33,9 +33,9 @@ public sealed record PresenciaDeCaja(DateTime? VistoUtc, int? PorSubir, int? Con
 /// </para>
 /// <para>
 /// Como el de eleventa (2026-10-17, docs/paridad-eleventa.md): se ve el de otro día (solo para verlo e imprimirlo; «Cerrar
-/// el día» es el de hoy), lleva la utilidad y lo vendido por departamento para quien tiene «Ver costos, utilidad y margen»
-/// (<see cref="UtilidadDelDiaDto"/>) y, a la hora de cierre de la tienda, se le recuerda cerrarlo a quien lo cierra
-/// (<see cref="RecordatorioAsync"/>).
+/// el día» es el de hoy), lleva lo vendido por departamento (<see cref="VentasPorDepartamentoDto"/>) y, para quien tiene «Ver
+/// costos, utilidad y margen», la utilidad del día y la de cada departamento (<see cref="UtilidadDelDiaDto"/>); y, a la hora
+/// de cierre de la tienda, se le recuerda cerrarlo a quien lo cierra (<see cref="RecordatorioAsync"/>).
 /// </para>
 /// </summary>
 public sealed class RegistroCorteDelDia(PosDbContext db)
@@ -60,10 +60,14 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
     /// <param name="fecha">Hoy o un día que ya pasó: el de otro día solo se ve (no dice qué falta para cerrarlo ni lo detiene).</param>
     /// <param name="presencias">Lo que se sabe del latido de cada caja (por su ID).</param>
     /// <param name="piloto">El piloto con eleventa: el turno de esta caja no se cierra aquí, así que lo esperado de un turno abierto (que suma días) no se enseña.</param>
-    /// <param name="conUtilidad">Con la utilidad y lo vendido por departamento: solo para quien tiene «Ver costos, utilidad y margen».</param>
+    /// <param name="porDepartamento">Con lo vendido por departamento (lo ve todo el que ve el corte del día, como en eleventa).</param>
+    /// <param name="conUtilidad">
+    /// Con la utilidad del día y el costo de cada departamento (y lo vendido por departamento): solo para quien tiene «Ver
+    /// costos, utilidad y margen».
+    /// </param>
     public async Task<CorteDelDiaDto> ArmarAsync(
-        Guid sucursalId, DateOnly fecha, IReadOnlyDictionary<Guid, PresenciaDeCaja> presencias, bool piloto = false, bool conUtilidad = false,
-        CancellationToken ct = default)
+        Guid sucursalId, DateOnly fecha, IReadOnlyDictionary<Guid, PresenciaDeCaja> presencias, bool piloto = false, bool porDepartamento = false,
+        bool conUtilidad = false, CancellationToken ct = default)
     {
         var (desde, hasta) = Rango(fecha);
         var ahora = Ahora;
@@ -145,6 +149,10 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
             ? new CierreDelDiaDto(HoraMexico.ALocal(cierre!.FechaUtc), cierre.UsuarioId is { } quien ? nombres.GetValueOrDefault(quien, "—") : "—")
             : null;
 
+        VentasPorDepartamentoDto? ventasPorDepartamento = null;
+        UtilidadDelDiaDto? utilidad = null;
+        if (porDepartamento || conUtilidad)
+            (ventasPorDepartamento, utilidad) = await PorDepartamentoAsync(vigentesDelDia, devueltas, conUtilidad, ct);
         return new CorteDelDiaDto(fecha, filas, vigentesDelDia.Sum(v => v.TotalCentavos), vigentesDelDia.Count, Forma(cobrosDelDia, FormaPago.Efectivo),
             Forma(cobrosDelDia, FormaPago.Tarjeta), Forma(cobrosDelDia, FormaPago.Transferencia), Forma(cobrosDelDia, FormaPago.Credito), porVerificar, salidas,
             movimientosDelDia.Where(m => m.Tipo == TipoMovimientoCaja.Entrada).Sum(m => m.MontoCentavos),
@@ -152,7 +160,7 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
             // Lo que entró por abonos: en efectivo con su redondeo, como en el corte y en el resumen.
             deClientes.Count, deClientes.Sum(a => a.Forma == FormaPago.Efectivo ? a.MontoCentavos + a.RedondeoCentavos : a.MontoCentavos),
             vigentesDelDia.SelectMany(v => v.Lineas).Where(l => l.EsImpresiones).Sum(l => l.ImporteCentavos),
-            porQueNo, avisos, piloto, cerrado, conUtilidad ? await UtilidadAsync(vigentesDelDia, devueltas, ct) : null, deOtroDia);
+            porQueNo, avisos, piloto, cerrado, utilidad, deOtroDia, ventasPorDepartamento);
     }
 
     /// <summary>
@@ -210,12 +218,14 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
         cierre is not null && !hayAbiertos && !aperturas.Any(abierto => abierto > cierre.FechaUtc);
 
     /// <summary>
-    /// La utilidad del día (<see cref="UtilidadDelDiaDto"/>): cada renglón vendido ese día suma su importe y su costo (el que
+    /// Lo vendido por departamento (<see cref="VentasPorDepartamentoDto"/>) y, con <paramref name="conUtilidad"/>, su costo y la
+    /// utilidad del día (<see cref="UtilidadDelDiaDto"/>): cada renglón vendido ese día suma su importe y su costo (el que
     /// guardó al cobrar), y cada renglón devuelto ese día los resta, en el departamento de su producto. El artículo común y las
-    /// impresiones van aparte.
+    /// impresiones van aparte. Sin <paramref name="conUtilidad"/>, ningún costo sale de aquí.
     /// </summary>
     /// <param name="devueltas">Las devoluciones del día (sin las cancelaciones: un ticket cancelado ya no está en lo vendido).</param>
-    private async Task<UtilidadDelDiaDto> UtilidadAsync(IReadOnlyList<Venta> vigentes, IReadOnlyList<Devolucion> devueltas, CancellationToken ct)
+    private async Task<(VentasPorDepartamentoDto PorDepartamento, UtilidadDelDiaDto? Utilidad)> PorDepartamentoAsync(
+        IReadOnlyList<Venta> vigentes, IReadOnlyList<Devolucion> devueltas, bool conUtilidad, CancellationToken ct)
     {
         var idsDevueltas = devueltas.Select(d => d.Id).ToList();
         var lineasDevueltas = await db.DevolucionesLineas.AsNoTracking().Where(l => idsDevueltas.Contains(l.DevolucionId)).ToListAsync(ct);
@@ -233,19 +243,25 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
         var nombres = await db.Departamentos.AsNoTracking().ToDictionaryAsync(d => d.Id, d => d.Nombre, ct);
         var departamentos = renglones.Where(r => r.Linea.VarianteId is not null && !r.Linea.EsImpresiones)
             .GroupBy(r => departamentoDe.TryGetValue(r.Linea.VarianteId!.Value, out var d) ? nombres.GetValueOrDefault(d, "Sin departamento") : "Sin departamento")
-            .Select(g => new DepartamentoDelDiaDto(g.Key, g.Sum(r => r.ImporteCentavos), g.Sum(r => r.CostoCentavos)))
-            .Where(d => d.VentaCentavos != 0 || d.CostoCentavos != 0)
-            .OrderByDescending(d => d.VentaCentavos).ThenBy(d => d.Departamento, StringComparer.CurrentCultureIgnoreCase)
+            .Select(g => (Nombre: g.Key, Venta: g.Sum(r => r.ImporteCentavos), Costo: g.Sum(r => r.CostoCentavos)))
+            .Where(d => d.Venta != 0 || d.Costo != 0)
+            .OrderByDescending(d => d.Venta).ThenBy(d => d.Nombre, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
         var impresiones = renglones.Where(r => r.Linea.EsImpresiones).ToList();
-        return new UtilidadDelDiaDto(departamentos, impresiones.Sum(r => r.ImporteCentavos), impresiones.Sum(r => r.CostoCentavos),
-            renglones.Where(r => r.Linea.VarianteId is null && !r.Linea.EsImpresiones).Sum(r => r.ImporteCentavos),
+        var (ventaImpresiones, costoImpresiones) = (impresiones.Sum(r => r.ImporteCentavos), impresiones.Sum(r => r.CostoCentavos));
+        var porDepartamento = new VentasPorDepartamentoDto(
+            departamentos.Select(d => new DepartamentoDelDiaDto(d.Nombre, d.Venta, conUtilidad ? d.Costo : null)).ToList(),
+            ventaImpresiones, conUtilidad ? costoImpresiones : null,
+            renglones.Where(r => r.Linea.VarianteId is null && !r.Linea.EsImpresiones).Sum(r => r.ImporteCentavos));
+        if (!conUtilidad)
+            return (porDepartamento, null);
+        return (porDepartamento, new UtilidadDelDiaDto(departamentos.Sum(d => d.Venta) + ventaImpresiones, departamentos.Sum(d => d.Costo) + costoImpresiones,
             // Los servicios (lo del catálogo que no lleva inventario) se cobran con costo 0 hasta que lleguen sus recetas.
             renglones.Where(r => r.Linea.VarianteId is not null && !r.Linea.EsImpresiones && !r.Linea.LlevaInventario && r.Linea.CostoCentavos == 0)
-                .Sum(r => r.ImporteCentavos));
+                .Sum(r => r.ImporteCentavos)));
     }
 
-    /// <summary>Un renglón de la utilidad del día: lo vendido (en positivo) o lo devuelto (en negativo), con su costo.</summary>
+    /// <summary>Un renglón de lo vendido por departamento: lo vendido (en positivo) o lo devuelto (en negativo), con su costo.</summary>
     private sealed record RenglonDelDia(VentaLinea Linea, long ImporteCentavos, long CostoCentavos);
 
     /// <summary>

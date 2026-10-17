@@ -118,7 +118,8 @@ public static class ApiCaja
 
         // El corte del día (entrega 6): todas las cajas y turnos de la sucursal de esta caja, para quien tiene el permiso.
         // En el piloto con eleventa se ve, pero no se cierra. Como el de eleventa (2026-10-17): el de otro día con «fecha» (hoy
-        // si no se da; uno que ya pasó solo se ve), y la utilidad y los departamentos solo para quien ve la utilidad.
+        // si no se da; uno que ya pasó solo se ve) y lo vendido por departamento; la utilidad (y el costo de cada departamento),
+        // solo para quien ve la utilidad.
         api.MapGet("/cajas/{cajaId:guid}/corte-del-dia", async (Guid cajaId, Guid usuarioId, DateOnly? fecha, PosDbContext db, PresenciaCajas presencia,
             OpcionesEleventa opcionesEleventa) =>
         {
@@ -129,8 +130,8 @@ public static class ApiCaja
             var hoy = registro.Hoy;
             if (fecha > hoy)
                 throw new InvalidOperationException(RegistroCorteDelDia.TodaviaNoLlega);
-            var dia = await registro.ArmarAsync(caja.SucursalId, fecha ?? hoy, presencia.Foto(), opcionesEleventa.CorteEnEleventa,
-                await control.PuedeAsync(usuarioId, AccionControlada.VerUtilidad));
+            var dia = await registro.ArmarAsync(caja.SucursalId, fecha ?? hoy, presencia.Foto(), opcionesEleventa.CorteEnEleventa, porDepartamento: true,
+                conUtilidad: await control.PuedeAsync(usuarioId, AccionControlada.VerUtilidad));
             // El piloto: los turnos que cerró el corte de eleventa dicen lo que se contó allá (TurnosDelPiloto), también los de un
             // día del piloto que se ve después de dejarlo. Un día que ya pasó es del piloto si lo fue, no según el de hoy.
             dia = await CorteEnElPiloto.ConLoDeEleventaAsync(db, dia);

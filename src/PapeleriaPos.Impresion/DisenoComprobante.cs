@@ -89,8 +89,8 @@ public static class DisenoComprobante
     /// <summary>
     /// El corte del día impreso (2026-10-17), como el de eleventa («Imprimir» lo manda a la impresora de tickets) y con el
     /// acomodo del corte del turno: el día y si se cerró, lo vendido y sus formas de pago, cada turno con lo que se contó, los
-    /// movimientos y, solo si vienen (para quien ve la utilidad), la utilidad y las ventas por departamento. Lo mismo que ve en
-    /// la pantalla quien lo imprime, de hoy o de un día que ya pasó.
+    /// movimientos, las ventas por departamento y, solo si viene (para quien ve la utilidad), la utilidad, también la de cada
+    /// departamento. Lo mismo que ve en la pantalla quien lo imprime, de hoy o de un día que ya pasó.
     /// </summary>
     /// <param name="impresoPor">Quien lo imprime.</param>
     /// <param name="impresoLocal">Cuándo (hora de México).</param>
@@ -193,6 +193,38 @@ public static class DisenoComprobante
         if (d.ImpresionesCentavos != 0)
             Dinero("Impresiones cobradas", d.ImpresionesCentavos);
 
+        // Como en eleventa, las ventas por departamento las ve (y las imprime) quien ve el corte del día; la utilidad de cada
+        // uno, solo quien ve la utilidad.
+        if (d.PorDepartamento is { } porDepartamento)
+        {
+            var conUtilidad = d.Utilidad is not null;
+            Seccion("VENTAS POR DEPARTAMENTO");
+            void Departamento(string nombre, string venta, string? utilidad, bool negrita = false)
+            {
+                var anchoNombre = DisenoTicket.Columnas - (utilidad is null ? anchoMonto : 2 * 13);
+                var partes = DisenoTicket.Partir(nombre, anchoNombre - 1);
+                var montos = utilidad is null ? venta.PadLeft(anchoMonto) : venta.PadLeft(13) + utilidad.PadLeft(13);
+                e.Add(new Renglon(partes[0].PadRight(anchoNombre) + montos, Negrita: negrita));
+                foreach (var parte in partes.Skip(1))
+                    e.Add(new Renglon("  " + parte, Negrita: negrita));
+            }
+            string? Utilidad(long? centavos) => conUtilidad ? DisenoTicket.Dinero(centavos ?? 0) : null;
+            Departamento("Departamento", "Venta", conUtilidad ? "Utilidad" : null);
+            foreach (var departamento in porDepartamento.Departamentos)
+                Departamento(departamento.Departamento, DisenoTicket.Dinero(departamento.VentaCentavos), Utilidad(departamento.UtilidadCentavos));
+            if (porDepartamento.ImpresionesCentavos != 0 || porDepartamento.ImpresionesCostoCentavos is not (null or 0))
+                Departamento("Impresiones", DisenoTicket.Dinero(porDepartamento.ImpresionesCentavos), Utilidad(porDepartamento.ImpresionesUtilidadCentavos));
+            if (porDepartamento.ArticuloComunCentavos != 0)
+                // El ticket va en la página 850, que no tiene la raya larga.
+                Departamento("Artículo común", DisenoTicket.Dinero(porDepartamento.ArticuloComunCentavos), conUtilidad ? "sin costo" : null);
+            if (porDepartamento.Departamentos.Count == 0 && porDepartamento.ImpresionesCentavos == 0 && porDepartamento.ArticuloComunCentavos == 0)
+                e.Add(new Renglon(d.DeOtroDia ? "Ese día no hubo ventas." : "Hoy todavía no hay ventas."));
+            e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
+            Departamento("Total", DisenoTicket.Dinero(porDepartamento.TotalCentavos), Utilidad(d.Utilidad?.UtilidadCentavos), negrita: true);
+            if (d.Devoluciones > 0)
+                Texto("Lo devuelto ese día ya se restó de su departamento.");
+        }
+
         if (d.Utilidad is { } u)
         {
             Seccion("UTILIDAD");
@@ -201,34 +233,10 @@ public static class DisenoComprobante
             Dinero("Utilidad bruta", u.UtilidadCentavos, negrita: true);
             if (u.MargenCentesimas is { } margen)
                 Linea("Margen", Nucleo.Catalogo.Margen.Texto(margen));
-            if (u.ArticuloComunCentavos != 0)
-                Texto($"Sin el artículo común ({DisenoTicket.Dinero(u.ArticuloComunCentavos)}): no tiene costo.");
+            if (d.PorDepartamento?.ArticuloComunCentavos is { } comun and not 0)
+                Texto($"Sin el artículo común ({DisenoTicket.Dinero(comun)}): no tiene costo.");
             if (u.ServiciosSinCostoCentavos != 0)
                 Texto($"Los servicios ({DisenoTicket.Dinero(u.ServiciosSinCostoCentavos)}) aún no tienen costo: cuentan completos.");
-            if (d.Devoluciones > 0)
-                Texto("Lo devuelto ese día ya se restó de su departamento.");
-
-            Seccion("VENTAS POR DEPARTAMENTO");
-            const int anchoNombre = DisenoTicket.Columnas - 2 * 13;
-            void Departamento(string nombre, string venta, string ganancia, bool negrita = false)
-            {
-                var partes = DisenoTicket.Partir(nombre, anchoNombre - 1);
-                e.Add(new Renglon(partes[0].PadRight(anchoNombre) + venta.PadLeft(13) + ganancia.PadLeft(13), Negrita: negrita));
-                foreach (var parte in partes.Skip(1))
-                    e.Add(new Renglon("  " + parte, Negrita: negrita));
-            }
-            Departamento("Departamento", "Venta", "Utilidad");
-            foreach (var departamento in u.Departamentos)
-                Departamento(departamento.Departamento, DisenoTicket.Dinero(departamento.VentaCentavos), DisenoTicket.Dinero(departamento.UtilidadCentavos));
-            if (u.ImpresionesCentavos != 0 || u.ImpresionesCostoCentavos != 0)
-                Departamento("Impresiones", DisenoTicket.Dinero(u.ImpresionesCentavos), DisenoTicket.Dinero(u.ImpresionesUtilidadCentavos));
-            if (u.ArticuloComunCentavos != 0)
-                // El ticket va en la página 850, que no tiene la raya larga.
-                Departamento("Artículo común", DisenoTicket.Dinero(u.ArticuloComunCentavos), "sin costo");
-            if (u.Departamentos.Count == 0 && u.ImpresionesCentavos == 0 && u.ArticuloComunCentavos == 0)
-                e.Add(new Renglon("Ese día no hubo ventas."));
-            e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
-            Departamento("Total", DisenoTicket.Dinero(u.VentaCentavos + u.ArticuloComunCentavos), DisenoTicket.Dinero(u.UtilidadCentavos), negrita: true);
         }
         return e;
     }

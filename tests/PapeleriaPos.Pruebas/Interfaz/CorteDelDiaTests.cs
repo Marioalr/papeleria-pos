@@ -19,9 +19,9 @@ namespace PapeleriaPos.Pruebas.Interfaz;
 
 /// <summary>
 /// El corte del día como el de eleventa (2026-10-17), en la pantalla, sin navegador: se mueve de día con ← → o la fecha (el
-/// de otro día solo se ve), cada quien ve lo que le toca (la utilidad y los departamentos, solo quien ve la utilidad), se
-/// imprime lo que se ve (también el de otro día) y, en la venta, el recordatorio de cerrar el día sale a la hora de cierre y
-/// se va al cerrarlo. Cada prueba con su propio servicio.
+/// de otro día solo se ve), cada quien ve lo que le toca (las ventas por departamento, todos los que ven el corte; la
+/// utilidad, solo quien la ve), se imprime lo que se ve (también el de otro día) y, en la venta, el recordatorio de cerrar
+/// el día sale a la hora de cierre y se va al cerrarlo. Cada prueba con su propio servicio.
 /// </summary>
 public sealed class CorteDelDiaTests
 {
@@ -209,18 +209,22 @@ public sealed class CorteDelDiaTests
             [new LineaSolicitada(pluma, null, 1000), new LineaSolicitada(copia, null, 2000), new LineaSolicitada(null, null, 1000, "Recuerdo", 1500)],
             [new CobroSolicitado(FormaPago.Efectivo, 100000)]));
 
-        // El dueño: la utilidad arriba y abajo, por departamento, con el artículo común aparte.
+        // El dueño: la utilidad arriba y abajo, también la de cada departamento, con el artículo común aparte.
         await using (var p = await DelDiaAsync(c, c.Dueno, turno))
         {
             var texto = await p.TextoAsync();
             Assert.Contains("Utilidad bruta", texto);
             Assert.Contains("Ventas por departamento", texto);
+            // Con las columnas de la utilidad y el margen de cada departamento.
+            var encabezado = (await p.LeerAsync()).Elementos.First(e => e.Etiqueta == "tr" && e.Texto.Contains("Ventas por departamento"));
+            Assert.Contains("Utilidad", encabezado.Texto);
+            Assert.Contains("Margen", encabezado.Texto);
             Assert.Contains("Escritura", texto);
             Assert.Contains("Servicios", texto);
             Assert.Contains("Artículo común", texto);
             Assert.Contains("Utilidad del día", texto);
             Assert.Contains("todavía no tienen costo", texto);
-            // Lo impreso es lo que ve: con la utilidad y los departamentos.
+            // Lo impreso es lo que ve: con las ventas por departamento y la utilidad.
             var impreso = await ImpresoAsync(p);
             Assert.Contains("CORTE DEL DÍA", impreso);
             Assert.Contains($"Todas las cajas · {hoy.ToString("dddd dd/MM/yyyy", Formato.Mexico)}", impreso);
@@ -240,18 +244,27 @@ public sealed class CorteDelDiaTests
             Assert.Empty(p.Errores);
         }
 
-        // El encargado: el corte del día, sin nada de la utilidad, ni en la pantalla ni en el papel.
+        // El encargado: el corte del día con las ventas por departamento, como en eleventa, pero sin nada de la utilidad (ni
+        // la de cada departamento), ni en la pantalla ni en el papel.
         await using (var p = await DelDiaAsync(c, c.Encargado, turno))
         {
             var texto = await p.TextoAsync();
             Assert.Contains("Formas de pago y movimientos", texto);
+            Assert.Contains("Ventas por departamento", texto);
+            Assert.Contains("Escritura", texto);
+            Assert.Contains("Servicios", texto);
+            Assert.Contains("Artículo común", texto);
             Assert.DoesNotContain("tilidad", texto);
-            Assert.DoesNotContain("departamento", texto, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("Margen", texto);
+            Assert.DoesNotContain("sin costo", texto);
+            var tabla = await p.ElementoAsync(e => e.Etiqueta == "table" && e.Texto.Contains("Ventas por departamento"), "las ventas por departamento");
+            Assert.DoesNotContain("restringido", tabla.Clase);
             var impreso = await ImpresoAsync(p);
             Assert.Contains("CORTE DEL DÍA", impreso);
+            Assert.Contains("VENTAS POR DEPARTAMENTO", impreso);
+            Assert.Contains("Escritura", impreso);
             Assert.DoesNotContain("UTILIDAD", impreso);
             Assert.DoesNotContain("Utilidad", impreso);
-            Assert.DoesNotContain("DEPARTAMENTO", impreso);
             Assert.Empty(p.Errores);
         }
 

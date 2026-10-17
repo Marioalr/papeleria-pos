@@ -497,8 +497,9 @@ No está en el prototipo:
   - las formas de pago;
   - las salidas por categoría, las devoluciones y las cancelaciones;
   - lo fiado, los abonos y las impresiones cobradas;
-  - para quien tiene «ver costos, utilidad y margen», la utilidad bruta y las ventas por departamento con su utilidad y su
-    margen, como la ganancia del corte de eleventa (2026-10-17).
+  - las ventas por departamento, como en el corte de eleventa (2026-10-17);
+  - para quien tiene «ver costos, utilidad y margen», la utilidad bruta y la de cada departamento con su margen, como la
+    ganancia del corte de eleventa (2026-10-17).
 
   «Cerrar el día» se habilita cuando no queda ningún turno abierto ni ventas por subir de otra caja, y manda el resumen
   por Telegram. Como el de eleventa (2026-10-17): abre en el de hoy y ← → (o la fecha) llevan al de otro día, que solo

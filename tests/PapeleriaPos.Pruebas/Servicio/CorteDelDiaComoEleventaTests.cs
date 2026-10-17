@@ -18,9 +18,10 @@ namespace PapeleriaPos.Pruebas.Servicio;
 
 /// <summary>
 /// El corte del día como el de eleventa (2026-10-17, docs/paridad-eleventa.md): el de otro día solo se ve (y el de hoy sigue
-/// con sus reglas para cerrarse), la utilidad y las ventas por departamento solo para quien tiene «Ver costos, utilidad y
-/// margen», los turnos del piloto que cerró el corte de eleventa siguen diciéndolo en el día que les toca, y el recordatorio
-/// de cerrar el día sale desde la hora de cierre de la tienda, a quien lo cierra, hasta que se cierra. Cada prueba con su base.
+/// con sus reglas para cerrarse), las ventas por departamento para todos los que ven el corte y la utilidad solo para quien
+/// tiene «Ver costos, utilidad y margen», los turnos del piloto que cerró el corte de eleventa siguen diciéndolo en el día
+/// que les toca, y el recordatorio de cerrar el día sale desde la hora de cierre de la tienda, a quien lo cierra, hasta que
+/// se cierra. Cada prueba con su base.
 /// </summary>
 public sealed class CorteDelDiaComoEleventaTests
 {
@@ -232,12 +233,13 @@ public sealed class CorteDelDiaComoEleventaTests
     }
 
     /// <summary>
-    /// La utilidad y lo vendido por departamento, como la ganancia del corte de eleventa: solo para quien tiene «Ver costos,
-    /// utilidad y margen» (al momento de dárselo). Lo vendido menos su costo de cuando se cobró; lo devuelto ese día se resta
-    /// de su departamento; el artículo común no entra y los servicios cuentan sin costo, como hasta hoy.
+    /// Lo vendido por departamento, como en el corte de eleventa, para todos los que ven el corte del día; la utilidad (la del
+    /// día y la de cada departamento), como la ganancia de eleventa, solo para quien tiene «Ver costos, utilidad y margen» (al
+    /// momento de dárselo): a los demás no les llega ningún costo. Lo vendido menos su costo de cuando se cobró; lo devuelto
+    /// ese día se resta de su departamento; el artículo común no entra y los servicios cuentan sin costo, como hasta hoy.
     /// </summary>
     [Fact]
-    public async Task La_utilidad_y_los_departamentos_solo_los_ve_quien_ve_la_utilidad()
+    public async Task Los_departamentos_los_ve_quien_ve_el_corte_y_la_utilidad_solo_quien_la_ve()
     {
         await using var servicio = await ServicioDePrueba.CrearAsync();
         var p = await PuestoAsync(servicio);
@@ -288,30 +290,37 @@ public sealed class CorteDelDiaComoEleventaTests
             .GroupBy(x => x.Item1).Select(g => new DepartamentoDelDiaDto(g.Key, g.Sum(x => x.Item2), g.Sum(x => x.Item3)))
             .OrderByDescending(d => d.VentaCentavos).ThenBy(d => d.Departamento, StringComparer.CurrentCultureIgnoreCase).ToList();
 
-        // Quien no ve la utilidad no la recibe: ni la utilidad, ni los departamentos, ni los costos.
+        // Quien ve el corte pero no la utilidad: lo vendido por departamento, igual que el dueño, sin ningún costo (ni vacío
+        // en lo que llega) y sin la utilidad.
         Assert.Null(delEncargado.Utilidad);
-        Assert.DoesNotContain("departamentos", crudoDelEncargado, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("costoCentavos", crudoDelEncargado, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(esperados.Select(d => d with { CostoCentavos = null }), delEncargado.PorDepartamento!.Departamentos);
+        Assert.Equal((0L, (long?)null, 1500L), (delEncargado.PorDepartamento.ImpresionesCentavos, delEncargado.PorDepartamento.ImpresionesCostoCentavos,
+            delEncargado.PorDepartamento.ArticuloComunCentavos));
+        Assert.Contains("\"departamentos\"", crudoDelEncargado, StringComparison.OrdinalIgnoreCase);
+        foreach (var dato in new[] { "costo", "utilidadCentavos", "margen" })
+            Assert.DoesNotContain(dato, crudoDelEncargado, StringComparison.OrdinalIgnoreCase);
         Assert.Equal((1, 1), (delEncargado.Tickets, delEncargado.Devoluciones));
         Assert.Equal(HttpStatusCode.Forbidden, delCajero.StatusCode);
-        // El dueño: por departamento, de lo que más se vendió a lo que menos, con lo devuelto ya restado.
-        var utilidad = delDueno.Utilidad!;
-        Assert.Equal(esperados, utilidad.Departamentos);
-        Assert.Equal((0L, 0L), (utilidad.ImpresionesCentavos, utilidad.ImpresionesCostoCentavos));
+        // El dueño: por departamento, de lo que más se vendió a lo que menos, con lo devuelto ya restado, y con su costo.
+        var porDepartamento = delDueno.PorDepartamento!;
+        Assert.Equal(esperados, porDepartamento.Departamentos);
+        Assert.Equal((0L, (long?)0L), (porDepartamento.ImpresionesCentavos, porDepartamento.ImpresionesCostoCentavos));
         // El artículo común va aparte y no entra en la utilidad; los servicios, sin costo.
-        Assert.Equal((1500L, lineaCopia.ImporteCentavos), (utilidad.ArticuloComunCentavos, utilidad.ServiciosSinCostoCentavos));
+        var utilidad = delDueno.Utilidad!;
+        Assert.Equal((lineaComun.ImporteCentavos, lineaCopia.ImporteCentavos), (porDepartamento.ArticuloComunCentavos, utilidad.ServiciosSinCostoCentavos));
         var venta = esperados.Sum(d => d.VentaCentavos);
-        var costo = esperados.Sum(d => d.CostoCentavos);
+        var costo = esperados.Sum(d => d.CostoCentavos!.Value);
         Assert.Equal((venta, costo, venta - costo), (utilidad.VentaCentavos, utilidad.CostoCentavos, utilidad.UtilidadCentavos));
         Assert.Equal(Margen.Calcular(venta, costo), utilidad.MargenCentesimas);
+        Assert.Equal(esperados.Select(d => d.VentaCentavos - d.CostoCentavos), porDepartamento.Departamentos.Select(d => d.UtilidadCentavos));
         // Todo lo vendido, menos lo devuelto: lo del corte.
-        Assert.Equal(delDueno.VendidoCentavos - delDueno.DevolucionesCentavos, utilidad.VentaCentavos + utilidad.ArticuloComunCentavos);
-        Assert.Equal(lineaComun.ImporteCentavos, utilidad.ArticuloComunCentavos);
+        Assert.Equal(delDueno.VendidoCentavos - delDueno.DevolucionesCentavos, porDepartamento.TotalCentavos);
 
-        // En cuanto el encargado ve la utilidad, su corte la trae.
+        // En cuanto el encargado ve la utilidad, su corte la trae, y el costo de cada departamento.
         await p.CambiarAsync(p.Encargado, AccionControlada.VerUtilidad, NivelPermiso.Permitido);
         var conUtilidad = await Leer<CorteDelDiaDto>(await p.Http.GetAsync(p.Ruta(p.Encargado)));
         Assert.Equal(utilidad.UtilidadCentavos, conUtilidad.Utilidad?.UtilidadCentavos);
+        Assert.Equal(esperados, conUtilidad.PorDepartamento!.Departamentos);
     }
 
     /// <summary>Lo del piloto con eleventa, sin escribir en él: la prueba aplica su lectura con TurnosDelPiloto.</summary>
@@ -364,6 +373,7 @@ public sealed class CorteDelDiaComoEleventaTests
             (delPiloto.CorteEnEleventa, delPiloto.ContadoCentavos, delPiloto.DiferenciaCentavos));
         Assert.Null(deAyer.Cierre);
         Assert.NotNull(deAyer.Utilidad);
+        Assert.Equal(ticket.TotalCentavos, deAyer.PorDepartamento!.TotalCentavos);
         Assert.Empty(deHoy.Turnos);
         Assert.Equal(0, deHoy.Tickets);
 

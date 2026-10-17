@@ -6,19 +6,26 @@ namespace PapeleriaPos.Pruebas.Impresion;
 
 /// <summary>
 /// El corte del día impreso (2026-10-17), como el de eleventa y con el acomodo del corte del turno: a 48 columnas, el día y
-/// si se cerró, lo vendido y sus formas de pago, cada turno con lo que se contó, los movimientos y, solo si vienen (para
-/// quien ve la utilidad), la utilidad y las ventas por departamento.
+/// si se cerró, lo vendido y sus formas de pago, cada turno con lo que se contó, los movimientos, las ventas por departamento
+/// y, solo si viene (para quien ve la utilidad), la utilidad, también la de cada departamento.
 /// </summary>
 public class CorteDelDiaImpresoTests
 {
     private static readonly DateTime Impreso = new(2026, 10, 17, 9, 30, 0);
 
-    private static UtilidadDelDiaDto Utilidad() => new(
-        [new DepartamentoDelDiaDto("Papelería, oficina y regalos de temporada", 200000, 120000), new DepartamentoDelDiaDto("Escolar", 100000, 70000)],
-        ImpresionesCentavos: 35600, ImpresionesCostoCentavos: 9000, ArticuloComunCentavos: 15000, ServiciosSinCostoCentavos: 20000);
+    /// <summary>Lo vendido por departamento; con <paramref name="conCosto"/>, con su costo (para quien ve la utilidad).</summary>
+    private static VentasPorDepartamentoDto PorDepartamento(bool conCosto) => new(
+        [
+            new DepartamentoDelDiaDto("Papelería, oficina y regalos de temporada", 200000, conCosto ? 120000 : null),
+            new DepartamentoDelDiaDto("Escolar", 100000, conCosto ? 70000 : null),
+        ],
+        ImpresionesCentavos: 35600, ImpresionesCostoCentavos: conCosto ? 9000 : null, ArticuloComunCentavos: 15000);
+
+    /// <summary>La utilidad que va con el costo de <see cref="PorDepartamento"/>: 2,000 + 1,000 + 356 de venta y 1,200 + 700 + 90 de costo.</summary>
+    private static UtilidadDelDiaDto Utilidad() => new(VentaCentavos: 335600, CostoCentavos: 199000, ServiciosSinCostoCentavos: 20000);
 
     private static CorteDelDiaDto Dia(UtilidadDelDiaDto? utilidad = null, bool deOtroDia = true, bool piloto = false, CierreDelDiaDto? cierre = null,
-        string? enEleventa = null) => new(
+        string? enEleventa = null, VentasPorDepartamentoDto? porDepartamento = null) => new(
         new DateOnly(2026, 10, 16),
         [
             new TurnoDelDiaDto(Guid.NewGuid(), Guid.NewGuid(), "Caja 1", "Ana", new DateTime(2026, 10, 16, 9, 0, 0), new DateTime(2026, 10, 16, 15, 0, 0), 12,
@@ -30,7 +37,7 @@ public class CorteDelDiaImpresoTests
         TransferenciasPorVerificar: 1, Salidas: [new SalidaDelDiaDto("Pago al proveedor de los refrescos y las botanas del mes", 2, 40000)],
         EntradasCentavos: 10000, Devoluciones: 1, DevolucionesCentavos: 3800, Cancelaciones: 1, CancelacionesCentavos: 1500, Abonos: 2,
         AbonosCentavos: 30000, ImpresionesCentavos: 35600, PorQueNoSeCierra: [], Avisos: [], Piloto: piloto, Cierre: cierre, Utilidad: utilidad,
-        DeOtroDia: deOtroDia);
+        DeOtroDia: deOtroDia, PorDepartamento: porDepartamento ?? PorDepartamento(conCosto: utilidad is not null));
 
     /// <summary>
     /// El texto como sale, sus renglones y, para leer lo que baja de renglón, todo seguido. Antes, que ningún renglón pase de
@@ -83,10 +90,21 @@ public class CorteDelDiaImpresoTests
         Assert.Contains(renglones, r => r.StartsWith("Cancelaciones (1)") && r.EndsWith("-$15.00"));
         Assert.Contains(renglones, r => r.StartsWith("Abonos recibidos (2)") && r.EndsWith("$300.00"));
         Assert.Contains(renglones, r => r.StartsWith("Impresiones cobradas") && r.EndsWith("$356.00"));
-        // Sin la utilidad (quien no la ve no la recibe), ni la utilidad ni los departamentos.
+        // Las ventas por departamento, como en eleventa, para todos los que ven el corte: la venta de cada uno, las impresiones,
+        // el artículo común y el total, menos lo devuelto.
+        Assert.Contains("VENTAS POR DEPARTAMENTO", renglones);
+        Assert.Contains(renglones, r => Columnas(r, "Departamento", "Venta"));
+        Assert.Contains(renglones, r => Columnas(r, "Papelería, oficina y regalos de", "$2,000.00"));
+        Assert.Contains(renglones, r => Columnas(r, "Escolar", "$1,000.00"));
+        Assert.Contains(renglones, r => Columnas(r, "Impresiones", "$356.00"));
+        Assert.Contains(renglones, r => Columnas(r, "Artículo común", "$150.00"));
+        Assert.Contains(renglones, r => Columnas(r, "Total", "$3,506.00"));
+        Assert.Contains("Lo devuelto ese día ya se restó de su departamento.", texto);
+        // Sin la utilidad (quien no la ve no la recibe), nada de la utilidad: ni arriba, ni por departamento, ni su sección.
         Assert.DoesNotContain("UTILIDAD", texto);
         Assert.DoesNotContain("Utilidad", texto);
-        Assert.DoesNotContain("DEPARTAMENTO", texto);
+        Assert.DoesNotContain("sin costo", texto);
+        Assert.DoesNotContain("Margen", texto);
     }
 
     [Fact]
@@ -102,7 +120,6 @@ public class CorteDelDiaImpresoTests
         Assert.Contains(renglones, r => r.StartsWith("Margen") && r.EndsWith("40.7 %"));
         Assert.Contains("Sin el artículo común ($150.00): no tiene costo.", texto);
         Assert.Contains("aún no tienen costo: cuentan completos.", texto);
-        Assert.Contains("Lo devuelto ese día ya se restó de su departamento.", texto);
         // Por departamento: la venta y la utilidad; un nombre largo baja de renglón; las impresiones y el artículo común aparte.
         Assert.Contains("VENTAS POR DEPARTAMENTO", renglones);
         Assert.Contains(renglones, r => Columnas(r, "Departamento", "Venta", "Utilidad"));
@@ -133,6 +150,15 @@ public class CorteDelDiaImpresoTests
         Assert.Contains("  Corte en eleventa: contado $787.50, faltaron", renglones);
         Assert.Contains("  Corte en eleventa", renglones);
         Assert.DoesNotContain("Diferencias de corte", piloto);
+    }
+
+    [Fact]
+    public void De_una_caja_principal_de_antes_sin_las_ventas_por_departamento_no_las_imprime()
+    {
+        var (texto, _) = Imprimir(Dia() with { PorDepartamento = null });
+
+        Assert.DoesNotContain("DEPARTAMENTO", texto);
+        Assert.Contains("MOVIMIENTOS", texto);
     }
 
     [Fact]

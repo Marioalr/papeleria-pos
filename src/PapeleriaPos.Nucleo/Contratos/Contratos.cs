@@ -231,18 +231,21 @@ public sealed record CorteInformativoDto(
 /// <param name="Piloto">El piloto con eleventa: el corte del día se hace allá, aquí solo se ve.</param>
 /// <param name="Cierre">Si ya se cerró después de su último turno.</param>
 /// <param name="Utilidad">
-/// La utilidad del día y por departamento, solo para quien tiene «Ver costos, utilidad y margen» (2026-10-17): a los demás
-/// no se les manda.
+/// La utilidad del día, solo para quien tiene «Ver costos, utilidad y margen» (2026-10-17): a los demás no se les manda.
 /// </param>
 /// <param name="DeOtroDia">
 /// Un día que ya pasó (2026-10-17): se ve y se imprime, pero no se cierra; «Cerrar el día» es solo el de hoy.
+/// </param>
+/// <param name="PorDepartamento">
+/// Lo vendido por departamento, como en eleventa: para todos los que ven el corte del día (2026-10-17). Su costo y su
+/// utilidad, solo para quien ve la utilidad. Vacío desde una caja principal de antes.
 /// </param>
 public sealed record CorteDelDiaDto(
     DateOnly Fecha, IReadOnlyList<TurnoDelDiaDto> Turnos, long VendidoCentavos, int Tickets, long EfectivoCentavos, long TarjetaCentavos,
     long TransferenciaCentavos, long FiadoCentavos, int TransferenciasPorVerificar, IReadOnlyList<SalidaDelDiaDto> Salidas, long EntradasCentavos,
     int Devoluciones, long DevolucionesCentavos, int Cancelaciones, long CancelacionesCentavos, int Abonos, long AbonosCentavos,
     long ImpresionesCentavos, IReadOnlyList<string> PorQueNoSeCierra, IReadOnlyList<string> Avisos, bool Piloto, CierreDelDiaDto? Cierre,
-    UtilidadDelDiaDto? Utilidad = null, bool DeOtroDia = false);
+    UtilidadDelDiaDto? Utilidad = null, bool DeOtroDia = false, VentasPorDepartamentoDto? PorDepartamento = null);
 
 /// <param name="Tickets">Los de ese día (de un turno que viene de otro día, solo los de hoy), como lo vendido y las formas de pago.</param>
 /// <param name="EsperadoCentavos">El efectivo que debería haber en todo el turno: el de su corte o, si sigue abierto, el de ahora. Vacío en el piloto.</param>
@@ -260,41 +263,63 @@ public sealed record TurnoDelDiaDto(
 public sealed record SalidaDelDiaDto(string Motivo, int Veces, long MontoCentavos);
 
 /// <summary>
-/// La utilidad del día, como la «Ganancia» y la «Ganancia por departamento» del corte del día de eleventa (2026-10-17), solo
-/// para quien tiene «Ver costos, utilidad y margen». Es lo vendido menos su costo: el que guardó cada venta al cobrar (el
-/// costo promedio del kardex; en las impresiones, el de cada trabajo). Lo devuelto ese día se resta del departamento de lo
-/// devuelto, como en eleventa (una cancelación no: el ticket cancelado ya no cuenta como vendido). El artículo común no
-/// tiene costo: va aparte y no entra en la utilidad, como en el resumen del día. Los servicios todavía no tienen costo (sus
-/// recetas llegan con la fase 4): cuentan completos, como hasta hoy.
+/// La utilidad del día, como la «Ganancia» del corte del día de eleventa (2026-10-17), solo para quien tiene «Ver costos,
+/// utilidad y margen». Es lo vendido menos su costo: el que guardó cada venta al cobrar (el costo promedio del kardex; en las
+/// impresiones, el de cada trabajo), con lo devuelto ese día restado, como en las ventas por departamento
+/// (<see cref="VentasPorDepartamentoDto"/>, donde va la de cada uno). El artículo común no tiene costo: no entra en la
+/// utilidad, como en el resumen del día. Los servicios todavía no tienen costo (sus recetas llegan con la fase 4): cuentan
+/// completos, como hasta hoy.
 /// </summary>
-/// <param name="Departamentos">De lo que más se vendió a lo que menos.</param>
-/// <param name="ImpresionesCentavos">Lo cobrado de impresiones, menos lo devuelto; su costo es <paramref name="ImpresionesCostoCentavos"/>.</param>
-/// <param name="ArticuloComunCentavos">Lo vendido como artículo común, menos lo devuelto: sin costo, no entra en la utilidad.</param>
-/// <param name="ServiciosSinCostoCentavos">De lo de los departamentos, lo de servicios sin costo: cuenta completo como utilidad.</param>
-public sealed record UtilidadDelDiaDto(
-    IReadOnlyList<DepartamentoDelDiaDto> Departamentos, long ImpresionesCentavos, long ImpresionesCostoCentavos, long ArticuloComunCentavos,
-    long ServiciosSinCostoCentavos)
+/// <param name="VentaCentavos">Lo vendido con costo: lo de los departamentos y las impresiones, sin el artículo común.</param>
+/// <param name="CostoCentavos">Su costo.</param>
+/// <param name="ServiciosSinCostoCentavos">De lo vendido, lo de servicios sin costo: cuenta completo como utilidad.</param>
+public sealed record UtilidadDelDiaDto(long VentaCentavos, long CostoCentavos, long ServiciosSinCostoCentavos)
 {
-    /// <summary>Lo vendido con costo: lo de los departamentos y las impresiones, sin el artículo común.</summary>
-    public long VentaCentavos => Departamentos.Sum(d => d.VentaCentavos) + ImpresionesCentavos;
-
-    public long CostoCentavos => Departamentos.Sum(d => d.CostoCentavos) + ImpresionesCostoCentavos;
-
+    [JsonIgnore]
     public long UtilidadCentavos => VentaCentavos - CostoCentavos;
 
     /// <summary>La utilidad entre lo vendido con costo, en centésimas (3250 = 32.5 %); vacío sin venta.</summary>
+    [JsonIgnore]
     public int? MargenCentesimas => DepartamentoDelDiaDto.Margen(VentaCentavos, CostoCentavos);
-
-    public long ImpresionesUtilidadCentavos => ImpresionesCentavos - ImpresionesCostoCentavos;
 }
 
-/// <summary>Lo vendido de un departamento en el día (menos lo devuelto ese día) y su costo.</summary>
-public sealed record DepartamentoDelDiaDto(string Departamento, long VentaCentavos, long CostoCentavos)
+/// <summary>
+/// Lo vendido ese día por departamento, como las «Ventas por departamento» del corte del día de eleventa (2026-10-17): para
+/// todos los que ven el corte del día. Lo devuelto ese día se resta de su departamento, como en eleventa (una cancelación
+/// no: el ticket cancelado ya no cuenta como vendido). Las impresiones y el artículo común van aparte. Los costos (y con
+/// ellos la utilidad de cada uno, como la «Ganancia por departamento» de eleventa) solo vienen para quien tiene «Ver costos,
+/// utilidad y margen»: a los demás no se les mandan, ni vacíos.
+/// </summary>
+/// <param name="Departamentos">De lo que más se vendió a lo que menos.</param>
+/// <param name="ImpresionesCentavos">Lo cobrado de impresiones, menos lo devuelto.</param>
+/// <param name="ImpresionesCostoCentavos">Su costo; vacío para quien no ve la utilidad.</param>
+/// <param name="ArticuloComunCentavos">Lo vendido como artículo común, menos lo devuelto: no tiene costo.</param>
+public sealed record VentasPorDepartamentoDto(
+    IReadOnlyList<DepartamentoDelDiaDto> Departamentos, long ImpresionesCentavos,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? ImpresionesCostoCentavos, long ArticuloComunCentavos)
 {
-    public long UtilidadCentavos => VentaCentavos - CostoCentavos;
+    /// <summary>Todo lo vendido ese día, menos lo devuelto: lo vendido del corte menos sus devoluciones.</summary>
+    [JsonIgnore]
+    public long TotalCentavos => Departamentos.Sum(d => d.VentaCentavos) + ImpresionesCentavos + ArticuloComunCentavos;
 
-    /// <summary>En centésimas (3250 = 32.5 %); vacío sin venta.</summary>
-    public int? MargenCentesimas => Margen(VentaCentavos, CostoCentavos);
+    [JsonIgnore]
+    public long? ImpresionesUtilidadCentavos => ImpresionesCentavos - ImpresionesCostoCentavos;
+
+    [JsonIgnore]
+    public int? ImpresionesMargenCentesimas => ImpresionesCostoCentavos is { } costo ? DepartamentoDelDiaDto.Margen(ImpresionesCentavos, costo) : null;
+}
+
+/// <summary>Lo vendido de un departamento en el día (menos lo devuelto ese día).</summary>
+/// <param name="CostoCentavos">Su costo; vacío para quien no ve la utilidad.</param>
+public sealed record DepartamentoDelDiaDto(
+    string Departamento, long VentaCentavos, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? CostoCentavos = null)
+{
+    [JsonIgnore]
+    public long? UtilidadCentavos => VentaCentavos - CostoCentavos;
+
+    /// <summary>En centésimas (3250 = 32.5 %); vacío sin el costo o sin venta.</summary>
+    [JsonIgnore]
+    public int? MargenCentesimas => CostoCentavos is { } costo ? Margen(VentaCentavos, costo) : null;
 
     internal static int? Margen(long ventaCentavos, long costoCentavos) => ventaCentavos > 0 ? Catalogo.Margen.Calcular(ventaCentavos, costoCentavos) : null;
 }
