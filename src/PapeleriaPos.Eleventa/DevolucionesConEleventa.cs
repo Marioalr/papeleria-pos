@@ -80,11 +80,11 @@ public static class DevolucionesConEleventa
     /// Los tickets cobrados con ese folio, en vivo; vacío si eleventa no contestó a tiempo (<see cref="EsperaEnVivo"/>).
     /// </summary>
     public static async Task<List<TicketLeido>?> PorFolioEnVivoAsync(ServidorEleventa servidor, int folio, CancellationToken ct = default) =>
-        await EnVivoAsync(servidor, c => TicketsDeEleventa.PorFolioAsync(c, folio, ct), ct);
+        await EnVivoAsync(servidor, c => TicketsDeEleventa.PorFolioAsync(c, folio, FirebirdSinCancelar.Nunca), ct);
 
     /// <summary>Un ticket con sus artículos y sus devoluciones, en vivo. Sin eleventa, el error lo dice (<see cref="NoContesta"/>).</summary>
     public static async Task<TicketLeido> TicketEnVivoAsync(ServidorEleventa servidor, int ticket, CancellationToken ct = default) =>
-        (await EnVivoAsync(servidor, async c => new Leido<TicketLeido>(await TicketsDeEleventa.TicketAsync(c, ticket, ct)), ct)
+        (await EnVivoAsync(servidor, async c => new Leido<TicketLeido>(await TicketsDeEleventa.TicketAsync(c, ticket, FirebirdSinCancelar.Nunca)), ct)
             ?? throw new InvalidOperationException(NoContesta)).Valor
         ?? throw new InvalidOperationException($"En eleventa ya no está ese ticket ({ticket}).");
 
@@ -576,9 +576,9 @@ public static class DevolucionesConEleventa
             await using var tx = await c.BeginTransactionAsync(new FbTransactionOptions
             {
                 TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
-            }, ct);
-            var leidas = await TicketsDeEleventa.DevolucionesAsync(c, tx, [id], ct);
-            await tx.CommitAsync(ct);
+            }, FirebirdSinCancelar.Nunca);
+            var leidas = await TicketsDeEleventa.DevolucionesAsync(c, tx, [id], FirebirdSinCancelar.Nunca);
+            await tx.CommitAsync(FirebirdSinCancelar.Nunca);
             return leidas;
         }, ct);
         if (devoluciones is null)
@@ -597,21 +597,28 @@ public static class DevolucionesConEleventa
 
     // ── Ayudas ──
 
-    /// <summary>Lo que se lee en vivo, con un límite: si eleventa no contesta a tiempo (o la red falla), vacío.</summary>
+    /// <summary>
+    /// Lo que se lee en vivo, con un límite: si eleventa no contesta a tiempo (o la red falla), vacío. Lo que no contestó se
+    /// deja de esperar, sin cancelarlo (<see cref="FirebirdSinCancelar"/>), y con su conexión: cerrarla aquí esperaría a
+    /// eleventa sin fin, con el candado de la bandeja tomado (revisión del 2026-10-17, segunda vuelta).
+    /// </summary>
     private static async Task<T?> EnVivoAsync<T>(ServidorEleventa servidor, Func<FbConnection, Task<T>> leer, CancellationToken ct) where T : class
     {
-        using var limite = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        limite.CancelAfter(EsperaEnVivo);
         try
         {
-            await using var conexion = new FbConnection(servidor.Cadena());
-            await conexion.OpenAsync(limite.Token).WaitAsync(limite.Token);
-            return await leer(conexion).WaitAsync(limite.Token);
+            return await LeerAsync().WaitAsync(EsperaEnVivo, ct);
         }
         catch (Exception ex) when (ex is FbException or IOException or System.Net.Sockets.SocketException or TimeoutException
             || ex is OperationCanceledException && !ct.IsCancellationRequested)
         {
             return null;
+        }
+
+        async Task<T> LeerAsync()
+        {
+            await using var conexion = new FbConnection(servidor.Cadena());
+            await conexion.OpenAsync(FirebirdSinCancelar.Nunca);
+            return await leer(conexion);
         }
     }
 

@@ -582,11 +582,17 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
     - **La lectura y la bandeja usan el mismo candado:** mientras la lectura lee y aplica, la bandeja no manda; el cobro
       no la espera (el ticket sale con el folio de la caja). Con límites (revisión del 2026-10-17): Firebird por sí solo
       espera sin fin a un eleventa que se quedó callado a media llamada, así que cada llamada de la lectura, la bandeja y
-      las revisiones espera lo más 2 minutos (`Eleventa:SegundosMaximos`) y después se cancela y se toma como falla de
-      red (se reintenta); y la lectura espera el candado lo más el doble: si no, se deja para la siguiente vuelta. Como
-      una llamada cancelada pudo alcanzar a guardar, el reintento la encuentra por su marca; la revisión del folio solo
-      lo mueve si todavía tiene el que se revisó (si corre dos veces, la segunda no lo mueve otra vez); y un choque de
-      candados (otra escritura tenía los mismos renglones, quizá la que se canceló) no se da por rechazado: se reintenta.
+      las revisiones espera lo más 2 minutos (`Eleventa:SegundosMaximos`) y después se deja de esperar y se toma como
+      falla de red (se reintenta); y la lectura espera el candado lo más el doble: si no, se deja para la siguiente
+      vuelta. No se cancela (revisión del 2026-10-17, segunda vuelta): con el Firebird 2.0.1 de la tienda, FirebirdClient
+      no sabe cancelar una llamada y, si se le pide, truena el servicio de la caja 2 (hay una prueba que habla con el
+      Firebird de prueba como 2.0 y deja callada una escritura). La llamada que se dejó de esperar sigue sola por detrás
+      y puede alcanzar a guardar: el reintento la encuentra por su marca; la revisión del folio solo lo mueve si todavía
+      tiene el que se revisó (si corre dos veces, la segunda no lo mueve otra vez); y un choque de candados (otra
+      escritura tenía los mismos renglones, quizá la que se dejó de esperar) no se da por rechazado: se reintenta. Lo
+      mismo las lecturas en vivo de la ventana de devoluciones (3 segundos): lo que no contestó se deja con su conexión,
+      porque cerrarla también esperaba a eleventa sin fin, con el candado de la bandeja tomado (la bandeja y la lectura
+      se quedaban paradas).
     - Antes de que eleventa cierre su turno sigue el aviso de #86: al intentar el corte o al salir, la caja dice que el
       corte se hace en eleventa. Si el corte de eleventa cierra el turno con la caja nueva abierta, lo siguiente que se
       cobre dice que el turno ya está cerrado: se entra otra vez (Ctrl+U) y se abre el nuevo.

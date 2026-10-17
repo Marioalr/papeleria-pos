@@ -39,12 +39,6 @@ public sealed class EnvioVentasEleventa(
     /// <summary>Después de una falla de red, cuánto tiempo el cobro ya no espera a eleventa (para no tardar en cada venta).</summary>
     public static readonly TimeSpan SinRedPor = TimeSpan.FromMinutes(1);
 
-    /// <summary>
-    /// Lo que se espera de más a una llamada a eleventa que ya se canceló por tiempo, antes de dejarla ir: Firebird no
-    /// siempre suelta al cancelar.
-    /// </summary>
-    private static readonly TimeSpan Margen = TimeSpan.FromSeconds(10);
-
     /// <summary>Después de un respaldo de eleventa que no se pudo hacer, cuánto se espera para volver a intentarlo.</summary>
     public static readonly TimeSpan ReintentarRespaldo = TimeSpan.FromMinutes(5);
 
@@ -325,12 +319,11 @@ public sealed class EnvioVentasEleventa(
             if (ahora < _sinRedHastaUtc || await RestauracionDeEleventa.DetencionAsync(db, ct) is not null
                 || await FoliosRepetidos.PorRevisarAsync(db, ahora, ct) is not { Count: > 0 } enviadas)
                 return true;
-            // Con un límite: una llamada colgada no detiene la bandeja (es como si no hubiera red), y se cancela.
-            using var limite = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            limite.CancelAfter(opciones.EsperaMaxima);
+            // Con un límite: una llamada colgada no detiene la bandeja (es como si no hubiera red). Se deja de esperar, sin
+            // cancelarla: con Firebird 2.0 cancelar truena el servicio (FirebirdSinCancelar).
             try
             {
-                if (await RevisarConEleventaAsync().WaitAsync(opciones.EsperaMaxima + Margen, ct) is > 0 and var repetidos)
+                if (await RevisarConEleventaAsync().WaitAsync(opciones.EsperaMaxima, ct) is > 0 and var repetidos)
                     log.LogWarning("{Repetidos} ventas de esta caja tienen en eleventa el mismo folio que otra caja: sus reimpresiones salen con el folio de la caja.",
                         repetidos);
                 await db.SaveChangesAsync(ct);
@@ -345,8 +338,8 @@ public sealed class EnvioVentasEleventa(
             async Task<int> RevisarConEleventaAsync()
             {
                 await using var conexion = new FbConnection(servidor.Cadena());
-                await conexion.OpenAsync(limite.Token);
-                return await FoliosRepetidos.RevisarAsync(db, conexion, enviadas, ahora, limite.Token);
+                await conexion.OpenAsync(FirebirdSinCancelar.Nunca);
+                return await FoliosRepetidos.RevisarAsync(db, conexion, enviadas, ahora, FirebirdSinCancelar.Nunca);
             }
         }, ct);
     }
@@ -437,10 +430,9 @@ public sealed class EnvioVentasEleventa(
     private async Task<bool> MandarAsync(PosDbContext db, EnvioAEleventa envio, CancellationToken ct)
     {
         var (servidor, caja) = _destino!.Value;
-        // La escritura se cancela si tarda más de la cuenta (una llamada colgada): así no sigue sola por detrás mientras se
-        // reintenta (revisión del 2026-10-17).
-        using var limite = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var escritura = limite.Token;
+        // La escritura va sin cancelación: con Firebird 2.0 cancelar truena el servicio (FirebirdSinCancelar). Si tarda más de
+        // la cuenta se deja de esperar, y lo que alcance a guardar lo encuentra la marca en el siguiente intento.
+        var escritura = FirebirdSinCancelar.Nunca;
         // Lo último que escribió el puente: si eleventa ya no lo tiene (se restauró un respaldo), no se escribe nada.
         caja = caja with { Huella = await RestauracionDeEleventa.HuellaAsync(db, reloj.GetUtcNow().UtcDateTime, RestauracionDeEleventa.AlEscribir, ct) };
         // Escribe en eleventa y dice en qué turno de eleventa quedó (vacío si ya estaba): el turno de la caja nueva lo adopta.
@@ -540,10 +532,9 @@ public sealed class EnvioVentasEleventa(
         TurnoDeEleventa? deEleventa = null;
         try
         {
-            // Con un límite: una llamada que se queda colgada se cancela y se toma como falla de red (se reintenta y no detiene
-            // la bandeja). Si alcanzó a entrar, la marca la encuentra en el siguiente intento.
-            limite.CancelAfter(opciones.EsperaMaxima);
-            deEleventa = await escribir().WaitAsync(opciones.EsperaMaxima + Margen, ct);
+            // Con un límite: una llamada que se queda colgada se deja de esperar y se toma como falla de red (se reintenta y no
+            // detiene la bandeja). Si alcanzó a entrar, la marca la encuentra en el siguiente intento.
+            deEleventa = await escribir().WaitAsync(opciones.EsperaMaxima, ct);
             (envio.Estado, envio.EnviadaUtc, envio.Error) = (EstadoEnvioEleventa.Enviada, reloj.GetUtcNow().UtcDateTime, null);
             (_ultimoEnvioUtc, _ultimoError, _sinRedHastaUtc) = (envio.EnviadaUtc, null, default);
         }
@@ -715,8 +706,9 @@ public sealed class EnvioVentasEleventa(
                 async Task<(List<EnvioAEleventa>, List<TurnoEnEleventa>)> RevisarConEleventaAsync()
                 {
                     await using var conexion = new FbConnection(servidor.Cadena());
-                    await conexion.OpenAsync(ct);
-                    return (await RestauracionDeEleventa.PerdidosAsync(db, conexion, ahora, ct), await TurnosQueYaNoEstanAsync(db, conexion, ct));
+                    await conexion.OpenAsync(FirebirdSinCancelar.Nunca);
+                    return (await RestauracionDeEleventa.PerdidosAsync(db, conexion, ahora, FirebirdSinCancelar.Nunca),
+                        await TurnosQueYaNoEstanAsync(db, conexion, FirebirdSinCancelar.Nunca));
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException && (EsDeRed(ex) || ex is FbException))
