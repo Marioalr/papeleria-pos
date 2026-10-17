@@ -161,10 +161,14 @@ public sealed record MovimientosInventarioDto(IReadOnlyList<MovimientoInventario
 /// <param name="MaximoSugerido">Sin máximo propio: el que calcula el sugerido de compra con lo que se vende; vacío si no se vende.</param>
 /// <param name="EnCamino">Lo que ya viene en órdenes de compra abiertas.</param>
 /// <param name="Pedir">
-/// Cuánto pedir, en unidad base: lo que falta para su máximo (contando lo que ya viene) o, sin máximo, lo que pide el sugerido.
-/// Vacío si no hace falta o no se sabe.
+/// Cuánto pedir, en unidad base, contando lo que ya viene: lo que falta para su máximo o, sin máximo, lo que pide el sugerido;
+/// con su mínimo propio, al menos lo que falta para llegar a él (el sugerido no lo conoce). Vacío si no hace falta o no se
+/// sabe.
 /// </param>
-/// <param name="PedirEn">Lo del sugerido va en la presentación en que se compra («2 Caja 12»); vacío si va por unidad.</param>
+/// <param name="PedirEn">
+/// Lo del sugerido va en la presentación en que se compra («2 Caja 12»); vacío si va por unidad (también lo que falta para el
+/// mínimo).
+/// </param>
 public sealed record BajoInventarioDto(
     Guid VarianteId, Guid ProductoId, string Nombre, string? Codigo, Guid DepartamentoId, string Departamento, UnidadBase Unidad, decimal Existencia,
     decimal Minimo, bool MinimoPropio, decimal? Maximo, decimal? MaximoSugerido, decimal EnCamino, decimal? Pedir, string? PedirEn);

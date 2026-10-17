@@ -378,8 +378,8 @@ public sealed class RegistroReportesInventario(PosDbContext db)
     /// Lo que está en su mínimo o debajo (el de su ficha o, sin él, <see cref="PocaExistencia.Hasta"/> o menos), como «Poca
     /// existencia» de Productos: por departamento y por nombre, de <see cref="BajosPorPagina"/> en <see cref="BajosPorPagina"/>.
     /// Cada uno con su mínimo, su máximo, lo que ya viene en órdenes abiertas y cuánto pedir: lo que falta para su máximo o, si
-    /// no tiene, lo que pide el sugerido de compra (se calcula solo para los de la página). Para quien pide la mercancía o pone
-    /// los mínimos.
+    /// no tiene, lo que pide el sugerido de compra (se calcula solo para los de la página), y con su mínimo propio, al menos lo
+    /// que falta para llegar a él. Para quien pide la mercancía o pone los mínimos.
     /// </summary>
     public async Task<BajosInventarioDto> BajosAsync(
         Guid sucursalId, Guid usuarioId, Guid? departamentoId, string? texto, bool soloConMinimoPropio, int pagina = 0, CancellationToken ct = default)
@@ -416,22 +416,36 @@ public sealed class RegistroReportesInventario(PosDbContext db)
         var productos = primeras.Select(v =>
         {
             var viene = enCamino.GetValueOrDefault(v.Id);
+            // Lo que hay y lo que ya viene en órdenes abiertas (lo negativo cuenta como cero, como en el sugerido).
+            var disponible = Math.Max(0, v.Existencia.EnUnidades) + viene;
             decimal? pedir = null, maximoSugerido = null;
             string? pedirEn = null;
             if (v.Maximo is { } propio)
             {
-                // Hasta su máximo, contando lo que ya viene (lo negativo cuenta como cero, como en el sugerido).
-                var falta = propio.EnUnidades - (Math.Max(0, v.Existencia.EnUnidades) + viene);
+                // Hasta su máximo (que no es menor que su mínimo).
+                var falta = propio.EnUnidades - disponible;
                 pedir = falta > 0 ? falta : null;
             }
-            else if (calculos.GetValueOrDefault(v.Id) is { } calculo)
+            else
             {
-                maximoSugerido = calculo.Resultado.Maximo > 0 ? calculo.Resultado.Maximo : null;
-                if (calculo.Resultado.Paquetes > 0)
+                // Sin máximo, lo que pide el sugerido, en la presentación en que se compra.
+                if (calculos.GetValueOrDefault(v.Id) is { } calculo)
                 {
-                    var factor = calculo.Presentacion.Factor.EnUnidades;
-                    pedir = calculo.Resultado.Sugerido(factor);
-                    pedirEn = factor == 1 ? null : $"{calculo.Resultado.Paquetes} {calculo.Presentacion.Nombre}";
+                    maximoSugerido = calculo.Resultado.Maximo > 0 ? calculo.Resultado.Maximo : null;
+                    if (calculo.Resultado.Paquetes > 0)
+                    {
+                        var factor = calculo.Presentacion.Factor.EnUnidades;
+                        pedir = calculo.Resultado.Sugerido(factor);
+                        pedirEn = factor == 1 ? null : $"{calculo.Resultado.Paquetes} {calculo.Presentacion.Nombre}";
+                    }
+                }
+                // Pero el sugerido no conoce su mínimo propio: si con eso no llega a él (o el sugerido no pide nada, porque se
+                // vende poco), se pide lo que le falta para llegar, en su unidad.
+                if (v.Minimo is { } minimo)
+                {
+                    var paraElMinimo = minimo.EnUnidades - disponible;
+                    if (paraElMinimo > (pedir ?? 0))
+                        (pedir, pedirEn) = (paraElMinimo, null);
                 }
             }
             return new BajoInventarioDto(v.Id, v.ProductoId, v.Nombre, codigos.GetValueOrDefault(v.Id), v.DepartamentoId,

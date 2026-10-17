@@ -444,6 +444,55 @@ public class ReportesInventarioApiTests(ServicioDePrueba servicio) : IClassFixtu
             .ThenBy(x => x.Nombre, StringComparer.CurrentCultureIgnoreCase), todos.Productos.Select(p => (p.Departamento, p.Nombre)));
     }
 
+    [Fact]
+    public async Task Sin_maximo_pide_lo_del_sugerido_pero_al_menos_lo_que_falta_para_su_minimo()
+    {
+        var e = await PrepararAsync();
+        var departamento = (await e.Http.GetFromJsonAsync<OpcionesCatalogoDto>("api/catalogo/opciones"))!.Departamentos[0].Id;
+        // Mínimo 8, hay 2 y viene 1 en una orden, sin ventas: el sugerido no pide nada; faltan 5 para su mínimo.
+        var sinVentas = await ProductoAsync(e, "Mínimo sin máximo de prueba sin ventas", 2, 100, departamento, new MinimoYMaximoDto(8000, null));
+        // Mínimo 30 y hay 1, con ventas: el sugerido pide menos de las 29 que faltan para su mínimo.
+        var minimoAlto = await ProductoAsync(e, "Mínimo sin máximo de prueba alto", 1, 100, departamento, new MinimoYMaximoDto(30000, null));
+        // Mínimo 3 y hay 1, con ventas: el sugerido pide más de las 2 que faltan; se queda lo del sugerido.
+        var minimoBajo = await ProductoAsync(e, "Mínimo sin máximo de prueba bajo", 1, 100, departamento, new MinimoYMaximoDto(3000, null));
+        // Justo en su mínimo y sin ventas: sale, pero no le falta nada para llegar.
+        var justo = await ProductoAsync(e, "Mínimo sin máximo de prueba justo", 5, 100, departamento, new MinimoYMaximoDto(5000, null));
+        await using (var db = servicio.Base())
+        {
+            var hace3Dias = DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow)).AddDays(-3);
+            db.VentasHistoricas.Add(new VentaHistorica
+            {
+                SucursalId = e.Caja.SucursalId, FechaUtc = HoraMexico.AUtc(hace3Dias.ToDateTime(new TimeOnly(12, 0))), FolioOrigen = "MINIMO-1", TotalCentavos = 56000,
+                Lineas =
+                [
+                    new VentaHistoricaLinea { VarianteId = minimoAlto.Variantes[0].Id!.Value, Cantidad = Cantidad.Piezas(14), PrecioCentavos = 2000, ImporteCentavos = 28000 },
+                    new VentaHistoricaLinea { VarianteId = minimoBajo.Variantes[0].Id!.Value, Cantidad = Cantidad.Piezas(14), PrecioCentavos = 2000, ImporteCentavos = 28000 },
+                ],
+            });
+            await db.SaveChangesAsync();
+        }
+        var proveedor = (await e.Http.GetFromJsonAsync<List<ProveedorDto>>("api/proveedores"))!.First();
+        var orden = await Leer<OrdenDto>(await e.Http.PostAsJsonAsync("api/ordenes", new SolicitudAbrirOrden(e.Encargado.UsuarioId, e.Caja.SucursalId, proveedor.Id!.Value, null)));
+        await Leer<OrdenDto>(await e.Http.PostAsJsonAsync($"api/ordenes/{orden.Id}/renglones",
+            new SolicitudPedido(e.Encargado.UsuarioId, sinVentas.Variantes[0].Id!.Value, sinVentas.Variantes[0].Presentaciones[0].Id!.Value, 1000)));
+
+        var bajos = await Leer<BajosInventarioDto>(await e.Http.GetAsync(
+            $"{e.Url}/bajos?usuarioId={e.Encargado.UsuarioId}&q={Uri.EscapeDataString("mínimo sin máximo de prueba")}"));
+        var sugerido = await Leer<SugeridoDto>(await e.Http.GetAsync($"api/sucursales/{e.Caja.SucursalId}/sugerido?usuarioId={e.Encargado.UsuarioId}"));
+        BajoInventarioDto De(FichaProductoDto producto) => bajos.Productos.Single(p => p.VarianteId == producto.Variantes[0].Id);
+        decimal DelSugerido(FichaProductoDto producto) =>
+            sugerido.Proveedores.SelectMany(p => p.Renglones).Where(r => r.VarianteId == producto.Variantes[0].Id).Sum(r => r.Paquetes * r.Factor);
+
+        Assert.Equal(4, bajos.Total);
+        Assert.Equal(0m, DelSugerido(sinVentas));
+        Assert.Equal((1m, (decimal?)5m, (string?)null), (De(sinVentas).EnCamino, De(sinVentas).Pedir, De(sinVentas).PedirEn));
+        Assert.InRange(DelSugerido(minimoAlto), 1m, 28m);
+        Assert.Equal(29m, De(minimoAlto).Pedir);
+        Assert.True(DelSugerido(minimoBajo) > 2, $"El sugerido pide {DelSugerido(minimoBajo)}");
+        Assert.Equal(DelSugerido(minimoBajo), De(minimoBajo).Pedir);
+        Assert.Equal((5m, 5m, true, (decimal?)null), (De(justo).Existencia, De(justo).Minimo, De(justo).MinimoPropio, De(justo).Pedir));
+    }
+
     // ── En el piloto con eleventa ───────────────────────────────────────────
 
     [Fact]

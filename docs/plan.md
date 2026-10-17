@@ -599,8 +599,9 @@ en Inventario (F4). Solo leen, así que también van en el piloto con eleventa, 
 - **Bajos en inventario:** cada variante puede llevar su mínimo y su máximo en la ficha (F3), como en eleventa, y «Poca
   existencia» usa el suyo (sin él, 3 o menos, como antes). La tarjeta dice cuántos están en su mínimo o debajo; la lista
   va por departamento, de 100 en 100, con cuánto pedir: lo que falta para su máximo, contando lo que ya viene en órdenes
-  abiertas, o, sin máximo, lo que pide el sugerido de compra. Es un número en la pantalla: los pedidos siguen en las
-  órdenes y el sugerido. La ve quien pide la mercancía o pone los mínimos.
+  abiertas, o, sin máximo, lo que pide el sugerido de compra, pero al menos lo que falta para llegar a su mínimo (el
+  sugerido no lo conoce). Es un número en la pantalla: los pedidos siguen en las órdenes y el sugerido. La ve quien pide
+  la mercancía o pone los mínimos.
 - **El mínimo y el máximo** se guardan en la variante, con su migración, y suben la versión del catálogo como cualquier
   cambio de la ficha. Son del POS: la lectura de eleventa no lee los suyos, así que en el piloto también se ponen aquí.
   Cada cambio queda en la bitácora, y una caja de antes que guarda la ficha no los borra. La venta sigue diciendo

@@ -59,7 +59,7 @@
 - **Mínimo y máximo propios** (2026-10-17, como en eleventa): cada variante puede llevar los suyos en su ficha. Con su
   mínimo o menos sale en «Poca existencia» (Productos) y en «Bajos en inventario» (Inventario), con cuánto pedir para
   llegar a su máximo, contando lo que ya viene en órdenes; sin mínimo propio cuenta 3 o menos, y sin máximo, lo que pide
-  el sugerido. Son del POS: la lectura de eleventa no los trae.
+  el sugerido, pero al menos lo que falta para llegar a su mínimo. Son del POS: la lectura de eleventa no los trae.
 
 ## Conteos
 

@@ -2,7 +2,8 @@
    mínimo o debajo, por departamento. El mínimo y el máximo de cada producto se ponen en su ficha (Productos, F3); sin mínimo
    propio cuenta la regla de siempre, 3 o menos (la misma de «Poca existencia»). Cada renglón dice cuánto pedir: lo que falta
    para su máximo, con lo que ya viene en órdenes abiertas; sin máximo, lo que pide el sugerido de compra (en la presentación
-   en que se compra). Es un número en la pantalla: los pedidos se hacen en «Órdenes de compra» o desde el sugerido. Va de
+   en que se compra) y, si tiene su mínimo, al menos lo que le falta para llegar a él (el sugerido no lo conoce). Es un número
+   en la pantalla: los pedidos se hacen en «Órdenes de compra» o desde el sugerido. Va de
    100 en 100 (el sugerido se calcula solo para los de la página). Lo ve quien pide la mercancía o pone los mínimos
    (ConsultasInventario). En el piloto con eleventa se ve igual. *@
 @implements IDisposable
@@ -31,7 +32,7 @@
 <p class="nota">
     Por departamento y por nombre. El mínimo y el máximo se ponen en la ficha de cada producto (Productos, F3 › Editar); sin
     mínimo propio cuenta @PocaExistencia.Hasta o menos. «Pedir» llega a su máximo con lo que ya viene en órdenes de compra; sin
-    máximo, es lo que pide el sugerido de compra.
+    máximo, es lo que pide el sugerido de compra, y al menos lo que falta para llegar a su mínimo.
 </p>
 @if (_error is not null)
 {
@@ -249,6 +250,7 @@
 
     private static string SinPedir(BajoInventarioDto p) =>
         p.Maximo is not null ? "Con lo que hay y lo que viene, ya llega a su máximo."
+        : p.MinimoPropio ? "Con lo que hay y lo que viene llega a su mínimo. Ponle su máximo en la ficha para saber hasta dónde pedir."
         : p.MaximoSugerido is null ? "No se ha vendido en el último año: el sugerido no pide nada. Ponle su máximo en la ficha."
         : "Según lo que se vende, el sugerido no pide nada todavía.";
 
