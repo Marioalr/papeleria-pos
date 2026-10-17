@@ -758,14 +758,18 @@ prueba y el piloto se suma a la entrega 3.
 - [x] Las impresiones: ¿la bandeja con miniaturas, siempre a la vista bajo el cobro, o la tarjeta que se va a los 20 s? La
   bandeja con miniaturas, que se puede recorrer, con un botón para agrandarla (como maximizar una ventana, pero sin
   cubrir toda la pantalla), parecido a Control Print (2026-10-15).
-- [ ] ¿Cada cajero puede hacer el corte de su propio turno, o solo quien tenga el permiso? Propuesta: solo con el
-  permiso, como hoy el encargado.
-- [ ] ¿El corte del día lo cierra solo la primera cuenta? ¿A qué hora se recuerda cerrarlo?
+- [x] ¿Cada cajero puede hacer el corte de su propio turno, o solo quien tenga el permiso? Solo con el permiso, como ya
+  funciona (decidido el 2026-10-17 mientras el dueño no estaba; por revisar).
+- [x] ¿El corte del día lo cierra solo la primera cuenta? ¿A qué hora se recuerda cerrarlo? Quien tenga «ver y cerrar el
+  corte del día» (por omisión, la primera cuenta), y se recuerda a la hora de cierre de Configuración › Tienda (decidido
+  el 2026-10-17; por revisar).
 - [x] ¿Qué billetes salen como botones en el cobro? Ninguno: se escribe lo que dio (2026-10-10).
 - [ ] WhatsApp: ¿se prueba la lista con Kapso (gratis si su plan admite coexistencia; si no, 25 USD al mes)? ¿Se pone el
   aviso de privacidad simplificado en el mensaje de bienvenida?
 - [ ] Ticket desde el celular: ¿quién lo arma (alguien que atiende en el piso, el encargado)? ¿El lector de las cajas
   lee QR, para cuando no hay red?
 - [x] ¿Pitido al escanear y al fallar? Sin sonidos por ahora (2026-10-10).
-- [ ] ¿Alguna caja tiene o tendrá pantalla táctil?
-- [ ] ¿Pedir el PIN otra vez tras unos minutos sin usar la caja? Por ejemplo, 10.
+- [x] ¿Alguna caja tiene o tendrá pantalla táctil? No por ahora: todo con teclado y ratón, con botones de buen tamaño
+  (decidido el 2026-10-17; por revisar).
+- [x] ¿Pedir el PIN otra vez tras unos minutos sin usar la caja? No por ahora, como eleventa: estorba para cobrar
+  rápido; Ctrl+U cambia de usuario (decidido el 2026-10-17; por revisar).
