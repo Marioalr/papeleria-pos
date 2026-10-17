@@ -38,6 +38,13 @@ Importar una copia de la base de eleventa (requiere Firebird 2.5 embebido, ver
 dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --salida eleventa.db
 ```
 
+Al dejar eleventa, la importación final trae su historial de ventas a la base de la tienda, sin lo que mandó el puente
+(se puede repetir; con `--simular` solo dice qué haría; ver [la importación final](docs/migracion-eleventa.md#la-importación-final)):
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --base pos.db --simular
+```
+
 ### Probar la caja
 
 1. Una base de prueba (ficticia o importada) con la Caja 1 y usuarios de prueba:

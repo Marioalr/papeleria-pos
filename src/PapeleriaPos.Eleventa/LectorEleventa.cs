@@ -147,23 +147,40 @@ public static class LectorEleventa
             throw new InvalidOperationException($"No se pudo restaurar el respaldo de eleventa:\n{string.Join('\n', errores)}");
     }
 
+    /// <summary>
+    /// Todo lo que se importa: el catálogo y el historial (los tickets con sus líneas y las devoluciones), el historial de
+    /// una sola foto. La marca de cada ticket (<c>CREADO_EN</c>) y las devoluciones son para la importación final: con ellas
+    /// se reconoce lo que escribió el puente.
+    /// </summary>
     public static async Task<DatosEleventa> LeerAsync(FbConnection c, CancellationToken ct = default)
     {
         var datos = await LeerCatalogoAsync(c, ct);
-        return new DatosEleventa
+        await using var tx = await c.BeginTransactionAsync(new FbTransactionOptions
+        {
+            TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
+        }, ct);
+        var leidos = new DatosEleventa
         {
             Departamentos = datos.Departamentos,
             Productos = datos.Productos,
             Existencias = datos.Existencias,
             Promociones = datos.Promociones,
-            Tickets = await Leer(c, null, "SELECT ID, FOLIO, VENDIDO_EN, TOTAL, ESTA_CANCELADO FROM VENTATICKETS",
+            Tickets = await Leer(c, tx, "SELECT ID, FOLIO, VENDIDO_EN, TOTAL, ESTA_CANCELADO, CREADO_EN FROM VENTATICKETS",
                 r => new FilaTicket(Entero(r, 0), EnteroONulo(r, 1), r.IsDBNull(2) ? null : r.GetDateTime(2), Doble(r, 3),
-                    Texto(r, 4) is "t" or "T"), ct),
-            Lineas = await Leer(c, null,
+                    Texto(r, 4) is "t" or "T", r.IsDBNull(5) ? null : r.GetDateTime(5)), ct),
+            Lineas = await Leer(c, tx,
                 "SELECT TICKET_ID, PRODUCTO_CODIGO, PRODUCTO_NOMBRE, CANTIDAD, TOTAL_ARTICULO, PRECIO_FINAL, GANANCIA, DEPARTAMENTO_ID, USA_MAYOREO FROM VENTATICKETS_ARTICULOS",
                 r => new FilaLinea(Entero(r, 0), Texto(r, 1), Texto(r, 2), Doble(r, 3), r.IsDBNull(4) ? null : Doble(r, 4), Doble(r, 5),
                     Doble(r, 6), EnteroONulo(r, 7), Texto(r, 8) is "t" or "T"), ct),
+            Devoluciones = await Leer(c, tx, """
+                SELECT ID, TICKET_ID, TIPO_DEVOLUCION, DEVUELTO_EN, TOTAL_DEVUELTO, CAJERO, CAJA, TURNO_ID FROM DEVOLUCIONES
+                WHERE TICKET_ID IS NOT NULL AND DEVUELTO_EN IS NOT NULL
+                """,
+                r => new DevolucionLeida(Entero(r, 0), Entero(r, 1), Texto(r, 2) is "C" or "c", r.GetDateTime(3),
+                    r.IsDBNull(4) ? 0 : (decimal)Convert.ToSingle(r.GetValue(4)), Texto(r, 5), Texto(r, 6), EnteroONulo(r, 7), []), ct),
         };
+        await tx.CommitAsync(ct);
+        return leidos;
     }
 
     /// <summary>

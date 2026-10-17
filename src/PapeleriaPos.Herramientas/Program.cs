@@ -50,6 +50,14 @@ static int Ayuda()
               Importa una copia de la base de eleventa (catálogo, ventas y existencias). La original no se abre.
               Por omisión busca Firebird en firebird25-32\embed y firebird25, junto a la carpeta de la base.
 
+          importar-eleventa --fdb PDVDATA.FDB --base pos.db [--simular] [--firebird32 <carpeta>] [--firebird64 <carpeta>]
+              La importación final, al dejar eleventa: trae a la base de la tienda (la que se armó con importar-eleventa y
+              donde corrió el piloto) el historial de ventas de eleventa, sin las ventas que mandó la caja 2 (ya están ahí
+              como ventas, con sus devoluciones). Solo el historial: el catálogo ya está y las existencias salen del conteo.
+              Se puede correr más de una vez: lo que ya estaba no se duplica y lo que cambió en eleventa se actualiza.
+              Antes deja una copia de la base junto a ella. Dice qué hizo, qué no trajo y por qué, y lo que hay que
+              revisar a mano. Con --simular dice qué haría, sin guardar nada.
+
           observar-eleventa --servidor <PC> --ruta <C:\...\PDVDATA.FDB> [--puerto 3050] --usuario <usuario>
                             [--carpeta <carpeta>]
               Para entender qué escribe eleventa (el piloto, paso 2): toma una foto de toda su base, solo leyendo;
@@ -111,8 +119,14 @@ static async Task<int> ImportarEleventaAsync(string[] args)
         Console.Error.WriteLine("Indica la copia de la base de eleventa con --fdb (por ejemplo PDVDATA.FDB).");
         return 1;
     }
+    var final = Opcion(args, "--base");
+    if (final is not null && !File.Exists(final))
+    {
+        Console.Error.WriteLine($"No existe la base {final}. La importación final va a la base de la tienda (la que se armó con importar-eleventa).");
+        return 1;
+    }
     var salida = Opcion(args, "--salida") ?? "eleventa.db";
-    if (!PrepararSalida(salida, args.Contains("--reemplazar")))
+    if (final is null && !PrepararSalida(salida, args.Contains("--reemplazar")))
         return 1;
 
     var carpeta = Path.GetDirectoryName(Path.GetFullPath(fdb))!;
@@ -121,6 +135,8 @@ static async Task<int> ImportarEleventaAsync(string[] args)
         Opcion(args, "--firebird64") ?? Path.Combine(carpeta, "firebird25"));
 
     var eleventa = await LectorEleventa.LeerAsync(fdb, firebird, Console.WriteLine);
+    if (final is not null)
+        return await ImportacionFinalAsync(final, eleventa, args.Contains("--simular"));
     Console.WriteLine("Pasando al modelo del POS…");
     var datos = ImportadorEleventa.Importar(eleventa);
 
@@ -159,6 +175,65 @@ static async Task<int> ImportarEleventaAsync(string[] args)
             Console.WriteLine($"  {veces,6:N0}  {aviso}");
     }
     return 0;
+}
+
+/// <summary>
+/// La importación final en la base de la tienda (docs/migracion-eleventa.md, «La importación final»): todo en una transacción,
+/// después de dejar una copia de la base junto a ella; con --simular se deshace al final.
+/// </summary>
+static async Task<int> ImportacionFinalAsync(string ruta, DatosEleventa eleventa, bool simular)
+{
+    if (!simular)
+        Console.WriteLine($"Copia de la base antes de importar: {CopiarAntesDeImportar(ruta)}");
+    Console.WriteLine("Comparando con lo que ya tiene la base…");
+    await using var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={ruta}"));
+    await BaseDeDatos.PrepararAsync(db);
+    await using var transaccion = await db.Database.BeginTransactionAsync();
+    ResultadoImportacionFinal resultado;
+    try
+    {
+        resultado = await ImportacionFinal.AplicarAsync(db, eleventa);
+    }
+    catch (InvalidOperationException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+    if (simular)
+        await transaccion.RollbackAsync();
+    else
+        await transaccion.CommitAsync();
+
+    Console.WriteLine();
+    Console.WriteLine($"{(simular ? "Simulación de la importación final" : "Importación final")} en {Path.GetFullPath(ruta)}");
+    Console.WriteLine();
+    foreach (var linea in ImportacionFinal.Describir(resultado))
+        Console.WriteLine(linea);
+    if (simular)
+        Console.WriteLine("\nSimulación: no se guardó nada.");
+    return 0;
+}
+
+/// <summary>
+/// Antes de la importación final, una copia de la base junto a ella (con la copia en línea de SQLite, como los respaldos del
+/// servicio): «pos.antes-de-importar-AAAA-MM-DD-HHmmss.db».
+/// </summary>
+static string CopiarAntesDeImportar(string ruta)
+{
+    var completa = Path.GetFullPath(ruta);
+    var destino = Path.Combine(Path.GetDirectoryName(completa)!,
+        $"{Path.GetFileNameWithoutExtension(completa)}.antes-de-importar-{DateTime.Now:yyyy-MM-dd-HHmmss}{Path.GetExtension(completa)}");
+    static string Cadena(string archivo) => new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = archivo, Pooling = false }.ToString();
+    using (var origen = new Microsoft.Data.Sqlite.SqliteConnection(Cadena(completa)))
+    using (var copia = new Microsoft.Data.Sqlite.SqliteConnection(Cadena(destino)))
+    {
+        origen.Open();
+        copia.Open();
+        BaseDeDatos.Ajustar(origen);
+        BaseDeDatos.Ajustar(copia);
+        origen.BackupDatabase(copia);
+    }
+    return destino;
 }
 
 static async Task<int> SincronizarEleventaAsync(string[] args)
