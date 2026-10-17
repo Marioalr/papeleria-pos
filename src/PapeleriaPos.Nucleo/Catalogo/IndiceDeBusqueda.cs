@@ -34,7 +34,7 @@ public sealed class ArticuloBuscable
     /// <summary>El nombre en pedazos (color, medida, marca…): la caja junta con eso las familias de la lista.</summary>
     public IReadOnlyList<ParteDeNombre> Partes { get; }
 
-    /// <summary>En qué lugar llegó: entre dos que empatan en todo lo demás, el de antes.</summary>
+    /// <summary>En qué lugar llegó (el de la lista de <see cref="IndiceDeBusqueda.Articulos"/>).</summary>
     internal int Posicion { get; }
 
     /// <summary>El nombre para ordenar en español de México sin importar mayúsculas, ya calculado (comparar así es rápido).</summary>
@@ -61,8 +61,8 @@ public readonly record struct Encontrado(ArticuloBuscable Articulo, bool Parecid
 /// <para>
 /// El orden: el código exacto; entre los parecidos, los que coinciden exacto en más palabras; lo que esa caja eligió antes
 /// con el mismo texto; lo que se llama como se escribió antes de lo que salió por un sinónimo; lo que empieza con lo
-/// escrito; lo más vendido; el nombre (en español de México, sea cual sea el idioma de la PC) y, al final, el orden en que
-/// llegaron.
+/// escrito; lo más vendido; el nombre (en español de México, sea cual sea el idioma de la PC) y, al final, entre los que se
+/// llaman igual, el más antiguo.
 /// </para>
 /// <para>
 /// Por dentro, cada palabra apunta a los productos que la tienen, y las palabras van ordenadas: las que empiezan con un
@@ -121,8 +121,9 @@ public sealed partial class IndiceDeBusqueda
     }
 
     /// <summary>
-    /// Arma el índice. Los productos, en su orden (el desempate final); los códigos, las marcas y los sinónimos pueden venir
-    /// en cualquier orden y repetidos: dan lo mismo.
+    /// Arma el índice. Los productos, los códigos, las marcas y los sinónimos pueden venir en cualquier orden y repetidos: dan
+    /// lo mismo. Así la copia de una caja puesta al día con lo que cambió (los productos nuevos al final) busca igual que una
+    /// recién bajada y que el servicio (entrega 5, partes 2 y 3).
     /// </summary>
     /// <param name="marcas">
     /// Las marcas para leer los nombres (<see cref="LectorDeNombres"/>); también se aprenden de lo que se repite al final de
@@ -242,7 +243,8 @@ public sealed partial class IndiceDeBusqueda
     {
         // Primero el código exacto; entre los parecidos, los que coinciden exacto en más palabras («pluma pumto» antes que
         // el plumón); lo elegido antes; lo que se llama como se escribió antes de lo que salió por un sinónimo; lo que empieza
-        // con lo escrito; lo más vendido; el nombre, y el orden en que llegaron.
+        // con lo escrito; lo más vendido; el nombre, y entre dos que se llaman igual, el más antiguo (su Id va por fecha): no
+        // depende del orden en que llegaron.
         var c = y.CodigoExacto.CompareTo(x.CodigoExacto);
         if (c == 0)
             c = y.Coinciden.CompareTo(x.Coinciden);
@@ -256,7 +258,7 @@ public sealed partial class IndiceDeBusqueda
             c = y.Vendidos.CompareTo(x.Vendidos);
         if (c == 0)
             c = x.Articulo.OrdenDelNombre.AsSpan().SequenceCompareTo(y.Articulo.OrdenDelNombre);
-        return c != 0 ? c : x.Articulo.Posicion.CompareTo(y.Articulo.Posicion);
+        return c != 0 ? c : x.Articulo.VarianteId.CompareTo(y.Articulo.VarianteId);
     }
 
     /// <summary>Los que valen por cada pedazo: por sí mismo o por alguno de sus sinónimos; tienen que valer todos.</summary>

@@ -20,47 +20,11 @@ public static class ApiContingencia
         var api = app.MapGroup("/api").ConErrores().SoloSuCaja();
         var bandeja = app.MapGroup("/api/bandeja").ConErrores().SoloSuCaja().AddEndpointFilter(AvisarSiNoSubeAsync);
 
-        // La copia local: catálogo con existencias, usuarios (PIN como hash), sus permisos, ticket, la configuración de la tienda y
-        // el último folio de la caja.
-        api.MapGet("/cajas/{cajaId:guid}/paquete", async (Guid cajaId, PosDbContext db, CatalogoEnMemoria catalogo, IOptions<OpcionesTicket> opciones) =>
-        {
-            var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
-            var sucursal = await db.Sucursales.FindAsync(caja.SucursalId);
-            var (version, productos, codigos, marcas) = await catalogo.TodosAsync(db, caja.SucursalId);
-            // Los dados de baja también, sin el hash de su PIN: sus letras no se le dan a otro, y no entran.
-            var usuarios = (await db.Usuarios.AsNoTracking()
-                    .Where(u => u.SucursalId == null || u.SucursalId == caja.SucursalId)
-                    .Select(u => new UsuarioLocalDto(u.Id, u.NombreUsuario, u.Nombre, u.Rol, u.PinHash, u.Activo))
-                    .ToListAsync())
-                .Select(u => u.Activo ? u : u with { PinHash = "" })
-                .ToList();
-            // Los permisos de cada activo y los de defecto (entrega 1). Las reglas por rol, de antes, solo para una caja que
-            // todavía no se actualiza.
-            var control = new ServicioControl(db);
-            var permisos = (await control.UsuariosQueEntranAsync(caja.SucursalId))
-                .Select(u => new PermisosLocalesDto(u.Id, u.Permisos.Lista()))
-                .Append(new PermisosLocalesDto(null, (await control.DefectoAsync()).Lista()))
-                .ToList();
-            var reglas = PermisosDeRoles.Efectivas(await db.ReglasPermiso.AsNoTracking()
-                .Where(r => r.SucursalId == null || r.SucursalId == caja.SucursalId).ToListAsync(), caja.SucursalId);
-            var ticket = await ApiConfiguracion.ConfiguracionAsync(db, caja.SucursalId, opciones.Value);
-            // La configuración de la tienda (entrega 7): sin conexión, el nombre en la entrada, las fichas de la espera y el
-            // fondo sugerido siguen como en línea.
-            var configuracion = await new RegistroConfiguracion(db).LeerAsync(caja.SucursalId);
-            var clientes = await ApiClientes.ParaLaCajaAsync(db, caja.SucursalId);
-            // La búsqueda de la caja va contra esta copia (entrega 5, parte 3) y da lo mismo que la de aquí: lleva las marcas con
-            // que se leen los nombres (las familias), los sinónimos de la tienda («boligrafo» encuentra los lapiceros), lo más
-            // vendido y lo que esta caja eligió antes con cada texto.
-            var sinonimos = await new RegistroSinonimos(db).ListarAsync();
-            var enLaCopia = productos.Select(p => p.VarianteId).ToHashSet();
-            var vendidos = (await catalogo.VecesVendidoAsync(db)).Where(x => x.Value > 0 && enLaCopia.Contains(x.Key))
-                .Select(x => new VecesVendidoDto(x.Key, x.Value)).ToList();
-            var elegidos = (await catalogo.ElegidosAsync(db, caja.Id)).Where(e => enLaCopia.Contains(e.VarianteId)).ToList();
-            return new PaqueteContingenciaDto(version, new CajaDto(caja.Id, caja.Nombre, caja.Serie, caja.SucursalId, sucursal!.Nombre, caja.Equipo),
-                productos, codigos, usuarios, reglas, ticket.RenglonesEncabezado, ticket.RenglonesPie, ApiConfiguracion.Logo(ticket),
-                await new RegistroCaja(db).UltimoFolioAsync(caja.SucursalId, caja.Serie), configuracion.LimiteEfectivoCentavos,
-                ApiClientes.ParaCajasDeAntes(clientes), clientes, marcas, sinonimos, permisos, configuracion, vendidos, elegidos);
-        });
+        // La copia local completa: catálogo con existencias, usuarios (PIN como hash), sus permisos, ticket, la configuración de
+        // la tienda, el último folio de la caja y lo que necesita su búsqueda (CopiaDeLaCaja). Una caja de ahora pide después solo
+        // lo que cambió (ApiCopia).
+        api.MapGet("/cajas/{cajaId:guid}/paquete", (Guid cajaId, PosDbContext db, CatalogoEnMemoria catalogo, VersionesDeLaCopia versiones,
+            IOptions<OpcionesTicket> opciones, CancellationToken ct) => CopiaDeLaCaja.PaqueteAsync(db, catalogo, versiones, cajaId, opciones.Value, ct));
 
         // Lo que lleva el turno, sin guardar un corte: la base de la cuenta que la caja lleva por su lado.
         api.MapGet("/turnos/{turnoId:guid}/resumen", async (Guid turnoId, PosDbContext db) =>
@@ -79,8 +43,10 @@ public static class ApiContingencia
 
         bandeja.MapPost("/ventas", async (VentaContingenciaDto v, PosDbContext db, CatalogoEnMemoria catalogo, EnvioVentasEleventa eleventa) =>
         {
-            if (await db.Ventas.AnyAsync(x => x.Id == v.Id))
-                return Results.NoContent();
+            // Ya está (subió antes, o se cobró en línea y la caja no supo): una vez. Si es otra con el mismo Id (la caja la cobró
+            // otra vez, cambiada, sin saber que la primera había quedado), no se descarta callada: queda por revisar.
+            if (await db.Ventas.AsNoTracking().Include(x => x.Lineas).SingleOrDefaultAsync(x => x.Id == v.Id) is { } yaEsta)
+                return MismaVenta(yaEsta, v) ? Results.NoContent() : throw new InvalidOperationException(VentaDistinta(yaEsta, v));
             var caja = await db.Cajas.FindAsync(v.CajaId) ?? throw new InvalidOperationException("La caja no existe.");
             var lineas = v.Lineas.Select(l => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.CantidadMilesimas, l.Descripcion, l.PrecioCentavos,
                 DescuentoCentesimas: l.DescuentoCentesimas, DescuentoCentavos: l.DescuentoCentavos, MotivoDescuento: l.MotivoDescuento)).ToList();
@@ -90,9 +56,20 @@ public static class ApiContingencia
             // También va a eleventa (el piloto); su ticket ya salió con el folio de la caja, así que se manda en la vuelta.
             // Aunque el piloto sea solo en efectivo, no se rechaza: ya se cobró. Si no fue en efectivo, queda por revisar.
             eleventa.Encolar(db, venta.Id);
-            // Si fió: con lo que sabía la caja (una caja de antes no fía sin conexión; si llegara, se revisa con el saldo real).
-            await new RegistroCaja(db).CobroDeContingenciaAsync(venta, v.Cobros, v.Folio, v.PagadaUtc, redondear: v.RedondeoCentavos is not null,
-                fiado: v.SaldoConocidoCentavos is { } conocido ? new FiadoSinConexion(conocido, v.ExcesoAutorizadoCentavos, v.VenceCredito) : null);
+            try
+            {
+                // Si fió: con lo que sabía la caja (una caja de antes no fía sin conexión; si llegara, se revisa con el saldo real).
+                await new RegistroCaja(db).CobroDeContingenciaAsync(venta, v.Cobros, v.Folio, v.PagadaUtc, redondear: v.RedondeoCentavos is not null,
+                    fiado: v.SaldoConocidoCentavos is { } conocido ? new FiadoSinConexion(conocido, v.ExcesoAutorizadoCentavos, v.VenceCredito) : null);
+            }
+            catch (Exception ex) when (ex is DbUpdateException or InvalidOperationException)
+            {
+                // El cobro en línea de esta misma venta (que la caja dejó de esperar) entró a la vez y primero, con el mismo folio
+                // (la serie de la caja sigue igual por los dos caminos): ya está, una vez.
+                if (await ApiCaja.YaCobradaAsync(db, v.Id) is null)
+                    throw;
+                return Results.NoContent();
+            }
             eleventa.Despertar();
             return Results.NoContent();
         });
@@ -130,6 +107,26 @@ public static class ApiContingencia
             return corte;
         });
     }
+
+    /// <summary>
+    /// Lo que subió es la venta que ya está: las mismas líneas (producto, presentación, cantidad, precio y descuento; el
+    /// artículo común, por su descripción), en cualquier orden.
+    /// </summary>
+    private static bool MismaVenta(Venta yaEsta, VentaContingenciaDto v)
+    {
+        static string Clave(Guid? variante, Guid? presentacion, string descripcion, long cantidad, long precio, int? porcentaje, long? monto) =>
+            $"{variante}|{presentacion}|{(variante is null ? descripcion.Trim().ToUpperInvariant() : "")}|{cantidad}|{precio}|{porcentaje}|{monto}";
+        var alla = yaEsta.Lineas.Select(l => Clave(l.VarianteId, l.PresentacionId, l.Descripcion, l.Cantidad.Milesimas, l.PrecioCentavos,
+            l.DescuentoCentesimas, l.DescuentoCentesimas is null && l.DescuentoCentavos > 0 ? l.DescuentoCentavos : null));
+        var subio = v.Lineas.Select(l => Clave(l.VarianteId, l.PresentacionId, l.Descripcion, l.CantidadMilesimas, l.PrecioCentavos,
+            l.DescuentoCentesimas, l.DescuentoCentesimas is null && l.DescuentoCentavos > 0 ? l.DescuentoCentavos : null));
+        return alla.Order(StringComparer.Ordinal).SequenceEqual(subio.Order(StringComparer.Ordinal));
+    }
+
+    private static string VentaDistinta(Venta yaEsta, VentaContingenciaDto v) =>
+        $"La venta {yaEsta.FolioTexto} ya estaba en la caja principal ({AlertasTelegram.Dinero(yaEsta.TotalCentavos)}, "
+        + $"{yaEsta.Lineas.Count} {(yaEsta.Lineas.Count == 1 ? "línea" : "líneas")}), y esta caja la cobró otra vez sin conexión con otras "
+        + $"líneas, con el folio {yaEsta.Serie}-{v.Folio:000000}: no se guardó dos veces; hay que revisarla.";
 
     /// <summary>
     /// Si algo de la bandeja no se puede guardar, el dueño se entera por Telegram (una vez por cada cosa, aunque la caja

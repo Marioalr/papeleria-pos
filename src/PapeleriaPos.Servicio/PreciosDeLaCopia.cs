@@ -17,7 +17,11 @@ public static class PreciosDeLaCopia
     /// quitó (el historial de precios, con su versión), una escala que cambió desde cuánto aplica, o la presentación de la
     /// línea (cuánto trae). Solo los precios de todas las sucursales y los de la del ticket.
     /// </summary>
-    /// <param name="actual">La versión del catálogo con que se arma la venta: lo de esa versión o de antes ya se revisó.</param>
+    /// <param name="actual">
+    /// La versión del catálogo con que se arma la venta (la del catálogo en memoria). Lo de después todavía no está en él
+    /// (la recarga va en camino, entrega 5, parte 2): la venta se arma y se revisa con esa, sin decir «cambió» una y otra vez
+    /// con los mismos precios.
+    /// </param>
     public static async Task<List<Guid>> CambiadosAsync(
         PosDbContext db, Guid sucursalId, IReadOnlyList<LineaSolicitada> lineas, long versionDelTicket, long actual, CancellationToken ct = default)
     {
@@ -34,15 +38,16 @@ public static class PreciosDeLaCopia
             .Select(l => l.PresentacionId!.Value).Distinct().ToList();
 
         var historial = await db.PreciosHistorial.AsNoTracking()
-            .Where(h => variantes.Contains(h.VarianteId) && h.VersionCatalogo > desde && (h.SucursalId == null || h.SucursalId == sucursalId))
+            .Where(h => variantes.Contains(h.VarianteId) && h.VersionCatalogo > desde && h.VersionCatalogo <= actual
+                        && (h.SucursalId == null || h.SucursalId == sucursalId))
             .Select(h => new { h.VarianteId, Version = h.VersionCatalogo!.Value })
             .ToListAsync(ct);
         var precios = await db.Precios.AsNoTracking()
-            .Where(p => variantes.Contains(p.VarianteId) && p.Version > desde && (p.SucursalId == null || p.SucursalId == sucursalId))
+            .Where(p => variantes.Contains(p.VarianteId) && p.Version > desde && p.Version <= actual && (p.SucursalId == null || p.SucursalId == sucursalId))
             .Select(p => new { p.VarianteId, p.Version })
             .ToListAsync(ct);
         var deLasPresentaciones = await db.Presentaciones.AsNoTracking()
-            .Where(p => presentaciones.Contains(p.Id) && p.Version > desde)
+            .Where(p => presentaciones.Contains(p.Id) && p.Version > desde && p.Version <= actual)
             .Select(p => new { p.VarianteId, p.Version })
             .ToListAsync(ct);
         return historial.Concat(precios).Concat(deLasPresentaciones)

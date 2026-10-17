@@ -15,6 +15,12 @@
                 <span class="punto"></span>Sin la principal@(_contingencia!.Pendientes > 0 ? $" · {_contingencia.Pendientes} por subir" : "")
             </span>
             break;
+        case ChipConexion.RedLenta:
+            <span class="vn-chip-estado aviso"
+                  title="La caja principal tarda en contestar@(Ms(_contingencia!.Latencia) is { } ms ? $" ({ms})" : ""): se vende con la copia de esta caja y lo cobrado sube solo. Vuelve sola cuando la red esté bien.">
+                <span class="punto"></span>Red lenta@(_contingencia.Pendientes > 0 ? $" · {_contingencia.Pendientes} por subir" : "")
+            </span>
+            break;
         case ChipConexion.Subiendo:
             <span class="vn-chip-estado aviso"><span class="punto"></span>Subiendo @_contingencia!.Pendientes…</span>
             break;
@@ -22,7 +28,7 @@
             <span class="vn-chip-estado" title="El servicio y la base están en esta PC."><span class="punto"></span>Servicio aquí</span>
             break;
         default:
-            <span class="vn-chip-estado" title="El catálogo está en esta caja; lo que se cobra va a la caja principal."><span class="punto"></span>Conectada a la principal</span>
+            <span class="vn-chip-estado" title="El catálogo está en esta caja; lo que se cobra va a la caja principal."><span class="punto"></span>Conectada a la principal@(Ms(_contingencia?.Latencia) is { } latencia ? $" · {latencia}" : "")</span>
             break;
     }
     @if (Impresora.MuestraVistaPrevia)
@@ -68,7 +74,13 @@
     public enum ChipConexion
     {
         ServicioAqui, ConectadaALaPrincipal, SinLaPrincipal, Subiendo,
+
+        /// <summary>La caja principal contesta, pero tarde: se vende con la copia (entrega 5, parte 2).</summary>
+        RedLenta,
     }
+
+    /// <summary>Lo que tardó el último latido, como en la propuesta («Conectada a Caja 1 · 9 ms»); vacío si no se sabe.</summary>
+    private static string? Ms(TimeSpan? latencia) => latencia is { } l ? $"{Math.Max(1, Math.Round(l.TotalMilliseconds)):0} ms" : null;
 
     /// <summary>
     /// Primero lo que sabe la contingencia (la ventana de Windows): si la caja principal no contesta, o si falta subir lo
@@ -81,6 +93,7 @@
     public static ChipConexion QueDice(Contingencia? contingencia, ConexionCaja conexion) => contingencia switch
     {
         { ServidorResponde: false } when !conexion.Servicio.IsLoopback || conexion.SimularSinConexion => ChipConexion.SinLaPrincipal,
+        { EstadoDeLaRed: EstadoRed.Lenta } when !conexion.Servicio.IsLoopback => ChipConexion.RedLenta,
         { Pendientes: > 0 } => ChipConexion.Subiendo,
         _ => conexion.Servicio.IsLoopback ? ChipConexion.ServicioAqui : ChipConexion.ConectadaALaPrincipal,
     };

@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+using System.Net.ServerSentEvents;
 using System.Text.Json;
 using PapeleriaPos.Impresiones.Contratos;
 using PapeleriaPos.Nucleo;
@@ -18,12 +20,54 @@ public sealed record BaseTurno(Guid TurnoId, long FondoCentavos, AnotacionDiario
 /// La caja sin la caja principal (docs/fase-1-varias-cajas.md). Revisa cada pocos segundos si el servicio contesta;
 /// mientras no, vende con su copia del catálogo y su propio folio, y todo lo que hace queda en la bandeja. Al volver la
 /// conexión sube la bandeja en orden y, hasta que termina, sigue trabajando por su cuenta (así sus folios no chocan).
+/// <para>
+/// La copia al día y la red con tres estados (entrega 5, parte 2, docs/propuesta-interfaz.md, «Rendimiento»): la caja
+/// principal avisa por SSE cuando cambia una versión y la caja pide solo lo que cambió desde la suya, lo aplica fuera del
+/// hilo de la pantalla y cambia la foto del catálogo de un jalón; el latido queda de respaldo. El latido también mide cuánto
+/// tarda la caja principal en contestar: buena, lenta o caída (<see cref="CalidadDeLaRed"/>); en lenta, la caja trabaja
+/// como sin conexión hasta que esté buena.
+/// </para>
 /// </summary>
 public sealed class Contingencia
 {
     private static readonly TimeSpan Latido = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan EsperaLatido = TimeSpan.FromSeconds(3);
+
+    /// <summary>Lo más que se espera un latido: después de esto, la caja principal no contestó (caída).</summary>
+    private static readonly TimeSpan EsperaLatido = TimeSpan.FromSeconds(2);
+
+    /// <summary>Con un servicio de antes (sin cambios por versión), la copia se vuelve a bajar completa cada tanto (las existencias).</summary>
     private static readonly TimeSpan PaqueteViejo = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// Con los cambios por versión, la copia completa se vuelve a bajar a lo más cada tanto, por si acaso: lo que no llegue con
+    /// los cambios (un error nuestro) se corrige solo. Al abrir la caja también se baja si la caja principal se reinició.
+    /// </summary>
+    private static readonly TimeSpan CopiaCompletaCada = TimeSpan.FromHours(4);
+
+    /// <summary>Lo más que se espera la copia completa (varios MB) y los cambios.</summary>
+    private static readonly TimeSpan EsperaCopia = TimeSpan.FromSeconds(60);
+
+    private static readonly TimeSpan EsperaCambios = TimeSpan.FromSeconds(10);
+
+    /// <summary>Lo más que se espera cada cosa de la bandeja al subir.</summary>
+    private static readonly TimeSpan EsperaSubida = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Lo que solo cambió de existencias se guarda en la base de la caja a lo más cada tanto (la copia pesa varios MB): al
+    /// abrir, la caja pide las que cambiaron desde las de la copia guardada. Lo del catálogo se guarda al momento.
+    /// </summary>
+    private static readonly TimeSpan GuardarExistenciasCada = TimeSpan.FromMinutes(10);
+
+    /// <summary>Un servicio de antes no tiene los cambios ni el aviso: se vuelve a probar después de esto.</summary>
+    private static readonly TimeSpan ServicioDeAntesPor = TimeSpan.FromMinutes(5);
+
+    /// <summary>Sin nada del aviso (ni el «vivo» de cada 15 s) en este rato, la conexión quedó medio muerta: se vuelve a conectar.</summary>
+    private static readonly TimeSpan AvisoCallado = TimeSpan.FromSeconds(45);
+
+    /// <summary>Lo que se espera antes de volver a conectar el aviso: se dobla con cada intento fallido, hasta el tope.</summary>
+    private static readonly TimeSpan ReconectarAviso = TimeSpan.FromSeconds(1);
+
+    private static readonly TimeSpan ReconectarAvisoTope = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan ReintentoErrores = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan RefrescoCredito = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan EsperaCreditos = TimeSpan.FromSeconds(10);
@@ -44,19 +88,74 @@ public sealed class Contingencia
     /// </summary>
     private sealed class Copia
     {
-        public Copia(PaqueteContingenciaDto p)
+        /// <param name="anterior">La copia que había: de ella sale desde cuándo tiene cada producto sus precios (<see cref="PreciosDesde"/>).</param>
+        /// <param name="mismaBusqueda">
+        /// Lo que llegó no cambia nada de lo que arma la búsqueda por nombre (<see cref="CambiosCopiaDto.CambiaLaBusqueda"/>): el
+        /// índice de la foto de <paramref name="anterior"/> sirve igual y no se arma otra vez.
+        /// </param>
+        public Copia(PaqueteContingenciaDto p, Copia? anterior = null, bool mismaBusqueda = false)
         {
             Paquete = p;
             PorVariante = p.Productos.ToDictionary(x => x.VarianteId);
+            PreciosDesde = DesdeCuando(p, PorVariante, anterior);
             // Los códigos, en la foto del catálogo: el escaneo, en línea o sin conexión, resuelve igual (entrega 5). Y la búsqueda
             // por nombre, la misma del servicio, también sin conexión (entrega 5, parte 3).
-            Foto = FotoCatalogo.Armar(p);
+            Foto = FotoCatalogo.Armar(p, mismaBusqueda ? anterior?.Foto : null);
             Presentaciones = p.Productos.SelectMany(x => x.Presentaciones).GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First());
             Usuarios = p.Usuarios.ToDictionary(u => u.Usuario.Trim().ToLowerInvariant());
             UsuariosPorId = p.Usuarios.ToDictionary(u => u.Id);
             (PermisosPorUsuario, Defecto) = PermisosDe(p);
             Activos = p.Usuarios.Where(u => u.Activo).Select(u => new UsuarioConPermisos(u.Id, u.Usuario, u.Nombre, PermisosDe(u.Id))).ToList();
         }
+
+        /// <summary>
+        /// La misma copia con otras existencias (entrega 5, parte 2: después de cada venta), o con otro «lo más vendido» o «lo
+        /// elegido» (parte 3): los mismos productos, códigos y nombres, así que lo que sale de ellos (el índice de la búsqueda por
+        /// nombre, los usuarios) se queda; la foto se arma otra vez con los productos de ahora (<see cref="FotoCatalogo.Armar"/>).
+        /// </summary>
+        public static Copia ConOtrasExistencias(PaqueteContingenciaDto p, Copia anterior) => new(anterior, p);
+
+        private Copia(Copia anterior, PaqueteContingenciaDto p)
+        {
+            Paquete = p;
+            PorVariante = p.Productos.ToDictionary(x => x.VarianteId);
+            PreciosDesde = anterior.PreciosDesde;
+            Foto = FotoCatalogo.Armar(p, anterior.Foto);
+            Presentaciones = anterior.Presentaciones;
+            (Usuarios, UsuariosPorId, PermisosPorUsuario, Defecto, Activos) =
+                (anterior.Usuarios, anterior.UsuariosPorId, anterior.PermisosPorUsuario, anterior.Defecto, anterior.Activos);
+        }
+
+        /// <summary>
+        /// Desde qué versión del catálogo tiene cada producto, en esta copia, los precios que tiene (entrega 5, parte 2): la de
+        /// la copia con que llegaron así. Si llega otra vez con los mismos precios y presentaciones (en una copia completa, o
+        /// porque cambió su nombre o sus códigos), se queda la de antes. Sin conexión no se cobra con precios que llegaron
+        /// después de lo que vio el cajero (<see cref="Contingencia.Cobrar"/>).
+        /// </summary>
+        public IReadOnlyDictionary<Guid, long> PreciosDesde { get; }
+
+        private static Dictionary<Guid, long> DesdeCuando(PaqueteContingenciaDto p, Dictionary<Guid, ProductoVentaDto> productos, Copia? anterior)
+        {
+            // De otra base (la prueba empezó de cero) o más nueva que esta: sus versiones no son de esta.
+            if (anterior is not null && (anterior.Paquete.Base != p.Base || anterior.Paquete.Version > p.Version))
+                anterior = null;
+            var desde = new Dictionary<Guid, long>(productos.Count);
+            foreach (var (varianteId, producto) in productos)
+            {
+                var version = producto.Version ?? p.Version;
+                if (anterior is not null && anterior.PorVariante.TryGetValue(varianteId, out var antes)
+                    && anterior.PreciosDesde.TryGetValue(varianteId, out var suya) && suya <= version && MismosPrecios(antes, producto))
+                    version = suya;
+                desde[varianteId] = version;
+            }
+            return desde;
+        }
+
+        /// <summary>Los mismos precios y presentaciones: lo que cuenta para lo que se cobra (no el nombre ni los códigos).</summary>
+        public static bool MismosPrecios(ProductoVentaDto a, ProductoVentaDto b) =>
+            ReferenceEquals(a, b)
+            || ((ReferenceEquals(a.Precios, b.Precios) || a.Precios.SequenceEqual(b.Precios))
+                && (ReferenceEquals(a.Presentaciones, b.Presentaciones) || a.Presentaciones.SequenceEqual(b.Presentaciones)));
 
         /// <summary>
         /// Los permisos de cada usuario y los de defecto (entrega 1). Una copia de antes (con las reglas por rol) se lee como la
@@ -103,6 +202,14 @@ public sealed class Contingencia
     private readonly SemaphoreSlim _subida = new(1, 1);
     private readonly SemaphoreSlim _creditos = new(1, 1);
     private readonly Lock _candado = new();
+    private readonly Lock _candadoSinConfirmar = new();
+
+    /// <summary>
+    /// Los cobros que no se sabe si quedaron (<see cref="NoSeSabeSiQuedo"/>), y si se mandaron fiados; también en la base de la
+    /// caja.
+    /// </summary>
+    private volatile ImmutableDictionary<Guid, bool> _sinConfirmar;
+
     private readonly Dictionary<Guid, AutorizacionLocal> _autorizaciones = [];
     private readonly Dictionary<string, (int Fallos, DateTime? Hasta)> _intentos = [];
     private volatile Copia? _copia;
@@ -117,23 +224,62 @@ public sealed class Contingencia
 
     private DateTime _paqueteBajadoUtc = DateTime.MinValue;
     private DateTime _ultimoReintentoUtc = DateTime.MinValue;
-    private bool _responde = true;
+    private readonly CalidadDeLaRed _red;
     private CancellationTokenSource? _alto;
+
+    /// <summary>El latido y el aviso (<see cref="Iniciar"/>): al cerrar la caja se espera a que terminen lo que iban haciendo.</summary>
+    private Task _deFondo = Task.CompletedTask;
+
+    /// <summary>Se cerró la caja (<see cref="Detener"/>): ya no empieza otra vuelta de ponerse al día.</summary>
+    private bool Detenida => _alto?.IsCancellationRequested == true;
+
+    /// <summary>Las versiones de la caja principal que se conocen (las del aviso o las del latido); vacías con un servicio de antes.</summary>
+    private VersionesCopiaDto? _dePrincipal;
+
+    /// <summary>Una puesta al día a la vez; lo que se avise mientras, se revisa al terminar (<see cref="_otraVez"/>).</summary>
+    private readonly SemaphoreSlim _poniendoAlDia = new(1, 1);
+
+    private volatile bool _otraVez;
+
+    /// <summary>Hasta cuándo no se piden cambios ni el aviso (el servicio es de antes).</summary>
+    private DateTime _sinCambiosHasta = DateTime.MinValue;
+
+    private DateTime _sinAvisoHasta = DateTime.MinValue;
+
+    /// <summary>Desde cuándo la copia no se baja completa (al abrir la caja cuenta como bajada): <see cref="CopiaCompletaCada"/>.</summary>
+    private DateTime _completaDesdeUtc;
+
+    /// <summary>Cuándo se guardó la copia en la base de la caja y si tiene existencias más nuevas que no se han guardado.</summary>
+    private DateTime _copiaGuardadaUtc = DateTime.MinValue;
+
+    private bool _existenciasSinGuardar;
+
+    /// <summary>Mientras baja la copia completa, la red la llena la propia caja: un latido lento no cuenta.</summary>
+    private volatile bool _bajandoCopia;
     private SaldosCreditoDto? _saldos;
     private long? _creditosPedidos;
 
     /// <summary>Algo del crédito pasó en línea en esta caja (o se anotó mientras se pedían): el siguiente latido pide los saldos.</summary>
     private volatile bool _refrescarCredito;
 
+    /// <param name="http">El cliente de lo de fondo (<see cref="RedCaja.Fondo"/>): el latido, el aviso, la copia y la bandeja.</param>
     /// <param name="rendimiento">Para decir qué pasaba si la pantalla se traba (bajar y armar la copia); sin él, no se dice.</param>
-    public Contingencia(AlmacenLocal almacen, HttpClient http, ConexionCaja conexion, TimeProvider? reloj = null, RendimientoCaja? rendimiento = null)
+    /// <param name="reglas">
+    /// Cómo se decide el estado de la red (<see cref="ReglasDeLaRed"/>). La caja de verdad usa
+    /// <see cref="ReglasDeLaRed.DeLaTienda"/>; sin ellas, solo si contesta o no (<see cref="ReglasDeLaRed.SoloSiContesta"/>).
+    /// </param>
+    public Contingencia(AlmacenLocal almacen, HttpClient http, ConexionCaja conexion, TimeProvider? reloj = null, RendimientoCaja? rendimiento = null,
+        ReglasDeLaRed? reglas = null)
     {
         _almacen = almacen;
         _rendimiento = rendimiento;
         _http = new Transporte(http, conexion);
         _conexion = conexion;
         _reloj = reloj ?? TimeProvider.System;
+        _red = new CalidadDeLaRed(reglas ?? ReglasDeLaRed.SoloSiContesta, _reloj);
+        _completaDesdeUtc = Ahora;
         _saldos = almacen.Leer<SaldosCreditoDto>("saldos");
+        _sinConfirmar = (almacen.Leer<Dictionary<Guid, bool>>(ClaveSinConfirmar) ?? []).ToImmutableDictionary();
         PilotoEleventa = almacen.Leer<bool?>(ClavePilotoEleventa) ?? false;
         (Pendientes, ConError, UltimoError, ImpresionesPorSubir) = almacen.Contar();
         // La copia trae miles de productos: leerla y armar sus índices ya no detiene la ventana al abrir (entrega 5). Lo que
@@ -228,10 +374,29 @@ public sealed class Contingencia
     /// <summary>Cambió la conexión o la bandeja: la pantalla vuelve a dibujar la franja.</summary>
     public event Action? Cambio;
 
-    public bool ServidorResponde => _responde;
+    /// <summary>La caja principal contesta (aunque sea tarde).</summary>
+    public bool ServidorResponde => _red.Estado != EstadoRed.Caida;
 
-    /// <summary>Se trabaja con la caja principal solo si contesta y ya no queda nada por subir.</summary>
-    public bool EnLinea => _responde && Pendientes == 0;
+    /// <summary>
+    /// Se trabaja con la caja principal solo si la red está buena y ya no queda nada por subir. Con la red lenta, como sin
+    /// conexión (entrega 5, parte 2).
+    /// </summary>
+    public bool EnLinea => _red.Estado == EstadoRed.Buena && Pendientes == 0;
+
+    /// <summary>Buena, lenta o caída (<see cref="CalidadDeLaRed"/>).</summary>
+    public EstadoRed EstadoDeLaRed => _red.Estado;
+
+    /// <summary>Lo que tardó en contestar el último latido; vacío si no contestó.</summary>
+    public TimeSpan? Latencia => _red.Latencia;
+
+    /// <summary>Con qué reglas se decide el estado de la red.</summary>
+    public ReglasDeLaRed ReglasDeLaRed => _red.Reglas;
+
+    /// <summary>
+    /// Lo que no se puede hacer con la copia (devolver, el catálogo, los reportes) se intenta con la caja principal aunque la
+    /// red esté lenta: no hay otra forma de hacerlo. Con algo por subir, no: primero sube (sus folios y su orden).
+    /// </summary>
+    public bool SeIntentaSinCopia => _red.Estado != EstadoRed.Caida && Pendientes == 0;
 
     public int Pendientes { get; private set; }
     public int ConError { get; private set; }
@@ -288,22 +453,38 @@ public sealed class Contingencia
         if (_alto is not null)
             return;
         _alto = new CancellationTokenSource();
-        _ = Task.Run(() => LatirAsync(_alto.Token));
+        _deFondo = Task.WhenAll(Task.Run(() => LatirAsync(_alto.Token)), Task.Run(() => EscucharAvisosAsync(_alto.Token)));
+    }
+
+    /// <summary>
+    /// Solo el aviso de la caja principal (SSE), sin el latido de cada 5 s: para las pruebas, que piden cada latido. La caja
+    /// de verdad usa <see cref="Iniciar"/>, que pone los dos.
+    /// </summary>
+    public void IniciarAvisos()
+    {
+        if (_alto is not null)
+            return;
+        _alto = new CancellationTokenSource();
+        _deFondo = Task.Run(() => EscucharAvisosAsync(_alto.Token));
     }
 
     public void Detener() => _alto?.Cancel();
 
     /// <summary>
-    /// Se cierra la caja: el latido se detiene y lo que se mandó escribir en la base local queda en el disco antes de irse
-    /// (los tickets en espera, lo último de un cobro). Antes, también termina de leer la copia que se lee al abrir (si se
-    /// cierra enseguida), y al final suelta las conexiones de la base: caja-local.db no se queda abierta. Espera poco en
-    /// total: una base que no responde no detiene el cierre.
+    /// Se cierra la caja: el latido y el aviso se detienen y lo que se mandó escribir en la base local queda en el disco antes
+    /// de irse (los tickets en espera, lo último de un cobro). Lo de fondo que iba a medias termina antes: la copia que se leía
+    /// al abrir (si se cierra enseguida), el latido o el aviso, y la vuelta de ponerse al día (la copia a medio guardar). Al
+    /// final suelta las conexiones de la base: caja-local.db no se queda abierta. Espera poco en total: una base o una red que
+    /// no responden no detienen el cierre.
     /// </summary>
     public void Cerrar(TimeSpan? espera = null)
     {
         var limite = DateTime.UtcNow + (espera ?? TimeSpan.FromSeconds(3));
         Detener();
-        ((IAsyncResult)_carga).AsyncWaitHandle.WaitOne(Restante(limite));
+        foreach (var tarea in new[] { _carga, _deFondo })
+            ((IAsyncResult)tarea).AsyncWaitHandle.WaitOne(Restante(limite));
+        if (_poniendoAlDia.Wait(Restante(limite)))
+            _poniendoAlDia.Release();
         _almacen.Cerrar(Restante(limite));
     }
 
@@ -355,6 +536,7 @@ public sealed class Contingencia
         if (!_conexion.Lista || (_conexion.CajaId is null && _conexion.PideAlta))
             return;
         EstadoServicioDto? estado;
+        var desde = _reloj.GetTimestamp();
         try
         {
             // Con lo que tiene por subir: el corte del día espera a que suba (entrega 6).
@@ -362,10 +544,16 @@ public sealed class Contingencia
         }
         catch (ErrorCaja)
         {
-            Fijar(responde: false);
+            // No contestó, ni a tiempo: caída.
+            if (_red.Fallo())
+                Cambio?.Invoke();
             return;
         }
-        Fijar(responde: true);
+        // Lo que tardó en contestar decide si la red está buena o lenta (con histéresis); el chip de arriba lo dice en ms.
+        var antes = _red.Latencia;
+        if (_red.Contesto(_reloj.GetElapsedTime(desde), ocupada: _bajandoCopia)
+            || Math.Round(antes?.TotalMilliseconds ?? -1) != Math.Round(_red.Latencia?.TotalMilliseconds ?? -1))
+            Cambio?.Invoke();
         await RecordarPilotoEleventaAsync(estado?.PilotoEleventa == true);
         if (estado?.AvisoBase != AvisoBase)
         {
@@ -385,23 +573,55 @@ public sealed class Contingencia
             if (_conexion.CajaId is null)
                 return;
         }
+        // Lo de la bandeja sube también con la red lenta: va de fondo, y mientras la caja sigue con su copia.
         var subio = Pendientes > 0;
         if (Pendientes > 0 || ImpresionesPorSubir > 0 || (ConError > 0 && Ahora - _ultimoReintentoUtc > ReintentoErrores))
             await SubirAsync();
-        if (subio && _responde)
+        if (subio && ServidorResponde)
             await AvisarLoQueQuedaAsync();
         // Los saldos del crédito: cuando cambiaron, cuando acaba de subir lo suyo, o cada tanto si tiene algo por confirmar.
         var tocaCredito = _refrescarCredito || _creditosPedidos is not { } pedidos || _reloj.GetElapsedTime(pedidos) > RefrescoCredito;
-        if (_responde && (_saldos is null ? tocaCredito
+        if (ServidorResponde && (_saldos is null ? tocaCredito
                 : estado!.VersionCredito != _saldos.Version || ((subio || tocaCredito) && _almacen.CuentaPropia().Count > 0)))
             await ActualizarCreditosAsync();
-        // La copia se vuelve a bajar en el primer latido con conexión (también la de antes de la entrega 1, sin los permisos por
-        // usuario, que mientras tanto se lee como la leería la migración), cuando cambia y cada tanto.
-        if (_responde && (Paquete is null || Paquete.Version != estado!.VersionDatos || Ahora - _paqueteBajadoUtc > PaqueteViejo))
+        if (!ServidorResponde || estado is null)
+            return;
+        // La copia: con un servicio de ahora, pide lo que cambió desde la suya (el aviso por SSE casi siempre ya lo hizo; el
+        // latido queda de respaldo). Con uno de antes, la baja completa en el primer latido, cuando cambia y cada tanto.
+        if (estado.Base is { } base_ && estado.VersionExistencias is { } existencias)
+        {
+            _dePrincipal = new VersionesCopiaDto(base_, estado.VersionDatos, existencias, estado.VersionCredito);
+            await PonerAlDiaAsync();
+        }
+        else if (Paquete is null || Paquete.Version != estado.VersionDatos || Ahora - _paqueteBajadoUtc > PaqueteViejo)
             await ActualizarPaqueteAsync();
     }
 
-    public void MarcarSinConexion() => Fijar(responde: false);
+    /// <summary>
+    /// La caja principal no contestó a algo de fondo: si pasó su plazo, la red está lenta; si ni se pudo conectar, caída.
+    /// </summary>
+    private void NoContesto(ErrorCaja error)
+    {
+        if (error.PorPlazo ? _red.PlazoVencido() : _red.Fallo())
+            Cambio?.Invoke();
+    }
+
+    /// <summary>La caja principal no contestó a algo que se le pidió (ni se pudo conectar): sin conexión, hasta el siguiente latido.</summary>
+    public void MarcarSinConexion()
+    {
+        if (_red.Fallo())
+            Cambio?.Invoke();
+    }
+
+    /// <summary>
+    /// Algo que el cajero esperaba no llegó a tiempo (pasó su plazo, <see cref="Transporte"/>): la red está lenta, y la caja
+    /// trabaja como sin conexión hasta que el latido diga que está buena (entrega 5, parte 2).
+    /// </summary>
+    public void MarcarLenta()
+    {
+        if (_red.PlazoVencido())
+            Cambio?.Invoke();
+    }
 
     /// <summary>El latido, con lo que esta caja tiene por subir y lo que no pudo subir (entrega 6).</summary>
     private string RutaEstado => _conexion.CajaId is { } esta ? $"api/estado?caja={esta}&porSubir={Pendientes}&conError={ConError}" : "api/estado";
@@ -437,7 +657,7 @@ public sealed class Contingencia
             {
                 try
                 {
-                    await _http.PostJsonAsync(elemento.Ruta, elemento.Json);
+                    await _http.PostJsonAsync(elemento.Ruta, elemento.Json, EsperaSubida);
                     await _almacen.MarcarSubidoAsync(elemento.Orden, Ahora);
                 }
                 catch (ErrorCaja ex) when (ex.Codigo != "sin-conexion")
@@ -450,7 +670,7 @@ public sealed class Contingencia
         }
         catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
         {
-            Fijar(responde: false);
+            NoContesto(ex);
         }
         catch (ErrorCaja)
         {
@@ -474,31 +694,295 @@ public sealed class Contingencia
         await _carga.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         if (_conexion.CajaId is not { } caja)
             return;
+        _bajandoCopia = true;
         try
         {
             var reloj = System.Diagnostics.Stopwatch.StartNew();
-            if (await _http.GetAsync<PaqueteContingenciaDto>($"api/cajas/{caja}/paquete") is not { } paquete)
+            if (await _http.GetAsync<PaqueteContingenciaDto>($"api/cajas/{caja}/paquete", espera: EsperaCopia) is not { } paquete)
                 return;
             _rendimiento?.Actividad("la sincronización (bajar la copia del catálogo)", reloj.Elapsed);
             reloj.Restart();
-            Poner(new Copia(paquete));
+            Poner(new Copia(paquete, _copia));
             _rendimiento?.Actividad("la sincronización (armar la copia y su foto)", reloj.Elapsed);
-            _paqueteBajadoUtc = Ahora;
+            (_paqueteBajadoUtc, _completaDesdeUtc) = (Ahora, Ahora);
             Cambio?.Invoke();
-            // El folio, como cualquier escritura. La copia (miles de productos) se convierte aquí, fuera de la cola, y se guarda
-            // en pedazos: lo que escribe la venta mientras tanto no la espera completa, y lo que se lee no la espera.
-            await _almacen.EscribirAsync(l => l.Guardar("folio", Math.Max(l.Leer<int?>("folio") ?? 0, paquete.UltimoFolio)), "el folio de la copia");
-            reloj.Restart();
-            await _almacen.GuardarCopiaAsync(JsonSerializer.SerializeToUtf8Bytes(paquete, AlmacenLocal.Json));
-            _rendimiento?.Actividad("la sincronización (guardar la copia en la base de la caja)", reloj.Elapsed);
+            await GuardarAsync(paquete);
         }
         catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
         {
-            Fijar(responde: false);
+            NoContesto(ex);
         }
         catch (ErrorCaja)
         {
             // Se intenta otra vez con el siguiente latido.
+        }
+        finally
+        {
+            _bajandoCopia = false;
+        }
+    }
+
+    /// <summary>
+    /// La copia en la base de la caja, con su folio. El folio, como cualquier escritura; la copia (miles de productos) se
+    /// convierte aquí, fuera de la cola, y se guarda en pedazos: lo que escribe la venta mientras tanto no la espera completa,
+    /// y lo que se lee no la espera.
+    /// </summary>
+    private async Task GuardarAsync(PaqueteContingenciaDto paquete)
+    {
+        await _almacen.EscribirAsync(l => l.Guardar("folio", Math.Max(l.Leer<int?>("folio") ?? 0, paquete.UltimoFolio)), "el folio de la copia");
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+        await _almacen.GuardarCopiaAsync(JsonSerializer.SerializeToUtf8Bytes(paquete, AlmacenLocal.Json));
+        (_copiaGuardadaUtc, _existenciasSinGuardar) = (Ahora, false);
+        _rendimiento?.Actividad("la sincronización (guardar la copia en la base de la caja)", reloj.Elapsed);
+    }
+
+    // ── La copia al día: lo que cambió, avisado por la caja principal (entrega 5, parte 2) ──
+
+    /// <summary>
+    /// Pone la copia al día con las versiones que se conocen de la caja principal (las del aviso o las del latido): pide lo que
+    /// cambió desde la suya y lo aplica; si no se puede (no hay copia, es de otra base o de otro formato, la caja principal es de
+    /// antes o lo que llegó no cuadra), baja la copia completa, como antes. Una a la vez: lo que se avise mientras, se revisa al
+    /// terminar. Nunca detiene un escaneo: la foto cambia de un jalón al final.
+    /// </summary>
+    public Task PonerAlDiaAsync() => Task.Run(async () =>
+    {
+        _otraVez = true;
+        // Lo que se avise justo cuando la otra vuelta ya terminó, pero todavía no suelta, lo atiende ella al soltar.
+        while (_otraVez && !Detenida && await _poniendoAlDia.WaitAsync(0))
+        {
+            try
+            {
+                while (_otraVez && !Detenida)
+                {
+                    _otraVez = false;
+                    await PonerAlDiaUnaVezAsync();
+                }
+            }
+            finally
+            {
+                _poniendoAlDia.Release();
+            }
+        }
+    });
+
+    private async Task PonerAlDiaUnaVezAsync()
+    {
+        await _carga.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        if (_conexion.CajaId is not { } caja || _dePrincipal is not { } principal)
+            return;
+        var copia = _copia?.Paquete;
+        if (copia is null || copia.Base != principal.Base || copia.Formato != CopiaAlDia.Formato || copia.VersionExistencias is not { } existencias
+            || Ahora - _completaDesdeUtc > CopiaCompletaCada)
+        {
+            await BajarCopiaAsync();
+            return;
+        }
+        // Ya está (o es más nueva que lo que se avisó: bajó completa después del aviso).
+        if (copia.Version >= principal.Catalogo && existencias >= principal.Existencias)
+        {
+            if (_existenciasSinGuardar && Ahora - _copiaGuardadaUtc > GuardarExistenciasCada)
+                await GuardarAsync(copia);
+            return;
+        }
+        if (Ahora < _sinCambiosHasta)
+        {
+            await BajarCopiaAsync();
+            return;
+        }
+        CambiosCopiaDto? cambios;
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            cambios = await _http.GetAsync<CambiosCopiaDto>(
+                $"api/cajas/{caja}/cambios?desde={copia.Version}&existencias={existencias}&base={copia.Base}&formato={CopiaAlDia.Formato}"
+                + $"&vendidos={copia.VersionVendidos ?? 0}&elegidos={copia.VersionElegidos ?? 0}",
+                noEncontradoEsNulo: true, espera: EsperaCambios);
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
+        {
+            NoContesto(ex);
+            return;
+        }
+        catch (ErrorCaja)
+        {
+            // Lo que no salió (un error del servicio): la copia completa, como antes.
+            await BajarCopiaAsync();
+            return;
+        }
+        if (cambios is null)
+        {
+            // Una caja principal de antes, sin los cambios: la copia completa, y no se vuelve a preguntar en un rato.
+            _sinCambiosHasta = Ahora + ServicioDeAntesPor;
+            await BajarCopiaAsync();
+            return;
+        }
+        if (cambios.PaqueteCompleto is not null)
+        {
+            await BajarCopiaAsync();
+            return;
+        }
+        _rendimiento?.Actividad("la sincronización (pedir lo que cambió)", reloj.Elapsed);
+        try
+        {
+            await AplicarAsync(copia, cambios);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or KeyNotFoundException or NullReferenceException)
+        {
+            // Lo que llegó no cuadra con la copia: la copia completa.
+            await BajarCopiaAsync();
+        }
+    }
+
+    /// <summary>
+    /// Lo que cambió, sobre la copia (<see cref="CopiaAlDia.Aplicar"/>), con su foto armada aquí, fuera del hilo de la pantalla,
+    /// igual que al bajarla completa; se cambia de un jalón. Lo del catálogo se guarda al momento en la base de la caja (por el
+    /// escritor de siempre, en pedazos); lo que solo cambió de existencias, cada tanto.
+    /// </summary>
+    private async Task AplicarAsync(PaqueteContingenciaDto copia, CambiosCopiaDto cambios)
+    {
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
+        var nueva = CopiaAlDia.Aplicar(copia, cambios);
+        // Solo existencias (lo de cada venta), lo más vendido o lo elegido: lo que sale de los nombres se queda; la foto, otra vez,
+        // como siempre. Si no cambia nada de lo que arma la búsqueda por nombre (entrega 5, parte 3), su índice tampoco.
+        var anterior = _copia;
+        var deEsta = anterior is not null && ReferenceEquals(anterior.Paquete, copia);
+        var armada = !cambios.CambiaCatalogo && deEsta
+            ? Copia.ConOtrasExistencias(nueva, anterior!)
+            : new Copia(nueva, anterior, mismaBusqueda: deEsta && !cambios.CambiaLaBusqueda);
+        // Si mientras tanto bajó otra (o empezó de cero), esta ya no.
+        if (!ReferenceEquals(_copia?.Paquete, copia))
+            return;
+        Poner(armada);
+        _rendimiento?.Actividad("la sincronización (aplicar lo que cambió y armar la foto)", reloj.Elapsed);
+        Cambio?.Invoke();
+        if (cambios.CambiaCatalogo || Ahora - _copiaGuardadaUtc > GuardarExistenciasCada)
+            await GuardarAsync(nueva);
+        else
+        {
+            _existenciasSinGuardar = true;
+            // El último folio de la serie de esta caja, como lo dice la caja principal: sin guardar la copia entera.
+            if (cambios.UltimoFolio > copia.UltimoFolio)
+                await _almacen.EscribirAsync(l => l.Guardar("folio", Math.Max(l.Leer<int?>("folio") ?? 0, cambios.UltimoFolio)), "el folio de la copia");
+        }
+    }
+
+    /// <summary>
+    /// El aviso de la caja principal (SSE, <c>api/cajas/{id}/avisos</c>): se queda conectado y, con cada versión nueva, la caja
+    /// se pone al día (y pide los saldos del crédito si cambiaron). Si se corta (o se queda callado: ni el «vivo» de cada 15 s),
+    /// se vuelve a conectar, esperando cada vez un poco más. Con una caja principal de antes (sin el aviso) queda el latido.
+    /// </summary>
+    private async Task EscucharAvisosAsync(CancellationToken ct)
+    {
+        var espera = ReconectarAviso;
+        try
+        {
+            try
+            {
+                await _conexion.Listo.WaitAsync(ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Si no arrancó, el latido lo dice.
+            }
+            while (!ct.IsCancellationRequested)
+            {
+                if (_conexion.Lista && _conexion.CajaId is { } caja && Ahora >= _sinAvisoHasta && !_conexion.SimularSinConexion)
+                {
+                    try
+                    {
+                        if (await EscucharAvisoAsync(caja, ct))
+                            espera = ReconectarAviso;
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+                    {
+                        // Se cortó: se vuelve a conectar.
+                    }
+                }
+                await Task.Delay(espera + TimeSpan.FromMilliseconds(Random.Shared.Next(250)), _reloj, ct);
+                espera = TimeSpan.FromTicks(Math.Min(espera.Ticks * 2, ReconectarAvisoTope.Ticks));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Se cerró la caja.
+        }
+    }
+
+    /// <summary>Una conexión del aviso, hasta que se corta. Dice si llegó algo (para no esperar de más al volver a conectar).</summary>
+    private async Task<bool> EscucharAvisoAsync(Guid caja, CancellationToken ct)
+    {
+        using var respuesta = await _http.AbrirAvisoAsync($"api/cajas/{caja}/avisos", EsperaCambios, ct);
+        if (respuesta is null)
+        {
+            // Una caja principal de antes: el latido basta.
+            _sinAvisoHasta = Ahora + ServicioDeAntesPor;
+            return false;
+        }
+        using var callado = new CancellationTokenSource(AvisoCallado, _reloj);
+        using var fin = CancellationTokenSource.CreateLinkedTokenSource(ct, callado.Token);
+        await using var flujo = new FlujoVigilado(await respuesta.Content.ReadAsStreamAsync(ct), callado, AvisoCallado);
+        var llego = false;
+        await foreach (var aviso in SseParser.Create(flujo).EnumerateAsync(fin.Token))
+        {
+            llego = true;
+            if (aviso.EventType == "versiones" && JsonSerializer.Deserialize<VersionesCopiaDto>(aviso.Data, AlmacenLocal.Json) is { } versiones)
+                Avisaron(versiones);
+        }
+        return llego;
+    }
+
+    /// <summary>La caja principal avisó sus versiones: la copia se pone al día y, si cambiaron, se piden los saldos del crédito.</summary>
+    private void Avisaron(VersionesCopiaDto versiones)
+    {
+        _dePrincipal = versiones;
+        if (_saldos is { } saldos && saldos.Version != versiones.Credito)
+            _ = Task.Run(ActualizarCreditosAsync);
+        _ = PonerAlDiaAsync();
+    }
+
+    /// <summary>
+    /// El cuerpo del aviso: cada vez que llega algo (un aviso o el «vivo»), se le da otro rato; si se queda callado ese rato, la
+    /// lectura se corta y el aviso se vuelve a conectar.
+    /// </summary>
+    private sealed class FlujoVigilado(Stream interno, CancellationTokenSource callado, TimeSpan rato) : Stream
+    {
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var leidos = await interno.ReadAsync(buffer, cancellationToken);
+            if (leidos > 0)
+                callado.CancelAfter(rato);
+            return leidos;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override int Read(byte[] buffer, int offset, int count) => interno.Read(buffer, offset, count);
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+                interno.Dispose();
+            base.Dispose(disposing);
         }
     }
 
@@ -532,7 +1016,7 @@ public sealed class Contingencia
         }
         catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
         {
-            Fijar(responde: false);
+            NoContesto(ex);
         }
         catch (ErrorCaja)
         {
@@ -551,8 +1035,10 @@ public sealed class Contingencia
     /// </summary>
     public void OlvidarCredito()
     {
-        _almacen.Escribir(l => l.LimpiarCredito().Borrar("saldos").Borrar("turno").Borrar("base").Borrar("folio").Borrar(ClaveEspera).LimpiarDiario(),
-            "empezar de cero");
+        _almacen.Escribir(l => l.LimpiarCredito().Borrar("saldos").Borrar("turno").Borrar("base").Borrar("folio").Borrar(ClaveEspera)
+            .Borrar(ClaveSinConfirmar).LimpiarDiario(), "empezar de cero");
+        lock (_candadoSinConfirmar)
+            _sinConfirmar = ImmutableDictionary<Guid, bool>.Empty;
         _saldos = null;
         _creditosPedidos = null;
         // Los productos y precios de encima eran de la base que se quitó: hasta que baje la copia nueva, solo la copia.
@@ -569,14 +1055,6 @@ public sealed class Contingencia
     public Task GuardarEnEsperaAsync(IReadOnlyList<TicketGuardado> tickets) =>
         _almacen.EscribirAsync(l => _ = tickets.Count == 0 ? l.Borrar(ClaveEspera) : l.Guardar(ClaveEspera, tickets), "los tickets en espera");
 
-    private void Fijar(bool responde)
-    {
-        if (_responde == responde)
-            return;
-        _responde = responde;
-        Cambio?.Invoke();
-    }
-
     private void Recontar()
     {
         (Pendientes, ConError, UltimoError, ImpresionesPorSubir) = _almacen.Contar();
@@ -591,7 +1069,7 @@ public sealed class Contingencia
     {
         _almacen.Escribir(l => l.Encolar(trabajo.Id, "api/impresiones", trabajo, bloquea: false), "una impresión medida");
         Recontar();
-        if (_responde)
+        if (ServidorResponde)
             _ = Task.Run(SubirAsync);
     }
 
@@ -790,7 +1268,8 @@ public sealed class Contingencia
             throw new InvalidOperationException("El efectivo contado no puede ser negativo.");
 
         var corte = Corte(turno, TipoCorte.Z, Nombre(s.UsuarioId), s.ContadoCentavos);
-        var id = Ids.Nuevo();
+        // El mismo Id con que se mandó en línea: si la caja principal sí lo guardó, al subir ya está.
+        var id = s.Id ?? Ids.Nuevo();
         var ahora = Ahora;
         _almacen.Escribir(lote => lote.Encolar(id, $"api/bandeja/turnos/{turnoId}/corte-z", new CorteContingenciaDto(id, s.UsuarioId, null, ahora, s.ContadoCentavos))
             .Borrar("turno").Borrar("base").LimpiarDiario(), "el corte sin conexión");
@@ -816,6 +1295,9 @@ public sealed class Contingencia
     /// </summary>
     public TicketDto Cobrar(SolicitudCobro s)
     {
+        // Se mandó y no se sabe si quedó: con la copia sería otra venta con el mismo Id (ClienteCaja.CobrarAsync).
+        if (s.VentaId is { } enviada && CobroSinConfirmar(enviada))
+            throw ErrorSinConfirmar(enviada, s.Cobros.Any(c => c.Forma == FormaPago.Credito));
         var datos = Datos;
         var caja = Caja;
         var turno = TurnoRequerido(s.TurnoId);
@@ -829,6 +1311,11 @@ public sealed class Contingencia
         ClienteRegistradoDto? cliente = null;
         if (s.ClienteId is { } clienteId && (cliente = Clientes().FirstOrDefault(c => c.Id == clienteId)) is null)
             throw new InvalidOperationException("Ese cliente no está en la copia de esta caja: quítalo del ticket (CTRL+L).");
+        // Tampoco sin conexión se cobra con precios que el cajero no vio (entrega 5, parte 2): con la red lenta la copia se sigue
+        // poniendo al día. La pantalla pone el ticket al día con los de la copia y lo dice, como con lo que contesta la caja
+        // principal; el cobro no se repite solo.
+        if (PreciosCambiados(datos, s) is { } cambiados)
+            throw new ErrorCaja(cambiados.Mensaje, PreciosCambiadosDto.CodigoDelError) { PreciosCambiados = cambiados };
         // Los mismos precios que calculó la pantalla: con el mayoreo del cliente si ella lo usó.
         var venta = new Venta
         {
@@ -948,6 +1435,34 @@ public sealed class Contingencia
     }
 
     /// <summary>
+    /// Lo del ticket cuyos precios en la copia no son los que vio el cajero: llegaron después de la versión con que se pusieron
+    /// los de su línea (<see cref="LineaSolicitada.VersionCatalogo"/>, o la del ticket). Una versión más nueva que la copia salió
+    /// de lo que llegó encima de ella (lo dijo el cobro, o la caja principal tenía el código): vale si sus precios son los de la
+    /// copia. Sin versión (una pantalla de antes), como siempre. Con los productos como están en la copia.
+    /// </summary>
+    private PreciosCambiadosDto? PreciosCambiados(Copia datos, SolicitudCobro s)
+    {
+        var foto = Foto;
+        var cambiados = new List<ProductoVentaDto>();
+        foreach (var lineas in s.Lineas.Where(l => l.VarianteId is not null).GroupBy(l => l.VarianteId!.Value))
+        {
+            if (lineas.Min(l => l.VersionCatalogo ?? s.VersionCatalogo) is not { } vista || !datos.PorVariante.TryGetValue(lineas.Key, out var enLaCopia))
+                continue;
+            var losVio = vista > datos.Paquete.Version
+                ? foto?.PorVariante(lineas.Key) is not { } visto || Copia.MismosPrecios(visto, enLaCopia)
+                : datos.PreciosDesde.GetValueOrDefault(lineas.Key, enLaCopia.Version ?? datos.Paquete.Version) <= vista;
+            if (!losVio)
+                cambiados.Add(enLaCopia);
+        }
+        if (cambiados.Count == 0)
+            return null;
+        var nombres = cambiados.Select(p => $"«{p.Descripcion}»").ToList();
+        var lista = nombres.Count == 1 ? nombres[0] : $"{string.Join(", ", nombres.Take(nombres.Count - 1))} y {nombres[^1]}";
+        return new PreciosCambiadosDto($"Cambió el precio de {lista} en la copia de esta caja: revisa el total y cobra otra vez.", cambiados,
+            datos.Paquete.Version);
+    }
+
+    /// <summary>
     /// Un abono sin conexión, con el saldo que conoce esta caja: el mismo cálculo que en línea. Sube con la bandeja (el
     /// servicio lo guarda tal cual) y su comprobante dice que el saldo es el de esta caja.
     /// </summary>
@@ -1039,6 +1554,39 @@ public sealed class Contingencia
     /// <summary>El servicio rechazó lo que se le mandó (por una regla): no pasó, ya no se cuenta.</summary>
     public Task QuitarCreditoAsync(Guid id) => _almacen.EscribirAsync(l => l.QuitarCredito([id]), "lo que no se fió");
 
+    // ── Los cobros que no se sabe si quedaron (entrega 5, parte 2) ──────────
+
+    private const string ClaveSinConfirmar = "cobros-sin-confirmar";
+
+    /// <summary>Ese cobro se mandó y no se sabe si quedó (<see cref="NoSeSabeSiQuedo"/>): solo se cobra en línea, con su mismo Id.</summary>
+    public bool CobroSinConfirmar(Guid ventaId) => _sinConfirmar.ContainsKey(ventaId);
+
+    /// <summary>Lo que se le dice al cajero de ese cobro: lo de lo fiado si se mandó fiado (o se manda así ahora).</summary>
+    public ErrorCaja ErrorSinConfirmar(Guid ventaId, bool fiado) => ClienteCaja.SinConfirmar(fiado || _sinConfirmar.GetValueOrDefault(ventaId));
+
+    /// <summary>
+    /// La caja principal no contestó a un cobro (puede que lo haya guardado, con el siguiente folio de esta caja) y sin conexión
+    /// no se pudo hacer. Ese folio se aparta: el siguiente cobro sin conexión no lo repite (si no quedó, se brinca). El ticket
+    /// solo se cobra en línea, con el mismo Id, hasta saberlo: <see cref="Cobrar"/> no lo hace y <see cref="CobroEnLineaAsync"/>
+    /// lo suelta. Queda en la base de la caja (también si se reinicia).
+    /// </summary>
+    /// <param name="fiado">Se mandó fiado: el cajero lee lo de lo fiado (<see cref="ErrorSinConfirmar"/>).</param>
+    public void NoSeSabeSiQuedo(Guid ventaId, bool fiado)
+    {
+        lock (_candadoSinConfirmar)
+        {
+            if (_sinConfirmar.ContainsKey(ventaId))
+                return;
+            _almacen.Escribir(l =>
+            {
+                var registro = l.Leer<Dictionary<Guid, bool>>(ClaveSinConfirmar) ?? [];
+                registro[ventaId] = fiado;
+                l.Guardar(ClaveSinConfirmar, registro).Guardar("folio", (l.Leer<int?>("folio") ?? 0) + 1);
+            }, "un cobro que no se sabe si quedó");
+            _sinConfirmar = _sinConfirmar.SetItem(ventaId, fiado);
+        }
+    }
+
     // ── Lo que pasó en línea, para la cuenta del turno ──────────────────────
 
     /// <summary>Al entrar en línea se toma la cuenta del servicio como base; el diario empieza de nuevo.</summary>
@@ -1083,10 +1631,20 @@ public sealed class Contingencia
         var fiado = ticket.VentaId is { } ventaId && ticket.Credito is { } credito ? (ventaId, credito.Vence) : ((Guid, DateOnly?)?)null;
         if (fiado is not null)
             _refrescarCredito = true;
+        // Si no se sabía si había quedado, ya se sabe.
+        Guid? sabido = null;
+        if (ticket.VentaId is { } id && _sinConfirmar.ContainsKey(id))
+        {
+            lock (_candadoSinConfirmar)
+                _sinConfirmar = _sinConfirmar.Remove(id);
+            sabido = id;
+        }
         return _almacen.EscribirAsync(lote =>
         {
             if (fiado is { } corregir)
                 lote.CorregirCredito(corregir.Item1, null, corregir.Item2);
+            if (sabido is { } quitar && lote.Leer<Dictionary<Guid, bool>>(ClaveSinConfirmar) is { } registro && registro.Remove(quitar))
+                _ = registro.Count == 0 ? lote.Borrar(ClaveSinConfirmar) : lote.Guardar(ClaveSinConfirmar, registro);
             lote.Anotar(Anotacion(turnoId, ticket)).Guardar("folio", Math.Max(lote.Leer<int?>("folio") ?? 0, folio));
         }, "un cobro");
     }

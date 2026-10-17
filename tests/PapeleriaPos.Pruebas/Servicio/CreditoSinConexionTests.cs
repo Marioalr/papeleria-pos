@@ -459,6 +459,29 @@ public sealed class CreditoSinConexionTests(ServicioDePrueba servicio) : IClassF
 
     // ── Devolver el saldo a favor (parte 3): solo en línea, y cuenta en el corte de la caja ──
 
+    /// <summary>
+    /// Si la devolución pasa el tope de siempre (la caja principal sí la guardó, pero no contestó a tiempo), tampoco se repite:
+    /// queda sin confirmar, como cuando se pierde la respuesta, y otra vez con el mismo Id sale el mismo comprobante.
+    /// </summary>
+    [Fact]
+    public async Task Si_la_devolucion_del_saldo_no_contesta_a_tiempo_tampoco_se_repite()
+    {
+        var p = await PuestoAsync();
+        var cliente = await ClienteAsync(p, "Sin conexión: pagó de más y tardó", 0, debe: -15000);
+        var solicitud = new SolicitudDevolverSaldo(Ids.Nuevo(), p.Caja.Id, p.Turno.Id, p.Encargado.UsuarioId, 15000, -15000);
+
+        p.Red.TardaDemasiado = r => r.RequestUri!.AbsolutePath.EndsWith("/saldo-devuelto");
+        var tarde = await Assert.ThrowsAsync<ErrorCaja>(() => p.Cliente.DevolverSaldoAsync(cliente.Id, solicitud, 15000));
+        p.Red.TardaDemasiado = null;
+        var pendiente = p.Cliente.DevolucionSinConfirmar(cliente.Id);
+        var comprobante = await p.Cliente.DevolverSaldoAsync(cliente.Id, solicitud, 15000);
+
+        Assert.Equal("saldo-sin-confirmar", tarde.Codigo);
+        Assert.Equal(solicitud, pendiente?.Solicitud);
+        Assert.Equal(15000, comprobante.CobradoCentavos);
+        Assert.Equal(0, await SaldoAsync(cliente.Id));
+    }
+
     [Fact]
     public async Task Lo_devuelto_de_un_saldo_a_favor_entra_al_corte_de_la_caja_y_si_se_pierde_la_respuesta_no_se_repite()
     {

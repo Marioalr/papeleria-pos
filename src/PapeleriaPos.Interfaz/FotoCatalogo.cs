@@ -11,13 +11,13 @@ namespace PapeleriaPos.Interfaz;
 /// con la versión del catálogo con que se armó la copia. Escanear es buscar en ella: fracciones de microsegundo, también en
 /// línea; la red no entra en el escaneo.
 /// <para>
-/// No cambia nunca: se arma fuera del hilo de la pantalla cuando la copia se carga o se baja, y la contingencia la cambia
-/// por la nueva de un jalón. Lo que llega después de la caja principal (un producto recién dado de alta en otra caja, o
+/// No cambia nunca: se arma fuera del hilo de la pantalla cuando la copia se carga, se baja o llega lo que cambió (entrega
+/// 5, parte 2), y la contingencia la cambia por la nueva de un jalón. Lo que llega después de la caja principal (un producto recién dado de alta en otra caja, o
 /// los precios nuevos que dijo el cobro) va en una foto nueva con eso encima (<see cref="Con"/>), sin tocar esta.
 /// </para>
 /// <para>
 /// También se busca por nombre en ella (entrega 5, parte 3, <see cref="Buscar"/>): la misma búsqueda del servicio, armada
-/// junto con la foto.
+/// junto con la foto; cada foto puesta al día trae la suya (si no cambió nada de lo que la arma, con el mismo índice).
 /// </para>
 /// </summary>
 public sealed class FotoCatalogo
@@ -64,7 +64,16 @@ public sealed class FotoCatalogo
     /// ni los espacios de las orillas; si un código se repite, vale el primero; y el producto sale con la presentación de ese
     /// código (si ya no la tiene, con la suya). Cada producto queda con la versión de la copia si no trae la propia.
     /// </summary>
-    public static FotoCatalogo Armar(PaqueteContingenciaDto paquete)
+    public static FotoCatalogo Armar(PaqueteContingenciaDto paquete) => Armar(paquete, null);
+
+    /// <summary>
+    /// La foto de una copia que llegó con cambios (entrega 5, parte 2), siempre con su búsqueda por nombre (parte 3). Con
+    /// <paramref name="conLaBusquedaDe"/>, una foto de la misma copia en la que no cambió nada de lo que arma esa búsqueda
+    /// (los productos, sus nombres y códigos, las marcas y los sinónimos; solo existencias, lo más vendido o lo elegido): su
+    /// índice sirve igual y no se arma otra vez, que con miles de productos es lo que más tarda. Lo más vendido y lo elegido
+    /// salen de esta copia.
+    /// </summary>
+    public static FotoCatalogo Armar(PaqueteContingenciaDto paquete, FotoCatalogo? conLaBusquedaDe)
     {
         var porVariante = new Dictionary<Guid, ProductoVentaDto>(paquete.Productos.Count);
         foreach (var p in paquete.Productos)
@@ -79,7 +88,7 @@ public sealed class FotoCatalogo
         }
         return new FotoCatalogo(paquete.Version, porCodigo.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase), porVariante.ToFrozenDictionary(),
             ImmutableDictionary<Guid, ProductoVentaDto>.Empty, ImmutableDictionary.Create<string, (Guid, Guid)>(StringComparer.OrdinalIgnoreCase),
-            BusquedaDeLaCopia.Armar(paquete, porVariante));
+            BusquedaDeLaCopia.Armar(paquete, porVariante, conLaBusquedaDe?._busqueda.Indice));
     }
 
     /// <summary>El producto de un código, con la presentación de ese código; vacío si no está en la copia.</summary>
@@ -134,6 +143,9 @@ public sealed class FotoCatalogo
 
     // ── La búsqueda por nombre (entrega 5, parte 3) ─────────────────────────
 
+    /// <summary>Si las dos buscan con el mismo índice (no se armó otra vez: <see cref="Armar(PaqueteContingenciaDto, FotoCatalogo?)"/>).</summary>
+    internal bool MismaBusquedaQue(FotoCatalogo otra) => ReferenceEquals(_busqueda.Indice, otra._busqueda.Indice);
+
     /// <summary>
     /// Si se busca por nombre en ella, como el servicio: sin productos (la caja recién instalada) o con una copia de un servicio
     /// de antes (no trae lo más vendido ni lo elegido antes, y ordenaría distinto), se le pregunta al servicio.
@@ -175,11 +187,15 @@ public sealed class FotoCatalogo
         /// Con lo mismo que el servicio: los productos de la copia en su orden, todos sus códigos (también los repetidos), las
         /// marcas con que el servicio lee los nombres y los sinónimos de la tienda.
         /// </summary>
-        public static BusquedaDeLaCopia Armar(PaqueteContingenciaDto paquete, Dictionary<Guid, ProductoVentaDto> porVariante)
+        /// <param name="indice">El de una foto de la misma copia, si no cambió nada de lo que lo arma: no se arma otra vez.</param>
+        public static BusquedaDeLaCopia Armar(PaqueteContingenciaDto paquete, Dictionary<Guid, ProductoVentaDto> porVariante, IndiceDeBusqueda? indice = null)
         {
-            var codigos = paquete.Codigos.ToLookup(c => c.VarianteId, c => c.Codigo);
-            var productos = porVariante.Values.Select(p => new ProductoParaBuscar(p.VarianteId, p.Descripcion, p.Codigo, codigos[p.VarianteId]));
-            var indice = IndiceDeBusqueda.Armar(productos, paquete.Marcas, (paquete.Sinonimos ?? []).Select(s => (s.Palabra, s.Equivale)));
+            if (indice is null)
+            {
+                var codigos = paquete.Codigos.ToLookup(c => c.VarianteId, c => c.Codigo);
+                var productos = porVariante.Values.Select(p => new ProductoParaBuscar(p.VarianteId, p.Descripcion, p.Codigo, codigos[p.VarianteId]));
+                indice = IndiceDeBusqueda.Armar(productos, paquete.Marcas, (paquete.Sinonimos ?? []).Select(s => (s.Palabra, s.Equivale)));
+            }
             var vendidos = new Dictionary<Guid, int>();
             foreach (var v in paquete.Vendidos ?? [])
                 vendidos[v.VarianteId] = v.Veces;
