@@ -31,8 +31,13 @@ public sealed class BuscadorPorDifusion : IBuscadorDeLaPrincipal
 /// busca al momento (<see cref="BuscarAhoraAsync"/>).
 /// </para>
 /// </summary>
+/// <param name="redes">
+/// Las redes de esta caja: solo se revisa lo que contesta desde ellas (lo de otra red no es de la tienda). Sin esto, las de sus
+/// tarjetas de cable y Wi-Fi; las pruebas ponen las suyas.
+/// </param>
 public sealed class ReencuentroDeLaPrincipal(
-    ConexionCaja conexion, IBuscadorDeLaPrincipal buscador, HttpClient http, TimeProvider? reloj = null, BitacoraDeRed? bitacora = null)
+    ConexionCaja conexion, IBuscadorDeLaPrincipal buscador, HttpClient http, TimeProvider? reloj = null, BitacoraDeRed? bitacora = null,
+    Func<IReadOnlyList<(System.Net.IPAddress Direccion, int Prefijo)>>? redes = null)
 {
     /// <summary>Lo que la dirección guardada tiene que llevar sin contestar antes de buscar en la red.</summary>
     public static readonly TimeSpan CaidaParaBuscar = TimeSpan.FromSeconds(30);
@@ -46,8 +51,18 @@ public sealed class ReencuentroDeLaPrincipal(
     /// <summary>Lo que se espera a que un servicio encontrado pruebe quién es.</summary>
     public static readonly TimeSpan EsperaPrueba = TimeSpan.FromSeconds(2);
 
-    /// <summary>Cuántos de los que contestan se revisan en cada búsqueda (en la tienda hay uno).</summary>
-    public const int CuantosSeRevisan = 5;
+    /// <summary>
+    /// Cuántas IP distintas de las que contestan se revisan en cada búsqueda (en la tienda contesta una): de una IP, una sola vez
+    /// (con el puerto de la dirección guardada, si contestó con él), así que muchas respuestas falsas desde un mismo equipo no
+    /// dejan fuera a la de verdad.
+    /// </summary>
+    public const int CuantasSeRevisan = 64;
+
+    /// <summary>Cuántas se revisan a la vez: la búsqueda entera tarda unos segundos aunque contesten muchas.</summary>
+    public const int ALaVez = 16;
+
+    /// <summary>Lo que dice la franja si dos o más prueban ser la caja principal: no se cambia sola a ninguna.</summary>
+    public const string DosPrincipales = "Hay dos cajas principales en la red: avisa al dueño.";
 
     /// <summary>
     /// Lo más que se lee de lo que contesta un servicio encontrado (la prueba es un renglón): uno que contesta de más no llena la
@@ -57,8 +72,13 @@ public sealed class ReencuentroDeLaPrincipal(
 
     private readonly TimeProvider _reloj = reloj ?? TimeProvider.System;
     private readonly Lock _candado = new();
-    private DateTimeOffset? _caidaDesde;
-    private DateTimeOffset? _siguiente;
+    /// <summary>
+    /// Desde cuándo no contesta y cuándo toca buscar otra vez, con la marca de tiempo de la PC (no la hora: si Windows corrige su
+    /// reloj en medio de una caída, no se adelanta ni se atrasa la búsqueda).
+    /// </summary>
+    private long? _caidaDesde;
+
+    private (long Desde, TimeSpan Espera)? _siguiente;
     private int _busquedas;
     private Task<bool> _busqueda = Task.FromResult(false);
 
@@ -106,7 +126,7 @@ public sealed class ReencuentroDeLaPrincipal(
     /// </summary>
     public void Latido(bool contesto)
     {
-        var ahora = _reloj.GetUtcNow();
+        var ahora = _reloj.GetTimestamp();
         lock (_candado)
         {
             if (contesto)
@@ -118,7 +138,8 @@ public sealed class ReencuentroDeLaPrincipal(
                 return;
             }
             _caidaDesde ??= ahora;
-            if (!Aplica || !_busqueda.IsCompleted || ahora - _caidaDesde < CaidaParaBuscar || _siguiente is { } siguiente && ahora < siguiente)
+            if (!Aplica || !_busqueda.IsCompleted || _reloj.GetElapsedTime(_caidaDesde.Value, ahora) < CaidaParaBuscar
+                || _siguiente is { } siguiente && _reloj.GetElapsedTime(siguiente.Desde, ahora) < siguiente.Espera)
                 return;
             _busqueda = Task.Run(() => BuscarAsync(automatica: true, CancellationToken.None));
         }
@@ -154,7 +175,7 @@ public sealed class ReencuentroDeLaPrincipal(
             lock (_candado)
             {
                 busqueda = ++_busquedas;
-                sinContestar = _caidaDesde is { } desde ? _reloj.GetUtcNow() - desde : null;
+                sinContestar = _caidaDesde is { } desde ? _reloj.GetElapsedTime(desde) : null;
             }
             var guardada = conexion.Servicio;
             if (busqueda == 1)
@@ -169,39 +190,68 @@ public sealed class ReencuentroDeLaPrincipal(
             {
                 encontrados = [];
             }
-            var noProbaron = new List<string>();
-            // Si contesta en la dirección guardada, su servicio está ahí (arrancando, o se tardó): no se cambia a otra, aunque esa
-            // PC conteste también por otra tarjeta (su Wi-Fi, con una IP del router que puede cambiar).
-            var laMisma = encontrados.Any(e => MismaDireccion(e, guardada));
-            foreach (var encontrado in laMisma ? [] : encontrados.Take(CuantosSeRevisan))
+            // Cada IP una vez (de las redes de esta caja), y todas a la vez: ninguna respuesta, falsa o no, deja fuera a otra.
+            var candidatos = Candidatos(encontrados, guardada, (redes ?? RedLocal.Subredes)());
+            using var turnos = new SemaphoreSlim(ALaVez);
+            var revisados = await Task.WhenAll(candidatos.Select(async c =>
             {
-                if (await EsLaPrincipalAsync(encontrado, ct))
+                await turnos.WaitAsync(ct);
+                try
                 {
-                    cambio = await CambiarAAsync(guardada, encontrado);
-                    return cambio;
+                    return (Direccion: c, Probo: await EsLaPrincipalAsync(c, ct));
                 }
-                noProbaron.Add(encontrado.Authority);
+                finally
+                {
+                    turnos.Release();
+                }
+            }));
+            var probaron = revisados.Where(r => r.Probo).Select(r => r.Direccion).ToList();
+            var noProbaron = revisados.Where(r => !r.Probo).Select(r => r.Direccion.Authority).ToList();
+            // La dirección guardada cuenta como «la misma» solo si prueba quién es: una respuesta falsa desde su IP no detiene nada.
+            var laMisma = probaron.Any(p => MismaDireccion(p, guardada));
+            if (!laMisma && probaron.Count == 1)
+            {
+                cambio = await CambiarAAsync(guardada, probaron[0]);
+                return cambio;
             }
-            bool anotar;
+            string clave, linea;
             lock (_candado)
             {
                 // La caja principal contestó otra vez mientras se buscaba: ya no hay nada que decir.
                 if (automatica && _caidaDesde is null)
                     return false;
-                Resultado = laMisma
-                    ? $"La caja principal contesta en la red en {guardada.Authority}, pero no su servicio: la caja sigue intentando."
-                    : encontrados.Count == 0
-                        ? $"No contestó ninguna caja principal en la red ({Hora()})."
-                        : $"Contestó {Textos.Lista(noProbaron)}, pero no probó ser la caja principal de esta caja: no se usa.";
-                // Cada cosa distinta una vez por caída: buscar cada pocos minutos durante 12 horas no llena la bitácora.
-                anotar = _anotado.Add(laMisma ? "misma" : encontrados.Count == 0 ? "ninguna" : string.Join(",", noProbaron.Order(StringComparer.Ordinal)));
+                if (laMisma)
+                {
+                    Resultado = $"La caja principal contesta en {guardada.Authority} y probó quién es: la caja sigue intentando.";
+                    (clave, linea) = ("misma", $"Contesta en la red en {guardada.Authority} (la misma dirección) y probó quién es; el latido vuelve solo.");
+                }
+                else if (probaron.Count > 1)
+                {
+                    // Una puede ser una copia de su base (la PC de antes, un respaldo en otra PC): no se cambia sola a ninguna.
+                    Resultado = DosPrincipales;
+                    var cuales = Textos.Lista(probaron.Select(p => p.Authority).ToList());
+                    (clave, linea) = ($"dos:{cuales}", $"Contestaron {cuales}, y las dos probaron ser la caja principal de esta caja (una puede ser una copia de "
+                                                      + "su base): no se cambia sola a ninguna. La caja sigue con su copia; avisa al dueño.");
+                }
+                else if (encontrados.Count == 0)
+                {
+                    Resultado = $"No contestó ninguna caja principal en la red ({Hora()}).";
+                    (clave, linea) = ("ninguna", "No contestó ninguna caja principal en la red; se vuelve a buscar cada vez más espaciado.");
+                }
+                else
+                {
+                    var cuales = noProbaron.Count > 0 ? Textos.Lista(noProbaron) : $"{encontrados.Count} fuera de la red de esta caja";
+                    Resultado = $"Contestó {cuales}, pero no probó ser la caja principal de esta caja: no se usa.";
+                    (clave, linea) = (string.Join(",", noProbaron.Order(StringComparer.Ordinal)),
+                        $"Contestó {cuales}, pero no probó con la llave de esta caja que es su caja principal: no se usa.");
+                }
             }
+            // Cada cosa distinta una vez por caída: buscar cada pocos minutos durante 12 horas no llena la bitácora.
+            bool anotar;
+            lock (_candado)
+                anotar = _anotado.Add(clave);
             if (anotar)
-                bitacora?.Anotar(laMisma
-                    ? $"Contesta en la red en {guardada.Authority} (la misma dirección), pero su servicio no contesta."
-                    : encontrados.Count == 0
-                        ? "No contestó ninguna caja principal en la red; se vuelve a buscar cada vez más espaciado."
-                        : $"Contestó {Textos.Lista(noProbaron)}, pero no probó con la llave de esta caja que es su caja principal: no se usa.");
+                bitacora?.Anotar(linea);
             return false;
         }
         finally
@@ -210,7 +260,7 @@ public sealed class ReencuentroDeLaPrincipal(
             {
                 // Si mientras tanto contestó (el latido ya lo dejó en cero), no hay siguiente: empieza de nuevo en la próxima caída.
                 if (automatica && !cambio && _caidaDesde is not null)
-                    _siguiente = _reloj.GetUtcNow() + Esperas[Math.Clamp(_busquedas, 1, Esperas.Count) - 1];
+                    _siguiente = (_reloj.GetTimestamp(), Esperas[Math.Clamp(_busquedas, 1, Esperas.Count) - 1]);
             }
             Cambio?.Invoke();
         }
@@ -274,6 +324,24 @@ public sealed class ReencuentroDeLaPrincipal(
         }
         SeCambio?.Invoke(nueva);
         return true;
+    }
+
+    /// <summary>
+    /// Lo que se revisa de lo que contestó: solo IP (no nombres), solo de las redes de esta caja (si se saben), cada IP una vez
+    /// (con el puerto de la dirección guardada si contestó con él; si no, el primero), hasta <see cref="CuantasSeRevisan"/>.
+    /// </summary>
+    internal static List<Uri> Candidatos(IEnumerable<Uri> encontrados, Uri guardada, IReadOnlyList<(System.Net.IPAddress Direccion, int Prefijo)> redes)
+    {
+        var candidatos = new List<Uri>();
+        foreach (var deUnaIp in encontrados.GroupBy(u => u.Host.Trim('[', ']'), StringComparer.OrdinalIgnoreCase))
+        {
+            if (!System.Net.IPAddress.TryParse(deUnaIp.Key, out var ip) || redes.Count > 0 && !RedLocal.EsDeLaRedLocal(ip, redes))
+                continue;
+            candidatos.Add(deUnaIp.FirstOrDefault(u => u.Port == guardada.Port) ?? deUnaIp.First());
+            if (candidatos.Count == CuantasSeRevisan)
+                break;
+        }
+        return candidatos;
     }
 
     private static bool MismaDireccion(Uri a, Uri b) =>

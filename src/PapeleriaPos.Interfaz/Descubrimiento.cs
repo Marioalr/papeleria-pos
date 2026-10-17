@@ -42,8 +42,8 @@ public static class Descubrimiento
     /// </summary>
     public static async Task<List<Uri>> BuscarAsync(TimeSpan espera, CancellationToken ct = default)
     {
-        var encontrados = new List<Uri>();
         using var udp = new UdpClient(AddressFamily.InterNetwork) { EnableBroadcast = true };
+        SinCortesPorIcmp(udp.Client);
         udp.Client.Bind(new IPEndPoint(IPAddress.Any, 0));
         var pregunta = Encoding.UTF8.GetBytes(Pregunta);
         foreach (var destino in RedLocal.Difusiones(RedLocal.Subredes()).Prepend(IPAddress.Broadcast).Distinct())
@@ -58,13 +58,35 @@ public static class Descubrimiento
             }
         }
 
+        return await EscucharAsync(t => udp.ReceiveAsync(t), espera, ct);
+    }
+
+    /// <summary>Lo más que se recuerda de lo que contesta: una lluvia de respuestas no llena la memoria.</summary>
+    public const int TopeDeRespuestas = 256;
+
+    /// <summary>
+    /// Lo que contesta durante <paramref name="espera"/>, sin repetir. En Windows, un «puerto inalcanzable» (ICMP) de un equipo al
+    /// que le llegó la pregunta (o uno falso) hace que la recepción truene con «conexión reiniciada»: no es el fin, se sigue
+    /// escuchando hasta que se acabe el tiempo. Si la red se va, lo que contestó antes sirve.
+    /// </summary>
+    internal static async Task<List<Uri>> EscucharAsync(Func<CancellationToken, ValueTask<UdpReceiveResult>> recibir, TimeSpan espera, CancellationToken ct)
+    {
+        var encontrados = new List<Uri>();
         using var limite = CancellationTokenSource.CreateLinkedTokenSource(ct);
         limite.CancelAfter(espera);
         try
         {
-            while (true)
+            while (encontrados.Count < TopeDeRespuestas)
             {
-                var recibido = await udp.ReceiveAsync(limite.Token);
+                UdpReceiveResult recibido;
+                try
+                {
+                    recibido = await recibir(limite.Token);
+                }
+                catch (SocketException ex) when (ex.SocketErrorCode is SocketError.ConnectionReset or SocketError.ConnectionRefused or SocketError.NetworkReset)
+                {
+                    continue;
+                }
                 if (LeerRespuesta(recibido.Buffer, recibido.RemoteEndPoint.Address) is { } uri && !encontrados.Contains(uri))
                     encontrados.Add(uri);
             }
@@ -78,6 +100,27 @@ public static class Descubrimiento
             // La red se fue mientras se esperaba: lo que contestó antes, sirve.
         }
         return encontrados;
+    }
+
+    /// <summary>SIO_UDP_CONNRESET: que Windows no corte la recepción de UDP por un «puerto inalcanzable» (ICMP).</summary>
+    private const int SioUdpConnReset = unchecked((int)0x9800000C);
+
+    /// <summary>
+    /// En Windows, que un «puerto inalcanzable» (ICMP) que llegue no corte la recepción de este socket de UDP (sin esto, cualquiera
+    /// en la red puede cortar la búsqueda con uno falso). En los demás sistemas no hace falta.
+    /// </summary>
+    public static void SinCortesPorIcmp(Socket socket)
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+        try
+        {
+            socket.IOControl(SioUdpConnReset, [0, 0, 0, 0], null);
+        }
+        catch (Exception ex) when (ex is SocketException or NotSupportedException or PlatformNotSupportedException)
+        {
+            // Sin eso, la recepción ya sigue escuchando tras «conexión reiniciada» (EscucharAsync).
+        }
     }
 
     /// <summary>La dirección del servicio que contestó (su IP y el puerto que dijo); vacía si no es una respuesta del POS.</summary>

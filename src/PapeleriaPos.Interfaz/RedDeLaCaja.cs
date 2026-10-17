@@ -90,15 +90,16 @@ public sealed class RedDeLaCaja
     /// El cliente con que se le pide a un servicio encontrado que pruebe quién es: aparte del de la venta, sin seguir
     /// redirecciones (lo que conteste ese mismo servicio es lo que cuenta) y sin guardar conexiones.
     /// </summary>
-    private static HttpClient ClienteDeLaPrueba() => new(new SocketsHttpHandler
+    private static HttpClient ClienteDeLaPrueba() => new(ManejadorDeLaPrueba()) { Timeout = Timeout.InfiniteTimeSpan };
+
+    /// <summary>Sin proxy (nada de la red ve a quién se le pregunta), sin seguir redirecciones y sin guardar conexiones.</summary>
+    internal static SocketsHttpHandler ManejadorDeLaPrueba() => new()
     {
+        UseProxy = false,
         AllowAutoRedirect = false,
         UseCookies = false,
         ConnectTimeout = ReencuentroDeLaPrincipal.EsperaPrueba,
         PooledConnectionIdleTimeout = TimeSpan.FromSeconds(1),
-    })
-    {
-        Timeout = Timeout.InfiniteTimeSpan,
     };
 
     public ConexionCaja Conexion { get; }

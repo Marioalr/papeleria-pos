@@ -124,7 +124,7 @@ public sealed class RedDeLaTiendaApiTests(ServicioDePrueba servicio) : IClassFix
         // firma con la dirección en que recibe (192.168.1.10:5080).
         var http = new HttpClient(tienda.Server.CreateHandler());
         var buscador = new Contestan(new Uri("http://192.168.1.66:5080/"), new Uri("http://192.168.1.10:5080/"));
-        var reencuentro = new ReencuentroDeLaPrincipal(conexion, buscador, http);
+        var reencuentro = new ReencuentroDeLaPrincipal(conexion, buscador, http, redes: () => RedDeLaTienda);
 
         Assert.True(await reencuentro.BuscarAhoraAsync());
 
@@ -164,7 +164,7 @@ public sealed class RedDeLaTiendaApiTests(ServicioDePrueba servicio) : IClassFix
         var bitacora = new BitacoraDeRed(carpeta.Ruta, "red-caja", reloj);
         bitacora.Empezar("esta caja");
         var vigia = new VigiaDeLaRed(bitacora, new EquipoFalso(), new PruebasFalsas(), new OpcionesDelVigia(), reloj);
-        var reencuentro = new ReencuentroDeLaPrincipal(conexion, new Contestan(new Uri("http://192.168.1.10:5080/")), red, reloj, bitacora);
+        var reencuentro = new ReencuentroDeLaPrincipal(conexion, new Contestan(new Uri("http://192.168.1.10:5080/")), red, reloj, bitacora, () => RedDeLaTienda);
         var contingencia = new Contingencia(new AlmacenLocal(baseLocal), red, conexion, reloj,
             redDeLaCaja: new RedDeLaCaja(conexion, bitacora, vigia, reencuentro));
         try

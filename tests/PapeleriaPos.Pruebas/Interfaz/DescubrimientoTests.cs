@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Turnos;
@@ -103,6 +104,67 @@ public sealed class DescubrimientoTests
 
     [Fact]
     public void Una_direccion_por_nombre_no_se_firma() => Assert.Null(Descubrimiento.Direccion(new Uri("http://caja1:5080/")));
+
+    /// <summary>
+    /// En Windows, un «puerto inalcanzable» (ICMP) que llega a media búsqueda (de un equipo al que le llegó la pregunta, o uno falso)
+    /// hace tronar la recepción con «conexión reiniciada»: se sigue escuchando y la respuesta de la caja principal se toma igual.
+    /// </summary>
+    [Fact]
+    public async Task Una_conexion_reiniciada_no_corta_la_escucha()
+    {
+        var principal = new IPEndPoint(IPAddress.Parse("192.168.0.10"), Descubrimiento.Puerto);
+        var llegan = new Queue<Func<UdpReceiveResult>>(
+        [
+            () => throw new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.ConnectionReset),
+            () => throw new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.ConnectionReset),
+            () => new UdpReceiveResult(Descubrimiento.ArmarRespuesta(5080), principal),
+        ]);
+
+        // Después de lo que llega, nada más: se espera hasta que se acaba el rato de escuchar.
+        var encontrados = await Descubrimiento.EscucharAsync(async ct =>
+        {
+            if (llegan.TryDequeue(out var siguiente))
+                return siguiente();
+            await Task.Delay(Timeout.Infinite, ct);
+            throw new OperationCanceledException(ct);
+        }, TimeSpan.FromSeconds(2), CancellationToken.None);
+
+        Assert.Equal([new Uri("http://192.168.0.10:5080/")], encontrados);
+    }
+
+    /// <summary>
+    /// El servicio contesta a lo más 5 preguntas por segundo a cada equipo (200 entre todos): quien pregunta sin parar no deja sin
+    /// respuesta a una caja de verdad, que pregunta una vez.
+    /// </summary>
+    [Fact]
+    public void Quien_pregunta_sin_parar_no_deja_sin_respuesta_a_las_cajas()
+    {
+        var limite = new PapeleriaPos.Servicio.LimiteDeRespuestas();
+        var otro = IPAddress.Parse("192.168.0.66");
+        var caja2 = IPAddress.Parse("192.168.0.11");
+
+        var alOtro = Enumerable.Range(0, 50).Count(_ => limite.Contestar(otro, 100));
+        var aLaCaja = limite.Contestar(caja2, 100);
+        var alSiguienteSegundo = limite.Contestar(otro, 101);
+
+        Assert.Equal(PapeleriaPos.Servicio.LimiteDeRespuestas.PorEquipo, alOtro);
+        Assert.True(aLaCaja);
+        Assert.True(alSiguienteSegundo);
+        var muchos = Enumerable.Range(1, 250).Count(i => limite.Contestar(IPAddress.Parse($"10.0.{i / 200}.{i % 200}"), 101));
+        Assert.Equal(PapeleriaPos.Servicio.LimiteDeRespuestas.EnTotal - 1, muchos);
+    }
+
+    /// <summary>Los clientes de la caja no usan proxy: la llave de la caja nunca pasa por un proxy de la red (WPAD).</summary>
+    [Fact]
+    public void Los_clientes_de_la_caja_no_usan_proxy()
+    {
+        using var manejador = RedCaja.Manejador(TimeSpan.FromSeconds(2));
+        using var deLaPrueba = RedDeLaCaja.ManejadorDeLaPrueba();
+
+        Assert.False(manejador.UseProxy);
+        Assert.False(deLaPrueba.UseProxy);
+        Assert.False(deLaPrueba.AllowAutoRedirect);
+    }
 
     [Fact]
     public void La_pregunta_de_dns_es_una_pregunta_tipo_a_por_ese_nombre()

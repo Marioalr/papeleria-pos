@@ -86,6 +86,39 @@ public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int
     }
 }
 
+/// <summary>
+/// Cuántas preguntas por UDP contesta el servicio: a lo más <see cref="PorEquipo"/> por segundo a cada IP y
+/// <see cref="EnTotal"/> por segundo entre todas. Así quien pregunta sin parar (o con IP falsas) no deja sin respuesta a las cajas
+/// de verdad, que preguntan una vez cada tanto. Lo usa un solo hilo (el que recibe).
+/// </summary>
+public sealed class LimiteDeRespuestas(int porEquipo = LimiteDeRespuestas.PorEquipo, int enTotal = LimiteDeRespuestas.EnTotal)
+{
+    public const int PorEquipo = 5;
+    public const int EnTotal = 200;
+
+    private readonly Dictionary<IPAddress, int> _deCadaUno = [];
+    private long _segundo = long.MinValue;
+    private int _total;
+
+    /// <summary>Si se le contesta a <paramref name="quien"/> en este segundo (de un reloj que solo avanza).</summary>
+    public bool Contestar(IPAddress quien, long segundo)
+    {
+        if (segundo != _segundo)
+        {
+            (_segundo, _total) = (segundo, 0);
+            _deCadaUno.Clear();
+        }
+        if (_total >= enTotal)
+            return false;
+        var suyas = _deCadaUno.GetValueOrDefault(quien);
+        if (suyas >= porEquipo)
+            return false;
+        _deCadaUno[quien] = suyas + 1;
+        _total++;
+        return true;
+    }
+}
+
 /// <summary>Revisa cada hora si ya está la copia del día; así sale aunque la PC se prenda tarde.</summary>
 public sealed class RespaldoDiario(ServicioRespaldos respaldos) : BackgroundService
 {
@@ -108,8 +141,6 @@ public sealed class RespaldoDiario(ServicioRespaldos respaldos) : BackgroundServ
 /// </summary>
 public sealed class DescubrimientoEnRed(IServer servidor, RedLocalDelServicio redLocal, ILogger<DescubrimientoEnRed> log) : BackgroundService
 {
-    /// <summary>Lo más que contesta por segundo: una pregunta repetida sin parar (o mal intencionada) no ocupa al servicio.</summary>
-    public const int RespuestasPorSegundo = 20;
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -117,6 +148,8 @@ public sealed class DescubrimientoEnRed(IServer servidor, RedLocalDelServicio re
         try
         {
             udp = new UdpClient(new IPEndPoint(IPAddress.Any, Descubrimiento.Puerto));
+            // En Windows, un «puerto inalcanzable» (ICMP) de una caja que ya cerró su búsqueda no corta la recepción.
+            Descubrimiento.SinCortesPorIcmp(udp.Client);
         }
         catch (SocketException ex)
         {
@@ -126,7 +159,7 @@ public sealed class DescubrimientoEnRed(IServer servidor, RedLocalDelServicio re
 
         using (udp)
         {
-            var (segundo, contestadas) = (0L, 0);
+            var limite = new LimiteDeRespuestas();
             while (!ct.IsCancellationRequested)
             {
                 try
@@ -134,9 +167,7 @@ public sealed class DescubrimientoEnRed(IServer servidor, RedLocalDelServicio re
                     var recibido = await udp.ReceiveAsync(ct);
                     if (!Descubrimiento.EsPregunta(recibido.Buffer) || PuertoHttp() is not { } puerto || !redLocal.EsDeLaRedLocal(recibido.RemoteEndPoint.Address))
                         continue;
-                    var ahora = Environment.TickCount64 / 1000;
-                    (segundo, contestadas) = ahora == segundo ? (segundo, contestadas + 1) : (ahora, 1);
-                    if (contestadas <= RespuestasPorSegundo)
+                    if (limite.Contestar(recibido.RemoteEndPoint.Address, Environment.TickCount64 / 1000))
                         await udp.SendAsync(Descubrimiento.ArmarRespuesta(puerto), recibido.RemoteEndPoint, ct);
                 }
                 catch (SocketException ex)

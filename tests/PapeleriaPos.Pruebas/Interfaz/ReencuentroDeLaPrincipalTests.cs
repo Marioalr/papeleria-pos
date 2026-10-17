@@ -44,8 +44,11 @@ public sealed class ReencuentroDeLaPrincipalTests : IDisposable
     {
         var bitacora = new BitacoraDeRed(_carpeta.Ruta, "red-caja", _reloj);
         bitacora.Empezar("esta caja");
-        return (new ReencuentroDeLaPrincipal(conexion, _buscador, new HttpClient(_servicios), _reloj, bitacora), bitacora);
+        return (new ReencuentroDeLaPrincipal(conexion, _buscador, new HttpClient(_servicios), _reloj, bitacora, () => RedDeLaCaja2), bitacora);
     }
+
+    /// <summary>La red de la caja 2: 192.168.0.0/24.</summary>
+    private static readonly IReadOnlyList<(IPAddress, int)> RedDeLaCaja2 = [(IPAddress.Parse("192.168.0.11"), 24)];
 
     /// <summary>
     /// Contestan tres en la red: uno que no sabe la prueba, uno que le pasa la pregunta a la caja principal de verdad (su prueba es
@@ -293,22 +296,110 @@ public sealed class ReencuentroDeLaPrincipalTests : IDisposable
         Assert.Equal(0, _buscador.Veces);
     }
 
-    /// <summary>
-    /// Si contesta en la red en la misma dirección guardada (su servicio no, todavía: arranca o se tardó), no se cambia, aunque esa
-    /// PC conteste también por otra tarjeta y lo pruebe ahí (su Wi-Fi, con una IP del router que puede cambiar): lo dice.
-    /// </summary>
+    /// <summary>Si contesta en la dirección guardada y prueba quién es, no hay nada que cambiar: el latido vuelve solo; lo dice.</summary>
     [Fact]
-    public async Task Si_contesta_en_la_misma_direccion_no_se_cambia()
+    public async Task Si_la_guardada_contesta_y_prueba_quien_es_no_se_cambia()
     {
-        _buscador.Contestan = [Nueva, Guardada];
-        _servicios.Principal = Nueva;
+        _buscador.Contestan = [Guardada];
+        _servicios.Principal = Guardada;
         var conexion = Conexion();
         var (reencuentro, _) = Nuevo(conexion);
 
         Assert.False(await reencuentro.BuscarAhoraAsync());
         Assert.Equal(Guardada, conexion.Servicio);
+        Assert.Empty(_guardadas);
+        Assert.Equal("La caja principal contesta en 192.168.0.10:5080 y probó quién es: la caja sigue intentando.", reencuentro.Resultado);
+    }
+
+    /// <summary>
+    /// Un equipo de la red contesta por UDP haciéndose pasar por la dirección guardada (que ya no es de la caja principal): eso solo
+    /// no detiene la búsqueda. La guardada cuenta como «la misma» solo si prueba quién es; la de verdad, en su IP nueva, sí se usa.
+    /// </summary>
+    [Fact]
+    public async Task Una_respuesta_falsa_desde_la_ip_guardada_no_detiene_la_busqueda()
+    {
+        _buscador.Contestan = [Guardada, Nueva];
+        _servicios.Principal = Nueva;
+        var conexion = Conexion();
+        var (reencuentro, _) = Nuevo(conexion);
+
+        Assert.True(await reencuentro.BuscarAhoraAsync());
+        Assert.Equal(Nueva, conexion.Servicio);
+    }
+
+    /// <summary>Muchas respuestas falsas desde un mismo equipo (con otros puertos) cuentan como una: la caja principal se revisa igual.</summary>
+    [Fact]
+    public async Task Muchas_respuestas_falsas_desde_un_equipo_no_dejan_fuera_a_la_principal()
+    {
+        _buscador.Contestan = [.. Enumerable.Range(1, 20).Select(puerto => new Uri($"http://192.168.0.66:{puerto}/")), Nueva];
+        _servicios.Principal = Nueva;
+        var conexion = Conexion();
+        var (reencuentro, _) = Nuevo(conexion);
+
+        Assert.True(await reencuentro.BuscarAhoraAsync());
+        Assert.Equal(Nueva, conexion.Servicio);
+        Assert.Equal(2, _servicios.Preguntas.Count);
+    }
+
+    /// <summary>
+    /// Si dos prueban ser la caja principal (una puede ser una copia de su base: la PC de antes, un respaldo en otra PC), no se
+    /// cambia sola a ninguna: sigue con su copia, la franja dice que se avise al dueño y la bitácora lo anota una vez.
+    /// </summary>
+    [Fact]
+    public async Task Si_dos_prueban_ser_la_caja_principal_no_se_cambia_sola_a_ninguna()
+    {
+        var copia = new Uri("http://192.168.0.99:5080/");
+        _servicios.Principal = Nueva;
+        _servicios.Copias.Add(copia);
+        _buscador.Contestan = [copia, Nueva];
+        var conexion = Conexion();
+        var (reencuentro, _) = Nuevo(conexion);
+
+        Assert.False(await reencuentro.BuscarAhoraAsync());
+        Assert.False(await reencuentro.BuscarAhoraAsync());
+
+        Assert.Equal(Guardada, conexion.Servicio);
+        Assert.Empty(_guardadas);
+        Assert.Equal(ReencuentroDeLaPrincipal.DosPrincipales, reencuentro.Resultado);
+        Assert.Single(_carpeta.Lineas(), l => l.StartsWith("Contestaron 192.168.0.99:5080 y 192.168.0.57:5080, y las dos probaron", StringComparison.Ordinal));
+    }
+
+    /// <summary>Lo que contesta desde otra red no es de la tienda: ni se le pregunta.</summary>
+    [Fact]
+    public async Task Lo_que_contesta_desde_otra_red_no_se_revisa()
+    {
+        _buscador.Contestan = [new Uri("http://10.8.0.5:5080/")];
+        var (reencuentro, _) = Nuevo(Conexion());
+
+        Assert.False(await reencuentro.BuscarAhoraAsync());
         Assert.Empty(_servicios.Preguntas);
-        Assert.StartsWith("La caja principal contesta en la red en 192.168.0.10:5080", reencuentro.Resultado);
+    }
+
+    /// <summary>
+    /// Los tiempos de la búsqueda van con la marca de tiempo de la PC, no con la hora: si Windows corrige su hora en plena caída
+    /// (una hora para atrás o para adelante), no se deja de buscar ni se busca antes de tiempo.
+    /// </summary>
+    [Fact]
+    public async Task Si_windows_corrige_su_hora_la_busqueda_no_se_atrasa_ni_se_adelanta()
+    {
+        _buscador.Contestan = [];
+        var (reencuentro, _) = Nuevo(Conexion());
+
+        reencuentro.Latido(contesto: false);
+        _reloj.Avanzar(TimeSpan.FromSeconds(5));
+        _reloj.CambiarLaHora(TimeSpan.FromHours(1));
+        reencuentro.Latido(contesto: false);
+        await reencuentro.UltimaBusqueda;
+        Assert.Equal(0, _buscador.Veces);
+
+        _reloj.CambiarLaHora(TimeSpan.FromHours(-2));
+        for (var i = 0; i < 5; i++)
+        {
+            _reloj.Avanzar(TimeSpan.FromSeconds(5));
+            reencuentro.Latido(contesto: false);
+            await reencuentro.UltimaBusqueda;
+        }
+        Assert.Equal(1, _buscador.Veces);
     }
 
     /// <summary>Lo que contesta en la red, como se le pida.</summary>
@@ -368,6 +459,9 @@ public sealed class ReencuentroDeLaPrincipalTests : IDisposable
     {
         public Uri? Principal { get; set; }
 
+        /// <summary>Otros servicios con una copia de la base: saben la huella de la llave de esta caja y firman con su dirección.</summary>
+        public List<Uri> Copias { get; } = [];
+
         public List<Uri> Impostores { get; } = [];
 
         /// <summary>Este le pasa la pregunta a aquel y contesta lo que aquel conteste.</summary>
@@ -398,7 +492,7 @@ public sealed class ReencuentroDeLaPrincipalTests : IDisposable
                 return Responder(new IdentidadServicioDto(Descubrimiento.Prueba(LlaveCaja.Huella("otra"), caja, reto, Descubrimiento.Direccion(donde)!)));
             if (QuePasanLaPregunta.TryGetValue(donde, out var aQuien))
                 return Responder(new IdentidadServicioDto(Descubrimiento.Prueba(LlaveCaja.Huella(Llave), caja, reto, Descubrimiento.Direccion(aQuien)!)));
-            if (donde == Principal && caja == CajaId)
+            if ((donde == Principal || Copias.Contains(donde)) && caja == CajaId)
                 return Responder(new IdentidadServicioDto(Descubrimiento.Prueba(LlaveCaja.Huella(Llave), caja, reto, Descubrimiento.Direccion(donde)!)), Relleno);
             throw new HttpRequestException(HttpRequestError.ConnectionError, "No contesta.");
         }

@@ -11,11 +11,25 @@ internal sealed class RelojDeLaRed(DateTimeOffset inicio) : TimeProvider
 {
     public DateTimeOffset Ahora { get; set; } = inicio;
 
+    /// <summary>La marca de tiempo de la PC (lo que no cambia aunque Windows corrija su hora): avanza con <see cref="Avanzar"/>.</summary>
+    public long Marca { get; private set; }
+
     public override DateTimeOffset GetUtcNow() => Ahora;
+
+    public override long GetTimestamp() => Marca;
+
+    public override long TimestampFrequency => TimeSpan.TicksPerSecond;
 
     public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Utc;
 
-    public void Avanzar(TimeSpan tiempo) => Ahora += tiempo;
+    public void Avanzar(TimeSpan tiempo)
+    {
+        Ahora += tiempo;
+        Marca += tiempo.Ticks;
+    }
+
+    /// <summary>Windows corrige su hora (o alguien la cambia): se mueve la hora, no la marca de tiempo.</summary>
+    public void CambiarLaHora(TimeSpan cuanto) => Ahora += cuanto;
 
     public static RelojDeLaRed Nuevo() => new(new DateTimeOffset(2026, 10, 17, 14, 0, 0, TimeSpan.Zero));
 }
