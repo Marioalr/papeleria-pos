@@ -34,6 +34,8 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
 
     public Task<T> AbrirAsync<T>(Dictionary<string, object?> parametros) where T : IComponent => Dispatcher.InvokeAsync(async () =>
     {
+        // Como en la página: el foco de un elemento (FocusAsync) lo contesta la página de mentiras, sin error.
+        ElementReferenceContext ??= new WebElementReferenceContext((IJSRuntime)servicios.GetService(typeof(IJSRuntime))!);
         var componente = (T)InstantiateComponent(typeof(T));
         _raiz = AssignRootComponentId(componente);
         await RenderRootComponentAsync(_raiz, ParameterView.FromDictionary(parametros));

@@ -671,6 +671,8 @@
                     }
                 </div>
             }
+            @* Cerrar el día, a la hora de cierre y para quien lo cierra (2026-10-17): con los demás avisos, arriba de «Último» (caja.css). *@
+            <RecordatorioCierreDelDia @ref="_recordatorioDelDia" CajaId="Caja.Id" Sesion="Sesion" Visible="!VaEnPanel" AlAbrirElCorte="() => Abrir(Ventanas.Corte)" />
         </aside>
     </div>
 
@@ -3414,6 +3416,9 @@
 
     private EfectivoCajaDto? _efectivo;
 
+    /// <summary>El recordatorio de cerrar el día: al cerrarlo desde el corte, se va sin esperar a que vuelva a preguntar.</summary>
+    private RecordatorioCierreDelDia? _recordatorioDelDia;
+
     /// <summary>
     /// El aviso de retiro, si el efectivo llegó al límite. En el piloto con eleventa no sale (se quita al dejarlo): el
     /// cajón es de las dos y el turno de esta caja no se cierra aquí (su corte se hace en eleventa), así que lo esperado
@@ -3530,7 +3535,8 @@
                 }
                 @* «Que entre a esta caja» (quien no tiene el corte) es cambiar de usuario, como Ctrl+U. *@
                 <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="AlCerrarTurno"
-                           AlCerrarElTurno="TurnoCerrado" AlCambiarUsuario="SalirAsync" />
+                           AlCerrarElTurno="TurnoCerrado" AlCambiarUsuario="SalirAsync"
+                           AlCerrarElDia="() => _recordatorioDelDia?.RevisarAsync() ?? Task.CompletedTask" />
             </Ventana>
             break;
         case Ventanas.VentasDelDia:

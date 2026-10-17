@@ -186,6 +186,29 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         return await _http.PostAsync<CierreDelDiaDto>($"api/cajas/{cajaId}/corte-del-dia/cierre", new SolicitudCierreDia(usuarioId));
     }
 
+    /// <summary>
+    /// El corte del día de una fecha (2026-10-17): hoy, o uno que ya pasó, solo para verlo e imprimirlo. Con la utilidad y los
+    /// departamentos si quien entró ve la utilidad. Necesita la caja principal.
+    /// </summary>
+    public async Task<CorteDelDiaDto> CorteDelDiaAsync(Guid cajaId, Guid usuarioId, DateOnly fecha)
+    {
+        if (contingencia is { ServidorResponde: false })
+            throw new ErrorCaja(CorteDelDiaSinConexion, "sin-conexion");
+        return (await _http.GetAsync<CorteDelDiaDto>(
+            $"api/cajas/{cajaId}/corte-del-dia?usuarioId={usuarioId}&fecha={fecha.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}"))!;
+    }
+
+    /// <summary>
+    /// El recordatorio de cerrar el día (2026-10-17): vacío si no toca (antes de la hora de cierre, el día ya cerrado, sin el
+    /// permiso o en el piloto) y sin conexión con la caja principal, que es la que sabe si el día se cerró.
+    /// </summary>
+    public async Task<RecordatorioCierreDto?> RecordatorioCierreAsync(Guid cajaId, Guid usuarioId)
+    {
+        if (contingencia is { ServidorResponde: false })
+            return null;
+        return await _http.GetAsync<RecordatorioCierreDto>($"api/cajas/{cajaId}/corte-del-dia/recordatorio?usuarioId={usuarioId}", nadaEsNulo: true);
+    }
+
     public Task<ProductoVentaDto?> PorCodigoAsync(string codigo, Guid sucursalId) =>
         ConRespaldoAsync(() => _http.GetAsync<ProductoVentaDto>($"api/productos/codigo/{Uri.EscapeDataString(codigo)}?sucursalId={sucursalId}",
             noEncontradoEsNulo: true), l => l.PorCodigo(codigo));

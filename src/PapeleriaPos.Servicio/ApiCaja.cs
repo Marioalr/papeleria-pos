@@ -117,16 +117,24 @@ public static class ApiCaja
         });
 
         // El corte del día (entrega 6): todas las cajas y turnos de la sucursal de esta caja, para quien tiene el permiso.
-        // En el piloto con eleventa se ve, pero no se cierra.
-        api.MapGet("/cajas/{cajaId:guid}/corte-del-dia", async (Guid cajaId, Guid usuarioId, PosDbContext db, PresenciaCajas presencia,
+        // En el piloto con eleventa se ve, pero no se cierra. Como el de eleventa (2026-10-17): el de otro día con «fecha» (hoy
+        // si no se da; uno que ya pasó solo se ve), y la utilidad y los departamentos solo para quien ve la utilidad.
+        api.MapGet("/cajas/{cajaId:guid}/corte-del-dia", async (Guid cajaId, Guid usuarioId, DateOnly? fecha, PosDbContext db, PresenciaCajas presencia,
             OpcionesEleventa opcionesEleventa) =>
         {
             var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
-            await new ServicioControl(db).ExigirAsync(usuarioId, caja.SucursalId, AccionControlada.CorteDelDia, "El corte del día lo ve quien tiene ese permiso.");
+            var control = new ServicioControl(db);
+            await control.ExigirAsync(usuarioId, caja.SucursalId, AccionControlada.CorteDelDia, "El corte del día lo ve quien tiene ese permiso.");
             var registro = new RegistroCorteDelDia(db);
-            var dia = await registro.ArmarAsync(caja.SucursalId, registro.Hoy, presencia.Foto(), opcionesEleventa.CorteEnEleventa);
-            // El piloto: los turnos que cerró el corte de eleventa dicen lo que se contó allá (TurnosDelPiloto).
-            return opcionesEleventa.CorteEnEleventa ? await CorteEnElPiloto.ConLoDeEleventaAsync(db, dia) : dia;
+            var hoy = registro.Hoy;
+            if (fecha > hoy)
+                throw new InvalidOperationException(RegistroCorteDelDia.TodaviaNoLlega);
+            var dia = await registro.ArmarAsync(caja.SucursalId, fecha ?? hoy, presencia.Foto(), opcionesEleventa.CorteEnEleventa,
+                await control.PuedeAsync(usuarioId, AccionControlada.VerUtilidad));
+            // El piloto: los turnos que cerró el corte de eleventa dicen lo que se contó allá (TurnosDelPiloto), también los de un
+            // día del piloto que se ve después de dejarlo. Un día que ya pasó es del piloto si lo fue, no según el de hoy.
+            dia = await CorteEnElPiloto.ConLoDeEleventaAsync(db, dia);
+            return dia.DeOtroDia ? dia with { Piloto = await CorteEnElPiloto.FueDelPilotoAsync(db, dia) } : dia;
         });
 
         api.MapPost("/cajas/{cajaId:guid}/corte-del-dia/cierre", async (Guid cajaId, SolicitudCierreDia s, PosDbContext db, PresenciaCajas presencia,
@@ -138,6 +146,17 @@ public static class ApiCaja
             var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
             var registro = new RegistroCorteDelDia(db);
             return await registro.CerrarAsync(caja.SucursalId, caja.Id, s.UsuarioId, registro.Hoy, presencia.Foto());
+        });
+
+        // El recordatorio de cerrar el día (2026-10-17): a la hora de cierre de la tienda, mientras el día no se cierre, a quien
+        // lo cierra. La venta lo pregunta cada minuto; sin nada que recordar, 204. La hora es la de los trabajos de fondo (las
+        // pruebas la cambian).
+        api.MapGet("/cajas/{cajaId:guid}/corte-del-dia/recordatorio", async (Guid cajaId, Guid usuarioId, PosDbContext db, TimeProvider reloj,
+            OpcionesEleventa opcionesEleventa) =>
+        {
+            var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
+            return await new RegistroCorteDelDia(db).RecordatorioAsync(caja.SucursalId, usuarioId, reloj.GetUtcNow().UtcDateTime, opcionesEleventa.CorteEnEleventa)
+                is { } recordatorio ? Results.Ok(recordatorio) : Results.NoContent();
         });
 
         api.MapGet("/productos/codigo/{codigo}", async (string codigo, Guid sucursalId, PosDbContext db, CatalogoEnMemoria catalogo) =>

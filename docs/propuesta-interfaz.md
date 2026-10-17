@@ -496,10 +496,15 @@ No está en el prototipo:
   - el efectivo esperado y el contado en cada turno, con sus diferencias;
   - las formas de pago;
   - las salidas por categoría, las devoluciones y las cancelaciones;
-  - lo fiado, los abonos y las impresiones cobradas.
+  - lo fiado, los abonos y las impresiones cobradas;
+  - para quien tiene «ver costos, utilidad y margen», la utilidad bruta y las ventas por departamento con su utilidad y su
+    margen, como la ganancia del corte de eleventa (2026-10-17).
 
   «Cerrar el día» se habilita cuando no queda ningún turno abierto ni ventas por subir de otra caja, y manda el resumen
-  por Telegram.
+  por Telegram. Como el de eleventa (2026-10-17): abre en el de hoy y ← → (o la fecha) llevan al de otro día, que solo
+  se ve; «Imprimir» lo manda a la impresora de tickets tal como se ve, también el de otro día. Desde la hora de cierre de
+  Configuración › Tienda, si el día no se ha cerrado, quien lo cierra lo ve en la venta, con los demás avisos del panel,
+  hasta que lo cierra.
 - El conteo por denominación (la tabla `CorteConteo`) deja de usarse.
 
 ## Reportes
@@ -532,7 +537,7 @@ Opciones propuestas (las que ya existen en el POS y las comunes en una caja):
 |---|---|
 | Tienda | Nombre, dirección, teléfono, horario (para avisar si no abre o no se cerró el día), logotipo |
 | Venta y cobro | Cobrar el efectivo al peso, formas de pago, comisión de la tarjeta, pedir la referencia de la terminal, si avisa al vender sin existencia (la venta nunca se detiene), sinónimos de la búsqueda, existencia en el ticket cuando queden pocas, tickets en espera, rápidos, días para devolver |
-| Efectivo y corte | Límite de efectivo en caja, fondo sugerido, umbral de diferencia que avisa, para qué son las salidas, comprobante de salidas, hora para recordar cerrar el día |
+| Efectivo y corte | Límite de efectivo en caja, fondo sugerido, umbral de diferencia que avisa, para qué son las salidas, comprobante de salidas (cerrar el día se recuerda a la hora de cierre de Tienda, 2026-10-17) |
 | Ticket | Encabezado y pie, ahorro por mayoreo, qué hacer al cobrar (imprimir, preguntar, no imprimir), ticket de prueba, vista previa |
 | Impresoras e impresiones | Impresora de tickets, precio por hoja (blanco y negro y color), cómo se avisa lo impreso en esa PC (bandeja con miniaturas, tarjeta con tiempo o solo el contador; por caja), recordarlo al cobrar, impresoras de inyección |
 | Inventario | Margen mínimo (con el permiso de utilidad), productos del conteo del día, aviso de mínimo, días que cubre el sugerido, recibir a ciegas |

@@ -376,6 +376,23 @@ td.acciones-renglon { white-space: nowrap; text-align: right; }
 .ventana.corte > .ventana-titulo .cerrar { width: 34px; height: 32px; color: #556375; background: #fff; border: 1px solid #dfe4ea; border-radius: 8px; font-size: 20px; }
 .ventana.corte > .ventana-titulo .cerrar:hover { border-color: #23439b; color: #15202c; }
 .fondo-ventana > .ventana.corte > .ventana-cuerpo { flex: 1; min-height: 0; padding: 18px 24px; gap: 12px; }
+/* El corte del día como el de eleventa (2026-10-17): el de otro día con ← → o la fecha, «Imprimir», y la utilidad y los
+   departamentos para quien ve la utilidad (con borde punteado, como lo que depende de un permiso en el prototipo). */
+.vn-corte-del-dia { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.vn-corte-del-dia:focus { outline: none; }
+.vn-corte-fecha { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.vn-corte-fecha .vn-corte-dia { font-size: 16px; font-weight: 700; color: var(--vn-texto); margin: 0 4px; }
+.vn-corte-fecha input[type="date"] { font: inherit; font-size: 13.5px; color: var(--vn-texto); padding: 4px 8px; border: 1px solid var(--vn-borde); border-radius: 8px; background: var(--vn-hoja); }
+.vn-corte-fecha input[type="date"]:focus { outline: 2px solid var(--vn-tinta); outline-offset: -1px; border-color: var(--vn-tinta); }
+.vn-corte-kpis.cinco { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.vn-corte-kpi.restringido, .vn-corte-tarjeta.restringido, .vn-corte-tabla.restringido { border-style: dashed; border-color: var(--vn-tinta-medio); }
+.vn-corte-tabla td small { color: var(--vn-suave); font-size: 12px; }
+@container (max-width: 760px) {
+    .vn-corte-kpis.cinco { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* El recordatorio de cerrar el día, en la venta: con los demás avisos del panel, arriba de «Último». */
+.vn-der > .vn-recordatorio-dia { order: 1; }
+.vn-der > .vn-ultimo { order: 2; }
 
 /* Configuración › Sinónimos: el alta en una fila */
 .sinonimos-alta { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin: 8px 0; }
