@@ -439,6 +439,84 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("Departamentos");
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Exhibidor", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("DesdeDia")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("DesdeMes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("HastaDia")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("HastaMes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("ModificadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Version");
+
+                    b.ToTable("Exhibidores");
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.LugarExhibidor", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ExhibidorId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ModificadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Orden")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExhibidorId");
+
+                    b.HasIndex("Version");
+
+                    b.ToTable("LugaresExhibidor");
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Marca", b =>
                 {
                     b.Property<Guid>("Id")
@@ -685,6 +763,39 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasIndex("Version");
 
                     b.ToTable("Productos");
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.ProductoExhibido", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("LugarId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ModificadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Posicion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("VarianteId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VarianteId");
+
+                    b.HasIndex("Version");
+
+                    b.HasIndex("LugarId", "VarianteId")
+                        .IsUnique();
+
+                    b.ToTable("ProductosExhibidos");
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Proveedor", b =>
@@ -3211,6 +3322,17 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Navigation("Presentacion");
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.LugarExhibidor", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Exhibidor", "Exhibidor")
+                        .WithMany("Lugares")
+                        .HasForeignKey("ExhibidorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Exhibidor");
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.MayoreoPorRevisar", b =>
                 {
                     b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
@@ -3272,6 +3394,25 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Navigation("Departamento");
 
                     b.Navigation("Marca");
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.ProductoExhibido", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.LugarExhibidor", "Lugar")
+                        .WithMany("Productos")
+                        .HasForeignKey("LugarId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", "Variante")
+                        .WithMany()
+                        .HasForeignKey("VarianteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Lugar");
+
+                    b.Navigation("Variante");
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.ProveedorVariante", b =>
@@ -4080,6 +4221,16 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasForeignKey("VentaId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Exhibidor", b =>
+                {
+                    b.Navigation("Lugares");
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.LugarExhibidor", b =>
+                {
+                    b.Navigation("Productos");
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Presentacion", b =>

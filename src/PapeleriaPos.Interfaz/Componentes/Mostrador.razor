@@ -1,0 +1,582 @@
+@* Ctrl+M: el mostrador y la temporada (entrega 13; docs/propuesta-interfaz.md, «Lo que se señala: exhibidos y temporada»,
+   panelMostrador del prototipo). Primero la temporada que corre y luego los exhibidores; cada uno con sus lugares (la repisa
+   de arriba, la de abajo, la mesa de la entrada) y sus productos en el mismo acomodo que en la tienda, de izquierda a derecha:
+   el cajero no recuerda el nombre, recuerda dónde está, y ahí lo toca. Se pinta de la copia de esta caja, sin la red.
+   El cursor se queda en el cuadro de captura, como en el prototipo: lo escrito ahí es la cantidad, las flechas eligen la pieza
+   (la venta se las pasa) y Enter la agrega. En el verificador (F9), tocar una solo enseña su precio. Quien tiene «Productos,
+   precios y etiquetas» lo acomoda aquí mismo («Acomodar»): busca o escanea para agregar, y mueve o quita cada pieza. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+@inject IServiceProvider Servicios
+
+<div class="vn-mostrador-panel @(Verificando ? "verifica" : null) @(_acomodando ? "acomoda" : null)">
+    <p class="vn-panel-sub">@Subtitulo</p>
+    @if (_error is { } error)
+    {
+        <div class="vn-alerta" role="alert"><Ico Nombre="alerta" /><div><span>@error</span></div></div>
+    }
+    @if (_exhibidores is null)
+    {
+        @if (_error is null)
+        {
+            <p class="nota">Cargando…</p>
+        }
+    }
+    else if (Elegido is not { } elegido)
+    {
+        <p class="nota">Todavía no hay exhibidores ni temporadas: se dan de alta en Configuración › Mostrador y temporadas.</p>
+    }
+    else
+    {
+        var lugares = Lugares(elegido);
+        var columnas = MostradorEnPantalla.Columnas(elegido);
+        var lado = MostradorEnPantalla.Lado(elegido);
+        <div class="vn-segmento vn-lugares" role="tablist" aria-label="Exhibidores y temporadas">
+            @foreach (var e in Visibles)
+            {
+                var este = e;
+                var esElegido = e.Id == elegido.Id;
+                <button role="tab" class="@(esElegido ? "on" : null)" aria-selected="@(esElegido ? "true" : "false")" title="@TituloDe(e)"
+                        @onclick="() => Ver(este.Id)" @onmousedown:preventDefault="true">
+                    <Ico Nombre="@(e.Tipo == TipoExhibidor.Temporada ? "reloj" : "tienda")" />@e.Nombre
+                </button>
+            }
+        </div>
+        <p class="nota">@NotaDe(elegido)</p>
+        @if (_acomodando)
+        {
+            @Acomodo(elegido, lugares)
+        }
+        @if (lugares.Count == 0)
+        {
+            <p class="nota">Todavía no tiene lugares: se le agregan en Configuración › Mostrador y temporadas.</p>
+        }
+        var k = 0;
+        @foreach (var (lugar, piezas) in lugares)
+        {
+            var esteLugar = lugar;
+            <div class="vn-repisa">@lugar.Nombre</div>
+            <div class="vn-mostrador" style="--cols:@columnas; --lado:@(lado)px">
+                @foreach (var pieza in piezas)
+                {
+                    var indice = k++;
+                    var activa = indice == _activa;
+                    <button id="pieza-@indice" class="vn-pieza @(activa ? "activa" : null)" title="@TituloDe(pieza)"
+                            @onclick="() => TocarAsync(indice)" @onmousedown:preventDefault="true">
+                        <span class="vn-foto" aria-hidden="true">@MostradorEnPantalla.Iniciales(pieza.Producto?.Descripcion ?? "?")</span>
+                        <span class="vn-pieza-nombre">@(pieza.Producto?.Descripcion ?? "Ya no está en el catálogo")</span>
+                        <strong>@(pieza.Producto is { } p ? Formato.Dinero(PrecioDeMenudeo.De(p.Precios, Caja.SucursalId)) : "—")</strong>
+                    </button>
+                }
+                @if (_acomodando)
+                {
+                    <button class="vn-pieza vn-pieza-mas @(_destino == lugar.Id ? "destino" : null)" title="@($"Agregar un producto en «{lugar.Nombre}»")"
+                            @onclick="() => AgregarEn(esteLugar.Id)" @onmousedown:preventDefault="true">
+                        <Ico Nombre="mas" /><span>Agregar aquí</span>
+                    </button>
+                }
+            </div>
+            @if (piezas.Count == 0 && !_acomodando)
+            {
+                <p class="nota">Sin productos todavía@(PuedeAcomodar && !Verificando ? ": se ponen con «Acomodar»." : ".")</p>
+            }
+        }
+        @if (PuedeAcomodar && !Verificando)
+        {
+            <div class="vn-botonera">
+                @if (_acomodando)
+                {
+                    <button class="vn-boton chico" @onclick="DejarDeAcomodarAsync">Listo</button>
+                }
+                else
+                {
+                    <button class="vn-boton chico" title="Agregar, mover o quitar los productos de cada lugar" @onclick="AcomodarAsync"><Ico Nombre="capas" />Acomodar</button>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+
+    /// <summary>Quien entró: con él se guarda lo que se acomoda.</summary>
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Se abrió desde el verificador (F9): tocar una pieza solo enseña su precio.</summary>
+    [Parameter] public bool Verificando { get; set; }
+
+    /// <summary>Lo que se ve primero (la temporada de su chip); vacío, lo primero de la lista.</summary>
+    [Parameter] public Guid? Inicial { get; set; }
+
+    /// <summary>Con «Productos, precios y etiquetas» en «Puede»: sale «Acomodar».</summary>
+    [Parameter] public bool PuedeAcomodar { get; set; }
+
+    /// <summary>Se tocó una pieza (o Enter con ella elegida): la venta la agrega o, en el verificador, enseña su precio.</summary>
+    [Parameter] public EventCallback<ProductoVentaDto> AlTocar { get; set; }
+
+    /// <summary>Entró o salió de «Acomodar»: mientras acomoda, el cursor está aquí y no en el cuadro de captura.</summary>
+    [Parameter] public EventCallback<bool> AlAcomodar { get; set; }
+
+    /// <summary>Una pieza del mostrador: su producto como está en la copia (vacío si ya no está en el catálogo).</summary>
+    private sealed record Pieza(Guid VarianteId, ProductoVentaDto? Producto);
+
+    private IReadOnlyList<ExhibidorDto>? _exhibidores;
+    private Guid? _elegido;
+    private int _activa;
+    private string? _error;
+    private bool _acomodando;
+
+    /// <summary>La pieza elegida se lleva a la vista después de dibujar (con las flechas, el panel se recorre solo).</summary>
+    private bool _mostrar;
+
+    /// <summary>Los productos que no están en la copia (la caja sin copia los pide a la caja principal, una vez).</summary>
+    private readonly Dictionary<Guid, ProductoVentaDto?> _pedidos = [];
+
+    private TimeProvider Reloj => Servicios.GetService<TimeProvider>() ?? TimeProvider.System;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _elegido = Inicial;
+        // De la copia, sin la red; sin copia (el navegador), de la caja principal.
+        _exhibidores = Cliente.ExhibidoresDeLaCopia();
+        if (_exhibidores is null)
+        {
+            try
+            {
+                _exhibidores = (await Cliente.MostradorAsync()).Exhibidores;
+            }
+            catch (ErrorCaja ex)
+            {
+                _error = ex.Message;
+            }
+        }
+        await PedirLosQueFaltanAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_mostrar)
+        {
+            _mostrar = false;
+            await Js.MostrarAsync($"#pieza-{_activa}");
+        }
+        if (_enfocarAgregar)
+        {
+            _enfocarAgregar = false;
+            await Js.EnfocarAsync("#mostrador-agregar");
+        }
+    }
+
+    /// <summary>Lo que sale arriba, en su orden; al acomodar, también las temporadas que hoy no corren.</summary>
+    private List<ExhibidorDto> Visibles => MostradorEnPantalla.EnOrden(_exhibidores ?? [], Temporadas.Hoy(Reloj), conLasQueNoCorren: _acomodando);
+
+    private ExhibidorDto? Elegido
+    {
+        get
+        {
+            var visibles = Visibles;
+            return visibles.FirstOrDefault(e => e.Id == _elegido) ?? visibles.FirstOrDefault();
+        }
+    }
+
+    /// <summary>Sus lugares con sus piezas: para vender, solo lo que está en el catálogo; al acomodar, todo (lo que ya no está se quita).</summary>
+    private List<(LugarExhibidorDto Lugar, List<Pieza> Piezas)> Lugares(ExhibidorDto exhibidor) =>
+        exhibidor.Lugares
+            .Select(l => (l, l.Productos.Select(v => new Pieza(v, Producto(v))).Where(p => _acomodando || p.Producto is not null).ToList()))
+            .ToList();
+
+    /// <summary>Como en la copia de esta caja (con los precios de ahora); sin copia, lo que contestó la caja principal.</summary>
+    private ProductoVentaDto? Producto(Guid varianteId) =>
+        Cliente.Foto is { } foto ? foto.PorVariante(varianteId) : _pedidos.GetValueOrDefault(varianteId);
+
+    /// <summary>Sin copia (el navegador): los productos de los exhibidores se piden a la caja principal, una vez.</summary>
+    private async Task PedirLosQueFaltanAsync()
+    {
+        if (Cliente.Foto is not null || _exhibidores is null)
+            return;
+        foreach (var id in _exhibidores.SelectMany(e => e.Lugares).SelectMany(l => l.Productos).Distinct().Where(id => !_pedidos.ContainsKey(id)).ToList())
+        {
+            try
+            {
+                _pedidos[id] = await Cliente.PorVarianteAsync(id, Caja.SucursalId);
+            }
+            catch (ErrorCaja)
+            {
+                _pedidos[id] = null;
+            }
+        }
+    }
+
+    private string Subtitulo =>
+        _acomodando ? "Acomodar: así queda en todas las cajas. Toca una pieza para moverla o quitarla; «Agregar aquí» pone otra. Se guarda solo."
+        : Verificando ? "Verificador: tocar uno solo muestra su precio."
+        : "Toca lo que el cliente señala. Con un número en el cuadro, agrega esa cantidad.";
+
+    private string NotaDe(ExhibidorDto e)
+    {
+        if (e.Tipo == TipoExhibidor.Exhibidor)
+            return "Como está acomodado en la tienda, de izquierda a derecha.";
+        var fechas = Temporadas.Fechas(e.Desde, e.Hasta);
+        if (fechas is null)
+            return "Sin fechas: no sale al vender hasta que se le pongan (Configuración › Mostrador y temporadas).";
+        return e.CorreEl(Temporadas.Hoy(Reloj)) ? $"Temporada {fechas}." : $"Temporada {fechas}: hoy no corre, no sale al vender.";
+    }
+
+    private string TituloDe(ExhibidorDto e) =>
+        e.Tipo == TipoExhibidor.Temporada ? $"Temporada{(Temporadas.Fechas(e.Desde, e.Hasta) is { } f ? $" {f}" : ", sin fechas")}" : "Exhibidor";
+
+    private string TituloDe(Pieza pieza) =>
+        pieza.Producto is { } p ? $"{p.Descripcion} · {Formato.Dinero(PrecioDeMenudeo.De(p.Precios, Caja.SucursalId))}" : "Ya no está en el catálogo: quítalo";
+
+    // ── Lo que hace la venta con el teclado (el cursor está en el cuadro de captura) ──
+
+    /// <summary>
+    /// Las flechas eligen la pieza (←↑→↓, también de un lugar al de abajo) y Tab o Shift+Tab cambian de exhibidor o temporada.
+    /// Dice si la tecla era suya.
+    /// </summary>
+    public bool Mover(string tecla)
+    {
+        if (Elegido is not { } elegido)
+            return false;
+        if (tecla is "Tab" or "Shift+Tab")
+        {
+            var visibles = Visibles;
+            var i = visibles.FindIndex(e => e.Id == elegido.Id);
+            Ver(visibles[(i + (tecla == "Tab" ? 1 : visibles.Count - 1)) % visibles.Count].Id);
+            return true;
+        }
+        if (tecla is not ("ArrowLeft" or "ArrowRight" or "ArrowUp" or "ArrowDown"))
+            return false;
+        _activa = MostradorEnPantalla.Siguiente(Lugares(elegido).Select(l => l.Piezas.Count).ToList(), MostradorEnPantalla.Columnas(elegido), _activa, tecla);
+        _mostrar = true;
+        StateHasChanged();
+        return true;
+    }
+
+    /// <summary>La pieza elegida con las flechas (la primera, si no se ha movido); vacío si no hay ninguna.</summary>
+    public ProductoVentaDto? ProductoElegido =>
+        Elegido is { } elegido ? Lugares(elegido).SelectMany(l => l.Piezas).ElementAtOrDefault(_activa)?.Producto : null;
+
+    /// <summary>Está acomodando: las teclas son de aquí.</summary>
+    public bool Acomodando => _acomodando;
+
+    private void Ver(Guid id)
+    {
+        (_elegido, _activa, _destino, _buscado, _resultados) = (id, 0, null, "", []);
+        StateHasChanged();
+    }
+
+    private async Task TocarAsync(int indice)
+    {
+        if (Elegido is not { } elegido || Lugares(elegido).SelectMany(l => l.Piezas).ElementAtOrDefault(indice) is not { } pieza)
+            return;
+        _activa = indice;
+        if (_acomodando)
+        {
+            // Elegirla para moverla o quitarla; el cursor sigue en «Agregar».
+            _destino = null;
+            _enfocarAgregar = true;
+            return;
+        }
+        if (pieza.Producto is { } producto)
+            await AlTocar.InvokeAsync(producto);
+    }
+
+    // ── Acomodar (con «Productos, precios y etiquetas») ─────────────────────
+
+    /// <summary>El lugar donde se agrega lo que se busca; vacío, el de la pieza elegida (o el primero).</summary>
+    private Guid? _destino;
+
+    private string _buscado = "";
+    private List<ResultadoBusquedaDto> _resultados = [];
+    private int _resultado;
+    private bool _enfocarAgregar;
+
+    /// <summary>Lo que se acomoda va de uno en uno, sobre lo que contestó la caja principal la vez anterior.</summary>
+    private readonly SemaphoreSlim _guardando = new(1, 1);
+
+    private async Task AcomodarAsync()
+    {
+        (_acomodando, _error, _enfocarAgregar) = (true, null, true);
+        await AlAcomodar.InvokeAsync(true);
+        // Lo más nuevo de la caja principal: lo que se acomoda va sobre eso.
+        try
+        {
+            _exhibidores = (await Cliente.MostradorAsync()).Exhibidores;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task DejarDeAcomodarAsync()
+    {
+        (_acomodando, _destino, _buscado, _resultados, _activa) = (false, null, "", [], 0);
+        await AlAcomodar.InvokeAsync(false);
+    }
+
+    private void AgregarEn(Guid lugarId)
+    {
+        _destino = lugarId;
+        _enfocarAgregar = true;
+    }
+
+    /// <summary>Dónde va lo que se agrega: el lugar que se eligió con «Agregar aquí», el de la pieza elegida o el primero.</summary>
+    private LugarExhibidorDto? Destino(ExhibidorDto exhibidor, List<(LugarExhibidorDto Lugar, List<Pieza> Piezas)> lugares)
+    {
+        if (exhibidor.Lugares.FirstOrDefault(l => l.Id == _destino) is { } elegido)
+            return elegido;
+        var conteos = lugares.Select(l => l.Piezas.Count).ToList();
+        return conteos.Sum() > 0 ? lugares[MostradorEnPantalla.Lugar(conteos, _activa).Lugar].Lugar : exhibidor.Lugares.FirstOrDefault();
+    }
+
+    private RenderFragment Acomodo(ExhibidorDto exhibidor, List<(LugarExhibidorDto Lugar, List<Pieza> Piezas)> lugares) => @<div class="vn-acomodar">
+        @{
+            var destino = Destino(exhibidor, lugares);
+            var elegida = Elegida(lugares);
+        }
+        @if (destino is null)
+        {
+            <p class="nota">Para acomodar, primero agrégale un lugar en Configuración › Mostrador y temporadas.</p>
+        }
+        else
+        {
+            <label for="mostrador-agregar">Agregar en «@destino.Nombre»@(elegida is not null && _destino is null ? ", después de la elegida" : "")</label>
+            <input id="mostrador-agregar" autocomplete="off" spellcheck="false" placeholder="Busca el nombre o escanea el código"
+                   value="@_buscado" @oninput="BuscarAsync" @onkeydown="AlTeclearAsync" />
+            @if (_resultados.Count > 0)
+            {
+                <div class="vn-acomodar-res" role="listbox">
+                    @for (var i = 0; i < _resultados.Count; i++)
+                    {
+                        var r = _resultados[i];
+                        <button role="option" class="@(i == _resultado ? "activa" : null)" @onclick="() => AgregarAsync(r.VarianteId)" @onmousedown:preventDefault="true">
+                            <span>@r.Descripcion</span><strong>@Formato.Dinero(r.PrecioCentavos)</strong>
+                        </button>
+                    }
+                </div>
+            }
+            else if (_buscado.Trim().Length >= 2)
+            {
+                <p class="nota">Nada coincide con «@_buscado.Trim()».</p>
+            }
+        }
+        @if (elegida is { } e)
+        {
+            <div class="vn-acomodar-barra">
+                <span title="@TituloDe(e.Pieza)">@(e.Pieza.Producto?.Descripcion ?? "Ya no está en el catálogo")</span>
+                <button class="vn-boton chico" title="Antes (Shift+←)" aria-label="Antes" disabled="@(e.Posicion == 0)"
+                        @onclick="() => MoverPiezaAsync(-1)" @onmousedown:preventDefault="true">←</button>
+                <button class="vn-boton chico" title="Después (Shift+→)" aria-label="Después" disabled="@(e.Posicion >= lugares[e.Lugar].Piezas.Count - 1)"
+                        @onclick="() => MoverPiezaAsync(1)" @onmousedown:preventDefault="true">→</button>
+                <button class="vn-boton chico" title="Al lugar de arriba (Shift+↑)" aria-label="Al lugar de arriba" disabled="@(e.Lugar == 0)"
+                        @onclick="() => CambiarDeLugarAsync(-1)" @onmousedown:preventDefault="true">↑</button>
+                <button class="vn-boton chico" title="Al lugar de abajo (Shift+↓)" aria-label="Al lugar de abajo" disabled="@(e.Lugar >= lugares.Count - 1)"
+                        @onclick="() => CambiarDeLugarAsync(1)" @onmousedown:preventDefault="true">↓</button>
+                <button class="vn-boton chico" title="Quitarlo de aquí (Supr): sigue en el catálogo" @onclick="QuitarPiezaAsync" @onmousedown:preventDefault="true">Quitar <kbd>Supr</kbd></button>
+            </div>
+        }
+        <p class="nota">Con el cuadro vacío: ← ↑ → ↓ eligen una pieza, Shift con las flechas la mueve y Supr la quita.</p>
+    </div>;
+
+    private async Task BuscarAsync(ChangeEventArgs e)
+    {
+        _buscado = e.Value?.ToString() ?? "";
+        var texto = _buscado.Trim();
+        _resultado = 0;
+        if (texto.Length < 2)
+        {
+            _resultados = [];
+            return;
+        }
+        try
+        {
+            _resultados = (Cliente.BuscarEnLaCopia(texto, 6) ?? await Cliente.BuscarAsync(texto, Caja.SucursalId, maximo: 6)).Take(6).ToList();
+        }
+        catch (ErrorCaja ex)
+        {
+            (_resultados, _error) = ([], ex.Message);
+        }
+    }
+
+    private async Task AlTeclearAsync(KeyboardEventArgs e)
+    {
+        var vacio = _buscado.Trim().Length == 0;
+        switch (e.Key)
+        {
+            case "Enter" when !vacio:
+                // Un código (escaneado o tecleado), o lo elegido de la lista.
+                if (Cliente.Foto?.PorCodigo(_buscado.Trim()) is { } escaneado)
+                    await AgregarAsync(escaneado.VarianteId);
+                else if (_resultados.Count > 0)
+                    await AgregarAsync(_resultados[Math.Clamp(_resultado, 0, _resultados.Count - 1)].VarianteId);
+                else if (await PorCodigoAsync(_buscado.Trim()) is { } deLaPrincipal)
+                    await AgregarAsync(deLaPrincipal.VarianteId);
+                else
+                    _error = $"No hay ningún producto con «{_buscado.Trim()}».";
+                break;
+            case "ArrowDown" when !vacio && _resultados.Count > 0:
+                _resultado = Math.Min(_resultado + 1, _resultados.Count - 1);
+                break;
+            case "ArrowUp" when !vacio && _resultados.Count > 0:
+                _resultado = Math.Max(_resultado - 1, 0);
+                break;
+            case "ArrowLeft" or "ArrowRight" or "ArrowUp" or "ArrowDown" when vacio && e.ShiftKey:
+                await (e.Key switch
+                {
+                    "ArrowLeft" => MoverPiezaAsync(-1),
+                    "ArrowRight" => MoverPiezaAsync(1),
+                    "ArrowUp" => CambiarDeLugarAsync(-1),
+                    _ => CambiarDeLugarAsync(1),
+                });
+                break;
+            case "ArrowLeft" or "ArrowRight" or "ArrowUp" or "ArrowDown" when vacio:
+                _destino = null;
+                Mover(e.Key);
+                break;
+            case "Delete" when vacio:
+                await QuitarPiezaAsync();
+                break;
+        }
+    }
+
+    private async Task<ProductoVentaDto?> PorCodigoAsync(string codigo)
+    {
+        try
+        {
+            return await Cliente.PorCodigoAsync(codigo, Caja.SucursalId);
+        }
+        catch (ErrorCaja)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Agrega un producto en su lugar: después de la pieza elegida si es de ese lugar; si no, al final. Si ya estaba ahí, solo
+    /// se elige.
+    /// </summary>
+    private Task AgregarAsync(Guid varianteId) => CambiarAsync((exhibidor, lugares) =>
+    {
+        if (Destino(exhibidor, lugares) is not { } destino)
+            return null;
+        var productos = destino.Productos.ToList();
+        if (productos.Contains(varianteId))
+            return ([], (destino.Id, varianteId));
+        var elegida = lugares.SelectMany(l => l.Piezas).ElementAtOrDefault(_activa);
+        var despues = _destino is null && elegida is not null ? productos.IndexOf(elegida.VarianteId) : -1;
+        productos.Insert(despues >= 0 ? despues + 1 : productos.Count, varianteId);
+        return ([new LugarConProductosDto(destino.Id, productos)], (destino.Id, varianteId));
+    }, limpiar: true);
+
+    /// <summary>La elegida, una antes (−1) o una después (+1) en su lugar.</summary>
+    private Task MoverPiezaAsync(int paso) => CambiarAsync((_, lugares) =>
+    {
+        if (Elegida(lugares) is not { } elegida)
+            return null;
+        var (lugar, _, pieza) = elegida;
+        var productos = lugares[lugar].Lugar.Productos.ToList();
+        var desde = productos.IndexOf(pieza.VarianteId);
+        var hasta = Siguiente(productos, desde, paso, lugares[lugar].Piezas);
+        if (desde < 0 || hasta < 0)
+            return null;
+        productos.RemoveAt(desde);
+        productos.Insert(hasta, pieza.VarianteId);
+        return ([new LugarConProductosDto(lugares[lugar].Lugar.Id, productos)], (lugares[lugar].Lugar.Id, pieza.VarianteId));
+    });
+
+    /// <summary>La elegida, al lugar de arriba (−1) o al de abajo (+1), en la misma posición si cabe.</summary>
+    private Task CambiarDeLugarAsync(int paso) => CambiarAsync((_, lugares) =>
+    {
+        if (Elegida(lugares) is not { } elegida || elegida.Lugar + paso < 0 || elegida.Lugar + paso >= lugares.Count)
+            return null;
+        var (lugar, posicion, pieza) = elegida;
+        var de = lugares[lugar].Lugar;
+        var a = lugares[lugar + paso].Lugar;
+        var quedan = de.Productos.Where(v => v != pieza.VarianteId).ToList();
+        var llegan = a.Productos.Where(v => v != pieza.VarianteId).ToList();
+        llegan.Insert(Math.Min(posicion, llegan.Count), pieza.VarianteId);
+        return ([new LugarConProductosDto(de.Id, quedan), new LugarConProductosDto(a.Id, llegan)], (a.Id, pieza.VarianteId));
+    });
+
+    /// <summary>Quita la elegida de su lugar (no del catálogo); la elegida pasa a la que sigue.</summary>
+    private Task QuitarPiezaAsync() => CambiarAsync((_, lugares) =>
+    {
+        if (Elegida(lugares) is not { } elegida)
+            return null;
+        var (lugar, _, pieza) = elegida;
+        var productos = lugares[lugar].Lugar.Productos.Where(v => v != pieza.VarianteId).ToList();
+        return ([new LugarConProductosDto(lugares[lugar].Lugar.Id, productos)], null);
+    });
+
+    private (int Lugar, int Posicion, Pieza Pieza)? Elegida(List<(LugarExhibidorDto Lugar, List<Pieza> Piezas)> lugares)
+    {
+        var conteos = lugares.Select(l => l.Piezas.Count).ToList();
+        if (conteos.Sum() == 0)
+            return null;
+        var (lugar, posicion) = MostradorEnPantalla.Lugar(conteos, Math.Clamp(_activa, 0, conteos.Sum() - 1));
+        return (lugar, posicion, lugares[lugar].Piezas[posicion]);
+    }
+
+    /// <summary>A dónde va en la lista guardada la que se mueve un lugar: junto a la pieza de al lado que se ve.</summary>
+    private static int Siguiente(List<Guid> productos, int desde, int paso, List<Pieza> piezas)
+    {
+        var visible = piezas.FindIndex(p => p.VarianteId == productos[desde]);
+        var vecina = visible + paso;
+        return vecina < 0 || vecina >= piezas.Count ? -1 : productos.IndexOf(piezas[vecina].VarianteId);
+    }
+
+    /// <summary>
+    /// Un cambio de lo acomodado: se calcula sobre lo último que contestó la caja principal, se guarda, y lo que contesta es lo
+    /// que se ve; la elegida sigue a la pieza que se movió. De uno en uno: una flecha que se queda oprimida no se adelanta.
+    /// </summary>
+    private async Task CambiarAsync(
+        Func<ExhibidorDto, List<(LugarExhibidorDto Lugar, List<Pieza> Piezas)>, (List<LugarConProductosDto> Lugares, (Guid Lugar, Guid Variante)? Elegir)?> cambio,
+        bool limpiar = false)
+    {
+        await _guardando.WaitAsync();
+        try
+        {
+            if (Elegido is not { } exhibidor || cambio(exhibidor, Lugares(exhibidor)) is not { } hecho)
+                return;
+            var (lugares, elegir) = hecho;
+            if (lugares.Count > 0)
+            {
+                _exhibidores = (await Cliente.AcomodarAsync(new SolicitudAcomodo(Sesion.UsuarioId, Caja.SucursalId, lugares))).Exhibidores;
+                await PedirLosQueFaltanAsync();
+            }
+            _error = null;
+            if (limpiar)
+                (_buscado, _resultados, _resultado) = ("", [], 0);
+            if (elegir is { } aElegir && Elegido is { } despues)
+            {
+                var (lugarId, varianteId) = aElegir;
+                var k = 0;
+                foreach (var (lugar, piezas) in Lugares(despues))
+                {
+                    var i = piezas.FindIndex(p => p.VarianteId == varianteId);
+                    if (lugar.Id == lugarId && i >= 0)
+                    {
+                        _activa = k + i;
+                        break;
+                    }
+                    k += piezas.Count;
+                }
+                _mostrar = true;
+            }
+            else if (Elegido is { } quedo)
+                _activa = Math.Clamp(_activa, 0, Math.Max(Lugares(quedo).Sum(l => l.Piezas.Count) - 1, 0));
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _guardando.Release();
+            _enfocarAgregar = _acomodando;
+        }
+    }
+}

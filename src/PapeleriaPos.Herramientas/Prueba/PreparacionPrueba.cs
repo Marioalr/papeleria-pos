@@ -13,7 +13,8 @@ namespace PapeleriaPos.Herramientas.Prueba;
 /// La base de la prueba con una persona real (docs/plan.md): sobre la papelería ficticia, la caja y los usuarios de
 /// prueba, los rápidos al precio que decidió el dueño, un chat de Telegram simulado del dueño (sus avisos se ven en la
 /// caja), impresiones por cobrar como si vinieran de la WF-6590, unos clientes registrados (dos con crédito, uno que ya
-/// debe y está vencido), y una factura y una nota de un proveedor con productos de esta base.
+/// debe y está vencido), una factura y una nota de un proveedor con productos de esta base, y el mostrador y las temporadas
+/// con productos acomodados (Ctrl+M, <see cref="MostradorDePrueba"/>).
 /// </summary>
 public static class PreparacionPrueba
 {
@@ -24,6 +25,8 @@ public static class PreparacionPrueba
         db.ChangeTracker.AutoDetectChangesEnabled = true;
         var hecho = await PreparacionCaja.PrepararAsync(db, ct);
         hecho.AddRange(await PreciosDeLosRapidosAsync(db, ct));
+        // Lo que se señala (entrega 13): Ctrl+M y el chip de la temporada con qué tocar.
+        hecho.AddRange(await MostradorDePrueba.AcomodarAsync(db, ct));
         var ahora = db.Reloj.GetUtcNow().UtcDateTime;
 
         if (!await db.ChatsTelegram.AnyAsync(c => c.ChatId == ChatTelegram.Simulado, ct))

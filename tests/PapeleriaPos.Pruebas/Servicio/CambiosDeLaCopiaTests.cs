@@ -81,9 +81,10 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
 
     /// <summary>
     /// Con cambios de todo tipo (precio, alta, código quitado, baja, marca, usuario, PIN mal tecleado, la tienda, un sinónimo,
-    /// un cliente, una venta y lo que la caja eligió en la búsqueda), la copia de antes con los cambios encima queda igual que
-    /// la copia completa de ahora, también en lo que usa su búsqueda (todos los códigos, las marcas, lo más vendido y lo
-    /// elegido: entrega 5, parte 3), y los cambios traen solo los productos que cambiaron y lo elegido después.
+    /// un cliente, una venta, lo que la caja eligió en la búsqueda, y una temporada nueva y lo acomodado en el mostrador), la
+    /// copia de antes con los cambios encima queda igual que la copia completa de ahora, también en lo que usa su búsqueda
+    /// (todos los códigos, las marcas, lo más vendido y lo elegido: entrega 5, parte 3) y en lo que se señala (entrega 13), y los
+    /// cambios traen solo los productos que cambiaron y lo elegido después.
     /// </summary>
     [Fact]
     public async Task La_copia_con_los_cambios_encima_queda_igual_que_la_completa()
@@ -111,6 +112,17 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
             .IsSuccessStatusCode);
         await Leer<List<SinonimoDto>>(await c.Http.PostAsJsonAsync("api/catalogo/sinonimos",
             new SolicitudSinonimo(c.Dueno.UsuarioId, c.Datos.SucursalId, "separador", "divisor", false)));
+        // Lo que se señala (entrega 13): una temporada nueva con sus fechas y su mesa, y productos en las repisas del mostrador.
+        var mostrador = await Leer<MostradorDto>(await c.Http.PostAsJsonAsync("api/mostrador",
+            new SolicitudNuevoExhibidor(c.Dueno.UsuarioId, c.Datos.SucursalId, "Regreso a clases", PapeleriaPos.Nucleo.Catalogo.TipoExhibidor.Temporada)));
+        var regreso = mostrador.Exhibidores.Single(e => e.Nombre == "Regreso a clases");
+        await Leer<MostradorDto>(await c.Http.PutAsJsonAsync($"api/mostrador/{regreso.Id}", new SolicitudCambiarExhibidor(c.Dueno.UsuarioId, c.Datos.SucursalId,
+            Fechas: new FechasTemporadaDto(new PapeleriaPos.Nucleo.Catalogo.DiaDelAnio(7, 15), new PapeleriaPos.Nucleo.Catalogo.DiaDelAnio(8, 31)))));
+        mostrador = await Leer<MostradorDto>(await c.Http.PostAsJsonAsync($"api/mostrador/{regreso.Id}/lugares", new SolicitudLugar(c.Dueno.UsuarioId, c.Datos.SucursalId, "Mesa")));
+        var repisas = mostrador.Exhibidores.First(e => e.Nombre == "Mostrador").Lugares;
+        await Leer<MostradorDto>(await c.Http.PutAsJsonAsync("api/mostrador/acomodo", new SolicitudAcomodo(c.Dueno.UsuarioId, c.Datos.SucursalId,
+            [new LugarConProductosDto(repisas[0].Id, [conPrecio.VarianteId, nuevo.VarianteId]), new LugarConProductosDto(repisas[1].Id, [vendido.VarianteId]),
+             new LugarConProductosDto(mostrador.Exhibidores.Single(e => e.Nombre == "Regreso a clases").Lugares[0].Id, [deAntes.VarianteId])])));
         // Un PIN mal tecleado no cambia nada.
         Assert.Equal(HttpStatusCode.BadRequest, (await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("cajero", "9999"))).StatusCode);
         // Lo demás, en la base: un código quitado, una marca, un usuario nuevo, la tienda y un cliente nuevo.
@@ -159,6 +171,9 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
         Assert.NotNull(cambios.Registrados);
         Assert.NotNull(cambios.Sinonimos);
         Assert.NotNull(cambios.Marcas);
+        Assert.NotNull(cambios.Exhibidores);
+        Assert.Equal([conPrecio.VarianteId, nuevo.VarianteId], despues.Exhibidores!.First(e => e.Nombre == "Mostrador").Lugares[0].Productos);
+        Assert.Contains(despues.Exhibidores!, e => e.Nombre == "Regreso a clases" && e.Desde == new PapeleriaPos.Nucleo.Catalogo.DiaDelAnio(7, 15));
         Assert.Null(cambios.Caja);
         Assert.Null(cambios.Ticket);
         Assert.True(cambios.Version > antes.Version && cambios.VersionExistencias > antes.VersionExistencias);
@@ -212,6 +227,42 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
 
         Assert.Null(cambios.PaqueteCompleto);
         Assert.Equal(Comparable(despues), Comparable(CopiaAlDia.Aplicar(antes, cambios)));
+    }
+
+    /// <summary>
+    /// Lo acomodado que solo sale de un lugar (entrega 13): no cambia ningún producto del catálogo, pero los cambios traen los
+    /// exhibidores (lo quitado queda anotado) y la copia con ellos encima queda igual que la completa. Se guarda ya en la caja
+    /// (cambia lo de la copia), sin volver a armar su búsqueda (no cambia nada de lo que la arma).
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_sale_del_mostrador_llega_con_los_cambios()
+    {
+        var c = await CajaAsync();
+        await servicio.CatalogoAlDiaAsync();
+        var actual = await Leer<MostradorDto>(await c.Http.GetAsync("api/mostrador"));
+        var navidad = actual.Exhibidores.Single(e => e.Nombre == "Navidad");
+        var lista = DeLaCopia(await CopiaAsync(c), p => p.Presentacion.EsBase);
+        var (uno, otro) = (lista[21], lista[22]);
+        await Leer<MostradorDto>(await c.Http.PutAsJsonAsync("api/mostrador/acomodo", new SolicitudAcomodo(c.Dueno.UsuarioId, c.Datos.SucursalId,
+            [new LugarConProductosDto(navidad.Lugares[0].Id, [uno.VarianteId, otro.VarianteId])])));
+        await servicio.CatalogoAlDiaAsync();
+        var antes = await CopiaAsync(c);
+
+        await Leer<MostradorDto>(await c.Http.PutAsJsonAsync("api/mostrador/acomodo", new SolicitudAcomodo(c.Dueno.UsuarioId, c.Datos.SucursalId,
+            [new LugarConProductosDto(navidad.Lugares[0].Id, [otro.VarianteId])])));
+        await servicio.CatalogoAlDiaAsync();
+        var cambios = await CambiosAsync(c, antes);
+        var despues = await CopiaAsync(c);
+
+        Assert.Null(cambios.PaqueteCompleto);
+        Assert.Empty(cambios.Productos);
+        Assert.Empty(cambios.Quitados);
+        Assert.True(cambios.CambiaCatalogo);
+        Assert.False(cambios.CambiaLaBusqueda);
+        Assert.Equal([otro.VarianteId], cambios.Exhibidores!.Single(e => e.Nombre == "Navidad").Lugares[0].Productos);
+        Assert.Equal(Comparable(despues), Comparable(CopiaAlDia.Aplicar(antes, cambios)));
+        // Y sin más cambios, ya no los trae.
+        Assert.Null((await CambiosAsync(c, despues)).Exhibidores);
     }
 
     /// <summary>

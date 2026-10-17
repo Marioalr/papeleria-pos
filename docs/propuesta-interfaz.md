@@ -247,6 +247,13 @@ mismo acomodo que en la tienda**: el cajero no recuerda el nombre, recuerda dón
 
 En el prototipo, «Qué probar › Lo que se señala: exhibidos y temporada». Las fotos son dibujos.
 
+**La parte 1 ya está (2026-10-17):** los puntos 1 y 2, sin las fotos todavía (en su lugar, las iniciales del producto).
+Ctrl+M con la temporada que corre y el mostrador, cada lugar con sus productos en su acomodo; tocar agrega (con un número
+antes, esa cantidad) y en el verificador solo enseña el precio, con «Agregarlo al ticket»; el chip de cada temporada
+mientras corre; «Acomodar» en el mismo Ctrl+M, y los exhibidores, las temporadas con sus fechas y sus lugares en
+Configuración › Mostrador y temporadas. Las fotos, la hoja de la temporada, las tarjetas de precio, empezar y terminar la
+temporada y lo más preguntado van en las partes que siguen ([avance](plan.md#primero-la-versión-unicaja-entrega-0)).
+
 ### Tickets en espera
 
 Hoy casi no se usan y rara vez son más de 3, así que dejan de ocupar una fila de pestañas. Pero **no hay límite**: con
@@ -736,7 +743,7 @@ la 11 y la 12). Qué hace eleventa que el POS todavía no, en qué entrega va y 
 | 9 | Reportes, los que el dueño usa hoy en eleventa | Grande | Para dejar eleventa |
 | 7 | Configuración nueva: buscador, grupos, alcance y guardado al momento | Mediano | Después |
 | 8 | Las pantallas de atrás con el mismo patrón de lista y detalle: Productos (abre con la lista, no vacío), Inventario por tareas, Clientes | Grande | Después |
-| 13 | Lo que se señala: el mostrador y la temporada con fotos en su acomodo (Ctrl+M), las fotos desde el celular, la hoja de la temporada y las tarjetas de precio, empezar y terminar la temporada, lo más preguntado | Mediano | Después |
+| 13 | Lo que se señala: el mostrador y la temporada con fotos en su acomodo (Ctrl+M), las fotos desde el celular, la hoja de la temporada y las tarjetas de precio, empezar y terminar la temporada, lo más preguntado. La parte 1 ya está (2026-10-17): Ctrl+M con los exhibidores y las temporadas en su acomodo, todavía sin fotos; el verificador, el chip de la temporada, «Acomodar» y Configuración › Mostrador y temporadas ([avance](plan.md#primero-la-versión-unicaja-entrega-0)) | Mediano | Después |
 | 4 | Impresiones: la bandeja con miniaturas y lotes por PC, el panel F2 de todas las PC, las miniaturas en el ticket y el recordatorio al cobrar | Mediano | Lo que eleventa no tiene, con el módulo de impresión |
 | 11 | WhatsApp: la lista «Escribieron hace poco» y la liga con las impresiones, con la etapa 2 de WhatsApp | Mediano | Lo que eleventa no tiene |
 | 12 | Ticket desde el celular, con la app Android (fase 8): armarlo, elegir la caja, el aviso a esa caja, la ficha que llega con su efecto y el QR sin red | Mediano | Lo que eleventa no tiene |

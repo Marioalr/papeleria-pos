@@ -6,6 +6,8 @@ let hayVentana = false;
 let hayPanel = false;
 // Se ve una página (Productos, Inventario o Clientes) en lugar de la venta (entrega 8): la venta está oculta.
 let hayPagina = false;
+// El mostrador (Ctrl+M, entrega 13) está abierto con el cursor en el cuadro de captura (no al acomodar).
+let hayMostrador = false;
 let escribiendo = null;
 
 export function registrar(referencia) {
@@ -31,6 +33,7 @@ export function quitar() {
     rodando = null;
     rafaga = null;
     hayPagina = false;
+    hayMostrador = false;
     pantalla = null;
 }
 
@@ -110,6 +113,32 @@ export function paginaAbierta(abierta) {
     hayPagina = abierta;
 }
 
+// El mostrador (Ctrl+M, entrega 13): el cursor se queda en el cuadro de captura, como en el prototipo, y lo escrito ahí es la
+// cantidad. Las flechas eligen la pieza, Tab el exhibidor o la temporada, y Enter la agrega (en el verificador, la enseña).
+// El Enter dice si llegó en ráfaga (el lector, más rápido que una persona): lo escaneado va al ticket como siempre, nunca
+// como cantidad. Lo demás (escribir, Esc, las F) es como con cualquier panel.
+export function mostradorAbierto(abierto) {
+    hayMostrador = abierto;
+}
+
+function teclaDelMostrador(e, campo) {
+    const tecla = e.key;
+    const flecha = tecla === 'ArrowLeft' || tecla === 'ArrowRight' || tecla === 'ArrowUp' || tecla === 'ArrowDown';
+    if (e.ctrlKey || e.altKey || e.metaKey || !(flecha || tecla === 'Enter' || tecla === 'Tab')) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    clearTimeout(escribiendo);
+    const texto = campo.value;
+    if (tecla === 'Enter') {
+        const delLector = texto.length >= RAFAGA_MINIMO && e.timeStamp - ultimaEscrita < RAFAGA_MS;
+        campo.value = '';
+        pantalla.invokeMethodAsync('EnMostrador', 'Enter', texto, e.timeStamp, delLector);
+    } else {
+        pantalla.invokeMethodAsync('EnMostrador', tecla === 'Tab' && e.shiftKey ? 'Shift+Tab' : tecla, texto, null, false);
+    }
+    return true;
+}
+
 // En una página: Esc, las F y las Ctrl de la caja van a la pantalla, que decide (F1 a la venta, F3 y F4 a su página, Esc
 // cierra lo abierto); así F5 no recarga ni Ctrl+P imprime. Las flechas, Enter y lo que se escribe son de la página: ↑ ↓ en
 // su búsqueda recorren la lista, y en la lista o en las tarjetas pasan a la de al lado. Lo que se escribe fuera de un campo
@@ -118,7 +147,7 @@ export function paginaAbierta(abierta) {
 function teclaDePagina(e) {
     const tecla = e.key;
     const funcion = /^F([1-9]|1[0-2])$/.test(tecla);
-    const ctrlCaja = e.ctrlKey && !e.altKey && /^[pedlbuqPEDLBUQ]$/.test(tecla);
+    const ctrlCaja = e.ctrlKey && !e.altKey && /^[pedlbuqmPEDLBUQM]$/.test(tecla);
     if (tecla === 'Escape' || funcion || ctrlCaja) {
         e.preventDefault();
         e.stopPropagation();
@@ -246,6 +275,7 @@ function alPresionar(e) {
         teclaDePagina(e);
         return;
     }
+    if (hayMostrador && hayPanel && esCaptura(campo) && teclaDelMostrador(e, campo)) return;
 
     if (tecla === 'Enter' && !hayVentana && esCaptura(campo)) {
         e.preventDefault();
@@ -267,6 +297,8 @@ function alPresionar(e) {
     const ctrlD = e.ctrlKey && (tecla === 'd' || tecla === 'D');
     const ctrlL = e.ctrlKey && (tecla === 'l' || tecla === 'L');
     const ctrlB = e.ctrlKey && (tecla === 'b' || tecla === 'B');
+    // Ctrl+M: el mostrador y la temporada (entrega 13).
+    const ctrlM = e.ctrlKey && (tecla === 'm' || tecla === 'M');
     // Ctrl+U: cambiar de usuario (en el navegador sería ver el código de la página).
     const ctrlU = e.ctrlKey && (tecla === 'u' || tecla === 'U');
     const funcion = /^F([1-9]|1[0-2])$/.test(tecla);
@@ -303,9 +335,9 @@ function alPresionar(e) {
 
     let atrapar;
     if (hayVentana) {
-        atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlU || (hayPanel && tecla === 'Insert');
+        atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlM || ctrlU || (hayPanel && tecla === 'Insert');
     } else {
-        atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlU || rapido || tecla === 'Escape' || tecla === 'Insert'
+        atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlM || ctrlU || rapido || tecla === 'Escape' || tecla === 'Insert'
             || (tecla === 'Delete' && vacio && !enPago)
             || ((tecla === 'ArrowUp' || tecla === 'ArrowDown') && (campo === null || enCodigo))
             || ((tecla === '+' || tecla === '-') && vacio && (campo === null || enCodigo));
@@ -322,7 +354,7 @@ function alPresionar(e) {
         texto = campo.value;
         if (rapido || tecla === 'Escape' || (tecla === 'F11' && texto !== '')) campo.value = '';
     }
-    let nombre = ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlU ? 'Ctrl+U'
+    let nombre = ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlM ? 'Ctrl+M' : ctrlU ? 'Ctrl+U'
         : rapido ? 'Alt+' + tecla : tecla;
     // F12: el cursor pasa a «Pagó con» aquí mismo, sin esperar la vuelta a .NET, para que lo que se teclee enseguida
     // (lo que dio el cliente) caiga ahí y no en el cuadro de captura. .NET sabe que ya se movió.
