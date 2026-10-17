@@ -63,6 +63,7 @@ public static class CopiaAlDia
             Encabezado = cambios.Ticket?.Encabezado ?? copia.Encabezado,
             Pie = cambios.Ticket?.Pie ?? copia.Pie,
             Logo = cambios.Ticket is { } ticket ? ticket.Logo : copia.Logo,
+            AlCobrar = cambios.Ticket?.AlCobrar ?? copia.AlCobrar,
             Configuracion = configuracion,
             LimiteEfectivoCentavos = cambios.Configuracion is { } nueva ? nueva.LimiteEfectivoCentavos : copia.LimiteEfectivoCentavos,
             Clientes = cambios.Clientes ?? copia.Clientes,

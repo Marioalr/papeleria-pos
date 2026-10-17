@@ -436,6 +436,10 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<ConfiguracionTicketDto> GuardarLogoTicketAsync(Guid cajaId, SolicitudLogo solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/cajas/{cajaId}/configuracion/ticket/logo", solicitud));
 
+    /// <summary>«Al cobrar»: imprimir el ticket, ofrecerlo o no imprimirlo, con «Configurar el ticket» de quien entró a la caja.</summary>
+    public Task<ConfiguracionTicketDto> GuardarAlCobrarAsync(Guid cajaId, SolicitudAlCobrar solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/cajas/{cajaId}/configuracion/ticket/al-cobrar", solicitud));
+
     public Task<VentaParaDevolverDto?> VentaPorFolioAsync(Guid sucursalId, string folio) =>
         ConRespaldoAsync(() => _http.GetAsync<VentaParaDevolverDto>($"api/sucursales/{sucursalId}/ventas/folio/{Uri.EscapeDataString(folio)}",
             noEncontradoEsNulo: true));

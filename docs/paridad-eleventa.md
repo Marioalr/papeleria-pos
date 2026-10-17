@@ -42,7 +42,7 @@
 | Promociones: hoy, F11 al costo en el regreso a clases | La usan, solo en esa temporada (dueño) | Escalas por cantidad; no hay promociones con fechas | Promociones con fechas, con los kits | Fase 3, antes del próximo regreso a clases | Mediano |
 | Ctrl+D, descuento; cambiar el precio en la venta | Por confirmar | Ctrl+D y Ctrl+E, con permiso y límite | — | — | — |
 | F12, cobrar en efectivo: pagó con y cambio | La usan | F12 al «Pagó con» con el exacto en gris; redondeo al peso | — | — | — |
-| Al cobrar: F2, sin imprimir el ticket; F4, notas en el ticket | Por confirmar | Siempre imprime (o lo muestra en pantalla si no hay impresora); sin notas | Cobrar sin imprimir, y reimprimir después sin pedir motivo, si la tienda lo usa | Sin plan | Chico |
+| Al cobrar: F2, sin imprimir el ticket; F4, notas en el ticket | Por confirmar | **Cobrar sin imprimir: hecho (2026-10-17).** Configuración › Ticket › «Al cobrar», para toda la tienda: «Imprimir el ticket» (lo de siempre; sin impresora, se ve en pantalla), «Ofrecerlo» (se cobra igual y el panel ofrece «Imprimir ticket», Ctrl+I, hasta el primer escaneo del siguiente cliente) o «No imprimirlo» (si lo piden, se reimprime desde «Ventas del día»). Nunca pregunta antes de cobrar; lo fiado sale siempre. Sin notas | Las notas (F4), si las usan; reimprimir sin pedir motivo el ticket que no salió al cobrar (hoy lo pide, como toda reimpresión) | Sin plan | Chico |
 | Otras formas de pago: tarjeta, transferencia, vales, cheque, dólares, crédito, mixto | No la usan: en su base todo va en efectivo | Tarjeta, transferencia por verificar, crédito y mixto; apagadas en el piloto | — | — | — |
 | Ventas del día y devoluciones: por folio, día, cajero o caja; imprimir copia; devolver y cancelar | La usan (devoluciones y cancelaciones vistas en vivo) | Las de hoy de esa caja (desde la lista «/»), con reimprimir. Devolver hasta 7 días y cancelar en el mismo turno, por el folio, también el de eleventa | Ver las de otro día, otro cajero u otra caja | Sin plan | Chico |
 | El ticket: logotipo, datos del negocio y notas al pie | La usan | Encabezado, pie y logotipo; sin QR por ahora, como el de eleventa (2026-10-16). En el piloto, con el folio de eleventa | — | — | — |
@@ -150,9 +150,10 @@ caja 2; los reportes y lo demás de la tabla detienen el último paso, apagar el
 | 11 | **Tomar el corte de eleventa:** al ver cerrado el turno adoptado, cerrar el de la caja nueva con lo contado allá. Puede entrar con el piloto andando: mientras, la caja avisa que el corte se hace en eleventa | Mediano |
 
 Del 2 al 5 es el [diseño por aprobar](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar):
-es puente y se quita al dejar eleventa. Si en la tienda se ve que casi no se imprime el ticket o que los cajeros usan
-Ins para la cantidad, esos dos cambios chicos conviene hacerlos antes del piloto. La entrega 5 no detiene el piloto:
-ahí la caja 2 tiene su propio servicio en la misma PC, y la red solo entra al mandar a eleventa, con su bandeja.
+es puente y se quita al dejar eleventa. Si en la tienda se ve que los cajeros usan Ins para la cantidad, ese cambio
+chico conviene hacerlo antes del piloto. Cobrar sin imprimir ya está (2026-10-17): si casi no se imprime el ticket, se
+elige en Configuración › Ticket › «Al cobrar». La entrega 5 no detiene el piloto: ahí la caja 2 tiene su propio servicio
+en la misma PC, y la red solo entra al mandar a eleventa, con su bandeja.
 
 ### 2. Para dejar eleventa
 
@@ -225,9 +226,9 @@ Un fin de semana, en las pantallas de eleventa y viendo trabajar a la caja, sin 
 cambia lo que falta ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-octubre)):
 
 - **La versión de eleventa** (Configuración ➜ Mantenimiento ➜ Licencia, ya en la guía).
-- **Al vender:** si los cajeros usan Ins para la cantidad; si al cobrar usan F2 (sin ticket) o el ticket sale siempre,
-  y si le ponen notas (F4); si dan descuentos o cambian precios, para dejarle los mismos permisos a quien atiende la
-  caja 2.
+- **Al vender:** si los cajeros usan Ins para la cantidad; si al cobrar usan F2 (sin ticket) o el ticket sale siempre
+  (para dejar igual «Al cobrar» en Configuración › Ticket, 2026-10-17), y si le ponen notas (F4); si dan descuentos o
+  cambian precios, para dejarle los mismos permisos a quien atiende la caja 2.
 - **El corte:** si además del corte de cada cajero se hace el del día o el de todas las cajas; si se imprime y se guarda
   con el efectivo; si se mira la ganancia o las ventas por departamento; si se manda por correo.
 - **Otros días:** si se abren ventas o cortes de otros días (Ventas del día y devoluciones, Historial de cortes), y

@@ -348,8 +348,9 @@ public static class ApiCaja
         var configuracion = await ApiConfiguracion.ConfiguracionAsync(db, v.SucursalId, opciones);
         var cliente = v.ClienteId is { } clienteId && await db.ClientesRegistrados.FindAsync(clienteId) is { } c ? RegistroClientes.Dto(c) : null;
         var folioEleventa = await db.EnviosAEleventa.AsNoTracking().Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == v.Id).Select(e => e.FolioEleventa).FirstOrDefaultAsync();
+        // Con «Al cobrar» de la sucursal: la caja decide con el ticket que ya le llega, sin preguntar nada más al cobrar.
         return ArmadoTicket.Desde(v, caja!.Nombre, cajero, id => presentaciones.TryGetValue(id, out var p) ? p : null,
             configuracion.RenglonesEncabezado, configuracion.RenglonesPie, ApiConfiguracion.Logo(configuracion), cliente,
-            await new RegistroCredito(db).TicketAsync(v.Id)) with { FolioEleventa = folioEleventa };
+            await new RegistroCredito(db).TicketAsync(v.Id)) with { FolioEleventa = folioEleventa, AlCobrar = configuracion.AlCobrar };
     }
 }

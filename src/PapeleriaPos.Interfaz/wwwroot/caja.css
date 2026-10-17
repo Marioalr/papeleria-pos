@@ -930,6 +930,8 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-segmento button.on.p { background: var(--vn-cobro-claro); color: var(--vn-cobro); font-weight: 700; }
 .vn-segmento button.on.a { background: var(--vn-aviso-fondo); color: var(--vn-aviso); font-weight: 700; }
 .vn-segmento button.on.n { background: var(--vn-error-fondo); color: var(--vn-error); font-weight: 700; }
+/* La opción elegida de un ajuste (Configuración › Ticket › «Al cobrar»), como .segmento button.on.x del prototipo. */
+.vn-segmento button.on.x { background: var(--vn-tinta-claro); color: var(--vn-tinta); font-weight: 700; }
 .vn-umbral { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; vertical-align: middle; font-size: 12.5px; color: var(--vn-suave); }
 .vn-umbral input { width: 72px; padding: 4px 6px; border: 1px solid var(--vn-borde); border-radius: 6px; font: 500 13px var(--vn-f-texto); text-align: right; }
 
