@@ -218,11 +218,12 @@ no-break. La causa **no se conoce** todavía.
     guiarse por la luz de «en línea» del módem, que puede seguir prendida toda la caída. Al cerrar se deja conectado.
   - **Después, en este orden** (el dueño o quien él diga): con el cable todavía fuera (la red local funciona), y antes
     de la primera reconexión, guardar el registro del Tenda (exportarlo o foto de cada página), porque las reconexiones
-    y su reinicio diario lo borran; la página de estado y el registro de eventos del módem, desde una laptop conectada
-    a un puerto de red del módem; copiar a una USB la carpeta del script de las dos cajas; exportar del Visor de eventos
-    los registros Sistema, Dhcp-Client, NetworkProfile y WLAN-AutoConfig (en Registros de aplicaciones y servicios >
-    Microsoft > Windows); y el número de reporte y la hora de la caída según Megacable. Todo eso queda fuera del
-    repositorio.
+    y su reinicio diario lo borran; la página de estado y el registro de eventos del módem, desde una laptop conectada a
+    un puerto de red del módem; copiar a una USB la carpeta del script de las dos cajas y la bitácora de red del POS
+    (`red-caja-…` y `red-servicio-…`, [dónde](pruebas-en-tienda.md#después-de-una-caída-la-bitácora-de-red)); exportar
+    del Visor de eventos los registros Sistema, Dhcp-Client, NetworkProfile y WLAN-AutoConfig (en Registros de
+    aplicaciones y servicios > Microsoft > Windows); y el número de reporte y la hora de la caída según Megacable. Todo
+    eso queda fuera del repositorio.
 - **El arreglo propuesto, con lo que ya hay** (sin compras, 2026-10-09; por aprobar): que la venta y la impresión no
   dependan del router ([plan](plan.md#para-el-piloto-con-dos-cajas)):
   - IP fija puesta en cada equipo, dentro de la red local de hoy, fuera del rango que reparte el Tenda y reservada en
@@ -273,10 +274,19 @@ no-break. La causa **no se conoce** todavía.
 
   No conviene un enchufe inteligente que reinicie el módem: en 12 horas lo apagaría a cada rato y borraría su registro.
 - **En el POS:** la venta de la caja principal no usa la red (habla con su propio servicio). La caja 2 pasa a
-  contingencia y sigue vendiendo, pero hoy no vuelve a buscar a la principal si cambia su IP. La impresora de tickets,
-  el SNMP y la dirección de la caja principal en la caja 2 aceptan nombres (el instalador sugiere el nombre de la PC):
-  hay que configurarlos por IP, y que el instalador muestre la IP. Hace falta distinguir en pantalla «sin internet» (la
-  venta sigue, no desconectes nada) de «sin red local», y una bitácora de red que junte sola los datos del diagnóstico.
+  contingencia y sigue vendiendo y, desde el 2026-10-17, si a la caja principal le cambia la IP, la vuelve a encontrar
+  sola, con su llave ([cómo](arquitectura.md#la-red-de-la-matriz)). La impresora de tickets, el SNMP y la dirección de
+  la caja principal en la caja 2 aceptan nombres (el instalador sugiere el nombre de la PC): hay que configurarlos por
+  IP, y que el instalador muestre la IP. La caja ya avisa si la impresora de tickets está por nombre, compartida o con
+  WSD, y si la caja principal está por nombre; la franja distingue «sin internet» (la venta sigue, no desconectes nada)
+  de «sin red local»; y la bitácora de red junta sola buena parte del diagnóstico ([cómo se
+  lee](pruebas-en-tienda.md#después-de-una-caída-la-bitácora-de-red)): el latido con lo que tarda, el router (ping, su
+  página y su DNS), el internet (desde la caja principal), la impresora de tickets (solo ping), la IP y de dónde viene,
+  el router y su MAC, el Wi-Fi con su señal, la difusión y los descartados de la tarjeta, cuándo arrancó la PC y cuándo
+  cada caja dejó de latir. Lo que no junta, y sigue siendo del script: el perfil de red de Windows, `ipconfig /all` con
+  las fechas de la concesión, `arp -a`, `tracert`, el ping a lo que el POS no conoce (el grabador y el módem, salvo que
+  se pongan en `Red:Equipos`), los puertos 3050 y 3309 (una conexión de prueba quedaría en el registro de Firebird) y
+  los botones del personal; y en una PC sin el POS (la caja principal durante el piloto) no corre nada de esto.
 - **Internet de respaldo:** las caídas de unas 12 horas también cortan lo que sí necesita internet (WhatsApp, recargas,
   Telegram, ver las cámaras). Queda como [idea](ideas.md#internet-de-respaldo), para después de arreglar la red local.
 

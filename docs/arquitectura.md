@@ -113,7 +113,8 @@ instala las actualizaciones a distancia ([plan](plan.md#para-el-piloto-con-dos-c
 ## Red
 
 - **Router Tenda** en cada sucursal: IP fija reservada para la caja principal. Las cajas la encuentran por búsqueda en
-  la red al darlas de alta (si después cambia la IP, hoy hay que reconfigurarlas).
+  la red al darlas de alta y, si después cambia la IP, la vuelven a encontrar solas, con su llave
+  ([red de la matriz](#la-red-de-la-matriz)).
 - **La red local no debe depender del internet** ([red de la matriz](#la-red-de-la-matriz)).
 - **Red privada** (NetBird, gratis): soporte a distancia y, con el central, las cámaras en vivo, sin abrir puertos.
   Tailscale gratis es solo para uso no comercial; Tailscale de pago es el plan B ([propuesta](servidor-remoto.md)).
@@ -155,9 +156,41 @@ causas posibles y qué se junta en la próxima caída están en [notas](notas.md
   Si en la próxima caída los equipos que ya están en el switch no se contestan por IP, el arreglo no basta.
 - **Si aun así falla:** lo que se podría comprar queda solo como referencia ([notas](notas.md#red-de-la-tienda)); el
   dueño no quiere lista de compras (2026-10-09).
-- **En el POS:** que la caja 2 vuelva a buscar sola a la principal (con su llave) si cambia la IP; avisos si algo está
-  configurado por nombre o con WSD; una franja que distinga «sin internet: la venta sigue, no desconectes nada» de «sin
-  red local»; y una bitácora de red que junte sola el diagnóstico.
+- **En el POS** (en código desde el 2026-10-17; falta verlo en Windows y en la tienda,
+  [avance](plan.md#la-versión-unicaja-y-el-piloto-en-la-caja-2)):
+  - **La caja vuelve a encontrar sola a la caja principal** si le cambió la IP: si la dirección guardada no contesta
+    30 s, pregunta en la red por UDP (puerto 5081, un paquete a la difusión de cada red, sin recorrerla equipo por
+    equipo) y a cada servicio que contesta le pide que pruebe que es su caja principal: un reto al azar que el servicio
+    firma (HMAC-SHA256) con la huella de la llave de esa caja, el número de la caja y la IP y el puerto en que recibió
+    la pregunta. La llave no viaja; un reto nuevo cada vez evita que se repita una respuesta vieja, y la dirección, que
+    otro equipo le pase la pregunta a la caja principal de verdad y se quede en medio. Solo se cambia a uno que lo
+    prueba y guarda la dirección nueva en `caja.json`; lo que contesta sin probarlo se anota y no se usa. Si no la
+    encuentra, busca otra vez a los 30 s, al minuto, a los 2 y luego cada 5 minutos; «Volver a buscarla», en la franja,
+    busca al momento. Mientras la guardada contesta, nada. El servicio contesta por UDP solo a su red local (su misma
+    red, sin túneles como NetBird; el firewall ya solo abre el 5081 a la red local), a lo más 20 veces por segundo, y
+    solo el de la caja principal (`Descubrimiento:Activo`; apagado en la prueba y en desarrollo). La prueba
+    (`api/identidad`) va sin llave y solo a la red local.
+  - **Avisos de lo que está por nombre o con WSD:** la impresora de tickets por nombre (`tcp://tickets:9100`, o una cola
+    de Windows con su puerto TCP/IP a un nombre), compartida desde otra PC o con un puerto WSD (la caja de Windows lee
+    el puerto de la cola en el registro) dice «Tickets · configúrala por IP» en el estado de arriba y en la entrada,
+    donde ya se ven los problemas de la impresora; la caja principal por nombre lo dice en Configuración › Acerca de ›
+    Red, y la PC de eleventa por nombre, en la bitácora del servicio.
+  - **La franja y el chip:** el servicio revisa cada 30 s (15 s sin internet) si hay internet, con una conexión TCP a
+    1.1.1.1:443 y 8.8.8.8:443 (2 s; sin DNS ni cuentas; `Red:Internet`), y si contesta su router (ping o su página,
+    1 s), y lo dice en su estado (el latido de las cajas). Dos revisiones seguidas sin respuesta: no hay. La caja lo
+    junta con lo suyo: «Sin internet: la venta sigue. No desconectes nada.» si llega a la caja principal y no hay
+    internet; «Sin red local: esta caja trabaja con su copia» si no llega (con «Volver a buscarla»); en la caja
+    principal, sin internet ni router (el router trabado), «Sin internet ni red local: esta caja sigue vendiendo», sin
+    el «no desconectes nada», porque la [guía](pruebas-en-tienda.md#durante-una-falla-de-red) pide juntar los datos y
+    desconectar el cable del módem; con todo bien, nada. Arriba, el chip «Sin internet», como en el prototipo. Sin modal
+    y fuera del cobro.
+  - **La bitácora de red:** cada caja (`red-caja-AAAA-MM-DD.log`, junto a su registro) y el servicio
+    (`red-servicio-AAAA-MM-DD.log`, en `C:\ProgramData\PapeleriaPos\registros`) anotan solos lo que cambia de la red,
+    con fecha y hora, y un resumen cada 15 minutos; se guardan 10 días. Lo que anota y cómo leerla, en [pruebas en la
+    tienda](pruebas-en-tienda.md#después-de-una-caída-la-bitácora-de-red); las últimas caídas, con desde, hasta y cuánto
+    duraron, en Configuración › Acerca de › Red. Cubre casi todo lo que el script de diagnóstico iba a juntar
+    ([notas](notas.md#red-de-la-tienda)); el script sigue haciendo falta en una PC sin el POS (la caja principal durante
+    el piloto) y para lo que el POS no ve.
 - **Cambiar la red de la tienda** afecta también a eleventa y a Control Print, que siguen en uso: se hace un sábado o
   domingo, con todo listado y la forma de regresar ([pruebas en la tienda](pruebas-en-tienda.md)).
 

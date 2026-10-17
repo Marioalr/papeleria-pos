@@ -103,7 +103,8 @@ configuración y exportar el registro del Tenda (un reinicio lo borra).
 6. **Para la próxima falla de red:** el script de diagnóstico corriendo en las dos cajas (si el dueño lo aprueba) y
    su ícono «Diagnóstico de red» en el escritorio de la caja 2; el cable de red que va del módem al puerto de internet
    del Tenda, marcado con cinta de color en las dos puntas; y la instrucción al personal
-   ([abajo](#durante-una-falla-de-red)).
+   ([abajo](#durante-una-falla-de-red)). Donde ya esté el POS, su bitácora de red se anota sola
+   ([cómo se lee](#después-de-una-caída-la-bitácora-de-red)).
 
 ## Segundo fin de semana: arreglar la red
 
@@ -143,6 +144,10 @@ hora algo no funciona, se regresa todo.
   esté apagado (la contingencia es del POS nuevo). Al volver a prender el Tenda, ver las cámaras en DMSS desde un
   celular con datos, porque se apagó el UPnP. Esto comprueba el arreglo, no la causa: la prueba de verdad es la
   próxima caída real, con el script corriendo.
+- **Con el POS en la caja 2 (el piloto):** con el puerto de la cola de la impresora de tickets ya en TCP/IP, el chip de
+  arriba dice solo «Tickets» (antes, «Tickets · configúrala por IP»); mientras el Tenda está apagado, la franja de la
+  caja 2 dice «Sin red local» o «Sin internet» según lo que vea, y su bitácora de red anota cuándo se perdió y cuándo
+  volvió el router ([cómo se lee](#después-de-una-caída-la-bitácora-de-red)).
 - **Si algo sale mal o se llega a la hora límite, regresar todo:** cada equipo a su dirección anotada (o a DHCP), la
   caja 2 de vuelta a su Wi-Fi (con la clave a la mano), cada cola de Windows a su puerto de antes, el WSD de las
   impresoras otra vez prendido, eleventa y Control Print a sus direcciones de antes, el Tenda a su configuración
@@ -185,4 +190,52 @@ Cualquier día. **Instrucción al personal:**
 > vez. Al cerrar la tienda,
 > déjalo conectado y anota la hora.
 
-Lo que se junta después lo hace el dueño ([notas](notas.md#red-de-la-tienda)).
+Lo que se junta después lo hace el dueño ([notas](notas.md#red-de-la-tienda)), y con eso la bitácora de red del POS
+([abajo](#después-de-una-caída-la-bitácora-de-red)).
+
+## Después de una caída: la bitácora de red
+
+Donde está instalado el POS, la bitácora de red se anota sola, sin que nadie haga nada
+([cómo funciona](arquitectura.md#la-red-de-la-matriz)). Para un vistazo, Configuración › Acerca de › Red enseña las
+últimas caídas con desde, hasta y cuánto duraron (las de esa caja y las de la caja principal).
+
+- **Dónde está** (se guardan 10 días: copiarla a la USB junto con lo demás antes de que pasen):
+  - **cada caja:** `red-caja-AAAA-MM-DD.log`, en la carpeta del registro de la caja
+    (`%LocalAppData%\PapeleriaPos\registros` de la cuenta de Windows con que se usa; en la caja de prueba,
+    `C:\ProgramData\PapeleriaPos-Prueba\registros`);
+  - **el servicio:** `red-servicio-AAAA-MM-DD.log`, en `C:\ProgramData\PapeleriaPos\registros` de la PC donde corre (la
+    caja principal; durante el piloto corre en la caja 2, y la caja principal de eleventa no tiene POS: ahí sigue
+    haciendo falta el script de diagnóstico).
+- **Cómo se lee:** se abre con el Bloc de notas; cada línea empieza con la fecha y la hora de esa PC, y solo hay líneas
+  cuando algo cambia (más un resumen cada 15 minutos):
+  - «Empieza la bitácora de red … (la PC arrancó a las …)» es cuando se abrió la caja o arrancó el servicio; «Termina
+    …», cuando se cerró bien. Un hueco sin líneas antes de un «Empieza» sin su «Termina» dice que la PC se apagó de
+    golpe o se fue la luz;
+  - «Se perdió «internet»» y «Volvió «internet» tras 2 h 5 min (se perdió a las 14:03:12)»: lo mismo para «la caja
+    principal», «el router», «la impresora de tickets» y los equipos de `Red:Equipos` (en el piloto, también «la PC de
+    eleventa», solo con ping). Se da por perdido con dos revisiones seguidas sin respuesta (unos 30 a 60 s después de
+    que pasa). Un equipo que nunca contestó el ping (su firewall no lo deja) no cuenta como caído: lo dice una vez;
+  - «Red con la caja principal: buena → lenta (últimos latidos: …)»: el latido de la caja, con lo que tardó;
+  - «Esta PC: …», al empezar, y «Esta PC cambió de IP / de conexión / de Wi-Fi / de router»: cómo está conectada (cable
+    o Wi-Fi con su nombre y señal), su IP y si se la dio el router (DHCP) o es fija, y el router con su MAC. Una IP
+    169.254 dice que el router no le dio dirección; «El router … cambió de MAC», que otro aparato contesta con la IP del
+    router;
+  - «El DNS del router no contesta»: el router está trabado (no contesta ni su propio nombre, `tendawifi.com`);
+  - «Llega mucha difusión a esta PC: … paquetes por segundo»: posible tormenta de tráfico;
+  - ««Caja 2» dejó de latir» / «volvió a latir» (en la del servicio): cuándo la caja principal dejó de saber de cada
+    caja;
+  - «Se busca la caja principal en la red», «Contestó …, pero no probó …» y «La caja principal cambió de dirección»: la
+    caja buscándola por si le cambió la IP;
+  - «Resumen de 15 min»: cuánto tardaron los latidos y el router (lo menos, lo más y la mitad), si hubo internet, la
+    señal del Wi-Fi y cuánta difusión y cuántos descartados llegaron.
+- **Qué mirar después de la caída**, con las horas de la instrucción al personal (el video, «Se cayó la red», «Ya
+  desconecté», «Reconecté») y la hora de Megacable:
+  1. en la del servicio, si «el router» se perdió junto con «internet» o después (las causas 1 y 2 de
+     [notas](notas.md#red-de-la-tienda)), y si volvió en cuanto se desconectó el cable del módem;
+  2. en la de la caja 2, si se perdió «la caja principal» y «el router» con la señal del Wi-Fi buena (el Tenda dejó de
+     dar Wi-Fi) o con la señal mala, si la caja se quedó con una IP 169.254 (sin DHCP) y si el DNS del router se trabó;
+  3. si las dos cajas lo anotaron a la misma hora (««Caja 2» dejó de latir» en la del servicio): con los equipos en el
+     switch e IP fija, la caja principal no debería perder a la impresora de tickets (si la pierde, el arreglo no
+     basta);
+  4. si hubo mucha difusión o descartados en el resumen (la causa 3: una tormenta de tráfico);
+  5. si cambió la IP o la MAC del router en medio, o algo seguía configurado por nombre o con WSD (lo dice al empezar).
