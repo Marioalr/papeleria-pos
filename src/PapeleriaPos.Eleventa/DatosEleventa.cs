@@ -15,7 +15,12 @@ public sealed record FilaExistencia(int ProductoId, double Cantidad);
 
 public sealed record FilaPromocion(string Codigo, double Desde, double PrecioConImpuestos);
 
-public sealed record FilaTicket(int Id, int? Folio, DateTime? VendidoEn, double Total, bool Cancelado);
+/// <param name="Total">Lo que queda en el ticket: eleventa le baja lo devuelto (la cancelación no).</param>
+/// <param name="CreadoEn">
+/// Cuándo se abrió el ticket (hora de la tienda). En los que escribió el puente es su marca: cuándo se empezó la venta en la
+/// caja nueva, en diezmilésimas de segundo (la importación final la usa para no traerlos dos veces).
+/// </param>
+public sealed record FilaTicket(int Id, int? Folio, DateTime? VendidoEn, double Total, bool Cancelado, DateTime? CreadoEn = null);
 
 /// <param name="TotalArticulo">Vacío en las líneas viejas: entonces el importe es precio × cantidad.</param>
 /// <param name="Ganancia">Utilidad por pieza (precio menos costo): la de la línea es la cantidad por esta.</param>
@@ -31,6 +36,12 @@ public sealed class DatosEleventa
     public List<FilaPromocion> Promociones { get; init; } = [];
     public List<FilaTicket> Tickets { get; init; } = [];
     public List<FilaLinea> Lineas { get; init; } = [];
+
+    /// <summary>
+    /// Las devoluciones y cancelaciones (<c>DEVOLUCIONES</c>, sin sus artículos: eleventa ya se los bajó a sus tickets). Solo
+    /// las lee la importación, para saber si las de los tickets de la caja 2 ya están en la base (la importación final).
+    /// </summary>
+    public List<DevolucionLeida> Devoluciones { get; init; } = [];
 
     /// <summary>Lo del piloto que la lectura trae en la misma foto (vacío si no se pidió).</summary>
     public DatosDelPiloto? Piloto { get; init; }

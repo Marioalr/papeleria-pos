@@ -153,7 +153,9 @@ Solo alimenta el análisis ABC, la temporada y el sugerido de compra.
 
 **MapeoImportacion**: `Origen` (`eleventa`), `Entidad`, `IdOrigen`, `IdNuevo`. Permite repetir la importación sin
 duplicar y rastrear de dónde salió cada registro. En fase 0 lo usa el generador de datos ficticios, para probar ese
-camino desde el principio.
+camino desde el principio. La importación final también guarda ahí qué ticket de eleventa es cada venta que mandó la
+caja 2 del piloto (`Venta`: `VENTATICKETS.ID` → la venta), para no traerla al historial
+([importación final](migracion-eleventa.md#la-importación-final)).
 
 ## Cómo queda en el código
 
