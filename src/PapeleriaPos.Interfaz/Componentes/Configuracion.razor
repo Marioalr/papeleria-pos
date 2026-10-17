@@ -546,8 +546,8 @@
                 new(AlCobrar, "Al cobrar")
                 {
                     Ayuda = "Nunca pregunta antes de cobrar. «Ofrecerlo»: hasta que escaneas al siguiente cliente, el panel ofrece «Imprimir "
-                        + "ticket» (Ctrl+I). «No imprimirlo»: si lo piden, se reimprime desde «Ventas del día». Lo fiado sale siempre, y los "
-                        + "comprobantes y el corte, como siempre.",
+                        + "ticket» (Ctrl+I). «No imprimirlo»: si lo piden, se reimprime desde «Ventas del día»; sin conexión no se puede, así "
+                        + "que se ofrece. Lo fiado sale siempre, y los comprobantes y el corte, como siempre.",
                     Permiso = AccionControlada.ConfigurarTicket,
                     NoListo = NoListoTicket,
                     Palabras = "imprimir ofrecer papel",
@@ -921,10 +921,15 @@
             }
         </span>;
 
-    private Task GuardarAlCobrarAsync(TicketAlCobrar alCobrar) =>
-        _ticket?.AlCobrar == alCobrar
-            ? Task.CompletedTask
-            : HacerAsync(AlCobrar, async () => _ticket = await Cliente.GuardarAlCobrarAsync(Caja.Id, new SolicitudAlCobrar(Sesion.UsuarioId, alCobrar)));
+    /// <summary>
+    /// En su turno, después de lo que se está guardando: si se toca otra opción mientras se guarda la anterior (la red lenta),
+    /// se compara con lo que quedó y gana la última que se tocó.
+    /// </summary>
+    private Task GuardarAlCobrarAsync(TicketAlCobrar alCobrar) => HacerAsync(AlCobrar, async () =>
+    {
+        if (_ticket?.AlCobrar != alCobrar)
+            _ticket = await Cliente.GuardarAlCobrarAsync(Caja.Id, new SolicitudAlCobrar(Sesion.UsuarioId, alCobrar));
+    });
 
     /// <summary>El ticket de prueba en la cola de la impresora: junto a su botón se ve si salió y, si no, «Reintentar».</summary>
     private TrabajoDeImpresion? _prueba;

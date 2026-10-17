@@ -43,6 +43,21 @@ public class AlCobrarTests
         Assert.True(fiado.SiempreSeImprime && aFavor.SiempreSeImprime);
     }
 
+    /// <summary>
+    /// «No imprimirlo» cobrado sin la caja principal (con la copia de la caja) se ofrece, como «Ofrecerlo»: sin ella no hay
+    /// reimpresión si el cliente lo pide. Las otras dos, igual que en línea; y lo fiado sale.
+    /// </summary>
+    [Fact]
+    public void Sin_conexion_no_imprimirlo_se_ofrece()
+    {
+        Assert.Equal(TicketAlCobrar.Ofrecer, (Ticket(TicketAlCobrar.NoImprimir) with { EnContingencia = true }).LoQueSeHaceAlCobrar);
+        Assert.Equal(TicketAlCobrar.Ofrecer, (Ticket(TicketAlCobrar.Ofrecer) with { EnContingencia = true }).LoQueSeHaceAlCobrar);
+        Assert.Equal(TicketAlCobrar.Imprimir, (Ticket(TicketAlCobrar.Imprimir) with { EnContingencia = true }).LoQueSeHaceAlCobrar);
+        var fiado = Ticket(TicketAlCobrar.NoImprimir, new CobroTicketDto(FormaPago.Credito, 4500, 0, 0, null))
+            with { Credito = new CreditoTicketDto(4500, 4500, null, Estimado: true), EnContingencia = true };
+        Assert.Equal(TicketAlCobrar.Imprimir, fiado.LoQueSeHaceAlCobrar);
+    }
+
     /// <summary>Van como número en la copia y en el ticket, y como texto en la base: el orden no cambia.</summary>
     [Fact]
     public void Las_opciones_y_como_se_llaman()

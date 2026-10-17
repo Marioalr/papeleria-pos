@@ -747,10 +747,13 @@ servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-ca
   · Imprimir ticket (Ctrl+I)» y, si se vuelve al total con Esc, sigue abajo, junto a «Último», en lugar de «Reimprimir».
   Sale una vez, sin pedir motivo (no es una reimpresión: no había salido), y el panel dice cómo va en la cola. Con el
   primer escaneo del siguiente cliente (o al retomar otro de la espera) deja de ofrecerse y ya no vuelve, aunque se
-  quite lo escaneado. Si mientras tanto se reimprime con su motivo («/»), tampoco: no queda una copia más sin motivo.
-  Sin impresora, Ctrl+I lo enseña en pantalla.
+  quite lo escaneado. Si mientras tanto se reimprime con su motivo («/»), tampoco: no queda una copia más sin motivo; ni
+  si se cancela o se devuelve algo de esa venta (saldría completo el ticket de una venta cancelada), y entonces su
+  cambio también deja el panel. Con el ratón, «Imprimir ticket» y «Volver al total» regresan el cursor al cuadro de
+  captura, como Ctrl+I y Esc. Sin impresora, Ctrl+I lo enseña en pantalla.
 - **«No imprimirlo»:** a la impresora no le llega nada y el panel dice «Ticket A-… sin imprimir». Si el cliente lo pide,
-  «Reimprimir» (abajo o en «Ventas del día»), con su motivo, como toda reimpresión.
+  «Reimprimir» (abajo o en «Ventas del día»), con su motivo, como toda reimpresión. Sin conexión no se puede reimprimir:
+  lo que se cobra con la copia de la caja (sin conexión o con la red lenta) se ofrece, como con «Ofrecerlo».
 - **Lo que sale siempre:** lo fiado, porque el ticket lleva «SU CUENTA» (lo que debe y hasta cuándo paga) y el cliente
   se lo lleva. El ajuste es solo del ticket de la venta al cobrar: los comprobantes de devoluciones y cancelaciones, de
   entradas y salidas de efectivo y de abonos, el estado de cuenta, el corte, las reimpresiones y el ticket de prueba
@@ -760,7 +763,9 @@ servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-ca
   pulso del cajón (va al principio del ticket; en la tienda no hay cajón). La base guarda el ajuste en
   `ConfiguracionesTicket` (migración `TicketAlCobrar`); las que ya existían siguen imprimiendo.
 - **Decidido, por revisar** (el dueño no estaba): para toda la tienda y no por caja; lo fiado como la única excepción
-  del ticket de venta; reimprimir después sigue pidiendo motivo; sin papel no se abre el cajón; Ctrl+I como su tecla.
+  del ticket de venta; reimprimir después sigue pidiendo motivo; sin papel no se abre el cajón; Ctrl+I como su tecla;
+  sin conexión, «No imprimirlo» se ofrece como «Ofrecerlo» (sin la caja principal no hay reimpresión; de la revisión del
+  PR #118).
 
 #### Después: el piloto en la caja 2
 

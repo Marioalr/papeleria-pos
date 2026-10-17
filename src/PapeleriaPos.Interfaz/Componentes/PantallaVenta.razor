@@ -443,7 +443,7 @@
                         <div><span>Hay <strong>@Formato.Dinero(efectivoC.EsperadoCentavos)</strong> en efectivo y el límite es @Formato.Dinero(efectivoC.LimiteCentavos ?? 0): haz un retiro.</span></div>
                     </div>
                 }
-                <div class="vn-ultimo"><span></span><button class="vn-enlace" @onclick="() => _cobrado = null">Volver al total</button></div>
+                <div class="vn-ultimo"><span></span><button class="vn-enlace" @onclick="VolverAlTotal">Volver al total</button></div>
             }
             else
             {
@@ -3513,7 +3513,8 @@
     /// <summary>
     /// «Imprimir ticket» (Ctrl+I) del que se ofreció: sale una vez, sin pedir motivo (no es una reimpresión: no había salido),
     /// y el panel vuelve a enseñar esa venta con cómo va su papel. Sin el pulso del cajón: al cobrar no se abrió, y abrirlo
-    /// ya con el siguiente cliente sorprendería. Sin impresora, se ve en pantalla. Sin nada que ofrecer, no hace nada.
+    /// ya con el siguiente cliente sorprendería. Sin impresora, se ve en pantalla. Sin nada que ofrecer, no hace nada. Con el
+    /// ratón, el cursor regresa al cuadro de captura: el botón se va, y lo que escanee el siguiente cliente no se pierde.
     /// </summary>
     private async Task ImprimirOfrecidoAsync()
     {
@@ -3527,6 +3528,14 @@
             return;
         }
         _trabajoCobrado = Cola.Encolar($"Ticket {ticket.FolioImpreso}", DisenoTicket.Armar(ticket), abrirCajon: false);
+        _enfocar = "#codigo";
+    }
+
+    /// <summary>«Volver al total»: el cambio deja el panel y el cursor regresa al cuadro de captura, como con Esc.</summary>
+    private void VolverAlTotal()
+    {
+        _cobrado = null;
+        _enfocar = "#codigo";
     }
 
     private async Task VerCobradoEnPantallaAsync()
@@ -3908,6 +3917,12 @@
 
     private async Task DevolucionHechaAsync(ComprobanteDevolucionDto comprobante)
     {
+        // Si es la venta que se acaba de cobrar: su cambio ya no se queda en el panel, ni se sigue ofreciendo su ticket («Al
+        // cobrar»: «Ofrecerlo»), que saldría completo, de una venta cancelada o con algo devuelto.
+        if (_cobrado?.Folio == comprobante.Folio)
+            _cobrado = null;
+        if (_ofrecido?.Folio == comprobante.Folio)
+            (_ofrecido, _ticketDelSiguiente) = (null, null);
         await Cerrar();
         Avisar($"{(comprobante.EsCancelacion ? "Ticket cancelado" : "Devolución registrada")}: entrega {Formato.Dinero(comprobante.ReembolsoEfectivoCentavos)} en efectivo"
             + (comprobante.AlCreditoCentavos > 0 ? $" y baja {Formato.Dinero(comprobante.AlCreditoCentavos)} de la cuenta de «{comprobante.Cliente}»." : "."), error: false);

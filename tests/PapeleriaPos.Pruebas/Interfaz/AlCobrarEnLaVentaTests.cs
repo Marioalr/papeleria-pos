@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Http.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Components;
@@ -275,8 +276,10 @@ public sealed class AlCobrarEnLaVentaTests(ServicioDePrueba servicio) : IClassFi
     }
 
     /// <summary>
-    /// Sin conexión, la caja hace lo que dice su copia, que se pone al día con lo que cambió: el dueño cambia «Al cobrar» con la
-    /// caja ya abierta, el latido lo trae, y el cobro con la copia ya no le manda nada a la impresora.
+    /// Sin conexión, la caja hace lo que dice su copia, que se pone al día con lo que cambió: el dueño cambia «Al cobrar» a «No
+    /// imprimirlo» con la caja ya abierta y el latido lo trae. El cobro con la copia no le manda nada a la impresora; pero como
+    /// sin la caja principal no hay reimpresión, el ticket se ofrece, como con «Ofrecerlo» (decidido el 2026-10-17, por
+    /// revisar), y Ctrl+I lo imprime.
     /// </summary>
     [Fact]
     public async Task Sin_conexion_hace_lo_que_dice_la_copia_de_la_caja()
@@ -297,9 +300,12 @@ public sealed class AlCobrarEnLaVentaTests(ServicioDePrueba servicio) : IClassFi
 
             var folio = await CobrarAsync(v, a.Codigo!);
 
-            Assert.Contains($"Ticket {folio} sin imprimir", await DelTicketAsync(v));
+            Assert.Contains($"Ticket {folio} Imprimir ticket Ctrl+I", await DelTicketAsync(v));
             Assert.Equal(1, v.Contingencia.Pendientes);
             Assert.Equal(0, impresora.Intentos);
+            await TeclaAsync(v, "Ctrl+I");
+            await TicketeraDePrueba.EsperarAsync(() => impresora.Salieron.Count == 1, "el ticket que se ofreció");
+            Assert.Contains(folio, impresora.Salieron.Single());
             Assert.Empty(v.Pantalla.Errores);
         }
         finally
@@ -328,6 +334,97 @@ public sealed class AlCobrarEnLaVentaTests(ServicioDePrueba servicio) : IClassFi
             await TeclaAsync(v, "Ctrl+I");
             await v.Pantalla.EsperarAsync(t => t.Contains($"Folio {folio}"), "el ticket en pantalla");
             Assert.False(await SeOfreceAsync(v));
+            Assert.Empty(v.Pantalla.Errores);
+        }
+        finally
+        {
+            await PonerAsync(TicketAlCobrar.Imprimir);
+        }
+    }
+
+    /// <summary>
+    /// Si se cancela (o se devuelve algo de) la venta que se ofrece, ya no se ofrece: saldría completo el ticket de una venta
+    /// cancelada. El comprobante de la cancelación sale como siempre, y el cambio de esa venta deja el panel.
+    /// </summary>
+    [Fact]
+    public async Task Cancelar_la_venta_que_se_ofrece_ya_no_la_ofrece()
+    {
+        await PonerAsync(TicketAlCobrar.Ofrecer);
+        try
+        {
+            var impresora = new TicketeraDePrueba();
+            // El dueño cancela sin pedirle autorización a nadie.
+            await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, impresora: impresora, quien: ("dueno", "3333"));
+            var (a, _) = v.DosDeLaCopia();
+            var folio = await CobrarAsync(v, a.Codigo!);
+            Assert.True(await SeOfreceAsync(v));
+
+            // Su folio abre la devolución, como desde «Ventas del día»: el motivo y «Cancelar todo el ticket».
+            await v.EscanearAsync(folio);
+            await v.Pantalla.EsperarAsync(t => t.Contains("Cancelar todo el ticket"), "la devolución de ese ticket");
+            var motivo = await v.Pantalla.ElementoAsync(e => e.Etiqueta == "input" && e.Id is null && e.Eventos.ContainsKey("oninput")
+                && e.Clase != "cantidad-devolver", "el motivo");
+            await v.Pantalla.DispararAsync(motivo, "oninput", new ChangeEventArgs { Value = "Ya no lo quiso" });
+            await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cancelar todo el ticket"));
+            await v.Pantalla.EsperarAsync(t => t.Contains("Ticket cancelado"), "la cancelación");
+            await TicketeraDePrueba.EsperarAsync(() => impresora.Salieron.Count == 1, "el comprobante de la cancelación");
+            Assert.Contains(folio, impresora.Salieron.Single());
+
+            Assert.False(await SeOfreceAsync(v));
+            Assert.True((await TeclaAsync(v, "Ctrl+I")).IsCompletedSuccessfully);
+            Assert.Empty(ColaDeImpresion.De(impresora).Pendientes);
+            Assert.Single(impresora.Mandados);
+            Assert.DoesNotContain((await v.Pantalla.LeerAsync()).Elementos, e => e.Clase == "vn-cambio");
+            Assert.Empty(v.Pantalla.Errores);
+        }
+        finally
+        {
+            await PonerAsync(TicketAlCobrar.Imprimir);
+        }
+    }
+
+    /// <summary>Hace de caja.js y anota lo que se le pide (para ver a dónde se manda el cursor).</summary>
+    private sealed class PaginaQueAnota : IJSRuntime, IJSObjectReference
+    {
+        public ConcurrentQueue<string> Llamadas { get; } = new();
+
+        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args) => InvokeAsync<TValue>(identifier, CancellationToken.None, args);
+
+        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken cancellationToken, object?[]? args)
+        {
+            if (identifier == "import")
+                return ValueTask.FromResult(this is TValue modulo ? modulo : default!);
+            Llamadas.Enqueue($"{identifier}({string.Join(",", args?.Select(a => a?.ToString()) ?? [])})");
+            return ValueTask.FromResult(default(TValue)!);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Con el ratón, «Volver al total» e «Imprimir ticket» regresan el cursor al cuadro de captura, como Esc y Ctrl+I: el botón
+    /// se va de la página, y sin esto lo que escaneara el siguiente cliente no llegaba a ningún lado hasta tocar el cuadro.
+    /// </summary>
+    [Fact]
+    public async Task Con_el_raton_el_cursor_regresa_al_cuadro_de_captura()
+    {
+        await PonerAsync(TicketAlCobrar.Ofrecer);
+        try
+        {
+            var impresora = new TicketeraDePrueba();
+            var pagina = new PaginaQueAnota();
+            await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, impresora: impresora, pagina: pagina);
+            var (a, _) = v.DosDeLaCopia();
+            await CobrarAsync(v, a.Codigo!);
+
+            pagina.Llamadas.Clear();
+            await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Volver al total"));
+            await VentaConCopia.EsperarAsync(() => pagina.Llamadas.Contains("enfocar(#codigo)"), "el cursor en el cuadro al volver al total");
+
+            pagina.Llamadas.Clear();
+            await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Imprimir ticket"));
+            await VentaConCopia.EsperarAsync(() => pagina.Llamadas.Contains("enfocar(#codigo)"), "el cursor en el cuadro al imprimirlo");
+            await TicketeraDePrueba.EsperarAsync(() => impresora.Salieron.Count == 1, "el ticket");
             Assert.Empty(v.Pantalla.Errores);
         }
         finally
@@ -406,6 +503,60 @@ public sealed class AlCobrarEnLaVentaTests(ServicioDePrueba servicio) : IClassFi
         }
         finally
         {
+            await PonerAsync(TicketAlCobrar.Imprimir);
+        }
+    }
+
+    /// <summary>
+    /// Con la red lenta: se toca «Ofrecerlo» y, mientras se guarda, «Imprimir el ticket» (cambiar de opinión). La segunda se
+    /// guarda en su turno, comparada con lo que quedó de la primera: gana la última que se tocó. La red se detiene y se suelta,
+    /// sin esperar tiempos.
+    /// </summary>
+    [Fact]
+    public async Task En_la_configuracion_gana_la_ultima_opcion_que_se_toca()
+    {
+        var http = servicio.Fabrica.CreateClient();
+        var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.First();
+        var sesion = (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333"))).Content.ReadFromJsonAsync<SesionDto>())!;
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
+        var red = new RedDePrueba(servicio.Fabrica.Server.CreateHandler());
+        var servicios = new ServiceCollection()
+            .AddSingleton(conexion)
+            .AddSingleton(new ClienteCaja(new HttpClient(red), conexion))
+            .AddSingleton<IImpresora>(new SinImpresora())
+            .AddSingleton<IJSRuntime>(new PaginaQueContesta())
+            .AddScoped<ModuloCaja>()
+            .AddSingleton(new RendimientoCaja())
+            .BuildServiceProvider();
+        var ruta = $"/api/cajas/{caja.Id}/configuracion/ticket/al-cobrar";
+        await using var p = new PantallaSinNavegador(servicios);
+        await p.AbrirAsync<Configuracion>(new()
+        {
+            [nameof(Configuracion.Caja)] = caja,
+            [nameof(Configuracion.Sesion)] = sesion,
+            [nameof(Configuracion.AlCambiar)] = new EventCallback(null, (Action)(() => { })),
+            [nameof(Configuracion.AlNoGuardar)] = new EventCallback<string>(null, (Action<string>)(_ => { })),
+        });
+        await p.EsperarAsync(t => !t.Contains("Cargando…"), "lo guardado");
+        try
+        {
+            // Desde el buscador: elegir el grupo vuelve a leer lo guardado por la red.
+            await p.EscribirAsync("cfg-busca", "ofrecer");
+            red.TodoDetenido = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var primero = p.OprimirAsync(await p.PorIdAsync("aj-al-cobrar-ofrecer"));
+            await VentaConCopia.EsperarAsync(() => red.Cuantas(ruta) == 1, "el primer guardado, detenido");
+            var segundo = p.OprimirAsync(await p.PorIdAsync("aj-al-cobrar-imprimir"));
+            red.TodoDetenido.SetResult();
+            await Task.WhenAll(primero, segundo).WaitAsync(TimeSpan.FromSeconds(20));
+
+            Assert.Equal(TicketAlCobrar.Imprimir, (await http.GetFromJsonAsync<ConfiguracionTicketDto>($"api/sucursales/{caja.SucursalId}/ticket"))!.AlCobrar);
+            Assert.Equal([("Imprimir el ticket", true), ("Ofrecerlo", false), ("No imprimirlo", false)], await OpcionesAsync(p));
+            Assert.Equal(2, red.Cuantas(ruta));
+            Assert.Empty(p.Errores);
+        }
+        finally
+        {
+            red.TodoDetenido?.TrySetResult();
             await PonerAsync(TicketAlCobrar.Imprimir);
         }
     }

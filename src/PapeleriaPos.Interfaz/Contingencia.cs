@@ -1426,12 +1426,13 @@ public sealed class Contingencia
         var folio = UltimoFolio + 1;
         venta.Pagar(folio, s.Cobros, ahora);
         venta.EnContingencia = true;
-        // «Al cobrar» (Configuración › Ticket), como lo trae la copia: sin conexión se decide igual que en línea.
+        // «Al cobrar» (Configuración › Ticket), como lo trae la copia; y que se cobró sin la caja principal: hasta que suba no
+        // se puede reimprimir, así que «No imprimirlo» se ofrece (TicketDto.LoQueSeHaceAlCobrar).
         var ticket = ArmadoTicket.Desde(venta, caja.Nombre, Nombre(s.CajeroId),
             id => datos.Presentaciones.TryGetValue(id, out var p) ? (p.Nombre, p.EsBase) : null,
             datos.Paquete.Encabezado, datos.Paquete.Pie, datos.Paquete.Logo, cliente,
             cuenta is null ? null : new CreditoTicketDto(aCredito, cuenta.SaldoCentavos + aCredito, vence, Estimado: true))
-            with { AlCobrar = datos.Paquete.AlCobrar };
+            with { AlCobrar = datos.Paquete.AlCobrar, EnContingencia = true };
         var subida = new VentaContingenciaDto(venta.Id, caja.Id, turno.Id, s.CajeroId, folio, ahora,
             venta.Lineas.Select(x => new LineaContingenciaDto(x.VarianteId, x.PresentacionId, x.Descripcion, x.Cantidad.Milesimas, x.PrecioCentavos,
                 x.DescuentoCentesimas, x.DescuentoCentesimas is null && x.TieneDescuento ? x.DescuentoCentavos : null, x.MotivoDescuento)).ToList(),

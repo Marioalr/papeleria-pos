@@ -191,11 +191,15 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 /// ticket del cobro, así que decidir si se imprime no le suma nada al cobro. Solo cuenta al cobrar
 /// (<see cref="LoQueSeHaceAlCobrar"/>): una reimpresión sale siempre. Con un servicio de antes, se imprime.
 /// </param>
+/// <param name="EnContingencia">
+/// Se cobró con la copia de la caja, sin la caja principal (sin conexión o con la red lenta): hasta que suba, no se puede
+/// reimprimir. Lo pone la caja; el servicio nunca.
+/// </param>
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
     long TotalCentavos, long IvaCentavos, IReadOnlyList<CobroTicketDto> Cobros, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie,
     LogoTicketDto? Logo = null, Guid? VentaId = null, long RedondeoCentavos = 0, string? Cliente = null, CreditoTicketDto? Credito = null,
-    int? FolioEleventa = null, bool YaCobrada = false, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir)
+    int? FolioEleventa = null, bool YaCobrada = false, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir, bool EnContingencia = false)
 {
     /// <summary>
     /// Lo fiado se imprime aunque «Al cobrar» diga otra cosa: el cliente se lleva «SU CUENTA», lo que quedó a deber y hasta
@@ -204,8 +208,15 @@ public sealed record TicketDto(
     /// </summary>
     public bool SiempreSeImprime => Credito is not null || CreditoCentavos > 0;
 
-    /// <summary>Lo que se hace con este ticket al cobrar: lo de <see cref="AlCobrar"/>, salvo lo que siempre se imprime.</summary>
-    public TicketAlCobrar LoQueSeHaceAlCobrar => SiempreSeImprime ? TicketAlCobrar.Imprimir : AlCobrar;
+    /// <summary>
+    /// Lo que se hace con este ticket al cobrar: lo de <see cref="AlCobrar"/>, salvo lo que siempre se imprime. Y «No
+    /// imprimirlo» sin conexión se ofrece, como «Ofrecerlo»: si el cliente lo pide, sin la caja principal no hay reimpresión
+    /// (decidido el 2026-10-17, por revisar).
+    /// </summary>
+    public TicketAlCobrar LoQueSeHaceAlCobrar =>
+        SiempreSeImprime ? TicketAlCobrar.Imprimir
+        : AlCobrar == TicketAlCobrar.NoImprimir && EnContingencia ? TicketAlCobrar.Ofrecer
+        : AlCobrar;
 
     /// <summary>El folio que se lee en el ticket y en la pantalla.</summary>
     public string FolioImpreso => FolioEleventa?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? Folio;
