@@ -680,17 +680,26 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
         cortado, perdido al restaurar, dejado por revisar a mano), «eleventa ya lo tenía» (el ticket ya está cancelado, ya
         no le queda eso por devolver; son dos reembolsos y los dos quedan a la vista) u otra cosa. Lo que ya estaba por
         revisar antes de este cambio lo saca de su texto, y desde cuándo, de su último intento;
-      - mientras una devolución de aquí espera su anotación a mano, la vuelta no pasa a la venta ninguna devolución de
-        eleventa de ese ticket hecha después (con 10 minutos de holgura por la hora de cada PC): espera. Y la lectura no
-        ajusta la existencia de lo que devolvió la de aquí: si lo de eleventa es su anotación, allá ya está y aquí todavía
-        se suma por no haber llegado, y se contaría dos veces;
+      - mientras una devolución de aquí espera su anotación a mano, la vuelta no pasa a la venta las devoluciones de
+        eleventa de ese ticket hechas después (con 10 minutos de holgura por la hora de cada PC) que pueden ser su
+        anotación: con algún artículo en común (por su producto de aquí, así dos productos de eleventa con el mismo código
+        que aquí son uno cuentan como el mismo), o la cancelación del ticket. Esas esperan; lo que no tiene nada en común
+        se pasa como siempre. Y la existencia sigue a eleventa mientras tanto: de lo que devolvió la de aquí (que todavía
+        no llega allá y se suma) se descuenta lo que ya devolvió eso que espera, porque si es su anotación se contaría dos
+        veces (cuarta revisión: antes se dejaba de ajustar esa existencia, y si se tardaba en decidir se quedaba atrás de
+        eleventa). Esos tickets se siguen leyendo aunque sean de hace más de 31 días;
       - al marcarla «Ya lo anoté en eleventa», la pantalla de la caja 2 lee en vivo las devoluciones de eleventa de ese
         ticket de después de la de aquí (que no escribió la caja 2 ni se han pasado o ligado) y quien la anotó elige cuál
         es su anotación, o cuáles, si la anotó en partes. Tienen que devolver juntas lo mismo, artículo por artículo (o las
         dos ser la cancelación del ticket); si no, no se puede marcar todavía: lo que sobre o falte no se esconde en la
         liga. Sin eleventa no se puede marcar. Se ligan por `DEVOLUCIONES.ID`, no se pasan a la venta, y la de aquí queda
-        anotada a mano (con lo elegido en la bitácora). Lo que esperaba y no se eligió se pasa en la siguiente lectura, que
-        se pide en ese momento, como cualquier otra de eleventa;
+        anotada a mano (con lo elegido en la bitácora). Lo que esperaba y no se eligió se pasa en ese momento a la venta,
+        leído en vivo, como cualquier otra de eleventa (si eleventa no contesta, en la siguiente lectura);
+      - si lo anotado allá no cuadra con nada que se pueda elegir (dos de aquí anotadas en una sola allá, más o menos
+        artículos, una cancelación anotada como devolución…), quien tiene «Configuración de la tienda» la marca «Resolverlo a
+        mano» (queda en la bitácora, con su nota): la de aquí queda anotada a mano sin ligarse con nada, y lo que eleventa
+        devolvió de ese ticket deja de esperar y se pasa en ese momento a la venta como cualquier otra devolución de allá
+        (o queda por revisar si aquí ya no alcanza). Desde ahí la existencia sigue a eleventa;
       - si todavía se iba a mandar sola, primero se deja por revisar: desde ahí la lectura espera su anotación;
       - lo que sí llegó solo aunque aquí no se supo (se cortó al contestar, o se dejó por revisar mientras la bandeja lo
         mandaba) no se anota a mano: quedaría dos veces (cuarta revisión). «Dejar por revisar» toma el candado de la

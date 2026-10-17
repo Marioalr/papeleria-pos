@@ -267,12 +267,12 @@ public static class SincronizacionEleventa
         // mismo momento que las existencias, y lo que se mandó mientras se leía eleventa, hasta aquí.
         await using (var propia = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null)
         {
-            // Las devoluciones de aquí cuya anotación a mano quizá ya está en eleventa (la vuelta la retuvo): sin ajustar.
-            var conAnotacion = e.Piloto?.Devoluciones is { Count: > 0 } devoluciones
-                ? await DevolucionesConEleventa.ConAnotacionRetenidaAsync(db, devoluciones, ct)
+            // Lo que eleventa devolvió y la vuelta retiene porque puede ser la anotación a mano de una de aquí.
+            var retenidas = e.Piloto?.Devoluciones is { Count: > 0 } devoluciones
+                ? await DevolucionesConEleventa.RetenidasAsync(db, devoluciones, ct)
                 : [];
             var bandeja = await BandejaAsync(db, sucursal.Id, mandados?.Mandados() ?? new HashSet<Guid>(),
-                mandados?.Rechazados() ?? new HashSet<Guid>(), conAnotacion, ct);
+                mandados?.Rechazados() ?? new HashSet<Guid>(), retenidas, ct);
             await ExistenciasAsync(db, r, sucursal.Id, activas, nuevas, existenciaDe, productos, bandeja, ahoraUtc, ct);
             await db.SaveChangesAsync(ct);
             if (propia is not null)
@@ -464,13 +464,18 @@ public static class SincronizacionEleventa
     /// ni lo pendiente cuyo último intento falló por la red (se pudo cortar justo después de que eleventa lo guardó; el
     /// siguiente intento lo encuentra por su marca), o del que no se sabe cómo falló (al arrancar el servicio, hasta que
     /// se vuelve a intentar): sus variantes se ajustan en otra lectura. Lo que eleventa rechazó (<paramref name="rechazados"/>)
-    /// no está allá, aunque la bandeja siga detenida en eso. Tampoco se sabe de una devolución de aquí que espera su anotación
-    /// a mano y ya tiene en eleventa una de su ticket que puede serlo (<paramref name="conAnotacion"/>): sumarla sería
-    /// contarla dos veces si lo es (revisión del 2026-10-17); se ajusta cuando se elige.
+    /// no está allá, aunque la bandeja siga detenida en eso.
+    /// </para>
+    /// <para>
+    /// Una devolución de aquí que espera su anotación a mano y ya tiene en eleventa una de su ticket que puede serlo
+    /// (<paramref name="retenidas"/>): si lo es, eleventa ya la tiene, y sumarla otra vez la contaría dos veces. Se suma solo
+    /// lo que no cubre lo de eleventa (lo menos entre las dos, por variante; una cancelación allá cubre todo). Así la
+    /// existencia sigue a eleventa en todo lo demás mientras se decide (cuarta revisión, 2026-10-17: antes se dejaba de
+    /// ajustar, y si tardaba en decidirse se quedaba atrás de eleventa).
     /// </para>
     /// </summary>
     private static async Task<Bandeja> BandejaAsync(PosDbContext db, Guid sucursalId, IReadOnlySet<Guid> mandados, IReadOnlySet<Guid> rechazados,
-        IReadOnlySet<Guid> conAnotacion, CancellationToken ct)
+        IReadOnlyList<AnotacionRetenida> retenidas, CancellationToken ct)
     {
         var vistos = mandados.ToList();
         var envios = await db.EnviosAEleventa.AsNoTracking()
@@ -490,8 +495,7 @@ public static class SincronizacionEleventa
             return bandeja;
 
         var enCamino = envios.Where(x => mandados.Contains(x.Id)
-                || x.Estado == EstadoEnvioEleventa.Pendiente && x.Intentos > 0 && !rechazados.Contains(x.Id)
-                || x.Documento is { } documento && conAnotacion.Contains(documento))
+                || x.Estado == EstadoEnvioEleventa.Pendiente && x.Intentos > 0 && !rechazados.Contains(x.Id))
             .Select(x => x.Documento).ToHashSet();
         var documentos = envios.Where(x => x.Documento is not null).Select(x => x.Documento!.Value).Distinct().ToList();
         var movimientos = await db.MovimientosInventario.AsNoTracking()
@@ -506,6 +510,18 @@ public static class SincronizacionEleventa
                 bandeja.EnCamino.Add(m.VarianteId);
             else
                 bandeja.SinLlegar[m.VarianteId] = bandeja.SinLlegar.GetValueOrDefault(m.VarianteId) + m.Cantidad;
+        }
+        foreach (var retenida in retenidas)
+        {
+            var deAqui = movimientos.Where(m => m.DocumentoId is { } documento && retenida.Esperan.Contains(documento) && !enCamino.Contains(documento))
+                .GroupBy(m => m.VarianteId).Select(g => (Variante: g.Key, Cantidad: g.Aggregate(Cantidad.Cero, (suma, m) => suma + m.Cantidad)));
+            foreach (var (variante, aqui) in deAqui.Where(x => x.Cantidad.EsPositiva))
+            {
+                var alla = retenida.Todo ? aqui : retenida.Retenido.GetValueOrDefault(variante, Cantidad.Cero);
+                var cubierto = alla < aqui ? alla : aqui;
+                if (cubierto.EsPositiva)
+                    bandeja.SinLlegar[variante] = bandeja.SinLlegar.GetValueOrDefault(variante) - cubierto;
+            }
         }
         return bandeja;
     }

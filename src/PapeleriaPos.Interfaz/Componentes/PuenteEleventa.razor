@@ -64,12 +64,18 @@
                                         }
                                         <button class="vn-boton chico" disabled="@(_ocupado || _elegidas.Count == 0)" @onclick="() => MarcarAsync(revisar)">Es su anotación</button>
                                     }
+                                    @* Si lo anotado allá no cuadra con nada que se pueda elegir. *@
+                                    <button class="vn-boton chico" disabled="@_ocupado" title="@ResolverTitulo" @onclick="() => ResolverAsync(revisar)">Resolverlo a mano</button>
                                 }
                                 else if (PuedeMarcar)
                                 {
                                     <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => item.EligeAnotacion ? ElegirAnotacionAsync(revisar) : MarcarAsync(revisar)">
                                         @(item.EnvioId is not null ? "Ya lo anoté en eleventa" : "Ya lo revisé")
                                     </button>
+                                    @if (item.EligeAnotacion)
+                                    {
+                                        <button class="vn-boton chico" disabled="@_ocupado" title="@ResolverTitulo" @onclick="() => ResolverAsync(revisar)">Resolverlo a mano</button>
+                                    }
                                 }
                             </li>
                         }
@@ -194,6 +200,34 @@
             // También cuando llegó sola a eleventa: el servicio ya la dio por enviada, y deja de enseñarse.
             _error = ex.Message;
             await ActualizarAsync();
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private const string ResolverTitulo =
+        "Si lo que se anotó en eleventa no cuadra con nada que se pueda elegir: lo que eleventa devolvió de este ticket se pasa a la venta como devolución de allá.";
+
+    /// <summary>
+    /// Lo anotado en eleventa no cuadra con nada que se pueda elegir: ya se resolvió a mano allá (queda en la bitácora), y lo
+    /// que eleventa devolvió de ese ticket se pasa a la venta.
+    /// </summary>
+    private async Task ResolverAsync(PorRevisarEleventaDto item)
+    {
+        _error = null;
+        _ocupado = true;
+        try
+        {
+            await Puente!.ResolverAManoAsync(item.EnvioId!.Value, new SolicitudRevision(Sesion.UsuarioId, null));
+            (_eligiendo, _anotaciones) = (null, null);
+            _elegidas.Clear();
+            await ActualizarAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
         }
         finally
         {

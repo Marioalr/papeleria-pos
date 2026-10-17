@@ -281,7 +281,7 @@ public sealed class EnvioVentasEleventa(
             var tomadas = leidas.Candidatas.Where(l => elegidas.Contains(l.Id)).ToList();
             if (tomadas.Count != elegidas.Distinct().Count())
                 throw new InvalidOperationException(DevolucionesConEleventa.YaNoSeElige);
-            if (DevolucionesConEleventa.PorQueNoEs(porAnotar.Armada, tomadas) is { } porque)
+            if (await DevolucionesConEleventa.PorQueNoEsAsync(db, porAnotar, tomadas) is { } porque)
                 throw new InvalidOperationException(porque);
             DevolucionesConEleventa.Ligar(db, porAnotar, tomadas, reloj.GetUtcNow().UtcDateTime);
             anotacion = $" (en eleventa: {string.Join(", ", tomadas.Select(t => $"{(t.EsCancelacion ? "cancelación" : "devolución")} #{t.Id} del {t.DevueltoEn:dd/MM HH:mm}"))})";
@@ -292,6 +292,55 @@ public sealed class EnvioVentasEleventa(
         // Antes de guardarlo: una lectura de eleventa a medias no sabe si lo leyó antes o después de que se registrara allá.
         EnCurso.AnotadoAMano(envio.Id);
         await db.SaveChangesAsync();
+        if (anotacion.Length > 0)
+            await PasarLoRetenidoAsync(db, envio.VentaId!.Value);
+        Despertar();
+        return true;
+    }
+
+    /// <summary>
+    /// Ya no espera nada de ese ticket (se eligió su anotación o se resolvió a mano): lo que eleventa le devolvió y la vuelta
+    /// retenía se pasa ya a la venta, leído en vivo y con el candado de la bandeja, sin esperar la siguiente lectura (que,
+    /// en un ticket de hace más de 31 días, ya no lo leería). Si eleventa no contesta o la bandeja está ocupada, lo pasa la
+    /// siguiente lectura.
+    /// </summary>
+    private async Task PasarLoRetenidoAsync(PosDbContext db, Guid ventaId)
+    {
+        if (_destino is not { } destino)
+            return;
+        using var candado = await IntentarCandadoAsync(DevolucionesConEleventa.EsperaEnVivo);
+        if (candado is null)
+            return;
+        try
+        {
+            await DevolucionesConEleventa.RevisarEnVivoAsync(db, destino.Servidor, ventaId, reloj.GetUtcNow().UtcDateTime);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            log.LogWarning(ex, "No se pudo pasar lo que eleventa devolvió de la venta {Venta}: lo pasa la siguiente lectura.", ventaId);
+        }
+    }
+
+    /// <summary>
+    /// «Resolverlo a mano»: la salida cuando la anotación a mano de una devolución de aquí no cuadra con nada que se pueda
+    /// elegir (dos de aquí anotadas en una sola allá, más o menos artículos, una cancelación anotada como devolución…; cuarta
+    /// revisión, 2026-10-17). Quien tiene «Configuración de la tienda» dice que ya lo resolvió en eleventa: la de aquí queda
+    /// anotada a mano sin ligarse con nada, y lo que eleventa devolvió de ese ticket deja de esperar y se pasa a la venta como
+    /// cualquier otra devolución de allá (o queda por revisar, si aquí ya no alcanza). Desde ahí la existencia sigue a
+    /// eleventa. Queda en la bitácora, con su nota.
+    /// </summary>
+    public async Task<bool> ResolverAManoAsync(PosDbContext db, Guid id, SolicitudRevision s)
+    {
+        if (await db.EnviosAEleventa.FindAsync(id) is not { } envio || await DevolucionesConEleventa.PorAnotarAsync(db, envio) is null)
+            return false;
+        var control = await ConPermisoAsync(db, envio, s);
+        var resuelto = (await EstadoAsync(db)).PorAtender.FirstOrDefault(e => e.Id == id);
+        envio.Estado = EstadoEnvioEleventa.AMano;
+        envio.Error = Recortar($"{DevolucionesConEleventa.ResueltaAMano} {envio.Error}".Trim());
+        control.Anotar($"Resolvió a mano en eleventa, sin elegir su anotación: {resuelto?.Descripcion ?? envio.Tipo.ToString()}", resuelto?.TotalCentavos);
+        EnCurso.AnotadoAMano(envio.Id);
+        await db.SaveChangesAsync();
+        await PasarLoRetenidoAsync(db, envio.VentaId!.Value);
         Despertar();
         return true;
     }
