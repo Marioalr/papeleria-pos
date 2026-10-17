@@ -451,9 +451,11 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// junta con lo suyo para la franja: «Sin internet: la venta sigue. No desconectes nada.» Vacía en un servicio de antes o si
 /// el servicio no lo revisa (la prueba en desarrollo).
 /// </param>
+/// <param name="FormatoCopia">El de la copia que arma (<see cref="VersionesCopiaDto.Formato"/>); vacío en un servicio de antes.</param>
 public sealed record EstadoServicioDto(
     string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false, long VersionCredito = 0,
-    bool PilotoEleventa = false, string? AvisoBase = null, long? VersionExistencias = null, Guid? Base = null, RedDeLaPrincipalDto? Red = null);
+    bool PilotoEleventa = false, string? AvisoBase = null, long? VersionExistencias = null, Guid? Base = null, int? FormatoCopia = null,
+    RedDeLaPrincipalDto? Red = null);
 
 /// <summary>Cómo ve la red la caja principal: lo revisa sola cada medio minuto (docs/arquitectura.md, «La red de la matriz»).</summary>
 /// <param name="Internet">Si contesta algo de internet; vacío: todavía no se sabe.</param>
@@ -528,8 +530,9 @@ public sealed record CodigoLocalDto(string Codigo, Guid VarianteId, Guid Present
 /// sugerido).
 /// </param>
 /// <param name="Codigos">
-/// Todos los códigos de los productos de la copia, en el orden del servicio: si uno se repite (en otro producto), al
-/// escanear vale el primero, y la búsqueda por nombre lo encuentra en los dos, como en el servicio.
+/// Todos los códigos de los productos de la copia, también los que solo cambian en mayúsculas («ZZ-01» en uno y «zz-01» en
+/// otro): al escanear se lo lleva el igual tal cual o, si ninguno, el producto más antiguo (<c>CodigosDeEscaneo</c>), como en
+/// el servicio, y la búsqueda por nombre lo encuentra en los dos. El orden no cuenta.
 /// </param>
 /// <param name="Marcas">Las que usa el servicio para leer los nombres: la búsqueda de la copia los lee igual (entrega 5, parte 3).</param>
 /// <param name="Base">

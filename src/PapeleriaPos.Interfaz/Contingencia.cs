@@ -38,6 +38,9 @@ public sealed class Contingencia
     /// <summary>Con un servicio de antes (sin cambios por versión), la copia se vuelve a bajar completa cada tanto (las existencias).</summary>
     private static readonly TimeSpan PaqueteViejo = TimeSpan.FromMinutes(30);
 
+    /// <summary>El formato de la copia de una caja principal que no lo dice (la de la entrega 5, parte 2).</summary>
+    private const int FormatoDeAntes = 1;
+
     /// <summary>
     /// Con los cambios por versión, la copia completa se vuelve a bajar a lo más cada tanto, por si acaso: lo que no llegue con
     /// los cambios (un error nuestro) se corrige solo. Al abrir la caja también se baja si la caja principal se reinició.
@@ -239,6 +242,9 @@ public sealed class Contingencia
 
     /// <summary>Las versiones de la caja principal que se conocen (las del aviso o las del latido); vacías con un servicio de antes.</summary>
     private VersionesCopiaDto? _dePrincipal;
+
+    /// <summary>Las versiones que dijo la caja principal la última vez (en el latido o en el aviso): para las pruebas.</summary>
+    internal VersionesCopiaDto? VersionesDeLaPrincipal => _dePrincipal;
 
     /// <summary>Una puesta al día a la vez; lo que se avise mientras, se revisa al terminar (<see cref="_otraVez"/>).</summary>
     private readonly SemaphoreSlim _poniendoAlDia = new(1, 1);
@@ -637,7 +643,7 @@ public sealed class Contingencia
         // latido queda de respaldo). Con uno de antes, la baja completa en el primer latido, cuando cambia y cada tanto.
         if (estado.Base is { } base_ && estado.VersionExistencias is { } existencias)
         {
-            _dePrincipal = new VersionesCopiaDto(base_, estado.VersionDatos, existencias, estado.VersionCredito);
+            _dePrincipal = new VersionesCopiaDto(base_, estado.VersionDatos, existencias, estado.VersionCredito, estado.FormatoCopia);
             await PonerAlDiaAsync();
         }
         else if (Paquete is null || Paquete.Version != estado.VersionDatos || Ahora - _paqueteBajadoUtc > PaqueteViejo)
@@ -818,6 +824,15 @@ public sealed class Contingencia
         if (_conexion.CajaId is not { } caja || _dePrincipal is not { } principal)
             return;
         var copia = _copia?.Paquete;
+        // La caja principal arma la copia en otro formato (una de las dos se actualizó antes que la otra): no se le piden cambios
+        // y la copia completa se baja como con una de antes, solo cuando cambia su versión del catálogo o cada tanto. Antes se
+        // bajaba completa con cada latido y cada aviso: la que llegaba nunca era del formato de esta caja.
+        if ((principal.Formato ?? FormatoDeAntes) != CopiaAlDia.Formato)
+        {
+            if (copia is null || copia.Version != principal.Catalogo || Ahora - _paqueteBajadoUtc > PaqueteViejo)
+                await BajarCopiaAsync();
+            return;
+        }
         if (copia is null || copia.Base != principal.Base || copia.Formato != CopiaAlDia.Formato || copia.VersionExistencias is not { } existencias
             || Ahora - _completaDesdeUtc > CopiaCompletaCada)
         {

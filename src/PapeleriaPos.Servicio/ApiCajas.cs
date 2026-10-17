@@ -37,7 +37,8 @@ public static partial class ApiCajas
             // La red vista desde aquí (si hay internet y si contesta el router): la franja de las cajas (la red de la tienda en el POS).
             var red = http.RequestServices.GetService<VigiaDeLaRed>()?.Estado;
             return new EstadoServicioDto("Papelería POS", Version, await db.Sucursales.OrderBy(s => s.Nombre).Select(s => s.Nombre).ToListAsync(),
-                versiones.Catalogo, prueba.Activo, versiones.Credito, eleventa.SoloEfectivo, revision.Aviso, versiones.Existencias, versiones.Base, red);
+                versiones.Catalogo, prueba.Activo, versiones.Credito, eleventa.SoloEfectivo, revision.Aviso, versiones.Existencias, versiones.Base,
+                versiones.Formato, red);
         });
 
         // Abierto, pero solo contesta con el PIN del dueño: qué sucursales y cajas hay para elegir.
