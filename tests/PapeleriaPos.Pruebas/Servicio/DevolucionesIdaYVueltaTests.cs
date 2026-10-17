@@ -358,8 +358,8 @@ public sealed class DevolucionesIdaYVueltaTests
         var c = await AbrirAsync(servicio, await MapearAsync(servicio));
         var ticket = await CobrarAsync(c);
         var pendiente = (await EnviosAsync(c)).PorAtender.Single();
-        await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsync($"api/eleventa/envios/{pendiente.Id}/revisar", null));
         var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+        await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsJsonAsync($"api/eleventa/envios/{pendiente.Id}/revisar", new SolicitudRevision(dueno.UsuarioId, null)));
 
         async Task<PantallaSinNavegador> PantallaAsync(SesionDto sesion)
         {

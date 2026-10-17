@@ -270,8 +270,9 @@ public static class ApiEleventa
         });
 
         // Lo que no entra: se deja por revisar para que lo demás pase. Hasta anotarlo a mano, la lectura lo sigue descontando.
-        api.MapPost("/envios/{id:guid}/revisar", async (Guid id, EnvioVentasEleventa envios, PosDbContext db) =>
-            await envios.DejarPorRevisarAsync(db, id)
+        // Lo deja quien entró con «Configuración de la tienda», como anotarlo a mano; queda en la bitácora.
+        api.MapPost("/envios/{id:guid}/revisar", async (Guid id, SolicitudRevision s, EnvioVentasEleventa envios, PosDbContext db) =>
+            await envios.DejarPorRevisarAsync(db, id, s)
                 ? Results.Ok(await envios.EstadoAsync(db))
                 : Results.BadRequest(new ErrorDto("Solo se deja por revisar lo que está pendiente.")));
 

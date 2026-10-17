@@ -141,14 +141,18 @@ public sealed class EnvioVentasEleventa(
     /// <summary>
     /// Lo que no entra y no se puede arreglar desde aquí se deja por revisar, para que lo que sigue en la bandeja pueda
     /// pasar. Si ya se corrigió a mano en eleventa, va <see cref="AnotarAManoAsync"/>: mientras quede por revisar, la
-    /// lectura de eleventa lo sigue descontando de la existencia.
+    /// lectura de eleventa lo sigue descontando de la existencia. Lo deja quien entró con «Configuración de la tienda»,
+    /// como anotarlo a mano, y queda en la bitácora.
     /// </summary>
-    public async Task<bool> DejarPorRevisarAsync(PosDbContext db, Guid id)
+    public async Task<bool> DejarPorRevisarAsync(PosDbContext db, Guid id, SolicitudRevision s)
     {
         if (await db.EnviosAEleventa.FindAsync(id) is not { Estado: EstadoEnvioEleventa.Pendiente } envio)
             return false;
+        var control = await ConPermisoAsync(db, envio, s);
+        var dejado = (await EstadoAsync(db)).PorAtender.FirstOrDefault(e => e.Id == id);
         envio.Estado = EstadoEnvioEleventa.PorRevisar;
         envio.Error = Recortar($"Se dejó para revisar a mano. {envio.Error}".Trim());
+        control.Anotar($"Dejó por revisar lo que no pasa solo a eleventa: {dejado?.Descripcion ?? envio.Tipo.ToString()}", dejado?.TotalCentavos);
         await db.SaveChangesAsync();
         Despertar();
         return true;
@@ -163,21 +167,38 @@ public sealed class EnvioVentasEleventa(
     {
         if (await db.EnviosAEleventa.FindAsync(id) is not { Estado: EstadoEnvioEleventa.Pendiente or EstadoEnvioEleventa.PorRevisar } envio)
             return false;
-        var (sucursalId, cajaId) = await DondeAsync(db, envio);
-        var control = new ServicioControl(db);
-        await control.ExigirDeLaSesionAsync(s.UsuarioId, sucursalId, cajaId, AccionControlada.ConfigurarTienda);
+        var control = await ConPermisoAsync(db, envio, s);
         // Cómo se ve en la bandeja («Venta B-000123», «Salida de efectivo: …»), para la bitácora.
         var anotado = (await EstadoAsync(db)).PorAtender.FirstOrDefault(e => e.Id == id);
         envio.Estado = EstadoEnvioEleventa.AMano;
         envio.Error = Recortar($"Se anotó a mano en eleventa. {envio.Error}".Trim());
-        control.Registrar(sucursalId, cajaId, s.UsuarioId, AccionControlada.ConfigurarTienda,
-            $"Anotó a mano en eleventa: {anotado?.Descripcion ?? envio.Tipo.ToString()}" + (string.IsNullOrWhiteSpace(s.Nota) ? "" : $". {s.Nota.Trim()}"),
-            anotado?.TotalCentavos, envio.VentaId);
+        control.Anotar($"Anotó a mano en eleventa: {anotado?.Descripcion ?? envio.Tipo.ToString()}", anotado?.TotalCentavos);
         // Antes de guardarlo: una lectura de eleventa a medias no sabe si lo leyó antes o después de que se registrara allá.
         EnCurso.AnotadoAMano(envio.Id);
         await db.SaveChangesAsync();
         Despertar();
         return true;
+    }
+
+    /// <summary>
+    /// Lo que se hace a mano con algo de la bandeja (dejarlo por revisar, anotarlo a mano) lo hace quien entró con
+    /// «Configuración de la tienda», en la sucursal y la caja de eso: si no lo tiene, queda en la bitácora como intento
+    /// sin permiso y no se hace. Regresa con qué anotar en la bitácora lo que sí se hizo.
+    /// </summary>
+    private static async Task<HechoAMano> ConPermisoAsync(PosDbContext db, EnvioAEleventa envio, SolicitudRevision s)
+    {
+        var (sucursalId, cajaId) = await DondeAsync(db, envio);
+        var control = new ServicioControl(db);
+        await control.ExigirDeLaSesionAsync(s.UsuarioId, sucursalId, cajaId, AccionControlada.ConfigurarTienda);
+        return new HechoAMano(control, sucursalId, cajaId, envio.VentaId, s);
+    }
+
+    /// <summary>Lo que se hizo a mano con algo de la bandeja, en la bitácora: quién, dónde, de qué venta, cuánto y su nota.</summary>
+    private sealed class HechoAMano(ServicioControl control, Guid sucursalId, Guid? cajaId, Guid? ventaId, SolicitudRevision s)
+    {
+        public void Anotar(string que, long? monto) =>
+            control.Registrar(sucursalId, cajaId, s.UsuarioId, AccionControlada.ConfigurarTienda,
+                que + (string.IsNullOrWhiteSpace(s.Nota) ? "" : $". {s.Nota.Trim()}"), monto, ventaId);
     }
 
     /// <summary>

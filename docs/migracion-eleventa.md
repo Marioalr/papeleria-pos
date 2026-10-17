@@ -431,10 +431,10 @@ se cierra antes que sus ventas.
   Eleventa no lo ha hecho entre turnos, pero así cuadran sus cortes.
 - **Lo que no se puede mandar solo:**
   - si algo no entra, lo que sigue espera en la bandeja;
-  - si ya se arregló a mano en eleventa, `POST /api/eleventa/envios/{id}/a-mano` lo anota y lo demás pasa (lo anota
-    quien entró con «Configuración de la tienda», y queda en la bitácora; desde el 2026-10-17); si todavía falta
-    revisarlo, `POST …/revisar` lo deja por revisar, lo demás pasa y la lectura lo sigue descontando hasta anotarlo a
-    mano;
+  - si ya se arregló a mano en eleventa, `POST /api/eleventa/envios/{id}/a-mano` lo anota y lo demás pasa; si todavía
+    falta revisarlo, `POST …/revisar` lo deja por revisar, lo demás pasa y la lectura lo sigue descontando hasta
+    anotarlo a mano. Los dos los hace quien entró con «Configuración de la tienda», y quedan en la bitácora (desde el
+    2026-10-17);
   - lo que volvió dañado no regresa al inventario de eleventa.
 - **El cierre** usa la diferencia del corte Z de la caja 2 (contado menos esperado). Con las entradas y salidas ya en
   eleventa (abajo), su efectivo al cierre queda en lo contado.
