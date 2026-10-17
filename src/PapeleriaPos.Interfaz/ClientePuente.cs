@@ -24,8 +24,9 @@ public sealed class ClientePuente(HttpClient http, ConexionCaja conexion)
     /// <summary>Lo que quedó por revisar con eleventa y lo que conviene saber, para la pantalla.</summary>
     public async Task<PuenteEleventaDto> PantallaAsync() => (await _http.GetAsync<PuenteEleventaDto>("api/eleventa/pantalla"))!;
 
-    /// <summary>Lo que ya se anotó a mano en eleventa: deja de mandarse y de enseñarse.</summary>
-    public Task AnotarAManoAsync(Guid envioId) => _http.PostAsync<object>($"api/eleventa/envios/{envioId}/a-mano", null, sinRespuesta: true);
+    /// <summary>Lo que ya se anotó a mano en eleventa: deja de mandarse y de enseñarse. Lo hace quien tiene «Configuración de la tienda».</summary>
+    public Task AnotarAManoAsync(Guid envioId, SolicitudRevision solicitud) =>
+        _http.PostAsync<object>($"api/eleventa/envios/{envioId}/a-mano", solicitud, sinRespuesta: true);
 
     /// <summary>
     /// Reanudar el puente después de que se detuvo porque eleventa se restauró: lo que se perdió allá queda por revisar.

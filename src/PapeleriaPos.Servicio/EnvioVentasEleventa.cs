@@ -156,19 +156,48 @@ public sealed class EnvioVentasEleventa(
 
     /// <summary>
     /// Lo que ya quedó en eleventa a mano (alguien lo registró allá, o allá ya estaba), pendiente o por revisar: ya no se
-    /// manda, lo que sigue en la bandeja puede pasar, y la lectura de eleventa ya no lo descuenta de la existencia.
+    /// manda, lo que sigue en la bandeja puede pasar, y la lectura de eleventa ya no lo descuenta de la existencia. Lo anota
+    /// quien entró con «Configuración de la tienda» (como «Ya lo revisé» y reanudar el puente), y queda en la bitácora.
     /// </summary>
-    public async Task<bool> AnotarAManoAsync(PosDbContext db, Guid id)
+    public async Task<bool> AnotarAManoAsync(PosDbContext db, Guid id, SolicitudRevision s)
     {
         if (await db.EnviosAEleventa.FindAsync(id) is not { Estado: EstadoEnvioEleventa.Pendiente or EstadoEnvioEleventa.PorRevisar } envio)
             return false;
+        var (sucursalId, cajaId) = await DondeAsync(db, envio);
+        var control = new ServicioControl(db);
+        await control.ExigirDeLaSesionAsync(s.UsuarioId, sucursalId, cajaId, AccionControlada.ConfigurarTienda);
+        // Cómo se ve en la bandeja («Venta B-000123», «Salida de efectivo: …»), para la bitácora.
+        var anotado = (await EstadoAsync(db)).PorAtender.FirstOrDefault(e => e.Id == id);
         envio.Estado = EstadoEnvioEleventa.AMano;
         envio.Error = Recortar($"Se anotó a mano en eleventa. {envio.Error}".Trim());
+        control.Registrar(sucursalId, cajaId, s.UsuarioId, AccionControlada.ConfigurarTienda,
+            $"Anotó a mano en eleventa: {anotado?.Descripcion ?? envio.Tipo.ToString()}" + (string.IsNullOrWhiteSpace(s.Nota) ? "" : $". {s.Nota.Trim()}"),
+            anotado?.TotalCentavos, envio.VentaId);
         // Antes de guardarlo: una lectura de eleventa a medias no sabe si lo leyó antes o después de que se registrara allá.
         EnCurso.AnotadoAMano(envio.Id);
         await db.SaveChangesAsync();
         Despertar();
         return true;
+    }
+
+    /// <summary>
+    /// La sucursal y la caja de lo que va en la bandeja (las de su venta, su devolución de un ticket de eleventa, su entrada
+    /// o salida, o su turno): ahí se revisa el permiso y ahí va la bitácora.
+    /// </summary>
+    private static async Task<(Guid Sucursal, Guid? Caja)> DondeAsync(PosDbContext db, EnvioAEleventa envio)
+    {
+        if (envio.VentaId is { } ventaId
+            && await db.Ventas.AsNoTracking().Where(v => v.Id == ventaId).Select(v => new { v.SucursalId, v.CajaId }).FirstOrDefaultAsync() is { } venta)
+            return (venta.SucursalId, venta.CajaId);
+        if (envio.DevolucionDeEleventaId is { } idaId
+            && await db.Set<DevolucionDeEleventa>().AsNoTracking().Where(d => d.Id == idaId).Select(d => new { d.SucursalId, d.CajaId }).FirstOrDefaultAsync() is { } ida)
+            return (ida.SucursalId, ida.CajaId);
+        var turnoId = envio.TurnoId ?? (envio.MovimientoId is { } movimientoId
+            ? await db.MovimientosCaja.AsNoTracking().Where(m => m.Id == movimientoId).Select(m => (Guid?)m.TurnoId).FirstOrDefaultAsync()
+            : null);
+        return turnoId is { } t && await db.Turnos.AsNoTracking().Where(x => x.Id == t).Select(x => new { x.SucursalId, x.CajaId }).FirstOrDefaultAsync() is { } turno
+            ? (turno.SucursalId, turno.CajaId)
+            : throw new InvalidOperationException("No se sabe de qué caja es eso.");
     }
 
     public async Task<EstadoEnviosEleventaDto> EstadoAsync(PosDbContext db)

@@ -275,9 +275,10 @@ public static class ApiEleventa
                 ? Results.Ok(await envios.EstadoAsync(db))
                 : Results.BadRequest(new ErrorDto("Solo se deja por revisar lo que está pendiente.")));
 
-        // Lo que ya quedó en eleventa a mano (pendiente o por revisar): ya no se manda ni se descuenta al leer eleventa.
-        api.MapPost("/envios/{id:guid}/a-mano", async (Guid id, EnvioVentasEleventa envios, PosDbContext db) =>
-            await envios.AnotarAManoAsync(db, id)
+        // Lo que ya quedó en eleventa a mano (pendiente o por revisar): ya no se manda ni se descuenta al leer eleventa. Lo
+        // anota quien entró con «Configuración de la tienda», como «Ya lo revisé» y reanudar el puente; queda en la bitácora.
+        api.MapPost("/envios/{id:guid}/a-mano", async (Guid id, SolicitudRevision s, EnvioVentasEleventa envios, PosDbContext db) =>
+            await envios.AnotarAManoAsync(db, id, s)
                 ? Results.Ok(await envios.EstadoAsync(db))
                 : Results.BadRequest(new ErrorDto("Solo se anota a mano lo que está pendiente o por revisar.")));
 

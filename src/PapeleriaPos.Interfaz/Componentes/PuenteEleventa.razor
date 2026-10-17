@@ -132,7 +132,7 @@
         try
         {
             if (item.EnvioId is { } envio)
-                await Puente!.AnotarAManoAsync(envio);
+                await Puente!.AnotarAManoAsync(envio, new SolicitudRevision(Sesion.UsuarioId, null));
             else if (item.VueltaId is { } vuelta)
                 await Puente!.VueltaRevisadaAsync(vuelta, new SolicitudRevision(Sesion.UsuarioId, null));
             await ActualizarAsync();
