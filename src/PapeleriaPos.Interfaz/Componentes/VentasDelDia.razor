@@ -1,72 +1,378 @@
+@* Las ventas del día y de otros días (paridad con eleventa, «Ventas del día y devoluciones», 2026-10-17), en el panel de la
+   derecha (desde «/»). Abre en las de hoy de esta caja, de todos los cajeros, como antes. Quien tiene «Ver reportes de
+   ventas» cambia de día (← →, los botones o la fecha) y de caja; cualquiera filtra por cajero y busca un folio en
+   cualquier día (Enter). Cada venta dice su folio, la hora, quién cobró, la caja, el total, cómo se pagó y si se canceló o
+   se devolvió algo; de ahí se reimprime (con motivo, como siempre) y «Devolver o cancelar» abre la devolución con su folio,
+   con sus reglas (7 días, el mismo turno para cancelar y los permisos). Las ventas están en la caja principal: sin ella,
+   la caja solo tiene su copia para vender, y lo dice. *@
 @inject ClienteCaja Cliente
+@inject ModuloCaja Js
 
-@if (_error is not null)
-{
-    <p class="error">@_error</p>
-}
-else if (_ventas is null)
-{
-    <p>Cargando…</p>
-}
-else if (_ventas.Count == 0)
-{
-    <p class="vacia">Esta caja no ha vendido hoy.</p>
-}
-else
-{
-    var cobradas = _ventas.Where(v => !v.Cancelada).ToList();
-    <p>
-        <strong>@cobradas.Count</strong> ventas · <strong>@Formato.Dinero(cobradas.Sum(v => v.TotalCentavos))</strong>
-        @if (_ventas.Count > cobradas.Count)
+<div class="vn-ventas" id="ventas" @onkeydown="AlTeclearAsync">
+    <div class="vn-ventas-dia">
+        @if (VeOtrosDias)
         {
-            <span> · @(_ventas.Count - cobradas.Count) canceladas</span>
-        }
-    </p>
-    <div class="resultados">
-        <table>
-            <thead><tr><th>Folio</th><th>Hora</th><th>Cajero</th><th class="num">Artículos</th><th class="num">Total</th><th></th></tr></thead>
-            @foreach (var v in _ventas)
+            <button class="vn-boton" title="Día anterior (←)" aria-label="Día anterior" disabled="@(_datos is null)" @onclick="() => MoverAsync(-1)">←</button>
+            <input id="ventas-fecha" @key="_versionFecha" type="date" aria-label="Día" value="@Dia?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)"
+                   max="@_datos?.Hoy.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)" @onchange="CambiarFechaAsync" @onkeydown:stopPropagation="true" />
+            <button class="vn-boton" title="Día siguiente (→)" aria-label="Día siguiente" disabled="@(_datos is null || EsHoy)" @onclick="() => MoverAsync(1)">→</button>
+            @if (_datos is not null && !EsHoy)
             {
-                <tr class="@(v.Cancelada ? "negado" : "")">
-                    <td>@v.Folio@(v.Cancelada ? " (cancelado)" : "")</td>
-                    <td>@v.FechaLocal.ToString("HH:mm")</td>
-                    <td>@v.Cajero</td>
-                    <td class="num">@v.Articulos</td>
-                    <td class="num">@Formato.Dinero(v.TotalCentavos)</td>
-                    <td>
-                        <button class="boton chico" @onclick="() => ReimprimirAsync(v.Id)">Reimprimir</button>
-                        @if (!v.Cancelada)
-                        {
-                            <button class="boton chico" @onclick="() => AlDevolver.InvokeAsync(v.Folio)">Devolver / cancelar</button>
-                        }
-                    </td>
-                </tr>
+                <button class="vn-boton" @onclick="IrAHoyAsync">Hoy</button>
             }
-        </table>
+        }
+        else
+        {
+            @* Sin «Ver reportes de ventas»: las de hoy de esta caja, como antes. *@
+            <span class="vn-ventas-hoy">Hoy · @NombreDeEstaCaja</span>
+        }
     </div>
-}
+    <div class="vn-ventas-filtros">
+        @if (VeOtrosDias)
+        {
+            <select id="ventas-caja" aria-label="Caja" value="@_caja" @onchange="CambiarCajaAsync" @onkeydown:stopPropagation="true">
+                <option value="">Todas las cajas</option>
+                @foreach (var c in Cajas)
+                {
+                    <option value="@c.Id">@(c.Id == CajaId ? $"{c.Nombre} (esta)" : c.Nombre)</option>
+                }
+            </select>
+        }
+        <select id="ventas-cajero" aria-label="Cajero" value="@_cajero" @onchange="CambiarCajeroAsync" @onkeydown:stopPropagation="true">
+            <option value="">Todos los cajeros</option>
+            @foreach (var u in _datos?.Cajeros ?? [])
+            {
+                <option value="@u.Id">@u.Nombre</option>
+            }
+        </select>
+    </div>
+    <input id="ventas-folio" class="vn-ventas-folio" aria-label="Buscar un folio" autocomplete="off" placeholder="Folio de cualquier día (A-000123)"
+           value="@_folio" @oninput="e => _folio = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearFolioAsync" @onkeydown:stopPropagation="true" />
+
+    @if (_error is not null)
+    {
+        <div class="vn-alerta @(_sinConexion ? "info" : "")" role="alert">
+            <Ico Nombre="@(_sinConexion ? "red" : "alerta")" />
+            <div>
+                <span>@_error</span>
+                <span><button class="vn-boton chico" @onclick="CargarAsync">Volver a intentar</button></span>
+            </div>
+        </div>
+    }
+    else if (_datos is not { } d)
+    {
+        <p class="vn-ventas-resumen">Cargando…</p>
+    }
+    else
+    {
+        var cobradas = d.Ventas.Where(v => !v.Cancelada).ToList();
+        var canceladas = d.Ventas.Count - cobradas.Count;
+        var devuelto = cobradas.Sum(v => v.DevueltoCentavos);
+        <p class="vn-ventas-resumen">
+            @if (_cargando)
+            {
+                <span>Cargando…</span>
+            }
+            else
+            {
+                @* Los espacios van dentro del texto: Razor quita el que queda solo entre una etiqueta y una expresión. *@
+                <span>@(d.Folio is { } folio ? $"Folio «{folio}»: " : "")<strong>@cobradas.Count</strong>@(cobradas.Count == 1 ? " venta · " : " ventas · ")<strong>@Formato.Dinero(cobradas.Sum(v => v.TotalCentavos))</strong>@(canceladas > 0 ? $" · {canceladas} {(canceladas == 1 ? "cancelada" : "canceladas")}" : "")@(devuelto > 0 ? $" · devuelto {Formato.Dinero(devuelto)}" : "")</span>
+                @if (d.Folio is not null)
+                {
+                    <button class="vn-enlace" @onclick="VerElDiaAsync">Ver el día</button>
+                }
+            }
+        </p>
+        @if (d.HayMas)
+        {
+            <p class="vn-ventas-nota">Ese día tiene más ventas de las que caben aquí: se ven las más nuevas. Elige una caja o un cajero.</p>
+        }
+        @if (d.Ventas.Count == 0)
+        {
+            <p class="vn-ventas-vacia">@Vacia(d)</p>
+        }
+        else
+        {
+            <div class="vn-ventas-lista @(_cargando ? "cargando" : "")" aria-label="Ventas">
+                @foreach (var v in d.Ventas)
+                {
+                    var venta = v;
+                    <div class="vn-venta @(v.Cancelada ? "cancelada" : "")" id="venta-@v.Id">
+                        <strong>@(v.FolioEleventa?.ToString(CultureInfo.InvariantCulture) ?? v.Folio)</strong>
+                        <span class="num">@Formato.Dinero(v.TotalCentavos)</span>
+                        <small>
+                            @* Los espacios van dentro del texto: Razor quita el que queda al principio de una etiqueta. *@
+                            @Hora(v, d) · @v.Cajero · @v.Caja · @FormasTexto(v.Formas)@(v.FolioEleventa is null ? "" : " · en la caja ")
+                            @if (v.FolioEleventa is not null)
+                            {
+                                <code>@v.Folio</code>
+                            }
+                        </small>
+                        @if (v.Cancelada || v.DevueltoCentavos > 0)
+                        {
+                            <span class="vn-venta-estado">
+                                @if (v.Cancelada)
+                                {
+                                    <span class="vn-etiq rojo">Cancelada</span>
+                                }
+                                else if (v.DevueltaCompleta)
+                                {
+                                    <span class="vn-etiq gris">Devuelta · @Formato.Dinero(v.DevueltoCentavos)</span>
+                                }
+                                else
+                                {
+                                    <span class="vn-etiq ambar">Devuelta en parte · @Formato.Dinero(v.DevueltoCentavos)</span>
+                                }
+                            </span>
+                        }
+                        <span class="vn-venta-botones">
+                            @if (Ve(AccionControlada.Reimprimir))
+                            {
+                                <button class="vn-boton chico" @onclick="() => AlReimprimir.InvokeAsync(venta.Id)"><Ico Nombre="impresora" />Reimprimir</button>
+                            }
+                            @if (SeDevuelveOCancela(v))
+                            {
+                                <button class="vn-boton chico" @onclick="() => AlDevolver.InvokeAsync(venta.Folio)"><Ico Nombre="volver" />Devolver o cancelar</button>
+                            }
+                        </span>
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
 
 @code {
     [Parameter, EditorRequired] public Guid CajaId { get; set; }
+
+    /// <summary>Quien entró a la caja: el servicio revisa con su usuario lo que puede ver.</summary>
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
     /// <summary>La pantalla de venta pide el motivo y reimprime.</summary>
     [Parameter] public EventCallback<Guid> AlReimprimir { get; set; }
+
     /// <summary>Abre la devolución o cancelación con el folio ya escrito.</summary>
     [Parameter] public EventCallback<string> AlDevolver { get; set; }
 
-    private List<VentaDelDiaDto>? _ventas;
-    private string? _error;
+    /// <summary>
+    /// Los permisos con que pinta la pantalla de venta (los de la sesión o, de un servicio de antes, los que pidió aparte); sin
+    /// ellos, los de la sesión.
+    /// </summary>
+    [CascadingParameter(Name = "PermisosDeSesion")] public IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? PermisosDeSesion { get; set; }
 
-    protected override async Task OnInitializedAsync()
+    private VentasDeUnDiaDto? _datos;
+    private string? _error;
+    private bool _sinConexion;
+
+    /// <summary>El día que se ve; vacío hasta que la caja principal dice cuál es hoy.</summary>
+    private DateOnly? _fecha;
+
+    /// <summary>La caja del filtro («»: todas). Empieza en esta caja.</summary>
+    private string _caja = "";
+
+    /// <summary>El cajero del filtro («»: todos).</summary>
+    private string _cajero = "";
+
+    private string _folio = "";
+
+    /// <summary>El folio que se buscó: mientras, la lista es la de ese folio, de cualquier día.</summary>
+    private string? _folioBuscado;
+
+    /// <summary>La última consulta: una respuesta vieja (de otro día) no tapa a la nueva.</summary>
+    private int _consulta;
+
+    /// <summary>Se pidió otro día, otro filtro o un folio y todavía no llega: lo de antes se ve apagado.</summary>
+    private bool _cargando;
+
+    private bool _enfocar = true;
+
+    /// <summary>Otros días y otras cajas: con «Ver reportes de ventas» en «Puede» (el servicio lo vuelve a revisar).</summary>
+    private bool VeOtrosDias => Puede(AccionControlada.VerReportes);
+
+    /// <summary>Lo puede sin pedir autorización. Sin saberlo, se ve y el servicio decide, como en la pantalla de venta.</summary>
+    private bool Puede(AccionControlada accion) => PermisosDeSesion is { } permisos
+        ? (permisos.GetValueOrDefault(accion)?.Nivel ?? NivelPermiso.Permitido) == NivelPermiso.Permitido
+        : Sesion.Puede(accion);
+
+    /// <summary>Se le enseña: lo puede o lo puede pedir.</summary>
+    private bool Ve(AccionControlada accion) => PermisosDeSesion is { } permisos
+        ? permisos.GetValueOrDefault(accion)?.Nivel != NivelPermiso.NoPermitido
+        : Sesion.Ve(accion);
+
+    /// <summary>
+    /// Sube cuando la fecha escrita no se tomó tal cual (incompleta, o después de hoy): el campo se vuelve a dibujar con el día
+    /// que se ve, y no se queda con lo escrito.
+    /// </summary>
+    private int _versionFecha;
+
+    private DateOnly? Dia => _fecha ?? _datos?.Fecha;
+
+    private bool EsHoy => _datos is not null && Dia >= _datos.Hoy;
+
+    private IReadOnlyList<OpcionFiltroDto> Cajas => _datos?.Cajas ?? [];
+
+    private string NombreDeEstaCaja => Cajas.FirstOrDefault(c => c.Id == CajaId)?.Nombre ?? "esta caja";
+
+    private Guid? CajaElegida => Guid.TryParse(_caja, out var caja) ? caja : null;
+
+    private Guid? CajeroElegido => Guid.TryParse(_cajero, out var cajero) ? cajero : null;
+
+    protected override Task OnInitializedAsync()
     {
+        _caja = CajaId.ToString();
+        return CargarAsync();
+    }
+
+    /// <summary>El cursor en el folio: se escribe ahí, y con él vacío, ← → cambian de día.</summary>
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!_enfocar)
+            return;
+        _enfocar = false;
+        await Js.EnfocarAsync("#ventas-folio");
+    }
+
+    private async Task CargarAsync()
+    {
+        var consulta = ++_consulta;
+        _cargando = true;
         try
         {
-            _ventas = await Cliente.VentasDelDiaAsync(CajaId);
+            // Sin «Ver reportes de ventas», siempre las de hoy (de la caja principal) de esta caja.
+            var datos = VeOtrosDias
+                ? await Cliente.VentasDeUnDiaAsync(CajaId, Sesion.UsuarioId, _fecha, CajaElegida, CajeroElegido, _folioBuscado)
+                : await Cliente.VentasDeUnDiaAsync(CajaId, Sesion.UsuarioId, null, CajaId, CajeroElegido, _folioBuscado);
+            if (consulta != _consulta)
+                return;
+            (_datos, _error, _sinConexion) = (datos, null, false);
+            if (VeOtrosDias && datos.Folio is null)
+                _fecha = datos.Fecha;
         }
         catch (ErrorCaja ex)
         {
-            _error = ex.Message;
+            if (consulta != _consulta)
+                return;
+            (_error, _sinConexion) = (ex.Message, ex.Codigo == "sin-conexion");
         }
+        _cargando = false;
     }
 
-    private Task ReimprimirAsync(Guid ventaId) => AlReimprimir.InvokeAsync(ventaId);
+    /// <summary>← → (con el cursor fuera de un campo): el día de antes o el de después, hasta hoy.</summary>
+    private Task AlTeclearAsync(KeyboardEventArgs e) => e.Key switch
+    {
+        "ArrowLeft" => MoverAsync(-1),
+        "ArrowRight" => MoverAsync(1),
+        _ => Task.CompletedTask,
+    };
+
+    /// <summary>Enter busca el folio (vacío: regresa al día); con el folio vacío, ← → cambian de día.</summary>
+    private async Task AlTeclearFolioAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await BuscarFolioAsync();
+        else if (_folio.Length == 0)
+            await AlTeclearAsync(e);
+    }
+
+    private async Task MoverAsync(int dias)
+    {
+        if (!VeOtrosDias || _datos is null || Dia is not { } dia)
+            return;
+        var nuevo = dia.AddDays(dias);
+        if (nuevo > _datos.Hoy)
+            return;
+        await IrAAsync(nuevo);
+    }
+
+    private Task IrAHoyAsync() => _datos is null ? Task.CompletedTask : IrAAsync(_datos.Hoy);
+
+    /// <summary>La fecha escrita (o elegida en el calendario): hasta hoy.</summary>
+    private async Task CambiarFechaAsync(ChangeEventArgs e)
+    {
+        if (!DateOnly.TryParseExact(e.Value?.ToString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var fecha))
+        {
+            _versionFecha++;
+            return;
+        }
+        if (_datos is { } d && fecha > d.Hoy)
+        {
+            _versionFecha++;
+            fecha = d.Hoy;
+        }
+        await IrAAsync(fecha);
+    }
+
+    private async Task IrAAsync(DateOnly dia)
+    {
+        (_fecha, _folioBuscado, _folio) = (dia, null, "");
+        await CargarAsync();
+    }
+
+    private async Task CambiarCajaAsync(ChangeEventArgs e)
+    {
+        (_caja, _folioBuscado, _folio) = (e.Value?.ToString() ?? "", null, "");
+        await CargarAsync();
+    }
+
+    private async Task CambiarCajeroAsync(ChangeEventArgs e)
+    {
+        (_cajero, _folioBuscado, _folio) = (e.Value?.ToString() ?? "", null, "");
+        await CargarAsync();
+    }
+
+    private async Task BuscarFolioAsync()
+    {
+        var folio = _folio.Trim();
+        if (folio.Length == 0 && _folioBuscado is null)
+            return;
+        _folioBuscado = folio.Length == 0 ? null : folio;
+        await CargarAsync();
+    }
+
+    private async Task VerElDiaAsync()
+    {
+        (_folioBuscado, _folio) = (null, "");
+        await CargarAsync();
+    }
+
+    /// <summary>
+    /// «Devolver o cancelar» se ofrece mientras se pueda: en sus 7 días (como lo cuenta la ventana de la devolución) y si queda
+    /// algo por devolver. La ventana aplica sus reglas y los permisos.
+    /// </summary>
+    private bool SeDevuelveOCancela(VentaDeUnDiaDto v) =>
+        !v.Cancelada && !v.DevueltaCompleta && v.SeDevuelve && (Ve(AccionControlada.Devolucion) || Ve(AccionControlada.CancelarTicket));
+
+    /// <summary>La hora; con la fecha si es de otro día que el que se ve (lo de un folio).</summary>
+    private static string Hora(VentaDeUnDiaDto v, VentasDeUnDiaDto d) =>
+        d.Folio is null && DateOnly.FromDateTime(v.FechaLocal) == d.Fecha ? v.FechaLocal.ToString("HH:mm") : v.FechaLocal.ToString("dd/MM/yyyy HH:mm");
+
+    /// <summary>«Efectivo», «Efectivo y tarjeta», «Tarjeta, transferencia y crédito».</summary>
+    private static string FormasTexto(IReadOnlyList<FormaPago> formas)
+    {
+        var nombres = formas.Select(f => f switch
+        {
+            FormaPago.Tarjeta => "tarjeta",
+            FormaPago.Transferencia => "transferencia",
+            FormaPago.Credito => "crédito",
+            _ => "efectivo",
+        }).ToList();
+        if (nombres.Count == 0)
+            return "sin cobro";
+        var texto = nombres.Count == 1 ? nombres[0] : $"{string.Join(", ", nombres.Take(nombres.Count - 1))} y {nombres[^1]}";
+        return char.ToUpper(texto[0], CultureInfo.CurrentCulture) + texto[1..];
+    }
+
+    /// <summary>Sin ventas: lo dice con el día, la caja y el cajero que se eligieron.</summary>
+    private string Vacia(VentasDeUnDiaDto d)
+    {
+        if (d.Folio is { } folio)
+            return $"No hay un ticket con el folio «{folio}».";
+        var deEstaCaja = CajaElegida == CajaId || !VeOtrosDias;
+        if (d.Fecha == d.Hoy && deEstaCaja && CajeroElegido is null)
+            return "Esta caja no ha vendido hoy.";
+        var cuando = d.Fecha == d.Hoy ? "hoy" : $"el {d.Fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)}";
+        var donde = CajaElegida is { } caja ? $" en {Cajas.FirstOrDefault(c => c.Id == caja)?.Nombre ?? "esa caja"}" : " en ninguna caja";
+        var quien = CajeroElegido is { } cajero ? $" de {d.Cajeros.FirstOrDefault(c => c.Id == cajero)?.Nombre ?? "ese cajero"}" : "";
+        return $"No hubo ventas {cuando}{donde}{quien}.";
+    }
 }

@@ -580,6 +580,23 @@ servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-ca
 - **Inventario:** no se ofrece lo que mueve existencias (recibir compras, los conteos, ajustes, mermas y abrir un
   paquete): el inventario se lleva en eleventa. Las órdenes, el sugerido, las etiquetas y la hoja de códigos, sí.
 
+**Avance (2026-10-17): las ventas de otros días y el historial de cortes,** como «Ventas del día y devoluciones» y el
+«Historial de cortes» de eleventa ([paridad](paridad-eleventa.md#la-tabla)).
+- **«Ventas del día»** (en «/», el mismo panel): abre en las de hoy de esa caja, de todos los cajeros, como antes. Con
+  «Ver reportes de ventas» (al migrar, solo el dueño) se cambia de día con ← → o la fecha, y de caja; cualquiera filtra
+  por cajero y busca un folio de cualquier día y caja (como al escribirlo para devolver). Cada venta dice su folio (en
+  el piloto, también el de eleventa), la hora, quién cobró, la caja, el total, cómo se pagó y si se canceló o se
+  devolvió en parte; reimprimir pide el motivo, como siempre, y «Devolver o cancelar» abre la devolución con el folio,
+  con sus reglas.
+- **El historial de cortes** va en el corte, junto a «Turno» y «Del día» («/» lo abre ahí): los turnos de cualquier día,
+  por caja y cajero, con lo esperado, lo contado, la diferencia, quién lo hizo y cuándo, y «Reimprimir el corte», que
+  sale igual que el corte Z al cerrar. Lo ve quien hace el corte de un turno o ve el del día (al migrar, el encargado y
+  el dueño); el cajero no: su corte es a ciegas. En el piloto, «Corte en eleventa».
+- **Sin conexión,** la caja solo tiene su copia para vender: las ventas y los cortes de todas las cajas están en la caja
+  principal, y los dos lo dicen.
+- **Lo nuevo del servicio, solo para leer:** `GET api/cajas/{caja}/ventas` (un día, la caja, el cajero o un folio) y
+  `GET api/cajas/{caja}/cortes` (un día, la caja y el cajero), con el usuario de la sesión. Sin cambios en la base.
+
 #### Después: el piloto en la caja 2
 
 Mientras se arma el puente con eleventa, la versión unicaja sigue creciendo con la venta completa (entrega 3) y la base

@@ -1,0 +1,392 @@
+@* El historial de cortes (paridad con eleventa, «Historial de cortes», 2026-10-17), dentro del corte (CorteCaja): los turnos de
+   un día, de una caja o de todas y de un cajero o de todos (los que se abrieron, se cerraron o seguían abiertos ese día,
+   como en el corte del día), cada uno con su corte del turno: lo esperado, lo contado, la diferencia, quién lo hizo y
+   cuándo. «Reimprimir el corte» lo manda igual que el corte Z al cerrar el turno (a la impresora de tickets o, sin ella,
+   aquí mismo). ← → (o la fecha) cambian de día y ↑ ↓ en la lista eligen el turno. Lo ve quien hace el corte de un turno o
+   ve el del día; el servicio lo revisa. En el piloto con eleventa, el turno cuyo corte se hace allá dice «Corte en
+   eleventa». Los cortes están en la caja principal: sin ella, lo dice. *@
+@inject ClienteCaja Cliente
+@inject IImpresora Impresora
+@inject ModuloCaja Js
+
+<div class="vn-historial" id="historial" @onkeydown="AlTeclearAsync">
+    <div class="vn-historial-filtros">
+        <span class="vn-historial-dia">
+            <button class="vn-boton" title="Día anterior (←)" aria-label="Día anterior" disabled="@(_datos is null)" @onclick="() => MoverAsync(-1)">←</button>
+            <input id="historial-fecha" @key="_versionFecha" type="date" aria-label="Día" value="@Dia?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)"
+                   max="@_datos?.Hoy.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)" @onchange="CambiarFechaAsync" @onkeydown:stopPropagation="true" />
+            <button class="vn-boton" title="Día siguiente (→)" aria-label="Día siguiente" disabled="@(_datos is null || EsHoy)" @onclick="() => MoverAsync(1)">→</button>
+            @if (_datos is not null && !EsHoy)
+            {
+                <button class="vn-boton" @onclick="IrAHoyAsync">Hoy</button>
+            }
+        </span>
+        <select id="historial-caja" aria-label="Caja" value="@_caja" @onchange="CambiarCajaAsync" @onkeydown:stopPropagation="true">
+            <option value="">Todas las cajas</option>
+            @foreach (var c in _datos?.Cajas ?? [])
+            {
+                <option value="@c.Id">@c.Nombre</option>
+            }
+        </select>
+        <select id="historial-cajero" aria-label="Cajero" value="@_cajero" @onchange="CambiarCajeroAsync" @onkeydown:stopPropagation="true">
+            <option value="">Todos los cajeros</option>
+            @foreach (var u in _datos?.Cajeros ?? [])
+            {
+                <option value="@u.Id">@u.Nombre</option>
+            }
+        </select>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="vn-alerta @(_sinConexion ? "info" : "")" role="alert">
+            <Ico Nombre="@(_sinConexion ? "red" : "alerta")" />
+            <div>
+                <span>@_error</span>
+                <span><button class="vn-boton chico" @onclick="CargarAsync">Volver a intentar</button></span>
+            </div>
+        </div>
+    }
+    else if (_datos is not { } d)
+    {
+        <p class="vn-corte-nota">Cargando los cortes…</p>
+    }
+    else
+    {
+        <div class="vn-corte-turno">
+            @* En angosto (la tarjeta del turno de otro cajero), la tabla se recorre de lado dentro de su caja. *@
+            <div class="vn-corte-desliza vn-historial-lista @(_cargando ? "cargando" : "")" id="historial-lista" tabindex="0" aria-label="Turnos del día" @onkeydown="AlTeclearLista">
+                <table class="vn-corte-tabla">
+                    <thead>
+                        <tr><th>Caja</th><th>Cajero</th><th>Turno</th><th class="num">Esperado</th><th class="num">Contado</th><th class="num">Diferencia</th><th>Hizo el corte</th></tr>
+                    </thead>
+                    <tbody>
+                        @if (d.Turnos.Count == 0)
+                        {
+                            <tr><td colspan="7" class="vn-corte-vacio">@Vacio(d)</td></tr>
+                        }
+                        @for (var k = 0; k < d.Turnos.Count; k++)
+                        {
+                            var indice = k;
+                            var t = d.Turnos[k];
+                            <tr id="turno-@t.Id" class="@(indice == _elegido ? "on" : "")" @onclick="() => Elegir(indice)">
+                                <td>@t.Caja</td>
+                                <td>@t.Cajero@(t.Corte?.EnContingencia == true ? " · sin conexión" : "")</td>
+                                <td>@Hora(t.AbiertoLocal, d.Fecha)–@(t.CerradoLocal is { } hasta ? Hora(hasta, d.Fecha) : "abierto")</td>
+                                @if (t.Corte is { } c)
+                                {
+                                    <td class="num">@Formato.Dinero(c.EsperadoCentavos)</td>
+                                    <td class="num">@(c.ContadoCentavos is { } contado ? Formato.Dinero(contado) : "—")</td>
+                                    <td class="num @(c.DiferenciaCentavos < 0 ? "vn-dif-mal" : c.DiferenciaCentavos == 0 ? "vn-dif-bien" : "")">
+                                        @(c.DiferenciaCentavos is { } dif ? Formato.ConSigno(dif) : "—")
+                                    </td>
+                                    <td>@c.RealizadoPor · @Hora(c.FechaLocal, d.Fecha)</td>
+                                }
+                                else
+                                {
+                                    <td colspan="4"><span class="vn-etiq ambar">@(t.CorteEnEleventa ? "Corte en eleventa" : "Turno abierto")</span></td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="vn-corte-tarjeta" id="historial-detalle">
+                @if (Elegido is not { } e)
+                {
+                    <p class="vn-corte-nota">@(d.Turnos.Count == 0 ? "Cuando haya turnos ese día, aquí sale el corte del que se elija." : "Elige un turno para ver su corte.")</p>
+                }
+                else
+                {
+                    <h3>Turno de @e.Cajero · @e.Caja</h3>
+                    <p class="vn-corte-nota">
+                        Abrió el @e.AbiertoLocal.ToString("dd/MM/yyyy") a las @e.AbiertoLocal.ToString("HH:mm")@(e.CerradoLocal is { } cerro
+                            ? $"; cerró el {cerro:dd/MM/yyyy} a las {cerro:HH:mm}." : "; sigue abierto.")
+                    </p>
+                    @if (e.Corte is { } r)
+                    {
+                        var diferencia = r.DiferenciaCentavos ?? 0;
+                        <div class="vn-corte-linea"><span>Ventas del turno@(r.Cancelaciones > 0 ? $" ({r.Cancelaciones} {(r.Cancelaciones == 1 ? "cancelada" : "canceladas")})" : "")</span><strong>@r.Ventas</strong></div>
+                        <div class="vn-corte-linea"><span>Fondo</span><strong>@Formato.Dinero(r.FondoCentavos)</strong></div>
+                        <div class="vn-corte-linea"><span>Efectivo de ventas</span><strong>@Formato.Dinero(r.EfectivoVentasCentavos)</strong></div>
+                        @if (r.AbonosEfectivoCentavos != 0)
+                        {
+                            <div class="vn-corte-linea"><span>Abonos de clientes en efectivo</span><strong>@Formato.Dinero(r.AbonosEfectivoCentavos)</strong></div>
+                        }
+                        <div class="vn-corte-linea"><span>Entradas</span><strong>@Formato.Dinero(r.EntradasCentavos)</strong></div>
+                        <div class="vn-corte-linea"><span>Salidas</span><strong>@Formato.ConSigno(-r.SalidasCentavos)</strong></div>
+                        @if (r.DevolucionesCentavos > 0)
+                        {
+                            <div class="vn-corte-linea"><span>Devoluciones y cancelaciones</span><strong>@Formato.ConSigno(-r.DevolucionesCentavos)</strong></div>
+                        }
+                        @if (r.SaldoDevueltoCentavos != 0)
+                        {
+                            <div class="vn-corte-linea"><span>Saldo a favor devuelto</span><strong>@Formato.ConSigno(-r.SaldoDevueltoCentavos)</strong></div>
+                        }
+                        <div class="vn-corte-linea suma"><span>Esperado</span><strong>@Formato.Dinero(r.EsperadoCentavos)</strong></div>
+                        @if (r.ContadoCentavos is { } contado)
+                        {
+                            <div class="vn-corte-linea suma"><span>Contado</span><strong>@Formato.Dinero(contado)</strong></div>
+                            <div class="vn-corte-linea">
+                                <span>@(diferencia == 0 ? "Cuadra" : diferencia > 0 ? "Sobrante" : "Faltante") · a nombre de @r.Cajero</span>
+                                <strong class="@(diferencia < 0 ? "vn-dif-mal" : "vn-dif-bien")">@Formato.ConSigno(diferencia)</strong>
+                            </div>
+                        }
+                        <div class="vn-corte-linea"><span>Tarjeta</span><strong>@Formato.Dinero(r.TarjetaCentavos)</strong></div>
+                        <div class="vn-corte-linea"><span>Transferencias</span><strong>@Formato.Dinero(r.TransferenciaCentavos)</strong></div>
+                        @if (r.AbonosTarjetaCentavos != 0)
+                        {
+                            <div class="vn-corte-linea"><span>Abonos con tarjeta</span><strong>@Formato.Dinero(r.AbonosTarjetaCentavos)</strong></div>
+                        }
+                        @if (r.AbonosTransferenciaCentavos != 0)
+                        {
+                            <div class="vn-corte-linea"><span>Abonos por transferencia</span><strong>@Formato.Dinero(r.AbonosTransferenciaCentavos)</strong></div>
+                        }
+                        @if (r.CreditoCentavos != 0)
+                        {
+                            <div class="vn-corte-linea"><span>Fiado (no es efectivo)</span><strong>@Formato.Dinero(r.CreditoCentavos)</strong></div>
+                        }
+                        <p class="vn-corte-nota">
+                            Lo hizo @r.RealizadoPor el @r.FechaLocal.ToString("dd/MM/yyyy") a las @r.FechaLocal.ToString("HH:mm").@(r.EnContingencia
+                                ? " Se hizo sin conexión con la caja principal; al subir se cuadró con lo que hizo esa caja." : "")
+                        </p>
+                        <div class="vn-botonera">
+                            <button class="vn-boton primario" id="historial-reimprimir" disabled="@_imprimiendo" @onclick="() => ReimprimirAsync(e)">
+                                <Ico Nombre="impresora" />Reimprimir el corte
+                            </button>
+                        </div>
+                        @if (_impreso == e.Id)
+                        {
+                            <p class="vn-corte-nota">Salió el corte del turno de @e.Cajero.</p>
+                        }
+                        @if (_errorImpresion is not null)
+                        {
+                            <p class="vn-corte-error">@_errorImpresion</p>
+                        }
+                        @if (_vistaPrevia is { } vista && vista.Turno == e.Id)
+                        {
+                            <pre class="vn-corte-ticket">@vista.Texto</pre>
+                        }
+                    }
+                    else if (e.CorteEnEleventa)
+                    {
+                        <div class="vn-alerta info"><Ico Nombre="info" /><div><span>El corte de este turno se hace en eleventa: lo contado está allá.</span></div></div>
+                    }
+                    else
+                    {
+                        <p class="vn-corte-nota">Su corte sale aquí cuando se cierre el turno.</p>
+                    }
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>La caja desde la que se ve: el historial es el de su sucursal.</summary>
+    [Parameter, EditorRequired] public Guid CajaId { get; set; }
+
+    /// <summary>Quien entró: el servicio revisa que haga el corte de un turno o vea el del día.</summary>
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    private HistorialCortesDto? _datos;
+    private string? _error;
+    private bool _sinConexion;
+
+    /// <summary>El día que se ve; vacío hasta que la caja principal dice cuál es hoy.</summary>
+    private DateOnly? _fecha;
+
+    /// <summary>La caja del filtro («»: todas).</summary>
+    private string _caja = "";
+
+    /// <summary>El cajero del filtro («»: todos).</summary>
+    private string _cajero = "";
+
+    /// <summary>El turno elegido en la lista: el último (el más reciente) al cambiar de día.</summary>
+    private int _elegido = -1;
+
+    /// <summary>La última consulta: una respuesta vieja (de otro día) no tapa a la nueva.</summary>
+    private int _consulta;
+
+    /// <summary>Se pidió otro día u otro filtro y todavía no llega: lo de antes se ve apagado.</summary>
+    private bool _cargando;
+
+    private bool _imprimiendo;
+
+    /// <summary>De qué turno salió el corte reimpreso (para decirlo junto a él).</summary>
+    private Guid? _impreso;
+
+    private string? _errorImpresion;
+
+    /// <summary>Sin impresora (el navegador): el corte reimpreso se ve aquí, como al cerrar el turno.</summary>
+    private (Guid Turno, string Texto)? _vistaPrevia;
+
+    private bool _enfocar = true;
+
+    /// <summary>
+    /// Sube cuando la fecha escrita no se tomó tal cual (incompleta, o después de hoy): el campo se vuelve a dibujar con el día
+    /// que se ve, y no se queda con lo escrito.
+    /// </summary>
+    private int _versionFecha;
+
+    private DateOnly? Dia => _fecha ?? _datos?.Fecha;
+
+    private bool EsHoy => _datos is not null && Dia >= _datos.Hoy;
+
+    private TurnoConCorteDto? Elegido => _datos is { } d && _elegido >= 0 && _elegido < d.Turnos.Count ? d.Turnos[_elegido] : null;
+
+    private Guid? CajaElegida => Guid.TryParse(_caja, out var caja) ? caja : null;
+
+    private Guid? CajeroElegido => Guid.TryParse(_cajero, out var cajero) ? cajero : null;
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    /// <summary>El cursor en la lista: ↑ ↓ eligen el turno y ← → cambian de día.</summary>
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!_enfocar || _datos is null)
+            return;
+        _enfocar = false;
+        await Js.EnfocarAsync("#historial-lista");
+    }
+
+    private async Task CargarAsync()
+    {
+        var consulta = ++_consulta;
+        _cargando = true;
+        try
+        {
+            var datos = await Cliente.HistorialCortesAsync(CajaId, Sesion.UsuarioId, _fecha, CajaElegida, CajeroElegido);
+            if (consulta != _consulta)
+                return;
+            var antes = Elegido?.Id;
+            (_datos, _error, _sinConexion, _fecha) = (datos, null, false, datos.Fecha);
+            // El mismo turno si sigue en la lista (otro filtro); si no, el más reciente.
+            _elegido = antes is { } id && datos.Turnos.ToList().FindIndex(t => t.Id == id) is >= 0 and var mismo ? mismo : datos.Turnos.Count - 1;
+            (_impreso, _errorImpresion) = (null, null);
+        }
+        catch (ErrorCaja ex)
+        {
+            if (consulta != _consulta)
+                return;
+            (_error, _sinConexion) = (ex.Message, ex.Codigo == "sin-conexion");
+        }
+        _cargando = false;
+    }
+
+    /// <summary>← → (con el cursor fuera de la fecha y los filtros): el día de antes o el de después, hasta hoy.</summary>
+    private Task AlTeclearAsync(KeyboardEventArgs e) => e.Key switch
+    {
+        "ArrowLeft" => MoverAsync(-1),
+        "ArrowRight" => MoverAsync(1),
+        _ => Task.CompletedTask,
+    };
+
+    /// <summary>↑ ↓ en la lista: el turno de arriba o el de abajo.</summary>
+    private void AlTeclearLista(KeyboardEventArgs e)
+    {
+        if (_datos is not { Turnos.Count: > 0 } d)
+            return;
+        if (e.Key == "ArrowUp")
+            Elegir(Math.Max(0, _elegido - 1));
+        else if (e.Key == "ArrowDown")
+            Elegir(Math.Min(d.Turnos.Count - 1, _elegido + 1));
+    }
+
+    private void Elegir(int indice)
+    {
+        if (indice != _elegido)
+            (_impreso, _errorImpresion) = (null, null);
+        _elegido = indice;
+    }
+
+    private async Task MoverAsync(int dias)
+    {
+        if (_datos is null || Dia is not { } dia)
+            return;
+        var nuevo = dia.AddDays(dias);
+        if (nuevo > _datos.Hoy)
+            return;
+        await IrAAsync(nuevo);
+    }
+
+    private Task IrAHoyAsync() => _datos is null ? Task.CompletedTask : IrAAsync(_datos.Hoy);
+
+    /// <summary>La fecha escrita (o elegida en el calendario): hasta hoy.</summary>
+    private async Task CambiarFechaAsync(ChangeEventArgs e)
+    {
+        if (!DateOnly.TryParseExact(e.Value?.ToString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var fecha))
+        {
+            _versionFecha++;
+            return;
+        }
+        if (_datos is { } d && fecha > d.Hoy)
+        {
+            _versionFecha++;
+            fecha = d.Hoy;
+        }
+        await IrAAsync(fecha);
+    }
+
+    private async Task IrAAsync(DateOnly dia)
+    {
+        _fecha = dia;
+        await CargarAsync();
+    }
+
+    private async Task CambiarCajaAsync(ChangeEventArgs e)
+    {
+        _caja = e.Value?.ToString() ?? "";
+        await CargarAsync();
+    }
+
+    private async Task CambiarCajeroAsync(ChangeEventArgs e)
+    {
+        _cajero = e.Value?.ToString() ?? "";
+        await CargarAsync();
+    }
+
+    /// <summary>
+    /// El corte, impreso igual que al cerrar el turno (DisenoComprobante.Corte, por la impresora de tickets o, sin ella, aquí).
+    /// El de una caja sin conexión ya se cuadró al subir: el papel ya no dice que se cuadra al volver.
+    /// </summary>
+    private async Task ReimprimirAsync(TurnoConCorteDto turno)
+    {
+        if (_imprimiendo || turno.Corte is not { } corte)
+            return;
+        (_imprimiendo, _impreso, _errorImpresion) = (true, null, null);
+        try
+        {
+            var documento = DisenoComprobante.Corte(corte with { EnContingencia = false }, turno.Caja);
+            if (Impresora.MuestraVistaPrevia)
+            {
+                _vistaPrevia = (turno.Id, TicketTexto.Generar(documento));
+                return;
+            }
+            await Impresora.ImprimirAsync(documento, abrirCajon: false);
+            _impreso = turno.Id;
+        }
+        catch (Exception ex)
+        {
+            _errorImpresion = $"No se pudo imprimir: {ex.Message}";
+        }
+        finally
+        {
+            _imprimiendo = false;
+        }
+    }
+
+    /// <summary>«09:00», o con la fecha si no es del día que se ve (un turno que viene de otro día).</summary>
+    private static string Hora(DateTime local, DateOnly dia) =>
+        DateOnly.FromDateTime(local) == dia ? local.ToString("HH:mm") : local.ToString("dd/MM HH:mm");
+
+    /// <summary>Sin turnos: lo dice con el día, la caja y el cajero que se eligieron.</summary>
+    private string Vacio(HistorialCortesDto d)
+    {
+        var cuando = d.Fecha == d.Hoy ? "Hoy no se ha abierto ningún turno" : $"El {d.Fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)} no hubo turnos";
+        var donde = CajaElegida is { } caja ? $" en {d.Cajas.FirstOrDefault(c => c.Id == caja)?.Nombre ?? "esa caja"}" : "";
+        var quien = CajeroElegido is { } cajero ? $" de {d.Cajeros.FirstOrDefault(c => c.Id == cajero)?.Nombre ?? "ese cajero"}" : "";
+        return $"{cuando}{donde}{quien}.";
+    }
+}
