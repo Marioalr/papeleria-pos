@@ -234,6 +234,10 @@
             Conexion.Servicio = _servicio!;
             Conexion.CajaId = alta.Caja.Id;
             Conexion.Llave = alta.Llave;
+            // La llave del servicio que la dio de alta (vacía en uno de antes): desde ahora no se cambia sola a otro que no firme con ella.
+            Conexion.LlaveDelServicio = alta.LlaveDelServicio;
+            Conexion.DireccionDeConfianza = _servicio;
+            Conexion.SinComprobar = false;
             if (Conexion.AlGuardar is { } guardar)
                 await guardar(Conexion);
             _pin = "";

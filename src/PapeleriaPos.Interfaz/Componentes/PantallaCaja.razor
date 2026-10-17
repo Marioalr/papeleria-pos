@@ -1,5 +1,6 @@
 @* Raíz de la caja: conecta con el servicio (o da de alta la PC), pide entrar con la ficha y el PIN, abre el turno y muestra
    la venta. La entrada, abrir el turno y el turno de otro cajero van con el lado de la entrada (entrega 6). *@
+@implements IDisposable
 @inject ClienteCaja Cliente
 @inject ConexionCaja Conexion
 @inject IServiceProvider Servicios
@@ -9,7 +10,7 @@
     <AlgoFallo Parte="la franja de la prueba">
         <FranjaPrueba />
     </AlgoFallo>
-    <FranjaContingencia />
+    <FranjaContingencia AlDarDeAlta="@(Conexion.PideAlta ? EventCallback.Factory.Create(this, () => DarDeAlta(ReencuentroDeLaPrincipal.OtraCajaPrincipal)) : default)" />
     @if (_alta || !Conexion.Lista)
     {
         <ConfigurarCaja Aviso="@_avisoAlta" AlTerminar="AltaTerminada" />
@@ -87,7 +88,32 @@
     private bool _alta;
     private string? _avisoAlta;
 
-    protected override Task OnInitializedAsync() => Conexion.Lista ? IniciarAsync() : Task.CompletedTask;
+    protected override Task OnInitializedAsync()
+    {
+        // La caja principal dice que ya no conoce a esta caja (al probar quién es, sin recibir la llave): se da de alta otra vez.
+        if (Servicios.GetService<Contingencia>() is { } contingencia)
+            contingencia.SinAlta += AlQuedarSinAlta;
+        return Conexion.Lista ? IniciarAsync() : Task.CompletedTask;
+    }
+
+    private void AlQuedarSinAlta(string porque)
+    {
+        if (Conexion.PideAlta)
+            _ = InvokeAsync(() => DarDeAlta(porque));
+    }
+
+    /// <summary>A dar de alta esta PC otra vez (con el usuario y el PIN de quien puede), con el porqué.</summary>
+    private void DarDeAlta(string porque)
+    {
+        (_alta, _avisoAlta) = (true, porque);
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        if (Servicios.GetService<Contingencia>() is { } contingencia)
+            contingencia.SinAlta -= AlQuedarSinAlta;
+    }
 
     private async Task IniciarAsync()
     {

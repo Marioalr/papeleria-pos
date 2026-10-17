@@ -53,7 +53,7 @@ public static partial class ApiCajas
                 cajas.Where(c => c.SucursalId == x.Id).Select(c => new CajaAltaDto(c.Id, c.Nombre, c.Serie, c.Equipo)).ToList())).ToList();
         });
 
-        api.MapPost("/alta", async (SolicitudAltaCaja s, PosDbContext db, LlavesDeCajas llaves) =>
+        api.MapPost("/alta", async (SolicitudAltaCaja s, PosDbContext db, LlavesDeCajas llaves, Lazy<LlaveDelServicio> llaveDelServicio) =>
         {
             var control = new ServicioControl(db);
             var dueno = await control.IdentificarAsync(s.Usuario, s.Pin, s.SucursalId, AccionControlada.AdministrarCajas);
@@ -84,7 +84,9 @@ public static partial class ApiCajas
             await db.SaveChangesAsync();
             // La llave de antes de esta caja (otra PC) ya no entra.
             llaves.Olvidar();
-            return new AltaCajaDto(new CajaDto(caja.Id, caja.Nombre, caja.Serie, sucursal.Id, sucursal.Nombre, caja.Equipo), llave);
+            // Con la llave pública del servicio: la caja la recuerda y no se cambia sola a otro que no firme con ella.
+            return new AltaCajaDto(new CajaDto(caja.Id, caja.Nombre, caja.Serie, sucursal.Id, sucursal.Nombre, caja.Equipo), llave,
+                llaveDelServicio.Value.Publica);
         });
 
         // Con llave, pero desde cualquier caja: quien entró con «Dar de alta y quitar cajas» quita el equipo de otra (una PC

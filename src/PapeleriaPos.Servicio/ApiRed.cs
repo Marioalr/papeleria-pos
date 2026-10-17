@@ -49,7 +49,7 @@ public static class ApiRed
         // Sin llave (la caja todavía no sabe si este es su servicio, y no le manda su llave a quien no lo ha probado), solo desde
         // la red de la tienda: la prueba de que este servicio dio de alta a esa caja, hecha con la huella de su llave sobre un reto
         // de la caja y la dirección en que llegó la pregunta. No dice nada más: ni de qué caja es la huella ni la huella.
-        api.MapGet("/identidad", async (Guid? caja, string? reto, HttpContext http, PosDbContext db, RedLocalDelServicio redLocal) =>
+        api.MapGet("/identidad", async (Guid? caja, string? reto, HttpContext http, PosDbContext db, RedLocalDelServicio redLocal, Lazy<LlaveDelServicio> llave) =>
         {
             if (!redLocal.EsDeLaRedLocal(http.Connection.RemoteIpAddress))
                 return Results.Json(new ErrorDto("Solo desde la red de la tienda.", "fuera-de-la-red"), statusCode: StatusCodes.Status403Forbidden);
@@ -60,7 +60,10 @@ public static class ApiRed
             var huella = await db.Cajas.AsNoTracking().Where(c => c.Id == cajaId && c.Activa && c.LlaveHuella != null).Select(c => c.LlaveHuella).SingleOrDefaultAsync();
             if (huella is null)
                 return Results.Json(new ErrorDto("Esa caja no está dada de alta en este servicio.", "caja-sin-alta"), statusCode: StatusCodes.Status404NotFound);
-            return Results.Ok(new IdentidadServicioDto(Descubrimiento.Prueba(huella, cajaId, reto!, Descubrimiento.Direccion(local, http.Connection.LocalPort))));
+            var direccion = Descubrimiento.Direccion(local, http.Connection.LocalPort);
+            var prueba = Descubrimiento.Prueba(huella, cajaId, reto!, direccion);
+            // Y lo mismo firmado con la llave propia del servicio: una copia de la base en otra PC no la tiene.
+            return Results.Ok(new IdentidadServicioDto(prueba, llave.Value.Publica, llave.Value.Firmar(Descubrimiento.MensajeFirmado(cajaId, reto!, direccion, prueba))));
         });
 
         // Con llave (o desde esta PC): las últimas caídas de la bitácora de red de la caja principal y lo que ve ahora.

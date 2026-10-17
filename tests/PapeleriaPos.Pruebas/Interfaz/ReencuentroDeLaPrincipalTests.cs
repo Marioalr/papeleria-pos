@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Cryptography;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Turnos;
@@ -361,7 +362,8 @@ public sealed class ReencuentroDeLaPrincipalTests : IDisposable
         Assert.Equal(Guardada, conexion.Servicio);
         Assert.Empty(_guardadas);
         Assert.Equal(ReencuentroDeLaPrincipal.DosPrincipales, reencuentro.Resultado);
-        Assert.Single(_carpeta.Lineas(), l => l.StartsWith("Contestaron 192.168.0.99:5080 y 192.168.0.57:5080, y las dos probaron", StringComparison.Ordinal));
+        Assert.Single(_carpeta.Lineas(), l => l.StartsWith("Contestaron 192.168.0.99:5080 y 192.168.0.57:5080, y prueban ser cajas principales distintas",
+            StringComparison.Ordinal));
     }
 
     /// <summary>Lo que contesta desde otra red no es de la tienda: ni se le pregunta.</summary>
@@ -400,6 +402,183 @@ public sealed class ReencuentroDeLaPrincipalTests : IDisposable
             await reencuentro.UltimaBusqueda;
         }
         Assert.Equal(1, _buscador.Veces);
+    }
+
+    // ── La llave propia del servicio ────────────────────────────────────────
+
+    /// <summary>La llave del servicio de la caja principal de esta caja, y la de otro servicio (una copia de su base, en otra PC).</summary>
+    private static readonly ECDsa LlaveDeLaPrincipal = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+    private static readonly ECDsa LlaveDeOtra = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+    private static string Publica(ECDsa llave) => Convert.ToBase64String(llave.ExportSubjectPublicKeyInfo());
+
+    /// <summary>
+    /// Esta caja ya conoce la llave de su caja principal: una copia de su base en otra PC (sabe la huella de la llave de la caja,
+    /// pero no firma con la llave del servicio) no gana, aunque sea la única que contesta. La franja dice que se avise al dueño.
+    /// </summary>
+    [Fact]
+    public async Task Con_la_llave_del_servicio_una_copia_de_la_base_no_gana_aunque_sea_la_unica()
+    {
+        var copia = new Uri("http://192.168.0.99:5080/");
+        _servicios.Copias.Add(copia);
+        _servicios.LlavesDe[copia] = LlaveDeOtra;
+        _buscador.Contestan = [copia];
+        var conexion = Conexion();
+        conexion.LlaveDelServicio = Publica(LlaveDeLaPrincipal);
+        var (reencuentro, _) = Nuevo(conexion);
+
+        Assert.False(await reencuentro.BuscarAhoraAsync());
+
+        Assert.Equal(Guardada, conexion.Servicio);
+        Assert.Empty(_guardadas);
+        Assert.Equal(ReencuentroDeLaPrincipal.DosPrincipales, reencuentro.Resultado);
+        Assert.Contains(_carpeta.Lineas(), l => l.StartsWith("Contestó 192.168.0.99:5080, que sabe de esta caja pero no firma con la llave de su caja principal",
+            StringComparison.Ordinal));
+    }
+
+    /// <summary>Con la llave del servicio, la caja principal en su IP nueva sí gana, aunque también conteste una copia de su base.</summary>
+    [Fact]
+    public async Task Con_la_llave_del_servicio_la_principal_gana_aunque_conteste_una_copia()
+    {
+        var copia = new Uri("http://192.168.0.99:5080/");
+        _servicios.Principal = Nueva;
+        _servicios.LlavesDe[Nueva] = LlaveDeLaPrincipal;
+        _servicios.Copias.Add(copia);
+        _servicios.LlavesDe[copia] = LlaveDeOtra;
+        _buscador.Contestan = [copia, Nueva];
+        var conexion = Conexion();
+        conexion.LlaveDelServicio = Publica(LlaveDeLaPrincipal);
+        var (reencuentro, _) = Nuevo(conexion);
+
+        Assert.True(await reencuentro.BuscarAhoraAsync());
+
+        Assert.Equal(Nueva, conexion.Servicio);
+        Assert.Contains(_carpeta.Lineas(), l => l.StartsWith("También contestó 192.168.0.99:5080, que sabe de esta caja pero no firma", StringComparison.Ordinal));
+    }
+
+    /// <summary>Una firma que no cuadra con la llave que dice (alguien que copió la llave pública, no la privada) no cuenta.</summary>
+    [Fact]
+    public async Task Una_firma_que_no_cuadra_no_cuenta()
+    {
+        _servicios.Principal = Nueva;
+        _servicios.LlavesDe[Nueva] = LlaveDeLaPrincipal;
+        _servicios.FirmanConOtra.Add(Nueva);
+        _buscador.Contestan = [Nueva];
+        var conexion = Conexion();
+        conexion.LlaveDelServicio = Publica(LlaveDeLaPrincipal);
+        var (reencuentro, _) = Nuevo(conexion);
+
+        Assert.False(await reencuentro.BuscarAhoraAsync());
+        Assert.Equal(Guardada, conexion.Servicio);
+    }
+
+    /// <summary>
+    /// La misma caja principal que contesta por dos tarjetas (cable y Wi-Fi) firma con la misma llave: es una sola, y la caja sí se
+    /// cambia (antes de conocer su llave también: la llave dice que es el mismo servicio).
+    /// </summary>
+    [Fact]
+    public async Task La_misma_caja_principal_por_dos_tarjetas_es_una_sola()
+    {
+        var porWifi = new Uri("http://192.168.0.58:5080/");
+        _servicios.Principal = Nueva;
+        _servicios.Copias.Add(porWifi);
+        _servicios.LlavesDe[Nueva] = LlaveDeLaPrincipal;
+        _servicios.LlavesDe[porWifi] = LlaveDeLaPrincipal;
+        _buscador.Contestan = [Nueva, porWifi];
+        var conexion = Conexion();
+        var (reencuentro, _) = Nuevo(conexion);
+
+        Assert.True(await reencuentro.BuscarAhoraAsync());
+        Assert.Equal(Nueva, conexion.Servicio);
+    }
+
+    /// <summary>
+    /// La dirección guardada prueba quién es: la primera vez, la caja aprende la llave de su caja principal y la guarda (en la
+    /// dirección que puso el dueño). Desde ahí, una copia de la base ya no gana.
+    /// </summary>
+    [Fact]
+    public async Task La_primera_vez_que_la_guardada_prueba_quien_es_la_caja_aprende_su_llave()
+    {
+        _servicios.Principal = Guardada;
+        _servicios.LlavesDe[Guardada] = LlaveDeLaPrincipal;
+        var conexion = Conexion();
+        var (reencuentro, _) = Nuevo(conexion);
+
+        Assert.Equal(Comprobacion.Es, await reencuentro.ComprobarGuardadaAsync());
+
+        Assert.Equal(Publica(LlaveDeLaPrincipal), conexion.LlaveDelServicio);
+        Assert.Equal([Guardada], _guardadas);
+        Assert.Contains(_carpeta.Lineas(), l => l.StartsWith("Esta caja recuerda la llave de su caja principal", StringComparison.Ordinal));
+    }
+
+    /// <summary>En una dirección que la caja encontró sola (no la que puso el dueño), la llave no se aprende: se sigue como antes.</summary>
+    [Fact]
+    public async Task En_una_direccion_que_no_puso_el_dueno_la_llave_no_se_aprende()
+    {
+        _servicios.Principal = Guardada;
+        _servicios.LlavesDe[Guardada] = LlaveDeLaPrincipal;
+        var conexion = Conexion();
+        conexion.DireccionDeConfianza = new Uri("http://192.168.0.200:5080/");
+        var (reencuentro, _) = Nuevo(conexion);
+
+        Assert.Equal(Comprobacion.Es, await reencuentro.ComprobarGuardadaAsync());
+        Assert.Null(conexion.LlaveDelServicio);
+        Assert.Empty(_guardadas);
+    }
+
+    /// <summary>
+    /// La dirección guardada sabe de esta caja, pero firma con otra llave (se reinstaló, o es una copia de su base): no es. La caja no
+    /// le manda su llave y la franja ofrece darla de alta otra vez.
+    /// </summary>
+    [Fact]
+    public async Task Si_la_guardada_firma_con_otra_llave_no_es()
+    {
+        _servicios.Principal = Guardada;
+        _servicios.LlavesDe[Guardada] = LlaveDeOtra;
+        var conexion = Conexion();
+        conexion.LlaveDelServicio = Publica(LlaveDeLaPrincipal);
+        var (reencuentro, _) = Nuevo(conexion);
+
+        Assert.Equal(Comprobacion.NoEs, await reencuentro.ComprobarGuardadaAsync());
+        Assert.True(reencuentro.OtraIdentidad);
+        Assert.Equal(ReencuentroDeLaPrincipal.OtraCajaPrincipal, reencuentro.Resultado);
+        Assert.Equal(Publica(LlaveDeLaPrincipal), conexion.LlaveDelServicio);
+    }
+
+    /// <summary>
+    /// Un servicio de antes (sin la prueba): si la caja todavía no conoce la llave de su caja principal, se sigue como antes; si ya la
+    /// conoce, un «no tengo la prueba» no le basta (no se deja engañar con eso).
+    /// </summary>
+    [Theory]
+    [InlineData(false, Comprobacion.SinLaPrueba)]
+    [InlineData(true, Comprobacion.NoEs)]
+    public async Task Un_servicio_de_antes_sigue_como_antes_solo_si_no_se_conoce_su_llave(bool conoceLaLlave, Comprobacion queda)
+    {
+        _servicios.SinLaRuta.Add(Guardada);
+        var conexion = Conexion();
+        if (conoceLaLlave)
+            conexion.LlaveDelServicio = Publica(LlaveDeLaPrincipal);
+        var (reencuentro, _) = Nuevo(conexion);
+
+        Assert.Equal(queda, await reencuentro.ComprobarGuardadaAsync());
+    }
+
+    [Fact]
+    public async Task Si_la_guardada_ya_no_conoce_a_esta_caja_lo_dice()
+    {
+        _servicios.NoLaConocen.Add(Guardada);
+        var (reencuentro, _) = Nuevo(Conexion());
+
+        Assert.Equal(Comprobacion.NoLaConoce, await reencuentro.ComprobarGuardadaAsync());
+    }
+
+    [Fact]
+    public async Task Si_la_guardada_no_contesta_lo_dice()
+    {
+        var (reencuentro, _) = Nuevo(Conexion());
+
+        Assert.Equal(Comprobacion.NoContesta, await reencuentro.ComprobarGuardadaAsync());
     }
 
     /// <summary>Lo que contesta en la red, como se le pida.</summary>
@@ -475,6 +654,18 @@ public sealed class ReencuentroDeLaPrincipalTests : IDisposable
         /// <summary>Estos contestan, pero la conexión se corta a media respuesta.</summary>
         public List<Uri> Cortados { get; } = [];
 
+        /// <summary>La llave propia del servicio en cada dirección (la caja principal, una copia de su base): firma con ella.</summary>
+        public Dictionary<Uri, ECDsa> LlavesDe { get; } = [];
+
+        /// <summary>Estos dicen la llave de su dirección, pero firman con otra (una firma que no cuadra).</summary>
+        public HashSet<Uri> FirmanConOtra { get; } = [];
+
+        /// <summary>Servicios de antes: no tienen la ruta de la prueba.</summary>
+        public HashSet<Uri> SinLaRuta { get; } = [];
+
+        /// <summary>Servicios que ya no conocen a esta caja (la quitaron).</summary>
+        public HashSet<Uri> NoLaConocen { get; } = [];
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             lock (Preguntas)
@@ -488,12 +679,29 @@ public sealed class ReencuentroDeLaPrincipalTests : IDisposable
             var reto = consulta["reto"]!;
             if (Cortados.Contains(donde))
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new SeCorta()) });
+            if (SinLaRuta.Contains(donde))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            if (NoLaConocen.Contains(donde))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)
+                {
+                    Content = new StringContent("""{"mensaje":"Esa caja no está dada de alta en este servicio.","codigo":"caja-sin-alta"}""",
+                        System.Text.Encoding.UTF8, "application/json"),
+                });
             if (Impostores.Contains(donde))
                 return Responder(new IdentidadServicioDto(Descubrimiento.Prueba(LlaveCaja.Huella("otra"), caja, reto, Descubrimiento.Direccion(donde)!)));
             if (QuePasanLaPregunta.TryGetValue(donde, out var aQuien))
                 return Responder(new IdentidadServicioDto(Descubrimiento.Prueba(LlaveCaja.Huella(Llave), caja, reto, Descubrimiento.Direccion(aQuien)!)));
             if ((donde == Principal || Copias.Contains(donde)) && caja == CajaId)
-                return Responder(new IdentidadServicioDto(Descubrimiento.Prueba(LlaveCaja.Huella(Llave), caja, reto, Descubrimiento.Direccion(donde)!)), Relleno);
+            {
+                var direccion = Descubrimiento.Direccion(donde)!;
+                var prueba = Descubrimiento.Prueba(LlaveCaja.Huella(Llave), caja, reto, direccion);
+                if (!LlavesDe.TryGetValue(donde, out var suya))
+                    return Responder(new IdentidadServicioDto(prueba), Relleno);
+                using var otra = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+                var firma = (FirmanConOtra.Contains(donde) ? otra : suya)
+                    .SignData(Descubrimiento.MensajeFirmado(caja, reto, direccion, prueba), HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+                return Responder(new IdentidadServicioDto(prueba, Publica(suya), Convert.ToBase64String(firma)), Relleno);
+            }
             throw new HttpRequestException(HttpRequestError.ConnectionError, "No contesta.");
         }
 

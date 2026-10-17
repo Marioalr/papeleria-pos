@@ -71,7 +71,8 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
     {
         await Fabrica.DisposeAsync();
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _ruta, _ruta + "-wal", _ruta + "-shm", _ruta + ".en-uso", _ruta + ".danada" })
+        // También la llave propia del servicio, que se hace junto a la base la primera vez que se usa.
+        foreach (var archivo in new[] { _ruta, _ruta + "-wal", _ruta + "-shm", _ruta + ".en-uso", _ruta + ".danada", Path.ChangeExtension(_ruta, ".llave") })
             await BorrarAsync(archivo);
     }
 

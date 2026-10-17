@@ -58,6 +58,32 @@ public sealed class ConexionCaja
 
     public string? Llave { get; set; }
 
+    /// <summary>
+    /// La llave pública de la caja principal (la propia de su servicio, que no está en su base): se recuerda al darse de alta o la
+    /// primera vez que su dirección prueba quién es, y desde entonces la caja no se cambia sola a un servicio que no firme con ella
+    /// (<see cref="ReencuentroDeLaPrincipal"/>). Vacía con un servicio de antes.
+    /// </summary>
+    public string? LlaveDelServicio { get; set; }
+
+    /// <summary>
+    /// La dirección que puso el dueño al darla de alta (en una caja de antes, la que ya tenía): solo ahí se aprende la llave del
+    /// servicio la primera vez. Una dirección que la caja encontró sola en la red no la enseña: si no, una copia de la base que
+    /// contestara sola se quedaría como la de confianza. Vacía: con la que abrió la caja.
+    /// </summary>
+    public Uri? DireccionDeConfianza { get; set; }
+
+    private volatile bool _sinComprobar;
+
+    /// <summary>
+    /// Después de una caída (o al abrir la caja), mientras la dirección guardada no pruebe otra vez que es la caja principal de esta
+    /// caja: no se le manda la llave a nadie (<see cref="Transporte"/>), y la caja trabaja con su copia.
+    /// </summary>
+    public bool SinComprobar
+    {
+        get => _sinComprobar;
+        set => _sinComprobar = value;
+    }
+
     /// <summary>La ventana de Windows se da de alta antes de vender; la del navegador, en la PC del servicio, no.</summary>
     public bool PideAlta { get; init; }
 
@@ -1100,6 +1126,9 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     {
         if (contingencia is null)
             return await enLinea();
+        // Al abrir la caja, la caja principal prueba quién es antes de recibir la llave: se espera eso (milisegundos en la red de la
+        // tienda, a lo más unos segundos), no la red entera.
+        await contingencia.ComprobarAntesDeLlamarAsync();
         if (!contingencia.EnLinea && (sinConexion is not null || !contingencia.SeIntentaSinCopia))
             return Local(contingencia, sinConexion);
         T resultado;

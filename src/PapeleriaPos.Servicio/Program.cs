@@ -64,6 +64,12 @@ if (respaldos)
     builder.Services.AddHostedService<RespaldoDiario>();
 // La red de la tienda en el POS (docs/arquitectura.md, «La red de la matriz»): solo se contesta a la red de la tienda.
 builder.Services.TryAddSingleton(new RedLocalDelServicio());
+// La llave propia del servicio (pos.llave, junto a la base y fuera de ella): firma quién es. Se hace o se lee la primera vez que
+// se usa (al dar de alta una caja o al probar quién es).
+builder.Services.TryAddSingleton(proveedor => new Lazy<LlaveDelServicio>(() => LlaveDelServicio.CargarOCrear(
+    LlaveDelServicio.Archivo(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(cadena).DataSource),
+    ex => proveedor.GetRequiredService<ILogger<LlaveDelServicio>>().LogWarning(ex,
+        "La llave del servicio no se pudo leer (¿viene de otra PC?): se hizo otra. Las cajas que conocían la de antes se dan de alta otra vez."))));
 if (builder.Configuration.GetValue("Descubrimiento:Activo", true))
     builder.Services.AddHostedService<DescubrimientoEnRed>();
 // El vigía de la red: si hay internet y si contesta el router (lo dice en /api/estado, para la franja de las cajas), y la bitácora

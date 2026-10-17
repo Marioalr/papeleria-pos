@@ -29,9 +29,17 @@ namespace PapeleriaPos.Caja;
 /// <param name="ServicioLocal">En la prueba: el servicio, relativo a la carpeta de la caja.</param>
 /// <param name="BaseInicial">En la prueba: la base con que se instaló (de solo lectura, en Archivos de programa).</param>
 /// <param name="CarpetaDatos">En la prueba: dónde va la base de trabajo y las respuestas (admite %ProgramData%).</param>
+/// <param name="LlaveDelServicio">
+/// La llave pública de la caja principal (de su servicio, no de su base): la caja no se cambia sola a otro que no firme con ella.
+/// No es secreta; se aprende al darse de alta o la primera vez que la caja principal prueba quién es.
+/// </param>
+/// <param name="DireccionDeConfianza">
+/// La dirección que puso el dueño al darla de alta (en una caja de antes, la que ya tenía): solo ahí se aprende esa llave.
+/// </param>
 public sealed record ConfiguracionCaja(
     string Servicio, Guid? CajaId, string? Impresora, string? LlaveProtegida = null, string? ColaImpresion = null, bool QuitarImpresos = true,
-    bool Prueba = false, string? ServicioLocal = null, string? BaseInicial = null, string? CarpetaDatos = null)
+    bool Prueba = false, string? ServicioLocal = null, string? BaseInicial = null, string? CarpetaDatos = null, string? LlaveDelServicio = null,
+    string? DireccionDeConfianza = null)
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
 
@@ -81,6 +89,8 @@ public sealed record ConfiguracionCaja(
         {
             Servicio = conexion.Servicio.ToString(),
             CajaId = conexion.CajaId,
+            LlaveDelServicio = conexion.LlaveDelServicio,
+            DireccionDeConfianza = conexion.DireccionDeConfianza?.ToString(),
             LlaveProtegida = conexion.Llave is { } llave
                 ? Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(llave), null, DataProtectionScope.LocalMachine))
                 : null,
@@ -133,6 +143,9 @@ public partial class MainWindow : Window
             Servicio = new Uri(configuracion.Servicio),
             CajaId = prueba is null ? configuracion.CajaId : null,
             Llave = prueba is null ? configuracion.Llave() : null,
+            LlaveDelServicio = prueba is null ? configuracion.LlaveDelServicio : null,
+            // Una caja de antes (sin esto guardado): la dirección que ya tenía, la que puso el dueño.
+            DireccionDeConfianza = new Uri(configuracion.DireccionDeConfianza ?? configuracion.Servicio),
             PideAlta = prueba is null,
             Listo = prueba?.Listo ?? Task.CompletedTask,
             AlGuardar = c =>

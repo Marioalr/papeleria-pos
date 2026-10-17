@@ -30,6 +30,9 @@ public static class Descubrimiento
     /// <summary>Con qué empieza lo que se firma: si un día cambia la forma, una prueba de antes no sirve.</summary>
     private const string Version = "papeleria-pos/identidad/1";
 
+    /// <summary>Con qué empieza lo que el servicio firma con su propia llave (<see cref="MensajeFirmado"/>).</summary>
+    private const string VersionDeLaFirma = "papeleria-pos/identidad-del-servicio/1";
+
     /// <summary>Lo que contesta el servicio: "PAPELERIAPOS 5080".</summary>
     public static byte[] ArmarRespuesta(int puertoHttp) => Encoding.UTF8.GetBytes($"{Respuesta} {puertoHttp}");
 
@@ -157,6 +160,35 @@ public static class Descubrimiento
     public static bool EsLaPrueba(string? contesto, string esperada) =>
         contesto is { Length: > 0 }
         && CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(contesto.ToUpperInvariant()), Encoding.ASCII.GetBytes(esperada));
+
+    /// <summary>
+    /// Lo que el servicio firma con su propia llave (ECDSA P-256, SHA-256): lo mismo de la prueba y la prueba. Esa llave no está
+    /// en la base ni en sus respaldos (en Windows, cifrada para esa PC): una copia de la base en otra PC sabe la huella de la llave
+    /// de la caja, pero no firma como el servicio que la caja conoce.
+    /// </summary>
+    public static byte[] MensajeFirmado(Guid cajaId, string reto, string direccion, string prueba) =>
+        Encoding.UTF8.GetBytes($"{VersionDeLaFirma}\n{cajaId:D}\n{reto}\n{direccion}\n{prueba}");
+
+    /// <summary>Si <paramref name="firma"/> es de esa llave pública (en base64) sobre ese mensaje; cualquier cosa rara, no.</summary>
+    public static bool FirmaValida(string? llavePublica, byte[] mensaje, string? firma)
+    {
+        if (llavePublica is not { Length: > 0 and <= 1024 } || firma is not { Length: > 0 and <= 1024 })
+            return false;
+        try
+        {
+            using var ecdsa = ECDsa.Create();
+            ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(llavePublica), out _);
+            return ecdsa.VerifyData(mensaje, Convert.FromBase64String(firma), HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+        }
+        catch (Exception ex) when (ex is FormatException or CryptographicException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Unas letras para reconocer la llave de un servicio en la bitácora («a1b2c3d4»), sin escribirla entera.</summary>
+    public static string HuellaDeLaLlave(string llavePublica) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.ASCII.GetBytes(llavePublica)))[..8].ToLowerInvariant();
 
     /// <summary>
     /// La dirección con que se firma: la IP y el puerto en que el servicio recibió la pregunta, que son los mismos a los que la

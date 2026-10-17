@@ -22,6 +22,12 @@
                 }
             </span>
             <span class="espacio"></span>
+            @if (franja == AvisosDeRed.Franja.SinRedLocal && Reencuentro is { OtraIdentidad: true } && AlDarDeAlta.HasDelegate)
+            {
+                @* La caja principal sabe de esta caja pero no firma como la de siempre (se reinstaló o es una copia de su base): lo
+                   decide el dueño, que la da de alta otra vez con su PIN. *@
+                <button class="vn-boton chico" tabindex="-1" @onmousedown:preventDefault="true" @onclick="AlDarDeAlta">Dar de alta otra vez</button>
+            }
             @if (franja == AvisosDeRed.Franja.SinRedLocal && Reencuentro is { Aplica: true } reencuentro)
             {
                 @* Ni con el clic se lleva el foco: el lector sigue escribiendo en la venta, y su Enter no vuelve a oprimir el botón. *@
@@ -61,6 +67,9 @@
 }
 
 @code {
+    /// <summary>Para «Dar de alta otra vez» (lo pone la caja que se da de alta); sin esto, no se ofrece.</summary>
+    [Parameter] public EventCallback AlDarDeAlta { get; set; }
+
     private Contingencia? _contingencia;
 
     private ReencuentroDeLaPrincipal? Reencuentro => _contingencia?.RedDeLaCaja?.Reencuentro;

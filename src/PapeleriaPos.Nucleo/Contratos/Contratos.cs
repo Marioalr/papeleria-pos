@@ -468,7 +468,12 @@ public sealed record RedDeLaPrincipalDto(bool? Internet, bool? Router, DateTime?
 /// a él: la prueba hecha con la huella de la llave de esa caja (<c>Descubrimiento.Prueba</c>). Solo la tiene el servicio que
 /// dio de alta a esa caja; la llave nunca viaja.
 /// </summary>
-public sealed record IdentidadServicioDto(string Prueba);
+/// <param name="LlaveDelServicio">
+/// La llave pública del servicio (la suya, que no está en la base ni en sus respaldos): la caja la recuerda y, desde entonces,
+/// solo se cambia a un servicio que firme con ella. Vacía en un servicio de antes.
+/// </param>
+/// <param name="Firma">Lo mismo de la prueba, firmado con la llave del servicio (<c>Descubrimiento.MensajeFirmado</c>).</param>
+public sealed record IdentidadServicioDto(string Prueba, string? LlaveDelServicio = null, string? Firma = null);
 
 /// <summary>Una caída de la red, de la bitácora de red: qué se perdió, desde cuándo y hasta cuándo (vacío: sigue).</summary>
 /// <param name="Que">«internet», «la caja principal», «el router»…</param>
@@ -497,7 +502,11 @@ public sealed record SucursalAltaDto(Guid Id, string Nombre, IReadOnlyList<CajaA
 public sealed record SolicitudAltaCaja(string Usuario, string Pin, Guid SucursalId, Guid? CajaId, string? Nombre, string? Serie, string Equipo);
 
 /// <param name="Llave">Solo la ve el equipo: la guarda y la manda en cada llamada (encabezado X-Caja-Llave).</param>
-public sealed record AltaCajaDto(CajaDto Caja, string Llave);
+/// <param name="LlaveDelServicio">
+/// La llave pública del servicio que la dio de alta: la caja la guarda y no se cambia sola a otro servicio que no firme con
+/// ella (una copia de la base en otra PC). Vacía en un servicio de antes.
+/// </param>
+public sealed record AltaCajaDto(CajaDto Caja, string Llave, string? LlaveDelServicio = null);
 
 // ── Contingencia (entrega 3, parte 2) ───────────────────────────────────────
 
