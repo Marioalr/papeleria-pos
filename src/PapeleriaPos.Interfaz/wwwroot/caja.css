@@ -1292,3 +1292,26 @@ img.vn-foto { display: block; object-fit: contain; }
     .vn-tarea { padding: 11px 13px; }
     .vn-col-detalle { gap: 12px; padding: 14px 20px; }
 }
+/* ── Productos › Temporadas y Tarjetas de precio (entrega 13, parte 3): la lista del año pasado con sus precios, la hoja, las
+   tarjetas y el resumen al terminarla. Tablas como las de las páginas (.vn-tabla), con el lugar de la mesa como grupo. ── */
+.vn-temporadas > .vn-segmento, .vn-tarjetas-pag > .vn-segmento { align-self: flex-start; }
+.vn-temporadas > .vn-alerta, .vn-tarjetas-pag > .vn-alerta { margin: 0; }
+.vn-temporadas .aviso .ico { width: 15px; height: 15px; vertical-align: -3px; }
+.vn-tabla td.grupo { padding: 5px 12px; background: var(--vn-renglon); font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--vn-suave); }
+.vn-temp-prod { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.vn-temp-prod .vn-foto { --lado: 38px; }
+.vn-temp-prod > div, .vn-tarjeta-prod { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.vn-temp-prod .vn-enlace { font-size: 14px; color: var(--vn-texto); text-align: left; }
+.vn-temp-prod small, .vn-tarjeta-prod small { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-size: 12px; color: var(--vn-suave); }
+.vn-tarjeta-prod strong { font-size: 14px; font-weight: 600; }
+.vn-tabla td.num .vn-enlace { font: 600 14px var(--vn-f-cifras); font-variant-numeric: tabular-nums; }
+.vn-tabla td.num .vn-enlace:disabled { color: var(--vn-texto); text-decoration: none; cursor: default; }
+.vn-tabla td.num.bajo { color: var(--vn-error); font-weight: 700; }
+.vn-tabla td.precio input { width: 92px; text-align: right; font-variant-numeric: tabular-nums; }
+.vn-tabla td.precio small { display: block; margin-top: 2px; font-size: 11.5px; white-space: normal; }
+.vn-tabla td.precio small.rojo { color: var(--vn-error); font-weight: 600; }
+.vn-temporada-precios tr.cambia > td { background: var(--vn-cobro-claro); }
+.vn-temporada-precios tr.apagado .vn-enlace { color: var(--vn-tenue); }
+.vn-tarjetas th.marca, .vn-tarjetas td.marca { width: 1%; padding-right: 0; }
+.vn-tarjetas td.acciones { width: 1%; white-space: nowrap; text-align: right; }
+.vn-tarjetas td.num .vn-etiq { margin-left: 6px; }

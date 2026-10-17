@@ -362,6 +362,35 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("CodigosBarras");
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.ConsultaDePrecio", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CajaId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("FechaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("VarianteId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CajaId");
+
+                    b.HasIndex("VarianteId");
+
+                    b.HasIndex("SucursalId", "FechaUtc");
+
+                    b.ToTable("ConsultasDePrecio", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.DecisionDepuracion", b =>
                 {
                     b.Property<Guid>("Id")
@@ -930,6 +959,40 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("HojaCodigos", (string)null);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.RenglonTemporadaDelAnio", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Inicial")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Posicion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("Quedo")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("TemporadaId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("VarianteId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Vendido")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VarianteId");
+
+                    b.HasIndex("TemporadaId", "VarianteId")
+                        .IsUnique();
+
+                    b.ToTable("TemporadasDelAnioRenglones", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Sinonimo", b =>
                 {
                     b.Property<Guid>("Id")
@@ -994,6 +1057,91 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasIndex("Version");
 
                     b.ToTable("Sucursales");
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.TarjetaDePrecio", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Codigo")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ImpresaPorId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ImpresaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("PrecioCentavos")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("VarianteId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ImpresaPorId");
+
+                    b.HasIndex("VarianteId");
+
+                    b.HasIndex("SucursalId", "VarianteId")
+                        .IsUnique();
+
+                    b.ToTable("TarjetasDePrecio", (string)null);
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.TemporadaDelAnio", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Contada")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("ExhibidorId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly>("Fin")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly>("Inicio")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("PreciosConfirmadosPorId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("PreciosConfirmadosUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("SucursalId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("TerminadaPorId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("TerminadaUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PreciosConfirmadosPorId");
+
+                    b.HasIndex("SucursalId");
+
+                    b.HasIndex("TerminadaPorId");
+
+                    b.HasIndex("ExhibidorId", "SucursalId", "Inicio")
+                        .IsUnique();
+
+                    b.ToTable("TemporadasDelAnio", (string)null);
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Variante", b =>
@@ -3355,6 +3503,26 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Navigation("Presentacion");
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.ConsultaDePrecio", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Turnos.Caja", null)
+                        .WithMany()
+                        .HasForeignKey("CajaId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
+                        .WithMany()
+                        .HasForeignKey("VarianteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.FotoProducto", b =>
                 {
                     b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
@@ -3489,6 +3657,67 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasForeignKey("VarianteId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.RenglonTemporadaDelAnio", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.TemporadaDelAnio", null)
+                        .WithMany("Renglones")
+                        .HasForeignKey("TemporadaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
+                        .WithMany()
+                        .HasForeignKey("VarianteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.TarjetaDePrecio", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("ImpresaPorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
+                        .WithMany()
+                        .HasForeignKey("VarianteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.TemporadaDelAnio", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Exhibidor", null)
+                        .WithMany()
+                        .HasForeignKey("ExhibidorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("PreciosConfirmadosPorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
+                        .WithMany()
+                        .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("TerminadaPorId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Variante", b =>
@@ -4283,6 +4512,11 @@ namespace PapeleriaPos.Datos.Migraciones
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Producto", b =>
                 {
                     b.Navigation("Variantes");
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.TemporadaDelAnio", b =>
+                {
+                    b.Navigation("Renglones");
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.Variante", b =>

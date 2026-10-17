@@ -288,6 +288,17 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
 public sealed class PaginaQueContesta : IJSRuntime, IJSObjectReference
 {
     private readonly Dictionary<string, string> _guardado = [];
+    private readonly List<(string Funcion, object?[]? Argumentos)> _llamadas = [];
+
+    /// <summary>Lo que se le pidió a la página, en orden (la vista previa de una hoja, imprimirla…), para revisarlo.</summary>
+    public IReadOnlyList<(string Funcion, object?[]? Argumentos)> Llamadas
+    {
+        get
+        {
+            lock (_guardado)
+                return [.. _llamadas];
+        }
+    }
 
     public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args) => InvokeAsync<TValue>(identifier, CancellationToken.None, args);
 
@@ -296,6 +307,7 @@ public sealed class PaginaQueContesta : IJSRuntime, IJSObjectReference
         object? resultado;
         lock (_guardado)
         {
+            _llamadas.Add((identifier, args));
             resultado = identifier switch
             {
                 "import" => this,

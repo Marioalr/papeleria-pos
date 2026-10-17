@@ -130,6 +130,7 @@ app.MapearApiCredito();
 app.MapearApiCatalogo();
 app.MapearApiMostrador();
 app.MapearApiFotos();
+app.MapearApiTemporadas();
 app.MapearApiCompras();
 app.MapearApiConteos();
 app.MapearApiEtiquetas();

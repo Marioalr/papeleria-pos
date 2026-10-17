@@ -815,6 +815,68 @@ servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-ca
   Windows de la caja 2 ([guía del fin de semana](pruebas-en-tienda.md)). La hoja de la temporada y las tarjetas de precio
   (la parte 3) ya pueden usarlas.
 
+**Avance (2026-10-17), entrega 13, parte 3: empezar y terminar la temporada, su hoja, las tarjetas de precio y lo más
+preguntado,** como en la [propuesta](propuesta-interfaz.md#lo-que-se-señala-exhibidos-y-temporada) (puntos 3 a 6). Todo en
+Productos (F3), con la caja principal; nada de esto viaja en la copia de las cajas:
+- **«Temporadas»** (abajo de la lista, para quien tiene «Productos, precios y etiquetas»): arriba se elige la temporada (la
+  que corre, primero) y el paso: 1 · Empezar: precios, 2 · Hoja, 3 · Tarjetas y 4 · Terminar. Esc regresa al producto.
+- **Empezar la temporada:** la que corre hoy o, si no, la siguiente (Navidad, el 17 de octubre: la del 20 de noviembre al
+  1 de enero), con la lista del año pasado: lo acomodado en su mesa, en su orden, cada producto con el precio que tuvo
+  entonces, el de hoy y si tiene foto (tocarlo abre su ficha para ponérsela; o con el celular, en la página del conteo). El
+  precio de entonces sale de su historial al terminar el primer día de esa temporada (lo que se rebajó al final para sacar lo
+  que sobraba no cuenta); si su historial no llega tan atrás (el primer año, con lo que vino de eleventa), del precio al que
+  más veces se cobró en esa temporada, aquí o en eleventa. Quien tiene «Ver costos, utilidad y margen» ve además el costo de
+  hoy (el de su última compra; sin compras, el promedio de lo que hay), el margen con el precio de hoy y un sugerido: el más
+  alto entre el de hoy y el del año pasado, subido al que deja el margen mínimo (el del departamento o el general) si deja
+  menos, a los 50 centavos de arriba; nunca baja un precio. Los demás no reciben esas columnas: el servicio no las manda.
+- **Los precios se confirman una vez:** se escribe el de cada uno (Enter pasa al siguiente; «Todos al del año pasado»,
+  «Todos al sugerido» o tocar el de un renglón) y «Confirmar los precios» (Ctrl+Enter) los manda todos juntos, en una sola
+  transacción: cambian los que cambiaron (con su historial, un renglón en la bitácora con cuántos y cuáles, y las cajas los
+  toman con la versión del catálogo) y los demás quedan confirmados como están («Luis confirmó los precios el 10/10»). Las
+  mismas reglas que cambiar precios de varios: el mayoreo no se toca y nunca queda igual o más caro que el menudeo, ni un
+  paquete más caro que sus piezas; si un precio lo dejaría así, nada se confirma y se dice cuál (la página ya lo marca en
+  rojo). Tampoco si un precio cambió mientras tanto (otra caja); si la respuesta se pierde y se confirma otra vez, lo que ya
+  quedó no se vuelve a cambiar. Al confirmar dice cuántos de los que cambiaron tienen tarjeta de precio.
+- **La hoja de la temporada:** cada lugar de la mesa con sus productos de tres en tres, cada uno con su foto (sin foto, sus
+  iniciales), su nombre, su precio y su código dibujado (también se cobra escaneándolo desde la hoja); a lo que no tiene
+  código se le da uno interno, como al imprimir etiquetas. Hoja carta con su título y «Hoja 1 de 2»; un lugar que sigue en
+  otra hoja repite su nombre. «Vista previa» y «Imprimir» como la hoja de códigos: la caja arma la página
+  (PapeleriaPos.Impresion, HojaDeTemporada) en un marco y la manda a la impresora de inyección o la láser, al 100 %.
+- **Las tarjetas de precio:** una por producto, 18 por hoja carta (6.5 × 4.2 cm) con su línea para recortar: el nombre, el
+  precio grande y el código para escanearla en lugar del producto (HojaDeTarjetas). Al imprimirlas queda anotado con qué
+  precio y qué código salió cada una. En la temporada (paso 3) van marcadas las que no tiene y las que cambiaron; en
+  Productos › «Tarjetas de precio» hay tres listas: «Por reimprimir» (su precio de hoy, o su código, ya no es el de la
+  tarjeta: el POS dice cuáles; al imprimirlas salen de la lista, y «Ya no tiene» quita la que se tiró), «Lo más preguntado»
+  y cada exhibidor o temporada en su acomodo. El botón de Productos dice cuántas hay por reimprimir.
+- **Lo más preguntado:** el verificador (F9) cuenta cada producto que enseña (escaneado, escrito o tocado en Ctrl+M), sin
+  esperar ni estorbar; sin conexión no se cuenta, como lo que se busca. «Lo más preguntado» enseña lo que más se preguntó en
+  los últimos 90 días y no tiene tarjeta: lo primero a lo que conviene ponérsela.
+- **Terminar la temporada:** la última que empezó, con el resumen de cada producto de su primer día a hoy: lo que había (al
+  empezar, más lo que llegó), lo que se vendió (menos lo devuelto) y lo que quedó, con «se acabó», «no se vendió» o qué parte
+  se vendió. Lo que sobró se cuenta en «Contado» (con «Conteo completo de un departamento»; lo vacío se queda como está):
+  reemplaza la existencia como un conteo. «Terminar la temporada» pregunta una vez y guarda el resumen, que ya no cambia; se
+  termina una vez por año. Si la tienda empezó a usar este POS ya empezada la temporada, el resumen va desde ese día y lo
+  dice; si ya había terminado, no hay resumen.
+- **En el piloto con eleventa:** los precios de lo de eleventa se cambian allá (se ven sin cuadro y se confirman como están;
+  lo dado de alta aquí sí cambia), y lo que sobró no se cuenta aquí: el inventario se lleva en eleventa y la página lo dice.
+  El resumen sí: lo que bajó la existencia con la lectura de eleventa cuenta como vendido en la caja principal, y lo que subió,
+  como lo que llegó. La hoja, las tarjetas y las consultas, igual: son del POS.
+- **La base:** la migración TemporadaTarjetasYConsultas (la temporada de cada año con su resumen, las tarjetas impresas y las
+  consultas del verificador). Ninguna sube la versión del catálogo.
+- **Decidido mientras tanto, por revisar con el dueño:** todo en Productos y no en Ctrl+M (el prototipo tenía ahí «Imprimir
+  la hoja» y «Tarjetas para la vitrina»: imprimir pide la vista previa y es trabajo de atrás); que empezar sea la que corre o
+  la siguiente, y terminar la última que empezó; el precio de entonces al terminar el primer día de la temporada pasada; el
+  costo de hoy, el de la última compra; el sugerido, que nunca baja un precio; que el mayoreo no se mueva al confirmar (si
+  estorba, se cambia en la ficha) y que se confirme todo o nada; la tarjeta queda anotada al oprimir «Imprimir», aunque se
+  cancele el diálogo de la impresora (se vuelve a imprimir desde la misma lista); 18 tarjetas por hoja; contar las consultas
+  solo con conexión y 90 días para lo más preguntado; el resumen desde el primer día de la temporada hasta que se termina (lo
+  que se venda después de su último día y antes de terminarla, cuenta); terminarla con una pregunta antes (no se deshace); que
+  terminarla no quite su aviso arriba de la venta (sigue sus fechas); y en el piloto, lo que bajó con la lectura de eleventa
+  como vendido.
+- **Falta:** imprimir la hoja y una hoja de tarjetas en la WF-6590 y la L5590 al 100 % y escanear una tarjeta recortada con
+  el lector de la caja 2 ([guía del fin de semana](pruebas-en-tienda.md)); ver en la ventana de Windows la vista previa con
+  las fotos.
+
 #### Después: el piloto en la caja 2
 
 Mientras se arma el puente con eleventa, la versión unicaja sigue creciendo con la venta completa (entrega 3) y la base

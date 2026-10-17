@@ -71,6 +71,22 @@ catálogo de eleventa. Las fotos son solo del POS: no tocan los datos de elevent
   foto» hasta «Guardada»; cuánto tarda en salir en la caja 2 y si se reconoce bien el producto en su pantalla; cuántas se
   tomaron y en cuánto tiempo.
 
+## Con el POS en la caja 2: la hoja de la temporada y las tarjetas de precio
+
+La hoja de la temporada y las tarjetas de precio ([entrega 13, parte 3](plan.md#primero-la-versión-unicaja-entrega-0)) se
+imprimen en las impresoras de inyección y en la láser, que solo están en la tienda. El mismo fin de semana de las fotos, ya
+con la temporada acomodada y sus fotos tomadas:
+
+- **En la tienda,** en la caja 2, Productos (F3) › «Temporadas», la temporada que corra:
+  1. «2 · Hoja» › «Vista previa» y luego «Imprimir la hoja», en la WF-6590 y en la L5590, al **100 % (tamaño real)**, sin
+     márgenes que la achiquen.
+  2. «3 · Tarjetas» › «Imprimir…» una hoja de tarjetas; recortar dos por su línea.
+  3. En la venta, escanear con el lector de la caja 2 el código de una tarjeta recortada y uno de la hoja: cada uno entra al
+     ticket como el producto.
+- **Qué anotar:** si la hoja sale completa y en su tamaño (medir una tarjeta: 6.5 × 4.2 cm), si las fotos se reconocen
+  impresas (en blanco y negro y a color), si el lector lee los códigos a la primera (también a través de un portatarjetas o
+  una mica), y cuánto tarda en salir cada hoja.
+
 ## Primer fin de semana: conocer la tienda
 
 Solo mirar y anotar. Lo único que se cambia es la configuración de los grabadores, por seguridad. Si el dueño lo
