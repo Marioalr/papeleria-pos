@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using PapeleriaPos.Pruebas.Servicio;
 
 namespace PapeleriaPos.Pruebas.Interfaz;
@@ -15,9 +14,7 @@ public sealed class F12AlCobroTests(ServicioDePrueba servicio) : IClassFixture<S
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
+        ArchivosDePrueba.BorrarBase(_baseLocal);
     }
 
     [Fact]

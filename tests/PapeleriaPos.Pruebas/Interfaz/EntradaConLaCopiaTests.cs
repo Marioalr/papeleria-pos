@@ -1,5 +1,4 @@
 using System.Net.Http.Json;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
 using PapeleriaPos.Impresion;
@@ -22,9 +21,7 @@ public sealed class EntradaConLaCopiaTests(ServicioDePrueba servicio) : IClassFi
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
+        ArchivosDePrueba.BorrarBase(_baseLocal);
     }
 
     [Fact]

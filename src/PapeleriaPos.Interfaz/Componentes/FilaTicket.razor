@@ -2,7 +2,9 @@
    componente, con @key en la pantalla de venta, y solo se vuelve a pintar si cambió lo que dice (su cantidad, su precio,
    si está elegido). Al escanear, la línea nueva se pinta y las demás no. Sus botones usan los métodos de este renglón, no
    un manejador nuevo en cada pintado: lo que ya está en la página no se toca. Lo de la venta lo hace la pantalla
-   (AlTocar, AlPaso, AlAccion). *@
+   (AlTocar, AlPaso, AlAccion), y cada aviso lleva su línea, no su lugar: si mientras tanto llega un «buscando…» antes que
+   ella, o el clic sale antes de que la página tome el dibujo nuevo, la pantalla actúa sobre esta línea y no sobre la que
+   quedó en su lugar. *@
 
 <tr id="linea-@Indice" class="@(Seleccionada ? "seleccionada" : "")" @onclick="TocarAsync">
     <td class="vn-col-cant">
@@ -116,9 +118,12 @@
         Precio, Descuento, Mayoreo, Quitar,
     }
 
+    /// <summary>La línea de la venta de este renglón: es lo que se le dice a la pantalla con cada botón.</summary>
+    [Parameter, EditorRequired] public VentaLinea Linea { get; set; } = null!;
+
     [Parameter, EditorRequired] public Datos Renglon { get; set; } = null!;
 
-    /// <summary>Su lugar en el ticket (el id «linea-N» y lo que se le dice a la pantalla).</summary>
+    /// <summary>Su lugar en el ticket: el id «linea-N» (la pantalla lo usa para mostrarlo).</summary>
     [Parameter] public int Indice { get; set; }
 
     [Parameter] public bool Seleccionada { get; set; }
@@ -126,20 +131,20 @@
     /// <summary>Sus acciones, si está elegido.</summary>
     [Parameter] public AccionesDeFila? Acciones { get; set; }
 
-    [Parameter] public EventCallback<int> AlTocar { get; set; }
+    [Parameter] public EventCallback<VentaLinea> AlTocar { get; set; }
 
-    /// <summary>− o + en el renglón: su lugar y −1 o 1.</summary>
-    [Parameter] public EventCallback<(int Indice, int Paso)> AlPaso { get; set; }
+    /// <summary>− o + en el renglón: su línea y −1 o 1.</summary>
+    [Parameter] public EventCallback<(VentaLinea Linea, int Paso)> AlPaso { get; set; }
 
-    /// <summary>Un botón de sus acciones (el renglón ya está elegido).</summary>
-    [Parameter] public EventCallback<Accion> AlAccion { get; set; }
+    /// <summary>Un botón de sus acciones, con su línea.</summary>
+    [Parameter] public EventCallback<(VentaLinea Linea, Accion Accion)> AlAccion { get; set; }
 
     /// <summary>Lo que se pintó la última vez: con lo mismo, no se vuelve a pintar.</summary>
-    private (Datos, int, bool, AccionesDeFila?) _pintado;
+    private (VentaLinea, Datos, int, bool, AccionesDeFila?) _pintado;
 
     protected override void OnInitialized() => _pintado = Ahora;
 
-    private (Datos, int, bool, AccionesDeFila?) Ahora => (Renglon, Indice, Seleccionada, Seleccionada ? Acciones : null);
+    private (VentaLinea, Datos, int, bool, AccionesDeFila?) Ahora => (Linea, Renglon, Indice, Seleccionada, Seleccionada ? Acciones : null);
 
     protected override bool ShouldRender()
     {
@@ -150,13 +155,13 @@
         return true;
     }
 
-    private Task TocarAsync() => AlTocar.InvokeAsync(Indice);
-    private Task MenosAsync() => AlPaso.InvokeAsync((Indice, -1));
-    private Task MasAsync() => AlPaso.InvokeAsync((Indice, 1));
-    private Task PrecioAsync() => AlAccion.InvokeAsync(Accion.Precio);
-    private Task DescuentoAsync() => AlAccion.InvokeAsync(Accion.Descuento);
-    private Task MayoreoAsync() => AlAccion.InvokeAsync(Accion.Mayoreo);
-    private Task QuitarAsync() => AlAccion.InvokeAsync(Accion.Quitar);
+    private Task TocarAsync() => AlTocar.InvokeAsync(Linea);
+    private Task MenosAsync() => AlPaso.InvokeAsync((Linea, -1));
+    private Task MasAsync() => AlPaso.InvokeAsync((Linea, 1));
+    private Task PrecioAsync() => AlAccion.InvokeAsync((Linea, Accion.Precio));
+    private Task DescuentoAsync() => AlAccion.InvokeAsync((Linea, Accion.Descuento));
+    private Task MayoreoAsync() => AlAccion.InvokeAsync((Linea, Accion.Mayoreo));
+    private Task QuitarAsync() => AlAccion.InvokeAsync((Linea, Accion.Quitar));
 
     private static RenderFragment Marca(MarcaDeAccion marca) => marca.Autoriza is { } quien
         ? @<small class="vn-candado" title="Lo autoriza @quien"><Ico Nombre="candado" />@quien</small>

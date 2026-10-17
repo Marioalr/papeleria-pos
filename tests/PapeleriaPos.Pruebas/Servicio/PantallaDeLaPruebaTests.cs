@@ -1,5 +1,4 @@
 using System.Net.Http.Json;
-using Microsoft.Data.Sqlite;
 using PapeleriaPos.Herramientas.Prueba;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Interfaz.Componentes;
@@ -111,6 +110,7 @@ public class PantallaDeLaPruebaTests(ServicioEnPrueba prueba) : IClassFixture<Se
         Assert.Equal(EstadoCaja.ChipConexion.ServicioAqui, EstadoCaja.QueDice(null, conexion));
         Assert.Equal(EstadoCaja.ChipConexion.ConectadaALaPrincipal,
             EstadoCaja.QueDice(null, new ConexionCaja { Servicio = new Uri("http://192.168.1.10:5080/") }));
-        SqliteConnection.ClearAllPools();
+        // Su base local está en la carpeta de la prueba, que se borra al final: la caja se cierra y la suelta.
+        contingencia.Cerrar(TimeSpan.FromSeconds(20));
     }
 }

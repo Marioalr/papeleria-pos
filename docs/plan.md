@@ -561,9 +561,11 @@ aprobó el dueño el 2026-10-10 ([propuesta](propuesta-interfaz.md#rendimiento))
 - **Lo que no está en la copia** (recién dado de alta en otra caja) entra en su lugar como «Buscando…» y se le pregunta a
   la caja principal en segundo plano, con medio segundo; lo que se escanea después no lo espera. Si llega, toma su lugar;
   si no existe, lo de siempre (darlo de alta o el artículo común, según los permisos); si no contesta a tiempo, la caja
-  lo dice y se escanea otra vez. El cobro, las teclas del ticket y sus botones (y «5*») lo esperan: nunca se cobra un
-  «Buscando…». Una palabra sin números que no está en la copia («SOBRE-A») se pregunta primero como código y, si no, se
-  busca como nombre, como antes.
+  lo dice y se escanea otra vez. El cobro, las teclas del ticket (también Ctrl+E y Ctrl+D) y los botones de cada fila (y
+  «5*») lo esperan: nunca se cobra un «Buscando…». Lo que se hace con un renglón (su precio, su descuento, su mayoreo,
+  los botones de su fila) es de ese renglón aunque mientras tanto llegue un «Buscando…»; con una ventana abierta, la
+  selección no se mueve. Una palabra sin números que no está en la copia («SOBRE-A») se pregunta primero como código y,
+  si no, se busca como nombre, como antes.
 - **El cobro lleva la versión de la copia** (y cada línea la de su precio: la pieza y el paquete del mismo producto
   pueden venir de copias distintas). Si el precio o el mayoreo de algo del ticket cambió después, el servicio no cobra y
   contesta con los precios de ahora; la caja pone el ticket al día y dice «Cambió el precio de …: revisa el total y

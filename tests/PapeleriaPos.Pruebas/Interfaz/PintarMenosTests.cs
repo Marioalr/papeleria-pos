@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using PapeleriaPos.Pruebas.Servicio;
 using Xunit.Abstractions;
 
@@ -21,9 +20,7 @@ public sealed class PintarMenosTests(ServicioDePrueba servicio, ITestOutputHelpe
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
+        ArchivosDePrueba.BorrarBase(_baseLocal);
     }
 
     [Fact]

@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using PapeleriaPos.Impresiones.Contratos;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo;
@@ -16,9 +15,8 @@ public sealed class TicketsEnEsperaTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _ruta, _ruta + "-wal", _ruta + "-shm" })
-            File.Delete(archivo);
+        _contingencia?.Cerrar(TimeSpan.FromSeconds(20));
+        ArchivosDePrueba.BorrarBase(_ruta);
     }
 
     /// <summary>Por pieza a $10.00, desde 12 a $8.00, y la caja de 12 a $90.00.</summary>
@@ -124,9 +122,13 @@ public sealed class TicketsEnEsperaTests : IDisposable
 
     private Contingencia? _contingencia;
 
-    /// <summary>La caja como al arrancar: su base local abierta de nuevo (sin revisar la conexión: no hace falta aquí).</summary>
+    /// <summary>
+    /// La caja como al arrancar: la de antes se cerró (como al apagarla) y su base local se abre de nuevo (sin revisar la
+    /// conexión: no hace falta aquí).
+    /// </summary>
     private ClienteCaja CajaReiniciada()
     {
+        _contingencia?.Cerrar(TimeSpan.FromSeconds(20));
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost:9") };
         var http = new HttpClient();
         _contingencia = new Contingencia(new AlmacenLocal(_ruta), http, conexion);

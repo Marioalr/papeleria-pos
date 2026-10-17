@@ -372,8 +372,10 @@
                             {
                                 var linea = Actual.Venta.Lineas[i];
                                 var elegida = i == _seleccion;
-                                <FilaTicket @key="linea" Indice="i" Renglon="Renglon(linea)" Seleccionada="elegida" Acciones="@(elegida ? AccionesDe(linea) : null)"
-                                            AlTocar="Seleccionar" AlPaso="PasoDeFilaAsync" AlAccion="AccionDeFilaAsync" />
+                                @* Cada acción de la fila le dice a la pantalla su renglón, no su número: el número cambia si llega un
+                                   «buscando…» antes que él, y un clic puede salir antes de que la página tome el dibujo nuevo. *@
+                                <FilaTicket @key="linea" Linea="linea" Indice="i" Renglon="Renglon(linea)" Seleccionada="elegida" Acciones="@(elegida ? AccionesDe(linea) : null)"
+                                            AlTocar="SeleccionarAsync" AlPaso="PasoDeFilaAsync" AlAccion="AccionDeFilaAsync" />
                                 @foreach (var buscando in BuscandoDespuesDe(linea))
                                 {
                                     @RenglonBuscando(buscando)
@@ -998,10 +1000,20 @@
     /// <summary>Con mayoreo (un precio por pieza desde más de una), la fila ofrece F11.</summary>
     private static bool TieneEscalas(ProductoVentaDto producto) => producto.Precios.Any(p => p.PresentacionId is null && p.CantidadMinimaMilesimas > 1000);
 
-    /// <summary>Un botón de la fila hace lo mismo que su tecla; el cursor vuelve al cuadro si no se abrió una ventana.</summary>
-    private async Task EnLaFilaAsync(Func<Task> hacer)
+    /// <summary>
+    /// Un botón de la fila hace lo mismo que su tecla, sobre su renglón: el que se tocó, aunque mientras tanto haya llegado
+    /// un «buscando…» (que mueve la selección) o el clic haya salido antes de que la página tomara el dibujo nuevo. Como las
+    /// teclas, espera los escaneos que faltan; si su renglón ya no está en el ticket, no hace nada. El cursor vuelve al
+    /// cuadro si no se abrió una ventana.
+    /// </summary>
+    private async Task EnLaFilaAsync(VentaLinea linea, Func<Task> hacer)
     {
-        await hacer();
+        await _captura.EsperarAsync();
+        if (Actual.Venta.Lineas.IndexOf(linea) is var indice and >= 0)
+        {
+            _seleccion = indice;
+            await hacer();
+        }
         if (_ventana == Ventanas.Ninguna)
             _enfocar = "#codigo";
     }
@@ -1151,7 +1163,7 @@
         if (!_pilotoEleventa)
             yield return new("Abono a la cuenta de un cliente", "efectivo", "Ctrl+B", null, () => Abrir(Ventanas.Abono));
         yield return new("Cambiar precio del artículo", "etiqueta", "Ctrl+E", AccionControlada.CambiarPrecio, AbrirCambioPrecio);
-        yield return new("Descuento", "porcentaje", "Ctrl+D", AccionControlada.Descuento, () => Abrir(Ventanas.Descuento));
+        yield return new("Descuento", "porcentaje", "Ctrl+D", AccionControlada.Descuento, AbrirDescuento);
         yield return new("Ver el mayoreo del artículo", "capas", "F11", null, MayoreoAsync);
         yield return new("Quitar el artículo", "basura", "Supr", AccionControlada.QuitarProducto, BorrarSeleccion);
         yield return new("Poner el ticket en espera", "pausa", "F6", null, PonerEnEsperaAsync);
@@ -1436,13 +1448,8 @@
             Avisar("No hay tickets en espera.", error: false);
     }
 
-    /// <summary>Los botones − y + de la fila: cambian la cantidad de ese renglón.</summary>
-    private async Task PasoCantidadAsync(int indice, int paso)
-    {
-        _seleccion = indice;
-        await CambiarCantidadSeleccion(paso);
-        _enfocar = "#codigo";
-    }
+    /// <summary>Los botones − y + de la fila: cambian la cantidad de ese renglón (<see cref="EnLaFilaAsync"/>).</summary>
+    private Task PasoCantidadAsync(VentaLinea linea, int paso) => EnLaFilaAsync(linea, () => CambiarCantidadSeleccion(paso));
 
     // ── El cobro en el panel: «Pagó con» siempre a la vista ─────────────────
 
@@ -1920,6 +1927,13 @@
     private TicketDto? _ultimo;
     private (string Titulo, string Texto)? _vistaPrevia;
     private Ventanas _ventana;
+
+    /// <summary>
+    /// El renglón de la ventana del precio, del descuento o del mayoreo, desde que se abre hasta que se cierra: lo que se
+    /// escribe en ella va a ese renglón aunque mientras tanto llegue un «buscando…» o se toque otra fila.
+    /// </summary>
+    private VentaLinea? _lineaDeLaVentana;
+
     private DotNetObjectReference<PantallaVenta>? _referencia;
 
     protected override void OnInitialized()
@@ -2555,9 +2569,10 @@
         _menuEspera = false;
 
         // Las teclas que actúan sobre el ticket esperan a que termine el último escaneo (y el cobro en curso): F6 no manda
-        // un escaneo al ticket nuevo, ni + cambia el que se está cobrando. F12 espera en IrAlCobroAsync: dentro del cobro,
-        // que además dice si llegó algo mientras, o antes de pasar el cursor al cobro.
-        if (tecla is "F6" or "F5" or "+" or "-" or "Delete" or "F11" || tecla.StartsWith("Alt+", StringComparison.Ordinal))
+        // un escaneo al ticket nuevo, ni + cambia el que se está cobrando, ni Ctrl+E abre el precio de un renglón mientras
+        // llega el «buscando…» de lo último que se escaneó (que se lleva la selección). F12 espera en IrAlCobroAsync:
+        // dentro del cobro, que además dice si llegó algo mientras, o antes de pasar el cursor al cobro.
+        if (tecla is "F6" or "F5" or "+" or "-" or "Delete" or "F11" or "Ctrl+E" or "Ctrl+D" || tecla.StartsWith("Alt+", StringComparison.Ordinal))
             await _captura.EsperarAsync();
 
         switch (tecla)
@@ -2581,7 +2596,7 @@
             case "F2": await Abrir(Ventanas.Impresiones); break;
             case "Insert" or "Ctrl+P": await Abrir(Ventanas.Comun); break;
             case "Ctrl+E": await AbrirCambioPrecio(); break;
-            case "Ctrl+D": await Abrir(Ventanas.Descuento); break;
+            case "Ctrl+D": await AbrirDescuento(); break;
             case "Ctrl+L": await Abrir(Ventanas.ElegirCliente); break;
             case "Ctrl+B": await Abrir(Ventanas.Abono); break;
             case "Delete": await BorrarSeleccion(); break;
@@ -2924,7 +2939,8 @@
     /// <summary>
     /// El producto que llegó de la caja principal, donde estaba su «buscando…»: debajo de lo que se escaneó antes y arriba de
     /// lo que se escaneó después. Si ya estaba en el ticket, suma a su línea, como cualquier escaneo. Lo seleccionado se
-    /// queda, salvo que la línea nueva quede al final (lo último que se escaneó).
+    /// queda, salvo que la línea nueva quede al final (lo último que se escaneó) y no haya una ventana abierta: el precio,
+    /// el descuento o el mayoreo que se abrió para un renglón no se pasa al que llegó.
     /// </summary>
     private void AgregarEnSuLugar(TicketAbierto ticket, LineaBuscando buscando, ProductoVentaDto producto)
     {
@@ -2955,7 +2971,8 @@
         if (ticket != Actual)
             return;
         (_cobrado, _avisoDelCobro) = (null, null);
-        _seleccion = seleccionada is null || lineas[^1] == linea ? lineas.IndexOf(linea) : lineas.IndexOf(seleccionada);
+        var seQueda = seleccionada is not null && (_ventana != Ventanas.Ninguna || lineas[^1] != linea);
+        _seleccion = seQueda ? lineas.IndexOf(seleccionada!) : lineas.IndexOf(linea);
         _ = Js.MostrarAsync($"#linea-{_seleccion}");
     }
 
@@ -2999,7 +3016,13 @@
 
     // ── Renglones ───────────────────────────────────────────────────────────
 
-    private void Seleccionar(int indice) => _seleccion = indice;
+    /// <summary>Un clic en la fila la selecciona: la suya, después de los escaneos que faltan (<see cref="EnLaFilaAsync"/>).</summary>
+    private async Task SeleccionarAsync(VentaLinea linea)
+    {
+        await _captura.EsperarAsync();
+        if (Actual.Venta.Lineas.IndexOf(linea) is var indice and >= 0)
+            _seleccion = indice;
+    }
 
     /// <summary>Lo que dice el renglón de una línea (FilaTicket): con lo mismo que la vez pasada, no se vuelve a pintar.</summary>
     private FilaTicket.Datos Renglon(VentaLinea linea)
@@ -3037,16 +3060,16 @@
     private FilaTicket.MarcaDeAccion MarcaDe(AccionControlada accion, string tecla) =>
         new(tecla, Permiso(accion) is { Nivel: NivelPermiso.RequiereAutorizacion } p ? Quien(p) : null);
 
-    /// <summary>Los botones − y + de un renglón.</summary>
-    private Task PasoDeFilaAsync((int Indice, int Paso) paso) => PasoCantidadAsync(paso.Indice, paso.Paso);
+    /// <summary>Los botones − y + de un renglón: el suyo.</summary>
+    private Task PasoDeFilaAsync((VentaLinea Linea, int Paso) paso) => PasoCantidadAsync(paso.Linea, paso.Paso);
 
-    /// <summary>Un botón de las acciones del renglón elegido: lo mismo que su tecla.</summary>
-    private Task AccionDeFilaAsync(FilaTicket.Accion accion) => accion switch
+    /// <summary>Un botón de las acciones de un renglón: lo mismo que su tecla, sobre ese renglón (<see cref="EnLaFilaAsync"/>).</summary>
+    private Task AccionDeFilaAsync((VentaLinea Linea, FilaTicket.Accion Accion) accion) => accion.Accion switch
     {
-        FilaTicket.Accion.Precio => EnLaFilaAsync(AbrirCambioPrecio),
-        FilaTicket.Accion.Descuento => EnLaFilaAsync(() => Abrir(Ventanas.Descuento)),
-        FilaTicket.Accion.Mayoreo => EnLaFilaAsync(MayoreoAsync),
-        _ => EnLaFilaAsync(BorrarSeleccion),
+        FilaTicket.Accion.Precio => EnLaFilaAsync(accion.Linea, AbrirCambioPrecio),
+        FilaTicket.Accion.Descuento => EnLaFilaAsync(accion.Linea, AbrirDescuento),
+        FilaTicket.Accion.Mayoreo => EnLaFilaAsync(accion.Linea, MayoreoAsync),
+        _ => EnLaFilaAsync(accion.Linea, BorrarSeleccion),
     };
 
     private async Task MoverSeleccion(int paso)
@@ -3131,7 +3154,7 @@
                 Avisar("A esa cantidad no hay mayoreo: F11 sin escribir nada muestra desde cuánto.", error: false);
             return;
         }
-        await Abrir(Ventanas.Mayoreo);
+        await Abrir(Ventanas.Mayoreo, linea);
     }
 
     /// <summary>"Mayoreo desde 12", o "desde 24 pzas" en un renglón de paquetes, o "desde 10 m" a granel.</summary>
@@ -3541,6 +3564,9 @@
 
     // ── Descuento (Ctrl+D) ──────────────────────────────────────────────────
 
+    /// <summary>Al renglón seleccionado (la ventana se queda con él, <see cref="Abrir"/>) o, sin renglón, a todo el ticket.</summary>
+    private Task AbrirDescuento() => Abrir(Ventanas.Descuento, LineaSeleccionada);
+
     private async Task DescuentoAplicadoAsync()
     {
         await Cerrar();
@@ -3760,15 +3786,24 @@
         {
             case null: Avisar("Selecciona un renglón (flechas) para cambiar su precio."); break;
             case { VarianteId: null }: Avisar("El artículo común ya lleva el precio que se escribió: bórralo y agrégalo de nuevo."); break;
-            default: await Abrir(Ventanas.CambiarPrecio); break;
+            case var linea: await Abrir(Ventanas.CambiarPrecio, linea); break;
         }
     }
 
-    /// <summary>Queda en la venta con su autorización; el servicio la revisa y la gasta al cobrar.</summary>
+    /// <summary>
+    /// Queda en la venta con su autorización; el servicio la revisa y la gasta al cobrar. Es del renglón con el que se abrió
+    /// la ventana (<see cref="_lineaDeLaVentana"/>), aunque mientras tanto se haya seleccionado otro; si ese renglón ya no
+    /// está en el ticket, no se cambia nada.
+    /// </summary>
     private async Task PrecioCambiadoAsync((long Precio, Guid? AutorizacionId) cambio)
     {
-        var linea = LineaSeleccionada!;
+        var linea = _lineaDeLaVentana;
         await Cerrar();
+        if (linea is null || !Actual.Venta.Lineas.Contains(linea))
+        {
+            Avisar("Ese artículo ya no está en el ticket: no se cambió ningún precio.");
+            return;
+        }
         try
         {
             Actual.Venta.CambiarPrecio(linea, cambio.Precio, cambio.AutorizacionId);
@@ -3881,7 +3916,7 @@
                 <MovimientoEfectivo Tipo="tipo" TurnoId="Turno.Id" UsuarioId="Sesion.UsuarioId" AlTerminar="MovimientoRegistrado" />
             </Ventana>
             break;
-        case Ventanas.Mayoreo when LineaSeleccionada is { VarianteId: { } varianteMayoreo } lineaMayoreo
+        case Ventanas.Mayoreo when _lineaDeLaVentana is { VarianteId: { } varianteMayoreo } lineaMayoreo
                                    && Actual.Productos.TryGetValue(varianteMayoreo, out var productoMayoreo):
             <Ventana Titulo="Mayoreo" AlCerrar="Cerrar">
                 <EscalasMayoreo Producto="productoMayoreo" SucursalId="Caja.SucursalId" PresentacionId="lineaMayoreo.PresentacionId" Cantidad="lineaMayoreo.Cantidad"
@@ -3928,9 +3963,10 @@
                 <DevolverCancelar Caja="Caja" Sesion="Sesion" FolioInicial="@_folioDevolucion" AlTerminar="DevolucionHechaAsync" />
             </Ventana>
             break;
-        case Ventanas.CambiarPrecio when LineaSeleccionada is { } seleccionada:
-            <Ventana Titulo="Cambiar precio" AlCerrar="Cerrar">
-                <CambiarPrecio Descripcion="@seleccionada.Descripcion" PrecioActualCentavos="seleccionada.PrecioCentavos" Cantidad="seleccionada.Cantidad"
+        case Ventanas.CambiarPrecio when _lineaDeLaVentana is { } lineaPrecio:
+            @* @key: el precio de otro renglón empieza en blanco, no con lo que se escribió para este. *@
+            <Ventana @key="lineaPrecio" Titulo="Cambiar precio" AlCerrar="Cerrar">
+                <CambiarPrecio Descripcion="@lineaPrecio.Descripcion" PrecioActualCentavos="lineaPrecio.PrecioCentavos" Cantidad="lineaPrecio.Cantidad"
                                Caja="Caja" Sesion="Sesion" AlCambiar="PrecioCambiadoAsync" />
             </Ventana>
             break;
@@ -3946,7 +3982,7 @@
             break;
         case Ventanas.Descuento:
             <Ventana Titulo="Descuento" AlCerrar="Cerrar">
-                <Descuento Venta="Actual.Venta" Linea="LineaSeleccionada" Caja="Caja" Sesion="Sesion" ClienteDelTicket="Actual.Cliente"
+                <Descuento Venta="Actual.Venta" Linea="_lineaDeLaVentana" Caja="Caja" Sesion="Sesion" ClienteDelTicket="Actual.Cliente"
                            AlTerminar="DescuentoAplicadoAsync" />
             </Ventana>
             break;
@@ -3995,7 +4031,11 @@
 
     // ── Ventanas y avisos ───────────────────────────────────────────────────
 
-    private async Task Abrir(Ventanas ventana)
+    /// <param name="linea">
+    /// El renglón del precio, del descuento o del mayoreo: la ventana es suya hasta cerrarla, aunque mientras tanto llegue un
+    /// «buscando…» o se toque otra fila.
+    /// </param>
+    private async Task Abrir(Ventanas ventana, VentaLinea? linea = null)
     {
         _menuUsuario = false;
         _menuEspera = false;
@@ -4004,6 +4044,7 @@
         if (_ventana != ventana)
             DejarVentana();
         _ventana = ventana;
+        _lineaDeLaVentana = linea;
         _avisoDelPanel = null;
         await AvisarTeclasAsync();
         StateHasChanged();
@@ -4031,6 +4072,7 @@
     {
         DejarVentana();
         _ventana = Ventanas.Ninguna;
+        _lineaDeLaVentana = null;
         _avisoDelPanel = null;
         await AvisarTeclasAsync();
         StateHasChanged();

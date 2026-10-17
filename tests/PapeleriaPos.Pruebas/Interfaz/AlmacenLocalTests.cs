@@ -11,9 +11,7 @@ public sealed class AlmacenLocalTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _ruta, _ruta + "-wal", _ruta + "-shm" })
-            File.Delete(archivo);
+        ArchivosDePrueba.BorrarBase(_ruta);
     }
 
     [Fact]

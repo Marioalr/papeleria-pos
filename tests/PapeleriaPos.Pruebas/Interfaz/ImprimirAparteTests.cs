@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Components.Web;
-using Microsoft.Data.Sqlite;
 using PapeleriaPos.Impresion;
 using PapeleriaPos.Pruebas.Impresion;
 using PapeleriaPos.Pruebas.Servicio;
@@ -18,9 +17,7 @@ public sealed class ImprimirAparteTests(ServicioDePrueba servicio) : IClassFixtu
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
+        ArchivosDePrueba.BorrarBase(_baseLocal);
     }
 
     private static async Task<string> CobrarAsync(VentaConCopia v, string codigo)

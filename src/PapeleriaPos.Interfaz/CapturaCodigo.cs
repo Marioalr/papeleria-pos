@@ -82,9 +82,9 @@ public sealed class CapturaCodigo
 
     /// <summary>
     /// Termina cuando terminan los escaneos en cola (y el cobro, si hay uno) y lo que se pregunta a la caja principal. Las
-    /// teclas que actúan sobre el ticket (F6, F5, + y −, Supr, F11, y F12 antes de pasar el cursor al cobro) lo esperan: F6
-    /// no manda un escaneo al ticket nuevo, ni + cambia el ticket que se está cobrando, ni F12 se pierde si la primera línea
-    /// sigue en camino.
+    /// teclas que actúan sobre el ticket (F6, F5, + y −, Supr, F11, Ctrl+E, Ctrl+D, y F12 antes de pasar el cursor al
+    /// cobro) y los botones de cada fila lo esperan: F6 no manda un escaneo al ticket nuevo, ni + cambia el ticket que se
+    /// está cobrando, ni F12 se pierde si la primera línea sigue en camino.
     /// </summary>
     public async Task EsperarAsync()
     {
