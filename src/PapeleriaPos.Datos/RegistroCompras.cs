@@ -15,9 +15,11 @@ namespace PapeleriaPos.Datos;
 /// F4 Inventario, compras (docs/fase-2-inventario.md, entrega 2): quien recibe cuenta la mercancía a ciegas; quien
 /// captura los costos pasa la nota del proveedor y cierra la compra. Al cerrar, lo contado entra al kardex con el costo
 /// de la nota (el costo promedio se ajusta solo), cada proveedor guarda su último costo, las diferencias quedan para
-/// reclamarlas y, si un producto queda debajo del margen mínimo, se sugiere precio: el precio no cambia solo.
+/// reclamarlas y, si un producto queda debajo del margen mínimo, se sugiere precio: el precio no cambia solo. En el piloto
+/// con eleventa (<paramref name="lecturaDeEleventa"/>) no se abre, no se cuenta lo recibido ni se cierra una compra: el
+/// inventario se lleva en eleventa (<see cref="TrastiendaEnElPiloto"/>). Lo que quedó abierto se consulta y se cancela.
 /// </summary>
-public sealed class RegistroCompras(PosDbContext db)
+public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = false)
 {
     /// <summary>Un producto nuevo de la nota necesita departamento: se dan de alta en Productos › Departamentos.</summary>
     public const string SinDepartamentos =
@@ -105,6 +107,7 @@ public sealed class RegistroCompras(PosDbContext db)
     public async Task<CompraDto> AbrirAsync(SolicitudAbrirCompra s, CancellationToken ct = default)
     {
         await RequerirAsync(s.UsuarioId, s.SucursalId, AccionControlada.RecibirMercancia, "No tienes permiso para recibir mercancía.", ct);
+        TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
         if (await db.Proveedores.FindAsync([s.ProveedorId], ct) is not { Activo: true })
             throw new ArgumentException("Elige el proveedor.");
         var compra = new Compra
@@ -122,6 +125,7 @@ public sealed class RegistroCompras(PosDbContext db)
     {
         var compra = await CompraAsync(compraId, ct);
         await RequerirAsync(s.UsuarioId, compra.SucursalId, AccionControlada.RecibirMercancia, "No tienes permiso para recibir mercancía.", ct);
+        TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
         var presentacion = await PresentacionAsync(s.VarianteId, s.PresentacionId, ct);
         var cantidad = new Cantidad(s.CantidadMilesimas);
         if (!presentacion.Variante!.AdmiteCantidad(cantidad.Por(presentacion.Factor)))
@@ -139,6 +143,7 @@ public sealed class RegistroCompras(PosDbContext db)
     {
         var compra = await CompraAsync(compraId, ct);
         await RequerirAsync(s.UsuarioId, compra.SucursalId, AccionControlada.RecibirMercancia, "No tienes permiso para recibir mercancía.", ct);
+        TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
         var cantidad = new Cantidad(s.CantidadMilesimas);
         if (!cantidad.EsEntera)
             throw new ArgumentException("Lo que no está en el catálogo se cuenta en piezas enteras.");
@@ -549,6 +554,7 @@ public sealed class RegistroCompras(PosDbContext db)
     {
         var compra = await CompraAsync(compraId, ct);
         await RequerirCosteoAsync(usuarioId, compra.SucursalId, ct);
+        TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
         var resumen = (await DetalleAsync(compraId, usuarioId, ct))!;
         compra.Cerrar(usuarioId, Ahora);
 

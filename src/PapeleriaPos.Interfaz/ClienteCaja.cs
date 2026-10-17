@@ -486,6 +486,13 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<DepartamentosDto> ReactivarDepartamentoAsync(Guid departamentoId, SolicitudReactivarDepartamento solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<DepartamentosDto>($"api/catalogo/departamentos/{departamentoId}/reactivar", solicitud));
 
+    /// <summary>
+    /// En el piloto con eleventa (con su lectura prendida), lo que dicen Productos e Inventario: de los productos de eleventa
+    /// no se cambia lo que pone la lectura, y no se ofrece lo que mueve existencias. Vacíos, fuera del piloto.
+    /// </summary>
+    public Task<TrastiendaEnElPilotoDto> TrastiendaEnElPilotoAsync() =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<TrastiendaEnElPilotoDto>("api/catalogo/piloto"))!);
+
     // ── Compras (F4, solo con la caja principal) ──
 
     public Task<List<ProveedorDto>> ProveedoresAsync(bool inactivos = false) =>

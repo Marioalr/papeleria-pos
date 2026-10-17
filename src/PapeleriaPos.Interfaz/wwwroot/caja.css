@@ -1156,6 +1156,10 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-depto-pasar div { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .vn-depto-pasar small { display: block; margin-top: 6px; font-size: 12.5px; color: var(--vn-suave); }
 .vn-depto-error > td { padding-top: 2px; }
+/* El piloto con eleventa en la ficha: los códigos de la pieza que se quedan (los de eleventa) y sus precios, sin cambiar */
+.vn-adentro .codigos-fijos { display: inline-flex; flex-wrap: wrap; gap: 4px; margin: 0 6px 4px 0; vertical-align: middle; }
+.vn-adentro .codigos-fijos code { font-size: 13px; padding: 1px 6px; border: 1px solid var(--vn-linea); border-radius: 6px; background: var(--vn-renglon); color: var(--vn-suave); }
+.vn-adentro tr.de-eleventa td { color: var(--vn-suave); }
 
 /* Inventario por tareas: una tarjeta por tarea, solo las de quien entró */
 .vn-hub { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding: 22px 26px; }
