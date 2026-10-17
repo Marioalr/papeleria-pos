@@ -84,6 +84,12 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<Busqueda> Busquedas => Set<Busqueda>();
     public DbSet<Sinonimo> Sinonimos => Set<Sinonimo>();
 
+    /// <summary>Lo que se señala (entrega 13): los exhibidores y las temporadas, sus lugares y lo acomodado en ellos.</summary>
+    public DbSet<Exhibidor> Exhibidores => Set<Exhibidor>();
+
+    public DbSet<LugarExhibidor> LugaresExhibidor => Set<LugarExhibidor>();
+    public DbSet<ProductoExhibido> ProductosExhibidos => Set<ProductoExhibido>();
+
     /// <summary>Lo quitado de lo que lleva la copia de las cajas, con su versión (entrega 5, parte 2): lo escribe la base al guardar.</summary>
     public DbSet<Borrado> Borrados => Set<Borrado>();
 

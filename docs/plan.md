@@ -735,6 +735,47 @@ servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-ca
 - **Inventario:** no se ofrece lo que mueve existencias (recibir compras, los conteos, ajustes, mermas y abrir un
   paquete): el inventario se lleva en eleventa. Las órdenes, el sugerido, las etiquetas y la hoja de códigos, sí.
 
+**Avance (2026-10-17), entrega 13, parte 1: lo que se señala,** como en la
+[propuesta](propuesta-interfaz.md#lo-que-se-señala-exhibidos-y-temporada) y el
+[prototipo](propuesta-interfaz/prototipo.html), todavía sin las fotos (en su lugar, las iniciales del producto):
+- **Exhibidores y temporadas, en la base:** cada uno con sus lugares de arriba abajo («Repisa de arriba», «Mesa de la
+  entrada») y los productos de cada lugar de izquierda a derecha. La temporada tiene un día y mes de inicio y de fin que
+  se repiten cada año; Navidad cruza el año. La migración deja «Mostrador», con «Repisa de arriba» y «Repisa de abajo»
+  vacías, y las temporadas del dueño, cada una con «Mesa de la entrada»: 15 de septiembre (del 1 al 16 de septiembre),
+  Todos Santos (del 16 de septiembre al 5 de noviembre), Navidad (del 20 de noviembre al 1 de enero) y Primavera, sin
+  fechas: sin fechas no sale en la venta. El 16 de septiembre corren dos.
+- **Ctrl+M en la venta** (también en la barra de teclas y en «/»): un panel a la derecha, como los demás, sin tapar el
+  ticket. Primero las temporadas que corren hoy y luego los exhibidores, cada lugar con sus productos: el lugar de la
+  foto, el nombre y el precio; la mesa de la temporada de 3 en 3, más grandes, y la vitrina de 4 en 4. Tocar uno lo
+  agrega; con un número antes en el cuadro, esa cantidad. El panel se cierra y queda el total, listo para F12. El cursor
+  se queda en el cuadro de captura: las flechas eligen la pieza, Tab cambia de exhibidor o temporada y Enter agrega la
+  elegida. Lo que escanea el lector con el panel abierto entra al ticket como siempre, nunca como cantidad. Sale de la
+  copia de la caja, sin la red: también sin conexión.
+- **En el verificador (F9):** Ctrl+M (o su botón) abre el mostrador con el cuadro en ámbar; tocar una pieza, o escanear,
+  solo enseña su precio y su existencia, y «Agregarlo al ticket» la agrega.
+- **El chip de la temporada:** mientras corre, arriba de la venta, con su nombre; abre Ctrl+M en ella. Al terminar sus
+  fechas se quita solo (se revisa cada minuto y cuando cambia la copia). En las páginas de atrás no sale.
+- **Acomodar,** en el mismo Ctrl+M, para quien tiene «Productos, precios y etiquetas»: se busca por nombre o se escanea
+  y Enter, y entra después de la pieza elegida («Agregar aquí» lo pone al final de un lugar); Shift y las flechas lo
+  mueven, Supr lo quita. Cada cambio se guarda al momento en la caja principal y llega a todas las cajas. Al acomodar
+  también salen las temporadas que no corren, para prepararlas antes.
+- **Configuración › Mostrador y temporadas:** «Exhibidores» y «Temporadas», con el mismo permiso: nuevo, el nombre, las
+  fechas («del 16 de septiembre al 5 de noviembre», «16/9 al 5/11» o «el 30 de abril») y los lugares (agregar, cambiar
+  el nombre, subir, bajar y quitar: sus productos pasan al lugar de al lado). Quitar un exhibidor o una temporada lo
+  oculta. La bitácora anota de cada exhibidor y temporada el alta, el nombre, las fechas y si se quitó; el acomodo y los
+  lugares, no. Sin conexión no se cambia: se dice.
+- **En la copia de cada caja:** suben la versión del catálogo y llegan con lo que cambió, toda la lista cuando cambia
+  algo (es chica). La copia pasa al formato 3: una caja cuya copia no los trae baja la completa una sola vez. La prueba
+  de que la copia con los cambios encima queda igual que la completa ya los incluye.
+- **En el piloto con eleventa** se acomoda igual: el acomodo es solo del POS y no toca lo que trae la lectura.
+- **La base de la prueba** (`preparar-prueba`) ya trae productos en el mostrador y en cada temporada.
+- **Decidido mientras tanto, por revisar con el dueño:** acomodar en Ctrl+M (como el prototipo) y no en Productos; el
+  permiso «Productos, precios y etiquetas», sin autorización; los nombres de los lugares que deja la migración; que sea
+  el mismo en todas las cajas y sucursales; y que con el panel abierto un número de hasta 4 cifras y Enter sea la
+  cantidad de la pieza elegida, y lo demás, un escaneo.
+- **Para las partes que siguen:** las fotos (desde la app Android o la PC), la hoja de la temporada y las tarjetas de
+  precio, empezar y terminar la temporada con el precio del año pasado, y lo más preguntado.
+
 #### Después: el piloto en la caja 2
 
 Mientras se arma el puente con eleventa, la versión unicaja sigue creciendo con la venta completa (entrega 3) y la base

@@ -786,8 +786,10 @@ public sealed class Contingencia
                 await BajarCopiaAsync();
             return;
         }
+        // Sin los exhibidores, una copia de este formato la guardó una versión de esta caja que todavía no los conocía (y los
+        // cambios solo los traen cuando cambian): se baja completa una vez (entrega 13).
         if (copia is null || copia.Base != principal.Base || copia.Formato != CopiaAlDia.Formato || copia.VersionExistencias is not { } existencias
-            || Ahora - _completaDesdeUtc > CopiaCompletaCada)
+            || copia.Exhibidores is null || Ahora - _completaDesdeUtc > CopiaCompletaCada)
         {
             await BajarCopiaAsync();
             return;

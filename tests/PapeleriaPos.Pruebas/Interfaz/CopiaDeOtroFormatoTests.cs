@@ -31,7 +31,8 @@ public sealed class CopiaDeOtroFormatoTests(ServicioDePrueba servicio) : IClassF
 
     /// <summary>
     /// La caja principal en otro formato: la de la entrega 5, parte 2 (el 1: no lo dice en el latido ni en el aviso, y su copia
-    /// no trae lo de la búsqueda) o una más nueva que esta caja (el 3, que sí lo dice).
+    /// no trae lo de la búsqueda), la de la parte 3 (el 2: sin los exhibidores ni las temporadas de la entrega 13) o una más
+    /// nueva que esta caja (el 4, que sí lo dice).
     /// </summary>
     private sealed class CajaPrincipalDeOtroFormato(int formato, HttpMessageHandler interno) : DelegatingHandler(interno)
     {
@@ -51,6 +52,8 @@ public sealed class CopiaDeOtroFormatoTests(ServicioDePrueba servicio) : IClassF
                         foreach (var nuevo in new[] { "vendidos", "elegidos", "versionVendidos", "versionElegidos" })
                             json.Remove(nuevo);
                     }
+                    if (formato < 3)
+                        json.Remove("exhibidores");
                 }, cancellationToken);
             }
             else if (ruta.EndsWith("/avisos", StringComparison.Ordinal) && respuesta.IsSuccessStatusCode)
@@ -147,13 +150,14 @@ public sealed class CopiaDeOtroFormatoTests(ServicioDePrueba servicio) : IClassF
     }
 
     /// <summary>
-    /// Con una caja principal de antes (el formato 1) o una más nueva (el 3): la copia completa baja una vez, y los latidos sin
-    /// cambios ya no la vuelven a bajar ni piden cambios. Cuando cambia un precio (sube la versión del catálogo), la baja otra vez,
-    /// una sola, con el precio nuevo.
+    /// Con una caja principal de antes (los formatos 1 y 2) o una más nueva (el 4): la copia completa baja una vez, y los
+    /// latidos sin cambios ya no la vuelven a bajar ni piden cambios. Cuando cambia un precio (sube la versión del catálogo), la
+    /// baja otra vez, una sola, con el precio nuevo.
     /// </summary>
     [Theory]
     [InlineData(1)]
-    [InlineData(3)]
+    [InlineData(2)]
+    [InlineData(4)]
     public async Task Con_otro_formato_la_copia_completa_baja_solo_cuando_cambia_el_catalogo(int formato)
     {
         var c = await AbrirAsync(formato);
@@ -179,7 +183,8 @@ public sealed class CopiaDeOtroFormatoTests(ServicioDePrueba servicio) : IClassF
     /// </summary>
     [Theory]
     [InlineData(1)]
-    [InlineData(3)]
+    [InlineData(2)]
+    [InlineData(4)]
     public async Task Con_otro_formato_los_avisos_no_bajan_la_copia_completa(int formato)
     {
         var c = await AbrirAsync(formato);
@@ -242,5 +247,37 @@ public sealed class CopiaDeOtroFormatoTests(ServicioDePrueba servicio) : IClassF
         Assert.True(otra.Foto!.SeBusca);
         // La caja principal dice su formato en el latido.
         Assert.Equal(CopiaAlDia.Formato, (await servicio.Fabrica.CreateClient().GetFromJsonAsync<EstadoServicioDto>("api/estado"))!.FormatoCopia);
+    }
+
+    /// <summary>
+    /// Una copia del formato de ahora (el 3) sin los exhibidores la guardó una versión de esta caja que todavía no los conocía,
+    /// con una caja principal ya actualizada (los cambios solo los traen cuando cambian): se baja completa una sola vez, y
+    /// desde ahí Ctrl+M y el chip de la temporada los tienen (entrega 13).
+    /// </summary>
+    [Fact]
+    public async Task Una_copia_de_este_formato_sin_los_exhibidores_se_cambia_una_sola_vez()
+    {
+        var caja = (await servicio.Fabrica.CreateClient().GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.First();
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
+        var primera = new Contingencia(new AlmacenLocal(_baseLocal), new HttpClient(new RedDePrueba(servicio.Fabrica.Server.CreateHandler())), conexion);
+        await primera.LatidoAsync();
+        var paquete = primera.Paquete!;
+        primera.Cerrar(TimeSpan.FromSeconds(10));
+        Assert.NotNull(paquete.Exhibidores);
+        await new AlmacenLocal(_baseLocal).GuardarCopiaAsync(JsonSerializer.SerializeToUtf8Bytes(paquete with { Exhibidores = null }, AlmacenLocal.Json));
+
+        var red = new RedDePrueba(servicio.Fabrica.Server.CreateHandler());
+        var otra = new Contingencia(new AlmacenLocal(_baseLocal), new HttpClient(red), new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id });
+        _abiertas.Add(otra);
+        var cliente = new ClienteCaja(new HttpClient(red), conexion, otra);
+        await otra.CopiaLeida;
+        Assert.Null(cliente.ExhibidoresDeLaCopia());
+
+        await otra.LatidoAsync();
+        await otra.LatidoAsync();
+        await otra.LatidoAsync();
+
+        Assert.Equal(1, red.Cuantas($"/api/cajas/{caja.Id}/paquete"));
+        Assert.Equal(paquete.Exhibidores!.Select(e => e.Nombre), cliente.ExhibidoresDeLaCopia()!.Select(e => e.Nombre));
     }
 }

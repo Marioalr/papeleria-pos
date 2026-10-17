@@ -1135,6 +1135,80 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
             return new object();
         });
 
+    // ── Lo que se señala: el mostrador y las temporadas (entrega 13) ─────────
+
+    /// <summary>
+    /// Lo último que contestó la caja principal de los exhibidores y las temporadas (al acomodar en Ctrl+M o al cambiarlos en la
+    /// Configuración): mientras sea tan nuevo como la copia, manda sobre ella. Así lo que se acaba de acomodar se ve igual al
+    /// volver a abrir Ctrl+M, sin esperar a que la copia se ponga al día (un segundo, con el aviso).
+    /// </summary>
+    private MostradorDto? _mostradorReciente;
+
+    /// <summary>
+    /// Los exhibidores y las temporadas para Ctrl+M y el chip de la temporada, sin la red: los de la copia de esta caja (o lo
+    /// que acaba de contestar la caja principal, si es tan nuevo como ella). Vacío (null) sin una copia que los traiga (el
+    /// navegador sin base local, la caja recién instalada, o mientras se lee la copia al abrir): entonces se le pregunta a la
+    /// caja principal (<see cref="MostradorAsync"/>).
+    /// </summary>
+    public IReadOnlyList<ExhibidorDto>? ExhibidoresDeLaCopia()
+    {
+        // Sin esperar: mientras se lee la copia al abrir, como si no la hubiera.
+        var copia = contingencia is { CopiaLeida.IsCompleted: true } ? contingencia.Paquete : null;
+        return _mostradorReciente is { } reciente && (copia?.Exhibidores is null || reciente.Version >= copia.Version)
+            ? reciente.Exhibidores
+            : copia?.Exhibidores;
+    }
+
+    /// <summary>
+    /// Los exhibidores y las temporadas como los tiene la caja principal (la Configuración, «Acomodar», la caja sin copia). Sin
+    /// conexión, los de la copia de esta caja, si los trae.
+    /// </summary>
+    public async Task<MostradorDto> MostradorAsync()
+    {
+        var mostrador = await ConRespaldoAsync(async () => (await _http.GetAsync<MostradorDto>("api/mostrador"))!,
+            l => l.Paquete is { Exhibidores: { } exhibidores } copia
+                ? new MostradorDto(copia.Version, exhibidores)
+                : throw new InvalidOperationException("Esta caja todavía no tiene el mostrador en su copia: se ve cuando vuelva la conexión."));
+        return Recordar(mostrador);
+    }
+
+    /// <summary>Un exhibidor o una temporada nuevo (Configuración › Mostrador y temporadas).</summary>
+    public Task<MostradorDto> NuevoExhibidorAsync(SolicitudNuevoExhibidor solicitud) =>
+        CambiarMostradorAsync(() => _http.PostAsync<MostradorDto>("api/mostrador", solicitud));
+
+    /// <summary>Su nombre o, de una temporada, sus fechas.</summary>
+    public Task<MostradorDto> CambiarExhibidorAsync(Guid exhibidorId, SolicitudCambiarExhibidor solicitud) =>
+        CambiarMostradorAsync(() => _http.PutAsync<MostradorDto>($"api/mostrador/{exhibidorId}", solicitud));
+
+    public Task<MostradorDto> QuitarExhibidorAsync(Guid exhibidorId, SolicitudMostrador solicitud) =>
+        CambiarMostradorAsync(() => _http.PostAsync<MostradorDto>($"api/mostrador/{exhibidorId}/quitar", solicitud));
+
+    public Task<MostradorDto> AgregarLugarAsync(Guid exhibidorId, SolicitudLugar solicitud) =>
+        CambiarMostradorAsync(() => _http.PostAsync<MostradorDto>($"api/mostrador/{exhibidorId}/lugares", solicitud));
+
+    public Task<MostradorDto> CambiarLugarAsync(Guid lugarId, SolicitudLugar solicitud) =>
+        CambiarMostradorAsync(() => _http.PutAsync<MostradorDto>($"api/mostrador/lugares/{lugarId}", solicitud));
+
+    public Task<MostradorDto> MoverLugarAsync(Guid lugarId, SolicitudMoverLugar solicitud) =>
+        CambiarMostradorAsync(() => _http.PostAsync<MostradorDto>($"api/mostrador/lugares/{lugarId}/mover", solicitud));
+
+    public Task<MostradorDto> QuitarLugarAsync(Guid lugarId, SolicitudMostrador solicitud) =>
+        CambiarMostradorAsync(() => _http.PostAsync<MostradorDto>($"api/mostrador/lugares/{lugarId}/quitar", solicitud));
+
+    /// <summary>Ctrl+M › Acomodar: cómo quedan los productos de uno o más lugares.</summary>
+    public Task<MostradorDto> AcomodarAsync(SolicitudAcomodo solicitud) =>
+        CambiarMostradorAsync(() => _http.PutAsync<MostradorDto>("api/mostrador/acomodo", solicitud));
+
+    /// <summary>Lo cambia la caja principal, con quien entró: sin conexión no se puede (se dice), y lo que contesta se recuerda.</summary>
+    private async Task<MostradorDto> CambiarMostradorAsync(Func<Task<MostradorDto>> cambio) => Recordar(await ConRespaldoAsync(cambio));
+
+    private MostradorDto Recordar(MostradorDto mostrador)
+    {
+        if (_mostradorReciente is not { } antes || mostrador.Version >= antes.Version)
+            _mostradorReciente = mostrador;
+        return mostrador;
+    }
+
     private static T Local<T>(Contingencia contingencia, Func<Contingencia, T>? sinConexion)
     {
         if (sinConexion is null)

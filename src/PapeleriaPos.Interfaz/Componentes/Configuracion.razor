@@ -504,6 +504,29 @@
                 },
             ],
         },
+        new("mostrador", "Mostrador y temporadas", "capas")
+        {
+            Descripcion = "Lo que el cliente señala, en Ctrl+M: cada exhibidor y cada temporada con sus lugares, en el mismo acomodo que en la "
+                + "tienda. La temporada sale primero, con su chip arriba, mientras corre. Los productos se acomodan en la venta: Ctrl+M › Acomodar.",
+            Ajustes =
+            [
+                new("exhibidores", "Exhibidores")
+                {
+                    Ayuda = "Lo que está a la vista todo el año (la vitrina del mostrador, la pared) y sus lugares, de arriba abajo.",
+                    Permiso = AccionControlada.EditarCatalogo,
+                    Palabras = "mostrador vitrina repisa lugar Ctrl+M exhibido",
+                    Bloque = @<MostradorConfiguracion Caja="Caja" Sesion="Sesion" Tipo="TipoExhibidor.Exhibidor" AlGuardar="MarcarGuardado" AlNoGuardar="NoGuardadoAsync" />,
+                },
+                new("temporadas", "Temporadas")
+                {
+                    Ayuda = "Lo que se vende unas semanas al año, con sus fechas, que se repiten cada año: mientras corre, sale primero en Ctrl+M y "
+                        + "con su chip arriba de la venta; al terminar, se oculta sola. Sin fechas no sale.",
+                    Permiso = AccionControlada.EditarCatalogo,
+                    Palabras = "temporada fechas navidad todos santos muertos septiembre primavera chip Ctrl+M",
+                    Bloque = @<MostradorConfiguracion Caja="Caja" Sesion="Sesion" Tipo="TipoExhibidor.Temporada" AlGuardar="MarcarGuardado" AlNoGuardar="NoGuardadoAsync" />,
+                },
+            ],
+        },
         new("efectivo", "Efectivo y corte", "contar")
         {
             Descripcion = "El dinero de la caja y los turnos.",
@@ -998,6 +1021,7 @@
         ("Ctrl+D", "Descuento"),
         ("Ctrl+L", "Elegir el cliente del ticket"),
         ("Ctrl+B", "Abono a la cuenta de un cliente"),
+        ("Ctrl+M", "El mostrador y la temporada: lo que el cliente señala"),
         ("Ctrl+Q", "Cotizar un PDF"),
         ("Ctrl+U", "Cambiar de usuario"),
         ($"Alt+1 a Alt+{Rapido.Maximo}", "Los rápidos; con un número antes, esa cantidad"),

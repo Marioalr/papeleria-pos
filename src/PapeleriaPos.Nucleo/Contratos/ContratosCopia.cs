@@ -28,8 +28,8 @@ public sealed record TicketLocalDto(IReadOnlyList<string> Encabezado, IReadOnlyL
 /// Lo que cambió en la copia de una caja desde su versión (<c>api/cajas/{id}/cambios</c>): los productos que cambiaron o
 /// llegaron, completos y con su existencia; los que ya no van; las existencias que cambiaron; y, de lo demás que lleva la
 /// copia, solo lo que cambió, completo (los usuarios con sus permisos, la caja, el ticket, la configuración, los clientes,
-/// las marcas, los sinónimos, lo más vendido) o solo lo nuevo (lo que esta caja eligió en la búsqueda). Lo que no cambió
-/// viene vacío.
+/// las marcas, los sinónimos, lo más vendido, los exhibidores y las temporadas) o solo lo nuevo (lo que esta caja eligió en
+/// la búsqueda). Lo que no cambió viene vacío.
 /// </summary>
 /// <param name="PaqueteCompleto">
 /// Vacío: estos son los cambios. Con texto, por qué no se pueden dar desde esa versión (otra base, otro formato, una versión
@@ -55,6 +55,10 @@ public sealed record TicketLocalDto(IReadOnlyList<string> Encabezado, IReadOnlyL
 /// </param>
 /// <param name="VersionVendidos">La de lo más vendido con que queda la copia; vacía con un servicio de antes.</param>
 /// <param name="VersionElegidos">Hasta dónde queda lo elegido en la copia; vacía con un servicio de antes.</param>
+/// <param name="Exhibidores">
+/// Los exhibidores y las temporadas (entrega 13), completos, si cambió algo de ellos: su nombre, sus fechas, sus lugares o lo
+/// acomodado en ellos.
+/// </param>
 public sealed record CambiosCopiaDto(
     string? PaqueteCompleto, long Version, long VersionExistencias, int UltimoFolio, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<Guid> Quitados,
     IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<ExistenciaLocalDto> Existencias,
@@ -62,7 +66,7 @@ public sealed record CambiosCopiaDto(
     IReadOnlyList<ReglaDto>? Reglas = null, TicketLocalDto? Ticket = null, ConfiguracionSucursalDto? Configuracion = null,
     IReadOnlyList<ClienteRegistradoDto>? Clientes = null, IReadOnlyList<ClienteRegistradoDto>? Registrados = null, IReadOnlyList<string>? Marcas = null,
     IReadOnlyList<SinonimoDto>? Sinonimos = null, IReadOnlyList<VecesVendidoDto>? Vendidos = null, IReadOnlyList<ElegidoDto>? Elegidos = null,
-    long? VersionVendidos = null, long? VersionElegidos = null)
+    long? VersionVendidos = null, long? VersionElegidos = null, IReadOnlyList<ExhibidorDto>? Exhibidores = null)
 {
     /// <summary>No se pueden dar los cambios desde ahí: la caja baja la copia completa.</summary>
     public static CambiosCopiaDto Completo(string motivo) => new(motivo, 0, 0, 0, [], [], [], []);
@@ -73,7 +77,8 @@ public sealed record CambiosCopiaDto(
     /// </summary>
     public bool CambiaCatalogo =>
         Productos.Count > 0 || Quitados.Count > 0 || Caja is not null || Usuarios is not null || Permisos is not null || Reglas is not null
-        || Ticket is not null || Configuracion is not null || Registrados is not null || Clientes is not null || Marcas is not null || Sinonimos is not null;
+        || Ticket is not null || Configuracion is not null || Registrados is not null || Clientes is not null || Marcas is not null || Sinonimos is not null
+        || Exhibidores is not null;
 
     /// <summary>
     /// Si cambia algo de lo que arma la búsqueda por nombre (los productos, sus códigos, las marcas, los sinónimos): entonces

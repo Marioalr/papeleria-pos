@@ -1,4 +1,6 @@
-@* F9: consulta precio y existencia sin agregar a la venta. *@
+@* F9: consulta precio y existencia sin agregar a la venta. Si se lo lleva, «Agregarlo al ticket» (docs/propuesta-interfaz.md,
+   «La pantalla de venta»). Desde aquí, Ctrl+M abre el mostrador y la temporada en modo verificador: tocar una pieza la enseña
+   aquí, con su lugar para la foto, sin agregarla (entrega 13). *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
@@ -6,25 +8,57 @@
     <input id="verificador" autocomplete="off" @bind="_codigo" @bind:event="oninput" @onkeydown="AlTeclear" />
 </label>
 
-@if (_producto is not null)
+@if (_producto is { } producto)
 {
     <div class="verificado">
-        <div class="descripcion">@_producto.Descripcion</div>
-        <div class="precio">@Formato.Dinero(Precio(_producto))</div>
-        <div class="nota">Existencia: @(_producto.Existencia is { } e ? Formato.Numero(e) : "no lleva inventario")</div>
+        <span class="vn-foto" aria-hidden="true">@MostradorEnPantalla.Iniciales(producto.Descripcion)</span>
+        <div class="descripcion">@producto.Descripcion</div>
+        <div class="precio">@Formato.Dinero(Precio(producto))</div>
+        <div class="nota">Existencia: @(producto.Existencia is { } e ? Formato.Numero(e) : "no lleva inventario")</div>
     </div>
+    @if (AlAgregar.HasDelegate)
+    {
+        <button class="vn-boton" @onclick="() => AlAgregar.InvokeAsync(producto)"><Ico Nombre="mas" />Agregarlo al ticket</button>
+    }
 }
 @if (_error is not null)
 {
     <p class="error">@_error</p>
 }
+@if (AlMostrador.HasDelegate)
+{
+    <div class="vn-botonera">
+        <button class="vn-boton chico" title="Lo que el cliente señala: tocarlo enseña su precio aquí" @onclick="AlMostrador">
+            <Ico Nombre="tienda" />Mostrador y temporada <kbd>Ctrl+M</kbd>
+        </button>
+    </div>
+}
 
 @code {
     [Parameter, EditorRequired] public Guid SucursalId { get; set; }
 
+    /// <summary>Lo que se enseña al abrir: lo que se tocó en el mostrador (entrega 13).</summary>
+    [Parameter] public ProductoVentaDto? Producto { get; set; }
+
+    /// <summary>Lo que se busca al abrir: lo que se escaneó con el mostrador abierto en modo verificador.</summary>
+    [Parameter] public string? Codigo { get; set; }
+
+    /// <summary>«Agregarlo al ticket»: si se lo lleva.</summary>
+    [Parameter] public EventCallback<ProductoVentaDto> AlAgregar { get; set; }
+
+    /// <summary>El mostrador y la temporada en modo verificador (Ctrl+M).</summary>
+    [Parameter] public EventCallback AlMostrador { get; set; }
+
     private string _codigo = "";
     private ProductoVentaDto? _producto;
     private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _producto = Producto;
+        if (Producto is null && Codigo?.Trim() is { Length: > 0 } codigo)
+            await BuscarAsync(codigo);
+    }
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
@@ -36,16 +70,21 @@
     {
         if (e.Key != "Enter" || _codigo.Trim().Length == 0)
             return;
+        await BuscarAsync(_codigo.Trim());
+        _codigo = "";
+    }
+
+    private async Task BuscarAsync(string codigo)
+    {
         try
         {
-            _producto = await Cliente.PorCodigoAsync(_codigo.Trim(), SucursalId);
-            _error = _producto is null ? $"No existe el código «{_codigo.Trim()}»." : null;
+            _producto = await Cliente.PorCodigoAsync(codigo, SucursalId);
+            _error = _producto is null ? $"No existe el código «{codigo}»." : null;
         }
         catch (ErrorCaja ex)
         {
             _error = ex.Message;
         }
-        _codigo = "";
     }
 
     private long Precio(ProductoVentaDto p) =>
