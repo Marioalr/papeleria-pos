@@ -11,10 +11,21 @@ namespace PapeleriaPos.Datos.Migraciones
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // Las devoluciones de eleventa que esperaban la pregunta «¿Es la misma?» no se habían pasado a su venta: se quitan, y
-            // la siguiente lectura las vuelve a traer (son de los últimos 31 días) y las pasa, o las retiene mientras una de
-            // aquí de su ticket espere su anotación a mano (revisión del 2026-10-17: ya no se adivina, se elige).
+            // Una de aquí puede ligarse con varias de eleventa (la anotó en partes): el índice deja de ser único, antes de ligar.
+            migrationBuilder.DropIndex(
+                name: "IX_DevolucionesDesdeEleventa_DevolucionId",
+                table: "DevolucionesDesdeEleventa");
+
+            // Las devoluciones de eleventa que esperaban la pregunta «¿Es la misma?» no se habían pasado a su venta (revisión del
+            // 2026-10-17: ya no se adivina, se elige). Si la de aquí que preguntaban ya se había marcado «Ya lo anoté en
+            // eleventa», son su anotación (por eso se preguntaba: por ejemplo, la anotó en partes): se ligan con ella y no se
+            // vuelven a pasar (cuarta revisión). Las demás se quitan, y la siguiente lectura las vuelve a traer: las retiene
+            // mientras la de aquí espere su anotación a mano, o las pasa.
             migrationBuilder.Sql("""
+                UPDATE "DevolucionesDesdeEleventa" SET "DevolucionId" = "QuizaEsDevolucionId", "Propia" = 1, "PorRevisar" = NULL
+                WHERE "QuizaEsDevolucionId" IS NOT NULL AND "DevolucionId" IS NULL
+                    AND EXISTS (SELECT 1 FROM "EnviosAEleventa" e WHERE e."DevolucionId" = "DevolucionesDesdeEleventa"."QuizaEsDevolucionId"
+                        AND e."Tipo" IN ('Devolucion', 'Cancelacion') AND e."Estado" = 'AMano');
                 DELETE FROM "DevolucionesDesdeEleventa" WHERE "QuizaEsDevolucionId" IS NOT NULL AND "DevolucionId" IS NULL;
                 """);
 
@@ -37,10 +48,6 @@ namespace PapeleriaPos.Datos.Migraciones
 
             migrationBuilder.DropForeignKey(
                 name: "FK_DevolucionesDesdeEleventa_Devoluciones_QuizaEsDevolucionId",
-                table: "DevolucionesDesdeEleventa");
-
-            migrationBuilder.DropIndex(
-                name: "IX_DevolucionesDesdeEleventa_DevolucionId",
                 table: "DevolucionesDesdeEleventa");
 
             migrationBuilder.DropIndex(

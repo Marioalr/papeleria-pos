@@ -679,7 +679,9 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       - cada envío que queda por revisar guarda por qué y desde cuándo: «se anota a mano» (de otro turno, de un turno ya
         cortado, perdido al restaurar, dejado por revisar a mano), «eleventa ya lo tenía» (el ticket ya está cancelado, ya
         no le queda eso por devolver; son dos reembolsos y los dos quedan a la vista) u otra cosa. Lo que ya estaba por
-        revisar antes de este cambio lo saca de su texto, y desde cuándo, de su último intento;
+        revisar antes de este cambio lo saca de su texto, y desde cuándo, de su último intento. Y lo de eleventa que
+        esperaba la pregunta «¿Es la misma?» de una de aquí ya marcada «Ya lo anoté en eleventa» (por ejemplo, anotada en
+        dos partes) queda ligado con ella al actualizar: no se vuelve a pasar a la venta (cuarta revisión);
       - mientras una devolución de aquí espera su anotación a mano, la vuelta no pasa a la venta las devoluciones de
         eleventa de ese ticket hechas después (con 10 minutos de holgura por la hora de cada PC) que pueden ser su
         anotación: con algún artículo en común (por su producto de aquí, así dos productos de eleventa con el mismo código
