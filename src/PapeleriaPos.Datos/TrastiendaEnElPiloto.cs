@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Control;
 
@@ -55,6 +56,13 @@ public static class TrastiendaEnElPiloto
             : (await db.MapeosImportacion.AsNoTracking().Where(m => m.Origen == Eleventa && m.Entidad == Promocion && ids.Contains(m.IdNuevo))
                 .Select(m => m.IdNuevo).ToListAsync(ct)).ToHashSet();
     }
+
+    /// <summary>
+    /// El precio de menudeo, el que pone la lectura en un producto de eleventa: por unidad base, desde una y para todas las
+    /// sucursales. Con sus promociones (<see cref="PromocionesAsync"/>), lo que no se cambia aquí de sus precios.
+    /// </summary>
+    public static bool EsMenudeo(Precio precio) =>
+        precio.PresentacionId is null && precio.SucursalId is null && precio.CantidadMinima == Cantidad.Unidades(1);
 
     /// <summary>Lo que mueve existencias, en el piloto: no se hace. Va después de revisar el permiso, que manda primero.</summary>
     public static void RevisarInventario(bool lecturaDeEleventa)
