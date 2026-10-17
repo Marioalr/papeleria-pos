@@ -63,6 +63,15 @@ public sealed class OpcionesEleventa
     public int Minutos { get; set; } = 5;
 
     /// <summary>
+    /// Lo más que se espera a eleventa en una lectura, un envío de la bandeja o una revisión (revisión del 2026-10-17): una
+    /// llamada que se queda colgada (la red se cae a medias) se deja para la siguiente vuelta, como si no hubiera red, y no
+    /// detiene ni la lectura ni la bandeja. Firebird por sí solo puede esperar sin fin.
+    /// </summary>
+    public int SegundosMaximos { get; set; } = 120;
+
+    public TimeSpan EsperaMaxima => TimeSpan.FromSeconds(Math.Max(1, SegundosMaximos));
+
+    /// <summary>
     /// Los respaldos de eleventa (<see cref="RespaldoDeEleventa"/>): la ruta de <c>gbak.exe</c> en esta PC, el de Firebird
     /// 2.0 como el de la tienda (por ejemplo, «C:\Program Files\Firebird\Firebird_2_0\bin\gbak.exe»). Vacía, no hay respaldo
     /// propio, y con <see cref="RespaldoObligatorio"/> no se escribe en eleventa.
@@ -124,6 +133,9 @@ public sealed class LecturaEleventa(
     IServiceScopeFactory alcances, OpcionesEleventa opciones, EnvioVentasEleventa envios, TimeProvider reloj, ILogger<LecturaEleventa> log)
     : BackgroundService
 {
+    /// <summary>La bandeja no soltó el candado a tiempo: esta lectura se deja para la siguiente vuelta.</summary>
+    public const string BandejaOcupada = "La bandeja de eleventa sigue ocupada con eleventa: esta lectura se deja para la siguiente vuelta.";
+
     private readonly SemaphoreSlim _ahora = new(0, 1);
     private readonly ServidorEleventa? _servidor = opciones.Conexion();
     private EstadoEleventaDto? _estado;
@@ -176,8 +188,17 @@ public sealed class LecturaEleventa(
         {
             using var alcance = alcances.CreateScope();
             var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
-            // El piloto: la lectura y la bandeja usan el mismo candado (mientras se lee y se aplica, no se manda nada).
-            using var candado = envios.Activo ? await envios.CandadoAsync(ct) : null;
+            // El piloto: la lectura y la bandeja usan el mismo candado (mientras se lee y se aplica, no se manda nada). Si la
+            // bandeja lleva demasiado con eleventa (una llamada colgada), esta lectura se deja para la siguiente vuelta en lugar
+            // de esperar sin fin (revisión del 2026-10-17).
+            using var candado = envios.Activo ? await envios.IntentarCandadoAsync(opciones.EsperaMaxima * 2, ct) : null;
+            if (envios.Activo && candado is null)
+            {
+                _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), false, _estado?.Resultado, BandejaOcupada,
+                    HoraMexico.ALocal(inicio + espera), _lecturas, _estado?.Avisos ?? new Dictionary<string, int>());
+                log.LogWarning("No se leyó eleventa: {Motivo}", BandejaOcupada);
+                return;
+            }
             // El puente detenido (eleventa se restauró): lo de eleventa ya no cuadra con lo que mandó la caja 2 (sus
             // existencias, sus turnos, sus números), así que no se aplica nada hasta reanudarlo.
             if (envios.Activo && await RestauracionDeEleventa.DetencionAsync(db, ct) is { } detenido)
@@ -199,7 +220,8 @@ public sealed class LecturaEleventa(
                     Huella = envios.Activo ? await RestauracionDeEleventa.HuellaAsync(db, ahora, RestauracionDeEleventa.AlLeer, ct) : null,
                 }
                 : null;
-            var datos = await LectorEleventa.LeerCatalogoAsync(servidor, consulta, ct);
+            // Con un límite: si eleventa se queda callado a media lectura, se vuelve a intentar en la siguiente vuelta.
+            var datos = await LectorEleventa.LeerCatalogoAsync(servidor, consulta, ct).WaitAsync(opciones.EsperaMaxima, ct);
             ahora = reloj.GetUtcNow().UtcDateTime;
             if (datos.Piloto?.Restauracion is { } restauracion)
             {

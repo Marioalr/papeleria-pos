@@ -566,7 +566,10 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       cajón de las dos cajas, así que no entra en lo contado ni en las diferencias del día. Después, cualquier cajero
       abre su turno en la caja nueva, y adopta el siguiente de eleventa.
     - **La lectura y la bandeja usan el mismo candado:** mientras la lectura lee y aplica, la bandeja no manda; el cobro
-      no la espera (el ticket sale con el folio de la caja).
+      no la espera (el ticket sale con el folio de la caja). Con límites (revisión del 2026-10-17): Firebird por sí solo
+      espera sin fin a un eleventa que se quedó callado a media llamada, así que cada llamada de la lectura, la bandeja y
+      las revisiones espera lo más 2 minutos (`Eleventa:SegundosMaximos`) y después se toma como falla de red (se
+      reintenta); y la lectura espera el candado lo más el doble: si no, se deja para la siguiente vuelta.
     - Antes de que eleventa cierre su turno sigue el aviso de #86: al intentar el corte o al salir, la caja dice que el
       corte se hace en eleventa. Si el corte de eleventa cierra el turno con la caja nueva abierta, lo siguiente que se
       cobre dice que el turno ya está cerrado: se entra otra vez (Ctrl+U) y se abre el nuevo.

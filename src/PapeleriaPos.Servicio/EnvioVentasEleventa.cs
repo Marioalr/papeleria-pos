@@ -111,8 +111,8 @@ public sealed class EnvioVentasEleventa(
     /// El candado, si se libera pronto; vacío si no. Para revisar en vivo un ticket antes de devolverlo: la cajera tiene al
     /// cliente enfrente, y si la bandeja o la lectura van, se deja pasar.
     /// </summary>
-    public async Task<IDisposable?> IntentarCandadoAsync(TimeSpan espera) =>
-        await _uno.WaitAsync(espera) ? new Soltar(_uno) : null;
+    public async Task<IDisposable?> IntentarCandadoAsync(TimeSpan espera, CancellationToken ct = default) =>
+        await _uno.WaitAsync(espera, ct) ? new Soltar(_uno) : null;
 
     private sealed class Soltar(SemaphoreSlim candado) : IDisposable
     {
@@ -320,9 +320,8 @@ public sealed class EnvioVentasEleventa(
                 return true;
             try
             {
-                await using var conexion = new FbConnection(servidor.Cadena());
-                await conexion.OpenAsync(ct);
-                if (await FoliosRepetidos.RevisarAsync(db, conexion, enviadas, ahora, ct) is > 0 and var repetidos)
+                // Con un límite: una llamada colgada no detiene la bandeja (es como si no hubiera red).
+                if (await RevisarConEleventaAsync().WaitAsync(opciones.EsperaMaxima, ct) is > 0 and var repetidos)
                     log.LogWarning("{Repetidos} ventas de esta caja tienen en eleventa el mismo folio que otra caja: sus reimpresiones salen con el folio de la caja.",
                         repetidos);
                 await db.SaveChangesAsync(ct);
@@ -333,6 +332,13 @@ public sealed class EnvioVentasEleventa(
                 _sinRedHastaUtc = ahora + SinRedPor;
             }
             return true;
+
+            async Task<int> RevisarConEleventaAsync()
+            {
+                await using var conexion = new FbConnection(servidor.Cadena());
+                await conexion.OpenAsync(ct);
+                return await FoliosRepetidos.RevisarAsync(db, conexion, enviadas, ahora, ct);
+            }
         }, ct);
     }
 
@@ -519,7 +525,9 @@ public sealed class EnvioVentasEleventa(
         TurnoDeEleventa? deEleventa = null;
         try
         {
-            deEleventa = await escribir();
+            // Con un límite: una llamada que se queda colgada se toma como falla de red (se reintenta y no detiene la bandeja).
+            // Si después sí entra, la marca la encuentra en el siguiente intento.
+            deEleventa = await escribir().WaitAsync(opciones.EsperaMaxima, ct);
             (envio.Estado, envio.EnviadaUtc, envio.Error) = (EstadoEnvioEleventa.Enviada, reloj.GetUtcNow().UtcDateTime, null);
             (_ultimoEnvioUtc, _ultimoError, _sinRedHastaUtc) = (envio.EnviadaUtc, null, default);
         }
@@ -674,18 +682,22 @@ public sealed class EnvioVentasEleventa(
             ?? throw new InvalidOperationException("El puente con eleventa no está detenido.");
         var (servidor, _) = _destino ?? throw new InvalidOperationException("Esta caja no manda a eleventa.");
         int perdidos;
-        // Con el candado: ni la bandeja ni la lectura van mientras tanto.
-        using (await CandadoAsync(ct))
+        // Con el candado: ni la bandeja ni la lectura van mientras tanto (si no se suelta pronto, se intenta después).
+        using (await IntentarCandadoAsync(opciones.EsperaMaxima * 2, ct)
+            ?? throw new InvalidOperationException("La bandeja de eleventa sigue ocupada con eleventa: vuelve a intentarlo en un momento."))
         {
             var ahora = reloj.GetUtcNow().UtcDateTime;
             List<EnvioAEleventa> sinEleventa;
             List<TurnoEnEleventa> sueltos;
             try
             {
-                await using var conexion = new FbConnection(servidor.Cadena());
-                await conexion.OpenAsync(ct);
-                sinEleventa = await RestauracionDeEleventa.PerdidosAsync(db, conexion, ahora, ct);
-                sueltos = await TurnosQueYaNoEstanAsync(db, conexion, ct);
+                (sinEleventa, sueltos) = await RevisarConEleventaAsync().WaitAsync(opciones.EsperaMaxima, ct);
+                async Task<(List<EnvioAEleventa>, List<TurnoEnEleventa>)> RevisarConEleventaAsync()
+                {
+                    await using var conexion = new FbConnection(servidor.Cadena());
+                    await conexion.OpenAsync(ct);
+                    return (await RestauracionDeEleventa.PerdidosAsync(db, conexion, ahora, ct), await TurnosQueYaNoEstanAsync(db, conexion, ct));
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException && (EsDeRed(ex) || ex is FbException))
             {

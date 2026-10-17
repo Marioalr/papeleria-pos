@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PapeleriaPos.Eleventa;
@@ -513,6 +514,84 @@ public class EnvioEleventaApiTests
         Assert.Equal([ResultadoBitacora.Negado, ResultadoBitacora.Negado, ResultadoBitacora.Hecho], bitacora.Select(b => b.Resultado));
         Assert.Equal(($"Dejó por revisar lo que no pasa solo a eleventa: {pendiente.Descripcion}. Eleventa no tiene el producto", ticket.VentaId,
             (long?)pendiente.TotalCentavos), (bitacora[2].Detalle, bitacora[2].VentaId, bitacora[2].MontoCentavos));
+    }
+
+    /// <summary>Un «eleventa» que acepta la conexión y ya no contesta, como la red que se cae a media llamada.</summary>
+    private sealed class EleventaCallado : IDisposable
+    {
+        private readonly TcpListener _oyente = new(IPAddress.Loopback, 0);
+        private readonly List<TcpClient> _aceptados = [];
+        private readonly Lock _candado = new();
+
+        public EleventaCallado()
+        {
+            _oyente.Start();
+            Puerto = ((IPEndPoint)_oyente.LocalEndpoint).Port;
+            _ = AceptarAsync();
+        }
+
+        public int Puerto { get; }
+
+        private async Task AceptarAsync()
+        {
+            while (true)
+            {
+                try
+                {
+                    var conexion = await _oyente.AcceptTcpClientAsync();
+                    lock (_candado)
+                        _aceptados.Add(conexion);
+                }
+                catch (Exception ex) when (ex is SocketException or ObjectDisposedException or InvalidOperationException)
+                {
+                    return;
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            _oyente.Stop();
+            lock (_candado)
+                foreach (var conexion in _aceptados)
+                    conexion.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task Si_eleventa_se_queda_callado_a_media_llamada_la_bandeja_no_se_detiene()
+    {
+        // Firebird por sí solo esperaría sin fin a que conteste; la bandeja espera lo más dos segundos y lo toma como sin red.
+        using var callado = new EleventaCallado();
+        await using var servicio = await ServicioDePrueba.CrearAsync(
+            [.. Ajustes("127.0.0.1", callado.Puerto, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 1), ("Eleventa:SegundosMaximos", "2")]);
+        var c = await AbrirAsync(servicio);
+
+        var ticket = await CobrarAsync(c);
+        var primero = await EsperarAsync(c, x => x.PorAtender.Any(e => e.Intentos >= 1 && e.Error is not null));
+        Assert.Equal(HttpStatusCode.Accepted, (await c.Http.PostAsync("api/eleventa/enviar", null)).StatusCode);
+        var segundo = await EsperarAsync(c, x => x.PorAtender.Any(e => e.Intentos >= 2));
+
+        Assert.Null(ticket.FolioEleventa);
+        Assert.Equal("El eleventa de 127.0.0.1 no terminó de contestar a tiempo: se vuelve a intentar.", primero.PorAtender.Single().Error);
+        Assert.Equal((EstadoEnvioEleventa.Pendiente, 2), segundo.PorAtender.Select(e => (e.Estado, e.Intentos)).Single());
+    }
+
+    [Fact]
+    public async Task Si_la_bandeja_no_suelta_el_candado_la_lectura_no_espera_sin_fin()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(
+            [.. Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB"), ("Eleventa:Activo", "true"), ("Eleventa:Minutos", "600"), ("Eleventa:SegundosMaximos", "1")]);
+        var http = servicio.Fabrica.CreateClient();
+        var envios = servicio.Fabrica.Services.GetRequiredService<EnvioVentasEleventa>();
+
+        // La bandeja se quedó con el candado (una llamada colgada): la lectura espera un rato y la deja para la siguiente vuelta.
+        using var candado = await envios.CandadoAsync(CancellationToken.None);
+        Assert.Equal(HttpStatusCode.Accepted, (await http.PostAsync("api/eleventa/leer", null)).StatusCode);
+        var estado = await PilotoDePrueba.EsperarAsync(async () => (await http.GetFromJsonAsync<EstadoEleventaDto>("api/eleventa"))!,
+            x => x.Error == LecturaEleventa.BandejaOcupada);
+
+        Assert.Equal((false, LecturaEleventa.BandejaOcupada), (estado.Bien, estado.Error));
     }
 
     /// <summary>
