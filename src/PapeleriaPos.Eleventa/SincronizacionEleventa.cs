@@ -294,7 +294,7 @@ public static class SincronizacionEleventa
                     r.Avisar(AvisoCodigoOcupado);
                 else
                 {
-                    var nuevo = new CodigoBarras { Codigo = codigo, PresentacionId = presentacion.Id, Origen = ReglasEleventa.OrigenDe(codigo) };
+                    var nuevo = new CodigoBarras { Codigo = codigo, PresentacionId = presentacion.Id, Origen = CodigoBarras.OrigenDe(codigo) };
                     db.CodigosBarras.Add(nuevo);
                     porCodigo[codigo] = nuevo;
                 }
@@ -341,11 +341,11 @@ public static class SincronizacionEleventa
             if (propios.Count == 1)
             {
                 porCodigo.Remove(propios[0].Codigo);
-                (propios[0].Codigo, propios[0].Origen) = (codigo, ReglasEleventa.OrigenDe(codigo));
+                (propios[0].Codigo, propios[0].Origen) = (codigo, CodigoBarras.OrigenDe(codigo));
                 porCodigo[codigo] = propios[0];
                 return true;
             }
-            var nuevo = new CodigoBarras { Codigo = codigo, PresentacionId = presentacion.Id, Origen = ReglasEleventa.OrigenDe(codigo) };
+            var nuevo = new CodigoBarras { Codigo = codigo, PresentacionId = presentacion.Id, Origen = CodigoBarras.OrigenDe(codigo) };
             db.CodigosBarras.Add(nuevo);
             porCodigo[codigo] = nuevo;
             return true;
