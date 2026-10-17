@@ -1,4 +1,5 @@
 using FirebirdSql.Data.FirebirdClient;
+using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Eleventa;
 
@@ -134,7 +135,7 @@ public static partial class EnvioEleventa
                 [("ticket", d.TicketEleventa)])
             ?? throw new ChoqueConEleventa($"En eleventa ya no está el ticket {d.TicketEleventa}.");
         if (ticket[2] is string cancelado && cancelado.Trim() is "t" or "T")
-            throw new ChoqueConEleventa($"En eleventa el ticket #{ticket[0]} ya está cancelado.");
+            throw new ChoqueConEleventa($"En eleventa el ticket #{ticket[0]} ya está cancelado.", MotivoPorRevisar.EleventaYaLoTenia);
         var folio = Convert.ToInt32(ticket[0]);
 
         var articulos = await ArticulosDelTicketAsync(sql, d.TicketEleventa);
@@ -148,7 +149,7 @@ public static partial class EnvioEleventa
         // En la copia y en vivo, eleventa devolvió en el mismo turno y en la misma caja en que se cobró. Lo de otra caja o de
         // otro turno todavía no se ha visto cómo lo anota (docs/pruebas-en-tienda.md): mientras, queda por revisar.
         if (Convert.ToInt32(ticket[3]) != caja.CajaId || ticket[4] is DBNull || Convert.ToInt32(ticket[4]) != turno)
-            throw new ChoqueConEleventa(DeOtroTurnoODeOtraCaja);
+            throw new ChoqueConEleventa(DeOtroTurnoODeOtraCaja, MotivoPorRevisar.AnotarAMano);
         var dia = await DiaAsync(sql, caja.CajaId, devuelta.Date);
 
         if (d.EsCancelacion)
@@ -275,7 +276,8 @@ public static partial class EnvioEleventa
             var articulo = (p.ArticuloEleventa is { } renglon ? articulos.FirstOrDefault(a => a.Id == renglon && Alcanza(a)) : null)
                 ?? (p.ArticuloEleventa is null && codigo is not null ? articulos.FirstOrDefault(a => string.Equals(a.Codigo, codigo, StringComparison.OrdinalIgnoreCase) && Alcanza(a)) : null)
                 ?? (p.ArticuloEleventa is null ? articulos.FirstOrDefault(a => EsComun(a) && string.Equals(a.Nombre, p.Nombre.Trim(), StringComparison.OrdinalIgnoreCase) && Alcanza(a)) : null)
-                ?? throw new ChoqueConEleventa($"En el ticket de eleventa ya no está «{p.Nombre}» con {p.Cantidad} por devolver.");
+                ?? throw new ChoqueConEleventa($"En el ticket de eleventa ya no está «{p.Nombre}» con {p.Cantidad} por devolver.",
+                    MotivoPorRevisar.EleventaYaLoTenia);
             usado[articulo.Id] = usado.GetValueOrDefault(articulo.Id) + p.Cantidad;
             // La de un ticket de eleventa (por su renglón) no se pasa de lo que le queda a ese renglón, y si se lo lleva todo,
             // es exacto lo que le queda: si no, el ticket de eleventa quedaría abajo de cero o con un total sin artículos. Si
@@ -285,7 +287,7 @@ public static partial class EnvioEleventa
                 var queda = articulo.Total - devueltos.Where(x => x.Articulo.Id == articulo.Id).Sum(x => x.Monto);
                 if (p.Importe > queda + 0.005m || articulo.Cantidad - usado[articulo.Id] <= 0.0005m && Math.Abs(p.Importe - queda) > 0.005m)
                     throw new ChoqueConEleventa($"En el ticket de eleventa a «{articulo.Nombre}» le quedan {queda:0.00} y aquí se devolvieron {p.Importe:0.00}: "
-                        + "cambió desde que se devolvió aquí. Anótala a mano en eleventa.");
+                        + "cambió desde que se devolvió aquí. Anótala a mano en eleventa.", MotivoPorRevisar.AnotarAMano);
             }
             devueltos.Add(new Devuelto(articulo, p.Cantidad, p.Importe, p.RegresaAlInventario && !EsComun(articulo) ? p.Cantidad : 0));
         }

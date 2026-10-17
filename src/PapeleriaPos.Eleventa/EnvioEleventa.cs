@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using FirebirdSql.Data.FirebirdClient;
+using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Eleventa;
 
@@ -59,7 +60,14 @@ public sealed record TurnoDeEleventa(int Id, DateTime InicioLocal);
 /// red y reintentar no lo arregla: lo que choca queda por revisar y lo demás de la bandeja sigue (docs/migracion-eleventa.md,
 /// «Lo que falta para el piloto»). Solo del piloto: se quita al dejar eleventa.
 /// </summary>
-public sealed class ChoqueConEleventa(string mensaje) : InvalidOperationException(mensaje);
+/// <param name="motivo">
+/// Si se anota a mano allá (no está en eleventa) o eleventa ya lo tenía (no se anota: se revisa). Con eso la vuelta sabe si
+/// una devolución que llega de eleventa puede ser su anotación a mano.
+/// </param>
+public sealed class ChoqueConEleventa(string mensaje, MotivoPorRevisar motivo = MotivoPorRevisar.Otro) : InvalidOperationException(mensaje)
+{
+    public MotivoPorRevisar Motivo { get; } = motivo;
+}
 
 /// <summary>Cómo quedó el folio de un ticket después de revisar que otra caja no lo usó al mismo tiempo.</summary>
 /// <param name="Anterior">El que tenía antes de tomar el siguiente; vacío si no se cambió.</param>
@@ -270,9 +278,9 @@ public static partial class EnvioEleventa
         if (turnos.Count == 0)
             return caja.AbreTurno ? await AbrirTurnoAsync(sql, caja, nuevo) : throw new InvalidOperationException(CorteEnElPiloto.AbreLaCajaEnEleventa);
         if (turnos[0][2] is DateTime cortado)
-            throw new ChoqueConEleventa(CorteEnElPiloto.YaSeContoEnEleventa(cortado));
+            throw new ChoqueConEleventa(CorteEnElPiloto.YaSeContoEnEleventa(cortado), MotivoPorRevisar.AnotarAMano);
         if (turnos.Count(t => t[2] is DBNull) > 1)
-            throw new ChoqueConEleventa(CorteEnElPiloto.DosTurnosAbiertos);
+            throw new ChoqueConEleventa(CorteEnElPiloto.DosTurnosAbiertos, MotivoPorRevisar.AnotarAMano);
         return new TurnoDeEleventa(Convert.ToInt32(turnos[0][0]), (DateTime)turnos[0][1]);
     }
 

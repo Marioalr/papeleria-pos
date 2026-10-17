@@ -241,7 +241,7 @@ public sealed class LecturaEleventa(
             foreach (var aviso in turnos?.Avisos ?? [])
                 avisos[aviso] = avisos.GetValueOrDefault(aviso) + 1;
             if (vuelta is { PorRevisar: > 0 } choques)
-                avisos[DevolucionesConEleventa.NoAlcanza] = avisos.GetValueOrDefault(DevolucionesConEleventa.NoAlcanza) + choques.PorRevisar;
+                avisos[DevolucionesConEleventa.VueltaPorRevisar] = avisos.GetValueOrDefault(DevolucionesConEleventa.VueltaPorRevisar) + choques.PorRevisar;
             var texto = resultado.ToString();
             if (turnos is { Cortes: > 0 } conCorte)
                 texto += $"; {conCorte.Cortes} {(conCorte.Cortes == 1 ? "turno cerrado" : "turnos cerrados")} con el corte de eleventa";

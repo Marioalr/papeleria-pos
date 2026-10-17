@@ -1189,4 +1189,8 @@ public sealed record SolicitudReanudarPuente(Guid UsuarioId, Guid CajaId, string
 
 /// <summary>Algo que quedó por revisar con eleventa: de la bandeja (<paramref name="EnvioId"/>) o una devolución hecha allá (<paramref name="VueltaId"/>).</summary>
 /// <param name="Motivo">Por qué, dicho para la tienda.</param>
-public sealed record PorRevisarEleventaDto(Guid? EnvioId, Guid? VueltaId, string Descripcion, DateTime FechaLocal, long TotalCentavos, string Motivo);
+/// <param name="Pregunta">
+/// Una devolución hecha allá que quizá es la de aquí anotada a mano: qué se pregunta («Sí, es la misma» / «No, es otra»).
+/// </param>
+public sealed record PorRevisarEleventaDto(Guid? EnvioId, Guid? VueltaId, string Descripcion, DateTime FechaLocal, long TotalCentavos, string Motivo,
+    string? Pregunta = null);

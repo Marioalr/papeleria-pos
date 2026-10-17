@@ -2957,6 +2957,10 @@ namespace PapeleriaPos.Datos.Migraciones
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Articulos")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Caja")
                         .HasMaxLength(50)
                         .HasColumnType("TEXT");
@@ -2984,6 +2988,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<bool>("Propia")
                         .HasColumnType("INTEGER");
 
+                    b.Property<Guid?>("QuizaEsDevolucionId")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("RevisadaUtc")
                         .HasColumnType("TEXT");
 
@@ -3003,6 +3010,8 @@ namespace PapeleriaPos.Datos.Migraciones
 
                     b.HasIndex("DevolucionId")
                         .IsUnique();
+
+                    b.HasIndex("QuizaEsDevolucionId");
 
                     b.HasIndex("TicketEleventa");
 
@@ -3086,6 +3095,12 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasColumnType("INTEGER");
 
                     b.Property<Guid?>("MovimientoId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PorRevisarPorque")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("PorRevisarUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<int?>("TicketEleventa")
@@ -4256,6 +4271,11 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasOne("PapeleriaPos.Nucleo.Ventas.Devolucion", null)
                         .WithOne()
                         .HasForeignKey("PapeleriaPos.Nucleo.Ventas.DevolucionDesdeEleventa", "DevolucionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("PapeleriaPos.Nucleo.Ventas.Devolucion", null)
+                        .WithMany()
+                        .HasForeignKey("QuizaEsDevolucionId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("PapeleriaPos.Nucleo.Ventas.Venta", null)

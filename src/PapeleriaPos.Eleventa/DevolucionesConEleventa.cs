@@ -61,12 +61,18 @@ public static class DevolucionesConEleventa
         "En eleventa se devolvió de este ticket algo que aquí ya no queda (¿se devolvió también en la caja 2?): revísalo en las dos.";
 
     /// <summary>
-    /// Por qué una devolución en eleventa de un ticket de la caja 2 no se pasó a su venta: aquí hay una devolución de ese
-    /// ticket que se iba a anotar a mano allá, y no se sabe si es esa.
+    /// Por qué una devolución en eleventa de un ticket de la caja 2 no se pasó a su venta: puede ser la anotación a mano de
+    /// una devolución de aquí. Se pregunta en la pantalla de la caja 2 («Sí, es la misma» / «No, es otra»).
     /// </summary>
-    public const string NoSeSabeSiEsLaDeAqui =
-        "En eleventa se devolvió algo de este ticket y aquí hay una devolución que se iba a anotar a mano allá, pero no es igual: "
-        + "revisa si es la misma.";
+    public const string QuizaEsLaDeAqui =
+        "Puede ser la devolución de aquí que se iba a anotar a mano en eleventa: di si es la misma o es otra.";
+
+    /// <summary>Lo que dice la lectura cuando una devolución de eleventa no se pasó sola a su venta.</summary>
+    public const string VueltaPorRevisar =
+        "Devoluciones hechas en eleventa que no se pasaron solas a su venta: se revisan en la pantalla de la caja 2.";
+
+    /// <summary>Lo que puede ir adelantada la hora de la PC de eleventa respecto a la de la caja 2, al buscar una anotación a mano.</summary>
+    public static readonly TimeSpan HolguraDeHora = TimeSpan.FromMinutes(10);
 
     // ── La ida ──
 
@@ -290,60 +296,114 @@ public static class DevolucionesConEleventa
             {
                 DevolucionEleventa = d.Id, TicketEleventa = d.TicketId, DevueltaUtc = devueltaUtc, EsCancelacion = d.EsCancelacion, TotalCentavos = Centavos(d.Total),
                 Cajero = Recortar(d.Cajero, 50), Caja = Recortar(d.Caja, 50), VentaId = venta.Id, VistaUtc = ahoraUtc,
+                Articulos = d.Articulos.Select(a => new ArticuloDevueltoEnEleventa(a.Codigo, a.Nombre, a.Cantidad, a.Dinero, a.ProductoId)).ToList(),
             };
             db.Set<DevolucionDesdeEleventa>().Add(registro);
 
-            // Una devolución de aquí que no pasó sola (de otro turno o de otra caja de eleventa, queda por revisar: «Anótala a
-            // mano en eleventa») y se anotó a mano allá: eleventa la escribe con su hora, sin la marca, y parecería nueva. Si es
-            // igual (lo mismo de los mismos artículos), es esa: se liga y su envío queda anotado a mano. Si no se sabe cuál es,
-            // queda por revisar en lugar de aplicarla (revisión del 2026-10-17).
-            if (await AnotadasAManoAsync(db, venta.Id, ct) is { Count: > 0 } aMano)
+            // ¿Es la anotación a mano de una devolución de aquí que no pasó sola? Eleventa la escribe con su hora, sin la marca,
+            // y parecería nueva (revisión del 2026-10-17). Solo se busca entre las que se mandaron a anotar a mano y tienen algo
+            // en común con esta (nunca entre las que chocaron porque eleventa ya lo tenía: esas son dos reembolsos):
+            if (await QuizaLaDeAquiAsync(db, venta.Id, d, devueltaUtc, ct) is { Count: > 0 } quiza)
             {
-                if (aMano.Where(p => Iguales(p.Armada, d)).ToList() is [var propia])
+                // si alguien ya dijo «Ya lo anoté en eleventa» y es exactamente la misma, se liga;
+                if (quiza.Where(x => x.Envio.Estado == EstadoEnvioEleventa.AMano && Iguales(x.Armada, d)).ToList() is [var anotada])
                 {
-                    (registro.DevolucionId, registro.Propia) = (propia.Envio.DevolucionId, true);
-                    if (propia.Envio.Estado == EstadoEnvioEleventa.PorRevisar)
-                        (propia.Envio.Estado, propia.Envio.Error) = (EstadoEnvioEleventa.AMano,
-                            Recortar($"Se anotó a mano en eleventa: la lectura la encontró allá ({d.Caja}, {d.DevueltoEn:dd/MM HH:mm}). {propia.Envio.Error}".Trim(), 500));
+                    (registro.DevolucionId, registro.Propia) = (anotada.Envio.DevolucionId, true);
                     ligadas++;
                 }
                 else
                 {
-                    registro.PorRevisar = NoSeSabeSiEsLaDeAqui;
+                    // si no, se pregunta en la pantalla de la caja 2 («Sí, es la misma» / «No, es otra») y mientras no se aplica.
+                    var posible = quiza.FirstOrDefault(x => Iguales(x.Armada, d)) ?? quiza[0];
+                    (registro.QuizaEsDevolucionId, registro.PorRevisar) = (posible.Envio.DevolucionId, QuizaEsLaDeAqui);
                     porRevisar++;
                 }
                 continue;
             }
-            var devolucion = await ArmarDeEleventaAsync(db, venta, d, devueltaUtc, ct);
-            if (devolucion is null)
-            {
-                registro.PorRevisar = NoAlcanza;
+            if (await PasarALaVentaAsync(db, venta, registro, d, ventas.First(v => v.Ticket == d.TicketId).FolioEleventa, ct))
+                pasadas++;
+            else
                 porRevisar++;
-                continue;
-            }
-            // Lo que regresa al inventario: al mismo costo con que salió, como una devolución de aquí.
-            var inventario = new RegistroInventario(db);
-            foreach (var linea in devolucion.Lineas)
-            {
-                var vendida = venta.Lineas.Single(l => l.Id == linea.VentaLineaId);
-                if (!vendida.LlevaInventario || vendida.VarianteId is not { } varianteId || await db.Variantes.FindAsync([varianteId], ct) is not { } variante)
-                    continue;
-                var cantidadBase = new Cantidad(Redondeo.Dividir((Int128)vendida.CantidadBase.Milesimas * linea.Cantidad.Milesimas, vendida.Cantidad.Milesimas));
-                await inventario.AgregarAsync(Kardex.Entrada(venta.SucursalId, variante, TipoMovimiento.Devolucion, cantidadBase, linea.CostoCentavos, devueltaUtc,
-                    documentoTipo: nameof(Devolucion), documentoId: devolucion.Id), ct);
-            }
-            if (devolucion.EsCancelacion || devolucion.Lineas.Any(l => venta.Lineas.Single(x => x.Id == l.VentaLineaId).EsImpresiones))
-                await ImpresionesDelPos.EnLaVenta(db).LiberarAsync(venta.Id, ct);
-            CalculoDevolucion.Aplicar(venta, devolucion);
-            db.Devoluciones.Add(devolucion);
-            registro.DevolucionId = devolucion.Id;
-            control.Registrar(venta.SucursalId, venta.CajaId, null, d.EsCancelacion ? AccionControlada.CancelarTicket : AccionControlada.Devolucion,
-                $"{(d.EsCancelacion ? "Cancelación" : "Devolución")} hecha en eleventa del ticket {venta.FolioTexto} (#{ventas.First(v => v.Ticket == d.TicketId).FolioEleventa}, "
-                + $"{d.Caja}, {d.Cajero}): no salió de esta caja", devolucion.TotalCentavos, venta.Id);
-            pasadas++;
         }
         return new ResultadoVuelta(pasadas, porRevisar, ligadas);
     }
+
+    /// <summary>
+    /// Pasa una devolución de eleventa a su venta de aquí: una devolución sin efectivo (salió de la caja de eleventa), con su
+    /// entrada al kardex, a nombre del cajero de la venta y en la bitácora. Si aquí ya no queda tanto, queda por revisar
+    /// (falso). Quien llama guarda.
+    /// </summary>
+    private static async Task<bool> PasarALaVentaAsync(PosDbContext db, Venta venta, DevolucionDesdeEleventa registro, DevolucionLeida d, int? folioEleventa,
+        CancellationToken ct)
+    {
+        var devolucion = await ArmarDeEleventaAsync(db, venta, d, registro.DevueltaUtc, ct);
+        if (devolucion is null)
+        {
+            registro.PorRevisar = NoAlcanza;
+            return false;
+        }
+        // Lo que regresa al inventario: al mismo costo con que salió, como una devolución de aquí.
+        var inventario = new RegistroInventario(db);
+        foreach (var linea in devolucion.Lineas)
+        {
+            var vendida = venta.Lineas.Single(l => l.Id == linea.VentaLineaId);
+            if (!vendida.LlevaInventario || vendida.VarianteId is not { } varianteId || await db.Variantes.FindAsync([varianteId], ct) is not { } variante)
+                continue;
+            var cantidadBase = new Cantidad(Redondeo.Dividir((Int128)vendida.CantidadBase.Milesimas * linea.Cantidad.Milesimas, vendida.Cantidad.Milesimas));
+            await inventario.AgregarAsync(Kardex.Entrada(venta.SucursalId, variante, TipoMovimiento.Devolucion, cantidadBase, linea.CostoCentavos, registro.DevueltaUtc,
+                documentoTipo: nameof(Devolucion), documentoId: devolucion.Id), ct);
+        }
+        if (devolucion.EsCancelacion || devolucion.Lineas.Any(l => venta.Lineas.Single(x => x.Id == l.VentaLineaId).EsImpresiones))
+            await ImpresionesDelPos.EnLaVenta(db).LiberarAsync(venta.Id, ct);
+        CalculoDevolucion.Aplicar(venta, devolucion);
+        db.Devoluciones.Add(devolucion);
+        registro.DevolucionId = devolucion.Id;
+        new ServicioControl(db).Registrar(venta.SucursalId, venta.CajaId, null, d.EsCancelacion ? AccionControlada.CancelarTicket : AccionControlada.Devolucion,
+            $"{(d.EsCancelacion ? "Cancelación" : "Devolución")} hecha en eleventa del ticket {venta.FolioTexto} (#{folioEleventa}, {d.Caja}, {d.Cajero}): "
+            + "no salió de esta caja", devolucion.TotalCentavos, venta.Id);
+        return true;
+    }
+
+    /// <summary>
+    /// «Sí, es la misma»: la devolución de eleventa es la anotación a mano de la de aquí. Se ligan (no se aplica otra vez) y el
+    /// envío de la de aquí queda anotado a mano. Quien llama revisa el permiso, anota en la bitácora y guarda.
+    /// </summary>
+    public static async Task<DevolucionDesdeEleventa> EsLaMismaAsync(PosDbContext db, Guid vueltaId, DateTime ahoraUtc, CancellationToken ct = default)
+    {
+        var vuelta = await PreguntadaAsync(db, vueltaId, ct);
+        var propiaId = vuelta.QuizaEsDevolucionId!.Value;
+        if (await db.Set<DevolucionDesdeEleventa>().AnyAsync(x => x.DevolucionId == propiaId, ct))
+            throw new InvalidOperationException("La devolución de aquí ya está ligada con otra de eleventa: esta es otra.");
+        (vuelta.DevolucionId, vuelta.Propia, vuelta.QuizaEsDevolucionId, vuelta.PorRevisar, vuelta.RevisadaUtc) = (propiaId, true, null, null, ahoraUtc);
+        if (await db.EnviosAEleventa.FirstOrDefaultAsync(e => e.DevolucionId == propiaId
+                && (e.Tipo == TipoEnvioEleventa.Devolucion || e.Tipo == TipoEnvioEleventa.Cancelacion), ct) is { Estado: EstadoEnvioEleventa.PorRevisar } envio)
+            (envio.Estado, envio.Error) = (EstadoEnvioEleventa.AMano,
+                Recortar($"Se anotó a mano en eleventa ({vuelta.Caja}, {HoraMexico.ALocal(vuelta.DevueltaUtc):dd/MM HH:mm}). {envio.Error}".Trim(), 500));
+        return vuelta;
+    }
+
+    /// <summary>
+    /// «No, es otra»: la devolución de eleventa no es la de aquí; se pasa a su venta como cualquier otra de la vuelta (o queda
+    /// por revisar si aquí ya no queda tanto). La de aquí sigue esperando a que la anoten a mano. Quien llama revisa el permiso,
+    /// anota en la bitácora y guarda, en una transacción.
+    /// </summary>
+    public static async Task<DevolucionDesdeEleventa> EsOtraAsync(PosDbContext db, Guid vueltaId, CancellationToken ct = default)
+    {
+        var vuelta = await PreguntadaAsync(db, vueltaId, ct);
+        var venta = await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleAsync(v => v.Id == vuelta.VentaId, ct);
+        var folio = await db.EnviosAEleventa.Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == venta.Id).Select(e => e.FolioEleventa).FirstOrDefaultAsync(ct);
+        (vuelta.QuizaEsDevolucionId, vuelta.PorRevisar) = (null, null);
+        var d = new DevolucionLeida(vuelta.DevolucionEleventa, vuelta.TicketEleventa, vuelta.EsCancelacion, HoraMexico.ALocal(vuelta.DevueltaUtc),
+            vuelta.TotalCentavos / 100m, vuelta.Cajero ?? "", vuelta.Caja ?? "", null,
+            vuelta.Articulos.Select(a => new ArticuloDevueltoLeido(a.Codigo, a.Nombre, a.Cantidad, a.Dinero, a.ProductoId)).ToList());
+        await PasarALaVentaAsync(db, venta, vuelta, d, folio, ct);
+        return vuelta;
+    }
+
+    private static async Task<DevolucionDesdeEleventa> PreguntadaAsync(PosDbContext db, Guid vueltaId, CancellationToken ct) =>
+        await db.Set<DevolucionDesdeEleventa>().FindAsync([vueltaId], ct) is { QuizaEsDevolucionId: not null, DevolucionId: null } vuelta
+            ? vuelta
+            : throw new InvalidOperationException("Esa devolución de eleventa no está esperando a saber si es la de aquí.");
 
     /// <summary>
     /// La vuelta, en una sola transacción, y guardada: se lee la venta, se le pasa lo de eleventa y se guarda sin que otra
@@ -367,14 +427,19 @@ public static class DevolucionesConEleventa
     private sealed record AnotadaAMano(EnvioAEleventa Envio, DevolucionParaEleventa Armada);
 
     /// <summary>
-    /// Las devoluciones y cancelaciones de aquí de esa venta que no pasaron solas a eleventa (por revisar, o ya anotadas a
-    /// mano) y que todavía no se ligan con una de eleventa: lo que se habría mandado, para compararlo.
+    /// Las devoluciones y cancelaciones de aquí de esa venta que una de eleventa podría estar anotando a mano: las que se
+    /// mandaron a anotar a mano (de otro turno o de otra caja, de un turno ya cortado, perdidas al restaurar, dejadas por
+    /// revisar a mano) o que alguien ya marcó «Ya lo anoté en eleventa», nunca las que chocaron porque eleventa ya lo tenía;
+    /// que todavía no se ligan con otra de eleventa; de antes de esta (con unos minutos por la hora de cada PC); y que tienen
+    /// algo en común con ella (algún artículo, o una de las dos es cancelación). Con lo que se habría mandado, para compararlo.
     /// </summary>
-    private static async Task<List<AnotadaAMano>> AnotadasAManoAsync(PosDbContext db, Guid ventaId, CancellationToken ct)
+    private static async Task<List<AnotadaAMano>> QuizaLaDeAquiAsync(PosDbContext db, Guid ventaId, DevolucionLeida d, DateTime devueltaUtc,
+        CancellationToken ct)
     {
         var envios = await db.EnviosAEleventa
             .Where(e => e.VentaId == ventaId && (e.Tipo == TipoEnvioEleventa.Devolucion || e.Tipo == TipoEnvioEleventa.Cancelacion) && e.DevolucionId != null
-                && (e.Estado == EstadoEnvioEleventa.PorRevisar || e.Estado == EstadoEnvioEleventa.AMano))
+                && (e.Estado == EstadoEnvioEleventa.PorRevisar && e.PorRevisarPorque == MotivoPorRevisar.AnotarAMano
+                    || e.Estado == EstadoEnvioEleventa.AMano && e.PorRevisarPorque != MotivoPorRevisar.EleventaYaLoTenia))
             .ToListAsync(ct);
         if (envios.Count == 0)
             return [];
@@ -382,14 +447,27 @@ public static class DevolucionesConEleventa
                 .Select(x => x.DevolucionId!.Value).ToListAsync(ct))
             .Concat(db.ChangeTracker.Entries<DevolucionDesdeEleventa>().Where(x => x.Entity.DevolucionId is not null).Select(x => x.Entity.DevolucionId!.Value))
             .ToHashSet();
+        var ids = envios.Select(e => e.DevolucionId!.Value).ToList();
+        var hechas = await db.Devoluciones.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.FechaUtc, ct);
         var lista = new List<AnotadaAMano>();
         foreach (var envio in envios.Where(e => !ligadas.Contains(e.DevolucionId!.Value)))
         {
-            if ((await VentasParaEleventa.ArmarDevolucionAsync(db, envio.DevolucionId!.Value, ct)).Devolucion is { } armada)
+            var desde = envio.PorRevisarUtc ?? hechas.GetValueOrDefault(envio.DevolucionId!.Value);
+            if (devueltaUtc < desde - HolguraDeHora)
+                continue;
+            if ((await VentasParaEleventa.ArmarDevolucionAsync(db, envio.DevolucionId!.Value, ct)).Devolucion is { } armada && SeTocan(armada, d))
                 lista.Add(new AnotadaAMano(envio, armada));
         }
         return lista;
     }
+
+    /// <summary>Si tienen algo en común: una de las dos es cancelación (se lleva todo lo que queda), o devuelven algún mismo artículo.</summary>
+    private static bool SeTocan(DevolucionParaEleventa aqui, DevolucionLeida alla) =>
+        aqui.EsCancelacion || alla.EsCancelacion
+        || aqui.Articulos.Select(a => Clave(a.ProductoId, a.Nombre)).Intersect(alla.Articulos.Select(a => Clave(a.ProductoId, a.Nombre))).Any();
+
+    /// <summary>Un artículo, por su producto de eleventa o, si fue común, por su nombre.</summary>
+    private static string Clave(int? producto, string nombre) => producto is { } p ? $"#{p}" : nombre.Trim().ToUpperInvariant();
 
     /// <summary>
     /// Si una devolución de eleventa es la misma que la de aquí: las dos cancelaciones, o lo mismo de los mismos artículos
@@ -401,7 +479,6 @@ public static class DevolucionesConEleventa
             return false;
         if (aqui.EsCancelacion)
             return true;
-        static string Clave(int? producto, string nombre) => producto is { } p ? $"#{p}" : nombre.Trim().ToUpperInvariant();
         var deAqui = aqui.Articulos.GroupBy(a => Clave(a.ProductoId, a.Nombre)).ToDictionary(g => g.Key, g => g.Sum(a => a.Cantidad));
         var deAlla = alla.Articulos.GroupBy(a => Clave(a.ProductoId, a.Nombre)).ToDictionary(g => g.Key, g => g.Sum(a => a.Cantidad));
         return deAqui.Count == deAlla.Count && deAqui.All(a => deAlla.TryGetValue(a.Key, out var cantidad) && Math.Abs(cantidad - a.Value) < 0.0005m);

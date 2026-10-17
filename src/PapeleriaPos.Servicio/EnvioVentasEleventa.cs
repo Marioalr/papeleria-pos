@@ -152,6 +152,7 @@ public sealed class EnvioVentasEleventa(
         var dejado = (await EstadoAsync(db)).PorAtender.FirstOrDefault(e => e.Id == id);
         envio.Estado = EstadoEnvioEleventa.PorRevisar;
         envio.Error = Recortar($"Se dejó para revisar a mano. {envio.Error}".Trim());
+        (envio.PorRevisarPorque, envio.PorRevisarUtc) = (MotivoPorRevisar.AnotarAMano, reloj.GetUtcNow().UtcDateTime);
         control.Anotar($"Dejó por revisar lo que no pasa solo a eleventa: {dejado?.Descripcion ?? envio.Tipo.ToString()}", dejado?.TotalCentavos);
         await db.SaveChangesAsync();
         Despertar();
@@ -511,6 +512,8 @@ public sealed class EnvioVentasEleventa(
         if (escribir is null)
         {
             (envio.Estado, envio.Error) = (descartada ? EstadoEnvioEleventa.Descartada : EstadoEnvioEleventa.PorRevisar, porRevisar);
+            if (!descartada)
+                (envio.PorRevisarPorque, envio.PorRevisarUtc) = (MotivoPorRevisar.Otro, reloj.GetUtcNow().UtcDateTime);
             await db.SaveChangesAsync(ct);
             if (!descartada)
                 log.LogWarning("{Tipo} no pasa sola a eleventa: {Motivo}", envio.Tipo, porRevisar);
@@ -536,6 +539,8 @@ public sealed class EnvioVentasEleventa(
             // Eleventa ya tiene otra cosa (su turno se cortó, hay dos abiertos, el ticket ya está cancelado…): no es la red y
             // reintentar no lo arregla. Queda por revisar, con el porqué, y lo demás de la bandeja sigue. No está allá.
             (envio.Estado, envio.Error) = (EstadoEnvioEleventa.PorRevisar, Recortar(ex.Message));
+            // Si se anota a mano allá o si eleventa ya lo tenía: la vuelta no toma lo de eleventa por su anotación a mano.
+            (envio.PorRevisarPorque, envio.PorRevisarUtc) = (ex.Motivo, reloj.GetUtcNow().UtcDateTime);
             EnCurso.Rechazado(envio.Id);
             // Eleventa sí contestó: el cobro puede volver a esperarlo.
             _sinRedHastaUtc = default;
@@ -708,6 +713,7 @@ public sealed class EnvioVentasEleventa(
                 envio.Error = Recortar($"Eleventa ya no lo tiene: se perdió al restaurar un respaldo (se había mandado el "
                     + $"{HoraMexico.ALocal(envio.EnviadaUtc!.Value):dd/MM HH:mm}). Anótalo a mano en eleventa.");
                 envio.Estado = EstadoEnvioEleventa.PorRevisar;
+                (envio.PorRevisarPorque, envio.PorRevisarUtc) = (MotivoPorRevisar.AnotarAMano, ahora);
                 // Su número en eleventa ya es de otra cosa (o de nada); el folio de la venta se queda: es el que salió impreso.
                 (envio.TicketEleventa, envio.IdEleventa) = (null, null);
             }

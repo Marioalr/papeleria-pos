@@ -16,6 +16,25 @@ public enum EstadoEnvioEleventa
     AMano,
 }
 
+/// <summary>
+/// Por qué algo de la bandeja quedó por revisar (revisión del 2026-10-17): con eso, la vuelta sabe si una devolución que
+/// llega de eleventa puede ser la anotación a mano de una de aquí.
+/// </summary>
+public enum MotivoPorRevisar
+{
+    /// <summary>Otra cosa: no fue en efectivo, se dejó una venta que no llegó…</summary>
+    Otro,
+
+    /// <summary>
+    /// No se puede mandar solo y no está en eleventa: se anota a mano allá (es de otro turno o de otra caja de eleventa, su
+    /// turno ya se cortó, hay dos turnos abiertos, se perdió al restaurar un respaldo, o alguien lo dejó para revisarlo a mano).
+    /// </summary>
+    AnotarAMano,
+
+    /// <summary>Choca con lo que eleventa ya tiene (el ticket ya está cancelado, ya no le queda eso por devolver): no se anota, se revisa.</summary>
+    EleventaYaLoTenia,
+}
+
 public enum TipoEnvioEleventa
 {
     Venta,
@@ -67,6 +86,12 @@ public class EnvioAEleventa
 
     /// <summary>Por qué no entró la última vez (o por qué queda por revisar), dicho para la tienda.</summary>
     public string? Error { get; set; }
+
+    /// <summary>Por qué quedó por revisar, si quedó.</summary>
+    public MotivoPorRevisar? PorRevisarPorque { get; set; }
+
+    /// <summary>Cuándo quedó por revisar.</summary>
+    public DateTime? PorRevisarUtc { get; set; }
 
     public DateTime? EnviadaUtc { get; set; }
 
