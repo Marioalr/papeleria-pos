@@ -60,9 +60,15 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
         await Fabrica.Services.GetRequiredService<PapeleriaPos.Servicio.CatalogoEnMemoria>().AlDiaAsync(db);
     }
 
+    /// <summary>
+    /// La base se prepara con el pool, a propósito: la conexión que se queda guardada la mantiene abierta mientras corre la
+    /// prueba. El servicio la abre sin pool, y sin esa conexión cada petición la cerraría del todo (vaciando el -wal en la base
+    /// y volviéndolo a crear en la siguiente): la corrida tardaba casi el doble. Al final se suelta solo esa
+    /// (<see cref="DisposeAsync"/>).
+    /// </summary>
     public async Task InitializeAsync()
     {
-        await using (var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={_ruta}")))
+        await using (var db = new PosDbContext(BaseDeDatos.Opciones(ArchivosDePrueba.Cadena(_ruta))))
         {
             await BaseDeDatos.PrepararAsync(db);
             await GuardadoLote.GuardarAsync(GeneradorFicticios.Generar(new OpcionesFicticios { Dias = 30 }), db);
@@ -80,37 +86,16 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
 
     ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsync());
 
+    /// <summary>
+    /// Detiene el servicio, suelta la conexión guardada de su base y la borra con sus marcas. Un trabajo de fondo que terminaba
+    /// puede tener el archivo abierto un instante: se reintenta, y si no, se queda en la carpeta temporal.
+    /// </summary>
     public async Task DisposeAsync()
     {
         await Fabrica.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        ArchivosDePrueba.BorrarBase(_ruta, ".en-uso", ".danada");
         // También la llave propia del servicio, que se hace junto a la base la primera vez que se usa.
-        foreach (var archivo in new[] { _ruta, _ruta + "-wal", _ruta + "-shm", _ruta + ".en-uso", _ruta + ".danada", Path.ChangeExtension(_ruta, ".llave") })
-            await BorrarAsync(archivo);
-    }
-
-    /// <summary>
-    /// En Windows, el archivo puede seguir abierto un instante después de parar el servicio (un trabajo de fondo que
-    /// terminaba): se reintenta, y si no, se queda en la carpeta temporal. Una limpieza fallida no tumba la corrida.
-    /// </summary>
-    private static async Task BorrarAsync(string archivo)
-    {
-        for (var intento = 1; ; intento++)
-        {
-            try
-            {
-                File.Delete(archivo);
-                return;
-            }
-            catch (IOException) when (intento < 20)
-            {
-                await Task.Delay(100);
-            }
-            catch (IOException)
-            {
-                return;
-            }
-        }
+        ArchivosDePrueba.BorrarArchivo(Path.ChangeExtension(_ruta, ".llave"));
     }
 }
 

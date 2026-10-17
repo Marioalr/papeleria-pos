@@ -9,11 +9,8 @@ public sealed class ImportacionControlPrintTests : IDisposable
 {
     private readonly string _ruta = Path.Combine(Path.GetTempPath(), $"controlprint-{Guid.NewGuid():N}.db");
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        File.Delete(_ruta);
-    }
+    /// <summary>La base se abre siempre sin pool (Pooling=False), aquí y al importar: no queda ninguna conexión que soltar.</summary>
+    public void Dispose() => File.Delete(_ruta);
 
     /// <summary>Una base como la de Control Print: la tabla settings con la configuración en JSON (enums como texto).</summary>
     private void CrearBase(string? json)

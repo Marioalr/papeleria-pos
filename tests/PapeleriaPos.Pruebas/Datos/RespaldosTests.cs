@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo.Turnos;
 
@@ -8,12 +7,7 @@ public sealed class RespaldosTests : IDisposable
 {
     private readonly string _carpeta = Path.Combine(Path.GetTempPath(), $"pos-respaldos-{Guid.NewGuid():N}");
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (Directory.Exists(_carpeta))
-            Directory.Delete(_carpeta, recursive: true);
-    }
+    public void Dispose() => ArchivosDePrueba.BorrarCarpeta(_carpeta);
 
     [Fact]
     public async Task La_copia_es_una_base_completa_que_se_puede_abrir()
