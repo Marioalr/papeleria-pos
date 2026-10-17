@@ -630,21 +630,37 @@ public sealed record PresentacionFichaDto(Guid? Id, string Nombre, long FactorMi
 
 /// <param name="Presentacion">Vacío: precio por unidad base. Con nombre: el precio propio de esa presentación.</param>
 /// <param name="CantidadMinimaMilesimas">Desde cuánto aplica (1000 = una unidad: menudeo; más, mayoreo).</param>
-public sealed record PrecioFichaDto(string? Presentacion, long CantidadMinimaMilesimas, long PrecioCentavos);
+/// <param name="DeEleventa">
+/// En el piloto con eleventa (con su lectura prendida), un precio que pone la lectura: el de menudeo o una promoción por
+/// cantidad de eleventa. No se cambia aquí. Lo dice el servicio al leer la ficha; al guardar, no lo lee.
+/// </param>
+public sealed record PrecioFichaDto(string? Presentacion, long CantidadMinimaMilesimas, long PrecioCentavos, bool DeEleventa = false);
 
 public sealed record ProveedorFichaDto(Guid ProveedorId, string Proveedor, string? CodigoProveedor, long? UltimoCostoCentavos, DateTime? UltimaCompraLocal);
 
 /// <param name="Existencia">En la sucursal, en unidades base (solo lectura).</param>
 /// <param name="CostoPromedioCentavos">Solo para el dueño y el encargado (solo lectura).</param>
+/// <param name="DeEleventa">
+/// En el piloto con eleventa (con su lectura prendida), una variante que viene de eleventa: si está activa, los códigos de su
+/// presentación base (se pueden agregar otros) y los precios de eleventa no se cambian aquí, ni se depura. Lo dice el
+/// servicio al leer la ficha; al guardar, no lo lee.
+/// </param>
 public sealed record VarianteFichaDto(
     Guid? Id, string Descripcion, UnidadBase Unidad, bool Activa, IReadOnlyList<PresentacionFichaDto> Presentaciones, IReadOnlyList<PrecioFichaDto> Precios,
-    decimal? Existencia = null, decimal? CostoPromedioCentavos = null, IReadOnlyList<ProveedorFichaDto>? Proveedores = null);
+    decimal? Existencia = null, decimal? CostoPromedioCentavos = null, IReadOnlyList<ProveedorFichaDto>? Proveedores = null, bool DeEleventa = false);
 
 /// <summary>La ficha de un producto en F3: lo que se edita junto (el producto, sus variantes, presentaciones, códigos y precios).</summary>
 /// <param name="Marca">Por nombre: si no existe, se da de alta.</param>
+/// <param name="EnEleventa">
+/// En el piloto con eleventa (con su lectura prendida), si algo de este producto viene de eleventa: por qué eso no se
+/// cambia aquí (lo de cada variante y cada precio lo dicen sus <c>DeEleventa</c>). Vacío: todo se cambia aquí.
+/// </param>
+/// <param name="ProductoDeEleventa">
+/// En el piloto, el nombre, el departamento y si se vende los pone la lectura: es de eleventa y de una sola variante.
+/// </param>
 public sealed record FichaProductoDto(
     Guid? Id, string Nombre, Guid DepartamentoId, string? Marca, TipoProducto Tipo, Impuesto Impuesto, string? ClaveSat, bool Activo, bool PorCompletar,
-    IReadOnlyList<VarianteFichaDto> Variantes);
+    IReadOnlyList<VarianteFichaDto> Variantes, string? EnEleventa = null, bool ProductoDeEleventa = false);
 
 public sealed record SolicitudGuardarProducto(Guid UsuarioId, Guid SucursalId, FichaProductoDto Producto);
 

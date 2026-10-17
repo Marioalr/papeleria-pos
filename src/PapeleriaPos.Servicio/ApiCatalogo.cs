@@ -20,6 +20,11 @@ public static class ApiCatalogo
 
         api.MapGet("/opciones", (PosDbContext db) => new RegistroCatalogo(db).OpcionesAsync());
 
+        // El piloto con eleventa (su lectura prendida): lo que dicen Productos e Inventario; vacíos, fuera del piloto.
+        api.MapGet("/piloto", (OpcionesEleventa eleventa) => eleventa.Activo
+            ? new TrastiendaEnElPilotoDto(TrastiendaEnElPiloto.ProductosEnEleventa, TrastiendaEnElPiloto.InventarioEnEleventa)
+            : new TrastiendaEnElPilotoDto(null, null));
+
         // Productos › Departamentos: todos, con cuántos productos activos tiene cada uno. Los da de alta, les cambia el nombre,
         // los desactiva y los reactiva quien entró a la caja con «Productos, precios y etiquetas»; nada se borra. En el piloto
         // con eleventa (su lectura prendida) solo se consultan: se cambian allá y llegan con la lectura.
@@ -43,10 +48,11 @@ public static class ApiCatalogo
         api.MapPost("/sinonimos", (SolicitudSinonimo s, PosDbContext db) => new RegistroSinonimos(db).AgregarAsync(s));
         api.MapPost("/sinonimos/{id:guid}/quitar", (Guid id, SolicitudQuitarSinonimo s, PosDbContext db) => new RegistroSinonimos(db).QuitarAsync(id, s));
 
-        // El costo y los proveedores solo van para el dueño y el encargado.
-        api.MapGet("/productos/{productoId:guid}", async (Guid productoId, Guid sucursalId, Guid usuarioId, PosDbContext db) =>
+        // El costo y los proveedores solo van para el dueño y el encargado. En el piloto con eleventa, la ficha dice qué pone
+        // la lectura en los productos de eleventa: eso no se cambia aquí (TrastiendaEnElPiloto).
+        api.MapGet("/productos/{productoId:guid}", async (Guid productoId, Guid sucursalId, Guid usuarioId, PosDbContext db, OpcionesEleventa eleventa) =>
         {
-            var registro = new RegistroCatalogo(db);
+            var registro = new RegistroCatalogo(db, eleventa.Activo);
             return await registro.FichaAsync(productoId, sucursalId, await registro.VeCostosAsync(usuarioId)) is { } ficha
                 ? Results.Ok(ficha)
                 : Results.NotFound(new ErrorDto("El producto ya no existe."));
@@ -66,9 +72,9 @@ public static class ApiCatalogo
         api.MapGet("/variantes/{varianteId:guid}/movimientos", (Guid varianteId, Guid sucursalId, int? maximo, PosDbContext db) =>
             new RegistroCatalogo(db).UltimosMovimientosAsync(varianteId, sucursalId, maximo ?? 8));
 
-        api.MapPost("/productos", async (SolicitudGuardarProducto s, PosDbContext db) =>
+        api.MapPost("/productos", async (SolicitudGuardarProducto s, PosDbContext db, OpcionesEleventa eleventa) =>
         {
-            var registro = new RegistroCatalogo(db);
+            var registro = new RegistroCatalogo(db, eleventa.Activo);
             var id = await registro.GuardarAsync(s);
             return await registro.FichaAsync(id, s.SucursalId, await registro.VeCostosAsync(s.UsuarioId));
         });
@@ -84,21 +90,22 @@ public static class ApiCatalogo
 
         // ── Depuración ───────────────────────────────────────────────────────
 
-        api.MapPost("/depuracion/baja", async (SolicitudBaja s, PosDbContext db) =>
+        // En el piloto con eleventa, lo de eleventa no se da de baja, no se junta ni se le cambia la unidad aquí.
+        api.MapPost("/depuracion/baja", async (SolicitudBaja s, PosDbContext db, OpcionesEleventa eleventa) =>
         {
-            await new RegistroDepuracion(db).DarDeBajaAsync(s.UsuarioId, s.SucursalId, s.VarianteId);
+            await new RegistroDepuracion(db, eleventa.Activo).DarDeBajaAsync(s.UsuarioId, s.SucursalId, s.VarianteId);
             return Results.NoContent();
         });
 
-        api.MapPost("/depuracion/juntar", async (SolicitudJuntar s, PosDbContext db) =>
+        api.MapPost("/depuracion/juntar", async (SolicitudJuntar s, PosDbContext db, OpcionesEleventa eleventa) =>
         {
-            await new RegistroDepuracion(db).JuntarAsync(s.UsuarioId, s.SucursalId, s.OrigenId, s.DestinoId);
+            await new RegistroDepuracion(db, eleventa.Activo).JuntarAsync(s.UsuarioId, s.SucursalId, s.OrigenId, s.DestinoId);
             return Results.NoContent();
         });
 
-        api.MapPost("/depuracion/unidad", async (SolicitudCambiarUnidad s, PosDbContext db) =>
+        api.MapPost("/depuracion/unidad", async (SolicitudCambiarUnidad s, PosDbContext db, OpcionesEleventa eleventa) =>
         {
-            await new RegistroDepuracion(db).CambiarUnidadAsync(s.UsuarioId, s.SucursalId, s.VarianteId, s.Unidad, s.FactorMilesimas, s.PrecioCentavos);
+            await new RegistroDepuracion(db, eleventa.Activo).CambiarUnidadAsync(s.UsuarioId, s.SucursalId, s.VarianteId, s.Unidad, s.FactorMilesimas, s.PrecioCentavos);
             return Results.NoContent();
         });
 
