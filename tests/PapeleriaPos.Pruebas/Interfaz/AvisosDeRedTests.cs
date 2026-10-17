@@ -105,6 +105,46 @@ public sealed class AvisosDeRedTests
     public void La_ip_de_la_impresora_para_hacerle_ping(string? configuracion, string? ip) =>
         Assert.Equal(ip, AvisosDeRed.IpDeLaImpresora(configuracion, Puertos)?.ToString());
 
+    /// <summary>Lo de Windows, contado: a qué se le preguntó.</summary>
+    private sealed class DetallesContados : IDetallesDeRed
+    {
+        public int Wifis;
+        public int Macs;
+
+        public (string? Red, int? Senal)? Wifi(string idDelAdaptador)
+        {
+            Wifis++;
+            return ("Tienda", 80);
+        }
+
+        public string? Mac(IPAddress ip)
+        {
+            Macs++;
+            return "50:2b:73:aa:bb:cc";
+        }
+    }
+
+    /// <summary>
+    /// El Wi-Fi (su nombre y su señal) solo se le pregunta a Windows con «DetalleWifi» (en 24H2 podría sacar la pregunta del
+    /// permiso de ubicación encima de la venta): por omisión, ni se le pregunta. La MAC del router, siempre.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void El_wifi_solo_se_lee_con_detalle_wifi(bool detalleWifi)
+    {
+        var windows = new DetallesContados();
+        var detalles = RedDeLaCaja.DetallesPara(new OpcionesRedDeLaCaja { Detalles = windows, DetalleWifi = detalleWifi })!;
+
+        var wifi = detalles.Wifi("{4d36e972-e325-11ce-bfc1-08002be10318}");
+        var mac = detalles.Mac(IPAddress.Parse("192.168.0.1"));
+
+        Assert.Equal(detalleWifi ? 1 : 0, windows.Wifis);
+        Assert.Equal(detalleWifi ? ("Tienda", 80) : null, wifi);
+        Assert.Equal(1, windows.Macs);
+        Assert.Equal("50:2b:73:aa:bb:cc", mac);
+    }
+
     [Theory]
     [InlineData("http://192.168.0.10:5080/", null)]
     [InlineData("http://localhost:5080/", null)]

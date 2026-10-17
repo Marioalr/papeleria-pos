@@ -21,6 +21,13 @@ public sealed class OpcionesRedDeLaCaja
     /// <summary>El Wi-Fi y la MAC del router (los lee la caja de Windows).</summary>
     public IDetallesDeRed? Detalles { get; init; }
 
+    /// <summary>
+    /// Que la bitácora anote el nombre del Wi-Fi y su señal («Red»: { «DetalleWifi»: true } en caja.json), para diagnosticar una
+    /// caída. Apagado: en Windows 11 24H2 leerlo podría sacar la pregunta del permiso de ubicación encima de la venta. La MAC del
+    /// router se anota siempre (no es de ubicación).
+    /// </summary>
+    public bool DetalleWifi { get; init; }
+
     /// <summary>Las pruebas de la red (ping); las pruebas del POS ponen unas a mano.</summary>
     public IPruebasDeRed? Pruebas { get; init; }
 
@@ -70,7 +77,7 @@ public sealed class RedDeLaCaja
         var equipos = AvisosDeRed.IpDeLaImpresora(opciones.Impresora, opciones.Puertos) is { } impresora
             ? new List<(string, IPAddress)> { ("la impresora de tickets", impresora) }
             : [];
-        var vigia = new VigiaDeLaRed(bitacora, opciones.Equipo ?? new RedDelEquipo(opciones.Detalles), opciones.Pruebas ?? new PruebasDeRed(),
+        var vigia = new VigiaDeLaRed(bitacora, opciones.Equipo ?? new RedDelEquipo(DetallesPara(opciones)), opciones.Pruebas ?? new PruebasDeRed(),
             new OpcionesDelVigia
             {
                 Quien = "esta caja",
@@ -84,6 +91,21 @@ public sealed class RedDeLaCaja
         var reencuentro = new ReencuentroDeLaPrincipal(conexion, opciones.Buscador ?? new BuscadorPorDifusion(), opciones.Identidad ?? ClienteDeLaPrueba(),
             reloj, bitacora);
         return new RedDeLaCaja(conexion, bitacora, vigia, reencuentro, avisoImpresora);
+    }
+
+    /// <summary>
+    /// Lo de Windows que lee el vigía: el Wi-Fi solo con <see cref="OpcionesRedDeLaCaja.DetalleWifi"/> (en 24H2 podría pedir el
+    /// permiso de ubicación); la MAC del router, siempre.
+    /// </summary>
+    internal static IDetallesDeRed? DetallesPara(OpcionesRedDeLaCaja opciones) =>
+        opciones.Detalles is not { } detalles ? null : opciones.DetalleWifi ? detalles : new SinWifi(detalles);
+
+    /// <summary>Sin el Wi-Fi: ni se le pregunta a Windows.</summary>
+    private sealed class SinWifi(IDetallesDeRed detalles) : IDetallesDeRed
+    {
+        public (string? Red, int? Senal)? Wifi(string idDelAdaptador) => null;
+
+        public string? Mac(IPAddress ip) => detalles.Mac(ip);
     }
 
     /// <summary>

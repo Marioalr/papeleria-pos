@@ -36,10 +36,11 @@ namespace PapeleriaPos.Caja;
 /// <param name="DireccionDeConfianza">
 /// La dirección que puso el dueño al darla de alta (en una caja de antes, la que ya tenía): solo ahí se aprende esa llave.
 /// </param>
+/// <param name="Red">Lo de la bitácora de red: «"Red": { "DetalleWifi": true }» anota el Wi-Fi (apagado: ver <see cref="AjustesDeRed"/>).</param>
 public sealed record ConfiguracionCaja(
     string Servicio, Guid? CajaId, string? Impresora, string? LlaveProtegida = null, string? ColaImpresion = null, bool QuitarImpresos = true,
     bool Prueba = false, string? ServicioLocal = null, string? BaseInicial = null, string? CarpetaDatos = null, string? LlaveDelServicio = null,
-    string? DireccionDeConfianza = null)
+    string? DireccionDeConfianza = null, AjustesDeRed? Red = null)
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
 
@@ -110,6 +111,13 @@ public sealed record ConfiguracionCaja(
     }
 }
 
+/// <summary>«Red» en caja.json.</summary>
+/// <param name="DetalleWifi">
+/// Que la bitácora de red anote el nombre del Wi-Fi y su señal, para diagnosticar una caída (se prende en la caja 2 cuando hace
+/// falta). Apagado por omisión: en Windows 11 24H2, leerlo podría sacar la pregunta del permiso de ubicación encima de la venta.
+/// </param>
+public sealed record AjustesDeRed(bool DetalleWifi = false);
+
 /// <summary>La ventana de la caja: muestra la interfaz compartida y manda el ticket a la impresora de tickets.</summary>
 public partial class MainWindow : Window
 {
@@ -173,6 +181,7 @@ public partial class MainWindow : Window
                 Impresora = configuracion.Impresora,
                 Puertos = new PuertosDeImpresorasWindows(),
                 Detalles = new RedDeWindows(),
+                DetalleWifi = configuracion.Red?.DetalleWifi ?? false,
             });
         // Cotizar: el PDF se mide aquí, en la PC donde está; el precio lo pone la caja principal.
         servicios.AddSingleton<IMedidorPdf, MedidorPdfWindows>();

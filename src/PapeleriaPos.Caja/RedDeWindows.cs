@@ -9,9 +9,11 @@ namespace PapeleriaPos.Caja;
 
 /// <summary>
 /// Lo de la red que solo sabe Windows, para la bitácora de red (la red de la tienda en el POS): el Wi-Fi de la caja (el nombre de
-/// su perfil de red y su señal, de las API de Windows, sin pedir permisos) y la MAC del router (de la tabla ARP que Windows ya
-/// tiene, sin mandar nada). El nombre del Wi-Fi como tal no se pide: desde Windows 11 24H2 puede sacar la pregunta del permiso de
-/// ubicación. Lo que no se puede leer se queda vacío: nunca detiene la caja.
+/// su perfil de red y su señal, de las API de Windows) y la MAC del router (de la tabla ARP que Windows ya tiene, sin mandar nada).
+/// El Wi-Fi solo se lee con «"Red": { "DetalleWifi": true }» en caja.json (<see cref="OpcionesRedDeLaCaja.DetalleWifi"/>): no se
+/// puede asegurar que en Windows 11 24H2 no saque la pregunta del permiso de ubicación encima de la venta. El nombre del Wi-Fi
+/// como tal (GetConnectedSsid) no se pide nunca. Lo que no se puede leer (también sin permiso) se queda vacío, sin avisar: nunca
+/// detiene la caja.
 /// </summary>
 public sealed class RedDeWindows : IDetallesDeRed
 {
