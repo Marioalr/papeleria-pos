@@ -767,6 +767,7 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | ¿Pantalla táctil? | No por ahora: todo con teclado y ratón, con botones de buen tamaño | Propuesta |
 | ¿Pedir el PIN otra vez tras unos minutos sin usar la caja? | No por ahora, como eleventa: estorba para cobrar rápido. Ctrl+U cambia de usuario | Propuesta |
 | Las tres partes del puente (turno y corte, devoluciones de ida y vuelta, respaldos) | En un solo PR: los arreglos de la revisión tocan las tres | Puente (#109) |
+| Ventas de otros días e historial de cortes: quién ve qué, topes y detalles | Otro día u otra caja con «Ver reportes de ventas»; buscar un folio, cualquiera; el historial, quien hace cortes; ocho detalles más en el PR | #113 |
 | Al devolver en la caja 2 un ticket cobrado en eleventa, ¿el dinero al peso o exacto? | Exacto al centavo, como lo devuelve eleventa ($9.50, no $10): así el ticket de eleventa queda en cero y el cajón cuadra con lo que anota eleventa. Lo que cobró la propia caja se sigue devolviendo al peso, porque se cobró redondeado | Puente (#109) |
 
 ## Recomendaciones
