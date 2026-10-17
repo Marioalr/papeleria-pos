@@ -88,7 +88,7 @@ public sealed class VersionesDeLaCopia(IServiceScopeFactory alcances)
             .Where(s => s.Nombre == Secuencia.Catalogo || s.Nombre == Secuencia.Existencias || s.Nombre == Secuencia.Credito)
             .ToDictionaryAsync(s => s.Nombre, s => s.Valor, ct);
         return new VersionesCopiaDto(base_, valores.GetValueOrDefault(Secuencia.Catalogo), valores.GetValueOrDefault(Secuencia.Existencias),
-            valores.GetValueOrDefault(Secuencia.Credito));
+            valores.GetValueOrDefault(Secuencia.Credito), Formato);
     }
 }
 

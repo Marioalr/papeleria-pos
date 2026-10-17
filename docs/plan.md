@@ -611,9 +611,11 @@ aprobó el dueño el 2026-10-10 ([propuesta](propuesta-interfaz.md#rendimiento))
   al día trae su búsqueda: si cambió algo de los productos, las marcas o los sinónimos, su índice se arma otra vez; si
   solo cambiaron existencias, lo más vendido o lo elegido, se usa el mismo. La copia puesta al día queda igual que una
   recién bajada, también en esto (lo cuida una prueba), y entre productos que se llaman igual la búsqueda ordena por
-  antigüedad (antes, por el orden en que llegaban): ordena igual que la completa y que la caja principal. Al agregar un
-  sinónimo ya no se baja la copia: llega con el aviso. El formato de la copia pasó a 2: una de antes se baja completa una
-  vez.
+  antigüedad (antes, por el orden en que llegaban): ordena igual que la completa y que la caja principal. Al escanear, los
+  códigos que solo cambian en mayúsculas («ZZ-01» y «zz-01») se resuelven igual en las dos: el igual tal cual o, si
+  ninguno, el producto más antiguo (antes ganaba el primero de la lista, y en la copia puesta al día lo que cambió va al
+  final). Lo elegido en la búsqueda mientras se arman los cambios ya no se pierde. Al agregar un sinónimo ya no se baja la
+  copia: llega con el aviso. El formato de la copia pasó a 2: una de antes se baja completa una vez.
 - **Pintar menos:** cada renglón del ticket es su propio componente: al escanear se pinta el renglón nuevo y el que
   estaba elegido, y la pantalla una sola vez. Con 20 renglones, un escaneo le mandaba a la página 449 cambios y cambiaba
   134 manejadores de eventos; ahora, unos 40 y 5.
@@ -659,7 +661,10 @@ aprobó el dueño el 2026-10-10 ([propuesta](propuesta-interfaz.md#rendimiento))
 - **Cuándo baja la copia completa, como antes:** si no tiene copia, si la caja principal se reinició o empezó de cero (otra
   base), si cambió el formato de la copia, si son muchos cambios (una cuarta parte del catálogo), si pedir los cambios
   falla, y por si acaso cada 4 horas. Una caja de antes funciona igual con el servicio nuevo, y una caja nueva con un
-  servicio de antes hace lo de siempre (latido y copia completa).
+  servicio de antes hace lo de siempre (latido y copia completa). Si la caja y la caja principal arman la copia en
+  formatos distintos (mientras se actualiza una antes que la otra; la caja principal dice el suyo en el latido y en el
+  aviso), la caja no pide cambios y la baja completa solo cuando cambia el catálogo o cada media hora; antes la bajaba
+  completa con cada latido y cada aviso.
 - **La red con plazos:** dos conexiones aparte, una para lo que espera el cajero y otra para lo de fondo (el aviso, la copia,
   la bandeja). Lo de la venta que también se puede hacer con la copia lleva plazo: leer, 800 ms; cobrar y lo demás que
   escribe, 2.5 s (los 2 s que la caja principal espera el folio de eleventa en el piloto, y medio segundo para la red). El

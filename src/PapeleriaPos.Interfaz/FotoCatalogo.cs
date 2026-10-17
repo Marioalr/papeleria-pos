@@ -22,8 +22,8 @@ namespace PapeleriaPos.Interfaz;
 /// </summary>
 public sealed class FotoCatalogo
 {
-    /// <summary>Cada código con su producto, ya con la presentación de ese código (el paquete, la caja de 12…).</summary>
-    private readonly FrozenDictionary<string, ProductoVentaDto?> _porCodigo;
+    /// <summary>Cada código con su producto y la presentación de ese código (el paquete, la caja de 12…), como en el servicio.</summary>
+    private readonly CodigosDeEscaneo _codigos;
 
     private readonly FrozenDictionary<Guid, ProductoVentaDto> _porVariante;
 
@@ -36,11 +36,11 @@ public sealed class FotoCatalogo
     /// <summary>La búsqueda por nombre de la copia (entrega 5, parte 3): se arma con la foto y pasa igual a las que van encima.</summary>
     private readonly BusquedaDeLaCopia _busqueda;
 
-    private FotoCatalogo(long version, FrozenDictionary<string, ProductoVentaDto?> porCodigo, FrozenDictionary<Guid, ProductoVentaDto> porVariante,
+    private FotoCatalogo(long version, CodigosDeEscaneo codigos, FrozenDictionary<Guid, ProductoVentaDto> porVariante,
         ImmutableDictionary<Guid, ProductoVentaDto> nuevos, ImmutableDictionary<string, (Guid, Guid)> codigosNuevos, BusquedaDeLaCopia busqueda)
     {
         Version = version;
-        _porCodigo = porCodigo;
+        _codigos = codigos;
         _porVariante = porVariante;
         _nuevos = nuevos;
         _codigosNuevos = codigosNuevos;
@@ -53,16 +53,17 @@ public sealed class FotoCatalogo
     /// <summary>Cuántos productos trae la copia.</summary>
     public int Productos => _porVariante.Count;
 
-    /// <summary>Cuántos códigos trae la copia.</summary>
-    public int Codigos => _porCodigo.Count;
+    /// <summary>Cuántos códigos trae la copia (sin contar dos veces los que solo cambian en mayúsculas).</summary>
+    public int Codigos => _codigos.Count;
 
     /// <summary>Cuántos productos llegaron de la caja principal después de la copia (van encima de ella).</summary>
     public int Nuevos => _nuevos.Count;
 
     /// <summary>
-    /// La foto de una copia. Resuelve cada código igual que lo hacía <c>Contingencia.PorCodigo</c>: sin importar mayúsculas
-    /// ni los espacios de las orillas; si un código se repite, vale el primero; y el producto sale con la presentación de ese
-    /// código (si ya no la tiene, con la suya). Cada producto queda con la versión de la copia si no trae la propia.
+    /// La foto de una copia. Resuelve cada código como el servicio (<see cref="CodigosDeEscaneo"/>): sin importar mayúsculas
+    /// ni los espacios de las orillas, y entre los que solo cambian en mayúsculas, el igual tal cual o el del producto más
+    /// antiguo; el producto sale con la presentación de ese código (si ya no la tiene, con la suya). Cada producto queda con la
+    /// versión de la copia si no trae la propia.
     /// </summary>
     public static FotoCatalogo Armar(PaqueteContingenciaDto paquete) => Armar(paquete, null);
 
@@ -78,15 +79,7 @@ public sealed class FotoCatalogo
         var porVariante = new Dictionary<Guid, ProductoVentaDto>(paquete.Productos.Count);
         foreach (var p in paquete.Productos)
             porVariante.TryAdd(p.VarianteId, p.Version is null ? p with { Version = paquete.Version } : p);
-        var porCodigo = new Dictionary<string, ProductoVentaDto?>(paquete.Codigos.Count, StringComparer.OrdinalIgnoreCase);
-        foreach (var c in paquete.Codigos)
-        {
-            // El primero se queda, aunque su producto no esté en la copia: así lo resolvía la contingencia.
-            if (porCodigo.ContainsKey(c.Codigo))
-                continue;
-            porCodigo[c.Codigo] = porVariante.TryGetValue(c.VarianteId, out var p) ? ConPresentacion(p, c.PresentacionId) : null;
-        }
-        return new FotoCatalogo(paquete.Version, porCodigo.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase), porVariante.ToFrozenDictionary(),
+        return new FotoCatalogo(paquete.Version, new CodigosDeEscaneo(paquete.Codigos), porVariante.ToFrozenDictionary(),
             ImmutableDictionary<Guid, ProductoVentaDto>.Empty, ImmutableDictionary.Create<string, (Guid, Guid)>(StringComparer.OrdinalIgnoreCase),
             BusquedaDeLaCopia.Armar(paquete, porVariante, conLaBusquedaDe?._busqueda.Indice));
     }
@@ -97,8 +90,10 @@ public sealed class FotoCatalogo
         codigo = codigo.Trim();
         if (_codigosNuevos.TryGetValue(codigo, out var nuevo) && _nuevos.TryGetValue(nuevo.VarianteId, out var producto))
             return ConPresentacion(producto, nuevo.PresentacionId);
-        if (!_porCodigo.TryGetValue(codigo, out var enLaCopia) || enLaCopia is null)
+        // El código que se lleva el escaneo, aunque su producto no esté en la copia (entonces no hay): así lo resolvía la contingencia.
+        if (_codigos.Buscar(codigo) is not { } deLaCopia || !_porVariante.TryGetValue(deLaCopia.VarianteId, out var suyo))
             return null;
+        var enLaCopia = ConPresentacion(suyo, deLaCopia.PresentacionId);
         // Si sus precios cambiaron después de la copia (lo dijo el cobro), los de ahora, con la presentación del código.
         return _nuevos.TryGetValue(enLaCopia.VarianteId, out var alDia) ? ConPresentacion(alDia, enLaCopia.Presentacion.Id) : enLaCopia;
     }
@@ -116,9 +111,9 @@ public sealed class FotoCatalogo
     {
         var baseDelProducto = ConPresentacion(producto, producto.Presentaciones.FirstOrDefault(p => p.EsBase)?.Id ?? producto.Presentacion.Id);
         var codigos = _codigosNuevos;
-        if (codigo?.Trim() is { Length: > 0 } limpio && !_porCodigo.ContainsKey(limpio))
+        if (codigo?.Trim() is { Length: > 0 } limpio && !_codigos.Contiene(limpio))
             codigos = codigos.SetItem(limpio, (producto.VarianteId, producto.Presentacion.Id));
-        return new FotoCatalogo(Version, _porCodigo, _porVariante, _nuevos.SetItem(producto.VarianteId, baseDelProducto), codigos, _busqueda);
+        return new FotoCatalogo(Version, _codigos, _porVariante, _nuevos.SetItem(producto.VarianteId, baseDelProducto), codigos, _busqueda);
     }
 
     /// <summary>
@@ -133,9 +128,9 @@ public sealed class FotoCatalogo
         var nuevos = anterior._nuevos.Where(x => x.Value.Version is { } v && v > Version).ToImmutableDictionary();
         if (nuevos.IsEmpty)
             return this;
-        var codigos = anterior._codigosNuevos.Where(x => nuevos.ContainsKey(x.Value.VarianteId) && !_porCodigo.ContainsKey(x.Key))
+        var codigos = anterior._codigosNuevos.Where(x => nuevos.ContainsKey(x.Value.VarianteId) && !_codigos.Contiene(x.Key))
             .ToImmutableDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase);
-        return new FotoCatalogo(Version, _porCodigo, _porVariante, nuevos, codigos, _busqueda);
+        return new FotoCatalogo(Version, _codigos, _porVariante, nuevos, codigos, _busqueda);
     }
 
     private static ProductoVentaDto ConPresentacion(ProductoVentaDto p, Guid presentacionId) =>

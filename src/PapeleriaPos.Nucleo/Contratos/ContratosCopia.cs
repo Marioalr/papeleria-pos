@@ -11,7 +11,12 @@ namespace PapeleriaPos.Nucleo.Contratos;
 /// <param name="Catalogo">La del catálogo y lo demás que lleva la copia (<see cref="EstadoServicioDto.VersionDatos"/>).</param>
 /// <param name="Existencias">La de las existencias: sube con cada venta.</param>
 /// <param name="Credito">La de los saldos del crédito (<see cref="EstadoServicioDto.VersionCredito"/>).</param>
-public sealed record VersionesCopiaDto(Guid Base, long Catalogo, long Existencias, long Credito);
+/// <param name="Formato">
+/// El de la copia que arma la caja principal (<see cref="PaqueteContingenciaDto.Formato"/>). Si no es el de la caja (una de
+/// las dos se actualizó antes que la otra), la caja no pide cambios y baja la copia completa solo cuando cambia la versión del
+/// catálogo, o cada tanto, como con una caja principal de antes. Vacío en la de la entrega 5, parte 2, que armaba el 1.
+/// </param>
+public sealed record VersionesCopiaDto(Guid Base, long Catalogo, long Existencias, long Credito, int? Formato = null);
 
 /// <summary>La existencia de un producto en la sucursal de la caja, ya en unidades.</summary>
 public sealed record ExistenciaLocalDto(Guid VarianteId, decimal Cantidad);

@@ -24,14 +24,15 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
         Guid VarianteId, string Descripcion, string? Codigo, Impuesto Impuesto, UnidadBase Unidad, bool LlevaInventario,
         List<PresentacionDto> Presentaciones, List<PrecioDto> Precios);
 
-    /// <param name="Codigos">Todos los códigos de lo que se vende, en el orden de la base (también los repetidos): van a la copia de las cajas.</param>
+    /// <param name="Codigos">Todos los códigos de lo que se vende (también los que solo cambian en mayúsculas): van a la copia de las cajas.</param>
     /// <param name="Marcas">Con las que se leen los nombres: la copia de las cajas los lee igual.</param>
     /// <param name="Busqueda">La búsqueda por nombre, la misma que arma cada caja con su copia (entrega 5, parte 3).</param>
+    /// <param name="Escaneo">De qué producto es cada código escaneado: la misma regla que la copia de las cajas.</param>
     /// <param name="CodigosDe">Los códigos de cada variante (los de sus presentaciones), como van en la copia y en sus cambios.</param>
-    private sealed record Indice(long Version, Dictionary<Guid, Articulo> PorVariante, Dictionary<string, (Guid Variante, Guid Presentacion)> PorCodigo,
+    private sealed record Indice(long Version, Dictionary<Guid, Articulo> PorVariante, CodigosDeEscaneo Escaneo,
         List<CodigoLocalDto> Codigos, IReadOnlyList<string> Marcas, IndiceDeBusqueda Busqueda, ILookup<Guid, CodigoLocalDto> CodigosDe);
 
-    private static readonly Indice Vacio = new(-1, [], [], [], [], IndiceDeBusqueda.Vacio, Array.Empty<CodigoLocalDto>().ToLookup(c => c.VarianteId));
+    private static readonly Indice Vacio = new(-1, [], CodigosDeEscaneo.Ninguno, [], [], IndiceDeBusqueda.Vacio, Array.Empty<CodigoLocalDto>().ToLookup(c => c.VarianteId));
 
     private Indice _indice = Vacio;
     private readonly Lock _candado = new();
@@ -60,10 +61,29 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
     /// orden: la copia de cada caja dice hasta cuál trae, y sus cambios traen lo suyo de después (entrega 5, partes 2 y 3).
     /// </summary>
     private readonly System.Collections.Concurrent.ConcurrentDictionary<(Guid Caja, string Texto), (Guid Variante, long Orden)> _elegido = new();
-    private bool _elegidoCargado;
+    private volatile bool _elegidoCargado;
 
     /// <summary>El número del último elegido (no vuelve atrás mientras corre el servicio; al arrancar, las cajas bajan su copia completa).</summary>
     private long _ordenElegido;
+
+    /// <summary>
+    /// Tomar el número de lo elegido y guardarlo van juntos, y leer hasta dónde va y la lista de una caja también: si no, lo
+    /// que se elegía justo mientras se armaban los cambios de una caja se perdía para siempre (el número ya contaba y lo elegido
+    /// todavía no estaba).
+    /// </summary>
+    private readonly Lock _candadoElegido = new();
+
+    /// <summary>Lo elegido se lee de la base una vez (al arrancar), una lectura a la vez.</summary>
+    private readonly SemaphoreSlim _cargandoElegido = new(1, 1);
+
+    /// <summary>Cambia al invalidar: lo elegido que se leyó de la base de antes ya no se pone.</summary>
+    private int _generacionElegido;
+
+    /// <summary>Para las pruebas: entre tomar el número de lo elegido y guardarlo (dentro del candado).</summary>
+    internal Action? EntreElNumeroYLoElegido { get; set; }
+
+    /// <summary>Para las pruebas: entre leer de la base lo elegido (al arrancar) y ponerlo.</summary>
+    internal Func<Task>? AlLeerLoElegido { get; set; }
 
     /// <summary>La base cambió entera (la prueba empezó de cero): se vuelve a cargar aunque la versión coincida.</summary>
     public void Invalidar()
@@ -75,16 +95,28 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
             _recargando = null;
         }
         Volatile.Write(ref _vendidos, LoVendido.Nada);
-        _elegido.Clear();
-        _elegidoCargado = false;
+        lock (_candadoElegido)
+        {
+            _generacionElegido++;
+            _elegido.Clear();
+            _elegidoCargado = false;
+        }
     }
 
     /// <summary>La clave de «lo elegido antes»: lo escrito sin acentos, mayúsculas ni espacios de más.</summary>
     public static string ClaveDeBusqueda(string texto) => IndiceDeBusqueda.Clave(texto);
 
     /// <summary>Lo que eligió una caja con un texto: la próxima vez sale primero.</summary>
-    public void Aprender(Guid cajaId, string texto, Guid varianteId) =>
-        _elegido[(cajaId, ClaveDeBusqueda(texto))] = (varianteId, Interlocked.Increment(ref _ordenElegido));
+    public void Aprender(Guid cajaId, string texto, Guid varianteId)
+    {
+        var clave = (cajaId, ClaveDeBusqueda(texto));
+        lock (_candadoElegido)
+        {
+            var orden = ++_ordenElegido;
+            EntreElNumeroYLoElegido?.Invoke();
+            _elegido[clave] = (varianteId, orden);
+        }
+    }
 
     /// <summary>
     /// Lo que eligió esta caja con cada texto, para su copia (entrega 5, parte 3): con eso la búsqueda de la caja ordena igual
@@ -94,23 +126,51 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
     public async Task<(long Version, List<ElegidoDto> Elegidos)> ElegidosAsync(PosDbContext db, Guid cajaId, long desde = 0, CancellationToken ct = default)
     {
         await CargarElegidoAsync(db, ct);
-        // Primero hasta dónde: lo que se elija mientras tanto puede venir también, y vuelve a venir la próxima vez (pisa igual).
-        var version = Interlocked.Read(ref _ordenElegido);
-        var elegidos = _elegido.Where(x => x.Key.Caja == cajaId && x.Value.Orden > desde)
-            .Select(x => new ElegidoDto(x.Key.Texto, x.Value.Variante)).OrderBy(e => e.Texto, StringComparer.Ordinal).ToList();
-        return (version, elegidos);
+        // Hasta dónde va y lo de después de «desde», del mismo momento: lo que se elija mientras tanto, viene la próxima vez.
+        lock (_candadoElegido)
+        {
+            var elegidos = _elegido.Where(x => x.Key.Caja == cajaId && x.Value.Orden > desde)
+                .Select(x => new ElegidoDto(x.Key.Texto, x.Value.Variante)).OrderBy(e => e.Texto, StringComparer.Ordinal).ToList();
+            return (_ordenElegido, elegidos);
+        }
     }
 
+    /// <summary>
+    /// Lo elegido que guardó la base, la primera vez que hace falta (al arrancar), una lectura a la vez. Lo que se eligió
+    /// mientras se leía es más nuevo que lo de la base y se queda: antes la lectura lo pisaba con lo de antes.
+    /// </summary>
     private async Task CargarElegidoAsync(PosDbContext db, CancellationToken ct)
     {
         if (_elegidoCargado)
             return;
-        // Lo más reciente de cada caja y texto gana: se recorre en orden de fecha.
-        var elegidas = await db.Busquedas.AsNoTracking().Where(b => b.VarianteId != null).OrderBy(b => b.FechaUtc)
-            .Select(b => new { b.CajaId, b.Texto, b.VarianteId }).ToListAsync(ct);
-        foreach (var b in elegidas)
-            _elegido[(b.CajaId, b.Texto)] = (b.VarianteId!.Value, Interlocked.Increment(ref _ordenElegido));
-        _elegidoCargado = true;
+        await _cargandoElegido.WaitAsync(ct);
+        try
+        {
+            if (_elegidoCargado)
+                return;
+            var generacion = Volatile.Read(ref _generacionElegido);
+            // Lo más reciente de cada caja y texto gana: se recorre en orden de fecha.
+            var elegidas = await db.Busquedas.AsNoTracking().Where(b => b.VarianteId != null).OrderBy(b => b.FechaUtc)
+                .Select(b => new { b.CajaId, b.Texto, b.VarianteId }).ToListAsync(ct);
+            var ultimo = new Dictionary<(Guid Caja, string Texto), Guid>();
+            foreach (var b in elegidas)
+                ultimo[(b.CajaId, b.Texto)] = b.VarianteId!.Value;
+            if (AlLeerLoElegido is { } alLeer)
+                await alLeer();
+            lock (_candadoElegido)
+            {
+                // La base cambió entera mientras se leía (la prueba empezó de cero): lo leído era de la otra.
+                if (generacion != _generacionElegido)
+                    return;
+                foreach (var (clave, variante) in ultimo)
+                    _elegido.TryAdd(clave, (variante, ++_ordenElegido));
+                _elegidoCargado = true;
+            }
+        }
+        finally
+        {
+            _cargandoElegido.Release();
+        }
     }
 
     /// <summary>
@@ -292,9 +352,6 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
         }
 
         var deLoQueSeVende = codigos.Where(c => porVariante.ContainsKey(c.VarianteId)).Select(c => new CodigoLocalDto(c.Codigo, c.VarianteId, c.PresentacionId)).ToList();
-        var porCodigo = new Dictionary<string, (Guid, Guid)>(StringComparer.OrdinalIgnoreCase);
-        foreach (var c in deLoQueSeVende)
-            porCodigo.TryAdd(c.Codigo, (c.VarianteId, c.PresentacionId));
 
         // Las marcas se aprenden de todo el catálogo; también valen las de los productos. La copia de las cajas lleva las mismas
         // y sus sinónimos, y arma la misma búsqueda (entrega 5, parte 3).
@@ -304,7 +361,7 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
             porVariante.Values.Select(a => new ProductoParaBuscar(a.VarianteId, a.Descripcion, a.Codigo, codigosPorVariante[a.VarianteId].Select(c => c.Codigo))),
             marcas, sinonimos.Select(s => (s.Palabra, s.Equivale)));
         // Los cambios de la copia de una caja llevan todos los códigos de cada producto que cambió, como la copia completa.
-        return new Indice(version, porVariante, porCodigo, deLoQueSeVende, marcas, busqueda, deLoQueSeVende.ToLookup(c => c.VarianteId));
+        return new Indice(version, porVariante, new CodigosDeEscaneo(deLoQueSeVende), deLoQueSeVende, marcas, busqueda, deLoQueSeVende.ToLookup(c => c.VarianteId));
     }
 
     /// <summary>
@@ -317,9 +374,16 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
     public async Task<ProductoVentaDto?> PorCodigoAsync(PosDbContext db, string codigo, Guid sucursalId, CancellationToken ct = default)
     {
         var indice = await ActualAsync(ct);
-        if (!indice.PorCodigo.TryGetValue(codigo.Trim(), out var x) && !(indice = await AlDiaAsync(db, indice, ct)).PorCodigo.TryGetValue(codigo.Trim(), out x))
-            return null;
-        return await ProductoAsync(db, indice.Version, indice.PorVariante[x.Variante], x.Presentacion, sucursalId, ct);
+        // Sin importar mayúsculas; entre los que solo cambian en eso, el igual tal cual (CodigosDeEscaneo, como la copia de las cajas).
+        var elCodigo = indice.Escaneo.Buscar(codigo.Trim());
+        if (elCodigo is null)
+        {
+            indice = await AlDiaAsync(db, indice, ct);
+            elCodigo = indice.Escaneo.Buscar(codigo.Trim());
+            if (elCodigo is null)
+                return null;
+        }
+        return await ProductoAsync(db, indice.Version, indice.PorVariante[elCodigo.VarianteId], elCodigo.PresentacionId, sucursalId, ct);
     }
 
     /// <param name="conExistencia">Sin ella, no se lee la base: para armar una venta, que no la usa.</param>
@@ -365,8 +429,8 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
     /// <summary>
     /// Todo el catálogo vendible de una sucursal, con existencias: la copia de una caja para vender sin conexión. Con la
     /// versión de la base de ahora (si la recarga sigue en camino, la espera: la caja la baja en segundo plano). Con todos los
-    /// códigos (también los repetidos: al escanear vale el primero, como aquí) y las marcas con que se leen los nombres, para
-    /// que la caja arme la misma búsqueda (entrega 5, parte 3).
+    /// códigos (también los que solo cambian en mayúsculas: al escanear, la misma regla que aquí) y las marcas con que se leen
+    /// los nombres, para que la caja arme la misma búsqueda (entrega 5, parte 3).
     /// </summary>
     /// <param name="existencias">Las de la sucursal, leídas por quien arma la copia (con su versión).</param>
     public async Task<(long Version, List<ProductoVentaDto> Productos, List<CodigoLocalDto> Codigos, IReadOnlyList<string> Marcas)> TodosAsync(

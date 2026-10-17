@@ -339,6 +339,8 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
         var primero = await LeerHastaAsync(lector, l => l.Any(x => x.StartsWith("data: ", StringComparison.Ordinal)));
         Assert.Contains("event: versiones", primero);
         var alConectarse = Versiones(primero.Last());
+        // Con el formato de su copia: si no es el de la caja, la caja no le pide cambios.
+        Assert.Equal(CopiaAlDia.Formato, alConectarse.Formato);
         var vivo = await LeerHastaAsync(lector, l => l.Contains(": vivo"));
 
         Assert.True((await http.PostAsJsonAsync("api/catalogo/precio-menudeo",
