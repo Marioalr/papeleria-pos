@@ -571,6 +571,27 @@ número los enseña en la lista). Antes solo llegaban de eleventa, y Compras ped
 - **En el piloto con eleventa** (con su lectura prendida) solo se consultan: se cambian allá, como las altas y los
   precios (2026-10-10), y llegan con la lectura. Un cambio hecho aquí, la siguiente lectura lo regresaría.
 
+**Avance (2026-10-17): cambiar precios de varios a la vez, en Productos.** Como «Actualizar varios» de eleventa, para
+cuando un proveedor sube sus precios ([paridad](paridad-eleventa.md#productos-y-precios)). Antes se cambiaban uno por uno
+en la ficha. Abajo de la lista de Productos (F3), «Cambiar precios» se abre a la derecha:
+- **Cuáles:** los productos activos de un departamento, de una marca, los que coinciden con un texto (como la búsqueda de
+  la lista) o los marcados en la lista. Mientras está abierto, un toque en la lista marca o desmarca y, con el cursor en
+  la búsqueda, ↑ ↓ eligen y Enter marca. Hasta 1,000 a la vez.
+- **Cómo:** subir o bajar un porcentaje o una cantidad, o un precio fijo, sobre el menudeo; si se quiere, el mayoreo (las
+  escalas y los precios por paquete) en la misma proporción; y el redondeo a los 50 centavos o al peso más cercano. El
+  redondeo nunca deja un precio al revés de lo pedido (si se sube, no baja) ni en $0, y un precio fijo queda tal cual.
+- **Primero se ve cómo quedan** (Enter): cada producto con su precio de ahora y el nuevo, y lo que no cambia y por qué.
+  Quien tiene «Ver costos, utilidad y margen» ve también el margen de cada uno y un aviso si queda debajo del mínimo.
+- **«Aplicar» (o Ctrl+Enter) los cambia todos de una vez,** con un solo renglón en la bitácora (cuántos, cuáles, la regla
+  y quién) y el historial de cada precio, como en la ficha; las cajas los toman con la versión del catálogo. Si algo
+  cambió desde que se vio (otro precio, un producto que entró), no se aplica y la vista se vuelve a pedir; si se pierde
+  la respuesta y se oprime otra vez, no se aplica dos veces. Lo hace quien tiene «Productos, precios y etiquetas».
+- **En el piloto con eleventa,** el menudeo y las promociones de lo de eleventa se cambian allá, como en la ficha: una
+  nota lo dice. Lo dado de alta aquí cambia completo y, de lo de eleventa, su mayoreo de aquí.
+- **Por revisar** (decidido mientras el dueño no estaba): el precio fijo, que eleventa tiene; el mayoreo y el redondeo a
+  50 centavos ya marcados al abrir; el redondeo que nunca queda al revés de lo pedido; solo productos activos (sin kits),
+  y hasta 1,000 a la vez; Ctrl+Enter para aplicar, para que un doble Enter no aplique sin querer.
+
 **Avance (2026-10-16): Productos e Inventario en el piloto.** Con la lectura de eleventa prendida, lo que ella pone no
 se cambia en la caja 2: si no, la siguiente lectura lo regresaría sin avisar. Una nota lo dice en cada página y el
 servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-cada-pocos-minutos-paso-1)).

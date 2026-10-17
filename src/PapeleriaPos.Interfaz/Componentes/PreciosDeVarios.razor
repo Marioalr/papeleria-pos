@@ -1,0 +1,568 @@
+@* Productos (F3) › Cambiar precios: los de varios productos a la vez, como «Actualizar varios» de eleventa (cuando un
+   proveedor sube sus precios), en el detalle de la página, como los departamentos. Cuáles: los activos de un departamento,
+   de una marca, los que coinciden con un texto (como la búsqueda de la lista) o los marcados en la lista de la izquierda;
+   mientras esto está abierto, un toque en la lista marca o desmarca, y con el cursor en su búsqueda, ↑ ↓ eligen y Enter
+   marca. Cómo: subir o bajar un porcentaje o una cantidad, o un precio fijo, sobre el menudeo; el mayoreo (escalas y
+   precios por paquete) en la misma proporción, si se quiere, y el redondeo a los 50 centavos o al peso, como pone sus
+   precios la tienda. Enter enseña cómo quedan (con el margen y el aviso de debajo del mínimo solo para quien ve la
+   utilidad), y «Aplicar» o Ctrl+Enter los cambia todos de una vez, con un renglón en la bitácora; si algo cambió desde la
+   vista, el servicio no aplica y la vista se vuelve a pedir. Esc cierra la vista y, sin ella, regresa al producto. En el
+   piloto con eleventa, una nota dice que el menudeo de lo de eleventa se cambia allá. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="vn-det-cab">
+    <div>
+        <h2>Cambiar precios</h2>
+        <p>De varios productos a la vez, como «Actualizar varios» de eleventa: primero se ve cómo quedan. Esc regresa al producto.</p>
+    </div>
+</div>
+<div class="vn-adentro vn-precios">
+    @if (_piloto is { } piloto)
+    {
+        <div class="vn-alerta info">
+            <Ico Nombre="info" />
+            <div>
+                <span>@piloto</span>
+                <span>
+                    Aquí cambian completos los dados de alta aquí. De los de eleventa, solo su mayoreo de aquí (las escalas del F11 o de F3 y
+                    los precios por paquete), si también cambias el mayoreo.
+                </span>
+            </div>
+        </div>
+    }
+
+    <h3>Cuáles</h3>
+    <div class="vn-filtros" role="group" aria-label="Cuáles productos">
+        @foreach (var (cuales, nombre) in Criterios)
+        {
+            var este = cuales;
+            <button id="precios-cuales-@cuales" class="vn-filtro @(_cuales == cuales ? "on" : "")" aria-pressed="@(_cuales == cuales ? "true" : "false")"
+                    @onclick="() => ElegirCuales(este)">
+                @nombre@(cuales == CualesProductos.Marcados ? $" · {Formato.Numero(Marcados.Count)}" : "")
+            </button>
+        }
+    </div>
+    <div class="vn-precios-fila">
+        @switch (_cuales)
+        {
+            case CualesProductos.Departamento:
+                <select id="precios-depto" aria-label="Departamento" value="@_departamento" @onchange="DepartamentoElegido" @onkeydown="AlTeclearAsync">
+                    <option value="">Elige el departamento…</option>
+                    @foreach (var d in Opciones.Departamentos)
+                    {
+                        <option value="@d.Id">@d.Nombre</option>
+                    }
+                </select>
+                break;
+            case CualesProductos.Marca:
+                <select id="precios-marca" aria-label="Marca" value="@_marca" @onchange="MarcaElegida" @onkeydown="AlTeclearAsync">
+                    <option value="">Elige la marca…</option>
+                    @foreach (var m in Opciones.Marcas)
+                    {
+                        <option value="@m">@m</option>
+                    }
+                </select>
+                break;
+            case CualesProductos.Busqueda:
+                <input id="precios-texto" aria-label="Lo que se busca" placeholder="Parte del nombre, la marca, el departamento o un código" autocomplete="off"
+                       spellcheck="false" value="@_texto" @oninput="TextoEscrito" @onkeydown="AlTeclearAsync" />
+                break;
+            default:
+                <span class="vn-precios-marcados">@MarcadosTexto</span>
+                <button class="vn-boton chico" disabled="@(EnLaLista == 0)" @onclick="AlMarcarLosDeLaLista">
+                    @(EnLaLista == 1 ? "Marcar el de la lista" : $"Marcar los {Formato.Numero(EnLaLista)} de la lista")
+                </button>
+                <button class="vn-boton chico" disabled="@(Marcados.Count == 0)" @onclick="AlQuitarLasMarcas">Quitar las marcas</button>
+                break;
+        }
+    </div>
+    <p class="nota">
+        @(_cuales == CualesProductos.Marcados
+            ? "Toca en la lista los que vas a cambiar (cuentan los activos); con el cursor en su búsqueda, ↑ ↓ eligen y Enter marca o desmarca."
+            : "Solo los productos activos, con todas sus variantes activas.")
+    </p>
+
+    <h3>Cómo</h3>
+    <div class="vn-precios-fila">
+        <select id="precios-como" aria-label="Cómo cambian" value="@_como" @onchange="ComoElegido" @onkeydown="AlTeclearAsync">
+            <option value="@ComoCambiarPrecios.SubirPorcentaje">Subir un porcentaje</option>
+            <option value="@ComoCambiarPrecios.BajarPorcentaje">Bajar un porcentaje</option>
+            <option value="@ComoCambiarPrecios.SubirMonto">Subir una cantidad</option>
+            <option value="@ComoCambiarPrecios.BajarMonto">Bajar una cantidad</option>
+            <option value="@ComoCambiarPrecios.PrecioFijo">Poner un precio</option>
+        </select>
+        <span class="vn-precios-cuanto">
+            @if (!EsPorcentaje)
+            {
+                <span>$</span>
+            }
+            <input id="precios-cuanto" aria-label="@(EsPorcentaje ? "Porcentaje" : _como == ComoCambiarPrecios.PrecioFijo ? "Precio" : "Cantidad")"
+                   inputmode="decimal" autocomplete="off" value="@_cuanto" @oninput="CuantoEscrito" @onkeydown="AlTeclearAsync" />
+            @if (EsPorcentaje)
+            {
+                <span>%</span>
+            }
+        </span>
+        <label class="vn-precios-redondeo">
+            Redondear
+            <select id="precios-redondeo" value="@_redondeo" @onchange="RedondeoElegido" @onkeydown="AlTeclearAsync">
+                <option value="@RedondeoDePrecios.CincuentaCentavos">a los 50 centavos más cercanos</option>
+                <option value="@RedondeoDePrecios.UnPeso">al peso más cercano</option>
+                <option value="@RedondeoDePrecios.SinRedondear">sin redondear</option>
+            </select>
+        </label>
+    </div>
+    <label class="opcion">
+        <input id="precios-mayoreo" type="checkbox" checked="@_conMayoreo" @onchange="MayoreoElegido" @onkeydown="AlTeclearAsync" />
+        También el mayoreo (las escalas y los precios por paquete), en la misma proporción
+    </label>
+    @if (_como == ComoCambiarPrecios.PrecioFijo)
+    {
+        <p class="nota">El precio que escribas queda tal cual en todos; lo que se redondea es su mayoreo.</p>
+    }
+    <div class="vn-botonera">
+        <button id="precios-ver" class="vn-boton @(_vista is null ? "primario" : "")" disabled="@_ocupado" @onclick="VerAsync">
+            Ver cómo quedan <kbd>Enter</kbd>
+        </button>
+    </div>
+
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_aviso is not null)
+    {
+        <p class="aviso">@_aviso</p>
+    }
+
+    @if (_vista is { } vista)
+    {
+        var cambian = vista.Cambian.Count;
+        <h3>Cómo quedan</h3>
+        <p class="vn-precios-resumen">
+            <strong>@(cambian == 0 ? "No cambia ninguno" : $"Cambian {Formato.Numero(cambian)} de {Formato.Numero(cambian + vista.NoCambian.Count)}")</strong>
+            · @vista.Cuales: @vista.Regla.
+        </p>
+        @if (cambian > 0)
+        {
+            <div class="vn-botonera">
+                <button id="precios-aplicar" class="vn-boton primario" disabled="@_ocupado" @onclick="AplicarAsync">
+                    @(cambian == 1 ? "Aplicar a 1 producto" : $"Aplicar a {Formato.Numero(cambian)} productos") <kbd>Ctrl+Enter</kbd>
+                </button>
+                <button class="vn-boton" @onclick="CerrarVista">Cambiar algo <kbd>Esc</kbd></button>
+            </div>
+            <table class="vn-tabla vn-precios-tabla">
+                <thead>
+                    <tr>
+                        <th>Producto</th>
+                        <th class="num">Ahora</th>
+                        <th class="num">Queda</th>
+                        @if (vista.ConMargen)
+                        {
+                            <th class="num">Margen</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in vista.Cambian)
+                    {
+                        <tr>
+                            <td>
+                                @c.Producto
+                                @if (c.Mayoreo.Count > 0)
+                                {
+                                    <small>Mayoreo: @MayoreoTexto(c)</small>
+                                }
+                            </td>
+                            <td class="num">@Formato.Dinero(c.AntesCentavos)</td>
+                            <td class="num">
+                                @if (c.MenudeoEnEleventa)
+                                {
+                                    <span class="vn-etiq gris" title="Su menudeo se cambia en eleventa y llega con su lectura">se cambia en eleventa</span>
+                                }
+                                else
+                                {
+                                    <strong>@Formato.Dinero(c.DespuesCentavos)</strong>
+                                }
+                            </td>
+                            @if (vista.ConMargen)
+                            {
+                                <td class="num">
+                                    @if (c.MargenAntesCentesimas is { } antes && c.MargenDespuesCentesimas is { } despues)
+                                    {
+                                        @($"{Margen.Texto(antes)} → {Margen.Texto(despues)}")
+                                        @if (c.MargenMinimoCentesimas is { } minimo && despues < minimo)
+                                        {
+                                            <span class="vn-etiq rojo">debajo del mínimo @Margen.Texto(minimo)</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span class="nota">sin costo todavía</span>
+                                    }
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        @if (vista.EnEleventa is { } enEleventa)
+        {
+            <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@enEleventa</span></div></div>
+        }
+        @foreach (var grupo in vista.NoCambian.GroupBy(n => n.PorQue).OrderBy(g => g.Key))
+        {
+            <p class="nota @(grupo.Key is PorQueNoCambia.QuedariaEnCero ? "vn-precios-no" : "")">@NoCambianTexto(grupo.Key, grupo.ToList())</p>
+        }
+        @if (!vista.ConMargen && cambian > 0)
+        {
+            <p class="nota">El margen lo ve quien tiene el permiso «Ver costos, utilidad y margen».</p>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Los departamentos activos y las marcas, los de la página.</summary>
+    [Parameter, EditorRequired] public OpcionesCatalogoDto Opciones { get; set; } = null!;
+
+    /// <summary>La búsqueda y el departamento de la lista: con ellos empieza, si los hay.</summary>
+    [Parameter, EditorRequired] public ProductosVistos Estado { get; set; } = null!;
+
+    /// <summary>Los productos marcados en la lista de la izquierda (los marca la página).</summary>
+    [Parameter, EditorRequired] public IReadOnlyCollection<Guid> Marcados { get; set; } = [];
+
+    /// <summary>Sube con cada marca que se pone o se quita: la vista de antes ya no sirve, y lo que cambia son los marcados.</summary>
+    [Parameter] public int VersionDeMarcas { get; set; }
+
+    /// <summary>Cuántos productos trae la lista ahora: los que marca «Marcar los … de la lista».</summary>
+    [Parameter] public int EnLaLista { get; set; }
+
+    [Parameter] public EventCallback AlMarcarLosDeLaLista { get; set; }
+    [Parameter] public EventCallback AlQuitarLasMarcas { get; set; }
+
+    /// <summary>Se aplicó: la página pone al día su lista (los precios cambiaron).</summary>
+    [Parameter] public EventCallback AlAplicar { get; set; }
+
+    private static readonly (CualesProductos Cuales, string Nombre)[] Criterios =
+    [
+        (CualesProductos.Departamento, "Un departamento"),
+        (CualesProductos.Marca, "Una marca"),
+        (CualesProductos.Busqueda, "Los que coinciden"),
+        (CualesProductos.Marcados, "Los marcados"),
+    ];
+
+    private CualesProductos _cuales;
+    private string _departamento = "";
+    private string _marca = "";
+    private string _texto = "";
+    private ComoCambiarPrecios _como = ComoCambiarPrecios.SubirPorcentaje;
+    private string _cuanto = "";
+
+    /// <summary>Con el mayoreo, por omisión: si el proveedor sube, el paquete sube igual.</summary>
+    private bool _conMayoreo = true;
+
+    /// <summary>A los 50 centavos, por omisión: así pone sus precios la tienda.</summary>
+    private RedondeoDePrecios _redondeo = RedondeoDePrecios.CincuentaCentavos;
+
+    /// <summary>Lo que se ve (cómo quedan) y lo que se pidió para verlo: «Aplicar» manda eso mismo, con su huella.</summary>
+    private VistaPreciosDeVariosDto? _vista;
+    private SolicitudPreciosDeVarios? _pedido;
+
+    /// <summary>El de esta vista: si la respuesta de «Aplicar» se pierde y se vuelve a oprimir, el servicio no aplica dos veces.</summary>
+    private Guid _id;
+
+    /// <summary>En el piloto con eleventa, por qué el menudeo de lo de eleventa no cambia aquí.</summary>
+    private string? _piloto;
+
+    private string? _error;
+    private string? _aviso;
+    private bool _ocupado;
+
+    /// <summary>La de las marcas que ya se tomaron en cuenta: si llega otra, se marcó o se desmarcó algo en la lista.</summary>
+    private int _versionVista;
+
+    /// <summary>Sube con cada cambio en lo elegido: una vista que llega después de un cambio ya no es la de lo que se ve escrito.</summary>
+    private int _cambios;
+
+    /// <summary>A dónde va el cursor después de dibujar.</summary>
+    private string? _enfocar;
+
+    private bool EsPorcentaje => _como is ComoCambiarPrecios.SubirPorcentaje or ComoCambiarPrecios.BajarPorcentaje;
+
+    private string MarcadosTexto => Marcados.Count switch
+    {
+        0 => "Ninguno marcado.",
+        1 => "1 marcado.",
+        var n => $"{Formato.Numero(n)} marcados.",
+    };
+
+    protected override void OnInitialized()
+    {
+        // Empieza con lo que se tenía en la lista: lo marcado, lo que se buscaba o el departamento del filtro. Las marcas de
+        // ahora ya cuentan: lo que se marque después llega con otra versión, aunque el aviso del piloto no haya llegado.
+        (_departamento, _texto, _versionVista) = (Estado.Departamento?.ToString() ?? "", Estado.Texto.Trim(), VersionDeMarcas);
+        _cuales = Marcados.Count > 0 ? CualesProductos.Marcados
+            : _texto.Length > 0 ? CualesProductos.Busqueda
+            : CualesProductos.Departamento;
+        _enfocar = _cuales == CualesProductos.Marcados || (_cuales == CualesProductos.Departamento && _departamento.Length > 0) || _cuales == CualesProductos.Busqueda
+            ? "#precios-cuanto"
+            : Control(_cuales);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _piloto = (await Cliente.TrastiendaEnElPilotoAsync()).Productos;
+        }
+        catch (ErrorCaja)
+        {
+            // Sin saberlo, el servicio decide igual: la vista dice qué es de eleventa.
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        // Una marca que se puso o se quitó en la lista: se cambian los marcados, y la vista de antes ya no sirve.
+        if (VersionDeMarcas == _versionVista)
+            return;
+        _versionVista = VersionDeMarcas;
+        if (Marcados.Count > 0)
+            _cuales = CualesProductos.Marcados;
+        // El aviso de lo que se aplicó se queda: quitar las marcas al aplicar también pasa por aquí.
+        (_vista, _pedido, _error) = (null, null, null);
+        _cambios++;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_enfocar is { } selector)
+        {
+            _enfocar = null;
+            await Js.EnfocarAsync(selector);
+        }
+    }
+
+    /// <summary>Esc: cierra la vista (para cambiar algo). Devuelve si había una; sin ella, la página regresa al producto.</summary>
+    public Task<bool> CerrarAsync()
+    {
+        if (_vista is null)
+            return Task.FromResult(false);
+        CerrarVista();
+        StateHasChanged();
+        return Task.FromResult(true);
+    }
+
+    private void CerrarVista()
+    {
+        (_vista, _pedido, _enfocar) = (null, null, "#precios-cuanto");
+        _cambios++;
+    }
+
+    /// <summary>Algo cambió en lo que se eligió: la vista de antes ya no es lo que se aplicaría.</summary>
+    private void Invalidar()
+    {
+        (_vista, _pedido, _error, _aviso) = (null, null, null, null);
+        _cambios++;
+    }
+
+    private static string Control(CualesProductos cuales) => cuales switch
+    {
+        CualesProductos.Departamento => "#precios-depto",
+        CualesProductos.Marca => "#precios-marca",
+        CualesProductos.Busqueda => "#precios-texto",
+        _ => "#precios-cuanto",
+    };
+
+    private void ElegirCuales(CualesProductos cuales)
+    {
+        (_cuales, _enfocar) = (cuales, Control(cuales));
+        Invalidar();
+    }
+
+    private void DepartamentoElegido(ChangeEventArgs e)
+    {
+        _departamento = e.Value?.ToString() ?? "";
+        Invalidar();
+    }
+
+    private void MarcaElegida(ChangeEventArgs e)
+    {
+        _marca = e.Value?.ToString() ?? "";
+        Invalidar();
+    }
+
+    private void TextoEscrito(ChangeEventArgs e)
+    {
+        _texto = e.Value?.ToString() ?? "";
+        Invalidar();
+    }
+
+    private void ComoElegido(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<ComoCambiarPrecios>(e.Value?.ToString(), out var como))
+            _como = como;
+        Invalidar();
+    }
+
+    private void CuantoEscrito(ChangeEventArgs e)
+    {
+        _cuanto = e.Value?.ToString() ?? "";
+        Invalidar();
+    }
+
+    private void RedondeoElegido(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<RedondeoDePrecios>(e.Value?.ToString(), out var redondeo))
+            _redondeo = redondeo;
+        Invalidar();
+    }
+
+    private void MayoreoElegido(ChangeEventArgs e)
+    {
+        _conMayoreo = e.Value is true;
+        Invalidar();
+    }
+
+    /// <summary>Enter: cómo quedan. Ctrl+Enter: aplicar lo que se ve (sin vista, primero la enseña).</summary>
+    private async Task AlTeclearAsync(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || e.Repeat || e.AltKey || e.ShiftKey)
+            return;
+        if ((e.CtrlKey || e.MetaKey) && _vista is { Cambian.Count: > 0 })
+            await AplicarAsync();
+        else
+            await VerAsync();
+    }
+
+    /// <summary>Lo que se pide con lo escrito; si la cantidad no se entiende, el error y nada.</summary>
+    private SolicitudPreciosDeVarios? Pedido()
+    {
+        long valor;
+        if (EsPorcentaje)
+        {
+            var limpio = _cuanto.Replace("%", "").Trim();
+            if (!decimal.TryParse(limpio, NumberStyles.Number, CultureInfo.InvariantCulture, out var porcentaje) || porcentaje <= 0 || porcentaje > 1_000_000)
+            {
+                _error = "Escribe el porcentaje: un número mayor que cero (10 es 10 %).";
+                return null;
+            }
+            valor = (long)Math.Round(porcentaje * 100, MidpointRounding.AwayFromZero);
+        }
+        else if (Formato.LeerPesos(_cuanto) is { } centavos and > 0)
+            valor = centavos;
+        else
+        {
+            _error = _como == ComoCambiarPrecios.PrecioFijo ? "Escribe el precio: más de cero." : "Escribe cuánto: más de cero.";
+            return null;
+        }
+        return new SolicitudPreciosDeVarios(Sesion.UsuarioId, Caja.SucursalId, _cuales,
+            Guid.TryParse(_departamento, out var departamento) ? departamento : null, _marca.Length > 0 ? _marca : null, _texto,
+            _cuales == CualesProductos.Marcados ? Marcados.ToList() : null, _como, valor, _conMayoreo, _redondeo);
+    }
+
+    /// <summary>Cómo quedan, sin cambiar nada.</summary>
+    private async Task VerAsync()
+    {
+        if (_ocupado)
+            return;
+        (_error, _aviso) = (null, null);
+        if (Pedido() is not { } pedido)
+        {
+            (_vista, _pedido) = (null, null);
+            return;
+        }
+        _ocupado = true;
+        var cambios = _cambios;
+        try
+        {
+            var vista = await Cliente.VistaPreciosDeVariosAsync(pedido);
+            // Si mientras llegaba se cambió lo elegido (o se cerró), esta vista ya no es la de lo que se ve: no se enseña.
+            if (cambios == _cambios)
+                (_vista, _pedido, _id) = (vista, pedido, Ids.Nuevo());
+        }
+        catch (ErrorCaja ex)
+        {
+            if (cambios == _cambios)
+                (_vista, _pedido, _error) = (null, null, ex.Message);
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    /// <summary>
+    /// Aplica lo que se ve, todo junto. Si algo cambió desde la vista, el servicio no aplica: la vista se vuelve a pedir, con
+    /// el aviso. Si la caja principal no contestó, no se sabe si se aplicó: oprimirlo otra vez no lo aplica dos veces.
+    /// </summary>
+    private async Task AplicarAsync()
+    {
+        if (_ocupado || _vista is not { Cambian.Count: > 0 } vista || _pedido is not { } pedido)
+            return;
+        (_ocupado, _error, _aviso) = (true, null, null);
+        string? noSeAplico = null;
+        try
+        {
+            var hecho = await Cliente.CambiarPreciosDeVariosAsync(pedido with { Huella = vista.Huella, Id = _id });
+            (_vista, _pedido) = (null, null);
+            if (pedido.Cuales == CualesProductos.Marcados)
+                await AlQuitarLasMarcas.InvokeAsync();
+            await AlAplicar.InvokeAsync();
+            _enfocar = "#precios-cuanto";
+            _aviso = hecho.YaSeHabiaAplicado
+                ? $"Ya se había aplicado: {hecho.Bitacora}."
+                : $"Listo: cambió el precio de {(hecho.Productos == 1 ? "1 producto" : $"{Formato.Numero(hecho.Productos)} productos")}. "
+                  + "Las cajas ya los venden así y quedó en la bitácora.";
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
+        {
+            _error = "La caja principal no contestó: no se sabe si se aplicó. Oprime «Aplicar» otra vez: si ya se había aplicado, lo dice sin "
+                     + "cambiar nada de nuevo.";
+        }
+        catch (ErrorCaja ex) when (ex.Codigo is null)
+        {
+            // Lo rechazó el servicio (algo cambió desde la vista, o ya no hay qué cambiar): la vista con lo de ahora.
+            noSeAplico = ex.Message;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+        if (noSeAplico is not null)
+        {
+            await VerAsync();
+            _error = _error is null ? noSeAplico : $"{noSeAplico} {_error}";
+        }
+    }
+
+    /// <summary>«desde 12: $5.00 → $5.50 · Caja 12: $55.00 → $60.50».</summary>
+    private static string MayoreoTexto(PrecioQueCambiaDto cambio) =>
+        string.Join(" · ", cambio.Mayoreo.Select(m => $"{m.Cual}: {Formato.Dinero(m.AntesCentavos)} → {Formato.Dinero(m.DespuesCentavos)}"));
+
+    /// <summary>«2 quedan igual con el redondeo: Goma, Lápiz.», con los primeros nombres.</summary>
+    private static string NoCambianTexto(PorQueNoCambia porQue, IReadOnlyList<PrecioQueNoCambiaDto> productos)
+    {
+        var uno = productos.Count == 1;
+        var cuantos = Formato.Numero(productos.Count);
+        var por = porQue switch
+        {
+            PorQueNoCambia.QuedaIgual => uno ? "1 queda igual con el redondeo" : $"{cuantos} quedan igual con el redondeo",
+            PorQueNoCambia.EnEleventa => uno ? "1 es de eleventa: su precio se cambia allá" : $"{cuantos} son de eleventa: su precio se cambia allá",
+            PorQueNoCambia.QuedariaEnCero => uno ? "1 quedaría en $0 o menos y no cambia" : $"{cuantos} quedarían en $0 o menos y no cambian",
+            _ => uno ? "1 no tiene precio de menudeo" : $"{cuantos} no tienen precio de menudeo",
+        };
+        const int Nombres = 8;
+        var nombres = string.Join(", ", productos.Take(Nombres).Select(p => p.Producto));
+        return productos.Count > Nombres ? $"{por}: {nombres} y {Formato.Numero(productos.Count - Nombres)} más." : $"{por}: {nombres}.";
+    }
+}
