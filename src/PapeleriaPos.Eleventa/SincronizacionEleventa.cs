@@ -267,8 +267,12 @@ public static class SincronizacionEleventa
         // mismo momento que las existencias, y lo que se mandó mientras se leía eleventa, hasta aquí.
         await using (var propia = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null)
         {
+            // Las devoluciones de aquí cuya anotación a mano quizá ya está en eleventa (la vuelta la retuvo): sin ajustar.
+            var conAnotacion = e.Piloto?.Devoluciones is { Count: > 0 } devoluciones
+                ? await DevolucionesConEleventa.ConAnotacionRetenidaAsync(db, devoluciones, ct)
+                : [];
             var bandeja = await BandejaAsync(db, sucursal.Id, mandados?.Mandados() ?? new HashSet<Guid>(),
-                mandados?.Rechazados() ?? new HashSet<Guid>(), ct);
+                mandados?.Rechazados() ?? new HashSet<Guid>(), conAnotacion, ct);
             await ExistenciasAsync(db, r, sucursal.Id, activas, nuevas, existenciaDe, productos, bandeja, ahoraUtc, ct);
             await db.SaveChangesAsync(ct);
             if (propia is not null)
@@ -460,11 +464,13 @@ public static class SincronizacionEleventa
     /// ni lo pendiente cuyo último intento falló por la red (se pudo cortar justo después de que eleventa lo guardó; el
     /// siguiente intento lo encuentra por su marca), o del que no se sabe cómo falló (al arrancar el servicio, hasta que
     /// se vuelve a intentar): sus variantes se ajustan en otra lectura. Lo que eleventa rechazó (<paramref name="rechazados"/>)
-    /// no está allá, aunque la bandeja siga detenida en eso.
+    /// no está allá, aunque la bandeja siga detenida en eso. Tampoco se sabe de una devolución de aquí que espera su anotación
+    /// a mano y ya tiene en eleventa una de su ticket que puede serlo (<paramref name="conAnotacion"/>): sumarla sería
+    /// contarla dos veces si lo es (revisión del 2026-10-17); se ajusta cuando se elige.
     /// </para>
     /// </summary>
     private static async Task<Bandeja> BandejaAsync(PosDbContext db, Guid sucursalId, IReadOnlySet<Guid> mandados, IReadOnlySet<Guid> rechazados,
-        CancellationToken ct)
+        IReadOnlySet<Guid> conAnotacion, CancellationToken ct)
     {
         var vistos = mandados.ToList();
         var envios = await db.EnviosAEleventa.AsNoTracking()
@@ -484,7 +490,8 @@ public static class SincronizacionEleventa
             return bandeja;
 
         var enCamino = envios.Where(x => mandados.Contains(x.Id)
-                || x.Estado == EstadoEnvioEleventa.Pendiente && x.Intentos > 0 && !rechazados.Contains(x.Id))
+                || x.Estado == EstadoEnvioEleventa.Pendiente && x.Intentos > 0 && !rechazados.Contains(x.Id)
+                || x.Documento is { } documento && conAnotacion.Contains(documento))
             .Select(x => x.Documento).ToHashSet();
         var documentos = envios.Where(x => x.Documento is not null).Select(x => x.Documento!.Value).Distinct().ToList();
         var movimientos = await db.MovimientosInventario.AsNoTracking()

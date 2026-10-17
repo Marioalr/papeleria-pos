@@ -88,6 +88,18 @@ public static class TicketsDeEleventa
         return ticket;
     }
 
+    /// <summary>
+    /// El turno que eleventa tiene abierto ahora en esa caja: el único en que el puente sabe escribir una devolución. Vacío si
+    /// no hay (después del corte, antes de volver a abrir la caja allá) o si hubiera dos (la base no lo deja).
+    /// </summary>
+    public static async Task<int?> TurnoAbiertoAsync(FbConnection c, int cajaId, CancellationToken ct = default)
+    {
+        await using var tx = await c.BeginTransactionAsync(SoloLeer, ct);
+        var abiertos = await LeerAsync(c, tx, $"SELECT ID FROM TURNOS WHERE ID_CAJA = {cajaId} AND TERMINO_EN IS NULL", r => Entero(r, 0), ct);
+        await tx.CommitAsync(ct);
+        return abiertos is [var turno] ? turno : null;
+    }
+
     /// <summary>Las devoluciones y cancelaciones de esos tickets, con lo que se devolvió de cada artículo.</summary>
     public static async Task<List<DevolucionLeida>> DevolucionesAsync(FbConnection c, FbTransaction tx, IReadOnlyCollection<int> tickets, CancellationToken ct)
     {

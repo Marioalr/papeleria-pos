@@ -209,7 +209,8 @@ else
                     case [{ FolioCaja: { } deLaCaja }]:
                         folio = deLaCaja;
                         break;
-                    case [{ FolioCaja: null, Nota: null, TicketEleventa: { } unico }]:
+                    // Uno solo de eleventa se abre, aunque no se devuelva aquí (de otro turno, de otra caja…): la ventana dice por qué.
+                    case [{ FolioCaja: null, TicketEleventa: { } unico }] when _aviso is null:
                         await AbrirDeEleventaAsync(puente, unico);
                         return;
                     default:

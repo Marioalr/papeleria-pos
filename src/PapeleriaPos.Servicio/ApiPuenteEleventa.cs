@@ -24,16 +24,20 @@ public static class ApiPuenteEleventa
         api.MapGet("/folio/{folio:int}", async (int folio, PosDbContext db, OpcionesEleventa opciones) =>
         {
             var destino = opciones.ParaEscribir();
-            var enEleventa = destino is { } d ? await DevolucionesConEleventa.PorFolioEnVivoAsync(d.Servidor, folio) : null;
-            return await FoliosRepetidos.BuscarAsync(db, folio, enEleventa, destino is not null, db.Reloj.GetUtcNow().UtcDateTime);
+            var enEleventa = destino is { } d ? await DevolucionesConEleventa.PorFolioEnVivoAsync(d.Servidor, folio, d.Caja.CajaId) : null;
+            return await FoliosRepetidos.BuscarAsync(db, folio, enEleventa is var (tickets, puente) ? (tickets, puente) : null, destino is not null,
+                db.Reloj.GetUtcNow().UtcDateTime);
         });
 
-        // La ida: un ticket cobrado en eleventa, leído en vivo, como lo enseña la ventana de devoluciones.
+        // La ida: un ticket cobrado en eleventa, leído en vivo, como lo enseña la ventana de devoluciones. Solo se devuelve
+        // aquí el del turno que eleventa tiene abierto en la caja 2; el de otro turno o de otra caja dice que se devuelva en
+        // eleventa (revisión del 2026-10-17, decidido).
         api.MapGet("/tickets/{ticket:int}", async (int ticket, PosDbContext db, OpcionesEleventa opciones) =>
         {
-            var leido = await DevolucionesConEleventa.TicketEnVivoAsync(Destino(opciones), ticket);
+            var (servidor, caja) = Destino(opciones);
+            var (leido, puente) = await DevolucionesConEleventa.TicketEnVivoAsync(servidor, ticket, caja.CajaId);
             await NoEsDeEstaCajaAsync(db, leido);
-            return await DevolucionesConEleventa.ParaDevolverAsync(db, leido, db.Reloj.GetUtcNow().UtcDateTime);
+            return await DevolucionesConEleventa.ParaDevolverAsync(db, leido, puente, db.Reloj.GetUtcNow().UtcDateTime);
         });
 
         // La ida: se vuelve a leer en vivo (otra caja pudo devolver algo mientras tanto) y se devuelve aquí, con las reglas y
@@ -41,12 +45,13 @@ public static class ApiPuenteEleventa
         api.MapPost("/tickets/{ticket:int}/devolucion", async (int ticket, SolicitudDevolucion s, PosDbContext db, OpcionesEleventa opciones,
             EnvioVentasEleventa envios, IOptions<OpcionesTicket> ticketOpciones) =>
         {
-            var leido = await DevolucionesConEleventa.TicketEnVivoAsync(Destino(opciones), ticket);
+            var (servidor, caja) = Destino(opciones);
+            var (leido, puente) = await DevolucionesConEleventa.TicketEnVivoAsync(servidor, ticket, caja.CajaId);
             await NoEsDeEstaCajaAsync(db, leido);
             await using var tx = await db.Database.BeginTransactionAsync();
             try
             {
-                var (devolucion, _) = await DevolucionesConEleventa.DevolverAsync(db, leido, s, db.Reloj.GetUtcNow().UtcDateTime);
+                var (devolucion, _) = await DevolucionesConEleventa.DevolverAsync(db, leido, puente, s, db.Reloj.GetUtcNow().UtcDateTime);
                 await db.SaveChangesAsync();
                 await tx.CommitAsync();
                 envios.Despertar();
@@ -61,14 +66,6 @@ public static class ApiPuenteEleventa
 
         // Lo que la pantalla de la caja 2 enseña del puente: lo que quedó por revisar y lo que conviene saber.
         api.MapGet("/pantalla", async (PosDbContext db, EnvioVentasEleventa envios, LecturaEleventa lectura) => await PantallaAsync(db, envios, lectura));
-
-        // ¿La devolución de eleventa es la de aquí anotada a mano? «Sí, es la misma» la liga (no se aplica otra vez y la de aquí
-        // queda anotada a mano); «No, es otra» la pasa a su venta. Con «Configuración de la tienda»; queda en la bitácora.
-        api.MapPost("/vuelta/{id:guid}/misma", async (Guid id, SolicitudRevision s, PosDbContext db) =>
-            await DecidirAsync(db, id, s, async () => await DevolucionesConEleventa.EsLaMismaAsync(db, id, db.Reloj.GetUtcNow().UtcDateTime),
-                "es la de aquí anotada a mano: se ligaron"));
-        api.MapPost("/vuelta/{id:guid}/otra", async (Guid id, SolicitudRevision s, PosDbContext db) =>
-            await DecidirAsync(db, id, s, async () => await DevolucionesConEleventa.EsOtraAsync(db, id), "es otra: se pasó a su venta"));
 
         // Una devolución de eleventa que no se pudo pasar a su venta, ya revisada: deja de enseñarse. Con «Configuración de la
         // tienda», como reanudar la escritura; queda en la bitácora.
@@ -99,29 +96,8 @@ public static class ApiPuenteEleventa
         });
     }
 
-    /// <summary>
-    /// Lo que se decide de una devolución de eleventa que quizá es la de aquí anotada a mano: con el permiso de quien entró,
-    /// en una transacción (la venta no cambia en medio) y en la bitácora.
-    /// </summary>
-    private static async Task<IResult> DecidirAsync(PosDbContext db, Guid id, SolicitudRevision s, Func<Task<DevolucionDesdeEleventa>> decidir, string que)
-    {
-        var vuelta = await db.Set<DevolucionDesdeEleventa>().AsNoTracking().FirstOrDefaultAsync(v => v.Id == id)
-            ?? throw new InvalidOperationException("Esa devolución de eleventa no existe.");
-        var venta = await db.Ventas.AsNoTracking().FirstOrDefaultAsync(v => v.Id == vuelta.VentaId) ?? throw new InvalidOperationException("La venta no existe.");
-        var control = new ServicioControl(db);
-        await control.ExigirDeLaSesionAsync(s.UsuarioId, venta.SucursalId, venta.CajaId, AccionControlada.ConfigurarTienda);
-        await using var tx = await db.Database.BeginTransactionAsync();
-        var decidida = await decidir();
-        control.Registrar(venta.SucursalId, venta.CajaId, s.UsuarioId, AccionControlada.ConfigurarTienda,
-            $"Dijo que la {(vuelta.EsCancelacion ? "cancelación" : "devolución")} en eleventa del ticket {venta.FolioTexto} {que}"
-            + (decidida.PorRevisar is { } porRevisar ? $" ({porRevisar})" : "") + (string.IsNullOrWhiteSpace(s.Nota) ? "" : $". {s.Nota.Trim()}"));
-        await db.SaveChangesAsync();
-        await tx.CommitAsync();
-        return Results.NoContent();
-    }
-
-    private static ServidorEleventa Destino(OpcionesEleventa opciones) =>
-        opciones.ParaEscribir()?.Servidor ?? throw new InvalidOperationException("Esta caja no manda a eleventa: los tickets de eleventa se devuelven en eleventa.");
+    private static (ServidorEleventa Servidor, CajaEnEleventa Caja) Destino(OpcionesEleventa opciones) =>
+        opciones.ParaEscribir() ?? throw new InvalidOperationException("Esta caja no manda a eleventa: los tickets de eleventa se devuelven en eleventa.");
 
     /// <summary>Un ticket que mandó esta caja se devuelve con su venta de aquí, no como uno de eleventa.</summary>
     private static async Task NoEsDeEstaCajaAsync(PosDbContext db, TicketLeido t)
@@ -153,26 +129,22 @@ public static class ApiPuenteEleventa
     internal static async Task<PuenteEleventaDto> PantallaAsync(PosDbContext db, EnvioVentasEleventa envios, LecturaEleventa lectura)
     {
         var estado = await envios.EstadoAsync(db);
-        var porRevisar = estado.PorAtender.Where(e => e.Estado == EstadoEnvioEleventa.PorRevisar)
-            .Select(e => new PorRevisarEleventaDto(e.Id, null, e.Descripcion, e.FechaLocal, e.TotalCentavos, e.Error ?? ""))
-            .ToList();
+        var porRevisar = new List<PorRevisarEleventaDto>();
+        foreach (var e in estado.PorAtender.Where(e => e.Estado == EstadoEnvioEleventa.PorRevisar))
+        {
+            // Una devolución de aquí de un ticket que está en eleventa: al marcarla se elige cuál es su anotación allá.
+            var eligeAnotacion = e.Tipo is TipoEnvioEleventa.Devolucion or TipoEnvioEleventa.Cancelacion
+                && await db.EnviosAEleventa.FindAsync(e.Id) is { } envio && await DevolucionesConEleventa.PorAnotarAsync(db, envio) is not null;
+            porRevisar.Add(new PorRevisarEleventaDto(e.Id, null, e.Descripcion, e.FechaLocal, e.TotalCentavos, e.Error ?? "", eligeAnotacion));
+        }
         var vueltas = await (from v in db.Set<DevolucionDesdeEleventa>().AsNoTracking()
                              join venta in db.Ventas.AsNoTracking() on v.VentaId equals venta.Id
-                             join quiza in db.Devoluciones.AsNoTracking() on v.QuizaEsDevolucionId equals quiza.Id into quizas
-                             from quiza in quizas.DefaultIfEmpty()
                              where v.PorRevisar != null && v.RevisadaUtc == null
                              orderby v.DevueltaUtc
-                             select new
-                             {
-                                 v.Id, v.EsCancelacion, v.DevueltaUtc, v.TotalCentavos, v.PorRevisar, venta.Serie, venta.Folio,
-                                 QuizaFechaUtc = quiza == null ? (DateTime?)null : quiza.FechaUtc, QuizaEsCancelacion = quiza != null && quiza.EsCancelacion,
-                             }).ToListAsync();
+                             select new { v.Id, v.EsCancelacion, v.DevueltaUtc, v.TotalCentavos, v.PorRevisar, venta.Serie, venta.Folio }).ToListAsync();
         porRevisar.AddRange(vueltas.Select(v => new PorRevisarEleventaDto(null, v.Id,
             $"{(v.EsCancelacion ? "Cancelación" : "Devolución")} en eleventa de {v.Serie}-{v.Folio:000000}", HoraMexico.ALocal(v.DevueltaUtc), v.TotalCentavos,
-            v.PorRevisar!,
-            v.QuizaFechaUtc is { } quizaUtc
-                ? $"¿Es la {(v.QuizaEsCancelacion ? "cancelación" : "devolución")} que se hizo aquí el {HoraMexico.ALocal(quizaUtc):dd/MM HH:mm}, anotada a mano en eleventa?"
-                : null)));
+            v.PorRevisar!)));
 
         var avisos = new List<string>();
         if (estado.Pendientes > 0 && estado.PorAtender.FirstOrDefault(e => e.Estado == EstadoEnvioEleventa.Pendiente)?.Error is { } espera)

@@ -1,7 +1,8 @@
 @* Solo del piloto con eleventa (se quita al dejarlo): en el estado de arriba de la caja 2, lo que quedó por revisar con
    eleventa y lo que conviene saber (sin Telegram, que está en pausa): también si el puente se detuvo porque eleventa se
    restauró, o si espera a respaldarla. Sale solo si hay algo. Quien tiene «Configuración de la tienda» marca ahí lo que
-   ya se anotó a mano en eleventa y reanuda el puente (docs/migracion-eleventa.md, «Lo que falta para el piloto»). *@
+   ya se anotó a mano en eleventa (de una devolución de aquí, eligiendo cuál es su anotación allá) y reanuda el puente
+   (docs/migracion-eleventa.md, «Lo que falta para el piloto»). *@
 @implements IAsyncDisposable
 @inject ClienteCaja Cliente
 @inject IServiceProvider Servicios
@@ -43,19 +44,30 @@
                             <li>
                                 <div><strong>@item.Descripcion</strong> · @item.FechaLocal.ToString("dd/MM HH:mm") · @Formato.Dinero(item.TotalCentavos)</div>
                                 <div class="vn-puente-motivo">@item.Motivo</div>
-                                @if (item.Pregunta is { } pregunta)
+                                @if (PuedeMarcar && item.EligeAnotacion && _eligiendo == item.EnvioId && _anotaciones is { } anotaciones)
                                 {
-                                    @* Quizá es la de aquí anotada a mano en eleventa: lo dice quien revisó eleventa. *@
-                                    <div class="vn-puente-motivo">@pregunta</div>
-                                    @if (PuedeMarcar)
+                                    @* Una devolución de aquí: quien la anotó en eleventa dice cuál es su anotación allá (se ligan). *@
+                                    @if (anotaciones.Count == 0)
                                     {
-                                        <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => DecidirAsync(revisar, esLaMisma: true)">Sí, es la misma</button>
-                                        <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => DecidirAsync(revisar, esLaMisma: false)">No, es otra</button>
+                                        <div class="vn-puente-motivo">En eleventa todavía no hay una devolución de este ticket después de la de aquí: anótala allá y vuelve a marcarla.</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="vn-puente-motivo">¿Cuál es su anotación en eleventa? Marca la que hiciste allá (o las que, juntas, son la de aquí).</div>
+                                        @foreach (var a in anotaciones)
+                                        {
+                                            var anotacion = a;
+                                            <label class="vn-puente-anotacion">
+                                                <input type="checkbox" checked="@_elegidas.Contains(a.Id)" @onchange="e => Elegir(anotacion.Id, e.Value is true)" />
+                                                <span>#@a.Id · @a.DevueltaLocal.ToString("dd/MM HH:mm") · @a.Caja, @a.Cajero · @a.Detalle · @Formato.Dinero(a.TotalCentavos)</span>
+                                            </label>
+                                        }
+                                        <button class="vn-boton chico" disabled="@(_ocupado || _elegidas.Count == 0)" @onclick="() => MarcarAsync(revisar)">Es su anotación</button>
                                     }
                                 }
                                 else if (PuedeMarcar)
                                 {
-                                    <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => MarcarAsync(revisar)">
+                                    <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => item.EligeAnotacion ? ElegirAnotacionAsync(revisar) : MarcarAsync(revisar)">
                                         @(item.EnvioId is not null ? "Ya lo anoté en eleventa" : "Ya lo revisé")
                                     </button>
                                 }
@@ -80,6 +92,10 @@
     private static readonly TimeSpan CadaCuanto = TimeSpan.FromSeconds(30);
 
     private PuenteEleventaDto? _puente;
+    // La devolución de aquí de la que se está eligiendo su anotación en eleventa, lo que se leyó allá y lo elegido.
+    private Guid? _eligiendo;
+    private List<AnotacionEnEleventaDto>? _anotaciones;
+    private readonly HashSet<int> _elegidas = [];
     private bool _abierto;
     private bool _ocupado;
     private string? _error;
@@ -142,9 +158,11 @@
         try
         {
             if (item.EnvioId is { } envio)
-                await Puente!.AnotarAManoAsync(envio, new SolicitudRevision(Sesion.UsuarioId, null));
+                await Puente!.AnotarAManoAsync(envio, new SolicitudAnotadoAMano(Sesion.UsuarioId, null, item.EligeAnotacion ? _elegidas.ToList() : null));
             else if (item.VueltaId is { } vuelta)
                 await Puente!.VueltaRevisadaAsync(vuelta, new SolicitudRevision(Sesion.UsuarioId, null));
+            (_eligiendo, _anotaciones) = (null, null);
+            _elegidas.Clear();
             await ActualizarAsync();
         }
         catch (ErrorCaja ex)
@@ -157,19 +175,19 @@
         }
     }
 
-    /// <summary>Si la devolución de eleventa es la de aquí anotada a mano (se ligan) o es otra (se pasa a su venta).</summary>
-    private async Task DecidirAsync(PorRevisarEleventaDto item, bool esLaMisma)
+    /// <summary>
+    /// «Ya lo anoté en eleventa» de una devolución de aquí: se leen en eleventa las devoluciones de su ticket que pueden ser su
+    /// anotación, para elegir cuál es.
+    /// </summary>
+    private async Task ElegirAnotacionAsync(PorRevisarEleventaDto item)
     {
         _error = null;
         _ocupado = true;
         try
         {
-            var solicitud = new SolicitudRevision(Sesion.UsuarioId, null);
-            if (esLaMisma)
-                await Puente!.VueltaEsLaMismaAsync(item.VueltaId!.Value, solicitud);
-            else
-                await Puente!.VueltaEsOtraAsync(item.VueltaId!.Value, solicitud);
-            await ActualizarAsync();
+            _anotaciones = await Puente!.AnotacionesAsync(item.EnvioId!.Value);
+            _eligiendo = item.EnvioId;
+            _elegidas.Clear();
         }
         catch (ErrorCaja ex)
         {
@@ -179,6 +197,14 @@
         {
             _ocupado = false;
         }
+    }
+
+    private void Elegir(int anotacion, bool elegida)
+    {
+        if (elegida)
+            _elegidas.Add(anotacion);
+        else
+            _elegidas.Remove(anotacion);
     }
 
     /// <summary>El puente se detuvo porque eleventa se restauró: quien revisó eleventa lo reanuda (queda en la bitácora).</summary>
