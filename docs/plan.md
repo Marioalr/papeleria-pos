@@ -773,9 +773,10 @@ compras), pero hace que el POS lo aguante, lo diga bien y lo anote:
   - la prueba de que es la caja principal usa la huella de la llave que guarda su base: quien tenga una copia de esa
     base podría hacerse pasar por ella ante una caja (no al revés). Cerrarlo pediría una llave propia del servicio,
     entregada a cada caja en el alta.
-- **Falta, en Windows** (el CI y una PC): el nombre del Wi-Fi y su señal, la MAC del router, el puerto de la cola en el
-  registro y guardar la dirección nueva en `caja.json`. **En la tienda, un sábado o domingo:** cambiarle la IP a la
-  caja principal con la caja 2 abierta, y la próxima caída de verdad, con la bitácora.
+- **Falta, en Windows** (el CI y una PC): el Wi-Fi (el nombre de su perfil de red, sin pedir el permiso de ubicación) y
+  su señal, la MAC del router, el puerto de la cola en el registro y guardar la dirección nueva en `caja.json`. **En la
+  tienda, un sábado o domingo:** cambiarle la IP a la caja principal con la caja 2 abierta, y la próxima caída de
+  verdad, con la bitácora.
 
 #### Después: el piloto en la caja 2
 

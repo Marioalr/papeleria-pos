@@ -166,10 +166,11 @@ causas posibles y qué se junta en la próxima caída están en [notas](notas.md
     otro equipo le pase la pregunta a la caja principal de verdad y se quede en medio. Solo se cambia a uno que lo
     prueba y guarda la dirección nueva en `caja.json`; lo que contesta sin probarlo se anota y no se usa. Si no la
     encuentra, busca otra vez a los 30 s, al minuto, a los 2 y luego cada 5 minutos; «Volver a buscarla», en la franja,
-    busca al momento. Mientras la guardada contesta, nada. El servicio contesta por UDP solo a su red local (su misma
-    red, sin túneles como NetBird; el firewall ya solo abre el 5081 a la red local), a lo más 20 veces por segundo, y
-    solo el de la caja principal (`Descubrimiento:Activo`; apagado en la prueba y en desarrollo). La prueba
-    (`api/identidad`) va sin llave y solo a la red local.
+    busca al momento. Mientras la guardada contesta, nada, y si contesta en la red pero su servicio todavía no
+    (arranca), tampoco se cambia. El servicio contesta por UDP solo a su red local (su misma red, sin túneles como
+    NetBird; el firewall ya solo abre el 5081 a la red local), a lo más 20 veces por segundo, y solo el de la caja
+    principal (`Descubrimiento:Activo`; apagado en la prueba y en desarrollo). La prueba (`api/identidad`) va sin llave
+    y solo a la red local.
   - **Avisos de lo que está por nombre o con WSD:** la impresora de tickets por nombre (`tcp://tickets:9100`, o una cola
     de Windows con su puerto TCP/IP a un nombre), compartida desde otra PC o con un puerto WSD (la caja de Windows lee
     el puerto de la cola en el registro) dice «Tickets · configúrala por IP» en el estado de arriba y en la entrada,

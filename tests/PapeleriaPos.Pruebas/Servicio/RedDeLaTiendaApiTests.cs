@@ -199,6 +199,48 @@ public sealed class RedDeLaTiendaApiTests(ServicioDePrueba servicio) : IClassFix
     }
 
     /// <summary>
+    /// La caja abre sin la caja principal: la bitácora de red empieza antes del primer latido (que ya anota que no contesta) y, al
+    /// cerrar la caja, termina. Así la caída queda en el resumen y no se pierde al empezar.
+    /// </summary>
+    [Fact]
+    public async Task La_bitacora_empieza_antes_del_primer_latido_y_termina_al_cerrar()
+    {
+        using var carpeta = new CarpetaDePrueba();
+        var conexion = new ConexionCaja { Servicio = new Uri("http://192.168.1.99:5080/"), CajaId = Guid.NewGuid(), Llave = LlaveCaja.Nueva(), PideAlta = true };
+        var red = new HttpClient(new SoloA("192.168.1.10", servicio.Fabrica.Server.CreateHandler()));
+        var bitacora = new BitacoraDeRed(carpeta.Ruta, "red-caja");
+        // Un arranque lento de la bitácora (leer lo de días anteriores en un disco lento): aun así, el primer latido va después.
+        var vigia = new VigiaDeLaRed(bitacora, new EquipoFalso(), new PruebasFalsas(), new OpcionesDelVigia
+        {
+            Quien = "esta caja",
+            AlTerminar = "se cerró la caja",
+            Encendida = () =>
+            {
+                Thread.Sleep(TimeSpan.FromMilliseconds(500));
+                return TimeSpan.FromMinutes(5);
+            },
+        });
+        var contingencia = new Contingencia(new AlmacenLocal(Path.Combine(carpeta.Ruta, "caja-local.db")), red, conexion,
+            redDeLaCaja: new RedDeLaCaja(conexion, bitacora, vigia));
+        try
+        {
+            contingencia.Iniciar();
+            await VentaConCopia.EsperarAsync(() => bitacora.Perdido("la caja principal"), "«Se perdió «la caja principal»» en la bitácora");
+        }
+        finally
+        {
+            contingencia.Cerrar(TimeSpan.FromSeconds(20));
+        }
+
+        var lineas = carpeta.Lineas();
+        Assert.StartsWith("Empieza la bitácora de red de esta caja", lineas[0]);
+        Assert.Single(lineas, l => l.StartsWith("Empieza", StringComparison.Ordinal));
+        Assert.Contains(lineas, l => l.StartsWith("Se perdió «la caja principal»: 192.168.1.99:5080 no contesta", StringComparison.Ordinal));
+        Assert.Equal("Termina la bitácora de red: se cerró la caja.", lineas[^1]);
+        Assert.Equal("la caja principal", Assert.Single(bitacora.Caidas()).Que);
+    }
+
+    /// <summary>
     /// El servicio revisa el internet (con la red de mentira: sin red de verdad) y lo dice en su estado; la caja lo junta con su
     /// latido y la franja dice «Sin internet: la venta sigue. No desconectes nada.»; si además no llega a la caja principal, «Sin
     /// red local» con «Volver a buscarla».

@@ -151,7 +151,7 @@ public static class RegistroInterfaz
         // (solo con la contingencia, que es la que late) y los avisos de lo configurado por nombre o con WSD.
         // Sin la contingencia (el navegador) no hay latido: solo los avisos de la impresora de tickets.
         var opcionesDeRed = baseLocal is null && red is not null ? new OpcionesRedDeLaCaja { Impresora = red.Impresora, Puertos = red.Puertos } : red;
-        var redDeLaCaja = RedDeLaCaja.Crear(conexion, redCaja.Fondo, opcionesDeRed);
+        var redDeLaCaja = RedDeLaCaja.Crear(conexion, opcionesDeRed);
         servicios.AddSingleton(redDeLaCaja);
         Contingencia? contingencia = null;
         if (baseLocal is not null)

@@ -479,9 +479,14 @@ public sealed class Contingencia
             return;
         _alto = new CancellationTokenSource();
         var alto = _alto.Token;
-        _deFondo = Task.WhenAll(Task.Run(() => LatirAsync(alto)), Task.Run(() => EscucharAvisosAsync(alto)),
-            // El vigía de la red: su bitácora empieza al abrir la caja y termina al cerrarla.
-            Task.Run(() => _redDeLaCaja?.VigilarAsync(alto) ?? Task.CompletedTask));
+        _deFondo = Task.Run(() =>
+        {
+            // La bitácora de red empieza antes que el primer latido, que ya puede anotar que la caja principal no contesta (fuera del
+            // hilo de la pantalla: lee lo de los días anteriores). Termina al cerrar la caja.
+            _redDeLaCaja?.Vigia?.Empezar();
+            return Task.WhenAll(Task.Run(() => LatirAsync(alto)), Task.Run(() => EscucharAvisosAsync(alto)),
+                Task.Run(() => _redDeLaCaja?.VigilarAsync(alto) ?? Task.CompletedTask));
+        });
     }
 
     /// <summary>

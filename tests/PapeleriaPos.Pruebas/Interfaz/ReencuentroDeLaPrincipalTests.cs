@@ -210,6 +210,20 @@ public sealed class ReencuentroDeLaPrincipalTests : IDisposable
         Assert.Equal(1, _buscador.Veces);
     }
 
+    /// <summary>Uno que se corta a media respuesta no detiene la búsqueda: el siguiente, la caja principal, se revisa y se usa.</summary>
+    [Fact]
+    public async Task Uno_que_se_corta_a_media_respuesta_no_detiene_la_busqueda()
+    {
+        _servicios.Cortados.Add(Impostor);
+        _servicios.Principal = Nueva;
+        _buscador.Contestan = [Impostor, Nueva];
+        var conexion = Conexion();
+        var (reencuentro, _) = Nuevo(conexion);
+
+        Assert.True(await reencuentro.BuscarAhoraAsync());
+        Assert.Equal(Nueva, conexion.Servicio);
+    }
+
     /// <summary>Un servicio que contesta de más (más que una prueba) no se lee completo ni se usa.</summary>
     [Fact]
     public async Task Una_respuesta_de_mas_no_se_usa()
@@ -279,12 +293,15 @@ public sealed class ReencuentroDeLaPrincipalTests : IDisposable
         Assert.Equal(0, _buscador.Veces);
     }
 
-    /// <summary>Si contesta en la red en la misma dirección guardada (su servicio no, todavía), no hay nada que cambiar: lo dice.</summary>
+    /// <summary>
+    /// Si contesta en la red en la misma dirección guardada (su servicio no, todavía: arranca o se tardó), no se cambia, aunque esa
+    /// PC conteste también por otra tarjeta y lo pruebe ahí (su Wi-Fi, con una IP del router que puede cambiar): lo dice.
+    /// </summary>
     [Fact]
     public async Task Si_contesta_en_la_misma_direccion_no_se_cambia()
     {
-        _buscador.Contestan = [Guardada];
-        _servicios.Principal = Guardada;
+        _buscador.Contestan = [Nueva, Guardada];
+        _servicios.Principal = Nueva;
         var conexion = Conexion();
         var (reencuentro, _) = Nuevo(conexion);
 
@@ -315,6 +332,34 @@ public sealed class ReencuentroDeLaPrincipalTests : IDisposable
         }
     }
 
+    /// <summary>Una respuesta que se corta: al leerla, la conexión ya no está.</summary>
+    private sealed class SeCorta : Stream
+    {
+        public override int Read(byte[] buffer, int offset, int count) => throw new IOException("Se cortó la conexión.");
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            ValueTask.FromException<int>(new IOException("Se cortó la conexión."));
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
     /// <summary>
     /// Los servicios de la red, de mentira: la caja principal (que sabe la huella de la llave de esta caja y firma con su propia
     /// dirección), los que contestan cualquier cosa y los que le pasan la pregunta a la caja principal y devuelven su respuesta.
@@ -333,6 +378,9 @@ public sealed class ReencuentroDeLaPrincipalTests : IDisposable
         /// <summary>Lo que la caja principal manda de más después de su prueba (para una respuesta demasiado larga).</summary>
         public string Relleno { get; set; } = "";
 
+        /// <summary>Estos contestan, pero la conexión se corta a media respuesta.</summary>
+        public List<Uri> Cortados { get; } = [];
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             lock (Preguntas)
@@ -344,6 +392,8 @@ public sealed class ReencuentroDeLaPrincipalTests : IDisposable
             var consulta = System.Web.HttpUtility.ParseQueryString(uri.Query);
             var caja = Guid.Parse(consulta["caja"]!);
             var reto = consulta["reto"]!;
+            if (Cortados.Contains(donde))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new SeCorta()) });
             if (Impostores.Contains(donde))
                 return Responder(new IdentidadServicioDto(Descubrimiento.Prueba(LlaveCaja.Huella("otra"), caja, reto, Descubrimiento.Direccion(donde)!)));
             if (QuePasanLaPregunta.TryGetValue(donde, out var aQuien))

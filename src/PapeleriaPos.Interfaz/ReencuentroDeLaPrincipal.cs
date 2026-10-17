@@ -170,14 +170,11 @@ public sealed class ReencuentroDeLaPrincipal(
                 encontrados = [];
             }
             var noProbaron = new List<string>();
-            var laMisma = false;
-            foreach (var encontrado in encontrados.Take(CuantosSeRevisan))
+            // Si contesta en la dirección guardada, su servicio está ahí (arrancando, o se tardó): no se cambia a otra, aunque esa
+            // PC conteste también por otra tarjeta (su Wi-Fi, con una IP del router que puede cambiar).
+            var laMisma = encontrados.Any(e => MismaDireccion(e, guardada));
+            foreach (var encontrado in laMisma ? [] : encontrados.Take(CuantosSeRevisan))
             {
-                if (MismaDireccion(encontrado, guardada))
-                {
-                    laMisma = true;
-                    continue;
-                }
                 if (await EsLaPrincipalAsync(encontrado, ct))
                 {
                     cambio = await CambiarAAsync(guardada, encontrado);
@@ -249,9 +246,10 @@ public sealed class ReencuentroDeLaPrincipal(
             var identidad = JsonSerializer.Deserialize<IdentidadServicioDto>(leido.AsSpan(0, largo), JsonSerializerOptions.Web);
             return Descubrimiento.EsLaPrueba(identidad?.Prueba, Descubrimiento.Prueba(LlaveCaja.Huella(llave), caja, reto, direccion));
         }
-        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException or NotSupportedException
-                                       or InvalidOperationException)
+        catch (Exception ex) when (ex is HttpRequestException or IOException or OperationCanceledException or JsonException or NotSupportedException
+                                       or InvalidOperationException or ArgumentException)
         {
+            // Uno que se corta a media respuesta (o contesta cualquier cosa) no detiene la búsqueda: se revisa el siguiente.
             return false;
         }
     }

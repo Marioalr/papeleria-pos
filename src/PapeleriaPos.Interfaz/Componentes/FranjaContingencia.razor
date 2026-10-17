@@ -2,7 +2,7 @@
    local» cuando no llega a la caja principal (con «Volver a buscarla», como en el prototipo), la red lenta, o «Sin internet: la
    venta sigue. No desconectes nada.» cuando lo dice la caja principal y la red local está bien (AvisosDeRed.QueDice); y lo que
    falta por subir y si la base (la del servicio o la de esta caja) no está lista contra apagones. Sin modal: nada estorba al
-   cobro, y el botón no se lleva el foco de la venta (no está en el orden del tabulador). *@
+   cobro, y el botón no se lleva el foco de la venta (no está en el orden del tabulador y el clic no lo enfoca). *@
 @implements IDisposable
 @inject ConexionCaja Conexion
 @inject IServiceProvider Servicios
@@ -24,7 +24,8 @@
             <span class="espacio"></span>
             @if (franja == AvisosDeRed.Franja.SinRedLocal && Reencuentro is { Aplica: true } reencuentro)
             {
-                <button class="vn-boton chico" tabindex="-1" disabled="@reencuentro.Buscando"
+                @* Ni con el clic se lleva el foco: el lector sigue escribiendo en la venta, y su Enter no vuelve a oprimir el botón. *@
+                <button class="vn-boton chico" tabindex="-1" disabled="@reencuentro.Buscando" @onmousedown:preventDefault="true"
                         title="La busca en la red y solo se cambia a ella si prueba, con la llave de esta caja, que es su caja principal."
                         @onclick="VolverABuscarlaAsync">
                     @(reencuentro.Buscando ? "Buscando…" : "Volver a buscarla")

@@ -86,10 +86,15 @@ public sealed record ConfiguracionCaja(
                 : null,
         };
         Directory.CreateDirectory(Path.GetDirectoryName(Guardada)!);
-        // Primero a un archivo aparte y después se cambia de un jalón: si se va la luz a media escritura (puede pasar cuando la
-        // caja guarda sola la dirección nueva de la caja principal, en plena falla de la red), caja.json no queda a medias.
+        // Primero a un archivo aparte, hasta el disco, y después se cambia de un jalón: si se va la luz a media escritura (puede
+        // pasar cuando la caja guarda sola la dirección nueva de la caja principal, en plena falla de la red), caja.json no queda
+        // a medias ni en ceros.
         var nuevoArchivo = Guardada + ".nuevo";
-        File.WriteAllText(nuevoArchivo, JsonSerializer.Serialize(nueva, Json));
+        using (var archivo = new FileStream(nuevoArchivo, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            archivo.Write(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(nueva, Json)));
+            archivo.Flush(flushToDisk: true);
+        }
         File.Move(nuevoArchivo, Guardada, overwrite: true);
         return nueva;
     }

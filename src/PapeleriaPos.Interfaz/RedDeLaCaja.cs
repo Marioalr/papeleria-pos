@@ -30,6 +30,9 @@ public sealed class OpcionesRedDeLaCaja
     /// <summary>Cómo se busca a la caja principal en la red; las pruebas del POS ponen uno a mano.</summary>
     public IBuscadorDeLaPrincipal? Buscador { get; init; }
 
+    /// <summary>Con qué se le pide a un servicio encontrado que pruebe quién es; las pruebas del POS ponen el suyo.</summary>
+    public HttpClient? Identidad { get; init; }
+
     public TimeProvider? Reloj { get; init; }
 }
 
@@ -56,8 +59,7 @@ public sealed class RedDeLaCaja
     /// La de la caja de verdad (la ventana de Windows): la bitácora en la carpeta del registro, el vigía (la tarjeta, el router y
     /// la impresora de tickets) y volver a encontrar a la caja principal por la red con la llave de esta caja.
     /// </summary>
-    /// <param name="fondo">El cliente de lo de fondo (<see cref="RedCaja.Fondo"/>): con él se le pide al servicio que pruebe quién es.</param>
-    public static RedDeLaCaja Crear(ConexionCaja conexion, HttpClient fondo, OpcionesRedDeLaCaja? opciones)
+    public static RedDeLaCaja Crear(ConexionCaja conexion, OpcionesRedDeLaCaja? opciones)
     {
         opciones ??= new OpcionesRedDeLaCaja();
         var avisoImpresora = AvisosDeRed.DeLaImpresora(opciones.Impresora, opciones.Puertos);
@@ -79,9 +81,25 @@ public sealed class RedDeLaCaja
                 AlEmpezar = () => new[] { avisoImpresora, AvisosDeRed.DelServicio(conexion.Servicio) }.OfType<string>(),
                 Hacia = () => IPAddress.TryParse(conexion.Servicio.Host.Trim('[', ']'), out var ip) && !IPAddress.IsLoopback(ip) ? ip : null,
             }, reloj);
-        var reencuentro = new ReencuentroDeLaPrincipal(conexion, opciones.Buscador ?? new BuscadorPorDifusion(), fondo, reloj, bitacora);
+        var reencuentro = new ReencuentroDeLaPrincipal(conexion, opciones.Buscador ?? new BuscadorPorDifusion(), opciones.Identidad ?? ClienteDeLaPrueba(),
+            reloj, bitacora);
         return new RedDeLaCaja(conexion, bitacora, vigia, reencuentro, avisoImpresora);
     }
+
+    /// <summary>
+    /// El cliente con que se le pide a un servicio encontrado que pruebe quién es: aparte del de la venta, sin seguir
+    /// redirecciones (lo que conteste ese mismo servicio es lo que cuenta) y sin guardar conexiones.
+    /// </summary>
+    private static HttpClient ClienteDeLaPrueba() => new(new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        UseCookies = false,
+        ConnectTimeout = ReencuentroDeLaPrincipal.EsperaPrueba,
+        PooledConnectionIdleTimeout = TimeSpan.FromSeconds(1),
+    })
+    {
+        Timeout = Timeout.InfiniteTimeSpan,
+    };
 
     public ConexionCaja Conexion { get; }
 

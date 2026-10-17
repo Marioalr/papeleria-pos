@@ -97,6 +97,7 @@ public sealed class VigiaDeLaRed
     private readonly TimeProvider _reloj;
     private readonly SemaphoreSlim _paso = new(1, 1);
     private readonly Lock _candado = new();
+    private int _empezado;
 
     private FotoDeLaRed? _foto;
     private Seguimiento _router;
@@ -186,9 +187,14 @@ public sealed class VigiaDeLaRed
     /// <summary>Cuánto espera para la siguiente revisión: sin internet, menos.</summary>
     public TimeSpan SiguienteEspera => Internet == false ? _opciones.CadaSinInternet : _opciones.Cada;
 
-    /// <summary>La primera línea de la bitácora, con la hora en que arrancó la PC (lo que tiene prendida, de Windows).</summary>
+    /// <summary>
+    /// La primera línea de la bitácora, con la hora en que arrancó la PC (lo que tiene prendida, de Windows), y lo configurado por
+    /// nombre. Una sola vez: la caja la pide antes de su primer latido, y <see cref="VigilarAsync"/> ya no la repite.
+    /// </summary>
     public void Empezar()
     {
+        if (Interlocked.Exchange(ref _empezado, 1) == 1)
+            return;
         var encendida = _opciones.Encendida?.Invoke() ?? TimeSpan.FromMilliseconds(Environment.TickCount64);
         _bitacora.Empezar(_opciones.Quien, _reloj.GetLocalNow().DateTime - encendida);
         foreach (var aviso in _opciones.AlEmpezar?.Invoke() ?? [])

@@ -217,9 +217,9 @@ Donde está instalado el POS, la bitácora de red se anota sola, sin que nadie h
     que pasa). Un equipo que nunca contestó el ping (su firewall no lo deja) no cuenta como caído: lo dice una vez;
   - «Red con la caja principal: buena → lenta (últimos latidos: …)»: el latido de la caja, con lo que tardó;
   - «Esta PC: …», al empezar, y «Esta PC cambió de IP / de conexión / de Wi-Fi / de router»: cómo está conectada (cable
-    o Wi-Fi con su nombre y señal), su IP y si se la dio el router (DHCP) o es fija, y el router con su MAC. Una IP
-    169.254 dice que el router no le dio dirección; «El router … cambió de MAC», que otro aparato contesta con la IP del
-    router;
+    o Wi-Fi con el nombre de su perfil de red y su señal), su IP y si se la dio el router (DHCP) o es fija, y el router
+    con su MAC. Una IP 169.254 dice que el router no le dio dirección; «El router … cambió de MAC», que otro aparato
+    contesta con la IP del router;
   - «El DNS del router no contesta»: el router está trabado (no contesta ni su propio nombre, `tendawifi.com`);
   - «Llega mucha difusión a esta PC: … paquetes por segundo»: posible tormenta de tráfico;
   - ««Caja 2» dejó de latir» / «volvió a latir» (en la del servicio): cuándo la caja principal dejó de saber de cada

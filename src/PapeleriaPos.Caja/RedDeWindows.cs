@@ -8,10 +8,10 @@ using Windows.Networking.Connectivity;
 namespace PapeleriaPos.Caja;
 
 /// <summary>
-/// Lo de la red que solo sabe Windows, para la bitácora de red (la red de la tienda en el POS): el Wi-Fi de la caja (su nombre y
-/// su señal, de las API de Windows, sin pedir permisos) y la MAC del router (de la tabla ARP que Windows ya tiene, sin mandar
-/// nada). Desde Windows 11 24H2, el nombre del Wi-Fi puede pedir el permiso de ubicación: sin él, va el nombre del perfil de red
-/// de Windows (casi siempre el mismo). Lo que no se puede leer se queda vacío: nunca detiene la caja.
+/// Lo de la red que solo sabe Windows, para la bitácora de red (la red de la tienda en el POS): el Wi-Fi de la caja (el nombre de
+/// su perfil de red y su señal, de las API de Windows, sin pedir permisos) y la MAC del router (de la tabla ARP que Windows ya
+/// tiene, sin mandar nada). El nombre del Wi-Fi como tal no se pide: desde Windows 11 24H2 puede sacar la pregunta del permiso de
+/// ubicación. Lo que no se puede leer se queda vacío: nunca detiene la caja.
 /// </summary>
 public sealed class RedDeWindows : IDetallesDeRed
 {
@@ -23,17 +23,9 @@ public sealed class RedDeWindows : IDetallesDeRed
         {
             if (perfil.NetworkAdapter?.NetworkAdapterId != id || !perfil.IsWlanConnectionProfile)
                 continue;
-            string? red = null;
-            try
-            {
-                red = perfil.WlanConnectionProfileDetails?.GetConnectedSsid();
-            }
-            catch (Exception ex) when (ex is UnauthorizedAccessException or COMException)
-            {
-                // Sin el permiso de ubicación: el nombre del perfil.
-            }
-            if (string.IsNullOrWhiteSpace(red))
-                red = perfil.ProfileName;
+            // El nombre del perfil de red de Windows (casi siempre el del Wi-Fi). No se le pide a Windows el nombre del Wi-Fi
+            // (GetConnectedSsid): desde Windows 11 24H2 eso puede sacar la pregunta del permiso de ubicación encima de la venta.
+            var red = perfil.ProfileName;
             // Windows da de 0 a 5 rayitas: en porcentaje, de 20 en 20.
             int? senal = perfil.GetSignalBars() is { } rayitas ? Math.Clamp(rayitas * 20, 0, 100) : null;
             return (string.IsNullOrWhiteSpace(red) ? null : red, senal);
