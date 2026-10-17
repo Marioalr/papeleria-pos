@@ -111,7 +111,7 @@ Sin tiempos: se avanza cuando la fase anterior funciona en la tienda. **Foco:** 
 | 2. Inventario | Compras, recepción ciega, presentaciones, conteos cíclicos, etiquetas, sugerido de compra |
 | 3. Precios y clientes | Mayoreo, promociones, kits, clientes registrados, crédito |
 | 4. Servicios y pedidos | Primero, servicios con costo real: recetas con los consumibles del servicio (micas, espirales, portadas), depreciación del equipo y luz (engargolado y enmicado). Después pedidos, cola compartida, charolas, recogida por celular, duplicados, apartados, listas escolares, captura manual desde WhatsApp |
-| 5. Piloto en la matriz | Primero el piloto en la caja 2: vende con la caja nueva y manda cada venta a eleventa, que sigue siendo el oficial ([piloto](#la-versión-unicaja-y-el-piloto-en-la-caja-2)). Después, dejar eleventa con las dos cajas: depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo. Antes: la red de la tienda arreglada y las tres impresoras de inyección; los reportes, después de la prueba con una persona real y su aprobación. Desde el arranque, respaldo cifrado fuera de la tienda (Backblaze B2) y vigilancia de la caja principal (Healthchecks.io) ([qué falta](#para-el-piloto-con-dos-cajas)) |
+| 5. Piloto en la matriz | Primero el piloto en la caja 2: vende con la caja nueva y manda cada venta a eleventa, que sigue siendo el oficial ([piloto](#la-versión-unicaja-y-el-piloto-en-la-caja-2)). Después, dejar eleventa con las dos cajas: depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo. Antes: la red de la tienda arreglada; los reportes, después de la prueba con una persona real y su aprobación. Las tres impresoras de inyección van con la entrega 4, después de alcanzar a eleventa (2026-10-15); mientras, Control Print sigue aparte. Desde el arranque, respaldo cifrado fuera de la tienda (Backblaze B2) y vigilancia de la caja principal (Healthchecks.io) ([qué falta](#para-el-piloto-con-dos-cajas)) |
 | 6. WhatsApp y central | La API de WhatsApp → pedidos cuando el dueño la quiera, con un receptor aparte ([WhatsApp](whatsapp.md)). **Pospuesto:** el central, con sus entregas 6.1 a 6.6 ([propuesta](servidor-remoto.md#entregas)) |
 | 7. Sucursal 2 | **Pospuesta.** Precios por sucursal, traspasos, compras que se reparten, inversión de apertura y punto de equilibrio ([propuesta](servidor-remoto.md)). Si abre antes, abre con eleventa |
 | 8. App Android | Preventa y pedidos desde el celular. Preventa: el ticket se arma en el celular, se elige a qué caja mandarlo y ahí llega en espera, con un efecto para que se note ([propuesta](propuesta-interfaz.md#desde-el-celular)) |
@@ -747,6 +747,26 @@ El 2026-10-08 el dueño pospuso la multisucursal para completar primero el POS d
   supuestos de ese tipo.
 - **Cuándo retomarla:** cuando el dueño decida pasar la sucursal 2 (o la 3.ª) al POS, unos 6 meses antes de esa fecha;
   mientras, la sucursal 2 abre con eleventa ([señales](notas.md#para-retomar-la-multisucursal)).
+
+## Decidido mientras el dueño no estaba (2026-10-17)
+
+El dueño (2026-10-17): «te quedarás un buen rato trabajando solo; si tienes preguntas, haz una sugerencia recomendada y
+apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción recomendada, y queda **por revisar**:
+
+| Pregunta | Decisión | Dónde |
+|---|---|---|
+| Si un ticket no salió y el cliente ya se fue, ¿solo «Reintentar»? | También «No imprimirlo»: la cola sigue y el ticket se reimprime después desde las ventas del día. Además evita un ticket doble cuando la impresora imprimió pero no lo confirmó | #108 |
+| Después de una restauración de eleventa, lo que se perdió de la caja 2, ¿a mano o se vuelve a mandar solo? | A mano en eleventa: queda listado como por revisar. Mandarlo solo le daría folios nuevos, distintos a los impresos, quizá en turnos que allá ya no existen | Puente, parte 3 |
+| Si en la caja 2 no hay `gbak.exe`, ¿se copia o se escribe sin el respaldo propio? | Se copia el de Firebird 2.0 de la caja principal, con su `fbclient.dll` (se ve en la tienda; [guía](pruebas-en-tienda.md)). El respaldo sigue siendo obligatorio para escribir | Puente, parte 3 |
+| La entrega 9 (reportes) | Justo después de aprobar la prueba con una persona real, empezando por lo que hace el reporte de ventas de eleventa y la comparación contra el año anterior ([paridad](paridad-eleventa.md#recomendaciones)) | Entrega 9 |
+| Dejar eleventa | En dos pasos: primero el modo multicaja con el puente escribiendo; al final, apagar el puente cuando el POS tenga la entrega 9 y un mes que cuadre con eleventa | Piloto |
+| La ganancia del día, con Telegram en pausa | En el corte del día, para quien tiene «Ver costos, utilidad y margen», como el de eleventa | El corte del día como el de eleventa |
+| Las tres impresoras de inyección | Van con la entrega 4, después de alcanzar a eleventa (meta del 2026-10-15); mientras, Control Print sigue cobrando aparte. Se alinearon la fase 5 y [impresión](impresion.md) | Plan |
+| ¿Quién hace el corte de un turno? | Solo quien tiene el permiso, como ya funciona | Propuesta |
+| ¿Quién cierra el corte del día y cuándo se recuerda? | Quien tiene «ver y cerrar el corte del día» (por omisión, la primera cuenta). Se recuerda a la hora de cierre de Configuración › Tienda | Propuesta |
+| ¿Pantalla táctil? | No por ahora: todo con teclado y ratón, con botones de buen tamaño | Propuesta |
+| ¿Pedir el PIN otra vez tras unos minutos sin usar la caja? | No por ahora, como eleventa: estorba para cobrar rápido. Ctrl+U cambia de usuario | Propuesta |
+| Las tres partes del puente (turno y corte, devoluciones de ida y vuelta, respaldos) | En un solo PR: los arreglos de la revisión tocan las tres | Puente |
 
 ## Recomendaciones
 
