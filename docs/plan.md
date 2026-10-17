@@ -606,19 +606,28 @@ aprobó el dueño el 2026-10-10 ([propuesta](propuesta-interfaz.md#rendimiento))
   servicio de antes hace lo de siempre (latido y copia completa).
 - **La red con plazos:** dos conexiones aparte, una para lo que espera el cajero y otra para lo de fondo (el aviso, la copia,
   la bandeja). Lo de la venta que también se puede hacer con la copia lleva plazo: leer, 800 ms; cobrar y lo demás que
-  escribe, 2.5 s (los 2 s que la caja principal espera el folio de eleventa en el piloto, y medio segundo para la red). Lo de
-  atrás (reportes, catálogo, inventario), hasta 15 s, como antes. Keepalive de TCP (pregunta tras 5 s sin nada, cada 2 s,
+  escribe, 2.5 s (los 2 s que la caja principal espera el folio de eleventa en el piloto, y medio segundo para la red). El
+  plazo es solo de esa operación: lo que se pide después (la cuenta del turno) ya no lo lleva. Lo de atrás (reportes,
+  catálogo, inventario) y el corte Z, hasta 15 s, como antes; el corte Z lleva su Id desde la caja: si la respuesta se
+  pierde y la caja lo hace con su cuenta, al subir ya está (antes se quedaba con «El turno ya está cerrado»). Keepalive de TCP (pregunta tras 5 s sin nada, cada 2 s,
   3 veces) y conexiones que se renuevan cada 2 minutos: una conexión medio muerta tras reconectarse el Wi-Fi se nota en
   unos 11 s.
 - **El cobro que no llega a tiempo** se hace con la copia y va a la bandeja con el mismo Id. Si la caja principal sí lo había
   guardado (solo se perdió la respuesta), al subir queda una venta, con el mismo folio que se imprimió (la serie de la caja
-  sigue igual por los dos caminos), una sola vez en el turno y una sola vez hacia eleventa. La pantalla enseña un solo
-  ticket. También si las dos llegan a la vez.
+  sigue igual por los dos caminos), una sola vez en el turno y una sola vez hacia eleventa, y lo de su bitácora (el
+  descuento, el precio cambiado) una sola vez. La pantalla enseña un solo ticket. También si las dos llegan a la vez. Si
+  con la copia tampoco se puede (algo recién dado de alta que la copia no tiene, impresiones), no se sabe si quedó: el
+  panel lo dice, ese folio se aparta (el siguiente cobro sin conexión no lo repite) y el ticket solo se cobra en línea con
+  el mismo Id; al volver la red, si ya había quedado, sale el mismo y el panel dice «Ese ticket ya había quedado cobrado».
+  Si una caja sube con el Id de una venta que ya está otra distinta, no se descarta callada: queda por revisar.
 - **Buena, lenta o caída:** el latido mide lo que tarda la caja principal en contestar. Lenta: dos latidos seguidos de
   300 ms o más, o algo que el cajero esperaba y no llegó a tiempo; caída: no contesta en 2 s. Vuelve a buena con tres
-  latidos seguidos de menos de 100 ms (15 s); de una caída, en cuanto contesta bien, salvo que la red vaya y venga (otra
-  caída en menos de 2 minutos): entonces pasa por lenta. En lenta la caja trabaja como sin conexión (su copia, su folio, la
-  bandeja); lo que no se puede hacer con la copia (devolver, el catálogo) se intenta con la caja principal. Se ve donde ya
+  latidos seguidos de menos de 200 ms (15 s; un Wi-Fi de 150 ms ya no se queda lenta para siempre tras un tropiezo); de una
+  caída, en cuanto contesta en menos de 100 ms, salvo que la red vaya y venga (otra caída en menos de 2 minutos): entonces
+  pasa por lenta. En lenta la caja trabaja como sin conexión (su copia, su folio, la bandeja), y su copia se sigue poniendo
+  al día: si llegó otro precio de algo del ticket, no se cobra con un precio que el cajero no vio (el ticket se pone al día
+  y el panel lo dice, como cuando lo dice la caja principal). Lo que no se puede hacer con la copia (devolver, el catálogo)
+  se intenta con la caja principal. Se ve donde ya
   se veía la conexión: «Conectada a la principal · 9 ms», «Red lenta» y la franja de arriba.
 - **Nada pesado dentro de una petición del servicio:** el catálogo en memoria se recarga de fondo y mientras se contesta con
   el vigente (lo que no tiene, como un producto recién dado de alta, sí espera la recarga), y el cobro se revisa con esa
