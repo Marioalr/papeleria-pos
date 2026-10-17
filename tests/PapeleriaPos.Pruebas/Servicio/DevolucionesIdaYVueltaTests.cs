@@ -1,8 +1,11 @@
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Components;
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
+using PapeleriaPos.Datos;
 using PapeleriaPos.Eleventa;
 using PapeleriaPos.Impresion;
 using PapeleriaPos.Interfaz;
@@ -379,6 +382,61 @@ public sealed class DevolucionesIdaYVueltaTests
         var dueno = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
         await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsJsonAsync($"api/eleventa/envios/{envio}/revisar", new SolicitudRevision(dueno.UsuarioId, null)));
         return (ticket, envio);
+    }
+
+    /// <summary>Justo después de que la vuelta lee la venta, hace otra cosa (una devolución en la caja que no esperó el candado).</summary>
+    private sealed class SeCuela(Func<Task> otraCosa) : DbCommandInterceptor
+    {
+        private int _hecho;
+
+        /// <summary>Por qué no pudo entrar lo que se quiso colar; vacío si entró.</summary>
+        public Exception? Error { get; private set; }
+
+        public override async ValueTask<DbDataReader> ReaderExecutedAsync(DbCommand command, CommandExecutedEventData eventData, DbDataReader result,
+            CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("FROM \"Ventas\"") && Interlocked.Exchange(ref _hecho, 1) == 0)
+            {
+                try
+                {
+                    await otraCosa();
+                }
+                catch (Exception ex)
+                {
+                    Error = ex;
+                }
+            }
+            return result;
+        }
+    }
+
+    [Fact]
+    public async Task Una_devolucion_de_la_caja_que_se_cuela_mientras_la_lectura_pasa_una_de_eleventa_no_se_pierde()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes());
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        var ticket = await EnviadaAsync(servicio, c, plumas: 3);
+        var alla = new DevolucionLeida(904, 500, false, HoraLocal(1), 9, "cajera2", "Caja 2", 31, [new ArticuloDevueltoLeido("PLU-FINA", "Pluma punto fino", 1, 9, 10)]);
+        // En cuanto la lectura lee la venta, en la caja se devuelve otra pluma (sin esperar el candado de la bandeja; si la
+        // base está apartada, espera un segundo y desiste).
+        var cuela = new SeCuela(async () =>
+        {
+            await using var caja = new PosDbContext(BaseDeDatos.Opciones($"Data Source={servicio.Ruta};Pooling=False;Default Timeout=1"));
+            var linea = (await caja.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == ticket.VentaId)).Lineas.Single();
+            await new RegistroDevoluciones(caja).DevolverAsync(ticket.VentaId!.Value, [new LineaPorDevolver(linea.Id, Cantidad.Unidades(1))],
+                c.Encargado.UsuarioId, c.Datos.Id, "No pinta", null);
+        });
+
+        await using (var db = new PosDbContext(new DbContextOptionsBuilder<PosDbContext>()
+            .UseSqlite($"Data Source={servicio.Ruta};Pooling=False").AddInterceptors(cuela).Options))
+            Assert.Equal(new ResultadoVuelta(1, 0), await DevolucionesConEleventa.PasarVueltaAsync(db, [alla], DateTime.UtcNow));
+
+        // La de la caja no pudo meterse en medio, y lo devuelto en la venta es la suma de sus devoluciones.
+        Assert.NotNull(cuela.Error);
+        await using var revision = servicio.Base();
+        var venta = await revision.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == ticket.VentaId);
+        var devueltas = await revision.Devoluciones.Include(d => d.Lineas).Where(d => d.VentaId == venta.Id).ToListAsync();
+        Assert.Equal((1000L, 1000L), (devueltas.SelectMany(d => d.Lineas).Sum(l => l.Cantidad.Milesimas), venta.Lineas.Single().CantidadDevuelta.Milesimas));
     }
 
     [Fact]

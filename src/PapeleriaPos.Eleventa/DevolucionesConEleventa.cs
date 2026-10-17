@@ -254,7 +254,8 @@ public static class DevolucionesConEleventa
 
     /// <summary>
     /// Pasa a las ventas de la caja 2 lo que se devolvió o canceló en eleventa (la vuelta): lo que ya se pasó o es de aquí se
-    /// salta; lo demás es una devolución sin efectivo con su entrada al kardex, o queda por revisar. Quien llama guarda.
+    /// salta; lo demás es una devolución sin efectivo con su entrada al kardex, o queda por revisar. Quien llama guarda, en
+    /// la misma transacción en que se leyó (<see cref="PasarVueltaAsync"/>).
     /// </summary>
     public static async Task<ResultadoVuelta> AplicarVueltaAsync(PosDbContext db, IReadOnlyList<DevolucionLeida> devoluciones, DateTime ahoraUtc,
         CancellationToken ct = default)
@@ -342,6 +343,24 @@ public static class DevolucionesConEleventa
             pasadas++;
         }
         return new ResultadoVuelta(pasadas, porRevisar, ligadas);
+    }
+
+    /// <summary>
+    /// La vuelta, en una sola transacción, y guardada: se lee la venta, se le pasa lo de eleventa y se guarda sin que otra
+    /// devolución de esa venta se cuele en medio y se pierda (una de esta caja que no esperó el candado de la bandeja; revisión
+    /// del 2026-10-17). Con SQLite la transacción aparta la escritura desde el principio: la otra espera a que termine, y
+    /// entonces ve lo de aquí (y si no alcanza a esperar, no entra: el cajero la vuelve a buscar).
+    /// </summary>
+    public static async Task<ResultadoVuelta> PasarVueltaAsync(PosDbContext db, IReadOnlyList<DevolucionLeida> devoluciones, DateTime ahoraUtc,
+        CancellationToken ct = default)
+    {
+        if (devoluciones.Count == 0)
+            return new ResultadoVuelta(0, 0);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var resultado = await AplicarVueltaAsync(db, devoluciones, ahoraUtc, ct);
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return resultado;
     }
 
     /// <summary>Una devolución de aquí que se iba a anotar a mano en eleventa, con lo que se habría mandado.</summary>
@@ -482,8 +501,7 @@ public static class DevolucionesConEleventa
         }, ct);
         if (devoluciones is null)
             return false;
-        await AplicarVueltaAsync(db, devoluciones, ahoraUtc, ct);
-        await db.SaveChangesAsync(ct);
+        await PasarVueltaAsync(db, devoluciones, ahoraUtc, ct);
         return true;
     }
 

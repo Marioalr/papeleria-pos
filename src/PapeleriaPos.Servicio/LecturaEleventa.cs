@@ -211,10 +211,9 @@ public sealed class LecturaEleventa(
                 return;
             }
             var turnos = consulta is not null && datos.Piloto is { } piloto ? await TurnosDelPiloto.AplicarAsync(db, consulta.CajaId, piloto, ahora, ct) : null;
-            // La vuelta, antes de las existencias: lo devuelto en eleventa entra con su devolución, no como un ajuste.
-            var vuelta = datos.Piloto is { } conDevoluciones ? await DevolucionesConEleventa.AplicarVueltaAsync(db, conDevoluciones.Devoluciones, ahora, ct) : null;
-            if (vuelta is not null)
-                await db.SaveChangesAsync(ct);
+            // La vuelta, antes de las existencias: lo devuelto en eleventa entra con su devolución, no como un ajuste. En su propia
+            // transacción: una devolución de la caja que no esperó el candado no se pierde.
+            var vuelta = datos.Piloto is { } conDevoluciones ? await DevolucionesConEleventa.PasarVueltaAsync(db, conDevoluciones.Devoluciones, ahora, ct) : null;
             var resultado = await SincronizacionEleventa.AplicarAsync(db, datos, ahora, mandados, ct);
             var avisos = new Dictionary<string, int>(resultado.Avisos);
             foreach (var aviso in turnos?.Avisos ?? [])
