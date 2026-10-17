@@ -2,10 +2,12 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using PapeleriaPos.Interfaz;
+using PapeleriaPos.Interfaz.Componentes;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Pruebas.Interfaz;
 using PapeleriaPos.Servicio;
@@ -117,7 +119,8 @@ public sealed class LlaveDelServicioTests(ServicioDePrueba servicio) : IClassFix
 
     /// <summary>
     /// La dirección guardada sabe de esta caja pero firma con otra llave (la PC se reinstaló, o es una copia de su base): la caja no le
-    /// manda su llave, sigue con su copia y la franja ofrece darla de alta otra vez.
+    /// manda su llave, sigue con su copia y la franja ofrece darla de alta otra vez, con el porqué para la pantalla del alta. Solo si
+    /// la caja se lo pide (sin nadie en la venta: con alguien, se perdería el ticket que lleva).
     /// </summary>
     [Fact]
     public async Task Con_otra_llave_del_servicio_la_caja_no_manda_su_llave_y_sigue_con_su_copia()
@@ -133,8 +136,63 @@ public sealed class LlaveDelServicioTests(ServicioDePrueba servicio) : IClassFix
 
         Assert.DoesNotContain(caja.Red.Pedidas, p => p.ConLlave);
         Assert.Equal(EstadoRed.Caida, caja.Contingencia.EstadoDeLaRed);
-        Assert.True(caja.Reencuentro.OtraIdentidad);
+        Assert.Equal(ReencuentroDeLaPrincipal.OtraCajaPrincipal, caja.Reencuentro.AltaPorque);
         Assert.Equal(ReencuentroDeLaPrincipal.OtraCajaPrincipal, caja.Reencuentro.Resultado);
+
+        await using var servicios = new ServiceCollection().AddSingleton(caja.Conexion).AddSingleton(caja.Contingencia).BuildServiceProvider();
+        foreach (var conAlta in new[] { false, true })
+        {
+            string? porque = null;
+            var pantalla = new PantallaSinNavegador(servicios);
+            await using var _ = pantalla;
+            await pantalla.AbrirAsync<FranjaContingencia>(conAlta
+                ? new() { [nameof(FranjaContingencia.AlDarDeAlta)] = new EventCallback<string>(null, (Action<string>)(p => porque = p)) }
+                : []);
+            await pantalla.EsperarAsync(t => t.Contains(AvisosDeRed.SinRedLocal, StringComparison.Ordinal), "«Sin red local» en la franja");
+            var boton = (await pantalla.LeerAsync()).Elementos
+                .SingleOrDefault(e => e.Etiqueta == "button" && PantallaSinNavegador.Limpio(e.Texto) == "Dar de alta otra vez");
+            Assert.Equal(conAlta, boton is not null);
+            if (boton is null)
+                continue;
+            await pantalla.OprimirAsync(boton);
+            Assert.Equal(ReencuentroDeLaPrincipal.OtraCajaPrincipal, porque);
+            Assert.Empty(pantalla.Errores);
+        }
+    }
+
+    /// <summary>
+    /// La pantalla del alta, abierta con «Dar de alta otra vez» de la franja (el dueño, o alguien por error), se puede dejar: «Volver
+    /// sin dar de alta» regresa y la caja sigue con su copia. Abierta porque la caja principal ya no la conoce, no se ofrece.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task La_pantalla_del_alta_desde_la_franja_se_puede_dejar(bool desdeLaFranja)
+    {
+        var conexion = new ConexionCaja { Servicio = Principal, CajaId = Guid.NewGuid(), Llave = "llave", PideAlta = true };
+        await using var servicios = new ServiceCollection()
+            .AddSingleton(conexion)
+            .AddSingleton(new ClienteCaja(servicio.Fabrica.CreateClient(), conexion))
+            .BuildServiceProvider();
+        var volvio = false;
+        var pantalla = new PantallaSinNavegador(servicios);
+        await using var _ = pantalla;
+        await pantalla.AbrirAsync<ConfigurarCaja>(new()
+        {
+            [nameof(ConfigurarCaja.Aviso)] = ReencuentroDeLaPrincipal.OtraCajaPrincipal,
+            [nameof(ConfigurarCaja.AlVolver)] = desdeLaFranja ? new EventCallback(null, (Action)(() => volvio = true)) : default(EventCallback),
+        });
+
+        var boton = (await pantalla.LeerAsync()).Elementos
+            .SingleOrDefault(e => e.Etiqueta == "button" && PantallaSinNavegador.Limpio(e.Texto) == "Volver sin dar de alta");
+        Assert.Equal(desdeLaFranja, boton is not null);
+        Assert.Contains(ReencuentroDeLaPrincipal.OtraCajaPrincipal, await pantalla.TextoAsync(), StringComparison.Ordinal);
+        if (boton is not null)
+        {
+            await pantalla.OprimirAsync(boton);
+            Assert.True(volvio);
+        }
+        Assert.Empty(pantalla.Errores);
     }
 
     /// <summary>
@@ -158,7 +216,10 @@ public sealed class LlaveDelServicioTests(ServicioDePrueba servicio) : IClassFix
         Assert.Equal(!conoceLaLlave, caja.Red.Pedidas.Any(p => p.ConLlave));
     }
 
-    /// <summary>Si la caja principal ya no conoce a esta caja (la quitaron), se le pide a la pantalla darla de alta otra vez, sin mandar la llave.</summary>
+    /// <summary>
+    /// Si la caja principal ya no conoce a esta caja (la quitaron), se le pide a la pantalla darla de alta otra vez, sin mandar la
+    /// llave. Con alguien en la caja, no: se perdería el ticket que lleva; mientras, vende con la copia, y se pide en cuanto sale.
+    /// </summary>
     [Fact]
     public async Task Si_la_principal_ya_no_conoce_a_la_caja_se_da_de_alta_otra_vez()
     {
@@ -168,9 +229,15 @@ public sealed class LlaveDelServicioTests(ServicioDePrueba servicio) : IClassFix
         (await servicio.Fabrica.CreateClient().PostAsJsonAsync($"api/cajas/{alta.Caja.Id}/quitar-equipo", new SolicitudQuitarEquipo(dueno.UsuarioId))).EnsureSuccessStatusCode();
         await using var caja = Caja.Abrir(tienda, alta, _carpeta, conocida: alta.LlaveDelServicio);
         caja.Conexion.SinComprobar = true;
+        caja.Conexion.UsuarioEnCaja = Guid.NewGuid();
         string? porque = null;
         caja.Contingencia.SinAlta += texto => porque = texto;
 
+        await caja.Contingencia.LatidoAsync();
+        Assert.Null(porque);
+        Assert.False(caja.Contingencia.EnLinea);
+
+        caja.Conexion.UsuarioEnCaja = null;
         await caja.Contingencia.LatidoAsync();
 
         Assert.StartsWith("La caja principal ya no reconoce a esta PC", porque);

@@ -362,6 +362,8 @@ public sealed class ReencuentroDeLaPrincipalTests : IDisposable
         Assert.Equal(Guardada, conexion.Servicio);
         Assert.Empty(_guardadas);
         Assert.Equal(ReencuentroDeLaPrincipal.DosPrincipales, reencuentro.Resultado);
+        // Lo decide el dueño: la franja ofrece darla de alta otra vez (con «Buscar en la red» elige la de verdad).
+        Assert.Equal(ReencuentroDeLaPrincipal.DosPrincipalesAlDarDeAlta, reencuentro.AltaPorque);
         Assert.Single(_carpeta.Lineas(), l => l.StartsWith("Contestaron 192.168.0.99:5080 y 192.168.0.57:5080, y prueban ser cajas principales distintas",
             StringComparison.Ordinal));
     }
@@ -415,7 +417,8 @@ public sealed class ReencuentroDeLaPrincipalTests : IDisposable
 
     /// <summary>
     /// Esta caja ya conoce la llave de su caja principal: una copia de su base en otra PC (sabe la huella de la llave de la caja,
-    /// pero no firma con la llave del servicio) no gana, aunque sea la única que contesta. La franja dice que se avise al dueño.
+    /// pero no firma con la llave del servicio) no gana, aunque sea la única que contesta. Puede ser también la caja principal
+    /// reinstalada o en otra PC, con otra IP: la franja lo dice y ofrece darla de alta otra vez (lo decide el dueño).
     /// </summary>
     [Fact]
     public async Task Con_la_llave_del_servicio_una_copia_de_la_base_no_gana_aunque_sea_la_unica()
@@ -432,9 +435,64 @@ public sealed class ReencuentroDeLaPrincipalTests : IDisposable
 
         Assert.Equal(Guardada, conexion.Servicio);
         Assert.Empty(_guardadas);
-        Assert.Equal(ReencuentroDeLaPrincipal.DosPrincipales, reencuentro.Resultado);
+        Assert.Equal(ReencuentroDeLaPrincipal.OtraCajaPrincipal, reencuentro.Resultado);
+        Assert.Equal(ReencuentroDeLaPrincipal.OtraCajaPrincipal, reencuentro.AltaPorque);
         Assert.Contains(_carpeta.Lineas(), l => l.StartsWith("Contestó 192.168.0.99:5080, que sabe de esta caja pero no firma con la llave de su caja principal",
             StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Con la llave del servicio, contestan dos que saben de esta caja y firman con llaves distintas (la PC de antes y una laptop
+    /// con un respaldo): son dos, no se usa ninguna. Si firman con la misma llave, es una sola PC que contesta por dos tarjetas.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Con_la_llave_del_servicio_dos_que_no_firman_como_la_de_siempre(bool conLaMismaLlave)
+    {
+        var copia = new Uri("http://192.168.0.99:5080/");
+        var otraCopia = new Uri("http://192.168.0.98:5080/");
+        using var deLaOtra = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        _servicios.Copias.Add(copia);
+        _servicios.Copias.Add(otraCopia);
+        _servicios.LlavesDe[copia] = LlaveDeOtra;
+        _servicios.LlavesDe[otraCopia] = conLaMismaLlave ? LlaveDeOtra : deLaOtra;
+        _buscador.Contestan = [copia, otraCopia];
+        var conexion = Conexion();
+        conexion.LlaveDelServicio = Publica(LlaveDeLaPrincipal);
+        var (reencuentro, _) = Nuevo(conexion);
+
+        Assert.False(await reencuentro.BuscarAhoraAsync());
+
+        Assert.Equal(Guardada, conexion.Servicio);
+        Assert.Equal(conLaMismaLlave ? ReencuentroDeLaPrincipal.OtraCajaPrincipal : ReencuentroDeLaPrincipal.DosPrincipales, reencuentro.Resultado);
+        Assert.Equal(conLaMismaLlave ? ReencuentroDeLaPrincipal.OtraCajaPrincipal : ReencuentroDeLaPrincipal.DosPrincipalesAlDarDeAlta, reencuentro.AltaPorque);
+        if (!conLaMismaLlave)
+            Assert.Contains(_carpeta.Lineas(), l => l.StartsWith("Contestaron 192.168.0.99:5080 y 192.168.0.98:5080, que saben de esta caja pero no firman",
+                StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Lo que dijo la búsqueda (contestan dos) se queda mientras la dirección guardada no conteste: la comprobación de cada latido no
+    /// le quita a la franja «Dar de alta otra vez». Cuando la guardada vuelve y prueba quién es, ya no hace falta.
+    /// </summary>
+    [Fact]
+    public async Task Dar_de_alta_otra_vez_no_parpadea_mientras_la_guardada_no_contesta()
+    {
+        var copia = new Uri("http://192.168.0.99:5080/");
+        _servicios.Principal = Nueva;
+        _servicios.Copias.Add(copia);
+        _buscador.Contestan = [copia, Nueva];
+        var conexion = Conexion();
+        var (reencuentro, _) = Nuevo(conexion);
+        Assert.False(await reencuentro.BuscarAhoraAsync());
+
+        Assert.Equal(Comprobacion.NoContesta, await reencuentro.ComprobarGuardadaAsync());
+        Assert.Equal(ReencuentroDeLaPrincipal.DosPrincipalesAlDarDeAlta, reencuentro.AltaPorque);
+
+        _servicios.Principal = Guardada;
+        Assert.Equal(Comprobacion.Es, await reencuentro.ComprobarGuardadaAsync());
+        Assert.Null(reencuentro.AltaPorque);
     }
 
     /// <summary>Con la llave del servicio, la caja principal en su IP nueva sí gana, aunque también conteste una copia de su base.</summary>
@@ -541,7 +599,7 @@ public sealed class ReencuentroDeLaPrincipalTests : IDisposable
         var (reencuentro, _) = Nuevo(conexion);
 
         Assert.Equal(Comprobacion.NoEs, await reencuentro.ComprobarGuardadaAsync());
-        Assert.True(reencuentro.OtraIdentidad);
+        Assert.Equal(ReencuentroDeLaPrincipal.OtraCajaPrincipal, reencuentro.AltaPorque);
         Assert.Equal(ReencuentroDeLaPrincipal.OtraCajaPrincipal, reencuentro.Resultado);
         Assert.Equal(Publica(LlaveDeLaPrincipal), conexion.LlaveDelServicio);
     }

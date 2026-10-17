@@ -22,11 +22,13 @@
                 }
             </span>
             <span class="espacio"></span>
-            @if (franja == AvisosDeRed.Franja.SinRedLocal && Reencuentro is { OtraIdentidad: true } && AlDarDeAlta.HasDelegate)
+            @if (franja == AvisosDeRed.Franja.SinRedLocal && Reencuentro is { AltaPorque: { } porque } && AlDarDeAlta.HasDelegate)
             {
-                @* La caja principal sabe de esta caja pero no firma como la de siempre (se reinstaló o es una copia de su base): lo
-                   decide el dueño, que la da de alta otra vez con su PIN. *@
-                <button class="vn-boton chico" tabindex="-1" @onmousedown:preventDefault="true" @onclick="AlDarDeAlta">Dar de alta otra vez</button>
+                @* La que sabe de esta caja no firma como su caja principal de siempre (se reinstaló o se cambió su PC, o es una copia de
+                   su base), o contestan dos: lo decide el dueño, que la da de alta otra vez con su PIN. *@
+                <button class="vn-boton chico" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => AlDarDeAlta.InvokeAsync(porque)">
+                    Dar de alta otra vez
+                </button>
             }
             @if (franja == AvisosDeRed.Franja.SinRedLocal && Reencuentro is { Aplica: true } reencuentro)
             {
@@ -67,8 +69,11 @@
 }
 
 @code {
-    /// <summary>Para «Dar de alta otra vez» (lo pone la caja que se da de alta); sin esto, no se ofrece.</summary>
-    [Parameter] public EventCallback AlDarDeAlta { get; set; }
+    /// <summary>
+    /// Para «Dar de alta otra vez», con el porqué (lo pone la caja que se da de alta, cuando nadie está en la venta); sin esto, no
+    /// se ofrece.
+    /// </summary>
+    [Parameter] public EventCallback<string> AlDarDeAlta { get; set; }
 
     private Contingencia? _contingencia;
 

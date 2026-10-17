@@ -91,7 +91,14 @@ public sealed class ReencuentroDeLaPrincipal(
     /// <summary>Lo que dice la franja si dos o más prueban ser cajas principales distintas: no se cambia sola a ninguna.</summary>
     public const string DosPrincipales = "Hay dos cajas principales en la red: avisa al dueño.";
 
-    /// <summary>Lo que dice la franja si la dirección guardada sabe de esta caja pero no firma como su caja principal de siempre.</summary>
+    /// <summary>Lo que dice la pantalla del alta, si se abre con «Dar de alta otra vez» cuando contestan dos.</summary>
+    public const string DosPrincipalesAlDarDeAlta =
+        "Hay dos cajas principales en la red (una puede ser la PC de antes o una copia de la base): búscalas y elige la de verdad.";
+
+    /// <summary>
+    /// Lo que dice la franja si la que sabe de esta caja (en su dirección de siempre o en otra) no firma como su caja principal de
+    /// siempre.
+    /// </summary>
     public const string OtraCajaPrincipal =
         "La caja principal no probó ser la misma de siempre: si se cambió o se reinstaló su PC, el dueño da de alta esta caja otra vez.";
 
@@ -143,10 +150,11 @@ public sealed class ReencuentroDeLaPrincipal(
     public string? Resultado { get; private set; }
 
     /// <summary>
-    /// La dirección guardada sabe de esta caja, pero no firma con la llave de su caja principal de siempre (se reinstaló, o es una
-    /// copia de su base): la franja ofrece darla de alta otra vez.
+    /// Por qué la caja no puede saber sola cuál es su caja principal: la que sabe de esta caja no firma con la llave de su caja
+    /// principal de siempre (se reinstaló o se cambió su PC, o es una copia de su base), o contestan dos. La franja ofrece «Dar de
+    /// alta otra vez» (lo hace el dueño, con su PIN) y la pantalla del alta lo dice. Vacío si no hace falta.
     /// </summary>
-    public bool OtraIdentidad { get; private set; }
+    public string? AltaPorque { get; private set; }
 
     /// <summary>Empezó o terminó una búsqueda: la franja se vuelve a pintar.</summary>
     public event Action? Cambio;
@@ -177,7 +185,7 @@ public sealed class ReencuentroDeLaPrincipal(
             {
                 if (_busquedas > 0 && _busqueda.IsCompleted)
                     bitacora?.Anotar($"La caja principal contestó otra vez: se deja de buscarla (se buscó {Veces(_busquedas)}).");
-                (_caidaDesde, _siguiente, _busquedas, Resultado, OtraIdentidad) = (null, null, 0, null, false);
+                (_caidaDesde, _siguiente, _busquedas, Resultado, AltaPorque) = (null, null, 0, null, null);
                 _anotado.Clear();
                 return;
             }
@@ -244,7 +252,11 @@ public sealed class ReencuentroDeLaPrincipal(
         {
             cambio = _comprobada != resultado;
             _comprobada = resultado;
-            OtraIdentidad = otra && resultado == Comprobacion.NoEs;
+            // Lo que dijo la última búsqueda (contestan dos) se queda mientras la guardada no diga otra cosa: sin parpadeos.
+            if (resultado == Comprobacion.Es)
+                AltaPorque = null;
+            else if (resultado == Comprobacion.NoEs && otra)
+                AltaPorque = OtraCajaPrincipal;
             if (resultado == Comprobacion.NoEs)
                 Resultado = otra ? OtraCajaPrincipal : $"{guardada.Authority} contesta, pero no probó ser la caja principal de esta caja: no se le manda la llave.";
         }
@@ -303,10 +315,12 @@ public sealed class ReencuentroDeLaPrincipal(
                 }
             }));
             var probaron = revisados.Where(r => r.Resultado == Prueba.Probo).ToList();
-            var copias = revisados.Where(r => r.Resultado == Prueba.OtraIdentidad).Select(r => r.Direccion.Authority).ToList();
+            var deOtra = revisados.Where(r => r.Resultado == Prueba.OtraIdentidad).ToList();
+            var copias = deOtra.Select(r => r.Direccion.Authority).ToList();
             var noProbaron = revisados.Where(r => r.Resultado is not (Prueba.Probo or Prueba.OtraIdentidad)).Select(r => r.Direccion.Authority).ToList();
             // Cada caja principal por su llave (una de antes, sin llave, por su dirección): la misma puede contestar por dos tarjetas.
             var principales = probaron.GroupBy(r => r.LlaveDelServicio ?? r.Direccion.Authority).ToList();
+            var otras = deOtra.GroupBy(r => r.LlaveDelServicio ?? r.Direccion.Authority).Count();
             // La dirección guardada cuenta como «la misma» solo si prueba quién es: una respuesta falsa desde su IP no detiene nada.
             var laMisma = probaron.Any(p => MismaDireccion(p.Direccion, guardada));
             if (!laMisma && principales.Count == 1)
@@ -325,19 +339,29 @@ public sealed class ReencuentroDeLaPrincipal(
                     return false;
                 if (laMisma)
                 {
-                    Resultado = $"La caja principal contesta en {guardada.Authority} y probó quién es: la caja sigue intentando.";
+                    (Resultado, AltaPorque) = ($"La caja principal contesta en {guardada.Authority} y probó quién es: la caja sigue intentando.", null);
                     (clave, linea) = ("misma", $"Contesta en la red en {guardada.Authority} (la misma dirección) y probó quién es; el latido vuelve solo.");
                 }
-                else if (principales.Count > 1 || copias.Count > 0)
+                else if (principales.Count + otras > 1)
                 {
                     // Una puede ser una copia de su base (la PC de antes, un respaldo en otra PC): no se cambia sola a ninguna.
-                    Resultado = DosPrincipales;
+                    (Resultado, AltaPorque) = (DosPrincipales, DosPrincipalesAlDarDeAlta);
                     var cuales = Textos.Lista([.. probaron.Select(p => p.Direccion.Authority), .. copias]);
                     (clave, linea) = ($"dos:{cuales}", principales.Count > 1
                         ? $"Contestaron {cuales}, y prueban ser cajas principales distintas de esta caja (una puede ser una copia de su base): no se "
                           + "cambia sola a ninguna. La caja sigue con su copia; avisa al dueño."
-                        : $"Contestó {cuales}, que sabe de esta caja pero no firma con la llave de su caja principal (una copia de su base): no se usa. "
-                          + "La caja sigue con su copia; avisa al dueño.");
+                        : $"Contestaron {cuales}, que saben de esta caja pero no firman con la llave de su caja principal (la PC de antes, una copia "
+                          + "de su base): no se usa ninguna. La caja sigue con su copia; avisa al dueño.");
+                }
+                else if (otras == 1)
+                {
+                    // La única que sabe de esta caja no firma como la de siempre: se reinstaló o se cambió la PC de la caja principal (con
+                    // otra IP), o es una copia de su base. Lo decide el dueño: si es la de verdad, da de alta esta caja otra vez.
+                    (Resultado, AltaPorque) = (OtraCajaPrincipal, OtraCajaPrincipal);
+                    var cuales = Textos.Lista(copias);
+                    (clave, linea) = ($"otra:{cuales}", $"Contestó {cuales}, que sabe de esta caja pero no firma con la llave de su caja principal "
+                                                       + "(se reinstaló o se cambió su PC, o es una copia de su base): no se usa. La caja sigue con su "
+                                                       + "copia; si es la de verdad, el dueño da de alta esta caja otra vez.");
                 }
                 else if (encontrados.Count == 0)
                 {
@@ -511,7 +535,7 @@ public sealed class ReencuentroDeLaPrincipal(
     private async Task<bool> CambiarAAsync(Uri antes, Uri nueva)
     {
         conexion.Servicio = nueva;
-        Resultado = $"Se encontró la caja principal en {nueva.Authority}.";
+        (Resultado, AltaPorque) = ($"Se encontró la caja principal en {nueva.Authority}.", null);
         bitacora?.Anotar($"La caja principal cambió de dirección: {antes.Authority} → {nueva.Authority}. Contestó en la red y probó con la llave de "
                          + "esta caja que es su caja principal: se guarda la dirección nueva.");
         try

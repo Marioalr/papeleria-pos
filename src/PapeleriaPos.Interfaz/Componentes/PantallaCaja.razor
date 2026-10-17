@@ -10,10 +10,12 @@
     <AlgoFallo Parte="la franja de la prueba">
         <FranjaPrueba />
     </AlgoFallo>
-    <FranjaContingencia AlDarDeAlta="@(Conexion.PideAlta ? EventCallback.Factory.Create(this, () => DarDeAlta(ReencuentroDeLaPrincipal.OtraCajaPrincipal)) : default)" />
+    @* «Dar de alta otra vez» solo sin nadie en la venta: con alguien, se perdería el ticket que lleva. *@
+    <FranjaContingencia AlDarDeAlta="@(Conexion.PideAlta && _sesion is null ? EventCallback.Factory.Create<string>(this, AltaDesdeLaFranja) : default)" />
     @if (_alta || !Conexion.Lista)
     {
-        <ConfigurarCaja Aviso="@_avisoAlta" AlTerminar="AltaTerminada" />
+        <ConfigurarCaja Aviso="@_avisoAlta" AlTerminar="AltaTerminada"
+                        AlVolver="@(_altaSePuedeDejar ? EventCallback.Factory.Create(this, DejarElAlta) : default)" />
     }
     else if (_error is not null)
     {
@@ -88,6 +90,9 @@
     private bool _alta;
     private string? _avisoAlta;
 
+    /// <summary>El alta se abrió con «Dar de alta otra vez» de la franja: «Volver» la deja y la caja sigue con su copia.</summary>
+    private bool _altaSePuedeDejar;
+
     protected override Task OnInitializedAsync()
     {
         // La caja principal dice que ya no conoce a esta caja (al probar quién es, sin recibir la llave): se da de alta otra vez.
@@ -105,9 +110,18 @@
     /// <summary>A dar de alta esta PC otra vez (con el usuario y el PIN de quien puede), con el porqué.</summary>
     private void DarDeAlta(string porque)
     {
-        (_alta, _avisoAlta) = (true, porque);
+        (_alta, _avisoAlta, _altaSePuedeDejar) = (true, porque, false);
         StateHasChanged();
     }
+
+    /// <summary>«Dar de alta otra vez» de la franja: lo oprime el dueño, o alguien por error (por eso se puede volver).</summary>
+    private void AltaDesdeLaFranja(string porque)
+    {
+        DarDeAlta(porque);
+        _altaSePuedeDejar = true;
+    }
+
+    private void DejarElAlta() => (_alta, _avisoAlta, _altaSePuedeDejar) = (false, null, false);
 
     public void Dispose()
     {
@@ -194,7 +208,7 @@
 
     private async Task AltaTerminada()
     {
-        (_alta, _avisoAlta, _caja) = (false, null, null);
+        (_alta, _avisoAlta, _altaSePuedeDejar, _caja) = (false, null, false, null);
         await IniciarAsync();
     }
 

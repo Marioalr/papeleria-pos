@@ -683,7 +683,8 @@ public sealed class Contingencia
 
     /// <summary>
     /// La caja principal dice que no conoce a esta caja (la quitaron o la dieron de alta en otra PC): la pantalla la da de alta
-    /// otra vez, como cuando una llamada lo dice. Con el porqué.
+    /// otra vez, como cuando una llamada lo dice. Con el porqué. Nunca con alguien en la caja (<see cref="ConexionCaja.UsuarioEnCaja"/>):
+    /// se perdería el ticket que lleva. Mientras, vende con la copia, y en el primer latido después de que salga, se dice.
     /// </summary>
     public event Action<string>? SinAlta;
 
@@ -705,7 +706,8 @@ public sealed class Contingencia
     /// <summary>
     /// Si falta, que la dirección guardada pruebe quién es (una comprobación a la vez). Es (o un servicio de antes, sin la prueba,
     /// si esta caja no conoce su llave): se le vuelve a mandar la llave. No es, no contesta o no conoce a esta caja: caída (la caja
-    /// trabaja con su copia y no le manda la llave), y si no la conoce, la pantalla la da de alta otra vez. Vacío si no faltaba.
+    /// trabaja con su copia y no le manda la llave), y si no la conoce, la pantalla la da de alta otra vez (<see cref="SinAlta"/>).
+    /// Vacío si no faltaba.
     /// </summary>
     private async Task<Comprobacion?> ComprobarSiFaltaAsync()
     {
@@ -723,7 +725,7 @@ public sealed class Contingencia
             {
                 if (_red.Fallo())
                     Cambio?.Invoke();
-                if (resultado == Comprobacion.NoLaConoce)
+                if (resultado == Comprobacion.NoLaConoce && _conexion.UsuarioEnCaja is null)
                     SinAlta?.Invoke("La caja principal ya no reconoce a esta PC (la quitaron o la dieron de alta en otra): el dueño la da de alta otra vez.");
             }
             return resultado;
