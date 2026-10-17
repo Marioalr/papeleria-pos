@@ -89,11 +89,14 @@ public sealed class MedicionCopiaTests(ITestOutputHelper salida) : IDisposable
         // Lo que cambió: un precio, una venta (solo existencias) y 50 precios.
         var conPrecio = copia.Productos.Where(p => p.Precios.Count == 1 && p.Precios[0].PresentacionId is null && p.LlevaInventario)
             .OrderBy(p => p.VarianteId).Take(60).ToList();
+        // Como lo pide la caja (Contingencia): con las versiones de lo más vendido y lo elegido que ya tiene, para que no
+        // vuelvan enteras con cada cambio.
         async Task<(long Bytes, double Ms, CambiosCopiaDto Cambios)> CambiosAsync(PaqueteContingenciaDto desde)
         {
             var reloj = Stopwatch.StartNew();
             var bytes = await http.GetByteArrayAsync(
-                $"api/cajas/{caja.Id}/cambios?desde={desde.Version}&existencias={desde.VersionExistencias}&base={desde.Base}&formato={CopiaAlDia.Formato}");
+                $"api/cajas/{caja.Id}/cambios?desde={desde.Version}&existencias={desde.VersionExistencias}&base={desde.Base}&formato={CopiaAlDia.Formato}"
+                + $"&vendidos={desde.VersionVendidos ?? 0}&elegidos={desde.VersionElegidos ?? 0}");
             var ms = reloj.Elapsed.TotalMilliseconds;
             return (bytes.Length, ms, JsonSerializer.Deserialize<CambiosCopiaDto>(bytes, JsonSerializerOptions.Web)!);
         }
