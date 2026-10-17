@@ -154,6 +154,12 @@ es puente y se quita al dejar eleventa. Si en la tienda se ve que casi no se imp
 Ins para la cantidad, esos dos cambios chicos conviene hacerlos antes del piloto. La entrega 5 no detiene el piloto:
 ahí la caja 2 tiene su propio servicio en la misma PC, y la red solo entra al mandar a eleventa, con su bandeja.
 
+**Avance (2026-10-17):** el 2, el 3, el 4, el 5 y el 11 ya están en código en la rama del puente (PR #109, #110 y #111,
+con los arreglos de su revisión): la caja nueva adopta el turno de eleventa y toma su corte, los folios repetidos, las
+devoluciones de ida y vuelta y los respaldos de eleventa ([avance](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)).
+Falta probarlos contra la copia (paso 5) y ver en la tienda lo que todavía queda por revisar: cómo anota eleventa la
+devolución de otra caja o de otro turno, y dónde está `gbak.exe` en la caja 2.
+
 ### 2. Para dejar eleventa
 
 Primero el modo multicaja, al aprobar el piloto (decisión del dueño, 2026-10-12); al final, apagar el puente.
