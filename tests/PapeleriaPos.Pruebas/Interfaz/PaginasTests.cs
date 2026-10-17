@@ -269,7 +269,8 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         await p.EsperarAsync(t => t.Contains("contando"), "lo que se está recibiendo");
 
         var tareas = await BotonesAsync(p, "vn-tarea");
-        Assert.Equal(PaginasDeAtras.Tareas.Select(t => t.Nombre),
+        // Todas menos lo que vale el inventario: es costo, y el encargado no tiene «Ver costos, utilidad y margen».
+        Assert.Equal(PaginasDeAtras.Tareas.Where(t => t.Id != TareaInventario.Valor).Select(t => t.Nombre),
             tareas.Select(t => PaginasDeAtras.Tareas.First(x => t.StartsWith(x.Nombre, StringComparison.Ordinal)).Nombre));
         Assert.Matches(@"\d+ contando", tareas.Single(t => t.StartsWith("Recibir mercancía", StringComparison.Ordinal)));
         Assert.DoesNotContain("solo consulta", tareas.Single(t => t.StartsWith("Proveedores", StringComparison.Ordinal)));

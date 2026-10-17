@@ -1,0 +1,47 @@
+@* Las páginas de una lista larga de los reportes del inventario (2026-10-17): «1–50 de 1,234 movimientos», con un botón a
+   cada lado (y Re Pág y Av Pág desde la búsqueda de la lista, donde la hay). Si caben en una, solo cuántos son; sin nada,
+   no sale (la lista dice por qué). *@
+
+@if (Total > 0)
+{
+    <div class="vn-reporte-pie">
+        <span>@Cuantos</span>
+        @if (Total > Tamano)
+        {
+            <button class="vn-boton chico" title="@($"{Anterior} (Re Pág)")" disabled="@(Pagina == 0)" @onclick="AlAnterior">← @Anterior</button>
+            <button class="vn-boton chico" title="@($"{Siguiente} (Av Pág)")" disabled="@(!HaySiguiente(Total, Pagina, Tamano))" @onclick="AlSiguiente">@Siguiente →</button>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public int Total { get; set; }
+
+    /// <summary>La que se ve, desde cero.</summary>
+    [Parameter, EditorRequired] public int Pagina { get; set; }
+
+    [Parameter, EditorRequired] public int Tamano { get; set; }
+
+    /// <summary>Cómo se llaman: «movimientos»; y uno solo, «movimiento».</summary>
+    [Parameter, EditorRequired] public string Plural { get; set; } = "";
+
+    [Parameter, EditorRequired] public string Singular { get; set; } = "";
+
+    /// <summary>Lo que dice el botón de la página de antes («Más recientes» en los movimientos).</summary>
+    [Parameter] public string Anterior { get; set; } = "Anteriores";
+
+    [Parameter] public string Siguiente { get; set; } = "Siguientes";
+
+    [Parameter] public EventCallback AlAnterior { get; set; }
+    [Parameter] public EventCallback AlSiguiente { get; set; }
+
+    /// <summary>Si después de esta hay otra.</summary>
+    public static bool HaySiguiente(int total, int pagina, int tamano) => (pagina + 1L) * tamano < total;
+
+    private string Cuantos => Total switch
+    {
+        1 => $"1 {Singular}",
+        _ when Total <= Tamano => $"{Formato.Numero(Total)} {Plural}",
+        _ => $"{Formato.Numero(Pagina * (long)Tamano + 1)}–{Formato.Numero(Math.Min(Total, (Pagina + 1L) * Tamano))} de {Formato.Numero(Total)} {Plural}",
+    };
+}

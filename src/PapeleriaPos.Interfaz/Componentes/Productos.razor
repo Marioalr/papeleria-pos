@@ -4,7 +4,8 @@
    del kardex, «Etiqueta» (a las etiquetas por imprimir) y «Editar». La ficha de siempre (variantes, presentaciones,
    códigos, precios, kardex y depurar) se abre ahí mismo, con su «Guardar»; Esc la cierra. También «Nuevo producto», el
    mayoreo por revisar, los departamentos (darlos de alta, cambiarles el nombre, desactivarlos) y las decisiones de la
-   depuración, en el mismo lado. El filtro y la ficha solo ofrecen los departamentos activos. En el piloto con eleventa, el
+   depuración, en el mismo lado. El filtro y la ficha solo ofrecen los departamentos activos. «Poca existencia» es lo que
+   está en su mínimo o debajo: el de su ficha o, sin él, 3 o menos (2026-10-17). En el piloto con eleventa, el
    detalle y la ficha de un producto de eleventa dicen que lo que pone su lectura se cambia allá (la ficha no lo deja
    cambiar). *@
 @implements IPagina
@@ -22,7 +23,7 @@
                 <button class="vn-filtro @(Estado.Filtro == FiltroProductos.PorCompletar ? "on" : "")" title="Lo que un cajero dio de alta desde la caja"
                         @onclick="() => FiltrarAsync(FiltroProductos.PorCompletar)">Por completar @(_lista?.PorCompletar)</button>
                 <button class="vn-filtro @(Estado.Filtro == FiltroProductos.PocaExistencia ? "on" : "")"
-                        title="@($"{PocaExistencia.Hasta} o menos en el sistema, como avisa la venta: el catálogo no tiene un mínimo por producto")"
+                        title="@($"En su mínimo de inventario o debajo (el de su ficha; sin él, {PocaExistencia.Hasta} o menos), como «Bajos en inventario» en Inventario")"
                         @onclick="() => FiltrarAsync(FiltroProductos.PocaExistencia)">Poca existencia</button>
                 @if (Acceso.Puede(AccionControlada.VerUtilidad))
                 {
@@ -75,7 +76,7 @@
                                 }
                                 @if (Estado.Filtro == FiltroProductos.PocaExistencia && p.Existencia is { } quedan)
                                 {
-                                    <span class="vn-etiq @(quedan <= 0 ? "rojo" : "ambar")">@(quedan <= 0 ? "Sin existencia" : $"Quedan {Formato.Numero(quedan)}")</span>
+                                    <span class="vn-etiq @(quedan <= 0 ? "rojo" : "ambar")">@(quedan <= 0 ? "Sin existencia" : $"Quedan {Formato.Numero(quedan)}")@(p.Minimo is { } minimo ? $" · mínimo {Formato.Numero(minimo)}" : "")</span>
                                 }
                                 @if (Estado.Filtro == FiltroProductos.MargenBajo && p.MargenCentesimas is { } margen)
                                 {
@@ -443,7 +444,7 @@
     private string SinResultados => Estado.Filtro switch
     {
         FiltroProductos.PorCompletar => "No hay nada por completar.",
-        FiltroProductos.PocaExistencia => $"Nada tiene {PocaExistencia.Hasta} o menos.",
+        FiltroProductos.PocaExistencia => $"Nada está en su mínimo o debajo (sin mínimo propio, {PocaExistencia.Hasta} o menos).",
         FiltroProductos.MargenBajo => "Nada deja menos que el margen mínimo.",
         _ when Estado.Texto.Trim().Length > 0 => $"Nada coincide con «{Estado.Texto.Trim()}».",
         _ => "No hay productos.",
@@ -679,8 +680,8 @@
             </div>
             <div class="vn-dato">
                 <span>Existencia</span>
-                <strong>@(servicio ? "—" : $"{Formato.Numero(variante.Existencia ?? 0)}{Unidad(variante.Unidad)}")</strong>
-                <small>@(servicio ? "servicio" : "según el kardex")</small>
+                <strong class="@(!servicio && Baja(variante) ? "bajo" : "")">@(servicio ? "—" : $"{Formato.Numero(variante.Existencia ?? 0)}{Unidad(variante.Unidad)}")</strong>
+                <small>@(servicio ? "servicio" : $"según el kardex{MinimoYMaximoTexto(variante)}")</small>
             </div>
             @if (Acceso.Puede(AccionControlada.CostearCompra) || Acceso.Puede(AccionControlada.VerUtilidad))
             {
@@ -748,6 +749,16 @@
             <p class="nota">El margen y la utilidad los ve quien tiene el permiso «Ver costos, utilidad y margen».</p>
         }
     };
+
+    /// <summary>Si está en su mínimo o debajo (el de su ficha o, sin él, 3 o menos): como «Poca existencia».</summary>
+    private static bool Baja(VarianteFichaDto variante) =>
+        PocaExistencia.Es(Cantidad.Unidades(variante.Existencia ?? 0),
+            variante.MinimoYMaximo?.MinimoMilesimas is { } minimo ? new Cantidad(minimo) : null);
+
+    /// <summary>« · mínimo 5 · máximo 20», con lo que tenga en su ficha; nada si no tiene.</summary>
+    private static string MinimoYMaximoTexto(VarianteFichaDto variante) =>
+        (variante.MinimoYMaximo?.MinimoMilesimas is { } minimo ? $" · mínimo {Formato.Numero(new Cantidad(minimo).EnUnidades)}" : "")
+        + (variante.MinimoYMaximo?.MaximoMilesimas is { } maximo ? $" · máximo {Formato.Numero(new Cantidad(maximo).EnUnidades)}" : "");
 
     /// <summary>El margen mínimo del departamento, o el general (Configuración › Inventario); vacío si no se pudo leer.</summary>
     private int? MinimoDe(Guid departamentoId) =>

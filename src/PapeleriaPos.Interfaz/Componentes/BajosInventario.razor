@@ -1,0 +1,258 @@
+@* Inventario (F4) › Bajos en inventario, como los «Productos bajos en inventario» de eleventa (2026-10-17): lo que está en su
+   mínimo o debajo, por departamento. El mínimo y el máximo de cada producto se ponen en su ficha (Productos, F3); sin mínimo
+   propio cuenta la regla de siempre, 3 o menos (la misma de «Poca existencia»). Cada renglón dice cuánto pedir: lo que falta
+   para su máximo, con lo que ya viene en órdenes abiertas; sin máximo, lo que pide el sugerido de compra (en la presentación
+   en que se compra) y, si tiene su mínimo, al menos lo que le falta para llegar a él (el sugerido no lo conoce). Es un número
+   en la pantalla: los pedidos se hacen en «Órdenes de compra» o desde el sugerido. Va de
+   100 en 100 (el sugerido se calcula solo para los de la página). Lo ve quien pide la mercancía o pone los mínimos
+   (ConsultasInventario). En el piloto con eleventa se ve igual. *@
+@implements IDisposable
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="vn-reporte-filtros">
+    <input id="bajos-buscar" class="vn-reporte-busca" data-busca placeholder="Producto: nombre o código" autocomplete="off" spellcheck="false"
+           aria-label="Buscar entre los bajos en inventario" value="@_texto" @oninput="EscribiendoAsync" @onkeydown="AlTeclearAsync" />
+    <select id="bajos-depto" aria-label="Departamento" value="@(_departamento?.ToString() ?? "")" @onchange="DepartamentoAsync">
+        <option value="">Todos los departamentos</option>
+        @foreach (var d in _departamentos)
+        {
+            <option value="@d.Id">@d.Nombre</option>
+        }
+    </select>
+    <div class="vn-filtros" role="group" aria-label="Qué mínimo">
+        <button class="vn-filtro @(_soloConMinimo ? "" : "on")" title="@($"Con su mínimo propio o, sin él, con {PocaExistencia.Hasta} o menos")" @onclick="() => SoloConMinimoAsync(false)">
+            Todos @(_bajos is { } b ? Formato.Numero(b.Todos) : "")
+        </button>
+        <button class="vn-filtro @(_soloConMinimo ? "on" : "")" title="Solo los que tienen su mínimo en la ficha" @onclick="() => SoloConMinimoAsync(true)">
+            Con mínimo propio @(_bajos is { } c ? Formato.Numero(c.ConMinimoPropio) : "")
+        </button>
+    </div>
+</div>
+<p class="nota">
+    Por departamento y por nombre. El mínimo y el máximo se ponen en la ficha de cada producto (Productos, F3 › Editar); sin
+    mínimo propio cuenta @PocaExistencia.Hasta o menos. «Pedir» llega a su máximo con lo que ya viene en órdenes de compra; sin
+    máximo, es lo que pide el sugerido de compra, y al menos lo que falta para llegar a su mínimo.
+</p>
+@if (_error is not null)
+{
+    <p class="error">@_error</p>
+}
+@if (_bajos is { } pagina)
+{
+    <Paginador Total="pagina.Total" Pagina="pagina.Pagina" Tamano="pagina.Tamano" Plural="productos" Singular="producto"
+               AlAnterior="AnterioresAsync" AlSiguiente="SiguientesAsync" />
+}
+@* Cada página nueva empieza arriba: la lista se dibuja de nuevo (@key) en lugar de quedarse a la mitad. *@
+<div class="vn-reporte-desliza" @key="_vista">
+    @if (_bajos is null)
+    {
+        @if (_error is null)
+        {
+            <p class="nota">Cargando…</p>
+        }
+    }
+    else if (_bajos.Productos.Count == 0)
+    {
+        <p class="nota">@SinBajos</p>
+    }
+    else
+    {
+        <table class="vn-tabla vn-bajos">
+            <thead>
+                <tr><th>Producto</th><th class="num">Hay</th><th class="num">Mínimo</th><th class="num">Máximo</th><th class="num">En camino</th><th class="num">Pedir</th></tr>
+            </thead>
+            <tbody>
+                @{
+                    string? departamento = null;
+                }
+                @foreach (var p in _bajos.Productos)
+                {
+                    if (p.Departamento != departamento)
+                    {
+                        departamento = p.Departamento;
+                        <tr class="grupo"><td colspan="6">@departamento</td></tr>
+                    }
+                    <tr @key="p.VarianteId">
+                        <td>
+                            @p.Nombre
+                            @if (p.Codigo is { } codigo)
+                            {
+                                <small class="vn-renglon-sub"><code>@codigo</code></small>
+                            }
+                        </td>
+                        <td class="num @(p.Existencia <= 0 ? "rojo" : "")">@Textos.Cantidad(p.Existencia, p.Unidad)</td>
+                        <td class="num @(p.MinimoPropio ? "" : "tenue")" title="@(p.MinimoPropio ? "El de su ficha" : $"Sin mínimo propio: {PocaExistencia.Hasta} o menos")">
+                            @Textos.Cantidad(p.Minimo, p.Unidad)
+                        </td>
+                        <td class="num @(p.Maximo is null ? "tenue" : "")" title="@(p.Maximo is null ? "Sin máximo propio: el que calcula el sugerido con lo que se vende" : "El de su ficha")">
+                            @(p.Maximo is { } maximo ? Textos.Cantidad(maximo, p.Unidad) : p.MaximoSugerido is { } sugerido ? Textos.Cantidad(sugerido, p.Unidad) : "—")
+                        </td>
+                        <td class="num">@(p.EnCamino > 0 ? Textos.Cantidad(p.EnCamino, p.Unidad) : "—")</td>
+                        <td class="num pedir">
+                            @if (p.Pedir is { } pedir)
+                            {
+                                <strong>@Textos.Cantidad(pedir, p.Unidad)</strong>
+                                @if (p.PedirEn is { } en)
+                                {
+                                    <small class="vn-renglon-sub">@en</small>
+                                }
+                            }
+                            else
+                            {
+                                <span class="tenue" title="@SinPedir(p)">—</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Lo que se espera al dejar de escribir antes de buscar (el lector no espera: su Enter busca ya).</summary>
+    private static readonly TimeSpan PausaAlEscribir = TimeSpan.FromMilliseconds(250);
+
+    private BajosInventarioDto? _bajos;
+    private string? _error;
+    private IReadOnlyList<OpcionCatalogoDto> _departamentos = [];
+    private string _texto = "";
+    private Guid? _departamento;
+    private bool _soloConMinimo;
+    private int _pagina;
+    private int _secuencia;
+
+    /// <summary>Cuántas listas se han dibujado: con cada una, la lista empieza arriba.</summary>
+    private int _vista;
+    private CancellationTokenSource? _escribiendo;
+    private bool _enfocar = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var opciones = OpcionesAsync();
+        await CargarAsync();
+        await opciones;
+    }
+
+    private async Task OpcionesAsync()
+    {
+        try
+        {
+            _departamentos = (await Cliente.OpcionesCatalogoAsync()).Departamentos;
+        }
+        catch (ErrorCaja)
+        {
+            // Sin ellos, solo no se filtra por departamento.
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_enfocar)
+        {
+            _enfocar = false;
+            await Js.EnfocarAsync("#bajos-buscar");
+        }
+    }
+
+    private async Task CargarAsync()
+    {
+        var secuencia = ++_secuencia;
+        try
+        {
+            var bajos = await Cliente.BajosInventarioAsync(Caja.SucursalId, Sesion.UsuarioId, _departamento, _texto, _soloConMinimo, _pagina);
+            if (secuencia == _secuencia)
+                (_bajos, _error, _vista) = (bajos, null, _vista + 1);
+        }
+        catch (ErrorCaja ex)
+        {
+            if (secuencia == _secuencia)
+                (_bajos, _error) = (null, ex.Message);
+        }
+    }
+
+    /// <summary>Otro filtro: desde la primera página.</summary>
+    private Task DeNuevoAsync()
+    {
+        _pagina = 0;
+        return CargarAsync();
+    }
+
+    private Task DepartamentoAsync(ChangeEventArgs e)
+    {
+        _departamento = Guid.TryParse(e.Value?.ToString(), out var d) ? d : null;
+        return DeNuevoAsync();
+    }
+
+    private Task SoloConMinimoAsync(bool solo)
+    {
+        _soloConMinimo = solo;
+        return DeNuevoAsync();
+    }
+
+    private bool HaySiguientes => _bajos is { } b && Paginador.HaySiguiente(b.Total, b.Pagina, b.Tamano);
+
+    private Task SiguientesAsync()
+    {
+        _pagina++;
+        return CargarAsync();
+    }
+
+    private Task AnterioresAsync()
+    {
+        _pagina = Math.Max(0, _pagina - 1);
+        return CargarAsync();
+    }
+
+    private async Task EscribiendoAsync(ChangeEventArgs e)
+    {
+        _texto = e.Value?.ToString() ?? "";
+        _escribiendo?.Cancel();
+        var espera = _escribiendo = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(PausaAlEscribir, espera.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+        await DeNuevoAsync();
+    }
+
+    /// <summary>Enter busca ya (lo que escanea el lector); Re Pág y Av Pág cambian de página.</summary>
+    private async Task AlTeclearAsync(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "Enter":
+                _escribiendo?.Cancel();
+                await DeNuevoAsync();
+                await Js.EnfocarAsync("#bajos-buscar");
+                break;
+            case "PageDown" when HaySiguientes:
+                await SiguientesAsync();
+                break;
+            case "PageUp" when _pagina > 0:
+                await AnterioresAsync();
+                break;
+        }
+    }
+
+    private string SinBajos =>
+        _texto.Trim().Length > 0 || _departamento is not null
+            ? "Nada en su mínimo o debajo con esos filtros."
+            : _soloConMinimo ? "Ningún producto con mínimo propio está en su mínimo o debajo." : "Nada está en su mínimo o debajo.";
+
+    private static string SinPedir(BajoInventarioDto p) =>
+        p.Maximo is not null ? "Con lo que hay y lo que viene, ya llega a su máximo."
+        : p.MinimoPropio ? "Con lo que hay y lo que viene llega a su mínimo. Ponle su máximo en la ficha para saber hasta dónde pedir."
+        : p.MaximoSugerido is null ? "No se ha vendido en el último año: el sugerido no pide nada. Ponle su máximo en la ficha."
+        : "Según lo que se vende, el sugerido no pide nada todavía.";
+
+    public void Dispose() => _escribiendo?.Cancel();
+}
