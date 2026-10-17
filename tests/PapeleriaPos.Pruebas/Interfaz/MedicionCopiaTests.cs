@@ -33,7 +33,7 @@ public sealed class MedicionCopiaTests(ITestOutputHelper salida) : IDisposable
 {
     private readonly string _baseLocal = Path.Combine(Path.GetTempPath(), $"caja-medicion-{Guid.NewGuid():N}.db");
 
-    public void Dispose() => BasesDePrueba.Borrar(_baseLocal);
+    public void Dispose() => ArchivosDePrueba.BorrarBase(_baseLocal);
 
     private static double Mediana(IEnumerable<double> valores) => valores.Order().ToList() is var l ? l[l.Count / 2] : 0;
 

@@ -180,7 +180,7 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 /// <param name="TotalCentavos">Exacto: la suma de las líneas, con el IVA incluido.</param>
 /// <param name="RedondeoCentavos">El del efectivo al peso (fase 3): lo que pagó el cliente es el total más esto.</param>
 /// <param name="Cliente">El cliente registrado con sus privilegios: "Escuela Benito Juárez (descuento 10 %)".</param>
-/// <param name="Folio">El de esta caja (A-000123): va en el QR, que abre la devolución en la caja nueva.</param>
+/// <param name="Folio">El de esta caja (A-000123): con él se abre la devolución en la caja nueva.</param>
 /// <param name="FolioEleventa">En el piloto, el que le dio eleventa si llegó a tiempo: es el que se imprime, para devolver en cualquier caja.</param>
 /// <param name="YaCobrada">
 /// El cobro llegó con el Id de una venta que ya estaba (se había perdido la respuesta, entrega 5, parte 2): es esa, como se
@@ -684,27 +684,49 @@ public sealed record PresentacionFichaDto(Guid? Id, string Nombre, long FactorMi
 
 /// <param name="Presentacion">Vacío: precio por unidad base. Con nombre: el precio propio de esa presentación.</param>
 /// <param name="CantidadMinimaMilesimas">Desde cuánto aplica (1000 = una unidad: menudeo; más, mayoreo).</param>
-public sealed record PrecioFichaDto(string? Presentacion, long CantidadMinimaMilesimas, long PrecioCentavos);
+/// <param name="DeEleventa">
+/// En el piloto con eleventa (con su lectura prendida), un precio que pone la lectura: el de menudeo o una promoción por
+/// cantidad de eleventa. No se cambia aquí. Lo dice el servicio al leer la ficha; al guardar, no lo lee.
+/// </param>
+public sealed record PrecioFichaDto(string? Presentacion, long CantidadMinimaMilesimas, long PrecioCentavos, bool DeEleventa = false);
 
 public sealed record ProveedorFichaDto(Guid ProveedorId, string Proveedor, string? CodigoProveedor, long? UltimoCostoCentavos, DateTime? UltimaCompraLocal);
 
 /// <param name="Existencia">En la sucursal, en unidades base (solo lectura).</param>
 /// <param name="CostoPromedioCentavos">Solo para el dueño y el encargado (solo lectura).</param>
+/// <param name="DeEleventa">
+/// En el piloto con eleventa (con su lectura prendida), una variante que viene de eleventa: si está activa, los códigos de su
+/// presentación base (se pueden agregar otros) y los precios de eleventa no se cambian aquí, ni se depura. Lo dice el
+/// servicio al leer la ficha; al guardar, no lo lee.
+/// </param>
 public sealed record VarianteFichaDto(
     Guid? Id, string Descripcion, UnidadBase Unidad, bool Activa, IReadOnlyList<PresentacionFichaDto> Presentaciones, IReadOnlyList<PrecioFichaDto> Precios,
-    decimal? Existencia = null, decimal? CostoPromedioCentavos = null, IReadOnlyList<ProveedorFichaDto>? Proveedores = null);
+    decimal? Existencia = null, decimal? CostoPromedioCentavos = null, IReadOnlyList<ProveedorFichaDto>? Proveedores = null, bool DeEleventa = false);
 
 /// <summary>La ficha de un producto en F3: lo que se edita junto (el producto, sus variantes, presentaciones, códigos y precios).</summary>
 /// <param name="Marca">Por nombre: si no existe, se da de alta.</param>
+/// <param name="EnEleventa">
+/// En el piloto con eleventa (con su lectura prendida), si algo de este producto viene de eleventa: por qué eso no se
+/// cambia aquí (lo de cada variante y cada precio lo dicen sus <c>DeEleventa</c>). Vacío: todo se cambia aquí.
+/// </param>
+/// <param name="ProductoDeEleventa">
+/// En el piloto, el nombre, el departamento y si se vende los pone la lectura: es de eleventa y de una sola variante.
+/// </param>
 public sealed record FichaProductoDto(
     Guid? Id, string Nombre, Guid DepartamentoId, string? Marca, TipoProducto Tipo, Impuesto Impuesto, string? ClaveSat, bool Activo, bool PorCompletar,
-    IReadOnlyList<VarianteFichaDto> Variantes);
+    IReadOnlyList<VarianteFichaDto> Variantes, string? EnEleventa = null, bool ProductoDeEleventa = false);
 
 public sealed record SolicitudGuardarProducto(Guid UsuarioId, Guid SucursalId, FichaProductoDto Producto);
 
 public sealed record OpcionCatalogoDto(Guid Id, string Nombre);
 
-public sealed record OpcionesCatalogoDto(IReadOnlyList<OpcionCatalogoDto> Departamentos, IReadOnlyList<string> Marcas);
+/// <param name="Departamentos">Los activos: los únicos que se ofrecen (al filtrar la lista, en la ficha, en el alta rápida y en las compras).</param>
+/// <param name="Desactivados">
+/// Los desactivados (Productos › Departamentos), solo para decir el de un producto que se quedó en uno: no se ofrecen.
+/// Vacío en un servicio de antes.
+/// </param>
+public sealed record OpcionesCatalogoDto(
+    IReadOnlyList<OpcionCatalogoDto> Departamentos, IReadOnlyList<string> Marcas, IReadOnlyList<OpcionCatalogoDto>? Desactivados = null);
 
 public sealed record MovimientoKardexDto(DateTime FechaLocal, TipoMovimiento Tipo, decimal Cantidad, decimal Existencia, string? Motivo, string? Documento);
 

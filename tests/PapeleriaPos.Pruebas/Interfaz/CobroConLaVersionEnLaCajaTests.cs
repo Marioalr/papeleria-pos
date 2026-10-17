@@ -15,7 +15,10 @@ public sealed class CobroConLaVersionEnLaCajaTests(ServicioDePrueba servicio) : 
 {
     private readonly string _baseLocal = Path.Combine(Path.GetTempPath(), $"caja-version-{Guid.NewGuid():N}.db");
 
-    public void Dispose() => BasesDePrueba.Borrar(_baseLocal);
+    public void Dispose()
+    {
+        ArchivosDePrueba.BorrarBase(_baseLocal);
+    }
 
     /// <summary>Lo de la copia que se vende por pieza a un solo precio: una pieza cuesta lo que dice su precio.</summary>
     private static List<ProductoVentaDto> SinMayoreo(VentaConCopia v) => v.DeLaCopia().Where(p => p.Precios.Count == 1).ToList();

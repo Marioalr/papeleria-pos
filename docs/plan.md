@@ -7,6 +7,8 @@
 > que reemplaza a Control Print, y **saber exactamente cuánto se gana** ([qué falta](#para-el-piloto-con-dos-cajas)).
 > **Primero (2026-10-10): la versión unicaja de la caja nueva,** para desarrollo, y después **el piloto en la caja 2**,
 > que vende con la caja nueva y manda cada venta a eleventa ([camino](#la-versión-unicaja-y-el-piloto-en-la-caja-2)).
+> **La meta (2026-10-15): alcanzar a eleventa.** Primero lo que eleventa ya hace y lo que pide dejarlo; lo que no tiene,
+> después ([paridad con eleventa](paridad-eleventa.md)).
 > **La multisucursal queda pospuesta, no
 > retirada:** su propuesta y lo investigado están en [notas](notas.md) e [ideas](ideas.md#varias-sucursales-pospuesto).
 
@@ -47,6 +49,7 @@
 | Núcleo | Sin dependencias de Windows: lo comparten la caja y los servidores; la app Android usa la API del servicio |
 | Inventario | Kardex: solo se agregan movimientos y la existencia es la suma. La existencia nunca detiene una venta: si alguien trae el producto a la caja, existe y la base es la que está mal (2026-10-10, [inventario](inventario.md)) |
 | IDs, dinero y fechas | UUIDv7, centavos enteros, UTC; folios legibles por caja (A-000123) |
+| Ticket | Sin QR por ahora, como el de eleventa (2026-10-16): «primero igualar a eleventa». Para devolver se escribe el folio impreso: el de la caja (A-000123) o, en el piloto, el de eleventa |
 | Contingencia | Cada caja guarda copia del catálogo y una bandeja de salida: si la caja principal se apaga, las demás siguen vendiendo |
 | Escaneo | Siempre contra la copia local del catálogo, también en línea (2026-10-10): la red no entra en el escaneo. Los productos nuevos se dan de alta pocos días a la semana, así que la copia casi siempre está al día; el cobro lleva su versión para que los precios coincidan ([propuesta](propuesta-interfaz.md#rendimiento)) |
 | Roles | Sin roles (2026-10-10): cada usuario tiene sus **permisos**, cada uno en «puede», «con autorización» o «no». Al instalar se ponen los de defecto y la primera cuenta tiene todos ([propuesta](propuesta-interfaz.md#usuarios-y-permisos)). Casi no se pedirá autorización: o puede o no puede, y quien no puede le pide a quien sí que entre (Ctrl+U). Por ahora, en Administración solo hay «puede» o «no»; más adelante se decide qué acciones sí pueden pedir autorización (2026-10-15) |
@@ -267,6 +270,12 @@ la caja con su ficha y su PIN del POS, todos desde la misma cuenta común de Win
   propia base, pero manda cada venta a la caja principal igual que hoy lo hace eleventa multicaja: la venta queda en los
   dos lados. Eleventa sigue siendo el sistema oficial en la caja principal
   ([convivencia](migracion-eleventa.md#el-piloto-convivencia-con-eleventa)).
+
+**La meta (dueño, 2026-10-15): alcanzar a eleventa.** Primero lo que eleventa ya hace (vender, cobrar, los cortes, el
+inventario y los reportes que usa el dueño) y lo que pide dejarlo (el piloto, el puente y el rendimiento). Lo que
+eleventa no tiene va después: las etiquetas de cajones y ganchos, WhatsApp, el ticket desde el celular, los exhibidos y
+la temporada, y el módulo de impresión. Qué hace eleventa que el POS todavía no, y en qué orden cerrarlo:
+[paridad con eleventa](paridad-eleventa.md) (2026-10-16).
 
 #### Primero: la versión unicaja (entrega 0)
 
@@ -561,9 +570,11 @@ aprobó el dueño el 2026-10-10 ([propuesta](propuesta-interfaz.md#rendimiento))
 - **Lo que no está en la copia** (recién dado de alta en otra caja) entra en su lugar como «Buscando…» y se le pregunta a
   la caja principal en segundo plano, con medio segundo; lo que se escanea después no lo espera. Si llega, toma su lugar;
   si no existe, lo de siempre (darlo de alta o el artículo común, según los permisos); si no contesta a tiempo, la caja
-  lo dice y se escanea otra vez. El cobro, las teclas del ticket y sus botones (y «5*») lo esperan: nunca se cobra un
-  «Buscando…». Una palabra sin números que no está en la copia («SOBRE-A») se pregunta primero como código y, si no, se
-  busca como nombre, como antes.
+  lo dice y se escanea otra vez. El cobro, las teclas del ticket (también Ctrl+E y Ctrl+D) y los botones de cada fila (y
+  «5*») lo esperan: nunca se cobra un «Buscando…». Lo que se hace con un renglón (su precio, su descuento, su mayoreo,
+  los botones de su fila) es de ese renglón aunque mientras tanto llegue un «Buscando…»; con una ventana abierta, la
+  selección no se mueve. Una palabra sin números que no está en la copia («SOBRE-A») se pregunta primero como código y,
+  si no, se busca como nombre, como antes.
 - **El cobro lleva la versión de la copia** (y cada línea la de su precio: la pieza y el paquete del mismo producto
   pueden venir de copias distintas). Si el precio o el mayoreo de algo del ticket cambió después, el servicio no cobra y
   contesta con los precios de ahora; la caja pone el ticket al día y dice «Cambió el precio de …: revisa el total y
@@ -609,9 +620,9 @@ aprobó el dueño el 2026-10-10 ([propuesta](propuesta-interfaz.md#rendimiento))
   escribe, 2.5 s (los 2 s que la caja principal espera el folio de eleventa en el piloto, y medio segundo para la red). El
   plazo es solo de esa operación: lo que se pide después (la cuenta del turno) ya no lo lleva. Lo de atrás (reportes,
   catálogo, inventario) y el corte Z, hasta 15 s, como antes; el corte Z lleva su Id desde la caja: si la respuesta se
-  pierde y la caja lo hace con su cuenta, al subir ya está (antes se quedaba con «El turno ya está cerrado»). Keepalive de TCP (pregunta tras 5 s sin nada, cada 2 s,
-  3 veces) y conexiones que se renuevan cada 2 minutos: una conexión medio muerta tras reconectarse el Wi-Fi se nota en
-  unos 11 s.
+  pierde y la caja lo hace con su cuenta, al subir ya está (antes se quedaba con «El turno ya está cerrado»). Keepalive
+  de TCP (pregunta tras 5 s sin nada, cada 2 s, 3 veces) y conexiones que se renuevan cada 2 minutos: una conexión medio
+  muerta tras reconectarse el Wi-Fi se nota en unos 11 s.
 - **El cobro que no llega a tiempo** se hace con la copia y va a la bandeja con el mismo Id. Si la caja principal sí lo había
   guardado (solo se perdió la respuesta), al subir queda una venta, con el mismo folio que se imprimió (la serie de la caja
   sigue igual por los dos caminos), una sola vez en el turno y una sola vez hacia eleventa, y lo de su bitácora (el
@@ -627,8 +638,8 @@ aprobó el dueño el 2026-10-10 ([propuesta](propuesta-interfaz.md#rendimiento))
   pasa por lenta. En lenta la caja trabaja como sin conexión (su copia, su folio, la bandeja), y su copia se sigue poniendo
   al día: si llegó otro precio de algo del ticket, no se cobra con un precio que el cajero no vio (el ticket se pone al día
   y el panel lo dice, como cuando lo dice la caja principal). Lo que no se puede hacer con la copia (devolver, el catálogo)
-  se intenta con la caja principal. Se ve donde ya
-  se veía la conexión: «Conectada a la principal · 9 ms», «Red lenta» y la franja de arriba.
+  se intenta con la caja principal. Se ve donde ya se veía la conexión: «Conectada a la principal · 9 ms», «Red lenta» y
+  la franja de arriba.
 - **Nada pesado dentro de una petición del servicio:** el catálogo en memoria se recarga de fondo y mientras se contesta con
   el vigente (lo que no tiene, como un producto recién dado de alta, sí espera la recarga), y el cobro se revisa con esa
   misma versión. Las versiones y las llaves de las cajas, en memoria. El cobro lee los productos y su último costo antes de
@@ -653,6 +664,26 @@ aprobó el dueño el 2026-10-10 ([propuesta](propuesta-interfaz.md#rendimiento))
   caja 2, el plazo del cobro en el piloto con eleventa, que el aviso vuelva solo tras una caída del Wi-Fi, lo que tarda la
   copia completa por Wi-Fi, y la ráfaga de noche en una PC como la caja 2 con un proxy que agregue retardo y pérdidas.
 
+**Avance (2026-10-16): los departamentos, en Productos.** Como en eleventa («Departamentos: nuevo, cambiar el nombre,
+eliminar»), abajo de la lista de Productos (F3) está «Departamentos», con cuántos productos activos tiene cada uno (el
+número los enseña en la lista). Antes solo llegaban de eleventa, y Compras pedía darlos de alta donde no se podía.
+- **Alta, nombre, desactivar y reactivar,** con «Productos, precios y etiquetas» de quien entró y en la bitácora. Los
+  nombres no se repiten, sin importar mayúsculas, acentos ni espacios de más.
+- **Nada se borra:** uno desactivado ya no se ofrece en el filtro, la ficha, el alta rápida ni las compras; el producto
+  que se quedó en uno lo sigue diciendo, «(desactivado)». Al desactivar uno con productos activos, pasan antes al que se
+  elija; los inactivos se quedan.
+- **En el piloto con eleventa** (con su lectura prendida) solo se consultan: se cambian allá, como las altas y los
+  precios (2026-10-10), y llegan con la lectura. Un cambio hecho aquí, la siguiente lectura lo regresaría.
+
+**Avance (2026-10-16): Productos e Inventario en el piloto.** Con la lectura de eleventa prendida, lo que ella pone no
+se cambia en la caja 2: si no, la siguiente lectura lo regresaría sin avisar. Una nota lo dice en cada página y el
+servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-cada-pocos-minutos-paso-1)).
+- **Productos:** de un producto de eleventa, el nombre, el departamento, si se vende, el código de la pieza, el menudeo
+  y sus promociones se ven sin cambiarse, y no se depura. Las escalas del F11 o de F3, las presentaciones, la marca y
+  lo dado de alta aquí, sí.
+- **Inventario:** no se ofrece lo que mueve existencias (recibir compras, los conteos, ajustes, mermas y abrir un
+  paquete): el inventario se lleva en eleventa. Las órdenes, el sugerido, las etiquetas y la hoja de códigos, sí.
+
 #### Después: el piloto en la caja 2
 
 Mientras se arma el puente con eleventa, la versión unicaja sigue creciendo con la venta completa (entrega 3) y la base
@@ -666,7 +697,7 @@ visual (entrega 2). Para el piloto hace falta, en este orden:
 | 4 | **Cancelaciones, devoluciones, turno y corte** de la caja 2, también en eleventa | Que los cortes y las existencias de eleventa sigan cuadrando | Mediano |
 | 5 | **Semanas de prueba contra una copia de eleventa,** comparando la base antes y después de cada venta | Escribir en una base ajena puede descuadrarla | — |
 | 6 | **La base de la caja 2 contra apagones** (entrega 10), su respaldo y cómo se actualiza con un arreglo | Desde el primer día de ventas reales | Chico |
-| 7 | **En la tienda, un sábado o domingo:** la impresora de tickets que comparten las dos cajas y el lector (si lee QR, qué manda con los códigos de 11 cifras y su ritmo al teclear) | Lo que no se puede simular ([guía](pruebas-en-tienda.md)) | Un fin de semana |
+| 7 | **En la tienda, un sábado o domingo:** la impresora de tickets que comparten las dos cajas y el lector (qué manda con los códigos de 11 cifras y su ritmo al teclear) | Lo que no se puede simular ([guía](pruebas-en-tienda.md)) | Un fin de semana |
 | 8 | **Enseñar** a quien atiende la caja 2 | — | Una tarde |
 
 - **A eleventa va lo que entiende:** la venta, el cobro y lo que descuenta de la existencia. Lo que eleventa no tiene
@@ -749,7 +780,8 @@ Cada parte entra sin detener a la caja 2:
 3. **Dejar eleventa:** el servicio nuevo en la caja principal y la caja 2 conectada a él, con su rendimiento (entrega 5:
    escaneo contra la copia local, cambios avisados, plazos y estados de la red); la red de la tienda arreglada; la
    impresora de tickets compartida con reintento; el día pico con el simulador; los reportes de ventas (entrega 9), que
-   el dueño usa hoy en eleventa; la depuración del catálogo y el conteo físico. Eleventa queda de consulta.
+   el dueño usa hoy en eleventa; la depuración del catálogo y el conteo físico. Eleventa queda de consulta
+   ([lo que falta, en orden](paridad-eleventa.md#2-para-dejar-eleventa)).
 4. **El resto del rediseño:** la configuración (7), las pantallas de atrás (8) y lo que se señala (13).
 5. **Lo que eleventa no tiene:** el módulo de impresión con las tres impresoras de inyección y la bandeja (entrega 4),
    que retira Control Print; servicios con costo real y pedidos (fase 4); la ganancia real del mes; WhatsApp
@@ -892,12 +924,19 @@ Piloto en la caja 2 ([ver arriba](#la-versión-unicaja-y-el-piloto-en-la-caja-2)
 - [x] Paso 3: mandar cada venta con la bandeja de salida (PR #67 y #69), en código; todavía no se escribe en el eleventa
   real
 - [x] Paso 4: cancelaciones, devoluciones, turno, corte y entradas y salidas (PR #70, #72 y #73), en código
-- [ ] Los riesgos verificados el 2026-10-12: el cobro espera el último escaneo y «Pagó con» no toma escaneos como
-  dinero; solo efectivo en la caja 2; la lectura de eleventa respeta lo que sigue en la bandeja
-- [ ] Paso 6, la entrega 10: la base de la caja 2 contra apagones y su respaldo
+- [x] Los riesgos verificados el 2026-10-12: el cobro espera el último escaneo y «Pagó con» no toma escaneos como
+  dinero; solo efectivo en la caja 2; la lectura de eleventa respeta lo que sigue en la bandeja (PR #82, #83 y #85)
+- [x] Paso 6, la entrega 10: la base contra apagones (PR #84); el servicio de la caja 2 la respalda cada día
+- [ ] Paso 6, lo que falta: cómo se actualiza la caja 2 del piloto con un arreglo, sin perder su base ni la
+  configuración del puente
 - [ ] Lo que falta del diseño, por aprobar: eleventa abierto en la caja 2 en el mismo turno, devoluciones de ida y
   vuelta, folios repetidos, y los respaldos de eleventa y su restauración automática
   ([diseño](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))
+- [ ] Antes de vender en la caja 2: revisar en F3 el «Mayoreo por revisar». El F11 de eleventa (el segundo precio que
+  el cajero pone a mano) no existe en la caja nueva: lo que no tenga escala se cobra a menudeo
+  ([paridad](paridad-eleventa.md#venta-y-cobro))
+- [ ] En la tienda, mirar lo que la [paridad con eleventa](paridad-eleventa.md#qué-mirar-en-la-tienda) marca «por
+  confirmar»
 - [ ] Paso 5: semanas de prueba contra una copia servida por un Firebird 2.0.1 como el de la tienda
 - [ ] Paso 7: el fin de semana del 17 y 18 de octubre
   ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-octubre))
@@ -927,6 +966,11 @@ Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
 - [ ] Probar en Windows con las dos cajas reales: servicio, alta de la caja 2, contingencia, respaldos, ventana de la
   caja y ticket desde las dos (el cajón, cuando lo haya)
 - [ ] Medir un día pico (~120 tickets) con las dos cajas, en la caja principal real, con el simulador de cajas
+- [ ] Departamentos en el POS: darlos de alta, cambiarles el nombre y desactivarlos. Hoy solo llegan de eleventa, y
+  Compras pide darlos de alta «en F3 Productos», donde no se puede ([paridad](paridad-eleventa.md#productos-y-precios))
+- [ ] La importación final sin las ventas que ya mandó el puente (por `VENTATICKETS.ID`), para no contarlas dos veces
+  en los reportes ([diseño](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)); hoy el
+  importador no las distingue
 - [ ] Antes del piloto: respaldo cifrado en Backblaze B2, con una restauración de ensayo, y vigilancia de la caja
   principal en Healthchecks.io ([notas](notas.md#respaldo-fuera-de-la-tienda-y-aviso-de-apertura))
 - [ ] Soporte a distancia para instalar las actualizaciones (NetBird gratis u otro, [notas](notas.md#cuentas-y-pagos))
@@ -975,7 +1019,7 @@ Por definir:
 - [ ] Contestar las demás [preguntas de la propuesta](propuesta-interfaz.md#preguntas-para-el-dueño) antes de cada
   entrega: antes de la 1, las de los permisos (el corte del turno, el PIN tras unos minutos); antes de la 4, bandeja o
   tarjeta para las impresiones
-- [ ] Probar el lector en la tienda: si lee QR, qué manda con los códigos de 11 cifras y su ritmo al teclear
+- [ ] Probar el lector en la tienda: qué manda con los códigos de 11 cifras y su ritmo al teclear
 - [ ] Instalador de la tienda para el administrador: servicio, cajas, firewall, carpeta de la caja con permisos y las
   colas de las impresoras de inyección ([detalle](#instalación-y-usuarios-de-windows)). Hoy son los scripts de
   `instalacion/`

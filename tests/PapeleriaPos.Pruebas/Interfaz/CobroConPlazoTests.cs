@@ -19,7 +19,7 @@ public sealed class CobroConPlazoTests : IDisposable
 {
     private readonly string _baseLocal = Path.Combine(Path.GetTempPath(), $"caja-plazo-{Guid.NewGuid():N}.db");
 
-    public void Dispose() => BasesDePrueba.Borrar(_baseLocal);
+    public void Dispose() => ArchivosDePrueba.BorrarBase(_baseLocal);
 
     /// <summary>El piloto, con un eleventa que no contesta (nadie escucha en ese puerto): lo que va allá espera en su bandeja.</summary>
     private static readonly (string, string)[] Piloto =

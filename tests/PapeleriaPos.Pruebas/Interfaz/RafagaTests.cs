@@ -17,7 +17,7 @@ public sealed class RafagaTests(ServicioDePrueba servicio) : IClassFixture<Servi
 {
     private readonly string _baseLocal = Path.Combine(Path.GetTempPath(), $"caja-rafaga-{Guid.NewGuid():N}.db");
 
-    public void Dispose() => BasesDePrueba.Borrar(_baseLocal);
+    public void Dispose() => ArchivosDePrueba.BorrarBase(_baseLocal);
 
     private static async Task<T> Leer<T>(HttpResponseMessage r)
     {

@@ -205,7 +205,7 @@ public sealed class CalidadDeLaRedTests
         finally
         {
             contingencia?.Cerrar(TimeSpan.FromSeconds(10));
-            BasesDePrueba.Borrar(ruta);
+            ArchivosDePrueba.BorrarBase(ruta);
         }
     }
 
@@ -243,7 +243,7 @@ public sealed class CalidadDeLaRedTests
         {
             servicios.GetRequiredService<Contingencia>().Cerrar(TimeSpan.FromSeconds(10));
             servicios.Dispose();
-            BasesDePrueba.Borrar(ruta);
+            ArchivosDePrueba.BorrarBase(ruta);
         }
     }
 

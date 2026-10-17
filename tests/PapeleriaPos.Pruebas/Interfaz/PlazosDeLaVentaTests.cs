@@ -15,7 +15,7 @@ public sealed class PlazosDeLaVentaTests : IDisposable
 {
     private readonly string _baseLocal = Path.Combine(Path.GetTempPath(), $"caja-plazos-{Guid.NewGuid():N}.db");
 
-    public void Dispose() => BasesDePrueba.Borrar(_baseLocal);
+    public void Dispose() => ArchivosDePrueba.BorrarBase(_baseLocal);
 
     /// <summary>
     /// El turno se lee con el plazo de la lectura; la cuenta del turno que se pide después (la base de lo que la caja suma por su

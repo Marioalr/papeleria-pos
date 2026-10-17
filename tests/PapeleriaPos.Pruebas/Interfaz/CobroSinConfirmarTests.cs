@@ -16,7 +16,7 @@ public sealed class CobroSinConfirmarTests : IDisposable
 {
     private readonly string _baseLocal = Path.Combine(Path.GetTempPath(), $"caja-sin-confirmar-{Guid.NewGuid():N}.db");
 
-    public void Dispose() => BasesDePrueba.Borrar(_baseLocal);
+    public void Dispose() => ArchivosDePrueba.BorrarBase(_baseLocal);
 
     private const string CodigoNuevo = "9900000777123";
     private const string NombreNuevo = "Separadores recién dados de alta";

@@ -262,7 +262,7 @@ public class VersionDeLaCopiaTests : IAsyncLifetime
         }
         finally
         {
-            BasesDePrueba.Borrar(ruta, cadena);
+            ArchivosDePrueba.BorrarBase(ruta);
         }
     }
 }

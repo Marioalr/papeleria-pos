@@ -1,4 +1,5 @@
-@* Devoluciones y cancelaciones con el folio del ticket (el QR lo escribe solo). Si la regla lo pide, autoriza el encargado.
+@* Devoluciones y cancelaciones con el folio impreso en el ticket (el de la caja o, en el piloto, el de eleventa; el ticket
+   no lleva QR por ahora, como el de eleventa: 2026-10-16). Si la regla lo pide, autoriza el encargado.
    En el piloto con eleventa solo se devuelve en efectivo lo que se cobró en efectivo: de un ticket fiado, o con tarjeta o
    transferencia, el servicio dice por qué no se devuelve aquí y no se ofrece (también lo rechaza). *@
 @inject ClienteCaja Cliente
@@ -12,7 +13,7 @@
 else
 {
     <div class="captura-folio">
-        <label>Folio del ticket (escanea el QR)
+        <label>Folio del ticket
             <input id="folio" autocomplete="off" @bind="_folio" @bind:event="oninput" @onkeydown="AlTeclearFolio" placeholder="A-000123" />
         </label>
         <button class="boton" @onclick="BuscarAsync">Buscar</button>

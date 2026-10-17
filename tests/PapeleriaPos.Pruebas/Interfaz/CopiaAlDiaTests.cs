@@ -25,7 +25,7 @@ public sealed class CopiaAlDiaTests(ServicioDePrueba servicio) : IClassFixture<S
     {
         foreach (var contingencia in _abiertas)
             contingencia.Cerrar(TimeSpan.FromSeconds(10));
-        BasesDePrueba.Borrar(_baseLocal);
+        ArchivosDePrueba.BorrarBase(_baseLocal);
     }
 
     private sealed record Caja(Contingencia Contingencia, RedDePrueba Red, CajaDto Datos, HttpClient Directo, SesionDto Dueno, SesionDto Cajero);

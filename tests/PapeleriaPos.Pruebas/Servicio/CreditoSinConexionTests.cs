@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PapeleriaPos.Datos;
@@ -27,10 +26,8 @@ public sealed class CreditoSinConexionTests(ServicioDePrueba servicio) : IClassF
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
         foreach (var ruta in _bases)
-            foreach (var archivo in new[] { ruta, ruta + "-wal", ruta + "-shm" })
-                File.Delete(archivo);
+            ArchivosDePrueba.BorrarBase(ruta);
     }
 
     /// <summary>Una caja de verdad (cliente, contingencia y base local propia) con su turno abierto.</summary>
