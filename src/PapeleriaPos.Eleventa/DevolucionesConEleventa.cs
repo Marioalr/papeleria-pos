@@ -17,9 +17,26 @@ namespace PapeleriaPos.Eleventa;
 public sealed record ResultadoVuelta(int Pasadas, int PorRevisar, int Propias = 0);
 
 /// <summary>
+/// La caja 2 en eleventa (la del puente) y el turno que eleventa tiene abierto ahora en ella, leído en vivo: solo los tickets
+/// de ese turno se devuelven en la caja 2 (<see cref="DevolucionesConEleventa.DeOtroTurno"/>).
+/// </summary>
+/// <param name="CajaId"><c>CAJAS.ID</c>.</param>
+/// <param name="TurnoId"><c>TURNOS.ID</c>; vacío si eleventa no tiene turno abierto en la caja.</param>
+public sealed record TurnoDelPuente(int CajaId, int? TurnoId)
+{
+    /// <summary>Si el ticket es de este turno de la caja 2: el puente sabe escribir su devolución.</summary>
+    public bool Tiene(TicketLeido t) => t.CajaId == CajaId && t.TurnoId is { } turno && turno == TurnoId;
+}
+
+/// <summary>
 /// Las devoluciones y cancelaciones de ida y vuelta con eleventa (decisión del dueño, 2026-10-12; docs/migracion-eleventa.md,
 /// «Devoluciones de ida y vuelta»). Solo del piloto: se quita al dejar eleventa.
 /// <list type="bullet">
+/// <item><b>Solo lo del turno de ahora</b> (revisión del 2026-10-17, decidido; por revisar con el dueño): mientras dure el
+/// piloto, la caja 2 devuelve o cancela solo lo que el puente sabe escribir en eleventa: sus ventas mientras sigue abierto
+/// su turno, y los tickets cobrados en el eleventa de la caja 2 en el turno que eleventa tiene abierto ahora. Lo de otro
+/// turno, de otra caja o de la principal se devuelve en eleventa (<see cref="DeOtroTurno"/>), y su devolución llega aquí
+/// sola con la lectura (la vuelta), como cualquier otra de eleventa.</item>
 /// <item><b>La ida:</b> en la caja 2 se devuelve un ticket que se cobró en eleventa. Se lee en vivo (el ticket, sus
 /// artículos y sus devoluciones); sin eleventa no se devuelve. Solo efectivo, 7 días y los permisos de la caja nueva. El
 /// ticket leído se guarda en el puente (<see cref="DevolucionDeEleventa"/>), no como venta. El dinero sale del turno de la
@@ -53,6 +70,14 @@ public static class DevolucionesConEleventa
         "Este ticket ya tuvo una devolución en eleventa: lo que queda se devuelve en eleventa.";
 
     public const string NoFueEnEfectivo = "Se cobró con otra forma de pago en eleventa: se devuelve en eleventa.";
+
+    /// <summary>
+    /// Por qué la caja 2 no devuelve ni cancela un ticket de otro turno de eleventa, de otra caja o de la principal: el puente
+    /// todavía no sabe cómo lo anota eleventa (docs/pruebas-en-tienda.md). Se devuelve en eleventa, que sigue abierto en la caja
+    /// 2, y su devolución llega aquí sola con la lectura.
+    /// </summary>
+    public const string DeOtroTurno =
+        "Este ticket es de otro turno: devuélvelo en eleventa (está abierto en esta caja). La devolución llega aquí sola con la lectura.";
     public const string CanceladoEnEleventa = "Ese ticket está cancelado en eleventa.";
     public const string Vencido = "El ticket tiene más de 7 días: ya no admite devoluciones.";
 
@@ -77,26 +102,42 @@ public static class DevolucionesConEleventa
     // ── La ida ──
 
     /// <summary>
-    /// Los tickets cobrados con ese folio, en vivo; vacío si eleventa no contestó a tiempo (<see cref="EsperaEnVivo"/>).
+    /// Los tickets cobrados con ese folio, en vivo, y el turno que eleventa tiene abierto ahora en la caja del puente; vacío si
+    /// eleventa no contestó a tiempo (<see cref="EsperaEnVivo"/>).
     /// </summary>
-    public static async Task<List<TicketLeido>?> PorFolioEnVivoAsync(ServidorEleventa servidor, int folio, CancellationToken ct = default) =>
-        await EnVivoAsync(servidor, c => TicketsDeEleventa.PorFolioAsync(c, folio, FirebirdSinCancelar.Nunca), ct);
+    /// <param name="cajaDelPuente"><c>CAJAS.ID</c> de la caja 2 en eleventa.</param>
+    public static async Task<(List<TicketLeido> Tickets, TurnoDelPuente Puente)?> PorFolioEnVivoAsync(ServidorEleventa servidor, int folio, int cajaDelPuente,
+        CancellationToken ct = default) =>
+        await EnVivoAsync(servidor, async c => new Leido<List<TicketLeido>>(await TicketsDeEleventa.PorFolioAsync(c, folio, FirebirdSinCancelar.Nunca),
+            await PuenteAsync(c, cajaDelPuente)), ct) is { } leido
+            ? (leido.Valor!, leido.Puente)
+            : null;
 
-    /// <summary>Un ticket con sus artículos y sus devoluciones, en vivo. Sin eleventa, el error lo dice (<see cref="NoContesta"/>).</summary>
-    public static async Task<TicketLeido> TicketEnVivoAsync(ServidorEleventa servidor, int ticket, CancellationToken ct = default) =>
-        (await EnVivoAsync(servidor, async c => new Leido<TicketLeido>(await TicketsDeEleventa.TicketAsync(c, ticket, FirebirdSinCancelar.Nunca)), ct)
-            ?? throw new InvalidOperationException(NoContesta)).Valor
-        ?? throw new InvalidOperationException($"En eleventa ya no está ese ticket ({ticket}).");
+    /// <summary>
+    /// Un ticket con sus artículos y sus devoluciones, en vivo, y el turno que eleventa tiene abierto ahora en la caja del
+    /// puente. Sin eleventa, el error lo dice (<see cref="NoContesta"/>).
+    /// </summary>
+    public static async Task<(TicketLeido Ticket, TurnoDelPuente Puente)> TicketEnVivoAsync(ServidorEleventa servidor, int ticket, int cajaDelPuente,
+        CancellationToken ct = default)
+    {
+        var leido = await EnVivoAsync(servidor, async c => new Leido<TicketLeido>(await TicketsDeEleventa.TicketAsync(c, ticket, FirebirdSinCancelar.Nunca),
+            await PuenteAsync(c, cajaDelPuente)), ct) ?? throw new InvalidOperationException(NoContesta);
+        return (leido.Valor ?? throw new InvalidOperationException($"En eleventa ya no está ese ticket ({ticket})."), leido.Puente);
+    }
 
-    /// <summary>Lo que se leyó en vivo, aunque no esté (para distinguirlo de que eleventa no contestó).</summary>
-    private sealed record Leido<T>(T? Valor) where T : class;
+    private static async Task<TurnoDelPuente> PuenteAsync(FbConnection c, int cajaDelPuente) =>
+        new(cajaDelPuente, await TicketsDeEleventa.TurnoAbiertoAsync(c, cajaDelPuente, FirebirdSinCancelar.Nunca));
+
+    /// <summary>Lo que se leyó en vivo, aunque no esté (para distinguirlo de que eleventa no contestó), con el turno del puente.</summary>
+    private sealed record Leido<T>(T? Valor, TurnoDelPuente Puente) where T : class;
 
     /// <summary>
     /// Lo que la ventana de devoluciones enseña de un ticket de eleventa, como uno de la caja: lo vendido, lo ya devuelto
     /// (allá, y aquí lo que todavía no llega) y lo que queda, o por qué no se devuelve aquí. Los Id son los de eleventa
     /// (<see cref="IdDelTicket"/>, <see cref="IdDelArticulo"/>).
     /// </summary>
-    public static async Task<VentaParaDevolverDto> ParaDevolverAsync(PosDbContext db, TicketLeido t, DateTime ahoraUtc, CancellationToken ct = default)
+    public static async Task<VentaParaDevolverDto> ParaDevolverAsync(PosDbContext db, TicketLeido t, TurnoDelPuente puente, DateTime ahoraUtc,
+        CancellationToken ct = default)
     {
         var aqui = await DevueltoAquiAsync(db, t.Id, ct);
         var lineas = t.Articulos.Select(a =>
@@ -107,17 +148,42 @@ public static class DevolucionesConEleventa
                 Centavos(a.Total + allaDinero), a.ProductoId is not null);
         }).ToList();
         var dias = t.VendidoEn is { } vendidoEn ? Devolucion.DiasParaDevolver - (int)(HoraMexico.ALocal(ahoraUtc) - vendidoEn).TotalDays : 0;
+        // Cancelado o vencido, la ventana ya lo dice.
         return new VentaParaDevolverDto(IdDelTicket(t.Id), $"{t.Folio} · {t.Caja} (eleventa)", t.VendidoEn ?? HoraMexico.ALocal(ahoraUtc),
             t.Cancelado ? EstadoVenta.Cancelada : EstadoVenta.Pagada, Centavos(t.Pagado), lineas, PuedeCancelar: false, Math.Max(0, dias),
-            NoSeDevuelveEnElPiloto: t.Cancelado ? null : t.EnEfectivo ? null : NoFueEnEfectivo);
+            NoSeDevuelveEnElPiloto: t.Cancelado || dias <= 0 ? null : !puente.Tiene(t) ? DeOtroTurno : t.EnEfectivo ? null : NoFueEnEfectivo);
     }
 
-    /// <summary>Por qué un ticket de eleventa no se devuelve aquí (cancelado, no fue en efectivo, más de 7 días); vacío si sí.</summary>
-    public static string? PorQueNoSeDevuelveAqui(TicketLeido t, DateTime ahoraUtc) =>
+    /// <summary>
+    /// Por qué un ticket de eleventa no se devuelve aquí (cancelado, más de 7 días, de otro turno o de otra caja, no fue en
+    /// efectivo); vacío si sí.
+    /// </summary>
+    public static string? PorQueNoSeDevuelveAqui(TicketLeido t, TurnoDelPuente puente, DateTime ahoraUtc) =>
         t.Cancelado ? CanceladoEnEleventa
-        : !t.EnEfectivo ? NoFueEnEfectivo
         : t.VendidoEn is not { } vendido || ahoraUtc - HoraMexico.AUtc(vendido) > TimeSpan.FromDays(Devolucion.DiasParaDevolver) ? Vencido
+        : !puente.Tiene(t) ? DeOtroTurno
+        : !t.EnEfectivo ? NoFueEnEfectivo
         : null;
+
+    /// <summary>
+    /// Una venta de la caja 2 que ya está en eleventa se devuelve o se cancela aquí solo mientras sigue abierto su turno (revisión
+    /// del 2026-10-17, decidido): el de la caja nueva se cierra cuando eleventa hace su corte (<see cref="TurnosDelPiloto"/>), y
+    /// después el ticket es de otro turno de eleventa, donde el puente no sabe escribir su devolución. Se devuelve en eleventa
+    /// (<see cref="DeOtroTurno"/>) y llega aquí con la vuelta. Lo que todavía no llega a eleventa sí se devuelve aquí: va detrás
+    /// de su venta. Si eleventa cortó y la lectura todavía no lo ve, se deja pasar: al mandarla queda por revisar, para anotarla
+    /// a mano.
+    /// </summary>
+    public static async Task<string?> DeOtroTurnoAsync(PosDbContext db, Guid ventaId, CancellationToken ct = default)
+    {
+        if (!await db.EnviosAEleventa.AsNoTracking().AnyAsync(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == ventaId
+                && e.Estado == EstadoEnvioEleventa.Enviada && e.TicketEleventa != null, ct))
+            return null;
+        var abierto = await (from v in db.Ventas.AsNoTracking()
+                             join t in db.Turnos.AsNoTracking() on v.TurnoId equals t.Id
+                             where v.Id == ventaId
+                             select t.CerradoUtc == null).FirstOrDefaultAsync(ct);
+        return abierto ? null : DeOtroTurno;
+    }
 
     /// <summary>
     /// La devolución de un ticket de eleventa en la caja nueva: con lo que se acaba de leer en vivo, las reglas de la caja
@@ -134,9 +200,9 @@ public static class DevolucionesConEleventa
     /// </para>
     /// </summary>
     public static async Task<(DevolucionDeEleventa Devolucion, MovimientoCaja? Salida)> DevolverAsync(
-        PosDbContext db, TicketLeido t, SolicitudDevolucion s, DateTime ahoraUtc, CancellationToken ct = default)
+        PosDbContext db, TicketLeido t, TurnoDelPuente puente, SolicitudDevolucion s, DateTime ahoraUtc, CancellationToken ct = default)
     {
-        if (PorQueNoSeDevuelveAqui(t, ahoraUtc) is { } porque)
+        if (PorQueNoSeDevuelveAqui(t, puente, ahoraUtc) is { } porque)
             throw new InvalidOperationException(porque);
         var vendidoEn = t.VendidoEn!.Value;
         if (string.IsNullOrWhiteSpace(s.Motivo))

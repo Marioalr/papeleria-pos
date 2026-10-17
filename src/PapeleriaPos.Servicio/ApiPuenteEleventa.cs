@@ -24,16 +24,20 @@ public static class ApiPuenteEleventa
         api.MapGet("/folio/{folio:int}", async (int folio, PosDbContext db, OpcionesEleventa opciones) =>
         {
             var destino = opciones.ParaEscribir();
-            var enEleventa = destino is { } d ? await DevolucionesConEleventa.PorFolioEnVivoAsync(d.Servidor, folio) : null;
-            return await FoliosRepetidos.BuscarAsync(db, folio, enEleventa, destino is not null, db.Reloj.GetUtcNow().UtcDateTime);
+            var enEleventa = destino is { } d ? await DevolucionesConEleventa.PorFolioEnVivoAsync(d.Servidor, folio, d.Caja.CajaId) : null;
+            return await FoliosRepetidos.BuscarAsync(db, folio, enEleventa is var (tickets, puente) ? (tickets, puente) : null, destino is not null,
+                db.Reloj.GetUtcNow().UtcDateTime);
         });
 
-        // La ida: un ticket cobrado en eleventa, leído en vivo, como lo enseña la ventana de devoluciones.
+        // La ida: un ticket cobrado en eleventa, leído en vivo, como lo enseña la ventana de devoluciones. Solo se devuelve
+        // aquí el del turno que eleventa tiene abierto en la caja 2; el de otro turno o de otra caja dice que se devuelva en
+        // eleventa (revisión del 2026-10-17, decidido).
         api.MapGet("/tickets/{ticket:int}", async (int ticket, PosDbContext db, OpcionesEleventa opciones) =>
         {
-            var leido = await DevolucionesConEleventa.TicketEnVivoAsync(Destino(opciones), ticket);
+            var (servidor, caja) = Destino(opciones);
+            var (leido, puente) = await DevolucionesConEleventa.TicketEnVivoAsync(servidor, ticket, caja.CajaId);
             await NoEsDeEstaCajaAsync(db, leido);
-            return await DevolucionesConEleventa.ParaDevolverAsync(db, leido, db.Reloj.GetUtcNow().UtcDateTime);
+            return await DevolucionesConEleventa.ParaDevolverAsync(db, leido, puente, db.Reloj.GetUtcNow().UtcDateTime);
         });
 
         // La ida: se vuelve a leer en vivo (otra caja pudo devolver algo mientras tanto) y se devuelve aquí, con las reglas y
@@ -41,12 +45,13 @@ public static class ApiPuenteEleventa
         api.MapPost("/tickets/{ticket:int}/devolucion", async (int ticket, SolicitudDevolucion s, PosDbContext db, OpcionesEleventa opciones,
             EnvioVentasEleventa envios, IOptions<OpcionesTicket> ticketOpciones) =>
         {
-            var leido = await DevolucionesConEleventa.TicketEnVivoAsync(Destino(opciones), ticket);
+            var (servidor, caja) = Destino(opciones);
+            var (leido, puente) = await DevolucionesConEleventa.TicketEnVivoAsync(servidor, ticket, caja.CajaId);
             await NoEsDeEstaCajaAsync(db, leido);
             await using var tx = await db.Database.BeginTransactionAsync();
             try
             {
-                var (devolucion, _) = await DevolucionesConEleventa.DevolverAsync(db, leido, s, db.Reloj.GetUtcNow().UtcDateTime);
+                var (devolucion, _) = await DevolucionesConEleventa.DevolverAsync(db, leido, puente, s, db.Reloj.GetUtcNow().UtcDateTime);
                 await db.SaveChangesAsync();
                 await tx.CommitAsync();
                 envios.Despertar();
@@ -120,8 +125,8 @@ public static class ApiPuenteEleventa
         return Results.NoContent();
     }
 
-    private static ServidorEleventa Destino(OpcionesEleventa opciones) =>
-        opciones.ParaEscribir()?.Servidor ?? throw new InvalidOperationException("Esta caja no manda a eleventa: los tickets de eleventa se devuelven en eleventa.");
+    private static (ServidorEleventa Servidor, CajaEnEleventa Caja) Destino(OpcionesEleventa opciones) =>
+        opciones.ParaEscribir() ?? throw new InvalidOperationException("Esta caja no manda a eleventa: los tickets de eleventa se devuelven en eleventa.");
 
     /// <summary>Un ticket que mandó esta caja se devuelve con su venta de aquí, no como uno de eleventa.</summary>
     private static async Task NoEsDeEstaCajaAsync(PosDbContext db, TicketLeido t)

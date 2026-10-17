@@ -608,16 +608,18 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
     eleventa no contesta, se deja pasar (decisión del 2026-10-11) y un choque queda por revisar.
   - Un choque con eleventa («ya está cancelado») queda por revisar y no detiene la bandeja; solo la falla de red se
     reintenta. Lo que quede por revisar se ve en la pantalla de la caja 2 (el bot de Telegram todavía no existe).
-  - Falta ver en la copia cómo anota eleventa una devolución de otra caja o de otro turno: mientras, eso queda por
-    revisar.
+  - Falta ver en la copia cómo anota eleventa una devolución de otra caja o de otro turno. Mientras, la caja 2 no las
+    hace (decidido el 2026-10-17, por revisar con el dueño): se hacen en eleventa y llegan con la vuelta (abajo, «Solo
+    lo del turno de ahora»).
   - **Avance (2026-10-16), en código** (`DevolucionesConEleventa`, `TicketsDeEleventa`; tablas del puente
     `DevolucionesDeEleventa`, la ida, y `DevolucionesDesdeEleventa`, la vuelta):
     - **La ida.** El folio que se escribe en la ventana de devoluciones se busca también en vivo en eleventa (hasta 3
       segundos). Si es un ticket de otra caja, o uno que se cobró en el eleventa de la caja 2, se abre ahí como uno de la
-      caja, con «(eleventa)» y su caja: lo vendido, lo ya devuelto allá y lo que queda. Se devuelve por artículo (el
-      ticket completo no se cancela aquí), si se cobró en efectivo, no está cancelado y tiene 7 días o menos, con el
-      motivo, el permiso de devolución y quien autoriza, como en la caja nueva. Sin eleventa no se devuelve: dice que se
-      espere a la red.
+      caja, con «(eleventa)» y su caja: lo vendido, lo ya devuelto allá y lo que queda. Se devuelve aquí solo si es del
+      turno que eleventa tiene abierto ahora en la caja 2 (se lee en vivo con el ticket; abajo, «Solo lo del turno de
+      ahora»), por artículo (el ticket completo no se cancela aquí), si se cobró en efectivo, no está cancelado y tiene 7
+      días o menos, con el motivo, el permiso de devolución y quien autoriza, como en la caja nueva. Sin eleventa no se
+      devuelve: dice que se espere a la red.
     - Al devolver se vuelve a leer en vivo (otra caja pudo devolver algo mientras) y se guarda todo junto: el ticket como
       se leyó y lo devuelto (en el puente, no como venta del núcleo); la salida de efectivo del turno de la caja nueva
       («Devolución del ticket #4521 de eleventa (Principal): …»; no va a eleventa como salida); la apertura del cajón; la
@@ -631,10 +633,23 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       anota como devuelto. Al peso, como en las ventas de la caja nueva (que se cobraron ya redondeadas), un ticket de
       $9.50 devuelto completo salía en $10 y dejaba el de eleventa en −$0.50. Al escribirla, si eleventa cambió desde que
       se devolvió aquí y ya no le queda tanto a ese renglón, queda por revisar.
-    - Solo se escribe en eleventa si el ticket es del mismo turno de la caja 2 en eleventa. El de otra caja (la principal)
-      o de otro turno queda por revisar al mandarlo («todavía no se ha visto cómo anota eleventa esa devolución»), sin
-      detener la bandeja: el dinero ya salió de la caja nueva y el inventario ya entró aquí; falta anotarla a mano en
-      eleventa. Mientras no se vea en vivo, casi toda devolución de la ida queda así.
+    - **Solo lo del turno de ahora** (revisión del 2026-10-17; decidido, por revisar con el dueño). El puente solo sabe
+      escribir la devolución de un ticket del turno que eleventa tiene abierto en la caja 2: así la hace eleventa en la
+      copia y en vivo, y la de otra caja o de otro turno todavía no se ha visto. Por eso, mientras dure el piloto, la caja
+      2 solo devuelve o cancela lo que el puente sabe escribir: sus ventas mientras sigue abierto su turno (el de la caja
+      nueva se cierra cuando se toma el corte de eleventa) y los tickets cobrados en el eleventa de la caja 2 en el turno
+      abierto. De cualquier otro (de otro turno, de otra caja, de la principal) la ventana de devoluciones enseña el
+      ticket y dice «Este ticket es de otro turno: devuélvelo en eleventa (está abierto en esta caja). La devolución llega
+      aquí sola con la lectura.», sin ofrecer devolverlo ni cancelarlo (el servicio también lo rechaza). Se devuelve en
+      eleventa y, si es un ticket de la caja 2, entra a su venta con la vuelta como cualquier otra devolución de eleventa:
+      sin efectivo de la caja nueva y sin nada que ligar. Antes la caja 2 los devolvía, quedaban por revisar para
+      anotarlos a mano en eleventa, y había que adivinar cuál devolución de eleventa era esa anotación.
+
+      Lo que la caja 2 sabe de los turnos de eleventa lo trae la lectura de cada 5 minutos: si eleventa corta su turno y
+      la caja 2 acepta una devolución antes de verlo, al mandarla ya es de otro turno y queda por revisar, para anotarla
+      a mano (abajo). Cuando se vea en la tienda cómo anota eleventa una devolución de otro turno o de otra caja
+      ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-octubre)), el puente puede aprender a escribirla y la caja 2
+      a recibir esas devoluciones también.
     - **La vuelta.** La lectura de cada 5 minutos lee, en la misma foto que las existencias, las devoluciones y
       cancelaciones en eleventa de los tickets que mandó la caja 2 en los últimos 31 días (listas `IN` en grupos de
       1000). Antes de las existencias, cada una entra a su venta de aquí como una devolución del núcleo **sin efectivo**:
