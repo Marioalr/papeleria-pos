@@ -163,7 +163,7 @@ Primero el modo multicaja, al aprobar el piloto (decisión del dueño, 2026-10-1
 | 1 | **La entrega 5, lo que falta después del PR #100:** buscar contra la copia, bajar solo lo que cambió, plazos y estados de la red, imprimir aparte (con el reintento), pintar menos y la prueba de la ráfaga. La caja 2 pasa a trabajar contra el servicio de la principal | Grande |
 | 2 | **El modo multicaja con el puente:** un solo servicio en la caja principal y el puente escribiendo por las dos cajas. Antes, revisar los respaldos que hace eleventa al cerrarse y medir que la principal aguante eleventa, Firebird y el servicio juntos | Mediano |
 | 3 | **La red de la tienda** (el arreglo, por aprobar) y, en el POS, volver a buscar a la principal, «sin internet» o «sin red local» y la bitácora de red | Chico, más dos fines de semana |
-| 4 | **Las dos cajas reales en Windows y el día pico** con el simulador de cajas, que no existe | Mediano |
+| 4 | **Las dos cajas reales en Windows y el día pico** con el simulador de cajas (ya está desde el 2026-10-17; falta correrlo en la caja principal, [guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real)) | Mediano |
 | 5 | **La entrega 9, los reportes que el dueño usa en eleventa:** ventas por día, mes y año a la fecha contra el año anterior, con la ganancia para quien la ve; después por cajero, departamento y forma de pago, lo más vendido y Excel | Grande |
 | 6 | **El corte del día como el de eleventa:** impreso, de otra fecha y con la ganancia y los departamentos; y el historial de cortes, si la tienda los usa | Chico |
 | 7 | **Departamentos en el POS:** darlos de alta, cambiarles el nombre y desactivarlos | Chico |

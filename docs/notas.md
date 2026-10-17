@@ -71,8 +71,9 @@ Propuesta para cumplirlo ([guía](pruebas-en-tienda.md)):
   a `main`. Antes de fusionar cada uno hay que cambiarle la base a `main`. Si GitHub marca conflicto pero la fusión en
   local sale limpia, suele ser porque hay dos bases comunes (un PR que entró por separado y también dentro de la pila).
   Se arregla fusionando `main` en la rama del PR. Pasó con el #49 y el #44 el 2026-10-10.
-- **No hay simulador de cajas** para medir el día pico ni la contingencia, y la única medición de búsquedas (18 ms, 19
-  de cada 20) es de la PC de desarrollo (i9): falta medir en una PC como las de caja.
+- **El simulador de cajas ya está** (2026-10-17, `simular-cajas`, [avance](plan.md#para-el-piloto-con-dos-cajas)): mide
+  el día pico, la contingencia y el cuadre, pero solo se ha corrido en la PC de desarrollo (i9); falta en la caja
+  principal de la tienda ([guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real)).
 - **Una sola impresora de inyección por sucursal:** el servicio vigila una sola dirección (`ImpresoraHost`); la matriz
   tiene tres ([impresoras](#impresoras)).
 - **Los borrados del catálogo no dejan rastro:** el catálogo y la depuración borran códigos, presentaciones y ligas con
