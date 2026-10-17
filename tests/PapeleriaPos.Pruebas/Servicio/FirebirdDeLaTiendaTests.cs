@@ -166,6 +166,41 @@ public sealed class FirebirdDeLaTiendaTests
     }
 
     [FactConFirebird]
+    public async Task Una_escritura_que_se_dejo_de_esperar_ya_no_se_confirma_aunque_eleventa_conteste_tarde()
+    {
+        var (e, _) = await EleventaAsync();
+        await using var eleventa = e;
+        using var proxy = new ProxyFirebird(e.Servidor.Servidor, e.Servidor.Puerto) { SoloProtocolo10 = true, Retener = true };
+        await using var servicio = await ServicioDePrueba.CrearAsync(
+            [.. Ajustes(e.Servidor with { Servidor = "127.0.0.1", Puerto = proxy.Puerto }), ("Eleventa:SegundosMaximos", "2"), ("Eleventa:SegundosAlCobrar", "5")]);
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        async Task<double> ExistenciaAsync() => Convert.ToDouble(await e.ValorAsync("SELECT CANTIDAD_ACTUAL FROM INVENTARIO_BALANCES WHERE PRODUCTO_ID = 10"));
+        var antes = await ExistenciaAsync();
+
+        // Eleventa va lenta a media escritura (no muerta): se deja de esperar. Aquí se cancela, y al buscarla allá todavía
+        // no está confirmada: se descarta.
+        proxy.Disparador = "INSERT INTO VENTATICKETS_ARTICULOS";
+        var ticket = await CobrarAsync(c, plumas: 2);
+        await EsperarAsync(() => EnviosAsync(c), x => x.PorAtender.Any(p => p.Tipo == TipoEnvioEleventa.Venta && p.Intentos >= 1 && p.Error is not null));
+        await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/cancelacion",
+            new SolicitudCancelacion(c.Encargado.UsuarioId, c.Datos.Id, "Se arrepintió")));
+        await EsperarAsync(async () =>
+        {
+            await c.Http.PostAsync("api/eleventa/enviar", null);
+            return await EnviosAsync(c);
+        }, x => x.Pendientes == 0);
+
+        // Eleventa contesta tarde y la escritura que se dejó de esperar sigue: ya no se confirma, se deshace.
+        proxy.Soltar();
+        Assert.Equal(0, await EsperarAsync(async () => Convert.ToInt32(await e.ValorAsync(
+            "SELECT COUNT(*) FROM MON$TRANSACTIONS WHERE MON$ATTACHMENT_ID <> CURRENT_CONNECTION")), n => n == 0));
+        await using var db = servicio.Base();
+        Assert.All(await db.EnviosAEleventa.Where(x => x.VentaId == ticket.VentaId).ToListAsync(), x => Assert.Equal(EstadoEnvioEleventa.Descartada, x.Estado));
+        Assert.Equal(0, Convert.ToInt32(await e.ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE CAJA_ID = @c AND ESTA_ABIERTO = 'f'", ("c", CajaEleventa))));
+        Assert.Equal(antes, await ExistenciaAsync(), 3);
+    }
+
+    [FactConFirebird]
     public async Task Una_venta_cancelada_que_no_alcanzo_a_guardarse_en_eleventa_se_descarta_despues_de_buscarla()
     {
         var (e, _) = await EleventaAsync();

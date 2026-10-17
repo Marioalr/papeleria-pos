@@ -22,7 +22,17 @@ public sealed record CajaEnEleventa(int CajaId, int CajeroId, string? Ip = null,
     /// Solo del piloto (<see cref="RestauracionDeEleventa"/>).
     /// </summary>
     public HuellaDelPuente? Huella { get; init; }
+
+    /// <summary>
+    /// Si quien manda todavía espera esta escritura. Se pregunta justo antes de confirmarla en eleventa: si ya la dio por
+    /// perdida (tardó más de la cuenta y se dejó de esperar), se deshace en vez de confirmarse, para que no entre tarde,
+    /// cuando aquí ya se decidió sin ella (revisión del 2026-10-17). Vacía, se confirma siempre.
+    /// </summary>
+    public Func<bool>? SigueEsperando { get; init; }
 }
+
+/// <summary>Una escritura que quien la mandó ya dejó de esperar: se deshizo en vez de confirmarse (<see cref="CajaEnEleventa.SigueEsperando"/>).</summary>
+public sealed class EscrituraDejada() : InvalidOperationException("Se dejó de esperar esta escritura: se deshizo sin confirmarla en eleventa.");
 
 /// <summary>Una venta cobrada en efectivo, como la entiende eleventa.</summary>
 /// <param name="CreadaLocal">Cuándo se empezó en la caja nueva (hora local). También es su marca en eleventa: así no se manda dos veces.</param>
@@ -215,6 +225,7 @@ public static partial class EnvioEleventa
             await SumarPorDepartamentoAsync(sql, "CORTE_VENTAS_DEPTO_OPERACIONES", "ID_OPERACION", dia, depto.Key, ventas, ganancias);
         }
 
+        SigueEsperando(caja);
         await tx.CommitAsync(ct);
 
         // Eleventa toma el folio como el último más uno, sin candado: si otra caja cobró en el mismo instante, se repite. Este
@@ -476,6 +487,13 @@ public static partial class EnvioEleventa
     /// Antes de escribir, en la misma transacción: si eleventa ya no tiene lo último que escribió el puente (se restauró un
     /// respaldo), no se escribe nada (<see cref="EleventaRestaurada"/>).
     /// </summary>
+    /// <summary>Justo antes de confirmar: si quien la manda ya no la espera, se deshace (<see cref="CajaEnEleventa.SigueEsperando"/>).</summary>
+    private static void SigueEsperando(CajaEnEleventa caja)
+    {
+        if (caja.SigueEsperando?.Invoke() == false)
+            throw new EscrituraDejada();
+    }
+
     private static async Task RevisarHuellaAsync(FbConnection c, FbTransaction tx, CajaEnEleventa caja, CancellationToken ct)
     {
         if (caja.Huella is { } huella && await RestauracionDeEleventa.RevisarAsync(c, tx, huella, ct) is { } restauracion)

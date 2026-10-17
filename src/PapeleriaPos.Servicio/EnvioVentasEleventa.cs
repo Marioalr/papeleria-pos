@@ -471,16 +471,21 @@ public sealed class EnvioVentasEleventa(
         // La escritura va sin cancelación: con Firebird 2.0 cancelar truena el servicio (FirebirdSinCancelar). Si tarda más de
         // la cuenta se deja de esperar, y lo que alcance a guardar lo encuentra la marca en el siguiente intento.
         var escritura = FirebirdSinCancelar.Nunca;
+        // Si este intento ya se dio por perdido: lo que se dejó de esperar no empieza a escribir si conecta tarde, y lo que
+        // llega a confirmar tarde se deshace (revisión del 2026-10-17): si no, entraría cuando aquí ya se decidió sin ella.
+        var perdido = 0;
         // Lo último que escribió el puente: si eleventa ya no lo tiene (se restauró un respaldo), no se escribe nada.
-        caja = caja with { Huella = await RestauracionDeEleventa.HuellaAsync(db, reloj.GetUtcNow().UtcDateTime, RestauracionDeEleventa.AlEscribir, ct) };
+        caja = caja with
+        {
+            Huella = await RestauracionDeEleventa.HuellaAsync(db, reloj.GetUtcNow().UtcDateTime, RestauracionDeEleventa.AlEscribir, ct),
+            SigueEsperando = () => Volatile.Read(ref perdido) == 0,
+        };
         // Escribe en eleventa y dice en qué turno de eleventa quedó (vacío si ya estaba): el turno de la caja nueva lo adopta.
         Func<Task<TurnoDeEleventa?>>? escribir = null;
         string? porRevisar = null;
         var descartada = false;
         // Una venta cancelada aquí que, al buscarla en eleventa, no estaba: se descarta.
         var noLlego = false;
-        // Si este intento ya se dio por perdido: lo que se dejó de esperar no empieza a escribir si conecta tarde.
-        var perdido = 0;
         // Si este intento solo busca en eleventa la venta que se canceló aquí: lo que le pase no dice nada del intento anterior.
         var buscando = false;
         switch (envio.Tipo)
@@ -599,7 +604,8 @@ public sealed class EnvioVentasEleventa(
         try
         {
             // Con un límite: una llamada que se queda colgada se deja de esperar y se toma como falla de red (se reintenta y no
-            // detiene la bandeja). Si alcanzó a entrar, la marca la encuentra en el siguiente intento.
+            // detiene la bandeja). Si sigue y llega a confirmar, se deshace (SigueEsperando); si ya había confirmado, la marca la
+            // encuentra en el siguiente intento.
             deEleventa = await escribir().WaitAsync(opciones.EsperaMaxima, ct);
             if (noLlego)
                 (envio.Estado, envio.Error) = (EstadoEnvioEleventa.Descartada, porRevisar);
@@ -635,7 +641,13 @@ public sealed class EnvioVentasEleventa(
             await DetenerAsync(db, ex.Restauracion, CancellationToken.None);
             log.LogError("El puente con eleventa se detuvo: {Motivo}", ex.Message);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Se apaga el servicio: lo que siga en camino ya no se confirma.
+            Volatile.Write(ref perdido, 1);
+            throw;
+        }
+        catch (Exception ex)
         {
             Volatile.Write(ref perdido, 1);
             envio.Error = _ultimoError = Recortar(LectorEleventa.Explicar(ex, servidor));

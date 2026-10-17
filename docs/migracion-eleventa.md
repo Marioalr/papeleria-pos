@@ -591,10 +591,13 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       falla de red (se reintenta); y la lectura espera el candado lo más el doble: si no, se deja para la siguiente
       vuelta. No se cancela (revisión del 2026-10-17, segunda vuelta): con el Firebird 2.0.1 de la tienda, FirebirdClient
       no sabe cancelar una llamada y, si se le pide, truena el servicio de la caja 2 (hay una prueba que habla con el
-      Firebird de prueba como 2.0 y deja callada una escritura). La llamada que se dejó de esperar sigue sola por detrás
-      y puede alcanzar a guardar: el reintento la encuentra por su marca; la revisión del folio solo lo mueve si todavía
-      tiene el que se revisó (si corre dos veces, la segunda no lo mueve otra vez); y un choque de candados (otra
-      escritura tenía los mismos renglones, quizá la que se dejó de esperar) no se da por rechazado: se reintenta. Lo
+      Firebird de prueba como 2.0 y deja callada una escritura). La llamada que se dejó de esperar sigue sola por detrás,
+      pero ya no confirma: justo antes de confirmar en eleventa pregunta si todavía se la espera y, si no, se deshace
+      (cuarta revisión): si no, una escritura lenta podía entrar cuando aquí ya se había decidido sin ella (por ejemplo,
+      descartar una venta que se canceló). Lo que ya había confirmado cuando se dejó de esperar lo encuentra el reintento
+      por su marca; la revisión del folio solo lo mueve si todavía tiene el que se revisó (si corre dos veces, la segunda
+      no lo mueve otra vez); y un choque de candados (otra escritura tenía los mismos renglones, quizá la que se dejó de
+      esperar) no se da por rechazado: se reintenta. Lo
       mismo las lecturas en vivo de la ventana de devoluciones (3 segundos): lo que no contestó se deja con su conexión,
       porque cerrarla también esperaba a eleventa sin fin, con el candado de la bandeja tomado (la bandeja y la lectura
       se quedaban paradas).

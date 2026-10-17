@@ -227,6 +227,7 @@ public static partial class EnvioEleventa
             await SumarPorDepartamentoAsync(sql, "CORTE_VENTAS_DEPTO_OPERACIONES", "ID_OPERACION", dia, depto.Key, ventas, ganancias);
         }
 
+        SigueEsperando(caja);
         await tx.CommitAsync(ct);
         return new DevolucionEnEleventa(id, YaEstaba: false, deEleventa);
     }
@@ -371,6 +372,7 @@ public static partial class EnvioEleventa
             """,
             [("turno", turno), ("cerrado", cerrado)]);
 
+        SigueEsperando(caja);
         await tx.CommitAsync(ct);
         return new CierreEnEleventa(turno, YaEstaba: false);
     }

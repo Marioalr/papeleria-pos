@@ -11,7 +11,9 @@ namespace PapeleriaPos.Pruebas.Eleventa;
 /// <item>con <see cref="SoloProtocolo10"/>, esconde los protocolos 11 y siguientes al conectar, así que se habla el
 /// protocolo 10, el que negocia Firebird 2.0.1 (y con el que FirebirdClient no sabe cancelar);</item>
 /// <item>con <see cref="Disparador"/>, en cuanto el puente manda ese texto, deja de pasar lo que contesta Firebird, como la
-/// red que se cae a media llamada: el puente se queda esperando.</item>
+/// red que se cae a media llamada: el puente se queda esperando;</item>
+/// <item>con <see cref="Retener"/>, en vez de tirarlo, retiene lo que contesta Firebird a esa conexión hasta
+/// <see cref="Soltar"/>: la llamada va lenta, no muerta, y termina tarde. Las demás conexiones pasan.</item>
 /// </list>
 /// Cortesía de la revisión del 2026-10-17.
 /// </summary>
@@ -39,6 +41,14 @@ public sealed class ProxyFirebird : IDisposable
     public string? Disparador { get; set; }
 
     public bool Callado => _callado;
+
+    /// <summary>Retener (en vez de tirar) lo que contesta Firebird a la conexión del disparador, hasta <see cref="Soltar"/>.</summary>
+    public bool Retener { get; set; }
+
+    private readonly TaskCompletionSource _soltar = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Lo retenido sigue su camino: la llamada lenta termina.</summary>
+    public void Soltar() => _soltar.TrySetResult();
 
     /// <summary>
     /// La red vuelve: las conexiones nuevas pasan otra vez. Las que se quedaron calladas se cortan (como cuando la red se cae
@@ -87,8 +97,9 @@ public sealed class ProxyFirebird : IDisposable
             await servidor.ConnectAsync(_servidor, _puerto);
             lock (_abiertos)
                 _abiertos.AddRange([cliente, servidor]);
-            _ = DelPuenteAsync(cliente.GetStream(), servidor.GetStream());
-            _ = DeFirebirdAsync(servidor.GetStream(), cliente.GetStream());
+            var retenida = new Retenida();
+            _ = DelPuenteAsync(cliente.GetStream(), servidor.GetStream(), retenida);
+            _ = DeFirebirdAsync(servidor.GetStream(), cliente.GetStream(), retenida);
         }
     }
 
@@ -102,7 +113,13 @@ public sealed class ProxyFirebird : IDisposable
     private static int Entero(byte[] b, int i = 0) => BinaryPrimitives.ReadInt32BigEndian(b.AsSpan(i));
     private static int Relleno(int n) => (4 - n % 4) % 4;
 
-    private async Task DelPuenteAsync(NetworkStream puente, NetworkStream firebird)
+    /// <summary>Si lo que contesta Firebird a una conexión se retiene.</summary>
+    private sealed class Retenida
+    {
+        public volatile bool Si;
+    }
+
+    private async Task DelPuenteAsync(NetworkStream puente, NetworkStream firebird, Retenida retenida)
     {
         try
         {
@@ -138,7 +155,13 @@ public sealed class ProxyFirebird : IDisposable
                 {
                     ventana += Encoding.Latin1.GetString(buffer, 0, n);
                     if (ventana.Contains(disparador))
-                        _callado = true;
+                    {
+                        // Retenida: solo esta conexión, y una vez.
+                        if (Retener)
+                            (retenida.Si, Disparador) = (true, null);
+                        else
+                            _callado = true;
+                    }
                     if (ventana.Length > 4096)
                         ventana = ventana[^2048..];
                 }
@@ -151,7 +174,7 @@ public sealed class ProxyFirebird : IDisposable
         }
     }
 
-    private async Task DeFirebirdAsync(NetworkStream firebird, NetworkStream puente)
+    private async Task DeFirebirdAsync(NetworkStream firebird, NetworkStream puente, Retenida retenida)
     {
         try
         {
@@ -168,7 +191,9 @@ public sealed class ProxyFirebird : IDisposable
                         _aceptados.Add(Entero(buffer, 4) & 0xFF);
                     primero = false;
                 }
-                // Callado: el puente espera esta respuesta para siempre.
+                // Retenida: llega cuando se suelte. Callado: el puente espera esta respuesta para siempre.
+                if (retenida.Si)
+                    await _soltar.Task;
                 if (!_callado)
                     await puente.WriteAsync(buffer.AsMemory(0, n));
             }
@@ -181,6 +206,7 @@ public sealed class ProxyFirebird : IDisposable
 
     public void Dispose()
     {
+        _soltar.TrySetResult();
         _oyente.Stop();
         lock (_abiertos)
             foreach (var conexion in _abiertos)
