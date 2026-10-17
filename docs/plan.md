@@ -766,7 +766,8 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | ¿Quién cierra el corte del día y cuándo se recuerda? | Quien tiene «ver y cerrar el corte del día» (por omisión, la primera cuenta). Se recuerda a la hora de cierre de Configuración › Tienda | Propuesta |
 | ¿Pantalla táctil? | No por ahora: todo con teclado y ratón, con botones de buen tamaño | Propuesta |
 | ¿Pedir el PIN otra vez tras unos minutos sin usar la caja? | No por ahora, como eleventa: estorba para cobrar rápido. Ctrl+U cambia de usuario | Propuesta |
-| Las tres partes del puente (turno y corte, devoluciones de ida y vuelta, respaldos) | En un solo PR: los arreglos de la revisión tocan las tres | Puente |
+| Las tres partes del puente (turno y corte, devoluciones de ida y vuelta, respaldos) | En un solo PR: los arreglos de la revisión tocan las tres | Puente (#109) |
+| Al devolver en la caja 2 un ticket cobrado en eleventa, ¿el dinero al peso o exacto? | Exacto al centavo, como lo devuelve eleventa ($9.50, no $10): así el ticket de eleventa queda en cero y el cajón cuadra con lo que anota eleventa. Lo que cobró la propia caja se sigue devolviendo al peso, porque se cobró redondeado | Puente (#109) |
 
 ## Recomendaciones
 
