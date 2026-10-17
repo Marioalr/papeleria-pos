@@ -167,8 +167,17 @@ public class DevolucionDesdeEleventa
 
     public Guid VentaId { get; set; }
 
-    /// <summary>La devolución que se le hizo a la venta de la caja nueva; vacía si quedó por revisar.</summary>
+    /// <summary>
+    /// La devolución que se le hizo a la venta de la caja nueva; vacía si quedó por revisar. Si es <see cref="Propia"/>, la
+    /// que se hizo aquí y se anotó a mano en eleventa.
+    /// </summary>
     public Guid? DevolucionId { get; set; }
+
+    /// <summary>
+    /// Es una devolución que se hizo aquí, no pasó sola a eleventa (quedó por revisar) y se anotó a mano allá: eleventa la
+    /// escribe con su propia hora, sin la marca de la caja 2. Se ligó con la de aquí y no se aplicó otra vez.
+    /// </summary>
+    public bool Propia { get; set; }
 
     /// <summary>Por qué no se pasó a la venta (ya se había devuelto aquí, no está en el ticket…).</summary>
     public string? PorRevisar { get; set; }

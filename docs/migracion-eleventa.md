@@ -610,6 +610,12 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
     - La vuelta nunca entra a la bandeja. Lo ya pasado se reconoce por `DEVOLUCIONES.ID` (con su `DEVUELTO_EN`) y lo que
       escribió la caja 2 por la marca `TICKET_ID` + `DEVUELTO_EN`. Si aquí ya no queda tanto (¿se devolvió en las dos
       cajas?), queda por revisar.
+    - Una devolución de aquí que no pasó sola (quedó por revisar: «Anótala a mano en eleventa») y se anotó a mano allá
+      llega sin la marca, con la hora de eleventa (revisión del 2026-10-17). Si es igual a la de aquí (las dos
+      cancelaciones, o lo mismo de los mismos artículos), se liga con ella: no se aplica otra vez y su envío queda
+      anotado a mano, aunque no se haya marcado. Si aquí hay una por anotar y la de eleventa no es igual, queda por
+      revisar en lugar de aplicarse. Esa devolución de aquí no impide devolver aquí lo que queda: su dinero salió de esta
+      caja.
     - **Antes de devolver aquí** un ticket de la caja 2 que ya está en eleventa, se leen en vivo sus devoluciones allá
       (con el candado de la bandeja, hasta 3 segundos) y entran primero. Si eleventa ya le devolvió algo, lo que queda se
       devuelve en eleventa: el reembolso de aquí se redondea con lo que salió de esta caja, y lo de eleventa no salió de

@@ -226,9 +226,11 @@ public sealed class LecturaEleventa(
                 texto += $"; {conCorte.Cortes} {(conCorte.Cortes == 1 ? "turno cerrado" : "turnos cerrados")} con el corte de eleventa";
             if (vuelta is { Pasadas: > 0 } pasadas)
                 texto += $"; {pasadas.Pasadas} {(pasadas.Pasadas == 1 ? "devolución" : "devoluciones")} de eleventa";
+            if (vuelta is { Propias: > 0 } propias)
+                texto += $"; {propias.Propias} {(propias.Propias == 1 ? "devolución de aquí anotada" : "devoluciones de aquí anotadas")} a mano en eleventa";
             _estado = new EstadoEleventaDto(true, servidor.ToString(), HoraMexico.ALocal(inicio), true, texto, null,
                 HoraMexico.ALocal(inicio + espera), ++_lecturas, avisos);
-            if (resultado.HuboCambios || turnos is { Cortes: > 0 } or { Adoptados: > 0 } || vuelta is { Pasadas: > 0 } or { PorRevisar: > 0 })
+            if (resultado.HuboCambios || turnos is { Cortes: > 0 } or { Adoptados: > 0 } || vuelta is { Pasadas: > 0 } or { PorRevisar: > 0 } or { Propias: > 0 })
                 log.LogInformation("Eleventa ({Servidor}): {Resultado}.", servidor, texto);
             // Lo que seguía en la bandeja de un turno que eleventa cortó: su hora dice si va al turno siguiente o queda por revisar.
             if (turnos is { Cortes: > 0 })

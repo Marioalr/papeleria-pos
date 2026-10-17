@@ -2981,6 +2981,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("Propia")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime?>("RevisadaUtc")
                         .HasColumnType("TEXT");
 
