@@ -1,7 +1,8 @@
 @* La temporada, a la vista mientras corre (entrega 13, docs/propuesta-interfaz.md, «Lo que se señala: exhibidos y temporada»;
    el chip «temporada» del prototipo): arriba de la venta, un chip con su nombre («Todos Santos») que abre Ctrl+M en ella. Al
    terminar sus fechas se oculta solo, aunque nadie toque la caja (se revisa cada minuto). Sale de la copia de esta caja, sin la
-   red. Se pinta solo cuando cambia lo suyo: la venta se vuelve a pintar con cada escaneo (entrega 5, parte 3, «Pintar menos»). *@
+   red; sin copia (el navegador), de la caja principal, a la que se le vuelve a preguntar a lo más cada minuto. Se pinta solo
+   cuando cambia lo suyo: la venta se vuelve a pintar con cada escaneo (entrega 5, parte 3, «Pintar menos»). *@
 @implements IDisposable
 @inject ClienteCaja Cliente
 @inject IServiceProvider Servicios
@@ -32,10 +33,13 @@
     private IReadOnlyList<ExhibidorDto>? _de;
     private DateOnly _hoy;
     private bool _visible;
-    private bool _preguntado;
     private bool _cambio = true;
     private Contingencia? _contingencia;
     private readonly CancellationTokenSource _alto = new();
+
+    /// <summary>Sin copia (el navegador): lo que contestó la caja principal la última vez, y cuándo se le preguntó.</summary>
+    private IReadOnlyList<ExhibidorDto>? _delServicio;
+    private DateTimeOffset? _preguntadoEn;
 
     private TimeProvider Reloj => Servicios.GetService<TimeProvider>() ?? TimeProvider.System;
 
@@ -52,19 +56,7 @@
     {
         if (Visible != _visible)
             (_visible, _cambio) = (Visible, true);
-        // Sin copia (el navegador): se le pregunta a la caja principal, una sola vez (no con cada escaneo).
-        if (!_preguntado && Cliente.ExhibidoresDeLaCopia() is null)
-        {
-            _preguntado = true;
-            try
-            {
-                await Cliente.MostradorAsync();
-            }
-            catch (ErrorCaja)
-            {
-                // Sin conexión ni copia: sin chip.
-            }
-        }
+        await PreguntarSiTocaAsync();
         Revisar();
     }
 
@@ -76,12 +68,34 @@
     }
 
     /// <summary>
-    /// Las que corren hoy, de lo que hay ahora (la copia, o lo que acaba de contestar la caja principal). Sin recalcular si no
-    /// cambió ni la lista ni el día; solo se vuelve a pintar si cambiaron las que corren.
+    /// Sin una copia que los traiga (el navegador), se le pregunta a la caja principal: al abrir, y después a lo más cada minuto
+    /// (no con cada escaneo), para que lo que se cambie en otra caja también se vea aquí. Con copia, nunca: llega con ella.
+    /// </summary>
+    private async Task PreguntarSiTocaAsync()
+    {
+        if (Cliente.ExhibidoresDeLaCopia() is not null)
+            return;
+        var ahora = Reloj.GetUtcNow();
+        if (_preguntadoEn is { } antes && ahora >= antes && ahora - antes < CadaCuanto)
+            return;
+        _preguntadoEn = ahora;
+        try
+        {
+            _delServicio = (await Cliente.MostradorAsync()).Exhibidores;
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión ni copia: lo de la última vez (o sin chip).
+        }
+    }
+
+    /// <summary>
+    /// Las que corren hoy, de lo que hay ahora (la copia, o lo que contestó la caja principal). Sin recalcular si no cambió ni la
+    /// lista ni el día; solo se vuelve a pintar si cambiaron las que corren.
     /// </summary>
     private void Revisar()
     {
-        var de = Cliente.ExhibidoresDeLaCopia();
+        var de = Cliente.ExhibidoresDeLaCopia() ?? _delServicio;
         var hoy = Temporadas.Hoy(Reloj);
         if (ReferenceEquals(de, _de) && hoy == _hoy)
             return;
@@ -91,8 +105,9 @@
             (_corren, _cambio) = (corren, true);
     }
 
-    private void AlCambiar() => _ = InvokeAsync(() =>
+    private void AlCambiar() => _ = InvokeAsync(async () =>
     {
+        await PreguntarSiTocaAsync();
         Revisar();
         if (_cambio)
             StateHasChanged();

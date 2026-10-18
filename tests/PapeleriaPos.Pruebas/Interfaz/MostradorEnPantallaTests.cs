@@ -76,21 +76,33 @@ public class MostradorEnPantallaTests
     [InlineData("2.5", 2.5)]
     [InlineData("1,5", 1.5)]
     [InlineData("3*", 3)]
+    [InlineData("9999", 9999)]
     public void Lo_escrito_antes_es_la_cantidad(string texto, double cantidad)
     {
         Assert.Equal((decimal)cantidad, MostradorEnPantalla.Cantidad(texto));
         Assert.True(MostradorEnPantalla.EsCantidad(texto));
     }
 
-    /// <summary>Un código (también corto, si es largo para ser una cantidad), un nombre o «3*código» van como siempre: un escaneo.</summary>
+    /// <summary>
+    /// Un código largo (también el que se quedó en el cuadro al tocar una pieza: serían billones), un nombre, «3*código» o algo
+    /// que no es un número de hasta cuatro cifras no son una cantidad: con Enter van como siempre, un escaneo, y al tocar una
+    /// pieza no se agregan.
+    /// </summary>
     [Theory]
     [InlineData("0")]
     [InlineData("7501234567890")]
     [InlineData("12345")]
+    [InlineData("10000")]
+    [InlineData("1.2345")]
+    [InlineData("1e3")]
     [InlineData("cua pro")]
     [InlineData("3*7501234567890")]
     [InlineData("-2")]
-    public void Lo_que_no_es_una_cantidad_va_como_siempre(string texto) => Assert.False(MostradorEnPantalla.EsCantidad(texto));
+    public void Lo_que_no_es_una_cantidad_va_como_siempre(string texto)
+    {
+        Assert.False(MostradorEnPantalla.EsCantidad(texto));
+        Assert.Null(MostradorEnPantalla.Cantidad(texto));
+    }
 
     [Theory]
     [InlineData("Calculadora básica 8 dígitos", "CB")]
