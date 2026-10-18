@@ -459,8 +459,8 @@ public sealed class OtrosDiasTests
     }
 
     /// <summary>
-    /// «Reimprimir el corte» con impresora: sale en la impresora de tickets igual que el corte Z al cerrar. El de una caja sin
-    /// conexión ya se cuadró al subir: el papel ya no dice que se cuadra al volver.
+    /// «Reimprimir el corte» con impresora: va a la cola de la impresora de tickets, como el corte Z al cerrar, y sale igual.
+    /// El de una caja sin conexión ya se cuadró al subir: el papel ya no dice que se cuadra al volver.
     /// </summary>
     [Fact]
     public async Task El_corte_reimpreso_sale_en_la_impresora_como_el_corte_z()
@@ -485,13 +485,50 @@ public sealed class OtrosDiasTests
         Assert.Contains("Se hizo sin conexión con la caja principal", await p.TextoAsync());
 
         await p.OprimirAsync(await p.BotonAsync("Reimprimir el corte"));
-        await p.EsperarAsync(t => t.Contains("Salió el corte del turno de Cajero de prueba."), "el aviso de que salió");
+        await p.EsperarAsync(t => t.Contains("Corte del turno de Cajero de prueba impreso"), "el aviso de que salió");
 
         var papel = Encoding.Latin1.GetString(Assert.Single(impresora.Recibidos));
         Assert.Contains("CORTE DEL TURNO (Z)", papel);
         Assert.Contains("Hizo el corte: Due", papel);
         Assert.Contains("Sobrante", papel);
         Assert.DoesNotContain("se cuadra al volver", papel);
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// «Reimprimir el corte» va por la misma cola que el ticket y el corte Z (entrega 5, parte 3): la pantalla no espera a la
+    /// impresora; si no sale (se acabó el papel), lo dice junto al corte con «Reintentar» y «No imprimirlo», y con
+    /// «Reintentar» sale una sola vez.
+    /// </summary>
+    [Fact]
+    public async Task El_corte_reimpreso_va_por_la_cola_y_si_no_sale_se_reintenta()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var sinPapel = true;
+        var impresora = new PapeleriaPos.Pruebas.Impresion.TicketeraDePrueba
+        {
+            Falla = _ => Volatile.Read(ref sinPapel) ? new IOException("Se acabó el papel de la impresora de tickets.") : null,
+        };
+        await using var c = await PrepararAsync(servicio, impresora);
+        var turno = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Cajero.UsuarioId, 50000);
+        await VenderAsync(c, c.Datos, turno, 2500);
+        await c.Cliente.CorteZAsync(turno.Id, new SolicitudCorteZ(c.Dueno.UsuarioId, 52500));
+        var p = new PantallaSinNavegador(c.Servicios);
+        await using var _ = p;
+        await p.AbrirAsync<HistorialCortes>(new() { [nameof(HistorialCortes.CajaId)] = c.Datos.Id, [nameof(HistorialCortes.Sesion)] = c.Dueno });
+        await p.EsperarElementoAsync($"turno-{turno.Id}");
+
+        await p.OprimirAsync(await p.BotonAsync("Reimprimir el corte"));
+        await p.EsperarAsync(t => t.Contains("No salió «Corte del turno de Cajero de prueba»: Se acabó el papel de la impresora de tickets. El corte ya quedó."),
+            "el aviso de que no salió");
+        Assert.Equal(["Corte del turno de Cajero de prueba"], ColaDeImpresion.De(impresora).Pendientes.Select(t => t.Titulo));
+        Assert.Empty(impresora.Salieron);
+
+        Volatile.Write(ref sinPapel, false);
+        await p.OprimirAsync(await p.BotonAsync("Reintentar"));
+        await p.EsperarAsync(t => t.Contains("Corte del turno de Cajero de prueba impreso"), "el corte impreso");
+        Assert.Contains("CORTE DEL TURNO (Z)", Assert.Single(impresora.Salieron));
+        Assert.Empty(ColaDeImpresion.De(impresora).Pendientes);
         Assert.Empty(p.Errores);
     }
 
