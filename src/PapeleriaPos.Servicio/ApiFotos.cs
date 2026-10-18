@@ -13,6 +13,9 @@ namespace PapeleriaPos.Servicio;
 /// </summary>
 public static class ApiFotos
 {
+    /// <summary>Lo que ocupa en base64 la foto más grande que se acepta (<see cref="FotoDelProducto.BytesMaximos"/>).</summary>
+    private const int Base64Maximo = (FotoDelProducto.BytesMaximos + 2) / 3 * 4;
+
     public static void MapearApiFotos(this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api/fotos").ConErrores().SoloSuCaja();
@@ -42,19 +45,20 @@ public static class ApiFotos
             return Results.File(datos, "image/jpeg");
         });
 
-        // Una foto nueva o en lugar de la que tenía: primero quién y de qué producto; luego se lee, se endereza y se achica.
-        api.MapPut("/{varianteId:guid}", async (Guid varianteId, SolicitudFoto s, PosDbContext db, CancellationToken ct) =>
+        // Una foto nueva o en lugar de la que tenía: primero quién y de qué producto; luego se lee, se endereza y se achica, de
+        // una en una (PreparacionDeFotos). El cuerpo no pasa de lo que ocupa en base64 la foto más grande que se acepta.
+        api.MapPut("/{varianteId:guid}", async (Guid varianteId, SolicitudFoto s, PosDbContext db, PreparacionDeFotos preparacion, CancellationToken ct) =>
         {
             var registro = new RegistroFotos(db);
             await registro.RevisarAsync(varianteId, s.UsuarioId, s.SucursalId, ct);
             if (string.IsNullOrEmpty(s.ImagenBase64))
                 throw new ArgumentException("No llegó ninguna foto.");
             // Antes de convertirla: una más grande que lo que se acepta ni se lee.
-            if (s.ImagenBase64.Length > (FotoDelProducto.BytesMaximos + 2) / 3 * 4)
+            if (s.ImagenBase64.Length > Base64Maximo)
                 throw new ArgumentException($"La foto pasa de {FotoDelProducto.BytesMaximos / 1024 / 1024} MB: usa una más chica.");
-            var foto = FotoDelProducto.Preparar(Convert.FromBase64String(s.ImagenBase64));
+            var foto = await preparacion.PrepararAsync(Convert.FromBase64String(s.ImagenBase64), ct);
             return await registro.GuardarAsync(varianteId, s, foto.Jpeg, foto.Ancho, foto.Alto, ct);
-        });
+        }).WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(Base64Maximo + 64 * 1024));
 
         api.MapPost("/{varianteId:guid}/quitar", async (Guid varianteId, SolicitudQuitarFoto s, PosDbContext db, CancellationToken ct) =>
         {

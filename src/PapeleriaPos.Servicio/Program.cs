@@ -45,6 +45,8 @@ builder.Services.AddSingleton<LlavesDeCajas>();
 builder.Services.AddDbContext<PosDbContext>((proveedor, o) => o.UseSqlite(cadena)
     .AddInterceptors(new AlGuardarEnLaBase(proveedor.GetRequiredService<VersionesDeLaCopia>())));
 builder.Services.AddSingleton<CatalogoEnMemoria>();
+// Las fotos de los productos se preparan de una en una: leer una grande ocupa memoria por un momento (entrega 13, parte 2).
+builder.Services.AddSingleton<PreparacionDeFotos>();
 builder.Services.Configure<OpcionesTicket>(builder.Configuration.GetSection("Ticket"));
 
 // La base contra apagones (entrega 10): si la vez anterior no se detuvo bien, se revisa la base antes de seguir. Si

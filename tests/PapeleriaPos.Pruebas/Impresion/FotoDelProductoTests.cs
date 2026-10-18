@@ -112,6 +112,73 @@ public class FotoDelProductoTests
         Assert.Throws<ArgumentException>(() => FotoDelProducto.Preparar(foto[..(foto.Length / 2)]));
     }
 
+    // ── Sin gastar de más (revisión de la entrega 13): esto corre en la caja principal, la que cobra ──
+
+    [Fact]
+    public void Lo_que_se_lee_completo_va_hasta_16_megapixeles_y_lo_demas_se_rechaza_antes_de_apartar_memoria()
+    {
+        // El de la revisión: un PNG que dice medir 10,000 × 9,999 (en blanco pesaba 300 KB y ocupaba 900 MB al leerlo).
+        Assert.Contains("se lee completa", Assert.Throws<ArgumentException>(() => FotoDelProducto.Preparar(ImagenesDePrueba.PngQueDiceMedir(10_000, 9_999))).Message);
+        Assert.Contains("se lee completa", Assert.Throws<ArgumentException>(() => FotoDelProducto.Preparar(ImagenesDePrueba.BmpEnorme(9_999, 9_999))).Message);
+        // Lo que dice medir más de lo que su archivo puede traer, aunque quepa en los 16: tampoco (el BMP de 118 bytes apartaba
+        // 377 MB antes de ver que no traía nada).
+        Assert.Contains("demasiado chico", Assert.Throws<ArgumentException>(() => FotoDelProducto.Preparar(ImagenesDePrueba.PngQueDiceMedir(4_000, 4_000))).Message);
+        Assert.Contains("demasiado chico", Assert.Throws<ArgumentException>(() => FotoDelProducto.Preparar(ImagenesDePrueba.BmpEnorme(3_000, 3_000))).Message);
+    }
+
+    [Fact]
+    public void El_jpg_progresivo_se_lee_completo_y_va_hasta_16_megapixeles()
+    {
+        var progresiva = ImagenesDePrueba.Progresiva();
+        var deUnBarrido = ImagenesDePrueba.Foto(400, 300);
+
+        // El progresivo guarda la imagen entera aunque se lea reducido; el de la cámara o el celular (un barrido) no, aunque
+        // traiga adentro una miniatura con su propio barrido (va dentro de su segmento).
+        Assert.True(FotoDelProducto.Barridos(progresiva) > 1);
+        Assert.Equal(1, FotoDelProducto.Barridos(deUnBarrido));
+        Assert.Equal(1, FotoDelProducto.Barridos(ImagenesDePrueba.ConMiniaturaAdentro(deUnBarrido)));
+        Assert.Equal(0, FotoDelProducto.Barridos("no es un jpg"u8));
+        // El mismo progresivo diciendo que mide 5,000 × 4,000 (20 megapíxeles): no se lee.
+        Assert.Contains("se lee completa", Assert.Throws<ArgumentException>(() => FotoDelProducto.Preparar(ImagenesDePrueba.ConMedidas(progresiva, 5_000, 4_000))).Message);
+        // Como es (32 × 24), sí: con su mitad roja a la izquierda.
+        var foto = FotoDelProducto.Preparar(progresiva);
+        Assert.Equal((32, 24), (foto.Ancho, foto.Alto));
+        using var leida = ImagenesDePrueba.Leer(foto.Jpeg);
+        Assert.True(ImagenesDePrueba.EsRojo(leida.GetPixel(4, 12)), leida.GetPixel(4, 12).ToString());
+        Assert.True(ImagenesDePrueba.EsAzul(leida.GetPixel(28, 12)), leida.GetPixel(28, 12).ToString());
+        // Y una de la cámara con su miniatura adentro se lee igual que sin ella.
+        var conMiniatura = FotoDelProducto.Preparar(ImagenesDePrueba.ConMiniaturaAdentro(deUnBarrido));
+        Assert.Equal((240, 180), (conMiniatura.Ancho, conMiniatura.Alto));
+    }
+
+    /// <summary>
+    /// Con lo que dice medir y lo que pesa el archivo, antes de apartar memoria: si se lee, y si no, por qué. Solo el JPG puede
+    /// ser de un barrido (el de la cámara o el celular, que se lee reducido).
+    /// </summary>
+    [Theory]
+    [InlineData(SKEncodedImageFormat.Jpeg, 12_000, 8_000, true, 5_000_000L, null)] // del celular, 96 megapíxeles: se lee reducida
+    [InlineData(SKEncodedImageFormat.Jpeg, 12_000, 9_000, true, 5_000_000L, "demasiado grande")]
+    [InlineData(SKEncodedImageFormat.Jpeg, 4_000, 4_000, false, 3_000_000L, null)] // progresiva: hasta 16
+    [InlineData(SKEncodedImageFormat.Jpeg, 5_000, 4_000, false, 3_000_000L, "se lee completa")]
+    [InlineData(SKEncodedImageFormat.Png, 4_000, 4_000, false, 2_000_000L, null)]
+    [InlineData(SKEncodedImageFormat.Png, 4_001, 4_000, false, 2_000_000L, "se lee completa")]
+    [InlineData(SKEncodedImageFormat.Webp, 5_000, 4_000, false, 2_000_000L, "se lee completa")]
+    [InlineData(SKEncodedImageFormat.Gif, 5_000, 4_000, false, 2_000_000L, "se lee completa")]
+    [InlineData(SKEncodedImageFormat.Bmp, 5_000, 4_000, false, 60_000_000L, "se lee completa")]
+    [InlineData(SKEncodedImageFormat.Png, 2_000, 2_000, false, 1_000L, "demasiado chico")] // 4 megapíxeles en 1 KB
+    [InlineData(SKEncodedImageFormat.Jpeg, 10_000, 9_000, true, 50_000L, "demasiado chico")]
+    [InlineData(SKEncodedImageFormat.Png, 900, 900, false, 100L, null)] // las chicas casi no ocupan: no se revisa lo que pesan
+    [InlineData(SKEncodedImageFormat.Png, 0, 900, false, 100L, "No se reconoce")]
+    public void Antes_de_leerla_se_revisa_lo_que_dice_medir(SKEncodedImageFormat formato, int ancho, int alto, bool unBarrido, long bytes, string? porQue)
+    {
+        var dice = FotoDelProducto.Revisar(formato, ancho, alto, unBarrido, bytes);
+
+        if (porQue is null)
+            Assert.Null(dice);
+        else
+            Assert.Contains(porQue, dice);
+    }
+
     [Fact]
     public void La_huella_y_el_archivo_de_la_pantalla_se_leen_igual_en_la_caja_y_en_el_servicio()
     {

@@ -116,6 +116,85 @@ internal static class ImagenesDePrueba
         return [.. bmp];
     }
 
+    /// <summary>
+    /// Un PNG de verdad en su encabezado que dice medir <paramref name="ancho"/> por <paramref name="alto"/>, pero casi no trae datos
+    /// (como el de la revisión: 300 KB de blanco que decían 10,000 por 9,999). Lo que dice medir se lee sin abrir sus datos.
+    /// </summary>
+    public static byte[] PngQueDiceMedir(int ancho, int alto)
+    {
+        var png = new List<byte>([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+        void Pedazo(string tipo, byte[] datos)
+        {
+            png.AddRange(GrandeAlFinal((uint)datos.Length));
+            byte[] conTipo = [.. System.Text.Encoding.ASCII.GetBytes(tipo), .. datos];
+            png.AddRange(conTipo);
+            png.AddRange(GrandeAlFinal(Crc32(conTipo)));
+        }
+        // 8 bits por color, RGB, sin entrelazar.
+        Pedazo("IHDR", [.. GrandeAlFinal((uint)ancho), .. GrandeAlFinal((uint)alto), 8, 2, 0, 0, 0]);
+        Pedazo("IDAT", [0x78, 0x9C, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01]);
+        Pedazo("IEND", []);
+        return [.. png];
+    }
+
+    /// <summary>
+    /// Un JPG progresivo de verdad (32 × 24, la mitad izquierda roja; 10 barridos), hecho con otro programa: SkiaSharp no los
+    /// escribe. Así llegan muchas imágenes de las páginas.
+    /// </summary>
+    public static byte[] Progresiva() => Convert.FromBase64String(
+        "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQU"
+        + "FBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wgARCAAYACADASIAAhEBAxEB/8QAFgABAQEAAAAAAAAAAAAAAAAAAAEG/8QAFgEBAQEAAAAAAAAAAAAAAAAABwgG"
+        + "/9oADAMBAAIQAxAAAAHEDKP1D/KcABVlD/Kf/8QAFBABAAAAAAAAAAAAAAAAAAAAMP/aAAgBAQABBQJP/8QAFBEBAAAAAAAAAAAAAAAAAAAAIP/aAAgBAwEBPwEf/8QAFBEBAAAAAAAAAAAAAAAAAAAAIP/a"
+        + "AAgBAgEBPwEf/8QAFBABAAAAAAAAAAAAAAAAAAAAMP/aAAgBAQAGPwJP/8QAFBABAAAAAAAAAAAAAAAAAAAAMP/aAAgBAQABPyFP/9oADAMBAAIAAwAAABD/AN/9/8QAFBEBAAAAAAAAAAAAAAAAAAAAIP/a"
+        + "AAgBAwEBPxAf/8QAFBEBAAAAAAAAAAAAAAAAAAAAIP/aAAgBAgEBPxAf/8QAFBABAAAAAAAAAAAAAAAAAAAAMP/aAAgBAQABPxBP/9k=");
+
+    /// <summary>El mismo JPG diciendo que mide otra cosa (su marca SOF): lo de adentro es el mismo, así que no se podría leer completo.</summary>
+    public static byte[] ConMedidas(byte[] jpeg, int ancho, int alto)
+    {
+        var copia = (byte[])jpeg.Clone();
+        for (var i = 2; i + 8 < copia.Length;)
+        {
+            if (copia[i] != 0xFF)
+            {
+                i++;
+                continue;
+            }
+            var marca = copia[i + 1];
+            if (marca is >= 0xC0 and <= 0xCF and not (0xC4 or 0xC8 or 0xCC))
+            {
+                (copia[i + 5], copia[i + 6], copia[i + 7], copia[i + 8]) = ((byte)(alto >> 8), (byte)alto, (byte)(ancho >> 8), (byte)ancho);
+                return copia;
+            }
+            i += 2 + (copia[i + 2] << 8 | copia[i + 3]);
+        }
+        throw new Xunit.Sdk.XunitException("El JPG no trae su marca SOF.");
+    }
+
+    /// <summary>
+    /// Un JPG de un barrido con un segmento APP1 que trae adentro lo que parece otro barrido (FF DA), como la miniatura que el
+    /// celular guarda en la foto: no cuenta.
+    /// </summary>
+    public static byte[] ConMiniaturaAdentro(byte[] jpeg)
+    {
+        byte[] adentro = [.. "Exif\0\0"u8.ToArray(), 0xFF, 0xD8, 0xFF, 0xDA, 0x00, 0x08, 1, 2, 3, 4, 5, 6, 0xFF, 0xD9];
+        var largo = adentro.Length + 2;
+        return [.. jpeg.Take(2), 0xFF, 0xE1, (byte)(largo >> 8), (byte)(largo & 0xFF), .. adentro, .. jpeg.Skip(2)];
+    }
+
+    private static byte[] GrandeAlFinal(uint valor) => [(byte)(valor >> 24), (byte)(valor >> 16), (byte)(valor >> 8), (byte)valor];
+
+    private static uint Crc32(byte[] datos)
+    {
+        var crc = 0xFFFFFFFFu;
+        foreach (var b in datos)
+        {
+            crc ^= b;
+            for (var k = 0; k < 8; k++)
+                crc = (crc & 1) != 0 ? crc >> 1 ^ 0xEDB88320u : crc >> 1;
+        }
+        return ~crc;
+    }
+
     /// <summary>Lee una imagen (para revisar cómo quedó).</summary>
     public static SKBitmap Leer(byte[] datos) => SKBitmap.Decode(datos) ?? throw new Xunit.Sdk.XunitException("No se pudo leer la imagen.");
 

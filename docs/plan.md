@@ -781,10 +781,17 @@ servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-ca
 - **Una por producto** (por variante: la de cada color o tamaño), la que sale en Ctrl+M, en la lista de la búsqueda y en el
   verificador. Subir otra la reemplaza; también se quita. La pone o la quita quien tiene «Productos, precios y etiquetas»,
   sin volver a escribir su PIN; el servicio lo revisa y queda en la bitácora («Puso la foto de «…» (desde el celular)»).
-- **Se guarda chica:** el servicio revisa que sea una foto (JPEG, PNG, WebP, GIF o BMP, de hasta 15 MB y 100 megapíxeles),
-  la endereza como se tomó (el celular en vertical) y la deja en un JPEG de a lo más 240 píxeles por lado, completa (sin
-  recortarla) y unos 15 KB o menos; lo transparente queda blanco. La original nunca se guarda. Medido aquí: fotos de 2 a
-  10 MB quedan de 4 a 6 KB, en 15 a 100 ms. Con 300 fotos, menos de 5 MB.
+- **Se guarda chica:** el servicio revisa que sea una foto (JPEG, PNG, WebP, GIF o BMP, de hasta 15 MB), la endereza como
+  se tomó (el celular en vertical) y la deja en un JPEG de a lo más 240 píxeles por lado, completa (sin recortarla) y unos
+  15 KB o menos; lo transparente queda blanco. La original nunca se guarda. Medido aquí: fotos de 2 a 10 MB quedan de 4 a
+  6 KB, en 15 a 100 ms. Con 300 fotos, menos de 5 MB.
+- **Sin gastar de más en la caja principal** (de la revisión: un PNG en blanco de 300 KB que decía medir 10,000 × 10,000
+  ocupaba 900 MB al leerlo, y un JPG progresivo así, 600). Antes de apartar memoria se revisa lo que dice medir: la foto JPG
+  de una cámara o un celular (de un solo barrido) se lee ya reducida y va hasta 100 megapíxeles; lo que se lee completo
+  (PNG, WebP, GIF, BMP y el JPG progresivo, que guarda la imagen entera aunque se lea reducida) va hasta 16 megapíxeles; y
+  nada que diga medir mucho más de lo que su archivo puede traer. Después se achica a la mitad las veces que haga falta, sin
+  copias. Las fotos se preparan de una en una: si llegan varias a la vez, esperan su turno. Lo más que ocupa la más grande
+  que se acepta: unos 100 MB por un momento.
 - **En la misma base** (pos.db), y no en una carpeta aparte: el respaldo diario y el de cada corte Z las llevan, y restaurar
   uno las regresa como estaban. Cada respaldo pesa unos 5 MB más con 300 fotos.
 - **Desde el celular,** en la página del conteo (`/conteo`), sin esperar a la app Android: quien puede ve «Contar» y
