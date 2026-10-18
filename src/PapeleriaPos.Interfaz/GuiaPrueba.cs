@@ -29,7 +29,11 @@ public static class GuiaPrueba
     /// tarea, y la guía nueva saldría ya contestada. La 1 fue la de la primera prueba (2026-10-10, la pantalla de antes); la
     /// 2, la de la pantalla nueva; la 3 (2026-10-14), la de la entrada con fichas y el corte nuevo, donde «entrar»,
     /// «otro-turno», «alta-rapida» y «corte» cambiaron de sentido. Se sube cuando las tareas cambian de sentido. Con las
-    /// páginas de atrás (entrega 8) sigue la 3: sus tareas piden lo mismo en las pantallas nuevas, y «paginas» es nueva.
+    /// páginas de atrás (entrega 8) sigue la 3: sus tareas piden lo mismo en las pantallas nuevas, y «paginas» es nueva. Con
+    /// la guía v4 (2026-10-17) también: lo nuevo (las ventas de otros días y el historial de cortes, lo que se señala con
+    /// Ctrl+M y sus fotos, cambiar precios de varios, empezar y terminar la temporada, los reportes del inventario y «al
+    /// cobrar») va en tareas con Id nuevo, y las de antes piden lo mismo con lo que se les agregó (el corte del día como el de
+    /// eleventa; los departamentos y el mínimo en Productos).
     /// </summary>
     public const int Version = 3;
 
@@ -100,7 +104,8 @@ public static class GuiaPrueba
             "F12 apaga lo demás y deja el cursor en «Pagó con» con el total en gris, ya al peso («En efectivo, al peso»); Esc regresa al cuadro "
             + "sin cobrar. Al escribir, el cambio sale al momento; Enter cobra y el panel deja el cambio en grande hasta que agregas lo del "
             + "siguiente cliente. Sin impresora, el panel dice «Ticket A-… · verlo en pantalla»: el ticket no se abre solo, y ese enlace lo "
-            + "muestra con Total, Redondeo y Total a pagar. F12 y Enter cobra exacto."),
+            + "muestra con Total, Redondeo y Total a pagar. F12 y Enter cobra exacto. La prueba no tiene impresora de tickets: «Reintentar» y "
+            + "«No imprimirlo» solo se ven con una impresora que falle."),
         new("cambio-grande", "Cobrar",
             "Cobra algo de menos de $100 como si te pagaran con un billete de $1,000: oprime F12, escribe 1000 y Enter.",
             "Antes del Enter, el panel ya dice el cambio en grande, y el botón, «Cobrar · cambio $…». Un solo Enter cobra, sin preguntar otra "
@@ -128,6 +133,32 @@ public static class GuiaPrueba
             "Oprime F2 (impresiones por cobrar): agrega una a la venta y cóbrala; marca otra como «no vendida» con su motivo.",
             "Las impresiones salen en el panel de la derecha. La cobrada entra en la línea «Impresiones» del ticket; la no vendida ya no "
             + "aparece por cobrar."),
+        new("mostrador", "Lo que se señala",
+            "Oprime Ctrl+M (o toca «Ctrl+M Mostrador» en la barra de abajo) y toca una pieza de «Todos Santos». Oprime Ctrl+M otra vez, pasa al "
+            + "«Mostrador» con Tab (o tocándolo arriba del panel) y toca una pieza de la repisa de arriba. Luego escribe 3 en el cuadro, oprime "
+            + "Ctrl+M y toca otra.",
+            "El panel sale a la derecha, sin tapar el ticket: primero la temporada que corre («Todos Santos», con su mesa de la entrada) y luego "
+            + "el «Mostrador», con la repisa de arriba y la de abajo; cada producto en su lugar, con su foto o, si no tiene, sus iniciales, su "
+            + "nombre y su precio. Al tocar uno entra al ticket, el panel se cierra y queda el total, listo para F12. Con 3 antes entran tres. "
+            + "No espera nada: sale de la copia de la caja."),
+        new("mostrador-teclado", "Lo que se señala",
+            "Con el cuadro vacío oprime Ctrl+M, muévete con las flechas y con Tab, y oprime Enter. Después escribe 2, oprime Ctrl+M, elige otra "
+            + "pieza con las flechas y Enter. Por último abre Ctrl+M y escanea (o escribe y Enter) uno de los códigos para vender de "
+            + "«Léeme.txt».",
+            "El cursor no sale del cuadro: las flechas mueven la pieza marcada y Tab pasa al siguiente exhibidor o temporada (Shift+Tab, al "
+            + "anterior). Enter agrega la marcada; con 2 antes, dos. Lo escaneado con el panel abierto entra al ticket como siempre y el panel "
+            + "se cierra: un código nunca se toma como la cantidad, aunque sea corto (la cantidad es un número de hasta cuatro cifras; «45*» "
+            + "siempre es cantidad)."),
+        new("mostrador-verificador", "Lo que se señala",
+            "Oprime F9 y luego Ctrl+M (o toca «Mostrador y temporada» en el verificador). Toca una pieza y después «Agregarlo al ticket».",
+            "El cuadro de captura se pone en ámbar y el panel dice «Verificador: tocar uno solo muestra su precio.». Al tocar no entra nada al "
+            + "ticket: el verificador enseña su foto (o sus iniciales) en grande, su nombre, su precio y su existencia. «Agregarlo al ticket» lo "
+            + "agrega y regresa a vender."),
+        new("temporada", "Lo que se señala",
+            "Mira arriba de la venta, a la derecha del estado de la caja, y toca el chip «Todos Santos». Cierra el panel con Esc, ve a Clientes "
+            + "y regresa a la venta con F1.",
+            "Mientras corre una temporada (Todos Santos va del 16 de septiembre al 5 de noviembre) está su chip, con su nombre y Ctrl+M; al "
+            + "tocarlo se abre el mostrador en ella. En Productos, Inventario y Clientes no sale. Al terminar sus fechas se quita solo."),
 
         // ── Los tickets en espera ──
         new("en-espera", "Tickets en espera",
@@ -163,6 +194,13 @@ public static class GuiaPrueba
             + "todo el ticket». Autoriza tocando la ficha de «Encargado de prueba» (2222).",
             "La cancelación pide la autorización en el panel, con las fichas de quienes pueden darla. El ticket queda cancelado y la "
             + "cancelación aparece en «Avisos al dueño» (arriba, en la franja de prueba)."),
+        new("ventas-del-dia", "Devolver y autorizar",
+            "Escribe /ventas y Enter. Con el cursor en el folio, oprime ← y →. Escribe el folio del ticket que cancelaste y Enter; en esa venta "
+            + "oprime «Reimprimir», escribe un motivo y Enter. Vuelve a abrir «Ventas del día» y en otra venta oprime «Devolver o cancelar».",
+            "Abren las de hoy de esta caja, las más nuevas primero: folio, hora, quién cobró, caja, total y cómo se pagó; la cancelada dice "
+            + "«Cancelada» y la devuelta, «Devuelta en parte». Como cajero no cambias de día ni de caja (← y → no hacen nada). El folio se "
+            + "encuentra aunque sea de otro día. Reimprimir pide el motivo y sale el ticket; «Devolver o cancelar» abre la devolución con el "
+            + "folio ya escrito."),
         new("cliente-venta", "Cliente del ticket",
             "Toca la flecha «Público en general» arriba del total (o Ctrl+L) y busca a la «Escuela Primaria Benito Juárez» por su teléfono "
             + "(escribe 1234). Agrega productos y cóbrala. En otra venta elige a «Papelería La Esquina» y agrega un solo folder.",
@@ -239,18 +277,29 @@ public static class GuiaPrueba
             + "detalle). «Listo» lleva a «Abrir turno de Encargado de prueba»."),
         new("corte-del-dia", "El corte",
             "Entra con la ficha del dueño (D) y su PIN, 3333, y abre tu turno con $500. En «Corte» elige «Del día · todas las cajas». Oprime "
-            + "«Hacer ese corte», escribe un total y Enter; luego «Ver el corte del día» y «Cerrar el día». Para seguir con lo de abajo, "
-            + "oprime Ctrl+U y abre otro turno del cajero (C, 1111 y $500).",
-            "Con el turno del dueño, la venta tiene todas las pestañas, y en «Corte» sale «Turno | Del día · todas las cajas» (al "
-            + "cajero y al encargado no). Si el cajero dejó tickets sin cobrar, vuelven a la espera («Volvieron los … tickets que estaban "
-            + "en espera»): son de la caja, no del turno; tu corte dice que se quedan para el siguiente turno, y vuelven en el del "
-            + "cajero. Arriba: lo vendido hoy, el efectivo (con lo esperado en las cajas), tarjeta y transferencia, y las diferencias "
-            + "de corte. La tabla tiene el turno del cajero (lo esperado, lo contado y su diferencia) y el tuyo como «Turno abierto»; "
-            + "abajo, las formas de pago, las salidas por motivo, las devoluciones, las cancelaciones, lo fiado y los abonos, y las "
-            + "impresiones cobradas. Mientras tu turno siga abierto, «Cerrar el día» espera: «Falta cerrar el turno de Dueño de prueba "
-            + "(Caja 1).». Ya cortado, se cierra: «Día cerrado a las … por Dueño de prueba.», y el resumen no se manda otra vez: ya "
-            + "salió con el último corte. En «Avisos al dueño» llega un «Resumen del día» con cada corte que deja la caja sin turno "
-            + "abierto; al cerrar el día, ninguno más."),
+            + "«Hacer ese corte», escribe un total y Enter; luego «Ver el corte del día» y «Cerrar el día». Con el cursor en el corte del día "
+            + "oprime ← y luego →, y toca «Imprimir».",
+            "Con el turno del dueño, la venta tiene todas las pestañas, y en «Corte» sale «Turno | Del día · todas las cajas | Historial» (al "
+            + "encargado, «Turno | Historial»; al cajero, nada). Si el cajero dejó tickets sin cobrar, vuelven a la espera («Volvieron los … "
+            + "tickets que estaban en espera»): son de la caja, no del turno; tu corte dice que se quedan para el siguiente turno, y vuelven en "
+            + "el del cajero. Arriba: lo vendido hoy, el efectivo (con lo esperado en las cajas), tarjeta y transferencia, y las diferencias de "
+            + "corte. La tabla tiene el turno del cajero (lo esperado, lo contado y su diferencia) y el tuyo como «Turno abierto»; abajo, las "
+            + "formas de pago, las salidas por motivo, las devoluciones, las cancelaciones, lo fiado y los abonos, y las impresiones cobradas. "
+            + "Mientras tu turno siga abierto, «Cerrar el día» espera: «Falta cerrar el turno de Dueño de prueba (Caja 1).». Ya cortado, se "
+            + "cierra: «Día cerrado a las … por Dueño de prueba.», y el resumen no se manda otra vez: ya salió con el último corte. En «Avisos "
+            + "al dueño» llega un «Resumen del día» con cada corte que deja la caja sin turno abierto; al cerrar el día, ninguno más. Abajo "
+            + "salen las ventas por departamento (las ve quien ve el corte del día) y, solo para quien ve la utilidad, la utilidad bruta arriba "
+            + "y la de cada departamento. ← lleva al corte de ayer, que solo se ve; «Imprimir» lo saca en la impresora de tickets (sin "
+            + "impresora, abajo en «Así sale impreso»). A la hora de cierre de Configuración › Tienda, en la venta del dueño sale «Falta cerrar "
+            + "el día» hasta que se cierra."),
+        new("historial-cortes", "El corte",
+            "En «Corte» › «Turno», oprime «Listo: abrir el siguiente turno» y abre otra vez tu turno con $500. Escribe /historial y Enter. Con ↑ "
+            + "↓ elige el turno del cajero y oprime «Reimprimir el corte». Oprime ← y →. Luego /ventas, ← y «Todas las cajas». Para seguir con "
+            + "lo de abajo, haz el corte de tu turno («Corte», cualquier total en «Efectivo contado» y Enter) y oprime Ctrl+U para abrir otro "
+            + "turno del cajero (C, 1111 y $500).",
+            "Se abre el corte en «Historial»: los turnos de hoy con lo esperado, lo contado, la diferencia, quién hizo el corte y a qué hora; el "
+            + "tuyo, «Turno abierto». El corte sale igual que al cerrar el turno («CORTE DEL TURNO (Z)»; sin impresora, ahí mismo). En «Ventas "
+            + "del día» el dueño sí cambia de día y de caja."),
 
         // ── Las páginas de atrás (entrega 8): Productos, Inventario y Clientes, con otro turno del cajero ──
         new("paginas", "Productos, Inventario y Clientes",
@@ -264,14 +313,84 @@ public static class GuiaPrueba
             "Como encargado (Ctrl+U, E y 2222, y «Productos e inventario, sin cortar»), oprime F3. Sin escribir nada, baja por la lista con ↓ "
             + "(con el cursor en la búsqueda). Escribe parte del nombre de un producto y Enter; toca «Poca existencia» y luego «Todos». Con un "
             + "producto elegido, oprime «Editar»: cámbiale el precio, «Guardar» y Esc. Da de alta uno nuevo con «Nuevo producto», con su "
-            + "presentación «Caja 12» y un código interno (botón «Código interno»). Vuelve como cajero (tu nombre → «Salir», C y 1111) y "
-            + "escribe ese código en la venta.",
+            + "presentación «Caja 12» y un código interno (botón «Código interno»). A un producto con 5 de existencia ponle «Mínimo de "
+            + "inventario» 10 en su ficha y toca «Poca existencia». Con «Departamentos» (abajo de la lista) da de alta uno, cámbiale el nombre y "
+            + "desactiva uno que tenga productos, pasándolos a otro. Vuelve como cajero (tu nombre → «Salir», C y 1111) y escribe ese código en "
+            + "la venta.",
             "Productos ya no abre vacío: trae la lista, lo más vendido primero, y abajo dice cuántos son («50 de …», con «Ver 50 más»). A la "
-            + "derecha, el elegido: su nombre, marca, departamento y código, con «Etiqueta» y «Editar»; su precio (y su mayoreo, si tiene), "
-            + "su existencia, su costo promedio y sus últimos movimientos («Inventario inicial», «Venta A-…»). El margen no sale: una nota "
-            + "dice que lo ve quien tiene «Ver costos, utilidad y margen». ↓ cambia el detalle; lo escrito busca por nombre, marca, "
-            + "departamento o código. «Poca existencia» deja lo que tiene 3 o menos. La ficha se abre ahí mismo: el precio nuevo se guarda y "
-            + "Esc regresa al producto, ya con su precio. El producto nuevo se guarda y se vende con su código."),
+            + "derecha, el elegido: su nombre, marca, departamento y código, con «Etiqueta» y «Editar»; su precio (y su mayoreo, si tiene), su "
+            + "existencia, su costo promedio y sus últimos movimientos («Inventario inicial», «Venta A-…»). El margen no sale: una nota dice que "
+            + "lo ve quien tiene «Ver costos, utilidad y margen». ↓ cambia el detalle; lo escrito busca por nombre, marca, departamento o "
+            + "código. «Poca existencia» deja lo que está en su mínimo o debajo (sin mínimo, 3 o menos). La ficha se abre ahí mismo: el precio "
+            + "nuevo se guarda y Esc regresa al producto, ya con su precio. Con su mínimo en 10, el que tiene 5 sale en «Poca existencia» (y en "
+            + "Inventario, en «Bajos en inventario»). «Departamentos» dice cuántos productos tiene cada uno; el nuevo y su nombre nuevo salen en "
+            + "el filtro y en la ficha, y al desactivar uno con productos pide a cuál pasan: ya no se ofrece. El producto nuevo se guarda y se "
+            + "vende con su código."),
+        new("precios-varios", "Productos (F3)",
+            "Como encargado (sin cortar), en Productos (F3) escribe «cuaderno» en la búsqueda y oprime «Cambiar precios» (abajo de la lista). "
+            + "Escribe 10 en el porcentaje y Enter; revisa lo que sale y oprime Esc. Toca «Los marcados», toca dos productos de la lista de la "
+            + "izquierda, elige «Poner un precio», escribe 25, Enter y luego Ctrl+Enter. Después, como dueño (Ctrl+U, D y 3333, y «Productos e "
+            + "inventario, sin cortar»), en «Cambiar precios» toca «Una marca», elige una, escribe 5, Enter y oprime «Aplicar a …». Cobra en la "
+            + "venta uno de los que cambiaste.",
+            "Se abre a la derecha con lo que buscabas («Los que coinciden» con «cuaderno»), y cada renglón de la lista trae una casilla. Enter "
+            + "enseña «Cómo quedan» sin cambiar nada: cuántos cambian, cada producto con su precio de ahora y el nuevo (a los 50 centavos más "
+            + "cercanos) y lo que cambia de su mayoreo; Esc la cierra. Un toque marca o desmarca, y «Los marcados» dice cuántos. Ctrl+Enter los "
+            + "cambia: «Listo: cambió el precio de 2 productos…», y la lista ya trae los precios nuevos. El encargado no ve el margen; el dueño "
+            + "ve el de ahora y el que queda, con «debajo del mínimo» en rojo si queda abajo del mínimo de Configuración › Inventario. La venta "
+            + "cobra el precio nuevo, y en la bitácora queda un solo renglón con cuántos, cuáles y la regla. Si el mayoreo de alguno no cabe más "
+            + "barato que el menudeo, la vista lo marca «ajustado» o dice por qué ese producto no cambia."),
+        new("foto-pc", "Productos (F3)",
+            "Como encargado (sin cortar), en Productos (F3) abre la «Calculadora Casio Científica». En «Foto» toca «Elegir una foto…» y elige "
+            + "una imagen (o copia una de una página, haz clic en el cuadro de la foto y Ctrl+V); revisa cómo se ve y «Guardar la foto». Con F1: "
+            + "Ctrl+M › «Mostrador»; escribe «calculadora»; F9, Ctrl+M y toca la calculadora. Al final, «Quitar la foto».",
+            "Se ve antes de guardarla; dice «Guardada: así llega a las cajas (240×…, … KB)». En Ctrl+M la pieza enseña la foto en lugar de sus "
+            + "iniciales, en la búsqueda sale chica a la izquierda y en el verificador grande; los demás siguen con iniciales. Al quitarla "
+            + "vuelven sus iniciales."),
+        new("foto-celular", "Productos (F3)",
+            "Con un celular en el mismo wifi: en la ficha del «Compás Maped De precisión», «Con el celular…» y escanea el QR. Entra como "
+            + "«encargado» / 2222, toca «Fotos», escribe «compás» y elígelo; «Tomar la foto» con el celular en vertical, revisa y «Guardar». En "
+            + "la PC, Ctrl+M › «Mostrador».",
+            "Salen «Contar» y «Fotos»; la cámara se abre desde la página; la foto se ve derecha; dice «Guardada: ya llega a las cajas». En unos "
+            + "segundos la pieza del compás enseña su foto en la PC. Como cajero (1111) no sale «Fotos»."),
+        new("empezar-temporada", "Productos (F3)",
+            "Como encargado (sin cortar), en Productos (F3) toca «Temporadas» (abajo de la lista) y elige «Navidad». Revisa la lista. En el "
+            + "cuadro «Precio» del primero escribe un precio nuevo y Enter; en el siguiente escribe 1 y oprime Ctrl+Enter. Corrige el que salió "
+            + "en rojo (o «Dejar los de hoy» y vuelve a escribir el primero) y Ctrl+Enter.",
+            "Abre en la temporada que corre (Todos Santos); arriba se cambia a las demás y dice sus fechas, cuántos productos tiene y cuántos "
+            + "sin foto. «1 · Empezar: precios» trae la lista del año pasado en el orden de la mesa: el precio de entonces (en la base de "
+            + "prueba, el que más se cobró el año pasado), el de hoy, «sin foto» donde falta, y el cuadro del precio; el encargado no ve costo, "
+            + "margen ni sugerido. Enter pasa al cuadro de abajo. Un precio igual o abajo de su mayoreo sale en rojo («más barato que su "
+            + "mayoreo») y no deja confirmar. Ctrl+Enter: «Listo: cambió 1 precio; las cajas ya lo tienen.», arriba «Encargado de prueba "
+            + "confirmó los precios el …», y la venta ya cobra el precio nuevo. Tocar el nombre de uno abre su ficha (ahí se le pone la foto) y "
+            + "Esc regresa a la temporada."),
+        new("temporada-costos", "Productos (F3)",
+            "Como dueño (Ctrl+U, D y 3333), en la misma temporada.",
+            "Salen además el costo de hoy, el margen (en rojo si queda abajo del mínimo) y el sugerido; «Todos al sugerido» los pone en los "
+            + "cuadros (nunca baja un precio)."),
+        new("hoja-temporada", "Productos (F3)",
+            "En «2 · Hoja», «Vista previa». Luego «3 · Tarjetas», «Vista previa».",
+            "Abajo se ve la hoja como saldrá: por lugar de la mesa, de tres en tres, cada producto con su foto (o sus iniciales), su nombre, su "
+            + "precio y su código de barras, con «Hoja 1 de …». Las tarjetas: 18 por hoja carta con su línea para recortar, el nombre, el precio "
+            + "grande y el código. Ya van marcadas las que no tiene. (Sin impresora: «Imprimir» abre el diálogo de Windows; si se imprime, "
+            + "quedan anotadas.)"),
+        new("tarjetas-reimprimir", "Productos (F3)",
+            "En «3 · Tarjetas» oprime «Imprimir … tarjetas» (en el diálogo, cancela). Abre el primero de la lista, «Editar», cámbiale el precio, "
+            + "«Guardar» y Esc. Toca «Tarjetas de precio».",
+            "El botón dice «Tarjetas de precio · 1 por reimprimir». Abre en «Por reimprimir»: el producto con el precio de su tarjeta, «cambió "
+            + "el precio» y el de hoy. Al imprimirla sale de la lista; «Ya no tiene» también la quita."),
+        new("mas-preguntado", "Productos (F3)",
+            "En la venta (F1), F9 y escanea (o escribe y Enter) el código de un producto tres veces y el de otro una vez. Regresa a Productos › "
+            + "«Tarjetas de precio» › «Lo más preguntado».",
+            "Salen los dos, primero el de «3 veces», sin marcar; lo que ya tiene tarjeta no sale. Tocarlos y «Imprimir» les da su tarjeta."),
+        new("terminar-temporada", "Productos (F3)",
+            "En «Temporadas», «Todos Santos», «4 · Terminar». En «Contado» de uno escribe un número y Enter. En el de abajo escribe 1.2345 y sal "
+            + "del cuadro; corrígelo a 1 y sal otra vez. Oprime «Terminar la temporada» y «Sí, terminarla».",
+            "Cada producto con lo que había, lo que se vendió y lo que quedó, y «se acabó», «no se vendió» o qué parte se vendió. En la base de "
+            + "prueba dice «desde que se empezó a usar este POS» (su inventario empieza el 30 de septiembre). Lo contado se guarda al dar Enter "
+            + "o salir del cuadro, y abajo dice «guardado; el sistema decía N»; 1.2345 no se guarda y dice «Revisa lo contado: escribe solo "
+            + "cantidades, como 12 o 2.5.». Antes de terminarla pregunta (Esc la deja); después: «Encargado de prueba la terminó y contó lo que "
+            + "sobró el …»; la existencia queda en lo contado (menos lo que se haya vendido después de contarlo) y el resumen ya no cambia. En "
+            + "el piloto con eleventa no sale «Contado» y dice por qué."),
         new("recibir", "Inventario (F4) · Compras",
             "Como cajero, oprime F4 (o «Inventario» arriba) y toca la tarjeta «Recibir mercancía»: elige el proveedor de «Léeme.txt» y cuenta "
             + "lo que dice ahí para la factura (puedes contar uno menos de algo; el nuevo, con su código). Termina el conteo.",
@@ -326,6 +445,13 @@ public static class GuiaPrueba
             "La tarjeta de las mermas dice «tú: hasta $200.00» y la de los ajustes «lo autoriza Encargado de prueba o Dueño de prueba». La "
             + "merma chica entra sola; la grande (más de $200 de costo) y la corrección piden la autorización: se toca la ficha del encargado "
             + "y se escribe su PIN. Todo queda en la lista y en la existencia; si la corrección vale $200 o más, sale en «Avisos al dueño»."),
+        new("reportes-inventario", "Inventario (F4)",
+            "Como dueño, sin cortar (Ctrl+U, D y 3333, y «Productos e inventario, sin cortar»), en Inventario (F4) abre «Lo que vale el "
+            + "inventario» y elige un departamento. Con «← Inventario» abre «Movimientos» (los de hoy), elige «Ventas» en el tipo y mira el "
+            + "folio de una venta de la prueba. Luego abre «Bajos en inventario».",
+            "«Lo que vale el inventario» dice el total a costo y lo de cada departamento, con sus productos a un lado. «Movimientos» trae los de "
+            + "hoy, del más reciente al más viejo, con su folio, quién y lo que quedó; con «Ventas» quedan solo las ventas, cada una con el "
+            + "folio de su ticket. En «Bajos en inventario» sale el producto al que le pusiste mínimo 10, con cuánto pedir."),
         new("cliente-alta", "Clientes",
             "Como encargado (sin cortar → Clientes), da de alta un cliente con «Nuevo cliente», con teléfono y 5 % de descuento. Toca «Por "
             + "revisar»: elige a «Maestra Carmen», «Editar» y «Guardar». Elige al «Arq. Ramírez»: en «Del crédito sin conexión, por "
@@ -364,6 +490,15 @@ public static class GuiaPrueba
             "La primera vez no sale ninguna pluma: solo «Parecidos a «lapicero»…» (lapiceras y estuches). Con el sinónimo salen las plumas, y "
             + "cada renglón dice «por «lapicero»». Los sinónimos solo los dan de alta el dueño y el encargado; uno mal puesto mezcla "
             + "productos, y se quita ahí mismo."),
+        new("acomodar", $"{ConfiguracionNueva} · El dueño",
+            "Como dueño, vendiendo, oprime Ctrl+M, toca «Acomodar» y elige «Mostrador». En el cuadro para agregar escribe el nombre de un "
+            + "producto, elígelo de la lista (↑ ↓) y Enter, o escanea su código. Muévelo con Shift+← y Shift+→ (Shift+↑ ↓ lo cambian de repisa), "
+            + "quita otro con Supr y toca «Listo». Luego, en Configuración → Mostrador y temporadas (o escribe «temporada» en su buscador), "
+            + "ponle a «Primavera» «del 21 de marzo al 30 de abril» y agrégale al Mostrador un lugar «Pared».",
+            "«Acomodar» solo le sale a quien cambia «Productos, precios y etiquetas» (el dueño y el encargado; al cajero, no). Lo agregado entra "
+            + "después de la pieza marcada; moverlo y quitarlo se guarda al momento, sin botón, y así queda en todas las cajas. Al acomodar "
+            + "también salen las temporadas que no corren, para prepararlas. En la Configuración cada cambio se guarda solo («Guardado a las "
+            + "…»), y una fecha que no existe (31/4) lo dice. «Pared» sale en Ctrl+M después de las repisas."),
         new("configuracion", $"{ConfiguracionNueva} · El dueño",
             "Como dueño, en Configuración escribe «fondo» en el buscador y pon el fondo sugerido en $500; en Ticket cambia el pie y mira «Así "
             + "sale». Mira «Usuarios y permisos» y la Bitácora. Abre «Avisos al dueño» en la franja de prueba.",
@@ -372,6 +507,15 @@ public static class GuiaPrueba
             + "clientes» y Cajero de prueba «Permisos por defecto»; cada permiso es Puede, Con autorización o No (en Administración, solo "
             + "Puede o No). La bitácora tiene lo de hoy: cancelaciones, precios, autorizaciones, compras, los cortes del turno y el cierre del "
             + "día. En «Avisos al dueño» están los avisos que se habrían mandado: cancelaciones, cortes con diferencia, el resumen del día…"),
+        new("al-cobrar", $"{ConfiguracionNueva} · El dueño",
+            "Como dueño, en Configuración → Ticket, en «Al cobrar» toca «Ofrecerlo» y cierra la Configuración (Esc). Cobra una venta y oprime "
+            + "Ctrl+I. Cobra otra y, sin oprimir nada, escanea lo del siguiente cliente. Vuelve a Configuración → Ticket, toca «No imprimirlo» y "
+            + "cobra otra venta. Al terminar, deja «Imprimir el ticket».",
+            "La opción queda marcada al tocarla y arriba dice «Guardado a las …», sin botón ni PIN; el ajuste dice «Toda la tienda». Con "
+            + "«Ofrecerlo» se cobra igual de rápido, sin ninguna pregunta, y el panel dice «Ticket A-… · Imprimir ticket Ctrl+I»; Ctrl+I lo "
+            + "enseña en pantalla (la prueba no tiene impresora). En la otra venta, con el primer escaneo del siguiente cliente ya no se ofrece. "
+            + "Con «No imprimirlo» el panel dice «Ticket A-… sin imprimir» y no ofrece nada; si lo piden, «Reimprimir», con su motivo. Lo fiado "
+            + "sale siempre."),
     ];
 
     /// <summary>
