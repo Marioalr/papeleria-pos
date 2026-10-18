@@ -4142,9 +4142,12 @@
             await Abrir(Ventanas.Verificador);
             return;
         }
+        // Solo una cantidad de hasta cuatro cifras: un código que se quedó en el cuadro nunca es cuántas (serían billones).
         if (MostradorEnPantalla.Cantidad(escrito) is not { } cantidad)
         {
-            AvisarEnElPanel($"Antes de tocar una pieza solo va la cantidad: «{escrito.Trim()}» no lo es.");
+            AvisarEnElPanel(Cliente.Foto?.PorCodigo(escrito.Trim()) is { } conEseCodigo
+                ? $"«{escrito.Trim()}» es el código de {conEseCodigo.Descripcion}: Enter lo agrega. Antes de tocar una pieza solo va la cantidad."
+                : $"Antes de tocar una pieza solo va la cantidad, de hasta cuatro cifras: «{escrito.Trim()}» no lo es.");
             return;
         }
         // Una fracción en algo por pieza: el panel se queda, con lo escrito (con Enter, caja.js ya lo había quitado), para corregirlo.
@@ -4189,8 +4192,9 @@
     /// <summary>
     /// Las teclas del cuadro de captura con el mostrador abierto (caja.js): las flechas eligen la pieza, Tab el exhibidor o la
     /// temporada, y Enter agrega la elegida con lo escrito como cantidad (en el verificador, la enseña). Lo que no es una
-    /// cantidad, o llegó en ráfaga (el lector), va como siempre: un escaneo con el mostrador abierto entra al ticket y el panel
-    /// se cierra; en el verificador, enseña su precio.
+    /// cantidad, lo que llegó en ráfaga (el lector) y un código corto que existe («45», la etiqueta de un producto, aunque el
+    /// lector no se reconozca por su ritmo) van como siempre: un escaneo con el mostrador abierto entra al ticket y el panel se
+    /// cierra; en el verificador, enseña su precio. «45*» siempre es la cantidad.
     /// </summary>
     /// <param name="hora">La del Enter, con el reloj de la página.</param>
     /// <param name="rafaga">Lo tecleó el lector: más rápido que una persona.</param>
@@ -4212,7 +4216,7 @@
             mostrador.Mover(tecla);
             return;
         }
-        if (rafaga || !MostradorEnPantalla.EsCantidad(texto))
+        if (rafaga || !MostradorEnPantalla.EsCantidad(texto) || await EsCodigoAsync(texto))
         {
             if (_mostradorVerifica)
             {
@@ -4233,6 +4237,28 @@
         else
             AvisarEnElPanel("Aquí no hay piezas que agregar: elige otro con Tab, o tócalo arriba.");
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// Si lo escrito antes de Enter es el código de un producto: en la copia de esta caja, como al escanear (sin copia, el
+    /// navegador, se le pregunta a la caja principal). Con «*» al final es la cantidad, no un código.
+    /// </summary>
+    private async Task<bool> EsCodigoAsync(string texto)
+    {
+        texto = texto.Trim();
+        if (texto.Length == 0 || texto.EndsWith('*'))
+            return false;
+        if (Cliente.Foto is { } foto)
+            return foto.PorCodigo(texto) is not null;
+        try
+        {
+            return await Cliente.PorCodigoAsync(texto, Caja.SucursalId) is not null;
+        }
+        catch (ErrorCaja)
+        {
+            // Sin copia ni conexión no se sabe: se toma como la cantidad.
+            return false;
+        }
     }
 
     // ── Ventanas y avisos ───────────────────────────────────────────────────

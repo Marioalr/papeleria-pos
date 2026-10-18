@@ -25,7 +25,12 @@ public sealed record ExhibidorDto(Guid Id, string Nombre, TipoExhibidor Tipo, Di
 /// Los exhibidores y las temporadas activos: primero los exhibidores y después las temporadas, cada uno en su orden. Con la
 /// versión del catálogo con que se leyeron: la caja usa lo más nuevo entre esto y su copia.
 /// </summary>
-public sealed record MostradorDto(long Version, IReadOnlyList<ExhibidorDto> Exhibidores);
+/// <param name="Base">
+/// De qué base es la versión (la de la copia, <see cref="VersionesCopiaDto.Base"/>: cambia al arrancar la caja principal y al
+/// empezar de cero la prueba). La caja solo compara la versión con la de una copia de la misma base: después de restaurar un
+/// respaldo, las versiones vuelven a empezar. Vacía en lo que la caja arma con su copia.
+/// </param>
+public sealed record MostradorDto(long Version, IReadOnlyList<ExhibidorDto> Exhibidores, Guid? Base = null);
 
 /// <summary>Un exhibidor o una temporada nuevo: empieza sin lugares; se le agregan en la Configuración.</summary>
 public sealed record SolicitudNuevoExhibidor(Guid UsuarioId, Guid SucursalId, string Nombre, TipoExhibidor Tipo);

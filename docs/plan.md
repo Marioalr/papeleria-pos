@@ -772,7 +772,9 @@ servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-ca
 - **Decidido mientras tanto, por revisar con el dueño:** acomodar en Ctrl+M (como el prototipo) y no en Productos; el
   permiso «Productos, precios y etiquetas», sin autorización; los nombres de los lugares que deja la migración; que sea
   el mismo en todas las cajas y sucursales; y que con el panel abierto un número de hasta 4 cifras y Enter sea la
-  cantidad de la pieza elegida, y lo demás, un escaneo.
+  cantidad de la pieza elegida, salvo que sea el código de un producto («45»): ese se escanea, y «45*» siempre es la
+  cantidad. Al tocar una pieza, lo escrito solo cuenta si es una cantidad de hasta 4 cifras (un código que se quedó en
+  el cuadro no).
 - **Para las partes que siguen:** las fotos (desde la app Android o la PC), la hoja de la temporada y las tarjetas de
   precio, empezar y terminar la temporada con el precio del año pasado, y lo más preguntado.
 

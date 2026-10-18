@@ -1,4 +1,5 @@
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Configuracion;
 using PapeleriaPos.Nucleo.Contratos;
 
 namespace PapeleriaPos.Interfaz;
@@ -106,24 +107,33 @@ public static class MostradorEnPantalla
         return (Math.Max(porLugar.Count - 1, 0), 0);
     }
 
+    /// <summary>Lo más que agrega una pieza de una vez: cuatro cifras, como un rápido.</summary>
+    public const decimal CantidadMaxima = Rapido.CantidadMaxima;
+
+    /// <summary>Una cantidad: hasta cuatro cifras, con hasta tres decimales (con punto o coma) y, si se quiere, el asterisco.</summary>
+    private static readonly System.Text.RegularExpressions.Regex FormaDeCantidad = new(@"^[0-9]{1,4}([.,][0-9]{1,3})?\*?$");
+
     /// <summary>
     /// Cuánto se agrega al tocar una pieza: lo escrito en el cuadro de captura (docs/propuesta-interfaz.md: «con un número
-    /// antes, agrega esa cantidad»), o una pieza si no hay nada. Vacío si lo escrito no es una cantidad.
+    /// antes, agrega esa cantidad»), o una pieza si no hay nada. Vacío si lo escrito no es una cantidad de hasta cuatro cifras
+    /// (<see cref="CantidadMaxima"/>): un código que se quedó en el cuadro («7501234567890») nunca se toma como cantidad.
     /// </summary>
     public static decimal? Cantidad(string texto)
     {
-        texto = texto.Trim().TrimEnd('*').Replace(',', '.');
+        texto = texto.Trim();
         if (texto.Length == 0)
             return 1;
-        return decimal.TryParse(texto, System.Globalization.NumberStyles.AllowDecimalPoint, System.Globalization.CultureInfo.InvariantCulture, out var n) && n > 0
-            ? Math.Round(n, 3)
-            : null;
+        if (!FormaDeCantidad.IsMatch(texto))
+            return null;
+        var n = decimal.Parse(texto.TrimEnd('*').Replace(',', '.'), System.Globalization.NumberStyles.AllowDecimalPoint,
+            System.Globalization.CultureInfo.InvariantCulture);
+        return n is > 0 and <= CantidadMaxima ? n : null;
     }
 
     /// <summary>
-    /// Si lo escrito antes de Enter es una cantidad para la pieza elegida (hasta cuatro cifras, con decimales): lo demás (un
-    /// código, un nombre, «3*código») va como siempre, como un escaneo.
+    /// Si lo escrito antes de Enter puede ser la cantidad de la pieza elegida (hasta cuatro cifras, con decimales): lo demás (un
+    /// nombre, «3*código», un código largo) va como siempre, como un escaneo. Un código corto («45») también: la venta lo busca
+    /// antes en la copia; «45*» siempre es la cantidad.
     /// </summary>
-    public static bool EsCantidad(string texto) =>
-        System.Text.RegularExpressions.Regex.IsMatch(texto.Trim(), @"^(\d{1,4}([.,]\d{1,3})?\*?)?$") && Cantidad(texto) is not null;
+    public static bool EsCantidad(string texto) => Cantidad(texto) is not null;
 }

@@ -1139,24 +1139,34 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     /// <summary>
     /// Lo último que contestó la caja principal de los exhibidores y las temporadas (al acomodar en Ctrl+M o al cambiarlos en la
-    /// Configuración): mientras sea tan nuevo como la copia, manda sobre ella. Así lo que se acaba de acomodar se ve igual al
-    /// volver a abrir Ctrl+M, sin esperar a que la copia se ponga al día (un segundo, con el aviso).
+    /// Configuración), con la base y la versión del catálogo de las que salió. Solo manda sobre una copia de su misma base y
+    /// mientras la copia no llegue a su versión: así lo que se acaba de acomodar se ve igual al volver a abrir Ctrl+M, sin
+    /// esperar a que la copia se ponga al día (un segundo, con el aviso). Al llegar la copia a esa versión, o con una copia de
+    /// otra base (la caja principal arrancó otra vez, empezó de cero o se restauró un respaldo: sus versiones quieren decir otra
+    /// cosa), se suelta y manda la copia.
     /// </summary>
     private MostradorDto? _mostradorReciente;
 
     /// <summary>
     /// Los exhibidores y las temporadas para Ctrl+M y el chip de la temporada, sin la red: los de la copia de esta caja (o lo
-    /// que acaba de contestar la caja principal, si es tan nuevo como ella). Vacío (null) sin una copia que los traiga (el
-    /// navegador sin base local, la caja recién instalada, o mientras se lee la copia al abrir): entonces se le pregunta a la
-    /// caja principal (<see cref="MostradorAsync"/>).
+    /// que acaba de contestar la caja principal, si es de la misma base y más nuevo que ella). Vacío (null) sin una copia que
+    /// los traiga (el navegador sin base local, la caja recién instalada, o mientras se lee la copia al abrir): entonces se le
+    /// pregunta a la caja principal (<see cref="MostradorAsync"/>), cada vez, para ver lo que se cambió en otra caja.
     /// </summary>
     public IReadOnlyList<ExhibidorDto>? ExhibidoresDeLaCopia()
     {
         // Sin esperar: mientras se lee la copia al abrir, como si no la hubiera.
         var copia = contingencia is { CopiaLeida.IsCompleted: true } ? contingencia.Paquete : null;
-        return _mostradorReciente is { } reciente && (copia?.Exhibidores is null || reciente.Version >= copia.Version)
-            ? reciente.Exhibidores
-            : copia?.Exhibidores;
+        if (copia?.Exhibidores is not { } deLaCopia)
+            return null;
+        if (_mostradorReciente is { } reciente)
+        {
+            if (reciente.Base is { } base_ && base_ == copia.Base && reciente.Version > copia.Version)
+                return reciente.Exhibidores;
+            // La copia ya trae lo que contestó, o es de otra base: manda la copia.
+            _mostradorReciente = null;
+        }
+        return deLaCopia;
     }
 
     /// <summary>
@@ -1167,7 +1177,7 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     {
         var mostrador = await ConRespaldoAsync(async () => (await _http.GetAsync<MostradorDto>("api/mostrador"))!,
             l => l.Paquete is { Exhibidores: { } exhibidores } copia
-                ? new MostradorDto(copia.Version, exhibidores)
+                ? new MostradorDto(copia.Version, exhibidores, copia.Base)
                 : throw new InvalidOperationException("Esta caja todavía no tiene el mostrador en su copia: se ve cuando vuelva la conexión."));
         return Recordar(mostrador);
     }
@@ -1202,9 +1212,10 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// <summary>Lo cambia la caja principal, con quien entró: sin conexión no se puede (se dice), y lo que contesta se recuerda.</summary>
     private async Task<MostradorDto> CambiarMostradorAsync(Func<Task<MostradorDto>> cambio) => Recordar(await ConRespaldoAsync(cambio));
 
+    /// <summary>Lo más nuevo que contestó; de otra base, lo último (su versión no se compara con la de antes).</summary>
     private MostradorDto Recordar(MostradorDto mostrador)
     {
-        if (_mostradorReciente is not { } antes || mostrador.Version >= antes.Version)
+        if (_mostradorReciente is not { } antes || antes.Base != mostrador.Base || mostrador.Version >= antes.Version)
             _mostradorReciente = mostrador;
         return mostrador;
     }
