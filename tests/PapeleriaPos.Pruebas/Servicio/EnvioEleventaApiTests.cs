@@ -323,6 +323,19 @@ public class EnvioEleventaApiTests
     private static async Task<HttpResponseMessage> AManoAsync(Caja c, Guid envio, SesionDto quien, string? nota = null) =>
         await c.Http.PostAsJsonAsync($"api/eleventa/envios/{envio}/a-mano", new SolicitudRevision(quien.UsuarioId, nota));
 
+    /// <summary>
+    /// Cobrar con la bandeja ocupada: el cobro no la espera ni la intenta mandar. Lo que nunca se intentó mandar se deja por
+    /// revisar (o se descarta) sin buscarlo en eleventa.
+    /// </summary>
+    private static async Task<TicketDto> CobrarSinIntentarAsync(ServicioDePrueba servicio, Caja c)
+    {
+        TicketDto ticket;
+        using (await servicio.Fabrica.Services.GetRequiredService<EnvioVentasEleventa>().CandadoAsync(CancellationToken.None))
+            ticket = await CobrarAsync(c);
+        Assert.Equal(0, (await EnviosAsync(c)).PorAtender.Single().Intentos);
+        return ticket;
+    }
+
     /// <summary>Dejar por revisar lo que no entra, como quien entró.</summary>
     private static async Task<HttpResponseMessage> PorRevisarAsync(Caja c, Guid envio, SesionDto quien, string? nota = null) =>
         await c.Http.PostAsJsonAsync($"api/eleventa/envios/{envio}/revisar", new SolicitudRevision(quien.UsuarioId, nota));
@@ -358,23 +371,47 @@ public class EnvioEleventaApiTests
     }
 
     [Fact]
-    public async Task Lo_cancelado_antes_de_llegar_a_eleventa_ya_no_se_manda()
+    public async Task Lo_cancelado_antes_de_intentar_mandarlo_ya_no_se_manda()
     {
+        // Sin eleventa al cobrar (nunca se intentó mandar), la venta y su cancelación se descartan sin buscarla allá: nunca
+        // salió.
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
         var c = await AbrirAsync(servicio);
         var encargado = await EncargadoAsync(c);
-        var ticket = await CobrarAsync(c);
-        Assert.Equal(1, (await EnviosAsync(c)).Pendientes);
+        // La bandeja está ocupada al cobrar: el cobro no la espera ni la intenta.
+        TicketDto ticket;
+        using (await servicio.Fabrica.Services.GetRequiredService<EnvioVentasEleventa>().CandadoAsync(CancellationToken.None))
+            ticket = await CobrarAsync(c);
+        Assert.Equal(0, (await EnviosAsync(c)).PorAtender.Single().Intentos);
 
         await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/cancelacion",
             new SolicitudCancelacion(encargado.UsuarioId, c.Datos.Id, "Se arrepintió")));
         var envios = await EsperarAsync(c, x => x.Pendientes == 0);
 
-        // La venta y su cancelación se descartan sin buscar a eleventa: allá nunca existió.
         Assert.Equal((0, 0), (envios.Pendientes, envios.PorRevisar));
-        await using var db = servicio.Base();
-        Assert.All(db.EnviosAEleventa.ToList(), x => Assert.Equal(EstadoEnvioEleventa.Descartada, x.Estado));
-        Assert.Equal([TipoEnvioEleventa.Venta, TipoEnvioEleventa.Cancelacion], db.EnviosAEleventa.Select(x => x.Tipo).AsEnumerable().Order());
+        await using var revision = servicio.Base();
+        Assert.All(revision.EnviosAEleventa.ToList(), x => Assert.Equal(EstadoEnvioEleventa.Descartada, x.Estado));
+        Assert.Equal([TipoEnvioEleventa.Venta, TipoEnvioEleventa.Cancelacion], revision.EnviosAEleventa.Select(x => x.Tipo).AsEnumerable().Order());
+    }
+
+    [Fact]
+    public async Task Lo_cancelado_despues_de_intentar_mandarlo_no_se_descarta_mientras_eleventa_no_conteste()
+    {
+        // Ya se intentó mandar: cualquier intento pudo dejarla allá (aunque el último ni se haya conectado). Sin eleventa no se
+        // sabe, y no se descarta: se queda pendiente, y su cancelación detrás.
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
+        var c = await AbrirAsync(servicio);
+        var encargado = await EncargadoAsync(c);
+        var ticket = await CobrarAsync(c);
+        Assert.Equal(1, (await EnviosAsync(c)).PorAtender.Single().Intentos);
+
+        await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/cancelacion",
+            new SolicitudCancelacion(encargado.UsuarioId, c.Datos.Id, "Se arrepintió")));
+        Assert.Equal(HttpStatusCode.Accepted, (await c.Http.PostAsync("api/eleventa/enviar", null)).StatusCode);
+        var envios = await EsperarAsync(c, x => x.PorAtender.Any(p => p.Tipo == TipoEnvioEleventa.Venta && p.Intentos >= 3));
+
+        Assert.Equal([(TipoEnvioEleventa.Venta, EstadoEnvioEleventa.Pendiente), (TipoEnvioEleventa.Cancelacion, EstadoEnvioEleventa.Pendiente)],
+            envios.PorAtender.Select(p => (p.Tipo, p.Estado)));
     }
 
     [Fact]
@@ -382,7 +419,7 @@ public class EnvioEleventaApiTests
     {
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
         var c = await AbrirAsync(servicio);
-        await CobrarAsync(c);
+        await CobrarSinIntentarAsync(servicio, c);
         var pendiente = (await EnviosAsync(c)).PorAtender.Single();
         var dueno = await DuenoAsync(c);
 
@@ -392,6 +429,23 @@ public class EnvioEleventaApiTests
         Assert.Equal((0, 1), (dejado.Pendientes, dejado.PorRevisar));
         Assert.StartsWith("Se dejó para revisar a mano.", dejado.PorAtender.Single().Error);
         Assert.Equal(HttpStatusCode.BadRequest, otraVez.StatusCode);
+    }
+
+    [Fact]
+    public async Task Sin_eleventa_no_se_deja_por_revisar_lo_que_ya_se_intento_mandar()
+    {
+        // Un intento pudo dejarla en eleventa aunque aquí no se supo: si se anotara a mano quedaría dos veces. Sin eleventa no
+        // se sabe, y no se deja por revisar.
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
+        var c = await AbrirAsync(servicio);
+        await CobrarAsync(c);
+        var pendiente = (await EnviosAsync(c)).PorAtender.Single();
+        Assert.True(pendiente.Intentos > 0);
+
+        var rechazo = await PilotoDePrueba.RechazoAsync(await PorRevisarAsync(c, pendiente.Id, await DuenoAsync(c)));
+
+        Assert.EndsWith(EnvioVentasEleventa.SinEleventaNoSeDeja, rechazo);
+        Assert.Equal(EstadoEnvioEleventa.Pendiente, (await EnviosAsync(c)).PorAtender.Single().Estado);
     }
 
     [Fact]
@@ -443,7 +497,7 @@ public class EnvioEleventaApiTests
     {
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
         var c = await AbrirAsync(servicio);
-        await CobrarAsync(c);
+        await CobrarSinIntentarAsync(servicio, c);
         var pendiente = (await EnviosAsync(c)).PorAtender.Single();
         // Se dejó por revisar; después alguien la registra en eleventa a mano mientras se lee eleventa.
         var dueno = await DuenoAsync(c);
@@ -494,7 +548,7 @@ public class EnvioEleventaApiTests
     {
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
         var c = await AbrirAsync(servicio);
-        var ticket = await CobrarAsync(c);
+        var ticket = await CobrarSinIntentarAsync(servicio, c);
         var pendiente = (await EnviosAsync(c)).PorAtender.Single();
         var desde = DateTime.UtcNow.AddSeconds(-1);
 

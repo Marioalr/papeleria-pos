@@ -100,6 +100,11 @@ public static class TicketsDeEleventa
         return abiertos is [var turno] ? turno : null;
     }
 
+    /// <summary>El turno de eleventa en que se cobró un ticket; vacío si ya no está o no tiene.</summary>
+    public static async Task<int?> TurnoDelTicketAsync(FbConnection c, FbTransaction tx, int ticket, CancellationToken ct = default) =>
+        (await LeerAsync(c, tx, $"SELECT TURNO_ID FROM VENTATICKETS WHERE ID = {ticket}", r => r.IsDBNull(0) ? (int?)null : Entero(r, 0), ct))
+        .FirstOrDefault();
+
     /// <summary>Las devoluciones y cancelaciones de esos tickets, con lo que se devolvió de cada artículo.</summary>
     public static async Task<List<DevolucionLeida>> DevolucionesAsync(FbConnection c, FbTransaction tx, IReadOnlyCollection<int> tickets, CancellationToken ct)
     {

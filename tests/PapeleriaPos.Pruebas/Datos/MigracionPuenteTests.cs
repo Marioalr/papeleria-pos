@@ -118,4 +118,57 @@ public class MigracionPuenteTests
 
         Assert.Equal([902], await db.Set<DevolucionDesdeEleventa>().AsNoTracking().Select(d => d.DevolucionEleventa).ToListAsync());
     }
+
+    [Fact]
+    public async Task Lo_de_eleventa_que_esperaba_la_pregunta_de_una_ya_anotada_a_mano_queda_ligado_con_ella()
+    {
+        await using var conexion = new SqliteConnection("Data Source=:memory:");
+        await conexion.OpenAsync();
+        await using var db = new PosDbContext(new DbContextOptionsBuilder<PosDbContext>().UseSqlite(conexion).Options);
+        var migrador = db.GetService<IMigrator>();
+        await migrador.MigrateAsync(Anterior);
+        var (sucursal, cajero, caja, turno, venta, anotada, esperando) = (Id(), Id(), Id(), Id(), Id(), Id(), Id());
+        const string Fecha = "'2026-10-16 12:00:00'";
+        foreach (var (sql, parametros) in new (string, object[])[]
+                 {
+                     ($"INSERT INTO Sucursales (Id, Clave, Nombre, Activa, Version, ModificadoUtc) VALUES ({{0}}, 'M', 'Matriz', 1, 1, {Fecha})", [sucursal]),
+                     ("INSERT INTO Usuarios (Id, Nombre, NombreUsuario, PinHash, Rol, SucursalId, Activo, IntentosFallidos, Version, ModificadoUtc) " +
+                      $"VALUES ({{0}}, 'Ana', 'ana', 'x', 'Cajero', {{1}}, 1, 0, 1, {Fecha})", [cajero, sucursal]),
+                     ($"INSERT INTO Cajas (Id, SucursalId, Nombre, Serie, EsPrincipal, Activa, Version, ModificadoUtc) VALUES ({{0}}, {{1}}, 'Caja 2', 'B', 0, 1, 1, {Fecha})",
+                         [caja, sucursal]),
+                     ($"INSERT INTO Turnos (Id, SucursalId, CajaId, CajeroId, AbiertoUtc, FondoCentavos) VALUES ({{0}}, {{1}}, {{2}}, {{3}}, {Fecha}, 30000)",
+                         [turno, sucursal, caja, cajero]),
+                     ("INSERT INTO Ventas (Id, CajaId, CajeroId, CreadaUtc, EnContingencia, Estado, Folio, IvaCentavos, PagadaUtc, Serie, " +
+                      $"SucursalId, TotalCentavos, TurnoId, RedondeoCentavos) VALUES ({{0}}, {{1}}, {{2}}, {Fecha}, 0, 'Pagada', 1, 0, {Fecha}, 'B', {{3}}, 2700, {{4}}, 0)",
+                         [venta, caja, cajero, sucursal, turno]),
+                 })
+            await db.Database.ExecuteSqlRawAsync(sql, parametros);
+        // Dos devoluciones de aquí: una ya marcada «Ya lo anoté en eleventa» (la anotó allá en dos partes) y otra que todavía
+        // espera su anotación a mano.
+        foreach (var (devolucion, estado) in new[] { (anotada, "AMano"), (esperando, "PorRevisar") })
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                "INSERT INTO Devoluciones (Id, AlCreditoCentavos, CajaId, EsCancelacion, FechaUtc, Motivo, RedondeoCentavos, ReembolsoEfectivoCentavos, " +
+                $"SucursalId, TotalCentavos, TurnoId, UsuarioId, VentaId) VALUES ({{0}}, 0, {{1}}, 0, {Fecha}, 'No pinta', 0, 1800, {{2}}, 1800, {{3}}, {{4}}, {{5}})",
+                devolucion, caja, sucursal, turno, cajero, venta);
+            await db.Database.ExecuteSqlRawAsync(
+                "INSERT INTO EnviosAEleventa (Id, Tipo, Estado, CreadoUtc, Intentos, FolioRepetido, DevolucionId, VentaId, PorRevisarPorque) " +
+                $"VALUES ({{0}}, 'Devolucion', {{1}}, {Fecha}, 1, 0, {{2}}, {{3}}, 'AnotarAMano')", Id(), estado, devolucion, venta);
+        }
+        // En eleventa: las dos partes de la anotada, y otra que esperaba la pregunta de la que todavía espera.
+        const string Columnas = "Id, Articulos, DevolucionEleventa, DevueltaUtc, EsCancelacion, Propia, TicketEleventa, TotalCentavos, VentaId, VistaUtc";
+        foreach (var (enEleventa, quizaEs) in new[] { (901, anotada), (902, anotada), (903, esperando) })
+            await db.Database.ExecuteSqlRawAsync(
+                $"INSERT INTO DevolucionesDesdeEleventa ({Columnas}, QuizaEsDevolucionId, PorRevisar) "
+                + "VALUES ({0}, '[]', {1}, '2026-10-16 18:00:00', 0, 0, 500, 900, {2}, '2026-10-16 18:05:00', {3}, 'Puede ser la de aquí')",
+                Id(), enEleventa, venta, quizaEs);
+
+        await migrador.MigrateAsync();
+
+        // Las dos partes quedan ligadas con la anotada (no se vuelven a pasar a la venta); la otra se quita y la lectura la
+        // vuelve a traer, para retenerla mientras la de aquí espere su anotación.
+        var quedan = await db.Set<DevolucionDesdeEleventa>().AsNoTracking().OrderBy(d => d.DevolucionEleventa).ToListAsync();
+        Assert.Equal([(901, true, (Guid?)Guid.Parse(anotada), (string?)null), (902, true, Guid.Parse(anotada), null)],
+            quedan.Select(d => (d.DevolucionEleventa, d.Propia, d.DevolucionId, d.PorRevisar)));
+    }
 }
