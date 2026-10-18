@@ -22,7 +22,17 @@ public sealed record CajaEnEleventa(int CajaId, int CajeroId, string? Ip = null,
     /// Solo del piloto (<see cref="RestauracionDeEleventa"/>).
     /// </summary>
     public HuellaDelPuente? Huella { get; init; }
+
+    /// <summary>
+    /// Si quien manda todavía espera esta escritura. Se pregunta justo antes de confirmarla en eleventa: si ya la dio por
+    /// perdida (tardó más de la cuenta y se dejó de esperar), se deshace en vez de confirmarse, para que no entre tarde,
+    /// cuando aquí ya se decidió sin ella (revisión del 2026-10-17). Vacía, se confirma siempre.
+    /// </summary>
+    public Func<bool>? SigueEsperando { get; init; }
 }
+
+/// <summary>Una escritura que quien la mandó ya dejó de esperar: se deshizo en vez de confirmarse (<see cref="CajaEnEleventa.SigueEsperando"/>).</summary>
+public sealed class EscrituraDejada() : InvalidOperationException("Se dejó de esperar esta escritura: se deshizo sin confirmarla en eleventa.");
 
 /// <summary>Una venta cobrada en efectivo, como la entiende eleventa.</summary>
 /// <param name="CreadaLocal">Cuándo se empezó en la caja nueva (hora local). También es su marca en eleventa: así no se manda dos veces.</param>
@@ -115,6 +125,39 @@ public static partial class EnvioEleventa
             [("caja", caja.CajaId), ("creada", creada)]);
         await tx.CommitAsync(ct);
         return ya is null ? null : new VentaEnEleventa(Convert.ToInt32(ya[0]), Convert.ToInt32(ya[1]), YaEstaba: true, FolioRepetido: false);
+    }
+
+    /// <summary>
+    /// Una devolución o cancelación que escribió la caja 2 (la de una venta suya o la de un ticket de eleventa), por su marca
+    /// (<c>TICKET_ID</c> + <c>DEVUELTO_EN</c>, la hora en que se hizo aquí), sin escribir nada. Vacía si no está.
+    /// </summary>
+    public static async Task<int?> BuscarDevolucionAsync(ServidorEleventa servidor, int ticket, DateTime devueltaLocal, CancellationToken ct = default)
+    {
+        var devuelta = new DateTime(devueltaLocal.Ticks - devueltaLocal.Ticks % 1000);
+        return await BuscarAsync(servidor, "SELECT ID FROM DEVOLUCIONES WHERE TICKET_ID = @ticket AND DEVUELTO_EN = @devuelta",
+            [("ticket", ticket), ("devuelta", devuelta)], ct);
+    }
+
+    /// <summary>Una entrada o salida de efectivo que escribió la caja 2, por su marca (la caja, el tipo y la hora), sin escribir nada. Vacía si no está.</summary>
+    public static async Task<int?> BuscarMovimientoAsync(ServidorEleventa servidor, CajaEnEleventa caja, bool esEntrada, DateTime hechaLocal,
+        CancellationToken ct = default)
+    {
+        var cuando = new DateTime(hechaLocal.Ticks - hechaLocal.Ticks % 1000);
+        return await BuscarAsync(servidor, "SELECT ID FROM CORTE_MOVIMIENTOS WHERE ID_CAJA = @caja AND TIPO = @tipo AND CUANDO_FUE = @cuando",
+            [("caja", caja.CajaId), ("tipo", esEntrada ? "Entrada" : "Salida"), ("cuando", cuando)], ct);
+    }
+
+    private static async Task<int?> BuscarAsync(ServidorEleventa servidor, string consulta, (string Nombre, object? Valor)[] parametros, CancellationToken ct)
+    {
+        await using var conexion = new FbConnection(servidor.Cadena());
+        await conexion.OpenAsync(ct);
+        await using var tx = await conexion.BeginTransactionAsync(new FbTransactionOptions
+        {
+            TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.ReadCommitted | FbTransactionBehavior.RecVersion | FbTransactionBehavior.NoWait,
+        }, ct);
+        var id = await new Sql(conexion, tx, ct).ValorAsync(consulta, parametros);
+        await tx.CommitAsync(ct);
+        return id is null ? null : Convert.ToInt32(id);
     }
 
     /// <summary>
@@ -215,6 +258,7 @@ public static partial class EnvioEleventa
             await SumarPorDepartamentoAsync(sql, "CORTE_VENTAS_DEPTO_OPERACIONES", "ID_OPERACION", dia, depto.Key, ventas, ganancias);
         }
 
+        SigueEsperando(caja);
         await tx.CommitAsync(ct);
 
         // Eleventa toma el folio como el último más uno, sin candado: si otra caja cobró en el mismo instante, se repite. Este
@@ -476,6 +520,13 @@ public static partial class EnvioEleventa
     /// Antes de escribir, en la misma transacción: si eleventa ya no tiene lo último que escribió el puente (se restauró un
     /// respaldo), no se escribe nada (<see cref="EleventaRestaurada"/>).
     /// </summary>
+    /// <summary>Justo antes de confirmar: si quien la manda ya no la espera, se deshace (<see cref="CajaEnEleventa.SigueEsperando"/>).</summary>
+    private static void SigueEsperando(CajaEnEleventa caja)
+    {
+        if (caja.SigueEsperando?.Invoke() == false)
+            throw new EscrituraDejada();
+    }
+
     private static async Task RevisarHuellaAsync(FbConnection c, FbTransaction tx, CajaEnEleventa caja, CancellationToken ct)
     {
         if (caja.Huella is { } huella && await RestauracionDeEleventa.RevisarAsync(c, tx, huella, ct) is { } restauracion)

@@ -313,6 +313,17 @@ public static class ApiEleventa
             return Results.Ok(await envios.EstadoAsync(db));
         });
 
+        // La salida cuando la anotación a mano de una devolución de aquí no cuadra con nada que se pueda elegir: ya se resolvió
+        // a mano en eleventa. Lo que eleventa devolvió de ese ticket se pasa a la venta en la siguiente lectura, que se pide ya.
+        // Con «Configuración de la tienda»; queda en la bitácora.
+        api.MapPost("/envios/{id:guid}/resuelta", async (Guid id, SolicitudRevision s, EnvioVentasEleventa envios, PosDbContext db, LecturaEleventa lectura) =>
+        {
+            if (!await envios.ResolverAManoAsync(db, id, s))
+                return Results.BadRequest(new ErrorDto("Solo se resuelve a mano una devolución de aquí que espera su anotación en eleventa."));
+            lectura.LeerAhora();
+            return Results.Ok(await envios.EstadoAsync(db));
+        });
+
         // Las devoluciones de eleventa que pueden ser la anotación a mano de una devolución de aquí, leídas en vivo: para elegir
         // la suya al marcarla «Ya lo anoté en eleventa».
         api.MapGet("/envios/{id:guid}/anotaciones", async (Guid id, EnvioVentasEleventa envios, PosDbContext db) => await envios.AnotacionesAsync(db, id));

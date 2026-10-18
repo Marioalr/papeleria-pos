@@ -25,10 +25,11 @@ public static class ApiDevoluciones
             var venta = await new RegistroDevoluciones(db).PorFolioAsync(sucursalId, folio);
             if (venta is null)
                 return Results.NotFound(new ErrorDto($"No existe el ticket «{folio}»."));
+            string? deOtroTurno = null;
             if (eleventa.CorteEnEleventa)
             {
                 // Lo que se le devolvió en eleventa entra antes, y la venta se vuelve a leer: pudo cambiar.
-                await RevisarEnEleventaAsync(db, venta.Id, eleventa, envios, soloRevisar: true);
+                deOtroTurno = await RevisarEnEleventaAsync(db, venta.Id, eleventa, envios, soloRevisar: true);
                 venta = await new RegistroDevoluciones(db).PorFolioAsync(sucursalId, folio) ?? venta;
             }
             var ahora = db.Reloj.GetUtcNow().UtcDateTime;
@@ -40,8 +41,8 @@ public static class ApiDevoluciones
                 ? await SoloEfectivoEnElPiloto.PorQueNoSeDevuelveAsync(db, venta.Id) ?? await DevolucionesConEleventa.PorQueNoSeDevuelveAsync(db, venta.Id)
                 : null;
             // Cancelada o vencida, la ventana ya lo dice.
-            if (noSeDevuelve is null && eleventa.CorteEnEleventa && venta.Estado == EstadoVenta.Pagada && dias > 0)
-                noSeDevuelve = await DevolucionesConEleventa.DeOtroTurnoAsync(db, venta.Id);
+            if (noSeDevuelve is null && venta.Estado == EstadoVenta.Pagada && dias > 0)
+                noSeDevuelve = deOtroTurno;
             return Results.Ok(new VentaParaDevolverDto(venta.Id, venta.FolioTexto!, HoraMexico.ALocal(venta.PagadaUtc.Value), venta.Estado, venta.TotalCentavos,
                 venta.Lineas.Select(l => new LineaDevolucionDto(l.Id, l.Descripcion, l.Cantidad.Milesimas, l.CantidadDevuelta.Milesimas, l.ImporteCentavos, l.LlevaInventario)).ToList(),
                 seCancela && venta.Estado == EstadoVenta.Pagada, Math.Max(0, dias), venta.CreditoCentavos, cliente, noSeDevuelve));
@@ -114,19 +115,26 @@ public static class ApiDevoluciones
     /// eleventa), también.
     /// </summary>
     /// <param name="soloRevisar">Al buscar el ticket: la ventana lo enseña con el porqué (<c>NoSeDevuelveEnElPiloto</c>).</param>
-    private static async Task RevisarEnEleventaAsync(PosDbContext db, Guid ventaId, OpcionesEleventa opciones, EnvioVentasEleventa envios, bool soloRevisar = false)
+    /// <returns>Si es de otro turno de eleventa, por qué (<see cref="DevolucionesConEleventa.DeOtroTurno"/>).</returns>
+    private static async Task<string?> RevisarEnEleventaAsync(PosDbContext db, Guid ventaId, OpcionesEleventa opciones, EnvioVentasEleventa envios,
+        bool soloRevisar = false)
     {
         if (!opciones.CorteEnEleventa || opciones.ParaEscribir() is not { } destino)
-            return;
+            return null;
         // Con el puente detenido (eleventa se restauró) sus números ya no dicen qué es de quién: se deja pasar.
+        DevolucionesConEleventa.VistaEnVivo? vista = null;
         using (var candado = await RestauracionDeEleventa.DetencionAsync(db) is null ? await envios.IntentarCandadoAsync(DevolucionesConEleventa.EsperaEnVivo) : null)
         {
             if (candado is not null)
-                await DevolucionesConEleventa.RevisarEnVivoAsync(db, destino.Servidor, ventaId, db.Reloj.GetUtcNow().UtcDateTime);
+                vista = await DevolucionesConEleventa.RevisarEnVivoAsync(db, destino.Servidor, ventaId, db.Reloj.GetUtcNow().UtcDateTime, destino.Caja.CajaId);
         }
-        if (!soloRevisar && (await DevolucionesConEleventa.PorQueNoSeDevuelveAsync(db, ventaId) ?? await DevolucionesConEleventa.DeOtroTurnoAsync(db, ventaId))
-                is { } porque)
+        // De otro turno de eleventa: lo dice eleventa en vivo; sin él, el turno de la venta aquí (cuarta revisión).
+        var deOtroTurno = vista is { } vistaEnVivo
+            ? vistaEnVivo.DelTurno ? null : DevolucionesConEleventa.DeOtroTurno
+            : await DevolucionesConEleventa.DeOtroTurnoAsync(db, ventaId);
+        if (!soloRevisar && (await DevolucionesConEleventa.PorQueNoSeDevuelveAsync(db, ventaId) ?? deOtroTurno) is { } porque)
             throw new InvalidOperationException(porque);
+        return deOtroTurno;
     }
 
     private static async Task<ComprobanteDevolucionDto> ComprobanteAsync(PosDbContext db, Devolucion d, OpcionesTicket opciones)

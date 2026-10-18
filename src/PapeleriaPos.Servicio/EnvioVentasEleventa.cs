@@ -143,20 +143,103 @@ public sealed class EnvioVentasEleventa(
     /// pasar. Si ya se corrigió a mano en eleventa, va <see cref="AnotarAManoAsync"/>: mientras quede por revisar, la
     /// lectura de eleventa lo sigue descontando de la existencia. Lo deja quien entró con «Configuración de la tienda»,
     /// como anotarlo a mano, y queda en la bitácora.
+    /// <para>
+    /// Con el candado de la bandeja (que no se esté mandando en ese momento) y, si ya se intentó mandar, buscándolo antes en
+    /// eleventa por su marca (cuarta revisión, 2026-10-17): un intento que se cortó pudo dejarlo allá aunque aquí no se
+    /// supo, y si se anotara a mano quedaría dos veces. Si está, queda como enviado; sin eleventa no se sabe, y no se deja.
+    /// </para>
     /// </summary>
     public async Task<bool> DejarPorRevisarAsync(PosDbContext db, Guid id, SolicitudRevision s)
     {
         if (await db.EnviosAEleventa.FindAsync(id) is not { Estado: EstadoEnvioEleventa.Pendiente } envio)
             return false;
         var control = await ConPermisoAsync(db, envio, s);
+        using var candado = await IntentarCandadoAsync(opciones.EsperaMaxima * 2) ?? throw new InvalidOperationException(BandejaMandando);
+        await db.Entry(envio).ReloadAsync();
+        if (envio.Estado != EstadoEnvioEleventa.Pendiente)
+            return false;
         var dejado = (await EstadoAsync(db)).PorAtender.FirstOrDefault(e => e.Id == id);
-        envio.Estado = EstadoEnvioEleventa.PorRevisar;
-        envio.Error = Recortar($"Se dejó para revisar a mano. {envio.Error}".Trim());
-        (envio.PorRevisarPorque, envio.PorRevisarUtc) = (MotivoPorRevisar.AnotarAMano, reloj.GetUtcNow().UtcDateTime);
-        control.Anotar($"Dejó por revisar lo que no pasa solo a eleventa: {dejado?.Descripcion ?? envio.Tipo.ToString()}", dejado?.TotalCentavos);
+        YaEnEleventa? yaEstaba = null;
+        if (envio.Intentos > 0)
+        {
+            try
+            {
+                yaEstaba = await YaEstaEnEleventaAsync(db, envio);
+            }
+            catch (Exception ex) when (EsDeRed(ex) || ex is FbException)
+            {
+                throw new InvalidOperationException($"{LectorEleventa.Explicar(ex, _destino!.Value.Servidor)} {SinEleventaNoSeDeja}");
+            }
+        }
+        if (yaEstaba is { } ya)
+        {
+            (envio.Estado, envio.EnviadaUtc, envio.Error) = (EstadoEnvioEleventa.Enviada, reloj.GetUtcNow().UtcDateTime, null);
+            (envio.TicketEleventa, envio.FolioEleventa, envio.IdEleventa) =
+                (envio.TicketEleventa ?? ya.TicketEleventa, envio.FolioEleventa ?? ya.FolioEleventa, envio.IdEleventa ?? ya.IdEleventa);
+            control.Anotar($"Iba a dejar por revisar {dejado?.Descripcion ?? envio.Tipo.ToString()}, pero ya estaba en eleventa: quedó como enviado",
+                dejado?.TotalCentavos);
+        }
+        else
+        {
+            envio.Estado = EstadoEnvioEleventa.PorRevisar;
+            envio.Error = Recortar($"Se dejó para revisar a mano. {envio.Error}".Trim());
+            (envio.PorRevisarPorque, envio.PorRevisarUtc) = (MotivoPorRevisar.AnotarAMano, reloj.GetUtcNow().UtcDateTime);
+            control.Anotar($"Dejó por revisar lo que no pasa solo a eleventa: {dejado?.Descripcion ?? envio.Tipo.ToString()}", dejado?.TotalCentavos);
+        }
         await db.SaveChangesAsync();
         Despertar();
         return true;
+    }
+
+    public const string BandejaMandando = "La bandeja está mandando a eleventa en este momento: vuelve a intentarlo en un momento.";
+
+    public const string SinEleventaNoSeDeja = "Sin eleventa no se sabe si ya llegó (un intento pudo dejarlo allá): déjalo por revisar cuando conteste.";
+
+    /// <summary>Lo que ya dejó en eleventa un intento de algo de la bandeja: su ticket y folio (una venta) o su número (lo demás).</summary>
+    private sealed record YaEnEleventa(int? TicketEleventa, int? FolioEleventa, int? IdEleventa);
+
+    /// <summary>
+    /// Si algo de la bandeja ya está en eleventa aunque aquí no se supo (un intento que se cortó después de que eleventa lo
+    /// guardó), por su marca, en vivo y sin escribir nada. Vacío si no está; error si eleventa no contesta a tiempo.
+    /// </summary>
+    private async Task<YaEnEleventa?> YaEstaEnEleventaAsync(PosDbContext db, EnvioAEleventa envio)
+    {
+        var (servidor, caja) = _destino ?? throw new InvalidOperationException("Esta caja no manda a eleventa.");
+        var nunca = FirebirdSinCancelar.Nunca;
+        switch (envio.Tipo)
+        {
+            case TipoEnvioEleventa.Venta:
+                var creada = await db.Ventas.AsNoTracking().Where(v => v.Id == envio.VentaId).Select(v => v.CreadaUtc).SingleAsync();
+                return await EnvioEleventa.BuscarVentaAsync(servidor, caja, HoraMexico.ALocal(creada), nunca).WaitAsync(opciones.EsperaMaxima) is { } venta
+                    ? new YaEnEleventa(venta.TicketId, venta.Folio, null)
+                    : null;
+            case TipoEnvioEleventa.Devolucion or TipoEnvioEleventa.Cancelacion:
+                // Si su venta no está allá, tampoco su devolución.
+                if (await db.EnviosAEleventa.AsNoTracking()
+                        .Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == envio.VentaId && e.Estado == EstadoEnvioEleventa.Enviada && e.TicketEleventa != null)
+                        .Select(e => e.TicketEleventa).FirstOrDefaultAsync() is not { } ticket)
+                    return null;
+                var hecha = await db.Devoluciones.AsNoTracking().Where(d => d.Id == envio.DevolucionId).Select(d => d.FechaUtc).SingleAsync();
+                return await EnvioEleventa.BuscarDevolucionAsync(servidor, ticket, HoraMexico.ALocal(hecha), nunca).WaitAsync(opciones.EsperaMaxima) is { } devolucion
+                    ? new YaEnEleventa(null, null, devolucion)
+                    : null;
+            case TipoEnvioEleventa.DevolucionDeEleventa:
+                var ida = await db.Set<DevolucionDeEleventa>().AsNoTracking().Where(d => d.Id == envio.DevolucionDeEleventaId)
+                    .Select(d => new { d.TicketEleventa, d.FechaUtc }).SingleAsync();
+                return await EnvioEleventa.BuscarDevolucionAsync(servidor, ida.TicketEleventa, HoraMexico.ALocal(ida.FechaUtc), nunca).WaitAsync(opciones.EsperaMaxima)
+                    is { } deLaIda
+                    ? new YaEnEleventa(null, null, deLaIda)
+                    : null;
+            case TipoEnvioEleventa.MovimientoDeCaja:
+                var movimiento = await db.MovimientosCaja.AsNoTracking().Where(m => m.Id == envio.MovimientoId)
+                    .Select(m => new { m.Tipo, m.FechaUtc }).SingleAsync();
+                return await EnvioEleventa.BuscarMovimientoAsync(servidor, caja, movimiento.Tipo == Nucleo.Turnos.TipoMovimientoCaja.Entrada,
+                    HoraMexico.ALocal(movimiento.FechaUtc), nunca).WaitAsync(opciones.EsperaMaxima) is { } enCaja
+                    ? new YaEnEleventa(null, null, enCaja)
+                    : null;
+            default:
+                return null;
+        }
     }
 
     /// <summary>
@@ -181,14 +264,24 @@ public sealed class EnvioVentasEleventa(
             throw new InvalidOperationException(DevolucionesConEleventa.PrimeroPorRevisar);
         if (await DevolucionesConEleventa.PorAnotarAsync(db, envio) is { } porAnotar)
         {
-            if (s.Anotaciones is not { Count: > 0 } elegidas)
-                throw new InvalidOperationException(DevolucionesConEleventa.DiCualEs);
             var leidas = await DevolucionesConEleventa.AnotacionesEnVivoAsync(db, Servidor(), porAnotar)
                 ?? throw new InvalidOperationException(DevolucionesConEleventa.NoContestaParaElegir);
-            var tomadas = leidas.Where(l => elegidas.Contains(l.Id)).ToList();
+            // Llegó sola a eleventa (allá está con su marca): queda como enviada, no hay nada que anotar.
+            if (leidas.Suya is { } suya)
+            {
+                await DevolucionesConEleventa.DarPorEnviadaAsync(db, envio.DevolucionId!.Value, suya.Id, reloj.GetUtcNow().UtcDateTime);
+                control.Anotar($"Iba a marcar como anotado a mano {anotado?.Descripcion ?? envio.Tipo.ToString()}, pero llegó sola a eleventa: quedó como enviado",
+                    anotado?.TotalCentavos);
+                await db.SaveChangesAsync();
+                Despertar();
+                return true;
+            }
+            if (s.Anotaciones is not { Count: > 0 } elegidas)
+                throw new InvalidOperationException(DevolucionesConEleventa.DiCualEs);
+            var tomadas = leidas.Candidatas.Where(l => elegidas.Contains(l.Id)).ToList();
             if (tomadas.Count != elegidas.Distinct().Count())
                 throw new InvalidOperationException(DevolucionesConEleventa.YaNoSeElige);
-            if (DevolucionesConEleventa.PorQueNoEs(porAnotar.Armada, tomadas) is { } porque)
+            if (await DevolucionesConEleventa.PorQueNoEsAsync(db, porAnotar, tomadas) is { } porque)
                 throw new InvalidOperationException(porque);
             DevolucionesConEleventa.Ligar(db, porAnotar, tomadas, reloj.GetUtcNow().UtcDateTime);
             anotacion = $" (en eleventa: {string.Join(", ", tomadas.Select(t => $"{(t.EsCancelacion ? "cancelación" : "devolución")} #{t.Id} del {t.DevueltoEn:dd/MM HH:mm}"))})";
@@ -199,6 +292,55 @@ public sealed class EnvioVentasEleventa(
         // Antes de guardarlo: una lectura de eleventa a medias no sabe si lo leyó antes o después de que se registrara allá.
         EnCurso.AnotadoAMano(envio.Id);
         await db.SaveChangesAsync();
+        if (anotacion.Length > 0)
+            await PasarLoRetenidoAsync(db, envio.VentaId!.Value);
+        Despertar();
+        return true;
+    }
+
+    /// <summary>
+    /// Ya no espera nada de ese ticket (se eligió su anotación o se resolvió a mano): lo que eleventa le devolvió y la vuelta
+    /// retenía se pasa ya a la venta, leído en vivo y con el candado de la bandeja, sin esperar la siguiente lectura (que,
+    /// en un ticket de hace más de 31 días, ya no lo leería). Si eleventa no contesta o la bandeja está ocupada, lo pasa la
+    /// siguiente lectura.
+    /// </summary>
+    private async Task PasarLoRetenidoAsync(PosDbContext db, Guid ventaId)
+    {
+        if (_destino is not { } destino)
+            return;
+        using var candado = await IntentarCandadoAsync(DevolucionesConEleventa.EsperaEnVivo);
+        if (candado is null)
+            return;
+        try
+        {
+            await DevolucionesConEleventa.RevisarEnVivoAsync(db, destino.Servidor, ventaId, reloj.GetUtcNow().UtcDateTime);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            log.LogWarning(ex, "No se pudo pasar lo que eleventa devolvió de la venta {Venta}: lo pasa la siguiente lectura.", ventaId);
+        }
+    }
+
+    /// <summary>
+    /// «Resolverlo a mano»: la salida cuando la anotación a mano de una devolución de aquí no cuadra con nada que se pueda
+    /// elegir (dos de aquí anotadas en una sola allá, más o menos artículos, una cancelación anotada como devolución…; cuarta
+    /// revisión, 2026-10-17). Quien tiene «Configuración de la tienda» dice que ya lo resolvió en eleventa: la de aquí queda
+    /// anotada a mano sin ligarse con nada, y lo que eleventa devolvió de ese ticket deja de esperar y se pasa a la venta como
+    /// cualquier otra devolución de allá (o queda por revisar, si aquí ya no alcanza). Desde ahí la existencia sigue a
+    /// eleventa. Queda en la bitácora, con su nota.
+    /// </summary>
+    public async Task<bool> ResolverAManoAsync(PosDbContext db, Guid id, SolicitudRevision s)
+    {
+        if (await db.EnviosAEleventa.FindAsync(id) is not { } envio || await DevolucionesConEleventa.PorAnotarAsync(db, envio) is null)
+            return false;
+        var control = await ConPermisoAsync(db, envio, s);
+        var resuelto = (await EstadoAsync(db)).PorAtender.FirstOrDefault(e => e.Id == id);
+        envio.Estado = EstadoEnvioEleventa.AMano;
+        envio.Error = Recortar($"{DevolucionesConEleventa.ResueltaAMano} {envio.Error}".Trim());
+        control.Anotar($"Resolvió a mano en eleventa, sin elegir su anotación: {resuelto?.Descripcion ?? envio.Tipo.ToString()}", resuelto?.TotalCentavos);
+        EnCurso.AnotadoAMano(envio.Id);
+        await db.SaveChangesAsync();
+        await PasarLoRetenidoAsync(db, envio.VentaId!.Value);
         Despertar();
         return true;
     }
@@ -214,7 +356,14 @@ public sealed class EnvioVentasEleventa(
         var porAnotar = await DevolucionesConEleventa.PorAnotarAsync(db, envio) ?? throw new InvalidOperationException(DevolucionesConEleventa.NoSeElige);
         var leidas = await DevolucionesConEleventa.AnotacionesEnVivoAsync(db, Servidor(), porAnotar)
             ?? throw new InvalidOperationException(DevolucionesConEleventa.NoContestaParaElegir);
-        return leidas.Select(DevolucionesConEleventa.ComoAnotacion).ToList();
+        // Llegó sola a eleventa (allá está con su marca): se corrige aquí (queda como enviada) y no hay nada que elegir.
+        if (leidas.Suya is { } suya)
+        {
+            await DevolucionesConEleventa.DarPorEnviadaAsync(db, porAnotar.Envio.DevolucionId!.Value, suya.Id, reloj.GetUtcNow().UtcDateTime);
+            await db.SaveChangesAsync();
+            throw new InvalidOperationException(DevolucionesConEleventa.LlegoSola);
+        }
+        return leidas.Candidatas.Select(DevolucionesConEleventa.ComoAnotacion).ToList();
     }
 
     private ServidorEleventa Servidor() => _destino?.Servidor ?? throw new InvalidOperationException("Esta caja no manda a eleventa.");
@@ -471,17 +620,21 @@ public sealed class EnvioVentasEleventa(
         // La escritura va sin cancelación: con Firebird 2.0 cancelar truena el servicio (FirebirdSinCancelar). Si tarda más de
         // la cuenta se deja de esperar, y lo que alcance a guardar lo encuentra la marca en el siguiente intento.
         var escritura = FirebirdSinCancelar.Nunca;
+        // Si este intento ya se dio por perdido: lo que se dejó de esperar no empieza a escribir si conecta tarde, y lo que
+        // llega a confirmar tarde se deshace (revisión del 2026-10-17): si no, entraría cuando aquí ya se decidió sin ella.
+        var perdido = 0;
         // Lo último que escribió el puente: si eleventa ya no lo tiene (se restauró un respaldo), no se escribe nada.
-        caja = caja with { Huella = await RestauracionDeEleventa.HuellaAsync(db, reloj.GetUtcNow().UtcDateTime, RestauracionDeEleventa.AlEscribir, ct) };
+        caja = caja with
+        {
+            Huella = await RestauracionDeEleventa.HuellaAsync(db, reloj.GetUtcNow().UtcDateTime, RestauracionDeEleventa.AlEscribir, ct),
+            SigueEsperando = () => Volatile.Read(ref perdido) == 0,
+        };
         // Escribe en eleventa y dice en qué turno de eleventa quedó (vacío si ya estaba): el turno de la caja nueva lo adopta.
         Func<Task<TurnoDeEleventa?>>? escribir = null;
         string? porRevisar = null;
         var descartada = false;
         // Una venta cancelada aquí que, al buscarla en eleventa, no estaba: se descarta.
         var noLlego = false;
-        // Si la venta alcanzó a conectarse con eleventa (desde ahí, si falla, no se sabe si quedó allá), y si este intento ya se
-        // dio por perdido: lo que se dejó de esperar no empieza a escribir si conecta tarde. Con Interlocked: los dos lados se ven.
-        int conectada = 0, perdido = 0;
         // Si este intento solo busca en eleventa la venta que se canceló aquí: lo que le pase no dice nada del intento anterior.
         var buscando = false;
         switch (envio.Tipo)
@@ -489,12 +642,13 @@ public sealed class EnvioVentasEleventa(
             case TipoEnvioEleventa.Venta:
                 var venta = await VentasParaEleventa.ArmarAsync(db, envio.VentaId!.Value, ct);
                 (porRevisar, descartada) = (venta.PorRevisar, venta.Descartada);
-                if (venta.Descartada && envio.Intentos > 0 && !EnCurso.NoEstaAlla(envio.Id))
+                if (venta.Descartada && envio.Intentos > 0)
                 {
-                    // Se canceló aquí después de un intento de mandarla del que no se sabe cómo terminó (se cortó por tiempo o
-                    // por la red, quizá después de que eleventa la guardó; revisión del 2026-10-17): antes de descartarla se busca
-                    // allá por su marca. Si está, queda como enviada y su cancelación va detrás, como la de cualquier venta que
-                    // ya llegó; descartada, eleventa la seguiría teniendo como vendida y la lectura no lo sabría.
+                    // Se canceló aquí después de algún intento de mandarla: cualquiera pudo dejarla en eleventa (se cortó por
+                    // tiempo o por la red después de que eleventa la guardó), aunque el último ni se haya conectado (revisiones
+                    // del 2026-10-17). Antes de descartarla se busca allá por su marca; si eleventa no contesta, no se sabe y
+                    // espera. Si está, queda como enviada y su cancelación va detrás, como la de cualquier venta que ya llegó;
+                    // descartada, eleventa la seguiría teniendo como vendida y la lectura no lo sabría.
                     var creada = HoraMexico.ALocal(await db.Ventas.AsNoTracking().Where(v => v.Id == envio.VentaId).Select(v => v.CreadaUtc).SingleAsync(ct));
                     buscando = true;
                     escribir = async () =>
@@ -511,7 +665,6 @@ public sealed class EnvioVentasEleventa(
                     {
                         await using var conexion = new FbConnection(servidor.Cadena());
                         await conexion.OpenAsync(escritura);
-                        Interlocked.Exchange(ref conectada, 1);
                         if (Volatile.Read(ref perdido) == 1)
                             return null;
                         var r = await EnvioEleventa.MandarAsync(conexion, caja, paraEleventa, escritura);
@@ -600,7 +753,8 @@ public sealed class EnvioVentasEleventa(
         try
         {
             // Con un límite: una llamada que se queda colgada se deja de esperar y se toma como falla de red (se reintenta y no
-            // detiene la bandeja). Si alcanzó a entrar, la marca la encuentra en el siguiente intento.
+            // detiene la bandeja). Si sigue y llega a confirmar, se deshace (SigueEsperando); si ya había confirmado, la marca la
+            // encuentra en el siguiente intento.
             deEleventa = await escribir().WaitAsync(opciones.EsperaMaxima, ct);
             if (noLlego)
                 (envio.Estado, envio.Error) = (EstadoEnvioEleventa.Descartada, porRevisar);
@@ -636,12 +790,15 @@ public sealed class EnvioVentasEleventa(
             await DetenerAsync(db, ex.Restauracion, CancellationToken.None);
             log.LogError("El puente con eleventa se detuvo: {Motivo}", ex.Message);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            Interlocked.Exchange(ref perdido, 1);
-            // Una venta que ni siquiera se conectó con eleventa no está allá: si se cancela aquí, se descarta sin buscarla.
-            if (envio.Tipo == TipoEnvioEleventa.Venta && !buscando && Volatile.Read(ref conectada) == 0)
-                EnCurso.SinSalir(envio.Id);
+            // Se apaga el servicio: lo que siga en camino ya no se confirma.
+            Volatile.Write(ref perdido, 1);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Volatile.Write(ref perdido, 1);
             envio.Error = _ultimoError = Recortar(LectorEleventa.Explicar(ex, servidor));
             // Si no fue la red, eleventa contestó que no y deshizo lo que llevaba: no está allá, y la lectura ya lo puede
             // descontar. De lo que se cortó por la red o por tiempo (o a medias) no se sabe. Tampoco de un choque de candados:

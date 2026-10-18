@@ -65,6 +65,7 @@ public static partial class EnvioEleventa
         var id = await AnotarEntradaOSalidaAsync(sql, caja.CajaId, turno.Id, m.EsEntrada, m.Monto,
             motivo.Length > 0 ? motivo : m.EsEntrada ? "Entrada de efectivo" : "Salida de efectivo", cuando);
 
+        SigueEsperando(caja);
         await tx.CommitAsync(ct);
         return new MovimientoEnEleventa(id, YaEstaba: false, turno);
     }
