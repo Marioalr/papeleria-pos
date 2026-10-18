@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
@@ -163,6 +164,55 @@ public sealed class FotosApiTests(ServicioDePrueba servicio) : IClassFixture<Ser
             new SolicitudFoto(c.Encargado.UsuarioId, c.Datos.SucursalId, "no-es-base64!"))).StatusCode);
         await using var db = servicio.Base();
         Assert.False(await db.FotosProducto.AnyAsync(f => f.VarianteId == producto.VarianteId));
+    }
+
+    /// <summary>
+    /// Lo que se lee completo y dice medir de más (como el PNG de la revisión, que ocupaba 900 MB) se rechaza antes de leerlo, y no
+    /// se guarda nada.
+    /// </summary>
+    [Fact]
+    public async Task Una_imagen_que_dice_medir_de_mas_se_rechaza_sin_leerla()
+    {
+        var c = await CajaAsync();
+        var producto = (await ProductosAsync(c, 17, 1))[0];
+
+        var respuesta = await SubirAsync(c, producto.VarianteId, ImagenesDePrueba.PngQueDiceMedir(10_000, 9_999));
+
+        Assert.Equal(HttpStatusCode.BadRequest, respuesta.StatusCode);
+        Assert.Contains("se lee completa", (await respuesta.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
+        await using var db = servicio.Base();
+        Assert.False(await db.FotosProducto.AnyAsync(f => f.VarianteId == producto.VarianteId));
+    }
+
+    /// <summary>
+    /// Las fotos se preparan de una en una (revisión de la entrega 13): si llegan tres a la vez (dos celulares y la PC), las otras
+    /// esperan su turno y nunca se leen dos juntas; las tres quedan.
+    /// </summary>
+    [Fact]
+    public async Task Las_fotos_se_preparan_de_una_en_una()
+    {
+        var c = await CajaAsync();
+        var productos = await ProductosAsync(c, 20, 3);
+        var preparacion = servicio.Fabrica.Services.GetRequiredService<PapeleriaPos.Servicio.PreparacionDeFotos>();
+        var primera = 0;
+        // La primera, ya con su turno, espera a que las otras dos estén formadas: así llegan a la vez de verdad.
+        preparacion.AlEmpezar = async () =>
+        {
+            if (Interlocked.Exchange(ref primera, 1) == 0)
+                await PapeleriaPos.Pruebas.Interfaz.VentaConCopia.EsperarAsync(() => preparacion.Esperando == 2, "las otras dos en la fila");
+        };
+        try
+        {
+            var respuestas = await Task.WhenAll(productos.Select((p, i) => SubirAsync(c, p.VarianteId, ImagenesDePrueba.Foto(1200 + 100 * i, 900))));
+            Assert.All(respuestas, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
+        }
+        finally
+        {
+            preparacion.AlEmpezar = null;
+        }
+        Assert.Equal(1, preparacion.MasALaVez);
+        await using var db = servicio.Base();
+        Assert.Equal(3, await db.FotosProducto.CountAsync(f => productos.Select(p => p.VarianteId).Contains(f.VarianteId)));
     }
 
     /// <summary>

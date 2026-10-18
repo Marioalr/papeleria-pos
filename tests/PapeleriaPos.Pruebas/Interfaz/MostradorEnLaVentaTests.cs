@@ -27,8 +27,15 @@ public sealed class MostradorEnLaVentaTests(ServicioDePrueba servicio) : IClassF
         ArchivosDePrueba.BorrarBase(_baseDelDueno);
     }
 
-    /// <summary>Lo que se acomodó para las pruebas: productos de la copia que se venden por pieza, con su código.</summary>
-    private sealed record Acomodado(ProductoVentaDto A, ProductoVentaDto B, ProductoVentaDto C, ProductoVentaDto D, ProductoVentaDto E, Guid Feria, Guid OtraFeria);
+    /// <summary>
+    /// Lo que se acomodó para las pruebas: productos de la copia que se venden por pieza, con su código. F no está acomodado:
+    /// tiene además un código corto (<see cref="CodigoCorto"/>).
+    /// </summary>
+    private sealed record Acomodado(
+        ProductoVentaDto A, ProductoVentaDto B, ProductoVentaDto C, ProductoVentaDto D, ProductoVentaDto E, ProductoVentaDto F, Guid Feria, Guid OtraFeria);
+
+    /// <summary>Un código corto, como la etiqueta que se le pone a lo que no trae código de fábrica: también parece una cantidad.</summary>
+    private const string CodigoCorto = "45";
 
     private static async Task<T> Leer<T>(HttpResponseMessage r)
     {
@@ -39,7 +46,7 @@ public sealed class MostradorEnLaVentaTests(ServicioDePrueba servicio) : IClassF
     /// <summary>
     /// Una sola vez por base (las pruebas de esta clase la comparten): sin las temporadas que deja la migración (corren según el
     /// día), dos que corren hoy («Feria de prueba» con A; «Otra feria» con E), una que no («Fuera de temporada», con B), el
-    /// mostrador con B y C arriba y D abajo, y una «Vitrina de prueba» para acomodar.
+    /// mostrador con B y C arriba y D abajo, una «Vitrina de prueba» para acomodar, y F con el código corto.
     /// </summary>
     private async Task<Acomodado> PrepararAsync()
     {
@@ -51,7 +58,7 @@ public sealed class MostradorEnLaVentaTests(ServicioDePrueba servicio) : IClassF
             .Select(c => (Codigo: c, Producto: copia.Productos.FirstOrDefault(p => p.VarianteId == c.VarianteId)))
             .Where(x => x.Producto is { Unidad: UnidadBase.Pieza } p && p.Presentacion.Id == x.Codigo.PresentacionId && p.Codigo == x.Codigo.Codigo
                         && p.Precios.Any(precio => precio.PresentacionId is null))
-            .Select(x => x.Producto!).DistinctBy(p => p.VarianteId).OrderBy(p => p.VarianteId).Skip(40).Take(5).ToList();
+            .Select(x => x.Producto!).DistinctBy(p => p.VarianteId).OrderBy(p => p.VarianteId).Skip(40).Take(6).ToList();
         var mostrador = await Leer<MostradorDto>(await http.GetAsync("api/mostrador"));
         Guid Id(MostradorDto m, string nombre) => m.Exhibidores.Single(e => e.Nombre == nombre).Id;
         if (mostrador.Exhibidores.All(e => e.Nombre != "Feria de prueba"))
@@ -85,9 +92,13 @@ public sealed class MostradorEnLaVentaTests(ServicioDePrueba servicio) : IClassF
             await Leer<MostradorDto>(await http.PutAsJsonAsync("api/mostrador/acomodo", new SolicitudAcomodo(dueno.UsuarioId, caja.SucursalId,
                 [new LugarConProductosDto(conLugar.Exhibidores.Single(e => e.Nombre == "Vitrina de prueba").Lugares[0].Id, [productos[1].VarianteId])])));
             mostrador = await Leer<MostradorDto>(await http.GetAsync("api/mostrador"));
+            await using var db = servicio.Base();
+            db.CodigosBarras.Add(new CodigoBarras { Codigo = CodigoCorto, PresentacionId = productos[5].Presentacion.Id, Origen = OrigenCodigo.Interno });
+            await db.SaveChangesAsync();
         }
         await servicio.CatalogoAlDiaAsync();
-        return new Acomodado(productos[0], productos[1], productos[2], productos[3], productos[4], Id(mostrador, "Feria de prueba"), Id(mostrador, "Otra feria"));
+        return new Acomodado(productos[0], productos[1], productos[2], productos[3], productos[4], productos[5], Id(mostrador, "Feria de prueba"),
+            Id(mostrador, "Otra feria"));
     }
 
     private Task<VentaConCopia> AbrirAsync((string Usuario, string Pin)? quien = null) =>
@@ -191,7 +202,7 @@ public sealed class MostradorEnLaVentaTests(ServicioDePrueba servicio) : IClassF
         await TeclaAsync(v, "Ctrl+M");
         await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escribiendo("cuaderno"));
         await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("pieza-0"));
-        Assert.Contains("Antes de tocar una pieza solo va la cantidad: «cuaderno» no lo es.", await v.Pantalla.TextoAsync());
+        Assert.Contains("Antes de tocar una pieza solo va la cantidad, de hasta cuatro cifras: «cuaderno» no lo es.", await v.Pantalla.TextoAsync());
         // Una fracción en algo que se vende por pieza tampoco: el panel se queda, para corregirla.
         await EnMostradorAsync(v, "Enter", "1.5");
         Assert.True(await PanelAbiertoAsync(v));
@@ -201,6 +212,42 @@ public sealed class MostradorEnLaVentaTests(ServicioDePrueba servicio) : IClassF
         Assert.Equal(2, renglones.Count);
         Assert.StartsWith($"1 {p.B.Descripcion}", renglones[0]);
         Assert.StartsWith($"1 {p.C.Descripcion}", renglones[1]);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>
+    /// Un código corto que existe («45») con el mostrador abierto, tecleado o del lector sin reconocerse por su ritmo, entra al
+    /// ticket como un escaneo y no como 45 de la pieza elegida; con «*», «45*», sí es la cantidad. Y tocar una pieza con un
+    /// código largo en el cuadro no agrega billones: antes de tocar solo va una cantidad de hasta cuatro cifras.
+    /// </summary>
+    [Fact]
+    public async Task Un_codigo_corto_con_el_mostrador_abierto_es_un_escaneo_y_uno_largo_no_es_la_cantidad()
+    {
+        var p = await PrepararAsync();
+        await using var v = await AbrirAsync();
+
+        await TeclaAsync(v, "Ctrl+M");
+        await EnMostradorAsync(v, "Enter", CodigoCorto);
+        Assert.False(await PanelAbiertoAsync(v));
+        await TeclaAsync(v, "Ctrl+M");
+        await EnMostradorAsync(v, "Enter", $"{CodigoCorto}*");
+        Assert.False(await PanelAbiertoAsync(v));
+
+        // Un número largo que se quedó en el cuadro (no es ningún código: su dígito verificador no cuadra) y un código.
+        await TeclaAsync(v, "Ctrl+M");
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escribiendo("7501234567890"));
+        await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("pieza-0"));
+        Assert.True(await PanelAbiertoAsync(v));
+        Assert.Contains("Antes de tocar una pieza solo va la cantidad, de hasta cuatro cifras: «7501234567890» no lo es.", await v.Pantalla.TextoAsync());
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Escribiendo(p.B.Codigo!));
+        await v.Pantalla.OprimirAsync(await v.Pantalla.PorIdAsync("pieza-0"));
+        Assert.True(await PanelAbiertoAsync(v));
+        Assert.Contains($"«{p.B.Codigo}» es el código de {p.B.Descripcion}: Enter lo agrega.", await v.Pantalla.TextoAsync());
+
+        var renglones = await VentaConCopia.RenglonesAsync(v.Pantalla);
+        Assert.Equal(2, renglones.Count);
+        Assert.StartsWith($"1 {p.F.Descripcion}", renglones[0]);
+        Assert.StartsWith($"45 {p.A.Descripcion}", renglones[1]);
         Assert.Empty(v.Pantalla.Errores);
     }
 
