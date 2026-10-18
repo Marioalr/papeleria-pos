@@ -80,7 +80,7 @@ public sealed class ImportacionFinalConEleventaTests
         await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/eleventa/tickets/{enLaCaja2.TicketId}/devolucion", UnaPluma(deSuEleventa)));
         await EsperarAsync(() => EnviosAsync(c), x => x.Pendientes == 0);
         var deLaPrincipal = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/eleventa/tickets/{dePrincipal.TicketId}"));
-        Assert.Equal(DevolucionesConEleventa.DeOtroTurno,
+        Assert.Equal("Este ticket es de otra caja de eleventa (Principal): devuélvelo en eleventa (está abierto en esta caja).",
             await RechazoAsync(await c.Http.PostAsJsonAsync($"api/eleventa/tickets/{dePrincipal.TicketId}/devolucion", UnaPluma(deLaPrincipal))));
         await EnvioEleventa.DevolverAsync(e.Conexion, principal, Devolucion(dePrincipal.TicketId, HoraLocal(10), new ArticuloDevuelto(10, "Pluma", 1, 9)));
 
