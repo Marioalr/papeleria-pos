@@ -401,17 +401,52 @@ public sealed class CorteDelDiaTests
             Assert.False(await HayBotonAsync(p, "Del día"));
         }
 
-        // Con impresora: va al papel, en la página 850, y lo dice.
+        // Con impresora: va por la cola de la impresora de tickets (como el corte del turno) al papel, en la página 850, y lo
+        // dice.
         await using (var p = await DelDiaAsync(conImpresora, conImpresora.Dueno, turno))
         {
             await p.OprimirAsync(await p.BotonAsync("Imprimir"));
-            await p.EsperarAsync(t => t.Contains($"Se mandó a la impresora el del {hoy.ToString("dd/MM", Formato.Mexico)}."), "lo impreso");
+            await p.EsperarAsync(t => t.Contains($"Corte del día {hoy.ToString("dd/MM", Formato.Mexico)} impreso"), "lo impreso");
             Assert.Contains("CORTE DEL DÍA", papel.Texto);
             Assert.Contains("UTILIDAD", papel.Texto);
             Assert.Contains("Lo imprimió: Dueño de prueba", papel.Texto);
             Assert.DoesNotContain("Así sale impreso", await p.TextoAsync());
             Assert.Empty(p.Errores);
         }
+    }
+
+    /// <summary>
+    /// «Imprimir» va por la misma cola que el ticket y el corte del turno (entrega 5, parte 3): la pantalla no espera a la
+    /// impresora; si no sale (se acabó el papel), lo dice arriba del corte con «Reintentar» y «No imprimirlo», y con
+    /// «Reintentar» sale una sola vez.
+    /// </summary>
+    [Fact]
+    public async Task Imprimirlo_va_por_la_cola_y_si_no_sale_se_reintenta()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync();
+        var sinPapel = true;
+        var impresora = new PapeleriaPos.Pruebas.Impresion.TicketeraDePrueba
+        {
+            Falla = _ => Volatile.Read(ref sinPapel) ? new IOException("Se acabó el papel de la impresora de tickets.") : null,
+        };
+        var c = await PrepararAsync(servicio, impresora);
+        var turno = await c.Cliente.AbrirTurnoAsync(c.Datos.Id, c.Cajero.UsuarioId, 50000);
+        var titulo = $"Corte del día {Hoy.ToString("dd/MM", Formato.Mexico)}";
+
+        await using var p = await DelDiaAsync(c, c.Dueno, turno);
+        await p.OprimirAsync(await p.BotonAsync("Imprimir"));
+        await p.EsperarAsync(t => t.Contains($"No salió «{titulo}»: Se acabó el papel de la impresora de tickets. El corte del día no cambia."),
+            "el aviso de que no salió");
+        Assert.Equal([titulo], ColaDeImpresion.De(impresora).Pendientes.Select(x => x.Titulo));
+        Assert.Empty(impresora.Salieron);
+        Assert.DoesNotContain("Así sale impreso", await p.TextoAsync());
+
+        Volatile.Write(ref sinPapel, false);
+        await p.OprimirAsync(await p.BotonAsync("Reintentar"));
+        await p.EsperarAsync(t => t.Contains($"{titulo} impreso"), "el corte del día impreso");
+        Assert.Single(impresora.Salieron);
+        Assert.Empty(ColaDeImpresion.De(impresora).Pendientes);
+        Assert.Empty(p.Errores);
     }
 
     [Fact]

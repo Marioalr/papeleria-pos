@@ -6,9 +6,9 @@
    principal. En el piloto con eleventa se ve, pero el día se cierra con el corte de eleventa. Va dentro del corte
    (CorteCaja); también se puede poner donde no hay turno abierto, con la caja y la sesión.
    Como el de eleventa (2026-10-17): el de otro día con ← → o la fecha (uno que ya pasó solo se ve; «Cerrar el día» es el de
-   hoy), «Imprimir» en la impresora de tickets (lo que se ve aquí, también el de otro día), las ventas por departamento y,
-   para quien tiene «Ver costos, utilidad y margen», la utilidad del día y la de cada departamento (a los demás el servicio
-   no se las manda). *@
+   hoy), «Imprimir» por la cola de la impresora de tickets (lo que se ve aquí, también el de otro día), las ventas por
+   departamento y, para quien tiene «Ver costos, utilidad y margen», la utilidad del día y la de cada departamento (a los
+   demás el servicio no se las manda). *@
 @implements IDisposable
 @inject ClienteCaja Cliente
 @inject IImpresora Impresora
@@ -30,12 +30,14 @@
         {
             <span class="vn-corte-nota">@_impreso</span>
         }
-        @if (_errorImpresion is not null)
-        {
-            <span class="vn-corte-error">@_errorImpresion</span>
-        }
-        <button class="vn-boton" disabled="@(_dia is null || _imprimiendo)" @onclick="ImprimirAsync"><Ico Nombre="impresora" />Imprimir</button>
+        <button class="vn-boton" disabled="@(_dia is null)" @onclick="Imprimir"><Ico Nombre="impresora" />Imprimir</button>
     </div>
+    @if (_trabajo is { } trabajo)
+    {
+        @* Va a la cola de la impresora, como el corte del turno (entrega 5, parte 3): aquí se ve si salió y, si no,
+           «Reintentar» y «No imprimirlo». *@
+        <AvisoImpresion Trabajo="trabajo" Nota="El corte del día no cambia." />
+    }
 
     @if (_dia is not { } d)
     {
@@ -398,9 +400,12 @@
     private int _cargas;
 
     private string? _vistaPrevia;
+
+    /// <summary>Sin impresora: dónde se ve lo impreso.</summary>
     private string? _impreso;
-    private string? _errorImpresion;
-    private bool _imprimiendo;
+
+    /// <summary>Lo impreso en la cola de la impresora de tickets, para decir cómo va.</summary>
+    private TrabajoDeImpresion? _trabajo;
 
     /// <summary>El día que se ve (o el que se está pidiendo).</summary>
     private DateOnly? Fecha => _dia?.Fecha ?? _pedido ?? _hoy;
@@ -455,7 +460,7 @@
             || DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow)) <= dia.Fecha)
             return;
         _pedido = dia.Fecha;
-        (_resumen, _vistaPrevia, _impreso, _errorImpresion) = (null, null, null, null);
+        (_resumen, _vistaPrevia, _impreso, _trabajo) = (null, null, null, null);
         await CargarAsync();
         StateHasChanged();
     }
@@ -511,7 +516,7 @@
         if (_hoy is not { } hoy)
             return;
         _pedido = fecha < hoy ? fecha : null;
-        (_dia, _resumen, _vistaPrevia, _impreso, _errorImpresion) = (null, null, null, null, null);
+        (_dia, _resumen, _vistaPrevia, _impreso, _trabajo) = (null, null, null, null, null);
         _enfocar = !desdeLaFecha;
         await CargarAsync();
     }
@@ -574,35 +579,22 @@
     }
 
     /// <summary>
-    /// «Imprimir», como el corte del turno: a la impresora de tickets lo que se ve (sin impresora, aquí mismo). Si falla, el
-    /// corte sigue en la pantalla y se puede volver a intentar.
+    /// «Imprimir», como el corte del turno: lo que se ve va a la cola de la impresora de tickets (entrega 5, parte 3), sin
+    /// esperarla, y arriba se ve si salió, con «Reintentar» si no; sin impresora, aquí mismo, en «Así sale impreso».
     /// </summary>
-    private async Task ImprimirAsync()
+    private void Imprimir()
     {
-        if (_dia is not { } dia || _imprimiendo)
+        if (_dia is not { } dia)
             return;
-        _imprimiendo = true;
-        (_impreso, _errorImpresion) = (null, null);
-        try
+        var documento = DisenoComprobante.CorteDelDia(dia, Sesion.Nombre, HoraMexico.ALocal(DateTime.UtcNow));
+        var cola = ColaDeImpresion.De(Impresora);
+        if (cola.MuestraVistaPrevia)
         {
-            var documento = DisenoComprobante.CorteDelDia(dia, Sesion.Nombre, HoraMexico.ALocal(DateTime.UtcNow));
-            if (Impresora.MuestraVistaPrevia)
-            {
-                _vistaPrevia = TicketTexto.Generar(documento);
-                _impreso = "Sin impresora: abajo, en «Así sale impreso».";
-                return;
-            }
-            await Impresora.ImprimirAsync(documento, abrirCajon: false);
-            _impreso = $"Se mandó a la impresora el del {dia.Fecha.ToString("dd/MM", Formato.Mexico)}.";
+            _vistaPrevia = TicketTexto.Generar(documento);
+            _impreso = "Sin impresora: abajo, en «Así sale impreso».";
+            return;
         }
-        catch (Exception ex)
-        {
-            _errorImpresion = $"No se pudo imprimir: {ex.Message}";
-        }
-        finally
-        {
-            _imprimiendo = false;
-        }
+        _trabajo = cola.Encolar($"Corte del día {dia.Fecha.ToString("dd/MM", Formato.Mexico)}", documento, abrirCajon: false);
     }
 
     /// <summary>«margen de 32 %», y si quedó fuera el artículo común (no tiene costo).</summary>
