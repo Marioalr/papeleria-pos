@@ -74,9 +74,12 @@ public sealed record SolicitudHojaDeTemporada(Guid UsuarioId, Guid SucursalId);
 /// <summary>Un producto en el resumen de la temporada, en unidad base.</summary>
 /// <param name="Inicial">Lo que había al empezar, más lo que llegó durante la temporada.</param>
 /// <param name="Vendido">Lo que se vendió en la temporada, menos lo que se devolvió.</param>
-/// <param name="Quedo">Lo que quedó (lo contado, si se contó).</param>
+/// <param name="Quedo">Lo que quedó (con lo contado, si ya se terminó).</param>
+/// <param name="Contado">Mientras no se termina: lo que ya se contó de él (se guarda al escribirlo); vacío si no se ha contado.</param>
+/// <param name="Esperado">Lo que decía el sistema cuando se contó: al terminarla entra la diferencia, y lo vendido después sigue contando.</param>
 public sealed record ResumenDeProductoDto(
-    Guid VarianteId, string Nombre, string? Codigo, string Lugar, UnidadBase Unidad, bool LlevaInventario, decimal Inicial, decimal Vendido, decimal Quedo);
+    Guid VarianteId, string Nombre, string? Codigo, string Lugar, UnidadBase Unidad, bool LlevaInventario, decimal Inicial, decimal Vendido, decimal Quedo,
+    decimal? Contado = null, decimal? Esperado = null);
 
 /// <summary>
 /// Terminar la temporada (docs/propuesta-interfaz.md, «Lo que se señala», punto 4): la última que empezó, con el resumen de qué
@@ -93,14 +96,17 @@ public sealed record TemporadaParaTerminarDto(
     Guid ExhibidorId, string Nombre, DateOnly Inicio, DateOnly Fin, DateOnly Desde, DateOnly Hasta, bool Corre, string? Terminada, bool Contada, bool AntesDelPos,
     bool SeCuenta, string? EnEleventa, IReadOnlyList<ResumenDeProductoDto> Productos);
 
-/// <summary>Lo que se contó de un producto al terminar la temporada, en milésimas de su unidad base.</summary>
-public sealed record ContadoDto(Guid VarianteId, long CantidadMilesimas);
+/// <summary>
+/// Lo que se contó de un producto de la temporada, en milésimas de su unidad base, al momento de contarlo: el servicio lo guarda
+/// con lo que dice el sistema en ese momento (como una captura del conteo completo). Vacío: ya no está contado.
+/// </summary>
+public sealed record SolicitudContado(Guid UsuarioId, Guid SucursalId, Guid VarianteId, long? CantidadMilesimas);
 
 /// <summary>
-/// Terminar la temporada: lo contado de cada producto reemplaza su existencia (lo que no se contó se queda como está). Sin nada
-/// contado, solo queda el resumen.
+/// Terminar la temporada: de lo que se contó entra al kardex la diferencia con lo que decía el sistema al contarlo (lo que no se
+/// contó se queda como está), y queda guardado el resumen.
 /// </summary>
-public sealed record SolicitudTerminarTemporada(Guid UsuarioId, Guid SucursalId, IReadOnlyList<ContadoDto> Contado);
+public sealed record SolicitudTerminarTemporada(Guid UsuarioId, Guid SucursalId);
 
 /// <summary>Un producto con su tarjeta de precio (o para dársela).</summary>
 /// <param name="PrecioCentavos">El de menudeo de hoy.</param>

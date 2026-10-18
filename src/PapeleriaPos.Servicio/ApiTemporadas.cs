@@ -34,6 +34,10 @@ public static class ApiTemporadas
         api.MapGet("/temporadas/{id:guid}/terminar", (Guid id, Guid sucursalId, PosDbContext db, OpcionesEleventa eleventa, TimeProvider reloj) =>
             new RegistroTemporadas(db, eleventa.Activo, reloj).ParaTerminarAsync(id, sucursalId));
 
+        // Lo contado de un producto, al escribirlo: se guarda con lo que dice el sistema en ese momento (como el conteo completo).
+        api.MapPut("/temporadas/{id:guid}/contado", (Guid id, SolicitudContado s, PosDbContext db, OpcionesEleventa eleventa, TimeProvider reloj) =>
+            new RegistroTemporadas(db, eleventa.Activo, reloj).ContarAsync(id, s));
+
         api.MapPost("/temporadas/{id:guid}/terminar", (Guid id, SolicitudTerminarTemporada s, PosDbContext db, OpcionesEleventa eleventa, TimeProvider reloj) =>
             new RegistroTemporadas(db, eleventa.Activo, reloj).TerminarAsync(id, s));
 

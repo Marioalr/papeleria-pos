@@ -9,6 +9,8 @@ using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Historico;
 using PapeleriaPos.Nucleo.Importacion;
 using PapeleriaPos.Nucleo.Inventario;
+using PapeleriaPos.Nucleo.Turnos;
+using PapeleriaPos.Nucleo.Ventas;
 using static PapeleriaPos.Pruebas.Servicio.ServicioDeTemporadas;
 
 namespace PapeleriaPos.Pruebas.Servicio;
@@ -47,6 +49,10 @@ public sealed class TemporadaApiTests(ServicioDeTemporadas servicio) : IClassFix
     /// <summary>Una temporada nueva con sus fechas y su «Mesa de la entrada» con esos productos, dada de alta por el dueño.</summary>
     private static Task<Guid> TemporadaAsync(Caja c, DiaDelAnio desde, DiaDelAnio hasta, params Guid[] productos) =>
         ServicioDeTemporadas.TemporadaAsync(c.Http, c.Dueno.UsuarioId, c.Sucursal, desde, hasta, productos);
+
+    /// <summary>Lo contado de un producto, como lo manda la pantalla al escribirlo (vacío: ya no está contado).</summary>
+    private static Task<HttpResponseMessage> ContarAsync(Caja c, Guid temporada, SesionDto quien, Guid variante, long? milesimas) =>
+        c.Http.PutAsJsonAsync($"api/temporadas/{temporada}/contado", new SolicitudContado(quien.UsuarioId, c.Sucursal, variante, milesimas));
 
     private static Task<TemporadaParaEmpezarDto> EmpezarAsync(Caja c, Guid temporada, SesionDto quien) =>
         c.Http.GetFromJsonAsync<TemporadaParaEmpezarDto>($"api/temporadas/{temporada}/empezar?sucursalId={c.Sucursal}&usuarioId={quien.UsuarioId}")!;
@@ -338,15 +344,23 @@ public sealed class TemporadaApiTests(ServicioDeTemporadas servicio) : IClassFix
         Assert.Null(antes.Terminada);
         Assert.Equal([(30m, 7m, 22m), (6m, 0m, 6m)], antes.Productos.Select(p => (p.Inicial, p.Vendido, p.Quedo)));
 
-        // El cajero no la termina; contar pide «Conteo completo de un departamento».
+        // El cajero no la termina ni cuenta (contar pide «Conteo completo de un departamento»); las velas se cuentan enteras.
         Assert.Equal(HttpStatusCode.Forbidden, (await c.Http.PostAsJsonAsync($"api/temporadas/{temporada}/terminar",
-            new SolicitudTerminarTemporada(c.Cajero.UsuarioId, c.Sucursal, []))).StatusCode);
-        Assert.Contains("piezas enteras", await RechazoAsync(await c.Http.PostAsJsonAsync($"api/temporadas/{temporada}/terminar",
-            new SolicitudTerminarTemporada(c.Encargado.UsuarioId, c.Sucursal, [new ContadoDto(vela, 19_500)]))));
+            new SolicitudTerminarTemporada(c.Cajero.UsuarioId, c.Sucursal))).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await ContarAsync(c, temporada, c.Cajero, vela, 20_000)).StatusCode);
+        Assert.Contains("piezas enteras", await RechazoAsync(await ContarAsync(c, temporada, c.Encargado, vela, 19_500)));
 
-        // Sobraron 20 velas (el sistema decía 22); el copal no se contó y se queda como está.
+        // Sobraron 20 velas (el sistema decía 22): se guarda al contarlo, con lo que decía el sistema; contarlo otra vez lo
+        // reemplaza. El copal se contó y se quitó: se queda como está.
+        await Leer<TemporadaParaTerminarDto>(await ContarAsync(c, temporada, c.Encargado, vela, 21_000));
+        await Leer<TemporadaParaTerminarDto>(await ContarAsync(c, temporada, c.Encargado, copal, 5_000));
+        await Leer<TemporadaParaTerminarDto>(await ContarAsync(c, temporada, c.Encargado, copal, null));
+        var contada = await Leer<TemporadaParaTerminarDto>(await ContarAsync(c, temporada, c.Encargado, vela, 20_000));
+        Assert.Equal([(20m, 22m), (null, null)], contada.Productos.Select(p => (p.Contado, p.Esperado)));
+        Assert.Equal(22m, contada.Productos[0].Quedo);
+
         var terminada = await Leer<TemporadaParaTerminarDto>(await c.Http.PostAsJsonAsync($"api/temporadas/{temporada}/terminar",
-            new SolicitudTerminarTemporada(c.Encargado.UsuarioId, c.Sucursal, [new ContadoDto(vela, 20_000)])));
+            new SolicitudTerminarTemporada(c.Encargado.UsuarioId, c.Sucursal)));
 
         Assert.Equal("Encargado de prueba la terminó y contó lo que sobró el 17/10/2040", terminada.Terminada);
         Assert.True(terminada.Contada);
@@ -363,11 +377,98 @@ public sealed class TemporadaApiTests(ServicioDeTemporadas servicio) : IClassFix
 
         // Se termina una vez: lo guardado no cambia aunque después se venda.
         Assert.Contains("ya se terminó", await RechazoAsync(await c.Http.PostAsJsonAsync($"api/temporadas/{temporada}/terminar",
-            new SolicitudTerminarTemporada(c.Encargado.UsuarioId, c.Sucursal, []))));
+            new SolicitudTerminarTemporada(c.Encargado.UsuarioId, c.Sucursal))));
+        Assert.Contains("ya se terminó", await RechazoAsync(await ContarAsync(c, temporada, c.Encargado, vela, 1_000)));
         await servicio.MovimientoAsync(c.Sucursal, vela, TipoMovimiento.Venta, 5, ServicioDeTemporadas.Hoy);
         var guardada = await c.Http.GetFromJsonAsync<TemporadaParaTerminarDto>($"api/temporadas/{temporada}/terminar?sucursalId={c.Sucursal}");
         Assert.Equal([(30m, 7m, 20m), (6m, 0m, 6m)], guardada!.Productos.Select(p => (p.Inicial, p.Vendido, p.Quedo)));
         Assert.Equal(terminada.Terminada, guardada.Terminada);
+    }
+
+    /// <summary>
+    /// Lo contado entra contra lo que decía el sistema al contarlo, no contra lo de cuando se termina (revisión de la entrega 13):
+    /// el sistema dice 10, se cuentan 8 (faltan 2), se vende una mientras se cuenta lo demás y luego se termina. Quedan 7, como en
+    /// la mesa, y el faltante queda de 2; antes quedaban 8 (la vendida regresaba a la existencia) y el faltante, de 1.
+    /// </summary>
+    [Fact]
+    public async Task Lo_vendido_entre_contar_y_terminar_sigue_contando()
+    {
+        var c = await CajaAsync();
+        var departamento = await servicio.DepartamentoAsync();
+        var vela = await servicio.ProductoAsync(departamento, "Vela que se vende mientras se cuenta", 2000, El(2040, 1, 1), codigo: Codigo("VMC"));
+        await servicio.MovimientoAsync(c.Sucursal, vela, TipoMovimiento.InventarioInicial, 10, El(2040, 9, 1));
+        var temporada = await TemporadaAsync(c, Del16DeSeptiembre, Al5DeNoviembre, vela);
+
+        var contada = await Leer<TemporadaParaTerminarDto>(await ContarAsync(c, temporada, c.Encargado, vela, 8_000));
+        Assert.Equal((8m, 10m), (contada.Productos.Single().Contado, contada.Productos.Single().Esperado));
+        await servicio.MovimientoAsync(c.Sucursal, vela, TipoMovimiento.Venta, 1, ServicioDeTemporadas.Hoy);
+        var terminada = await Leer<TemporadaParaTerminarDto>(await c.Http.PostAsJsonAsync($"api/temporadas/{temporada}/terminar",
+            new SolicitudTerminarTemporada(c.Encargado.UsuarioId, c.Sucursal)));
+
+        await using var db = servicio.Base();
+        Assert.Equal(7m, (await db.Existencias.SingleAsync(e => e.SucursalId == c.Sucursal && e.VarianteId == vela)).Cantidad.EnUnidades);
+        Assert.Equal(-2m, (await db.MovimientosInventario.SingleAsync(m => m.VarianteId == vela && m.DocumentoTipo == nameof(TemporadaDelAnio))).Cantidad.EnUnidades);
+        // El resumen guardado: había 10, se vendió 1 y quedaron 7.
+        Assert.Equal((10m, 1m, 7m), (terminada.Productos.Single().Inicial, terminada.Productos.Single().Vendido, terminada.Productos.Single().Quedo));
+    }
+
+    /// <summary>
+    /// El precio de entonces que sale de lo que se cobró es el de menudeo (revisión de la entrega 13): lo que se cobró a precio de
+    /// mayoreo no cuenta, aunque haya sido lo más que se vendió.
+    /// </summary>
+    [Fact]
+    public async Task El_precio_de_entonces_de_lo_cobrado_no_toma_el_de_mayoreo()
+    {
+        var c = await CajaAsync();
+        var departamento = await servicio.DepartamentoAsync();
+        // Dados de alta en 2040: su historial no llega a la Navidad pasada, el precio sale de lo que se cobró.
+        var deEleventa = await servicio.ProductoAsync(departamento, "Esfera de eleventa con mayoreo", 3000, El(2040, 6, 1));
+        var deVarias = await servicio.ProductoAsync(departamento, "Moño que se vendía por docena", 1500, El(2040, 6, 1));
+        var delPos = await servicio.ProductoAsync(departamento, "Corona del POS con mayoreo", 3000, El(2040, 6, 1), codigo: Codigo("CPM"),
+            escalas: [(12, 2000)]);
+        await using (var db = servicio.Base())
+        {
+            // eleventa no dice si fue mayoreo: tres tickets de 12 a $20 y uno de una pieza a $25. Del moño solo hay de varias piezas.
+            var venta = new VentaHistorica { SucursalId = c.Sucursal, FechaUtc = El(2039, 12, 10).UtcDateTime, FolioOrigen = $"H{Guid.NewGuid():N}"[..10] };
+            for (var i = 0; i < 3; i++)
+                venta.Lineas.Add(new VentaHistoricaLinea { VarianteId = deEleventa, Cantidad = Cantidad.Piezas(12), PrecioCentavos = 2000, ImporteCentavos = 24_000 });
+            venta.Lineas.Add(new VentaHistoricaLinea { VarianteId = deEleventa, Cantidad = Cantidad.Piezas(1), PrecioCentavos = 2500, ImporteCentavos = 2500 });
+            venta.Lineas.Add(new VentaHistoricaLinea { VarianteId = deVarias, Cantidad = Cantidad.Piezas(12), PrecioCentavos = 1000, ImporteCentavos = 12_000 });
+            venta.Lineas.Add(new VentaHistoricaLinea { VarianteId = deVarias, Cantidad = Cantidad.Piezas(12), PrecioCentavos = 1000, ImporteCentavos = 12_000 });
+            venta.Lineas.Add(new VentaHistoricaLinea { VarianteId = deVarias, Cantidad = Cantidad.Piezas(6), PrecioCentavos = 1200, ImporteCentavos = 7_200 });
+            db.VentasHistoricas.Add(venta);
+
+            // En este POS: dos tickets de 12 coronas con el mayoreo (desde 12, $20) y uno de una a $30.
+            var cajero = await db.Usuarios.Where(u => u.NombreUsuario == "cajero").Select(u => u.Id).SingleAsync();
+            var turno = new Turno
+            {
+                SucursalId = c.Sucursal, CajaId = c.CajaId, CajeroId = cajero, AbiertoUtc = El(2039, 12, 10).UtcDateTime, CerradoUtc = El(2039, 12, 10).UtcDateTime,
+            };
+            db.Turnos.Add(turno);
+            var variante = await db.Variantes.SingleAsync(v => v.Id == delPos);
+            var pieza = await db.Presentaciones.SingleAsync(p => p.VarianteId == delPos && p.EsBase);
+            var precios = await db.Precios.Where(p => p.VarianteId == delPos).ToListAsync();
+            var folio = Random.Shared.Next(800_000, 900_000);
+            foreach (var piezas in new long[] { 12, 12, 1 })
+            {
+                var cobro = new Venta
+                {
+                    SucursalId = c.Sucursal, CajaId = c.CajaId, TurnoId = turno.Id, CajeroId = cajero, Serie = "Z", CreadaUtc = El(2039, 12, 11).UtcDateTime,
+                };
+                cobro.AgregarProducto(new ProductoEnVenta(delPos, "Corona del POS con mayoreo", Impuesto.Iva16, UnidadBase.Pieza, true), pieza,
+                    Cantidad.Piezas(piezas), precios);
+                cobro.Pagar(folio++, [new CobroSolicitado(FormaPago.Efectivo, cobro.TotalCentavos)], El(2039, 12, 11).UtcDateTime);
+                db.Ventas.Add(cobro);
+            }
+            await db.SaveChangesAsync();
+        }
+        var temporada = await TemporadaAsync(c, Del20DeNoviembre, Al1DeEnero, deEleventa, deVarias, delPos);
+
+        var empezar = await EmpezarAsync(c, temporada, c.Encargado);
+
+        // La esfera a $25 (la de una pieza), el moño a $12 (el más alto: el mayoreo siempre es más barato), la corona a $30.
+        Assert.Equal([(2500L, "ventas"), (1200L, "ventas"), (3000L, "ventas")],
+            empezar.Productos.Select(p => (p.AnteriorCentavos!.Value, p.DeDonde!)));
     }
 
     [Fact]
@@ -419,7 +520,7 @@ public sealed class TemporadaApiTests(ServicioDeTemporadas servicio) : IClassFix
             Assert.False(antes.SeCuenta);
             Assert.Empty(antes.Productos);
             Assert.Contains("antes de que la tienda usara este POS", await RechazoAsync(await c.Http.PostAsJsonAsync($"api/temporadas/{vieja}/terminar",
-                new SolicitudTerminarTemporada(c.Encargado.UsuarioId, c.Sucursal, []))));
+                new SolicitudTerminarTemporada(c.Encargado.UsuarioId, c.Sucursal))));
         }
         finally
         {
@@ -475,13 +576,19 @@ public sealed class TemporadaApiTests(ServicioDeTemporadas servicio) : IClassFix
         // Lo vendido: lo de la caja 2 (5) y lo que bajó con la lectura (12); lo que subió con ella llegó.
         Assert.Equal((70m, 17m, 53m), (terminar.Productos[0].Inicial, terminar.Productos[0].Vendido, terminar.Productos[0].Quedo));
         // Contar no se hace en el piloto, aunque se mande.
-        Assert.Contains(TrastiendaEnElPiloto.InventarioEnEleventa, await RechazoAsync(await c.Http.PostAsJsonAsync($"api/temporadas/{temporada}/terminar",
-            new SolicitudTerminarTemporada(c.Encargado.UsuarioId, c.Sucursal, [new ContadoDto(deEleventa, 50_000)]))));
+        Assert.Contains(TrastiendaEnElPiloto.InventarioEnEleventa, await RechazoAsync(await ContarAsync(c, temporada, c.Encargado, deEleventa, 50_000)));
+        // Lo que se contó fuera del piloto (antes de volver a él) no se ve ni se aplica: el inventario se lleva en eleventa.
+        var fuera = await CajaAsync();
+        Assert.Equal(53m, (await Leer<TemporadaParaTerminarDto>(await ContarAsync(fuera, temporada, fuera.Encargado, deEleventa, 50_000))).Productos[0].Esperado);
+        Assert.Null((await c.Http.GetFromJsonAsync<TemporadaParaTerminarDto>($"api/temporadas/{temporada}/terminar?sucursalId={c.Sucursal}"))!.Productos[0].Contado);
         // Sin contar, sí se termina y queda el resumen.
         var terminada = await Leer<TemporadaParaTerminarDto>(await c.Http.PostAsJsonAsync($"api/temporadas/{temporada}/terminar",
-            new SolicitudTerminarTemporada(c.Encargado.UsuarioId, c.Sucursal, [])));
+            new SolicitudTerminarTemporada(c.Encargado.UsuarioId, c.Sucursal)));
         Assert.Equal("Encargado de prueba la terminó el 17/10/2040", terminada.Terminada);
         Assert.False(terminada.Contada);
+        Assert.Equal(53m, terminada.Productos[0].Quedo);
+        await using (var db = servicio.Base())
+            Assert.False(await db.MovimientosInventario.AnyAsync(m => m.VarianteId == deEleventa && m.DocumentoTipo == nameof(TemporadaDelAnio)));
     }
 
     [Fact]

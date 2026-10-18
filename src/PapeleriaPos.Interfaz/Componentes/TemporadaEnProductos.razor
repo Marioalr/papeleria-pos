@@ -290,7 +290,7 @@
                 {
                     var este = p;
                     var indice = i++;
-                    var escrito = Estado.Precios.TryGetValue(p.VarianteId, out var texto) ? texto : null;
+                    var escrito = Estado.Precios.TryGetValue(p.VarianteId, out var suyo) ? suyo : null;
                     var problema = TemporadaEnPantalla.Problema(p, escrito);
                     var cambia = problema is null && TemporadaEnPantalla.Precio(p, escrito) is { } nuevo && nuevo != p.PrecioCentavos;
                     if (p.Lugar != lugar)
@@ -368,7 +368,7 @@
                             @if (Editable(p))
                             {
                                 <input id="precio-@indice" aria-label="@($"Precio de «{p.Nombre}»")" inputmode="decimal" autocomplete="off" spellcheck="false"
-                                       value="@(escrito ?? (p.PrecioCentavos is { } actual ? Pesos(actual) : ""))"
+                                       value="@(escrito?.Texto ?? (p.PrecioCentavos is { } actual ? Pesos(actual) : ""))"
                                        @oninput="ev => Escribir(este, ev.Value?.ToString())" @onkeydown="ev => AlTeclearPrecioAsync(ev, indice)" />
                             }
                             else
@@ -409,18 +409,19 @@
 
     private static string Pesos(long centavos) => (centavos / 100m).ToString("0.00", CultureInfo.InvariantCulture);
 
+    /// <summary>Lo escrito, con el de hoy que se ve en la lista: si alguien lo cambia mientras tanto, no se confirma sin verlo.</summary>
     private void Escribir(ProductoDeTemporadaDto p, string? texto)
     {
         if (texto is null || (p.PrecioCentavos is { } hoy && Formato.LeerPesos(texto) == hoy && texto.Trim() == Pesos(hoy)))
             Estado.Precios.Remove(p.VarianteId);
         else
-            Estado.Precios[p.VarianteId] = texto;
+            Estado.Precios[p.VarianteId] = new PrecioEscrito(texto, p.PrecioCentavos);
     }
 
     private void Usar(ProductoDeTemporadaDto p, long centavos)
     {
         if (Editable(p))
-            Estado.Precios[p.VarianteId] = Pesos(centavos);
+            Estado.Precios[p.VarianteId] = new PrecioEscrito(Pesos(centavos), p.PrecioCentavos);
     }
 
     private void TodosAlAnterior()
@@ -653,8 +654,15 @@
                                 @if (r.LlevaInventario)
                                 {
                                     <input id="contado-@indice" aria-label="@($"Contado de «{r.Nombre}»")" inputmode="decimal" autocomplete="off"
-                                           value="@(Estado.Contado.GetValueOrDefault(r.VarianteId) ?? "")" placeholder="@Formato.Numero(r.Quedo)"
-                                           @oninput="ev => Contar(este, ev.Value?.ToString())" @onkeydown="ev => AlTeclearContadoAsync(ev, indice)" />
+                                           value="@ContadoEscrito(r)" placeholder="@Formato.Numero(r.Quedo)"
+                                           @oninput="ev => Contar(este, ev.Value?.ToString())" @onchange="() => GuardarContadoAsync(este)"
+                                           @onkeydown="ev => AlTeclearContadoAsync(ev, este, indice)" />
+                                    @if (r.Contado is not null && r.Esperado is { } esperado && !Estado.Contado.ContainsKey(r.VarianteId))
+                                    {
+                                        <small title="Lo que decía el sistema cuando se contó: al terminarla entra la diferencia, y lo vendido después sigue contando">
+                                            guardado; el sistema decía @Formato.Numero(esperado)
+                                        </small>
+                                    }
                                 }
                             </td>
                         }
@@ -666,7 +674,10 @@
             return;
         if (Cuenta)
         {
-            <p class="nota">Cuenta lo que sobró y escríbelo en «Contado»: reemplaza lo que dice el sistema, como un conteo. Lo que dejes vacío se queda como está.</p>
+            <p class="nota">
+                Cuenta lo que sobró y escríbelo en «Contado»: se guarda al salir del cuadro (o con Enter), con lo que dice el sistema en ese momento. Al
+                terminarla entra la diferencia, como en un conteo: lo que se venda mientras tanto sigue contando. Lo que dejes vacío se queda como está.
+            </p>
         }
         else if (t.SeCuenta)
         {
@@ -674,7 +685,7 @@
         }
         if (_porTerminar)
         {
-            var contados = Estado.Contado.Count(c => !string.IsNullOrWhiteSpace(c.Value));
+            var contados = t.Productos.Count(p => p.Contado is not null);
             <div class="vn-alerta">
                 <Ico Nombre="alerta" />
                 <div>
@@ -692,62 +703,117 @@
         else
         {
             <div class="vn-botonera">
-                <button id="terminar" class="vn-boton primario" disabled="@(_ocupado || !Acceso.Puede(AccionControlada.EditarCatalogo))" @onclick="PreguntarTerminar">
+                <button id="terminar" class="vn-boton primario" disabled="@(_ocupado || !Acceso.Puede(AccionControlada.EditarCatalogo))" @onclick="PreguntarTerminarAsync">
                     Terminar la temporada
                 </button>
             </div>
         }
     };
 
-    private void Contar(ResumenDeProductoDto r, string? texto)
+    private const string NoEsCantidad = "Revisa lo contado: escribe solo cantidades, como 12 o 2.5.";
+
+    /// <summary>Lo que se está guardando de cada producto: lo que se escriba mientras tanto espera a que termine.</summary>
+    private readonly Dictionary<Guid, Task<TemporadaParaTerminarDto>> _guardando = [];
+
+    /// <summary>Lo escrito que todavía no se guarda; si no, lo que ya se contó (vacío, sin contar).</summary>
+    private string ContadoEscrito(ResumenDeProductoDto r) =>
+        Estado.Contado.TryGetValue(r.VarianteId, out var texto) ? texto : r.Contado is { } contado ? TemporadaEnPantalla.TextoDeCantidad(contado) : "";
+
+    private void Contar(ResumenDeProductoDto r, string? texto) => Estado.Contado[r.VarianteId] = texto ?? "";
+
+    /// <summary>
+    /// Lo escrito en «Contado» de un producto se guarda en la caja principal al salir del cuadro o con Enter, con lo que dice el
+    /// sistema en ese momento: así lo que se venda mientras se cuenta lo demás (o antes de terminarla) sigue contando. Si no es una
+    /// cantidad, lo dice y se queda escrito para corregirlo.
+    /// </summary>
+    private async Task GuardarContadoAsync(ResumenDeProductoDto r)
     {
-        if (string.IsNullOrWhiteSpace(texto))
+        if (Elegida is not { } elegida)
+            return;
+        if (_guardando.TryGetValue(r.VarianteId, out var enCurso))
+            await EsperarAsync(enCurso);
+        if (!Estado.Contado.TryGetValue(r.VarianteId, out var texto))
+            return;
+        if (!TemporadaEnPantalla.LeerCantidad(texto, out var milesimas))
+        {
+            _error = NoEsCantidad;
+            return;
+        }
+        var guardado = _terminar?.Productos.FirstOrDefault(p => p.VarianteId == r.VarianteId)?.Contado;
+        if (milesimas == (guardado is { } g ? (long)(g * Cantidad.Escala) : null))
+        {
             Estado.Contado.Remove(r.VarianteId);
-        else
-            Estado.Contado[r.VarianteId] = texto;
+            return;
+        }
+        var guardar = Cliente.ContarEnTemporadaAsync(elegida.ExhibidorId, new SolicitudContado(Sesion.UsuarioId, Caja.SucursalId, r.VarianteId, milesimas));
+        _guardando[r.VarianteId] = guardar;
+        try
+        {
+            _terminar = await guardar;
+            // Lo que se escribió mientras se guardaba se guarda después (al salir del cuadro otra vez).
+            if (Estado.Contado.TryGetValue(r.VarianteId, out var ahora) && ahora == texto)
+                Estado.Contado.Remove(r.VarianteId);
+            _error = null;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _guardando.Remove(r.VarianteId);
+        }
     }
 
-    private async Task AlTeclearContadoAsync(KeyboardEventArgs e, int indice)
+    private static async Task EsperarAsync(Task enCurso)
     {
-        if (e.Key == "Enter")
-            await Js.EnfocarAsync($"#contado-{indice + 1}");
+        try
+        {
+            await enCurso;
+        }
+        catch (ErrorCaja)
+        {
+            // Lo dijo quien lo guardaba.
+        }
     }
 
-    private void PreguntarTerminar()
+    /// <summary>Enter guarda lo contado y pasa al de abajo.</summary>
+    private async Task AlTeclearContadoAsync(KeyboardEventArgs e, ResumenDeProductoDto r, int indice)
+    {
+        if (e.Key != "Enter")
+            return;
+        await GuardarContadoAsync(r);
+        await Js.EnfocarAsync($"#contado-{indice + 1}");
+    }
+
+    /// <summary>
+    /// Antes de preguntar, lo escrito que no se ha guardado (se oprimió aquí sin salir del cuadro) se guarda, y se espera lo que
+    /// se está guardando: lo que se termina es lo que ya tiene la caja principal.
+    /// </summary>
+    private async Task PreguntarTerminarAsync()
     {
         (_aviso, _error) = (null, null);
-        if (Leidos() is null)
+        foreach (var enCurso in _guardando.Values.ToList())
+            await EsperarAsync(enCurso);
+        foreach (var id in Estado.Contado.Keys.ToList())
         {
-            _error = "Revisa lo contado: escribe solo cantidades, como 12 o 2.5.";
-            return;
+            if (_terminar?.Productos.FirstOrDefault(p => p.VarianteId == id) is { } r)
+                await GuardarContadoAsync(r);
+            else
+                Estado.Contado.Remove(id);
+            if (_error is not null)
+                return;
         }
         _porTerminar = true;
     }
 
-    /// <summary>Lo contado de cada producto en milésimas; vacío si algo no es una cantidad.</summary>
-    private List<ContadoDto>? Leidos()
-    {
-        var contados = new List<ContadoDto>();
-        foreach (var (varianteId, texto) in Estado.Contado)
-        {
-            if (string.IsNullOrWhiteSpace(texto))
-                continue;
-            if (!decimal.TryParse(texto.Trim().Replace(',', '.'), NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var cantidad) || cantidad < 0
-                || cantidad > 1_000_000)
-                return null;
-            contados.Add(new ContadoDto(varianteId, Cantidad.Unidades(cantidad).Milesimas));
-        }
-        return contados;
-    }
-
     private async Task TerminarAsync()
     {
-        if (Elegida is not { } elegida || Leidos() is not { } contados)
+        if (Elegida is not { } elegida)
             return;
         await HacerAsync(async () =>
         {
-            _terminar = await Cliente.TerminarTemporadaAsync(elegida.ExhibidorId,
-                new SolicitudTerminarTemporada(Sesion.UsuarioId, Caja.SucursalId, Cuenta ? contados : []));
+            _terminar = await Cliente.TerminarTemporadaAsync(elegida.ExhibidorId, new SolicitudTerminarTemporada(Sesion.UsuarioId, Caja.SucursalId));
             Estado.Contado.Clear();
             _porTerminar = false;
             _aviso = "Listo: terminada. Lo que quedó se guarda para el año que sigue, en su mesa de siempre.";

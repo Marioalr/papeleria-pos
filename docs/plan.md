@@ -824,8 +824,10 @@ Productos (F3), con la caja principal; nada de esto viaja en la copia de las caj
   1 de enero), con la lista del año pasado: lo acomodado en su mesa, en su orden, cada producto con el precio que tuvo
   entonces, el de hoy y si tiene foto (tocarlo abre su ficha para ponérsela; o con el celular, en la página del conteo). El
   precio de entonces sale de su historial al terminar el primer día de esa temporada (lo que se rebajó al final para sacar lo
-  que sobraba no cuenta); si su historial no llega tan atrás (el primer año, con lo que vino de eleventa), del precio al que
-  más veces se cobró en esa temporada, aquí o en eleventa. Quien tiene «Ver costos, utilidad y margen» ve además el costo de
+  que sobraba no cuenta); si su historial no llega tan atrás (el primer año, con lo que vino de eleventa), del precio de
+  menudeo al que más veces se cobró en esa temporada: de este POS, sin lo que se cobró a precio de mayoreo; de eleventa, que no
+  dice si fue mayoreo, lo vendido de a una pieza, o si solo hay de varias, el más alto que se cobró (el mayoreo siempre es más
+  barato). Quien tiene «Ver costos, utilidad y margen» ve además el costo de
   hoy (el de su última compra; sin compras, el promedio de lo que hay), el margen con el precio de hoy y un sugerido: el más
   alto entre el de hoy y el del año pasado, subido al que deja el margen mínimo (el del departamento o el general) si deja
   menos, a los 50 centavos de arriba; nunca baja un precio. Los demás no reciben esas columnas: el servicio no las manda.
@@ -835,8 +837,10 @@ Productos (F3), con la caja principal; nada de esto viaja en la copia de las caj
   toman con la versión del catálogo) y los demás quedan confirmados como están («Luis confirmó los precios el 10/10»). Las
   mismas reglas que cambiar precios de varios: el mayoreo no se toca y nunca queda igual o más caro que el menudeo, ni un
   paquete más caro que sus piezas; si un precio lo dejaría así, nada se confirma y se dice cuál (la página ya lo marca en
-  rojo). Tampoco si un precio cambió mientras tanto (otra caja); si la respuesta se pierde y se confirma otra vez, lo que ya
-  quedó no se vuelve a cambiar. Al confirmar dice cuántos de los que cambiaron tienen tarjeta de precio.
+  rojo). Tampoco si un precio cambió mientras tanto (otra caja): lo escrito recuerda el de hoy que se veía al escribirlo, y si
+  al volver a abrir la lista ya es otro, el renglón lo marca («el de hoy cambió») hasta escribirlo otra vez. Si la respuesta se
+  pierde y se confirma otra vez, lo que ya quedó no se vuelve a cambiar. Al confirmar dice cuántos de los que cambiaron tienen
+  tarjeta de precio.
 - **La hoja de la temporada:** cada lugar de la mesa con sus productos de tres en tres, cada uno con su foto (sin foto, sus
   iniciales), su nombre, su precio y su código dibujado (también se cobra escaneándolo desde la hoja); a lo que no tiene
   código se le da uno interno, como al imprimir etiquetas. Hoja carta con su título y «Hoja 1 de 2»; un lugar que sigue en
@@ -854,15 +858,19 @@ Productos (F3), con la caja principal; nada de esto viaja en la copia de las caj
 - **Terminar la temporada:** la última que empezó, con el resumen de cada producto de su primer día a hoy: lo que había (al
   empezar, más lo que llegó), lo que se vendió (menos lo devuelto) y lo que quedó, con «se acabó», «no se vendió» o qué parte
   se vendió. Lo que sobró se cuenta en «Contado» (con «Conteo completo de un departamento»; lo vacío se queda como está):
-  reemplaza la existencia como un conteo. «Terminar la temporada» pregunta una vez y guarda el resumen, que ya no cambia; se
+  cada uno se guarda en la caja principal al salir del cuadro (o con Enter), con lo que decía el sistema en ese momento, como
+  las capturas del conteo completo; al terminarla entra la diferencia, así lo que se venda mientras se cuenta lo demás (o antes
+  de terminarla) sigue contando, y lo contado no se pierde si se cierra la página. Más de tres decimales no es una cantidad: lo
+  dice. «Terminar la temporada» guarda antes lo escrito que falte, pregunta una vez y guarda el resumen, que ya no cambia; se
   termina una vez por año. Si la tienda empezó a usar este POS ya empezada la temporada, el resumen va desde ese día y lo
   dice; si ya había terminado, no hay resumen.
 - **En el piloto con eleventa:** los precios de lo de eleventa se cambian allá (se ven sin cuadro y se confirman como están;
-  lo dado de alta aquí sí cambia), y lo que sobró no se cuenta aquí: el inventario se lleva en eleventa y la página lo dice.
-  El resumen sí: lo que bajó la existencia con la lectura de eleventa cuenta como vendido en la caja principal, y lo que subió,
+  lo dado de alta aquí sí cambia), y lo que sobró no se cuenta aquí: el inventario se lleva en eleventa y la página lo dice
+  (lo que se hubiera contado fuera del piloto, antes de volver a él, no se aplica). El resumen sí: lo que bajó la existencia con la lectura de eleventa cuenta como vendido en la caja principal, y lo que subió,
   como lo que llegó. La hoja, las tarjetas y las consultas, igual: son del POS.
-- **La base:** la migración TemporadaTarjetasYConsultas (la temporada de cada año con su resumen, las tarjetas impresas y las
-  consultas del verificador). Ninguna sube la versión del catálogo.
+- **La base:** las migraciones TemporadaTarjetasYConsultas (la temporada de cada año con su resumen, las tarjetas impresas y
+  las consultas del verificador) y ContadoDeLaTemporada (lo contado al terminarla, con lo que decía el sistema). Ninguna sube
+  la versión del catálogo.
 - **Decidido mientras tanto, por revisar con el dueño:** todo en Productos y no en Ctrl+M (el prototipo tenía ahí «Imprimir
   la hoja» y «Tarjetas para la vitrina»: imprimir pide la vista previa y es trabajo de atrás); que empezar sea la que corre o
   la siguiente, y terminar la última que empezó; el precio de entonces al terminar el primer día de la temporada pasada; el

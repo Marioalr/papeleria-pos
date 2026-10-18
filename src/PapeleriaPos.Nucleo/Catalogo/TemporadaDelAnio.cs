@@ -98,6 +98,31 @@ public class TemporadaDelAnio
 }
 
 /// <summary>
+/// Lo que se contó de un producto al terminar la temporada, con lo que decía el sistema en ese momento, como las capturas del
+/// conteo completo: al terminarla entra al kardex la diferencia (contado − esperado), así lo que se vendió después de contarlo
+/// sigue contando y no regresa a la existencia. Uno por producto en cada temporada del año: contarlo otra vez lo reemplaza.
+/// </summary>
+public class ContadoDeTemporada
+{
+    public Guid Id { get; set; } = Ids.Nuevo();
+
+    /// <summary>La temporada de ese año (<see cref="TemporadaDelAnio"/>).</summary>
+    public Guid TemporadaId { get; set; }
+
+    public Guid VarianteId { get; set; }
+    public Cantidad Contado { get; set; }
+
+    /// <summary>La existencia que decía el sistema cuando se contó.</summary>
+    public Cantidad Esperado { get; set; }
+
+    public DateTime ContadoUtc { get; set; }
+    public Guid UsuarioId { get; set; }
+
+    /// <summary>Lo que entra al kardex al terminarla: lo que faltó (negativo) o lo que sobró.</summary>
+    public Cantidad Diferencia => Contado - Esperado;
+}
+
+/// <summary>
 /// Un producto en el resumen de una temporada terminada: lo que había (al empezar, más lo que llegó en la temporada), lo que
 /// se vendió y lo que quedó, en unidad base.
 /// </summary>

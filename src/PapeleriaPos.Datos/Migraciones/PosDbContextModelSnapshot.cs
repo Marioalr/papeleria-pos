@@ -391,6 +391,42 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("ConsultasDePrecio", (string)null);
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.ContadoDeTemporada", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Contado")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("ContadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Esperado")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("TemporadaId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UsuarioId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("VarianteId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UsuarioId");
+
+                    b.HasIndex("VarianteId");
+
+                    b.HasIndex("TemporadaId", "VarianteId")
+                        .IsUnique();
+
+                    b.ToTable("TemporadasDelAnioContados", (string)null);
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.DecisionDepuracion", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3513,6 +3549,27 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasOne("PapeleriaPos.Nucleo.Catalogo.Sucursal", null)
                         .WithMany()
                         .HasForeignKey("SucursalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
+                        .WithMany()
+                        .HasForeignKey("VarianteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.ContadoDeTemporada", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.TemporadaDelAnio", null)
+                        .WithMany()
+                        .HasForeignKey("TemporadaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PapeleriaPos.Nucleo.Usuarios.Usuario", null)
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 

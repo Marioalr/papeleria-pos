@@ -302,37 +302,91 @@ public sealed class RegistroTemporadas(PosDbContext db, bool lecturaDeEleventa =
         }
 
         var resumen = desdeUtc is { } desdeDelResumen ? await ResumenAsync(puestos, sucursalId, desdeDelResumen, Ahora, ct) : [];
+        // Lo que ya se contó (se guarda al escribirlo), con lo que decía el sistema en ese momento. En el piloto no se cuenta.
+        var contados = corrida is null || lecturaDeEleventa
+            ? []
+            : await db.ContadosDeTemporada.AsNoTracking().Where(c => c.TemporadaId == corrida.Id).ToDictionaryAsync(c => c.VarianteId, ct);
+        resumen = resumen.Select(r => contados.TryGetValue(r.VarianteId, out var c) ? r with { Contado = c.Contado.EnUnidades, Esperado = c.Esperado.EnUnidades } : r)
+            .ToList();
         return new TemporadaParaTerminarDto(temporada.Id, temporada.Nombre, periodo.Inicio, periodo.Fin, desdeLocal, Hoy, periodo.Contiene(Hoy), null, false,
             AntesDelPos: desdeUtc is null, SeCuenta: !lecturaDeEleventa && desdeUtc is not null, enEleventa, resumen);
     }
 
     /// <summary>
-    /// Termina la última que empezó. Lo contado de cada producto reemplaza su existencia, con la diferencia en el kardex como la
-    /// de un conteo (a su costo promedio), contra lo que dice el sistema ahora; lo que no se contó se queda como está. Contar
-    /// pide «Conteo completo de un departamento» y no se hace en el piloto con eleventa. Queda guardado el resumen de cada
-    /// producto (lo que había, lo que se vendió y lo que quedó) y un renglón en la bitácora. Se termina una vez por año.
+    /// Lo que se contó de un producto de la temporada, al momento de contarlo (la página lo manda al escribirlo): se guarda con lo
+    /// que dice el sistema en ese momento, como una captura del conteo completo. Al terminarla entra la diferencia; así lo que se
+    /// venda mientras se cuenta lo demás (o antes de terminarla) sigue contando y no regresa a la existencia. Contarlo otra vez lo
+    /// reemplaza; vacío, ya no está contado. Pide «Conteo completo de un departamento» y no se hace en el piloto con eleventa (el
+    /// inventario se lleva allá); quitar lo contado, sí.
+    /// </summary>
+    public async Task<TemporadaParaTerminarDto> ContarAsync(Guid exhibidorId, SolicitudContado s, CancellationToken ct = default)
+    {
+        var control = new ServicioControl(db);
+        await control.ExigirAsync(s.UsuarioId, s.SucursalId, AccionControlada.ConteoCompleto,
+            "Lo que sobró lo cuenta quien tiene «Conteo completo de un departamento».", ct);
+        if (s.CantidadMilesimas is not null)
+            TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
+        var (temporada, puestos) = await TemporadaAsync(exhibidorId, ct);
+        var (desde, hasta) = FechasDe(temporada);
+        var periodo = PeriodoDeTemporada.UltimaQueEmpezo(desde, hasta, Hoy);
+        if (puestos.All(p => p.VarianteId != s.VarianteId))
+            throw new ArgumentException("Ese producto ya no está en la mesa de la temporada: vuelve a abrir la lista.");
+        if (s.CantidadMilesimas < 0)
+            throw new ArgumentException("Lo contado no puede ser negativo.");
+
+        await using var transaccion = await db.Database.BeginTransactionAsync(ct);
+        var corrida = await CorridaAsync(exhibidorId, s.SucursalId, periodo, ct);
+        if (corrida.TerminadaUtc is not null)
+            throw new InvalidOperationException($"«{temporada.Nombre}» de {periodo.Inicio.Year} ya se terminó: su resumen quedó guardado.");
+        if (await DesdeDelResumenAsync(s.SucursalId, periodo, ct) is null)
+            throw new InvalidOperationException($"«{temporada.Nombre}» de {periodo.Inicio.Year} fue antes de que la tienda usara este POS: no hay con qué armar su resumen.");
+        var guardado = await db.ContadosDeTemporada.SingleOrDefaultAsync(c => c.TemporadaId == corrida.Id && c.VarianteId == s.VarianteId, ct);
+        if (s.CantidadMilesimas is not { } milesimas)
+        {
+            if (guardado is not null)
+                db.ContadosDeTemporada.Remove(guardado);
+        }
+        else
+        {
+            var variante = (await new RegistroEtiquetas(db).VariantesAsync([s.VarianteId], tracking: false, ct)).GetValueOrDefault(s.VarianteId)
+                ?? throw new InvalidOperationException("El producto ya no existe.");
+            var nombre = RegistroCompras.Nombre(variante);
+            if (!variante.Producto!.LlevaInventario)
+                throw new ArgumentException($"«{nombre}» no lleva inventario: no se cuenta.");
+            var cantidad = new Cantidad(milesimas);
+            if (!variante.AdmiteCantidad(cantidad))
+                throw new ArgumentException($"«{nombre}» se cuenta en piezas enteras.");
+            var esperado = (await new RegistroInventario(db).ExistenciaAsync(s.SucursalId, variante.Id, ct)).Cantidad;
+            if (guardado is null)
+            {
+                // Con Add: con su Id ya puesto, EF lo tomaría por uno que ya existe.
+                db.ContadosDeTemporada.Add(new ContadoDeTemporada
+                {
+                    TemporadaId = corrida.Id, VarianteId = variante.Id, Contado = cantidad, Esperado = esperado, ContadoUtc = Ahora, UsuarioId = s.UsuarioId,
+                });
+            }
+            else
+                (guardado.Contado, guardado.Esperado, guardado.ContadoUtc, guardado.UsuarioId) = (cantidad, esperado, Ahora, s.UsuarioId);
+        }
+        await db.SaveChangesAsync(ct);
+        await transaccion.CommitAsync(ct);
+        return await ParaTerminarAsync(exhibidorId, s.SucursalId, ct);
+    }
+
+    /// <summary>
+    /// Termina la última que empezó. De cada producto que se contó entra al kardex la diferencia entre lo contado y lo que decía
+    /// el sistema al contarlo, como en el conteo completo (a su costo promedio): lo que se vendió después de contarlo sigue
+    /// contando. Lo que no se contó se queda como está. Aplicar lo contado pide «Conteo completo de un departamento»; en el piloto
+    /// con eleventa no se aplica. Queda guardado el resumen de cada producto (lo que había, lo que se vendió y lo que quedó) y un
+    /// renglón en la bitácora. Se termina una vez por año.
     /// </summary>
     public async Task<TemporadaParaTerminarDto> TerminarAsync(Guid exhibidorId, SolicitudTerminarTemporada s, CancellationToken ct = default)
     {
         var control = new ServicioControl(db);
         await control.ExigirAsync(s.UsuarioId, s.SucursalId, Permiso, "La temporada la termina quien tiene «Productos, precios y etiquetas».", ct);
-        var contado = s.Contado ?? [];
-        if (contado.Count > 0)
-        {
-            await control.ExigirAsync(s.UsuarioId, s.SucursalId, AccionControlada.ConteoCompleto,
-                "Lo que sobró lo cuenta quien tiene «Conteo completo de un departamento»: termínala sin contar, o que la termine quien lo tiene.", ct);
-            TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
-        }
         var (temporada, puestos) = await TemporadaAsync(exhibidorId, ct);
         var (desde, hasta) = FechasDe(temporada);
         var periodo = PeriodoDeTemporada.UltimaQueEmpezo(desde, hasta, Hoy);
-        if (contado.GroupBy(c => c.VarianteId).Any(g => g.Count() > 1))
-            throw new ArgumentException("Un producto viene contado dos veces.");
-        var deLaTemporada = puestos.Select(p => p.VarianteId).ToHashSet();
-        if (contado.Any(c => !deLaTemporada.Contains(c.VarianteId)))
-            throw new ArgumentException("Uno de los contados ya no está en la mesa de la temporada: vuelve a abrir la lista.");
-        if (contado.Any(c => c.CantidadMilesimas < 0))
-            throw new ArgumentException("Lo contado no puede ser negativo.");
 
         await using var transaccion = await db.Database.BeginTransactionAsync(ct);
         var corrida = await CorridaAsync(exhibidorId, s.SucursalId, periodo, ct);
@@ -340,6 +394,15 @@ public sealed class RegistroTemporadas(PosDbContext db, bool lecturaDeEleventa =
             throw new InvalidOperationException($"«{temporada.Nombre}» de {periodo.Inicio.Year} ya se terminó: su resumen quedó guardado.");
         if (await DesdeDelResumenAsync(s.SucursalId, periodo, ct) is not { } desdeUtc)
             throw new InvalidOperationException($"«{temporada.Nombre}» de {periodo.Inicio.Year} fue antes de que la tienda usara este POS: no hay con qué armar su resumen.");
+        // Lo contado de lo que sigue en la mesa (lo que se quitó de ella ya no cuenta). En el piloto no se aplica, aunque se haya
+        // contado antes de él: el inventario se lleva en eleventa (y ahí no se ve para quitarlo).
+        var deLaTemporada = puestos.Select(p => p.VarianteId).ToHashSet();
+        var contado = lecturaDeEleventa
+            ? []
+            : (await db.ContadosDeTemporada.Where(c => c.TemporadaId == corrida.Id).ToListAsync(ct)).Where(c => deLaTemporada.Contains(c.VarianteId)).ToList();
+        if (contado.Count > 0)
+            await control.ExigirAsync(s.UsuarioId, s.SucursalId, AccionControlada.ConteoCompleto,
+                "Lo contado lo aplica quien tiene «Conteo completo de un departamento»: que la termine quien lo tiene.", ct);
 
         var ahora = Ahora;
         var neto = 0L;
@@ -350,17 +413,10 @@ public sealed class RegistroTemporadas(PosDbContext db, bool lecturaDeEleventa =
             var inventario = new RegistroInventario(db);
             foreach (var c in contado)
             {
-                var variante = variantes[c.VarianteId];
-                var nombre = RegistroCompras.Nombre(variante);
-                if (!variante.Producto!.LlevaInventario)
-                    throw new ArgumentException($"«{nombre}» no lleva inventario: no se cuenta.");
-                var cantidad = new Cantidad(c.CantidadMilesimas);
-                if (!variante.AdmiteCantidad(cantidad))
-                    throw new ArgumentException($"«{nombre}» se cuenta en piezas enteras.");
-                var diferencia = cantidad - (await inventario.ExistenciaAsync(s.SucursalId, variante.Id, ct)).Cantidad;
-                if (diferencia.Milesimas != 0)
+                if (c.Diferencia.Milesimas != 0)
                     conDiferencia++;
-                neto += await inventario.AgregarDiferenciaDeConteoAsync(s.SucursalId, variante, diferencia, ahora, nameof(TemporadaDelAnio), corrida.Id, ct);
+                neto += await inventario.AgregarDiferenciaDeConteoAsync(s.SucursalId, variantes[c.VarianteId], c.Diferencia, ahora, nameof(TemporadaDelAnio),
+                    corrida.Id, ct);
             }
             // Lo contado ya queda en el kardex: el resumen lo lee de ahí.
             await db.SaveChangesAsync(ct);
@@ -516,8 +572,10 @@ public sealed class RegistroTemporadas(PosDbContext db, bool lecturaDeEleventa =
     /// <list type="number">
     /// <item>El de su historial: el menudeo que tenía al terminar el primer día de esa temporada (con lo que se confirmó al
     /// empezarla; si después se rebajó para sacar lo que sobraba, no cuenta).</item>
-    /// <item>Si su historial no llega tan atrás (el primer año, con lo que vino de eleventa): el precio al que más veces se
-    /// cobró en esa temporada, en este POS o en eleventa.</item>
+    /// <item>Si su historial no llega tan atrás (el primer año, con lo que vino de eleventa): el precio de menudeo al que más
+    /// veces se cobró en esa temporada. De este POS, lo que no se cobró a precio de mayoreo (ni con el precio cambiado, ni por
+    /// paquete); de eleventa, que no dice si fue mayoreo, lo que se vendió de a una pieza (o menos), que nunca lleva el de una
+    /// escala. Si de eleventa solo hay ventas de varias piezas, el más alto que se cobró: el mayoreo siempre es más barato.</item>
     /// </list>
     /// Sin ninguno de los dos, no se sabe (no estaba, o no se vendió).
     /// </summary>
@@ -550,18 +608,19 @@ public sealed class RegistroTemporadas(PosDbContext db, bool lecturaDeEleventa =
                             join v in db.Ventas.AsNoTracking() on l.VentaId equals v.Id
                             where v.SucursalId == sucursalId && v.Estado == EstadoVenta.Pagada && v.PagadaUtc >= desdeUtc && v.PagadaUtc < hastaUtc
                                   && l.VarianteId != null && faltan.Contains(l.VarianteId.Value) && !l.EsImpresiones && l.PrecioOriginalCentavos == null
+                                  && l.MayoreoDesde == null
                             select new { Variante = l.VarianteId!.Value, Fecha = v.PagadaUtc!.Value, l.PrecioCentavos, l.Cantidad, l.CantidadBase })
             .ToListAsync(ct);
         var deEleventa = await (from l in db.VentasHistoricasLineas.AsNoTracking()
                                 join v in db.VentasHistoricas.AsNoTracking() on l.VentaHistoricaId equals v.Id
                                 where v.SucursalId == sucursalId && !v.Cancelada && v.FechaUtc >= desdeUtc && v.FechaUtc < hastaUtc && faltan.Contains(l.VarianteId)
-                                select new { Variante = l.VarianteId, Fecha = v.FechaUtc, l.PrecioCentavos })
+                                select new { Variante = l.VarianteId, Fecha = v.FechaUtc, l.PrecioCentavos, l.Cantidad })
             .ToListAsync(ct);
-        // Por pieza: lo vendido en su presentación base (el precio de un paquete es de otra cosa).
-        var cobrados = delPos.Where(l => l.Cantidad == l.CantidadBase).Select(l => (l.Variante, l.Fecha, l.PrecioCentavos))
-            .Concat(deEleventa.Select(l => (l.Variante, l.Fecha, l.PrecioCentavos)))
+        // De menudeo: de este POS, por pieza (el precio de un paquete es de otra cosa) y sin mayoreo; de eleventa, de a una pieza.
+        var deMenudeo = delPos.Where(l => l.Cantidad == l.CantidadBase).Select(l => (l.Variante, l.Fecha, l.PrecioCentavos))
+            .Concat(deEleventa.Where(l => l.Cantidad <= Una).Select(l => (l.Variante, l.Fecha, l.PrecioCentavos)))
             .Where(l => l.PrecioCentavos > 0);
-        foreach (var grupo in cobrados.GroupBy(l => l.Variante))
+        foreach (var grupo in deMenudeo.GroupBy(l => l.Variante))
         {
             // El que más veces se cobró (cada ticket cuenta una vez, aunque lleve muchas piezas); si empatan, el último.
             var masVeces = grupo.GroupBy(l => l.PrecioCentavos)
@@ -569,6 +628,9 @@ public sealed class RegistroTemporadas(PosDbContext db, bool lecturaDeEleventa =
                 .First().Key;
             resultado[grupo.Key] = (masVeces, "ventas");
         }
+        // De eleventa solo de varias piezas: el más alto que se cobró (una escala o el mayoreo de eleventa siempre es más barato).
+        foreach (var grupo in deEleventa.Where(l => l.PrecioCentavos > 0 && !resultado.ContainsKey(l.Variante)).GroupBy(l => l.Variante))
+            resultado[grupo.Key] = (grupo.Max(l => l.PrecioCentavos), "ventas");
         return resultado;
     }
 

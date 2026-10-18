@@ -321,7 +321,21 @@ public sealed class TemporadaEnProductosTests(ServicioDeTemporadas servicio) : I
 
         // Había 12 y se vendieron todas: «se acabó». Pero en la mesa quedó una que no se cobró: se cuenta 1.
         Assert.Contains("12 12 0 se acabó", await RenglonAsync(p, $"resumen-{vela}"));
+        // Más de tres decimales no es una cantidad: lo dice y no truena (revisión de la entrega 13).
+        await p.EscribirAsync("contado-0", "1.2345");
+        await p.SalirAsync("contado-0");
+        await p.EsperarAsync(t => t.Contains("Revisa lo contado: escribe solo cantidades, como 12 o 2.5."), "el aviso de la cantidad");
+        await p.OprimirAsync(await p.PorIdAsync("terminar"));
+        Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id == "terminar-si");
+        // Al salir del cuadro se guarda, con lo que decía el sistema en ese momento (0).
         await p.EscribirAsync("contado-0", "1");
+        await p.SalirAsync("contado-0");
+        await p.EsperarAsync(t => t.Contains("guardado; el sistema decía 0"), "lo contado guardado");
+        await using (var db = servicio.Base())
+        {
+            var guardado = await db.ContadosDeTemporada.SingleAsync(x => x.VarianteId == vela);
+            Assert.Equal((1m, 0m), (guardado.Contado.EnUnidades, guardado.Esperado.EnUnidades));
+        }
         await p.OprimirAsync(await p.PorIdAsync("terminar"));
         await p.EsperarAsync(t => t.Contains("lo contado reemplaza la existencia de 1 producto"), "la pregunta");
         // Esc la deja sin terminar.
@@ -336,6 +350,80 @@ public sealed class TemporadaEnProductosTests(ServicioDeTemporadas servicio) : I
         Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id is "terminar" or "contado-0");
         await using (var db = servicio.Base())
             Assert.Equal(1m, (await db.Existencias.SingleAsync(e => e.SucursalId == c.Datos.SucursalId && e.VarianteId == vela)).Cantidad.EnUnidades);
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// Lo contado se guarda al contarlo (revisión de la entrega 13): se cuenta, se vende uno mientras se cuenta lo demás, y al
+    /// terminar el que se vendió no regresa. También con Enter, y lo escrito que no se guardó se guarda antes de preguntar.
+    /// </summary>
+    [Fact]
+    public async Task Lo_contado_se_guarda_al_contarlo_y_lo_que_se_vende_despues_sigue_contando()
+    {
+        var c = await PrepararAsync(servicio.Fabrica);
+        var departamento = await servicio.DepartamentoAsync();
+        var vela = await servicio.ProductoAsync(departamento, "Vela contada a tiempo", 2000, El(2040, 1, 1), codigo: Codigo("VCT"));
+        var copal = await servicio.ProductoAsync(departamento, "Copal contado sin salir", 1000, El(2040, 1, 1), codigo: Codigo("CCS"));
+        await servicio.MovimientoAsync(c.Datos.SucursalId, vela, TipoMovimiento.InventarioInicial, 10, El(2040, 9, 1));
+        await servicio.MovimientoAsync(c.Datos.SucursalId, copal, TipoMovimiento.InventarioInicial, 5, El(2040, 9, 1));
+        var temporada = await ServicioDeTemporadas.TemporadaAsync(c.Http, c.Dueno.UsuarioId, c.Datos.SucursalId, Del16DeSeptiembre, Al5DeNoviembre, vela, copal);
+        var (p, _) = await ProductosAsync(c, c.Encargado);
+        await using var __ = p;
+        await AbrirTemporadaAsync(p, temporada, PasoDeTemporada.Terminar);
+
+        // La vela: el sistema dice 10, se cuentan 8 y Enter (se guarda y pasa al copal). Mientras, se vende una.
+        await p.EscribirAsync("contado-0", "8");
+        await p.TeclaAsync("contado-0", "Enter");
+        await p.EsperarAsync(t => t.Contains("guardado; el sistema decía 10"), "la vela guardada");
+        Assert.Contains("#contado-1", c.Pagina.Llamadas.Where(l => l.Funcion == "enfocar").Select(l => l.Argumentos?[0] as string));
+        await servicio.MovimientoAsync(c.Datos.SucursalId, vela, TipoMovimiento.Venta, 1, ServicioDeTemporadas.Hoy);
+        // El copal se escribe y se oprime «Terminar» sin salir del cuadro: se guarda antes de preguntar.
+        await p.EscribirAsync("contado-1", "5");
+        await p.OprimirAsync(await p.PorIdAsync("terminar"));
+        await p.EsperarAsync(t => t.Contains("lo contado reemplaza la existencia de 2 productos"), "la pregunta");
+        await p.OprimirAsync(await p.PorIdAsync("terminar-si"));
+        await p.EsperarAsync(t => t.Contains("Listo: terminada."), "la temporada terminada");
+
+        await using var db = servicio.Base();
+        Assert.Equal(7m, (await db.Existencias.SingleAsync(e => e.SucursalId == c.Datos.SucursalId && e.VarianteId == vela)).Cantidad.EnUnidades);
+        Assert.Equal(5m, (await db.Existencias.SingleAsync(e => e.SucursalId == c.Datos.SucursalId && e.VarianteId == copal)).Cantidad.EnUnidades);
+        Assert.Contains("10 1 7", await RenglonAsync(p, $"resumen-{vela}"));
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// Lo escrito recuerda el de hoy que se veía (revisión de la entrega 13): se escribe $55 cuando la vela vale $50, otra caja la
+    /// pone a $60 y se vuelve a abrir la lista. El renglón lo marca y no se confirma: los $60 no se pisan sin verlos.
+    /// </summary>
+    [Fact]
+    public async Task Un_precio_que_cambio_despues_de_escribirlo_no_se_pisa_sin_verlo()
+    {
+        var c = await PrepararAsync(servicio.Fabrica);
+        var departamento = await servicio.DepartamentoAsync();
+        var vela = await servicio.ProductoAsync(departamento, "Vela que otra caja cambia", 5000, El(2039, 9, 1), codigo: Codigo("VOC"));
+        var temporada = await ServicioDeTemporadas.TemporadaAsync(c.Http, c.Dueno.UsuarioId, c.Datos.SucursalId, Del16DeSeptiembre, Al5DeNoviembre, vela);
+        var (p, _) = await ProductosAsync(c, c.Dueno);
+        await using var __ = p;
+        await AbrirTemporadaAsync(p, temporada);
+
+        await p.EscribirAsync("precio-0", "55");
+        await servicio.CambiarPrecioAsync(vela, 6000, ServicioDeTemporadas.Hoy);
+        // Se vuelve a abrir la lista (otro paso y de regreso): lo escrito se queda.
+        await p.OprimirAsync(await p.PorIdAsync($"paso-{PasoDeTemporada.Hoja}"));
+        await p.OprimirAsync(await p.PorIdAsync($"paso-{PasoDeTemporada.Precios}"));
+        await p.EsperarAsync(t => t.Contains("$60.00"), "el precio de la otra caja");
+        Assert.Equal("55", (await p.PorIdAsync("precio-0")).Valor);
+        Assert.Contains("el de hoy cambió (era $50.00): escríbelo otra vez", await RenglonAsync(p, $"temp-{vela}"));
+
+        await p.OprimirAsync(await p.PorIdAsync("confirmar-precios"));
+        await p.EsperarAsync(t => t.Contains("Revisa los precios marcados en rojo"), "el aviso de los precios en rojo");
+        Assert.Equal(6000, await servicio.MenudeoAsync(vela));
+
+        // Escribirlo otra vez, con los $60 a la vista, sí se confirma.
+        await p.EscribirAsync("precio-0", "55");
+        await p.OprimirAsync(await p.PorIdAsync("confirmar-precios"));
+        await p.EsperarAsync(t => t.Contains("Listo: cambió 1 precio"), "la confirmación");
+        Assert.Equal(5500, await servicio.MenudeoAsync(vela));
         Assert.Empty(p.Errores);
     }
 

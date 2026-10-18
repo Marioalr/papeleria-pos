@@ -1257,6 +1257,10 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<TemporadaParaTerminarDto> ParaTerminarTemporadaAsync(Guid exhibidorId, Guid sucursalId) =>
         ConRespaldoAsync(async () => (await _http.GetAsync<TemporadaParaTerminarDto>($"api/temporadas/{exhibidorId}/terminar?sucursalId={sucursalId}"))!);
 
+    /// <summary>Lo contado de un producto al terminar la temporada, al escribirlo: la caja principal lo guarda con lo que dice el sistema.</summary>
+    public Task<TemporadaParaTerminarDto> ContarEnTemporadaAsync(Guid exhibidorId, SolicitudContado solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<TemporadaParaTerminarDto>($"api/temporadas/{exhibidorId}/contado", solicitud));
+
     public Task<TemporadaParaTerminarDto> TerminarTemporadaAsync(Guid exhibidorId, SolicitudTerminarTemporada solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<TemporadaParaTerminarDto>($"api/temporadas/{exhibidorId}/terminar", solicitud));
 

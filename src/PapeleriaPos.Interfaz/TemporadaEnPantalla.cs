@@ -1,3 +1,5 @@
+using System.Globalization;
+using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
 
 namespace PapeleriaPos.Interfaz;
@@ -18,6 +20,13 @@ public enum PasoDeTemporada
     Terminar,
 }
 
+/// <summary>Un precio escrito en la lista de la temporada, todavía sin confirmar.</summary>
+/// <param name="Antes">
+/// El precio de hoy que estaba en la lista al escribirlo: es el que se manda como «el de antes». Si mientras tanto alguien lo
+/// cambia (otra caja), al volver a abrir la lista el renglón lo dice y no se confirma sin escribirlo otra vez.
+/// </param>
+public sealed record PrecioEscrito(string Texto, long? Antes);
+
 /// <summary>
 /// Lo que se recuerda de Productos › Temporadas mientras se va a la ficha de un producto (a tomarle su foto) y se regresa: la
 /// temporada elegida, el paso y los precios que se habían escrito.
@@ -27,13 +36,13 @@ public sealed class TemporadasVistas
     public Guid? Elegida { get; set; }
     public PasoDeTemporada Paso { get; set; }
 
-    /// <summary>Lo escrito en «Precio» de cada producto, sin confirmar todavía (de <see cref="PreciosDe"/>).</summary>
-    public Dictionary<Guid, string> Precios { get; } = [];
+    /// <summary>Lo escrito en «Precio» de cada producto, sin confirmar todavía (de <see cref="PreciosDe"/>), con el de hoy que se veía.</summary>
+    public Dictionary<Guid, PrecioEscrito> Precios { get; } = [];
 
     /// <summary>De qué temporada son <see cref="Precios"/>: al cambiar de temporada se olvidan.</summary>
     public Guid? PreciosDe { get; set; }
 
-    /// <summary>Lo escrito en «Contado» al terminarla, por producto.</summary>
+    /// <summary>Lo escrito en «Contado» al terminarla que todavía no guarda la caja principal (se guarda al salir del cuadro o con Enter).</summary>
     public Dictionary<Guid, string> Contado { get; } = [];
 }
 
@@ -44,13 +53,14 @@ public sealed class TemporadasVistas
 public static class TemporadaEnPantalla
 {
     /// <summary>El precio de un renglón: lo escrito, si se escribió algo; si no, el de hoy. Vacío si lo escrito no es un precio.</summary>
-    public static long? Precio(ProductoDeTemporadaDto producto, string? escrito) =>
-        escrito is null ? producto.PrecioCentavos : Formato.LeerPesos(escrito) is { } pesos && pesos > 0 ? pesos : null;
+    public static long? Precio(ProductoDeTemporadaDto producto, PrecioEscrito? escrito) =>
+        escrito is null ? producto.PrecioCentavos : Formato.LeerPesos(escrito.Texto) is { } pesos && pesos > 0 ? pesos : null;
 
     /// <summary>
-    /// Qué le pasa al precio de un renglón; vacío si está bien. Lo de eleventa (en el piloto) y lo desactivado no se cambia aquí.
+    /// Qué le pasa al precio de un renglón; vacío si está bien. Si el de hoy cambió desde que se escribió (otra caja), se marca:
+    /// confirmarlo así pisaría ese cambio sin verlo. Lo de eleventa (en el piloto) y lo desactivado no se cambia aquí.
     /// </summary>
-    public static string? Problema(ProductoDeTemporadaDto producto, string? escrito)
+    public static string? Problema(ProductoDeTemporadaDto producto, PrecioEscrito? escrito)
     {
         if (escrito is null)
             return null;
@@ -58,6 +68,8 @@ public static class TemporadaEnPantalla
             return "no es un precio";
         if (precio == producto.PrecioCentavos)
             return null;
+        if (escrito.Antes != producto.PrecioCentavos)
+            return $"el de hoy cambió (era {(escrito.Antes is { } antes ? Formato.Dinero(antes) : "sin precio")}): escríbelo otra vez";
         if (producto.EnEleventa)
             return "se cambia en eleventa";
         if (!producto.Activo)
@@ -71,20 +83,45 @@ public static class TemporadaEnPantalla
     /// Los precios que se mandan a confirmar: los de lo activo con precio (lo escrito o el de hoy); lo de eleventa, como está.
     /// Vacío si alguno tiene un problema: primero se corrige.
     /// </summary>
-    public static List<PrecioDeTemporadaDto>? ParaConfirmar(IEnumerable<ProductoDeTemporadaDto> productos, IReadOnlyDictionary<Guid, string> escritos)
+    /// <remarks>
+    /// De lo escrito, «el de antes» es el de hoy que se veía al escribirlo (no el de la lista que se volvió a leer): si alguien lo
+    /// cambió mientras tanto, la caja principal no lo confirma.
+    /// </remarks>
+    public static List<PrecioDeTemporadaDto>? ParaConfirmar(IEnumerable<ProductoDeTemporadaDto> productos, IReadOnlyDictionary<Guid, PrecioEscrito> escritos)
     {
         var lista = new List<PrecioDeTemporadaDto>();
         foreach (var p in productos)
         {
-            var escrito = escritos.TryGetValue(p.VarianteId, out var texto) ? texto : null;
+            var escrito = escritos.TryGetValue(p.VarianteId, out var suyo) ? suyo : null;
             if (Problema(p, escrito) is not null)
                 return null;
             if (!p.Activo || Precio(p, escrito) is not { } precio)
                 continue;
-            lista.Add(new PrecioDeTemporadaDto(p.VarianteId, p.PrecioCentavos ?? 0, p.EnEleventa ? p.PrecioCentavos ?? precio : precio));
+            var antes = escrito is null ? p.PrecioCentavos ?? 0 : escrito.Antes ?? 0;
+            lista.Add(new PrecioDeTemporadaDto(p.VarianteId, antes, p.EnEleventa ? p.PrecioCentavos ?? precio : precio));
         }
         return lista;
     }
+
+    /// <summary>
+    /// Lo escrito en «Contado», en milésimas de la unidad base. Vacío (sin nada escrito) es «sin contar». Falso si no es una
+    /// cantidad: negativa, con más de tres decimales (lo más chico que se lleva es una milésima) o de más de un millón.
+    /// </summary>
+    public static bool LeerCantidad(string? texto, out long? milesimas)
+    {
+        milesimas = null;
+        var limpio = (texto ?? "").Trim().Replace(',', '.');
+        if (limpio.Length == 0)
+            return true;
+        if (!decimal.TryParse(limpio, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var cantidad)
+            || cantidad > 1_000_000 || decimal.Round(cantidad, 3) != cantidad)
+            return false;
+        milesimas = Cantidad.Unidades(cantidad).Milesimas;
+        return true;
+    }
+
+    /// <summary>Una cantidad como se escribe en el cuadro: «12», «2.5».</summary>
+    public static string TextoDeCantidad(decimal cantidad) => cantidad.ToString("0.###", CultureInfo.InvariantCulture);
 
     /// <summary>Cómo se vendió en la temporada: «se acabó», «no se vendió» o qué parte de lo que había («80 %»).</summary>
     public static string ComoSeVendio(ResumenDeProductoDto r)

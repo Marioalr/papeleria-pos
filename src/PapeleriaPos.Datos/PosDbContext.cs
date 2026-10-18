@@ -98,6 +98,9 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
 
     public DbSet<RenglonTemporadaDelAnio> TemporadasDelAnioRenglones => Set<RenglonTemporadaDelAnio>();
 
+    /// <summary>Lo que se contó al terminar cada temporada, con lo que decía el sistema al contarlo.</summary>
+    public DbSet<ContadoDeTemporada> ContadosDeTemporada => Set<ContadoDeTemporada>();
+
     /// <summary>Las tarjetas de precio que se imprimieron, con el precio y el código con que salieron.</summary>
     public DbSet<TarjetaDePrecio> TarjetasDePrecio => Set<TarjetaDePrecio>();
 

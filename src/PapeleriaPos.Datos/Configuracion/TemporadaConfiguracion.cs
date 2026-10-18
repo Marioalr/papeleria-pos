@@ -35,6 +35,20 @@ internal sealed class RenglonTemporadaDelAnioConfiguracion : IEntityTypeConfigur
     }
 }
 
+internal sealed class ContadoDeTemporadaConfiguracion : IEntityTypeConfiguration<ContadoDeTemporada>
+{
+    public void Configure(EntityTypeBuilder<ContadoDeTemporada> b)
+    {
+        b.ToTable("TemporadasDelAnioContados");
+        b.HasOne<TemporadaDelAnio>().WithMany().HasForeignKey(c => c.TemporadaId);
+        b.HasOne<Variante>().WithMany().HasForeignKey(c => c.VarianteId);
+        b.HasOne<Usuario>().WithMany().HasForeignKey(c => c.UsuarioId);
+        b.Ignore(c => c.Diferencia);
+        // Uno por producto en cada temporada del año: contarlo otra vez lo reemplaza.
+        b.HasIndex(c => new { c.TemporadaId, c.VarianteId }).IsUnique();
+    }
+}
+
 internal sealed class TarjetaDePrecioConfiguracion : IEntityTypeConfiguration<TarjetaDePrecio>
 {
     public void Configure(EntityTypeBuilder<TarjetaDePrecio> b)
