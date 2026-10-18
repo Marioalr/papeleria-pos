@@ -7,8 +7,8 @@ namespace PapeleriaPos.Datos;
 
 /// <summary>
 /// De dónde salió cada movimiento del kardex y quién lo hizo, para leerlo en Inventario › Movimientos: «A-000123» y el
-/// cajero de la venta, «C-000041 · Proveedor» y quien cerró la compra, quien ajustó, quien contó… El movimiento no guarda
-/// quién: lo dice su documento. Una consulta por tipo de documento, solo de los movimientos que se van a enseñar.
+/// cajero de la venta, «C-000041 · Proveedor» y quien cerró la compra, quien ajustó, quien contó (también al terminar una
+/// temporada)… El movimiento no guarda quién: lo dice su documento. Una consulta por tipo de documento, solo de los movimientos que se van a enseñar.
 /// </summary>
 internal sealed class DocumentosDelKardex(PosDbContext db)
 {
@@ -52,6 +52,11 @@ internal sealed class DocumentosDelKardex(PosDbContext db)
         var contados = conteosIds.Count == 0 ? [] : (await db.ConteosCiclicosRenglones.AsNoTracking().Where(r => conteosIds.Contains(r.ConteoId))
                 .Select(r => new { r.ConteoId, r.VarianteId, r.ContadoPorId }).ToListAsync(ct))
             .GroupBy(r => (r.ConteoId, r.VarianteId)).ToDictionary(g => g.Key, g => g.Select(r => r.ContadoPorId).FirstOrDefault(q => q is not null));
+        // Lo contado al terminar una temporada (entrega 13, parte 3): quién contó ese producto.
+        var temporadasIds = De(nameof(TemporadaDelAnio));
+        var deTemporada = temporadasIds.Count == 0 ? [] : (await db.ContadosDeTemporada.AsNoTracking().Where(c => temporadasIds.Contains(c.TemporadaId))
+                .Select(c => new { c.TemporadaId, c.VarianteId, c.UsuarioId }).ToListAsync(ct))
+            .GroupBy(c => (c.TemporadaId, c.VarianteId)).ToDictionary(g => g.Key, g => g.First().UsuarioId);
         var completosIds = De(nameof(ConteoDepartamento));
         var completos = completosIds.Count == 0 ? [] : await db.ConteosDepartamento.AsNoTracking().Where(c => completosIds.Contains(c.Id))
             .ToDictionaryAsync(c => c.Id, c => c.TerminadoPorId, ct);
@@ -76,6 +81,7 @@ internal sealed class DocumentosDelKardex(PosDbContext db)
                         a.UsuarioId),
                 nameof(ConteoCiclico) => Con("del día", contados.GetValueOrDefault((id, m.VarianteId))),
                 nameof(ConteoDepartamento) => Con("completo", completos.GetValueOrDefault(id)),
+                nameof(TemporadaDelAnio) => Con("de la temporada", deTemporada.TryGetValue((id, m.VarianteId), out var conto) ? conto : null),
                 nameof(DecisionDepuracion) => Con("de la depuración", null),
                 OrigenDelMovimiento.LecturaEleventa => new Documento(null, null, "eleventa"),
                 OrigenDelMovimiento.ImportacionEleventa => Con("de la importación de eleventa", null),

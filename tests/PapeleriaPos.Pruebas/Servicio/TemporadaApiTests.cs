@@ -386,6 +386,38 @@ public sealed class TemporadaApiTests(ServicioDeTemporadas servicio) : IClassFix
     }
 
     /// <summary>
+    /// Lo contado al terminar la temporada entra al kardex como un conteo «de la temporada» (al juntar la temporada con los
+    /// movimientos de Inventario › Movimientos, #114): ahí dice quién contó ese producto, el filtro de quién lo hizo lo
+    /// encuentra, y los últimos movimientos del producto en Productos (F3) lo nombran igual.
+    /// </summary>
+    [Fact]
+    public async Task Lo_contado_al_terminarla_sale_en_los_movimientos_con_quien_lo_conto()
+    {
+        var c = await CajaAsync();
+        var departamento = await servicio.DepartamentoAsync();
+        var codigo = Codigo("VLK");
+        var vela = await servicio.ProductoAsync(departamento, "Vela del kardex", 2000, El(2040, 1, 1), codigo: codigo);
+        await servicio.MovimientoAsync(c.Sucursal, vela, TipoMovimiento.InventarioInicial, 12, El(2040, 9, 1));
+        var temporada = await TemporadaAsync(c, Del16DeSeptiembre, Al5DeNoviembre, vela);
+        await Leer<TemporadaParaTerminarDto>(await ContarAsync(c, temporada, c.Encargado, vela, 10_000));
+        await Leer<TemporadaParaTerminarDto>(await c.Http.PostAsJsonAsync($"api/temporadas/{temporada}/terminar",
+            new SolicitudTerminarTemporada(c.Encargado.UsuarioId, c.Sucursal)));
+
+        // El día de la prueba (el reloj fijo de la temporada), no el de la PC.
+        var dia = $"&desde={HoraMexico.ALocal(Hoy.UtcDateTime):yyyy-MM-dd}&hasta={HoraMexico.ALocal(Hoy.UtcDateTime):yyyy-MM-dd}";
+        var movimientos = await Leer<MovimientosInventarioDto>(await c.Http.GetAsync(
+            $"api/sucursales/{c.Sucursal}/inventario/movimientos?usuarioId={c.Encargado.UsuarioId}&clase=Conteo&q={codigo}{dia}"));
+        var conteo = Assert.Single(movimientos.Movimientos);
+        Assert.Equal((-2m, "de la temporada", "Encargado de prueba"), (conteo.Cantidad, conteo.Documento, conteo.Quien));
+        var delEncargado = await Leer<MovimientosInventarioDto>(await c.Http.GetAsync(
+            $"api/sucursales/{c.Sucursal}/inventario/movimientos?usuarioId={c.Encargado.UsuarioId}&q={codigo}&quienId={c.Encargado.UsuarioId}{dia}"));
+        Assert.Equal([ClaseMovimiento.Conteo], delEncargado.Movimientos.Select(m => m.Clase));
+        // En Productos (F3), los últimos movimientos del producto lo nombran igual: «Conteo de la temporada».
+        var ultimos = (await c.Http.GetFromJsonAsync<List<MovimientoProductoDto>>($"api/catalogo/variantes/{vela}/movimientos?sucursalId={c.Sucursal}"))!;
+        Assert.Equal("de la temporada", ultimos.First(m => m.Tipo == TipoMovimiento.Conteo).Documento);
+    }
+
+    /// <summary>
     /// Lo contado entra contra lo que decía el sistema al contarlo, no contra lo de cuando se termina (revisión de la entrega 13):
     /// el sistema dice 10, se cuentan 8 (faltan 2), se vende una mientras se cuenta lo demás y luego se termina. Quedan 7, como en
     /// la mesa, y el faltante queda de 2; antes quedaban 8 (la vendida regresaba a la existencia) y el faltante, de 1.

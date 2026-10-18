@@ -310,6 +310,7 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
             nameof(Devolucion) when m.DocumentoId is { } id => devoluciones.GetValueOrDefault(id),
             nameof(ConteoCiclico) => "del día",
             nameof(ConteoDepartamento) => "completo",
+            nameof(TemporadaDelAnio) => "de la temporada",
             _ => null,
         };
 

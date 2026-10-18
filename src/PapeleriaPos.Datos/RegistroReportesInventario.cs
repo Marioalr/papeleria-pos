@@ -204,7 +204,7 @@ public sealed class RegistroReportesInventario(PosDbContext db)
     /// <summary>
     /// Lo que hizo alguien, según el documento de cada movimiento (el movimiento no guarda quién): sus ventas, sus devoluciones,
     /// las compras que cerró (o recibió, si no se han cerrado), sus ajustes y mermas, los paquetes que abrió, lo que contó en
-    /// el conteo del día y los conteos completos que cerró.
+    /// el conteo del día o al terminar una temporada y los conteos completos que cerró.
     /// </summary>
     private IQueryable<MovimientoInventario> DeQuien(IQueryable<MovimientoInventario> consulta, Guid quien)
     {
@@ -222,7 +222,9 @@ public sealed class RegistroReportesInventario(PosDbContext db)
             || (m.DocumentoTipo == nameof(AperturaPaquete) && aperturas.Contains(m.DocumentoId))
             || (m.DocumentoTipo == nameof(ConteoDepartamento) && completos.Contains(m.DocumentoId))
             || (m.DocumentoTipo == nameof(ConteoCiclico)
-                && db.ConteosCiclicosRenglones.Any(r => r.ConteoId == m.DocumentoId && r.VarianteId == m.VarianteId && r.ContadoPorId == quien)));
+                && db.ConteosCiclicosRenglones.Any(r => r.ConteoId == m.DocumentoId && r.VarianteId == m.VarianteId && r.ContadoPorId == quien))
+            || (m.DocumentoTipo == nameof(TemporadaDelAnio)
+                && db.ContadosDeTemporada.Any(c => c.TemporadaId == m.DocumentoId && c.VarianteId == m.VarianteId && c.UsuarioId == quien)));
     }
 
     /// <summary>Las variantes cuyo producto coincide con lo escrito (el nombre, la marca, la variante o un código).</summary>
