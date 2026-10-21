@@ -573,8 +573,8 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
     private sealed class Dibujo : Renderer
     {
         private readonly List<(string Texto, ulong Clic)> _botones = [];
-        private readonly Dictionary<string, ulong> _eventos = [];
         private string _textos = "";
+        private int _raiz;
 
         /// <summary>Enfocar un campo (FocusAsync, en el corte) va a la página falsa, que contesta todo.</summary>
         public Dibujo(IServiceProvider servicios) : base(servicios, NullLoggerFactory.Instance) =>
@@ -608,21 +608,123 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
         public async Task<T> DibujarAsync<T>(Dictionary<string, object?> parametros) where T : IComponent
         {
             var pantalla = (T)InstantiateComponent(typeof(T));
-            await RenderRootComponentAsync(AssignRootComponentId(pantalla), ParameterView.FromDictionary(parametros));
+            _raiz = AssignRootComponentId(pantalla);
+            await RenderRootComponentAsync(_raiz, ParameterView.FromDictionary(parametros));
             return pantalla;
         }
 
-        public Task ApretarAsync(ulong boton) => DispatchEventAsync(boton, null, new MouseEventArgs());
-
-        /// <summary>El último manejador de ese evento («oninput», «onkeydown»…) en el elemento con ese id, o null.</summary>
-        public ulong? Evento(string id, string evento)
+        /// <summary>
+        /// Aprieta un botón que se encontró antes (<see cref="Boton"/>, <see cref="PorTitulo"/>). Si entre que se encontró y ahora
+        /// el botón se volvió a dibujar con otro número de evento (su lambda nueva), el de antes ya no existe: se aprieta el mismo
+        /// botón ya dibujado otra vez, el único con su nombre o su título en lo que está dibujado ahora. Se llama dentro del
+        /// despachador, donde la pantalla no cambia mientras tanto.
+        /// </summary>
+        public async Task ApretarAsync(ulong boton)
         {
-            lock (_botones)
-                return _eventos.TryGetValue($"{id}:{evento}", out var manejador) ? manejador : null;
+            try
+            {
+                await DispatchEventAsync(boton, null, new MouseEventArgs());
+            }
+            catch (ArgumentException ex) when (ex.ParamName == "eventHandlerId" && ElMismoBoton(boton) is { } ahora)
+            {
+                await DispatchEventAsync(ahora, null, new MouseEventArgs());
+            }
         }
+
+        /// <summary>
+        /// El manejador de ese evento («oninput», «onkeydown»…) en el elemento con ese id, en lo que está dibujado ahora, o null.
+        /// Antes se tomaba de lo que se iba dibujando, y ahí solo se veía cuando el elemento entraba con su id: un campo que se
+        /// vuelve a dibujar (su @bind nuevo) cambia de número sin volver a dibujar su id, y la prueba escribía con el número de
+        /// antes, que ya no existía («There is no event handler associated with this event», en el CI). Dentro del despachador
+        /// (donde se escribe enseguida) se lee ahí mismo; fuera, se le pide.
+        /// </summary>
+        public ulong? Evento(string id, string evento) =>
+            Dispatcher.CheckAccess() ? EventoAhora(_raiz, id, evento) : Dispatcher.InvokeAsync(() => EventoAhora(_raiz, id, evento)).GetAwaiter().GetResult();
 
         /// <summary>Lo que se escribe en un campo con @bind: llega como su «oninput».</summary>
         public Task EscribirAsync(ulong manejador, string valor) => DispatchEventAsync(manejador, null, new ChangeEventArgs { Value = valor });
+
+        private ulong? EventoAhora(int componente, string id, string evento)
+        {
+            var marcos = GetCurrentRenderTreeFrames(componente);
+            for (var i = 0; i < marcos.Count; i++)
+            {
+                var m = marcos.Array[i];
+                if (m.FrameType == RenderTreeFrameType.Component && EventoAhora(m.ComponentId, id, evento) is { } adentro)
+                    return adentro;
+                if (m.FrameType != RenderTreeFrameType.Element)
+                    continue;
+                var (suyo, manejador) = ((string?)null, 0UL);
+                for (var j = i + 1; j < i + m.ElementSubtreeLength && marcos.Array[j].FrameType == RenderTreeFrameType.Attribute; j++)
+                {
+                    var a = marcos.Array[j];
+                    if (a.AttributeName == "id")
+                        suyo = a.AttributeValue as string;
+                    else if (a.AttributeName == evento && a.AttributeEventHandlerId != 0)
+                        manejador = a.AttributeEventHandlerId;
+                }
+                if (suyo == id && manejador != 0)
+                    return manejador;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// El clic de ahora del botón que tenía ese número: el único botón dibujado ahora con el mismo nombre (su primer texto) o
+        /// el mismo título; null si no hay uno solo así.
+        /// </summary>
+        private ulong? ElMismoBoton(ulong antes)
+        {
+            string? nombre, titulo;
+            lock (_botones)
+            {
+                nombre = _botones.LastOrDefault(b => b.Clic == antes).Texto;
+                titulo = PorTitulo.FirstOrDefault(t => t.Value == antes).Key;
+            }
+            var ahora = new List<(string? Nombre, string? Titulo, ulong Clic)>();
+            BotonesAhora(_raiz, ahora);
+            var iguales = ahora.Where(b => nombre is not null ? b.Nombre == nombre : titulo is not null && b.Titulo == titulo).ToList();
+            return iguales.Count == 1 ? iguales[0].Clic : null;
+        }
+
+        private void BotonesAhora(int componente, List<(string? Nombre, string? Titulo, ulong Clic)> botones)
+        {
+            var marcos = GetCurrentRenderTreeFrames(componente);
+            for (var i = 0; i < marcos.Count; i++)
+            {
+                var m = marcos.Array[i];
+                if (m.FrameType == RenderTreeFrameType.Component)
+                    BotonesAhora(m.ComponentId, botones);
+                if (m.FrameType != RenderTreeFrameType.Element)
+                    continue;
+                var (titulo, clic) = ((string?)null, 0UL);
+                var j = i + 1;
+                for (; j < i + m.ElementSubtreeLength && marcos.Array[j].FrameType == RenderTreeFrameType.Attribute; j++)
+                {
+                    var a = marcos.Array[j];
+                    if (a.AttributeName == "title")
+                        titulo = a.AttributeValue as string;
+                    else if (a.AttributeName == "onclick" && a.AttributeEventHandlerId != 0)
+                        clic = a.AttributeEventHandlerId;
+                }
+                if (clic == 0)
+                    continue;
+                // Su nombre es su primer texto, como lo anota UpdateDisplayAsync.
+                string? nombre = null;
+                for (; j < i + m.ElementSubtreeLength && nombre is null; j++)
+                {
+                    if (marcos.Array[j].FrameType is RenderTreeFrameType.Text or RenderTreeFrameType.Markup)
+                    {
+                        var texto = Limpio(marcos.Array[j]);
+                        nombre = texto.Length > 0 ? texto : null;
+                    }
+                }
+                botones.Add((nombre, titulo, clic));
+            }
+        }
+
+        private static string Limpio(RenderTreeFrame marco) =>
+            Etiquetas.Replace(WebUtility.HtmlDecode(marco.FrameType == RenderTreeFrameType.Text ? marco.TextContent : marco.MarkupContent), "").Trim();
 
         protected override void HandleException(Exception exception)
         {
@@ -635,7 +737,6 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
             lock (_botones)
             {
                 string? titulo = null;
-                string? id = null;
                 ulong? clicSinNombre = null;
                 for (var i = 0; i < lote.ReferenceFrames.Count; i++)
                 {
@@ -643,16 +744,10 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
                     switch (marco.FrameType)
                     {
                         case RenderTreeFrameType.Element:
-                            (titulo, id) = (null, null);
+                            titulo = null;
                             break;
                         case RenderTreeFrameType.Attribute when marco.AttributeName == "title":
                             titulo = marco.AttributeValue as string;
-                            break;
-                        case RenderTreeFrameType.Attribute when marco.AttributeName == "id":
-                            id = marco.AttributeValue as string;
-                            break;
-                        case RenderTreeFrameType.Attribute when id is not null && marco.AttributeEventHandlerId != 0 && marco.AttributeName != "onclick":
-                            _eventos[$"{id}:{marco.AttributeName}"] = marco.AttributeEventHandlerId;
                             break;
                         case RenderTreeFrameType.Attribute when marco.AttributeName == "onclick" && marco.AttributeEventHandlerId != 0:
                             if (titulo is not null)
@@ -660,7 +755,7 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
                             clicSinNombre = marco.AttributeEventHandlerId;
                             break;
                         case RenderTreeFrameType.Text or RenderTreeFrameType.Markup:
-                            var texto = Etiquetas.Replace(WebUtility.HtmlDecode(marco.FrameType == RenderTreeFrameType.Text ? marco.TextContent : marco.MarkupContent), "").Trim();
+                            var texto = Limpio(marco);
                             if (texto.Length == 0)
                                 break;
                             _textos += texto + "\n";
