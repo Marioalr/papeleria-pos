@@ -14,8 +14,9 @@
   una PC con Windows, y el que junta la configuración de cada PC), cables de red, cinta de color y una memoria USB con
   todo.
 - **Las herramientas de prueba,** probadas antes en la PC de desarrollo. Las de la impresora de tickets y el lector ya
-  están (2026-10-16): `probar-impresora-tickets` y `probar-lector`. Falta la que lee por SNMP las tres impresoras de
-  inyección, con el módulo de impresión.
+  están (2026-10-16): `probar-impresora-tickets` y `probar-lector`; el simulador de cajas para el día pico, desde el
+  2026-10-17 (`simular-dia-pico`, [abajo](#el-día-pico-en-la-caja-principal-real)). Falta la que lee por SNMP las tres
+  impresoras de inyección, con el módulo de impresión.
 - **Sin compras** (2026-10-09): todo se hace con lo que ya hay en la tienda.
 
 ## Fin de semana del 17 y 18 de octubre
@@ -51,6 +52,33 @@ datos de eleventa.
      cortes de otros días y qué se mira del inventario.
 4. **Lo que siga pendiente de conocer la tienda** ([abajo](#primer-fin-de-semana-conocer-la-tienda)), si da tiempo y
    el dueño lo aprueba.
+
+## El día pico en la caja principal real
+
+Cualquier fin de semana, en un rato sin venta (antes de abrir o al cerrar): unos 15 minutos con la caja principal libre. Mide
+el servicio del POS en el procesador y el disco de la caja principal de verdad, con un día pico de dos cajas
+([plan](plan.md#para-el-piloto-con-dos-cajas)). **Solo lectura para eleventa:** no lo abre ni lo lee; usa una copia de la
+base de prueba del POS, nunca la de eleventa ni la de la prueba con una persona.
+
+- **Qué hace** `scripts\simular-dia-pico.cmd`: compila el servicio y el simulador del repositorio, arranca un servicio del
+  POS solo para él (en esta PC, en un puerto propio, sin red hacia afuera) con una copia de la base de prueba que dejó el
+  instalador (si no está, arma una igual), y dos cajas simuladas venden 120 tickets cada una en 10 minutos, como la caja de
+  verdad: con su copia, cobros, búsquedas, devoluciones, cancelaciones, entradas y salidas, un precio que cambia, un producto
+  que llega, y la red de la segunda caída 30 segundos a la mitad del día. Al final hace el corte de cada turno, cuadra todo,
+  detiene el servicio y borra su carpeta.
+- **Antes:** el repositorio al día y .NET en la caja principal (como `observar-en-vivo` en la caja 2), cerrada la caja de la
+  prueba del POS y lo demás pesado. Eleventa puede quedarse abierto, sin vender: el simulador le quita procesador.
+- **Se corre** con doble clic en `scripts\simular-dia-pico.cmd`. Dice cómo va; al final, «Cuadra» o qué no cuadró.
+- **Se anota:** el informe que deja en `Documentos\TPV\dia-pico` (los tiempos contra las metas, la memoria del servicio, el
+  cuadre, lo que pasó y la PC). Se trae a la PC de desarrollo: no tiene datos de la tienda.
+- **Sale bien si** cuadra (ninguna venta perdida ni duplicada, los cortes al centavo, las existencias con su kardex) y los
+  tiempos de 19 de cada 20 quedan en sus metas; si no, el informe dice qué y cuánto, y se revisa entre semana.
+- **Con la red de verdad (si da tiempo):** en la caja 2, con la caja de la prueba del POS abierta en la caja principal (su
+  servicio, en el puerto 5180), `dotnet run -c Release --project src\PapeleriaPos.Herramientas -- simular-cajas --servicio
+  http://<IP de la caja principal>:5180 --cajas 2 --tickets 120 --minutos 10 --caida 30s@50% --salida
+  "%USERPROFILE%\Documents\TPV\dia-pico\por-wifi.md"`: las cajas simuladas van por el Wi-Fi de la caja 2. Así no mide la
+  memoria del servicio (es de la otra PC: se ve en su Administrador de tareas). Deja las cajas simuladas y sus ventas en
+  la base de la prueba con una persona; «Empezar de cero», en la franja de la prueba, la deja como estaba.
 
 ## Primer fin de semana: conocer la tienda
 
@@ -173,7 +201,8 @@ hora algo no funciona, se regresa todo.
   caja. Si se oprime por error, «Volver sin dar de alta» regresa.
 - **El bot de Telegram de verdad.**
 - **La impresión** con la cola de laboratorio y después con la real, sin quitar Control Print hasta el piloto.
-- **Un día pico** (~120 tickets) con el simulador de cajas, contra la caja principal real.
+- **Un día pico** (~120 tickets) con el simulador de cajas, contra la caja principal real
+  ([cómo](#el-día-pico-en-la-caja-principal-real); se puede antes, con la base de prueba).
 
 ## Durante una falla de red
 

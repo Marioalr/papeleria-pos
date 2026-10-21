@@ -3,9 +3,7 @@ using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Interfaz;
-using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Pruebas.Servicio;
@@ -54,48 +52,11 @@ public sealed class MedicionCopiaTests(ITestOutputHelper salida) : IDisposable
         return porQue;
     }
 
-    /// <summary>
-    /// El catálogo ficticio, <paramref name="veces"/> veces: cada producto otra vez con su nombre y «· 2», «· 3»…, sus
-    /// presentaciones, sus precios y sus códigos (con «-2», «-3»… para que no se repitan).
-    /// </summary>
+    /// <summary>El catálogo ficticio, <paramref name="veces"/> veces (como el simulador de cajas con --catalogo-por).</summary>
     private static async Task MultiplicarAsync(ServicioDePrueba servicio, int veces)
     {
         await using var db = servicio.Base();
-        var productos = await db.Productos.AsNoTracking().Where(p => p.Activo)
-            .Include(p => p.Variantes).ThenInclude(v => v.Presentaciones).ThenInclude(p => p.Codigos).ToListAsync();
-        var precios = (await db.Precios.AsNoTracking().ToListAsync()).ToLookup(p => p.VarianteId);
-        for (var n = 2; n <= veces; n++)
-        {
-            foreach (var p in productos)
-            {
-                var producto = new Producto
-                {
-                    Nombre = $"{p.Nombre} · {n}", MarcaId = p.MarcaId, DepartamentoId = p.DepartamentoId, Tipo = p.Tipo, Impuesto = p.Impuesto,
-                };
-                db.Productos.Add(producto);
-                foreach (var v in p.Variantes.Where(v => v.Activa))
-                {
-                    var variante = new Variante { ProductoId = producto.Id, Descripcion = v.Descripcion, UnidadBase = v.UnidadBase };
-                    db.Variantes.Add(variante);
-                    var nuevas = new Dictionary<Guid, Guid>();
-                    foreach (var pr in v.Presentaciones)
-                    {
-                        var presentacion = new Presentacion { VarianteId = variante.Id, Nombre = pr.Nombre, Factor = pr.Factor, EsBase = pr.EsBase };
-                        db.Presentaciones.Add(presentacion);
-                        nuevas[pr.Id] = presentacion.Id;
-                        foreach (var c in pr.Codigos)
-                            db.CodigosBarras.Add(new CodigoBarras { Codigo = $"{c.Codigo}-{n}", PresentacionId = presentacion.Id, Origen = c.Origen });
-                    }
-                    foreach (var precio in precios[v.Id])
-                        db.Precios.Add(new Precio
-                        {
-                            VarianteId = variante.Id, PresentacionId = precio.PresentacionId is { } pid ? nuevas[pid] : null, SucursalId = precio.SucursalId,
-                            CantidadMinima = precio.CantidadMinima, PrecioCentavos = precio.PrecioCentavos,
-                        });
-                }
-            }
-        }
-        await db.SaveChangesAsync();
+        await PapeleriaPos.Herramientas.Simulador.BaseDePrueba.MultiplicarCatalogoAsync(db, veces);
     }
 
     [FactDeMedicion]
@@ -128,11 +89,14 @@ public sealed class MedicionCopiaTests(ITestOutputHelper salida) : IDisposable
         // Lo que cambió: un precio, una venta (solo existencias) y 50 precios.
         var conPrecio = copia.Productos.Where(p => p.Precios.Count == 1 && p.Precios[0].PresentacionId is null && p.LlevaInventario)
             .OrderBy(p => p.VarianteId).Take(60).ToList();
+        // Como lo pide la caja (Contingencia): con las versiones de lo más vendido y lo elegido que ya tiene, para que no
+        // vuelvan enteras con cada cambio.
         async Task<(long Bytes, double Ms, CambiosCopiaDto Cambios)> CambiosAsync(PaqueteContingenciaDto desde)
         {
             var reloj = Stopwatch.StartNew();
             var bytes = await http.GetByteArrayAsync(
-                $"api/cajas/{caja.Id}/cambios?desde={desde.Version}&existencias={desde.VersionExistencias}&base={desde.Base}&formato={CopiaAlDia.Formato}");
+                $"api/cajas/{caja.Id}/cambios?desde={desde.Version}&existencias={desde.VersionExistencias}&base={desde.Base}&formato={CopiaAlDia.Formato}"
+                + $"&vendidos={desde.VersionVendidos ?? 0}&elegidos={desde.VersionElegidos ?? 0}");
             var ms = reloj.Elapsed.TotalMilliseconds;
             return (bytes.Length, ms, JsonSerializer.Deserialize<CambiosCopiaDto>(bytes, JsonSerializerOptions.Web)!);
         }

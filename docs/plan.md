@@ -1024,13 +1024,95 @@ para esos días ([forma de trabajar](notas.md#forma-de-trabajar), [guía de los 
 | Crear el bot de Telegram de verdad y probarlo | Fase 1, entrega 4 | Falta |
 | Probar la impresión con la cola de laboratorio y después con la real | Fase 1, entrega 5 | Falta |
 | Prueba con una persona real | [Ver arriba](#prueba-con-una-persona-real) | La primera fue el 2026-10-10, con la pantalla de hoy, y fue precaria (por eso el rediseño). La siguiente es el fin de semana del 17 y 18 de octubre, con la pantalla nueva lista; de su aprobación dependen los reportes |
-| Medir un día pico (~120 tickets) con las dos cajas, en la caja principal real | Hace falta el simulador de cajas (no existe; [descrito aquí](prueba-sucursales-linux.md#lo-que-hay-que-arreglar-o-construir)) | Falta |
+| Medir un día pico (~120 tickets) con las dos cajas, en la caja principal real | El simulador de cajas (`simular-cajas`, [avance abajo](#para-el-piloto-con-dos-cajas)) y la [guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real) | El simulador ya está (2026-10-17) y se midió en la PC de desarrollo; falta un fin de semana en la caja principal |
 | Precios y clientes | [Fase 3](fase-3-precios-clientes.md) | Las entregas 1 y 2 ya están en `main`. Propuesta, por aprobar: que la entrega 3 (consumibles del mes) capture todos los gastos del mes cuando se pagan; el reporte de la ganancia va con los reportes |
 | Servicios con costo real (engargolado y enmicado con depreciación, luz y consumibles; impresiones por impresora), pedidos y WhatsApp desde la PC. Apartados y cotizaciones guardadas quedan como mejora: el eleventa de la tienda no los tiene | Fase 4 ([servicios](servicios.md), [pedidos](pedidos.md), [WhatsApp](whatsapp.md)) | Falta su plan |
 | Instalador de la tienda, soporte a distancia (NetBird gratis u otro) y cómo se actualiza | [Por definir](#pendientes) | Falta |
 | Respaldo cifrado fuera de la tienda y vigilancia de la caja principal: se reporta a Healthchecks.io cada pocos minutos en horario, y si no abre o se apaga, Healthchecks.io avisa por Telegram (el bot del POS no puede avisar de su propia caja) | Fase 5 ([notas](notas.md#respaldo-fuera-de-la-tienda-y-aviso-de-apertura)) | Falta (chico) |
 | Depuración, conteo físico, importación final y arranque | Fase 5 y [depuración](#depuración-del-inventario) | Falta |
 | Promociones y kits, si el piloto queda cerca del regreso a clases | [Fase 3](fase-3-precios-clientes.md) | Pospuestas por ahora |
+
+**Avance (2026-10-17): el simulador de cajas y el día pico en la PC de desarrollo.** Lo que pedían la fila del día pico
+y la [prueba de las sucursales](prueba-sucursales-linux.md#lo-que-hay-que-arreglar-o-construir): un día pico con varias
+cajas contra el servicio de verdad, como le hablan las cajas, también con la red caída. Es `simular-cajas`, en
+Herramientas ([cómo se corre](../README.md#el-día-pico-con-varias-cajas-simulador); en la tienda,
+`scripts\simular-dia-pico.cmd` con [su guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real)). Es una
+herramienta de prueba: no cambia nada del POS, y no corre contra un servicio que no sea de prueba ni contra uno en el
+piloto con eleventa.
+- **Las cajas son las de verdad, sin la pantalla:** cada caja simulada usa las clases de la caja (`ClienteCaja`; la
+  contingencia con su latido, su aviso y su copia al día; su `caja-local.db` en una carpeta temporal; la foto del
+  catálogo para escanear y buscar; sus dos conexiones y sus plazos) y le habla al servicio por HTTP, con la llave de su
+  caja. Las da de alta con el PIN del dueño (o usa las que ya había), entra quien atiende y abre su turno.
+- **El día:** tickets de 1 a 8 renglones de lo más vendido, con su cantidad; algunos buscados por nombre (letra por
+  letra, contra la copia) y los rápidos; efectivo con billetes, tarjeta, transferencia y mixto; una entrada y dos salidas
+  de efectivo por caja; cancelaciones (con el PIN del encargado) y devoluciones, también de tickets de la otra caja. Al
+  40 % del día el dueño cambia el precio de lo más vendido mientras una caja lo tiene en el ticket (la caja principal
+  rechaza ese cobro y se cobra otra vez con el precio nuevo); al 60 % llega un producto que nadie había dado de alta: la
+  caja 1 lo da de alta ahí mismo y lo vende, y después la otra lo escanea con lo que le llegó a su copia. Al final, el
+  corte Z de cada turno, contando lo que espera el corte. Las horas siguen las de la tienda, de 9:00 a 20:30 (más gente
+  a mediodía y a la salida de la escuela), comprimidas en los minutos que se pidan; con la misma base sale el mismo día.
+- **La caída** (`--caida 30s@50%`): corta la red de la caja 2 (la del Wi-Fi) como un interruptor: no conecta, y lo que
+  iba a medias, también el aviso, se corta. La caja cobra con su copia, lo deja en su bandeja y lo sube al volver.
+- **Qué mide:** lo que espera quien atiende (escanear, buscar, cobrar en línea y sin conexión), el latido, cuánto tarda un
+  precio en llegar a la copia de cada caja, cuánto tarda en subir la bandeja al volver la red, abrir la caja y cada
+  llamada a la caja principal por su ruta (la mitad, 19 de cada 20, el 99 %, la peor y cuánto pesa); y la memoria y el
+  procesador del servicio. Lo compara con las [metas de la propuesta](propuesta-interfaz.md#metas) y las de
+  [la prueba de las sucursales](prueba-sucursales-linux.md#qué-se-mide-y-cuándo-sale-bien).
+- **El cuadre, al final:** cada venta que cobró cada caja está una sola vez en la caja principal, con su folio y su total,
+  y no hay ninguna de más; los folios de cada caja, seguidos; lo hecho sin conexión subió una vez y la bandeja quedó
+  vacía; el turno y el corte de cada caja (ventas, canceladas, tarjeta, transferencia y lo contado contra lo esperado) y
+  el corte del día; las existencias bajaron lo vendido menos lo devuelto y son la suma de su kardex, en toda la base;
+  ningún folio repetido; la copia de cada caja quedó al día. Si algo no cuadra, el informe dice qué y cuánto, y el
+  comando sale con 1. La prueba automática (`SimuladorCajasTests`) corre 2 cajas × 10 tickets con la caída y revisa el
+  cuadre, no los tiempos.
+- **Medido en la PC de desarrollo** (i9-13900HX con Linux; el servicio en Release con una copia de la base ficticia de un
+  año, 1,458 productos, y en la última columna con el catálogo copiado 4 veces, 5,832, como el de la tienda; 2 cajas ×
+  120 tickets en 10 minutos; la PC no estaba sola, pudo tener compilaciones y pruebas de otras ramas a la par). Sin la
+  pantalla: lo que tarda en pintarse se mide en la caja de Windows. 19 de cada 20 veces y, entre paréntesis, la peor:
+
+  | Qué | Meta | Sin caída | Con la caída de 30 s | Catálogo ×4, con la caída |
+  |---|---|---|---|---|
+  | Escanear → la línea (contra la copia) | La mitad ≤ 16 ms, el 99 % < 50 ms | 0.06 ms (3.3 ms) | 0.07 ms (1.9 ms) | 0.06 ms (1.7 ms) |
+  | Escribir → resultados (contra la copia) | < 100 ms | 0.97 ms (26 ms) | 0.95 ms (33 ms) | 1.5 ms (28 ms) |
+  | Cobrar → listo, en línea | < 300 ms | 31 ms (404 ms¹) | 25 ms (412 ms¹) | 24 ms (268 ms¹) |
+  | Cobrar → listo, sin conexión | < 300 ms | No se dio | 16 ms (2 cobros) | 82 ms¹ (2 cobros) |
+  | El latido | < 100 ms | 1.3 ms (20 ms) | 2.6 ms (29 ms) | 1.3 ms (20 ms) |
+  | Un precio → en la copia de cada caja | < 2 min | 0.2 s | 0.25 s | 0.63 s |
+  | Volver la red → la bandeja arriba, en línea | < 2 min | No se dio | 3.5 s | 2.6 s |
+  | Abrir la caja (bajar la copia completa y armar su foto) | < 5 s | 0.85 s | 1.1 s | 2.0 s |
+  | Memoria del servicio: antes del día → al terminar | < 300 MB | 261 → 370 MB | 262 → 383 MB | 282 → 422 MB |
+
+  ¹ La primera del día: lo que se usa por primera vez se compila (en el servicio recién arrancado o en la caja). El 99 %
+  del cobro en línea: 84, 33 y 90 ms.
+- **Cuadró en todas** (también en las de abajo): las 240 ventas, ninguna perdida ni duplicada; los folios del 1 al 120 en
+  cada caja; lo cobrado sin conexión, arriba una sola vez; cada corte sin diferencia entre lo esperado y lo contado; el
+  corte del día con sus 236 tickets; las existencias de los ~300 productos que se movieron bajaron lo vendido menos lo
+  devuelto, y en toda la base cada existencia es la suma de su kardex. El servicio usó el 2 % de un núcleo.
+- **Con la caída de 2 minutos a mediodía** (`--caida 2m@25%`, cuando hay más gente): la caja 2 trabajó sin conexión
+  0.8 s después de caerse y cobró 30 tickets con su copia (19 de cada 20 en 21 ms). 6.9 s después de volver la red ya
+  había subido sus 33 cosas (30 ventas, un movimiento de efectivo y dos de la bitácora), cada una una vez, y trabajaba en
+  línea; las devoluciones que esperaban a la caja principal se hicieron al volver. El precio que el dueño cambió durante
+  la caída le llegó en cuanto volvió (33 s después del cambio). Cuadró igual.
+- **Lo que no cumple: la memoria del servicio.** La meta es menos de 300 MB y sin crecer de un día a otro (antes de la
+  entrega 5 usaba ~190–230 MB en esta PC). Ahora empieza el día con 250–280 MB y lo termina con 370–420 MB (lo más, con
+  el catálogo ×4). No es una fuga: con 1,200 tickets sin esperas llega a ~410 MB y de ahí no pasa, sube y baja con cada
+  recolección. Lo que ocupa, según Linux: 120–226 MB la memoria propia del servicio (sobre todo los objetos de .NET),
+  90–107 MB lo que .NET arma para el código que compila al vuelo y 67–79 MB sus bibliotecas. Con el recolector de
+  memoria «de estación» en vez del «de servidor», el mismo día con la caída queda en 230 → 307 MB, con el cobro igual 19
+  de cada 20 veces (27 ms) y más lento el 99 % (97 ms contra 33); compilado de antemano (ReadyToRun) no baja, y con 2
+  núcleos tampoco. No se cambió: ni así llega a la meta, y tiene su costo. Primero se mide en la caja principal con el
+  simulador, que lo dice; si allá pasa de 300 MB, lo primero es probar el recolector de estación, o revisar la meta, que
+  se midió antes del catálogo en memoria y la búsqueda de la entrega 5.
+- **Otras cosas que se vieron, sin meta propia:** lo que cambió pesa en promedio 0.6 KB por pedido (unos 470 en el día,
+  entre las dos cajas); la copia completa, 1.1 MB (4.1 MB con el catálogo ×4), y bajarla con el día en marcha, 0.5–1.1
+  s; de lo demás, lo más lento es el conteo cíclico del día al entrar a vender, ~200 ms. Con el catálogo ×4, un precio
+  tarda más en llegar a la copia (0.6 s) porque la caja vuelve a armar el índice de su búsqueda, de fondo. La medición
+  de la copia (`MedicionCopiaTests`) pedía lo que cambió sin decir qué versión de lo más vendido traía la caja, y cada
+  «un precio» llegaba con lo más vendido completo (62 KB con el catálogo ×4); ya lo pide como la caja: 1.9 KB.
+- **Falta:** correrlo en la caja principal real un sábado o domingo
+  ([guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real)), y si da tiempo con la caja 2 por su Wi-Fi; y
+  para la prueba de las sucursales, la carga sostenida (varios días seguidos, para ver la memoria de un día a otro) y
+  apagar el servicio a media venta, que el simulador no hace.
 
 **Respuestas del dueño (2026-10-08):** usa el reporte de ventas por periodo (día, mes y año a la fecha) y la comparación
 contra hace un año, y se agregarán más; la meta es saber exactamente cuánto se gana. Las recargas y el pago de servicios
@@ -1215,7 +1297,8 @@ Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
 - [ ] Capturar cada gasto cuando se paga (propuesta, por aprobar: con la entrega 3 de la fase 3)
 - [ ] Probar en Windows con las dos cajas reales: servicio, alta de la caja 2, contingencia, respaldos, ventana de la
   caja y ticket desde las dos (el cajón, cuando lo haya)
-- [ ] Medir un día pico (~120 tickets) con las dos cajas, en la caja principal real, con el simulador de cajas
+- [ ] Medir un día pico (~120 tickets) con las dos cajas, en la caja principal real, con el simulador de cajas (ya está,
+  2026-10-17: `scripts\simular-dia-pico.cmd`, [guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real))
 - [ ] Departamentos en el POS: darlos de alta, cambiarles el nombre y desactivarlos. Hoy solo llegan de eleventa, y
   Compras pide darlos de alta «en F3 Productos», donde no se puede ([paridad](paridad-eleventa.md#productos-y-precios))
 - [ ] La importación final sin las ventas que ya mandó el puente (por `VENTATICKETS.ID`), para no contarlas dos veces
