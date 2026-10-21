@@ -151,10 +151,16 @@ public sealed class ServicioControl(PosDbContext db)
             autorizacion.AutorizadorId, ResultadoBitacora.Autorizado);
     }
 
-    /// <summary>Un registro de la bitácora que hizo una caja sin conexión. Guarda; si ya llegó antes, no lo repite.</summary>
+    /// <summary>
+    /// Un registro de la bitácora que hizo una caja sin conexión. Guarda; si ya llegó antes, no lo repite. Lo que anotó el cobro
+    /// sin conexión de una venta que sí había quedado en línea (la caja dejó de esperar la respuesta y la cobró con su copia,
+    /// entrega 5, parte 2) tampoco: el cobro en línea ya dejó lo suyo, y la de la caja no se guardó.
+    /// </summary>
     public async Task RegistrarDeContingenciaAsync(BitacoraContingenciaDto b, CancellationToken ct = default)
     {
         if (await db.Bitacora.AnyAsync(x => x.Id == b.Id, ct))
+            return;
+        if (b.VentaId is { } ventaId && LoDelCobro.Contains(b.Accion) && await db.Ventas.AnyAsync(v => v.Id == ventaId && !v.EnContingencia, ct))
             return;
         db.Bitacora.Add(new Bitacora
         {
@@ -164,6 +170,9 @@ public sealed class ServicioControl(PosDbContext db)
         });
         await db.SaveChangesAsync(ct);
     }
+
+    /// <summary>Lo que anota el cobro, en línea y sin conexión, de su propia venta.</summary>
+    private static readonly HashSet<AccionControlada> LoDelCobro = [AccionControlada.CambiarPrecio, AccionControlada.Descuento, AccionControlada.ExcederLimiteCredito];
 
     /// <summary>Agrega a la bitácora sin guardar.</summary>
     public void Registrar(

@@ -16,6 +16,12 @@ public class Existencia
     /// <summary>Centavos por unidad base, sin redondear. Vacío si no hay existencia.</summary>
     public decimal? CostoPromedio => Cantidad.EsPositiva ? CostoCentavos * Cantidad.Escala / (decimal)Cantidad.Milesimas : null;
 
+    /// <summary>
+    /// La versión de las existencias con que cambió por última vez la cantidad (entrega 5, parte 2): las cajas piden «lo que
+    /// cambió desde la mía» y ven «Quedan 3» al día. La pone la base al guardar; una venta no sube la del catálogo.
+    /// </summary>
+    public long Version { get; set; }
+
     public void Aplicar(MovimientoInventario movimiento)
     {
         if (movimiento.SucursalId != SucursalId || movimiento.VarianteId != VarianteId)

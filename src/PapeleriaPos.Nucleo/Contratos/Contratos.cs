@@ -182,11 +182,15 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 /// <param name="Cliente">El cliente registrado con sus privilegios: "Escuela Benito Juárez (descuento 10 %)".</param>
 /// <param name="Folio">El de esta caja (A-000123): con él se abre la devolución en la caja nueva.</param>
 /// <param name="FolioEleventa">En el piloto, el que le dio eleventa si llegó a tiempo: es el que se imprime, para devolver en cualquier caja.</param>
+/// <param name="YaCobrada">
+/// El cobro llegó con el Id de una venta que ya estaba (se había perdido la respuesta, entrega 5, parte 2): es esa, como se
+/// cobró entonces, y la pantalla lo dice.
+/// </param>
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
     long TotalCentavos, long IvaCentavos, IReadOnlyList<CobroTicketDto> Cobros, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie,
     LogoTicketDto? Logo = null, Guid? VentaId = null, long RedondeoCentavos = 0, string? Cliente = null, CreditoTicketDto? Credito = null,
-    int? FolioEleventa = null)
+    int? FolioEleventa = null, bool YaCobrada = false)
 {
     /// <summary>El folio que se lee en el ticket y en la pantalla.</summary>
     public string FolioImpreso => FolioEleventa?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? Folio;
@@ -215,7 +219,11 @@ public sealed record VentaDelDiaDto(Guid Id, string Folio, DateTime FechaLocal, 
 /// </summary>
 /// <param name="UsuarioId">Quien hace el corte: el de la sesión.</param>
 /// <param name="ContadoCentavos">El total del efectivo que contó.</param>
-public sealed record SolicitudCorteZ(Guid UsuarioId, long ContadoCentavos);
+/// <param name="Id">
+/// El del corte, desde la caja (entrega 5, parte 2): si la caja principal lo guardó pero la respuesta no llegó, el que hace la
+/// caja sin conexión es el mismo, y al subir no choca con el turno ya cerrado. Vacío (una caja de antes): uno nuevo.
+/// </param>
+public sealed record SolicitudCorteZ(Guid UsuarioId, long ContadoCentavos, Guid? Id = null);
 
 /// <param name="UmbralAvisoCentavos">
 /// En el corte Z: el umbral de la sucursal, si la diferencia pasó de él y el aviso sale por Telegram. Vacío si no.
@@ -416,7 +424,10 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 // ── Varias cajas (entrega 3) ────────────────────────────────────────────────
 
 /// <summary>Lo que contesta el servicio sin llave: para encontrarlo en la red y saber que está vivo.</summary>
-/// <param name="VersionDatos">Cambia con el catálogo, los usuarios o sus permisos: la caja vuelve a bajar su copia.</param>
+/// <param name="VersionDatos">
+/// Cambia con lo que lleva la copia de las cajas (el catálogo, los usuarios y sus permisos, la configuración…): la caja pide
+/// lo que cambió (o, una de antes, vuelve a bajar su copia). Un PIN mal tecleado o abrir un turno ya no la cambian.
+/// </param>
 /// <param name="Prueba">El servicio es el de la prueba con una persona real: datos ficticios, guía y avisos simulados.</param>
 /// <param name="VersionCredito">Cambia con cada fiado, abono o cambio de crédito: la caja vuelve a pedir los saldos.</param>
 /// <param name="PilotoEleventa">
@@ -427,9 +438,17 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// La base contra apagones (entrega 10): el servicio se apagó de golpe y la base no pasó la revisión al arrancar. La caja
 /// lo muestra en la franja hasta que se restaure el respaldo. Vacío si todo está bien.
 /// </param>
+/// <param name="VersionExistencias">
+/// Cambia con cada cambio de existencia (una venta, una compra): la caja pide las que cambiaron desde la suya (entrega 5,
+/// parte 2). Vacía en un servicio de antes: entonces la existencia de la copia se pone al día al bajarla completa.
+/// </param>
+/// <param name="Base">
+/// De qué base son las versiones (cambia al arrancar el servicio y al empezar de cero la prueba): con otra, los cambios
+/// desde la versión de la caja no sirven y se baja la copia completa. Vacía en un servicio de antes.
+/// </param>
 public sealed record EstadoServicioDto(
     string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false, long VersionCredito = 0,
-    bool PilotoEleventa = false, string? AvisoBase = null);
+    bool PilotoEleventa = false, string? AvisoBase = null, long? VersionExistencias = null, Guid? Base = null);
 
 /// <summary>Usuario y PIN de quien autoriza: dar de alta una caja (antes de que haya sesión) y Telegram, que sigue como estaba.</summary>
 public sealed record SolicitudCredenciales(string Usuario, string Pin);
@@ -481,13 +500,20 @@ public sealed record CodigoLocalDto(string Codigo, Guid VarianteId, Guid Present
 /// fichas de espera y «Abrir turno» propone el fondo. Vacía en una copia de antes: lo de siempre (3 fichas, sin fondo
 /// sugerido).
 /// </param>
+/// <param name="Base">
+/// De qué base es la copia (<see cref="EstadoServicioDto.Base"/>), y con <paramref name="Formato"/> y
+/// <paramref name="VersionExistencias"/>, desde dónde pedir lo que cambió (entrega 5, parte 2). Vacíos en un servicio de antes:
+/// esa copia solo se renueva entera.
+/// </param>
+/// <param name="Formato">Cómo está armada la copia: si la caja o el servicio cambian de formato, se baja completa.</param>
+/// <param name="VersionExistencias">La versión de las existencias con que se armó.</param>
 public sealed record PaqueteContingenciaDto(
     long Version, CajaDto Caja, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<UsuarioLocalDto> Usuarios,
     IReadOnlyList<ReglaDto> Reglas,
     IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, int UltimoFolio, long? LimiteEfectivoCentavos,
     IReadOnlyList<ClienteRegistradoDto>? Clientes = null, IReadOnlyList<ClienteRegistradoDto>? Registrados = null,
     IReadOnlyList<string>? Marcas = null, IReadOnlyList<SinonimoDto>? Sinonimos = null, IReadOnlyList<PermisosLocalesDto>? Permisos = null,
-    ConfiguracionSucursalDto? Configuracion = null);
+    ConfiguracionSucursalDto? Configuracion = null, Guid? Base = null, int? Formato = null, long? VersionExistencias = null);
 
 // Lo que sube con la bandeja. Cada cosa lleva el ID que le dio la caja: si llega dos veces, se guarda una.
 

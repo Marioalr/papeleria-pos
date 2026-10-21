@@ -50,9 +50,13 @@ public sealed class CobroConLaVersionTests(ServicioDePrueba servicio) : IClassFi
             [new LineaSolicitada(producto.VarianteId, producto.Presentacion.Id, piezas * 1000, VersionCatalogo: versionDeLaLinea)],
             [new CobroSolicitado(FormaPago.Efectivo, 1_000_000)], VentaId: ventaId ?? Guid.NewGuid(), VersionCatalogo: version));
 
-    private static async Task CambiarPrecioAsync(Caja c, ProductoVentaDto producto, long centavos) =>
+    /// <summary>El precio nuevo, ya en el catálogo en memoria del servicio (se recarga en segundo plano, entrega 5, parte 2).</summary>
+    private async Task CambiarPrecioAsync(Caja c, ProductoVentaDto producto, long centavos)
+    {
         Assert.True((await c.Http.PostAsJsonAsync("api/catalogo/precio-menudeo",
             new SolicitudPrecioMenudeo(c.Dueno.UsuarioId, c.Datos.SucursalId, producto.VarianteId, centavos))).IsSuccessStatusCode);
+        await servicio.CatalogoAlDiaAsync();
+    }
 
     [Fact]
     public async Task Con_la_version_de_una_copia_vieja_no_cobra_y_contesta_con_los_precios_de_ahora()
@@ -115,6 +119,7 @@ public sealed class CobroConLaVersionTests(ServicioDePrueba servicio) : IClassFi
             db.Precios.Remove(await db.Precios.SingleAsync(p => p.Id == escala.Id));
             await db.SaveChangesAsync();
         }
+        await servicio.CatalogoAlDiaAsync();
 
         var respuesta = await CobrarAsync(c, producto, (int)(escala.CantidadMinimaMilesimas / 1000), c.Copia.Version);
 

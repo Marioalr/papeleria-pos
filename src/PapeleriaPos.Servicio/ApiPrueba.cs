@@ -38,10 +38,13 @@ public static class ApiPrueba
         api.MapPost("/respuestas/en-blanco", (SolicitudGuiaEnBlanco s, ModoPrueba prueba) => new ArchivoGuardadoDto(prueba.DejarEnBlanco(s.Version, s.Texto)));
 
         // Vuelve a la base con que se instaló: lo hecho en la prueba se pierde, las respuestas de la guía se quedan.
-        api.MapPost("/empezar-de-cero", (ModoPrueba prueba, CatalogoEnMemoria catalogo) =>
+        api.MapPost("/empezar-de-cero", (ModoPrueba prueba, CatalogoEnMemoria catalogo, VersionesDeLaCopia versiones, LlavesDeCajas llaves) =>
         {
             prueba.EmpezarDeCero();
             catalogo.Invalidar();
+            // Las copias de las cajas son de la base de antes: la bajan completa (entrega 5, parte 2). Y sus llaves, otra vez de la base.
+            versiones.BaseNueva();
+            llaves.Olvidar();
             return Results.NoContent();
         });
     }

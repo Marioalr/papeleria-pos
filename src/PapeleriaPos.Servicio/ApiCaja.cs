@@ -108,7 +108,7 @@ public static class ApiCaja
             // El piloto en la caja 2: el corte se hace en eleventa, aunque la pantalla ya no lo ofrezca (una caja de antes).
             if (opcionesEleventa.CorteEnEleventa)
                 throw new InvalidOperationException(CorteEnElPiloto.CorteEnEleventa);
-            var corte = await CorteDtoAsync(db, await new RegistroCaja(db).CorteZAsync(turnoId, s.UsuarioId, s.ContadoCentavos));
+            var corte = await CorteDtoAsync(db, await new RegistroCaja(db).CorteZAsync(turnoId, s.UsuarioId, s.ContadoCentavos, id: s.Id));
             // Si el turno pasó a eleventa, su cierre ya está en la bandeja: que vaya ya.
             eleventa.Despertar();
             // Con cada cierre, una copia de la base (además de la diaria); si falla, el corte ya quedó guardado.
@@ -172,9 +172,10 @@ public static class ApiCaja
         api.MapPost("/ventas", async (SolicitudCobro s, PosDbContext db, CatalogoEnMemoria catalogo, IOptions<OpcionesTicket> ticket, EnvioVentasEleventa eleventa,
             OpcionesEleventa opcionesEleventa) =>
         {
-            // La caja manda otra vez la misma venta si no le llegó la respuesta: se regresa el ticket que ya se cobró.
+            // La caja manda otra vez la misma venta si no le llegó la respuesta: se regresa el ticket que ya se cobró, como se cobró,
+            // y la caja dice que ya había quedado.
             if (s.VentaId is { } ventaId && await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleOrDefaultAsync(v => v.Id == ventaId) is { } cobrada)
-                return Results.Ok(await TicketAsync(db, cobrada, ticket.Value));
+                return Results.Ok((await TicketAsync(db, cobrada, ticket.Value)) with { YaCobrada = true });
             // El piloto en la caja 2: solo efectivo, aunque la pantalla ya no ofrezca lo demás.
             if (opcionesEleventa.SoloEfectivo)
                 SoloEfectivoEnElPiloto.RevisarCobro(s.Cobros);
@@ -197,7 +198,18 @@ public static class ApiCaja
             // El piloto en la caja 2: la venta entra a la bandeja hacia eleventa junto con el cobro, y se intenta
             // mandar ya, para que el ticket salga con el folio de eleventa.
             eleventa.Encolar(db, venta.Id);
-            await new RegistroCaja(db).CobrarAsync(venta, s.Cobros, impresiones: impresiones);
+            try
+            {
+                await new RegistroCaja(db).CobrarAsync(venta, s.Cobros, impresiones: impresiones);
+            }
+            catch (Exception ex) when (ex is DbUpdateException or InvalidOperationException)
+            {
+                // La misma venta llegó dos veces a la vez (entrega 5, parte 2): la caja dejó de esperar este cobro (pasó su plazo) y
+                // la mandó con la bandeja con el mismo Id, y entró primero esa. Queda una; se regresa su ticket.
+                if (await YaCobradaAsync(db, venta.Id) is not { } yaCobrada)
+                    throw;
+                return Results.Ok((await TicketAsync(db, yaCobrada, ticket.Value)) with { YaCobrada = true });
+            }
             await eleventa.MandarAlCobrarAsync(venta.Id);
             return Results.Ok(await TicketAsync(db, venta, ticket.Value));
         });
@@ -239,6 +251,13 @@ public static class ApiCaja
                 : Results.NotFound(new ErrorDto("Esta caja todavía no tiene ventas.")));
     }
 
+    /// <summary>La venta con ese Id, si ya se guardó (con sus líneas y cobros, para su ticket).</summary>
+    internal static async Task<Venta?> YaCobradaAsync(PosDbContext db, Guid ventaId)
+    {
+        db.ChangeTracker.Clear();
+        return await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleOrDefaultAsync(v => v.Id == ventaId);
+    }
+
     /// <summary>
     /// Arma la venta con los precios del catálogo: la caja solo dice qué y cuánto. Un precio distinto (cambiado en la caja,
     /// o el que se cobró sin conexión) queda como precio cambiado. Con <paramref name="mayoreoDeCliente"/> (el cliente del
@@ -268,7 +287,8 @@ public static class ApiCaja
                 venta.AplicarDescuentoSolicitado(comun, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
                 continue;
             }
-            var producto = await catalogo.PorVarianteAsync(db, varianteId, caja.SucursalId)
+            // Sin su existencia: la venta no la usa, y leerla por cada línea era ir a la base antes de cobrar.
+            var producto = await catalogo.PorVarianteAsync(db, varianteId, caja.SucursalId, conExistencia: false)
                 ?? throw new InvalidOperationException($"«{l.Descripcion ?? "Un producto"}» ya no está en el catálogo.");
             var agregada = venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
             if (l.PrecioCentavos is { } precio && precio != agregada.PrecioCentavos)
