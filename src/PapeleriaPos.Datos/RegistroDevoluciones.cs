@@ -15,13 +15,16 @@ public sealed class RegistroDevoluciones(PosDbContext db)
 {
     private DateTime Ahora => db.Reloj.GetUtcNow().UtcDateTime;
 
-    /// <summary>Busca un ticket por su folio ("A-000123"), como viene en el QR.</summary>
+    /// <summary>Busca un ticket por el folio que trae impreso: el de la caja («A-000123») o, en el piloto, el de eleventa.</summary>
     public async Task<Venta?> PorFolioAsync(Guid sucursalId, string folio, CancellationToken ct = default)
     {
-        // En el piloto, el ticket impreso lleva el folio de eleventa (solo número); el QR, el de la caja (A-000123).
+        // En el piloto, el ticket impreso lleva el folio de eleventa (solo número) si eleventa contestó a tiempo; si no, el de
+        // la caja. Si eleventa repitió el folio en otra caja, la caja enseña los dos antes de llegar aquí (el puente,
+        // FoliosRepetidos); aquí, el más reciente de esta caja.
         if (folio.Trim() is { Length: > 0 } soloNumero && soloNumero.All(char.IsAsciiDigit) && int.TryParse(soloNumero, out var deEleventa))
         {
-            var ventaId = await db.EnviosAEleventa.Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.FolioEleventa == deEleventa).Select(e => e.VentaId).FirstOrDefaultAsync(ct);
+            var ventaId = await db.EnviosAEleventa.Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.FolioEleventa == deEleventa)
+                .OrderByDescending(e => e.CreadoUtc).Select(e => e.VentaId).FirstOrDefaultAsync(ct);
             return ventaId is null ? null : await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros)
                 .SingleOrDefaultAsync(v => v.Id == ventaId && v.SucursalId == sucursalId, ct);
         }

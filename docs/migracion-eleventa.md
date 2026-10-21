@@ -149,6 +149,8 @@ la caja principal por la red, como lo abre una caja de eleventa, y se pone al d�
   - la existencia, con un ajuste en el kardex al costo promedio y a nombre de `lectura-eleventa`.
 - **Qué no toca:**
   - lo dado de alta aquí;
+  - el mínimo y el máximo de inventario de cada producto (2026-10-17): son del POS, y los de eleventa no se leen (ni
+    se importan). En el piloto también se ponen aquí;
   - las escalas de mayoreo deducidas del F11 o capturadas en F3;
   - la unidad (si cambia allá, da un aviso);
   - el nombre de un producto que la depuración ya agrupó;
@@ -179,7 +181,9 @@ la caja principal por la red, como lo abre una caja de eleventa, y se pone al d�
     sola variante; si cada variante está activa; los códigos de su pieza (se pueden agregar otros); el precio de menudeo
     y las promociones de eleventa. Tampoco se da de baja, se junta ni se le cambia la unidad. Sí se cambian las escalas
     del F11 o de F3 (también el mayoreo por revisar), las otras presentaciones, la marca, las variantes nuevas y lo dado
-    de alta aquí, que va a eleventa como artículo común;
+    de alta aquí, que va a eleventa como artículo común. Al cambiar precios de varios a la vez (Productos › «Cambiar
+    precios», 2026-10-17), igual: de lo de eleventa solo cambia su mayoreo de aquí, sin pasar de su menudeo ni de sus
+    promociones, y la vista previa lo dice;
   - en Inventario (F4), lo que mueve existencias: recibir y cerrar compras, el conteo del día (la venta ya no enseña su
     chip), el conteo completo (también en el celular), ajustes, mermas y abrir un paquete. Tampoco con lo dado de alta
     aquí: una compra o un conteo junta los dos, y eleventa no lleva su existencia. Las órdenes, el sugerido, las
@@ -269,8 +273,9 @@ Lo demás:
   - Ya pasó que dos cajas cobraran con dos segundos de diferencia y se repitiera un folio.
   - La caja 2 nueva tendrá el mismo riesgo mientras conviva con eleventa: hay que tomarlo justo antes de guardar, en la
     misma transacción, y revisar después que no se repitió.
-- **Turnos:** uno abierto por caja (`UNIQUE (ID_CAJA, TERMINO_EN)`). La caja 2 nueva va a necesitar abrir y cerrar el
-  suyo en eleventa (paso 4).
+- **Turnos:** uno abierto por caja (`UNIQUE (ID_CAJA, TERMINO_EN)`, `UNQ_TURNO_ABIERTO_CAJA`: con Firebird 2.x no
+  deja dos turnos de la misma caja sin `TERMINO_EN`). En el piloto la caja 2 nueva adopta el que abre eleventa y toma
+  su corte ([abajo](#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)).
 - **Las otras operaciones del corte** van en `CORTE_MOVIMIENTOS`, de tipo `Entrada`, `Salida` y `Devolucion` (paso 4).
 - **El día es el del cobro:** el acumulado de `CORTE_OPERACIONES` es lo vendido ese día en esa caja (cuadra en todos
   los días de la copia). Si un turno pasa de la medianoche, lo cobrado después suma al renglón del día siguiente.
@@ -338,8 +343,9 @@ acumulados del turno, del día y del departamento.
 - **Sin duplicar:** la marca de cada venta es la hora en que se empezó en la caja nueva (`CREADO_EN`, en diezmilésimas de
   segundo, de esa caja). Si se manda otra vez, por ejemplo porque se cortó la red justo al confirmar, regresa el folio
   que ya tenía y no escribe nada.
-- **El folio** es el último más uno, tomado dentro de la transacción. Después revisa que otra caja no haya cobrado con
-  el mismo; si pasó, lo dice, para revisarlo.
+- **El folio** es el último más uno, tomado dentro de la transacción. Justo después revisa que otra caja no haya cobrado
+  con el mismo; si pasó, el ticket de la caja 2 toma el siguiente, porque todavía no se entrega con él
+  ([folios repetidos](#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)).
 - **Lo de cada producto lo toma de eleventa:** su código, nombre, departamento y costo de ese momento. La caja nueva
   manda el ID de eleventa, la cantidad y el importe.
 - **Lo que eleventa no tiene** (un artículo común, un producto dado de alta solo en la caja nueva o borrado en eleventa)
@@ -373,10 +379,16 @@ dotnet run --project src/PapeleriaPos.Herramientas -- probar-envio-eleventa --se
 - **Una vuelta de fondo** manda lo pendiente cada 30 s (`SegundosEntreEnvios`), de la más vieja a la más nueva. Si es la
   red, deja el resto para la siguiente vuelta. Al volver la red, cada venta toma el siguiente folio de eleventa, y su
   reimpresión ya lo lleva.
-- **El ticket** imprime «Folio 4521» (el de eleventa) cuando lo hay. El QR sigue con el de la caja 2, que abre la
-  devolución al escanearlo, y en la ventana de devolución también se puede escribir el folio de eleventa.
+- **El ticket** imprime «Folio 4521» (el de eleventa) cuando lo hay. Desde el 2026-10-16 el ticket no lleva QR
+  («primero igualar a eleventa»): para devolver se escribe el folio impreso, el de eleventa o el de la caja (B-000123).
+  Si eleventa repitió ese folio en otra caja, la caja enseña los dos tickets y se elige por la hora y el total.
 - **Lo que eleventa no entendería** queda por revisar y no se manda solo: lo que no fue en efectivo (la tienda solo
-  cobra en efectivo). Lo que se canceló antes de mandarse se descarta: allá nunca existió.
+  cobra en efectivo). Lo que se canceló antes de intentar mandarlo se descarta: allá nunca existió. Pero si ya se
+  intentó mandar, cualquier intento pudo dejarla en eleventa (se cortó por tiempo o por la red después de que eleventa
+  la guardó), aunque el último ni se haya conectado: antes de descartarla se busca allá por su marca, y si está, queda
+  como enviada y se manda su cancelación (revisiones del 2026-10-17). Si se descartara, eleventa la seguiría teniendo
+  como vendida y la lectura no lo sabría: la existencia se iría corriendo. Mientras eleventa no conteste, no se sabe y
+  no se descarta.
 - **El redondeo del efectivo** va en la línea más grande, para que el total de eleventa sea lo que entró a la caja.
 - **Cómo va:** `GET /api/eleventa/envios` dice cuántas ventas están pendientes y por revisar, el último error («No
   contesta el eleventa de…») y los folios repetidos. `POST /api/eleventa/enviar` hace la vuelta ya.
@@ -438,6 +450,8 @@ inventados.
 se cierra antes que sus ventas.
 - **Qué entra a la bandeja:**
   - la cancelación o devolución de una venta que fue a eleventa, en la misma transacción;
+  - la devolución en la caja 2 de un ticket que se cobró en eleventa (la ida,
+    [abajo](#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)), también en la misma transacción;
   - el corte Z de un turno que mandó algo, como el cierre del turno de eleventa;
   - lo que dependía de una venta descartada también se descarta; lo de una venta por revisar, también queda por revisar.
 - **Dónde se aplica:** lo devuelto va al turno y al día en que se devuelve, que es cuando sale el dinero de la caja.
@@ -446,7 +460,8 @@ se cierra antes que sus ventas.
   - si algo no entra, lo que sigue espera en la bandeja;
   - si ya se arregló a mano en eleventa, `POST /api/eleventa/envios/{id}/a-mano` lo anota y lo demás pasa; si todavía
     falta revisarlo, `POST …/revisar` lo deja por revisar, lo demás pasa y la lectura lo sigue descontando hasta
-    anotarlo a mano;
+    anotarlo a mano. Los dos los hace quien entró con «Configuración de la tienda», y quedan en la bitácora (desde el
+    2026-10-17);
   - lo que volvió dañado no regresa al inventario de eleventa.
 - **El cierre** usa la diferencia del corte Z de la caja 2 (contado menos esperado). Con las entradas y salidas ya en
   eleventa (abajo), su efectivo al cierre queda en lo contado.
@@ -457,8 +472,10 @@ solo para convivir con eleventa):
 - el turno de eleventa lo abre eleventa con su fondo y lo cierra su corte: el puente no lo abre ni lo cierra. Si allá no
   hay turno abierto, lo que se manda espera en la bandeja («Abre la caja en eleventa…») y entra en cuanto lo abran;
 - un cierre que ya estaba en la bandeja, o el de un corte Z que sube de la contingencia, queda por revisar;
-- el turno de la caja nueva no se cierra, así que solo se cancela un ticket del mismo día (después es devolución) y no
-  sale el aviso de retiro (el cajón es de las dos).
+- la caja nueva toma el corte de eleventa: cierra su turno cuando eleventa cierra el que adoptó (2026-10-16,
+  [abajo](#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)). Mientras eleventa no lo cierre, el turno de la
+  caja nueva sigue abierto (puede durar días), así que solo se cancela un ticket del mismo día (después es devolución) y
+  no sale el aviso de retiro (el cajón es de las dos).
 
 Se probó como el paso 3, con pruebas contra el Firebird de prueba y de punta a punta contra copias: se cobraron dos
 ventas, se canceló una y se devolvió parte de la otra (un artículo completo), y se hizo el corte Z con un faltante. En la
@@ -553,6 +570,48 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
     revisar, porque allá ya se contó.
   - Si se cae la red, se sigue en la caja nueva (contingencia): el eleventa de la caja 2 escribe en el Firebird de la
     principal y no vende sin red. Si falla la caja nueva, se cambia a eleventa.
+  - **Avance (2026-10-16), en código** (`TurnosDelPiloto`, tabla del puente `TurnosEnEleventa`):
+    - **Adoptar.** El turno de la caja nueva guarda el `TURNOS.ID` (y su `INICIO_EN`) del turno que eleventa tiene
+      abierto en la caja 2: lo toma lo primero que manda, o la lectura de cada pocos minutos si allá hay uno solo. Sin
+      turno en eleventa no se abre ninguno: lo que se manda espera («Abre la caja en eleventa…»), como desde el #86. Lo
+      del diseño, «si no hay, lo abre… como hoy», se quedó como hoy: lo abre eleventa con su fondo. Con dos abiertos
+      (la base no lo deja: `UNQ_TURNO_ABIERTO_CAJA`) no adopta ninguno y avisa.
+    - **A qué turno va cada cosa: por su hora.** Lo que pasó en la caja nueva va al turno de eleventa que estaba abierto
+      a esa hora o, si no había ninguno, al siguiente que se abrió (el primero de la caja que terminó después, o sigue
+      abierto). Si ese turno ya se cortó, lo que no alcanzó a llegar ya se contó allá: queda por revisar, con el porqué,
+      y no detiene la bandeja. Lo que se cobró después del corte de eleventa (antes de que la caja nueva lo viera, por
+      ejemplo con la caja 2 apagada en la noche) entra al turno siguiente: así funciona «después del corte, la siguiente
+      venta va al turno siguiente». Por eso no se dejan por revisar todos los pendientes del turno al tomar el corte:
+      solo los de antes de la hora del corte.
+    - **Tomar el corte.** Cuando la lectura ve cerrado el turno adoptado, cierra el de la caja nueva a la hora del corte
+      de eleventa, sin corte Z ni conteo aquí, y guarda lo que se contó allá (`EFECTIVO_AL_CIERRE`) y lo que faltó o
+      sobró (el movimiento «Efectivo faltante/sobrante al cerrar turno»). Si en ese turno se cobró después del corte
+      (eleventa cortó con la caja 2 apagada y en la mañana se vendió antes de que la lectura lo viera), se cierra a la
+      hora de lo último que pasó en él, para que siga en el corte del día; la hora del corte de eleventa se guarda aparte
+      (revisión del 2026-10-17). Queda en la bitácora («Corte del turno de Ana
+      hecho en eleventa…»). El corte del día enseña ese turno como «En eleventa», con lo contado allá en una nota: es el
+      cajón de las dos cajas, así que no entra en lo contado ni en las diferencias del día. Después, cualquier cajero
+      abre su turno en la caja nueva, y adopta el siguiente de eleventa.
+    - **La lectura y la bandeja usan el mismo candado:** mientras la lectura lee y aplica, la bandeja no manda; el cobro
+      no la espera (el ticket sale con el folio de la caja). Con límites (revisión del 2026-10-17): Firebird por sí solo
+      espera sin fin a un eleventa que se quedó callado a media llamada, así que cada llamada de la lectura, la bandeja y
+      las revisiones espera lo más 2 minutos (`Eleventa:SegundosMaximos`) y después se deja de esperar y se toma como
+      falla de red (se reintenta); y la lectura espera el candado lo más el doble: si no, se deja para la siguiente
+      vuelta. No se cancela (revisión del 2026-10-17, segunda vuelta): con el Firebird 2.0.1 de la tienda, FirebirdClient
+      no sabe cancelar una llamada y, si se le pide, truena el servicio de la caja 2 (hay una prueba que habla con el
+      Firebird de prueba como 2.0 y deja callada una escritura). La llamada que se dejó de esperar sigue sola por detrás,
+      pero ya no confirma: justo antes de confirmar en eleventa pregunta si todavía se la espera y, si no, se deshace
+      (cuarta revisión): si no, una escritura lenta podía entrar cuando aquí ya se había decidido sin ella (por ejemplo,
+      descartar una venta que se canceló). Lo que ya había confirmado cuando se dejó de esperar lo encuentra el reintento
+      por su marca; la revisión del folio solo lo mueve si todavía tiene el que se revisó (si corre dos veces, la segunda
+      no lo mueve otra vez); y un choque de candados (otra escritura tenía los mismos renglones, quizá la que se dejó de
+      esperar) no se da por rechazado: se reintenta. Lo
+      mismo las lecturas en vivo de la ventana de devoluciones (3 segundos): lo que no contestó se deja con su conexión,
+      porque cerrarla también esperaba a eleventa sin fin, con el candado de la bandeja tomado (la bandeja y la lectura
+      se quedaban paradas).
+    - Antes de que eleventa cierre su turno sigue el aviso de #86: al intentar el corte o al salir, la caja dice que el
+      corte se hace en eleventa. Si el corte de eleventa cierra el turno con la caja nueva abierta, lo siguiente que se
+      cobre dice que el turno ya está cerrado: se entra otra vez (Ctrl+U) y se abre el nuevo.
 - **Devoluciones de ida y vuelta.**
   - Ida: si el folio no es de la caja 2, se lee el ticket en vivo en eleventa (el ticket, sus artículos y sus
     devoluciones). Solo efectivo, 7 días y las reglas de la caja nueva. Si eleventa no contesta, se espera a que
@@ -565,12 +624,128 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
     eleventa no contesta, se deja pasar (decisión del 2026-10-11) y un choque queda por revisar.
   - Un choque con eleventa («ya está cancelado») queda por revisar y no detiene la bandeja; solo la falla de red se
     reintenta. Lo que quede por revisar se ve en la pantalla de la caja 2 (el bot de Telegram todavía no existe).
-  - Falta ver en la copia cómo anota eleventa una devolución de otra caja o de otro turno: mientras, eso queda por
-    revisar.
+  - Falta ver en la copia cómo anota eleventa una devolución de otra caja o de otro turno. Mientras, la caja 2 no las
+    hace (decidido el 2026-10-17, por revisar con el dueño): se hacen en eleventa y llegan con la vuelta (abajo, «Solo
+    lo del turno de ahora»).
+  - **Avance (2026-10-16), en código** (`DevolucionesConEleventa`, `TicketsDeEleventa`; tablas del puente
+    `DevolucionesDeEleventa`, la ida, y `DevolucionesDesdeEleventa`, la vuelta):
+    - **La ida.** El folio que se escribe en la ventana de devoluciones se busca también en vivo en eleventa (hasta 3
+      segundos). Si es un ticket de otra caja, o uno que se cobró en el eleventa de la caja 2, se abre ahí como uno de la
+      caja, con «(eleventa)» y su caja: lo vendido, lo ya devuelto allá y lo que queda. Se devuelve aquí solo si es del
+      turno que eleventa tiene abierto ahora en la caja 2 (se lee en vivo con el ticket; abajo, «Solo lo del turno de
+      ahora»), por artículo (el ticket completo no se cancela aquí), si se cobró en efectivo, no está cancelado y tiene 7
+      días o menos, con el motivo, el permiso de devolución y quien autoriza, como en la caja nueva. Sin eleventa no se
+      devuelve: dice que se espere a la red.
+    - Al devolver se vuelve a leer en vivo (otra caja pudo devolver algo mientras) y se guarda todo junto: el ticket como
+      se leyó y lo devuelto (en el puente, no como venta del núcleo); la salida de efectivo del turno de la caja nueva
+      («Devolución del ticket #4521 de eleventa (Principal): …»; no va a eleventa como salida); la apertura del cajón; la
+      entrada al kardex de lo que regresa al inventario, y el envío a la bandeja, que la escribe en eleventa como eleventa
+      escribe una parcial, renglón por renglón del ticket. Mientras no llega, la lectura la sigue sumando a las
+      existencias.
+    - **Lo que sale es exacto, al centavo** (revisión del 2026-10-17): eleventa cobró con centavos y dio el cambio con
+      centavos, así que se regresa lo que dice eleventa, como lo regresaría eleventa. De cada artículo, si se devuelve todo
+      lo que le queda, sale exacto lo que le queda en eleventa; si es una parte, en proporción a su precio, sin pasarse.
+      Así el ticket de eleventa queda en cero al devolverlo todo (nunca abajo) y lo que sale del cajón es lo que eleventa
+      anota como devuelto. Al peso, como en las ventas de la caja nueva (que se cobraron ya redondeadas), un ticket de
+      $9.50 devuelto completo salía en $10 y dejaba el de eleventa en −$0.50. Al escribirla, si eleventa cambió desde que
+      se devolvió aquí y ya no le queda tanto a ese renglón, queda por revisar.
+    - **Solo lo del turno de ahora** (revisión del 2026-10-17; decidido, por revisar con el dueño). El puente solo sabe
+      escribir la devolución de un ticket del turno que eleventa tiene abierto en la caja 2: así la hace eleventa en la
+      copia y en vivo, y la de otra caja o de otro turno todavía no se ha visto. Por eso, mientras dure el piloto, la caja
+      2 solo devuelve o cancela lo que el puente sabe escribir: sus ventas y los tickets cobrados en el eleventa de la
+      caja 2 cuyo ticket es del turno que eleventa tiene abierto ahora en la caja 2. Se ve en vivo, con el ticket (cuarta
+      revisión: antes, para sus ventas, se veía su turno aquí, que se cierra hasta que la lectura toma el corte de
+      eleventa: se aceptaba lo que ya era de otro turno y se rechazaba lo que se cobró después del corte); sin eleventa,
+      para sus ventas, mientras su turno aquí siga abierto. De cualquier otro la ventana de devoluciones enseña el ticket,
+      sin ofrecer devolverlo ni cancelarlo (el servicio también lo rechaza), y dice por qué: de una venta de la caja 2,
+      «Este ticket es de otro turno: devuélvelo en eleventa (está abierto en esta caja). La devolución llega aquí sola con
+      la lectura.»; de un ticket cobrado en eleventa, «Este ticket es de otro turno de eleventa…» o «Este ticket es de otra
+      caja de eleventa (Principal)…», sin decir que llega aquí (no es una venta de aquí). Se devuelve en eleventa y, si es
+      un ticket de la caja 2, entra a su venta con la vuelta como cualquier otra devolución de eleventa: sin efectivo de
+      la caja nueva y sin nada que ligar. Antes la caja 2 los devolvía, quedaban por revisar para anotarlos a mano en
+      eleventa, y había que adivinar cuál devolución de eleventa era esa anotación.
+
+      Queda un caso raro: si al devolverla eleventa no contesta (o la bandeja está mandando) y eleventa ya cortó su turno
+      sin que la lectura lo viera, o si eleventa corta justo entre que se acepta y se manda, al mandarla ya es de otro
+      turno y queda por revisar, para anotarla a mano (abajo). Cuando se vea en la tienda cómo anota eleventa una
+      devolución de otro turno o de otra caja
+      ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-octubre)), el puente puede aprender a escribirla y la caja 2
+      a recibir esas devoluciones también.
+    - **La vuelta.** La lectura de cada 5 minutos lee, en la misma foto que las existencias, las devoluciones y
+      cancelaciones en eleventa de los tickets que mandó la caja 2 en los últimos 31 días (listas `IN` en grupos de
+      1000). Antes de las existencias, cada una entra a su venta de aquí como una devolución del núcleo **sin efectivo**:
+      el dinero salió de la caja de eleventa, así que el corte de la caja nueva no la cuenta. Va al turno de la venta, a
+      nombre de su cajero, con la hora de eleventa y el motivo «Hecha en eleventa (Caja 2, cajera2, 16/10 12:30): no
+      salió de esta caja». La cancelación devuelve lo que queda; la parcial, cada artículo en las líneas de su producto (o,
+      si fue común, de su nombre). Lo que regresa entra al kardex al costo con que salió, así que las existencias ya
+      cuadran con eleventa y no salen como ajuste; los reportes de ventas la descuentan, y queda en la bitácora.
+    - La vuelta nunca entra a la bandeja. Lo ya pasado se reconoce por `DEVOLUCIONES.ID` (con su `DEVUELTO_EN`) y lo que
+      escribió la caja 2 por la marca `TICKET_ID` + `DEVUELTO_EN`. Si aquí ya no queda tanto (¿se devolvió en las dos
+      cajas?), queda por revisar.
+    - **La anotación a mano se elige, no se adivina** (revisión del 2026-10-17; decidido, por revisar con el dueño). Con
+      «Solo lo del turno de ahora», que una devolución de aquí no pase sola a eleventa es raro: su turno de eleventa se
+      cortó antes de mandarla (la lectura todavía no lo veía), se perdió al restaurar un respaldo, o alguien la dejó por
+      revisar a mano. Queda por revisar, «anótala a mano», y su anotación en eleventa llega con la vuelta sin la marca de la
+      caja 2, con la hora de eleventa: parecería otra devolución. Antes la vuelta adivinaba si era la misma (por sus
+      artículos) o preguntaba «¿Es la misma?»; con dos devoluciones del mismo ticket, o una anotada en dos partes, se
+      perdía o se repetía algo. Ahora:
+      - cada envío que queda por revisar guarda por qué y desde cuándo: «se anota a mano» (de otro turno, de un turno ya
+        cortado, perdido al restaurar, dejado por revisar a mano), «eleventa ya lo tenía» (el ticket ya está cancelado, ya
+        no le queda eso por devolver; son dos reembolsos y los dos quedan a la vista) u otra cosa. Lo que ya estaba por
+        revisar antes de este cambio lo saca de su texto, y desde cuándo, de su último intento. Y lo de eleventa que
+        esperaba la pregunta «¿Es la misma?» de una de aquí ya marcada «Ya lo anoté en eleventa» (por ejemplo, anotada en
+        dos partes) queda ligado con ella al actualizar: no se vuelve a pasar a la venta (cuarta revisión);
+      - mientras una devolución de aquí espera su anotación a mano, la vuelta no pasa a la venta las devoluciones de
+        eleventa de ese ticket hechas después (con 10 minutos de holgura por la hora de cada PC) que pueden ser su
+        anotación: con algún artículo en común (por su producto de aquí, así dos productos de eleventa con el mismo código
+        que aquí son uno cuentan como el mismo), o la cancelación del ticket. Esas esperan; lo que no tiene nada en común
+        se pasa como siempre. Y la existencia sigue a eleventa mientras tanto: de lo que devolvió la de aquí (que todavía
+        no llega allá y se suma) se descuenta lo que ya devolvió eso que espera, porque si es su anotación se contaría dos
+        veces (cuarta revisión: antes se dejaba de ajustar esa existencia, y si se tardaba en decidir se quedaba atrás de
+        eleventa). Esos tickets se siguen leyendo aunque sean de hace más de 31 días;
+      - al marcarla «Ya lo anoté en eleventa», la pantalla de la caja 2 lee en vivo las devoluciones de eleventa de ese
+        ticket de después de la de aquí (que no escribió la caja 2 ni se han pasado o ligado) y quien la anotó elige cuál
+        es su anotación, o cuáles, si la anotó en partes. Tienen que devolver juntas lo mismo, artículo por artículo (o las
+        dos ser la cancelación del ticket); si no, no se puede marcar todavía: lo que sobre o falte no se esconde en la
+        liga. Sin eleventa no se puede marcar. Se ligan por `DEVOLUCIONES.ID`, no se pasan a la venta, y la de aquí queda
+        anotada a mano (con lo elegido en la bitácora). Lo que esperaba y no se eligió se pasa en ese momento a la venta,
+        leído en vivo, como cualquier otra de eleventa (si eleventa no contesta, en la siguiente lectura);
+      - si lo anotado allá no cuadra con nada que se pueda elegir (dos de aquí anotadas en una sola allá, más o menos
+        artículos, una cancelación anotada como devolución…), quien tiene «Configuración de la tienda» la marca «Resolverlo a
+        mano» (queda en la bitácora, con su nota): la de aquí queda anotada a mano sin ligarse con nada, y lo que eleventa
+        devolvió de ese ticket deja de esperar y se pasa en ese momento a la venta como cualquier otra devolución de allá
+        (o queda por revisar si aquí ya no alcanza). Desde ahí la existencia sigue a eleventa;
+      - si todavía se iba a mandar sola, primero se deja por revisar: desde ahí la lectura espera su anotación;
+      - lo que sí llegó solo aunque aquí no se supo (se cortó al contestar, o se dejó por revisar mientras la bandeja lo
+        mandaba) no se anota a mano: quedaría dos veces (cuarta revisión). «Dejar por revisar» toma el candado de la
+        bandeja y, si ya se intentó mandar, lo busca antes en eleventa por su marca: si está, queda como enviado (sin
+        eleventa no se sabe, y no se deja). Y una devolución de aquí que aparece en eleventa con su marca (en la lectura,
+        o al ir a elegir su anotación) queda como enviada.
+
+      Ligada, la de aquí no impide devolver aquí lo que queda: su dinero salió de esta caja.
+    - **Antes de devolver aquí** un ticket de la caja 2 que ya está en eleventa, se leen en vivo sus devoluciones allá
+      (con el candado de la bandeja, hasta 3 segundos) y entran primero. Si eleventa ya le devolvió algo, lo que queda se
+      devuelve en eleventa: el reembolso de aquí se redondea con lo que salió de esta caja, y lo de eleventa no salió de
+      ella. Si eleventa no contesta, se deja pasar; si al mandarla choca, queda por revisar.
+    - **Por revisar, en la pantalla de la caja 2:** arriba, junto al estado de la caja, sale «Eleventa · 2 por revisar»
+      cuando hay algo. Ahí está lo que la bandeja dejó por revisar, con el porqué, y las devoluciones de eleventa que no
+      se pudieron pasar. Quien tiene «Configuración de la tienda» marca «Ya lo anoté en eleventa» (de una devolución de
+      aquí, eligiendo cuál es su anotación allá) o «Ya lo revisé» (queda en la bitácora). También dice lo que espera para
+      irse a eleventa y por qué, los folios repetidos y los avisos de la lectura.
 - **Folios repetidos.** Justo después de guardar, el puente revisa si el folio ya lo tiene otro ticket; si todavía no
-  se entregó, toma el siguiente y corrige solo su propio ticket y su kardex. Si ya salió impreso, no se cambia: ese
-  ticket se devuelve en la caja 2 por su QR y sus reimpresiones salen con el folio de la caja 2, como cuando eleventa no
-  contesta. La revisión tardía va en su propio paso, aunque la bandeja esté atorada.
+  se entregó, toma el siguiente y corrige solo su propio ticket y su kardex. Si ya salió impreso, no se cambia: sus
+  reimpresiones salen con el folio de la caja 2, como cuando eleventa no contesta, y como el ticket ya no lleva QR
+  (dueño, 2026-10-16: «primero igualar a eleventa»), al escribir ese folio para devolver la caja enseña los dos tickets
+  (el de la caja 2 y el de la otra caja) para elegir por la hora y el total. La revisión tardía va en su propio paso,
+  aunque la bandeja esté atorada.
+  - **Avance (2026-10-16), en código** (`FoliosRepetidos`, tabla del puente `FoliosRepetidosEnEleventa`): la revisión al
+    guardar toma el siguiente folio y cambia «Venta #folio» en su kardex (hasta tres veces; si sigue chocando, queda
+    marcado). La venta que se mandó en la vuelta también: su folio de eleventa no se imprimió. La revisión tardía, en
+    cada vuelta de la bandeja antes de mandar, vuelve a ver las ventas de la última hora; si otra caja tiene el mismo
+    folio, marca la venta (`FolioRepetido`) y anota el otro ticket con su caja, su hora y su total. Al escribir el folio
+    en la ventana de devoluciones (`GET /api/eleventa/folio/{folio}`), si son dos, se elige con «Es este»: el de la caja
+    2 se abre ahí, y el de otra caja también, leído en vivo (la ida, arriba). Si eleventa no contesta, el de otra caja se
+    devuelve en eleventa.
 - **Los respaldos de eleventa.** Según sus páginas (consultadas el 2026-10-12): el [respaldo
   automático](https://eleventa.com/aprender/respaldo-automatico) se configura en Configuración ➜ Mantenimiento y puede
   respaldar al salir; en multicaja queda en `AbarrotesMultiCaja\respaldos` de la PC servidor;
@@ -590,6 +765,60 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
 
   Sin verificar: si eleventa respalda con `gbak` o copiando el archivo, si saca a las otras cajas mientras respalda, y
   si la versión de la tienda sigue restaurando sola.
+  - **Avance (2026-10-17), en código** (`RestauracionDeEleventa`, `RespaldoDeEleventa`; tabla del puente
+    `DetencionesDelPuente`):
+    - **Ver la restauración, solo con lo que escribió el puente.** Antes de cada escritura, en la misma transacción, y en
+      la lectura de cada 5 minutos, en la misma foto, se revisa en eleventa:
+      - que sigan ahí los últimos tickets que mandó la caja 2, con su folio y su marca (`CREADO_EN`): si ya no están, o
+        ese número ya es de otro ticket (eleventa volvió a cobrar con los números del respaldo), se perdieron;
+      - que siga el turno que adoptó, con su inicio;
+      - y que los contadores de eleventa (tickets, turnos, devoluciones, entradas y salidas) no estén abajo de lo que ya
+        le dieron a la caja 2.
+
+      Lo que eleventa hace siempre no toca nada de eso: cancelar o devolver (también todo lo de un renglón, que lo
+      borra), cobrar en otra caja y cortar el turno (que borra su ticket abierto) no dan falsas alarmas.
+    - **Si eleventa se restauró, el puente se detiene:** lo que iba a escribir no se escribe y se queda en la bandeja,
+      no escribe nada más, la lectura no aplica nada (las existencias, los precios, los turnos y la vuelta de eleventa
+      ya no cuadran con lo que mandó la caja 2) y no se revisan folios. La caja sigue vendiendo: los tickets salen con
+      el folio de la caja. En la pantalla de la caja 2 sale «Eleventa · detenido», con lo que se vio («ya no está el
+      ticket #4522 que mandó el 16/10 10:05…»).
+    - **Se reanuda a mano:** quien tiene «Configuración de la tienda» revisa eleventa y toca «Ya revisé eleventa:
+      reanudar» (`POST /api/eleventa/reanudar`); queda en la bitácora, con lo que se vio y su nota. Al reanudar, con
+      eleventa contestando (si no, no se puede: no se sabría qué se perdió):
+      - lo que la caja 2 mandó en los últimos 31 días y ya no está allá como lo dejó (la venta por su ticket, su folio
+        y su marca; la devolución y la entrada o salida por su renglón y su marca) queda por revisar, «Eleventa ya no lo
+        tiene: se perdió al restaurar un respaldo… Anótalo a mano en eleventa». La venta conserva el folio que salió
+        impreso, para devolverla; su número de ticket en eleventa se olvida, porque ya puede ser de otro;
+      - si el turno adoptado ya no está, se suelta y la caja nueva toma el que eleventa tenga abierto;
+      - el puente vuelve a escribir (primero lo que esperaba en la bandeja) y a leer.
+
+      Decidido aquí, porque el diseño no lo decía: lo perdido no se vuelve a mandar solo, queda por revisar. Volver a
+      mandarlo le daría folios nuevos que no son los impresos, a turnos que quizá allá ya no están; lo que queda por
+      revisar sigue contando en las existencias de la caja nueva y se ve en la pantalla de la caja 2 hasta anotarlo a
+      mano (queda la pregunta para el dueño, abajo).
+    - **El respaldo propio del día, con gbak.** Antes de lo primero que escribe cada día, y en cuanto la lectura ve que
+      eleventa contesta (así el primer cobro del día no espera a gbak), el puente corre el `gbak.exe` de la caja 2 con
+      la base de la principal por la red (`gbak -b -g servidor:ruta archivo`; con Firebird 2.0, gbak escribe el
+      respaldo en la PC que lo corre). El usuario y la clave van en el entorno (`ISC_USER`, `ISC_PASSWORD`), no en la
+      línea de comandos. Queda `eleventa-AAAA-MM-DD.fbk` en `ProgramData\PapeleriaPos\respaldos-eleventa` (junto a la
+      base de la caja 2, fuera de OneDrive), primero como `.tmp` y renombrado solo si gbak terminó bien; se guardan 5
+      días. No acepta una carpeta en OneDrive. Se espera a gbak hasta 10 minutos.
+    - **Sin el respaldo del día no se escribe en eleventa:** lo que va allá espera en la bandeja (la caja sigue
+      vendiendo y el primer ticket del día sale con el folio de la caja mientras gbak termina) y la pantalla de la caja 2
+      dice por qué («No se manda nada a eleventa hasta respaldarla: …»); se vuelve a intentar cada 5 minutos. Con
+      `RespaldoObligatorio` en falso se escribe aunque no se haya podido, con aviso. Sin la ruta de gbak y con el
+      respaldo obligatorio (así viene), no se escribe nada: escribir en el eleventa real pide un respaldo.
+
+    ```json
+    "Eleventa": { …, "Gbak": "C:\\…\\bin\\gbak.exe", "CarpetaRespaldos": "C:\\ProgramData\\PapeleriaPos\\respaldos-eleventa", "DiasDeRespaldos": 5, "RespaldoObligatorio": true }
+    ```
+
+    Probado con un gbak de mentiras (nunca contra nada real) y contra el Firebird de prueba, haciendo a mano lo que deja
+    una restauración (borrar los últimos tickets, regresar el contador y volver a cobrar con esos números). Falta ver en
+    la tienda dónde está `gbak.exe` en la caja 2 y probar el respaldo contra la copia en el paso 5.
+
+    Para el dueño: al reanudar después de una restauración, ¿lo que se perdió en eleventa se anota a mano allá (como
+    quedó), o la caja 2 lo vuelve a mandar sola, con folios nuevos?
 - **El modo multicaja, al aprobar el piloto (propuesta):** un solo servicio en la caja principal, como quedará al final;
   la base de la caja 2 se muda ahí y la caja 2 se conecta a él. El puente se muda con él y escribe en el Firebird de la
   misma PC, una venta a la vez, con el `CAJAS.ID` y el cajero de cada caja. Eleventa sigue abierto en las dos cajas.
@@ -597,13 +826,81 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
   la principal cuando ya no ve eleventa ni su respaldo corriendo. Falta medir que la principal aguante eleventa,
   Firebird y el servicio juntos.
 - **Para la importación final:** las ventas que mandó el puente ya están en la base nueva; la importación de eleventa
-  las excluye por `VENTATICKETS.ID`, para no contarlas dos veces.
+  no las trae (por `VENTATICKETS.ID` y su marca), para no contarlas dos veces. Ya está en código (2026-10-17,
+  [abajo](#la-importación-final)).
+
+## La importación final
+
+Al dejar eleventa, su historial de ventas entra a la base de la tienda, la que se armó con `importar-eleventa` y donde
+corrió el piloto, para los reportes contra el año anterior (entrega 9). Solo el historial: el catálogo ya está (lo siguió
+la lectura de cada pocos minutos) y las existencias salen del conteo físico. Primero con `--simular`, que dice qué haría
+sin guardar nada:
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --base C:\…\pos.db --simular
+dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --base C:\…\pos.db
+```
+
+- **Sin lo que mandó el puente** (2026-10-17, `ImportacionFinal` y `LoQueMandoElPuente`). Las ventas de la caja 2 ya están
+  en la base, con sus cancelaciones y devoluciones: las de la caja 2 y las que se hicieron en eleventa (la vuelta las pasó
+  sin efectivo). Sus tickets no se traen, o contarían dos veces. Se reconocen como el puente reconoce lo suyo, nunca por el
+  folio (eleventa lo repite entre cajas):
+  - por el número que le dio eleventa (`VENTATICKETS.ID`) y su marca (`CREADO_EN`: cuándo se empezó la venta en la caja 2,
+    en diezmilésimas de segundo);
+  - si la caja 2 no supo su número (se cortó la red justo cuando eleventa lo guardó), por su marca y la hora del cobro
+    (`VENDIDO_EN`).
+
+  Lo que eleventa les devolvió o canceló ya se lo bajó a esos tickets, así que tampoco entra. Las devoluciones
+  (`DEVOLUCIONES`) solo se leen para decir de quién fue cada una: de la caja 2 (su marca, `TICKET_ID` + `DEVUELTO_EN`, o la
+  anotación a mano que se eligió para una de aquí) o de eleventa (la vuelta, por su `DEVOLUCIONES.ID`).
+- **Lo de eleventa entra como en una base nueva:** cada ticket con lo que eleventa le bajó al devolver (también lo que
+  devolvió la caja 2 de un ticket de eleventa, la ida) y los cancelados marcados.
+- **Se puede correr más de una vez.** Lo que ya estaba igual no se toca; lo que cambió en eleventa desde la importación
+  anterior (una devolución, una cancelación) se vuelve a escribir; lo nuevo entra una vez; lo que resultó ser de la caja 2
+  se quita, y lo que ya no está en eleventa se deja. Los mapeos dicen qué ticket es cada venta del historial y, también,
+  qué ticket de eleventa es cada venta de la caja 2 (`Venta`): si después se quita el puente, otra importación sigue sin
+  traerlas.
+- **Todo o nada,** en una transacción y con la base apartada para escribir, así que se corre con la caja cerrada. Antes
+  deja una copia de la base junto a ella (`pos.antes-de-importar-AAAA-MM-DD-HHmmss.db`). No acepta una base que no se armó
+  con `importar-eleventa`, ni una copia de eleventa más vieja que lo que ya se importó; si la copia es de antes de lo último
+  que mandó la caja 2, lo dice primero (conviene sacar otra y repetirla).
+- **Lo vendido con un producto que la base no tiene** (se dio de alta en eleventa después de la última lectura) se da de
+  alta inactivo, con su Id de eleventa; lo vendido con un código que ya no es de ningún producto, como al importar una base
+  nueva. Una vez: al repetirla se usan los mismos.
+- **Dice qué hizo:** cuántos tickets entraron, cambiaron, ya estaban o se quitaron; cuántos de la caja 2 no se trajeron,
+  cuánto suman, cuántos estaban cancelados o tenían devoluciones (de la caja 2 o de eleventa); cuántas ventas de la caja 2
+  no llegaron a eleventa (allá no hay nada que quitar), y cómo cuadra: lo que suma eleventa es el historial más lo de la
+  caja 2.
+- **Lo que no se decide solo queda en una lista, para revisarlo a mano** (decidido el 2026-10-17, por revisar: no se quita
+  ni se aplica nada por adivinar):
+  - una venta de la caja 2 que se anotó a mano en eleventa, o que quedó para anotarse: allá no lleva la marca y se trae
+    como de eleventa; si se anotó, cuenta dos veces. Dice qué tickets de eleventa pueden ser (el mismo total, al peso,
+    cobrados después);
+  - una que se mandó y eleventa ya no tiene (¿se restauró un respaldo?), o que eleventa tiene dos veces;
+  - una que aquí se canceló antes de llegar, o que sigue pendiente, y que eleventa sí tiene (no se trae). Desde el
+    2026-10-17 la bandeja busca en eleventa la cancelada antes de descartarla, así que sería de antes;
+  - una devolución que se hizo en eleventa de un ticket de la caja 2 y no está en su venta (la lectura no la trajo, o quedó
+    por revisar): como ese ticket no se trae, no cuenta en ningún lado hasta pasarla. Si puede ser la anotación a mano de
+    una devolución de aquí que todavía nadie elige («Ya lo anoté en eleventa»; mientras, la vuelta la retiene), lo dice:
+    si es esa, aquí ya está. La que ya se eligió cuenta como de la caja 2;
+  - una devolución de la caja 2 de un ticket de eleventa (la ida) que no llegó a eleventa: el ticket se trae sin ella y
+    cuenta de más, salvo que se haya anotado a mano allá. Desde que la caja 2 solo devuelve lo del turno de ahora es raro:
+    eleventa cortó ese turno antes de que llegara.
+
+Se probó sin Firebird (las filas de eleventa con las marcas del puente: lo reconocido por su número o solo por su marca,
+correrla dos veces, lo que cambió en eleventa, lo que ya estaba y era de la caja 2, sin la bandeja y la lista para
+revisar, también la anotación a mano de una devolución de aquí, ya elegida o por elegir) y contra el Firebird de prueba: la
+caja 2 vendió, canceló y devolvió por el puente, en eleventa se le devolvió algo (la vuelta), eleventa vendió, canceló y
+devolvió lo suyo, y la caja 2 devolvió un ticket de su eleventa del turno de ahora (la ida; el de la principal no lo deja
+devolver aquí y se devolvió en eleventa). El historial quedó exactamente con los tickets de eleventa, suma lo mismo que
+eleventa sin los de la caja 2, y la segunda vez no cambió nada.
 
 ## Arranque (fase 5)
 
 1. Depuración del catálogo sobre la base importada ([plan](plan.md#depuración-del-inventario)): bajas, duplicados,
    equipo de la tienda, unidades y servicios.
 2. Conteo físico completo, por departamentos, en las semanas previas. Reemplaza todas las existencias de eleventa.
-3. Arranque en un día tranquilo.
-4. Eleventa queda instalado solo para consulta unas semanas, como respaldo, con un plan para regresar si algo falla.
-5. Capacitación a cajeros y encargado antes del arranque, con datos de prueba.
+3. La importación final del historial de eleventa, sin lo que mandó el puente ([arriba](#la-importación-final)).
+4. Arranque en un día tranquilo.
+5. Eleventa queda instalado solo para consulta unas semanas, como respaldo, con un plan para regresar si algo falla.
+6. Capacitación a cajeros y encargado antes del arranque, con datos de prueba.

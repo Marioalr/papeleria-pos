@@ -38,6 +38,10 @@
   sistema dice que queda una y las dos cajas la escanean a la vez, el producto existe y la base es la que está mal; las
   dos ventas pasan y la diferencia sale en el conteo. Tampoco hay opción para bloquearla.
 - **Apartados y pedidos:** la mercancía separada se descuenta del disponible, no de la existencia.
+- **Se consulta** en Inventario (2026-10-17, como en eleventa): los movimientos de toda la tienda por días, tipo,
+  producto, departamento y quién (el movimiento no guarda quién: lo dice su documento, la venta, la compra, el ajuste o
+  el conteo), y lo que vale el inventario, la suma de los costos del kardex de lo que tiene existencia, por
+  departamento.
 
 ## Compras
 
@@ -52,6 +56,10 @@
   cerrado) y un QR; un almacén futuro es una sucursal sin cajas.
 - **Sugerido de compra:** mínimos y máximos calculados con el historial de ventas (incluido el de eleventa) y la
   temporada (regreso a clases).
+- **Mínimo y máximo propios** (2026-10-17, como en eleventa): cada variante puede llevar los suyos en su ficha. Con su
+  mínimo o menos sale en «Poca existencia» (Productos) y en «Bajos en inventario» (Inventario), con cuánto pedir para
+  llegar a su máximo, contando lo que ya viene en órdenes; sin mínimo propio cuenta 3 o menos, y sin máximo, lo que pide
+  el sugerido, pero al menos lo que falta para llegar a su mínimo. Son del POS: la lectura de eleventa no los trae.
 
 ## Conteos
 

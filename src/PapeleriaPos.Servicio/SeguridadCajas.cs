@@ -10,7 +10,8 @@ namespace PapeleriaPos.Servicio;
 
 /// <summary>
 /// Solo las cajas dadas de alta usan la API desde la red: cada llamada trae la llave de la caja. La caja principal
-/// (la misma PC del servicio) no la necesita. Sin llave solo se puede preguntar si el servicio está vivo y pedir el alta.
+/// (la misma PC del servicio) no la necesita. Sin llave solo se puede preguntar si el servicio está vivo, pedir el alta y
+/// pedirle que pruebe quién es (la caja que lo encontró en la red, antes de mandarle su llave).
 /// </summary>
 public static class SeguridadCajas
 {
@@ -43,8 +44,10 @@ public static class SeguridadCajas
             }
         }
 
+        // La identidad, sin llave: la caja que encontró al servicio en la red le pide que pruebe quién es antes de mandarle su
+        // llave (Descubrimiento); el servicio solo contesta a la red de la tienda.
         if (contexto.Items.ContainsKey(CajaDeLaLlave) || ruta.StartsWithSegments("/api/estado") || ruta.StartsWithSegments("/api/alta")
-            || EsLaMismaPc(contexto.Connection.RemoteIpAddress))
+            || ruta.StartsWithSegments("/api/identidad") || EsLaMismaPc(contexto.Connection.RemoteIpAddress))
         {
             await siguiente(contexto);
             return;

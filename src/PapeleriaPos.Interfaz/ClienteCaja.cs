@@ -58,6 +58,32 @@ public sealed class ConexionCaja
 
     public string? Llave { get; set; }
 
+    /// <summary>
+    /// La llave pública de la caja principal (la propia de su servicio, que no está en su base): se recuerda al darse de alta o la
+    /// primera vez que su dirección prueba quién es, y desde entonces la caja no se cambia sola a un servicio que no firme con ella
+    /// (<see cref="ReencuentroDeLaPrincipal"/>). Vacía con un servicio de antes.
+    /// </summary>
+    public string? LlaveDelServicio { get; set; }
+
+    /// <summary>
+    /// La dirección que puso el dueño al darla de alta (en una caja de antes, la que ya tenía): solo ahí se aprende la llave del
+    /// servicio la primera vez. Una dirección que la caja encontró sola en la red no la enseña: si no, una copia de la base que
+    /// contestara sola se quedaría como la de confianza. Vacía: con la que abrió la caja.
+    /// </summary>
+    public Uri? DireccionDeConfianza { get; set; }
+
+    private volatile bool _sinComprobar;
+
+    /// <summary>
+    /// Después de una caída (o al abrir la caja), mientras la dirección guardada no pruebe otra vez que es la caja principal de esta
+    /// caja: no se le manda la llave a nadie (<see cref="Transporte"/>), y la caja trabaja con su copia.
+    /// </summary>
+    public bool SinComprobar
+    {
+        get => _sinComprobar;
+        set => _sinComprobar = value;
+    }
+
     /// <summary>La ventana de Windows se da de alta antes de vender; la del navegador, en la PC del servicio, no.</summary>
     public bool PideAlta { get; init; }
 
@@ -256,6 +282,42 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         return await _http.PostAsync<CierreDelDiaDto>($"api/cajas/{cajaId}/corte-del-dia/cierre", new SolicitudCierreDia(usuarioId));
     }
 
+    /// <summary>
+    /// Cierra el día que se ve (2026-10-17): si ya no es hoy (pasó la medianoche con el corte abierto), el servicio no lo
+    /// cierra, ni ese ni el nuevo. Lo demás, como <see cref="CerrarElDiaAsync(Guid, Guid)"/>.
+    /// </summary>
+    public async Task<CierreDelDiaDto> CerrarElDiaAsync(Guid cajaId, Guid usuarioId, DateOnly fecha)
+    {
+        if (contingencia is { ServidorResponde: false })
+            throw new ErrorCaja(CorteDelDiaSinConexion, "sin-conexion");
+        if (contingencia is { Pendientes: > 0 and var pendientes })
+            throw new ErrorCaja($"Esta caja todavía sube lo que hizo sin conexión ({pendientes} por subir): el cierre espera a que termine.");
+        return await _http.PostAsync<CierreDelDiaDto>($"api/cajas/{cajaId}/corte-del-dia/cierre", new SolicitudCierreDia(usuarioId, fecha));
+    }
+
+    /// <summary>
+    /// El corte del día de una fecha (2026-10-17): hoy, o uno que ya pasó, solo para verlo e imprimirlo. Con las ventas por
+    /// departamento y, si quien entró ve la utilidad, la utilidad. Necesita la caja principal.
+    /// </summary>
+    public async Task<CorteDelDiaDto> CorteDelDiaAsync(Guid cajaId, Guid usuarioId, DateOnly fecha)
+    {
+        if (contingencia is { ServidorResponde: false })
+            throw new ErrorCaja(CorteDelDiaSinConexion, "sin-conexion");
+        return (await _http.GetAsync<CorteDelDiaDto>(
+            $"api/cajas/{cajaId}/corte-del-dia?usuarioId={usuarioId}&fecha={fecha.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}"))!;
+    }
+
+    /// <summary>
+    /// El recordatorio de cerrar el día (2026-10-17): vacío si no toca (antes de la hora de cierre, el día ya cerrado, sin el
+    /// permiso o en el piloto) y sin conexión con la caja principal, que es la que sabe si el día se cerró.
+    /// </summary>
+    public async Task<RecordatorioCierreDto?> RecordatorioCierreAsync(Guid cajaId, Guid usuarioId)
+    {
+        if (contingencia is { ServidorResponde: false })
+            return null;
+        return await _http.GetAsync<RecordatorioCierreDto>($"api/cajas/{cajaId}/corte-del-dia/recordatorio?usuarioId={usuarioId}", nadaEsNulo: true);
+    }
+
     public Task<ProductoVentaDto?> PorCodigoAsync(string codigo, Guid sucursalId) =>
         ConRespaldoAsync(() => _http.GetAsync<ProductoVentaDto>($"api/productos/codigo/{Uri.EscapeDataString(codigo)}?sucursalId={sucursalId}",
             noEncontradoEsNulo: true), l => l.PorCodigo(codigo));
@@ -436,6 +498,10 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<ConfiguracionTicketDto> GuardarLogoTicketAsync(Guid cajaId, SolicitudLogo solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/cajas/{cajaId}/configuracion/ticket/logo", solicitud));
 
+    /// <summary>«Al cobrar»: imprimir el ticket, ofrecerlo o no imprimirlo, con «Configurar el ticket» de quien entró a la caja.</summary>
+    public Task<ConfiguracionTicketDto> GuardarAlCobrarAsync(Guid cajaId, SolicitudAlCobrar solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/cajas/{cajaId}/configuracion/ticket/al-cobrar", solicitud));
+
     public Task<VentaParaDevolverDto?> VentaPorFolioAsync(Guid sucursalId, string folio) =>
         ConRespaldoAsync(() => _http.GetAsync<VentaParaDevolverDto>($"api/sucursales/{sucursalId}/ventas/folio/{Uri.EscapeDataString(folio)}",
             noEncontradoEsNulo: true));
@@ -458,6 +524,61 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<List<BitacoraDto>> ConsultarBitacoraAsync(Guid cajaId, Guid usuarioId, DateOnly desde, DateOnly hasta) =>
         ConRespaldoAsync(async () => await _http.GetAsync<List<BitacoraDto>>(
             $"api/cajas/{cajaId}/bitacora?usuarioId={usuarioId}&desde={desde:yyyy-MM-dd}&hasta={hasta:yyyy-MM-dd}") ?? []);
+
+    // ── Las ventas de otros días y el historial de cortes (paridad con eleventa, 2026-10-17): solo con la caja principal ──
+
+    /// <summary>
+    /// Lo que dice la caja sin la caja principal: las ventas de todas las cajas y de todos los días están allá; aquí solo
+    /// está la copia para vender.
+    /// </summary>
+    public const string VentasSinConexion =
+        "Sin conexión con la caja principal: esta caja solo tiene su copia para vender. Las ventas (las de hoy, las de otros días y las de "
+        + "otras cajas) se ven cuando vuelva.";
+
+    /// <summary>Lo que dice la caja sin la caja principal: el historial junta los cortes de todas las cajas.</summary>
+    public const string CortesSinConexion =
+        "Sin conexión con la caja principal: el historial de cortes junta los de todas las cajas y se ve cuando vuelva.";
+
+    /// <summary>
+    /// Las ventas de un día (vacío: hoy en la caja principal) de una caja (vacía: todas) y de un cajero (vacío: todos); con
+    /// <paramref name="folio"/>, las de ese folio en cualquier día (solo el número, sin los reportes, en esta caja). Las de
+    /// hoy de esta caja las ve cualquiera; las de otro día o de otra caja, quien tiene «Ver reportes de ventas» (lo revisa el
+    /// servicio).
+    /// </summary>
+    public Task<VentasDeUnDiaDto> VentasDeUnDiaAsync(Guid cajaId, Guid usuarioId, DateOnly? fecha, Guid? caja, Guid? cajero, string? folio = null) =>
+        SoloConLaPrincipalAsync<VentasDeUnDiaDto>(VentasSinConexion, $"api/cajas/{cajaId}/ventas?usuarioId={usuarioId}" + Filtros(fecha, caja, cajero)
+            + (string.IsNullOrWhiteSpace(folio) ? "" : $"&folio={Uri.EscapeDataString(folio.Trim())}"));
+
+    /// <summary>
+    /// Los turnos de un día (vacío: hoy) con su corte, de una caja (vacía: todas) y de un cajero (vacío: todos), para quien
+    /// hace el corte de un turno o ve el del día (lo revisa el servicio).
+    /// </summary>
+    public Task<HistorialCortesDto> HistorialCortesAsync(Guid cajaId, Guid usuarioId, DateOnly? fecha, Guid? caja, Guid? cajero) =>
+        SoloConLaPrincipalAsync<HistorialCortesDto>(CortesSinConexion, $"api/cajas/{cajaId}/cortes?usuarioId={usuarioId}" + Filtros(fecha, caja, cajero));
+
+    private static string Filtros(DateOnly? fecha, Guid? caja, Guid? cajero) =>
+        (fecha is { } dia ? $"&fecha={dia.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}" : "") + (caja is { } c ? $"&caja={c}" : "")
+        + (cajero is { } u ? $"&cajero={u}" : "");
+
+    /// <summary>
+    /// Lo que solo sabe la caja principal (lo de todas las cajas y todos los días): sin ella, el error lo dice con
+    /// <paramref name="sinConexion"/>, sin esperar. Si deja de contestar a media consulta, la caja lo sabe desde ya, como con
+    /// lo demás.
+    /// </summary>
+    private async Task<T> SoloConLaPrincipalAsync<T>(string sinConexion, string url)
+    {
+        if (contingencia is { ServidorResponde: false })
+            throw new ErrorCaja(sinConexion, "sin-conexion");
+        try
+        {
+            return (await _http.GetAsync<T>(url))!;
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
+        {
+            contingencia?.MarcarSinConexion();
+            throw new ErrorCaja(sinConexion, "sin-conexion");
+        }
+    }
 
     // ── Usuarios y permisos (entrega 1, solo con la caja principal): cada cambio regresa la lista completa ──
 
@@ -584,6 +705,19 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// </summary>
     public Task<TrastiendaEnElPilotoDto> TrastiendaEnElPilotoAsync() =>
         ConRespaldoAsync(async () => (await _http.GetAsync<TrastiendaEnElPilotoDto>("api/catalogo/piloto"))!);
+
+    // ── Cambiar precios de varios a la vez (Productos › Cambiar precios, solo con la caja principal) ──
+
+    /// <summary>Cómo quedan los precios con esa regla, sin cambiar nada; el margen, solo para quien ve la utilidad.</summary>
+    public Task<VistaPreciosDeVariosDto> VistaPreciosDeVariosAsync(SolicitudPreciosDeVarios solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<VistaPreciosDeVariosDto>("api/catalogo/precios-de-varios/vista", solicitud));
+
+    /// <summary>
+    /// Aplica lo que se vio (con su huella y el Id de esta vez): si algo cambió desde la vista, el servicio no lo aplica; si
+    /// ya lo había aplicado (se perdió la respuesta), no lo hace otra vez.
+    /// </summary>
+    public Task<PreciosDeVariosAplicadosDto> CambiarPreciosDeVariosAsync(SolicitudPreciosDeVarios solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<PreciosDeVariosAplicadosDto>("api/catalogo/precios-de-varios", solicitud));
 
     // ── Compras (F4, solo con la caja principal) ──
 
@@ -756,6 +890,37 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     public Task<MargenesDto> GuardarMargenesAsync(Guid sucursalId, SolicitudMargenes solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<MargenesDto>($"api/sucursales/{sucursalId}/margenes", solicitud));
+
+    // ── Los reportes del inventario (F4, como en eleventa; solo con la caja principal) ──
+
+    /// <summary>Lo que vale el inventario a costo, por departamento, y una página de los productos del elegido (con «Ver costos…»).</summary>
+    public Task<ValorInventarioDto> ValorInventarioAsync(Guid sucursalId, Guid usuarioId, Guid? departamentoId, FiltroValor filtro, int pagina) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<ValorInventarioDto>(
+            $"api/sucursales/{sucursalId}/inventario/valor?usuarioId={usuarioId}&filtro={filtro}&pagina={pagina}"
+            + (departamentoId is { } d ? $"&departamentoId={d}" : "")))!);
+
+    /// <summary>Una página de los movimientos del kardex con esos filtros, del más reciente al más viejo.</summary>
+    public Task<MovimientosInventarioDto> MovimientosInventarioAsync(Guid sucursalId, Guid usuarioId, FiltroMovimientosDto filtro, int pagina) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<MovimientosInventarioDto>(
+            $"api/sucursales/{sucursalId}/inventario/movimientos?usuarioId={usuarioId}"
+            + $"&desde={filtro.Desde.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}&hasta={filtro.Hasta.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}"
+            + (filtro.Clase is { } clase ? $"&clase={clase}" : "")
+            + (string.IsNullOrWhiteSpace(filtro.Texto) ? "" : $"&q={Uri.EscapeDataString(filtro.Texto.Trim())}")
+            + (filtro.DepartamentoId is { } d ? $"&departamentoId={d}" : "")
+            + (filtro.QuienId is { } q ? $"&quienId={q}" : "")
+            + $"&pagina={pagina}"))!);
+
+    /// <summary>Para el filtro «Quién» de los movimientos: los usuarios de la sucursal, también los dados de baja.</summary>
+    public Task<List<OpcionCatalogoDto>> QuienesMovimientosAsync(Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<OpcionCatalogoDto>>(
+            $"api/sucursales/{sucursalId}/inventario/movimientos/quienes?usuarioId={usuarioId}") ?? []);
+
+    /// <summary>Lo que está en su mínimo o debajo, por departamento, con cuánto pedir: una página.</summary>
+    public Task<BajosInventarioDto> BajosInventarioAsync(Guid sucursalId, Guid usuarioId, Guid? departamentoId, string? texto, bool soloConMinimo, int pagina) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<BajosInventarioDto>(
+            $"api/sucursales/{sucursalId}/inventario/bajos?usuarioId={usuarioId}&conMinimo={soloConMinimo}&pagina={pagina}"
+            + (departamentoId is { } d ? $"&departamentoId={d}" : "")
+            + (string.IsNullOrWhiteSpace(texto) ? "" : $"&q={Uri.EscapeDataString(texto.Trim())}")))!);
 
     // ── Clientes registrados (fase 3, entrega 2) ──
 
@@ -1041,6 +1206,24 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         }
     }
 
+    /// <summary>
+    /// La bitácora de red de la caja principal (Configuración › Acerca de): sus últimas caídas, dónde está y lo que ve ahora. Vacía
+    /// si no contesta o es un servicio de antes: no espera a una caja principal que no está.
+    /// </summary>
+    public async Task<ResumenDeRedDto?> RedDeLaPrincipalAsync()
+    {
+        if (contingencia is { EnLinea: false })
+            return null;
+        try
+        {
+            return await _http.GetAsync<ResumenDeRedDto>("api/red", noEncontradoEsNulo: true, espera: PlazoLectura);
+        }
+        catch (ErrorCaja)
+        {
+            return null;
+        }
+    }
+
     /// <summary>La versión del servicio de la caja principal (Configuración › Acerca de); vacía si no contesta.</summary>
     public async Task<string?> VersionDeLaPrincipalAsync()
     {
@@ -1082,6 +1265,9 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     {
         if (contingencia is null)
             return await enLinea();
+        // Al abrir la caja, la caja principal prueba quién es antes de recibir la llave: se espera eso (milisegundos en la red de la
+        // tienda, a lo más unos segundos), no la red entera.
+        await contingencia.ComprobarAntesDeLlamarAsync();
         if (!contingencia.EnLinea && (sinConexion is not null || !contingencia.SeIntentaSinCopia))
             return Local(contingencia, sinConexion);
         T resultado;

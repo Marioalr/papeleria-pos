@@ -173,7 +173,8 @@ public sealed class TrastiendaEnElPilotoTests(ServicioDePrueba servicio) : IClas
         await using (var p = await InventarioAsync(c))
         {
             await p.EsperarAsync(t => t.Contains(TrastiendaEnElPiloto.InventarioEnEleventa), "la nota del piloto");
-            Assert.Equal(["Ordenes", "Sugerido", "Etiquetas", "HojaCodigos", "Proveedores"], await TarjetasAsync(p));
+            // Los reportes (bajos en inventario y movimientos) solo leen: van también en el piloto.
+            Assert.Equal(["Ordenes", "Sugerido", "Bajos", "Etiquetas", "HojaCodigos", "Proveedores", "Movimientos"], await TarjetasAsync(p));
             Assert.Empty(p.Errores);
         }
         // El chip del conteo del día o «/» piden esa tarea: en el piloto queda en las tarjetas, con la nota.
@@ -203,7 +204,8 @@ public sealed class TrastiendaEnElPilotoTests(ServicioDePrueba servicio) : IClas
         Assert.DoesNotContain(TrastiendaEnElPiloto.InventarioEnEleventa, await p.TextoAsync());
         await p.OprimirAsync(await p.BotonAsync("← Inventario"));
         await p.EsperarAsync(t => t.Contains("Solo las tareas que tienes"), "las tarjetas");
-        Assert.Equal(PaginasDeAtras.Tareas.Select(t => t.Id.ToString()), await TarjetasAsync(p));
+        // Todas menos lo que vale el inventario: el encargado no tiene «Ver costos, utilidad y margen».
+        Assert.Equal(PaginasDeAtras.Tareas.Where(t => t.Id != TareaInventario.Valor).Select(t => t.Id.ToString()), await TarjetasAsync(p));
         Assert.Empty(p.Errores);
     }
 
