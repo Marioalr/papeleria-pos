@@ -90,6 +90,9 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<LugarExhibidor> LugaresExhibidor => Set<LugarExhibidor>();
     public DbSet<ProductoExhibido> ProductosExhibidos => Set<ProductoExhibido>();
 
+    /// <summary>Las fotos de los productos (entrega 13, parte 2): una por variante, ya chica.</summary>
+    public DbSet<FotoProducto> FotosProducto => Set<FotoProducto>();
+
     /// <summary>Lo quitado de lo que lleva la copia de las cajas, con su versión (entrega 5, parte 2): lo escribe la base al guardar.</summary>
     public DbSet<Borrado> Borrados => Set<Borrado>();
 

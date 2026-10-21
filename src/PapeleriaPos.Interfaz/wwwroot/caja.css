@@ -260,6 +260,20 @@ ul.revision-celular .cifras { color: var(--suave); font-size: 14px; display: fle
 .celular .boton { font-size: 16px; padding: 10px 14px; }
 .celular .boton.chico { font-size: 14px; padding: 6px 10px; }
 .celular td, .celular th { padding: 5px 6px; font-size: 14px; }
+/* «Contar» y «Fotos» en el celular (entrega 13, parte 2), y las fotos: buscar o escanear, la foto grande y la cámara. */
+.pestanas-celular { display: flex; gap: 0; margin: 10px 12px 0; border: 1px solid var(--borde); border-radius: 8px; overflow: hidden; background: #fff; }
+.pestanas-celular button { flex: 1; font: inherit; font-size: 16px; padding: 10px; border: 0; background: none; color: var(--suave); cursor: pointer; }
+.pestanas-celular button.on { background: var(--azul-claro); color: var(--azul); font-weight: 600; }
+.fotos-celular { display: flex; flex-direction: column; gap: 10px; }
+.buscar-foto input { width: 100%; }
+ul.resultados-foto { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+ul.resultados-foto .boton { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; white-space: normal; text-align: left; }
+ul.resultados-foto .nombre { font-weight: 600; }
+.tarjeta-foto { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: #fff; border: 1px solid var(--borde); border-radius: 8px; }
+.foto-grande { display: grid; place-items: center; width: 100%; aspect-ratio: 1; max-height: 60vh; border-radius: 8px; background: #f4f1ea; color: var(--suave); overflow: hidden; }
+.foto-grande img { width: 100%; height: 100%; object-fit: contain; }
+.tarjeta-foto .acciones { justify-content: flex-start; flex-wrap: wrap; }
+.boton.archivo.principal { color: #fff; }
 @media (max-width: 640px) {
     .tarjeta { width: calc(100vw - 24px); padding: 18px 16px; }
     ul.departamentos li { grid-template-columns: 1fr; gap: 4px; }
@@ -981,6 +995,18 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 button.vn-chip-temporada:hover { border-color: #d98a00; }
 /* El verificador con el lugar de la foto, más grande (como v-foto del prototipo). */
 .verificado .vn-foto { --lado: 120px; margin: 0 auto 8px; }
+/* Las fotos (entrega 13, parte 2; .foto del prototipo): completas en su cuadro, sin recortar, sobre el mismo fondo que las
+   iniciales. Las enseña la base de la caja, sin la red. En la lista de la búsqueda, chica a la izquierda (.op.con-foto). */
+img.vn-foto { display: block; object-fit: contain; }
+.vn-res.con-foto { grid-template-columns: 38px minmax(0, 1fr) auto 104px; gap: 12px; }
+.vn-res-foto { display: block; width: 38px; height: 38px; object-fit: contain; border-radius: 7px; background: #f4f1ea; box-shadow: 0 0 0 1px var(--vn-linea); }
+/* La foto en la ficha del producto (F3): el cuadro (Ctrl+V pega ahí una imagen copiada) y lo que se hace con ella. */
+.foto-variante { display: flex; align-items: flex-start; gap: 14px; margin: 10px 0 2px; }
+.foto-variante-cuadro { flex: none; border-radius: 9px; padding: 3px; }
+.foto-variante-cuadro .vn-foto { --lado: 96px; }
+.foto-variante-cuadro:focus { outline: 2px dashed var(--vn-tinta, var(--azul)); outline-offset: 1px; }
+.foto-variante-texto { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.foto-variante-texto h5 { margin: 0; }
 
 /* ── Usuarios y permisos (entrega 1, htmlUsuarios del prototipo): un grupo de la Configuración nueva (entrega 7) ──
    Va en la ventana de la configuración, fuera de .venta-nueva, así que trae sus colores (los mismos). Toma lo que queda de

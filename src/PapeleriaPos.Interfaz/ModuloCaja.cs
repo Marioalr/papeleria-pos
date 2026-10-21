@@ -111,6 +111,13 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     /// <summary>Abre el diálogo de impresión solo con lo que hay en el marco.</summary>
     public async Task ImprimirMarcoAsync(string selector) => await (await Modulo).InvokeVoidAsync("imprimirMarco", selector);
 
+    /// <summary>
+    /// La foto de un producto en su ficha (entrega 13, parte 2): Ctrl+V con el cursor en ese cuadro le pasa la imagen pegada,
+    /// ya achicada, a <paramref name="ficha"/> (su <c>ImagenPegada</c>).
+    /// </summary>
+    public async Task PegarImagenAsync<T>(string selector, DotNetObjectReference<T> ficha) where T : class =>
+        await (await Modulo).InvokeVoidAsync("pegarImagen", selector, ficha);
+
     /// <summary>Guarda en el navegador (vacío: lo borra).</summary>
     public async Task GuardarAsync(string clave, string? valor) => await (await Modulo).InvokeVoidAsync("guardar", clave, valor);
 

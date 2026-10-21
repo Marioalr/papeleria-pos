@@ -695,6 +695,11 @@ public sealed record CodigoLocalDto(string Codigo, Guid VarianteId, Guid Present
 /// red. Desde el formato 3 siempre vienen (vacíos si no hay ninguno); vacíos (null) en una copia de antes, o en una de ese
 /// formato que guardó una caja que todavía no los conocía: esa se baja completa otra vez.
 /// </param>
+/// <param name="Fotos">
+/// Las fotos de los productos (entrega 13, parte 2): solo de qué producto es cada una y su huella, en el orden de las variantes;
+/// cada caja baja aparte las que no tiene. Así la copia no crece con las fotos (unos 80 bytes por foto). Desde el formato 4
+/// siempre vienen (vacías si no hay ninguna); vacías (null) en una copia de antes: esa se baja completa otra vez.
+/// </param>
 public sealed record PaqueteContingenciaDto(
     long Version, CajaDto Caja, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<UsuarioLocalDto> Usuarios,
     IReadOnlyList<ReglaDto> Reglas,
@@ -703,7 +708,8 @@ public sealed record PaqueteContingenciaDto(
     IReadOnlyList<string>? Marcas = null, IReadOnlyList<SinonimoDto>? Sinonimos = null, IReadOnlyList<PermisosLocalesDto>? Permisos = null,
     ConfiguracionSucursalDto? Configuracion = null, Guid? Base = null, int? Formato = null, long? VersionExistencias = null,
     IReadOnlyList<VecesVendidoDto>? Vendidos = null, IReadOnlyList<ElegidoDto>? Elegidos = null, long? VersionVendidos = null, long? VersionElegidos = null,
-    TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir, IReadOnlyList<ExhibidorDto>? Exhibidores = null);
+    TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir, IReadOnlyList<ExhibidorDto>? Exhibidores = null,
+    IReadOnlyList<FotoDeProductoDto>? Fotos = null);
 
 // Lo que sube con la bandeja. Cada cosa lleva el ID que le dio la caja: si llega dos veces, se guarda una.
 

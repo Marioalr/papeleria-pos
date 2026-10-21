@@ -54,6 +54,21 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
         return await respuesta.Content.ReadFromJsonAsync<T>();
     }
 
+    /// <summary>
+    /// Lo que contesta, tal cual (la foto de un producto, entrega 13, parte 2); vacío si no está (404). Más de
+    /// <paramref name="maximo"/> bytes no se recibe: no es lo que se pidió.
+    /// </summary>
+    /// <param name="ct">Para soltarla antes (se cierra la caja): sale como si no hubiera contestado a tiempo.</param>
+    public async Task<byte[]?> GetBytesAsync(string url, TimeSpan? espera = null, int maximo = int.MaxValue, CancellationToken ct = default)
+    {
+        using var respuesta = await EnviarAsync(HttpMethod.Get, url, espera: espera, ct: ct);
+        if (respuesta.StatusCode == HttpStatusCode.NotFound)
+            return null;
+        await RevisarAsync(respuesta);
+        var datos = await respuesta.Content.ReadAsByteArrayAsync();
+        return datos.Length <= maximo ? datos : throw new ErrorCaja($"La caja principal contestó con algo demasiado grande ({datos.Length:N0} bytes).");
+    }
+
     public async Task<T> PostAsync<T>(string url, object? cuerpo, bool sinRespuesta = false, Uri? servicio = null, TimeSpan? espera = null)
     {
         using var respuesta = await EnviarAsync(HttpMethod.Post, url, cuerpo, servicio, espera);
@@ -70,7 +85,8 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
 
     /// <summary>Cada llamada va a la caja principal guardada y lleva la llave de esta caja.</summary>
     private async Task<HttpResponseMessage> EnviarAsync(
-        HttpMethod metodo, string url, object? cuerpo = null, Uri? servicio = null, TimeSpan? espera = null, HttpContent? contenido = null)
+        HttpMethod metodo, string url, object? cuerpo = null, Uri? servicio = null, TimeSpan? espera = null, HttpContent? contenido = null,
+        CancellationToken ct = default)
     {
         // La prueba con una persona real puede simular que no hay conexión (lo suyo, la guía y los avisos, sí contesta).
         if (conexion.SimularSinConexion && !url.StartsWith("api/prueba/", StringComparison.Ordinal))
@@ -85,7 +101,8 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
             mensaje.Content = JsonContent.Create(cuerpo, cuerpo?.GetType() ?? typeof(object));
         if (espera is null && PlazosDeLaVenta is { } plazos)
             espera = metodo == HttpMethod.Get ? plazos.Lectura : plazos.Escritura;
-        using var limite = new CancellationTokenSource(espera ?? Timeout.InfiniteTimeSpan);
+        using var limite = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limite.CancelAfter(espera ?? Timeout.InfiniteTimeSpan);
         try
         {
             return await http.SendAsync(mensaje, limite.Token);

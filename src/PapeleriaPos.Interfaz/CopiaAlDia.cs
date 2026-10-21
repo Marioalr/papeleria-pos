@@ -8,15 +8,17 @@ namespace PapeleriaPos.Interfaz;
 /// quitan con los suyos; las existencias que cambiaron se ponen en su producto; y de lo demás (usuarios, permisos, la caja, el
 /// ticket, la configuración, los clientes, las marcas, los sinónimos, lo más vendido, los exhibidores y las temporadas) lo que
 /// llegó reemplaza lo de la copia. Lo elegido en la búsqueda llega solo lo nuevo y pisa lo del mismo texto (entrega 5, parte 3).
+/// De las fotos llegan las que cambiaron o llegaron (de qué producto y su huella) y las que se quitaron (entrega 13, parte 2).
 /// </summary>
 public static class CopiaAlDia
 {
     /// <summary>
     /// El formato de la copia que entiende esta caja (<c>VersionesDeLaCopia.Formato</c> en el servicio): si la copia guardada
     /// o la caja principal tienen otro, se baja completa. El 2 trae lo que necesita la búsqueda (entrega 5, parte 3); el 3,
-    /// siempre los exhibidores y las temporadas (entrega 13).
+    /// siempre los exhibidores y las temporadas (entrega 13); el 4, siempre de qué producto es cada foto, con su huella
+    /// (entrega 13, parte 2).
     /// </summary>
-    public const int Formato = 3;
+    public const int Formato = 4;
 
     public static PaqueteContingenciaDto Aplicar(PaqueteContingenciaDto copia, CambiosCopiaDto cambios)
     {
@@ -76,7 +78,24 @@ public static class CopiaAlDia
             Elegidos = cambios.Elegidos is { Count: > 0 } elegidos ? ConLoElegido(copia.Elegidos, elegidos) : copia.Elegidos,
             VersionElegidos = cambios.VersionElegidos ?? copia.VersionElegidos,
             Exhibidores = cambios.Exhibidores ?? copia.Exhibidores,
+            Fotos = cambios.CambianLasFotos ? ConLasFotos(copia.Fotos, cambios.Fotos ?? [], cambios.FotosQuitadas ?? []) : copia.Fotos,
         };
+    }
+
+    /// <summary>
+    /// Las fotos de la copia con lo que cambió (entrega 13, parte 2): sin las que se quitaron y con las que llegaron encima, en
+    /// el orden de las variantes, como la completa.
+    /// </summary>
+    private static List<FotoDeProductoDto> ConLasFotos(IReadOnlyList<FotoDeProductoDto>? copia, IReadOnlyList<FotoDeProductoDto> llegaron, IReadOnlyList<Guid> quitadas)
+    {
+        var porVariante = new Dictionary<Guid, string>();
+        foreach (var foto in copia ?? [])
+            porVariante[foto.VarianteId] = foto.Huella;
+        foreach (var varianteId in quitadas)
+            porVariante.Remove(varianteId);
+        foreach (var foto in llegaron)
+            porVariante[foto.VarianteId] = foto.Huella;
+        return porVariante.OrderBy(x => x.Key).Select(x => new FotoDeProductoDto(x.Key, x.Value)).ToList();
     }
 
     /// <summary>Lo elegido de la copia con lo nuevo encima (lo del mismo texto se pisa), en el orden de los textos, como la completa.</summary>

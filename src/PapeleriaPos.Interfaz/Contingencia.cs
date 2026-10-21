@@ -299,6 +299,8 @@ public sealed class Contingencia
         _conexion = conexion;
         _reloj = reloj ?? TimeProvider.System;
         _red = new CalidadDeLaRed(reglas ?? ReglasDeLaRed.SoloSiContesta, _reloj);
+        // Las fotos de los productos (entrega 13, parte 2): las que ya bajó, de su base; las que falten, de fondo.
+        Fotos = new FotosDeLaCaja(almacen, _http, _reloj);
         _completaDesdeUtc = Ahora;
         _saldos = almacen.Leer<SaldosCreditoDto>("saldos");
         _sinConfirmar = (almacen.Leer<Dictionary<Guid, bool>>(ClaveSinConfirmar) ?? []).ToImmutableDictionary();
@@ -316,7 +318,7 @@ public sealed class Contingencia
         {
             if (_almacen.LeerCopia<PaqueteContingenciaDto>() is { } paquete)
             {
-                Poner(new Copia(paquete));
+                Poner(new Copia(paquete), deLaRed: false);
                 _rendimiento?.Actividad("leer la copia del catálogo al abrir la caja", reloj.Elapsed);
             }
         }
@@ -327,15 +329,26 @@ public sealed class Contingencia
         }
     }
 
-    /// <summary>La copia nueva y su foto, de un jalón: lo que llegó de la caja principal y es más nuevo que ella se queda encima.</summary>
-    private void Poner(Copia copia)
+    /// <summary>
+    /// La copia nueva y su foto, de un jalón: lo que llegó de la caja principal y es más nuevo que ella se queda encima. Y de qué
+    /// productos hay foto: las que falten se bajan de fondo (entrega 13, parte 2).
+    /// </summary>
+    /// <param name="deLaRed">Si llegó de la caja principal (y no es la guardada en la base, al abrir).</param>
+    private void Poner(Copia copia, bool deLaRed = true)
     {
         _copia = copia;
         FotoCatalogo? antes;
         do
             antes = Volatile.Read(ref _foto);
         while (Interlocked.CompareExchange(ref _foto, copia.Foto.ConLoNuevoDe(antes), antes) != antes);
+        Fotos.Referencias(copia.Paquete.Fotos, deLaRed);
     }
+
+    /// <summary>
+    /// Las fotos de los productos en esta caja (entrega 13, parte 2): las que dice la copia, bajadas aparte a su base. Ctrl+M, la
+    /// lista de la búsqueda y el verificador las enseñan de aquí, sin la red.
+    /// </summary>
+    public FotosDeLaCaja Fotos { get; }
 
     /// <summary>
     /// Termina cuando ya se leyó la copia guardada al abrir la caja (fuera del hilo de la pantalla): la entrada la espera así,
@@ -527,6 +540,8 @@ public sealed class Contingencia
             ((IAsyncResult)tarea).AsyncWaitHandle.WaitOne(Restante(limite));
         if (_poniendoAlDia.Wait(Restante(limite)))
             _poniendoAlDia.Release();
+        // Las fotos que iban bajando se sueltan; lo que se escribía de ellas, termina.
+        Fotos.Detener(Restante(limite));
         _almacen.Cerrar(Restante(limite));
     }
 
@@ -658,6 +673,8 @@ public sealed class Contingencia
         }
         else if (Paquete is null || Paquete.Version != estado.VersionDatos || Ahora - _paqueteBajadoUtc > PaqueteViejo)
             await ActualizarPaqueteAsync();
+        // Las fotos que no se pudieron bajar (no había conexión): otra vuelta, ya con la caja principal contestando.
+        Fotos.SiFaltan();
     }
 
     /// <summary>
@@ -922,10 +939,10 @@ public sealed class Contingencia
                 await BajarCopiaAsync();
             return;
         }
-        // Sin los exhibidores, una copia de este formato la guardó una versión de esta caja que todavía no los conocía (y los
-        // cambios solo los traen cuando cambian): se baja completa una vez (entrega 13).
+        // Sin los exhibidores o sin las fotos, una copia de este formato la guardó una versión de esta caja que todavía no los
+        // conocía (y los cambios solo los traen cuando cambian): se baja completa una vez (entrega 13, partes 1 y 2).
         if (copia is null || copia.Base != principal.Base || copia.Formato != CopiaAlDia.Formato || copia.VersionExistencias is not { } existencias
-            || copia.Exhibidores is null || Ahora - _completaDesdeUtc > CopiaCompletaCada)
+            || copia.Exhibidores is null || copia.Fotos is null || Ahora - _completaDesdeUtc > CopiaCompletaCada)
         {
             await BajarCopiaAsync();
             return;

@@ -171,7 +171,13 @@
                                 var idRenglon = n++;
                                 if (!renglon.EsFamilia)
                                 {
-                                    <div id="res-@idRenglon" class="vn-res @(activo ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, -1)">
+                                    @* Con foto, chica a la izquierda, para confirmar que es ese (entrega 13, parte 2): de la base de esta caja, sin la red. *@
+                                    var fotoRes = Cliente.Fotos.Direccion(r.VarianteId);
+                                    <div id="res-@idRenglon" class="vn-res @(fotoRes is null ? "" : "con-foto") @(activo ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, -1)">
+                                        @if (fotoRes is not null)
+                                        {
+                                            <img class="vn-res-foto" src="@fotoRes" alt="" />
+                                        }
                                         <div class="vn-res-texto">
                                             <div class="vn-res-nombre">@Marcado(r.Descripcion)@PorSinonimo(r)</div>
                                             @if (r.Codigo is { } codigoRes)
@@ -219,7 +225,12 @@
                                         var valor = renglon.Valores[v].Elemento;
                                         var activoValor = n == _indiceResultado;
                                         var idValor = n++;
-                                        <div id="res-@idValor" class="vn-res vn-res-valor @(activoValor ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, indiceValor)">
+                                        var fotoValor = Cliente.Fotos.Direccion(valor.VarianteId);
+                                        <div id="res-@idValor" class="vn-res vn-res-valor @(fotoValor is null ? "" : "con-foto") @(activoValor ? "activa" : "")" role="option" @onclick="() => AgregarDeLaListaAsync(indiceRenglon, indiceValor)">
+                                            @if (fotoValor is not null)
+                                            {
+                                                <img class="vn-res-foto" src="@fotoValor" alt="" />
+                                            }
                                             <div class="vn-res-texto">
                                                 <div class="vn-res-nombre">
                                                     @Punto(eje, renglon.Valores[v].Clave)@Marcado(ValorTexto(renglon, v))

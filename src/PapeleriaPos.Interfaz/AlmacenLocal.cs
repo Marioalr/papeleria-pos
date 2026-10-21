@@ -110,6 +110,7 @@ public sealed class AlmacenLocal
             CREATE INDEX IF NOT EXISTS IX_Credito_Cliente ON Credito (ClienteId);
             CREATE TABLE IF NOT EXISTS CopiaPedazos (
                 Copia TEXT NOT NULL, Indice INTEGER NOT NULL, Datos BLOB NOT NULL, PRIMARY KEY (Copia, Indice));
+            CREATE TABLE IF NOT EXISTS Fotos (VarianteId TEXT PRIMARY KEY, Huella TEXT NOT NULL, Datos BLOB NOT NULL);
             """);
         // Bases creadas antes de las impresiones (entrega 5): sin la columna, todo bloquea.
         using (var columnas = Comando(conexion, null, "SELECT COUNT(*) FROM pragma_table_info('Bandeja') WHERE name = 'Bloquea'"))
@@ -371,6 +372,25 @@ public sealed class AlmacenLocal
         return sobran;
     }
 
+    /// <summary>
+    /// Las fotos de los productos que bajó esta caja (entrega 13, parte 2): de qué producto es cada una, su huella y la foto. Se
+    /// leen una vez, al abrir la caja; después se enseñan de memoria y lo que baja se escribe aquí por el escritor de siempre.
+    /// </summary>
+    public List<(Guid VarianteId, string Huella, byte[] Datos)> LeerFotos()
+    {
+        AlDia();
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, null, "SELECT VarianteId, Huella, Datos FROM Fotos");
+        using var lector = comando.ExecuteReader();
+        var fotos = new List<(Guid, string, byte[])>();
+        while (lector.Read())
+        {
+            if (Guid.TryParse(lector.GetString(0), out var varianteId))
+                fotos.Add((varianteId, lector.GetString(1), lector.GetFieldValue<byte[]>(2)));
+        }
+        return fotos;
+    }
+
     /// <summary>Lo que falta subir y lo que no se pudo subir (para reintentarlo), en orden.</summary>
     public List<ElementoBandeja> PorSubir(bool conErrores)
     {
@@ -553,6 +573,22 @@ public sealed class Lote
     {
         if (Leer<AlmacenLocal.CopiaGuardada>("copia")?.Copia != copia)
             AlmacenLocal.Ejecutar(_conexion, _transaccion, "DELETE FROM CopiaPedazos WHERE Copia = $copia AND Indice = $indice", ("$copia", copia), ("$indice", indice));
+        return this;
+    }
+
+    /// <summary>La foto de un producto que bajó esta caja (entrega 13, parte 2): nueva, o en lugar de la que tenía.</summary>
+    public Lote GuardarFoto(Guid varianteId, string huella, byte[] datos)
+    {
+        AlmacenLocal.Ejecutar(_conexion, _transaccion, "INSERT OR REPLACE INTO Fotos (VarianteId, Huella, Datos) VALUES ($variante, $huella, $datos)",
+            ("$variante", varianteId.ToString()), ("$huella", huella), ("$datos", datos));
+        return this;
+    }
+
+    /// <summary>Las fotos de los productos que ya no tienen (se les quitó en la caja principal).</summary>
+    public Lote QuitarFotos(IEnumerable<Guid> variantes)
+    {
+        foreach (var varianteId in variantes)
+            AlmacenLocal.Ejecutar(_conexion, _transaccion, "DELETE FROM Fotos WHERE VarianteId = $variante", ("$variante", varianteId.ToString()));
         return this;
     }
 

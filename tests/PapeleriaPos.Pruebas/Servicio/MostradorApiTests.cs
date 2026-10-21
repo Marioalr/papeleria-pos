@@ -77,7 +77,8 @@ public sealed class MostradorApiTests(ServicioDePrueba servicio) : IClassFixture
 
         var despues = await Leer<PaqueteContingenciaDto>(await http.GetAsync($"api/cajas/{caja.Id}/paquete"));
 
-        Assert.Equal(3, copia.Formato);
+        // Desde el formato 3 (el 4 trae además las fotos, entrega 13, parte 2).
+        Assert.True(copia.Formato >= 3);
         Assert.Equal(CopiaAlDia.Formato, copia.Formato);
         Assert.Equal(["Mostrador", "15 de septiembre", "Todos Santos", "Navidad", "Primavera"], copia.Exhibidores!.Select(e => e.Nombre).Take(5));
         Assert.Equal([producto.VarianteId], despues.Exhibidores!.First(e => e.Nombre == "Mostrador").Lugares[1].Productos);

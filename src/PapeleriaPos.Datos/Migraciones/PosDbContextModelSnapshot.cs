@@ -485,6 +485,39 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.ToTable("Exhibidores");
                 });
 
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.FotoProducto", b =>
+                {
+                    b.Property<Guid>("VarianteId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Alto")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Ancho")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<byte[]>("Datos")
+                        .IsRequired()
+                        .HasColumnType("BLOB");
+
+                    b.Property<string>("Huella")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ModificadoUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("VarianteId");
+
+                    b.HasIndex("Version");
+
+                    b.ToTable("FotosProducto");
+                });
+
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.LugarExhibidor", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3609,6 +3642,15 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired();
 
                     b.Navigation("Presentacion");
+                });
+
+            modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.FotoProducto", b =>
+                {
+                    b.HasOne("PapeleriaPos.Nucleo.Catalogo.Variante", null)
+                        .WithOne()
+                        .HasForeignKey("PapeleriaPos.Nucleo.Catalogo.FotoProducto", "VarianteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("PapeleriaPos.Nucleo.Catalogo.LugarExhibidor", b =>
