@@ -865,6 +865,12 @@ namespace PapeleriaPos.Datos.Migraciones
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("InventarioMaximo")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("InventarioMinimo")
+                        .HasColumnType("INTEGER");
+
                     b.Property<Guid?>("JuntadaEnId")
                         .HasColumnType("TEXT");
 
@@ -2178,6 +2184,8 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.HasIndex("VarianteId");
 
                     b.HasIndex("DocumentoTipo", "DocumentoId");
+
+                    b.HasIndex("SucursalId", "FechaUtc");
 
                     b.HasIndex("SucursalId", "VarianteId", "FechaUtc");
 

@@ -6,8 +6,8 @@ using PapeleriaPos.Nucleo.Contratos;
 namespace PapeleriaPos.Servicio;
 
 /// <summary>
-/// F3 Productos (fase 2, entrega 1): buscar, la ficha, guardar, el código interno y el alta rápida desde la caja; y sus
-/// departamentos.
+/// F3 Productos (fase 2, entrega 1): buscar, la ficha, guardar, el código interno y el alta rápida desde la caja; sus
+/// departamentos; y cambiar precios de varios a la vez.
 /// </summary>
 public static class ApiCatalogo
 {
@@ -87,6 +87,17 @@ public static class ApiCatalogo
             var varianteId = await new RegistroCatalogo(db).AltaRapidaAsync(s);
             return await catalogo.PorVarianteAsync(db, varianteId, s.SucursalId);
         });
+
+        // ── Cambiar precios de varios a la vez (como «Actualizar varios» de eleventa) ──
+
+        // Cómo quedan, sin cambiar nada, y aplicarlo: lo hace quien entró con «Productos, precios y etiquetas»; el margen solo
+        // va para quien ve la utilidad. Al aplicar se vuelve a calcular: si algo cambió desde la vista, no se aplica. En el
+        // piloto con eleventa, el menudeo y las promociones de los productos de eleventa no cambian aquí.
+        api.MapPost("/precios-de-varios/vista", (SolicitudPreciosDeVarios s, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroPreciosDeVarios(db, eleventa.Activo).VistaAsync(s));
+
+        api.MapPost("/precios-de-varios", (SolicitudPreciosDeVarios s, PosDbContext db, OpcionesEleventa eleventa) =>
+            new RegistroPreciosDeVarios(db, eleventa.Activo).AplicarAsync(s));
 
         // ── Depuración ───────────────────────────────────────────────────────
 

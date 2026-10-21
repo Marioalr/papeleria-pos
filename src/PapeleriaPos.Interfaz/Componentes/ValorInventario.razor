@@ -1,0 +1,229 @@
+@* Inventario (F4) › Lo que vale el inventario, como el «Reporte de inventario» de eleventa (2026-10-17): la existencia a
+   costo promedio (el que usa el POS, el del kardex), en total y por departamento, con cuántos productos tienen existencia,
+   cuántos están en cero, en negativo o sin costo. A la derecha, los productos del departamento elegido (o de todos), de lo
+   que más vale a lo que menos, o los que están en cero, en negativo o sin costo, de 50 en 50. Solo para quien tiene «Ver
+   costos, utilidad y margen»: los demás no ven la tarjeta, y el servicio lo revisa. En el piloto con eleventa se ve igual
+   (solo lee). *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+@if (_valor is null)
+{
+    <p class="nota">@(_error ?? "Calculando…")</p>
+}
+else
+{
+    var total = _valor.Total;
+    <div class="vn-rejilla cuatro">
+        <div class="vn-dato restringido">
+            <span>Vale a costo</span>
+            <strong id="valor-total">@Formato.Dinero(total.ValorCentavos)</strong>
+            <small>costo promedio × existencia, @_valor.FechaLocal.ToString("HH:mm", CultureInfo.InvariantCulture)</small>
+        </div>
+        <div class="vn-dato">
+            <span>Con existencia</span>
+            <strong>@Formato.Numero(total.ConExistencia)</strong>
+            <small class="@(total.SinCosto > 0 ? "rojo" : "")">@(total.SinCosto == 0 ? "todos con su costo" : $"{CuantosProductos(total.SinCosto)} sin costo: no suman")</small>
+        </div>
+        <div class="vn-dato">
+            <span>En cero</span>
+            <strong>@Formato.Numero(total.EnCero)</strong>
+            <small>de los que se venden</small>
+        </div>
+        <div class="vn-dato">
+            <span>En negativo</span>
+            <strong class="@(total.Negativa > 0 ? "bajo" : "")">@Formato.Numero(total.Negativa)</strong>
+            <small>se vendió más de lo que había en el sistema: un conteo los corrige</small>
+        </div>
+    </div>
+    <div class="vn-reporte-dos">
+        <section class="vn-reporte-desliza" aria-label="Por departamento">
+            <table class="vn-tabla">
+                <thead>
+                    <tr><th>Departamento</th><th class="num">Vale</th><th class="num">%</th><th class="num">Con existencia</th><th class="num">En cero</th><th class="num">Negativos</th></tr>
+                </thead>
+                <tbody>
+                    @Renglon(total, "valor-todos")
+                    @for (var i = 0; i < _valor.Departamentos.Count; i++)
+                    {
+                        @Renglon(_valor.Departamentos[i], $"valor-depto-{i}")
+                    }
+                </tbody>
+            </table>
+        </section>
+        <section class="vn-reporte-columna" aria-label="Productos">
+            @{
+                var grupo = Elegido;
+            }
+            <h3 class="vn-sub-titulo">@(_valor.DepartamentoId is null ? "Todos los productos" : $"Productos de «{grupo.Nombre}»")</h3>
+            <div class="vn-filtros" role="group" aria-label="Qué productos">
+                @Filtro(FiltroValor.ConExistencia, "Con existencia", grupo.ConExistencia)
+                @Filtro(FiltroValor.EnCero, "En cero", grupo.EnCero)
+                @Filtro(FiltroValor.Negativa, "En negativo", grupo.Negativa)
+                @Filtro(FiltroValor.SinCosto, "Sin costo", grupo.SinCosto)
+            </div>
+            <Paginador Total="_valor.TotalProductos" Pagina="_valor.Pagina" Tamano="_valor.Tamano" Plural="productos" Singular="producto"
+                       AlAnterior="AnterioresAsync" AlSiguiente="SiguientesAsync" />
+            @* Cada página nueva empieza arriba: la lista se dibuja de nuevo (@key) en lugar de quedarse a la mitad. *@
+            <div class="vn-reporte-desliza" @key="_vista">
+                @if (_valor.Productos.Count == 0)
+                {
+                    <p class="nota">@SinProductos</p>
+                }
+                else
+                {
+                    <table class="vn-tabla">
+                        <thead><tr><th>Producto</th><th class="num">Existencia</th><th class="num">Costo promedio</th><th class="num">Vale</th></tr></thead>
+                        <tbody>
+                            @foreach (var p in _valor.Productos)
+                            {
+                                <tr class="@(p.Activo ? "" : "apagado")">
+                                    <td>
+                                        @p.Nombre
+                                        <small class="vn-renglon-sub">
+                                            @if (p.Codigo is { } codigo)
+                                            {
+                                                <code>@codigo</code>
+                                            }
+                                            @if (_valor.DepartamentoId is null)
+                                            {
+                                                <span>@p.Departamento</span>
+                                            }
+                                            @if (!p.Activo)
+                                            {
+                                                <span class="vn-etiq gris">ya no se vende</span>
+                                            }
+                                        </small>
+                                    </td>
+                                    <td class="num @(p.Existencia < 0 ? "rojo" : "")">@Textos.Cantidad(p.Existencia, p.Unidad)</td>
+                                    <td class="num">@(p.CostoPromedioCentavos is { } costo ? Formato.Dinero((long)Math.Round(costo)) : "—")</td>
+                                    <td class="num">@(p.ValorCentavos > 0 ? Formato.Dinero(p.ValorCentavos) : "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </section>
+    </div>
+    <p class="nota">
+        Cada producto vale su costo promedio (el de sus compras, el que usa el POS) por su existencia. Lo que quedó en negativo no
+        resta, y lo que tiene existencia sin costo no suma. Un producto que ya no se vende cuenta mientras tenga existencia.
+    </p>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    private ValorInventarioDto? _valor;
+    private string? _error;
+    private Guid? _departamento;
+    private FiltroValor _filtro = FiltroValor.ConExistencia;
+    private int _pagina;
+    private int _secuencia;
+
+    /// <summary>Cuántas listas se han dibujado: con cada una, la de los productos empieza arriba.</summary>
+    private int _vista;
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_enfocar && _valor is not null)
+        {
+            _enfocar = false;
+            await Js.EnfocarAsync("#valor-todos");
+        }
+    }
+
+    private bool _enfocar = true;
+
+    private async Task CargarAsync()
+    {
+        var secuencia = ++_secuencia;
+        try
+        {
+            var valor = await Cliente.ValorInventarioAsync(Caja.SucursalId, Sesion.UsuarioId, _departamento, _filtro, _pagina);
+            if (secuencia == _secuencia)
+                (_valor, _error, _vista) = (valor, null, _vista + 1);
+        }
+        catch (ErrorCaja ex)
+        {
+            if (secuencia == _secuencia)
+                _error = ex.Message;
+        }
+    }
+
+    /// <summary>El grupo de la derecha: el departamento elegido, o toda la tienda.</summary>
+    private ValorGrupoDto Elegido =>
+        _valor!.DepartamentoId is { } d ? _valor.Departamentos.FirstOrDefault(x => x.DepartamentoId == d) ?? _valor.Total : _valor.Total;
+
+    private async Task DepartamentoAsync(Guid? departamento)
+    {
+        (_departamento, _pagina) = (departamento, 0);
+        // Al cambiar de departamento, lo que tiene existencia; los que están en cero o en negativo, con su filtro.
+        if (Elegir(departamento) is { } grupo && Cuantos(grupo, _filtro) == 0)
+            _filtro = FiltroValor.ConExistencia;
+        await CargarAsync();
+    }
+
+    private ValorGrupoDto? Elegir(Guid? departamento) =>
+        departamento is { } d ? _valor?.Departamentos.FirstOrDefault(x => x.DepartamentoId == d) : _valor?.Total;
+
+    private async Task FiltrarAsync(FiltroValor filtro)
+    {
+        (_filtro, _pagina) = (filtro, 0);
+        await CargarAsync();
+    }
+
+    private Task SiguientesAsync()
+    {
+        _pagina++;
+        return CargarAsync();
+    }
+
+    private Task AnterioresAsync()
+    {
+        _pagina = Math.Max(0, _pagina - 1);
+        return CargarAsync();
+    }
+
+    private static int Cuantos(ValorGrupoDto grupo, FiltroValor filtro) => filtro switch
+    {
+        FiltroValor.EnCero => grupo.EnCero,
+        FiltroValor.Negativa => grupo.Negativa,
+        FiltroValor.SinCosto => grupo.SinCosto,
+        _ => grupo.ConExistencia,
+    };
+
+    private string SinProductos => _filtro switch
+    {
+        FiltroValor.EnCero => "Ninguno está en cero.",
+        FiltroValor.Negativa => "Ninguno quedó en negativo.",
+        FiltroValor.SinCosto => "Todos los que tienen existencia tienen su costo.",
+        _ => "Ninguno tiene existencia.",
+    };
+
+    private static string CuantosProductos(int cuantos) => cuantos == 1 ? "1 producto" : $"{Formato.Numero(cuantos)} productos";
+
+    /// <summary>Un renglón de la tabla de la izquierda: el nombre elige el departamento de la derecha.</summary>
+    private RenderFragment Renglon(ValorGrupoDto grupo, string id) => __builder =>
+    {
+        var total = _valor!.Total.ValorCentavos;
+        var elegido = grupo.DepartamentoId == _valor.DepartamentoId;
+        <tr class="@(elegido ? "on" : "") @(grupo.DepartamentoId is null ? "suma" : "")">
+            <td><button id="@id" class="vn-enlace" @onclick="() => DepartamentoAsync(grupo.DepartamentoId)">@grupo.Nombre</button></td>
+            <td class="num">@Formato.Dinero(grupo.ValorCentavos)</td>
+            <td class="num">@(total > 0 ? $"{Math.Round(grupo.ValorCentavos * 100m / total, 1).ToString("0.#", Formato.Mexico)} %" : "—")</td>
+            <td class="num">@Formato.Numero(grupo.ConExistencia)</td>
+            <td class="num">@Formato.Numero(grupo.EnCero)</td>
+            <td class="num @(grupo.Negativa > 0 ? "rojo" : "")">@Formato.Numero(grupo.Negativa)</td>
+        </tr>
+    };
+
+    private RenderFragment Filtro(FiltroValor filtro, string nombre, int cuantos) => __builder =>
+    {
+        <button class="vn-filtro @(_filtro == filtro ? "on" : "")" @onclick="() => FiltrarAsync(filtro)">@nombre @Formato.Numero(cuantos)</button>
+    };
+}
