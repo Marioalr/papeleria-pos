@@ -27,6 +27,9 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
 {
     private int _raiz;
 
+    /// <summary>La página de mentiras (si la hay): contesta también el foco de un elemento (FocusAsync), como en la página.</summary>
+    private readonly IJSRuntime? _pagina = (IJSRuntime?)servicios.GetService(typeof(IJSRuntime));
+
     public override Dispatcher Dispatcher { get; } = Dispatcher.CreateDefault();
 
     /// <summary>Lo que falló al dibujar o en un evento: la prueba revisa que no haya nada.</summary>
@@ -34,6 +37,9 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
 
     public Task<T> AbrirAsync<T>(Dictionary<string, object?> parametros) where T : IComponent => Dispatcher.InvokeAsync(async () =>
     {
+        // Como en la página: el foco de un elemento (FocusAsync) lo contesta la página de mentiras, sin error.
+        if (_pagina is not null)
+            ElementReferenceContext ??= new WebElementReferenceContext(_pagina);
         var componente = (T)InstantiateComponent(typeof(T));
         _raiz = AssignRootComponentId(componente);
         await RenderRootComponentAsync(_raiz, ParameterView.FromDictionary(parametros));
@@ -52,7 +58,77 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
     /// </summary>
     public TimeSpan AcuseDelDibujo { get; set; }
 
-    protected override Task UpdateDisplayAsync(in RenderBatch lote) => AcuseDelDibujo > TimeSpan.Zero ? Task.Delay(AcuseDelDibujo) : Task.CompletedTask;
+    protected override Task UpdateDisplayAsync(in RenderBatch lote)
+    {
+        Contar(lote);
+        return AcuseDelDibujo > TimeSpan.Zero ? Task.Delay(AcuseDelDibujo) : Task.CompletedTask;
+    }
+
+    // ── Lo que se repinta (entrega 5, parte 3, «Pintar menos») ──
+
+    private readonly Lock _candadoDibujos = new();
+    private int _lotes;
+    private int _cambios;
+    private int _manejadores;
+    private readonly Dictionary<string, int> _porComponente = [];
+
+    /// <summary>
+    /// Lo que se dibujó desde <see cref="ContarDesdeAhora"/>: cuántas veces se mandó algo a «la página», cuántas veces se
+    /// pintó cada componente (por su tipo), cuántos cambios llevaban y cuántos manejadores de eventos se cambiaron por otros.
+    /// </summary>
+    public sealed record Dibujos(int Lotes, IReadOnlyDictionary<string, int> PorComponente, int Cambios, int ManejadoresCambiados)
+    {
+        public int Componentes => PorComponente.Values.Sum();
+
+        public int De(string componente) => PorComponente.GetValueOrDefault(componente);
+
+        public override string ToString() =>
+            $"{Lotes} lotes, {Componentes} componentes pintados ({string.Join(", ", PorComponente.OrderByDescending(x => x.Value).Select(x => $"{x.Key} {x.Value}"))}), "
+            + $"{Cambios} cambios, {ManejadoresCambiados} manejadores cambiados";
+    }
+
+    /// <summary>El tipo del componente; uno que se pintó y se quitó en el mismo dibujo ya no está.</summary>
+    private string Tipo(int componente)
+    {
+        try
+        {
+            return GetComponentState(componente).Component.GetType().Name;
+        }
+        catch (ArgumentException)
+        {
+            return "(quitado en el mismo dibujo)";
+        }
+    }
+
+    public void ContarDesdeAhora()
+    {
+        lock (_candadoDibujos)
+        {
+            (_lotes, _cambios, _manejadores) = (0, 0, 0);
+            _porComponente.Clear();
+        }
+    }
+
+    public Dibujos Contados()
+    {
+        lock (_candadoDibujos)
+            return new Dibujos(_lotes, new Dictionary<string, int>(_porComponente), _cambios, _manejadores);
+    }
+
+    private void Contar(in RenderBatch lote)
+    {
+        lock (_candadoDibujos)
+        {
+            _lotes++;
+            _manejadores += lote.DisposedEventHandlerIDs.Count;
+            for (var i = 0; i < lote.UpdatedComponents.Count; i++)
+            {
+                var diff = lote.UpdatedComponents.Array[i];
+                _porComponente[Tipo(diff.ComponentId)] = _porComponente.GetValueOrDefault(Tipo(diff.ComponentId)) + 1;
+                _cambios += diff.Edits.Count;
+            }
+        }
+    }
 
     /// <summary>Todo el texto de la pantalla (cada elemento empieza renglón) y sus elementos, en orden.</summary>
     public Task<(string Texto, List<ElementoDibujado> Elementos)> LeerAsync() => Dispatcher.InvokeAsync(() =>
@@ -218,6 +294,17 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
 public sealed class PaginaQueContesta : IJSRuntime, IJSObjectReference
 {
     private readonly Dictionary<string, string> _guardado = [];
+    private readonly List<(string Funcion, object?[]? Argumentos)> _llamadas = [];
+
+    /// <summary>Lo que se le pidió a la página, en orden (la vista previa de una hoja, imprimirla…), para revisarlo.</summary>
+    public IReadOnlyList<(string Funcion, object?[]? Argumentos)> Llamadas
+    {
+        get
+        {
+            lock (_guardado)
+                return [.. _llamadas];
+        }
+    }
 
     public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args) => InvokeAsync<TValue>(identifier, CancellationToken.None, args);
 
@@ -226,6 +313,7 @@ public sealed class PaginaQueContesta : IJSRuntime, IJSObjectReference
         object? resultado;
         lock (_guardado)
         {
+            _llamadas.Add((identifier, args));
             resultado = identifier switch
             {
                 "import" => this,

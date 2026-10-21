@@ -1,0 +1,274 @@
+@* Las fotos de los productos desde el celular (entrega 13, parte 2; docs/propuesta-interfaz.md, «Lo que se señala», punto 7):
+   en la página del conteo (/conteo), sin esperar a la app Android. Se escanea o se busca el producto, se toma la foto con la
+   cámara del celular, se ve cómo quedó y se guarda. Quien tiene «Productos, precios y etiquetas»: el servicio la revisa, la
+   endereza, la achica y la guarda chica, y llega sola a las cajas. La lista dice cuáles ya tienen foto. *@
+@implements IDisposable
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="fotos-celular">
+    <div class="buscar-foto">
+        <input id="buscar-foto" placeholder="Escanea o escribe el nombre o el código" autocomplete="off" @bind="_busqueda" @bind:event="oninput"
+               @bind:after="BuscarAsync" @onkeydown="AlTeclearAsync" />
+    </div>
+    @if (_resultados.Count > 0)
+    {
+        <ul class="resultados-foto">
+            @foreach (var r in _resultados)
+            {
+                var este = r;
+                <li>
+                    <button class="boton" @onclick="() => ElegirAsync(este.VarianteId, este.Descripcion, este.Codigo, este.PrecioCentavos)">
+                        <span class="nombre">@r.Descripcion</span>
+                        <span class="nota">@(r.Codigo is { } codigo ? $"{codigo} · " : "")@Formato.Dinero(r.PrecioCentavos)@(Cliente.Fotos.Direccion(r.VarianteId) is null ? "" : " · con foto")</span>
+                    </button>
+                </li>
+            }
+        </ul>
+    }
+    else if (_busqueda.Trim().Length >= 2 && _elegido is null && !_buscando)
+    {
+        <p class="nota">Nada coincide con «@_busqueda.Trim()».</p>
+    }
+
+    @if (_elegido is { } e)
+    {
+        <div class="tarjeta-foto">
+            <strong>@e.Descripcion</strong>
+            <span class="nota">@(e.Codigo is { } codigo ? $"{codigo} · " : "")@Formato.Dinero(e.PrecioCentavos)</span>
+            <div class="foto-grande">
+                @if (Vista is { } vista)
+                {
+                    <img src="@vista" alt="Foto: @e.Descripcion" />
+                }
+                else
+                {
+                    <span>@(_cargando ? "Cargando…" : "Sin foto todavía")</span>
+                }
+            </div>
+            @if (_porGuardar is not null)
+            {
+                <p class="nota">Así se va a ver: revisa que se vea bien el producto.</p>
+                <div class="acciones">
+                    <button class="boton principal" disabled="@_ocupado" @onclick="GuardarAsync">Guardar</button>
+                    <label class="boton archivo">Tomar otra<InputFile accept="image/*" capture="environment" OnChange="TomadaAsync" /></label>
+                    <button class="boton" disabled="@_ocupado" @onclick="Cancelar">Cancelar</button>
+                </div>
+            }
+            else
+            {
+                <div class="acciones">
+                    <label class="boton principal archivo">@(TieneFoto ? "Tomar otra foto" : "Tomar la foto")<InputFile accept="image/*" capture="environment" OnChange="TomadaAsync" /></label>
+                    @if (TieneFoto)
+                    {
+                        <button class="boton" disabled="@_ocupado" @onclick="QuitarAsync">Quitar la foto</button>
+                    }
+                </div>
+            }
+        </div>
+    }
+    else if (_resultados.Count == 0 && _busqueda.Trim().Length < 2)
+    {
+        <p class="nota">Escanea el código del producto o escribe su nombre; luego toma su foto. Se guarda chica y llega sola a las cajas: sale en Ctrl+M, en la búsqueda y en el verificador.</p>
+    }
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_aviso is not null)
+    {
+        <p class="aviso">@_aviso</p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>El producto de la foto: lo que se ve de él.</summary>
+    private sealed record Elegido(Guid VarianteId, string Descripcion, string? Codigo, long PrecioCentavos);
+
+    private string _busqueda = "";
+    private List<ResultadoBusquedaDto> _resultados = [];
+    private Elegido? _elegido;
+
+    /// <summary>La que tiene ahora (de la caja principal); vacía si no tiene.</summary>
+    private string? _actual;
+
+    /// <summary>La que se acaba de tomar, todavía sin guardar (ya achicada en el celular).</summary>
+    private byte[]? _porGuardar;
+
+    private bool _buscando;
+    private bool _cargando;
+    private bool _ocupado;
+    private string? _error;
+    private string? _aviso;
+    private bool _enfocar = true;
+
+    private string? Vista => _porGuardar is { } porGuardar ? $"data:image/jpeg;base64,{Convert.ToBase64String(porGuardar)}" : _actual;
+
+    private bool TieneFoto => _actual is not null;
+
+    protected override void OnInitialized() => Cliente.Fotos.Cambio += AlCambiarLasFotos;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!_enfocar)
+            return;
+        _enfocar = false;
+        try
+        {
+            await Js.EnfocarAsync("#buscar-foto");
+        }
+        catch (JSDisconnectedException)
+        {
+            // El celular se fue (apagó la pantalla): al volver, sigue donde estaba.
+        }
+    }
+
+    private void AlCambiarLasFotos() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task BuscarAsync()
+    {
+        var texto = _busqueda.Trim();
+        if (texto.Length < 2)
+        {
+            _resultados = [];
+            return;
+        }
+        _buscando = true;
+        try
+        {
+            var resultados = await Cliente.BuscarAsync(texto, Caja.SucursalId, maximo: 8);
+            // Lo que llegó tarde (ya se escribió otra cosa) no pisa lo de ahora.
+            if (_busqueda.Trim() == texto)
+                _resultados = resultados.Take(8).ToList();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _buscando = false;
+        }
+    }
+
+    /// <summary>Con Enter: un código escaneado (o escrito) elige su producto; un nombre que solo da uno, también.</summary>
+    private async Task AlTeclearAsync(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || _busqueda.Trim() is not { Length: > 0 } texto)
+            return;
+        _error = null;
+        try
+        {
+            if (await Cliente.PorCodigoAsync(texto, Caja.SucursalId) is { } producto)
+            {
+                await ElegirAsync(producto.VarianteId, producto.Descripcion, producto.Codigo,
+                    PrecioDeMenudeo.De(producto.Precios, Caja.SucursalId));
+                return;
+            }
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+            return;
+        }
+        await BuscarAsync();
+        if (_resultados is [var unico])
+            await ElegirAsync(unico.VarianteId, unico.Descripcion, unico.Codigo, unico.PrecioCentavos);
+        else if (_resultados.Count == 0)
+            _error = $"No hay ningún producto con «{texto}».";
+    }
+
+    private async Task ElegirAsync(Guid varianteId, string descripcion, string? codigo, long precio)
+    {
+        (_elegido, _busqueda, _resultados, _porGuardar, _actual, _error, _aviso) = (new Elegido(varianteId, descripcion, codigo, precio), "", [], null, null, null, null);
+        _cargando = true;
+        StateHasChanged();
+        try
+        {
+            _actual = await Cliente.FotoAsync(varianteId) is { } datos ? $"data:image/jpeg;base64,{Convert.ToBase64String(datos)}" : null;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _cargando = false;
+        }
+    }
+
+    /// <summary>
+    /// La foto de la cámara: se achica en el celular (<see cref="ImagenElegida"/>: una de 4 MB viaja como de unos 150 KB, en un
+    /// momento por el Wi-Fi) y se ve antes de guardarla.
+    /// </summary>
+    private async Task TomadaAsync(InputFileChangeEventArgs e)
+    {
+        (_error, _aviso) = (null, null);
+        try
+        {
+            Tomada(await ImagenElegida.LeerAsync(e.File));
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    /// <summary>La foto que se acaba de tomar, para verla antes de guardarla.</summary>
+    internal void Tomada(byte[] datos)
+    {
+        _porGuardar = datos;
+        StateHasChanged();
+    }
+
+    private void Cancelar() => (_porGuardar, _error) = (null, null);
+
+    private async Task GuardarAsync()
+    {
+        if (_porGuardar is not { } datos || _elegido is not { } e)
+            return;
+        (_ocupado, _error, _aviso) = (true, null, null);
+        try
+        {
+            var guardada = await Cliente.GuardarFotoAsync(e.VarianteId,
+                new SolicitudFoto(Sesion.UsuarioId, Caja.SucursalId, Convert.ToBase64String(datos), "el celular"));
+            (_porGuardar, _actual) = (null, $"data:image/jpeg;base64,{guardada.JpegBase64}");
+            _aviso = "Guardada: ya llega a las cajas. Escanea el siguiente producto.";
+            (_busqueda, _enfocar) = ("", true);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task QuitarAsync()
+    {
+        if (_elegido is not { } e)
+            return;
+        (_ocupado, _error, _aviso) = (true, null, null);
+        try
+        {
+            await Cliente.QuitarFotoAsync(e.VarianteId, new SolicitudQuitarFoto(Sesion.UsuarioId, Caja.SucursalId));
+            _actual = null;
+            _aviso = "Quitada: en las cajas vuelven a salir sus iniciales.";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    public void Dispose() => Cliente.Fotos.Cambio -= AlCambiarLasFotos;
+}

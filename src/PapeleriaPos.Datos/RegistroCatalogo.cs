@@ -13,8 +13,12 @@ namespace PapeleriaPos.Datos;
 /// F3 Productos (docs/fase-2-inventario.md, entrega 1): buscar, ver y editar un producto con sus variantes,
 /// presentaciones, códigos y precios; el código interno para lo que no trae; y el alta rápida desde la caja.
 /// Los cambios de precio quedan en el historial (lo escribe la base) y en la bitácora.
+/// <para>
+/// Con <paramref name="lecturaDeEleventa"/> (el piloto con eleventa, con su lectura prendida), de los productos de eleventa
+/// no se cambia lo que pone la lectura (<see cref="TrastiendaEnElPiloto"/>): la ficha lo dice y al guardar se revisa.
+/// </para>
 /// </summary>
-public sealed class RegistroCatalogo(PosDbContext db)
+public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = false)
 {
     private const string SecuenciaCodigoInterno = "codigo-interno";
     private static readonly Cantidad Una = Cantidad.Unidades(1);
@@ -70,12 +74,23 @@ public sealed class RegistroCatalogo(PosDbContext db)
         }).ToList();
     }
 
-    public async Task<OpcionesCatalogoDto> OpcionesAsync(CancellationToken ct = default) =>
-        new((await db.Departamentos.AsNoTracking().Where(d => d.Activo).ToListAsync(ct))
-                .OrderBy(d => d.Nombre, StringComparer.CurrentCultureIgnoreCase).Select(d => new OpcionCatalogoDto(d.Id, d.Nombre)).ToList(),
-            (await db.Marcas.AsNoTracking().Where(m => m.Activa).Select(m => m.Nombre).ToListAsync(ct)).Order(StringComparer.CurrentCultureIgnoreCase).ToList());
+    /// <summary>
+    /// Los departamentos que se ofrecen (los activos) y las marcas. Los desactivados van aparte, solo para decir el de un
+    /// producto que se quedó en uno (Productos › Departamentos).
+    /// </summary>
+    public async Task<OpcionesCatalogoDto> OpcionesAsync(CancellationToken ct = default)
+    {
+        var departamentos = (await db.Departamentos.AsNoTracking().ToListAsync(ct)).OrderBy(d => d.Nombre, StringComparer.CurrentCultureIgnoreCase).ToList();
+        List<OpcionCatalogoDto> Opciones(bool activos) => departamentos.Where(d => d.Activo == activos).Select(d => new OpcionCatalogoDto(d.Id, d.Nombre)).ToList();
+        return new(Opciones(activos: true),
+            (await db.Marcas.AsNoTracking().Where(m => m.Activa).Select(m => m.Nombre).ToListAsync(ct)).Order(StringComparer.CurrentCultureIgnoreCase).ToList(),
+            Opciones(activos: false));
+    }
 
-    /// <summary>La ficha completa. El costo solo va si <paramref name="conCostos"/> (dueño y encargado).</summary>
+    /// <summary>
+    /// La ficha completa. El costo solo va si <paramref name="conCostos"/> (dueño y encargado). En el piloto con eleventa,
+    /// dice qué pone la lectura en los productos de eleventa (eso no se cambia aquí).
+    /// </summary>
     public async Task<FichaProductoDto?> FichaAsync(Guid productoId, Guid sucursalId, bool conCostos, CancellationToken ct = default)
     {
         var p = await db.Productos.AsNoTracking().Include(x => x.Marca)
@@ -89,6 +104,9 @@ public sealed class RegistroCatalogo(PosDbContext db)
         var proveedores = conCostos
             ? (await db.ProveedoresVariantes.AsNoTracking().Include(x => x.Proveedor).Where(x => ids.Contains(x.VarianteId)).ToListAsync(ct)).ToLookup(x => x.VarianteId)
             : null;
+        var deEleventa = lecturaDeEleventa ? await TrastiendaEnElPiloto.DeEleventaAsync(db, ids, ct) : new HashSet<Guid>();
+        var promociones = await TrastiendaEnElPiloto.PromocionesAsync(db, deEleventa.SelectMany(v => precios[v]).Select(x => x.Id), ct);
+        bool PoneLaLectura(Precio x) => deEleventa.Contains(x.VarianteId) && (EsMenudeo(x) || promociones.Contains(x.Id));
 
         return new FichaProductoDto(p.Id, p.Nombre, p.DepartamentoId, p.Marca?.Nombre, p.Tipo, p.Impuesto, p.ClaveSat, p.Activo, p.PorCompletar,
             p.Variantes.OrderBy(v => v.Descripcion, StringComparer.CurrentCultureIgnoreCase).Select(v =>
@@ -99,13 +117,26 @@ public sealed class RegistroCatalogo(PosDbContext db)
                     presentaciones.Select(x => new PresentacionFichaDto(x.Id, x.Nombre, x.Factor.Milesimas, x.EsBase,
                         x.Codigos.OrderBy(c => c.Codigo).Select(c => new CodigoFichaDto(c.Codigo, c.Origen)).ToList())).ToList(),
                     precios[v.Id].OrderBy(x => x.PresentacionId is not null).ThenBy(x => x.CantidadMinima)
-                        .Select(x => new PrecioFichaDto(presentaciones.FirstOrDefault(pr => pr.Id == x.PresentacionId)?.Nombre, x.CantidadMinima.Milesimas, x.PrecioCentavos))
+                        .Select(x => new PrecioFichaDto(presentaciones.FirstOrDefault(pr => pr.Id == x.PresentacionId)?.Nombre, x.CantidadMinima.Milesimas, x.PrecioCentavos,
+                            PoneLaLectura(x)))
                         .ToList(),
                     existencia?.Cantidad.EnUnidades, conCostos ? existencia?.CostoPromedio : null,
                     proveedores?[v.Id].Select(x => new ProveedorFichaDto(x.ProveedorId, x.Proveedor!.Nombre, x.CodigoProveedor, x.UltimoCostoCentavos,
-                        x.UltimaCompraUtc is { } u ? HoraMexico.ALocal(u) : null)).ToList());
-            }).ToList());
+                        x.UltimaCompraUtc is { } u ? HoraMexico.ALocal(u) : null)).ToList(),
+                    deEleventa.Contains(v.Id), new MinimoYMaximoDto(v.InventarioMinimo?.Milesimas, v.InventarioMaximo?.Milesimas));
+            }).ToList(),
+            deEleventa.Count > 0 ? TrastiendaEnElPiloto.ProductosEnEleventa : null, DeEleventaCompleto(p.Variantes, deEleventa));
     }
+
+    /// <summary>El precio de menudeo, el que pone la lectura de eleventa: por unidad base, desde una.</summary>
+    private static bool EsMenudeo(Precio x) => x.PresentacionId is null && x.SucursalId is null && x.CantidadMinima == Una;
+
+    /// <summary>
+    /// El nombre, el departamento y si se vende los pone la lectura cuando el producto es una sola variante de eleventa (como
+    /// allá); si la depuración le juntó otras, o se le agregaron aquí, ya no.
+    /// </summary>
+    private static bool DeEleventaCompleto(IReadOnlyCollection<Variante> variantes, HashSet<Guid> deEleventa) =>
+        variantes.Count == 1 && deEleventa.Contains(variantes.First().Id);
 
     /// <summary>Los últimos movimientos de una variante en la sucursal, con la existencia que dejó cada uno.</summary>
     public async Task<List<MovimientoKardexDto>> KardexAsync(Guid varianteId, Guid sucursalId, int maximo = 200, CancellationToken ct = default)
@@ -151,10 +182,12 @@ public sealed class RegistroCatalogo(PosDbContext db)
             {
                 p.Id, p.Nombre, Marca = p.Marca == null ? null : p.Marca.Nombre, p.DepartamentoId, Departamento = p.Departamento!.Nombre,
                 p.Activo, p.PorCompletar, p.Tipo,
-                Variantes = p.Variantes.Select(v => new { v.Id, v.Descripcion, v.Activa }).ToList(),
+                Variantes = p.Variantes.Select(v => new { v.Id, v.Descripcion, v.Activa, v.InventarioMinimo }).ToList(),
             })
             .ToListAsync(ct);
         var porCompletar = todos.Count(p => p.PorCompletar);
+        var minimosDeInventario = todos.SelectMany(p => p.Variantes).Where(v => v.InventarioMinimo is not null)
+            .ToDictionary(v => v.Id, v => v.InventarioMinimo);
 
         var codigos = (await db.CodigosBarras.AsNoTracking()
                 .Select(c => new { c.Codigo, c.Presentacion!.VarianteId, c.Presentacion.EsBase }).ToListAsync(ct))
@@ -201,13 +234,17 @@ public sealed class RegistroCatalogo(PosDbContext db)
                 return null;
             return (Margen.Calcular(precio, costo), minimos.GetValueOrDefault(departamento) ?? general);
         }
-        decimal ExistenciaDe(Guid? variante) => variante is { } v && existencias.TryGetValue(v, out var e) ? e.Cantidad.EnUnidades : 0;
+        Cantidad CantidadDe(Guid? variante) => variante is { } v && existencias.TryGetValue(v, out var e) ? e.Cantidad : Cantidad.Cero;
+        decimal ExistenciaDe(Guid? variante) => CantidadDe(variante).EnUnidades;
+        Cantidad? MinimoDe(Guid? variante) => variante is { } v ? minimosDeInventario.GetValueOrDefault(v) : null;
 
         productos = filtro switch
         {
             FiltroProductos.PorCompletar => productos.Where(x => x.Producto.PorCompletar).ToList(),
+            // En su mínimo o debajo: el propio de su primera variante o, sin él, 3 o menos (PocaExistencia).
             FiltroProductos.PocaExistencia => productos
-                .Where(x => x.Producto.Tipo == TipoProducto.Mercancia && x.Primera is not null && ExistenciaDe(x.Primera) <= PocaExistencia.Hasta).ToList(),
+                .Where(x => x.Producto.Tipo == TipoProducto.Mercancia && x.Primera is not null
+                    && PocaExistencia.Es(CantidadDe(x.Primera), MinimoDe(x.Primera))).ToList(),
             FiltroProductos.MargenBajo => productos
                 .Where(x => MargenDe(x.Producto.DepartamentoId, x.Primera) is { } m && m.Margen < m.Minimo).ToList(),
             _ => productos,
@@ -231,7 +268,7 @@ public sealed class RegistroCatalogo(PosDbContext db)
                 return new ProductoEnListaDto(p.Id, p.Nombre, p.Marca, p.Departamento, p.Variantes.Count, codigo,
                     x.Primera is { } w && menudeos.TryGetValue(w, out var precio) ? precio : null,
                     servicio || x.Primera is null ? null : ExistenciaDe(x.Primera), servicio, p.Activo, p.PorCompletar,
-                    margen?.Margen, margen?.Minimo);
+                    margen?.Margen, margen?.Minimo, servicio ? null : MinimoDe(x.Primera)?.EnUnidades);
             }).ToList(),
             productos.Count, porCompletar, vendidos.Count > 0);
     }
@@ -273,6 +310,7 @@ public sealed class RegistroCatalogo(PosDbContext db)
             nameof(Devolucion) when m.DocumentoId is { } id => devoluciones.GetValueOrDefault(id),
             nameof(ConteoCiclico) => "del día",
             nameof(ConteoDepartamento) => "completo",
+            nameof(TemporadaDelAnio) => "de la temporada",
             _ => null,
         };
 
@@ -300,8 +338,8 @@ public sealed class RegistroCatalogo(PosDbContext db)
             throw new PermisoRequerido(AccionControlada.EditarCatalogo, NivelPermiso.NoPermitido, "El catálogo lo editan el dueño y el encargado.");
         var f = s.Producto;
         Validar(f);
-        if (!await db.Departamentos.AnyAsync(d => d.Id == f.DepartamentoId, ct))
-            throw new ArgumentException("Elige el departamento.");
+        var departamento = await db.Departamentos.AsNoTracking().SingleOrDefaultAsync(d => d.Id == f.DepartamentoId, ct)
+            ?? throw new ArgumentException("Elige el departamento.");
         await RevisarCodigosAsync(f, ct);
 
         var producto = f.Id is { } id
@@ -309,6 +347,12 @@ public sealed class RegistroCatalogo(PosDbContext db)
                 .SingleOrDefaultAsync(p => p.Id == id, ct) ?? throw new InvalidOperationException("El producto ya no existe.")
             : null;
         var nuevo = producto is null;
+        // Un departamento desactivado (Productos › Departamentos) ya no se ofrece: no le llega un producto activo, ni nuevo, ni
+        // que se cambie a él o se reactive en él. El que ya estaba ahí se sigue guardando mientras no cambie de departamento.
+        if (!departamento.Activo && f.Activo && (producto is null || producto.DepartamentoId != departamento.Id || !producto.Activo))
+            throw new InvalidOperationException($"El departamento «{departamento.Nombre}» está desactivado: elige otro.");
+        if (lecturaDeEleventa && producto is not null && await CambiaLoDeEleventaAsync(producto, f, ct))
+            throw new InvalidOperationException(TrastiendaEnElPiloto.ProductosEnEleventa);
         if (producto is null)
         {
             producto = new Producto { Nombre = "" };
@@ -338,6 +382,8 @@ public sealed class RegistroCatalogo(PosDbContext db)
             else if (variante.UnidadBase != fv.Unidad && await TieneHistoriaAsync(variante.Id, ct))
                 throw new InvalidOperationException($"«{Nombre(producto, variante)}» ya tiene movimientos: su unidad no se cambia aquí (llega con la depuración).");
             (variante.Descripcion, variante.UnidadBase, variante.Activa) = (fv.Descripcion.Trim(), fv.Unidad, fv.Activa);
+            if (MinimoYMaximo(producto, variante, f.Tipo, fv.MinimoYMaximo, nueva: fv.Id is null) is { } cambioMinimo)
+                cambios.Add(cambioMinimo);
             await PresentacionesAsync(variante, fv, ct);
             cambios.AddRange(await PreciosAsync(producto, variante, fv, nuevo, ct));
         }
@@ -359,6 +405,8 @@ public sealed class RegistroCatalogo(PosDbContext db)
         var control = new ServicioControl(db);
         if ((await control.EvaluarAsync(s.UsuarioId, s.SucursalId, AccionControlada.EditarCatalogo, ct: ct)).Nivel != NivelPermiso.Permitido)
             throw new PermisoRequerido(AccionControlada.EditarCatalogo, NivelPermiso.NoPermitido, "Los precios los cambian el dueño y el encargado.");
+        if (lecturaDeEleventa && (await TrastiendaEnElPiloto.DeEleventaAsync(db, [s.VarianteId], ct)).Count > 0)
+            throw new InvalidOperationException(TrastiendaEnElPiloto.ProductosEnEleventa);
         if (s.PrecioCentavos <= 0)
             throw new ArgumentException("Escribe el precio.");
         var variante = await db.Variantes.Include(v => v.Producto).SingleOrDefaultAsync(v => v.Id == s.VarianteId, ct)
@@ -379,6 +427,77 @@ public sealed class RegistroCatalogo(PosDbContext db)
         }
         await db.SaveChangesAsync(ct);
     }
+
+    /// <summary>
+    /// En el piloto con eleventa, si la ficha cambia algo que pone la lectura en un producto de eleventa: el nombre, el
+    /// departamento y si se vende (si es una sola variante de eleventa); de cada variante de eleventa, si está activa, cuál es
+    /// su presentación base y los códigos que ya tiene (se pueden agregar otros), y sus precios de eleventa (el de menudeo y
+    /// las promociones). Lo demás (las escalas del F11 o de F3, las otras presentaciones, la marca, las variantes nuevas) sí.
+    /// </summary>
+    private async Task<bool> CambiaLoDeEleventaAsync(Producto producto, FichaProductoDto f, CancellationToken ct)
+    {
+        var deEleventa = await TrastiendaEnElPiloto.DeEleventaAsync(db, producto.Variantes.Select(v => v.Id), ct);
+        if (deEleventa.Count == 0)
+            return false;
+        if (DeEleventaCompleto(producto.Variantes, deEleventa)
+            && (f.Nombre.Trim() != producto.Nombre || f.DepartamentoId != producto.DepartamentoId || f.Activo != producto.Activo))
+            return true;
+        var ids = deEleventa.ToList();
+        var precios = (await db.Precios.AsNoTracking().Where(x => ids.Contains(x.VarianteId) && x.PresentacionId == null && x.SucursalId == null).ToListAsync(ct))
+            .ToLookup(x => x.VarianteId);
+        var promociones = await TrastiendaEnElPiloto.PromocionesAsync(db, precios.SelectMany(g => g).Select(x => x.Id), ct);
+        foreach (var variante in producto.Variantes.Where(v => deEleventa.Contains(v.Id)))
+        {
+            // Si no viene, se quería quitar: eso lo rechaza la revisión de siempre (tiene historia).
+            if (f.Variantes.FirstOrDefault(x => x.Id == variante.Id) is not { } fv)
+                continue;
+            if (fv.Activa != variante.Activa)
+                return true;
+            if (variante.Presentaciones.FirstOrDefault(x => x.EsBase) is { } pieza)
+            {
+                var enviada = fv.Presentaciones.FirstOrDefault(x => x.Id == pieza.Id);
+                var codigos = (enviada?.Codigos ?? []).Select(c => c.Codigo.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                if (enviada is not { EsBase: true } || pieza.Codigos.Any(c => !codigos.Contains(c.Codigo)))
+                    return true;
+            }
+            foreach (var suyo in precios[variante.Id].Where(x => EsMenudeo(x) || promociones.Contains(x.Id)))
+            {
+                if (!fv.Precios.Any(x => x.Presentacion is null && x.CantidadMinimaMilesimas == suyo.CantidadMinima.Milesimas && x.PrecioCentavos == suyo.PrecioCentavos))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// El mínimo y el máximo de inventario de la variante, como vienen en la ficha (ya revisados en <see cref="Validar"/>). Sin
+    /// ellos (una caja de antes) se quedan como estaban; un servicio no lleva inventario, así que no los tiene. Son del POS:
+    /// en el piloto con eleventa también se ponen aquí, porque la lectura no los trae. Devuelve el cambio, para la bitácora.
+    /// </summary>
+    private static string? MinimoYMaximo(Producto producto, Variante variante, TipoProducto tipo, MinimoYMaximoDto? enviados, bool nueva)
+    {
+        if (enviados is null && tipo == TipoProducto.Mercancia)
+            return null;
+        var (minimo, maximo) = tipo == TipoProducto.Mercancia && enviados is not null
+            ? (Leer(enviados.MinimoMilesimas), Leer(enviados.MaximoMilesimas))
+            : (null, null);
+        if (minimo == variante.InventarioMinimo && maximo == variante.InventarioMaximo)
+            return null;
+        var antes = TextoMinimoYMaximo(variante.InventarioMinimo, variante.InventarioMaximo);
+        (variante.InventarioMinimo, variante.InventarioMaximo) = (minimo, maximo);
+        return nueva ? null : $"Mínimo y máximo de «{Nombre(producto, variante)}»: {antes} → {TextoMinimoYMaximo(minimo, maximo)}";
+
+        static Cantidad? Leer(long? milesimas) => milesimas is { } m ? new Cantidad(m) : null;
+    }
+
+    /// <summary>«mínimo 5, máximo 20», «mínimo 5, sin máximo» o «sin mínimo ni máximo»: como queda en la bitácora.</summary>
+    private static string TextoMinimoYMaximo(Cantidad? minimo, Cantidad? maximo) => (minimo, maximo) switch
+    {
+        (null, null) => "sin mínimo ni máximo",
+        ({ } min, null) => $"mínimo {min}, sin máximo",
+        (null, { } max) => $"sin mínimo, máximo {max}",
+        ({ } min, { } max) => $"mínimo {min}, máximo {max}",
+    };
 
     private static void Validar(FichaProductoDto f)
     {
@@ -414,6 +533,9 @@ public sealed class RegistroCatalogo(PosDbContext db)
                 throw new ArgumentException($"«{quien}» necesita su precio de menudeo (desde una unidad).");
             if (v.Precios.GroupBy(p => (p.Presentacion?.Trim().ToLowerInvariant(), p.CantidadMinimaMilesimas)).Any(g => g.Count() > 1))
                 throw new ArgumentException($"«{quien}» tiene dos precios desde la misma cantidad.");
+            if (f.Tipo == TipoProducto.Mercancia && v.MinimoYMaximo is { } mm)
+                Variante.RevisarMinimoYMaximo(v.Unidad, mm.MinimoMilesimas is { } min ? new Cantidad(min) : null,
+                    mm.MaximoMilesimas is { } max ? new Cantidad(max) : null, quien);
         }
         var codigos = f.Variantes.SelectMany(v => v.Presentaciones).SelectMany(p => p.Codigos).Select(c => c.Codigo.Trim()).ToList();
         if (codigos.Any(c => c.Length == 0))
@@ -581,8 +703,10 @@ public sealed class RegistroCatalogo(PosDbContext db)
             throw new ArgumentException("Escribe el nombre del producto.");
         if (s.PrecioCentavos <= 0)
             throw new ArgumentException("Escribe el precio.");
-        if (!await db.Departamentos.AnyAsync(d => d.Id == s.DepartamentoId, ct))
-            throw new ArgumentException("Elige el departamento.");
+        var departamento = await db.Departamentos.AsNoTracking().SingleOrDefaultAsync(d => d.Id == s.DepartamentoId, ct)
+            ?? throw new ArgumentException("Elige el departamento.");
+        if (!departamento.Activo)
+            throw new InvalidOperationException($"El departamento «{departamento.Nombre}» está desactivado: elige otro.");
         var codigo = s.Codigo.Trim();
         if (await db.CodigosBarras.AnyAsync(c => c.Codigo == codigo, ct))
             throw new InvalidOperationException($"El código «{codigo}» ya existe.");

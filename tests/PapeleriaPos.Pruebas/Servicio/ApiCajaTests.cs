@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Herramientas;
 using PapeleriaPos.Herramientas.Ficticios;
@@ -16,13 +18,15 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
 {
     private readonly string _ruta = Path.Combine(Path.GetTempPath(), $"pos-prueba-{Guid.NewGuid():N}.db");
     private readonly (string Clave, string Valor)[] _ajustes;
+    private readonly Action<IServiceCollection>? _servicios;
     public WebApplicationFactory<Program> Fabrica { get; private set; } = null!;
 
     public ServicioDePrueba() : this([])
     {
     }
 
-    private ServicioDePrueba((string Clave, string Valor)[] ajustes) => _ajustes = ajustes;
+    private ServicioDePrueba((string Clave, string Valor)[] ajustes, Action<IServiceCollection>? servicios = null) =>
+        (_ajustes, _servicios) = (ajustes, servicios);
 
     /// <summary>Uno propio para una prueba, con su configuración (por ejemplo, la de eleventa).</summary>
     public static async Task<ServicioDePrueba> CrearAsync(params (string Clave, string Valor)[] ajustes)
@@ -32,11 +36,29 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
         return servicio;
     }
 
+    /// <summary>Uno propio con su configuración y algo de mentiras en lugar de lo de verdad (por ejemplo, el gbak de las pruebas).</summary>
+    public static async Task<ServicioDePrueba> CrearAsync(Action<IServiceCollection> servicios, params (string Clave, string Valor)[] ajustes)
+    {
+        var servicio = new ServicioDePrueba(ajustes, servicios);
+        await servicio.InitializeAsync();
+        return servicio;
+    }
+
     /// <summary>La base del servicio, para preparar o revisar lo que la API no muestra.</summary>
     public PosDbContext Base() => new(BaseDeDatos.Opciones($"Data Source={_ruta};Pooling=False"));
 
     /// <summary>El archivo de la base (junto a él quedan sus marcas, como la de un apagón).</summary>
     public string Ruta => _ruta;
+
+    /// <summary>
+    /// Espera a que el catálogo en memoria del servicio tenga lo último que se guardó: se recarga en segundo plano y mientras
+    /// contesta con el vigente (entrega 5, parte 2). Para lo que se revisa justo después de cambiar el catálogo.
+    /// </summary>
+    public async Task CatalogoAlDiaAsync()
+    {
+        await using var db = Base();
+        await Fabrica.Services.GetRequiredService<PapeleriaPos.Servicio.CatalogoEnMemoria>().AlDiaAsync(db);
+    }
 
     public async Task InitializeAsync()
     {
@@ -51,6 +73,8 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
             b.UseSetting("ConnectionStrings:Pos", $"Data Source={_ruta};Pooling=False").UseSetting("Respaldos:Activo", "false").UseSetting("Telegram:Activo", "false");
             foreach (var (clave, valor) in _ajustes)
                 b.UseSetting(clave, valor);
+            if (_servicios is { } servicios)
+                b.ConfigureTestServices(servicios);
         });
     }
 
@@ -60,7 +84,8 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
     {
         await Fabrica.DisposeAsync();
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _ruta, _ruta + "-wal", _ruta + "-shm", _ruta + ".en-uso", _ruta + ".danada" })
+        // También la llave propia del servicio, que se hace junto a la base la primera vez que se usa.
+        foreach (var archivo in new[] { _ruta, _ruta + "-wal", _ruta + "-shm", _ruta + ".en-uso", _ruta + ".danada", Path.ChangeExtension(_ruta, ".llave") })
             await BorrarAsync(archivo);
     }
 

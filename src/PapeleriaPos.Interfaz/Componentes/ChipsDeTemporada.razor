@@ -1,0 +1,136 @@
+@* La temporada, a la vista mientras corre (entrega 13, docs/propuesta-interfaz.md, «Lo que se señala: exhibidos y temporada»;
+   el chip «temporada» del prototipo): arriba de la venta, un chip con su nombre («Todos Santos») que abre Ctrl+M en ella. Al
+   terminar sus fechas se oculta solo, aunque nadie toque la caja (se revisa cada minuto). Sale de la copia de esta caja, sin la
+   red; sin copia (el navegador), de la caja principal, a la que se le vuelve a preguntar a lo más cada minuto. Se pinta solo
+   cuando cambia lo suyo: la venta se vuelve a pintar con cada escaneo (entrega 5, parte 3, «Pintar menos»). *@
+@implements IDisposable
+@inject ClienteCaja Cliente
+@inject IServiceProvider Servicios
+
+@if (Visible)
+{
+    @foreach (var temporada in _corren)
+    {
+        var esta = temporada;
+        <button class="vn-chip-estado vn-chip-temporada" title="@($"{temporada.Nombre}: sus productos con foto y precio (Ctrl+M)")"
+                @onclick="() => AlAbrir.InvokeAsync(esta.Id)">
+            <Ico Nombre="reloj" /><span class="vn-chip-nombre">@temporada.Nombre</span> <kbd>Ctrl+M</kbd>
+        </button>
+    }
+}
+
+@code {
+    /// <summary>Solo en la venta: en las páginas (Productos, Inventario, Clientes) no sale, como en el prototipo.</summary>
+    [Parameter] public bool Visible { get; set; } = true;
+
+    /// <summary>Se tocó el chip de esa temporada: Ctrl+M en ella.</summary>
+    [Parameter] public EventCallback<Guid> AlAbrir { get; set; }
+
+    /// <summary>Cada cuánto se revisa si una temporada empezó o terminó, aunque nadie toque la caja.</summary>
+    private static readonly TimeSpan CadaCuanto = TimeSpan.FromMinutes(1);
+
+    private List<ExhibidorDto> _corren = [];
+    private IReadOnlyList<ExhibidorDto>? _de;
+    private DateOnly _hoy;
+    private bool _visible;
+    private bool _cambio = true;
+    private Contingencia? _contingencia;
+    private readonly CancellationTokenSource _alto = new();
+
+    /// <summary>Sin copia (el navegador): lo que contestó la caja principal la última vez, y cuándo se le preguntó.</summary>
+    private IReadOnlyList<ExhibidorDto>? _delServicio;
+    private DateTimeOffset? _preguntadoEn;
+
+    private TimeProvider Reloj => Servicios.GetService<TimeProvider>() ?? TimeProvider.System;
+
+    protected override void OnInitialized()
+    {
+        // La copia cambia (un exhibidor o unas fechas nuevas): se revisa ya, sin esperar a que la venta se vuelva a pintar.
+        _contingencia = Servicios.GetService<Contingencia>();
+        if (_contingencia is not null)
+            _contingencia.Cambio += AlCambiar;
+        _ = VigilarAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Visible != _visible)
+            (_visible, _cambio) = (Visible, true);
+        await PreguntarSiTocaAsync();
+        Revisar();
+    }
+
+    protected override bool ShouldRender()
+    {
+        var pintar = _cambio;
+        _cambio = false;
+        return pintar;
+    }
+
+    /// <summary>
+    /// Sin una copia que los traiga (el navegador), se le pregunta a la caja principal: al abrir, y después a lo más cada minuto
+    /// (no con cada escaneo), para que lo que se cambie en otra caja también se vea aquí. Con copia, nunca: llega con ella.
+    /// </summary>
+    private async Task PreguntarSiTocaAsync()
+    {
+        if (Cliente.ExhibidoresDeLaCopia() is not null)
+            return;
+        var ahora = Reloj.GetUtcNow();
+        if (_preguntadoEn is { } antes && ahora >= antes && ahora - antes < CadaCuanto)
+            return;
+        _preguntadoEn = ahora;
+        try
+        {
+            _delServicio = (await Cliente.MostradorAsync()).Exhibidores;
+        }
+        catch (ErrorCaja)
+        {
+            // Sin conexión ni copia: lo de la última vez (o sin chip).
+        }
+    }
+
+    /// <summary>
+    /// Las que corren hoy, de lo que hay ahora (la copia, o lo que contestó la caja principal). Sin recalcular si no cambió ni la
+    /// lista ni el día; solo se vuelve a pintar si cambiaron las que corren.
+    /// </summary>
+    private void Revisar()
+    {
+        var de = Cliente.ExhibidoresDeLaCopia() ?? _delServicio;
+        var hoy = Temporadas.Hoy(Reloj);
+        if (ReferenceEquals(de, _de) && hoy == _hoy)
+            return;
+        (_de, _hoy) = (de, hoy);
+        var corren = MostradorEnPantalla.TemporadasQueCorren(de, hoy);
+        if (!corren.Select(t => (t.Id, t.Nombre)).SequenceEqual(_corren.Select(t => (t.Id, t.Nombre))))
+            (_corren, _cambio) = (corren, true);
+    }
+
+    private void AlCambiar() => _ = InvokeAsync(async () =>
+    {
+        await PreguntarSiTocaAsync();
+        Revisar();
+        if (_cambio)
+            StateHasChanged();
+    });
+
+    private async Task VigilarAsync()
+    {
+        using var reloj = new PeriodicTimer(CadaCuanto);
+        try
+        {
+            while (await reloj.WaitForNextTickAsync(_alto.Token))
+                AlCambiar();
+        }
+        catch (OperationCanceledException)
+        {
+            // La venta se fue.
+        }
+    }
+
+    public void Dispose()
+    {
+        _alto.Cancel();
+        if (_contingencia is not null)
+            _contingencia.Cambio -= AlCambiar;
+    }
+}

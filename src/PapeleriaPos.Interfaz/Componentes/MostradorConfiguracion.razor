@@ -1,0 +1,219 @@
+@* Configuración › Mostrador y temporadas (entrega 13; docs/propuesta-interfaz.md, «Lo que se señala: exhibidos y temporada»):
+   los exhibidores o las temporadas, cada uno con su nombre, sus lugares de arriba abajo (la repisa de arriba, la de abajo, la
+   mesa de la entrada) y, de una temporada, sus fechas, que se repiten cada año. Se dan de alta, se cambian y se quitan aquí; los
+   productos se acomodan en la venta (Ctrl+M › Acomodar). Se guarda al momento con «Productos, precios y etiquetas» de quien
+   entró (sin pedir autorización: o puede o no puede), y llega a las cajas con su copia. *@
+@inherits GuardadoAlMomento
+@inject ClienteCaja Cliente
+@inject IServiceProvider Servicios
+
+@if (_mostrador is null)
+{
+    <p class="@(_errorCarga is null ? "vn-cfg-nota" : "vn-cfg-error")">@(_errorCarga ?? "Cargando…")</p>
+}
+else
+{
+    var deEste = DelTipo;
+    @if (deEste.Count == 0)
+    {
+        <p class="vn-cfg-nota">@(EsTemporada ? "Sin temporadas." : "Sin exhibidores.")</p>
+    }
+    <div class="vn-cfg-mostrador">
+        @foreach (var e in deEste)
+        {
+            var exhibidor = e;
+            var renglon = Renglon(e.Id);
+            var nombre = $"mo-nombre-{e.Id}";
+            var fechas = $"mo-fechas-{e.Id}";
+            <div class="vn-cfg-ex" @key="e.Id">
+                <div class="vn-cfg-ex-cab">
+                    <input id="@nombre" class="vn-cfg-ex-nombre" maxlength="@Exhibidor.LargoNombre" autocomplete="off" spellcheck="false" disabled="@(!Puede)"
+                           aria-label="@(EsTemporada ? "Nombre de la temporada" : "Nombre del exhibidor")" value="@Escrito(nombre, e.Nombre)"
+                           @oninput="v => Escribir(nombre, v.Value, texto => CambiarAsync(exhibidor.Id, new SolicitudCambiarExhibidor(Sesion.UsuarioId, Caja.SucursalId, Nombre: texto)), renglon)"
+                           @onblur="() => SalirAsync(nombre)" @onkeydown="k => AlTeclearAsync(k, nombre)" />
+                    @if (EsTemporada)
+                    {
+                        <label class="vn-cfg-ex-fechas">Fechas
+                            <input id="@fechas" autocomplete="off" spellcheck="false" disabled="@(!Puede)" placeholder="del 16/9 al 5/11"
+                                   value="@Escrito(fechas, Temporadas.Fechas(e.Desde, e.Hasta) ?? "")"
+                                   @oninput="v => Escribir(fechas, v.Value, texto => CambiarFechasAsync(exhibidor.Id, texto), renglon, conPausa: false)"
+                                   @onblur="() => SalirAsync(fechas)" @onkeydown="k => AlTeclearAsync(k, fechas)" />
+                        </label>
+                        @if (e.Desde is null)
+                        {
+                            <span class="vn-etiq ambar" title="Sin fechas no sale al vender">Sin fechas</span>
+                        }
+                        else if (e.CorreEl(Hoy))
+                        {
+                            <span class="vn-etiq" title="Sale primero en Ctrl+M y con su chip arriba de la venta">Corre hoy</span>
+                        }
+                    }
+                    <span class="espacio"></span>
+                    @if (Puede)
+                    {
+                        <button class="vn-boton chico" disabled="@_ocupado" title="Ya no sale en Ctrl+M; lo acomodado no se borra"
+                                @onclick="() => UnaVezAsync(renglon, () => Cliente.QuitarExhibidorAsync(exhibidor.Id, Solicitud))">Quitar</button>
+                    }
+                </div>
+                <div class="vn-cfg-lugares">
+                    <span class="vn-cfg-nota">Lugares, de arriba abajo:</span>
+                    @if (e.Lugares.Count == 0)
+                    {
+                        <span class="vn-cfg-nota">ninguno todavía: sin lugares no se le pueden acomodar productos.</span>
+                    }
+                    @for (var i = 0; i < e.Lugares.Count; i++)
+                    {
+                        var lugar = e.Lugares[i];
+                        var campo = $"mo-lugar-{lugar.Id}";
+                        var primero = i == 0;
+                        var ultimo = i == e.Lugares.Count - 1;
+                        <div class="vn-cfg-lugar" @key="lugar.Id">
+                            <input id="@campo" maxlength="@LugarExhibidor.LargoNombre" autocomplete="off" spellcheck="false" disabled="@(!Puede)"
+                                   aria-label="@($"Nombre del lugar {i + 1} de {e.Nombre}")" value="@Escrito(campo, lugar.Nombre)"
+                                   @oninput="v => Escribir(campo, v.Value, texto => CambiarDelLugarAsync(lugar.Id, texto), renglon)"
+                                   @onblur="() => SalirAsync(campo)" @onkeydown="k => AlTeclearAsync(k, campo)" />
+                            <small>@(lugar.Productos.Count == 1 ? "1 producto" : $"{lugar.Productos.Count} productos")</small>
+                            @if (Puede)
+                            {
+                                <span class="vn-cfg-acciones">
+                                    <button class="vn-boton chico" title="Subirlo" aria-label="Subirlo" disabled="@(primero || _ocupado)"
+                                            @onclick="() => UnaVezAsync(renglon, () => Cliente.MoverLugarAsync(lugar.Id, new SolicitudMoverLugar(Sesion.UsuarioId, Caja.SucursalId, -1)))"><Ico Nombre="arriba" /></button>
+                                    <button class="vn-boton chico" title="Bajarlo" aria-label="Bajarlo" disabled="@(ultimo || _ocupado)"
+                                            @onclick="() => UnaVezAsync(renglon, () => Cliente.MoverLugarAsync(lugar.Id, new SolicitudMoverLugar(Sesion.UsuarioId, Caja.SucursalId, 1)))"><Ico Nombre="abajo" /></button>
+                                    <button class="vn-boton chico" disabled="@_ocupado"
+                                            title="@(lugar.Productos.Count == 0 ? "Quitarlo" : "Quitarlo: sus productos pasan al lugar de al lado")"
+                                            @onclick="() => UnaVezAsync(renglon, () => Cliente.QuitarLugarAsync(lugar.Id, Solicitud))">Quitar</button>
+                                </span>
+                            }
+                        </div>
+                    }
+                    @if (Puede)
+                    {
+                        var nuevo = $"mo-lugar-nuevo-{e.Id}";
+                        <div class="vn-cfg-lugar nuevo">
+                            <input id="@nuevo" maxlength="@LugarExhibidor.LargoNombre" autocomplete="off" spellcheck="false"
+                                   placeholder="@(EsTemporada ? "Otro lugar: la mesa de la entrada, el aparador…" : "Otro lugar: la repisa de abajo, el gancho de la pared…")"
+                                   aria-label="@($"Lugar nuevo de {e.Nombre}")" value="@_lugaresNuevos.GetValueOrDefault(e.Id)"
+                                   @oninput="@(v => _lugaresNuevos[exhibidor.Id] = v.Value?.ToString() ?? string.Empty)"
+                                   @onkeydown="@(k => k.Key == "Enter" ? AgregarLugarAsync(exhibidor.Id) : Task.CompletedTask)" />
+                            <button class="vn-boton chico" disabled="@_ocupado" @onclick="() => AgregarLugarAsync(exhibidor.Id)"><Ico Nombre="mas" />Agregar lugar</button>
+                        </div>
+                    }
+                </div>
+                @if (ErrorDe(renglon) is { } error)
+                {
+                    <p class="vn-cfg-error" role="alert">@error</p>
+                }
+            </div>
+        }
+    </div>
+    @if (Puede)
+    {
+        <div class="vn-cfg-ex-nuevo">
+            <input id="mo-nuevo-@Tipo" maxlength="@Exhibidor.LargoNombre" autocomplete="off" spellcheck="false"
+                   placeholder="@(EsTemporada ? "Otra temporada: Regreso a clases, Día del niño…" : "Otro exhibidor: la pared, la vitrina de la entrada…")"
+                   aria-label="@(EsTemporada ? "Nombre de la temporada nueva" : "Nombre del exhibidor nuevo")" value="@_nuevo"
+                   @oninput="@(v => _nuevo = v.Value?.ToString() ?? string.Empty)" @onkeydown="@(k => k.Key == "Enter" ? NuevoAsync() : Task.CompletedTask)" />
+            <button class="vn-boton chico" disabled="@_ocupado" @onclick="NuevoAsync"><Ico Nombre="mas" />@(EsTemporada ? "Nueva temporada" : "Nuevo exhibidor")</button>
+        </div>
+        @if (ErrorDe(RenglonNuevo) is { } errorNuevo)
+        {
+            <p class="vn-cfg-error" role="alert">@errorNuevo</p>
+        }
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+
+    /// <summary>Quien entró: los cambia con «Productos, precios y etiquetas».</summary>
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Los exhibidores o las temporadas.</summary>
+    [Parameter, EditorRequired] public TipoExhibidor Tipo { get; set; }
+
+    /// <summary>Se guardó un cambio: la Configuración dice a qué hora.</summary>
+    [Parameter] public EventCallback AlGuardar { get; set; }
+
+    /// <summary>Al cerrar no se pudo guardar lo que quedó escrito: por qué.</summary>
+    [Parameter] public EventCallback<string> AlNoGuardar { get; set; }
+
+    private MostradorDto? _mostrador;
+    private string? _errorCarga;
+    private string _nuevo = "";
+    private readonly Dictionary<Guid, string> _lugaresNuevos = [];
+
+    /// <summary>Mientras se quita, se mueve o se agrega algo: un doble clic no lo hace dos veces.</summary>
+    private bool _ocupado;
+
+    private bool EsTemporada => Tipo == TipoExhibidor.Temporada;
+
+    private bool Puede => Sesion.Puede(AccionControlada.EditarCatalogo);
+
+    private DateOnly Hoy => Temporadas.Hoy(Servicios.GetService<TimeProvider>() ?? TimeProvider.System);
+
+    private List<ExhibidorDto> DelTipo => (_mostrador?.Exhibidores ?? []).Where(e => e.Tipo == Tipo).ToList();
+
+    private SolicitudMostrador Solicitud => new(Sesion.UsuarioId, Caja.SucursalId);
+
+    private static string Renglon(Guid id) => $"mo-{id}";
+
+    private string RenglonNuevo => $"mo-nuevo-{Tipo}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _mostrador = await Cliente.MostradorAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _errorCarga = ex.Message;
+        }
+    }
+
+    protected override Task AlGuardarAsync() => AlGuardar.InvokeAsync();
+
+    protected override Task NoSeGuardoAlCerrarAsync(IReadOnlyList<string> errores) => AlNoGuardar.InvokeAsync(string.Join(" ", errores));
+
+    private async Task CambiarAsync(Guid id, SolicitudCambiarExhibidor solicitud) => _mostrador = await Cliente.CambiarExhibidorAsync(id, solicitud);
+
+    /// <summary>Las fechas como se escriben (también vacías: sin fechas); si no se entienden, se dice por qué.</summary>
+    private Task CambiarFechasAsync(Guid id, string texto)
+    {
+        var (desde, hasta) = Temporadas.LeerFechas(texto);
+        return CambiarAsync(id, new SolicitudCambiarExhibidor(Sesion.UsuarioId, Caja.SucursalId, Fechas: new FechasTemporadaDto(desde, hasta)));
+    }
+
+    private async Task CambiarDelLugarAsync(Guid lugarId, string texto) =>
+        _mostrador = await Cliente.CambiarLugarAsync(lugarId, new SolicitudLugar(Sesion.UsuarioId, Caja.SucursalId, texto));
+
+    private async Task AgregarLugarAsync(Guid exhibidorId)
+    {
+        var nombre = _lugaresNuevos.GetValueOrDefault(exhibidorId) ?? "";
+        if (await UnaVezAsync(Renglon(exhibidorId), () => Cliente.AgregarLugarAsync(exhibidorId, new SolicitudLugar(Sesion.UsuarioId, Caja.SucursalId, nombre))))
+            _lugaresNuevos.Remove(exhibidorId);
+    }
+
+    private async Task NuevoAsync()
+    {
+        if (await UnaVezAsync(RenglonNuevo, () => Cliente.NuevoExhibidorAsync(new SolicitudNuevoExhibidor(Sesion.UsuarioId, Caja.SucursalId, _nuevo, Tipo))))
+            _nuevo = "";
+    }
+
+    /// <summary>Quitar, mover o agregar, de uno en uno: lo que llega mientras tanto (un doble clic) no se hace.</summary>
+    private async Task<bool> UnaVezAsync(string renglon, Func<Task<MostradorDto>> cambio)
+    {
+        if (_ocupado)
+            return false;
+        _ocupado = true;
+        try
+        {
+            return await HacerAsync(renglon, async () => _mostrador = await cambio());
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

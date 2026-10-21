@@ -6,6 +6,8 @@ let hayVentana = false;
 let hayPanel = false;
 // Se ve una página (Productos, Inventario o Clientes) en lugar de la venta (entrega 8): la venta está oculta.
 let hayPagina = false;
+// El mostrador (Ctrl+M, entrega 13) está abierto con el cursor en el cuadro de captura (no al acomodar).
+let hayMostrador = false;
 let escribiendo = null;
 
 export function registrar(referencia) {
@@ -25,9 +27,13 @@ export function quitar() {
     document.removeEventListener('scroll', alRodarLista, true);
     clearTimeout(escribiendo);
     clearInterval(rodando);
+    clearTimeout(mandarMedidos);
+    mandarMedidos = null;
+    medidos = [];
     rodando = null;
     rafaga = null;
     hayPagina = false;
+    hayMostrador = false;
     pantalla = null;
 }
 
@@ -64,19 +70,28 @@ function alRodarLista(e) {
     abajo?.classList.toggle('apagada', lista.scrollTop + lista.clientHeight >= lista.scrollHeight - 1);
 }
 
-// El cuadro de captura no avisa a .NET en cada tecla: al Enter, el texto se lee y el cuadro se vacía aquí mismo, y el
-// código va en una sola llamada. Así un escaneo nunca se pega al siguiente aunque lleguen sin pausa, y el lector no
-// repinta la pantalla con cada carácter. Lo que se escribe a mano se avisa al dejar de teclear (para un rápido con
-// cantidad, F11, y la búsqueda), no con cada tecla.
+// El cuadro de captura no avisa a .NET con cada carácter del lector: al Enter, el texto se lee y el cuadro se vacía aquí
+// mismo, y el código va en una sola llamada. Así un escaneo nunca se pega al siguiente aunque lleguen sin pausa, y el
+// lector no repinta la pantalla con cada carácter. Lo que se escribe a mano con letras se avisa en cuanto se teclea: la
+// búsqueda va contra la copia de la caja y sale al momento (entrega 5, parte 3; antes se esperaban 150 ms y la red). Lo que
+// llega en ráfaga (el lector, que termina con su Enter antes de parar) y lo que no trae letras (la cantidad de un rápido o
+// de F11) se avisa al dejar de teclear.
 function esCaptura(elemento) {
     return elemento instanceof HTMLInputElement && elemento.dataset.captura !== undefined;
 }
+
+// La hora (del teclado) de lo último que se escribió en el cuadro de captura.
+let ultimaEscrita = -Infinity;
 
 function alEscribir(e) {
     if (!pantalla || !esCaptura(e.target)) return;
     clearTimeout(escribiendo);
     const campo = e.target;
-    escribiendo = setTimeout(() => pantalla?.invokeMethodAsync('Escribiendo', campo.value), 150);
+    const enRafaga = e.timeStamp - ultimaEscrita < RAFAGA_MS;
+    ultimaEscrita = e.timeStamp;
+    const avisar = () => pantalla?.invokeMethodAsync('Escribiendo', campo.value);
+    if (!enRafaga && /\p{L}/u.test(campo.value)) avisar();
+    else escribiendo = setTimeout(avisar, RAFAGA_MS);
 }
 
 export function limpiarCaptura() {
@@ -98,6 +113,32 @@ export function paginaAbierta(abierta) {
     hayPagina = abierta;
 }
 
+// El mostrador (Ctrl+M, entrega 13): el cursor se queda en el cuadro de captura, como en el prototipo, y lo escrito ahí es la
+// cantidad. Las flechas eligen la pieza, Tab el exhibidor o la temporada, y Enter la agrega (en el verificador, la enseña).
+// El Enter dice si llegó en ráfaga (el lector, más rápido que una persona): lo escaneado va al ticket como siempre, nunca
+// como cantidad. Lo demás (escribir, Esc, las F) es como con cualquier panel.
+export function mostradorAbierto(abierto) {
+    hayMostrador = abierto;
+}
+
+function teclaDelMostrador(e, campo) {
+    const tecla = e.key;
+    const flecha = tecla === 'ArrowLeft' || tecla === 'ArrowRight' || tecla === 'ArrowUp' || tecla === 'ArrowDown';
+    if (e.ctrlKey || e.altKey || e.metaKey || !(flecha || tecla === 'Enter' || tecla === 'Tab')) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    clearTimeout(escribiendo);
+    const texto = campo.value;
+    if (tecla === 'Enter') {
+        const delLector = texto.length >= RAFAGA_MINIMO && e.timeStamp - ultimaEscrita < RAFAGA_MS;
+        campo.value = '';
+        pantalla.invokeMethodAsync('EnMostrador', 'Enter', texto, e.timeStamp, delLector);
+    } else {
+        pantalla.invokeMethodAsync('EnMostrador', tecla === 'Tab' && e.shiftKey ? 'Shift+Tab' : tecla, texto, null, false);
+    }
+    return true;
+}
+
 // En una página: Esc, las F y las Ctrl de la caja van a la pantalla, que decide (F1 a la venta, F3 y F4 a su página, Esc
 // cierra lo abierto); así F5 no recarga ni Ctrl+P imprime. Las flechas, Enter y lo que se escribe son de la página: ↑ ↓ en
 // su búsqueda recorren la lista, y en la lista o en las tarjetas pasan a la de al lado. Lo que se escribe fuera de un campo
@@ -106,7 +147,7 @@ export function paginaAbierta(abierta) {
 function teclaDePagina(e) {
     const tecla = e.key;
     const funcion = /^F([1-9]|1[0-2])$/.test(tecla);
-    const ctrlCaja = e.ctrlKey && !e.altKey && /^[pedlbuqPEDLBUQ]$/.test(tecla);
+    const ctrlCaja = e.ctrlKey && !e.altKey && /^[pedlbuqmPEDLBUQM]$/.test(tecla);
     if (tecla === 'Escape' || funcion || ctrlCaja) {
         e.preventDefault();
         e.stopPropagation();
@@ -174,6 +215,7 @@ function moverEnLista(donde, tecla) {
 // cobra sin él. Una persona no baja de unos 80 ms entre tecla y tecla ni con el teclado numérico; un lector USB teclea
 // cada carácter en pocos milisegundos. El ritmo del lector de la tienda falta medirlo allá (docs/plan.md, paso 7): si
 // no se reconoce, se ajustan RAFAGA_MS y RAFAGA_MINIMO (el cambio no lleva tope: lo decidió el dueño el 2026-10-14).
+// RAFAGA_MS también dice, en el cuadro de captura, qué se escribe en ráfaga y no busca hasta que se deja de teclear.
 const RAFAGA_MS = 50;
 // Menos caracteres no se distinguen de alguien que teclea rápido «200» y Enter.
 const RAFAGA_MINIMO = 4;
@@ -207,7 +249,7 @@ function rafagaDelLector(e) {
             donde.value = r.antes;
             donde.dispatchEvent(new Event('input', { bubbles: true }));
         }
-        pantalla.invokeMethodAsync('EscaneoEnPago', r.texto);
+        pantalla.invokeMethodAsync('EscaneoEnPago', r.texto, hora);
         return true;
     }
     if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
@@ -233,6 +275,7 @@ function alPresionar(e) {
         teclaDePagina(e);
         return;
     }
+    if (hayMostrador && hayPanel && esCaptura(campo) && teclaDelMostrador(e, campo)) return;
 
     if (tecla === 'Enter' && !hayVentana && esCaptura(campo)) {
         e.preventDefault();
@@ -240,7 +283,8 @@ function alPresionar(e) {
         clearTimeout(escribiendo);
         const texto = campo.value;
         campo.value = '';
-        if (texto.trim() !== '') pantalla.invokeMethodAsync('Escaneado', texto);
+        // Con la hora del Enter (el reloj de la página): se mide cuánto tarda en verse su línea (pintado, abajo).
+        if (texto.trim() !== '') pantalla.invokeMethodAsync('Escaneado', texto, e.timeStamp);
         return;
     }
     const enCodigo = esCaptura(campo);
@@ -253,8 +297,13 @@ function alPresionar(e) {
     const ctrlD = e.ctrlKey && (tecla === 'd' || tecla === 'D');
     const ctrlL = e.ctrlKey && (tecla === 'l' || tecla === 'L');
     const ctrlB = e.ctrlKey && (tecla === 'b' || tecla === 'B');
+    // Ctrl+M: el mostrador y la temporada (entrega 13).
+    const ctrlM = e.ctrlKey && (tecla === 'm' || tecla === 'M');
     // Ctrl+U: cambiar de usuario (en el navegador sería ver el código de la página).
     const ctrlU = e.ctrlKey && (tecla === 'u' || tecla === 'U');
+    // Ctrl+I: imprimir el ticket que se ofrece al cobrar (Configuración › Ticket › «Al cobrar»: «Ofrecerlo»). Sin ventana,
+    // como los rápidos: el ticket que se ofrece está en el panel del total.
+    const ctrlI = e.ctrlKey && !e.altKey && (tecla === 'i' || tecla === 'I');
     const funcion = /^F([1-9]|1[0-2])$/.test(tecla);
 
     // Ctrl+Q: cotizar a una tecla. Sin ventana, el selector de archivos se abre aquí mismo, desde la tecla. Con un panel
@@ -289,9 +338,9 @@ function alPresionar(e) {
 
     let atrapar;
     if (hayVentana) {
-        atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlU || (hayPanel && tecla === 'Insert');
+        atrapar = tecla === 'Escape' || funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlM || ctrlU || (hayPanel && tecla === 'Insert');
     } else {
-        atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlU || rapido || tecla === 'Escape' || tecla === 'Insert'
+        atrapar = funcion || ctrlP || ctrlE || ctrlD || ctrlL || ctrlB || ctrlM || ctrlU || ctrlI || rapido || tecla === 'Escape' || tecla === 'Insert'
             || (tecla === 'Delete' && vacio && !enPago)
             || ((tecla === 'ArrowUp' || tecla === 'ArrowDown') && (campo === null || enCodigo))
             || ((tecla === '+' || tecla === '-') && vacio && (campo === null || enCodigo));
@@ -308,8 +357,8 @@ function alPresionar(e) {
         texto = campo.value;
         if (rapido || tecla === 'Escape' || (tecla === 'F11' && texto !== '')) campo.value = '';
     }
-    let nombre = ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlU ? 'Ctrl+U'
-        : rapido ? 'Alt+' + tecla : tecla;
+    let nombre = ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlM ? 'Ctrl+M' : ctrlU ? 'Ctrl+U'
+        : ctrlI ? 'Ctrl+I' : rapido ? 'Alt+' + tecla : tecla;
     // F12: el cursor pasa a «Pagó con» aquí mismo, sin esperar la vuelta a .NET, para que lo que se teclee enseguida
     // (lo que dio el cliente) caiga ahí y no en el cuadro de captura. .NET sabe que ya se movió.
     if (tecla === 'F12' && !hayVentana && !enPago) {
@@ -321,6 +370,25 @@ function alPresionar(e) {
         }
     }
     pantalla.invokeMethodAsync('Tecla', nombre, texto);
+}
+
+// Del Enter a la línea pintada (entrega 5, docs/propuesta-interfaz.md, «Cómo se mide»): .NET avisa cuando ya dibujó lo de
+// esos escaneos, con la hora de cada Enter; aquí se mide con el reloj de la página en el cuadro siguiente, el que la pinta,
+// y se le manda a la pantalla de a varios (una vez por segundo), para no sumarle trabajo en plena ráfaga.
+let medidos = [];
+let mandarMedidos = null;
+
+export function pintado(horas) {
+    requestAnimationFrame(() => {
+        const ahora = performance.now();
+        for (const hora of horas) medidos.push(ahora - hora);
+        if (mandarMedidos) return;
+        mandarMedidos = setTimeout(() => {
+            mandarMedidos = null;
+            const lista = medidos.splice(0);
+            if (lista.length > 0 && pantalla) pantalla.invokeMethodAsync('Pintados', lista).catch(() => { });
+        }, 1000);
+    });
 }
 
 // «/ Más acciones»: deja el texto en el cuadro de captura, con el cursor al final.
@@ -393,4 +461,38 @@ export function imprimirMarco(selector) {
     if (!marco || !marco.contentWindow) return;
     marco.contentWindow.focus();
     marco.contentWindow.print();
+}
+
+// La foto de un producto (Productos, F3; entrega 13, parte 2): con el cursor en su cuadro, Ctrl+V pega la imagen que se
+// copió (de otra página, de una captura de pantalla). Se achica aquí, a lo más 960 por lado y en JPEG, y se le pasa a la ficha
+// (ImagenPegada) para verla antes de guardarla; el servicio la deja de 240. Lo que no es una imagen se pega como siempre.
+export function pegarImagen(selector, ficha) {
+    const zona = document.querySelector(selector);
+    if (!zona) return;
+    zona.onpaste = async e => {
+        const imagen = [...(e.clipboardData?.items ?? [])].find(i => i.kind === 'file' && i.type.startsWith('image/'));
+        if (!imagen) return;
+        e.preventDefault();
+        try {
+            await ficha.invokeMethodAsync('ImagenPegada', await achicarImagen(imagen.getAsFile(), 960));
+        } catch {
+            ficha.invokeMethodAsync('ImagenPegada', null).catch(() => { });
+        }
+    };
+}
+
+async function achicarImagen(archivo, lado) {
+    const imagen = await createImageBitmap(archivo);
+    const escala = Math.min(1, lado / Math.max(imagen.width, imagen.height));
+    const lienzo = document.createElement('canvas');
+    lienzo.width = Math.max(1, Math.round(imagen.width * escala));
+    lienzo.height = Math.max(1, Math.round(imagen.height * escala));
+    const dibujo = lienzo.getContext('2d');
+    // Lo transparente (una imagen de una página) queda blanco, como en la caja principal.
+    dibujo.fillStyle = '#fff';
+    dibujo.fillRect(0, 0, lienzo.width, lienzo.height);
+    dibujo.drawImage(imagen, 0, 0, lienzo.width, lienzo.height);
+    imagen.close();
+    const jpeg = await new Promise(listo => lienzo.toBlob(listo, 'image/jpeg', 0.9));
+    return new Uint8Array(await jpeg.arrayBuffer());
 }

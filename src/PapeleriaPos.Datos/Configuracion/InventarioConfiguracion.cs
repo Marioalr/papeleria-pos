@@ -19,6 +19,8 @@ internal sealed class MovimientoInventarioConfiguracion : IEntityTypeConfigurati
         b.HasOne<Variante>().WithMany().HasForeignKey(m => m.VarianteId);
         b.HasIndex(m => new { m.SucursalId, m.VarianteId, m.FechaUtc });
         b.HasIndex(m => new { m.DocumentoTipo, m.DocumentoId });
+        // Los movimientos de unos días de toda la sucursal (Inventario › Movimientos), del más reciente al más viejo.
+        b.HasIndex(m => new { m.SucursalId, m.FechaUtc });
     }
 }
 
@@ -29,6 +31,8 @@ internal sealed class ExistenciaConfiguracion : IEntityTypeConfiguration<Existen
         b.HasKey(e => new { e.SucursalId, e.VarianteId });
         b.HasOne<Sucursal>().WithMany().HasForeignKey(e => e.SucursalId);
         b.HasOne<Variante>().WithMany().HasForeignKey(e => e.VarianteId);
+        // Lo que cambió desde la versión de una caja (entrega 5, parte 2): después de cada venta.
+        b.HasIndex(e => new { e.SucursalId, e.Version });
     }
 }
 
@@ -268,4 +272,15 @@ internal sealed class BusquedaConfiguracion : IEntityTypeConfiguration<Busqueda>
 internal sealed class SecuenciaConfiguracion : IEntityTypeConfiguration<Secuencia>
 {
     public void Configure(EntityTypeBuilder<Secuencia> b) => b.HasKey(s => s.Nombre);
+}
+
+internal sealed class BorradoConfiguracion : IEntityTypeConfiguration<Borrado>
+{
+    public void Configure(EntityTypeBuilder<Borrado> b)
+    {
+        b.ToTable("Borrados");
+        b.Property(x => x.Entidad).HasMaxLength(60);
+        // Lo quitado desde la versión de una caja.
+        b.HasIndex(x => x.Version);
+    }
 }

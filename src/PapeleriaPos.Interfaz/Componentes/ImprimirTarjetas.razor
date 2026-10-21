@@ -1,0 +1,213 @@
+@* Las tarjetas de precio de una lista de productos (entrega 13, parte 3; docs/propuesta-interfaz.md, «Lo que se señala», punto
+   5): las de la mesa de una temporada, las de un exhibidor, las que hay que volver a imprimir o lo más preguntado sin tarjeta.
+   Cada renglón con su casilla, su tarjeta (con qué precio salió, o «sin tarjeta») y su precio de hoy. «Vista previa» y
+   «Imprimir» como la hoja de códigos: la caja arma las hojas (HojaDeTarjetas) y las imprime en la de inyección o la láser.
+   Al imprimirlas quedan anotadas con su precio de hoy; si después cambia, vuelven a salir «por reimprimir». *@
+@using PapeleriaPos.Impresion
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+@if (Productos.Count == 0)
+{
+    <p class="vacia">@Vacia</p>
+}
+else
+{
+    <table class="vn-tabla vn-tarjetas">
+        <thead>
+            <tr>
+                <th class="marca"><input type="checkbox" aria-label="Marcar todos" checked="@(_marcados.Count == Productos.Count)" @onchange="MarcarTodos" /></th>
+                <th>Producto</th>
+                @if (ConVeces)
+                {
+                    <th class="num" title="@($"Las veces que se preguntó en el verificador (F9) en los últimos {ConsultaDePrecio.DiasQueCuentan} días")">Preguntado</th>
+                }
+                <th class="num">Su tarjeta</th>
+                <th class="num">Hoy</th>
+                @if (AlQuitar.HasDelegate)
+                {
+                    <th></th>
+                }
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in Productos)
+            {
+                var este = p;
+                <tr id="tarjeta-@p.VarianteId">
+                    <td class="marca">
+                        <input type="checkbox" aria-label="@($"Imprimir la tarjeta de «{p.Nombre}»")" checked="@_marcados.Contains(p.VarianteId)"
+                               @onchange="() => Marcar(este)" />
+                    </td>
+                    <td>
+                        <div class="vn-tarjeta-prod">
+                            <strong>@p.Nombre</strong>
+                            <small>@Detalle(p)</small>
+                        </div>
+                    </td>
+                    @if (ConVeces)
+                    {
+                        <td class="num">@(p.Veces == 1 ? "1 vez" : $"{Formato.Numero(p.Veces)} veces")</td>
+                    }
+                    <td class="num">
+                        @(p.TarjetaCentavos is { } tarjeta ? Formato.Dinero(tarjeta) : "sin tarjeta")
+                        @if (p.PorQue is { } porQue)
+                        {
+                            <span class="vn-etiq ambar">@porQue</span>
+                        }
+                    </td>
+                    <td class="num">@(p.PrecioCentavos is { } hoy ? Formato.Dinero(hoy) : "sin precio")</td>
+                    @if (AlQuitar.HasDelegate)
+                    {
+                        <td class="acciones">
+                            <button class="vn-boton chico" disabled="@_ocupado" title="Ya no tiene tarjeta (se quitó o se tiró): deja de estar por reimprimir"
+                                    @onclick="() => QuitarAsync(este)">Ya no tiene</button>
+                        </td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+    <div class="vn-botonera">
+        <button id="vista-tarjetas" class="vn-boton" disabled="@(_ocupado || _marcados.Count == 0)" @onclick="VistaPreviaAsync">Vista previa</button>
+        <button id="imprimir-tarjetas" class="vn-boton primario" disabled="@(_ocupado || _marcados.Count == 0)" @onclick="ImprimirAsync">
+            <Ico Nombre="impresora" />@(_marcados.Count == 1 ? "Imprimir 1 tarjeta" : $"Imprimir {_marcados.Count} tarjetas")
+        </button>
+    </div>
+    <p class="nota">
+        Salen @HojaDeTarjetas.PorHoja por hoja carta, para recortar, en la impresora de inyección o la láser. Imprime al
+        <strong>100 % (tamaño real)</strong>: así el lector lee el código. Al imprimirlas quedan anotadas con su precio de hoy; si
+        después cambia, vuelven a salir «por reimprimir».
+    </p>
+}
+@if (_mensaje is not null)
+{
+    <p class="aviso">@_mensaje</p>
+}
+@if (_error is not null)
+{
+    <p class="error">@_error</p>
+}
+<div class="vista-etiquetas @(_vista ? "" : "oculto")">
+    <iframe id="@Marco" title="Vista previa de las tarjetas de precio"></iframe>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Los productos, en el orden en que salen (y se imprimen).</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<ProductoConTarjetaDto> Productos { get; set; } = [];
+
+    /// <summary>Cuáles empiezan marcados; sin esto, todos.</summary>
+    [Parameter] public Func<ProductoConTarjetaDto, bool>? MarcarAlEmpezar { get; set; }
+
+    /// <summary>Con la columna de cuántas veces se preguntó (lo más preguntado).</summary>
+    [Parameter] public bool ConVeces { get; set; }
+
+    [Parameter] public string Vacia { get; set; } = "No hay productos.";
+
+    /// <summary>El id del marco de la vista previa: uno por página.</summary>
+    [Parameter] public string Marco { get; set; } = "marco-tarjetas";
+
+    /// <summary>Se imprimieron: cómo quedaron las tarjetas por reimprimir.</summary>
+    [Parameter] public EventCallback<TarjetasDto> AlImprimir { get; set; }
+
+    /// <summary>«Ya no tiene»: con esto sale el botón en cada renglón.</summary>
+    [Parameter] public EventCallback<ProductoConTarjetaDto> AlQuitar { get; set; }
+
+    private readonly HashSet<Guid> _marcados = [];
+    private IReadOnlyList<ProductoConTarjetaDto>? _de;
+    private bool _vista;
+    private bool _ocupado;
+    private string? _mensaje;
+    private string? _error;
+
+    /// <summary>Una lista nueva (otra temporada, otra lista, la misma ya impresa): se marca otra vez como empieza.</summary>
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(_de, Productos))
+            return;
+        _de = Productos;
+        _marcados.Clear();
+        foreach (var p in Productos.Where(p => MarcarAlEmpezar?.Invoke(p) ?? true))
+            _marcados.Add(p.VarianteId);
+    }
+
+    private static string Detalle(ProductoConTarjetaDto p) =>
+        string.Join(" · ", new[] { p.Codigo, p.Donde }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    private void Marcar(ProductoConTarjetaDto p)
+    {
+        if (!_marcados.Remove(p.VarianteId))
+            _marcados.Add(p.VarianteId);
+    }
+
+    private void MarcarTodos()
+    {
+        if (_marcados.Count == Productos.Count)
+            _marcados.Clear();
+        else
+            _marcados.UnionWith(Productos.Select(p => p.VarianteId));
+    }
+
+    private async Task VistaPreviaAsync() => await HacerAsync(async () => await PrepararAsync());
+
+    /// <summary>
+    /// Las arma con su precio de hoy (y código para lo que no tiene), las enseña y las manda a la impresora; quedan anotadas con
+    /// el precio y el código con que salieron.
+    /// </summary>
+    private async Task ImprimirAsync() =>
+        await HacerAsync(async () =>
+        {
+            var listas = await PrepararAsync();
+            if (listas.Tarjetas.Count == 0)
+                return;
+            await Js.ImprimirMarcoAsync($"#{Marco}");
+            var quedaron = await Cliente.TarjetasImpresasAsync(new SolicitudTarjetasImpresas(Sesion.UsuarioId, Caja.SucursalId, listas.Tarjetas));
+            _mensaje = (listas.Tarjetas.Count == 1 ? "Listo: 1 tarjeta a la impresora." : $"Listo: {listas.Tarjetas.Count} tarjetas a la impresora.")
+                + " Quedan anotadas con su precio de hoy." + SinPrecio(listas);
+            await AlImprimir.InvokeAsync(quedaron);
+        });
+
+    private async Task<TarjetasParaImprimirDto> PrepararAsync()
+    {
+        var ids = Productos.Where(p => _marcados.Contains(p.VarianteId)).Select(p => p.VarianteId).ToList();
+        var listas = await Cliente.PrepararTarjetasAsync(new SolicitudPrepararTarjetas(Sesion.UsuarioId, Caja.SucursalId, ids));
+        _vista = listas.Tarjetas.Count > 0;
+        StateHasChanged();
+        await Js.MostrarEnMarcoAsync($"#{Marco}", HojaDeTarjetas.Html(listas.Tarjetas.Select(t => new TarjetaDePrecioEnHoja(t.Nombre, t.PrecioCentavos, t.Codigo)).ToList()));
+        var hojas = HojaDeTarjetas.Paginas(listas.Tarjetas.Select(t => new TarjetaDePrecioEnHoja(t.Nombre, t.PrecioCentavos, t.Codigo)).ToList()).Count;
+        _mensaje = listas.Tarjetas.Count == 0
+            ? null
+            : $"{(listas.Tarjetas.Count == 1 ? "1 tarjeta" : $"{listas.Tarjetas.Count} tarjetas")} en {(hojas == 1 ? "1 hoja" : $"{hojas} hojas")}."
+              + (listas.CodigosNuevos == 0 ? "" : $" A {listas.CodigosNuevos} se les dio código interno: ya se cobran escaneando su tarjeta.");
+        _mensaje = (_mensaje ?? "") + SinPrecio(listas);
+        if (_mensaje.Length == 0)
+            _mensaje = null;
+        return listas;
+    }
+
+    private static string SinPrecio(TarjetasParaImprimirDto listas) =>
+        listas.SinPrecio.Count == 0 ? "" : $" Sin precio no salen: {string.Join(", ", listas.SinPrecio.Select(n => $"«{n}»"))}.";
+
+    private async Task QuitarAsync(ProductoConTarjetaDto p) => await HacerAsync(() => AlQuitar.InvokeAsync(p));
+
+    private async Task HacerAsync(Func<Task> accion)
+    {
+        _ocupado = true;
+        (_mensaje, _error) = (null, null);
+        try
+        {
+            await accion();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

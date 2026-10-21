@@ -29,9 +29,18 @@ namespace PapeleriaPos.Caja;
 /// <param name="ServicioLocal">En la prueba: el servicio, relativo a la carpeta de la caja.</param>
 /// <param name="BaseInicial">En la prueba: la base con que se instaló (de solo lectura, en Archivos de programa).</param>
 /// <param name="CarpetaDatos">En la prueba: dónde va la base de trabajo y las respuestas (admite %ProgramData%).</param>
+/// <param name="LlaveDelServicio">
+/// La llave pública de la caja principal (de su servicio, no de su base): la caja no se cambia sola a otro que no firme con ella.
+/// No es secreta; se aprende al darse de alta o la primera vez que la caja principal prueba quién es.
+/// </param>
+/// <param name="DireccionDeConfianza">
+/// La dirección que puso el dueño al darla de alta (en una caja de antes, la que ya tenía): solo ahí se aprende esa llave.
+/// </param>
+/// <param name="Red">Lo de la bitácora de red: «"Red": { "DetalleWifi": true }» anota el Wi-Fi (apagado: ver <see cref="AjustesDeRed"/>).</param>
 public sealed record ConfiguracionCaja(
     string Servicio, Guid? CajaId, string? Impresora, string? LlaveProtegida = null, string? ColaImpresion = null, bool QuitarImpresos = true,
-    bool Prueba = false, string? ServicioLocal = null, string? BaseInicial = null, string? CarpetaDatos = null)
+    bool Prueba = false, string? ServicioLocal = null, string? BaseInicial = null, string? CarpetaDatos = null, string? LlaveDelServicio = null,
+    string? DireccionDeConfianza = null, AjustesDeRed? Red = null)
 {
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
 
@@ -81,20 +90,41 @@ public sealed record ConfiguracionCaja(
         {
             Servicio = conexion.Servicio.ToString(),
             CajaId = conexion.CajaId,
+            LlaveDelServicio = conexion.LlaveDelServicio,
+            DireccionDeConfianza = conexion.DireccionDeConfianza?.ToString(),
             LlaveProtegida = conexion.Llave is { } llave
                 ? Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(llave), null, DataProtectionScope.LocalMachine))
                 : null,
         };
         Directory.CreateDirectory(Path.GetDirectoryName(Guardada)!);
-        File.WriteAllText(Guardada, JsonSerializer.Serialize(nueva, Json));
+        // Primero a un archivo aparte, hasta el disco, y después se cambia de un jalón: si se va la luz a media escritura (puede
+        // pasar cuando la caja guarda sola la dirección nueva de la caja principal, en plena falla de la red), caja.json no queda
+        // a medias ni en ceros.
+        var nuevoArchivo = Guardada + ".nuevo";
+        using (var archivo = new FileStream(nuevoArchivo, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            archivo.Write(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(nueva, Json)));
+            archivo.Flush(flushToDisk: true);
+        }
+        File.Move(nuevoArchivo, Guardada, overwrite: true);
         return nueva;
     }
 }
+
+/// <summary>«Red» en caja.json.</summary>
+/// <param name="DetalleWifi">
+/// Que la bitácora de red anote el nombre del Wi-Fi y su señal, para diagnosticar una caída (se prende en la caja 2 cuando hace
+/// falta). Apagado por omisión: en Windows 11 24H2, leerlo podría sacar la pregunta del permiso de ubicación encima de la venta.
+/// </param>
+public sealed record AjustesDeRed(bool DetalleWifi = false);
 
 /// <summary>La ventana de la caja: muestra la interfaz compartida y manda el ticket a la impresora de tickets.</summary>
 public partial class MainWindow : Window
 {
     private readonly RegistroDiario _registro;
+
+    /// <summary>caja.json se guarda de uno en uno: el alta y la dirección nueva de la caja principal pueden llegar a la vez.</summary>
+    private readonly Lock _guardando = new();
 
     /// <summary>Para volver a cargar sin que la caja se quede en «Cargando…» (AlgoFallo quita antes la pantalla).</summary>
     private readonly RecargaDeLaCaja _recarga = new();
@@ -121,11 +151,16 @@ public partial class MainWindow : Window
             Servicio = new Uri(configuracion.Servicio),
             CajaId = prueba is null ? configuracion.CajaId : null,
             Llave = prueba is null ? configuracion.Llave() : null,
+            LlaveDelServicio = prueba is null ? configuracion.LlaveDelServicio : null,
+            // Una caja de antes (sin esto guardado): la dirección que ya tenía, la que puso el dueño.
+            DireccionDeConfianza = new Uri(configuracion.DireccionDeConfianza ?? configuracion.Servicio),
             PideAlta = prueba is null,
             Listo = prueba?.Listo ?? Task.CompletedTask,
             AlGuardar = c =>
             {
-                configuracion = configuracion.Guardar(c);
+                // Lo guarda el alta (en la ventana) y también la caja sola, de fondo, al encontrar la caja principal en otra IP.
+                lock (_guardando)
+                    configuracion = configuracion.Guardar(c);
                 return Task.CompletedTask;
             },
         };
@@ -135,9 +170,19 @@ public partial class MainWindow : Window
         servicios.AddSingleton(_recarga);
         // "tcp://192.168.1.100:9100" imprime directo por la red; un nombre (como "Tickets") usa la impresora de Windows.
         var impresora = Impresoras.Crear(configuracion.Impresora, nombre => new ImpresoraWindows(nombre));
-        // La copia para vender sin la caja principal y la bandeja de salida, junto a la configuración de la caja.
+        // La copia para vender sin la caja principal y la bandeja de salida, junto a la configuración de la caja. La red de la
+        // tienda en el POS: la bitácora de red junto al registro de la caja (red-caja-AAAA-MM-DD.log), el Wi-Fi y la MAC del
+        // router, y el puerto de la impresora de tickets (si es WSD o por nombre, el estado de arriba lo dice).
         servicios.AgregarInterfazCaja(conexion, impresora,
-            prueba is null ? ConfiguracionCaja.BaseLocal : Path.Combine(ServicioDePrueba.CarpetaDatos(configuracion), "caja-local.db"));
+            prueba is null ? ConfiguracionCaja.BaseLocal : Path.Combine(ServicioDePrueba.CarpetaDatos(configuracion), "caja-local.db"),
+            new OpcionesRedDeLaCaja
+            {
+                CarpetaBitacora = registro.Carpeta,
+                Impresora = configuracion.Impresora,
+                Puertos = new PuertosDeImpresorasWindows(),
+                Detalles = new RedDeWindows(),
+                DetalleWifi = configuracion.Red?.DetalleWifi ?? false,
+            });
         // Cotizar: el PDF se mide aquí, en la PC donde está; el precio lo pone la caja principal.
         servicios.AddSingleton<IMedidorPdf, MedidorPdfWindows>();
         // La prueba se actualiza desde Configuración con los instaladores que arma GitHub.
@@ -147,10 +192,14 @@ public partial class MainWindow : Window
         Vista.Services = proveedor;
         Vista.BlazorWebViewInitialized += AlIniciarLaPagina;
         Vista.UrlLoading += AlCargarUnaDireccion;
+        // Antes que el aviso del corte en eleventa: si se decide no cerrar, ese ya no sale.
+        AvisarLoQueNoSeImprimio(ColaDeImpresion.De(impresora));
         if (proveedor.GetService<Contingencia>() is { } contingencia)
         {
             IniciarAgente(configuracion, conexion, contingencia);
             RecordarElCorteAlCerrar(contingencia);
+            // Lo que estaba en la cola del escritor de la base local (entrega 5) queda en el disco antes de cerrar.
+            Closed += (_, _) => contingencia.Cerrar();
         }
     }
 
@@ -350,11 +399,40 @@ public partial class MainWindow : Window
     /// convivir con eleventa: se quita al dejarlo.
     /// </summary>
     private void RecordarElCorteAlCerrar(Contingencia contingencia) =>
-        Closing += (_, _) =>
+        Closing += (_, e) =>
         {
-            if (contingencia.PilotoEleventa)
+            // Si ya se decidió no cerrar (quedaba algo por imprimir), no hace falta recordarlo.
+            if (!e.Cancel && contingencia.PilotoEleventa)
                 MessageBox.Show(this, PilotoConEleventa.CorteEnEleventa, Title, MessageBoxButton.OK, MessageBoxImage.Information);
         };
+
+    /// <summary>
+    /// La cola de la impresora de tickets (entrega 5, parte 3): lo que se imprime no detiene la pantalla, así que al cerrar la
+    /// caja puede quedar algo sin imprimir (no salió, o espera a la impresora). Nada se pierde sin decirlo: se pregunta antes
+    /// de cerrar, con lo que es, y si se cierra igual queda anotado en el registro del día. No se guarda para imprimirlo al
+    /// abrir otra vez (saldría tarde, sin que nadie lo espere): lo que dice ya quedó guardado y se puede volver a imprimir.
+    /// </summary>
+    private void AvisarLoQueNoSeImprimio(ColaDeImpresion cola)
+    {
+        Closing += (_, e) =>
+        {
+            // Cerrándose por un error, Windows no deja detenerlo: no se pregunta (queda anotado al cerrarse).
+            if (e.Cancel || Application.Current is App { SeCierraPorUnError: true } || cola.Pendientes is not { Count: > 0 } pendientes)
+                return;
+            var motivo = cola.Problema is { Estado: EstadoImpresion.NoSalio, Motivo: { } m } ? $" ({m.TrimEnd('.')})" : "";
+            var respuesta = MessageBox.Show(this,
+                $"Falta imprimir {string.Join(", ", pendientes.Select(t => $"«{t.Titulo}»"))}{motivo}.\n\n"
+                + "Si cierras la caja, no sale: lo que dice ya quedó guardado y se puede volver a imprimir. ¿Cerrar de todos modos?",
+                Title, MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+            if (respuesta != MessageBoxResult.Yes)
+                e.Cancel = true;
+        };
+        Closed += (_, _) =>
+        {
+            foreach (var trabajo in cola.Pendientes)
+                _registro.Anotar($"Se cerró la caja sin imprimir «{trabajo.Titulo}»{(trabajo.Motivo is { } motivo ? $": {motivo}" : ".")}");
+        };
+    }
 
     private AgenteImpresion? _agente;
 

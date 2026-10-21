@@ -1,0 +1,235 @@
+@* La foto de un producto en su ficha (Productos, F3; entrega 13, parte 2): la que sale en Ctrl+M, en la lista de la búsqueda
+   y en el verificador. Se elige un archivo o se pega una imagen (Ctrl+V con el cursor en su cuadro), se ve antes de guardarla
+   y se guarda; también se quita. Quien tiene «Productos, precios y etiquetas»: el servicio la revisa, la endereza, la achica y
+   la guarda chica, y llega sola a las cajas. También desde el celular, en la página del conteo («Fotos»). *@
+@implements IAsyncDisposable
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="foto-variante">
+    <div id="@Cuadro" class="foto-variante-cuadro" tabindex="@(PuedeEditar ? "0" : null)"
+         title="@(PuedeEditar ? "Con el cursor aquí, Ctrl+V pega una imagen copiada" : null)">
+        @if (Vista is { } vista)
+        {
+            <img class="vn-foto" src="@vista" alt="Foto: @Nombre" />
+        }
+        else
+        {
+            <span class="vn-foto" aria-hidden="true">@MostradorEnPantalla.Iniciales(Nombre)</span>
+        }
+    </div>
+    <div class="foto-variante-texto">
+        <h5>Foto</h5>
+        @if (_porGuardar is not null)
+        {
+            <p class="nota">Así se va a ver: revisa que se vea el producto. Al guardarla se achica y llega a todas las cajas.</p>
+            <div class="acciones">
+                <button class="boton principal chico" disabled="@_ocupado" @onclick="GuardarAsync">Guardar la foto</button>
+                <button class="boton chico" disabled="@_ocupado" @onclick="Cancelar">Cancelar</button>
+            </div>
+        }
+        else
+        {
+            <p class="nota">@(TieneFoto ? "Sale en Ctrl+M, en la lista de la búsqueda y en el verificador." : "Sin foto: en las cajas salen sus iniciales.")</p>
+            @if (PuedeEditar)
+            {
+                <div class="acciones">
+                    <label class="boton chico archivo">
+                        @(TieneFoto ? "Cambiar la foto…" : "Elegir una foto…")
+                        <InputFile accept="image/*" disabled="@_ocupado" OnChange="ElegirAsync" />
+                    </label>
+                    @if (TieneFoto)
+                    {
+                        <button class="boton chico" disabled="@_ocupado" @onclick="QuitarAsync">Quitar la foto</button>
+                    }
+                    <button class="boton chico" @onclick="CelularAsync">@(_celular is null ? "Con el celular…" : "Ocultar el código")</button>
+                </div>
+                <p class="nota">O copia una imagen y, con el cursor en el cuadro de la foto, Ctrl+V.</p>
+            }
+        }
+        @if (_celular is { } celular)
+        {
+            @* La página del conteo, «Fotos»: su código QR y su dirección (en el piloto con eleventa, el conteo no se ofrece). *@
+            <div class="celular-qr">
+                @if (celular.Direcciones.Count == 0)
+                {
+                    <p class="nota">No se encontró la red de esta PC: conecta la caja principal a la red de la tienda para tomar fotos con el celular.</p>
+                }
+                else
+                {
+                    @if (celular.QrSvg is { } qr)
+                    {
+                        <div class="qr">@((MarkupString)qr)</div>
+                    }
+                    <div>
+                        <p><strong>Con el celular</strong> en el wifi de la tienda, escanea el código con la cámara o abre</p>
+                        @foreach (var url in celular.Direcciones)
+                        {
+                            <p class="direccion">@url</p>
+                        }
+                        <p class="nota">Entra con tu usuario y PIN, toca «Fotos», escanea este producto y toma su foto.</p>
+                    </div>
+                }
+            </div>
+        }
+        @if (_error is not null)
+        {
+            <p class="error">@_error</p>
+        }
+        @if (_aviso is not null)
+        {
+            <p class="aviso">@_aviso</p>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter, EditorRequired] public Guid VarianteId { get; set; }
+
+    /// <summary>El nombre del producto: sus iniciales, mientras no tiene foto.</summary>
+    [Parameter, EditorRequired] public string Nombre { get; set; } = "";
+
+    /// <summary>Con «Productos, precios y etiquetas»: la pone, la cambia o la quita. El servicio decide.</summary>
+    [Parameter] public bool PuedeEditar { get; set; }
+
+    /// <summary>La que se eligió o se pegó, todavía sin guardar (ya achicada en la página).</summary>
+    private byte[]? _porGuardar;
+
+    /// <summary>Lo último que pasó aquí: la que se acaba de guardar (como quedó) o que se quitó; vacío, lo que tiene la caja.</summary>
+    private string? _guardada;
+
+    private bool _quitada;
+
+    /// <summary>Dónde abrir en el celular la página para tomar la foto (su código QR); vacío mientras no se pide.</summary>
+    private DireccionCelularDto? _celular;
+    private string? _error;
+    private string? _aviso;
+    private bool _ocupado;
+    private DotNetObjectReference<FotoDeLaVariante>? _referencia;
+
+    private string Cuadro => $"foto-{VarianteId:N}";
+
+    /// <summary>Lo que se ve: la que está por guardarse, la que se acaba de guardar o la que tiene esta caja (sin la red).</summary>
+    private string? Vista =>
+        _porGuardar is { } porGuardar ? DatosDe(porGuardar)
+        : _guardada ?? (_quitada ? null : Cliente.Fotos.Direccion(VarianteId));
+
+    private bool TieneFoto => _guardada is not null || !_quitada && Cliente.Fotos.Direccion(VarianteId) is not null;
+
+    private static string DatosDe(byte[] jpeg) => $"data:image/jpeg;base64,{Convert.ToBase64String(jpeg)}";
+
+    protected override void OnInitialized() => Cliente.Fotos.Cambio += AlCambiarLasFotos;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!primera || !PuedeEditar)
+            return;
+        _referencia = DotNetObjectReference.Create(this);
+        await Js.PegarImagenAsync($"#{Cuadro}", _referencia);
+    }
+
+    private void AlCambiarLasFotos() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>Un archivo elegido: se achica en la página (<see cref="ImagenElegida"/>) y se ve antes de guardarla.</summary>
+    private async Task ElegirAsync(InputFileChangeEventArgs e)
+    {
+        (_error, _aviso) = (null, null);
+        try
+        {
+            Elegida(await ImagenElegida.LeerAsync(e.File));
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    /// <summary>Lo que se pegó con Ctrl+V en el cuadro de la foto, ya achicado (caja.js); vacío si no se pudo leer.</summary>
+    [JSInvokable]
+    public Task ImagenPegada(byte[]? datos) => InvokeAsync(() =>
+    {
+        (_error, _aviso) = (null, null);
+        if (datos is { Length: > 0 })
+            Elegida(datos);
+        else
+        {
+            _error = "No se pudo pegar esa imagen: guárdala en un archivo y elígela.";
+            StateHasChanged();
+        }
+    });
+
+    /// <summary>La foto elegida, para verla antes de guardarla.</summary>
+    internal void Elegida(byte[] datos)
+    {
+        _porGuardar = datos;
+        StateHasChanged();
+    }
+
+    private void Cancelar() => (_porGuardar, _error) = (null, null);
+
+    private async Task CelularAsync()
+    {
+        if (_celular is not null)
+        {
+            _celular = null;
+            return;
+        }
+        try
+        {
+            _celular = await Cliente.DireccionCelularAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_porGuardar is not { } datos)
+            return;
+        (_ocupado, _error, _aviso) = (true, null, null);
+        try
+        {
+            var guardada = await Cliente.GuardarFotoAsync(VarianteId, new SolicitudFoto(Sesion.UsuarioId, Caja.SucursalId, Convert.ToBase64String(datos), "la PC"));
+            (_porGuardar, _guardada, _quitada) = (null, $"data:image/jpeg;base64,{guardada.JpegBase64}", false);
+            _aviso = $"Guardada: así llega a las cajas ({guardada.Ancho}×{guardada.Alto}, {Math.Max(1, (guardada.Bytes + 512) / 1024)} KB).";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task QuitarAsync()
+    {
+        (_ocupado, _error, _aviso) = (true, null, null);
+        try
+        {
+            await Cliente.QuitarFotoAsync(VarianteId, new SolicitudQuitarFoto(Sesion.UsuarioId, Caja.SucursalId));
+            (_guardada, _quitada) = (null, true);
+            _aviso = "Quitada: en las cajas vuelven a salir sus iniciales.";
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Cliente.Fotos.Cambio -= AlCambiarLasFotos;
+        _referencia?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

@@ -25,6 +25,9 @@ public static class ImportadorEleventa
 {
     public const string Origen = "eleventa";
 
+    /// <summary>El Id de origen de lo vendido con un código que ya no está en el catálogo de eleventa: «codigo:» y el código.</summary>
+    internal const string IdPorCodigo = "codigo:";
+
     public const string AvisoMayoreoDeducido = "Mayoreo de eleventa (F11) pasado a escala por cantidad: el paquete salió de sus ventas con F11";
     public const string AvisoMayoreoPorRevisar = "Mayoreo de eleventa (F11) por revisar en F3: no se pudo saber desde cuántas piezas";
     public const string AvisoMayoreoYaEstaba = "Mayoreo de eleventa (F11) igual a una promoción por cantidad: se quedó la promoción";
@@ -131,54 +134,28 @@ public static class ImportadorEleventa
 
         // Ventas
         var lineasPorTicket = e.Lineas.ToLookup(l => l.TicketId);
+        Guid VarianteDe(FilaLinea l)
+        {
+            var codigo = l.Codigo.Trim();
+            if (!porCodigo.TryGetValue(codigo, out var v))
+            {
+                var unidad = conFracciones.Contains(codigo) ? UnidadBase.Kilogramo : UnidadBase.Pieza;
+                var nueva = CrearProducto(r, l.Nombre.Trim(), DepartamentoDe(l.DepartamentoId), unidad, activo: false, codigo, idOrigen: $"{IdPorCodigo}{codigo}");
+                v = (nueva, null);
+                porCodigo[codigo] = v;
+                r.Avisar(AvisoCodigoInexistente);
+            }
+            return v.Variante.Id;
+        }
         foreach (var t in e.Tickets.OrderBy(t => t.Id))
         {
-            if (t.VendidoEn is not { } vendido)
+            if (t.VendidoEn is null)
             {
                 r.Avisar(AvisoTicketAbierto);
                 continue;
             }
 
-            var venta = new VentaHistorica
-            {
-                SucursalId = matriz.Id,
-                FechaUtc = HoraMexico.AUtc(vendido),
-                FolioOrigen = (t.Folio ?? t.Id).ToString(),
-                TotalCentavos = Centavos(t.Total),
-                Cancelada = t.Cancelado,
-            };
-
-            foreach (var l in lineasPorTicket[t.Id])
-            {
-                var cantidad = Cantidad.Unidades(Math.Round((decimal)l.Cantidad, 3));
-                if (!cantidad.EsPositiva)
-                {
-                    r.Avisar(AvisoLineaSinCantidad);
-                    continue;
-                }
-
-                var codigo = l.Codigo.Trim();
-                if (!porCodigo.TryGetValue(codigo, out var v))
-                {
-                    var unidad = conFracciones.Contains(codigo) ? UnidadBase.Kilogramo : UnidadBase.Pieza;
-                    var nueva = CrearProducto(r, l.Nombre.Trim(), DepartamentoDe(l.DepartamentoId), unidad, activo: false, codigo, idOrigen: $"codigo:{codigo}");
-                    v = (nueva, null);
-                    porCodigo[codigo] = v;
-                    r.Avisar(AvisoCodigoInexistente);
-                }
-
-                var importe = Centavos(l.TotalArticulo ?? l.PrecioFinal * l.Cantidad);
-                venta.Lineas.Add(new VentaHistoricaLinea
-                {
-                    VentaHistoricaId = venta.Id,
-                    VarianteId = v.Variante.Id,
-                    Cantidad = cantidad,
-                    PrecioCentavos = Centavos(l.PrecioFinal),
-                    ImporteCentavos = importe,
-                    CostoCentavos = importe - Centavos(l.Ganancia * l.Cantidad),
-                });
-            }
-
+            var venta = Venta(t, lineasPorTicket[t.Id], matriz.Id, VarianteDe, aviso => r.Avisar(aviso));
             r.Ventas.Add(venta);
             Mapear(r, nameof(VentaHistorica), t.Id.ToString(), venta.Id);
         }
@@ -203,6 +180,50 @@ public static class ImportadorEleventa
         }
 
         return r;
+    }
+
+    /// <summary>
+    /// Un ticket cobrado de eleventa como venta del historial: su total (eleventa ya le bajó lo devuelto) y, de cada línea, la
+    /// cantidad, el precio, el importe y el costo. Lo mismo para una base nueva que en la importación final
+    /// (<see cref="ImportacionFinal"/>).
+    /// </summary>
+    /// <param name="variante">La variante de cada línea (por su código); no se pide para las líneas sin cantidad.</param>
+    /// <param name="id">El de la venta que reemplaza, si ya estaba en el historial; si no, uno nuevo.</param>
+    internal static VentaHistorica Venta(
+        FilaTicket t, IEnumerable<FilaLinea> lineas, Guid sucursalId, Func<FilaLinea, Guid> variante, Action<string> avisar, Guid? id = null)
+    {
+        var venta = new VentaHistorica
+        {
+            SucursalId = sucursalId,
+            FechaUtc = HoraMexico.AUtc(t.VendidoEn ?? throw new ArgumentException("El ticket no se ha cobrado.", nameof(t))),
+            FolioOrigen = (t.Folio ?? t.Id).ToString(),
+            TotalCentavos = Centavos(t.Total),
+            Cancelada = t.Cancelado,
+        };
+        if (id is { } propio)
+            venta.Id = propio;
+
+        foreach (var l in lineas)
+        {
+            var cantidad = Cantidad.Unidades(Math.Round((decimal)l.Cantidad, 3));
+            if (!cantidad.EsPositiva)
+            {
+                avisar(AvisoLineaSinCantidad);
+                continue;
+            }
+
+            var importe = Centavos(l.TotalArticulo ?? l.PrecioFinal * l.Cantidad);
+            venta.Lineas.Add(new VentaHistoricaLinea
+            {
+                VentaHistoricaId = venta.Id,
+                VarianteId = variante(l),
+                Cantidad = cantidad,
+                PrecioCentavos = Centavos(l.PrecioFinal),
+                ImporteCentavos = importe,
+                CostoCentavos = importe - Centavos(l.Ganancia * l.Cantidad),
+            });
+        }
+        return venta;
     }
 
     /// <summary>
@@ -289,7 +310,7 @@ public static class ImportadorEleventa
             Sugerida = sugerida,
         };
 
-    private static Variante CrearProducto(
+    internal static Variante CrearProducto(
         ResultadoImportacion r, string nombre, Departamento departamento, UnidadBase unidad, bool activo, string? codigo, string idOrigen)
     {
         var producto = new Producto { Nombre = nombre, DepartamentoId = departamento.Id, Activo = activo };
@@ -318,6 +339,6 @@ public static class ImportadorEleventa
 
     private static long Centavos(double pesos) => ReglasEleventa.Centavos(pesos);
 
-    private static void Mapear(ResultadoImportacion r, string entidad, string idOrigen, Guid idNuevo) =>
+    internal static void Mapear(ResultadoImportacion r, string entidad, string idOrigen, Guid idNuevo) =>
         r.Mapeos.Add(new MapeoImportacion { Origen = Origen, Entidad = entidad, IdOrigen = idOrigen, IdNuevo = idNuevo });
 }

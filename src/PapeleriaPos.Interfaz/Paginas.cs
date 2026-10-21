@@ -15,7 +15,10 @@ public enum Pagina
     Clientes,
 }
 
-/// <summary>Las tareas del inventario, cada una con su tarjeta (htmlInventario del prototipo, y lo que ya había).</summary>
+/// <summary>
+/// Las tareas del inventario, cada una con su tarjeta (htmlInventario del prototipo, lo que ya había y los reportes de
+/// eleventa: los bajos en inventario, los movimientos y lo que vale).
+/// </summary>
 public enum TareaInventario
 {
     Recibir,
@@ -30,6 +33,9 @@ public enum TareaInventario
     HojaCodigos,
     ConteoCompleto,
     Proveedores,
+    Bajos,
+    Movimientos,
+    Valor,
 }
 
 /// <summary>Una página de atrás: lo que la caja le pide desde sus teclas.</summary>
@@ -136,9 +142,17 @@ public static class PaginasDeAtras
 {
     /// <param name="Regla">El permiso de la tarea: sin él (en «No») la tarjeta no aparece.</param>
     /// <param name="Reglas">Otras con las que también se ve (los proveedores, para quien compra, recibe o edita el catálogo).</param>
-    public sealed record Tarea(TareaInventario Id, string Icono, string Nombre, string Descripcion, AccionControlada? Regla, AccionControlada[]? Reglas = null);
+    /// <param name="Consulta">
+    /// Solo lee (los reportes como en eleventa): se ve con alguna de sus reglas en «Puede», porque consultar no se autoriza.
+    /// </param>
+    public sealed record Tarea(
+        TareaInventario Id, string Icono, string Nombre, string Descripcion, AccionControlada? Regla, IReadOnlyList<AccionControlada>? Reglas = null,
+        bool Consulta = false);
 
-    /// <summary>En el orden del prototipo; al final, lo que ya había y él no tiene (la hoja de códigos y los proveedores).</summary>
+    /// <summary>
+    /// En el orden del prototipo; luego lo que ya había y él no tiene (la hoja de códigos y los proveedores) y los reportes de
+    /// eleventa (2026-10-17): «Bajos en inventario» junto al sugerido, y al final los movimientos y lo que vale.
+    /// </summary>
     public static IReadOnlyList<Tarea> Tareas { get; } =
     [
         new(TareaInventario.Recibir, "recibir", "Recibir mercancía", "Contar a ciegas lo que llegó; la nota del proveedor se compara después.",
@@ -151,17 +165,37 @@ public static class PaginasDeAtras
         new(TareaInventario.Compras, "ticket", "Compras y notas", "XML o PDF del proveedor, costos y cierre de la compra.", AccionControlada.CostearCompra),
         new(TareaInventario.Ordenes, "lista", "Órdenes de compra", "Lo que se le pide a cada proveedor.", AccionControlada.PedirCompra),
         new(TareaInventario.Sugerido, "buscar", "Sugerido de compra", "Qué pedir según lo que se vende.", AccionControlada.PedirCompra),
+        new(TareaInventario.Bajos, "abajo", "Bajos en inventario", "Lo que está en su mínimo o debajo, con cuánto pedir.", null,
+            ConsultasInventario.Bajos, Consulta: true),
         new(TareaInventario.Etiquetas, "etiqueta", "Etiquetas", "Hojas de etiquetas con su código de barras para imprimir.", AccionControlada.EditarCatalogo),
         new(TareaInventario.HojaCodigos, "escaner", "Hoja de códigos", "La hoja del mostrador con lo diminuto que no lleva etiqueta, para cobrarlo escaneando.",
             AccionControlada.EditarCatalogo),
         new(TareaInventario.ConteoCompleto, "contar", "Conteo completo", "Un departamento entero, también desde el celular.", AccionControlada.ConteoCompleto),
         new(TareaInventario.Proveedores, "tienda", "Proveedores", "A quién se le compra: teléfono, RFC y notas.", null,
             [AccionControlada.RecibirMercancia, AccionControlada.CostearCompra, AccionControlada.PedirCompra, AccionControlada.EditarCatalogo]),
+        new(TareaInventario.Movimientos, "transferir", "Movimientos", "Lo que entró y salió, por día, tipo, producto y quién.", null,
+            ConsultasInventario.Movimientos, Consulta: true),
+        new(TareaInventario.Valor, "efectivo", "Lo que vale el inventario", "A costo promedio, por departamento y por producto.", null,
+            ConsultasInventario.Valor, Consulta: true),
     ];
 
-    /// <summary>Las que tiene quien entró, en «Puede» o «Con autorización»: las demás no aparecen.</summary>
+    /// <summary>
+    /// Las que tiene quien entró, en «Puede» o «Con autorización»; las de consulta, solo en «Puede». Las demás no aparecen.
+    /// </summary>
     public static IEnumerable<Tarea> TareasDe(PermisosDePagina permisos) =>
-        Tareas.Where(t => t.Regla is { } regla ? permisos.Ve(regla) : t.Reglas?.Any(permisos.Ve) == true);
+        Tareas.Where(t => t.Consulta ? t.Reglas?.Any(permisos.Puede) == true
+            : t.Regla is { } regla ? permisos.Ve(regla) : t.Reglas?.Any(permisos.Ve) == true);
+
+    /// <summary>
+    /// Las que mueven existencias. En el piloto con eleventa (con su lectura prendida) no se ofrecen: el inventario se lleva
+    /// allá y la lectura deja la existencia en la de eleventa. Las órdenes, el sugerido, las etiquetas, la hoja de códigos,
+    /// los proveedores y los reportes (bajos en inventario, movimientos y lo que vale), sí.
+    /// </summary>
+    public static IReadOnlySet<TareaInventario> MuevenExistencias { get; } = new HashSet<TareaInventario>
+    {
+        TareaInventario.Recibir, TareaInventario.ConteoDelDia, TareaInventario.Mermas, TareaInventario.Ajustes, TareaInventario.Paquete,
+        TareaInventario.Compras, TareaInventario.ConteoCompleto,
+    };
 
     public static Tarea De(TareaInventario id) => Tareas.Single(t => t.Id == id);
 }

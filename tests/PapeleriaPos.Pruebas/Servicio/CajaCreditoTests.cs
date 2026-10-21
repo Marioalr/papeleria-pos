@@ -1,5 +1,4 @@
 using System.Net.Http.Json;
-using Microsoft.Data.Sqlite;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
@@ -18,9 +17,7 @@ public sealed class CajaCreditoTests(ServicioDePrueba servicio) : IClassFixture<
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
+        ArchivosDePrueba.BorrarBase(_baseLocal);
     }
 
     [Fact]

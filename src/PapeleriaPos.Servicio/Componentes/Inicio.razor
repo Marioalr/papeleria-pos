@@ -1,7 +1,7 @@
 @page "/"
 
 @* La caja en el navegador solo se abre en esta misma PC: las demás cajas usan la ventana de Windows dada de alta (con
-   su llave). Desde otro aparato de la red, como el celular, solo está el conteo. *@
+   su llave). Desde otro aparato de la red, como el celular, solo está el conteo (y ahí, las fotos de los productos). *@
 @if (DesdeEstaPc)
 {
     <PageTitle>Caja · Papelería POS</PageTitle>
@@ -14,7 +14,7 @@ else
         <div class="centrado">
             <div class="tarjeta">
                 <h2>Papelería POS</h2>
-                <p>Desde este aparato se usa el <a href="@ApiConteos.PaginaCelular">conteo de inventario</a>.</p>
+                <p>Desde este aparato se usa el <a href="@ApiConteos.PaginaCelular">conteo de inventario</a>; ahí mismo, en «Fotos», se toman las de los productos.</p>
                 <p class="nota">La caja se abre en la PC de la caja principal o en una caja dada de alta.</p>
             </div>
         </div>

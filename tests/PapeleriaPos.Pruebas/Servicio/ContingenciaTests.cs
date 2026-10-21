@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PapeleriaPos.Datos;
@@ -17,21 +16,28 @@ namespace PapeleriaPos.Pruebas.Servicio;
 /// <summary>
 /// Entre la caja y el servicio de prueba: con <see cref="Caido"/>, como si la caja principal estuviera apagada; con
 /// <see cref="Rechaza"/>, contesta con un error a lo que cumpla, como si el servicio no lo hubiera podido guardar; con
-/// <see cref="PierdeRespuesta"/>, lo manda (el servicio lo guarda) pero la respuesta no llega.
+/// <see cref="PierdeRespuesta"/>, lo manda (el servicio lo guarda) pero la respuesta no llega; con
+/// <see cref="TardaDemasiado"/>, lo manda (el servicio lo guarda) pero la respuesta llega después del tope del cliente.
 /// </summary>
 internal sealed class Interruptor(HttpMessageHandler interno) : DelegatingHandler(interno)
 {
     public bool Caido { get; set; }
     public Func<HttpRequestMessage, bool>? Rechaza { get; set; }
     public Func<HttpRequestMessage, bool>? PierdeRespuesta { get; set; }
+    public Func<HttpRequestMessage, bool>? TardaDemasiado { get; set; }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         if (Caido)
-            throw new HttpRequestException("La caja principal no contesta.");
+            throw new HttpRequestException(HttpRequestError.ConnectionError, "La caja principal no contesta.");
         if (Rechaza?.Invoke(request) == true)
             return new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = JsonContent.Create(new ErrorDto("La base estaba ocupada.")) };
         var respuesta = await base.SendAsync(request, cancellationToken);
+        if (TardaDemasiado?.Invoke(request) == true)
+        {
+            respuesta.Dispose();
+            throw new TaskCanceledException("Pasó el tope del cliente.");
+        }
         if (PierdeRespuesta?.Invoke(request) != true)
             return respuesta;
         respuesta.Dispose();
@@ -46,9 +52,7 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
+        ArchivosDePrueba.BorrarBase(_baseLocal);
     }
 
     private static int Folio(TicketDto t) => int.Parse(t.Folio[(t.Folio.IndexOf('-') + 1)..]);
@@ -248,5 +252,46 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
         Assert.Equal(System.Net.HttpStatusCode.BadRequest, mismoFolio.StatusCode);
         var delDia = (await local.GetFromJsonAsync<List<VentaDelDiaDto>>($"api/cajas/{caja.Id}/ventas-del-dia"))!;
         Assert.Single(delDia, v => v.Id == venta.Id);
+    }
+
+    /// <summary>
+    /// Una venta que sube con el Id de una que ya está, pero con otras líneas (la caja la cobró otra vez sin conexión, cambiada,
+    /// sin saber que la primera sí había quedado; entrega 5, parte 2, revisión): no se guarda otra ni se descarta callada; queda
+    /// por revisar, con los dos folios. La misma, igual, sigue entrando una vez.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_sube_con_el_Id_de_una_venta_que_ya_esta_pero_distinta_queda_por_revisar()
+    {
+        var local = servicio.Fabrica.CreateClient();
+        var caja = (await local.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
+        var cajero = (await (await local.PostAsJsonAsync("api/sesion", new SolicitudEntrada("cajero", "1111"))).Content.ReadFromJsonAsync<SesionDto>())!;
+        var respuesta = await local.GetAsync($"api/cajas/{caja.Id}/turno");
+        var turno = respuesta.StatusCode == System.Net.HttpStatusCode.NoContent
+            ? (await (await local.PostAsJsonAsync("api/turnos", new SolicitudTurno(caja.Id, cajero.UsuarioId, 0))).Content.ReadFromJsonAsync<TurnoDto>())!
+            : (await respuesta.Content.ReadFromJsonAsync<TurnoDto>())!;
+        var paquete = (await local.GetFromJsonAsync<PaqueteContingenciaDto>($"api/cajas/{caja.Id}/paquete"))!;
+        var producto = paquete.Productos.Where(p => p.Precios.Any(x => x.PresentacionId == null)).Skip(1).First();
+        var precio = producto.Precios.Where(x => x.PresentacionId == null).MinBy(x => x.CantidadMinimaMilesimas)!.PrecioCentavos;
+        var linea = new LineaContingenciaDto(producto.VarianteId, producto.Presentacion.Id, producto.Descripcion, 1000, precio);
+        var venta = new VentaContingenciaDto(Guid.NewGuid(), caja.Id, turno.Id, cajero.UsuarioId, paquete.UltimoFolio + 1, DateTime.UtcNow,
+            [linea], [new CobroSolicitado(FormaPago.Efectivo, precio)]);
+
+        var primera = await local.PostAsJsonAsync("api/bandeja/ventas", venta);
+        var distinta = await local.PostAsJsonAsync("api/bandeja/ventas", venta with
+        {
+            Folio = venta.Folio + 1, Lineas = [linea with { CantidadMilesimas = 3000 }], Cobros = [new CobroSolicitado(FormaPago.Efectivo, 3 * precio)],
+        });
+        var igual = await local.PostAsJsonAsync("api/bandeja/ventas", venta);
+
+        Assert.True(primera.IsSuccessStatusCode, await primera.Content.ReadAsStringAsync());
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, distinta.StatusCode);
+        var porRevisar = (await distinta.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje;
+        Assert.Contains("hay que revisarla", porRevisar);
+        Assert.Contains($"{caja.Serie}-{venta.Folio:000000}", porRevisar);
+        Assert.Contains($"{caja.Serie}-{venta.Folio + 1:000000}", porRevisar);
+        Assert.True(igual.IsSuccessStatusCode);
+        await using var db = servicio.Base();
+        var guardada = await db.Ventas.AsNoTracking().Include(x => x.Lineas).SingleAsync(x => x.Id == venta.Id);
+        Assert.Equal(1000, Assert.Single(guardada.Lineas).Cantidad.Milesimas);
     }
 }

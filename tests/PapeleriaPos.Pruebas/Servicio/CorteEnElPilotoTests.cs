@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.Data.Sqlite;
 using PapeleriaPos.Eleventa;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo;
@@ -24,9 +23,7 @@ public sealed class CorteEnElPilotoTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
+        ArchivosDePrueba.BorrarBase(_baseLocal);
     }
 
     /// <summary>La caja manda a un eleventa que no contesta (nadie escucha en ese puerto): lo que va allá espera en la bandeja.</summary>
@@ -34,6 +31,8 @@ public sealed class CorteEnElPilotoTests : IDisposable
     [
         ("Eleventa:Escribir", "true"), ("Eleventa:Servidor", "127.0.0.1"), ("Eleventa:Puerto", "1"), ("Eleventa:Base", @"C:\eleventa\PDVDATA.FDB"),
         ("Eleventa:Clave", "masterkey"), ("Eleventa:Caja", "4"), ("Eleventa:Cajero", "7"), ("Eleventa:SegundosEntreEnvios", "3600"),
+        // Sin respaldo propio de eleventa (lo prueban RespaldoDeEleventaTests y RespaldoDelPilotoTests).
+        ("Eleventa:RespaldoObligatorio", "false"),
     ];
 
     /// <summary>Una caja de antes del 2026-10-14 sube el conteo billete por billete: un billete de 500.</summary>

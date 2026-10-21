@@ -3,12 +3,19 @@
    notas, órdenes, el sugerido, etiquetas, el conteo completo y, de lo que ya había, la hoja de códigos y los proveedores.
    Solo salen las de quien entró («Puede» o «Con autorización»), con lo pendiente de cada una cuando se lee rápido, su
    límite («tú: hasta $200») o quién la autoriza. Cada tarjeta abre la pantalla de siempre de esa tarea, aquí mismo, con
-   «← Inventario» (o Esc) para volver: por dentro funcionan como antes. *@
+   «← Inventario» (o Esc) para volver: por dentro funcionan como antes. En el piloto con eleventa, las que mueven
+   existencias no se ofrecen (el inventario se lleva allá) y una nota lo dice. Los reportes de eleventa (2026-10-17: bajos
+   en inventario, movimientos y lo que vale) son tarjetas de consulta: salen con su permiso en «Puede», con el acomodo
+   nuevo, y también en el piloto. *@
 @implements IPagina
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
-@if (_tarea is { } abierta)
+@if (_pedidaEsperando)
+{
+    @* Una tarea que mueve existencias, pedida desde fuera (el chip del conteo): se abre cuando se sabe si es el piloto. *@
+}
+else if (_tarea is { } abierta)
 {
     var tarea = PaginasDeAtras.De(abierta);
     <div class="vn-tarea-pag">
@@ -18,8 +25,9 @@
             <h2>@tarea.Nombre</h2>
             <p>@tarea.Descripcion</p>
         </div>
-        @* @key: de una tarea a otra (Mermas y Ajustes son la misma pantalla) empieza como nueva. *@
-        <div class="vn-tarea-cuerpo vn-adentro" @key="abierta">
+        @* @key: de una tarea a otra (Mermas y Ajustes son la misma pantalla) empieza como nueva. Las de antes van con sus letras
+           y botones (vn-adentro); los reportes, con el acomodo de las páginas (vn-reporte). *@
+        <div class="vn-tarea-cuerpo @(tarea.Consulta ? "vn-reporte" : "vn-adentro")" @key="abierta">
             @switch (abierta)
             {
                 case TareaInventario.Recibir:
@@ -55,6 +63,15 @@
                 case TareaInventario.ConteoCompleto:
                     <ConteoCompleto Caja="Caja" Sesion="Sesion" />
                     break;
+                case TareaInventario.Bajos:
+                    <BajosInventario Caja="Caja" Sesion="Sesion" />
+                    break;
+                case TareaInventario.Movimientos:
+                    <MovimientosInventario Caja="Caja" Sesion="Sesion" />
+                    break;
+                case TareaInventario.Valor:
+                    <ValorInventario Caja="Caja" Sesion="Sesion" />
+                    break;
                 default:
                     <Proveedores Caja="Caja" Sesion="Sesion" />
                     break;
@@ -67,8 +84,13 @@ else
     <div class="vn-hub">
         <h2>Inventario</h2>
         <p>Solo las tareas que tienes. Las demás no aparecen.</p>
+        @if (_piloto is { } piloto)
+        {
+            <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@piloto</span></div></div>
+        }
         <div class="vn-tareas" data-rejilla>
-            @foreach (var t in PaginasDeAtras.TareasDe(Acceso))
+            @* Las tarjetas, cuando se sabe si es el piloto (un instante): así no se ofrece lo que en el piloto no va. *@
+            @foreach (var t in _pilotoSabido ? Ofrecidas : [])
             {
                 <button id="tarea-@t.Id" class="vn-tarea" @onclick="AlTocar(t.Id)">
                     <Ico Nombre="@t.Icono" />
@@ -123,16 +145,59 @@ else
     private PendientesInventarioDto? _pendientes;
     private ConteoCiclicoDto? _conteo;
 
+    /// <summary>En el piloto con eleventa: por qué no están las que mueven existencias. Vacío fuera del piloto.</summary>
+    private string? _piloto;
+
+    /// <summary>Ya se sabe si es el piloto (sin tareas que muevan existencias, desde el principio).</summary>
+    private bool _pilotoSabido;
+
+    /// <summary>La tarea pedida desde fuera mueve existencias: se abre (o no, en el piloto) cuando se sepa.</summary>
+    private bool _pedidaEsperando;
+
+    /// <summary>Las de quien entró; en el piloto, sin las que mueven existencias.</summary>
+    private IEnumerable<PaginasDeAtras.Tarea> Ofrecidas =>
+        PaginasDeAtras.TareasDe(Acceso).Where(t => _piloto is null || !PaginasDeAtras.MuevenExistencias.Contains(t.Id));
+
     protected override async Task OnInitializedAsync()
     {
-        _tarea = TareaInicial is { } inicial && PaginasDeAtras.TareasDe(Acceso).Any(t => t.Id == inicial) ? inicial : null;
         _conteo = Conteo;
+        var pedida = TareaInicial is { } t && PaginasDeAtras.TareasDe(Acceso).Any(x => x.Id == t) ? t : (TareaInventario?)null;
+        // Lo que no mueve existencias («Ir a Etiquetas») se abre ya; lo que sí, cuando se sepa si es el piloto.
+        _pedidaEsperando = pedida is { } p && PaginasDeAtras.MuevenExistencias.Contains(p);
+        _tarea = _pedidaEsperando ? null : pedida;
+        await PilotoAsync();
+        _pilotoSabido = true;
+        if (_pedidaEsperando)
+            (_tarea, _pedidaEsperando) = (Ofrecidas.Any(x => x.Id == pedida) ? pedida : null, false);
+        // Las tarjetas (o la tarea pedida) ya; lo pendiente de cada una, cuando llegue.
+        StateHasChanged();
         await PendientesAsync();
     }
 
+    /// <summary>Si es el piloto con eleventa, solo para quien tiene alguna tarea que mueve existencias.</summary>
+    private async Task PilotoAsync()
+    {
+        if (!PaginasDeAtras.TareasDe(Acceso).Any(t => PaginasDeAtras.MuevenExistencias.Contains(t.Id)))
+            return;
+        try
+        {
+            _piloto = (await Cliente.TrastiendaEnElPilotoAsync()).Inventario;
+        }
+        catch (ErrorCaja)
+        {
+            // Sin saberlo se ofrecen como siempre: el servicio decide.
+        }
+    }
+
+    /// <summary>Al abrir la página, el cursor va a la primera tarjeta (una vez que se sabe qué se abre).</summary>
+    private bool _enfocarAlAbrir = true;
+
     protected override async Task OnAfterRenderAsync(bool primera)
     {
-        if (primera && _tarea is null)
+        if (!_enfocarAlAbrir || !_pilotoSabido)
+            return;
+        _enfocarAlAbrir = false;
+        if (_tarea is null)
             await EnfocarAsync();
     }
 
@@ -156,10 +221,10 @@ else
 
     private readonly Dictionary<TareaInventario, Func<Task>> _alTocar = [];
 
-    /// <summary>Abre una tarea (si quien entró la tiene); desde fuera, el chip del conteo o «Ir a Etiquetas».</summary>
+    /// <summary>Abre una tarea (si quien entró la tiene y se ofrece); desde fuera, el chip del conteo o «Ir a Etiquetas».</summary>
     public Task AbrirAsync(TareaInventario tarea)
     {
-        if (PaginasDeAtras.TareasDe(Acceso).Any(t => t.Id == tarea))
+        if (Ofrecidas.Any(t => t.Id == tarea))
         {
             _tarea = tarea;
             StateHasChanged();
@@ -176,13 +241,14 @@ else
     }
 
     /// <summary>
-    /// Lo pendiente: las compras, las órdenes y los conteos completos en una consulta de solo cuentas; el conteo del día, el
-    /// que ya tiene la venta (o se pide, como al abrirlo). El sugerido no lleva cuenta: calcularlo lee un año de ventas.
+    /// Lo pendiente: las compras, las órdenes, los conteos completos y lo que está en su mínimo o debajo en una consulta de
+    /// solo cuentas; el conteo del día, el que ya tiene la venta (o se pide, como al abrirlo). El sugerido no lleva cuenta:
+    /// calcularlo lee un año de ventas.
     /// </summary>
     private async Task PendientesAsync()
     {
         var tareas = PaginasDeAtras.TareasDe(Acceso).Select(t => t.Id).ToHashSet();
-        if (tareas.Overlaps([TareaInventario.Recibir, TareaInventario.Compras, TareaInventario.Ordenes, TareaInventario.ConteoCompleto]))
+        if (tareas.Overlaps([TareaInventario.Recibir, TareaInventario.Compras, TareaInventario.Ordenes, TareaInventario.ConteoCompleto, TareaInventario.Bajos]))
         {
             try
             {
@@ -243,6 +309,9 @@ else
                 break;
             case TareaInventario.ConteoCompleto when p is { ConteosCompletosAbiertos: > 0 }:
                 yield return (p.ConteosCompletosAbiertos == 1 ? "1 departamento abierto" : $"{p.ConteosCompletosAbiertos} departamentos abiertos", "azul");
+                break;
+            case TareaInventario.Bajos when p is { BajosEnInventario: > 0 }:
+                yield return (p.BajosEnInventario == 1 ? "1 en su mínimo o debajo" : $"{Formato.Numero(p.BajosEnInventario)} en su mínimo o debajo", "ambar");
                 break;
         }
     }

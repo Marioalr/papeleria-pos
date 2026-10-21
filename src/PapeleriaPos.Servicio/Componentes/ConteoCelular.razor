@@ -1,5 +1,6 @@
 @* El conteo completo desde el celular (fase 2, entrega 3, parte 3): cada quien entra con su usuario y PIN, y el
-   celular lo recuerda un turno para no pedirlo cada vez que la página se recarga. *@
+   celular lo recuerda un turno para no pedirlo cada vez que la página se recarga. Quien tiene «Productos, precios y
+   etiquetas» también toma aquí las fotos de los productos («Fotos», entrega 13, parte 2), sin esperar a la app Android. *@
 @using PapeleriaPos.Interfaz
 @using PapeleriaPos.Nucleo.Contratos
 @inject ClienteCaja Cliente
@@ -29,11 +30,25 @@
     else
     {
         <div class="barra-celular">
-            <span>Conteo · @_sesion.Nombre</span>
+            <span>@(EnFotos ? "Fotos" : "Conteo") · @_sesion.Nombre</span>
             <button class="boton chico" @onclick="SalirAsync">Salir</button>
         </div>
+        @if (PuedeFotos)
+        {
+            <div class="pestanas-celular" role="tablist">
+                <button role="tab" class="@(EnFotos ? null : "on")" aria-selected="@(EnFotos ? "false" : "true")" @onclick="() => CambiarAsync(false)">Contar</button>
+                <button role="tab" class="@(EnFotos ? "on" : null)" aria-selected="@(EnFotos ? "true" : "false")" @onclick="() => CambiarAsync(true)">Fotos</button>
+            </div>
+        }
         <div class="cuerpo-celular">
-            <ConteoCompleto Caja="_caja" Sesion="_sesion" EnCelular="true" ConteoInicial="_conteoInicial" AlCambiarConteo="RecordarConteoAsync" />
+            @if (EnFotos)
+            {
+                <FotosCelular Caja="_caja" Sesion="_sesion" />
+            }
+            else
+            {
+                <ConteoCompleto Caja="_caja" Sesion="_sesion" EnCelular="true" ConteoInicial="_conteoInicial" AlCambiarConteo="RecordarConteoAsync" />
+            }
         </div>
     }
 </div>
@@ -41,6 +56,15 @@
 @code {
     private const string ClaveSesion = "papeleria-pos.conteo.sesion";
     private const string ClaveConteo = "papeleria-pos.conteo.actual";
+    private const string ClavePestana = "papeleria-pos.conteo.pestana";
+
+    /// <summary>En «Fotos» (entrega 13, parte 2) en lugar del conteo; el celular lo recuerda al recargar la página.</summary>
+    private bool _fotos;
+
+    /// <summary>Las fotos las toma quien tiene «Productos, precios y etiquetas» (el servicio lo vuelve a revisar al guardar).</summary>
+    private bool PuedeFotos => _sesion?.Puede(PapeleriaPos.Nucleo.Control.AccionControlada.EditarCatalogo) == true;
+
+    private bool EnFotos => _fotos && PuedeFotos;
 
     private CajaDto? _caja;
     private SesionDto? _sesion;
@@ -78,6 +102,7 @@
         _sesion = Sesiones.Recuperar(_llave);
         if (_sesion is not null && Guid.TryParse(await Js.LeerAsync(ClaveConteo), out var conteo))
             _conteoInicial = conteo;
+        _fotos = _sesion is not null && await Js.LeerAsync(ClavePestana) == "fotos";
         _listo = true;
         StateHasChanged();
     }
@@ -93,11 +118,18 @@
 
     private async Task RecordarConteoAsync(Guid? conteoId) => await Js.GuardarAsync(ClaveConteo, conteoId?.ToString());
 
+    private async Task CambiarAsync(bool fotos)
+    {
+        _fotos = fotos;
+        await Js.GuardarAsync(ClavePestana, fotos ? "fotos" : null);
+    }
+
     private async Task SalirAsync()
     {
         Sesiones.Olvidar(_llave);
-        (_sesion, _llave, _conteoInicial) = (null, null, null);
+        (_sesion, _llave, _conteoInicial, _fotos) = (null, null, null, false);
         await Js.GuardarAsync(ClaveSesion, null);
         await Js.GuardarAsync(ClaveConteo, null);
+        await Js.GuardarAsync(ClavePestana, null);
     }
 }

@@ -118,7 +118,7 @@ según los permisos de quien entró.
 | `12*código` | Agrega doce de una vez |
 | Un número y Alt+1 a Alt+6 | Agrega esa cantidad del rápido: `20` y Alt+1 son veinte copias |
 | Texto (`cuaderno estrella`) | Los resultados salen debajo del cuadro, mientras se escribe: nombre, marca, código, precio y existencia. ↑ ↓ y Enter agregan. F10 se queda y solo pone el cursor ahí |
-| Un folio (`A-000118`) o su QR | Abre ese ticket en el panel para devolver o cancelar |
+| Un folio (`A-000118`, o el de eleventa en el piloto) | Abre ese ticket en el panel para devolver o cancelar. El ticket no lleva QR por ahora, como el de eleventa (2026-10-16) |
 | `/` | La lista de todas las acciones que tiene ese usuario, con su tecla; lo que pide autorización lleva candado y el nombre de quien autoriza |
 | Un código que no existe | Lo dice bajo el cuadro, en rojo, y ofrece lo que sus permisos dejan: darlo de alta ahí o venderlo como artículo común |
 | `+` / `−` con el cuadro vacío | Cambia la cantidad del artículo seleccionado; ↑ ↓ eligen otro; Supr lo quita |
@@ -247,6 +247,34 @@ mismo acomodo que en la tienda**: el cajero no recuerda el nombre, recuerda dón
 
 En el prototipo, «Qué probar › Lo que se señala: exhibidos y temporada». Las fotos son dibujos.
 
+**La parte 1 ya está (2026-10-17):** los puntos 1 y 2, sin las fotos todavía (en su lugar, las iniciales del producto).
+Ctrl+M con la temporada que corre y el mostrador, cada lugar con sus productos en su acomodo; tocar agrega (con un número
+antes, esa cantidad) y en el verificador solo enseña el precio, con «Agregarlo al ticket»; el chip de cada temporada
+mientras corre; «Acomodar» en el mismo Ctrl+M, y los exhibidores, las temporadas con sus fechas y sus lugares en
+Configuración › Mostrador y temporadas. Las fotos, la hoja de la temporada, las tarjetas de precio, empezar y terminar la
+temporada y lo más preguntado van en las partes que siguen ([avance](plan.md#primero-la-versión-unicaja-entrega-0)).
+
+**La parte 2 ya está (2026-10-17):** el punto 7, las fotos. Se toman con el celular en la página del conteo («Fotos»: se
+escanea o se busca el producto, se toma la foto, se ve y se guarda) o se suben desde la PC en la ficha del producto (F3: se
+elige o se pega con Ctrl+V). El servicio la endereza y la guarda chica (un JPEG de 240 por lado, unos 15 KB o menos), una por
+producto; la pone o la quita quien tiene «Productos, precios y etiquetas». La copia de cada caja lleva solo de qué producto es
+cada foto y su huella; la caja baja aparte las que cambian, las guarda en su base y las enseña de ahí, sin la red: en Ctrl+M
+en lugar de las iniciales, chica en la lista de la búsqueda y grande en el verificador. La hoja de la temporada, las tarjetas
+de precio, empezar y terminar la temporada y lo más preguntado van en la parte 3
+([avance](plan.md#primero-la-versión-unicaja-entrega-0)).
+
+**La parte 3 ya está (2026-10-17):** los puntos 3 a 6, en Productos (F3). «Temporadas» lleva cada temporada por sus pasos
+del año. **Empezarla:** la lista del año pasado (lo acomodado en su mesa, en su orden) con el precio de entonces (el de su
+historial al empezar esa temporada o, el primer año, al que más se cobró), el de hoy y, para quien ve la utilidad, el costo
+de hoy, el margen y un sugerido que nunca baja un precio; se escribe el precio de cada uno (Enter pasa al siguiente) y se
+confirman todos juntos (Ctrl+Enter), sin dejar el mayoreo igual o más caro que el menudeo; también dice qué productos no
+tienen foto (tocar uno abre su ficha). **La hoja:** la foto (o las iniciales), el nombre, el precio y el código de cada uno,
+en el orden de la mesa, con su vista previa, para la impresora de inyección o la láser. **Las tarjetas** de la mesa y
+**terminarla:** el resumen de cada producto (lo que había, lo que se vendió y lo que quedó), y lo que sobró se cuenta (en el
+piloto con eleventa no: el inventario se lleva allá, y lo dice). «Tarjetas de precio» dice cuáles volver a imprimir porque
+cambió su precio, lo que más se pregunta en el verificador sin tarjeta (el verificador cuenta cada consulta) y las de cada
+exhibidor; salen 18 por hoja carta, para recortar ([avance](plan.md#primero-la-versión-unicaja-entrega-0)).
+
 ### Tickets en espera
 
 Hoy casi no se usan y rara vez son más de 3, así que dejan de ocupar una fila de pestañas. Pero **no hay límite**: con
@@ -327,7 +355,7 @@ un solo panel, siempre listo:**
   lo que falta.
 - Bajo el cobro, la [bandeja de impresiones](#las-impresiones-por-cobrar-la-bandeja).
 - Al cobrar, el panel muestra el cambio en grande hasta que se escanea al siguiente cliente; si la impresora no
-  respondió, ahí mismo están «Reintentar» y «Verlo en pantalla».
+  respondió, ahí mismo están «Reintentar», «No imprimirlo» y «Verlo en pantalla».
 
 **F12:**
 
@@ -496,10 +524,16 @@ No está en el prototipo:
   - el efectivo esperado y el contado en cada turno, con sus diferencias;
   - las formas de pago;
   - las salidas por categoría, las devoluciones y las cancelaciones;
-  - lo fiado, los abonos y las impresiones cobradas.
+  - lo fiado, los abonos y las impresiones cobradas;
+  - las ventas por departamento, como en el corte de eleventa (2026-10-17);
+  - para quien tiene «ver costos, utilidad y margen», la utilidad bruta y la de cada departamento con su margen, como la
+    ganancia del corte de eleventa (2026-10-17).
 
   «Cerrar el día» se habilita cuando no queda ningún turno abierto ni ventas por subir de otra caja, y manda el resumen
-  por Telegram.
+  por Telegram. Como el de eleventa (2026-10-17): abre en el de hoy y ← → (o la fecha) llevan al de otro día, que solo
+  se ve (también el de hoy a la vista al pasar la medianoche: ya no se cierra); «Imprimir» lo manda a la impresora de
+  tickets tal como se ve, también el de otro día. Desde la hora de cierre de Configuración › Tienda, si el día no se ha
+  cerrado, quien lo cierra lo ve en la venta, con los demás avisos del panel, hasta que lo cierra.
 - El conteo por denominación (la tabla `CorteConteo`) deja de usarse.
 
 ## Reportes
@@ -532,8 +566,8 @@ Opciones propuestas (las que ya existen en el POS y las comunes en una caja):
 |---|---|
 | Tienda | Nombre, dirección, teléfono, horario (para avisar si no abre o no se cerró el día), logotipo |
 | Venta y cobro | Cobrar el efectivo al peso, formas de pago, comisión de la tarjeta, pedir la referencia de la terminal, si avisa al vender sin existencia (la venta nunca se detiene), sinónimos de la búsqueda, existencia en el ticket cuando queden pocas, tickets en espera, rápidos, días para devolver |
-| Efectivo y corte | Límite de efectivo en caja, fondo sugerido, umbral de diferencia que avisa, para qué son las salidas, comprobante de salidas, hora para recordar cerrar el día |
-| Ticket | Encabezado y pie, QR del folio, ahorro por mayoreo, qué hacer al cobrar (imprimir, preguntar, no imprimir), ticket de prueba, vista previa |
+| Efectivo y corte | Límite de efectivo en caja, fondo sugerido, umbral de diferencia que avisa, para qué son las salidas, comprobante de salidas (cerrar el día se recuerda a la hora de cierre de Tienda, 2026-10-17) |
+| Ticket | Encabezado y pie, ahorro por mayoreo, qué hacer al cobrar (imprimir, preguntar, no imprimir), ticket de prueba, vista previa |
 | Impresoras e impresiones | Impresora de tickets, precio por hoja (blanco y negro y color), cómo se avisa lo impreso en esa PC (bandeja con miniaturas, tarjeta con tiempo o solo el contador; por caja), recordarlo al cobrar, impresoras de inyección |
 | Inventario | Margen mínimo (con el permiso de utilidad), productos del conteo del día, aviso de mínimo, días que cubre el sugerido, recibir a ciegas |
 | Clientes y crédito | Plazo y límite con que empieza cada cliente, aviso de lo vencido, comprobante de abonos |
@@ -561,7 +595,7 @@ La misma pantalla en todas; cambia solo lo que dice el estado de arriba:
 | Estado normal | «Servicio aquí · Caja 2 conectada» | «Conectada a Caja 1 · 9 ms» |
 | Sin internet | «Sin internet»: Telegram y el respaldo de fuera esperan; la venta sigue igual | Igual |
 | Sin la principal | (no aplica: el servicio está en la misma PC) | Franja ámbar: sigue vendiendo con su serie (B-), cuántas ventas esperan para subir y «Volver a buscarla» |
-| Impresora sin respuesta | El cobro termina igual; «Reintentar» y «Verlo en pantalla» | Igual |
+| Impresora sin respuesta | El cobro termina igual; «Reintentar», «No imprimirlo» y «Verlo en pantalla» | Igual |
 
 ## Rendimiento
 
@@ -720,6 +754,10 @@ ven en esa misma versión. El piloto es en la caja 2: vende con la caja nueva y 
 además de la 0, pide el puente con eleventa y la 10 ([plan](plan.md#la-versión-unicaja-y-el-piloto-en-la-caja-2)). Los
 números de siempre se quedan; la tabla va en el orden nuevo.
 
+**La meta (dueño, 2026-10-15): alcanzar a eleventa.** Lo que eleventa ya hace va antes que lo que no tiene (la 13, la 4,
+la 11 y la 12). Qué hace eleventa que el POS todavía no, en qué entrega va y en qué orden:
+[paridad con eleventa](paridad-eleventa.md).
+
 | # | Entrega | Tamaño | Cuándo |
 |---|---|---|---|
 | 0 | La versión unicaja, vender en una caja: la pantalla de venta nueva sobre el mismo servicio, cobro, ticket y base. El cuadro de captura con el lector en una sola llamada y las teclas que esperan al último escaneo; `12*código` y el folio; la búsqueda por pedazos de palabra con el nombre de eleventa como sinónimo, lo elegido antes y lo más vendido; la lista con + − y Supr; los rápidos (Copia B/N y CURP); el panel del total con F12, el exacto en gris y el cambio, sin billetes; los tickets en espera con F6 y F5; guardar lo que se busca; sin sonidos. Lo demás abre lo de hoy. La pantalla de hoy se quitó el 2026-10-14 (decisión del dueño) | Mediano a grande | Primero, para desarrollo |
@@ -728,11 +766,11 @@ números de siempre se quedan; la tabla va en el orden nuevo.
 | 2 | Base visual: colores, letras, botones, etiquetas, panel y barra de teclas; estado de arriba. Permisos de la sesión en una consulta y pantalla según lo que tiene cada quien | Mediano | Con la 3 |
 | 1 | Permisos por usuario: el modelo, la migración desde los roles, la primera cuenta, «Conectar a servidor», los de defecto y la pantalla de usuarios y permisos | Mediano | Después de la 3 |
 | 6 | Entrada con fichas y PIN; Ctrl+U; el corte del turno con solo el total y sin volver a pedir el PIN; el corte del día | Mediano | Con la 1 |
-| 5 | Rendimiento para la caja 2: escanear contra la copia local, con su versión en el cobro; la base de la caja fuera del hilo de la pantalla; solo lo que cambió, avisado por SSE; plazos y estados de la red; imprimir aparte; menos repintado; la prueba de la ráfaga. El lector en una sola llamada ya va en la 0, y no perder escaneos en ráfaga ya está en `main` (#56) | Grande | Para dejar eleventa: la caja 2 con el servicio nuevo |
+| 5 | Rendimiento para la caja 2: escanear contra la copia local, con su versión en el cobro; la base de la caja fuera del hilo de la pantalla; solo lo que cambió, avisado por SSE; plazos y estados de la red; imprimir aparte; menos repintado; la prueba de la ráfaga. El lector en una sola llamada ya va en la 0, y no perder escaneos en ráfaga ya está en `main` (#56). La parte 1 ya está (2026-10-15): escanear contra la copia, el cobro con su versión, un solo escritor para la base de la caja y medir el escaneo ([avance](plan.md#primero-la-versión-unicaja-entrega-0)) | Grande | Para dejar eleventa: la caja 2 con el servicio nuevo |
 | 9 | Reportes, los que el dueño usa hoy en eleventa | Grande | Para dejar eleventa |
 | 7 | Configuración nueva: buscador, grupos, alcance y guardado al momento | Mediano | Después |
 | 8 | Las pantallas de atrás con el mismo patrón de lista y detalle: Productos (abre con la lista, no vacío), Inventario por tareas, Clientes | Grande | Después |
-| 13 | Lo que se señala: el mostrador y la temporada con fotos en su acomodo (Ctrl+M), las fotos desde el celular, la hoja de la temporada y las tarjetas de precio, empezar y terminar la temporada, lo más preguntado | Mediano | Después |
+| 13 | Lo que se señala: el mostrador y la temporada con fotos en su acomodo (Ctrl+M), las fotos desde el celular, la hoja de la temporada y las tarjetas de precio, empezar y terminar la temporada, lo más preguntado. La parte 1 ya está (2026-10-17): Ctrl+M con los exhibidores y las temporadas en su acomodo; el verificador, el chip de la temporada, «Acomodar» y Configuración › Mostrador y temporadas. La parte 2 también (2026-10-17): las fotos, desde el celular (la página del conteo) o la PC (F3), en Ctrl+M, la búsqueda y el verificador, de la base de cada caja. Y la parte 3 (2026-10-17): empezar la temporada con los precios del año pasado, su hoja, las tarjetas de precio (y cuáles volver a imprimir), terminarla con su resumen y lo más preguntado en el verificador, en Productos ([avance](plan.md#primero-la-versión-unicaja-entrega-0)) | Mediano | Después |
 | 4 | Impresiones: la bandeja con miniaturas y lotes por PC, el panel F2 de todas las PC, las miniaturas en el ticket y el recordatorio al cobrar | Mediano | Lo que eleventa no tiene, con el módulo de impresión |
 | 11 | WhatsApp: la lista «Escribieron hace poco» y la liga con las impresiones, con la etapa 2 de WhatsApp | Mediano | Lo que eleventa no tiene |
 | 12 | Ticket desde el celular, con la app Android (fase 8): armarlo, elegir la caja, el aviso a esa caja, la ficha que llega con su efecto y el QR sin red | Mediano | Lo que eleventa no tiene |
@@ -754,14 +792,18 @@ prueba y el piloto se suma a la entrega 3.
 - [x] Las impresiones: ¿la bandeja con miniaturas, siempre a la vista bajo el cobro, o la tarjeta que se va a los 20 s? La
   bandeja con miniaturas, que se puede recorrer, con un botón para agrandarla (como maximizar una ventana, pero sin
   cubrir toda la pantalla), parecido a Control Print (2026-10-15).
-- [ ] ¿Cada cajero puede hacer el corte de su propio turno, o solo quien tenga el permiso? Propuesta: solo con el
-  permiso, como hoy el encargado.
-- [ ] ¿El corte del día lo cierra solo la primera cuenta? ¿A qué hora se recuerda cerrarlo?
+- [x] ¿Cada cajero puede hacer el corte de su propio turno, o solo quien tenga el permiso? Solo con el permiso, como ya
+  funciona (decidido el 2026-10-17 mientras el dueño no estaba; por revisar).
+- [x] ¿El corte del día lo cierra solo la primera cuenta? ¿A qué hora se recuerda cerrarlo? Quien tenga «ver y cerrar el
+  corte del día» (por omisión, la primera cuenta), y se recuerda a la hora de cierre de Configuración › Tienda (decidido
+  el 2026-10-17; por revisar).
 - [x] ¿Qué billetes salen como botones en el cobro? Ninguno: se escribe lo que dio (2026-10-10).
 - [ ] WhatsApp: ¿se prueba la lista con Kapso (gratis si su plan admite coexistencia; si no, 25 USD al mes)? ¿Se pone el
   aviso de privacidad simplificado en el mensaje de bienvenida?
 - [ ] Ticket desde el celular: ¿quién lo arma (alguien que atiende en el piso, el encargado)? ¿El lector de las cajas
   lee QR, para cuando no hay red?
 - [x] ¿Pitido al escanear y al fallar? Sin sonidos por ahora (2026-10-10).
-- [ ] ¿Alguna caja tiene o tendrá pantalla táctil?
-- [ ] ¿Pedir el PIN otra vez tras unos minutos sin usar la caja? Por ejemplo, 10.
+- [x] ¿Alguna caja tiene o tendrá pantalla táctil? No por ahora: todo con teclado y ratón, con botones de buen tamaño
+  (decidido el 2026-10-17; por revisar).
+- [x] ¿Pedir el PIN otra vez tras unos minutos sin usar la caja? No por ahora, como eleventa: estorba para cobrar
+  rápido; Ctrl+U cambia de usuario (decidido el 2026-10-17; por revisar).

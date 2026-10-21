@@ -20,9 +20,14 @@ public sealed record PrecioDto(Guid Id, Guid? PresentacionId, Guid? SucursalId, 
 
 /// <summary>Un producto listo para agregarse a la venta: con sus presentaciones y precios.</summary>
 /// <param name="Presentacion">La que corresponde al código escaneado (la base si se buscó por nombre).</param>
+/// <param name="Version">
+/// La versión del catálogo de la que salieron sus precios (entrega 5): la de la copia de la caja, o la del servicio cuando se
+/// lo pidió. El cobro la lleva, para que el servicio sepa si sus precios cambiaron después. Vacía en un servicio de antes.
+/// </param>
 public sealed record ProductoVentaDto(
     Guid VarianteId, string Descripcion, string? Codigo, Impuesto Impuesto, UnidadBase Unidad, bool LlevaInventario,
-    decimal? Existencia, PresentacionDto Presentacion, IReadOnlyList<PresentacionDto> Presentaciones, IReadOnlyList<PrecioDto> Precios)
+    decimal? Existencia, PresentacionDto Presentacion, IReadOnlyList<PresentacionDto> Presentaciones, IReadOnlyList<PrecioDto> Precios,
+    long? Version = null)
 {
     public ProductoEnVenta ParaVenta() => new(VarianteId, Descripcion, Impuesto, Unidad, LlevaInventario);
 
@@ -117,9 +122,14 @@ public sealed record SolicitudMovimiento(TipoMovimientoCaja Tipo, long MontoCent
 /// <summary>Una línea tal como la manda la caja. Sin variante es artículo común, con descripción y precio a mano.</summary>
 /// <param name="PrecioCentavos">En un producto del catálogo, el precio cambiado en la caja (con <paramref name="AutorizacionId"/>).</param>
 /// <param name="DescuentoCentesimas">Descuento en porcentaje (centésimas: 1000 = 10 %); o <paramref name="DescuentoCentavos"/> en monto. Con motivo.</param>
+/// <param name="VersionCatalogo">
+/// Al cobrar (entrega 5): la versión del catálogo de la que salieron los precios que el cajero vio en esta línea
+/// (<see cref="ProductoVentaDto.Version"/>), si no es la del ticket (<see cref="SolicitudCobro.VersionCatalogo"/>): un producto
+/// que llegó de la caja principal, o una línea de antes de que bajara la copia de ahora.
+/// </param>
 public sealed record LineaSolicitada(
     Guid? VarianteId, Guid? PresentacionId, long CantidadMilesimas, string? Descripcion = null, long? PrecioCentavos = null, Guid? AutorizacionId = null,
-    int? DescuentoCentesimas = null, long? DescuentoCentavos = null, string? MotivoDescuento = null);
+    int? DescuentoCentesimas = null, long? DescuentoCentavos = null, string? MotivoDescuento = null, long? VersionCatalogo = null);
 
 /// <summary>El servicio vuelve a armar la venta con los precios del catálogo: nunca confía en los precios de la caja.</summary>
 /// <param name="VentaId">Lo pone la caja: si la respuesta no llegó y se manda otra vez (o sube con la bandeja), no se cobra dos veces.</param>
@@ -131,10 +141,28 @@ public sealed record LineaSolicitada(
 /// La caja calculó el ticket con el mayoreo siempre del cliente. Vacío en las cajas de antes, que no lo conocen: el servicio
 /// calcula igual que ellas.
 /// </param>
+/// <param name="VersionCatalogo">
+/// La versión de la copia del catálogo con que la caja puso los precios del ticket (entrega 5; cada línea puede decir otra,
+/// <see cref="LineaSolicitada.VersionCatalogo"/>). Si el precio o el mayoreo de algo del ticket cambió después, el servicio no
+/// cobra: contesta con los de ahora (<see cref="PreciosCambiadosDto"/>), para que el ticket diga lo que vio el cajero.
+/// Vacía en las cajas de antes: se cobra como siempre.
+/// </param>
 public sealed record SolicitudCobro(
     Guid CajaId, Guid TurnoId, Guid CajeroId, IReadOnlyList<LineaSolicitada> Lineas, IReadOnlyList<CobroSolicitado> Cobros, Guid? VentaId = null,
     IReadOnlyList<Guid>? Impresiones = null, [property: JsonPropertyName("clienteEspecialId")] Guid? ClienteId = null,
-    Guid? AutorizacionDescuentoId = null, Guid? AutorizacionBajoCostoId = null, bool? MayoreoDeCliente = null, Guid? AutorizacionCreditoId = null);
+    Guid? AutorizacionDescuentoId = null, Guid? AutorizacionBajoCostoId = null, bool? MayoreoDeCliente = null, Guid? AutorizacionCreditoId = null,
+    long? VersionCatalogo = null);
+
+/// <summary>
+/// El cobro no se hizo (entrega 5): el precio o el mayoreo de algo del ticket cambió después de la versión con que la caja
+/// puso sus precios. Llega con un 409 y se lee también como <see cref="ErrorDto"/>.
+/// </summary>
+/// <param name="Productos">Los que cambiaron, como están ahora (con su versión).</param>
+/// <param name="VersionCatalogo">Hasta esta versión, lo demás del ticket no cambió.</param>
+public sealed record PreciosCambiadosDto(string Mensaje, IReadOnlyList<ProductoVentaDto> Productos, long VersionCatalogo, string Codigo = PreciosCambiadosDto.CodigoDelError)
+{
+    public const string CodigoDelError = "precios-cambiados";
+}
 
 /// <param name="ImporteCentavos">Ya con el descuento.</param>
 /// <param name="Descuento">Cómo se lee el descuento ("10 %" o vacío si fue un monto).</param>
@@ -152,14 +180,44 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 /// <param name="TotalCentavos">Exacto: la suma de las líneas, con el IVA incluido.</param>
 /// <param name="RedondeoCentavos">El del efectivo al peso (fase 3): lo que pagó el cliente es el total más esto.</param>
 /// <param name="Cliente">El cliente registrado con sus privilegios: "Escuela Benito Juárez (descuento 10 %)".</param>
-/// <param name="Folio">El de esta caja (A-000123): va en el QR, que abre la devolución en la caja nueva.</param>
+/// <param name="Folio">El de esta caja (A-000123): con él se abre la devolución en la caja nueva.</param>
 /// <param name="FolioEleventa">En el piloto, el que le dio eleventa si llegó a tiempo: es el que se imprime, para devolver en cualquier caja.</param>
+/// <param name="YaCobrada">
+/// El cobro llegó con el Id de una venta que ya estaba (se había perdido la respuesta, entrega 5, parte 2): es esa, como se
+/// cobró entonces, y la pantalla lo dice.
+/// </param>
+/// <param name="AlCobrar">
+/// Lo que dice Configuración › Ticket › «Al cobrar» (con conexión, el servicio; sin ella, la copia de la caja): viene con el
+/// ticket del cobro, así que decidir si se imprime no le suma nada al cobro. Solo cuenta al cobrar
+/// (<see cref="LoQueSeHaceAlCobrar"/>): una reimpresión sale siempre. Con un servicio de antes, se imprime.
+/// </param>
+/// <param name="EnContingencia">
+/// Se cobró con la copia de la caja, sin la caja principal (sin conexión o con la red lenta): hasta que suba, no se puede
+/// reimprimir. Lo pone la caja; el servicio nunca.
+/// </param>
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
     long TotalCentavos, long IvaCentavos, IReadOnlyList<CobroTicketDto> Cobros, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie,
     LogoTicketDto? Logo = null, Guid? VentaId = null, long RedondeoCentavos = 0, string? Cliente = null, CreditoTicketDto? Credito = null,
-    int? FolioEleventa = null)
+    int? FolioEleventa = null, bool YaCobrada = false, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir, bool EnContingencia = false)
 {
+    /// <summary>
+    /// Lo fiado se imprime aunque «Al cobrar» diga otra cosa: el cliente se lleva «SU CUENTA», lo que quedó a deber y hasta
+    /// cuándo lo paga. Lo demás que se imprime (los comprobantes de devoluciones, entradas, salidas y abonos, el corte, las
+    /// reimpresiones) no depende de «Al cobrar».
+    /// </summary>
+    public bool SiempreSeImprime => Credito is not null || CreditoCentavos > 0;
+
+    /// <summary>
+    /// Lo que se hace con este ticket al cobrar: lo de <see cref="AlCobrar"/>, salvo lo que siempre se imprime. Y «No
+    /// imprimirlo» sin conexión se ofrece, como «Ofrecerlo»: si el cliente lo pide, sin la caja principal no hay reimpresión
+    /// (decidido el 2026-10-17, por revisar).
+    /// </summary>
+    public TicketAlCobrar LoQueSeHaceAlCobrar =>
+        SiempreSeImprime ? TicketAlCobrar.Imprimir
+        : AlCobrar == TicketAlCobrar.NoImprimir && EnContingencia ? TicketAlCobrar.Ofrecer
+        : AlCobrar;
+
     /// <summary>El folio que se lee en el ticket y en la pantalla.</summary>
     public string FolioImpreso => FolioEleventa?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? Folio;
 
@@ -187,7 +245,11 @@ public sealed record VentaDelDiaDto(Guid Id, string Folio, DateTime FechaLocal, 
 /// </summary>
 /// <param name="UsuarioId">Quien hace el corte: el de la sesión.</param>
 /// <param name="ContadoCentavos">El total del efectivo que contó.</param>
-public sealed record SolicitudCorteZ(Guid UsuarioId, long ContadoCentavos);
+/// <param name="Id">
+/// El del corte, desde la caja (entrega 5, parte 2): si la caja principal lo guardó pero la respuesta no llegó, el que hace la
+/// caja sin conexión es el mismo, y al subir no choca con el turno ya cerrado. Vacío (una caja de antes): uno nuevo.
+/// </param>
+public sealed record SolicitudCorteZ(Guid UsuarioId, long ContadoCentavos, Guid? Id = null);
 
 /// <param name="UmbralAvisoCentavos">
 /// En el corte Z: el umbral de la sucursal, si la diferencia pasó de él y el aviso sale por Telegram. Vacío si no.
@@ -217,8 +279,8 @@ public sealed record CorteInformativoDto(
 /// <summary>
 /// El corte del día (entrega 6, 2026-10-14), para quien tiene «ver y cerrar el corte del día»: todas las cajas y turnos de
 /// la sucursal. Los turnos del día son los que se abrieron, se cerraron o siguen abiertos ese día; lo demás (lo vendido,
-/// las formas de pago, las salidas, las devoluciones, lo fiado…) es lo de esos turnos que pasó ese día: de un turno que
-/// viene de otro día, solo lo de hoy.
+/// las formas de pago, las salidas, lo fiado…) es lo de esos turnos que pasó ese día: de un turno que viene de otro día,
+/// solo lo de hoy. Las devoluciones, las de la sucursal ese día (2026-10-17).
 /// </summary>
 /// <param name="EfectivoCentavos">Lo que se cobró en efectivo en las ventas (con su redondeo).</param>
 /// <param name="FiadoCentavos">Lo que se vendió a crédito: ya cuenta en lo vendido y no es dinero.</param>
@@ -226,25 +288,111 @@ public sealed record CorteInformativoDto(
 /// <param name="EntradasCentavos">Las entradas de efectivo (F7), que no son venta.</param>
 /// <param name="AbonosCentavos">Lo que entró por abonos de clientes (no son venta), en todas las formas.</param>
 /// <param name="ImpresionesCentavos">Lo que se cobró de impresiones en las ventas.</param>
-/// <param name="PorQueNoSeCierra">Lo que falta para cerrar el día; vacío: se puede cerrar.</param>
-/// <param name="Avisos">Lo que conviene saber y no detiene el cierre.</param>
+/// <param name="PorQueNoSeCierra">Lo que falta para cerrar el día; vacío: se puede cerrar. De un día que ya pasó, vacío: no se cierra.</param>
+/// <param name="Avisos">Lo que conviene saber y no detiene el cierre. De un día que ya pasó, vacío.</param>
 /// <param name="Piloto">El piloto con eleventa: el corte del día se hace allá, aquí solo se ve.</param>
 /// <param name="Cierre">Si ya se cerró después de su último turno.</param>
+/// <param name="Utilidad">
+/// La utilidad del día, solo para quien tiene «Ver costos, utilidad y margen» (2026-10-17): a los demás no se les manda.
+/// </param>
+/// <param name="DeOtroDia">
+/// Un día que ya pasó (2026-10-17): se ve y se imprime, pero no se cierra; «Cerrar el día» es solo el de hoy.
+/// </param>
+/// <param name="PorDepartamento">
+/// Lo vendido por departamento, como en eleventa: para todos los que ven el corte del día (2026-10-17). Su costo y su
+/// utilidad, solo para quien ve la utilidad. Vacío desde una caja principal de antes.
+/// </param>
 public sealed record CorteDelDiaDto(
     DateOnly Fecha, IReadOnlyList<TurnoDelDiaDto> Turnos, long VendidoCentavos, int Tickets, long EfectivoCentavos, long TarjetaCentavos,
     long TransferenciaCentavos, long FiadoCentavos, int TransferenciasPorVerificar, IReadOnlyList<SalidaDelDiaDto> Salidas, long EntradasCentavos,
     int Devoluciones, long DevolucionesCentavos, int Cancelaciones, long CancelacionesCentavos, int Abonos, long AbonosCentavos,
-    long ImpresionesCentavos, IReadOnlyList<string> PorQueNoSeCierra, IReadOnlyList<string> Avisos, bool Piloto, CierreDelDiaDto? Cierre);
+    long ImpresionesCentavos, IReadOnlyList<string> PorQueNoSeCierra, IReadOnlyList<string> Avisos, bool Piloto, CierreDelDiaDto? Cierre,
+    UtilidadDelDiaDto? Utilidad = null, bool DeOtroDia = false, VentasPorDepartamentoDto? PorDepartamento = null);
 
 /// <param name="Tickets">Los de ese día (de un turno que viene de otro día, solo los de hoy), como lo vendido y las formas de pago.</param>
 /// <param name="EsperadoCentavos">El efectivo que debería haber en todo el turno: el de su corte o, si sigue abierto, el de ahora. Vacío en el piloto.</param>
-/// <param name="ContadoCentavos">Vacío mientras el turno sigue abierto.</param>
+/// <param name="ContadoCentavos">Vacío mientras el turno sigue abierto, y en el piloto (el corte se hace en eleventa).</param>
+/// <param name="CorteEnEleventa">
+/// El piloto con eleventa: el turno lo cerró el corte de eleventa, y esto dice lo que se contó allá (el cajón de las dos,
+/// no lo de esta caja sola: por eso no va en «Contado» ni en las diferencias del día). Solo para convivir con eleventa.
+/// </param>
 public sealed record TurnoDelDiaDto(
     Guid Id, Guid CajaId, string Caja, string Cajero, DateTime AbiertoLocal, DateTime? CerradoLocal, int Tickets, long VendidoCentavos,
-    long TarjetaCentavos, long TransferenciaCentavos, long? EsperadoCentavos, long? ContadoCentavos, long? DiferenciaCentavos, bool EnContingencia);
+    long TarjetaCentavos, long TransferenciaCentavos, long? EsperadoCentavos, long? ContadoCentavos, long? DiferenciaCentavos, bool EnContingencia,
+    string? CorteEnEleventa = null);
 
 /// <summary>Las salidas de efectivo del día por su motivo (hoy el motivo se escribe libre: las que dicen lo mismo van juntas).</summary>
 public sealed record SalidaDelDiaDto(string Motivo, int Veces, long MontoCentavos);
+
+/// <summary>
+/// La utilidad del día, como la «Ganancia» del corte del día de eleventa (2026-10-17), solo para quien tiene «Ver costos,
+/// utilidad y margen». Es lo vendido menos su costo: el que guardó cada venta al cobrar (el costo promedio del kardex; en las
+/// impresiones, el de cada trabajo), con lo devuelto ese día restado, como en las ventas por departamento
+/// (<see cref="VentasPorDepartamentoDto"/>, donde va la de cada uno). El artículo común no tiene costo: no entra en la
+/// utilidad, como en el resumen del día. Los servicios todavía no tienen costo (sus recetas llegan con la fase 4): cuentan
+/// completos, como hasta hoy.
+/// </summary>
+/// <param name="VentaCentavos">Lo vendido con costo: lo de los departamentos y las impresiones, sin el artículo común.</param>
+/// <param name="CostoCentavos">Su costo.</param>
+/// <param name="ServiciosSinCostoCentavos">De lo vendido, lo de servicios sin costo: cuenta completo como utilidad.</param>
+public sealed record UtilidadDelDiaDto(long VentaCentavos, long CostoCentavos, long ServiciosSinCostoCentavos)
+{
+    [JsonIgnore]
+    public long UtilidadCentavos => VentaCentavos - CostoCentavos;
+
+    /// <summary>La utilidad entre lo vendido con costo, en centésimas (3250 = 32.5 %); vacío sin venta.</summary>
+    [JsonIgnore]
+    public int? MargenCentesimas => DepartamentoDelDiaDto.Margen(VentaCentavos, CostoCentavos);
+}
+
+/// <summary>
+/// Lo vendido ese día por departamento, como las «Ventas por departamento» del corte del día de eleventa (2026-10-17): para
+/// todos los que ven el corte del día. Lo devuelto ese día se resta de su departamento, como en eleventa (una cancelación
+/// no: el ticket cancelado ya no cuenta como vendido). Las impresiones y el artículo común van aparte. Los costos (y con
+/// ellos la utilidad de cada uno, como la «Ganancia por departamento» de eleventa) solo vienen para quien tiene «Ver costos,
+/// utilidad y margen»: a los demás no se les mandan, ni vacíos.
+/// </summary>
+/// <param name="Departamentos">De lo que más se vendió a lo que menos.</param>
+/// <param name="ImpresionesCentavos">Lo cobrado de impresiones, menos lo devuelto.</param>
+/// <param name="ImpresionesCostoCentavos">Su costo; vacío para quien no ve la utilidad.</param>
+/// <param name="ArticuloComunCentavos">Lo vendido como artículo común, menos lo devuelto: no tiene costo.</param>
+public sealed record VentasPorDepartamentoDto(
+    IReadOnlyList<DepartamentoDelDiaDto> Departamentos, long ImpresionesCentavos,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? ImpresionesCostoCentavos, long ArticuloComunCentavos)
+{
+    /// <summary>Todo lo vendido ese día, menos lo devuelto: lo vendido del corte menos sus devoluciones.</summary>
+    [JsonIgnore]
+    public long TotalCentavos => Departamentos.Sum(d => d.VentaCentavos) + ImpresionesCentavos + ArticuloComunCentavos;
+
+    [JsonIgnore]
+    public long? ImpresionesUtilidadCentavos => ImpresionesCentavos - ImpresionesCostoCentavos;
+
+    [JsonIgnore]
+    public int? ImpresionesMargenCentesimas => ImpresionesCostoCentavos is { } costo ? DepartamentoDelDiaDto.Margen(ImpresionesCentavos, costo) : null;
+}
+
+/// <summary>Lo vendido de un departamento en el día (menos lo devuelto ese día).</summary>
+/// <param name="CostoCentavos">Su costo; vacío para quien no ve la utilidad.</param>
+public sealed record DepartamentoDelDiaDto(
+    string Departamento, long VentaCentavos, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? CostoCentavos = null)
+{
+    [JsonIgnore]
+    public long? UtilidadCentavos => VentaCentavos - CostoCentavos;
+
+    /// <summary>En centésimas (3250 = 32.5 %); vacío sin el costo o sin venta.</summary>
+    [JsonIgnore]
+    public int? MargenCentesimas => CostoCentavos is { } costo ? Margen(VentaCentavos, costo) : null;
+
+    internal static int? Margen(long ventaCentavos, long costoCentavos) => ventaCentavos > 0 ? Catalogo.Margen.Calcular(ventaCentavos, costoCentavos) : null;
+}
+
+/// <summary>
+/// El recordatorio de cerrar el día (2026-10-17): ya es la hora de cierre de la tienda (Configuración › Tienda) y el día de
+/// hoy no se ha cerrado. Lo ve en la venta quien tiene «Ver y cerrar el corte del día»; se va al cerrar el día.
+/// </summary>
+/// <param name="Fecha">El día por cerrar: hoy.</param>
+/// <param name="HoraCierre">La hora a la que cierra la tienda.</param>
+public sealed record RecordatorioCierreDto(DateOnly Fecha, TimeOnly HoraCierre);
 
 /// <summary>Qué pasó con el resumen del día al cerrarlo.</summary>
 public enum EnvioResumen
@@ -265,13 +413,19 @@ public enum EnvioResumen
 /// <param name="Resumen">Solo en la respuesta al cerrarlo.</param>
 public sealed record CierreDelDiaDto(DateTime CerradoLocal, string CerradoPor, EnvioResumen? Resumen = null);
 
-public sealed record SolicitudCierreDia(Guid UsuarioId);
+/// <param name="Fecha">
+/// El día que se ve en la caja al cerrarlo (2026-10-17): si ya no es hoy (pasó la medianoche con el corte abierto), no se
+/// cierra, ni el que se ve ni el nuevo. Vacía en una caja de antes: hoy.
+/// </param>
+public sealed record SolicitudCierreDia(Guid UsuarioId, DateOnly? Fecha = null);
 
 /// <param name="Codigo">"requiere-autorizacion" o "no-permitido" cuando lo detiene una regla.</param>
 public sealed record ErrorDto(string Mensaje, string? Codigo = null);
 
 /// <param name="LogoPngBase64">Cómo se ve el logo convertido, para la pantalla.</param>
-public sealed record ConfiguracionTicketDto(IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, string? LogoPngBase64);
+/// <param name="AlCobrar">Qué se hace con el ticket al cobrar (<see cref="ConfiguracionTicket.AlCobrar"/>).</param>
+public sealed record ConfiguracionTicketDto(
+    IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, string? LogoPngBase64, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir);
 
 /// <summary>
 /// El encabezado y el pie del ticket (la Configuración nueva, entrega 7): los cambia quien entró a la caja con «Configurar
@@ -283,6 +437,10 @@ public sealed record SolicitudTextosTicket(Guid UsuarioId, IReadOnlyList<string>
 /// <param name="UsuarioId">Quien entró a la caja, con «Configurar el ticket».</param>
 /// <param name="ImagenBase64">El archivo tal cual (PNG, JPG o BMP); el servicio lo pasa a blanco y negro. Vacío: quita el logo.</param>
 public sealed record SolicitudLogo(Guid UsuarioId, string? ImagenBase64);
+
+/// <summary>«Al cobrar» (Configuración › Ticket): lo cambia quien entró a la caja con «Configurar el ticket», sin volver a escribir su PIN.</summary>
+/// <param name="UsuarioId">Quien entró a la caja.</param>
+public sealed record SolicitudAlCobrar(Guid UsuarioId, TicketAlCobrar AlCobrar);
 
 // ── Control (entrega 2) ─────────────────────────────────────────────────────
 
@@ -310,7 +468,10 @@ public sealed record EfectivoCajaDto(long EsperadoCentavos, long? LimiteCentavos
 /// la venta, el fondo que propone «Abrir turno» y el límite de efectivo.
 /// </summary>
 /// <param name="NombreTienda">Vacío: la entrada dice el de la sucursal.</param>
-/// <param name="HoraApertura">El horario de la tienda: fuera de él, abrir un turno avisa y de noche no se avisa de la impresora.</param>
+/// <param name="HoraApertura">
+/// El horario de la tienda: fuera de él, abrir un turno avisa y de noche no se avisa de la impresora; desde la hora de cierre
+/// se recuerda cerrar el día a quien lo cierra (2026-10-17).
+/// </param>
 /// <param name="LimiteEfectivoCentavos">Al llegar, la caja pide un retiro. Vacío: sin límite.</param>
 /// <param name="FondoSugeridoCentavos">Lo que propone «Abrir turno». Vacío: el fondo se escribe cada vez.</param>
 /// <param name="UmbralCorteCentavos">Una diferencia mayor en el corte de un turno avisa al dueño.</param>
@@ -388,7 +549,10 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 // ── Varias cajas (entrega 3) ────────────────────────────────────────────────
 
 /// <summary>Lo que contesta el servicio sin llave: para encontrarlo en la red y saber que está vivo.</summary>
-/// <param name="VersionDatos">Cambia con el catálogo, los usuarios o sus permisos: la caja vuelve a bajar su copia.</param>
+/// <param name="VersionDatos">
+/// Cambia con lo que lleva la copia de las cajas (el catálogo, los usuarios y sus permisos, la configuración…): la caja pide
+/// lo que cambió (o, una de antes, vuelve a bajar su copia). Un PIN mal tecleado o abrir un turno ya no la cambian.
+/// </param>
 /// <param name="Prueba">El servicio es el de la prueba con una persona real: datos ficticios, guía y avisos simulados.</param>
 /// <param name="VersionCredito">Cambia con cada fiado, abono o cambio de crédito: la caja vuelve a pedir los saldos.</param>
 /// <param name="PilotoEleventa">
@@ -399,9 +563,51 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// La base contra apagones (entrega 10): el servicio se apagó de golpe y la base no pasó la revisión al arrancar. La caja
 /// lo muestra en la franja hasta que se restaure el respaldo. Vacío si todo está bien.
 /// </param>
+/// <param name="VersionExistencias">
+/// Cambia con cada cambio de existencia (una venta, una compra): la caja pide las que cambiaron desde la suya (entrega 5,
+/// parte 2). Vacía en un servicio de antes: entonces la existencia de la copia se pone al día al bajarla completa.
+/// </param>
+/// <param name="Base">
+/// De qué base son las versiones (cambia al arrancar el servicio y al empezar de cero la prueba): con otra, los cambios
+/// desde la versión de la caja no sirven y se baja la copia completa. Vacía en un servicio de antes.
+/// </param>
+/// <param name="Red">
+/// La red vista desde la caja principal (la red de la tienda en el POS): si hay internet y si contesta su router. La caja lo
+/// junta con lo suyo para la franja: «Sin internet: la venta sigue. No desconectes nada.» Vacía en un servicio de antes o si
+/// el servicio no lo revisa (la prueba en desarrollo).
+/// </param>
+/// <param name="FormatoCopia">El de la copia que arma (<see cref="VersionesCopiaDto.Formato"/>); vacío en un servicio de antes.</param>
 public sealed record EstadoServicioDto(
     string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false, long VersionCredito = 0,
-    bool PilotoEleventa = false, string? AvisoBase = null);
+    bool PilotoEleventa = false, string? AvisoBase = null, long? VersionExistencias = null, Guid? Base = null, int? FormatoCopia = null,
+    RedDeLaPrincipalDto? Red = null);
+
+/// <summary>Cómo ve la red la caja principal: lo revisa sola cada medio minuto (docs/arquitectura.md, «La red de la matriz»).</summary>
+/// <param name="Internet">Si contesta algo de internet; vacío: todavía no se sabe.</param>
+/// <param name="Router">Si contesta su router (la puerta de enlace); vacío: no tiene o todavía no se sabe.</param>
+/// <param name="DesdeUtc">Desde cuándo está así el internet.</param>
+public sealed record RedDeLaPrincipalDto(bool? Internet, bool? Router, DateTime? DesdeUtc = null);
+
+/// <summary>
+/// Lo que contesta el servicio a una caja que lo encontró en la red y quiere saber si es su caja principal antes de cambiarse
+/// a él: la prueba hecha con la huella de la llave de esa caja (<c>Descubrimiento.Prueba</c>). Solo la tiene el servicio que
+/// dio de alta a esa caja; la llave nunca viaja.
+/// </summary>
+/// <param name="LlaveDelServicio">
+/// La llave pública del servicio (la suya, que no está en la base ni en sus respaldos): la caja la recuerda y, desde entonces,
+/// solo se cambia a un servicio que firme con ella. Vacía en un servicio de antes.
+/// </param>
+/// <param name="Firma">Lo mismo de la prueba, firmado con la llave del servicio (<c>Descubrimiento.MensajeFirmado</c>).</param>
+public sealed record IdentidadServicioDto(string Prueba, string? LlaveDelServicio = null, string? Firma = null);
+
+/// <summary>Una caída de la red, de la bitácora de red: qué se perdió, desde cuándo y hasta cuándo (vacío: sigue).</summary>
+/// <param name="Que">«internet», «la caja principal», «el router»…</param>
+/// <param name="FinAproximado">No se vio volver (se cerró o se apagó antes): volvió después de <paramref name="Hasta"/>.</param>
+public sealed record CaidaDeRedDto(string Que, DateTime Desde, DateTime? Hasta, bool FinAproximado = false);
+
+/// <summary>Lo que dice la bitácora de red de la caja principal (Configuración › Acerca de): sus últimas caídas y dónde está.</summary>
+/// <param name="Carpeta">Dónde están sus archivos (red-servicio-AAAA-MM-DD.log), en la caja principal.</param>
+public sealed record ResumenDeRedDto(IReadOnlyList<CaidaDeRedDto> Caidas, string? Carpeta, RedDeLaPrincipalDto? Ahora);
 
 /// <summary>Usuario y PIN de quien autoriza: dar de alta una caja (antes de que haya sesión) y Telegram, que sigue como estaba.</summary>
 public sealed record SolicitudCredenciales(string Usuario, string Pin);
@@ -421,7 +627,11 @@ public sealed record SucursalAltaDto(Guid Id, string Nombre, IReadOnlyList<CajaA
 public sealed record SolicitudAltaCaja(string Usuario, string Pin, Guid SucursalId, Guid? CajaId, string? Nombre, string? Serie, string Equipo);
 
 /// <param name="Llave">Solo la ve el equipo: la guarda y la manda en cada llamada (encabezado X-Caja-Llave).</param>
-public sealed record AltaCajaDto(CajaDto Caja, string Llave);
+/// <param name="LlaveDelServicio">
+/// La llave pública del servicio que la dio de alta: la caja la guarda y no se cambia sola a otro servicio que no firme con
+/// ella (una copia de la base en otra PC). Vacía en un servicio de antes.
+/// </param>
+public sealed record AltaCajaDto(CajaDto Caja, string Llave, string? LlaveDelServicio = null);
 
 // ── Contingencia (entrega 3, parte 2) ───────────────────────────────────────
 
@@ -453,13 +663,53 @@ public sealed record CodigoLocalDto(string Codigo, Guid VarianteId, Guid Present
 /// fichas de espera y «Abrir turno» propone el fondo. Vacía en una copia de antes: lo de siempre (3 fichas, sin fondo
 /// sugerido).
 /// </param>
+/// <param name="Codigos">
+/// Todos los códigos de los productos de la copia, también los que solo cambian en mayúsculas («ZZ-01» en uno y «zz-01» en
+/// otro): al escanear se lo lleva el igual tal cual o, si ninguno, el producto más antiguo (<c>CodigosDeEscaneo</c>), como en
+/// el servicio, y la búsqueda por nombre lo encuentra en los dos. El orden no cuenta.
+/// </param>
+/// <param name="Marcas">Las que usa el servicio para leer los nombres: la búsqueda de la copia los lee igual (entrega 5, parte 3).</param>
+/// <param name="Base">
+/// De qué base es la copia (<see cref="EstadoServicioDto.Base"/>), y con <paramref name="Formato"/> y
+/// <paramref name="VersionExistencias"/>, desde dónde pedir lo que cambió (entrega 5, parte 2). Vacíos en un servicio de antes:
+/// esa copia solo se renueva entera.
+/// </param>
+/// <param name="Formato">Cómo está armada la copia: si la caja o el servicio cambian de formato, se baja completa.</param>
+/// <param name="VersionExistencias">La versión de las existencias con que se armó.</param>
+/// <param name="Vendidos">
+/// Cuántas veces se vendió cada producto en 90 días, y <paramref name="Elegidos"/>, lo que esta caja eligió antes con cada
+/// texto: con eso la búsqueda contra la copia ordena igual que el servicio (entrega 5, parte 3). Vacíos en una copia de
+/// antes: ordena sin ellos hasta que baje la siguiente.
+/// </param>
+/// <param name="VersionVendidos">
+/// La de lo más vendido que trae (el servicio lo calcula una vez al día): si la del servicio es otra, los cambios traen el
+/// nuevo (entrega 5, partes 2 y 3).
+/// </param>
+/// <param name="VersionElegidos">Hasta dónde trae lo elegido: los cambios traen lo que esta caja eligió después.</param>
+/// <param name="AlCobrar">
+/// Qué se hace con el ticket al cobrar (Configuración › Ticket): sin conexión, el ticket del cobro lo trae de aquí. En una
+/// copia de antes, se imprime.
+/// </param>
+/// <param name="Exhibidores">
+/// Los exhibidores y las temporadas activos, con sus lugares y sus productos en orden (entrega 13): Ctrl+M los pinta sin la
+/// red. Desde el formato 3 siempre vienen (vacíos si no hay ninguno); vacíos (null) en una copia de antes, o en una de ese
+/// formato que guardó una caja que todavía no los conocía: esa se baja completa otra vez.
+/// </param>
+/// <param name="Fotos">
+/// Las fotos de los productos (entrega 13, parte 2): solo de qué producto es cada una y su huella, en el orden de las variantes;
+/// cada caja baja aparte las que no tiene. Así la copia no crece con las fotos (unos 80 bytes por foto). Desde el formato 4
+/// siempre vienen (vacías si no hay ninguna); vacías (null) en una copia de antes: esa se baja completa otra vez.
+/// </param>
 public sealed record PaqueteContingenciaDto(
     long Version, CajaDto Caja, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<UsuarioLocalDto> Usuarios,
     IReadOnlyList<ReglaDto> Reglas,
     IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, int UltimoFolio, long? LimiteEfectivoCentavos,
     IReadOnlyList<ClienteRegistradoDto>? Clientes = null, IReadOnlyList<ClienteRegistradoDto>? Registrados = null,
     IReadOnlyList<string>? Marcas = null, IReadOnlyList<SinonimoDto>? Sinonimos = null, IReadOnlyList<PermisosLocalesDto>? Permisos = null,
-    ConfiguracionSucursalDto? Configuracion = null);
+    ConfiguracionSucursalDto? Configuracion = null, Guid? Base = null, int? Formato = null, long? VersionExistencias = null,
+    IReadOnlyList<VecesVendidoDto>? Vendidos = null, IReadOnlyList<ElegidoDto>? Elegidos = null, long? VersionVendidos = null, long? VersionElegidos = null,
+    TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir, IReadOnlyList<ExhibidorDto>? Exhibidores = null,
+    IReadOnlyList<FotoDeProductoDto>? Fotos = null);
 
 // Lo que sube con la bandeja. Cada cosa lleva el ID que le dio la caja: si llega dos veces, se guarda una.
 
@@ -630,27 +880,61 @@ public sealed record PresentacionFichaDto(Guid? Id, string Nombre, long FactorMi
 
 /// <param name="Presentacion">Vacío: precio por unidad base. Con nombre: el precio propio de esa presentación.</param>
 /// <param name="CantidadMinimaMilesimas">Desde cuánto aplica (1000 = una unidad: menudeo; más, mayoreo).</param>
-public sealed record PrecioFichaDto(string? Presentacion, long CantidadMinimaMilesimas, long PrecioCentavos);
+/// <param name="DeEleventa">
+/// En el piloto con eleventa (con su lectura prendida), un precio que pone la lectura: el de menudeo o una promoción por
+/// cantidad de eleventa. No se cambia aquí. Lo dice el servicio al leer la ficha; al guardar, no lo lee.
+/// </param>
+public sealed record PrecioFichaDto(string? Presentacion, long CantidadMinimaMilesimas, long PrecioCentavos, bool DeEleventa = false);
 
 public sealed record ProveedorFichaDto(Guid ProveedorId, string Proveedor, string? CodigoProveedor, long? UltimoCostoCentavos, DateTime? UltimaCompraLocal);
 
+/// <summary>
+/// El mínimo y el máximo de inventario de una variante, en milésimas de su unidad base (como en eleventa, «Productos bajos en
+/// inventario»). Vacíos: sin mínimo propio (cuenta <see cref="PocaExistencia.Hasta"/> o menos) y sin máximo (lo pide el
+/// sugerido).
+/// </summary>
+public sealed record MinimoYMaximoDto(long? MinimoMilesimas, long? MaximoMilesimas);
+
 /// <param name="Existencia">En la sucursal, en unidades base (solo lectura).</param>
 /// <param name="CostoPromedioCentavos">Solo para el dueño y el encargado (solo lectura).</param>
+/// <param name="DeEleventa">
+/// En el piloto con eleventa (con su lectura prendida), una variante que viene de eleventa: si está activa, los códigos de su
+/// presentación base (se pueden agregar otros) y los precios de eleventa no se cambian aquí, ni se depura. Lo dice el
+/// servicio al leer la ficha; al guardar, no lo lee.
+/// </param>
+/// <param name="MinimoYMaximo">
+/// Su mínimo y su máximo de inventario. Al leer la ficha, siempre viene. Al guardar, vacío es «no se tocan»: así una caja de
+/// antes, que no los conoce, no los borra.
+/// </param>
 public sealed record VarianteFichaDto(
     Guid? Id, string Descripcion, UnidadBase Unidad, bool Activa, IReadOnlyList<PresentacionFichaDto> Presentaciones, IReadOnlyList<PrecioFichaDto> Precios,
-    decimal? Existencia = null, decimal? CostoPromedioCentavos = null, IReadOnlyList<ProveedorFichaDto>? Proveedores = null);
+    decimal? Existencia = null, decimal? CostoPromedioCentavos = null, IReadOnlyList<ProveedorFichaDto>? Proveedores = null, bool DeEleventa = false,
+    MinimoYMaximoDto? MinimoYMaximo = null);
 
 /// <summary>La ficha de un producto en F3: lo que se edita junto (el producto, sus variantes, presentaciones, códigos y precios).</summary>
 /// <param name="Marca">Por nombre: si no existe, se da de alta.</param>
+/// <param name="EnEleventa">
+/// En el piloto con eleventa (con su lectura prendida), si algo de este producto viene de eleventa: por qué eso no se
+/// cambia aquí (lo de cada variante y cada precio lo dicen sus <c>DeEleventa</c>). Vacío: todo se cambia aquí.
+/// </param>
+/// <param name="ProductoDeEleventa">
+/// En el piloto, el nombre, el departamento y si se vende los pone la lectura: es de eleventa y de una sola variante.
+/// </param>
 public sealed record FichaProductoDto(
     Guid? Id, string Nombre, Guid DepartamentoId, string? Marca, TipoProducto Tipo, Impuesto Impuesto, string? ClaveSat, bool Activo, bool PorCompletar,
-    IReadOnlyList<VarianteFichaDto> Variantes);
+    IReadOnlyList<VarianteFichaDto> Variantes, string? EnEleventa = null, bool ProductoDeEleventa = false);
 
 public sealed record SolicitudGuardarProducto(Guid UsuarioId, Guid SucursalId, FichaProductoDto Producto);
 
 public sealed record OpcionCatalogoDto(Guid Id, string Nombre);
 
-public sealed record OpcionesCatalogoDto(IReadOnlyList<OpcionCatalogoDto> Departamentos, IReadOnlyList<string> Marcas);
+/// <param name="Departamentos">Los activos: los únicos que se ofrecen (al filtrar la lista, en la ficha, en el alta rápida y en las compras).</param>
+/// <param name="Desactivados">
+/// Los desactivados (Productos › Departamentos), solo para decir el de un producto que se quedó en uno: no se ofrecen.
+/// Vacío en un servicio de antes.
+/// </param>
+public sealed record OpcionesCatalogoDto(
+    IReadOnlyList<OpcionCatalogoDto> Departamentos, IReadOnlyList<string> Marcas, IReadOnlyList<OpcionCatalogoDto>? Desactivados = null);
 
 public sealed record MovimientoKardexDto(DateTime FechaLocal, TipoMovimiento Tipo, decimal Cantidad, decimal Existencia, string? Motivo, string? Documento);
 
@@ -1130,3 +1414,56 @@ public sealed record EstadoEnviosEleventaDto(
 public sealed record EnvioEleventaDto(
     Guid Id, TipoEnvioEleventa Tipo, string Descripcion, DateTime FechaLocal, long TotalCentavos, EstadoEnvioEleventa Estado, int Intentos, string? Error,
     int? FolioEleventa);
+
+/// <summary>
+/// Los tickets con un folio de eleventa que se escribió para devolver (el piloto: el ticket ya no lleva QR, 2026-10-16).
+/// Eleventa repite folios entre cajas que cobran casi al mismo tiempo: si hay más de uno, la caja los enseña y se elige el
+/// del cliente por la hora y el total. Solo para convivir con eleventa.
+/// </summary>
+/// <param name="Aviso">Lo que conviene saber, por ejemplo que eleventa no contestó.</param>
+public sealed record FolioEleventaDto(int Folio, IReadOnlyList<TicketConFolioDto> Tickets, string? Aviso = null);
+
+/// <param name="Caja">La caja que lo cobró: esta, u otra de eleventa.</param>
+/// <param name="FolioCaja">El de esta caja (B-000123): con él se abre la devolución aquí. Vacío si es de otra caja de eleventa.</param>
+/// <param name="TicketEleventa"><c>VENTATICKETS.ID</c> en eleventa.</param>
+/// <param name="Nota">Lo que hay que saber de ese ticket, por ejemplo que se devuelve en eleventa.</param>
+public sealed record TicketConFolioDto(string Caja, DateTime? FechaLocal, long TotalCentavos, string? FolioCaja, int? TicketEleventa, string? Nota = null);
+
+/// <summary>
+/// Lo que la caja 2 enseña del puente con eleventa (el piloto; sin Telegram, que está en pausa): lo que quedó por revisar y
+/// lo que conviene saber. Solo para convivir con eleventa.
+/// </summary>
+/// <param name="Detenido">Por qué el puente dejó de escribir en eleventa; vacío si escribe.</param>
+/// <param name="Respaldo">Por qué la bandeja espera al respaldo de eleventa; vacío si no espera.</param>
+public sealed record PuenteEleventaDto(IReadOnlyList<PorRevisarEleventaDto> PorRevisar, IReadOnlyList<string> Avisos, string? Detenido = null,
+    string? Respaldo = null);
+
+/// <summary>
+/// Reanudar el puente con eleventa después de que se detuvo porque eleventa ya no tenía lo que le mandó la caja 2 (se
+/// restauró un respaldo): quien tiene «Configuración de la tienda», desde la caja 2, con una nota de lo que revisó.
+/// </summary>
+public sealed record SolicitudReanudarPuente(Guid UsuarioId, Guid CajaId, string? Nota);
+
+/// <summary>Algo que quedó por revisar con eleventa: de la bandeja (<paramref name="EnvioId"/>) o una devolución hecha allá (<paramref name="VueltaId"/>).</summary>
+/// <param name="Motivo">Por qué, dicho para la tienda.</param>
+/// <param name="EligeAnotacion">
+/// Una devolución de aquí de un ticket que está en eleventa: al marcarla «Ya lo anoté en eleventa» se elige cuál de las
+/// devoluciones de eleventa de ese ticket es su anotación (<see cref="AnotacionEnEleventaDto"/>).
+/// </param>
+public sealed record PorRevisarEleventaDto(Guid? EnvioId, Guid? VueltaId, string Descripcion, DateTime FechaLocal, long TotalCentavos, string Motivo,
+    bool EligeAnotacion = false);
+
+/// <summary>
+/// Una devolución o cancelación hecha en eleventa que puede ser la anotación a mano de una devolución de aquí, leída en vivo
+/// para elegirla.
+/// </summary>
+/// <param name="Id"><c>DEVOLUCIONES.ID</c>.</param>
+/// <param name="DevueltaLocal">Hora de la tienda (la de la PC de eleventa).</param>
+/// <param name="Detalle">Lo devuelto («1 Pluma punto fino») o «Cancelación del ticket».</param>
+public sealed record AnotacionEnEleventaDto(int Id, DateTime DevueltaLocal, bool EsCancelacion, string Caja, string Cajero, long TotalCentavos, string Detalle);
+
+/// <summary>
+/// «Ya lo anoté en eleventa», de quien tiene «Configuración de la tienda», con una nota. Si es una devolución de aquí de un
+/// ticket que está en eleventa, también cuál es su anotación allá (<see cref="Anotaciones"/>: los <c>DEVOLUCIONES.ID</c>).
+/// </summary>
+public sealed record SolicitudAnotadoAMano(Guid UsuarioId, string? Nota, IReadOnlyList<int>? Anotaciones = null);

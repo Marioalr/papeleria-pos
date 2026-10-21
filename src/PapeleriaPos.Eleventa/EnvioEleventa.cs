@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using FirebirdSql.Data.FirebirdClient;
+using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Eleventa;
 
@@ -13,7 +14,25 @@ namespace PapeleriaPos.Eleventa;
 /// (<see cref="CorteEnElPiloto"/>): el turno lo abre eleventa con su fondo y lo cierra su corte; sin turno, lo que se
 /// manda espera (<see cref="CorteEnElPiloto.AbreLaCajaEnEleventa"/>). Solo para convivir con eleventa: se quita al dejarlo.
 /// </param>
-public sealed record CajaEnEleventa(int CajaId, int CajeroId, string? Ip = null, bool AbreTurno = true);
+public sealed record CajaEnEleventa(int CajaId, int CajeroId, string? Ip = null, bool AbreTurno = true)
+{
+    /// <summary>
+    /// Lo último que escribió el puente: antes de escribir, en la misma transacción, se revisa que siga en eleventa; si no,
+    /// eleventa se restauró a un respaldo anterior y no se escribe (<see cref="EleventaRestaurada"/>). Vacía, no se revisa.
+    /// Solo del piloto (<see cref="RestauracionDeEleventa"/>).
+    /// </summary>
+    public HuellaDelPuente? Huella { get; init; }
+
+    /// <summary>
+    /// Si quien manda todavía espera esta escritura. Se pregunta justo antes de confirmarla en eleventa: si ya la dio por
+    /// perdida (tardó más de la cuenta y se dejó de esperar), se deshace en vez de confirmarse, para que no entre tarde,
+    /// cuando aquí ya se decidió sin ella (revisión del 2026-10-17). Vacía, se confirma siempre.
+    /// </summary>
+    public Func<bool>? SigueEsperando { get; init; }
+}
+
+/// <summary>Una escritura que quien la mandó ya dejó de esperar: se deshizo en vez de confirmarse (<see cref="CajaEnEleventa.SigueEsperando"/>).</summary>
+public sealed class EscrituraDejada() : InvalidOperationException("Se dejó de esperar esta escritura: se deshizo sin confirmarla en eleventa.");
 
 /// <summary>Una venta cobrada en efectivo, como la entiende eleventa.</summary>
 /// <param name="CreadaLocal">Cuándo se empezó en la caja nueva (hora local). También es su marca en eleventa: así no se manda dos veces.</param>
@@ -35,8 +54,34 @@ public sealed record TurnoParaEleventa(DateTime AbiertoLocal, decimal DineroInic
 public sealed record ArticuloParaEleventa(int? ProductoId, string Nombre, decimal Cantidad, decimal Importe);
 
 /// <param name="YaEstaba">Ya se había mandado (por ejemplo, se cortó la red justo al confirmar): no se escribió otra vez.</param>
-/// <param name="FolioRepetido">Otra caja de eleventa cobró con el mismo folio en el mismo instante. Eleventa también lo permite; queda para revisar.</param>
-public sealed record VentaEnEleventa(int TicketId, int Folio, bool YaEstaba, bool FolioRepetido);
+/// <param name="FolioRepetido">
+/// Otra caja de eleventa cobró con el mismo folio en el mismo instante y, después de tomar el siguiente unas veces, sigue
+/// chocando. Eleventa también lo permite; queda para revisar.
+/// </param>
+/// <param name="Turno">El turno de eleventa donde quedó (vacío si ya estaba): el turno de la caja nueva lo adopta.</param>
+/// <param name="FolioAnterior">El folio que tenía antes de tomar el siguiente porque otra caja lo usó al mismo tiempo.</param>
+public sealed record VentaEnEleventa(int TicketId, int Folio, bool YaEstaba, bool FolioRepetido, TurnoDeEleventa? Turno = null, int? FolioAnterior = null);
+
+/// <summary>Un turno de eleventa (<c>TURNOS.ID</c>) y cuándo empezó (hora de la tienda): juntos dicen que es el mismo turno.</summary>
+public sealed record TurnoDeEleventa(int Id, DateTime InicioLocal);
+
+/// <summary>
+/// Eleventa ya tiene otra cosa: su turno ya se cortó, hay dos abiertos para la caja, el ticket ya está cancelado… No es la
+/// red y reintentar no lo arregla: lo que choca queda por revisar y lo demás de la bandeja sigue (docs/migracion-eleventa.md,
+/// «Lo que falta para el piloto»). Solo del piloto: se quita al dejar eleventa.
+/// </summary>
+/// <param name="motivo">
+/// Si se anota a mano allá (no está en eleventa) o eleventa ya lo tenía (no se anota: se revisa). Con eso la vuelta sabe si
+/// una devolución que llega de eleventa puede ser su anotación a mano.
+/// </param>
+public sealed class ChoqueConEleventa(string mensaje, MotivoPorRevisar motivo = MotivoPorRevisar.Otro) : InvalidOperationException(mensaje)
+{
+    public MotivoPorRevisar Motivo { get; } = motivo;
+}
+
+/// <summary>Cómo quedó el folio de un ticket después de revisar que otra caja no lo usó al mismo tiempo.</summary>
+/// <param name="Anterior">El que tenía antes de tomar el siguiente; vacío si no se cambió.</param>
+public sealed record FolioRevisado(int Folio, bool Repetido, int? Anterior);
 
 /// <summary>
 /// Escribe en eleventa una venta de la caja nueva como la escribe una caja de eleventa al cobrar
@@ -58,6 +103,61 @@ public static partial class EnvioEleventa
         await using var conexion = new FbConnection(servidor.Cadena());
         await conexion.OpenAsync(ct);
         return await MandarAsync(conexion, caja, venta, ct);
+    }
+
+    /// <summary>
+    /// Una venta de la caja nueva que ya está en eleventa, por su marca (la caja y <c>CREADO_EN</c>, como la busca
+    /// <see cref="MandarAsync(FbConnection, CajaEnEleventa, VentaParaEleventa, CancellationToken)"/> antes de escribirla),
+    /// sin escribir nada: para saber si un intento que se cortó por tiempo o por la red alcanzó a guardarla. Vacía si no está.
+    /// </summary>
+    /// <param name="creadaLocal">Cuándo se empezó en la caja nueva (hora local): su marca.</param>
+    public static async Task<VentaEnEleventa?> BuscarVentaAsync(ServidorEleventa servidor, CajaEnEleventa caja, DateTime creadaLocal,
+        CancellationToken ct = default)
+    {
+        var creada = new DateTime(creadaLocal.Ticks - creadaLocal.Ticks % 1000);
+        await using var conexion = new FbConnection(servidor.Cadena());
+        await conexion.OpenAsync(ct);
+        await using var tx = await conexion.BeginTransactionAsync(new FbTransactionOptions
+        {
+            TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.ReadCommitted | FbTransactionBehavior.RecVersion | FbTransactionBehavior.NoWait,
+        }, ct);
+        var ya = await new Sql(conexion, tx, ct).FilaAsync("SELECT ID, FOLIO FROM VENTATICKETS WHERE CAJA_ID = @caja AND CREADO_EN = @creada AND ESTA_ABIERTO = 'f'",
+            [("caja", caja.CajaId), ("creada", creada)]);
+        await tx.CommitAsync(ct);
+        return ya is null ? null : new VentaEnEleventa(Convert.ToInt32(ya[0]), Convert.ToInt32(ya[1]), YaEstaba: true, FolioRepetido: false);
+    }
+
+    /// <summary>
+    /// Una devolución o cancelación que escribió la caja 2 (la de una venta suya o la de un ticket de eleventa), por su marca
+    /// (<c>TICKET_ID</c> + <c>DEVUELTO_EN</c>, la hora en que se hizo aquí), sin escribir nada. Vacía si no está.
+    /// </summary>
+    public static async Task<int?> BuscarDevolucionAsync(ServidorEleventa servidor, int ticket, DateTime devueltaLocal, CancellationToken ct = default)
+    {
+        var devuelta = new DateTime(devueltaLocal.Ticks - devueltaLocal.Ticks % 1000);
+        return await BuscarAsync(servidor, "SELECT ID FROM DEVOLUCIONES WHERE TICKET_ID = @ticket AND DEVUELTO_EN = @devuelta",
+            [("ticket", ticket), ("devuelta", devuelta)], ct);
+    }
+
+    /// <summary>Una entrada o salida de efectivo que escribió la caja 2, por su marca (la caja, el tipo y la hora), sin escribir nada. Vacía si no está.</summary>
+    public static async Task<int?> BuscarMovimientoAsync(ServidorEleventa servidor, CajaEnEleventa caja, bool esEntrada, DateTime hechaLocal,
+        CancellationToken ct = default)
+    {
+        var cuando = new DateTime(hechaLocal.Ticks - hechaLocal.Ticks % 1000);
+        return await BuscarAsync(servidor, "SELECT ID FROM CORTE_MOVIMIENTOS WHERE ID_CAJA = @caja AND TIPO = @tipo AND CUANDO_FUE = @cuando",
+            [("caja", caja.CajaId), ("tipo", esEntrada ? "Entrada" : "Salida"), ("cuando", cuando)], ct);
+    }
+
+    private static async Task<int?> BuscarAsync(ServidorEleventa servidor, string consulta, (string Nombre, object? Valor)[] parametros, CancellationToken ct)
+    {
+        await using var conexion = new FbConnection(servidor.Cadena());
+        await conexion.OpenAsync(ct);
+        await using var tx = await conexion.BeginTransactionAsync(new FbTransactionOptions
+        {
+            TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.ReadCommitted | FbTransactionBehavior.RecVersion | FbTransactionBehavior.NoWait,
+        }, ct);
+        var id = await new Sql(conexion, tx, ct).ValorAsync(consulta, parametros);
+        await tx.CommitAsync(ct);
+        return id is null ? null : Convert.ToInt32(id);
     }
 
     /// <summary>
@@ -93,15 +193,20 @@ public static partial class EnvioEleventa
             TransactionBehavior = FbTransactionBehavior.Write | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
         }, ct);
         var sql = new Sql(c, tx, ct);
+        await RevisarHuellaAsync(c, tx, caja, ct);
 
         if (await sql.FilaAsync("SELECT ID, FOLIO FROM VENTATICKETS WHERE CAJA_ID = @caja AND CREADO_EN = @creada AND ESTA_ABIERTO = 'f'",
                 [("caja", caja.CajaId), ("creada", creada)]) is { } ya)
         {
             await tx.CommitAsync(ct);
-            return new VentaEnEleventa(Convert.ToInt32(ya[0]), Convert.ToInt32(ya[1]), YaEstaba: true, FolioRepetido: false);
+            // Si ya estaba es porque aquí no se supo (se cortó la red al confirmar): su folio todavía no se imprimió y se
+            // revisa como al guardar.
+            var yaRevisado = await RevisarFolioAsync(c, Convert.ToInt32(ya[0]), Convert.ToInt32(ya[1]), ct);
+            return new VentaEnEleventa(Convert.ToInt32(ya[0]), yaRevisado.Folio, YaEstaba: true, yaRevisado.Repetido, FolioAnterior: yaRevisado.Anterior);
         }
 
-        var turno = await TurnoAbiertoAsync(sql, caja, venta.Turno);
+        var deEleventa = await TurnoParaAsync(sql, caja, cobrada, venta.Turno);
+        var turno = deEleventa.Id;
         var dia = await DiaAsync(sql, caja.CajaId, cobrada.Date);
         var articulos = await ArmarAsync(sql, venta.Articulos);
 
@@ -153,30 +258,116 @@ public static partial class EnvioEleventa
             await SumarPorDepartamentoAsync(sql, "CORTE_VENTAS_DEPTO_OPERACIONES", "ID_OPERACION", dia, depto.Key, ventas, ganancias);
         }
 
+        SigueEsperando(caja);
         await tx.CommitAsync(ct);
 
-        // Eleventa toma el folio como el último más uno, sin candado: si otra caja cobró en el mismo instante, se repite.
-        await using var revision = await c.BeginTransactionAsync(new FbTransactionOptions
-        {
-            TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.ReadCommitted | FbTransactionBehavior.RecVersion | FbTransactionBehavior.NoWait,
-        }, ct);
-        var repetido = Convert.ToInt32(await new Sql(c, revision, ct).ValorAsync("SELECT COUNT(*) FROM VENTATICKETS WHERE FOLIO = @folio", [("folio", folio)])) > 1;
-        await revision.CommitAsync(ct);
-        return new VentaEnEleventa(ticket, folio, YaEstaba: false, repetido);
+        // Eleventa toma el folio como el último más uno, sin candado: si otra caja cobró en el mismo instante, se repite. Este
+        // ticket todavía no se entrega, así que es él quien toma el siguiente.
+        var revisado = await RevisarFolioAsync(c, ticket, folio, ct);
+        return new VentaEnEleventa(ticket, revisado.Folio, YaEstaba: false, revisado.Repetido, deEleventa, revisado.Anterior);
     }
 
     /// <summary>
-    /// El turno abierto de la caja en eleventa. Si no hay, se abre como lo abre eleventa: la hora en <c>CAJAS</c>, el
-    /// renglón del día, el turno en ceros y su primer ticket abierto, que eleventa siempre tiene mientras hay turno. En el
-    /// piloto no (<see cref="CajaEnEleventa.AbreTurno"/>): no se escribe nada y lo que se manda espera a que eleventa lo abra.
+    /// Justo después de guardar (docs/migracion-eleventa.md, «Folios repetidos»): si otro ticket ya tiene ese folio (otra
+    /// caja cobró casi al mismo tiempo y eleventa no lo impide), este todavía no se entregó con él (el cobro lo imprime
+    /// después; si la venta va en la vuelta, salió con el folio de la caja). Toma el siguiente y corrige solo lo suyo: el
+    /// folio del ticket y su kardex («Venta #folio»). El otro ticket no se toca. Si después de unas vueltas sigue chocando,
+    /// se queda como está y se avisa.
     /// </summary>
-    private static async Task<int> TurnoAbiertoAsync(Sql sql, CajaEnEleventa caja, TurnoParaEleventa nuevo)
+    public static async Task<FolioRevisado> RevisarFolioAsync(FbConnection c, int ticket, int folio, CancellationToken ct = default)
     {
-        if (await TurnoDeLaCajaAsync(sql, caja.CajaId) is { } abierto)
-            return abierto;
-        if (!caja.AbreTurno)
-            throw new InvalidOperationException(CorteEnElPiloto.AbreLaCajaEnEleventa);
+        int? anterior = null;
+        for (var vuelta = 0; ; vuelta++)
+        {
+            await using (var revision = await c.BeginTransactionAsync(new FbTransactionOptions
+            {
+                TransactionBehavior = FbTransactionBehavior.Read | FbTransactionBehavior.ReadCommitted | FbTransactionBehavior.RecVersion | FbTransactionBehavior.NoWait,
+            }, ct))
+            {
+                var otros = Convert.ToInt32(await new Sql(c, revision, ct).ValorAsync(
+                    "SELECT COUNT(*) FROM VENTATICKETS WHERE FOLIO = @folio AND ID <> @ticket", [("folio", folio), ("ticket", ticket)]));
+                await revision.CommitAsync(ct);
+                if (otros == 0)
+                    return new FolioRevisado(folio, Repetido: false, anterior);
+            }
+            if (vuelta == 3)
+                return new FolioRevisado(folio, Repetido: true, anterior);
+            var deAntes = folio;
+            try
+            {
+                folio = await ConReintentosAsync(() => CambiarFolioAsync(c, ticket, deAntes, ct), ct);
+            }
+            catch (FbException ex) when (ex.Errors.Any(e => Choques.Contains(e.Number)))
+            {
+                // Otra caja escribe lo mismo una y otra vez: la venta ya está en eleventa; se queda con su folio y se avisa.
+                return new FolioRevisado(folio, Repetido: true, anterior);
+            }
+            anterior ??= deAntes;
+        }
+    }
 
+    /// <summary>
+    /// El siguiente folio para el ticket, solo si todavía tiene el que se revisó: la misma revisión pudo correr dos veces (un
+    /// intento que se cortó por tiempo y siguió, y el que lo reintentó) y la segunda no lo mueve otra vez (revisión del
+    /// 2026-10-17). Regresa el folio que quedó.
+    /// </summary>
+    private static async Task<int> CambiarFolioAsync(FbConnection c, int ticket, int folio, CancellationToken ct)
+    {
+        await using var tx = await c.BeginTransactionAsync(new FbTransactionOptions
+        {
+            TransactionBehavior = FbTransactionBehavior.Write | FbTransactionBehavior.Concurrency | FbTransactionBehavior.NoWait,
+        }, ct);
+        var sql = new Sql(c, tx, ct);
+        var nuevo = Convert.ToInt32(await sql.ValorAsync("SELECT MAX(FOLIO) FROM VENTATICKETS") ?? 0) + 1;
+        if (await sql.EjecutarAsync("UPDATE VENTATICKETS SET FOLIO = @nuevo WHERE ID = @ticket AND FOLIO = @folio",
+                [("nuevo", nuevo), ("ticket", ticket), ("folio", folio)]) == 0)
+        {
+            // Ya lo movió la otra: se queda con el que tiene.
+            var actual = Convert.ToInt32(await sql.ValorAsync("SELECT FOLIO FROM VENTATICKETS WHERE ID = @ticket", [("ticket", ticket)]) ?? folio);
+            await tx.CommitAsync(ct);
+            return actual;
+        }
+        await sql.EjecutarAsync("UPDATE INVENTARIO_HISTORIAL SET DESCRIPCION = @nueva WHERE VENTA_ID = @ticket AND DESCRIPCION = @vieja",
+            [("nueva", $"Venta #{nuevo}"), ("vieja", $"Venta #{folio}"), ("ticket", ticket)]);
+        await tx.CommitAsync(ct);
+        return nuevo;
+    }
+
+    /// <summary>
+    /// El turno de eleventa al que va lo que pasó a esa hora en la caja nueva (docs/migracion-eleventa.md, «Eleventa
+    /// abierto en la caja 2»): el de la caja que estaba abierto entonces o, si no había ninguno, el siguiente que se abrió.
+    /// Es el primero que terminó después (o sigue abierto), y su corte es el que cuenta ese efectivo:
+    /// <list type="bullet">
+    /// <item>si ya se cortó, lo que pasó antes del corte ya se contó allá y no se manda: queda por revisar
+    /// (<see cref="ChoqueConEleventa"/>);</item>
+    /// <item>si hay dos turnos abiertos para la caja, no se sabe cuál: también queda por revisar. La base de eleventa no lo
+    /// deja (<c>UNQ_TURNO_ABIERTO_CAJA</c>), pero por si una no lo trae. El puente nunca abre un segundo turno;</item>
+    /// <item>si no hay ninguno, en el piloto (<see cref="CajaEnEleventa.AbreTurno"/>) no se escribe nada y lo que se manda
+    /// espera a que eleventa lo abra; fuera del piloto (las herramientas que escriben en una copia) se abre como lo abre
+    /// eleventa.</item>
+    /// </list>
+    /// Así, lo que se cobró después del corte de eleventa y antes de que la caja nueva lo viera entra al turno siguiente.
+    /// </summary>
+    private static async Task<TurnoDeEleventa> TurnoParaAsync(Sql sql, CajaEnEleventa caja, DateTime cuando, TurnoParaEleventa nuevo)
+    {
+        var turnos = await sql.FilasAsync(
+            "SELECT ID, INICIO_EN, TERMINO_EN FROM TURNOS WHERE ID_CAJA = @caja AND (TERMINO_EN IS NULL OR TERMINO_EN > @cuando) ORDER BY ID",
+            [("caja", caja.CajaId), ("cuando", cuando)]);
+        if (turnos.Count == 0)
+            return caja.AbreTurno ? await AbrirTurnoAsync(sql, caja, nuevo) : throw new InvalidOperationException(CorteEnElPiloto.AbreLaCajaEnEleventa);
+        if (turnos[0][2] is DateTime cortado)
+            throw new ChoqueConEleventa(CorteEnElPiloto.YaSeContoEnEleventa(cortado), MotivoPorRevisar.AnotarAMano);
+        if (turnos.Count(t => t[2] is DBNull) > 1)
+            throw new ChoqueConEleventa(CorteEnElPiloto.DosTurnosAbiertos, MotivoPorRevisar.AnotarAMano);
+        return new TurnoDeEleventa(Convert.ToInt32(turnos[0][0]), (DateTime)turnos[0][1]);
+    }
+
+    /// <summary>
+    /// Sin turno abierto para la caja (y fuera del piloto), se abre como lo abre eleventa: la hora en <c>CAJAS</c>, el
+    /// renglón del día, el turno en ceros y su primer ticket abierto, que eleventa siempre tiene mientras hay turno.
+    /// </summary>
+    private static async Task<TurnoDeEleventa> AbrirTurnoAsync(Sql sql, CajaEnEleventa caja, TurnoParaEleventa nuevo)
+    {
         var inicio = new DateTime(nuevo.AbiertoLocal.Ticks - nuevo.AbiertoLocal.Ticks % 10000);
         await sql.EjecutarAsync(caja.Ip is null
                 ? "UPDATE CAJAS SET ULTIMO_INGRESO = @ahora WHERE ID = @caja"
@@ -194,12 +385,12 @@ public static partial class EnvioEleventa
             VALUES (@caja, @cajero, 'Ticket 1', @inicio, -1, @turno)
             """,
             [("caja", caja.CajaId), ("cajero", caja.CajeroId), ("inicio", inicio), ("turno", turno)]);
-        return turno;
+        return new TurnoDeEleventa(turno, inicio);
     }
 
     /// <summary>
-    /// El turno abierto de la caja; si alguna vez quedó más de uno (eleventa no lo impide), el más reciente, que es el
-    /// que usa.
+    /// El turno abierto de la caja (la base no deja dos: <c>UNQ_TURNO_ABIERTO_CAJA</c>); si una base no lo trajera, el más
+    /// reciente. Solo para cerrarlo fuera del piloto.
     /// </summary>
     private static async Task<int?> TurnoDeLaCajaAsync(Sql sql, int caja) =>
         await sql.ValorAsync("SELECT FIRST 1 ID FROM TURNOS WHERE ID_CAJA = @caja AND TERMINO_EN IS NULL ORDER BY ID DESC", [("caja", caja)]) is { } id
@@ -324,6 +515,23 @@ public static partial class EnvioEleventa
 
     /// <summary>Los del día y la caja: los mismos, menos el efectivo al cierre.</summary>
     private static readonly string[] ColumnasDia = [.. ColumnasTurno.Where(c => c != "EFECTIVO_AL_CIERRE")];
+
+    /// <summary>
+    /// Antes de escribir, en la misma transacción: si eleventa ya no tiene lo último que escribió el puente (se restauró un
+    /// respaldo), no se escribe nada (<see cref="EleventaRestaurada"/>).
+    /// </summary>
+    /// <summary>Justo antes de confirmar: si quien la manda ya no la espera, se deshace (<see cref="CajaEnEleventa.SigueEsperando"/>).</summary>
+    private static void SigueEsperando(CajaEnEleventa caja)
+    {
+        if (caja.SigueEsperando?.Invoke() == false)
+            throw new EscrituraDejada();
+    }
+
+    private static async Task RevisarHuellaAsync(FbConnection c, FbTransaction tx, CajaEnEleventa caja, CancellationToken ct)
+    {
+        if (caja.Huella is { } huella && await RestauracionDeEleventa.RevisarAsync(c, tx, huella, ct) is { } restauracion)
+            throw new EleventaRestaurada(restauracion);
+    }
 
     private sealed class Sql(FbConnection c, FbTransaction tx, CancellationToken ct)
     {

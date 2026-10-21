@@ -15,17 +15,24 @@ namespace PapeleriaPos.Datos;
 /// F4 Inventario, compras (docs/fase-2-inventario.md, entrega 2): quien recibe cuenta la mercancía a ciegas; quien
 /// captura los costos pasa la nota del proveedor y cierra la compra. Al cerrar, lo contado entra al kardex con el costo
 /// de la nota (el costo promedio se ajusta solo), cada proveedor guarda su último costo, las diferencias quedan para
-/// reclamarlas y, si un producto queda debajo del margen mínimo, se sugiere precio: el precio no cambia solo.
+/// reclamarlas y, si un producto queda debajo del margen mínimo, se sugiere precio: el precio no cambia solo. En el piloto
+/// con eleventa (<paramref name="lecturaDeEleventa"/>) no se abre, no se cuenta lo recibido ni se cierra una compra: el
+/// inventario se lleva en eleventa (<see cref="TrastiendaEnElPiloto"/>). Lo que quedó abierto se consulta y se cancela.
 /// </summary>
-public sealed class RegistroCompras(PosDbContext db)
+public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = false)
 {
+    /// <summary>Un producto nuevo de la nota necesita departamento: se dan de alta en Productos › Departamentos.</summary>
+    public const string SinDepartamentos =
+        "No hay ningún departamento activo: da de alta uno (o reactiva uno) en Productos (F3) › Departamentos.";
+
     private DateTime Ahora => db.Reloj.GetUtcNow().UtcDateTime;
 
     // ── Lo pendiente de cada tarea, para las tarjetas del inventario (entrega 8) ──
 
     /// <summary>
     /// Cuántas compras se están contando o esperan su nota, cuántas órdenes siguen abiertas (y cuántas ya llevan productos:
-    /// lo que se espera que llegue) y cuántos departamentos se cuentan completos. Solo cuentas, sin montos.
+    /// lo que se espera que llegue), cuántos departamentos se cuentan completos y cuántos productos están en su mínimo o
+    /// debajo (Bajos en inventario). Solo cuentas, sin montos.
     /// </summary>
     public async Task<PendientesInventarioDto> PendientesAsync(Guid sucursalId, CancellationToken ct = default)
     {
@@ -37,7 +44,7 @@ public sealed class RegistroCompras(PosDbContext db)
         var conteos = await db.ConteosDepartamento.AsNoTracking()
             .CountAsync(c => c.SucursalId == sucursalId && c.Estado == EstadoConteoDepartamento.Abierto, ct);
         return new PendientesInventarioDto(compras.GetValueOrDefault(EstadoCompra.Recibiendo), compras.GetValueOrDefault(EstadoCompra.PorCostear),
-            ordenes.Count, ordenes.Count(n => n > 0), conteos);
+            ordenes.Count, ordenes.Count(n => n > 0), conteos, await new RegistroReportesInventario(db).ContarBajosAsync(sucursalId, ct));
     }
 
     // ── Proveedores ──────────────────────────────────────────────────────────
@@ -101,6 +108,7 @@ public sealed class RegistroCompras(PosDbContext db)
     public async Task<CompraDto> AbrirAsync(SolicitudAbrirCompra s, CancellationToken ct = default)
     {
         await RequerirAsync(s.UsuarioId, s.SucursalId, AccionControlada.RecibirMercancia, "No tienes permiso para recibir mercancía.", ct);
+        TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
         if (await db.Proveedores.FindAsync([s.ProveedorId], ct) is not { Activo: true })
             throw new ArgumentException("Elige el proveedor.");
         var compra = new Compra
@@ -118,6 +126,7 @@ public sealed class RegistroCompras(PosDbContext db)
     {
         var compra = await CompraAsync(compraId, ct);
         await RequerirAsync(s.UsuarioId, compra.SucursalId, AccionControlada.RecibirMercancia, "No tienes permiso para recibir mercancía.", ct);
+        TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
         var presentacion = await PresentacionAsync(s.VarianteId, s.PresentacionId, ct);
         var cantidad = new Cantidad(s.CantidadMilesimas);
         if (!presentacion.Variante!.AdmiteCantidad(cantidad.Por(presentacion.Factor)))
@@ -135,6 +144,7 @@ public sealed class RegistroCompras(PosDbContext db)
     {
         var compra = await CompraAsync(compraId, ct);
         await RequerirAsync(s.UsuarioId, compra.SucursalId, AccionControlada.RecibirMercancia, "No tienes permiso para recibir mercancía.", ct);
+        TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
         var cantidad = new Cantidad(s.CantidadMilesimas);
         if (!cantidad.EsEntera)
             throw new ArgumentException("Lo que no está en el catálogo se cuenta en piezas enteras.");
@@ -298,20 +308,20 @@ public sealed class RegistroCompras(PosDbContext db)
     }
 
     /// <summary>
-    /// Lo que se precarga de un producto nuevo: el nombre del documento, el departamento donde más productos tiene ese
-    /// proveedor, una pieza por unidad, el precio que deja el margen mínimo y el código si es un código de barras libre.
+    /// Lo que se precarga de un producto nuevo: el nombre del documento, el departamento (activo) donde más productos tiene
+    /// ese proveedor, una pieza por unidad, el precio que deja el margen mínimo y el código si es un código de barras libre.
     /// </summary>
     private async Task<ProductoNuevo> PropuestaAsync(Compra compra, CompraRenglon r, CancellationToken ct)
     {
         var departamento = await (from pv in db.ProveedoresVariantes
                                   join v in db.Variantes on pv.VarianteId equals v.Id
-                                  where pv.ProveedorId == compra.ProveedorId
+                                  where pv.ProveedorId == compra.ProveedorId && v.Producto!.Departamento!.Activo
                                   group v by v.Producto!.DepartamentoId into g
                                   orderby g.Count() descending
                                   select (Guid?)g.Key).FirstOrDefaultAsync(ct)
             ?? (await db.Departamentos.AsNoTracking().Where(d => d.Activo).ToListAsync(ct)).OrderBy(d => d.Nombre, StringComparer.CurrentCultureIgnoreCase)
                 .Select(d => (Guid?)d.Id).FirstOrDefault()
-            ?? throw new InvalidOperationException("Da de alta al menos un departamento en F3 Productos.");
+            ?? throw new InvalidOperationException(SinDepartamentos);
         var una = Cantidad.Piezas(1);
         var minimos = await MargenesMinimosAsync(compra.SucursalId, ct);
         var codigo = EsCodigoDeBarras(r.CodigoProveedor) && !await db.CodigosBarras.AnyAsync(c => c.Codigo == r.CodigoProveedor, ct) ? r.CodigoProveedor : null;
@@ -545,6 +555,7 @@ public sealed class RegistroCompras(PosDbContext db)
     {
         var compra = await CompraAsync(compraId, ct);
         await RequerirCosteoAsync(usuarioId, compra.SucursalId, ct);
+        TrastiendaEnElPiloto.RevisarInventario(lecturaDeEleventa);
         var resumen = (await DetalleAsync(compraId, usuarioId, ct))!;
         compra.Cerrar(usuarioId, Ahora);
 

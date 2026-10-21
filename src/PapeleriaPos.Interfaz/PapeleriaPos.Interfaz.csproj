@@ -21,4 +21,9 @@
     <ProjectReference Include="..\Impresiones\PapeleriaPos.Impresiones\PapeleriaPos.Impresiones.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Las pruebas ven con qué plazos sale cada petición (Transporte.PlazosDeLaVenta). -->
+    <InternalsVisibleTo Include="PapeleriaPos.Pruebas" />
+  </ItemGroup>
+
 </Project>

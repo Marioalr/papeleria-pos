@@ -15,19 +15,53 @@
                 <span class="punto"></span>Sin la principal@(_contingencia!.Pendientes > 0 ? $" · {_contingencia.Pendientes} por subir" : "")
             </span>
             break;
+        case ChipConexion.RedLenta:
+            <span class="vn-chip-estado aviso"
+                  title="La caja principal tarda en contestar@(Ms(_contingencia!.Latencia) is { } ms ? $" ({ms})" : ""): se vende con la copia de esta caja y lo cobrado sube solo. Vuelve sola cuando la red esté bien.">
+                <span class="punto"></span>Red lenta@(_contingencia.Pendientes > 0 ? $" · {_contingencia.Pendientes} por subir" : "")
+            </span>
+            break;
         case ChipConexion.Subiendo:
             <span class="vn-chip-estado aviso"><span class="punto"></span>Subiendo @_contingencia!.Pendientes…</span>
+            break;
+        case ChipConexion.ServicioAqui when SinInternet(_contingencia, Conexion) is { } sinInternet:
+            @* Como en el prototipo: en la caja principal, «Sin internet» en lugar de «Servicio aquí». *@
+            <span class="vn-chip-estado aviso" title="@Titulo(sinInternet)"><span class="punto"></span>Sin internet</span>
             break;
         case ChipConexion.ServicioAqui:
             <span class="vn-chip-estado" title="El servicio y la base están en esta PC."><span class="punto"></span>Servicio aquí</span>
             break;
         default:
-            <span class="vn-chip-estado" title="El catálogo está en esta caja; lo que se cobra va a la caja principal."><span class="punto"></span>Conectada a la principal</span>
+            <span class="vn-chip-estado" title="El catálogo está en esta caja; lo que se cobra va a @Conexion.Servicio.Authority."><span class="punto"></span>Conectada a la principal@(Ms(_contingencia?.Latencia) is { } latencia ? $" · {latencia}" : "")</span>
             break;
+    }
+    @if (!Conexion.Servicio.IsLoopback && SinInternet(_contingencia, Conexion) is { } sinInternetAqui)
+    {
+        <span class="vn-chip-estado aviso" title="@Titulo(sinInternetAqui)"><span class="punto"></span>Sin internet</span>
     }
     @if (Impresora.MuestraVistaPrevia)
     {
         <span class="vn-chip-estado" title="Sin impresora de tickets en esta PC: el ticket se ve en pantalla."><Ico Nombre="monitor" />Ticket en pantalla</span>
+    }
+    else if (Cola.Problema is { Estado: EstadoImpresion.NoSalio } noSalio)
+    {
+        @* La cola se detuvo: lo que sigue espera. Desde aquí también se reintenta, también en las páginas (entrega 5, parte 3). *@
+        <button class="vn-chip-estado aviso" title="No salió «@noSalio.Titulo»: @noSalio.Motivo Toca para reintentar." @onclick="Cola.Reintentar">
+            <Ico Nombre="impresora" />Tickets · no salió@(Cola.Pendientes.Count > 1 ? $" ({Cola.Pendientes.Count} por imprimir)" : "") · Reintentar
+        </button>
+        <button class="vn-chip-estado aviso" title="«@noSalio.Titulo» se deja sin imprimir y sigue lo demás: se puede volver a imprimir."
+                @onclick="() => AvisoImpresion.NoImprimirlo(Cola, noSalio, Servicios)">
+            No imprimirlo
+        </button>
+    }
+    else if (Cola.Problema is { } ocupada)
+    {
+        <span class="vn-chip-estado aviso" title="«@ocupada.Titulo»: @ocupada.Motivo Se vuelve a intentar sola."><Ico Nombre="impresora" />Tickets · esperando a la impresora</span>
+    }
+    else if (Red?.AvisoImpresora is { } porNombre)
+    {
+        @* Por nombre, compartida o con WSD: con el router trabado no se encuentra (la red de la tienda en el POS). *@
+        <span class="vn-chip-estado aviso" title="@porNombre"><Ico Nombre="impresora" />Tickets · @AvisosDeRed.ConfiguralaPorIp</span>
     }
     else
     {
@@ -39,6 +73,8 @@
             Impresiones por cobrar <span class="cuenta">@_porCobrar</span>
         </button>
     }
+    @* Solo del piloto con eleventa: lo que quedó por revisar con eleventa (se quita al dejarlo). *@
+    <PuenteEleventa Caja="Caja" Sesion="Sesion" />
 </div>
 
 @code {
@@ -53,7 +89,32 @@
     public enum ChipConexion
     {
         ServicioAqui, ConectadaALaPrincipal, SinLaPrincipal, Subiendo,
+
+        /// <summary>La caja principal contesta, pero tarde: se vende con la copia (entrega 5, parte 2).</summary>
+        RedLenta,
     }
+
+    /// <summary>
+    /// «Sin internet» arriba (la propuesta, «Caja principal y secundarias»): lo dice la caja principal y esta caja llega a ella
+    /// (si no llega, no se sabe; la franja dice «Sin red local»). Con la red lenta también: es un hecho. Dice lo mismo que la
+    /// franja: en la caja principal sin router, «Sin internet ni red local» (ahí no se dice «no desconectes nada»). Vacío si hay
+    /// internet o no se sabe.
+    /// </summary>
+    public static string? SinInternet(Contingencia? contingencia, ConexionCaja conexion)
+    {
+        if (contingencia is not { ServidorResponde: true, RedDeLaPrincipal.Internet: false })
+            return null;
+        var franja = AvisosDeRed.QueDice(conexion.Servicio.IsLoopback, conexion.SimularSinConexion, contingencia.EstadoDeLaRed, contingencia.RedDeLaPrincipal);
+        return franja == AvisosDeRed.Franja.SinInternetNiRedLocal ? AvisosDeRed.SinInternetNiRedLocal : AvisosDeRed.SinInternet;
+    }
+
+    private static string Titulo(string sinInternet) => $"{sinInternet} Telegram y el respaldo fuera de la tienda esperan a que vuelva.";
+
+    /// <summary>La red de la tienda en el POS: los avisos de lo configurado por nombre o con WSD.</summary>
+    private RedDeLaCaja? Red => Servicios.GetService<RedDeLaCaja>();
+
+    /// <summary>Lo que tardó el último latido, como en la propuesta («Conectada a Caja 1 · 9 ms»); vacío si no se sabe.</summary>
+    private static string? Ms(TimeSpan? latencia) => latencia is { } l ? $"{Math.Max(1, Math.Round(l.TotalMilliseconds)):0} ms" : null;
 
     /// <summary>
     /// Primero lo que sabe la contingencia (la ventana de Windows): si la caja principal no contesta, o si falta subir lo
@@ -66,6 +127,7 @@
     public static ChipConexion QueDice(Contingencia? contingencia, ConexionCaja conexion) => contingencia switch
     {
         { ServidorResponde: false } when !conexion.Servicio.IsLoopback || conexion.SimularSinConexion => ChipConexion.SinLaPrincipal,
+        { EstadoDeLaRed: EstadoRed.Lenta } when !conexion.Servicio.IsLoopback => ChipConexion.RedLenta,
         { Pendientes: > 0 } => ChipConexion.Subiendo,
         _ => conexion.Servicio.IsLoopback ? ChipConexion.ServicioAqui : ChipConexion.ConectadaALaPrincipal,
     };
@@ -74,16 +136,49 @@
     private int _porCobrar;
     private readonly CancellationTokenSource _alto = new();
 
+    /// <summary>
+    /// La pantalla de venta se vuelve a pintar con cada escaneo; el estado de arriba, solo cuando cambia lo suyo (entrega 5,
+    /// parte 3, «Pintar menos»): la conexión, lo que falta por cobrar, o la caja y quien entró.
+    /// </summary>
+    private bool _cambio = true;
+
+    private (CajaDto, SesionDto)? _pintadoCon;
+
+    protected override void OnParametersSet()
+    {
+        if (_pintadoCon is not { } antes || !ReferenceEquals(antes.Item1, Caja) || !ReferenceEquals(antes.Item2, Sesion))
+            _cambio = true;
+        _pintadoCon = (Caja, Sesion);
+    }
+
+    protected override bool ShouldRender()
+    {
+        var pintar = _cambio;
+        _cambio = false;
+        return pintar;
+    }
+
+    /// <summary>Cambió algo de lo suyo: se vuelve a pintar.</summary>
+    private void Pintar()
+    {
+        _cambio = true;
+        StateHasChanged();
+    }
+
+    /// <summary>La cola de la impresora de tickets (entrega 5, parte 3): si algo no salió, el chip lo dice.</summary>
+    private ColaDeImpresion Cola => ColaDeImpresion.De(Impresora);
+
     protected override void OnInitialized()
     {
         // Solo la ventana de Windows trabaja sin conexión; en el navegador de la caja principal no hay contingencia.
         _contingencia = Servicios.GetService<Contingencia>();
         if (_contingencia is not null)
             _contingencia.Cambio += AlCambiar;
+        Cola.Cambio += AlCambiar;
         _ = VigilarAsync();
     }
 
-    private void AlCambiar() => _ = InvokeAsync(StateHasChanged);
+    private void AlCambiar() => _ = InvokeAsync(Pintar);
 
     private async Task VigilarAsync()
     {
@@ -112,13 +207,14 @@
             // Sin la caja principal no se sabe: el chip se oculta hasta que vuelva.
             _porCobrar = 0;
         }
-        StateHasChanged();
+        Pintar();
     }
 
     public async ValueTask DisposeAsync()
     {
         if (_contingencia is not null)
             _contingencia.Cambio -= AlCambiar;
+        Cola.Cambio -= AlCambiar;
         await _alto.CancelAsync();
         _alto.Dispose();
     }

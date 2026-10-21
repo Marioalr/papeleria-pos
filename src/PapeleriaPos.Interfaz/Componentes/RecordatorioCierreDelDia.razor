@@ -1,0 +1,105 @@
+@* El recordatorio de cerrar el día (2026-10-17, docs/propuesta-interfaz.md «Corte»): a la hora de cierre de la tienda
+   (Configuración › Tienda), si el día de hoy no se ha cerrado, quien tiene «Ver y cerrar el corte del día» lo ve en la
+   venta, donde van los demás avisos (el retiro, la impresora): sin ventana, sin sonido y sin un paso más en el cobro. Se
+   va al cerrar el día. Lo decide la caja principal (RegistroCorteDelDia.RecordatorioAsync): sin conexión, o en el piloto
+   con eleventa (el día se cierra allá), no sale. Pregunta al entrar y cada minuto, como el chip de las impresiones, y solo
+   por quien tiene el permiso. *@
+@implements IDisposable
+@inject ClienteCaja Cliente
+
+@if (Visible && _recordatorio is { } r)
+{
+    <div class="vn-alerta vn-recordatorio-dia" role="status">
+        <Ico Nombre="reloj" />
+        <div>
+            <span><strong>Falta cerrar el día.</strong> La tienda cierra a las @r.HoraCierre.ToString("HH:mm", Formato.Mexico): haz el corte de los turnos y ciérralo en «Corte › Del día».</span>
+            @if (AlAbrirElCorte.HasDelegate)
+            {
+                <span><button class="vn-boton chico" @onclick="AlAbrirElCorte">Ir al corte</button></span>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    /// <summary>Cada cuánto se vuelve a preguntar: la hora de cierre llega sin que nadie toque la caja.</summary>
+    public static readonly TimeSpan CadaCuanto = TimeSpan.FromMinutes(1);
+
+    [Parameter, EditorRequired] public Guid CajaId { get; set; }
+
+    /// <summary>Quien entró: el recordatorio es para quien cierra el día.</summary>
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Con un panel abierto en su lugar no se enseña (sigue sabiendo si toca).</summary>
+    [Parameter] public bool Visible { get; set; } = true;
+
+    /// <summary>Opcional: abrir el corte desde el aviso.</summary>
+    [Parameter] public EventCallback AlAbrirElCorte { get; set; }
+
+    private RecordatorioCierreDto? _recordatorio;
+    private readonly CancellationTokenSource _fin = new();
+    private Guid? _de;
+
+    /// <summary>Cuántas veces se ha preguntado: solo vale la respuesta de la última.</summary>
+    private int _revisiones;
+
+    protected override void OnInitialized()
+    {
+        _de = Sesion.UsuarioId;
+        _ = VigilarAsync();
+    }
+
+    /// <summary>Si en la misma venta entra otro (hoy Ctrl+U regresa a la entrada), lo suyo de una vez.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_de == Sesion.UsuarioId)
+            return;
+        _de = Sesion.UsuarioId;
+        await RevisarAsync();
+    }
+
+    private async Task VigilarAsync()
+    {
+        using var reloj = new PeriodicTimer(CadaCuanto);
+        try
+        {
+            do
+                await InvokeAsync(RevisarAsync);
+            while (await reloj.WaitForNextTickAsync(_fin.Token));
+        }
+        catch (OperationCanceledException)
+        {
+            // Se fue la venta.
+        }
+    }
+
+    /// <summary>
+    /// Pregunta si toca (también al cerrar el día desde el corte: se va sin esperar el siguiente minuto). Quien no cierra el
+    /// día no pregunta (el servicio también lo revisa): la venta no hace llamadas de más.
+    /// </summary>
+    public async Task RevisarAsync()
+    {
+        if (_fin.IsCancellationRequested)
+            return;
+        var revision = ++_revisiones;
+        RecordatorioCierreDto? recordatorio = null;
+        if (Sesion.Puede(AccionControlada.CorteDelDia))
+        {
+            try
+            {
+                recordatorio = await Cliente.RecordatorioCierreAsync(CajaId, Sesion.UsuarioId);
+            }
+            catch (ErrorCaja)
+            {
+                // Sin la caja principal (o una de antes, que no lo sabe) no se sabe: sin recordatorio; en un minuto, otra vez.
+            }
+        }
+        // Si mientras tanto se volvió a preguntar (al cerrar el día), lo que llega tarde ya no vale: no lo vuelve a enseñar.
+        if (_fin.IsCancellationRequested || revision != _revisiones || Equals(recordatorio, _recordatorio))
+            return;
+        _recordatorio = recordatorio;
+        StateHasChanged();
+    }
+
+    public void Dispose() => _fin.Cancel();
+}

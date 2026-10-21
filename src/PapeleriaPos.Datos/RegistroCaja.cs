@@ -110,6 +110,12 @@ public sealed class RegistroCaja(PosDbContext db)
 
         venta.ValidarCobros(cobros, redondear);
 
+        // Lo que el cobro solo lee va antes de tomar el candado de escritura (entrega 5, parte 2): dos cobros a la vez ya no se
+        // esperan mientras se leen los productos y sus costos. Dentro queda lo que se lee para escribir: el folio y la existencia.
+        var conInventario = venta.Lineas.Where(l => l.LlevaInventario && l.VarianteId is not null).Select(l => l.VarianteId!.Value).Distinct().ToList();
+        var variantes = await db.Variantes.Where(v => conInventario.Contains(v.Id)).ToDictionaryAsync(v => v.Id, ct);
+        var ultimosCostos = await UltimosCostosAsync(conInventario, ct);
+
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         try
         {
@@ -140,11 +146,11 @@ public sealed class RegistroCaja(PosDbContext db)
             var inventario = new RegistroInventario(db);
             foreach (var linea in venta.Lineas.Where(l => l.LlevaInventario && l.VarianteId is not null))
             {
-                var variante = await db.Variantes.FindAsync([linea.VarianteId!.Value], ct)
+                var variante = variantes.GetValueOrDefault(linea.VarianteId!.Value)
                     ?? throw new InvalidOperationException($"«{linea.Descripcion}» ya no está en el catálogo.");
                 var existencia = await inventario.ExistenciaAsync(venta.SucursalId, variante.Id, ct);
                 var salida = Kardex.Salida(venta.SucursalId, variante, TipoMovimiento.Venta, linea.CantidadBase, existencia,
-                    await UltimoCostoAsync(variante.Id, ct), ahora, documentoTipo: nameof(Venta), documentoId: venta.Id);
+                    ultimosCostos.GetValueOrDefault(variante.Id), ahora, documentoTipo: nameof(Venta), documentoId: venta.Id);
                 linea.CostoCentavos = -salida.CostoCentavos;
                 await inventario.AgregarAsync(salida, ct);
             }
@@ -283,8 +289,14 @@ public sealed class RegistroCaja(PosDbContext db)
     /// bitácora como negado. La diferencia queda a nombre del cajero del turno y, si pasa del umbral, el aviso sale de la
     /// bitácora (AlertasTelegram). El turno se cierra.
     /// </summary>
-    public async Task<Corte> CorteZAsync(Guid turnoId, Guid usuarioId, long contadoCentavos, CancellationToken ct = default)
+    /// <param name="id">
+    /// El que le dio la caja (entrega 5, parte 2): si ya está (la caja lo mandó otra vez, o subió el que hizo sin conexión porque
+    /// no le llegó la respuesta), es ese; no se cierra otra vez.
+    /// </param>
+    public async Task<Corte> CorteZAsync(Guid turnoId, Guid usuarioId, long contadoCentavos, Guid? id = null, CancellationToken ct = default)
     {
+        if (id is { } dado && await db.Cortes.FindAsync([dado], ct) is { } existente)
+            return existente;
         var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
         var control = new ServicioControl(db);
         if ((await control.EvaluarAsync(usuarioId, turno.SucursalId, AccionControlada.CorteZ, ct: ct)).Nivel != NivelPermiso.Permitido)
@@ -298,6 +310,8 @@ public sealed class RegistroCaja(PosDbContext db)
         var ahora = Ahora;
         var corte = CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.Z, usuarioId, ahora,
             contadoCentavos, await DevolucionesAsync(turno.Id, ct), await AbonosAsync(turno.Id, ct));
+        if (id is { } suyo)
+            corte.Id = suyo;
         turno.CerradoUtc = ahora;
         control.Registrar(turno.SucursalId, turno.CajaId, usuarioId, AccionControlada.CorteZ,
             $"Corte del turno de {await NombreAsync(turno.CajeroId, ct)}: esperado {corte.EsperadoCentavos / 100m:N2}, contado {corte.ContadoCentavos / 100m:N2}",
@@ -518,7 +532,8 @@ public sealed class RegistroCaja(PosDbContext db)
     private async Task<Turno> TurnoAbiertoPorIdAsync(Guid turnoId, CancellationToken ct)
     {
         var turno = await TurnoPorIdAsync(turnoId, ct);
-        return turno.Abierto ? turno : throw new InvalidOperationException("El turno ya está cerrado.");
+        // Lo pudo cerrar otra caja o, en el piloto con eleventa, el corte de eleventa: se entra otra vez y se abre otro.
+        return turno.Abierto ? turno : throw new InvalidOperationException("El turno ya está cerrado: cambia de usuario (Ctrl+U) para abrir otro.");
     }
 
     private async Task<int> SiguienteFolioAsync(Guid sucursalId, string serie, CancellationToken ct)
@@ -532,6 +547,18 @@ public sealed class RegistroCaja(PosDbContext db)
         }
         secuencia.Valor++;
         return checked((int)secuencia.Valor);
+    }
+
+    /// <summary>El último costo de cada variante (el de <see cref="UltimoCostoAsync"/>), en una sola lectura.</summary>
+    private async Task<Dictionary<Guid, long>> UltimosCostosAsync(IReadOnlyCollection<Guid> variantes, CancellationToken ct)
+    {
+        if (variantes.Count == 0)
+            return [];
+        var costos = await db.ProveedoresVariantes.AsNoTracking()
+            .Where(pv => variantes.Contains(pv.VarianteId) && pv.UltimoCostoCentavos != null)
+            .Select(pv => new { pv.VarianteId, pv.UltimaCompraUtc, Costo = pv.UltimoCostoCentavos!.Value })
+            .ToListAsync(ct);
+        return costos.GroupBy(c => c.VarianteId).ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.UltimaCompraUtc).First().Costo);
     }
 
     internal async Task<long> UltimoCostoAsync(Guid varianteId, CancellationToken ct) =>

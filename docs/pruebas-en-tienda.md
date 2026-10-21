@@ -13,8 +13,10 @@
 - **Lo que se lleva listo:** el instalador probado en una PC limpia, los scripts (el de diagnóstico de red, probado en
   una PC con Windows, y el que junta la configuración de cada PC), cables de red, cinta de color y una memoria USB con
   todo.
-- **Una herramienta de prueba,** probada antes en la PC de desarrollo: lee por SNMP las tres impresoras de inyección y
-  manda dos tickets a la vez al puerto 9100 de la impresora de tickets.
+- **Las herramientas de prueba,** probadas antes en la PC de desarrollo. Las de la impresora de tickets y el lector ya
+  están (2026-10-16): `probar-impresora-tickets` y `probar-lector`; el simulador de cajas para el día pico, desde el
+  2026-10-17 (`simular-dia-pico`, [abajo](#el-día-pico-en-la-caja-principal-real)). Falta la que lee por SNMP las tres
+  impresoras de inyección, con el módulo de impresión.
 - **Sin compras** (2026-10-09): todo se hace con lo que ya hay en la tienda.
 
 ## Fin de semana del 17 y 18 de octubre
@@ -25,22 +27,105 @@ datos de eleventa.
 
 1. **La prueba con una persona real, con la pantalla nueva:** el instalador de prueba armado entre semana con lo último
    de `main` (su propio puerto y su base de prueba, aparte de eleventa) y la guía al día, en una PC con Windows.
-2. **El paso 7 del piloto:** la pantalla nueva en la ventana de Windows a 1366×768; dos tickets a la vez desde las dos
-   cajas a la impresora de tickets; y el lector: si lee QR, qué manda con los códigos de 11 cifras y su ritmo al
-   teclear.
+2. **El paso 7 del piloto:** la pantalla nueva en la ventana de Windows a 1366×768, y en la caja 2, con el repositorio
+   al día (como `observar-en-vivo`):
+   - `scripts\probar-impresora-tickets.cmd`: dos tickets de prueba a la impresora de tickets, primero a la vez y después
+     casi juntos; si la caja principal también tiene el repositorio, abierto en las dos, con Enter al mismo tiempo. Pide
+     la IP de la impresora. Se anota lo que dijo de cada ticket y si salieron completos, hasta «Fin del ticket». Solo
+     gasta papel: no toca eleventa.
+   - `scripts\probar-lector.cmd`: escanear varios códigos, uno de 11 cifras (comparado con el de ese producto en
+     eleventa). Dice qué llegó y si en el cobro la caja lo reconoce como el lector por su ritmo; si no, cuánto subir
+     `RAFAGA_MS` en `caja.js`. Sin QR: el ticket no lo lleva por ahora (2026-10-16).
 3. **Solo mirar, por eleventa**
    ([por qué](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)):
-   - la versión de eleventa en las dos cajas;
+   - la versión de eleventa en las dos cajas (Configuración ➜ Mantenimiento ➜ Licencia);
    - su respaldo automático: si está activo, si respalda al salir, en qué carpeta, y la hora, el tamaño y el tipo de los
      últimos respaldos;
    - si existe `gbak.exe` en la carpeta de Firebird (`FirebirdSQL20\bin`) y si Firebird corre como servicio de Windows;
+   - en la caja 2, la ruta completa de un `gbak.exe` de Firebird 2.0 (con `fbclient.dll` o `gds32.dll` junto a él) y el
+     espacio libre del disco: la caja nueva lo usa para respaldar eleventa antes de escribirle cada día (va en
+     `Eleventa:Gbak`; los respaldos, unos 5 días, en `ProgramData\PapeleriaPos\respaldos-eleventa`). Solo mirar: no correr
+     gbak en la tienda;
    - en la caja principal, con `netstat -ano`, qué programa escucha en los puertos 3050 y 3309;
-   - la hora de cada caja contra la del celular;
+   - la hora de cada caja contra la del celular (en el piloto, la caja nueva compara la hora de lo que manda con la del
+     corte de eleventa para saber si ya se contó allá);
+   - cómo se hace el corte de la caja 2 en eleventa al final del día: quién lo hace, a qué hora, si después se cierra
+     eleventa o se deja abierto, y si en la mañana se abre eleventa en la caja 2 antes de vender (la caja nueva adopta el
+     turno que abre eleventa y toma su corte);
    - si OneDrive sincroniza Documentos en la caja 2 (las notas de `observar-en-vivo` son datos reales);
-   - con `observar-en-vivo` en la caja 2: entradas y salidas de dinero, un cierre con diferencia y, si se da, algo
-     después de medianoche.
+   - con `observar-en-vivo` en la caja 2: entradas y salidas de dinero, un cierre con diferencia y, si se dan de
+     verdad, algo después de medianoche y una devolución o cancelación de un ticket de otra caja o de otro turno (por
+     ejemplo, en la caja 2 algo que se vendió en la principal, o un ticket de ayer). Esto último es lo que más falta: el
+     script dice en qué turno y con qué caja la anota eleventa. Mientras no se vea, la caja 2 no hace esas devoluciones
+     (dice que se hagan en eleventa, que llegan solas con la lectura); cuando se vea, el puente puede aprender a
+     escribirlas y la caja 2 a recibirlas también;
+   - lo que la [paridad con eleventa](paridad-eleventa.md#qué-mirar-en-la-tienda) marca «por confirmar»: si los cajeros
+     usan Ins para la cantidad y si el ticket sale siempre, cómo se hace y se imprime el corte, si se consultan ventas o
+     cortes de otros días y qué se mira del inventario.
 4. **Lo que siga pendiente de conocer la tienda** ([abajo](#primer-fin-de-semana-conocer-la-tienda)), si da tiempo y
    el dueño lo aprueba.
+
+## El día pico en la caja principal real
+
+Cualquier fin de semana, en un rato sin venta (antes de abrir o al cerrar): unos 15 minutos con la caja principal libre. Mide
+el servicio del POS en el procesador y el disco de la caja principal de verdad, con un día pico de dos cajas
+([plan](plan.md#para-el-piloto-con-dos-cajas)). **Solo lectura para eleventa:** no lo abre ni lo lee; usa una copia de la
+base de prueba del POS, nunca la de eleventa ni la de la prueba con una persona.
+
+- **Qué hace** `scripts\simular-dia-pico.cmd`: compila el servicio y el simulador del repositorio, arranca un servicio del
+  POS solo para él (en esta PC, en un puerto propio, sin red hacia afuera) con una copia de la base de prueba que dejó el
+  instalador (si no está, arma una igual), y dos cajas simuladas venden 120 tickets cada una en 10 minutos, como la caja de
+  verdad: con su copia, cobros, búsquedas, devoluciones, cancelaciones, entradas y salidas, un precio que cambia, un producto
+  que llega, y la red de la segunda caída 30 segundos a la mitad del día. Al final hace el corte de cada turno, cuadra todo,
+  detiene el servicio y borra su carpeta.
+- **Antes:** el repositorio al día y .NET en la caja principal (como `observar-en-vivo` en la caja 2), cerrada la caja de la
+  prueba del POS y lo demás pesado. Eleventa puede quedarse abierto, sin vender: el simulador le quita procesador.
+- **Se corre** con doble clic en `scripts\simular-dia-pico.cmd`. Dice cómo va; al final, «Cuadra» o qué no cuadró.
+- **Se anota:** el informe que deja en `Documentos\TPV\dia-pico` (los tiempos contra las metas, la memoria del servicio, el
+  cuadre, lo que pasó y la PC). Se trae a la PC de desarrollo: no tiene datos de la tienda.
+- **Sale bien si** cuadra (ninguna venta perdida ni duplicada, los cortes al centavo, las existencias con su kardex) y los
+  tiempos de 19 de cada 20 quedan en sus metas; si no, el informe dice qué y cuánto, y se revisa entre semana.
+- **Con la red de verdad (si da tiempo):** en la caja 2, con la caja de la prueba del POS abierta en la caja principal (su
+  servicio, en el puerto 5180), `dotnet run -c Release --project src\PapeleriaPos.Herramientas -- simular-cajas --servicio
+  http://<IP de la caja principal>:5180 --cajas 2 --tickets 120 --minutos 10 --caida 30s@50% --salida
+  "%USERPROFILE%\Documents\TPV\dia-pico\por-wifi.md"`: las cajas simuladas van por el Wi-Fi de la caja 2. Así no mide la
+  memoria del servicio (es de la otra PC: se ve en su Administrador de tareas). Deja las cajas simuladas y sus ventas en
+  la base de la prueba con una persona; «Empezar de cero», en la franja de la prueba, la deja como estaba.
+
+## Con el POS en la caja 2: las fotos de lo que se señala
+
+Las fotos de los productos ([entrega 13, parte 2](plan.md#primero-la-versión-unicaja-entrega-0)) se toman en la tienda, con
+los productos enfrente, contra el catálogo de verdad: el fin de semana del piloto en la caja 2 (el paso 7), cuando ya lee el
+catálogo de eleventa. Las fotos son solo del POS: no tocan los datos de eleventa.
+
+- **Entre semana:** acomodar en Ctrl+M el mostrador y la temporada que corra (Todos Santos, hasta el 5 de noviembre;
+  Navidad, desde el 20 de noviembre): así se sabe qué productos fotografiar. Quién las toma (con «Productos, precios y
+  etiquetas»: el dueño o el encargado) y con qué celular.
+- **En la tienda:**
+  1. El celular, en el Wi-Fi de la tienda. En la caja 2, en Productos (F3), la ficha de un producto, «Con el celular…»
+     enseña el código QR de la página (y su dirección): entrar con el usuario y el PIN y tocar «Fotos».
+  2. Por cada producto: escanear su código (o escribir su nombre), «Tomar la foto», revisar que se vea el producto y
+     «Guardar». Con buena luz, de frente, sobre algo liso y llenando la foto.
+  3. En la caja 2: Ctrl+M (cada pieza con su foto), buscar uno por su nombre (la foto chica a la izquierda) y F9 (grande).
+- **Qué anotar:** si la cámara se abre directo desde la página y en qué celulares; cuánto tarda cada foto, desde «Tomar la
+  foto» hasta «Guardada»; cuánto tarda en salir en la caja 2 y si se reconoce bien el producto en su pantalla; cuántas se
+  tomaron y en cuánto tiempo.
+
+## Con el POS en la caja 2: la hoja de la temporada y las tarjetas de precio
+
+La hoja de la temporada y las tarjetas de precio ([entrega 13, parte 3](plan.md#primero-la-versión-unicaja-entrega-0)) se
+imprimen en las impresoras de inyección y en la láser, que solo están en la tienda. El mismo fin de semana de las fotos, ya
+con la temporada acomodada y sus fotos tomadas:
+
+- **En la tienda,** en la caja 2, Productos (F3) › «Temporadas», la temporada que corra:
+  1. «2 · Hoja» › «Vista previa» y luego «Imprimir la hoja», en la WF-6590 y en la L5590, al **100 % (tamaño real)**, sin
+     márgenes que la achiquen.
+  2. «3 · Tarjetas» › «Imprimir…» una hoja de tarjetas; recortar dos por su línea.
+  3. En la venta, escanear con el lector de la caja 2 el código de una tarjeta recortada y uno de la hoja: cada uno entra al
+     ticket como el producto.
+- **Qué anotar:** si la hoja sale completa y en su tamaño (medir una tarjeta: 6.5 × 4.2 cm), si las fotos se reconocen
+  impresas (en blanco y negro y a color), si el lector lee los códigos a la primera (también a través de un portatarjetas o
+  una mica), y cuánto tarda en salir cada hoja.
 
 ## Primer fin de semana: conocer la tienda
 
@@ -75,7 +160,9 @@ configuración y exportar el registro del Tenda (un reinicio lo borra).
      ([cuáles](notas.md#red-de-la-tienda)), y si el registro Dhcp-Client está activado.
 2. **Impresoras** (1 a 2 h):
    - lectura SNMP de las dos WF-6590 y de la L5590 (serie, contador y niveles), la de la L5590 por primera vez;
-   - dos tickets al mismo tiempo desde las dos cajas a la impresora de tickets, para ver si espera o rechaza;
+   - dos tickets al mismo tiempo desde las dos cajas a la impresora de tickets, para ver si espera o rechaza; con la
+     caja nueva, que el segundo diga «espera a la impresora» y salga solo después, una sola vez; si alguno dice «no
+     salió» pero sí salió (no confirmó), «No imprimirlo» lo deja y sigue lo demás, sin que salga dos veces;
    - qué colas tiene cada PC y en qué PC corre Control Print;
    - para qué se usa cada impresora y cuánto se cobra en cada una, con el personal y en Control Print.
 3. **Grabadores** (30 min): configurarlos por seguridad ([lista](camaras.md#configurar-el-grabador)), y anotar qué
@@ -91,7 +178,8 @@ configuración y exportar el registro del Tenda (un reinicio lo borra).
 6. **Para la próxima falla de red:** el script de diagnóstico corriendo en las dos cajas (si el dueño lo aprueba) y
    su ícono «Diagnóstico de red» en el escritorio de la caja 2; el cable de red que va del módem al puerto de internet
    del Tenda, marcado con cinta de color en las dos puntas; y la instrucción al personal
-   ([abajo](#durante-una-falla-de-red)).
+   ([abajo](#durante-una-falla-de-red)). Donde ya esté el POS, su bitácora de red se anota sola
+   ([cómo se lee](#después-de-una-caída-la-bitácora-de-red)).
 
 ## Segundo fin de semana: arreglar la red
 
@@ -131,6 +219,10 @@ hora algo no funciona, se regresa todo.
   esté apagado (la contingencia es del POS nuevo). Al volver a prender el Tenda, ver las cámaras en DMSS desde un
   celular con datos, porque se apagó el UPnP. Esto comprueba el arreglo, no la causa: la prueba de verdad es la
   próxima caída real, con el script corriendo.
+- **Con el POS en la caja 2 (el piloto):** con el puerto de la cola de la impresora de tickets ya en TCP/IP, el chip de
+  arriba dice solo «Tickets» (antes, «Tickets · configúrala por IP»); mientras el Tenda está apagado, la franja de la
+  caja 2 dice «Sin red local» o «Sin internet» según lo que vea, y su bitácora de red anota cuándo se perdió y cuándo
+  volvió el router ([cómo se lee](#después-de-una-caída-la-bitácora-de-red)).
 - **Si algo sale mal o se llega a la hora límite, regresar todo:** cada equipo a su dirección anotada (o a DHCP), la
   caja 2 de vuelta a su Wi-Fi (con la clave a la mano), cada cola de Windows a su puerto de antes, el WSD de las
   impresoras otra vez prendido, eleventa y Control Print a sus direcciones de antes, el Tenda a su configuración
@@ -149,9 +241,15 @@ hora algo no funciona, se regresa todo.
 - **Respaldo y vigilancia:** el respaldo cifrado en Backblaze B2, con una restauración de ensayo, la vigilancia de la
   caja principal en Healthchecks.io y NetBird para el soporte a distancia
   ([notas](notas.md#respaldo-fuera-de-la-tienda-y-aviso-de-apertura)).
+- **Si se reinstala o se cambia la PC de la caja principal** (también al restaurar una copia en la de repuesto): su
+  llave propia (`pos.llave`, junto a la base) no va en los respaldos, así que la nueva tiene otra. Cada caja deja de
+  mandarle su llave, sigue vendiendo con su copia y su franja dice «La caja principal no probó ser la misma de
+  siempre» con «Dar de alta otra vez» (sin nadie en la venta): el dueño la da de alta con su PIN, eligiendo la misma
+  caja. Si se oprime por error, «Volver sin dar de alta» regresa.
 - **El bot de Telegram de verdad.**
 - **La impresión** con la cola de laboratorio y después con la real, sin quitar Control Print hasta el piloto.
-- **Un día pico** (~120 tickets) con el simulador de cajas, contra la caja principal real.
+- **Un día pico** (~120 tickets) con el simulador de cajas, contra la caja principal real
+  ([cómo](#el-día-pico-en-la-caja-principal-real); se puede antes, con la base de prueba).
 
 ## Durante una falla de red
 
@@ -173,4 +271,77 @@ Cualquier día. **Instrucción al personal:**
 > vez. Al cerrar la tienda,
 > déjalo conectado y anota la hora.
 
-Lo que se junta después lo hace el dueño ([notas](notas.md#red-de-la-tienda)).
+Lo que se junta después lo hace el dueño ([notas](notas.md#red-de-la-tienda)), y con eso la bitácora de red del POS
+([abajo](#después-de-una-caída-la-bitácora-de-red)).
+
+## Después de una caída: la bitácora de red
+
+Donde está instalado el POS, la bitácora de red se anota sola, sin que nadie haga nada
+([cómo funciona](arquitectura.md#la-red-de-la-matriz)). Para un vistazo, Configuración › Acerca de › Red enseña las
+últimas caídas con desde, hasta y cuánto duraron (las de esa caja y las de la caja principal).
+
+- **Dónde está** (se guardan 10 días: copiarla a la USB junto con lo demás antes de que pasen):
+  - **cada caja:** `red-caja-AAAA-MM-DD.log`, en la carpeta del registro de la caja
+    (`%LocalAppData%\PapeleriaPos\registros` de la cuenta de Windows con que se usa; en la caja de prueba,
+    `C:\ProgramData\PapeleriaPos-Prueba\registros`);
+  - **el servicio:** `red-servicio-AAAA-MM-DD.log`, en `C:\ProgramData\PapeleriaPos\registros` de la PC donde corre (la
+    caja principal; durante el piloto corre en la caja 2, y la caja principal de eleventa no tiene POS: ahí sigue
+    haciendo falta el script de diagnóstico).
+- **Cómo se lee:** se abre con el Bloc de notas; cada línea empieza con la fecha y la hora de esa PC, y solo hay líneas
+  cuando algo cambia (más un resumen cada 15 minutos):
+  - «Empieza la bitácora de red … (la PC arrancó a las …)» es cuando se abrió la caja o arrancó el servicio; «Termina
+    …», cuando se cerró bien. Un hueco sin líneas antes de un «Empieza» sin su «Termina» dice que la PC se apagó de
+    golpe o se fue la luz;
+  - «Se perdió «internet»» y «Volvió «internet» tras 2 h 5 min (se perdió a las 14:03:12)»: lo mismo para «la caja
+    principal», «el router», «la impresora de tickets» y los equipos de `Red:Equipos` (en el piloto, también «la PC de
+    eleventa», solo con ping). Se da por perdido con dos revisiones seguidas sin respuesta (unos 30 a 60 s después de
+    que pasa). Un equipo que nunca contestó el ping (su firewall no lo deja) no cuenta como caído: lo dice una vez.
+    Estas líneas, y las de «Empieza» y «Termina», se anotan siempre, aunque el archivo del día llegue a su tope;
+  - «Se perdió «la caja principal»» dice también cómo estaba la red antes y lo que tardaron los últimos latidos. Que la
+    red con la caja principal se ponga lenta y vuelva a estar buena (pasa seguido en un Wi-Fi regular) no lleva línea:
+    el resumen dice cuántas veces;
+  - «Esta PC: …», al empezar, y «Esta PC cambió de IP / de conexión / de Wi-Fi / de router»: cómo está conectada (cable
+    o Wi-Fi; con el detalle del Wi-Fi prendido, también el nombre de su perfil de red y su señal: abajo), su IP y si se
+    la dio el router (DHCP) o es fija, y el router con su MAC. Una IP 169.254 dice que el router no le dio dirección;
+    «El router … cambió de MAC», que otro aparato contesta con la IP del router;
+  - «El DNS del router no contesta»: el router está trabado (no contesta ni su propio nombre, `tendawifi.com`). Se
+    anota la primera vez en cada 15 minutos; el resumen dice cuántas veces no contestó;
+  - «Llega mucha difusión a esta PC: … paquetes por segundo»: posible tormenta de tráfico;
+  - ««Caja 2» dejó de latir» / «volvió a latir» (en la del servicio): cuándo la caja principal dejó de saber de cada
+    caja. También la primera vez en cada 15 minutos; si se repite, el resumen dice cuántas veces más;
+  - «Se busca la caja principal en la red», «Contestó …, pero no probó …» y «La caja principal cambió de dirección»: la
+    caja buscándola por si le cambió la IP;
+  - «Esta caja recuerda la llave de su caja principal (…)»: una vez, al estrenar esta versión en una caja que ya estaba
+    dada de alta (las que se dan de alta después ya la traen). Desde ahí solo se cambia a una caja principal que firme
+    con esa llave;
+  - «… no firma con la llave de su caja principal …» o «Contestaron …, y prueban ser cajas principales distintas …» (la
+    franja dice «La caja principal no probó ser la misma de siempre» o «Hay dos cajas principales en la red: avisa al
+    dueño»): en la red hay otra PC con el servicio y una copia de la base (la caja principal de antes, un respaldo
+    abierto en una laptop), o se reinstaló o se cambió la PC de la caja principal. La caja no se cambia sola y sigue
+    vendiendo con su copia: hay que apagar el servicio de la PC que sobra o, si se cambió la caja principal, dar de alta
+    la caja otra vez ([abajo](#después-al-dejar-eleventa-las-dos-cajas-con-el-pos));
+  - «Resumen de 15 min»: cuánto tardaron los latidos y el router (lo menos, lo más y la mitad), si hubo internet, la
+    señal del Wi-Fi (con el detalle prendido), cuánta difusión y cuántos descartados llegaron, y lo que se repitió: «la
+    red con la caja principal se puso lenta 12 veces», «el DNS del router no contestó 10 de 31 veces», ««Caja 2» dejó
+    de latir 4 veces más».
+- **El detalle del Wi-Fi** (el nombre del perfil de red y la señal) viene apagado: en Windows 11 24H2, leerlo podría
+  sacar la pregunta del permiso de ubicación encima de la venta. Para diagnosticar las caídas se prende en la caja 2, un
+  sábado o domingo fuera del horario de venta: cerrar la caja y abrir con el Bloc de notas
+  `C:\ProgramData\PapeleriaPos\Caja\caja.json`. Si tiene el renglón `"Red": null`, cambiar `null` por
+  `{ "DetalleWifi": true }`; si no lo tiene, agregar justo después de la primera llave, `{`, el renglón
+  `"Red": { "DetalleWifi": true },` (con la coma). Guardar y abrir la caja: si no abre, el renglón quedó mal (revisar
+  las comillas y la coma, o quitarlo). Esperar un par de minutos: si sale cualquier pregunta de Windows (la de la
+  ubicación), contestar que no y apagarlo. Si no sale nada, la línea «Esta PC: …» de la bitácora de ese día ya trae el
+  Wi-Fi y su señal. Para apagarlo, cambiar `true` por `false`.
+- **Qué mirar después de la caída**, con las horas de la instrucción al personal (el video, «Se cayó la red», «Ya
+  desconecté», «Reconecté») y la hora de Megacable:
+  1. en la del servicio, si «el router» se perdió junto con «internet» o después (las causas 1 y 2 de
+     [notas](notas.md#red-de-la-tienda)), y si volvió en cuanto se desconectó el cable del módem;
+  2. en la de la caja 2, si se perdió «la caja principal» y «el router» con la señal del Wi-Fi buena (el Tenda dejó de
+     dar Wi-Fi) o con la señal mala (con el detalle del Wi-Fi prendido), si la caja se quedó con una IP 169.254 (sin
+     DHCP) y si el DNS del router se trabó;
+  3. si las dos cajas lo anotaron a la misma hora (««Caja 2» dejó de latir» en la del servicio): con los equipos en el
+     switch e IP fija, la caja principal no debería perder a la impresora de tickets (si la pierde, el arreglo no
+     basta);
+  4. si hubo mucha difusión o descartados en el resumen (la causa 3: una tormenta de tráfico);
+  5. si cambió la IP o la MAC del router en medio, o algo seguía configurado por nombre o con WSD (lo dice al empezar).
