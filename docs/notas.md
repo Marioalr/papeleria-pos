@@ -145,10 +145,10 @@ el último medio año se fue el internet 3 veces (es variable), y suele tardar u
 no-break. La causa **no se conoce** todavía.
 
 - **Lo que vio el dueño en una caída** (la semana del 2026-10-12): desconectó el cable de red que va del módem al Tenda
-  y, después de un rato, lo volvió a conectar; la red local ya no se volvió a caer. Es una sola vez, no se sabe si al
-  reconectarlo el internet ya había vuelto, y es poco probable poder hacer más pruebas. Si el internet seguía caído,
-  apoya la causa 1 (lo que mandaba el módem ya había pasado) y debilita la 2 (con los equipos reintentando, la red se
-  habría vuelto a caer); si ya había vuelto, no dice nada nuevo.
+  y, después de un rato, lo volvió a conectar con el internet todavía caído (volvió hasta el día siguiente); la red
+  local ya no se volvió a caer. Apoya la causa 1 (lo que mandaba el módem al caerse el servicio ya había pasado) y
+  debilita la 2: con los equipos reintentando sin internet, la red se habría vuelto a caer. Es una sola vez y es poco
+  probable poder hacer más pruebas.
 - **Cómo se siguió trabajando:** la caja 2 con los datos de un celular por su Wi-Fi y la caja principal con otro
   celular por cable USB, sin dejar su cable de red (así siguió imprimiendo). En el Wi-Fi del celular la caja 2 sale de
   la red de la tienda: no ve a la caja principal, ni a la impresora de tickets, ni el Firebird de eleventa. Por eso se
@@ -176,6 +176,7 @@ no-break. La causa **no se conoce** todavía.
      PC reintentan sin parar, y cada intento ocupa lugar en la memoria de un router barato. Encaja con que empiece y
      termine junto con el internet. Es menos probable: son unos 10 equipos, los intentos sin respuesta se borran en
      unos 30 s, una tabla llena no impide que el celular se una al Wi-Fi, y no explica que no pase en todas las caídas.
+     En la caída de la semana del 12, reconectar el cable con el internet todavía caído no la volvió a tumbar.
   3. **Por qué también se cae lo que va por cable:** si el problema solo traba al router, el switch sigue pasando el
      tráfico entre equipos con dirección vigente. Para que se caiga todo tiene que pasar algo más: equipos conectados a
      los puertos del Tenda o a su Wi-Fi; una tormenta de tráfico que el switch reparte a todos los puertos; equipos

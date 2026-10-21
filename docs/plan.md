@@ -1390,10 +1390,11 @@ el internet y vuelve en cuanto regresa. El Tenda está bien configurado y conect
 se fue el internet 3 veces, y suele tardar unas 12 horas en volver. No hay ningún no-break.
 
 **Respuestas del dueño (2026-10-21):** la semana del 12 estuvo en una caída: desconectó el cable de red que va del módem
-al Tenda, lo volvió a conectar después de un rato y la red local no volvió a caerse; no es concluyente y es poco probable
-poder hacer más pruebas ([notas](notas.md#red-de-la-tienda)). Para seguir trabajando, la caja 2 tomó internet del Wi-Fi
-de un celular y la caja principal de otro celular por cable USB, sin dejar su cable de red: por eso es indispensable que
-la caja 2 tenga su propia copia (ya la tiene, entrega 5). Pidió analizar un solo celular para las dos
+al Tenda, lo volvió a conectar después de un rato, con el internet todavía caído (volvió hasta el día siguiente), y la
+red local no volvió a caerse; no es concluyente y es poco probable poder hacer más pruebas
+([notas](notas.md#red-de-la-tienda)). Para seguir trabajando, la caja 2 tomó internet del Wi-Fi de un celular y la caja
+principal de otro celular por cable USB, sin dejar su cable de red: por eso es indispensable que la caja 2 tenga su
+propia copia (ya la tiene, entrega 5). Pidió analizar un solo celular para las dos; la caja principal no tiene Wi-Fi
 ([análisis](arquitectura.md#la-red-de-la-matriz), por probar en la tienda). La sucursal 2 empezará con una sola PC, así
 que no tendrá la sincronización entre cajas de la matriz.
 

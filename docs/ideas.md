@@ -129,8 +129,9 @@ arregla la red local ([notas](notas.md#red-de-la-tienda)), porque un respaldo pu
   (queda el PIN). Los avisos de Telegram esperan en una cola y salen si el internet vuelve antes de un día; los de más
   de un día vencen sin enviarse. Falta anotar el modelo de la terminal de tarjetas: unas traen su propio chip y otras
   usan el celular por Bluetooth.
-- **Hoy:** en una caída usan los datos del celular, que es gratis: el celular comparte sus datos por Wi-Fi (para la
-  terminal) o por cable USB (para la caja principal; no probado con los celulares de la tienda).
+- **Hoy:** en una caída usan los datos del celular, que es gratis: por Wi-Fi a la caja 2 y a la terminal, y por cable
+  USB a la caja principal (así se trabajó en la caída de la semana del 2026-10-12, con dos celulares). Con uno solo:
+  [análisis](arquitectura.md#la-red-de-la-matriz).
 - **Si un día se quiere algo más:** un módem de prepago al que el personal pasa el cable del puerto de internet del
   Tenda en una caída, o un router de negocio que haga el cambio solo. Solo después del arreglo de la red: con el
   módem de respaldo, la red local del Tenda no debe chocar con la suya. Referencia de modelos y precios en
