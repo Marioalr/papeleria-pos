@@ -73,7 +73,8 @@
 | Eliminar productos | La usan | Dar de baja con su historia; juntar los duplicados | — | — | — |
 | Impuestos por producto | No la usan: no se desglosa el IVA | IVA 16 %, 0 % o exento | — | — | — |
 | Kits | No la usan: no hay kits en su base | El tipo existe, sin uso | Con las promociones (arriba) | — | — |
-| Importar y exportar productos en Excel; cambiar precios de varios a la vez | Por confirmar | Nada de eso: los precios se cambian en la ficha, uno por uno | Lo que la tienda use | Sin plan | Chico cada uno |
+| Cambiar precios de varios a la vez («Actualizar varios»): un porcentaje, una cantidad o un precio fijo, con un resumen antes de aplicar | Por confirmar | **Hecho (2026-10-17).** Productos › «Cambiar precios»: los de un departamento, una marca, lo que coincide con un texto o los marcados en la lista; subir o bajar un porcentaje o una cantidad, o un precio fijo, sobre el menudeo, con el mayoreo en la misma proporción y el redondeo a los 50 centavos o al peso. Primero se ve cómo quedan (el margen, para quien ve la utilidad) y se aplica todo junto, con la bitácora. En el piloto, lo de eleventa se cambia allá | — | — | — |
+| Importar y exportar productos en Excel | Por confirmar | Nada de eso | Lo que la tienda use | Sin plan | Chico |
 
 ### Inventario
 
@@ -218,6 +219,8 @@ Solo para completar el cuadro:
 - **Transferencias por verificar.**
 - **El diagnóstico en Excel:** dinero parado, 80-20, margen por departamento, catálogo por revisar y temporada.
 - **Las impresiones por cobrar** del módulo de impresión, lo de Control Print.
+- **Al cambiar precios de varios:** el mayoreo en la misma proporción, el redondeo como pone sus precios la tienda y el
+  margen de cada uno antes de aplicar (2026-10-17).
 
 ## Qué mirar en la tienda
 

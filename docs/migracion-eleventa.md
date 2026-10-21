@@ -179,7 +179,9 @@ la caja principal por la red, como lo abre una caja de eleventa, y se pone al d�
     sola variante; si cada variante está activa; los códigos de su pieza (se pueden agregar otros); el precio de menudeo
     y las promociones de eleventa. Tampoco se da de baja, se junta ni se le cambia la unidad. Sí se cambian las escalas
     del F11 o de F3 (también el mayoreo por revisar), las otras presentaciones, la marca, las variantes nuevas y lo dado
-    de alta aquí, que va a eleventa como artículo común;
+    de alta aquí, que va a eleventa como artículo común. Al cambiar precios de varios a la vez (Productos › «Cambiar
+    precios», 2026-10-17), igual: de lo de eleventa solo cambia su mayoreo de aquí, sin pasar de su menudeo ni de sus
+    promociones, y la vista previa lo dice;
   - en Inventario (F4), lo que mueve existencias: recibir y cerrar compras, el conteo del día (la venta ya no enseña su
     chip), el conteo completo (también en el celular), ajustes, mermas y abrir un paquete. Tampoco con lo dado de alta
     aquí: una compra o un conteo junta los dos, y eleventa no lleva su existencia. Las órdenes, el sugerido, las

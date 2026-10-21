@@ -1188,6 +1188,24 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-depto-pasar div { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .vn-depto-pasar small { display: block; margin-top: 6px; font-size: 12.5px; color: var(--vn-suave); }
 .vn-depto-error > td { padding-top: 2px; }
+/* Productos › Cambiar precios: cuáles, cómo y cómo quedan antes de aplicar. Mientras está abierto, la lista de la izquierda
+   marca: cada renglón lleva su casilla. */
+.vn-items .vn-item .vn-marca { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1.5px solid var(--vn-borde); border-radius: 5px; background: var(--vn-hoja); color: #fff; }
+.vn-items .vn-item .vn-marca.on { background: var(--vn-tinta); border-color: var(--vn-tinta); }
+.vn-items .vn-item .vn-marca svg.ico { width: 13px; height: 13px; stroke-width: 2.6; }
+.vn-precios .vn-alerta { margin: 0; }
+.vn-precios-fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.vn-precios-fila > select, .vn-precios-fila > input { min-width: 280px; }
+.vn-precios-marcados { font-weight: 600; color: var(--vn-texto); }
+.vn-precios-cuanto { display: inline-flex; align-items: center; gap: 5px; font: 600 15px var(--vn-f-cifras); color: var(--vn-suave); }
+.vn-adentro .vn-precios-cuanto input { width: 110px; text-align: right; font-variant-numeric: tabular-nums; }
+.vn-adentro label.vn-precios-redondeo { flex-direction: row; align-items: center; gap: 6px; }
+.vn-adentro.vn-precios label.opcion { font-size: 14px; color: var(--vn-texto); }
+.vn-precios-resumen { font-size: 14px; line-height: 1.4; color: var(--vn-texto); }
+.vn-precios .vn-boton.primario kbd { background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .35); color: #fff; }
+.vn-precios-tabla td small { display: block; margin-top: 2px; font-size: 12.5px; color: var(--vn-suave); }
+.vn-precios-tabla td .vn-etiq { margin-left: 6px; }
+.vn-adentro .nota.vn-precios-no { color: var(--vn-error); font-weight: 600; }
 /* El piloto con eleventa en la ficha: los códigos de la pieza que se quedan (los de eleventa) y sus precios, sin cambiar */
 .vn-adentro .codigos-fijos { display: inline-flex; flex-wrap: wrap; gap: 4px; margin: 0 6px 4px 0; vertical-align: middle; }
 .vn-adentro .codigos-fijos code { font-size: 13px; padding: 1px 6px; border: 1px solid var(--vn-linea); border-radius: 6px; background: var(--vn-renglon); color: var(--vn-suave); }

@@ -479,6 +479,19 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<TrastiendaEnElPilotoDto> TrastiendaEnElPilotoAsync() =>
         ConRespaldoAsync(async () => (await _http.GetAsync<TrastiendaEnElPilotoDto>("api/catalogo/piloto"))!);
 
+    // ── Cambiar precios de varios a la vez (Productos › Cambiar precios, solo con la caja principal) ──
+
+    /// <summary>Cómo quedan los precios con esa regla, sin cambiar nada; el margen, solo para quien ve la utilidad.</summary>
+    public Task<VistaPreciosDeVariosDto> VistaPreciosDeVariosAsync(SolicitudPreciosDeVarios solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<VistaPreciosDeVariosDto>("api/catalogo/precios-de-varios/vista", solicitud));
+
+    /// <summary>
+    /// Aplica lo que se vio (con su huella y el Id de esta vez): si algo cambió desde la vista, el servicio no lo aplica; si
+    /// ya lo había aplicado (se perdió la respuesta), no lo hace otra vez.
+    /// </summary>
+    public Task<PreciosDeVariosAplicadosDto> CambiarPreciosDeVariosAsync(SolicitudPreciosDeVarios solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<PreciosDeVariosAplicadosDto>("api/catalogo/precios-de-varios", solicitud));
+
     // ── Compras (F4, solo con la caja principal) ──
 
     public Task<List<ProveedorDto>> ProveedoresAsync(bool inactivos = false) =>

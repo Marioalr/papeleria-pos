@@ -101,4 +101,53 @@ public class CalculoPrecioTests
     {
         Assert.Null(CalculoPrecio.Calcular([], Matriz, _pieza, Cantidad.Piezas(1)));
     }
+
+    // ── Nunca se cobra más que a menudeo, aunque las escalas hayan quedado capturadas fuera de orden ──
+
+    [Fact]
+    public void Una_escala_mas_cara_que_el_menudeo_no_se_cobra()
+    {
+        Precio[] precios = [PorPieza(1090), PorPieza(1100, desde: 12)];
+
+        var doce = CalculoPrecio.Calcular(precios, Matriz, _pieza, Cantidad.Piezas(12))!;
+
+        Assert.Equal((1090L, 12 * 1090L, false), (doce.Precio.PrecioCentavos, doce.ImporteCentavos, doce.EsMayoreo));
+    }
+
+    [Fact]
+    public void Una_escala_fuera_de_orden_no_cobra_mas_por_llevar_mas()
+    {
+        // Desde 24 quedó más cara que desde 12 (y que el menudeo): 24 piezas se cobran a la de 12.
+        Precio[] precios = [PorPieza(1500), PorPieza(1450, desde: 12), PorPieza(1550, desde: 24)];
+
+        var veinticuatro = CalculoPrecio.Calcular(precios, Matriz, _pieza, Cantidad.Piezas(24))!;
+
+        Assert.Equal((1450L, 24 * 1450L, true), (veinticuatro.Precio.PrecioCentavos, veinticuatro.ImporteCentavos, veinticuatro.EsMayoreo));
+        Assert.Equal(1450, CalculoPrecio.Calcular(precios, Matriz, _pieza, Cantidad.Piezas(12))!.Precio.PrecioCentavos);
+    }
+
+    [Fact]
+    public void El_mayoreo_siempre_tampoco_cobra_una_escala_mas_cara()
+    {
+        Precio[] precios = [PorPieza(1000), PorPieza(1100, desde: 12)];
+
+        var una = CalculoPrecio.Calcular(precios, Matriz, _pieza, Cantidad.Piezas(1), mayoreoSiempre: true)!;
+
+        Assert.Equal((1000L, false), (una.Precio.PrecioCentavos, una.EsMayoreo));
+    }
+
+    [Fact]
+    public void Un_paquete_mas_caro_que_sus_piezas_a_menudeo_se_cobra_por_sus_piezas()
+    {
+        var par = new Presentacion { VarianteId = _pluma.Id, Nombre = "Par", Factor = Cantidad.Piezas(2) };
+        var propio = new Precio { VarianteId = _pluma.Id, PresentacionId = par.Id, CantidadMinima = Cantidad.Piezas(1), PrecioCentavos = 2050 };
+        var conDescuento = new Precio { VarianteId = _pluma.Id, PresentacionId = par.Id, CantidadMinima = Cantidad.Piezas(1), PrecioCentavos = 1990 };
+
+        var caro = CalculoPrecio.Calcular([PorPieza(1000), propio], Matriz, par, Cantidad.Piezas(1))!;
+        var barato = CalculoPrecio.Calcular([PorPieza(1000), conDescuento], Matriz, par, Cantidad.Piezas(1))!;
+
+        Assert.Equal((2000L, (Guid?)null), (caro.ImporteCentavos, caro.Precio.PresentacionId));
+        Assert.Same(conDescuento, barato.Precio);
+        Assert.Equal(1990, barato.ImporteCentavos);
+    }
 }
