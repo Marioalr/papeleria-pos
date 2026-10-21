@@ -29,6 +29,11 @@ public static class CalculoPrecio
     /// En ambos casos se prefieren los precios de la sucursal sobre los base, y se toma la escala más alta que
     /// alcance la cantidad. Con <paramref name="mayoreoSiempre"/> (el privilegio de un cliente registrado), al menos la
     /// primera escala de mayoreo aunque no se llegue a su cantidad. Devuelve <c>null</c> si la variante no tiene precio.
+    /// <para>
+    /// Nunca se cobra más que a menudeo: si las escalas quedaron capturadas fuera de orden (una más cara que el menudeo o que
+    /// una de menos piezas), se cobra la más barata de las que alcanza; y un paquete cuyo precio propio cuesta más que sus
+    /// piezas a menudeo se cobra por sus piezas.
+    /// </para>
     /// </summary>
     public static PrecioAplicado? Calcular(
         IEnumerable<Precio> precios, Guid sucursalId, Presentacion presentacion, Cantidad cantidad, bool mayoreoSiempre = false)
@@ -36,7 +41,11 @@ public static class CalculoPrecio
         var deLaVariante = precios.Where(p => p.VarianteId == presentacion.VarianteId).ToList();
 
         var propias = DeSucursalOBase(deLaVariante.Where(p => p.PresentacionId == presentacion.Id), sucursalId);
-        if (ElegirEscala(propias, cantidad, mayoreoSiempre) is { } propio)
+        var porUnidad = DeSucursalOBase(deLaVariante.Where(p => p.PresentacionId is null), sucursalId);
+        // El paquete nunca cuesta más que sus piezas a menudeo: si así quedó su precio propio, se cobra por sus piezas.
+        if (ElegirEscala(propias, cantidad, mayoreoSiempre) is { } propio
+            && (porUnidad.MinBy(p => p.CantidadMinima) is not { } menudeoPorPieza
+                || propio.PrecioCentavos <= presentacion.Factor.Importe(menudeoPorPieza.PrecioCentavos)))
         {
             var menudeo = propias.MinBy(p => p.CantidadMinima)!;
             return new PrecioAplicado(propio, cantidad.Importe(propio.PrecioCentavos))
@@ -47,7 +56,6 @@ public static class CalculoPrecio
         }
 
         var unidadesBase = cantidad.Por(presentacion.Factor);
-        var porUnidad = DeSucursalOBase(deLaVariante.Where(p => p.PresentacionId is null), sucursalId);
         if (ElegirEscala(porUnidad, unidadesBase, mayoreoSiempre) is not { } escala)
             return null;
         var deMenudeo = porUnidad.MinBy(p => p.CantidadMinima)!;
@@ -77,17 +85,19 @@ public static class CalculoPrecio
 
     /// <summary>
     /// La escala más alta que alcanza la cantidad; si no alcanza ninguna (medio metro), la más baja. Con mayoreo siempre,
-    /// nunca menos que la primera de mayoreo (la segunda escala).
+    /// nunca menos que la primera de mayoreo (la segunda escala). Con las escalas en orden (cada una más barata que la
+    /// anterior) es la más barata de las que alcanza, y eso se toma: si una quedó fuera de orden (más cara que el menudeo o
+    /// que una de menos piezas), no se cobra más por llevar más.
     /// </summary>
     private static Precio? ElegirEscala(List<Precio> escalas, Cantidad cantidad, bool mayoreoSiempre)
     {
         var abs = cantidad.Abs();
-        var elegida = escalas.Where(p => p.CantidadMinima <= abs).MaxBy(p => p.CantidadMinima)
+        var alcanzadas = escalas.Where(p => p.CantidadMinima <= abs).ToList();
+        if (mayoreoSiempre && escalas.OrderBy(p => p.CantidadMinima).Skip(1).FirstOrDefault() is { } primeraDeMayoreo
+            && !alcanzadas.Contains(primeraDeMayoreo))
+            alcanzadas.Add(primeraDeMayoreo);
+        // Entre dos al mismo precio, la de más piezas, como antes.
+        return alcanzadas.OrderBy(p => p.PrecioCentavos).ThenByDescending(p => p.CantidadMinima).FirstOrDefault()
             ?? escalas.MinBy(p => p.CantidadMinima);
-        if (mayoreoSiempre && elegida is not null
-            && escalas.OrderBy(p => p.CantidadMinima).Skip(1).FirstOrDefault() is { } primeraDeMayoreo
-            && elegida.CantidadMinima < primeraDeMayoreo.CantidadMinima)
-            return primeraDeMayoreo;
-        return elegida;
     }
 }

@@ -31,7 +31,8 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
 
     /// <summary>
     /// Cuántas compras se están contando o esperan su nota, cuántas órdenes siguen abiertas (y cuántas ya llevan productos:
-    /// lo que se espera que llegue) y cuántos departamentos se cuentan completos. Solo cuentas, sin montos.
+    /// lo que se espera que llegue), cuántos departamentos se cuentan completos y cuántos productos están en su mínimo o
+    /// debajo (Bajos en inventario). Solo cuentas, sin montos.
     /// </summary>
     public async Task<PendientesInventarioDto> PendientesAsync(Guid sucursalId, CancellationToken ct = default)
     {
@@ -43,7 +44,7 @@ public sealed class RegistroCompras(PosDbContext db, bool lecturaDeEleventa = fa
         var conteos = await db.ConteosDepartamento.AsNoTracking()
             .CountAsync(c => c.SucursalId == sucursalId && c.Estado == EstadoConteoDepartamento.Abierto, ct);
         return new PendientesInventarioDto(compras.GetValueOrDefault(EstadoCompra.Recibiendo), compras.GetValueOrDefault(EstadoCompra.PorCostear),
-            ordenes.Count, ordenes.Count(n => n > 0), conteos);
+            ordenes.Count, ordenes.Count(n => n > 0), conteos, await new RegistroReportesInventario(db).ContarBajosAsync(sucursalId, ct));
     }
 
     // ── Proveedores ──────────────────────────────────────────────────────────
