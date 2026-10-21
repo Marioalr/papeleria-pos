@@ -42,7 +42,7 @@
     }
     else if (_delDia)
     {
-        <CorteDelDia CajaId="Turno.CajaId" Sesion="Sesion" AlHacerElCorte="() => Mostrar(delDia: false)" />
+        <CorteDelDia CajaId="Turno.CajaId" Sesion="Sesion" AlHacerElCorte="() => Mostrar(delDia: false)" AlCerrarElDia="AlCerrarElDia" />
     }
     else if (PilotoEleventa && _resultado is null)
     {
@@ -218,6 +218,9 @@
     /// caja», como en el prototipo). Sin él, el botón termina el corte sin cerrar el turno (<see cref="AlTerminar"/>).
     /// </summary>
     [Parameter] public EventCallback AlCambiarUsuario { get; set; }
+
+    /// <summary>Opcional: se cerró el día desde «Del día» (la venta quita el recordatorio de cerrarlo).</summary>
+    [Parameter] public EventCallback AlCerrarElDia { get; set; }
 
     /// <summary>
     /// El piloto con eleventa (2026-10-12): el corte de esta caja se hace en eleventa. En su lugar, el aviso; el corte del

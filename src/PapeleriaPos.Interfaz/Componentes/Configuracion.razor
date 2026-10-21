@@ -447,7 +447,7 @@
                 TextoTienda("telefono", "Teléfono", null, ConfiguracionSucursal.LargoTelefono, c => c.Telefono, (c, v) => c with { Telefono = v }, "tel"),
                 new("horario", "Horario")
                 {
-                    Ayuda = "Abrir un turno fuera de él avisa al dueño, y de noche no se avisa que la impresora no responde.",
+                    Ayuda = "Abrir un turno fuera de él avisa al dueño, y de noche no se avisa que la impresora no responde. A la hora de cierre, a quien cierra el día se le recuerda cerrarlo.",
                     Permiso = AccionControlada.ConfigurarTienda,
                     NoListo = NoListoTienda,
                     Entre = "a",

@@ -279,8 +279,8 @@ public sealed record CorteInformativoDto(
 /// <summary>
 /// El corte del día (entrega 6, 2026-10-14), para quien tiene «ver y cerrar el corte del día»: todas las cajas y turnos de
 /// la sucursal. Los turnos del día son los que se abrieron, se cerraron o siguen abiertos ese día; lo demás (lo vendido,
-/// las formas de pago, las salidas, las devoluciones, lo fiado…) es lo de esos turnos que pasó ese día: de un turno que
-/// viene de otro día, solo lo de hoy.
+/// las formas de pago, las salidas, lo fiado…) es lo de esos turnos que pasó ese día: de un turno que viene de otro día,
+/// solo lo de hoy. Las devoluciones, las de la sucursal ese día (2026-10-17).
 /// </summary>
 /// <param name="EfectivoCentavos">Lo que se cobró en efectivo en las ventas (con su redondeo).</param>
 /// <param name="FiadoCentavos">Lo que se vendió a crédito: ya cuenta en lo vendido y no es dinero.</param>
@@ -288,15 +288,26 @@ public sealed record CorteInformativoDto(
 /// <param name="EntradasCentavos">Las entradas de efectivo (F7), que no son venta.</param>
 /// <param name="AbonosCentavos">Lo que entró por abonos de clientes (no son venta), en todas las formas.</param>
 /// <param name="ImpresionesCentavos">Lo que se cobró de impresiones en las ventas.</param>
-/// <param name="PorQueNoSeCierra">Lo que falta para cerrar el día; vacío: se puede cerrar.</param>
-/// <param name="Avisos">Lo que conviene saber y no detiene el cierre.</param>
+/// <param name="PorQueNoSeCierra">Lo que falta para cerrar el día; vacío: se puede cerrar. De un día que ya pasó, vacío: no se cierra.</param>
+/// <param name="Avisos">Lo que conviene saber y no detiene el cierre. De un día que ya pasó, vacío.</param>
 /// <param name="Piloto">El piloto con eleventa: el corte del día se hace allá, aquí solo se ve.</param>
 /// <param name="Cierre">Si ya se cerró después de su último turno.</param>
+/// <param name="Utilidad">
+/// La utilidad del día, solo para quien tiene «Ver costos, utilidad y margen» (2026-10-17): a los demás no se les manda.
+/// </param>
+/// <param name="DeOtroDia">
+/// Un día que ya pasó (2026-10-17): se ve y se imprime, pero no se cierra; «Cerrar el día» es solo el de hoy.
+/// </param>
+/// <param name="PorDepartamento">
+/// Lo vendido por departamento, como en eleventa: para todos los que ven el corte del día (2026-10-17). Su costo y su
+/// utilidad, solo para quien ve la utilidad. Vacío desde una caja principal de antes.
+/// </param>
 public sealed record CorteDelDiaDto(
     DateOnly Fecha, IReadOnlyList<TurnoDelDiaDto> Turnos, long VendidoCentavos, int Tickets, long EfectivoCentavos, long TarjetaCentavos,
     long TransferenciaCentavos, long FiadoCentavos, int TransferenciasPorVerificar, IReadOnlyList<SalidaDelDiaDto> Salidas, long EntradasCentavos,
     int Devoluciones, long DevolucionesCentavos, int Cancelaciones, long CancelacionesCentavos, int Abonos, long AbonosCentavos,
-    long ImpresionesCentavos, IReadOnlyList<string> PorQueNoSeCierra, IReadOnlyList<string> Avisos, bool Piloto, CierreDelDiaDto? Cierre);
+    long ImpresionesCentavos, IReadOnlyList<string> PorQueNoSeCierra, IReadOnlyList<string> Avisos, bool Piloto, CierreDelDiaDto? Cierre,
+    UtilidadDelDiaDto? Utilidad = null, bool DeOtroDia = false, VentasPorDepartamentoDto? PorDepartamento = null);
 
 /// <param name="Tickets">Los de ese día (de un turno que viene de otro día, solo los de hoy), como lo vendido y las formas de pago.</param>
 /// <param name="EsperadoCentavos">El efectivo que debería haber en todo el turno: el de su corte o, si sigue abierto, el de ahora. Vacío en el piloto.</param>
@@ -312,6 +323,76 @@ public sealed record TurnoDelDiaDto(
 
 /// <summary>Las salidas de efectivo del día por su motivo (hoy el motivo se escribe libre: las que dicen lo mismo van juntas).</summary>
 public sealed record SalidaDelDiaDto(string Motivo, int Veces, long MontoCentavos);
+
+/// <summary>
+/// La utilidad del día, como la «Ganancia» del corte del día de eleventa (2026-10-17), solo para quien tiene «Ver costos,
+/// utilidad y margen». Es lo vendido menos su costo: el que guardó cada venta al cobrar (el costo promedio del kardex; en las
+/// impresiones, el de cada trabajo), con lo devuelto ese día restado, como en las ventas por departamento
+/// (<see cref="VentasPorDepartamentoDto"/>, donde va la de cada uno). El artículo común no tiene costo: no entra en la
+/// utilidad, como en el resumen del día. Los servicios todavía no tienen costo (sus recetas llegan con la fase 4): cuentan
+/// completos, como hasta hoy.
+/// </summary>
+/// <param name="VentaCentavos">Lo vendido con costo: lo de los departamentos y las impresiones, sin el artículo común.</param>
+/// <param name="CostoCentavos">Su costo.</param>
+/// <param name="ServiciosSinCostoCentavos">De lo vendido, lo de servicios sin costo: cuenta completo como utilidad.</param>
+public sealed record UtilidadDelDiaDto(long VentaCentavos, long CostoCentavos, long ServiciosSinCostoCentavos)
+{
+    [JsonIgnore]
+    public long UtilidadCentavos => VentaCentavos - CostoCentavos;
+
+    /// <summary>La utilidad entre lo vendido con costo, en centésimas (3250 = 32.5 %); vacío sin venta.</summary>
+    [JsonIgnore]
+    public int? MargenCentesimas => DepartamentoDelDiaDto.Margen(VentaCentavos, CostoCentavos);
+}
+
+/// <summary>
+/// Lo vendido ese día por departamento, como las «Ventas por departamento» del corte del día de eleventa (2026-10-17): para
+/// todos los que ven el corte del día. Lo devuelto ese día se resta de su departamento, como en eleventa (una cancelación
+/// no: el ticket cancelado ya no cuenta como vendido). Las impresiones y el artículo común van aparte. Los costos (y con
+/// ellos la utilidad de cada uno, como la «Ganancia por departamento» de eleventa) solo vienen para quien tiene «Ver costos,
+/// utilidad y margen»: a los demás no se les mandan, ni vacíos.
+/// </summary>
+/// <param name="Departamentos">De lo que más se vendió a lo que menos.</param>
+/// <param name="ImpresionesCentavos">Lo cobrado de impresiones, menos lo devuelto.</param>
+/// <param name="ImpresionesCostoCentavos">Su costo; vacío para quien no ve la utilidad.</param>
+/// <param name="ArticuloComunCentavos">Lo vendido como artículo común, menos lo devuelto: no tiene costo.</param>
+public sealed record VentasPorDepartamentoDto(
+    IReadOnlyList<DepartamentoDelDiaDto> Departamentos, long ImpresionesCentavos,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? ImpresionesCostoCentavos, long ArticuloComunCentavos)
+{
+    /// <summary>Todo lo vendido ese día, menos lo devuelto: lo vendido del corte menos sus devoluciones.</summary>
+    [JsonIgnore]
+    public long TotalCentavos => Departamentos.Sum(d => d.VentaCentavos) + ImpresionesCentavos + ArticuloComunCentavos;
+
+    [JsonIgnore]
+    public long? ImpresionesUtilidadCentavos => ImpresionesCentavos - ImpresionesCostoCentavos;
+
+    [JsonIgnore]
+    public int? ImpresionesMargenCentesimas => ImpresionesCostoCentavos is { } costo ? DepartamentoDelDiaDto.Margen(ImpresionesCentavos, costo) : null;
+}
+
+/// <summary>Lo vendido de un departamento en el día (menos lo devuelto ese día).</summary>
+/// <param name="CostoCentavos">Su costo; vacío para quien no ve la utilidad.</param>
+public sealed record DepartamentoDelDiaDto(
+    string Departamento, long VentaCentavos, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? CostoCentavos = null)
+{
+    [JsonIgnore]
+    public long? UtilidadCentavos => VentaCentavos - CostoCentavos;
+
+    /// <summary>En centésimas (3250 = 32.5 %); vacío sin el costo o sin venta.</summary>
+    [JsonIgnore]
+    public int? MargenCentesimas => CostoCentavos is { } costo ? Margen(VentaCentavos, costo) : null;
+
+    internal static int? Margen(long ventaCentavos, long costoCentavos) => ventaCentavos > 0 ? Catalogo.Margen.Calcular(ventaCentavos, costoCentavos) : null;
+}
+
+/// <summary>
+/// El recordatorio de cerrar el día (2026-10-17): ya es la hora de cierre de la tienda (Configuración › Tienda) y el día de
+/// hoy no se ha cerrado. Lo ve en la venta quien tiene «Ver y cerrar el corte del día»; se va al cerrar el día.
+/// </summary>
+/// <param name="Fecha">El día por cerrar: hoy.</param>
+/// <param name="HoraCierre">La hora a la que cierra la tienda.</param>
+public sealed record RecordatorioCierreDto(DateOnly Fecha, TimeOnly HoraCierre);
 
 /// <summary>Qué pasó con el resumen del día al cerrarlo.</summary>
 public enum EnvioResumen
@@ -332,7 +413,11 @@ public enum EnvioResumen
 /// <param name="Resumen">Solo en la respuesta al cerrarlo.</param>
 public sealed record CierreDelDiaDto(DateTime CerradoLocal, string CerradoPor, EnvioResumen? Resumen = null);
 
-public sealed record SolicitudCierreDia(Guid UsuarioId);
+/// <param name="Fecha">
+/// El día que se ve en la caja al cerrarlo (2026-10-17): si ya no es hoy (pasó la medianoche con el corte abierto), no se
+/// cierra, ni el que se ve ni el nuevo. Vacía en una caja de antes: hoy.
+/// </param>
+public sealed record SolicitudCierreDia(Guid UsuarioId, DateOnly? Fecha = null);
 
 /// <param name="Codigo">"requiere-autorizacion" o "no-permitido" cuando lo detiene una regla.</param>
 public sealed record ErrorDto(string Mensaje, string? Codigo = null);
@@ -383,7 +468,10 @@ public sealed record EfectivoCajaDto(long EsperadoCentavos, long? LimiteCentavos
 /// la venta, el fondo que propone «Abrir turno» y el límite de efectivo.
 /// </summary>
 /// <param name="NombreTienda">Vacío: la entrada dice el de la sucursal.</param>
-/// <param name="HoraApertura">El horario de la tienda: fuera de él, abrir un turno avisa y de noche no se avisa de la impresora.</param>
+/// <param name="HoraApertura">
+/// El horario de la tienda: fuera de él, abrir un turno avisa y de noche no se avisa de la impresora; desde la hora de cierre
+/// se recuerda cerrar el día a quien lo cierra (2026-10-17).
+/// </param>
 /// <param name="LimiteEfectivoCentavos">Al llegar, la caja pide un retiro. Vacío: sin límite.</param>
 /// <param name="FondoSugeridoCentavos">Lo que propone «Abrir turno». Vacío: el fondo se escribe cada vez.</param>
 /// <param name="UmbralCorteCentavos">Una diferencia mayor en el corte de un turno avisa al dueño.</param>
