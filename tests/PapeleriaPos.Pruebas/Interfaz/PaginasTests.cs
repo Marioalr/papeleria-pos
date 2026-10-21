@@ -341,8 +341,9 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         Assert.Contains("Límite y plazo", botones);
         Assert.Contains("Nuevo cliente", botones);
         Assert.Contains("puedes cambiarlo", await p.TextoAsync());
-        // «Por revisar»: lo del crédito sin conexión de este cliente, en su detalle.
-        Assert.Contains("Del crédito sin conexión, por revisar", await p.TextoAsync());
+        // «Por revisar»: lo del crédito sin conexión de este cliente, en su detalle. La página lo pide aparte de la lista, así
+        // que puede llegar después de su cuenta (pasó en el CI de Windows): se espera.
+        await p.EsperarAsync(t => t.Contains("Del crédito sin conexión, por revisar"), "lo del crédito sin conexión por revisar");
         // Editar, en el mismo lado; Esc regresa sin guardar.
         await p.OprimirAsync(await p.BotonAsync("Editar"));
         Assert.Equal($"Editar «{PreparacionPrueba.ConDeuda}»", await TituloAsync(p));
