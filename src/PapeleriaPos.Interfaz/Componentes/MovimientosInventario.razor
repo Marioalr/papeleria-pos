@@ -1,0 +1,351 @@
+@* Inventario (F4) › Movimientos, como los «Movimientos de inventario» de eleventa (2026-10-17): el kardex de toda la
+   tienda en unos días (hoy, ayer, 7 o 30 días, este mes o del día que se escriba al que se escriba), del más reciente al
+   más viejo, de 50 en 50. Se filtra por tipo, producto (nombre o código; también escaneándolo), departamento y quién lo
+   hizo. Cada renglón dice cuándo, qué (con su folio o su motivo), el producto, cuánto entró o salió, lo que quedó y quién; el
+   costo, solo para quien tiene «Ver costos, utilidad y margen». Lo ve quien lleva el inventario (ConsultasInventario). En el
+   piloto con eleventa se ve igual, con la lectura de eleventa como un tipo más. Solo lee. *@
+@implements IDisposable
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="vn-reporte-filtros">
+    <div class="vn-filtros" role="group" aria-label="Días">
+        @foreach (var (rango, nombre) in Rangos)
+        {
+            <button class="vn-filtro @(rango == _rango ? "on" : "")" @onclick="AlElegir(rango)">@nombre</button>
+        }
+    </div>
+    <label class="vn-reporte-campo">Del <input id="mov-desde" type="date" value="@Fecha(_desde)" @onchange="DesdeAsync" /></label>
+    <label class="vn-reporte-campo">al <input id="mov-hasta" type="date" value="@Fecha(_hasta)" @onchange="HastaAsync" /></label>
+</div>
+<div class="vn-reporte-filtros">
+    <input id="mov-buscar" class="vn-reporte-busca" data-busca placeholder="Producto: nombre o código" autocomplete="off" spellcheck="false"
+           aria-label="Buscar los movimientos de un producto" value="@_texto" @oninput="EscribiendoAsync" @onkeydown="AlTeclearAsync" />
+    <select id="mov-tipo" aria-label="Tipo de movimiento" value="@(_clase?.ToString() ?? "")" @onchange="TipoAsync">
+        <option value="">Todos los tipos</option>
+        @foreach (var (clase, nombre) in Textos.ClasesParaFiltrar)
+        {
+            <option value="@clase">@nombre</option>
+        }
+    </select>
+    <select id="mov-depto" aria-label="Departamento" value="@(_departamento?.ToString() ?? "")" @onchange="DepartamentoAsync">
+        <option value="">Todos los departamentos</option>
+        @foreach (var d in _departamentos)
+        {
+            <option value="@d.Id">@d.Nombre</option>
+        }
+    </select>
+    <select id="mov-quien" aria-label="Quién lo hizo" value="@(_quien?.ToString() ?? "")" @onchange="QuienAsync">
+        <option value="">Todos</option>
+        @foreach (var u in _quienes)
+        {
+            <option value="@u.Id">@u.Nombre</option>
+        }
+    </select>
+</div>
+@if (_movimientos is { } pagina)
+{
+    @* Del más reciente al más viejo: la página siguiente es la de antes. *@
+    <Paginador Total="pagina.Total" Pagina="pagina.Pagina" Tamano="pagina.Tamano" Plural="movimientos" Singular="movimiento"
+               Anterior="Más recientes" Siguiente="Anteriores" AlAnterior="RecientesAsync" AlSiguiente="AnterioresAsync" />
+}
+@if (_error is not null)
+{
+    <p class="error">@_error</p>
+}
+@* Cada página nueva empieza arriba: la lista se dibuja de nuevo (@key) en lugar de quedarse a la mitad. *@
+<div class="vn-reporte-desliza" @key="_vista">
+    @if (_movimientos is null)
+    {
+        @if (_error is null)
+        {
+            <p class="nota">Cargando…</p>
+        }
+    }
+    else if (_movimientos.Movimientos.Count == 0)
+    {
+        <p class="nota">@SinMovimientos</p>
+    }
+    else
+    {
+        <table class="vn-tabla vn-movimientos">
+            <thead>
+                <tr>
+                    <th>Cuándo</th><th>Movimiento</th><th>Producto</th><th class="num">Cantidad</th><th class="num">Quedó</th><th>Quién</th>
+                    @if (_movimientos.ConCostos)
+                    {
+                        <th class="num">Costo</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var m in _movimientos.Movimientos)
+                {
+                    <tr @key="m.Id">
+                        <td class="cuando">@Cuando(m.FechaLocal)</td>
+                        <td>
+                            <strong>@Textos.Clase(m.Clase)</strong>@(m.Documento is { } documento ? $" {documento}" : "")
+                            @if (m.Motivo is { Length: > 0 } motivo)
+                            {
+                                <small class="vn-renglon-sub">@motivo</small>
+                            }
+                        </td>
+                        <td>
+                            @m.Producto
+                            <small class="vn-renglon-sub">
+                                @if (m.Codigo is { } codigo)
+                                {
+                                    <code>@codigo</code>
+                                }
+                                <span>@m.Departamento</span>
+                            </small>
+                        </td>
+                        <td class="num @(m.Cantidad > 0 ? "entra" : "")">@(m.Cantidad > 0 ? "+" : "−")@Textos.Cantidad(Math.Abs(m.Cantidad), m.Unidad)</td>
+                        <td class="num @(m.Existencia < 0 ? "rojo" : "")">@Textos.Cantidad(m.Existencia, m.Unidad)</td>
+                        <td>@(m.Quien ?? "—")</td>
+                        @if (_movimientos.ConCostos)
+                        {
+                            <td class="num">@(m.CostoCentavos is { } costo ? Formato.ConSigno(costo) : "")</td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+@if (_movimientos is { ConCostos: false })
+{
+    <p class="nota">El costo de cada movimiento lo ve quien tiene el permiso «Ver costos, utilidad y margen».</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Los días que se eligen con un toque; con las fechas escritas, ninguno.</summary>
+    private enum Rango { Hoy, Ayer, Semana, Mes, EsteMes }
+
+    private static readonly (Rango Rango, string Nombre)[] Rangos =
+        [(Rango.Hoy, "Hoy"), (Rango.Ayer, "Ayer"), (Rango.Semana, "7 días"), (Rango.Mes, "30 días"), (Rango.EsteMes, "Este mes")];
+
+    /// <summary>Lo que se espera al dejar de escribir antes de buscar (el lector no espera: su Enter busca ya).</summary>
+    private static readonly TimeSpan PausaAlEscribir = TimeSpan.FromMilliseconds(250);
+
+    private Rango? _rango = Rango.Hoy;
+    private DateOnly _desde;
+    private DateOnly _hasta;
+    private ClaseMovimiento? _clase;
+    private string _texto = "";
+    private Guid? _departamento;
+    private Guid? _quien;
+    private int _pagina;
+
+    private MovimientosInventarioDto? _movimientos;
+    private string? _error;
+    private IReadOnlyList<OpcionCatalogoDto> _departamentos = [];
+    private IReadOnlyList<OpcionCatalogoDto> _quienes = [];
+    private int _secuencia;
+
+    /// <summary>Cuántas listas se han dibujado: con cada una, la lista empieza arriba.</summary>
+    private int _vista;
+
+    private CancellationTokenSource? _escribiendo;
+    private bool _enfocar = true;
+
+    private static DateOnly Hoy => DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
+
+    protected override async Task OnInitializedAsync()
+    {
+        (_desde, _hasta) = Dias(Rango.Hoy);
+        var opciones = OpcionesAsync();
+        await CargarAsync();
+        await opciones;
+    }
+
+    /// <summary>Los departamentos (también los desactivados: sus movimientos se quedan) y los usuarios, para los filtros.</summary>
+    private async Task OpcionesAsync()
+    {
+        try
+        {
+            var catalogo = await Cliente.OpcionesCatalogoAsync();
+            _departamentos = [.. catalogo.Departamentos, .. (catalogo.Desactivados ?? []).Select(d => d with { Nombre = $"{d.Nombre} (desactivado)" })];
+            _quienes = await Cliente.QuienesMovimientosAsync(Caja.SucursalId, Sesion.UsuarioId);
+        }
+        catch (ErrorCaja)
+        {
+            // Sin ellos, solo no se filtra por departamento o por quién.
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_enfocar)
+        {
+            _enfocar = false;
+            await Js.EnfocarAsync("#mov-buscar");
+        }
+    }
+
+    private static (DateOnly Desde, DateOnly Hasta) Dias(Rango rango)
+    {
+        var hoy = Hoy;
+        return rango switch
+        {
+            Rango.Ayer => (hoy.AddDays(-1), hoy.AddDays(-1)),
+            Rango.Semana => (hoy.AddDays(-6), hoy),
+            Rango.Mes => (hoy.AddDays(-29), hoy),
+            Rango.EsteMes => (new DateOnly(hoy.Year, hoy.Month, 1), hoy),
+            _ => (hoy, hoy),
+        };
+    }
+
+    private async Task CargarAsync()
+    {
+        var secuencia = ++_secuencia;
+        try
+        {
+            var filtro = new FiltroMovimientosDto(_desde, _hasta, _clase, _texto, _departamento, _quien);
+            var movimientos = await Cliente.MovimientosInventarioAsync(Caja.SucursalId, Sesion.UsuarioId, filtro, _pagina);
+            if (secuencia == _secuencia)
+                (_movimientos, _error, _vista) = (movimientos, null, _vista + 1);
+        }
+        catch (ErrorCaja ex)
+        {
+            if (secuencia == _secuencia)
+                (_movimientos, _error) = (null, ex.Message);
+        }
+    }
+
+    /// <summary>Otro filtro: desde la primera página.</summary>
+    private Task DeNuevoAsync()
+    {
+        _pagina = 0;
+        return CargarAsync();
+    }
+
+    /// <summary>El clic de cada rango, el mismo en cada vuelta del dibujo.</summary>
+    private Func<Task> AlElegir(Rango rango) =>
+        _alElegir.TryGetValue(rango, out var alElegir) ? alElegir : _alElegir[rango] = () => RangoAsync(rango);
+
+    private readonly Dictionary<Rango, Func<Task>> _alElegir = [];
+
+    private Task RangoAsync(Rango rango)
+    {
+        _rango = rango;
+        (_desde, _hasta) = Dias(rango);
+        return DeNuevoAsync();
+    }
+
+    private static string Fecha(DateOnly dia) => dia.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    private static DateOnly? LeerFecha(object? valor) =>
+        DateOnly.TryParseExact(valor?.ToString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dia) ? dia : null;
+
+    /// <summary>El primer día escrito: si queda después del último, el último lo sigue.</summary>
+    private Task DesdeAsync(ChangeEventArgs e)
+    {
+        if (LeerFecha(e.Value) is not { } dia)
+            return Task.CompletedTask;
+        (_desde, _rango) = (dia, null);
+        if (_hasta < dia)
+            _hasta = dia;
+        return DeNuevoAsync();
+    }
+
+    /// <summary>El último día escrito: si queda antes del primero, el primero lo sigue.</summary>
+    private Task HastaAsync(ChangeEventArgs e)
+    {
+        if (LeerFecha(e.Value) is not { } dia)
+            return Task.CompletedTask;
+        (_hasta, _rango) = (dia, null);
+        if (_desde > dia)
+            _desde = dia;
+        return DeNuevoAsync();
+    }
+
+    private Task TipoAsync(ChangeEventArgs e)
+    {
+        _clase = Enum.TryParse<ClaseMovimiento>(e.Value?.ToString(), out var clase) ? clase : null;
+        return DeNuevoAsync();
+    }
+
+    private Task DepartamentoAsync(ChangeEventArgs e)
+    {
+        _departamento = Guid.TryParse(e.Value?.ToString(), out var d) ? d : null;
+        return DeNuevoAsync();
+    }
+
+    private Task QuienAsync(ChangeEventArgs e)
+    {
+        _quien = Guid.TryParse(e.Value?.ToString(), out var q) ? q : null;
+        return DeNuevoAsync();
+    }
+
+    private async Task EscribiendoAsync(ChangeEventArgs e)
+    {
+        _texto = e.Value?.ToString() ?? "";
+        _escribiendo?.Cancel();
+        var espera = _escribiendo = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(PausaAlEscribir, espera.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+        await DeNuevoAsync();
+    }
+
+    /// <summary>Enter busca ya (lo que escanea el lector); Re Pág y Av Pág cambian de página.</summary>
+    private async Task AlTeclearAsync(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "Enter":
+                _escribiendo?.Cancel();
+                await DeNuevoAsync();
+                await Js.EnfocarAsync("#mov-buscar");
+                break;
+            case "PageDown" when HayAnteriores:
+                await AnterioresAsync();
+                break;
+            case "PageUp" when _pagina > 0:
+                await RecientesAsync();
+                break;
+        }
+    }
+
+    private bool HayAnteriores => _movimientos is { } m && Paginador.HaySiguiente(m.Total, m.Pagina, m.Tamano);
+
+    private Task AnterioresAsync()
+    {
+        _pagina++;
+        return CargarAsync();
+    }
+
+    private Task RecientesAsync()
+    {
+        _pagina = Math.Max(0, _pagina - 1);
+        return CargarAsync();
+    }
+
+    private string SinMovimientos =>
+        _clase is not null || _texto.Trim().Length > 0 || _departamento is not null || _quien is not null
+            ? "Nada con esos filtros en esos días."
+            : _rango == Rango.Hoy ? "Hoy todavía no hay movimientos. Prueba con «7 días»." : "No hubo movimientos en esos días.";
+
+    /// <summary>«hoy 12:44», «ayer 18:02», «13/10 10:15»; de otro año, con el año.</summary>
+    private static string Cuando(DateTime fecha)
+    {
+        var hoy = Hoy;
+        var dia = DateOnly.FromDateTime(fecha);
+        var hora = fecha.ToString("HH:mm", CultureInfo.InvariantCulture);
+        return dia == hoy ? $"hoy {hora}"
+            : dia == hoy.AddDays(-1) ? $"ayer {hora}"
+            : dia.Year == hoy.Year ? $"{fecha.ToString("dd/MM", CultureInfo.InvariantCulture)} {hora}"
+            : $"{fecha.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)} {hora}";
+    }
+
+    public void Dispose() => _escribiendo?.Cancel();
+}
