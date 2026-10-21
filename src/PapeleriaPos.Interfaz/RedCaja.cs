@@ -53,8 +53,10 @@ public sealed class RedCaja : IDisposable
 
     /// <summary>Un manejador con el keepalive de TCP y las conexiones que se renuevan.</summary>
     /// <param name="conectar">Lo más que se espera a conectar (si la caja principal está apagada, falla en este tiempo).</param>
+    /// <remarks>Sin proxy: la llave de la caja (X-Caja-Llave) va directo a la caja principal, nunca a un proxy de la red (WPAD).</remarks>
     public static SocketsHttpHandler Manejador(TimeSpan conectar) => new()
     {
+        UseProxy = false,
         ConnectTimeout = conectar,
         PooledConnectionLifetime = VidaDeLaConexion,
         PooledConnectionIdleTimeout = ConexionSinUsar,

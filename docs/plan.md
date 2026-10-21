@@ -811,6 +811,92 @@ en Inventario (F4). Solo leen, así que también van en el piloto con eleventa, 
 - **Falta:** exportarlos a Excel, como eleventa (la caja todavía no guarda archivos), y, si la tienda usa los mínimos de
   eleventa, pasarlos en la importación final (la importación no los lee).
 
+**Avance (2026-10-17): la red de la tienda en el POS,** como lo pide la [red de la
+matriz](arquitectura.md#la-red-de-la-matriz) («En el POS»). Casi siempre que se va el internet de Megacable se cae
+también la red local; esto no la arregla (eso es el [arreglo propuesto](arquitectura.md#la-red-de-la-matriz), sin
+compras), pero hace que el POS lo aguante, lo diga bien y lo anote:
+- **La caja vuelve a encontrar sola a la caja principal** si le cambió la IP (el DHCP del router): si la dirección
+  guardada no contesta 30 s, la busca en la red (un paquete por UDP, sin recorrerla) y solo se cambia a la que prueba,
+  con la huella de la llave de esa caja y con la llave propia del servicio, que es su caja principal: un reto nuevo
+  cada vez, firmado también con la dirección en que llegó, así que otro equipo no puede pasarle la pregunta a la de
+  verdad y quedarse en medio. La llave de la caja no viaja. Revisa cada IP que contesta una vez (hasta 64), así que
+  respuestas falsas no dejan fuera a la de verdad, y se cambia solo si una sola lo prueba. Guarda la dirección nueva en
+  `caja.json` (de un jalón: un apagón a media escritura no lo deja a medias). Mientras la guardada contesta, nada; si no
+  la encuentra, busca cada vez más espaciado (hasta cada 5 minutos, con la marca de tiempo de la PC, no la hora) y lo
+  anota una vez; «Volver a buscarla», en la franja, busca al momento. El servicio contesta solo a su red local, a lo más
+  5 veces por segundo a cada equipo y 200 entre todos, y solo el de la caja principal.
+- **La llave propia de la caja principal** (`pos.llave`, junto a la base, fuera de ella y de sus respaldos; en Windows,
+  cifrada para esa PC): las cajas la aprenden al darse de alta, o las de antes la primera vez que su dirección de
+  siempre prueba quién es. Así, otra PC con una copia de la base (la caja principal de antes, un respaldo en una laptop)
+  nunca gana. Después de una caída y al abrir, la caja no manda su llave hasta que la dirección guardada pruebe otra vez
+  quién es; mientras, vende con su copia.
+- **Avisos de lo configurado por nombre o con WSD:** la impresora de tickets por nombre, compartida desde otra PC o con
+  un puerto WSD (la caja de Windows lee el puerto de la cola en el registro) dice «Tickets · configúrala por IP» en el
+  estado de arriba y en la entrada; la caja principal por nombre, en Configuración › Acerca de › Red; la PC de eleventa
+  por nombre, en la bitácora del servicio.
+- **La franja:** el servicio revisa cada 30 s si hay internet (una conexión a 1.1.1.1 y 8.8.8.8 por su IP, 2 s, sin
+  cuentas) y si contesta su router, y lo dice en su latido. La caja lo junta con lo suyo: «Sin internet: la venta sigue.
+  No desconectes nada.» si llega a la caja principal; «Sin red local: esta caja trabaja con su copia» si no llega; en la
+  caja principal sin saber que su router contesta (trabado, o una 169.254 sin puerta de enlace), «Sin internet ni red
+  local»; con todo bien, nada. Arriba, el chip «Sin internet» del prototipo. Sin modal y fuera del cobro.
+- **La bitácora de red:** cada caja y el servicio anotan solos, con fecha y hora, cuando se pierde y vuelve el internet,
+  la caja principal, el router, la impresora de tickets (solo ping) y cada caja (siempre, aunque el archivo del día
+  llegue a su tope); los cambios de la IP y de dónde viene, del router y su MAC; el DNS del router trabado, una tormenta
+  de difusión y cuándo arrancó la PC; y un resumen cada 15 minutos, que cuenta lo que va y viene (la red lenta, el DNS
+  del router, una caja que deja de latir) en vez de una línea cada vez. El Wi-Fi y su señal, solo si se prende su
+  detalle. Unos archivos por día (`red-caja-…` y `red-servicio-…`) que se guardan 10 días (lo viejo se quita también al
+  cambiar el día), y las últimas caídas, con desde, hasta y cuánto duraron, en Configuración › Acerca de › Red
+  ([cómo se lee](pruebas-en-tienda.md#después-de-una-caída-la-bitácora-de-red)).
+- **Revisión (2026-10-17):** una revisión aparte no encontró fallas en la prueba de quién es, pero sí siete cosas, ya
+  arregladas, cada una con su prueba: la caja principal que arranca sin router ya no dice «no desconectes nada»; otra
+  PC con una copia de la base ya no gana (la llave propia del servicio, y con dos que prueban no se cambia sola); un
+  equipo de la red ya no detiene la búsqueda con respuestas falsas; la bitácora del servicio se limpia al cambiar el día
+  y cuenta lo que va y viene; la búsqueda no se mueve con la hora de Windows; el Wi-Fi solo con su detalle prendido;
+  y los clientes de la caja no usan proxy. Además, si se cambia la PC de la caja principal, la caja ofrece darse de
+  alta otra vez sin quitarle la venta a quien atiende.
+- **Decidido, por revisar** (el dueño no estaba; van a «Decidido mientras el dueño no estaba» al juntarlo con #112):
+  - si la caja principal estaba guardada por su nombre y no contesta, la caja se cambia a su IP cuando la encuentra y la
+    prueba (en el POS, todo por IP);
+  - en la caja principal, sin internet y sin saber que su router contesta (el router trabado, o la PC arrancó sin que
+    el router le diera dirección), la franja dice «Sin internet ni red local: esta caja sigue vendiendo», sin «no
+    desconectes nada»: la guía de la tienda pide juntar los datos y desconectar el cable del módem. Si su propio
+    servicio no contesta (al actualizarse), «El servicio de esta PC no contesta», y ahí ya no sale la franja de la red
+    lenta, como no salía el chip;
+  - el internet se revisa contra 1.1.1.1 y 8.8.8.8 por su IP (`Red:Internet` lo cambia), el DNS del router con
+    `tendawifi.com` (`Red:NombreDelRouter`) y otros equipos con ping si se ponen en `Red:Equipos` (el grabador, el
+    módem); en el piloto, también la PC de eleventa, solo con ping. Un equipo que nunca contestó el ping (su firewall)
+    no cuenta como caído;
+  - la bitácora se guarda 10 días; también la anota la prueba con una persona real (su servicio en la misma PC);
+  - «Volver a buscarla» no entra en el orden del tabulador, para no quitarle el foco a la venta: se oprime con el ratón,
+    y la caja busca sola de todos modos;
+  - la llave propia del servicio va en `pos.llave`, junto a la base y fuera de los respaldos (en Windows, cifrada para
+    esa PC): reinstalar o cambiar la PC de la caja principal, o restaurar una copia en la de repuesto, pide dar de alta
+    cada caja otra vez. La franja lo ofrece («Dar de alta otra vez», con el PIN del dueño) solo sin nadie en la venta, y
+    desde ahí se puede volver sin dar de alta;
+  - una caja de antes aprende esa llave la primera vez que su dirección de siempre (la que puso el dueño; si no, con la
+    que abrió) prueba quién es, y la guarda en `caja.json`. Ya con la llave, un servicio de antes (sin la prueba) no le
+    basta;
+  - después de una caída y al abrir, la llave de la caja no sale hasta que la dirección guardada pruebe quién es: al
+    abrir, cada llamada espera esa prueba a lo más 3 s y, si no llega, va con la copia;
+  - si contestan dos que prueban ser su caja principal (o solo una que sabe de la caja pero no firma con su llave), la
+    caja no se cambia sola: la franja dice «Hay dos cajas principales en la red: avisa al dueño» (o «La caja principal
+    no probó ser la misma de siempre») y ofrece darla de alta otra vez. La misma PC por cable y por Wi-Fi (la misma
+    llave) cuenta como una;
+  - si la caja principal ya no conoce a la caja (la quitaron), la pantalla del alta espera a que salga quien atiende;
+    mientras, vende con la copia;
+  - en la bitácora, las veces que la red se puso lenta van solo en el resumen de 15 minutos; del DNS del router y de las
+    cajas que dejan de latir, la primera vez de cada periodo lleva su línea y las demás se cuentan en el resumen; lo que
+    se pierde y vuelve, siempre;
+  - el detalle del Wi-Fi viene apagado: se prende en `caja.json` de la caja 2 para diagnosticar
+    ([cómo](pruebas-en-tienda.md#después-de-una-caída-la-bitácora-de-red)), revisando que no salga la pregunta de la
+    ubicación;
+  - el servicio contesta por UDP a lo más 5 veces por segundo a cada equipo y 200 entre todos.
+- **Falta, en Windows** (el CI y una PC): el Wi-Fi con su detalle prendido (el nombre de su perfil de red, sin pedir el
+  permiso de ubicación) y su señal, la MAC del router, el puerto de la cola en el registro, guardar la dirección nueva y
+  la llave del servicio en `caja.json`, `pos.llave` cifrado para la PC (y que copiado a otra no sirva) y que un «puerto
+  inalcanzable» no corte la búsqueda. **En la tienda, un sábado o domingo:** cambiarle la IP a la caja principal con
+  la caja 2 abierta, prender el detalle del Wi-Fi en la caja 2, y la próxima caída de verdad, con la bitácora.
+
 #### Después: el piloto en la caja 2
 
 Mientras se arma el puente con eleventa, la versión unicaja sigue creciendo con la venta completa (entrega 3) y la base
@@ -928,7 +1014,7 @@ para esos días ([forma de trabajar](notas.md#forma-de-trabajar), [guía de los 
 | Qué | Dónde está | Estado |
 |---|---|---|
 | **La red de la tienda:** diagnóstico en la próxima caída real (desconectar el módem no la reproduce), con el script de diagnóstico en las dos cajas, y el arreglo, por aprobar, con lo que ya hay: el módem solo al internet del Tenda, red local nueva, IP fijas puestas en cada equipo, los equipos de la tienda en el switch que ya hay y no en el Tenda, e impresoras por IP sin WSD | [Red de la matriz](arquitectura.md#la-red-de-la-matriz), [notas](notas.md#red-de-la-tienda) | Falta: el script (chico) y dos fines de semana ([guía](pruebas-en-tienda.md)) |
-| En el POS, por la red: que la caja 2 vuelva a buscar sola a la principal, avisos de lo configurado por nombre o con WSD, la franja «sin internet» o «sin red local» y la bitácora de red | [Red de la matriz](arquitectura.md#la-red-de-la-matriz) | Falta (chico) |
+| En el POS, por la red: que la caja 2 vuelva a buscar sola a la principal, avisos de lo configurado por nombre o con WSD, la franja «sin internet» o «sin red local» y la bitácora de red | [Red de la matriz](arquitectura.md#la-red-de-la-matriz) | En código (2026-10-17, [avance](#la-versión-unicaja-y-el-piloto-en-la-caja-2)): falta verlo en Windows y en la tienda |
 | **Las tres impresoras de inyección** (dos WF-6590 y una L5590): cada una con sus costos, su cola en cada PC, su contador, su calibración y sus hojas por cobrar | [Impresión](impresion.md), [notas](notas.md#impresoras) | Falta (mediano); antes, leer la L5590 por SNMP |
 | **La impresora de tickets compartida:** reintento si las dos cajas imprimen a la vez y botón «Reintentar». No hay cajón | [Notas](notas.md#impresoras) | En código (entrega 5, parte 3, 2026-10-16): la cola de cada caja; falta probarla en la tienda con las dos cajas |
 | **Reportes de ventas:** día contra hace un año (el mismo día de la semana o la misma fecha: por decidir), mes y año a la fecha contra el año anterior, meses cerrados; venta neta, tickets, ticket promedio, costo, utilidad y margen; por departamento, caja, cajero y forma de pago; exportar a Excel y líneas en el resumen de Telegram; la utilidad solo la ve el dueño. El año anterior sale del historial de eleventa (su utilidad, con el costo capturado en eleventa) | [Notas](notas.md#reportes) | Pospuesto: después de la prueba con una persona real y su aprobación (2026-10-09) |
@@ -1116,8 +1202,8 @@ Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
   aprueba, con su ícono para el personal en la caja 2 y la instrucción ([qué registra](notas.md#red-de-la-tienda))
 - [ ] Segundo fin de semana, si el dueño lo aprueba: arreglar la red
   ([guía](pruebas-en-tienda.md#segundo-fin-de-semana-arreglar-la-red))
-- [ ] En el POS, por la red: la caja 2 vuelve a buscar a la principal, avisos de nombres o WSD, la franja de «sin
-  internet» y la bitácora de red
+- [x] En el POS, por la red: la caja 2 vuelve a buscar a la principal, avisos de nombres o WSD, la franja de «sin
+  internet» y la bitácora de red (en código, 2026-10-17; falta verlo en Windows y en la tienda)
 - [ ] Las tres impresoras de inyección en el módulo de impresión
 - [x] Impresora de tickets compartida: reintento y botón «Reintentar» (la cola de la caja, entrega 5, parte 3), en
   código; falta probarla en la tienda con las dos cajas

@@ -1,30 +1,54 @@
-@* Avisa en toda la caja cuando trabaja sin la caja principal (o con la red lenta, como sin ella), lo que falta por subir y si la base (la del servicio o la de esta caja) no está lista contra apagones. *@
+@* Avisa en toda la caja cómo está la red (la red de la tienda en el POS, docs/arquitectura.md, «La red de la matriz»): «Sin red
+   local» cuando no llega a la caja principal (con «Volver a buscarla», como en el prototipo), la red lenta, o «Sin internet: la
+   venta sigue. No desconectes nada.» cuando lo dice la caja principal y la red local está bien (AvisosDeRed.QueDice); y lo que
+   falta por subir y si la base (la del servicio o la de esta caja) no está lista contra apagones. Sin modal: nada estorba al
+   cobro, y el botón no se lleva el foco de la venta (no está en el orden del tabulador y el clic no lo enfoca). *@
 @implements IDisposable
+@inject ConexionCaja Conexion
 @inject IServiceProvider Servicios
 
 @if (_contingencia is { } c)
 {
-    @if (!c.ServidorResponde)
+    var franja = AvisosDeRed.QueDice(Conexion.Servicio.IsLoopback, Conexion.SimularSinConexion, c.EstadoDeLaRed, c.RedDeLaPrincipal);
+    @if (franja is AvisosDeRed.Franja.SinRedLocal or AvisosDeRed.Franja.SinServicio or AvisosDeRed.Franja.Lenta)
     {
-        <div class="franja-contingencia sin-conexion">
-            Sin conexión con la caja principal: se vende con la copia de esta caja.
-            @if (c.Pendientes > 0)
+        <div class="vn-franja" role="status">
+            <svg class="ico" aria-hidden="true" viewBox="0 0 24 24"><path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.6 16a5 5 0 0 1 6.8 0" /><circle cx="12" cy="19.3" r=".9" /></svg>
+            <span>
+                <strong>@AvisosDeRed.Texto(franja)</strong>@(c.Pendientes > 0 ? $" · {c.Pendientes} por subir" : "")
+                @if (franja == AvisosDeRed.Franja.SinRedLocal && Reencuentro is { Resultado: { } resultado })
+                {
+                    <span class="vn-franja-nota"> · @resultado</span>
+                }
+            </span>
+            <span class="espacio"></span>
+            @if (franja == AvisosDeRed.Franja.SinRedLocal && Reencuentro is { AltaPorque: { } porque } && AlDarDeAlta.HasDelegate)
             {
-                <span> · @c.Pendientes por subir</span>
+                @* La que sabe de esta caja no firma como su caja principal de siempre (se reinstaló o se cambió su PC, o es una copia de
+                   su base), o contestan dos: lo decide el dueño, que la da de alta otra vez con su PIN. *@
+                <button class="vn-boton chico" tabindex="-1" @onmousedown:preventDefault="true" @onclick="() => AlDarDeAlta.InvokeAsync(porque)">
+                    Dar de alta otra vez
+                </button>
+            }
+            @if (franja == AvisosDeRed.Franja.SinRedLocal && Reencuentro is { Aplica: true } reencuentro)
+            {
+                @* Ni con el clic se lleva el foco: el lector sigue escribiendo en la venta, y su Enter no vuelve a oprimir el botón. *@
+                <button class="vn-boton chico" tabindex="-1" disabled="@reencuentro.Buscando" @onmousedown:preventDefault="true"
+                        title="La busca en la red y solo se cambia a ella si prueba, con la llave de esta caja, que es su caja principal."
+                        @onclick="VolverABuscarlaAsync">
+                    @(reencuentro.Buscando ? "Buscando…" : "Volver a buscarla")
+                </button>
             }
         </div>
     }
-    else if (c.EstadoDeLaRed == EstadoRed.Lenta)
+    else if (franja is AvisosDeRed.Franja.SinInternet or AvisosDeRed.Franja.SinInternetNiRedLocal)
     {
-        <div class="franja-contingencia sin-conexion">
-            La red con la caja principal está lenta: se vende con la copia de esta caja hasta que mejore.
-            @if (c.Pendientes > 0)
-            {
-                <span> · @c.Pendientes por subir</span>
-            }
+        <div class="vn-franja internet" role="status">
+            <svg class="ico" aria-hidden="true" viewBox="0 0 24 24"><path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.6 16a5 5 0 0 1 6.8 0" /><circle cx="12" cy="19.3" r=".9" /></svg>
+            <span><strong>@AvisosDeRed.Texto(franja)</strong></span>
         </div>
     }
-    else if (c.Pendientes > 0)
+    @if (c.ServidorResponde && franja != AvisosDeRed.Franja.Lenta && c.Pendientes > 0)
     {
         <div class="franja-contingencia subiendo">Volvió la conexión: subiendo @c.Pendientes pendientes…</div>
     }
@@ -45,7 +69,15 @@
 }
 
 @code {
+    /// <summary>
+    /// Para «Dar de alta otra vez», con el porqué (lo pone la caja que se da de alta, cuando nadie está en la venta); sin esto, no
+    /// se ofrece.
+    /// </summary>
+    [Parameter] public EventCallback<string> AlDarDeAlta { get; set; }
+
     private Contingencia? _contingencia;
+
+    private ReencuentroDeLaPrincipal? Reencuentro => _contingencia?.RedDeLaCaja?.Reencuentro;
 
     protected override void OnInitialized()
     {
@@ -56,6 +88,28 @@
     }
 
     private void AlCambiar() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>
+    /// «Volver a buscarla»: la busca en la red al momento; si una prueba que es su caja principal, se cambia a ella y el latido la
+    /// usa enseguida. Si no, la franja dice lo que pasó y la caja sigue con su copia.
+    /// </summary>
+    private async Task VolverABuscarlaAsync()
+    {
+        if (Reencuentro is not { } reencuentro)
+            return;
+        var busqueda = reencuentro.BuscarAhoraAsync();
+        StateHasChanged();
+        try
+        {
+            if (!await busqueda && _contingencia is { } contingencia)
+                // La caja principal pudo volver en la misma dirección: que el latido lo diga sin esperar su turno.
+                await contingencia.LatidoAsync();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Buscarla es una ayuda: si algo falla, la caja sigue con su copia y la busca sola.
+        }
+    }
 
     public void Dispose()
     {
