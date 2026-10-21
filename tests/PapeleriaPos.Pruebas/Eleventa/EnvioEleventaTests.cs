@@ -332,7 +332,8 @@ public class EnvioEleventaTests
         await using var e = await TiendaAsync();
         var venta = await EnvioEleventa.MandarAsync(e.Conexion, Caja, Venta(new DateTime(2026, 3, 9, 11, 0, 0), new ArticuloParaEleventa(10, "Cuaderno", 1, 30)));
 
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => EnvioEleventa.DevolverAsync(e.Conexion, Caja,
+        // Es un choque con eleventa (no la red): la bandeja lo deja por revisar y sigue con lo demás.
+        var error = await Assert.ThrowsAsync<ChoqueConEleventa>(() => EnvioEleventa.DevolverAsync(e.Conexion, Caja,
             Devolucion(venta.TicketId, cancelacion: false, new DateTime(2026, 3, 9, 11, 30, 0), new ArticuloDevuelto(10, "Cuaderno", 2, 60))));
 
         Assert.Contains("Cuaderno", error.Message);

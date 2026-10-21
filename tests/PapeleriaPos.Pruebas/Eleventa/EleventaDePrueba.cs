@@ -7,6 +7,11 @@ namespace PapeleriaPos.Pruebas.Eleventa;
 /// Una prueba contra un Firebird de verdad. Solo corre donde hay uno de prueba en esta misma PC (nunca el de la tienda),
 /// dicho en la variable <c>PRUEBAS_FIREBIRD</c> como «servidor:puerto» (por ejemplo «127.0.0.1:3055»); la clave va en
 /// <c>PRUEBAS_FIREBIRD_CLAVE</c> o es la de omisión de Firebird. En el CI no hay: ahí se salta.
+/// <para>
+/// Las bases de prueba las crea el servidor, en su propio disco: en la carpeta temporal de esta PC, o en la que diga
+/// <c>PRUEBAS_FIREBIRD_CARPETA</c> si el Firebird corre en un contenedor (por ejemplo «/firebird/data» con
+/// jacobalberty/firebird:2.5-ss, publicado solo en 127.0.0.1).
+/// </para>
 /// </summary>
 public sealed class FactConFirebirdAttribute : FactAttribute
 {
@@ -38,7 +43,10 @@ public sealed class EleventaDePrueba : IAsyncDisposable
     public static async Task<EleventaDePrueba> CrearAsync()
     {
         var variable = Environment.GetEnvironmentVariable("PRUEBAS_FIREBIRD")!.Split(':');
-        var archivo = Path.Combine(Path.GetTempPath(), $"eleventa-prueba-{Guid.NewGuid():N}.fdb");
+        var nombre = $"eleventa-prueba-{Guid.NewGuid():N}.fdb";
+        var archivo = Environment.GetEnvironmentVariable("PRUEBAS_FIREBIRD_CARPETA") is { Length: > 0 } carpeta
+            ? $"{carpeta.TrimEnd('/', '\\')}/{nombre}"
+            : Path.Combine(Path.GetTempPath(), nombre);
         var servidor = new ServidorEleventa(variable[0], archivo, "SYSDBA",
             Environment.GetEnvironmentVariable("PRUEBAS_FIREBIRD_CLAVE") is { Length: > 0 } clave ? clave : "masterkey",
             variable.Length > 1 ? int.Parse(variable[1]) : 3050);
@@ -217,6 +225,11 @@ public sealed class EleventaDePrueba : IAsyncDisposable
             CONSTRAINT PK_PRODUCTOS PRIMARY KEY (CODIGO))
         """,
         "CREATE TABLE INVENTARIO_BALANCES (PRODUCTO_ID TLLAVE NOT NULL, CANTIDAD_ACTUAL TCANTIDAD, ALMACEN_ID TLLAVE, UNIQUE (PRODUCTO_ID))",
+        // De las promociones por cantidad, solo lo que lee la lectura de cada pocos minutos (LectorEleventa).
+        """
+        CREATE TABLE PROMOCIONES_POR_CANTIDAD (ID TLLAVE NOT NULL, PRODUCTO_CODIGO TCODIGOPRODUCTO NOT NULL, DESDE TCANTIDAD,
+            PRECIO_PROMOCION_CON_IMPUESTOS TMONEDA, CONSTRAINT PK_PROMOCIONES_POR_CANTIDAD PRIMARY KEY (ID))
+        """,
         """
         CREATE TABLE INVENTARIO_HISTORIAL (ID TLLAVE NOT NULL, PRODUCTO_ID TLLAVE NOT NULL, CUANDO_FUE TFECHAHORA NOT NULL,
             CANTIDAD_ANTERIOR TCANTIDAD NOT NULL, CANTIDAD TCANTIDAD NOT NULL, DESCRIPCION TCADENALARGA, COSTO_UNITARIO TMONEDA,

@@ -171,6 +171,10 @@ public static class RegistroInterfaz
             PlazoLectura = Transporte.PlazoLectura,
             PlazoEscritura = Transporte.PlazoEscritura,
         });
+        // Solo del piloto con eleventa: lo que la caja 2 le pide al puente (se quita al dejarlo). Por el cliente de lo que
+        // espera el cajero, con su tope (RedCaja.TopeInteractivo), sin los plazos cortos de la venta: nada de esto se hace sin
+        // conexión.
+        servicios.AddScoped(_ => new ClientePuente(redCaja.Interactivo, conexion));
         servicios.AddSingleton(impresora);
         servicios.AddScoped<ModuloCaja>();
         return servicios;

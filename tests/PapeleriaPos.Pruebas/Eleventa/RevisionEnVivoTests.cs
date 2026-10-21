@@ -198,4 +198,25 @@ public class RevisionEnVivoTests
         Assert.Contains("  ✓ cuadró: sin faltante ni sobrante", lineas);
         Assert.Contains("  ✗ su ticket abierto sigue ahí (la caja 2 lo borra)", RevisionEnVivo.Revisar(antes, sinBorrar));
     }
+
+    [Fact]
+    public void La_devolucion_de_un_ticket_de_otra_caja_y_otro_turno_dice_donde_la_anoto_eleventa()
+    {
+        // Lo que falta ver en vivo: en la caja 2 se devuelve algo que se vendió en la principal, en otro turno.
+        string[] devoluciones = ["ID", "TURNO_ID", "TICKET_ID", "TIPO_DEVOLUCION", "TOTAL_DEVUELTO", "CAJA"];
+        string[] tickets = ["ID", "FOLIO", "TURNO_ID", "CAJA_ID", "TOTAL", "ESTA_CANCELADO"];
+        var antes = Foto(Tabla("DEVOLUCIONES", devoluciones), Tabla("VENTATICKETS", tickets, ["50", "4521", "3", "1", "30", "f"]));
+        var despues = Foto(Tabla("DEVOLUCIONES", devoluciones, ["90", "8", "50", "C", "30", "Caja 2"]),
+            Tabla("VENTATICKETS", tickets, ["50", "4521", "3", "1", "30", "t"]));
+        // La del mismo turno no lo dice.
+        var mismoTurno = Foto(Tabla("DEVOLUCIONES", devoluciones, ["90", "3", "50", "C", "30", "Principal"]),
+            Tabla("VENTATICKETS", tickets, ["50", "4521", "3", "1", "30", "t"]));
+
+        var lineas = RevisionEnVivo.Revisar(antes, despues);
+
+        Assert.Equal("Cancelación del ticket #4521 (DEVOLUCIONES 90, $30.00):", lineas[0]);
+        Assert.Contains("  · el ticket se cobró en el turno 3 (caja 1) y la devolución quedó en el turno 8 («Caja 2»): así anota eleventa la de "
+            + "otro turno u otra caja; la caja 2 todavía la deja por revisar", lineas);
+        Assert.DoesNotContain(RevisionEnVivo.Revisar(antes, mismoTurno), l => l.Contains("así anota eleventa"));
+    }
 }

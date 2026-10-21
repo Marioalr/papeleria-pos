@@ -113,7 +113,14 @@ builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.AgregarImpresiones(builder.Configuration);
 
 // El piloto en la caja 2: lee el catálogo y las existencias de eleventa cada pocos minutos (solo si Eleventa:Activo).
-builder.Services.AddSingleton(builder.Configuration.GetSection("Eleventa").Get<OpcionesEleventa>() ?? new OpcionesEleventa());
+var opcionesEleventa = builder.Configuration.GetSection("Eleventa").Get<OpcionesEleventa>() ?? new OpcionesEleventa();
+builder.Services.AddSingleton(opcionesEleventa);
+// Antes de lo primero que escribe en eleventa cada día, el puente la respalda con gbak (las pruebas ponen uno de mentiras).
+builder.Services.TryAddSingleton<PapeleriaPos.Eleventa.IEjecutorGbak, PapeleriaPos.Eleventa.EjecutorGbak>();
+builder.Services.AddSingleton(proveedor => new PapeleriaPos.Eleventa.RespaldoDeEleventa(
+    new PapeleriaPos.Eleventa.OpcionesRespaldoEleventa(opcionesEleventa.Gbak, RutasServicio.CarpetaRespaldosEleventa(opcionesEleventa, cadena),
+        opcionesEleventa.DiasDeRespaldos),
+    proveedor.GetRequiredService<PapeleriaPos.Eleventa.IEjecutorGbak>()));
 builder.Services.AddSingleton<LecturaEleventa>();
 builder.Services.AddHostedService(proveedor => proveedor.GetRequiredService<LecturaEleventa>());
 // Y manda cada venta a eleventa (solo si Eleventa:Escribir), con su bandeja de salida.

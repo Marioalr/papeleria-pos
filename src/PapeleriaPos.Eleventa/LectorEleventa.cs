@@ -52,6 +52,18 @@ public sealed record ServidorEleventa(string Servidor, string Base, string Usuar
 }
 
 /// <summary>
+/// Las llamadas del puente a Firebird nunca llevan con qué cancelarlas (revisión del 2026-10-17). Con el Firebird de la
+/// tienda (2.0.1, protocolo 10), FirebirdClient no sabe cancelar una llamada: si se le pide (al vencer un límite o al
+/// apagar el servicio), lanza el error desde un temporizador, fuera de todo <c>try</c>, y truena el proceso del servicio.
+/// Por eso se dejan de esperar con <c>WaitAsync</c> y siguen solas por detrás: lo que alcancen a guardar lo encuentra la
+/// marca en el siguiente intento, y la revisión del folio solo lo mueve si todavía tiene el que se revisó.
+/// </summary>
+public static class FirebirdSinCancelar
+{
+    public static CancellationToken Nunca => CancellationToken.None;
+}
+
+/// <summary>
 /// Lee la base de eleventa. Nunca abre el archivo original: lo copia a una carpeta de trabajo, lo respalda con el
 /// gbak de 32 bits (la base es de Firebird 1.5 de 32 bits y el Firebird de 64 bits no la abre) y restaura el respaldo
 /// como base de 64 bits, que es la que se lee.
@@ -170,19 +182,26 @@ public static class LectorEleventa
     /// El eleventa de la caja principal, por la red, como lo abre una caja de eleventa: solo para leer el catálogo cada
     /// pocos minutos (docs/migracion-eleventa.md, «El piloto»). No escribe nada.
     /// </summary>
-    public static async Task<DatosEleventa> LeerCatalogoAsync(ServidorEleventa servidor, CancellationToken ct = default)
+    public static async Task<DatosEleventa> LeerCatalogoAsync(ServidorEleventa servidor, CancellationToken ct = default) =>
+        await LeerCatalogoAsync(servidor, null, ct);
+
+    /// <param name="piloto">Lo del piloto que se lee en la misma foto (los turnos de la caja 2); vacío fuera del piloto.</param>
+    public static async Task<DatosEleventa> LeerCatalogoAsync(ServidorEleventa servidor, ConsultaDelPiloto? piloto, CancellationToken ct = default)
     {
         await using var conexion = new FbConnection(servidor.Cadena());
         await conexion.OpenAsync(ct);
-        return await LeerCatalogoAsync(conexion, ct);
+        return await LeerCatalogoAsync(conexion, piloto, ct);
     }
+
+    public static Task<DatosEleventa> LeerCatalogoAsync(FbConnection c, CancellationToken ct = default) => LeerCatalogoAsync(c, null, ct);
 
     /// <summary>
     /// Lo que cambia durante el día y hace falta para vender: departamentos, productos (con precios y costo), existencias
     /// y promociones; sin las ventas, que pesan y no hacen falta cada pocos minutos. En una transacción de solo lectura y
-    /// con foto fija: todo es del mismo momento, y eleventa ni lo nota.
+    /// con foto fija: todo es del mismo momento, y eleventa ni lo nota. En el piloto, en la misma foto, lo que el puente
+    /// necesita saber (<see cref="ConsultaDelPiloto"/>).
     /// </summary>
-    public static async Task<DatosEleventa> LeerCatalogoAsync(FbConnection c, CancellationToken ct = default)
+    public static async Task<DatosEleventa> LeerCatalogoAsync(FbConnection c, ConsultaDelPiloto? piloto, CancellationToken ct = default)
     {
         await using var tx = await c.BeginTransactionAsync(new FbTransactionOptions
         {
@@ -190,6 +209,7 @@ public static class LectorEleventa
         }, ct);
         var datos = new DatosEleventa
         {
+            Piloto = piloto is null ? null : await LeerDelPilotoAsync(c, tx, piloto, ct),
             Departamentos = await Leer(c, tx, "SELECT ID, NOMBRE, ACTIVO FROM DEPARTAMENTOS",
                 r => new FilaDepartamento(Entero(r, 0), Texto(r, 1), Texto(r, 2) is "1" or "t" or "T"), ct),
             Productos = await Leer(c, tx,
@@ -205,6 +225,38 @@ public static class LectorEleventa
         return datos;
     }
 
+    /// <summary>
+    /// Lo del piloto: los turnos abiertos de la caja 2 y los que adoptó la caja nueva (si eleventa ya los cerró, con lo que
+    /// se contó y lo que faltó o sobró al cerrar), las devoluciones de los tickets que mandó la caja 2 y si sigue ahí lo
+    /// que escribió el puente. Solo lee.
+    /// </summary>
+    private static async Task<DatosDelPiloto> LeerDelPilotoAsync(FbConnection c, FbTransaction tx, ConsultaDelPiloto consulta, CancellationToken ct)
+    {
+        static FilaTurno Turno(DbDataReader r) => new(Entero(r, 0), Entero(r, 1), r.GetDateTime(2), r.IsDBNull(3) ? null : r.GetDateTime(3),
+            r.IsDBNull(4) ? null : Convert.ToDecimal(r.GetValue(4), System.Globalization.CultureInfo.InvariantCulture));
+        const string columnas = "SELECT ID, ID_CAJA, INICIO_EN, TERMINO_EN, EFECTIVO_AL_CIERRE FROM TURNOS";
+
+        var turnos = await Leer(c, tx, $"{columnas} WHERE ID_CAJA = {consulta.CajaId} AND TERMINO_EN IS NULL", Turno, ct);
+        foreach (var grupo in ListasIn.Grupos(consulta.Turnos))
+            turnos.AddRange((await Leer(c, tx, $"{columnas} WHERE ID IN ({grupo})", Turno, ct)).Where(t => turnos.All(x => x.Id != t.Id)));
+
+        // Eleventa anota lo que faltó o sobró al cerrar como una salida o entrada del corte: «Efectivo faltante al cerrar
+        // turno de…» (docs/migracion-eleventa.md, «Cancelar, devolver y cerrar el turno»).
+        var cierres = new List<FilaCierreDeTurno>();
+        foreach (var grupo in ListasIn.Grupos(turnos.Where(t => t.Termino is not null).Select(t => t.Id)))
+            cierres.AddRange(await Leer(c, tx, $"""
+                SELECT ID_TURNO, TIPO, MONTO FROM CORTE_MOVIMIENTOS
+                WHERE ID_TURNO IN ({grupo}) AND (DESCRIPCION STARTING WITH 'Efectivo faltante al cerrar turno'
+                    OR DESCRIPCION STARTING WITH 'Efectivo sobrante al cerrar turno')
+                """,
+                r => new FilaCierreDeTurno(Entero(r, 0), Texto(r, 1) == "Salida", Convert.ToDecimal(r.GetValue(2), System.Globalization.CultureInfo.InvariantCulture)), ct));
+        // La vuelta: lo que se devolvió o canceló en eleventa de los tickets que mandó la caja 2.
+        var devoluciones = consulta.Tickets is { Count: > 0 } tickets ? await TicketsDeEleventa.DevolucionesAsync(c, tx, tickets, ct) : [];
+        // Los respaldos de eleventa: que siga ahí lo que escribió el puente (si no, no se aplica nada de esta foto).
+        var restauracion = consulta.Huella is { } huella ? await RestauracionDeEleventa.RevisarAsync(c, tx, huella, ct) : null;
+        return new DatosDelPiloto { Turnos = turnos, Cierres = cierres, Devoluciones = devoluciones, Restauracion = restauracion };
+    }
+
     /// <summary>Por qué no se pudo leer, dicho para la tienda (Firebird lo dice en inglés y con códigos).</summary>
     public static string Explicar(Exception ex, ServidorEleventa servidor) => ex switch
     {
@@ -214,6 +266,8 @@ public static class LectorEleventa
         FbException { ErrorCode: 335544472 } => "Eleventa no aceptó el usuario o la clave de Firebird.",
         // isc_io_error: la ruta de la base no existe en esa PC.
         FbException { ErrorCode: 335544344 } => $"En {servidor.Servidor} no está la base {servidor.Base}.",
+        // Se acabó la espera (la red se cayó a media llamada, o eleventa se quedó callado): se vuelve a intentar.
+        TimeoutException or OperationCanceledException => $"El eleventa de {servidor.Servidor} no terminó de contestar a tiempo: se vuelve a intentar.",
         _ => ex.Message,
     };
 

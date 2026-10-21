@@ -35,7 +35,17 @@ public static class RutasServicio
     public static string CarpetaRespaldos(IConfiguration configuracion, string cadenaConexion) =>
         configuracion["Respaldos:Carpeta"] is { Length: > 0 } carpeta
             ? carpeta
-            : Path.Combine(Path.GetDirectoryName(Path.GetFullPath(new SqliteConnectionStringBuilder(cadenaConexion).DataSource)) ?? ".", "respaldos");
+            : Path.Combine(CarpetaDeLaBase(cadenaConexion), "respaldos");
+
+    /// <summary>
+    /// El piloto: los respaldos que hace el puente de eleventa (Eleventa:CarpetaRespaldos), por omisión en
+    /// "respaldos-eleventa", junto a la base: en el disco de la caja 2 (ProgramData) y fuera de OneDrive.
+    /// </summary>
+    public static string CarpetaRespaldosEleventa(OpcionesEleventa eleventa, string cadenaConexion) =>
+        eleventa.CarpetaRespaldos is { Length: > 0 } carpeta ? carpeta : Path.Combine(CarpetaDeLaBase(cadenaConexion), "respaldos-eleventa");
+
+    private static string CarpetaDeLaBase(string cadenaConexion) =>
+        Path.GetDirectoryName(Path.GetFullPath(new SqliteConnectionStringBuilder(cadenaConexion).DataSource)) ?? ".";
 }
 
 /// <summary>Las copias de la base: la diaria la hace <see cref="RespaldoDiario"/>; la del corte Z, el corte.</summary>
