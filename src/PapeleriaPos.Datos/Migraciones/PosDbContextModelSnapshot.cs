@@ -1292,6 +1292,10 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<Guid>("SucursalId")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("AlCobrar")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Encabezado")
                         .IsRequired()
                         .HasColumnType("TEXT");

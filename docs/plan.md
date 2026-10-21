@@ -897,6 +897,38 @@ compras), pero hace que el POS lo aguante, lo diga bien y lo anote:
   inalcanzable» no corte la búsqueda. **En la tienda, un sábado o domingo:** cambiarle la IP a la caja principal con
   la caja 2 abierta, prender el detalle del Wi-Fi en la caja 2, y la próxima caída de verdad, con la bitácora.
 
+**Avance (2026-10-17): al cobrar, imprimir el ticket, ofrecerlo o no imprimirlo,** como pide la
+[propuesta](propuesta-interfaz.md#configuración) en Configuración › Ticket y como cobra eleventa sin ticket con F2
+([paridad](paridad-eleventa.md#venta-y-cobro)):
+- **Configuración › Ticket › «Al cobrar»,** para toda la tienda y con «Configurar el ticket», como el encabezado y el
+  pie: las dos cajas comparten la impresora y los clientes. Tres opciones en un segmento, como en el prototipo, que se
+  guardan al tocarlas y quedan en la bitácora: «Imprimir el ticket» (por omisión, lo de siempre), «Ofrecerlo» y «No
+  imprimirlo». El «preguntar» de la propuesta quedó en «Ofrecerlo»: nunca se pregunta antes de cobrar, porque F12 ya es
+  la confirmación (2026-10-14).
+- **«Ofrecerlo»:** se cobra igual y la caja queda lista para el siguiente cliente. El panel del cambio dice «Ticket A-…
+  · Imprimir ticket (Ctrl+I)» y, si se vuelve al total con Esc, sigue abajo, junto a «Último», en lugar de «Reimprimir».
+  Sale una vez, sin pedir motivo (no es una reimpresión: no había salido), y el panel dice cómo va en la cola. Con el
+  primer escaneo del siguiente cliente (o al retomar otro de la espera) deja de ofrecerse y ya no vuelve, aunque se
+  quite lo escaneado. Si mientras tanto se reimprime con su motivo («/»), tampoco: no queda una copia más sin motivo; ni
+  si se cancela o se devuelve algo de esa venta (saldría completo el ticket de una venta cancelada), y entonces su
+  cambio también deja el panel. Con el ratón, «Imprimir ticket» y «Volver al total» regresan el cursor al cuadro de
+  captura, como Ctrl+I y Esc. Sin impresora, Ctrl+I lo enseña en pantalla.
+- **«No imprimirlo»:** a la impresora no le llega nada y el panel dice «Ticket A-… sin imprimir». Si el cliente lo pide,
+  «Reimprimir» (abajo o en «Ventas del día»), con su motivo, como toda reimpresión. Sin conexión no se puede reimprimir:
+  lo que se cobra con la copia de la caja (sin conexión o con la red lenta) se ofrece, como con «Ofrecerlo».
+- **Lo que sale siempre:** lo fiado, porque el ticket lleva «SU CUENTA» (lo que debe y hasta cuándo paga) y el cliente
+  se lo lleva. El ajuste es solo del ticket de la venta al cobrar: los comprobantes de devoluciones y cancelaciones, de
+  entradas y salidas de efectivo y de abonos, el estado de cuenta, el corte, las reimpresiones y el ticket de prueba
+  salen como siempre.
+- **El cobro no espera nada más:** lo que se hace con el ticket llega con el ticket del cobro (en línea, lo de la
+  sucursal en ese momento; sin conexión, lo de la copia de la caja, que lo trae con lo que cambió). Sin papel no va el
+  pulso del cajón (va al principio del ticket; en la tienda no hay cajón). La base guarda el ajuste en
+  `ConfiguracionesTicket` (migración `TicketAlCobrar`); las que ya existían siguen imprimiendo.
+- **Decidido, por revisar** (el dueño no estaba): para toda la tienda y no por caja; lo fiado como la única excepción
+  del ticket de venta; reimprimir después sigue pidiendo motivo; sin papel no se abre el cajón; Ctrl+I como su tecla;
+  sin conexión, «No imprimirlo» se ofrece como «Ofrecerlo» (sin la caja principal no hay reimpresión; de la revisión del
+  PR #118).
+
 #### Después: el piloto en la caja 2
 
 Mientras se arma el puente con eleventa, la versión unicaja sigue creciendo con la venta completa (entrega 3) y la base
