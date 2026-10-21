@@ -141,14 +141,26 @@ public sealed class RestauracionDelPilotoTests
         await using var eleventa = e;
         using var gbak = new GbakDePrueba();
         int? enEleventaAlRespaldar = null;
-        gbak.AlRespaldar = async () => enEleventaAlRespaldar = await TicketsDeLaCaja2Async(e);
+        // gbak no termina hasta que contesta el primer cobro. Uno de mentiras acaba al instante, y entonces la vuelta (que el
+        // cobro despierta) podía respaldar y mandar la venta a eleventa antes de que el cobro armara su ticket, que salía con
+        // el folio de eleventa (pasó una vez: 42); con el de verdad, que tarda, no pasa. Si el cobro esperara a gbak, gbak
+        // terminaría a los 30 s y la venta entraría a eleventa mientras el cobro todavía espera su folio (aquí, hasta 2
+        // minutos): el ticket saldría con el de eleventa, y la prueba lo ve igual que antes.
+        var primerCobro = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        gbak.AlRespaldar = async () =>
+        {
+            enEleventaAlRespaldar = await TicketsDeLaCaja2Async(e);
+            await Task.WhenAny(primerCobro.Task, Task.Delay(TimeSpan.FromSeconds(30)));
+        };
         await using var servicio = await ServicioDePrueba.CrearAsync(s => s.AddSingleton<IEjecutorGbak>(gbak),
-            [.. Ajustes(e.Servidor), ("Eleventa:Gbak", gbak.Ruta), ("Eleventa:CarpetaRespaldos", gbak.Respaldos), ("Eleventa:RespaldoObligatorio", "true")]);
+            [.. Ajustes(e.Servidor), ("Eleventa:Gbak", gbak.Ruta), ("Eleventa:CarpetaRespaldos", gbak.Respaldos), ("Eleventa:RespaldoObligatorio", "true"),
+                ("Eleventa:SegundosAlCobrar", "120")]);
         var c = await AbrirAsync(servicio, await MapearAsync(servicio));
 
         // La primera del día no espera a gbak (sale con el folio de la caja); la bandeja respalda y después la manda. Lo
         // que sigue en el día ya no respalda.
         var primera = await CobrarAsync(c);
+        primerCobro.SetResult();
         await MandarAsync(c);
         await CobrarAsync(c);
         await MandarAsync(c);
