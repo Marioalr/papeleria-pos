@@ -256,4 +256,45 @@ public class CapturaCodigoTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => _enCurso[0]);
     }
+
+    /// <summary>
+    /// Un código que no está en la copia (entrega 5) se pregunta aparte: la cola no lo espera y los escaneos que siguen entran
+    /// enseguida; las teclas del ticket y el cobro sí lo esperan, y el cobro sabe que llegó algo.
+    /// </summary>
+    [Fact]
+    public async Task Lo_que_se_pregunta_aparte_no_detiene_la_cola_pero_las_teclas_y_el_cobro_lo_esperan()
+    {
+        var lineas = new List<string>();
+        var contesta = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task PreguntarAsync()
+        {
+            await contesta.Task;
+            await _blazor.InvokeAsync(() => lineas.Add("nuevo"));
+        }
+        Task ProcesarAsync(string codigo)
+        {
+            if (codigo == "nuevo")
+                _captura.EnVuelo(PreguntarAsync());
+            else
+                lineas.Add(codigo);
+            return Task.CompletedTask;
+        }
+
+        await _blazor.InvokeAsync(() => Enter("7500000000011", ProcesarAsync));
+        await _blazor.InvokeAsync(() => Enter("nuevo", ProcesarAsync));
+        await _blazor.InvokeAsync(() => Enter("7500000000028", ProcesarAsync));
+        Assert.Equal(["7500000000011", "7500000000028"], lineas);
+        Assert.Equal(1, _captura.Buscando);
+
+        var f6 = _blazor.InvokeAsync(() => _captura.EsperarAsync());
+        var cobro = _blazor.InvokeAsync(() => _captura.ApartarAsync(() => lineas.Count));
+        Assert.False(f6.IsCompleted);
+        Assert.False(cobro.IsCompleted);
+        contesta.SetResult();
+        await f6;
+        using var apartado = await cobro;
+
+        Assert.Equal(["7500000000011", "7500000000028", "nuevo"], lineas);
+        Assert.True(apartado.LlegoAlgo);
+    }
 }

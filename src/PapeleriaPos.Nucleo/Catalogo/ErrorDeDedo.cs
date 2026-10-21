@@ -8,13 +8,27 @@ namespace PapeleriaPos.Nucleo.Catalogo;
 public static class ErrorDeDedo
 {
     /// <summary>El pedazo es el principio de una palabra o, con 4 letras o más, se le parece con una letra de diferencia.</summary>
-    public static bool Coincide(string pedazo, IEnumerable<string> palabras) =>
-        palabras.Any(w => w.StartsWith(pedazo, StringComparison.Ordinal))
-        || (pedazo.Length >= 4 && pedazo.Any(char.IsLetter)
-            && palabras.Any(w => DifierenEnUna(pedazo, w.Length > pedazo.Length ? w[..pedazo.Length] : w) || DifierenEnUna(pedazo, w)));
+    public static bool Coincide(string pedazo, IEnumerable<string> palabras)
+    {
+        var conErrores = AdmiteErrores(pedazo);
+        return palabras.Any(w => Coincide(pedazo, w, conErrores));
+    }
+
+    /// <summary>
+    /// Lo mismo con una sola palabra: la búsqueda la revisa una vez por cada palabra del catálogo, no por cada producto
+    /// (<see cref="IndiceDeBusqueda"/>).
+    /// </summary>
+    public static bool Coincide(string pedazo, string palabra) => Coincide(pedazo, palabra, AdmiteErrores(pedazo));
+
+    /// <summary>Con menos de cuatro letras sobran los parecidos, y los números no tienen errores de dedo.</summary>
+    private static bool AdmiteErrores(string pedazo) => pedazo.Length >= 4 && pedazo.Any(char.IsLetter);
+
+    private static bool Coincide(string pedazo, string palabra, bool conErrores) =>
+        palabra.StartsWith(pedazo, StringComparison.Ordinal)
+        || (conErrores && (DifierenEnUna(pedazo, palabra.Length > pedazo.Length ? palabra.AsSpan(0, pedazo.Length) : palabra.AsSpan()) || DifierenEnUna(pedazo, palabra)));
 
     /// <summary>Si a y b difieren en a lo más una letra: cambiada, de más, de menos o dos volteadas («manial» y «manila»).</summary>
-    public static bool DifierenEnUna(string a, string b)
+    public static bool DifierenEnUna(ReadOnlySpan<char> a, ReadOnlySpan<char> b)
     {
         if (Math.Abs(a.Length - b.Length) > 1)
             return false;

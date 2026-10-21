@@ -269,7 +269,8 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         await p.EsperarAsync(t => t.Contains("contando"), "lo que se está recibiendo");
 
         var tareas = await BotonesAsync(p, "vn-tarea");
-        Assert.Equal(PaginasDeAtras.Tareas.Select(t => t.Nombre),
+        // Todas menos lo que vale el inventario: es costo, y el encargado no tiene «Ver costos, utilidad y margen».
+        Assert.Equal(PaginasDeAtras.Tareas.Where(t => t.Id != TareaInventario.Valor).Select(t => t.Nombre),
             tareas.Select(t => PaginasDeAtras.Tareas.First(x => t.StartsWith(x.Nombre, StringComparison.Ordinal)).Nombre));
         Assert.Matches(@"\d+ contando", tareas.Single(t => t.StartsWith("Recibir mercancía", StringComparison.Ordinal)));
         Assert.DoesNotContain("solo consulta", tareas.Single(t => t.StartsWith("Proveedores", StringComparison.Ordinal)));
@@ -340,8 +341,9 @@ public sealed class PaginasTests(ServicioEnPrueba prueba) : IClassFixture<Servic
         Assert.Contains("Límite y plazo", botones);
         Assert.Contains("Nuevo cliente", botones);
         Assert.Contains("puedes cambiarlo", await p.TextoAsync());
-        // «Por revisar»: lo del crédito sin conexión de este cliente, en su detalle.
-        Assert.Contains("Del crédito sin conexión, por revisar", await p.TextoAsync());
+        // «Por revisar»: lo del crédito sin conexión de este cliente, en su detalle. La página lo pide aparte de la lista, así
+        // que puede llegar después de su cuenta (pasó en el CI de Windows): se espera.
+        await p.EsperarAsync(t => t.Contains("Del crédito sin conexión, por revisar"), "lo del crédito sin conexión por revisar");
         // Editar, en el mismo lado; Esc regresa sin guardar.
         await p.OprimirAsync(await p.BotonAsync("Editar"));
         Assert.Equal($"Editar «{PreparacionPrueba.ConDeuda}»", await TituloAsync(p));

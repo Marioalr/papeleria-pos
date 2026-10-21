@@ -99,6 +99,12 @@ public sealed class RegistroDiario
     public void Anotar(string texto) => Escribir(Marca(), texto, texto);
 
     /// <summary>
+    /// Lo que no se puede perder (la bitácora de red: cuándo se perdió algo y cuándo volvió): se anota en un renglón aunque el
+    /// archivo de hoy ya haya llegado a su tope y a su reserva. Son pocos al día; lo que se repite va contado en otro lado.
+    /// </summary>
+    public void AnotarSiempre(string texto) => Escribir(Marca(), texto, texto, siempre: true);
+
+    /// <summary>
     /// Lo que puede llegar una y otra vez, como un error de JavaScript en una tecla (cada vez que se aprieta): se anota
     /// completo la primera vez y después solo una línea, a las 2, 10, 100… veces, para que no llene el registro.
     /// </summary>
@@ -200,21 +206,24 @@ public sealed class RegistroDiario
 
     /// <param name="completo">Con todo el detalle, mientras quepa en el tope.</param>
     /// <param name="corto">Pasado el tope, en una línea (la primera, recortada), mientras quepa en la reserva.</param>
-    private void Escribir(string marca, string completo, string corto)
+    /// <param name="siempre">En una línea recortada, aunque ya no quepa (<see cref="AnotarSiempre"/>).</param>
+    private void Escribir(string marca, string completo, string corto, bool siempre = false)
     {
         lock (_candado)
         {
             try
             {
                 var hoy = Hoy;
-                if (_llenoEl == hoy)
+                if (_llenoEl == hoy && !siempre)
                     return;
                 Directory.CreateDirectory(Carpeta);
                 var ruta = Archivo(hoy);
                 var archivo = new FileInfo(ruta);
                 var ocupado = archivo.Exists ? archivo.Length : 0;
                 var bytes = Encoding.UTF8.GetBytes($"{marca}  {completo}{Environment.NewLine}");
-                if (ocupado + bytes.Length > _tope)
+                if (siempre && ocupado + bytes.Length > _tope)
+                    bytes = Encoding.UTF8.GetBytes($"{marca}  {PrimeraLinea(corto)}{Environment.NewLine}");
+                else if (ocupado + bytes.Length > _tope)
                 {
                     // La caja se volvió a abrir el mismo día con el archivo ya lleno: ya se dijo, y ya no se anota nada.
                     if (_revisadoEl != hoy)

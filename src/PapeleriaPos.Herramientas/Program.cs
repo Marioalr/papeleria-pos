@@ -8,6 +8,7 @@ using PapeleriaPos.Herramientas.Eleventa;
 using PapeleriaPos.Herramientas.Ficticios;
 using PapeleriaPos.Herramientas.Importacion;
 using PapeleriaPos.Herramientas.Prueba;
+using PapeleriaPos.Herramientas.Simulador;
 using PapeleriaPos.Herramientas.Tienda;
 using PapeleriaPos.Impresion;
 using PapeleriaPos.Impresiones.Datos;
@@ -30,6 +31,7 @@ return args switch
     ["preparar-prueba", .. var resto] => await PrepararPruebaAsync(resto),
     ["probar-impresora-tickets", .. var resto] => await ProbarImpresoraTicketsAsync(resto),
     ["probar-lector", ..] => ProbarLector(),
+    ["simular-cajas", .. var resto] => await SimularCajasAsync(resto),
     _ => Ayuda(),
 };
 
@@ -108,6 +110,24 @@ static int Ayuda()
               Para el fin de semana en la tienda: qué manda el lector y a qué ritmo. Con cada código escaneado dice qué
               llegó y el tiempo entre tecla y tecla, y si en el cobro la caja lo reconoce como el lector (caja.js,
               RAFAGA_MS). scripts\probar-lector.cmd lo abre.
+
+          simular-cajas (--servicio <url> | --iniciar-servicio <PapeleriaPos.Servicio.exe o .dll> [--base prueba.db])
+                        [--cajas 2] [--tickets 120] [--minutos 10] [--caida 30s@50%] [--caida-caja <n>] [--salida informe.md]
+                        [--semilla 2026] [--donde "PC de desarrollo"] [--pid <proceso del servicio>] [--nucleos <n>] [--catalogo-por <n>]
+                        [--dueno usuario:PIN] [--cajero usuario:PIN] [--encargado usuario:PIN]
+              El día pico con varias cajas (docs/prueba-sucursales-linux.md): da de alta las cajas con el PIN del dueño (o usa
+              las que ya había: «Caja simulada 1», «2»…) y cada una vende sus --tickets como la caja de verdad, sin la pantalla:
+              con su copia del catálogo, su contingencia y su base local en una carpeta temporal, en --minutos (0: sin esperas).
+              Con --caida, la red de una caja (la última, o --caida-caja) se cae a media jornada: «30s@50%», «2m@40%» o «5t@50%»
+              (5 tickets de esa caja). Mide cada operación (la mitad, 19 de 20, 99 % y la peor) contra las metas, la memoria del
+              servicio y la copia; hace el corte de cada turno y cuadra todo contra la caja principal. El informe sale en la
+              consola y, con --salida, en un archivo.
+              Con --iniciar-servicio arranca su propio servicio en esta PC, con una copia de --base (sin ella, arma la base de
+              prueba como preparar-prueba), y lo detiene al terminar; con --nucleos, ese servicio usa solo esos núcleos (para
+              parecerse a la caja principal en una PC con muchos), y con --catalogo-por 4 su catálogo es del tamaño del de la
+              tienda (cada producto 4 veces). Con --servicio, solo uno de prueba (su api/estado lo dice):
+              nunca el de la tienda ni uno en el piloto con eleventa. Los usuarios, por omisión, los de la base de prueba.
+              Sale con 0 si cuadra, 1 si no cuadra o algo falló, 2 si no pudo empezar. scripts\simular-dia-pico.cmd lo abre.
         """);
     return 1;
 }
@@ -661,6 +681,113 @@ static int ProbarLector()
     foreach (var linea in PruebaLector.Resumen(codigos))
         Console.WriteLine(linea);
     return 0;
+}
+
+static async Task<int> SimularCajasAsync(string[] args)
+{
+    if (OpcionesSimulador.Leer(args, out var error) is not { } opciones)
+    {
+        Console.Error.WriteLine(error);
+        return 2;
+    }
+    var url = Opcion(args, "--servicio");
+    var ejecutable = Opcion(args, "--iniciar-servicio");
+    if ((url is null) == (ejecutable is null))
+    {
+        Console.Error.WriteLine("Indica --servicio <url> (un servicio de prueba que ya corre) o --iniciar-servicio <ruta del servicio> (arranca uno "
+            + "propio, con una copia de la base de prueba).");
+        return 2;
+    }
+    Uri? servicio = null;
+    if (url is not null && !Uri.TryCreate(url.EndsWith('/') ? url : url + "/", UriKind.Absolute, out servicio))
+    {
+        Console.Error.WriteLine($"No entiendo la dirección del servicio «{url}» (por ejemplo, http://192.168.1.10:5180).");
+        return 2;
+    }
+    var carpeta = Path.Combine(Path.GetTempPath(), $"simulador-cajas-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(carpeta);
+    ServicioLocal? propio = null;
+    try
+    {
+        string? baseDeDatos = null, descripcion = null;
+        if (ejecutable is not null)
+        {
+            baseDeDatos = Path.Combine(carpeta, "pos.db");
+            var catalogoPor = 1;
+            if (Opcion(args, "--catalogo-por") is { } por && (!int.TryParse(por, out catalogoPor) || catalogoPor is < 1 or > 10))
+            {
+                Console.Error.WriteLine("--catalogo-por va de 1 a 10 (4 deja la papelería ficticia del tamaño del catálogo de la tienda).");
+                return 2;
+            }
+            descripcion = await BaseDePrueba.PrepararAsync(baseDeDatos, Opcion(args, "--base"), carpeta, Console.Out, catalogoPor);
+            int? nucleos = null;
+            if (Opcion(args, "--nucleos") is { } texto)
+            {
+                if (!int.TryParse(texto, out var n) || n < 1 || n > Environment.ProcessorCount)
+                {
+                    Console.Error.WriteLine($"--nucleos va de 1 a {Environment.ProcessorCount}.");
+                    return 2;
+                }
+                nucleos = n;
+                descripcion += $"; el servicio, con {n} {(n == 1 ? "núcleo" : "núcleos")} de esta PC (su afinidad y DOTNET_PROCESSOR_COUNT), para parecerse a la caja principal";
+            }
+            Console.WriteLine("Arrancando el servicio…");
+            propio = await ServicioLocal.IniciarAsync(ejecutable, baseDeDatos, carpeta, nucleos);
+            servicio = propio.Url;
+        }
+        System.Diagnostics.Process? proceso = propio?.Proceso;
+        if (proceso is null && int.TryParse(Opcion(args, "--pid"), out var pid))
+        {
+            try
+            {
+                proceso = System.Diagnostics.Process.GetProcessById(pid);
+            }
+            catch (ArgumentException)
+            {
+                Console.Error.WriteLine($"No hay un proceso {pid}: la memoria del servicio no se mide.");
+            }
+        }
+        var simulador = new SimuladorCajas(opciones, servicio!, fondo => PapeleriaPos.Interfaz.RedCaja.Manejador(TimeSpan.FromSeconds(fondo ? 3 : 2)))
+        {
+            Salida = Console.Out, Proceso = proceso, ServicioPropio = propio is not null,
+            DescripcionDeLaBase = descripcion ?? "la del servicio de prueba",
+            Base = baseDeDatos is null ? null : () => new PosDbContext(BaseDeDatos.Opciones($"Data Source={baseDeDatos};Pooling=False")),
+            Carpeta = Path.Combine(carpeta, "cajas"),
+        };
+        var resultado = await simulador.CorrerAsync();
+        // Los PIN no van al informe (aunque sean los de la base de prueba).
+        var comando = "simular-cajas " + string.Join(' ', args.Select((a, i) =>
+            i > 0 && args[i - 1] is "--dueno" or "--cajero" or "--encargado" ? a.Split(':')[0] + ":****" : a.Contains(' ') ? $"\"{a}\"" : a));
+        var informe = Informe.Markdown(resultado, comando);
+        Console.WriteLine();
+        Console.WriteLine(informe);
+        if (Opcion(args, "--salida") is { } salida)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(salida))!);
+            await File.WriteAllTextAsync(salida, informe);
+            Console.WriteLine($"El informe quedó en {Path.GetFullPath(salida)}");
+        }
+        return resultado.Paso ? 0 : 1;
+    }
+    catch (InvalidOperationException ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 2;
+    }
+    finally
+    {
+        if (propio is not null)
+            await propio.DisposeAsync();
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        try
+        {
+            Directory.Delete(carpeta, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"No se pudo borrar la carpeta temporal {carpeta}: {ex.Message}");
+        }
+    }
 }
 
 static string? Opcion(string[] args, string nombre)

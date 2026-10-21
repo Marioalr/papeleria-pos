@@ -86,6 +86,165 @@ public static class DisenoComprobante
         return e;
     }
 
+    /// <summary>
+    /// El corte del día impreso (2026-10-17), como el de eleventa («Imprimir» lo manda a la impresora de tickets) y con el
+    /// acomodo del corte del turno: el día y si se cerró, lo vendido y sus formas de pago, cada turno con lo que se contó, los
+    /// movimientos, las ventas por departamento y, solo si viene (para quien ve la utilidad), la utilidad, también la de cada
+    /// departamento. Lo mismo que ve en la pantalla quien lo imprime, de hoy o de un día que ya pasó.
+    /// </summary>
+    /// <param name="impresoPor">Quien lo imprime.</param>
+    /// <param name="impresoLocal">Cuándo (hora de México).</param>
+    public static List<Elemento> CorteDelDia(CorteDelDiaDto d, string impresoPor, DateTime impresoLocal)
+    {
+        const int anchoMonto = 14, anchoConcepto = DisenoTicket.Columnas - anchoMonto;
+        var e = new List<Elemento>
+        {
+            new Renglon("CORTE DEL DÍA", Alineacion.Centro, Negrita: true, Grande: true),
+            // En el piloto, aquí solo está lo de la caja nueva: lo de las demás cajas está en eleventa.
+            new Renglon($"{(d.Piloto ? "Esta caja" : "Todas las cajas")} · {d.Fecha.ToString("dddd dd/MM/yyyy", Mexico)}", Alineacion.Centro),
+            new Renglon(new string('-', DisenoTicket.Columnas)),
+        };
+        // Lo de cada turno va con sangría, también lo que baja de renglón.
+        void Texto(string texto, bool negrita = false, int sangria = 0)
+        {
+            foreach (var parte in DisenoTicket.Partir(texto, DisenoTicket.Columnas - sangria))
+                e.Add(new Renglon(new string(' ', sangria) + parte, Negrita: negrita));
+        }
+        // Un concepto largo (el motivo de una salida) baja de renglón; el monto va en el último.
+        void Linea(string concepto, string monto, bool negrita = false, int sangria = 0)
+        {
+            var partes = DisenoTicket.Partir(concepto, anchoConcepto - 1 - sangria);
+            var margen = new string(' ', sangria);
+            for (var i = 0; i < partes.Count - 1; i++)
+                e.Add(new Renglon(margen + partes[i], Negrita: negrita));
+            e.Add(new Renglon((margen + partes[^1]).PadRight(anchoConcepto) + monto.PadLeft(anchoMonto), Negrita: negrita));
+        }
+        void Dinero(string concepto, long centavos, bool negrita = false, int sangria = 0) =>
+            Linea(concepto, DisenoTicket.Dinero(centavos), negrita, sangria);
+        void Seccion(string titulo)
+        {
+            e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
+            e.Add(new Renglon(titulo, Negrita: true));
+        }
+
+        e.Add(new Renglon($"Impreso: {impresoLocal.ToString("dd/MM/yyyy  HH:mm", Mexico)}"));
+        Texto($"Lo imprimió: {impresoPor}");
+        Texto(d switch
+        {
+            { Piloto: true, DeOtroDia: true } => "Del piloto con eleventa: el día se cerró con el corte de eleventa.",
+            { Piloto: true } => "Piloto con eleventa: el día se cierra con el corte de eleventa.",
+            { Cierre: { } cierre } => $"Día cerrado a las {cierre.CerradoLocal.ToString("HH:mm", Mexico)} por {cierre.CerradoPor}.",
+            { DeOtroDia: true } => "Ese día no se cerró.",
+            _ => "El día todavía no se cierra.",
+        }, negrita: true);
+        e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
+        Dinero("Vendido", d.VendidoCentavos, negrita: true);
+        e.Add(new Renglon($"Tickets: {d.Tickets} en {d.Turnos.Count} {(d.Turnos.Count == 1 ? "turno" : "turnos")}"));
+        Dinero("Efectivo", d.EfectivoCentavos);
+        Dinero("Tarjeta", d.TarjetaCentavos);
+        Dinero("Transferencia", d.TransferenciaCentavos);
+        if (d.FiadoCentavos != 0)
+            Dinero("Fiado (ventas a crédito)", d.FiadoCentavos);
+        if (d.TransferenciasPorVerificar > 0)
+            e.Add(new Renglon($"Transferencias por verificar: {d.TransferenciasPorVerificar}"));
+        if (d.Utilidad is { } utilidad)
+            Dinero("Utilidad bruta", utilidad.UtilidadCentavos, negrita: true);
+
+        Seccion("TURNOS");
+        if (d.Turnos.Count == 0)
+            e.Add(new Renglon(d.DeOtroDia ? "Ese día no se abrió ningún turno." : "Hoy todavía no se abre ningún turno."));
+        foreach (var t in d.Turnos)
+        {
+            Texto($"{t.Caja} · {t.Cajero}{(t.EnContingencia ? " (sin conexión)" : "")}");
+            var horario = $"{Hora(t.AbiertoLocal, d.Fecha)}-{(t.CerradoLocal is { } cerrado ? Hora(cerrado, d.Fecha) : "abierto")}";
+            Dinero($"{horario} · {t.Tickets} {(t.Tickets == 1 ? "ticket" : "tickets")}", t.VendidoCentavos, sangria: 2);
+            if (t.ContadoCentavos is { } contado)
+            {
+                Texto($"Esperado {DisenoTicket.Dinero(t.EsperadoCentavos ?? 0)} · contado {DisenoTicket.Dinero(contado)}", sangria: 2);
+                var diferencia = t.DiferenciaCentavos ?? 0;
+                Dinero(diferencia < 0 ? "Faltante" : diferencia > 0 ? "Sobrante" : "Cuadra", Math.Abs(diferencia), sangria: 2);
+            }
+            else if (t.CorteEnEleventa is { } enEleventa)
+                Texto(enEleventa, sangria: 2);
+            // Su corte va en el día en que se hizo.
+            else if (t.CerradoLocal is { } despues && DateOnly.FromDateTime(despues) > d.Fecha)
+                Texto($"Su corte, el {despues.ToString("dd/MM", Mexico)}, va en ese día.", sangria: 2);
+            else if (t.CerradoLocal is null)
+                Texto(d.Piloto ? "Corte en eleventa" : t.EsperadoCentavos is { } esperado
+                    ? $"Turno abierto · esperado {DisenoTicket.Dinero(esperado)}"
+                    : "Turno abierto", sangria: 2);
+        }
+        if (d.Turnos.Any(t => t.ContadoCentavos is not null))
+            Dinero("Diferencias de corte", d.Turnos.Sum(t => t.DiferenciaCentavos ?? 0), negrita: true);
+        if (d.Turnos.Any(t => DateOnly.FromDateTime(t.AbiertoLocal) < d.Fecha))
+            Texto("De un turno que viene de otro día, solo lo de este día; lo esperado y lo contado, de todo el turno.");
+
+        Seccion("MOVIMIENTOS");
+        if (d.EntradasCentavos != 0)
+            Dinero("Entradas de efectivo", d.EntradasCentavos);
+        foreach (var s in d.Salidas)
+            Dinero($"Salidas · {s.Motivo}{(s.Veces > 1 ? $" ({s.Veces})" : "")}", -s.MontoCentavos);
+        if (d.Salidas.Count == 0)
+            Dinero("Salidas", 0);
+        Dinero($"Devoluciones{(d.Devoluciones > 0 ? $" ({d.Devoluciones})" : "")}", -d.DevolucionesCentavos);
+        Dinero($"Cancelaciones{(d.Cancelaciones > 0 ? $" ({d.Cancelaciones})" : "")}", -d.CancelacionesCentavos);
+        if (d.Abonos > 0)
+            Dinero($"Abonos recibidos ({d.Abonos})", d.AbonosCentavos);
+        if (d.ImpresionesCentavos != 0)
+            Dinero("Impresiones cobradas", d.ImpresionesCentavos);
+
+        // Como en eleventa, las ventas por departamento las ve (y las imprime) quien ve el corte del día; la utilidad de cada
+        // uno, solo quien ve la utilidad.
+        if (d.PorDepartamento is { } porDepartamento)
+        {
+            var conUtilidad = d.Utilidad is not null;
+            Seccion("VENTAS POR DEPARTAMENTO");
+            void Departamento(string nombre, string venta, string? utilidad, bool negrita = false)
+            {
+                var anchoNombre = DisenoTicket.Columnas - (utilidad is null ? anchoMonto : 2 * 13);
+                var partes = DisenoTicket.Partir(nombre, anchoNombre - 1);
+                var montos = utilidad is null ? venta.PadLeft(anchoMonto) : venta.PadLeft(13) + utilidad.PadLeft(13);
+                e.Add(new Renglon(partes[0].PadRight(anchoNombre) + montos, Negrita: negrita));
+                foreach (var parte in partes.Skip(1))
+                    e.Add(new Renglon("  " + parte, Negrita: negrita));
+            }
+            string? Utilidad(long? centavos) => conUtilidad ? DisenoTicket.Dinero(centavos ?? 0) : null;
+            Departamento("Departamento", "Venta", conUtilidad ? "Utilidad" : null);
+            foreach (var departamento in porDepartamento.Departamentos)
+                Departamento(departamento.Departamento, DisenoTicket.Dinero(departamento.VentaCentavos), Utilidad(departamento.UtilidadCentavos));
+            if (porDepartamento.ImpresionesCentavos != 0 || porDepartamento.ImpresionesCostoCentavos is not (null or 0))
+                Departamento("Impresiones", DisenoTicket.Dinero(porDepartamento.ImpresionesCentavos), Utilidad(porDepartamento.ImpresionesUtilidadCentavos));
+            if (porDepartamento.ArticuloComunCentavos != 0)
+                // El ticket va en la página 850, que no tiene la raya larga.
+                Departamento("Artículo común", DisenoTicket.Dinero(porDepartamento.ArticuloComunCentavos), conUtilidad ? "sin costo" : null);
+            if (porDepartamento.Departamentos.Count == 0 && porDepartamento.ImpresionesCentavos == 0 && porDepartamento.ArticuloComunCentavos == 0)
+                e.Add(new Renglon(d.DeOtroDia ? "Ese día no hubo ventas." : "Hoy todavía no hay ventas."));
+            e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
+            Departamento("Total", DisenoTicket.Dinero(porDepartamento.TotalCentavos), Utilidad(d.Utilidad?.UtilidadCentavos), negrita: true);
+            if (d.Devoluciones > 0)
+                Texto("Lo devuelto ese día ya se restó de su departamento.");
+        }
+
+        if (d.Utilidad is { } u)
+        {
+            Seccion("UTILIDAD");
+            Dinero("Venta con costo", u.VentaCentavos);
+            Dinero("Costo", -u.CostoCentavos);
+            Dinero("Utilidad bruta", u.UtilidadCentavos, negrita: true);
+            if (u.MargenCentesimas is { } margen)
+                Linea("Margen", Nucleo.Catalogo.Margen.Texto(margen));
+            if (d.PorDepartamento?.ArticuloComunCentavos is { } comun and not 0)
+                Texto($"Sin el artículo común ({DisenoTicket.Dinero(comun)}): no tiene costo.");
+            if (u.ServiciosSinCostoCentavos != 0)
+                Texto($"Los servicios ({DisenoTicket.Dinero(u.ServiciosSinCostoCentavos)}) aún no tienen costo: cuentan completos.");
+        }
+        return e;
+    }
+
+    /// <summary>«09:00», o con la fecha si no es del día del corte (un turno que viene de otro día).</summary>
+    private static string Hora(DateTime local, DateOnly dia) =>
+        local.ToString(DateOnly.FromDateTime(local) == dia ? "HH:mm" : "dd/MM HH:mm", Mexico);
+
     /// <summary>Comprobante de una cancelación o devolución: qué regresó y cuánto efectivo salió de la caja.</summary>
     public static List<Elemento> Devolucion(ComprobanteDevolucionDto c)
     {

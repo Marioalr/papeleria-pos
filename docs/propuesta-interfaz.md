@@ -327,7 +327,7 @@ un solo panel, siempre listo:**
   lo que falta.
 - Bajo el cobro, la [bandeja de impresiones](#las-impresiones-por-cobrar-la-bandeja).
 - Al cobrar, el panel muestra el cambio en grande hasta que se escanea al siguiente cliente; si la impresora no
-  respondió, ahí mismo están «Reintentar» y «Verlo en pantalla».
+  respondió, ahí mismo están «Reintentar», «No imprimirlo» y «Verlo en pantalla».
 
 **F12:**
 
@@ -496,10 +496,16 @@ No está en el prototipo:
   - el efectivo esperado y el contado en cada turno, con sus diferencias;
   - las formas de pago;
   - las salidas por categoría, las devoluciones y las cancelaciones;
-  - lo fiado, los abonos y las impresiones cobradas.
+  - lo fiado, los abonos y las impresiones cobradas;
+  - las ventas por departamento, como en el corte de eleventa (2026-10-17);
+  - para quien tiene «ver costos, utilidad y margen», la utilidad bruta y la de cada departamento con su margen, como la
+    ganancia del corte de eleventa (2026-10-17).
 
   «Cerrar el día» se habilita cuando no queda ningún turno abierto ni ventas por subir de otra caja, y manda el resumen
-  por Telegram.
+  por Telegram. Como el de eleventa (2026-10-17): abre en el de hoy y ← → (o la fecha) llevan al de otro día, que solo
+  se ve (también el de hoy a la vista al pasar la medianoche: ya no se cierra); «Imprimir» lo manda a la impresora de
+  tickets tal como se ve, también el de otro día. Desde la hora de cierre de Configuración › Tienda, si el día no se ha
+  cerrado, quien lo cierra lo ve en la venta, con los demás avisos del panel, hasta que lo cierra.
 - El conteo por denominación (la tabla `CorteConteo`) deja de usarse.
 
 ## Reportes
@@ -532,7 +538,7 @@ Opciones propuestas (las que ya existen en el POS y las comunes en una caja):
 |---|---|
 | Tienda | Nombre, dirección, teléfono, horario (para avisar si no abre o no se cerró el día), logotipo |
 | Venta y cobro | Cobrar el efectivo al peso, formas de pago, comisión de la tarjeta, pedir la referencia de la terminal, si avisa al vender sin existencia (la venta nunca se detiene), sinónimos de la búsqueda, existencia en el ticket cuando queden pocas, tickets en espera, rápidos, días para devolver |
-| Efectivo y corte | Límite de efectivo en caja, fondo sugerido, umbral de diferencia que avisa, para qué son las salidas, comprobante de salidas, hora para recordar cerrar el día |
+| Efectivo y corte | Límite de efectivo en caja, fondo sugerido, umbral de diferencia que avisa, para qué son las salidas, comprobante de salidas (cerrar el día se recuerda a la hora de cierre de Tienda, 2026-10-17) |
 | Ticket | Encabezado y pie, ahorro por mayoreo, qué hacer al cobrar (imprimir, preguntar, no imprimir), ticket de prueba, vista previa |
 | Impresoras e impresiones | Impresora de tickets, precio por hoja (blanco y negro y color), cómo se avisa lo impreso en esa PC (bandeja con miniaturas, tarjeta con tiempo o solo el contador; por caja), recordarlo al cobrar, impresoras de inyección |
 | Inventario | Margen mínimo (con el permiso de utilidad), productos del conteo del día, aviso de mínimo, días que cubre el sugerido, recibir a ciegas |
@@ -561,7 +567,7 @@ La misma pantalla en todas; cambia solo lo que dice el estado de arriba:
 | Estado normal | «Servicio aquí · Caja 2 conectada» | «Conectada a Caja 1 · 9 ms» |
 | Sin internet | «Sin internet»: Telegram y el respaldo de fuera esperan; la venta sigue igual | Igual |
 | Sin la principal | (no aplica: el servicio está en la misma PC) | Franja ámbar: sigue vendiendo con su serie (B-), cuántas ventas esperan para subir y «Volver a buscarla» |
-| Impresora sin respuesta | El cobro termina igual; «Reintentar» y «Verlo en pantalla» | Igual |
+| Impresora sin respuesta | El cobro termina igual; «Reintentar», «No imprimirlo» y «Verlo en pantalla» | Igual |
 
 ## Rendimiento
 
@@ -732,7 +738,7 @@ la 11 y la 12). Qué hace eleventa que el POS todavía no, en qué entrega va y 
 | 2 | Base visual: colores, letras, botones, etiquetas, panel y barra de teclas; estado de arriba. Permisos de la sesión en una consulta y pantalla según lo que tiene cada quien | Mediano | Con la 3 |
 | 1 | Permisos por usuario: el modelo, la migración desde los roles, la primera cuenta, «Conectar a servidor», los de defecto y la pantalla de usuarios y permisos | Mediano | Después de la 3 |
 | 6 | Entrada con fichas y PIN; Ctrl+U; el corte del turno con solo el total y sin volver a pedir el PIN; el corte del día | Mediano | Con la 1 |
-| 5 | Rendimiento para la caja 2: escanear contra la copia local, con su versión en el cobro; la base de la caja fuera del hilo de la pantalla; solo lo que cambió, avisado por SSE; plazos y estados de la red; imprimir aparte; menos repintado; la prueba de la ráfaga. El lector en una sola llamada ya va en la 0, y no perder escaneos en ráfaga ya está en `main` (#56) | Grande | Para dejar eleventa: la caja 2 con el servicio nuevo |
+| 5 | Rendimiento para la caja 2: escanear contra la copia local, con su versión en el cobro; la base de la caja fuera del hilo de la pantalla; solo lo que cambió, avisado por SSE; plazos y estados de la red; imprimir aparte; menos repintado; la prueba de la ráfaga. El lector en una sola llamada ya va en la 0, y no perder escaneos en ráfaga ya está en `main` (#56). La parte 1 ya está (2026-10-15): escanear contra la copia, el cobro con su versión, un solo escritor para la base de la caja y medir el escaneo ([avance](plan.md#primero-la-versión-unicaja-entrega-0)) | Grande | Para dejar eleventa: la caja 2 con el servicio nuevo |
 | 9 | Reportes, los que el dueño usa hoy en eleventa | Grande | Para dejar eleventa |
 | 7 | Configuración nueva: buscador, grupos, alcance y guardado al momento | Mediano | Después |
 | 8 | Las pantallas de atrás con el mismo patrón de lista y detalle: Productos (abre con la lista, no vacío), Inventario por tareas, Clientes | Grande | Después |
@@ -758,14 +764,18 @@ prueba y el piloto se suma a la entrega 3.
 - [x] Las impresiones: ¿la bandeja con miniaturas, siempre a la vista bajo el cobro, o la tarjeta que se va a los 20 s? La
   bandeja con miniaturas, que se puede recorrer, con un botón para agrandarla (como maximizar una ventana, pero sin
   cubrir toda la pantalla), parecido a Control Print (2026-10-15).
-- [ ] ¿Cada cajero puede hacer el corte de su propio turno, o solo quien tenga el permiso? Propuesta: solo con el
-  permiso, como hoy el encargado.
-- [ ] ¿El corte del día lo cierra solo la primera cuenta? ¿A qué hora se recuerda cerrarlo?
+- [x] ¿Cada cajero puede hacer el corte de su propio turno, o solo quien tenga el permiso? Solo con el permiso, como ya
+  funciona (decidido el 2026-10-17 mientras el dueño no estaba; por revisar).
+- [x] ¿El corte del día lo cierra solo la primera cuenta? ¿A qué hora se recuerda cerrarlo? Quien tenga «ver y cerrar el
+  corte del día» (por omisión, la primera cuenta), y se recuerda a la hora de cierre de Configuración › Tienda (decidido
+  el 2026-10-17; por revisar).
 - [x] ¿Qué billetes salen como botones en el cobro? Ninguno: se escribe lo que dio (2026-10-10).
 - [ ] WhatsApp: ¿se prueba la lista con Kapso (gratis si su plan admite coexistencia; si no, 25 USD al mes)? ¿Se pone el
   aviso de privacidad simplificado en el mensaje de bienvenida?
 - [ ] Ticket desde el celular: ¿quién lo arma (alguien que atiende en el piso, el encargado)? ¿El lector de las cajas
   lee QR, para cuando no hay red?
 - [x] ¿Pitido al escanear y al fallar? Sin sonidos por ahora (2026-10-10).
-- [ ] ¿Alguna caja tiene o tendrá pantalla táctil?
-- [ ] ¿Pedir el PIN otra vez tras unos minutos sin usar la caja? Por ejemplo, 10.
+- [x] ¿Alguna caja tiene o tendrá pantalla táctil? No por ahora: todo con teclado y ratón, con botones de buen tamaño
+  (decidido el 2026-10-17; por revisar).
+- [x] ¿Pedir el PIN otra vez tras unos minutos sin usar la caja? No por ahora, como eleventa: estorba para cobrar
+  rápido; Ctrl+U cambia de usuario (decidido el 2026-10-17; por revisar).

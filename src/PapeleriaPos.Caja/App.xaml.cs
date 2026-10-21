@@ -104,6 +104,12 @@ public partial class App : Application
     /// <summary>Si no pudo abrir (caja.json dañado, por ejemplo), volver a abrirla falla igual.</summary>
     private const string NoAbre = "Avísale a quien te instaló la caja y mándale esa carpeta.";
 
+    /// <summary>
+    /// La caja se está cerrando por un error: la ventana ya no pregunta nada al cerrarse (no se puede detener, y «No» no
+    /// haría nada); lo que quede sin imprimir solo se anota.
+    /// </summary>
+    internal bool SeCierraPorUnError => _cerrando;
+
     /// <summary>Se cierra en orden: la ventana se cierra como siempre y el servicio de la prueba se detiene bien.</summary>
     private void Cerrar(string porque, string queHacer = VuelveAAbrir)
     {

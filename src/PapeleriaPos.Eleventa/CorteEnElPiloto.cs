@@ -105,6 +105,17 @@ public static class CorteEnElPiloto
         };
     }
 
+    /// <summary>
+    /// Si un día fue del piloto: alguno de sus turnos adoptó el de eleventa (<see cref="TurnosDelPiloto"/>). El corte de un
+    /// día que ya pasó se ve según cómo fue ese día (2026-10-17), no según el piloto de hoy: uno de antes del piloto se cerró
+    /// aquí, y uno del piloto lo cerró el corte de eleventa, también si después se dejó el piloto.
+    /// </summary>
+    public static Task<bool> FueDelPilotoAsync(PosDbContext db, CorteDelDiaDto dia, CancellationToken ct = default)
+    {
+        var ids = dia.Turnos.Select(t => t.Id).ToList();
+        return db.Set<TurnoEnEleventa>().AsNoTracking().AnyAsync(t => ids.Contains(t.TurnoId), ct);
+    }
+
     /// <summary>La cancelación en el piloto: solo la de un ticket cobrado hoy. Lo demás lo revisa la cancelación de siempre.</summary>
     public static async Task RevisarCancelacionAsync(PosDbContext db, Guid ventaId, CancellationToken ct = default)
     {

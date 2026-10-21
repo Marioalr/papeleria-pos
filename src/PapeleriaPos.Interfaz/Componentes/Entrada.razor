@@ -6,6 +6,7 @@
 @implements IAsyncDisposable
 @inject ClienteCaja Cliente
 @inject IJSRuntime JS
+@inject IServiceProvider Servicios
 
 <div class="entrada">
     <LadoEntrada Caja="Caja" Turno="Turno" />
@@ -107,9 +108,31 @@
 
     protected override Task OnInitializedAsync() => CargarAsync();
 
+    /// <summary>De dónde salieron las fichas que se ven: la copia de esta caja (al abrir, sin esperar a la red) o el servicio.</summary>
+    private bool _deLaCopia;
+
+    /// <summary>
+    /// La elegida lo está porque la copia tenía una sola ficha, no porque alguien la tocó: si el servicio trae más (alguien
+    /// dado de alta hace un momento), se quita (<see cref="PonerAlDiaAsync"/>).
+    /// </summary>
+    private bool _elegidaSola;
+
     private async Task CargarAsync()
     {
         _errorFichas = null;
+        // Con la copia de esta caja, las fichas salen sin esperar a la red (entrega 5, parte 3): son las mismas que da el
+        // servicio. La caja principal las pone al día en cuanto contesta.
+        if (Cliente.FichasDeLaCopia(Caja.Id) is { } deLaCopia)
+        {
+            (_fichas, _deLaCopia) = (deLaCopia, true);
+            if (_fichas.Count == 1)
+            {
+                Elegir(_fichas[0]);
+                _elegidaSola = true;
+            }
+            _ = PonerAlDiaAsync();
+            return;
+        }
         try
         {
             _fichas = await Cliente.FichasAsync(Caja.Id);
@@ -123,8 +146,59 @@
         }
     }
 
+    /// <summary>
+    /// Las fichas del servicio, después de salir con las de la copia: si cambiaron (alguien dado de alta hace un momento), se
+    /// ponen; la elegida se queda si sigue, con lo que se tecleó de su PIN. Si estaba elegida sola (la copia tenía una) y
+    /// ahora son más, se quita: quien teclea su PIN puede ser el nuevo, y gastaría los intentos del otro.
+    /// </summary>
+    private async Task PonerAlDiaAsync()
+    {
+        List<FichaUsuarioDto> fichas;
+        try
+        {
+            fichas = await Cliente.FichasAsync(Caja.Id);
+        }
+        catch (ErrorCaja)
+        {
+            // Se quedan las de la copia.
+            return;
+        }
+        if (_fichas is { } antes && antes.SequenceEqual(fichas))
+            return;
+        _fichas = fichas;
+        // Mientras se entra con el PIN, la elegida se queda: si no entra, ahí mismo se dice por qué.
+        if (_ocupado)
+        {
+            StateHasChanged();
+            return;
+        }
+        if (_elegida is { } elegida && fichas.FirstOrDefault(f => f.UsuarioId == elegida.UsuarioId) is { } sigue && !(_elegidaSola && fichas.Count > 1))
+            _elegida = sigue;
+        else
+        {
+            (_elegida, _pin, _error, _elegidaSola) = (null, "", null, false);
+            // Si solo hay uno, ya está elegido: solo falta su PIN.
+            if (fichas.Count == 1)
+            {
+                Elegir(fichas[0]);
+                _elegidaSola = true;
+            }
+        }
+        StateHasChanged();
+    }
+
+    /// <summary>Lo que tardó en salir la entrada desde que se abrió la caja se anota una vez (la meta: lista en menos de 5 s).</summary>
+    private static int _yaSeAnoto;
+
     protected override async Task OnAfterRenderAsync(bool primera)
     {
+        if (_fichas is not null && Interlocked.Exchange(ref _yaSeAnoto, 1) == 0
+            && Servicios.GetService<RegistroDiario>() is { } registro)
+        {
+            var desde = DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime;
+            registro.Anotar($"La entrada salió a los {desde.TotalSeconds.ToString("0.0", Formato.Mexico)} s de abrir la caja"
+                + (_deLaCopia ? ", con la copia de esta caja." : ", con lo que contestó la caja principal."));
+        }
         if (!primera)
             return;
         _referencia = DotNetObjectReference.Create(this);
@@ -134,11 +208,12 @@
 
     private static string Inicial(string nombre) => nombre.Trim() is { Length: > 0 } n ? char.ToUpper(n[0], Formato.Mexico).ToString() : "?";
 
+    /// <summary>Tocar una ficha (o su letra): ya no es la elegida sola.</summary>
     private void Elegir(FichaUsuarioDto ficha)
     {
         if (_ocupado)
             return;
-        (_elegida, _pin, _error) = (ficha, "", null);
+        (_elegida, _pin, _error, _elegidaSola) = (ficha, "", null, false);
     }
 
     private async Task CifraAsync(char cifra)
@@ -210,7 +285,7 @@
                 break;
             case "Escape":
                 if (!_ocupado)
-                    (_elegida, _pin, _error) = (null, "", null);
+                    (_elegida, _pin, _error, _elegidaSola) = (null, "", null, false);
                 break;
             case [var cifra] when char.IsAsciiDigit(cifra):
                 await CifraAsync(cifra);
