@@ -1197,6 +1197,8 @@
         yield return new("Cotizar un PDF", "impresora", "Ctrl+Q", null, () => Js.ClicAsync("#pdf-cotizar"));
         yield return new("Verificar transferencias", "check", null, AccionControlada.VerificarTransferencia, () => Abrir(Ventanas.Transferencias));
         yield return new("Corte", "contar", null, null, () => Abrir(Ventanas.Corte));
+        if (VeHistorialDeCortes)
+            yield return new("Historial de cortes", "reloj", null, null, AbrirHistorialDeCortesAsync);
         yield return new("Conteo del día", "contar", null, AccionControlada.ContarInventario, () => IrAAsync(Pagina.Inventario, TareaInventario.ConteoDelDia));
         yield return new("Productos", "cajas", "F3", AccionControlada.EditarCatalogo, () => IrAAsync(Pagina.Productos));
         if (VeInventario)
@@ -4042,12 +4044,12 @@
                 }
                 @* «Que entre a esta caja» (quien no tiene el corte) es cambiar de usuario, como Ctrl+U. *@
                 <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="AlCerrarTurno"
-                           AlCerrarElTurno="TurnoCerrado" AlCambiarUsuario="SalirAsync" />
+                           AlCerrarElTurno="TurnoCerrado" AlCambiarUsuario="SalirAsync" Historial="_historialDeCortes" />
             </Ventana>
             break;
         case Ventanas.VentasDelDia:
-            <Ventana Titulo="Ventas del día" Clase="ventas-dia tarjetas ventas-del-dia" AlCerrar="Cerrar">
-                <VentasDelDia CajaId="Caja.Id" AlReimprimir="(Guid id) => PedirReimpresion(id)" AlDevolver="(string folio) => AbrirDevolucion(folio)" />
+            <Ventana Titulo="Ventas del día" Clase="ventas-del-dia" AlCerrar="Cerrar">
+                <VentasDelDia CajaId="Caja.Id" Sesion="Sesion" AlReimprimir="(Guid id) => PedirReimpresion(id)" AlDevolver="(string folio) => AbrirDevolucion(folio)" />
             </Ventana>
             break;
         case Ventanas.Devolucion:
@@ -4176,6 +4178,25 @@
         // Si CTRL+L se queda a medio camino (pidiendo la autorización del costo), el ticket regresa a como estaba.
         if (_ventana == Ventanas.ElegirCliente)
             _elegirCliente?.Cancelar();
+        // Al dejar el corte, la próxima vez abre en el turno.
+        if (_ventana == Ventanas.Corte)
+            _historialDeCortes = false;
+    }
+
+    // ── El historial de cortes (paridad con eleventa, 2026-10-17): va en el corte, y «/» lo abre ahí ──
+
+    /// <summary>El corte se abre en su historial («Historial de cortes» en «/»), no en el del turno.</summary>
+    private bool _historialDeCortes;
+
+    /// <summary>Lo ve quien hace el corte de un turno o ve el del día (sin los permisos, se ve y el servicio decide).</summary>
+    private bool VeHistorialDeCortes => _permisosPedidos
+        && ((Permiso(AccionControlada.CorteZ)?.Nivel ?? NivelPermiso.Permitido) == NivelPermiso.Permitido
+            || (Permiso(AccionControlada.CorteDelDia)?.Nivel ?? NivelPermiso.Permitido) == NivelPermiso.Permitido);
+
+    private Task AbrirHistorialDeCortesAsync()
+    {
+        _historialDeCortes = true;
+        return Abrir(Ventanas.Corte);
     }
 
     private void Avisar(string mensaje, bool error = true)
