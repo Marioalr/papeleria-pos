@@ -2,11 +2,14 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PapeleriaPos.Eleventa;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Importacion;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Ventas;
@@ -34,6 +37,8 @@ public class EnvioEleventaApiTests
         ("Eleventa:SegundosAlCobrar", segundosAlCobrar.ToString(CultureInfo.InvariantCulture)),
         // Que en la prueba solo mande el cobro o quien lo pida, no la vuelta de fondo.
         ("Eleventa:SegundosEntreEnvios", "3600"),
+        // Sin respaldo propio de eleventa (lo prueban RespaldoDeEleventaTests y RespaldoDelPilotoTests).
+        ("Eleventa:RespaldoObligatorio", "false"),
     ];
 
     private static (string, string)[] Ajustes(ServidorEleventa e) => Ajustes(e.Servidor, e.Puerto, e.Base);
@@ -310,6 +315,31 @@ public class EnvioEleventaApiTests
     private static async Task<SesionDto> EncargadoAsync(Caja c) =>
         await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("encargado", "2222")));
 
+    /// <summary>El dueño: tiene «Configuración de la tienda».</summary>
+    private static async Task<SesionDto> DuenoAsync(Caja c) =>
+        await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333")));
+
+    /// <summary>Anotar que ya quedó en eleventa a mano, como quien entró.</summary>
+    private static async Task<HttpResponseMessage> AManoAsync(Caja c, Guid envio, SesionDto quien, string? nota = null) =>
+        await c.Http.PostAsJsonAsync($"api/eleventa/envios/{envio}/a-mano", new SolicitudRevision(quien.UsuarioId, nota));
+
+    /// <summary>
+    /// Cobrar con la bandeja ocupada: el cobro no la espera ni la intenta mandar. Lo que nunca se intentó mandar se deja por
+    /// revisar (o se descarta) sin buscarlo en eleventa.
+    /// </summary>
+    private static async Task<TicketDto> CobrarSinIntentarAsync(ServicioDePrueba servicio, Caja c)
+    {
+        TicketDto ticket;
+        using (await servicio.Fabrica.Services.GetRequiredService<EnvioVentasEleventa>().CandadoAsync(CancellationToken.None))
+            ticket = await CobrarAsync(c);
+        Assert.Equal(0, (await EnviosAsync(c)).PorAtender.Single().Intentos);
+        return ticket;
+    }
+
+    /// <summary>Dejar por revisar lo que no entra, como quien entró.</summary>
+    private static async Task<HttpResponseMessage> PorRevisarAsync(Caja c, Guid envio, SesionDto quien, string? nota = null) =>
+        await c.Http.PostAsJsonAsync($"api/eleventa/envios/{envio}/revisar", new SolicitudRevision(quien.UsuarioId, nota));
+
     [FactConFirebird]
     public async Task La_cancelacion_y_la_devolucion_llegan_a_eleventa_en_orden_y_su_turno_sigue_abierto()
     {
@@ -341,23 +371,47 @@ public class EnvioEleventaApiTests
     }
 
     [Fact]
-    public async Task Lo_cancelado_antes_de_llegar_a_eleventa_ya_no_se_manda()
+    public async Task Lo_cancelado_antes_de_intentar_mandarlo_ya_no_se_manda()
     {
+        // Sin eleventa al cobrar (nunca se intentó mandar), la venta y su cancelación se descartan sin buscarla allá: nunca
+        // salió.
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
         var c = await AbrirAsync(servicio);
         var encargado = await EncargadoAsync(c);
-        var ticket = await CobrarAsync(c);
-        Assert.Equal(1, (await EnviosAsync(c)).Pendientes);
+        // La bandeja está ocupada al cobrar: el cobro no la espera ni la intenta.
+        TicketDto ticket;
+        using (await servicio.Fabrica.Services.GetRequiredService<EnvioVentasEleventa>().CandadoAsync(CancellationToken.None))
+            ticket = await CobrarAsync(c);
+        Assert.Equal(0, (await EnviosAsync(c)).PorAtender.Single().Intentos);
 
         await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/cancelacion",
             new SolicitudCancelacion(encargado.UsuarioId, c.Datos.Id, "Se arrepintió")));
         var envios = await EsperarAsync(c, x => x.Pendientes == 0);
 
-        // La venta y su cancelación se descartan sin buscar a eleventa: allá nunca existió.
         Assert.Equal((0, 0), (envios.Pendientes, envios.PorRevisar));
-        await using var db = servicio.Base();
-        Assert.All(db.EnviosAEleventa.ToList(), x => Assert.Equal(EstadoEnvioEleventa.Descartada, x.Estado));
-        Assert.Equal([TipoEnvioEleventa.Venta, TipoEnvioEleventa.Cancelacion], db.EnviosAEleventa.Select(x => x.Tipo).AsEnumerable().Order());
+        await using var revision = servicio.Base();
+        Assert.All(revision.EnviosAEleventa.ToList(), x => Assert.Equal(EstadoEnvioEleventa.Descartada, x.Estado));
+        Assert.Equal([TipoEnvioEleventa.Venta, TipoEnvioEleventa.Cancelacion], revision.EnviosAEleventa.Select(x => x.Tipo).AsEnumerable().Order());
+    }
+
+    [Fact]
+    public async Task Lo_cancelado_despues_de_intentar_mandarlo_no_se_descarta_mientras_eleventa_no_conteste()
+    {
+        // Ya se intentó mandar: cualquier intento pudo dejarla allá (aunque el último ni se haya conectado). Sin eleventa no se
+        // sabe, y no se descarta: se queda pendiente, y su cancelación detrás.
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
+        var c = await AbrirAsync(servicio);
+        var encargado = await EncargadoAsync(c);
+        var ticket = await CobrarAsync(c);
+        Assert.Equal(1, (await EnviosAsync(c)).PorAtender.Single().Intentos);
+
+        await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/cancelacion",
+            new SolicitudCancelacion(encargado.UsuarioId, c.Datos.Id, "Se arrepintió")));
+        Assert.Equal(HttpStatusCode.Accepted, (await c.Http.PostAsync("api/eleventa/enviar", null)).StatusCode);
+        var envios = await EsperarAsync(c, x => x.PorAtender.Any(p => p.Tipo == TipoEnvioEleventa.Venta && p.Intentos >= 3));
+
+        Assert.Equal([(TipoEnvioEleventa.Venta, EstadoEnvioEleventa.Pendiente), (TipoEnvioEleventa.Cancelacion, EstadoEnvioEleventa.Pendiente)],
+            envios.PorAtender.Select(p => (p.Tipo, p.Estado)));
     }
 
     [Fact]
@@ -365,15 +419,33 @@ public class EnvioEleventaApiTests
     {
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
         var c = await AbrirAsync(servicio);
-        await CobrarAsync(c);
+        await CobrarSinIntentarAsync(servicio, c);
         var pendiente = (await EnviosAsync(c)).PorAtender.Single();
+        var dueno = await DuenoAsync(c);
 
-        var dejado = await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsync($"api/eleventa/envios/{pendiente.Id}/revisar", null));
-        var otraVez = await c.Http.PostAsync($"api/eleventa/envios/{pendiente.Id}/revisar", null);
+        var dejado = await Leer<EstadoEnviosEleventaDto>(await PorRevisarAsync(c, pendiente.Id, dueno));
+        var otraVez = await PorRevisarAsync(c, pendiente.Id, dueno);
 
         Assert.Equal((0, 1), (dejado.Pendientes, dejado.PorRevisar));
         Assert.StartsWith("Se dejó para revisar a mano.", dejado.PorAtender.Single().Error);
         Assert.Equal(HttpStatusCode.BadRequest, otraVez.StatusCode);
+    }
+
+    [Fact]
+    public async Task Sin_eleventa_no_se_deja_por_revisar_lo_que_ya_se_intento_mandar()
+    {
+        // Un intento pudo dejarla en eleventa aunque aquí no se supo: si se anotara a mano quedaría dos veces. Sin eleventa no
+        // se sabe, y no se deja por revisar.
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
+        var c = await AbrirAsync(servicio);
+        await CobrarAsync(c);
+        var pendiente = (await EnviosAsync(c)).PorAtender.Single();
+        Assert.True(pendiente.Intentos > 0);
+
+        var rechazo = await PilotoDePrueba.RechazoAsync(await PorRevisarAsync(c, pendiente.Id, await DuenoAsync(c)));
+
+        Assert.EndsWith(EnvioVentasEleventa.SinEleventaNoSeDeja, rechazo);
+        Assert.Equal(EstadoEnvioEleventa.Pendiente, (await EnviosAsync(c)).PorAtender.Single().Estado);
     }
 
     [Fact]
@@ -382,11 +454,12 @@ public class EnvioEleventaApiTests
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
         var c = await AbrirAsync(servicio);
         var encargado = await EncargadoAsync(c);
+        var dueno = await DuenoAsync(c);
         var ticket = await CobrarAsync(c);
         var pendiente = (await EnviosAsync(c)).PorAtender.Single();
 
-        var aMano = await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsync($"api/eleventa/envios/{pendiente.Id}/a-mano", null));
-        var otraVez = await c.Http.PostAsync($"api/eleventa/envios/{pendiente.Id}/a-mano", null);
+        var aMano = await Leer<EstadoEnviosEleventaDto>(await AManoAsync(c, pendiente.Id, dueno));
+        var otraVez = await AManoAsync(c, pendiente.Id, dueno);
         var paraDevolver = await Leer<VentaParaDevolverDto>(await c.Http.GetAsync($"api/sucursales/{c.Datos.SucursalId}/ventas/folio/{ticket.Folio}"));
         await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{ticket.VentaId}/devoluciones",
             new SolicitudDevolucion(encargado.UsuarioId, c.Datos.Id, "No era la que buscaba",
@@ -424,14 +497,15 @@ public class EnvioEleventaApiTests
     {
         await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
         var c = await AbrirAsync(servicio);
-        await CobrarAsync(c);
+        await CobrarSinIntentarAsync(servicio, c);
         var pendiente = (await EnviosAsync(c)).PorAtender.Single();
         // Se dejó por revisar; después alguien la registra en eleventa a mano mientras se lee eleventa.
-        await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsync($"api/eleventa/envios/{pendiente.Id}/revisar", null));
+        var dueno = await DuenoAsync(c);
+        await Leer<EstadoEnviosEleventaDto>(await PorRevisarAsync(c, pendiente.Id, dueno));
         var envios = servicio.Fabrica.Services.GetRequiredService<EnvioVentasEleventa>();
 
         using var vigilancia = envios.EnCurso.Vigilar();
-        var aMano = await Leer<EstadoEnviosEleventaDto>(await c.Http.PostAsync($"api/eleventa/envios/{pendiente.Id}/a-mano", null));
+        var aMano = await Leer<EstadoEnviosEleventaDto>(await AManoAsync(c, pendiente.Id, dueno));
 
         Assert.Equal((0, 0), (aMano.Pendientes, aMano.PorRevisar));
         Assert.Equal([pendiente.Id], vigilancia.Mandados());
@@ -441,14 +515,190 @@ public class EnvioEleventaApiTests
         Assert.StartsWith("Se anotó a mano en eleventa. Se dejó para revisar a mano.", envio.Error);
     }
 
+    [Fact]
+    public async Task Solo_quien_tiene_configuracion_de_la_tienda_anota_a_mano_y_queda_en_la_bitacora()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
+        var c = await AbrirAsync(servicio);
+        var ticket = await CobrarAsync(c);
+        var pendiente = (await EnviosAsync(c)).PorAtender.Single();
+        var desde = DateTime.UtcNow.AddSeconds(-1);
+
+        // El cajero y el encargado no: queda como intento sin permiso y la venta sigue pendiente. El dueño sí.
+        var delCajero = await AManoAsync(c, pendiente.Id, c.Sesion);
+        var delEncargado = await AManoAsync(c, pendiente.Id, await EncargadoAsync(c));
+        var sigue = (await EnviosAsync(c)).PorAtender.Single();
+        var delDueno = await Leer<EstadoEnviosEleventaDto>(await AManoAsync(c, pendiente.Id, await DuenoAsync(c), "La capturé en eleventa"));
+
+        Assert.Equal((HttpStatusCode.Forbidden, HttpStatusCode.Forbidden), (delCajero.StatusCode, delEncargado.StatusCode));
+        Assert.Equal("no-permitido", (await delCajero.Content.ReadFromJsonAsync<ErrorDto>())!.Codigo);
+        Assert.Equal((pendiente.Id, EstadoEnvioEleventa.Pendiente), (sigue.Id, sigue.Estado));
+        Assert.Empty(delDueno.PorAtender);
+        await using var db = servicio.Base();
+        var bitacora = await db.Bitacora.AsNoTracking().Where(b => b.Accion == AccionControlada.ConfigurarTienda && b.FechaUtc >= desde)
+            .OrderBy(b => b.FechaUtc).ToListAsync();
+        Assert.Equal([ResultadoBitacora.Negado, ResultadoBitacora.Negado, ResultadoBitacora.Hecho], bitacora.Select(b => b.Resultado));
+        Assert.Equal(($"Anotó a mano en eleventa: {pendiente.Descripcion}. La capturé en eleventa", ticket.VentaId, (long?)pendiente.TotalCentavos),
+            (bitacora[2].Detalle, bitacora[2].VentaId, bitacora[2].MontoCentavos));
+        Assert.Equal(EstadoEnvioEleventa.AMano, (await db.EnviosAEleventa.SingleAsync(x => x.Id == pendiente.Id)).Estado);
+    }
+
+    [Fact]
+    public async Task Solo_quien_tiene_configuracion_de_la_tienda_deja_por_revisar_y_queda_en_la_bitacora()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 20));
+        var c = await AbrirAsync(servicio);
+        var ticket = await CobrarSinIntentarAsync(servicio, c);
+        var pendiente = (await EnviosAsync(c)).PorAtender.Single();
+        var desde = DateTime.UtcNow.AddSeconds(-1);
+
+        // El cajero y el encargado no: queda como intento sin permiso y la venta sigue pendiente. El dueño sí.
+        var delCajero = await PorRevisarAsync(c, pendiente.Id, c.Sesion);
+        var delEncargado = await PorRevisarAsync(c, pendiente.Id, await EncargadoAsync(c));
+        var sigue = (await EnviosAsync(c)).PorAtender.Single();
+        var delDueno = await Leer<EstadoEnviosEleventaDto>(await PorRevisarAsync(c, pendiente.Id, await DuenoAsync(c), "Eleventa no tiene el producto"));
+
+        Assert.Equal((HttpStatusCode.Forbidden, HttpStatusCode.Forbidden), (delCajero.StatusCode, delEncargado.StatusCode));
+        Assert.Equal("no-permitido", (await delCajero.Content.ReadFromJsonAsync<ErrorDto>())!.Codigo);
+        Assert.Equal((pendiente.Id, EstadoEnvioEleventa.Pendiente), (sigue.Id, sigue.Estado));
+        Assert.Equal((0, 1), (delDueno.Pendientes, delDueno.PorRevisar));
+        await using var db = servicio.Base();
+        var bitacora = await db.Bitacora.AsNoTracking().Where(b => b.Accion == AccionControlada.ConfigurarTienda && b.FechaUtc >= desde)
+            .OrderBy(b => b.FechaUtc).ToListAsync();
+        Assert.Equal([ResultadoBitacora.Negado, ResultadoBitacora.Negado, ResultadoBitacora.Hecho], bitacora.Select(b => b.Resultado));
+        Assert.Equal(($"Dejó por revisar lo que no pasa solo a eleventa: {pendiente.Descripcion}. Eleventa no tiene el producto", ticket.VentaId,
+            (long?)pendiente.TotalCentavos), (bitacora[2].Detalle, bitacora[2].VentaId, bitacora[2].MontoCentavos));
+    }
+
+    [FactConFirebird]
+    public async Task Si_otra_escritura_tiene_los_mismos_renglones_no_se_da_por_rechazada_y_se_manda_despues()
+    {
+        await using var e = await EleventaAsync();
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor));
+        var c = await AbrirAsync(servicio);
+        await MapearAsync(servicio, c.Producto.VarianteId);
+        var envios = servicio.Fabrica.Services.GetRequiredService<EnvioVentasEleventa>();
+        // Otra escritura tiene la existencia de la pluma: como un intento anterior que se cortó por tiempo y sigue abierto.
+        await using var otra = new FirebirdSql.Data.FirebirdClient.FbConnection(e.Servidor.Cadena());
+        await otra.OpenAsync();
+        await using var abierta = await otra.BeginTransactionAsync(new FirebirdSql.Data.FirebirdClient.FbTransactionOptions
+        {
+            TransactionBehavior = FirebirdSql.Data.FirebirdClient.FbTransactionBehavior.Write | FirebirdSql.Data.FirebirdClient.FbTransactionBehavior.Concurrency
+                | FirebirdSql.Data.FirebirdClient.FbTransactionBehavior.NoWait,
+        });
+        await using (var tomar = new FirebirdSql.Data.FirebirdClient.FbCommand("UPDATE INVENTARIO_BALANCES SET CANTIDAD_ACTUAL = CANTIDAD_ACTUAL WHERE PRODUCTO_ID = 10",
+            otra, abierta))
+            await tomar.ExecuteNonQueryAsync();
+        using var vigilancia = envios.EnCurso.Vigilar();
+
+        var ticket = await CobrarAsync(c);
+        var estado = await EsperarAsync(c, x => x.PorAtender.Any(p => p.Intentos >= 1 && p.Error is not null));
+
+        // No se sabe si entró: no se da por rechazada (la lectura no la descuenta como si no estuviera) y espera en la bandeja.
+        Assert.Null(ticket.FolioEleventa);
+        Assert.Empty(vigilancia.Rechazados());
+        Assert.Equal(EstadoEnvioEleventa.Pendiente, estado.PorAtender.Single().Estado);
+        // Ya sin la otra escritura, entra.
+        await abierta.RollbackAsync();
+        Assert.Equal(HttpStatusCode.Accepted, (await c.Http.PostAsync("api/eleventa/enviar", null)).StatusCode);
+        Assert.Equal(0, (await EsperarAsync(c, x => x.Pendientes == 0)).Pendientes);
+    }
+
+    /// <summary>Un «eleventa» que acepta la conexión y ya no contesta, como la red que se cae a media llamada.</summary>
+    private sealed class EleventaCallado : IDisposable
+    {
+        private readonly TcpListener _oyente = new(IPAddress.Loopback, 0);
+        private readonly List<TcpClient> _aceptados = [];
+        private readonly Lock _candado = new();
+
+        public EleventaCallado()
+        {
+            _oyente.Start();
+            Puerto = ((IPEndPoint)_oyente.LocalEndpoint).Port;
+            _ = AceptarAsync();
+        }
+
+        public int Puerto { get; }
+
+        private async Task AceptarAsync()
+        {
+            while (true)
+            {
+                try
+                {
+                    var conexion = await _oyente.AcceptTcpClientAsync();
+                    lock (_candado)
+                        _aceptados.Add(conexion);
+                }
+                catch (Exception ex) when (ex is SocketException or ObjectDisposedException or InvalidOperationException)
+                {
+                    return;
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            _oyente.Stop();
+            lock (_candado)
+                foreach (var conexion in _aceptados)
+                    conexion.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task Si_eleventa_se_queda_callado_a_media_llamada_la_bandeja_no_se_detiene()
+    {
+        // Firebird por sí solo esperaría sin fin a que conteste; la bandeja espera lo más dos segundos y lo toma como sin red.
+        using var callado = new EleventaCallado();
+        await using var servicio = await ServicioDePrueba.CrearAsync(
+            [.. Ajustes("127.0.0.1", callado.Puerto, @"C:\eleventa\PDVDATA.FDB", segundosAlCobrar: 1), ("Eleventa:SegundosMaximos", "2")]);
+        var c = await AbrirAsync(servicio);
+
+        var ticket = await CobrarAsync(c);
+        var primero = await EsperarAsync(c, x => x.PorAtender.Any(e => e.Intentos >= 1 && e.Error is not null));
+        Assert.Equal(HttpStatusCode.Accepted, (await c.Http.PostAsync("api/eleventa/enviar", null)).StatusCode);
+        var segundo = await EsperarAsync(c, x => x.PorAtender.Any(e => e.Intentos >= 2));
+
+        Assert.Null(ticket.FolioEleventa);
+        Assert.Equal("El eleventa de 127.0.0.1 no terminó de contestar a tiempo: se vuelve a intentar.", primero.PorAtender.Single().Error);
+        Assert.Equal((EstadoEnvioEleventa.Pendiente, 2), segundo.PorAtender.Select(e => (e.Estado, e.Intentos)).Single());
+    }
+
+    [Fact]
+    public async Task Si_la_bandeja_no_suelta_el_candado_la_lectura_no_espera_sin_fin()
+    {
+        await using var servicio = await ServicioDePrueba.CrearAsync(
+            [.. Ajustes("127.0.0.1", 1, @"C:\eleventa\PDVDATA.FDB"), ("Eleventa:Activo", "true"), ("Eleventa:Minutos", "600"), ("Eleventa:SegundosMaximos", "1")]);
+        var http = servicio.Fabrica.CreateClient();
+        var envios = servicio.Fabrica.Services.GetRequiredService<EnvioVentasEleventa>();
+
+        // La bandeja se quedó con el candado (una llamada colgada): la lectura espera un rato y la deja para la siguiente vuelta.
+        using var candado = await envios.CandadoAsync(CancellationToken.None);
+        Assert.Equal(HttpStatusCode.Accepted, (await http.PostAsync("api/eleventa/leer", null)).StatusCode);
+        var estado = await PilotoDePrueba.EsperarAsync(async () => (await http.GetFromJsonAsync<EstadoEleventaDto>("api/eleventa"))!,
+            x => x.Error == LecturaEleventa.BandejaOcupada);
+
+        Assert.Equal((false, LecturaEleventa.BandejaOcupada), (estado.Bien, estado.Error));
+    }
+
+    /// <summary>
+    /// Espera a que la bandeja llegue a algo, hasta un minuto. El estado se lee en dos consultas (lo que está por atender y
+    /// cuántos hay de cada uno): solo vale uno en que las dos dicen lo mismo, no uno leído a la mitad de un envío.
+    /// </summary>
     private static async Task<EstadoEnviosEleventaDto> EsperarAsync(Caja c, Func<EstadoEnviosEleventaDto, bool> listo)
     {
-        for (var intento = 0; ; intento++)
+        var limite = DateTime.UtcNow.AddMinutes(1);
+        while (true)
         {
             var estado = await EnviosAsync(c);
-            if (listo(estado) || intento == 100)
+            if (listo(estado) && Cuadra(estado) || DateTime.UtcNow > limite)
                 return estado;
             await Task.Delay(100);
         }
     }
+
+    private static bool Cuadra(EstadoEnviosEleventaDto e) =>
+        e.PorAtender.Count(x => x.Estado == EstadoEnvioEleventa.Pendiente) == e.Pendientes
+        && e.PorAtender.Count(x => x.Estado == EstadoEnvioEleventa.PorRevisar) == e.PorRevisar;
 }

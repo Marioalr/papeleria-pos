@@ -117,14 +117,25 @@ public static class ApiCaja
         });
 
         // El corte del día (entrega 6): todas las cajas y turnos de la sucursal de esta caja, para quien tiene el permiso.
-        // En el piloto con eleventa se ve, pero no se cierra.
-        api.MapGet("/cajas/{cajaId:guid}/corte-del-dia", async (Guid cajaId, Guid usuarioId, PosDbContext db, PresenciaCajas presencia,
+        // En el piloto con eleventa se ve, pero no se cierra. Como el de eleventa (2026-10-17): el de otro día con «fecha» (hoy
+        // si no se da; uno que ya pasó solo se ve) y lo vendido por departamento; la utilidad (y el costo de cada departamento),
+        // solo para quien ve la utilidad.
+        api.MapGet("/cajas/{cajaId:guid}/corte-del-dia", async (Guid cajaId, Guid usuarioId, DateOnly? fecha, PosDbContext db, PresenciaCajas presencia,
             OpcionesEleventa opcionesEleventa) =>
         {
             var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
-            await new ServicioControl(db).ExigirAsync(usuarioId, caja.SucursalId, AccionControlada.CorteDelDia, "El corte del día lo ve quien tiene ese permiso.");
+            var control = new ServicioControl(db);
+            await control.ExigirAsync(usuarioId, caja.SucursalId, AccionControlada.CorteDelDia, "El corte del día lo ve quien tiene ese permiso.");
             var registro = new RegistroCorteDelDia(db);
-            return await registro.ArmarAsync(caja.SucursalId, registro.Hoy, presencia.Foto(), opcionesEleventa.CorteEnEleventa);
+            var hoy = registro.Hoy;
+            if (fecha > hoy)
+                throw new InvalidOperationException(RegistroCorteDelDia.TodaviaNoLlega);
+            var dia = await registro.ArmarAsync(caja.SucursalId, fecha ?? hoy, presencia.Foto(), opcionesEleventa.CorteEnEleventa, porDepartamento: true,
+                conUtilidad: await control.PuedeAsync(usuarioId, AccionControlada.VerUtilidad));
+            // El piloto: los turnos que cerró el corte de eleventa dicen lo que se contó allá (TurnosDelPiloto), también los de un
+            // día del piloto que se ve después de dejarlo. Un día que ya pasó es del piloto si lo fue, no según el de hoy.
+            dia = await CorteEnElPiloto.ConLoDeEleventaAsync(db, dia);
+            return dia.DeOtroDia ? dia with { Piloto = await CorteEnElPiloto.FueDelPilotoAsync(db, dia) } : dia;
         });
 
         api.MapPost("/cajas/{cajaId:guid}/corte-del-dia/cierre", async (Guid cajaId, SolicitudCierreDia s, PosDbContext db, PresenciaCajas presencia,
@@ -135,7 +146,20 @@ public static class ApiCaja
                 throw new InvalidOperationException(CorteEnElPiloto.CorteDelDiaEnEleventa);
             var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
             var registro = new RegistroCorteDelDia(db);
-            return await registro.CerrarAsync(caja.SucursalId, caja.Id, s.UsuarioId, registro.Hoy, presencia.Foto());
+            // El día que se ve en la caja: si pasó la medianoche con el corte abierto, ya no es hoy y no se cierra (tampoco el
+            // nuevo, que nadie ha visto). Una caja de antes no lo manda: hoy.
+            return await registro.CerrarAsync(caja.SucursalId, caja.Id, s.UsuarioId, s.Fecha ?? registro.Hoy, presencia.Foto());
+        });
+
+        // El recordatorio de cerrar el día (2026-10-17): a la hora de cierre de la tienda, mientras el día no se cierre, a quien
+        // lo cierra. La venta lo pregunta cada minuto; sin nada que recordar, 204. La hora es la de los trabajos de fondo (las
+        // pruebas la cambian).
+        api.MapGet("/cajas/{cajaId:guid}/corte-del-dia/recordatorio", async (Guid cajaId, Guid usuarioId, PosDbContext db, TimeProvider reloj,
+            OpcionesEleventa opcionesEleventa) =>
+        {
+            var caja = await db.Cajas.FindAsync(cajaId) ?? throw new InvalidOperationException("La caja no existe.");
+            return await new RegistroCorteDelDia(db).RecordatorioAsync(caja.SucursalId, usuarioId, reloj.GetUtcNow().UtcDateTime, opcionesEleventa.CorteEnEleventa)
+                is { } recordatorio ? Results.Ok(recordatorio) : Results.NoContent();
         });
 
         api.MapGet("/productos/codigo/{codigo}", async (string codigo, Guid sucursalId, PosDbContext db, CatalogoEnMemoria catalogo) =>
@@ -347,9 +371,12 @@ public static class ApiCaja
         var presentaciones = await db.Presentaciones.Where(p => ids.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => (p.Nombre, p.EsBase));
         var configuracion = await ApiConfiguracion.ConfiguracionAsync(db, v.SucursalId, opciones);
         var cliente = v.ClienteId is { } clienteId && await db.ClientesRegistrados.FindAsync(clienteId) is { } c ? RegistroClientes.Dto(c) : null;
-        var folioEleventa = await db.EnviosAEleventa.AsNoTracking().Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == v.Id).Select(e => e.FolioEleventa).FirstOrDefaultAsync();
+        // El piloto: el folio de eleventa, si llegó; si otra caja de eleventa lo repitió, el de la caja (FoliosRepetidos).
+        var folioEleventa = await db.EnviosAEleventa.AsNoTracking().Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == v.Id)
+            .Select(e => e.FolioRepetido ? null : e.FolioEleventa).FirstOrDefaultAsync();
+        // Con «Al cobrar» de la sucursal: la caja decide con el ticket que ya le llega, sin preguntar nada más al cobrar.
         return ArmadoTicket.Desde(v, caja!.Nombre, cajero, id => presentaciones.TryGetValue(id, out var p) ? p : null,
             configuracion.RenglonesEncabezado, configuracion.RenglonesPie, ApiConfiguracion.Logo(configuracion), cliente,
-            await new RegistroCredito(db).TicketAsync(v.Id)) with { FolioEleventa = folioEleventa };
+            await new RegistroCredito(db).TicketAsync(v.Id)) with { FolioEleventa = folioEleventa, AlCobrar = configuracion.AlCobrar };
     }
 }

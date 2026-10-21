@@ -423,7 +423,19 @@
                     <strong>@Formato.Dinero(cobrado.CambioCentavos > 0 ? cobrado.CambioCentavos : cobrado.TotalCobradoCentavos)</strong>
                     <p>@PagoTexto(cobrado)</p>
                 </div>
-                @if (Cola.MuestraVistaPrevia)
+                @if (ReferenceEquals(Ofrecido, cobrado))
+                {
+                    @* «Al cobrar»: «Ofrecerlo» (Configuración › Ticket): no salió solo; se ofrece hasta que se escanea al siguiente cliente. *@
+                    <div class="vn-folio-ok">
+                        <Ico Nombre="impresora" />Ticket <code>@cobrado.FolioImpreso</code>
+                        <button class="vn-boton chico" @onclick="ImprimirOfrecidoAsync">Imprimir ticket <kbd>Ctrl+I</kbd></button>
+                    </div>
+                }
+                else if (cobrado.LoQueSeHaceAlCobrar == TicketAlCobrar.NoImprimir)
+                {
+                    <div class="vn-folio-ok"><Ico Nombre="impresora" />Ticket <code>@cobrado.FolioImpreso</code> sin imprimir</div>
+                }
+                else if (Cola.MuestraVistaPrevia)
                 {
                     <div class="vn-folio-ok"><Ico Nombre="monitor" />Ticket <code>@cobrado.FolioImpreso</code> · <button class="vn-enlace" @onclick="VerCobradoEnPantallaAsync">verlo en pantalla</button></div>
                 }
@@ -444,7 +456,7 @@
                         <div><span>Hay <strong>@Formato.Dinero(efectivoC.EsperadoCentavos)</strong> en efectivo y el límite es @Formato.Dinero(efectivoC.LimiteCentavos ?? 0): haz un retiro.</span></div>
                     </div>
                 }
-                <div class="vn-ultimo"><span></span><button class="vn-enlace" @onclick="() => _cobrado = null">Volver al total</button></div>
+                <div class="vn-ultimo"><span></span><button class="vn-enlace" @onclick="VolverAlTotal">Volver al total</button></div>
             }
             else
             {
@@ -603,12 +615,19 @@
                     {
                         <span>Todavía no hay ventas en este turno.</span>
                     }
-                    @if (Ve(AccionControlada.Reimprimir))
+                    @if (Ofrecido is not null)
+                    {
+                        @* Lo que se ofreció al cobrar sigue aquí aunque se vuelva al total (Esc), hasta el primer escaneo. *@
+                        <button class="vn-boton chico" @onclick="ImprimirOfrecidoAsync">Imprimir ticket <kbd>Ctrl+I</kbd></button>
+                    }
+                    else if (Ve(AccionControlada.Reimprimir))
                     {
                         <button class="vn-enlace" @onclick="ReimprimirUltimoAsync">Reimprimir</button>
                     }
                 </div>
             }
+            @* Cerrar el día, a la hora de cierre y para quien lo cierra (2026-10-17): con los demás avisos, arriba de «Último» (caja.css). *@
+            <RecordatorioCierreDelDia @ref="_recordatorioDelDia" CajaId="Caja.Id" Sesion="Sesion" Visible="!VaEnPanel" AlAbrirElCorte="() => Abrir(Ventanas.Corte)" />
         </aside>
     </div>
 
@@ -1199,6 +1218,8 @@
         yield return new("Cotizar un PDF", "impresora", "Ctrl+Q", null, () => Js.ClicAsync("#pdf-cotizar"));
         yield return new("Verificar transferencias", "check", null, AccionControlada.VerificarTransferencia, () => Abrir(Ventanas.Transferencias));
         yield return new("Corte", "contar", null, null, () => Abrir(Ventanas.Corte));
+        if (VeHistorialDeCortes)
+            yield return new("Historial de cortes", "reloj", null, null, AbrirHistorialDeCortesAsync);
         yield return new("Conteo del día", "contar", null, AccionControlada.ContarInventario, () => IrAAsync(Pagina.Inventario, TareaInventario.ConteoDelDia));
         yield return new("Productos", "cajas", "F3", AccionControlada.EditarCatalogo, () => IrAAsync(Pagina.Productos));
         if (VeInventario)
@@ -2625,6 +2646,7 @@
             case "Ctrl+D": await AbrirDescuento(); break;
             case "Ctrl+L": await Abrir(Ventanas.ElegirCliente); break;
             case "Ctrl+B": await Abrir(Ventanas.Abono); break;
+            case "Ctrl+I": await ImprimirOfrecidoAsync(); break;
             case "Ctrl+M": await AbrirMostradorAsync(); break;
             case "Delete": await BorrarSeleccion(); break;
             case "ArrowUp": await MoverSeleccion(-1); break;
@@ -3477,14 +3499,75 @@
     /// La venta ya quedó guardada: el ticket va a la cola de la impresora (entrega 5, parte 3) y el panel dice si salió, sin
     /// esperarlo. Sin impresora (en el navegador), el ticket no se abre solo: el panel ofrece verlo; si la impresora no
     /// responde (o el ticket ni se pudo armar para ella), ahí mismo «Reintentar», «No imprimirlo» y «Verlo en pantalla».
+    /// <para>
+    /// Según «Al cobrar» (Configuración › Ticket), que llega con el ticket: con «Ofrecerlo» no sale y se ofrece hasta que
+    /// empieza la siguiente venta (<see cref="Ofrecido"/>); con «No imprimirlo», nada. Ninguno de los dos le manda nada a la
+    /// impresora, ni el pulso del cajón (va con el papel; en la tienda no hay cajón). Lo fiado sale siempre
+    /// (<see cref="TicketDto.LoQueSeHaceAlCobrar"/>). Decidirlo no espera nada: el cobro ya terminó.
+    /// </para>
     /// </summary>
     private async Task ImprimirCobradoAsync(TicketDto ticket)
     {
         (_cobrado, _trabajoCobrado) = (ticket, null);
+        // Se ofrece mientras el ticket del siguiente cliente (el que ya se atiende) siga vacío: lo que caiga ahí, también lo que
+        // se escaneó mientras se cobraba, ya es la siguiente venta (Ofrecido).
+        (_ofrecido, _ticketDelSiguiente) = ticket.LoQueSeHaceAlCobrar == TicketAlCobrar.Ofrecer ? (ticket, Actual) : (null, null);
         await Cerrar();
-        if (Cola.MuestraVistaPrevia)
+        if (Cola.MuestraVistaPrevia || ticket.LoQueSeHaceAlCobrar != TicketAlCobrar.Imprimir)
             return;
         _trabajoCobrado = Cola.Encolar($"Ticket {ticket.FolioImpreso}", DisenoTicket.Armar(ticket), ticket.AbreCajon);
+    }
+
+    // ── «Al cobrar»: «Ofrecerlo» ────────────────────────────────────────────
+
+    /// <summary>El ticket que se cobró con «Ofrecerlo» y todavía no sale; vacío si no hay qué ofrecer.</summary>
+    private TicketDto? _ofrecido;
+
+    /// <summary>El ticket (vacío) del siguiente cliente cuando se ofreció: si se cambia a otro (F5), ya es otra venta.</summary>
+    private TicketAbierto? _ticketDelSiguiente;
+
+    /// <summary>
+    /// Lo que se ofrece con «Imprimir ticket» (Ctrl+I), en el panel del cambio y, si se volvió al total, abajo junto a
+    /// «Último». Se deja de ofrecer en cuanto empieza la siguiente venta: el primer escaneo (o algo en el ticket del siguiente
+    /// cliente, o retomar otro de la espera), y ya no vuelve aunque después se quite lo escaneado. Se revisa al dibujar y con
+    /// Ctrl+I, así que nada de lo que agrega al ticket tiene que acordarse de quitarlo.
+    /// </summary>
+    private TicketDto? Ofrecido
+    {
+        get
+        {
+            if (_ofrecido is not null && (Actual != _ticketDelSiguiente || Actual.Venta.Lineas.Count > 0 || Actual.Buscando.Count > 0))
+                (_ofrecido, _ticketDelSiguiente) = (null, null);
+            return _ofrecido;
+        }
+    }
+
+    /// <summary>
+    /// «Imprimir ticket» (Ctrl+I) del que se ofreció: sale una vez, sin pedir motivo (no es una reimpresión: no había salido),
+    /// y el panel vuelve a enseñar esa venta con cómo va su papel. Sin el pulso del cajón: al cobrar no se abrió, y abrirlo
+    /// ya con el siguiente cliente sorprendería. Sin impresora, se ve en pantalla. Sin nada que ofrecer, no hace nada. Con el
+    /// ratón, el cursor regresa al cuadro de captura: el botón se va, y lo que escanee el siguiente cliente no se pierde.
+    /// </summary>
+    private async Task ImprimirOfrecidoAsync()
+    {
+        if (Ofrecido is not { } ticket)
+            return;
+        (_ofrecido, _ticketDelSiguiente) = (null, null);
+        (_cobrado, _trabajoCobrado) = (ticket, null);
+        if (Cola.MuestraVistaPrevia)
+        {
+            await VerCobradoEnPantallaAsync();
+            return;
+        }
+        _trabajoCobrado = Cola.Encolar($"Ticket {ticket.FolioImpreso}", DisenoTicket.Armar(ticket), abrirCajon: false);
+        _enfocar = "#codigo";
+    }
+
+    /// <summary>«Volver al total»: el cambio deja el panel y el cursor regresa al cuadro de captura, como con Esc.</summary>
+    private void VolverAlTotal()
+    {
+        _cobrado = null;
+        _enfocar = "#codigo";
     }
 
     private async Task VerCobradoEnPantallaAsync()
@@ -3567,6 +3650,9 @@
             var ventaId = _reimprimir ?? (await Cliente.UltimoTicketAsync(Caja.Id))?.VentaId
                 ?? throw new ErrorCaja("Esta caja todavía no tiene ventas.");
             var ticket = await Cliente.ReimprimirAsync(ventaId, new SolicitudReimpresion(Sesion.UsuarioId, Caja.Id, motivo));
+            // Si era el que se ofrecía al cobrar («Al cobrar»: «Ofrecerlo»), ya salió: no queda una copia más sin motivo.
+            if (_ofrecido is { VentaId: { } ofrecida } && ofrecida == ticket.VentaId)
+                (_ofrecido, _ticketDelSiguiente) = (null, null);
             await ImprimirAsync(ticket, abrirCajon: false);
         }
         catch (ErrorCaja ex)
@@ -3863,6 +3949,12 @@
 
     private async Task DevolucionHechaAsync(ComprobanteDevolucionDto comprobante)
     {
+        // Si es la venta que se acaba de cobrar: su cambio ya no se queda en el panel, ni se sigue ofreciendo su ticket («Al
+        // cobrar»: «Ofrecerlo»), que saldría completo, de una venta cancelada o con algo devuelto.
+        if (_cobrado?.Folio == comprobante.Folio)
+            _cobrado = null;
+        if (_ofrecido?.Folio == comprobante.Folio)
+            (_ofrecido, _ticketDelSiguiente) = (null, null);
         await Cerrar();
         Avisar($"{(comprobante.EsCancelacion ? "Ticket cancelado" : "Devolución registrada")}: entrega {Formato.Dinero(comprobante.ReembolsoEfectivoCentavos)} en efectivo"
             + (comprobante.AlCreditoCentavos > 0 ? $" y baja {Formato.Dinero(comprobante.AlCreditoCentavos)} de la cuenta de «{comprobante.Cliente}»." : "."), error: false);
@@ -3874,6 +3966,9 @@
     // ── Efectivo en caja ────────────────────────────────────────────────────
 
     private EfectivoCajaDto? _efectivo;
+
+    /// <summary>El recordatorio de cerrar el día: al cerrarlo desde el corte, se va sin esperar a que vuelva a preguntar.</summary>
+    private RecordatorioCierreDelDia? _recordatorioDelDia;
 
     /// <summary>
     /// El aviso de retiro, si el efectivo llegó al límite. En el piloto con eleventa no sale (se quita al dejarlo): el
@@ -3990,12 +4085,13 @@
                 }
                 @* «Que entre a esta caja» (quien no tiene el corte) es cambiar de usuario, como Ctrl+U. *@
                 <CorteCaja Turno="Turno" Sesion="Sesion" Caja="@Caja.Nombre" AlTerminar="AlCerrarTurno"
-                           AlCerrarElTurno="TurnoCerrado" AlCambiarUsuario="SalirAsync" />
+                           AlCerrarElTurno="TurnoCerrado" AlCambiarUsuario="SalirAsync" Historial="_historialDeCortes"
+                           AlCerrarElDia="() => _recordatorioDelDia?.RevisarAsync() ?? Task.CompletedTask" />
             </Ventana>
             break;
         case Ventanas.VentasDelDia:
-            <Ventana Titulo="Ventas del día" Clase="ventas-dia tarjetas ventas-del-dia" AlCerrar="Cerrar">
-                <VentasDelDia CajaId="Caja.Id" AlReimprimir="(Guid id) => PedirReimpresion(id)" AlDevolver="(string folio) => AbrirDevolucion(folio)" />
+            <Ventana Titulo="Ventas del día" Clase="ventas-del-dia" AlCerrar="Cerrar">
+                <VentasDelDia CajaId="Caja.Id" Sesion="Sesion" AlReimprimir="(Guid id) => PedirReimpresion(id)" AlDevolver="(string folio) => AbrirDevolucion(folio)" />
             </Ventana>
             break;
         case Ventanas.Devolucion:
@@ -4316,11 +4412,30 @@
         // Si CTRL+L se queda a medio camino (pidiendo la autorización del costo), el ticket regresa a como estaba.
         if (_ventana == Ventanas.ElegirCliente)
             _elegirCliente?.Cancelar();
+        // Al dejar el corte, la próxima vez abre en el turno.
+        if (_ventana == Ventanas.Corte)
+            _historialDeCortes = false;
         // Lo de Ctrl+M y lo que enseñaba el verificador no se quedan para la próxima vez (entrega 13).
         if (_ventana == Ventanas.Mostrador)
             _mostradorAcomoda = false;
         if (_ventana == Ventanas.Verificador)
             (_verificado, _verificarCodigo) = (null, null);
+    }
+
+    // ── El historial de cortes (paridad con eleventa, 2026-10-17): va en el corte, y «/» lo abre ahí ──
+
+    /// <summary>El corte se abre en su historial («Historial de cortes» en «/»), no en el del turno.</summary>
+    private bool _historialDeCortes;
+
+    /// <summary>Lo ve quien hace el corte de un turno o ve el del día (sin los permisos, se ve y el servicio decide).</summary>
+    private bool VeHistorialDeCortes => _permisosPedidos
+        && ((Permiso(AccionControlada.CorteZ)?.Nivel ?? NivelPermiso.Permitido) == NivelPermiso.Permitido
+            || (Permiso(AccionControlada.CorteDelDia)?.Nivel ?? NivelPermiso.Permitido) == NivelPermiso.Permitido);
+
+    private Task AbrirHistorialDeCortesAsync()
+    {
+        _historialDeCortes = true;
+        return Abrir(Ventanas.Corte);
     }
 
     private void Avisar(string mensaje, bool error = true)

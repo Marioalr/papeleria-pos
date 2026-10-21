@@ -171,7 +171,10 @@ Los tiempos son los de 19 de cada 20 veces: la vez más lenta de cada 20 no cuen
 - **Pruebas en Linux** en GitHub Actions, para que lo que se rompa en Linux se vea en cada cambio.
 - **Simulador de cajas:** da de alta N cajas con el PIN del dueño y vende por la API como la caja, con su contingencia
   (si el servicio no contesta, guarda las ventas y las sube al volver). Anota cuánto tarda cada llamada. Es una
-  herramienta de prueba, no parte del POS.
+  herramienta de prueba, no parte del POS. **Ya está (2026-10-17):** `simular-cajas`, con la caja de verdad sin la
+  pantalla, una caída de la red a media jornada, las metas de abajo, la memoria del servicio y el cuadre al final
+  ([avance](plan.md#para-el-piloto-con-dos-cajas)). Para el central le falta la carga sostenida (el techo, las 72 horas) y
+  apagar el servicio a media venta.
 - **Instalarlo en Linux:** el servicio publicado para Linux y un script que crea el usuario sin privilegios, el
   servicio del sistema y el cortafuegos. Es el principio del script del central.
 
