@@ -228,6 +228,10 @@ public sealed class Contingencia
     private DateTime _paqueteBajadoUtc = DateTime.MinValue;
     private DateTime _ultimoReintentoUtc = DateTime.MinValue;
     private readonly CalidadDeLaRed _red;
+
+    /// <summary>La red de la tienda en el POS: la bitácora de red, el vigía y volver a encontrar a la caja principal.</summary>
+    private readonly RedDeLaCaja? _redDeLaCaja;
+
     private CancellationTokenSource? _alto;
 
     /// <summary>El latido y el aviso (<see cref="Iniciar"/>): al cerrar la caja se espera a que terminen lo que iban haciendo.</summary>
@@ -274,10 +278,22 @@ public sealed class Contingencia
     /// Cómo se decide el estado de la red (<see cref="ReglasDeLaRed"/>). La caja de verdad usa
     /// <see cref="ReglasDeLaRed.DeLaTienda"/>; sin ellas, solo si contesta o no (<see cref="ReglasDeLaRed.SoloSiContesta"/>).
     /// </param>
+    /// <param name="redDeLaCaja">
+    /// La red de la tienda en el POS: la bitácora de red, su vigía y volver a encontrar a la caja principal si le cambió la IP. Cada
+    /// latido se le pasa; sin ella (las pruebas de lo demás), nada de eso.
+    /// </param>
     public Contingencia(AlmacenLocal almacen, HttpClient http, ConexionCaja conexion, TimeProvider? reloj = null, RendimientoCaja? rendimiento = null,
-        ReglasDeLaRed? reglas = null)
+        ReglasDeLaRed? reglas = null, RedDeLaCaja? redDeLaCaja = null)
     {
         _almacen = almacen;
+        _redDeLaCaja = redDeLaCaja;
+        if (redDeLaCaja is not null)
+        {
+            redDeLaCaja.Cambio += () => Cambio?.Invoke();
+            // Encontró a la caja principal en otra dirección (y probó que es ella): el latido la usa al momento.
+            if (redDeLaCaja.Reencuentro is { } reencuentro)
+                reencuentro.SeCambio += _ => LatirYa();
+        }
         _rendimiento = rendimiento;
         _http = new Transporte(http, conexion);
         _conexion = conexion;
@@ -385,9 +401,10 @@ public sealed class Contingencia
 
     /// <summary>
     /// Se trabaja con la caja principal solo si la red está buena y ya no queda nada por subir. Con la red lenta, como sin
-    /// conexión (entrega 5, parte 2).
+    /// conexión (entrega 5, parte 2). Tampoco mientras la caja principal no pruebe otra vez quién es (después de una caída o al
+    /// abrir la caja): a quien no lo ha probado no se le manda la llave.
     /// </summary>
-    public bool EnLinea => _red.Estado == EstadoRed.Buena && Pendientes == 0;
+    public bool EnLinea => _red.Estado == EstadoRed.Buena && Pendientes == 0 && !_conexion.SinComprobar;
 
     /// <summary>Buena, lenta o caída (<see cref="CalidadDeLaRed"/>).</summary>
     public EstadoRed EstadoDeLaRed => _red.Estado;
@@ -399,10 +416,19 @@ public sealed class Contingencia
     public ReglasDeLaRed ReglasDeLaRed => _red.Reglas;
 
     /// <summary>
+    /// Lo que la caja principal dijo en el último latido que contestó: si hay internet y si contesta su router. Vacío con un
+    /// servicio de antes o mientras no lo diga. La franja lo junta con el estado de la red (<see cref="AvisosDeRed.QueDice"/>).
+    /// </summary>
+    public RedDeLaPrincipalDto? RedDeLaPrincipal { get; private set; }
+
+    /// <summary>La red de la tienda en el POS (la bitácora, el vigía, volver a encontrar a la caja principal); vacía sin ella.</summary>
+    public RedDeLaCaja? RedDeLaCaja => _redDeLaCaja;
+
+    /// <summary>
     /// Lo que no se puede hacer con la copia (devolver, el catálogo, los reportes) se intenta con la caja principal aunque la
     /// red esté lenta: no hay otra forma de hacerlo. Con algo por subir, no: primero sube (sus folios y su orden).
     /// </summary>
-    public bool SeIntentaSinCopia => _red.Estado != EstadoRed.Caida && Pendientes == 0;
+    public bool SeIntentaSinCopia => _red.Estado != EstadoRed.Caida && Pendientes == 0 && !_conexion.SinComprobar;
 
     public int Pendientes { get; private set; }
     public int ConError { get; private set; }
@@ -459,7 +485,17 @@ public sealed class Contingencia
         if (_alto is not null)
             return;
         _alto = new CancellationTokenSource();
-        _deFondo = Task.WhenAll(Task.Run(() => LatirAsync(_alto.Token)), Task.Run(() => EscucharAvisosAsync(_alto.Token)));
+        var alto = _alto.Token;
+        // Al abrir, la dirección guardada prueba quién es antes de recibir la llave (pudo cambiar mientras la caja estuvo cerrada).
+        PorComprobar();
+        _deFondo = Task.Run(() =>
+        {
+            // La bitácora de red empieza antes que el primer latido, que ya puede anotar que la caja principal no contesta (fuera del
+            // hilo de la pantalla: lee lo de los días anteriores). Termina al cerrar la caja.
+            _redDeLaCaja?.Vigia?.Empezar();
+            return Task.WhenAll(Task.Run(() => LatirAsync(alto)), Task.Run(() => EscucharAvisosAsync(alto)),
+                Task.Run(() => _redDeLaCaja?.VigilarAsync(alto) ?? Task.CompletedTask));
+        });
     }
 
     /// <summary>
@@ -535,12 +571,22 @@ public sealed class Contingencia
     /// </summary>
     public Task LatidoAsync() => Task.Run(LatirUnaVezAsync);
 
+    /// <summary>Un latido ya, sin esperarlo (se encontró a la caja principal en otra dirección); si falla, lo dice el siguiente.</summary>
+    private void LatirYa() =>
+        _ = LatidoAsync().ContinueWith(t => t.Exception, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+
     private async Task LatirUnaVezAsync()
     {
         // Primero la copia guardada: la que baje después es más nueva.
         await _carga.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         if (!_conexion.Lista || (_conexion.CajaId is null && _conexion.PideAlta))
             return;
+        // Después de una caída (o al abrir), la dirección guardada prueba quién es antes de volver a recibir la llave.
+        if (await ComprobarSiFaltaAsync() is Comprobacion.NoEs or Comprobacion.NoContesta or Comprobacion.NoLaConoce)
+        {
+            _redDeLaCaja?.Latido(null, _red.Estado, null);
+            return;
+        }
         EstadoServicioDto? estado;
         var desde = _reloj.GetTimestamp();
         try
@@ -550,16 +596,27 @@ public sealed class Contingencia
         }
         catch (ErrorCaja)
         {
-            // No contestó, ni a tiempo: caída.
+            // No contestó, ni a tiempo: caída (y al volver, primero prueba quién es).
             if (_red.Fallo())
                 Cambio?.Invoke();
+            PorComprobar();
+            // A la bitácora de red; si no contesta un rato, se busca a la caja principal en la red (por si le cambió la IP).
+            _redDeLaCaja?.Latido(null, _red.Estado, null);
             return;
         }
         // Lo que tardó en contestar decide si la red está buena o lenta (con histéresis); el chip de arriba lo dice en ms.
         var antes = _red.Latencia;
-        if (_red.Contesto(_reloj.GetElapsedTime(desde), ocupada: _bajandoCopia)
+        var tardo = _reloj.GetElapsedTime(desde);
+        if (_red.Contesto(tardo, ocupada: _bajandoCopia)
             || Math.Round(antes?.TotalMilliseconds ?? -1) != Math.Round(_red.Latencia?.TotalMilliseconds ?? -1))
             Cambio?.Invoke();
+        // Lo que dice la caja principal del internet y de su router (la franja «Sin internet»), y a la bitácora de red.
+        if (estado?.Red != RedDeLaPrincipal)
+        {
+            RedDeLaPrincipal = estado?.Red;
+            Cambio?.Invoke();
+        }
+        _redDeLaCaja?.Latido(tardo, _red.Estado, estado?.Red);
         await RecordarPilotoEleventaAsync(estado?.PilotoEleventa == true);
         if (estado?.AvisoBase != AvisoBase)
         {
@@ -610,6 +667,8 @@ public sealed class Contingencia
     {
         if (error.PorPlazo ? _red.PlazoVencido() : _red.Fallo())
             Cambio?.Invoke();
+        if (!error.PorPlazo)
+            PorComprobar();
     }
 
     /// <summary>La caja principal no contestó a algo que se le pidió (ni se pudo conectar): sin conexión, hasta el siguiente latido.</summary>
@@ -617,6 +676,83 @@ public sealed class Contingencia
     {
         if (_red.Fallo())
             Cambio?.Invoke();
+        PorComprobar();
+    }
+
+    // ── Que la caja principal pruebe quién es antes de recibir la llave ─────
+
+    /// <summary>
+    /// La caja principal dice que no conoce a esta caja (la quitaron o la dieron de alta en otra PC): la pantalla la da de alta
+    /// otra vez, como cuando una llamada lo dice. Con el porqué. Nunca con alguien en la caja (<see cref="ConexionCaja.UsuarioEnCaja"/>):
+    /// se perdería el ticket que lleva. Mientras, vende con la copia, y en el primer latido después de que salga, se dice.
+    /// </summary>
+    public event Action<string>? SinAlta;
+
+    private readonly SemaphoreSlim _comprobando = new(1, 1);
+
+    /// <summary>Lo más que una llamada espera, al abrir la caja, a que la caja principal pruebe quién es.</summary>
+    private static readonly TimeSpan EsperaComprobacion = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// Después de una caída (o al abrir), la dirección guardada tiene que probar otra vez quién es antes de recibir la llave
+    /// (<see cref="ConexionCaja.SinComprobar"/>). Solo si esta caja la puede comprobar (con llave, la caja principal en otra PC).
+    /// </summary>
+    private void PorComprobar()
+    {
+        if (_redDeLaCaja?.Reencuentro is { Aplica: true })
+            _conexion.SinComprobar = true;
+    }
+
+    /// <summary>
+    /// Si falta, que la dirección guardada pruebe quién es (una comprobación a la vez). Es (o un servicio de antes, sin la prueba,
+    /// si esta caja no conoce su llave): se le vuelve a mandar la llave. No es, no contesta o no conoce a esta caja: caída (la caja
+    /// trabaja con su copia y no le manda la llave), y si no la conoce, la pantalla la da de alta otra vez (<see cref="SinAlta"/>).
+    /// Vacío si no faltaba.
+    /// </summary>
+    private async Task<Comprobacion?> ComprobarSiFaltaAsync()
+    {
+        if (!_conexion.SinComprobar || _redDeLaCaja?.Reencuentro is not { Aplica: true } reencuentro)
+            return null;
+        await _comprobando.WaitAsync();
+        try
+        {
+            if (!_conexion.SinComprobar)
+                return Comprobacion.Es;
+            var resultado = await reencuentro.ComprobarGuardadaAsync();
+            if (resultado is Comprobacion.Es or Comprobacion.SinLaPrueba)
+                _conexion.SinComprobar = false;
+            else
+            {
+                if (_red.Fallo())
+                    Cambio?.Invoke();
+                if (resultado == Comprobacion.NoLaConoce && _conexion.UsuarioEnCaja is null)
+                    SinAlta?.Invoke("La caja principal ya no reconoce a esta PC (la quitaron o la dieron de alta en otra): el dueño la da de alta otra vez.");
+            }
+            return resultado;
+        }
+        finally
+        {
+            _comprobando.Release();
+        }
+    }
+
+    /// <summary>
+    /// Antes de una llamada a la caja principal: si falta que pruebe quién es y la red no se sabe caída (al abrir la caja), se
+    /// comprueba ya, sin esperar al latido, a lo más <see cref="EsperaComprobacion"/>. Después de una caída no espera: la caja sigue
+    /// con su copia hasta que el latido la compruebe.
+    /// </summary>
+    internal async Task ComprobarAntesDeLlamarAsync()
+    {
+        if (!_conexion.SinComprobar || _red.Estado == EstadoRed.Caida)
+            return;
+        try
+        {
+            await ComprobarSiFaltaAsync().WaitAsync(EsperaComprobacion);
+        }
+        catch (TimeoutException)
+        {
+            // Sigue sin comprobar: la llamada se hace con la copia.
+        }
     }
 
     /// <summary>
@@ -903,7 +1039,7 @@ public sealed class Contingencia
             }
             while (!ct.IsCancellationRequested)
             {
-                if (_conexion.Lista && _conexion.CajaId is { } caja && Ahora >= _sinAvisoHasta && !_conexion.SimularSinConexion)
+                if (_conexion.Lista && _conexion.CajaId is { } caja && Ahora >= _sinAvisoHasta && !_conexion.SimularSinConexion && !_conexion.SinComprobar)
                 {
                     try
                     {
@@ -1428,10 +1564,13 @@ public sealed class Contingencia
         var folio = UltimoFolio + 1;
         venta.Pagar(folio, s.Cobros, ahora);
         venta.EnContingencia = true;
+        // «Al cobrar» (Configuración › Ticket), como lo trae la copia; y que se cobró sin la caja principal: hasta que suba no
+        // se puede reimprimir, así que «No imprimirlo» se ofrece (TicketDto.LoQueSeHaceAlCobrar).
         var ticket = ArmadoTicket.Desde(venta, caja.Nombre, Nombre(s.CajeroId),
             id => datos.Presentaciones.TryGetValue(id, out var p) ? (p.Nombre, p.EsBase) : null,
             datos.Paquete.Encabezado, datos.Paquete.Pie, datos.Paquete.Logo, cliente,
-            cuenta is null ? null : new CreditoTicketDto(aCredito, cuenta.SaldoCentavos + aCredito, vence, Estimado: true));
+            cuenta is null ? null : new CreditoTicketDto(aCredito, cuenta.SaldoCentavos + aCredito, vence, Estimado: true))
+            with { AlCobrar = datos.Paquete.AlCobrar, EnContingencia = true };
         var subida = new VentaContingenciaDto(venta.Id, caja.Id, turno.Id, s.CajeroId, folio, ahora,
             venta.Lineas.Select(x => new LineaContingenciaDto(x.VarianteId, x.PresentacionId, x.Descripcion, x.Cantidad.Milesimas, x.PrecioCentavos,
                 x.DescuentoCentesimas, x.DescuentoCentesimas is null && x.TieneDescuento ? x.DescuentoCentavos : null, x.MotivoDescuento)).ToList(),

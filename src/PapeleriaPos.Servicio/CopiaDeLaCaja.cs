@@ -26,11 +26,12 @@ public static class CopiaDeLaCaja
     public static int MaximoDeCambios(int productos) => Math.Max(500, productos / 4);
 
     /// <summary>
-    /// La copia completa: catálogo con existencias, usuarios (el PIN como hash) con sus permisos, ticket, la configuración de
-    /// la tienda, los clientes y el último folio de la caja; con la base, el formato y las versiones desde las que la caja
-    /// pide después lo que cambió. Y lo que necesita la búsqueda de la caja para dar lo mismo que la de aquí (entrega 5, parte
-    /// 3): todos los códigos, las marcas con que se leen los nombres, los sinónimos, lo más vendido y lo que esta caja eligió
-    /// antes con cada texto, con sus versiones. Y los exhibidores y las temporadas, con lo acomodado en ellos (entrega 13).
+    /// La copia completa: catálogo con existencias, usuarios (el PIN como hash) con sus permisos, ticket (con lo que se hace
+    /// con él al cobrar), la configuración de la tienda, los clientes y el último folio de la caja; con la base, el formato y
+    /// las versiones desde las que la caja pide después lo que cambió. Y lo que necesita la búsqueda de la caja para dar lo
+    /// mismo que la de aquí (entrega 5, parte 3): todos los códigos, las marcas con que se leen los nombres, los sinónimos, lo
+    /// más vendido y lo que esta caja eligió antes con cada texto, con sus versiones. Y los exhibidores y las temporadas, con
+    /// lo acomodado en ellos (entrega 13).
     /// </summary>
     public static async Task<PaqueteContingenciaDto> PaqueteAsync(
         PosDbContext db, CatalogoEnMemoria catalogo, VersionesDeLaCopia versiones, Guid cajaId, OpcionesTicket opciones, CancellationToken ct = default)
@@ -51,6 +52,7 @@ public static class CopiaDeLaCaja
             ticket.Logo, await new RegistroCaja(db).UltimoFolioAsync(caja.SucursalId, caja.Serie, ct), configuracion.LimiteEfectivoCentavos,
             ApiClientes.ParaCajasDeAntes(clientes), clientes, marcas, await new RegistroSinonimos(db).ListarAsync(ct), permisos,
             configuracion, versiones.Base, VersionesDeLaCopia.Formato, versionExistencias, vendidos, elegidos, versionVendidos, versionElegidos,
+            ticket.AlCobrar,
             // Los exhibidores y las temporadas (entrega 13): siempre, aunque no haya ninguno (el formato 3 los trae).
             await RegistroMostrador.ListarAsync(db, ct));
     }
@@ -224,6 +226,6 @@ public static class CopiaDeLaCaja
     private static async Task<TicketLocalDto> TicketAsync(PosDbContext db, Guid sucursalId, OpcionesTicket opciones, CancellationToken ct)
     {
         var ticket = await ApiConfiguracion.ConfiguracionAsync(db, sucursalId, opciones);
-        return new TicketLocalDto(ticket.RenglonesEncabezado, ticket.RenglonesPie, ApiConfiguracion.Logo(ticket));
+        return new TicketLocalDto(ticket.RenglonesEncabezado, ticket.RenglonesPie, ApiConfiguracion.Logo(ticket), ticket.AlCobrar);
     }
 }

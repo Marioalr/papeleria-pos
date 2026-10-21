@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Turnos;
@@ -33,9 +34,11 @@ public static partial class ApiCajas
                 presencia.Bandeja(id, cuantas, conError ?? 0, db.Reloj.GetUtcNow().UtcDateTime);
             // Las versiones, de memoria (entrega 5, parte 2): con ellas la caja sabe si pedir lo que cambió.
             var versiones = await versionesCopia.ActualesAsync();
+            // La red vista desde aquí (si hay internet y si contesta el router): la franja de las cajas (la red de la tienda en el POS).
+            var red = http.RequestServices.GetService<VigiaDeLaRed>()?.Estado;
             return new EstadoServicioDto("Papelería POS", Version, await db.Sucursales.OrderBy(s => s.Nombre).Select(s => s.Nombre).ToListAsync(),
                 versiones.Catalogo, prueba.Activo, versiones.Credito, eleventa.SoloEfectivo, revision.Aviso, versiones.Existencias, versiones.Base,
-                versiones.Formato);
+                versiones.Formato, red);
         });
 
         // Abierto, pero solo contesta con el PIN del dueño: qué sucursales y cajas hay para elegir.
@@ -50,7 +53,7 @@ public static partial class ApiCajas
                 cajas.Where(c => c.SucursalId == x.Id).Select(c => new CajaAltaDto(c.Id, c.Nombre, c.Serie, c.Equipo)).ToList())).ToList();
         });
 
-        api.MapPost("/alta", async (SolicitudAltaCaja s, PosDbContext db, LlavesDeCajas llaves) =>
+        api.MapPost("/alta", async (SolicitudAltaCaja s, PosDbContext db, LlavesDeCajas llaves, Lazy<LlaveDelServicio> llaveDelServicio) =>
         {
             var control = new ServicioControl(db);
             var dueno = await control.IdentificarAsync(s.Usuario, s.Pin, s.SucursalId, AccionControlada.AdministrarCajas);
@@ -81,7 +84,9 @@ public static partial class ApiCajas
             await db.SaveChangesAsync();
             // La llave de antes de esta caja (otra PC) ya no entra.
             llaves.Olvidar();
-            return new AltaCajaDto(new CajaDto(caja.Id, caja.Nombre, caja.Serie, sucursal.Id, sucursal.Nombre, caja.Equipo), llave);
+            // Con la llave pública del servicio: la caja la recuerda y no se cambia sola a otro que no firme con ella.
+            return new AltaCajaDto(new CajaDto(caja.Id, caja.Nombre, caja.Serie, sucursal.Id, sucursal.Nombre, caja.Equipo), llave,
+                llaveDelServicio.Value.Publica);
         });
 
         // Con llave, pero desde cualquier caja: quien entró con «Dar de alta y quitar cajas» quita el equipo de otra (una PC

@@ -4,6 +4,7 @@
    transferencia, el servicio dice por qué no se devuelve aquí y no se ofrece (también lo rechaza). *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
+@inject IServiceProvider Servicios
 
 @if (_autorizar is { } pendiente)
 {
@@ -18,6 +19,31 @@ else
         </label>
         <button class="boton" @onclick="BuscarAsync">Buscar</button>
     </div>
+
+    @if (_opciones is { } opciones)
+    {
+        @* El piloto con eleventa: el mismo folio en más de un ticket (eleventa lo repite entre cajas). *@
+        <p>El folio <strong>@_folioOpciones</strong> lo tienen @opciones.Count tickets: elige el del cliente por la hora y el total que dice su ticket.</p>
+        @if (_aviso is not null)
+        {
+            <p class="aviso">@_aviso</p>
+        }
+        <div class="resultados">
+            <table>
+                <thead><tr><th>Caja</th><th>Fecha y hora</th><th class="num">Total</th><th></th></tr></thead>
+                @foreach (var t in opciones)
+                {
+                    var ticket = t;
+                    <tr>
+                        <td>@t.Caja</td>
+                        <td>@(t.FechaLocal?.ToString("dd/MM/yyyy HH:mm") ?? "—")</td>
+                        <td class="num">@Formato.Dinero(t.TotalCentavos)</td>
+                        <td><button class="boton" @onclick="() => ElegirAsync(ticket)">Es este</button></td>
+                    </tr>
+                }
+            </table>
+        </div>
+    }
 
     @if (_venta is { } v)
     {
@@ -138,14 +164,62 @@ else
             await BuscarAsync();
     }
 
+    /// <summary>
+    /// El piloto con eleventa: los tickets que llevan el folio de eleventa escrito, cuando son más de uno (eleventa lo repite
+    /// entre cajas). Se elige por la hora y el total. Vacío si no.
+    /// </summary>
+    private IReadOnlyList<TicketConFolioDto>? _opciones;
+    private string _folioOpciones = "";
+    private string? _aviso;
+
+    /// <summary>
+    /// El piloto con eleventa: el ticket que se devuelve es uno cobrado en eleventa (la ida), leído en vivo; su
+    /// <c>VENTATICKETS.ID</c>. Vacío si es de esta caja.
+    /// </summary>
+    private int? _ticketEleventa;
+
     private async Task BuscarAsync()
     {
         _error = null;
+        _aviso = null;
+        _opciones = null;
+        _ticketEleventa = null;
         _cantidades.Clear();
         _danados.Clear();
+        var folio = _folio.Trim();
         try
         {
-            _venta = await Cliente.VentaPorFolioAsync(Caja.SucursalId, _folio.Trim());
+            // El piloto: el folio impreso puede ser el de eleventa (solo número): de esta caja, de otra caja de eleventa, o de
+            // las dos si eleventa lo repitió.
+            if (PilotoEleventa && folio.Length > 0 && folio.All(char.IsAsciiDigit) && int.TryParse(folio, out var deEleventa)
+                && Servicios.GetService<ClientePuente>() is { } puente && await TicketsConFolioAsync(puente, deEleventa) is { } encontrado)
+            {
+                var tickets = encontrado.Tickets;
+                _aviso = encontrado.Aviso;
+                switch (tickets)
+                {
+                    case []:
+                        // Sin eleventa no se sabe si es de otra caja: se dice, y si no, se busca como siempre.
+                        if (_aviso is { } sinEleventa)
+                        {
+                            (_venta, _error) = (null, sinEleventa);
+                            return;
+                        }
+                        break;
+                    case [{ FolioCaja: { } deLaCaja }]:
+                        folio = deLaCaja;
+                        break;
+                    // Uno solo de eleventa se abre, aunque no se devuelva aquí (de otro turno, de otra caja…): la ventana dice por qué.
+                    case [{ FolioCaja: null, TicketEleventa: { } unico }] when _aviso is null:
+                        await AbrirDeEleventaAsync(puente, unico);
+                        return;
+                    default:
+                        _venta = null;
+                        (_opciones, _folioOpciones) = (tickets, folio);
+                        return;
+                }
+            }
+            _venta = await Cliente.VentaPorFolioAsync(Caja.SucursalId, folio);
             if (_venta is null)
                 _error = $"No existe el ticket «{_folio.Trim()}».";
         }
@@ -153,6 +227,55 @@ else
         {
             _error = ex.Message;
         }
+    }
+
+    /// <summary>Lo que el puente sabe de ese folio; si no contesta (un servicio de antes), se busca como siempre.</summary>
+    private static async Task<FolioEleventaDto?> TicketsConFolioAsync(ClientePuente puente, int folio)
+    {
+        try
+        {
+            return await puente.FolioAsync(folio);
+        }
+        catch (ErrorCaja)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// El que eligió el cajero de los que tienen el mismo folio: el de esta caja se abre aquí; el de otra caja de eleventa,
+    /// también (se lee en vivo), salvo que no se pueda devolver aquí: entonces se dice por qué.
+    /// </summary>
+    private async Task ElegirAsync(TicketConFolioDto ticket)
+    {
+        _error = null;
+        try
+        {
+            if (ticket.FolioCaja is { } folio)
+            {
+                _venta = await Cliente.VentaPorFolioAsync(Caja.SucursalId, folio);
+                _ticketEleventa = null;
+                _opciones = null;
+                if (_venta is null)
+                    _error = $"No existe el ticket «{folio}».";
+            }
+            else if (ticket is { Nota: null, TicketEleventa: { } deEleventa } && Servicios.GetService<ClientePuente>() is { } puente)
+                await AbrirDeEleventaAsync(puente, deEleventa);
+            else
+                _error = ticket.Nota;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    /// <summary>Un ticket cobrado en eleventa, leído en vivo: se devuelve aquí como uno de esta caja (la ida).</summary>
+    private async Task AbrirDeEleventaAsync(ClientePuente puente, int ticket)
+    {
+        _venta = await puente.TicketAsync(ticket);
+        _ticketEleventa = ticket;
+        _opciones = null;
     }
 
     private void Marcar(Guid lineaId, bool danado)
@@ -196,8 +319,12 @@ else
             _error = "Escribe cuánto se devuelve de cada artículo.";
             return;
         }
+        var solicitud = new SolicitudDevolucion(Sesion.UsuarioId, Caja.Id, _motivo, lineas, autorizacionId);
+        // La ida: un ticket de eleventa se devuelve por el puente (sale de esta caja y va a eleventa por la bandeja).
         await EjecutarAsync(AccionControlada.Devolucion, $"Devolución del ticket {venta.Folio}", monto, DevolverAsync,
-            () => Cliente.DevolverAsync(venta.Id, new SolicitudDevolucion(Sesion.UsuarioId, Caja.Id, _motivo, lineas, autorizacionId)));
+            _ticketEleventa is { } deEleventa && Servicios.GetService<ClientePuente>() is { } puente
+                ? () => puente.DevolverAsync(deEleventa, solicitud)
+                : () => Cliente.DevolverAsync(venta.Id, solicitud));
     }
 
     /// <summary>Hace la operación; si la regla pide autorización, muestra la ventana del encargado y la repite con ella.</summary>

@@ -33,7 +33,8 @@ Pendientes que vienen de Control Print:
 - Cotizar PDF y detector de documentos comunes (CURP, recibo de luz).
 - Impresiones desde el celular y copias hechas en el panel de la impresora.
 - Varias impresoras: la matriz tiene **dos WF-6590 y una EcoTank L5590**, todas por red. Hoy el POS mide y cobra una
-  sola; las tres hacen falta antes del piloto ([plan](plan.md#para-el-piloto-con-dos-cajas)).
+  sola. Las tres van con la entrega 4, después de alcanzar a eleventa (meta del dueño, 2026-10-15); mientras, Control
+  Print sigue cobrando aparte ([plan](plan.md#decidido-mientras-el-dueño-no-estaba-2026-10-17)).
 
 ## Dónde vive el código
 

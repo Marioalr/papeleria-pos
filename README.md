@@ -38,6 +38,13 @@ Importar una copia de la base de eleventa (requiere Firebird 2.5 embebido, ver
 dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --salida eleventa.db
 ```
 
+Al dejar eleventa, la importación final trae su historial de ventas a la base de la tienda, sin lo que mandó el puente
+(se puede repetir; con `--simular` solo dice qué haría; ver [la importación final](docs/migracion-eleventa.md#la-importación-final)):
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --base pos.db --simular
+```
+
 ### Probar la caja
 
 1. Una base de prueba (ficticia o importada) con la Caja 1 y usuarios de prueba:
@@ -159,6 +166,21 @@ Lo mismo en desarrollo, en el navegador:
 dotnet run --project src/PapeleriaPos.Herramientas -- preparar-prueba --salida prueba/datos/prueba.db --ejemplos prueba/Ejemplos
 dotnet run --project src/PapeleriaPos.Servicio -- --environment Development --Urls=http://localhost:5180 --Caja:Servicio=http://localhost:5180 --ConnectionStrings:Pos="Data Source=prueba/datos/pos.db" --Prueba:Activa=true --Prueba:BaseInicial=prueba/datos/prueba.db --Telegram:Activo=false
 ```
+
+### El día pico con varias cajas (simulador)
+
+`simular-cajas` vende un día pico comprimido en varias cajas simuladas, como la caja de verdad pero sin la pantalla (con su
+copia del catálogo, su contingencia y su base local), contra un servicio de prueba; mide cada operación contra las metas y al
+final cuadra todo: ventas, folios, turnos, cortes y existencias ([avance](docs/plan.md#para-el-piloto-con-dos-cajas)). Lo
+más simple es que arranque su propio servicio con una copia de una base de prueba y lo detenga al terminar:
+
+```
+dotnet build src/PapeleriaPos.Servicio -c Release
+dotnet run -c Release --project src/PapeleriaPos.Herramientas -- simular-cajas --iniciar-servicio src/PapeleriaPos.Servicio/bin/Release/net10.0/PapeleriaPos.Servicio.dll --base prueba/datos/prueba.db --cajas 2 --tickets 120 --minutos 10 --caida 30s@50% --salida dia-pico.md
+```
+
+Sin `--base` arma la base como `preparar-prueba`. Sale con 0 si cuadra. En la tienda, `scripts\simular-dia-pico.cmd`
+([guía](docs/pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real)).
 
 Migraciones de la base (EF Core):
 

@@ -1,3 +1,5 @@
+using PapeleriaPos.Nucleo.Configuracion;
+
 namespace PapeleriaPos.Nucleo.Contratos;
 
 // La copia de la caja al día (entrega 5, parte 2, docs/propuesta-interfaz.md, «Rendimiento»): la caja principal avisa por
@@ -21,8 +23,9 @@ public sealed record VersionesCopiaDto(Guid Base, long Catalogo, long Existencia
 /// <summary>La existencia de un producto en la sucursal de la caja, ya en unidades.</summary>
 public sealed record ExistenciaLocalDto(Guid VarianteId, decimal Cantidad);
 
-/// <summary>El encabezado, el pie y el logo del ticket, como van en la copia.</summary>
-public sealed record TicketLocalDto(IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo);
+/// <summary>El encabezado, el pie y el logo del ticket, y qué se hace con él al cobrar, como van en la copia.</summary>
+public sealed record TicketLocalDto(
+    IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir);
 
 /// <summary>
 /// Lo que cambió en la copia de una caja desde su versión (<c>api/cajas/{id}/cambios</c>): los productos que cambiaron o
