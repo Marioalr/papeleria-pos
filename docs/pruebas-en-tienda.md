@@ -155,7 +155,8 @@ configuración y exportar el registro del Tenda (un reinicio lo borra).
      `Get-PrinterPort`, `Get-PrinterDriver`) y el perfil de red;
    - la hoja de estado de red de cada impresora, si cada una tiene IP fija, y cómo se le cambia la IP a la impresora
      de tickets y cuál es la suya de fábrica;
-   - si hay un cable que pueda llegar hasta la caja 2;
+   - si hay un cable que pueda llegar hasta la caja 2, y si la caja principal tiene Wi-Fi
+     ([para qué](arquitectura.md#la-red-de-la-matriz));
    - de cada caja, los registros del Visor de eventos para buscar las caídas pasadas
      ([cuáles](notas.md#red-de-la-tienda)), y si el registro Dhcp-Client está activado.
 2. **Impresoras** (1 a 2 h):
@@ -250,6 +251,26 @@ hora algo no funciona, se regresa todo.
 - **La impresión** con la cola de laboratorio y después con la real, sin quitar Control Print hasta el piloto.
 - **Un día pico** (~120 tickets) con el simulador de cajas, contra la caja principal real
   ([cómo](#el-día-pico-en-la-caja-principal-real); se puede antes, con la base de prueba).
+
+## El internet de respaldo con un celular
+
+Cualquier fin de semana, unos 20 minutos, con la tienda tranquila y el visto bueno del dueño
+([el análisis](arquitectura.md#la-red-de-la-matriz)). No se provoca la falla: desconectar el cable no la reproduce, solo
+deja a la tienda sin internet, como en una caída.
+
+1. Desconectar el cable marcado (el de red que va del módem al Tenda).
+2. En el celular, compartir sus datos por cable USB y por su Wi-Fi a la vez; anotar si lo deja y si el plan lo permite.
+3. Conectarlo como dice el análisis: si la caja principal tiene Wi-Fi, el cable USB a la caja 2 y el Wi-Fi del celular a
+   la caja principal; si no, al revés.
+4. En cada caja: abrir una página de internet, imprimir una página de prueba en una Epson y un ticket de prueba, y ver
+   que el POS siga conectado con la caja principal. Si la caja 2 quedó en el Wi-Fi del celular: cobrar algo (sale con
+   la copia de la caja), volver al Wi-Fi de la tienda y ver que lo cobrado suba solo y que el ticket salga con
+   «Reintentar».
+5. Si una caja no abre la página con el celular conectado: la métrica (en el análisis), que es un ajuste de Windows:
+   solo con el visto bueno del dueño, y anotar cómo estaba.
+6. Volver a conectar el cable marcado, desconectar el celular y ver que todo quede como antes.
+
+Con lo que salga, se agrega a la instrucción de [abajo](#durante-una-falla-de-red) cómo conectar el celular.
 
 ## Durante una falla de red
 

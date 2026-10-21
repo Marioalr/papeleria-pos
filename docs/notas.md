@@ -144,6 +144,17 @@ Wi-Fi. Todo va por cable salvo la caja 2, que va por Wi-Fi. El Tenda está bien 
 el último medio año se fue el internet 3 veces (es variable), y suele tardar unas 12 horas en volver. No hay ningún
 no-break. La causa **no se conoce** todavía.
 
+- **Lo que vio el dueño en una caída** (la semana del 2026-10-12): desconectó el cable de red que va del módem al Tenda
+  y, después de un rato, lo volvió a conectar; la red local ya no se volvió a caer. Es una sola vez, no se sabe si al
+  reconectarlo el internet ya había vuelto, y es poco probable poder hacer más pruebas. Si el internet seguía caído,
+  apoya la causa 1 (lo que mandaba el módem ya había pasado) y debilita la 2 (con los equipos reintentando, la red se
+  habría vuelto a caer); si ya había vuelto, no dice nada nuevo.
+- **Cómo se siguió trabajando:** la caja 2 con los datos de un celular por su Wi-Fi y la caja principal con otro
+  celular por cable USB, sin dejar su cable de red (así siguió imprimiendo). En el Wi-Fi del celular la caja 2 sale de
+  la red de la tienda: no ve a la caja principal, ni a la impresora de tickets, ni el Firebird de eleventa. Por eso se
+  cambia de red una y otra vez: a la del celular para bajar lo que mandan los clientes y a la de la tienda para
+  imprimir. Con el POS sigue vendiendo con su propia copia mientras está fuera
+  ([un solo celular para las dos](arquitectura.md#la-red-de-la-matriz)).
 - **Lo que dicen los datos** (revisión del 2026-10-09): lo más probable es que no sea un aparato dañado. Cambiar el
   módem por otro de Megacable descarta un módem descompuesto, pero no la forma en que se porta ese tipo de módem
   cuando pierde el servicio (no se sabe si el nuevo es del mismo modelo). Que los celulares no se puedan conectar
