@@ -478,10 +478,43 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// De qué base son las versiones (cambia al arrancar el servicio y al empezar de cero la prueba): con otra, los cambios
 /// desde la versión de la caja no sirven y se baja la copia completa. Vacía en un servicio de antes.
 /// </param>
+/// <param name="Red">
+/// La red vista desde la caja principal (la red de la tienda en el POS): si hay internet y si contesta su router. La caja lo
+/// junta con lo suyo para la franja: «Sin internet: la venta sigue. No desconectes nada.» Vacía en un servicio de antes o si
+/// el servicio no lo revisa (la prueba en desarrollo).
+/// </param>
 /// <param name="FormatoCopia">El de la copia que arma (<see cref="VersionesCopiaDto.Formato"/>); vacío en un servicio de antes.</param>
 public sealed record EstadoServicioDto(
     string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false, long VersionCredito = 0,
-    bool PilotoEleventa = false, string? AvisoBase = null, long? VersionExistencias = null, Guid? Base = null, int? FormatoCopia = null);
+    bool PilotoEleventa = false, string? AvisoBase = null, long? VersionExistencias = null, Guid? Base = null, int? FormatoCopia = null,
+    RedDeLaPrincipalDto? Red = null);
+
+/// <summary>Cómo ve la red la caja principal: lo revisa sola cada medio minuto (docs/arquitectura.md, «La red de la matriz»).</summary>
+/// <param name="Internet">Si contesta algo de internet; vacío: todavía no se sabe.</param>
+/// <param name="Router">Si contesta su router (la puerta de enlace); vacío: no tiene o todavía no se sabe.</param>
+/// <param name="DesdeUtc">Desde cuándo está así el internet.</param>
+public sealed record RedDeLaPrincipalDto(bool? Internet, bool? Router, DateTime? DesdeUtc = null);
+
+/// <summary>
+/// Lo que contesta el servicio a una caja que lo encontró en la red y quiere saber si es su caja principal antes de cambiarse
+/// a él: la prueba hecha con la huella de la llave de esa caja (<c>Descubrimiento.Prueba</c>). Solo la tiene el servicio que
+/// dio de alta a esa caja; la llave nunca viaja.
+/// </summary>
+/// <param name="LlaveDelServicio">
+/// La llave pública del servicio (la suya, que no está en la base ni en sus respaldos): la caja la recuerda y, desde entonces,
+/// solo se cambia a un servicio que firme con ella. Vacía en un servicio de antes.
+/// </param>
+/// <param name="Firma">Lo mismo de la prueba, firmado con la llave del servicio (<c>Descubrimiento.MensajeFirmado</c>).</param>
+public sealed record IdentidadServicioDto(string Prueba, string? LlaveDelServicio = null, string? Firma = null);
+
+/// <summary>Una caída de la red, de la bitácora de red: qué se perdió, desde cuándo y hasta cuándo (vacío: sigue).</summary>
+/// <param name="Que">«internet», «la caja principal», «el router»…</param>
+/// <param name="FinAproximado">No se vio volver (se cerró o se apagó antes): volvió después de <paramref name="Hasta"/>.</param>
+public sealed record CaidaDeRedDto(string Que, DateTime Desde, DateTime? Hasta, bool FinAproximado = false);
+
+/// <summary>Lo que dice la bitácora de red de la caja principal (Configuración › Acerca de): sus últimas caídas y dónde está.</summary>
+/// <param name="Carpeta">Dónde están sus archivos (red-servicio-AAAA-MM-DD.log), en la caja principal.</param>
+public sealed record ResumenDeRedDto(IReadOnlyList<CaidaDeRedDto> Caidas, string? Carpeta, RedDeLaPrincipalDto? Ahora);
 
 /// <summary>Usuario y PIN de quien autoriza: dar de alta una caja (antes de que haya sesión) y Telegram, que sigue como estaba.</summary>
 public sealed record SolicitudCredenciales(string Usuario, string Pin);
@@ -501,7 +534,11 @@ public sealed record SucursalAltaDto(Guid Id, string Nombre, IReadOnlyList<CajaA
 public sealed record SolicitudAltaCaja(string Usuario, string Pin, Guid SucursalId, Guid? CajaId, string? Nombre, string? Serie, string Equipo);
 
 /// <param name="Llave">Solo la ve el equipo: la guarda y la manda en cada llamada (encabezado X-Caja-Llave).</param>
-public sealed record AltaCajaDto(CajaDto Caja, string Llave);
+/// <param name="LlaveDelServicio">
+/// La llave pública del servicio que la dio de alta: la caja la guarda y no se cambia sola a otro servicio que no firme con
+/// ella (una copia de la base en otra PC). Vacía en un servicio de antes.
+/// </param>
+public sealed record AltaCajaDto(CajaDto Caja, string Llave, string? LlaveDelServicio = null);
 
 // ── Contingencia (entrega 3, parte 2) ───────────────────────────────────────
 

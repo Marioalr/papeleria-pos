@@ -684,13 +684,20 @@
         },
         new("acerca", "Acerca de", "info")
         {
-            Descripcion = "La versión de la caja y lo que tarda en escanear.",
+            Descripcion = "La versión de la caja, lo que tarda en escanear y cómo ha estado la red.",
             SeGuarda = false,
             Visible = () => true,
             Ajustes =
             [
                 new("version", "Versión") { Dice = () => Version, Palabras = "acerca", SoloEstaCaja = true },
                 new("escaneo", "Escanear") { Dice = () => TextoDelEscaneo, Palabras = "rendimiento lector velocidad tarda copia catalogo", SoloEstaCaja = true },
+                new("red", "Red")
+                {
+                    Ayuda = "Cómo está ahora y sus últimas caídas, de la bitácora de red, que se anota sola.",
+                    Palabras = "internet wifi router bitacora caidas ip conexion principal impresora wsd",
+                    SoloEstaCaja = true,
+                    Bloque = @<ResumenDeRed />,
+                },
                 new("actualizacion", "Actualización")
                 {
                     Ayuda = "Solo en la caja de prueba: instalar otra de las versiones que arma GitHub.",

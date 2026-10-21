@@ -811,6 +811,92 @@ en Inventario (F4). Solo leen, así que también van en el piloto con eleventa, 
 - **Falta:** exportarlos a Excel, como eleventa (la caja todavía no guarda archivos), y, si la tienda usa los mínimos de
   eleventa, pasarlos en la importación final (la importación no los lee).
 
+**Avance (2026-10-17): la red de la tienda en el POS,** como lo pide la [red de la
+matriz](arquitectura.md#la-red-de-la-matriz) («En el POS»). Casi siempre que se va el internet de Megacable se cae
+también la red local; esto no la arregla (eso es el [arreglo propuesto](arquitectura.md#la-red-de-la-matriz), sin
+compras), pero hace que el POS lo aguante, lo diga bien y lo anote:
+- **La caja vuelve a encontrar sola a la caja principal** si le cambió la IP (el DHCP del router): si la dirección
+  guardada no contesta 30 s, la busca en la red (un paquete por UDP, sin recorrerla) y solo se cambia a la que prueba,
+  con la huella de la llave de esa caja y con la llave propia del servicio, que es su caja principal: un reto nuevo
+  cada vez, firmado también con la dirección en que llegó, así que otro equipo no puede pasarle la pregunta a la de
+  verdad y quedarse en medio. La llave de la caja no viaja. Revisa cada IP que contesta una vez (hasta 64), así que
+  respuestas falsas no dejan fuera a la de verdad, y se cambia solo si una sola lo prueba. Guarda la dirección nueva en
+  `caja.json` (de un jalón: un apagón a media escritura no lo deja a medias). Mientras la guardada contesta, nada; si no
+  la encuentra, busca cada vez más espaciado (hasta cada 5 minutos, con la marca de tiempo de la PC, no la hora) y lo
+  anota una vez; «Volver a buscarla», en la franja, busca al momento. El servicio contesta solo a su red local, a lo más
+  5 veces por segundo a cada equipo y 200 entre todos, y solo el de la caja principal.
+- **La llave propia de la caja principal** (`pos.llave`, junto a la base, fuera de ella y de sus respaldos; en Windows,
+  cifrada para esa PC): las cajas la aprenden al darse de alta, o las de antes la primera vez que su dirección de
+  siempre prueba quién es. Así, otra PC con una copia de la base (la caja principal de antes, un respaldo en una laptop)
+  nunca gana. Después de una caída y al abrir, la caja no manda su llave hasta que la dirección guardada pruebe otra vez
+  quién es; mientras, vende con su copia.
+- **Avisos de lo configurado por nombre o con WSD:** la impresora de tickets por nombre, compartida desde otra PC o con
+  un puerto WSD (la caja de Windows lee el puerto de la cola en el registro) dice «Tickets · configúrala por IP» en el
+  estado de arriba y en la entrada; la caja principal por nombre, en Configuración › Acerca de › Red; la PC de eleventa
+  por nombre, en la bitácora del servicio.
+- **La franja:** el servicio revisa cada 30 s si hay internet (una conexión a 1.1.1.1 y 8.8.8.8 por su IP, 2 s, sin
+  cuentas) y si contesta su router, y lo dice en su latido. La caja lo junta con lo suyo: «Sin internet: la venta sigue.
+  No desconectes nada.» si llega a la caja principal; «Sin red local: esta caja trabaja con su copia» si no llega; en la
+  caja principal sin saber que su router contesta (trabado, o una 169.254 sin puerta de enlace), «Sin internet ni red
+  local»; con todo bien, nada. Arriba, el chip «Sin internet» del prototipo. Sin modal y fuera del cobro.
+- **La bitácora de red:** cada caja y el servicio anotan solos, con fecha y hora, cuando se pierde y vuelve el internet,
+  la caja principal, el router, la impresora de tickets (solo ping) y cada caja (siempre, aunque el archivo del día
+  llegue a su tope); los cambios de la IP y de dónde viene, del router y su MAC; el DNS del router trabado, una tormenta
+  de difusión y cuándo arrancó la PC; y un resumen cada 15 minutos, que cuenta lo que va y viene (la red lenta, el DNS
+  del router, una caja que deja de latir) en vez de una línea cada vez. El Wi-Fi y su señal, solo si se prende su
+  detalle. Unos archivos por día (`red-caja-…` y `red-servicio-…`) que se guardan 10 días (lo viejo se quita también al
+  cambiar el día), y las últimas caídas, con desde, hasta y cuánto duraron, en Configuración › Acerca de › Red
+  ([cómo se lee](pruebas-en-tienda.md#después-de-una-caída-la-bitácora-de-red)).
+- **Revisión (2026-10-17):** una revisión aparte no encontró fallas en la prueba de quién es, pero sí siete cosas, ya
+  arregladas, cada una con su prueba: la caja principal que arranca sin router ya no dice «no desconectes nada»; otra
+  PC con una copia de la base ya no gana (la llave propia del servicio, y con dos que prueban no se cambia sola); un
+  equipo de la red ya no detiene la búsqueda con respuestas falsas; la bitácora del servicio se limpia al cambiar el día
+  y cuenta lo que va y viene; la búsqueda no se mueve con la hora de Windows; el Wi-Fi solo con su detalle prendido;
+  y los clientes de la caja no usan proxy. Además, si se cambia la PC de la caja principal, la caja ofrece darse de
+  alta otra vez sin quitarle la venta a quien atiende.
+- **Decidido, por revisar** (el dueño no estaba; van a «Decidido mientras el dueño no estaba» al juntarlo con #112):
+  - si la caja principal estaba guardada por su nombre y no contesta, la caja se cambia a su IP cuando la encuentra y la
+    prueba (en el POS, todo por IP);
+  - en la caja principal, sin internet y sin saber que su router contesta (el router trabado, o la PC arrancó sin que
+    el router le diera dirección), la franja dice «Sin internet ni red local: esta caja sigue vendiendo», sin «no
+    desconectes nada»: la guía de la tienda pide juntar los datos y desconectar el cable del módem. Si su propio
+    servicio no contesta (al actualizarse), «El servicio de esta PC no contesta», y ahí ya no sale la franja de la red
+    lenta, como no salía el chip;
+  - el internet se revisa contra 1.1.1.1 y 8.8.8.8 por su IP (`Red:Internet` lo cambia), el DNS del router con
+    `tendawifi.com` (`Red:NombreDelRouter`) y otros equipos con ping si se ponen en `Red:Equipos` (el grabador, el
+    módem); en el piloto, también la PC de eleventa, solo con ping. Un equipo que nunca contestó el ping (su firewall)
+    no cuenta como caído;
+  - la bitácora se guarda 10 días; también la anota la prueba con una persona real (su servicio en la misma PC);
+  - «Volver a buscarla» no entra en el orden del tabulador, para no quitarle el foco a la venta: se oprime con el ratón,
+    y la caja busca sola de todos modos;
+  - la llave propia del servicio va en `pos.llave`, junto a la base y fuera de los respaldos (en Windows, cifrada para
+    esa PC): reinstalar o cambiar la PC de la caja principal, o restaurar una copia en la de repuesto, pide dar de alta
+    cada caja otra vez. La franja lo ofrece («Dar de alta otra vez», con el PIN del dueño) solo sin nadie en la venta, y
+    desde ahí se puede volver sin dar de alta;
+  - una caja de antes aprende esa llave la primera vez que su dirección de siempre (la que puso el dueño; si no, con la
+    que abrió) prueba quién es, y la guarda en `caja.json`. Ya con la llave, un servicio de antes (sin la prueba) no le
+    basta;
+  - después de una caída y al abrir, la llave de la caja no sale hasta que la dirección guardada pruebe quién es: al
+    abrir, cada llamada espera esa prueba a lo más 3 s y, si no llega, va con la copia;
+  - si contestan dos que prueban ser su caja principal (o solo una que sabe de la caja pero no firma con su llave), la
+    caja no se cambia sola: la franja dice «Hay dos cajas principales en la red: avisa al dueño» (o «La caja principal
+    no probó ser la misma de siempre») y ofrece darla de alta otra vez. La misma PC por cable y por Wi-Fi (la misma
+    llave) cuenta como una;
+  - si la caja principal ya no conoce a la caja (la quitaron), la pantalla del alta espera a que salga quien atiende;
+    mientras, vende con la copia;
+  - en la bitácora, las veces que la red se puso lenta van solo en el resumen de 15 minutos; del DNS del router y de las
+    cajas que dejan de latir, la primera vez de cada periodo lleva su línea y las demás se cuentan en el resumen; lo que
+    se pierde y vuelve, siempre;
+  - el detalle del Wi-Fi viene apagado: se prende en `caja.json` de la caja 2 para diagnosticar
+    ([cómo](pruebas-en-tienda.md#después-de-una-caída-la-bitácora-de-red)), revisando que no salga la pregunta de la
+    ubicación;
+  - el servicio contesta por UDP a lo más 5 veces por segundo a cada equipo y 200 entre todos.
+- **Falta, en Windows** (el CI y una PC): el Wi-Fi con su detalle prendido (el nombre de su perfil de red, sin pedir el
+  permiso de ubicación) y su señal, la MAC del router, el puerto de la cola en el registro, guardar la dirección nueva y
+  la llave del servicio en `caja.json`, `pos.llave` cifrado para la PC (y que copiado a otra no sirva) y que un «puerto
+  inalcanzable» no corte la búsqueda. **En la tienda, un sábado o domingo:** cambiarle la IP a la caja principal con
+  la caja 2 abierta, prender el detalle del Wi-Fi en la caja 2, y la próxima caída de verdad, con la bitácora.
+
 **Avance (2026-10-17): al cobrar, imprimir el ticket, ofrecerlo o no imprimirlo,** como pide la
 [propuesta](propuesta-interfaz.md#configuración) en Configuración › Ticket y como cobra eleventa sin ticket con F2
 ([paridad](paridad-eleventa.md#venta-y-cobro)):
@@ -960,7 +1046,7 @@ para esos días ([forma de trabajar](notas.md#forma-de-trabajar), [guía de los 
 | Qué | Dónde está | Estado |
 |---|---|---|
 | **La red de la tienda:** diagnóstico en la próxima caída real (desconectar el módem no la reproduce), con el script de diagnóstico en las dos cajas, y el arreglo, por aprobar, con lo que ya hay: el módem solo al internet del Tenda, red local nueva, IP fijas puestas en cada equipo, los equipos de la tienda en el switch que ya hay y no en el Tenda, e impresoras por IP sin WSD | [Red de la matriz](arquitectura.md#la-red-de-la-matriz), [notas](notas.md#red-de-la-tienda) | Falta: el script (chico) y dos fines de semana ([guía](pruebas-en-tienda.md)) |
-| En el POS, por la red: que la caja 2 vuelva a buscar sola a la principal, avisos de lo configurado por nombre o con WSD, la franja «sin internet» o «sin red local» y la bitácora de red | [Red de la matriz](arquitectura.md#la-red-de-la-matriz) | Falta (chico) |
+| En el POS, por la red: que la caja 2 vuelva a buscar sola a la principal, avisos de lo configurado por nombre o con WSD, la franja «sin internet» o «sin red local» y la bitácora de red | [Red de la matriz](arquitectura.md#la-red-de-la-matriz) | En código (2026-10-17, [avance](#la-versión-unicaja-y-el-piloto-en-la-caja-2)): falta verlo en Windows y en la tienda |
 | **Las tres impresoras de inyección** (dos WF-6590 y una L5590): cada una con sus costos, su cola en cada PC, su contador, su calibración y sus hojas por cobrar | [Impresión](impresion.md), [notas](notas.md#impresoras) | Falta (mediano); antes, leer la L5590 por SNMP |
 | **La impresora de tickets compartida:** reintento si las dos cajas imprimen a la vez y botón «Reintentar». No hay cajón | [Notas](notas.md#impresoras) | En código (entrega 5, parte 3, 2026-10-16): la cola de cada caja; falta probarla en la tienda con las dos cajas |
 | **Reportes de ventas:** día contra hace un año (el mismo día de la semana o la misma fecha: por decidir), mes y año a la fecha contra el año anterior, meses cerrados; venta neta, tickets, ticket promedio, costo, utilidad y margen; por departamento, caja, cajero y forma de pago; exportar a Excel y líneas en el resumen de Telegram; la utilidad solo la ve el dueño. El año anterior sale del historial de eleventa (su utilidad, con el costo capturado en eleventa) | [Notas](notas.md#reportes) | Pospuesto: después de la prueba con una persona real y su aprobación (2026-10-09) |
@@ -970,13 +1056,95 @@ para esos días ([forma de trabajar](notas.md#forma-de-trabajar), [guía de los 
 | Crear el bot de Telegram de verdad y probarlo | Fase 1, entrega 4 | Falta |
 | Probar la impresión con la cola de laboratorio y después con la real | Fase 1, entrega 5 | Falta |
 | Prueba con una persona real | [Ver arriba](#prueba-con-una-persona-real) | La primera fue el 2026-10-10, con la pantalla de hoy, y fue precaria (por eso el rediseño). La siguiente es el fin de semana del 17 y 18 de octubre, con la pantalla nueva lista; de su aprobación dependen los reportes |
-| Medir un día pico (~120 tickets) con las dos cajas, en la caja principal real | Hace falta el simulador de cajas (no existe; [descrito aquí](prueba-sucursales-linux.md#lo-que-hay-que-arreglar-o-construir)) | Falta |
+| Medir un día pico (~120 tickets) con las dos cajas, en la caja principal real | El simulador de cajas (`simular-cajas`, [avance abajo](#para-el-piloto-con-dos-cajas)) y la [guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real) | El simulador ya está (2026-10-17) y se midió en la PC de desarrollo; falta un fin de semana en la caja principal |
 | Precios y clientes | [Fase 3](fase-3-precios-clientes.md) | Las entregas 1 y 2 ya están en `main`. Propuesta, por aprobar: que la entrega 3 (consumibles del mes) capture todos los gastos del mes cuando se pagan; el reporte de la ganancia va con los reportes |
 | Servicios con costo real (engargolado y enmicado con depreciación, luz y consumibles; impresiones por impresora), pedidos y WhatsApp desde la PC. Apartados y cotizaciones guardadas quedan como mejora: el eleventa de la tienda no los tiene | Fase 4 ([servicios](servicios.md), [pedidos](pedidos.md), [WhatsApp](whatsapp.md)) | Falta su plan |
 | Instalador de la tienda, soporte a distancia (NetBird gratis u otro) y cómo se actualiza | [Por definir](#pendientes) | Falta |
 | Respaldo cifrado fuera de la tienda y vigilancia de la caja principal: se reporta a Healthchecks.io cada pocos minutos en horario, y si no abre o se apaga, Healthchecks.io avisa por Telegram (el bot del POS no puede avisar de su propia caja) | Fase 5 ([notas](notas.md#respaldo-fuera-de-la-tienda-y-aviso-de-apertura)) | Falta (chico) |
 | Depuración, conteo físico, importación final y arranque | Fase 5 y [depuración](#depuración-del-inventario) | Falta |
 | Promociones y kits, si el piloto queda cerca del regreso a clases | [Fase 3](fase-3-precios-clientes.md) | Pospuestas por ahora |
+
+**Avance (2026-10-17): el simulador de cajas y el día pico en la PC de desarrollo.** Lo que pedían la fila del día pico
+y la [prueba de las sucursales](prueba-sucursales-linux.md#lo-que-hay-que-arreglar-o-construir): un día pico con varias
+cajas contra el servicio de verdad, como le hablan las cajas, también con la red caída. Es `simular-cajas`, en
+Herramientas ([cómo se corre](../README.md#el-día-pico-con-varias-cajas-simulador); en la tienda,
+`scripts\simular-dia-pico.cmd` con [su guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real)). Es una
+herramienta de prueba: no cambia nada del POS, y no corre contra un servicio que no sea de prueba ni contra uno en el
+piloto con eleventa.
+- **Las cajas son las de verdad, sin la pantalla:** cada caja simulada usa las clases de la caja (`ClienteCaja`; la
+  contingencia con su latido, su aviso y su copia al día; su `caja-local.db` en una carpeta temporal; la foto del
+  catálogo para escanear y buscar; sus dos conexiones y sus plazos) y le habla al servicio por HTTP, con la llave de su
+  caja. Las da de alta con el PIN del dueño (o usa las que ya había), entra quien atiende y abre su turno.
+- **El día:** tickets de 1 a 8 renglones de lo más vendido, con su cantidad; algunos buscados por nombre (letra por
+  letra, contra la copia) y los rápidos; efectivo con billetes, tarjeta, transferencia y mixto; una entrada y dos salidas
+  de efectivo por caja; cancelaciones (con el PIN del encargado) y devoluciones, también de tickets de la otra caja. Al
+  40 % del día el dueño cambia el precio de lo más vendido mientras una caja lo tiene en el ticket (la caja principal
+  rechaza ese cobro y se cobra otra vez con el precio nuevo); al 60 % llega un producto que nadie había dado de alta: la
+  caja 1 lo da de alta ahí mismo y lo vende, y después la otra lo escanea con lo que le llegó a su copia. Al final, el
+  corte Z de cada turno, contando lo que espera el corte. Las horas siguen las de la tienda, de 9:00 a 20:30 (más gente
+  a mediodía y a la salida de la escuela), comprimidas en los minutos que se pidan; con la misma base sale el mismo día.
+- **La caída** (`--caida 30s@50%`): corta la red de la caja 2 (la del Wi-Fi) como un interruptor: no conecta, y lo que
+  iba a medias, también el aviso, se corta. La caja cobra con su copia, lo deja en su bandeja y lo sube al volver.
+- **Qué mide:** lo que espera quien atiende (escanear, buscar, cobrar en línea y sin conexión), el latido, cuánto tarda un
+  precio en llegar a la copia de cada caja, cuánto tarda en subir la bandeja al volver la red, abrir la caja y cada
+  llamada a la caja principal por su ruta (la mitad, 19 de cada 20, el 99 %, la peor y cuánto pesa); y la memoria y el
+  procesador del servicio. Lo compara con las [metas de la propuesta](propuesta-interfaz.md#metas) y las de
+  [la prueba de las sucursales](prueba-sucursales-linux.md#qué-se-mide-y-cuándo-sale-bien).
+- **El cuadre, al final:** cada venta que cobró cada caja está una sola vez en la caja principal, con su folio y su total,
+  y no hay ninguna de más; los folios de cada caja, seguidos; lo hecho sin conexión subió una vez y la bandeja quedó
+  vacía; el turno y el corte de cada caja (ventas, canceladas, tarjeta, transferencia y lo contado contra lo esperado) y
+  el corte del día; las existencias bajaron lo vendido menos lo devuelto y son la suma de su kardex, en toda la base;
+  ningún folio repetido; la copia de cada caja quedó al día. Si algo no cuadra, el informe dice qué y cuánto, y el
+  comando sale con 1. La prueba automática (`SimuladorCajasTests`) corre 2 cajas × 10 tickets con la caída y revisa el
+  cuadre, no los tiempos.
+- **Medido en la PC de desarrollo** (i9-13900HX con Linux; el servicio en Release con una copia de la base ficticia de un
+  año, 1,458 productos, y en la última columna con el catálogo copiado 4 veces, 5,832, como el de la tienda; 2 cajas ×
+  120 tickets en 10 minutos; la PC no estaba sola, pudo tener compilaciones y pruebas de otras ramas a la par). Sin la
+  pantalla: lo que tarda en pintarse se mide en la caja de Windows. 19 de cada 20 veces y, entre paréntesis, la peor:
+
+  | Qué | Meta | Sin caída | Con la caída de 30 s | Catálogo ×4, con la caída |
+  |---|---|---|---|---|
+  | Escanear → la línea (contra la copia) | La mitad ≤ 16 ms, el 99 % < 50 ms | 0.06 ms (3.3 ms) | 0.07 ms (1.9 ms) | 0.06 ms (1.7 ms) |
+  | Escribir → resultados (contra la copia) | < 100 ms | 0.97 ms (26 ms) | 0.95 ms (33 ms) | 1.5 ms (28 ms) |
+  | Cobrar → listo, en línea | < 300 ms | 31 ms (404 ms¹) | 25 ms (412 ms¹) | 24 ms (268 ms¹) |
+  | Cobrar → listo, sin conexión | < 300 ms | No se dio | 16 ms (2 cobros) | 82 ms¹ (2 cobros) |
+  | El latido | < 100 ms | 1.3 ms (20 ms) | 2.6 ms (29 ms) | 1.3 ms (20 ms) |
+  | Un precio → en la copia de cada caja | < 2 min | 0.2 s | 0.25 s | 0.63 s |
+  | Volver la red → la bandeja arriba, en línea | < 2 min | No se dio | 3.5 s | 2.6 s |
+  | Abrir la caja (bajar la copia completa y armar su foto) | < 5 s | 0.85 s | 1.1 s | 2.0 s |
+  | Memoria del servicio: antes del día → al terminar | < 300 MB | 261 → 370 MB | 262 → 383 MB | 282 → 422 MB |
+
+  ¹ La primera del día: lo que se usa por primera vez se compila (en el servicio recién arrancado o en la caja). El 99 %
+  del cobro en línea: 84, 33 y 90 ms.
+- **Cuadró en todas** (también en las de abajo): las 240 ventas, ninguna perdida ni duplicada; los folios del 1 al 120 en
+  cada caja; lo cobrado sin conexión, arriba una sola vez; cada corte sin diferencia entre lo esperado y lo contado; el
+  corte del día con sus 236 tickets; las existencias de los ~300 productos que se movieron bajaron lo vendido menos lo
+  devuelto, y en toda la base cada existencia es la suma de su kardex. El servicio usó el 2 % de un núcleo.
+- **Con la caída de 2 minutos a mediodía** (`--caida 2m@25%`, cuando hay más gente): la caja 2 trabajó sin conexión
+  0.8 s después de caerse y cobró 30 tickets con su copia (19 de cada 20 en 21 ms). 6.9 s después de volver la red ya
+  había subido sus 33 cosas (30 ventas, un movimiento de efectivo y dos de la bitácora), cada una una vez, y trabajaba en
+  línea; las devoluciones que esperaban a la caja principal se hicieron al volver. El precio que el dueño cambió durante
+  la caída le llegó en cuanto volvió (33 s después del cambio). Cuadró igual.
+- **Lo que no cumple: la memoria del servicio.** La meta es menos de 300 MB y sin crecer de un día a otro (antes de la
+  entrega 5 usaba ~190–230 MB en esta PC). Ahora empieza el día con 250–280 MB y lo termina con 370–420 MB (lo más, con
+  el catálogo ×4). No es una fuga: con 1,200 tickets sin esperas llega a ~410 MB y de ahí no pasa, sube y baja con cada
+  recolección. Lo que ocupa, según Linux: 120–226 MB la memoria propia del servicio (sobre todo los objetos de .NET),
+  90–107 MB lo que .NET arma para el código que compila al vuelo y 67–79 MB sus bibliotecas. Con el recolector de
+  memoria «de estación» en vez del «de servidor», el mismo día con la caída queda en 230 → 307 MB, con el cobro igual 19
+  de cada 20 veces (27 ms) y más lento el 99 % (97 ms contra 33); compilado de antemano (ReadyToRun) no baja, y con 2
+  núcleos tampoco. No se cambió: ni así llega a la meta, y tiene su costo. Primero se mide en la caja principal con el
+  simulador, que lo dice; si allá pasa de 300 MB, lo primero es probar el recolector de estación, o revisar la meta, que
+  se midió antes del catálogo en memoria y la búsqueda de la entrega 5.
+- **Otras cosas que se vieron, sin meta propia:** lo que cambió pesa en promedio 0.6 KB por pedido (unos 470 en el día,
+  entre las dos cajas); la copia completa, 1.1 MB (4.1 MB con el catálogo ×4), y bajarla con el día en marcha, 0.5–1.1
+  s; de lo demás, lo más lento es el conteo cíclico del día al entrar a vender, ~200 ms. Con el catálogo ×4, un precio
+  tarda más en llegar a la copia (0.6 s) porque la caja vuelve a armar el índice de su búsqueda, de fondo. La medición
+  de la copia (`MedicionCopiaTests`) pedía lo que cambió sin decir qué versión de lo más vendido traía la caja, y cada
+  «un precio» llegaba con lo más vendido completo (62 KB con el catálogo ×4); ya lo pide como la caja: 1.9 KB.
+- **Falta:** correrlo en la caja principal real un sábado o domingo
+  ([guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real)), y si da tiempo con la caja 2 por su Wi-Fi; y
+  para la prueba de las sucursales, la carga sostenida (varios días seguidos, para ver la memoria de un día a otro) y
+  apagar el servicio a media venta, que el simulador no hace.
 
 **Respuestas del dueño (2026-10-08):** usa el reporte de ventas por periodo (día, mes y año a la fecha) y la comparación
 contra hace un año, y se agregarán más; la meta es saber exactamente cuánto se gana. Las recargas y el pago de servicios
@@ -1148,8 +1316,8 @@ Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
   aprueba, con su ícono para el personal en la caja 2 y la instrucción ([qué registra](notas.md#red-de-la-tienda))
 - [ ] Segundo fin de semana, si el dueño lo aprueba: arreglar la red
   ([guía](pruebas-en-tienda.md#segundo-fin-de-semana-arreglar-la-red))
-- [ ] En el POS, por la red: la caja 2 vuelve a buscar a la principal, avisos de nombres o WSD, la franja de «sin
-  internet» y la bitácora de red
+- [x] En el POS, por la red: la caja 2 vuelve a buscar a la principal, avisos de nombres o WSD, la franja de «sin
+  internet» y la bitácora de red (en código, 2026-10-17; falta verlo en Windows y en la tienda)
 - [ ] Las tres impresoras de inyección en el módulo de impresión
 - [x] Impresora de tickets compartida: reintento y botón «Reintentar» (la cola de la caja, entrega 5, parte 3), en
   código; falta probarla en la tienda con las dos cajas
@@ -1161,7 +1329,8 @@ Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
 - [ ] Capturar cada gasto cuando se paga (propuesta, por aprobar: con la entrega 3 de la fase 3)
 - [ ] Probar en Windows con las dos cajas reales: servicio, alta de la caja 2, contingencia, respaldos, ventana de la
   caja y ticket desde las dos (el cajón, cuando lo haya)
-- [ ] Medir un día pico (~120 tickets) con las dos cajas, en la caja principal real, con el simulador de cajas
+- [ ] Medir un día pico (~120 tickets) con las dos cajas, en la caja principal real, con el simulador de cajas (ya está,
+  2026-10-17: `scripts\simular-dia-pico.cmd`, [guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real))
 - [ ] Departamentos en el POS: darlos de alta, cambiarles el nombre y desactivarlos. Hoy solo llegan de eleventa, y
   Compras pide darlos de alta «en F3 Productos», donde no se puede ([paridad](paridad-eleventa.md#productos-y-precios))
 - [ ] La importación final sin las ventas que ya mandó el puente (por `VENTATICKETS.ID`), para no contarlas dos veces

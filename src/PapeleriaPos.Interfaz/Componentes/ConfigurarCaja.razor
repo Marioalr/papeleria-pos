@@ -95,6 +95,12 @@
         {
             <p class="error">@_error</p>
         }
+        @if (AlVolver.HasDelegate)
+        {
+            <div class="acciones">
+                <button class="boton" @onclick="AlVolver">Volver sin dar de alta</button>
+            </div>
+        }
     </div>
 </div>
 
@@ -102,6 +108,12 @@
     /// <summary>Por qué se pide el alta (por ejemplo, el dueño quitó esta PC).</summary>
     [Parameter] public string? Aviso { get; set; }
     [Parameter] public EventCallback AlTerminar { get; set; }
+
+    /// <summary>
+    /// «Volver sin dar de alta» (si se llegó con «Dar de alta otra vez» de la franja): la caja sigue con su copia. Sin esto, no se
+    /// ofrece.
+    /// </summary>
+    [Parameter] public EventCallback AlVolver { get; set; }
 
     private string _direccion = "";
     private List<Uri>? _encontrados;
@@ -234,6 +246,10 @@
             Conexion.Servicio = _servicio!;
             Conexion.CajaId = alta.Caja.Id;
             Conexion.Llave = alta.Llave;
+            // La llave del servicio que la dio de alta (vacía en uno de antes): desde ahora no se cambia sola a otro que no firme con ella.
+            Conexion.LlaveDelServicio = alta.LlaveDelServicio;
+            Conexion.DireccionDeConfianza = _servicio;
+            Conexion.SinComprobar = false;
             if (Conexion.AlGuardar is { } guardar)
                 await guardar(Conexion);
             _pin = "";

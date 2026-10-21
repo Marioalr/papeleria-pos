@@ -115,6 +115,24 @@ label.opcion { flex-direction: row; align-items: center; gap: 8px; font-size: 15
 .franja-contingencia.subiendo { background: var(--azul-claro); color: var(--azul); }
 .franja-contingencia.con-error { background: #fdecea; color: var(--error); }
 
+/* La red de la tienda en el POS: la franja de la red como la del prototipo (.franja): «Sin red local» con «Volver a buscarla»,
+   la red lenta, o «Sin internet: la venta sigue». Va arriba de todo (fuera de .venta-nueva), así que trae sus colores. */
+.vn-franja {
+    --vn-texto: #15202c;
+    --vn-borde: #c6cfda;
+    --vn-hoja: #ffffff;
+    --vn-tinta: #23439b;
+    --vn-aviso: #8a5300;
+    --vn-aviso-fondo: #fff3dc;
+    --vn-aviso-borde: #efc884;
+    display: flex; align-items: center; gap: 10px; padding: 7px 16px; font: 14px/1.35 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    border-bottom: 1px solid var(--vn-aviso-borde); background: var(--vn-aviso-fondo); color: var(--vn-aviso);
+}
+.vn-franja strong { color: #6b4000; }
+.vn-franja .vn-franja-nota { font-size: 13px; }
+.vn-franja svg.ico { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.vn-franja .vn-boton:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: 2px; }
+
 /* Entrega 4: Telegram */
 .esperando { padding: 8px 12px; background: var(--azul-claro); color: var(--azul); border-radius: 4px; }
 .alertas { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
@@ -1301,3 +1319,8 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
     .vn-reporte-dos { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; overflow-y: auto; }
     .vn-reporte-dos .vn-reporte-desliza { overflow: visible; }
 }
+
+/* Configuración › Acerca de › Red (la red de la tienda en el POS): cómo está y las últimas caídas de la bitácora de red. */
+.vn-red-resumen { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.vn-red-aviso { margin: 0; padding: 7px 10px; border-radius: 8px; font-size: 13px; line-height: 1.4; background: var(--vn-aviso-fondo); color: var(--vn-aviso); border: 1px solid var(--vn-aviso-borde); }
+.vn-red-caidas td { font-size: 13px; }

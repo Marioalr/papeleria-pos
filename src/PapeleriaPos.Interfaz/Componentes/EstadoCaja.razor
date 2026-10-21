@@ -24,12 +24,20 @@
         case ChipConexion.Subiendo:
             <span class="vn-chip-estado aviso"><span class="punto"></span>Subiendo @_contingencia!.Pendientes…</span>
             break;
+        case ChipConexion.ServicioAqui when SinInternet(_contingencia, Conexion) is { } sinInternet:
+            @* Como en el prototipo: en la caja principal, «Sin internet» en lugar de «Servicio aquí». *@
+            <span class="vn-chip-estado aviso" title="@Titulo(sinInternet)"><span class="punto"></span>Sin internet</span>
+            break;
         case ChipConexion.ServicioAqui:
             <span class="vn-chip-estado" title="El servicio y la base están en esta PC."><span class="punto"></span>Servicio aquí</span>
             break;
         default:
-            <span class="vn-chip-estado" title="El catálogo está en esta caja; lo que se cobra va a la caja principal."><span class="punto"></span>Conectada a la principal@(Ms(_contingencia?.Latencia) is { } latencia ? $" · {latencia}" : "")</span>
+            <span class="vn-chip-estado" title="El catálogo está en esta caja; lo que se cobra va a @Conexion.Servicio.Authority."><span class="punto"></span>Conectada a la principal@(Ms(_contingencia?.Latencia) is { } latencia ? $" · {latencia}" : "")</span>
             break;
+    }
+    @if (!Conexion.Servicio.IsLoopback && SinInternet(_contingencia, Conexion) is { } sinInternetAqui)
+    {
+        <span class="vn-chip-estado aviso" title="@Titulo(sinInternetAqui)"><span class="punto"></span>Sin internet</span>
     }
     @if (Impresora.MuestraVistaPrevia)
     {
@@ -49,6 +57,11 @@
     else if (Cola.Problema is { } ocupada)
     {
         <span class="vn-chip-estado aviso" title="«@ocupada.Titulo»: @ocupada.Motivo Se vuelve a intentar sola."><Ico Nombre="impresora" />Tickets · esperando a la impresora</span>
+    }
+    else if (Red?.AvisoImpresora is { } porNombre)
+    {
+        @* Por nombre, compartida o con WSD: con el router trabado no se encuentra (la red de la tienda en el POS). *@
+        <span class="vn-chip-estado aviso" title="@porNombre"><Ico Nombre="impresora" />Tickets · @AvisosDeRed.ConfiguralaPorIp</span>
     }
     else
     {
@@ -78,6 +91,25 @@
         /// <summary>La caja principal contesta, pero tarde: se vende con la copia (entrega 5, parte 2).</summary>
         RedLenta,
     }
+
+    /// <summary>
+    /// «Sin internet» arriba (la propuesta, «Caja principal y secundarias»): lo dice la caja principal y esta caja llega a ella
+    /// (si no llega, no se sabe; la franja dice «Sin red local»). Con la red lenta también: es un hecho. Dice lo mismo que la
+    /// franja: en la caja principal sin router, «Sin internet ni red local» (ahí no se dice «no desconectes nada»). Vacío si hay
+    /// internet o no se sabe.
+    /// </summary>
+    public static string? SinInternet(Contingencia? contingencia, ConexionCaja conexion)
+    {
+        if (contingencia is not { ServidorResponde: true, RedDeLaPrincipal.Internet: false })
+            return null;
+        var franja = AvisosDeRed.QueDice(conexion.Servicio.IsLoopback, conexion.SimularSinConexion, contingencia.EstadoDeLaRed, contingencia.RedDeLaPrincipal);
+        return franja == AvisosDeRed.Franja.SinInternetNiRedLocal ? AvisosDeRed.SinInternetNiRedLocal : AvisosDeRed.SinInternet;
+    }
+
+    private static string Titulo(string sinInternet) => $"{sinInternet} Telegram y el respaldo fuera de la tienda esperan a que vuelva.";
+
+    /// <summary>La red de la tienda en el POS: los avisos de lo configurado por nombre o con WSD.</summary>
+    private RedDeLaCaja? Red => Servicios.GetService<RedDeLaCaja>();
 
     /// <summary>Lo que tardó el último latido, como en la propuesta («Conectada a Caja 1 · 9 ms»); vacío si no se sabe.</summary>
     private static string? Ms(TimeSpan? latencia) => latencia is { } l ? $"{Math.Max(1, Math.Round(l.TotalMilliseconds)):0} ms" : null;
