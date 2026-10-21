@@ -5,6 +5,8 @@ using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Pruebas.Servicio;
+// La caída que simula el simulador, no la de la bitácora de red de la caja (PapeleriaPos.Interfaz.CaidaDeRed, #116).
+using CaidaDeRed = PapeleriaPos.Herramientas.Simulador.CaidaDeRed;
 
 namespace PapeleriaPos.Pruebas.Herramientas;
 
