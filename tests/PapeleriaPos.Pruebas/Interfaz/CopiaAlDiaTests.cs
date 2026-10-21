@@ -13,7 +13,10 @@ namespace PapeleriaPos.Pruebas.Interfaz;
 /// <summary>
 /// La copia de la caja al día con solo lo que cambió (entrega 5, parte 2): la caja de verdad (contingencia y base local)
 /// contra el servicio de verdad. Lo que se revisa no depende de lo que tarda la PC: qué se le pidió a la red (cuántas veces
-/// la copia completa, cuántas los cambios) y qué quedó en la foto del catálogo, esperando cada cosa con un límite.
+/// la copia completa, cuántas los cambios) y qué quedó en la foto del catálogo, esperando cada cosa con un límite. Donde hace
+/// falta que la caja principal conteste, se dan latidos hasta que contesta (<see cref="PermisosSinConexionTests.ConConexionAsync"/>):
+/// en una máquina ocupada un latido puede pasar de su plazo, y con él la caja se queda con la copia de antes (pasó una vez
+/// en el CI de Windows: la existencia seguía en 44 y no en 41). Un latido que no llegó no pide cambios ni la copia completa.
 /// </summary>
 public sealed class CopiaAlDiaTests(ServicioDePrueba servicio) : IClassFixture<ServicioDePrueba>, IDisposable
 {
@@ -69,7 +72,7 @@ public sealed class CopiaAlDiaTests(ServicioDePrueba servicio) : IClassFixture<S
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
         var contingencia = new Contingencia(new AlmacenLocal(_baseLocal), new HttpClient(red), conexion);
         _abiertas.Add(contingencia);
-        await contingencia.LatidoAsync();
+        await PermisosSinConexionTests.ConConexionAsync(contingencia);
         Assert.NotNull(contingencia.Foto);
         async Task<SesionDto> Entrar(string usuario, string pin) =>
             (await (await directo.PostAsJsonAsync("api/sesion", new SolicitudEntrada(usuario, pin))).Content.ReadFromJsonAsync<SesionDto>())!;
@@ -99,7 +102,7 @@ public sealed class CopiaAlDiaTests(ServicioDePrueba servicio) : IClassFixture<S
         var nuevo = producto.Precios[0].PrecioCentavos + 350;
 
         await CambiarPrecioAsync(c, producto, nuevo);
-        await c.Contingencia.LatidoAsync();
+        await PermisosSinConexionTests.ConConexionAsync(c.Contingencia);
 
         var despues = c.Contingencia.Foto!;
         Assert.Equal(copias, c.Red.Cuantas(Paquete(c)));
@@ -132,7 +135,7 @@ public sealed class CopiaAlDiaTests(ServicioDePrueba servicio) : IClassFixture<S
             [new LineaSolicitada(producto.VarianteId, producto.Presentacion.Id, 3000)], [new CobroSolicitado(FormaPago.Efectivo, 10_000_000)]));
         Assert.True(venta.IsSuccessStatusCode, await venta.Content.ReadAsStringAsync());
 
-        await c.Contingencia.LatidoAsync();
+        await PermisosSinConexionTests.ConConexionAsync(c.Contingencia);
 
         Assert.Equal(producto.Existencia - 3, c.Contingencia.Foto!.PorCodigo(producto.Codigo!)!.Existencia);
         Assert.Equal(version, c.Contingencia.Foto.Version);
@@ -250,7 +253,7 @@ public sealed class CopiaAlDiaTests(ServicioDePrueba servicio) : IClassFixture<S
         var nuevo = producto.Precios[0].PrecioCentavos + 70;
 
         await CambiarPrecioAsync(c, producto, nuevo);
-        await c.Contingencia.LatidoAsync();
+        await PermisosSinConexionTests.ConConexionAsync(c.Contingencia);
 
         Assert.Equal(copias + 1, c.Red.Cuantas(Paquete(c)));
         Assert.Equal(0, c.Red.Cuantas(Cambios(c)));
@@ -268,7 +271,7 @@ public sealed class CopiaAlDiaTests(ServicioDePrueba servicio) : IClassFixture<S
         var nuevo = producto.Precios[0].PrecioCentavos + 90;
 
         await CambiarPrecioAsync(c, producto, nuevo);
-        await c.Contingencia.LatidoAsync();
+        await PermisosSinConexionTests.ConConexionAsync(c.Contingencia);
 
         Assert.Equal(1, c.Red.Cuantas(Cambios(c)));
         Assert.Equal(copias + 1, c.Red.Cuantas(Paquete(c)));
@@ -290,7 +293,7 @@ public sealed class CopiaAlDiaTests(ServicioDePrueba servicio) : IClassFixture<S
 
         var red = new RedDePrueba(servicio.Fabrica.Server.CreateHandler());
         var otraVez = new Contingencia(new AlmacenLocal(_baseLocal), new HttpClient(red), new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = c.Datos.Id });
-        await otraVez.LatidoAsync();
+        await PermisosSinConexionTests.ConConexionAsync(otraVez);
 
         Assert.Equal(0, red.Cuantas(Paquete(c)));
         Assert.Equal(1, red.Cuantas(Cambios(c)));
