@@ -111,7 +111,7 @@ Sin tiempos: se avanza cuando la fase anterior funciona en la tienda. **Foco:** 
 | 2. Inventario | Compras, recepción ciega, presentaciones, conteos cíclicos, etiquetas, sugerido de compra |
 | 3. Precios y clientes | Mayoreo, promociones, kits, clientes registrados, crédito |
 | 4. Servicios y pedidos | Primero, servicios con costo real: recetas con los consumibles del servicio (micas, espirales, portadas), depreciación del equipo y luz (engargolado y enmicado). Después pedidos, cola compartida, charolas, recogida por celular, duplicados, apartados, listas escolares, captura manual desde WhatsApp |
-| 5. Piloto en la matriz | Primero el piloto en la caja 2: vende con la caja nueva y manda cada venta a eleventa, que sigue siendo el oficial ([piloto](#la-versión-unicaja-y-el-piloto-en-la-caja-2)). Después, dejar eleventa con las dos cajas: depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo. Antes: la red de la tienda arreglada y las tres impresoras de inyección; los reportes, después de la prueba con una persona real y su aprobación. Desde el arranque, respaldo cifrado fuera de la tienda (Backblaze B2) y vigilancia de la caja principal (Healthchecks.io) ([qué falta](#para-el-piloto-con-dos-cajas)) |
+| 5. Piloto en la matriz | Primero el piloto en la caja 2: vende con la caja nueva y manda cada venta a eleventa, que sigue siendo el oficial ([piloto](#la-versión-unicaja-y-el-piloto-en-la-caja-2)). Después, dejar eleventa con las dos cajas: depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo. Antes: la red de la tienda arreglada; los reportes, después de la prueba con una persona real y su aprobación. Las tres impresoras de inyección van con la entrega 4, después de alcanzar a eleventa (2026-10-15); mientras, Control Print sigue aparte. Desde el arranque, respaldo cifrado fuera de la tienda (Backblaze B2) y vigilancia de la caja principal (Healthchecks.io) ([qué falta](#para-el-piloto-con-dos-cajas)) |
 | 6. WhatsApp y central | La API de WhatsApp → pedidos cuando el dueño la quiera, con un receptor aparte ([WhatsApp](whatsapp.md)). **Pospuesto:** el central, con sus entregas 6.1 a 6.6 ([propuesta](servidor-remoto.md#entregas)) |
 | 7. Sucursal 2 | **Pospuesta.** Precios por sucursal, traspasos, compras que se reparten, inversión de apertura y punto de equilibrio ([propuesta](servidor-remoto.md)). Si abre antes, abre con eleventa |
 | 8. App Android | Preventa y pedidos desde el celular. Preventa: el ticket se arma en el celular, se elige a qué caja mandarlo y ahí llega en espera, con un efecto para que se note ([propuesta](propuesta-interfaz.md#desde-el-celular)) |
@@ -675,6 +675,35 @@ número los enseña en la lista). Antes solo llegaban de eleventa, y Compras ped
 - **En el piloto con eleventa** (con su lectura prendida) solo se consultan: se cambian allá, como las altas y los
   precios (2026-10-10), y llegan con la lectura. Un cambio hecho aquí, la siguiente lectura lo regresaría.
 
+**Avance (2026-10-17): cambiar precios de varios a la vez, en Productos.** Como «Actualizar varios» de eleventa, para
+cuando un proveedor sube sus precios ([paridad](paridad-eleventa.md#productos-y-precios)). Antes se cambiaban uno por uno
+en la ficha. Abajo de la lista de Productos (F3), «Cambiar precios» se abre a la derecha:
+- **Cuáles:** los productos activos de un departamento, de una marca, los que coinciden con un texto (como la búsqueda de
+  la lista, también con su departamento) o los marcados en la lista. Mientras está abierto, un toque en la lista marca o
+  desmarca y, con el cursor en la búsqueda, ↑ ↓ eligen y Enter marca. Hasta 1,000 a la vez.
+- **Cómo:** subir o bajar un porcentaje o una cantidad, o un precio fijo, sobre el menudeo; si se quiere, el mayoreo (las
+  escalas y los precios por paquete) en la misma proporción; y el redondeo a los 50 centavos o al peso más cercano. El
+  redondeo nunca deja un precio al revés de lo pedido (si se sube, no baja) ni en $0, y un precio fijo queda tal cual.
+- **Lo que se cobra queda en orden:** el mayoreo nunca queda igual o más caro que el menudeo ni que una escala de menos
+  piezas, y un paquete no cuesta más que sus piezas a menudeo; si ya tenía descuento, lo sigue teniendo. Si el redondeo
+  lo empareja o lo pasa, ese precio va al paso de abajo (sin ir al revés de lo pedido) o se queda como estaba, y la
+  vista lo marca «ajustado»; si ni así cabe, o si sin el mayoreo el menudeo bajaría hasta él, el producto no cambia y la
+  vista dice por qué. Además, la caja nunca cobra una escala más cara que el menudeo ni un paquete más caro que sus piezas,
+  aunque así hayan quedado capturados.
+- **Primero se ve cómo quedan** (Enter): cada producto con su precio de ahora y el nuevo, y lo que no cambia y por qué.
+  Quien tiene «Ver costos, utilidad y margen» ve también el margen de cada uno y un aviso si queda debajo del mínimo.
+- **«Aplicar» (o Ctrl+Enter) los cambia todos de una vez,** con un solo renglón en la bitácora (cuántos, cuáles, la regla
+  y quién) y el historial de cada precio, como en la ficha; las cajas los toman con la versión del catálogo. Si algo
+  cambió desde que se vio (otro precio, un producto que entró), no se aplica y la vista se vuelve a pedir; si se pierde
+  la respuesta y se oprime otra vez, no se aplica dos veces. Lo hace quien tiene «Productos, precios y etiquetas».
+- **En el piloto con eleventa,** el menudeo y las promociones de lo de eleventa se cambian allá, como en la ficha: una
+  nota lo dice. Lo dado de alta aquí cambia completo y, de lo de eleventa, su mayoreo de aquí, sin pasar de su menudeo ni
+  de sus promociones de eleventa (para subirlo más, primero se sube allá).
+- **Por revisar** (decidido mientras el dueño no estaba): el precio fijo, que eleventa tiene; el mayoreo y el redondeo a
+  50 centavos ya marcados al abrir; el redondeo que nunca queda al revés de lo pedido; el mayoreo que no cabe más barato,
+  al paso de abajo o como estaba (o el producto no cambia); solo productos activos (sin kits), y hasta 1,000 a la vez;
+  Ctrl+Enter para aplicar, para que un doble Enter no aplique sin querer.
+
 **Avance (2026-10-16): Productos e Inventario en el piloto.** Con la lectura de eleventa prendida, lo que ella pone no
 se cambia en la caja 2: si no, la siguiente lectura lo regresaría sin avisar. Una nota lo dice en cada página y el
 servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-cada-pocos-minutos-paso-1)).
@@ -683,6 +712,53 @@ servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-ca
   lo dado de alta aquí, sí.
 - **Inventario:** no se ofrece lo que mueve existencias (recibir compras, los conteos, ajustes, mermas y abrir un
   paquete): el inventario se lleva en eleventa. Las órdenes, el sugerido, las etiquetas y la hoja de códigos, sí.
+
+**Avance (2026-10-17): las ventas de otros días y el historial de cortes,** como «Ventas del día y devoluciones» y el
+«Historial de cortes» de eleventa ([paridad](paridad-eleventa.md#la-tabla)).
+- **«Ventas del día»** (en «/», el mismo panel): abre en las de hoy de esa caja, de todos los cajeros, como antes. Con
+  «Ver reportes de ventas» (al migrar, solo el dueño) se cambia de día con ← → o la fecha, y de caja; cualquiera filtra
+  por cajero y busca un folio de cualquier día: con su serie («B-000123»), en cualquier caja, como al escribirlo para
+  devolver; solo el número, sin ese permiso, en las de esa caja (si no, recorriendo los números se verían las ventas de
+  las otras). Cada venta dice su folio (en el piloto, también el de eleventa), la hora, quién cobró, la caja, el total,
+  cómo se pagó y si se canceló o se devolvió en parte; reimprimir pide el motivo, como siempre, y «Devolver o cancelar»
+  abre la devolución con el folio, con sus reglas.
+- **El historial de cortes** va en el corte, junto a «Turno» y «Del día» («/» lo abre ahí): los turnos de cualquier día,
+  por caja y cajero, con lo esperado, lo contado, la diferencia, quién lo hizo y cuándo, y «Reimprimir el corte», que
+  sale igual que el corte Z al cerrar. Lo ve quien hace el corte de un turno o ve el del día (al migrar, el encargado y
+  el dueño); el cajero no: su corte es a ciegas. En el piloto, «Corte en eleventa».
+- **Sin conexión,** la caja solo tiene su copia para vender: las ventas y los cortes de todas las cajas están en la caja
+  principal, y los dos lo dicen.
+- **Lo nuevo del servicio, solo para leer:** `GET api/cajas/{caja}/ventas` (un día, la caja, el cajero o un folio) y
+  `GET api/cajas/{caja}/cortes` (un día, la caja y el cajero), con el usuario de la sesión. Sin cambios en la base.
+
+**Avance (2026-10-17): los reportes del inventario, como en eleventa.** Lo que eleventa tiene en F4 y el POS solo tenía
+en el diagnóstico en Excel o en la ficha del producto ([paridad](paridad-eleventa.md#inventario)): tres tarjetas nuevas
+en Inventario (F4). Solo leen, así que también van en el piloto con eleventa, y salen con su permiso en «Puede»
+(consultar no se autoriza).
+- **Lo que vale el inventario** (su «Reporte de inventario»): la existencia a costo promedio, el que usa el POS, en
+  total y por departamento, con cuántos productos tienen existencia y cuántos están en cero, en negativo o sin costo (lo
+  negativo no resta y lo que no tiene costo no suma). A un lado, los productos del departamento que se elige, de lo que
+  más vale a lo que menos, o los que están en cero, en negativo o sin costo, de 50 en 50. Solo con «Ver costos, utilidad
+  y margen»: los demás no ven la tarjeta, y el servicio lo revisa.
+- **Movimientos:** el kardex de toda la tienda en unos días (hoy, ayer, 7 o 30 días, el mes o de una fecha a otra), por
+  tipo (ventas, devoluciones, compras, ajustes, mermas, conteos, paquetes, inventario inicial y la lectura de eleventa),
+  producto (nombre o código, también escaneado), departamento y quién lo hizo, de 50 en 50 (Re Pág y Av Pág). Cada uno
+  con su folio o su motivo, lo que entró o salió, lo que quedó y quién; el costo, solo con «Ver costos, utilidad y
+  margen». La ve quien lleva el inventario (el catálogo, los ajustes, las compras, las órdenes, el conteo completo o los
+  costos): hoy el dueño y el encargado. Con un año de la papelería ficticia, cada página sale en menos de una décima de
+  segundo, también con cinco veces más movimientos.
+- **Bajos en inventario:** cada variante puede llevar su mínimo y su máximo en la ficha (F3), como en eleventa, y «Poca
+  existencia» usa el suyo (sin él, 3 o menos, como antes). La tarjeta dice cuántos están en su mínimo o debajo; la lista
+  va por departamento, de 100 en 100, con cuánto pedir: lo que falta para su máximo, contando lo que ya viene en órdenes
+  abiertas, o, sin máximo, lo que pide el sugerido de compra, pero al menos lo que falta para llegar a su mínimo (el
+  sugerido no lo conoce). Es un número en la pantalla: los pedidos siguen en las órdenes y el sugerido. La ve quien pide
+  la mercancía o pone los mínimos.
+- **El mínimo y el máximo** se guardan en la variante, con su migración, y suben la versión del catálogo como cualquier
+  cambio de la ficha. Son del POS: la lectura de eleventa no lee los suyos, así que en el piloto también se ponen aquí.
+  Cada cambio queda en la bitácora, y una caja de antes que guarda la ficha no los borra. La venta sigue diciendo
+  «Quedan 2» con 3 o menos: la copia de las cajas no lleva el mínimo.
+- **Falta:** exportarlos a Excel, como eleventa (la caja todavía no guarda archivos), y, si la tienda usa los mínimos de
+  eleventa, pasarlos en la importación final (la importación no los lee).
 
 #### Después: el piloto en la caja 2
 
@@ -852,6 +928,41 @@ El 2026-10-08 el dueño pospuso la multisucursal para completar primero el POS d
 - **Cuándo retomarla:** cuando el dueño decida pasar la sucursal 2 (o la 3.ª) al POS, unos 6 meses antes de esa fecha;
   mientras, la sucursal 2 abre con eleventa ([señales](notas.md#para-retomar-la-multisucursal)).
 
+## Decidido mientras el dueño no estaba (2026-10-17)
+
+El dueño (2026-10-17): «te quedarás un buen rato trabajando solo; si tienes preguntas, haz una sugerencia recomendada y
+apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción recomendada, y queda **por revisar**:
+
+| Pregunta | Decisión | Dónde |
+|---|---|---|
+| Si un ticket no salió y el cliente ya se fue, ¿solo «Reintentar»? | También «No imprimirlo»: la cola sigue y el ticket se reimprime después desde las ventas del día. Además evita un ticket doble cuando la impresora imprimió pero no lo confirmó | #108 |
+| Después de una restauración de eleventa, lo que se perdió de la caja 2, ¿a mano o se vuelve a mandar solo? | A mano en eleventa: queda listado como por revisar. Mandarlo solo le daría folios nuevos, distintos a los impresos, quizá en turnos que allá ya no existen | Puente, parte 3 |
+| Si en la caja 2 no hay `gbak.exe`, ¿se copia o se escribe sin el respaldo propio? | Se copia el de Firebird 2.0 de la caja principal, con su `fbclient.dll` (se ve en la tienda; [guía](pruebas-en-tienda.md)). El respaldo sigue siendo obligatorio para escribir | Puente, parte 3 |
+| La entrega 9 (reportes) | Justo después de aprobar la prueba con una persona real, empezando por lo que hace el reporte de ventas de eleventa y la comparación contra el año anterior ([paridad](paridad-eleventa.md#recomendaciones)) | Entrega 9 |
+| Dejar eleventa | En dos pasos: primero el modo multicaja con el puente escribiendo; al final, apagar el puente cuando el POS tenga la entrega 9 y un mes que cuadre con eleventa | Piloto |
+| La ganancia del día, con Telegram en pausa | En el corte del día, para quien tiene «Ver costos, utilidad y margen», como el de eleventa | El corte del día como el de eleventa |
+| Las tres impresoras de inyección | Van con la entrega 4, después de alcanzar a eleventa (meta del 2026-10-15); mientras, Control Print sigue cobrando aparte. Se alinearon la fase 5 y [impresión](impresion.md) | Plan |
+| ¿Quién hace el corte de un turno? | Solo quien tiene el permiso, como ya funciona | Propuesta |
+| ¿Quién cierra el corte del día y cuándo se recuerda? | Quien tiene «ver y cerrar el corte del día» (por omisión, la primera cuenta). Se recuerda a la hora de cierre de Configuración › Tienda | Propuesta |
+| ¿Pantalla táctil? | No por ahora: todo con teclado y ratón, con botones de buen tamaño | Propuesta |
+| ¿Pedir el PIN otra vez tras unos minutos sin usar la caja? | No por ahora, como eleventa: estorba para cobrar rápido. Ctrl+U cambia de usuario | Propuesta |
+| Las tres partes del puente (turno y corte, devoluciones de ida y vuelta, respaldos) | En un solo PR: los arreglos de la revisión tocan las tres | Puente (#109) |
+| Empezar y terminar la temporada, la hoja y las tarjetas (entrega 13, parte 3) | Todo en Productos (no en Ctrl+M); el precio de entonces es el del primer día de la temporada pasada; el sugerido nunca baja un precio; una tarjeta cuenta como impresa al oprimir «Imprimir»; las consultas cuentan solo en línea (90 días, las 30 más); lo contado se guarda en la principal al escribirlo (pide «Conteo completo de un departamento») y al terminar entra contra lo que decía el sistema al contarlo; el precio de entonces no toma el de mayoreo; en el piloto, sin «Contado» | #123 |
+| Las fotos de los productos (entrega 13, parte 2) | En la base (van en los respaldos), JPEG de 240 px sin recortar, una por variante; las sube quien tiene «Productos, precios y etiquetas» desde el celular (/conteo) o la PC (ficha F3, también Ctrl+V); «Quitar» sin confirmación; se aceptan fotos JPG de cámara de hasta 100 megapíxeles y lo demás (PNG, WebP, JPG progresivo) hasta 16, preparadas de una en una | #122 |
+| El mostrador y las temporadas (entrega 13, parte 1) | Se acomoda en Ctrl+M › «Acomodar» (no en F3) con «Productos, precios y etiquetas»; un solo acomodo para todas las cajas; lugares de inicio «Repisa de arriba/abajo» y «Mesa de la entrada»; con el panel abierto, un número de hasta 4 cifras y Enter es la cantidad, salvo que sea el código de un producto (entonces entra ese producto); «45*» siempre es cantidad | #121 |
+| La importación final al dejar eleventa | A la base de la tienda que ya existe, solo el historial y sin los tickets que mandó el puente (por su número y su marca, nunca por el folio); lo dudoso se lista, no se resuelve; con la caja cerrada | #120 |
+| Cambiar precios de varios a la vez | Con «Poner un precio» además de porcentaje y cantidad; mayoreo en proporción y redondeo a $0.50 por omisión; el redondeo nunca va en contra de lo pedido ni deja $0; el mayoreo siempre más barato que el menudeo (si el redondeo lo rompe, la escala baja al paso de abajo o se queda; si nada cabe, el producto no cambia); en el piloto, las escalas del POS de un producto de eleventa solo suben hasta abajo de los precios de eleventa; hasta 1,000 a la vez; aplicar con Ctrl+Enter o el botón; el cobro cobra siempre la escala más barata que alcanza | #119 |
+| Qué hacer con el ticket al cobrar | «Imprimir» (por omisión), «Ofrecerlo» (nunca pregunta antes de cobrar: se ofrece con Ctrl+I hasta el siguiente escaneo) o «No imprimirlo»; para toda la tienda; lo fiado se imprime siempre; imprimirlo después con «Reimprimir» sigue pidiendo motivo; sin conexión, «No imprimirlo» lo ofrece como «Ofrecerlo» (reimprimir no se puede sin la principal) | #118 |
+| La memoria del servicio (370–420 MB al final de un día pico en la PC de desarrollo; meta: 300 MB) | Medirla primero en la caja principal real con el simulador; si allá pasa de 300 MB, probar el otro modo de memoria de .NET (baja a ~307 MB, pero el cobro más lento sube de 33 a 97 ms) o ajustar la meta | #117 |
+| La red de la tienda en el POS | La caja se cambia a la IP comprobada de la principal si la guardada (también por nombre) deja de contestar; en la principal sin internet ni router, la franja no dice «no desconectes nada»; en el piloto, ping a la PC de eleventa; «Volver a buscarla» solo con el ratón; el detalle del Wi-Fi apagado por omisión | #116 |
+| La llave propia de la caja principal | Para que una copia de la base en otra PC no se haga pasar por ella. **Consecuencia:** si se reinstala o se cambia la PC principal (o se restaura en la de repuesto), hay que dar de alta otra vez cada caja con el PIN del dueño | #116 |
+| El corte del día como el de eleventa | Las devoluciones del día se restan de la utilidad y de su departamento; recordatorio a la hora de cierre (21:00 si no se configura), sin recordatorio en el piloto; las ventas por departamento las ve quien ve el corte, la utilidad solo con «Ver costos»; un día que no se cerró antes de medianoche se queda «sin cerrar» (solo se cierra el de hoy) | #115 |
+| Inventario como eleventa: lo que vale, movimientos y bajos | Sin exportar a Excel por ahora; mínimo y máximo por variante para todas las sucursales; costos solo con «Ver costos»; «Pedir» en piezas; cinco detalles más en el PR | #114 |
+| Ventas de otros días e historial de cortes: quién ve qué, topes y detalles | Otro día u otra caja con «Ver reportes de ventas»; buscar un folio con su serie, cualquiera (solo el número, sin el permiso, busca en esta caja); el historial, quien hace cortes; ocho detalles más en el PR | #113 |
+| En el piloto, ¿qué devoluciones hace la caja 2? | Solo las de tickets del turno de eleventa en curso de la caja 2, que el puente sabe escribir. Los de otro turno, otra caja o la principal se devuelven en el eleventa que está abierto en esa misma caja, y la devolución llega sola con la lectura. Así no hay que adivinar qué devolución anotada a mano en eleventa corresponde a cuál (tres revisiones encontraron casos que se perdían o se duplicaban). Cuando se vea en la tienda cómo anota eleventa una devolución de otro turno, el puente puede aprender a escribirla y la caja 2 tomarlas también | Puente (#109) |
+| Una anotación a mano en eleventa que no cuadra exacto | «Resolverlo a mano» con «Configuración de la tienda» y nota en la bitácora; mientras se decide, la existencia sigue a eleventa (sin congelarla) | Puente (#109) |
+| Al devolver en la caja 2 un ticket cobrado en eleventa, ¿el dinero al peso o exacto? | Exacto al centavo, como lo devuelve eleventa ($9.50, no $10): así el ticket de eleventa queda en cero y el cajón cuadra con lo que anota eleventa. Lo que cobró la propia caja se sigue devolviendo al peso, porque se cobró redondeado | Puente (#109) |
+
 ## Recomendaciones
 
 Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin volver a preguntar lo que ya se contestó.
@@ -859,6 +970,7 @@ Lo que se propuso y el dueño dejó para después. Se retoma cuando toque, sin v
 | Recomendación | Por qué | Estado |
 |---|---|---|
 | **Pedir el PIN para administrar usuarios:** el de quien entró, una vez al abrir «Usuarios y permisos», válido mientras esa ventana siga abierta. Lo mismo para quitar una PC y aplicar la calibración de la impresora, que con la Configuración nueva (entrega 7) ya no piden PIN | El servicio confía en la caja para saber quién es el usuario: con la llave de una caja y el id de un usuario (las fichas lo dan) se le podría cambiar el PIN o los permisos a otro, por ejemplo al dueño, sin saber el PIN de nadie. La solución de fondo es que el servicio dé una sesión al entrar y la pida en cada llamada | No por ahora (dueño, 2026-10-15) |
+| **En el piloto, las devoluciones en eleventa** (salvo las ventas de la caja 2 del turno en curso, que el puente escribe como eleventa): las demás se hacen en el eleventa abierto en la misma caja y la lectura las trae sin efectivo | Cuatro revisiones del puente siguieron encontrando fallas justo en devolver en la caja 2 tickets de otro turno y en anotarlas a mano en eleventa; lo simple ya está sólido. Contradice la decisión del 2026-10-12 (ida y vuelta), por eso no se cambió | Por decidir (2026-10-17) |
 | **El encabezado del ticket con los datos de la tienda:** si el encabezado está vacío, armarlo con el nombre, la dirección y el teléfono de Configuración → Tienda | La dirección y el teléfono se guardan (entrega 7) pero no salen en ningún lado; el encabezado se escribe a mano y normalmente ya los trae | No por ahora (dueño, 2026-10-15) |
 
 ## Pendientes

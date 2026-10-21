@@ -692,6 +692,13 @@ public sealed record PrecioFichaDto(string? Presentacion, long CantidadMinimaMil
 
 public sealed record ProveedorFichaDto(Guid ProveedorId, string Proveedor, string? CodigoProveedor, long? UltimoCostoCentavos, DateTime? UltimaCompraLocal);
 
+/// <summary>
+/// El mínimo y el máximo de inventario de una variante, en milésimas de su unidad base (como en eleventa, «Productos bajos en
+/// inventario»). Vacíos: sin mínimo propio (cuenta <see cref="PocaExistencia.Hasta"/> o menos) y sin máximo (lo pide el
+/// sugerido).
+/// </summary>
+public sealed record MinimoYMaximoDto(long? MinimoMilesimas, long? MaximoMilesimas);
+
 /// <param name="Existencia">En la sucursal, en unidades base (solo lectura).</param>
 /// <param name="CostoPromedioCentavos">Solo para el dueño y el encargado (solo lectura).</param>
 /// <param name="DeEleventa">
@@ -699,9 +706,14 @@ public sealed record ProveedorFichaDto(Guid ProveedorId, string Proveedor, strin
 /// presentación base (se pueden agregar otros) y los precios de eleventa no se cambian aquí, ni se depura. Lo dice el
 /// servicio al leer la ficha; al guardar, no lo lee.
 /// </param>
+/// <param name="MinimoYMaximo">
+/// Su mínimo y su máximo de inventario. Al leer la ficha, siempre viene. Al guardar, vacío es «no se tocan»: así una caja de
+/// antes, que no los conoce, no los borra.
+/// </param>
 public sealed record VarianteFichaDto(
     Guid? Id, string Descripcion, UnidadBase Unidad, bool Activa, IReadOnlyList<PresentacionFichaDto> Presentaciones, IReadOnlyList<PrecioFichaDto> Precios,
-    decimal? Existencia = null, decimal? CostoPromedioCentavos = null, IReadOnlyList<ProveedorFichaDto>? Proveedores = null, bool DeEleventa = false);
+    decimal? Existencia = null, decimal? CostoPromedioCentavos = null, IReadOnlyList<ProveedorFichaDto>? Proveedores = null, bool DeEleventa = false,
+    MinimoYMaximoDto? MinimoYMaximo = null);
 
 /// <summary>La ficha de un producto en F3: lo que se edita junto (el producto, sus variantes, presentaciones, códigos y precios).</summary>
 /// <param name="Marca">Por nombre: si no existe, se da de alta.</param>
