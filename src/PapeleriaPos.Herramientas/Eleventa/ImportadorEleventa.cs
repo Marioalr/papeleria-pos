@@ -326,7 +326,7 @@ public static class ImportadorEleventa
         r.Variantes.Add(variante);
         r.Presentaciones.Add(presentacion);
         if (!string.IsNullOrEmpty(codigo))
-            r.Codigos.Add(new CodigoBarras { Codigo = codigo, PresentacionId = presentacion.Id, Origen = OrigenDe(codigo) });
+            r.Codigos.Add(new CodigoBarras { Codigo = codigo, PresentacionId = presentacion.Id, Origen = CodigoBarras.OrigenDe(codigo) });
         Mapear(r, nameof(Producto), idOrigen, producto.Id);
         Mapear(r, nameof(Variante), idOrigen, variante.Id);
         return variante;
@@ -334,8 +334,6 @@ public static class ImportadorEleventa
 
     // Las mismas reglas que la lectura de cada pocos minutos (SincronizacionEleventa).
     private static UnidadBase Unidad(FilaProducto p, bool conFracciones, ResultadoImportacion r) => ReglasEleventa.Unidad(p, conFracciones, aviso => r.Avisar(aviso));
-
-    private static OrigenCodigo OrigenDe(string codigo) => ReglasEleventa.OrigenDe(codigo);
 
     private static bool EsEntero(double cantidad) => ReglasEleventa.EsEntero(cantidad);
 

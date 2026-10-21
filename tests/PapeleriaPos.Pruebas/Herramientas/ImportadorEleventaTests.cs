@@ -72,6 +72,15 @@ public class ImportadorEleventaTests
         Assert.Equal(OrigenCodigo.Interno, Assert.Single(r.Codigos).Origen);
     }
 
+    [Fact]
+    public void Los_EAN_13_que_empiezan_con_2_son_internos_como_en_el_catalogo()
+    {
+        // El rango de uso interno de las tiendas: 2000000000015 es el primer código interno que da el POS.
+        var r = ImportadorEleventa.Importar(Datos([Producto(1, "2000000000015", "Separadores de colores")]));
+
+        Assert.Equal(OrigenCodigo.Interno, Assert.Single(r.Codigos).Origen);
+    }
+
     [Theory]
     [InlineData('D', 3, "Contac Autoadh Trans", UnidadBase.Metro)]
     [InlineData('D', 4, "Liston 2.0 V/Colores X Metro", UnidadBase.Metro)]
