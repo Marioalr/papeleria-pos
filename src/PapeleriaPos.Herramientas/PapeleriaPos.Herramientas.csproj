@@ -5,6 +5,9 @@
     <ProjectReference Include="..\PapeleriaPos.Datos\PapeleriaPos.Datos.csproj" />
     <ProjectReference Include="..\PapeleriaPos.Eleventa\PapeleriaPos.Eleventa.csproj" />
     <ProjectReference Include="..\PapeleriaPos.Impresion\PapeleriaPos.Impresion.csproj" />
+    <!-- El simulador de cajas (simular-cajas) vende con el código de la caja, sin la pantalla: ClienteCaja, Contingencia,
+         AlmacenLocal, la foto del catálogo y la red con sus plazos. -->
+    <ProjectReference Include="..\PapeleriaPos.Interfaz\PapeleriaPos.Interfaz.csproj" />
   </ItemGroup>
 
   <ItemGroup>

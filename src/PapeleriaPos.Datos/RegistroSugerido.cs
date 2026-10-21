@@ -48,44 +48,20 @@ public sealed class RegistroSugerido(PosDbContext db)
         await new ServicioControl(db).ExigirAsync(usuarioId, sucursalId, AccionControlada.PedirCompra, Mensaje, ct);
         var parametros = await ParametrosAsync(sucursalId, ct);
         var hoy = DateOnly.FromDateTime(HoraMexico.ALocal(Ahora));
-        var desdeLocal = hoy.AddYears(-1).AddDays(-SugeridoCompra.DiasRecientes - 1);
-        var desde = HoraMexico.AUtc(desdeLocal.ToDateTime(TimeOnly.MinValue));
-
-        var ventas = await VentasAsync(sucursalId, desde, ct);
-        var vendidas = ventas.Keys.ToList();
-        var variantes = await db.Variantes.AsNoTracking().Include(v => v.Producto).ThenInclude(p => p!.Marca).Include(v => v.Presentaciones)
-            .Where(v => v.Activa && v.Producto!.Activo && v.Producto.Tipo == TipoProducto.Mercancia && vendidas.Contains(v.Id))
-            .AsSplitQuery().ToListAsync(ct);
-        var ids = variantes.Select(v => v.Id).ToList();
-        var existencias = await db.Existencias.AsNoTracking().Where(e => e.SucursalId == sucursalId && ids.Contains(e.VarianteId))
-            .ToDictionaryAsync(e => e.VarianteId, ct);
-        var enCamino = (await (from r in db.OrdenesRenglones
-                               join o in db.OrdenesCompra on r.OrdenId equals o.Id
-                               where o.SucursalId == sucursalId && o.Estado == EstadoOrden.Abierta && ids.Contains(r.VarianteId)
-                               select new { r.VarianteId, r.CantidadBase }).ToListAsync(ct))
-            .GroupBy(x => x.VarianteId).ToDictionary(g => g.Key, g => g.Sum(x => x.CantidadBase.EnUnidades));
-        var presentacionDeCompra = await PresentacionesDeCompraAsync(ids, ct);
+        var calculos = await CalcularVariantesAsync(sucursalId, parametros, hoy, null, ct);
+        var ids = calculos.Select(c => c.Variante.Id).ToList();
         var proveedores = await ProveedoresAsync(ids, ct);
         var nombresProveedor = await db.Proveedores.AsNoTracking().ToDictionaryAsync(p => p.Id, p => p.Nombre, ct);
-        var reglas = new SugeridoCompra.Parametros(parametros.CoberturaDias, parametros.ColchonDias);
 
         var renglones = new List<(Guid? Proveedor, RenglonSugeridoDto Renglon)>();
-        foreach (var v in variantes)
+        foreach (var (v, presentacion, existencia, enCamino, resultado) in calculos)
         {
-            var presentacion = presentacionDeCompra.GetValueOrDefault(v.Id) is { } pid && v.Presentaciones.FirstOrDefault(p => p.Id == pid) is { } elegida
-                ? elegida
-                : v.Presentaciones.FirstOrDefault(p => p.EsBase) ?? v.Presentaciones.First();
-            var existencia = existencias.GetValueOrDefault(v.Id);
-            var resultado = SugeridoCompra.Calcular(
-                new SugeridoCompra.Producto(v.Id, ventas[v.Id], existencia?.Cantidad.EnUnidades ?? 0, enCamino.GetValueOrDefault(v.Id),
-                    presentacion.Factor.EnUnidades, v.UnidadBase.AdmiteFracciones()),
-                hoy, reglas);
             if (resultado.Paquetes == 0)
                 continue;
             var proveedor = proveedores.GetValueOrDefault(v.Id);
             var costoUnidad = proveedor?.UltimoCostoCentavos ?? (existencia?.CostoPromedio is { } promedio ? (long)Math.Round(promedio) : null);
             renglones.Add((proveedor?.ProveedorId, new RenglonSugeridoDto(v.Id, RegistroCompras.Nombre(v), proveedor?.CodigoProveedor, v.UnidadBase,
-                existencia?.Cantidad.EnUnidades ?? 0, enCamino.GetValueOrDefault(v.Id), resultado.VentaDiaria, resultado.Temporada, resultado.Minimo,
+                existencia?.Cantidad.EnUnidades ?? 0, enCamino, resultado.VentaDiaria, resultado.Temporada, resultado.Minimo,
                 resultado.Maximo, presentacion.Id, presentacion.Nombre, presentacion.Factor.EnUnidades, resultado.Paquetes,
                 costoUnidad is { } c ? (long)Math.Round(c * presentacion.Factor.EnUnidades) : null, resultado.Urgente)));
         }
@@ -99,17 +75,92 @@ public sealed class RegistroSugerido(PosDbContext db)
         return new SugeridoDto(hoy, parametros, grupos);
     }
 
-    /// <summary>Lo vendido por variante y día local, en unidad base: las ventas pagadas del POS y el historial de eleventa.</summary>
-    private async Task<Dictionary<Guid, Dictionary<DateOnly, decimal>>> VentasAsync(Guid sucursalId, DateTime desde, CancellationToken ct)
+    /// <summary>Lo que dice el sugerido de cada variante: en qué presentación se compra, su existencia, lo que viene y el cálculo.</summary>
+    public sealed record CalculoSugerido(Variante Variante, Presentacion Presentacion, Existencia? Existencia, decimal EnCamino, SugeridoCompra.Resultado Resultado);
+
+    /// <summary>
+    /// Lo que dice el sugerido de hoy de unas variantes, sin revisar permisos (lo hace quien lo pide): «Bajos en inventario»
+    /// lo usa para las que no tienen su máximo. Solo trae las que se vendieron en el último año (las demás no tienen con qué
+    /// calcularse); solo lee las ventas de esas.
+    /// </summary>
+    public async Task<Dictionary<Guid, CalculoSugerido>> DeVariantesAsync(Guid sucursalId, IReadOnlyCollection<Guid> ids, CancellationToken ct = default)
     {
-        var delPos = await (from l in db.VentasLineas
-                             join v in db.Ventas on l.VentaId equals v.Id
-                             where v.SucursalId == sucursalId && v.Estado == EstadoVenta.Pagada && v.PagadaUtc >= desde && l.VarianteId != null
-                             select new { Variante = l.VarianteId!.Value, Fecha = v.PagadaUtc!.Value, l.CantidadBase }).ToListAsync(ct);
-        var historicas = await (from l in db.VentasHistoricasLineas
-                                join v in db.VentasHistoricas on l.VentaHistoricaId equals v.Id
-                                where v.SucursalId == sucursalId && !v.Cancelada && v.FechaUtc >= desde
-                                select new { Variante = l.VarianteId, Fecha = v.FechaUtc, CantidadBase = l.Cantidad }).ToListAsync(ct);
+        if (ids.Count == 0)
+            return [];
+        var parametros = await ParametrosAsync(sucursalId, ct);
+        var hoy = DateOnly.FromDateTime(HoraMexico.ALocal(Ahora));
+        return (await CalcularVariantesAsync(sucursalId, parametros, hoy, ids, ct)).ToDictionary(c => c.Variante.Id);
+    }
+
+    /// <summary>
+    /// El cálculo de cada variante activa que se vendió en el último año (de <paramref name="soloEstas"/>, si vienen): lo
+    /// vendido, su existencia, lo que ya viene en órdenes abiertas y la presentación en que se compra.
+    /// </summary>
+    private async Task<List<CalculoSugerido>> CalcularVariantesAsync(
+        Guid sucursalId, ParametrosSugeridoDto parametros, DateOnly hoy, IReadOnlyCollection<Guid>? soloEstas, CancellationToken ct)
+    {
+        var desdeLocal = hoy.AddYears(-1).AddDays(-SugeridoCompra.DiasRecientes - 1);
+        var desde = HoraMexico.AUtc(desdeLocal.ToDateTime(TimeOnly.MinValue));
+
+        var ventas = await VentasAsync(sucursalId, desde, soloEstas, ct);
+        var vendidas = ventas.Keys.ToList();
+        var variantes = await db.Variantes.AsNoTracking().Include(v => v.Producto).ThenInclude(p => p!.Marca).Include(v => v.Presentaciones)
+            .Where(v => v.Activa && v.Producto!.Activo && v.Producto.Tipo == TipoProducto.Mercancia && vendidas.Contains(v.Id))
+            .AsSplitQuery().ToListAsync(ct);
+        var ids = variantes.Select(v => v.Id).ToList();
+        var existencias = await db.Existencias.AsNoTracking().Where(e => e.SucursalId == sucursalId && ids.Contains(e.VarianteId))
+            .ToDictionaryAsync(e => e.VarianteId, ct);
+        var enCamino = await EnCaminoAsync(sucursalId, ids, ct);
+        var presentacionDeCompra = await PresentacionesDeCompraAsync(ids, ct);
+        var reglas = new SugeridoCompra.Parametros(parametros.CoberturaDias, parametros.ColchonDias);
+
+        var calculos = new List<CalculoSugerido>();
+        foreach (var v in variantes)
+        {
+            var presentacion = presentacionDeCompra.GetValueOrDefault(v.Id) is { } pid && v.Presentaciones.FirstOrDefault(p => p.Id == pid) is { } elegida
+                ? elegida
+                : v.Presentaciones.FirstOrDefault(p => p.EsBase) ?? v.Presentaciones.First();
+            var existencia = existencias.GetValueOrDefault(v.Id);
+            var viene = enCamino.GetValueOrDefault(v.Id);
+            var resultado = SugeridoCompra.Calcular(
+                new SugeridoCompra.Producto(v.Id, ventas[v.Id], existencia?.Cantidad.EnUnidades ?? 0, viene, presentacion.Factor.EnUnidades,
+                    v.UnidadBase.AdmiteFracciones()),
+                hoy, reglas);
+            calculos.Add(new CalculoSugerido(v, presentacion, existencia, viene, resultado));
+        }
+        return calculos;
+    }
+
+    /// <summary>Lo que ya viene de cada variante en las órdenes de compra abiertas de la sucursal, en unidad base.</summary>
+    public async Task<Dictionary<Guid, decimal>> EnCaminoAsync(Guid sucursalId, IReadOnlyCollection<Guid> ids, CancellationToken ct = default) =>
+        (await (from r in db.OrdenesRenglones
+                join o in db.OrdenesCompra on r.OrdenId equals o.Id
+                where o.SucursalId == sucursalId && o.Estado == EstadoOrden.Abierta && ids.Contains(r.VarianteId)
+                select new { r.VarianteId, r.CantidadBase }).ToListAsync(ct))
+        .GroupBy(x => x.VarianteId).ToDictionary(g => g.Key, g => g.Sum(x => x.CantidadBase.EnUnidades));
+
+    /// <summary>
+    /// Lo vendido por variante y día local, en unidad base: las ventas pagadas del POS y el historial de eleventa. Con
+    /// <paramref name="soloEstas"/>, solo lo de esas variantes.
+    /// </summary>
+    private async Task<Dictionary<Guid, Dictionary<DateOnly, decimal>>> VentasAsync(
+        Guid sucursalId, DateTime desde, IReadOnlyCollection<Guid>? soloEstas, CancellationToken ct)
+    {
+        var lineasDelPos = from l in db.VentasLineas
+                           join v in db.Ventas on l.VentaId equals v.Id
+                           where v.SucursalId == sucursalId && v.Estado == EstadoVenta.Pagada && v.PagadaUtc >= desde && l.VarianteId != null
+                           select new { Variante = l.VarianteId!.Value, Fecha = v.PagadaUtc!.Value, l.CantidadBase };
+        var lineasHistoricas = from l in db.VentasHistoricasLineas
+                               join v in db.VentasHistoricas on l.VentaHistoricaId equals v.Id
+                               where v.SucursalId == sucursalId && !v.Cancelada && v.FechaUtc >= desde
+                               select new { Variante = l.VarianteId, Fecha = v.FechaUtc, CantidadBase = l.Cantidad };
+        if (soloEstas is not null)
+        {
+            lineasDelPos = lineasDelPos.Where(l => soloEstas.Contains(l.Variante));
+            lineasHistoricas = lineasHistoricas.Where(l => soloEstas.Contains(l.Variante));
+        }
+        var delPos = await lineasDelPos.ToListAsync(ct);
+        var historicas = await lineasHistoricas.ToListAsync(ct);
         var ventas = new Dictionary<Guid, Dictionary<DateOnly, decimal>>();
         foreach (var l in delPos.Concat(historicas))
         {

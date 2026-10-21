@@ -533,7 +533,7 @@
         },
         new("ticket", "Ticket", "ticket")
         {
-            Descripcion = "El ticket de 80 mm: lo que dice arriba y abajo, y su logotipo.",
+            Descripcion = "El ticket de 80 mm: lo que dice arriba y abajo, su logotipo y si sale al cobrar.",
             Ajustes =
             [
                 RenglonesTicket("encabezado", "Encabezado",
@@ -542,12 +542,29 @@
                 RenglonesTicket("pie", "Pie", $"Hasta {ConfiguracionTicket.RenglonesMaximos} renglones de {ConfiguracionTicket.Columnas} caracteres.", 3,
                     t => t.Pie, (t, renglones) => (t.Encabezado, renglones)),
                 Logotipo("logo-ticket"),
+                // En todas las cajas, como lo demás del ticket: las dos comparten la impresora y atienden a los mismos clientes.
+                new(AlCobrar, "Al cobrar")
+                {
+                    Ayuda = "Nunca pregunta antes de cobrar. «Ofrecerlo»: hasta que escaneas al siguiente cliente, el panel ofrece «Imprimir "
+                        + "ticket» (Ctrl+I). «No imprimirlo»: si lo piden, se reimprime desde «Ventas del día»; sin conexión no se puede, así "
+                        + "que se ofrece. Lo fiado sale siempre, y los comprobantes y el corte, como siempre.",
+                    Permiso = AccionControlada.ConfigurarTicket,
+                    NoListo = NoListoTicket,
+                    Palabras = "imprimir ofrecer papel",
+                    Control = ControlAlCobrar,
+                },
                 new("prueba", "Ticket de prueba")
                 {
                     Ayuda = "Sale con lo de arriba. Sin impresora de tickets, se ve en «Así sale».",
                     Permiso = AccionControlada.ConfigurarTicket,
                     NoListo = NoListoTicket,
-                    Control = @<button class="vn-boton chico" @onclick="ImprimirPruebaAsync">Imprimir uno de prueba</button>,
+                    Control = @<span class="vn-botonera">
+                        <button class="vn-boton chico" @onclick="ImprimirPrueba">Imprimir uno de prueba</button>
+                        @if (_prueba is { } prueba)
+                        {
+                            <AvisoImpresion Trabajo="prueba" />
+                        }
+                    </span>,
                 },
             ],
             Contenido = AsiSale,
@@ -667,12 +684,20 @@
         },
         new("acerca", "Acerca de", "info")
         {
-            Descripcion = "La versión de la caja.",
+            Descripcion = "La versión de la caja, lo que tarda en escanear y cómo ha estado la red.",
             SeGuarda = false,
             Visible = () => true,
             Ajustes =
             [
-                new("version", "Versión") { Dice = () => Version, Palabras = "acerca" },
+                new("version", "Versión") { Dice = () => Version, Palabras = "acerca", SoloEstaCaja = true },
+                new("escaneo", "Escanear") { Dice = () => TextoDelEscaneo, Palabras = "rendimiento lector velocidad tarda copia catalogo", SoloEstaCaja = true },
+                new("red", "Red")
+                {
+                    Ayuda = "Cómo está ahora y sus últimas caídas, de la bitácora de red, que se anota sola.",
+                    Palabras = "internet wifi router bitacora caidas ip conexion principal impresora wsd",
+                    SoloEstaCaja = true,
+                    Bloque = @<ResumenDeRed />,
+                },
                 new("actualizacion", "Actualización")
                 {
                     Ayuda = "Solo en la caja de prueba: instalar otra de las versiones que arma GitHub.",
@@ -882,20 +907,52 @@
     private Task QuitarLogotipoAsync(string renglon) =>
         HacerAsync(renglon, async () => _ticket = await Cliente.GuardarLogoTicketAsync(Caja.Id, new SolicitudLogo(Sesion.UsuarioId, null)));
 
-    private async Task ImprimirPruebaAsync()
+    // ── «Al cobrar» ──────────────────────────────────────────────────────────
+
+    /// <summary>El renglón de «Al cobrar»: ahí se dice si no se pudo guardar.</summary>
+    private const string AlCobrar = "al-cobrar";
+
+    /// <summary>
+    /// Las tres opciones en un segmento, como el «opcion» del prototipo (con tres o menos): la elegida, marcada. Se guarda al
+    /// tocarla, como el logotipo; con Tab se pasa de una a otra y Enter o Espacio la eligen.
+    /// </summary>
+    private RenderFragment ControlAlCobrar =>
+        @<span class="vn-segmento" role="radiogroup" aria-label="Al cobrar">
+            @foreach (var opcion in Enum.GetValues<TicketAlCobrar>())
+            {
+                var esta = opcion;
+                var elegida = _ticket?.AlCobrar == esta;
+                <button id="@($"aj-al-cobrar-{esta.ToString().ToLowerInvariant()}")" role="radio" aria-checked="@(elegida ? "true" : "false")"
+                        class="@(elegida ? "on x" : null)" disabled="@(!Sesion.Puede(AccionControlada.ConfigurarTicket))"
+                        @onclick="() => GuardarAlCobrarAsync(esta)">@ConfiguracionTicket.Nombre(esta)</button>
+            }
+        </span>;
+
+    /// <summary>
+    /// En su turno, después de lo que se está guardando: si se toca otra opción mientras se guarda la anterior (la red lenta),
+    /// se compara con lo que quedó y gana la última que se tocó.
+    /// </summary>
+    private Task GuardarAlCobrarAsync(TicketAlCobrar alCobrar) => HacerAsync(AlCobrar, async () =>
+    {
+        if (_ticket?.AlCobrar != alCobrar)
+            _ticket = await Cliente.GuardarAlCobrarAsync(Caja.Id, new SolicitudAlCobrar(Sesion.UsuarioId, alCobrar));
+    });
+
+    /// <summary>El ticket de prueba en la cola de la impresora: junto a su botón se ve si salió y, si no, «Reintentar».</summary>
+    private TrabajoDeImpresion? _prueba;
+
+    private void ImprimirPrueba()
     {
         _avisos.Remove("prueba");
         Error("prueba", null);
-        try
+        var cola = ColaDeImpresion.De(Impresora);
+        if (cola.MuestraVistaPrevia)
         {
-            await Impresora.ImprimirAsync(Ejemplo(), abrirCajon: false);
-            _avisos["prueba"] = Impresora.MuestraVistaPrevia ? "Sin impresora de tickets: así sale, abajo." : "Salió el ticket de prueba.";
+            _avisos["prueba"] = "Sin impresora de tickets: así sale, abajo.";
+            return;
         }
-        catch (Exception ex)
-        {
-            // Como el corte: si la impresora falla, se dice por qué y la ventana sigue.
-            Error("prueba", $"No salió: {ex.Message}");
-        }
+        // Por la cola de la impresora, como todo lo que se imprime (entrega 5, parte 3): sale después de lo que ya esperaba.
+        _prueba = cola.Encolar("Ticket de prueba", DisenoTicket.Armar(Ejemplo()), abrirCajon: false);
     }
 
     private RenderFragment AsiSale =>
@@ -992,6 +1049,7 @@
         ("Ctrl+B", "Abono a la cuenta de un cliente"),
         ("Ctrl+Q", "Cotizar un PDF"),
         ("Ctrl+U", "Cambiar de usuario"),
+        ("Ctrl+I", "Imprimir el ticket que se ofrece al cobrar (Ticket › «Al cobrar»: «Ofrecerlo»)"),
         ($"Alt+1 a Alt+{Rapido.Maximo}", "Los rápidos; con un número antes, esa cantidad"),
         ("/", "Todo lo que puedes hacer"),
         ("Esc", "Cerrar lo que está abierto"),
@@ -1007,6 +1065,22 @@
                 }
             </tbody>
         </table>;
+
+    /// <summary>
+    /// Lo que tardan los escaneos, del Enter a la línea en pantalla, y la copia del catálogo contra la que se escanea
+    /// (entrega 5): para el dueño o quien instala la caja.
+    /// </summary>
+    private string TextoDelEscaneo
+    {
+        get
+        {
+            var medida = (Servicios.GetService<RendimientoCaja>()?.Escaneos ?? new MedidaEscaneos(0, 0, 0, 0)).Texto;
+            return Cliente.Foto is { } foto
+                ? $"{medida} Se escanea contra la copia del catálogo de esta caja: versión {foto.Version}, "
+                  + $"{foto.Productos.ToString("#,##0", Formato.Mexico)} productos."
+                : $"{medida} Esta caja todavía no tiene su copia del catálogo: el escaneo le pregunta a la caja principal.";
+        }
+    }
 
     /// <summary>«Papelería POS 1.0.0 · cambio abc1234», y la de la caja principal si es otra.</summary>
     private string Version

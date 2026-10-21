@@ -70,6 +70,22 @@ public static class ApiConfiguracion
             await db.SaveChangesAsync();
             return Dto(configuracion);
         });
+
+        // «Al cobrar»: imprimir el ticket, ofrecerlo o no imprimirlo, en todas las cajas de la sucursal. Llega a cada caja con
+        // su copia (sin conexión) y con el ticket de cada cobro (en línea).
+        api.MapPut("/ticket/al-cobrar", async (Guid cajaId, SolicitudAlCobrar s, PosDbContext db, IOptions<OpcionesTicket> opciones) =>
+        {
+            var (caja, control) = await ExigirTicketAsync(db, cajaId, s.UsuarioId);
+            var configuracion = await ParaCambiarAsync(db, caja.SucursalId, opciones.Value);
+            if (configuracion.AlCobrar != s.AlCobrar)
+            {
+                configuracion.CambiarAlCobrar(s.AlCobrar);
+                control.Registrar(caja.SucursalId, caja.Id, s.UsuarioId, AccionControlada.ConfigurarTicket,
+                    $"Cambió qué se hace con el ticket al cobrar: «{ConfiguracionTicket.Nombre(s.AlCobrar)}»");
+                await db.SaveChangesAsync();
+            }
+            return Dto(configuracion);
+        });
     }
 
     /// <summary>La de la sucursal o, si nunca se ha guardado, los textos de appsettings.</summary>
@@ -87,8 +103,8 @@ public static class ApiConfiguracion
 
     private static ConfiguracionTicketDto Dto(ConfiguracionTicket c) =>
         Logo(c) is { } logo
-            ? new ConfiguracionTicketDto(c.RenglonesEncabezado, c.RenglonesPie, logo, Convert.ToBase64String(LogoTicket.ComoPng(logo)))
-            : new ConfiguracionTicketDto(c.RenglonesEncabezado, c.RenglonesPie, null, null);
+            ? new ConfiguracionTicketDto(c.RenglonesEncabezado, c.RenglonesPie, logo, Convert.ToBase64String(LogoTicket.ComoPng(logo)), c.AlCobrar)
+            : new ConfiguracionTicketDto(c.RenglonesEncabezado, c.RenglonesPie, null, null, c.AlCobrar);
 
     /// <summary>Quien entró a la caja, con «Configurar el ticket» en «Puede»: si no, el error dice quién lo tiene.</summary>
     private static async Task<(Caja Caja, ServicioControl Control)> ExigirTicketAsync(PosDbContext db, Guid cajaId, Guid usuarioId)

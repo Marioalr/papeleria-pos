@@ -50,6 +50,16 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
     /// <summary>El archivo de la base (junto a él quedan sus marcas, como la de un apagón).</summary>
     public string Ruta => _ruta;
 
+    /// <summary>
+    /// Espera a que el catálogo en memoria del servicio tenga lo último que se guardó: se recarga en segundo plano y mientras
+    /// contesta con el vigente (entrega 5, parte 2). Para lo que se revisa justo después de cambiar el catálogo.
+    /// </summary>
+    public async Task CatalogoAlDiaAsync()
+    {
+        await using var db = Base();
+        await Fabrica.Services.GetRequiredService<PapeleriaPos.Servicio.CatalogoEnMemoria>().AlDiaAsync(db);
+    }
+
     public async Task InitializeAsync()
     {
         await using (var db = new PosDbContext(BaseDeDatos.Opciones($"Data Source={_ruta}")))
@@ -74,7 +84,8 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
     {
         await Fabrica.DisposeAsync();
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _ruta, _ruta + "-wal", _ruta + "-shm", _ruta + ".en-uso", _ruta + ".danada" })
+        // También la llave propia del servicio, que se hace junto a la base la primera vez que se usa.
+        foreach (var archivo in new[] { _ruta, _ruta + "-wal", _ruta + "-shm", _ruta + ".en-uso", _ruta + ".danada", Path.ChangeExtension(_ruta, ".llave") })
             await BorrarAsync(archivo);
     }
 

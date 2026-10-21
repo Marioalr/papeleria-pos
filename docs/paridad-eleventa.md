@@ -42,9 +42,9 @@
 | Promociones: hoy, F11 al costo en el regreso a clases | La usan, solo en esa temporada (dueño) | Escalas por cantidad; no hay promociones con fechas | Promociones con fechas, con los kits | Fase 3, antes del próximo regreso a clases | Mediano |
 | Ctrl+D, descuento; cambiar el precio en la venta | Por confirmar | Ctrl+D y Ctrl+E, con permiso y límite | — | — | — |
 | F12, cobrar en efectivo: pagó con y cambio | La usan | F12 al «Pagó con» con el exacto en gris; redondeo al peso | — | — | — |
-| Al cobrar: F2, sin imprimir el ticket; F4, notas en el ticket | Por confirmar | Siempre imprime (o lo muestra en pantalla si no hay impresora); sin notas | Cobrar sin imprimir, y reimprimir después sin pedir motivo, si la tienda lo usa | Sin plan | Chico |
+| Al cobrar: F2, sin imprimir el ticket; F4, notas en el ticket | Por confirmar | **Cobrar sin imprimir: hecho (2026-10-17).** Configuración › Ticket › «Al cobrar», para toda la tienda: «Imprimir el ticket» (lo de siempre; sin impresora, se ve en pantalla), «Ofrecerlo» (se cobra igual y el panel ofrece «Imprimir ticket», Ctrl+I, hasta el primer escaneo del siguiente cliente) o «No imprimirlo» (si lo piden, se reimprime desde «Ventas del día»; sin conexión no se puede, así que se ofrece). Nunca pregunta antes de cobrar; lo fiado sale siempre. Sin notas | Las notas (F4), si las usan; reimprimir sin pedir motivo el ticket que no salió al cobrar (hoy lo pide, como toda reimpresión) | Sin plan | Chico |
 | Otras formas de pago: tarjeta, transferencia, vales, cheque, dólares, crédito, mixto | No la usan: en su base todo va en efectivo | Tarjeta, transferencia por verificar, crédito y mixto; apagadas en el piloto | — | — | — |
-| Ventas del día y devoluciones: por folio, día, cajero o caja; imprimir copia; devolver y cancelar | La usan (devoluciones y cancelaciones vistas en vivo) | Las de hoy de esa caja (desde la lista «/»), con reimprimir. Devolver hasta 7 días y cancelar en el mismo turno, por el folio, también el de eleventa | Ver las de otro día, otro cajero u otra caja | Sin plan | Chico |
+| Ventas del día y devoluciones: por folio, día, cajero o caja; imprimir copia; devolver y cancelar | La usan (devoluciones y cancelaciones vistas en vivo) | **Hecho (2026-10-17).** «Ventas del día» (lista «/»): las de hoy de esa caja, para todos; otro día (← → o la fecha) u otra caja, con «Ver reportes de ventas»; por cajero y por folio en cualquier día (con su serie, de cualquier caja; solo el número, sin ese permiso, de esa caja). Cada una con la caja, cómo se pagó y si se canceló o se devolvió en parte; reimprimir y «Devolver o cancelar» (hasta 7 días; cancelar, en el mismo turno). Sin conexión, lo dice | — | — | — |
 | El ticket: logotipo, datos del negocio y notas al pie | La usan | Encabezado, pie y logotipo; sin QR por ahora, como el de eleventa (2026-10-16). En el piloto, con el folio de eleventa | — | — | — |
 | Granel; báscula | Granel sí; báscula no: la medida KG está desactivada en su eleventa | Fracciones por metro, kilo y litro, sin báscula | — | — | — |
 | Clientes en la venta y facturar | No la usan: sin el módulo de clientes y sin nada fiscal | Clientes registrados (fase 3); se guardan los datos para facturar después | — | — | — |
@@ -59,7 +59,7 @@
 | Límite de efectivo en caja | Por confirmar | Límite con aviso de retiro (apagado en el piloto) | — | — | — |
 | Corte del turno, con faltante o sobrante | La usan | Corte del turno a ciegas, solo con el total, impreso; la diferencia a nombre del cajero | En el piloto el corte se hace en eleventa y la caja nueva todavía no lo toma: hoy solo avisa | Piloto, diseño | Mediano |
 | Corte del día y de todas las cajas: ventas, ganancia, formas de pago, ventas y ganancia por departamento, entradas, salidas, devoluciones; se imprime y se ve el de otra fecha | Por confirmar | Corte del día de hoy, de todas las cajas, para quien tiene el permiso: lo vendido, el efectivo, las formas de pago, las salidas, las devoluciones, lo fiado y los abonos. Sin ganancia ni departamentos; no se imprime | Imprimirlo; la ganancia y los departamentos (para quien ve la utilidad); el de otra fecha; la hora para recordar el cierre | La hora, entrega 6 (lo que falta); lo demás, sin plan | Chico |
-| Historial de cortes: por fecha, cajero, turno y caja | Por confirmar | No hay: solo el corte de hoy | Consultar y reimprimir un corte anterior | Sin plan | Chico |
+| Historial de cortes: por fecha, cajero, turno y caja | Por confirmar | **Hecho (2026-10-17).** En el corte, «Historial» (también en «/»): los turnos de cualquier día, por caja y cajero, con lo esperado, lo contado, la diferencia, quién y cuándo, y reimprimir el corte Z. Para quien hace el corte de un turno o ve el del día; en el piloto, «Corte en eleventa» | — | — | — |
 | El corte por correo al cerrar cada turno | Por confirmar | No hay (el resumen del día iba por Telegram, en pausa) | Si lo usan, que el corte le llegue al dueño sin Telegram | Sin plan | Chico |
 
 ### Productos y precios
@@ -73,7 +73,8 @@
 | Eliminar productos | La usan | Dar de baja con su historia; juntar los duplicados | — | — | — |
 | Impuestos por producto | No la usan: no se desglosa el IVA | IVA 16 %, 0 % o exento | — | — | — |
 | Kits | No la usan: no hay kits en su base | El tipo existe, sin uso | Con las promociones (arriba) | — | — |
-| Importar y exportar productos en Excel; cambiar precios de varios a la vez | Por confirmar | Nada de eso: los precios se cambian en la ficha, uno por uno | Lo que la tienda use | Sin plan | Chico cada uno |
+| Cambiar precios de varios a la vez («Actualizar varios»): un porcentaje, una cantidad o un precio fijo, con un resumen antes de aplicar | Por confirmar | **Hecho (2026-10-17).** Productos › «Cambiar precios»: los de un departamento, una marca, lo que coincide con un texto o los marcados en la lista; subir o bajar un porcentaje o una cantidad, o un precio fijo, sobre el menudeo, con el mayoreo en la misma proporción y el redondeo a los 50 centavos o al peso. Primero se ve cómo quedan (el margen, para quien ve la utilidad) y se aplica todo junto, con la bitácora. En el piloto, lo de eleventa se cambia allá | — | — | — |
+| Importar y exportar productos en Excel | Por confirmar | Nada de eso | Lo que la tienda use | Sin plan | Chico |
 
 ### Inventario
 
@@ -81,9 +82,9 @@
 |---|---|---|---|---|---|
 | Existencia por producto, que baja con cada venta | La usan | Kardex; la existencia nunca detiene la venta. En el piloto la trae la lectura de eleventa cada 5 minutos | — | — | — |
 | F4: agregar inventario y ajustes | Por confirmar cómo los usan | Compras a ciegas con la factura XML o la nota PDF, ajustes, mermas y conteos | — | — | — |
-| Movimientos (por fecha, cajero, producto, departamento y tipo) y kardex | Por confirmar | El kardex de la ficha (sus últimos 200, sin costo ni filtro de fechas) y los últimos 8 en Productos | Los movimientos por fecha, si los usan | Sin plan | Chico |
-| Productos bajos en inventario: mínimo y máximo por producto | Por confirmar | El filtro «Poca existencia» (3 o menos) y el sugerido, con mínimo y máximo calculados | Un mínimo propio por producto, si lo usan | Sin plan | Chico |
-| Reporte de inventario: lo que vale a costo, por departamento | Por confirmar | Solo en el diagnóstico en Excel | Verlo en pantalla | Sin plan | Chico |
+| Movimientos (por fecha, cajero, producto, departamento y tipo) y kardex | Por confirmar | Hecho (2026-10-17): Inventario › Movimientos, de unos días (hoy, ayer, 7 o 30 días, el mes o de una fecha a otra), por tipo, producto (también escaneado), departamento y quién, de 50 en 50; cada uno con su folio o su motivo, lo que quedó y quién; el costo, con «Ver costos, utilidad y margen». También el kardex de la ficha y los últimos 8 en Productos | Exportarlos a Excel, como eleventa, si lo usan | Sin plan | Chico |
+| Productos bajos en inventario: mínimo y máximo por producto | Por confirmar | Hecho (2026-10-17): cada variante con su mínimo y su máximo en la ficha (F3), y en el piloto también; «Poca existencia» usa el propio (sin él, 3 o menos) e Inventario › Bajos en inventario lista lo que está en su mínimo o debajo, por departamento, con cuánto pedir (hasta el máximo; sin él, lo del sugerido, y al menos lo que falta para el mínimo) | A Excel, si lo usan; pasar los mínimos que ya tenga eleventa, si los usan (la importación no los lee) | Sin plan | Chico |
+| Reporte de inventario: lo que vale a costo, por departamento | Por confirmar | Hecho (2026-10-17): Inventario › Lo que vale el inventario, a costo promedio, en total y por departamento, con cuántos están en cero, en negativo o sin costo, y los productos de cada departamento; solo con «Ver costos, utilidad y margen». También en el diagnóstico en Excel | Exportarlo a Excel desde la caja, si lo usan | Sin plan | Chico |
 | Compras y proveedores: órdenes, compras sugeridas | No la usan: sus proveedores están vacíos | Compras, órdenes, proveedores y sugerido (fase 2) | — | — | — |
 
 ### Clientes y crédito
@@ -150,9 +151,10 @@ caja 2; los reportes y lo demás de la tabla detienen el último paso, apagar el
 | 11 | **Tomar el corte de eleventa:** al ver cerrado el turno adoptado, cerrar el de la caja nueva con lo contado allá. Puede entrar con el piloto andando: mientras, la caja avisa que el corte se hace en eleventa | Mediano |
 
 Del 2 al 5 es el [diseño por aprobar](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar):
-es puente y se quita al dejar eleventa. Si en la tienda se ve que casi no se imprime el ticket o que los cajeros usan
-Ins para la cantidad, esos dos cambios chicos conviene hacerlos antes del piloto. La entrega 5 no detiene el piloto:
-ahí la caja 2 tiene su propio servicio en la misma PC, y la red solo entra al mandar a eleventa, con su bandeja.
+es puente y se quita al dejar eleventa. Si en la tienda se ve que los cajeros usan Ins para la cantidad, ese cambio
+chico conviene hacerlo antes del piloto. Cobrar sin imprimir ya está (2026-10-17): si casi no se imprime el ticket, se
+elige en Configuración › Ticket › «Al cobrar». La entrega 5 no detiene el piloto: ahí la caja 2 tiene su propio servicio
+en la misma PC, y la red solo entra al mandar a eleventa, con su bandeja.
 
 **Avance (2026-10-17):** el 2, el 3, el 4, el 5 y el 11 ya están en código en la rama del puente (PR #109, #110 y #111,
 con los arreglos de su revisión): la caja nueva adopta el turno de eleventa y toma su corte, los folios repetidos, las
@@ -169,15 +171,15 @@ Primero el modo multicaja, al aprobar el piloto (decisión del dueño, 2026-10-1
 | 1 | **La entrega 5, lo que falta después del PR #100:** buscar contra la copia, bajar solo lo que cambió, plazos y estados de la red, imprimir aparte (con el reintento), pintar menos y la prueba de la ráfaga. La caja 2 pasa a trabajar contra el servicio de la principal | Grande |
 | 2 | **El modo multicaja con el puente:** un solo servicio en la caja principal y el puente escribiendo por las dos cajas. Antes, revisar los respaldos que hace eleventa al cerrarse y medir que la principal aguante eleventa, Firebird y el servicio juntos | Mediano |
 | 3 | **La red de la tienda** (el arreglo, por aprobar) y, en el POS, volver a buscar a la principal, «sin internet» o «sin red local» y la bitácora de red | Chico, más dos fines de semana |
-| 4 | **Las dos cajas reales en Windows y el día pico** con el simulador de cajas, que no existe | Mediano |
+| 4 | **Las dos cajas reales en Windows y el día pico** con el simulador de cajas (ya está desde el 2026-10-17; falta correrlo en la caja principal, [guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real)) | Mediano |
 | 5 | **La entrega 9, los reportes que el dueño usa en eleventa:** ventas por día, mes y año a la fecha contra el año anterior, con la ganancia para quien la ve; después por cajero, departamento y forma de pago, lo más vendido y Excel | Grande |
-| 6 | **El corte del día como el de eleventa:** impreso, de otra fecha y con la ganancia y los departamentos; y el historial de cortes, si la tienda los usa | Chico |
+| 6 | **El corte del día como el de eleventa:** impreso, de otra fecha y con la ganancia y los departamentos (el historial de cortes ya está, 2026-10-17) | Chico |
 | 7 | **Departamentos en el POS:** darlos de alta, cambiarles el nombre y desactivarlos | Chico |
 | 8 | **Respaldo fuera de la tienda** con una restauración de ensayo, y la vigilancia de la caja principal | Chico |
 | 9 | **Instalador de la tienda, actualizaciones y soporte a distancia** | Mediano |
 | 10 | **Depuración, conteo físico e importación final,** sin las ventas que ya mandó el puente | Grande: la depuración y el conteo son trabajo de la tienda; lo del puente, chico |
 | 11 | **Promociones con fechas y kits,** si se deja eleventa antes del próximo regreso a clases | Mediano |
-| 12 | **Lo «por confirmar» que sí usen:** ventas de otros días, cancelar una entrada o salida, mínimos por producto, lo que vale el inventario, los movimientos, Excel | Chico cada uno |
+| 12 | **Lo «por confirmar» que sí usen:** cancelar una entrada o salida, Excel (las ventas de otros días, los mínimos por producto, lo que vale el inventario y los movimientos ya están, 2026-10-17) | Chico cada uno |
 
 Al final: enseñar a todos, eleventa de consulta unas semanas y apagar el puente.
 
@@ -224,6 +226,8 @@ Solo para completar el cuadro:
 - **Transferencias por verificar.**
 - **El diagnóstico en Excel:** dinero parado, 80-20, margen por departamento, catálogo por revisar y temporada.
 - **Las impresiones por cobrar** del módulo de impresión, lo de Control Print.
+- **Al cambiar precios de varios:** el mayoreo en la misma proporción, el redondeo como pone sus precios la tienda y el
+  margen de cada uno antes de aplicar (2026-10-17).
 
 ## Qué mirar en la tienda
 
@@ -231,18 +235,20 @@ Un fin de semana, en las pantallas de eleventa y viendo trabajar a la caja, sin 
 cambia lo que falta ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-octubre)):
 
 - **La versión de eleventa** (Configuración ➜ Mantenimiento ➜ Licencia, ya en la guía).
-- **Al vender:** si los cajeros usan Ins para la cantidad; si al cobrar usan F2 (sin ticket) o el ticket sale siempre,
-  y si le ponen notas (F4); si dan descuentos o cambian precios, para dejarle los mismos permisos a quien atiende la
-  caja 2.
+- **Al vender:** si los cajeros usan Ins para la cantidad; si al cobrar usan F2 (sin ticket) o el ticket sale siempre
+  (para dejar igual «Al cobrar» en Configuración › Ticket, 2026-10-17), y si le ponen notas (F4); si dan descuentos o
+  cambian precios, para dejarle los mismos permisos a quien atiende la caja 2.
 - **El corte:** si además del corte de cada cajero se hace el del día o el de todas las cajas; si se imprime y se guarda
   con el efectivo; si se mira la ganancia o las ventas por departamento; si se manda por correo.
 - **Otros días:** si se abren ventas o cortes de otros días (Ventas del día y devoluciones, Historial de cortes), y
-  desde qué caja.
+  desde qué caja y quién. Ya están en el POS (2026-10-17): lo que se vea dice a quién darle «Ver reportes de ventas»
+  (otros días y otras cajas) y quién necesita el historial de cortes.
 - **El efectivo:** si está puesto el límite de efectivo en caja y si se cancelan entradas o salidas.
 - **Los reportes:** qué pantalla da hoy las ventas por día, mes y año (Reportes › Reporte de ventas, o F3 › Ventas por
   período), para que la entrega 9 empiece por esa.
 - **El inventario:** cómo se registra lo que llega (Agregar inventario) y si se usan los productos bajos en inventario
-  (con un mínimo por producto), el reporte de inventario o los movimientos.
+  (con un mínimo por producto), el reporte de inventario o los movimientos. El POS ya los tiene (2026-10-17): si en
+  eleventa hay mínimos puestos, anotar cuántos, para pasarlos en la importación final.
 - **Los productos:** si se importan o exportan en Excel y si se cambian precios de varios a la vez.
 
 ## Fuentes

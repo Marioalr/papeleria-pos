@@ -25,3 +25,22 @@ public class MovimientoInventario
     /// <summary>Obligatorio en ajustes y mermas.</summary>
     public string? Motivo { get; init; }
 }
+
+/// <summary>
+/// De dónde salen los movimientos que no tienen un documento del POS (los demás anotan el nombre de su clase: «Venta»,
+/// «Compra», «AjusteInventario»…).
+/// </summary>
+public static class OrigenDelMovimiento
+{
+    /// <summary>
+    /// La lectura de eleventa del piloto: deja la existencia en la de allá (como la diferencia de un conteo, o como
+    /// inventario inicial en un producto nuevo). Es lo que anota SincronizacionEleventa.Documento en el puente.
+    /// </summary>
+    public const string LecturaEleventa = "lectura-eleventa";
+
+    /// <summary>La importación de eleventa (ImportadorEleventa.Origen): lo que había al importar, como inventario inicial.</summary>
+    public const string ImportacionEleventa = "eleventa";
+
+    /// <summary>La papelería ficticia de las pruebas (GeneradorFicticios.Origen), como si se hubiera importado.</summary>
+    public const string Ficticios = "ficticios";
+}

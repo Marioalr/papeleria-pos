@@ -22,6 +22,15 @@ public static class RutasServicio
         return $"Data Source={Path.Combine(carpeta, "pos.db")}";
     }
 
+    /// <summary>
+    /// "registros", junto a la base (C:\ProgramData\PapeleriaPos\registros): ahí va la bitácora de red de la caja principal
+    /// (red-servicio-AAAA-MM-DD.log), que se abre con el Bloc de notas. Red:Carpeta la cambia.
+    /// </summary>
+    public static string CarpetaRegistros(IConfiguration configuracion, string cadenaConexion) =>
+        configuracion["Red:Carpeta"] is { Length: > 0 } carpeta
+            ? carpeta
+            : Path.Combine(Path.GetDirectoryName(Path.GetFullPath(new SqliteConnectionStringBuilder(cadenaConexion).DataSource)) ?? ".", "registros");
+
     /// <summary>"respaldos", junto a la base, salvo que se configure otra carpeta (una USB, por ejemplo).</summary>
     public static string CarpetaRespaldos(IConfiguration configuracion, string cadenaConexion) =>
         configuracion["Respaldos:Carpeta"] is { Length: > 0 } carpeta
@@ -87,6 +96,39 @@ public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int
     }
 }
 
+/// <summary>
+/// Cuántas preguntas por UDP contesta el servicio: a lo más <see cref="PorEquipo"/> por segundo a cada IP y
+/// <see cref="EnTotal"/> por segundo entre todas. Así quien pregunta sin parar (o con IP falsas) no deja sin respuesta a las cajas
+/// de verdad, que preguntan una vez cada tanto. Lo usa un solo hilo (el que recibe).
+/// </summary>
+public sealed class LimiteDeRespuestas(int porEquipo = LimiteDeRespuestas.PorEquipo, int enTotal = LimiteDeRespuestas.EnTotal)
+{
+    public const int PorEquipo = 5;
+    public const int EnTotal = 200;
+
+    private readonly Dictionary<IPAddress, int> _deCadaUno = [];
+    private long _segundo = long.MinValue;
+    private int _total;
+
+    /// <summary>Si se le contesta a <paramref name="quien"/> en este segundo (de un reloj que solo avanza).</summary>
+    public bool Contestar(IPAddress quien, long segundo)
+    {
+        if (segundo != _segundo)
+        {
+            (_segundo, _total) = (segundo, 0);
+            _deCadaUno.Clear();
+        }
+        if (_total >= enTotal)
+            return false;
+        var suyas = _deCadaUno.GetValueOrDefault(quien);
+        if (suyas >= porEquipo)
+            return false;
+        _deCadaUno[quien] = suyas + 1;
+        _total++;
+        return true;
+    }
+}
+
 /// <summary>Revisa cada hora si ya está la copia del día; así sale aunque la PC se prenda tarde.</summary>
 public sealed class RespaldoDiario(ServicioRespaldos respaldos) : BackgroundService
 {
@@ -101,15 +143,23 @@ public sealed class RespaldoDiario(ServicioRespaldos respaldos) : BackgroundServ
     }
 }
 
-/// <summary>Contesta a las cajas que buscan al servicio en la red (<see cref="Descubrimiento"/>).</summary>
-public sealed class DescubrimientoEnRed(IServer servidor, ILogger<DescubrimientoEnRed> log) : BackgroundService
+/// <summary>
+/// Contesta a las cajas que buscan al servicio en la red (<see cref="Descubrimiento"/>): solo a las de la red de la tienda (la
+/// misma red que alguna tarjeta de cable o Wi-Fi de esta PC; el firewall, además, solo abre el puerto para la red local), y solo
+/// con su puerto. Contestar no prueba nada: la caja le pide después al servicio que pruebe quién es, con la huella de su llave.
+/// Prendido solo en el servicio de la caja principal (Descubrimiento:Activo; apagado en el de la prueba y en desarrollo).
+/// </summary>
+public sealed class DescubrimientoEnRed(IServer servidor, RedLocalDelServicio redLocal, ILogger<DescubrimientoEnRed> log) : BackgroundService
 {
+
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
         UdpClient udp;
         try
         {
             udp = new UdpClient(new IPEndPoint(IPAddress.Any, Descubrimiento.Puerto));
+            // En Windows, un «puerto inalcanzable» (ICMP) de una caja que ya cerró su búsqueda no corta la recepción.
+            Descubrimiento.SinCortesPorIcmp(udp.Client);
         }
         catch (SocketException ex)
         {
@@ -119,12 +169,15 @@ public sealed class DescubrimientoEnRed(IServer servidor, ILogger<Descubrimiento
 
         using (udp)
         {
+            var limite = new LimiteDeRespuestas();
             while (!ct.IsCancellationRequested)
             {
                 try
                 {
                     var recibido = await udp.ReceiveAsync(ct);
-                    if (Descubrimiento.EsPregunta(recibido.Buffer) && PuertoHttp() is { } puerto)
+                    if (!Descubrimiento.EsPregunta(recibido.Buffer) || PuertoHttp() is not { } puerto || !redLocal.EsDeLaRedLocal(recibido.RemoteEndPoint.Address))
+                        continue;
+                    if (limite.Contestar(recibido.RemoteEndPoint.Address, Environment.TickCount64 / 1000))
                         await udp.SendAsync(Descubrimiento.ArmarRespuesta(puerto), recibido.RemoteEndPoint, ct);
                 }
                 catch (SocketException ex)
