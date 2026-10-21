@@ -627,6 +627,35 @@ servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-ca
 - **Lo nuevo del servicio, solo para leer:** `GET api/cajas/{caja}/ventas` (un día, la caja, el cajero o un folio) y
   `GET api/cajas/{caja}/cortes` (un día, la caja y el cajero), con el usuario de la sesión. Sin cambios en la base.
 
+**Avance (2026-10-17): los reportes del inventario, como en eleventa.** Lo que eleventa tiene en F4 y el POS solo tenía
+en el diagnóstico en Excel o en la ficha del producto ([paridad](paridad-eleventa.md#inventario)): tres tarjetas nuevas
+en Inventario (F4). Solo leen, así que también van en el piloto con eleventa, y salen con su permiso en «Puede»
+(consultar no se autoriza).
+- **Lo que vale el inventario** (su «Reporte de inventario»): la existencia a costo promedio, el que usa el POS, en
+  total y por departamento, con cuántos productos tienen existencia y cuántos están en cero, en negativo o sin costo (lo
+  negativo no resta y lo que no tiene costo no suma). A un lado, los productos del departamento que se elige, de lo que
+  más vale a lo que menos, o los que están en cero, en negativo o sin costo, de 50 en 50. Solo con «Ver costos, utilidad
+  y margen»: los demás no ven la tarjeta, y el servicio lo revisa.
+- **Movimientos:** el kardex de toda la tienda en unos días (hoy, ayer, 7 o 30 días, el mes o de una fecha a otra), por
+  tipo (ventas, devoluciones, compras, ajustes, mermas, conteos, paquetes, inventario inicial y la lectura de eleventa),
+  producto (nombre o código, también escaneado), departamento y quién lo hizo, de 50 en 50 (Re Pág y Av Pág). Cada uno
+  con su folio o su motivo, lo que entró o salió, lo que quedó y quién; el costo, solo con «Ver costos, utilidad y
+  margen». La ve quien lleva el inventario (el catálogo, los ajustes, las compras, las órdenes, el conteo completo o los
+  costos): hoy el dueño y el encargado. Con un año de la papelería ficticia, cada página sale en menos de una décima de
+  segundo, también con cinco veces más movimientos.
+- **Bajos en inventario:** cada variante puede llevar su mínimo y su máximo en la ficha (F3), como en eleventa, y «Poca
+  existencia» usa el suyo (sin él, 3 o menos, como antes). La tarjeta dice cuántos están en su mínimo o debajo; la lista
+  va por departamento, de 100 en 100, con cuánto pedir: lo que falta para su máximo, contando lo que ya viene en órdenes
+  abiertas, o, sin máximo, lo que pide el sugerido de compra, pero al menos lo que falta para llegar a su mínimo (el
+  sugerido no lo conoce). Es un número en la pantalla: los pedidos siguen en las órdenes y el sugerido. La ve quien pide
+  la mercancía o pone los mínimos.
+- **El mínimo y el máximo** se guardan en la variante, con su migración, y suben la versión del catálogo como cualquier
+  cambio de la ficha. Son del POS: la lectura de eleventa no lee los suyos, así que en el piloto también se ponen aquí.
+  Cada cambio queda en la bitácora, y una caja de antes que guarda la ficha no los borra. La venta sigue diciendo
+  «Quedan 2» con 3 o menos: la copia de las cajas no lleva el mínimo.
+- **Falta:** exportarlos a Excel, como eleventa (la caja todavía no guarda archivos), y, si la tienda usa los mínimos de
+  eleventa, pasarlos en la importación final (la importación no los lee).
+
 #### Después: el piloto en la caja 2
 
 Mientras se arma el puente con eleventa, la versión unicaja sigue creciendo con la venta completa (entrega 3) y la base

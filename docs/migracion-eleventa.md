@@ -149,6 +149,8 @@ la caja principal por la red, como lo abre una caja de eleventa, y se pone al d�
   - la existencia, con un ajuste en el kardex al costo promedio y a nombre de `lectura-eleventa`.
 - **Qué no toca:**
   - lo dado de alta aquí;
+  - el mínimo y el máximo de inventario de cada producto (2026-10-17): son del POS, y los de eleventa no se leen (ni
+    se importan). En el piloto también se ponen aquí;
   - las escalas de mayoreo deducidas del F11 o capturadas en F3;
   - la unidad (si cambia allá, da un aviso);
   - el nombre de un producto que la depuración ya agrupó;

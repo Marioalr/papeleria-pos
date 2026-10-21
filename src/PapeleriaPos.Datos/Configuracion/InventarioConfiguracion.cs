@@ -19,6 +19,8 @@ internal sealed class MovimientoInventarioConfiguracion : IEntityTypeConfigurati
         b.HasOne<Variante>().WithMany().HasForeignKey(m => m.VarianteId);
         b.HasIndex(m => new { m.SucursalId, m.VarianteId, m.FechaUtc });
         b.HasIndex(m => new { m.DocumentoTipo, m.DocumentoId });
+        // Los movimientos de unos días de toda la sucursal (Inventario › Movimientos), del más reciente al más viejo.
+        b.HasIndex(m => new { m.SucursalId, m.FechaUtc });
     }
 }
 

@@ -1247,3 +1247,51 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
     .vn-tarea { padding: 11px 13px; }
     .vn-col-detalle { gap: 12px; padding: 14px 20px; }
 }
+
+/* ── Inventario › los reportes como en eleventa (2026-10-17): bajos en inventario, movimientos y lo que vale ──
+   Van en la tarea abierta con el acomodo de las páginas: arriba los filtros (los chips, la búsqueda y las listas), abajo la
+   lista, que se recorre sola bajo sus títulos para caber en 1366×697. */
+.vn-tarea-cuerpo.vn-reporte { display: flex; flex-direction: column; gap: 10px; overflow: hidden; padding-bottom: 12px; }
+.vn-reporte > .nota { flex: none; margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--vn-suave); }
+.vn-reporte > .error { flex: none; margin: 0; color: var(--vn-error); font-weight: 600; font-size: 13.5px; }
+.vn-reporte-filtros { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.vn-reporte-filtros select, .vn-reporte-campo input { font: 500 13px var(--vn-f-texto); padding: 5px 8px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); color: var(--vn-texto); }
+.vn-reporte-filtros select { max-width: 240px; }
+.vn-reporte-campo { flex-direction: row; align-items: center; gap: 6px; font-size: 13px; color: var(--vn-suave); }
+.vn-reporte-busca { flex: 1 1 260px; min-width: 200px; font: 500 15px var(--vn-f-texto); padding: 7px 11px; border: 1px solid var(--vn-borde); border-radius: 8px; background: var(--vn-hoja); color: var(--vn-texto); }
+.vn-reporte-busca::placeholder { color: var(--vn-tenue); }
+.vn-reporte-busca:focus, .vn-reporte-filtros select:focus, .vn-reporte-campo input:focus { outline: 2px solid var(--vn-tinta); outline-offset: -1px; border-color: var(--vn-tinta); }
+.vn-reporte-pie { flex: none; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--vn-suave); }
+.vn-reporte-pie > span { margin-right: auto; }
+.vn-reporte-desliza { flex: 1; min-height: 0; overflow-y: auto; }
+.vn-reporte-desliza > .nota { margin: 6px 0 0; font-size: 12.5px; color: var(--vn-suave); }
+.vn-reporte-desliza > .nota .vn-enlace { margin-left: 4px; font-size: 12.5px; }
+.vn-reporte-desliza .vn-tabla { overflow: visible; }
+.vn-reporte-desliza .vn-tabla th { position: sticky; top: 0; z-index: 1; }
+.vn-reporte-desliza .vn-tabla th:first-child { border-top-left-radius: 10px; }
+.vn-reporte-desliza .vn-tabla th:last-child { border-top-right-radius: 10px; }
+.vn-reporte .vn-tabla td { vertical-align: top; }
+.vn-reporte .vn-tabla td.num.rojo { color: var(--vn-error); font-weight: 600; }
+.vn-reporte .vn-tabla td.num.entra { color: var(--vn-cobro); }
+.vn-reporte .vn-tabla .tenue { color: var(--vn-tenue); }
+.vn-reporte .vn-tabla td.cuando { white-space: nowrap; color: var(--vn-suave); font-variant-numeric: tabular-nums; }
+.vn-reporte .vn-tabla td.pedir strong { font: 700 15px var(--vn-f-cifras); font-variant-numeric: tabular-nums; }
+.vn-reporte .vn-tabla td .vn-enlace { font-size: 14px; text-align: left; }
+.vn-reporte .vn-tabla tr.grupo > td { background: var(--vn-renglon); font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--vn-suave); font-weight: 700; padding: 5px 12px; }
+.vn-reporte .vn-tabla tr.on > td { background: var(--vn-tinta-claro); }
+.vn-reporte .vn-tabla tr.suma > td { font-weight: 700; }
+.vn-reporte .vn-tabla tr.apagado > td:first-child { color: var(--vn-tenue); }
+.vn-renglon-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; margin-top: 2px; font-size: 12px; color: var(--vn-suave); }
+.vn-renglon-sub code { font: 12px var(--vn-f-codigo); color: var(--vn-suave); }
+.vn-rejilla.cuatro { flex: none; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* Lo que vale: los departamentos a la izquierda y los productos del elegido a la derecha, cada uno con su barra (el
+   renglón de la rejilla mide lo que queda, así cada lado se recorre solo). */
+.vn-reporte-dos { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 14px; }
+.vn-reporte-columna { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.vn-reporte-columna .vn-sub-titulo { margin: 0; }
+/* Más angosto, uno debajo del otro, y se recorren juntos. */
+@media (max-width: 1200px) {
+    .vn-rejilla.cuatro { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .vn-reporte-dos { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; overflow-y: auto; }
+    .vn-reporte-dos .vn-reporte-desliza { overflow: visible; }
+}

@@ -124,6 +124,7 @@ app.MapearApiClientes();
 app.MapearApiCredito();
 app.MapearApiCatalogo();
 app.MapearApiCompras();
+app.MapearApiReportesInventario();
 app.MapearApiConteos();
 app.MapearApiEtiquetas();
 app.MapearApiPrueba();

@@ -664,6 +664,37 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<MargenesDto> GuardarMargenesAsync(Guid sucursalId, SolicitudMargenes solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<MargenesDto>($"api/sucursales/{sucursalId}/margenes", solicitud));
 
+    // ── Los reportes del inventario (F4, como en eleventa; solo con la caja principal) ──
+
+    /// <summary>Lo que vale el inventario a costo, por departamento, y una página de los productos del elegido (con «Ver costos…»).</summary>
+    public Task<ValorInventarioDto> ValorInventarioAsync(Guid sucursalId, Guid usuarioId, Guid? departamentoId, FiltroValor filtro, int pagina) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<ValorInventarioDto>(
+            $"api/sucursales/{sucursalId}/inventario/valor?usuarioId={usuarioId}&filtro={filtro}&pagina={pagina}"
+            + (departamentoId is { } d ? $"&departamentoId={d}" : "")))!);
+
+    /// <summary>Una página de los movimientos del kardex con esos filtros, del más reciente al más viejo.</summary>
+    public Task<MovimientosInventarioDto> MovimientosInventarioAsync(Guid sucursalId, Guid usuarioId, FiltroMovimientosDto filtro, int pagina) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<MovimientosInventarioDto>(
+            $"api/sucursales/{sucursalId}/inventario/movimientos?usuarioId={usuarioId}"
+            + $"&desde={filtro.Desde.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}&hasta={filtro.Hasta.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}"
+            + (filtro.Clase is { } clase ? $"&clase={clase}" : "")
+            + (string.IsNullOrWhiteSpace(filtro.Texto) ? "" : $"&q={Uri.EscapeDataString(filtro.Texto.Trim())}")
+            + (filtro.DepartamentoId is { } d ? $"&departamentoId={d}" : "")
+            + (filtro.QuienId is { } q ? $"&quienId={q}" : "")
+            + $"&pagina={pagina}"))!);
+
+    /// <summary>Para el filtro «Quién» de los movimientos: los usuarios de la sucursal, también los dados de baja.</summary>
+    public Task<List<OpcionCatalogoDto>> QuienesMovimientosAsync(Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<OpcionCatalogoDto>>(
+            $"api/sucursales/{sucursalId}/inventario/movimientos/quienes?usuarioId={usuarioId}") ?? []);
+
+    /// <summary>Lo que está en su mínimo o debajo, por departamento, con cuánto pedir: una página.</summary>
+    public Task<BajosInventarioDto> BajosInventarioAsync(Guid sucursalId, Guid usuarioId, Guid? departamentoId, string? texto, bool soloConMinimo, int pagina) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<BajosInventarioDto>(
+            $"api/sucursales/{sucursalId}/inventario/bajos?usuarioId={usuarioId}&conMinimo={soloConMinimo}&pagina={pagina}"
+            + (departamentoId is { } d ? $"&departamentoId={d}" : "")
+            + (string.IsNullOrWhiteSpace(texto) ? "" : $"&q={Uri.EscapeDataString(texto.Trim())}")))!);
+
     // ── Clientes registrados (fase 3, entrega 2) ──
 
     /// <summary>Los activos, para elegir uno en la venta. Sin conexión, los de la copia local.</summary>
