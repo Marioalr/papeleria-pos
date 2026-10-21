@@ -17,4 +17,11 @@ public class PrecioHistorial
     public long? PrecioNuevoCentavos { get; set; }
 
     public DateTime FechaUtc { get; set; }
+
+    /// <summary>
+    /// La versión del catálogo con que quedó el cambio (entrega 5): el cobro de una caja la compara con la de su copia, para
+    /// no cobrar precios que el cajero no vio. Una escala de mayoreo que se quitó solo deja rastro aquí. Vacía en los cambios
+    /// de antes.
+    /// </summary>
+    public long? VersionCatalogo { get; set; }
 }

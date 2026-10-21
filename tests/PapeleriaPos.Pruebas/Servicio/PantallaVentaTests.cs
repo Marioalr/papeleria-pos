@@ -3,7 +3,6 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.RenderTree;
 using Microsoft.AspNetCore.Components.Web;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.JSInterop;
@@ -330,9 +329,7 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            foreach (var archivo in new[] { ruta, ruta + "-wal", ruta + "-shm" })
-                File.Delete(archivo);
+            ArchivosDePrueba.BorrarBase(ruta);
         }
     }
 

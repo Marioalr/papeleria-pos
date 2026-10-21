@@ -300,7 +300,7 @@
                     @for (var k = 0; k < Math.Min(_fichasEnEspera, esperan.Count); k++)
                     {
                         var enEspera = esperan[k];
-                        <button class="vn-ficha" title="@TituloEspera(enEspera, k == 0)" @onclick="() => Retomar(enEspera)"><Ico Nombre="pausa" />@Desde(enEspera) · @Formato.Dinero(enEspera.Venta.TotalCentavos)</button>
+                        <button class="vn-ficha" title="@TituloEspera(enEspera, k == 0)" @onclick="() => RetomarAsync(enEspera)"><Ico Nombre="pausa" />@Desde(enEspera) · @Formato.Dinero(enEspera.Venta.TotalCentavos)</button>
                     }
                     @if (esperan.Count > _fichasEnEspera)
                     {
@@ -320,7 +320,7 @@
                                     <div class="vn-menu-lista" id="lista-espera">
                                         @foreach (var enEspera in resto)
                                         {
-                                            <button class="vn-fila-espera" role="menuitem" title="@TituloEspera(enEspera, false)" @onclick="() => Retomar(enEspera)">
+                                            <button class="vn-fila-espera" role="menuitem" title="@TituloEspera(enEspera, false)" @onclick="() => RetomarAsync(enEspera)">
                                                 <Ico Nombre="pausa" />
                                                 <span><strong>@Desde(enEspera)</strong><small>@ArticulosTexto(enEspera.Venta)</small></span>
                                                 <em>@Formato.Dinero(enEspera.Venta.TotalCentavos)</em>
@@ -335,11 +335,11 @@
                             }
                         </span>
                     }
-                    <button class="vn-boton chico" disabled="@(Actual.Venta.Lineas.Count == 0)" title="Guarda este ticket y empieza otro" @onclick="PonerEnEspera"><Ico Nombre="pausa" />Poner en espera <kbd>F6</kbd></button>
+                    <button class="vn-boton chico" disabled="@(Actual.Venta.Lineas.Count == 0)" title="Guarda este ticket y empieza otro" @onclick="PonerEnEsperaAsync"><Ico Nombre="pausa" />Poner en espera <kbd>F6</kbd></button>
                 </span>
             </div>
             <div class="vn-ticket">
-                @if (Actual.Venta.Lineas.Count == 0)
+                @if (Actual.Venta.Lineas.Count == 0 && Actual.Buscando.Count == 0)
                 {
                     <div class="vn-vacio">
                         <h3>Escanea el primer producto</h3>
@@ -361,19 +361,26 @@
                             <tr><th class="vn-col-cant">Cantidad</th><th>Descripción</th><th class="num vn-col-precio">Precio</th><th class="num vn-col-importe">Importe</th></tr>
                         </thead>
                         <tbody>
+                            @* Lo que no está en la copia de esta caja entra en su lugar como «buscando…» mientras se pregunta a la
+                               caja principal (entrega 5): los escaneos que siguen no lo esperan. *@
+                            @foreach (var buscando in BuscandoDespuesDe(null))
+                            {
+                                @RenglonBuscando(buscando)
+                            }
                             @for (var i = 0; i < Actual.Venta.Lineas.Count; i++)
                             {
-                                var indice = i;
+                                @* Cada acción de la fila lleva su renglón, no su número: el número cambia si llega un «buscando…» antes que
+                                   él, y un clic puede salir antes de que la página tome el dibujo nuevo. *@
                                 var linea = Actual.Venta.Lineas[i];
                                 var producto = linea.VarianteId is { } v ? Actual.Productos.GetValueOrDefault(v) : null;
-                                <tr id="linea-@i" class="@(i == _seleccion ? "seleccionada" : "")" @onclick="() => Seleccionar(indice)">
+                                <tr id="linea-@i" class="@(i == _seleccion ? "seleccionada" : "")" @onclick="() => SeleccionarAsync(linea)">
                                     <td class="vn-col-cant">
                                         @if (producto is not null && !linea.EsImpresiones)
                                         {
                                             <span class="vn-paso">
-                                                <button tabindex="-1" title="Uno menos" @onclick="() => PasoCantidadAsync(indice, -1)" @onclick:stopPropagation="true">−</button>
+                                                <button tabindex="-1" title="Uno menos" @onclick="() => PasoCantidadAsync(linea, -1)" @onclick:stopPropagation="true">−</button>
                                                 <span>@Formato.Numero(linea.Cantidad.EnUnidades)</span>
-                                                <button tabindex="-1" title="Uno más" @onclick="() => PasoCantidadAsync(indice, 1)" @onclick:stopPropagation="true">+</button>
+                                                <button tabindex="-1" title="Uno más" @onclick="() => PasoCantidadAsync(linea, 1)" @onclick:stopPropagation="true">+</button>
                                             </span>
                                         }
                                         else
@@ -424,25 +431,25 @@
                                             <div class="vn-tira">
                                                 @if (producto is not null && !linea.EsImpresiones && Ve(AccionControlada.CambiarPrecio))
                                                 {
-                                                    <button class="vn-accion" @onclick="() => EnLaFilaAsync(AbrirCambioPrecio)" @onclick:stopPropagation="true">
+                                                    <button class="vn-accion" @onclick="() => EnLaFilaAsync(linea, AbrirCambioPrecio)" @onclick:stopPropagation="true">
                                                         <Ico Nombre="etiqueta" />Precio @Marca(AccionControlada.CambiarPrecio, "Ctrl+E")
                                                     </button>
                                                 }
                                                 @if (Ve(AccionControlada.Descuento))
                                                 {
-                                                    <button class="vn-accion" @onclick="() => EnLaFilaAsync(() => Abrir(Ventanas.Descuento))" @onclick:stopPropagation="true">
+                                                    <button class="vn-accion" @onclick="() => EnLaFilaAsync(linea, AbrirDescuento)" @onclick:stopPropagation="true">
                                                         <Ico Nombre="porcentaje" />Descuento @Limite(AccionControlada.Descuento) @Marca(AccionControlada.Descuento, "Ctrl+D")
                                                     </button>
                                                 }
                                                 @if (producto is not null && !linea.EsImpresiones && TieneEscalas(producto))
                                                 {
-                                                    <button class="vn-accion" @onclick="() => EnLaFilaAsync(MayoreoAsync)" @onclick:stopPropagation="true">
+                                                    <button class="vn-accion" @onclick="() => EnLaFilaAsync(linea, MayoreoAsync)" @onclick:stopPropagation="true">
                                                         <Ico Nombre="capas" />Mayoreo <kbd>F11</kbd>
                                                     </button>
                                                 }
                                                 @if (Ve(AccionControlada.QuitarProducto))
                                                 {
-                                                    <button class="vn-accion peligro" @onclick="() => EnLaFilaAsync(BorrarSeleccion)" @onclick:stopPropagation="true">
+                                                    <button class="vn-accion peligro" @onclick="() => EnLaFilaAsync(linea, BorrarSeleccion)" @onclick:stopPropagation="true">
                                                         <Ico Nombre="basura" />Quitar <kbd>Supr</kbd>
                                                     </button>
                                                 }
@@ -450,6 +457,14 @@
                                         </td>
                                     </tr>
                                 }
+                                @foreach (var buscando in BuscandoDespuesDe(linea))
+                                {
+                                    @RenglonBuscando(buscando)
+                                }
+                            }
+                            @foreach (var buscando in BuscandoSinLugar())
+                            {
+                                @RenglonBuscando(buscando)
                             }
                         </tbody>
                     </table>
@@ -787,10 +802,10 @@
     /// El corte cerró el turno: lo que quedó sin cobrar (también el ticket que se atendía, como estaba) se guarda en espera
     /// para el siguiente turno, como dijo el corte.
     /// </summary>
-    private void TurnoCerrado()
+    private async Task TurnoCerrado()
     {
         _turnoCerrado = true;
-        GuardarEspera();
+        await GuardarEsperaYEsperarAsync();
     }
 
     /// <summary>
@@ -801,7 +816,8 @@
     private async Task SalirAsync()
     {
         await _captura.EsperarAsync();
-        GuardarEspera();
+        // Ya guardados cuando entre el siguiente: los lee al abrir su venta.
+        await GuardarEsperaYEsperarAsync();
         await AlSalir.InvokeAsync();
     }
 
@@ -1088,10 +1104,20 @@
     /// <summary>Con mayoreo (un precio por pieza desde más de una), la fila ofrece F11.</summary>
     private static bool TieneEscalas(ProductoVentaDto producto) => producto.Precios.Any(p => p.PresentacionId is null && p.CantidadMinimaMilesimas > 1000);
 
-    /// <summary>Un botón de la fila hace lo mismo que su tecla; el cursor vuelve al cuadro si no se abrió una ventana.</summary>
-    private async Task EnLaFilaAsync(Func<Task> hacer)
+    /// <summary>
+    /// Un botón de la fila hace lo mismo que su tecla, sobre su renglón: el que se tocó, aunque mientras tanto haya llegado
+    /// un «buscando…» (que mueve la selección) o el clic haya salido antes de que la página tomara el dibujo nuevo. Como las
+    /// teclas, espera los escaneos que faltan; si su renglón ya no está en el ticket, no hace nada. El cursor vuelve al
+    /// cuadro si no se abrió una ventana.
+    /// </summary>
+    private async Task EnLaFilaAsync(VentaLinea linea, Func<Task> hacer)
     {
-        await hacer();
+        await _captura.EsperarAsync();
+        if (Actual.Venta.Lineas.IndexOf(linea) is var indice and >= 0)
+        {
+            _seleccion = indice;
+            await hacer();
+        }
         if (_ventana == Ventanas.Ninguna)
             _enfocar = "#codigo";
     }
@@ -1250,18 +1276,14 @@
         if (!_pilotoEleventa)
             yield return new("Abono a la cuenta de un cliente", "efectivo", "Ctrl+B", null, () => Abrir(Ventanas.Abono));
         yield return new("Cambiar precio del artículo", "etiqueta", "Ctrl+E", AccionControlada.CambiarPrecio, AbrirCambioPrecio);
-        yield return new("Descuento", "porcentaje", "Ctrl+D", AccionControlada.Descuento, () => Abrir(Ventanas.Descuento));
+        yield return new("Descuento", "porcentaje", "Ctrl+D", AccionControlada.Descuento, AbrirDescuento);
         yield return new("Ver el mayoreo del artículo", "capas", "F11", null, MayoreoAsync);
         yield return new("Quitar el artículo", "basura", "Supr", AccionControlada.QuitarProducto, BorrarSeleccion);
-        yield return new("Poner el ticket en espera", "pausa", "F6", null, () =>
+        yield return new("Poner el ticket en espera", "pausa", "F6", null, PonerEnEsperaAsync);
+        yield return new("Retomar un ticket en espera", "ticket", "F5", null, async () =>
         {
-            PonerEnEspera();
-            return Task.CompletedTask;
-        });
-        yield return new("Retomar un ticket en espera", "ticket", "F5", null, () =>
-        {
+            await _captura.EsperarAsync();
             RetomarPrimero();
-            return Task.CompletedTask;
         });
         yield return new("Entrada de efectivo", "entrada", "F7", AccionControlada.EntradaEfectivo, () => Abrir(Ventanas.Entrada));
         yield return new("Salida de efectivo", "salida", "F8", AccionControlada.SalidaEfectivo, () => Abrir(Ventanas.Salida));
@@ -1366,7 +1388,8 @@
             var listos = new List<RapidoListo>();
             foreach (var rapido in (await Cliente.RapidosAsync(Caja.SucursalId)).Take(Rapido.Maximo))
             {
-                var producto = await Cliente.PorVarianteAsync(rapido.VarianteId, Caja.SucursalId);
+                // De la copia de la caja, si ya la tiene: sin una consulta por cada rápido.
+                var producto = Cliente.Foto?.PorVariante(rapido.VarianteId) ?? await Cliente.PorVarianteAsync(rapido.VarianteId, Caja.SucursalId);
                 listos.Add(new RapidoListo(rapido, producto, producto is null ? null : PrecioDelRapido(rapido, producto, Caja.SucursalId)));
             }
             _rapidos = listos;
@@ -1395,7 +1418,7 @@
     {
         if (indice < 0 || indice >= _rapidos.Count)
             return;
-        var (rapido, producto, _) = _rapidos[indice];
+        var (rapido, cargado, _) = _rapidos[indice];
         var texto = _captura.Texto.Trim();
         var veces = 1m;
         if (texto.Length > 0 && (!decimal.TryParse(texto, NumberStyles.Number, CultureInfo.InvariantCulture, out veces) || veces <= 0))
@@ -1408,6 +1431,8 @@
         // En la cola, como un escaneo: en orden con ellos, y no cae en un ticket que se está cobrando.
         await _captura.EnTurnoAsync(async () =>
         {
+            // Como un escaneo: de la copia de la caja, con los precios de ahora; si no está, el que se cargó al entrar, o se pide.
+            var producto = Cliente.Foto?.PorVariante(rapido.VarianteId) ?? cargado;
             try
             {
                 producto ??= await Cliente.PorVarianteAsync(rapido.VarianteId, Caja.SucursalId);
@@ -1483,13 +1508,35 @@
         Avisar("Ticket en espera. Atiende al siguiente; lo retomas arriba o con F5.", error: false);
     }
 
-    /// <summary>Retomar un ticket en espera: el que se atendía pasa a la espera (si estaba vacío, se descarta).</summary>
+    /// <summary>
+    /// El botón «Poner en espera» (y la acción): como F6, primero espera lo que se escaneó y lo que se le pregunta a la caja
+    /// principal, para que todo quede en el ticket que se aparta.
+    /// </summary>
+    private async Task PonerEnEsperaAsync()
+    {
+        await _captura.EsperarAsync();
+        PonerEnEspera();
+    }
+
+    /// <summary>Una ficha de la espera, con el mouse: como F5, primero espera lo que se escaneó en el ticket que se atiende.</summary>
+    private async Task RetomarAsync(TicketAbierto ticket)
+    {
+        _menuEspera = false;
+        await _captura.EsperarAsync();
+        if (_tickets.Contains(ticket))
+            Retomar(ticket);
+    }
+
+    /// <summary>
+    /// Retomar un ticket en espera: el que se atendía pasa a la espera (si estaba vacío, se descarta; no si se le pregunta
+    /// algo a la caja principal: su línea llega ahí).
+    /// </summary>
     private void Retomar(TicketAbierto ticket)
     {
         // Ya empezó el siguiente cliente: el cambio del anterior deja el panel.
         _cobrado = null;
         _menuEspera = false;
-        if (Actual.Venta.Lineas.Count == 0 && Actual != ticket)
+        if (Actual.Venta.Lineas.Count == 0 && Actual.Buscando.Count == 0 && Actual != ticket)
             _tickets.Remove(Actual);
         Cambiar(ticket);
         _enfocar = "#codigo";
@@ -1505,13 +1552,8 @@
             Avisar("No hay tickets en espera.", error: false);
     }
 
-    /// <summary>Los botones − y + de la fila: cambian la cantidad de ese renglón.</summary>
-    private async Task PasoCantidadAsync(int indice, int paso)
-    {
-        _seleccion = indice;
-        await CambiarCantidadSeleccion(paso);
-        _enfocar = "#codigo";
-    }
+    /// <summary>Los botones − y + de la fila: cambian la cantidad de ese renglón (<see cref="EnLaFilaAsync"/>).</summary>
+    private Task PasoCantidadAsync(VentaLinea linea, int paso) => EnLaFilaAsync(linea, () => CambiarCantidadSeleccion(paso));
 
     // ── El cobro en el panel: «Pagó con» siempre a la vista ─────────────────
 
@@ -1824,9 +1866,13 @@
                     : new CobroSolicitado(otra.Forma, monto, otra.Referencia.Trim().Length == 0 ? null : otra.Referencia.Trim()));
         if (EnEfectivo.ACobrarCentavos > 0)
             cobros.Add(new CobroSolicitado(FormaPago.Efectivo, Recibido));
-        // Si se cobró, el ticket nuevo ya dejó el cobro en blanco.
+        // Si se cobró, el ticket nuevo ya dejó el cobro en blanco. Lo que ya dice el panel del cobro (los precios que
+        // cambiaron) no se repite abajo.
         if (await CobrarAsync(cobros, autorizacionCredito, apartado) is { } error)
-            Avisar(error);
+        {
+            if (!ReferenceEquals(error, _avisoDelCobro))
+                Avisar(error);
+        }
         else
             _enfocar = "#codigo";
     }
@@ -1844,9 +1890,14 @@
         _cobrando = true;
         try
         {
+            var (ticket, total, _, lineas, _) = FotoDelTicket();
             using var apartado = await _captura.ApartarAsync(FotoDelTicket);
             if (apartado.LlegoAlgo)
-                return $"Llegó lo último que escaneaste: el total ahora es {Formato.Dinero(Actual.Venta.TotalCentavos)}. Revisa lo que te dio y vuelve a cobrar.";
+                // Un «buscando…» que no llegó (no existe, o la caja principal no contestó) no cambia el total: lo que pasó lo
+                // dice el aviso de la izquierda.
+                return ticket == Actual && total == Actual.Venta.TotalCentavos && lineas == Actual.Venta.Lineas.Count
+                    ? "Lo último que escaneaste no entró al ticket (el aviso de la izquierda dice por qué): cobra cuando esté completo."
+                    : $"Llegó lo último que escaneaste: el total ahora es {Formato.Dinero(Actual.Venta.TotalCentavos)}. Revisa lo que te dio y vuelve a cobrar.";
             await cobrar(apartado);
             return null;
         }
@@ -1856,9 +1907,12 @@
         }
     }
 
-    /// <summary>Lo que cambia si llega una línea mientras se espera para cobrar: el ticket, su total y lo que lleva.</summary>
-    private (TicketAbierto Ticket, long Total, decimal Articulos, int Lineas) FotoDelTicket() =>
-        (Actual, Actual.Venta.TotalCentavos, Actual.Venta.NumeroDeArticulos, Actual.Venta.Lineas.Count);
+    /// <summary>
+    /// Lo que cambia si llega una línea mientras se espera para cobrar: el ticket, su total, lo que lleva y lo que se le
+    /// pregunta a la caja principal.
+    /// </summary>
+    private (TicketAbierto Ticket, long Total, decimal Articulos, int Lineas, int Buscando) FotoDelTicket() =>
+        (Actual, Actual.Venta.TotalCentavos, Actual.Venta.NumeroDeArticulos, Actual.Venta.Lineas.Count, Actual.Buscando.Count);
 
     private async Task RevisarConteoAsync()
     {
@@ -1878,6 +1932,32 @@
         public required int Numero { get; init; }
         public Dictionary<Guid, ProductoVentaDto> Productos { get; } = [];
 
+        /// <summary>
+        /// La versión del catálogo de la que salió el precio que se ve en cada línea (entrega 5): la del producto con que se
+        /// agregó o se volvió a calcular. Al cobrar va con cada línea: dos presentaciones del mismo producto pueden venir de
+        /// copias distintas (la pieza de antes de que cambiara su precio, el paquete de después). Una línea que no está aquí
+        /// tomó sus precios del producto que guarda el ticket (<see cref="VersionDe"/>).
+        /// </summary>
+        public Dictionary<VentaLinea, long?> Versiones { get; } = [];
+
+        /// <summary>La versión del catálogo del precio que se ve en esa línea.</summary>
+        public long? VersionDe(VentaLinea linea) =>
+            Versiones.TryGetValue(linea, out var version) ? version
+            : linea.VarianteId is { } varianteId ? Productos.GetValueOrDefault(varianteId)?.Version : null;
+
+        /// <summary>
+        /// El precio de <paramref name="linea"/> se acaba de calcular con <paramref name="producto"/>: queda en el ticket (lo
+        /// siguiente de ese producto ya sale de él) y la línea con su versión. Las otras líneas del mismo producto (otra
+        /// presentación) se quedan con la versión de sus precios.
+        /// </summary>
+        public void Calculada(VentaLinea linea, ProductoVentaDto producto)
+        {
+            foreach (var otra in Venta.Lineas.Where(l => l != linea && l.VarianteId == producto.VarianteId))
+                Versiones.TryAdd(otra, VersionDe(otra));
+            Productos[producto.VarianteId] = producto;
+            Versiones[linea] = producto.Version;
+        }
+
         /// <summary>Los trabajos de impresión que van en la línea "Impresiones" de este ticket.</summary>
         public List<ImpresionPorCobrarDto> Impresiones { get; } = [];
 
@@ -1889,7 +1969,48 @@
 
         /// <summary>Se mandó a fiar y se perdió la respuesta: puede que ya esté guardado. Solo se cobra en línea, con el mismo Id.</summary>
         public bool FiadoSinConfirmar { get; set; }
+
+        /// <summary>
+        /// Los códigos que no están en la copia y se le preguntan a la caja principal (entrega 5): cada uno se ve en su
+        /// lugar como «buscando…». No son líneas de la venta: no cuentan en el total ni se cobran, ni se guardan en espera.
+        /// </summary>
+        public List<LineaBuscando> Buscando { get; } = [];
     }
+
+    /// <summary>
+    /// Un código que no está en la copia de esta caja, mientras se le pregunta a la caja principal: va después de
+    /// <see cref="Despues"/> (arriba de todo si no hay), y los que se escanean después van debajo de él.
+    /// </summary>
+    private sealed class LineaBuscando(string codigo, Cantidad cantidad, VentaLinea? despues, long numero)
+    {
+        public string Codigo { get; } = codigo;
+        public Cantidad Cantidad { get; } = cantidad;
+
+        /// <summary>La línea que estaba antes al escanearlo; vacío: arriba de todo.</summary>
+        public VentaLinea? Despues { get; set; } = despues;
+
+        /// <summary>En qué orden se escaneó: entre dos con la misma línea antes, el de antes va arriba.</summary>
+        public long Numero { get; } = numero;
+    }
+
+    private long _escaneosBuscados;
+
+    private IEnumerable<LineaBuscando> BuscandoDespuesDe(VentaLinea? linea) => Actual.Buscando.Where(b => b.Despues == linea);
+
+    /// <summary>Los que se quedaron sin la línea de antes (se quitó mientras se preguntaba): al final.</summary>
+    private IEnumerable<LineaBuscando> BuscandoSinLugar() =>
+        Actual.Buscando.Where(b => b.Despues is { } antes && !Actual.Venta.Lineas.Contains(antes));
+
+    private static RenderFragment RenglonBuscando(LineaBuscando buscando) =>
+        @<tr class="vn-buscando" aria-busy="true">
+            <td class="vn-col-cant"><span class="vn-paso-fijo">@Formato.Numero(buscando.Cantidad.EnUnidades)</span></td>
+            <td>
+                <div class="vn-nombre">Buscando…</div>
+                <div class="vn-sub"><code>@buscando.Codigo</code><span>no está en la copia de esta caja: se pregunta a la caja principal</span></div>
+            </td>
+            <td class="num vn-precio">—</td>
+            <td class="num vn-importe">—</td>
+        </tr>;
 
     private readonly List<TicketAbierto> _tickets = [];
     private TicketAbierto Actual => _tickets[_actual];
@@ -1902,6 +2023,13 @@
     private TicketDto? _ultimo;
     private (string Titulo, string Texto)? _vistaPrevia;
     private Ventanas _ventana;
+
+    /// <summary>
+    /// El renglón de la ventana del precio, del descuento o del mayoreo, desde que se abre hasta que se cierra: lo que se
+    /// escribe en ella va a ese renglón aunque mientras tanto llegue un «buscando…» o se toque otra fila.
+    /// </summary>
+    private VentaLinea? _lineaDeLaVentana;
+
     private DotNetObjectReference<PantallaVenta>? _referencia;
 
     protected override void OnInitialized()
@@ -1915,6 +2043,13 @@
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
+        // Ya se dibujó lo de estos escaneos: caja.js mide cuánto tardaron en verse (entrega 5).
+        if (_porPintar.Count > 0)
+        {
+            var horas = _porPintar.ToArray();
+            _porPintar.Clear();
+            _ = Js.PintadoAsync(horas);
+        }
         if (_enfocar is { } selector)
         {
             _enfocar = null;
@@ -1923,6 +2058,8 @@
         if (!primera)
             return;
         _referencia = DotNetObjectReference.Create(this);
+        // El vigía del hilo de la pantalla (entrega 5): en una ráfaga de escaneos, anota en el registro si se traba.
+        _vigia = new VigiaDeLaPantalla(InvokeAsync, Rendimiento, Servicios.GetService<RegistroDiario>());
         await Js.RegistrarTeclasAsync(_referencia);
         await Js.EnfocarAsync("#codigo");
         // Junto con lo demás de la página, antes de esperar al servicio: después, la página ya pudo volver a cargarse (y
@@ -1939,9 +2076,47 @@
         StateHasChanged();
     }
 
-    /// <summary>El Enter del cuadro de captura: caja.js ya tomó el texto y vació el cuadro.</summary>
+    // ── Lo que se mide (entrega 5, docs/propuesta-interfaz.md, «Cómo se mide») ──
+
+    /// <summary>Lo que mide la caja; sin la de la caja (una prueba), una propia.</summary>
+    private RendimientoCaja Rendimiento => _rendimiento ??= Servicios.GetService<RendimientoCaja>() ?? new RendimientoCaja();
+
+    private RendimientoCaja? _rendimiento;
+    private VigiaDeLaPantalla? _vigia;
+
+    /// <summary>La hora del Enter (reloj de la página) de los escaneos que ya agregaron lo suyo y todavía no se dibuja.</summary>
+    private readonly List<double> _porPintar = [];
+
+    /// <summary>
+    /// Lo de un Enter que agrega al ticket: cuando termina (ya está su línea, su «buscando…» o el aviso de por qué no), la
+    /// hora del Enter espera al siguiente dibujo para medirse. Un escaneo que esperó en la cola detrás de algo con red (un
+    /// nombre, un folio) se mide con todo lo que esperó.
+    /// </summary>
+    private async Task MedidoAsync(Func<Task> agregar, double? hora)
+    {
+        try
+        {
+            await agregar();
+        }
+        finally
+        {
+            if (hora is { } h)
+                _porPintar.Add(h);
+        }
+    }
+
+    /// <summary>Lo que tardaron en verse las líneas de los últimos escaneos, medido por caja.js con el reloj de la página.</summary>
     [JSInvokable]
-    public async Task Escaneado(string texto)
+    public void Pintados(double[] milisegundos)
+    {
+        foreach (var ms in milisegundos)
+            Rendimiento.AnotarEscaneo(TimeSpan.FromMilliseconds(ms));
+    }
+
+    /// <summary>El Enter del cuadro de captura: caja.js ya tomó el texto y vació el cuadro.</summary>
+    /// <param name="hora">La del Enter, con el reloj de la página: de ahí se mide hasta que se ve la línea.</param>
+    [JSInvokable]
+    public async Task Escaneado(string texto, double? hora = null)
     {
         if (_ventana != Ventanas.Ninguna || _pagina != Pagina.Venta)
             return;
@@ -1953,6 +2128,8 @@
             StateHasChanged();
             return;
         }
+        // Entra a la venta: el vigía sabe que hay ráfaga. Lo que tarda en verse se mide cuando ya agregó lo suyo.
+        _vigia?.Escaneo();
         // Con ↑ ↓ (o → y Tab) se eligió de la lista de resultados: Enter agrega ese; en una familia, su más vendido.
         if (_resultados is { Count: > 0 } resultados && _navegado && SepararCantidad(texto).Texto == _textoBuscado && Seleccionado() is { } elegido)
         {
@@ -1960,13 +2137,13 @@
             CerrarResultados();
             // caja.js ya vació el cuadro: el nombre buscado no se queda como la cantidad de lo que sigue (F11, un rápido).
             _captura.Texto = "";
-            await _captura.EnTurnoAsync(() => AgregarResultadoAsync(elegido, cantidad, buscado, resultados.Count));
+            await _captura.EnTurnoAsync(() => MedidoAsync(() => AgregarResultadoAsync(elegido, cantidad, buscado, resultados.Count), hora));
             StateHasChanged();
             return;
         }
         CerrarResultados();
         _captura.Texto = texto;
-        var escaneo = AgregarCodigoAsync();
+        var escaneo = AgregarCodigoAsync(hora);
         StateHasChanged();
         await escaneo;
         StateHasChanged();
@@ -1980,8 +2157,9 @@
     /// el ticket. Si se está cobrando, espera al cobro y cae en el ticket del siguiente cliente.
     /// </summary>
     [JSInvokable]
-    public async Task EscaneoEnPago(string codigo)
+    public async Task EscaneoEnPago(string codigo, double? hora = null)
     {
+        _vigia?.Escaneo();
         var cobrando = _cobrando;
         var enAbono = _ventana is Ventanas.Abono || _pagina == Pagina.Clientes;
         if (!cobrando)
@@ -1994,7 +2172,7 @@
         }
         var antes = FotoDelTicket();
         _captura.Texto = codigo;
-        var escaneo = AgregarCodigoAsync();
+        var escaneo = AgregarCodigoAsync(hora);
         StateHasChanged();
         await escaneo;
         if (!cobrando && !antes.Equals(FotoDelTicket()))
@@ -2480,9 +2658,10 @@
         _menuEspera = false;
 
         // Las teclas que actúan sobre el ticket esperan a que termine el último escaneo (y el cobro en curso): F6 no manda
-        // un escaneo al ticket nuevo, ni + cambia el que se está cobrando. F12 espera en IrAlCobroAsync: dentro del cobro,
-        // que además dice si llegó algo mientras, o antes de pasar el cursor al cobro.
-        if (tecla is "F6" or "F5" or "+" or "-" or "Delete" or "F11" || tecla.StartsWith("Alt+", StringComparison.Ordinal))
+        // un escaneo al ticket nuevo, ni + cambia el que se está cobrando, ni Ctrl+E abre el precio de un renglón mientras
+        // llega el «buscando…» de lo último que se escaneó (que se lleva la selección). F12 espera en IrAlCobroAsync:
+        // dentro del cobro, que además dice si llegó algo mientras, o antes de pasar el cursor al cobro.
+        if (tecla is "F6" or "F5" or "+" or "-" or "Delete" or "F11" or "Ctrl+E" or "Ctrl+D" || tecla.StartsWith("Alt+", StringComparison.Ordinal))
             await _captura.EsperarAsync();
 
         switch (tecla)
@@ -2506,7 +2685,7 @@
             case "F2": await Abrir(Ventanas.Impresiones); break;
             case "Insert" or "Ctrl+P": await Abrir(Ventanas.Comun); break;
             case "Ctrl+E": await AbrirCambioPrecio(); break;
-            case "Ctrl+D": await Abrir(Ventanas.Descuento); break;
+            case "Ctrl+D": await AbrirDescuento(); break;
             case "Ctrl+L": await Abrir(Ventanas.ElegirCliente); break;
             case "Ctrl+B": await Abrir(Ventanas.Abono); break;
             case "Delete": await BorrarSeleccion(); break;
@@ -2668,11 +2847,14 @@
     // ── Captura ─────────────────────────────────────────────────────────────
 
     /// <summary>El cuadro se vacía al momento y el escaneo espera su turno: el lector no espera a la red.</summary>
-    private Task AgregarCodigoAsync() => _captura.EnterAsync(ProcesarCodigoAsync);
+    /// <param name="hora">La del Enter, con el reloj de la página: se mide hasta que se ve lo que agregó.</param>
+    private Task AgregarCodigoAsync(double? hora = null) => _captura.EnterAsync(texto => MedidoAsync(() => ProcesarCodigoAsync(texto), hora));
 
     /// <summary>
     /// "7501…" agrega una pieza; "3*7501…" agrega tres; "5*" cambia la cantidad del renglón seleccionado. El QR de un
-    /// ticket ("A-000123") abre la devolución.
+    /// ticket ("A-000123") abre la devolución. El código se busca en la copia de esta caja, también en línea (entrega 5): la
+    /// red no entra en el escaneo. Lo que no está en la copia entra como «buscando…» y se le pregunta a la caja principal en
+    /// segundo plano. Sin copia (el navegador sin base local), se pregunta como antes.
     /// </summary>
     private async Task ProcesarCodigoAsync(string texto)
     {
@@ -2695,9 +2877,24 @@
             texto = texto[(asterisco + 1)..].Trim();
             if (texto.Length == 0)
             {
+                // Es para lo último que se escaneó, aunque siga «buscando…»: primero llega (o sale) su línea.
+                await _captura.EsperarEnVueloAsync();
                 await FijarCantidadSeleccion(cantidad);
                 return;
             }
+        }
+
+        if (Cliente.Foto is { } foto)
+        {
+            if (foto.PorCodigo(texto) is { } enLaCopia)
+                Agregar(enLaCopia, null, cantidad);
+            else if (!PareceNombre(texto))
+                BuscarEnLaPrincipal(texto, cantidad);
+            else if (!texto.Contains(' ') && await CodigoSinNumerosAsync(texto) is { } nuevo)
+                Agregar(nuevo, null, cantidad);
+            else
+                await AgregarNombreAsync(texto, cantidad);
+            return;
         }
 
         try
@@ -2711,10 +2908,7 @@
             }
             if (producto is null)
             {
-                // Como el prototipo: bajo el aviso, darlo de alta o venderlo como artículo común, si sus permisos lo dejan.
-                var elige = Ve(AccionControlada.AltaRapida) || Ve(AccionControlada.ArticuloComun);
-                Avisar($"No existe «{texto}». Revisa el código{(elige ? " o elige:" : ".")}");
-                _codigoNuevo = texto;
+                NoExiste(texto);
                 return;
             }
             Agregar(producto, null, cantidad);
@@ -2725,6 +2919,152 @@
         }
     }
 
+    /// <summary>
+    /// Una palabra sin números que no está en la copia: puede ser un código nuevo («SOBRE-A», dado de alta en otra caja) o un
+    /// nombre. Como antes de la copia, primero se pregunta el código a la caja principal (con su plazo, en la cola: el nombre
+    /// también la espera); si no lo tiene o no contesta, se busca como nombre.
+    /// </summary>
+    private async Task<ProductoVentaDto?> CodigoSinNumerosAsync(string texto)
+    {
+        try
+        {
+            return (await Cliente.BuscarEnLaPrincipalAsync(texto, Caja.SucursalId)).Producto;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Un nombre y Enter: se busca (todavía en el servicio, con la copia si no contesta) y se agrega el primero.</summary>
+    private async Task AgregarNombreAsync(string texto, Cantidad cantidad)
+    {
+        try
+        {
+            await AgregarPrimeroAsync(texto, cantidad);
+        }
+        catch (ErrorCaja ex)
+        {
+            Avisar(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Un código que no está en la copia de esta caja (un producto recién dado de alta en otra caja): entra en su lugar como
+    /// «buscando…» y se le pregunta a la caja principal en segundo plano, con medio segundo de plazo. La cola de escaneos no
+    /// lo espera; el cobro y las teclas del ticket, sí (<see cref="CapturaCodigo.EnVuelo"/>).
+    /// </summary>
+    private void BuscarEnLaPrincipal(string codigo, Cantidad cantidad)
+    {
+        var ticket = Actual;
+        var buscando = new LineaBuscando(codigo, cantidad, ticket.Venta.Lineas.LastOrDefault(), ++_escaneosBuscados);
+        ticket.Buscando.Add(buscando);
+        // Como al agregar: ya empezó el siguiente cliente, y el aviso de antes ya pasó.
+        (_cobrado, _avisoDelCobro, _mensaje) = (null, null, null);
+        _captura.EnVuelo(ResolverAsync(ticket, buscando));
+    }
+
+    /// <summary>
+    /// Lo que contestó la caja principal: el producto toma el lugar del «buscando…» (y queda en la foto de la copia); si no
+    /// existe, lo de siempre (darlo de alta o venderlo como artículo común, según los permisos); si no contestó a tiempo, el
+    /// renglón sale y se le dice al cajero que lo escanee otra vez.
+    /// </summary>
+    private async Task ResolverAsync(TicketAbierto ticket, LineaBuscando buscando)
+    {
+        var respuesta = CodigoDeLaPrincipal.NoContesto;
+        try
+        {
+            respuesta = await Cliente.BuscarEnLaPrincipalAsync(buscando.Codigo, Caja.SucursalId);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Lo que sea (una respuesta que no se entiende): como si no hubiera contestado. El renglón no se queda buscando.
+        }
+        finally
+        {
+            ticket.Buscando.Remove(buscando);
+        }
+        // La pantalla ya se fue (se volvió a cargar): sus tickets ya no son los de la caja; no se tocan ni se guardan.
+        if (_seFue)
+            return;
+        if (respuesta.Producto is { } producto)
+            AgregarEnSuLugar(ticket, buscando, producto);
+        else if (respuesta.Contesto)
+            NoExiste(buscando.Codigo);
+        else if (respuesta.Pregunto)
+            Avisar($"«{buscando.Codigo}» no está en la copia de esta caja y la caja principal no contestó: escanéalo otra vez en un momento.");
+        else
+        {
+            // Sin conexión (o mientras sube lo que hizo sin ella, que también se vende con la copia): como antes, lo que sus
+            // permisos le dejan (el artículo común se vende sin conexión).
+            var elige = Ve(AccionControlada.AltaRapida) || Ve(AccionControlada.ArticuloComun);
+            Avisar($"«{buscando.Codigo}» no está en la copia de esta caja y ahora se vende sin la caja principal. Revisa el código{(elige ? " o elige:" : ".")}");
+            _codigoNuevo = buscando.Codigo;
+        }
+        if (ticket != Actual && _tickets.Contains(ticket))
+        {
+            // Un ticket que ya no se atiende: si solo esperaba este código y se quedó vacío, se descarta, como al retomar otro;
+            // si no, se guarda en espera con su línea nueva.
+            if (ticket.Venta.Lineas.Count == 0 && ticket.Buscando.Count == 0)
+            {
+                var actual = Actual;
+                _tickets.Remove(ticket);
+                _actual = _tickets.IndexOf(actual);
+            }
+            else if (respuesta.Producto is not null)
+                GuardarEspera();
+        }
+        StateHasChanged();
+    }
+
+    /// <summary>Como el prototipo: bajo el aviso, darlo de alta o venderlo como artículo común, si sus permisos lo dejan.</summary>
+    private void NoExiste(string codigo)
+    {
+        var elige = Ve(AccionControlada.AltaRapida) || Ve(AccionControlada.ArticuloComun);
+        Avisar($"No existe «{codigo}». Revisa el código{(elige ? " o elige:" : ".")}");
+        _codigoNuevo = codigo;
+    }
+
+    /// <summary>
+    /// El producto que llegó de la caja principal, donde estaba su «buscando…»: debajo de lo que se escaneó antes y arriba de
+    /// lo que se escaneó después. Si ya estaba en el ticket, suma a su línea, como cualquier escaneo. Lo seleccionado se
+    /// queda, salvo que la línea nueva quede al final (lo último que se escaneó) y no haya una ventana abierta: el precio,
+    /// el descuento o el mayoreo que se abrió para un renglón no se pasa al que llegó.
+    /// </summary>
+    private void AgregarEnSuLugar(TicketAbierto ticket, LineaBuscando buscando, ProductoVentaDto producto)
+    {
+        var lineas = ticket.Venta.Lineas;
+        var seleccionada = ticket == Actual ? LineaSeleccionada : null;
+        var antes = lineas.Count;
+        VentaLinea linea;
+        try
+        {
+            linea = ticket.Venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(), buscando.Cantidad, producto.PreciosModelo());
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            Avisar(ex.Message);
+            return;
+        }
+        DescuentoDelCliente(ticket, linea);
+        ticket.Calculada(linea, producto);
+        if (lineas.Count > antes)
+        {
+            lineas.Remove(linea);
+            var anterior = buscando.Despues is { } despues ? lineas.IndexOf(despues) : -1;
+            lineas.Insert(buscando.Despues is null ? 0 : anterior < 0 ? lineas.Count : anterior + 1, linea);
+            // Los que se escanearon después y esperaban detrás de la misma línea, ahora van detrás de esta.
+            foreach (var otro in ticket.Buscando.Where(b => b.Despues == buscando.Despues && b.Numero > buscando.Numero))
+                otro.Despues = linea;
+        }
+        if (ticket != Actual)
+            return;
+        (_cobrado, _avisoDelCobro) = (null, null);
+        var seQueda = seleccionada is not null && (_ventana != Ventanas.Ninguna || lineas[^1] != linea);
+        _seleccion = seQueda ? lineas.IndexOf(seleccionada!) : lineas.IndexOf(linea);
+        _ = Js.MostrarAsync($"#linea-{_seleccion}");
+    }
+
     private void Agregar(ProductoVentaDto producto, Guid? presentacionId, Cantidad cantidad)
     {
         // Ya empezó el siguiente cliente: el cambio del anterior deja el panel.
@@ -2733,7 +3073,7 @@
         {
             var linea = Actual.Venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(presentacionId), cantidad, producto.PreciosModelo());
             DescuentoDelCliente(linea);
-            Actual.Productos[producto.VarianteId] = producto;
+            Actual.Calculada(linea, producto);
             _seleccion = Actual.Venta.Lineas.IndexOf(linea);
             _mensaje = null;
             _ = Js.MostrarAsync($"#linea-{_seleccion}");
@@ -2765,7 +3105,13 @@
 
     // ── Renglones ───────────────────────────────────────────────────────────
 
-    private void Seleccionar(int indice) => _seleccion = indice;
+    /// <summary>Un clic en la fila la selecciona: la suya, después de los escaneos que faltan (<see cref="EnLaFilaAsync"/>).</summary>
+    private async Task SeleccionarAsync(VentaLinea linea)
+    {
+        await _captura.EsperarAsync();
+        if (Actual.Venta.Lineas.IndexOf(linea) is var indice and >= 0)
+            _seleccion = indice;
+    }
 
     private async Task MoverSeleccion(int paso)
     {
@@ -2849,7 +3195,7 @@
                 Avisar("A esa cantidad no hay mayoreo: F11 sin escribir nada muestra desde cuánto.", error: false);
             return;
         }
-        await Abrir(Ventanas.Mayoreo);
+        await Abrir(Ventanas.Mayoreo, linea);
     }
 
     /// <summary>"Mayoreo desde 12", o "desde 24 pzas" en un renglón de paquetes, o "desde 10 m" a granel.</summary>
@@ -2880,6 +3226,7 @@
         try
         {
             Actual.Venta.CambiarCantidad(linea, cantidad, producto.PresentacionModelo(linea.PresentacionId), producto.PreciosModelo());
+            Actual.Versiones[linea] = producto.Version;
             _mensaje = null;
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
@@ -2932,15 +3279,34 @@
         // Sin tickets con algo, ni antes ni ahora (lo de casi siempre al cobrar): no hay nada que escribir.
         if (conAlgo.Count == 0 && !_hayEsperaGuardada)
             return;
+        // Como están ahora: se escriben en el hilo del escritor de la base local (entrega 5), y la pantalla sigue mientras.
+        var guardados = conAlgo.Select(t => TicketsEnEspera.Guardar(t.Venta, t.Productos, t.Impresiones, t.Cliente, t.Cuenta, t.FiadoSinConfirmar)).ToList();
+        _hayEsperaGuardada = conAlgo.Count > 0;
+        _esperaGuardandose = GuardarEsperaAsync(guardados);
+    }
+
+    /// <summary>Lo último que se mandó guardar de la espera: al salir, al cerrar el turno o antes de instalar, se espera.</summary>
+    private Task _esperaGuardandose = Task.CompletedTask;
+
+    private async Task GuardarEsperaAsync(List<TicketGuardado> guardados)
+    {
         try
         {
-            Cliente.GuardarEnEspera(conAlgo.Select(t => TicketsEnEspera.Guardar(t.Venta, t.Productos, t.Impresiones, t.Cliente, t.Cuenta, t.FiadoSinConfirmar)).ToList());
-            _hayEsperaGuardada = conAlgo.Count > 0;
+            await Cliente.GuardarEnEsperaAsync(guardados);
         }
         catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException or IOException)
         {
+            _hayEsperaGuardada = true;
             Avisar($"No se pudieron guardar los tickets en espera en esta caja: {ex.Message}");
+            StateHasChanged();
         }
+    }
+
+    /// <summary>Guarda la espera y termina cuando ya quedó (al salir de la venta, al cerrar el turno, antes de instalar).</summary>
+    private async Task GuardarEsperaYEsperarAsync()
+    {
+        GuardarEspera();
+        await _esperaGuardandose;
     }
 
     /// <summary>Al entrar a la venta, los que quedaron guardados (de antes de un reinicio o un apagón) vuelven a esperar.</summary>
@@ -2993,12 +3359,20 @@
         TicketDto ticket;
         try
         {
+            // Con la versión de la que salieron los precios que vio el cajero (entrega 5): si alguno cambió después, el servicio
+            // no cobra y contesta con los de ahora.
+            var (lineas, version) = ArmadoSolicitud.ParaCobrar(venta, abierto.VersionDe, Cliente.Foto?.Version);
             // Con el Id del ticket: si la respuesta se pierde, el siguiente intento (en línea o sin conexión) es la misma venta.
-            ticket = await Cliente.CobrarAsync(new SolicitudCobro(Caja.Id, Turno.Id, Sesion.UsuarioId, ArmadoSolicitud.Lineas(venta), cobros,
+            ticket = await Cliente.CobrarAsync(new SolicitudCobro(Caja.Id, Turno.Id, Sesion.UsuarioId, lineas, cobros,
                 VentaId: venta.Id, Impresiones: abierto.Impresiones.Count > 0 ? abierto.Impresiones.Select(i => i.Id).ToList() : null,
                 ClienteId: venta.ClienteId, AutorizacionDescuentoId: venta.AutorizacionDescuentoId,
                 AutorizacionBajoCostoId: venta.AutorizacionBajoCostoId, MayoreoDeCliente: venta.MayoreoDeCliente,
-                AutorizacionCreditoId: autorizacionCredito), soloEnLinea: abierto.FiadoSinConfirmar);
+                AutorizacionCreditoId: autorizacionCredito, VersionCatalogo: version), soloEnLinea: abierto.FiadoSinConfirmar);
+        }
+        catch (ErrorCaja ex) when (ex.PreciosCambiados is { } preciosCambiados)
+        {
+            // No se cobró: el ticket se pone al día y el cajero lo revisa; el cobro no se repite solo.
+            return PonerPreciosAlDia(abierto, preciosCambiados);
         }
         catch (ErrorCaja ex)
         {
@@ -3025,6 +3399,63 @@
         if (abierto.Impresiones.Count > 0 && _estado is not null)
             await _estado.ActualizarAsync();
         return null;
+    }
+
+    /// <summary>
+    /// El servicio no cobró (entrega 5): el precio o el mayoreo de algo del ticket cambió después de la copia con que se
+    /// pusieron sus precios. Las líneas de esos productos se vuelven a calcular con los precios de ahora (un precio cambiado a
+    /// mano se queda); lo demás del ticket ya lo revisó el servicio hasta su versión, y la foto de la caja se queda con lo de
+    /// ahora para el siguiente escaneo. El panel del cobro dice qué cambió; el cobro no se repite solo. Lo que el cliente dio
+    /// se queda escrito: el cambio se vuelve a calcular con el total nuevo.
+    /// </summary>
+    private string PonerPreciosAlDia(TicketAbierto ticket, PreciosCambiadosDto precios)
+    {
+        var venta = ticket.Venta;
+        var antes = venta.Lineas.ToDictionary(l => l, l => (l.PrecioCentavos, l.ImporteCentavos, l.AhorroMayoreoCentavos));
+        var cambiados = precios.Productos.Select(p => p.VarianteId).ToHashSet();
+        // Lo que no cambió ya lo revisó el servicio hasta su versión: sus líneas tienen los precios de ahora.
+        foreach (var linea in venta.Lineas.Where(l => l.VarianteId is { } v && !l.EsImpresiones && !cambiados.Contains(v)))
+        {
+            if (ticket.VersionDe(linea) is not { } version || version < precios.VersionCatalogo)
+                ticket.Versiones[linea] = precios.VersionCatalogo;
+        }
+        foreach (var (varianteId, producto) in ticket.Productos.ToList())
+        {
+            if (!cambiados.Contains(varianteId) && (producto.Version is not { } version || version < precios.VersionCatalogo))
+                ticket.Productos[varianteId] = producto with { Version = precios.VersionCatalogo };
+        }
+        foreach (var producto in precios.Productos)
+        {
+            Cliente.PreciosAlDia(producto);
+            var lineas = venta.Lineas.Where(l => l.VarianteId == producto.VarianteId && !l.EsImpresiones).ToList();
+            foreach (var linea in lineas)
+                ticket.Versiones.TryAdd(linea, ticket.VersionDe(linea));
+            ticket.Productos[producto.VarianteId] = producto;
+            foreach (var linea in lineas)
+            {
+                try
+                {
+                    venta.CambiarCantidad(linea, linea.Cantidad, producto.PresentacionModelo(linea.PresentacionId), producto.PreciosModelo());
+                    ticket.Versiones[linea] = producto.Version;
+                }
+                catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+                {
+                    // Ya no tiene esa presentación o se quedó sin precio: la línea queda como estaba (con la versión de sus
+                    // precios) y el servicio lo dice al cobrar.
+                }
+            }
+        }
+        var cambiaron = precios.Productos
+            .Where(p => venta.Lineas.Any(l => l.VarianteId == p.VarianteId && antes.TryGetValue(l, out var a)
+                                              && a != (l.PrecioCentavos, l.ImporteCentavos, l.AhorroMayoreoCentavos)))
+            .Select(p => $"«{p.Descripcion}»")
+            .ToList();
+        _avisoDelCobro = cambiaron.Count > 0
+            ? $"Cambió el precio de {Textos.Lista(cambiaron)}: revisa el total ({Formato.Dinero(venta.TotalCentavos)}) y cobra otra vez."
+            : $"Se pusieron al día los precios de {Textos.Lista(precios.Productos.Select(p => $"«{p.Descripcion}»").ToList())} con la caja principal; "
+              + "el total no cambió: cobra otra vez.";
+        _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
+        return _avisoDelCobro;
     }
 
     // ── Al cobrar: el cambio en grande hasta el siguiente cliente ───────────
@@ -3158,6 +3589,9 @@
     }
 
     // ── Descuento (Ctrl+D) ──────────────────────────────────────────────────
+
+    /// <summary>Al renglón seleccionado (la ventana se queda con él, <see cref="Abrir"/>) o, sin renglón, a todo el ticket.</summary>
+    private Task AbrirDescuento() => Abrir(Ventanas.Descuento, LineaSeleccionada);
 
     private async Task DescuentoAplicadoAsync()
     {
@@ -3312,16 +3746,26 @@
     /// <summary>La presentación y los precios de un renglón, de la copia que ya tiene el ticket (funciona sin conexión).</summary>
     private (Presentacion Presentacion, IReadOnlyList<Precio> Precios)? CatalogoDe(VentaLinea linea) => CatalogoDe(Actual, linea);
 
-    private static (Presentacion Presentacion, IReadOnlyList<Precio> Precios)? CatalogoDe(TicketAbierto ticket, VentaLinea linea) =>
-        linea.VarianteId is { } varianteId && ticket.Productos.TryGetValue(varianteId, out var producto)
-            ? (producto.PresentacionModelo(linea.PresentacionId), producto.PreciosModelo())
-            : null;
+    /// <summary>
+    /// Para volver a calcular el renglón (el mayoreo o el descuento del cliente): su precio va a salir de este producto. La
+    /// línea se queda con la versión más vieja de las dos, la suya o la de él, por si el cálculo no se hace (el cobro, a lo
+    /// más, la pone al día con los precios de ahora; nunca cobra uno que no se vio).
+    /// </summary>
+    private static (Presentacion Presentacion, IReadOnlyList<Precio> Precios)? CatalogoDe(TicketAbierto ticket, VentaLinea linea)
+    {
+        if (linea.VarianteId is not { } varianteId || !ticket.Productos.TryGetValue(varianteId, out var producto))
+            return null;
+        ticket.Versiones[linea] = (ticket.VersionDe(linea), producto.Version) is ({ } suya, { } delProducto) ? Math.Min(suya, delProducto) : null;
+        return (producto.PresentacionModelo(linea.PresentacionId), producto.PreciosModelo());
+    }
 
     /// <summary>Con cliente con descuento, lo que se agrega al ticket lleva el suyo (el mayoreo ya sale solo del precio).</summary>
-    private void DescuentoDelCliente(VentaLinea linea)
+    private void DescuentoDelCliente(VentaLinea linea) => DescuentoDelCliente(Actual, linea);
+
+    private static void DescuentoDelCliente(TicketAbierto ticket, VentaLinea linea)
     {
-        if (Actual.Cliente is { DescuentoCentesimas: > 0 } cliente && !linea.EsImpresiones && linea.DescuentoCentesimas != cliente.DescuentoCentesimas)
-            Actual.Venta.DescontarLinea(linea, cliente.DescuentoCentesimas, null, cliente.MotivoDescuento());
+        if (ticket.Cliente is { DescuentoCentesimas: > 0 } cliente && !linea.EsImpresiones && linea.DescuentoCentesimas != cliente.DescuentoCentesimas)
+            ticket.Venta.DescontarLinea(linea, cliente.DescuentoCentesimas, null, cliente.MotivoDescuento());
     }
 
     // ── Alta rápida de un código que no existe ──────────────────────────────
@@ -3368,15 +3812,24 @@
         {
             case null: Avisar("Selecciona un renglón (flechas) para cambiar su precio."); break;
             case { VarianteId: null }: Avisar("El artículo común ya lleva el precio que se escribió: bórralo y agrégalo de nuevo."); break;
-            default: await Abrir(Ventanas.CambiarPrecio); break;
+            case var linea: await Abrir(Ventanas.CambiarPrecio, linea); break;
         }
     }
 
-    /// <summary>Queda en la venta con su autorización; el servicio la revisa y la gasta al cobrar.</summary>
+    /// <summary>
+    /// Queda en la venta con su autorización; el servicio la revisa y la gasta al cobrar. Es del renglón con el que se abrió
+    /// la ventana (<see cref="_lineaDeLaVentana"/>), aunque mientras tanto se haya seleccionado otro; si ese renglón ya no
+    /// está en el ticket, no se cambia nada.
+    /// </summary>
     private async Task PrecioCambiadoAsync((long Precio, Guid? AutorizacionId) cambio)
     {
-        var linea = LineaSeleccionada!;
+        var linea = _lineaDeLaVentana;
         await Cerrar();
+        if (linea is null || !Actual.Venta.Lineas.Contains(linea))
+        {
+            Avisar("Ese artículo ya no está en el ticket: no se cambió ningún precio.");
+            return;
+        }
         try
         {
             Actual.Venta.CambiarPrecio(linea, cambio.Precio, cambio.AutorizacionId);
@@ -3498,7 +3951,7 @@
                 <MovimientoEfectivo Tipo="tipo" TurnoId="Turno.Id" UsuarioId="Sesion.UsuarioId" AlTerminar="MovimientoRegistrado" />
             </Ventana>
             break;
-        case Ventanas.Mayoreo when LineaSeleccionada is { VarianteId: { } varianteMayoreo } lineaMayoreo
+        case Ventanas.Mayoreo when _lineaDeLaVentana is { VarianteId: { } varianteMayoreo } lineaMayoreo
                                    && Actual.Productos.TryGetValue(varianteMayoreo, out var productoMayoreo):
             <Ventana Titulo="Mayoreo" AlCerrar="Cerrar">
                 <EscalasMayoreo Producto="productoMayoreo" SucursalId="Caja.SucursalId" PresentacionId="lineaMayoreo.PresentacionId" Cantidad="lineaMayoreo.Cantidad"
@@ -3545,9 +3998,10 @@
                 <DevolverCancelar Caja="Caja" Sesion="Sesion" FolioInicial="@_folioDevolucion" AlTerminar="DevolucionHechaAsync" />
             </Ventana>
             break;
-        case Ventanas.CambiarPrecio when LineaSeleccionada is { } seleccionada:
-            <Ventana Titulo="Cambiar precio" AlCerrar="Cerrar">
-                <CambiarPrecio Descripcion="@seleccionada.Descripcion" PrecioActualCentavos="seleccionada.PrecioCentavos" Cantidad="seleccionada.Cantidad"
+        case Ventanas.CambiarPrecio when _lineaDeLaVentana is { } lineaPrecio:
+            @* @key: el precio de otro renglón empieza en blanco, no con lo que se escribió para este. *@
+            <Ventana @key="lineaPrecio" Titulo="Cambiar precio" AlCerrar="Cerrar">
+                <CambiarPrecio Descripcion="@lineaPrecio.Descripcion" PrecioActualCentavos="lineaPrecio.PrecioCentavos" Cantidad="lineaPrecio.Cantidad"
                                Caja="Caja" Sesion="Sesion" AlCambiar="PrecioCambiadoAsync" />
             </Ventana>
             break;
@@ -3563,7 +4017,7 @@
             break;
         case Ventanas.Descuento:
             <Ventana Titulo="Descuento" AlCerrar="Cerrar">
-                <Descuento Venta="Actual.Venta" Linea="LineaSeleccionada" Caja="Caja" Sesion="Sesion" ClienteDelTicket="Actual.Cliente"
+                <Descuento Venta="Actual.Venta" Linea="_lineaDeLaVentana" Caja="Caja" Sesion="Sesion" ClienteDelTicket="Actual.Cliente"
                            AlTerminar="DescuentoAplicadoAsync" />
             </Ventana>
             break;
@@ -3592,7 +4046,7 @@
         case Ventanas.Configuracion:
             @* La Configuración nueva (entrega 7) ocupa la pantalla, como el corte: Esc la cierra. *@
             <Ventana Titulo="Configuración" Clase="cfg" AlCerrar="Cerrar">
-                <Configuracion Caja="Caja" Sesion="Sesion" AntesDeInstalar="GuardarEspera" AlCambiar="ConfiguracionCambiadaAsync"
+                <Configuracion Caja="Caja" Sesion="Sesion" AntesDeInstalar="GuardarEsperaYEsperarAsync" AlCambiar="ConfiguracionCambiadaAsync"
                                AlNoGuardar="ConfiguracionNoGuardada" />
             </Ventana>
             break;
@@ -3612,7 +4066,11 @@
 
     // ── Ventanas y avisos ───────────────────────────────────────────────────
 
-    private async Task Abrir(Ventanas ventana)
+    /// <param name="linea">
+    /// El renglón del precio, del descuento o del mayoreo: la ventana es suya hasta cerrarla, aunque mientras tanto llegue un
+    /// «buscando…» o se toque otra fila.
+    /// </param>
+    private async Task Abrir(Ventanas ventana, VentaLinea? linea = null)
     {
         _menuUsuario = false;
         _menuEspera = false;
@@ -3621,6 +4079,7 @@
         if (_ventana != ventana)
             DejarVentana();
         _ventana = ventana;
+        _lineaDeLaVentana = linea;
         _avisoDelPanel = null;
         await AvisarTeclasAsync();
         StateHasChanged();
@@ -3648,6 +4107,7 @@
     {
         DejarVentana();
         _ventana = Ventanas.Ninguna;
+        _lineaDeLaVentana = null;
         _avisoDelPanel = null;
         await AvisarTeclasAsync();
         StateHasChanged();
@@ -3693,10 +4153,22 @@
         return presentacion is { EsBase: false } ? $"{linea.Descripcion} ({presentacion.Nombre})" : linea.Descripcion;
     }
 
+    /// <summary>La pantalla ya se fue: lo que llegue después (lo que se le preguntaba a la caja principal) no la toca.</summary>
+    private bool _seFue;
+
     public async ValueTask DisposeAsync()
     {
+        _seFue = true;
         if (_contingencia is not null)
             _contingencia.Cambio -= AlCambiarContingencia;
+        // Lo que se mandó guardar de la espera queda antes de irse (volver a cargar, un error): la pantalla nueva lo lee.
+        await _esperaGuardandose.ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
+        // El vigía, fuera antes de desecharlo: un escaneo que llegue mientras se quitan las teclas ya no lo despierta.
+        if (_vigia is { } vigia)
+        {
+            _vigia = null;
+            await vigia.DisposeAsync();
+        }
         try
         {
             // Si se va con una ventana abierta (el corte Z, o «Cambiar de usuario» del menú con un panel) o en una página,
