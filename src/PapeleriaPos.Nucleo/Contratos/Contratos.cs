@@ -690,6 +690,11 @@ public sealed record CodigoLocalDto(string Codigo, Guid VarianteId, Guid Present
 /// Qué se hace con el ticket al cobrar (Configuración › Ticket): sin conexión, el ticket del cobro lo trae de aquí. En una
 /// copia de antes, se imprime.
 /// </param>
+/// <param name="Exhibidores">
+/// Los exhibidores y las temporadas activos, con sus lugares y sus productos en orden (entrega 13): Ctrl+M los pinta sin la
+/// red. Desde el formato 3 siempre vienen (vacíos si no hay ninguno); vacíos (null) en una copia de antes, o en una de ese
+/// formato que guardó una caja que todavía no los conocía: esa se baja completa otra vez.
+/// </param>
 public sealed record PaqueteContingenciaDto(
     long Version, CajaDto Caja, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<UsuarioLocalDto> Usuarios,
     IReadOnlyList<ReglaDto> Reglas,
@@ -698,7 +703,7 @@ public sealed record PaqueteContingenciaDto(
     IReadOnlyList<string>? Marcas = null, IReadOnlyList<SinonimoDto>? Sinonimos = null, IReadOnlyList<PermisosLocalesDto>? Permisos = null,
     ConfiguracionSucursalDto? Configuracion = null, Guid? Base = null, int? Formato = null, long? VersionExistencias = null,
     IReadOnlyList<VecesVendidoDto>? Vendidos = null, IReadOnlyList<ElegidoDto>? Elegidos = null, long? VersionVendidos = null, long? VersionElegidos = null,
-    TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir);
+    TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir, IReadOnlyList<ExhibidorDto>? Exhibidores = null);
 
 // Lo que sube con la bandeja. Cada cosa lleva el ID que le dio la caja: si llega dos veces, se guarda una.
 

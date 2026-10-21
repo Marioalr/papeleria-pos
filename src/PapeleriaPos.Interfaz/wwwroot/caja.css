@@ -928,6 +928,60 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-alerta.info { background: var(--vn-tinta-claro); color: var(--vn-tinta-hover); border-color: var(--vn-tinta-medio); }
 .vn-botonera { display: flex; flex-wrap: wrap; gap: 6px; }
 
+/* ── Lo que se señala: el mostrador y la temporada (Ctrl+M, entrega 13; .segmento.lugares, .repisa, .mostrador,
+   .mostrador-pieza y .chip-estado.temporada del prototipo). Cada lugar con sus piezas en el mismo acomodo que en la tienda:
+   la vitrina de 4 en 4, la mesa de la temporada de 3 en 3 y más grandes. Mientras no hay fotos (parte 2), el lugar de la
+   foto lleva las iniciales. ── */
+.vn-panel-sub { margin: -6px 0 0; color: var(--vn-suave); font-size: 13.5px; }
+.vn-mostrador-panel { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.vn-mostrador-panel .vn-alerta { margin: 0; }
+.vn-segmento { display: inline-flex; flex-wrap: wrap; max-width: 100%; border: 1px solid var(--vn-borde); border-radius: 8px; overflow: hidden; background: var(--vn-hoja); flex: none; }
+.vn-segmento button { font: inherit; border: 0; border-right: 1px solid var(--vn-linea); background: none; padding: 5px 10px; cursor: pointer; font-size: 12.5px; color: var(--vn-suave); white-space: nowrap; }
+.vn-segmento button:last-child { border-right: 0; }
+.vn-segmento button:hover { color: var(--vn-texto); }
+.vn-segmento button.on { background: var(--vn-tinta-claro); color: var(--vn-tinta); font-weight: 700; }
+.vn-segmento.vn-lugares { align-self: flex-start; }
+.vn-segmento.vn-lugares button { display: inline-flex; align-items: center; gap: 5px; padding: 6px 11px; font-size: 13px; }
+.vn-segmento.vn-lugares .ico { width: 14px; height: 14px; }
+.vn-mostrador-panel > .nota { margin: 0; font-size: 12.5px; color: var(--vn-suave); }
+.vn-repisa { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--vn-tenue); margin-bottom: -4px; }
+.vn-mostrador { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 6px; }
+.vn-pieza { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; font: inherit; color: var(--vn-texto); border: 1px solid var(--vn-linea); background: var(--vn-hoja); border-radius: 9px; padding: 6px 4px 7px; cursor: pointer; text-align: center; }
+.vn-pieza:hover, .vn-pieza.activa { border-color: var(--vn-cobro); box-shadow: 0 0 0 2px var(--vn-cobro-claro); }
+.vn-pieza-nombre { font-size: 11.5px; line-height: 1.2; color: var(--vn-texto); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.4em; overflow-wrap: anywhere; }
+.vn-pieza strong { font: 700 15px var(--vn-f-cifras); font-variant-numeric: tabular-nums; }
+/* El lugar de la foto: las iniciales mientras no la tiene. */
+.vn-foto { display: grid; place-items: center; flex: none; width: var(--lado, 60px); height: var(--lado, 60px); border-radius: 7px; background: #f4f1ea; box-shadow: 0 0 0 1px var(--vn-linea); color: #9a8c72; font: 700 calc(var(--lado, 60px) * .34) var(--vn-f-cifras); letter-spacing: .02em; }
+/* En el verificador: tocar solo enseña el precio (ámbar, como el cuadro del verificador). */
+.vn-mostrador-panel.verifica .vn-pieza:hover, .vn-mostrador-panel.verifica .vn-pieza.activa { border-color: #d98a00; box-shadow: 0 0 0 2px var(--vn-aviso-fondo); }
+.venta-nueva .vn-captura.verificar { border-color: #d98a00; box-shadow: 0 0 0 4px var(--vn-aviso-fondo); }
+.venta-nueva .vn-captura.verificar svg.vn-captura-ico { color: var(--vn-aviso); }
+/* Acomodar: la pieza elegida en tinta, «Agregar aquí» al final de cada lugar y lo de agregar, mover y quitar arriba. */
+.vn-mostrador-panel.acomoda .vn-pieza:hover, .vn-mostrador-panel.acomoda .vn-pieza.activa { border-color: var(--vn-tinta); box-shadow: 0 0 0 2px var(--vn-tinta-medio); }
+.vn-pieza-mas { justify-content: center; min-height: 92px; border-style: dashed; color: var(--vn-tinta); background: var(--vn-renglon); }
+.vn-pieza-mas span { font-size: 11.5px; }
+.vn-pieza-mas.destino { border-color: var(--vn-tinta); background: var(--vn-tinta-claro); }
+.vn-acomodar { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--vn-tinta-medio); border-radius: 10px; background: #fbfcff; }
+.vn-acomodar > label { font-size: 12.5px; color: var(--vn-suave); }
+.vn-acomodar > .nota { margin: 0; font-size: 12px; color: var(--vn-tenue); }
+.vn-acomodar-res { display: flex; flex-direction: column; gap: 2px; }
+.vn-acomodar-res button { display: flex; justify-content: space-between; gap: 8px; font: inherit; font-size: 13px; text-align: left; color: var(--vn-texto); border: 0; border-radius: 6px; background: none; padding: 5px 8px; cursor: pointer; }
+.vn-acomodar-res button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vn-acomodar-res button strong { font-variant-numeric: tabular-nums; }
+.vn-acomodar-res button:hover, .vn-acomodar-res button.activa { background: var(--vn-tinta-claro); box-shadow: inset 3px 0 0 var(--vn-tinta); }
+.vn-acomodar-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.vn-acomodar-barra > span { flex: 1 1 100%; min-width: 0; font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vn-acomodar-barra .vn-boton { min-width: 30px; }
+/* El chip de la temporada que corre, arriba de la venta. Si arriba no cabe todo (las pestañas del dueño, los chips del estado),
+   es lo que se encoge: el nombre se corta con «…» y completo queda en su título. */
+.vn-chip-temporada { flex: 0 1 auto; min-width: 72px; color: #7a3d00; background: #fff1e0; border-color: #f3c99a; }
+.vn-chip-nombre { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vn-chip-temporada .ico { width: 13px; height: 13px; }
+.vn-chip-temporada kbd { font-size: 10px; padding: 2px 4px 1px; }
+button.vn-chip-temporada:hover { border-color: #d98a00; }
+/* El verificador con el lugar de la foto, más grande (como v-foto del prototipo). */
+.verificado .vn-foto { --lado: 120px; margin: 0 auto 8px; }
+
 /* ── Usuarios y permisos (entrega 1, htmlUsuarios del prototipo): un grupo de la Configuración nueva (entrega 7) ──
    Va en la ventana de la configuración, fuera de .venta-nueva, así que trae sus colores (los mismos). Toma lo que queda de
    alto y la lista y los permisos se recorren cada uno por su lado: cabe en 1366×697. */
@@ -1142,6 +1196,21 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-cfg-buscar { padding: 10px 12px; border: 1px dashed var(--vn-borde); border-radius: 10px; background: var(--vn-renglon); }
 .vn-cfg-buscar .buscar-texto { width: 100%; }
 .vn-cfg-buscar .resultados { max-height: 220px; overflow-y: auto; }
+/* Configuración › Mostrador y temporadas (entrega 13): cada exhibidor o temporada en su tarjeta, con sus lugares de arriba abajo. */
+.vn-cfg-mostrador { display: flex; flex-direction: column; gap: 8px; }
+.vn-cfg-ex { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; }
+.vn-cfg-ex-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.vn-cfg-ex input, .vn-cfg-ex-nuevo input { font: 500 14px var(--vn-f-texto); padding: 5px 8px; border: 1px solid var(--vn-borde); border-radius: 7px; background: var(--vn-hoja); color: var(--vn-texto); }
+.vn-cfg-ex input.vn-cfg-ex-nombre { width: 220px; font-weight: 600; }
+.vn-cfg-ex-fechas { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; font-size: 13px; color: var(--vn-suave); }
+.vn-cfg-ex-fechas input { width: 300px; }
+.vn-cfg-lugares { display: flex; flex-direction: column; gap: 4px; padding-left: 12px; border-left: 3px solid var(--vn-renglon); }
+.vn-cfg-lugar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.vn-cfg-lugar input { width: 220px; }
+.vn-cfg-lugar small { min-width: 86px; font-size: 12.5px; color: var(--vn-suave); font-variant-numeric: tabular-nums; }
+.vn-cfg-lugar.nuevo input { width: 360px; }
+.vn-cfg-ex-nuevo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.vn-cfg-ex-nuevo input { width: 360px; }
 
 /* ── Las pantallas de atrás (entrega 8, htmlProductos, htmlInventario y htmlClientes del prototipo, con .modulo-pag,
    .col-lista, .busca, .filtros, .items, .col-detalle, .det-cab, .rejilla, .dato, .hub, .tareas y .tarea): Productos y

@@ -42,6 +42,8 @@
         </nav>
         <span class="espacio"></span>
         <EstadoCaja @ref="_estado" Caja="Caja" Sesion="Sesion" AlImpresiones="ImpresionesDesdeArribaAsync" />
+        @* La temporada que corre, con su chip: abre Ctrl+M en ella (entrega 13). Solo en la venta. *@
+        <ChipsDeTemporada Visible="_pagina == Pagina.Venta" AlAbrir="AbrirTemporadaAsync" />
         <div class="vn-usuario-caja">
             <button class="vn-usuario" title="Cambiar de usuario o salir" @onclick="() => _menuUsuario = !_menuUsuario">
                 <span class="vn-avatar">@Inicial(Sesion.Nombre)</span>
@@ -64,7 +66,7 @@
     <div class="vn-cuerpo @(_pagina == Pagina.Venta ? "" : "oculto")">
         <section class="vn-izq">
             <div class="vn-captura-caja">
-                <div class="vn-captura">
+                <div class="vn-captura @(VerificaConElMostrador ? "verificar" : null)">
                     <Ico Nombre="escaner" Clase="vn-captura-ico" />
                     @* Sin @bind: caja.js lo lee al Enter y lo vacía al momento (un escaneo nunca se pega al siguiente). *@
                     <input id="codigo" data-captura autocomplete="off" spellcheck="false" aria-label="Código del producto"
@@ -657,6 +659,7 @@
         {
             <button @onclick="@(() => ComoSuTecla("Insert"))"><kbd>Ins</kbd>Art. común</button>
         }
+        <button @onclick="@(() => ComoSuTecla("Ctrl+M"))"><kbd>Ctrl+M</kbd>Mostrador</button>
         <button @onclick="@(() => ComoSuTecla("Ctrl+L"))"><kbd>Ctrl+L</kbd>Cliente</button>
         @if (Ve(AccionControlada.EntradaEfectivo))
         {
@@ -756,6 +759,9 @@
         Ninguna, Comun, Entrada, Salida, Verificador, Corte, VentasDelDia, VistaPrevia, Configuracion, Motivo, Devolucion,
         CambiarPrecio, Transferencias, Impresiones, Cotizar, Descuento, AltaRapida, Mayoreo, ElegirCliente,
         AutorizarCosto, Abono, AutorizarCredito,
+
+        /// <summary>Ctrl+M: el mostrador y la temporada (entrega 13).</summary>
+        Mostrador,
     }
 
     /// <summary>
@@ -767,7 +773,7 @@
         Ventanas.AutorizarCosto, Ventanas.Comun, Ventanas.Entrada, Ventanas.Salida, Ventanas.Mayoreo, Ventanas.Verificador,
         Ventanas.VentasDelDia, Ventanas.Devolucion, Ventanas.CambiarPrecio, Ventanas.Impresiones, Ventanas.AltaRapida, Ventanas.Descuento,
         Ventanas.ElegirCliente, Ventanas.Abono, Ventanas.Cotizar, Ventanas.Motivo, Ventanas.VistaPrevia, Ventanas.Transferencias,
-        Ventanas.AutorizarCredito,
+        Ventanas.AutorizarCredito, Ventanas.Mostrador,
     ];
 
     private bool VaEnPanel => VentanasEnPanel.Contains(_ventana);
@@ -785,7 +791,7 @@
     private static readonly HashSet<Ventanas> PanelesQueSeDejan =
     [
         Ventanas.Verificador, Ventanas.Mayoreo, Ventanas.VentasDelDia, Ventanas.VistaPrevia, Ventanas.ElegirCliente, Ventanas.Cotizar,
-        Ventanas.Transferencias,
+        Ventanas.Transferencias, Ventanas.Mostrador,
     ];
 
     private bool PanelQueSeDeja => VaEnPanel && PanelesQueSeDejan.Contains(_ventana);
@@ -810,6 +816,7 @@
         var encima = (_ventana != Ventanas.Ninguna && (enLaVenta || !VaEnPanel)) || (!enLaVenta && _vistaPreviaDePagina is not null);
         await Js.VentanaAbiertaAsync(encima, enLaVenta && VaEnPanel);
         await Js.PaginaAbiertaAsync(!enLaVenta);
+        await Js.MostradorAbiertoAsync(enLaVenta && _ventana == Ventanas.Mostrador && !_mostradorAcomoda);
     }
 
     // ── Las páginas de atrás: Productos, Inventario y Clientes (entrega 8) ──
@@ -1178,6 +1185,7 @@
         yield return new("Verificar precio sin vender", "ojo", "F9", null, () => Abrir(Ventanas.Verificador));
         yield return new("Impresiones por cobrar", "impresora", "F2", null, () => Abrir(Ventanas.Impresiones));
         yield return new("Artículo común (sin inventario)", "etiqueta", "Ins", AccionControlada.ArticuloComun, () => Abrir(Ventanas.Comun));
+        yield return new("Mostrador y temporada", "tienda", "Ctrl+M", null, () => AbrirMostradorAsync());
         yield return new("Elegir cliente del ticket", "clientes", "Ctrl+L", null, () => Abrir(Ventanas.ElegirCliente));
         if (!_pilotoEleventa)
             yield return new("Abono a la cuenta de un cliente", "efectivo", "Ctrl+B", null, () => Abrir(Ventanas.Abono));
@@ -2534,6 +2542,13 @@
     {
         if (texto is not null)
             _captura.Texto = texto;
+        // Ctrl+M desde el verificador: el mostrador en modo verificador (entrega 13), en lugar de cerrarlo y vender.
+        if (tecla == "Ctrl+M" && _ventana == Ventanas.Verificador && _pagina == Pagina.Venta)
+        {
+            await AbrirMostradorAsync(verificar: true);
+            StateHasChanged();
+            return;
+        }
         // El corte o la Configuración encima (de la venta o de una página): lo suyo, como siempre.
         if (_ventana != Ventanas.Ninguna && !VaEnPanel && !await TeclaConVentanaAsync(tecla, desdeLaCaptura: texto is not null))
             return;
@@ -2621,6 +2636,7 @@
             case "Ctrl+L": await Abrir(Ventanas.ElegirCliente); break;
             case "Ctrl+B": await Abrir(Ventanas.Abono); break;
             case "Ctrl+I": await ImprimirOfrecidoAsync(); break;
+            case "Ctrl+M": await AbrirMostradorAsync(); break;
             case "Delete": await BorrarSeleccion(); break;
             case "ArrowUp": await MoverSeleccion(-1); break;
             case "ArrowDown": await MoverSeleccion(1); break;
@@ -2769,6 +2785,7 @@
         "Ctrl+D" => Ventanas.Descuento,
         "Ctrl+L" => Ventanas.ElegirCliente,
         "Ctrl+B" => Ventanas.Abono,
+        "Ctrl+M" => Ventanas.Mostrador,
         // Con las piezas escritas en el cuadro, F11 las pone en el renglón (MayoreoAsync): ahí no cierra el mayoreo.
         "F11" when _captura.Texto.Trim().TrimEnd('*').Length == 0 => Ventanas.Mayoreo,
         _ => null,
@@ -4025,7 +4042,15 @@
             break;
         case Ventanas.Verificador:
             <Ventana Titulo="Verificador de precios" AlCerrar="Cerrar">
-                <Verificador SucursalId="Caja.SucursalId" />
+                <Verificador SucursalId="Caja.SucursalId" Producto="_verificado" Codigo="@_verificarCodigo" AlAgregar="AgregarDelVerificadorAsync"
+                             AlMostrador="() => AbrirMostradorAsync(verificar: true)" />
+            </Ventana>
+            break;
+        case Ventanas.Mostrador:
+            @* @key: cada vez que se abre (o el chip pide otra temporada) empieza en lo suyo. *@
+            <Ventana Titulo="Mostrador y temporada" Clase="mostrador" AlCerrar="Cerrar">
+                <Mostrador @key="_mostradorVez" @ref="_mostrador" Caja="Caja" Sesion="Sesion" Verificando="_mostradorVerifica" Inicial="_mostradorEn"
+                           PuedeAcomodar="PuedeAcomodar" AlTocar="TocarPiezaAsync" AlAcomodar="AcomodandoAsync" />
             </Ventana>
             break;
         case Ventanas.Corte:
@@ -4129,6 +4154,198 @@
     }
     </CascadingValue>;
 
+    // ── Lo que se señala: el mostrador y la temporada (Ctrl+M, entrega 13) ──
+
+    private Mostrador? _mostrador;
+
+    /// <summary>Cuántas veces se ha abierto: cada vez (o cuando el chip pide otra temporada) el panel empieza en lo suyo.</summary>
+    private int _mostradorVez;
+
+    /// <summary>Lo que se ve primero: la temporada del chip que se tocó; vacío, lo primero de la lista.</summary>
+    private Guid? _mostradorEn;
+
+    /// <summary>Se abrió desde el verificador (F9): tocar una pieza solo enseña su precio.</summary>
+    private bool _mostradorVerifica;
+
+    /// <summary>Está en «Acomodar»: el cursor está en el panel, y caja.js deja el cuadro de captura como con cualquier panel.</summary>
+    private bool _mostradorAcomoda;
+
+    /// <summary>Lo que el verificador enseña al abrir: la pieza que se tocó en el mostrador, o lo que se escaneó ahí.</summary>
+    private ProductoVentaDto? _verificado;
+
+    private string? _verificarCodigo;
+
+    /// <summary>El mostrador en modo verificador, con el cursor en el cuadro: lo escaneado solo enseña su precio (el cuadro, en ámbar).</summary>
+    private bool VerificaConElMostrador => _ventana == Ventanas.Mostrador && _mostradorVerifica && !_mostradorAcomoda;
+
+    /// <summary>«Acomodar»: con «Productos, precios y etiquetas» en «Puede» (sin los permisos, se ve y el servicio decide).</summary>
+    private bool PuedeAcomodar => _permisosPedidos && (Permiso(AccionControlada.EditarCatalogo)?.Nivel ?? NivelPermiso.Permitido) == NivelPermiso.Permitido;
+
+    /// <summary>
+    /// Ctrl+M (la barra de teclas, «/», el chip): el panel con la temporada que corre y los exhibidores. El cursor se queda en
+    /// el cuadro de captura, como en el prototipo: lo escrito ahí es la cantidad, y las flechas y Enter llegan al panel.
+    /// </summary>
+    private async Task AbrirMostradorAsync(Guid? en = null, bool verificar = false)
+    {
+        (_mostradorEn, _mostradorVerifica, _mostradorAcomoda) = (en, verificar, false);
+        _mostradorVez++;
+        await Abrir(Ventanas.Mostrador);
+        _enfocar = "#codigo";
+    }
+
+    /// <summary>
+    /// El chip de la temporada: Ctrl+M en ella. Como las teclas, no deja a medias un panel que espera su Enter (el artículo
+    /// común, un descuento…); desde el verificador, en su modo.
+    /// </summary>
+    private async Task AbrirTemporadaAsync(Guid temporada)
+    {
+        if (_pagina != Pagina.Venta || (_ventana != Ventanas.Ninguna && !VaEnPanel))
+            return;
+        if (PorQueNoSeDeja is { } espera)
+        {
+            AvisarEnElPanel(espera);
+            return;
+        }
+        await AbrirMostradorAsync(temporada, verificar: _ventana == Ventanas.Verificador || VerificaConElMostrador);
+    }
+
+    /// <summary>
+    /// Se tocó una pieza (o Enter con ella elegida). Vendiendo: entra al ticket con lo escrito en el cuadro como cantidad (o
+    /// una), el panel se cierra y queda el total, listo para F12. En el verificador: solo enseña su precio, con «Agregarlo al
+    /// ticket». Como un escaneo: de la copia de esta caja, con los precios de ahora, en su turno con los escaneos.
+    /// </summary>
+    private Task TocarPiezaAsync(ProductoVentaDto producto) => TocarConCantidadAsync(producto, _captura.Texto);
+
+    /// <param name="escrito">Lo escrito en el cuadro de captura: la cantidad.</param>
+    private async Task TocarConCantidadAsync(ProductoVentaDto producto, string escrito)
+    {
+        if (_mostradorVerifica)
+        {
+            // En el verificador no hay cantidad: nada se agrega.
+            VaciarCaptura();
+            (_verificado, _verificarCodigo) = (Cliente.Foto?.PorVariante(producto.VarianteId) ?? producto, null);
+            await Abrir(Ventanas.Verificador);
+            return;
+        }
+        // Solo una cantidad de hasta cuatro cifras: un código que se quedó en el cuadro nunca es cuántas (serían billones).
+        if (MostradorEnPantalla.Cantidad(escrito) is not { } cantidad)
+        {
+            AvisarEnElPanel(Cliente.Foto?.PorCodigo(escrito.Trim()) is { } conEseCodigo
+                ? $"«{escrito.Trim()}» es el código de {conEseCodigo.Descripcion}: Enter lo agrega. Antes de tocar una pieza solo va la cantidad."
+                : $"Antes de tocar una pieza solo va la cantidad, de hasta cuatro cifras: «{escrito.Trim()}» no lo es.");
+            return;
+        }
+        // Una fracción en algo por pieza: el panel se queda, con lo escrito (con Enter, caja.js ya lo había quitado), para corregirlo.
+        if (!producto.Unidad.AdmiteFracciones() && cantidad != decimal.Truncate(cantidad))
+        {
+            _captura.Texto = escrito.Trim();
+            await Js.EscribirCapturaAsync(_captura.Texto);
+            AvisarEnElPanel($"«{producto.Descripcion}» se vende por pieza: escribe cuántas, sin fracciones.");
+            return;
+        }
+        VaciarCaptura();
+        await Cerrar();
+        await _captura.EnTurnoAsync(() =>
+        {
+            Agregar(Cliente.Foto?.PorVariante(producto.VarianteId) ?? producto, null, Cantidad.Unidades(cantidad));
+            return Task.CompletedTask;
+        });
+        StateHasChanged();
+    }
+
+    /// <summary>«Agregarlo al ticket» en el verificador: una pieza de lo que enseña, y de vuelta a vender.</summary>
+    private async Task AgregarDelVerificadorAsync(ProductoVentaDto producto)
+    {
+        await Cerrar();
+        await _captura.EnTurnoAsync(() =>
+        {
+            Agregar(producto, null, Cantidad.Piezas(1));
+            return Task.CompletedTask;
+        });
+        StateHasChanged();
+    }
+
+    /// <summary>Entró o salió de «Acomodar»: caja.js deja de pasarle (o le vuelve a pasar) las flechas del cuadro de captura.</summary>
+    private async Task AcomodandoAsync(bool acomoda)
+    {
+        _mostradorAcomoda = acomoda;
+        await AvisarTeclasAsync();
+        if (!acomoda)
+            _enfocar = "#codigo";
+    }
+
+    /// <summary>
+    /// Las teclas del cuadro de captura con el mostrador abierto (caja.js): las flechas eligen la pieza, Tab el exhibidor o la
+    /// temporada, y Enter agrega la elegida con lo escrito como cantidad (en el verificador, la enseña). Lo que no es una
+    /// cantidad, lo que llegó en ráfaga (el lector) y un código corto que existe («45», la etiqueta de un producto, aunque el
+    /// lector no se reconozca por su ritmo) van como siempre: un escaneo con el mostrador abierto entra al ticket y el panel se
+    /// cierra; en el verificador, enseña su precio. «45*» siempre es la cantidad.
+    /// </summary>
+    /// <param name="hora">La del Enter, con el reloj de la página.</param>
+    /// <param name="rafaga">Lo tecleó el lector: más rápido que una persona.</param>
+    [JSInvokable]
+    public async Task EnMostrador(string tecla, string texto, double? hora = null, bool rafaga = false)
+    {
+        // Con Enter, caja.js ya vació el cuadro: lo escrito se usa aquí mismo (la cantidad o el escaneo) o se descarta.
+        _captura.Texto = tecla == "Enter" ? "" : texto;
+        if (_ventana != Ventanas.Mostrador || _pagina != Pagina.Venta || _mostrador is not { } mostrador || _mostradorAcomoda)
+        {
+            // caja.js no supo a tiempo que el mostrador ya no está: se le vuelve a decir, y lo escrito va como siempre.
+            await AvisarTeclasAsync();
+            if (tecla == "Enter" && texto.Trim().Length > 0)
+                await Escaneado(texto, hora);
+            return;
+        }
+        if (tecla != "Enter")
+        {
+            mostrador.Mover(tecla);
+            return;
+        }
+        if (rafaga || !MostradorEnPantalla.EsCantidad(texto) || await EsCodigoAsync(texto))
+        {
+            if (_mostradorVerifica)
+            {
+                (_verificado, _verificarCodigo) = (null, texto.Trim());
+                await Abrir(Ventanas.Verificador);
+            }
+            else
+            {
+                await QuitarVentanaAsync();
+                _enfocar = "#codigo";
+                await Escaneado(texto, hora);
+            }
+            StateHasChanged();
+            return;
+        }
+        if (mostrador.ProductoElegido is { } producto)
+            await TocarConCantidadAsync(producto, texto);
+        else
+            AvisarEnElPanel("Aquí no hay piezas que agregar: elige otro con Tab, o tócalo arriba.");
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Si lo escrito antes de Enter es el código de un producto: en la copia de esta caja, como al escanear (sin copia, el
+    /// navegador, se le pregunta a la caja principal). Con «*» al final es la cantidad, no un código.
+    /// </summary>
+    private async Task<bool> EsCodigoAsync(string texto)
+    {
+        texto = texto.Trim();
+        if (texto.Length == 0 || texto.EndsWith('*'))
+            return false;
+        if (Cliente.Foto is { } foto)
+            return foto.PorCodigo(texto) is not null;
+        try
+        {
+            return await Cliente.PorCodigoAsync(texto, Caja.SucursalId) is not null;
+        }
+        catch (ErrorCaja)
+        {
+            // Sin copia ni conexión no se sabe: se toma como la cantidad.
+            return false;
+        }
+    }
+
     // ── Ventanas y avisos ───────────────────────────────────────────────────
 
     /// <param name="linea">
@@ -4187,6 +4404,11 @@
         // Al dejar el corte, la próxima vez abre en el turno.
         if (_ventana == Ventanas.Corte)
             _historialDeCortes = false;
+        // Lo de Ctrl+M y lo que enseñaba el verificador no se quedan para la próxima vez (entrega 13).
+        if (_ventana == Ventanas.Mostrador)
+            _mostradorAcomoda = false;
+        if (_ventana == Ventanas.Verificador)
+            (_verificado, _verificarCodigo) = (null, null);
     }
 
     // ── El historial de cortes (paridad con eleventa, 2026-10-17): va en el corte, y «/» lo abre ahí ──

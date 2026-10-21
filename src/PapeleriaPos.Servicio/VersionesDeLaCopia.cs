@@ -22,8 +22,11 @@ public sealed class VersionesDeLaCopia(IServiceScopeFactory alcances)
     /// Cómo se arma la copia (sus campos y lo que quiere decir cada versión). Si cambia, la caja y el servicio de versiones
     /// distintas no se piden cambios: la copia se baja completa. El 2 (entrega 5, parte 3) trae lo que necesita la búsqueda
     /// de la caja: todos los códigos, las marcas con que se leen los nombres, lo más vendido y lo elegido, con sus versiones.
+    /// El 3 (entrega 13) trae siempre los exhibidores y las temporadas: así una caja reconoce una copia de este formato que
+    /// guardó una versión de ella que todavía no los conocía (los cambios solo los traen cuando cambian) y la baja completa
+    /// una vez.
     /// </summary>
-    public const int Formato = 2;
+    public const int Formato = 3;
 
     /// <summary>Cuánto vale lo leído de la base antes de volver a leerla.</summary>
     public static readonly TimeSpan Vigencia = TimeSpan.FromMilliseconds(250);

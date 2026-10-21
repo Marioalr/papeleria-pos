@@ -30,7 +30,8 @@ public static class CopiaDeLaCaja
     /// con él al cobrar), la configuración de la tienda, los clientes y el último folio de la caja; con la base, el formato y
     /// las versiones desde las que la caja pide después lo que cambió. Y lo que necesita la búsqueda de la caja para dar lo
     /// mismo que la de aquí (entrega 5, parte 3): todos los códigos, las marcas con que se leen los nombres, los sinónimos, lo
-    /// más vendido y lo que esta caja eligió antes con cada texto, con sus versiones.
+    /// más vendido y lo que esta caja eligió antes con cada texto, con sus versiones. Y los exhibidores y las temporadas, con
+    /// lo acomodado en ellos (entrega 13).
     /// </summary>
     public static async Task<PaqueteContingenciaDto> PaqueteAsync(
         PosDbContext db, CatalogoEnMemoria catalogo, VersionesDeLaCopia versiones, Guid cajaId, OpcionesTicket opciones, CancellationToken ct = default)
@@ -51,7 +52,9 @@ public static class CopiaDeLaCaja
             ticket.Logo, await new RegistroCaja(db).UltimoFolioAsync(caja.SucursalId, caja.Serie, ct), configuracion.LimiteEfectivoCentavos,
             ApiClientes.ParaCajasDeAntes(clientes), clientes, marcas, await new RegistroSinonimos(db).ListarAsync(ct), permisos,
             configuracion, versiones.Base, VersionesDeLaCopia.Formato, versionExistencias, vendidos, elegidos, versionVendidos, versionElegidos,
-            ticket.AlCobrar);
+            ticket.AlCobrar,
+            // Los exhibidores y las temporadas (entrega 13): siempre, aunque no haya ninguno (el formato 3 los trae).
+            await RegistroMostrador.ListarAsync(db, ct));
     }
 
     /// <summary>
@@ -126,6 +129,12 @@ public static class CopiaDeLaCaja
             }
             if (await db.Sinonimos.AnyAsync(s => s.Version > desde, ct) || Quitado(nameof(Sinonimo)))
                 cambios = cambios with { Sinonimos = await new RegistroSinonimos(db).ListarAsync(ct) };
+            // Lo que se señala (entrega 13): si cambió un exhibidor o una temporada, un lugar o lo acomodado (también lo quitado),
+            // todos, completos: son pocos.
+            if (await db.Exhibidores.AnyAsync(e => e.Version > desde, ct) || await db.LugaresExhibidor.AnyAsync(l => l.Version > desde, ct)
+                || await db.ProductosExhibidos.AnyAsync(p => p.Version > desde, ct)
+                || Quitado(nameof(Exhibidor), nameof(LugarExhibidor), nameof(ProductoExhibido)))
+                cambios = cambios with { Exhibidores = await RegistroMostrador.ListarAsync(db, ct) };
             return cambios;
         }, ct);
     }

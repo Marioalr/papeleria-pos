@@ -28,6 +28,13 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     /// </summary>
     public async Task PaginaAbiertaAsync(bool abierta) => await (await Modulo).InvokeVoidAsync("paginaAbierta", abierta);
 
+    /// <summary>
+    /// El mostrador (Ctrl+M, entrega 13) está abierto con el cursor en el cuadro de captura: caja.js le pasa a la venta las
+    /// flechas, Tab y el Enter del cuadro (<c>EnMostrador</c>), y lo escrito ahí es la cantidad. Con la franja de la prueba
+    /// encima, no (caja.js lo revisa con el panel).
+    /// </summary>
+    public async Task MostradorAbiertoAsync(bool abierto) => await (await Modulo).InvokeVoidAsync("mostradorAbierto", abierto);
+
     /// <summary>Lo último que dijo la pantalla de venta de sus ventanas.</summary>
     private (bool Abierta, bool EnPanel) _deLaVenta;
 

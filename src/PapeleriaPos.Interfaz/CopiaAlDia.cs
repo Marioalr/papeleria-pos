@@ -6,16 +6,17 @@ namespace PapeleriaPos.Interfaz;
 /// La copia de la caja con lo que cambió encima (entrega 5, parte 2): queda igual que si se hubiera bajado completa en ese
 /// momento. Cada producto que cambió llega completo y reemplaza al de la copia, con todos sus códigos; los que ya no van se
 /// quitan con los suyos; las existencias que cambiaron se ponen en su producto; y de lo demás (usuarios, permisos, la caja, el
-/// ticket, la configuración, los clientes, las marcas, los sinónimos, lo más vendido) lo que llegó reemplaza lo de la copia.
-/// Lo elegido en la búsqueda llega solo lo nuevo y pisa lo del mismo texto (entrega 5, parte 3).
+/// ticket, la configuración, los clientes, las marcas, los sinónimos, lo más vendido, los exhibidores y las temporadas) lo que
+/// llegó reemplaza lo de la copia. Lo elegido en la búsqueda llega solo lo nuevo y pisa lo del mismo texto (entrega 5, parte 3).
 /// </summary>
 public static class CopiaAlDia
 {
     /// <summary>
     /// El formato de la copia que entiende esta caja (<c>VersionesDeLaCopia.Formato</c> en el servicio): si la copia guardada
-    /// o la caja principal tienen otro, se baja completa. El 2 trae lo que necesita la búsqueda (entrega 5, parte 3).
+    /// o la caja principal tienen otro, se baja completa. El 2 trae lo que necesita la búsqueda (entrega 5, parte 3); el 3,
+    /// siempre los exhibidores y las temporadas (entrega 13).
     /// </summary>
-    public const int Formato = 2;
+    public const int Formato = 3;
 
     public static PaqueteContingenciaDto Aplicar(PaqueteContingenciaDto copia, CambiosCopiaDto cambios)
     {
@@ -74,6 +75,7 @@ public static class CopiaAlDia
             VersionVendidos = cambios.VersionVendidos ?? copia.VersionVendidos,
             Elegidos = cambios.Elegidos is { Count: > 0 } elegidos ? ConLoElegido(copia.Elegidos, elegidos) : copia.Elegidos,
             VersionElegidos = cambios.VersionElegidos ?? copia.VersionElegidos,
+            Exhibidores = cambios.Exhibidores ?? copia.Exhibidores,
         };
     }
 

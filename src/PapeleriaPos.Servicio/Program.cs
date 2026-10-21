@@ -173,6 +173,7 @@ app.MapearApiDescuentos();
 app.MapearApiClientes();
 app.MapearApiCredito();
 app.MapearApiCatalogo();
+app.MapearApiMostrador();
 app.MapearApiCompras();
 app.MapearApiReportesInventario();
 app.MapearApiConteos();
