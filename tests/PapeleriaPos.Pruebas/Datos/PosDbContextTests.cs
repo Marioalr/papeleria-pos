@@ -67,10 +67,13 @@ public class PosDbContextTests : IAsyncLifetime
         await using (var db = _base.Contexto())
         {
             var producto = await db.Productos.SingleAsync();
+            var variante = await db.Variantes.SingleAsync();
             var departamento = await db.Departamentos.SingleAsync();
             Assert.True(versionInicial > 0);
             Assert.Equal(versionInicial + 1, producto.Version);
-            Assert.Equal(versionInicial, departamento.Version);
+            Assert.Equal(versionInicial, variante.Version);
+            // El departamento no va en la copia de las cajas (entrega 5, parte 2): no lleva versión.
+            Assert.Equal(0, departamento.Version);
             Assert.Equal(_base.Reloj.Ahora.UtcDateTime, producto.ModificadoUtc);
             Assert.Equal(DateTimeKind.Utc, producto.ModificadoUtc.Kind);
         }

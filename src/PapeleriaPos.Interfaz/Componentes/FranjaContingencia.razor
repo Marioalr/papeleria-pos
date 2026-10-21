@@ -1,4 +1,4 @@
-@* Avisa en toda la caja cuando trabaja sin la caja principal, lo que falta por subir y si la base (la del servicio o la de esta caja) no está lista contra apagones. *@
+@* Avisa en toda la caja cuando trabaja sin la caja principal (o con la red lenta, como sin ella), lo que falta por subir y si la base (la del servicio o la de esta caja) no está lista contra apagones. *@
 @implements IDisposable
 @inject IServiceProvider Servicios
 
@@ -8,6 +8,16 @@
     {
         <div class="franja-contingencia sin-conexion">
             Sin conexión con la caja principal: se vende con la copia de esta caja.
+            @if (c.Pendientes > 0)
+            {
+                <span> · @c.Pendientes por subir</span>
+            }
+        </div>
+    }
+    else if (c.EstadoDeLaRed == EstadoRed.Lenta)
+    {
+        <div class="franja-contingencia sin-conexion">
+            La red con la caja principal está lenta: se vende con la copia de esta caja hasta que mejore.
             @if (c.Pendientes > 0)
             {
                 <span> · @c.Pendientes por subir</span>

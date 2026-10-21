@@ -32,7 +32,11 @@ public static class SeguridadCajas
         {
             var huella = LlaveCaja.Huella(llave);
             var db = contexto.RequestServices.GetRequiredService<PosDbContext>();
-            if (await db.Cajas.Where(c => c.LlaveHuella == huella && c.Activa).Select(c => (Guid?)c.Id).SingleOrDefaultAsync() is { } cajaId)
+            // De memoria (entrega 5, parte 2): el latido, el aviso y el cobro de cada caja ya no leen la base para esto.
+            var llaves = contexto.RequestServices.GetService<LlavesDeCajas>();
+            var deLaLlave = llaves is not null ? await llaves.CajaAsync(db, huella)
+                : await db.Cajas.Where(c => c.LlaveHuella == huella && c.Activa).Select(c => (Guid?)c.Id).SingleOrDefaultAsync();
+            if (deLaLlave is { } cajaId)
             {
                 contexto.Items[CajaDeLaLlave] = cajaId;
                 contexto.RequestServices.GetService<PresenciaCajas>()?.Visto(cajaId, db.Reloj.GetUtcNow().UtcDateTime);
