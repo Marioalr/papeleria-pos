@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo;
@@ -20,22 +19,16 @@ namespace PapeleriaPos.Pruebas.Servicio;
 public sealed class OtrosDiasApiTests : IDisposable
 {
     private readonly string _baseLocal = Path.Combine(Path.GetTempPath(), $"caja-local-{Guid.NewGuid():N}.db");
+    private Contingencia? _contingencia;
 
+    /// <summary>
+    /// La caja de la prueba sin conexión se cierra (suelta su base) y su base se borra. Solo las conexiones de esa base: las de
+    /// todas (<c>ClearAllPools</c>) le cerraban la suya a otra prueba que corría a la par.
+    /// </summary>
     public void Dispose()
     {
-        // La caja de la prueba sin conexión ya no usa su base: se sueltan sus conexiones antes de borrarla.
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-        {
-            try
-            {
-                File.Delete(archivo);
-            }
-            catch (IOException)
-            {
-                // Se queda en la carpeta temporal: una limpieza fallida no tumba la corrida.
-            }
-        }
+        _contingencia?.Cerrar(TimeSpan.FromSeconds(20));
+        ArchivosDePrueba.BorrarBase(_baseLocal);
     }
 
     private static async Task<T> Leer<T>(HttpResponseMessage r)
@@ -354,7 +347,7 @@ public sealed class OtrosDiasApiTests : IDisposable
         var interruptor = new Interruptor(servicio.Fabrica.Server.CreateHandler());
         var http = new HttpClient(interruptor);
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
-        var contingencia = new Contingencia(new AlmacenLocal(_baseLocal), http, conexion);
+        var contingencia = _contingencia = new Contingencia(new AlmacenLocal(_baseLocal), http, conexion);
         var cliente = new ClienteCaja(http, conexion, contingencia);
         await contingencia.LatidoAsync();
         var dueno = await cliente.EntrarAsync("dueno", "3333");

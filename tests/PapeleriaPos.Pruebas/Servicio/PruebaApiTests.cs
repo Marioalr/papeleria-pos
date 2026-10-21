@@ -328,8 +328,8 @@ public class PruebaApiTests(ServicioEnPrueba prueba) : IClassFixture<ServicioEnP
         Assert.NotNull(avisos);
         Assert.NotNull(respuestas);
         Assert.StartsWith("Primero vuelve a conectar", reiniciar.Message);
-        // Su base local está en la carpeta de la prueba, que se borra al final: suelta sus conexiones, y solo las suyas.
-        ArchivosDePrueba.SoltarBase(baseLocal);
+        // Su base local está en la carpeta de la prueba, que se borra al final: la caja se cierra y la suelta (solo la suya).
+        contingencia.Cerrar(TimeSpan.FromSeconds(20));
     }
 }
 

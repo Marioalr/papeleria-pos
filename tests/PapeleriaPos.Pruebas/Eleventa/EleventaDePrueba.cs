@@ -134,10 +134,16 @@ public sealed class EleventaDePrueba : IAsyncDisposable
 
     private static string Ceros(string[] columnas) => string.Join(", ", columnas.Select(_ => "0"));
 
+    /// <summary>
+    /// Cierra la conexión y borra la base. Antes de borrarla se sueltan las conexiones guardadas de esta base, nunca las de
+    /// todas (<c>FbConnection.ClearAllPools</c>), como en las de SQLite (<see cref="ArchivosDePrueba"/>). Hoy ninguna se
+    /// guarda (<see cref="ServidorEleventa.Cadena"/> va sin pool), así que no le movía nada a las demás pruebas; esto solo
+    /// evita que lo haga si un día se guardan.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         await Conexion.DisposeAsync();
-        FbConnection.ClearAllPools();
+        FbConnection.ClearPool(_cadena);
         await FbConnection.DropDatabaseAsync(_cadena);
     }
 
