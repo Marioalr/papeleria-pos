@@ -1,6 +1,7 @@
 @* F9: consulta precio y existencia sin agregar a la venta. Si se lo lleva, «Agregarlo al ticket» (docs/propuesta-interfaz.md,
    «La pantalla de venta»). Desde aquí, Ctrl+M abre el mostrador y la temporada en modo verificador: tocar una pieza la enseña
-   aquí, con su foto (entrega 13, parte 2: de la base de esta caja; sin foto, sus iniciales), sin agregarla. *@
+   aquí, con su foto (entrega 13, parte 2: de la base de esta caja; sin foto, sus iniciales), sin agregarla. Cada producto que
+   enseña cuenta como una consulta (entrega 13, parte 3): Productos › Tarjetas de precio dice lo que más se pregunta. *@
 @implements IDisposable
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
@@ -65,7 +66,9 @@
     {
         Cliente.Fotos.Cambio += AlCambiarLasFotos;
         _producto = Producto;
-        if (Producto is null && Codigo?.Trim() is { Length: > 0 } codigo)
+        if (Producto is { } tocado)
+            Contar(tocado);
+        else if (Codigo?.Trim() is { Length: > 0 } codigo)
             await BuscarAsync(codigo);
     }
 
@@ -89,6 +92,8 @@
         {
             _producto = await Cliente.PorCodigoAsync(codigo, SucursalId);
             _error = _producto is null ? $"No existe el código «{codigo}»." : null;
+            if (_producto is { } encontrado)
+                Contar(encontrado);
         }
         catch (ErrorCaja ex)
         {
@@ -97,6 +102,9 @@
     }
 
     private void AlCambiarLasFotos() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>Lo que se enseña cuenta como una consulta (lo más preguntado): sin esperarla, como lo que se busca.</summary>
+    private void Contar(ProductoVentaDto producto) => _ = Cliente.ContarConsultaAsync(SucursalId, producto.VarianteId);
 
     public void Dispose() => Cliente.Fotos.Cambio -= AlCambiarLasFotos;
 

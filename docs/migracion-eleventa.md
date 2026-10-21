@@ -188,7 +188,11 @@ la caja principal por la red, como lo abre una caja de eleventa, y se pone al d�
     chip), el conteo completo (también en el celular), ajustes, mermas y abrir un paquete. Tampoco con lo dado de alta
     aquí: una compra o un conteo junta los dos, y eleventa no lleva su existencia. Las órdenes, el sugerido, las
     etiquetas y la hoja de códigos siguen; lo que quedó abierto se consulta y se cancela;
-  - los departamentos se dan de alta y se cambian en eleventa (Productos › Departamentos solo los enseña).
+  - los departamentos se dan de alta y se cambian en eleventa (Productos › Departamentos solo los enseña);
+  - en Productos › Temporadas (2026-10-17): al empezarla, el precio de lo de eleventa se ve sin cuadro y se confirma como
+    está (lo dado de alta aquí sí cambia); al terminarla, lo que sobró no se cuenta aquí, y lo dice. El resumen sí sale: lo
+    que bajó con la lectura cuenta como vendido en la caja principal, y lo que subió, como lo que llegó. La hoja, las
+    tarjetas de precio y las consultas del verificador son solo del POS y siguen igual.
 
 Se configura en el servicio de la caja 2, sección `Eleventa`. Los datos reales van en la configuración de esa PC,
 nunca aquí; la clave puede ir en la variable de entorno `Eleventa__Clave`.

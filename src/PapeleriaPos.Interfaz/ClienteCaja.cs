@@ -1434,6 +1434,70 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task QuitarFotoAsync(Guid varianteId, SolicitudQuitarFoto solicitud) =>
         ConRespaldoAsync(async () => await _http.PostAsync<object>($"api/fotos/{varianteId}/quitar", solicitud, sinRespuesta: true));
 
+    // ── Empezar y terminar la temporada, las tarjetas de precio y lo más preguntado (entrega 13, parte 3) ──
+    // Productos (F3) los pide a la caja principal: sin conexión no se pueden (se dice). La venta solo cuenta lo que se pregunta.
+
+    public Task<TemporadasDto> TemporadasAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<TemporadasDto>($"api/temporadas?sucursalId={sucursalId}"))!);
+
+    /// <summary>La que sigue con la lista del año pasado; el costo, el margen y el sugerido, solo si quien entró ve la utilidad.</summary>
+    public Task<TemporadaParaEmpezarDto> EmpezarTemporadaAsync(Guid exhibidorId, Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<TemporadaParaEmpezarDto>(
+            $"api/temporadas/{exhibidorId}/empezar?sucursalId={sucursalId}&usuarioId={usuarioId}"))!);
+
+    public Task<PreciosConfirmadosDto> ConfirmarPreciosDeTemporadaAsync(Guid exhibidorId, SolicitudConfirmarPrecios solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<PreciosConfirmadosDto>($"api/temporadas/{exhibidorId}/precios", solicitud));
+
+    public Task<HojaDeTemporadaDto> HojaDeTemporadaAsync(Guid exhibidorId, SolicitudHojaDeTemporada solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<HojaDeTemporadaDto>($"api/temporadas/{exhibidorId}/hoja", solicitud));
+
+    public Task<TemporadaParaTerminarDto> ParaTerminarTemporadaAsync(Guid exhibidorId, Guid sucursalId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<TemporadaParaTerminarDto>($"api/temporadas/{exhibidorId}/terminar?sucursalId={sucursalId}"))!);
+
+    /// <summary>Lo contado de un producto al terminar la temporada, al escribirlo: la caja principal lo guarda con lo que dice el sistema.</summary>
+    public Task<TemporadaParaTerminarDto> ContarEnTemporadaAsync(Guid exhibidorId, SolicitudContado solicitud) =>
+        ConRespaldoAsync(() => _http.PutAsync<TemporadaParaTerminarDto>($"api/temporadas/{exhibidorId}/contado", solicitud));
+
+    public Task<TemporadaParaTerminarDto> TerminarTemporadaAsync(Guid exhibidorId, SolicitudTerminarTemporada solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<TemporadaParaTerminarDto>($"api/temporadas/{exhibidorId}/terminar", solicitud));
+
+    /// <summary>Las tarjetas por volver a imprimir y cuántas hay.</summary>
+    public Task<TarjetasDto> TarjetasAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<TarjetasDto>($"api/tarjetas?sucursalId={sucursalId}"))!);
+
+    public Task<List<ProductoConTarjetaDto>> TarjetasDeExhibidorAsync(Guid exhibidorId, Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<ProductoConTarjetaDto>>($"api/tarjetas/exhibidor/{exhibidorId}?sucursalId={sucursalId}") ?? []);
+
+    public Task<List<ProductoConTarjetaDto>> MasPreguntadosAsync(Guid sucursalId) =>
+        ConRespaldoAsync(async () => await _http.GetAsync<List<ProductoConTarjetaDto>>($"api/tarjetas/mas-preguntados?sucursalId={sucursalId}") ?? []);
+
+    public Task<TarjetasParaImprimirDto> PrepararTarjetasAsync(SolicitudPrepararTarjetas solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<TarjetasParaImprimirDto>("api/tarjetas/preparar", solicitud));
+
+    public Task<TarjetasDto> TarjetasImpresasAsync(SolicitudTarjetasImpresas solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<TarjetasDto>("api/tarjetas/impresas", solicitud));
+
+    public Task<TarjetasDto> QuitarTarjetaAsync(Guid varianteId, SolicitudQuitarTarjeta solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<TarjetasDto>($"api/tarjetas/{varianteId}/quitar", solicitud));
+
+    /// <summary>
+    /// Una consulta del verificador (F9): cuenta para lo más preguntado (Productos › Tarjetas de precio). Como lo que se busca:
+    /// sin conexión no se cuenta, y si falla no estorba (el verificador no la espera).
+    /// </summary>
+    public async Task ContarConsultaAsync(Guid sucursalId, Guid varianteId)
+    {
+        if (contingencia is { EnLinea: false })
+            return;
+        try
+        {
+            await _http.PostAsync<object>("api/consultas", new SolicitudConsulta(sucursalId, varianteId, conexion.CajaId), sinRespuesta: true);
+        }
+        catch (ErrorCaja)
+        {
+            // Se pierde esta: la siguiente sí cuenta.
+        }
+    }
+
     private static T Local<T>(Contingencia contingencia, Func<Contingencia, T>? sinConexion)
     {
         if (sinConexion is null)

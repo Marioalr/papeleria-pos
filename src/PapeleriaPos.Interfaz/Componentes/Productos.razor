@@ -7,7 +7,9 @@
    depuración, en el mismo lado. El filtro y la ficha solo ofrecen los departamentos activos. «Poca existencia» es lo que
    está en su mínimo o debajo: el de su ficha o, sin él, 3 o menos (2026-10-17). En el piloto con eleventa, el
    detalle y la ficha de un producto de eleventa dicen que lo que pone su lectura se cambia allá (la ficha no lo deja
-   cambiar). *@
+   cambiar). Lo que se señala (entrega 13, parte 3): «Temporadas» (empezarla con los precios del año pasado, su hoja, sus
+   tarjetas y terminarla) y «Tarjetas de precio» (las que hay que volver a imprimir porque cambió su precio, lo más preguntado
+   en el verificador sin tarjeta y las de cada exhibidor), en el mismo lado. *@
 @implements IPagina
 @implements IDisposable
 @inject ClienteCaja Cliente
@@ -120,6 +122,10 @@
                     <button class="vn-boton chico" @onclick="Nuevo"><Ico Nombre="mas" />Nuevo producto</button>
                     <button class="vn-boton chico @(_vista == Vista.Mayoreo ? "on" : "")" @onclick="() => Ver(Vista.Mayoreo)">Mayoreo por revisar</button>
                     <button class="vn-boton chico @(Marcando ? "on" : "")" @onclick="CambiarPrecios"><Ico Nombre="porcentaje" />Cambiar precios</button>
+                    <button id="ver-temporadas" class="vn-boton chico @(_vista == Vista.Temporadas ? "on" : "")" title="Empezarla con los precios del año pasado, su hoja, sus tarjetas y terminarla"
+                            @onclick="() => Ver(Vista.Temporadas)"><Ico Nombre="reloj" />Temporadas</button>
+                    <button id="ver-tarjetas" class="vn-boton chico @(_vista == Vista.Tarjetas ? "on" : "")" title="Las tarjetas de precio: las que hay que volver a imprimir, lo más preguntado y las de cada exhibidor"
+                            @onclick="() => Ver(Vista.Tarjetas)">Tarjetas de precio@(_porReimprimir > 0 ? $" · {_porReimprimir} por reimprimir" : "")</button>
                 }
                 <button class="vn-boton chico @(_vista == Vista.Departamentos ? "on" : "")" @onclick="() => Ver(Vista.Departamentos)">Departamentos</button>
                 <button class="vn-boton chico @(_vista == Vista.Decisiones ? "on" : "")" @onclick="DecisionesAsync">Decisiones de depuración</button>
@@ -156,6 +162,13 @@
             case Vista.Departamentos:
                 <Departamentos @ref="_departamentos" Caja="Caja" Sesion="Sesion" Acceso="Acceso" AlCambiar="DepartamentosCambiaronAsync"
                                AlVerProductos="VerDelDepartamentoAsync" />
+                break;
+            case Vista.Temporadas:
+                <TemporadaEnProductos @ref="_temporadas" Caja="Caja" Sesion="Sesion" Acceso="Acceso" Estado="_temporadasVistas" AlAbrirProducto="AbrirFicha"
+                                      AlCambiarTarjetas="PorReimprimirAsync" />
+                break;
+            case Vista.Tarjetas:
+                <TarjetasDePrecio Caja="Caja" Sesion="Sesion" AlCambiar="PorReimprimirAsync" />
                 break;
             case Vista.Decisiones:
                 <div class="vn-det-cab"><div><h2>Decisiones de depuración</h2><p>Lo que se decidió al depurar el catálogo. Esc regresa al producto.</p></div></div>
@@ -206,7 +219,7 @@
     /// <summary>«Ir a Etiquetas»: a Inventario › Etiquetas, para imprimirlas.</summary>
     [Parameter] public EventCallback AlIrAEtiquetas { get; set; }
 
-    private enum Vista { Detalle, Ficha, Mayoreo, Decisiones, Departamentos, Precios }
+    private enum Vista { Detalle, Ficha, Mayoreo, Decisiones, Departamentos, Precios, Temporadas, Tarjetas }
 
     /// <summary>Cuántos trae la lista de una vez; «Ver … más» trae otros tantos.</summary>
     public const int Pagina = 50;
@@ -254,6 +267,13 @@
     private List<DecisionDepuracionDto>? _decisiones;
     private readonly RevisarMayoreo.Capturado _capturaMayoreo = new();
     private Departamentos? _departamentos;
+    private TemporadaEnProductos? _temporadas;
+
+    /// <summary>Lo de Productos › Temporadas que sigue ahí al ir a la ficha de un producto (a tomarle su foto) y volver.</summary>
+    private readonly TemporadasVistas _temporadasVistas = new();
+
+    /// <summary>Cuántas tarjetas de precio hay que volver a imprimir (su precio cambió): lo dice el botón de abajo.</summary>
+    private int _porReimprimir;
 
     // Cambiar precios de varios (PreciosDeVarios): los marcados en la lista se quedan al ir y venir dentro de la página.
     private PreciosDeVarios? _precios;
@@ -291,6 +311,22 @@
             }
         }
         await CargarListaAsync();
+        await PorReimprimirAsync();
+    }
+
+    /// <summary>Cuántas tarjetas hay que volver a imprimir; sin conexión (o sin el permiso), el botón no dice nada.</summary>
+    private async Task PorReimprimirAsync()
+    {
+        if (!Acceso.Puede(AccionControlada.EditarCatalogo))
+            return;
+        try
+        {
+            _porReimprimir = (await Cliente.TarjetasAsync(Caja.SucursalId)).PorReimprimir.Count;
+        }
+        catch (ErrorCaja)
+        {
+            // Se queda lo que decía.
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool primera)
@@ -314,7 +350,9 @@
                     return true;
                 await AlProductoAsync();
                 return true;
-            case Vista.Mayoreo or Vista.Decisiones:
+            case Vista.Temporadas when _temporadas?.Cerrar() == true:
+                return true;
+            case Vista.Mayoreo or Vista.Decisiones or Vista.Temporadas or Vista.Tarjetas:
                 await AlProductoAsync();
                 return true;
             case Vista.Precios:
@@ -607,8 +645,9 @@
 
     private void AbrirFicha(Guid productoId)
     {
+        // Desde el mayoreo por revisar o desde una temporada (a tomarle su foto), se regresa ahí.
         if (_vista != Vista.Ficha)
-            _antesDeLaFicha = _vista == Vista.Mayoreo ? Vista.Mayoreo : Vista.Detalle;
+            _antesDeLaFicha = _vista is Vista.Mayoreo or Vista.Temporadas ? _vista : Vista.Detalle;
         (_fichaDe, _vista) = (productoId, Vista.Ficha);
     }
 
@@ -675,6 +714,8 @@
         await CargarListaAsync();
         if (editado is { } elegido && _ficha?.Id != elegido)
             await MostrarAsync(elegido);
+        // Pudo cambiar su precio: su tarjeta, si tiene, queda por reimprimir.
+        await PorReimprimirAsync();
         await EnfocarAsync();
     }
 

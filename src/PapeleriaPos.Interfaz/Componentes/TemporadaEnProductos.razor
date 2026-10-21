@@ -1,0 +1,841 @@
+@* Productos (F3) › Temporadas (entrega 13, parte 3; docs/propuesta-interfaz.md, «Lo que se señala», puntos 3 a 5): cada
+   temporada en los pasos del año. Arriba se elige la temporada (la que corre, primero) y el paso:
+   1. Precios: «Empezar la temporada», una vez al año y antes de sacar la mercancía. La lista del año pasado (lo acomodado en su
+      mesa, en su orden) con el precio de entonces, el de hoy y, para quien ve la utilidad, el costo de hoy, el margen y un
+      sugerido. Se escribe el precio de cada uno (Enter pasa al siguiente) y se confirman todos juntos (Ctrl+Enter). Dice qué
+      productos no tienen foto: tocar uno abre su ficha, donde se toma (o con el celular, en la página del conteo).
+   2. Hoja: la foto, el nombre, el precio y el código de cada uno, en el orden de la mesa, para imprimir y guardar con la
+      mercancía (reemplaza la lista que se escribe a mano).
+   3. Tarjetas: las tarjetas de precio de la mesa (las que no tiene, o las que cambiaron, ya marcadas).
+   4. Terminar: el resumen de cada producto (lo que había, lo que se vendió, lo que quedó); lo que sobró se cuenta y queda
+      guardado. En el piloto con eleventa no se cuenta aquí, y lo dice.
+   Todo con la caja principal: sin conexión, se dice. Esc regresa al producto. *@
+@using PapeleriaPos.Impresion
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="vn-det-cab">
+    <div>
+        <h2>Temporadas</h2>
+        <p>Empezarla con los precios del año pasado, su hoja, sus tarjetas y terminarla. Esc regresa al producto.</p>
+    </div>
+</div>
+<div class="vn-adentro vn-temporadas">
+    @if (_lista is null)
+    {
+        <p class="@(_errorLista is null ? "nota" : "error")">@(_errorLista ?? "Cargando…")</p>
+    }
+    else if (_lista.Temporadas.Count == 0)
+    {
+        <p class="vacia">No hay temporadas: se dan de alta en Configuración › Mostrador y temporadas.</p>
+    }
+    else if (Elegida is { } elegida)
+    {
+        <div class="vn-segmento vn-lugares" role="tablist" aria-label="Temporadas">
+            @foreach (var t in _lista.Temporadas)
+            {
+                var esta = t;
+                <button role="tab" id="temporada-@t.ExhibidorId" class="@(t.ExhibidorId == elegida.ExhibidorId ? "on" : null)" aria-selected="@(t.ExhibidorId == elegida.ExhibidorId ? "true" : "false")"
+                        @onclick="() => ElegirAsync(esta.ExhibidorId)">
+                    <Ico Nombre="reloj" />@t.Nombre@(t.Corre ? " · corre" : "")
+                </button>
+            }
+        </div>
+        <p class="nota">@Resumen(elegida)</p>
+        @if (elegida.Inicio is null)
+        {
+            <p class="vacia">«@elegida.Nombre» todavía no tiene fechas: pónselas en Configuración › Mostrador y temporadas.</p>
+        }
+        else
+        {
+            <div class="vn-segmento" role="tablist" aria-label="Pasos de la temporada">
+                @foreach (var paso in Enum.GetValues<PasoDeTemporada>())
+                {
+                    var este = paso;
+                    <button role="tab" id="paso-@paso" class="@(Estado.Paso == paso ? "on" : null)" aria-selected="@(Estado.Paso == paso ? "true" : "false")"
+                            @onclick="() => PasoAsync(este)">@NombreDelPaso(paso)</button>
+                }
+            </div>
+            @switch (Estado.Paso)
+            {
+                case PasoDeTemporada.Precios:
+                    @Precios
+                    break;
+                case PasoDeTemporada.Hoja:
+                    @Hoja
+                    break;
+                case PasoDeTemporada.Tarjetas:
+                    @Tarjetas
+                    break;
+                default:
+                    @Terminar
+                    break;
+            }
+        }
+    }
+    @if (_aviso is not null)
+    {
+        <p class="aviso">@_aviso</p>
+    }
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    <div class="vista-etiquetas @(_vistaHoja && Estado.Paso == PasoDeTemporada.Hoja ? "" : "oculto")">
+        <iframe id="marco-temporada" title="Vista previa de la hoja de la temporada"></iframe>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter, EditorRequired] public PermisosDePagina Acceso { get; set; } = null!;
+
+    /// <summary>La temporada, el paso y lo escrito: siguen ahí al ir a la ficha de un producto y volver.</summary>
+    [Parameter, EditorRequired] public TemporadasVistas Estado { get; set; } = null!;
+
+    /// <summary>Tocar un producto: su ficha, donde se le toma la foto.</summary>
+    [Parameter] public EventCallback<Guid> AlAbrirProducto { get; set; }
+
+    /// <summary>Se imprimieron tarjetas o cambiaron precios: lo que está por reimprimir cambió.</summary>
+    [Parameter] public EventCallback AlCambiarTarjetas { get; set; }
+
+    private const string MarcoHoja = "#marco-temporada";
+
+    private TemporadasDto? _lista;
+    private string? _errorLista;
+    private TemporadaParaEmpezarDto? _empezar;
+    private TemporadaParaTerminarDto? _terminar;
+    private List<ProductoConTarjetaDto>? _tarjetas;
+    private bool _vistaHoja;
+    private bool _ocupado;
+    private bool _porTerminar;
+    private string? _aviso;
+    private string? _error;
+
+    private TemporadaResumenDto? Elegida => _lista?.Temporadas.FirstOrDefault(t => t.ExhibidorId == Estado.Elegida) ?? _lista?.Temporadas.FirstOrDefault();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarListaAsync();
+        await CargarPasoAsync();
+    }
+
+    /// <summary>Esc: lo que está a medio terminar (la pregunta de terminarla) primero; si no, regresa al producto.</summary>
+    public bool Cerrar()
+    {
+        if (!_porTerminar)
+            return false;
+        _porTerminar = false;
+        StateHasChanged();
+        return true;
+    }
+
+    private async Task CargarListaAsync()
+    {
+        try
+        {
+            _lista = await Cliente.TemporadasAsync(Caja.SucursalId);
+            _errorLista = null;
+            Estado.Elegida = Elegida?.ExhibidorId;
+        }
+        catch (ErrorCaja ex)
+        {
+            _errorLista = ex.Message;
+        }
+    }
+
+    private async Task ElegirAsync(Guid temporada)
+    {
+        if (Estado.Elegida == temporada)
+            return;
+        Estado.Elegida = temporada;
+        (_empezar, _terminar, _tarjetas, _vistaHoja, _porTerminar, _aviso, _error) = (null, null, null, false, false, null, null);
+        await CargarPasoAsync();
+    }
+
+    private async Task PasoAsync(PasoDeTemporada paso)
+    {
+        Estado.Paso = paso;
+        (_porTerminar, _aviso, _error) = (false, null, null);
+        await CargarPasoAsync();
+    }
+
+    /// <summary>Lo del paso elegido, de la caja principal.</summary>
+    private async Task CargarPasoAsync()
+    {
+        if (Elegida is not { Inicio: not null } elegida)
+            return;
+        if (Estado.PreciosDe != elegida.ExhibidorId)
+        {
+            Estado.Precios.Clear();
+            Estado.Contado.Clear();
+            Estado.PreciosDe = elegida.ExhibidorId;
+        }
+        try
+        {
+            switch (Estado.Paso)
+            {
+                case PasoDeTemporada.Precios:
+                    _empezar = await Cliente.EmpezarTemporadaAsync(elegida.ExhibidorId, Caja.SucursalId, Sesion.UsuarioId);
+                    break;
+                case PasoDeTemporada.Tarjetas:
+                    _tarjetas = await Cliente.TarjetasDeExhibidorAsync(elegida.ExhibidorId, Caja.SucursalId);
+                    break;
+                case PasoDeTemporada.Terminar:
+                    _terminar = await Cliente.ParaTerminarTemporadaAsync(elegida.ExhibidorId, Caja.SucursalId);
+                    break;
+            }
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private static string NombreDelPaso(PasoDeTemporada paso) => paso switch
+    {
+        PasoDeTemporada.Precios => "1 · Empezar: precios",
+        PasoDeTemporada.Hoja => "2 · Hoja",
+        PasoDeTemporada.Tarjetas => "3 · Tarjetas",
+        _ => "4 · Terminar",
+    };
+
+    /// <summary>
+    /// «Del 20 de noviembre al 1 de enero · empieza en 34 días · 12 productos, 3 sin foto · Luis confirmó los precios el 10/10/2026»;
+    /// y de la última que empezó, si se terminó: «Luis la terminó el 6/1/2026».
+    /// </summary>
+    private string Resumen(TemporadaResumenDto t)
+    {
+        var partes = new List<string>();
+        if (t.Fechas is { } fechas)
+            partes.Add(char.ToUpperInvariant(fechas[0]) + fechas[1..]);
+        if (t.Corre)
+            partes.Add("corre hoy");
+        else if (t.Inicio is { } inicio && _lista?.Hoy is { } hoy && inicio > hoy)
+            partes.Add(inicio.DayNumber - hoy.DayNumber == 1 ? "empieza mañana" : $"empieza en {inicio.DayNumber - hoy.DayNumber} días");
+        partes.Add((t.Productos == 1 ? "1 producto" : $"{t.Productos} productos") + (t.SinFoto == 0 ? "" : $", {t.SinFoto} sin foto"));
+        if (t.PreciosConfirmados is { } confirmados)
+            partes.Add(confirmados);
+        if (t.Terminada is { } terminada)
+            partes.Add(terminada);
+        return string.Join(" · ", partes);
+    }
+
+    // ── 1. Empezar: los precios ─────────────────────────────────────────────
+
+    private RenderFragment Precios => __builder =>
+    {
+        if (_empezar is not { } e)
+        {
+            if (_error is null)
+            {
+                <p class="nota">Cargando…</p>
+            }
+            return;
+        }
+        var sinFoto = e.Productos.Count(p => !p.TieneFoto);
+        var columnas = e.VeCostos ? 7 : 4;
+        <p class="nota">
+            La de @(e.Corre ? "ahora" : e.Inicio.Year.ToString(CultureInfo.InvariantCulture)), @TemporadaEnPantalla.Periodo(e.Inicio, e.Fin), con la lista del año pasado
+            (@TemporadaEnPantalla.Periodo(e.InicioAnterior, e.FinAnterior)) en el orden de la mesa. Escribe el precio de cada uno (Enter pasa al
+            siguiente) y confírmalos todos juntos.
+        </p>
+        if (e.EnEleventa is { } enEleventa)
+        {
+            <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@enEleventa Aquí se confirman como están.</span></div></div>
+        }
+        if (e.PreciosConfirmados is { } confirmados)
+        {
+            <p class="aviso"><Ico Nombre="check" /> @confirmados.</p>
+        }
+        if (sinFoto > 0)
+        {
+            <div class="vn-alerta">
+                <Ico Nombre="celular" />
+                <div>
+                    <span>
+                        @(sinFoto == 1 ? "1 producto no tiene foto" : $"{sinFoto} productos no tienen foto"): tócalo para abrir su ficha y ponérsela, o tómala con
+                        el celular en la página del conteo › «Fotos». La hoja y Ctrl+M la usan.
+                    </span>
+                </div>
+            </div>
+        }
+        if (e.Productos.Count == 0)
+        {
+            <p class="vacia">Su mesa todavía no tiene productos: acomódalos en la venta con Ctrl+M › «Acomodar».</p>
+            return;
+        }
+        <table class="vn-tabla vn-temporada-precios">
+            <thead>
+                <tr>
+                    <th>Producto</th>
+                    <th class="num" title="El que tuvo en la temporada del año pasado">Año pasado</th>
+                    <th class="num">Hoy</th>
+                    @if (e.VeCostos)
+                    {
+                        <th class="num" title="El de su última compra; sin compras, el promedio de lo que hay">Costo</th>
+                        <th class="num">Margen</th>
+                        <th class="num" title="El más alto entre el de hoy y el del año pasado, subido al que deja el margen mínimo si deja menos">Sugerido</th>
+                    }
+                    <th class="num">Precio</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{
+                    string? lugar = null;
+                    var i = 0;
+                }
+                @foreach (var p in e.Productos)
+                {
+                    var este = p;
+                    var indice = i++;
+                    var escrito = Estado.Precios.TryGetValue(p.VarianteId, out var suyo) ? suyo : null;
+                    var problema = TemporadaEnPantalla.Problema(p, escrito);
+                    var cambia = problema is null && TemporadaEnPantalla.Precio(p, escrito) is { } nuevo && nuevo != p.PrecioCentavos;
+                    if (p.Lugar != lugar)
+                    {
+                        lugar = p.Lugar;
+                        <tr><td class="grupo" colspan="@columnas">@p.Lugar</td></tr>
+                    }
+                    <tr id="temp-@p.VarianteId" class="@(cambia ? "cambia" : null) @(p.Activo ? null : "apagado")">
+                        <td>
+                            <div class="vn-temp-prod">
+                                @if (Cliente.Fotos.Direccion(p.VarianteId) is { } foto)
+                                {
+                                    <img class="vn-foto" src="@foto" alt="" />
+                                }
+                                else
+                                {
+                                    <span class="vn-foto" aria-hidden="true">@MostradorEnPantalla.Iniciales(p.Nombre)</span>
+                                }
+                                <div>
+                                    <button class="vn-enlace" title="Abrir su ficha (su foto, su mayoreo)" @onclick="() => AlAbrirProducto.InvokeAsync(este.ProductoId)">@p.Nombre</button>
+                                    <small>
+                                        @if (p.Codigo is { } codigo)
+                                        {
+                                            <code>@codigo</code>
+                                        }
+                                        @if (!p.TieneFoto)
+                                        {
+                                            <span class="vn-etiq ambar">sin foto</span>
+                                        }
+                                        @if (!p.Activo)
+                                        {
+                                            <span class="vn-etiq gris">desactivado</span>
+                                        }
+                                        @if (p.EnEleventa)
+                                        {
+                                            <span class="vn-etiq gris">de eleventa</span>
+                                        }
+                                        @if (p.Mayoreo is { } mayoreo)
+                                        {
+                                            <span title="Su mayoreo no cambia aquí: el precio no puede quedar igual o abajo de él">mayoreo @mayoreo</span>
+                                        }
+                                    </small>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="num">
+                            @if (p.AnteriorCentavos is { } anterior)
+                            {
+                                <button class="vn-enlace" disabled="@(!Editable(p))" title="@($"Usar el del año pasado ({(p.DeDonde == "ventas" ? "al que más se cobró" : "de su historial de precios")})")"
+                                        @onclick="() => Usar(este, anterior)">@Formato.Dinero(anterior)</button>
+                            }
+                            else
+                            {
+                                <span title="No estaba el año pasado, o no hay con qué saberlo">—</span>
+                            }
+                        </td>
+                        <td class="num">@(p.PrecioCentavos is { } hoy ? Formato.Dinero(hoy) : "—")</td>
+                        @if (e.VeCostos)
+                        {
+                            <td class="num">@(p.CostoCentavos is { } costo ? Formato.Dinero(costo) : "—")</td>
+                            <td class="num @(p.MargenCentesimas < p.MargenMinimoCentesimas ? "bajo" : null)"
+                                title="@(p.MargenMinimoCentesimas is { } minimo ? $"Mínimo {Margen.Texto(minimo)}" : null)">@(p.MargenCentesimas is { } margen ? Margen.Texto(margen) : "—")</td>
+                            <td class="num">
+                                @if (p.SugeridoCentavos is { } sugerido)
+                                {
+                                    <button class="vn-enlace" disabled="@(!Editable(p))" title="Usar el sugerido" @onclick="() => Usar(este, sugerido)">@Formato.Dinero(sugerido)</button>
+                                }
+                                else
+                                {
+                                    <span title="Sin costo no hay con qué medir el margen">—</span>
+                                }
+                            </td>
+                        }
+                        <td class="num precio">
+                            @if (Editable(p))
+                            {
+                                <input id="precio-@indice" aria-label="@($"Precio de «{p.Nombre}»")" inputmode="decimal" autocomplete="off" spellcheck="false"
+                                       value="@(escrito?.Texto ?? (p.PrecioCentavos is { } actual ? Pesos(actual) : ""))"
+                                       @oninput="ev => Escribir(este, ev.Value?.ToString())" @onkeydown="ev => AlTeclearPrecioAsync(ev, indice)" />
+                            }
+                            else
+                            {
+                                <span>@(p.PrecioCentavos is { } fijo ? Formato.Dinero(fijo) : "—")</span>
+                            }
+                            @if (problema is not null)
+                            {
+                                <small class="rojo">@problema</small>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <div class="vn-botonera">
+            <button class="vn-boton chico" disabled="@_ocupado" title="Pone en cada uno el precio que tuvo el año pasado" @onclick="TodosAlAnterior">Todos al del año pasado</button>
+            @if (e.VeCostos)
+            {
+                <button class="vn-boton chico" disabled="@_ocupado" title="Pone en cada uno el sugerido" @onclick="TodosAlSugerido">Todos al sugerido</button>
+            }
+            <button class="vn-boton chico" disabled="@(_ocupado || Estado.Precios.Count == 0)" @onclick="Deshacer">Dejar los de hoy</button>
+        </div>
+        <div class="vn-botonera">
+            <button id="confirmar-precios" class="vn-boton primario" disabled="@(_ocupado || !Acceso.Puede(AccionControlada.EditarCatalogo))" @onclick="ConfirmarAsync">
+                <Ico Nombre="check" />Confirmar los precios <kbd>Ctrl+Enter</kbd>
+            </button>
+        </div>
+        <p class="nota">
+            «Confirmar» cambia de una vez los que cambiaste (las cajas los toman al momento, con su historial y un renglón en la bitácora) y
+            deja los demás como están. El mayoreo no se toca: si un precio quedaría igual o abajo de él, no se confirma nada y se dice cuál.
+            @(e.VeCostos ? "" : " El costo, el margen y el sugerido los ve quien tiene «Ver costos, utilidad y margen».")
+        </p>
+    };
+
+    /// <summary>Lo de eleventa (en el piloto) y lo desactivado se ve, pero su precio no se cambia aquí.</summary>
+    private static bool Editable(ProductoDeTemporadaDto p) => p.Activo && !p.EnEleventa;
+
+    private static string Pesos(long centavos) => (centavos / 100m).ToString("0.00", CultureInfo.InvariantCulture);
+
+    /// <summary>Lo escrito, con el de hoy que se ve en la lista: si alguien lo cambia mientras tanto, no se confirma sin verlo.</summary>
+    private void Escribir(ProductoDeTemporadaDto p, string? texto)
+    {
+        if (texto is null || (p.PrecioCentavos is { } hoy && Formato.LeerPesos(texto) == hoy && texto.Trim() == Pesos(hoy)))
+            Estado.Precios.Remove(p.VarianteId);
+        else
+            Estado.Precios[p.VarianteId] = new PrecioEscrito(texto, p.PrecioCentavos);
+    }
+
+    private void Usar(ProductoDeTemporadaDto p, long centavos)
+    {
+        if (Editable(p))
+            Estado.Precios[p.VarianteId] = new PrecioEscrito(Pesos(centavos), p.PrecioCentavos);
+    }
+
+    private void TodosAlAnterior()
+    {
+        foreach (var p in _empezar?.Productos ?? [])
+        {
+            if (p.AnteriorCentavos is { } anterior)
+                Usar(p, anterior);
+        }
+    }
+
+    private void TodosAlSugerido()
+    {
+        foreach (var p in _empezar?.Productos ?? [])
+        {
+            if (p.SugeridoCentavos is { } sugerido)
+                Usar(p, sugerido);
+        }
+    }
+
+    private void Deshacer() => Estado.Precios.Clear();
+
+    /// <summary>Enter pasa al precio del siguiente (como en una hoja de cálculo); Ctrl+Enter los confirma.</summary>
+    private async Task AlTeclearPrecioAsync(KeyboardEventArgs e, int indice)
+    {
+        if (e.Key != "Enter")
+            return;
+        if (e.CtrlKey)
+        {
+            await ConfirmarAsync();
+            return;
+        }
+        await Js.EnfocarAsync($"#precio-{indice + 1}");
+    }
+
+    private async Task ConfirmarAsync()
+    {
+        if (_empezar is not { } e || _ocupado)
+            return;
+        (_aviso, _error) = (null, null);
+        if (TemporadaEnPantalla.ParaConfirmar(e.Productos, Estado.Precios) is not { } precios)
+        {
+            _error = "Revisa los precios marcados en rojo: así no se pueden confirmar.";
+            return;
+        }
+        if (precios.Count == 0)
+        {
+            _error = "No hay precios que confirmar: escribe el de cada producto.";
+            return;
+        }
+        _ocupado = true;
+        try
+        {
+            var hecho = await Cliente.ConfirmarPreciosDeTemporadaAsync(e.ExhibidorId, new SolicitudConfirmarPrecios(Sesion.UsuarioId, Caja.SucursalId, precios));
+            _empezar = hecho.Temporada;
+            Estado.Precios.Clear();
+            _aviso = (hecho.Cambiaron == 0 ? "Listo: los precios quedaron confirmados como estaban."
+                    : hecho.Cambiaron == 1 ? "Listo: cambió 1 precio; las cajas ya lo tienen." : $"Listo: cambiaron {hecho.Cambiaron} precios; las cajas ya los tienen.")
+                + (hecho.ConTarjeta == 0 ? "" : hecho.ConTarjeta == 1 ? " 1 tiene tarjeta de precio: reimprímela en «3 · Tarjetas»."
+                    : $" {hecho.ConTarjeta} tienen tarjeta de precio: reimprímelas en «3 · Tarjetas».");
+            await CargarListaAsync();
+            if (hecho.ConTarjeta > 0)
+                await AlCambiarTarjetas.InvokeAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    // ── 2. La hoja de la temporada ──────────────────────────────────────────
+
+    private RenderFragment Hoja => __builder =>
+    {
+        <p class="nota">
+            La foto, el nombre, el precio y el código de cada producto, en el orden de la mesa. Reemplaza la lista que se escribe a mano:
+            imprímela y guárdala con la mercancía. Desde ella también se cobra escaneando el código.
+        </p>
+        <div class="vn-botonera">
+            <button id="vista-hoja" class="vn-boton" disabled="@_ocupado" @onclick="VistaPreviaHojaAsync">Vista previa</button>
+            <button id="imprimir-hoja" class="vn-boton primario" disabled="@_ocupado" @onclick="ImprimirHojaAsync"><Ico Nombre="impresora" />Imprimir la hoja</button>
+        </div>
+        <p class="nota">Imprime al <strong>100 % (tamaño real)</strong>, en la impresora de inyección o la láser: así el lector lee los códigos.</p>
+    };
+
+    private async Task VistaPreviaHojaAsync() => await HacerAsync(async () => await PrepararHojaAsync());
+
+    private async Task ImprimirHojaAsync() =>
+        await HacerAsync(async () =>
+        {
+            if (await PrepararHojaAsync())
+                await Js.ImprimirMarcoAsync(MarcoHoja);
+        });
+
+    /// <summary>La hoja con lo de hoy (a lo que no tiene código se le da uno interno), en el marco de la vista previa.</summary>
+    private async Task<bool> PrepararHojaAsync()
+    {
+        if (Elegida is not { } elegida)
+            return false;
+        var hoja = await Cliente.HojaDeTemporadaAsync(elegida.ExhibidorId, new SolicitudHojaDeTemporada(Sesion.UsuarioId, Caja.SucursalId));
+        var datos = new DatosDeHojaDeTemporada(hoja.Temporada, hoja.Fechas, hoja.Sucursal, DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow)),
+            hoja.Lugares.Select(l => new LugarDeHoja(l.Nombre, l.Productos
+                .Select(p => new ProductoDeHoja(p.Nombre, MostradorEnPantalla.Iniciales(p.Nombre), p.PrecioCentavos, p.Codigo,
+                    p.FotoBase64 is { } foto ? Convert.FromBase64String(foto) : null))
+                .ToList())).ToList());
+        _vistaHoja = true;
+        StateHasChanged();
+        await Js.MostrarEnMarcoAsync(MarcoHoja, HojaDeTemporada.Html(datos));
+        var productos = hoja.Lugares.Sum(l => l.Productos.Count);
+        var sinFoto = hoja.Lugares.Sum(l => l.Productos.Count(p => p.FotoBase64 is null));
+        var hojas = HojaDeTemporada.Paginas(datos.Lugares).Count;
+        _aviso = $"{(productos == 1 ? "1 producto" : $"{productos} productos")} en {(hojas == 1 ? "1 hoja" : $"{hojas} hojas")}"
+            + (sinFoto == 0 ? "." : $"; {sinFoto} sin foto llevan sus iniciales.")
+            + (hoja.CodigosNuevos == 0 ? "" : $" A {hoja.CodigosNuevos} se les dio código interno: ya se cobran escaneándolo.");
+        return true;
+    }
+
+    // ── 3. Las tarjetas de la mesa ──────────────────────────────────────────
+
+    private RenderFragment Tarjetas => __builder =>
+    {
+        if (_tarjetas is null)
+        {
+            if (_error is null)
+            {
+                <p class="nota">Cargando…</p>
+            }
+            return;
+        }
+        <p class="nota">
+            Una por producto, para la mesa: el precio grande para el cliente y el código para escanearla en lugar del producto. Ya van marcadas
+            las que no tiene y las que hay que volver a imprimir.
+        </p>
+        <ImprimirTarjetas Caja="Caja" Sesion="Sesion" Productos="_tarjetas" Marco="marco-tarjetas-temporada"
+                          MarcarAlEmpezar="p => p.TarjetaCentavos is null || p.PorQue is not null"
+                          Vacia="Su mesa todavía no tiene productos: acomódalos en la venta con Ctrl+M › «Acomodar»."
+                          AlImprimir="TarjetasImpresasAsync" />
+    };
+
+    private async Task TarjetasImpresasAsync(TarjetasDto _)
+    {
+        if (Elegida is { } elegida)
+            _tarjetas = await Cliente.TarjetasDeExhibidorAsync(elegida.ExhibidorId, Caja.SucursalId);
+        await AlCambiarTarjetas.InvokeAsync();
+    }
+
+    // ── 4. Terminar ─────────────────────────────────────────────────────────
+
+    private bool Cuenta => _terminar is { SeCuenta: true, Terminada: null } && Acceso.Puede(AccionControlada.ConteoCompleto);
+
+    private RenderFragment Terminar => __builder =>
+    {
+        if (_terminar is not { } t)
+        {
+            if (_error is null)
+            {
+                <p class="nota">Cargando…</p>
+            }
+            return;
+        }
+        <p class="nota">
+            La de @TemporadaEnPantalla.Periodo(t.Inicio, t.Fin)@(t.Corre ? ", que todavía corre" : ""). Lo que había (al empezar, más lo que llegó),
+            lo que se vendió y lo que quedó, del @TemporadaEnPantalla.Dia(t.Desde) @(t.Terminada is null ? "a hoy" : $"al {TemporadaEnPantalla.Dia(t.Hasta)}")@(t.Desde > t.Inicio
+                ? " (desde que se empezó a usar este POS: lo de antes está en eleventa)" : ""), para comprar mejor el año que sigue.
+        </p>
+        if (t.EnEleventa is { } enEleventa)
+        {
+            <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@enEleventa</span></div></div>
+        }
+        if (t.Terminada is { } terminada)
+        {
+            <p class="aviso"><Ico Nombre="check" /> @terminada. Su resumen quedó guardado.</p>
+        }
+        if (t.AntesDelPos)
+        {
+            <p class="vacia">Fue antes de que la tienda usara este POS: no hay con qué armar su resumen.</p>
+            return;
+        }
+        if (t.Productos.Count == 0)
+        {
+            <p class="vacia">Su mesa no tiene productos.</p>
+            return;
+        }
+        <table class="vn-tabla vn-temporada-resumen">
+            <thead>
+                <tr>
+                    <th>Producto</th>
+                    <th class="num" title="Lo que había al empezar, más lo que llegó en la temporada">Inicial</th>
+                    <th class="num">Se vendió</th>
+                    <th class="num" title="@(t.Terminada is null ? "Lo que dice el sistema hoy" : "Lo que quedó al terminarla")">Quedó</th>
+                    <th></th>
+                    @if (Cuenta)
+                    {
+                        <th class="num">Contado</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @{
+                    var i = 0;
+                }
+                @foreach (var r in t.Productos)
+                {
+                    var este = r;
+                    var indice = i++;
+                    var como = TemporadaEnPantalla.ComoSeVendio(r);
+                    <tr id="resumen-@r.VarianteId">
+                        <td>
+                            <div class="vn-tarjeta-prod">
+                                <strong>@r.Nombre</strong>
+                                <small>@(string.Join(" · ", new[] { r.Codigo, r.Lugar }.Where(x => !string.IsNullOrWhiteSpace(x))))</small>
+                            </div>
+                        </td>
+                        <td class="num">@(r.LlevaInventario ? Formato.Numero(r.Inicial) : "—")</td>
+                        <td class="num">@Formato.Numero(r.Vendido)</td>
+                        <td class="num">@(r.LlevaInventario ? Formato.Numero(r.Quedo) : "—")</td>
+                        <td>
+                            @if (como.Length > 0)
+                            {
+                                <span class="vn-etiq @(como == "no se vendió" ? "gris" : como == "se acabó" ? null : "azul")">@como</span>
+                            }
+                        </td>
+                        @if (Cuenta)
+                        {
+                            <td class="num precio">
+                                @if (r.LlevaInventario)
+                                {
+                                    <input id="contado-@indice" aria-label="@($"Contado de «{r.Nombre}»")" inputmode="decimal" autocomplete="off"
+                                           value="@ContadoEscrito(r)" placeholder="@Formato.Numero(r.Quedo)"
+                                           @oninput="ev => Contar(este, ev.Value?.ToString())" @onchange="() => GuardarContadoAsync(este)"
+                                           @onkeydown="ev => AlTeclearContadoAsync(ev, este, indice)" />
+                                    @if (r.Contado is not null && r.Esperado is { } esperado && !Estado.Contado.ContainsKey(r.VarianteId))
+                                    {
+                                        <small title="Lo que decía el sistema cuando se contó: al terminarla entra la diferencia, y lo vendido después sigue contando">
+                                            guardado; el sistema decía @Formato.Numero(esperado)
+                                        </small>
+                                    }
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+        if (t.Terminada is not null)
+            return;
+        if (Cuenta)
+        {
+            <p class="nota">
+                Cuenta lo que sobró y escríbelo en «Contado»: se guarda al salir del cuadro (o con Enter), con lo que dice el sistema en ese momento. Al
+                terminarla entra la diferencia, como en un conteo: lo que se venda mientras tanto sigue contando. Lo que dejes vacío se queda como está.
+            </p>
+        }
+        else if (t.SeCuenta)
+        {
+            <p class="nota">Lo que sobró lo cuenta quien tiene «Conteo completo de un departamento»; sin contar, solo se guarda el resumen.</p>
+        }
+        if (_porTerminar)
+        {
+            var contados = t.Productos.Count(p => p.Contado is not null);
+            <div class="vn-alerta">
+                <Ico Nombre="alerta" />
+                <div>
+                    <span>
+                        ¿Terminar «@t.Nombre» de @t.Inicio.Year? Su resumen queda guardado@(contados == 0 ? "" : contados == 1
+                            ? " y lo contado reemplaza la existencia de 1 producto" : $" y lo contado reemplaza la existencia de {contados} productos").
+                    </span>
+                    <span class="vn-botonera">
+                        <button id="terminar-si" class="vn-boton primario" disabled="@_ocupado" @onclick="TerminarAsync">Sí, terminarla</button>
+                        <button class="vn-boton" disabled="@_ocupado" @onclick="() => _porTerminar = false">Todavía no</button>
+                    </span>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="vn-botonera">
+                <button id="terminar" class="vn-boton primario" disabled="@(_ocupado || !Acceso.Puede(AccionControlada.EditarCatalogo))" @onclick="PreguntarTerminarAsync">
+                    Terminar la temporada
+                </button>
+            </div>
+        }
+    };
+
+    private const string NoEsCantidad = "Revisa lo contado: escribe solo cantidades, como 12 o 2.5.";
+
+    /// <summary>Lo que se está guardando de cada producto: lo que se escriba mientras tanto espera a que termine.</summary>
+    private readonly Dictionary<Guid, Task<TemporadaParaTerminarDto>> _guardando = [];
+
+    /// <summary>Lo escrito que todavía no se guarda; si no, lo que ya se contó (vacío, sin contar).</summary>
+    private string ContadoEscrito(ResumenDeProductoDto r) =>
+        Estado.Contado.TryGetValue(r.VarianteId, out var texto) ? texto : r.Contado is { } contado ? TemporadaEnPantalla.TextoDeCantidad(contado) : "";
+
+    private void Contar(ResumenDeProductoDto r, string? texto) => Estado.Contado[r.VarianteId] = texto ?? "";
+
+    /// <summary>
+    /// Lo escrito en «Contado» de un producto se guarda en la caja principal al salir del cuadro o con Enter, con lo que dice el
+    /// sistema en ese momento: así lo que se venda mientras se cuenta lo demás (o antes de terminarla) sigue contando. Si no es una
+    /// cantidad, lo dice y se queda escrito para corregirlo.
+    /// </summary>
+    private async Task GuardarContadoAsync(ResumenDeProductoDto r)
+    {
+        if (Elegida is not { } elegida)
+            return;
+        if (_guardando.TryGetValue(r.VarianteId, out var enCurso))
+            await EsperarAsync(enCurso);
+        if (!Estado.Contado.TryGetValue(r.VarianteId, out var texto))
+            return;
+        if (!TemporadaEnPantalla.LeerCantidad(texto, out var milesimas))
+        {
+            _error = NoEsCantidad;
+            return;
+        }
+        var guardado = _terminar?.Productos.FirstOrDefault(p => p.VarianteId == r.VarianteId)?.Contado;
+        if (milesimas == (guardado is { } g ? (long)(g * Cantidad.Escala) : null))
+        {
+            Estado.Contado.Remove(r.VarianteId);
+            return;
+        }
+        var guardar = Cliente.ContarEnTemporadaAsync(elegida.ExhibidorId, new SolicitudContado(Sesion.UsuarioId, Caja.SucursalId, r.VarianteId, milesimas));
+        _guardando[r.VarianteId] = guardar;
+        try
+        {
+            _terminar = await guardar;
+            // Lo que se escribió mientras se guardaba se guarda después (al salir del cuadro otra vez).
+            if (Estado.Contado.TryGetValue(r.VarianteId, out var ahora) && ahora == texto)
+                Estado.Contado.Remove(r.VarianteId);
+            _error = null;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _guardando.Remove(r.VarianteId);
+        }
+    }
+
+    private static async Task EsperarAsync(Task enCurso)
+    {
+        try
+        {
+            await enCurso;
+        }
+        catch (ErrorCaja)
+        {
+            // Lo dijo quien lo guardaba.
+        }
+    }
+
+    /// <summary>Enter guarda lo contado y pasa al de abajo.</summary>
+    private async Task AlTeclearContadoAsync(KeyboardEventArgs e, ResumenDeProductoDto r, int indice)
+    {
+        if (e.Key != "Enter")
+            return;
+        await GuardarContadoAsync(r);
+        await Js.EnfocarAsync($"#contado-{indice + 1}");
+    }
+
+    /// <summary>
+    /// Antes de preguntar, lo escrito que no se ha guardado (se oprimió aquí sin salir del cuadro) se guarda, y se espera lo que
+    /// se está guardando: lo que se termina es lo que ya tiene la caja principal.
+    /// </summary>
+    private async Task PreguntarTerminarAsync()
+    {
+        (_aviso, _error) = (null, null);
+        foreach (var enCurso in _guardando.Values.ToList())
+            await EsperarAsync(enCurso);
+        foreach (var id in Estado.Contado.Keys.ToList())
+        {
+            if (_terminar?.Productos.FirstOrDefault(p => p.VarianteId == id) is { } r)
+                await GuardarContadoAsync(r);
+            else
+                Estado.Contado.Remove(id);
+            if (_error is not null)
+                return;
+        }
+        _porTerminar = true;
+    }
+
+    private async Task TerminarAsync()
+    {
+        if (Elegida is not { } elegida)
+            return;
+        await HacerAsync(async () =>
+        {
+            _terminar = await Cliente.TerminarTemporadaAsync(elegida.ExhibidorId, new SolicitudTerminarTemporada(Sesion.UsuarioId, Caja.SucursalId));
+            Estado.Contado.Clear();
+            _porTerminar = false;
+            _aviso = "Listo: terminada. Lo que quedó se guarda para el año que sigue, en su mesa de siempre.";
+            await CargarListaAsync();
+        });
+    }
+
+    private async Task HacerAsync(Func<Task> accion)
+    {
+        _ocupado = true;
+        (_aviso, _error) = (null, null);
+        try
+        {
+            await accion();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+}

@@ -1,0 +1,165 @@
+@* Productos (F3) › Tarjetas de precio (entrega 13, parte 3; docs/propuesta-interfaz.md, «Lo que se señala», puntos 5 y 6): una
+   tarjeta por producto, para los exhibidores y la mesa de la temporada, con el precio grande para el cliente y el código para
+   escanearla en lugar del producto. Tres listas:
+   - «Por reimprimir»: si cambia un precio (o el código), el POS dice qué tarjetas volver a imprimir; al imprimirlas salen de la
+     lista. «Ya no tiene» la quita si la tarjeta ya no está.
+   - «Lo más preguntado»: lo que más se pregunta en el verificador (F9) y no tiene tarjeta: lo primero a lo que conviene ponérsela.
+   - Cada exhibidor y cada temporada, con sus productos en su acomodo.
+   Con la caja principal: sin conexión, se dice. Esc regresa al producto. *@
+@inject ClienteCaja Cliente
+
+<div class="vn-det-cab">
+    <div>
+        <h2>Tarjetas de precio</h2>
+        <p>Una por producto: el precio grande para el cliente y el código para escanearla en lugar del producto. Esc regresa al producto.</p>
+    </div>
+</div>
+<div class="vn-adentro vn-tarjetas-pag">
+    <div class="vn-segmento vn-lugares" role="tablist" aria-label="Qué tarjetas">
+        <button role="tab" id="lista-reimprimir" class="@(_lista == Lista.PorReimprimir ? "on" : null)" @onclick="() => VerAsync(Lista.PorReimprimir, null)">
+            <Ico Nombre="alerta" />Por reimprimir@(_porReimprimir is { Count: > 0 } n ? $" ({n.Count})" : "")
+        </button>
+        <button role="tab" id="lista-preguntado" class="@(_lista == Lista.MasPreguntado ? "on" : null)" @onclick="() => VerAsync(Lista.MasPreguntado, null)">
+            <Ico Nombre="ojo" />Lo más preguntado
+        </button>
+        @foreach (var e in _exhibidores ?? [])
+        {
+            var este = e;
+            <button role="tab" class="@(_lista == Lista.Exhibidor && _exhibidor == e.Id ? "on" : null)" @onclick="() => VerAsync(Lista.Exhibidor, este.Id)">
+                <Ico Nombre="@(e.Tipo == TipoExhibidor.Temporada ? "reloj" : "tienda")" />@e.Nombre
+            </button>
+        }
+    </div>
+    <p class="nota">@Explicacion</p>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    @if (_productos is null)
+    {
+        @if (_error is null)
+        {
+            <p class="nota">Cargando…</p>
+        }
+    }
+    else
+    {
+        <ImprimirTarjetas Caja="Caja" Sesion="Sesion" Productos="_productos" Marco="marco-tarjetas" ConVeces="_lista == Lista.MasPreguntado"
+                          MarcarAlEmpezar="MarcarAlEmpezar" Vacia="@Vacia" AlImprimir="ImpresasAsync"
+                          AlQuitar="@(_lista == Lista.PorReimprimir ? EventCallback.Factory.Create<ProductoConTarjetaDto>(this, QuitarAsync) : default)" />
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Se imprimieron o se quitaron tarjetas: lo que está por reimprimir cambió.</summary>
+    [Parameter] public EventCallback AlCambiar { get; set; }
+
+    private enum Lista { PorReimprimir, MasPreguntado, Exhibidor }
+
+    private Lista _lista;
+    private Guid? _exhibidor;
+    private IReadOnlyList<ExhibidorDto>? _exhibidores;
+    private List<ProductoConTarjetaDto>? _porReimprimir;
+    private List<ProductoConTarjetaDto>? _productos;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _exhibidores = (await Cliente.MostradorAsync()).Exhibidores;
+        }
+        catch (ErrorCaja)
+        {
+            // Sin los exhibidores, las otras dos listas se ven igual.
+        }
+        await LeerPorReimprimirAsync();
+        // Abre en lo que hay que volver a imprimir; si no hay nada, en lo más preguntado.
+        await VerAsync(_porReimprimir is { Count: > 0 } ? Lista.PorReimprimir : Lista.MasPreguntado, null);
+    }
+
+    private async Task LeerPorReimprimirAsync()
+    {
+        try
+        {
+            _porReimprimir = [.. (await Cliente.TarjetasAsync(Caja.SucursalId)).PorReimprimir];
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task VerAsync(Lista lista, Guid? exhibidor)
+    {
+        (_lista, _exhibidor, _productos, _error) = (lista, exhibidor, null, null);
+        await RecargarAsync();
+    }
+
+    /// <summary>
+    /// La lista de ahora otra vez (después de imprimir o de quitar una): la de antes se queda mientras llega, así lo que dijo la
+    /// impresión («Listo: …») y la vista previa siguen a la vista.
+    /// </summary>
+    private async Task RecargarAsync()
+    {
+        try
+        {
+            _productos = _lista switch
+            {
+                Lista.PorReimprimir => _porReimprimir ?? [.. (await Cliente.TarjetasAsync(Caja.SucursalId)).PorReimprimir],
+                Lista.MasPreguntado => await Cliente.MasPreguntadosAsync(Caja.SucursalId),
+                _ => await Cliente.TarjetasDeExhibidorAsync(_exhibidor!.Value, Caja.SucursalId),
+            };
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private string Explicacion => _lista switch
+    {
+        Lista.PorReimprimir => "Las tarjetas cuyo precio (o código) cambió desde que se imprimieron: al volver a imprimirlas salen de aquí.",
+        Lista.MasPreguntado => $"Lo que más se preguntó en el verificador (F9) en los últimos {ConsultaDePrecio.DiasQueCuentan} días y no tiene tarjeta: lo primero a lo que conviene ponérsela.",
+        _ => "Sus productos en su acomodo. Ya van marcadas las que no tiene y las que hay que volver a imprimir.",
+    };
+
+    private string Vacia => _lista switch
+    {
+        Lista.PorReimprimir => "Ninguna: todas las tarjetas tienen el precio de hoy.",
+        Lista.MasPreguntado => "Todavía no hay consultas en el verificador de lo que no tiene tarjeta.",
+        _ => "No tiene productos todavía: se acomodan en la venta con Ctrl+M › «Acomodar».",
+    };
+
+    private bool MarcarAlEmpezar(ProductoConTarjetaDto p) => _lista switch
+    {
+        Lista.PorReimprimir => true,
+        Lista.MasPreguntado => false,
+        _ => p.TarjetaCentavos is null || p.PorQue is not null,
+    };
+
+    private async Task ImpresasAsync(TarjetasDto quedaron)
+    {
+        _porReimprimir = [.. quedaron.PorReimprimir];
+        await RecargarAsync();
+        await AlCambiar.InvokeAsync();
+    }
+
+    private async Task QuitarAsync(ProductoConTarjetaDto p)
+    {
+        try
+        {
+            var quedaron = await Cliente.QuitarTarjetaAsync(p.VarianteId, new SolicitudQuitarTarjeta(Sesion.UsuarioId, Caja.SucursalId));
+            _porReimprimir = [.. quedaron.PorReimprimir];
+            await RecargarAsync();
+            await AlCambiar.InvokeAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}

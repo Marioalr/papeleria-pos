@@ -263,6 +263,18 @@ en lugar de las iniciales, chica en la lista de la búsqueda y grande en el veri
 de precio, empezar y terminar la temporada y lo más preguntado van en la parte 3
 ([avance](plan.md#primero-la-versión-unicaja-entrega-0)).
 
+**La parte 3 ya está (2026-10-17):** los puntos 3 a 6, en Productos (F3). «Temporadas» lleva cada temporada por sus pasos
+del año. **Empezarla:** la lista del año pasado (lo acomodado en su mesa, en su orden) con el precio de entonces (el de su
+historial al empezar esa temporada o, el primer año, al que más se cobró), el de hoy y, para quien ve la utilidad, el costo
+de hoy, el margen y un sugerido que nunca baja un precio; se escribe el precio de cada uno (Enter pasa al siguiente) y se
+confirman todos juntos (Ctrl+Enter), sin dejar el mayoreo igual o más caro que el menudeo; también dice qué productos no
+tienen foto (tocar uno abre su ficha). **La hoja:** la foto (o las iniciales), el nombre, el precio y el código de cada uno,
+en el orden de la mesa, con su vista previa, para la impresora de inyección o la láser. **Las tarjetas** de la mesa y
+**terminarla:** el resumen de cada producto (lo que había, lo que se vendió y lo que quedó), y lo que sobró se cuenta (en el
+piloto con eleventa no: el inventario se lleva allá, y lo dice). «Tarjetas de precio» dice cuáles volver a imprimir porque
+cambió su precio, lo que más se pregunta en el verificador sin tarjeta (el verificador cuenta cada consulta) y las de cada
+exhibidor; salen 18 por hoja carta, para recortar ([avance](plan.md#primero-la-versión-unicaja-entrega-0)).
+
 ### Tickets en espera
 
 Hoy casi no se usan y rara vez son más de 3, así que dejan de ocupar una fila de pestañas. Pero **no hay límite**: con
@@ -758,7 +770,7 @@ la 11 y la 12). Qué hace eleventa que el POS todavía no, en qué entrega va y 
 | 9 | Reportes, los que el dueño usa hoy en eleventa | Grande | Para dejar eleventa |
 | 7 | Configuración nueva: buscador, grupos, alcance y guardado al momento | Mediano | Después |
 | 8 | Las pantallas de atrás con el mismo patrón de lista y detalle: Productos (abre con la lista, no vacío), Inventario por tareas, Clientes | Grande | Después |
-| 13 | Lo que se señala: el mostrador y la temporada con fotos en su acomodo (Ctrl+M), las fotos desde el celular, la hoja de la temporada y las tarjetas de precio, empezar y terminar la temporada, lo más preguntado. La parte 1 ya está (2026-10-17): Ctrl+M con los exhibidores y las temporadas en su acomodo; el verificador, el chip de la temporada, «Acomodar» y Configuración › Mostrador y temporadas. La parte 2 también (2026-10-17): las fotos, desde el celular (la página del conteo) o la PC (F3), en Ctrl+M, la búsqueda y el verificador, de la base de cada caja ([avance](plan.md#primero-la-versión-unicaja-entrega-0)) | Mediano | Después |
+| 13 | Lo que se señala: el mostrador y la temporada con fotos en su acomodo (Ctrl+M), las fotos desde el celular, la hoja de la temporada y las tarjetas de precio, empezar y terminar la temporada, lo más preguntado. La parte 1 ya está (2026-10-17): Ctrl+M con los exhibidores y las temporadas en su acomodo; el verificador, el chip de la temporada, «Acomodar» y Configuración › Mostrador y temporadas. La parte 2 también (2026-10-17): las fotos, desde el celular (la página del conteo) o la PC (F3), en Ctrl+M, la búsqueda y el verificador, de la base de cada caja. Y la parte 3 (2026-10-17): empezar la temporada con los precios del año pasado, su hoja, las tarjetas de precio (y cuáles volver a imprimir), terminarla con su resumen y lo más preguntado en el verificador, en Productos ([avance](plan.md#primero-la-versión-unicaja-entrega-0)) | Mediano | Después |
 | 4 | Impresiones: la bandeja con miniaturas y lotes por PC, el panel F2 de todas las PC, las miniaturas en el ticket y el recordatorio al cobrar | Mediano | Lo que eleventa no tiene, con el módulo de impresión |
 | 11 | WhatsApp: la lista «Escribieron hace poco» y la liga con las impresiones, con la etapa 2 de WhatsApp | Mediano | Lo que eleventa no tiene |
 | 12 | Ticket desde el celular, con la app Android (fase 8): armarlo, elegir la caja, el aviso a esa caja, la ficha que llega con su efecto y el QR sin red | Mediano | Lo que eleventa no tiene |

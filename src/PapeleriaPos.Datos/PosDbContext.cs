@@ -93,6 +93,20 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     /// <summary>Las fotos de los productos (entrega 13, parte 2): una por variante, ya chica.</summary>
     public DbSet<FotoProducto> FotosProducto => Set<FotoProducto>();
 
+    /// <summary>Cada temporada en cada año (entrega 13, parte 3): cuándo se confirmaron sus precios y cuándo se terminó, con su resumen.</summary>
+    public DbSet<TemporadaDelAnio> TemporadasDelAnio => Set<TemporadaDelAnio>();
+
+    public DbSet<RenglonTemporadaDelAnio> TemporadasDelAnioRenglones => Set<RenglonTemporadaDelAnio>();
+
+    /// <summary>Lo que se contó al terminar cada temporada, con lo que decía el sistema al contarlo.</summary>
+    public DbSet<ContadoDeTemporada> ContadosDeTemporada => Set<ContadoDeTemporada>();
+
+    /// <summary>Las tarjetas de precio que se imprimieron, con el precio y el código con que salieron.</summary>
+    public DbSet<TarjetaDePrecio> TarjetasDePrecio => Set<TarjetaDePrecio>();
+
+    /// <summary>Lo que se pregunta en el verificador (F9): una por consulta.</summary>
+    public DbSet<ConsultaDePrecio> ConsultasDePrecio => Set<ConsultaDePrecio>();
+
     /// <summary>Lo quitado de lo que lleva la copia de las cajas, con su versión (entrega 5, parte 2): lo escribe la base al guardar.</summary>
     public DbSet<Borrado> Borrados => Set<Borrado>();
 

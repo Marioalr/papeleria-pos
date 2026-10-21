@@ -166,7 +166,7 @@ public sealed class RegistroEtiquetas(PosDbContext db)
         return new HojaCodigosDto(sucursal, productos, nuevos);
     }
 
-    private async Task<Dictionary<Guid, Variante>> VariantesAsync(IEnumerable<Guid> idsVariantes, bool tracking, CancellationToken ct)
+    internal async Task<Dictionary<Guid, Variante>> VariantesAsync(IEnumerable<Guid> idsVariantes, bool tracking, CancellationToken ct)
     {
         var ids = idsVariantes.ToList();
         var consulta = db.Variantes.Include(v => v.Producto).ThenInclude(p => p!.Marca).Include(v => v.Presentaciones).ThenInclude(p => p.Codigos)
@@ -178,7 +178,7 @@ public sealed class RegistroEtiquetas(PosDbContext db)
     /// A lo que no tiene ningún código le da uno interno (EAN-13 que empieza con 2) en la pieza y lo guarda; pide el
     /// permiso de editar el catálogo. Las variantes tienen que venir con sus presentaciones y códigos, rastreadas.
     /// </summary>
-    private async Task<int> DarCodigosAsync(IEnumerable<Variante> variantes, Guid usuarioId, Guid sucursalId, string para, CancellationToken ct)
+    internal async Task<int> DarCodigosAsync(IEnumerable<Variante> variantes, Guid usuarioId, Guid sucursalId, string para, CancellationToken ct)
     {
         var sinCodigo = variantes.Where(v => Codigo(v) is null).ToList();
         if (sinCodigo.Count == 0)
@@ -203,7 +203,7 @@ public sealed class RegistroEtiquetas(PosDbContext db)
     }
 
     /// <summary>El código de la etiqueta: el interno si tiene (para eso se le dio), si no el de fábrica, de la pieza.</summary>
-    private static string? Codigo(Variante v)
+    internal static string? Codigo(Variante v)
     {
         var codigos = v.Presentaciones.Where(p => p.EsBase).SelectMany(p => p.Codigos).ToList();
         return (codigos.FirstOrDefault(c => c.Origen == OrigenCodigo.Interno) ?? codigos.FirstOrDefault())?.Codigo;
@@ -230,7 +230,7 @@ public sealed class RegistroEtiquetas(PosDbContext db)
     }
 
     /// <summary>El precio de menudeo de la pieza: el de la sucursal si tiene uno propio, si no el general.</summary>
-    private async Task<Dictionary<Guid, long>> MenudeoAsync(List<Guid> ids, Guid sucursalId, CancellationToken ct) =>
+    internal async Task<Dictionary<Guid, long>> MenudeoAsync(List<Guid> ids, Guid sucursalId, CancellationToken ct) =>
         (await db.Precios.AsNoTracking().Where(p => ids.Contains(p.VarianteId) && p.PresentacionId == null && (p.SucursalId == null || p.SucursalId == sucursalId))
             .ToListAsync(ct))
         .GroupBy(p => p.VarianteId)
