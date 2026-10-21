@@ -203,7 +203,8 @@ public sealed class FotosEnLaCajaTests(ServicioDePrueba servicio) : IClassFixtur
 
         var direccion = cliente.Fotos.Direccion(producto)!;
         Assert.Equal(FotoProducto.Archivo(producto, foto.Huella), direccion);
-        Assert.True(cambios >= 1);
+        // El aviso sale justo después de guardarlas: se espera, porque la dirección puede verse un momento antes.
+        await VentaConCopia.EsperarAsync(() => Volatile.Read(ref cambios) >= 1, "el aviso de que llegaron las fotos");
         // La página del navegador la pide al servicio de su misma PC.
         Assert.Equal(Convert.FromBase64String(foto.JpegBase64), await http.GetByteArrayAsync(direccion));
     }
