@@ -72,6 +72,8 @@
         {
             <span class="vn-ayuda-tecla error">@_errorImpresion</span>
         }
+        @* Lo que no salió de la impresora de tickets (entrega 5, parte 3), con «Reintentar» y «No imprimirlo». *@
+        <AvisoImpresion EnLinea />
     </footer>
 </div>
 @* Con los campos, sin una variable local: si el contenido de la ventana tomara una, cada vuelta del dibujo le daría un
@@ -168,20 +170,15 @@
         var titulo = $"Estado de cuenta de {estado.Cliente}";
         var documento = DisenoComprobante.EstadoCuenta(estado);
         _errorImpresion = null;
-        if (Impresora.MuestraVistaPrevia)
+        var cola = ColaDeImpresion.De(Impresora);
+        if (cola.MuestraVistaPrevia)
         {
             (_tituloVistaPrevia, _vistaPrevia) = (titulo, TicketTexto.Generar(documento));
             await AvisarTeclasAsync();
             return;
         }
-        try
-        {
-            await Impresora.ImprimirAsync(documento, abrirCajon: false);
-        }
-        catch (Exception ex)
-        {
-            _errorImpresion = $"No se pudo imprimir ({titulo}): {ex.Message}";
-        }
+        // A la cola de la impresora, como en la venta (entrega 5, parte 3): si no sale, lo dice la barra de abajo.
+        cola.Encolar(titulo, documento, abrirCajon: false);
     }
 
     private async Task CerrarVistaPreviaAsync()

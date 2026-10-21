@@ -81,11 +81,7 @@ public sealed class BaseContraApagonesTests : IDisposable
     /// <summary>Si una migración se queda esperando el candado, la prueba falla en lugar de quedarse colgada.</summary>
     private static readonly TimeSpan Plazo = TimeSpan.FromSeconds(30);
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        Directory.Delete(_carpeta, recursive: true);
-    }
+    public void Dispose() => ArchivosDePrueba.BorrarCarpeta(_carpeta);
 
     private async Task CrearBaseAsync()
     {
@@ -169,13 +165,22 @@ public sealed class BaseContraApagonesTests : IDisposable
     {
         var almacen = new AlmacenLocal(Path.Combine(_carpeta, "caja-local.db"));
         var contingencia = new Contingencia(almacen, new HttpClient(), new ConexionCaja { Servicio = new Uri("http://localhost/") });
-        SqliteConnection.ClearAllPools();
+        try
+        {
+            SqliteConnection.ClearAllPools();
 
-        Assert.Equal((AjustesContraApagones.SincronizacionCompleta, AjustesContraApagones.EsperaSiEstaOcupadaMs), almacen.Ajustes());
-        Assert.Null(almacen.ProblemaDeAjustes);
-        Assert.Null(contingencia.AvisoBaseLocal);
-        Assert.Null(AjustesContraApagones.Problema(AjustesContraApagones.SincronizacionCompleta, AjustesContraApagones.EsperaSiEstaOcupadaMs));
-        Assert.Contains("synchronous quedó en 1", AjustesContraApagones.Problema(1, AjustesContraApagones.EsperaSiEstaOcupadaMs));
+            Assert.Equal((AjustesContraApagones.SincronizacionCompleta, AjustesContraApagones.EsperaSiEstaOcupadaMs), almacen.Ajustes());
+            Assert.Null(almacen.ProblemaDeAjustes);
+            Assert.Null(contingencia.AvisoBaseLocal);
+            Assert.Null(AjustesContraApagones.Problema(AjustesContraApagones.SincronizacionCompleta, AjustesContraApagones.EsperaSiEstaOcupadaMs));
+            Assert.Contains("synchronous quedó en 1", AjustesContraApagones.Problema(1, AjustesContraApagones.EsperaSiEstaOcupadaMs));
+        }
+        finally
+        {
+            // Como al cerrar la caja: la copia que lee al abrir (en segundo plano) y el escritor terminan, y suelta la base.
+            // Antes la prueba terminaba con esa lectura a medias, y la carpeta no se dejaba borrar.
+            contingencia.Cerrar(TimeSpan.FromSeconds(20));
+        }
     }
 
     [Fact]
@@ -463,6 +468,7 @@ public sealed class BaseContraApagonesTests : IDisposable
             s.AddSingleton<ITelegram>(telegram);
         }));
         var cajaLocal = Path.Combine(_carpeta, "caja-local.db");
+        Contingencia? contingencia = null;
 
         try
         {
@@ -470,7 +476,7 @@ public sealed class BaseContraApagonesTests : IDisposable
             var estado = await http.GetFromJsonAsync<EstadoServicioDto>("api/estado");
             await fabrica.Services.GetRequiredService<MotorTelegram>().EnviarAsync();
             var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
-            var contingencia = new Contingencia(new AlmacenLocal(cajaLocal), new HttpClient(fabrica.Server.CreateHandler()),
+            contingencia = new Contingencia(new AlmacenLocal(cajaLocal), new HttpClient(fabrica.Server.CreateHandler()),
                 new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id });
             await contingencia.LatidoAsync();
             string? ajustes;
@@ -492,6 +498,8 @@ public sealed class BaseContraApagonesTests : IDisposable
         }
         finally
         {
+            // La caja se cierra antes que el servicio: lo que escribía en caja-local.db (la copia que bajó) termina y la suelta.
+            contingencia?.Cerrar(TimeSpan.FromSeconds(20));
             await fabrica.DisposeAsync();
         }
         // Se detuvo bien: la marca se quita, pero la de la base dañada se queda y el siguiente arranque vuelve a revisar.

@@ -16,7 +16,7 @@ public enum FiltroProductos
     /// <summary>Lo que un cajero dio de alta desde la caja y falta completar.</summary>
     PorCompletar,
 
-    /// <summary>Lo que lleva inventario y tiene <see cref="PocaExistencia.Hasta"/> o menos.</summary>
+    /// <summary>Lo que lleva inventario y está en su mínimo o debajo (<see cref="PocaExistencia"/>).</summary>
     PocaExistencia,
 
     /// <summary>Lo que deja menos que el margen mínimo (el de su departamento o el general): solo con «Ver costos, utilidad y margen».</summary>
@@ -24,12 +24,21 @@ public enum FiltroProductos
 }
 
 /// <summary>
-/// Cuándo queda poca existencia. El catálogo no tiene un mínimo por producto (el sugerido calcula el suyo con lo que se
-/// vende, y es caro para una lista), así que es la misma cuenta con que la venta dice «Quedan 2».
+/// Cuándo queda poca existencia: «Poca existencia» en Productos (F3) y «Bajos en inventario» en Inventario (F4). Con su
+/// mínimo de inventario o menos, el que se le pone en su ficha, como en eleventa (2026-10-17); sin él, con
+/// <see cref="Hasta"/> o menos, la misma cuenta con que la venta dice «Quedan 2». El sugerido calcula aparte el suyo con lo
+/// que se vende (es caro para una lista).
 /// </summary>
 public static class PocaExistencia
 {
+    /// <summary>Sin un mínimo propio: con esto o menos.</summary>
     public const int Hasta = 3;
+
+    /// <summary>El mínimo con que se revisa: el propio o, sin él, <see cref="Hasta"/>.</summary>
+    public static Cantidad Minimo(Cantidad? propio) => propio ?? Cantidad.Piezas(Hasta);
+
+    /// <summary>Si está en su mínimo o debajo (también lo que quedó en negativo).</summary>
+    public static bool Es(Cantidad existencia, Cantidad? minimoPropio) => existencia <= Minimo(minimoPropio);
 }
 
 /// <summary>Un renglón de la lista de Productos: lo de su primera variante (las activas primero, por nombre).</summary>
@@ -37,9 +46,13 @@ public static class PocaExistencia
 /// <param name="Existencia">En la sucursal; vacía en un servicio.</param>
 /// <param name="MargenCentesimas">Solo para quien ve la utilidad, y si se sabe su costo (hay existencia).</param>
 /// <param name="MargenMinimoCentesimas">El de su departamento o el general, junto con el margen.</param>
+/// <param name="Minimo">
+/// El mínimo de inventario propio de su primera variante, en unidades; vacío: no tiene (cuenta <see cref="PocaExistencia.Hasta"/>).
+/// Vacío también en un servicio de antes.
+/// </param>
 public sealed record ProductoEnListaDto(
     Guid ProductoId, string Nombre, string? Marca, string Departamento, int Variantes, string? Codigo, long? PrecioCentavos, decimal? Existencia,
-    bool Servicio, bool Activo, bool PorCompletar, int? MargenCentesimas = null, int? MargenMinimoCentesimas = null);
+    bool Servicio, bool Activo, bool PorCompletar, int? MargenCentesimas = null, int? MargenMinimoCentesimas = null, decimal? Minimo = null);
 
 /// <summary>La lista de Productos: los primeros, con cuántos hay en total.</summary>
 /// <param name="Total">Cuántos hay con esa búsqueda y ese filtro.</param>
@@ -59,7 +72,11 @@ public sealed record MovimientoProductoDto(DateTime FechaLocal, TipoMovimiento T
 /// <param name="OrdenesAbiertas">Órdenes de compra abiertas: armándose o pedidas.</param>
 /// <param name="OrdenesEnCamino">De esas, las que ya llevan productos: lo que se espera que llegue.</param>
 /// <param name="ConteosCompletosAbiertos">Departamentos que se están contando completos.</param>
-public sealed record PendientesInventarioDto(int ComprasContando, int ComprasSinNota, int OrdenesAbiertas, int OrdenesEnCamino, int ConteosCompletosAbiertos);
+/// <param name="BajosEnInventario">
+/// Lo que está en su mínimo o debajo (<see cref="PocaExistencia"/>): lo de «Bajos en inventario». Cero en un servicio de antes.
+/// </param>
+public sealed record PendientesInventarioDto(
+    int ComprasContando, int ComprasSinNota, int OrdenesAbiertas, int OrdenesEnCamino, int ConteosCompletosAbiertos, int BajosEnInventario = 0);
 
 /// <summary>
 /// Productos e Inventario en el piloto con eleventa, con su lectura prendida (decisión del dueño, 2026-10-10: las altas y

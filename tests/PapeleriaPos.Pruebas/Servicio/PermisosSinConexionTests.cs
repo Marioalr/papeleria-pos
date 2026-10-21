@@ -1,5 +1,4 @@
 using System.Net.Http.Json;
-using Microsoft.Data.Sqlite;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
@@ -17,9 +16,7 @@ public sealed class PermisosSinConexionTests(ServicioDePrueba servicio) : IClass
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
+        ArchivosDePrueba.BorrarBase(_baseLocal);
     }
 
     internal static readonly long?[] Montos = [null, 0, 1000, 1001, 20000, 20001, 99_999_999];
@@ -106,9 +103,7 @@ public sealed class CopiaDeAntesTests(ServicioDePrueba servicio) : IClassFixture
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
+        ArchivosDePrueba.BorrarBase(_baseLocal);
     }
 
     [Fact]
@@ -126,9 +121,10 @@ public sealed class CopiaDeAntesTests(ServicioDePrueba servicio) : IClassFixture
         var turno = await cliente.TurnoAsync(caja.Id) ?? await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
         var enLinea = await PermisosSinConexionTests.LoQueSabeAsync(cliente, caja, turno);
 
-        // La copia como la guardaba una caja de antes: con las reglas por rol de la sucursal, sin los permisos.
-        using (var lote = almacen.Lote())
-            lote.Guardar("paquete", nueva.Paquete! with { Permisos = null }).Confirmar();
+        // La copia como la guardaba una caja de antes: con las reglas por rol de la sucursal, sin los permisos (ni la base, el
+        // formato y la versión de las existencias, de la entrega 5, parte 2).
+        await almacen.GuardarCopiaAsync(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+            nueva.Paquete! with { Permisos = null, Base = null, Formato = null, VersionExistencias = null }, AlmacenLocal.Json));
         interruptor.Caido = true;
         var deAntes = new Contingencia(almacen, http, conexion);
         var conCopiaDeAntes = new ClienteCaja(http, conexion, deAntes);

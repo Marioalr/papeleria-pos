@@ -23,8 +23,9 @@ public sealed class BaseEnMemoria : IAsyncDisposable
     }
 
     /// <summary>Un contexto nuevo sobre la misma base, como lo haría cada operación del servicio.</summary>
-    public PosDbContext Contexto() =>
-        new(new DbContextOptionsBuilder<PosDbContext>().UseSqlite(_conexion).Options) { Reloj = Reloj };
+    /// <param name="interceptores">Para ver lo que manda a la base (qué lee y si ya tiene la transacción abierta).</param>
+    public PosDbContext Contexto(params Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] interceptores) =>
+        new(new DbContextOptionsBuilder<PosDbContext>().UseSqlite(_conexion).AddInterceptors(interceptores).Options) { Reloj = Reloj };
 
     public async ValueTask DisposeAsync() => await _conexion.DisposeAsync();
 }

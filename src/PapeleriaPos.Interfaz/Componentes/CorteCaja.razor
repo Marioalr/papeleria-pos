@@ -2,8 +2,10 @@
    turno: quien ya entró con su PIN y tiene el permiso cuenta el efectivo y escribe el total, sin billete por billete, sin
    ver cuánto debería haber y sin volver a escribir su PIN; al cerrar ve lo esperado, lo contado y la diferencia, a nombre
    del cajero del turno. Quien no tiene el permiso ve el corte X (sin el efectivo) y quién puede hacerlo. Con «ver y
-   cerrar el corte del día», arriba elige entre el turno y el día (CorteDelDia). En el piloto con eleventa el corte del
-   turno se hace en eleventa. Va encima de la venta (la pestaña «Corte») y en la tarjeta del turno de otro cajero. *@
+   cerrar el corte del día», arriba elige entre el turno y el día (CorteDelDia); quien hace el corte de un turno o ve el del
+   día, también el historial de cortes de cualquier día (HistorialCortes, paridad con eleventa, 2026-10-17), que «/» abre
+   directo. En el piloto con eleventa el corte del turno se hace en eleventa. Va encima de la venta (la pestaña «Corte») y
+   en la tarjeta del turno de otro cajero. *@
 @implements IAsyncDisposable
 @inject ClienteCaja Cliente
 @inject IImpresora Impresora
@@ -11,22 +13,34 @@
 
 <div class="vn-corte">
     <div class="vn-corte-cab">
-        <h2>@(_delDia ? "Corte del día" : "Corte del turno")</h2>
-        @if (_informativo?.VeElDia == true)
+        <h2>@(_historial ? "Historial de cortes" : _delDia ? "Corte del día" : "Corte del turno")</h2>
+        @if (_informativo?.VeElDia == true || VeHistorial)
         {
+            @* El historial (paridad con eleventa, 2026-10-17), para quien hace el corte de un turno o ve el del día. *@
             <span class="vn-corte-segmento" role="tablist">
-                <button role="tab" class="@(_delDia ? "" : "activo")" aria-selected="@(!_delDia)" @onclick="() => Mostrar(delDia: false)">Turno</button>
-                <button role="tab" class="@(_delDia ? "activo" : "")" aria-selected="@_delDia" @onclick="() => Mostrar(delDia: true)">Del día · todas las cajas</button>
+                <button role="tab" class="@(_delDia || _historial ? "" : "activo")" aria-selected="@(!_delDia && !_historial)" @onclick="() => Mostrar(delDia: false)">Turno</button>
+                @if (_informativo?.VeElDia == true)
+                {
+                    <button role="tab" class="@(_delDia ? "activo" : "")" aria-selected="@_delDia" @onclick="() => Mostrar(delDia: true)">Del día · todas las cajas</button>
+                }
+                @if (VeHistorial)
+                {
+                    <button role="tab" class="@(_historial ? "activo" : "")" aria-selected="@_historial" @onclick="MostrarHistorial">Historial</button>
+                }
             </span>
         }
-        @if (_delDia && _resultado is not null)
+        @if ((_delDia || _historial) && _resultado is not null)
         {
             @* Ya se cerró el turno: también desde el día se sigue al siguiente turno (Esc dejaría la venta en un turno cerrado). *@
             <button class="vn-boton primario vn-corte-listo" @onclick="AlTerminar">Listo: abrir el siguiente turno</button>
         }
     </div>
 
-    @if (_delDia)
+    @if (_historial)
+    {
+        <HistorialCortes CajaId="Turno.CajaId" Sesion="Sesion" />
+    }
+    else if (_delDia)
     {
         <CorteDelDia CajaId="Turno.CajaId" Sesion="Sesion" AlHacerElCorte="() => Mostrar(delDia: false)" AlCerrarElDia="AlCerrarElDia" />
     }
@@ -61,6 +75,11 @@
                 @if (_error is not null)
                 {
                     <p class="vn-corte-error">@_error</p>
+                }
+                @if (_impreso is { } impreso)
+                {
+                    @* El corte va a la cola de la impresora (entrega 5, parte 3): aquí se ve si salió y, si no, «Reintentar» y «No imprimirlo». *@
+                    <AvisoImpresion Trabajo="impreso" Nota="El corte ya quedó." />
                 }
                 <div class="vn-botonera">
                     <button class="vn-boton primario" @ref="_listo" @onclick="AlTerminar">Listo: abrir el siguiente turno</button>
@@ -209,11 +228,40 @@
     /// </summary>
     [CascadingParameter(Name = PilotoConEleventa.Cascada)] public bool PilotoEleventa { get; set; }
 
+    /// <summary>Abre en el historial de cortes («Historial de cortes» en «/»), no en el del turno.</summary>
+    [Parameter] public bool Historial { get; set; }
+
+    /// <summary>Se ve el historial de cortes (paridad con eleventa, 2026-10-17).</summary>
+    private bool _historial;
+
+    /// <summary>
+    /// Los permisos con que pinta la pantalla de venta (los de la sesión o, de un servicio de antes, los que pidió aparte). En
+    /// la tarjeta del turno de otro cajero no hay: ahí, los de la sesión.
+    /// </summary>
+    [CascadingParameter(Name = "PermisosDeSesion")] public IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? PermisosDeSesion { get; set; }
+
+    /// <summary>
+    /// El historial lo ve quien hoy hace o ve los cortes: «Hacer el corte de un turno» o «Ver y cerrar el corte del día», en
+    /// «Puede» (el servicio lo vuelve a revisar). Con el corte X ya leído, lo que dijo el servicio; si no, los permisos de la
+    /// pantalla o de la sesión.
+    /// </summary>
+    private bool VeHistorial => _informativo is { } i
+        ? i.PuedeCortar || i.VeElDia
+        : Puede(AccionControlada.CorteZ) || Puede(AccionControlada.CorteDelDia);
+
+    /// <summary>Lo puede sin pedir autorización. Sin saberlo, se ve y el servicio decide, como en la pantalla de venta.</summary>
+    private bool Puede(AccionControlada accion) => PermisosDeSesion is { } permisos
+        ? (permisos.GetValueOrDefault(accion)?.Nivel ?? NivelPermiso.Permitido) == NivelPermiso.Permitido
+        : Sesion.Puede(accion);
+
     private CorteInformativoDto? _informativo;
     private CorteDto? _resultado;
     private string _contado = "";
     private string? _error;
     private string? _vistaPrevia;
+
+    /// <summary>El corte en la cola de la impresora de tickets; vacío sin impresora (se ve aquí mismo).</summary>
+    private TrabajoDeImpresion? _impreso;
     private bool _ocupado;
     private bool _delDia;
     private bool _enfocar = true;
@@ -224,7 +272,12 @@
 
     private long? Contado => Formato.LeerPesos(_contado);
 
-    protected override Task OnInitializedAsync() => CargarAsync();
+    protected override Task OnInitializedAsync()
+    {
+        // Quien no lo ve, abre en el turno, como siempre.
+        _historial = Historial && VeHistorial;
+        return CargarAsync();
+    }
 
     /// <summary>
     /// El corte X y los permisos de quien entró (también en el piloto: dicen si ve el corte del día). Si falla porque el
@@ -259,7 +312,7 @@
     /// </summary>
     protected override async Task OnAfterRenderAsync(bool primera)
     {
-        if (!_enfocar || _delDia)
+        if (!_enfocar || _delDia || _historial)
             return;
         if (_resultado is not null)
         {
@@ -311,7 +364,13 @@
     private void Mostrar(bool delDia)
     {
         _delDia = delDia;
+        _historial = false;
         _enfocar = !delDia;
+    }
+
+    private void MostrarHistorial()
+    {
+        (_historial, _delDia, _enfocar) = (true, false, false);
     }
 
     /// <summary>«desde las 09:00», o con la fecha si el turno se abrió otro día.</summary>
@@ -335,7 +394,7 @@
         {
             _resultado = await Cliente.CorteZAsync(Turno.Id, new SolicitudCorteZ(Sesion.UsuarioId, contado));
             _enfocar = true;
-            await ImprimirAsync(_resultado);
+            Imprimir(_resultado);
             await AlCerrarElTurno.InvokeAsync();
         }
         catch (ErrorCaja ex)
@@ -348,23 +407,18 @@
         }
     }
 
-    /// <summary>El corte se imprime para guardarlo con el efectivo; si falla la impresora, el corte ya quedó.</summary>
-    private async Task ImprimirAsync(CorteDto corte)
+    /// <summary>
+    /// El corte se imprime para guardarlo con el efectivo: va a la cola de la impresora, como el ticket, sin esperarla
+    /// (entrega 5, parte 3). Si no sale, el corte ya quedó: aquí mismo se ve y se reintenta.
+    /// </summary>
+    private void Imprimir(CorteDto corte)
     {
         var documento = DisenoComprobante.Corte(corte, Caja);
-        if (Impresora.MuestraVistaPrevia)
-        {
+        var cola = ColaDeImpresion.De(Impresora);
+        if (cola.MuestraVistaPrevia)
             _vistaPrevia = TicketTexto.Generar(documento);
-            return;
-        }
-        try
-        {
-            await Impresora.ImprimirAsync(documento, abrirCajon: false);
-        }
-        catch (Exception ex)
-        {
-            _error = $"El corte quedó, pero no se pudo imprimir: {ex.Message}";
-        }
+        else
+            _impreso = cola.Encolar($"Corte del turno de {corte.Cajero}", documento, abrirCajon: false);
     }
 
     /// <summary>El corte X: lo que se ve del turno antes de cerrarlo. El efectivo no: se cuenta a ciegas.</summary>

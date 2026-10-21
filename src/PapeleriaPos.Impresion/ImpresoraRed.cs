@@ -4,12 +4,23 @@ using PapeleriaPos.Nucleo.Contratos;
 namespace PapeleriaPos.Impresion;
 
 /// <summary>
+/// No se pudo conectar con la impresora de tickets: no se le mandó nada, así que se puede volver a intentar sin que el
+/// ticket salga dos veces. Pasa si está apagada o fuera de la red, y puede pasar mientras imprime lo de la otra caja (la
+/// POS-8360 de la tienda la comparten las dos): la cola de la caja lo vuelve a intentar sola (<see cref="ColaDeImpresion"/>).
+/// </summary>
+public sealed class ErrorAlConectar(string mensaje, Exception? causa = null) : IOException(mensaje, causa);
+
+/// <summary>
 /// Impresora de tickets en la red (como la POS-8360 de la tienda): se le mandan los comandos ESC/POS directo al
 /// puerto 9100, sin controlador de Windows. Sirve igual desde la caja que desde el servicio.
 /// <para>
 /// Si se cierra la conexión mientras la impresora sigue imprimiendo (el logo tarda), descarta lo que no alcanzó a
 /// procesar y el ticket sale cortado. Por eso se manda en partes y al final se le pregunta el estado del papel con
 /// GS r 1, que la impresora contesta en orden: cuando responde, ya imprimió todo lo anterior.
+/// </para>
+/// <para>
+/// Si no se pudo conectar, lanza <see cref="ErrorAlConectar"/> (no se mandó nada); si ya se mandó algo y algo falla (no
+/// confirmó, sin papel), un <see cref="IOException"/>: puede haber salido, y no se vuelve a mandar solo.
 /// </para>
 /// </summary>
 public sealed class ImpresoraRed(string host, int puerto = 9100, TimeSpan? esperaConexion = null, TimeSpan? esperaImpresion = null) : IImpresora
@@ -38,27 +49,36 @@ public sealed class ImpresoraRed(string host, int puerto = 9100, TimeSpan? esper
             await using var canal = cliente.GetStream();
             using (var limite = Limite(_esperaImpresion, ct))
             {
-                for (var i = 0; i < datos.Length; i += TamanoParte)
-                    await canal.WriteAsync(datos.AsMemory(i, Math.Min(TamanoParte, datos.Length - i)), limite.Token);
-                await canal.WriteAsync(PreguntarPapel, limite.Token);
-
                 var respuesta = new byte[1];
-                if (await canal.ReadAsync(respuesta, limite.Token) == 0)
+                int leidos;
+                try
+                {
+                    for (var i = 0; i < datos.Length; i += TamanoParte)
+                        await canal.WriteAsync(datos.AsMemory(i, Math.Min(TamanoParte, datos.Length - i)), limite.Token);
+                    await canal.WriteAsync(PreguntarPapel, limite.Token);
+                    leidos = await canal.ReadAsync(respuesta, limite.Token);
+                }
+                catch (IOException ex)
+                {
+                    // Ya se mandó algo: pudo salir una parte.
+                    throw new IOException("Se cortó la conexión con la impresora de tickets a medio ticket.", ex);
+                }
+                if (leidos == 0)
                     throw new IOException("La impresora cerró la conexión antes de terminar de imprimir.");
                 // Bits 2 y 3: sin papel.
                 if ((respuesta[0] & 0x0C) != 0)
                     throw new IOException("Se acabó el papel de la impresora de tickets.");
             }
         }
-        catch (SocketException ex)
+        catch (SocketException ex) when (!conectado)
         {
-            throw new IOException($"No responde la impresora de tickets en {Host}:{Puerto}.", ex);
+            throw new ErrorAlConectar($"No responde la impresora de tickets en {Host}:{Puerto}.", ex);
         }
         catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
         {
-            throw new IOException(conectado
-                ? "La impresora de tickets no confirmó que terminó de imprimir."
-                : $"No responde la impresora de tickets en {Host}:{Puerto}.", ex);
+            if (!conectado)
+                throw new ErrorAlConectar($"No responde la impresora de tickets en {Host}:{Puerto}.", ex);
+            throw new IOException("La impresora de tickets no confirmó que terminó de imprimir.", ex);
         }
     }
 

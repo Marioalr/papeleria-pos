@@ -1,3 +1,4 @@
+using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Clientes;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
@@ -74,6 +75,70 @@ public static class Textos
                   + $". «{comprobante.Cliente}» vuelve a deber {Formato.Dinero(comprobante.MontoCentavos)}."
                 : $"Abono de {Formato.Dinero(comprobante.MontoCentavos)} de «{comprobante.Cliente}». Saldo: {Formato.Dinero(comprobante.SaldoCentavos)}"
                   + (comprobante.Forma == FormaPago.Efectivo ? $". Cambio: {Formato.Dinero(comprobante.CambioCentavos)}." : ".");
+
+    /// <summary>Un movimiento del kardex en Inventario › Movimientos: «Venta», «Lectura de eleventa»…</summary>
+    public static string Clase(ClaseMovimiento clase) => clase switch
+    {
+        ClaseMovimiento.Venta => "Venta",
+        ClaseMovimiento.Devolucion => "Devolución",
+        ClaseMovimiento.Compra => "Compra",
+        ClaseMovimiento.Ajuste => "Ajuste",
+        ClaseMovimiento.Merma => "Merma",
+        ClaseMovimiento.Conteo => "Conteo",
+        ClaseMovimiento.Paquete => "Paquete abierto",
+        ClaseMovimiento.InventarioInicial => "Inventario inicial",
+        ClaseMovimiento.LecturaEleventa => "Lectura de eleventa",
+        ClaseMovimiento.Traspaso => "Traspaso",
+        _ => "Consumo de un servicio",
+    };
+
+    /// <summary>
+    /// Los tipos que se eligen en el filtro de Movimientos, como en eleventa (entradas, salidas, devoluciones y ajustes) y los
+    /// del POS. Los traspasos y los consumos de servicios todavía no existen: no se ofrecen.
+    /// </summary>
+    public static IReadOnlyList<(ClaseMovimiento Clase, string Nombre)> ClasesParaFiltrar { get; } =
+    [
+        (ClaseMovimiento.Venta, "Ventas"),
+        (ClaseMovimiento.Devolucion, "Devoluciones y cancelaciones"),
+        (ClaseMovimiento.Compra, "Compras"),
+        (ClaseMovimiento.Ajuste, "Ajustes"),
+        (ClaseMovimiento.Merma, "Mermas"),
+        (ClaseMovimiento.Conteo, "Conteos"),
+        (ClaseMovimiento.Paquete, "Paquetes abiertos"),
+        (ClaseMovimiento.InventarioInicial, "Inventario inicial"),
+        (ClaseMovimiento.LecturaEleventa, "Lectura de eleventa"),
+    ];
+
+    /// <summary>Una cantidad en su unidad: «24», «1.5 m», «0.25 kg».</summary>
+    public static string Cantidad(decimal cantidad, UnidadBase unidad) => Formato.Numero(cantidad) + unidad switch
+    {
+        UnidadBase.Metro => " m",
+        UnidadBase.Kilogramo => " kg",
+        UnidadBase.Litro => " l",
+        _ => "",
+    };
+
+    /// <summary>Cuánto duró algo, redondeado a lo que importa: «45 s», «17 min 28 s», «2 h 5 min», «3 d 4 h».</summary>
+    public static string Duracion(TimeSpan tiempo)
+    {
+        var segundos = (long)Math.Max(0, Math.Round(tiempo.TotalSeconds));
+        var (d, h, m, s) = (segundos / 86400, segundos / 3600 % 24, segundos / 60 % 60, segundos % 60);
+        return (d, h, m) switch
+        {
+            ( > 0, _, _) => h > 0 ? $"{d} d {h} h" : $"{d} d",
+            (_, > 0, _) => m > 0 ? $"{h} h {m} min" : $"{h} h",
+            (_, _, > 0) => s > 0 ? $"{m} min {s} s" : $"{m} min",
+            _ => $"{s} s",
+        };
+    }
+
+    /// <summary>«A», «A y B», «A, B y C».</summary>
+    public static string Lista(IReadOnlyList<string> cosas) => cosas.Count switch
+    {
+        0 => "",
+        1 => cosas[0],
+        _ => $"{string.Join(", ", cosas.Take(cosas.Count - 1))} y {cosas[^1]}",
+    };
 
     /// <summary>Quién autoriza: «Luis», «Carmen o Luis», «Ana, Carmen o Luis»; si son más, los dos primeros y cuántos más.</summary>
     public static string Quien(IReadOnlyList<QuienAutoriza> autorizan) => autorizan.Count switch

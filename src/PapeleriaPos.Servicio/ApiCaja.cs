@@ -108,7 +108,7 @@ public static class ApiCaja
             // El piloto en la caja 2: el corte se hace en eleventa, aunque la pantalla ya no lo ofrezca (una caja de antes).
             if (opcionesEleventa.CorteEnEleventa)
                 throw new InvalidOperationException(CorteEnElPiloto.CorteEnEleventa);
-            var corte = await CorteDtoAsync(db, await new RegistroCaja(db).CorteZAsync(turnoId, s.UsuarioId, s.ContadoCentavos));
+            var corte = await CorteDtoAsync(db, await new RegistroCaja(db).CorteZAsync(turnoId, s.UsuarioId, s.ContadoCentavos, id: s.Id));
             // Si el turno pasó a eleventa, su cierre ya está en la bandeja: que vaya ya.
             eleventa.Despertar();
             // Con cada cierre, una copia de la base (además de la diaria); si falla, el corte ya quedó guardado.
@@ -175,11 +175,10 @@ public static class ApiCaja
         // Lo que se buscó y qué se eligió: lo elegido sale primero la próxima vez en esa caja.
         api.MapPost("/busquedas", async (SolicitudBusqueda s, PosDbContext db, CatalogoEnMemoria catalogo) =>
         {
-            var texto = CatalogoEnMemoria.ClaveDeBusqueda(s.Texto);
+            // La misma clave que recuerda la copia de la caja (entrega 5, parte 3).
+            var texto = IndiceDeBusqueda.ClaveGuardada(s.Texto);
             if (texto.Length == 0)
                 return Results.NoContent();
-            if (texto.Length > 100)
-                texto = texto[..100].TrimEnd();
             if (!await db.Cajas.AnyAsync(c => c.Id == s.CajaId) || (s.VarianteId is { } v && !await db.Variantes.AnyAsync(x => x.Id == v)))
                 return Results.BadRequest(new ErrorDto("La caja o el producto de la búsqueda no existen."));
             db.Busquedas.Add(new Busqueda { CajaId = s.CajaId, FechaUtc = DateTime.UtcNow, Texto = texto, Resultados = s.Resultados, VarianteId = s.VarianteId });
@@ -196,9 +195,10 @@ public static class ApiCaja
         api.MapPost("/ventas", async (SolicitudCobro s, PosDbContext db, CatalogoEnMemoria catalogo, IOptions<OpcionesTicket> ticket, EnvioVentasEleventa eleventa,
             OpcionesEleventa opcionesEleventa) =>
         {
-            // La caja manda otra vez la misma venta si no le llegó la respuesta: se regresa el ticket que ya se cobró.
+            // La caja manda otra vez la misma venta si no le llegó la respuesta: se regresa el ticket que ya se cobró, como se cobró,
+            // y la caja dice que ya había quedado.
             if (s.VentaId is { } ventaId && await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleOrDefaultAsync(v => v.Id == ventaId) is { } cobrada)
-                return await TicketAsync(db, cobrada, ticket.Value);
+                return Results.Ok((await TicketAsync(db, cobrada, ticket.Value)) with { YaCobrada = true });
             // El piloto en la caja 2: solo efectivo, aunque la pantalla ya no ofrezca lo demás.
             if (opcionesEleventa.SoloEfectivo)
                 SoloEfectivoEnElPiloto.RevisarCobro(s.Cobros);
@@ -207,6 +207,11 @@ public static class ApiCaja
             var caja = await db.Cajas.FindAsync(s.CajaId) ?? throw new InvalidOperationException("La caja no existe.");
             var venta = await ArmarVentaAsync(db, catalogo, caja, turno.Id, s.CajeroId, s.VentaId ?? Ids.Nuevo(), s.Lineas,
                 await ApiClientes.MayoreoDelCobroAsync(db, s.ClienteId, s.MayoreoDeCliente));
+            // La caja escaneó contra su copia (entrega 5): si el precio o el mayoreo de algo del ticket cambió después, no se
+            // cobra con precios que el cajero no vio; se le contestan los de ahora y la caja pone el ticket al día. Una caja de
+            // antes no manda la versión: se cobra como siempre.
+            if (s.VersionCatalogo is { } version && await PreciosCambiadosAsync(db, catalogo, caja.SucursalId, s.Lineas, version) is { } cambiados)
+                return Results.Json(cambiados, statusCode: StatusCodes.Status409Conflict);
             (venta.ClienteId, venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId, venta.AutorizacionCreditoId) =
                 (s.ClienteId, s.AutorizacionDescuentoId, s.AutorizacionBajoCostoId, s.AutorizacionCreditoId);
             // Las impresiones van juntas en una línea; su precio y costo salen de cada trabajo, no de la caja.
@@ -216,9 +221,20 @@ public static class ApiCaja
             // El piloto en la caja 2: la venta entra a la bandeja hacia eleventa junto con el cobro, y se intenta
             // mandar ya, para que el ticket salga con el folio de eleventa.
             eleventa.Encolar(db, venta.Id);
-            await new RegistroCaja(db).CobrarAsync(venta, s.Cobros, impresiones: impresiones);
+            try
+            {
+                await new RegistroCaja(db).CobrarAsync(venta, s.Cobros, impresiones: impresiones);
+            }
+            catch (Exception ex) when (ex is DbUpdateException or InvalidOperationException)
+            {
+                // La misma venta llegó dos veces a la vez (entrega 5, parte 2): la caja dejó de esperar este cobro (pasó su plazo) y
+                // la mandó con la bandeja con el mismo Id, y entró primero esa. Queda una; se regresa su ticket.
+                if (await YaCobradaAsync(db, venta.Id) is not { } yaCobrada)
+                    throw;
+                return Results.Ok((await TicketAsync(db, yaCobrada, ticket.Value)) with { YaCobrada = true });
+            }
             await eleventa.MandarAlCobrarAsync(venta.Id);
-            return await TicketAsync(db, venta, ticket.Value);
+            return Results.Ok(await TicketAsync(db, venta, ticket.Value));
         });
 
         api.MapGet("/cajas/{cajaId:guid}/ventas-del-dia", async (Guid cajaId, PosDbContext db) =>
@@ -258,6 +274,13 @@ public static class ApiCaja
                 : Results.NotFound(new ErrorDto("Esta caja todavía no tiene ventas.")));
     }
 
+    /// <summary>La venta con ese Id, si ya se guardó (con sus líneas y cobros, para su ticket).</summary>
+    internal static async Task<Venta?> YaCobradaAsync(PosDbContext db, Guid ventaId)
+    {
+        db.ChangeTracker.Clear();
+        return await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleOrDefaultAsync(v => v.Id == ventaId);
+    }
+
     /// <summary>
     /// Arma la venta con los precios del catálogo: la caja solo dice qué y cuánto. Un precio distinto (cambiado en la caja,
     /// o el que se cobró sin conexión) queda como precio cambiado. Con <paramref name="mayoreoDeCliente"/> (el cliente del
@@ -287,7 +310,8 @@ public static class ApiCaja
                 venta.AplicarDescuentoSolicitado(comun, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
                 continue;
             }
-            var producto = await catalogo.PorVarianteAsync(db, varianteId, caja.SucursalId)
+            // Sin su existencia: la venta no la usa, y leerla por cada línea era ir a la base antes de cobrar.
+            var producto = await catalogo.PorVarianteAsync(db, varianteId, caja.SucursalId, conExistencia: false)
                 ?? throw new InvalidOperationException($"«{l.Descripcion ?? "Un producto"}» ya no está en el catálogo.");
             var agregada = venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
             if (l.PrecioCentavos is { } precio && precio != agregada.PrecioCentavos)
@@ -295,6 +319,30 @@ public static class ApiCaja
             venta.AplicarDescuentoSolicitado(agregada, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
         }
         return venta;
+    }
+
+    /// <summary>
+    /// Los productos del ticket cuyo precio o mayoreo cambió después de la versión con que la caja puso sus precios, como
+    /// están ahora; nada si no cambió ninguno. Se revisa después de armar la venta: lo que cambie mientras tanto ya no la toca.
+    /// Una versión más nueva que la del servicio quiere decir que su base cambió entera (la prueba empezó de cero): se
+    /// revisa todo.
+    /// </summary>
+    private static async Task<PreciosCambiadosDto?> PreciosCambiadosAsync(
+        PosDbContext db, CatalogoEnMemoria catalogo, Guid sucursalId, IReadOnlyList<LineaSolicitada> lineas, long version)
+    {
+        var actual = await catalogo.VersionAsync(db);
+        long Desde(LineaSolicitada l) => (l.VersionCatalogo ?? version) is var v && v <= actual ? v : -1;
+        var cambiados = await PreciosDeLaCopia.CambiadosAsync(db, sucursalId, lineas.Select(l => l with { VersionCatalogo = Desde(l) }).ToList(),
+            version, actual);
+        if (cambiados.Count == 0)
+            return null;
+        var productos = new List<ProductoVentaDto>();
+        foreach (var varianteId in cambiados)
+        {
+            if (await catalogo.PorVarianteAsync(db, varianteId, sucursalId) is { } producto)
+                productos.Add(producto);
+        }
+        return new PreciosCambiadosDto(PreciosDeLaCopia.Mensaje(productos), productos, actual);
     }
 
     internal static async Task<TurnoDto> TurnoDtoAsync(PosDbContext db, Turno t)
@@ -326,8 +374,9 @@ public static class ApiCaja
         // El piloto: el folio de eleventa, si llegó; si otra caja de eleventa lo repitió, el de la caja (FoliosRepetidos).
         var folioEleventa = await db.EnviosAEleventa.AsNoTracking().Where(e => e.Tipo == TipoEnvioEleventa.Venta && e.VentaId == v.Id)
             .Select(e => e.FolioRepetido ? null : e.FolioEleventa).FirstOrDefaultAsync();
+        // Con «Al cobrar» de la sucursal: la caja decide con el ticket que ya le llega, sin preguntar nada más al cobrar.
         return ArmadoTicket.Desde(v, caja!.Nombre, cajero, id => presentaciones.TryGetValue(id, out var p) ? p : null,
             configuracion.RenglonesEncabezado, configuracion.RenglonesPie, ApiConfiguracion.Logo(configuracion), cliente,
-            await new RegistroCredito(db).TicketAsync(v.Id)) with { FolioEleventa = folioEleventa };
+            await new RegistroCredito(db).TicketAsync(v.Id)) with { FolioEleventa = folioEleventa, AlCobrar = configuracion.AlCobrar };
     }
 }

@@ -1,0 +1,128 @@
+@* Configuración › Acerca de › Red (la red de la tienda en el POS, docs/arquitectura.md, «La red de la matriz»): cómo está la red
+   ahora, lo que está configurado por nombre o con WSD, y las últimas caídas de la bitácora de red de esta caja y de la caja
+   principal (desde, hasta y cuánto duraron), con dónde están sus archivos para abrirlos con el Bloc de notas. Solo lee: lo de
+   esta caja, de su bitácora; lo de la caja principal, si contesta. *@
+@implements IDisposable
+@inject ClienteCaja Cliente
+@inject ConexionCaja Conexion
+@inject IServiceProvider Servicios
+
+<div class="vn-red-resumen">
+    @foreach (var linea in Ahora())
+    {
+        <p class="vn-cfg-nota">@linea</p>
+    }
+    @foreach (var aviso in Avisos())
+    {
+        <p class="vn-red-aviso" role="note">@aviso</p>
+    }
+    @{
+        var caidas = Caidas();
+    }
+    @if (caidas.Count > 0)
+    {
+        <table class="vn-cfg-tabla vn-red-caidas">
+            <thead><tr><th>Se perdió</th><th>Desde</th><th>Hasta</th><th class="num">Duró</th><th>Lo anotó</th></tr></thead>
+            <tbody>
+                @foreach (var (caida, quien) in caidas)
+                {
+                    <tr>
+                        <td>@caida.Que</td>
+                        <td>@Fecha(caida.Desde)</td>
+                        <td>@(caida.Hasta is { } hasta ? $"{(hasta.Date == caida.Desde.Date ? Hora(hasta) : Fecha(hasta))}{(caida.FinAproximado ? " (se cerró antes de volver)" : "")}" : "sigue")</td>
+                        <td class="num">@(caida.Duracion is { } duro ? $"{(caida.FinAproximado ? "más de " : "")}{Textos.Duracion(duro)}" : "")</td>
+                        <td>@quien</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    else if (Red?.Bitacora is not null || _principal is not null)
+    {
+        <p class="vn-cfg-nota">Sin caídas en la bitácora de red de los últimos @BitacoraDeRed.DiasPorOmision días.</p>
+    }
+    @foreach (var archivo in Archivos())
+    {
+        <p class="vn-cfg-nota">@archivo</p>
+    }
+</div>
+
+@code {
+    private ResumenDeRedDto? _principal;
+    private Contingencia? _contingencia;
+
+    private RedDeLaCaja? Red => Servicios.GetService<RedDeLaCaja>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _contingencia = Servicios.GetService<Contingencia>();
+        if (_contingencia is not null)
+            _contingencia.Cambio += AlCambiar;
+        _principal = await Cliente.RedDeLaPrincipalAsync();
+    }
+
+    private void AlCambiar() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>Cómo está ahora esta caja (su conexión con la caja principal y su tarjeta de red) y lo que dice la caja principal.</summary>
+    private IEnumerable<string> Ahora()
+    {
+        if (_contingencia is { } c && !Conexion.Servicio.IsLoopback)
+        {
+            var red = c.EstadoDeLaRed switch
+            {
+                EstadoRed.Buena => $"conectada a la caja principal en {Conexion.Servicio.Authority} (red buena{(c.Latencia is { } l ? $", {RedLocal.Ms(l)}" : "")})",
+                EstadoRed.Lenta => $"la red con la caja principal ({Conexion.Servicio.Authority}) está lenta{(c.Latencia is { } l ? $" ({RedLocal.Ms(l)})" : "")}",
+                _ => $"no llega a la caja principal ({Conexion.Servicio.Authority}): trabaja con su copia",
+            };
+            yield return $"Esta caja: {red}.";
+        }
+        if (Red?.Vigia?.Equipo is { } equipo)
+            yield return $"Esta PC: {equipo.Texto}{Router(Red.Vigia.Router)}.";
+        var principal = _principal?.Ahora ?? _contingencia?.RedDeLaPrincipal;
+        if (principal is { Internet: { } internet })
+            yield return $"La caja principal: {(internet ? "hay internet" : "sin internet")}{Router(principal.Router)}.";
+    }
+
+    private static string Router(bool? contesta) => contesta switch
+    {
+        true => "; su router contesta",
+        false => "; su router no contesta",
+        _ => "",
+    };
+
+    /// <summary>Lo configurado por nombre o con WSD: con el router trabado no se encuentra.</summary>
+    private IEnumerable<string> Avisos()
+    {
+        if (Red?.AvisoServicio is { } servicio)
+            yield return servicio;
+        if (Red?.AvisoImpresora is { } impresora)
+            yield return impresora;
+    }
+
+    /// <summary>Las de esta caja y las de la caja principal, la más reciente primero.</summary>
+    private List<(CaidaDeRed Caida, string Quien)> Caidas()
+    {
+        var deEsta = (Red?.Bitacora?.Caidas() ?? []).Select(c => (c, "esta caja"));
+        var deLaPrincipal = (_principal?.Caidas ?? []).Select(c => (new CaidaDeRed(c.Que, c.Desde, c.Hasta, c.FinAproximado), "la caja principal"));
+        // En la caja principal las dos son de la misma PC, pero no se repiten: el internet y el router los anota su servicio.
+        return deEsta.Concat(deLaPrincipal).OrderByDescending(x => x.Item1.Desde).Take(8).ToList();
+    }
+
+    private IEnumerable<string> Archivos()
+    {
+        if (Red?.Bitacora is { } bitacora)
+            yield return $"La bitácora de red de esta caja está en {bitacora.Carpeta} ({bitacora.Nombre}-AAAA-MM-DD.log, una por día; se guardan {BitacoraDeRed.DiasPorOmision} días).";
+        if (_principal?.Carpeta is { } carpeta)
+            yield return $"La de la caja principal, en esa PC: {carpeta} (red-servicio-AAAA-MM-DD.log).";
+    }
+
+    private static string Fecha(DateTime cuando) => cuando.ToString("ddd d/MM HH:mm", Formato.Mexico);
+
+    private static string Hora(DateTime cuando) => cuando.ToString("HH:mm", Formato.Mexico);
+
+    public void Dispose()
+    {
+        if (_contingencia is not null)
+            _contingencia.Cambio -= AlCambiar;
+    }
+}

@@ -20,9 +20,14 @@ public sealed record PrecioDto(Guid Id, Guid? PresentacionId, Guid? SucursalId, 
 
 /// <summary>Un producto listo para agregarse a la venta: con sus presentaciones y precios.</summary>
 /// <param name="Presentacion">La que corresponde al código escaneado (la base si se buscó por nombre).</param>
+/// <param name="Version">
+/// La versión del catálogo de la que salieron sus precios (entrega 5): la de la copia de la caja, o la del servicio cuando se
+/// lo pidió. El cobro la lleva, para que el servicio sepa si sus precios cambiaron después. Vacía en un servicio de antes.
+/// </param>
 public sealed record ProductoVentaDto(
     Guid VarianteId, string Descripcion, string? Codigo, Impuesto Impuesto, UnidadBase Unidad, bool LlevaInventario,
-    decimal? Existencia, PresentacionDto Presentacion, IReadOnlyList<PresentacionDto> Presentaciones, IReadOnlyList<PrecioDto> Precios)
+    decimal? Existencia, PresentacionDto Presentacion, IReadOnlyList<PresentacionDto> Presentaciones, IReadOnlyList<PrecioDto> Precios,
+    long? Version = null)
 {
     public ProductoEnVenta ParaVenta() => new(VarianteId, Descripcion, Impuesto, Unidad, LlevaInventario);
 
@@ -117,9 +122,14 @@ public sealed record SolicitudMovimiento(TipoMovimientoCaja Tipo, long MontoCent
 /// <summary>Una línea tal como la manda la caja. Sin variante es artículo común, con descripción y precio a mano.</summary>
 /// <param name="PrecioCentavos">En un producto del catálogo, el precio cambiado en la caja (con <paramref name="AutorizacionId"/>).</param>
 /// <param name="DescuentoCentesimas">Descuento en porcentaje (centésimas: 1000 = 10 %); o <paramref name="DescuentoCentavos"/> en monto. Con motivo.</param>
+/// <param name="VersionCatalogo">
+/// Al cobrar (entrega 5): la versión del catálogo de la que salieron los precios que el cajero vio en esta línea
+/// (<see cref="ProductoVentaDto.Version"/>), si no es la del ticket (<see cref="SolicitudCobro.VersionCatalogo"/>): un producto
+/// que llegó de la caja principal, o una línea de antes de que bajara la copia de ahora.
+/// </param>
 public sealed record LineaSolicitada(
     Guid? VarianteId, Guid? PresentacionId, long CantidadMilesimas, string? Descripcion = null, long? PrecioCentavos = null, Guid? AutorizacionId = null,
-    int? DescuentoCentesimas = null, long? DescuentoCentavos = null, string? MotivoDescuento = null);
+    int? DescuentoCentesimas = null, long? DescuentoCentavos = null, string? MotivoDescuento = null, long? VersionCatalogo = null);
 
 /// <summary>El servicio vuelve a armar la venta con los precios del catálogo: nunca confía en los precios de la caja.</summary>
 /// <param name="VentaId">Lo pone la caja: si la respuesta no llegó y se manda otra vez (o sube con la bandeja), no se cobra dos veces.</param>
@@ -131,10 +141,28 @@ public sealed record LineaSolicitada(
 /// La caja calculó el ticket con el mayoreo siempre del cliente. Vacío en las cajas de antes, que no lo conocen: el servicio
 /// calcula igual que ellas.
 /// </param>
+/// <param name="VersionCatalogo">
+/// La versión de la copia del catálogo con que la caja puso los precios del ticket (entrega 5; cada línea puede decir otra,
+/// <see cref="LineaSolicitada.VersionCatalogo"/>). Si el precio o el mayoreo de algo del ticket cambió después, el servicio no
+/// cobra: contesta con los de ahora (<see cref="PreciosCambiadosDto"/>), para que el ticket diga lo que vio el cajero.
+/// Vacía en las cajas de antes: se cobra como siempre.
+/// </param>
 public sealed record SolicitudCobro(
     Guid CajaId, Guid TurnoId, Guid CajeroId, IReadOnlyList<LineaSolicitada> Lineas, IReadOnlyList<CobroSolicitado> Cobros, Guid? VentaId = null,
     IReadOnlyList<Guid>? Impresiones = null, [property: JsonPropertyName("clienteEspecialId")] Guid? ClienteId = null,
-    Guid? AutorizacionDescuentoId = null, Guid? AutorizacionBajoCostoId = null, bool? MayoreoDeCliente = null, Guid? AutorizacionCreditoId = null);
+    Guid? AutorizacionDescuentoId = null, Guid? AutorizacionBajoCostoId = null, bool? MayoreoDeCliente = null, Guid? AutorizacionCreditoId = null,
+    long? VersionCatalogo = null);
+
+/// <summary>
+/// El cobro no se hizo (entrega 5): el precio o el mayoreo de algo del ticket cambió después de la versión con que la caja
+/// puso sus precios. Llega con un 409 y se lee también como <see cref="ErrorDto"/>.
+/// </summary>
+/// <param name="Productos">Los que cambiaron, como están ahora (con su versión).</param>
+/// <param name="VersionCatalogo">Hasta esta versión, lo demás del ticket no cambió.</param>
+public sealed record PreciosCambiadosDto(string Mensaje, IReadOnlyList<ProductoVentaDto> Productos, long VersionCatalogo, string Codigo = PreciosCambiadosDto.CodigoDelError)
+{
+    public const string CodigoDelError = "precios-cambiados";
+}
 
 /// <param name="ImporteCentavos">Ya con el descuento.</param>
 /// <param name="Descuento">Cómo se lee el descuento ("10 %" o vacío si fue un monto).</param>
@@ -154,12 +182,42 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 /// <param name="Cliente">El cliente registrado con sus privilegios: "Escuela Benito Juárez (descuento 10 %)".</param>
 /// <param name="Folio">El de esta caja (A-000123): con él se abre la devolución en la caja nueva.</param>
 /// <param name="FolioEleventa">En el piloto, el que le dio eleventa si llegó a tiempo: es el que se imprime, para devolver en cualquier caja.</param>
+/// <param name="YaCobrada">
+/// El cobro llegó con el Id de una venta que ya estaba (se había perdido la respuesta, entrega 5, parte 2): es esa, como se
+/// cobró entonces, y la pantalla lo dice.
+/// </param>
+/// <param name="AlCobrar">
+/// Lo que dice Configuración › Ticket › «Al cobrar» (con conexión, el servicio; sin ella, la copia de la caja): viene con el
+/// ticket del cobro, así que decidir si se imprime no le suma nada al cobro. Solo cuenta al cobrar
+/// (<see cref="LoQueSeHaceAlCobrar"/>): una reimpresión sale siempre. Con un servicio de antes, se imprime.
+/// </param>
+/// <param name="EnContingencia">
+/// Se cobró con la copia de la caja, sin la caja principal (sin conexión o con la red lenta): hasta que suba, no se puede
+/// reimprimir. Lo pone la caja; el servicio nunca.
+/// </param>
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
     long TotalCentavos, long IvaCentavos, IReadOnlyList<CobroTicketDto> Cobros, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie,
     LogoTicketDto? Logo = null, Guid? VentaId = null, long RedondeoCentavos = 0, string? Cliente = null, CreditoTicketDto? Credito = null,
-    int? FolioEleventa = null)
+    int? FolioEleventa = null, bool YaCobrada = false, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir, bool EnContingencia = false)
 {
+    /// <summary>
+    /// Lo fiado se imprime aunque «Al cobrar» diga otra cosa: el cliente se lleva «SU CUENTA», lo que quedó a deber y hasta
+    /// cuándo lo paga. Lo demás que se imprime (los comprobantes de devoluciones, entradas, salidas y abonos, el corte, las
+    /// reimpresiones) no depende de «Al cobrar».
+    /// </summary>
+    public bool SiempreSeImprime => Credito is not null || CreditoCentavos > 0;
+
+    /// <summary>
+    /// Lo que se hace con este ticket al cobrar: lo de <see cref="AlCobrar"/>, salvo lo que siempre se imprime. Y «No
+    /// imprimirlo» sin conexión se ofrece, como «Ofrecerlo»: si el cliente lo pide, sin la caja principal no hay reimpresión
+    /// (decidido el 2026-10-17, por revisar).
+    /// </summary>
+    public TicketAlCobrar LoQueSeHaceAlCobrar =>
+        SiempreSeImprime ? TicketAlCobrar.Imprimir
+        : AlCobrar == TicketAlCobrar.NoImprimir && EnContingencia ? TicketAlCobrar.Ofrecer
+        : AlCobrar;
+
     /// <summary>El folio que se lee en el ticket y en la pantalla.</summary>
     public string FolioImpreso => FolioEleventa?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? Folio;
 
@@ -187,7 +245,11 @@ public sealed record VentaDelDiaDto(Guid Id, string Folio, DateTime FechaLocal, 
 /// </summary>
 /// <param name="UsuarioId">Quien hace el corte: el de la sesión.</param>
 /// <param name="ContadoCentavos">El total del efectivo que contó.</param>
-public sealed record SolicitudCorteZ(Guid UsuarioId, long ContadoCentavos);
+/// <param name="Id">
+/// El del corte, desde la caja (entrega 5, parte 2): si la caja principal lo guardó pero la respuesta no llegó, el que hace la
+/// caja sin conexión es el mismo, y al subir no choca con el turno ya cerrado. Vacío (una caja de antes): uno nuevo.
+/// </param>
+public sealed record SolicitudCorteZ(Guid UsuarioId, long ContadoCentavos, Guid? Id = null);
 
 /// <param name="UmbralAvisoCentavos">
 /// En el corte Z: el umbral de la sucursal, si la diferencia pasó de él y el aviso sale por Telegram. Vacío si no.
@@ -361,7 +423,9 @@ public sealed record SolicitudCierreDia(Guid UsuarioId, DateOnly? Fecha = null);
 public sealed record ErrorDto(string Mensaje, string? Codigo = null);
 
 /// <param name="LogoPngBase64">Cómo se ve el logo convertido, para la pantalla.</param>
-public sealed record ConfiguracionTicketDto(IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, string? LogoPngBase64);
+/// <param name="AlCobrar">Qué se hace con el ticket al cobrar (<see cref="ConfiguracionTicket.AlCobrar"/>).</param>
+public sealed record ConfiguracionTicketDto(
+    IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, string? LogoPngBase64, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir);
 
 /// <summary>
 /// El encabezado y el pie del ticket (la Configuración nueva, entrega 7): los cambia quien entró a la caja con «Configurar
@@ -373,6 +437,10 @@ public sealed record SolicitudTextosTicket(Guid UsuarioId, IReadOnlyList<string>
 /// <param name="UsuarioId">Quien entró a la caja, con «Configurar el ticket».</param>
 /// <param name="ImagenBase64">El archivo tal cual (PNG, JPG o BMP); el servicio lo pasa a blanco y negro. Vacío: quita el logo.</param>
 public sealed record SolicitudLogo(Guid UsuarioId, string? ImagenBase64);
+
+/// <summary>«Al cobrar» (Configuración › Ticket): lo cambia quien entró a la caja con «Configurar el ticket», sin volver a escribir su PIN.</summary>
+/// <param name="UsuarioId">Quien entró a la caja.</param>
+public sealed record SolicitudAlCobrar(Guid UsuarioId, TicketAlCobrar AlCobrar);
 
 // ── Control (entrega 2) ─────────────────────────────────────────────────────
 
@@ -481,7 +549,10 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 // ── Varias cajas (entrega 3) ────────────────────────────────────────────────
 
 /// <summary>Lo que contesta el servicio sin llave: para encontrarlo en la red y saber que está vivo.</summary>
-/// <param name="VersionDatos">Cambia con el catálogo, los usuarios o sus permisos: la caja vuelve a bajar su copia.</param>
+/// <param name="VersionDatos">
+/// Cambia con lo que lleva la copia de las cajas (el catálogo, los usuarios y sus permisos, la configuración…): la caja pide
+/// lo que cambió (o, una de antes, vuelve a bajar su copia). Un PIN mal tecleado o abrir un turno ya no la cambian.
+/// </param>
 /// <param name="Prueba">El servicio es el de la prueba con una persona real: datos ficticios, guía y avisos simulados.</param>
 /// <param name="VersionCredito">Cambia con cada fiado, abono o cambio de crédito: la caja vuelve a pedir los saldos.</param>
 /// <param name="PilotoEleventa">
@@ -492,9 +563,51 @@ public sealed record BitacoraDto(DateTime FechaLocal, string? Usuario, AccionCon
 /// La base contra apagones (entrega 10): el servicio se apagó de golpe y la base no pasó la revisión al arrancar. La caja
 /// lo muestra en la franja hasta que se restaure el respaldo. Vacío si todo está bien.
 /// </param>
+/// <param name="VersionExistencias">
+/// Cambia con cada cambio de existencia (una venta, una compra): la caja pide las que cambiaron desde la suya (entrega 5,
+/// parte 2). Vacía en un servicio de antes: entonces la existencia de la copia se pone al día al bajarla completa.
+/// </param>
+/// <param name="Base">
+/// De qué base son las versiones (cambia al arrancar el servicio y al empezar de cero la prueba): con otra, los cambios
+/// desde la versión de la caja no sirven y se baja la copia completa. Vacía en un servicio de antes.
+/// </param>
+/// <param name="Red">
+/// La red vista desde la caja principal (la red de la tienda en el POS): si hay internet y si contesta su router. La caja lo
+/// junta con lo suyo para la franja: «Sin internet: la venta sigue. No desconectes nada.» Vacía en un servicio de antes o si
+/// el servicio no lo revisa (la prueba en desarrollo).
+/// </param>
+/// <param name="FormatoCopia">El de la copia que arma (<see cref="VersionesCopiaDto.Formato"/>); vacío en un servicio de antes.</param>
 public sealed record EstadoServicioDto(
     string Servicio, string Version, IReadOnlyList<string> Sucursales, long VersionDatos = 0, bool Prueba = false, long VersionCredito = 0,
-    bool PilotoEleventa = false, string? AvisoBase = null);
+    bool PilotoEleventa = false, string? AvisoBase = null, long? VersionExistencias = null, Guid? Base = null, int? FormatoCopia = null,
+    RedDeLaPrincipalDto? Red = null);
+
+/// <summary>Cómo ve la red la caja principal: lo revisa sola cada medio minuto (docs/arquitectura.md, «La red de la matriz»).</summary>
+/// <param name="Internet">Si contesta algo de internet; vacío: todavía no se sabe.</param>
+/// <param name="Router">Si contesta su router (la puerta de enlace); vacío: no tiene o todavía no se sabe.</param>
+/// <param name="DesdeUtc">Desde cuándo está así el internet.</param>
+public sealed record RedDeLaPrincipalDto(bool? Internet, bool? Router, DateTime? DesdeUtc = null);
+
+/// <summary>
+/// Lo que contesta el servicio a una caja que lo encontró en la red y quiere saber si es su caja principal antes de cambiarse
+/// a él: la prueba hecha con la huella de la llave de esa caja (<c>Descubrimiento.Prueba</c>). Solo la tiene el servicio que
+/// dio de alta a esa caja; la llave nunca viaja.
+/// </summary>
+/// <param name="LlaveDelServicio">
+/// La llave pública del servicio (la suya, que no está en la base ni en sus respaldos): la caja la recuerda y, desde entonces,
+/// solo se cambia a un servicio que firme con ella. Vacía en un servicio de antes.
+/// </param>
+/// <param name="Firma">Lo mismo de la prueba, firmado con la llave del servicio (<c>Descubrimiento.MensajeFirmado</c>).</param>
+public sealed record IdentidadServicioDto(string Prueba, string? LlaveDelServicio = null, string? Firma = null);
+
+/// <summary>Una caída de la red, de la bitácora de red: qué se perdió, desde cuándo y hasta cuándo (vacío: sigue).</summary>
+/// <param name="Que">«internet», «la caja principal», «el router»…</param>
+/// <param name="FinAproximado">No se vio volver (se cerró o se apagó antes): volvió después de <paramref name="Hasta"/>.</param>
+public sealed record CaidaDeRedDto(string Que, DateTime Desde, DateTime? Hasta, bool FinAproximado = false);
+
+/// <summary>Lo que dice la bitácora de red de la caja principal (Configuración › Acerca de): sus últimas caídas y dónde está.</summary>
+/// <param name="Carpeta">Dónde están sus archivos (red-servicio-AAAA-MM-DD.log), en la caja principal.</param>
+public sealed record ResumenDeRedDto(IReadOnlyList<CaidaDeRedDto> Caidas, string? Carpeta, RedDeLaPrincipalDto? Ahora);
 
 /// <summary>Usuario y PIN de quien autoriza: dar de alta una caja (antes de que haya sesión) y Telegram, que sigue como estaba.</summary>
 public sealed record SolicitudCredenciales(string Usuario, string Pin);
@@ -514,7 +627,11 @@ public sealed record SucursalAltaDto(Guid Id, string Nombre, IReadOnlyList<CajaA
 public sealed record SolicitudAltaCaja(string Usuario, string Pin, Guid SucursalId, Guid? CajaId, string? Nombre, string? Serie, string Equipo);
 
 /// <param name="Llave">Solo la ve el equipo: la guarda y la manda en cada llamada (encabezado X-Caja-Llave).</param>
-public sealed record AltaCajaDto(CajaDto Caja, string Llave);
+/// <param name="LlaveDelServicio">
+/// La llave pública del servicio que la dio de alta: la caja la guarda y no se cambia sola a otro servicio que no firme con
+/// ella (una copia de la base en otra PC). Vacía en un servicio de antes.
+/// </param>
+public sealed record AltaCajaDto(CajaDto Caja, string Llave, string? LlaveDelServicio = null);
 
 // ── Contingencia (entrega 3, parte 2) ───────────────────────────────────────
 
@@ -546,13 +663,42 @@ public sealed record CodigoLocalDto(string Codigo, Guid VarianteId, Guid Present
 /// fichas de espera y «Abrir turno» propone el fondo. Vacía en una copia de antes: lo de siempre (3 fichas, sin fondo
 /// sugerido).
 /// </param>
+/// <param name="Codigos">
+/// Todos los códigos de los productos de la copia, también los que solo cambian en mayúsculas («ZZ-01» en uno y «zz-01» en
+/// otro): al escanear se lo lleva el igual tal cual o, si ninguno, el producto más antiguo (<c>CodigosDeEscaneo</c>), como en
+/// el servicio, y la búsqueda por nombre lo encuentra en los dos. El orden no cuenta.
+/// </param>
+/// <param name="Marcas">Las que usa el servicio para leer los nombres: la búsqueda de la copia los lee igual (entrega 5, parte 3).</param>
+/// <param name="Base">
+/// De qué base es la copia (<see cref="EstadoServicioDto.Base"/>), y con <paramref name="Formato"/> y
+/// <paramref name="VersionExistencias"/>, desde dónde pedir lo que cambió (entrega 5, parte 2). Vacíos en un servicio de antes:
+/// esa copia solo se renueva entera.
+/// </param>
+/// <param name="Formato">Cómo está armada la copia: si la caja o el servicio cambian de formato, se baja completa.</param>
+/// <param name="VersionExistencias">La versión de las existencias con que se armó.</param>
+/// <param name="Vendidos">
+/// Cuántas veces se vendió cada producto en 90 días, y <paramref name="Elegidos"/>, lo que esta caja eligió antes con cada
+/// texto: con eso la búsqueda contra la copia ordena igual que el servicio (entrega 5, parte 3). Vacíos en una copia de
+/// antes: ordena sin ellos hasta que baje la siguiente.
+/// </param>
+/// <param name="VersionVendidos">
+/// La de lo más vendido que trae (el servicio lo calcula una vez al día): si la del servicio es otra, los cambios traen el
+/// nuevo (entrega 5, partes 2 y 3).
+/// </param>
+/// <param name="VersionElegidos">Hasta dónde trae lo elegido: los cambios traen lo que esta caja eligió después.</param>
+/// <param name="AlCobrar">
+/// Qué se hace con el ticket al cobrar (Configuración › Ticket): sin conexión, el ticket del cobro lo trae de aquí. En una
+/// copia de antes, se imprime.
+/// </param>
 public sealed record PaqueteContingenciaDto(
     long Version, CajaDto Caja, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<UsuarioLocalDto> Usuarios,
     IReadOnlyList<ReglaDto> Reglas,
     IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie, LogoTicketDto? Logo, int UltimoFolio, long? LimiteEfectivoCentavos,
     IReadOnlyList<ClienteRegistradoDto>? Clientes = null, IReadOnlyList<ClienteRegistradoDto>? Registrados = null,
     IReadOnlyList<string>? Marcas = null, IReadOnlyList<SinonimoDto>? Sinonimos = null, IReadOnlyList<PermisosLocalesDto>? Permisos = null,
-    ConfiguracionSucursalDto? Configuracion = null);
+    ConfiguracionSucursalDto? Configuracion = null, Guid? Base = null, int? Formato = null, long? VersionExistencias = null,
+    IReadOnlyList<VecesVendidoDto>? Vendidos = null, IReadOnlyList<ElegidoDto>? Elegidos = null, long? VersionVendidos = null, long? VersionElegidos = null,
+    TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir);
 
 // Lo que sube con la bandeja. Cada cosa lleva el ID que le dio la caja: si llega dos veces, se guarda una.
 
@@ -731,6 +877,13 @@ public sealed record PrecioFichaDto(string? Presentacion, long CantidadMinimaMil
 
 public sealed record ProveedorFichaDto(Guid ProveedorId, string Proveedor, string? CodigoProveedor, long? UltimoCostoCentavos, DateTime? UltimaCompraLocal);
 
+/// <summary>
+/// El mínimo y el máximo de inventario de una variante, en milésimas de su unidad base (como en eleventa, «Productos bajos en
+/// inventario»). Vacíos: sin mínimo propio (cuenta <see cref="PocaExistencia.Hasta"/> o menos) y sin máximo (lo pide el
+/// sugerido).
+/// </summary>
+public sealed record MinimoYMaximoDto(long? MinimoMilesimas, long? MaximoMilesimas);
+
 /// <param name="Existencia">En la sucursal, en unidades base (solo lectura).</param>
 /// <param name="CostoPromedioCentavos">Solo para el dueño y el encargado (solo lectura).</param>
 /// <param name="DeEleventa">
@@ -738,9 +891,14 @@ public sealed record ProveedorFichaDto(Guid ProveedorId, string Proveedor, strin
 /// presentación base (se pueden agregar otros) y los precios de eleventa no se cambian aquí, ni se depura. Lo dice el
 /// servicio al leer la ficha; al guardar, no lo lee.
 /// </param>
+/// <param name="MinimoYMaximo">
+/// Su mínimo y su máximo de inventario. Al leer la ficha, siempre viene. Al guardar, vacío es «no se tocan»: así una caja de
+/// antes, que no los conoce, no los borra.
+/// </param>
 public sealed record VarianteFichaDto(
     Guid? Id, string Descripcion, UnidadBase Unidad, bool Activa, IReadOnlyList<PresentacionFichaDto> Presentaciones, IReadOnlyList<PrecioFichaDto> Precios,
-    decimal? Existencia = null, decimal? CostoPromedioCentavos = null, IReadOnlyList<ProveedorFichaDto>? Proveedores = null, bool DeEleventa = false);
+    decimal? Existencia = null, decimal? CostoPromedioCentavos = null, IReadOnlyList<ProveedorFichaDto>? Proveedores = null, bool DeEleventa = false,
+    MinimoYMaximoDto? MinimoYMaximo = null);
 
 /// <summary>La ficha de un producto en F3: lo que se edita junto (el producto, sus variantes, presentaciones, códigos y precios).</summary>
 /// <param name="Marca">Por nombre: si no existe, se da de alta.</param>

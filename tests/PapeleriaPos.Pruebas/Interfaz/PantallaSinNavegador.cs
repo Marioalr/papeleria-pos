@@ -58,7 +58,77 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
     /// </summary>
     public TimeSpan AcuseDelDibujo { get; set; }
 
-    protected override Task UpdateDisplayAsync(in RenderBatch lote) => AcuseDelDibujo > TimeSpan.Zero ? Task.Delay(AcuseDelDibujo) : Task.CompletedTask;
+    protected override Task UpdateDisplayAsync(in RenderBatch lote)
+    {
+        Contar(lote);
+        return AcuseDelDibujo > TimeSpan.Zero ? Task.Delay(AcuseDelDibujo) : Task.CompletedTask;
+    }
+
+    // ── Lo que se repinta (entrega 5, parte 3, «Pintar menos») ──
+
+    private readonly Lock _candadoDibujos = new();
+    private int _lotes;
+    private int _cambios;
+    private int _manejadores;
+    private readonly Dictionary<string, int> _porComponente = [];
+
+    /// <summary>
+    /// Lo que se dibujó desde <see cref="ContarDesdeAhora"/>: cuántas veces se mandó algo a «la página», cuántas veces se
+    /// pintó cada componente (por su tipo), cuántos cambios llevaban y cuántos manejadores de eventos se cambiaron por otros.
+    /// </summary>
+    public sealed record Dibujos(int Lotes, IReadOnlyDictionary<string, int> PorComponente, int Cambios, int ManejadoresCambiados)
+    {
+        public int Componentes => PorComponente.Values.Sum();
+
+        public int De(string componente) => PorComponente.GetValueOrDefault(componente);
+
+        public override string ToString() =>
+            $"{Lotes} lotes, {Componentes} componentes pintados ({string.Join(", ", PorComponente.OrderByDescending(x => x.Value).Select(x => $"{x.Key} {x.Value}"))}), "
+            + $"{Cambios} cambios, {ManejadoresCambiados} manejadores cambiados";
+    }
+
+    /// <summary>El tipo del componente; uno que se pintó y se quitó en el mismo dibujo ya no está.</summary>
+    private string Tipo(int componente)
+    {
+        try
+        {
+            return GetComponentState(componente).Component.GetType().Name;
+        }
+        catch (ArgumentException)
+        {
+            return "(quitado en el mismo dibujo)";
+        }
+    }
+
+    public void ContarDesdeAhora()
+    {
+        lock (_candadoDibujos)
+        {
+            (_lotes, _cambios, _manejadores) = (0, 0, 0);
+            _porComponente.Clear();
+        }
+    }
+
+    public Dibujos Contados()
+    {
+        lock (_candadoDibujos)
+            return new Dibujos(_lotes, new Dictionary<string, int>(_porComponente), _cambios, _manejadores);
+    }
+
+    private void Contar(in RenderBatch lote)
+    {
+        lock (_candadoDibujos)
+        {
+            _lotes++;
+            _manejadores += lote.DisposedEventHandlerIDs.Count;
+            for (var i = 0; i < lote.UpdatedComponents.Count; i++)
+            {
+                var diff = lote.UpdatedComponents.Array[i];
+                _porComponente[Tipo(diff.ComponentId)] = _porComponente.GetValueOrDefault(Tipo(diff.ComponentId)) + 1;
+                _cambios += diff.Edits.Count;
+            }
+        }
+    }
 
     /// <summary>Todo el texto de la pantalla (cada elemento empieza renglón) y sus elementos, en orden.</summary>
     public Task<(string Texto, List<ElementoDibujado> Elementos)> LeerAsync() => Dispatcher.InvokeAsync(() =>
