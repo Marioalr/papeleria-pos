@@ -1404,9 +1404,10 @@ Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
   2026-10-17: `scripts\simular-dia-pico.cmd`, [guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real))
 - [ ] Departamentos en el POS: darlos de alta, cambiarles el nombre y desactivarlos. Hoy solo llegan de eleventa, y
   Compras pide darlos de alta «en F3 Productos», donde no se puede ([paridad](paridad-eleventa.md#productos-y-precios))
-- [ ] La importación final sin las ventas que ya mandó el puente (por `VENTATICKETS.ID`), para no contarlas dos veces
-  en los reportes ([diseño](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar)); hoy el
-  importador no las distingue
+- [x] La importación final sin las ventas que ya mandó el puente (por `VENTATICKETS.ID` y su marca), para no contarlas
+  dos veces en los reportes (2026-10-17, en código: `importar-eleventa --base`, se puede repetir y dice qué hizo;
+  [cómo](migracion-eleventa.md#la-importación-final)). Lo que no se decide solo (una venta de la caja 2 anotada a mano en
+  eleventa, una devolución que no llegó a uno de los dos lados) queda en una lista para revisarlo a mano
 - [ ] Antes del piloto: respaldo cifrado en Backblaze B2, con una restauración de ensayo, y vigilancia de la caja
   principal en Healthchecks.io ([notas](notas.md#respaldo-fuera-de-la-tienda-y-aviso-de-apertura))
 - [ ] Soporte a distancia para instalar las actualizaciones (NetBird gratis u otro, [notas](notas.md#cuentas-y-pagos))
@@ -1463,6 +1464,10 @@ Por definir:
 - [ ] Si eleventa se restaura a un respaldo durante el piloto: lo que la caja 2 le había mandado y se perdió allá, ¿se
   anota a mano en eleventa (así quedó, por revisar en la pantalla de la caja 2) o la caja 2 lo vuelve a mandar sola, con
   folios nuevos? ([respaldos](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))
+- [ ] La importación final no quita ni aplica nada por adivinar: una venta de la caja 2 que se anotó a mano en eleventa
+  (allá no lleva la marca), o una devolución que no llegó a uno de los dos lados, queda en una lista para revisarla a mano
+  (2026-10-17). ¿Hace falta poder quitar a mano del historial el ticket de eleventa de una venta así?
+  ([importación final](migracion-eleventa.md#la-importación-final))
 
 - [ ] Si la sucursal 2 abre antes de la fase 7: guardar la lista de gastos de apertura con comprobantes
 - [ ] Administración: insumos del mes (papel térmico, cinta, limpieza…) para la ganancia mensual

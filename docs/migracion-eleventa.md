@@ -822,13 +822,81 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
   la principal cuando ya no ve eleventa ni su respaldo corriendo. Falta medir que la principal aguante eleventa,
   Firebird y el servicio juntos.
 - **Para la importación final:** las ventas que mandó el puente ya están en la base nueva; la importación de eleventa
-  las excluye por `VENTATICKETS.ID`, para no contarlas dos veces.
+  no las trae (por `VENTATICKETS.ID` y su marca), para no contarlas dos veces. Ya está en código (2026-10-17,
+  [abajo](#la-importación-final)).
+
+## La importación final
+
+Al dejar eleventa, su historial de ventas entra a la base de la tienda, la que se armó con `importar-eleventa` y donde
+corrió el piloto, para los reportes contra el año anterior (entrega 9). Solo el historial: el catálogo ya está (lo siguió
+la lectura de cada pocos minutos) y las existencias salen del conteo físico. Primero con `--simular`, que dice qué haría
+sin guardar nada:
+
+```
+dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --base C:\…\pos.db --simular
+dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:\ruta\PDVDATA.FDB --base C:\…\pos.db
+```
+
+- **Sin lo que mandó el puente** (2026-10-17, `ImportacionFinal` y `LoQueMandoElPuente`). Las ventas de la caja 2 ya están
+  en la base, con sus cancelaciones y devoluciones: las de la caja 2 y las que se hicieron en eleventa (la vuelta las pasó
+  sin efectivo). Sus tickets no se traen, o contarían dos veces. Se reconocen como el puente reconoce lo suyo, nunca por el
+  folio (eleventa lo repite entre cajas):
+  - por el número que le dio eleventa (`VENTATICKETS.ID`) y su marca (`CREADO_EN`: cuándo se empezó la venta en la caja 2,
+    en diezmilésimas de segundo);
+  - si la caja 2 no supo su número (se cortó la red justo cuando eleventa lo guardó), por su marca y la hora del cobro
+    (`VENDIDO_EN`).
+
+  Lo que eleventa les devolvió o canceló ya se lo bajó a esos tickets, así que tampoco entra. Las devoluciones
+  (`DEVOLUCIONES`) solo se leen para decir de quién fue cada una: de la caja 2 (su marca, `TICKET_ID` + `DEVUELTO_EN`, o la
+  anotación a mano que se eligió para una de aquí) o de eleventa (la vuelta, por su `DEVOLUCIONES.ID`).
+- **Lo de eleventa entra como en una base nueva:** cada ticket con lo que eleventa le bajó al devolver (también lo que
+  devolvió la caja 2 de un ticket de eleventa, la ida) y los cancelados marcados.
+- **Se puede correr más de una vez.** Lo que ya estaba igual no se toca; lo que cambió en eleventa desde la importación
+  anterior (una devolución, una cancelación) se vuelve a escribir; lo nuevo entra una vez; lo que resultó ser de la caja 2
+  se quita, y lo que ya no está en eleventa se deja. Los mapeos dicen qué ticket es cada venta del historial y, también,
+  qué ticket de eleventa es cada venta de la caja 2 (`Venta`): si después se quita el puente, otra importación sigue sin
+  traerlas.
+- **Todo o nada,** en una transacción y con la base apartada para escribir, así que se corre con la caja cerrada. Antes
+  deja una copia de la base junto a ella (`pos.antes-de-importar-AAAA-MM-DD-HHmmss.db`). No acepta una base que no se armó
+  con `importar-eleventa`, ni una copia de eleventa más vieja que lo que ya se importó; si la copia es de antes de lo último
+  que mandó la caja 2, lo dice primero (conviene sacar otra y repetirla).
+- **Lo vendido con un producto que la base no tiene** (se dio de alta en eleventa después de la última lectura) se da de
+  alta inactivo, con su Id de eleventa; lo vendido con un código que ya no es de ningún producto, como al importar una base
+  nueva. Una vez: al repetirla se usan los mismos.
+- **Dice qué hizo:** cuántos tickets entraron, cambiaron, ya estaban o se quitaron; cuántos de la caja 2 no se trajeron,
+  cuánto suman, cuántos estaban cancelados o tenían devoluciones (de la caja 2 o de eleventa); cuántas ventas de la caja 2
+  no llegaron a eleventa (allá no hay nada que quitar), y cómo cuadra: lo que suma eleventa es el historial más lo de la
+  caja 2.
+- **Lo que no se decide solo queda en una lista, para revisarlo a mano** (decidido el 2026-10-17, por revisar: no se quita
+  ni se aplica nada por adivinar):
+  - una venta de la caja 2 que se anotó a mano en eleventa, o que quedó para anotarse: allá no lleva la marca y se trae
+    como de eleventa; si se anotó, cuenta dos veces. Dice qué tickets de eleventa pueden ser (el mismo total, al peso,
+    cobrados después);
+  - una que se mandó y eleventa ya no tiene (¿se restauró un respaldo?), o que eleventa tiene dos veces;
+  - una que aquí se canceló antes de llegar, o que sigue pendiente, y que eleventa sí tiene (no se trae). Desde el
+    2026-10-17 la bandeja busca en eleventa la cancelada antes de descartarla, así que sería de antes;
+  - una devolución que se hizo en eleventa de un ticket de la caja 2 y no está en su venta (la lectura no la trajo, o quedó
+    por revisar): como ese ticket no se trae, no cuenta en ningún lado hasta pasarla. Si puede ser la anotación a mano de
+    una devolución de aquí que todavía nadie elige («Ya lo anoté en eleventa»; mientras, la vuelta la retiene), lo dice:
+    si es esa, aquí ya está. La que ya se eligió cuenta como de la caja 2;
+  - una devolución de la caja 2 de un ticket de eleventa (la ida) que no llegó a eleventa: el ticket se trae sin ella y
+    cuenta de más, salvo que se haya anotado a mano allá. Desde que la caja 2 solo devuelve lo del turno de ahora es raro:
+    eleventa cortó ese turno antes de que llegara.
+
+Se probó sin Firebird (las filas de eleventa con las marcas del puente: lo reconocido por su número o solo por su marca,
+correrla dos veces, lo que cambió en eleventa, lo que ya estaba y era de la caja 2, sin la bandeja y la lista para
+revisar, también la anotación a mano de una devolución de aquí, ya elegida o por elegir) y contra el Firebird de prueba: la
+caja 2 vendió, canceló y devolvió por el puente, en eleventa se le devolvió algo (la vuelta), eleventa vendió, canceló y
+devolvió lo suyo, y la caja 2 devolvió un ticket de su eleventa del turno de ahora (la ida; el de la principal no lo deja
+devolver aquí y se devolvió en eleventa). El historial quedó exactamente con los tickets de eleventa, suma lo mismo que
+eleventa sin los de la caja 2, y la segunda vez no cambió nada.
 
 ## Arranque (fase 5)
 
 1. Depuración del catálogo sobre la base importada ([plan](plan.md#depuración-del-inventario)): bajas, duplicados,
    equipo de la tienda, unidades y servicios.
 2. Conteo físico completo, por departamentos, en las semanas previas. Reemplaza todas las existencias de eleventa.
-3. Arranque en un día tranquilo.
-4. Eleventa queda instalado solo para consulta unas semanas, como respaldo, con un plan para regresar si algo falla.
-5. Capacitación a cajeros y encargado antes del arranque, con datos de prueba.
+3. La importación final del historial de eleventa, sin lo que mandó el puente ([arriba](#la-importación-final)).
+4. Arranque en un día tranquilo.
+5. Eleventa queda instalado solo para consulta unas semanas, como respaldo, con un plan para regresar si algo falla.
+6. Capacitación a cajeros y encargado antes del arranque, con datos de prueba.
