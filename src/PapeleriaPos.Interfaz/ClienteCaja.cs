@@ -298,6 +298,61 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         ConRespaldoAsync(async () => await _http.GetAsync<List<BitacoraDto>>(
             $"api/cajas/{cajaId}/bitacora?usuarioId={usuarioId}&desde={desde:yyyy-MM-dd}&hasta={hasta:yyyy-MM-dd}") ?? []);
 
+    // ── Las ventas de otros días y el historial de cortes (paridad con eleventa, 2026-10-17): solo con la caja principal ──
+
+    /// <summary>
+    /// Lo que dice la caja sin la caja principal: las ventas de todas las cajas y de todos los días están allá; aquí solo
+    /// está la copia para vender.
+    /// </summary>
+    public const string VentasSinConexion =
+        "Sin conexión con la caja principal: esta caja solo tiene su copia para vender. Las ventas (las de hoy, las de otros días y las de "
+        + "otras cajas) se ven cuando vuelva.";
+
+    /// <summary>Lo que dice la caja sin la caja principal: el historial junta los cortes de todas las cajas.</summary>
+    public const string CortesSinConexion =
+        "Sin conexión con la caja principal: el historial de cortes junta los de todas las cajas y se ve cuando vuelva.";
+
+    /// <summary>
+    /// Las ventas de un día (vacío: hoy en la caja principal) de una caja (vacía: todas) y de un cajero (vacío: todos); con
+    /// <paramref name="folio"/>, las de ese folio en cualquier día (solo el número, sin los reportes, en esta caja). Las de
+    /// hoy de esta caja las ve cualquiera; las de otro día o de otra caja, quien tiene «Ver reportes de ventas» (lo revisa el
+    /// servicio).
+    /// </summary>
+    public Task<VentasDeUnDiaDto> VentasDeUnDiaAsync(Guid cajaId, Guid usuarioId, DateOnly? fecha, Guid? caja, Guid? cajero, string? folio = null) =>
+        SoloConLaPrincipalAsync<VentasDeUnDiaDto>(VentasSinConexion, $"api/cajas/{cajaId}/ventas?usuarioId={usuarioId}" + Filtros(fecha, caja, cajero)
+            + (string.IsNullOrWhiteSpace(folio) ? "" : $"&folio={Uri.EscapeDataString(folio.Trim())}"));
+
+    /// <summary>
+    /// Los turnos de un día (vacío: hoy) con su corte, de una caja (vacía: todas) y de un cajero (vacío: todos), para quien
+    /// hace el corte de un turno o ve el del día (lo revisa el servicio).
+    /// </summary>
+    public Task<HistorialCortesDto> HistorialCortesAsync(Guid cajaId, Guid usuarioId, DateOnly? fecha, Guid? caja, Guid? cajero) =>
+        SoloConLaPrincipalAsync<HistorialCortesDto>(CortesSinConexion, $"api/cajas/{cajaId}/cortes?usuarioId={usuarioId}" + Filtros(fecha, caja, cajero));
+
+    private static string Filtros(DateOnly? fecha, Guid? caja, Guid? cajero) =>
+        (fecha is { } dia ? $"&fecha={dia.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}" : "") + (caja is { } c ? $"&caja={c}" : "")
+        + (cajero is { } u ? $"&cajero={u}" : "");
+
+    /// <summary>
+    /// Lo que solo sabe la caja principal (lo de todas las cajas y todos los días): sin ella, el error lo dice con
+    /// <paramref name="sinConexion"/>, sin esperar. Si deja de contestar a media consulta, la caja lo sabe desde ya, como con
+    /// lo demás.
+    /// </summary>
+    private async Task<T> SoloConLaPrincipalAsync<T>(string sinConexion, string url)
+    {
+        if (contingencia is { ServidorResponde: false })
+            throw new ErrorCaja(sinConexion, "sin-conexion");
+        try
+        {
+            return (await _http.GetAsync<T>(url))!;
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
+        {
+            contingencia?.MarcarSinConexion();
+            throw new ErrorCaja(sinConexion, "sin-conexion");
+        }
+    }
+
     // ── Usuarios y permisos (entrega 1, solo con la caja principal): cada cambio regresa la lista completa ──
 
     /// <summary>Los usuarios con sus permisos y los de defecto, para quien entró con «Usuarios y permisos».</summary>
@@ -423,6 +478,19 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// </summary>
     public Task<TrastiendaEnElPilotoDto> TrastiendaEnElPilotoAsync() =>
         ConRespaldoAsync(async () => (await _http.GetAsync<TrastiendaEnElPilotoDto>("api/catalogo/piloto"))!);
+
+    // ── Cambiar precios de varios a la vez (Productos › Cambiar precios, solo con la caja principal) ──
+
+    /// <summary>Cómo quedan los precios con esa regla, sin cambiar nada; el margen, solo para quien ve la utilidad.</summary>
+    public Task<VistaPreciosDeVariosDto> VistaPreciosDeVariosAsync(SolicitudPreciosDeVarios solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<VistaPreciosDeVariosDto>("api/catalogo/precios-de-varios/vista", solicitud));
+
+    /// <summary>
+    /// Aplica lo que se vio (con su huella y el Id de esta vez): si algo cambió desde la vista, el servicio no lo aplica; si
+    /// ya lo había aplicado (se perdió la respuesta), no lo hace otra vez.
+    /// </summary>
+    public Task<PreciosDeVariosAplicadosDto> CambiarPreciosDeVariosAsync(SolicitudPreciosDeVarios solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<PreciosDeVariosAplicadosDto>("api/catalogo/precios-de-varios", solicitud));
 
     // ── Compras (F4, solo con la caja principal) ──
 

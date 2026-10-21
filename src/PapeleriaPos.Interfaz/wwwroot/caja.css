@@ -376,6 +376,20 @@ td.acciones-renglon { white-space: nowrap; text-align: right; }
 .ventana.corte > .ventana-titulo .cerrar { width: 34px; height: 32px; color: #556375; background: #fff; border: 1px solid #dfe4ea; border-radius: 8px; font-size: 20px; }
 .ventana.corte > .ventana-titulo .cerrar:hover { border-color: #23439b; color: #15202c; }
 .fondo-ventana > .ventana.corte > .ventana-cuerpo { flex: 1; min-height: 0; padding: 18px 24px; gap: 12px; }
+/* El historial de cortes (paridad con eleventa, 2026-10-17), en el corte: el día y los filtros arriba; los turnos con su
+   corte en la tabla y, a la derecha, el corte del elegido con «Reimprimir el corte». */
+.vn-historial { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.vn-historial-filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.vn-historial-dia { display: inline-flex; align-items: center; gap: 6px; }
+.vn-historial-filtros input, .vn-historial-filtros select { min-width: 0; font: 500 14px var(--vn-f-texto); color: var(--vn-texto); padding: 7px 9px; border: 1px solid var(--vn-borde); border-radius: 8px; background: var(--vn-hoja); }
+.vn-historial-filtros input:focus, .vn-historial-filtros select:focus { outline: 2px solid var(--vn-tinta); outline-offset: -1px; border-color: var(--vn-tinta); }
+.vn-historial-lista { border-radius: 10px; }
+.vn-historial-lista:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: 2px; }
+.vn-historial-lista tbody tr { cursor: pointer; }
+.vn-historial-lista tbody tr:hover td { background: #fafbfd; }
+.vn-historial-lista tbody tr.on td { background: var(--vn-tinta-claro); }
+.vn-historial-lista tbody tr.on td:first-child { box-shadow: inset 3px 0 0 var(--vn-tinta); }
+.vn-historial-lista.cargando { opacity: .55; }
 
 /* Configuración › Sinónimos: el alta en una fila */
 .sinonimos-alta { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin: 8px 0; }
@@ -801,13 +815,35 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 /* Clientes (Ctrl+L) y quién abona (Ctrl+B): lo que debe a la derecha. Los abonos de hoy: el monto a la derecha y los botones abajo. */
 .vn-panel.tarjetas.clientes .resultados td.num:last-child, .vn-panel.tarjetas.clientes .resultados td.num:nth-child(5) { grid-column: 2; grid-row: 1; font-size: 14px; font-weight: 700; color: var(--vn-texto); text-align: right; }
 .vn-panel.tarjetas.clientes .resultados td:nth-child(6) { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
-/* Ventas del día: folio y total arriba, la hora y el cajero abajo, y reimprimir o devolver. */
-.vn-panel.tarjetas.ventas-del-dia .resultados td:nth-child(2) { grid-column: 2; grid-row: 2; text-align: right; }
-.vn-panel.tarjetas.ventas-del-dia .resultados td:nth-child(3) { grid-row: 2; }
-.vn-panel.tarjetas.ventas-del-dia .resultados td:nth-child(4) { display: none; }
-.vn-panel.tarjetas.ventas-del-dia .resultados td:nth-child(5) { grid-column: 2; grid-row: 1; font-size: 14px; font-weight: 700; color: var(--vn-texto); text-align: right; }
-.vn-panel.tarjetas.ventas-del-dia .resultados td:nth-child(6) { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; margin-top: 4px; }
-.vn-panel.tarjetas.ventas-del-dia .resultados tr.negado td:first-child { color: var(--vn-tenue); text-decoration: line-through; }
+/* Ventas del día y de otros días (paridad con eleventa, 2026-10-17): el día y los filtros arriba, quietos; abajo cada venta
+   con su folio y su total, la hora, quién cobró, la caja y cómo se pagó, su estado y reimprimir o devolver. La lista se
+   recorre sola, para caber en 1366×697. */
+.vn-ventas { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.vn-ventas-dia { display: flex; align-items: center; gap: 6px; }
+.vn-ventas-dia .vn-boton { padding: 6px 11px; }
+.vn-panel .vn-ventas-dia input { flex: 1; font-size: 15px; padding: 6px 8px; }
+.vn-ventas-hoy { font-size: 14px; font-weight: 600; color: var(--vn-suave); }
+.vn-ventas-filtros { display: flex; gap: 6px; }
+.vn-panel .vn-ventas-filtros select { flex: 1; font-size: 14px; padding: 6px 8px; }
+.vn-panel .vn-ventas input.vn-ventas-folio { font-size: 15px; padding: 7px 10px; }
+.vn-ventas-resumen { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 4px; font-size: 13.5px; color: var(--vn-suave); }
+.vn-ventas-resumen strong { color: var(--vn-texto); }
+.vn-ventas-resumen .vn-enlace { margin-left: auto; }
+.vn-ventas-nota, .vn-ventas-vacia { font-size: 13px; color: var(--vn-suave); }
+.vn-ventas-vacia { padding: 12px 4px; text-align: center; }
+.vn-ventas-lista { flex: 1 1 auto; min-height: 120px; overflow-y: auto; border: 1px solid var(--vn-linea); border-radius: 8px; background: var(--vn-hoja); }
+.vn-venta { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; row-gap: 2px; align-items: baseline; padding: 7px 10px; border-bottom: 1px solid var(--vn-renglon); }
+.vn-venta:last-child { border-bottom: 0; }
+.vn-venta > strong { font-size: 14.5px; overflow-wrap: anywhere; }
+.vn-venta > .num { font: 700 14px var(--vn-f-cifras); font-variant-numeric: tabular-nums; text-align: right; }
+.vn-venta > small { grid-column: 1 / -1; font-size: 12.5px; color: var(--vn-suave); }
+.vn-venta > small code { font: 12px var(--vn-f-codigo); }
+.vn-venta-estado { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
+.vn-venta-botones { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.vn-venta-botones:empty { display: none; }
+.vn-venta-botones .ico { width: 14px; height: 14px; }
+.vn-venta.cancelada > strong, .vn-venta.cancelada > .num { color: var(--vn-tenue); text-decoration: line-through; }
+.vn-ventas-lista.cargando { opacity: .55; }
 /* Devolver: cada artículo con lo vendido y lo ya devuelto, y cuánto se devuelve y si volvió dañado. */
 .vn-panel.tarjetas.devolver .resultados td:nth-child(1) { grid-column: 1 / -1; grid-row: 1; }
 .vn-panel.tarjetas.devolver .resultados td:nth-child(2) { grid-row: 2; }
@@ -1152,6 +1188,24 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-depto-pasar div { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .vn-depto-pasar small { display: block; margin-top: 6px; font-size: 12.5px; color: var(--vn-suave); }
 .vn-depto-error > td { padding-top: 2px; }
+/* Productos › Cambiar precios: cuáles, cómo y cómo quedan antes de aplicar. Mientras está abierto, la lista de la izquierda
+   marca: cada renglón lleva su casilla. */
+.vn-items .vn-item .vn-marca { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 1.5px solid var(--vn-borde); border-radius: 5px; background: var(--vn-hoja); color: #fff; }
+.vn-items .vn-item .vn-marca.on { background: var(--vn-tinta); border-color: var(--vn-tinta); }
+.vn-items .vn-item .vn-marca svg.ico { width: 13px; height: 13px; stroke-width: 2.6; }
+.vn-precios .vn-alerta { margin: 0; }
+.vn-precios-fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.vn-precios-fila > select, .vn-precios-fila > input { min-width: 280px; }
+.vn-precios-marcados { font-weight: 600; color: var(--vn-texto); }
+.vn-precios-cuanto { display: inline-flex; align-items: center; gap: 5px; font: 600 15px var(--vn-f-cifras); color: var(--vn-suave); }
+.vn-adentro .vn-precios-cuanto input { width: 110px; text-align: right; font-variant-numeric: tabular-nums; }
+.vn-adentro label.vn-precios-redondeo { flex-direction: row; align-items: center; gap: 6px; }
+.vn-adentro.vn-precios label.opcion { font-size: 14px; color: var(--vn-texto); }
+.vn-precios-resumen { font-size: 14px; line-height: 1.4; color: var(--vn-texto); }
+.vn-precios .vn-boton.primario kbd { background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .35); color: #fff; }
+.vn-precios-tabla td small { display: block; margin-top: 2px; font-size: 12.5px; color: var(--vn-suave); }
+.vn-precios-tabla td .vn-etiq { margin-left: 6px; }
+.vn-adentro .nota.vn-precios-no { color: var(--vn-error); font-weight: 600; }
 /* El piloto con eleventa en la ficha: los códigos de la pieza que se quedan (los de eleventa) y sus precios, sin cambiar */
 .vn-adentro .codigos-fijos { display: inline-flex; flex-wrap: wrap; gap: 4px; margin: 0 6px 4px 0; vertical-align: middle; }
 .vn-adentro .codigos-fijos code { font-size: 13px; padding: 1px 6px; border: 1px solid var(--vn-linea); border-radius: 6px; background: var(--vn-renglon); color: var(--vn-suave); }
