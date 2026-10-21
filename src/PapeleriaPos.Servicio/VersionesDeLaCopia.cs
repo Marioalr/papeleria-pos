@@ -20,9 +20,10 @@ public sealed class VersionesDeLaCopia(IServiceScopeFactory alcances)
 {
     /// <summary>
     /// Cómo se arma la copia (sus campos y lo que quiere decir cada versión). Si cambia, la caja y el servicio de versiones
-    /// distintas no se piden cambios: la copia se baja completa.
+    /// distintas no se piden cambios: la copia se baja completa. El 2 (entrega 5, parte 3) trae lo que necesita la búsqueda
+    /// de la caja: todos los códigos, las marcas con que se leen los nombres, lo más vendido y lo elegido, con sus versiones.
     /// </summary>
-    public const int Formato = 1;
+    public const int Formato = 2;
 
     /// <summary>Cuánto vale lo leído de la base antes de volver a leerla.</summary>
     public static readonly TimeSpan Vigencia = TimeSpan.FromMilliseconds(250);
@@ -87,7 +88,7 @@ public sealed class VersionesDeLaCopia(IServiceScopeFactory alcances)
             .Where(s => s.Nombre == Secuencia.Catalogo || s.Nombre == Secuencia.Existencias || s.Nombre == Secuencia.Credito)
             .ToDictionaryAsync(s => s.Nombre, s => s.Valor, ct);
         return new VersionesCopiaDto(base_, valores.GetValueOrDefault(Secuencia.Catalogo), valores.GetValueOrDefault(Secuencia.Existencias),
-            valores.GetValueOrDefault(Secuencia.Credito));
+            valores.GetValueOrDefault(Secuencia.Credito), Formato);
     }
 }
 

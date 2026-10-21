@@ -37,7 +37,7 @@ public sealed class FotoCatalogoTests
             // Otro código de la misma pieza (el de la marca).
             new CodigoLocalDto("LAP-AZ", Lapicero.VarianteId, Pieza.Id),
             new CodigoLocalDto("750200", Cuaderno.VarianteId, PiezaCuaderno.Id),
-            // Repetido: vale el primero.
+            // Repetido (la base no lo deja, pero la copia lo admite): se lo lleva el producto más antiguo, venga primero o no.
             new CodigoLocalDto("750200", Lapicero.VarianteId, Pieza.Id),
             // De un producto que no vino en la copia.
             new CodigoLocalDto("750999", Ids.Nuevo(), Ids.Nuevo()),
@@ -54,7 +54,7 @@ public sealed class FotoCatalogoTests
         // La caja de 12, con su código; sin importar los espacios de las orillas ni las mayúsculas.
         Assert.Equal((Lapicero.VarianteId, Caja12.Id), Clave(foto.PorCodigo(" 7501000000012 ")));
         Assert.Equal((Lapicero.VarianteId, Pieza.Id), Clave(foto.PorCodigo("lap-az")));
-        Assert.Equal((Cuaderno.VarianteId, PiezaCuaderno.Id), Clave(foto.PorCodigo("750200")));
+        Assert.Equal(Clave(DelRepetido), Clave(foto.PorCodigo("750200")));
         Assert.Null(foto.PorCodigo("750999"));
         Assert.Null(foto.PorCodigo("cuaderno"));
         // Los precios son los de la copia, y cada producto dice de qué versión salieron.
@@ -63,6 +63,25 @@ public sealed class FotoCatalogoTests
         Assert.Equal(7, foto.PorVariante(Cuaderno.VarianteId)!.Version);
         Assert.Equal(Pieza.Id, foto.PorVariante(Lapicero.VarianteId)!.Presentacion.Id);
         Assert.Null(foto.PorVariante(Ids.Nuevo()));
+    }
+
+    /// <summary>
+    /// La búsqueda por nombre de la copia (entrega 5, parte 3): con lo más vendido y lo elegido antes, como el servicio; un
+    /// código repetido se encuentra en los dos productos (al escanear, en uno: <see cref="CodigosDeEscaneo"/>). La copia de un
+    /// servicio de antes no los trae y ordenaría distinto: ahí se le pregunta al servicio.
+    /// </summary>
+    [Fact]
+    public void La_copia_busca_por_nombre_si_trae_lo_mas_vendido()
+    {
+        Assert.False(FotoCatalogo.Armar(Paquete(12, Lapicero, Cuaderno)).SeBusca);
+
+        var foto = FotoCatalogo.Armar(Paquete(12, Lapicero, Cuaderno) with { Vendidos = [new VecesVendidoDto(Cuaderno.VarianteId, 3)], Elegidos = [] });
+
+        Assert.True(foto.SeBusca);
+        Assert.Equal(["Cuaderno raya"], foto.Buscar("raya").Select(r => r.Descripcion));
+        // El código exacto primero, y el otro producto que también lo tiene.
+        Assert.Equal(["Cuaderno raya", "Lapicero azul"], foto.Buscar("750200").Select(r => r.Descripcion));
+        Assert.Equal((3, 3500L), (foto.Buscar("cuaderno")[0].Vendidos, foto.Buscar("cuaderno")[0].PrecioCentavos));
     }
 
     /// <summary>Lo de antes (Contingencia.PorCodigo, hasta la entrega 5), para revisar que la foto resuelve igual.</summary>
@@ -79,20 +98,33 @@ public sealed class FotoCatalogoTests
 
     internal static (Guid VarianteId, Guid PresentacionId)? Clave(ProductoVentaDto? p) => p is null ? null : (p.VarianteId, p.Presentacion.Id);
 
+    /// <summary>
+    /// Como lo hacía la contingencia, salvo un código repetido: antes ganaba el primero de la lista, y ahora el producto más
+    /// antiguo, como en el servicio, para que no dependa del orden de la copia (la puesta al día pone lo que cambió al final).
+    /// </summary>
     [Fact]
     public void Resuelve_cada_codigo_igual_que_la_contingencia_de_antes()
     {
         var paquete = Paquete(3, Lapicero, Cuaderno);
         var foto = FotoCatalogo.Armar(paquete);
 
-        foreach (var codigo in paquete.Codigos.Select(c => c.Codigo).Append("LAP-az ").Append("nada").Append(""))
+        foreach (var codigo in paquete.Codigos.Select(c => c.Codigo).Where(c => c != "750200").Append("LAP-az ").Append("nada").Append(""))
         {
             var antes = ComoAntes(paquete, codigo);
             var ahora = foto.PorCodigo(codigo);
             Assert.Equal(Clave(antes), Clave(ahora));
             Assert.Equal(antes?.Precios, ahora?.Precios);
         }
+        Assert.Equal(Clave(DelRepetido), Clave(foto.PorCodigo("750200")));
+        // En otro orden, lo mismo.
+        var alReves = FotoCatalogo.Armar(paquete with { Codigos = paquete.Codigos.Reverse().ToList() });
+        foreach (var codigo in paquete.Codigos.Select(c => c.Codigo))
+            Assert.Equal(Clave(foto.PorCodigo(codigo)), Clave(alReves.PorCodigo(codigo)));
     }
+
+    /// <summary>De quién es «750200», que está en los dos: del más antiguo (su Id va por fecha), con la presentación de su código.</summary>
+    private static ProductoVentaDto DelRepetido =>
+        Lapicero.VarianteId.CompareTo(Cuaderno.VarianteId) < 0 ? Lapicero with { Presentacion = Pieza } : Cuaderno with { Presentacion = PiezaCuaderno };
 
     [Fact]
     public void Lo_que_llega_de_la_principal_va_en_una_foto_nueva_encima_y_la_de_antes_no_cambia()

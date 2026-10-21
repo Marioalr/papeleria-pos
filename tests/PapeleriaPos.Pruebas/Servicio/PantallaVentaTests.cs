@@ -382,9 +382,11 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
         Assert.Contains($"Estado de cuenta de {PreparacionPrueba.ConDeuda}\n", textos);
         Assert.Contains("Sin impresora conectada: así saldrá impreso en la de 80 mm.", textos);
 
-        // Con impresora, el papel; nada en pantalla.
+        // Con impresora, el papel; nada en pantalla. El papel va a la cola de la impresora (entrega 5, parte 3) y sale en su
+        // hilo, sin que la pantalla lo espere: se espera a que salga, con un límite.
         var impresora = new ImpresoraQueAnota();
         textos = await ImprimirElEstadoAsync(impresora);
+        await Esperar(() => impresora.Impresos > 0);
         Assert.Equal(1, impresora.Impresos);
         Assert.DoesNotContain("Sin impresora conectada", textos);
     }

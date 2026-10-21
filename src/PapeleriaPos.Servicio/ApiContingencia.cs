@@ -21,7 +21,8 @@ public static class ApiContingencia
         var bandeja = app.MapGroup("/api/bandeja").ConErrores().SoloSuCaja().AddEndpointFilter(AvisarSiNoSubeAsync);
 
         // La copia local completa: catálogo con existencias, usuarios (PIN como hash), sus permisos, ticket, la configuración de
-        // la tienda y el último folio de la caja (CopiaDeLaCaja). Una caja de ahora pide después solo lo que cambió (ApiCopia).
+        // la tienda, el último folio de la caja y lo que necesita su búsqueda (CopiaDeLaCaja). Una caja de ahora pide después solo
+        // lo que cambió (ApiCopia).
         api.MapGet("/cajas/{cajaId:guid}/paquete", (Guid cajaId, PosDbContext db, CatalogoEnMemoria catalogo, VersionesDeLaCopia versiones,
             IOptions<OpcionesTicket> opciones, CancellationToken ct) => CopiaDeLaCaja.PaqueteAsync(db, catalogo, versiones, cajaId, opciones.Value, ct));
 

@@ -43,6 +43,9 @@ internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandle
     /// <summary>Mientras está puesta, la búsqueda de un producto por código espera a que se suelte (o a que la caja se canse).</summary>
     public TaskCompletionSource? Detenida { get; set; }
 
+    /// <summary>Mientras está puesta, todo espera a que se suelte: la red tan lenta que nada contesta.</summary>
+    public TaskCompletionSource? TodoDetenido { get; set; }
+
     /// <summary>
     /// Mientras está puesta, el cobro (POST api/ventas) llega al servicio y se guarda, pero su respuesta espera a que se
     /// suelte (o a que la caja deje de esperarla): como el Wi-Fi que se cae justo después de cobrar.
@@ -79,6 +82,8 @@ internal sealed class RedDePrueba(HttpMessageHandler interno) : DelegatingHandle
             await Task.Delay(suyo, cancellationToken);
         if (Detenida is { } detenida && ruta.StartsWith("/api/productos/codigo/", StringComparison.Ordinal))
             await detenida.Task.WaitAsync(cancellationToken);
+        if (TodoDetenido is { } todo)
+            await todo.Task.WaitAsync(cancellationToken);
         var respuesta = await base.SendAsync(request, cancellationToken);
         if (CobroRetenido is { } retenido && request.Method == HttpMethod.Post && ruta == "/api/ventas")
         {
@@ -119,8 +124,10 @@ internal sealed record VentaConCopia(
     /// (entrega 5, parte 2); sin esto, todo por <see cref="Red"/>.
     /// </param>
     /// <param name="quien">Quién entra a la venta, con su PIN; sin él, el cajero. El turno es del cajero.</param>
+    /// <param name="impresora">La impresora de tickets; sin ella, ninguna (el ticket se ve en pantalla).</param>
+    /// <param name="registro">El registro de la caja (registros\caja-….log); sin él, no se anota nada.</param>
     public static async Task<VentaConCopia> AbrirAsync(ServicioDePrueba servicio, string baseLocal, TimeSpan? plazo = null, IJSRuntime? pagina = null,
-        bool fondoAparte = false, (string Usuario, string Pin)? quien = null)
+        bool fondoAparte = false, (string Usuario, string Pin)? quien = null, IImpresora? impresora = null, RegistroDiario? registro = null)
     {
         var red = new RedDePrueba(servicio.Fabrica.Server.CreateHandler());
         var http = new HttpClient(red);
@@ -134,15 +141,17 @@ internal sealed record VentaConCopia(
         var cajero = await cliente.EntrarAsync("cajero", "1111");
         var turno = await cliente.TurnoAsync(caja.Id) ?? await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
         var sesion = quien is var (usuario, pin) ? await cliente.EntrarAsync(usuario, pin) : cajero;
-        var servicios = new ServiceCollection()
+        var coleccion = new ServiceCollection()
             .AddSingleton(conexion)
             .AddSingleton(cliente)
             .AddSingleton(contingencia)
             .AddSingleton(new RendimientoCaja())
-            .AddSingleton<IImpresora>(new SinImpresora())
+            .AddSingleton(impresora ?? new SinImpresora())
             .AddSingleton(pagina ?? new PaginaQueContesta())
-            .AddScoped<ModuloCaja>()
-            .BuildServiceProvider();
+            .AddScoped<ModuloCaja>();
+        if (registro is not null)
+            coleccion.AddSingleton(registro);
+        var servicios = coleccion.BuildServiceProvider();
         var pantalla = new PantallaSinNavegador(servicios);
         var venta = await pantalla.AbrirAsync<PantallaVenta>(new()
         {

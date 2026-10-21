@@ -327,7 +327,7 @@ un solo panel, siempre listo:**
   lo que falta.
 - Bajo el cobro, la [bandeja de impresiones](#las-impresiones-por-cobrar-la-bandeja).
 - Al cobrar, el panel muestra el cambio en grande hasta que se escanea al siguiente cliente; si la impresora no
-  respondió, ahí mismo están «Reintentar» y «Verlo en pantalla».
+  respondió, ahí mismo están «Reintentar», «No imprimirlo» y «Verlo en pantalla».
 
 **F12:**
 
@@ -561,7 +561,7 @@ La misma pantalla en todas; cambia solo lo que dice el estado de arriba:
 | Estado normal | «Servicio aquí · Caja 2 conectada» | «Conectada a Caja 1 · 9 ms» |
 | Sin internet | «Sin internet»: Telegram y el respaldo de fuera esperan; la venta sigue igual | Igual |
 | Sin la principal | (no aplica: el servicio está en la misma PC) | Franja ámbar: sigue vendiendo con su serie (B-), cuántas ventas esperan para subir y «Volver a buscarla» |
-| Impresora sin respuesta | El cobro termina igual; «Reintentar» y «Verlo en pantalla» | Igual |
+| Impresora sin respuesta | El cobro termina igual; «Reintentar», «No imprimirlo» y «Verlo en pantalla» | Igual |
 
 ## Rendimiento
 

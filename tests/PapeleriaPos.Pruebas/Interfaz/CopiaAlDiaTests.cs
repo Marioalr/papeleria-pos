@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
+using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
@@ -165,6 +166,73 @@ public sealed class CopiaAlDiaTests(ServicioDePrueba servicio) : IClassFixture<S
             Assert.Equal(latidos, c.Red.Cuantas("/api/estado"));
             Assert.Equal(copias, c.Red.Cuantas(Paquete(c)));
             Assert.True(c.Red.Cuantas(Cambios(c)) >= 1);
+        }
+        finally
+        {
+            c.Contingencia.Cerrar(TimeSpan.FromSeconds(10));
+        }
+    }
+
+    /// <summary>
+    /// La búsqueda por nombre de la caja va contra su copia (entrega 5, parte 3). Un producto que se renombra en la caja
+    /// principal y un sinónimo nuevo se encuentran en la caja en cuanto llega el aviso, con lo que cambió: sin bajar la copia
+    /// completa ni esperar el latido, y en el mismo orden que la búsqueda de la caja principal. Una venta después (solo
+    /// existencias) no arma otra vez el índice de la búsqueda, y la lista ya trae la existencia de ahora.
+    /// </summary>
+    [Fact]
+    public async Task Lo_renombrado_y_un_sinonimo_nuevo_se_encuentran_al_llegar_el_aviso()
+    {
+        var c = await AbrirAsync();
+        c.Contingencia.IniciarAvisos();
+        try
+        {
+            await VentaConCopia.EsperarAsync(() => c.Red.Cuantas($"/api/cajas/{c.Datos.Id}/avisos") > 0, "la conexión del aviso");
+            var producto = UnoSinMayoreo(c, 6);
+            var (latidos, copias) = (c.Red.Cuantas("/api/estado"), c.Red.Cuantas(Paquete(c)));
+            Assert.True(c.Contingencia.Foto!.SeBusca);
+            Assert.Empty(c.Contingencia.Foto.Buscar("zanfona"));
+            Assert.Empty(c.Contingencia.Foto.Buscar("ocarina"));
+
+            // En la caja principal: el producto se renombra y la tienda da de alta un sinónimo para el nombre nuevo.
+            await using (var db = servicio.Base())
+            {
+                (await db.Variantes.SingleAsync(v => v.Id == producto.VarianteId)).Descripcion = "Zanfona";
+                await db.SaveChangesAsync();
+            }
+            Assert.True((await c.Directo.PostAsJsonAsync("api/catalogo/sinonimos",
+                new SolicitudSinonimo(c.Dueno.UsuarioId, c.Datos.SucursalId, "ocarina", "zanfona", false))).IsSuccessStatusCode);
+
+            await VentaConCopia.EsperarAsync(() => c.Contingencia.Foto!.Buscar("ocarina").Any(r => r.VarianteId == producto.VarianteId),
+                "el producto renombrado y su sinónimo en la búsqueda de la caja");
+            var foto = c.Contingencia.Foto!;
+            var porNombre = foto.Buscar("zanfona");
+            var porSinonimo = foto.Buscar("ocarina");
+            Assert.Equal(producto.VarianteId, porNombre[0].VarianteId);
+            Assert.Contains("Zanfona", porNombre[0].Descripcion, StringComparison.Ordinal);
+            Assert.Equal("ocarina", porSinonimo.Single(r => r.VarianteId == producto.VarianteId).PorSinonimo);
+            // Como lo busca la caja principal.
+            await servicio.CatalogoAlDiaAsync();
+            foreach (var texto in new[] { "zanfona", "ocarina" })
+            {
+                var enLaPrincipal = (await c.Directo.GetFromJsonAsync<List<ResultadoBusquedaDto>>(
+                    $"api/productos/buscar?q={texto}&sucursalId={c.Datos.SucursalId}"))!;
+                Assert.Equal(enLaPrincipal.Select(r => (r.VarianteId, r.PorSinonimo)), foto.Buscar(texto, conLoElegido: false).Select(r => (r.VarianteId, r.PorSinonimo)));
+            }
+            Assert.Equal(latidos, c.Red.Cuantas("/api/estado"));
+            Assert.Equal(copias, c.Red.Cuantas(Paquete(c)));
+            Assert.True(c.Red.Cuantas(Cambios(c)) >= 1);
+
+            // Una venta (de otra caja): solo existencias. La lista de la búsqueda ya trae la de ahora.
+            var abierto = await c.Directo.GetAsync($"api/cajas/{c.Datos.Id}/turno");
+            var turno = abierto.StatusCode == HttpStatusCode.NoContent
+                ? await (await c.Directo.PostAsJsonAsync("api/turnos", new SolicitudTurno(c.Datos.Id, c.Cajero.UsuarioId, 50000))).Content.ReadFromJsonAsync<TurnoDto>()
+                : await abierto.Content.ReadFromJsonAsync<TurnoDto>();
+            var existencia = porNombre[0].Existencia;
+            Assert.True((await c.Directo.PostAsJsonAsync("api/ventas", new SolicitudCobro(c.Datos.Id, turno!.Id, c.Cajero.UsuarioId,
+                [new LineaSolicitada(producto.VarianteId, producto.Presentacion.Id, 1000)], [new CobroSolicitado(FormaPago.Efectivo, 10_000_000)]))).IsSuccessStatusCode);
+            await VentaConCopia.EsperarAsync(() => c.Contingencia.Foto!.Buscar("zanfona")[0].Existencia == existencia - 1, "la existencia de ahora en la búsqueda");
+            Assert.True(c.Contingencia.Foto!.MismaBusquedaQue(foto));
+            Assert.Equal(copias, c.Red.Cuantas(Paquete(c)));
         }
         finally
         {

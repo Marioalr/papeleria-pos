@@ -38,6 +38,9 @@ public sealed class Contingencia
     /// <summary>Con un servicio de antes (sin cambios por versión), la copia se vuelve a bajar completa cada tanto (las existencias).</summary>
     private static readonly TimeSpan PaqueteViejo = TimeSpan.FromMinutes(30);
 
+    /// <summary>El formato de la copia de una caja principal que no lo dice (la de la entrega 5, parte 2).</summary>
+    private const int FormatoDeAntes = 1;
+
     /// <summary>
     /// Con los cambios por versión, la copia completa se vuelve a bajar a lo más cada tanto, por si acaso: lo que no llegue con
     /// los cambios (un error nuestro) se corrige solo. Al abrir la caja también se baja si la caja principal se reinició.
@@ -89,23 +92,18 @@ public sealed class Contingencia
     private sealed class Copia
     {
         /// <param name="anterior">La copia que había: de ella sale desde cuándo tiene cada producto sus precios (<see cref="PreciosDesde"/>).</param>
-        public Copia(PaqueteContingenciaDto p, Copia? anterior = null)
+        /// <param name="mismaBusqueda">
+        /// Lo que llegó no cambia nada de lo que arma la búsqueda por nombre (<see cref="CambiosCopiaDto.CambiaLaBusqueda"/>): el
+        /// índice de la foto de <paramref name="anterior"/> sirve igual y no se arma otra vez.
+        /// </param>
+        public Copia(PaqueteContingenciaDto p, Copia? anterior = null, bool mismaBusqueda = false)
         {
             Paquete = p;
             PorVariante = p.Productos.ToDictionary(x => x.VarianteId);
             PreciosDesde = DesdeCuando(p, PorVariante, anterior);
-            // Los códigos, en la foto del catálogo: el escaneo, en línea o sin conexión, resuelve igual (entrega 5).
-            Foto = FotoCatalogo.Armar(p);
-            var codigos = p.Codigos.ToLookup(c => c.VarianteId);
-            // Las familias de la búsqueda, igual que en línea: las marcas salen de esta copia del catálogo.
-            var nombres = new LectorDeNombres(p.Productos.Select(x => x.Descripcion), p.Marcas);
-            Partes = p.Productos.ToDictionary(x => x.VarianteId, x => nombres.Leer(x.Descripcion));
-            // También se busca por lo que lee la caja del nombre: «negro» encuentra «Negra», «surtido» los «V/Colores».
-            Normalizado = p.Productos.ToDictionary(x => x.VarianteId,
-                x => Texto.Normalizar($"{x.Descripcion} {string.Join(" ", codigos[x.VarianteId].Select(c => c.Codigo))} "
-                    + string.Join(" ", Partes[x.VarianteId].Select(parte => parte.Clave))));
-            Palabras = Normalizado.ToDictionary(x => x.Key, x => x.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries));
-            Sinonimos = new SinonimosDeBusqueda((p.Sinonimos ?? []).Select(s => (s.Palabra, s.Equivale)));
+            // Los códigos, en la foto del catálogo: el escaneo, en línea o sin conexión, resuelve igual (entrega 5). Y la búsqueda
+            // por nombre, la misma del servicio, también sin conexión (entrega 5, parte 3).
+            Foto = FotoCatalogo.Armar(p, mismaBusqueda ? anterior?.Foto : null);
             Presentaciones = p.Productos.SelectMany(x => x.Presentaciones).GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First());
             Usuarios = p.Usuarios.ToDictionary(u => u.Usuario.Trim().ToLowerInvariant());
             UsuariosPorId = p.Usuarios.ToDictionary(u => u.Id);
@@ -114,9 +112,9 @@ public sealed class Contingencia
         }
 
         /// <summary>
-        /// La misma copia con otras existencias (entrega 5, parte 2: después de cada venta): los mismos productos, códigos y
-        /// nombres, así que lo que sale de ellos (las partes del nombre, lo normalizado para buscar, los usuarios) se queda; la
-        /// foto se arma otra vez, igual que siempre (<see cref="FotoCatalogo.Armar"/>), con los productos de ahora.
+        /// La misma copia con otras existencias (entrega 5, parte 2: después de cada venta), o con otro «lo más vendido» o «lo
+        /// elegido» (parte 3): los mismos productos, códigos y nombres, así que lo que sale de ellos (el índice de la búsqueda por
+        /// nombre, los usuarios) se queda; la foto se arma otra vez con los productos de ahora (<see cref="FotoCatalogo.Armar"/>).
         /// </summary>
         public static Copia ConOtrasExistencias(PaqueteContingenciaDto p, Copia anterior) => new(anterior, p);
 
@@ -125,9 +123,8 @@ public sealed class Contingencia
             Paquete = p;
             PorVariante = p.Productos.ToDictionary(x => x.VarianteId);
             PreciosDesde = anterior.PreciosDesde;
-            Foto = FotoCatalogo.Armar(p);
-            (Partes, Normalizado, Palabras, Sinonimos, Presentaciones) =
-                (anterior.Partes, anterior.Normalizado, anterior.Palabras, anterior.Sinonimos, anterior.Presentaciones);
+            Foto = FotoCatalogo.Armar(p, anterior.Foto);
+            Presentaciones = anterior.Presentaciones;
             (Usuarios, UsuariosPorId, PermisosPorUsuario, Defecto, Activos) =
                 (anterior.Usuarios, anterior.UsuariosPorId, anterior.PermisosPorUsuario, anterior.Defecto, anterior.Activos);
         }
@@ -190,15 +187,7 @@ public sealed class Contingencia
         /// <summary>Solo lo de esta copia: lo que llegó después de la caja principal va en la foto de la contingencia.</summary>
         public FotoCatalogo Foto { get; }
 
-        public Dictionary<Guid, string> Normalizado { get; }
-
-        /// <summary>Las palabras de cada producto, para el error de dedo.</summary>
-        public Dictionary<Guid, string[]> Palabras { get; }
-
-        public SinonimosDeBusqueda Sinonimos { get; }
-
         public Dictionary<Guid, PresentacionDto> Presentaciones { get; }
-        public Dictionary<Guid, IReadOnlyList<ParteDeNombre>> Partes { get; }
         /// <summary>Por su usuario: también los dados de baja (no entran).</summary>
         public Dictionary<string, UsuarioLocalDto> Usuarios { get; }
         public Dictionary<Guid, UsuarioLocalDto> UsuariosPorId { get; }
@@ -249,6 +238,9 @@ public sealed class Contingencia
 
     /// <summary>Las versiones de la caja principal que se conocen (las del aviso o las del latido); vacías con un servicio de antes.</summary>
     private VersionesCopiaDto? _dePrincipal;
+
+    /// <summary>Las versiones que dijo la caja principal la última vez (en el latido o en el aviso): para las pruebas.</summary>
+    internal VersionesCopiaDto? VersionesDeLaPrincipal => _dePrincipal;
 
     /// <summary>Una puesta al día a la vez; lo que se avise mientras, se revisa al terminar (<see cref="_otraVez"/>).</summary>
     private readonly SemaphoreSlim _poniendoAlDia = new(1, 1);
@@ -329,6 +321,12 @@ public sealed class Contingencia
         while (Interlocked.CompareExchange(ref _foto, copia.Foto.ConLoNuevoDe(antes), antes) != antes);
     }
 
+    /// <summary>
+    /// Termina cuando ya se leyó la copia guardada al abrir la caja (fuera del hilo de la pantalla): la entrada la espera así,
+    /// sin trabar la pantalla, y sale con la copia sin esperar a la red (entrega 5, parte 3).
+    /// </summary>
+    public Task CopiaLeida => _carga;
+
     /// <summary>La copia, esperando a que termine de cargarse si la caja recién abrió.</summary>
     private Copia? CopiaCargada()
     {
@@ -365,6 +363,19 @@ public sealed class Contingencia
         }
         while (Interlocked.CompareExchange(ref _foto, antes.Con(producto, codigo), antes) != antes);
     }
+
+    /// <summary>
+    /// Lo que esta caja eligió en la lista con cada texto desde que se abrió y ya guardó el servicio (entrega 5, parte 3): la
+    /// búsqueda contra la copia lo pone primero la vez siguiente, como el servicio, sin esperar a que baje otra copia. Es lo
+    /// más nuevo: solo esta caja elige lo suyo.
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Guid> _elegidos = new(StringComparer.Ordinal);
+
+    /// <summary>Lo que se eligió de la lista con ese texto (con la clave con que lo guarda el servicio).</summary>
+    public void Aprender(string texto, Guid varianteId) => _elegidos[IndiceDeBusqueda.ClaveGuardada(texto)] = varianteId;
+
+    /// <summary>Lo que se eligió aquí con ese texto desde que se abrió la caja; vacío si nada.</summary>
+    public Guid? ElegidoAqui(string texto) => _elegidos.TryGetValue(IndiceDeBusqueda.Clave(texto), out var elegido) ? elegido : null;
 
     /// <summary>Cambió la conexión o la bandeja: la pantalla vuelve a dibujar la franja.</summary>
     public event Action? Cambio;
@@ -585,7 +596,7 @@ public sealed class Contingencia
         // latido queda de respaldo). Con uno de antes, la baja completa en el primer latido, cuando cambia y cada tanto.
         if (estado.Base is { } base_ && estado.VersionExistencias is { } existencias)
         {
-            _dePrincipal = new VersionesCopiaDto(base_, estado.VersionDatos, existencias, estado.VersionCredito);
+            _dePrincipal = new VersionesCopiaDto(base_, estado.VersionDatos, existencias, estado.VersionCredito, estado.FormatoCopia);
             await PonerAlDiaAsync();
         }
         else if (Paquete is null || Paquete.Version != estado.VersionDatos || Ahora - _paqueteBajadoUtc > PaqueteViejo)
@@ -766,6 +777,15 @@ public sealed class Contingencia
         if (_conexion.CajaId is not { } caja || _dePrincipal is not { } principal)
             return;
         var copia = _copia?.Paquete;
+        // La caja principal arma la copia en otro formato (una de las dos se actualizó antes que la otra): no se le piden cambios
+        // y la copia completa se baja como con una de antes, solo cuando cambia su versión del catálogo o cada tanto. Antes se
+        // bajaba completa con cada latido y cada aviso: la que llegaba nunca era del formato de esta caja.
+        if ((principal.Formato ?? FormatoDeAntes) != CopiaAlDia.Formato)
+        {
+            if (copia is null || copia.Version != principal.Catalogo || Ahora - _paqueteBajadoUtc > PaqueteViejo)
+                await BajarCopiaAsync();
+            return;
+        }
         if (copia is null || copia.Base != principal.Base || copia.Formato != CopiaAlDia.Formato || copia.VersionExistencias is not { } existencias
             || Ahora - _completaDesdeUtc > CopiaCompletaCada)
         {
@@ -789,7 +809,8 @@ public sealed class Contingencia
         try
         {
             cambios = await _http.GetAsync<CambiosCopiaDto>(
-                $"api/cajas/{caja}/cambios?desde={copia.Version}&existencias={existencias}&base={copia.Base}&formato={CopiaAlDia.Formato}",
+                $"api/cajas/{caja}/cambios?desde={copia.Version}&existencias={existencias}&base={copia.Base}&formato={CopiaAlDia.Formato}"
+                + $"&vendidos={copia.VersionVendidos ?? 0}&elegidos={copia.VersionElegidos ?? 0}",
                 noEncontradoEsNulo: true, espera: EsperaCambios);
         }
         catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
@@ -836,11 +857,13 @@ public sealed class Contingencia
     {
         var reloj = System.Diagnostics.Stopwatch.StartNew();
         var nueva = CopiaAlDia.Aplicar(copia, cambios);
-        // Solo existencias (lo de cada venta): lo que sale de los nombres se queda; la foto, otra vez, como siempre.
+        // Solo existencias (lo de cada venta), lo más vendido o lo elegido: lo que sale de los nombres se queda; la foto, otra vez,
+        // como siempre. Si no cambia nada de lo que arma la búsqueda por nombre (entrega 5, parte 3), su índice tampoco.
         var anterior = _copia;
-        var armada = !cambios.CambiaCatalogo && anterior is not null && ReferenceEquals(anterior.Paquete, copia)
-            ? Copia.ConOtrasExistencias(nueva, anterior)
-            : new Copia(nueva, anterior);
+        var deEsta = anterior is not null && ReferenceEquals(anterior.Paquete, copia);
+        var armada = !cambios.CambiaCatalogo && deEsta
+            ? Copia.ConOtrasExistencias(nueva, anterior!)
+            : new Copia(nueva, anterior, mismaBusqueda: deEsta && !cambios.CambiaLaBusqueda);
         // Si mientras tanto bajó otra (o empezó de cero), esta ya no.
         if (!ReferenceEquals(_copia?.Paquete, copia))
             return;
@@ -1274,42 +1297,11 @@ public sealed class Contingencia
 
     public ProductoVentaDto? PorVariante(Guid varianteId) => Datos.Foto.PorVariante(varianteId);
 
-    /// <summary>Igual que en el servicio: cada palabra tiene que aparecer, sin importar acentos ni orden.</summary>
-    public List<ResultadoBusquedaDto> Buscar(string texto, int maximo = 30)
-    {
-        var palabras = Texto.Normalizar(texto).Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (palabras.Length == 0)
-            return [];
-        var datos = Datos;
-        var consulta = Texto.Normalizar(texto);
-        // Cada pedazo vale por sí mismo o por los sinónimos de la tienda, como en línea.
-        var pedazos = palabras.Select(w => (Pedazo: w, Sinonimos: datos.Sinonimos.De(w))).ToList();
-        bool Directo(ProductoVentaDto p, string w) => datos.Normalizado[p.VarianteId].Contains(w, StringComparison.Ordinal);
-        var candidatos = datos.Paquete.Productos
-            .Where(p => pedazos.All(x => Directo(p, x.Pedazo) || x.Sinonimos.Any(s => Directo(p, s.Equivale)))).ToList();
-        // Si nada coincide, un error de dedo, como en línea.
-        var parecido = false;
-        if (candidatos.Count == 0)
-        {
-            candidatos = datos.Paquete.Productos
-                .Where(p => pedazos.All(x => ErrorDeDedo.Coincide(x.Pedazo, datos.Palabras[p.VarianteId]) || x.Sinonimos.Any(s => Directo(p, s.Equivale))))
-                .ToList();
-            parecido = candidatos.Count > 0;
-        }
-        string? PorSinonimo(ProductoVentaDto p) =>
-            pedazos.Where(x => !Directo(p, x.Pedazo)).SelectMany(x => x.Sinonimos).Where(s => Directo(p, s.Equivale))
-                .Select(s => s.Palabra.ToLowerInvariant()).FirstOrDefault();
-        return candidatos
-            .OrderByDescending(p => p.Codigo is not null && string.Equals(p.Codigo, texto.Trim(), StringComparison.OrdinalIgnoreCase))
-            .ThenByDescending(p => parecido ? palabras.Count(w => Directo(p, w)) : 0)
-            .ThenBy(p => PorSinonimo(p) is not null)
-            .ThenByDescending(p => datos.Normalizado[p.VarianteId].StartsWith(consulta, StringComparison.Ordinal))
-            .ThenBy(p => p.Descripcion, StringComparer.CurrentCultureIgnoreCase)
-            .Take(maximo)
-            .Select(p => new ResultadoBusquedaDto(p.VarianteId, p.Descripcion, p.Codigo, PrecioMenudeo(p), p.Existencia,
-                Partes: datos.Partes[p.VarianteId], Parecido: parecido, PorSinonimo: PorSinonimo(p)))
-            .ToList();
-    }
+    /// <summary>
+    /// La misma búsqueda del servicio, con la copia (entrega 5, parte 3): sin acentos, en cualquier orden, con los sinónimos de
+    /// la tienda y lo más vendido. Sin la caja, como el servicio sin ella: sin lo elegido antes.
+    /// </summary>
+    public List<ResultadoBusquedaDto> Buscar(string texto, int maximo = 30) => Datos.Foto.Buscar(texto, maximo, conLoElegido: false);
 
     /// <summary>
     /// Cobra con la copia del catálogo y el siguiente folio de la caja. Los precios cambiados, los descuentos y pasar el
@@ -1758,13 +1750,6 @@ public sealed class Contingencia
             Tarjeta: ticket.Cobros.Where(c => c.Forma == FormaPago.Tarjeta).Sum(c => c.MontoCentavos),
             Transferencia: ticket.Cobros.Where(c => c.Forma == FormaPago.Transferencia).Sum(c => c.MontoCentavos),
             Redondeo: ticket.RedondeoCentavos, Credito: ticket.CreditoCentavos);
-
-    private long PrecioMenudeo(ProductoVentaDto p)
-    {
-        var porUnidad = p.Precios.Where(x => x.PresentacionId is null).ToList();
-        var deSucursal = porUnidad.Where(x => x.SucursalId == Caja.SucursalId).ToList();
-        return (deSucursal.Count > 0 ? deSucursal : porUnidad.Where(x => x.SucursalId is null)).MinBy(x => x.CantidadMinimaMilesimas)?.PrecioCentavos ?? 0;
-    }
 
     private string Nombre(Guid usuarioId) => Datos.UsuariosPorId.TryGetValue(usuarioId, out var u) ? u.Nombre : "—";
 

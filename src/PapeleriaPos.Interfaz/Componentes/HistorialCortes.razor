@@ -1,10 +1,10 @@
 @* El historial de cortes (paridad con eleventa, «Historial de cortes», 2026-10-17), dentro del corte (CorteCaja): los turnos de
    un día, de una caja o de todas y de un cajero o de todos (los que se abrieron, se cerraron o seguían abiertos ese día,
    como en el corte del día), cada uno con su corte del turno: lo esperado, lo contado, la diferencia, quién lo hizo y
-   cuándo. «Reimprimir el corte» lo manda igual que el corte Z al cerrar el turno (a la impresora de tickets o, sin ella,
-   aquí mismo). ← → (o la fecha) cambian de día y ↑ ↓ en la lista eligen el turno. Lo ve quien hace el corte de un turno o
-   ve el del día; el servicio lo revisa. En el piloto con eleventa, el turno cuyo corte se hace allá dice «Corte en
-   eleventa». Los cortes están en la caja principal: sin ella, lo dice. *@
+   cuándo. «Reimprimir el corte» lo manda igual que el corte Z al cerrar el turno (a la cola de la impresora de tickets o,
+   sin ella, aquí mismo). ← → (o la fecha) cambian de día y ↑ ↓ en la lista eligen el turno. Lo ve quien hace el corte de
+   un turno o ve el del día; el servicio lo revisa. En el piloto con eleventa, el turno cuyo corte se hace allá dice «Corte
+   en eleventa». Los cortes están en la caja principal: sin ella, lo dice. *@
 @inject ClienteCaja Cliente
 @inject IImpresora Impresora
 @inject ModuloCaja Js
@@ -152,17 +152,15 @@
                                 ? " Se hizo sin conexión con la caja principal; al subir se cuadró con lo que hizo esa caja." : "")
                         </p>
                         <div class="vn-botonera">
-                            <button class="vn-boton primario" id="historial-reimprimir" disabled="@_imprimiendo" @onclick="() => ReimprimirAsync(e)">
+                            <button class="vn-boton primario" id="historial-reimprimir" @onclick="() => Reimprimir(e)">
                                 <Ico Nombre="impresora" />Reimprimir el corte
                             </button>
                         </div>
-                        @if (_impreso == e.Id)
+                        @if (_impreso is { } impreso && impreso.Turno == e.Id)
                         {
-                            <p class="vn-corte-nota">Salió el corte del turno de @e.Cajero.</p>
-                        }
-                        @if (_errorImpresion is not null)
-                        {
-                            <p class="vn-corte-error">@_errorImpresion</p>
+                            @* Va a la cola de la impresora, como el corte al cerrar el turno (entrega 5, parte 3): aquí se ve si
+                               salió y, si no, «Reintentar» y «No imprimirlo». *@
+                            <AvisoImpresion Trabajo="impreso.Trabajo" Nota="El corte ya quedó." />
                         }
                         @if (_vistaPrevia is { } vista && vista.Turno == e.Id)
                         {
@@ -212,12 +210,8 @@
     /// <summary>Se pidió otro día u otro filtro y todavía no llega: lo de antes se ve apagado.</summary>
     private bool _cargando;
 
-    private bool _imprimiendo;
-
-    /// <summary>De qué turno salió el corte reimpreso (para decirlo junto a él).</summary>
-    private Guid? _impreso;
-
-    private string? _errorImpresion;
+    /// <summary>El corte reimpreso en la cola de la impresora, con su turno (para decir junto a él cómo va).</summary>
+    private (Guid Turno, TrabajoDeImpresion Trabajo)? _impreso;
 
     /// <summary>Sin impresora (el navegador): el corte reimpreso se ve aquí, como al cerrar el turno.</summary>
     private (Guid Turno, string Texto)? _vistaPrevia;
@@ -264,7 +258,7 @@
             (_datos, _error, _sinConexion, _fecha) = (datos, null, false, datos.Fecha);
             // El mismo turno si sigue en la lista (otro filtro); si no, el más reciente.
             _elegido = antes is { } id && datos.Turnos.ToList().FindIndex(t => t.Id == id) is >= 0 and var mismo ? mismo : datos.Turnos.Count - 1;
-            (_impreso, _errorImpresion) = (null, null);
+            _impreso = null;
         }
         catch (ErrorCaja ex)
         {
@@ -297,7 +291,7 @@
     private void Elegir(int indice)
     {
         if (indice != _elegido)
-            (_impreso, _errorImpresion) = (null, null);
+            _impreso = null;
         _elegido = indice;
     }
 
@@ -348,33 +342,22 @@
     }
 
     /// <summary>
-    /// El corte, impreso igual que al cerrar el turno (DisenoComprobante.Corte, por la impresora de tickets o, sin ella, aquí).
-    /// El de una caja sin conexión ya se cuadró al subir: el papel ya no dice que se cuadra al volver.
+    /// El corte, impreso igual que al cerrar el turno (DisenoComprobante.Corte): va a la cola de la impresora de tickets, como
+    /// el corte Z, sin esperarla (entrega 5, parte 3), y aquí se ve si salió; sin impresora, aquí mismo. El de una caja sin
+    /// conexión ya se cuadró al subir: el papel ya no dice que se cuadra al volver.
     /// </summary>
-    private async Task ReimprimirAsync(TurnoConCorteDto turno)
+    private void Reimprimir(TurnoConCorteDto turno)
     {
-        if (_imprimiendo || turno.Corte is not { } corte)
+        if (turno.Corte is not { } corte)
             return;
-        (_imprimiendo, _impreso, _errorImpresion) = (true, null, null);
-        try
+        var documento = DisenoComprobante.Corte(corte with { EnContingencia = false }, turno.Caja);
+        var cola = ColaDeImpresion.De(Impresora);
+        if (cola.MuestraVistaPrevia)
         {
-            var documento = DisenoComprobante.Corte(corte with { EnContingencia = false }, turno.Caja);
-            if (Impresora.MuestraVistaPrevia)
-            {
-                _vistaPrevia = (turno.Id, TicketTexto.Generar(documento));
-                return;
-            }
-            await Impresora.ImprimirAsync(documento, abrirCajon: false);
-            _impreso = turno.Id;
+            _vistaPrevia = (turno.Id, TicketTexto.Generar(documento));
+            return;
         }
-        catch (Exception ex)
-        {
-            _errorImpresion = $"No se pudo imprimir: {ex.Message}";
-        }
-        finally
-        {
-            _imprimiendo = false;
-        }
+        _impreso = (turno.Id, cola.Encolar($"Corte del turno de {corte.Cajero}", documento, abrirCajon: false));
     }
 
     /// <summary>«09:00», o con la fecha si no es del día que se ve (un turno que viene de otro día).</summary>

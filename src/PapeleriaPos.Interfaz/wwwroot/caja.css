@@ -699,7 +699,7 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .entrada-lado .fecha { font-size: 18px; color: var(--vn-noche-suave); }
 .entrada-lado .fecha::first-letter { text-transform: uppercase; }
 .estado-lista { display: flex; flex-direction: column; gap: 8px; list-style: none; margin: 18px 0 0; padding: 14px 0 0; border-top: 1px solid var(--vn-noche-borde); font-size: 14px; color: var(--vn-noche-suave); }
-.estado-lista li { display: flex; align-items: center; gap: 8px; }
+.estado-lista li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .estado-lista .punto { width: 8px; height: 8px; flex: none; border-radius: 50%; background: #3ccf8e; }
 .estado-lista .punto.ambar { background: #f0b445; }
 .estado-lista .punto.gris { background: var(--vn-noche-suave); }

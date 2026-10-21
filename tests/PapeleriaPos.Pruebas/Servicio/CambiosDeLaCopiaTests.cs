@@ -40,10 +40,16 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
 
     private static Task<PaqueteContingenciaDto> CopiaAsync(Caja c) => Leer<PaqueteContingenciaDto>(c.Http.GetAsync($"api/cajas/{c.Datos.Id}/paquete").Result);
 
+    /// <summary>Lo que cambió desde esa copia, como lo pide la caja: con las versiones de lo que usa su búsqueda (entrega 5, parte 3).</summary>
     private static async Task<CambiosCopiaDto> CambiosAsync(Caja c, PaqueteContingenciaDto desde, Guid? base_ = null, int formato = CopiaAlDia.Formato,
         long? version = null) =>
         await Leer<CambiosCopiaDto>(await c.Http.GetAsync(
-            $"api/cajas/{c.Datos.Id}/cambios?desde={version ?? desde.Version}&existencias={desde.VersionExistencias}&base={base_ ?? desde.Base}&formato={formato}"));
+            $"api/cajas/{c.Datos.Id}/cambios?desde={version ?? desde.Version}&existencias={desde.VersionExistencias}&base={base_ ?? desde.Base}&formato={formato}"
+            + $"&vendidos={desde.VersionVendidos}&elegidos={desde.VersionElegidos}"));
+
+    /// <summary>Lo que eligió la caja en la lista de la búsqueda con ese texto (lo que manda la venta).</summary>
+    private static async Task ElegirAsync(Caja c, string texto, Guid varianteId) =>
+        Assert.True((await c.Http.PostAsJsonAsync("api/busquedas", new SolicitudBusqueda(c.Datos.Id, texto, 3, varianteId))).IsSuccessStatusCode);
 
     private async Task<TurnoDto> TurnoAsync(Caja c)
     {
@@ -75,15 +81,20 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
 
     /// <summary>
     /// Con cambios de todo tipo (precio, alta, código quitado, baja, marca, usuario, PIN mal tecleado, la tienda, un sinónimo,
-    /// un cliente y una venta), la copia de antes con los cambios encima queda igual que la copia completa de ahora, y los
-    /// cambios traen solo los productos que cambiaron.
+    /// un cliente, una venta y lo que la caja eligió en la búsqueda), la copia de antes con los cambios encima queda igual que
+    /// la copia completa de ahora, también en lo que usa su búsqueda (todos los códigos, las marcas, lo más vendido y lo
+    /// elegido: entrega 5, parte 3), y los cambios traen solo los productos que cambiaron y lo elegido después.
     /// </summary>
     [Fact]
     public async Task La_copia_con_los_cambios_encima_queda_igual_que_la_completa()
     {
         var c = await CajaAsync();
         await servicio.CatalogoAlDiaAsync();
+        // Lo que la caja ya había elegido con un texto: viene en la copia de antes.
+        var deAntes = DeLaCopia(await CopiaAsync(c), p => p.Presentacion.EsBase)[11];
+        await ElegirAsync(c, "Separador De Antes", deAntes.VarianteId);
         var antes = await CopiaAsync(c);
+        Assert.Contains(new ElegidoDto("SEPARADOR DE ANTES", deAntes.VarianteId), antes.Elegidos!);
         var sinMayoreo = DeLaCopia(antes, p => p.LlevaInventario && p.Precios.Count == 1 && p.Precios[0].PresentacionId is null && p.Presentacion.EsBase);
         var (conPrecio, vendido, deBaja) = (sinMayoreo[0], sinMayoreo[1], sinMayoreo[2]);
         var conDosCodigos = antes.Codigos.GroupBy(x => x.VarianteId).Where(g => g.Count() >= 2).Select(g => g.Key)
@@ -122,12 +133,22 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
         await servicio.CatalogoAlDiaAsync();
         // Y una venta: solo existencias.
         await VenderAsync(c, vendido, 2);
+        // Lo que eligió después en la búsqueda: lo de un texto nuevo y, con el de antes, otro producto. Lo de otra caja no le toca.
+        await ElegirAsync(c, "separadores", nuevo.VarianteId);
+        await ElegirAsync(c, "Separador de antes", conPrecio.VarianteId);
+        servicio.Fabrica.Services.GetRequiredService<PapeleriaPos.Servicio.CatalogoEnMemoria>().Aprender(Guid.NewGuid(), "de otra caja", vendido.VarianteId);
 
         var cambios = await CambiosAsync(c, antes);
         var despues = await CopiaAsync(c);
 
         Assert.Null(cambios.PaqueteCompleto);
         Assert.Equal(Comparable(despues), Comparable(CopiaAlDia.Aplicar(antes, cambios)));
+        // Lo de la búsqueda: lo elegido después, solo lo nuevo; lo más vendido no se calculó otra vez, así que no viene.
+        Assert.Equal([new ElegidoDto("SEPARADOR DE ANTES", conPrecio.VarianteId), new ElegidoDto("SEPARADORES", nuevo.VarianteId)], cambios.Elegidos!);
+        Assert.Null(cambios.Vendidos);
+        Assert.Equal((antes.VersionVendidos, despues.VersionElegidos), (cambios.VersionVendidos, cambios.VersionElegidos));
+        Assert.Contains(new ElegidoDto("SEPARADORES", nuevo.VarianteId), despues.Elegidos!);
+        Assert.Contains(cambios.Codigos, x => x.Codigo == "9900000777001" && x.VarianteId == nuevo.VarianteId);
         // Solo lo que cambió: el del precio, el nuevo, el del código quitado y los de la marca; el dado de baja, quitado.
         var deLaMarca = despues.Productos.Where(p => p.Descripcion.Contains(marca, StringComparison.Ordinal)).Select(p => p.VarianteId).ToHashSet();
         Assert.Equal(deLaMarca.Union([conPrecio.VarianteId, nuevo.VarianteId, conDosCodigos]).Order(), cambios.Productos.Select(p => p.VarianteId).Order());
@@ -185,11 +206,44 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
         await propio.CatalogoAlDiaAsync();
 
         var cambios = await Leer<CambiosCopiaDto>(await http.GetAsync(
-            $"api/cajas/{caja.Id}/cambios?desde={antes.Version}&existencias={antes.VersionExistencias}&base={antes.Base}&formato={CopiaAlDia.Formato}"));
+            $"api/cajas/{caja.Id}/cambios?desde={antes.Version}&existencias={antes.VersionExistencias}&base={antes.Base}&formato={CopiaAlDia.Formato}"
+            + $"&vendidos={antes.VersionVendidos}&elegidos={antes.VersionElegidos}"));
         var despues = await Leer<PaqueteContingenciaDto>(await http.GetAsync($"api/cajas/{caja.Id}/paquete"));
 
         Assert.Null(cambios.PaqueteCompleto);
         Assert.Equal(Comparable(despues), Comparable(CopiaAlDia.Aplicar(antes, cambios)));
+    }
+
+    /// <summary>
+    /// Lo más vendido (entrega 5, parte 3): la caja principal lo calcula una vez al día, y cuando lo calcula otra vez, los
+    /// cambios lo traen completo, con su versión; mientras no, no viene. La copia de antes con esos cambios queda igual que la
+    /// completa de ahora, y después ya no hay nada que traer de la búsqueda.
+    /// </summary>
+    [Fact]
+    public async Task Lo_mas_vendido_calculado_otra_vez_llega_con_los_cambios()
+    {
+        var c = await CajaAsync();
+        await servicio.CatalogoAlDiaAsync();
+        var antes = await CopiaAsync(c);
+        var producto = DeLaCopia(antes, p => p.LlevaInventario && p.Presentacion.EsBase && p.Precios.Any(x => x.PresentacionId is null))[13];
+        var veces = antes.Vendidos!.SingleOrDefault(v => v.VarianteId == producto.VarianteId)?.Veces ?? 0;
+        await VenderAsync(c, producto, 1);
+        Assert.Null((await CambiosAsync(c, antes)).Vendidos);
+
+        // Un día después: lo más vendido se calcula otra vez (aquí, al volver a cargar el catálogo en memoria).
+        servicio.Fabrica.Services.GetRequiredService<PapeleriaPos.Servicio.CatalogoEnMemoria>().Invalidar();
+        await servicio.CatalogoAlDiaAsync();
+        var cambios = await CambiosAsync(c, antes);
+        var despues = await CopiaAsync(c);
+        var alDia = CopiaAlDia.Aplicar(antes, cambios);
+
+        Assert.Equal(despues.Vendidos, cambios.Vendidos);
+        Assert.True(Assert.Single(cambios.Vendidos!, v => v.VarianteId == producto.VarianteId).Veces > veces);
+        Assert.True(cambios.VersionVendidos > antes.VersionVendidos);
+        Assert.Equal(Comparable(despues), Comparable(alDia));
+        var otraVez = await CambiosAsync(c, alDia);
+        Assert.Null(otraVez.Vendidos);
+        Assert.Null(otraVez.Elegidos);
     }
 
     [Fact]
@@ -285,6 +339,8 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
         var primero = await LeerHastaAsync(lector, l => l.Any(x => x.StartsWith("data: ", StringComparison.Ordinal)));
         Assert.Contains("event: versiones", primero);
         var alConectarse = Versiones(primero.Last());
+        // Con el formato de su copia: si no es el de la caja, la caja no le pide cambios.
+        Assert.Equal(CopiaAlDia.Formato, alConectarse.Formato);
         var vivo = await LeerHastaAsync(lector, l => l.Contains(": vivo"));
 
         Assert.True((await http.PostAsJsonAsync("api/catalogo/precio-menudeo",

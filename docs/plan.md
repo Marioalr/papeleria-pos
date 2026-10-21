@@ -366,7 +366,7 @@ panel de la derecha y vuelve con Esc.
 - **F10** solo pone el cursor en el cuadro, donde salen los resultados.
 - **«Tarjeta» y «Transf.»** abren el cobro con esa forma y el total en ella.
 - **Al cobrar, el cambio en grande** se queda en el panel hasta que se escanea al siguiente cliente. Si el ticket no
-  salió, ahí mismo están «Reintentar» y «Verlo en pantalla».
+  salió, ahí mismo están «Reintentar», «No imprimirlo» y «Verlo en pantalla».
 - **F12 mueve el cursor a «Pagó con» en el navegador mismo,** sin esperar al servicio: lo que se teclea enseguida ya no
   cae en el cuadro de captura.
 - **Con un panel abierto, las teclas siguen** (2026-10-14, antes solo Esc): la del mismo panel lo cierra (F9 o Esc
@@ -587,11 +587,58 @@ aprobó el dueño el 2026-10-10 ([propuesta](propuesta-interfaz.md#rendimiento))
   un escaneo que esperó en la cola cuenta todo lo que esperó), en Configuración › Acerca de › Escanear; y el vigía del
   hilo de la pantalla anota en el registro de la caja cuando se traba más de 30 ms en una ráfaga de escaneos, con lo que
   pasaba.
-- **Para la parte 2:** buscar al escribir contra la copia; bajar solo lo que cambió, avisado por SSE (y que la versión no
-  suba con un PIN mal tecleado ni al abrir un turno, que hoy obligan a bajar la copia entera); un plazo por operación y
-  los estados de la red; imprimir aparte; pintar menos; la prueba de la ráfaga con la red simulada; y medir en las PC de la
-  tienda. Mientras tanto, «Quedan 3» y «Sin existencia» al escanear salen de la copia: pueden tener hasta media hora (las
-  ventas no cambian la versión); con lo que avise el SSE se ponen al día.
+- **Para la parte 2:** ~~buscar al escribir contra la copia~~ (hecho en la parte 3, abajo); bajar solo lo que cambió,
+  avisado por SSE (y que la versión no suba con un PIN mal tecleado ni al abrir un turno, que hoy obligan a bajar la copia
+  entera); un plazo por operación y los estados de la red; ~~imprimir aparte; pintar menos~~ (en la parte 3); la prueba
+  de la ráfaga con la red simulada; y medir en las PC de la tienda. Mientras tanto, «Quedan 3» y «Sin existencia» al
+  escanear salen de la copia: pueden tener hasta media hora (las ventas no cambian la versión); con lo que avise el SSE
+  se ponen al día.
+
+**Avance (2026-10-16), entrega 5, parte 3: la pantalla,** como lo aprobó el dueño el 2026-10-10
+([propuesta](propuesta-interfaz.md#rendimiento)):
+- **Buscar al escribir, contra la copia y sin la red:** la búsqueda es una sola para el servicio y para la copia de cada
+  caja (`IndiceDeBusqueda`, en el núcleo) y, con los mismos datos, da lo mismo y en el mismo orden: lo elegido antes en
+  esa caja, lo más vendido, los sinónimos, el error de dedo y las familias. La copia lleva lo que hace falta para
+  ordenar igual (lo más vendido en 90 días, lo que esa caja eligió con cada texto, todos los códigos y las marcas con
+  que se leen los nombres). Buscar toma menos de 2 ms con 5,800 productos (antes, 150 ms de espera y una consulta por la
+  red): lo que se escribe a mano se busca en cuanto se teclea, y lo que teclea el lector no busca nada. Enter con un
+  nombre agrega el primero, también de la copia. Sin copia (la caja recién instalada, el navegador), como antes.
+- **La búsqueda con la copia al día** (con la parte 2): lo que cambia en la caja principal llega a la búsqueda de cada
+  caja con el aviso y lo que cambió, en segundos, sin bajar la copia completa: cada producto que cambió, con todos sus
+  códigos; si cambió alguno, las marcas con que se leen los nombres (salen de los productos); los
+  sinónimos que cambiaron; lo más vendido, completo, cuando la caja principal lo calcula otra vez (una vez al día); y lo
+  que esa caja eligió en la búsqueda, solo lo nuevo. La caja pide desde las versiones de lo que tiene. Cada foto puesta
+  al día trae su búsqueda: si cambió algo de los productos, las marcas o los sinónimos, su índice se arma otra vez; si
+  solo cambiaron existencias, lo más vendido o lo elegido, se usa el mismo. La copia puesta al día queda igual que una
+  recién bajada, también en esto (lo cuida una prueba), y entre productos que se llaman igual la búsqueda ordena por
+  antigüedad (antes, por el orden en que llegaban): ordena igual que la completa y que la caja principal. Al escanear, los
+  códigos que solo cambian en mayúsculas («ZZ-01» y «zz-01») se resuelven igual en las dos: el igual tal cual o, si
+  ninguno, el producto más antiguo (antes ganaba el primero de la lista, y en la copia puesta al día lo que cambió va al
+  final). Lo elegido en la búsqueda mientras se arman los cambios ya no se pierde. Al agregar un sinónimo ya no se baja la
+  copia: llega con el aviso. El formato de la copia pasó a 2: una de antes se baja completa una vez.
+- **Pintar menos:** cada renglón del ticket es su propio componente: al escanear se pinta el renglón nuevo y el que
+  estaba elegido, y la pantalla una sola vez. Con 20 renglones, un escaneo le mandaba a la página 449 cambios y cambiaba
+  134 manejadores de eventos; ahora, unos 40 y 5.
+- **Imprimir aparte:** todo lo de la impresora de tickets (el ticket, las reimpresiones, los comprobantes, el corte y el
+  ticket de prueba) va a una cola de la caja y la pantalla queda libre al momento: cobrar ya no espera a que salga el
+  ticket, ni el aviso de retiro. Si la impresora no contesta al conectarse (puede estar imprimiendo lo de la otra caja),
+  se vuelve a intentar sola unos 15 s, sin que salga dos veces. Si no sale, la cola se detiene y lo dice con
+  «Reintentar» y «No imprimirlo» (en el panel del cobro, arriba del total, en el estado de arriba, en el corte y en la
+  entrada); lo que sigue espera en su orden. «No imprimirlo» lo deja sin imprimir, sin preguntar, lo anota en el
+  registro de la caja y la cola sigue: es para cuando el cliente ya se fue, o cuando no salió con «no confirmó» y pudo
+  salir ya (con «Reintentar» saldría dos veces); el ticket se reimprime desde las ventas del día. Un ticket que ni se
+  puede armar para la impresora (el logo dañado) también queda como «no salió», con «Verlo en pantalla». Si se cierra
+  la caja con algo sin imprimir, pregunta antes y lo anota en el registro. El pulso del cajón va al principio del
+  ticket: si se mandó, el cajón se abre aunque el papel no salga (en la tienda no hay cajón).
+- **F12** ya pasaba el cursor a «Pagó con» en la misma tecla, sin esperar a .NET (menos de 1 ms); ahora lo cuida una
+  prueba.
+- **Abrir la caja:** al publicar para Windows va ya compilada (ReadyToRun). La entrada sale con la copia, sin esperar a
+  la red (la caja, su turno y las fichas), y la caja principal la pone al día cuando contesta; el registro del día anota
+  a los cuántos segundos salió. Las letras ya eran las de Windows (Segoe UI), ninguna de internet.
+- **Falta, en la tienda (un sábado o domingo):** dos tickets a la vez desde las dos cajas a la POS-8360, para ver si
+  espera, rechaza o corta (si no conecta, la cola reintenta sola; si corta a medio ticket, dice «no salió» y espera
+  «Reintentar» o «No imprimirlo»); y medir allá lo que tarda escribir, escanear y abrir la caja. La parte 2 (la red y la
+  copia al día) ya va junto con esta (abajo).
 
 **Avance (2026-10-16), entrega 5, parte 2: la red y la copia al día,** como lo pide la
 [propuesta](propuesta-interfaz.md#rendimiento) (puntos 4, 5 y 6):
@@ -614,7 +661,10 @@ aprobó el dueño el 2026-10-10 ([propuesta](propuesta-interfaz.md#rendimiento))
 - **Cuándo baja la copia completa, como antes:** si no tiene copia, si la caja principal se reinició o empezó de cero (otra
   base), si cambió el formato de la copia, si son muchos cambios (una cuarta parte del catálogo), si pedir los cambios
   falla, y por si acaso cada 4 horas. Una caja de antes funciona igual con el servicio nuevo, y una caja nueva con un
-  servicio de antes hace lo de siempre (latido y copia completa).
+  servicio de antes hace lo de siempre (latido y copia completa). Si la caja y la caja principal arman la copia en
+  formatos distintos (mientras se actualiza una antes que la otra; la caja principal dice el suyo en el latido y en el
+  aviso), la caja no pide cambios y la baja completa solo cuando cambia el catálogo o cada media hora; antes la bajaba
+  completa con cada latido y cada aviso.
 - **La red con plazos:** dos conexiones aparte, una para lo que espera el cajero y otra para lo de fondo (el aviso, la copia,
   la bandeja). Lo de la venta que también se puede hacer con la copia lleva plazo: leer, 800 ms; cobrar y lo demás que
   escribe, 2.5 s (los 2 s que la caja principal espera el folio de eleventa en el piloto, y medio segundo para la red). El
@@ -659,10 +709,11 @@ aprobó el dueño el 2026-10-10 ([propuesta](propuesta-interfaz.md#rendimiento))
 
   Por Wi-Fi lo que más pesa es la copia completa (4 a 6 MB), y ahora casi nunca se baja. Se repite con la prueba
   `MedicionCopiaTests` y la variable `MEDIR_COPIA=4` (cuántas veces se copia el catálogo ficticio).
-- **Falta:** de la entrega 5, lo de la pantalla (buscar al escribir contra la copia, pintar menos, imprimir aparte y el
-  arranque), que va aparte; y medir en la tienda, un sábado o domingo: los umbrales de la red lenta con el Wi-Fi de la
-  caja 2, el plazo del cobro en el piloto con eleventa, que el aviso vuelva solo tras una caída del Wi-Fi, lo que tarda la
-  copia completa por Wi-Fi, y la ráfaga de noche en una PC como la caja 2 con un proxy que agregue retardo y pérdidas.
+- **Falta:** medir en la tienda, un sábado o domingo: los umbrales de la red lenta con el Wi-Fi de la caja 2, el plazo
+  del cobro en el piloto con eleventa, que el aviso vuelva solo tras una caída del Wi-Fi, lo que tarda la copia completa
+  por Wi-Fi, y la ráfaga de noche en una PC como la caja 2 con un proxy que agregue retardo y pérdidas. Lo de la pantalla
+  (la parte 3: buscar al escribir contra la copia, pintar menos, imprimir aparte y el arranque) ya va junto con esto, con
+  lo que usa la búsqueda dentro de lo que cambió (arriba).
 
 **Avance (2026-10-16): los departamentos, en Productos.** Como en eleventa («Departamentos: nuevo, cambiar el nombre,
 eliminar»), abajo de la lista de Productos (F3) está «Departamentos», con cuántos productos activos tiene cada uno (el
@@ -879,7 +930,7 @@ para esos días ([forma de trabajar](notas.md#forma-de-trabajar), [guía de los 
 | **La red de la tienda:** diagnóstico en la próxima caída real (desconectar el módem no la reproduce), con el script de diagnóstico en las dos cajas, y el arreglo, por aprobar, con lo que ya hay: el módem solo al internet del Tenda, red local nueva, IP fijas puestas en cada equipo, los equipos de la tienda en el switch que ya hay y no en el Tenda, e impresoras por IP sin WSD | [Red de la matriz](arquitectura.md#la-red-de-la-matriz), [notas](notas.md#red-de-la-tienda) | Falta: el script (chico) y dos fines de semana ([guía](pruebas-en-tienda.md)) |
 | En el POS, por la red: que la caja 2 vuelva a buscar sola a la principal, avisos de lo configurado por nombre o con WSD, la franja «sin internet» o «sin red local» y la bitácora de red | [Red de la matriz](arquitectura.md#la-red-de-la-matriz) | Falta (chico) |
 | **Las tres impresoras de inyección** (dos WF-6590 y una L5590): cada una con sus costos, su cola en cada PC, su contador, su calibración y sus hojas por cobrar | [Impresión](impresion.md), [notas](notas.md#impresoras) | Falta (mediano); antes, leer la L5590 por SNMP |
-| **La impresora de tickets compartida:** reintento si las dos cajas imprimen a la vez y botón «Reintentar». No hay cajón | [Notas](notas.md#impresoras) | Falta (chico) |
+| **La impresora de tickets compartida:** reintento si las dos cajas imprimen a la vez y botón «Reintentar». No hay cajón | [Notas](notas.md#impresoras) | En código (entrega 5, parte 3, 2026-10-16): la cola de cada caja; falta probarla en la tienda con las dos cajas |
 | **Reportes de ventas:** día contra hace un año (el mismo día de la semana o la misma fecha: por decidir), mes y año a la fecha contra el año anterior, meses cerrados; venta neta, tickets, ticket promedio, costo, utilidad y margen; por departamento, caja, cajero y forma de pago; exportar a Excel y líneas en el resumen de Telegram; la utilidad solo la ve el dueño. El año anterior sale del historial de eleventa (su utilidad, con el costo capturado en eleventa) | [Notas](notas.md#reportes) | Pospuesto: después de la prueba con una persona real y su aprobación (2026-10-09) |
 | **Ganancia real del mes:** el reporte (gastos fijos, consumibles del mes, recibo de luz, equipo con su depreciación y comisión de la tarjeta; utilidad bruta − mermas y faltantes − gastos = ganancia; punto de equilibrio y cierre del mes por Telegram). La captura de cada gasto cuando se paga no se pospone: propuesta, por aprobar, hacerla con la entrega 3 de la fase 3 (consumibles del mes), para todos los gastos | [Administración](#administración-y-punto-de-equilibrio), [servicios](servicios.md#tres-niveles-de-costo) | El reporte, pospuesto: después de la prueba con una persona real y su aprobación (2026-10-09) |
 | Fusionar a `main`, en orden, los PR abiertos (#27 en adelante) | `main` llega hasta la entrega 2 de la fase 3 | Hecho el 2026-10-10: del #27 al #52, con el #45. En Windows pasan todas las pruebas |
@@ -1068,7 +1119,8 @@ Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
 - [ ] En el POS, por la red: la caja 2 vuelve a buscar a la principal, avisos de nombres o WSD, la franja de «sin
   internet» y la bitácora de red
 - [ ] Las tres impresoras de inyección en el módulo de impresión
-- [ ] Impresora de tickets compartida: reintento y botón «Reintentar»
+- [x] Impresora de tickets compartida: reintento y botón «Reintentar» (la cola de la caja, entrega 5, parte 3), en
+  código; falta probarla en la tienda con las dos cajas
 - [ ] Corregir Telegram para que cumpla «solo el dueño»: rechazar el vínculo desde un grupo y revisar quién aprieta el
   botón (hoy se autoriza por chat; [notas](notas.md#reportes))
 - [ ] Después de la prueba con una persona real y su aprobación: reportes de ventas por periodo contra el año anterior

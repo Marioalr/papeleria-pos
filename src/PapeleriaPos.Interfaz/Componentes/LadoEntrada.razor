@@ -31,10 +31,23 @@
                 <li><span class="punto"></span>Conectada a la caja principal</li>
                 break;
         }
-        @* La impresora no se revisa (no hay a quién preguntarle cómo está): el punto no dice «lista», como el verde. *@
+        @* La impresora no se revisa (no hay a quién preguntarle cómo está): el punto no dice «lista», como el verde. Si algo de
+           la cola no salió (entrega 5, parte 3), lo dice, con «Reintentar» y «No imprimirlo»: quien entra después también lo ve. *@
         @if (Impresora.MuestraVistaPrevia)
         {
             <li><span class="punto gris"></span>Ticket en pantalla (sin impresora de tickets)</li>
+        }
+        else if (Cola.Problema is { Estado: EstadoImpresion.NoSalio } noSalio)
+        {
+            <li>
+                <span class="punto ambar"></span>Impresora de tickets: no salió «@noSalio.Titulo» (@noSalio.Motivo)
+                <button class="vn-boton chico" @onclick="Cola.Reintentar">Reintentar</button>
+                <button class="vn-boton chico" @onclick="() => AvisoImpresion.NoImprimirlo(Cola, noSalio, Servicios)">No imprimirlo</button>
+            </li>
+        }
+        else if (Cola.Problema is { } ocupada)
+        {
+            <li><span class="punto ambar"></span>Impresora de tickets: «@ocupada.Titulo» espera a que conteste</li>
         }
         else
         {
@@ -72,12 +85,15 @@
         }
     }
 
+    private ColaDeImpresion Cola => ColaDeImpresion.De(Impresora);
+
     protected override void OnInitialized()
     {
         // Solo la ventana de Windows trabaja sin conexión: si la pierde o sube lo pendiente, el lado lo dice al momento.
         _contingencia = Servicios.GetService<Contingencia>();
         if (_contingencia is not null)
             _contingencia.Cambio += AlCambiar;
+        Cola.Cambio += AlCambiar;
         _ = RelojAsync();
     }
 
@@ -106,6 +122,7 @@
     {
         if (_contingencia is not null)
             _contingencia.Cambio -= AlCambiar;
+        Cola.Cambio -= AlCambiar;
         _alto.Cancel();
         _alto.Dispose();
     }
