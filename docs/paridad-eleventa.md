@@ -54,10 +54,10 @@
 
 | eleventa | Uso | El POS hoy | Falta | Dónde | Tamaño |
 |---|---|---|---|---|---|
-| Abrir el turno con el fondo; un turno por cajero | La usan | Abrir turno con fondo (y el sugerido); un turno por cajero | En el piloto: adoptar el turno que eleventa abre en la caja 2 | Piloto, diseño | Mediano |
+| Abrir el turno con el fondo; un turno por cajero | La usan | Abrir turno con fondo (y el sugerido); un turno por cajero. En el piloto, la caja 2 adopta el turno que abre eleventa (#109, 2026-10-21) | Probarlo contra la copia | Piloto, paso 5 | — |
 | Entradas y salidas de efectivo, con comentario; se pueden cancelar | La usan (pocas a mano) | F7 y F8 con motivo; comprobante impreso de las salidas. En el piloto van a eleventa | Cancelar una equivocada, si lo usan (hoy se compensa con la contraria) | Sin plan | Chico |
 | Límite de efectivo en caja | Por confirmar | Límite con aviso de retiro (apagado en el piloto) | — | — | — |
-| Corte del turno, con faltante o sobrante | La usan | Corte del turno a ciegas, solo con el total, impreso; la diferencia a nombre del cajero | En el piloto el corte se hace en eleventa y la caja nueva todavía no lo toma: hoy solo avisa | Piloto, diseño | Mediano |
+| Corte del turno, con faltante o sobrante | La usan | Corte del turno a ciegas, solo con el total, impreso; la diferencia a nombre del cajero. En el piloto el corte se hace en eleventa y la caja 2 lo toma al verlo cerrado (#109, 2026-10-21) | Probarlo contra la copia | Piloto, paso 5 | — |
 | Corte del día y de todas las cajas: ventas, ganancia, formas de pago, ventas y ganancia por departamento, entradas, salidas, devoluciones; se imprime y se ve el de otra fecha | Por confirmar | Como el de eleventa (2026-10-17): de todas las cajas, para quien tiene el permiso, el de hoy o el de otro día (← → o la fecha; el de otro día solo se ve). Lo vendido, el efectivo, las formas de pago, las ventas por departamento, las entradas y salidas, las devoluciones, lo fiado y los abonos; la utilidad (también la de cada departamento), para quien ve la utilidad. «Imprimir» en la de tickets, también el de otro día. A la hora de cierre de la tienda se le recuerda cerrarlo a quien lo cierra | — | — | — |
 | Historial de cortes: por fecha, cajero, turno y caja | Por confirmar | **Hecho (2026-10-17).** En el corte, «Historial» (también en «/»): los turnos de cualquier día, por caja y cajero, con lo esperado, lo contado, la diferencia, quién y cuándo, y reimprimir el corte Z. Para quien hace el corte de un turno o ve el del día; en el piloto, «Corte en eleventa» | — | — | — |
 | El corte por correo al cerrar cada turno | Por confirmar | No hay (el resumen del día iba por Telegram, en pausa) | Si lo usan, que el corte le llegue al dueño sin Telegram | Sin plan | Chico |
@@ -67,7 +67,7 @@
 | eleventa | Uso | El POS hoy | Falta | Dónde | Tamaño |
 |---|---|---|---|---|---|
 | Alta y cambios de productos: código, nombre, precios, costo, departamento, tipo de venta | La usan. En el piloto se siguen haciendo en eleventa (dueño, 2026-10-10) | F3 Productos con lista y detalle, la ficha, alta rápida desde la venta y «por completar» | — | — | — |
-| Departamentos: nuevo, cambiar el nombre, eliminar | La usan | Llegan de eleventa y la lectura del piloto los pone al día; en el POS no hay dónde | Darlos de alta, cambiarles el nombre y desactivarlos | Pendiente nuevo, para dejar eleventa | Chico |
+| Departamentos: nuevo, cambiar el nombre, eliminar | La usan | **Hecho (#104, 2026-10-17).** En Productos (F3): darlos de alta, cambiarles el nombre y desactivarlos (sus productos activos pasan a otro). En el piloto llegan de eleventa y en el POS solo se ven | — | — | — |
 | Precio de costo, ganancia y precio de venta | La usan | Costo promedio y último costo por proveedor; margen mínimo con el precio sugerido al comprar | — | — | — |
 | Productos a granel (metro, kilo, litro) | La usan, con unidades mal puestas | Fracciones; cambiar la unidad en la depuración | Corregir las unidades | Depuración | Trabajo de la tienda |
 | Eliminar productos | La usan | Dar de baja con su historia; juntar los duplicados | — | — | — |
@@ -120,10 +120,10 @@
 |---|---|---|---|---|---|
 | La caja principal guarda la base y tiene que estar abierta; las demás se conectan por la red (puertos 3050 y 3309) | La usan | El servicio de Windows en la caja principal, sin sesión abierta, y las cajas con su llave | Las dos cajas reales y el día pico; antes, el modo multicaja con el puente | Plan, pendientes; piloto, al aprobarlo | Mediano |
 | Las ventas de todas las cajas en una sola base | La usan | En el piloto, cada venta de la caja 2 va a eleventa: pasos 1 a 4, en código | Semanas contra una copia en un Firebird 2.0.1 y la primera escritura real | Piloto, paso 5 | Semanas |
-| Un solo folio para todas las cajas | La usan | Una serie por caja (A-, B-). En el piloto, el ticket lleva el folio de eleventa | Revisar los folios repetidos | Piloto, diseño | Chico |
-| Devolver en una caja lo vendido en la otra | La usan (por eso el folio de eleventa en el ticket, 2026-10-10) | Por folio en cualquier caja, con el servicio | De ida y vuelta con eleventa | Piloto, diseño | Mediano |
+| Un solo folio para todas las cajas | La usan | Una serie por caja (A-, B-). En el piloto, el ticket lleva el folio de eleventa, y los folios repetidos se revisan justo después de guardar (#109, 2026-10-21) | Probarlo contra la copia | Piloto, paso 5 | — |
+| Devolver en una caja lo vendido en la otra | La usan (por eso el folio de eleventa en el ticket, 2026-10-10) | Por folio en cualquier caja, con el servicio. En el piloto, de ida y vuelta con eleventa (#109, 2026-10-21): la caja 2 devuelve lo del turno de eleventa en curso; lo demás se devuelve en eleventa y llega con la lectura | Ver en vivo la de otra caja o de otro turno; probarlo contra la copia | Piloto, paso 5 | — |
 | Sin la principal o sin red, la caja 2 no vende | — | Contingencia: sigue vendiendo y sube lo pendiente al volver | — | — | — |
-| Cada escaneo va a la principal: las pausas por Wi-Fi | — | Contra la copia de la caja (PR #100) | Lo demás de la entrega 5 | Entrega 5 | Grande |
+| Cada escaneo va a la principal: las pausas por Wi-Fi | — | **Hecho (entrega 5, #100, #105 y #108, 2026-10-21).** Contra la copia de la caja, que baja solo lo que cambió, avisada por la principal; la red con plazos y tres estados; imprimir aparte; pintar menos | Correr el día pico en la caja principal real | Pruebas en tienda | — |
 
 ## El orden
 
