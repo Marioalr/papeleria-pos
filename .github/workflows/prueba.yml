@@ -1,6 +1,10 @@
 # El instalador de la prueba con una persona real (docs/plan.md). Se arma en Windows porque la PC de desarrollo es
 # Linux: corre todas las pruebas, publica el servicio y la caja, prepara la base y los ejemplos, y deja
 # PapeleriaPos-Prueba.exe como artefacto de la corrida.
+#
+# Con lo mismo que publica deja también el paquete para actualizar una PC de la tienda (la caja 2 del piloto) con
+# actualizar.ps1: PapeleriaPos-Actualizacion-1.0.<corrida> (docs/pruebas-en-tienda.md, «Actualizar la caja 2 del piloto»).
+# Los .exe llevan esa versión (1.0.<número de esta corrida>, el mismo número que el instalador de prueba).
 name: Instalador de prueba
 
 on:
@@ -24,10 +28,10 @@ jobs:
       - name: Pruebas
         run: dotnet test -c Release
 
+      # Como siempre (Release, win-x64, con .NET adentro) en publicar/servicio y publicar/caja, con su versión, más actualizar.ps1.
       - name: Publicar el servicio y la caja
-        run: |
-          dotnet publish src/PapeleriaPos.Servicio -c Release -r win-x64 --self-contained -o publicar/servicio
-          dotnet publish src/PapeleriaPos.Caja -c Release -r win-x64 --self-contained -o publicar/caja
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File instalacion\armar-paquete.ps1 -Version 1.0.${{ github.run_number }} -Salida publicar
 
       - name: Base y ejemplos de la prueba
         run: dotnet run --project src/PapeleriaPos.Herramientas -c Release -- preparar-prueba --salida publicar/datos/prueba.db --ejemplos publicar/ejemplos
@@ -46,4 +50,14 @@ jobs:
         with:
           name: PapeleriaPos-Prueba
           path: publicar/PapeleriaPos-Prueba.exe
+          retention-days: 30
+
+      # El paquete para actualizar una PC de la tienda: actualizar.ps1, servicio\ y caja\ (sin lo de la prueba).
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PapeleriaPos-Actualizacion-1.0.${{ github.run_number }}
+          path: |
+            publicar/actualizar.ps1
+            publicar/servicio
+            publicar/caja
           retention-days: 30

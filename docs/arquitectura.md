@@ -251,9 +251,43 @@ causas posibles y qué se junta en la próxima caída están en [notas](notas.md
 
 ## Actualizaciones
 
-El central guarda el instalador vigente; cada caja principal lo descarga y verifica (SHA-256) y las cajas lo toman de
-su caja principal. Dentro de una sucursal todas las cajas deben tener la misma versión: primero se actualiza la caja
-principal y después las demás cajas. Primero se actualiza una sucursal y después las demás.
+**Durante el piloto, a mano, con el script** ([cómo](pruebas-en-tienda.md#actualizar-la-caja-2-del-piloto)):
+
+- **El paquete:** `actualizar.ps1`, `servicio\` y `caja\`, publicados para Windows de 64 bits con .NET adentro. Lo deja cada
+  corrida del «Instalador de prueba» de GitHub Actions (`PapeleriaPos-Actualizacion-1.0.<número>`), con lo mismo que el
+  instalador de prueba; también lo arma `instalacion/armar-paquete.ps1` en una PC con Windows. Cada .exe lleva su versión
+  (1.0.<número de la corrida>; lo compilado a mano, 0.0.0-local) y `actualizar.ps1` la compara: no pone una anterior ni la
+  misma sin `-Forzar`.
+- **Lo que cambia y lo que no:**
+  - el programa, en `C:\Program Files\PapeleriaPos` (`Servicio` y `Caja`), se reemplaza entero, con su `appsettings.json`.
+    Ahí las cuentas comunes de Windows no pueden cambiarlo; un servicio instalado en otra carpeta, como se hacía antes, pasa
+    ahí al actualizarlo;
+  - lo de la PC, en `C:\ProgramData\PapeleriaPos`, no se toca: la base (`pos.db`) y sus respaldos, la configuración de esa PC
+    (`servicio.json`, con el puente con eleventa), la llave del servicio, los registros y lo de la caja (`Caja\`: su alta, su
+    copia y los tickets en espera);
+  - `servicio.json` manda sobre el `appsettings.json` del programa, y las variables de entorno y la línea de órdenes mandan
+    sobre ella. La clave de eleventa va solo en la variable de entorno `Eleventa__Clave` del servicio, nunca en un archivo:
+    actualizar no borra el servicio (al de otra carpeta solo le cambia la ruta), así que su variable se queda. La prueba con
+    una persona real no lee `servicio.json`: tiene su propia carpeta y puede estar en la misma PC.
+- **Con respaldo y vuelta atrás:** con la caja cerrada y el servicio detenido, respalda la base (con su `-wal` y su `-shm`) y
+  los dos programas en `ProgramData\PapeleriaPos\actualizaciones\<fecha>-<versión de antes>` (las últimas 3). Arranca el
+  servicio y espera a que `api/estado` conteste con la versión nueva. Si no contesta, se detiene solo o la revisión de la base
+  al arrancar la encuentra dañada, regresa los programas y también la base (las migraciones pudieron cambiarla) y arranca la
+  versión de antes.
+- **Detener el servicio no pierde nada del puente.** La bandeja de salida (`EnviosAEleventa`) vive en `pos.db`: cada venta
+  entra a la bandeja en la misma transacción que la venta, y lo que va a eleventa sigue pendiente hasta que eleventa lo
+  confirma. Al detenerse, el servicio deja de esperar lo que iba en camino sin cancelarlo en Firebird (Firebird 2.0 no lo
+  aguanta): lo que eleventa alcanzó a guardar lo encuentra su marca en el siguiente intento y no se manda dos veces, y lo que
+  no, se vuelve a mandar. Al arrancar, la vuelta de fondo sigue con lo pendiente, en su orden. Mientras, la caja 2 está
+  cerrada y se cobra en eleventa.
+- **Un límite, por revisar:** el servicio migra la base antes de avisarle a Windows que ya arrancó, y Windows espera eso unos
+  30 s. Con las bases de hoy son segundos. Si un día una migración tardara más (una base muy grande), Windows daría por
+  fallido el arranque y `actualizar.ps1` regresaría a la versión de antes: para entonces, migrar después de avisarle a
+  Windows, o desde el script antes de arrancar el servicio.
+
+**Después, con el central** (pospuesto): el central guarda el instalador vigente; cada caja principal lo descarga y verifica
+(SHA-256) y las cajas lo toman de su caja principal. Dentro de una sucursal todas las cajas deben tener la misma versión:
+primero se actualiza la caja principal y después las demás cajas. Primero se actualiza una sucursal y después las demás.
 
 ## Cámaras y dispositivos
 

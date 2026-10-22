@@ -107,11 +107,11 @@
 |---|---|---|---|---|---|
 | Cajeros con usuario, contraseña y permisos | La usan | Permisos por usuario, con fichas y PIN (entrega 1) | — | — | — |
 | Configurar el ticket | La usan | Configuración › Ticket (entrega 7) | — | — | — |
-| Impresora de tickets en red, una para las dos cajas | La usan | ESC/POS por la red, configurada en cada PC; «Reintentar» si falla | Reintentar sola si la otra caja imprime e imprimir aparte de la pantalla; verla en la tienda | Piloto, paso 7; plan, pendientes; entrega 5 | Chico |
+| Impresora de tickets en red, una para las dos cajas | La usan | ESC/POS por la red, configurada en cada PC; imprime aparte de la pantalla y, si no contesta (la otra caja imprime), reintenta sola unos 15 s; si aun así no sale, «Reintentar» o «No imprimirlo» (PR #108) | Verla en la tienda con las dos cajas | Piloto, paso 7 | — |
 | Cajón de dinero | No hay cajón | Manda el pulso al cobrar en efectivo | — | — | — |
 | Lector de código de barras | La usan | Reconoce su ritmo; un escaneo en «Pagó con» no se toma como dinero | Medirlo en la tienda: 11 cifras y ritmo | Piloto, paso 7 | — |
 | Respaldo al salir, respaldar ahora y restaurar | Por confirmar (ya está en la guía del 17 y 18) | Diario y en cada corte Z, 30 días, en la caja principal; si la base se daña, avisa con el respaldo de antes | La copia fuera de la tienda; restaurar desde la pantalla. En el piloto, el respaldo propio de eleventa y ver si se restauró | Plan, pendientes; piloto, diseño | Chico; mediano |
-| Licencia y actualizaciones del programa | La usan (la versión, por ver) | Acerca de; el instalador de prueba | Instalador de la tienda, actualizaciones y soporte a distancia | Plan, pendientes | Mediano |
+| Licencia y actualizaciones del programa | La usan (la versión, por ver) | Acerca de, con la versión; el instalador de prueba; los scripts de instalación y `actualizar.ps1`, con respaldo y vuelta atrás (2026-10-21) | Instalador de la tienda, actualizaciones que se bajan solas y soporte a distancia | Plan, pendientes | Mediano |
 | Recargas, pago de servicios y terminal de tarjeta integrada | No la usan: las recargas y los pagos se cobran fuera | — (pospuestos) | — | — | — |
 
 ### Multicaja
@@ -144,8 +144,8 @@ caja 2; los reportes y lo demás de la tabla detienen el último paso, apagar el
 | 4 | **Los respaldos de eleventa:** detectar una restauración y dejar de escribir; el respaldo propio con `gbak` antes de la primera escritura del día | Mediano |
 | 5 | **Folios repetidos:** revisar justo después de guardar | Chico |
 | 6 | **El mayoreo por revisar:** antes de vender, revisar en F3 lo que el F11 de eleventa vendía a mano y no tiene escala | Chico, con el encargado |
-| 7 | **Si la impresora rechaza el segundo ticket:** que la caja reintente sola (hoy, «Reintentar» a mano) | Chico |
-| 8 | **Paso 6, lo que falta:** cómo se actualiza la caja 2 con un arreglo, sin perder su base ni la configuración del puente | Chico |
+| 7 | **Si la impresora rechaza el segundo ticket:** que la caja reintente sola. Ya está desde el PR #108: la cola de la impresora de tickets (`ColaDeImpresion`) vuelve a intentar sola, unos 15 s, cuando no puede conectarse (la otra caja está imprimiendo); como todavía no le mandó nada, no sale un ticket doble. Si aun así no sale, «Reintentar» o «No imprimirlo» | — |
+| 8 | **Paso 6, lo que falta:** cómo se actualiza la caja 2 con un arreglo, sin perder su base ni la configuración del puente. Ya está (2026-10-21): lo de la PC en `C:\ProgramData\PapeleriaPos\servicio.json` y `actualizar.ps1` con respaldo y vuelta atrás ([cómo](pruebas-en-tienda.md#actualizar-la-caja-2-del-piloto)) | — |
 | 9 | **Paso 5:** semanas de prueba contra una copia servida por un Firebird 2.0.1; después, **la primera escritura en el eleventa real**, con el visto bueno del dueño | Semanas |
 | 10 | **Paso 8:** enseñar a quien atiende la caja 2 (también lo que cambia de eleventa: Ins, F11 y cobrar sin ticket) | Una tarde |
 | 11 | **Tomar el corte de eleventa:** al ver cerrado el turno adoptado, cerrar el de la caja nueva con lo contado allá. Puede entrar con el piloto andando: mientras, la caja avisa que el corte se hace en eleventa | Mediano |
@@ -162,6 +162,11 @@ devoluciones de ida y vuelta y los respaldos de eleventa ([avance](migracion-ele
 Falta probarlos contra la copia (paso 5) y ver en la tienda lo que todavía queda por revisar: cómo anota eleventa la
 devolución de otra caja o de otro turno, y dónde está `gbak.exe` en la caja 2.
 
+**Avance (2026-10-21):** el 7 ya estaba desde el PR #108 (la cola de la impresora reintenta sola, sin ticket doble) y el 8
+ya está: la caja 2 se actualiza con `actualizar.ps1`, que respalda la base y los programas, no toca `servicio.json` (la
+configuración del puente) y regresa sola a la versión de antes si la nueva no arranca
+([cómo](pruebas-en-tienda.md#actualizar-la-caja-2-del-piloto)).
+
 ### 2. Para dejar eleventa
 
 Primero el modo multicaja, al aprobar el piloto (decisión del dueño, 2026-10-12); al final, apagar el puente.
@@ -176,7 +181,7 @@ Primero el modo multicaja, al aprobar el piloto (decisión del dueño, 2026-10-1
 | 6 | **El corte del día como el de eleventa:** impreso, de otra fecha y con la ganancia y los departamentos, y el historial de cortes. Ya están los dos (2026-10-17) | Chico |
 | 7 | **Departamentos en el POS:** darlos de alta, cambiarles el nombre y desactivarlos | Chico |
 | 8 | **Respaldo fuera de la tienda** con una restauración de ensayo, y la vigilancia de la caja principal | Chico |
-| 9 | **Instalador de la tienda, actualizaciones y soporte a distancia** | Mediano |
+| 9 | **Instalador de la tienda, actualizaciones y soporte a distancia** (a mano ya se actualiza con `actualizar.ps1`, 2026-10-21) | Mediano |
 | 10 | **Depuración, conteo físico e importación final,** sin las ventas que ya mandó el puente | Grande: la depuración y el conteo son trabajo de la tienda; lo del puente ya está en código (2026-10-17, [importación final](migracion-eleventa.md#la-importación-final)) |
 | 11 | **Promociones con fechas y kits,** si se deja eleventa antes del próximo regreso a clases | Mediano |
 | 12 | **Lo «por confirmar» que sí usen:** cancelar una entrada o salida, Excel (las ventas de otros días, los mínimos por producto, lo que vale el inventario y los movimientos ya están, 2026-10-17) | Chico cada uno |
