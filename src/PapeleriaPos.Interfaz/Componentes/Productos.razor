@@ -9,7 +9,8 @@
    detalle y la ficha de un producto de eleventa dicen que lo que pone su lectura se cambia allá (la ficha no lo deja
    cambiar). Lo que se señala (entrega 13, parte 3): «Temporadas» (empezarla con los precios del año pasado, su hoja, sus
    tarjetas y terminarla) y «Tarjetas de precio» (las que hay que volver a imprimir porque cambió su precio, lo más preguntado
-   en el verificador sin tarjeta y las de cada exhibidor), en el mismo lado. *@
+   en el verificador sin tarjeta y las de cada exhibidor), en el mismo lado. «Productos en Excel» (2026-10-22): exportar la
+   lista como se ve e importarla ya cambiada, viendo antes qué cambia; para quien ve Productos (importa quien cambia precios). *@
 @implements IPagina
 @implements IDisposable
 @inject ClienteCaja Cliente
@@ -129,6 +130,8 @@
                 }
                 <button class="vn-boton chico @(_vista == Vista.Departamentos ? "on" : "")" @onclick="() => Ver(Vista.Departamentos)">Departamentos</button>
                 <button class="vn-boton chico @(_vista == Vista.Decisiones ? "on" : "")" @onclick="DecisionesAsync">Decisiones de depuración</button>
+                <button id="ver-excel" class="vn-boton chico @(_vista == Vista.Excel ? "on" : "")" title="Exportar la lista a Excel o importarla ya cambiada"
+                        @onclick="() => Ver(Vista.Excel)"><Ico Nombre="transferir" />Productos en Excel</button>
             </div>
         </div>
     </section>
@@ -169,6 +172,10 @@
                 break;
             case Vista.Tarjetas:
                 <TarjetasDePrecio Caja="Caja" Sesion="Sesion" AlCambiar="PorReimprimirAsync" />
+                break;
+            case Vista.Excel:
+                <ExcelEnProductos @ref="_excel" Caja="Caja" Sesion="Sesion" Acceso="Acceso" Estado="Estado" EnLaLista="@(_lista?.Total ?? 0)"
+                                  Departamento="@(Estado.Departamento is { } filtrado ? NombreDepartamento(filtrado) : null)" AlImportar="ImportadoAsync" />
                 break;
             case Vista.Decisiones:
                 <div class="vn-det-cab"><div><h2>Decisiones de depuración</h2><p>Lo que se decidió al depurar el catálogo. Esc regresa al producto.</p></div></div>
@@ -219,7 +226,7 @@
     /// <summary>«Ir a Etiquetas»: a Inventario › Etiquetas, para imprimirlas.</summary>
     [Parameter] public EventCallback AlIrAEtiquetas { get; set; }
 
-    private enum Vista { Detalle, Ficha, Mayoreo, Decisiones, Departamentos, Precios, Temporadas, Tarjetas }
+    private enum Vista { Detalle, Ficha, Mayoreo, Decisiones, Departamentos, Precios, Temporadas, Tarjetas, Excel }
 
     /// <summary>Cuántos trae la lista de una vez; «Ver … más» trae otros tantos.</summary>
     public const int Pagina = 50;
@@ -268,6 +275,7 @@
     private readonly RevisarMayoreo.Capturado _capturaMayoreo = new();
     private Departamentos? _departamentos;
     private TemporadaEnProductos? _temporadas;
+    private ExcelEnProductos? _excel;
 
     /// <summary>Lo de Productos › Temporadas que sigue ahí al ir a la ficha de un producto (a tomarle su foto) y volver.</summary>
     private readonly TemporadasVistas _temporadasVistas = new();
@@ -358,6 +366,12 @@
             case Vista.Precios:
                 // Primero cierra la vista de cómo quedan; sin ella, al producto (los marcados se quedan).
                 if (_precios is not null && await _precios.CerrarAsync())
+                    return true;
+                await AlProductoAsync();
+                return true;
+            case Vista.Excel:
+                // Primero cierra la vista de lo que cambia con el Excel; sin ella, al producto.
+                if (_excel is not null && await _excel.CerrarAsync())
                     return true;
                 await AlProductoAsync();
                 return true;
@@ -679,6 +693,26 @@
     {
         _marcados.Clear();
         _versionDeMarcas++;
+    }
+
+    /// <summary>
+    /// Se importó el Excel: los departamentos (pudo dar de alta alguno) y la lista al día, el producto se vuelve a leer al regresar a
+    /// él, y sus tarjetas de precio quedan por reimprimir si cambió su precio.
+    /// </summary>
+    private async Task ImportadoAsync()
+    {
+        try
+        {
+            _opciones = await Cliente.OpcionesCatalogoAsync();
+            QuitarFiltroDesactivado();
+        }
+        catch (ErrorCaja)
+        {
+            // Se queda con los de antes; la lista se pide igual.
+        }
+        (_ficha, _variante, _movimientos) = (null, null, null);
+        await CargarListaAsync();
+        await PorReimprimirAsync();
     }
 
     /// <summary>Se cambiaron los precios: la lista con los nuevos, y el producto se vuelve a leer al regresar a él.</summary>

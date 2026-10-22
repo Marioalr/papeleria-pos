@@ -614,6 +614,15 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         ArchivoDeLaPrincipalAsync($"api/sucursales/{sucursalId}/inventario/valor/excel?usuarioId={usuarioId}&filtro={filtro}"
             + (departamentoId is { } d ? $"&departamentoId={d}" : ""));
 
+    /// <summary>
+    /// Los productos de la lista con esos filtros (Productos › Productos en Excel, 2026-10-22), en Excel: una fila por variante y sus
+    /// presentaciones en otra hoja; el costo y el margen, solo para quien los ve.
+    /// </summary>
+    public Task<ArchivoPorGuardar> ExcelProductosAsync(Guid sucursalId, Guid usuarioId, string? texto, FiltroProductos filtro, Guid? departamentoId,
+        bool inactivos) =>
+        ArchivoDeLaPrincipalAsync($"api/catalogo/lista/excel?sucursalId={sucursalId}&usuarioId={usuarioId}&q={Uri.EscapeDataString(texto ?? "")}"
+            + $"&filtro={filtro}" + (departamentoId is { } d ? $"&departamentoId={d}" : "") + $"&inactivos={inactivos}");
+
     /// <summary>Un archivo que arma la caja principal: sin ella, lo dice sin esperar.</summary>
     private async Task<ArchivoPorGuardar> ArchivoDeLaPrincipalAsync(string url)
     {
@@ -797,6 +806,19 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// </summary>
     public Task<PreciosDeVariosAplicadosDto> CambiarPreciosDeVariosAsync(SolicitudPreciosDeVarios solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<PreciosDeVariosAplicadosDto>("api/catalogo/precios-de-varios", solicitud));
+
+    // ── Productos en Excel: importar (Productos › Productos en Excel, 2026-10-22, solo con la caja principal) ──
+
+    /// <summary>Qué cambia con ese Excel, sin cambiar nada: lo que cambia producto por producto, lo nuevo y lo que se ignora (y por qué).</summary>
+    public Task<VistaImportacionDto> VistaImportacionAsync(SolicitudImportarProductos solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<VistaImportacionDto>("api/catalogo/importar/vista", solicitud));
+
+    /// <summary>
+    /// Aplica lo que se vio (el mismo archivo, con su huella y el Id de esta vez): si algo cambió desde la vista, el servicio no lo
+    /// aplica; si ya lo había aplicado (se perdió la respuesta), no lo hace otra vez.
+    /// </summary>
+    public Task<ImportacionAplicadaDto> ImportarProductosAsync(SolicitudImportarProductos solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<ImportacionAplicadaDto>("api/catalogo/importar", solicitud));
 
     // ── Compras (F4, solo con la caja principal) ──
 

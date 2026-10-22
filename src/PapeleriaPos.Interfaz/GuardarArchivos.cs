@@ -39,23 +39,52 @@ public interface IGuardarArchivo
 public sealed record PreguntaGuardarComo(string Carpeta, string Nombre, string Filtro, string Extension);
 
 /// <summary>
-/// Guardar en esta PC (la ventana de Windows): «Guardar como» de Windows pregunta dónde, la primera vez en Documentos y después en
-/// la carpeta del último que se guardó (mientras la caja siga abierta), con el nombre que propone la caja principal; y aquí se
-/// escribe. Primero va a un archivo aparte y luego se cambia de un jalón: si algo falla, no queda un archivo a medias con ese
-/// nombre. «Guardar como» lo pone el anfitrión (en la ventana, en su hilo): así esto se prueba sin Windows.
+/// Dónde empiezan «Guardar como» y «Abrir» en la ventana de Windows: la primera vez en Documentos, y después en la carpeta del
+/// último archivo que se guardó o se abrió, mientras la caja siga abierta. Así el Excel de los productos que se exportó se vuelve
+/// a encontrar al importarlo.
 /// </summary>
-/// <param name="guardarComo">Pregunta dónde guardarlo; vacío si se canceló.</param>
-/// <param name="carpetaInicial">Dónde empieza la primera vez; sin ella, Documentos.</param>
-public sealed class GuardadoEnLaPc(Func<PreguntaGuardarComo, Task<string?>> guardarComo, string? carpetaInicial = null) : IGuardarArchivo
+/// <param name="inicial">Dónde empieza la primera vez; sin ella, Documentos.</param>
+public sealed class CarpetaDeArchivos(string? inicial = null)
 {
-    private string _carpeta = carpetaInicial ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+    public string Ruta { get; private set; } = inicial ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
 
-    /// <summary>Donde empieza «Guardar como»: Documentos, o la carpeta del último que se guardó.</summary>
-    public string Carpeta => _carpeta;
+    /// <summary>Se guardó o se abrió ese archivo: la siguiente vez se empieza en su carpeta.</summary>
+    public void Usado(string archivo)
+    {
+        if (Path.GetDirectoryName(archivo) is { Length: > 0 } carpeta)
+            Ruta = carpeta;
+    }
+}
+
+/// <summary>
+/// Guardar en esta PC (la ventana de Windows): «Guardar como» de Windows pregunta dónde, la primera vez en Documentos y después en
+/// la carpeta del último que se guardó o se abrió (mientras la caja siga abierta, <see cref="CarpetaDeArchivos"/>), con el nombre
+/// que propone la caja principal; y aquí se escribe. Primero va a un archivo aparte y luego se cambia de un jalón: si algo falla,
+/// no queda un archivo a medias con ese nombre. «Guardar como» lo pone el anfitrión (en la ventana, en su hilo): así esto se prueba
+/// sin Windows.
+/// </summary>
+public sealed class GuardadoEnLaPc : IGuardarArchivo
+{
+    private readonly Func<PreguntaGuardarComo, Task<string?>> _guardarComo;
+    private readonly CarpetaDeArchivos _carpeta;
+
+    /// <param name="guardarComo">Pregunta dónde guardarlo; vacío si se canceló.</param>
+    /// <param name="carpeta">Dónde empieza: la misma que la de «Abrir» (<see cref="AbiertoEnLaPc"/>).</param>
+    public GuardadoEnLaPc(Func<PreguntaGuardarComo, Task<string?>> guardarComo, CarpetaDeArchivos carpeta) => (_guardarComo, _carpeta) = (guardarComo, carpeta);
+
+    /// <param name="guardarComo">Pregunta dónde guardarlo; vacío si se canceló.</param>
+    /// <param name="carpetaInicial">Dónde empieza la primera vez; sin ella, Documentos.</param>
+    public GuardadoEnLaPc(Func<PreguntaGuardarComo, Task<string?>> guardarComo, string? carpetaInicial = null)
+        : this(guardarComo, new CarpetaDeArchivos(carpetaInicial))
+    {
+    }
+
+    /// <summary>Donde empieza «Guardar como»: Documentos, o la carpeta del último que se guardó (o se abrió).</summary>
+    public string Carpeta => _carpeta.Ruta;
 
     public async Task<ArchivoGuardado?> GuardarAsync(ArchivoPorGuardar archivo)
     {
-        var ruta = await guardarComo(new PreguntaGuardarComo(_carpeta, archivo.Nombre, Filtro(archivo.Extension), archivo.Extension));
+        var ruta = await _guardarComo(new PreguntaGuardarComo(_carpeta.Ruta, archivo.Nombre, Filtro(archivo.Extension), archivo.Extension));
         if (string.IsNullOrWhiteSpace(ruta))
             return null;
         var aparte = ruta + ".guardando";
@@ -78,7 +107,7 @@ public sealed class GuardadoEnLaPc(Func<PreguntaGuardarComo, Task<string?>> guar
                 ? $"No se pudo guardar en {ruta}: Windows no deja escribir ahí. Elige otra carpeta, como Documentos."
                 : $"No se pudo guardar en {ruta}: si está abierto en Excel, ciérralo o guárdalo con otro nombre. ({ex.Message})");
         }
-        _carpeta = Path.GetDirectoryName(ruta) is { Length: > 0 } carpeta ? carpeta : _carpeta;
+        _carpeta.Usado(ruta);
         return new ArchivoGuardado(Path.GetFileName(ruta), ruta);
     }
 

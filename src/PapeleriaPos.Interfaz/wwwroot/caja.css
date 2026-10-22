@@ -1342,6 +1342,24 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-precios-tabla td small { display: block; margin-top: 2px; font-size: 12.5px; color: var(--vn-suave); }
 .vn-precios-tabla td .vn-etiq { margin-left: 6px; }
 .vn-adentro .nota.vn-precios-no { color: var(--vn-error); font-weight: 600; }
+/* Productos › Productos en Excel (2026-10-22): exportar la lista e importarla ya cambiada, viendo antes qué cambia, qué es nuevo
+   y qué se ignora. En la caja del navegador, su selector de archivos va dentro del botón (como el logotipo de Configuración ›
+   Ticket), con el cursor visible al llegar con Tab. */
+.vn-adentro.vn-excel:focus { outline: none; }
+.vn-excel-que { font-size: 14px; line-height: 1.45; color: var(--vn-texto); }
+.vn-excel .vn-archivo { position: relative; overflow: hidden; }
+.vn-excel .vn-archivo input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.vn-excel .vn-archivo:focus-within { outline: 2px solid var(--vn-tinta); outline-offset: 2px; }
+.vn-excel .vn-archivo.ocupado { opacity: .45; pointer-events: none; }
+.vn-excel .vn-boton.primario kbd { background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .35); color: #fff; }
+.vn-excel-resumen { font-size: 14px; line-height: 1.4; color: var(--vn-texto); }
+.vn-excel-tabla td { vertical-align: top; }
+.vn-excel-tabla td small { display: block; margin-top: 2px; font-size: 12.5px; color: var(--vn-suave); overflow-wrap: anywhere; }
+.vn-excel-tabla td small.vn-excel-aviso { color: var(--vn-aviso); font-weight: 600; }
+.vn-excel-tabla td .vn-etiq { margin-left: 6px; }
+.vn-excel-cambios { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: 13.5px; }
+.vn-excel-cambios span { color: var(--vn-suave); }
+.vn-excel-renglon { white-space: nowrap; font-size: 13px; color: var(--vn-suave); }
 /* El piloto con eleventa en la ficha: los códigos de la pieza que se quedan (los de eleventa) y sus precios, sin cambiar */
 .vn-adentro .codigos-fijos { display: inline-flex; flex-wrap: wrap; gap: 4px; margin: 0 6px 4px 0; vertical-align: middle; }
 .vn-adentro .codigos-fijos code { font-size: 13px; padding: 1px 6px; border: 1px solid var(--vn-linea); border-radius: 6px; background: var(--vn-renglon); color: var(--vn-suave); }

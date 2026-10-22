@@ -169,8 +169,12 @@ public partial class MainWindow : Window
         servicios.AddSingleton(registro);
         servicios.AddSingleton(_recarga);
         // Guardar un archivo (el Excel de los reportes, entrega 9, parte 2): «Guardar como» de Windows, en Documentos. Antes de la
-        // interfaz: si no, la caja lo descargaría como en el navegador.
-        servicios.AddSingleton<IGuardarArchivo>(new GuardadoEnLaPc(new GuardarComoDeWindows(this, () => Vista.WebView?.Focus()).PreguntarAsync));
+        // interfaz: si no, la caja lo descargaría como en el navegador. Abrir uno (el Excel de los productos que se importa,
+        // 2026-10-22): «Abrir» de Windows. Los dos empiezan en la carpeta del último que se guardó o se abrió: el Excel que se acaba de
+        // exportar se encuentra ahí.
+        var carpeta = new CarpetaDeArchivos();
+        servicios.AddSingleton<IGuardarArchivo>(new GuardadoEnLaPc(new GuardarComoDeWindows(this, () => Vista.WebView?.Focus()).PreguntarAsync, carpeta));
+        servicios.AddSingleton<IAbrirArchivo>(new AbiertoEnLaPc(new AbrirDeWindows(this, () => Vista.WebView?.Focus()).PreguntarAsync, carpeta));
         // "tcp://192.168.1.100:9100" imprime directo por la red; un nombre (como "Tickets") usa la impresora de Windows.
         var impresora = Impresoras.Crear(configuracion.Impresora, nombre => new ImpresoraWindows(nombre));
         // La copia para vender sin la caja principal y la bandeja de salida, junto a la configuración de la caja. La red de la
