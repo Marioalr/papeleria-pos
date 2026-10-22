@@ -81,7 +81,8 @@ function Respaldos { @(Get-ChildItem -LiteralPath $Actualizaciones -Directory -E
 
 # La marca en la base (marca.py): «poner» o «revisar». Verdadero si salió bien.
 function Marca([string]$que) {
-    & python (Join-Path $Ayudas 'marca.py') $que $Base
+    # Lo que escribe marca.py va a la pantalla, no a lo que devuelve la función (si no, devolvería ese texto y el booleano).
+    & python (Join-Path $Ayudas 'marca.py') $que $Base | ForEach-Object { Write-Host "    $_" }
     $bien = $LASTEXITCODE -eq 0
     $global:LASTEXITCODE = 0
     $bien
