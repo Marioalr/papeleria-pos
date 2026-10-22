@@ -241,6 +241,95 @@ public static class DisenoComprobante
         return e;
     }
 
+    private static readonly string[] DiasCortos = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+
+    /// <summary>
+    /// El resumen de «Ventas por período» (entrega 9, parte 2, 2026-10-22), como eleventa lo manda a la impresora de tickets pero sin
+    /// cada ticket (eleventa advierte que gasta mucho papel): de qué días y de qué caja, lo de cada día (los tickets y lo vendido; lo
+    /// devuelto y las formas de pago que no son efectivo, si las hubo), las formas de pago de todo el periodo y los totales, como en
+    /// la pantalla: lo vendido, lo devuelto, la venta neta y los cancelados, que no cuentan.
+    /// </summary>
+    /// <param name="caja">La caja que se eligió; vacía: todas.</param>
+    /// <param name="impresoPor">Quien lo imprime.</param>
+    /// <param name="impresoLocal">Cuándo (hora de México).</param>
+    public static List<Elemento> VentasPorPeriodo(VentasPorPeriodoDto d, string? caja, string impresoPor, DateTime impresoLocal)
+    {
+        const int anchoMonto = 14;
+        var e = new List<Elemento>
+        {
+            new Renglon("VENTAS POR PERÍODO", Alineacion.Centro, Negrita: true, Grande: true),
+            new Renglon(d.Desde == d.Hasta
+                ? d.Desde.ToString("dddd dd/MM/yyyy", Mexico)
+                : $"Del {d.Desde.ToString("dd/MM/yyyy", Mexico)} al {d.Hasta.ToString("dd/MM/yyyy", Mexico)}", Alineacion.Centro),
+            // En el piloto, aquí solo está lo de la caja 2: lo de las demás cajas está en eleventa.
+            new Renglon(d.Piloto ? "Solo esta caja (lo demás, en eleventa)" : caja ?? "Todas las cajas", Alineacion.Centro),
+            new Renglon(new string('-', DisenoTicket.Columnas)),
+            new Renglon($"Impreso: {impresoLocal.ToString("dd/MM/yyyy  HH:mm", Mexico)}"),
+        };
+        void Texto(string texto, bool negrita = false)
+        {
+            foreach (var parte in DisenoTicket.Partir(texto, DisenoTicket.Columnas))
+                e.Add(new Renglon(parte, Negrita: negrita));
+        }
+        void Linea(string concepto, string monto, bool negrita = false) =>
+            e.Add(new Renglon(Ajustar(concepto, DisenoTicket.Columnas - anchoMonto).PadRight(DisenoTicket.Columnas - anchoMonto) + monto.PadLeft(anchoMonto),
+                Negrita: negrita));
+        void Dinero(string concepto, long centavos, bool negrita = false) => Linea(concepto, DisenoTicket.Dinero(centavos), negrita);
+        void Seccion(string titulo)
+        {
+            e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
+            e.Add(new Renglon(titulo, Negrita: true));
+        }
+        Texto($"Lo imprimió: {impresoPor}");
+
+        Seccion("POR DÍA");
+        if (d.Dias.Count == 0)
+            e.Add(new Renglon("No hubo ventas en esos días."));
+        else
+            Linea($"{"Día",-21}{"Tickets",7}", "Vendido");
+        foreach (var dia in d.Dias)
+        {
+            var fecha = dia.Fecha!.Value;
+            var nombre = $"{DiasCortos[(int)fecha.DayOfWeek]} {fecha.ToString("dd/MM", Mexico)}";
+            Linea($"{nombre,-21}{dia.Tickets.ToString("N0", Mexico),7}", DisenoTicket.Dinero(dia.VendidoCentavos));
+            // Las formas, solo si no fue todo en efectivo (casi siempre lo es).
+            if (dia.Formas.Any(f => f.Forma != Nucleo.Ventas.FormaPago.Efectivo))
+                foreach (var forma in dia.Formas)
+                    Dinero($"  {NombreForma(forma.Forma)}", forma.Centavos);
+            if (dia.Devoluciones > 0)
+                Dinero($"  Devuelto ({dia.Devoluciones})", -dia.DevueltoCentavos);
+        }
+
+        var t = d.Totales;
+        Seccion("POR FORMA DE PAGO");
+        if (t.Formas.Count == 0)
+            e.Add(new Renglon("Nada cobrado en esos días."));
+        foreach (var forma in t.Formas)
+            Dinero(NombreForma(forma.Forma), forma.Centavos);
+        if (t.Formas.Any(f => f.Forma == Nucleo.Ventas.FormaPago.Efectivo))
+            Texto("El efectivo, sin el redondeo al peso.");
+
+        Seccion("TOTALES");
+        Linea("Tickets", t.Tickets.ToString("N0", Mexico));
+        Dinero("Vendido", t.VendidoCentavos, negrita: true);
+        Dinero($"Devoluciones ({t.Devoluciones})", -t.DevueltoCentavos);
+        Dinero("Venta neta", t.VentaCentavos, negrita: true);
+        if (t.Cancelados > 0)
+            Dinero($"Cancelados ({t.Cancelados}, no cuentan)", t.CanceladosCentavos);
+        return e;
+    }
+
+    /// <summary>Lo que no cabe en su lugar se corta (los nombres van completos en la pantalla y en el Excel).</summary>
+    private static string Ajustar(string texto, int ancho) => texto.Length < ancho ? texto : texto[..(ancho - 1)];
+
+    private static string NombreForma(Nucleo.Ventas.FormaPago forma) => forma switch
+    {
+        Nucleo.Ventas.FormaPago.Efectivo => "Efectivo",
+        Nucleo.Ventas.FormaPago.Tarjeta => "Tarjeta",
+        Nucleo.Ventas.FormaPago.Transferencia => "Transferencia",
+        _ => "Crédito (fiado)",
+    };
+
     /// <summary>«09:00», o con la fecha si no es del día del corte (un turno que viene de otro día).</summary>
     private static string Hora(DateTime local, DateOnly dia) =>
         local.ToString(DateOnly.FromDateTime(local) == dia ? "HH:mm" : "dd/MM HH:mm", Mexico);

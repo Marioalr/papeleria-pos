@@ -149,3 +149,100 @@ public sealed record ProductoReporteDto(Guid VarianteId, string Nombre, UnidadBa
     [JsonIgnore]
     public decimal Cantidad => CantidadMilesimas / (decimal)Nucleo.Cantidad.Escala;
 }
+
+// ── Ventas por período (entrega 9, parte 2, 2026-10-22): «F3 › Ventas por período» de eleventa ──
+// Los tickets de una fecha a otra, de una caja o de todas, con sus totales al final; a Excel o, el resumen (por día y por forma
+// de pago, no cada ticket), a la impresora de tickets. Para quien tiene «Ver reportes de ventas». Solo los de este POS: el
+// historial de eleventa no trae caja, cajero ni forma de pago (se dice cuánto hay de él en esos días).
+
+/// <summary>
+/// Una página de los tickets de unos días y los totales de todos ellos (no solo de la página): por día y por forma de pago.
+/// Cuentan como los reportes y el corte del día: un ticket que se canceló se lista, pero no cuenta; lo devuelto en esos días
+/// (de tickets de cualquier día de esa caja) se resta de lo vendido.
+/// </summary>
+/// <param name="Desde">El primer día (hora de la tienda).</param>
+/// <param name="Hasta">El último día, completo (si es hoy, hasta ahora).</param>
+/// <param name="Hoy">Hoy en la caja principal: de ahí no se pasa.</param>
+/// <param name="CajaId">La caja de los tickets; vacía: todas.</param>
+/// <param name="Cajas">Las cajas de la sucursal, para el filtro.</param>
+/// <param name="Ventas">Los de la página, del primero al último (como en el papel), también los cancelados.</param>
+/// <param name="Total">Cuántos tickets hay en esos días (con los cancelados).</param>
+/// <param name="Pagina">Cuál es esta, desde cero, de <paramref name="Tamano"/> en <paramref name="Tamano"/>.</param>
+/// <param name="Totales">Lo de todos esos días.</param>
+/// <param name="Dias">Lo de cada día con algo (tickets, devoluciones o cancelados), en orden.</param>
+/// <param name="DelHistorialTickets">En el historial de eleventa, los tickets de esos días (de toda la tienda, sin los cancelados); cero en el piloto.</param>
+/// <param name="DelHistorialCentavos">Lo que suman.</param>
+/// <param name="Piloto">El piloto con eleventa: solo lo que vendió la caja 2; lo de la caja principal está en eleventa.</param>
+public sealed record VentasPorPeriodoDto(
+    DateOnly Desde, DateOnly Hasta, DateOnly Hoy, Guid? CajaId, IReadOnlyList<OpcionFiltroDto> Cajas, IReadOnlyList<VentaDeUnDiaDto> Ventas, int Total,
+    int Pagina, int Tamano, ResumenDeVentasDto Totales, IReadOnlyList<ResumenDeVentasDto> Dias, int DelHistorialTickets, long DelHistorialCentavos,
+    bool Piloto);
+
+/// <summary>
+/// Lo de un día de «Ventas por período», o de todos sus días: lo vendido en los tickets que no se cancelaron, lo devuelto y los
+/// cancelados (que no cuentan).
+/// </summary>
+/// <param name="Fecha">El día; vacío en los totales de todo el periodo.</param>
+/// <param name="Tickets">Los cobrados que no se cancelaron.</param>
+/// <param name="VendidoCentavos">Lo que suman, sin el redondeo al peso (como el ticket).</param>
+/// <param name="Devoluciones">Las devoluciones de esos días (sin las cancelaciones), de tickets de cualquier día.</param>
+/// <param name="DevueltoCentavos">Lo que se devolvió en ellas.</param>
+/// <param name="Cancelados">Los tickets cobrados esos días que después se cancelaron: no cuentan.</param>
+/// <param name="CanceladosCentavos">Lo que sumaban.</param>
+/// <param name="Formas">Cómo se pagó lo vendido (el efectivo, sin el redondeo al peso): suman <paramref name="VendidoCentavos"/>.</param>
+public sealed record ResumenDeVentasDto(
+    DateOnly? Fecha, int Tickets, long VendidoCentavos, int Devoluciones, long DevueltoCentavos, int Cancelados, long CanceladosCentavos,
+    IReadOnlyList<FormaPagoReporteDto> Formas)
+{
+    /// <summary>La venta neta, como en los reportes: lo vendido menos lo devuelto.</summary>
+    [JsonIgnore]
+    public long VentaCentavos => VendidoCentavos - DevueltoCentavos;
+}
+
+// ── Los archivos de Excel (entrega 9, parte 2) ──
+
+/// <summary>
+/// Los archivos que arma la caja principal para guardarlos desde la caja (el Excel de los reportes): cómo se llaman y qué
+/// son. El nombre lo propone «Guardar como» en la ventana de Windows y es el de la descarga en el navegador.
+/// </summary>
+public static class ArchivosDeReportes
+{
+    /// <summary>El tipo de un libro de Excel (.xlsx).</summary>
+    public const string TipoExcel = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+    public const string ExtensionExcel = ".xlsx";
+
+    private static string Iso(DateOnly dia) => dia.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>«del 2026-10-01 al 2026-10-22», o solo el día si es uno.</summary>
+    private static string Dias(DateOnly desde, DateOnly hasta) => desde == hasta ? Iso(desde) : $"{Iso(desde)} a {Iso(hasta)}";
+
+    /// <summary>El reporte de ventas: «Ventas 2026-10-22.xlsx», «Ventas semana 2026-10-19.xlsx», «Ventas 2026-10.xlsx», «Ventas 2026.xlsx».</summary>
+    public static string ReporteDeVentas(PeriodoReporte periodo, DateOnly desde) => Limpio(periodo switch
+    {
+        PeriodoReporte.Hoy => $"Ventas {Iso(desde)}",
+        PeriodoReporte.Semana => $"Ventas semana {Iso(desde)}",
+        PeriodoReporte.Mes => $"Ventas {desde.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture)}",
+        _ => $"Ventas {desde.Year}",
+    });
+
+    /// <summary>«Ventas por período 2026-10-01 a 2026-10-22.xlsx», con la caja si es solo una.</summary>
+    public static string VentasPorPeriodo(DateOnly desde, DateOnly hasta, string? caja) =>
+        Limpio($"Ventas por período {Dias(desde, hasta)}{(caja is null ? "" : $" {caja}")}");
+
+    /// <summary>«Movimientos 2026-10-01 a 2026-10-22.xlsx».</summary>
+    public static string Movimientos(DateOnly desde, DateOnly hasta) => Limpio($"Movimientos {Dias(desde, hasta)}");
+
+    /// <summary>«Bajos en inventario 2026-10-22.xlsx».</summary>
+    public static string Bajos(DateOnly hoy) => Limpio($"Bajos en inventario {Iso(hoy)}");
+
+    /// <summary>«Lo que vale el inventario 2026-10-22.xlsx».</summary>
+    public static string Valor(DateOnly hoy) => Limpio($"Lo que vale el inventario {Iso(hoy)}");
+
+    /// <summary>Sin lo que Windows no deja en el nombre de un archivo (el de una caja puede traerlo), y con su extensión.</summary>
+    private static string Limpio(string nombre)
+    {
+        var limpio = new string(nombre.Select(c => c < ' ' || "<>:\"/\\|?*".Contains(c) ? '-' : c).ToArray()).Trim().TrimEnd('.');
+        return limpio + ExtensionExcel;
+    }
+}

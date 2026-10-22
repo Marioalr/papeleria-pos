@@ -90,7 +90,7 @@
                     </div>
                 }
             </div>
-            <p class="vn-rep-nota" id="rep-neta">@VentaNeta(a)</p>
+            <p class="vn-rep-nota" id="rep-neta">@TextosDeReportes.VentaNeta(a)</p>
 
             <div class="vn-grafica" id="grafica">
                 <div class="vn-grafica-cab">
@@ -212,7 +212,7 @@
             </div>
 
             <div class="vn-rep-notas">
-                @foreach (var nota in Notas(r))
+                @foreach (var nota in TextosDeReportes.Notas(r))
                 {
                     <p>@nota</p>
                 }
@@ -336,43 +336,6 @@
             <text>sin ventas el año pasado a estas alturas</text>
         }
     };
-
-    /// <summary>De dónde sale la venta neta: lo cobrado menos lo devuelto, sin los cancelados, como en el corte del día.</summary>
-    private static string VentaNeta(CifrasReporteDto a)
-    {
-        var partes = $"Venta neta: lo cobrado ({Formato.Dinero(a.VendidoCentavos)})";
-        if (a.DevueltoCentavos != 0)
-            partes += $" menos lo devuelto ({Formato.Dinero(a.DevueltoCentavos)}{(a.Devoluciones == 1 ? ", 1 devolución" : $", {a.Devoluciones} devoluciones")})";
-        partes += a.Cancelados switch
-        {
-            0 => "; los tickets cancelados no cuentan",
-            1 => $"; el ticket cancelado ({Formato.Dinero(a.CanceladosCentavos)}) no cuenta",
-            _ => $"; los {a.Cancelados} tickets cancelados ({Formato.Dinero(a.CanceladosCentavos)}) no cuentan",
-        };
-        return partes + ", como en el corte del día.";
-    }
-
-    /// <summary>Las notas de abajo: de dónde sale cada cosa.</summary>
-    private static IEnumerable<string> Notas(ReporteVentasDto r)
-    {
-        if (r.Anterior is { DelHistorialCentavos: not 0 })
-            yield return "El año pasado sale del historial de eleventa: sus tickets, con lo que eleventa les bajó al devolver"
-                + (r.ConUtilidad ? "; su utilidad, con el costo que se capturó en eleventa." : ".");
-        yield return r.Actual.DelHistorialCentavos != 0
-            ? $"De este periodo, {Formato.Dinero(r.Actual.DelHistorialCentavos)} ({Formato.Numero(r.Actual.DelHistorialTickets)} tickets) salen del "
-              + "historial de eleventa, que no trae el cajero ni la forma de pago: esas tablas son de lo vendido aquí."
-            : "El cajero y la forma de pago son de lo vendido aquí: el historial de eleventa no los trae. Lo devuelto se resta de la forma "
-              + "en que se regresó: a la cuenta del cliente (lo fiado) o en efectivo.";
-        yield return r.Piloto
-            ? "En el piloto el corte se hace en eleventa: aquí no hay diferencias de corte."
-            : "Las diferencias son las de los cortes del turno hechos en el periodo, a nombre del cajero del turno.";
-        if (r.ConUtilidad && r.Actual.Utilidad is { } u)
-            yield return "La utilidad es lo vendido menos el costo que guardó cada venta al cobrar (el promedio del inventario; el de las "
-                + "impresiones, el de cada trabajo), con lo devuelto restado. El artículo común no tiene costo: no entra."
-                + (u.ServiciosSinCostoCentavos != 0
-                    ? $" Los servicios ({Formato.Dinero(u.ServiciosSinCostoCentavos)}) todavía no tienen costo: cuentan completos, como en el corte del día."
-                    : "");
-    }
 
     private static string Diferencias(CajeroReporteDto c) => c.Cortes switch
     {

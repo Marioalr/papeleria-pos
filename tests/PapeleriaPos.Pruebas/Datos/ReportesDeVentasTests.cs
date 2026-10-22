@@ -34,6 +34,20 @@ internal sealed class TiendaDeReportes : IAsyncDisposable
     private int _folio;
     private int _folioHistorial;
 
+    /// <summary>Las otras cajas de la matriz (<see cref="OtraCajaAsync"/>), por su Id.</summary>
+    private readonly Dictionary<Guid, Caja> _otrasCajas = [];
+
+    /// <summary>Otra caja de la matriz (la caja 2), con su serie.</summary>
+    public async Task<Caja> OtraCajaAsync(string nombre = "Caja 2", string serie = "B")
+    {
+        var caja = new Caja { SucursalId = Matriz.Id, Nombre = nombre, Serie = serie };
+        await using var db = Contexto();
+        db.Cajas.Add(caja);
+        await db.SaveChangesAsync();
+        _otrasCajas[caja.Id] = caja;
+        return caja;
+    }
+
     /// <summary>Un producto del catálogo de la prueba, con su precio y el costo que guarda cada pieza vendida.</summary>
     public sealed record ProductoDePrueba(Producto Producto, Variante Variante, Presentacion Pieza, Precio Precio, long CostoCentavos, bool LlevaInventario);
 
@@ -94,11 +108,18 @@ internal sealed class TiendaDeReportes : IAsyncDisposable
     public static DateTime A(int anio, int mes, int dia, int hora, int minuto = 0, int segundo = 0) =>
         HoraMexico.AUtc(new DateTime(anio, mes, dia, hora, minuto, segundo));
 
-    /// <summary>Un turno de <paramref name="cajero"/>: abierto y, si se dice, cerrado (con su corte Z, si se da la diferencia).</summary>
-    public async Task<Turno> TurnoAsync(Usuario cajero, DateTime abiertoUtc, DateTime? cerradoUtc = null, long? diferencia = null, Usuario? corta = null)
+    /// <summary>
+    /// Un turno de <paramref name="cajero"/> en la Caja 1 (u otra): abierto y, si se dice, cerrado (con su corte Z, si se da la
+    /// diferencia).
+    /// </summary>
+    public async Task<Turno> TurnoAsync(Usuario cajero, DateTime abiertoUtc, DateTime? cerradoUtc = null, long? diferencia = null, Usuario? corta = null,
+        Caja? caja = null)
     {
         await using var db = Contexto();
-        var turno = new Turno { SucursalId = Matriz.Id, CajaId = Caja.Id, CajeroId = cajero.Id, AbiertoUtc = abiertoUtc, CerradoUtc = cerradoUtc, FondoCentavos = 50000 };
+        var turno = new Turno
+        {
+            SucursalId = Matriz.Id, CajaId = (caja ?? Caja).Id, CajeroId = cajero.Id, AbiertoUtc = abiertoUtc, CerradoUtc = cerradoUtc, FondoCentavos = 50000,
+        };
         db.Turnos.Add(turno);
         if (cerradoUtc is { } cerrado && diferencia is { } dif)
             db.Cortes.Add(new Corte
@@ -117,7 +138,8 @@ internal sealed class TiendaDeReportes : IAsyncDisposable
     public async Task<Venta> VenderAsync(Turno turno, DateTime pagadaUtc, IReadOnlyList<(ProductoDePrueba Producto, int Piezas)> productos, long? comun = null,
         params CobroSolicitado[] cobros)
     {
-        var venta = new Venta { SucursalId = Matriz.Id, CajaId = Caja.Id, TurnoId = turno.Id, CajeroId = turno.CajeroId, Serie = Caja.Serie, CreadaUtc = pagadaUtc };
+        var caja = _otrasCajas.GetValueOrDefault(turno.CajaId) ?? Caja;
+        var venta = new Venta { SucursalId = Matriz.Id, CajaId = caja.Id, TurnoId = turno.Id, CajeroId = turno.CajeroId, Serie = caja.Serie, CreadaUtc = pagadaUtc };
         foreach (var (p, piezas) in productos)
         {
             var linea = venta.AgregarProducto(new ProductoEnVenta(p.Variante.Id, p.Producto.Nombre, Impuesto.Iva16, UnidadBase.Pieza, p.LlevaInventario), p.Pieza,
@@ -140,7 +162,7 @@ internal sealed class TiendaDeReportes : IAsyncDisposable
         var guardada = await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleAsync(v => v.Id == venta.Id);
         var anteriores = await db.Devoluciones.Include(d => d.Lineas).Where(d => d.VentaId == venta.Id).ToListAsync();
         var linea = guardada.Lineas.Single(l => l.VarianteId == producto.Variante.Id);
-        var devolucion = CalculoDevolucion.Armar(guardada, [new LineaPorDevolver(linea.Id, Cantidad.Piezas(piezas))], Caja.Id, turno.Id, turno.CajeroId,
+        var devolucion = CalculoDevolucion.Armar(guardada, [new LineaPorDevolver(linea.Id, Cantidad.Piezas(piezas))], turno.CajaId, turno.Id, turno.CajeroId,
             "No era", fechaUtc, anteriores);
         CalculoDevolucion.Aplicar(guardada, devolucion);
         db.Devoluciones.Add(devolucion);

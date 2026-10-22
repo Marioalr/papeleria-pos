@@ -153,6 +153,80 @@ public static class TextosDeReportes
             : $"${Math.Round(pesos).ToString("0", Formato.Mexico)}");
     }
 
+    /// <summary>
+    /// De dónde sale la venta neta: lo cobrado menos lo devuelto, sin los cancelados, como en el corte del día. Lo dicen la pantalla
+    /// y el Excel.
+    /// </summary>
+    public static string VentaNeta(CifrasReporteDto a)
+    {
+        var partes = $"Venta neta: lo cobrado ({Formato.Dinero(a.VendidoCentavos)})";
+        if (a.DevueltoCentavos != 0)
+            partes += $" menos lo devuelto ({Formato.Dinero(a.DevueltoCentavos)}{(a.Devoluciones == 1 ? ", 1 devolución" : $", {a.Devoluciones} devoluciones")})";
+        partes += a.Cancelados switch
+        {
+            0 => "; los tickets cancelados no cuentan",
+            1 => $"; el ticket cancelado ({Formato.Dinero(a.CanceladosCentavos)}) no cuenta",
+            _ => $"; los {a.Cancelados} tickets cancelados ({Formato.Dinero(a.CanceladosCentavos)}) no cuentan",
+        };
+        return partes + ", como en el corte del día.";
+    }
+
+    /// <summary>Las notas de abajo: de dónde sale cada cosa. Las dicen la pantalla y el Excel.</summary>
+    public static IEnumerable<string> Notas(ReporteVentasDto r)
+    {
+        if (r.Anterior is { DelHistorialCentavos: not 0 })
+            yield return "El año pasado sale del historial de eleventa: sus tickets, con lo que eleventa les bajó al devolver"
+                + (r.ConUtilidad ? "; su utilidad, con el costo que se capturó en eleventa." : ".");
+        yield return r.Actual.DelHistorialCentavos != 0
+            ? $"De este periodo, {Formato.Dinero(r.Actual.DelHistorialCentavos)} ({Formato.Numero(r.Actual.DelHistorialTickets)} tickets) salen del "
+              + "historial de eleventa, que no trae el cajero ni la forma de pago: esas tablas son de lo vendido aquí."
+            : "El cajero y la forma de pago son de lo vendido aquí: el historial de eleventa no los trae. Lo devuelto se resta de la forma "
+              + "en que se regresó: a la cuenta del cliente (lo fiado) o en efectivo.";
+        yield return r.Piloto
+            ? "En el piloto el corte se hace en eleventa: aquí no hay diferencias de corte."
+            : "Las diferencias son las de los cortes del turno hechos en el periodo, a nombre del cajero del turno.";
+        if (r.ConUtilidad && r.Actual.Utilidad is { } u)
+            yield return "La utilidad es lo vendido menos el costo que guardó cada venta al cobrar (el promedio del inventario; el de las "
+                + "impresiones, el de cada trabajo), con lo devuelto restado. El artículo común no tiene costo: no entra."
+                + (u.ServiciosSinCostoCentavos != 0
+                    ? $" Los servicios ({Formato.Dinero(u.ServiciosSinCostoCentavos)}) todavía no tienen costo: cuentan completos, como en el corte del día."
+                    : "");
+    }
+
+    // ── Ventas por período (entrega 9, parte 2) ──
+
+    /// <summary>
+    /// Los días de «Ventas por período»: «Hoy, jueves 22 de octubre», «Martes 20 de octubre», «Del 1 al 22 de octubre», «Del 29
+    /// de septiembre al 5 de octubre»; con el año si no es el de hoy (o siempre, con <paramref name="conAnio"/>: el Excel y el
+    /// papel se guardan).
+    /// </summary>
+    public static string Periodo(DateOnly desde, DateOnly hasta, DateOnly hoy, bool conAnio = false)
+    {
+        int? anio = conAnio ? null : hoy.Year;
+        if (desde == hasta)
+            return desde == hoy ? $"Hoy, {Dia(desde, anio)}" : Mayuscula(Dia(desde, anio));
+        return Mayuscula(DelAl(desde, hasta, anio));
+    }
+
+    /// <summary>Cómo se pagó un ticket: «Efectivo», «Efectivo y tarjeta», «Tarjeta, transferencia y crédito».</summary>
+    public static string FormasDePago(IReadOnlyList<FormaPago> formas)
+    {
+        var nombres = formas.Select(f => f switch
+        {
+            FormaPago.Tarjeta => "tarjeta",
+            FormaPago.Transferencia => "transferencia",
+            FormaPago.Credito => "crédito",
+            _ => "efectivo",
+        }).ToList();
+        if (nombres.Count == 0)
+            return "Sin cobro";
+        return Mayuscula(nombres.Count == 1 ? nombres[0] : $"{string.Join(", ", nombres.Take(nombres.Count - 1))} y {nombres[^1]}");
+    }
+
+    /// <summary>Si la venta se canceló o se devolvió, como en «Ventas del día»: «Cancelada», «Devuelta», «Devuelta en parte»; vacío si no.</summary>
+    public static string? Estado(VentaDeUnDiaDto v) =>
+        v.Cancelada ? "Cancelada" : v.DevueltoCentavos <= 0 ? null : v.DevueltaCompleta ? "Devuelta" : "Devuelta en parte";
+
     /// <summary>Cómo se llama cada forma de pago en el reporte.</summary>
     public static string Forma(FormaPago forma) => forma switch
     {
