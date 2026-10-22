@@ -3,7 +3,8 @@
    ventas» cambia de día (← →, los botones o la fecha) y de caja; cualquiera filtra por cajero y busca un folio en
    cualquier día (Enter): con su serie, en cualquier caja; solo el número, sin los reportes, en esta caja. Cada venta
    dice su folio, la hora, quién cobró, la caja, el total, cómo se pagó y si se canceló o se devolvió algo; de ahí se
-   reimprime (con motivo, como siempre) y «Devolver o cancelar» abre la devolución con su folio, con sus reglas (7 días, el
+   reimprime (con motivo, como siempre; el ticket que nunca salió se imprime sin motivo, 2026-10-22) y «Devolver o cancelar»
+   abre la devolución con su folio, con sus reglas (7 días, el
    mismo turno para cancelar y los permisos). Las ventas están en la caja principal: sin ella, la caja solo tiene su copia
    para vender, y lo dice. *@
 @inject ClienteCaja Cliente
@@ -114,9 +115,14 @@
                             @* La nota del ticket (F4 al cobrar, 2026-10-22). *@
                             <small>Nota: @nota</small>
                         }
-                        @if (v.Cancelada || v.DevueltoCentavos > 0)
+                        @if (v.Cancelada || v.DevueltoCentavos > 0 || v.SinImprimir)
                         {
                             <span class="vn-venta-estado">
+                                @if (v.SinImprimir)
+                                {
+                                    @* No salió al cobrar («Al cobrar»: ofrecerlo o no imprimirlo) o se dejó sin imprimir (2026-10-22). *@
+                                    <span class="vn-etiq gris">Ticket sin imprimir</span>
+                                }
                                 @if (v.Cancelada)
                                 {
                                     <span class="vn-etiq rojo">Cancelada</span>
@@ -132,7 +138,13 @@
                             </span>
                         }
                         <span class="vn-venta-botones">
-                            @if (Ve(AccionControlada.Reimprimir))
+                            @if (v.SinImprimir)
+                            {
+                                @* Su ticket nunca salió: imprimirlo no es una reimpresión y no pide motivo (2026-10-22). *@
+                                <button class="vn-boton chico" title="No ha salido nunca: no es una reimpresión, no pide motivo"
+                                        @onclick="() => AlImprimir.InvokeAsync(venta.Id)"><Ico Nombre="impresora" />Imprimir</button>
+                            }
+                            else if (Ve(AccionControlada.Reimprimir))
                             {
                                 <button class="vn-boton chico" @onclick="() => AlReimprimir.InvokeAsync(venta.Id)"><Ico Nombre="impresora" />Reimprimir</button>
                             }
@@ -156,6 +168,12 @@
 
     /// <summary>La pantalla de venta pide el motivo y reimprime.</summary>
     [Parameter] public EventCallback<Guid> AlReimprimir { get; set; }
+
+    /// <summary>
+    /// El ticket de una venta que no salió nunca: la pantalla de venta lo imprime sin pedir motivo (no es una reimpresión), y si
+    /// mientras tanto ya salió, pide el motivo como siempre.
+    /// </summary>
+    [Parameter] public EventCallback<Guid> AlImprimir { get; set; }
 
     /// <summary>Abre la devolución o cancelación con el folio ya escrito.</summary>
     [Parameter] public EventCallback<string> AlDevolver { get; set; }

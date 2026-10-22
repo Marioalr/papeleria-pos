@@ -209,6 +209,10 @@ public static class ApiCaja
                 await ApiClientes.MayoreoDelCobroAsync(db, s.ClienteId, s.MayoreoDeCliente));
             // La nota del ticket (F4 al cobrar): sale en el ticket y en sus reimpresiones. Una más larga de lo que cabe no se cobra.
             venta.PonerNota(s.Nota);
+            // Si su ticket no sale al cobrar («Ofrecerlo» o «No imprimirlo»; lo fiado sale siempre), su primera impresión no
+            // pedirá motivo (2026-10-22).
+            venta.TicketSinImprimir = !ConfiguracionTicket.SaleAlCobrar((await ApiConfiguracion.ConfiguracionAsync(db, caja.SucursalId, ticket.Value)).AlCobrar,
+                s.Cobros.Any(c => c.Forma == FormaPago.Credito && c.MontoCentavos > 0));
             // La caja escaneó contra su copia (entrega 5): si el precio o el mayoreo de algo del ticket cambió después, no se
             // cobra con precios que el cajero no vio; se le contestan los de ahora y la caja pone el ticket al día. Una caja de
             // antes no manda la versión: se cobra como siempre.
@@ -260,8 +264,32 @@ public static class ApiCaja
                 ?? throw new InvalidOperationException("La venta no existe.");
             await new ServicioControl(db).RequerirAsync(s.UsuarioId, venta.SucursalId, s.CajaId, AccionControlada.Reimprimir, venta.TotalCentavos,
                 $"Reimpresión del ticket {venta.FolioTexto}", motivo: s.Motivo, ventaId: venta.Id);
+            // Ya salió: lo que se pida después también es una reimpresión.
+            venta.TicketSinImprimir = false;
             await db.SaveChangesAsync();
             return await TicketAsync(db, venta, ticket.Value);
+        });
+
+        // La primera impresión del ticket de una venta que no salió al cobrar (2026-10-22): sin motivo, y a la bitácora como
+        // primera impresión. Si ya salió (o se canceló o se devolvió algo), se dice con su código: la caja pide el motivo.
+        api.MapPost("/ventas/{ventaId:guid}/primera-impresion", async (Guid ventaId, SolicitudPrimeraImpresion s, PosDbContext db, IOptions<OpcionesTicket> ticket) =>
+        {
+            try
+            {
+                var venta = await new RegistroCaja(db).PrimeraImpresionAsync(ventaId, s.UsuarioId, s.CajaId);
+                return Results.Ok(await TicketAsync(db, venta, ticket.Value));
+            }
+            catch (TicketYaSalio ex)
+            {
+                return Results.BadRequest(new ErrorDto(ex.Message, SolicitudPrimeraImpresion.CodigoConMotivo));
+            }
+        });
+
+        // El ticket no salió de la impresora de la caja y se dejó así («No imprimirlo»): su primera impresión no pedirá motivo.
+        api.MapPost("/ventas/{ventaId:guid}/sin-imprimir", async (Guid ventaId, SolicitudTicketSinImprimir s, PosDbContext db) =>
+        {
+            await new RegistroCaja(db).TicketSinImprimirAsync(ventaId);
+            return Results.NoContent();
         });
 
         api.MapGet("/ventas/{ventaId:guid}/ticket", async (Guid ventaId, PosDbContext db, IOptions<OpcionesTicket> ticket) =>

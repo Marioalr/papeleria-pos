@@ -12,6 +12,11 @@ using PapeleriaPos.Nucleo.Ventas;
 namespace PapeleriaPos.Datos;
 
 /// <summary>
+/// El ticket ya salió (o se canceló o se devolvió algo de él): su impresión es una reimpresión, con su motivo (2026-10-22).
+/// </summary>
+public sealed class TicketYaSalio(string mensaje) : InvalidOperationException(mensaje);
+
+/// <summary>
 /// Lo que pasa en una caja y se guarda: turnos, cobros, entradas y salidas de efectivo y cortes. Cada operación es una
 /// sola transacción: o queda todo o no queda nada.
 /// </summary>
@@ -363,6 +368,52 @@ public sealed class RegistroCaja(PosDbContext db)
             devoluciones: await DevolucionesAsync(turno.Id, ct), abonos: await AbonosAsync(turno.Id, ct));
         var limite = await db.ConfiguracionesSucursal.Where(c => c.SucursalId == turno.SucursalId).Select(c => c.LimiteEfectivoCentavos).FirstOrDefaultAsync(ct);
         return (corte.EsperadoCentavos, limite);
+    }
+
+    /// <summary>
+    /// La primera impresión del ticket de una venta que no salió al cobrar (2026-10-22): «Al cobrar» en «Ofrecerlo» o «No
+    /// imprimirlo», o la impresora no lo sacó y se dejó con «No imprimirlo». No es una reimpresión, así que no pide motivo ni el
+    /// permiso de reimprimir, y queda en la bitácora como primera impresión. Una sola vez, aunque dos cajas la pidan a la vez:
+    /// si ya salió (o se canceló o se devolvió algo de ella, y saldría completo), <see cref="TicketYaSalio"/>: se reimprime con
+    /// su motivo.
+    /// </summary>
+    public async Task<Venta> PrimeraImpresionAsync(Guid ventaId, Guid usuarioId, Guid cajaId, CancellationToken ct = default)
+    {
+        if (!await db.Usuarios.AnyAsync(u => u.Id == usuarioId && u.Activo, ct))
+            throw new InvalidOperationException("El usuario no existe o está inactivo.");
+        // Lo que decide se lee dentro de la transacción: dos cajas a la vez no la imprimen las dos.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            var venta = await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleOrDefaultAsync(v => v.Id == ventaId, ct)
+                ?? throw new InvalidOperationException("La venta no existe.");
+            if (venta.Estado != EstadoVenta.Pagada || venta.Lineas.Any(l => l.CantidadDevuelta.EsPositiva))
+                throw new TicketYaSalio($"El ticket {venta.FolioTexto} se canceló o se devolvió algo de él: se reimprime, con su motivo.");
+            if (!venta.TicketSinImprimir)
+                throw new TicketYaSalio($"El ticket {venta.FolioTexto} ya salió: si lo vuelven a pedir, se reimprime con su motivo.");
+            venta.TicketSinImprimir = false;
+            new ServicioControl(db).Registrar(venta.SucursalId, cajaId, usuarioId, AccionControlada.Reimprimir,
+                $"Primera impresión del ticket {venta.FolioTexto}: no salió al cobrar (no es una reimpresión)", venta.TotalCentavos, venta.Id);
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return venta;
+        }
+        catch
+        {
+            db.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// El ticket de una venta no salió y se dejó así («No imprimirlo» en la cola de la impresora de la caja): sigue sin salir y
+    /// su primera impresión no pedirá motivo (<see cref="PrimeraImpresionAsync"/>).
+    /// </summary>
+    public async Task TicketSinImprimirAsync(Guid ventaId, CancellationToken ct = default)
+    {
+        var venta = await db.Ventas.FindAsync([ventaId], ct) ?? throw new InvalidOperationException("La venta no existe.");
+        venta.TicketSinImprimir = true;
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>El encargado confirma que una transferencia llegó a la cuenta, o la rechaza. Queda en la bitácora.</summary>

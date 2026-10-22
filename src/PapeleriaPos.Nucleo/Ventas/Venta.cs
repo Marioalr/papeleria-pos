@@ -73,6 +73,14 @@ public class Venta
     /// </summary>
     public string? Nota { get; private set; }
 
+    /// <summary>
+    /// Su ticket no ha salido nunca (2026-10-22): se cobró con «Al cobrar» en «Ofrecerlo» o «No imprimirlo» y no se pidió, o
+    /// no salió de la impresora y se dejó con «No imprimirlo». Su primera impresión no es una reimpresión: no pide motivo, y
+    /// después de ella las demás sí. Lo de una caja sin conexión llega como impreso: ahí no se sabe si salió después, y
+    /// reimprimirlo pide motivo, como siempre.
+    /// </summary>
+    public bool TicketSinImprimir { get; set; }
+
     /// <summary>Pone (o quita, vacía) la nota del ticket, de uno o dos renglones (<see cref="NotaDelTicket.Maximo"/>).</summary>
     public void PonerNota(string? nota)
     {

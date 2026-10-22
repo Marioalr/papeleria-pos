@@ -506,6 +506,22 @@ public sealed record ComprobanteMovimientoDto(
 
 public sealed record SolicitudReimpresion(Guid UsuarioId, Guid CajaId, string? Motivo);
 
+/// <summary>
+/// La primera impresión del ticket de una venta que no salió al cobrar (2026-10-22): no es una reimpresión y no pide motivo.
+/// Si ya salió (o se canceló o se devolvió algo de ella), el servicio contesta con <see cref="CodigoConMotivo"/>: se
+/// reimprime, con su motivo.
+/// </summary>
+public sealed record SolicitudPrimeraImpresion(Guid UsuarioId, Guid CajaId)
+{
+    public const string CodigoConMotivo = "con-motivo";
+}
+
+/// <summary>
+/// El ticket de una venta no salió y se dejó así («No imprimirlo» en la cola de la impresora, al cobrar o en su primera
+/// impresión): sigue sin salir, y su primera impresión no pedirá motivo.
+/// </summary>
+public sealed record SolicitudTicketSinImprimir(Guid UsuarioId, Guid CajaId);
+
 /// <summary>De antes de la entrega 1: la regla de un rol, como la copia de la caja se la lleva a una caja que no se ha actualizado.</summary>
 public sealed record ReglaDto(AccionControlada Accion, Rol Rol, NivelPermiso Nivel, long? UmbralCentavos, bool PideMotivo);
 

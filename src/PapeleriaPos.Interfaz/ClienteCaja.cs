@@ -184,6 +184,18 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<TicketDto> ReimprimirAsync(Guid ventaId, SolicitudReimpresion solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<TicketDto>($"api/ventas/{ventaId}/reimpresion", solicitud));
 
+    /// <summary>
+    /// La primera impresión del ticket de una venta que no salió al cobrar (2026-10-22): sin motivo, y la caja principal la anota
+    /// como primera impresión. Si ya salió, <see cref="ErrorCaja"/> con <see cref="SolicitudPrimeraImpresion.CodigoConMotivo"/>.
+    /// Solo con la caja principal, como reimprimir.
+    /// </summary>
+    public Task<TicketDto> PrimeraImpresionAsync(Guid ventaId, SolicitudPrimeraImpresion solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<TicketDto>($"api/ventas/{ventaId}/primera-impresion", solicitud));
+
+    /// <summary>El ticket de esa venta no salió de la impresora y se dejó así («No imprimirlo»): su primera impresión no pedirá motivo.</summary>
+    public Task TicketSinImprimirAsync(Guid ventaId, SolicitudTicketSinImprimir solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<object>($"api/ventas/{ventaId}/sin-imprimir", solicitud, sinRespuesta: true));
+
     public Task<EfectivoCajaDto?> EfectivoAsync(Guid turnoId) =>
         ConRespaldoAsync(() => _http.GetAsync<EfectivoCajaDto>($"api/turnos/{turnoId}/efectivo"), l => l.Efectivo(turnoId));
 

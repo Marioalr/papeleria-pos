@@ -3632,7 +3632,46 @@
         await Cerrar();
         if (Cola.MuestraVistaPrevia || ticket.LoQueSeHaceAlCobrar != TicketAlCobrar.Imprimir)
             return;
-        _trabajoCobrado = Cola.Encolar($"Ticket {ticket.FolioImpreso}", DisenoTicket.Armar(ticket), ticket.AbreCajon);
+        _trabajoCobrado = Cola.Encolar($"Ticket {ticket.FolioImpreso}", DisenoTicket.Armar(ticket), ticket.AbreCajon, SiSeDejaSinImprimir(ticket));
+    }
+
+    /// <summary>
+    /// Lo que hace «No imprimirlo» con el ticket de una venta que todavía no salía (al cobrar, «Imprimir ticket» o su primera
+    /// impresión, 2026-10-22): la caja principal lo sabe y su primera impresión, desde «Ventas del día», no pedirá motivo. Lo
+    /// cobrado sin conexión no se dice (su venta no ha subido): reimprimirlo pide motivo, como siempre. No se espera.
+    /// </summary>
+    private Action? SiSeDejaSinImprimir(TicketDto ticket) =>
+        ticket.VentaId is { } ventaId && !ticket.EnContingencia
+            ? () => _ = AvisarSinImprimirAsync(Cliente, ventaId, new SolicitudTicketSinImprimir(Sesion.UsuarioId, Caja.Id))
+            : null;
+
+    private static async Task AvisarSinImprimirAsync(ClienteCaja cliente, Guid ventaId, SolicitudTicketSinImprimir solicitud)
+    {
+        try
+        {
+            await cliente.TicketSinImprimirAsync(ventaId, solicitud);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Sin conexión: se queda como impreso, y reimprimirlo pide motivo, como siempre.
+        }
+    }
+
+    /// <summary>
+    /// La caja principal anota la primera impresión de un ticket que no había salido («Imprimir ticket», Ctrl+I): a la
+    /// bitácora, y lo que se pida después ya es una reimpresión, con su motivo. No se espera: el papel ya va a la cola. Lo
+    /// cobrado sin conexión no ha subido: no se dice.
+    /// </summary>
+    private static async Task AnotarPrimeraImpresionAsync(ClienteCaja cliente, Guid ventaId, SolicitudPrimeraImpresion solicitud)
+    {
+        try
+        {
+            await cliente.PrimeraImpresionAsync(ventaId, solicitud);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Sin conexión, o ya salió por otro lado: no hay nada más que anotar.
+        }
     }
 
     // ── «Al cobrar»: «Ofrecerlo» ────────────────────────────────────────────
@@ -3671,12 +3710,15 @@
             return;
         (_ofrecido, _ticketDelSiguiente) = (null, null);
         (_cobrado, _trabajoCobrado) = (ticket, null);
+        // Es su primera impresión: que la caja principal lo sepa (2026-10-22), sin esperarla.
+        if (ticket.VentaId is { } ventaId && !ticket.EnContingencia)
+            _ = AnotarPrimeraImpresionAsync(Cliente, ventaId, new SolicitudPrimeraImpresion(Sesion.UsuarioId, Caja.Id));
         if (Cola.MuestraVistaPrevia)
         {
             await VerCobradoEnPantallaAsync();
             return;
         }
-        _trabajoCobrado = Cola.Encolar($"Ticket {ticket.FolioImpreso}", DisenoTicket.Armar(ticket), abrirCajon: false);
+        _trabajoCobrado = Cola.Encolar($"Ticket {ticket.FolioImpreso}", DisenoTicket.Armar(ticket), abrirCajon: false, SiSeDejaSinImprimir(ticket));
         _enfocar = "#codigo";
     }
 
@@ -3731,7 +3773,8 @@
     /// Una reimpresión o un comprobante (devolución, abono, salida, estado de cuenta): a la cola de la impresora, como el
     /// ticket (entrega 5, parte 3). Si no sale, lo dice el panel de la derecha, con «Reintentar».
     /// </summary>
-    private async Task ImprimirDocumentoAsync(string titulo, IReadOnlyList<Elemento> documento, bool abrirCajon)
+    /// <param name="alDejarloSinImprimir">Si se deja sin imprimir («No imprimirlo»), lo que hay que hacer (la primera impresión de un ticket).</param>
+    private async Task ImprimirDocumentoAsync(string titulo, IReadOnlyList<Elemento> documento, bool abrirCajon, Action? alDejarloSinImprimir = null)
     {
         if (Cola.MuestraVistaPrevia)
         {
@@ -3742,7 +3785,7 @@
 
         // Primero se cierra la ventana y se ve la pantalla lista; la impresora tarda un par de segundos con el logo.
         await Cerrar();
-        Cola.Encolar(titulo, documento, abrirCajon);
+        Cola.Encolar(titulo, documento, abrirCajon, alDejarloSinImprimir);
     }
 
     // ── Reimprimir (con motivo, queda en la bitácora) ───────────────────────
@@ -3752,6 +3795,35 @@
     private bool _ocupadoMotivo;
 
     private Task ReimprimirUltimoAsync() => PedirReimpresion(null);
+
+    /// <summary>
+    /// «Imprimir» en «Ventas del día»: la primera impresión del ticket de una venta que no salió al cobrar (2026-10-22). No es una
+    /// reimpresión: no pide motivo, y la caja principal la anota como primera impresión. Si mientras tanto ya salió (otra caja la
+    /// imprimió, o se canceló o se devolvió algo de ella), es una reimpresión: se pide su motivo, como siempre, y se dice por qué.
+    /// </summary>
+    private async Task PrimeraImpresionAsync(Guid ventaId)
+    {
+        TicketDto ticket;
+        try
+        {
+            ticket = await Cliente.PrimeraImpresionAsync(ventaId, new SolicitudPrimeraImpresion(Sesion.UsuarioId, Caja.Id));
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == SolicitudPrimeraImpresion.CodigoConMotivo)
+        {
+            await PedirReimpresion(ventaId);
+            AvisarEnElPanel(ex.Message);
+            return;
+        }
+        catch (ErrorCaja ex)
+        {
+            AvisarEnElPanel(ex.Message);
+            return;
+        }
+        // Si era el que se ofrecía al cobrar («Ofrecerlo»), ya salió: no se sigue ofreciendo.
+        if (_ofrecido is { VentaId: { } ofrecida } && ofrecida == ticket.VentaId)
+            (_ofrecido, _ticketDelSiguiente) = (null, null);
+        await ImprimirDocumentoAsync($"Ticket {ticket.FolioImpreso}", DisenoTicket.Armar(ticket), abrirCajon: false, SiSeDejaSinImprimir(ticket));
+    }
 
     private async Task PedirReimpresion(Guid? ventaId)
     {
@@ -4213,7 +4285,8 @@
             break;
         case Ventanas.VentasDelDia:
             <Ventana Titulo="Ventas del día" Clase="ventas-del-dia" AlCerrar="Cerrar">
-                <VentasDelDia CajaId="Caja.Id" Sesion="Sesion" AlReimprimir="(Guid id) => PedirReimpresion(id)" AlDevolver="(string folio) => AbrirDevolucion(folio)" />
+                <VentasDelDia CajaId="Caja.Id" Sesion="Sesion" AlReimprimir="(Guid id) => PedirReimpresion(id)" AlImprimir="(Guid id) => PrimeraImpresionAsync(id)"
+                              AlDevolver="(string folio) => AbrirDevolucion(folio)" />
             </Ventana>
             break;
         case Ventanas.Devolucion:

@@ -3659,6 +3659,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<Guid>("SucursalId")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("TicketSinImprimir")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("TotalCentavos")
                         .HasColumnType("INTEGER");
 
