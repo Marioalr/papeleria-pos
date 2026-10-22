@@ -892,7 +892,36 @@ eleventa.
   19 ms y el año 97 ms; por la API, con el JSON, 9, 10, 20 y 93 ms. Todo se lee de un mismo momento de la base, sin el
   candado de escritura: no detiene ningún cobro, y lo que se cobra mientras tanto no deja cifras que no cuadren.
 - **Lo nuevo del servicio, solo para leer:** `GET api/cajas/{caja}/reportes/ventas` (el periodo y un día), con el usuario
-  de la sesión. Sin cambios en la base.
+  de la sesión. En la base, solo una marca en el historial de eleventa: su artículo común (abajo).
+- **La revisión del PR #131 (2026-10-22),** corregida con sus pruebas:
+  - **El artículo común de eleventa** (código `COMUN-…`, «Productos Comunes», ganancia igual al precio) entraba al historial
+    como un producto con costo 0: el año pasado contaba como utilidad al 100 % y no salía en «Artículo común». Ahora la
+    importación lo marca (y la migración marca lo ya importado) y el reporte lo cuenta como el de aquí: aparte y sin
+    utilidad. Las impresiones que se vendieron en eleventa son productos a granel del catálogo, con el nombre y el
+    departamento que les puso la tienda: no se reconocen con seguridad, y aquí se siguen vendiendo igual (los rápidos)
+    hasta que el módulo de impresión cobre en la matriz (entrega 4); se quedan en su departamento, que se compara con lo
+    mismo. El renglón «Impresiones» es lo que cobra el módulo de impresión (decidido, por revisar).
+  - **Una cancelación en eleventa de un ticket de la caja 2 que ya tenía una devolución** (eleventa cancela lo que quedó)
+    cancelaba aquí la venta, y el corte del día y los reportes restaban dos veces lo ya devuelto. Ahora es la devolución
+    de lo que quedaba: la venta sigue cobrada, todo devuelto, como cuando se devuelve todo en la caja.
+  - **Las cancelaciones** del reporte son las que se hicieron en el periodo, como en el corte del día (antes, los tickets
+    cobrados en el periodo que se cancelaron); un ticket cancelado sigue sin contar en lo cobrado del periodo en que se
+    cobró.
+  - **El corte del día** cuenta lo cobrado ese día en la sucursal, por la hora en que se cobró, como los reportes y el
+    resumen del día: una venta sin conexión que subía después de que su turno se había cerrado (en otro día) no estaba en
+    ningún corte. Su turno sale en la lista, con lo que vendió ese día y sin su corte, que va en el día en que se hizo.
+  - **El ticket promedio sin tickets** decía «sin ventas el año pasado a estas alturas»; ahora dice «sin tickets todavía» (o
+    «en este periodo»), y una utilidad del año pasado en cero o negativa se dice como es («sin utilidad…», o su cifra).
+  - **Febrero:** el 29 del año pasado contaba en la cifra y no en la gráfica de un febrero de 28 días: ahora va en el 28.
+  - **Si un periodo no llega** (sin conexión, sin el permiso), ya no se quedan las cifras del anterior bajo el nuevo: se ve
+    el error y «Volver a intentar» lo pide otra vez.
+  - **El piloto** era solo con el envío a eleventa (`Eleventa:Escribir`); una caja 2 que solo lee el catálogo
+    (`Eleventa:Activo`, lo que marca el piloto en la trastienda y en las promociones) también tiene solo lo suyo y el
+    historial de toda la tienda: ahora es cualquiera de los dos.
+  - **Sin desglose:** si el total de un ticket de eleventa no es la suma de sus artículos (versiones viejas, una línea sin
+    cantidad que no se importa), la importación lo avisa y la diferencia sale aparte en las ventas por departamento, así
+    suman la venta neta. Lo devuelto en eleventa cuenta el día de la venta (el ticket ya lo trae restado): un mes cerrado
+    puede diferir un poco del reporte de eleventa.
 - **Falta:** exportar a Excel (parte 2) y verlo en Windows.
 
 **Avance (2026-10-17): la red de la tienda en el POS,** como lo pide la [red de la
@@ -1471,9 +1500,13 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Si en la caja 2 no hay `gbak.exe`, ¿se copia o se escribe sin el respaldo propio? | Se copia el de Firebird 2.0 de la caja principal, con su `fbclient.dll` (se ve en la tienda; [guía](pruebas-en-tienda.md)). El respaldo sigue siendo obligatorio para escribir | Puente, parte 3 |
 | La entrega 9 (reportes) | Justo después de aprobar la prueba con una persona real, empezando por lo que hace el reporte de ventas de eleventa y la comparación contra el año anterior ([paridad](paridad-eleventa.md#recomendaciones)) | Entrega 9 |
 | ¿La entrega 9 espera a la prueba con una persona real? | Se adelanta la entrega 9 (2026-10-22): lo demás de la paridad ya está y el dueño pidió no detenerse hasta igualar a eleventa | Entrega 9, parte 1 |
-| Con qué se comparan los reportes («¿contra el mismo día de la semana del año pasado o contra la misma fecha?») | Hoy y la semana, con 52 semanas antes (el mismo día de la semana); el mes y el año, con las mismas fechas. La semana va de lunes a domingo. Lo que incluye hoy, hasta el mismo momento del día que le toca (un 29 de febrero, hasta el final del 28); un periodo que ya pasó, completo | Entrega 9, parte 1 |
-| Los reportes en el piloto con eleventa | Solo lo que vendió la caja 2, sin el historial de eleventa (es de toda la tienda) y sin comparar contra el año pasado; la pantalla lo dice | Entrega 9, parte 1 |
-| Los detalles de los reportes | La venta neta y la utilidad, como el corte del día; el ticket promedio, la venta neta entre los tickets; un ticket cancelado no cuenta en el periodo en que se cobró; lo devuelto se resta del cajero del ticket y de la forma en que se regresó (el efectivo, sin el redondeo al peso); las diferencias de corte, las de los cortes hechos en el periodo; lo que más se vende, por lo vendido, sin las impresiones ni el artículo común, y lo juntado en el producto en que quedó; los botones de arriba llevan al periodo de hoy y ← → a los anteriores, completos; sin índices nuevos | Entrega 9, parte 1 |
+| Con qué se comparan los reportes («¿contra el mismo día de la semana del año pasado o contra la misma fecha?») | Hoy y la semana, con 52 semanas antes (el mismo día de la semana); el mes y el año, con las mismas fechas. La semana va de lunes a domingo. Lo que incluye hoy, hasta el mismo momento del día que le toca (un 29 de febrero, hasta el final del 28); un periodo que ya pasó, completo. En la gráfica de un febrero de 28 días, el 29 del año pasado va en el 28 (revisión del PR #131) | Entrega 9, parte 1 |
+| Los reportes en el piloto con eleventa | Solo lo que vendió la caja 2, sin el historial de eleventa (es de toda la tienda) y sin comparar contra el año pasado; la pantalla lo dice. Es el piloto con la lectura o con el envío a eleventa (`Eleventa:Activo` o `Eleventa:Escribir`): la lectura es lo que marca el piloto en la trastienda y en las promociones, y una caja 2 que solo lee el catálogo también tiene solo lo suyo (revisión del PR #131) | Entrega 9, parte 1 |
+| Los detalles de los reportes | La venta neta y la utilidad, como el corte del día; el ticket promedio, la venta neta entre los tickets; un ticket cancelado no cuenta en el periodo en que se cobró, y las cancelaciones que se cuentan son las hechas en el periodo, como en el corte del día (revisión del PR #131); lo devuelto se resta del cajero del ticket y de la forma en que se regresó (el efectivo, sin el redondeo al peso); las diferencias de corte, las de los cortes hechos en el periodo; lo que más se vende, por lo vendido, sin las impresiones ni el artículo común, y lo juntado en el producto en que quedó; los botones de arriba llevan al periodo de hoy y ← → a los anteriores, completos; sin índices nuevos | Entrega 9, parte 1 |
+| El historial de eleventa en los reportes (revisión del PR #131) | Su artículo común, como el de aquí: aparte y sin utilidad (la importación lo marca; lo ya importado, al migrar). Lo que el total de un ticket tiene de más o de menos contra sus artículos, «Sin desglose» (la importación lo avisa), así las ventas por departamento suman la venta neta. Lo devuelto cuenta el día de la venta, como lo guarda eleventa: un mes cerrado puede diferir un poco del reporte de eleventa | Entrega 9, parte 1 |
+| Las impresiones que se vendieron en eleventa (revisión del PR #131) | Se quedan en el departamento de su producto: en eleventa son productos a granel con el nombre y el departamento que les puso la tienda (no se reconocen con seguridad), y aquí se venden igual (los rápidos) hasta que el módulo de impresión cobre en la matriz (entrega 4); así se comparan con lo mismo. El renglón «Impresiones» es lo que cobra el módulo de impresión | Entrega 9, parte 1 |
+| Una cancelación en eleventa de un ticket de la caja 2 que ya tenía devoluciones (revisión del PR #131) | Aquí es la devolución de lo que quedaba (eleventa cancela lo que quedó; aquí no se cancela un ticket con devoluciones) y la venta sigue cobrada: cancelarla restaba dos veces lo ya devuelto en el corte del día y en los reportes. En la bitácora queda como la cancelación que fue | Puente |
+| Lo vendido en el corte del día (revisión del PR #131) | Lo cobrado ese día en la sucursal, por la hora en que se cobró, como los reportes y el resumen del día: una venta sin conexión que sube después de que su turno se cerró cuenta el día en que se cobró, con su turno en la lista, sin su corte (va en el día en que se hizo) | El corte del día como el de eleventa |
 | Dejar eleventa | En dos pasos: primero el modo multicaja con el puente escribiendo; al final, apagar el puente cuando el POS tenga la entrega 9 y un mes que cuadre con eleventa | Piloto |
 | La ganancia del día, con Telegram en pausa | En el corte del día, para quien tiene «Ver costos, utilidad y margen», como el de eleventa | El corte del día como el de eleventa |
 | Las tres impresoras de inyección | Van con la entrega 4, después de alcanzar a eleventa (meta del 2026-10-15); mientras, Control Print sigue cobrando aparte. Se alinearon la fase 5 y [impresión](impresion.md) | Plan |

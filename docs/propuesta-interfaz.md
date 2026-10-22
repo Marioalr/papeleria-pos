@@ -520,7 +520,8 @@ No está en el prototipo:
   cajero del turno; si pasa del umbral, avisa por Telegram. Tarjeta y transferencias salen como información. Quien no
   tiene el permiso ve el corte X y el nombre de quién puede hacerlo.
 - **El del día, para quien tiene «ver y cerrar el corte del día»** (la primera cuenta). Junta todas las cajas y turnos:
-  - lo vendido;
+  - lo vendido: lo cobrado ese día, por la hora en que se cobró (también lo que se cobró sin conexión y subió después de
+    cerrado su turno: ese turno sale en la lista, con su corte en el día en que se hizo; revisión del PR #131);
   - el efectivo esperado y el contado en cada turno, con sus diferencias;
   - las formas de pago;
   - las salidas por categoría, las devoluciones y las cancelaciones;
@@ -557,8 +558,12 @@ parte 1 de la entrega 9 ya está: todo lo de arriba menos exportar a Excel, que 
   momento; un periodo que ya pasó, completo.
 - **← y →** llevan al periodo anterior y al siguiente (un día, una semana, un mes o un año completos); los botones de
   arriba, al de hoy.
-- **En el piloto con eleventa,** solo lo que vendió la caja 2, sin comparar: lo de la caja principal está en los reportes
-  de eleventa.
+- **En el piloto con eleventa** (la lectura o el envío a eleventa prendidos), solo lo que vendió la caja 2, sin comparar: lo
+  de la caja principal está en los reportes de eleventa.
+- **Lo que cuenta como el corte del día** (revisión del PR #131): las cancelaciones son las que se hicieron en el periodo;
+  el artículo común de eleventa va con el de aquí, y lo que un ticket de eleventa suma sin desglose, aparte. Bajo cada
+  cifra, lo que no hay en este periodo («sin tickets todavía») no se confunde con lo que no hubo el año pasado.
+- **Si un periodo no llega,** se ve el error con «Volver a intentar», no las cifras del periodo anterior.
 
 ## Configuración
 
