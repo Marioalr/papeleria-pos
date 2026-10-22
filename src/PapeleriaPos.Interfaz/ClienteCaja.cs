@@ -530,6 +530,17 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<ConfiguracionTicketDto> GuardarAlCobrarAsync(Guid cajaId, SolicitudAlCobrar solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/cajas/{cajaId}/configuracion/ticket/al-cobrar", solicitud));
 
+    /// <summary>Lo que dice Configuración › Respaldos sin la caja principal: los respaldos se hacen y se ven allá.</summary>
+    public const string RespaldosSinConexion = "Sin conexión con la caja principal: los respaldos se ven, y se respalda, cuando vuelva.";
+
+    /// <summary>Configuración › Respaldos (2026-10-22): dónde se guardan y el último, con «Configuración de la tienda».</summary>
+    public Task<RespaldosDto> RespaldosAsync(Guid cajaId, Guid usuarioId) =>
+        SoloConLaPrincipalAsync<RespaldosDto>(RespaldosSinConexion, $"api/cajas/{cajaId}/configuracion/respaldos?usuarioId={usuarioId}");
+
+    /// <summary>«Respaldar ahora»: una copia de la base en la caja principal, en este momento. Regresa dónde quedó y cuánto mide.</summary>
+    public Task<RespaldoDto> RespaldarAhoraAsync(Guid cajaId, SolicitudRespaldo solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<RespaldoDto>($"api/cajas/{cajaId}/configuracion/respaldos", solicitud));
+
     public Task<VentaParaDevolverDto?> VentaPorFolioAsync(Guid sucursalId, string folio) =>
         ConRespaldoAsync(() => _http.GetAsync<VentaParaDevolverDto>($"api/sucursales/{sucursalId}/ventas/folio/{Uri.EscapeDataString(folio)}",
             noEncontradoEsNulo: true));

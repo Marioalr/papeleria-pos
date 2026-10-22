@@ -125,7 +125,7 @@ que los cajeros no tengan que aprender otras.
 | F10 | Buscar por nombre, código o marca, sin importar acentos | 1 |
 | DEL | Borrar el artículo seleccionado | 1 (con bitácora en la 2) |
 | F5 / F6 | Cambiar entre tickets abiertos / dejar el ticket pendiente | 1 |
-| F7 / F8 | Entrada / salida de efectivo, siempre con motivo | 1 |
+| F7 / F8 | Entrada / salida de efectivo, siempre con motivo; ahí mismo se cancela una equivocada (2026-10-22) | 1; cancelar, paridad con eleventa |
 | F9 | Verificador: consultar precio y existencia sin agregar a la venta | 1 |
 | INS | «Varios», como en eleventa: la cantidad y luego el código del producto, escaneado o escrito (2026-10-22, decidido, por revisar) | Paridad con eleventa |
 | CTRL+P | Artículo común: descripción y precio a mano, sin inventario | 1 (permiso configurable en la 2) |
@@ -151,7 +151,10 @@ encargado.**
 
 1. **Abrir turno:** el cajero entra con su ficha y su PIN (2026-10-14; antes, con su usuario) y se cuenta el fondo, que
    no siempre es el mismo monto.
-2. **Durante el turno:** entradas (F7) y salidas (F8) de efectivo, siempre con motivo.
+2. **Durante el turno:** entradas (F7) y salidas (F8) de efectivo, siempre con motivo. Una equivocada se cancela en el
+   mismo panel (2026-10-22, como en eleventa; antes se compensaba con la contraria), con su motivo y con «Cancelar una
+   entrada o salida», solo en su turno y antes del corte; el corte ya no la cuenta y dice cuántas se cancelaron. En el
+   piloto no: van a eleventa.
 3. **Corte X (parcial):** informativo; no cierra el turno.
 4. **Corte del turno (Z):** quien tiene el permiso (el encargado o el dueño) ya entró con su PIN; cuenta el efectivo y
    escribe el total **sin ver cuánto debería haber** (2026-10-14: ya no por denominación ni otra vez el PIN; un escaneo en

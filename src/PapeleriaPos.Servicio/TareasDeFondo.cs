@@ -6,6 +6,7 @@ using Microsoft.Data.Sqlite;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo;
+using PapeleriaPos.Nucleo.Contratos;
 
 namespace PapeleriaPos.Servicio;
 
@@ -48,7 +49,11 @@ public static class RutasServicio
         Path.GetDirectoryName(Path.GetFullPath(new SqliteConnectionStringBuilder(cadenaConexion).DataSource)) ?? ".";
 }
 
-/// <summary>Las copias de la base: la diaria la hace <see cref="RespaldoDiario"/>; la del corte Z, el corte.</summary>
+/// <summary>
+/// Las copias de la base: la diaria la hace <see cref="RespaldoDiario"/>; la del corte Z, el corte; y la de «Respaldar ahora»,
+/// quien tiene «Configuración de la tienda» (<see cref="Ahora"/>, 2026-10-22). Todas con la copia en línea de SQLite
+/// (<see cref="Respaldos.Hacer"/>), que toma la base completa, también lo que sigue en el -wal, sin detener la venta.
+/// </summary>
 public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int dias, ILogger<ServicioRespaldos> log)
 {
     private readonly Lock _candado = new();
@@ -62,6 +67,19 @@ public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int
     /// </summary>
     public RevisionAlArrancar? Revision { get; init; }
 
+    /// <summary>Dónde se guardan (Respaldos:Carpeta; si no, «respaldos» junto a la base).</summary>
+    public string Carpeta => carpeta;
+
+    /// <summary>Los días que se guardan (Respaldos:Dias).</summary>
+    public int Dias => dias;
+
+    /// <summary>Por qué ahora no se hacen copias (apagadas, o la base no pasó la revisión al arrancar); vacío si se hacen.</summary>
+    public string? NoSeHacenPorque =>
+        !Activo ? "En esta caja principal los respaldos están apagados (Respaldos:Activo)."
+        : Revision is { BaseDanada: true } revision
+            ? $"La base no pasó la revisión al arrancar: la copia saldría dañada. Se guarda la de antes del apagón ({revision.Respaldo ?? "no hay ninguna"})."
+            : null;
+
     public void Hacer(string? etiqueta = null)
     {
         if (!Activo)
@@ -74,18 +92,62 @@ public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int
         }
         try
         {
-            lock (_candado)
-            {
-                var ahora = HoraMexico.ALocal(DateTime.UtcNow);
-                var ruta = Respaldos.Hacer(cadenaConexion, carpeta, ahora, etiqueta);
-                var borradas = Respaldos.Limpiar(carpeta, DateOnly.FromDateTime(ahora), dias);
-                log.LogInformation("Respaldo en {Ruta}; se borraron {Borradas} de hace más de {Dias} días.", ruta, borradas, dias);
-            }
+            Copiar(_ => etiqueta);
         }
         catch (Exception ex) when (ex is IOException or SqliteException or UnauthorizedAccessException)
         {
             // Un respaldo fallido no detiene la venta; queda en el registro y se reintenta en la siguiente revisión.
             log.LogError(ex, "No se pudo hacer el respaldo en {Carpeta}.", carpeta);
+        }
+    }
+
+    /// <summary>
+    /// «Respaldar ahora» (Configuración › Respaldos, 2026-10-22): una copia en este momento, igual que la diaria y la del corte
+    /// (<c>pos-AAAA-MM-DD-ahora-HHmm.db</c>), con su limpieza de los días de historia. Si no se pudo, o ahora no se hacen
+    /// (<see cref="NoSeHacenPorque"/>), lo dice: quien la pidió espera la respuesta.
+    /// </summary>
+    public RespaldoDto Ahora()
+    {
+        if (NoSeHacenPorque is { } porque)
+            throw new InvalidOperationException($"No se hizo el respaldo. {porque}");
+        try
+        {
+            return Copiar(hora => $"ahora-{hora:HHmm}");
+        }
+        catch (Exception ex) when (ex is IOException or SqliteException or UnauthorizedAccessException)
+        {
+            log.LogError(ex, "No se pudo hacer el respaldo en {Carpeta}.", carpeta);
+            throw new InvalidOperationException($"No se pudo hacer el respaldo en {carpeta}: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>El más reciente de la carpeta (el del día, el de un corte Z o el de «Respaldar ahora»); vacío si no hay.</summary>
+    public RespaldoDto? Ultimo()
+    {
+        try
+        {
+            if (Respaldos.Ultima(carpeta) is not { } ruta)
+                return null;
+            var archivo = new FileInfo(ruta);
+            return new RespaldoDto(ruta, archivo.Length, HoraMexico.ALocal(archivo.LastWriteTimeUtc));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            log.LogWarning(ex, "No se pudo leer la carpeta de respaldos {Carpeta}.", carpeta);
+            return null;
+        }
+    }
+
+    /// <summary>Uno a la vez: la copia (con su etiqueta, según la hora) y la limpieza de los de hace más días.</summary>
+    private RespaldoDto Copiar(Func<DateTime, string?> etiqueta)
+    {
+        lock (_candado)
+        {
+            var ahora = HoraMexico.ALocal(DateTime.UtcNow);
+            var ruta = Respaldos.Hacer(cadenaConexion, carpeta, ahora, etiqueta(ahora));
+            var borradas = Respaldos.Limpiar(carpeta, DateOnly.FromDateTime(ahora), dias);
+            log.LogInformation("Respaldo en {Ruta}; se borraron {Borradas} de hace más de {Dias} días.", ruta, borradas, dias);
+            return new RespaldoDto(ruta, new FileInfo(ruta).Length, ahora);
         }
     }
 

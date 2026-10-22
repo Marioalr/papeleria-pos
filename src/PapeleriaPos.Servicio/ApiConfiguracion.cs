@@ -86,7 +86,32 @@ public static class ApiConfiguracion
             }
             return Dto(configuracion);
         });
+
+        // Respaldos (2026-10-22): con «Configuración de la tienda». Ver dónde se guardan y el último, y «Respaldar ahora» con el
+        // mismo ServicioRespaldos de la copia diaria y la del corte Z. Restaurar uno no se hace desde aquí.
+        api.MapGet("/respaldos", async (Guid cajaId, Guid usuarioId, PosDbContext db, ServicioRespaldos respaldos) =>
+        {
+            var caja = await CajaAsync(db, cajaId);
+            await new ServicioControl(db).ExigirParaVerAsync(usuarioId, caja.SucursalId, AccionControlada.ConfigurarTienda);
+            return new RespaldosDto(respaldos.Carpeta, respaldos.Dias, respaldos.Ultimo(), respaldos.NoSeHacenPorque);
+        });
+
+        api.MapPost("/respaldos", async (Guid cajaId, SolicitudRespaldo s, PosDbContext db, ServicioRespaldos respaldos) =>
+        {
+            var caja = await CajaAsync(db, cajaId);
+            var control = new ServicioControl(db);
+            await control.ExigirDeLaSesionAsync(s.UsuarioId, caja.SucursalId, caja.Id, AccionControlada.ConfigurarTienda);
+            // La copia se hace fuera del hilo de la petición: con una base grande tarda unos segundos.
+            var hecho = await Task.Run(respaldos.Ahora);
+            control.Registrar(caja.SucursalId, caja.Id, s.UsuarioId, AccionControlada.ConfigurarTienda,
+                $"Respaldó la base: {Path.GetFileName(hecho.Ruta)} ({hecho.Tamano})");
+            await db.SaveChangesAsync();
+            return hecho;
+        });
     }
+
+    private static async Task<Caja> CajaAsync(PosDbContext db, Guid cajaId) =>
+        await db.Cajas.AsNoTracking().SingleOrDefaultAsync(c => c.Id == cajaId) ?? throw new InvalidOperationException("La caja no existe.");
 
     /// <summary>La de la sucursal o, si nunca se ha guardado, los textos de appsettings.</summary>
     public static async Task<ConfiguracionTicket> ConfiguracionAsync(PosDbContext db, Guid sucursalId, OpcionesTicket opciones)

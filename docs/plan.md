@@ -968,6 +968,30 @@ compras), pero hace que el POS lo aguante, lo diga bien y lo anote:
   sin conexión, «No imprimirlo» se ofrece como «Ofrecerlo» (sin la caja principal no hay reimpresión; de la revisión del
   PR #118).
 
+**Avance (2026-10-22): lo chico que faltaba para igualar a eleventa,** las filas «Por confirmar» de la
+[paridad](paridad-eleventa.md#venta-y-cobro): eleventa lo tiene y falta ver si la tienda lo usa. El dueño pidió el
+2026-10-22 seguir hasta que el POS sea como eleventa, así que se hizo ya, cada cosa chica y sin cambiar lo que ya
+funciona:
+- **Ins, «Varios»:** como en eleventa, pide la cantidad (con las reglas de `5*código`) y luego el código, escaneado o
+  escrito; Enter lo agrega y Esc lo cancela. El cursor se queda en el cuadro de captura, así que lo que escanea el
+  lector siempre es el código, también si llega mientras se abre el panel. El artículo común sigue en Ctrl+P.
+- **F4 al cobrar, la nota del ticket:** hasta 80 letras (dos renglones del ticket de 80 mm). Se guarda con la venta
+  (migración `NotaEnElTicket`) y sale en el ticket, en sus reimpresiones y en «Ventas del día», también sin conexión y
+  en la espera. En el piloto se queda en el POS: no se sabe cómo guarda eleventa `VENTATICKETS.NOTAS`.
+- **El ticket que no salió se imprime sin motivo:** con «Ofrecerlo» o «No imprimirlo» al cobrar, o «No imprimirlo» en la
+  cola, la venta guarda que su ticket no salió (migración `TicketSinImprimir`) y «Ventas del día» ofrece «Imprimir», sin
+  motivo ni el permiso de reimprimir; queda en la bitácora como primera impresión. Después ya es «Reimprimir», con su
+  motivo.
+- **Cancelar una entrada o salida equivocada (F7/F8):** debajo del panel, las del turno, con «Cancelar» para quien tiene
+  el permiso nuevo «Cancelar una entrada o salida» (en «Efectivo y corte»), con motivo, en su caja y en su turno, antes
+  del corte (migración `CancelarMovimientos`). Va a la bitácora, abre el cajón, y el corte ya no la cuenta y dice
+  cuántas se cancelaron. En el piloto no: van a eleventa y no se sabe cómo anota una cancelada; la pantalla lo dice.
+- **«Respaldar ahora»:** Configuración › Respaldos, con «Configuración de la tienda»: el último, dónde se guardan y una
+  copia en ese momento con el mismo `ServicioRespaldos` de la diaria (la copia en línea de SQLite, también lo que sigue
+  en el -wal), que dice dónde quedó y cuánto mide y va a la bitácora. Restaurar desde la pantalla no: es más delicado y
+  se diseña aparte.
+- **Decidido, por revisar:** en la tabla de [abajo](#decidido-mientras-el-dueño-no-estaba-2026-10-17).
+
 **Avance (2026-10-17), entrega 13, parte 1: lo que se señala,** como en la
 [propuesta](propuesta-interfaz.md#lo-que-se-señala-exhibidos-y-temporada) y el
 [prototipo](propuesta-interfaz/prototipo.html), todavía sin las fotos (en su lugar, las iniciales del producto):
@@ -1438,7 +1462,12 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | El mostrador y las temporadas (entrega 13, parte 1) | Se acomoda en Ctrl+M › «Acomodar» (no en F3) con «Productos, precios y etiquetas»; un solo acomodo para todas las cajas; lugares de inicio «Repisa de arriba/abajo» y «Mesa de la entrada»; con el panel abierto, un número de hasta 4 cifras y Enter es la cantidad, salvo que sea el código de un producto (entonces entra ese producto); «45*» siempre es cantidad | #121 |
 | La importación final al dejar eleventa | A la base de la tienda que ya existe, solo el historial y sin los tickets que mandó el puente (por su número y su marca, nunca por el folio); lo dudoso se lista, no se resuelve; con la caja cerrada | #120 |
 | Cambiar precios de varios a la vez | Con «Poner un precio» además de porcentaje y cantidad; mayoreo en proporción y redondeo a $0.50 por omisión; el redondeo nunca va en contra de lo pedido ni deja $0; el mayoreo siempre más barato que el menudeo (si el redondeo lo rompe, la escala baja al paso de abajo o se queda; si nada cabe, el producto no cambia); en el piloto, las escalas del POS de un producto de eleventa solo suben hasta abajo de los precios de eleventa; hasta 1,000 a la vez; aplicar con Ctrl+Enter o el botón; el cobro cobra siempre la escala más barata que alcanza | #119 |
-| Qué hacer con el ticket al cobrar | «Imprimir» (por omisión), «Ofrecerlo» (nunca pregunta antes de cobrar: se ofrece con Ctrl+I hasta el siguiente escaneo) o «No imprimirlo»; para toda la tienda; lo fiado se imprime siempre; imprimirlo después con «Reimprimir» sigue pidiendo motivo; sin conexión, «No imprimirlo» lo ofrece como «Ofrecerlo» (reimprimir no se puede sin la principal) | #118 |
+| Qué hacer con el ticket al cobrar | «Imprimir» (por omisión), «Ofrecerlo» (nunca pregunta antes de cobrar: se ofrece con Ctrl+I hasta el siguiente escaneo) o «No imprimirlo»; para toda la tienda; lo fiado se imprime siempre; imprimirlo después: la primera vez, desde «Ventas del día» y sin motivo (no es una reimpresión, 2026-10-22), y las siguientes con «Reimprimir» y su motivo; sin conexión, «No imprimirlo» lo ofrece como «Ofrecerlo» (reimprimir no se puede sin la principal) | #118 |
+| Ins: ¿«Varios» como en eleventa, o el artículo común como hasta hoy? | Como en eleventa: la cantidad y luego el código; el artículo común sigue en Ctrl+P. La barra dice «Ins Varios» (a 1366 no caben los dos). Lo que escanea el lector siempre es el código: si llega antes que la cantidad, se pide la cantidad, y si llega otro, el primero entra con una pieza. Lo tecleado es cantidad salvo que sea un código que existe; hasta 9999; Enter sin cantidad, una. Con el panel vacío, las demás teclas siguen funcionando | Ins «Varios» |
+| La nota del ticket (F4 al cobrar) | Hasta 80 letras, dos renglones del ticket; F4 solo con el cursor en el cobro (fuera de él sigue siendo Inventario); en el piloto no va a eleventa | F4 al cobrar |
+| ¿El ticket que no salió se imprime sin motivo? | Sí, una vez, desde «Ventas del día» y sin el permiso de reimprimir; Ctrl+I («Ofrecerlo») también cuenta como su primera impresión; lo cobrado sin conexión cuenta como impreso; si se canceló o se devolvió algo, pide motivo; el «Reimprimir» de abajo (la última venta) sigue pidiendo motivo | Ventas del día |
+| Cancelar una entrada o salida: ¿con qué permiso y quién? | Uno propio, «Cancelar una entrada o salida», en «Efectivo y corte», con motivo siempre, como cancelar un ticket o un abono. De inicio, el dueño sí y el cajero «No» (no «Con autorización»: «o puede o no puede»); a los usuarios que ya existen les llega como el de defecto («No») y el dueño se lo da a quien quiera. Solo en su caja y en su turno, antes del corte; abre el cajón; sin comprobante impreso ni aviso por Telegram (en pausa). En el piloto no se ofrece, ni para la salida de una devolución hecha en eleventa | F7/F8 |
+| «Respaldar ahora»: ¿quién y cómo? | Configuración › Respaldos, con «Configuración de la tienda» (el grupo se ve o no se ve); el archivo `pos-AAAA-MM-DD-ahora-HHmm.db`, junto a los demás y con la misma limpieza de 30 días; restaurar desde la pantalla, no | Configuración |
 | La memoria del servicio (370–420 MB al final de un día pico en la PC de desarrollo; meta: 300 MB) | Medirla primero en la caja principal real con el simulador; si allá pasa de 300 MB, probar el otro modo de memoria de .NET (baja a ~307 MB, pero el cobro más lento sube de 33 a 97 ms) o ajustar la meta | #117 |
 | La red de la tienda en el POS | La caja se cambia a la IP comprobada de la principal si la guardada (también por nombre) deja de contestar; en la principal sin internet ni router, la franja no dice «no desconectes nada»; en el piloto, ping a la PC de eleventa; «Volver a buscarla» solo con el ratón; el detalle del Wi-Fi apagado por omisión | #116 |
 | La llave propia de la caja principal | Para que una copia de la base en otra PC no se haga pasar por ella. **Consecuencia:** si se reinstala o se cambia la PC principal (o se restaura en la de repuesto), hay que dar de alta otra vez cada caja con el PIN del dueño | #116 |
