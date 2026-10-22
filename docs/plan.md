@@ -808,12 +808,14 @@ derecha, con lo que corre hoy, lo que viene y lo que terminó:
 - **Se aplican solas y no se acumulan:** el cálculo del precio, el único lugar donde se decide (la pantalla, el cobro sin
   conexión y el servicio lo usan igual), se queda con la que deja el importe más bajo, también contra el mayoreo y el
   mayoreo siempre del cliente: con 5 de algo, el 10 %; con 12, el mayoreo si deja menos. Un descuento con Ctrl+D va encima
-  del precio con la promoción; un precio cambiado con Ctrl+E ya no lleva promoción.
+  del precio con la promoción; el del cliente registrado, no: se queda lo que más le conviene. Un precio cambiado con Ctrl+E
+  ya no lleva promoción.
 - **Nunca debajo del costo sin autorización,** como Ctrl+D: al guardarla se revisa su precio más bajo (con el grupo
-  completo de un 3×2) contra el costo con que saldría del inventario; si algo queda debajo, la guarda quien tiene «Vender
-  debajo del costo» o con la autorización de quien lo tiene, y la bitácora lo dice. «Dejar al costo» pone cada producto
-  marcado a su costo (redondeado hacia arriba al centavo), desde hoy y por un mes (se cambia); es para quien tiene «Ver
-  costos, utilidad y margen», que también ve el costo y el margen de cada uno.
+  completo de un 3×2, y con cada presentación de precio propio) contra el costo con que saldría del inventario; si algo
+  queda debajo, la guarda quien tiene «Vender debajo del costo» (antes ve cuáles) o con la autorización de quien lo tiene,
+  y la bitácora lo dice. Lo que después quedaría debajo sin autorizarse no la lleva («Fuera por el costo»). «Dejar al
+  costo» pone cada producto marcado a su costo (redondeado hacia arriba al centavo), desde hoy y por un mes (se cambia); es
+  para quien tiene «Ver costos, utilidad y margen», que también ve el costo y el margen de cada uno.
 - **La venta y el ticket la dicen:** el renglón, «Regreso a clases · ahorra $6.00», como el mayoreo; bajo el total,
   «Ahorro por promociones»; el ticket, «Promoción Regreso a clases  -$6.00» bajo el artículo, y cuenta en «Usted ahorró».
   El verificador (F9) da el precio de hoy con la promoción y dice cuál.
@@ -828,11 +830,22 @@ derecha, con lo que corre hoy, lo que viene y lo que terminó:
   (2026-10-10), así la caja 2 cobra lo mismo que la caja de eleventa y el puente manda lo cobrado. La página lo dice; solo
   se consultan (y se pueden terminar).
 - **Los kits no:** la tienda no los usa en eleventa; siguen pospuestos.
-- **Por revisar** (decidido mientras el dueño no estaba; [la tabla](#decidido-mientras-el-dueño-no-estaba-2026-10-17)): que
-  en el piloto no se apliquen; el 3×2 y el segundo a mitad por producto, sin juntar productos distintos de un departamento;
-  en un empate gana el mayoreo; el descuento a mano va encima; el costo se revisa al guardarla (si después sube el costo,
-  la promoción sigue con su precio); «Dejar al costo» al centavo y por un mes; el nombre de hasta 40 letras; y casi a
-  medianoche, el cobro con el día de la caja si es el de hoy, el de ayer o el de mañana.
+- **Revisión del PR #132** (el mismo día): un precio cambiado con Ctrl+E justo al de la lista ya no da «cambió el
+  precio» una y otra vez (es precio cambiado: gasta su autorización, queda en la bitácora y va sin promoción), tampoco
+  sin conexión ni en el piloto; el costo se revisa también con la presentación de precio propio (una caja de 12 con un
+  3×2); lo que después quedaría debajo del costo se queda fuera hasta autorizarse («Fuera por el costo»); el día de la
+  caja solo cuenta cerca de la medianoche y, con la fecha de la PC mal, la caja se pone al día con el de la caja
+  principal y lo dice; el descuento del cliente registrado no va encima de la promoción; un descuento en monto más
+  grande que el renglón con su nueva promoción primero pone el ticket al día; devolver de una en una las piezas de un
+  3×2 suma lo cobrado; el porcentaje con coma («7,5») no se acepta; cuánto falta para el costo solo lo ve quien ve la
+  utilidad; Ctrl+E y F11 dicen que el renglón va con su promoción. El navegador de desarrollo sin base local no tiene
+  copia y no aplica promociones: es solo para probar.
+- **Por revisar** (decidido mientras el dueño no estaba; [la tabla](#decidido-mientras-el-dueño-no-estaba-2026-10-17)):
+  que en el piloto no se apliquen; el 3×2 y el segundo a mitad por producto, sin juntar productos distintos de un
+  departamento; en un empate gana el mayoreo; el descuento a mano va encima, el del cliente registrado no (se queda lo
+  que más le conviene); lo que después quedaría debajo del costo se queda fuera hasta autorizarse, y la autorización
+  vale para toda la promoción; el costo se revisa con la sucursal donde se guarda; «Dejar al costo» al centavo y por un
+  mes; el nombre de hasta 40 letras; y el día de la caja al cobrar, solo a menos de una hora de la medianoche.
 
 **Avance (2026-10-16): Productos e Inventario en el piloto.** Con la lectura de eleventa prendida, lo que ella pone no
 se cambia en la caja 2: si no, la siguiente lectura lo regresaría sin avisar. Una nota lo dice en cada página y el
@@ -1489,7 +1502,11 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Una anotación a mano en eleventa que no cuadra exacto | «Resolverlo a mano» con «Configuración de la tienda» y nota en la bitácora; mientras se decide, la existencia sigue a eleventa (sin congelarla) | Puente (#109) |
 | Al devolver en la caja 2 un ticket cobrado en eleventa, ¿el dinero al peso o exacto? | Exacto al centavo, como lo devuelve eleventa ($9.50, no $10): así el ticket de eleventa queda en cero y el cajón cuadra con lo que anota eleventa. Lo que cobró la propia caja se sigue devolviendo al peso, porque se cobró redondeado | Puente (#109) |
 | ¿Las promociones se aplican en la caja 2 durante el piloto? (2026-10-22) | No: los precios se ponen en eleventa (2026-10-10). Si la caja 2 aplicara las suyas, cobraría distinto que la caja de eleventa por lo mismo el mismo día; lo de temporada (el F11 al costo) se sigue haciendo allá. Con la lectura de eleventa prendida, el catálogo del servicio no lleva promociones (ni la copia ni el cobro las aplican) y Productos › Promociones solo las consulta, con la nota de por qué; terminarlas sí se puede. Al dejar eleventa se prenden solas | Promociones |
-| Las promociones: cómo cuentan y qué gana (2026-10-22) | El 3×2 y el segundo a mitad cuentan cada producto aparte, en piezas como el mayoreo (no juntan productos distintos de un departamento); no se acumulan: la que deja menos, también contra el mayoreo (en un empate, el mayoreo); el descuento a mano (Ctrl+D) va encima de la promoción; el costo se revisa al guardarla, con su precio más bajo, y si después sube el costo la promoción sigue con su precio; «Dejar al costo» al centavo hacia arriba, desde hoy y por un mes, para quien ve la utilidad; casi a medianoche, el cobro usa el día de la caja si es el de hoy, el de ayer o el de mañana; el nombre, de hasta 40 letras (sale en el ticket) | Promociones |
+| Las promociones: cómo cuentan y qué gana (2026-10-22) | El 3×2 y el segundo a mitad cuentan cada producto aparte, en piezas como el mayoreo (no juntan productos distintos de un departamento); no se acumulan: la que deja menos, también contra el mayoreo (en un empate, el mayoreo); el descuento a mano (Ctrl+D) va encima de la promoción; el costo se revisa al guardarla, con su precio más bajo (también el de una presentación con precio propio); «Dejar al costo» al centavo hacia arriba, desde hoy y por un mes, para quien ve la utilidad; el nombre, de hasta 40 letras (sale en el ticket) | Promociones |
+| El descuento del cliente registrado con una promoción (2026-10-22, revisión del PR #132) | No se acumulan: en cada renglón se queda lo que más le conviene al cliente, la promoción o su precio con su descuento (como la promoción contra el mayoreo; en un empate, su descuento). Con la promoción, su descuento queda en pausa en el renglón y vuelve si deja de convenirle (otra cantidad). Antes iba encima y una promoción «al costo» pedía autorización al cobrar | Promociones |
+| Lo que después queda debajo del costo (2026-10-22, revisión del PR #132) | No la lleva: un producto que llega a su departamento o su marca, o al que le baja el precio o le sube el costo, y con ella quedaría debajo de lo que cuesta, se queda fuera (las cajas no se la aplican y el cajero no se entera) mientras no se autorice; el detalle lo dice («Fuera por el costo»). Se autoriza guardándola otra vez con «Vender debajo del costo» o con la autorización de quien lo tiene: guardada así, la llevan todos aunque queden debajo, también lo que llegue después. Quien puede vender debajo del costo ve antes cuáles y la guarda otra vez para dejarla así. Antes, lo que llegaba después se vendía debajo del costo sin autorización | Promociones |
+| Las promociones en varias sucursales (2026-10-22, revisión del PR #132) | Al guardarla se revisa el costo con los precios y costos de la sucursal de la caja donde se guarda; en otra sucursal, lo que allí quedaría debajo se queda fuera si no se autorizó, con sus precios y costos. La tienda tiene una sucursal | Promociones |
+| El día de la caja al cobrar promociones (2026-10-22, revisión del PR #132) | La caja principal acepta el de la caja si es el suyo o, a menos de una hora de su medianoche, el de al lado (un reloj unos minutos atrás o adelante). Si no, cobra con el suyo y su respuesta lo dice: la caja pone el ticket al día con ese día, avisa que la fecha de la PC está mal y el siguiente cobro pasa (no se repite). Antes aceptaba un día de diferencia a cualquier hora | Promociones |
 | Los kits (2026-10-22) | Pospuestos: no hay kits en la base de eleventa («No la usan», [paridad](paridad-eleventa.md#productos-y-precios)) | Promociones |
 
 ## Recomendaciones

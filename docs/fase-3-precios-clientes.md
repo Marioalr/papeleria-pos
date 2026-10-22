@@ -102,13 +102,22 @@ Promociones, para quien tiene «Productos, precios y etiquetas»:
   margen».
 - **Su vigencia:** desde un día y hasta otro (o hasta que se termine), los días de la semana que se elijan, y en esta
   sucursal o en todas. La lista dice qué corre hoy, qué viene y qué terminó; «Terminar ahora» la quita desde ya.
-- **Se aplican solas y no se acumulan:** se queda la que más le conviene al cliente, también contra el mayoreo. Cuentan
-  cada producto aparte, en piezas como el mayoreo. Un descuento a mano (Ctrl+D) va encima de la promoción.
-- **Nunca debajo del costo sin autorización:** al guardarla, como Ctrl+D; lo hace quien tiene «Vender debajo del costo» o
-  con la autorización de quien lo tiene, y queda en la bitácora.
+- **Se aplican solas y no se acumulan:** se queda la que más le conviene al cliente, también contra el mayoreo y contra el
+  descuento fijo del cliente registrado (en cada renglón, la promoción o su precio con su descuento). Cuentan cada producto
+  aparte, en piezas como el mayoreo. Un descuento a mano (Ctrl+D) va encima de la promoción; un precio cambiado con Ctrl+E
+  la quita del renglón (la ventana lo dice).
+- **Nunca debajo del costo sin autorización:** al guardarla, como Ctrl+D, con su precio más bajo (también el de una
+  presentación con precio propio, como una caja de 12); lo hace quien tiene «Vender debajo del costo» (ve antes cuáles
+  quedan debajo) o con la autorización de quien lo tiene, y queda en la bitácora. Lo que después quedaría debajo sin
+  autorizarse (llegó a su departamento o su marca, bajó su precio, subió su costo) no la lleva: las cajas no se la aplican y
+  su detalle lo dice («Fuera por el costo»); guardarla otra vez con la autorización se la da. Cuánto falta para el costo
+  solo lo ve quien ve la utilidad.
 - **El ticket** dice la promoción y lo que se ahorró, como el mayoreo, y la pantalla de venta la dice en el renglón.
 - **En las cajas, también sin conexión:** van en su copia con sus fechas, y cada caja decide con la suya: la que empieza o
-  termina a medianoche se aplica sin bajar nada.
+  termina a medianoche se aplica sin bajar nada. Al cobrar, la caja principal acepta el día de la caja si es el suyo o, a
+  menos de una hora de su medianoche, el de al lado; si no (el reloj de la PC está mal), cobra con el suyo, la caja pone el
+  ticket al día con él y avisa que la fecha de la PC está mal. El navegador de desarrollo sin base local no tiene copia: no
+  las aplica (es solo para probar).
 - **En el piloto con eleventa** no se aplican en la caja 2 ni se dan de alta: los precios se ponen en eleventa.
 
 **Kits: pospuestos** (decidido, por revisar): un producto con su precio propio y su lista de piezas; al venderlo se
