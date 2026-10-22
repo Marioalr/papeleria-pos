@@ -108,6 +108,27 @@ public class MovimientoCaja
     /// revisarlo. El efectivo ya entró o salió del cajón, así que no se rechaza.
     /// </summary>
     public DateTime? FueraDeCorteUtc { get; set; }
+
+    /// <summary>
+    /// Cuándo se canceló, si era una equivocada (2026-10-22; antes se compensaba con la contraria): el corte ya no la cuenta y
+    /// dice que se canceló. Solo en su mismo turno, antes de su corte.
+    /// </summary>
+    public DateTime? CanceladoUtc { get; private set; }
+
+    public Guid? CanceladoPorId { get; private set; }
+    public string? MotivoCancelacion { get; private set; }
+
+    public bool Cancelado => CanceladoUtc is not null;
+
+    /// <summary>La cancela, con motivo. El permiso, el turno y el piloto los revisa quien la guarda.</summary>
+    public void Cancelar(Guid usuarioId, string motivo, DateTime ahoraUtc)
+    {
+        if (Cancelado)
+            throw new InvalidOperationException($"Esa {(Tipo == TipoMovimientoCaja.Entrada ? "entrada" : "salida")} ya se canceló.");
+        if (string.IsNullOrWhiteSpace(motivo))
+            throw new ArgumentException("La cancelación lleva motivo.");
+        (CanceladoUtc, CanceladoPorId, MotivoCancelacion) = (ahoraUtc, usuarioId, motivo.Trim());
+    }
 }
 
 public enum MotivoApertura

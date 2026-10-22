@@ -4178,6 +4178,17 @@
         await RevisarEfectivoAsync();
     }
 
+    /// <summary>
+    /// Se canceló una entrada o salida equivocada (2026-10-22): el panel sigue abierto (para registrar la buena) y el cajón se abre,
+    /// como al registrarla, por si el efectivo regresa o vuelve a salir. El efectivo esperado ya no la cuenta.
+    /// </summary>
+    private async Task MovimientoCancelado(MovimientoDelTurnoDto m)
+    {
+        if (!Cola.MuestraVistaPrevia)
+            Cola.AbrirCajon($"El cajón (cancelación de la {(m.Tipo == TipoMovimientoCaja.Entrada ? "entrada" : "salida")} {m.Folio})");
+        await RevisarEfectivoAsync();
+    }
+
     /// <summary>Si el efectivo llegó al límite de la sucursal, aparece el aviso de retiro hasta que se haga.</summary>
     private async Task RevisarEfectivoAsync()
     {
@@ -4229,7 +4240,7 @@
             var tipo = _ventana == Ventanas.Entrada ? TipoMovimientoCaja.Entrada : TipoMovimientoCaja.Salida;
             @* @key: de la entrada a la salida (o al revés) empieza en blanco, no con lo que se escribió en la otra. *@
             <Ventana @key="tipo" Titulo="@(tipo == TipoMovimientoCaja.Entrada ? "Entrada de efectivo" : "Salida de efectivo")" AlCerrar="Cerrar">
-                <MovimientoEfectivo Tipo="tipo" TurnoId="Turno.Id" UsuarioId="Sesion.UsuarioId" AlTerminar="MovimientoRegistrado" />
+                <MovimientoEfectivo Tipo="tipo" TurnoId="Turno.Id" Caja="Caja" Sesion="Sesion" AlTerminar="MovimientoRegistrado" AlCancelar="MovimientoCancelado" />
             </Ventana>
             break;
         case Ventanas.Mayoreo when _lineaDeLaVentana is { VarianteId: { } varianteMayoreo } lineaMayoreo

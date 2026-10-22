@@ -181,6 +181,22 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
             l => l.Movimiento(turnoId, movimiento), (l, comprobante) => l.MovimientoEnLineaAsync(turnoId, movimiento.Id!.Value, comprobante));
     }
 
+    /// <summary>Lo que dice la caja sin la caja principal en las entradas y salidas del turno: se ven y se cancelan allá.</summary>
+    public const string MovimientosSinConexion =
+        "Sin conexión con la caja principal: las entradas y salidas de este turno se ven, y una equivocada se cancela, cuando vuelva.";
+
+    /// <summary>Las entradas y salidas del turno (F7/F8), para cancelar una equivocada (2026-10-22). Solo con la caja principal.</summary>
+    public Task<MovimientosDelTurnoDto> MovimientosDelTurnoAsync(Guid turnoId) =>
+        SoloConLaPrincipalAsync<MovimientosDelTurnoDto>(MovimientosSinConexion, $"api/turnos/{turnoId}/movimientos");
+
+    /// <summary>
+    /// Cancela una entrada o salida equivocada (2026-10-22), con motivo y, si su permiso la pide, la autorización. Regresa cómo
+    /// quedaron las del turno; la cuenta de esta caja (para el corte sin conexión) deja de contarla.
+    /// </summary>
+    public Task<MovimientosDelTurnoDto> CancelarMovimientoAsync(Guid turnoId, MovimientoDelTurnoDto movimiento, SolicitudCancelacion solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<MovimientosDelTurnoDto>($"api/turnos/{turnoId}/movimientos/{movimiento.Id}/cancelacion", solicitud), null,
+            (l, _) => l.MovimientoCanceladoEnLineaAsync(turnoId, movimiento));
+
     public Task<TicketDto> ReimprimirAsync(Guid ventaId, SolicitudReimpresion solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<TicketDto>($"api/ventas/{ventaId}/reimpresion", solicitud));
 

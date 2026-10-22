@@ -1832,6 +1832,17 @@ public sealed class Contingencia
     }
 
     /// <summary>
+    /// Una entrada o salida cancelada en línea (2026-10-22) deja de contar en la cuenta del turno, con su propio renglón (el de
+    /// la entrada o salida se queda), como un abono cancelado.
+    /// </summary>
+    public Task MovimientoCanceladoEnLineaAsync(Guid turnoId, MovimientoDelTurnoDto m)
+    {
+        var entrada = m.Tipo == TipoMovimientoCaja.Entrada;
+        return _almacen.EscribirAsync(l => l.Anotar(new AnotacionDiario(Ids.Nuevo(), turnoId, Entradas: entrada ? -m.MontoCentavos : 0,
+            Salidas: entrada ? 0 : -m.MontoCentavos)), "una entrada o salida cancelada");
+    }
+
+    /// <summary>
     /// El reembolso sale del efectivo del turno abierto de esta caja; una cancelación deja de contar como venta, y su
     /// tarjeta, su transferencia y lo fiado dejan de contar en el corte (como en el del servicio, que solo suma las vigentes).
     /// </summary>

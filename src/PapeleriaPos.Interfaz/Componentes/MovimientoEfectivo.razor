@@ -1,37 +1,160 @@
-@* F7 / F8: entra o sale efectivo que no es venta. Siempre con motivo. *@
+@* F7 / F8: entra o sale efectivo que no es venta. Siempre con motivo. Abajo, las de este turno: una equivocada se cancela,
+   como en eleventa (2026-10-22; antes se compensaba con la contraria), con su motivo y con «Cancelar una entrada o salida»;
+   solo en este turno, antes de su corte. En el piloto con eleventa se ven, pero no se cancelan: van a eleventa (lo dice
+   aquí mismo). *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
-<label>Monto
-    <input id="movimiento-monto" inputmode="decimal" @bind="_monto" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
-</label>
-<label>Motivo
-    <input @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclear"
-           placeholder="@(Tipo == TipoMovimientoCaja.Entrada ? "Ej. cambio que se trajo" : "Ej. pago a proveedor, garrafón")" />
-</label>
-@if (_error is not null)
+@if (_autorizar is { } pendiente)
 {
-    <p class="error">@_error</p>
+    <AutorizarAccion Accion="AccionControlada.CancelarMovimiento" Detalle="@($"Cancelar {Describir(pendiente)}")"
+                     MontoCentavos="pendiente.MontoCentavos" Caja="Caja" Sesion="Sesion" AlAutorizar="a => CancelarAsync(pendiente, a.Id)"
+                     AlCancelar="() => _autorizar = null" />
 }
-<div class="acciones">
-    <button class="boton principal" disabled="@_ocupado" @onclick="RegistrarAsync">Registrar (Enter)</button>
-</div>
+else
+{
+    <label>Monto
+        <input id="movimiento-monto" inputmode="decimal" @bind="_monto" @bind:event="oninput" @onkeydown="AlTeclear" placeholder="$0.00" />
+    </label>
+    <label>Motivo
+        <input @bind="_motivo" @bind:event="oninput" @onkeydown="AlTeclear"
+               placeholder="@(Tipo == TipoMovimientoCaja.Entrada ? "Ej. cambio que se trajo" : "Ej. pago a proveedor, garrafón")" />
+    </label>
+    @if (_error is not null)
+    {
+        <p class="error">@_error</p>
+    }
+    <div class="acciones">
+        <button class="boton principal" disabled="@_ocupado" @onclick="RegistrarAsync">Registrar (Enter)</button>
+    </div>
+
+    <h3>En este turno</h3>
+    @if (_aviso is not null)
+    {
+        <p class="nota vn-movimiento-aviso" role="status">@_aviso</p>
+    }
+    @if (PilotoEleventa)
+    {
+        <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@PilotoConEleventa.NoSeCancelaMovimiento</span></div></div>
+    }
+    @if (_movimientos is null)
+    {
+        <p class="nota">@(_errorLista ?? "Cargando…")</p>
+    }
+    else if (_movimientos.Count == 0)
+    {
+        <p class="nota">Todavía no hay entradas ni salidas en este turno.</p>
+    }
+    else
+    {
+        <ul class="vn-movimientos">
+            @foreach (var m in _movimientos)
+            {
+                var movimiento = m;
+                <li id="movimiento-@m.Id" class="vn-movimiento @(m.Cancelado ? "cancelado" : "")">
+                    <div>
+                        <strong>@(m.Tipo == TipoMovimientoCaja.Entrada ? "Entrada" : "Salida") · @Formato.Dinero(m.MontoCentavos)</strong>
+                        <small>@m.FechaLocal.ToString("HH:mm") · @m.Motivo · @m.Usuario</small>
+                        @if (m.Cancelado)
+                        {
+                            <small class="vn-movimiento-cancelada">Cancelada@(m.CanceladoLocal is { } cuando ? $" a las {cuando:HH:mm}" : "")@(m.CanceladoPor is { } quien ? $" por {quien}" : ""): @m.MotivoCancelacion</small>
+                        }
+                    </div>
+                    @if (m.SeCancela && VeCancelar && _cancelando?.Id != m.Id)
+                    {
+                        <button class="boton chico" disabled="@_ocupado" @onclick="() => EmpezarACancelar(movimiento)">Cancelar</button>
+                    }
+                </li>
+                @if (_cancelando?.Id == m.Id)
+                {
+                    <li class="vn-movimiento-cancelar">
+                        <label>Motivo de la cancelación
+                            <input id="motivo-cancelar-movimiento" autocomplete="off" @bind="_motivoCancelacion" @bind:event="oninput"
+                                   @onkeydown="AlTeclearCancelacion" placeholder="Ej. se registró dos veces" />
+                        </label>
+                        @if (_errorCancelacion is not null)
+                        {
+                            <p class="error">@_errorCancelacion</p>
+                        }
+                        <div class="acciones">
+                            <button class="boton chico" disabled="@_ocupado" @onclick="() => _cancelando = null">No cancelarla</button>
+                            <button class="boton principal" disabled="@_ocupado" @onclick="() => CancelarAsync(movimiento, null)">
+                                Cancelar la @(m.Tipo == TipoMovimientoCaja.Entrada ? "entrada" : "salida") (Enter)
+                            </button>
+                        </div>
+                    </li>
+                }
+            }
+        </ul>
+        @if (!VeCancelar && _movimientos.Any(m => m.SeCancela))
+        {
+            <p class="nota">Cancelar una entrada o salida no lo tienes permitido: que entre quien puede (Ctrl+U), o haz la contraria (F7 o F8).</p>
+        }
+    }
+}
 
 @code {
     [Parameter] public TipoMovimientoCaja Tipo { get; set; }
     [Parameter] public Guid TurnoId { get; set; }
-    [Parameter] public Guid UsuarioId { get; set; }
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
     [Parameter] public EventCallback<ComprobanteMovimientoDto> AlTerminar { get; set; }
+
+    /// <summary>Se canceló una entrada o salida: la pantalla abre el cajón y vuelve a ver el efectivo.</summary>
+    [Parameter] public EventCallback<MovimientoDelTurnoDto> AlCancelar { get; set; }
+
+    [CascadingParameter(Name = PilotoConEleventa.Cascada)] public bool PilotoEleventa { get; set; }
+
+    /// <summary>Lo que puede quien entró (la pantalla de venta); sin eso, lo de la sesión.</summary>
+    [CascadingParameter(Name = "PermisosDeSesion")] public IReadOnlyDictionary<AccionControlada, PermisoDeSesion>? PermisosDeSesion { get; set; }
 
     private string _monto = "";
     private string _motivo = "";
     private string? _error;
     private bool _ocupado;
 
+    /// <summary>Las de este turno, de la caja principal; vacío mientras llegan (o si no hay conexión: <see cref="_errorLista"/>).</summary>
+    private IReadOnlyList<MovimientoDelTurnoDto>? _movimientos;
+    private string? _errorLista;
+
+    /// <summary>La que se está cancelando: su motivo se escribe debajo de ella.</summary>
+    private MovimientoDelTurnoDto? _cancelando;
+    private string _motivoCancelacion = "";
+    private string? _errorCancelacion;
+    private bool _enfocarMotivo;
+
+    /// <summary>Su permiso pide autorización: se pide ahí mismo y se vuelve a intentar con ella.</summary>
+    private MovimientoDelTurnoDto? _autorizar;
+
+    /// <summary>Lo que se acaba de cancelar.</summary>
+    private string? _aviso;
+
+    /// <summary>Se le enseña «Cancelar»: lo puede o lo puede pedir (el servicio lo vuelve a revisar).</summary>
+    private bool VeCancelar => PermisosDeSesion is { } permisos
+        ? permisos.GetValueOrDefault(AccionControlada.CancelarMovimiento)?.Nivel != NivelPermiso.NoPermitido
+        : Sesion.Ve(AccionControlada.CancelarMovimiento);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _movimientos = (await Cliente.MovimientosDelTurnoAsync(TurnoId)).Movimientos;
+        }
+        catch (ErrorCaja ex)
+        {
+            _errorLista = ex.Message;
+        }
+    }
+
     protected override async Task OnAfterRenderAsync(bool primera)
     {
         if (primera)
             await Js.EnfocarAsync("#movimiento-monto");
+        else if (_enfocarMotivo)
+        {
+            _enfocarMotivo = false;
+            await Js.EnfocarAsync("#motivo-cancelar-movimiento");
+        }
     }
 
     private async Task AlTeclear(KeyboardEventArgs e)
@@ -52,11 +175,58 @@
         _ocupado = true;
         try
         {
-            await AlTerminar.InvokeAsync(await Cliente.MovimientoAsync(TurnoId, new SolicitudMovimiento(Tipo, monto, _motivo.Trim(), UsuarioId)));
+            await AlTerminar.InvokeAsync(await Cliente.MovimientoAsync(TurnoId, new SolicitudMovimiento(Tipo, monto, _motivo.Trim(), Sesion.UsuarioId)));
         }
         catch (ErrorCaja ex)
         {
             _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private void EmpezarACancelar(MovimientoDelTurnoDto m) =>
+        (_cancelando, _motivoCancelacion, _errorCancelacion, _aviso, _enfocarMotivo) = (m, "", null, null, true);
+
+    private async Task AlTeclearCancelacion(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && _cancelando is { } m)
+            await CancelarAsync(m, null);
+    }
+
+    /// <summary>«la entrada de $200.00 de las 10:32 (cambio)».</summary>
+    private static string Describir(MovimientoDelTurnoDto m) =>
+        $"la {(m.Tipo == TipoMovimientoCaja.Entrada ? "entrada" : "salida")} de {Formato.Dinero(m.MontoCentavos)} de las {m.FechaLocal:HH:mm} ({m.Motivo})";
+
+    /// <summary>Con su motivo; si su permiso pide autorización, se pide y se vuelve a intentar con ella.</summary>
+    private async Task CancelarAsync(MovimientoDelTurnoDto m, Guid? autorizacion)
+    {
+        _autorizar = null;
+        if (_ocupado)
+            return;
+        if (string.IsNullOrWhiteSpace(_motivoCancelacion))
+        {
+            (_cancelando, _errorCancelacion, _enfocarMotivo) = (m, "Escribe por qué se cancela.", true);
+            return;
+        }
+        _ocupado = true;
+        try
+        {
+            _movimientos = (await Cliente.CancelarMovimientoAsync(TurnoId, m,
+                new SolicitudCancelacion(Sesion.UsuarioId, Caja.Id, _motivoCancelacion.Trim(), autorizacion))).Movimientos;
+            (_cancelando, _motivoCancelacion, _errorCancelacion) = (null, "", null);
+            _aviso = $"Se canceló {Describir(m)}: ya no cuenta en el corte.";
+            await AlCancelar.InvokeAsync(m);
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "requiere-autorizacion" && autorizacion is null)
+        {
+            _autorizar = m;
+        }
+        catch (ErrorCaja ex)
+        {
+            (_cancelando, _errorCancelacion) = (m, ex.Message);
         }
         finally
         {

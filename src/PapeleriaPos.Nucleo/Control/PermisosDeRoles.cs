@@ -75,6 +75,13 @@ public static class PermisosDeRoles
         Regla(AccionControlada.DevolverSaldoAFavor, Rol.Encargado, NivelPermiso.Permitido),
         // El corte del día (2026-10-14): la propuesta lo deja a la primera cuenta, que hoy es el dueño.
         .. Ambos(AccionControlada.CorteDelDia, NivelPermiso.NoPermitido),
+        // Cancelar una entrada o salida (2026-10-22), como las otras cancelaciones: su permiso propio y con motivo, el
+        // encargado sí. El cajero, «No» en lugar de «Con autorización» (dueño, 2026-10-15: «o puede o no puede»): que entre
+        // quien puede (Ctrl+U), o la compensa con la contraria, como hasta hoy. Con los permisos por usuario que ya hay, la
+        // acción nueva le llega a cada quien como en MigracionPermisos: a quien tiene todo (el dueño), «Puede»; a los demás,
+        // la de defecto, que es la del cajero («No»), hasta que el dueño se la dé en «Usuarios y permisos».
+        Regla(AccionControlada.CancelarMovimiento, Rol.Cajero, NivelPermiso.NoPermitido, motivo: true),
+        Regla(AccionControlada.CancelarMovimiento, Rol.Encargado, NivelPermiso.Permitido, motivo: true),
     ];
 
     /// <summary>Lo que solo podía hacer el dueño, aunque hubiera una regla para otro rol.</summary>

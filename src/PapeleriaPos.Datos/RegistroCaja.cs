@@ -73,6 +73,95 @@ public sealed class RegistroCaja(PosDbContext db)
     }
 
     /// <summary>
+    /// Lo que dice la caja en el piloto con eleventa al cancelar una entrada o salida (2026-10-22): la misma que dice su pantalla
+    /// (PilotoConEleventa, en la interfaz; una prueba lo revisa).
+    /// </summary>
+    public const string NoSeCancelaEnElPiloto =
+        "Mientras dure el piloto con eleventa, las entradas y salidas van a eleventa y aquí no se cancelan: no se sabe cómo anota eleventa "
+        + "una cancelada. Si te equivocaste, haz la contraria (F7 o F8).";
+
+    /// <summary>
+    /// Las entradas y salidas de efectivo de un turno (F7/F8), las más nuevas primero, y si cada una se puede cancelar (2026-10-22):
+    /// la de un turno abierto (antes de su corte) que no se ha cancelado y no va a eleventa. En el piloto, ninguna; fuera de él,
+    /// tampoco la que ya fue a eleventa ni la salida de una devolución hecha en eleventa, que va con ella.
+    /// </summary>
+    public async Task<MovimientosDelTurnoDto> MovimientosDelTurnoAsync(Guid turnoId, bool piloto, CancellationToken ct = default)
+    {
+        var turno = await TurnoPorIdAsync(turnoId, ct);
+        var movimientos = await db.MovimientosCaja.AsNoTracking().Where(m => m.TurnoId == turnoId).OrderByDescending(m => m.FechaUtc).ToListAsync(ct);
+        var deEleventa = await DeEleventaAsync(movimientos.Select(m => m.Id).ToList(), ct);
+        var personas = movimientos.Select(m => m.UsuarioId).Concat(movimientos.Select(m => m.CanceladoPorId).OfType<Guid>()).Distinct().ToList();
+        var nombres = await db.Usuarios.AsNoTracking().Where(u => personas.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Nombre, ct);
+        return new MovimientosDelTurnoDto(movimientos.Select(m => new MovimientoDelTurnoDto(m.Id, FolioDe(m), m.Tipo, m.MontoCentavos, m.Motivo,
+                HoraMexico.ALocal(m.FechaUtc), nombres.GetValueOrDefault(m.UsuarioId, "—"), !m.Cancelado && turno.Abierto && !piloto && !deEleventa.Contains(m.Id),
+                m.CanceladoUtc is { } cancelado ? HoraMexico.ALocal(cancelado) : null, m.CanceladoPorId is { } quien ? nombres.GetValueOrDefault(quien, "—") : null,
+                m.MotivoCancelacion)).ToList(),
+            piloto);
+    }
+
+    /// <summary>El folio de su comprobante: el final de su Id, como lo imprime la salida.</summary>
+    public static string FolioDe(MovimientoCaja m) => m.Id.ToString()[^6..].ToUpperInvariant();
+
+    /// <summary>
+    /// Cancelar una entrada o salida equivocada (F7/F8, como en eleventa; 2026-10-22; antes se compensaba con la contraria): solo
+    /// en su caja y en su mismo turno, antes de su corte, con motivo y con «Cancelar una entrada o salida» (el monto es el del
+    /// movimiento; si pide autorización, se gasta la que se mande). Queda en la bitácora y el corte ya no la cuenta. En el
+    /// piloto con eleventa no (<see cref="NoSeCancelaEnElPiloto"/>), ni la que ya va a eleventa.
+    /// </summary>
+    /// <param name="piloto">El piloto: esta caja manda sus entradas y salidas a eleventa.</param>
+    public async Task<MovimientoCaja> CancelarMovimientoAsync(Guid movimientoId, SolicitudCancelacion s, bool piloto = false, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(s.Motivo))
+            throw new ArgumentException("La cancelación lleva motivo.");
+        // Lo que decide se lee dentro de la transacción: una cancelación y un corte a la vez no pasan los dos.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            var movimiento = await db.MovimientosCaja.FindAsync([movimientoId], ct) ?? throw new InvalidOperationException("Esa entrada o salida no existe.");
+            await db.Entry(movimiento).ReloadAsync(ct);
+            var turno = await TurnoPorIdAsync(movimiento.TurnoId, ct);
+            await db.Entry(turno).ReloadAsync(ct);
+            if (!turno.Abierto || turno.CajaId != s.CajaId)
+                throw new InvalidOperationException("Una entrada o salida se cancela en su caja y en su mismo turno, antes de su corte.");
+            if (piloto || (await DeEleventaAsync([movimiento.Id], ct)).Count > 0)
+                throw new InvalidOperationException(NoSeCancelaEnElPiloto);
+            var entrada = movimiento.Tipo == TipoMovimientoCaja.Entrada;
+            // Antes del permiso: una ya cancelada no pide autorización para luego decir que ya se canceló.
+            if (movimiento.Cancelado)
+                throw new InvalidOperationException($"Esa {(entrada ? "entrada" : "salida")} ya se canceló.");
+            await new ServicioControl(db).RequerirAsync(s.UsuarioId, turno.SucursalId, s.CajaId, AccionControlada.CancelarMovimiento, movimiento.MontoCentavos,
+                $"Canceló la {(entrada ? "entrada" : "salida")} de efectivo {FolioDe(movimiento)} de las {HoraMexico.ALocal(movimiento.FechaUtc):HH:mm} "
+                + $"({movimiento.Motivo})", s.AutorizacionId, s.Motivo.Trim(), ct: ct);
+            var ahora = Ahora;
+            movimiento.Cancelar(s.UsuarioId, s.Motivo, ahora);
+            // El efectivo regresa (o sale otra vez) del cajón.
+            db.AperturasCajon.Add(new AperturaCajon
+            {
+                CajaId = turno.CajaId, TurnoId = turno.Id, UsuarioId = s.UsuarioId, Motivo = MotivoApertura.SinVenta,
+                Nota = $"Cancelación de la {(entrada ? "entrada" : "salida")} {FolioDe(movimiento)}: {movimiento.MotivoCancelacion}", FechaUtc = ahora,
+            });
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return movimiento;
+        }
+        catch
+        {
+            db.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    /// <summary>De esas, las que van (o ya fueron) a eleventa: por su bandeja, o la salida de una devolución hecha en eleventa.</summary>
+    private async Task<HashSet<Guid>> DeEleventaAsync(List<Guid> ids, CancellationToken ct)
+    {
+        var conIds = ids.Select(id => (Guid?)id).ToList();
+        var enLaBandeja = await db.EnviosAEleventa.AsNoTracking().Where(e => conIds.Contains(e.MovimientoId)).Select(e => e.MovimientoId!.Value).ToListAsync(ct);
+        var deDevoluciones = await db.Set<DevolucionDeEleventa>().AsNoTracking().Where(d => conIds.Contains(d.MovimientoId))
+            .Select(d => d.MovimientoId!.Value).ToListAsync(ct);
+        return [.. enLaBandeja, .. deDevoluciones];
+    }
+
+    /// <summary>
     /// El piloto en la caja 2 (docs/migracion-eleventa.md, «Entradas y salidas de dinero»): la entrada o salida también
     /// va a eleventa, en la misma transacción, si esta caja manda a eleventa o si su turno ya mandó algo. También la que
     /// se hace antes de la primera venta: eleventa abre el turno para una entrada, igual que para una venta. Quien llama

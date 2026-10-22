@@ -93,6 +93,23 @@ public static class ApiCaja
         api.MapPost("/turnos/{turnoId:guid}/movimientos", async (Guid turnoId, SolicitudMovimiento s, PosDbContext db, IOptions<OpcionesTicket> ticket, EnvioVentasEleventa eleventa) =>
             await ApiControl.MovimientoAsync(turnoId, s, db, ticket.Value, eleventa));
 
+        // Las entradas y salidas del turno (F7/F8), para cancelar una equivocada (como en eleventa, 2026-10-22). En el piloto se ven,
+        // pero no se cancelan: van a eleventa.
+        api.MapGet("/turnos/{turnoId:guid}/movimientos", async (Guid turnoId, PosDbContext db, OpcionesEleventa opcionesEleventa) =>
+            await new RegistroCaja(db).MovimientosDelTurnoAsync(turnoId, opcionesEleventa.Escribir));
+
+        // Cancelar una entrada o salida equivocada: en su caja y en su mismo turno, antes de su corte, con motivo y su permiso.
+        // Regresa cómo quedaron las del turno.
+        api.MapPost("/turnos/{turnoId:guid}/movimientos/{movimientoId:guid}/cancelacion", async (Guid turnoId, Guid movimientoId, SolicitudCancelacion s,
+            PosDbContext db, OpcionesEleventa opcionesEleventa) =>
+        {
+            if (!await db.MovimientosCaja.AnyAsync(m => m.Id == movimientoId && m.TurnoId == turnoId))
+                return Results.NotFound(new ErrorDto("Esa entrada o salida no es de este turno."));
+            var registro = new RegistroCaja(db);
+            await registro.CancelarMovimientoAsync(movimientoId, s, opcionesEleventa.Escribir);
+            return Results.Ok(await registro.MovimientosDelTurnoAsync(turnoId, opcionesEleventa.Escribir));
+        });
+
         // La cuenta del turno, guardada como corte parcial. La pantalla ya no la enseña antes de cerrar (corte-informativo).
         api.MapPost("/turnos/{turnoId:guid}/corte-x", async (Guid turnoId, Guid usuarioId, PosDbContext db) =>
             await CorteDtoAsync(db, await new RegistroCaja(db).CorteXAsync(turnoId, usuarioId)));
@@ -385,12 +402,15 @@ public static class ApiCaja
     {
         var turno = await db.Turnos.FindAsync(c.TurnoId);
         var nombres = await db.Usuarios.Where(u => u.Id == turno!.CajeroId || u.Id == c.RealizadoPorId).ToDictionaryAsync(u => u.Id, u => u.Nombre);
+        // Las entradas y salidas que se cancelaron (2026-10-22): ya no cuentan, y el corte lo dice.
+        var canceladas = await db.MovimientosCaja.AsNoTracking().Where(m => m.TurnoId == c.TurnoId && m.CanceladoUtc != null).Select(m => m.Tipo).ToListAsync();
         return new CorteDto(c.Tipo, HoraMexico.ALocal(c.FechaUtc), nombres[turno!.CajeroId], nombres.GetValueOrDefault(c.RealizadoPorId, "—"), c.Ventas,
             c.FondoCentavos, c.EfectivoVentasCentavos, c.EntradasCentavos, c.SalidasCentavos, c.TarjetaCentavos, c.TransferenciaCentavos, c.EsperadoCentavos,
             c.ContadoCentavos, c.DiferenciaCentavos, c.DevolucionesCentavos, c.Cancelaciones, c.EnContingencia, c.RedondeoCentavos, c.CreditoCentavos,
             c.Abonos, c.AbonosEfectivoCentavos, c.AbonosTarjetaCentavos, c.AbonosTransferenciaCentavos, c.SaldoDevueltoCentavos,
             // Al cerrar el turno, la caja dice si la diferencia pasó del umbral y se avisa por Telegram.
-            c is { Tipo: TipoCorte.Z, DiferenciaCentavos: { } diferencia } ? AlertasTelegram.UmbralSiAvisa(db, turno.SucursalId, diferencia) : null);
+            c is { Tipo: TipoCorte.Z, DiferenciaCentavos: { } diferencia } ? AlertasTelegram.UmbralSiAvisa(db, turno.SucursalId, diferencia) : null,
+            canceladas.Count(t => t == TipoMovimientoCaja.Entrada), canceladas.Count(t => t == TipoMovimientoCaja.Salida));
     }
 
     internal static async Task<TicketDto> TicketAsync(PosDbContext db, Venta v, OpcionesTicket opciones)

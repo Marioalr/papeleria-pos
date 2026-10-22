@@ -113,6 +113,12 @@ public enum AccionControlada
     /// migrar, solo el dueño.
     /// </summary>
     ConfigurarTienda,
+
+    /// <summary>
+    /// Cancelar una entrada o salida de efectivo equivocada (F7/F8; como en eleventa, 2026-10-22): solo en su caja y en su mismo
+    /// turno, antes de su corte, y con motivo. El monto que se revisa es el del movimiento. Antes se compensaba con la contraria.
+    /// </summary>
+    CancelarMovimiento,
 }
 
 /// <summary>En pantalla: «Puede», «Con autorización» (con candado y quién autoriza) y «No» (no aparece).</summary>
@@ -261,8 +267,8 @@ public static class Permisos
         ]),
         new("Efectivo y corte",
         [
-            AccionControlada.EntradaEfectivo, AccionControlada.SalidaEfectivo, AccionControlada.VerificarTransferencia, AccionControlada.CorteZ,
-            AccionControlada.CorteDelDia,
+            AccionControlada.EntradaEfectivo, AccionControlada.SalidaEfectivo, AccionControlada.CancelarMovimiento, AccionControlada.VerificarTransferencia,
+            AccionControlada.CorteZ, AccionControlada.CorteDelDia,
         ]),
         new("Inventario",
         [
@@ -318,6 +324,7 @@ public static class Permisos
         AccionControlada.AltaRapida => "Dar de alta un código desde la caja",
         AccionControlada.EntradaEfectivo => "Entrada de efectivo",
         AccionControlada.SalidaEfectivo => "Salida de efectivo",
+        AccionControlada.CancelarMovimiento => "Cancelar una entrada o salida",
         AccionControlada.AbrirCajonSinVenta => "Abrir el cajón sin venta",
         AccionControlada.VerificarTransferencia => "Verificar transferencias",
         AccionControlada.CorteZ => "Hacer el corte de un turno",

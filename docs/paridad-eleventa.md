@@ -55,7 +55,7 @@
 | eleventa | Uso | El POS hoy | Falta | Dónde | Tamaño |
 |---|---|---|---|---|---|
 | Abrir el turno con el fondo; un turno por cajero | La usan | Abrir turno con fondo (y el sugerido); un turno por cajero | En el piloto: adoptar el turno que eleventa abre en la caja 2 | Piloto, diseño | Mediano |
-| Entradas y salidas de efectivo, con comentario; se pueden cancelar | La usan (pocas a mano) | F7 y F8 con motivo; comprobante impreso de las salidas. En el piloto van a eleventa | Cancelar una equivocada, si lo usan (hoy se compensa con la contraria) | Sin plan | Chico |
+| Entradas y salidas de efectivo, con comentario; se pueden cancelar | La usan (pocas a mano) | F7 y F8 con motivo; comprobante impreso de las salidas. En el piloto van a eleventa. **Cancelar una equivocada: hecho (2026-10-22).** Debajo de F7 y F8, las del turno, y «Cancelar» en cada una para quien tiene «Cancelar una entrada o salida» (el dueño, y a quien él se lo dé en «Usuarios y permisos»; el cajero, de inicio, «No»), con motivo, en su caja y en su mismo turno, antes del corte. Queda en la bitácora, se abre el cajón y el corte ya no la cuenta y dice cuántas se cancelaron. Antes se compensaba con la contraria. En el piloto se ven, pero no se cancelan: van a eleventa, y no se sabe cómo anota eleventa una cancelada; la pantalla lo dice (si fue un error, la contraria) | En el piloto, cancelarlas cuando se vea cómo lo anota eleventa | Sin plan | Chico |
 | Límite de efectivo en caja | Por confirmar | Límite con aviso de retiro (apagado en el piloto) | — | — | — |
 | Corte del turno, con faltante o sobrante | La usan | Corte del turno a ciegas, solo con el total, impreso; la diferencia a nombre del cajero | En el piloto el corte se hace en eleventa y la caja nueva todavía no lo toma: hoy solo avisa | Piloto, diseño | Mediano |
 | Corte del día y de todas las cajas: ventas, ganancia, formas de pago, ventas y ganancia por departamento, entradas, salidas, devoluciones; se imprime y se ve el de otra fecha | Por confirmar | Como el de eleventa (2026-10-17): de todas las cajas, para quien tiene el permiso, el de hoy o el de otro día (← → o la fecha; el de otro día solo se ve). Lo vendido, el efectivo, las formas de pago, las ventas por departamento, las entradas y salidas, las devoluciones, lo fiado y los abonos; la utilidad (también la de cada departamento), para quien ve la utilidad. «Imprimir» en la de tickets, también el de otro día. A la hora de cierre de la tienda se le recuerda cerrarlo a quien lo cierra | — | — | — |
@@ -247,7 +247,9 @@ cambia lo que falta ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-o
 - **Otros días:** si se abren ventas o cortes de otros días (Ventas del día y devoluciones, Historial de cortes), y
   desde qué caja y quién. Ya están en el POS (2026-10-17): lo que se vea dice a quién darle «Ver reportes de ventas»
   (otros días y otras cajas) y quién necesita el historial de cortes.
-- **El efectivo:** si está puesto el límite de efectivo en caja y si se cancelan entradas o salidas.
+- **El efectivo:** si está puesto el límite de efectivo en caja y si se cancelan entradas o salidas (cancelarlas ya está
+  en el POS, 2026-10-22, salvo en el piloto: si alguien cancela una en eleventa, verla con `observar-eleventa`, sin
+  cancelar una de prueba, para saber cómo la anota y que el puente pueda mandarla).
 - **Los reportes:** qué pantalla da hoy las ventas por día, mes y año (Reportes › Reporte de ventas, o F3 › Ventas por
   período), para que la entrega 9 empiece por esa.
 - **El inventario:** cómo se registra lo que llega (Agregar inventario) y si se usan los productos bajos en inventario

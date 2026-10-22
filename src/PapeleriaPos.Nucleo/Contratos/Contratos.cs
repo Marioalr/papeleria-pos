@@ -257,12 +257,18 @@ public sealed record SolicitudCorteZ(Guid UsuarioId, long ContadoCentavos, Guid?
 /// <param name="UmbralAvisoCentavos">
 /// En el corte Z: el umbral de la sucursal, si la diferencia pasó de él y el aviso sale por Telegram. Vacío si no.
 /// </param>
+/// <param name="EntradasCanceladas">
+/// Las entradas de efectivo del turno que se cancelaron (2026-10-22): ya no cuentan en las entradas ni en lo esperado, y el
+/// corte dice que se cancelaron.
+/// </param>
+/// <param name="SalidasCanceladas">Lo mismo, de las salidas.</param>
 public sealed record CorteDto(
     TipoCorte Tipo, DateTime FechaLocal, string Cajero, string RealizadoPor, int Ventas, long FondoCentavos, long EfectivoVentasCentavos,
     long EntradasCentavos, long SalidasCentavos, long TarjetaCentavos, long TransferenciaCentavos, long EsperadoCentavos,
     long? ContadoCentavos, long? DiferenciaCentavos, long DevolucionesCentavos = 0, int Cancelaciones = 0, bool EnContingencia = false,
     long RedondeoCentavos = 0, long CreditoCentavos = 0, int Abonos = 0, long AbonosEfectivoCentavos = 0, long AbonosTarjetaCentavos = 0,
-    long AbonosTransferenciaCentavos = 0, long SaldoDevueltoCentavos = 0, long? UmbralAvisoCentavos = null);
+    long AbonosTransferenciaCentavos = 0, long SaldoDevueltoCentavos = 0, long? UmbralAvisoCentavos = null, int EntradasCanceladas = 0,
+    int SalidasCanceladas = 0);
 
 /// <summary>
 /// El corte X (entrega 6, 2026-10-14): lo que la pantalla enseña del turno antes de cerrarlo. Es a ciegas: no trae el
@@ -505,6 +511,26 @@ public sealed record ComprobanteMovimientoDto(
     string Folio, TipoMovimientoCaja Tipo, long MontoCentavos, string Motivo, DateTime FechaLocal, string Caja, string Usuario, IReadOnlyList<string> Encabezado);
 
 public sealed record SolicitudReimpresion(Guid UsuarioId, Guid CajaId, string? Motivo);
+
+/// <summary>
+/// Las entradas y salidas de efectivo de un turno (F7/F8), las más nuevas primero: ahí se cancela una equivocada (como en
+/// eleventa, 2026-10-22). Solo con la caja principal.
+/// </summary>
+/// <param name="Piloto">El piloto con eleventa: aquí no se cancelan (van a eleventa, y no se sabe cómo anota allá una cancelada).</param>
+public sealed record MovimientosDelTurnoDto(IReadOnlyList<MovimientoDelTurnoDto> Movimientos, bool Piloto);
+
+/// <summary>Una entrada o salida de efectivo del turno, y si se canceló.</summary>
+/// <param name="Folio">El del comprobante (lo que se imprimió en la salida).</param>
+/// <param name="SeCancela">
+/// Se puede cancelar: no se ha cancelado, su turno sigue abierto (antes de su corte) y no va a eleventa (el piloto, o la salida
+/// de una devolución hecha en eleventa). Que quien entró tenga el permiso, lo dice su sesión.
+/// </param>
+public sealed record MovimientoDelTurnoDto(
+    Guid Id, string Folio, TipoMovimientoCaja Tipo, long MontoCentavos, string Motivo, DateTime FechaLocal, string Usuario, bool SeCancela,
+    DateTime? CanceladoLocal = null, string? CanceladoPor = null, string? MotivoCancelacion = null)
+{
+    public bool Cancelado => CanceladoLocal is not null;
+}
 
 /// <summary>
 /// La primera impresión del ticket de una venta que no salió al cobrar (2026-10-22): no es una reimpresión y no pide motivo.

@@ -417,6 +417,26 @@ public class TicketTests
             r => r.StartsWith("Saldo a favor devuelto") && r.EndsWith("-$123.00"));
     }
 
+    /// <summary>
+    /// Una entrada o salida cancelada (2026-10-22) ya no suma en el corte, y el corte dice cuántas se cancelaron junto a lo que
+    /// sí cuenta, como la pantalla del corte.
+    /// </summary>
+    [Fact]
+    public void El_corte_dice_cuantas_entradas_y_salidas_se_cancelaron()
+    {
+        var corte = new CorteDto(TipoCorte.Z, new DateTime(2026, 10, 22, 18, 0, 0), "Ana", "Luis", 3, 50000, 20000, 10000, 5000, 0, 0, 75000, 75000, 0,
+            EntradasCanceladas: 1, SalidasCanceladas: 2);
+
+        var renglones = TicketTexto.Generar(DisenoComprobante.Corte(corte, "Caja 1")).Split(Environment.NewLine);
+        var sinCanceladas = TicketTexto.Generar(DisenoComprobante.Corte(corte with { EntradasCanceladas = 0, SalidasCanceladas = 0 }, "Caja 1"));
+
+        Assert.Contains(renglones, r => r.StartsWith("Entradas (1 cancelada)") && r.EndsWith("$100.00"));
+        Assert.Contains(renglones, r => r.StartsWith("Salidas (2 canceladas)") && r.EndsWith("-$50.00"));
+        Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
+        Assert.DoesNotContain("cancelada", sinCanceladas);
+        Assert.Equal(("Entradas", "Salidas (1 cancelada)"), (DisenoComprobante.ConCanceladas("Entradas", 0), DisenoComprobante.ConCanceladas("Salidas", 1)));
+    }
+
     [Fact]
     public void Escpos_inicia_corta_y_abre_el_cajon_solo_si_se_pide()
     {
