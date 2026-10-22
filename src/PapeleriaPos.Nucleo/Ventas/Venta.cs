@@ -349,7 +349,7 @@ public class Venta
         return linea;
     }
 
-    /// <summary>INS / CTRL+P: artículo varios o común, con descripción y precio a mano. No descuenta inventario.</summary>
+    /// <summary>Ctrl+P: artículo común, con descripción y precio a mano. No descuenta inventario.</summary>
     public VentaLinea AgregarArticuloComun(string descripcion, long precioCentavos, Cantidad cantidad)
     {
         RequerirEditable();

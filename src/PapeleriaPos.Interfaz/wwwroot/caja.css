@@ -986,6 +986,23 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-acomodar-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .vn-acomodar-barra > span { flex: 1 1 100%; min-width: 0; font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vn-acomodar-barra .vn-boton { min-width: 30px; }
+/* «Varios» (Ins, como en eleventa; 2026-10-22): los dos pasos, la cantidad y el código, con el de ahora en tinta. El cursor
+   se queda en el cuadro de captura, que dice lo que pide el paso y lleva el borde de siempre. */
+.vn-varios { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.vn-varios .vn-alerta { margin: 0; }
+.vn-varios > .nota { margin: 0; font-size: 12.5px; color: var(--vn-suave); }
+.vn-varios-pasos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.vn-varios-pasos li { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: baseline; column-gap: 10px; row-gap: 2px; padding: 10px 12px; border: 1px solid var(--vn-linea); border-radius: 10px; background: var(--vn-hoja); color: var(--vn-tenue); }
+.vn-varios-pasos li.activo { border-color: var(--vn-tinta); box-shadow: 0 0 0 3px var(--vn-tinta-claro); color: var(--vn-texto); }
+.vn-varios-pasos li.listo { background: var(--vn-renglon); color: var(--vn-texto); }
+.vn-varios-num { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--vn-renglon); color: var(--vn-suave); font: 700 12px var(--vn-f-cifras); }
+.vn-varios-pasos li.activo .vn-varios-num { background: var(--vn-tinta); color: #fff; }
+.vn-varios-pasos li.listo .vn-varios-num { background: var(--vn-cobro-claro); color: var(--vn-cobro); }
+.vn-varios-que { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--vn-suave); }
+.vn-varios-pasos strong { font-size: 15px; overflow-wrap: anywhere; }
+.vn-varios-pasos li:not(.listo) strong { font-weight: 400; font-size: 13.5px; color: var(--vn-suave); }
+.vn-varios-pasos code { grid-column: 3; font: 12px var(--vn-f-codigo); color: var(--vn-suave); }
+.vn-varios-ayuda { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--vn-suave); }
 /* El chip de la temporada que corre, arriba de la venta. Si arriba no cabe todo (las pestañas del dueño, los chips del estado),
    es lo que se encoge: el nombre se corta con «…» y completo queda en su título. */
 .vn-chip-temporada { flex: 0 1 auto; min-width: 72px; color: #7a3d00; background: #fff1e0; border-color: #f3c99a; }

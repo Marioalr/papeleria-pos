@@ -14,12 +14,18 @@ public class ModuloCajaTests
     {
         public List<(bool Abierta, bool EnPanel)> Ventana { get; } = [];
 
+        /// <summary>El tercero de cada llamada: si el panel es el de «Varios» (Ins), con su Enter en el cuadro de captura.</summary>
+        public List<bool> Varios { get; } = [];
+
         public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args)
         {
             if (identifier == "import")
                 return ValueTask.FromResult((TValue)(object)this);
             if (identifier == "ventanaAbierta")
+            {
                 Ventana.Add(((bool)args![0]!, (bool)args[1]!));
+                Varios.Add((bool)args[2]!);
+            }
             return ValueTask.FromResult(default(TValue)!);
         }
 
@@ -70,5 +76,24 @@ public class ModuloCajaTests
         await modulo.VentanaDeLaFranjaAsync(false);
 
         Assert.Equal((false, false), js.Ventana[^1]);
+    }
+
+    /// <summary>
+    /// «Varios» (Ins, 2026-10-22) va en la misma llamada que el panel: ningún Enter del lector cae entre una y otra. La guía de
+    /// la prueba encima lo tapa (su nota no le manda Enter a la venta) y al quitarla vuelve.
+    /// </summary>
+    [Fact]
+    public async Task Varios_va_en_la_misma_llamada_que_el_panel_y_la_franja_lo_tapa()
+    {
+        var js = new CajaJsFalso();
+        var modulo = new ModuloCaja(js);
+
+        await modulo.VentanaAbiertaAsync(true, enPanel: true, varios: true);
+        await modulo.VentanaDeLaFranjaAsync(true);
+        await modulo.VentanaDeLaFranjaAsync(false);
+        await modulo.VentanaAbiertaAsync(false);
+
+        Assert.Equal([(true, true), (true, false), (true, true), (false, false)], js.Ventana);
+        Assert.Equal([true, false, true, false], js.Varios);
     }
 }

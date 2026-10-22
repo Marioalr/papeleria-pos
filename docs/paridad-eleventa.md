@@ -32,8 +32,8 @@
 | eleventa | Uso | El POS hoy | Falta | Dónde | Tamaño |
 |---|---|---|---|---|---|
 | Escanear y Enter; `5*código`; + y − | La usan | Igual. Con el PR #100, contra la copia de la caja | — | — | — |
-| Ins, «Varios»: pide el código y la cantidad | Por confirmar | Ins abre el artículo común, igual que Ctrl+P | Que Ins pida el código y la cantidad, si los cajeros lo usan | Sin plan | Chico |
-| Ctrl+P, artículo común | La usan | Ins o Ctrl+P, a la bitácora. En el piloto va a eleventa como su artículo común | — | — | — |
+| Ins, «Varios»: pide el código y la cantidad | Por confirmar | **Hecho (2026-10-22).** Ins abre «Varios: cantidad y código»: cuántos (con las reglas de `5*código`; «5» e Ins también) y luego el código, escaneado o escrito, y Enter lo agrega de la copia de la caja. El cursor se queda en el cuadro de captura: lo que escanea el lector siempre es el código, también si llega mientras se abre el panel (si llega antes que la cantidad, se queda y se pide la cantidad). El artículo común sigue en Ctrl+P | — | — | — |
+| Ctrl+P, artículo común | La usan | Ctrl+P (desde el 2026-10-22, Ins es «Varios», como en eleventa), a la bitácora. En el piloto va a eleventa como su artículo común | — | — | — |
 | F10, buscar: el principio del nombre (con `%`, en cualquier parte) | La usan («el camino de siempre») | Bajo el cuadro: pedazos de palabra, error de dedo, sinónimos, familias y lo elegido antes | El nombre de eleventa como sinónimo, cuando la depuración cambie nombres | Entrega 3, lo que falta | Chico |
 | F9, verificador de precios | La usan | F9, por código: precio y existencia | — | — | — |
 | F6 y F5, tickets pendientes | La usan, poco | F6 y F5 con fichas y «Más»; sobreviven a un apagón | — | — | — |
@@ -147,14 +147,14 @@ caja 2; los reportes y lo demás de la tabla detienen el último paso, apagar el
 | 7 | **Si la impresora rechaza el segundo ticket:** que la caja reintente sola (hoy, «Reintentar» a mano) | Chico |
 | 8 | **Paso 6, lo que falta:** cómo se actualiza la caja 2 con un arreglo, sin perder su base ni la configuración del puente | Chico |
 | 9 | **Paso 5:** semanas de prueba contra una copia servida por un Firebird 2.0.1; después, **la primera escritura en el eleventa real**, con el visto bueno del dueño | Semanas |
-| 10 | **Paso 8:** enseñar a quien atiende la caja 2 (también lo que cambia de eleventa: Ins, F11 y cobrar sin ticket) | Una tarde |
+| 10 | **Paso 8:** enseñar a quien atiende la caja 2 (también lo que cambia de eleventa: F11 y cobrar sin ticket; Ins ya es «Varios», como allá) | Una tarde |
 | 11 | **Tomar el corte de eleventa:** al ver cerrado el turno adoptado, cerrar el de la caja nueva con lo contado allá. Puede entrar con el piloto andando: mientras, la caja avisa que el corte se hace en eleventa | Mediano |
 
 Del 2 al 5 es el [diseño por aprobar](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar):
-es puente y se quita al dejar eleventa. Si en la tienda se ve que los cajeros usan Ins para la cantidad, ese cambio
-chico conviene hacerlo antes del piloto. Cobrar sin imprimir ya está (2026-10-17): si casi no se imprime el ticket, se
-elige en Configuración › Ticket › «Al cobrar». La entrega 5 no detiene el piloto: ahí la caja 2 tiene su propio servicio
-en la misma PC, y la red solo entra al mandar a eleventa, con su bandeja.
+es puente y se quita al dejar eleventa. Ins ya es «Varios», como en eleventa (2026-10-22): la cantidad y el código.
+Cobrar sin imprimir ya está (2026-10-17): si casi no se imprime el ticket, se elige en Configuración › Ticket › «Al
+cobrar». La entrega 5 no detiene el piloto: ahí la caja 2 tiene su propio servicio en la misma PC, y la red solo entra
+al mandar a eleventa, con su bandeja.
 
 **Avance (2026-10-17):** el 2, el 3, el 4, el 5 y el 11 ya están en código en la rama del puente (PR #109, #110 y #111,
 con los arreglos de su revisión): la caja nueva adopta el turno de eleventa y toma su corte, los folios repetidos, las
@@ -236,7 +236,8 @@ Un fin de semana, en las pantallas de eleventa y viendo trabajar a la caja, sin 
 cambia lo que falta ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-octubre)):
 
 - **La versión de eleventa** (Configuración ➜ Mantenimiento ➜ Licencia, ya en la guía).
-- **Al vender:** si los cajeros usan Ins para la cantidad; si al cobrar usan F2 (sin ticket) o el ticket sale siempre
+- **Al vender:** si los cajeros usan Ins («Varios») para la cantidad (ya está como en eleventa, 2026-10-22: anotar si lo
+  usan con la cantidad primero o con el código primero); si al cobrar usan F2 (sin ticket) o el ticket sale siempre
   (para dejar igual «Al cobrar» en Configuración › Ticket, 2026-10-17), y si le ponen notas (F4); si dan descuentos o
   cambian precios, para dejarle los mismos permisos a quien atiende la caja 2.
 - **El corte:** si además del corte de cada cajero se hace el del día o el de todas las cajas; si se imprime y se guarda

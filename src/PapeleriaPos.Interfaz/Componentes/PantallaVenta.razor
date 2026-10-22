@@ -70,7 +70,7 @@
                     <Ico Nombre="escaner" Clase="vn-captura-ico" />
                     @* Sin @bind: caja.js lo lee al Enter y lo vacía al momento (un escaneo nunca se pega al siguiente). *@
                     <input id="codigo" data-captura autocomplete="off" spellcheck="false" aria-label="Código del producto"
-                           placeholder="Escanea o escribe: código, nombre, 3*código o folio de un ticket" />
+                           placeholder="@MarcadorDeLaCaptura" />
                     <span class="vn-captura-modo"><kbd>/</kbd> todas las acciones</span>
                 </div>
                 @if (_accionesVistas is { } acciones)
@@ -117,7 +117,7 @@
                     <div class="vn-resultados" role="listbox" data-familias="@familias.Ejes.Count">
                         @if (resultados.Count == 0)
                         {
-                            <div class="vn-res-vacio">Nada coincide con «@_textoBuscado». Revisa cómo se escribe, o véndelo como artículo común (<kbd>Ins</kbd>).</div>
+                            <div class="vn-res-vacio">Nada coincide con «@_textoBuscado». Revisa cómo se escribe, o véndelo como artículo común (<kbd>Ctrl+P</kbd>).</div>
                         }
                         else
                         {
@@ -666,10 +666,8 @@
         <button @onclick="@(() => ComoSuTecla("F10"))"><kbd>F10</kbd>Buscar</button>
         <button @onclick="@(() => ComoSuTecla("F9"))"><kbd>F9</kbd>Verificar</button>
         <button @onclick="@(() => ComoSuTecla("F2"))"><kbd>F2</kbd>Impresiones</button>
-        @if (Ve(AccionControlada.ArticuloComun))
-        {
-            <button @onclick="@(() => ComoSuTecla("Insert"))"><kbd>Ins</kbd>Art. común</button>
-        }
+        @* Ins es «Varios», como en eleventa (2026-10-22); el artículo común sigue con Ctrl+P, en «/». No caben los dos a 1366. *@
+        <button @onclick="@(() => ComoSuTecla("Insert"))"><kbd>Ins</kbd>Varios</button>
         <button @onclick="@(() => ComoSuTecla("Ctrl+M"))"><kbd>Ctrl+M</kbd>Mostrador</button>
         <button @onclick="@(() => ComoSuTecla("Ctrl+L"))"><kbd>Ctrl+L</kbd>Cliente</button>
         @if (Ve(AccionControlada.EntradaEfectivo))
@@ -773,6 +771,9 @@
 
         /// <summary>Ctrl+M: el mostrador y la temporada (entrega 13).</summary>
         Mostrador,
+
+        /// <summary>Ins: «Varios», la cantidad y el código, como en eleventa (2026-10-22). El artículo común es Ctrl+P.</summary>
+        Varios,
     }
 
     /// <summary>
@@ -784,7 +785,7 @@
         Ventanas.AutorizarCosto, Ventanas.Comun, Ventanas.Entrada, Ventanas.Salida, Ventanas.Mayoreo, Ventanas.Verificador,
         Ventanas.VentasDelDia, Ventanas.Devolucion, Ventanas.CambiarPrecio, Ventanas.Impresiones, Ventanas.AltaRapida, Ventanas.Descuento,
         Ventanas.ElegirCliente, Ventanas.Abono, Ventanas.Cotizar, Ventanas.Motivo, Ventanas.VistaPrevia, Ventanas.Transferencias,
-        Ventanas.AutorizarCredito, Ventanas.Mostrador,
+        Ventanas.AutorizarCredito, Ventanas.Mostrador, Ventanas.Varios,
     ];
 
     private bool VaEnPanel => VentanasEnPanel.Contains(_ventana);
@@ -792,8 +793,9 @@
     /// <summary>
     /// Los paneles que se dejan con la tecla de otra cosa (F12, Ctrl+L, F6…) sin perder nada: solo enseñan algo, o lo que
     /// tienen a medias no va a la venta ni al cajón (el verificador, el mayoreo, las ventas del día, el ticket en pantalla,
-    /// el cliente, cotizar y las transferencias). Los demás tienen campos que van a la venta o al cajón (artículo común, descuento, precio,
-    /// entrada y salida, abono, devolución, alta rápida, impresiones por cobrar, el motivo de la reimpresión): se terminan
+    /// el cliente, cotizar y las transferencias). Los demás tienen campos que van a la venta o al cajón (artículo común, «Varios»
+    /// con la cantidad o el código ya escritos, descuento, precio, entrada y salida, abono, devolución, alta rápida, impresiones
+    /// por cobrar, el motivo de la reimpresión): se terminan
     /// con Enter o se cierran con Esc o con su misma tecla, como dice la propuesta («Cada uno con sus campos y Enter para
     /// terminar»). Con otra tecla lo escrito se perdería sin decirlo y, con F12, se cobraría sin ello: Ins, «Engargolado»
     /// $35 y F12 por costumbre en lugar de Enter dejaría el cursor en «Pagó con» con el total de antes. Un panel nuevo no
@@ -805,7 +807,13 @@
         Ventanas.Transferencias, Ventanas.Mostrador,
     ];
 
-    private bool PanelQueSeDeja => VaEnPanel && PanelesQueSeDejan.Contains(_ventana);
+    private bool PanelQueSeDeja => VaEnPanel && (PanelesQueSeDejan.Contains(_ventana) || VariosSinNada);
+
+    /// <summary>
+    /// «Varios» (Ins) sin nada todavía, ni en el cuadro: se deja como los que solo enseñan (Ins por costumbre y luego Ctrl+P, el
+    /// artículo común, no tiene que pasar por Esc). Con la cantidad, el código o algo escrito, espera su Enter o Esc.
+    /// </summary>
+    private bool VariosSinNada => _ventana == Ventanas.Varios && _varios is { Cantidad: null, Codigo: null } && _captura.Texto.Trim().Length == 0;
 
     /// <summary>Por qué el panel abierto no se deja con otra tecla ni con «/ Más acciones»; null si se deja o no hay panel.</summary>
     private string? PorQueNoSeDeja =>
@@ -818,14 +826,15 @@
 
     /// <summary>
     /// Le dice a caja.js qué hay: una ventana encima (y si es un panel de la venta, con el que Ins y Ctrl+Q también son de la
-    /// venta) o una página. Un panel que se quedó en la venta mientras se ve una página no cuenta: está oculto, y las teclas
-    /// son de la página. Lo que se imprime desde una página sin impresora va encima, como una ventana.
+    /// venta; si es «Varios», su Enter en el cuadro de captura es suyo) o una página. Un panel que se quedó en la venta mientras
+    /// se ve una página no cuenta: está oculto, y las teclas son de la página. Lo que se imprime desde una página sin impresora
+    /// va encima, como una ventana.
     /// </summary>
     private async Task AvisarTeclasAsync()
     {
         var enLaVenta = _pagina == Pagina.Venta;
         var encima = (_ventana != Ventanas.Ninguna && (enLaVenta || !VaEnPanel)) || (!enLaVenta && _vistaPreviaDePagina is not null);
-        await Js.VentanaAbiertaAsync(encima, enLaVenta && VaEnPanel);
+        await Js.VentanaAbiertaAsync(encima, enLaVenta && VaEnPanel, varios: enLaVenta && _ventana == Ventanas.Varios);
         await Js.PaginaAbiertaAsync(!enLaVenta);
         await Js.MostradorAbiertoAsync(enLaVenta && _ventana == Ventanas.Mostrador && !_mostradorAcomoda);
     }
@@ -1091,7 +1100,8 @@
     {
         "F3" => SinTecla(Ve(AccionControlada.EditarCatalogo)),
         "F4" => SinTecla(VeInventario),
-        "Insert" or "Ctrl+P" => SinTecla(Ve(AccionControlada.ArticuloComun)),
+        // Ins («Varios») agrega un producto del catálogo, como escanearlo: es de todos.
+        "Ctrl+P" => SinTecla(Ve(AccionControlada.ArticuloComun)),
         "F7" => SinTecla(Ve(AccionControlada.EntradaEfectivo)),
         "F8" => SinTecla(Ve(AccionControlada.SalidaEfectivo)),
         _ => false,
@@ -1195,7 +1205,8 @@
         });
         yield return new("Verificar precio sin vender", "ojo", "F9", null, () => Abrir(Ventanas.Verificador));
         yield return new("Impresiones por cobrar", "impresora", "F2", null, () => Abrir(Ventanas.Impresiones));
-        yield return new("Artículo común (sin inventario)", "etiqueta", "Ins", AccionControlada.ArticuloComun, () => Abrir(Ventanas.Comun));
+        yield return new("Varios: cantidad y código", "capas", "Ins", null, () => AbrirVariosAsync(null));
+        yield return new("Artículo común (sin inventario)", "etiqueta", "Ctrl+P", AccionControlada.ArticuloComun, () => Abrir(Ventanas.Comun));
         yield return new("Mostrador y temporada", "tienda", "Ctrl+M", null, () => AbrirMostradorAsync());
         yield return new("Elegir cliente del ticket", "clientes", "Ctrl+L", null, () => Abrir(Ventanas.ElegirCliente));
         if (!_pilotoEleventa)
@@ -2062,6 +2073,13 @@
     [JSInvokable]
     public async Task Escaneado(string texto, double? hora = null)
     {
+        // Lo que el lector tecleó mientras se abría «Varios» (Ins), antes de que caja.js supiera del panel: es su código, y no se
+        // pierde (antes, con un panel abierto, este Enter no hacía nada).
+        if (_ventana == Ventanas.Varios && _pagina == Pagina.Venta)
+        {
+            await EnVarios(texto, hora, rafaga: true);
+            return;
+        }
         if (_ventana != Ventanas.Ninguna || _pagina != Pagina.Venta)
             return;
         // «/algo» y Enter: la acción elegida, o la primera que se llama así.
@@ -2477,7 +2495,7 @@
         if (resultados.Count == 0)
         {
             _ = Cliente.RegistrarBusquedaAsync(new SolicitudBusqueda(Caja.Id, texto, 0, null));
-            Avisar($"Nada coincide con «{texto}». Revisa cómo se escribe, o véndelo como artículo común (Ins).");
+            Avisar($"Nada coincide con «{texto}». Revisa cómo se escribe, o véndelo como artículo común (Ctrl+P).");
             return;
         }
         EjeFamilia? preferido = _ejePorTexto.TryGetValue(Texto.Normalizar(texto), out var eje) ? eje : null;
@@ -2641,7 +2659,9 @@
             case "F8": await Abrir(Ventanas.Salida); break;
             case "F9": await Abrir(Ventanas.Verificador); break;
             case "F2": await Abrir(Ventanas.Impresiones); break;
-            case "Insert" or "Ctrl+P": await Abrir(Ventanas.Comun); break;
+            // Lo que había en el cuadro, caja.js ya lo vació: es la cantidad («5» e Ins) o el código.
+            case "Insert": await AbrirVariosAsync(texto); break;
+            case "Ctrl+P": await Abrir(Ventanas.Comun); break;
             case "Ctrl+E": await AbrirCambioPrecio(); break;
             case "Ctrl+D": await AbrirDescuento(); break;
             case "Ctrl+L": await Abrir(Ventanas.ElegirCliente); break;
@@ -2791,7 +2811,8 @@
         "F2" => Ventanas.Impresiones,
         "F7" => Ventanas.Entrada,
         "F8" => Ventanas.Salida,
-        "Insert" or "Ctrl+P" => Ventanas.Comun,
+        "Insert" => Ventanas.Varios,
+        "Ctrl+P" => Ventanas.Comun,
         "Ctrl+E" => Ventanas.CambiarPrecio,
         "Ctrl+D" => Ventanas.Descuento,
         "Ctrl+L" => Ventanas.ElegirCliente,
@@ -4031,7 +4052,7 @@
             </Ventana>
             break;
         case Ventanas.Comun:
-            <Ventana Titulo="Artículo varios / común" AlCerrar="Cerrar">
+            <Ventana Titulo="Artículo común" AlCerrar="Cerrar">
                 <ArticuloComun AlAgregar="AgregarComun" />
             </Ventana>
             break;
@@ -4055,6 +4076,11 @@
             <Ventana Titulo="Verificador de precios" AlCerrar="Cerrar">
                 <Verificador SucursalId="Caja.SucursalId" Producto="_verificado" Codigo="@_verificarCodigo" AlAgregar="AgregarDelVerificadorAsync"
                              AlMostrador="() => AbrirMostradorAsync(verificar: true)" />
+            </Ventana>
+            break;
+        case Ventanas.Varios when _varios is { } varios:
+            <Ventana Titulo="Varios: cantidad y código" AlCerrar="Cerrar">
+                <Varios Cantidad="varios.Cantidad" Codigo="@varios.Codigo" Producto="DelCodigo(varios.Codigo)" Aviso="@varios.Aviso" />
             </Ventana>
             break;
         case Ventanas.Mostrador:
@@ -4357,6 +4383,177 @@
         }
     }
 
+    // ── Ins: «Varios», la cantidad y el código, como en eleventa (2026-10-22) ──
+
+    /// <summary>
+    /// Lo que lleva «Varios» (Ins) mientras su panel está abierto: la cantidad y el código, que se escriben (o se escanean) en el
+    /// cuadro de captura. El cursor se queda ahí, como con el mostrador: un escaneo nunca se parte entre el cuadro y un campo del
+    /// panel, ni se pierde. Vacío con el panel cerrado.
+    /// </summary>
+    private VariosEnCurso? _varios;
+
+    private sealed class VariosEnCurso
+    {
+        /// <summary>Cuántos; vacío mientras no se escribe.</summary>
+        public decimal? Cantidad { get; set; }
+
+        /// <summary>El código, si llegó antes que la cantidad: se escaneó al abrir el panel, o ya estaba escrito al oprimir Ins.</summary>
+        public string? Codigo { get; set; }
+
+        /// <summary>Por qué no se agregó todavía, en el panel.</summary>
+        public string? Aviso { get; set; }
+    }
+
+    /// <summary>Lo que dice el cuadro de captura vacío: con «Varios» abierto, lo que pide su paso.</summary>
+    private string MarcadorDeLaCaptura => _varios switch
+    {
+        null => "Escanea o escribe: código, nombre, 3*código o folio de un ticket",
+        { Cantidad: null } => "Varios: ¿cuántos? Escribe la cantidad y Enter",
+        _ => "Varios: escanea o escribe el código y Enter",
+    };
+
+    /// <summary>El producto de un código, de la copia de esta caja (para enseñarlo en el panel); vacío si no está en ella.</summary>
+    private ProductoVentaDto? DelCodigo(string? codigo) => codigo is null ? null : Cliente.Foto?.PorCodigo(codigo);
+
+    /// <summary>
+    /// Ins (la barra de teclas, «/»): el panel de «Varios». Lo que había en el cuadro, que caja.js ya vació, cuenta: una cantidad
+    /// («5» e Ins, como «20» y Alt+1) pasa directo al código; otra cosa (un código escrito, o un código corto que existe, como en
+    /// el mostrador) es el código, y falta la cantidad. El cursor se queda en el cuadro.
+    /// </summary>
+    private async Task AbrirVariosAsync(string? escrito)
+    {
+        var varios = new VariosEnCurso();
+        var texto = escrito?.Trim() ?? "";
+        if (texto.Length > 0)
+        {
+            if (MostradorEnPantalla.Cantidad(texto) is { } cantidad && !await EsCodigoAsync(texto))
+                varios.Cantidad = cantidad;
+            else
+                varios.Codigo = texto;
+        }
+        _captura.Texto = "";
+        // Antes de esperar a caja.js: un escaneo que llegue mientras tanto ya encuentra el panel (Escaneado).
+        _varios = varios;
+        await Abrir(Ventanas.Varios);
+        _enfocar = "#codigo";
+    }
+
+    /// <summary>
+    /// Enter en el cuadro de captura con «Varios» abierto (caja.js; o el escaneo que llegó mientras se abría, Escaneado). Primero
+    /// la cantidad, con las mismas reglas que «5*código» (con decimales, solo lo que se vende por metro, kilo o litro, o una
+    /// parte de un paquete que dé piezas enteras); Enter sin nada es una. Luego el código, escaneado o escrito (también un
+    /// nombre, como en «5*nombre»), y se agrega. Lo que llega en ráfaga (el lector) siempre es el código, nunca la cantidad, y un
+    /// código corto que existe («45») también, como en el mostrador; «45*» es la cantidad. Si el código llega primero, se queda
+    /// y se pide la cantidad; si llega otro antes de ella, el primero entra con una pieza, como un escaneo, y nada se pierde.
+    /// Lo que se agrega va por la cola de los escaneos, en su orden.
+    /// </summary>
+    /// <param name="hora">La del Enter, con el reloj de la página.</param>
+    /// <param name="rafaga">Lo tecleó el lector: más rápido que una persona.</param>
+    [JSInvokable]
+    public async Task EnVarios(string texto, double? hora = null, bool rafaga = false)
+    {
+        if (_ventana != Ventanas.Varios || _pagina != Pagina.Venta || _varios is not { } varios)
+        {
+            // caja.js no supo a tiempo que el panel ya no está: se le vuelve a decir, y lo escrito va como siempre.
+            await AvisarTeclasAsync();
+            if (texto.Trim().Length > 0)
+                await Escaneado(texto, hora);
+            return;
+        }
+        await PasoDeVariosAsync(varios, texto.Trim(), hora, rafaga);
+        StateHasChanged();
+    }
+
+    private async Task PasoDeVariosAsync(VariosEnCurso varios, string texto, double? hora, bool rafaga)
+    {
+        varios.Aviso = null;
+        if (varios.Cantidad is null)
+        {
+            // «3*código» de una vez, como en el cuadro: la cantidad y el código juntos.
+            if (!rafaga && texto.IndexOf('*') is > 0 and var asterisco && asterisco < texto.Length - 1)
+            {
+                if (MostradorEnPantalla.Cantidad(texto[..asterisco]) is not { } junta)
+                {
+                    varios.Aviso = NoEsCantidad(texto[..asterisco]);
+                    return;
+                }
+                (varios.Cantidad, varios.Codigo) = (junta, texto[(asterisco + 1)..].Trim());
+            }
+            else
+            {
+                var cantidad = MostradorEnPantalla.Cantidad(texto);
+                if (texto.Length > 0 && (rafaga || await EsCodigoAsync(texto) || (cantidad is null && !PareceCantidad(texto))))
+                {
+                    // El código antes que la cantidad. Si ya había otro, ese entra con una pieza, como cualquier escaneo.
+                    if (varios.Codigo is { } anterior)
+                        await AgregarEnSuTurnoAsync(1, anterior, hora);
+                    varios.Codigo = texto;
+                    return;
+                }
+                if (cantidad is null)
+                {
+                    varios.Aviso = NoEsCantidad(texto);
+                    return;
+                }
+                varios.Cantidad = cantidad;
+                if (varios.Codigo is null)
+                    return;
+            }
+        }
+        else if (texto.Length == 0)
+        {
+            varios.Aviso = "Escanea o escribe el código del producto, y Enter.";
+            return;
+        }
+        else if (texto.Contains('*'))
+        {
+            varios.Aviso = $"Aquí va solo el código: la cantidad ya es {Formato.Numero(varios.Cantidad.Value)}.";
+            return;
+        }
+        else
+            varios.Codigo = texto;
+        await AgregarVariosAsync(varios, varios.Cantidad!.Value, varios.Codigo!, hora);
+    }
+
+    /// <summary>Un número corto, como se escribe una cantidad (aunque no sirva: cero, o con más de tres decimales).</summary>
+    private static bool PareceCantidad(string texto) => Regex.IsMatch(texto, @"^[0-9]{1,4}([.,][0-9]*)?\*?$");
+
+    private static string NoEsCantidad(string texto) =>
+        $"«{texto}» no es una cantidad: escribe cuántos, más de cero y hasta {Formato.Numero(MostradorEnPantalla.CantidadMaxima)}, con hasta tres decimales.";
+
+    /// <summary>
+    /// La cantidad y el código ya están: se agregan como «cantidad*código» escrito en el cuadro (las mismas reglas y el mismo
+    /// camino que un escaneo: la copia de la caja, el «buscando…» de lo que no está en ella, un nombre) y el panel se cierra. Si
+    /// el producto está en la copia y la cantidad no le sirve (una fracción de algo que se vende por pieza), el panel se queda
+    /// con el código y pide otra cantidad.
+    /// </summary>
+    private async Task AgregarVariosAsync(VariosEnCurso varios, decimal cantidad, string codigo, double? hora)
+    {
+        if (DelCodigo(codigo) is { } producto && !SeVendeAsi(producto, cantidad))
+        {
+            (varios.Cantidad, varios.Codigo) = (null, codigo);
+            varios.Aviso = $"«{producto.Descripcion}» se vende por pieza: escribe cuántos, sin fracciones.";
+            return;
+        }
+        await QuitarVentanaAsync();
+        _enfocar = "#codigo";
+        await AgregarEnSuTurnoAsync(cantidad, codigo, hora);
+    }
+
+    /// <summary>«cantidad*código» por la cola de los escaneos, como si se hubiera escrito así en el cuadro.</summary>
+    private Task AgregarEnSuTurnoAsync(decimal cantidad, string codigo, double? hora)
+    {
+        var escrito = $"{cantidad.ToString("0.###", CultureInfo.InvariantCulture)}*{codigo}";
+        return _captura.EnTurnoAsync(() => MedidoAsync(() => ProcesarCodigoAsync(escrito), hora));
+    }
+
+    /// <summary>
+    /// Las reglas de «5*código» (<see cref="Venta.CambiarCantidad"/>): lo que se vende por pieza no lleva fracciones de pieza;
+    /// medio paquete de 12 sí, porque da piezas enteras.
+    /// </summary>
+    private static bool SeVendeAsi(ProductoVentaDto producto, decimal cantidad) =>
+        producto.Unidad.AdmiteFracciones() || Cantidad.Unidades(Math.Round(cantidad, 3)).Por(producto.PresentacionModelo().Factor).EsEntera;
+
     // ── Ventanas y avisos ───────────────────────────────────────────────────
 
     /// <param name="linea">
@@ -4420,6 +4617,9 @@
             _mostradorAcomoda = false;
         if (_ventana == Ventanas.Verificador)
             (_verificado, _verificarCodigo) = (null, null);
+        // «Varios» con Esc (o su tecla) se cancela: lo que llevaba no entra.
+        if (_ventana == Ventanas.Varios)
+            _varios = null;
     }
 
     // ── El historial de cortes (paridad con eleventa, 2026-10-17): va en el corte, y «/» lo abre ahí ──
