@@ -227,7 +227,8 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
     /// Lo vendido por departamento (<see cref="VentasPorDepartamentoDto"/>) y, con <paramref name="conUtilidad"/>, su costo y la
     /// utilidad del día (<see cref="UtilidadDelDiaDto"/>): cada renglón vendido ese día suma su importe y su costo (el que
     /// guardó al cobrar), y cada renglón devuelto ese día los resta, en el departamento de su producto. El artículo común y las
-    /// impresiones van aparte. Sin <paramref name="conUtilidad"/>, ningún costo sale de aquí.
+    /// impresiones van aparte. Sin <paramref name="conUtilidad"/>, ningún costo sale de aquí. Se cuenta como en los reportes de
+    /// ventas (<see cref="VendidoPorDepartamento"/>).
     /// </summary>
     /// <param name="devueltas">Las devoluciones del día (sin las cancelaciones: un ticket cancelado ya no está en lo vendido).</param>
     private async Task<(VentasPorDepartamentoDto PorDepartamento, UtilidadDelDiaDto? Utilidad)> PorDepartamentoAsync(
@@ -238,37 +239,18 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
         // Lo devuelto puede ser de un ticket de otro día: sus renglones se leen aparte.
         var idsVendidas = lineasDevueltas.Select(l => l.VentaLineaId).Distinct().ToList();
         var deLoDevuelto = await db.VentasLineas.AsNoTracking().Where(l => idsVendidas.Contains(l.Id)).ToDictionaryAsync(l => l.Id, ct);
-        var renglones = vigentes.SelectMany(v => v.Lineas).Select(l => new RenglonDelDia(l, l.ImporteCentavos, l.CostoCentavos))
+        var renglones = vigentes.SelectMany(v => v.Lineas).Select(l => RenglonVendido.De(l, l.ImporteCentavos, l.CostoCentavos))
             .Concat(lineasDevueltas.Where(d => deLoDevuelto.ContainsKey(d.VentaLineaId))
-                .Select(d => new RenglonDelDia(deLoDevuelto[d.VentaLineaId], -d.ImporteCentavos, -d.CostoCentavos)))
+                .Select(d => RenglonVendido.De(deLoDevuelto[d.VentaLineaId], -d.ImporteCentavos, -d.CostoCentavos)))
             .ToList();
 
-        var variantes = renglones.Select(r => r.Linea.VarianteId).OfType<Guid>().Distinct().ToList();
+        var variantes = renglones.Select(r => r.VarianteId).OfType<Guid>().Distinct().ToList();
         var departamentoDe = await db.Variantes.AsNoTracking().Where(v => variantes.Contains(v.Id))
             .Select(v => new { v.Id, v.Producto!.DepartamentoId }).ToDictionaryAsync(v => v.Id, v => v.DepartamentoId, ct);
         var nombres = await db.Departamentos.AsNoTracking().ToDictionaryAsync(d => d.Id, d => d.Nombre, ct);
-        var departamentos = renglones.Where(r => r.Linea.VarianteId is not null && !r.Linea.EsImpresiones)
-            .GroupBy(r => departamentoDe.TryGetValue(r.Linea.VarianteId!.Value, out var d) ? nombres.GetValueOrDefault(d, "Sin departamento") : "Sin departamento")
-            .Select(g => (Nombre: g.Key, Venta: g.Sum(r => r.ImporteCentavos), Costo: g.Sum(r => r.CostoCentavos)))
-            .Where(d => d.Venta != 0 || d.Costo != 0)
-            .OrderByDescending(d => d.Venta).ThenBy(d => d.Nombre, StringComparer.CurrentCultureIgnoreCase)
-            .ToList();
-        var impresiones = renglones.Where(r => r.Linea.EsImpresiones).ToList();
-        var (ventaImpresiones, costoImpresiones) = (impresiones.Sum(r => r.ImporteCentavos), impresiones.Sum(r => r.CostoCentavos));
-        var porDepartamento = new VentasPorDepartamentoDto(
-            departamentos.Select(d => new DepartamentoDelDiaDto(d.Nombre, d.Venta, conUtilidad ? d.Costo : null)).ToList(),
-            ventaImpresiones, conUtilidad ? costoImpresiones : null,
-            renglones.Where(r => r.Linea.VarianteId is null && !r.Linea.EsImpresiones).Sum(r => r.ImporteCentavos));
-        if (!conUtilidad)
-            return (porDepartamento, null);
-        return (porDepartamento, new UtilidadDelDiaDto(departamentos.Sum(d => d.Venta) + ventaImpresiones, departamentos.Sum(d => d.Costo) + costoImpresiones,
-            // Los servicios (lo del catálogo que no lleva inventario) se cobran con costo 0 hasta que lleguen sus recetas.
-            renglones.Where(r => r.Linea.VarianteId is not null && !r.Linea.EsImpresiones && !r.Linea.LlevaInventario && r.Linea.CostoCentavos == 0)
-                .Sum(r => r.ImporteCentavos)));
+        var (porDepartamento, utilidad) = VendidoPorDepartamento.Armar(renglones, departamentoDe, nombres, conUtilidad);
+        return (porDepartamento, conUtilidad ? utilidad : null);
     }
-
-    /// <summary>Un renglón de lo vendido por departamento: lo vendido (en positivo) o lo devuelto (en negativo), con su costo.</summary>
-    private sealed record RenglonDelDia(VentaLinea Linea, long ImporteCentavos, long CostoCentavos);
 
     /// <summary>
     /// Cierra el día: queda en la bitácora (con la suma de las diferencias de corte) y manda el resumen por Telegram, si no

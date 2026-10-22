@@ -5,6 +5,8 @@ using PapeleriaPos.Herramientas.Eleventa;
 using PapeleriaPos.Herramientas.Importacion;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Historico;
 using PapeleriaPos.Nucleo.Turnos;
 using PapeleriaPos.Nucleo.Usuarios;
@@ -221,6 +223,59 @@ public sealed class ImportacionFinalTests : IAsyncDisposable
         var texto = string.Join('\n', ImportacionFinal.Describir(r));
         Assert.Contains("No se trajeron: son ventas de la caja 2", texto);
         Assert.Contains("En eleventa, en total: $108.00 sin los cancelados = historial $48.00 + caja 2 $60.00", texto);
+    }
+
+    /// <summary>
+    /// Los reportes de ventas (entrega 9) juntan el historial de eleventa con las ventas de este POS. Después de la importación
+    /// final nada cuenta dos veces: la venta neta es la de eleventa sin los cancelados (el historial más lo de la caja 2, con lo
+    /// que se le devolvió en eleventa) y los tickets, los de eleventa sin los cancelados.
+    /// </summary>
+    [Fact]
+    public async Task Los_reportes_juntan_el_historial_y_lo_de_la_caja_2_sin_contar_nada_dos_veces()
+    {
+        var m = await PilotoAsync();
+        // Como en la prueba de arriba: la caja 2 vende tres veces (una se cancela aquí, otra no supo su número) y en eleventa le
+        // devuelven una goma; la principal vende dos (y le devuelven un lápiz).
+        var vendida = await VenderAsync(m, "A1", 2);
+        await EnvioAsync(vendida, EstadoEnvioEleventa.Enviada, 20, 102);
+        var cancelada = await VenderAsync(m, "B2", 1);
+        await EnvioAsync(cancelada, EstadoEnvioEleventa.Enviada, 21, 103);
+        Devolucion cancelacion;
+        await using (var db = _base!.Contexto())
+            cancelacion = await new RegistroDevoluciones(db).CancelarAsync(cancelada.Id, m.Encargado.Id, m.Caja.Id, "Se arrepintió", null);
+        var sinNumero = await VenderAsync(m, "A1", 3);
+        await EnvioAsync(sinNumero, EstadoEnvioEleventa.Pendiente);
+        var vuelta = new DevolucionLeida(902, 20, false, Luego(5), 15, "cajera2", "Caja 2", null, [new ArticuloDevueltoLeido("A1", "Goma", 1, 15, 1)]);
+        await using (var db = _base.Contexto())
+        {
+            await DevolucionesConEleventa.AplicarVueltaAsync(db, [vuelta], _base.Reloj.Ahora.UtcDateTime);
+            await db.SaveChangesAsync();
+        }
+        var e = Eleventa(
+            tickets: [TicketDe(vendida, 20, 102, total: 15), TicketDe(cancelada, 21, 103, cancelado: true), TicketDe(sinNumero, 22, 104),
+                new(23, 102, Luego(1), 15, false, Luego(0)), new(24, 105, Luego(3), 6, false, Luego(2))],
+            lineas: [Linea(20, "A1", 1, 15), Linea(21, "B2", 1, 6), Linea(22, "A1", 3, 15), Linea(23, "A1", 1, 15), Linea(24, "B2", 1, 6)],
+            devoluciones: [new(900, 21, true, RestauracionDeEleventa.Marca(cancelacion.FechaUtc), 6, "cajera2", "Caja 2", null, []), vuelta,
+                new(901, 24, false, Luego(4), 6, "admin", "Principal", null, [])]);
+        await ImportarAsync(e);
+        // Quien ve los reportes: el encargado, con el permiso (al migrar, solo el dueño lo tiene).
+        await using (var db = _base.Contexto())
+        {
+            (await db.PermisosUsuario.SingleAsync(p => p.UsuarioId == m.Encargado.Id && p.Accion == AccionControlada.VerReportes)).Nivel = NivelPermiso.Permitido;
+            await db.SaveChangesAsync();
+        }
+
+        await using var lectura = _base.Contexto();
+        var anio = await new ReportesDeVentas(lectura).ArmarAsync(m.Caja.Id, m.Encargado.Id, PeriodoReporte.Anio);
+
+        // Lo que suma eleventa sin los cancelados ($108): el historial ($48) más lo de la caja 2 ($60: $30 − la goma devuelta + $45).
+        Assert.Equal((10800L, 4800L), (anio.Actual.VentaCentavos, anio.Actual.DelHistorialCentavos));
+        Assert.Equal((10800L - 4800, 1500L), (anio.Actual.VendidoCentavos - anio.Actual.DelHistorialCentavos - anio.Actual.DevueltoCentavos,
+            anio.Actual.DevueltoCentavos));
+        // Los tickets de eleventa sin los cancelados: 10, 11, 20, 22, 23 y 24 (el 20 y el 22, como ventas de la caja 2; el 21 se canceló).
+        Assert.Equal((6, 4, 1), (anio.Actual.Tickets, anio.Actual.DelHistorialTickets, anio.Actual.Cancelados));
+        // Las gomas y los lápices, una sola vez: lo vendido por producto suma lo mismo.
+        Assert.Equal(10800L, anio.MasVendidos.Sum(p => p.VentaCentavos));
     }
 
     [Fact]

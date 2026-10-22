@@ -104,7 +104,10 @@ public enum AccionControlada
     /// </summary>
     VerUtilidad,
 
-    /// <summary>Ver los reportes de ventas (entrega 9: todavía no hay pantalla). Al migrar, solo el dueño.</summary>
+    /// <summary>
+    /// Ver los reportes de ventas (la pestaña Reportes, entrega 9) y las ventas de otro día o de otra caja. Solo en «Puede»:
+    /// consultar no se autoriza. Al migrar, solo el dueño.
+    /// </summary>
     VerReportes,
 
     /// <summary>
