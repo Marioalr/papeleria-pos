@@ -847,8 +847,8 @@ en Inventario (F4). Solo leen, así que también van en el piloto con eleventa, 
   cambio de la ficha. Son del POS: la lectura de eleventa no lee los suyos, así que en el piloto también se ponen aquí.
   Cada cambio queda en la bitácora, y una caja de antes que guarda la ficha no los borra. La venta sigue diciendo
   «Quedan 2» con 3 o menos: la copia de las cajas no lleva el mínimo.
-- **Falta:** exportarlos a Excel, como eleventa (la caja todavía no guarda archivos), y, si la tienda usa los mínimos de
-  eleventa, pasarlos en la importación final (la importación no los lee).
+- **Falta:** si la tienda usa los mínimos de eleventa, pasarlos en la importación final (la importación no los lee).
+  Exportarlos a Excel, como eleventa, ya está (2026-10-22, con la entrega 9, parte 2).
 
 **Avance (2026-10-22), entrega 9, parte 1: los reportes de ventas,** como en la [propuesta](propuesta-interfaz.md#reportes) y
 el [prototipo](propuesta-interfaz/prototipo.html): los que el dueño usa en eleventa, ventas por día, mes y año a la fecha
@@ -893,7 +893,53 @@ eleventa.
   candado de escritura: no detiene ningún cobro, y lo que se cobra mientras tanto no deja cifras que no cuadren.
 - **Lo nuevo del servicio, solo para leer:** `GET api/cajas/{caja}/reportes/ventas` (el periodo y un día), con el usuario
   de la sesión. Sin cambios en la base.
-- **Falta:** exportar a Excel (parte 2) y verlo en Windows.
+- **Falta:** verlo en Windows. Exportar a Excel ya está (la parte 2, abajo).
+
+**Avance (2026-10-22), entrega 9, parte 2: exportar a Excel, guardar archivos desde la caja y «Ventas por período»,** como
+en la [propuesta](propuesta-interfaz.md#reportes) («Exportar a Excel»; en el prototipo, «un Excel con una hoja por tabla») y
+en la [paridad](paridad-eleventa.md#reportes): lo que quedaba de los reportes de eleventa.
+- **Guardar un archivo desde la caja** (hasta hoy no se podía), de una sola forma para toda la caja: en la ventana de
+  Windows, «Guardar como» de Windows, encima de la caja, en Documentos (después, en la carpeta del último que se guardó,
+  mientras la caja siga abierta) con el nombre que propone la caja principal («Ventas 2026-10.xlsx»); si ya existe, Windows
+  pregunta si se reemplaza. Se escribe aparte y se cambia de un jalón: nunca queda un archivo a medias. En la caja del
+  navegador, una descarga. Junto al botón se lee dónde quedó, que se canceló o por qué no se pudo (por ejemplo, abierto en
+  Excel).
+- **El Excel lo arma la caja principal** (con ClosedXML, como el diagnóstico) con los mismos permisos que la pantalla: sin «Ver
+  costos, utilidad y margen» no lleva ni la utilidad ni el costo, ni sus columnas vacías. Cada hoja empieza con la tienda, qué
+  es y de qué días, quién lo exportó y cuándo, y sus notas (los filtros, el piloto, de dónde sale cada cosa); luego una tabla
+  de Excel con filtros, el renglón de los títulos fijo al bajar, el dinero con centavos, las fechas como fechas y un ancho que
+  se lee.
+- **Qué se exporta:** la pestaña Reportes (el resumen contra el año pasado con las notas de la pantalla, la gráfica como tabla,
+  los departamentos, los cajeros, las formas de pago y lo que más se vende, una hoja cada uno); «Ventas por período» (todos
+  los tickets con sus totales, hasta 60,000 por archivo, unos dos años; y cada día con sus formas de pago); y del inventario,
+  lo que se ve con sus filtros y sin las páginas: los movimientos (el costo, con el permiso; hasta 60,000 por archivo), los
+  bajos en inventario y lo que vale el inventario (cada departamento y los productos de la derecha).
+- **«Ventas por período»,** como la de eleventa (F3 › Ventas por período: las fechas y la caja; a Excel o a la impresora de
+  tickets): un botón en Reportes que la abre ahí mismo, con el acomodo de las tareas del inventario («← Reportes» o Esc
+  regresan; F1, a la venta). Hoy, ayer, esta semana, este mes, el mes pasado o de una fecha a otra, y de una caja o de todas;
+  los tickets del primero al último, de 100 en 100 (Re Pág y Av Pág), con su folio (en el piloto, el de eleventa), la fecha y
+  la hora, la caja, quién cobró, cómo se pagó, el total y si se canceló o se devolvió; abajo, siempre a la vista, los totales
+  de todos esos días: los tickets, lo vendido, lo devuelto, la venta neta y los cancelados que no cuentan, y cómo se pagó. ← y
+  → llevan a los días de antes o de después, del mismo largo (un mes, una semana o tantos días). Cuenta como el corte del día
+  y los reportes: una prueba arma tres días con devoluciones, una cancelación, el redondeo, tarjeta y transferencia en dos
+  cajas, y cada día da lo del corte del día (el efectivo, sin el redondeo al peso). Con «Ver reportes de ventas».
+- **«Imprimir el resumen»** manda a la impresora de tickets, por su cola (como el corte del día, con «Reintentar» si no
+  sale), lo de cada día (los tickets y lo vendido; lo devuelto y las formas de pago que no son efectivo, si las hubo), las
+  formas de pago del periodo y los totales; no cada ticket (eleventa advierte que eso gasta mucho papel). Sin impresora, se ve
+  en la pantalla.
+- **El historial de eleventa no se lista** en «Ventas por período»: no trae caja, cajero ni forma de pago. Se dice cuánto hay
+  de él en esos días; cuenta en la pestaña Reportes.
+- **En el piloto con eleventa,** como en la parte 1: solo lo de la caja 2, sin el historial (es de toda la tienda), y lo dice.
+- **Rápido:** con dos años de la papelería ficticia (el último, 20,607 tickets de este POS; septiembre, 1,760), en la PC de
+  desarrollo y por la API (la mediana de cinco): «Ventas por período» de un mes da una página con sus totales en 12 ms y su
+  Excel completo en 51 ms; el año entero, una página en 36 ms y su Excel en 0.6 s (807 KB). El Excel del reporte del año,
+  97 ms; el de los 3,218 movimientos de septiembre (con lo que quedó de cada uno), 125 ms; lo que vale el inventario, 43 ms;
+  los bajos, 60 ms. Los totales se suman en la base, por hora y con el índice de la fecha de cobro, y los tickets se leen sin
+  traer cada renglón (así, un año tardaba 3.5 s solo en leerse).
+- **Lo nuevo del servicio, solo para leer:** `GET api/cajas/{caja}/reportes/ventas/excel`, `.../reportes/ventas-por-periodo`
+  (y su `/excel`) y `GET api/sucursales/{sucursal}/inventario/movimientos/excel`, `.../bajos/excel` y `.../valor/excel`, con
+  el usuario de la sesión. Sin cambios en la base.
+- **Falta:** verlo en Windows: «Guardar como» encima de la ventana de la caja y abrir cada Excel en Excel.
 
 **Avance (2026-10-17): la red de la tienda en el POS,** como lo pide la [red de la
 matriz](arquitectura.md#la-red-de-la-matriz) («En el POS»). Casi siempre que se va el internet de Megacable se cae
@@ -1320,7 +1366,7 @@ para esos días ([forma de trabajar](notas.md#forma-de-trabajar), [guía de los 
 | En el POS, por la red: que la caja 2 vuelva a buscar sola a la principal, avisos de lo configurado por nombre o con WSD, la franja «sin internet» o «sin red local» y la bitácora de red | [Red de la matriz](arquitectura.md#la-red-de-la-matriz) | En código (2026-10-17, [avance](#la-versión-unicaja-y-el-piloto-en-la-caja-2)): falta verlo en Windows y en la tienda |
 | **Las tres impresoras de inyección** (dos WF-6590 y una L5590): cada una con sus costos, su cola en cada PC, su contador, su calibración y sus hojas por cobrar | [Impresión](impresion.md), [notas](notas.md#impresoras) | Falta (mediano); antes, leer la L5590 por SNMP |
 | **La impresora de tickets compartida:** reintento si las dos cajas imprimen a la vez y botón «Reintentar». No hay cajón | [Notas](notas.md#impresoras) | En código (entrega 5, parte 3, 2026-10-16): la cola de cada caja; falta probarla en la tienda con las dos cajas |
-| **Reportes de ventas:** día contra hace un año (el mismo día de la semana; decidido el 2026-10-22, por revisar), mes y año a la fecha contra el año anterior, meses cerrados; venta neta, tickets, ticket promedio, costo, utilidad y margen; por departamento, caja, cajero y forma de pago; exportar a Excel y líneas en el resumen de Telegram; la utilidad solo la ve el dueño. El año anterior sale del historial de eleventa (su utilidad, con el costo capturado en eleventa) | [Notas](notas.md#reportes) | Se adelantaron (2026-10-22). La parte 1 de la entrega 9 ya está en código ([avance](#primero-la-versión-unicaja-entrega-0)): falta exportar a Excel (parte 2) y verlo en Windows. Las líneas en el resumen de Telegram esperan a que se retome Telegram |
+| **Reportes de ventas:** día contra hace un año (el mismo día de la semana; decidido el 2026-10-22, por revisar), mes y año a la fecha contra el año anterior, meses cerrados; venta neta, tickets, ticket promedio, costo, utilidad y margen; por departamento, caja, cajero y forma de pago; exportar a Excel y líneas en el resumen de Telegram; la utilidad solo la ve el dueño. El año anterior sale del historial de eleventa (su utilidad, con el costo capturado en eleventa) | [Notas](notas.md#reportes) | Se adelantaron (2026-10-22). La entrega 9 ya está en código, sus dos partes ([avance](#primero-la-versión-unicaja-entrega-0)), con Excel y «Ventas por período»: falta verla en Windows. Las líneas en el resumen de Telegram esperan a que se retome Telegram |
 | **Ganancia real del mes:** el reporte (gastos fijos, consumibles del mes, recibo de luz, equipo con su depreciación y comisión de la tarjeta; utilidad bruta − mermas y faltantes − gastos = ganancia; punto de equilibrio y cierre del mes por Telegram). La captura de cada gasto cuando se paga no se pospone: propuesta, por aprobar, hacerla con la entrega 3 de la fase 3 (consumibles del mes), para todos los gastos | [Administración](#administración-y-punto-de-equilibrio), [servicios](servicios.md#tres-niveles-de-costo) | El reporte, pospuesto: después de la prueba con una persona real y su aprobación (2026-10-09) |
 | Fusionar a `main`, en orden, los PR abiertos (#27 en adelante) | `main` llega hasta la entrega 2 de la fase 3 | Hecho el 2026-10-10: del #27 al #52, con el #45. En Windows pasan todas las pruebas |
 | Probar en Windows con las dos cajas reales: servicio, alta de la caja 2, contingencia, respaldos, ventana de la caja y ticket desde las dos (el cajón, cuando lo haya) | Fase 1, entregas 1 y 3 | Falta: un sábado o domingo, sin tocar los datos de eleventa ([guía](pruebas-en-tienda.md#después-al-dejar-eleventa-las-dos-cajas-con-el-pos)) |
@@ -1474,6 +1520,10 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Con qué se comparan los reportes («¿contra el mismo día de la semana del año pasado o contra la misma fecha?») | Hoy y la semana, con 52 semanas antes (el mismo día de la semana); el mes y el año, con las mismas fechas. La semana va de lunes a domingo. Lo que incluye hoy, hasta el mismo momento del día que le toca (un 29 de febrero, hasta el final del 28); un periodo que ya pasó, completo | Entrega 9, parte 1 |
 | Los reportes en el piloto con eleventa | Solo lo que vendió la caja 2, sin el historial de eleventa (es de toda la tienda) y sin comparar contra el año pasado; la pantalla lo dice | Entrega 9, parte 1 |
 | Los detalles de los reportes | La venta neta y la utilidad, como el corte del día; el ticket promedio, la venta neta entre los tickets; un ticket cancelado no cuenta en el periodo en que se cobró; lo devuelto se resta del cajero del ticket y de la forma en que se regresó (el efectivo, sin el redondeo al peso); las diferencias de corte, las de los cortes hechos en el periodo; lo que más se vende, por lo vendido, sin las impresiones ni el artículo común, y lo juntado en el producto en que quedó; los botones de arriba llevan al periodo de hoy y ← → a los anteriores, completos; sin índices nuevos | Entrega 9, parte 1 |
+| ¿Cómo se guarda un archivo desde la caja (el Excel)? | Con «Guardar como» de Windows en la ventana de la caja: empieza en Documentos y después en la carpeta del último que se guardó (mientras la caja siga abierta), con el nombre que propone la caja principal («Ventas 2026-10.xlsx»); si ya existe, Windows pregunta si se reemplaza. En la caja del navegador, una descarga. Al lado del botón se lee dónde quedó o que se canceló | Entrega 9, parte 2 |
+| ¿Qué lleva cada Excel? | Lo que se ve, con sus filtros y sin las páginas, una hoja por tabla; sin «Ver costos, utilidad y margen», sin la utilidad ni el costo (ni sus columnas vacías); los movimientos y los tickets de «Ventas por período», hasta 60,000 por archivo (con más, se pide elegir menos días o un filtro: mientras se arma, cada celda ocupa memoria del servicio de la caja principal); de lo que vale el inventario, cada departamento y los productos de la derecha con su filtro | Entrega 9, parte 2 |
+| ¿Dónde va «Ventas por período» y qué cuenta? | En Reportes, con «Ver reportes de ventas» (en eleventa está en F3): un botón que la abre ahí mismo, con el acomodo de las tareas del inventario. Abre en hoy; los tickets del primero al último, de 100 en 100. Cuenta como el corte del día: un ticket cancelado se lista, pero no cuenta en el día en que se cobró; lo devuelto en esos días se resta, también de tickets de antes (de una caja, lo devuelto de sus tickets); las formas de pago, sin el redondeo al peso. El historial de eleventa no se lista (no trae caja, cajero ni forma de pago): se dice cuánto hay. ← → llevan al mismo largo antes o después. En el piloto, sin el historial | Entrega 9, parte 2 |
+| ¿Qué lleva el resumen impreso de «Ventas por período»? | Lo de cada día (los tickets y lo vendido; lo devuelto y las formas de pago que no son efectivo, si las hubo), las formas de pago del periodo y los totales; no cada ticket | Entrega 9, parte 2 |
 | Dejar eleventa | En dos pasos: primero el modo multicaja con el puente escribiendo; al final, apagar el puente cuando el POS tenga la entrega 9 y un mes que cuadre con eleventa | Piloto |
 | La ganancia del día, con Telegram en pausa | En el corte del día, para quien tiene «Ver costos, utilidad y margen», como el de eleventa | El corte del día como el de eleventa |
 | Las tres impresoras de inyección | Van con la entrega 4, después de alcanzar a eleventa (meta del 2026-10-15); mientras, Control Print sigue cobrando aparte. Se alinearon la fase 5 y [impresión](impresion.md) | Plan |
@@ -1492,7 +1542,7 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | La red de la tienda en el POS | La caja se cambia a la IP comprobada de la principal si la guardada (también por nombre) deja de contestar; en la principal sin internet ni router, la franja no dice «no desconectes nada»; en el piloto, ping a la PC de eleventa; «Volver a buscarla» solo con el ratón; el detalle del Wi-Fi apagado por omisión | #116 |
 | La llave propia de la caja principal | Para que una copia de la base en otra PC no se haga pasar por ella. **Consecuencia:** si se reinstala o se cambia la PC principal (o se restaura en la de repuesto), hay que dar de alta otra vez cada caja con el PIN del dueño | #116 |
 | El corte del día como el de eleventa | Las devoluciones del día se restan de la utilidad y de su departamento; recordatorio a la hora de cierre (21:00 si no se configura), sin recordatorio en el piloto; las ventas por departamento las ve quien ve el corte, la utilidad solo con «Ver costos»; un día que no se cerró antes de medianoche se queda «sin cerrar» (solo se cierra el de hoy) | #115 |
-| Inventario como eleventa: lo que vale, movimientos y bajos | Sin exportar a Excel por ahora; mínimo y máximo por variante para todas las sucursales; costos solo con «Ver costos»; «Pedir» en piezas; cinco detalles más en el PR | #114 |
+| Inventario como eleventa: lo que vale, movimientos y bajos | Sin exportar a Excel por ahora (ya se exportan desde el 2026-10-22, entrega 9, parte 2); mínimo y máximo por variante para todas las sucursales; costos solo con «Ver costos»; «Pedir» en piezas; cinco detalles más en el PR | #114 |
 | Ventas de otros días e historial de cortes: quién ve qué, topes y detalles | Otro día u otra caja con «Ver reportes de ventas»; buscar un folio con su serie, cualquiera (solo el número, sin el permiso, busca en esta caja); el historial, quien hace cortes; ocho detalles más en el PR | #113 |
 | En el piloto, ¿qué devoluciones hace la caja 2? | Solo las de tickets del turno de eleventa en curso de la caja 2, que el puente sabe escribir. Los de otro turno, otra caja o la principal se devuelven en el eleventa que está abierto en esa misma caja, y la devolución llega sola con la lectura. Así no hay que adivinar qué devolución anotada a mano en eleventa corresponde a cuál (tres revisiones encontraron casos que se perdían o se duplicaban). Cuando se vea en la tienda cómo anota eleventa una devolución de otro turno, el puente puede aprender a escribirla y la caja 2 tomarlas también | Puente (#109) |
 | Una anotación a mano en eleventa que no cuadra exacto | «Resolverlo a mano» con «Configuración de la tienda» y nota en la bitácora; mientras se decide, la existencia sigue a eleventa (sin congelarla) | Puente (#109) |
@@ -1613,7 +1663,8 @@ Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
   botón (hoy se autoriza por chat; [notas](notas.md#reportes))
 - [x] Reportes de ventas por periodo contra el año anterior: se adelantaron (2026-10-22, por revisar) y la parte 1 de la
   entrega 9 ya está ([avance](#primero-la-versión-unicaja-entrega-0))
-- [ ] Exportar los reportes de ventas a Excel (entrega 9, parte 2)
+- [x] Exportar los reportes de ventas y del inventario a Excel, guardar archivos desde la caja y «Ventas por período»
+  (entrega 9, parte 2, 2026-10-22; falta verlo en Windows)
 - [ ] Después de la prueba con una persona real y su aprobación: el reporte de la ganancia real del mes y el punto de
   equilibrio
 - [ ] Capturar cada gasto cuando se paga (propuesta, por aprobar: con la entrega 3 de la fase 3)
