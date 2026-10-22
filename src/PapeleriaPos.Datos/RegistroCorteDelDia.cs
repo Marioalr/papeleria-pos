@@ -19,9 +19,12 @@ public sealed record PresenciaDeCaja(DateTime? VistoUtc, int? PorSubir, int? Con
 /// El corte del día (entrega 6, docs/propuesta-interfaz.md «Corte», 2026-10-14): todas las cajas y turnos de la
 /// sucursal en un día, para quien tiene «ver y cerrar el corte del día». Los turnos del día son los que tocan ese día:
 /// los que se abrieron, los que se cerraron (uno olvidado de ayer que se corta hoy entra hoy, con su diferencia) y los que
-/// siguen abiertos. Lo vendido, las formas de pago, las salidas, lo fiado, los abonos y las impresiones son lo de esos
-/// turnos que pasó ese día, como en el resumen de Telegram: un turno que viene de otro día cuenta aquí solo lo de hoy (el de
-/// la caja 2 en el piloto suma días: si no, «Vendido hoy» diría lo de todo el piloto). Las devoluciones son todas las de la
+/// siguen abiertos; y el de una venta cobrada ese día que subió tarde (sin conexión, con la hora en que se cobró) después de
+/// que su turno se cerró, en otro día: cuenta lo que vendió este día, sin su corte (revisión del PR #131, 2026-10-22). Lo
+/// vendido, las formas de pago, las salidas, lo fiado, los abonos y las impresiones son lo de esos turnos que pasó ese día,
+/// como en el resumen de Telegram y en los reportes de ventas (lo vendido, por la hora en que se cobró): un turno que viene
+/// de otro día cuenta aquí solo lo de hoy (el de la caja 2 en el piloto suma días: si no, «Vendido hoy» diría lo de todo el
+/// piloto). Las devoluciones son todas las de la
 /// sucursal ese día, como en el resumen: una hecha en eleventa de un ticket de la caja 2 va en el turno de esa venta, que
 /// pudo cerrarse antes (2026-10-17). Lo esperado, lo contado y la diferencia de un turno son los de todo el turno, como en
 /// su corte, y van en el día en que se cortó: el día en que se abrió no los repite (2026-10-17).
@@ -73,9 +76,14 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
         var (desde, hasta) = Rango(fecha);
         var ahora = Ahora;
         var deOtroDia = fecha < Hoy;
-        // Los que tocan el día: se abrieron, se cerraron o siguen abiertos en él.
+        // Los que tocan el día (se abrieron, se cerraron o siguen abiertos en él) y los de lo que se cobró ese día: una venta
+        // sin conexión sube con la hora en que se cobró, aunque su turno se haya cerrado antes, en otro día. Así lo vendido del
+        // día es lo cobrado ese día en la sucursal, como en los reportes de ventas y en el resumen del día.
+        var cobradasEseDia = db.Ventas.Where(v => v.SucursalId == sucursalId && v.Estado == EstadoVenta.Pagada && v.PagadaUtc >= desde && v.PagadaUtc < hasta)
+            .Select(v => v.TurnoId);
         var turnos = await db.Turnos.AsNoTracking()
-            .Where(t => t.SucursalId == sucursalId && t.AbiertoUtc < hasta && (t.CerradoUtc == null || t.CerradoUtc >= desde))
+            .Where(t => t.SucursalId == sucursalId
+                && ((t.AbiertoUtc < hasta && (t.CerradoUtc == null || t.CerradoUtc >= desde)) || cobradasEseDia.Contains(t.Id)))
             .OrderBy(t => t.AbiertoUtc).ToListAsync(ct);
         var ids = turnos.Select(t => t.Id).ToList();
         var ventas = await db.Ventas.AsNoTracking().Include(v => v.Lineas).Include(v => v.Cobros).Where(v => ids.Contains(v.TurnoId)).AsSplitQuery().ToListAsync(ct);
@@ -106,9 +114,9 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
             var cobros = vigentes.SelectMany(v => v.Cobros).ToList();
             long? esperado = null, contado = null, diferencia = null;
             var enContingencia = t.AbiertoEnContingencia;
-            // Su corte va en el día en que se hizo: el de un turno que se cortó otro día no entra en este (su diferencia se
-            // contaría dos veces), y aquí se ve como cerrado ese otro día.
-            if (cortes.TryGetValue(t.Id, out var z) && z.FechaUtc < hasta)
+            // Su corte va en el día en que se hizo: el de un turno que se cortó otro día (después, o antes y aquí está por una
+            // venta que subió tarde) no entra en este (su diferencia se contaría dos veces), y aquí se ve como cerrado ese otro día.
+            if (cortes.TryGetValue(t.Id, out var z) && z.FechaUtc >= desde && z.FechaUtc < hasta)
             {
                 // Lo que dijo su corte: lo que llegó después de él (sin conexión) no lo cambia.
                 (esperado, contado, diferencia) = (z.EsperadoCentavos, z.ContadoCentavos, z.DiferenciaCentavos);
@@ -277,8 +285,10 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
             $"Cerró el día {fecha:dd/MM/yyyy}: {dia.Turnos.Count} {(dia.Turnos.Count == 1 ? "turno" : "turnos")}, vendido {dia.VendidoCentavos / 100m:N2}, "
             + $"diferencias de corte {diferencias / 100m:N2}",
             diferencias);
+        // Los cortes Z del día: el de un turno que está aquí por una venta que subió tarde se hizo otro día.
         var ids = dia.Turnos.Select(t => t.Id).ToList();
-        var cortesZ = await db.Cortes.AsNoTracking().Where(c => c.Tipo == TipoCorte.Z && ids.Contains(c.TurnoId))
+        var (desde, hasta) = Rango(fecha);
+        var cortesZ = await db.Cortes.AsNoTracking().Where(c => c.Tipo == TipoCorte.Z && ids.Contains(c.TurnoId) && c.FechaUtc >= desde && c.FechaUtc < hasta)
             .OrderBy(c => c.FechaUtc).Select(c => c.Id).ToListAsync(ct);
         var resumen = await AlertasTelegram.ResumenAlCerrarElDiaAsync(db, sucursalId, fecha, cortesZ, ct);
         await db.SaveChangesAsync(ct);

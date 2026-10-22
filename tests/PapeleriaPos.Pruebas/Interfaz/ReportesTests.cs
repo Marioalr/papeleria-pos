@@ -25,10 +25,11 @@ public sealed class ReportesTests(ServicioDePrueba servicio) : IClassFixture<Ser
 {
     private sealed record Caja(ClienteCaja Cliente, CajaDto Datos, ServiceProvider Servicios, SesionDto Cajero, SesionDto Encargado, SesionDto Dueno);
 
-    private static async Task<Caja> PrepararAsync(ServicioDePrueba servicio)
+    /// <param name="reportes">Entre la caja y el servicio, si la prueba contesta el reporte (<see cref="ReporteDePrueba"/>).</param>
+    private static async Task<Caja> PrepararAsync(ServicioDePrueba servicio, ReporteDePrueba? reportes = null)
     {
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost:5080/") };
-        var cliente = new ClienteCaja(new HttpClient(servicio.Fabrica.Server.CreateHandler()), conexion);
+        var cliente = new ClienteCaja(new HttpClient(reportes ?? servicio.Fabrica.Server.CreateHandler()), conexion);
         var caja = (await cliente.CajasAsync()).Single();
         conexion.CajaId = caja.Id;
         var servicios = new ServiceCollection()
@@ -40,6 +41,34 @@ public sealed class ReportesTests(ServicioDePrueba servicio) : IClassFixture<Ser
             .BuildServiceProvider();
         return new Caja(cliente, caja, servicios, await cliente.EntrarAsync("cajero", "1111"), await cliente.EntrarAsync("encargado", "2222"),
             await cliente.EntrarAsync("dueno", "3333"));
+    }
+
+    /// <summary>Entre la caja y el servicio de la prueba: el reporte de ventas lo contesta la prueba, si quiere; lo demás pasa.</summary>
+    private sealed class ReporteDePrueba(HttpMessageHandler interno) : DelegatingHandler(interno)
+    {
+        /// <summary>La respuesta al reporte que se pide; vacía, la del servicio.</summary>
+        public Func<HttpRequestMessage, HttpResponseMessage?>? Contestar { get; set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            request.RequestUri!.AbsolutePath.EndsWith("/reportes/ventas", StringComparison.Ordinal) && Contestar?.Invoke(request) is { } respuesta
+                ? respuesta
+                : await base.SendAsync(request, cancellationToken);
+    }
+
+    private static HttpResponseMessage Json(object valor, System.Net.HttpStatusCode estado = System.Net.HttpStatusCode.OK) =>
+        new(estado) { Content = JsonContent.Create(valor, valor.GetType(), options: System.Text.Json.JsonSerializerOptions.Web) };
+
+    /// <summary>La pestaña Reportes sola, como la abre la venta.</summary>
+    private static async Task<PantallaSinNavegador> ReportesAsync(Caja c, SesionDto quien)
+    {
+        var p = new PantallaSinNavegador(c.Servicios);
+        await p.AbrirAsync<Reportes>(new()
+        {
+            [nameof(Reportes.Caja)] = c.Datos,
+            [nameof(Reportes.Sesion)] = quien,
+            [nameof(Reportes.Estado)] = new ReportesVistos(),
+        });
+        return p;
     }
 
     /// <summary>Deja abierto el turno de quien vende (las pruebas de esta clase comparten la base y no corren en orden fijo).</summary>
@@ -303,6 +332,73 @@ public sealed class ReportesTests(ServicioDePrueba servicio) : IClassFixture<Ser
         Assert.DoesNotContain("Año pasado", await TextoDeAsync(p, "grafica"));
         Assert.DoesNotContain("vs. año pasado", await TextoDeAsync(p, "rep-departamentos"));
         Assert.Contains("En el piloto el corte se hace en eleventa", await p.TextoAsync());
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// Hoy todavía sin tickets y el año pasado a estas alturas uno (revisión del PR #131): el ticket promedio dice que hoy no
+    /// hay tickets, no que el año pasado no hubo ventas; la utilidad del año pasado, negativa, se dice con su cifra. La prueba
+    /// contesta el reporte: así no depende de la hora a la que corre.
+    /// </summary>
+    [Fact]
+    public async Task Sin_tickets_hoy_no_dice_que_el_anio_pasado_no_hubo_ventas()
+    {
+        var reportes = new ReporteDePrueba(servicio.Fabrica.Server.CreateHandler());
+        var c = await PrepararAsync(servicio, reportes);
+        var (hoy, antes) = (new DateOnly(2026, 10, 21), new DateOnly(2025, 10, 22));
+        reportes.Contestar = _ => Json(new ReporteVentasDto(PeriodoReporte.Hoy, hoy, hoy, hoy, new DateTime(2026, 10, 21, 13, 30, 0), antes, antes,
+            new DateTime(2025, 10, 22, 13, 30, 0), new CifrasReporteDto(0, 0, 0, 0, 0, 0, 0, 0, 0, new UtilidadDelDiaDto(0, 0, 0)),
+            new CifrasReporteDto(12345, 1, 12345, 0, 0, 0, 0, 12345, 1, new UtilidadDelDiaDto(12345, 13000, 0)),
+            [new PuntoReporteDto(new DateTime(2026, 10, 21, 9, 0, 0), new DateTime(2025, 10, 22, 9, 0, 0), 0, 12345)],
+            [new DepartamentoReporteDto("Escritura", ClaseVenta.Departamento, 0, 12345, 0)], [], [], [], ConUtilidad: true, Piloto: false));
+        var p = await ReportesAsync(c, c.Dueno);
+        await using var _ = p;
+        await p.EsperarElementoAsync("rep-kpi-venta");
+
+        var promedio = await TextoDeAsync(p, "rep-kpi-promedio");
+        Assert.Contains("sin tickets todavía", promedio);
+        Assert.DoesNotContain("año pasado", promedio);
+        Assert.Contains("▼ 100 % contra el año pasado", await TextoDeAsync(p, "rep-kpi-venta"));
+        Assert.Contains("▼ 100 % contra el año pasado", await TextoDeAsync(p, "rep-kpi-tickets"));
+        var utilidad = await TextoDeAsync(p, "rep-kpi-utilidad");
+        Assert.Contains("el año pasado a estas alturas: −$6.55", utilidad);
+        Assert.DoesNotContain("sin ventas el año pasado", utilidad);
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// Si el periodo que se pidió no llega (aquí, la caja principal dice que no), las cifras de antes no se quedan bajo ese periodo
+    /// (revisión del PR #131): se ve el error, y «Volver a intentar» pide ese periodo otra vez.
+    /// </summary>
+    [Fact]
+    public async Task Si_un_periodo_no_llega_no_se_quedan_las_cifras_de_antes()
+    {
+        var reportes = new ReporteDePrueba(servicio.Fabrica.Server.CreateHandler());
+        var c = await PrepararAsync(servicio, reportes);
+        var p = await ReportesAsync(c, c.Dueno);
+        await using var _ = p;
+        await p.EsperarElementoAsync("rep-kpi-venta");
+        Assert.StartsWith("Hoy, ", await TextoDeAsync(p, "rep-titulo"));
+
+        const string NoContesta = "La caja principal no deja verlo ahora.";
+        reportes.Contestar = r => r.RequestUri!.Query.Contains("periodo=Mes", StringComparison.Ordinal)
+            ? Json(new ErrorDto(NoContesta, "no-permitido"), System.Net.HttpStatusCode.Forbidden)
+            : null;
+        await p.OprimirAsync(await p.PorIdAsync("rep-Mes"));
+        await p.EsperarAsync(t => t.Contains(NoContesta), "el error");
+
+        // Ni las cifras ni el título de hoy bajo «Mes»: sin reporte, las flechas no mueven nada.
+        Assert.DoesNotContain((await p.LeerAsync()).Elementos, e => e.Id is "rep-kpi-venta" or "grafica" or "rep-departamentos");
+        Assert.Equal("", await TextoDeAsync(p, "rep-titulo"));
+        Assert.Contains("on", (await p.PorIdAsync("rep-Mes")).Clase);
+        Assert.True((await p.PorIdAsync("rep-anterior")).Desactivado);
+
+        // Ya contesta: «Volver a intentar» trae el mes.
+        reportes.Contestar = null;
+        await p.OprimirAsync(await p.BotonAsync("Volver a intentar"));
+        await EsperarTituloAsync(p, t => t.EndsWith(" a la fecha", StringComparison.Ordinal) && !char.IsDigit(t[0]), "el mes");
+        Assert.NotNull(await p.PorIdAsync("rep-kpi-venta"));
+        Assert.DoesNotContain(NoContesta, await p.TextoAsync());
         Assert.Empty(p.Errores);
     }
 }

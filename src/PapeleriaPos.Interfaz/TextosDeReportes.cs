@@ -109,6 +109,30 @@ public static class TextosDeReportes
         return (cambio >= 0, $"{Math.Abs(cambio).ToString("0.#", Formato.Mexico)} %");
     }
 
+    /// <summary>
+    /// Por qué una cifra de arriba no dice cuánto subió o bajó contra el año pasado; vacío si lo dice (<see cref="Cambio"/>).
+    /// Lo que falta en este periodo no es lo que no hubo el año pasado (revisión del PR #131, 2026-10-22): sin tickets, el
+    /// ticket promedio dice «sin tickets todavía» (o «en este periodo», si ya pasó); una cifra del año pasado en cero dice que
+    /// no la hubo, y una negativa (en dinero), cuánto fue. «A estas alturas», solo si el periodo va a la fecha.
+    /// </summary>
+    /// <param name="actual">La cifra de este periodo; vacía si no la hay (el ticket promedio sin tickets).</param>
+    /// <param name="anterior">La del año pasado, hasta el mismo momento; vacía si no la hay.</param>
+    /// <param name="sinNada">Cómo se dice que no la hubo: «sin ventas», «sin tickets», «sin utilidad».</param>
+    /// <param name="enPesos">Es dinero: lo del año pasado que no es cero ni sirve para sacar el porcentaje se dice con su cifra.</param>
+    public static string? SinCambio(ReporteVentasDto r, long? actual, long? anterior, string sinNada, bool enPesos = false)
+    {
+        if (r.Piloto)
+            return "sin comparar en el piloto";
+        if (r.Anterior is null)
+            return "sin ventas el año pasado";
+        if (actual is not { } este)
+            return r.ALaFecha ? $"{sinNada} todavía" : $"{sinNada} en este periodo";
+        if (Cambio(este, anterior) is not null)
+            return null;
+        var cuando = r.ALaFecha ? "el año pasado a estas alturas" : "el año pasado";
+        return enPesos && anterior is { } antes && antes != 0 ? $"{cuando}: {Formato.ConSigno(antes)}" : $"{sinNada} {cuando}";
+    }
+
     /// <summary>Para las tablas, en enteros: «+12 %», «−8 %», «nuevo» (sin nada el año pasado) o «—».</summary>
     public static string CambioCorto(long actual, long? anterior) => anterior switch
     {
@@ -137,10 +161,25 @@ public static class TextosDeReportes
         _ => Meses[inicio.Month - 1],
     };
 
-    /// <summary>El punto del año pasado que le toca: «mié 22 oct 2025» o «octubre de 2025».</summary>
-    public static string DetalleAnterior(PeriodoReporte periodo, DateTime inicio) => periodo == PeriodoReporte.Anio
-        ? $"{Meses[inicio.Month - 1]} de {inicio.Year}"
-        : $"{DiasCortos[(int)inicio.DayOfWeek]} {inicio.Day} {MesesCortos[inicio.Month - 1]} {inicio.Year}";
+    /// <summary>
+    /// El punto del año pasado que le toca: «mié 22 oct 2025» o «octubre de 2025». En el mes, el último día de un febrero de 28
+    /// lleva también el 29 del año pasado (<see cref="Nucleo.Reportes.PeriodoDeReporte.Cubeta"/>): «lun 28 y mar 29 feb 2028».
+    /// </summary>
+    /// <param name="desde">El primer día del periodo que se ve (para saber cuántos días tiene su mes).</param>
+    public static string DetalleAnterior(PeriodoReporte periodo, DateTime inicio, DateOnly? desde = null)
+    {
+        if (periodo == PeriodoReporte.Anio)
+            return $"{Meses[inicio.Month - 1]} de {inicio.Year}";
+        var dia = $"{DiasCortos[(int)inicio.DayOfWeek]} {inicio.Day}";
+        if (periodo == PeriodoReporte.Mes && desde is { } d && inicio.Day == DateTime.DaysInMonth(d.Year, d.Month)
+            && DateTime.DaysInMonth(inicio.Year, inicio.Month) > inicio.Day)
+        {
+            var despues = Enumerable.Range(inicio.Day + 1, DateTime.DaysInMonth(inicio.Year, inicio.Month) - inicio.Day)
+                .Select(n => new DateTime(inicio.Year, inicio.Month, n)).Select(f => $"{DiasCortos[(int)f.DayOfWeek]} {f.Day}");
+            dia = $"{string.Join(", ", new[] { dia }.Concat(despues.SkipLast(1)))} y {despues.Last()}";
+        }
+        return $"{dia} {MesesCortos[inicio.Month - 1]} {inicio.Year}";
+    }
 
     /// <summary>Las cifras del eje: «$850», «$12.5 mil», «$1.2 M».</summary>
     public static string Compacto(long centavos)

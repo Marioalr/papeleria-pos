@@ -81,7 +81,7 @@ else
                         @if (!Reporte.Piloto && p.InicioAnteriorLocal is { } antes)
                         {
                             <span>
-                                Año pasado (@TextosDeReportes.DetalleAnterior(Reporte.Periodo, antes)): <b>@(p.AnteriorCentavos is { } b ? Formato.ConSigno(b) : "—")</b>
+                                Año pasado (@TextosDeReportes.DetalleAnterior(Reporte.Periodo, antes, Reporte.Desde)): <b>@(p.AnteriorCentavos is { } b ? Formato.ConSigno(b) : "—")</b>
                                 @if (!p.EnCurso && p.ActualCentavos is { } x && TextosDeReportes.Cambio(x, p.AnteriorCentavos) is { } cambio)
                                 {
                                     <text> · @(cambio.Sube ? "▲" : "▼") @cambio.Porcentaje</text>

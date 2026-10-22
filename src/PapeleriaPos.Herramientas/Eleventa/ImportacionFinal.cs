@@ -88,8 +88,12 @@ public static class ImportacionFinal
     /// <summary>Una venta del historial como está guardada.</summary>
     private sealed record Guardada(Guid Id, Guid SucursalId, DateTime FechaUtc, string FolioOrigen, long TotalCentavos, bool Cancelada);
 
-    /// <summary>Una línea del historial: lo que se compara para saber si el ticket cambió en eleventa (milésimas, precio, importe y costo).</summary>
-    private static (long, long, long, long) Renglon(VentaHistoricaLinea l) => (l.Cantidad.Milesimas, l.PrecioCentavos, l.ImporteCentavos, l.CostoCentavos);
+    /// <summary>
+    /// Una línea del historial: lo que se compara para saber si el ticket cambió en eleventa (milésimas, precio, importe, costo
+    /// y si es un artículo común: lo importado antes de marcarlos se vuelve a escribir).
+    /// </summary>
+    private static (long, long, long, long, bool) Renglon(VentaHistoricaLinea l) =>
+        (l.Cantidad.Milesimas, l.PrecioCentavos, l.ImporteCentavos, l.CostoCentavos, l.EsArticuloComun);
 
     /// <summary>
     /// Pone el historial de eleventa de la base al día con lo que dice eleventa, sin las ventas de la caja 2. Si no hay una
@@ -124,9 +128,9 @@ public static class ImportacionFinal
             .Select(v => new Guardada(v.Id, v.SucursalId, v.FechaUtc, v.FolioOrigen, v.TotalCentavos, v.Cancelada))
             .ToDictionaryAsync(v => v.Id, ct);
         var renglones = (await db.VentasHistoricasLineas.AsNoTracking()
-                .Select(l => new { l.VentaHistoricaId, l.Cantidad, l.PrecioCentavos, l.ImporteCentavos, l.CostoCentavos })
+                .Select(l => new { l.VentaHistoricaId, l.Cantidad, l.PrecioCentavos, l.ImporteCentavos, l.CostoCentavos, l.EsArticuloComun })
                 .ToListAsync(ct))
-            .ToLookup(l => l.VentaHistoricaId, l => (l.Cantidad.Milesimas, l.PrecioCentavos, l.ImporteCentavos, l.CostoCentavos));
+            .ToLookup(l => l.VentaHistoricaId, l => (l.Cantidad.Milesimas, l.PrecioCentavos, l.ImporteCentavos, l.CostoCentavos, l.EsArticuloComun));
         var deEleventa = historial.Values.Where(m => guardadas.ContainsKey(m.IdNuevo)).Select(m => guardadas[m.IdNuevo]).ToList();
 
         // Una copia más vieja que lo ya importado regresaría el historial a como estaba: no se usa.
@@ -143,6 +147,7 @@ public static class ImportacionFinal
 
         var lote = new ResultadoImportacion();
         var variante = await VariantesAsync(db, e, mapeos, lote, r, ct);
+        var esComun = ImportadorEleventa.Comunes(e);
         var lineasPorTicket = e.Lineas.ToLookup(l => l.TicketId);
         var aBorrar = new List<Guid>();
         var mapeosABorrar = new List<Guid>();
@@ -158,7 +163,7 @@ public static class ImportacionFinal
                 continue;
 
             // Para comparar con lo guardado no hace falta saber de qué producto es cada línea (ni darlo de alta).
-            var como = ImportadorEleventa.Venta(t, lineasPorTicket[t.Id], sucursalId, _ => Guid.Empty, _ => { });
+            var como = ImportadorEleventa.Venta(t, lineasPorTicket[t.Id], sucursalId, _ => Guid.Empty, esComun, _ => { });
             r.Tickets++;
             if (!como.Cancelada)
                 r.TotalCentavos += como.TotalCentavos;
@@ -175,14 +180,14 @@ public static class ImportacionFinal
                 // Cambió en eleventa (se devolvió algo o se canceló): se vuelve a escribir como está, con el mismo Id.
                 r.Actualizados++;
                 aBorrar.Add(guardada.Id);
-                lote.Ventas.Add(ImportadorEleventa.Venta(t, lineasPorTicket[t.Id], sucursalId, variante, r.Avisar, guardada.Id));
+                lote.Ventas.Add(ImportadorEleventa.Venta(t, lineasPorTicket[t.Id], sucursalId, variante, esComun, r.Avisar, guardada.Id));
                 continue;
             }
 
             if (mapeo is not null)
                 mapeosABorrar.Add(mapeo.Id);
             r.Nuevos++;
-            var nueva = ImportadorEleventa.Venta(t, lineasPorTicket[t.Id], sucursalId, variante, r.Avisar);
+            var nueva = ImportadorEleventa.Venta(t, lineasPorTicket[t.Id], sucursalId, variante, esComun, r.Avisar);
             lote.Ventas.Add(nueva);
             ImportadorEleventa.Mapear(lote, nameof(VentaHistorica), t.Id.ToString(CultureInfo.InvariantCulture), nueva.Id);
         }
@@ -366,7 +371,7 @@ public static class ImportacionFinal
     }
 
     /// <summary>Si el ticket guardado es como está en eleventa: su encabezado y sus líneas (de qué producto es cada una no cuenta).</summary>
-    private static bool Igual(Guardada g, IEnumerable<(long, long, long, long)> renglones, VentaHistorica como) =>
+    private static bool Igual(Guardada g, IEnumerable<(long, long, long, long, bool)> renglones, VentaHistorica como) =>
         g.FechaUtc == como.FechaUtc && g.FolioOrigen == como.FolioOrigen && g.TotalCentavos == como.TotalCentavos && g.Cancelada == como.Cancelada
         && renglones.Order().SequenceEqual(como.Lineas.Select(Renglon).Order());
 

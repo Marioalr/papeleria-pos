@@ -107,12 +107,16 @@ public sealed class PeriodoDeReporte
         _ => Enumerable.Range(1, 12),
     };
 
-    /// <summary>La cubeta de un momento (hora de la tienda) del periodo o, con <paramref name="anterior"/>, del año pasado.</summary>
+    /// <summary>
+    /// La cubeta de un momento (hora de la tienda) del periodo o, con <paramref name="anterior"/>, del año pasado. La gráfica
+    /// tiene los días de este mes: un febrero de 28 días contra uno de 29 lleva el 29 del año pasado en el 28, así la gráfica
+    /// suma lo mismo que la cifra del año pasado (revisión del PR #131, 2026-10-22).
+    /// </summary>
     public int Cubeta(DateTime local, bool anterior = false) => Tipo switch
     {
         PeriodoReporte.Hoy => local.Hour,
         PeriodoReporte.Semana => DateOnly.FromDateTime(local).DayNumber - (anterior ? DesdeAnterior : Desde).DayNumber,
-        PeriodoReporte.Mes => local.Day,
+        PeriodoReporte.Mes => anterior ? Math.Min(local.Day, DateTime.DaysInMonth(Desde.Year, Desde.Month)) : local.Day,
         _ => local.Month,
     };
 

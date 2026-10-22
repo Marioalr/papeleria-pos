@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Hosting;
 using PapeleriaPos.Datos;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
@@ -27,9 +28,10 @@ public sealed class ReportesApiTests(ServicioDePrueba servicio) : IClassFixture<
         return (await r.Content.ReadFromJsonAsync<T>())!;
     }
 
-    private static async Task<Puesto> PuestoAsync(ServicioDePrueba servicio)
+    private static Task<Puesto> PuestoAsync(ServicioDePrueba servicio) => PuestoAsync(servicio.Fabrica.CreateClient());
+
+    private static async Task<Puesto> PuestoAsync(HttpClient http)
     {
-        var http = servicio.Fabrica.CreateClient();
         var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
         async Task<SesionDto> Entrar(string usuario, string pin) => await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada(usuario, pin)));
         return new Puesto(http, caja, await Entrar("cajero", "1111"), await Entrar("encargado", "2222"), await Entrar("dueno", "3333"));
@@ -124,5 +126,25 @@ public sealed class ReportesApiTests(ServicioDePrueba servicio) : IClassFixture<
         Assert.All(hoy.Serie, punto => Assert.Null(punto.AnteriorCentavos));
         Assert.Equal(0L, anio.Actual.DelHistorialCentavos);
         Assert.Null(anio.Anterior);
+    }
+
+    /// <summary>
+    /// Una caja 2 que solo lee el catálogo de eleventa (la lectura prendida, sin mandarle sus ventas) también es del piloto: la
+    /// principal sigue vendiendo en eleventa y el historial es de toda la tienda (revisión del PR #131, 2026-10-22). La lectura
+    /// marca el piloto, como en las promociones y la trastienda; mandar las ventas, también.
+    /// </summary>
+    [Fact]
+    public async Task Con_solo_la_lectura_de_eleventa_tambien_es_el_piloto()
+    {
+        await using var conLectura = servicio.Fabrica.WithWebHostBuilder(b => b.UseSetting("Eleventa:Activo", "true").UseSetting("Eleventa:Escribir", "false"));
+        var p = await PuestoAsync(conLectura.CreateClient());
+        await VentasAsync(servicio, p);
+
+        var hoy = await Leer<ReporteVentasDto>(await p.Http.GetAsync(p.Ruta(p.Dueno)));
+
+        Assert.True(hoy.Piloto);
+        Assert.Equal(0L, hoy.Actual.DelHistorialCentavos);
+        Assert.Null(hoy.Anterior);
+        Assert.All(hoy.Departamentos, d => Assert.Null(d.AnteriorCentavos));
     }
 }

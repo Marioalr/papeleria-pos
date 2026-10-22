@@ -169,6 +169,9 @@ public static class DisenoComprobante
             // Su corte va en el día en que se hizo.
             else if (t.CerradoLocal is { } despues && DateOnly.FromDateTime(despues) > d.Fecha)
                 Texto($"Su corte, el {despues.ToString("dd/MM", Mexico)}, va en ese día.", sangria: 2);
+            // Se cerró antes: está por lo que se cobró en él sin conexión y subió tarde, con la hora de este día.
+            else if (t.CerradoLocal is { } antes && DateOnly.FromDateTime(antes) < d.Fecha)
+                Texto($"Cobrado sin conexión; su corte es del {antes.ToString("dd/MM", Mexico)}.", sangria: 2);
             else if (t.CerradoLocal is null)
                 Texto(d.Piloto ? "Corte en eleventa" : t.EsperadoCentavos is { } esperado
                     ? $"Turno abierto · esperado {DisenoTicket.Dinero(esperado)}"

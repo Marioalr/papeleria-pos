@@ -31,4 +31,12 @@ public class VentaHistoricaLinea
 
     /// <summary>Costo total de la línea, como lo guardó eleventa.</summary>
     public long CostoCentavos { get; set; }
+
+    /// <summary>
+    /// Un artículo común de eleventa (código <c>COMUN-…</c>, departamento «Productos Comunes»): no es un producto del catálogo
+    /// (su variante es la inactiva que se le creó al importar) y no tiene costo (eleventa le pone de ganancia todo el precio).
+    /// Los reportes de ventas lo cuentan como el artículo común de aquí: aparte y fuera de la utilidad (revisión del PR #131,
+    /// 2026-10-22).
+    /// </summary>
+    public bool EsArticuloComun { get; set; }
 }
