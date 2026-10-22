@@ -556,6 +556,20 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<HistorialCortesDto> HistorialCortesAsync(Guid cajaId, Guid usuarioId, DateOnly? fecha, Guid? caja, Guid? cajero) =>
         SoloConLaPrincipalAsync<HistorialCortesDto>(CortesSinConexion, $"api/cajas/{cajaId}/cortes?usuarioId={usuarioId}" + Filtros(fecha, caja, cajero));
 
+    // ── Los reportes de ventas (entrega 9, parte 1, 2026-10-22): solo con la caja principal ──
+
+    /// <summary>Lo que dice la caja sin la caja principal: las ventas de todas las cajas y del año pasado están allá.</summary>
+    public const string ReportesSinConexion =
+        "Sin conexión con la caja principal: los reportes juntan las ventas de todas las cajas y del año pasado, y se ven cuando vuelva.";
+
+    /// <summary>
+    /// El reporte de ventas de <paramref name="periodo"/> del día <paramref name="fecha"/> (vacío: hoy en la caja principal),
+    /// contra el mismo periodo del año pasado, para quien tiene «Ver reportes de ventas» (lo revisa el servicio).
+    /// </summary>
+    public Task<ReporteVentasDto> ReporteVentasAsync(Guid cajaId, Guid usuarioId, PeriodoReporte periodo, DateOnly? fecha = null) =>
+        SoloConLaPrincipalAsync<ReporteVentasDto>(ReportesSinConexion, $"api/cajas/{cajaId}/reportes/ventas?usuarioId={usuarioId}&periodo={periodo}"
+            + (fecha is { } dia ? $"&fecha={dia.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}" : ""));
+
     private static string Filtros(DateOnly? fecha, Guid? caja, Guid? cajero) =>
         (fecha is { } dia ? $"&fecha={dia.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}" : "") + (caja is { } c ? $"&caja={c}" : "")
         + (cajero is { } u ? $"&cajero={u}" : "");

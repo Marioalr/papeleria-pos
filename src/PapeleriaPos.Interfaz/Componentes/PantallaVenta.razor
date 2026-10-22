@@ -1,8 +1,9 @@
 @* La pantalla de venta, la del rediseño (docs/propuesta-interfaz.md, entrega 0), en todas las cajas. La de antes, con la
    misma distribución que eleventa, ya no existe: el dueño la quitó el 2026-10-14 («no volveremos a esa versión»).
-   Productos (F3), Inventario (F4) y Clientes son páginas, como en el prototipo (entrega 8): bajo la barra de arriba se ve
-   la venta o una de ellas. La venta no se deja: se oculta con su ticket, sus tickets en espera, el cobro y el panel que
-   tuviera, y «Venta» (F1) la regresa tal cual. El corte y la Configuración siguen encima, como ventanas. *@
+   Productos (F3), Inventario (F4) y Clientes son páginas, como en el prototipo (entrega 8), y Reportes (entrega 9): bajo la
+   barra de arriba se ve la venta o una de ellas. La venta no se deja: se oculta con su ticket, sus tickets en espera, el
+   cobro y el panel que tuviera, y «Venta» (F1) la regresa tal cual. El corte y la Configuración siguen encima, como
+   ventanas. *@
 @implements IAsyncDisposable
 @using System.Text.RegularExpressions
 @using PapeleriaPos.Nucleo.Configuracion
@@ -35,6 +36,10 @@
                recibe abonos y devuelve el saldo a favor, con candado si lo autoriza otro. *@
             <button class="@Activa(Pagina.Clientes)" @onclick="() => IrAAsync(Pagina.Clientes)">Clientes</button>
             <button @onclick="() => Abrir(Ventanas.Corte)">Corte</button>
+            @if (VeReportes)
+            {
+                <button class="@Activa(Pagina.Reportes)" @onclick="() => IrAAsync(Pagina.Reportes)">Reportes</button>
+            }
             @if (VeConfiguracion)
             {
                 <button @onclick="() => Abrir(Ventanas.Configuracion)">Configuración</button>
@@ -633,7 +638,7 @@
 
     @if (_pagina != Pagina.Venta)
     {
-        @* Productos, Inventario o Clientes, con lo que se recuerda de cada uno (la búsqueda, el elegido, las etiquetas). *@
+        @* Productos, Inventario, Clientes o Reportes, con lo que se recuerda de cada uno (la búsqueda, el elegido, las etiquetas, el periodo). *@
         <div class="vn-pagina">
             <CascadingValue Name="@PilotoConEleventa.Cascada" Value="_pilotoEleventa">
                 <CascadingValue Name="PermisosDeSesion" Value="PermisosEnCascada">
@@ -646,6 +651,9 @@
                         case Pagina.Inventario:
                             <Inventario @ref="_inventario" Caja="Caja" Sesion="Sesion" Acceso="Acceso" EtiquetasPorImprimir="_paginas.Etiquetas"
                                         Conteo="_conteo" AlContar="c => _conteo = c" TareaInicial="_tareaInicial" />
+                            break;
+                        case Pagina.Reportes:
+                            <Reportes @ref="_reportes" Caja="Caja" Sesion="Sesion" Estado="_paginas.Reportes" />
                             break;
                         default:
                             <Clientes @ref="_clientes" Caja="Caja" Sesion="Sesion" Turno="Turno" Acceso="Acceso" Estado="_paginas.Clientes"
@@ -692,10 +700,14 @@
         @* La de las páginas, como en el prototipo: regresar a la venta; lo demás son las teclas de la página. *@
         <footer class="vn-teclas">
             <button @onclick="() => IrAAsync(Pagina.Venta)"><kbd>F1</kbd>Volver a la venta</button>
-            @if (_pagina != Pagina.Inventario)
+            @if (_pagina is Pagina.Productos or Pagina.Clientes)
             {
                 <span class="vn-ayuda-tecla"><kbd>↑</kbd> <kbd>↓</kbd> elegir</span>
                 <span class="vn-ayuda-tecla"><kbd>Enter</kbd> abrir</span>
+            }
+            else if (_pagina == Pagina.Reportes)
+            {
+                <span class="vn-ayuda-tecla"><kbd>←</kbd> <kbd>→</kbd> periodo anterior o siguiente</span>
             }
             <span class="vn-ayuda-tecla"><kbd>Esc</kbd> cierra lo abierto; si no hay nada, a la venta</span>
             <span class="espacio"></span>
@@ -841,6 +853,7 @@
     private Productos? _productos;
     private Inventario? _inventario;
     private Clientes? _clientes;
+    private Reportes? _reportes;
 
     /// <summary>La tarea con que abre Inventario (el chip del conteo, «Ir a Etiquetas»); vacío: sus tarjetas.</summary>
     private TareaInventario? _tareaInicial;
@@ -853,6 +866,7 @@
         Pagina.Productos => _productos,
         Pagina.Inventario => _inventario,
         Pagina.Clientes => _clientes,
+        Pagina.Reportes => _reportes,
         _ => null,
     };
 
@@ -865,7 +879,8 @@
     /// </summary>
     private async Task IrAAsync(Pagina pagina, TareaInventario? tarea = null)
     {
-        if ((pagina == Pagina.Productos && SinTecla(Ve(AccionControlada.EditarCatalogo))) || (pagina == Pagina.Inventario && SinTecla(VeInventario)))
+        if ((pagina == Pagina.Productos && SinTecla(Ve(AccionControlada.EditarCatalogo))) || (pagina == Pagina.Inventario && SinTecla(VeInventario))
+            || (pagina == Pagina.Reportes && SinTecla(VeReportes)))
         {
             Avisar("Eso no está entre lo que puedes hacer: «/» muestra todo lo que sí.");
             return;
@@ -1100,6 +1115,9 @@
     /// <summary>Con alguna tarea del inventario (sus tarjetas): la pestaña Inventario y F4.</summary>
     private bool VeInventario => _permisosPedidos && Acceso.VeInventario;
 
+    /// <summary>Los reportes de ventas (entrega 9): con «Ver reportes de ventas» en «Puede» (consultar no se autoriza).</summary>
+    private bool VeReportes => _permisosPedidos && Acceso.Puede(AccionControlada.VerReportes);
+
     /// <summary>Lo que puede quien entró, para las páginas: los permisos de la venta o, sin ellos, los de la sesión.</summary>
     private PermisosDePagina Acceso => new(Sesion, _permisos);
 
@@ -1226,6 +1244,8 @@
             yield return new("Inventario: recibir, contar y mermas", "recibir", "F4", null, () => IrAAsync(Pagina.Inventario));
         // Para todos, como la pestaña: quien no los administra solo los consulta.
         yield return new("Clientes", "clientes", null, null, () => IrAAsync(Pagina.Clientes));
+        if (VeReportes)
+            yield return new("Reportes de ventas", "grafica", null, null, () => IrAAsync(Pagina.Reportes));
         if (VeConfiguracion)
             yield return new("Configuración", "engrane", null, null, () => Abrir(Ventanas.Configuracion));
         yield return new("Cambiar de usuario", "usuario", "Ctrl+U", null, SalirAsync);

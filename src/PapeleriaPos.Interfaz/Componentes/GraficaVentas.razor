@@ -1,0 +1,208 @@
+@* La gráfica de los reportes de ventas (entrega 9), como htmlGrafica del prototipo: las barras de este año y la línea del año
+   pasado, con el detalle de cada hora, día o mes al pasar el ratón (un cuadro por punto, que sale con :hover, sin ir al
+   servicio) y la misma información como tabla con «Ver como tabla». La de ahora va más clara: va a la mitad. Lo que todavía no
+   llega no tiene barra; el año pasado va completo, para ver cómo siguió. *@
+
+@if (Tabla)
+{
+    <table class="vn-tabla vn-rep-tabla" id="rep-tabla">
+        <thead>
+            <tr>
+                <th>@Cabeza</th><th class="num">Este año</th>
+                @if (!Reporte.Piloto)
+                {
+                    <th class="num">Año pasado</th><th class="num">Cambio</th>
+                }
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in Reporte.Serie)
+            {
+                <tr class="@(p.EnCurso ? "en-curso" : null)">
+                    <td>@TextosDeReportes.Detalle(Reporte.Periodo, p.InicioLocal)@(p.EnCurso ? " (va en curso)" : "")</td>
+                    <td class="num">@(p.ActualCentavos is { } a ? Formato.ConSigno(a) : "—")</td>
+                    @if (!Reporte.Piloto)
+                    {
+                        <td class="num">@(p.AnteriorCentavos is { } b ? Formato.ConSigno(b) : "—")</td>
+                        <td class="num">@(p.ActualCentavos is { } x && !p.EnCurso ? TextosDeReportes.CambioCorto(x, p.AnteriorCentavos) : "—")</td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <div class="vn-grafica-lienzo">
+        <svg viewBox="0 0 @Ancho @Alto" role="img" aria-label="@($"Venta de este año{(Reporte.Piloto ? "" : " contra el año pasado")}")">
+            @* Cada <text> de SVG va dentro de su <g>: suelto en un bloque de código, Razor lo tomaría como el suyo. *@
+            @foreach (var (valor, y) in Rejilla)
+            {
+                <g>
+                    <line x1="@N(M.Izq)" x2="@N(Ancho - M.Der)" y1="@N(y)" y2="@N(y)" class="@(valor == 0 ? "cero" : "rejilla")" />
+                    <text class="eje" x="@N(M.Izq - 8)" y="@N(y + 4)" text-anchor="end">@TextosDeReportes.Compacto(valor)</text>
+                </g>
+            }
+            @for (var i = 0; i < Reporte.Serie.Count; i++)
+            {
+                if (Barra(i) is { } barra)
+                {
+                    <path d="@barra" class="@(Reporte.Serie[i].EnCurso ? "barra en-curso" : "barra")" />
+                }
+            }
+            @foreach (var tramo in Tramos)
+            {
+                <polyline points="@tramo" class="linea" />
+            }
+            @if (UltimoAnterior is { } ultimo)
+            {
+                <circle cx="@N(ultimo.X)" cy="@N(ultimo.Y)" r="4" class="punto" />
+            }
+            @for (var i = 0; i < Reporte.Serie.Count; i++)
+            {
+                if (ConEtiqueta(i))
+                {
+                    <g>
+                        <text class="eje" x="@N(Centro(i))" y="@N(Alto - 8)" text-anchor="middle">@TextosDeReportes.Etiqueta(Reporte.Periodo, Reporte.Serie[i].InicioLocal)</text>
+                    </g>
+                }
+            }
+        </svg>
+        @* Una zona por punto, encima de la gráfica: al pasar el ratón se marca y sale su cuadro (a la derecha en la primera
+           mitad, a la izquierda en la segunda). *@
+        <div class="vn-rep-zonas" style="@ZonasEstilo">
+            @for (var i = 0; i < Reporte.Serie.Count; i++)
+            {
+                var p = Reporte.Serie[i];
+                <div class="vn-rep-zona @(i < Reporte.Serie.Count / 2 ? "a-la-derecha" : "a-la-izquierda")" style="@ZonaEstilo(i)">
+                    <div class="vn-rep-tip" role="tooltip">
+                        <b>@TextosDeReportes.Detalle(Reporte.Periodo, p.InicioLocal)</b>
+                        <span>Este año: <b>@(p.ActualCentavos is { } a ? Formato.ConSigno(a) : "—")</b>@(p.EnCurso ? " (va en curso)" : "")</span>
+                        @if (!Reporte.Piloto && p.InicioAnteriorLocal is { } antes)
+                        {
+                            <span>
+                                Año pasado (@TextosDeReportes.DetalleAnterior(Reporte.Periodo, antes)): <b>@(p.AnteriorCentavos is { } b ? Formato.ConSigno(b) : "—")</b>
+                                @if (!p.EnCurso && p.ActualCentavos is { } x && TextosDeReportes.Cambio(x, p.AnteriorCentavos) is { } cambio)
+                                {
+                                    <text> · @(cambio.Sube ? "▲" : "▼") @cambio.Porcentaje</text>
+                                }
+                            </span>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public ReporteVentasDto Reporte { get; set; } = null!;
+
+    /// <summary>«Ver como tabla»: la misma información, en renglones.</summary>
+    [Parameter] public bool Tabla { get; set; }
+
+    // Las medidas del prototipo: a 1366 de ancho la gráfica mide casi lo mismo que su caja, así que las letras quedan de su tamaño.
+    private const double Ancho = 1290, Alto = 240;
+
+    private static readonly (double Izq, double Der, double Arriba, double Abajo) M = (62, 14, 12, 26);
+
+    private string Cabeza => Reporte.Periodo switch
+    {
+        PeriodoReporte.Hoy => "Hora",
+        PeriodoReporte.Anio => "Mes",
+        _ => "Día",
+    };
+
+    private static string N(double valor) => valor.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private double AnchoDeCada => (Ancho - M.Izq - M.Der) / Math.Max(1, Reporte.Serie.Count);
+
+    private double Centro(int i) => M.Izq + AnchoDeCada * i + AnchoDeCada / 2;
+
+    /// <summary>Lo más alto y lo más bajo que se dibuja, en escalones redondos (1, 2, 2.5 o 5 por una potencia de 10), con el cero.</summary>
+    private (long Piso, long Tope, long Paso) Escala
+    {
+        get
+        {
+            var valores = Reporte.Serie.SelectMany(p => new[] { p.ActualCentavos, p.AnteriorCentavos }).OfType<long>().ToList();
+            var (arriba, abajo) = (Math.Max(0, valores.DefaultIfEmpty(0).Max()), Math.Min(0, valores.DefaultIfEmpty(0).Min()));
+            var crudo = Math.Max(arriba - abajo, 100_00) / 4.0;
+            var potencia = Math.Pow(10, Math.Floor(Math.Log10(crudo)));
+            var paso = (long)Math.Ceiling(new[] { 1, 2, 2.5, 5, 10 }.Select(x => x * potencia).First(x => x >= crudo));
+            var piso = -paso * (long)Math.Ceiling(-abajo / (double)paso);
+            // Sin ninguna venta (todo en cero), un escalón: si no, arriba y abajo serían lo mismo.
+            return (piso, Math.Max(paso * (long)Math.Ceiling(arriba / (double)paso), piso + paso), paso);
+        }
+    }
+
+    private double Y(long valor)
+    {
+        var (piso, tope, _) = Escala;
+        return M.Arriba + (Alto - M.Arriba - M.Abajo) * (tope - valor) / (double)(tope - piso);
+    }
+
+    private IEnumerable<(long Valor, double Y)> Rejilla
+    {
+        get
+        {
+            var (piso, tope, paso) = Escala;
+            for (var v = piso; v <= tope; v += paso)
+                yield return (v, Y(v));
+        }
+    }
+
+    /// <summary>La barra de este año: con las esquinas de arriba redondas, como el prototipo (hacia abajo, lo que se devolvió de más).</summary>
+    private string? Barra(int i)
+    {
+        if (Reporte.Serie[i].ActualCentavos is not { } valor || valor == 0)
+            return null;
+        var ancho = Math.Min(24, AnchoDeCada * 0.62);
+        var x = M.Izq + AnchoDeCada * i + (AnchoDeCada - ancho) / 2;
+        var (y0, y) = (Y(0), Y(valor));
+        if (valor < 0)
+            return $"M{N(x)},{N(y0)} V{N(y)} H{N(x + ancho)} V{N(y0)} Z";
+        var r = Math.Min(4, y0 - y);
+        return $"M{N(x)},{N(y0)} V{N(y + r)} Q{N(x)},{N(y)} {N(x + r)},{N(y)} H{N(x + ancho - r)} Q{N(x + ancho)},{N(y)} {N(x + ancho)},{N(y + r)} V{N(y0)} Z";
+    }
+
+    /// <summary>La línea del año pasado, en tramos: se corta donde ese día no existe (el 29 de febrero).</summary>
+    private IEnumerable<string> Tramos
+    {
+        get
+        {
+            var tramo = new List<string>();
+            for (var i = 0; i < Reporte.Serie.Count; i++)
+            {
+                if (Reporte.Serie[i].AnteriorCentavos is { } valor)
+                    tramo.Add($"{N(Centro(i))},{N(Y(valor))}");
+                else if (tramo.Count > 0)
+                {
+                    yield return string.Join(' ', tramo);
+                    tramo.Clear();
+                }
+            }
+            if (tramo.Count > 0)
+                yield return string.Join(' ', tramo);
+        }
+    }
+
+    private (double X, double Y)? UltimoAnterior
+    {
+        get
+        {
+            var ultimo = Reporte.Serie.Select((p, i) => (p, i)).LastOrDefault(x => x.p.AnteriorCentavos is not null);
+            return ultimo.p is null ? null : (Centro(ultimo.i), Y(ultimo.p.AnteriorCentavos!.Value));
+        }
+    }
+
+    /// <summary>Todas las etiquetas si caben (las horas, la semana, los meses); en el mes, el 1 y cada 5 días.</summary>
+    private bool ConEtiqueta(int i) => Reporte.Serie.Count <= 16 || i == 0 || (i + 1) % 5 == 0;
+
+    private static string Porciento(double valor) => $"{N(valor * 100)}%";
+
+    /// <summary>Las zonas van sobre el área de las barras: de la orilla izquierda de la primera a la derecha de la última.</summary>
+    private string ZonasEstilo =>
+        $"left:{Porciento(M.Izq / Ancho)};right:{Porciento(M.Der / Ancho)};top:{Porciento(M.Arriba / Alto)};bottom:{Porciento(M.Abajo / Alto)}";
+
+    private string ZonaEstilo(int i) => $"left:{Porciento(i / (double)Reporte.Serie.Count)};width:{Porciento(1.0 / Reporte.Serie.Count)}";
+}

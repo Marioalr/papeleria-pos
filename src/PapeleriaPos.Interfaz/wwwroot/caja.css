@@ -1471,3 +1471,77 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-tarjetas th.marca, .vn-tarjetas td.marca { width: 1%; padding-right: 0; }
 .vn-tarjetas td.acciones { width: 1%; white-space: nowrap; text-align: right; }
 .vn-tarjetas td.num .vn-etiq { margin-left: 6px; }
+
+/* ── Reportes (entrega 9, parte 1, 2026-10-22; htmlReportes del prototipo, con .reportes, .rep-cab, .kpis, .grafica, .tip y
+   .barra-celda): una página como Productos, Inventario y Clientes (va en .venta-nueva, así que toma sus colores; aquí van los de
+   la gráfica). Se recorre hacia abajo: cabe en 1366×697, también con la franja de la prueba. ── */
+.vn-reportes {
+    --vn-serie-1: #2a78d6;
+    --vn-serie-2: #eb6834;
+    --vn-rejilla: #e8ecf1;
+    --vn-noche: #16213d;
+    --vn-noche-texto: #e8edfa;
+    flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 16px 24px;
+}
+.vn-rep-cab { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.vn-rep-cab h2 { margin: 0 6px 0 0; font-size: 22px; }
+.vn-rep-cab > .nota { margin: 0; font-size: 12.5px; color: var(--vn-suave); }
+.vn-segmento.grande button { padding: 8px 16px; font-size: 14px; }
+.vn-segmento button:focus-visible { outline: 2px solid var(--vn-tinta); outline-offset: -2px; }
+.vn-rep-periodo { display: inline-flex; align-items: center; gap: 6px; }
+.vn-rep-periodo strong { font-size: 15px; color: var(--vn-texto); margin: 0 2px; }
+.vn-rep-periodo .nota { margin: 0; font-size: 12.5px; color: var(--vn-suave); }
+.vn-reportes > .vn-alerta { margin: 0; }
+.vn-reportes > .nota { margin: 0; color: var(--vn-suave); }
+.vn-rep-cuerpo { display: flex; flex-direction: column; gap: 14px; transition: opacity .15s; }
+.vn-rep-cuerpo.cargando { opacity: .55; }
+.vn-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.vn-kpi { min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; }
+.vn-kpi > span { font-size: 13px; color: var(--vn-suave); }
+.vn-kpi > strong { font: 600 28px var(--vn-f-cifras); font-variant-numeric: tabular-nums; }
+.vn-kpi > small { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12.5px; color: var(--vn-suave); }
+.vn-kpi .sube { color: var(--vn-cobro); font-weight: 600; }
+.vn-kpi .baja { color: var(--vn-error); font-weight: 600; }
+.vn-kpi.restringido { border-style: dashed; border-color: var(--vn-tinta-medio); }
+.vn-reportes .vn-dif-mal { color: var(--vn-error); font-weight: 700; }
+.vn-rep-nota { margin: -6px 0 0; font-size: 12.5px; color: var(--vn-suave); }
+.vn-grafica { position: relative; padding: 12px 14px 8px; background: var(--vn-hoja); border: 1px solid var(--vn-linea); border-radius: 10px; }
+.vn-grafica-cab { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 4px; }
+.vn-grafica-cab h3 { margin: 0; font-size: 15px; }
+.vn-leyenda-g { display: flex; align-items: center; gap: 16px; font-size: 12.5px; color: var(--vn-suave); }
+.vn-leyenda-g span { display: inline-flex; align-items: center; gap: 6px; }
+.vn-leyenda-g .vn-enlace { font-size: 12.5px; }
+.vn-sw-barra { display: inline-block; width: 10px; height: 12px; border-radius: 3px 3px 0 0; background: var(--vn-serie-1); }
+.vn-sw-linea { display: inline-block; position: relative; width: 18px; height: 2px; background: var(--vn-serie-2); }
+.vn-sw-linea::after { content: ""; position: absolute; left: 5px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--vn-serie-2); box-shadow: 0 0 0 2px var(--vn-hoja); }
+.vn-grafica-lienzo { position: relative; }
+.vn-grafica-lienzo svg { display: block; width: 100%; height: auto; }
+.vn-grafica-lienzo .eje { font: 11.5px var(--vn-f-texto); fill: var(--vn-tenue); font-variant-numeric: tabular-nums; }
+.vn-grafica-lienzo line.rejilla { stroke: var(--vn-rejilla); stroke-width: 1; }
+.vn-grafica-lienzo line.cero { stroke: var(--vn-borde); stroke-width: 1; }
+.vn-grafica-lienzo path.barra { fill: var(--vn-serie-1); }
+.vn-grafica-lienzo path.barra.en-curso { opacity: .55; }
+.vn-grafica-lienzo polyline.linea { fill: none; stroke: var(--vn-serie-2); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.vn-grafica-lienzo circle.punto { fill: var(--vn-serie-2); stroke: var(--vn-hoja); stroke-width: 2; }
+/* El detalle de cada punto: su zona sobre la gráfica y su cuadro, que sale al pasar el ratón (sin ir al servicio). */
+.vn-rep-zonas { position: absolute; }
+.vn-rep-zona { position: absolute; top: 0; bottom: 0; }
+.vn-rep-zona:hover { background: rgba(35, 67, 155, .06); }
+.vn-rep-tip { display: none; position: absolute; top: 6%; z-index: 5; flex-direction: column; gap: 1px; padding: 7px 10px; border-radius: 7px; background: var(--vn-noche); color: var(--vn-noche-texto); font-size: 12.5px; line-height: 1.45; white-space: nowrap; pointer-events: none; box-shadow: 0 6px 18px rgba(10, 18, 40, .25); }
+.vn-rep-tip b { font-variant-numeric: tabular-nums; }
+.vn-rep-zona:hover .vn-rep-tip { display: flex; }
+.vn-rep-zona.a-la-derecha .vn-rep-tip { left: calc(100% + 6px); }
+.vn-rep-zona.a-la-izquierda .vn-rep-tip { right: calc(100% + 6px); }
+.vn-rep-tabla tr.en-curso td { color: var(--vn-suave); }
+.vn-dos-col { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.vn-rep-columna { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.vn-barra-celda { min-width: 80px; height: 6px; border-radius: 3px; background: var(--vn-rejilla); }
+.vn-barra-celda i { display: block; height: 100%; border-radius: 3px; background: var(--vn-serie-1); }
+.vn-rep-vacio { color: var(--vn-suave); text-align: center; }
+.vn-rep-notas { display: flex; flex-direction: column; gap: 4px; }
+.vn-rep-notas p { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--vn-suave); }
+/* Más angosto: los datos de dos en dos y las tablas una debajo de otra. */
+@media (max-width: 1200px) {
+    .vn-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .vn-dos-col { grid-template-columns: minmax(0, 1fr); }
+}
