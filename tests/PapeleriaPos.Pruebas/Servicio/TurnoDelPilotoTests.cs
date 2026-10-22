@@ -27,18 +27,9 @@ namespace PapeleriaPos.Pruebas.Servicio;
 /// lo que seguía en la bandeja de antes del corte queda por revisar sin detener lo demás; y el folio que eleventa repite en
 /// otra caja se reimprime con el de la caja y, al devolver, se elige por la hora y el total.
 /// </summary>
-public sealed class TurnoDelPilotoTests : IDisposable
+public sealed class TurnoDelPilotoTests
 {
     private const int CajaEleventa = 4;
-
-    private readonly string _baseLocal = Path.Combine(Path.GetTempPath(), $"caja-local-{Guid.NewGuid():N}.db");
-
-    public void Dispose()
-    {
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        foreach (var archivo in new[] { _baseLocal, _baseLocal + "-wal", _baseLocal + "-shm" })
-            File.Delete(archivo);
-    }
 
     /// <summary>El piloto: escribe en eleventa (y lee, si se da el servidor de prueba). Sin servidor, uno que no contesta.</summary>
     private static (string, string)[] Ajustes(ServidorEleventa? e = null, bool leer = false) =>

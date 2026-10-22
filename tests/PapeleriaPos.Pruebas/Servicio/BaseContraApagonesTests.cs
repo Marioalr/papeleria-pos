@@ -163,11 +163,13 @@ public sealed class BaseContraApagonesTests : IDisposable
     [Fact]
     public void La_base_local_de_la_caja_usa_los_mismos_ajustes()
     {
-        var almacen = new AlmacenLocal(Path.Combine(_carpeta, "caja-local.db"));
+        var ruta = Path.Combine(_carpeta, "caja-local.db");
+        var almacen = new AlmacenLocal(ruta);
         var contingencia = new Contingencia(almacen, new HttpClient(), new ConexionCaja { Servicio = new Uri("http://localhost/") });
         try
         {
-            SqliteConnection.ClearAllPools();
+            // Que la lectura abra una conexión nueva y no la que la caja dejó guardada al abrir: los ajustes se ponen en cada una.
+            ArchivosDePrueba.SoltarBase(ruta);
 
             Assert.Equal((AjustesContraApagones.SincronizacionCompleta, AjustesContraApagones.EsperaSiEstaOcupadaMs), almacen.Ajustes());
             Assert.Null(almacen.ProblemaDeAjustes);

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -16,6 +17,16 @@ public sealed record ElementoDibujado(string Etiqueta, IReadOnlyDictionary<strin
     public string? Clase => Atributos.GetValueOrDefault("class")?.ToString();
     public string? Valor => Atributos.GetValueOrDefault("value")?.ToString();
     public bool Desactivado => Atributos.GetValueOrDefault("disabled") is true;
+
+    /// <summary>
+    /// Dónde está en la pantalla: el componente que lo dibuja y su lugar en el marcado de ese componente (cuál de los que salen
+    /// del mismo lugar, como los renglones de una lista, o su <c>@key</c>). Si la pantalla se vuelve a dibujar igual, el mismo
+    /// elemento queda en el mismo lugar.
+    /// </summary>
+    internal string Lugar { get; init; } = "";
+
+    /// <summary>Cómo lo buscó la prueba (<see cref="PantallaSinNavegador.ElementoAsync"/>), para buscarlo igual otra vez.</summary>
+    internal Func<ElementoDibujado, bool>? Busqueda { get; init; }
 }
 
 /// <summary>
@@ -141,9 +152,11 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
 
     public async Task<string> TextoAsync() => (await LeerAsync()).Texto;
 
-    /// <summary>El primer elemento que cumple; falla si no hay.</summary>
+    /// <summary>El primer elemento que cumple; falla si no hay. Recuerda cómo se buscó, por si hay que buscarlo otra vez (<see cref="DispararAsync"/>).</summary>
     public async Task<ElementoDibujado> ElementoAsync(Func<ElementoDibujado, bool> condicion, string que) =>
-        (await LeerAsync()).Elementos.FirstOrDefault(condicion) ?? throw new Xunit.Sdk.XunitException($"No está {que}.");
+        (await LeerAsync()).Elementos.FirstOrDefault(condicion) is { } elemento
+            ? elemento with { Busqueda = condicion }
+            : throw new Xunit.Sdk.XunitException($"No está {que}.");
 
     public Task<ElementoDibujado> PorIdAsync(string id) => ElementoAsync(e => e.Id == id, $"«#{id}»");
 
@@ -173,6 +186,17 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
     public async Task TeclaAsync(string id, string tecla) =>
         await DispararAsync(await PorIdAsync(id), "onkeydown", new KeyboardEventArgs { Key = tecla });
 
+    /// <summary>
+    /// Dispara un evento de un elemento que se leyó antes. Todo lo que oprime, escribe o teclea una prueba pasa por aquí.
+    /// </summary>
+    /// <remarks>
+    /// Entre que se leyó el elemento y ahora, la pantalla pudo volver a dibujarse sola (terminó de cargar algo, llegó un aviso)
+    /// y su evento ya tener otro número. Si el número de antes todavía vale (un doble clic antes de que la página tome el
+    /// dibujo, <see cref="AcuseDelDibujo"/>), se usa ese. Si ya no existe, quien prueba oprime lo que ve: el mismo elemento ya
+    /// dibujado otra vez (<see cref="OtraVez"/>), buscado y disparado dentro del despachador, donde la pantalla no cambia
+    /// mientras tanto. Antes solo se encontraba otra vez por su id o por un texto único, y un campo sin id (el motivo de una
+    /// devolución) fallaba con «There is no event handler associated with this event».
+    /// </remarks>
     public Task DispararAsync(ElementoDibujado elemento, string evento, EventArgs datos) =>
         Dispatcher.InvokeAsync(async () =>
         {
@@ -180,11 +204,8 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
             {
                 await DispatchEventAsync(Manejador(elemento, evento), null, datos);
             }
-            catch (ArgumentException ex) when (ex.ParamName == "eventHandlerId" && Mismo(elemento) is { } actual)
+            catch (ArgumentException ex) when (ex.ParamName == "eventHandlerId" && OtraVez(elemento) is { } actual)
             {
-                // Entre que se leyó el elemento y ahora, la pantalla se volvió a dibujar sola (terminó de cargar algo) y su
-                // evento ya tiene otro número: quien prueba oprime lo que ve, el mismo elemento ya dibujado otra vez. Si el
-                // número de antes todavía vale (un doble clic antes de que la página tome el dibujo), se usa ese.
                 await DispatchEventAsync(Manejador(actual, evento), null, datos);
             }
         });
@@ -195,13 +216,21 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
             : throw new Xunit.Sdk.XunitException($"«{elemento.Etiqueta}#{elemento.Id}» no tiene {evento}.");
 
     /// <summary>
-    /// El mismo elemento en lo que está dibujado ahora: por su id o, si no tiene, por su etiqueta y su texto, cuando hay uno
-    /// solo así. Se llama dentro del despachador, donde la pantalla no cambia mientras tanto.
+    /// El mismo elemento en lo que está dibujado ahora, como lo buscaría otra vez quien prueba: igual que la primera vez (la
+    /// condición de <see cref="ElementoAsync"/>, también la de <see cref="PorIdAsync"/> y <see cref="BotonAsync"/>); si no se
+    /// buscó así o ya no la cumple, el que ocupa su lugar en la pantalla (<see cref="ElementoDibujado.Lugar"/>) con la misma
+    /// etiqueta y el mismo id; y si no, el único con su id, o con su etiqueta y su texto. Se llama dentro del despachador,
+    /// donde la pantalla no cambia mientras tanto.
     /// </summary>
-    private ElementoDibujado? Mismo(ElementoDibujado elemento)
+    private ElementoDibujado? OtraVez(ElementoDibujado elemento)
     {
         var elementos = new List<ElementoDibujado>();
         Recorrer(_raiz, elementos, new StringBuilder());
+        if (elemento.Busqueda is { } busqueda && elementos.FirstOrDefault(busqueda) is { } buscado)
+            return buscado;
+        if (elementos.FirstOrDefault(e => e.Lugar == elemento.Lugar) is { } enSuLugar && enSuLugar.Etiqueta == elemento.Etiqueta
+            && enSuLugar.Id == elemento.Id)
+            return enSuLugar;
         var iguales = elementos.Where(e => e.Etiqueta == elemento.Etiqueta
             && (elemento.Id is { } id ? e.Id == id : e.Texto == elemento.Texto)).ToList();
         return iguales.Count == 1 ? iguales[0] : null;
@@ -226,7 +255,7 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
         while (true)
         {
             if ((await LeerAsync()).Elementos.FirstOrDefault(e => e.Id == id) is { } elemento)
-                return elemento;
+                return elemento with { Busqueda = e => e.Id == id };
             if (DateTime.UtcNow > limite)
                 throw new Xunit.Sdk.XunitException($"No llegó «#{id}»:\n{await TextoAsync()}");
             await Task.Delay(20);
@@ -238,17 +267,32 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
     private void Recorrer(int componente, List<ElementoDibujado> elementos, StringBuilder texto)
     {
         var marcos = GetCurrentRenderTreeFrames(componente);
-        Recorrer(marcos.Array, 0, marcos.Count, elementos, texto);
+        Recorrer(componente.ToString(CultureInfo.InvariantCulture), marcos.Array, 0, marcos.Count, elementos, texto);
     }
 
-    private void Recorrer(RenderTreeFrame[] marcos, int desde, int hasta, List<ElementoDibujado> elementos, StringBuilder texto)
+    /// <param name="lugar">
+    /// Dónde están estos marcos (<see cref="ElementoDibujado.Lugar"/>): el componente y, dentro de él, el lugar del marcado de
+    /// cada elemento de arriba (su número de secuencia) y cuál de los que salen de ahí es (su <c>@key</c>, o el primero, el
+    /// segundo…).
+    /// </param>
+    private void Recorrer(string lugar, RenderTreeFrame[] marcos, int desde, int hasta, List<ElementoDibujado> elementos, StringBuilder texto)
     {
+        // Cuántos van de cada lugar del marcado entre estos hermanos: los renglones de una lista salen del mismo.
+        Dictionary<int, int>? vistos = null;
+        string Suyo(string tipo, int secuencia, object? llave)
+        {
+            vistos ??= [];
+            var vez = vistos[secuencia] = vistos.GetValueOrDefault(secuencia) + 1;
+            return llave is null ? $"{lugar}/{tipo}{secuencia}.{vez}" : $"{lugar}/{tipo}{secuencia}={llave}";
+        }
+
         for (var i = desde; i < hasta; i++)
         {
             var m = marcos[i];
             switch (m.FrameType)
             {
                 case RenderTreeFrameType.Element:
+                    var suyo = Suyo("e", m.Sequence, m.ElementKey);
                     var atributos = new Dictionary<string, object?>();
                     var eventos = new Dictionary<string, ulong>();
                     var j = i + 1;
@@ -259,11 +303,11 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
                         else
                             atributos[marcos[j].AttributeName] = marcos[j].AttributeValue;
                     }
-                    var lugar = elementos.Count;
+                    var indice = elementos.Count;
                     elementos.Add(null!);
                     var propio = new StringBuilder();
-                    Recorrer(marcos, j, i + m.ElementSubtreeLength, elementos, propio);
-                    elementos[lugar] = new ElementoDibujado(m.ElementName, atributos, eventos, propio.ToString());
+                    Recorrer(suyo, marcos, j, i + m.ElementSubtreeLength, elementos, propio);
+                    elementos[indice] = new ElementoDibujado(m.ElementName, atributos, eventos, propio.ToString()) { Lugar = suyo };
                     texto.Append('\n').Append(propio);
                     i += m.ElementSubtreeLength - 1;
                     break;
@@ -278,7 +322,7 @@ public sealed class PantallaSinNavegador(IServiceProvider servicios) : Renderer(
                     i += m.ComponentSubtreeLength - 1;
                     break;
                 case RenderTreeFrameType.Region:
-                    Recorrer(marcos, i + 1, i + m.RegionSubtreeLength, elementos, texto);
+                    Recorrer(Suyo("r", m.Sequence, null), marcos, i + 1, i + m.RegionSubtreeLength, elementos, texto);
                     i += m.RegionSubtreeLength - 1;
                     break;
             }

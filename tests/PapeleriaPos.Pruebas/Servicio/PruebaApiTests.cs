@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PapeleriaPos.Datos;
@@ -39,44 +40,22 @@ public sealed class ServicioEnPrueba : IAsyncLifetime
             Hecho = await PreparacionPrueba.PrepararAsync(db, Ejemplos);
             await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=DELETE;");
         }
-        Fabrica = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b
+        Fabrica = new FabricaDePrueba(b => b
             .UseSetting("ConnectionStrings:Pos", $"Data Source={Path.Combine(Carpeta, "pos.db")};Pooling=False")
             .UseSetting("Prueba:Activa", "true").UseSetting("Prueba:BaseInicial", BaseInicial).UseSetting("Prueba:CarpetaRespuestas", Carpeta)
             .UseSetting("Respaldos:Activo", "false").UseSetting("Telegram:Activo", "false"));
     }
 
+    /// <summary>
+    /// Detiene el servicio y borra la carpeta (las bases locales de caja que dejaron las pruebas sueltan sus conexiones al
+    /// borrarla). «Empezar de cero» lee la base inicial con su propia cadena, de solo lectura (<c>ModoPrueba</c>): esas
+    /// conexiones también son de esta prueba y se sueltan con esa cadena.
+    /// </summary>
     public async Task DisposeAsync()
     {
         await Fabrica.DisposeAsync();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        await BorrarCarpetaAsync(Carpeta);
-    }
-
-    /// <summary>
-    /// Como los archivos de <see cref="ServicioDePrueba"/>: un trabajo de fondo que terminaba puede seguir escribiendo en la
-    /// carpeta un instante después de parar el servicio (en Linux, el borrado encuentra un archivo nuevo y dice que la carpeta
-    /// no está vacía; en Windows, que un archivo sigue abierto). Se reintenta, y si no, se queda en la carpeta temporal: una
-    /// limpieza fallida no tumba la corrida.
-    /// </summary>
-    private static async Task BorrarCarpetaAsync(string carpeta)
-    {
-        for (var intento = 1; ; intento++)
-        {
-            try
-            {
-                if (Directory.Exists(carpeta))
-                    Directory.Delete(carpeta, recursive: true);
-                return;
-            }
-            catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException) && intento < 20)
-            {
-                await Task.Delay(100);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                return;
-            }
-        }
+        ArchivosDePrueba.Soltar(new SqliteConnectionStringBuilder { DataSource = BaseInicial, Mode = SqliteOpenMode.ReadOnly }.ToString());
+        ArchivosDePrueba.BorrarCarpeta(Carpeta);
     }
 }
 
@@ -329,8 +308,8 @@ public class PruebaApiTests(ServicioEnPrueba prueba) : IClassFixture<ServicioEnP
         // Como la arma la caja de Windows de la prueba: sin alta (la primera caja) y con su base local junto a los datos.
         var http = new HttpClient(prueba.Fabrica.Server.CreateHandler());
         var conexion = new PapeleriaPos.Interfaz.ConexionCaja { Servicio = new Uri("http://localhost/") };
-        var contingencia = new PapeleriaPos.Interfaz.Contingencia(
-            new PapeleriaPos.Interfaz.AlmacenLocal(Path.Combine(prueba.Carpeta, $"caja-local-{Guid.NewGuid():N}.db")), http, conexion);
+        var baseLocal = Path.Combine(prueba.Carpeta, $"caja-local-{Guid.NewGuid():N}.db");
+        var contingencia = new PapeleriaPos.Interfaz.Contingencia(new PapeleriaPos.Interfaz.AlmacenLocal(baseLocal), http, conexion);
         var cliente = new PapeleriaPos.Interfaz.ClienteCaja(http, conexion, contingencia);
         await contingencia.LatidoAsync();
         var caja = (await cliente.CajasAsync()).First();
@@ -349,7 +328,8 @@ public class PruebaApiTests(ServicioEnPrueba prueba) : IClassFixture<ServicioEnP
         Assert.NotNull(avisos);
         Assert.NotNull(respuestas);
         Assert.StartsWith("Primero vuelve a conectar", reiniciar.Message);
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        // Su base local está en la carpeta de la prueba, que se borra al final: la caja se cierra y la suelta (solo la suya).
+        contingencia.Cerrar(TimeSpan.FromSeconds(20));
     }
 }
 
