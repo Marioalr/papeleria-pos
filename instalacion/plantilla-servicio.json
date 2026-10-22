@@ -1,0 +1,23 @@
+// La configuración de ESTA PC para el servicio de Papelería POS: C:\ProgramData\PapeleriaPos\servicio.json.
+//
+// - Actualizar el programa (actualizar.ps1) no toca este archivo: lo que cambia de una PC a otra va aquí, nunca en el
+//   appsettings.json del programa, que se reemplaza al actualizar.
+// - Manda sobre el appsettings.json del programa. Las variables de entorno y la línea de órdenes mandan sobre esto.
+// - La clave de eleventa NUNCA va aquí: va solo en la variable de entorno Eleventa__Clave del servicio.
+// - Se edita como administrador (Bloc de notas). El servicio lo lee al arrancar: después de cambiarlo, en PowerShell como
+//   administrador, Restart-Service PapeleriaPos. Si queda mal escrito, el servicio no arranca y el Visor de eventos dice por qué.
+// - La base va siempre en C:\ProgramData\PapeleriaPos\pos.db: actualizar.ps1 la respalda ahí.
+{
+  // El puente con eleventa del piloto en la caja 2 (docs/migracion-eleventa.md): se quitan las // de estas líneas y se ponen
+  // los datos de la tienda. Caja y Cajero son los ID de eleventa (CAJAS.ID de la caja 2 y el cajero de las ventas).
+  //
+  // "Eleventa": {
+  //   "Activo": true,
+  //   "Escribir": false,
+  //   "Servidor": "<la PC de la caja principal>",
+  //   "Base": "C:\\...\\PDVDATA.FDB",
+  //   "Caja": 0,
+  //   "Cajero": 0,
+  //   "Gbak": "C:\\...\\bin\\gbak.exe"
+  // }
+}
