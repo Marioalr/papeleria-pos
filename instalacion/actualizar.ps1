@@ -538,8 +538,8 @@ if ($servicio) {
         Escribir "El programa del servicio no estaba en $($servicio.Exe): se pone el del paquete (-Forzar)." 'Yellow'
     }
     if (-not (Test-Path -LiteralPath $base)) {
-        if (-not $Forzar) { Terminar "No esta la base en $base: no habria que regresar si algo sale mal. Si el servicio nunca ha arrancado, no hay nada que respaldar: actualizar.ps1 -Forzar. Si usa otra base (ConnectionStrings:Pos), se actualiza a mano." }
-        Escribir "No esta la base en $base: se sigue sin respaldarla (-Forzar)." 'Yellow'
+        if (-not $Forzar) { Terminar "No esta la base en ${base}: no habria que regresar si algo sale mal. Si el servicio nunca ha arrancado, no hay nada que respaldar: actualizar.ps1 -Forzar. Si usa otra base (ConnectionStrings:Pos), se actualiza a mano." }
+        Escribir "No esta la base en ${base}: se sigue sin respaldarla (-Forzar)." 'Yellow'
     }
     if (Test-Path -LiteralPath (Join-Path $datos 'pos.db.danada')) {
         $yaDanada = $true

@@ -32,6 +32,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Antes de armar nada: que Windows PowerShell 5.1 pueda leer todos los scripts. Así salen juntos todos los errores de
+      # sintaxis, y no uno por corrida.
+      - name: Los scripts se leen sin errores
+        shell: powershell
+        run: |
+          $errores = 0
+          foreach ($archivo in @(Get-ChildItem -Recurse -File -Filter *.ps1 -Path instalacion, .github\instalacion)) {
+            $fallas = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($archivo.FullName, [ref]$null, [ref]$fallas)
+            foreach ($falla in $fallas) {
+              Write-Host "::error file=$($archivo.FullName),line=$($falla.Extent.StartLineNumber)::$($falla.Message)"
+              $errores++
+            }
+          }
+          if ($errores -gt 0) { throw "$errores errores de sintaxis en los scripts" }
+          Write-Host 'Todos los scripts se leen bien.'
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
