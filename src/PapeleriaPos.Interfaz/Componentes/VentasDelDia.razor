@@ -109,6 +109,11 @@
                                 <code>@v.Folio</code>
                             }
                         </small>
+                        @if (v.Nota is { } nota)
+                        {
+                            @* La nota del ticket (F4 al cobrar, 2026-10-22). *@
+                            <small>Nota: @nota</small>
+                        }
                         @if (v.Cancelada || v.DevueltoCentavos > 0)
                         {
                             <span class="vn-venta-estado">

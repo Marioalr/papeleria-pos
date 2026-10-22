@@ -92,6 +92,8 @@ internal sealed class VentaConfiguracion : IEntityTypeConfiguration<Venta>
         b.Ignore(v => v.CambioCentavos);
         b.Ignore(v => v.LlevaEfectivo);
         b.Ignore(v => v.TotalCobradoCentavos);
+        // La nota del ticket (F4 al cobrar, 2026-10-22): uno o dos renglones del ticket.
+        b.Property(v => v.Nota).HasMaxLength(NotaDelTicket.Maximo);
     }
 }
 

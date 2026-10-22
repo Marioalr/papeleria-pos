@@ -707,6 +707,15 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-pago-fila .x:hover { color: var(--vn-error); }
 .vn-pago-fila .x .ico { width: 16px; height: 16px; }
 .vn-pago-cab .nota { margin: 0; font-size: 13px; }
+/* La nota del ticket (F4 en el cobro, como en eleventa; 2026-10-22): un renglón para escribirla y, ya puesta, lo que dice. */
+.vn-nota-ticket { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--vn-suave); }
+.vn-nota-ticket > span { display: flex; justify-content: space-between; gap: 8px; }
+.vn-nota-ticket input { width: 100%; min-width: 0; font: 500 15px var(--vn-f-texto); color: var(--vn-texto); padding: 7px 10px; border: 1px solid var(--vn-borde); border-radius: 8px; background: var(--vn-hoja); }
+.vn-nota-ticket input:focus { outline: 2px solid var(--vn-cobro); outline-offset: -1px; border-color: var(--vn-cobro); }
+.vn-nota-ticket small { font-size: 12px; color: var(--vn-tenue); }
+.vn-nota-puesta { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; color: var(--vn-texto); }
+.vn-nota-puesta span { min-width: 0; overflow-wrap: anywhere; }
+.vn-nota-puesta .vn-enlace { white-space: nowrap; }
 .vn-cobrar { margin-top: 6px; display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; border: 0; border-radius: 10px; background: var(--vn-cobro); color: #fff; padding: 13px 16px; font: 700 19px var(--vn-f-cifras); text-align: left; cursor: pointer; }
 .vn-cobrar:hover:not(:disabled) { background: var(--vn-cobro-hover); }
 .vn-cobrar:disabled { background: #a9c9b8; cursor: default; }

@@ -26,7 +26,8 @@ public static class ArmadoTicket
         return new TicketDto(v.FolioTexto!, HoraMexico.ALocal(v.PagadaUtc!.Value), caja, cajero, lineas, v.NumeroDeArticulos, v.TotalCentavos,
             v.IvaCentavos,
             v.Cobros.OrderBy(c => c.Forma).Select(c => new CobroTicketDto(c.Forma, c.MontoCentavos, c.RecibidoCentavos, c.CambioCentavos, c.Referencia)).ToList(),
-            encabezado, pie, logo, v.Id, v.RedondeoCentavos, cliente is null ? null : ClienteTexto(cliente.Nombre, PrivilegiosAplicados(v)), credito);
+            encabezado, pie, logo, v.Id, v.RedondeoCentavos, cliente is null ? null : ClienteTexto(cliente.Nombre, PrivilegiosAplicados(v)), credito,
+            Nota: v.Nota);
     }
 
     /// <summary>"Escuela Benito Juárez (descuento 10 % · mayoreo siempre)", o solo el nombre si no tiene privilegios de venta.</summary>

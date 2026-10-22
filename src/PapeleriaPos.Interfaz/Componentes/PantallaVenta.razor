@@ -575,6 +575,24 @@
                                 <div class="vn-vivo falta"><span>Faltan</span><strong>@Formato.Dinero(aCobrar - Recibido)</strong></div>
                             }
                         }
+                        @* La nota del ticket (F4 en el cobro, como en eleventa; 2026-10-22): uno o dos renglones que salen en el ticket. *@
+                        @if (_notaAbierta)
+                        {
+                            <label class="vn-nota-ticket">
+                                <span>Nota en el ticket <small>@NotaQuedan</small></span>
+                                <input id="nota-ticket" data-pago autocomplete="off" maxlength="@NotaDelTicket.Maximo" placeholder="Ej. se entrega en la escuela, salón 3-B"
+                                       @bind="_nota" @bind:event="oninput" @onkeydown="AlTeclearNota" @onfocus="() => _enPago = true" @onblur="() => _enPago = false" />
+                                <small><kbd>Enter</kbd> la deja · <kbd>Esc</kbd> sin cambiarla</small>
+                            </label>
+                            @if (_errorNota is { } errorNota)
+                            {
+                                <div class="vn-vivo falta"><span>@errorNota</span></div>
+                            }
+                        }
+                        else if (Actual.Venta.Nota is { } notaPuesta)
+                        {
+                            <div class="vn-nota-puesta"><span>Nota: @notaPuesta</span><button class="vn-enlace" @onclick="AbrirNota">Cambiar <kbd>F4</kbd></button></div>
+                        }
                         @if (ExcesoDeCredito > 0 && ConCredito)
                         {
                             <div class="vn-alerta">
@@ -1551,6 +1569,72 @@
         _otras.Clear();
         _enPago = false;
         _avisoDelCobro = null;
+        (_notaAbierta, _nota, _errorNota) = (false, "", null);
+    }
+
+    // ── La nota del ticket: F4 en el cobro, como en eleventa (2026-10-22) ──
+
+    /// <summary>Se está escribiendo la nota del ticket, en el panel del total.</summary>
+    private bool _notaAbierta;
+
+    /// <summary>Lo que se escribe; se queda en la venta con Enter (o al cobrar), y Esc la deja como estaba.</summary>
+    private string _nota = "";
+
+    private string? _errorNota;
+
+    private string NotaQuedan => $"{_nota.Trim().Length} de {NotaDelTicket.Maximo}";
+
+    /// <summary>
+    /// F4 con el cursor en el cobro (o «Nota» junto a «Pagó con»): la nota del ticket, uno o dos renglones que salen en el
+    /// ticket y en sus reimpresiones. El cursor va a ella.
+    /// </summary>
+    private void AbrirNota()
+    {
+        if (Actual.Venta.Lineas.Count == 0)
+        {
+            Avisar("Primero agrega algo al ticket: la nota va con el cobro.", error: false);
+            return;
+        }
+        (_notaAbierta, _nota, _errorNota) = (true, Actual.Venta.Nota ?? "", null);
+        _enfocar = "#nota-ticket";
+    }
+
+    /// <summary>F4 otra vez, con la nota abierta, la deja (como Enter).</summary>
+    private void AlternarNota()
+    {
+        if (!_notaAbierta)
+            AbrirNota();
+        else if (DejarNota())
+            _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
+    }
+
+    private void AlTeclearNota(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && DejarNota())
+            _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
+    }
+
+    /// <summary>Lo escrito se queda en la venta; si no cabe en el ticket, lo dice y la nota sigue abierta.</summary>
+    private bool DejarNota()
+    {
+        try
+        {
+            Actual.Venta.PonerNota(_nota);
+        }
+        catch (ArgumentException ex)
+        {
+            _errorNota = ex.Message;
+            return false;
+        }
+        (_notaAbierta, _errorNota) = (false, null);
+        return true;
+    }
+
+    /// <summary>Esc en la nota: se queda como estaba y el cursor regresa a «Pagó con».</summary>
+    private void CancelarNota()
+    {
+        (_notaAbierta, _nota, _errorNota) = (false, "", null);
+        _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
     }
 
     /// <summary>
@@ -1575,6 +1659,10 @@
         @foreach (var forma in FormasQueFaltan)
         {
             <button class="vn-forma" title="@TituloDeForma(forma)" @onclick="AlAgregarForma(forma)"><Ico Nombre="@IconoDeForma(forma)" />@EtiquetaDeForma(forma)</button>
+        }
+        @if (!_notaAbierta)
+        {
+            <button class="vn-forma" title="Una nota que sale en el ticket (F4)" @onclick="AbrirNota"><Ico Nombre="lista" />Nota</button>
         }
     </span>;
 
@@ -1762,6 +1850,9 @@
         _avisoDelCobro = null;
         // Un escaneo de la cola pudo abrir algo (el folio de un ticket abre su devolución): no se cobra encima.
         if (_ventana != Ventanas.Ninguna || Actual.Venta.Lineas.Count == 0)
+            return;
+        // La nota que se estaba escribiendo va con el cobro (F12 o Enter); si no cabe, se dice ahí y no se cobra todavía.
+        if (_notaAbierta && !DejarNota())
             return;
         if (ErrorDelCobro is { } error)
         {
@@ -2652,6 +2743,8 @@
             // último escaneo al dar Enter.
             case "F12-pago": break;
             case "F12": await IrAlCobroAsync(); break;
+            // F4 con el cursor en el cobro (caja.js lo dice así): la nota del ticket, como en eleventa. Fuera del cobro, Inventario.
+            case "F4-cobro": AlternarNota(); break;
             case "F5": RetomarPrimero(); break;
             case "F6": PonerEnEspera(); break;
             case ['A', 'l', 't', '+', var numero] when numero is >= '1' and <= '6': await RapidoAsync(numero - '1'); break;
@@ -2676,6 +2769,9 @@
             case "F11": await MayoreoAsync(); break;
             case "F3": await IrAAsync(Pagina.Productos); break;
             case "F4": await IrAAsync(Pagina.Inventario); break;
+            case "Escape" when _notaAbierta:
+                CancelarNota();
+                break;
             case "Escape":
                 _cobrado = null;
                 // Desde el cuadro de captura, caja.js ya lo vació: vaciarlo otra vez desde aquí borraría lo que se
@@ -3397,7 +3493,7 @@
                 VentaId: venta.Id, Impresiones: abierto.Impresiones.Count > 0 ? abierto.Impresiones.Select(i => i.Id).ToList() : null,
                 ClienteId: venta.ClienteId, AutorizacionDescuentoId: venta.AutorizacionDescuentoId,
                 AutorizacionBajoCostoId: venta.AutorizacionBajoCostoId, MayoreoDeCliente: venta.MayoreoDeCliente,
-                AutorizacionCreditoId: autorizacionCredito, VersionCatalogo: version), soloEnLinea: abierto.FiadoSinConfirmar);
+                AutorizacionCreditoId: autorizacionCredito, VersionCatalogo: version, Nota: venta.Nota), soloEnLinea: abierto.FiadoSinConfirmar);
         }
         catch (ErrorCaja ex) when (ex.PreciosCambiados is { } preciosCambiados)
         {

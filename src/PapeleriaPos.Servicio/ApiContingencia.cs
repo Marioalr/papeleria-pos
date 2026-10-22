@@ -53,6 +53,8 @@ public static class ApiContingencia
             // El precio que se cobró manda; el mayoreo del cliente (el que usó la caja) solo sirve para que el ticket diga el ahorro.
             var venta = await ApiCaja.ArmarVentaAsync(db, catalogo, caja, v.TurnoId, v.CajeroId, v.Id, lineas, v.MayoreoDeCliente == true);
             venta.ClienteId = v.ClienteId;
+            // Su nota, como se imprimió; ya se cobró, así que no se rechaza por ella.
+            venta.PonerNota(NotaDelTicket.Recortada(v.Nota));
             // También va a eleventa (el piloto); su ticket ya salió con el folio de la caja, así que se manda en la vuelta.
             // Aunque el piloto sea solo en efectivo, no se rechaza: ya se cobró. Si no fue en efectivo, queda por revisar.
             eleventa.Encolar(db, venta.Id);

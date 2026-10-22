@@ -139,7 +139,7 @@ public sealed partial class VentasDeOtrosDias(PosDbContext db)
                 (int)v.NumeroDeArticulos, Formas(v), v.Estado == EstadoVenta.Cancelada, devuelto.GetValueOrDefault(v.Id),
                 v.Lineas.Count > 0 && v.Lineas.All(l => l.CantidadDevuelta >= l.Cantidad),
                 // Como la ventana de la devolución: le queda alguno de sus 7 días (cuenta los días completos que pasaron).
-                ahora - v.PagadaUtc.Value < TimeSpan.FromDays(Devolucion.DiasParaDevolver)))
+                ahora - v.PagadaUtc.Value < TimeSpan.FromDays(Devolucion.DiasParaDevolver), v.Nota))
             .ToList();
     }
 

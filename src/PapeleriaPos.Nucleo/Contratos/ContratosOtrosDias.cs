@@ -40,9 +40,11 @@ public sealed record VentasDeUnDiaDto(
 /// Todavía está en los días para devolver (7, contados desde que se cobró, con la hora de la caja principal), como lo dice la
 /// ventana de la devolución.
 /// </param>
+/// <param name="Nota">La nota del ticket (F4 al cobrar, 2026-10-22); vacía si no lleva.</param>
 public sealed record VentaDeUnDiaDto(
     Guid Id, string Folio, int? FolioEleventa, DateTime FechaLocal, Guid CajaId, string Caja, Guid CajeroId, string Cajero, long TotalCentavos,
-    int Articulos, IReadOnlyList<FormaPago> Formas, bool Cancelada, long DevueltoCentavos, bool DevueltaCompleta, bool SeDevuelve);
+    int Articulos, IReadOnlyList<FormaPago> Formas, bool Cancelada, long DevueltoCentavos, bool DevueltaCompleta, bool SeDevuelve,
+    string? Nota = null);
 
 /// <summary>
 /// El historial de cortes de un día: los turnos que tocan ese día (se abrieron, se cerraron o seguían abiertos en él), como

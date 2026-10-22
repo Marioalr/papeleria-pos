@@ -67,6 +67,19 @@ public class Venta
 
     public string? FolioTexto => Folio is { } f ? $"{Serie}-{f:000000}" : null;
 
+    /// <summary>
+    /// La nota del ticket: F4 al cobrar, como en eleventa (2026-10-22). Sale en el ticket y en sus reimpresiones, y en «Ventas
+    /// del día». Vacía si no lleva (<see cref="NotaDelTicket"/>).
+    /// </summary>
+    public string? Nota { get; private set; }
+
+    /// <summary>Pone (o quita, vacía) la nota del ticket, de uno o dos renglones (<see cref="NotaDelTicket.Maximo"/>).</summary>
+    public void PonerNota(string? nota)
+    {
+        RequerirEditable();
+        Nota = NotaDelTicket.Normalizar(nota);
+    }
+
     /// <summary>Artículos para el ticket: piezas por cantidad; lo que se vende por metro o a granel cuenta uno por línea.</summary>
     public decimal NumeroDeArticulos => Lineas.Sum(l => l.Cantidad.EsEntera ? l.Cantidad.EnUnidades : 1);
 

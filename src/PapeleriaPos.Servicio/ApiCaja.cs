@@ -207,6 +207,8 @@ public static class ApiCaja
             var caja = await db.Cajas.FindAsync(s.CajaId) ?? throw new InvalidOperationException("La caja no existe.");
             var venta = await ArmarVentaAsync(db, catalogo, caja, turno.Id, s.CajeroId, s.VentaId ?? Ids.Nuevo(), s.Lineas,
                 await ApiClientes.MayoreoDelCobroAsync(db, s.ClienteId, s.MayoreoDeCliente));
+            // La nota del ticket (F4 al cobrar): sale en el ticket y en sus reimpresiones. Una más larga de lo que cabe no se cobra.
+            venta.PonerNota(s.Nota);
             // La caja escaneó contra su copia (entrega 5): si el precio o el mayoreo de algo del ticket cambió después, no se
             // cobra con precios que el cajero no vio; se le contestan los de ahora y la caja pone el ticket al día. Una caja de
             // antes no manda la versión: se cobra como siempre.

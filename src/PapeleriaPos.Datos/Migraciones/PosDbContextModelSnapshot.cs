@@ -15,7 +15,7 @@ namespace PapeleriaPos.Datos.Migraciones
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.13");
 
             modelBuilder.Entity("PapeleriaPos.Datos.Borrado", b =>
                 {
@@ -3640,6 +3640,10 @@ namespace PapeleriaPos.Datos.Migraciones
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("MotivoCancelacion")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Nota")
+                        .HasMaxLength(80)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("PagadaUtc")

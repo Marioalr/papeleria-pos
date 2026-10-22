@@ -1509,6 +1509,8 @@ public sealed class Contingencia
             venta.AplicarDescuentoSolicitado(agregada, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
         }
         venta.ValidarCobros(s.Cobros);
+        // La nota del ticket (F4 al cobrar), como en línea.
+        venta.PonerNota(s.Nota);
 
         var bitacora = new List<BitacoraContingenciaDto>();
         var usadas = new List<Guid>();
@@ -1591,7 +1593,7 @@ public sealed class Contingencia
         var subida = new VentaContingenciaDto(venta.Id, caja.Id, turno.Id, s.CajeroId, folio, ahora,
             venta.Lineas.Select(x => new LineaContingenciaDto(x.VarianteId, x.PresentacionId, x.Descripcion, x.Cantidad.Milesimas, x.PrecioCentavos,
                 x.DescuentoCentesimas, x.DescuentoCentesimas is null && x.TieneDescuento ? x.DescuentoCentavos : null, x.MotivoDescuento)).ToList(),
-            s.Cobros, venta.ClienteId, venta.RedondeoCentavos, venta.MayoreoDeCliente, cuenta?.SaldoCentavos, excesoAutorizado, vence);
+            s.Cobros, venta.ClienteId, venta.RedondeoCentavos, venta.MayoreoDeCliente, cuenta?.SaldoCentavos, excesoAutorizado, vence, venta.Nota);
 
         _almacen.Escribir(lote =>
         {

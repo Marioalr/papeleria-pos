@@ -393,6 +393,9 @@ function alPresionar(e) {
             nombre = 'F12-pago';
         }
     }
+    // F4 con el cursor en el cobro («Pagó con», sus montos, su botón): la nota del ticket, como en eleventa (2026-10-22). En lo
+    // demás de la venta, F4 sigue siendo Inventario.
+    if (tecla === 'F4' && esDelCobro(e.target)) nombre = 'F4-cobro';
     pantalla.invokeMethodAsync('Tecla', nombre, texto);
 }
 

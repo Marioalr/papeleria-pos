@@ -147,11 +147,12 @@ public sealed record LineaSolicitada(
 /// cobra: contesta con los de ahora (<see cref="PreciosCambiadosDto"/>), para que el ticket diga lo que vio el cajero.
 /// Vacía en las cajas de antes: se cobra como siempre.
 /// </param>
+/// <param name="Nota">La nota del ticket (F4 al cobrar, 2026-10-22; <see cref="NotaDelTicket"/>). Vacía: sin nota.</param>
 public sealed record SolicitudCobro(
     Guid CajaId, Guid TurnoId, Guid CajeroId, IReadOnlyList<LineaSolicitada> Lineas, IReadOnlyList<CobroSolicitado> Cobros, Guid? VentaId = null,
     IReadOnlyList<Guid>? Impresiones = null, [property: JsonPropertyName("clienteEspecialId")] Guid? ClienteId = null,
     Guid? AutorizacionDescuentoId = null, Guid? AutorizacionBajoCostoId = null, bool? MayoreoDeCliente = null, Guid? AutorizacionCreditoId = null,
-    long? VersionCatalogo = null);
+    long? VersionCatalogo = null, string? Nota = null);
 
 /// <summary>
 /// El cobro no se hizo (entrega 5): el precio o el mayoreo de algo del ticket cambió después de la versión con que la caja
@@ -195,11 +196,13 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 /// Se cobró con la copia de la caja, sin la caja principal (sin conexión o con la red lenta): hasta que suba, no se puede
 /// reimprimir. Lo pone la caja; el servicio nunca.
 /// </param>
+/// <param name="Nota">La nota que se le puso al cobrar (F4, 2026-10-22): sale al final del ticket, también al reimprimirlo.</param>
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
     long TotalCentavos, long IvaCentavos, IReadOnlyList<CobroTicketDto> Cobros, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie,
     LogoTicketDto? Logo = null, Guid? VentaId = null, long RedondeoCentavos = 0, string? Cliente = null, CreditoTicketDto? Credito = null,
-    int? FolioEleventa = null, bool YaCobrada = false, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir, bool EnContingencia = false)
+    int? FolioEleventa = null, bool YaCobrada = false, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir, bool EnContingencia = false,
+    string? Nota = null)
 {
     /// <summary>
     /// Lo fiado se imprime aunque «Al cobrar» diga otra cosa: el cliente se lleva «SU CUENTA», lo que quedó a deber y hasta
@@ -724,10 +727,12 @@ public sealed record LineaContingenciaDto(
 /// <param name="SaldoConocidoCentavos">Si fió: lo que la caja creía que debía (con eso imprimió el ticket).</param>
 /// <param name="ExcesoAutorizadoCentavos">Si fió: lo que pasó del límite con permiso en la caja.</param>
 /// <param name="VenceCredito">Si fió: el vencimiento que se imprimió.</param>
+/// <param name="Nota">La nota del ticket (F4), como se imprimió.</param>
 public sealed record VentaContingenciaDto(
     Guid Id, Guid CajaId, Guid TurnoId, Guid CajeroId, int Folio, DateTime PagadaUtc, IReadOnlyList<LineaContingenciaDto> Lineas,
     IReadOnlyList<CobroSolicitado> Cobros, [property: JsonPropertyName("clienteEspecialId")] Guid? ClienteId = null, long? RedondeoCentavos = null,
-    bool? MayoreoDeCliente = null, long? SaldoConocidoCentavos = null, long ExcesoAutorizadoCentavos = 0, DateOnly? VenceCredito = null);
+    bool? MayoreoDeCliente = null, long? SaldoConocidoCentavos = null, long ExcesoAutorizadoCentavos = 0, DateOnly? VenceCredito = null,
+    string? Nota = null);
 
 public sealed record MovimientoContingenciaDto(Guid Id, TipoMovimientoCaja Tipo, long MontoCentavos, string Motivo, Guid UsuarioId, DateTime FechaUtc);
 

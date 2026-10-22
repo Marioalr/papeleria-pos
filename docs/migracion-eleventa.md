@@ -354,6 +354,11 @@ acumulados del turno, del día y del departamento.
   renglón del día, el turno en ceros con el fondo y su ticket abierto. Cerrarlo es del paso 4.
 - No pone los apartados que eleventa pone al escanear: la caja nueva escanea contra su propia base, y al cobrar ya no
   quedaría ninguno.
+- **La nota del ticket (F4 al cobrar, 2026-10-22) no va:** `VENTATICKETS.NOTAS` sigue vacía. La columna existe (un BLOB
+  binario, con `IMPRIMIR_NOTA` junto), pero no se sabe cómo la guarda eleventa (¿texto en Windows-1252, RTF?) ni si su
+  reimpresión la saca, y escribir algo que eleventa no espera en su base real no vale el riesgo. La nota se queda en el
+  POS (en su base, en el ticket de la caja 2 y en sus reimpresiones). Cuando pase una venta con nota en eleventa, se ve
+  con `observar-eleventa` y el puente la puede mandar.
 
 Se probó así:
 - Con pruebas contra un Firebird de prueba en la misma PC: una base vacía con las mismas tablas, tipos, contadores y

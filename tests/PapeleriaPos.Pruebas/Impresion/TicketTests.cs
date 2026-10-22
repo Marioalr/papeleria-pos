@@ -36,6 +36,49 @@ public class TicketTests
         Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
     }
 
+    /// <summary>
+    /// La nota del ticket (F4 al cobrar, como en eleventa; 2026-10-22): después del cobro y antes del pie, en uno o dos renglones
+    /// de 48, sin cortar palabras. Una palabra muy larga no la deja en tres: se corta en el renglón.
+    /// </summary>
+    [Fact]
+    public void La_nota_sale_antes_del_pie_en_dos_renglones_a_lo_mas()
+    {
+        var nota = "Se entrega en la escuela Benito Juárez, salón 3-B, con la maestra Lupita";
+        Assert.True(nota.Length <= NotaDelTicket.Maximo);
+
+        var renglones = TicketTexto.Generar(Ticket() with { Nota = nota }).Split(Environment.NewLine);
+
+        var primero = Array.FindIndex(renglones, r => r.StartsWith("Nota: Se entrega", StringComparison.Ordinal));
+        Assert.True(primero > Array.FindIndex(renglones, r => r.Contains("Efectivo: $200.00")));
+        Assert.True(primero < Array.FindIndex(renglones, r => r.Contains("Gracias por su compra")));
+        Assert.Equal($"Nota: {nota}", $"{renglones[primero]} {renglones[primero + 1]}");
+        Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
+        Assert.DoesNotContain("Nota:", TicketTexto.Generar(Ticket()));
+
+        var larga = "Recoger " + new string('x', 45) + " en la sucursal";
+        Assert.Equal(2, DisenoTicket.RenglonesDeLaNota(larga).Count);
+        Assert.Equal($"Nota: {larga}", string.Concat(DisenoTicket.RenglonesDeLaNota(larga)).Replace("  ", " "));
+    }
+
+    /// <summary>Como se guarda la nota: sin espacios de más ni saltos de renglón, vacía es ninguna y hasta 80 letras.</summary>
+    [Fact]
+    public void La_nota_se_guarda_en_un_renglon_y_hasta_lo_que_cabe()
+    {
+        Assert.Equal("Entregar en la escuela", NotaDelTicket.Normalizar("  Entregar\n en   la escuela "));
+        Assert.Null(NotaDelTicket.Normalizar("  \n "));
+        Assert.Null(NotaDelTicket.Normalizar(null));
+        Assert.Equal(80, NotaDelTicket.Normalizar(new string('a', 80))!.Length);
+        Assert.Throws<ArgumentException>(() => NotaDelTicket.Normalizar(new string('a', 81)));
+        // Lo que llega con la bandeja ya se cobró: se guarda hasta donde cabe.
+        Assert.Equal(80, NotaDelTicket.Recortada(new string('a', 90))!.Length);
+
+        var venta = new Venta { Serie = "A" };
+        venta.PonerNota(" Para Lupita ");
+        Assert.Equal("Para Lupita", venta.Nota);
+        venta.PonerNota("");
+        Assert.Null(venta.Nota);
+    }
+
     [Fact]
     public void Con_redondeo_sale_el_total_exacto_el_redondeo_y_lo_que_se_paga()
     {
