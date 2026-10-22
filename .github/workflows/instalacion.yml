@@ -1,0 +1,256 @@
+# La prueba de los scripts de instalacion/ en Windows (docs/pruebas-en-tienda.md, «Actualizar la caja 2 del piloto»): arma dos
+# paquetes, instala el primero como en la tienda, lo actualiza al segundo sin perder la base ni servicio.json, regresa sola de una
+# actualización que no arranca, pasa a Archivos de programa un servicio instalado como antes y al final quita todo.
+#
+# No corre las pruebas del POS (eso es pruebas.yml): solo publica y usa los scripts, con Windows PowerShell 5.1 como en la
+# tienda. Cada paso dice qué revisa («bien: …»); lo que no se cumple sale como error con su porqué, y el paso «Si algo falló»
+# enseña los registros de actualizar.ps1 y lo que dijo Windows del servicio.
+name: Instalación
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'instalacion/**'
+      - 'src/PapeleriaPos.Servicio/**'
+      - 'src/PapeleriaPos.Caja/**'
+      - 'Directory.Build.props'
+      - '.github/instalacion/**'
+      - '.github/workflows/instalacion.yml'
+
+concurrency:
+  group: instalacion-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scripts:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Para la marca en la base (sqlite3 viene con Python).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Armar el paquete 1.0.1, el 1.0.2 y uno 1.0.3 que no arranca
+        run: |
+          . .github\instalacion\ayudas.ps1
+          foreach ($v in '1', '2') {
+            $r = Correr instalacion\armar-paquete.ps1 @('-Version', "1.0.$v", '-Salida', (Join-Path $Paquetes "v$v"), '-Rapido')
+            Que ($r.Codigo -eq 0) "se armo el paquete 1.0.$v"
+          }
+          Que ((Version-De (Join-Path $Paquetes 'v2\caja\PapeleriaPos.Caja.exe')) -eq '1.0.2') 'la caja del paquete 1.0.2 dice 1.0.2'
+          Que (Test-Path (Join-Path $Paquetes 'v2\actualizar.ps1')) 'el paquete trae actualizar.ps1'
+          Que (Test-Path (Join-Path $Paquetes 'v2\servicio\plantilla-servicio.json')) 'y la plantilla de servicio.json'
+          # Un programa que termina en seguida (sin nada) o a los segundos que se le digan: el servicio que no arranca y la caja
+          # abierta de mentiras.
+          Add-Type -OutputType ConsoleApplication -OutputAssembly $ProgramaQueTermina -TypeDefinition @'
+          using System.Reflection;
+          [assembly: AssemblyFileVersion("1.0.3.0")]
+          [assembly: AssemblyInformationalVersion("1.0.3")]
+          public static class Programa
+          {
+              public static int Main(string[] argumentos)
+              {
+                  int segundos;
+                  if (argumentos.Length > 0 && int.TryParse(argumentos[0], out segundos))
+                      System.Threading.Thread.Sleep(segundos * 1000);
+                  return 3;
+              }
+          }
+          '@
+          Que ((Version-De $ProgramaQueTermina) -eq '1.0.3') 'el programa que termina dice 1.0.3'
+          Copy-Item -LiteralPath (Join-Path $Paquetes 'v2') -Destination (Join-Path $Paquetes 'roto') -Recurse
+          Copy-Item -LiteralPath $ProgramaQueTermina -Destination (Join-Path $Paquetes 'roto\servicio\PapeleriaPos.Servicio.exe') -Force
+          Que ((Version-De (Join-Path $Paquetes 'roto\servicio\PapeleriaPos.Servicio.exe')) -eq '1.0.3') 'el paquete roto trae un servicio 1.0.3 que termina en seguida'
+
+      - name: Instalar el 1.0.1 como en la tienda
+        run: |
+          . .github\instalacion\ayudas.ps1
+          $r = Correr (Join-Path $Paquetes 'v1\servicio\instalar-servicio.ps1')
+          Que ($r.Codigo -eq 0) 'instalar-servicio.ps1 termino bien'
+          $r = Correr (Join-Path $Paquetes 'v1\caja\instalar-caja.ps1')
+          Que ($r.Codigo -eq 0) 'instalar-caja.ps1 termino bien'
+          Que ((Ruta-Del-Servicio) -eq "`"$ExeServicio`"") 'el servicio corre desde Archivos de programa'
+          Que (Regla-Del-Firewall) 'abrio el firewall para las cajas'
+          Que ((Version-De $ExeCaja) -eq '1.0.1') 'la caja 1.0.1 esta en Archivos de programa'
+          Que ((Get-Content -LiteralPath $ServicioJson -Raw) -match 'Eleventa__Clave') 'se puso la plantilla de servicio.json'
+          $estado = Esperar-Version '1.0.1'
+          Que ($null -ne $estado) 'api/estado contesta con la 1.0.1'
+          Que (-not $estado.pilotoEleventa) 'sin el puente: la plantilla no trae ajustes'
+
+      - name: Una marca en la base y otra en servicio.json
+        run: |
+          . .github\instalacion\ayudas.ps1
+          Que (Marca poner) 'la marca quedo en la base, con el servicio en marcha'
+          # El puente prendido, sin servidor ni clave: no se conecta a nada, pero api/estado lo dice (pilotoEleventa).
+          $json = "// La configuracion de esta PC en la prueba de instalacion.`r`n{`r`n  `"Eleventa`": { `"Escribir`": true }`r`n}`r`n"
+          [IO.File]::WriteAllText($ServicioJson, $json, (New-Object System.Text.UTF8Encoding $false))
+          Set-Content -LiteralPath $HuellaServicioJson -Value (Huella-De-ServicioJson)
+          Restart-Service -Name PapeleriaPos
+          $estado = Esperar-Version '1.0.1'
+          Que ($estado.pilotoEleventa -eq $true) 'el servicio instalado lee C:\ProgramData\PapeleriaPos\servicio.json'
+
+      - name: Instalar otra vez no se deja
+        run: |
+          . .github\instalacion\ayudas.ps1
+          $r = Correr (Join-Path $Paquetes 'v2\servicio\instalar-servicio.ps1')
+          Que ($r.Codigo -ne 0) 'instalar-servicio.ps1 no se pone encima'
+          Que ($r.Texto -match 'actualizar\.ps1') 'y dice que una version nueva va con actualizar.ps1'
+          Que ((Version-De $ExeServicio) -eq '1.0.1') 'el servicio sigue en la 1.0.1'
+
+      - name: Actualizar al 1.0.2 con la caja abierta (se cierra sola a los 20 s)
+        run: |
+          . .github\instalacion\ayudas.ps1
+          $caja = Abrir-Caja-De-Mentiras 20
+          $r = Correr (Join-Path $Paquetes 'v2\actualizar.ps1')
+          Que ($r.Codigo -eq 0) 'actualizar.ps1 termino bien'
+          Que ($r.Texto -match 'La caja esta abierta') 'pidio cerrar la caja y espero'
+          $caja.WaitForExit()
+          Que ($caja.ExitCode -eq 3) 'la caja se cerro sola: no a la fuerza'
+          Que ($r.Texto -match 'Actualizado de 1\.0\.1 a 1\.0\.2') 'dice: Actualizado de 1.0.1 a 1.0.2'
+          $estado = Esperar-Version '1.0.2' 30
+          Que ($null -ne $estado) 'api/estado contesta con la 1.0.2'
+          Que ($estado.pilotoEleventa -eq $true) 'con lo de servicio.json'
+          Que ((Huella-De-ServicioJson) -eq (Get-Content -LiteralPath $HuellaServicioJson)) 'servicio.json quedo igual'
+          Que (Marca revisar) 'la marca sigue en la base'
+          Que ((Version-De $ExeServicio) -eq '1.0.2') 'el servicio de Archivos de programa es el 1.0.2'
+          Que ((Version-De $ExeCaja) -eq '1.0.2') 'la caja de Archivos de programa es la 1.0.2'
+          Que (-not (Test-Path (Join-Path $Programa 'Caja\de-mentiras'))) 'la carpeta de la caja es la del paquete'
+          $respaldos = Respaldos
+          Que ($respaldos.Count -eq 1) 'hay un respaldo'
+          $respaldo = $respaldos[0].FullName
+          Set-Content -LiteralPath $PrimerRespaldo -Value $respaldo
+          Que ($respaldos[0].Name -match '^\d{4}-\d{2}-\d{2}_\d{2}\.\d{2}\.\d{2}-1\.0\.1$') "con la fecha y la version de antes en el nombre ($($respaldos[0].Name))"
+          Que (Test-Path (Join-Path $respaldo 'base\pos.db')) 'con la base'
+          Que ((Version-De (Join-Path $respaldo 'servicio\PapeleriaPos.Servicio.exe')) -eq '1.0.1') 'con el servicio de antes'
+          Que ((Version-De (Join-Path $respaldo 'caja\PapeleriaPos.Caja.exe')) -eq '1.0.1') 'con la caja de antes'
+          Que (Test-Path (Join-Path $respaldo 'actualizar.log')) 'y con el registro'
+
+      - name: Una version anterior no se pone
+        run: |
+          . .github\instalacion\ayudas.ps1
+          $r = Correr (Join-Path $Paquetes 'v1\actualizar.ps1')
+          Que ($r.Codigo -eq 1) 'actualizar.ps1 se nego'
+          Que ($r.Texto -match 'version anterior') 'porque es una version anterior'
+          Que ((Respaldos).Count -eq 1) 'sin tocar nada: ni un respaldo nuevo'
+          Que ((Estado).version -eq '1.0.2') 'el servicio sigue en la 1.0.2'
+
+      - name: La misma version, solo con -Forzar
+        run: |
+          . .github\instalacion\ayudas.ps1
+          $r = Correr (Join-Path $Paquetes 'v2\actualizar.ps1')
+          Que ($r.Codigo -eq 0) 'sin -Forzar termino bien'
+          Que ($r.Texto -match 'Ya esta instalada') 'y dijo que ya esta instalada'
+          Que ((Respaldos).Count -eq 1) 'sin respaldo nuevo'
+          $r = Correr (Join-Path $Paquetes 'v2\actualizar.ps1') @('-Forzar')
+          Que ($r.Codigo -eq 0) 'con -Forzar la volvio a poner'
+          Que ($r.Texto -match 'Actualizado de 1\.0\.2 a 1\.0\.2') 'dice: Actualizado de 1.0.2 a 1.0.2'
+          Que ((Respaldos).Count -eq 2) 'con su respaldo'
+          Que (Marca revisar) 'la marca sigue en la base'
+
+      - name: Una actualizacion que no arranca regresa sola a la 1.0.2
+        run: |
+          . .github\instalacion\ayudas.ps1
+          $r = Correr (Join-Path $Paquetes 'roto\actualizar.ps1')
+          Que ($r.Codigo -eq 1) 'actualizar.ps1 dice que no quedo (codigo 1)'
+          Que ($r.Texto -match 'Se regreso a la version 1\.0\.2') 'dice que regreso a la 1.0.2'
+          Que ($r.Texto -match 'actualizar\.log') 'y donde quedo el registro'
+          $estado = Esperar-Version '1.0.2' 60
+          Que ($null -ne $estado) 'api/estado contesta con la 1.0.2'
+          Que ($estado.pilotoEleventa -eq $true) 'con lo de servicio.json'
+          Que ((Version-De $ExeServicio) -eq '1.0.2') 'el programa del servicio es otra vez el 1.0.2'
+          Que ((Get-Service -Name PapeleriaPos).StartType -eq 'Automatic') 'el servicio queda automatico'
+          Que (Marca revisar) 'la marca sigue en la base'
+          Que ((Huella-De-ServicioJson) -eq (Get-Content -LiteralPath $HuellaServicioJson)) 'servicio.json quedo igual'
+          Que ((Respaldos).Count -eq 3) 'quedo el respaldo de este intento'
+
+      - name: Un servicio instalado como antes (fuera de Archivos de programa) pasa a Archivos de programa
+        run: |
+          . .github\instalacion\ayudas.ps1
+          $r = Correr (Join-Path $Programa 'Servicio\instalar-servicio.ps1') @('-Quitar')
+          Que ($r.Codigo -eq 0) 'instalar-servicio.ps1 -Quitar, desde Archivos de programa, termino bien'
+          Que (Esperar-Sin-Servicio) 'ya no esta el servicio'
+          Que (-not (Test-Path (Join-Path $Programa 'Servicio'))) 'ni su carpeta en Archivos de programa'
+          Que (-not (Regla-Del-Firewall)) 'ni su regla del firewall'
+          Que ((Test-Path $Base) -and (Test-Path $ServicioJson)) 'la base y servicio.json se quedan'
+          # Como lo dejaba el instalar-servicio.ps1 de antes: registrado desde la carpeta donde se corria.
+          $viejo = 'C:\PapeleriaPos-de-antes\Servicio'
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $viejo) | Out-Null
+          Copy-Item -LiteralPath (Join-Path $Paquetes 'v1\servicio') -Destination $viejo -Recurse
+          New-Service -Name PapeleriaPos -BinaryPathName "`"$viejo\PapeleriaPos.Servicio.exe`"" -DisplayName 'Papeleria POS' -StartupType Automatic | Out-Null
+          sc.exe failure PapeleriaPos reset= 86400 actions= restart/5000/restart/5000/restart/60000 | Out-Null
+          Start-Service -Name PapeleriaPos
+          $estado = Esperar-Version '1.0.1'
+          Que ($null -ne $estado -and $estado.pilotoEleventa) 'el servicio de antes contesta con la 1.0.1 y lee servicio.json'
+          # Un ajuste propio en su appsettings.json: actualizar no sigue sin que se pase a servicio.json.
+          $appsettings = Join-Path $viejo 'appsettings.json'
+          $original = Get-Content -LiteralPath $appsettings -Raw -Encoding UTF8
+          [IO.File]::WriteAllText($appsettings, ($original -replace '^\s*\{', '{ "Respaldos": { "Dias": 45 },'), (New-Object System.Text.UTF8Encoding $false))
+          $r = Correr (Join-Path $Paquetes 'v2\actualizar.ps1')
+          Que ($r.Codigo -eq 1) 'con un ajuste propio en appsettings.json, actualizar.ps1 no sigue'
+          Que ($r.Texto -match 'Respaldos:Dias') 'y dice cual se perderia'
+          Que ((Ruta-Del-Servicio) -like '*PapeleriaPos-de-antes*') 'el servicio sigue donde estaba'
+          Que ((Respaldos).Count -eq 3) 'sin respaldo nuevo'
+          [IO.File]::WriteAllText($appsettings, $original, (New-Object System.Text.UTF8Encoding $false))
+          # Ya sin el ajuste, y con la caja abierta: -Forzar la cierra.
+          $caja = Abrir-Caja-De-Mentiras 600
+          $r = Correr (Join-Path $Paquetes 'v2\actualizar.ps1') @('-Forzar')
+          Que ($r.Codigo -eq 0) 'actualizar.ps1 -Forzar termino bien'
+          Que ($r.Texto -match 'Actualizado de 1\.0\.1 a 1\.0\.2') 'dice: Actualizado de 1.0.1 a 1.0.2'
+          Que ($caja.HasExited) 'cerro la caja a la fuerza (-Forzar)'
+          Que ((Ruta-Del-Servicio) -eq "`"$ExeServicio`"") 'el servicio ahora corre desde Archivos de programa'
+          Que (Test-Path "$viejo\PapeleriaPos.Servicio.exe") 'la carpeta de antes no se toco'
+          $estado = Esperar-Version '1.0.2' 30
+          Que ($null -ne $estado -and $estado.pilotoEleventa) 'api/estado contesta con la 1.0.2 y lee servicio.json'
+          Que (Marca revisar) 'la marca sigue en la base'
+          Que ((Huella-De-ServicioJson) -eq (Get-Content -LiteralPath $HuellaServicioJson)) 'servicio.json quedo igual'
+          Que ((Respaldos).Count -eq 3) 'se guardan los ultimos 3 respaldos'
+          Que (-not (Test-Path (Get-Content -LiteralPath $PrimerRespaldo))) 'el mas viejo se borro'
+
+      - name: Quitar todo
+        run: |
+          . .github\instalacion\ayudas.ps1
+          $r = Correr (Join-Path $Paquetes 'v2\caja\instalar-caja.ps1') @('-Quitar')
+          Que ($r.Codigo -eq 0) 'instalar-caja.ps1 -Quitar termino bien'
+          $r = Correr (Join-Path $Paquetes 'v2\servicio\instalar-servicio.ps1') @('-Quitar')
+          Que ($r.Codigo -eq 0) 'instalar-servicio.ps1 -Quitar termino bien'
+          Que (Esperar-Sin-Servicio) 'ya no esta el servicio'
+          Que (-not (Test-Path (Join-Path $Programa 'Servicio'))) 'ni su programa'
+          Que (-not (Test-Path (Join-Path $Programa 'Caja'))) 'ni la caja'
+          Que ((Test-Path $ServicioJson) -and (Marca revisar)) 'la base, con su marca, y servicio.json se quedan'
+
+      - name: Si algo fallo, los registros de actualizar.ps1 y lo que dijo Windows del servicio
+        if: failure()
+        run: |
+          $actualizaciones = Join-Path $env:ProgramData 'PapeleriaPos\actualizaciones'
+          foreach ($registro in @(Get-ChildItem -LiteralPath $actualizaciones -Recurse -Filter 'actualizar.log' -ErrorAction SilentlyContinue)) {
+            Write-Host "===== $($registro.FullName)"
+            Get-Content -LiteralPath $registro.FullName
+          }
+          Write-Host '===== El servicio'
+          Get-CimInstance -ClassName Win32_Service -Filter "Name='PapeleriaPos'" | Format-List Name, State, StartMode, PathName, ProcessId
+          Write-Host '===== El Visor de eventos (la ultima hora)'
+          $desde = (Get-Date).AddHours(-1)
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $desde } -MaxEvents 500 -ErrorAction SilentlyContinue |
+            Where-Object { $_.ProviderName -like 'PapeleriaPos*' -or $_.Message -match 'PapeleriaPos' } |
+            Sort-Object TimeCreated | Format-List TimeCreated, ProviderName, LevelDisplayName, Message
+          Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager'; StartTime = $desde } -MaxEvents 200 -ErrorAction SilentlyContinue |
+            Where-Object { $_.Message -match 'Papeleria' } | Sort-Object TimeCreated | Format-List TimeCreated, Id, Message
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: registros-de-actualizar
+          path: C:/ProgramData/PapeleriaPos/actualizaciones/*/actualizar.log
+          if-no-files-found: ignore
+          retention-days: 7
