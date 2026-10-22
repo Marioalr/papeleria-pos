@@ -233,6 +233,46 @@ public class PromocionesTests
         Assert.Equal(2700 - 270, linea.ImporteCentavos);
     }
 
+    /// <summary>
+    /// Revisión del PR #132: el descuento fijo del cliente registrado no se acumula con la promoción. En cada renglón se queda lo
+    /// que más le conviene al cliente: la promoción (y su descuento queda en pausa), o su precio con su descuento. Se vuelve a
+    /// decidir al cambiar la cantidad y al quitarle el descuento.
+    /// </summary>
+    [Fact]
+    public void El_descuento_del_cliente_no_se_acumula_con_la_promocion_se_queda_lo_que_mas_le_conviene()
+    {
+        var tresPorDos = Regla(TipoPromocion.LlevaNPagaM, lleva: 3, paga: 2);
+        var venta = new Venta { Serie = "A", SucursalId = Matriz, Promociones = new PromocionesDeLaVenta(_ => [tresPorDos], () => Hoy) };
+        Precio[] precios = [PorPieza(1000)];
+        var cuaderno = new ProductoEnVenta(_cuaderno.Id, "Cuaderno", Impuesto.Iva16, UnidadBase.Pieza, true);
+        var motivo = PapeleriaPos.Nucleo.Clientes.ClienteRegistrado.MotivoDescuento("Maestra Ana");
+
+        // 3 con el 5 % del cliente: el 3×2 ($20) le conviene más que $30 con 5 % ($28.50). El descuento queda en pausa.
+        var linea = venta.AgregarProducto(cuaderno, _pieza, Cantidad.Piezas(3), precios);
+        venta.DescontarLinea(linea, 500, null, motivo);
+        Assert.Equal((2000L, 0L, "Regreso a clases"), (linea.ImporteCentavos, linea.DescuentoCentavos, linea.Promocion));
+        Assert.False(linea.TieneDescuento);
+        Assert.True(linea.DescuentoDeCliente);
+        Assert.Equal(0, venta.DescuentoARevisar(500));
+
+        // Con 2 no hay 3×2: vuelve su 5 %.
+        venta.CambiarCantidad(linea, Cantidad.Piezas(2), _pieza, precios);
+        Assert.Equal((1900L, 100L, (string?)null), (linea.ImporteCentavos, linea.DescuentoCentavos, linea.Promocion));
+        venta.CambiarCantidad(linea, Cantidad.Piezas(3), _pieza, precios);
+        Assert.Equal((2000L, 0L), (linea.ImporteCentavos, linea.DescuentoCentavos));
+
+        // Con 40 % le conviene más su descuento ($18) que el 3×2 ($20): sin la promoción.
+        venta.DescontarLinea(linea, 4000, null, motivo);
+        Assert.Equal((1800L, 1200L, (Guid?)null), (linea.ImporteCentavos, linea.DescuentoCentavos, linea.PromocionId));
+        // Sin el descuento del cliente (sale del ticket), vuelve la promoción.
+        venta.QuitarDescuento(linea);
+        Assert.Equal((2000L, "Regreso a clases"), (linea.ImporteCentavos, linea.Promocion));
+
+        // Un descuento a mano sí va encima de la promoción.
+        venta.DescontarLinea(linea, 1000, null, "Pasta doblada");
+        Assert.Equal((1800L, 200L, "Regreso a clases"), (linea.ImporteCentavos, linea.DescuentoCentavos, linea.Promocion));
+    }
+
     [Fact]
     public void Lo_que_se_cobro_sin_conexion_entra_con_su_promocion_aunque_aqui_ya_no_este()
     {
@@ -248,6 +288,45 @@ public class PromocionesTests
         Assert.False(linea.TieneMayoreo);
         Assert.False(linea.PrecioCambiado);
         Assert.Throws<ArgumentException>(() => venta.FijarPromocionCobrada(linea, 800, promocion, "Regreso a clases", 9600));
+    }
+
+    // ── Al devolver ──
+
+    /// <summary>
+    /// Revisión del PR #132: devolver de una en una las tres piezas de un 3×2 de $10 ($20) da $6.67, $6.66 y $6.67: suman lo
+    /// cobrado, como el efectivo (antes, $20.01). Devolver las tres de una vez da $20, como siempre.
+    /// </summary>
+    [Fact]
+    public void Devolver_de_una_en_una_las_piezas_de_un_tres_por_dos_suma_lo_cobrado()
+    {
+        var ahora = HoraMexico.AUtc(Hoy.ToDateTime(new TimeOnly(12, 0)));
+        Venta Vendida()
+        {
+            var venta = new Venta { Serie = "A", SucursalId = Matriz, Promociones = new PromocionesDeLaVenta(_ => [Regla(TipoPromocion.LlevaNPagaM, lleva: 3, paga: 2)], () => Hoy) };
+            var linea = venta.AgregarProducto(new ProductoEnVenta(_cuaderno.Id, "Cuaderno", Impuesto.Iva16, UnidadBase.Pieza, true), _pieza, Cantidad.Piezas(3),
+                [PorPieza(1000)]);
+            linea.CostoCentavos = 1000;
+            venta.Pagar(1, [new CobroSolicitado(FormaPago.Efectivo, 2000)], ahora);
+            return venta;
+        }
+
+        var deUnaEnUna = Vendida();
+        var devoluciones = new List<Devolucion>();
+        for (var i = 0; i < 3; i++)
+        {
+            var d = CalculoDevolucion.Armar(deUnaEnUna, [new LineaPorDevolver(deUnaEnUna.Lineas[0].Id, Cantidad.Piezas(1))], Ids.Nuevo(), Ids.Nuevo(), Ids.Nuevo(),
+                "No era", ahora, devoluciones);
+            CalculoDevolucion.Aplicar(deUnaEnUna, d);
+            devoluciones.Add(d);
+        }
+        var todas = Vendida();
+        var completa = CalculoDevolucion.Armar(todas, [new LineaPorDevolver(todas.Lineas[0].Id, Cantidad.Piezas(3))], Ids.Nuevo(), Ids.Nuevo(), Ids.Nuevo(),
+            "No era", ahora);
+
+        Assert.Equal([667L, 666L, 667L], devoluciones.Select(d => d.TotalCentavos));
+        Assert.Equal((2000L, 2000L, 1000L), (devoluciones.Sum(d => d.TotalCentavos), devoluciones.Sum(d => d.ReembolsoEfectivoCentavos),
+            devoluciones.Sum(d => d.Lineas.Sum(l => l.CostoCentavos))));
+        Assert.Equal((2000L, 1000L), (completa.TotalCentavos, completa.Lineas[0].CostoCentavos));
     }
 
     // ── Al darla de alta ──
@@ -280,10 +359,33 @@ public class PromocionesTests
     [Fact]
     public void Su_precio_mas_bajo_es_con_el_grupo_completo()
     {
-        Assert.Equal(600m, CalculoPrecio.PrecioMasBajoCon(Regla(TipoPromocion.LlevaNPagaM, lleva: 3, paga: 2), 900));
-        Assert.Equal(750m, CalculoPrecio.PrecioMasBajoCon(Regla(TipoPromocion.SegundoAMitad), 1000));
-        Assert.Equal(850m, CalculoPrecio.PrecioMasBajoCon(Regla(TipoPromocion.Porcentaje, centesimas: 1500), 1000));
-        Assert.Equal(730m, CalculoPrecio.PrecioMasBajoCon(Regla(TipoPromocion.PrecioEspecial, precio: 730), 1250));
+        decimal? MasBajo(PromocionDeProducto regla, long porPieza) => CalculoPrecio.PrecioMasBajoCon(regla, [PorPieza(porPieza)], [_pieza, _docena], Matriz);
+
+        Assert.Equal(600m, MasBajo(Regla(TipoPromocion.LlevaNPagaM, lleva: 3, paga: 2), 900));
+        Assert.Equal(750m, MasBajo(Regla(TipoPromocion.SegundoAMitad), 1000));
+        Assert.Equal(850m, MasBajo(Regla(TipoPromocion.Porcentaje, centesimas: 1500), 1000));
+        Assert.Equal(730m, MasBajo(Regla(TipoPromocion.PrecioEspecial, precio: 730), 1250));
+        // Un precio especial más alto que el menudeo no lo baja (la venta no lo aplica): no lo deja debajo de nada.
+        Assert.Null(MasBajo(Regla(TipoPromocion.PrecioEspecial, precio: 1300), 1250));
+    }
+
+    /// <summary>
+    /// Revisión del PR #132: la docena con precio propio ($120, $10 la pieza) de un cuaderno de $12 baja con un 3×2 a $6.67 la
+    /// pieza (tres docenas por $240), no a los $8 de la pieza. Contra eso se revisa el costo.
+    /// </summary>
+    [Fact]
+    public void Su_precio_mas_bajo_cuenta_la_presentacion_con_precio_propio_como_la_venta()
+    {
+        Precio Docena(long centavos) => new() { VarianteId = _cuaderno.Id, PresentacionId = _docena.Id, CantidadMinima = Cantidad.Piezas(1), PrecioCentavos = centavos };
+        var tresPorDos = Regla(TipoPromocion.LlevaNPagaM, lleva: 3, paga: 2);
+        Precio[] precios = [PorPieza(1200), Docena(12000)];
+
+        Assert.Equal(666.6667m, Math.Round(CalculoPrecio.PrecioMasBajoCon(tresPorDos, precios, [_pieza, _docena], Matriz)!.Value, 4));
+        Assert.Equal(24000, Calcular(precios, _docena, 3, tresPorDos).ImporteCentavos);
+        // Una docena con precio propio más caro que sus piezas no la usa la venta (la cobra por sus piezas): cuenta la pieza.
+        Assert.Equal(800m, CalculoPrecio.PrecioMasBajoCon(tresPorDos, [PorPieza(1200), Docena(15000)], [_pieza, _docena], Matriz));
+        // El precio especial es por pieza en cualquier presentación.
+        Assert.Equal(700m, CalculoPrecio.PrecioMasBajoCon(Regla(TipoPromocion.PrecioEspecial, precio: 700), precios, [_pieza, _docena], Matriz));
     }
 
     [Fact]

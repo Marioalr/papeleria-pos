@@ -44,8 +44,13 @@ public sealed class RegistroPromociones(PosDbContext db, bool lecturaDeEleventa 
 
     private ServicioControl Control => new(db);
 
-    /// <summary>Un producto (variante) que toca una promoción: lo que se vende, con su menudeo por unidad base.</summary>
-    private sealed record Tocado(Guid VarianteId, Guid ProductoId, string Nombre, UnidadBase Unidad, long MenudeoCentavos);
+    /// <summary>
+    /// Un producto (variante) que toca una promoción: lo que se vende, con su menudeo por unidad base y lo que necesita el cálculo
+    /// de su precio más bajo con ella (sus precios en la sucursal, también los propios de sus presentaciones).
+    /// </summary>
+    private sealed record Tocado(
+        Guid VarianteId, Guid ProductoId, string Nombre, UnidadBase Unidad, long MenudeoCentavos, IReadOnlyList<Precio> Precios,
+        IReadOnlyList<Presentacion> Presentaciones);
 
     // ── Consultar ───────────────────────────────────────────────────────────
 
@@ -91,9 +96,13 @@ public sealed class RegistroPromociones(PosDbContext db, bool lecturaDeEleventa 
         var veCostos = await Control.PuedeAsync(usuarioId, AccionControlada.VerUtilidad, ct);
         var tocados = await TocaAsync(p.Alcance, sucursalId, ct);
         var deLaLista = p.Alcance.Where(a => a.VarianteId is not null).ToDictionary(a => a.VarianteId!.Value, a => a.PrecioCentavos);
-        var costos = await CostosAsync(sucursalId, deLaLista.Keys, ct);
+        var costos = await CostosPorUnidadAsync(db, sucursalId, tocados.Select(t => t.VarianteId), ct);
         var productos = tocados.Where(t => deLaLista.ContainsKey(t.VarianteId))
-            .Select(t => Renglon(p, t, deLaLista[t.VarianteId], costos, veCostos)).ToList();
+            .Select(t => Renglon(p, t, deLaLista[t.VarianteId], costos, veCostos, sucursalId)).ToList();
+        // Lo que se queda fuera por el costo (sin autorización): las cajas no se la aplican (CatalogoEnMemoria, con este cálculo).
+        var fuera = p.BajoCostoAutorizado ? []
+            : tocados.Where(t => DebajoDelCosto(MasBajo(p, t, deLaLista.GetValueOrDefault(t.VarianteId), sucursalId), costos.GetValueOrDefault(t.VarianteId)))
+                .Select(t => t.Nombre).ToList();
         var nombres = await NombresAsync(p.Alcance, ct);
         var usuarios = await db.Usuarios.AsNoTracking().Where(u => u.Id == p.CreadaPorId || u.Id == p.TerminadaPorId)
             .ToDictionaryAsync(u => u.Id, u => u.Nombre, ct);
@@ -104,13 +113,14 @@ public sealed class RegistroPromociones(PosDbContext db, bool lecturaDeEleventa 
             p.Alcance.Where(a => a.DepartamentoId is not null).Select(a => new OpcionCatalogoDto(a.DepartamentoId!.Value, nombres.GetValueOrDefault(a.DepartamentoId.Value, "—")))
                 .OrderBy(d => d.Nombre, StringComparer.CurrentCultureIgnoreCase).ToList(),
             p.Alcance.Where(a => a.MarcaId is not null).Select(a => nombres.GetValueOrDefault(a.MarcaId!.Value, "—")).Order(StringComparer.CurrentCultureIgnoreCase).ToList(),
-            tocados.Count, Quien(p.CreadaPorId, p.CreadaUtc), p.TerminadaUtc is { } terminada ? Quien(p.TerminadaPorId, terminada) : null, veCostos);
+            tocados.Count - fuera.Count, Quien(p.CreadaPorId, p.CreadaUtc), p.TerminadaUtc is { } terminada ? Quien(p.TerminadaPorId, terminada) : null, veCostos,
+            fuera);
     }
 
     /// <summary>
     /// Cómo quedaría antes de guardarla: los productos que toca (con los de sus departamentos y marcas), su precio con la
-    /// promoción y lo que queda debajo del costo (cuáles y cuánto falta, sin el costo de cada uno). El costo y el margen, para
-    /// quien ve la utilidad.
+    /// promoción y cuáles quedan debajo del costo. Cuánto falta, el costo y el margen, solo para quien ve la utilidad: con un
+    /// solo producto, lo que falta dice su costo.
     /// </summary>
     public async Task<VistaPromocionDto> VistaAsync(SolicitudPromocion s, CancellationToken ct = default)
     {
@@ -118,10 +128,12 @@ public sealed class RegistroPromociones(PosDbContext db, bool lecturaDeEleventa 
         var promocion = await ArmarAsync(s, ct);
         var veCostos = await Control.PuedeAsync(s.UsuarioId, AccionControlada.VerUtilidad, ct);
         var tocados = await TocaAsync(promocion.Alcance, s.SucursalId, ct);
-        var costos = await CostosAsync(s.SucursalId, tocados.Select(t => t.VarianteId), ct);
+        var costos = await CostosPorUnidadAsync(db, s.SucursalId, tocados.Select(t => t.VarianteId), ct);
         var especiales = PreciosEspeciales(promocion);
-        var renglones = tocados.Select(t => Renglon(promocion, t, especiales.GetValueOrDefault(t.VarianteId), costos, veCostos)).ToList();
-        return new VistaPromocionDto(renglones.Take(VistaPromocionDto.MaximoEnLaVista).ToList(), tocados.Count, BajoCosto(promocion, tocados, costos), veCostos);
+        var renglones = tocados.Select(t => Renglon(promocion, t, especiales.GetValueOrDefault(t.VarianteId), costos, veCostos, s.SucursalId)).ToList();
+        var bajoCosto = BajoCosto(promocion, tocados, costos, s.SucursalId);
+        return new VistaPromocionDto(renglones.Take(VistaPromocionDto.MaximoEnLaVista).ToList(), tocados.Count,
+            veCostos ? bajoCosto : bajoCosto with { FaltanteCentavos = 0 }, veCostos);
     }
 
     /// <summary>
@@ -141,7 +153,7 @@ public sealed class RegistroPromociones(PosDbContext db, bool lecturaDeEleventa 
             .Select(v => v.Id).ToListAsync(ct);
         var tocados = await TocaAsync(variantes.Select(v => new AlcancePromocion { VarianteId = v }).ToList(), s.SucursalId, ct);
         var veCostos = await Control.PuedeAsync(s.UsuarioId, AccionControlada.VerUtilidad, ct);
-        var costos = await CostosAsync(s.SucursalId, tocados.Select(t => t.VarianteId), ct);
+        var costos = await CostosPorUnidadAsync(db, s.SucursalId, tocados.Select(t => t.VarianteId), ct);
         var sinCosto = new List<string>();
         var renglones = new List<ProductoEnPromocionDto>();
         var precioEspecial = new Promocion { Nombre = "", Tipo = TipoPromocion.PrecioEspecial };
@@ -158,7 +170,7 @@ public sealed class RegistroPromociones(PosDbContext db, bool lecturaDeEleventa 
                 }
                 precio = (long)Math.Ceiling(costo);
             }
-            renglones.Add(Renglon(precioEspecial, t, precio, costos, veCostos));
+            renglones.Add(Renglon(precioEspecial, t, precio, costos, veCostos, s.SucursalId));
         }
         return new ProductosPromocionDto(renglones, sinCosto);
     }
@@ -181,15 +193,19 @@ public sealed class RegistroPromociones(PosDbContext db, bool lecturaDeEleventa 
             throw new ArgumentException("Su último día ya pasó: pon uno de hoy en adelante.");
         await using var transaccion = await db.Database.BeginTransactionAsync(ct);
         var existente = await db.Promociones.Include(p => p.Alcance).SingleOrDefaultAsync(p => p.Id == borrador.Id, ct);
+        // Lo que queda debajo del costo con ella en esta sucursal, con el grupo de precios que más la baja (también una
+        // presentación con precio propio). Si algo queda, guardarla así es autorizarlo: sus productos la llevan aunque queden
+        // debajo; si no, el que después quede debajo se queda fuera (CatalogoEnMemoria).
+        var tocados = await TocaAsync(borrador.Alcance, s.SucursalId, ct);
+        var bajoCosto = BajoCosto(borrador, tocados, await CostosPorUnidadAsync(db, s.SucursalId, tocados.Select(t => t.VarianteId), ct), s.SucursalId);
+        borrador.BajoCostoAutorizado = bajoCosto.Lineas.Count > 0;
         // Ya está así (se perdió la respuesta y se mandó otra vez, o se guardó sin cambiar nada): no se hace otra vez, ni se gasta
-        // otra autorización.
-        if (existente is { Activa: true } && Igual(existente, borrador))
+        // otra autorización. Si ahora algo quedó fuera por el costo y no estaba autorizado, guardarla otra vez es autorizarlo.
+        if (existente is { Activa: true } && Igual(existente, borrador) && (existente.BajoCostoAutorizado || !borrador.BajoCostoAutorizado))
             return await FichaAsync(existente, s.SucursalId, s.UsuarioId, ct);
 
-        // Nunca debajo del costo sin autorización (como Ctrl+D y Ctrl+E): la bitácora lo dice, con quién lo autorizó.
-        var tocados = await TocaAsync(borrador.Alcance, s.SucursalId, ct);
-        var bajoCosto = BajoCosto(borrador, tocados, await CostosAsync(s.SucursalId, tocados.Select(t => t.VarianteId), ct));
-        if (bajoCosto.FaltanteCentavos > 0)
+        // Nunca debajo del costo sin autorización (como Ctrl+D y Ctrl+E): la bitácora lo dice, con quién lo autorizó y cuánto falta.
+        if (borrador.BajoCostoAutorizado)
             await control.RequerirAsync(s.UsuarioId, s.SucursalId, s.CajaId, AccionControlada.VenderBajoCosto, bajoCosto.FaltanteCentavos,
                 $"La promoción «{borrador.Nombre}» deja debajo del costo: {Lista(bajoCosto.Lineas.Take(10).ToList(), bajoCosto.Lineas.Count)}",
                 s.AutorizacionBajoCostoId, ct: ct);
@@ -212,6 +228,7 @@ public sealed class RegistroPromociones(PosDbContext db, bool lecturaDeEleventa 
                 (borrador.Nombre, borrador.Tipo, borrador.Lleva, borrador.Paga, borrador.Centesimas);
             (promocion.Desde, promocion.Hasta, promocion.Dias, promocion.SucursalId) = (borrador.Desde, borrador.Hasta, borrador.Dias, borrador.SucursalId);
             (promocion.Activa, promocion.TerminadaUtc, promocion.TerminadaPorId) = (true, null, null);
+            promocion.BajoCostoAutorizado = borrador.BajoCostoAutorizado;
             CambiarAlcance(db, promocion, borrador.Alcance);
         }
         control.Registrar(s.SucursalId, s.CajaId, s.UsuarioId, AccionControlada.EditarCatalogo,
@@ -318,7 +335,8 @@ public sealed class RegistroPromociones(PosDbContext db, bool lecturaDeEleventa 
 
     /// <summary>
     /// Lo que se vende y la promoción toca: sus productos (las variantes activas) y los de sus departamentos y marcas, cada uno
-    /// con su nombre como sale en la venta y su menudeo por unidad base en la sucursal, por nombre.
+    /// con su nombre como sale en la venta, su menudeo por unidad base en la sucursal y sus precios y presentaciones (para su
+    /// precio más bajo con la promoción), por nombre.
     /// </summary>
     private async Task<List<Tocado>> TocaAsync(IReadOnlyCollection<AlcancePromocion> alcance, Guid sucursalId, CancellationToken ct)
     {
@@ -339,17 +357,18 @@ public sealed class RegistroPromociones(PosDbContext db, bool lecturaDeEleventa 
             .ToListAsync(ct);
         var ids = encontradas.Select(v => v.Id).ToList();
         var precios = (await db.Precios.AsNoTracking()
-                .Where(p => ids.Contains(p.VarianteId) && p.PresentacionId == null && (p.SucursalId == null || p.SucursalId == sucursalId))
-                .Select(p => new { p.VarianteId, p.SucursalId, p.CantidadMinima, p.PrecioCentavos }).ToListAsync(ct))
+                .Where(p => ids.Contains(p.VarianteId) && (p.SucursalId == null || p.SucursalId == sucursalId)).ToListAsync(ct))
             .ToLookup(p => p.VarianteId);
+        var presentaciones = (await db.Presentaciones.AsNoTracking().Where(p => ids.Contains(p.VarianteId)).ToListAsync(ct)).ToLookup(p => p.VarianteId);
         return encontradas
             .Select(v =>
             {
                 var suyos = precios[v.Id].ToList();
-                var deSucursal = suyos.Where(p => p.SucursalId == sucursalId).ToList();
-                var menudeo = (deSucursal.Count > 0 ? deSucursal : suyos.Where(p => p.SucursalId is null)).MinBy(p => p.CantidadMinima)?.PrecioCentavos ?? 0;
+                var porUnidad = suyos.Where(p => p.PresentacionId is null).ToList();
+                var deSucursal = porUnidad.Where(p => p.SucursalId == sucursalId).ToList();
+                var menudeo = (deSucursal.Count > 0 ? deSucursal : porUnidad.Where(p => p.SucursalId is null)).MinBy(p => p.CantidadMinima)?.PrecioCentavos ?? 0;
                 var nombre = string.Join(" ", new[] { v.Producto, v.Marca, v.Descripcion }.Where(x => !string.IsNullOrWhiteSpace(x)));
-                return new Tocado(v.Id, v.ProductoId, nombre, v.UnidadBase, menudeo);
+                return new Tocado(v.Id, v.ProductoId, nombre, v.UnidadBase, menudeo, suyos, presentaciones[v.Id].ToList());
             })
             .Where(t => t.MenudeoCentavos > 0)
             .OrderBy(t => t.Nombre, StringComparer.CurrentCultureIgnoreCase)
@@ -357,10 +376,12 @@ public sealed class RegistroPromociones(PosDbContext db, bool lecturaDeEleventa 
     }
 
     /// <summary>
-    /// Lo que cuesta una unidad de cada uno, como saldría del inventario al venderla (Kardex.Salida): el costo promedio de la
-    /// sucursal o, sin existencia, el último costo de su proveedor. Sin ninguno, no está.
+    /// Lo que cuesta una unidad base de cada uno, como saldría del inventario al venderla (Kardex.Salida): el costo promedio de
+    /// la sucursal o, sin existencia, el último costo de su proveedor. Sin ninguno, no está. Con esto se revisa el costo al
+    /// guardar una promoción y al llevarla a las cajas (CatalogoEnMemoria): con lo mismo, para que lo que se autorizó y lo que
+    /// queda fuera cuadren.
     /// </summary>
-    private async Task<Dictionary<Guid, decimal>> CostosAsync(Guid sucursalId, IEnumerable<Guid> variantes, CancellationToken ct)
+    public static async Task<Dictionary<Guid, decimal>> CostosPorUnidadAsync(PosDbContext db, Guid sucursalId, IEnumerable<Guid> variantes, CancellationToken ct = default)
     {
         var ids = variantes.Distinct().ToList();
         if (ids.Count == 0)
@@ -383,26 +404,36 @@ public sealed class RegistroPromociones(PosDbContext db, bool lecturaDeEleventa 
         return costos;
     }
 
+    /// <summary>Si con la promoción queda debajo de lo que cuesta: su precio más bajo con ella (vacío si no lo baja) contra su costo (sin costo, no).</summary>
+    public static bool DebajoDelCosto(decimal? precioMasBajo, decimal costo) => precioMasBajo is { } precio && costo > 0 && precio < costo;
+
+    /// <summary>Su precio por unidad base más bajo con la promoción, con cada grupo de precios con que lo vende la venta; vacío si no lo baja.</summary>
+    private static decimal? MasBajo(Promocion promocion, Tocado t, long? precioEspecial, Guid sucursalId) =>
+        CalculoPrecio.PrecioMasBajoCon(promocion.Regla(precioEspecial), t.Precios, t.Presentaciones, sucursalId);
+
     /// <summary>Un renglón de la promoción: su menudeo, su precio especial, y si queda debajo del costo (el costo y el margen, solo para quien los ve).</summary>
-    private static ProductoEnPromocionDto Renglon(Promocion promocion, Tocado t, long? precioEspecial, Dictionary<Guid, decimal> costos, bool veCostos)
+    private static ProductoEnPromocionDto Renglon(
+        Promocion promocion, Tocado t, long? precioEspecial, Dictionary<Guid, decimal> costos, bool veCostos, Guid sucursalId)
     {
-        var masBajo = CalculoPrecio.PrecioMasBajoCon(promocion.Regla(precioEspecial), t.MenudeoCentavos);
+        var masBajo = MasBajo(promocion, t, precioEspecial, sucursalId);
         decimal? costo = costos.TryGetValue(t.VarianteId, out var c) ? c : null;
-        var debajo = costo is { } suyo && masBajo < suyo;
+        var debajo = costo is { } suyo && DebajoDelCosto(masBajo, suyo);
         return new ProductoEnPromocionDto(t.VarianteId, t.ProductoId, t.Nombre, t.MenudeoCentavos, precioEspecial, UnidadTexto(t.Unidad),
-            veCostos ? costo : null, veCostos && costo is { } conCosto ? Margen.Calcular((long)Math.Floor(masBajo), conCosto) : null, debajo);
+            veCostos ? costo : null, veCostos && costo is { } conCosto ? Margen.Calcular((long)Math.Floor(masBajo ?? t.MenudeoCentavos), conCosto) : null, debajo);
     }
 
-    /// <summary>Lo que queda debajo del costo con la promoción: cuáles y cuánto falta en total, por una unidad de cada uno.</summary>
-    private static BajoCostoDto BajoCosto(Promocion promocion, IReadOnlyList<Tocado> tocados, Dictionary<Guid, decimal> costos)
+    /// <summary>
+    /// Lo que queda debajo del costo con la promoción: cuáles y cuánto falta en total, por una unidad base de cada uno (lo que
+    /// falta solo lo ve quien ve la utilidad: con un producto, dice su costo).
+    /// </summary>
+    private static BajoCostoDto BajoCosto(Promocion promocion, IReadOnlyList<Tocado> tocados, Dictionary<Guid, decimal> costos, Guid sucursalId)
     {
         var especiales = PreciosEspeciales(promocion);
         var debajo = tocados
-            .Select(t => (t.Nombre, Precio: CalculoPrecio.PrecioMasBajoCon(promocion.Regla(especiales.GetValueOrDefault(t.VarianteId)), t.MenudeoCentavos),
-                Costo: costos.TryGetValue(t.VarianteId, out var c) ? c : (decimal?)null))
-            .Where(x => x.Costo is { } costo && x.Precio < costo)
+            .Select(t => (t.Nombre, Precio: MasBajo(promocion, t, especiales.GetValueOrDefault(t.VarianteId), sucursalId), Costo: costos.GetValueOrDefault(t.VarianteId)))
+            .Where(x => DebajoDelCosto(x.Precio, x.Costo))
             .ToList();
-        return new BajoCostoDto((long)Math.Ceiling(debajo.Sum(x => x.Costo!.Value - x.Precio)), debajo.Select(x => x.Nombre).ToList());
+        return new BajoCostoDto((long)Math.Ceiling(debajo.Sum(x => x.Costo - x.Precio!.Value)), debajo.Select(x => x.Nombre).ToList());
     }
 
     private static Dictionary<Guid, long?> PreciosEspeciales(Promocion promocion) =>

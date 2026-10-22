@@ -148,6 +148,15 @@ public class Promocion : IVersionado
     /// <summary>Se aplica (entre sus fechas y en sus días). Se apaga con «Terminar ahora» y se vuelve a prender con «Activar otra vez».</summary>
     public bool Activa { get; set; } = true;
 
+    /// <summary>
+    /// Al guardarla algo quedaba debajo del costo y se autorizó (lo pudo hacer quien la guardó, o con la autorización de quien
+    /// puede): sus productos la llevan aunque queden debajo del costo. Sin esto, el producto al que con ella le quedaría el
+    /// precio debajo de lo que cuesta (porque llegó después a su departamento o a su marca, bajó su precio o subió su costo) se
+    /// queda fuera: las cajas no se la aplican y su detalle lo dice («Fuera por el costo»). Se vuelve a decidir cada vez que se
+    /// guarda.
+    /// </summary>
+    public bool BajoCostoAutorizado { get; set; }
+
     public Guid CreadaPorId { get; set; }
     public DateTime CreadaUtc { get; set; }
 

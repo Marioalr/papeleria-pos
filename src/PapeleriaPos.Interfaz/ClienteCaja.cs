@@ -343,12 +343,15 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     /// <summary>
     /// Las promociones de ahora que dijo el cobro (fase 3), si las dijo: quedan en la foto, para que el ticket se ponga al día con
-    /// ellas y el siguiente escaneo ya las traiga.
+    /// ellas y el siguiente escaneo ya las traiga. Y el día con que las aplicó la caja principal: si no es el de esta PC (su reloj
+    /// está mal), la caja usa ese, así el ticket que se pone al día se cobra a la siguiente. Devuelve el aviso de la fecha, si
+    /// está mal.
     /// </summary>
-    public void PromocionesAlDia(PreciosCambiadosDto precios)
+    public string? PromocionesAlDia(PreciosCambiadosDto precios)
     {
         if (precios.Promociones is { } promociones)
             contingencia?.PromocionesALaFoto(promociones, precios.VersionCatalogo);
+        return precios.DiaPromociones is { } dia ? contingencia?.DiaDeLaCajaPrincipal(dia) : null;
     }
 
     /// <summary>El día de hoy de la caja (hora de México): con él aplica las promociones (fase 3).</summary>
@@ -357,6 +360,12 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// <summary>
     /// De dónde saca una venta de esta caja sus promociones (fase 3): de la foto de su copia (la de ahora en cada cálculo, con lo
     /// que dijo el cobro encima), con el día de la caja. Sin copia todavía, ninguna: el cobro tampoco las aplica.
+    /// <para>
+    /// Sin base local (el navegador de desarrollo sin Caja:BaseLocal) no hay copia: no se aplican promociones ni se manda el día,
+    /// y el servicio cobra sin ellas, como las calculó la pantalla. Es solo para probar en desarrollo; la caja de verdad (la
+    /// ventana de Windows) siempre tiene su base local. Mandar el día sin copia haría que el servicio aplicara promociones que la
+    /// pantalla no puso, sin dónde guardarlas para ponerse al día.
+    /// </para>
     /// </summary>
     public PromocionesDeLaVenta PromocionesDeLaVenta => new(v => Foto?.Promociones.De(v) ?? [], () => Hoy);
 

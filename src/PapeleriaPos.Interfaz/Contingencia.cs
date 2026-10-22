@@ -394,9 +394,32 @@ public sealed class Contingencia
 
     /// <summary>
     /// El día de hoy de la caja (hora de México), con su reloj: con él decide qué promociones corren (fase 3). A medianoche
-    /// cambia solo, sin bajar nada, también sin conexión.
+    /// cambia solo, sin bajar nada, también sin conexión. Si el cobro dijo que la caja principal va en otro día (el reloj de esta
+    /// PC está mal), ese, mientras esta PC siga en el mismo día que cuando lo dijo: así el ticket se pone al día con él, se manda
+    /// con él y no se repite.
     /// </summary>
-    public DateOnly Hoy => DateOnly.FromDateTime(HoraMexico.ALocal(Ahora));
+    public DateOnly Hoy => DiaDeLaPc is var pc && _diaDeLaPrincipal is { } principal && principal.EnLaPc == pc ? principal.Dia : pc;
+
+    /// <summary>El día que marca el reloj de esta PC (hora de México).</summary>
+    public DateOnly DiaDeLaPc => DateOnly.FromDateTime(HoraMexico.ALocal(Ahora));
+
+    /// <summary>El día de la caja principal que dijo el cobro, con el día que marcaba esta PC entonces.</summary>
+    private sealed record DiaDeLaPrincipal(DateOnly EnLaPc, DateOnly Dia);
+
+    private volatile DiaDeLaPrincipal? _diaDeLaPrincipal;
+
+    /// <summary>
+    /// El cobro dijo con qué día aplicó las promociones la caja principal (fase 3): si no es el de esta PC, la caja usa ese
+    /// mientras esta PC siga en su día. Devuelve el aviso para el cajero si la fecha de la PC está mal; vacío si no.
+    /// </summary>
+    public string? DiaDeLaCajaPrincipal(DateOnly dia)
+    {
+        var pc = DiaDeLaPc;
+        _diaDeLaPrincipal = dia == pc ? null : new DiaDeLaPrincipal(pc, dia);
+        return dia == pc ? null
+            : $"La fecha de esta computadora ({pc.ToString("d/MM/yyyy", Formato.Mexico)}) no es la de la caja principal "
+              + $"({dia.ToString("d/MM/yyyy", Formato.Mexico)}): las promociones van con la de la caja principal. Corrige la fecha de esta computadora.";
+    }
 
     /// <summary>
     /// Un producto que la copia no tenía (recién dado de alta en otra caja) o los precios de ahora de uno que sí tenía (los
@@ -1519,6 +1542,8 @@ public sealed class Contingencia
             Id = s.VentaId ?? Ids.Nuevo(), SucursalId = caja.SucursalId, CajaId = caja.Id, TurnoId = turno.Id, CajeroId = s.CajeroId, Serie = caja.Serie,
             CreadaUtc = ahora, ClienteId = cliente?.Id, MayoreoDeCliente = cliente is not null && s.MayoreoDeCliente == true, Promociones = conPromociones,
         };
+        // Un descuento que no entra en su línea se dice después de revisar la promoción (como en el servicio).
+        ArgumentException? descuentoQueNoEntra = null;
         foreach (var l in s.Lineas)
         {
             var cantidad = new Cantidad(l.CantidadMilesimas);
@@ -1531,10 +1556,18 @@ public sealed class Contingencia
             var producto = datos.PorVariante.GetValueOrDefault(varianteId)
                 ?? throw new InvalidOperationException($"«{l.Descripcion ?? "Un producto"}» no está en la copia del catálogo de esta caja.");
             var agregada = venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
-            // Un precio cambiado en la caja no lleva promoción, aunque sea el de la lista (como en el servicio).
-            if (l.PrecioCentavos is { } precio && (precio != agregada.PrecioCentavos || agregada.TienePromocion))
+            // La pantalla manda el precio solo de lo que se cambió con Ctrl+E: es precio cambiado aunque sea el de la lista, sin
+            // promoción (como en el servicio). Si no, se cobraría con una promoción que la pantalla no puso, una y otra vez.
+            if (l.PrecioCentavos is { } precio)
                 venta.CambiarPrecio(agregada, precio, l.AutorizacionId);
-            venta.AplicarDescuentoSolicitado(agregada, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
+            try
+            {
+                venta.AplicarDescuentoSolicitado(agregada, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
+            }
+            catch (ArgumentException ex)
+            {
+                descuentoQueNoEntra ??= ex;
+            }
         }
         // La promoción de una línea no es la que vio el cajero (empezó o terminó a medianoche, o llegó otra con la copia): como un
         // precio que cambió, la pantalla pone el ticket al día con su foto y el cobro no se repite solo.
@@ -1547,6 +1580,8 @@ public sealed class Contingencia
                 PreciosCambiados = new PreciosCambiadosDto(mensaje, productos, datos.Paquete.Version),
             };
         }
+        if (descuentoQueNoEntra is not null)
+            throw descuentoQueNoEntra;
         venta.ValidarCobros(s.Cobros);
 
         var bitacora = new List<BitacoraContingenciaDto>();

@@ -255,4 +255,105 @@ public sealed class PromocionesEnProductosTests(ServicioDePrueba servicio) : ICl
         Assert.DoesNotContain("Dejar al costo", await p.TextoAsync());
         Assert.Empty(p.Errores);
     }
+
+    // ── Revisión del PR #132 ────────────────────────────────────────────────
+
+    /// <summary>«7,5» en el porcentaje se leía como 75 %: con coma no se acepta y lo dice; con punto, «Cómo queda» dice cómo se leyó.</summary>
+    [Fact]
+    public async Task El_porcentaje_va_con_punto_y_como_queda_dice_como_se_leyo()
+    {
+        var c = await PrepararAsync(servicio.Fabrica);
+        var ficha = Ficha();
+        await ProductoAsync(c, $"Carpeta {ficha}", 2000);
+        var (p, _) = await PromocionesAsync(c, c.Encargado, ficha);
+        await using var __ = p;
+        await p.OprimirAsync(await p.PorIdAsync("promo-nueva"));
+        await p.EscribirAsync("promo-nombre", $"Siete y medio {ficha}");
+        await p.DispararAsync(await p.PorIdAsync("promo-tipo"), "onchange", new ChangeEventArgs { Value = nameof(TipoPromocion.Porcentaje) });
+        await MarcarAsync(p, $"Carpeta {ficha}");
+        await p.EsperarAsync(t => Limpio(t).Contains($"Carpeta {ficha} $20.00 por pieza"), "el renglón del marcado");
+
+        await p.EscribirAsync("promo-porcentaje", "7,5");
+        await p.TeclaAsync("promo-porcentaje", "Enter");
+        await p.EsperarAsync(t => t.Contains("El porcentaje va con punto, sin comas: 7.5 es siete y medio por ciento."), "el error de la coma");
+        Assert.DoesNotContain("Cómo queda", await p.TextoAsync());
+        await p.EscribirAsync("promo-porcentaje", "7.5");
+        await p.TeclaAsync("promo-porcentaje", "Enter");
+
+        await p.EsperarAsync(t => Limpio(t).Contains("7.5 % menos · Toca 1 producto que se vende"), "cómo queda, con el porcentaje como se leyó");
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// Quien puede vender debajo del costo (el encargado) primero ve cuáles quedan debajo; guardarla otra vez sin cambiarla la guarda
+    /// así (antes se guardaba sin enseñárselo).
+    /// </summary>
+    [Fact]
+    public async Task Quien_puede_vender_debajo_del_costo_ve_cuales_quedan_y_la_guarda_otra_vez()
+    {
+        var c = await PrepararAsync(servicio.Fabrica);
+        var ficha = Ficha();
+        var pegamento = await ProductoAsync(c, $"Pegamento {ficha}", 1000);
+        await CostoAsync(servicio, pegamento, 700);
+        var (p, _) = await PromocionesAsync(c, c.Encargado, ficha);
+        await using var __ = p;
+        await p.OprimirAsync(await p.PorIdAsync("promo-nueva"));
+        await p.EscribirAsync("promo-nombre", $"Barato {ficha}");
+        await p.DispararAsync(await p.PorIdAsync("promo-tipo"), "onchange", new ChangeEventArgs { Value = nameof(TipoPromocion.PrecioEspecial) });
+        await MarcarAsync(p, $"Pegamento {ficha}");
+        await p.EsperarElementoAsync("promo-precio-0");
+        await p.EscribirAsync("promo-precio-0", "6");
+
+        await p.OprimirAsync(await p.PorIdAsync("promo-guardar"));
+        await p.EsperarAsync(t => t.Contains("Con esta promoción quedan productos debajo del costo"), "lo que queda debajo del costo");
+        Assert.Contains($"Quedan debajo del costo: «Pegamento {ficha}»", Limpio((await p.PorIdAsync("promo-bajo-costo")).Texto));
+        Assert.DoesNotContain("Listo: se guardó", await p.TextoAsync());
+        await CtrlEnterAsync(p, "promo-nombre");
+
+        await p.EsperarAsync(t => t.Contains($"Listo: se guardó la promoción «Barato {ficha}»."), "lo guardado");
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// Lo que llega después a un departamento en promoción y con ella quedaría debajo del costo no la lleva: el detalle lo dice
+    /// («Fuera por el costo»), con qué hacer para dársela. Con su propio servicio y su propio departamento.
+    /// </summary>
+    [Fact]
+    public async Task El_detalle_dice_lo_que_queda_fuera_por_el_costo()
+    {
+        await using var propio = await ServicioDePrueba.CrearAsync();
+        var c = await PrepararAsync(propio.Fabrica);
+        var ficha = Ficha();
+        var http = propio.Fabrica.CreateClient();
+        var departamento = (await (await http.PostAsJsonAsync("api/catalogo/departamentos",
+                new SolicitudDepartamento(c.Encargado.UsuarioId, c.Datos.SucursalId, $"Mitad {ficha}"))).Content.ReadFromJsonAsync<DepartamentosDto>())!
+            .Departamentos.Single(d => d.Nombre == $"Mitad {ficha}").Id;
+        async Task<Guid> DelDepartamentoAsync(string nombre)
+        {
+            var guardado = await c.Cliente.GuardarProductoAsync(new SolicitudGuardarProducto(c.Encargado.UsuarioId, c.Datos.SucursalId,
+                new FichaProductoDto(null, nombre, departamento, null, TipoProducto.Mercancia, Impuesto.Iva16, null, true, false,
+                [
+                    new VarianteFichaDto(null, "", UnidadBase.Pieza, true,
+                        [new PresentacionFichaDto(null, "Pieza", 1000, true, [new CodigoFichaDto($"PEF{Guid.NewGuid():N}"[..16])])], [new PrecioFichaDto(null, 1000, 1000)]),
+                ])));
+            return guardado.Variantes[0].Id!.Value;
+        }
+        await CostoAsync(propio, await DelDepartamentoAsync($"Con margen {ficha}"), 300);
+        var hoy = DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
+        await c.Cliente.GuardarPromocionAsync(new SolicitudPromocion(c.Encargado.UsuarioId, c.Datos.SucursalId, c.Datos.Id, $"Mitad {ficha}",
+            TipoPromocion.Porcentaje, 0, 0, 5000, hoy.AddDays(-1), hoy.AddDays(5), DiasDeLaSemana.Todos, false, [new AlcanceSolicitadoDto(DepartamentoId: departamento)],
+            Id: Guid.NewGuid()));
+        await CostoAsync(propio, await DelDepartamentoAsync($"Llegó después {ficha}"), 700);
+        var (p, _) = await PromocionesAsync(c, c.Encargado, ficha);
+        await using var __ = p;
+
+        await p.OprimirAsync(await p.ElementoAsync(e => e.Etiqueta == "tr" && Limpio(e.Texto).StartsWith($"Mitad {ficha}", StringComparison.Ordinal),
+            "la promoción en la lista"));
+        var fuera = Limpio((await p.EsperarElementoAsync("promo-fuera")).Texto);
+
+        Assert.Contains($"Fuera por el costo (no la llevan: con ella quedarían debajo de lo que cuestan): «Llegó después {ficha}».", fuera);
+        Assert.Contains("«Editar» y guárdala con «Vender debajo del costo»", fuera);
+        Assert.Contains("Toca 1 producto que se vende", Limpio(await p.TextoAsync()));
+        Assert.Empty(p.Errores);
+    }
 }

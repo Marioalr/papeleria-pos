@@ -139,6 +139,7 @@ internal sealed class VentaLineaConfiguracion : IEntityTypeConfiguration<VentaLi
         b.Property(l => l.Promocion).HasMaxLength(Nucleo.Catalogo.Promocion.LargoNombre);
         b.HasIndex(l => l.PromocionId);
         b.Ignore(l => l.TienePromocion);
+        b.Ignore(l => l.DescuentoDeCliente);
     }
 }
 

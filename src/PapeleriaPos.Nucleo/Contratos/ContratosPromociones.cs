@@ -68,11 +68,14 @@ public static class PromocionesDelCobro
     /// Los productos del ticket cuya promoción no es la que aplicó la pantalla de la caja, o con la que se ahorra otra cosa: lo
     /// que dicen sus líneas (<see cref="LineaSolicitada.PromocionId"/>) contra lo que se calculó al cobrar, producto por producto
     /// (una línea que manda la caja sin su presentación es la de la presentación base, y dos iguales se juntan en una). Las
-    /// líneas con el precio cambiado no llevan promoción. Si hay alguno, no se cobra con un precio que el cajero no vio: se le
-    /// dice, como con un precio que cambió.
+    /// líneas con el precio cambiado no llevan promoción: la caja manda el precio solo de esas, y quien cobra las arma como
+    /// precio cambiado aunque sea el de la lista. Si ni la caja ni el cobro pusieron ninguna promoción, no hay nada que revisar.
+    /// Si hay alguno, no se cobra con un precio que el cajero no vio: se le dice, como con un precio que cambió.
     /// </summary>
     public static List<Guid> Distintas(Ventas.Venta venta, IReadOnlyList<LineaSolicitada> lineas)
     {
+        if (!venta.Lineas.Any(l => l.TienePromocion) && !lineas.Any(l => l.PromocionId is not null))
+            return [];
         var deLaCaja = lineas.Where(l => l.VarianteId is not null && l.PrecioCentavos is null)
             .GroupBy(l => l.VarianteId!.Value)
             .ToDictionary(g => g.Key, g => Resumen(g.Select(l => l.PromocionId), g.Sum(l => l.AhorroPromocionCentavos ?? 0)));
@@ -135,12 +138,18 @@ public sealed record ProductoEnPromocionDto(
 /// <param name="Departamentos">Los departamentos a los que toca.</param>
 /// <param name="Marcas">Las marcas a las que toca, por su nombre.</param>
 /// <param name="CuantosToca">Cuántos productos que se venden toca hoy (con los de sus departamentos y marcas).</param>
+/// <param name="CuantosToca">Cuántos productos que se venden la llevan hoy (con los de sus departamentos y marcas, sin los que están fuera por el costo).</param>
 /// <param name="Creo">«Luis, el 22/10/2026 a las 10:30».</param>
 /// <param name="Termino">«Luis, el 22/10/2026 a las 18:00», si se terminó a mano.</param>
+/// <param name="FueraPorElCosto">
+/// Los que toca pero no la llevan: con ella quedarían debajo de lo que cuestan y no se autorizó (llegaron después a su
+/// departamento o su marca, bajó su precio o subió su costo). Para dárselas, se guarda otra vez con «Vender debajo del costo».
+/// </param>
 public sealed record PromocionFichaDto(
     Guid Id, string Nombre, TipoPromocion Tipo, int Lleva, int Paga, int Centesimas, DateOnly Desde, DateOnly? Hasta, DiasDeLaSemana Dias,
     Guid? SucursalId, EstadoPromocion Estado, string QueHace, string Fechas, IReadOnlyList<ProductoEnPromocionDto> Productos,
-    IReadOnlyList<OpcionCatalogoDto> Departamentos, IReadOnlyList<string> Marcas, int CuantosToca, string Creo, string? Termino, bool VeCostos);
+    IReadOnlyList<OpcionCatalogoDto> Departamentos, IReadOnlyList<string> Marcas, int CuantosToca, string Creo, string? Termino, bool VeCostos,
+    IReadOnlyList<string>? FueraPorElCosto = null);
 
 /// <summary>A qué le toca, como lo manda la pantalla: un producto (su variante), un departamento o una marca (por su nombre).</summary>
 /// <param name="PrecioCentavos">Del precio especial: el de esa variante, por unidad base y con IVA.</param>
@@ -161,7 +170,10 @@ public sealed record SolicitudPromocion(
 
 /// <summary>Cómo queda antes de guardarla: lo que toca, lo que queda debajo del costo y, para quien ve la utilidad, el margen.</summary>
 /// <param name="Productos">Los que toca (hasta <see cref="MaximoEnLaVista"/>; <paramref name="CuantosToca"/> dice cuántos son).</param>
-/// <param name="BajoCosto">Los que quedan debajo del costo y cuánto falta en total (sin el costo de cada uno).</param>
+/// <param name="BajoCosto">
+/// Los que quedan debajo del costo; cuánto falta en total, solo para quien ve la utilidad (con un producto, lo que falta dice
+/// su costo): para los demás, cero.
+/// </param>
 public sealed record VistaPromocionDto(IReadOnlyList<ProductoEnPromocionDto> Productos, int CuantosToca, BajoCostoDto BajoCosto, bool VeCostos)
 {
     public const int MaximoEnLaVista = 200;

@@ -176,9 +176,13 @@ public sealed record SolicitudCobro(
 /// Las promociones con que cobra el servicio (las de la sucursal de la caja): la caja pone su ticket al día con ellas, sin esperar
 /// a que le llegue su copia. Vacía si el servicio no las mandó (uno de antes).
 /// </param>
+/// <param name="DiaPromociones">
+/// El día con que el servicio aplicó las promociones: el de la caja, o el suyo si el de la caja no cuadra (su reloj está mal).
+/// La caja pone el ticket al día con este día y lo manda otra vez con él, así que no se repite.
+/// </param>
 public sealed record PreciosCambiadosDto(
     string Mensaje, IReadOnlyList<ProductoVentaDto> Productos, long VersionCatalogo, string Codigo = PreciosCambiadosDto.CodigoDelError,
-    IReadOnlyList<PromocionDto>? Promociones = null)
+    IReadOnlyList<PromocionDto>? Promociones = null, DateOnly? DiaPromociones = null)
 {
     public const string CodigoDelError = "precios-cambiados";
 }

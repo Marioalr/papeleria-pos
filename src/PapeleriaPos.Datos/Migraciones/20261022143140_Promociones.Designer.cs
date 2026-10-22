@@ -950,6 +950,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<bool>("Activa")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("BajoCostoAutorizado")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Centesimas")
                         .HasColumnType("INTEGER");
 

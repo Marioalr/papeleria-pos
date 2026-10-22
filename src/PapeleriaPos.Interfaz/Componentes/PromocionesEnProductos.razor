@@ -5,9 +5,11 @@
    una marca) o un precio especial de cada producto; con sus fechas, sus días de la semana y su sucursal. Los productos se
    marcan en la lista de la izquierda, como en «Cambiar precios». «Dejar al costo» (el F11 de eleventa en el regreso a
    clases) pone cada marcado a su costo: lo ve quien ve la utilidad. Enter enseña cómo queda (lo que toca y lo que queda
-   debajo del costo); «Guardar» o Ctrl+Enter la guarda y, si algo queda debajo del costo, lo pide como Ctrl+D: lo hace quien
-   tiene «Vender debajo del costo» o con la autorización de quien lo tiene. Esc regresa, paso a paso, al producto. En el
-   piloto con eleventa solo se consultan (y se pueden terminar): una nota dice por qué. *@
+   debajo del costo); «Guardar» o Ctrl+Enter la guarda y, si algo queda debajo del costo, lo pide como Ctrl+D: quien tiene
+   «Vender debajo del costo» la guarda otra vez para dejarla así (antes ve cuáles), o con la autorización de quien lo tiene.
+   Lo que después quede debajo del costo sin autorizarse (llegó a su departamento, bajó su precio, subió su costo) no la
+   lleva: su detalle lo dice («Fuera por el costo»). Esc regresa, paso a paso, al producto. En el piloto con eleventa solo se
+   consultan (y se pueden terminar): una nota dice por qué. *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
@@ -98,8 +100,11 @@ else
     private string? _aviso;
     private bool _ocupado;
 
-    /// <summary>Lo que falta autorizar para guardar: quedan productos debajo del costo.</summary>
-    private sealed record Pendiente(string Detalle, long Monto);
+    /// <summary>
+    /// Lo que falta autorizar para guardar: quedan productos debajo del costo. El monto (lo que falta), solo si quien la guarda ve
+    /// la utilidad: con un producto, dice su costo. «Vender debajo del costo» no lleva tope, así que sin él la regla es la misma.
+    /// </summary>
+    private sealed record Pendiente(string Detalle, long? Monto);
 
     private Pendiente? _autorizar;
 
@@ -136,6 +141,15 @@ else
     private int _marcasVistas = -1;
     private List<string> _sinCosto = [];
     private VistaPromocionDto? _vista;
+
+    /// <summary>Lo que hace la que se vio en «Cómo queda», como se leyó: «7.5 % menos».</summary>
+    private string? _vistaQueHace;
+
+    /// <summary>
+    /// La que ya se enseñó con lo que queda debajo del costo a quien puede guardarla así: guardarla otra vez sin cambiarla la
+    /// guarda (lo mismo que una autorización, pero sin pedírsela a otro).
+    /// </summary>
+    private string? _confirmadaBajoCosto;
 
     /// <summary>Mientras se arma una de productos, la lista de la izquierda marca (como en «Cambiar precios»).</summary>
     public bool MarcaProductos => _modo == Modo.Editor && (_tipo == TipoPromocion.PrecioEspecial || _aQue == AQue.Productos);
@@ -325,6 +339,15 @@ else
                     ? $": los del departamento {string.Join(", ", f.Departamentos.Select(d => $"«{d.Nombre}»"))}" : "")@(f.Marcas.Count > 0
                     ? $"{(f.Departamentos.Count > 0 ? " y" : ":")} los de la marca {string.Join(", ", f.Marcas.Select(m => $"«{m}»"))}" : "").
             </p>
+            @if (f.FueraPorElCosto is { Count: > 0 } fuera)
+            {
+                <p id="promo-fuera" class="nota vn-precios-no">
+                    Fuera por el costo (no la llevan: con ella quedarían debajo de lo que cuestan):
+                    @Textos.Lista(fuera.Take(10).Select(n => $"«{n}»").ToList())@(fuera.Count > 10 ? $" y {fuera.Count - 10} más" : "").
+                    Para dársela, «@(f.Estado is EstadoPromocion.Termino or EstadoPromocion.Terminada ? "Volver a usarla" : "Editar")» y guárdala con «Vender
+                    debajo del costo» o con la autorización de quien lo tiene.
+                </p>
+            }
             @if (f.Productos.Count > 0)
             {
                 @TablaProductos(f.Productos, f.Tipo, f.VeCostos, editable: false)
@@ -487,7 +510,7 @@ else
     {
         (_id, _esNueva, _nombre, _tipo, _lleva, _paga, _porcentaje) = (Ids.Nuevo(), nueva, "", TipoPromocion.LlevaNPagaM, "3", "2", "10");
         (_aQue, _departamento, _marca, _hasta, _dias, _soloEstaSucursal, _alCosto) = (AQue.Productos, null, "", null, DiasDeLaSemana.Todos, false, false);
-        (_vista, _error, _aviso, _sinCosto) = (null, null, null, []);
+        (_vista, _vistaQueHace, _error, _aviso, _sinCosto, _confirmadaBajoCosto) = (null, null, null, null, [], null);
         _renglones.Clear();
         _precios.Clear();
         _deLosRenglones.Clear();
@@ -692,6 +715,10 @@ else
         {
             <h3>Cómo queda</h3>
             <p class="vn-precios-resumen">
+                @if (_vistaQueHace is { } queHace)
+                {
+                    <span id="promo-que-hace">@Mayuscula(queHace) · </span>
+                }
                 <strong>@(vista.CuantosToca == 1 ? "Toca 1 producto que se vende" : $"Toca {Formato.Numero(vista.CuantosToca)} productos que se venden")</strong>
                 @if (vista.BajoCosto.Lineas.Count == 0)
                 {
@@ -700,9 +727,10 @@ else
             </p>
             @if (vista.BajoCosto.Lineas.Count > 0)
             {
-                <p class="nota vn-precios-no">
+                <p id="promo-bajo-costo" class="nota vn-precios-no">
                     Quedan debajo del costo: @Textos.Lista(vista.BajoCosto.Lineas.Take(10).Select(n => $"«{n}»").ToList())@(vista.BajoCosto.Lineas.Count > 10
-                        ? $" y {vista.BajoCosto.Lineas.Count - 10} más" : ""). Para guardarla hace falta «Vender debajo del costo» o la autorización de quien lo tiene.
+                        ? $" y {vista.BajoCosto.Lineas.Count - 10} más" : ""). Para guardarla hace falta «Vender debajo del costo» o la autorización de quien lo tiene;
+                    guardada así, la llevan aunque queden debajo.
                 </p>
             }
             @if (!especial && _aQue != AQue.Productos && vista.Productos.Count > 0)
@@ -780,7 +808,14 @@ else
         }
         if (_tipo == TipoPromocion.Porcentaje)
         {
-            if (!decimal.TryParse(_porcentaje.Replace("%", "").Trim(), NumberStyles.Number, CultureInfo.InvariantCulture, out var porcentaje))
+            // Con punto decimal: «7,5» se leía como 75 % (la coma de los miles).
+            var texto = _porcentaje.Replace("%", "").Trim();
+            if (texto.Contains(','))
+            {
+                _error = "El porcentaje va con punto, sin comas: 7.5 es siete y medio por ciento.";
+                return null;
+            }
+            if (!decimal.TryParse(texto, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var porcentaje))
             {
                 _error = "Escribe el porcentaje (como 10).";
                 return null;
@@ -817,6 +852,7 @@ else
         try
         {
             _vista = await Cliente.VistaPromocionAsync(solicitud);
+            _vistaQueHace = Promocion.TipoTexto(solicitud.Tipo, solicitud.Lleva, solicitud.Paga, solicitud.Centesimas);
         }
         catch (ErrorCaja ex)
         {
@@ -829,8 +865,9 @@ else
     }
 
     /// <summary>
-    /// Guardarla. Antes se ve cómo queda: si algo queda debajo del costo, como en Ctrl+D, quien tiene «Vender debajo del costo» la
-    /// guarda; si lo puede pedir, se pide la autorización; si no, no se puede. El servicio lo vuelve a revisar al guardar.
+    /// Guardarla. Antes se ve cómo queda: si algo queda debajo del costo, como en Ctrl+D, quien tiene «Vender debajo del costo»
+    /// la ve con los que quedan debajo y la guarda otra vez para dejarla así; si lo puede pedir, se pide la autorización (que
+    /// dice cuáles); si no, no se puede. El servicio lo vuelve a revisar al guardar.
     /// </summary>
     private async Task GuardarAsync(Guid? autorizacion)
     {
@@ -842,17 +879,24 @@ else
             if (autorizacion is null)
             {
                 var vista = _vista = await Cliente.VistaPromocionAsync(solicitud);
-                if (vista.BajoCosto.FaltanteCentavos > 0)
+                _vistaQueHace = Promocion.TipoTexto(solicitud.Tipo, solicitud.Lleva, solicitud.Paga, solicitud.Centesimas);
+                if (vista.BajoCosto.Lineas.Count > 0)
                 {
-                    var decision = await Cliente.PermisoAsync(new SolicitudPermiso(Sesion.UsuarioId, Caja.SucursalId, AccionControlada.VenderBajoCosto,
-                        vista.BajoCosto.FaltanteCentavos));
+                    long? falta = vista.VeCostos ? vista.BajoCosto.FaltanteCentavos : null;
+                    var decision = await Cliente.PermisoAsync(new SolicitudPermiso(Sesion.UsuarioId, Caja.SucursalId, AccionControlada.VenderBajoCosto, falta));
                     switch (decision.Nivel)
                     {
+                        case NivelPermiso.Permitido when Firma(solicitud) is var firma && firma != _confirmadaBajoCosto:
+                            // Primero ve cuáles quedan debajo («Cómo queda»); guardarla otra vez así, la guarda.
+                            _confirmadaBajoCosto = firma;
+                            _aviso = "Con esta promoción quedan productos debajo del costo (abajo, en «Cómo queda»). Si así va, guárdala otra vez "
+                                     + "(Ctrl+Enter): la llevan aunque queden debajo.";
+                            return;
                         case NivelPermiso.Permitido:
                             break;
                         case NivelPermiso.RequiereAutorizacion:
-                            _autorizar = new Pendiente($"La promoción «{_nombre.Trim()}» deja debajo del costo: {string.Join(", ", vista.BajoCosto.Lineas.Take(10))}",
-                                vista.BajoCosto.FaltanteCentavos);
+                            _autorizar = new Pendiente($"La promoción «{_nombre.Trim()}» deja debajo del costo: {string.Join(", ", vista.BajoCosto.Lineas.Take(10))}"
+                                + (vista.BajoCosto.Lineas.Count > 10 ? $" y {vista.BajoCosto.Lineas.Count - 10} más" : ""), falta);
                             return;
                         default:
                             _error = "Con esta promoción quedan productos debajo del costo y no tienes permiso para eso.";
@@ -883,4 +927,7 @@ else
         _autorizar = null;
         await GuardarAsync(autorizacionId);
     }
+
+    /// <summary>La que se arma, como texto que se compara: si cambió algo desde que se enseñó lo que queda debajo del costo.</summary>
+    private static string Firma(SolicitudPromocion solicitud) => System.Text.Json.JsonSerializer.Serialize(solicitud with { AutorizacionBajoCostoId = null });
 }

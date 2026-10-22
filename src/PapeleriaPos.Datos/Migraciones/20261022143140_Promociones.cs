@@ -46,6 +46,7 @@ namespace PapeleriaPos.Datos.Migraciones
                     Dias = table.Column<int>(type: "INTEGER", nullable: false),
                     SucursalId = table.Column<Guid>(type: "TEXT", nullable: true),
                     Activa = table.Column<bool>(type: "INTEGER", nullable: false),
+                    BajoCostoAutorizado = table.Column<bool>(type: "INTEGER", nullable: false),
                     CreadaPorId = table.Column<Guid>(type: "TEXT", nullable: false),
                     CreadaUtc = table.Column<DateTime>(type: "TEXT", nullable: false),
                     TerminadaUtc = table.Column<DateTime>(type: "TEXT", nullable: true),

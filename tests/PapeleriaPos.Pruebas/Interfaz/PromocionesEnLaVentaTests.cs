@@ -1,9 +1,14 @@
+using System.Globalization;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
+using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Pruebas.Servicio;
 
 namespace PapeleriaPos.Pruebas.Interfaz;
@@ -148,6 +153,99 @@ public sealed class PromocionesEnLaVentaTests(ServicioDePrueba servicio) : IClas
         var subida = await db.Ventas.AsNoTracking().Include(x => x.Lineas).Where(x => x.EnContingencia).OrderByDescending(x => x.PagadaUtc).FirstAsync();
         var linea = Assert.Single(subida.Lineas);
         Assert.Equal((conDescuento, promocion.Id, "Empieza mañana"), (subida.TotalCentavos, linea.PromocionId!.Value, linea.Promocion));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    // ── Revisión del PR #132 ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Sin conexión, un precio cambiado con Ctrl+E al mismo precio de la copia (con su autorización) se cobra como precio
+    /// cambiado, sin la promoción que el producto tiene: antes no se cobraba nunca («Cambió la promoción…»).
+    /// </summary>
+    [Fact]
+    public async Task Sin_conexion_un_precio_cambiado_al_de_la_copia_se_cobra_sin_promocion()
+    {
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var producto = SinMayoreo(v)[5];
+        var precio = producto.Precios[0].PrecioCentavos;
+        var promocion = await PromocionAsync(servicio, v, "10 % del precio cambiado", TipoPromocion.Porcentaje, producto.VarianteId, centesimas: 1000);
+        await CopiaAlDiaAsync(v, promocion.Id);
+        var turno = (await v.Cliente.TurnoAsync(v.Caja.Id))!;
+        v.Red.Caida = true;
+        await v.Contingencia.LatidoAsync();
+        Assert.False(v.Contingencia.EnLinea);
+        var autorizacion = await v.Cliente.AutorizarAsync(new SolicitudAutorizacion(AccionControlada.CambiarPrecio, v.Caja.SucursalId, v.Caja.Id,
+            v.Cajero.UsuarioId, "dueno", "3333", precio, "Precio"));
+
+        var ticket = v.Contingencia.Cobrar(new SolicitudCobro(v.Caja.Id, turno.Id, v.Cajero.UsuarioId,
+            [new LineaSolicitada(producto.VarianteId, producto.Presentacion.Id, 1000, producto.Descripcion, precio, autorizacion.Id)],
+            [new CobroSolicitado(FormaPago.Efectivo, 10_000_000)], VentaId: Ids.Nuevo(), DiaPromociones: v.Contingencia.Hoy));
+
+        Assert.Equal((precio, (string?)null), (ticket.TotalCentavos, ticket.Lineas[0].Promocion));
+    }
+
+    /// <summary>
+    /// Una caja con el reloj dos días atrás: la caja principal no acepta su día (no es casi medianoche) y cobra con el suyo; su 409
+    /// lo dice. La caja pone el ticket al día con ese día (la promoción que para ella todavía no empezaba), avisa que la fecha de la
+    /// PC está mal, y el siguiente cobro pasa: no se repite.
+    /// </summary>
+    [Fact]
+    public async Task Con_la_fecha_de_la_pc_mal_el_ticket_se_pone_al_dia_con_la_de_la_principal_y_lo_dice()
+    {
+        var hoy = DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
+        var mediodia = new DateTimeOffset(HoraMexico.AUtc(hoy.ToDateTime(new TimeOnly(12, 0))), TimeSpan.Zero);
+        await using var propio = await ServicioDePrueba.CrearAsync(s =>
+        {
+            s.RemoveAll<TimeProvider>();
+            s.AddSingleton<TimeProvider>(new RelojFijo(mediodia));
+        });
+        await using var v = await VentaConCopia.AbrirAsync(propio, _baseLocal, reloj: new RelojFijo(mediodia.AddDays(-2)));
+        var producto = SinMayoreo(v)[6];
+        var precio = producto.Precios[0].PrecioCentavos;
+        var promocion = await PromocionAsync(propio, v, "Desde hoy", TipoPromocion.Porcentaje, producto.VarianteId, centesimas: 2000, desde: hoy,
+            hasta: hoy.AddDays(10));
+        await CopiaAlDiaAsync(v, promocion.Id);
+        await v.EscanearAsync(producto.Codigo!);
+        // Para la caja todavía no empieza.
+        Assert.DoesNotContain("ahorra", Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla)));
+
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
+
+        await v.Pantalla.EsperarAsync(t => PantallaSinNavegador.Limpio(t).Contains("no es la de la caja principal"), "el aviso de la fecha");
+        Assert.Contains($"La fecha de esta computadora ({hoy.AddDays(-2).ToString("d/MM/yyyy", CultureInfo.InvariantCulture)}) no es la de la caja principal "
+            + $"({hoy.ToString("d/MM/yyyy", CultureInfo.InvariantCulture)})", PantallaSinNavegador.Limpio(await v.Pantalla.TextoAsync()));
+        Assert.Contains("Desde hoy · ahorra", Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla)));
+        Assert.Equal(hoy, v.Contingencia.Hoy);
+        await v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
+        await v.Pantalla.EsperarAsync(t => t.Contains("Cobrado"), "el cobro");
+        Assert.Equal(precio - Redondeo.Dividir(precio * 2000, 10000), (await UltimoTicketAsync(propio, v)).TotalCentavos);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>
+    /// Ctrl+E en un renglón con promoción dice en cuánto va con ella y que cambiarle el precio se la quita; F11 dice que va con la
+    /// promoción (no marca una escala como «así va ahora»).
+    /// </summary>
+    [Fact]
+    public async Task Ctrl_E_y_F11_dicen_que_el_renglon_va_con_su_promocion()
+    {
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal);
+        var producto = SinMayoreo(v)[7];
+        var precio = producto.Precios[0].PrecioCentavos;
+        var promocion = await PromocionAsync(servicio, v, "3×2 del renglón", TipoPromocion.LlevaNPagaM, producto.VarianteId, lleva: 3, paga: 2);
+        await CopiaAlDiaAsync(v, promocion.Id);
+        await v.EscanearAsync($"3*{producto.Codigo}");
+
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Tecla("Ctrl+E", ""));
+        var enCtrlE = PantallaSinNavegador.Limpio((await v.Pantalla.EsperarElementoAsync("precio-con-promocion")).Texto);
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Tecla("Escape", null));
+        await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Tecla("F11", ""));
+        var enF11 = PantallaSinNavegador.Limpio((await v.Pantalla.EsperarElementoAsync("mayoreo-con-promocion")).Texto);
+
+        var porPieza = (long)Math.Round(2m * precio / 3, MidpointRounding.AwayFromZero);
+        Assert.Equal($"Con la promoción «3×2 del renglón» va en {Formato.Dinero(2 * precio)} ({Formato.Dinero(porPieza)} c/u). "
+            + "Si le cambias el precio, ya no lleva la promoción.", enCtrlE);
+        Assert.Contains($"Así va ahora: con la promoción «3×2 del renglón», {Formato.Dinero(2 * precio)}", enF11);
         Assert.Empty(v.Pantalla.Errores);
     }
 }

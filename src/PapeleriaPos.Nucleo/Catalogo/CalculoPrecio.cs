@@ -54,17 +54,20 @@ public static class CalculoPrecio
     /// <para>
     /// Con las <paramref name="promociones"/> del producto que corren ese <paramref name="dia"/> (fase 3): no se acumulan. Cada
     /// una se calcula sobre el menudeo y se queda la que deja el importe más bajo, si es más bajo que el del mayoreo (o el
-    /// menudeo); entre dos iguales, la de menor Id, para que la caja y el servicio elijan la misma. Es el único lugar donde se
-    /// decide el precio: la pantalla de la caja, su cobro sin conexión y el servicio calculan igual.
+    /// menudeo); entre dos iguales, la de menor Id, para que la caja y el servicio elijan la misma. Con el
+    /// <paramref name="descuentoDelCliente"/> (el fijo del cliente registrado, que tampoco se acumula con ellas), la promoción
+    /// tiene que dejar menos que el mayoreo (o el menudeo) con ese descuento; si no, se queda el descuento. Es el único lugar
+    /// donde se decide el precio: la pantalla de la caja, su cobro sin conexión y el servicio calculan igual.
     /// </para>
     /// </summary>
+    /// <param name="descuentoDelCliente">En centésimas (500 = 5 %): el del cliente registrado que lleva el renglón.</param>
     public static PrecioAplicado? Calcular(
         IEnumerable<Precio> precios, Guid sucursalId, Presentacion presentacion, Cantidad cantidad, bool mayoreoSiempre = false,
-        IReadOnlyList<PromocionDeProducto>? promociones = null, DateOnly? dia = null)
+        IReadOnlyList<PromocionDeProducto>? promociones = null, DateOnly? dia = null, int? descuentoDelCliente = null)
     {
         var regular = SinPromociones(precios, sucursalId, presentacion, cantidad, mayoreoSiempre);
         return regular is not null && promociones is { Count: > 0 } && dia is { } hoy && cantidad.EsPositiva
-            ? ConLaQueMasConviene(regular, presentacion, cantidad, promociones, hoy)
+            ? ConLaQueMasConviene(regular, presentacion, cantidad, promociones, hoy, descuentoDelCliente)
             : regular;
     }
 
@@ -106,17 +109,21 @@ public static class CalculoPrecio
     /// presentaciones, si tienen precio propio. El precio especial es por unidad base.
     /// </summary>
     private static PrecioAplicado ConLaQueMasConviene(
-        PrecioAplicado regular, Presentacion presentacion, Cantidad cantidad, IReadOnlyList<PromocionDeProducto> promociones, DateOnly dia)
+        PrecioAplicado regular, Presentacion presentacion, Cantidad cantidad, IReadOnlyList<PromocionDeProducto> promociones, DateOnly dia,
+        int? descuentoDelCliente)
     {
         var menudeo = regular.Menudeo ?? regular.Precio;
         var porPresentacion = menudeo.PresentacionId is not null;
         var unidades = porPresentacion ? cantidad : cantidad.Por(presentacion.Factor);
         var importeMenudeo = unidades.Importe(menudeo.PrecioCentavos);
         var conMenudeo = new PrecioAplicado(menudeo, importeMenudeo) { Menudeo = menudeo, ImporteMenudeoCentavos = importeMenudeo };
-        // Lo que vale la línea a ese precio: la promoción tiene que quedar debajo de eso y del mayoreo.
+        // Lo que vale la línea a ese precio: la promoción tiene que quedar debajo de eso y del mayoreo; con el descuento del
+        // cliente, del mayoreo con su descuento (como lo descuenta la venta).
         var importeDeLaLinea = cantidad.Importe(conMenudeo.PrecioPorPresentacion(presentacion));
         PromocionDeProducto? mejor = null;
         var importeMejor = Math.Min(regular.ImporteCentavos, importeDeLaLinea);
+        if (descuentoDelCliente is > 0 and var descuento)
+            importeMejor = Math.Min(importeMejor, regular.ImporteCentavos - Redondeo.Dividir((Int128)regular.ImporteCentavos * descuento, 10000));
         foreach (var promocion in promociones.Where(p => p.AplicaEl(dia)).OrderBy(p => p.PromocionId))
         {
             if (ImporteCon(promocion, menudeo.PrecioCentavos, unidades, importeMenudeo, cantidad.Por(presentacion.Factor)) is { } importe
@@ -129,11 +136,34 @@ public static class CalculoPrecio
     }
 
     /// <summary>
-    /// El precio por unidad base más bajo al que deja la promoción un producto: con su grupo completo (3 piezas en un 3×2, 2 en
-    /// el segundo a mitad de precio), sobre su menudeo por unidad base. Con esto se revisa, al darla de alta, que no quede
-    /// debajo del costo; con el mismo cálculo que la venta.
+    /// El precio por unidad base más bajo al que la promoción deja un producto, con el mismo cálculo que la venta: con su grupo
+    /// completo (3 en un 3×2, 2 en el segundo a mitad de precio) sobre el menudeo de cada grupo de precios con que lo vende (el
+    /// de la unidad base y el propio de cada presentación que lo tiene y que la venta usa: el que no cuesta más que sus piezas),
+    /// el más bajo. Una caja de 12 a $120 de un producto de $12 la pieza baja con un 3×2 a $6.67 la pieza, no a $8. Vacío si no
+    /// lo baja en ninguno (o no tiene precio): entonces no lo deja debajo de nada. Con esto se revisa el costo al darla de alta y
+    /// al llevarla a las cajas.
     /// </summary>
-    public static decimal PrecioMasBajoCon(PromocionDeProducto promocion, long menudeoPorUnidad)
+    public static decimal? PrecioMasBajoCon(PromocionDeProducto promocion, IEnumerable<Precio> precios, IEnumerable<Presentacion> presentaciones, Guid sucursalId)
+    {
+        var lista = precios.ToList();
+        var menudeoPorUnidad = DeSucursalOBase(lista.Where(p => p.PresentacionId is null), sucursalId).MinBy(p => p.CantidadMinima)?.PrecioCentavos;
+        var masBajo = menudeoPorUnidad is { } menudeo ? PorUnidadBase(promocion, menudeo, Cantidad.Piezas(1)) : null;
+        foreach (var presentacion in presentaciones.Where(p => p.Factor.EsPositiva))
+        {
+            var propias = DeSucursalOBase(lista.Where(p => p.PresentacionId == presentacion.Id), sucursalId);
+            // La venta usa su precio propio solo si alguna de sus escalas no cuesta más que sus piezas a menudeo.
+            if (propias.Count == 0 || menudeoPorUnidad is { } porPieza && propias.Min(p => p.PrecioCentavos) > presentacion.Factor.Importe(porPieza))
+                continue;
+            if (PorUnidadBase(promocion, propias.MinBy(p => p.CantidadMinima)!.PrecioCentavos, presentacion.Factor) is { } propio
+                && (masBajo is null || propio < masBajo))
+                masBajo = propio;
+        }
+        return masBajo;
+    }
+
+    /// <summary>Un grupo completo de la promoción sobre el menudeo de un grupo de precios, por unidad base; vacío si no lo baja.</summary>
+    /// <param name="factor">Las unidades base de cada unidad del grupo: una en el de la unidad base; las de la presentación en uno propio.</param>
+    private static decimal? PorUnidadBase(PromocionDeProducto promocion, long menudeo, Cantidad factor)
     {
         var grupo = promocion.Tipo switch
         {
@@ -142,8 +172,12 @@ public static class CalculoPrecio
             _ => 1,
         };
         var unidades = Cantidad.Piezas(grupo);
-        var menudeo = unidades.Importe(menudeoPorUnidad);
-        return (ImporteCon(promocion, menudeoPorUnidad, unidades, menudeo, unidades) ?? menudeo) / (decimal)grupo;
+        var importe = unidades.Importe(menudeo);
+        var unidadesBase = unidades.Por(factor);
+        // Como la venta: la promoción solo se aplica si deja menos que el menudeo.
+        return ImporteCon(promocion, menudeo, unidades, importe, unidadesBase) is { } conPromocion && conPromocion > 0 && conPromocion < importe
+            ? conPromocion / (unidadesBase.Milesimas / (decimal)Cantidad.Escala)
+            : null;
     }
 
     /// <summary>Lo que cuesta la cantidad con esa promoción; vacío si no se puede aplicar (le falta lo de su tipo).</summary>

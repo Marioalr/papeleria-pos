@@ -101,7 +101,7 @@ public static class CopiaDeLaCaja
             var variantes = desde == actuales.Catalogo ? [] : await VariantesCambiadasAsync(db, desde, quitados, ct);
             if (variantes.Count > MaximoDeCambios(catalogo.Productos))
                 return CambiosCopiaDto.Completo($"Son {variantes.Count:N0} productos con cambios: conviene la copia completa.");
-            var (version, productos, codigos, sinCatalogo, marcas, lasPromociones) = await catalogo.ParaLaCopiaAsync(actuales.Catalogo, variantes,
+            var (version, productos, codigos, sinCatalogo, marcas, lasPromociones) = await catalogo.ParaLaCopiaAsync(db, actuales.Catalogo, variantes,
                 await ExistenciasAsync(db, caja.SucursalId, variantes, ct), caja.SucursalId, Hoy(reloj ?? db.Reloj), ct);
             // Con la versión que se leyó: si el índice ya va en una más nueva, lo que cambió después se pide la próxima vez.
             version = Math.Min(version, actuales.Catalogo);
