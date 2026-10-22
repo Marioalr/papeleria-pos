@@ -96,6 +96,7 @@ public sealed class MedicionCopiaTests(ITestOutputHelper salida) : IDisposable
             var reloj = Stopwatch.StartNew();
             var bytes = await http.GetByteArrayAsync(
                 $"api/cajas/{caja.Id}/cambios?desde={desde.Version}&existencias={desde.VersionExistencias}&base={desde.Base}&formato={CopiaAlDia.Formato}"
+                + $"&promociones={desde.HuellaPromociones}"
                 + $"&vendidos={desde.VersionVendidos ?? 0}&elegidos={desde.VersionElegidos ?? 0}");
             var ms = reloj.Elapsed.TotalMilliseconds;
             return (bytes.Length, ms, JsonSerializer.Deserialize<CambiosCopiaDto>(bytes, JsonSerializerOptions.Web)!);

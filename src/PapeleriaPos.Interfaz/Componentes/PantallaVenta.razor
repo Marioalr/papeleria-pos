@@ -497,6 +497,10 @@
                     {
                         <div class="vn-linea verde"><span>Ahorro por mayoreo</span><span>@Formato.Dinero(ahorro)</span></div>
                     }
+                    @if (Actual.Venta.Lineas.Sum(l => l.AhorroPromocionCentavos) is var porPromociones and > 0)
+                    {
+                        <div class="vn-linea verde"><span>Ahorro por promociones</span><span>@Formato.Dinero(porPromociones)</span></div>
+                    }
                     @if (Actual.Venta.DescuentoCentavos > 0)
                     {
                         <div class="vn-linea verde"><span>Descuentos</span><span>−@Formato.Dinero(Actual.Venta.DescuentoCentavos)</span></div>
@@ -3084,6 +3088,7 @@
             Nombre: linea.EsImpresiones ? $"Impresiones ({Actual.Impresiones.Count})" : Descripcion(linea, producto),
             Codigo: producto?.Codigo,
             Mayoreo: linea.TieneMayoreo ? $"{MayoreoTexto(linea, producto)} · ahorra {Formato.Dinero(linea.AhorroMayoreoCentavos)}" : null,
+            Promocion: linea.TienePromocion ? $"{linea.Promocion} · ahorra {Formato.Dinero(linea.AhorroPromocionCentavos)}" : null,
             Descuento: linea.TieneDescuento ? $"Descuento −{Formato.Dinero(linea.DescuentoCentavos)} · {linea.MotivoDescuento}" : null,
             PrecioCambiado: linea.PrecioCambiado,
             Existencia: producto?.Existencia is { } quedan && quedan <= 3 ? quedan <= 0 ? "Sin existencia en el sistema" : $"Quedan {Formato.Numero(quedan)}" : null,
@@ -3258,6 +3263,7 @@
         CajeroId = Sesion.UsuarioId,
         Serie = Caja.Serie,
         CreadaUtc = DateTime.UtcNow,
+        Promociones = Cliente.PromocionesDeLaVenta,
     };
 
     private void NuevoTicket()
@@ -3437,6 +3443,8 @@
         var venta = ticket.Venta;
         var antes = venta.Lineas.ToDictionary(l => l, l => (l.PrecioCentavos, l.ImporteCentavos, l.AhorroMayoreoCentavos));
         var cambiados = precios.Productos.Select(p => p.VarianteId).ToHashSet();
+        // Las promociones con que cobra la caja principal (fase 3): el ticket se pone al día con ellas.
+        Cliente.PromocionesAlDia(precios);
         // Lo que no cambió ya lo revisó el servicio hasta su versión: sus líneas tienen los precios de ahora.
         foreach (var linea in venta.Lineas.Where(l => l.VarianteId is { } v && !l.EsImpresiones && !cambiados.Contains(v)))
         {

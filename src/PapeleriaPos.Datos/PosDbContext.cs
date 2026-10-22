@@ -107,6 +107,11 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     /// <summary>Lo que se pregunta en el verificador (F9): una por consulta.</summary>
     public DbSet<ConsultaDePrecio> ConsultasDePrecio => Set<ConsultaDePrecio>();
 
+    /// <summary>Las promociones con fechas (fase 3): van en la copia de las cajas, con sus fechas y a qué tocan.</summary>
+    public DbSet<Promocion> Promociones => Set<Promocion>();
+
+    public DbSet<AlcancePromocion> AlcancesPromocion => Set<AlcancePromocion>();
+
     /// <summary>Lo quitado de lo que lleva la copia de las cajas, con su versión (entrega 5, parte 2): lo escribe la base al guardar.</summary>
     public DbSet<Borrado> Borrados => Set<Borrado>();
 

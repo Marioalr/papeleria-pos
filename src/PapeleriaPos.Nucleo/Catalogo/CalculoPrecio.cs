@@ -12,6 +12,23 @@ public sealed record PrecioAplicado(Precio Precio, long ImporteCentavos)
     public bool EsMayoreo => Menudeo is { } m && Precio.CantidadMinima > m.CantidadMinima && ImporteMenudeoCentavos > ImporteCentavos;
 
     public long AhorroCentavos => EsMayoreo ? ImporteMenudeoCentavos - ImporteCentavos : 0;
+
+    /// <summary>
+    /// La promoción que se aplicó (fase 3): le convenía más al cliente que el mayoreo y que las demás. Entonces
+    /// <see cref="Precio"/> es el menudeo y el importe, el de la promoción.
+    /// </summary>
+    public PromocionDeProducto? Promocion { get; init; }
+
+    /// <summary>
+    /// Lo que se ahorró por la promoción contra el precio de la línea (<see cref="PrecioPorPresentacion"/>) por la cantidad: así
+    /// el importe de la línea es siempre ese precio por la cantidad menos este ahorro, y se vuelve a armar igual al subir una
+    /// venta sin conexión. Cero sin promoción.
+    /// </summary>
+    public long AhorroPromocionCentavos { get; init; }
+
+    /// <summary>El precio de una presentación como va en la línea de la venta: el propio de la presentación, o el de la unidad base por las que trae.</summary>
+    public long PrecioPorPresentacion(Presentacion presentacion) =>
+        Precio.PresentacionId is null ? presentacion.Factor.Importe(Precio.PrecioCentavos) : Precio.PrecioCentavos;
 }
 
 /// <summary>Las escalas que tocan a una presentación: las suyas propias (raro) o las de la unidad base, de menor a mayor.</summary>
@@ -34,9 +51,25 @@ public static class CalculoPrecio
     /// una de menos piezas), se cobra la más barata de las que alcanza; y un paquete cuyo precio propio cuesta más que sus
     /// piezas a menudeo se cobra por sus piezas.
     /// </para>
+    /// <para>
+    /// Con las <paramref name="promociones"/> del producto que corren ese <paramref name="dia"/> (fase 3): no se acumulan. Cada
+    /// una se calcula sobre el menudeo y se queda la que deja el importe más bajo, si es más bajo que el del mayoreo (o el
+    /// menudeo); entre dos iguales, la de menor Id, para que la caja y el servicio elijan la misma. Es el único lugar donde se
+    /// decide el precio: la pantalla de la caja, su cobro sin conexión y el servicio calculan igual.
+    /// </para>
     /// </summary>
     public static PrecioAplicado? Calcular(
-        IEnumerable<Precio> precios, Guid sucursalId, Presentacion presentacion, Cantidad cantidad, bool mayoreoSiempre = false)
+        IEnumerable<Precio> precios, Guid sucursalId, Presentacion presentacion, Cantidad cantidad, bool mayoreoSiempre = false,
+        IReadOnlyList<PromocionDeProducto>? promociones = null, DateOnly? dia = null)
+    {
+        var regular = SinPromociones(precios, sucursalId, presentacion, cantidad, mayoreoSiempre);
+        return regular is not null && promociones is { Count: > 0 } && dia is { } hoy && cantidad.EsPositiva
+            ? ConLaQueMasConviene(regular, presentacion, cantidad, promociones, hoy)
+            : regular;
+    }
+
+    private static PrecioAplicado? SinPromociones(
+        IEnumerable<Precio> precios, Guid sucursalId, Presentacion presentacion, Cantidad cantidad, bool mayoreoSiempre)
     {
         var deLaVariante = precios.Where(p => p.VarianteId == presentacion.VarianteId).ToList();
 
@@ -64,6 +97,77 @@ public static class CalculoPrecio
             Menudeo = deMenudeo,
             ImporteMenudeoCentavos = unidadesBase.Importe(deMenudeo.PrecioCentavos),
         };
+    }
+
+    /// <summary>
+    /// La que más le conviene al cliente: el mayoreo (o el menudeo) que ya se calculó, o la promoción que deja el importe más
+    /// bajo. Las promociones van sobre el menudeo del mismo grupo de precios (el de la unidad base, o el propio de la
+    /// presentación) y cuentan en sus unidades: piezas (un paquete de 12 son 12 para el 3×2, como para el mayoreo) o
+    /// presentaciones, si tienen precio propio. El precio especial es por unidad base.
+    /// </summary>
+    private static PrecioAplicado ConLaQueMasConviene(
+        PrecioAplicado regular, Presentacion presentacion, Cantidad cantidad, IReadOnlyList<PromocionDeProducto> promociones, DateOnly dia)
+    {
+        var menudeo = regular.Menudeo ?? regular.Precio;
+        var porPresentacion = menudeo.PresentacionId is not null;
+        var unidades = porPresentacion ? cantidad : cantidad.Por(presentacion.Factor);
+        var importeMenudeo = unidades.Importe(menudeo.PrecioCentavos);
+        var conMenudeo = new PrecioAplicado(menudeo, importeMenudeo) { Menudeo = menudeo, ImporteMenudeoCentavos = importeMenudeo };
+        // Lo que vale la línea a ese precio: la promoción tiene que quedar debajo de eso y del mayoreo.
+        var importeDeLaLinea = cantidad.Importe(conMenudeo.PrecioPorPresentacion(presentacion));
+        PromocionDeProducto? mejor = null;
+        var importeMejor = Math.Min(regular.ImporteCentavos, importeDeLaLinea);
+        foreach (var promocion in promociones.Where(p => p.AplicaEl(dia)).OrderBy(p => p.PromocionId))
+        {
+            if (ImporteCon(promocion, menudeo.PrecioCentavos, unidades, importeMenudeo, cantidad.Por(presentacion.Factor)) is { } importe
+                && importe > 0 && importe < importeMejor)
+                (mejor, importeMejor) = (promocion, importe);
+        }
+        return mejor is null
+            ? regular
+            : conMenudeo with { ImporteCentavos = importeMejor, Promocion = mejor, AhorroPromocionCentavos = importeDeLaLinea - importeMejor };
+    }
+
+    /// <summary>
+    /// El precio por unidad base más bajo al que deja la promoción un producto: con su grupo completo (3 piezas en un 3×2, 2 en
+    /// el segundo a mitad de precio), sobre su menudeo por unidad base. Con esto se revisa, al darla de alta, que no quede
+    /// debajo del costo; con el mismo cálculo que la venta.
+    /// </summary>
+    public static decimal PrecioMasBajoCon(PromocionDeProducto promocion, long menudeoPorUnidad)
+    {
+        var grupo = promocion.Tipo switch
+        {
+            TipoPromocion.LlevaNPagaM => Math.Max(1, promocion.Lleva),
+            TipoPromocion.SegundoAMitad => 2,
+            _ => 1,
+        };
+        var unidades = Cantidad.Piezas(grupo);
+        var menudeo = unidades.Importe(menudeoPorUnidad);
+        return (ImporteCon(promocion, menudeoPorUnidad, unidades, menudeo, unidades) ?? menudeo) / (decimal)grupo;
+    }
+
+    /// <summary>Lo que cuesta la cantidad con esa promoción; vacío si no se puede aplicar (le falta lo de su tipo).</summary>
+    /// <param name="precioMenudeo">El menudeo, por cada una de <paramref name="unidades"/>.</param>
+    /// <param name="unidades">En lo que cuenta el menudeo: unidades base, o presentaciones con precio propio.</param>
+    /// <param name="unidadesBase">Para el precio especial, que es por unidad base.</param>
+    private static long? ImporteCon(PromocionDeProducto p, long precioMenudeo, Cantidad unidades, long importeMenudeo, Cantidad unidadesBase)
+    {
+        switch (p.Tipo)
+        {
+            case TipoPromocion.Porcentaje when p.Centesimas is > 0 and < 10000:
+                return importeMenudeo - Redondeo.Dividir((Int128)importeMenudeo * p.Centesimas, 10000);
+            case TipoPromocion.PrecioEspecial when p.PrecioCentavos is > 0 and var especial:
+                return unidadesBase.Importe(especial);
+            case TipoPromocion.LlevaNPagaM when p.Paga >= 1 && p.Lleva > p.Paga:
+                // De cada N completas (se cuentan las enteras: 3.5 m son un grupo de 3), N − M van gratis.
+                var grupos = unidades.Milesimas / (p.Lleva * Cantidad.Escala);
+                return importeMenudeo - Cantidad.Piezas(grupos * (p.Lleva - p.Paga)).Importe(precioMenudeo);
+            case TipoPromocion.SegundoAMitad:
+                var pares = unidades.Milesimas / (2 * Cantidad.Escala);
+                return importeMenudeo - Redondeo.Dividir(Cantidad.Piezas(pares).Importe(precioMenudeo), 2);
+            default:
+                return null;
+        }
     }
 
     /// <summary>Las escalas de una presentación en la sucursal, con la misma regla que <see cref="Calcular"/> (F11 las muestra).</summary>

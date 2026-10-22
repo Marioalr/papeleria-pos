@@ -32,8 +32,9 @@ public static class LoQueLlevaLaCopia
         // Solo la caja que pide, con su nombre, serie, sucursal y equipo; la llave no viaja.
         [typeof(Caja)] = [nameof(Caja.LlaveHuella), nameof(Caja.AltaUtc), nameof(Caja.EsPrincipal), nameof(Caja.Activa)],
         [typeof(Sucursal)] = [nameof(Sucursal.Clave), nameof(Sucursal.Activa)],
-        // El producto en la venta: su nombre (con la marca), impuesto, si lleva inventario y si está activo.
-        [typeof(Producto)] = [nameof(Producto.DepartamentoId), nameof(Producto.ClaveSat), nameof(Producto.ClaveUnidadSat), nameof(Producto.PorCompletar)],
+        // El producto en la venta: su nombre (con la marca), impuesto, si lleva inventario y si está activo. Y su departamento
+        // (fase 3): una promoción de un departamento llega a la copia con sus productos.
+        [typeof(Producto)] = [nameof(Producto.ClaveSat), nameof(Producto.ClaveUnidadSat), nameof(Producto.PorCompletar)],
         [typeof(Variante)] = [nameof(Variante.ManejaCaducidad), nameof(Variante.JuntadaEnId)],
         [typeof(CodigoBarras)] = [nameof(CodigoBarras.Origen)],
         // La configuración de la tienda que se usa sin conexión (el nombre, el horario, el efectivo, el corte y la espera);

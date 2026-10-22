@@ -32,15 +32,18 @@ public static class CopiaDeLaCaja
     /// mismo que la de aquí (entrega 5, parte 3): todos los códigos, las marcas con que se leen los nombres, los sinónimos, lo
     /// más vendido y lo que esta caja eligió antes con cada texto, con sus versiones. Y los exhibidores y las temporadas, con
     /// lo acomodado en ellos (entrega 13), y de qué producto es cada foto, con su huella (entrega 13, parte 2): las fotos no,
-    /// esas se bajan aparte.
+    /// esas se bajan aparte. Y las promociones de su sucursal que no han terminado, con sus fechas, con su huella (fase 3).
     /// </summary>
+    /// <param name="reloj">El de los trabajos de fondo del servicio, para el día de las promociones (las pruebas lo cambian); sin él, el de la base.</param>
     public static async Task<PaqueteContingenciaDto> PaqueteAsync(
-        PosDbContext db, CatalogoEnMemoria catalogo, VersionesDeLaCopia versiones, Guid cajaId, OpcionesTicket opciones, CancellationToken ct = default)
+        PosDbContext db, CatalogoEnMemoria catalogo, VersionesDeLaCopia versiones, Guid cajaId, OpcionesTicket opciones, CancellationToken ct = default,
+        TimeProvider? reloj = null)
     {
         var caja = await db.Cajas.FindAsync([cajaId], ct) ?? throw new InvalidOperationException("La caja no existe.");
         // La versión de las existencias antes que ellas: lo que cambie mientras tanto ya viene, y la caja lo vuelve a pedir.
         var versionExistencias = (await VersionesDeLaCopia.LeerAsync(db, versiones.Base, ct)).Existencias;
-        var (version, productos, codigos, marcas) = await catalogo.TodosAsync(db, await ExistenciasAsync(db, caja.SucursalId, null, ct), ct);
+        var (version, productos, codigos, marcas, promociones) = await catalogo.TodosAsync(db, await ExistenciasAsync(db, caja.SucursalId, null, ct),
+            caja.SucursalId, Hoy(reloj ?? db.Reloj), ct);
         var (usuarios, permisos, reglas) = await UsuariosAsync(db, caja.SucursalId, ct);
         var ticket = await TicketAsync(db, caja.SucursalId, opciones, ct);
         // La configuración de la tienda (entrega 7): sin conexión, el nombre en la entrada, las fichas de la espera y el
@@ -55,9 +58,13 @@ public static class CopiaDeLaCaja
             configuracion, versiones.Base, VersionesDeLaCopia.Formato, versionExistencias, vendidos, elegidos, versionVendidos, versionElegidos,
             ticket.AlCobrar,
             // Los exhibidores y las temporadas (entrega 13): siempre, aunque no haya ninguno (el formato 3 los trae). Y las fotos,
-            // solo de qué producto es cada una y su huella (entrega 13, parte 2): siempre, aunque no haya ninguna (el formato 4).
-            await RegistroMostrador.ListarAsync(db, ct), await RegistroFotos.ReferenciasAsync(db, ct));
+            // solo de qué producto es cada una y su huella (entrega 13, parte 2): siempre, aunque no haya ninguna (el formato 4). Y
+            // las promociones con su huella (fase 3): siempre, aunque no haya ninguna (el formato 5).
+            await RegistroMostrador.ListarAsync(db, ct), await RegistroFotos.ReferenciasAsync(db, ct), promociones, PromocionDto.Huella(promociones));
     }
+
+    /// <summary>El día de hoy en la tienda (hora de México): el de las promociones que van en la copia.</summary>
+    public static DateOnly Hoy(TimeProvider reloj) => DateOnly.FromDateTime(HoraMexico.ALocal(reloj.GetUtcNow().UtcDateTime));
 
     /// <summary>
     /// Lo que cambió desde la versión de la caja (<paramref name="desde"/>) y desde su versión de existencias, todo leído de un
@@ -68,9 +75,14 @@ public static class CopiaDeLaCaja
     /// </summary>
     /// <param name="vendidos">La versión de lo más vendido que trae la copia de la caja.</param>
     /// <param name="elegidos">Hasta dónde trae lo elegido la copia de la caja.</param>
+    /// <param name="promociones">
+    /// La huella de las promociones de la copia de la caja (fase 3): si las de ahora tienen otra (una nueva, una que cambió, la
+    /// que se terminó o la que ya pasó su último día), van completas.
+    /// </param>
+    /// <param name="reloj">El de los trabajos de fondo del servicio, para el día de las promociones; sin él, el de la base.</param>
     public static async Task<CambiosCopiaDto> CambiosAsync(
         PosDbContext db, CatalogoEnMemoria catalogo, VersionesDeLaCopia versiones, Guid cajaId, long desde, long existencias, Guid base_, int formato,
-        OpcionesTicket opciones, CancellationToken ct = default, long vendidos = 0, long elegidos = 0)
+        OpcionesTicket opciones, CancellationToken ct = default, long vendidos = 0, long elegidos = 0, string? promociones = null, TimeProvider? reloj = null)
     {
         if (base_ != versiones.Base)
             return CambiosCopiaDto.Completo("La copia es de otra base (la caja principal se reinició o empezó de cero).");
@@ -89,8 +101,8 @@ public static class CopiaDeLaCaja
             var variantes = desde == actuales.Catalogo ? [] : await VariantesCambiadasAsync(db, desde, quitados, ct);
             if (variantes.Count > MaximoDeCambios(catalogo.Productos))
                 return CambiosCopiaDto.Completo($"Son {variantes.Count:N0} productos con cambios: conviene la copia completa.");
-            var (version, productos, codigos, sinCatalogo, marcas) = await catalogo.ParaLaCopiaAsync(actuales.Catalogo, variantes,
-                await ExistenciasAsync(db, caja.SucursalId, variantes, ct), ct);
+            var (version, productos, codigos, sinCatalogo, marcas, lasPromociones) = await catalogo.ParaLaCopiaAsync(actuales.Catalogo, variantes,
+                await ExistenciasAsync(db, caja.SucursalId, variantes, ct), caja.SucursalId, Hoy(reloj ?? db.Reloj), ct);
             // Con la versión que se leyó: si el índice ya va en una más nueva, lo que cambió después se pide la próxima vez.
             version = Math.Min(version, actuales.Catalogo);
             var cambiadas = await db.Existencias.AsNoTracking().Where(e => e.SucursalId == caja.SucursalId && e.Version > existencias)
@@ -105,6 +117,10 @@ public static class CopiaDeLaCaja
                 productos, sinCatalogo, codigos, cambiadas.Select(e => new ExistenciaLocalDto(e.VarianteId, e.Cantidad.EnUnidades)).ToList(),
                 Vendidos: versionVendidos != vendidos ? losVendidos : null, Elegidos: losElegidos.Count > 0 ? losElegidos : null,
                 VersionVendidos: versionVendidos, VersionElegidos: versionElegidos);
+            // Las promociones (fase 3), completas si no son las de la copia: también cuando no cambió el catálogo y una ya pasó su
+            // último día (la completa ya no la lleva).
+            if (PromocionDto.Huella(lasPromociones) is var huella && huella != promociones)
+                cambios = cambios with { Promociones = lasPromociones, HuellaPromociones = huella };
             if (desde == actuales.Catalogo)
                 return cambios;
             // Las marcas con que se leen los nombres salen de los productos: si cambió alguno (también si se renombró su marca, o

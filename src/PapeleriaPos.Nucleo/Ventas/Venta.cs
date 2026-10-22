@@ -119,30 +119,62 @@ public class Venta
         if (linea.Unidad == UnidadBase.Pieza && !cantidadBase.EsEntera)
             throw new ArgumentException("Este producto se vende por pieza: no admite fracciones.");
 
-        var aplicado = CalculoPrecio.Calcular(precios, SucursalId, presentacion, cantidad, MayoreoDeCliente)
+        var aplicado = CalculoPrecio.Calcular(precios, SucursalId, presentacion, cantidad, MayoreoDeCliente,
+                linea.VarianteId is { } varianteId ? Promociones?.De(varianteId) : null, Promociones?.Dia)
             ?? throw new InvalidOperationException($"«{linea.Descripcion}» no tiene precio.");
 
         linea.Cantidad = cantidad;
         linea.CantidadBase = cantidadBase;
         if (linea.PrecioCambiado)
         {
-            // Con precio cambiado (autorizado), la cantidad nueva se cobra a ese precio y ya no es mayoreo.
+            // Con precio cambiado (autorizado), la cantidad nueva se cobra a ese precio y ya no es mayoreo ni promoción.
             AplicarDescuento(linea, cantidad.Importe(linea.PrecioCentavos));
             (linea.MayoreoDesde, linea.AhorroMayoreoCentavos) = (null, 0);
+            SinPromocion(linea);
         }
         else
         {
             AplicarDescuento(linea, aplicado.ImporteCentavos);
-            linea.PrecioCentavos = aplicado.Precio.PresentacionId is null
-                ? presentacion.Factor.Importe(aplicado.Precio.PrecioCentavos)
-                : aplicado.Precio.PrecioCentavos;
+            linea.PrecioCentavos = aplicado.PrecioPorPresentacion(presentacion);
             // Queda en la línea desde cuánto aplicó el mayoreo y cuánto se ahorró: el ticket y la reimpresión lo dicen.
             linea.MayoreoDesde = !aplicado.EsMayoreo ? null
                 : aplicado.Precio.PresentacionId is null ? aplicado.Precio.CantidadMinima : aplicado.Precio.CantidadMinima.Por(presentacion.Factor);
             linea.AhorroMayoreoCentavos = aplicado.AhorroCentavos;
+            // Y la promoción, si fue la que más le convenía (fase 3): cuál, cómo se llamaba y cuánto se ahorró.
+            (linea.PromocionId, linea.Promocion, linea.AhorroPromocionCentavos) = aplicado.Promocion is { } promocion
+                ? ((Guid?)promocion.PromocionId, promocion.Nombre, aplicado.AhorroPromocionCentavos)
+                : (null, null, 0L);
         }
         Recalcular();
     }
+
+    /// <summary>
+    /// Las promociones (fase 3): de dónde salen las de cada producto y en qué día se cobra. No se guarda: la pone quien arma la
+    /// venta (la caja con su copia y su fecha, la caja sin conexión, el servicio con la fecha del cobro). Sin ella, sin
+    /// promociones: un servicio que recibe una venta de una caja de antes, o el piloto con eleventa.
+    /// </summary>
+    public PromocionesDeLaVenta? Promociones { get; set; }
+
+    /// <summary>
+    /// Una venta que se cobró sin conexión (sube con la bandeja): su línea lleva la promoción con que se cobró, aunque aquí ya
+    /// no sea la misma (se cambió o terminó mientras tanto). Lo que se cobró manda: el precio de la línea y lo que se ahorró.
+    /// </summary>
+    public void FijarPromocionCobrada(VentaLinea linea, long precioCentavos, Guid promocionId, string promocion, long ahorroCentavos)
+    {
+        RequerirEditable();
+        if (linea.VarianteId is null || linea.EsImpresiones)
+            throw new InvalidOperationException("Solo un producto del catálogo lleva promoción.");
+        var importe = linea.Cantidad.Importe(precioCentavos);
+        if (precioCentavos <= 0 || ahorroCentavos <= 0 || ahorroCentavos >= importe)
+            throw new ArgumentException($"La promoción de «{linea.Descripcion}» no cuadra con su precio.");
+        linea.PrecioCentavos = precioCentavos;
+        (linea.MayoreoDesde, linea.AhorroMayoreoCentavos) = (null, 0);
+        (linea.PromocionId, linea.Promocion, linea.AhorroPromocionCentavos) = (promocionId, promocion, ahorroCentavos);
+        AplicarDescuento(linea, importe - ahorroCentavos);
+        Recalcular();
+    }
+
+    private static void SinPromocion(VentaLinea linea) => (linea.PromocionId, linea.Promocion, linea.AhorroPromocionCentavos) = (null, null, 0);
 
     /// <summary>
     /// El cliente registrado del ticket (fase 3, entrega 2), con descuento o sin él. Su descuento fijo ya lo aprobó quien
@@ -301,6 +333,7 @@ public class Venta
         AplicarDescuento(linea, linea.Cantidad.Importe(precioCentavos));
         linea.AutorizacionPrecioId = autorizacionId;
         (linea.MayoreoDesde, linea.AhorroMayoreoCentavos) = (null, 0);
+        SinPromocion(linea);
         Recalcular();
     }
 
@@ -557,6 +590,23 @@ public class VentaLinea
 
     /// <summary>El mayoreo se aplicó antes de llegar a la cantidad: es el «mayoreo siempre» del cliente registrado.</summary>
     public bool MayoreoDeCliente => MayoreoDesde is { } desde && CantidadBase < desde;
+
+    /// <summary>
+    /// La promoción que se aplicó (fase 3): la que más le convenía al cliente, también contra el mayoreo; vacía si no hubo. No
+    /// se borra una promoción (se termina), pero la línea no depende de ella: lleva su nombre y lo que se ahorró.
+    /// </summary>
+    public Guid? PromocionId { get; set; }
+
+    /// <summary>El nombre de la promoción al cobrar: el ticket y la reimpresión lo dicen.</summary>
+    public string? Promocion { get; set; }
+
+    /// <summary>
+    /// Lo que se ahorró por la promoción: el precio de la línea por la cantidad, menos esto, es su importe antes del descuento.
+    /// No es un descuento: no pide autorización (la pidió quien la dio de alta, si dejaba algo debajo del costo).
+    /// </summary>
+    public long AhorroPromocionCentavos { get; set; }
+
+    public bool TienePromocion => PromocionId is not null;
 
     public long ImporteSinDescuentoCentavos => ImporteCentavos + DescuentoCentavos;
 

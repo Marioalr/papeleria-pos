@@ -3,7 +3,10 @@ using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Interfaz;
 
-/// <summary>Lo que la caja manda de un ticket: qué y cuánto, el precio solo si se cambió, y el descuento con su motivo.</summary>
+/// <summary>
+/// Lo que la caja manda de un ticket: qué y cuánto, el precio solo si se cambió, el descuento con su motivo y la promoción que
+/// aplicó, con lo que se ahorró (fase 3: el servicio revisa que sea la misma).
+/// </summary>
 public static class ArmadoSolicitud
 {
     /// <summary>La línea "Impresiones" no se manda: el servicio la arma con los trabajos y sus precios.</summary>
@@ -33,6 +36,8 @@ public static class ArmadoSolicitud
             { PrecioCambiado: true } => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas, null, l.PrecioCentavos, l.AutorizacionPrecioId),
             _ => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas),
         };
+        if (l.TienePromocion)
+            linea = linea with { PromocionId = l.PromocionId, AhorroPromocionCentavos = l.AhorroPromocionCentavos, Promocion = l.Promocion };
         return l.TieneDescuento
             ? linea with
             {

@@ -32,6 +32,10 @@
             {
                 <span class="vn-etiq">@mayoreo</span>
             }
+            @if (Renglon.Promocion is { } promocion)
+            {
+                <span class="vn-etiq vn-etiq-promo"><Ico Nombre="porcentaje" />@promocion</span>
+            }
             @if (Renglon.Descuento is { } descuento)
             {
                 <span class="vn-etiq">@descuento</span>
@@ -102,9 +106,10 @@
     /// <param name="Mayoreo">«Mayoreo desde 12 · ahorra $6.00».</param>
     /// <param name="Descuento">«Descuento −$5.00 · motivo».</param>
     /// <param name="Existencia">«Quedan 2» o «Sin existencia en el sistema», con 3 o menos.</param>
+    /// <param name="Promocion">«Regreso a clases · ahorra $6.00»: la promoción que se aplicó (fase 3), como el mayoreo.</param>
     public sealed record Datos(
         bool ConPasos, decimal Cantidad, string Nombre, string? Codigo, string? Mayoreo, string? Descuento, bool PrecioCambiado, string? Existencia,
-        long PrecioOriginalCentavos, long PrecioCentavos, long ImporteCentavos);
+        long PrecioOriginalCentavos, long PrecioCentavos, long ImporteCentavos, string? Promocion = null);
 
     /// <summary>La tecla de una acción o, si la autoriza alguien más, el candado con quién.</summary>
     public sealed record MarcaDeAccion(string Tecla, string? Autoriza);
