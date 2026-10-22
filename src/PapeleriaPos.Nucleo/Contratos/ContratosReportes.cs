@@ -239,6 +239,13 @@ public static class ArchivosDeReportes
     /// <summary>«Lo que vale el inventario 2026-10-22.xlsx».</summary>
     public static string Valor(DateOnly hoy) => Limpio($"Lo que vale el inventario {Iso(hoy)}");
 
+    /// <summary>
+    /// Los productos de la lista (Productos › Productos en Excel): «Productos 2026-10-22.xlsx», o con el departamento si es solo
+    /// uno: «Productos Escritura 2026-10-22.xlsx».
+    /// </summary>
+    public static string Productos(DateOnly hoy, string? departamento) =>
+        Limpio($"Productos {(string.IsNullOrWhiteSpace(departamento) ? "" : $"{departamento.Trim()} ")}{Iso(hoy)}");
+
     /// <summary>Sin lo que Windows no deja en el nombre de un archivo (el de una caja puede traerlo), y con su extensión.</summary>
     private static string Limpio(string nombre)
     {
