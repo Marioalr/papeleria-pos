@@ -78,7 +78,7 @@
 | Formas de pago | Efectivo, tarjeta (terminal externa) y transferencia (por verificar). Hoy casi todo es efectivo |
 | Impresora de tickets | POS-8360, térmica de 80 mm, ESC/POS; el ticket conserva el formato y el logo del de eleventa. En la matriz hay una sola para las dos cajas y no hay cajón ([notas](notas.md#impresoras)) |
 | Red de la tienda | Todo por la red local, sin USB (respuesta del dueño). Propuesta, por aprobar, con lo que ya hay (sin compras, 2026-10-09): IP fijas puestas en cada equipo, todo configurado por IP y los equipos de la tienda en el switch, para que la venta y la impresión no dependan del router ni del internet ([red de la matriz](arquitectura.md#la-red-de-la-matriz)) |
-| Reportes | Ventas por día, mes y año a la fecha contra el año anterior, y la ganancia real del mes; la meta es saber exactamente cuánto se gana ([detalle](#para-el-piloto-con-dos-cajas)). Pospuestos (2026-10-09) hasta después de la [prueba con una persona real](#prueba-con-una-persona-real) y de que el dueño la apruebe. La utilidad y la ganancia solo las ve el dueño (2026-10-09) |
+| Reportes | Ventas por día, mes y año a la fecha contra el año anterior, y la ganancia real del mes; la meta es saber exactamente cuánto se gana ([detalle](#para-el-piloto-con-dos-cajas)). Pospuestos (2026-10-09) hasta después de la [prueba con una persona real](#prueba-con-una-persona-real) y de que el dueño la apruebe; se adelantaron el 2026-10-22 (por revisar), y la parte 1 de la entrega 9 ya está ([avance](#primero-la-versión-unicaja-entrega-0)). La utilidad y la ganancia solo las ve el dueño (2026-10-09): en los reportes, quien tiene «Ver costos, utilidad y margen» |
 | Administración | Inversión de apertura, gastos fijos e insumos del mes por sucursal: la ganancia mensual real y el punto de equilibrio ([detalle](#administración-y-punto-de-equilibrio)) |
 | Git | Ramas cortas por tema, fusionadas a `main` |
 | Instalación | La hace el administrador de la PC, una vez y en cada actualización; el día a día corre en un usuario común de Windows, sin privilegios de administrador ([detalle](#instalación-y-usuarios-de-windows)) |
@@ -111,7 +111,7 @@ Sin tiempos: se avanza cuando la fase anterior funciona en la tienda. **Foco:** 
 | 2. Inventario | Compras, recepción ciega, presentaciones, conteos cíclicos, etiquetas, sugerido de compra |
 | 3. Precios y clientes | Mayoreo, promociones, kits, clientes registrados, crédito |
 | 4. Servicios y pedidos | Primero, servicios con costo real: recetas con los consumibles del servicio (micas, espirales, portadas), depreciación del equipo y luz (engargolado y enmicado). Después pedidos, cola compartida, charolas, recogida por celular, duplicados, apartados, listas escolares, captura manual desde WhatsApp |
-| 5. Piloto en la matriz | Primero el piloto en la caja 2: vende con la caja nueva y manda cada venta a eleventa, que sigue siendo el oficial ([piloto](#la-versión-unicaja-y-el-piloto-en-la-caja-2)). Después, dejar eleventa con las dos cajas: depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo. Antes: la red de la tienda arreglada; los reportes, después de la prueba con una persona real y su aprobación. Las tres impresoras de inyección van con la entrega 4, después de alcanzar a eleventa (2026-10-15); mientras, Control Print sigue aparte. Desde el arranque, respaldo cifrado fuera de la tienda (Backblaze B2) y vigilancia de la caja principal (Healthchecks.io) ([qué falta](#para-el-piloto-con-dos-cajas)) |
+| 5. Piloto en la matriz | Primero el piloto en la caja 2: vende con la caja nueva y manda cada venta a eleventa, que sigue siendo el oficial ([piloto](#la-versión-unicaja-y-el-piloto-en-la-caja-2)). Después, dejar eleventa con las dos cajas: depuración del inventario, conteo físico inicial, arranque, eleventa como respaldo. Antes: la red de la tienda arreglada y los reportes (la parte 1 se adelantó el 2026-10-22). Las tres impresoras de inyección van con la entrega 4, después de alcanzar a eleventa (2026-10-15); mientras, Control Print sigue aparte. Desde el arranque, respaldo cifrado fuera de la tienda (Backblaze B2) y vigilancia de la caja principal (Healthchecks.io) ([qué falta](#para-el-piloto-con-dos-cajas)) |
 | 6. WhatsApp y central | La API de WhatsApp → pedidos cuando el dueño la quiera, con un receptor aparte ([WhatsApp](whatsapp.md)). **Pospuesto:** el central, con sus entregas 6.1 a 6.6 ([propuesta](servidor-remoto.md#entregas)) |
 | 7. Sucursal 2 | **Pospuesta.** Precios por sucursal, traspasos, compras que se reparten, inversión de apertura y punto de equilibrio ([propuesta](servidor-remoto.md)). Si abre antes, abre con eleventa |
 | 8. App Android | Preventa y pedidos desde el celular. Preventa: el ticket se arma en el celular, se elige a qué caja mandarlo y ahí llega en espera, con un efecto para que se note ([propuesta](propuesta-interfaz.md#desde-el-celular)) |
@@ -850,6 +850,51 @@ en Inventario (F4). Solo leen, así que también van en el piloto con eleventa, 
 - **Falta:** exportarlos a Excel, como eleventa (la caja todavía no guarda archivos), y, si la tienda usa los mínimos de
   eleventa, pasarlos en la importación final (la importación no los lee).
 
+**Avance (2026-10-22), entrega 9, parte 1: los reportes de ventas,** como en la [propuesta](propuesta-interfaz.md#reportes) y
+el [prototipo](propuesta-interfaz/prototipo.html): los que el dueño usa en eleventa, ventas por día, mes y año a la fecha
+contra el año anterior ([paridad](paridad-eleventa.md#reportes)), para saber exactamente cuánto se gana. Se adelantó
+(decidido el 2026-10-22, por revisar): lo demás de la paridad ya está y el dueño pidió no detenerse hasta igualar a
+eleventa.
+- **La pestaña Reportes** (después de «Corte»; también «Reportes de ventas» en «/»), para quien tiene «Ver reportes de
+  ventas» en «Puede» (al migrar, solo el dueño; consultar no se autoriza): hoy, la semana, el mes y el año a la fecha,
+  siempre contra el mismo periodo del año pasado. ← y → llevan a los anteriores, completos (un día, una semana, un mes
+  cerrado o un año). Es una página, como Productos: F1 o Esc regresan a la venta, y al volver se ve el mismo periodo.
+- **Arriba,** la venta neta, los tickets y el ticket promedio, con cuánto subieron o bajaron, y la utilidad bruta con su
+  margen, solo con «Ver costos, utilidad y margen» (a los demás el servicio no les manda ningún costo). Cuentan como el
+  corte del día, con el mismo código: la venta neta es lo cobrado en los tickets que no se cancelaron menos lo devuelto en
+  el periodo; la utilidad, lo vendido menos el costo que guardó cada venta al cobrar, con lo devuelto restado y sin el
+  artículo común. Una prueba arma un día con devoluciones, una cancelación, el redondeo y un servicio, y el reporte de hoy
+  da lo mismo que el corte del día.
+- **La gráfica:** las barras de este año (la de ahora, más clara: va a la mitad) y la línea del año pasado, completo; al
+  pasar el ratón, el detalle de cada hora, día o mes y el que le toca del año pasado. «Ver como tabla» da lo mismo en
+  renglones.
+- **Abajo,** por departamento (con el cambio contra el año pasado y, con el permiso, el margen; las impresiones y el
+  artículo común aparte), por cajero (lo que cobró menos lo devuelto de sus tickets, y la suma de las diferencias de los
+  cortes de sus turnos hechos en el periodo), por forma de pago (lo devuelto, restado de como se regresó, así que suman la
+  venta neta) y lo que más se vende (por lo vendido; un producto juntado con otro, en el que quedó).
+- **El año pasado sale del historial de eleventa** (sus tickets sin los cancelados, con lo que eleventa les bajó al
+  devolver; la utilidad, con el costo que se capturó allá) más las ventas de este POS donde las haya. La importación final
+  ya no trae lo que mandó el puente: una prueba arma el piloto, la importación final y el reporte, y la venta del año es
+  exactamente lo de eleventa sin los cancelados, sin contar nada dos veces. El historial no trae el cajero ni la forma de
+  pago: esas tablas son de lo vendido aquí, y la pantalla lo dice.
+- **Con qué se compara** (decidido, por revisar; era una pregunta del plan): hoy y la semana, con 52 semanas antes, el
+  mismo día de la semana (un sábado con un sábado); el mes y el año, con las mismas fechas. La semana va de lunes a
+  domingo. Lo que incluye hoy se compara hasta el mismo momento del día que le toca (un 29 de febrero, el año pasado va
+  hasta el final del 28); un periodo que ya pasó, completo. Los días son los de la tienda, de medianoche a medianoche,
+  también con el horario de verano de antes de octubre de 2022.
+- **En el piloto con eleventa** la base de la caja 2 solo tiene lo suyo y el historial de toda la tienda de cuando se armó:
+  el reporte es de lo de la caja 2, sin el historial y sin comparar, y lo dice («Solo lo que vendió la caja 2: lo de la
+  caja principal está en los reportes de eleventa»). Sin conexión con la caja principal, lo dice y espera a que vuelva.
+- **Rápido:** se suma en la base (por hora y por producto) y usa los índices de la fecha de las ventas y del historial (sin
+  índices nuevos: con una sola sucursal, la base prefería el de la sucursal, que recorre todo, y ya no se le deja). Con dos
+  años de la papelería ficticia (unos 20 mil tickets por año: uno como historial y otro como ventas de este POS, con un
+  corte por día y alguna devolución), en la PC de desarrollo (la mediana de cinco): hoy 4 ms, la semana 6 ms, el mes
+  19 ms y el año 97 ms; por la API, con el JSON, 9, 10, 20 y 93 ms. Todo se lee de un mismo momento de la base, sin el
+  candado de escritura: no detiene ningún cobro, y lo que se cobra mientras tanto no deja cifras que no cuadren.
+- **Lo nuevo del servicio, solo para leer:** `GET api/cajas/{caja}/reportes/ventas` (el periodo y un día), con el usuario
+  de la sesión. Sin cambios en la base.
+- **Falta:** exportar a Excel (parte 2) y verlo en Windows.
+
 **Avance (2026-10-17): la red de la tienda en el POS,** como lo pide la [red de la
 matriz](arquitectura.md#la-red-de-la-matriz) («En el POS»). Casi siempre que se va el internet de Megacable se cae
 también la red local; esto no la arregla (eso es el [arreglo propuesto](arquitectura.md#la-red-de-la-matriz), sin
@@ -1251,8 +1296,8 @@ Cada parte entra sin detener a la caja 2:
 3. **Dejar eleventa:** el servicio nuevo en la caja principal y la caja 2 conectada a él, con su rendimiento (entrega 5:
    escaneo contra la copia local, cambios avisados, plazos y estados de la red); la red de la tienda arreglada; la
    impresora de tickets compartida con reintento; el día pico con el simulador; los reportes de ventas (entrega 9), que
-   el dueño usa hoy en eleventa; la depuración del catálogo y el conteo físico. Eleventa queda de consulta
-   ([lo que falta, en orden](paridad-eleventa.md#2-para-dejar-eleventa)).
+   el dueño usa hoy en eleventa (la parte 1 ya está, 2026-10-22); la depuración del catálogo y el conteo físico.
+   Eleventa queda de consulta ([lo que falta, en orden](paridad-eleventa.md#2-para-dejar-eleventa)).
 4. **El resto del rediseño:** la configuración (7), las pantallas de atrás (8) y lo que se señala (13).
 5. **Lo que eleventa no tiene:** el módulo de impresión con las tres impresoras de inyección y la bandeja (entrega 4),
    que retira Control Print; servicios con costo real y pedidos (fase 4); la ganancia real del mes; WhatsApp
@@ -1275,13 +1320,13 @@ para esos días ([forma de trabajar](notas.md#forma-de-trabajar), [guía de los 
 | En el POS, por la red: que la caja 2 vuelva a buscar sola a la principal, avisos de lo configurado por nombre o con WSD, la franja «sin internet» o «sin red local» y la bitácora de red | [Red de la matriz](arquitectura.md#la-red-de-la-matriz) | En código (2026-10-17, [avance](#la-versión-unicaja-y-el-piloto-en-la-caja-2)): falta verlo en Windows y en la tienda |
 | **Las tres impresoras de inyección** (dos WF-6590 y una L5590): cada una con sus costos, su cola en cada PC, su contador, su calibración y sus hojas por cobrar | [Impresión](impresion.md), [notas](notas.md#impresoras) | Falta (mediano); antes, leer la L5590 por SNMP |
 | **La impresora de tickets compartida:** reintento si las dos cajas imprimen a la vez y botón «Reintentar». No hay cajón | [Notas](notas.md#impresoras) | En código (entrega 5, parte 3, 2026-10-16): la cola de cada caja; falta probarla en la tienda con las dos cajas |
-| **Reportes de ventas:** día contra hace un año (el mismo día de la semana o la misma fecha: por decidir), mes y año a la fecha contra el año anterior, meses cerrados; venta neta, tickets, ticket promedio, costo, utilidad y margen; por departamento, caja, cajero y forma de pago; exportar a Excel y líneas en el resumen de Telegram; la utilidad solo la ve el dueño. El año anterior sale del historial de eleventa (su utilidad, con el costo capturado en eleventa) | [Notas](notas.md#reportes) | Pospuesto: después de la prueba con una persona real y su aprobación (2026-10-09) |
+| **Reportes de ventas:** día contra hace un año (el mismo día de la semana; decidido el 2026-10-22, por revisar), mes y año a la fecha contra el año anterior, meses cerrados; venta neta, tickets, ticket promedio, costo, utilidad y margen; por departamento, caja, cajero y forma de pago; exportar a Excel y líneas en el resumen de Telegram; la utilidad solo la ve el dueño. El año anterior sale del historial de eleventa (su utilidad, con el costo capturado en eleventa) | [Notas](notas.md#reportes) | Se adelantaron (2026-10-22). La parte 1 de la entrega 9 ya está en código ([avance](#primero-la-versión-unicaja-entrega-0)): falta exportar a Excel (parte 2) y verlo en Windows. Las líneas en el resumen de Telegram esperan a que se retome Telegram |
 | **Ganancia real del mes:** el reporte (gastos fijos, consumibles del mes, recibo de luz, equipo con su depreciación y comisión de la tarjeta; utilidad bruta − mermas y faltantes − gastos = ganancia; punto de equilibrio y cierre del mes por Telegram). La captura de cada gasto cuando se paga no se pospone: propuesta, por aprobar, hacerla con la entrega 3 de la fase 3 (consumibles del mes), para todos los gastos | [Administración](#administración-y-punto-de-equilibrio), [servicios](servicios.md#tres-niveles-de-costo) | El reporte, pospuesto: después de la prueba con una persona real y su aprobación (2026-10-09) |
 | Fusionar a `main`, en orden, los PR abiertos (#27 en adelante) | `main` llega hasta la entrega 2 de la fase 3 | Hecho el 2026-10-10: del #27 al #52, con el #45. En Windows pasan todas las pruebas |
 | Probar en Windows con las dos cajas reales: servicio, alta de la caja 2, contingencia, respaldos, ventana de la caja y ticket desde las dos (el cajón, cuando lo haya) | Fase 1, entregas 1 y 3 | Falta: un sábado o domingo, sin tocar los datos de eleventa ([guía](pruebas-en-tienda.md#después-al-dejar-eleventa-las-dos-cajas-con-el-pos)) |
 | Crear el bot de Telegram de verdad y probarlo | Fase 1, entrega 4 | Falta |
 | Probar la impresión con la cola de laboratorio y después con la real | Fase 1, entrega 5 | Falta |
-| Prueba con una persona real | [Ver arriba](#prueba-con-una-persona-real) | La primera fue el 2026-10-10, con la pantalla de hoy, y fue precaria (por eso el rediseño). La siguiente es el fin de semana del 17 y 18 de octubre, con la pantalla nueva lista; de su aprobación dependen los reportes |
+| Prueba con una persona real | [Ver arriba](#prueba-con-una-persona-real) | La primera fue el 2026-10-10, con la pantalla de hoy, y fue precaria (por eso el rediseño). La siguiente es el fin de semana del 17 y 18 de octubre, con la pantalla nueva lista; de su aprobación dependían los reportes, que se adelantaron el 2026-10-22 |
 | Medir un día pico (~120 tickets) con las dos cajas, en la caja principal real | El simulador de cajas (`simular-cajas`, [avance abajo](#para-el-piloto-con-dos-cajas)) y la [guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real) | El simulador ya está (2026-10-17) y se midió en la PC de desarrollo; falta un fin de semana en la caja principal |
 | Precios y clientes | [Fase 3](fase-3-precios-clientes.md) | Las entregas 1 y 2 ya están en `main`. Propuesta, por aprobar: que la entrega 3 (consumibles del mes) capture todos los gastos del mes cuando se pagan; el reporte de la ganancia va con los reportes |
 | Servicios con costo real (engargolado y enmicado con depreciación, luz y consumibles; impresiones por impresora), pedidos y WhatsApp desde la PC. Apartados y cotizaciones guardadas quedan como mejora: el eleventa de la tienda no los tiene | Fase 4 ([servicios](servicios.md), [pedidos](pedidos.md), [WhatsApp](whatsapp.md)) | Falta su plan |
@@ -1425,6 +1470,10 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Después de una restauración de eleventa, lo que se perdió de la caja 2, ¿a mano o se vuelve a mandar solo? | A mano en eleventa: queda listado como por revisar. Mandarlo solo le daría folios nuevos, distintos a los impresos, quizá en turnos que allá ya no existen | Puente, parte 3 |
 | Si en la caja 2 no hay `gbak.exe`, ¿se copia o se escribe sin el respaldo propio? | Se copia el de Firebird 2.0 de la caja principal, con su `fbclient.dll` (se ve en la tienda; [guía](pruebas-en-tienda.md)). El respaldo sigue siendo obligatorio para escribir | Puente, parte 3 |
 | La entrega 9 (reportes) | Justo después de aprobar la prueba con una persona real, empezando por lo que hace el reporte de ventas de eleventa y la comparación contra el año anterior ([paridad](paridad-eleventa.md#recomendaciones)) | Entrega 9 |
+| ¿La entrega 9 espera a la prueba con una persona real? | Se adelanta la entrega 9 (2026-10-22): lo demás de la paridad ya está y el dueño pidió no detenerse hasta igualar a eleventa | Entrega 9, parte 1 |
+| Con qué se comparan los reportes («¿contra el mismo día de la semana del año pasado o contra la misma fecha?») | Hoy y la semana, con 52 semanas antes (el mismo día de la semana); el mes y el año, con las mismas fechas. La semana va de lunes a domingo. Lo que incluye hoy, hasta el mismo momento del día que le toca (un 29 de febrero, hasta el final del 28); un periodo que ya pasó, completo | Entrega 9, parte 1 |
+| Los reportes en el piloto con eleventa | Solo lo que vendió la caja 2, sin el historial de eleventa (es de toda la tienda) y sin comparar contra el año pasado; la pantalla lo dice | Entrega 9, parte 1 |
+| Los detalles de los reportes | La venta neta y la utilidad, como el corte del día; el ticket promedio, la venta neta entre los tickets; un ticket cancelado no cuenta en el periodo en que se cobró; lo devuelto se resta del cajero del ticket y de la forma en que se regresó (el efectivo, sin el redondeo al peso); las diferencias de corte, las de los cortes hechos en el periodo; lo que más se vende, por lo vendido, sin las impresiones ni el artículo común, y lo juntado en el producto en que quedó; los botones de arriba llevan al periodo de hoy y ← → a los anteriores, completos; sin índices nuevos | Entrega 9, parte 1 |
 | Dejar eleventa | En dos pasos: primero el modo multicaja con el puente escribiendo; al final, apagar el puente cuando el POS tenga la entrega 9 y un mes que cuadre con eleventa | Piloto |
 | La ganancia del día, con Telegram en pausa | En el corte del día, para quien tiene «Ver costos, utilidad y margen», como el de eleventa | El corte del día como el de eleventa |
 | Las tres impresoras de inyección | Van con la entrega 4, después de alcanzar a eleventa (meta del 2026-10-15); mientras, Control Print sigue cobrando aparte. Se alinearon la fase 5 y [impresión](impresion.md) | Plan |
@@ -1562,7 +1611,9 @@ Piloto con dos cajas ([ver arriba](#para-el-piloto-con-dos-cajas)):
   código; falta probarla en la tienda con las dos cajas
 - [ ] Corregir Telegram para que cumpla «solo el dueño»: rechazar el vínculo desde un grupo y revisar quién aprieta el
   botón (hoy se autoriza por chat; [notas](notas.md#reportes))
-- [ ] Después de la prueba con una persona real y su aprobación: reportes de ventas por periodo contra el año anterior
+- [x] Reportes de ventas por periodo contra el año anterior: se adelantaron (2026-10-22, por revisar) y la parte 1 de la
+  entrega 9 ya está ([avance](#primero-la-versión-unicaja-entrega-0))
+- [ ] Exportar los reportes de ventas a Excel (entrega 9, parte 2)
 - [ ] Después de la prueba con una persona real y su aprobación: el reporte de la ganancia real del mes y el punto de
   equilibrio
 - [ ] Capturar cada gasto cuando se paga (propuesta, por aprobar: con la entrega 3 de la fase 3)
@@ -1657,8 +1708,9 @@ Por definir:
 - [x] Apartados y cotizaciones: el eleventa de la tienda no los tiene
 - [x] Impresoras de la matriz, todas por red: una de tickets para las dos cajas, dos WF-6590 y una L5590
 - [x] La utilidad y la ganancia solo las ve el dueño (2026-10-09)
-- [ ] Con los reportes, después de la prueba con una persona real: ¿contra el mismo día de la semana del año pasado o
-  contra la misma fecha?
+- [x] Con los reportes: ¿contra el mismo día de la semana del año pasado o contra la misma fecha? Hoy y la semana, contra
+  el mismo día de la semana (52 semanas antes); el mes y el año, contra las mismas fechas (decidido el 2026-10-22, por
+  revisar)
 - [x] Gastos del mes (2026-10-09): renta, luz, insumos y sueldos; todo lo que se gaste se captura en el momento para
   saber al cierre cuánto se ganó ([administración](#administración-y-punto-de-equilibrio))
 - [x] «La primera prueba» después de la que se retoman los reportes es la prueba con una persona real (2026-10-09)
