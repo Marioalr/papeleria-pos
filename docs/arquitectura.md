@@ -156,6 +156,29 @@ causas posibles y qué se junta en la próxima caída están en [notas](notas.md
   Si en la próxima caída los equipos que ya están en el switch no se contestan por IP, el arreglo no basta.
 - **Si aun así falla:** lo que se podría comprar queda solo como referencia ([notas](notas.md#red-de-la-tienda)); el
   dueño no quiere lista de compras (2026-10-09).
+- **Internet de respaldo con un solo celular** (análisis del 2026-10-21, por probar en la tienda,
+  [cómo](pruebas-en-tienda.md#el-internet-de-respaldo-con-un-celular)): hoy se usan dos, uno por el Wi-Fi a la caja 2 y
+  otro por cable USB a la caja principal ([notas](notas.md#red-de-la-tienda)). Un celular puede compartir sus datos a la
+  vez por cable USB, por su Wi-Fi y por Bluetooth (Android y iPhone lo permiten; probarlo con el que se use y que su plan
+  deje compartir); las cajas, y la terminal de tarjetas si va por el Wi-Fi del celular, gastan del mismo plan.
+  - **Cómo se conecta:** el cable USB a la caja principal, que no tiene Wi-Fi (2026-10-21) y sigue imprimiendo y
+    atendiendo a la caja 2 por su cable de red; el Wi-Fi del celular, a la caja 2.
+  - **La caja 2 se cambia de red** cada vez que baja algo de internet. Mientras está en el Wi-Fi del celular, el POS
+    vende con su copia: lo cobrado espera en su bandeja y los tickets en la cola («Reintentar» o «No imprimirlo» al
+    volver). En el piloto, eleventa no vende en la caja 2 mientras tanto, y lo que cobre el POS llega a eleventa al
+    volver, con el folio de la caja. Que Windows solo se conecte solo al Wi-Fi de la tienda: el del celular, a mano.
+  - **Para que la caja 2 no se cambie de red,** con lo que ya hay: si tiene Bluetooth, el celular le comparte el
+    internet por Bluetooth y ella se queda en el Wi-Fi de la tienda. Es más lento (uno o dos megabits: un PDF de 5 MB
+    tarda como medio minuto), pero alcanza para los archivos de los clientes. O, si llega un cable de red a la caja 2,
+    el cable para lo de la tienda y el Wi-Fi del celular para el internet.
+  - **Lo que hay que ver:** con la conexión de la tienda puesta y sin internet en el Tenda, Windows puede seguir
+    mandando lo de internet por ella (al Tenda, sin salida) aunque el celular esté conectado: en la caja principal, y
+    en la caja 2 si se queda en la red de la tienda. Si pasa, se le sube la métrica a esa conexión una sola vez
+    (propiedades de IPv4 › Opciones avanzadas: quitar «Métrica automática» y poner 100). Lo de internet se va por el
+    celular y lo de la tienda sigue por esa conexión, porque es su misma red; sin el celular, todo queda como hoy. Y
+    que la red del celular no tenga el mismo rango que la de la tienda (`ipconfig`).
+  - **El POS no cambia:** con internet por el celular, la franja «sin internet» se quita sola, y el servicio sigue
+    atendiendo a la caja 2 por la red de la tienda.
 - **En el POS** (en código desde el 2026-10-17; falta verlo en Windows y en la tienda,
   [avance](plan.md#la-versión-unicaja-y-el-piloto-en-la-caja-2)):
   - **La caja vuelve a encontrar sola a la caja principal** si le cambió la IP: si la dirección guardada no contesta
