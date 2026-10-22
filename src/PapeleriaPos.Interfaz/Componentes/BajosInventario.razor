@@ -5,7 +5,8 @@
    en que se compra) y, si tiene su mínimo, al menos lo que le falta para llegar a él (el sugerido no lo conoce). Es un número
    en la pantalla: los pedidos se hacen en «Órdenes de compra» o desde el sugerido. Va de
    100 en 100 (el sugerido se calcula solo para los de la página). Lo ve quien pide la mercancía o pone los mínimos
-   (ConsultasInventario). En el piloto con eleventa se ve igual. *@
+   (ConsultasInventario). En el piloto con eleventa se ve igual. «Exportar a Excel» (entrega 9, parte 2) los lleva todos, con
+   estos filtros. *@
 @implements IDisposable
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
@@ -28,6 +29,9 @@
             Con mínimo propio @(_bajos is { } c ? Formato.Numero(c.ConMinimoPropio) : "")
         </button>
     </div>
+    <span class="espacio"></span>
+    @* Todos los de estos filtros, sin las páginas (entrega 9, parte 2). *@
+    <ExportarExcel Id="bajos-excel" Pedir="ExcelAsync" Desactivado="@(_bajos is null)" />
 </div>
 <p class="nota">
     Por departamento y por nombre. El mínimo y el máximo se ponen en la ficha de cada producto (Productos, F3 › Editar); sin
@@ -158,6 +162,8 @@
             await Js.EnfocarAsync("#bajos-buscar");
         }
     }
+
+    private Task<ArchivoPorGuardar> ExcelAsync() => Cliente.ExcelBajosAsync(Caja.SucursalId, Sesion.UsuarioId, _departamento, _texto, _soloConMinimo);
 
     private async Task CargarAsync()
     {

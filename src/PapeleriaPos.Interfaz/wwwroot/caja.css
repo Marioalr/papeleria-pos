@@ -1545,3 +1545,25 @@ img.vn-foto { display: block; object-fit: contain; }
     .vn-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .vn-dos-col { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ── Exportar a Excel y Ventas por período (entrega 9, parte 2, 2026-10-22). «Exportar a Excel» es el botón del prototipo
+   (htmlReportes) y dice al lado dónde quedó el archivo; «Ventas por período» va con el acomodo de las tareas del inventario
+   (.vn-tarea-cab, .vn-reporte), con los totales de todos los días siempre a la vista, abajo de la lista. Cabe en 1366×697. ── */
+.vn-exportar { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.vn-exportado { font-size: 12.5px; line-height: 1.35; color: var(--vn-suave); overflow-wrap: anywhere; }
+.vn-exportado.error { color: var(--vn-error); font-weight: 600; }
+.vn-tarea-cab .vn-exportado { max-width: 420px; }
+.vn-rep-acciones { margin-left: auto; display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 12px; min-width: 0; }
+.vn-rep-acciones > .nota { margin: 0; font-size: 12.5px; color: var(--vn-suave); }
+.vn-por-periodo .vn-tarea-cab { flex-wrap: wrap; row-gap: 6px; }
+.vn-por-periodo-titulo { font-size: 15px; color: var(--vn-texto); margin-left: 4px; }
+.vn-reporte-desliza.cargando { opacity: .55; transition: opacity .15s; }
+.vn-por-periodo .vn-tabla tr.apagado > td { color: var(--vn-tenue); }
+.vn-por-periodo .vn-tabla tr.apagado > td.num { text-decoration: line-through; }
+.vn-por-periodo .vn-tabla td .vn-etiq { font-weight: 600; }
+.vn-por-periodo .vn-reporte-desliza > .vn-sub-titulo { margin: 12px 0 6px; }
+.vn-por-periodo .vn-corte-ticket { max-width: 460px; }
+.vn-por-periodo-totales { flex: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 22px; padding: 9px 12px; background: var(--vn-renglon); border: 1px solid var(--vn-linea); border-radius: 10px; font-size: 13.5px; color: var(--vn-suave); }
+.vn-por-periodo-totales strong { margin-left: 4px; font: 700 16px var(--vn-f-cifras); font-variant-numeric: tabular-nums; color: var(--vn-texto); }
+.vn-por-periodo-totales .neta strong { color: var(--vn-tinta); }
+.vn-por-periodo-totales .tenue { margin-left: auto; font-size: 12.5px; }

@@ -5,11 +5,20 @@
    luego la gráfica (barras de este año, línea del año pasado, el detalle al pasar el ratón y «Ver como tabla») y las ventas por
    departamento (con el margen, con el permiso), por cajero (con sus diferencias de corte), por forma de pago y lo que más se
    vende. Es una página (como Productos, Inventario y Clientes): F1 o Esc regresan a la venta. Solo con la caja principal; el
-   servicio decide qué se ve. «Exportar a Excel» llega con la parte 2. *@
+   servicio decide qué se ve.
+   La parte 2 (2026-10-22): «Exportar a Excel» (lo que se ve, una hoja por tabla, como dice el prototipo) y «Ventas por período»
+   (los tickets de unos días, como en eleventa), que se abre aquí mismo con el acomodo de las tareas del inventario: «← Reportes»
+   o Esc regresan al resumen. *@
 @implements IPagina
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
+@if (Estado.PorPeriodo.Abierta)
+{
+    <VentasPorPeriodo @ref="_porPeriodo" Caja="Caja" Sesion="Sesion" Estado="Estado.PorPeriodo" AlVolver="VolverAsync" />
+}
+else
+{
 <div class="vn-reportes" id="reportes" @onkeydown="AlTeclearAsync">
     <div class="vn-rep-cab">
         <h2>Reportes</h2>
@@ -35,11 +44,18 @@
             }
         </span>
         <span class="espacio"></span>
-        @if (_reporte is { } conQue)
-        {
-            <span class="nota" id="rep-contra">@TextosDeReportes.Comparacion(conQue)</span>
-        }
-        @* Aquí va «Exportar a Excel», con la parte 2 de la entrega 9. *@
+        @* A la derecha, como en el prototipo, también cuando no cabe en un renglón. *@
+        <span class="vn-rep-acciones">
+            @if (_reporte is { } conQue)
+            {
+                <span class="nota" id="rep-contra">@TextosDeReportes.Comparacion(conQue)</span>
+            }
+            <button id="rep-por-periodo" class="vn-boton" title="Los tickets de unos días, de una caja o de todas" @onclick="AbrirPorPeriodo">
+                <Ico Nombre="lista" />Ventas por período
+            </button>
+            @* Lo que se ve (el periodo de arriba), una hoja por tabla, como en el prototipo. *@
+            <ExportarExcel Id="rep-excel" Pedir="ExcelAsync" Desactivado="@(_reporte is null)" />
+        </span>
     </div>
 
     @if (_error is not null)
@@ -220,6 +236,7 @@
         </div>
     }
 </div>
+}
 
 @code {
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
@@ -239,21 +256,57 @@
 
     private bool _enfocar = true;
 
+    /// <summary>«Ventas por período», cuando se ve.</summary>
+    private VentasPorPeriodo? _porPeriodo;
+
+    /// <summary>Se regresó de «Ventas por período»: el cursor vuelve a su botón.</summary>
+    private bool _enfocarPorPeriodo;
+
     protected override Task OnInitializedAsync() => CargarAsync();
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
+        if (_enfocarPorPeriodo)
+        {
+            _enfocarPorPeriodo = false;
+            await Js.EnfocarAsync("#rep-por-periodo");
+        }
         if (!_enfocar)
             return;
         _enfocar = false;
         await EnfocarAsync();
     }
 
-    /// <summary>El cursor al periodo que se ve: Tab y Enter llegan a lo demás.</summary>
-    public async Task EnfocarAsync() => await Js.EnfocarAsync($"#rep-{Estado.Periodo}");
+    /// <summary>El cursor al periodo que se ve (o a los días de «Ventas por período»): Tab y Enter llegan a lo demás.</summary>
+    public async Task EnfocarAsync()
+    {
+        if (Estado.PorPeriodo.Abierta && _porPeriodo is { } porPeriodo)
+            await porPeriodo.EnfocarAsync();
+        else
+            await Js.EnfocarAsync($"#rep-{Estado.Periodo}");
+    }
 
-    /// <summary>No hay nada adentro que cerrar: Esc regresa a la venta.</summary>
-    public Task<bool> CerrarAsync() => Task.FromResult(false);
+    /// <summary>Esc: de «Ventas por período» regresa a los reportes; si no, no hay nada adentro que cerrar y Esc regresa a la venta.</summary>
+    public async Task<bool> CerrarAsync()
+    {
+        if (!Estado.PorPeriodo.Abierta)
+            return false;
+        await VolverAsync();
+        return true;
+    }
+
+    /// <summary>«Ventas por período»: los tickets de unos días, aquí mismo; se recuerda al ir a la venta y volver.</summary>
+    private void AbrirPorPeriodo() => Estado.PorPeriodo.Abierta = true;
+
+    private Task VolverAsync()
+    {
+        (Estado.PorPeriodo.Abierta, _enfocarPorPeriodo) = (false, true);
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>El Excel de lo que se ve: el periodo de arriba, con lo que puede ver quien entró.</summary>
+    private Task<ArchivoPorGuardar> ExcelAsync() => Cliente.ExcelReporteVentasAsync(Caja.Id, Sesion.UsuarioId, Estado.Periodo, Estado.Fecha);
 
     private async Task CargarAsync()
     {

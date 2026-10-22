@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.JSInterop;
 using PapeleriaPos.Impresion;
 
@@ -118,6 +119,16 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     public async Task PegarImagenAsync<T>(string selector, DotNetObjectReference<T> ficha) where T : class =>
         await (await Modulo).InvokeVoidAsync("pegarImagen", selector, ficha);
 
+    /// <summary>
+    /// Descarga un archivo en la caja del navegador (el Excel de un reporte, entrega 9, parte 2), por un flujo: no viaja como texto
+    /// en un solo mensaje. En la ventana de Windows no se usa: ahí se guarda con «Guardar como» (<see cref="GuardadoEnLaPc"/>).
+    /// </summary>
+    public async Task DescargarAsync(string nombre, string tipo, byte[] datos)
+    {
+        using var flujo = new DotNetStreamReference(new MemoryStream(datos));
+        await (await Modulo).InvokeVoidAsync("descargar", nombre, tipo, flujo);
+    }
+
     /// <summary>Guarda en el navegador (vacío: lo borra).</summary>
     public async Task GuardarAsync(string clave, string? valor) => await (await Modulo).InvokeVoidAsync("guardar", clave, valor);
 
@@ -191,6 +202,9 @@ public static class RegistroInterfaz
         servicios.AddScoped(_ => new ClientePuente(redCaja.Interactivo, conexion));
         servicios.AddSingleton(impresora);
         servicios.AddScoped<ModuloCaja>();
+        // Guardar un archivo (el Excel de los reportes, entrega 9, parte 2): la ventana de Windows ya puso su «Guardar como»; si
+        // no, es la caja del navegador, y se descarga.
+        servicios.TryAddScoped<IGuardarArchivo, DescargaDelNavegador>();
         return servicios;
     }
 }

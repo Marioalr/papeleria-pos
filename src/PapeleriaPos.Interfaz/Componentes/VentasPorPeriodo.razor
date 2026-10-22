@@ -1,0 +1,368 @@
+@* Reportes › Ventas por período (entrega 9, parte 2, 2026-10-22), como «Ventas por período» de eleventa (F3: las fechas y la
+   caja; a Excel o a la impresora de tickets): los tickets de unos días (de un toque: hoy, ayer, esta semana, este mes o el mes
+   pasado; o del día que se escriba al que se escriba), de una caja o de todas, del primero al último y de 100 en 100, con su
+   folio, la fecha y la hora, la caja, quién cobró, cómo se pagó, el total y si se canceló o se devolvió; abajo, los totales de
+   todos esos días. «Exportar a Excel» los lleva todos; «Imprimir el resumen» manda a la impresora de tickets, por su cola, los
+   totales por día y por forma de pago (no cada ticket). Con el acomodo de las tareas del inventario: «← Reportes» o Esc
+   regresan a los reportes y F1 a la venta; ← y → llevan a los días de antes o de después, Re Pág y Av Pág cambian de página.
+   Para quien tiene «Ver reportes de ventas» (el servicio lo revisa). En el piloto, solo lo de la caja 2, y lo dice. *@
+@using PapeleriaPos.Nucleo.Reportes
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+@inject IImpresora Impresora
+
+<div class="vn-tarea-pag vn-por-periodo" id="ventas-periodo" @onkeydown="AlTeclearAsync">
+    <div class="vn-tarea-cab">
+        <button id="vpp-volver" class="vn-boton chico" title="Volver a los reportes (Esc)" @onclick="AlVolver">← Reportes</button>
+        <Ico Nombre="lista" />
+        <h2>Ventas por período</h2>
+        <p>Los tickets de unos días, de una caja o de todas, con sus totales.</p>
+        <span class="espacio"></span>
+        @if (_impreso is not null)
+        {
+            <span class="vn-exportado" role="status">@_impreso</span>
+        }
+        <button id="vpp-imprimir" class="vn-boton" disabled="@(_datos is null)" @onclick="Imprimir"><Ico Nombre="impresora" />Imprimir el resumen</button>
+        <ExportarExcel Id="vpp-excel" Pedir="ExcelAsync" Desactivado="@(_datos is null)" />
+    </div>
+    <div class="vn-tarea-cuerpo vn-reporte">
+        <div class="vn-reporte-filtros">
+            <div class="vn-filtros" role="group" aria-label="Días">
+                @foreach (var (dias, nombre) in Elegibles)
+                {
+                    <button id="vpp-@dias" class="vn-filtro @(Elegidos == dias ? "on" : "")" @onclick="AlElegir(dias)">@nombre</button>
+                }
+            </div>
+            @* Las flechas dentro de una fecha o de la caja cambian eso, no los días que se ven. *@
+            <label class="vn-reporte-campo">Del <input id="vpp-desde" type="date" value="@Iso(Desde)" max="@Iso(Hoy)" @onchange="DesdeAsync" @onkeydown:stopPropagation="true" /></label>
+            <label class="vn-reporte-campo">al <input id="vpp-hasta" type="date" value="@Iso(Hasta)" max="@Iso(Hoy)" @onchange="HastaAsync" @onkeydown:stopPropagation="true" /></label>
+            <select id="vpp-caja" aria-label="Caja" value="@(Estado.CajaId?.ToString() ?? "")" @onchange="CajaAsync" @onkeydown:stopPropagation="true">
+                <option value="">Todas las cajas</option>
+                @foreach (var c in _datos?.Cajas ?? [])
+                {
+                    <option value="@c.Id">@(c.Id == Caja.Id ? $"{c.Nombre} (esta)" : c.Nombre)</option>
+                }
+            </select>
+            <strong id="vpp-titulo" class="vn-por-periodo-titulo">@TextosDeReportes.Periodo(Desde, Hasta, Hoy)</strong>
+            @if (_cargando)
+            {
+                <span class="nota">Cargando…</span>
+            }
+        </div>
+        @if (_datos is { Piloto: true })
+        {
+            <div class="vn-alerta info" id="vpp-piloto"><Ico Nombre="info" /><div><span>@PilotoConEleventa.VentasPorPeriodoDeLaCaja2</span></div></div>
+        }
+        @if (_trabajo is { } trabajo)
+        {
+            @* Va a la cola de la impresora, como el corte del día: aquí se ve si salió y, si no, «Reintentar» y «No imprimirlo». *@
+            <AvisoImpresion Trabajo="trabajo" Nota="Las ventas no cambian: se puede volver a imprimir." />
+        }
+        @if (_error is not null)
+        {
+            <div class="vn-alerta" role="alert"><Ico Nombre="alerta" /><div><span>@_error</span><span><button class="vn-boton chico" @onclick="CargarAsync">Volver a intentar</button></span></div></div>
+        }
+        @if (_datos is not { } d)
+        {
+            @if (_error is null)
+            {
+                <p class="nota">Cargando…</p>
+            }
+        }
+        else
+        {
+            var t = d.Totales;
+            <Paginador Total="d.Total" Pagina="d.Pagina" Tamano="d.Tamano" Plural="tickets" Singular="ticket" AlAnterior="AnterioresAsync" AlSiguiente="SiguientesAsync" />
+            @* Cada página nueva empieza arriba: la lista se dibuja de nuevo (@key) en lugar de quedarse a la mitad. *@
+            <div class="vn-reporte-desliza @(_cargando ? "cargando" : null)" @key="_vista">
+                @if (d.Ventas.Count == 0)
+                {
+                    <p class="nota" id="vpp-vacia">@Vacia(d)</p>
+                }
+                else
+                {
+                    <table class="vn-tabla" id="vpp-tickets">
+                        <thead>
+                            <tr><th>Folio</th><th>Fecha y hora</th><th>Caja</th><th>Cajero</th><th>Forma de pago</th><th class="num">Total</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var v in d.Ventas)
+                            {
+                                <tr @key="v.Id" class="@(v.Cancelada ? "apagado" : null)">
+                                    <td>
+                                        <strong>@(v.FolioEleventa?.ToString(CultureInfo.InvariantCulture) ?? v.Folio)</strong>
+                                        @if (v.FolioEleventa is not null)
+                                        {
+                                            <small class="vn-renglon-sub">en la caja <code>@v.Folio</code></small>
+                                        }
+                                    </td>
+                                    <td class="cuando">@v.FechaLocal.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)</td>
+                                    <td>@v.Caja</td>
+                                    <td>@v.Cajero</td>
+                                    <td>@TextosDeReportes.FormasDePago(v.Formas)</td>
+                                    <td class="num">@Formato.Dinero(v.TotalCentavos)</td>
+                                    <td>
+                                        @if (v.Cancelada)
+                                        {
+                                            <span class="vn-etiq rojo">Cancelada · no cuenta</span>
+                                        }
+                                        else if (v.DevueltoCentavos > 0)
+                                        {
+                                            <span class="vn-etiq @(v.DevueltaCompleta ? "gris" : "ambar")">@TextosDeReportes.Estado(v) · @Formato.Dinero(v.DevueltoCentavos)</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                @if (_vistaPrevia is not null)
+                {
+                    @* Sin impresora (el navegador, las pruebas): como saldría en el papel. *@
+                    <h3 class="vn-sub-titulo">Así sale impreso</h3>
+                    <pre class="vn-corte-ticket" id="vpp-impreso">@_vistaPrevia</pre>
+                }
+            </div>
+            @* Los totales de todos esos días (no solo de la página), siempre a la vista. *@
+            <div class="vn-por-periodo-totales" id="vpp-totales">
+                <span>Tickets <strong>@Formato.Numero(t.Tickets)</strong></span>
+                <span>Vendido <strong>@Formato.Dinero(t.VendidoCentavos)</strong></span>
+                <span>@(t.Devoluciones == 1 ? "Devuelto (1)" : $"Devuelto ({t.Devoluciones})") <strong>@Formato.ConSigno(-t.DevueltoCentavos)</strong></span>
+                <span class="neta">Venta neta <strong>@Formato.Dinero(t.VentaCentavos)</strong></span>
+                @if (t.Cancelados > 0)
+                {
+                    <span class="tenue">@(t.Cancelados == 1 ? "1 cancelado" : $"{t.Cancelados} cancelados") (@Formato.Dinero(t.CanceladosCentavos)) no cuentan</span>
+                }
+            </div>
+            <p class="nota" id="vpp-notas">@Notas(d)</p>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+
+    /// <summary>Quien entró: el servicio revisa que tenga «Ver reportes de ventas».</summary>
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>Los días, la caja y la página que se ven: se recuerdan al ir a la venta y volver.</summary>
+    [Parameter, EditorRequired] public VentasPorPeriodoVistas Estado { get; set; } = null!;
+
+    /// <summary>«← Reportes» (y Esc, desde los reportes): de regreso al resumen.</summary>
+    [Parameter] public EventCallback AlVolver { get; set; }
+
+    private static readonly (DiasElegidos Dias, string Nombre)[] Elegibles =
+    [
+        (DiasElegidos.Hoy, "Hoy"), (DiasElegidos.Ayer, "Ayer"), (DiasElegidos.EstaSemana, "Esta semana"), (DiasElegidos.EsteMes, "Este mes"),
+        (DiasElegidos.MesPasado, "Mes pasado"),
+    ];
+
+    private VentasPorPeriodoDto? _datos;
+    private string? _error;
+    private bool _cargando;
+
+    /// <summary>Cuántas veces se ha pedido: si se cambió otra vez antes de que llegara, lo que llega tarde no se enseña.</summary>
+    private int _cargas;
+
+    /// <summary>Cuántas listas se han dibujado: con cada una, la lista empieza arriba.</summary>
+    private int _vista;
+
+    private bool _enfocar = true;
+
+    /// <summary>Sin impresora (el navegador, las pruebas): el resumen como saldría impreso.</summary>
+    private string? _vistaPrevia;
+
+    private string? _impreso;
+    private TrabajoDeImpresion? _trabajo;
+
+    /// <summary>Hoy en la caja principal (antes de que conteste, el de esta caja).</summary>
+    private DateOnly Hoy => _datos?.Hoy ?? DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
+
+    /// <summary>Los días que se ven: los de un toque que se eligieron (de hoy), o las fechas.</summary>
+    private (DateOnly Desde, DateOnly Hasta) Dias => Estado.Dias is { } dias ? DiasDeVentas.De(dias, Hoy) : (Estado.Desde ?? Hoy, Estado.Hasta ?? Hoy);
+
+    private DateOnly Desde => Dias.Desde;
+
+    private DateOnly Hasta => Dias.Hasta;
+
+    /// <summary>Cuál de los de un toque es lo que se ve; ninguno si se escribieron las fechas.</summary>
+    private DiasElegidos? Elegidos => Estado.Dias ?? DiasDeVentas.Cual(Desde, Hasta, Hoy);
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!_enfocar)
+            return;
+        _enfocar = false;
+        await EnfocarAsync();
+    }
+
+    /// <summary>El cursor a los días que se ven (el de un toque, o la primera fecha): Tab y Enter llegan a lo demás.</summary>
+    public async Task EnfocarAsync() => await Js.EnfocarAsync(Elegidos is { } dias ? $"#vpp-{dias}" : "#vpp-desde");
+
+    private async Task CargarAsync()
+    {
+        var carga = ++_cargas;
+        (_cargando, _error) = (true, null);
+        try
+        {
+            // Hoy, el de la caja principal (sin fechas): el reloj de esta caja puede ir un poco adelantado.
+            var (desde, hasta) = Estado.Dias == DiasElegidos.Hoy ? ((DateOnly?)null, (DateOnly?)null) : (Desde, Hasta);
+            var datos = await Cliente.VentasPorPeriodoAsync(Caja.Id, Sesion.UsuarioId, desde, hasta, Estado.CajaId, Estado.Pagina);
+            if (carga != _cargas)
+                return;
+            // Una página que ya no existe (se recordó la de otro día, con más tickets): la primera.
+            if (datos is { Ventas.Count: 0, Total: > 0, Pagina: > 0 })
+            {
+                Estado.Pagina = 0;
+                await CargarAsync();
+                return;
+            }
+            (_datos, _vista, Estado.Pagina) = (datos, _vista + 1, datos.Pagina);
+        }
+        catch (ErrorCaja ex)
+        {
+            if (carga == _cargas)
+                _error = ex.Message;
+        }
+        finally
+        {
+            if (carga == _cargas)
+                _cargando = false;
+        }
+    }
+
+    /// <summary>
+    /// Otros días: desde la primera página, y lo que se imprimió antes ya no es de lo que se ve. Si son los de un toque (con ← →
+    /// se llega al mes pasado), se recuerdan como tales.
+    /// </summary>
+    private Task DiasAsync(DateOnly desde, DateOnly hasta)
+    {
+        var dias = DiasDeVentas.Cual(desde, hasta, Hoy);
+        (Estado.Dias, Estado.Desde, Estado.Hasta, Estado.Pagina) = (dias, dias is null ? desde : null, dias is null ? hasta : null, 0);
+        (_vistaPrevia, _impreso) = (null, null);
+        return CargarAsync();
+    }
+
+    /// <summary>El clic de cada uno de un toque, el mismo en cada vuelta del dibujo.</summary>
+    private Func<Task> AlElegir(DiasElegidos dias) =>
+        _alElegir.TryGetValue(dias, out var alElegir) ? alElegir : _alElegir[dias] = () => ElegirAsync(dias);
+
+    private readonly Dictionary<DiasElegidos, Func<Task>> _alElegir = [];
+
+    private Task ElegirAsync(DiasElegidos dias)
+    {
+        (Estado.Dias, Estado.Desde, Estado.Hasta, Estado.Pagina) = (dias, null, null, 0);
+        (_vistaPrevia, _impreso) = (null, null);
+        return CargarAsync();
+    }
+
+    private static string Iso(DateOnly dia) => dia.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    private static DateOnly? LeerFecha(object? valor) =>
+        DateOnly.TryParseExact(valor?.ToString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dia) ? dia : null;
+
+    /// <summary>El primer día escrito: si queda después del último, el último lo sigue.</summary>
+    private Task DesdeAsync(ChangeEventArgs e)
+    {
+        if (LeerFecha(e.Value) is not { } dia)
+            return Task.CompletedTask;
+        dia = dia > Hoy ? Hoy : dia;
+        return DiasAsync(dia, Hasta < dia ? dia : Hasta);
+    }
+
+    /// <summary>El último día escrito: si queda antes del primero, el primero lo sigue.</summary>
+    private Task HastaAsync(ChangeEventArgs e)
+    {
+        if (LeerFecha(e.Value) is not { } dia)
+            return Task.CompletedTask;
+        dia = dia > Hoy ? Hoy : dia;
+        return DiasAsync(Desde > dia ? dia : Desde, dia);
+    }
+
+    private Task CajaAsync(ChangeEventArgs e)
+    {
+        (Estado.CajaId, Estado.Pagina) = (Guid.TryParse(e.Value?.ToString(), out var caja) ? caja : null, 0);
+        (_vistaPrevia, _impreso) = (null, null);
+        return CargarAsync();
+    }
+
+    /// <summary>← y →: los días de antes o de después, del mismo largo (un mes, una semana o tantos días); después de hoy no hay.</summary>
+    private Task MoverAsync(int pasos) =>
+        DiasDeVentas.Mover(Desde, Hasta, pasos, Hoy) is { } otros ? DiasAsync(otros.Desde, otros.Hasta) : Task.CompletedTask;
+
+    private bool HaySiguientes => _datos is { } d && Paginador.HaySiguiente(d.Total, d.Pagina, d.Tamano);
+
+    private Task SiguientesAsync()
+    {
+        if (!HaySiguientes)
+            return Task.CompletedTask;
+        Estado.Pagina++;
+        return CargarAsync();
+    }
+
+    private Task AnterioresAsync()
+    {
+        if (Estado.Pagina == 0)
+            return Task.CompletedTask;
+        Estado.Pagina--;
+        return CargarAsync();
+    }
+
+    /// <summary>← y → mueven los días, Re Pág y Av Pág la página; lo demás, Tab y Enter.</summary>
+    private Task AlTeclearAsync(KeyboardEventArgs e) => e.CtrlKey || e.AltKey || e.ShiftKey || e.MetaKey
+        ? Task.CompletedTask
+        : e.Key switch
+        {
+            "ArrowLeft" => MoverAsync(-1),
+            "ArrowRight" => MoverAsync(1),
+            "PageDown" => SiguientesAsync(),
+            "PageUp" => AnterioresAsync(),
+            _ => Task.CompletedTask,
+        };
+
+    private Task<ArchivoPorGuardar> ExcelAsync() => Cliente.ExcelVentasPorPeriodoAsync(Caja.Id, Sesion.UsuarioId, Desde, Hasta, Estado.CajaId);
+
+    /// <summary>
+    /// «Imprimir el resumen», como el corte del día: los totales por día y por forma de pago de todos esos días van a la cola de
+    /// la impresora de tickets, sin esperarla, y arriba se ve si salió (con «Reintentar» si no); sin impresora, aquí mismo, en «Así
+    /// sale impreso».
+    /// </summary>
+    private void Imprimir()
+    {
+        if (_datos is not { } d)
+            return;
+        var caja = d.CajaId is { } elegida ? d.Cajas.FirstOrDefault(c => c.Id == elegida)?.Nombre : null;
+        var documento = DisenoComprobante.VentasPorPeriodo(d, caja, Sesion.Nombre, HoraMexico.ALocal(DateTime.UtcNow));
+        var cola = ColaDeImpresion.De(Impresora);
+        if (cola.MuestraVistaPrevia)
+        {
+            (_vistaPrevia, _impreso) = (TicketTexto.Generar(documento), "Sin impresora: abajo de la lista, en «Así sale impreso».");
+            return;
+        }
+        _trabajo = cola.Encolar(d.Desde == d.Hasta
+            ? $"Ventas del {d.Desde.ToString("dd/MM", CultureInfo.InvariantCulture)}"
+            : $"Ventas del {d.Desde.ToString("dd/MM", CultureInfo.InvariantCulture)} al {d.Hasta.ToString("dd/MM", CultureInfo.InvariantCulture)}", documento,
+            abrirCajon: false);
+    }
+
+    private string Vacia(VentasPorPeriodoDto d) => d.CajaId is { } caja
+        ? $"{d.Cajas.FirstOrDefault(c => c.Id == caja)?.Nombre ?? "Esa caja"} no tuvo tickets en esos días."
+        : "No hubo tickets en esos días.";
+
+    /// <summary>Cómo se pagó lo vendido y, si lo hay, lo del historial de eleventa en esos días (que no se lista).</summary>
+    private static string Notas(VentasPorPeriodoDto d)
+    {
+        var formas = d.Totales.Formas.Count == 0
+            ? "Nada cobrado en esos días."
+            : $"Cómo se pagó: {string.Join(" · ", d.Totales.Formas.Select(f => $"{TextosDeReportes.Forma(f.Forma)} {Formato.Dinero(f.Centavos)}"))}"
+              + (d.Totales.Formas.Any(f => f.Forma == FormaPago.Efectivo) ? " (el efectivo, sin el redondeo al peso)." : ".");
+        var cuentan = " Un ticket cancelado se lista, pero no cuenta; lo devuelto en esos días se resta, como en el corte del día.";
+        var historial = d.DelHistorialTickets > 0
+            ? $" Además, el historial de eleventa tiene {Formato.Numero(d.DelHistorialTickets)} tickets ({Formato.Dinero(d.DelHistorialCentavos)}) en esos "
+              + "días: cuentan en los reportes, pero no se listan porque no traen caja, cajero ni forma de pago."
+            : "";
+        return formas + cuentan + historial;
+    }
+}

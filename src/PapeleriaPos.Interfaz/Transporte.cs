@@ -69,6 +69,20 @@ public sealed class Transporte(HttpClient http, ConexionCaja conexion)
         return datos.Length <= maximo ? datos : throw new ErrorCaja($"La caja principal contestó con algo demasiado grande ({datos.Length:N0} bytes).");
     }
 
+    /// <summary>
+    /// Un archivo que arma la caja principal (el Excel de un reporte, entrega 9, parte 2), con el nombre que propone (el de su
+    /// «Content-Disposition») y su tipo.
+    /// </summary>
+    public async Task<ArchivoPorGuardar> GetArchivoAsync(string url)
+    {
+        using var respuesta = await EnviarAsync(HttpMethod.Get, url);
+        await RevisarAsync(respuesta);
+        var encabezado = respuesta.Content.Headers.ContentDisposition;
+        var nombre = encabezado?.FileNameStar ?? encabezado?.FileName?.Trim('"') ?? "archivo";
+        var tipo = respuesta.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
+        return new ArchivoPorGuardar(nombre, tipo, await respuesta.Content.ReadAsByteArrayAsync());
+    }
+
     public async Task<T> PostAsync<T>(string url, object? cuerpo, bool sinRespuesta = false, Uri? servicio = null, TimeSpan? espera = null)
     {
         using var respuesta = await EnviarAsync(HttpMethod.Post, url, cuerpo, servicio, espera);

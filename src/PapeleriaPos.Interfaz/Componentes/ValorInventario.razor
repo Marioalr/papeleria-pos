@@ -3,7 +3,7 @@
    cuántos están en cero, en negativo o sin costo. A la derecha, los productos del departamento elegido (o de todos), de lo
    que más vale a lo que menos, o los que están en cero, en negativo o sin costo, de 50 en 50. Solo para quien tiene «Ver
    costos, utilidad y margen»: los demás no ven la tarjeta, y el servicio lo revisa. En el piloto con eleventa se ve igual
-   (solo lee). *@
+   (solo lee). «Exportar a Excel» (entrega 9, parte 2) lleva cada departamento y todos los productos de la derecha. *@
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
@@ -61,6 +61,9 @@ else
                 @Filtro(FiltroValor.EnCero, "En cero", grupo.EnCero)
                 @Filtro(FiltroValor.Negativa, "En negativo", grupo.Negativa)
                 @Filtro(FiltroValor.SinCosto, "Sin costo", grupo.SinCosto)
+                <span class="espacio"></span>
+                @* Cada departamento y todos estos productos, sin las páginas (entrega 9, parte 2). *@
+                <ExportarExcel Id="valor-excel" Pedir="ExcelAsync" />
             </div>
             <Paginador Total="_valor.TotalProductos" Pagina="_valor.Pagina" Tamano="_valor.Tamano" Plural="productos" Singular="producto"
                        AlAnterior="AnterioresAsync" AlSiguiente="SiguientesAsync" />
@@ -138,6 +141,8 @@ else
     }
 
     private bool _enfocar = true;
+
+    private Task<ArchivoPorGuardar> ExcelAsync() => Cliente.ExcelValorAsync(Caja.SucursalId, Sesion.UsuarioId, _departamento, _filtro);
 
     private async Task CargarAsync()
     {

@@ -168,6 +168,9 @@ public partial class MainWindow : Window
         servicios.AddWpfBlazorWebView();
         servicios.AddSingleton(registro);
         servicios.AddSingleton(_recarga);
+        // Guardar un archivo (el Excel de los reportes, entrega 9, parte 2): «Guardar como» de Windows, en Documentos. Antes de la
+        // interfaz: si no, la caja lo descargaría como en el navegador.
+        servicios.AddSingleton<IGuardarArchivo>(new GuardadoEnLaPc(new GuardarComoDeWindows(this, () => Vista.WebView?.Focus()).PreguntarAsync));
         // "tcp://192.168.1.100:9100" imprime directo por la red; un nombre (como "Tickets") usa la impresora de Windows.
         var impresora = Impresoras.Crear(configuracion.Impresora, nombre => new ImpresoraWindows(nombre));
         // La copia para vender sin la caja principal y la bandeja de salida, junto a la configuración de la caja. La red de la
