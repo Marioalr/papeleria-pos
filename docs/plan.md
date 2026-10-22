@@ -941,6 +941,72 @@ en la [paridad](paridad-eleventa.md#reportes): lo que quedaba de los reportes de
   el usuario de la sesión. Sin cambios en la base.
 - **Falta:** verlo en Windows: «Guardar como» encima de la ventana de la caja y abrir cada Excel en Excel.
 
+**Avance (2026-10-22): importar y exportar los productos en Excel,** como «Exportar» e «Importar» del catálogo de eleventa
+([paridad](paridad-eleventa.md#productos-y-precios)): lo último de «Productos y precios» que eleventa tiene y el POS no.
+- **«Productos en Excel»,** abajo de la lista de Productos (F3): se abre a la derecha, como «Cambiar precios». Lo ve quien ve
+  Productos; importa quien tiene «Productos, precios y etiquetas» en «Puede», como «Cambiar precios». Esc cierra lo que se ve
+  y luego regresa al producto; F1, a la venta.
+- **Exportar** la lista como se ve (la búsqueda, que también busca la marca y el departamento; el departamento; «por completar»,
+  «poca existencia» o «margen bajo»; con o sin los inactivos), en su orden y sin las páginas, con el encabezado y los títulos de
+  los demás Excel (#134). La hoja «Productos» lleva una fila por variante que se vende: su código, los otros códigos, el
+  producto y la variante, el departamento, la marca, la unidad, el precio, el mayoreo (desde cuántas y a cuánto; siempre al menos
+  dos escalas, para poder agregar una), la existencia, el mínimo, el máximo y si se vende; al final el costo promedio y el
+  margen, solo con «Ver costos, utilidad y margen». La hoja «Presentaciones», las cajas y paquetes con sus códigos y su precio
+  propio. Los códigos van como texto (Excel no les quita los ceros). Se guarda como los demás Excel, con el nombre «Productos
+  2026-10-22.xlsx» (con el departamento, si la lista es de uno). Los kits y los cobros de terceros no van: se cambian en su ficha.
+- **Importar** el mismo Excel ya cambiado. En la ventana de Windows se elige con «Abrir» de Windows (`IAbrirArchivo`, junto a
+  `IGuardarArchivo`: los dos empiezan en la carpeta del último archivo que se guardó o se abrió, así el que se acaba de exportar
+  está a la mano, y se lee aunque Excel lo tenga abierto); en el navegador, con su selector de archivos, como la foto de la
+  ficha (#122). Cada renglón se reconoce por su código (uno de su pieza, sin importar mayúsculas, como al escanear); un código
+  que no tiene nadie es un producto nuevo; lo que no tiene ningún código (casi siempre un servicio), por su nombre.
+- **Siempre primero la vista,** como «Cambiar precios»: qué cambia de cada producto (lo de antes → lo nuevo; el margen, para
+  quien lo ve), qué es nuevo (con un aviso si ya hay uno que se llama igual: quizá se le cambió el código), los departamentos y
+  las marcas que se dan de alta, y qué se ignora, con su renglón y su porqué. Nada cambia hasta «Aplicar» o Ctrl+Enter.
+- **Aplicar,** todo junto en una sola transacción, con un renglón en la bitácora; el historial de cada precio y la versión del
+  catálogo los escribe la base, así que las cajas lo reciben con su copia, como un cambio de la ficha. Si algo cambió desde la
+  vista no se aplica y se vuelve a ver, con el aviso; si se perdió la respuesta, oprimirlo otra vez no aplica dos veces.
+- **Las reglas de la ficha y de «Cambiar precios»:** el mayoreo más barato que el menudeo (y una escala de más piezas, igual o
+  más barata que la de menos); una caja, nunca más cara que sus piezas sueltas; lo que cambia, nunca debajo de su costo (a quien
+  no ve costos no se le dice cuánto es); un código, de un solo producto. Además, el cobro nunca cobra una escala más cara que el
+  menudeo (la red de seguridad de `CalculoPrecio`). Un departamento que no existe se da de alta si quien importa puede (#104);
+  uno desactivado no recibe productos activos.
+- **Qué se ignora,** cada renglón con su porqué (lo demás del archivo se importa igual): sin código y sin un producto sin
+  código que se llame así; un código repetido en el archivo, o que ya es de otro producto o de una presentación; el mismo
+  producto dos veces; un código escrito como número al que Excel le quitó los ceros; un número que no se entiende, en cero o
+  demasiado grande; una coma que podría ser de decimales («12,50»: se pide 12.50, porque la coma solo separa los miles); lo que
+  le falta a uno nuevo (nombre, departamento o precio); el mayoreo igual o más caro que el menudeo o una caja más cara que sus
+  piezas; un precio debajo del costo; un departamento desactivado, o uno nuevo con un nombre que no cabe; variantes de un mismo
+  producto con distinto nombre, departamento o marca; y lo que no se cambia desde Excel (la unidad, lo que trae una
+  presentación, el mínimo de un servicio, un kit).
+- **Lo que se tolera:** una fórmula vale lo que calculó Excel; los espacios, el signo de pesos y la coma de los miles
+  («$1,234.50»); el dinero se redondea al centavo (lo que se ve con el formato de pesos). Hasta 10,000 renglones por hoja y 8 MB.
+- **En el piloto con eleventa** no se importa: las altas y los precios se hacen en eleventa (#106). La pantalla lo dice y el
+  servicio lo rechaza; exportar, sí.
+- **Rápido:** con 10,000 variantes (la papelería ficticia y productos de relleno), por la API en la PC de desarrollo (con otras
+  pruebas corriendo a la vez): exportar, 4.2 s (667 KB); ver qué cambia con todos los precios cambiados, 2.2 s; aplicarlo, 4.9 s.
+  Antes de un arreglo, leer 10,000 productos por su Id tardaba casi 40 s (EF arma un parámetro por cada Id): con más de 500, se
+  lee todo el catálogo y se filtra.
+- **Lo nuevo del servicio:** `GET api/catalogo/lista/excel` (con los filtros de la lista) y `POST api/catalogo/importar/vista` y
+  `api/catalogo/importar` (el archivo; al aplicar, con la huella de la vista y su Id). Sin cambios en la base.
+- **Decidido, por revisar** (el dueño no estaba; también en «Decidido mientras el dueño no estaba»):
+  - un solo botón, «Productos en Excel», abajo de la lista (ya eran siete), con exportar e importar adentro;
+  - un renglón nuevo es un producto con una sola variante; la variante nueva de un producto que ya existe se agrega en su ficha;
+  - una columna que no viene no cambia nada; una celda vacía quita lo que se puede quitar (la marca, el mínimo, el máximo, una
+    escala, un código de «Otros códigos», el precio propio de una caja); el nombre, el departamento y el precio no se vacían;
+  - no se importan la existencia ni el costo (cambian con las compras, los conteos y los ajustes, con su kardex), ni la unidad
+    (es de la depuración), ni lo que trae una presentación;
+  - un renglón con algo mal se ignora completo; si lo que está mal son los precios de una variante, solo los renglones que los
+    cambian;
+  - un producto «por completar» que cambia en el Excel queda completo, como al guardar su ficha;
+  - «Se vende: No» desactiva el producto si tiene una sola variante; si tiene varias, solo esa variante;
+  - los departamentos y las marcas que no existen se dan de alta (la vista los dice antes);
+  - un precio debajo del costo se ignora (para venderlo así, en su ficha, que lo deja);
+  - un código escrito como número que con sus ceros es uno que ya existe se ignora: no se adivina cuál era;
+  - hasta 10,000 renglones por hoja y 8 MB por archivo; se exportan hasta 30,000;
+  - en el piloto no se importa nada, ni lo dado de alta aquí.
+- **Falta:** verlo en Windows: «Abrir» y «Guardar como» encima de la ventana de la caja, y abrir, cambiar y guardar el Excel
+  en Excel antes de importarlo.
+
 **Avance (2026-10-17): la red de la tienda en el POS,** como lo pide la [red de la
 matriz](arquitectura.md#la-red-de-la-matriz) («En el POS»). Casi siempre que se va el internet de Megacable se cae
 también la red local; esto no la arregla (eso es el [arreglo propuesto](arquitectura.md#la-red-de-la-matriz), sin
@@ -1524,6 +1590,7 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | ¿Qué lleva cada Excel? | Lo que se ve, con sus filtros y sin las páginas, una hoja por tabla; sin «Ver costos, utilidad y margen», sin la utilidad ni el costo (ni sus columnas vacías); los movimientos y los tickets de «Ventas por período», hasta 60,000 por archivo (con más, se pide elegir menos días o un filtro: mientras se arma, cada celda ocupa memoria del servicio de la caja principal); de lo que vale el inventario, cada departamento y los productos de la derecha con su filtro | Entrega 9, parte 2 |
 | ¿Dónde va «Ventas por período» y qué cuenta? | En Reportes, con «Ver reportes de ventas» (en eleventa está en F3): un botón que la abre ahí mismo, con el acomodo de las tareas del inventario. Abre en hoy; los tickets del primero al último, de 100 en 100. Cuenta como el corte del día: un ticket cancelado se lista, pero no cuenta en el día en que se cobró; lo devuelto en esos días se resta, también de tickets de antes (de una caja, lo devuelto de sus tickets); las formas de pago, sin el redondeo al peso. El historial de eleventa no se lista (no trae caja, cajero ni forma de pago): se dice cuánto hay. ← → llevan al mismo largo antes o después. En el piloto, sin el historial | Entrega 9, parte 2 |
 | ¿Qué lleva el resumen impreso de «Ventas por período»? | Lo de cada día (los tickets y lo vendido; lo devuelto y las formas de pago que no son efectivo, si las hubo), las formas de pago del periodo y los totales; no cada ticket | Entrega 9, parte 2 |
+| Importar y exportar los productos en Excel | Un solo botón, «Productos en Excel», abajo de la lista de Productos; exporta quien ve Productos e importa quien cambia precios; cada producto por su código (uno nuevo, con una variante); siempre la vista antes y Ctrl+Enter; una columna que no viene no cambia nada y una celda vacía quita lo que se puede quitar; no se importan la existencia, el costo, la unidad ni lo que trae una caja; el renglón con algo mal se ignora completo (con precios mal, solo los que los cambian); lo «por completar» queda completo; departamentos y marcas nuevos se dan de alta; debajo del costo se ignora; un código sin sus ceros se ignora; hasta 10,000 renglones y 8 MB; en el piloto no se importa | Productos en Excel |
 | Dejar eleventa | En dos pasos: primero el modo multicaja con el puente escribiendo; al final, apagar el puente cuando el POS tenga la entrega 9 y un mes que cuadre con eleventa | Piloto |
 | La ganancia del día, con Telegram en pausa | En el corte del día, para quien tiene «Ver costos, utilidad y margen», como el de eleventa | El corte del día como el de eleventa |
 | Las tres impresoras de inyección | Van con la entrega 4, después de alcanzar a eleventa (meta del 2026-10-15); mientras, Control Print sigue cobrando aparte. Se alinearon la fase 5 y [impresión](impresion.md) | Plan |
