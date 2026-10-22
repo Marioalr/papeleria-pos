@@ -35,6 +35,21 @@ public sealed class RespaldarAhoraApiTests : IDisposable
         return (await r.Content.ReadFromJsonAsync<T>())!;
     }
 
+    /// <summary>Pregunta cómo va «Respaldar ahora» hasta que termina (con su límite: no depende de lo que tarda la PC).</summary>
+    private static async Task<RespaldosDto> TerminadoAsync(HttpClient http, string url)
+    {
+        var limite = DateTime.UtcNow.AddSeconds(20);
+        while (true)
+        {
+            var estado = await Leer<RespaldosDto>(await http.GetAsync(url));
+            if (estado.Ahora is { Haciendo: false })
+                return estado;
+            if (DateTime.UtcNow > limite)
+                throw new Xunit.Sdk.XunitException("No terminó el respaldo.");
+            await Task.Delay(20);
+        }
+    }
+
     private static async Task<(HttpClient Http, CajaDto Caja, Func<string, string, Task<SesionDto>> Entrar)> AbrirAsync(ServicioDePrueba s)
     {
         var http = s.Fabrica.CreateClient();
@@ -64,9 +79,15 @@ public sealed class RespaldarAhoraApiTests : IDisposable
         await Leer<ComprobanteMovimientoDto>(await http.PostAsJsonAsync($"api/turnos/{turno.Id}/movimientos",
             new SolicitudMovimiento(TipoMovimientoCaja.Entrada, 12300, "Antes del respaldo", cajero.UsuarioId, entrada)));
 
-        var hecho = await Leer<RespaldoDto>(await http.PostAsJsonAsync(url, new SolicitudRespaldo(dueno.UsuarioId)));
+        // Contesta enseguida, ya empezado; cómo va se pregunta hasta que termina.
+        var pedido = await Leer<RespaldosDto>(await http.PostAsJsonAsync(url, new SolicitudRespaldo(dueno.UsuarioId)));
+        Assert.NotNull(pedido.Ahora);
+        var terminado = await TerminadoAsync(http, $"{url}?usuarioId={dueno.UsuarioId}");
+        Assert.Null(terminado.Ahora!.Fallo);
+        var hecho = terminado.Ahora.Hecho!;
 
         Assert.Equal(_carpeta, Path.GetDirectoryName(hecho.Ruta));
+        Assert.Null(hecho.AvisoLimpieza);
         Assert.Matches(@"^pos-\d{4}-\d{2}-\d{2}-ahora-\d{4}\.db$", Path.GetFileName(hecho.Ruta));
         Assert.Equal(new FileInfo(hecho.Ruta).Length, hecho.Bytes);
         await using (var copia = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = hecho.Ruta, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString()))
@@ -78,9 +99,9 @@ public sealed class RespaldarAhoraApiTests : IDisposable
             Assert.Equal("Antes del respaldo", await comando.ExecuteScalarAsync());
         }
 
-        // «Último respaldo» ya es ese, y queda en la bitácora.
-        var despues = await Leer<RespaldosDto>(await http.GetAsync($"{url}?usuarioId={dueno.UsuarioId}"));
-        Assert.Equal((hecho.Ruta, hecho.Bytes), (despues.Ultimo!.Ruta, despues.Ultimo.Bytes));
+        // «Último respaldo» ya es ese, y queda en la bitácora (antes de que el estado diga que terminó).
+        Assert.Equal((hecho.Ruta, hecho.Bytes), (terminado.Ultimo!.Ruta, terminado.Ultimo.Bytes));
+        Assert.Empty(Directory.GetFiles(_carpeta, "*.tmp*"));
         await using var db = servicio.Base();
         var bitacora = await db.Bitacora.AsNoTracking().Where(b => b.Accion == AccionControlada.ConfigurarTienda && b.Detalle.StartsWith("Respaldó la base"))
             .Select(b => new { b.UsuarioId, b.Detalle }).SingleAsync();

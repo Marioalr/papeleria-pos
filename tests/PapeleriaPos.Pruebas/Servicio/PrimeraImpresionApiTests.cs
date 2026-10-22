@@ -61,6 +61,12 @@ public sealed class PrimeraImpresionApiTests(ServicioDePrueba servicio) : IClass
         Assert.Contains(dice, error.Mensaje);
     }
 
+    private async Task<List<string>> DetallesAsync(Guid ventaId)
+    {
+        await using var db = servicio.Base();
+        return await db.Bitacora.AsNoTracking().Where(b => b.VentaId == ventaId).Select(b => b.Detalle).ToListAsync();
+    }
+
     private async Task<List<string>> BitacoraAsync(Guid ventaId)
     {
         await using var db = servicio.Base();
@@ -116,10 +122,42 @@ public sealed class PrimeraImpresionApiTests(ServicioDePrueba servicio) : IClass
         Assert.Equal(HttpStatusCode.NoContent, dejado.StatusCode);
         Assert.True((await DelDiaAsync(c, id)).SinImprimir);
 
+        // Queda en la bitácora que se dejó sin imprimir.
+        Assert.Contains($"El ticket {ticket.Folio} no salió de la impresora y se dejó sin imprimir: su primera impresión no pedirá motivo",
+            await DetallesAsync(id));
+
         // Si se reimprime con su motivo (abajo, «Reimprimir»), ya salió.
-        await Leer<TicketDto>(await c.Http.PostAsJsonAsync($"api/ventas/{id}/reimpresion", new SolicitudReimpresion(c.Cajero.UsuarioId, c.Datos.Id, "Lo pidió")));
+        var reimpreso = await Leer<TicketDto>(await c.Http.PostAsJsonAsync($"api/ventas/{id}/reimpresion",
+            new SolicitudReimpresion(c.Cajero.UsuarioId, c.Datos.Id, "Lo pidió")));
+        Assert.Equal(1, reimpreso.Impresiones);
         Assert.False((await DelDiaAsync(c, id)).SinImprimir);
         await SeReimprimeConMotivoAsync(await PrimeraAsync(c, id), "ya salió");
+
+        // Un «No imprimirlo» de un trabajo de antes de esa reimpresión (revisión del PR #133) ya no la marca: después salió otro.
+        var deAntes = await c.Http.PostAsJsonAsync($"api/ventas/{id}/sin-imprimir", new SolicitudTicketSinImprimir(c.Cajero.UsuarioId, c.Datos.Id, 0));
+        Assert.Equal(HttpStatusCode.NoContent, deAntes.StatusCode);
+        Assert.False((await DelDiaAsync(c, id)).SinImprimir);
+        await SeReimprimeConMotivoAsync(await PrimeraAsync(c, id), "ya salió");
+        // El de esa reimpresión (si no hubiera salido) sí.
+        await c.Http.PostAsJsonAsync($"api/ventas/{id}/sin-imprimir", new SolicitudTicketSinImprimir(c.Cajero.UsuarioId, c.Datos.Id, reimpreso.Impresiones));
+        Assert.True((await DelDiaAsync(c, id)).SinImprimir);
+    }
+
+    /// <summary>Lo cancelado no se vuelve a marcar sin imprimir: si lo piden, se reimprime completo, con su motivo.</summary>
+    [Fact]
+    public async Task Lo_cancelado_no_se_marca_sin_imprimir()
+    {
+        var c = await CajaAsync();
+        var id = (await CobrarAsync(c)).VentaId!.Value;
+        var encargado = await Leer<SesionDto>(await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("encargado", "2222")));
+        await Leer<ComprobanteDevolucionDto>(await c.Http.PostAsJsonAsync($"api/ventas/{id}/cancelacion",
+            new SolicitudCancelacion(encargado.UsuarioId, c.Datos.Id, "Se equivocó de producto", null)));
+
+        await c.Http.PostAsJsonAsync($"api/ventas/{id}/sin-imprimir", new SolicitudTicketSinImprimir(c.Cajero.UsuarioId, c.Datos.Id));
+
+        Assert.False((await DelDiaAsync(c, id)).SinImprimir);
+        await using var db = servicio.Base();
+        Assert.False(await db.Ventas.AsNoTracking().Where(v => v.Id == id).Select(v => v.TicketSinImprimir).SingleAsync());
     }
 
     /// <summary>Lo cancelado (o con algo devuelto) saldría completo: no se ofrece sin motivo, y el servicio tampoco lo deja.</summary>

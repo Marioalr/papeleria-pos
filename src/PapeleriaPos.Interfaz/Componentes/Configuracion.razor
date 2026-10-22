@@ -243,6 +243,9 @@
             Sesion.Puede(AccionControlada.ConfigurarTienda)
                 ? CargarAsync(async () => _respaldos = await Cliente.RespaldosAsync(Caja.Id, Sesion.UsuarioId), e => _errorRespaldos = e)
                 : Task.CompletedTask);
+        // Un «Respaldar ahora» que ya iba en camino (se pidió y se cerró la Configuración): se ve cómo termina.
+        if (_respaldos?.Ahora is { Haciendo: true })
+            _ = EsperarRespaldoAsync();
     }
 
     /// <summary>Al abrir, el cursor en «Buscar un ajuste»: se escribe para buscar, y con Tab se pasa a los grupos y a sus ajustes.</summary>
@@ -993,10 +996,15 @@
         return $"{cuando} a las {local.ToString("HH:mm", Formato.Mexico)}";
     }
 
+    /// <summary>Lo que se espera entre una pregunta y otra mientras la caja principal hace «Respaldar ahora».</summary>
+    private static readonly TimeSpan EsperaDelRespaldo = TimeSpan.FromSeconds(1);
+
     /// <summary>
-    /// «Respaldar ahora» (2026-10-22): la caja principal hace la copia en ese momento, con el mismo servicio que la diaria y la
-    /// del corte Z (la copia en línea de SQLite: la base completa, sin detener la venta). Aquí se dice dónde quedó y cuánto
-    /// mide, y «Último respaldo» ya es ese. No es un cambio de la configuración: no mueve «Guardado a las…».
+    /// «Respaldar ahora» (2026-10-22): la caja principal hace la copia, con el mismo servicio que la diaria y la del corte Z (la
+    /// copia en línea de SQLite: la base completa, sin detener la venta), en segundo plano: contesta enseguida y aquí se pregunta
+    /// cómo va hasta que termina (revisión del PR #133; antes se esperaba y con una base grande pasaba de los 15 s). Al terminar
+    /// se dice dónde quedó y cuánto mide, y «Último respaldo» ya es ese. No es un cambio de la configuración: no mueve
+    /// «Guardado a las…».
     /// </summary>
     private async Task RespaldarAsync()
     {
@@ -1007,17 +1015,53 @@
         Error(Respaldar, null);
         try
         {
-            var hecho = await Cliente.RespaldarAhoraAsync(Caja.Id, new SolicitudRespaldo(Sesion.UsuarioId));
-            _respaldos = _respaldos with { Ultimo = hecho };
-            _avisos[Respaldar] = $"Se guardó en {hecho.Ruta} ({hecho.Tamano}).";
+            _respaldos = await Cliente.RespaldarAhoraAsync(Caja.Id, new SolicitudRespaldo(Sesion.UsuarioId));
         }
         catch (ErrorCaja ex)
         {
+            _respaldando = false;
             Error(Respaldar, ex.Message);
+            return;
+        }
+        await EsperarRespaldoAsync();
+    }
+
+    /// <summary>
+    /// Mientras se hace «Respaldar ahora» (pedido aquí, o ya en camino al abrir la Configuración), pregunta cada segundo cómo va;
+    /// al cerrar la Configuración deja de preguntar. Al terminar dice dónde quedó y cuánto mide (y aparte, si no se pudieron
+    /// borrar los viejos), o por qué no salió.
+    /// </summary>
+    private async Task EsperarRespaldoAsync()
+    {
+        _respaldando = true;
+        try
+        {
+            while (_respaldos?.Ahora is { Haciendo: true } && !Cerrado)
+            {
+                StateHasChanged();
+                await Task.Delay(EsperaDelRespaldo);
+                if (Cerrado)
+                    return;
+                try
+                {
+                    _respaldos = await Cliente.RespaldosAsync(Caja.Id, Sesion.UsuarioId);
+                }
+                catch (ErrorCaja ex)
+                {
+                    Error(Respaldar, ex.Message);
+                    return;
+                }
+            }
+            if (_respaldos?.Ahora is { Hecho: { } hecho })
+                _avisos[Respaldar] = $"Se guardó en {hecho.Ruta} ({hecho.Tamano})." + (hecho.AvisoLimpieza is { } limpieza ? $" {limpieza}" : "");
+            else if (_respaldos?.Ahora is { Fallo: { } fallo })
+                Error(Respaldar, fallo);
         }
         finally
         {
             _respaldando = false;
+            if (!Cerrado)
+                StateHasChanged();
         }
     }
 

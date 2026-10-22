@@ -150,4 +150,39 @@ public sealed class CancelarMovimientoEnLaVentaTests(ServicioDePrueba servicio) 
         Assert.Contains(PilotoConEleventa.NoSeCancelaMovimiento, PantallaSinNavegador.Limpio(await v.Pantalla.TextoAsync()));
         Assert.Empty(v.Pantalla.Errores);
     }
+
+    /// <summary>
+    /// La caja 2 va por Wi-Fi: la caja principal cancela, pero la respuesta se pierde. La caja lo dice (no se sabe si quedó) y no
+    /// mueve su cuenta ni abre el cajón; cuando vuelve la conexión, Enter la manda otra vez con el mismo Id y la caja principal
+    /// contesta como la primera vez, sin cancelarla dos veces (revisión del PR #133). Antes decía «ya se canceló» y la caja se
+    /// quedaba sin descontarla.
+    /// </summary>
+    [Fact]
+    public async Task Si_se_pierde_la_respuesta_Enter_otra_vez_la_termina_sin_cancelarla_dos_veces()
+    {
+        var impresora = new TicketeraDePrueba();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, quien: ("encargado", "2222"), impresora: impresora);
+        var turno = v.Venta.Turno.Id;
+        var id = await EntradaAsync(v, 20000, "Cambio en monedas");
+        var antes = v.Contingencia.Efectivo(turno).EsperadoCentavos;
+        await AbrirConAsync(v, id);
+
+        v.Red.PierdeRespuesta = ruta => ruta.EndsWith("/cancelacion", StringComparison.Ordinal);
+        await CancelarConMotivoAsync(v, id, "Se perdió la respuesta");
+
+        Assert.Contains(ClienteCaja.CancelacionSinConfirmar, PantallaSinNavegador.Limpio(await v.Pantalla.TextoAsync()));
+        Assert.Equal(antes, v.Contingencia.Efectivo(turno).EsperadoCentavos);
+        Assert.Equal(0, impresora.Intentos);
+
+        v.Red.PierdeRespuesta = null;
+        await v.Contingencia.LatidoAsync();
+        await v.Pantalla.TeclaAsync("motivo-cancelar-movimiento", "Enter");
+
+        Assert.Contains("Cancelada", PantallaSinNavegador.Limpio((await v.Pantalla.PorIdAsync($"movimiento-{id}")).Texto));
+        await TicketeraDePrueba.EsperarAsync(() => impresora.Salieron.Count == 1, "el cajón");
+        Assert.Equal(antes - 20000, v.Contingencia.Efectivo(turno).EsperadoCentavos);
+        await using var db = servicio.Base();
+        Assert.Equal(1, db.Bitacora.Count(b => b.Accion == AccionControlada.CancelarMovimiento && b.Detalle.EndsWith("Motivo: Se perdió la respuesta")));
+        Assert.Empty(v.Pantalla.Errores);
+    }
 }

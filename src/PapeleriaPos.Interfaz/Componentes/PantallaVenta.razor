@@ -591,7 +591,7 @@
                         }
                         else if (Actual.Venta.Nota is { } notaPuesta)
                         {
-                            <div class="vn-nota-puesta"><span>Nota: @notaPuesta</span><button class="vn-enlace" @onclick="AbrirNota">Cambiar <kbd>F4</kbd></button></div>
+                            <div class="vn-nota-puesta"><span>Nota: @notaPuesta</span><button class="vn-enlace" disabled="@_cobrando" @onclick="AbrirNota">Cambiar <kbd>F4</kbd></button></div>
                         }
                         @if (ExcesoDeCredito > 0 && ConCredito)
                         {
@@ -1584,6 +1584,9 @@
 
     private string NotaQuedan => $"{_nota.Trim().Length} de {NotaDelTicket.Maximo}";
 
+    /// <summary>Lo que dice F4 (o «Nota») con el cobro en camino: la nota ya va con él.</summary>
+    internal const string NotaConElCobroEnCamino = "El cobro ya va en camino con su nota: espera a que termine para escribir otra.";
+
     /// <summary>
     /// F4 con el cursor en el cobro (o «Nota» junto a «Pagó con»): la nota del ticket, uno o dos renglones que salen en el
     /// ticket y en sus reimpresiones. El cursor va a ella.
@@ -1593,6 +1596,12 @@
         if (Actual.Venta.Lineas.Count == 0)
         {
             Avisar("Primero agrega algo al ticket: la nota va con el cobro.", error: false);
+            return;
+        }
+        // Con el cobro en camino, la nota ya va con él: cambiarla ahora no llegaría al ticket (revisión del PR #133).
+        if (_cobrando)
+        {
+            _avisoDelCobro = NotaConElCobroEnCamino;
             return;
         }
         (_notaAbierta, _nota, _errorNota) = (true, Actual.Venta.Nota ?? "", null);
@@ -1662,7 +1671,7 @@
         }
         @if (!_notaAbierta)
         {
-            <button class="vn-forma" title="Una nota que sale en el ticket (F4)" @onclick="AbrirNota"><Ico Nombre="lista" />Nota</button>
+            <button class="vn-forma" title="Una nota que sale en el ticket (F4)" disabled="@_cobrando" @onclick="AbrirNota"><Ico Nombre="lista" />Nota</button>
         }
     </span>;
 
@@ -2662,6 +2671,10 @@
     {
         if (texto is not null)
             _captura.Texto = texto;
+        // La nota es del cobro de la venta: con una ventana abierta (el abono, que también es data-cobro), F4 es Inventario, como
+        // siempre. caja.js ya lo manda así; esto cubre una página que todavía no sabe de la ventana (revisión del PR #133).
+        if (tecla == "F4-cobro" && _ventana != Ventanas.Ninguna)
+            tecla = "F4";
         // Ctrl+M desde el verificador: el mostrador en modo verificador (entrega 13), en lugar de cerrarlo y vender.
         if (tecla == "Ctrl+M" && _ventana == Ventanas.Verificador && _pagina == Pagina.Venta)
         {
@@ -2855,12 +2868,14 @@
         // Una autorización a mitad del cobro, o un panel con campos: espera su Enter o Esc, y lo dice.
         if (PorQueNoSeDeja is { } espera)
         {
+            await RegresarLoEscritoAsync(tecla, desdeLaCaptura);
             AvisarEnElPanel(espera);
             return false;
         }
         // La tecla de algo que no puede solo lo avisa: el panel se queda.
         if (SinTecla(tecla))
         {
+            await RegresarLoEscritoAsync(tecla, desdeLaCaptura);
             AvisarEnElPanel("Eso no está entre lo que puedes hacer: «/» muestra todo lo que sí.");
             return false;
         }
@@ -2893,6 +2908,17 @@
         tecla is "Delete" or "ArrowUp" or "ArrowDown" or "ArrowLeft" or "ArrowRight" or "+" or "-" or "Tab" or "Shift+Tab" or "Escape-familia"
             or "F12-pago"
         || tecla.StartsWith("Alt+", StringComparison.Ordinal);
+
+    /// <summary>
+    /// caja.js vacía el cuadro de captura con las teclas que usan lo escrito (F11 con algo escrito, Ins): si el panel no se deja,
+    /// la tecla no hace nada y lo escrito regresa al cuadro (revisión del PR #133). Antes se perdía: con «Varios», «5» y F11 por
+    /// error, el Enter siguiente agregaba una pieza en lugar de cinco.
+    /// </summary>
+    private async Task RegresarLoEscritoAsync(string tecla, bool desdeLaCaptura)
+    {
+        if (desdeLaCaptura && tecla is "F11" or "Insert" && _captura.Texto.Length > 0)
+            await Js.EscribirCapturaAsync(_captura.Texto);
+    }
 
     private void AvisarEnElPanel(string aviso)
     {
@@ -3642,7 +3668,7 @@
     /// </summary>
     private Action? SiSeDejaSinImprimir(TicketDto ticket) =>
         ticket.VentaId is { } ventaId && !ticket.EnContingencia
-            ? () => _ = AvisarSinImprimirAsync(Cliente, ventaId, new SolicitudTicketSinImprimir(Sesion.UsuarioId, Caja.Id))
+            ? () => _ = AvisarSinImprimirAsync(Cliente, ventaId, new SolicitudTicketSinImprimir(Sesion.UsuarioId, Caja.Id, ticket.Impresiones))
             : null;
 
     private static async Task AvisarSinImprimirAsync(ClienteCaja cliente, Guid ventaId, SolicitudTicketSinImprimir solicitud)
@@ -3654,23 +3680,6 @@
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Sin conexión: se queda como impreso, y reimprimirlo pide motivo, como siempre.
-        }
-    }
-
-    /// <summary>
-    /// La caja principal anota la primera impresión de un ticket que no había salido («Imprimir ticket», Ctrl+I): a la
-    /// bitácora, y lo que se pida después ya es una reimpresión, con su motivo. No se espera: el papel ya va a la cola. Lo
-    /// cobrado sin conexión no ha subido: no se dice.
-    /// </summary>
-    private static async Task AnotarPrimeraImpresionAsync(ClienteCaja cliente, Guid ventaId, SolicitudPrimeraImpresion solicitud)
-    {
-        try
-        {
-            await cliente.PrimeraImpresionAsync(ventaId, solicitud);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Sin conexión, o ya salió por otro lado: no hay nada más que anotar.
         }
     }
 
@@ -3709,10 +3718,32 @@
         if (Ofrecido is not { } ticket)
             return;
         (_ofrecido, _ticketDelSiguiente) = (null, null);
-        (_cobrado, _trabajoCobrado) = (ticket, null);
-        // Es su primera impresión: que la caja principal lo sepa (2026-10-22), sin esperarla.
+        // Es su primera impresión: antes de imprimirlo, la caja principal la anota (revisión del PR #133; antes no se esperaba).
+        // Si mientras tanto ya salió (otra caja lo imprimió desde «Ventas del día»), es una reimpresión: pide su motivo y dice
+        // por qué, como allá. Sin la caja principal sale el que se ofrecía, sin anotarlo.
         if (ticket.VentaId is { } ventaId && !ticket.EnContingencia)
-            _ = AnotarPrimeraImpresionAsync(Cliente, ventaId, new SolicitudPrimeraImpresion(Sesion.UsuarioId, Caja.Id));
+        {
+            try
+            {
+                ticket = await Cliente.PrimeraImpresionAsync(ventaId, new SolicitudPrimeraImpresion(Sesion.UsuarioId, Caja.Id));
+            }
+            catch (ErrorCaja ex) when (ex.Codigo == SolicitudPrimeraImpresion.CodigoConMotivo)
+            {
+                await PedirReimpresion(ventaId);
+                AvisarEnElPanel(ex.Message);
+                return;
+            }
+            catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
+            {
+                // Sale el que se ofrecía; la caja principal no lo sabe.
+            }
+            catch (ErrorCaja ex)
+            {
+                Avisar(ex.Message);
+                return;
+            }
+        }
+        (_cobrado, _trabajoCobrado) = (ticket, null);
         if (Cola.MuestraVistaPrevia)
         {
             await VerCobradoEnPantallaAsync();
@@ -4596,26 +4627,24 @@
     private ProductoVentaDto? DelCodigo(string? codigo) => codigo is null ? null : Cliente.Foto?.PorCodigo(codigo);
 
     /// <summary>
-    /// Ins (la barra de teclas, «/»): el panel de «Varios». Lo que había en el cuadro, que caja.js ya vació, cuenta: una cantidad
-    /// («5» e Ins, como «20» y Alt+1) pasa directo al código; otra cosa (un código escrito, o un código corto que existe, como en
-    /// el mostrador) es el código, y falta la cantidad. El cursor se queda en el cuadro.
+    /// Ins (la barra de teclas, «/»): el panel de «Varios». Lo que había en el cuadro, que caja.js ya vació, cuenta como su primer
+    /// paso (<see cref="PasoDeVariosAsync"/>): una cantidad («5» e Ins, como «20» y Alt+1) pasa directo al código; otra cosa (un
+    /// código escrito, o un código corto que existe, como en el mostrador) es el código, y falta la cantidad; «3*código», los
+    /// dos. El cursor se queda en el cuadro.
     /// </summary>
     private async Task AbrirVariosAsync(string? escrito)
     {
         var varios = new VariosEnCurso();
         var texto = escrito?.Trim() ?? "";
-        if (texto.Length > 0)
-        {
-            if (MostradorEnPantalla.Cantidad(texto) is { } cantidad && !await EsCodigoAsync(texto))
-                varios.Cantidad = cantidad;
-            else
-                varios.Codigo = texto;
-        }
         _captura.Texto = "";
-        // Antes de esperar a caja.js: un escaneo que llegue mientras tanto ya encuentra el panel (Escaneado).
+        // El panel primero, antes de esperar nada (revisión del PR #133): sin copia en la caja (el navegador), saber si «5» es un
+        // código se le pregunta a la caja principal, y un escaneo que llegara mientras tanto entraba como una pieza. Ya con el
+        // panel, es el código (Escaneado), también mientras caja.js se entera.
         _varios = varios;
         await Abrir(Ventanas.Varios);
         _enfocar = "#codigo";
+        if (texto.Length > 0 && ReferenceEquals(_varios, varios))
+            await PasoDeVariosAsync(varios, texto, hora: null, rafaga: false);
     }
 
     /// <summary>
@@ -4657,6 +4686,9 @@
                     varios.Aviso = NoEsCantidad(texto[..asterisco]);
                     return;
                 }
+                // El código que esperaba su cantidad entra con una pieza, como cuando llega otro código (revisión del PR #133).
+                if (varios.Codigo is { } pendiente)
+                    await AgregarEnSuTurnoAsync(1, pendiente, hora);
                 (varios.Cantidad, varios.Codigo) = (junta, texto[(asterisco + 1)..].Trim());
             }
             else
@@ -4715,16 +4747,33 @@
             varios.Aviso = $"«{producto.Descripcion}» se vende por pieza: escribe cuántos, sin fracciones.";
             return;
         }
-        await QuitarVentanaAsync();
-        _enfocar = "#codigo";
-        await AgregarEnSuTurnoAsync(cantidad, codigo, hora);
+        // Su lugar en la cola de los escaneos se toma ya, antes de cerrar el panel (revisión del PR #133): F6 o F12 que lleguen
+        // mientras se cierra esperan a que entre, y no cae en el ticket del siguiente cliente. Entra ya con el panel cerrado.
+        var cerrado = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var agregado = AgregarEnSuTurnoAsync(cantidad, codigo, hora, cerrado.Task);
+        try
+        {
+            await QuitarVentanaAsync();
+            _enfocar = "#codigo";
+        }
+        finally
+        {
+            cerrado.TrySetResult();
+        }
+        await agregado;
     }
 
     /// <summary>«cantidad*código» por la cola de los escaneos, como si se hubiera escrito así en el cuadro.</summary>
-    private Task AgregarEnSuTurnoAsync(decimal cantidad, string codigo, double? hora)
+    /// <param name="despuesDe">Lo que espera ya en su lugar de la cola antes de agregarlo (que se cierre el panel).</param>
+    private Task AgregarEnSuTurnoAsync(decimal cantidad, string codigo, double? hora, Task? despuesDe = null)
     {
         var escrito = $"{cantidad.ToString("0.###", CultureInfo.InvariantCulture)}*{codigo}";
-        return _captura.EnTurnoAsync(() => MedidoAsync(() => ProcesarCodigoAsync(escrito), hora));
+        return _captura.EnTurnoAsync(async () =>
+        {
+            if (despuesDe is not null)
+                await despuesDe;
+            await MedidoAsync(() => ProcesarCodigoAsync(escrito), hora);
+        });
     }
 
     /// <summary>

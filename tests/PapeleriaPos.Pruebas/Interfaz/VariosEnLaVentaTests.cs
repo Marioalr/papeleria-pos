@@ -1,4 +1,9 @@
+using System.Net.Http.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.JSInterop;
+using PapeleriaPos.Impresion;
 using PapeleriaPos.Interfaz;
+using PapeleriaPos.Interfaz.Componentes;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Pruebas.Servicio;
@@ -230,6 +235,168 @@ public sealed class VariosEnLaVentaTests(ServicioDePrueba servicio) : IClassFixt
         var acciones = PantallaSinNavegador.Limpio(await v.Pantalla.TextoAsync());
         Assert.Contains("Varios: cantidad y código Ins", acciones);
         Assert.Contains("Artículo común (sin inventario) Ctrl+P", acciones);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    // ── Revisión del PR #133 ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// «5» escrito y F11 por error: caja.js vacía el cuadro con F11 (usa lo escrito), pero el panel no se deja, así que lo escrito
+    /// regresa al cuadro y el Enter siguiente sigue siendo «5». Antes se perdía y entraba una pieza.
+    /// </summary>
+    [Fact]
+    public async Task Cinco_y_F11_por_error_no_se_lleva_la_cantidad()
+    {
+        var pagina = new PaginaQueContesta();
+        await using var v = await AbrirAsync(pagina);
+        var a = v.DeLaCopia()[0];
+
+        await TeclaAsync(v, "Insert");
+        await TeclaAsync(v, "F11", "5");
+
+        Assert.Contains("Primero termina aquí", await v.Pantalla.TextoAsync());
+        Assert.Equal("5", pagina.Llamadas.Last(l => l.Funcion == "escribirCaptura").Argumentos![0]);
+        await EnterAsync(v, "5");
+        await EnterAsync(v, a.Codigo!, rafaga: true);
+        Assert.StartsWith($"5 {a.Descripcion}", Assert.Single(await VentaConCopia.RenglonesAsync(v.Pantalla)));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>
+    /// Se escaneó uno (espera su cantidad) y luego se escribe «3*otro»: el primero entra con una pieza, como cuando llega otro
+    /// código, y el otro con tres. Antes el primero se perdía.
+    /// </summary>
+    [Fact]
+    public async Task Con_un_codigo_esperando_su_cantidad_tres_por_otro_mete_el_primero_con_una_pieza()
+    {
+        await using var v = await AbrirAsync();
+        var (a, b) = v.DosDeLaCopia();
+
+        await TeclaAsync(v, "Insert");
+        await EnterAsync(v, a.Codigo!, rafaga: true);
+        await EnterAsync(v, $"3*{b.Codigo}");
+
+        var renglones = await VentaConCopia.RenglonesAsync(v.Pantalla);
+        Assert.Equal(2, renglones.Count);
+        Assert.StartsWith($"1 {a.Descripcion}", renglones[0]);
+        Assert.StartsWith($"3 {b.Descripcion}", renglones[1]);
+        Assert.False(await PanelAbiertoAsync(v));
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>
+    /// La caja del navegador, sin copia: «5» e Ins le pregunta a la caja principal si «5» es un código. El panel se abre antes de
+    /// esperar esa respuesta, así que el escaneo que llega mientras tanto es su código y entran cinco; antes entraba como una pieza.
+    /// </summary>
+    [Fact]
+    public async Task Sin_copia_el_panel_se_abre_antes_de_preguntar_y_el_escaneo_de_mientras_es_su_codigo()
+    {
+        var red = new RedDePrueba(servicio.Fabrica.Server.CreateHandler());
+        var http = new HttpClient(red);
+        var caja = (await servicio.Fabrica.CreateClient().GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.First();
+        var conexion = new ConexionCaja { Servicio = new Uri("http://localhost/"), CajaId = caja.Id };
+        var cliente = new ClienteCaja(http, conexion);
+        var cajero = await cliente.EntrarAsync("cajero", "1111");
+        var turno = await cliente.TurnoAsync(caja.Id) ?? await cliente.AbrirTurnoAsync(caja.Id, cajero.UsuarioId, 50000);
+        await using var servicios = new ServiceCollection()
+            .AddSingleton(conexion)
+            .AddSingleton(cliente)
+            .AddSingleton(new RendimientoCaja())
+            .AddSingleton<IImpresora>(new SinImpresora())
+            .AddSingleton<IJSRuntime>(new PaginaQueContesta())
+            .AddScoped<ModuloCaja>()
+            .BuildServiceProvider();
+        await using var pantalla = new PantallaSinNavegador(servicios);
+        var venta = await pantalla.AbrirAsync<PantallaVenta>(new()
+        {
+            [nameof(PantallaVenta.Caja)] = caja,
+            [nameof(PantallaVenta.Sesion)] = cajero,
+            [nameof(PantallaVenta.Turno)] = turno,
+        });
+        Assert.Null(cliente.Foto);
+        var codigo = (await servicio.Fabrica.CreateClient().GetFromJsonAsync<PaqueteContingenciaDto>($"api/cajas/{caja.Id}/paquete"))!.Productos
+            .First(p => p.Unidad == UnidadBase.Pieza && p.Codigo is { Length: > 6 } && p.Presentacion.EsBase && p.Precios.Any(x => x.PresentacionId == null));
+
+        red.Detenida = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ins = pantalla.Dispatcher.InvokeAsync(() => venta.Tecla("Insert", "5"));
+        await VentaConCopia.EsperarAsync(() => red.Pedidas.Any(r => r.StartsWith("/api/productos/codigo/5?", StringComparison.Ordinal)), "la pregunta por «5»");
+        Assert.Contains("Varios: cantidad y código", await pantalla.TextoAsync());
+        await pantalla.Dispatcher.InvokeAsync(() => venta.Escaneado(codigo.Codigo!, 1234.5));
+        red.Detenida.SetResult();
+        await ins;
+
+        // Sin copia, el renglón llega de la caja principal: se espera a que esté (con su límite).
+        var limite = DateTime.UtcNow.AddSeconds(20);
+        List<string> renglones;
+        while ((renglones = await VentaConCopia.RenglonesAsync(pantalla)) is not [var unico] || !unico.StartsWith("5 ", StringComparison.Ordinal))
+        {
+            if (DateTime.UtcNow > limite)
+                throw new Xunit.Sdk.XunitException($"No llegó el renglón: {string.Join(" | ", renglones)}");
+            await Task.Delay(20);
+        }
+        Assert.StartsWith($"5 {codigo.Descripcion}", Assert.Single(renglones));
+        Assert.Empty(pantalla.Errores);
+    }
+
+    /// <summary>
+    /// La página que se detiene al avisarle que la ventana se cierra (como un caja.js que tarda en contestar): ahí, entre el Enter
+    /// del código y su renglón, llega F6.
+    /// </summary>
+    private sealed class PaginaQueSeDetiene : IJSRuntime, IJSObjectReference
+    {
+        private readonly PaginaQueContesta _pagina = new();
+
+        /// <summary>Mientras está puesta, avisar que la ventana se cerró espera a que se suelte.</summary>
+        public TaskCompletionSource? Detener { get; set; }
+
+        /// <summary>Se pone cuando ya está esperando.</summary>
+        public TaskCompletionSource Detenida { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args) => InvokeAsync<TValue>(identifier, CancellationToken.None, args);
+
+        public async ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken cancellationToken, object?[]? args)
+        {
+            if (identifier == "import")
+                return (TValue)(object)this;
+            if (identifier == "ventanaAbierta" && args is [false, ..] && Detener is { } detener)
+            {
+                Detenida.TrySetResult();
+                await detener.Task;
+            }
+            return await _pagina.InvokeAsync<TValue>(identifier, cancellationToken, args);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// F6 mientras «Varios» se cierra (su renglón todavía no entra): espera a que entre, y el renglón se queda en el ticket que se
+    /// pone en espera, no en el del siguiente cliente (revisión del PR #133).
+    /// </summary>
+    [Fact]
+    public async Task F6_mientras_se_cierra_el_panel_espera_a_que_entre_el_renglon()
+    {
+        var pagina = new PaginaQueSeDetiene();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, fondoAparte: true, pagina: pagina);
+        var (a, b) = v.DosDeLaCopia();
+        await v.EscanearAsync(b.Codigo!);
+
+        await TeclaAsync(v, "Insert");
+        await EnterAsync(v, "3");
+        pagina.Detener = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var codigo = EnterAsync(v, a.Codigo!, rafaga: true);
+        await pagina.Detenida.Task.WaitAsync(TimeSpan.FromSeconds(20));
+        var enEspera = TeclaAsync(v, "F6", null);
+        pagina.Detener.SetResult();
+        await codigo;
+        await enEspera;
+
+        // El ticket nuevo quedó vacío: los dos renglones se fueron con el de la espera.
+        Assert.Empty(await VentaConCopia.RenglonesAsync(v.Pantalla));
+        await TeclaAsync(v, "F5", null);
+        var renglones = await VentaConCopia.RenglonesAsync(v.Pantalla);
+        Assert.Equal(2, renglones.Count);
+        Assert.Contains(renglones, r => r.StartsWith($"3 {a.Descripcion}", StringComparison.Ordinal));
         Assert.Empty(v.Pantalla.Errores);
     }
 }

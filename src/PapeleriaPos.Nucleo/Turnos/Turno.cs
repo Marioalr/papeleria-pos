@@ -118,16 +118,23 @@ public class MovimientoCaja
     public Guid? CanceladoPorId { get; private set; }
     public string? MotivoCancelacion { get; private set; }
 
+    /// <summary>
+    /// El Id de la solicitud que la canceló (la da la caja): si la misma llega otra vez porque se perdió la respuesta, ya está
+    /// hecha y no es un error (revisión del PR #133).
+    /// </summary>
+    public Guid? CancelacionId { get; private set; }
+
     public bool Cancelado => CanceladoUtc is not null;
 
     /// <summary>La cancela, con motivo. El permiso, el turno y el piloto los revisa quien la guarda.</summary>
-    public void Cancelar(Guid usuarioId, string motivo, DateTime ahoraUtc)
+    /// <param name="cancelacionId">El de la solicitud de la caja, para reconocerla si llega otra vez.</param>
+    public void Cancelar(Guid usuarioId, string motivo, DateTime ahoraUtc, Guid? cancelacionId = null)
     {
         if (Cancelado)
             throw new InvalidOperationException($"Esa {(Tipo == TipoMovimientoCaja.Entrada ? "entrada" : "salida")} ya se canceló.");
         if (string.IsNullOrWhiteSpace(motivo))
             throw new ArgumentException("La cancelación lleva motivo.");
-        (CanceladoUtc, CanceladoPorId, MotivoCancelacion) = (ahoraUtc, usuarioId, motivo.Trim());
+        (CanceladoUtc, CanceladoPorId, MotivoCancelacion, CancelacionId) = (ahoraUtc, usuarioId, motivo.Trim(), cancelacionId);
     }
 }
 

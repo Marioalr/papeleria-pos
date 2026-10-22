@@ -197,12 +197,17 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 /// reimprimir. Lo pone la caja; el servicio nunca.
 /// </param>
 /// <param name="Nota">La nota que se le puso al cobrar (F4, 2026-10-22): sale al final del ticket, también al reimprimirlo.</param>
+/// <param name="Impresiones">
+/// Las veces que la caja principal ya registró que salió (su primera impresión y las reimpresiones) cuando lo armó; el del cobro,
+/// ninguna. Si este no sale y se deja con «No imprimirlo», la caja la manda de vuelta: solo cuenta si no salió otro después
+/// (revisión del PR #133).
+/// </param>
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
     long TotalCentavos, long IvaCentavos, IReadOnlyList<CobroTicketDto> Cobros, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie,
     LogoTicketDto? Logo = null, Guid? VentaId = null, long RedondeoCentavos = 0, string? Cliente = null, CreditoTicketDto? Credito = null,
     int? FolioEleventa = null, bool YaCobrada = false, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir, bool EnContingencia = false,
-    string? Nota = null)
+    string? Nota = null, int Impresiones = 0)
 {
     /// <summary>
     /// Lo fiado se imprime aunque «Al cobrar» diga otra cosa: el cliente se lleva «SU CUENTA», lo que quedó a deber y hasta
@@ -533,6 +538,15 @@ public sealed record MovimientoDelTurnoDto(
 }
 
 /// <summary>
+/// Cancelar una entrada o salida equivocada (F7/F8, 2026-10-22), con su motivo y, si su permiso la pide, la autorización.
+/// </summary>
+/// <param name="Id">
+/// El de esta cancelación, que da la caja (revisión del PR #133): si se manda otra vez porque se perdió la respuesta (la caja 2
+/// va por Wi-Fi), es la misma, y la caja principal contesta como la primera vez sin cancelarla dos veces.
+/// </param>
+public sealed record SolicitudCancelarMovimiento(Guid Id, Guid UsuarioId, Guid CajaId, string Motivo, Guid? AutorizacionId = null);
+
+/// <summary>
 /// La primera impresión del ticket de una venta que no salió al cobrar (2026-10-22): no es una reimpresión y no pide motivo.
 /// Si ya salió (o se canceló o se devolvió algo de ella), el servicio contesta con <see cref="CodigoConMotivo"/>: se
 /// reimprime, con su motivo.
@@ -546,7 +560,11 @@ public sealed record SolicitudPrimeraImpresion(Guid UsuarioId, Guid CajaId)
 /// El ticket de una venta no salió y se dejó así («No imprimirlo» en la cola de la impresora, al cobrar o en su primera
 /// impresión): sigue sin salir, y su primera impresión no pedirá motivo.
 /// </summary>
-public sealed record SolicitudTicketSinImprimir(Guid UsuarioId, Guid CajaId);
+/// <param name="ImpresionesAntes">
+/// Las que ya llevaba registradas cuando se armó ese ticket (<see cref="TicketDto.Impresiones"/>): si la caja principal tiene
+/// más, salió otro después (se reimprimió, u otra caja lo imprimió) y la marca no se pone (revisión del PR #133).
+/// </param>
+public sealed record SolicitudTicketSinImprimir(Guid UsuarioId, Guid CajaId, int ImpresionesAntes = 0);
 
 /// <summary>De antes de la entrega 1: la regla de un rol, como la copia de la caja se la lleva a una caja que no se ha actualizado.</summary>
 public sealed record ReglaDto(AccionControlada Accion, Rol Rol, NivelPermiso Nivel, long? UmbralCentavos, bool PideMotivo);

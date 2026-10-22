@@ -2973,6 +2973,9 @@ namespace PapeleriaPos.Datos.Migraciones
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("CancelacionId")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("CanceladoPorId")
                         .HasColumnType("TEXT");
 
@@ -3667,6 +3670,9 @@ namespace PapeleriaPos.Datos.Migraciones
 
                     b.Property<Guid>("SucursalId")
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("TicketImpresiones")
+                        .HasColumnType("INTEGER");
 
                     b.Property<bool>("TicketSinImprimir")
                         .HasColumnType("INTEGER");

@@ -191,11 +191,19 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     /// <summary>
     /// Cancela una entrada o salida equivocada (2026-10-22), con motivo y, si su permiso la pide, la autorización. Regresa cómo
-    /// quedaron las del turno; la cuenta de esta caja (para el corte sin conexión) deja de contarla.
+    /// quedaron las del turno; la cuenta de esta caja (para el corte sin conexión) deja de contarla. Si se pierde la respuesta,
+    /// no se sabe si quedó: lo dice (<see cref="CancelacionSinConfirmar"/>) y, al mandarla otra vez con el mismo Id, la caja
+    /// principal contesta como si fuera la primera (revisión del PR #133).
     /// </summary>
-    public Task<MovimientosDelTurnoDto> CancelarMovimientoAsync(Guid turnoId, MovimientoDelTurnoDto movimiento, SolicitudCancelacion solicitud) =>
+    public Task<MovimientosDelTurnoDto> CancelarMovimientoAsync(Guid turnoId, MovimientoDelTurnoDto movimiento, SolicitudCancelarMovimiento solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<MovimientosDelTurnoDto>($"api/turnos/{turnoId}/movimientos/{movimiento.Id}/cancelacion", solicitud), null,
-            (l, _) => l.MovimientoCanceladoEnLineaAsync(turnoId, movimiento));
+            (l, _) => l.MovimientoCanceladoEnLineaAsync(turnoId, movimiento, solicitud.Id),
+            siSePierde: _ => new ErrorCaja(CancelacionSinConfirmar, "cancelacion-sin-confirmar"));
+
+    /// <summary>Lo que dice la caja si se perdió la respuesta de una cancelación: no se sabe si quedó.</summary>
+    public const string CancelacionSinConfirmar =
+        "Se perdió la conexión al cancelar y no se sabe si quedó: no muevas el efectivo todavía. Cuando vuelva la conexión, oprime Enter otra vez "
+        + "(si ya quedó, no se cancela dos veces).";
 
     public Task<TicketDto> ReimprimirAsync(Guid ventaId, SolicitudReimpresion solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<TicketDto>($"api/ventas/{ventaId}/reimpresion", solicitud));
@@ -537,9 +545,12 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public Task<RespaldosDto> RespaldosAsync(Guid cajaId, Guid usuarioId) =>
         SoloConLaPrincipalAsync<RespaldosDto>(RespaldosSinConexion, $"api/cajas/{cajaId}/configuracion/respaldos?usuarioId={usuarioId}");
 
-    /// <summary>«Respaldar ahora»: una copia de la base en la caja principal, en este momento. Regresa dónde quedó y cuánto mide.</summary>
-    public Task<RespaldoDto> RespaldarAhoraAsync(Guid cajaId, SolicitudRespaldo solicitud) =>
-        ConRespaldoAsync(() => _http.PostAsync<RespaldoDto>($"api/cajas/{cajaId}/configuracion/respaldos", solicitud));
+    /// <summary>
+    /// «Respaldar ahora»: la caja principal empieza la copia de la base y contesta enseguida (revisión del PR #133); cómo va lo
+    /// dice <see cref="RespaldosAsync"/> (<see cref="RespaldosDto.Ahora"/>). Si ya había una en camino, no empieza otra.
+    /// </summary>
+    public Task<RespaldosDto> RespaldarAhoraAsync(Guid cajaId, SolicitudRespaldo solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<RespaldosDto>($"api/cajas/{cajaId}/configuracion/respaldos", solicitud));
 
     public Task<VentaParaDevolverDto?> VentaPorFolioAsync(Guid sucursalId, string folio) =>
         ConRespaldoAsync(() => _http.GetAsync<VentaParaDevolverDto>($"api/sucursales/{sucursalId}/ventas/folio/{Uri.EscapeDataString(folio)}",

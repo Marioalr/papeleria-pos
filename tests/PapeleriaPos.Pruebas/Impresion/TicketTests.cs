@@ -451,6 +451,43 @@ public class TicketTests
         Assert.False(Contiene(sinCajon, cajon));
     }
 
+    /// <summary>Cuántas veces está una secuencia de bytes.</summary>
+    private static int Veces(byte[] datos, byte[] buscado)
+    {
+        var veces = 0;
+        for (var i = 0; i + buscado.Length <= datos.Length; i++)
+            if (datos.AsSpan(i, buscado.Length).SequenceEqual(buscado))
+                veces++;
+        return veces;
+    }
+
+    /// <summary>
+    /// Un texto libre con caracteres de control (revisión del PR #133) no le llega a la impresora como comandos: la nota ya no los
+    /// guarda, y aunque un texto los traiga (una nota de antes, un motivo, un nombre), el ticket los cambia por espacios, también
+    /// lo que la página de códigos dibujaría en esos bytes (←). Solo quedan el reinicio y el corte del ticket, una vez, y el cajón
+    /// solo si se pide.
+    /// </summary>
+    [Fact]
+    public void Un_texto_libre_no_le_manda_comandos_a_la_impresora()
+    {
+        Assert.Equal("Entregar p hoy", NotaDelTicket.Normalizar("Entregar\u001Bp\u0000\u0019\u0019 hoy"));
+        Assert.Equal("Hola VB adios", NotaDelTicket.Normalizar("Hola\u001DVB\u0000 adios"));
+        Assert.Null(NotaDelTicket.Normalizar("\u001B\u001D\u0000"));
+
+        byte[] cajon = [0x1B, (byte)'p'];
+        byte[] reinicio = [0x1B, (byte)'@'];
+        byte[] corte = [0x1D, (byte)'V'];
+        foreach (var texto in new[] { "Entregar\u001Bp\u0000\u0019\u0019 hoy", "Hola\u001DVB\u0000 adios", "Hola\u001B@ adios", "Uno ←p dos\u007F" })
+        {
+            var bytes = TicketEscPos.Generar(Ticket() with { Nota = texto, Cliente = texto }, abrirCajon: false);
+            Assert.False(Contiene(bytes, cajon), texto);
+            Assert.Equal(1, Veces(bytes, reinicio));
+            Assert.Equal(1, Veces(bytes, corte));
+            Assert.DoesNotContain(TicketEscPos.Imprimible(texto), b => b < 0x20 || b == 0x7F);
+        }
+        Assert.True(Contiene(TicketEscPos.Generar(Ticket() with { Nota = "Hola" }, abrirCajon: true), [0x1B, (byte)'p', 0, 25, 250]));
+    }
+
     [Fact]
     public void Escpos_usa_la_pagina_850_para_la_ñ_y_el_ticket_no_trae_qr()
     {

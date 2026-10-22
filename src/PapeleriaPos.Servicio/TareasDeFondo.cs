@@ -101,24 +101,78 @@ public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int
         }
     }
 
+    // ── «Respaldar ahora» (Configuración › Respaldos, 2026-10-22) ──
+
+    private readonly Lock _candadoAhora = new();
+    private RespaldoAhoraDto? _ahora;
+
+    /// <summary>El último «Respaldar ahora» que se pidió: haciéndose, hecho o fallido; vacío si no se ha pedido.</summary>
+    public RespaldoAhoraDto? EstadoAhora
+    {
+        get
+        {
+            lock (_candadoAhora)
+                return _ahora;
+        }
+    }
+
+    /// <summary>Para las pruebas: lo que espera la copia de «Respaldar ahora» antes de empezar.</summary>
+    internal Func<Task>? AntesDeCopiarAhora { get; set; }
+
+    /// <summary>Para las pruebas: la limpieza de los de hace más días (<see cref="Respaldos.Limpiar"/>).</summary>
+    internal Func<string, DateOnly, int, int> Limpiar { get; init; } = Respaldos.Limpiar;
+
     /// <summary>
-    /// «Respaldar ahora» (Configuración › Respaldos, 2026-10-22): una copia en este momento, igual que la diaria y la del corte
-    /// (<c>pos-AAAA-MM-DD-ahora-HHmm.db</c>), con su limpieza de los días de historia. Si no se pudo, o ahora no se hacen
-    /// (<see cref="NoSeHacenPorque"/>), lo dice: quien la pidió espera la respuesta.
+    /// «Respaldar ahora» (Configuración › Respaldos): una copia en este momento, igual que la diaria y la del corte
+    /// (<c>pos-AAAA-MM-DD-ahora-HHmm.db</c>), con su limpieza de los días de historia. Se hace en segundo plano y esto regresa
+    /// enseguida, ya empezada (revisión del PR #133): con una base grande, esperarla pasaba de los 15 s que espera la caja, que
+    /// lo daba por fallido aunque la copia saliera, y al volver a pedirlo hacía otra completa. Si ya hay uno en camino, no
+    /// empieza otro: regresa ese. Quien lo pidió ve cómo va con <see cref="EstadoAhora"/>.
     /// </summary>
-    public RespaldoDto Ahora()
+    /// <param name="alTerminar">Ya terminado, bien o mal (para la bitácora), antes de que <see cref="EstadoAhora"/> lo diga.</param>
+    public RespaldoAhoraDto IniciarAhora(Func<RespaldoAhoraDto, Task>? alTerminar = null)
     {
         if (NoSeHacenPorque is { } porque)
             throw new InvalidOperationException($"No se hizo el respaldo. {porque}");
+        RespaldoAhoraDto empezado;
+        lock (_candadoAhora)
+        {
+            if (_ahora is { Haciendo: true } enCamino)
+                return enCamino;
+            _ahora = empezado = new RespaldoAhoraDto(true, HoraMexico.ALocal(DateTime.UtcNow));
+        }
+        _ = Task.Run(() => HacerAhoraAsync(empezado, alTerminar));
+        return empezado;
+    }
+
+    private async Task HacerAhoraAsync(RespaldoAhoraDto empezado, Func<RespaldoAhoraDto, Task>? alTerminar)
+    {
+        RespaldoAhoraDto terminado;
         try
         {
-            return Copiar(hora => $"ahora-{hora:HHmm}");
+            if (AntesDeCopiarAhora is { } antes)
+                await antes();
+            terminado = empezado with { Haciendo = false, Hecho = Copiar(hora => $"ahora-{hora:HHmm}") };
         }
-        catch (Exception ex) when (ex is IOException or SqliteException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is not OutOfMemoryException)
         {
+            // Cualquier error termina el que estaba en camino: si no, se quedaría «haciéndose» y no se podría pedir otro.
             log.LogError(ex, "No se pudo hacer el respaldo en {Carpeta}.", carpeta);
-            throw new InvalidOperationException($"No se pudo hacer el respaldo en {carpeta}: {ex.Message}", ex);
+            terminado = empezado with { Haciendo = false, Fallo = $"No se pudo hacer el respaldo en {carpeta}: {ex.Message}" };
         }
+        if (alTerminar is not null)
+        {
+            try
+            {
+                await alTerminar(terminado);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                log.LogWarning(ex, "El respaldo terminó, pero no se pudo anotar en la bitácora.");
+            }
+        }
+        lock (_candadoAhora)
+            _ahora = terminado;
     }
 
     /// <summary>El más reciente de la carpeta (el del día, el de un corte Z o el de «Respaldar ahora»); vacío si no hay.</summary>
@@ -138,16 +192,29 @@ public sealed class ServicioRespaldos(string cadenaConexion, string carpeta, int
         }
     }
 
-    /// <summary>Uno a la vez: la copia (con su etiqueta, según la hora) y la limpieza de los de hace más días.</summary>
+    /// <summary>
+    /// Uno a la vez: la copia (con su etiqueta, según la hora) y la limpieza de los de hace más días. Si la copia salió pero la
+    /// limpieza no (un archivo ocupado), el respaldo está hecho: lo que no se borró va aparte (revisión del PR #133), en el
+    /// registro y en <see cref="RespaldoDto.AvisoLimpieza"/>.
+    /// </summary>
     private RespaldoDto Copiar(Func<DateTime, string?> etiqueta)
     {
         lock (_candado)
         {
             var ahora = HoraMexico.ALocal(DateTime.UtcNow);
             var ruta = Respaldos.Hacer(cadenaConexion, carpeta, ahora, etiqueta(ahora));
-            var borradas = Respaldos.Limpiar(carpeta, DateOnly.FromDateTime(ahora), dias);
-            log.LogInformation("Respaldo en {Ruta}; se borraron {Borradas} de hace más de {Dias} días.", ruta, borradas, dias);
-            return new RespaldoDto(ruta, new FileInfo(ruta).Length, ahora);
+            var tamano = new FileInfo(ruta).Length;
+            try
+            {
+                var borradas = Limpiar(carpeta, DateOnly.FromDateTime(ahora), dias);
+                log.LogInformation("Respaldo en {Ruta}; se borraron {Borradas} de hace más de {Dias} días.", ruta, borradas, dias);
+                return new RespaldoDto(ruta, tamano, ahora);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                log.LogWarning(ex, "Respaldo en {Ruta}, pero no se pudieron borrar los de hace más de {Dias} días.", ruta, dias);
+                return new RespaldoDto(ruta, tamano, ahora, $"No se pudieron borrar los respaldos de hace más de {dias} días: {ex.Message}");
+            }
         }
     }
 

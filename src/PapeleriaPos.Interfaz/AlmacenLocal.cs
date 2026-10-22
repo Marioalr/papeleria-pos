@@ -450,6 +450,23 @@ public sealed class AlmacenLocal
             lector.GetInt64(11), lector.GetInt64(12), lector.GetInt64(13), lector.GetInt64(14));
     }
 
+    /// <summary>
+    /// Las entradas y salidas canceladas en línea después de la base del turno (2026-10-22): cada una dejó en el diario su renglón
+    /// que resta (Contingencia.MovimientoCanceladoEnLineaAsync), el único que resta entradas o salidas.
+    /// </summary>
+    public (int Entradas, int Salidas) Canceladas(Guid turnoId)
+    {
+        AlDia();
+        using var conexion = Abrir();
+        using var comando = Comando(conexion, null, """
+            SELECT COALESCE(SUM(CASE WHEN Entradas < 0 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN Salidas < 0 THEN 1 ELSE 0 END), 0)
+            FROM Diario WHERE TurnoId = $turno
+            """, ("$turno", turnoId.ToString()));
+        using var lector = comando.ExecuteReader();
+        lector.Read();
+        return (lector.GetInt32(0), lector.GetInt32(1));
+    }
+
     /// <summary>Lo propio sin confirmar de un cliente (o de todos), en el orden en que pasó.</summary>
     /// <summary>Si la caja tiene algo del cliente (fiado o abonado) en la bandeja que todavía no sube.</summary>
     public bool CreditoSinSubir(Guid clienteId)

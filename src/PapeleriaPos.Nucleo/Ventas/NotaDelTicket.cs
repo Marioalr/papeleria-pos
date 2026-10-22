@@ -29,10 +29,17 @@ public static class NotaDelTicket
     /// </summary>
     public static string? Recortada(string? nota) => Limpia(nota) is { } limpia ? limpia.Length > Maximo ? limpia[..Maximo].TrimEnd() : limpia : null;
 
+    /// <summary>
+    /// Sin caracteres de control (revisión del PR #133: llegarían a la impresora como comandos, como abrir el cajón) ni espacios
+    /// de más: cada uno cuenta como un espacio.
+    /// </summary>
     private static string? Limpia(string? nota)
     {
-        if (string.IsNullOrWhiteSpace(nota))
+        if (nota is null)
             return null;
-        return string.Join(' ', nota.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        var sinControles = string.Concat(nota.Select(c => char.IsControl(c) ? ' ' : c));
+        if (string.IsNullOrWhiteSpace(sinControles))
+            return null;
+        return string.Join(' ', sinControles.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     }
 }

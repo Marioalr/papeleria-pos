@@ -53,7 +53,8 @@ public sealed class CancelarMovimientoApiTests(ServicioDePrueba servicio) : ICla
         (await c.Http.GetFromJsonAsync<MovimientosDelTurnoDto>($"api/turnos/{c.Turno.Id}/movimientos"))!;
 
     private static Task<HttpResponseMessage> CancelarAsync(Caja c, MovimientoDelTurnoDto m, SesionDto quien, string motivo) =>
-        c.Http.PostAsJsonAsync($"api/turnos/{c.Turno.Id}/movimientos/{m.Id}/cancelacion", new SolicitudCancelacion(quien.UsuarioId, c.Datos.Id, motivo));
+        c.Http.PostAsJsonAsync($"api/turnos/{c.Turno.Id}/movimientos/{m.Id}/cancelacion",
+            new SolicitudCancelarMovimiento(Guid.NewGuid(), quien.UsuarioId, c.Datos.Id, motivo));
 
     [Fact]
     public async Task Se_cancela_con_motivo_y_su_permiso_y_el_corte_dice_que_se_cancelo()
@@ -77,7 +78,7 @@ public sealed class CancelarMovimientoApiTests(ServicioDePrueba servicio) : ICla
             (await RechazoAsync(await CancelarAsync(c, entrada, c.Encargado, "Otra vez"), HttpStatusCode.BadRequest)).Mensaje);
         // De otro turno: no es de este.
         var ajena = await c.Http.PostAsJsonAsync($"api/turnos/{Guid.NewGuid()}/movimientos/{salida.Id}/cancelacion",
-            new SolicitudCancelacion(c.Encargado.UsuarioId, c.Datos.Id, "x"));
+            new SolicitudCancelarMovimiento(Guid.NewGuid(), c.Encargado.UsuarioId, c.Datos.Id, "x"));
         Assert.NotEqual(HttpStatusCode.OK, ajena.StatusCode);
 
         // El corte Z: la entrada cancelada no cuenta, y dice cuántas se cancelaron (la pantalla y el papel).

@@ -54,7 +54,7 @@ public sealed class CancelarMovimientoTests : IAsyncLifetime
         return (turno, entrada, salida);
     }
 
-    private SolicitudCancelacion Del(Usuario quien, string motivo, Caja? caja = null) => new(quien.Id, (caja ?? _caja).Id, motivo);
+    private SolicitudCancelarMovimiento Del(Usuario quien, string motivo, Caja? caja = null) => new(Guid.NewGuid(), quien.Id, (caja ?? _caja).Id, motivo);
 
     [Fact]
     public async Task Se_cancela_con_su_motivo_queda_en_la_bitacora_y_el_corte_ya_no_la_cuenta()
@@ -103,6 +103,30 @@ public sealed class CancelarMovimientoTests : IAsyncLifetime
         var otraVez = await Assert.ThrowsAsync<InvalidOperationException>(() => registro.CancelarMovimientoAsync(entrada.Id, Del(_encargado, "Otra vez")));
         Assert.Equal("Esa entrada ya se canceló.", otraVez.Message);
         Assert.Equal(1, await db.Bitacora.CountAsync(b => b.Accion == AccionControlada.CancelarMovimiento));
+    }
+
+    /// <summary>
+    /// Se perdió la respuesta y la caja la manda otra vez, con el mismo Id: ya está hecha, sin otra bitácora ni otra apertura del
+    /// cajón; aunque mientras tanto se haya hecho el corte. Otra solicitud para la misma sí dice que ya se canceló.
+    /// </summary>
+    [Fact]
+    public async Task La_misma_solicitud_otra_vez_es_la_misma_cancelacion()
+    {
+        var (turno, entrada, _) = await TurnoConDosAsync();
+        var solicitud = Del(_encargado, "Se registró dos veces");
+        await using (var db = _base.Contexto())
+            await new RegistroCaja(db).CancelarMovimientoAsync(entrada.Id, solicitud);
+        await using (var db = _base.Contexto())
+            await new RegistroCaja(db).CorteZAsync(turno.Id, _encargado.Id, 45000);
+
+        await using var otra = _base.Contexto();
+        var registro = new RegistroCaja(otra);
+        var otraVez = await registro.CancelarMovimientoAsync(entrada.Id, solicitud with { Motivo = "Otra vez" });
+        Assert.Equal((true, "Se registró dos veces", (Guid?)solicitud.Id), (otraVez.Cancelado, otraVez.MotivoCancelacion, otraVez.CancelacionId));
+        Assert.Equal(1, await otra.Bitacora.CountAsync(b => b.Accion == AccionControlada.CancelarMovimiento));
+        Assert.Equal(1, await otra.AperturasCajon.CountAsync(a => a.Nota!.StartsWith("Cancelación de la entrada")));
+        var nueva = await Assert.ThrowsAsync<InvalidOperationException>(() => registro.CancelarMovimientoAsync(entrada.Id, Del(_encargado, "Otra")));
+        Assert.Equal("Una entrada o salida se cancela en su caja y en su mismo turno, antes de su corte.", nueva.Message);
     }
 
     [Fact]

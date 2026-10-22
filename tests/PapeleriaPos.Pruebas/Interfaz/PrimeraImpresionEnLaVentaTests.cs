@@ -170,6 +170,39 @@ public sealed class PrimeraImpresionEnLaVentaTests(ServicioDePrueba servicio) : 
         }
     }
 
+    /// <summary>
+    /// «Ofrecerlo»: otra caja lo imprime primero desde «Ventas del día». Ctrl+I en esta ya no saca otra copia sin motivo ni
+    /// bitácora (revisión del PR #133): espera a la caja principal, que dice que ya salió, y pide el motivo, como «Ventas del día».
+    /// </summary>
+    [Fact]
+    public async Task Ctrl_I_de_uno_que_ya_salio_en_otra_caja_pide_el_motivo()
+    {
+        await AlCobrarAsync(TicketAlCobrar.Ofrecer);
+        try
+        {
+            var impresora = new TicketeraDePrueba();
+            await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, impresora: impresora);
+            var (a, _) = v.DosDeLaCopia();
+            var (id, folio) = await CobrarAsync(v, a.Codigo!);
+            var otra = await servicio.Fabrica.CreateClient().PostAsJsonAsync($"api/ventas/{id}/primera-impresion",
+                new SolicitudPrimeraImpresion(v.Cajero.UsuarioId, v.Caja.Id));
+            Assert.True(otra.IsSuccessStatusCode);
+
+            await v.Pantalla.Dispatcher.InvokeAsync(() => v.Venta.Tecla("Ctrl+I", null));
+
+            var texto = await v.Pantalla.TextoAsync();
+            Assert.Contains("Motivo de la reimpresión", texto);
+            Assert.Contains($"El ticket {folio} ya salió: si lo vuelven a pedir, se reimprime con su motivo.", texto);
+            Assert.Equal(0, impresora.Intentos);
+            Assert.Single(await BitacoraAsync(id));
+            Assert.Empty(v.Pantalla.Errores);
+        }
+        finally
+        {
+            await AlCobrarAsync(TicketAlCobrar.Imprimir);
+        }
+    }
+
     /// <summary>Si mientras estaba abierto «Ventas del día» ya salió en otra caja, es una reimpresión: pide el motivo y dice por qué.</summary>
     [Fact]
     public async Task Si_ya_salio_en_otra_caja_pide_el_motivo_y_dice_por_que()

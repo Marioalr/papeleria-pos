@@ -126,6 +126,12 @@ else
     /// <summary>Su permiso pide autorización: se pide ahí mismo y se vuelve a intentar con ella.</summary>
     private MovimientoDelTurnoDto? _autorizar;
 
+    /// <summary>
+    /// La cancelación que se está pidiendo, con su Id: si se pierde la respuesta, Enter la manda otra vez igual y no se cancela
+    /// dos veces (revisión del PR #133). Otra entrada o salida, otra cancelación.
+    /// </summary>
+    private (Guid MovimientoId, Guid Id)? _solicitud;
+
     /// <summary>Lo que se acaba de cancelar.</summary>
     private string? _aviso;
 
@@ -188,7 +194,7 @@ else
     }
 
     private void EmpezarACancelar(MovimientoDelTurnoDto m) =>
-        (_cancelando, _motivoCancelacion, _errorCancelacion, _aviso, _enfocarMotivo) = (m, "", null, null, true);
+        (_cancelando, _motivoCancelacion, _errorCancelacion, _aviso, _enfocarMotivo, _solicitud) = (m, "", null, null, true, null);
 
     private async Task AlTeclearCancelacion(KeyboardEventArgs e)
     {
@@ -211,12 +217,14 @@ else
             (_cancelando, _errorCancelacion, _enfocarMotivo) = (m, "Escribe por qué se cancela.", true);
             return;
         }
+        if (_solicitud?.MovimientoId != m.Id)
+            _solicitud = (m.Id, Ids.Nuevo());
         _ocupado = true;
         try
         {
             _movimientos = (await Cliente.CancelarMovimientoAsync(TurnoId, m,
-                new SolicitudCancelacion(Sesion.UsuarioId, Caja.Id, _motivoCancelacion.Trim(), autorizacion))).Movimientos;
-            (_cancelando, _motivoCancelacion, _errorCancelacion) = (null, "", null);
+                new SolicitudCancelarMovimiento(_solicitud.Value.Id, Sesion.UsuarioId, Caja.Id, _motivoCancelacion.Trim(), autorizacion))).Movimientos;
+            (_cancelando, _motivoCancelacion, _errorCancelacion, _solicitud) = (null, "", null, null);
             _aviso = $"Se canceló {Describir(m)}: ya no cuenta en el corte.";
             await AlCancelar.InvokeAsync(m);
         }

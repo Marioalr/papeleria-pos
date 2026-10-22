@@ -81,6 +81,13 @@ public class Venta
     /// </summary>
     public bool TicketSinImprimir { get; set; }
 
+    /// <summary>
+    /// Cuántas veces salió su ticket después del cobro, según la caja principal: su primera impresión (desde «Ventas del día» o
+    /// con Ctrl+I) y cada reimpresión. «No imprimirlo» solo vuelve a marcar <see cref="TicketSinImprimir"/> si no salió otra
+    /// después del trabajo que no salió (revisión del PR #133): si mientras tanto se reimprimió, ya salió.
+    /// </summary>
+    public int TicketImpresiones { get; set; }
+
     /// <summary>Pone (o quita, vacía) la nota del ticket, de uno o dos renglones (<see cref="NotaDelTicket.Maximo"/>).</summary>
     public void PonerNota(string? nota)
     {

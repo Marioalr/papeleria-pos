@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using PapeleriaPos.Interfaz.Componentes;
 using PapeleriaPos.Nucleo.Ventas;
 using PapeleriaPos.Pruebas.Impresion;
 using PapeleriaPos.Pruebas.Servicio;
@@ -148,6 +149,58 @@ public sealed class NotaEnLaVentaTests(ServicioDePrueba servicio) : IClassFixtur
         await v.Contingencia.LatidoAsync();
         Assert.Equal(0, v.Contingencia.Pendientes);
         Assert.Equal("Sin conexion, para Lupita", (await CobradaAsync(v)).Nota);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>
+    /// Con el cobro en camino, F4 y «Nota» ya no abren la nota (revisión del PR #133): lo que se escribiera ahí no llegaba al
+    /// ticket, que sale con la que se mandó, y no se decía. Lo dice, y el ticket sale con la que llevaba.
+    /// </summary>
+    [Fact]
+    public async Task Con_el_cobro_en_camino_la_nota_no_se_cambia_y_lo_dice()
+    {
+        var impresora = new TicketeraDePrueba();
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, impresora: impresora);
+        var (a, _) = v.DosDeLaCopia();
+        await v.EscanearAsync(a.Codigo!);
+        await TeclaAsync(v, "F4-cobro");
+        await v.Pantalla.EscribirAsync("nota-ticket", "Primera");
+        await v.Pantalla.TeclaAsync("nota-ticket", "Enter");
+
+        v.Red.CobroRetenido = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var antes = v.Red.Pedidas.Count(p => p == "/api/ventas");
+        var cobro = v.Pantalla.OprimirAsync(await v.Pantalla.BotonAsync("Cobrar exacto"));
+        await VentaConCopia.EsperarAsync(() => v.Red.Pedidas.Count(p => p == "/api/ventas") > antes, "el cobro en camino");
+
+        await TeclaAsync(v, "F4-cobro");
+        Assert.False(await NotaAbiertaAsync(v));
+        Assert.Contains(PantallaVenta.NotaConElCobroEnCamino, await v.Pantalla.TextoAsync());
+        Assert.True((await v.Pantalla.ElementoAsync(e => e.Etiqueta == "button" && e.Clase == "vn-enlace" && e.Texto.Contains("Cambiar"), "«Cambiar F4»")).Desactivado);
+
+        v.Red.CobroRetenido.TrySetResult();
+        await cobro;
+        await TicketeraDePrueba.EsperarAsync(() => impresora.Salieron.Count == 1, "el ticket");
+        Assert.Contains("Nota: Primera", impresora.Salieron.Single());
+        Assert.Equal("Primera", (await CobradaAsync(v)).Nota);
+        Assert.Empty(v.Pantalla.Errores);
+    }
+
+    /// <summary>
+    /// F4 con el cursor en el monto del abono (también es data-cobro) es Inventario, como siempre (revisión del PR #133): la nota
+    /// es del cobro de la venta. caja.js ya manda F4 ahí; si una página todavía mandara «F4-cobro», la pantalla hace lo mismo.
+    /// </summary>
+    [Fact]
+    public async Task F4_en_el_abono_va_a_Inventario()
+    {
+        await using var v = await VentaConCopia.AbrirAsync(servicio, _baseLocal, fondoAparte: true);
+
+        await TeclaAsync(v, "Ctrl+B");
+        await v.Pantalla.EsperarAsync(t => t.Contains("Abono a cuenta"), "el panel del abono");
+        await TeclaAsync(v, "F4-cobro");
+
+        await v.Pantalla.EsperarAsync(t => t.Contains("Solo las tareas que tienes"), "Inventario");
+        Assert.DoesNotContain("Primero termina aquí", await v.Pantalla.TextoAsync());
+        Assert.False(await NotaAbiertaAsync(v));
         Assert.Empty(v.Pantalla.Errores);
     }
 }

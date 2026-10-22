@@ -99,8 +99,8 @@ public static class ApiCaja
             await new RegistroCaja(db).MovimientosDelTurnoAsync(turnoId, opcionesEleventa.Escribir));
 
         // Cancelar una entrada o salida equivocada: en su caja y en su mismo turno, antes de su corte, con motivo y su permiso.
-        // Regresa cómo quedaron las del turno.
-        api.MapPost("/turnos/{turnoId:guid}/movimientos/{movimientoId:guid}/cancelacion", async (Guid turnoId, Guid movimientoId, SolicitudCancelacion s,
+        // Regresa cómo quedaron las del turno. La misma solicitud otra vez (se perdió la respuesta) contesta lo mismo.
+        api.MapPost("/turnos/{turnoId:guid}/movimientos/{movimientoId:guid}/cancelacion", async (Guid turnoId, Guid movimientoId, SolicitudCancelarMovimiento s,
             PosDbContext db, OpcionesEleventa opcionesEleventa) =>
         {
             if (!await db.MovimientosCaja.AnyAsync(m => m.Id == movimientoId && m.TurnoId == turnoId))
@@ -281,8 +281,9 @@ public static class ApiCaja
                 ?? throw new InvalidOperationException("La venta no existe.");
             await new ServicioControl(db).RequerirAsync(s.UsuarioId, venta.SucursalId, s.CajaId, AccionControlada.Reimprimir, venta.TotalCentavos,
                 $"Reimpresión del ticket {venta.FolioTexto}", motivo: s.Motivo, ventaId: venta.Id);
-            // Ya salió: lo que se pida después también es una reimpresión.
+            // Ya salió: lo que se pida después también es una reimpresión, y un «No imprimirlo» de antes ya no lo marca.
             venta.TicketSinImprimir = false;
+            venta.TicketImpresiones++;
             await db.SaveChangesAsync();
             return await TicketAsync(db, venta, ticket.Value);
         });
@@ -302,10 +303,11 @@ public static class ApiCaja
             }
         });
 
-        // El ticket no salió de la impresora de la caja y se dejó así («No imprimirlo»): su primera impresión no pedirá motivo.
+        // El ticket no salió de la impresora de la caja y se dejó así («No imprimirlo»): su primera impresión no pedirá motivo,
+        // si después de ese trabajo no salió otro (RegistroCaja.TicketSinImprimirAsync).
         api.MapPost("/ventas/{ventaId:guid}/sin-imprimir", async (Guid ventaId, SolicitudTicketSinImprimir s, PosDbContext db) =>
         {
-            await new RegistroCaja(db).TicketSinImprimirAsync(ventaId);
+            await new RegistroCaja(db).TicketSinImprimirAsync(ventaId, s);
             return Results.NoContent();
         });
 
@@ -403,14 +405,14 @@ public static class ApiCaja
         var turno = await db.Turnos.FindAsync(c.TurnoId);
         var nombres = await db.Usuarios.Where(u => u.Id == turno!.CajeroId || u.Id == c.RealizadoPorId).ToDictionaryAsync(u => u.Id, u => u.Nombre);
         // Las entradas y salidas que se cancelaron (2026-10-22): ya no cuentan, y el corte lo dice.
-        var canceladas = await db.MovimientosCaja.AsNoTracking().Where(m => m.TurnoId == c.TurnoId && m.CanceladoUtc != null).Select(m => m.Tipo).ToListAsync();
+        var (entradasCanceladas, salidasCanceladas) = (await RegistroCaja.CanceladasAsync(db, [c.TurnoId])).GetValueOrDefault(c.TurnoId);
         return new CorteDto(c.Tipo, HoraMexico.ALocal(c.FechaUtc), nombres[turno!.CajeroId], nombres.GetValueOrDefault(c.RealizadoPorId, "—"), c.Ventas,
             c.FondoCentavos, c.EfectivoVentasCentavos, c.EntradasCentavos, c.SalidasCentavos, c.TarjetaCentavos, c.TransferenciaCentavos, c.EsperadoCentavos,
             c.ContadoCentavos, c.DiferenciaCentavos, c.DevolucionesCentavos, c.Cancelaciones, c.EnContingencia, c.RedondeoCentavos, c.CreditoCentavos,
             c.Abonos, c.AbonosEfectivoCentavos, c.AbonosTarjetaCentavos, c.AbonosTransferenciaCentavos, c.SaldoDevueltoCentavos,
             // Al cerrar el turno, la caja dice si la diferencia pasó del umbral y se avisa por Telegram.
             c is { Tipo: TipoCorte.Z, DiferenciaCentavos: { } diferencia } ? AlertasTelegram.UmbralSiAvisa(db, turno.SucursalId, diferencia) : null,
-            canceladas.Count(t => t == TipoMovimientoCaja.Entrada), canceladas.Count(t => t == TipoMovimientoCaja.Salida));
+            entradasCanceladas, salidasCanceladas);
     }
 
     internal static async Task<TicketDto> TicketAsync(PosDbContext db, Venta v, OpcionesTicket opciones)
@@ -427,6 +429,9 @@ public static class ApiCaja
         // Con «Al cobrar» de la sucursal: la caja decide con el ticket que ya le llega, sin preguntar nada más al cobrar.
         return ArmadoTicket.Desde(v, caja!.Nombre, cajero, id => presentaciones.TryGetValue(id, out var p) ? p : null,
             configuracion.RenglonesEncabezado, configuracion.RenglonesPie, ApiConfiguracion.Logo(configuracion), cliente,
-            await new RegistroCredito(db).TicketAsync(v.Id)) with { FolioEleventa = folioEleventa, AlCobrar = configuracion.AlCobrar };
+            await new RegistroCredito(db).TicketAsync(v.Id)) with
+        {
+            FolioEleventa = folioEleventa, AlCobrar = configuracion.AlCobrar, Impresiones = v.TicketImpresiones,
+        };
     }
 }
