@@ -19,6 +19,10 @@ namespace PapeleriaPos.Interfaz;
 /// También se busca por nombre en ella (entrega 5, parte 3, <see cref="Buscar"/>): la misma búsqueda del servicio, armada
 /// junto con la foto; cada foto puesta al día trae la suya (si no cambió nada de lo que la arma, con el mismo índice).
 /// </para>
+/// <para>
+/// Y las promociones de la copia, por producto (fase 3, <see cref="Promociones"/>): la venta las aplica con la fecha de la caja,
+/// también sin conexión. Las que dijo el cobro después de la copia van en una foto nueva encima (<see cref="ConPromociones"/>).
+/// </para>
 /// </summary>
 public sealed class FotoCatalogo
 {
@@ -36,8 +40,15 @@ public sealed class FotoCatalogo
     /// <summary>La búsqueda por nombre de la copia (entrega 5, parte 3): se arma con la foto y pasa igual a las que van encima.</summary>
     private readonly BusquedaDeLaCopia _busqueda;
 
+    /// <summary>Las promociones de la copia, por producto (fase 3).</summary>
+    private readonly PromocionesPorProducto _promociones;
+
+    /// <summary>Las que dijo el cobro después de la copia, con la versión del catálogo de entonces; vacío si ninguna.</summary>
+    private readonly (PromocionesPorProducto Promociones, long Version)? _promocionesNuevas;
+
     private FotoCatalogo(long version, CodigosDeEscaneo codigos, FrozenDictionary<Guid, ProductoVentaDto> porVariante,
-        ImmutableDictionary<Guid, ProductoVentaDto> nuevos, ImmutableDictionary<string, (Guid, Guid)> codigosNuevos, BusquedaDeLaCopia busqueda)
+        ImmutableDictionary<Guid, ProductoVentaDto> nuevos, ImmutableDictionary<string, (Guid, Guid)> codigosNuevos, BusquedaDeLaCopia busqueda,
+        PromocionesPorProducto promociones, (PromocionesPorProducto, long)? promocionesNuevas = null)
     {
         Version = version;
         _codigos = codigos;
@@ -45,7 +56,15 @@ public sealed class FotoCatalogo
         _nuevos = nuevos;
         _codigosNuevos = codigosNuevos;
         _busqueda = busqueda;
+        _promociones = promociones;
+        _promocionesNuevas = promocionesNuevas;
     }
+
+    /// <summary>
+    /// Las promociones con que vende la caja (fase 3): las de la copia o, si el cobro dijo otras después de ella, esas. La venta
+    /// decide con la fecha de la caja cuáles corren.
+    /// </summary>
+    public PromocionesPorProducto Promociones => _promocionesNuevas?.Promociones ?? _promociones;
 
     /// <summary>La versión del catálogo de la copia (<see cref="PaqueteContingenciaDto.Version"/>): la que lleva el cobro.</summary>
     public long Version { get; }
@@ -81,7 +100,8 @@ public sealed class FotoCatalogo
             porVariante.TryAdd(p.VarianteId, p.Version is null ? p with { Version = paquete.Version } : p);
         return new FotoCatalogo(paquete.Version, new CodigosDeEscaneo(paquete.Codigos), porVariante.ToFrozenDictionary(),
             ImmutableDictionary<Guid, ProductoVentaDto>.Empty, ImmutableDictionary.Create<string, (Guid, Guid)>(StringComparer.OrdinalIgnoreCase),
-            BusquedaDeLaCopia.Armar(paquete, porVariante, conLaBusquedaDe?._busqueda.Indice));
+            BusquedaDeLaCopia.Armar(paquete, porVariante, conLaBusquedaDe?._busqueda.Indice),
+            paquete.Promociones is { Count: > 0 } promociones ? new PromocionesPorProducto(promociones) : PromocionesPorProducto.Ninguna);
     }
 
     /// <summary>El producto de un código, con la presentación de ese código; vacío si no está en la copia.</summary>
@@ -113,8 +133,16 @@ public sealed class FotoCatalogo
         var codigos = _codigosNuevos;
         if (codigo?.Trim() is { Length: > 0 } limpio && !_codigos.Contiene(limpio))
             codigos = codigos.SetItem(limpio, (producto.VarianteId, producto.Presentacion.Id));
-        return new FotoCatalogo(Version, _codigos, _porVariante, _nuevos.SetItem(producto.VarianteId, baseDelProducto), codigos, _busqueda);
+        return new FotoCatalogo(Version, _codigos, _porVariante, _nuevos.SetItem(producto.VarianteId, baseDelProducto), codigos, _busqueda, _promociones,
+            _promocionesNuevas);
     }
+
+    /// <summary>
+    /// Una foto nueva con las promociones que dijo el cobro (fase 3), las de la caja principal con la versión del catálogo
+    /// <paramref name="version"/>: la venta las usa desde ya, sin esperar a que baje la copia. Esta no cambia.
+    /// </summary>
+    public FotoCatalogo ConPromociones(IReadOnlyList<PromocionDto> promociones, long version) =>
+        new(Version, _codigos, _porVariante, _nuevos, _codigosNuevos, _busqueda, _promociones, (new PromocionesPorProducto(promociones), version));
 
     /// <summary>
     /// Esta foto (la de una copia nueva) con lo que la anterior tenía encima y sigue siendo más nuevo que la copia: lo que la
@@ -123,14 +151,17 @@ public sealed class FotoCatalogo
     /// </summary>
     public FotoCatalogo ConLoNuevoDe(FotoCatalogo? anterior)
     {
-        if (anterior is null || anterior._nuevos.IsEmpty || Version < anterior.Version)
+        if (anterior is null || Version < anterior.Version)
             return this;
+        // Las promociones que dijo el cobro, si siguen siendo más nuevas que la copia (fase 3).
+        var promocionesNuevas = anterior._promocionesNuevas is { } dichas && dichas.Version > Version ? dichas : ((PromocionesPorProducto, long)?)null;
         var nuevos = anterior._nuevos.Where(x => x.Value.Version is { } v && v > Version).ToImmutableDictionary();
-        if (nuevos.IsEmpty)
+        if (nuevos.IsEmpty && promocionesNuevas is null)
             return this;
         var codigos = anterior._codigosNuevos.Where(x => nuevos.ContainsKey(x.Value.VarianteId) && !_codigos.Contiene(x.Key))
             .ToImmutableDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase);
-        return new FotoCatalogo(Version, _codigos, _porVariante, nuevos, codigos, _busqueda);
+        return new FotoCatalogo(Version, _codigos, _porVariante, nuevos.IsEmpty ? _nuevos : nuevos, nuevos.IsEmpty ? _codigosNuevos : codigos, _busqueda,
+            _promociones, promocionesNuevas);
     }
 
     private static ProductoVentaDto ConPresentacion(ProductoVentaDto p, Guid presentacionId) =>

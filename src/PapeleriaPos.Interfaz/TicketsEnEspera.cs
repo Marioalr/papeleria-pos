@@ -24,7 +24,7 @@ public static class TicketsEnEspera
 {
     public static TicketGuardado Guardar(Venta venta, IReadOnlyDictionary<Guid, ProductoVentaDto> productos, IReadOnlyList<ImpresionPorCobrarDto> impresiones,
         ClienteRegistradoDto? cliente, CreditoClienteDto? cuenta, bool fiadoSinConfirmar) =>
-        new(venta.Id, venta.CreadaUtc, ArmadoSolicitud.Lineas(venta),
+        new(venta.Id, venta.CreadaUtc, ArmadoSolicitud.Lineas(venta, conDescuentoEnPausa: true),
             venta.Lineas.Select(l => l.VarianteId).OfType<Guid>().Distinct().Select(productos.GetValueOrDefault).OfType<ProductoVentaDto>().ToList(),
             [.. impresiones], cliente, cuenta, venta.MayoreoDeCliente, venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId, fiadoSinConfirmar,
             venta.Nota);
@@ -60,7 +60,8 @@ public static class TicketsEnEspera
                     continue;
                 }
                 var agregada = venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
-                if (l.PrecioCentavos is { } precio && precio != agregada.PrecioCentavos)
+                // Solo lo cambiado con Ctrl+E se guarda con su precio: vuelve cambiado aunque sea el de la lista, sin promoción.
+                if (l.PrecioCentavos is { } precio)
                     venta.CambiarPrecio(agregada, precio, l.AutorizacionId);
                 venta.AplicarDescuentoSolicitado(agregada, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
             }

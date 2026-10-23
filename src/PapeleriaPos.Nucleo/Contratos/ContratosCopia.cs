@@ -67,6 +67,10 @@ public sealed record TicketLocalDto(
 /// orden de las variantes. Pisan lo de la copia; la caja baja aparte las que no tiene.
 /// </param>
 /// <param name="FotosQuitadas">Los productos a los que se les quitó la foto.</param>
+/// <param name="Promociones">
+/// Las promociones de la sucursal de la caja, completas, si ya no son las de su copia (su huella, <paramref name="HuellaPromociones"/>,
+/// no es la que mandó la caja, fase 3): una nueva, una que cambió, la que se terminó o la que ya pasó su último día.
+/// </param>
 public sealed record CambiosCopiaDto(
     string? PaqueteCompleto, long Version, long VersionExistencias, int UltimoFolio, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<Guid> Quitados,
     IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<ExistenciaLocalDto> Existencias,
@@ -75,7 +79,8 @@ public sealed record CambiosCopiaDto(
     IReadOnlyList<ClienteRegistradoDto>? Clientes = null, IReadOnlyList<ClienteRegistradoDto>? Registrados = null, IReadOnlyList<string>? Marcas = null,
     IReadOnlyList<SinonimoDto>? Sinonimos = null, IReadOnlyList<VecesVendidoDto>? Vendidos = null, IReadOnlyList<ElegidoDto>? Elegidos = null,
     long? VersionVendidos = null, long? VersionElegidos = null, IReadOnlyList<ExhibidorDto>? Exhibidores = null,
-    IReadOnlyList<FotoDeProductoDto>? Fotos = null, IReadOnlyList<Guid>? FotosQuitadas = null)
+    IReadOnlyList<FotoDeProductoDto>? Fotos = null, IReadOnlyList<Guid>? FotosQuitadas = null, IReadOnlyList<PromocionDto>? Promociones = null,
+    string? HuellaPromociones = null)
 {
     /// <summary>No se pueden dar los cambios desde ahí: la caja baja la copia completa.</summary>
     public static CambiosCopiaDto Completo(string motivo) => new(motivo, 0, 0, 0, [], [], [], []);
@@ -85,12 +90,13 @@ public sealed record CambiosCopiaDto(
     /// pedir si se pierden): entonces la copia se guarda ya. Las fotos tampoco cuentan (entrega 13, parte 2): si la caja se
     /// cierra antes de guardar la copia, la de su base pide otra vez lo que cambió desde su versión, con ellas; y una caja que
     /// abre sin conexión con la foto de antes no cobra distinto. Así, mientras se toman las fotos de la temporada, cada foto no
-    /// obliga a cada caja a guardar su copia entera ni a armar otra vez su búsqueda.
+    /// obliga a cada caja a guardar su copia entera ni a armar otra vez su búsqueda. Las promociones sí cuentan (fase 3): sin
+    /// conexión, la caja cobra con las de su copia guardada.
     /// </summary>
     public bool CambiaCatalogo =>
         Productos.Count > 0 || Quitados.Count > 0 || Caja is not null || Usuarios is not null || Permisos is not null || Reglas is not null
         || Ticket is not null || Configuracion is not null || Registrados is not null || Clientes is not null || Marcas is not null || Sinonimos is not null
-        || Exhibidores is not null;
+        || Exhibidores is not null || Promociones is not null;
 
     /// <summary>
     /// Si cambia algo de lo que arma la búsqueda por nombre (los productos, sus códigos, las marcas, los sinónimos): entonces

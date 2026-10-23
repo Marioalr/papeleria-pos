@@ -127,6 +127,37 @@ public class TicketTests
         Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
     }
 
+    /// <summary>
+    /// La promoción (fase 3) sale como el mayoreo: el renglón con su importe a menudeo y abajo cuál fue y cuánto se ahorró; un
+    /// nombre largo sigue en el renglón de abajo. Cuenta en lo que se ahorró.
+    /// </summary>
+    [Fact]
+    public void La_promocion_sale_debajo_del_articulo_y_cuenta_en_lo_que_se_ahorro()
+    {
+        var ticket = Ticket() with
+        {
+            Lineas =
+            [
+                new LineaTicketDto("3", "Cuaderno profesional raya", 4500, 9000, AhorroPromocionCentavos: 4500, Promocion: "3×2 en cuadernos"),
+                new LineaTicketDto("2", "Pegamento en barra 40 g", 3000, 3600, 400, "10 %", AhorroPromocionCentavos: 2000,
+                    Promocion: "Regreso a clases: lo estratégico al costo"),
+            ],
+            TotalCentavos = 12600,
+        };
+
+        var renglones = TicketTexto.Generar(ticket).Split(Environment.NewLine);
+
+        Assert.Contains(renglones, r => r.Contains("Cuaderno profesional raya") && r.EndsWith("$135.00"));
+        Assert.Contains(renglones, r => r.Contains("Promoción 3×2 en cuadernos") && r.EndsWith("-$45.00"));
+        Assert.Contains(renglones, r => r.Contains("Pegamento en barra 40 g") && r.EndsWith("$60.00"));
+        var largo = Array.FindIndex(renglones, r => r.Contains("Promoción Regreso a clases:"));
+        Assert.EndsWith("-$20.00", renglones[largo]);
+        Assert.Contains("al costo", renglones[largo + 1]);
+        Assert.Contains(renglones, r => r.Contains("Descuento 10 %") && r.EndsWith("-$4.00"));
+        Assert.Contains(renglones, r => r.Contains("Usted ahorró: $69.00"));
+        Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
+    }
+
     [Fact]
     public void El_texto_cabe_en_48_columnas_y_trae_lo_importante()
     {
@@ -463,9 +494,9 @@ public class TicketTests
 
     /// <summary>
     /// Un texto libre con caracteres de control (revisión del PR #133) no le llega a la impresora como comandos: la nota ya no los
-    /// guarda, y aunque un texto los traiga (una nota de antes, un motivo, un nombre), el ticket los cambia por espacios, también
-    /// lo que la página de códigos dibujaría en esos bytes (←). Solo quedan el reinicio y el corte del ticket, una vez, y el cajón
-    /// solo si se pide.
+    /// guarda, y aunque un texto los traiga (una nota de antes, un motivo, un nombre, el de una promoción), el ticket los cambia
+    /// por espacios, también lo que la página de códigos dibujaría en esos bytes (←). Solo quedan el reinicio y el corte del
+    /// ticket, una vez, y el cajón solo si se pide.
     /// </summary>
     [Fact]
     public void Un_texto_libre_no_le_manda_comandos_a_la_impresora()
@@ -479,7 +510,11 @@ public class TicketTests
         byte[] corte = [0x1D, (byte)'V'];
         foreach (var texto in new[] { "Entregar\u001Bp\u0000\u0019\u0019 hoy", "Hola\u001DVB\u0000 adios", "Hola\u001B@ adios", "Uno ←p dos\u007F" })
         {
-            var bytes = TicketEscPos.Generar(Ticket() with { Nota = texto, Cliente = texto }, abrirCajon: false);
+            // El nombre de la promoción (fase 3) también sale en el ticket, bajo el artículo.
+            var conPromocion = new LineaTicketDto("3", "Cuaderno profesional raya", 4500, 9000, AhorroPromocionCentavos: 4500, Promocion: texto);
+            var bytes = TicketEscPos.Generar(Ticket() with { Nota = texto, Cliente = texto, Lineas = [.. Ticket().Lineas, conPromocion] },
+                abrirCajon: false);
+            Assert.True(Contiene(bytes, TicketEscPos.Imprimible("Promoción")), texto);
             Assert.False(Contiene(bytes, cajon), texto);
             Assert.Equal(1, Veces(bytes, reinicio));
             Assert.Equal(1, Veces(bytes, corte));

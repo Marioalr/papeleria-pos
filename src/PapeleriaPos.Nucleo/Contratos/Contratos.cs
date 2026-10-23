@@ -127,9 +127,15 @@ public sealed record SolicitudMovimiento(TipoMovimientoCaja Tipo, long MontoCent
 /// (<see cref="ProductoVentaDto.Version"/>), si no es la del ticket (<see cref="SolicitudCobro.VersionCatalogo"/>): un producto
 /// que llegó de la caja principal, o una línea de antes de que bajara la copia de ahora.
 /// </param>
+/// <param name="PromocionId">
+/// La promoción que la caja aplicó a esta línea (fase 3) y <paramref name="AhorroPromocionCentavos"/>, lo que se ahorró: al cobrar,
+/// si el servicio no aplicaría la misma (empezó, terminó o cambió), no cobra y contesta como con un precio que cambió. En lo que
+/// sube sin conexión, la que se cobró (con su nombre en <paramref name="Promocion"/>).
+/// </param>
 public sealed record LineaSolicitada(
     Guid? VarianteId, Guid? PresentacionId, long CantidadMilesimas, string? Descripcion = null, long? PrecioCentavos = null, Guid? AutorizacionId = null,
-    int? DescuentoCentesimas = null, long? DescuentoCentavos = null, string? MotivoDescuento = null, long? VersionCatalogo = null);
+    int? DescuentoCentesimas = null, long? DescuentoCentavos = null, string? MotivoDescuento = null, long? VersionCatalogo = null,
+    Guid? PromocionId = null, long? AhorroPromocionCentavos = null, string? Promocion = null);
 
 /// <summary>El servicio vuelve a armar la venta con los precios del catálogo: nunca confía en los precios de la caja.</summary>
 /// <param name="VentaId">Lo pone la caja: si la respuesta no llegó y se manda otra vez (o sube con la bandeja), no se cobra dos veces.</param>
@@ -147,20 +153,37 @@ public sealed record LineaSolicitada(
 /// cobra: contesta con los de ahora (<see cref="PreciosCambiadosDto"/>), para que el ticket diga lo que vio el cajero.
 /// Vacía en las cajas de antes: se cobra como siempre.
 /// </param>
+/// <param name="DiaPromociones">
+/// El día de la caja con que puso las promociones del ticket (fase 3; cada línea dice la suya en
+/// <see cref="LineaSolicitada.PromocionId"/>). El servicio las aplica con ese día si es el suyo, el de antes o el de después (la
+/// caja y la caja principal casi a medianoche); si no, con el suyo. Vacío en las cajas de antes y en una sin copia todavía:
+/// sin promociones, como las calculó la caja.
+/// </param>
 /// <param name="Nota">La nota del ticket (F4 al cobrar, 2026-10-22; <see cref="NotaDelTicket"/>). Vacía: sin nota.</param>
 public sealed record SolicitudCobro(
     Guid CajaId, Guid TurnoId, Guid CajeroId, IReadOnlyList<LineaSolicitada> Lineas, IReadOnlyList<CobroSolicitado> Cobros, Guid? VentaId = null,
     IReadOnlyList<Guid>? Impresiones = null, [property: JsonPropertyName("clienteEspecialId")] Guid? ClienteId = null,
     Guid? AutorizacionDescuentoId = null, Guid? AutorizacionBajoCostoId = null, bool? MayoreoDeCliente = null, Guid? AutorizacionCreditoId = null,
-    long? VersionCatalogo = null, string? Nota = null);
+    long? VersionCatalogo = null, DateOnly? DiaPromociones = null, string? Nota = null);
 
 /// <summary>
 /// El cobro no se hizo (entrega 5): el precio o el mayoreo de algo del ticket cambió después de la versión con que la caja
-/// puso sus precios. Llega con un 409 y se lee también como <see cref="ErrorDto"/>.
+/// puso sus precios, o su promoción no es la que aplicaría el servicio (fase 3). Llega con un 409 y se lee también como
+/// <see cref="ErrorDto"/>.
 /// </summary>
 /// <param name="Productos">Los que cambiaron, como están ahora (con su versión).</param>
 /// <param name="VersionCatalogo">Hasta esta versión, lo demás del ticket no cambió.</param>
-public sealed record PreciosCambiadosDto(string Mensaje, IReadOnlyList<ProductoVentaDto> Productos, long VersionCatalogo, string Codigo = PreciosCambiadosDto.CodigoDelError)
+/// <param name="Promociones">
+/// Las promociones con que cobra el servicio (las de la sucursal de la caja): la caja pone su ticket al día con ellas, sin esperar
+/// a que le llegue su copia. Vacía si el servicio no las mandó (uno de antes).
+/// </param>
+/// <param name="DiaPromociones">
+/// El día con que el servicio aplicó las promociones: el de la caja, o el suyo si el de la caja no cuadra (su reloj está mal).
+/// La caja pone el ticket al día con este día y lo manda otra vez con él, así que no se repite.
+/// </param>
+public sealed record PreciosCambiadosDto(
+    string Mensaje, IReadOnlyList<ProductoVentaDto> Productos, long VersionCatalogo, string Codigo = PreciosCambiadosDto.CodigoDelError,
+    IReadOnlyList<PromocionDto>? Promociones = null, DateOnly? DiaPromociones = null)
 {
     public const string CodigoDelError = "precios-cambiados";
 }
@@ -169,9 +192,11 @@ public sealed record PreciosCambiadosDto(string Mensaje, IReadOnlyList<ProductoV
 /// <param name="Descuento">Cómo se lee el descuento ("10 %" o vacío si fue un monto).</param>
 /// <param name="AhorroMayoreoCentavos">Lo que se ahorró por el mayoreo contra el menudeo (fase 3).</param>
 /// <param name="Mayoreo">Cómo se lee: "Mayoreo desde 12".</param>
+/// <param name="AhorroPromocionCentavos">Lo que se ahorró por la promoción (fase 3).</param>
+/// <param name="Promocion">El nombre de la promoción, como se llamaba al cobrar: "Regreso a clases".</param>
 public sealed record LineaTicketDto(
     string Cantidad, string Descripcion, long PrecioCentavos, long ImporteCentavos, long DescuentoCentavos = 0, string? Descuento = null,
-    long AhorroMayoreoCentavos = 0, string? Mayoreo = null);
+    long AhorroMayoreoCentavos = 0, string? Mayoreo = null, long AhorroPromocionCentavos = 0, string? Promocion = null);
 
 public sealed record CobroTicketDto(FormaPago Forma, long MontoCentavos, long RecibidoCentavos, long CambioCentavos, string? Referencia);
 
@@ -241,8 +266,8 @@ public sealed record TicketDto(
     public bool AbreCajon => Cobros.Any(c => c.Forma == FormaPago.Efectivo);
     public long DescuentoCentavos => Lineas.Sum(l => l.DescuentoCentavos);
 
-    /// <summary>"Usted ahorró": los descuentos y el mayoreo.</summary>
-    public long AhorroCentavos => Lineas.Sum(l => l.DescuentoCentavos + l.AhorroMayoreoCentavos);
+    /// <summary>"Usted ahorró": los descuentos, el mayoreo y las promociones.</summary>
+    public long AhorroCentavos => Lineas.Sum(l => l.DescuentoCentavos + l.AhorroMayoreoCentavos + l.AhorroPromocionCentavos);
 }
 
 public sealed record VentaDelDiaDto(Guid Id, string Folio, DateTime FechaLocal, long TotalCentavos, int Articulos, string Cajero, bool Cancelada = false);
@@ -763,6 +788,12 @@ public sealed record CodigoLocalDto(string Codigo, Guid VarianteId, Guid Present
 /// cada caja baja aparte las que no tiene. Así la copia no crece con las fotos (unos 80 bytes por foto). Desde el formato 4
 /// siempre vienen (vacías si no hay ninguna); vacías (null) en una copia de antes: esa se baja completa otra vez.
 /// </param>
+/// <param name="Promociones">
+/// Las promociones de la sucursal de la caja que no han terminado, también las que empiezan después (fase 3): la caja decide
+/// con su fecha, también sin conexión, y una que empieza o termina a medianoche se aplica sin bajar nada. Desde el formato 5
+/// siempre vienen (vacías si no hay ninguna, y en el piloto con eleventa); vacías (null) en una copia de antes.
+/// </param>
+/// <param name="HuellaPromociones">La de <paramref name="Promociones"/> (<see cref="PromocionDto.Huella"/>): la caja la manda al pedir lo que cambió.</param>
 public sealed record PaqueteContingenciaDto(
     long Version, CajaDto Caja, IReadOnlyList<ProductoVentaDto> Productos, IReadOnlyList<CodigoLocalDto> Codigos, IReadOnlyList<UsuarioLocalDto> Usuarios,
     IReadOnlyList<ReglaDto> Reglas,
@@ -772,16 +803,20 @@ public sealed record PaqueteContingenciaDto(
     ConfiguracionSucursalDto? Configuracion = null, Guid? Base = null, int? Formato = null, long? VersionExistencias = null,
     IReadOnlyList<VecesVendidoDto>? Vendidos = null, IReadOnlyList<ElegidoDto>? Elegidos = null, long? VersionVendidos = null, long? VersionElegidos = null,
     TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir, IReadOnlyList<ExhibidorDto>? Exhibidores = null,
-    IReadOnlyList<FotoDeProductoDto>? Fotos = null);
+    IReadOnlyList<FotoDeProductoDto>? Fotos = null, IReadOnlyList<PromocionDto>? Promociones = null, string? HuellaPromociones = null);
 
 // Lo que sube con la bandeja. Cada cosa lleva el ID que le dio la caja: si llega dos veces, se guarda una.
 
 public sealed record TurnoContingenciaDto(Guid Id, Guid CajaId, Guid CajeroId, long FondoCentavos, DateTime AbiertoUtc);
 
 /// <param name="PrecioCentavos">El que se cobró (por presentación, con IVA): manda sobre el del catálogo.</param>
+/// <param name="PromocionId">
+/// La promoción con que se cobró (fase 3), con su nombre y lo que se ahorró: también manda, aunque en la caja principal ya
+/// haya cambiado o terminado.
+/// </param>
 public sealed record LineaContingenciaDto(
     Guid? VarianteId, Guid? PresentacionId, string Descripcion, long CantidadMilesimas, long PrecioCentavos, int? DescuentoCentesimas = null,
-    long? DescuentoCentavos = null, string? MotivoDescuento = null);
+    long? DescuentoCentavos = null, string? MotivoDescuento = null, Guid? PromocionId = null, string? Promocion = null, long AhorroPromocionCentavos = 0);
 
 /// <param name="RedondeoCentavos">El que cobró la caja. Vacío en lo que se cobró antes de que existiera el redondeo: eso se vuelve a cobrar exacto.</param>
 /// <param name="SaldoConocidoCentavos">Si fió: lo que la caja creía que debía (con eso imprimió el ticket).</param>
@@ -923,7 +958,9 @@ public sealed record PuntualidadDto(int Compras, int Liquidadas, int ATiempo, in
 /// <summary>¿Este ticket, con sus descuentos y precios cambiados, deja líneas debajo del costo? El costo no viaja a la caja.</summary>
 /// <param name="ClienteId">El cliente del ticket.</param>
 /// <param name="MayoreoDeCliente">La caja calculó los precios con el mayoreo siempre del cliente.</param>
-public sealed record SolicitudBajoCosto(Guid CajaId, IReadOnlyList<LineaSolicitada> Lineas, Guid? ClienteId = null, bool? MayoreoDeCliente = null);
+/// <param name="DiaPromociones">El día con que la caja puso las promociones (fase 3), como al cobrar: el descuento va encima de ellas.</param>
+public sealed record SolicitudBajoCosto(
+    Guid CajaId, IReadOnlyList<LineaSolicitada> Lineas, Guid? ClienteId = null, bool? MayoreoDeCliente = null, DateOnly? DiaPromociones = null);
 
 /// <param name="FaltanteCentavos">Cuánto queda debajo del costo en total (cero: nada).</param>
 /// <param name="Lineas">Las descripciones de las líneas que quedan debajo del costo.</param>

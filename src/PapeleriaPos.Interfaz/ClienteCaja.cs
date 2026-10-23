@@ -378,6 +378,37 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public void PreciosAlDia(ProductoVentaDto producto) => contingencia?.AgregarALaFoto(producto);
 
     /// <summary>
+    /// Las promociones de ahora que dijo el cobro (fase 3), si las dijo: quedan en la foto, para que el ticket se ponga al día con
+    /// ellas y el siguiente escaneo ya las traiga. Y el día con que las aplicó la caja principal: si no es el de esta PC (su reloj
+    /// está mal), la caja usa ese, así el ticket que se pone al día se cobra a la siguiente. Devuelve el aviso de la fecha, si
+    /// está mal.
+    /// </summary>
+    public string? PromocionesAlDia(PreciosCambiadosDto precios)
+    {
+        if (precios.Promociones is { } promociones)
+            contingencia?.PromocionesALaFoto(promociones, precios.VersionCatalogo);
+        return precios.DiaPromociones is { } dia ? contingencia?.DiaDeLaCajaPrincipal(dia) : null;
+    }
+
+    /// <summary>El día de hoy de la caja (hora de México): con él aplica las promociones (fase 3).</summary>
+    public DateOnly Hoy => contingencia?.Hoy ?? DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
+
+    /// <summary>
+    /// De dónde saca una venta de esta caja sus promociones (fase 3): de la foto de su copia (la de ahora en cada cálculo, con lo
+    /// que dijo el cobro encima), con el día de la caja. Sin copia todavía, ninguna: el cobro tampoco las aplica.
+    /// <para>
+    /// Sin base local (el navegador de desarrollo sin Caja:BaseLocal) no hay copia: no se aplican promociones ni se manda el día,
+    /// y el servicio cobra sin ellas, como las calculó la pantalla. Es solo para probar en desarrollo; la caja de verdad (la
+    /// ventana de Windows) siempre tiene su base local. Mandar el día sin copia haría que el servicio aplicara promociones que la
+    /// pantalla no puso, sin dónde guardarlas para ponerse al día.
+    /// </para>
+    /// </summary>
+    public PromocionesDeLaVenta PromocionesDeLaVenta => new(v => Foto?.Promociones.De(v) ?? [], () => Hoy);
+
+    /// <summary>El día con que se pusieron las promociones del ticket, para el cobro; vacío sin copia (no se pusieron).</summary>
+    private DateOnly? DiaPromociones => Foto is null ? null : Hoy;
+
+    /// <summary>
     /// Cuánto se espera a la caja principal por un código que no está en la copia (docs/propuesta-interfaz.md,
     /// «Rendimiento»: medio segundo). Pasado eso, la línea sale y se le dice al cajero que lo escanee otra vez.
     /// </summary>
@@ -479,7 +510,7 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// </summary>
     public Task<TicketDto> CobrarAsync(SolicitudCobro solicitud, bool soloEnLinea = false)
     {
-        solicitud = solicitud with { VentaId = solicitud.VentaId ?? Ids.Nuevo() };
+        solicitud = solicitud with { VentaId = solicitud.VentaId ?? Ids.Nuevo(), DiaPromociones = solicitud.DiaPromociones ?? DiaPromociones };
         var ventaId = solicitud.VentaId.Value;
         var fiado = solicitud.Cobros.Where(c => c.Forma == FormaPago.Credito).Sum(c => c.MontoCentavos);
         if ((soloEnLinea || contingencia?.CobroSinConfirmar(ventaId) == true) && contingencia is { EnLinea: false })
@@ -768,6 +799,26 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// </summary>
     public Task<PreciosDeVariosAplicadosDto> CambiarPreciosDeVariosAsync(SolicitudPreciosDeVarios solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<PreciosDeVariosAplicadosDto>("api/catalogo/precios-de-varios", solicitud));
+
+    // ── Promociones (Productos › Promociones, fase 3; solo con la caja principal) ──
+
+    public Task<ListaPromocionesDto> PromocionesAsync(Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<ListaPromocionesDto>($"api/promociones?sucursalId={sucursalId}&usuarioId={usuarioId}"))!);
+
+    public Task<PromocionFichaDto> PromocionAsync(Guid id, Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<PromocionFichaDto>($"api/promociones/{id}?sucursalId={sucursalId}&usuarioId={usuarioId}"))!);
+
+    public Task<VistaPromocionDto> VistaPromocionAsync(SolicitudPromocion solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<VistaPromocionDto>("api/promociones/vista", solicitud));
+
+    public Task<ProductosPromocionDto> ProductosPromocionAsync(SolicitudProductosPromocion solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<ProductosPromocionDto>("api/promociones/productos", solicitud));
+
+    public Task<PromocionFichaDto> GuardarPromocionAsync(SolicitudPromocion solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<PromocionFichaDto>("api/promociones", solicitud));
+
+    public Task<PromocionFichaDto> TerminarPromocionAsync(Guid id, SolicitudTerminarPromocion solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<PromocionFichaDto>($"api/promociones/{id}/terminar", solicitud));
 
     // ── Compras (F4, solo con la caja principal) ──
 
@@ -1115,7 +1166,8 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     /// <summary>Solo con la caja principal (ahí está el costo); sin conexión, el costo no se revisa.</summary>
     public Task<BajoCostoDto> BajoCostoAsync(SolicitudBajoCosto solicitud) =>
-        ConRespaldoAsync(() => _http.PostAsync<BajoCostoDto>("api/descuentos/bajo-costo", solicitud), _ => new BajoCostoDto(0, []));
+        ConRespaldoAsync(() => _http.PostAsync<BajoCostoDto>("api/descuentos/bajo-costo",
+            solicitud with { DiaPromociones = solicitud.DiaPromociones ?? DiaPromociones }), _ => new BajoCostoDto(0, []));
 
     // ── Impresiones (solo con la caja principal: ahí llegan los trabajos de todas las PC) ──
 

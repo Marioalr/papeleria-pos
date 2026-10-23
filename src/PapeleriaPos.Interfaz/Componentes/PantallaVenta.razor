@@ -497,6 +497,10 @@
                     {
                         <div class="vn-linea verde"><span>Ahorro por mayoreo</span><span>@Formato.Dinero(ahorro)</span></div>
                     }
+                    @if (Actual.Venta.Lineas.Sum(l => l.AhorroPromocionCentavos) is var porPromociones and > 0)
+                    {
+                        <div class="vn-linea verde"><span>Ahorro por promociones</span><span>@Formato.Dinero(porPromociones)</span></div>
+                    }
                     @if (Actual.Venta.DescuentoCentavos > 0)
                     {
                         <div class="vn-linea verde"><span>Descuentos</span><span>−@Formato.Dinero(Actual.Venta.DescuentoCentavos)</span></div>
@@ -3227,6 +3231,7 @@
             Nombre: linea.EsImpresiones ? $"Impresiones ({Actual.Impresiones.Count})" : Descripcion(linea, producto),
             Codigo: producto?.Codigo,
             Mayoreo: linea.TieneMayoreo ? $"{MayoreoTexto(linea, producto)} · ahorra {Formato.Dinero(linea.AhorroMayoreoCentavos)}" : null,
+            Promocion: linea.TienePromocion ? $"{linea.Promocion} · ahorra {Formato.Dinero(linea.AhorroPromocionCentavos)}" : null,
             Descuento: linea.TieneDescuento ? $"Descuento −{Formato.Dinero(linea.DescuentoCentavos)} · {linea.MotivoDescuento}" : null,
             PrecioCambiado: linea.PrecioCambiado,
             Existencia: producto?.Existencia is { } quedan && quedan <= 3 ? quedan <= 0 ? "Sin existencia en el sistema" : $"Quedan {Formato.Numero(quedan)}" : null,
@@ -3401,6 +3406,7 @@
         CajeroId = Sesion.UsuarioId,
         Serie = Caja.Serie,
         CreadaUtc = DateTime.UtcNow,
+        Promociones = Cliente.PromocionesDeLaVenta,
     };
 
     private void NuevoTicket()
@@ -3580,6 +3586,8 @@
         var venta = ticket.Venta;
         var antes = venta.Lineas.ToDictionary(l => l, l => (l.PrecioCentavos, l.ImporteCentavos, l.AhorroMayoreoCentavos));
         var cambiados = precios.Productos.Select(p => p.VarianteId).ToHashSet();
+        // Las promociones con que cobra la caja principal (fase 3), con su día: el ticket se pone al día con ellas.
+        var avisoDeLaFecha = Cliente.PromocionesAlDia(precios);
         // Lo que no cambió ya lo revisó el servicio hasta su versión: sus líneas tienen los precios de ahora.
         foreach (var linea in venta.Lineas.Where(l => l.VarianteId is { } v && !l.EsImpresiones && !cambiados.Contains(v)))
         {
@@ -3621,6 +3629,8 @@
             ? $"Cambió el precio de {Textos.Lista(cambiaron)}: revisa el total ({Formato.Dinero(venta.TotalCentavos)}) y cobra otra vez."
             : $"Se pusieron al día los precios de {Textos.Lista(precios.Productos.Select(p => $"«{p.Descripcion}»").ToList())} con la caja principal; "
               + "el total no cambió: cobra otra vez.";
+        if (avisoDeLaFecha is not null)
+            _avisoDelCobro += " " + avisoDeLaFecha;
         _enfocar = EnEfectivo.ACobrarCentavos > 0 ? "#pago-nuevo" : "#cobrar-nuevo";
         return _avisoDelCobro;
     }
@@ -4278,7 +4288,7 @@
                                    && Actual.Productos.TryGetValue(varianteMayoreo, out var productoMayoreo):
             <Ventana Titulo="Mayoreo" AlCerrar="Cerrar">
                 <EscalasMayoreo Producto="productoMayoreo" SucursalId="Caja.SucursalId" PresentacionId="lineaMayoreo.PresentacionId" Cantidad="lineaMayoreo.Cantidad"
-                                MayoreoDeCliente="Actual.Venta.MayoreoDeCliente"
+                                MayoreoDeCliente="Actual.Venta.MayoreoDeCliente" Promocion="@lineaMayoreo.Promocion" ImporteConPromocionCentavos="@lineaMayoreo.ImporteSinDescuentoCentavos"
                                 PrecioCambiadoCentavos="@(lineaMayoreo.PrecioCambiado ? lineaMayoreo.PrecioCentavos : null)" />
             </Ventana>
             break;
@@ -4340,6 +4350,7 @@
             @* @key: el precio de otro renglón empieza en blanco, no con lo que se escribió para este. *@
             <Ventana @key="lineaPrecio" Titulo="Cambiar precio" AlCerrar="Cerrar">
                 <CambiarPrecio Descripcion="@lineaPrecio.Descripcion" PrecioActualCentavos="lineaPrecio.PrecioCentavos" Cantidad="lineaPrecio.Cantidad"
+                               Promocion="@lineaPrecio.Promocion" ImporteConPromocionCentavos="@(lineaPrecio.TienePromocion ? lineaPrecio.ImporteSinDescuentoCentavos : null)"
                                Caja="Caja" Sesion="Sesion" AlCambiar="PrecioCambiadoAsync" />
             </Ventana>
             break;

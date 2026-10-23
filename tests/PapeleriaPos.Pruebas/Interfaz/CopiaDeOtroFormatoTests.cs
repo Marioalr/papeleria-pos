@@ -32,7 +32,8 @@ public sealed class CopiaDeOtroFormatoTests(ServicioDePrueba servicio) : IClassF
     /// <summary>
     /// La caja principal en otro formato: la de la entrega 5, parte 2 (el 1: no lo dice en el latido ni en el aviso, y su copia
     /// no trae lo de la búsqueda), la de la parte 3 (el 2: sin los exhibidores ni las temporadas de la entrega 13), la de la
-    /// entrega 13, parte 1 (el 3: sin las fotos de la parte 2) o una más nueva que esta caja (el 5, que sí lo dice).
+    /// entrega 13, parte 1 (el 3: sin las fotos de la parte 2), la de la parte 2 (el 4: sin las promociones de la fase 3) o una
+    /// más nueva que esta caja (el 6, que sí lo dice).
     /// </summary>
     private sealed class CajaPrincipalDeOtroFormato(int formato, HttpMessageHandler interno) : DelegatingHandler(interno)
     {
@@ -56,6 +57,11 @@ public sealed class CopiaDeOtroFormatoTests(ServicioDePrueba servicio) : IClassF
                         json.Remove("exhibidores");
                     if (formato < 4)
                         json.Remove("fotos");
+                    if (formato < 5)
+                    {
+                        json.Remove("promociones");
+                        json.Remove("huellaPromociones");
+                    }
                 }, cancellationToken);
             }
             else if (ruta.EndsWith("/avisos", StringComparison.Ordinal) && respuesta.IsSuccessStatusCode)
@@ -152,7 +158,7 @@ public sealed class CopiaDeOtroFormatoTests(ServicioDePrueba servicio) : IClassF
     }
 
     /// <summary>
-    /// Con una caja principal de antes (los formatos 1, 2 y 3) o una más nueva (el 5): la copia completa baja una vez, y los
+    /// Con una caja principal de antes (los formatos 1, 2, 3 y 4) o una más nueva (el 6): la copia completa baja una vez, y los
     /// latidos sin cambios ya no la vuelven a bajar ni piden cambios. Cuando cambia un precio (sube la versión del catálogo), la
     /// baja otra vez, una sola, con el precio nuevo.
     /// </summary>
@@ -160,7 +166,8 @@ public sealed class CopiaDeOtroFormatoTests(ServicioDePrueba servicio) : IClassF
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
-    [InlineData(5)]
+    [InlineData(4)]
+    [InlineData(6)]
     public async Task Con_otro_formato_la_copia_completa_baja_solo_cuando_cambia_el_catalogo(int formato)
     {
         var c = await AbrirAsync(formato);
@@ -188,7 +195,8 @@ public sealed class CopiaDeOtroFormatoTests(ServicioDePrueba servicio) : IClassF
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
-    [InlineData(5)]
+    [InlineData(4)]
+    [InlineData(6)]
     public async Task Con_otro_formato_los_avisos_no_bajan_la_copia_completa(int formato)
     {
         var c = await AbrirAsync(formato);

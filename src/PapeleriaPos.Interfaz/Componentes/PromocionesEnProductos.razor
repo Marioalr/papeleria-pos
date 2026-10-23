@@ -1,0 +1,933 @@
+@* Productos (F3) › Promociones (fase 3, docs/fase-3-precios-clientes.md, «Promociones y kits»): las de la tienda con sus
+   fechas, en el detalle de la página como los departamentos. Arriba, qué corre hoy, lo que viene y lo que terminó; al tocar
+   una, su detalle (lo que hace, sus fechas y días, a qué toca, quién la hizo) con «Editar» y «Terminar ahora». «Nueva
+   promoción» la arma: lleva N y paga M (3×2), el segundo a mitad de precio, un porcentaje (en productos, un departamento o
+   una marca) o un precio especial de cada producto; con sus fechas, sus días de la semana y su sucursal. Los productos se
+   marcan en la lista de la izquierda, como en «Cambiar precios». «Dejar al costo» (el F11 de eleventa en el regreso a
+   clases) pone cada marcado a su costo: lo ve quien ve la utilidad. Enter enseña cómo queda (lo que toca y lo que queda
+   debajo del costo); «Guardar» o Ctrl+Enter la guarda y, si algo queda debajo del costo, lo pide como Ctrl+D: quien tiene
+   «Vender debajo del costo» la guarda otra vez para dejarla así (antes ve cuáles), o con la autorización de quien lo tiene.
+   Lo que después quede debajo del costo sin autorizarse (llegó a su departamento, bajó su precio, subió su costo) no la
+   lleva: su detalle lo dice («Fuera por el costo»). Esc regresa, paso a paso, al producto. En el piloto con eleventa solo se
+   consultan (y se pueden terminar): una nota dice por qué. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+@if (_autorizar is { } pendiente)
+{
+    <AutorizarAccion Accion="AccionControlada.VenderBajoCosto" Detalle="@pendiente.Detalle" MontoCentavos="pendiente.Monto" Caja="Caja" Sesion="Sesion"
+                     AlAutorizar="a => AutorizadoAsync(a.Id)" AlCancelar="() => _autorizar = null" />
+}
+else
+{
+    <div class="vn-det-cab">
+        <div>
+            <h2>@Titulo</h2>
+            <p>@Subtitulo</p>
+        </div>
+        @if (_modo == Modo.Lista && PuedeCambiar)
+        {
+            <div class="vn-botonera">
+                <button id="promo-nueva" class="vn-boton primario" @onclick="Nueva"><Ico Nombre="mas" />Nueva promoción</button>
+                @if (_lista?.VeCostos == true)
+                {
+                    <button id="promo-al-costo" class="vn-boton" title="El F11 del regreso a clases: los marcados en la lista, cada uno a su costo"
+                            @onclick="DejarAlCostoAsync">Dejar al costo</button>
+                }
+            </div>
+        }
+    </div>
+    <div class="vn-adentro vn-promos">
+        @if (_lista?.EnElPiloto is { } piloto)
+        {
+            <div class="vn-alerta info"><Ico Nombre="info" /><div><span>@piloto</span></div></div>
+        }
+        @if (_aviso is not null)
+        {
+            <p class="aviso">@_aviso</p>
+        }
+        @switch (_modo)
+        {
+            case Modo.Detalle when _ficha is { } ficha:
+                @Detalle(ficha)
+                break;
+            case Modo.Editor:
+                @Editor()
+                break;
+            default:
+                @Lista()
+                break;
+        }
+        @if (_error is not null)
+        {
+            <p class="error">@_error</p>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter, EditorRequired] public PermisosDePagina Acceso { get; set; } = null!;
+
+    /// <summary>Los departamentos activos y las marcas, los de la página.</summary>
+    [Parameter, EditorRequired] public OpcionesCatalogoDto Opciones { get; set; } = null!;
+
+    /// <summary>Los productos marcados en la lista de la izquierda: los de la promoción que se arma (como en «Cambiar precios»).</summary>
+    [Parameter, EditorRequired] public IReadOnlySet<Guid> Marcados { get; set; } = null!;
+
+    /// <summary>Cambia cada vez que se marca o desmarca algo en la lista: los renglones de la promoción se ponen al día.</summary>
+    [Parameter] public int VersionDeMarcas { get; set; }
+
+    /// <summary>Que la lista marque estos (al editar una promoción, sus productos; al guardar, ninguno).</summary>
+    [Parameter] public EventCallback<IReadOnlyCollection<Guid>> AlPonerMarcas { get; set; }
+
+    /// <summary>Se abrió o se cerró la promoción que se arma: la lista de la izquierda marca o elige.</summary>
+    [Parameter] public EventCallback AlCambiarModo { get; set; }
+
+    private enum Modo { Lista, Detalle, Editor }
+
+    private enum Filtro { Hoy, PorVenir, Terminadas, Todas }
+
+    /// <summary>A qué le toca la que se arma (una de precio especial, solo a productos).</summary>
+    private enum AQue { Productos, Departamento, Marca }
+
+    private Modo _modo;
+    private Filtro _filtro = Filtro.Hoy;
+    private ListaPromocionesDto? _lista;
+    private PromocionFichaDto? _ficha;
+    private string? _error;
+    private string? _aviso;
+    private bool _ocupado;
+
+    /// <summary>
+    /// Lo que falta autorizar para guardar: quedan productos debajo del costo. El monto (lo que falta), solo si quien la guarda ve
+    /// la utilidad: con un producto, dice su costo. «Vender debajo del costo» no lleva tope, así que sin él la regla es la misma.
+    /// </summary>
+    private sealed record Pendiente(string Detalle, long? Monto);
+
+    private Pendiente? _autorizar;
+
+    // ── La que se arma ──────────────────────────────────────────────────────
+
+    /// <summary>El Id de la que se arma: el de la que se edita o uno nuevo (si la respuesta se pierde, no quedan dos).</summary>
+    private Guid _id;
+
+    private bool _esNueva;
+    private string _nombre = "";
+    private TipoPromocion _tipo = TipoPromocion.LlevaNPagaM;
+    private string _lleva = "3";
+    private string _paga = "2";
+    private string _porcentaje = "10";
+    private AQue _aQue = AQue.Productos;
+    private Guid? _departamento;
+    private string _marca = "";
+    private DateOnly _desde;
+    private DateOnly? _hasta;
+    private DiasDeLaSemana _dias = DiasDeLaSemana.Todos;
+    private bool _soloEstaSucursal;
+
+    /// <summary>«Dejar al costo»: los que se marcan llegan con el precio de su costo.</summary>
+    private bool _alCosto;
+
+    /// <summary>Los renglones de los productos de la promoción (una variante cada uno), con su precio especial escrito.</summary>
+    private readonly List<ProductoEnPromocionDto> _renglones = [];
+
+    private readonly Dictionary<Guid, string> _precios = [];
+
+    /// <summary>De qué productos (marcados) son los renglones: lo marcado después se agrega y lo desmarcado se quita.</summary>
+    private readonly HashSet<Guid> _deLosRenglones = [];
+
+    private int _marcasVistas = -1;
+    private List<string> _sinCosto = [];
+    private VistaPromocionDto? _vista;
+
+    /// <summary>Lo que hace la que se vio en «Cómo queda», como se leyó: «7.5 % menos».</summary>
+    private string? _vistaQueHace;
+
+    /// <summary>
+    /// La que ya se enseñó con lo que queda debajo del costo a quien puede guardarla así: guardarla otra vez sin cambiarla la
+    /// guarda (lo mismo que una autorización, pero sin pedírsela a otro).
+    /// </summary>
+    private string? _confirmadaBajoCosto;
+
+    /// <summary>Mientras se arma una de productos, la lista de la izquierda marca (como en «Cambiar precios»).</summary>
+    public bool MarcaProductos => _modo == Modo.Editor && (_tipo == TipoPromocion.PrecioEspecial || _aQue == AQue.Productos);
+
+    private bool PuedeCambiar => Acceso.Puede(AccionControlada.EditarCatalogo) && _lista is { EnElPiloto: null };
+
+    private string Titulo => _modo switch
+    {
+        Modo.Detalle when _ficha is { } f => $"Promoción «{f.Nombre}»",
+        Modo.Editor => _esNueva ? (_alCosto ? "Dejar al costo" : "Nueva promoción") : $"Editar «{_nombre}»",
+        _ => "Promociones",
+    };
+
+    private string Subtitulo => _modo switch
+    {
+        Modo.Lista => "Se aplican solas en la venta, con sus fechas y sus días: la que más le conviene al cliente, sin juntarse con el mayoreo. Esc regresa al producto.",
+        Modo.Detalle => "Esc regresa a la lista.",
+        _ => "Marca sus productos en la lista de la izquierda. Enter enseña cómo queda; Ctrl+Enter la guarda; Esc regresa sin guardar.",
+    };
+
+    protected override async Task OnInitializedAsync() => await CargarListaAsync();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Se marcó o desmarcó algo en la lista mientras se arma una de productos: sus renglones al día.
+        if (VersionDeMarcas != _marcasVistas)
+        {
+            _marcasVistas = VersionDeMarcas;
+            if (MarcaProductos)
+                await RenglonesAlDiaAsync();
+        }
+    }
+
+    /// <summary>Esc: cierra la autorización, la que se arma o el detalle; en la lista, la página regresa al producto.</summary>
+    public async Task<bool> CerrarAsync()
+    {
+        switch (_modo)
+        {
+            case Modo.Lista when _autorizar is null:
+                return false;
+            case Modo.Editor when _autorizar is null:
+                await CambiarModoAsync(!_esNueva && _ficha is not null ? Modo.Detalle : Modo.Lista);
+                await QuitarMarcasAsync();
+                break;
+            case Modo.Detalle when _autorizar is null:
+                await CambiarModoAsync(Modo.Lista);
+                break;
+            default:
+                _autorizar = null;
+                break;
+        }
+        StateHasChanged();
+        return true;
+    }
+
+    private async Task CambiarModoAsync(Modo modo)
+    {
+        var marcaba = MarcaProductos;
+        (_modo, _error, _vista) = (modo, null, null);
+        if (marcaba != MarcaProductos)
+            await AlCambiarModo.InvokeAsync();
+    }
+
+    private async Task QuitarMarcasAsync()
+    {
+        if (Marcados.Count > 0)
+            await AlPonerMarcas.InvokeAsync([]);
+    }
+
+    // ── La lista ────────────────────────────────────────────────────────────
+
+    private async Task CargarListaAsync()
+    {
+        try
+        {
+            _lista = await Cliente.PromocionesAsync(Caja.SucursalId, Sesion.UsuarioId);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private static bool EnFiltro(PromocionResumenDto p, Filtro filtro) => filtro switch
+    {
+        Filtro.Hoy => p.Estado == EstadoPromocion.Hoy,
+        Filtro.PorVenir => p.Estado is EstadoPromocion.PorVenir or EstadoPromocion.HoyNoToca,
+        Filtro.Terminadas => p.Estado is EstadoPromocion.Termino or EstadoPromocion.Terminada,
+        _ => true,
+    };
+
+    private static string FiltroTexto(Filtro filtro) => filtro switch
+    {
+        Filtro.Hoy => "Hoy",
+        Filtro.PorVenir => "Por venir",
+        Filtro.Terminadas => "Terminadas",
+        _ => "Todas",
+    };
+
+    private RenderFragment Lista() => __builder =>
+    {
+        if (_lista is null)
+        {
+            <p class="nota">@(_error is null ? "Cargando…" : "")</p>
+            return;
+        }
+        <div class="vn-filtros" role="group" aria-label="Cuáles promociones">
+            @foreach (var filtro in Enum.GetValues<Filtro>())
+            {
+                var este = filtro;
+                <button id="promo-filtro-@filtro" class="vn-filtro @(_filtro == filtro ? "on" : "")" aria-pressed="@(_filtro == filtro ? "true" : "false")"
+                        @onclick="() => _filtro = este">
+                    @FiltroTexto(filtro) · @_lista.Promociones.Count(p => EnFiltro(p, este))
+                </button>
+            }
+        </div>
+        var cuales = _lista.Promociones.Where(p => EnFiltro(p, _filtro)).ToList();
+        if (cuales.Count == 0)
+        {
+            <p class="vacia">
+                @(_filtro switch
+                {
+                    Filtro.Hoy => "Hoy no corre ninguna promoción.",
+                    Filtro.PorVenir => "No hay promociones por venir.",
+                    Filtro.Terminadas => "Todavía no termina ninguna.",
+                    _ => "Todavía no hay promociones.",
+                })
+                @(PuedeCambiar && _lista.Promociones.Count == 0 ? " Da de alta la primera con «Nueva promoción»." : "")
+            </p>
+            return;
+        }
+        <table class="vn-tabla vn-promos-tabla">
+            <thead><tr><th>Promoción</th><th>Fechas</th><th></th></tr></thead>
+            <tbody>
+                @for (var i = 0; i < cuales.Count; i++)
+                {
+                    var p = cuales[i];
+                    <tr id="promo-@i" class="vn-promo-renglon @(p.Estado is EstadoPromocion.Termino or EstadoPromocion.Terminada ? "apagado" : "")"
+                        @onclick="() => AbrirAsync(p.Id)">
+                        <td>
+                            <strong>@p.Nombre</strong>
+                            <small>@p.QueHace · @p.AQue@(p.Sucursal is { } s ? $" · solo en {s}" : "")</small>
+                        </td>
+                        <td>@p.Fechas</td>
+                        <td class="num">@Estado(p.Estado, p.Desde, p.Hasta)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    /// <summary>«Hoy», «Hoy no toca», «Empieza el 1/08», «Terminó el 31/08», «Terminada».</summary>
+    private RenderFragment Estado(EstadoPromocion estado, DateOnly desde, DateOnly? hasta) => estado switch
+    {
+        EstadoPromocion.Hoy => @<span class="vn-etiq">Hoy</span>,
+        EstadoPromocion.HoyNoToca => @<span class="vn-etiq ambar">Hoy no toca</span>,
+        EstadoPromocion.PorVenir => @<span class="vn-etiq azul">Empieza el @desde.ToString("d/MM", Formato.Mexico)</span>,
+        EstadoPromocion.Termino => @<span class="vn-etiq gris">Terminó el @(hasta?.ToString("d/MM", Formato.Mexico))</span>,
+        _ => @<span class="vn-etiq gris">Terminada</span>,
+    };
+
+    // ── El detalle ──────────────────────────────────────────────────────────
+
+    private async Task AbrirAsync(Guid id)
+    {
+        try
+        {
+            _ficha = await Cliente.PromocionAsync(id, Caja.SucursalId, Sesion.UsuarioId);
+            _aviso = null;
+            await CambiarModoAsync(Modo.Detalle);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private RenderFragment Detalle(PromocionFichaDto f) => __builder =>
+    {
+        <div class="vn-promo-ficha">
+            <p class="vn-promo-que">
+                <strong>@Mayuscula(f.QueHace)</strong> · @f.Fechas · @(f.SucursalId is null ? "en todas las sucursales" : $"solo en {Caja.Sucursal}")
+                @Estado(f.Estado, f.Desde, f.Hasta)
+            </p>
+            <p>
+                @(f.CuantosToca == 1 ? "Toca 1 producto que se vende" : $"Toca {Formato.Numero(f.CuantosToca)} productos que se venden")@(f.Departamentos.Count > 0
+                    ? $": los del departamento {string.Join(", ", f.Departamentos.Select(d => $"«{d.Nombre}»"))}" : "")@(f.Marcas.Count > 0
+                    ? $"{(f.Departamentos.Count > 0 ? " y" : ":")} los de la marca {string.Join(", ", f.Marcas.Select(m => $"«{m}»"))}" : "").
+            </p>
+            @if (f.FueraPorElCosto is { Count: > 0 } fuera)
+            {
+                <p id="promo-fuera" class="nota vn-precios-no">
+                    Fuera por el costo (no la llevan: con ella quedarían debajo de lo que cuestan):
+                    @Textos.Lista(fuera.Take(10).Select(n => $"«{n}»").ToList())@(fuera.Count > 10 ? $" y {fuera.Count - 10} más" : "").
+                    Para dársela, «@(f.Estado is EstadoPromocion.Termino or EstadoPromocion.Terminada ? "Volver a usarla" : "Editar")» y guárdala con «Vender
+                    debajo del costo» o con la autorización de quien lo tiene.
+                </p>
+            }
+            @if (f.Productos.Count > 0)
+            {
+                @TablaProductos(f.Productos, f.Tipo, f.VeCostos, editable: false)
+            }
+            <p class="nota">
+                La dio de alta @f.Creo.@(f.Termino is { } termino ? $" La terminó {termino}." : "")
+            </p>
+        </div>
+        <div class="vn-botonera">
+            @if (PuedeCambiar)
+            {
+                <button id="promo-editar" class="vn-boton" @onclick="() => EditarAsync(f)">
+                    @(f.Estado is EstadoPromocion.Termino or EstadoPromocion.Terminada ? "Volver a usarla" : "Editar")
+                </button>
+            }
+            @if (Acceso.Puede(AccionControlada.EditarCatalogo) && f.Estado is EstadoPromocion.Hoy or EstadoPromocion.HoyNoToca or EstadoPromocion.PorVenir)
+            {
+                <button id="promo-terminar" class="vn-boton peligro" disabled="@_ocupado" @onclick="() => TerminarAsync(f)">Terminar ahora</button>
+            }
+            <button class="vn-boton" @onclick="() => CambiarModoAsync(Modo.Lista)">Volver a la lista <kbd>Esc</kbd></button>
+        </div>
+    };
+
+    private static string Mayuscula(string texto) => texto.Length == 0 ? texto : char.ToUpper(texto[0], Formato.Mexico) + texto[1..];
+
+    /// <summary>Los productos de una promoción: su menudeo, su precio especial (escrito, al armarla) y, para quien ve la utilidad, su costo y su margen.</summary>
+    private RenderFragment TablaProductos(IReadOnlyList<ProductoEnPromocionDto> productos, TipoPromocion tipo, bool veCostos, bool editable) => __builder =>
+    {
+        var especial = tipo == TipoPromocion.PrecioEspecial;
+        <table class="vn-tabla vn-promos-productos">
+            <thead>
+                <tr>
+                    <th>Producto</th>
+                    <th class="num">Menudeo</th>
+                    @if (especial)
+                    {
+                        <th class="num">Precio especial</th>
+                    }
+                    @if (veCostos)
+                    {
+                        <th class="num">Costo</th>
+                        <th class="num">Margen</th>
+                    }
+                    @if (editable)
+                    {
+                        <th></th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < productos.Count; i++)
+                {
+                    var p = productos[i];
+                    <tr>
+                        <td>
+                            @p.Producto
+                            @if (p.DebajoDelCosto)
+                            {
+                                <span class="vn-etiq rojo">debajo del costo</span>
+                            }
+                        </td>
+                        <td class="num">@Formato.Dinero(p.MenudeoCentavos)<small> por @p.Unidad</small></td>
+                        @if (especial)
+                        {
+                            <td class="num">
+                                @if (editable)
+                                {
+                                    var varianteId = p.VarianteId;
+                                    <span class="vn-precios-cuanto">
+                                        <span>$</span>
+                                        <input id="promo-precio-@i" aria-label="Precio especial de @p.Producto" inputmode="decimal" autocomplete="off"
+                                               value="@_precios.GetValueOrDefault(varianteId)" @oninput="e => _precios[varianteId] = e.Value?.ToString() ?? string.Empty"
+                                               @onkeydown="AlTeclearAsync" />
+                                    </span>
+                                }
+                                else if (p.PrecioCentavos is { } precio)
+                                {
+                                    <strong>@Formato.Dinero(precio)</strong>
+                                }
+                            </td>
+                        }
+                        @if (veCostos)
+                        {
+                            <td class="num">@(p.CostoCentavos is { } costo ? Formato.Dinero((long)Math.Ceiling(costo)) : "—")</td>
+                            <td class="num">@(p.MargenCentesimas is { } margen ? Margen.Texto(margen) : "—")</td>
+                        }
+                        @if (editable)
+                        {
+                            var quitar = p;
+                            <td class="acciones"><button class="vn-boton chico" title="Quitarlo de la promoción" @onclick="() => QuitarRenglonAsync(quitar)">Quitar</button></td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    private async Task TerminarAsync(PromocionFichaDto f)
+    {
+        _ocupado = true;
+        try
+        {
+            _ficha = await Cliente.TerminarPromocionAsync(f.Id, new SolicitudTerminarPromocion(Sesion.UsuarioId, Caja.SucursalId, Caja.Id));
+            _aviso = $"Se terminó la promoción «{f.Nombre}»: las cajas dejan de aplicarla con su copia.";
+            _error = null;
+            await CargarListaAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    // ── Armarla ─────────────────────────────────────────────────────────────
+
+    private async Task Nueva()
+    {
+        Limpiar(nueva: true);
+        _desde = _lista?.Hoy ?? Cliente.Hoy;
+        await EmpezarAsync();
+    }
+
+    /// <summary>«Dejar al costo»: un precio especial de los marcados, cada uno a su costo, desde hoy y por un mes (se cambia).</summary>
+    private async Task DejarAlCostoAsync()
+    {
+        Limpiar(nueva: true);
+        (_tipo, _nombre, _alCosto) = (TipoPromocion.PrecioEspecial, "Al costo", true);
+        _desde = _lista?.Hoy ?? Cliente.Hoy;
+        _hasta = _desde.AddDays(30);
+        await EmpezarAsync();
+    }
+
+    private async Task EditarAsync(PromocionFichaDto f)
+    {
+        Limpiar(nueva: false);
+        _id = f.Id;
+        (_nombre, _tipo, _desde, _hasta, _dias, _soloEstaSucursal) = (f.Nombre, f.Tipo, f.Desde, f.Hasta, f.Dias, f.SucursalId is not null);
+        (_lleva, _paga) = f.Tipo == TipoPromocion.LlevaNPagaM ? (f.Lleva.ToString(), f.Paga.ToString()) : ("3", "2");
+        _porcentaje = f.Tipo == TipoPromocion.Porcentaje ? (f.Centesimas / 100m).ToString("0.##", CultureInfo.InvariantCulture) : "10";
+        _aQue = f.Departamentos.Count > 0 ? AQue.Departamento : f.Marcas.Count > 0 ? AQue.Marca : AQue.Productos;
+        _departamento = f.Departamentos.FirstOrDefault()?.Id;
+        _marca = f.Marcas.FirstOrDefault() ?? "";
+        foreach (var p in f.Productos)
+        {
+            _renglones.Add(p);
+            _deLosRenglones.Add(p.ProductoId);
+            if (p.PrecioCentavos is { } precio)
+                _precios[p.VarianteId] = (precio / 100m).ToString("0.00", CultureInfo.InvariantCulture);
+        }
+        // Sus productos quedan marcados en la lista: desmarcar uno lo quita, marcar otro lo agrega.
+        await AlPonerMarcas.InvokeAsync(f.Productos.Select(p => p.ProductoId).Distinct().ToList());
+        await EmpezarAsync();
+    }
+
+    private void Limpiar(bool nueva)
+    {
+        (_id, _esNueva, _nombre, _tipo, _lleva, _paga, _porcentaje) = (Ids.Nuevo(), nueva, "", TipoPromocion.LlevaNPagaM, "3", "2", "10");
+        (_aQue, _departamento, _marca, _hasta, _dias, _soloEstaSucursal, _alCosto) = (AQue.Productos, null, "", null, DiasDeLaSemana.Todos, false, false);
+        (_vista, _vistaQueHace, _error, _aviso, _sinCosto, _confirmadaBajoCosto) = (null, null, null, null, [], null);
+        _renglones.Clear();
+        _precios.Clear();
+        _deLosRenglones.Clear();
+    }
+
+    /// <summary>Abre la que se arma: con lo que ya está marcado en la lista, si es de productos.</summary>
+    private async Task EmpezarAsync()
+    {
+        await CambiarModoAsync(Modo.Editor);
+        if (MarcaProductos)
+            await RenglonesAlDiaAsync();
+        await Js.EnfocarAsync("#promo-nombre");
+    }
+
+    /// <summary>
+    /// Los renglones con lo marcado en la lista: los productos que se marcaron llegan con sus variantes (al costo, con el precio
+    /// de su costo); los que se desmarcaron se van. Lo escrito en los demás se queda.
+    /// </summary>
+    private async Task RenglonesAlDiaAsync()
+    {
+        var marcados = Marcados.ToHashSet();
+        foreach (var quitado in _deLosRenglones.Where(p => !marcados.Contains(p)).ToList())
+        {
+            _deLosRenglones.Remove(quitado);
+            _renglones.RemoveAll(r => r.ProductoId == quitado);
+        }
+        var nuevos = marcados.Where(p => !_deLosRenglones.Contains(p)).ToList();
+        if (nuevos.Count == 0)
+            return;
+        try
+        {
+            var llegaron = await Cliente.ProductosPromocionAsync(new SolicitudProductosPromocion(Sesion.UsuarioId, Caja.SucursalId, nuevos,
+                _alCosto && _tipo == TipoPromocion.PrecioEspecial));
+            foreach (var r in llegaron.Productos.Where(r => _renglones.All(x => x.VarianteId != r.VarianteId)))
+            {
+                _renglones.Add(r);
+                if (r.PrecioCentavos is { } precio)
+                    _precios[r.VarianteId] = (precio / 100m).ToString("0.00", CultureInfo.InvariantCulture);
+            }
+            _deLosRenglones.UnionWith(nuevos);
+            _sinCosto = [.. _sinCosto.Union(llegaron.SinCosto)];
+            _vista = null;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    /// <summary>Quita un renglón (una variante); si era el último de su producto, también lo desmarca en la lista.</summary>
+    private async Task QuitarRenglonAsync(ProductoEnPromocionDto renglon)
+    {
+        _renglones.Remove(renglon);
+        _precios.Remove(renglon.VarianteId);
+        _vista = null;
+        if (_renglones.All(r => r.ProductoId != renglon.ProductoId))
+        {
+            _deLosRenglones.Remove(renglon.ProductoId);
+            await AlPonerMarcas.InvokeAsync(Marcados.Where(p => p != renglon.ProductoId).ToList());
+        }
+    }
+
+    private RenderFragment Editor() => __builder =>
+    {
+        var especial = _tipo == TipoPromocion.PrecioEspecial;
+        <div class="vn-precios-fila">
+            <label class="vn-promo-nombre">
+                Nombre (sale en el ticket)
+                <input id="promo-nombre" maxlength="@Promocion.LargoNombre" autocomplete="off" spellcheck="false" value="@_nombre"
+                       @oninput="e => _nombre = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearAsync" />
+            </label>
+        </div>
+        <h3>Qué hace</h3>
+        <div class="vn-precios-fila">
+            <select id="promo-tipo" aria-label="Qué hace" value="@_tipo" @onchange="TipoElegidoAsync" @onkeydown="AlTeclearAsync">
+                <option value="@TipoPromocion.LlevaNPagaM">Lleva y paga (como 3×2)</option>
+                <option value="@TipoPromocion.SegundoAMitad">El segundo a mitad de precio</option>
+                <option value="@TipoPromocion.Porcentaje">Un porcentaje menos</option>
+                <option value="@TipoPromocion.PrecioEspecial">Un precio especial de cada producto</option>
+            </select>
+            @switch (_tipo)
+            {
+                case TipoPromocion.LlevaNPagaM:
+                    <span class="vn-precios-cuanto">
+                        <span>Lleva</span>
+                        <input id="promo-lleva" aria-label="Cuántas lleva" inputmode="numeric" autocomplete="off" value="@_lleva"
+                               @oninput="e => _lleva = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearAsync" />
+                        <span>y paga</span>
+                        <input id="promo-paga" aria-label="Cuántas paga" inputmode="numeric" autocomplete="off" value="@_paga"
+                               @oninput="e => _paga = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearAsync" />
+                    </span>
+                    break;
+                case TipoPromocion.Porcentaje:
+                    <span class="vn-precios-cuanto">
+                        <input id="promo-porcentaje" aria-label="Porcentaje" inputmode="decimal" autocomplete="off" value="@_porcentaje"
+                               @oninput="e => _porcentaje = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearAsync" />
+                        <span>% menos</span>
+                    </span>
+                    break;
+            }
+        </div>
+        <p class="nota">
+            @(_tipo switch
+            {
+                TipoPromocion.LlevaNPagaM => "Cuenta cada producto aparte, en piezas como el mayoreo: un paquete de 12 son 12.",
+                TipoPromocion.SegundoAMitad => "De cada dos iguales, uno va a la mitad de su menudeo.",
+                TipoPromocion.Porcentaje => "Sobre el menudeo.",
+                _ => "El de cada producto, por pieza (o por metro, kilo o litro).",
+            })
+            No se junta con el mayoreo: se cobra lo que más le conviene al cliente.
+        </p>
+
+        <h3>A qué le toca</h3>
+        @if (!especial)
+        {
+            <div class="vn-filtros" role="group" aria-label="A qué le toca">
+                @foreach (var aQue in Enum.GetValues<AQue>())
+                {
+                    var este = aQue;
+                    <button id="promo-a-que-@aQue" class="vn-filtro @(_aQue == aQue ? "on" : "")" aria-pressed="@(_aQue == aQue ? "true" : "false")"
+                            @onclick="() => AQueElegidoAsync(este)">
+                        @(aQue switch { AQue.Productos => $"Productos · {Formato.Numero(Marcados.Count)}", AQue.Departamento => "Un departamento", _ => "Una marca" })
+                    </button>
+                }
+            </div>
+        }
+        @if (especial || _aQue == AQue.Productos)
+        {
+            <p class="nota">
+                Toca en la lista de la izquierda los productos (cada uno con todas sus variantes); con el cursor en su búsqueda, ↑ ↓ eligen y Enter marca o desmarca.
+            </p>
+            @if (_sinCosto.Count > 0)
+            {
+                <p class="nota vn-precios-no">Sin costo todavía (no se agregaron): @Textos.Lista(_sinCosto.Select(n => $"«{n}»").ToList()).</p>
+            }
+            @if (_renglones.Count > 0)
+            {
+                @TablaProductos(_renglones, _tipo, _lista?.VeCostos == true, editable: true)
+            }
+        }
+        else if (_aQue == AQue.Departamento)
+        {
+            <div class="vn-precios-fila">
+                <select id="promo-depto" aria-label="Departamento" value="@_departamento" @onchange="e => _departamento = Guid.TryParse(e.Value?.ToString(), out var d) ? d : null"
+                        @onkeydown="AlTeclearAsync">
+                    <option value="">Elige el departamento…</option>
+                    @foreach (var d in Opciones.Departamentos)
+                    {
+                        <option value="@d.Id">@d.Nombre</option>
+                    }
+                </select>
+            </div>
+        }
+        else
+        {
+            <div class="vn-precios-fila">
+                <select id="promo-marca" aria-label="Marca" value="@_marca" @onchange="e => _marca = e.Value?.ToString() ?? string.Empty" @onkeydown="AlTeclearAsync">
+                    <option value="">Elige la marca…</option>
+                    @foreach (var m in Opciones.Marcas)
+                    {
+                        <option value="@m">@m</option>
+                    }
+                </select>
+            </div>
+        }
+
+        <h3>Cuándo</h3>
+        <div class="vn-precios-fila">
+            <label class="vn-promo-fecha">
+                Desde
+                <input id="promo-desde" type="date" value="@_desde.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)" @onchange="DesdeElegido"
+                       @onkeydown="AlTeclearAsync" />
+            </label>
+            <label class="vn-promo-fecha">
+                Hasta (vacío: hasta que se termine)
+                <input id="promo-hasta" type="date" value="@(_hasta?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))" @onchange="HastaElegido"
+                       @onkeydown="AlTeclearAsync" />
+            </label>
+        </div>
+        <div class="vn-promo-dias" role="group" aria-label="Días de la semana">
+            @foreach (var dia in Semana.EnOrden)
+            {
+                var este = dia;
+                <label class="opcion">
+                    <input id="promo-dia-@dia" type="checkbox" checked="@((_dias & dia) != 0)" @onchange="e => DiaElegido(este, e.Value is true)" />
+                    @Semana.Nombre(dia)
+                </label>
+            }
+        </div>
+        <label class="opcion">
+            <input id="promo-sucursal" type="checkbox" checked="@_soloEstaSucursal" @onchange="e => _soloEstaSucursal = e.Value is true" />
+            Solo en esta sucursal (@Caja.Sucursal); si no, en todas
+        </label>
+
+        <div class="vn-botonera">
+            <button id="promo-ver" class="vn-boton" disabled="@_ocupado" @onclick="VerAsync">Ver cómo queda <kbd>Enter</kbd></button>
+            <button id="promo-guardar" class="vn-boton primario" disabled="@_ocupado" @onclick="() => GuardarAsync(null)">Guardar <kbd>Ctrl+Enter</kbd></button>
+            <button class="vn-boton" @onclick="() => CerrarAsync()">Cancelar <kbd>Esc</kbd></button>
+        </div>
+
+        @if (_vista is { } vista)
+        {
+            <h3>Cómo queda</h3>
+            <p class="vn-precios-resumen">
+                @if (_vistaQueHace is { } queHace)
+                {
+                    <span id="promo-que-hace">@Mayuscula(queHace) · </span>
+                }
+                <strong>@(vista.CuantosToca == 1 ? "Toca 1 producto que se vende" : $"Toca {Formato.Numero(vista.CuantosToca)} productos que se venden")</strong>
+                @if (vista.BajoCosto.Lineas.Count == 0)
+                {
+                    <span> · ninguno queda debajo del costo.</span>
+                }
+            </p>
+            @if (vista.BajoCosto.Lineas.Count > 0)
+            {
+                <p id="promo-bajo-costo" class="nota vn-precios-no">
+                    Quedan debajo del costo: @Textos.Lista(vista.BajoCosto.Lineas.Take(10).Select(n => $"«{n}»").ToList())@(vista.BajoCosto.Lineas.Count > 10
+                        ? $" y {vista.BajoCosto.Lineas.Count - 10} más" : ""). Para guardarla hace falta «Vender debajo del costo» o la autorización de quien lo tiene;
+                    guardada así, la llevan aunque queden debajo.
+                </p>
+            }
+            @if (!especial && _aQue != AQue.Productos && vista.Productos.Count > 0)
+            {
+                @TablaProductos(vista.Productos, _tipo, vista.VeCostos, editable: false)
+            }
+            @if (!vista.VeCostos)
+            {
+                <p class="nota">El costo y el margen los ve quien tiene el permiso «Ver costos, utilidad y margen».</p>
+            }
+        }
+    };
+
+    private async Task TipoElegidoAsync(ChangeEventArgs e)
+    {
+        var marcaba = MarcaProductos;
+        if (Enum.TryParse<TipoPromocion>(e.Value?.ToString(), out var tipo))
+            _tipo = tipo;
+        _vista = null;
+        if (marcaba != MarcaProductos)
+            await AlCambiarModo.InvokeAsync();
+        if (MarcaProductos)
+            await RenglonesAlDiaAsync();
+    }
+
+    private async Task AQueElegidoAsync(AQue aQue)
+    {
+        var marcaba = MarcaProductos;
+        (_aQue, _vista) = (aQue, null);
+        if (marcaba != MarcaProductos)
+            await AlCambiarModo.InvokeAsync();
+        if (MarcaProductos)
+            await RenglonesAlDiaAsync();
+    }
+
+    private void DesdeElegido(ChangeEventArgs e)
+    {
+        if (DateOnly.TryParseExact(e.Value?.ToString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var desde))
+            _desde = desde;
+        _vista = null;
+    }
+
+    private void HastaElegido(ChangeEventArgs e)
+    {
+        _hasta = DateOnly.TryParseExact(e.Value?.ToString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var hasta) ? hasta : null;
+        _vista = null;
+    }
+
+    private void DiaElegido(DiasDeLaSemana dia, bool marcado)
+    {
+        _dias = marcado ? _dias | dia : _dias & ~dia;
+        _vista = null;
+    }
+
+    /// <summary>Enter: cómo queda; Ctrl+Enter: guardarla.</summary>
+    private async Task AlTeclearAsync(KeyboardEventArgs e)
+    {
+        if (e.Key != "Enter" || _ocupado)
+            return;
+        if (e.CtrlKey)
+            await GuardarAsync(null);
+        else
+            await VerAsync();
+    }
+
+    /// <summary>Lo que se manda: lo escrito, revisado; vacío (con el error) si falta algo que se ve aquí.</summary>
+    private SolicitudPromocion? Solicitud(Guid? autorizacion)
+    {
+        _error = null;
+        int lleva = 0, paga = 0, centesimas = 0;
+        if (_tipo == TipoPromocion.LlevaNPagaM && (!int.TryParse(_lleva.Trim(), out lleva) || !int.TryParse(_paga.Trim(), out paga)))
+        {
+            _error = "Escribe cuántas lleva y cuántas paga (como 3 y 2).";
+            return null;
+        }
+        if (_tipo == TipoPromocion.Porcentaje)
+        {
+            // Con punto decimal: «7,5» se leía como 75 % (la coma de los miles).
+            var texto = _porcentaje.Replace("%", "").Trim();
+            if (texto.Contains(','))
+            {
+                _error = "El porcentaje va con punto, sin comas: 7.5 es siete y medio por ciento.";
+                return null;
+            }
+            if (!decimal.TryParse(texto, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var porcentaje))
+            {
+                _error = "Escribe el porcentaje (como 10).";
+                return null;
+            }
+            centesimas = (int)Math.Round(porcentaje * 100, MidpointRounding.AwayFromZero);
+        }
+        List<AlcanceSolicitadoDto> alcance = [];
+        if (_tipo == TipoPromocion.PrecioEspecial || _aQue == AQue.Productos)
+        {
+            foreach (var r in _renglones)
+            {
+                long? precio = null;
+                if (_tipo == TipoPromocion.PrecioEspecial && (precio = Formato.LeerPesos(_precios.GetValueOrDefault(r.VarianteId))) is not > 0)
+                {
+                    _error = $"Escribe el precio especial de «{r.Producto}».";
+                    return null;
+                }
+                alcance.Add(new AlcanceSolicitadoDto(VarianteId: r.VarianteId, PrecioCentavos: precio));
+            }
+        }
+        else if (_aQue == AQue.Departamento && _departamento is { } departamento)
+            alcance.Add(new AlcanceSolicitadoDto(DepartamentoId: departamento));
+        else if (_aQue == AQue.Marca && _marca.Trim().Length > 0)
+            alcance.Add(new AlcanceSolicitadoDto(Marca: _marca));
+        return new SolicitudPromocion(Sesion.UsuarioId, Caja.SucursalId, Caja.Id, _nombre, _tipo, lleva, paga, centesimas, _desde, _hasta, _dias,
+            _soloEstaSucursal, alcance, autorizacion, _id);
+    }
+
+    private async Task VerAsync()
+    {
+        if (Solicitud(null) is not { } solicitud)
+            return;
+        _ocupado = true;
+        try
+        {
+            _vista = await Cliente.VistaPromocionAsync(solicitud);
+            _vistaQueHace = Promocion.TipoTexto(solicitud.Tipo, solicitud.Lleva, solicitud.Paga, solicitud.Centesimas);
+        }
+        catch (ErrorCaja ex)
+        {
+            (_vista, _error) = (null, ex.Message);
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    /// <summary>
+    /// Guardarla. Antes se ve cómo queda: si algo queda debajo del costo, como en Ctrl+D, quien tiene «Vender debajo del costo»
+    /// la ve con los que quedan debajo y la guarda otra vez para dejarla así; si lo puede pedir, se pide la autorización (que
+    /// dice cuáles); si no, no se puede. El servicio lo vuelve a revisar al guardar.
+    /// </summary>
+    private async Task GuardarAsync(Guid? autorizacion)
+    {
+        if (Solicitud(autorizacion) is not { } solicitud)
+            return;
+        _ocupado = true;
+        try
+        {
+            if (autorizacion is null)
+            {
+                var vista = _vista = await Cliente.VistaPromocionAsync(solicitud);
+                _vistaQueHace = Promocion.TipoTexto(solicitud.Tipo, solicitud.Lleva, solicitud.Paga, solicitud.Centesimas);
+                if (vista.BajoCosto.Lineas.Count > 0)
+                {
+                    long? falta = vista.VeCostos ? vista.BajoCosto.FaltanteCentavos : null;
+                    var decision = await Cliente.PermisoAsync(new SolicitudPermiso(Sesion.UsuarioId, Caja.SucursalId, AccionControlada.VenderBajoCosto, falta));
+                    switch (decision.Nivel)
+                    {
+                        case NivelPermiso.Permitido when Firma(solicitud) is var firma && firma != _confirmadaBajoCosto:
+                            // Primero ve cuáles quedan debajo («Cómo queda»); guardarla otra vez así, la guarda.
+                            _confirmadaBajoCosto = firma;
+                            _aviso = "Con esta promoción quedan productos debajo del costo (abajo, en «Cómo queda»). Si así va, guárdala otra vez "
+                                     + "(Ctrl+Enter): la llevan aunque queden debajo.";
+                            return;
+                        case NivelPermiso.Permitido:
+                            break;
+                        case NivelPermiso.RequiereAutorizacion:
+                            _autorizar = new Pendiente($"La promoción «{_nombre.Trim()}» deja debajo del costo: {string.Join(", ", vista.BajoCosto.Lineas.Take(10))}"
+                                + (vista.BajoCosto.Lineas.Count > 10 ? $" y {vista.BajoCosto.Lineas.Count - 10} más" : ""), falta);
+                            return;
+                        default:
+                            _error = "Con esta promoción quedan productos debajo del costo y no tienes permiso para eso.";
+                            return;
+                    }
+                }
+            }
+            var ficha = await Cliente.GuardarPromocionAsync(solicitud);
+            (_ficha, _aviso) = (ficha, $"Listo: se guardó la promoción «{ficha.Nombre}». Las cajas la aplican con su copia, también sin conexión.");
+            _renglones.Clear();
+            _deLosRenglones.Clear();
+            await CambiarModoAsync(Modo.Detalle);
+            await QuitarMarcasAsync();
+            await CargarListaAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _ocupado = false;
+        }
+    }
+
+    private async Task AutorizadoAsync(Guid autorizacionId)
+    {
+        _autorizar = null;
+        await GuardarAsync(autorizacionId);
+    }
+
+    /// <summary>La que se arma, como texto que se compara: si cambió algo desde que se enseñó lo que queda debajo del costo.</summary>
+    private static string Firma(SolicitudPromocion solicitud) => System.Text.Json.JsonSerializer.Serialize(solicitud with { AutorizacionBajoCostoId = null });
+}
