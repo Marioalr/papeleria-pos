@@ -145,6 +145,9 @@
         /// <summary>Debajo del nombre, a todo lo ancho (los rápidos, los sinónimos, el margen por departamento).</summary>
         public RenderFragment? Bloque { get; init; }
 
+        /// <summary>Si el bloque se ve ahora (la lista de «Restaurar un respaldo», que se abre con su botón); vacío: siempre.</summary>
+        public Func<bool>? MuestraBloque { get; init; }
+
         /// <summary>Solo para el buscador: lleva a ese grupo, donde está lo que se busca (en «Usuarios y permisos», por ejemplo).</summary>
         public string? Lleva { get; init; }
 
@@ -360,7 +363,7 @@
     // ── Un renglón ───────────────────────────────────────────────────────────
 
     private RenderFragment Renglon(Grupo g, Ajuste a, bool enBusqueda) =>
-        @<div @key="a.Id" class="vn-ajuste @(a.Bloque is null ? null : "bloque")">
+        @<div @key="a.Id" class="vn-ajuste @(ConBloque(a) ? "bloque" : null)">
             <div class="vn-ajuste-txt">
                 <strong>@a.Titulo</strong>
                 @if (enBusqueda || a.Ayuda is not null)
@@ -407,11 +410,13 @@
                     }
                 </div>
             }
-            @if (a.Bloque is { } bloque && a.Lleva is null && a.NoListo?.Invoke() is null)
+            @if (a.Bloque is { } bloque && a.Lleva is null && a.NoListo?.Invoke() is null && ConBloque(a))
             {
                 <div class="vn-ajuste-bloque">@bloque</div>
             }
         </div>;
+
+    private static bool ConBloque(Ajuste a) => a.Bloque is not null && (a.MuestraBloque?.Invoke() ?? true);
 
     private RenderFragment Control(Ajuste a, Campo c) =>
         @<span class="@c.Clase">
@@ -697,11 +702,11 @@
             Ajustes = [Atajo("cajas-pc", "Cajas y sus PC", "cajas", AccionControlada.AdministrarCajas, "Quitar la PC de una caja; dar de alta una.", "equipo serie folios alta quitar")],
             Contenido = @<AdministrarCajas Caja="Caja" Sesion="Sesion" AlGuardar="MarcarGuardado" />,
         },
-        // Respaldos (2026-10-22, como el del prototipo): el último y «Respaldar ahora». Cada cuánto y cuántos días los decide la
-        // caja principal; restaurar uno no se hace desde aquí (es más delicado y va aparte).
+        // Respaldos (2026-10-22, como el del prototipo): el último, «Respaldar ahora» y, desde el 2026-10-23, «Restaurar un respaldo»
+        // (RestaurarRespaldo). Cada cuánto y cuántos días los decide la caja principal.
         new("respaldos", "Respaldos", "respaldo")
         {
-            Descripcion = "La caja principal copia la base sola, una vez al día y con cada corte Z, sin detener la venta. Restaurar uno no se hace desde aquí.",
+            Descripcion = "La caja principal copia la base sola, una vez al día y con cada corte Z, sin detener la venta. Aquí se respalda en el momento y se restaura uno.",
             SeGuarda = false,
             Visible = () => Sesion.Puede(AccionControlada.ConfigurarTienda),
             Ajustes =
@@ -729,6 +734,20 @@
                     NoListo = NoListoRespaldos,
                     Palabras = "copia base respaldo",
                     Control = @<button id="aj-respaldar" class="vn-boton chico" disabled="@_respaldando" @onclick="RespaldarAsync">@(_respaldando ? "Respaldando…" : "Respaldar ahora")</button>,
+                },
+                // Restaurar (2026-10-23): la lista se abre debajo, como en el prototipo («Elegir respaldo…»); cómo va o cómo quedó una
+                // restauración se ve aunque la lista esté cerrada.
+                new(Restaurar, "Restaurar un respaldo")
+                {
+                    Ayuda = "Regresa la base a como estaba en un respaldo; la de ahora se guarda aparte. La caja principal se reinicia y, mientras, las cajas venden sin conexión.",
+                    Permiso = AccionControlada.ConfigurarTienda,
+                    NoListo = NoListoRespaldos,
+                    Palabras = "restaurar regresar respaldo base danada apagon",
+                    Control = @<button id="aj-restaurar" class="vn-boton chico" aria-expanded="@(_restaurar ? "true" : "false")"
+                                       @onclick="() => _restaurar = !_restaurar">@(_restaurar ? "Cerrar la lista" : "Elegir respaldo…")</button>,
+                    Bloque = @<RestaurarRespaldo Caja="Caja" Sesion="Sesion" Restauracion="_respaldos?.Restauracion" ConLista="_restaurar"
+                                                 AlCambiar="RespaldosCambiaron" />,
+                    MuestraBloque = () => _restaurar || _respaldos?.Restauracion is not null,
                 },
             ],
         },
@@ -978,7 +997,21 @@
     /// <summary>El renglón de «Respaldar ahora»: ahí se dice dónde quedó o por qué no.</summary>
     private const string Respaldar = "respaldar";
 
+    /// <summary>El renglón de «Restaurar un respaldo» (2026-10-23).</summary>
+    private const string Restaurar = "restaurar";
+
     private bool _respaldando;
+
+    /// <summary>La lista de «Restaurar un respaldo» está abierta.</summary>
+    private bool _restaurar;
+
+    /// <summary>Se pidió, se canceló o volvió la caja principal: lo de Respaldos como quedó (el último, la restauración).</summary>
+    private void RespaldosCambiaron(RespaldosDto respaldos)
+    {
+        _respaldos = respaldos;
+        if (respaldos.Restauracion is { Pendiente: true })
+            _restaurar = false;
+    }
 
     private string? NoListoRespaldos() => _respaldos is null ? _errorRespaldos ?? "Cargando…" : null;
 

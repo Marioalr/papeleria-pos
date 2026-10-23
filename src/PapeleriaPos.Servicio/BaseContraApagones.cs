@@ -73,8 +73,9 @@ public sealed class RevisionAlArrancar(
 
     /// <summary>Para el estado del servicio: nada si todo está bien.</summary>
     public string? Aviso => !BaseDanada ? null
-        : Respaldo is { } respaldo ? $"{AvisoBaseDanada}: avisa al dueño, hay que restaurar el respaldo de antes del apagón ({Path.GetFileName(respaldo)})."
-        : $"{AvisoBaseDanada} y no hay respaldo: avisa al dueño.";
+        : Respaldo is { } respaldo
+            ? $"{AvisoBaseDanada}: avisa al dueño, hay que restaurar el respaldo de antes del apagón ({Path.GetFileName(respaldo)}) en Configuración › Respaldos."
+            : $"{AvisoBaseDanada} y no hay respaldo: avisa al dueño.";
 
     private static string? Archivo(string cadenaConexion)
     {
@@ -258,10 +259,14 @@ public sealed class RevisionAlArrancar(
             ? $"Hay que restaurar el respaldo de antes del apagón: {Path.GetFileName(respaldo)} ({HoraMexico.ALocal(File.GetLastWriteTimeUtc(respaldo)):dd/MM/yyyy HH:mm}), en {carpetaRespaldos}."
                 + (arranca ? " Mientras tanto no se hacen respaldos nuevos: saldrían dañados." : "")
             : $"Hay que restaurar un respaldo, pero no hay ninguno en {carpetaRespaldos}.");
-        // Sin el -wal de la dañada: SQLite lo aplicaría encima del respaldo.
+        // Las dos formas (2026-10-23): la pantalla, con el servicio en marcha, y restaurar.ps1 si ni arranca. Las dos apartan la
+        // base dañada con su -wal y su -shm (SQLite aplicaría ese -wal encima del respaldo) y no la borran.
         var nombre = Path.GetFileName(_base);
-        texto.Append($"Para restaurarlo: detén el servicio, mueve {nombre}, {nombre}-wal y {nombre}-shm a otra carpeta (por si hay que rescatar algo), "
-            + $"copia el respaldo como {nombre} y vuelve a arrancar el servicio. Al arrancar se revisa otra vez y, si ya está bien, se quita el aviso.");
+        texto.Append(arranca
+            ? "Para restaurarlo: en una caja, Configuración › Respaldos › «Restaurar un respaldo»; la caja principal se reinicia sola. "
+            : "Para restaurarlo: en la caja principal, como administrador, restaurar.ps1 (en C:\\Program Files\\PapeleriaPos\\Servicio). ");
+        texto.Append($"La base dañada ({nombre}, con su -wal y su -shm) se aparta en una carpeta, por si hay que rescatar algo. "
+            + "Al arrancar se revisa otra vez y, si ya está bien, se quita el aviso.");
         return texto.ToString();
     }
 

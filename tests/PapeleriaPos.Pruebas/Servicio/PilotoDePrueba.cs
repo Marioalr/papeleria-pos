@@ -50,9 +50,11 @@ internal static class PilotoDePrueba
     public sealed record Caja(HttpClient Http, CajaDto Datos, SesionDto Sesion, SesionDto Encargado, TurnoDto Turno, Guid Variante);
 
     /// <param name="variante">La pluma que se vende (<see cref="MapearAsync"/>).</param>
-    public static async Task<Caja> AbrirAsync(ServicioDePrueba servicio, Guid variante)
+    public static Task<Caja> AbrirAsync(ServicioDePrueba servicio, Guid variante) => AbrirAsync(servicio.Fabrica.CreateClient(), variante);
+
+    /// <summary>Con un servicio que arrancó la prueba (uno que se detiene y vuelve a arrancar: restaurar un respaldo).</summary>
+    public static async Task<Caja> AbrirAsync(HttpClient http, Guid variante)
     {
-        var http = servicio.Fabrica.CreateClient();
         var caja = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single();
         var sesion = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("cajero", "1111")));
         var encargado = await Leer<SesionDto>(await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("encargado", "2222")));

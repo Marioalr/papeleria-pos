@@ -87,18 +87,19 @@ public static class ApiConfiguracion
             return Dto(configuracion);
         });
 
-        // Respaldos (2026-10-22): con «Configuración de la tienda». Ver dónde se guardan, el último y cómo va «Respaldar ahora», que
-        // usa el mismo ServicioRespaldos de la copia diaria y la del corte Z. Restaurar uno no se hace desde aquí.
-        api.MapGet("/respaldos", async (Guid cajaId, Guid usuarioId, PosDbContext db, ServicioRespaldos respaldos) =>
+        // Respaldos (2026-10-22): con «Configuración de la tienda». Ver dónde se guardan, el último, cómo va «Respaldar ahora», que
+        // usa el mismo ServicioRespaldos de la copia diaria y la del corte Z, y la restauración pedida o la de este arranque.
+        api.MapGet("/respaldos", async (Guid cajaId, Guid usuarioId, PosDbContext db, ServicioRespaldos respaldos, RestauracionDeRespaldos restauracion) =>
         {
             var caja = await CajaAsync(db, cajaId);
             await new ServicioControl(db).ExigirParaVerAsync(usuarioId, caja.SucursalId, AccionControlada.ConfigurarTienda);
-            return EstadoDeRespaldos(respaldos);
+            return EstadoDeRespaldos(respaldos, restauracion);
         });
 
         // «Respaldar ahora»: empieza la copia en segundo plano y contesta enseguida; la pantalla pregunta cómo va (revisión del PR
         // #133). Si ya hay una en camino, no empieza otra. Al terminar queda en la bitácora, bien o mal.
-        api.MapPost("/respaldos", async (Guid cajaId, SolicitudRespaldo s, PosDbContext db, ServicioRespaldos respaldos, IServiceScopeFactory alcances) =>
+        api.MapPost("/respaldos", async (Guid cajaId, SolicitudRespaldo s, PosDbContext db, ServicioRespaldos respaldos, RestauracionDeRespaldos restauracion,
+            IServiceScopeFactory alcances) =>
         {
             var caja = await CajaAsync(db, cajaId);
             await new ServicioControl(db).ExigirDeLaSesionAsync(s.UsuarioId, caja.SucursalId, caja.Id, AccionControlada.ConfigurarTienda);
@@ -110,12 +111,70 @@ public static class ApiConfiguracion
                     terminado.Hecho is { } hecho ? $"Respaldó la base: {Path.GetFileName(hecho.Ruta)} ({hecho.Tamano})" : $"Pidió respaldar la base: {terminado.Fallo}");
                 await otra.SaveChangesAsync();
             });
-            return EstadoDeRespaldos(respaldos);
+            return EstadoDeRespaldos(respaldos, restauracion);
+        });
+
+        // Restaurar un respaldo (2026-10-23): la lista, con el de antes del apagón señalado si la base no pasó la revisión al arrancar.
+        api.MapGet("/respaldos/lista", async (Guid cajaId, Guid usuarioId, PosDbContext db, RestauracionDeRespaldos restauracion, RevisionAlArrancar revision,
+            IReinicioDelServicio reinicio, OpcionesEleventa eleventa) =>
+        {
+            var caja = await CajaAsync(db, cajaId);
+            await new ServicioControl(db).ExigirParaVerAsync(usuarioId, caja.SucursalId, AccionControlada.ConfigurarTienda);
+            return new RestaurablesDto(restauracion.Listar(revision.BaseDanada ? revision.Respaldo : null), reinicio.Automatico, eleventa.Escribir);
+        });
+
+        // Quien tiene «Configuración de la tienda» y vuelve a escribir su PIN: deja el pedido y, si es servicio de Windows, en cuanto
+        // sale la respuesta el servicio se detiene y Windows lo vuelve a arrancar ya con el respaldo (RestauracionDeRespaldos). En la
+        // caja del navegador se restaura la próxima vez que se arranque.
+        api.MapPost("/respaldos/restaurar", async (Guid cajaId, SolicitudRestaurar s, PosDbContext db, ServicioRespaldos respaldos,
+            RestauracionDeRespaldos restauracion, IReinicioDelServicio reinicio, HttpContext http, ILoggerFactory registros) =>
+        {
+            var caja = await CajaAsync(db, cajaId);
+            var control = new ServicioControl(db);
+            await control.ExigirDeLaSesionAsync(s.UsuarioId, caja.SucursalId, caja.Id, AccionControlada.ConfigurarTienda);
+            await control.ConfirmarPinAsync(s.UsuarioId, s.Pin, caja.SucursalId, caja.Id, AccionControlada.ConfigurarTienda, $"restaurar el respaldo {s.Archivo}");
+            if (respaldos.EstadoAhora is { Haciendo: true })
+                throw new InvalidOperationException("Se está haciendo un respaldo («Respaldar ahora»): restaura cuando termine.");
+            var pedida = restauracion.Pedir(s.Archivo, s.UsuarioId, caja.Id, caja.SucursalId, reinicio.Automatico);
+            control.Registrar(caja.SucursalId, caja.Id, s.UsuarioId, AccionControlada.ConfigurarTienda,
+                $"Pidió restaurar {pedida.Descripcion}: " + (reinicio.Automatico ? "la caja principal se reinicia" : "se restaura al volver a arrancar la caja principal"));
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (Exception ex) when (ex is DbUpdateException or Microsoft.Data.Sqlite.SqliteException)
+            {
+                // La base que se va a reemplazar puede ser la dañada: el pedido ya está; la base restaurada lo anota al arrancar.
+                registros.CreateLogger("Restaurar").LogWarning(ex, "No se pudo anotar en la bitácora el pedido de restaurar {Archivo}.", s.Archivo);
+            }
+            // Después de que la respuesta salió: la caja que lo pidió sabe que se pidió antes de que el servicio se detenga.
+            if (reinicio.Automatico)
+                http.Response.OnCompleted(() =>
+                {
+                    reinicio.Reiniciar();
+                    return Task.CompletedTask;
+                });
+            return EstadoDeRespaldos(respaldos, restauracion);
+        });
+
+        // Sin el reinicio automático (la caja del navegador): quitar el pedido mientras la caja principal no vuelve a arrancar.
+        api.MapPost("/respaldos/restaurar/cancelar", async (Guid cajaId, SolicitudRespaldo s, PosDbContext db, ServicioRespaldos respaldos,
+            RestauracionDeRespaldos restauracion) =>
+        {
+            var caja = await CajaAsync(db, cajaId);
+            var control = new ServicioControl(db);
+            await control.ExigirDeLaSesionAsync(s.UsuarioId, caja.SucursalId, caja.Id, AccionControlada.ConfigurarTienda);
+            if (restauracion.Cancelar() is { } cancelada)
+            {
+                control.Registrar(caja.SucursalId, caja.Id, s.UsuarioId, AccionControlada.ConfigurarTienda, $"Ya no se restaura {cancelada.Descripcion}");
+                await db.SaveChangesAsync();
+            }
+            return EstadoDeRespaldos(respaldos, restauracion);
         });
     }
 
-    private static RespaldosDto EstadoDeRespaldos(ServicioRespaldos respaldos) =>
-        new(respaldos.Carpeta, respaldos.Dias, respaldos.Ultimo(), respaldos.NoSeHacenPorque, respaldos.EstadoAhora);
+    private static RespaldosDto EstadoDeRespaldos(ServicioRespaldos respaldos, RestauracionDeRespaldos restauracion) =>
+        new(respaldos.Carpeta, respaldos.Dias, respaldos.Ultimo(), respaldos.NoSeHacenPorque, respaldos.EstadoAhora, restauracion.Ultima);
 
     private static async Task<Caja> CajaAsync(PosDbContext db, Guid cajaId) =>
         await db.Cajas.AsNoTracking().SingleOrDefaultAsync(c => c.Id == cajaId) ?? throw new InvalidOperationException("La caja no existe.");

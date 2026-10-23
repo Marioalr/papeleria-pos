@@ -38,7 +38,7 @@ internal sealed class FabricaDePrueba(Action<IWebHostBuilder> configurar) : WebA
 /// <summary>El servicio de verdad, sobre una base temporal con 30 días de datos ficticios, la Caja 1 y los usuarios de prueba.</summary>
 public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
 {
-    private readonly string _ruta = Path.Combine(Path.GetTempPath(), $"pos-prueba-{Guid.NewGuid():N}.db");
+    private readonly string _ruta;
     private readonly (string Clave, string Valor)[] _ajustes;
     private readonly Action<IServiceCollection>? _servicios;
     public WebApplicationFactory<Program> Fabrica { get; private set; } = null!;
@@ -47,8 +47,20 @@ public sealed class ServicioDePrueba : IAsyncLifetime, IAsyncDisposable
     {
     }
 
-    private ServicioDePrueba((string Clave, string Valor)[] ajustes, Action<IServiceCollection>? servicios = null) =>
-        (_ajustes, _servicios) = (ajustes, servicios);
+    private ServicioDePrueba((string Clave, string Valor)[] ajustes, Action<IServiceCollection>? servicios = null, string? ruta = null) =>
+        (_ajustes, _servicios, _ruta) = (ajustes, servicios, ruta ?? Path.Combine(Path.GetTempPath(), $"pos-prueba-{Guid.NewGuid():N}.db"));
+
+    /// <summary>
+    /// Uno propio con su base en una carpeta suya (<c>pos.db</c>), como en la tienda: para lo que deja cosas junto a la base
+    /// (restaurar un respaldo aparta la de antes en una carpeta a su lado). La carpeta la borra quien la da.
+    /// </summary>
+    public static async Task<ServicioDePrueba> CrearEnCarpetaAsync(string carpeta, Action<IServiceCollection>? servicios, params (string Clave, string Valor)[] ajustes)
+    {
+        Directory.CreateDirectory(carpeta);
+        var servicio = new ServicioDePrueba(ajustes, servicios, Path.Combine(carpeta, "pos.db"));
+        await servicio.InitializeAsync();
+        return servicio;
+    }
 
     /// <summary>Uno propio para una prueba, con su configuración (por ejemplo, la de eleventa).</summary>
     public static async Task<ServicioDePrueba> CrearAsync(params (string Clave, string Valor)[] ajustes)

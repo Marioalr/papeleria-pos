@@ -68,6 +68,12 @@ builder.Services.AddSingleton(proveedor => new ServicioRespaldos(cadena, RutasSe
     });
 if (respaldos)
     builder.Services.AddHostedService<RespaldoDiario>();
+// Restaurar un respaldo (Configuración › Respaldos, 2026-10-23): el pedido se deja junto a la base y el servicio se detiene; Windows
+// lo vuelve a arrancar y, antes de revisar la base y de migrarla, se restaura. Las pruebas cambian el reinicio por uno de mentiras.
+builder.Services.TryAddSingleton<IReinicioDelServicio, ReinicioComoServicioDeWindows>();
+builder.Services.AddSingleton(proveedor => new RestauracionDeRespaldos(cadena, RutasServicio.CarpetaRespaldos(builder.Configuration, cadena),
+    proveedor.GetRequiredService<IRevisionRapida>(), proveedor.GetRequiredService<ILogger<RestauracionDeRespaldos>>(),
+    proveedor.GetRequiredService<TimeProvider>()));
 // La red de la tienda en el POS (docs/arquitectura.md, «La red de la matriz»): solo se contesta a la red de la tienda.
 builder.Services.TryAddSingleton(new RedLocalDelServicio());
 // La llave propia del servicio (pos.llave, junto a la base y fuera de ella): firma quién es. Se hace o se lee la primera vez que
@@ -150,15 +156,27 @@ if (builder.Configuration.GetValue("Caja:ActualizacionPrueba", false))
 
 var app = builder.Build();
 
+// Restaurar un respaldo: si se pidió, primero que nada (antes de revisar la base y de migrarla) se pone el respaldo y la base de
+// antes se aparta en su carpeta. Si no se puede terminar, el servicio no arranca: así no abre una base a medias.
+var restauracion = app.Services.GetRequiredService<RestauracionDeRespaldos>();
+restauracion.SiSePidio();
 // Antes de migrar, la revisión si se apagó de golpe; al detenerse bien (también al apagar Windows), se quita la marca.
 var revision = app.Services.GetRequiredService<RevisionAlArrancar>();
+// Detenido para restaurar (servicio de Windows): al final del apagado sale con 1 y Windows lo vuelve a arrancar.
+if (app.Services.GetRequiredService<IReinicioDelServicio>() is ReinicioComoServicioDeWindows reinicio)
+    app.Lifetime.ApplicationStopped.Register(() => reinicio.AlDetenerse(revision.Detenido));
 revision.Revisar();
 app.Lifetime.ApplicationStopped.Register(revision.Detenido);
 // La caja de la prueba arranca este servicio y, al cerrarse, le cierra la entrada: se detiene bien y quita la marca.
 if (builder.Configuration.GetValue("Prueba:DetenerAlCerrarEntrada", false))
     ModoPrueba.DetenerAlCerrarEntrada(Console.OpenStandardInput(), app.Lifetime.StopApplication);
 using (var alcance = app.Services.CreateScope())
-    await revision.PrepararAsync(alcance.ServiceProvider.GetRequiredService<PosDbContext>());
+{
+    var db = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
+    await revision.PrepararAsync(db);
+    // Ya migrada la base restaurada: a su bitácora, y lo pendiente del puente con eleventa como «ya se intentó».
+    await restauracion.DespuesDeMigrarAsync(db);
+}
 
 app.UseAntiforgery();
 app.UsarLlavesDeCaja();
