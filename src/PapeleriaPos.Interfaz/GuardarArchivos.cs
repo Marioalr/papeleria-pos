@@ -82,33 +82,60 @@ public sealed class GuardadoEnLaPc : IGuardarArchivo
     /// <summary>Donde empieza «Guardar como»: Documentos, o la carpeta del último que se guardó (o se abrió).</summary>
     public string Carpeta => _carpeta.Ruta;
 
+    /// <summary>
+    /// Cambia el archivo de paso por el de ese nombre (lo reemplaza si ya existe). Las pruebas ponen uno que falla como Windows
+    /// cuando el archivo está abierto en Excel.
+    /// </summary>
+    internal Action<string, string> Mover { get; init; } = (aparte, ruta) => File.Move(aparte, ruta, overwrite: true);
+
     public async Task<ArchivoGuardado?> GuardarAsync(ArchivoPorGuardar archivo)
     {
         var ruta = await _guardarComo(new PreguntaGuardarComo(_carpeta.Ruta, archivo.Nombre, Filtro(archivo.Extension), archivo.Extension));
         if (string.IsNullOrWhiteSpace(ruta))
             return null;
         var aparte = ruta + ".guardando";
+        // Lo que dice depende del paso que falló (revisión del PR #134): escribir el de paso es cosa de la carpeta (no existe, se
+        // quitó la memoria, no deja escribir); cambiarlo por el que ya existe falla si otro programa, como Excel, lo tiene abierto.
         try
         {
             await File.WriteAllBytesAsync(aparte, archivo.Datos);
-            File.Move(aparte, ruta, overwrite: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            try
-            {
-                File.Delete(aparte);
-            }
-            catch (Exception borrar) when (borrar is IOException or UnauthorizedAccessException)
-            {
-                // Si ni se pudo crear, no hay qué borrar.
-            }
+            Borrar(aparte);
             throw new ErrorCaja(ex is UnauthorizedAccessException
-                ? $"No se pudo guardar en {ruta}: Windows no deja escribir ahí. Elige otra carpeta, como Documentos."
-                : $"No se pudo guardar en {ruta}: si está abierto en Excel, ciérralo o guárdalo con otro nombre. ({ex.Message})");
+                ? $"No se pudo guardar en {ruta}: Windows no deja escribir en esa carpeta. Elige otra, como Documentos."
+                : $"No se pudo guardar en {ruta}: no se pudo escribir en esa carpeta (¿se quitó la memoria o ya no existe?). Elige otra, como Documentos. ({ex.Message})");
+        }
+        try
+        {
+            // Fuera del hilo de la pantalla: en una memoria o en la red, cambiarlo tarda.
+            await Task.Run(() => Mover(aparte, ruta));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Borrar(aparte);
+            throw new ErrorCaja(Directory.Exists(ruta)
+                ? $"No se pudo guardar en {ruta}: ya hay una carpeta con ese nombre. Guárdalo con otro nombre."
+                : File.Exists(ruta)
+                    ? $"No se pudo guardar en {ruta}: otro programa lo tiene abierto (como Excel). Ciérralo o guárdalo con otro nombre."
+                    : $"No se pudo guardar en {ruta}: no se pudo escribir en esa carpeta (¿se quitó la memoria?). Elige otra, como Documentos. ({ex.Message})");
         }
         _carpeta.Usado(ruta);
         return new ArchivoGuardado(Path.GetFileName(ruta), ruta);
+    }
+
+    /// <summary>El de paso, si quedó: si ni se pudo crear, no hay qué borrar.</summary>
+    private static void Borrar(string aparte)
+    {
+        try
+        {
+            File.Delete(aparte);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // La carpeta ya no está (se quitó la memoria): no queda nada.
+        }
     }
 
     /// <summary>Lo que se ofrece en «Tipo»: un Excel, o lo que sea por su extensión.</summary>

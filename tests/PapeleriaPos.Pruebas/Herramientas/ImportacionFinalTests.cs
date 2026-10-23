@@ -522,4 +522,27 @@ public sealed class ImportacionFinalTests : IAsyncDisposable
         Assert.Equal(folder.Id, (await db.Variantes.SingleAsync(v => v.Id == variante.IdNuevo)).ProductoId);
         Assert.Equal(2, (await HistorialAsync())[23].Lineas.Count);
     }
+
+    /// <summary>
+    /// El artículo común de eleventa entra marcado (los reportes lo cuentan como el de aquí; revisión del PR #131), y uno que ya
+    /// estaba sin marcar (importado antes de marcarlos) se vuelve a escribir marcado.
+    /// </summary>
+    [Fact]
+    public async Task El_articulo_comun_de_eleventa_entra_marcado_y_el_que_ya_estaba_se_marca()
+    {
+        await PilotoAsync();
+        var e = Eleventa(tickets: [new(23, 102, Luego(1), 20, false, Luego(0))],
+            lineas: [Linea(23, "A1", 1, 15), new FilaLinea(23, "COMUN-77-3", "Recuerdo", 1, 5, 5, 5, 2, false)]);
+
+        var primera = await ImportarAsync(e);
+        var comun = (await HistorialAsync())[23].Lineas.Single(l => l.ImporteCentavos == 500);
+        await using (var db = _base!.Contexto())
+            await db.VentasHistoricasLineas.Where(l => l.Id == comun.Id).ExecuteUpdateAsync(x => x.SetProperty(l => l.EsArticuloComun, false));
+        var otra = await ImportarAsync(e);
+
+        Assert.True(comun.EsArticuloComun);
+        Assert.Equal((1, 0), (primera.Nuevos, primera.Actualizados));
+        Assert.Equal((0, 1), (otra.Nuevos, otra.Actualizados));
+        Assert.Equal([(500L, true), (1500L, false)], (await HistorialAsync())[23].Lineas.OrderBy(l => l.ImporteCentavos).Select(l => (l.ImporteCentavos, l.EsArticuloComun)));
+    }
 }

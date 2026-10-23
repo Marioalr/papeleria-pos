@@ -106,7 +106,7 @@ según los permisos de quien entró.
 │                                                              │ └─ la rueda del mouse baja ─┘ │
 │                                                              │ Último: A-000123 · cambio $63 │
 ├──────────────────────────────────────────────────────────────┴───────────────────────────────┤
-│ F12 Cobrar  F10 Buscar  F9 Verificar  F2 Impresiones  Ins Art. común  F7  F8  F6  / Más      │
+│ F12 Cobrar  F10 Buscar  F9 Verificar  F2 Impresiones  Ins Varios  F7  F8  F6  / Más          │
 └──────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -165,7 +165,7 @@ sube. Para eso, de lo más rápido a lo de respaldo:
 | 3 | **El principio de dos palabras, en cualquier orden** (`lus az` y Enter) | 6 a 8 | Todo lo demás. Cada pedazo es el principio de una palabra del nombre, la marca, el color o el código. Los dos pedazos dejan solo al producto aunque casi no se venda. Sin acentos, con los sinónimos que decida la tienda y con un error de dedo («sobre manial» da los sobres manila) |
 | 4 | **Afinar con fichas** (`folder` → «oficio») | 1 clic | Cuando el texto es general, las palabras que separan los resultados salen como fichas. Se tocan o se escribe su principio |
 | 5 | **Las familias en un renglón** (`lapicero` → sus colores; `lapicero negro` → sus tamaños) | 1 clic, Enter, o → y ↓ | Lo que solo cambia en el color, el tamaño, la marca, el contenido o el rayado ocupa un solo renglón, con fichas para cada valor (el color con un punto de referencia). Se despliega lo primero que cambia, Tab despliega por otra cosa y Enter agrega siempre el más vendido |
-| 6 | **Si no existe: artículo común** (Ins) | El precio | Se vende igual, y lo que se buscó queda anotado |
+| 6 | **Si no existe: artículo común** (Ctrl+P) | El precio | Se vende igual, y lo que se buscó queda anotado |
 
 - **El orden:** el código exacto; luego lo que esta caja eligió antes con ese mismo texto; luego lo que empieza con lo
   escrito; al final, lo más vendido en 90 días (para arrancar, el historial de eleventa).
@@ -372,9 +372,14 @@ dejar por caja (Configuración › Esta caja); en el prototipo se cambian arriba
 ### Los demás paneles
 
 Cambian el lado derecho y vuelven con Esc: cliente (Ctrl+L), abono (Ctrl+B), descuento (Ctrl+D), precio (Ctrl+E),
-impresiones por cobrar (F2), entrada y salida (F7/F8), artículo común (Ins o Ctrl+P), alta rápida, devolución,
+impresiones por cobrar (F2), entrada y salida (F7/F8), artículo común (Ctrl+P), «Varios» (Ins), alta rápida, devolución,
 mayoreo (F11), verificador (F9), ventas del día y cotizar un PDF (Ctrl+Q). Cada uno con sus campos y Enter para
 terminar; lo que pide autorización la pide ahí mismo.
+
+**«Varios» (Ins, como en eleventa; 2026-10-22, decidido, por revisar):** la cantidad y luego el código, escaneado o
+escrito, y Enter lo agrega. Como el mostrador (Ctrl+M), el cursor se queda en el cuadro de captura, que dice lo que pide
+cada paso: lo que escanea el lector siempre es el código, nunca la cantidad, también si llega mientras se abre el panel.
+El artículo común sigue en Ctrl+P; en la barra de abajo va «Ins Varios», porque no caben los dos a 1366.
 
 ## WhatsApp: quién escribió hace poco
 
@@ -520,7 +525,8 @@ No está en el prototipo:
   cajero del turno; si pasa del umbral, avisa por Telegram. Tarjeta y transferencias salen como información. Quien no
   tiene el permiso ve el corte X y el nombre de quién puede hacerlo.
 - **El del día, para quien tiene «ver y cerrar el corte del día»** (la primera cuenta). Junta todas las cajas y turnos:
-  - lo vendido;
+  - lo vendido: lo cobrado ese día, por la hora en que se cobró (también lo que se cobró sin conexión y subió después de
+    cerrado su turno: ese turno sale en la lista, con su corte en el día en que se hizo; revisión del PR #131);
   - el efectivo esperado y el contado en cada turno, con sus diferencias;
   - las formas de pago;
   - las salidas por categoría, las devoluciones y las cancelaciones;
@@ -557,20 +563,29 @@ entrega 9 ya está: la parte 1, todo lo de arriba menos exportar a Excel, y la p
   momento; un periodo que ya pasó, completo.
 - **← y →** llevan al periodo anterior y al siguiente (un día, una semana, un mes o un año completos); los botones de
   arriba, al de hoy.
-- **En el piloto con eleventa,** solo lo que vendió la caja 2, sin comparar: lo de la caja principal está en los reportes
-  de eleventa.
+- **En el piloto con eleventa** (la lectura o el envío a eleventa prendidos), solo lo que vendió la caja 2, sin comparar: lo
+  de la caja principal está en los reportes de eleventa.
+- **Lo que cuenta como el corte del día** (revisión del PR #131): las cancelaciones son las que se hicieron en el periodo;
+  el artículo común de eleventa va con el de aquí, y lo que un ticket de eleventa suma sin desglose, aparte. Bajo cada
+  cifra, lo que no hay en este periodo («sin tickets todavía») no se confunde con lo que no hubo el año pasado.
+- **Si un periodo no llega,** se ve el error con «Volver a intentar», no las cifras del periodo anterior.
 - **Exportar a Excel** (el botón del prototipo, arriba a la derecha; también en Movimientos, Bajos en inventario y Lo que vale
   el inventario): lo que se ve, con sus filtros y sin las páginas, una hoja por tabla. Lo arma la caja principal con los
   permisos de quien entró: sin «ver costos, utilidad y margen», ni la utilidad ni el costo van en el archivo. Cada hoja dice
   la tienda, qué es y de qué días, quién lo exportó y cuándo; el renglón de los títulos se queda fijo al bajar.
 - **Guardar un archivo desde la caja** (antes no se podía), de una sola forma: en la ventana de Windows, «Guardar como» de
   Windows, en Documentos (después, en la carpeta del último que se guardó) con el nombre que propone, como «Ventas
-  2026-10.xlsx»; en el navegador, una descarga. La pantalla dice dónde quedó o que se canceló.
+  2026-10.xlsx»; en el navegador, una descarga. La pantalla dice dónde quedó, que se canceló o por qué no se pudo (la carpeta,
+  o el archivo abierto en Excel), y el cursor vuelve al botón. Un Excel se espera hasta dos minutos: si tarda más, la caja
+  dice que la caja principal sigue armándolo, sin pasar a sin conexión.
 - **Ventas por período,** como la de eleventa (en su F3): un botón en Reportes que abre, ahí mismo y con el acomodo de las
   tareas del inventario («← Reportes» o Esc), los tickets de hoy, ayer, esta semana, este mes, el mes pasado o de una fecha a
   otra, de una caja o de todas, del primero al último y de 100 en 100, con los totales de todos esos días al final; ← y →,
   los días de antes o de después. «Imprimir el resumen» manda a la impresora de tickets lo de cada día y las formas de pago,
-  no cada ticket; «Exportar a Excel», todos. El historial de eleventa no se lista: no trae caja, cajero ni forma de pago.
+  no cada ticket (de más de 31 días, cada semana; de más de tres meses, cada mes); «Exportar a Excel», todos. Las fechas van
+  del 1 de enero de 2000 a hoy y hasta tres años a la vez. Los totales de cada día son los del corte del día: lo cobrado ese
+  día, y lo devuelto y lo cancelado ese día (también de tickets de antes); de una caja, lo de sus tickets, se haya hecho en
+  ella o en otra. El historial de eleventa no se lista: no trae caja, cajero ni forma de pago.
 
 ## Configuración
 

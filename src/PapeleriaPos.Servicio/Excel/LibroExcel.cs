@@ -26,7 +26,10 @@ internal enum FormatoCelda
     /// <summary>«22/10/2026 14:05».</summary>
     FechaYHora,
 
-    /// <summary>Piezas, metros, kilos: «1,234.5».</summary>
+    /// <summary>
+    /// Piezas, metros, kilos: «1,234» o, con fracción, «1,234.5». Cada celda con su formato: el de Excel con decimales
+    /// opcionales («#,##0.###») deja el punto en las enteras («5.»; revisión del PR #134).
+    /// </summary>
     Cantidad,
 }
 
@@ -71,8 +74,19 @@ internal static class LibroExcel
         FormatoCelda.Porcentaje => "0.0%",
         FormatoCelda.Fecha => "dd/mm/yyyy",
         FormatoCelda.FechaYHora => "dd/mm/yyyy hh:mm",
-        FormatoCelda.Cantidad => "#,##0.###",
+        FormatoCelda.Cantidad => "#,##0",
         _ => "@",
+    };
+
+    /// <summary>Una cantidad con fracción (un metro y medio, 0.250 kilos): hasta milésimas.</summary>
+    public const string CantidadConFraccion = "#,##0.###";
+
+    /// <summary>Si la cantidad trae fracción: esas celdas llevan <see cref="CantidadConFraccion"/>; las enteras, sin punto.</summary>
+    private static bool ConFraccion(object? valor) => valor switch
+    {
+        decimal m => m != decimal.Truncate(m),
+        double x => x != Math.Truncate(x),
+        _ => false,
     };
 
     /// <summary>Un libro nuevo, a nombre del POS.</summary>
@@ -137,14 +151,23 @@ internal static class LibroExcel
             return fila + 1;
         }
         // Cada valor sin su formato, y el formato después, de toda la columna de una vez: con miles de renglones, darle su
-        // formato a cada celda tardaba segundos.
+        // formato a cada celda tardaba segundos. Solo las cantidades con fracción (pocas: casi todo es por pieza) llevan el suyo.
+        var conFraccion = new List<IXLCell>();
         for (var r = 0; r < renglones.Count; r++)
             for (var c = 0; c < columnas.Count; c++)
-                hoja.Cell(fila + 1 + r, c + 1).Value = Celda(columnas[c].Valor(renglones[r]), columnas[c].Formato);
+            {
+                var valor = columnas[c].Valor(renglones[r]);
+                var celda = hoja.Cell(fila + 1 + r, c + 1);
+                celda.Value = Celda(valor, columnas[c].Formato);
+                if (columnas[c].Formato == FormatoCelda.Cantidad && ConFraccion(valor))
+                    conFraccion.Add(celda);
+            }
         var ultima = fila + renglones.Count;
         for (var c = 0; c < columnas.Count; c++)
             if (columnas[c].Formato != FormatoCelda.Texto)
                 hoja.Range(fila + 1, c + 1, ultima, c + 1).Style.NumberFormat.Format = FormatoDe(columnas[c].Formato);
+        foreach (var celda in conFraccion)
+            celda.Style.NumberFormat.Format = CantidadConFraccion;
         var tabla = hoja.Range(fila, 1, ultima, columnas.Count).CreateTable(nombre);
         tabla.Theme = XLTableTheme.TableStyleMedium2;
         return ultima;
@@ -181,7 +204,7 @@ internal static class LibroExcel
     {
         celda.Value = Celda(valor, formato);
         if (formato != FormatoCelda.Texto && valor is not (null or string))
-            celda.Style.NumberFormat.Format = FormatoDe(formato);
+            celda.Style.NumberFormat.Format = formato == FormatoCelda.Cantidad && ConFraccion(valor) ? CantidadConFraccion : FormatoDe(formato);
     }
 
     /// <summary>El valor como lo guarda Excel: el dinero, que llega en centavos, en pesos; las fechas, como fechas.</summary>

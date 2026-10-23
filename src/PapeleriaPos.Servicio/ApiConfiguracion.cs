@@ -86,7 +86,39 @@ public static class ApiConfiguracion
             }
             return Dto(configuracion);
         });
+
+        // Respaldos (2026-10-22): con «Configuración de la tienda». Ver dónde se guardan, el último y cómo va «Respaldar ahora», que
+        // usa el mismo ServicioRespaldos de la copia diaria y la del corte Z. Restaurar uno no se hace desde aquí.
+        api.MapGet("/respaldos", async (Guid cajaId, Guid usuarioId, PosDbContext db, ServicioRespaldos respaldos) =>
+        {
+            var caja = await CajaAsync(db, cajaId);
+            await new ServicioControl(db).ExigirParaVerAsync(usuarioId, caja.SucursalId, AccionControlada.ConfigurarTienda);
+            return EstadoDeRespaldos(respaldos);
+        });
+
+        // «Respaldar ahora»: empieza la copia en segundo plano y contesta enseguida; la pantalla pregunta cómo va (revisión del PR
+        // #133). Si ya hay una en camino, no empieza otra. Al terminar queda en la bitácora, bien o mal.
+        api.MapPost("/respaldos", async (Guid cajaId, SolicitudRespaldo s, PosDbContext db, ServicioRespaldos respaldos, IServiceScopeFactory alcances) =>
+        {
+            var caja = await CajaAsync(db, cajaId);
+            await new ServicioControl(db).ExigirDeLaSesionAsync(s.UsuarioId, caja.SucursalId, caja.Id, AccionControlada.ConfigurarTienda);
+            respaldos.IniciarAhora(async terminado =>
+            {
+                await using var alcance = alcances.CreateAsyncScope();
+                var otra = alcance.ServiceProvider.GetRequiredService<PosDbContext>();
+                new ServicioControl(otra).Registrar(caja.SucursalId, caja.Id, s.UsuarioId, AccionControlada.ConfigurarTienda,
+                    terminado.Hecho is { } hecho ? $"Respaldó la base: {Path.GetFileName(hecho.Ruta)} ({hecho.Tamano})" : $"Pidió respaldar la base: {terminado.Fallo}");
+                await otra.SaveChangesAsync();
+            });
+            return EstadoDeRespaldos(respaldos);
+        });
     }
+
+    private static RespaldosDto EstadoDeRespaldos(ServicioRespaldos respaldos) =>
+        new(respaldos.Carpeta, respaldos.Dias, respaldos.Ultimo(), respaldos.NoSeHacenPorque, respaldos.EstadoAhora);
+
+    private static async Task<Caja> CajaAsync(PosDbContext db, Guid cajaId) =>
+        await db.Cajas.AsNoTracking().SingleOrDefaultAsync(c => c.Id == cajaId) ?? throw new InvalidOperationException("La caja no existe.");
 
     /// <summary>La de la sucursal o, si nunca se ha guardado, los textos de appsettings.</summary>
     public static async Task<ConfiguracionTicket> ConfiguracionAsync(PosDbContext db, Guid sucursalId, OpcionesTicket opciones)

@@ -200,10 +200,13 @@
         return DeNuevoAsync();
     }
 
-    private bool HaySiguientes => _bajos is { } b && Paginador.HaySiguiente(b.Total, b.Pagina, b.Tamano);
+    /// <summary>Hay otra página después de la que se pidió (no de la que ya llegó): Av Pág sostenida no pasa de la última.</summary>
+    private bool HaySiguientes => _bajos is { } b && Paginador.HaySiguiente(b.Total, _pagina, b.Tamano);
 
     private Task SiguientesAsync()
     {
+        if (!HaySiguientes)
+            return Task.CompletedTask;
         _pagina++;
         return CargarAsync();
     }

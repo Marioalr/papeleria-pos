@@ -37,9 +37,17 @@ public sealed class RedCaja : IDisposable
     /// </summary>
     public static readonly TimeSpan TopeInteractivo = TimeSpan.FromSeconds(15);
 
+    /// <summary>
+    /// El tope de un archivo que arma la caja principal (el Excel de un reporte, revisión del PR #134): unos años de tickets
+    /// tardan más que lo de atrás, y pasar de <see cref="TopeInteractivo"/> no quiere decir que se haya ido.
+    /// </summary>
+    public static readonly TimeSpan TopeDescargas = TimeSpan.FromMinutes(2);
+
     public RedCaja(HttpMessageHandler interactivo, HttpMessageHandler fondo)
     {
         Interactivo = new HttpClient(interactivo) { Timeout = TopeInteractivo };
+        // Las mismas conexiones que lo interactivo, con su propio tope.
+        Descargas = new HttpClient(interactivo, disposeHandler: false) { Timeout = TopeDescargas };
         // Sin tope propio: el aviso se queda conectado; lo demás lleva su plazo en cada llamada.
         Fondo = new HttpClient(fondo) { Timeout = Timeout.InfiniteTimeSpan };
     }
@@ -48,6 +56,9 @@ public sealed class RedCaja : IDisposable
     public static RedCaja Crear() => new(Manejador(TimeSpan.FromSeconds(2)), Manejador(TimeSpan.FromSeconds(3)));
 
     public HttpClient Interactivo { get; }
+
+    /// <summary>Para bajar los archivos que arma la caja principal, con <see cref="TopeDescargas"/>.</summary>
+    public HttpClient Descargas { get; }
 
     public HttpClient Fondo { get; }
 
@@ -108,6 +119,7 @@ public sealed class RedCaja : IDisposable
 
     public void Dispose()
     {
+        Descargas.Dispose();
         Interactivo.Dispose();
         Fondo.Dispose();
     }

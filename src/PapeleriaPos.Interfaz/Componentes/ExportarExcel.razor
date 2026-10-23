@@ -2,8 +2,10 @@
    los permisos de quien entró (lo que no puede ver ni siquiera va en el archivo) y aquí se guarda como se guarda en esta caja
    (IGuardarArchivo): en la ventana de Windows, «Guardar como» de Windows, en Documentos con el nombre que propone; en la caja del
    navegador, una descarga. Al lado dice dónde quedó, que se canceló o por qué no se pudo. Lo usan los reportes de ventas,
-   «Ventas por período» y los reportes del inventario. *@
+   «Ventas por período» y los reportes del inventario. Al terminar, el cursor vuelve al botón (mientras trabaja está apagado y
+   el navegador suelta el foco; revisión del PR #134), así Tab, Esc y las flechas siguen donde iban. *@
 @inject IServiceProvider Servicios
+@inject ModuloCaja Js
 
 <span class="vn-exportar">
     <button id="@Id" class="vn-boton" disabled="@(_paso is not null || Desactivado)" @onclick="ExportarAsync">@(_paso ?? Texto)</button>
@@ -38,6 +40,17 @@
     private string? _estado;
     private bool _error;
 
+    /// <summary>Terminó: al dibujarse otra vez (ya prendido), el cursor regresa al botón.</summary>
+    private bool _enfocar;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!_enfocar)
+            return;
+        _enfocar = false;
+        await Js.EnfocarAsync($"#{Id}");
+    }
+
     private async Task ExportarAsync()
     {
         if (_paso is not null)
@@ -57,7 +70,7 @@
         }
         finally
         {
-            _paso = null;
+            (_paso, _enfocar) = (null, true);
         }
     }
 }

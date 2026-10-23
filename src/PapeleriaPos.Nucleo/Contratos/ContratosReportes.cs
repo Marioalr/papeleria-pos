@@ -48,7 +48,10 @@ public enum PeriodoReporte
 /// eleventa) y en el piloto, donde no hay con qué comparar.
 /// </param>
 /// <param name="Serie">La gráfica: por hora (hoy), por día (la semana y el mes) o por mes (el año).</param>
-/// <param name="Departamentos">De lo que más se vendió a lo que menos; al final las impresiones y el artículo común.</param>
+/// <param name="Departamentos">
+/// De lo que más se vendió a lo que menos; al final las impresiones, el artículo común y lo del historial de eleventa sin
+/// desglose. Suman la venta neta.
+/// </param>
 /// <param name="Cajeros">Lo cobrado por cada cajero y sus diferencias de corte, de lo vendido en este POS: el historial de eleventa no trae el cajero.</param>
 /// <param name="FormasDePago">Cómo se pagó, de lo vendido en este POS (el historial no trae la forma de pago); lo devuelto, restado de cómo se regresó.</param>
 /// <param name="MasVendidos">Lo que más se vende en el periodo, por lo vendido.</param>
@@ -75,8 +78,11 @@ public sealed record ReporteVentasDto(
 /// <param name="VendidoCentavos">Lo cobrado en esos tickets, antes de las devoluciones, sin el redondeo al peso (como el ticket).</param>
 /// <param name="DevueltoCentavos">Lo devuelto en el periodo, sin las cancelaciones.</param>
 /// <param name="Devoluciones">Cuántas devoluciones.</param>
-/// <param name="Cancelados">Los tickets cobrados en el periodo que después se cancelaron: no cuentan.</param>
-/// <param name="CanceladosCentavos">Lo que sumaban.</param>
+/// <param name="Cancelados">
+/// Las cancelaciones que se hicieron en el periodo, como las cuenta el corte del día (el día en que se cancelaron, de un ticket
+/// de cualquier día). Un ticket cancelado no cuenta en lo cobrado del periodo en que se cobró.
+/// </param>
+/// <param name="CanceladosCentavos">Lo que sumaban esos tickets.</param>
 /// <param name="DelHistorialCentavos">De la venta neta, lo que sale del historial de eleventa.</param>
 /// <param name="DelHistorialTickets">De los tickets, los del historial de eleventa.</param>
 /// <param name="Utilidad">
@@ -97,7 +103,10 @@ public sealed record CifrasReporteDto(
 /// <param name="InicioLocal">Cuándo empieza (hora de la tienda).</param>
 /// <param name="InicioAnteriorLocal">Cuándo empieza el que le toca del año pasado; vacío si no hay (el 29 de febrero) o en el piloto.</param>
 /// <param name="ActualCentavos">La venta neta; vacío si todavía no llega.</param>
-/// <param name="AnteriorCentavos">La del año pasado, completa; vacío si no hay con qué comparar.</param>
+/// <param name="AnteriorCentavos">
+/// La del año pasado, completa; vacío si no hay con qué comparar. Un febrero de 28 días contra uno de 29: el 28 lleva también lo
+/// del 29 del año pasado (<see cref="Reportes.PeriodoDeReporte.Cubeta"/>).
+/// </param>
 /// <param name="EnCurso">Es el de ahora: va a la mitad.</param>
 public sealed record PuntoReporteDto(
     DateTime InicioLocal, DateTime? InicioAnteriorLocal, long? ActualCentavos, long? AnteriorCentavos, bool EnCurso = false);
@@ -110,13 +119,19 @@ public enum ClaseVenta
     /// <summary>Las impresiones del módulo de impresión: su costo es el de cada trabajo.</summary>
     Impresiones,
 
-    /// <summary>Lo que se vendió como artículo común: no tiene costo.</summary>
+    /// <summary>Lo que se vendió como artículo común (aquí o en eleventa): no tiene costo.</summary>
     ArticuloComun,
+
+    /// <summary>
+    /// Del historial de eleventa, lo que sus tickets suman y sus artículos no: un ticket cuyo total no es la suma de sus
+    /// artículos (la importación lo avisa). Cuenta en la venta neta; no tiene departamento ni costo.
+    /// </summary>
+    SinDesglose,
 }
 
 /// <summary>Lo vendido de un departamento en el periodo (menos lo devuelto) y en el mismo periodo del año pasado.</summary>
 /// <param name="AnteriorCentavos">Vacío si no hay con qué comparar.</param>
-/// <param name="CostoCentavos">Su costo; vacío para quien no ve la utilidad (y en el artículo común, que no tiene).</param>
+/// <param name="CostoCentavos">Su costo; vacío para quien no ve la utilidad (y en el artículo común y lo sin desglose, que no tienen).</param>
 public sealed record DepartamentoReporteDto(
     string Nombre, ClaseVenta Clase, long VentaCentavos, long? AnteriorCentavos,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? CostoCentavos = null)
@@ -157,8 +172,9 @@ public sealed record ProductoReporteDto(Guid VarianteId, string Nombre, UnidadBa
 
 /// <summary>
 /// Una página de los tickets de unos días y los totales de todos ellos (no solo de la página): por día y por forma de pago.
-/// Cuentan como los reportes y el corte del día: un ticket que se canceló se lista, pero no cuenta; lo devuelto en esos días
-/// (de tickets de cualquier día de esa caja) se resta de lo vendido.
+/// Cuentan como los reportes y el corte del día, día por día: un ticket que se canceló se lista el día en que se cobró, pero no
+/// cuenta en lo vendido; lo devuelto y las cancelaciones son los que se hicieron en esos días (de tickets de cualquier día de esa
+/// caja), y lo devuelto se resta de lo vendido.
 /// </summary>
 /// <param name="Desde">El primer día (hora de la tienda).</param>
 /// <param name="Hasta">El último día, completo (si es hoy, hasta ahora).</param>
@@ -169,7 +185,7 @@ public sealed record ProductoReporteDto(Guid VarianteId, string Nombre, UnidadBa
 /// <param name="Total">Cuántos tickets hay en esos días (con los cancelados).</param>
 /// <param name="Pagina">Cuál es esta, desde cero, de <paramref name="Tamano"/> en <paramref name="Tamano"/>.</param>
 /// <param name="Totales">Lo de todos esos días.</param>
-/// <param name="Dias">Lo de cada día con algo (tickets, devoluciones o cancelados), en orden.</param>
+/// <param name="Dias">Lo de cada día con algo (tickets que cuentan, devoluciones o cancelaciones), en orden.</param>
 /// <param name="DelHistorialTickets">En el historial de eleventa, los tickets de esos días (de toda la tienda, sin los cancelados); cero en el piloto.</param>
 /// <param name="DelHistorialCentavos">Lo que suman.</param>
 /// <param name="Piloto">El piloto con eleventa: solo lo que vendió la caja 2; lo de la caja principal está en eleventa.</param>
@@ -179,16 +195,19 @@ public sealed record VentasPorPeriodoDto(
     bool Piloto);
 
 /// <summary>
-/// Lo de un día de «Ventas por período», o de todos sus días: lo vendido en los tickets que no se cancelaron, lo devuelto y los
-/// cancelados (que no cuentan).
+/// Lo de un día de «Ventas por período», o de todos sus días, como en el corte del día: lo vendido en los tickets que no se
+/// cancelaron, lo devuelto y las cancelaciones que se hicieron ese día.
 /// </summary>
 /// <param name="Fecha">El día; vacío en los totales de todo el periodo.</param>
 /// <param name="Tickets">Los cobrados que no se cancelaron.</param>
 /// <param name="VendidoCentavos">Lo que suman, sin el redondeo al peso (como el ticket).</param>
 /// <param name="Devoluciones">Las devoluciones de esos días (sin las cancelaciones), de tickets de cualquier día.</param>
 /// <param name="DevueltoCentavos">Lo que se devolvió en ellas.</param>
-/// <param name="Cancelados">Los tickets cobrados esos días que después se cancelaron: no cuentan.</param>
-/// <param name="CanceladosCentavos">Lo que sumaban.</param>
+/// <param name="Cancelados">
+/// Las cancelaciones que se hicieron esos días, de tickets de cualquier día, como las cuenta el corte del día (revisión del PR
+/// #131, 2026-10-22). El ticket cancelado ya no está en lo vendido del día en que se cobró: no se resta otra vez.
+/// </param>
+/// <param name="CanceladosCentavos">Lo que sumaban esos tickets.</param>
 /// <param name="Formas">Cómo se pagó lo vendido (el efectivo, sin el redondeo al peso): suman <paramref name="VendidoCentavos"/>.</param>
 public sealed record ResumenDeVentasDto(
     DateOnly? Fecha, int Tickets, long VendidoCentavos, int Devoluciones, long DevueltoCentavos, int Cancelados, long CanceladosCentavos,

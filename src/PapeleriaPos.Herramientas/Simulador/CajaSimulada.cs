@@ -261,6 +261,8 @@ public sealed class CajaSimulada
         var ticket = new TicketSimulado(new Venta
         {
             SucursalId = Caja.SucursalId, CajaId = Caja.Id, TurnoId = Turno.Id, CajeroId = Cajero.UsuarioId, Serie = Caja.Serie, CreadaUtc = DateTime.UtcNow,
+            // Con las promociones de su copia y su fecha, como la pantalla (fase 3).
+            Promociones = Cliente.PromocionesDeLaVenta,
         });
         foreach (var renglon in t.Renglones)
         {
@@ -594,6 +596,7 @@ public sealed class CajaSimulada
     private void PonerPreciosAlDia(TicketSimulado ticket, PreciosCambiadosDto precios)
     {
         var cambiados = precios.Productos.Select(p => p.VarianteId).ToHashSet();
+        Cliente.PromocionesAlDia(precios);
         foreach (var linea in ticket.Venta.Lineas.Where(l => l.VarianteId is { } v && !l.EsImpresiones && !cambiados.Contains(v)))
         {
             if (ticket.VersionDe(linea) is not { } version || version < precios.VersionCatalogo)

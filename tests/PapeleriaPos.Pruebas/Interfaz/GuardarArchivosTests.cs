@@ -66,15 +66,70 @@ public sealed class GuardarArchivosTests : IDisposable
         Assert.Empty(Directory.GetFileSystemEntries(_carpeta));
         Assert.Equal("No se guardó: se canceló.", ArchivoGuardado.Cancelado);
 
-        // Una carpeta que ya no existe (una memoria que se quitó): lo dice, en palabras de la tienda.
+        // Una carpeta que ya no existe (una memoria que se quitó): lo dice, en palabras de la tienda; es la carpeta, no Excel.
         var noExiste = Path.Combine(_carpeta, "Se quitó", "Ventas.xlsx");
         var error = await Assert.ThrowsAsync<ErrorCaja>(() => new GuardadoEnLaPc(_ => Task.FromResult<string?>(noExiste), _carpeta).GuardarAsync(Excel));
-        Assert.StartsWith($"No se pudo guardar en {noExiste}: si está abierto en Excel, ciérralo o guárdalo con otro nombre.", error.Message);
+        Assert.StartsWith($"No se pudo guardar en {noExiste}: no se pudo escribir en esa carpeta (¿se quitó la memoria o ya no existe?). Elige otra, "
+            + "como Documentos.", error.Message);
+        Assert.DoesNotContain("Excel", error.Message);
 
-        // En lugar del archivo hay una carpeta con ese nombre: no se puede reemplazar, y no queda el archivo de paso.
+        // En lugar del archivo hay una carpeta con ese nombre: no se puede reemplazar, lo dice, y no queda el archivo de paso.
         var ocupado = Directory.CreateDirectory(Path.Combine(_carpeta, "Ocupado.xlsx")).FullName;
-        await Assert.ThrowsAsync<ErrorCaja>(() => new GuardadoEnLaPc(_ => Task.FromResult<string?>(ocupado), _carpeta).GuardarAsync(Excel));
+        var conCarpeta = await Assert.ThrowsAsync<ErrorCaja>(() => new GuardadoEnLaPc(_ => Task.FromResult<string?>(ocupado), _carpeta).GuardarAsync(Excel));
+        Assert.Equal($"No se pudo guardar en {ocupado}: ya hay una carpeta con ese nombre. Guárdalo con otro nombre.", conCarpeta.Message);
         Assert.Equal([ocupado], Directory.GetFileSystemEntries(_carpeta));
+    }
+
+    /// <summary>
+    /// Lo que dice depende del paso que falló (revisión del PR #134): Windows no deja reemplazar un archivo abierto en Excel
+    /// (UnauthorizedAccessException al cambiar el de paso por él), y eso no es que la carpeta no deje escribir.
+    /// </summary>
+    [Fact]
+    public async Task Si_excel_lo_tiene_abierto_lo_dice_y_el_de_antes_se_queda()
+    {
+        var ruta = Path.Combine(_carpeta, "Ventas 2026-10.xlsx");
+        await File.WriteAllBytesAsync(ruta, [7]);
+        var guardado = new GuardadoEnLaPc(_ => Task.FromResult<string?>(ruta), _carpeta)
+        {
+            Mover = (_, _) => throw new UnauthorizedAccessException("Access to the path is denied."),
+        };
+
+        var error = await Assert.ThrowsAsync<ErrorCaja>(() => guardado.GuardarAsync(Excel));
+
+        Assert.Equal($"No se pudo guardar en {ruta}: otro programa lo tiene abierto (como Excel). Ciérralo o guárdalo con otro nombre.", error.Message);
+        Assert.Equal([7], await File.ReadAllBytesAsync(ruta));
+        Assert.Equal([ruta], Directory.GetFiles(_carpeta));
+        // La carpeta de la siguiente vez no cambia: no se guardó.
+        Assert.Equal(_carpeta, guardado.Carpeta);
+    }
+
+    /// <summary>Una carpeta en la que no se puede escribir: lo dice Windows al escribir el de paso, y eso es lo que dice la caja.</summary>
+    [Fact]
+    public async Task Una_carpeta_sin_permiso_para_escribir_lo_dice()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+        var soloLectura = Directory.CreateDirectory(Path.Combine(_carpeta, "Solo lectura")).FullName;
+        File.SetUnixFileMode(soloLectura, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            // Como administrador (root) sí se puede: ahí no hay qué probar.
+            try
+            {
+                await File.WriteAllBytesAsync(Path.Combine(soloLectura, "prueba"), [1]);
+                return;
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+            var ruta = Path.Combine(soloLectura, "Ventas.xlsx");
+            var error = await Assert.ThrowsAsync<ErrorCaja>(() => new GuardadoEnLaPc(_ => Task.FromResult<string?>(ruta), _carpeta).GuardarAsync(Excel));
+            Assert.Equal($"No se pudo guardar en {ruta}: Windows no deja escribir en esa carpeta. Elige otra, como Documentos.", error.Message);
+        }
+        finally
+        {
+            File.SetUnixFileMode(soloLectura, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
     }
 
     [Fact]

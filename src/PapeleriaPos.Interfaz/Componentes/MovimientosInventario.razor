@@ -324,10 +324,13 @@
         }
     }
 
-    private bool HayAnteriores => _movimientos is { } m && Paginador.HaySiguiente(m.Total, m.Pagina, m.Tamano);
+    /// <summary>Hay otra página después de la que se pidió (no de la que ya llegó): Av Pág sostenida no pasa de la última.</summary>
+    private bool HayAnteriores => _movimientos is { } m && Paginador.HaySiguiente(m.Total, _pagina, m.Tamano);
 
     private Task AnterioresAsync()
     {
+        if (!HayAnteriores)
+            return Task.CompletedTask;
         _pagina++;
         return CargarAsync();
     }

@@ -105,4 +105,25 @@ public class PeriodoDeReporteTests
         Assert.Equal((10, 12), (anio.Cubeta(Ahora), anio.Cubetas.Count()));
         Assert.Equal(new DateTime(2026, 11, 1), anio.Fin(10));
     }
+
+    /// <summary>
+    /// La gráfica del mes tiene los días de este mes: un febrero de 28 días lleva el 29 del año pasado (bisiesto) en el 28, así
+    /// suma lo mismo que la cifra (revisión del PR #131). Los demás días, cada uno en el suyo.
+    /// </summary>
+    [Fact]
+    public void Un_febrero_de_28_dias_lleva_el_29_del_anio_pasado_en_el_28()
+    {
+        var febrero = PeriodoDeReporte.De(PeriodoReporte.Mes, D(2029, 2, 1), new DateTime(2029, 3, 10, 12, 0, 0));
+        var bisiesto = PeriodoDeReporte.De(PeriodoReporte.Mes, D(2028, 2, 1), new DateTime(2029, 3, 10, 12, 0, 0));
+        var octubre = PeriodoDeReporte.De(PeriodoReporte.Mes, D(2026, 10, 21), Ahora);
+
+        Assert.Equal(28, febrero.Cubetas.Count());
+        Assert.Equal((28, 28, 10), (febrero.Cubeta(new DateTime(2028, 2, 29, 12, 0, 0), anterior: true),
+            febrero.Cubeta(new DateTime(2028, 2, 28, 12, 0, 0), anterior: true), febrero.Cubeta(new DateTime(2028, 2, 10, 12, 0, 0), anterior: true)));
+        Assert.Equal(new DateTime(2028, 2, 28), febrero.Inicio(28, anterior: true));
+        // Al revés no hay nada que juntar: el 29 de este febrero no tiene con qué compararse.
+        Assert.Equal((29, 28), (bisiesto.Cubetas.Count(), bisiesto.Cubeta(new DateTime(2027, 2, 28, 12, 0, 0), anterior: true)));
+        Assert.Null(bisiesto.Inicio(29, anterior: true));
+        Assert.Equal(31, octubre.Cubeta(new DateTime(2025, 10, 31, 20, 0, 0), anterior: true));
+    }
 }

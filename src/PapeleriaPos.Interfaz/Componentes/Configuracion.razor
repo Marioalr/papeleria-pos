@@ -192,6 +192,8 @@
     private string? _errorMargenes;
     private string? _errorSugerido;
     private string? _versionPrincipal;
+    private RespaldosDto? _respaldos;
+    private string? _errorRespaldos;
 
     /// <summary>Lo que salió bien y no es un cambio (el ticket de prueba), junto a su renglón.</summary>
     private readonly Dictionary<string, string> _avisos = [];
@@ -237,7 +239,13 @@
             Sesion.Puede(AccionControlada.PedirCompra)
                 ? CargarAsync(async () => _sugerido = await Cliente.ParametrosSugeridoAsync(Caja.SucursalId), e => _errorSugerido = e)
                 : Task.CompletedTask,
-            CargarAsync(async () => _versionPrincipal = await Cliente.VersionDeLaPrincipalAsync(), _ => { }));
+            CargarAsync(async () => _versionPrincipal = await Cliente.VersionDeLaPrincipalAsync(), _ => { }),
+            Sesion.Puede(AccionControlada.ConfigurarTienda)
+                ? CargarAsync(async () => _respaldos = await Cliente.RespaldosAsync(Caja.Id, Sesion.UsuarioId), e => _errorRespaldos = e)
+                : Task.CompletedTask);
+        // Un «Respaldar ahora» que ya iba en camino (se pidió y se cerró la Configuración): se ve cómo termina.
+        if (_respaldos?.Ahora is { Haciendo: true })
+            _ = EsperarRespaldoAsync();
     }
 
     /// <summary>Al abrir, el cursor en «Buscar un ajuste»: se escribe para buscar, y con Tab se pasa a los grupos y a sus ajustes.</summary>
@@ -569,7 +577,7 @@
                 new(AlCobrar, "Al cobrar")
                 {
                     Ayuda = "Nunca pregunta antes de cobrar. «Ofrecerlo»: hasta que escaneas al siguiente cliente, el panel ofrece «Imprimir "
-                        + "ticket» (Ctrl+I). «No imprimirlo»: si lo piden, se reimprime desde «Ventas del día»; sin conexión no se puede, así "
+                        + "ticket» (Ctrl+I). «No imprimirlo»: si lo piden, se imprime desde «Ventas del día», sin pedir motivo; sin conexión no se puede, así "
                         + "que se ofrece. Lo fiado sale siempre, y los comprobantes y el corte, como siempre.",
                     Permiso = AccionControlada.ConfigurarTicket,
                     NoListo = NoListoTicket,
@@ -688,6 +696,41 @@
             Visible = () => Sesion.Puede(AccionControlada.AdministrarCajas),
             Ajustes = [Atajo("cajas-pc", "Cajas y sus PC", "cajas", AccionControlada.AdministrarCajas, "Quitar la PC de una caja; dar de alta una.", "equipo serie folios alta quitar")],
             Contenido = @<AdministrarCajas Caja="Caja" Sesion="Sesion" AlGuardar="MarcarGuardado" />,
+        },
+        // Respaldos (2026-10-22, como el del prototipo): el último y «Respaldar ahora». Cada cuánto y cuántos días los decide la
+        // caja principal; restaurar uno no se hace desde aquí (es más delicado y va aparte).
+        new("respaldos", "Respaldos", "respaldo")
+        {
+            Descripcion = "La caja principal copia la base sola, una vez al día y con cada corte Z, sin detener la venta. Restaurar uno no se hace desde aquí.",
+            SeGuarda = false,
+            Visible = () => Sesion.Puede(AccionControlada.ConfigurarTienda),
+            Ajustes =
+            [
+                new("respaldo-ultimo", "Último respaldo")
+                {
+                    Ayuda = "El más reciente: el del día, el de un corte Z o el de «Respaldar ahora».",
+                    Permiso = AccionControlada.ConfigurarTienda,
+                    NoListo = NoListoRespaldos,
+                    Dice = () => UltimoRespaldo,
+                    Palabras = "copia base respaldar",
+                },
+                new("respaldo-carpeta", "Dónde se guardan")
+                {
+                    Ayuda = "En la caja principal; los de más días se borran solos.",
+                    Permiso = AccionControlada.ConfigurarTienda,
+                    NoListo = NoListoRespaldos,
+                    Dice = () => $"{_respaldos!.Carpeta} · los de los últimos {_respaldos.Dias} días",
+                    Palabras = "carpeta copia base dias",
+                },
+                new(Respaldar, "Respaldar ahora")
+                {
+                    Ayuda = "Una copia de la base en este momento, con lo último que se vendió, sin detener la venta.",
+                    Permiso = AccionControlada.ConfigurarTienda,
+                    NoListo = NoListoRespaldos,
+                    Palabras = "copia base respaldo",
+                    Control = @<button id="aj-respaldar" class="vn-boton chico" disabled="@_respaldando" @onclick="RespaldarAsync">@(_respaldando ? "Respaldando…" : "Respaldar ahora")</button>,
+                },
+            ],
         },
         new("bitacora", "Bitácora", "lista")
         {
@@ -930,6 +973,98 @@
     private Task QuitarLogotipoAsync(string renglon) =>
         HacerAsync(renglon, async () => _ticket = await Cliente.GuardarLogoTicketAsync(Caja.Id, new SolicitudLogo(Sesion.UsuarioId, null)));
 
+    // ── Respaldos ────────────────────────────────────────────────────────────
+
+    /// <summary>El renglón de «Respaldar ahora»: ahí se dice dónde quedó o por qué no.</summary>
+    private const string Respaldar = "respaldar";
+
+    private bool _respaldando;
+
+    private string? NoListoRespaldos() => _respaldos is null ? _errorRespaldos ?? "Cargando…" : null;
+
+    /// <summary>«Hoy a las 13:00 · 26.3 MB», «Todavía no hay ninguno»; y, si ahora no se hacen, por qué.</summary>
+    private string UltimoRespaldo =>
+        (_respaldos?.Ultimo is { } ultimo ? $"{CuandoFue(ultimo.FechaLocal)} · {ultimo.Tamano}" : "Todavía no hay ninguno")
+        + (_respaldos?.NoSeHacenPorque is { } porque ? $". {porque}" : "");
+
+    /// <summary>«Hoy a las 15:34», «Ayer a las 23:10» o «El 20 de octubre a las 13:00».</summary>
+    private static string CuandoFue(DateTime local)
+    {
+        var hoy = DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
+        var dia = DateOnly.FromDateTime(local);
+        var cuando = dia == hoy ? "Hoy" : dia == hoy.AddDays(-1) ? "Ayer" : $"El {local.ToString("d 'de' MMMM", Formato.Mexico)}";
+        return $"{cuando} a las {local.ToString("HH:mm", Formato.Mexico)}";
+    }
+
+    /// <summary>Lo que se espera entre una pregunta y otra mientras la caja principal hace «Respaldar ahora».</summary>
+    private static readonly TimeSpan EsperaDelRespaldo = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// «Respaldar ahora» (2026-10-22): la caja principal hace la copia, con el mismo servicio que la diaria y la del corte Z (la
+    /// copia en línea de SQLite: la base completa, sin detener la venta), en segundo plano: contesta enseguida y aquí se pregunta
+    /// cómo va hasta que termina (revisión del PR #133; antes se esperaba y con una base grande pasaba de los 15 s). Al terminar
+    /// se dice dónde quedó y cuánto mide, y «Último respaldo» ya es ese. No es un cambio de la configuración: no mueve
+    /// «Guardado a las…».
+    /// </summary>
+    private async Task RespaldarAsync()
+    {
+        if (_respaldando || _respaldos is null)
+            return;
+        _respaldando = true;
+        _avisos.Remove(Respaldar);
+        Error(Respaldar, null);
+        try
+        {
+            _respaldos = await Cliente.RespaldarAhoraAsync(Caja.Id, new SolicitudRespaldo(Sesion.UsuarioId));
+        }
+        catch (ErrorCaja ex)
+        {
+            _respaldando = false;
+            Error(Respaldar, ex.Message);
+            return;
+        }
+        await EsperarRespaldoAsync();
+    }
+
+    /// <summary>
+    /// Mientras se hace «Respaldar ahora» (pedido aquí, o ya en camino al abrir la Configuración), pregunta cada segundo cómo va;
+    /// al cerrar la Configuración deja de preguntar. Al terminar dice dónde quedó y cuánto mide (y aparte, si no se pudieron
+    /// borrar los viejos), o por qué no salió.
+    /// </summary>
+    private async Task EsperarRespaldoAsync()
+    {
+        _respaldando = true;
+        try
+        {
+            while (_respaldos?.Ahora is { Haciendo: true } && !Cerrado)
+            {
+                StateHasChanged();
+                await Task.Delay(EsperaDelRespaldo);
+                if (Cerrado)
+                    return;
+                try
+                {
+                    _respaldos = await Cliente.RespaldosAsync(Caja.Id, Sesion.UsuarioId);
+                }
+                catch (ErrorCaja ex)
+                {
+                    Error(Respaldar, ex.Message);
+                    return;
+                }
+            }
+            if (_respaldos?.Ahora is { Hecho: { } hecho })
+                _avisos[Respaldar] = $"Se guardó en {hecho.Ruta} ({hecho.Tamano})." + (hecho.AvisoLimpieza is { } limpieza ? $" {limpieza}" : "");
+            else if (_respaldos?.Ahora is { Fallo: { } fallo })
+                Error(Respaldar, fallo);
+        }
+        finally
+        {
+            _respaldando = false;
+            if (!Cerrado)
+                StateHasChanged();
+        }
+    }
+
     // ── «Al cobrar» ──────────────────────────────────────────────────────────
 
     /// <summary>El renglón de «Al cobrar»: ahí se dice si no se pudo guardar.</summary>
@@ -1062,7 +1197,8 @@
         ("F10", "Buscar un producto por nombre"),
         ("F11", "Ver el mayoreo del artículo"),
         ("F12", "Cobrar"),
-        ("Ins o Ctrl+P", "Artículo común (sin inventario)"),
+        ("Ins", "Varios: la cantidad y luego el código, como en eleventa (lo que se escanea es el código)"),
+        ("Ctrl+P", "Artículo común (sin inventario)"),
         ("Supr", "Quitar el artículo"),
         ("+ y −", "Una pieza más o una menos del artículo"),
         ("↑ y ↓", "Elegir el artículo del ticket"),

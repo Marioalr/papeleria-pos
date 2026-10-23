@@ -55,11 +55,11 @@ internal static class ExcelDeReportes
             new("Venta neta", FormatoCelda.Dinero, a.VentaCentavos, b?.VentaCentavos),
             new("Tickets", FormatoCelda.Entero, a.Tickets, b?.Tickets),
             new("Ticket promedio", FormatoCelda.Dinero, a.TicketPromedioCentavos, b?.TicketPromedioCentavos),
-            new("Lo cobrado (sin los cancelados)", FormatoCelda.Dinero, a.VendidoCentavos, b?.VendidoCentavos),
+            new("Lo cobrado en los tickets que no se cancelaron", FormatoCelda.Dinero, a.VendidoCentavos, b?.VendidoCentavos),
             new("Lo devuelto", FormatoCelda.Dinero, a.DevueltoCentavos, b?.DevueltoCentavos),
             new("Devoluciones", FormatoCelda.Entero, a.Devoluciones, b?.Devoluciones),
-            new("Tickets cancelados (no cuentan)", FormatoCelda.Entero, a.Cancelados, b?.Cancelados),
-            new("Lo que sumaban los cancelados", FormatoCelda.Dinero, a.CanceladosCentavos, b?.CanceladosCentavos),
+            new("Cancelaciones hechas en el periodo", FormatoCelda.Entero, a.Cancelados, b?.Cancelados),
+            new("Lo que sumaban esos tickets", FormatoCelda.Dinero, a.CanceladosCentavos, b?.CanceladosCentavos),
             new("Del historial de eleventa", FormatoCelda.Dinero, a.DelHistorialCentavos, b?.DelHistorialCentavos),
         };
         // La utilidad, solo si vino (quien lo exporta ve costos, utilidad y margen).
@@ -135,7 +135,8 @@ internal static class ExcelDeReportes
         if (conAnterior)
         {
             columnas.Add(new("Año pasado", p => p.AnteriorCentavos, FormatoCelda.Dinero, 15));
-            columnas.Add(new("Del año pasado", p => p.InicioAnteriorLocal is { } antes ? TextosDeReportes.DetalleAnterior(r.Periodo, antes) : null, Ancho: 18));
+            columnas.Add(new("Del año pasado", p => p.InicioAnteriorLocal is { } antes ? TextosDeReportes.DetalleAnterior(r.Periodo, antes, r.Desde) : null,
+                Ancho: 18));
             columnas.Add(new("Cambio", p => LibroExcel.Cambio(p.ActualCentavos, p.AnteriorCentavos), FormatoCelda.Porcentaje, 10));
         }
         columnas.Add(new("Nota", p => p.EnCurso ? "va en curso" : p.ActualCentavos is null ? "todavía no llega" : null, Ancho: 16));
@@ -145,7 +146,12 @@ internal static class ExcelDeReportes
     private static void Departamentos(IXLWorksheet hoja, ReporteVentasDto r, QuienExporta quien, string titulo, List<string?> notas)
     {
         var fila = LibroExcel.Encabezado(hoja, quien, $"Por departamento · {titulo}",
-            [.. notas, "Lo vendido menos lo devuelto en el periodo; al final, las impresiones y el artículo común."]);
+        [
+            .. notas,
+            "Lo vendido menos lo devuelto en el periodo; al final, las impresiones, el artículo común y, si lo hay, lo del historial de "
+            + "eleventa sin desglose: suman la venta neta.",
+            TextosDeReportes.NotaSinDesglose(r),
+        ]);
         var total = r.Departamentos.Where(d => d.VentaCentavos > 0).Sum(d => d.VentaCentavos);
         var columnas = new List<Columna<DepartamentoReporteDto>>
         {
@@ -158,12 +164,14 @@ internal static class ExcelDeReportes
             columnas.Add(new("Año pasado", d => d.AnteriorCentavos, FormatoCelda.Dinero, 15));
             columnas.Add(new("Cambio", d => LibroExcel.Cambio(d.VentaCentavos, d.AnteriorCentavos), FormatoCelda.Porcentaje, 10));
         }
-        // El costo, la utilidad y el margen: solo para quien ve costos (a los demás el servicio ni se los mandó).
+        // El costo, la utilidad y el margen: solo para quien ve costos (a los demás el servicio ni se los mandó). El artículo común y
+        // lo que el historial suma sin desglose no tienen costo: «sin costo», como en la pantalla.
         if (r.ConUtilidad)
         {
-            columnas.Add(new("Costo", d => d.CostoCentavos, FormatoCelda.Dinero, 15));
-            columnas.Add(new("Utilidad", d => d.Clase == ClaseVenta.ArticuloComun ? null : d.UtilidadCentavos, FormatoCelda.Dinero, 15));
-            columnas.Add(new("Margen", d => d.MargenCentesimas / 10000m, FormatoCelda.Porcentaje, 10));
+            static bool SinCosto(DepartamentoReporteDto d) => d.Clase is ClaseVenta.ArticuloComun or ClaseVenta.SinDesglose;
+            columnas.Add(new("Costo", d => SinCosto(d) ? null : d.CostoCentavos, FormatoCelda.Dinero, 15));
+            columnas.Add(new("Utilidad", d => SinCosto(d) ? null : d.UtilidadCentavos, FormatoCelda.Dinero, 15));
+            columnas.Add(new("Margen", d => SinCosto(d) ? "sin costo" : (object?)(d.MargenCentesimas / 10000m), FormatoCelda.Porcentaje, 10));
         }
         LibroExcel.Tabla(hoja, fila, "TablaDepartamentos", columnas, r.Departamentos, "No hubo ventas en este periodo.");
     }

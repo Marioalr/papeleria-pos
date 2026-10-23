@@ -9,6 +9,7 @@ namespace PapeleriaPos.Interfaz;
 /// ticket, la configuración, los clientes, las marcas, los sinónimos, lo más vendido, los exhibidores y las temporadas) lo que
 /// llegó reemplaza lo de la copia. Lo elegido en la búsqueda llega solo lo nuevo y pisa lo del mismo texto (entrega 5, parte 3).
 /// De las fotos llegan las que cambiaron o llegaron (de qué producto y su huella) y las que se quitaron (entrega 13, parte 2).
+/// Las promociones llegan completas, con su huella, cuando ya no son las de la copia (fase 3).
 /// </summary>
 public static class CopiaAlDia
 {
@@ -16,9 +17,9 @@ public static class CopiaAlDia
     /// El formato de la copia que entiende esta caja (<c>VersionesDeLaCopia.Formato</c> en el servicio): si la copia guardada
     /// o la caja principal tienen otro, se baja completa. El 2 trae lo que necesita la búsqueda (entrega 5, parte 3); el 3,
     /// siempre los exhibidores y las temporadas (entrega 13); el 4, siempre de qué producto es cada foto, con su huella
-    /// (entrega 13, parte 2).
+    /// (entrega 13, parte 2); el 5, siempre las promociones de la sucursal con sus fechas y su huella (fase 3).
     /// </summary>
-    public const int Formato = 4;
+    public const int Formato = 5;
 
     public static PaqueteContingenciaDto Aplicar(PaqueteContingenciaDto copia, CambiosCopiaDto cambios)
     {
@@ -79,6 +80,8 @@ public static class CopiaAlDia
             VersionElegidos = cambios.VersionElegidos ?? copia.VersionElegidos,
             Exhibidores = cambios.Exhibidores ?? copia.Exhibidores,
             Fotos = cambios.CambianLasFotos ? ConLasFotos(copia.Fotos, cambios.Fotos ?? [], cambios.FotosQuitadas ?? []) : copia.Fotos,
+            Promociones = cambios.Promociones ?? copia.Promociones,
+            HuellaPromociones = cambios.HuellaPromociones ?? copia.HuellaPromociones,
         };
     }
 

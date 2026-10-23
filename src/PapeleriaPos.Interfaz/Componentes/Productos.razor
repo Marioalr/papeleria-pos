@@ -9,8 +9,10 @@
    detalle y la ficha de un producto de eleventa dicen que lo que pone su lectura se cambia allá (la ficha no lo deja
    cambiar). Lo que se señala (entrega 13, parte 3): «Temporadas» (empezarla con los precios del año pasado, su hoja, sus
    tarjetas y terminarla) y «Tarjetas de precio» (las que hay que volver a imprimir porque cambió su precio, lo más preguntado
-   en el verificador sin tarjeta y las de cada exhibidor), en el mismo lado. «Productos en Excel» (2026-10-22): exportar la
-   lista como se ve e importarla ya cambiada, viendo antes qué cambia; para quien ve Productos (importa quien cambia precios). *@
+   en el verificador sin tarjeta y las de cada exhibidor), en el mismo lado. Y «Promociones» (fase 3): las de la tienda con sus
+   fechas, en el mismo lado; mientras se arma una de productos, la lista marca como en «Cambiar precios». «Productos en
+   Excel» (2026-10-22): exportar la lista como se ve e importarla ya cambiada, viendo antes qué cambia; para quien ve
+   Productos (importa quien cambia precios). *@
 @implements IPagina
 @implements IDisposable
 @inject ClienteCaja Cliente
@@ -127,6 +129,8 @@
                             @onclick="() => Ver(Vista.Temporadas)"><Ico Nombre="reloj" />Temporadas</button>
                     <button id="ver-tarjetas" class="vn-boton chico @(_vista == Vista.Tarjetas ? "on" : "")" title="Las tarjetas de precio: las que hay que volver a imprimir, lo más preguntado y las de cada exhibidor"
                             @onclick="() => Ver(Vista.Tarjetas)">Tarjetas de precio@(_porReimprimir > 0 ? $" · {_porReimprimir} por reimprimir" : "")</button>
+                    <button id="ver-promociones" class="vn-boton chico @(_vista == Vista.Promociones ? "on" : "")" title="Las promociones con fechas: 3×2, porcentajes y precios especiales, como dejar al costo en el regreso a clases"
+                            @onclick="() => Ver(Vista.Promociones)"><Ico Nombre="etiqueta" />Promociones</button>
                 }
                 <button class="vn-boton chico @(_vista == Vista.Departamentos ? "on" : "")" @onclick="() => Ver(Vista.Departamentos)">Departamentos</button>
                 <button class="vn-boton chico @(_vista == Vista.Decisiones ? "on" : "")" @onclick="DecisionesAsync">Decisiones de depuración</button>
@@ -172,6 +176,10 @@
                 break;
             case Vista.Tarjetas:
                 <TarjetasDePrecio Caja="Caja" Sesion="Sesion" AlCambiar="PorReimprimirAsync" />
+                break;
+            case Vista.Promociones when _opciones is not null:
+                <PromocionesEnProductos @ref="_promociones" Caja="Caja" Sesion="Sesion" Acceso="Acceso" Opciones="_opciones" Marcados="_marcados"
+                                        VersionDeMarcas="_versionDeMarcas" AlPonerMarcas="PonerMarcas" AlCambiarModo="StateHasChanged" />
                 break;
             case Vista.Excel:
                 <ExcelEnProductos @ref="_excel" Caja="Caja" Sesion="Sesion" Acceso="Acceso" Estado="Estado" EnLaLista="@(_lista?.Total ?? 0)"
@@ -226,7 +234,7 @@
     /// <summary>«Ir a Etiquetas»: a Inventario › Etiquetas, para imprimirlas.</summary>
     [Parameter] public EventCallback AlIrAEtiquetas { get; set; }
 
-    private enum Vista { Detalle, Ficha, Mayoreo, Decisiones, Departamentos, Precios, Temporadas, Tarjetas, Excel }
+    private enum Vista { Detalle, Ficha, Mayoreo, Decisiones, Departamentos, Precios, Temporadas, Tarjetas, Promociones, Excel }
 
     /// <summary>Cuántos trae la lista de una vez; «Ver … más» trae otros tantos.</summary>
     public const int Pagina = 50;
@@ -291,8 +299,14 @@
     /// <summary>Con lo que se buscó la lista que se ve: si es lo escrito, Enter marca el elegido en lugar de buscar otra vez.</summary>
     private string? _textoDeLaLista;
 
-    /// <summary>Está abierto «Cambiar precios»: un toque en la lista marca o desmarca, en lugar de abrir el producto.</summary>
-    private bool Marcando => _vista == Vista.Precios;
+    /// <summary>Productos › Promociones (fase 3): la que se arma toma los productos marcados en la lista.</summary>
+    private PromocionesEnProductos? _promociones;
+
+    /// <summary>
+    /// Está abierto «Cambiar precios», o se arma una promoción de productos: un toque en la lista marca o desmarca, en lugar de
+    /// abrir el producto.
+    /// </summary>
+    private bool Marcando => _vista == Vista.Precios || _vista == Vista.Promociones && _promociones?.MarcaProductos == true;
 
     protected override async Task OnInitializedAsync()
     {
@@ -359,6 +373,12 @@
                 await AlProductoAsync();
                 return true;
             case Vista.Temporadas when _temporadas?.Cerrar() == true:
+                return true;
+            case Vista.Promociones:
+                // Primero deja la autorización, la que se arma o el detalle; en la lista, al producto.
+                if (_promociones is not null && await _promociones.CerrarAsync())
+                    return true;
+                await AlProductoAsync();
                 return true;
             case Vista.Mayoreo or Vista.Decisiones or Vista.Temporadas or Vista.Tarjetas:
                 await AlProductoAsync();
@@ -692,6 +712,14 @@
     private void QuitarLasMarcas()
     {
         _marcados.Clear();
+        _versionDeMarcas++;
+    }
+
+    /// <summary>Las marcas que pide Promociones: al editar una, sus productos; al guardarla o dejarla, ninguno.</summary>
+    private void PonerMarcas(IReadOnlyCollection<Guid> productos)
+    {
+        _marcados.Clear();
+        _marcados.UnionWith(productos);
         _versionDeMarcas++;
     }
 

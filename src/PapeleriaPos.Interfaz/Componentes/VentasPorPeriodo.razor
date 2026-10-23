@@ -34,8 +34,8 @@
                 }
             </div>
             @* Las flechas dentro de una fecha o de la caja cambian eso, no los días que se ven. *@
-            <label class="vn-reporte-campo">Del <input id="vpp-desde" type="date" value="@Iso(Desde)" max="@Iso(Hoy)" @onchange="DesdeAsync" @onkeydown:stopPropagation="true" /></label>
-            <label class="vn-reporte-campo">al <input id="vpp-hasta" type="date" value="@Iso(Hasta)" max="@Iso(Hoy)" @onchange="HastaAsync" @onkeydown:stopPropagation="true" /></label>
+            <label class="vn-reporte-campo">Del <input id="vpp-desde" type="date" value="@Iso(Desde)" min="@Iso(DiasDeVentas.PrimerDia)" max="@Iso(Hoy)" @onchange="DesdeAsync" @onkeydown:stopPropagation="true" /></label>
+            <label class="vn-reporte-campo">al <input id="vpp-hasta" type="date" value="@Iso(Hasta)" min="@Iso(DiasDeVentas.PrimerDia)" max="@Iso(Hoy)" @onchange="HastaAsync" @onkeydown:stopPropagation="true" /></label>
             <select id="vpp-caja" aria-label="Caja" value="@(Estado.CajaId?.ToString() ?? "")" @onchange="CajaAsync" @onkeydown:stopPropagation="true">
                 <option value="">Todas las cajas</option>
                 @foreach (var c in _datos?.Cajas ?? [])
@@ -131,7 +131,8 @@
                 <span class="neta">Venta neta <strong>@Formato.Dinero(t.VentaCentavos)</strong></span>
                 @if (t.Cancelados > 0)
                 {
-                    <span class="tenue">@(t.Cancelados == 1 ? "1 cancelado" : $"{t.Cancelados} cancelados") (@Formato.Dinero(t.CanceladosCentavos)) no cuentan</span>
+                    @* Como en el corte del día: las que se hicieron esos días; el ticket ya no está en lo vendido. *@
+                    <span class="tenue">@(t.Cancelados == 1 ? "1 cancelación" : $"{t.Cancelados} cancelaciones") (@Formato.Dinero(t.CanceladosCentavos))</span>
                 }
             </div>
             <p class="nota" id="vpp-notas">@Notas(d)</p>
@@ -185,8 +186,14 @@
 
     private DateOnly Hasta => Dias.Hasta;
 
+    /// <summary>
+    /// El largo de lo que se ve: el de un toque que se eligió, o el de las fechas (el que se eligió, aunque ← → las hayan cortado en
+    /// hoy).
+    /// </summary>
+    private LargoDeVentas Largo => Estado.Dias is { } dias ? DiasDeVentas.LargoDe(dias) : Estado.Largo ?? DiasDeVentas.LargoDe(Desde, Hasta);
+
     /// <summary>Cuál de los de un toque es lo que se ve; ninguno si se escribieron las fechas.</summary>
-    private DiasElegidos? Elegidos => Estado.Dias ?? DiasDeVentas.Cual(Desde, Hasta, Hoy);
+    private DiasElegidos? Elegidos => Estado.Dias ?? DiasDeVentas.Cual(Desde, Hasta, Hoy, Largo);
 
     protected override Task OnInitializedAsync() => CargarAsync();
 
@@ -212,10 +219,10 @@
             var datos = await Cliente.VentasPorPeriodoAsync(Caja.Id, Sesion.UsuarioId, desde, hasta, Estado.CajaId, Estado.Pagina);
             if (carga != _cargas)
                 return;
-            // Una página que ya no existe (se recordó la de otro día, con más tickets): la primera.
+            // Una página que ya no existe (se recordó la de otro día, con más tickets): la última que hay.
             if (datos is { Ventas.Count: 0, Total: > 0, Pagina: > 0 })
             {
-                Estado.Pagina = 0;
+                Estado.Pagina = (datos.Total - 1) / datos.Tamano;
                 await CargarAsync();
                 return;
             }
@@ -223,8 +230,9 @@
         }
         catch (ErrorCaja ex)
         {
+            // Lo de antes no se queda bajo los días que se pidieron: se ve el error, y «Volver a intentar» los pide otra vez.
             if (carga == _cargas)
-                _error = ex.Message;
+                (_error, _datos) = (ex.Message, null);
         }
         finally
         {
@@ -234,13 +242,14 @@
     }
 
     /// <summary>
-    /// Otros días: desde la primera página, y lo que se imprimió antes ya no es de lo que se ve. Si son los de un toque (con ← →
-    /// se llega al mes pasado), se recuerdan como tales.
+    /// Otros días, de ese <paramref name="largo"/>: desde la primera página, y lo que se imprimió antes ya no es de lo que se ve.
+    /// Si son los de un toque de ese largo (con ← → se llega al mes pasado), se recuerdan como tales.
     /// </summary>
-    private Task DiasAsync(DateOnly desde, DateOnly hasta)
+    private Task DiasAsync(DateOnly desde, DateOnly hasta, LargoDeVentas largo)
     {
-        var dias = DiasDeVentas.Cual(desde, hasta, Hoy);
-        (Estado.Dias, Estado.Desde, Estado.Hasta, Estado.Pagina) = (dias, dias is null ? desde : null, dias is null ? hasta : null, 0);
+        var dias = DiasDeVentas.Cual(desde, hasta, Hoy, largo);
+        (Estado.Dias, Estado.Desde, Estado.Hasta, Estado.Largo, Estado.Pagina) =
+            (dias, dias is null ? desde : null, dias is null ? hasta : null, dias is null ? largo : null, 0);
         (_vistaPrevia, _impreso) = (null, null);
         return CargarAsync();
     }
@@ -253,7 +262,7 @@
 
     private Task ElegirAsync(DiasElegidos dias)
     {
-        (Estado.Dias, Estado.Desde, Estado.Hasta, Estado.Pagina) = (dias, null, null, 0);
+        (Estado.Dias, Estado.Desde, Estado.Hasta, Estado.Largo, Estado.Pagina) = (dias, null, null, null, 0);
         (_vistaPrevia, _impreso) = (null, null);
         return CargarAsync();
     }
@@ -263,23 +272,33 @@
     private static DateOnly? LeerFecha(object? valor) =>
         DateOnly.TryParseExact(valor?.ToString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dia) ? dia : null;
 
-    /// <summary>El primer día escrito: si queda después del último, el último lo sigue.</summary>
+    /// <summary>
+    /// El primer día escrito (de <see cref="DiasDeVentas.PrimerDia"/> a hoy: un año mal escrito, «26», no pide siglos): si queda
+    /// después del último, o a más de tres años de él, el último lo sigue.
+    /// </summary>
     private Task DesdeAsync(ChangeEventArgs e)
     {
         if (LeerFecha(e.Value) is not { } dia)
             return Task.CompletedTask;
-        dia = dia > Hoy ? Hoy : dia;
-        return DiasAsync(dia, Hasta < dia ? dia : Hasta);
+        dia = Acotar(dia);
+        var hasta = Hasta < dia ? dia : Hasta > DiasDeVentas.UltimoQueCabe(dia) ? DiasDeVentas.UltimoQueCabe(dia) : Hasta;
+        return EscritasAsync(dia, hasta);
     }
 
-    /// <summary>El último día escrito: si queda antes del primero, el primero lo sigue.</summary>
+    /// <summary>El último día escrito: si queda antes del primero, o a más de tres años de él, el primero lo sigue.</summary>
     private Task HastaAsync(ChangeEventArgs e)
     {
         if (LeerFecha(e.Value) is not { } dia)
             return Task.CompletedTask;
-        dia = dia > Hoy ? Hoy : dia;
-        return DiasAsync(Desde > dia ? dia : Desde, dia);
+        dia = Acotar(dia);
+        var desde = Desde > dia ? dia : Desde < DiasDeVentas.PrimeroQueCabe(dia) ? DiasDeVentas.PrimeroQueCabe(dia) : Desde;
+        return EscritasAsync(desde, dia);
     }
+
+    private DateOnly Acotar(DateOnly dia) => dia < DiasDeVentas.PrimerDia ? DiasDeVentas.PrimerDia : dia > Hoy ? Hoy : dia;
+
+    /// <summary>Unas fechas escritas: su largo es el suyo (un mes completo, una semana de lunes a domingo, o tantos días).</summary>
+    private Task EscritasAsync(DateOnly desde, DateOnly hasta) => DiasAsync(desde, hasta, DiasDeVentas.LargoDe(desde, hasta));
 
     private Task CajaAsync(ChangeEventArgs e)
     {
@@ -288,11 +307,21 @@
         return CargarAsync();
     }
 
-    /// <summary>← y →: los días de antes o de después, del mismo largo (un mes, una semana o tantos días); después de hoy no hay.</summary>
-    private Task MoverAsync(int pasos) =>
-        DiasDeVentas.Mover(Desde, Hasta, pasos, Hoy) is { } otros ? DiasAsync(otros.Desde, otros.Hasta) : Task.CompletedTask;
+    /// <summary>
+    /// ← y →: los días de antes o de después, del largo que se eligió (un mes, una semana o tantos días), aunque los que se ven
+    /// estén cortados en hoy; después de hoy no hay.
+    /// </summary>
+    private Task MoverAsync(int pasos)
+    {
+        var largo = Largo;
+        return DiasDeVentas.Mover(largo, Desde, pasos, Hoy) is { } otros ? DiasAsync(otros.Desde, otros.Hasta, largo) : Task.CompletedTask;
+    }
 
-    private bool HaySiguientes => _datos is { } d && Paginador.HaySiguiente(d.Total, d.Pagina, d.Tamano);
+    /// <summary>
+    /// Hay otra página después de la que se pidió (no de la que ya llegó): Av Pág sostenida mientras la caja principal contesta no
+    /// pasa de la última (revisión del PR #134).
+    /// </summary>
+    private bool HaySiguientes => _datos is { } d && Paginador.HaySiguiente(d.Total, Estado.Pagina, d.Tamano);
 
     private Task SiguientesAsync()
     {
@@ -358,7 +387,7 @@
             ? "Nada cobrado en esos días."
             : $"Cómo se pagó: {string.Join(" · ", d.Totales.Formas.Select(f => $"{TextosDeReportes.Forma(f.Forma)} {Formato.Dinero(f.Centavos)}"))}"
               + (d.Totales.Formas.Any(f => f.Forma == FormaPago.Efectivo) ? " (el efectivo, sin el redondeo al peso)." : ".");
-        var cuentan = " Un ticket cancelado se lista, pero no cuenta; lo devuelto en esos días se resta, como en el corte del día.";
+        var cuentan = $" {TextosDeReportes.ComoCuentaVentasPorPeriodo(d)}";
         var historial = d.DelHistorialTickets > 0
             ? $" Además, el historial de eleventa tiene {Formato.Numero(d.DelHistorialTickets)} tickets ({Formato.Dinero(d.DelHistorialCentavos)}) en esos "
               + "días: cuentan en los reportes, pero no se listan porque no traen caja, cajero ni forma de pago."

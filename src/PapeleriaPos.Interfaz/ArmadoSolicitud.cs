@@ -3,11 +3,19 @@ using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Interfaz;
 
-/// <summary>Lo que la caja manda de un ticket: qué y cuánto, el precio solo si se cambió, y el descuento con su motivo.</summary>
+/// <summary>
+/// Lo que la caja manda de un ticket: qué y cuánto, el precio solo si se cambió, el descuento con su motivo y la promoción que
+/// aplicó, con lo que se ahorró (fase 3: el servicio revisa que sea la misma).
+/// </summary>
 public static class ArmadoSolicitud
 {
     /// <summary>La línea "Impresiones" no se manda: el servicio la arma con los trabajos y sus precios.</summary>
-    public static List<LineaSolicitada> Lineas(Venta venta) => venta.Lineas.Where(l => !l.EsImpresiones).Select(Linea).ToList();
+    /// <param name="conDescuentoEnPausa">
+    /// Para guardar el ticket en espera: también el descuento del cliente que está en pausa por una promoción (fase 3), para que
+    /// vuelva igual. Al cobrar no va: no descuenta nada.
+    /// </param>
+    public static List<LineaSolicitada> Lineas(Venta venta, bool conDescuentoEnPausa = false) =>
+        venta.Lineas.Where(l => !l.EsImpresiones).Select(l => Linea(l, conDescuentoEnPausa)).ToList();
 
     /// <summary>
     /// Para cobrar (entrega 5): cada línea con la versión del catálogo de la que salió el precio que vio el cajero en ella
@@ -25,7 +33,9 @@ public static class ArmadoSolicitud
         return (lineas, conocidas.Count > 0 ? conocidas.Min() : deLaCopia);
     }
 
-    public static LineaSolicitada Linea(VentaLinea l)
+    public static LineaSolicitada Linea(VentaLinea l) => Linea(l, conDescuentoEnPausa: false);
+
+    private static LineaSolicitada Linea(VentaLinea l, bool conDescuentoEnPausa)
     {
         var linea = l switch
         {
@@ -33,6 +43,10 @@ public static class ArmadoSolicitud
             { PrecioCambiado: true } => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas, null, l.PrecioCentavos, l.AutorizacionPrecioId),
             _ => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.Cantidad.Milesimas),
         };
+        if (l.TienePromocion)
+            linea = linea with { PromocionId = l.PromocionId, AhorroPromocionCentavos = l.AhorroPromocionCentavos, Promocion = l.Promocion };
+        if (conDescuentoEnPausa && l.DescuentoDeCliente && !l.TieneDescuento)
+            return linea with { DescuentoCentesimas = l.DescuentoCentesimas, MotivoDescuento = l.MotivoDescuento };
         return l.TieneDescuento
             ? linea with
             {

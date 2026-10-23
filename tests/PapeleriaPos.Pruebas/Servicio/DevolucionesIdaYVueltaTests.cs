@@ -266,6 +266,45 @@ public sealed class DevolucionesIdaYVueltaTests
             new SolicitudDevolucion(c.Encargado.UsuarioId, c.Datos.Id, "Otra", [new LineaDevolucionSolicitada(buscado.Lineas[0].LineaId, 1000)]))));
     }
 
+    /// <summary>
+    /// En eleventa le devuelven una pluma a un ticket de la caja 2 y después cancelan lo que quedó (eleventa cancela lo que quedó
+    /// en el ticket). La lectura trae las dos: aquí la cancelación es la devolución de las otras dos plumas y la venta sigue
+    /// cobrada, todo devuelto: el corte del día y los reportes no restan nada dos veces (revisión del PR #131, 2026-10-22).
+    /// </summary>
+    [FactConFirebird]
+    public async Task La_cancelacion_en_eleventa_despues_de_una_devolucion_llega_como_la_devolucion_de_lo_que_quedaba()
+    {
+        var (e, _) = await EleventaAsync();
+        await using var eleventa = e;
+        await using var servicio = await ServicioDePrueba.CrearAsync(Ajustes(e.Servidor, leer: true));
+        var c = await AbrirAsync(servicio, await MapearAsync(servicio));
+        await EsperarPrimeraLecturaAsync(c);
+        var ticket = await CobrarAsync(c, plumas: 3);
+        await MandarAsync(c);
+        var enEleventa = await TicketEnEleventaAsync(servicio, ticket);
+        var (caja2, turno) = (new CajaEnEleventa(CajaEleventa, 7, AbreTurno: false), new TurnoParaEleventa(HoraLocal(120), 300));
+        await EnvioEleventa.DevolverAsync(e.Conexion, caja2,
+            new DevolucionParaEleventa(enEleventa, false, HoraLocal(0).AddSeconds(-10), turno, [new ArticuloDevuelto(10, "Pluma", 1, 9)]));
+        await EnvioEleventa.DevolverAsync(e.Conexion, caja2, new DevolucionParaEleventa(enEleventa, true, HoraLocal(0).AddSeconds(-5), turno, []));
+
+        await LeerAsync(c);
+        await LeerAsync(c);
+
+        await using var db = servicio.Base();
+        var venta = await db.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == ticket.VentaId);
+        Assert.Equal(EstadoVenta.Pagada, venta.Estado);
+        Assert.All(venta.Lineas, l => Assert.Equal(l.Cantidad, l.CantidadDevuelta));
+        // Las dos sin efectivo (salió de la caja de eleventa) y como devoluciones: entre las dos, lo que se cobró.
+        var devoluciones = await db.Devoluciones.Where(d => d.VentaId == venta.Id).OrderBy(d => d.FechaUtc).ToListAsync();
+        Assert.Equal([(false, 900L, 0L), (false, 1800L, 0L)], devoluciones.Select(d => (d.EsCancelacion, d.TotalCentavos, d.ReembolsoEfectivoCentavos)));
+        Assert.Equal(venta.TotalCentavos, devoluciones.Sum(d => d.TotalCentavos));
+        // Lo que hizo eleventa se queda como fue: una parcial y una cancelación.
+        Assert.Equal([false, true], (await db.Set<DevolucionDesdeEleventa>().OrderBy(d => d.DevolucionEleventa).ToListAsync()).Select(d => d.EsCancelacion));
+        // Las tres plumas regresaron al inventario, una vez cada una.
+        Assert.Equal(3000, (await db.MovimientosInventario.Where(m => m.DocumentoTipo == nameof(Devolucion) && m.VarianteId == c.Variante).ToListAsync())
+            .Sum(m => m.Cantidad.Milesimas));
+    }
+
     [FactConFirebird]
     public async Task Antes_de_devolver_aqui_se_revisa_en_vivo_que_eleventa_no_lo_haya_cancelado()
     {
@@ -1166,10 +1205,12 @@ public sealed class DevolucionesIdaYVueltaTests
 
         await using var revision = servicio.Base();
         var venta = await revision.Ventas.Include(v => v.Lineas).SingleAsync(v => v.Id == ticket.VentaId);
-        Assert.Equal(EstadoVenta.Cancelada, venta.Estado);
+        // La cancelación llegó después de la parcial (eleventa cancela lo que quedó): aquí es la devolución de lo que quedaba, y la
+        // venta sigue cobrada, todo devuelto (revisión del PR #131: cancelarla restaría dos veces la parcial en el corte del día).
+        Assert.Equal(EstadoVenta.Pagada, venta.Estado);
         Assert.All(venta.Lineas, l => Assert.Equal(l.Cantidad, l.CantidadDevuelta));
         var devoluciones = await revision.Devoluciones.Include(d => d.Lineas).Where(d => d.VentaId == venta.Id).OrderBy(d => d.FechaUtc).ToListAsync();
-        Assert.Equal([(false, 2), (true, 1)], devoluciones.Select(d => (d.EsCancelacion, d.Lineas.Count)));
+        Assert.Equal([(false, 2), (false, 1)], devoluciones.Select(d => (d.EsCancelacion, d.Lineas.Count)));
         Assert.All(devoluciones, d => Assert.Equal((0L, venta.TurnoId), (d.ReembolsoEfectivoCentavos, d.TurnoId)));
         // Las tres plumas regresaron al inventario (una y luego dos), y nada fue a la bandeja.
         Assert.Equal(3000, (await revision.MovimientosInventario.Where(m => m.DocumentoTipo == nameof(Devolucion) && m.VarianteId == c.Variante).ToListAsync())

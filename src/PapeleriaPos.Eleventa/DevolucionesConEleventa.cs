@@ -67,7 +67,9 @@ public sealed record TurnoDelPuente(int CajaId, int? TurnoId)
 /// <item><b>La vuelta:</b> la lectura de cada pocos minutos trae, en la misma foto que las existencias, las devoluciones y
 /// cancelaciones que se hicieron en eleventa de los tickets que mandó la caja 2, y las pasa a la venta de aquí antes de las
 /// existencias: una devolución sin efectivo (el dinero salió de la caja de eleventa, así que el corte de aquí no la
-/// cuenta), con la entrada al kardex, a nombre del cajero de la venta y con el motivo «Hecha en eleventa…». Lo propio se
+/// cuenta), con la entrada al kardex, a nombre del cajero de la venta y con el motivo «Hecha en eleventa…». La cancelación de
+/// un ticket que ya tenía devoluciones (eleventa cancela lo que quedó) es aquí la devolución de lo que quedaba: la venta sigue
+/// cobrada, como cuando se devuelve todo en la caja (revisión del PR #131, 2026-10-22). Lo propio se
 /// reconoce por la marca <c>TICKET_ID</c> + <c>DEVUELTO_EN</c>, y lo ya pasado por <c>DEVOLUCIONES.ID</c>. Nada de esto va
 /// a la bandeja. Lo que no se puede pasar (ya se devolvió aquí, no está en el ticket) queda por revisar. Lo que puede ser
 /// la anotación a mano de una devolución de aquí que no pasó sola espera: se elige al marcar la de aquí «Ya lo anoté en
@@ -483,9 +485,11 @@ public static class DevolucionesConEleventa
         CalculoDevolucion.Aplicar(venta, devolucion);
         db.Devoluciones.Add(devolucion);
         registro.DevolucionId = devolucion.Id;
+        // En la bitácora, lo que se hizo en eleventa (una cancelación lo es aunque aquí sea la devolución de lo que quedaba).
         new ServicioControl(db).Registrar(venta.SucursalId, venta.CajaId, null, d.EsCancelacion ? AccionControlada.CancelarTicket : AccionControlada.Devolucion,
-            $"{(d.EsCancelacion ? "Cancelación" : "Devolución")} hecha en eleventa del ticket {venta.FolioTexto} (#{folioEleventa}, {d.Caja}, {d.Cajero}): "
-            + "no salió de esta caja", devolucion.TotalCentavos, venta.Id);
+            $"{(d.EsCancelacion ? "Cancelación" : "Devolución")} hecha en eleventa del ticket {venta.FolioTexto} (#{folioEleventa}, {d.Caja}, {d.Cajero})"
+            + (d.EsCancelacion && !devolucion.EsCancelacion ? ", que ya tenía devoluciones: aquí es la devolución de lo que quedaba;" : ":")
+            + " no salió de esta caja", devolucion.TotalCentavos, venta.Id);
         return true;
     }
 
@@ -740,16 +744,25 @@ public static class DevolucionesConEleventa
     /// La devolución de la caja nueva que corresponde a una de eleventa: la cancelación, todo lo que queda; la parcial, cada
     /// artículo de eleventa en las líneas de su producto (o, si fue común, en las de su nombre), en proporción. Sin efectivo
     /// (salió de la caja de eleventa) y del turno de la venta. Vacía si aquí ya no queda tanto.
+    /// <para>
+    /// Si el ticket ya tenía devoluciones, eleventa cancela lo que quedó en él; aquí eso es la devolución de lo que quedaba, y la
+    /// venta sigue cobrada (revisión del PR #131, 2026-10-22). Aquí no se cancela un ticket con devoluciones
+    /// (<see cref="CalculoDevolucion.ArmarCancelacion"/>): el corte del día y los reportes dejarían de contar el ticket y
+    /// seguirían restando lo que ya se había devuelto, dos veces.
+    /// </para>
     /// </summary>
     private static async Task<Devolucion?> ArmarDeEleventaAsync(PosDbContext db, Venta venta, DevolucionLeida d, DateTime devueltaUtc, CancellationToken ct)
     {
         if (venta.Estado != EstadoVenta.Pagada)
             return null;
+        var loQueQuedaba = d.EsCancelacion && LoQueQuedaba(venta);
         var devolucion = new Devolucion
         {
             VentaId = venta.Id, SucursalId = venta.SucursalId, CajaId = venta.CajaId, TurnoId = venta.TurnoId, UsuarioId = venta.CajeroId,
-            EsCancelacion = d.EsCancelacion, FechaUtc = devueltaUtc,
-            Motivo = Recortar($"Hecha en eleventa ({d.Caja}, {d.Cajero}, {d.DevueltoEn:dd/MM HH:mm}): no salió de esta caja", 200),
+            EsCancelacion = d.EsCancelacion && !loQueQuedaba, FechaUtc = devueltaUtc,
+            Motivo = Recortar(loQueQuedaba
+                ? $"Cancelada en eleventa ({d.Caja}, {d.Cajero}, {d.DevueltoEn:dd/MM HH:mm}) después de otra devolución: lo que quedaba; no salió de esta caja"
+                : $"Hecha en eleventa ({d.Caja}, {d.Cajero}, {d.DevueltoEn:dd/MM HH:mm}): no salió de esta caja", 200),
         };
         // En unidades base (las de eleventa) por línea de la venta.
         var porLinea = new Dictionary<Guid, long>();
@@ -803,6 +816,9 @@ public static class DevolucionesConEleventa
         devolucion.TotalCentavos = devolucion.Lineas.Sum(l => l.ImporteCentavos);
         return devolucion;
     }
+
+    /// <summary>Si una cancelación de eleventa de esa venta es aquí la devolución de lo que quedaba: la venta ya tiene devoluciones.</summary>
+    private static bool LoQueQuedaba(Venta venta) => venta.Lineas.Any(l => l.CantidadDevuelta.EsPositiva);
 
     // ── Antes de devolver aquí un ticket de la caja 2 ──
 

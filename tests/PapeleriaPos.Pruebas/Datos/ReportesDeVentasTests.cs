@@ -155,6 +155,37 @@ internal sealed class TiendaDeReportes : IAsyncDisposable
         return venta;
     }
 
+    /// <summary>
+    /// Una venta armada a mano (mayoreo, descuento, impresiones, artículo común, cliente…), cobrada a esa hora en ese turno. Sin
+    /// cobros, en efectivo (redondeado al peso).
+    /// </summary>
+    public async Task<Venta> CobrarAsync(Turno turno, DateTime pagadaUtc, Action<Venta> armar, params CobroSolicitado[] cobros)
+    {
+        var venta = new Venta { SucursalId = Matriz.Id, CajaId = Caja.Id, TurnoId = turno.Id, CajeroId = turno.CajeroId, Serie = Caja.Serie, CreadaUtc = pagadaUtc };
+        armar(venta);
+        venta.Pagar(++_folio, cobros.Length > 0 ? cobros : [new CobroSolicitado(FormaPago.Efectivo, Redondeo.AlPeso(venta.TotalCentavos) + 100_000)], pagadaUtc);
+        await using var db = Contexto();
+        db.Ventas.Add(venta);
+        await db.SaveChangesAsync();
+        return venta;
+    }
+
+    /// <summary>Piezas de un producto en una venta armada a mano, con el costo de cada pieza y, si se dan, más escalas de mayoreo.</summary>
+    public static VentaLinea Agregar(Venta venta, ProductoDePrueba p, int piezas, params Precio[] escalas)
+    {
+        var linea = venta.AgregarProducto(new ProductoEnVenta(p.Variante.Id, p.Producto.Nombre, Impuesto.Iva16, UnidadBase.Pieza, p.LlevaInventario), p.Pieza,
+            Cantidad.Piezas(piezas), [p.Precio, .. escalas]);
+        linea.CostoCentavos = p.CostoCentavos * piezas;
+        return linea;
+    }
+
+    /// <summary>El corte del día de la sucursal, con lo vendido por departamento y la utilidad.</summary>
+    public async Task<CorteDelDiaDto> CorteDelDiaAsync(DateOnly dia)
+    {
+        await using var db = Contexto();
+        return await new RegistroCorteDelDia(db).ArmarAsync(Matriz.Id, dia, new Dictionary<Guid, PresenciaDeCaja>(), porDepartamento: true, conUtilidad: true);
+    }
+
     /// <summary>Se devuelven esas piezas de un producto de la venta, a esa hora y en ese turno.</summary>
     public async Task<Devolucion> DevolverAsync(Venta venta, ProductoDePrueba producto, int piezas, Turno turno, DateTime fechaUtc)
     {
@@ -445,6 +476,71 @@ public sealed class ReportesDeVentasTests
         Assert.Equal(
             [("Cuadernos", 8000L, (long?)20000), ("Escritura", 7250L, 0), ("Servicios", 3500L, 0)],
             anio.Departamentos.Where(d => d.Clase == ClaseVenta.Departamento).Select(d => (d.Nombre, d.VentaCentavos, d.AnteriorCentavos)));
+    }
+
+    /// <summary>
+    /// Febrero de 2029 (28 días) contra febrero de 2028 (bisiesto), ya completo: lo del 29 de febrero de 2028 cuenta en la cifra
+    /// del año pasado y, en la gráfica, va en el 28, así la gráfica suma lo mismo que la cifra (revisión del PR #131). Febrero
+    /// de 2028 contra el de 2027: el 29 no tiene con qué compararse.
+    /// </summary>
+    [Fact]
+    public async Task Un_febrero_de_28_dias_lleva_el_29_del_anio_pasado_en_el_28()
+    {
+        await using var t = await TiendaDeReportes.CrearAsync(new DateTime(2029, 3, 10, 12, 0, 0));
+        await t.HistorialAsync(A(2027, 2, 28, 12), [(t.Goma, 2, 500)]);
+        await t.HistorialAsync(A(2028, 2, 10, 12), [(t.Pluma, 5, 400)]);
+        await t.HistorialAsync(A(2028, 2, 28, 12), [(t.Goma, 1, 500)]);
+        await t.HistorialAsync(A(2028, 2, 29, 12), [(t.Cuaderno, 1, 2500)]);
+        var turno = await t.TurnoAsync(t.Ana, A(2029, 2, 10, 9), A(2029, 2, 10, 18));
+        await t.VenderAsync(turno, A(2029, 2, 10, 12), [(t.Pluma, 1)]);
+
+        var de2029 = await t.ReporteAsync(PeriodoReporte.Mes, new DateOnly(2029, 2, 1));
+        var de2028 = await t.ReporteAsync(PeriodoReporte.Mes, new DateOnly(2028, 2, 1));
+
+        // Los 28 días de este febrero; el año pasado, completo: $50 el 10, y el 28 con el 29 ($12.50 y $40).
+        Assert.Equal(28, de2029.Serie.Count);
+        Assert.Equal(10250L, de2029.Anterior!.VentaCentavos);
+        Assert.Equal(de2029.Anterior.VentaCentavos, de2029.Serie.Sum(p => p.AnteriorCentavos ?? 0));
+        Assert.Equal((5000L, 5250L), (de2029.Serie[9].AnteriorCentavos!.Value, de2029.Serie[27].AnteriorCentavos!.Value));
+        Assert.Equal(new DateTime(2028, 2, 28), de2029.Serie[27].InicioAnteriorLocal);
+        Assert.Equal(1000L, de2029.Serie[9].ActualCentavos);
+        // Los 29 de febrero de 2028; el 29 no existe en 2027.
+        Assert.Equal(29, de2028.Serie.Count);
+        Assert.Equal((10250L, 2500L), (de2028.Actual.VentaCentavos, de2028.Anterior!.VentaCentavos));
+        Assert.Equal((4000L, (long?)null, (DateTime?)null), (de2028.Serie[28].ActualCentavos!.Value, de2028.Serie[28].AnteriorCentavos, de2028.Serie[28].InicioAnteriorLocal));
+        Assert.Equal(de2028.Anterior.VentaCentavos, de2028.Serie.Sum(p => p.AnteriorCentavos ?? 0));
+    }
+
+    /// <summary>
+    /// Las sumas por fecha usan el índice de la fecha, también sin las estadísticas de la base (como en la tienda): sin el «+» de
+    /// la sucursal, SQLite prefiere el índice que empieza por ella, que con una sola sucursal recorre todo (revisión del PR #131).
+    /// Devoluciones y cortes son pocos y no tienen índice por fecha (sin índices nuevos, decidido el 2026-10-22).
+    /// </summary>
+    [Theory]
+    [InlineData("VentasPorHoraSql", "IX_Ventas_PagadaUtc")]
+    [InlineData("LineasSql", "IX_Ventas_PagadaUtc")]
+    [InlineData("CajerosSql", "IX_Ventas_PagadaUtc")]
+    [InlineData("FormasSql", "IX_Ventas_PagadaUtc")]
+    [InlineData("HistorialPorHoraSql", "IX_VentasHistoricas_FechaUtc")]
+    [InlineData("LineasHistorialSql", "IX_VentasHistoricas_FechaUtc")]
+    public async Task Las_sumas_por_fecha_usan_el_indice_de_la_fecha(string consulta, string indice)
+    {
+        await using var t = await TiendaDeReportes.CrearAsync(Ahora);
+        await using var db = t.Contexto();
+        await db.Database.OpenConnectionAsync();
+        var sql = (string)typeof(ReportesDeVentas).GetField(consulta, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .GetRawConstantValue()!;
+        await using var comando = ((Microsoft.Data.Sqlite.SqliteConnection)db.Database.GetDbConnection()).CreateCommand();
+        comando.CommandText = "EXPLAIN QUERY PLAN " + sql.Replace("{0}", "$s").Replace("{1}", "$d").Replace("{2}", "$h");
+        comando.Parameters.AddWithValue("$s", t.Matriz.Id.ToString().ToUpperInvariant());
+        comando.Parameters.AddWithValue("$d", "2026-01-01 06:00:00");
+        comando.Parameters.AddWithValue("$h", "2027-01-01 06:00:00");
+        var plan = new List<string>();
+        await using (var lector = await comando.ExecuteReaderAsync())
+            while (await lector.ReadAsync())
+                plan.Add(lector.GetString(3));
+
+        Assert.Contains(plan, paso => paso.Contains(indice));
     }
 
     [Fact]

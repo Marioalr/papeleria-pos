@@ -103,7 +103,7 @@ public static class TicketEscPos
                     b.AddRange([Esc, (byte)'a', (byte)r.Alineacion]);
                     b.AddRange([Esc, (byte)'E', (byte)(r.Negrita ? 1 : 0)]);
                     b.AddRange([Gs, (byte)'!', (byte)(r.Grande ? 0x01 : 0x00)]);
-                    b.AddRange(Pc850.GetBytes(r.Texto.Length > DisenoTicket.Columnas ? r.Texto[..DisenoTicket.Columnas] : r.Texto));
+                    b.AddRange(Imprimible(r.Texto.Length > DisenoTicket.Columnas ? r.Texto[..DisenoTicket.Columnas] : r.Texto));
                     b.Add(0x0A);
                     break;
                 case Imagen i:
@@ -121,6 +121,21 @@ public static class TicketEscPos
         b.AddRange([Esc, (byte)'d', 4]);         // avanza para que el pie pase la cuchilla
         b.AddRange([Gs, (byte)'V', 66, 0]);      // corte parcial
         return b.ToArray();
+    }
+
+    /// <summary>
+    /// El texto de un renglón en la página de códigos 850, sin un solo byte de control (antes del espacio, y DEL): a la impresora
+    /// le llegarían como comandos ESC/POS (abrir el cajón, cortar, reiniciar). Cualquier texto libre puede traerlos (la nota del
+    /// ticket, un motivo, un nombre), también como un símbolo que la página de códigos dibuja en esos bytes (←, por ejemplo); se
+    /// cambian por un espacio (revisión del PR #133).
+    /// </summary>
+    public static byte[] Imprimible(string texto)
+    {
+        var bytes = Pc850.GetBytes(texto);
+        for (var i = 0; i < bytes.Length; i++)
+            if (bytes[i] < 0x20 || bytes[i] == 0x7F)
+                bytes[i] = (byte)' ';
+        return bytes;
     }
 
     /// <summary>GS v 0: imagen en modo raster, renglón por renglón.</summary>

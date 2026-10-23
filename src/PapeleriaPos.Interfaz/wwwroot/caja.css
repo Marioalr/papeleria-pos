@@ -707,6 +707,15 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-pago-fila .x:hover { color: var(--vn-error); }
 .vn-pago-fila .x .ico { width: 16px; height: 16px; }
 .vn-pago-cab .nota { margin: 0; font-size: 13px; }
+/* La nota del ticket (F4 en el cobro, como en eleventa; 2026-10-22): un renglón para escribirla y, ya puesta, lo que dice. */
+.vn-nota-ticket { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--vn-suave); }
+.vn-nota-ticket > span { display: flex; justify-content: space-between; gap: 8px; }
+.vn-nota-ticket input { width: 100%; min-width: 0; font: 500 15px var(--vn-f-texto); color: var(--vn-texto); padding: 7px 10px; border: 1px solid var(--vn-borde); border-radius: 8px; background: var(--vn-hoja); }
+.vn-nota-ticket input:focus { outline: 2px solid var(--vn-cobro); outline-offset: -1px; border-color: var(--vn-cobro); }
+.vn-nota-ticket small { font-size: 12px; color: var(--vn-tenue); }
+.vn-nota-puesta { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; color: var(--vn-texto); }
+.vn-nota-puesta span { min-width: 0; overflow-wrap: anywhere; }
+.vn-nota-puesta .vn-enlace { white-space: nowrap; }
 .vn-cobrar { margin-top: 6px; display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; border: 0; border-radius: 10px; background: var(--vn-cobro); color: #fff; padding: 13px 16px; font: 700 19px var(--vn-f-cifras); text-align: left; cursor: pointer; }
 .vn-cobrar:hover:not(:disabled) { background: var(--vn-cobro-hover); }
 .vn-cobrar:disabled { background: #a9c9b8; cursor: default; }
@@ -986,6 +995,38 @@ button.vn-chip-estado:hover { border-color: var(--vn-tinta-medio); }
 .vn-acomodar-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .vn-acomodar-barra > span { flex: 1 1 100%; min-width: 0; font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vn-acomodar-barra .vn-boton { min-width: 30px; }
+/* «Varios» (Ins, como en eleventa; 2026-10-22): los dos pasos, la cantidad y el código, con el de ahora en tinta. El cursor
+   se queda en el cuadro de captura, que dice lo que pide el paso y lleva el borde de siempre. */
+.vn-varios { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.vn-varios .vn-alerta { margin: 0; }
+.vn-varios > .nota { margin: 0; font-size: 12.5px; color: var(--vn-suave); }
+.vn-varios-pasos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.vn-varios-pasos li { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: baseline; column-gap: 10px; row-gap: 2px; padding: 10px 12px; border: 1px solid var(--vn-linea); border-radius: 10px; background: var(--vn-hoja); color: var(--vn-tenue); }
+.vn-varios-pasos li.activo { border-color: var(--vn-tinta); box-shadow: 0 0 0 3px var(--vn-tinta-claro); color: var(--vn-texto); }
+.vn-varios-pasos li.listo { background: var(--vn-renglon); color: var(--vn-texto); }
+.vn-varios-num { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--vn-renglon); color: var(--vn-suave); font: 700 12px var(--vn-f-cifras); }
+.vn-varios-pasos li.activo .vn-varios-num { background: var(--vn-tinta); color: #fff; }
+.vn-varios-pasos li.listo .vn-varios-num { background: var(--vn-cobro-claro); color: var(--vn-cobro); }
+.vn-varios-que { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--vn-suave); }
+.vn-varios-pasos strong { font-size: 15px; overflow-wrap: anywhere; }
+.vn-varios-pasos li:not(.listo) strong { font-weight: 400; font-size: 13.5px; color: var(--vn-suave); }
+/* Las entradas y salidas del turno, debajo de F7/F8 (2026-10-22): cada una en su renglón, la cancelada tachada con su motivo;
+   el motivo de la cancelación se escribe debajo de la que se cancela. */
+.vn-movimientos { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--vn-linea); border-radius: 8px; background: var(--vn-hoja); }
+.vn-movimiento { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 7px 10px; border-bottom: 1px solid var(--vn-renglon); }
+.vn-movimiento:last-child, .vn-movimiento-cancelar:last-child { border-bottom: 0; }
+.vn-movimiento > div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.vn-movimiento strong { font-size: 14px; font-variant-numeric: tabular-nums; }
+.vn-movimiento small { font-size: 12.5px; color: var(--vn-suave); overflow-wrap: anywhere; }
+.vn-movimiento.cancelado strong { color: var(--vn-tenue); text-decoration: line-through; }
+.vn-movimiento small.vn-movimiento-cancelada { color: var(--vn-error); }
+.vn-movimiento-cancelar { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px; background: var(--vn-renglon); border-bottom: 1px solid var(--vn-linea); }
+.vn-movimiento-cancelar .acciones { margin-top: 0; }
+.vn-panel .vn-movimiento-cancelar .acciones .boton.principal { flex: 1 1 auto; padding: 8px 12px; font-size: 14px; }
+.vn-panel p.vn-movimiento-aviso { color: var(--vn-cobro); font-weight: 600; }
+.vn-panel .vn-alerta { margin: 0; }
+.vn-varios-pasos code { grid-column: 3; font: 12px var(--vn-f-codigo); color: var(--vn-suave); }
+.vn-varios-ayuda { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--vn-suave); }
 /* El chip de la temporada que corre, arriba de la venta. Si arriba no cabe todo (las pestañas del dueño, los chips del estado),
    es lo que se encoge: el nombre se corta con «…» y completo queda en su título. */
 .vn-chip-temporada { flex: 0 1 auto; min-width: 72px; color: #7a3d00; background: #fff1e0; border-color: #f3c99a; }
@@ -1344,6 +1385,24 @@ img.vn-foto { display: block; object-fit: contain; }
 .vn-precios-tabla td small { display: block; margin-top: 2px; font-size: 12.5px; color: var(--vn-suave); }
 .vn-precios-tabla td .vn-etiq { margin-left: 6px; }
 .vn-adentro .nota.vn-precios-no { color: var(--vn-error); font-weight: 600; }
+/* Productos › Promociones (fase 3): qué corre hoy, su detalle y la que se arma. Mientras se arma una de productos, la lista de
+   la izquierda marca, como en «Cambiar precios». */
+.vn-promos .vn-alerta { margin: 0; }
+.vn-promos-tabla tr.vn-promo-renglon { cursor: pointer; }
+.vn-promos-tabla tr.vn-promo-renglon:hover > td { background: var(--vn-tinta-claro); }
+.vn-promos-tabla tr.apagado td { color: var(--vn-tenue); }
+.vn-promos-tabla td small, .vn-promos-productos td small { display: block; margin-top: 2px; font-size: 12.5px; color: var(--vn-suave); }
+.vn-promos-productos td .vn-etiq { margin-left: 6px; }
+.vn-promos-productos td.acciones { width: 1%; white-space: nowrap; text-align: right; }
+.vn-promos .vn-precios-cuanto input { width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
+.vn-promos .vn-promo-nombre { flex: 1 1 320px; }
+.vn-promos .vn-promo-fecha { flex: 0 1 220px; }
+.vn-promo-dias { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.vn-promo-ficha { display: flex; flex-direction: column; gap: 8px; }
+.vn-promo-que .vn-etiq { margin-left: 6px; }
+.vn-promos .vn-boton.primario { background: var(--vn-tinta); border-color: var(--vn-tinta); color: #fff; font-weight: 600; }
+.vn-promos .vn-boton.primario kbd { background: rgba(255, 255, 255, .16); border-color: rgba(255, 255, 255, .35); color: #fff; }
+.vn-promos .vn-boton.peligro { color: var(--vn-error); border-color: #f0b8b2; }
 /* Productos › Productos en Excel (2026-10-22): exportar la lista e importarla ya cambiada, viendo antes qué cambia, qué es nuevo
    y qué se ignora. En la caja del navegador, su selector de archivos va dentro del botón (como el logotipo de Configuración ›
    Ticket), con el cursor visible al llegar con Tab. */

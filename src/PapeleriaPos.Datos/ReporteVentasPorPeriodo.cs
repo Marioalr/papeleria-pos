@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Reportes;
 using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Datos;
@@ -14,10 +15,11 @@ namespace PapeleriaPos.Datos;
 /// y la hora, la caja, quién cobró, el total, cómo se pagó y si se canceló o se devolvió; y los totales de todos esos días, por
 /// día y por forma de pago. Para quien tiene «Ver reportes de ventas» en «Puede» (consultar no se autoriza). Solo lee.
 /// <para>
-/// Cuenta como los reportes y el corte del día (<see cref="ReportesDeVentas"/>): un ticket que se canceló se lista, pero no
-/// cuenta (en el día en que se cobró); lo devuelto en esos días se resta de lo vendido, sea de un ticket de esos días o de
-/// antes (de la caja que se ve: la del ticket). Cada forma de pago es lo cobrado así (el efectivo, sin el redondeo al peso), así
-/// que suman lo vendido.
+/// Cuenta como los reportes y el corte del día (<see cref="ReportesDeVentas"/>), día por día: lo vendido es lo cobrado ese día
+/// en los tickets que no se cancelaron (un ticket que se canceló se lista el día en que se cobró, pero no cuenta); lo devuelto
+/// y las cancelaciones son los que se hicieron ese día, sean de un ticket de esos días o de antes (de la caja que se ve: la del
+/// ticket). Así, desde la revisión del PR #131 (2026-10-22), una cancelación cuenta el día en que se hizo, como en el corte del
+/// día. Cada forma de pago es lo cobrado así (el efectivo, sin el redondeo al peso), así que suman lo vendido.
 /// </para>
 /// <para>
 /// Solo los tickets de este POS: el historial de eleventa no trae caja, cajero ni forma de pago, así que no se lista; se dice
@@ -45,10 +47,16 @@ public sealed class ReporteVentasPorPeriodo(PosDbContext db)
 
     public const string AlReves = "El primer día va antes que el último.";
 
+    public const string AntesDelPrimerDia = "El primer día es de antes de 2000: revisa el año.";
+
+    public const string MasDeTresAnios = "Son más de tres años: elige hasta tres años a la vez.";
+
     /// <summary>
     /// Una página de los tickets de <paramref name="desde"/> a <paramref name="hasta"/> (vacíos: hoy; el último, si pasa de hoy,
     /// llega hasta hoy) de <paramref name="deCaja"/> (vacía: todas), con los totales de todos esos días, vista desde
-    /// <paramref name="cajaId"/> por <paramref name="usuarioId"/>, quien entró a esa caja.
+    /// <paramref name="cajaId"/> por <paramref name="usuarioId"/>, quien entró a esa caja. Desde <see cref="DiasDeVentas.PrimerDia"/>
+    /// y hasta <see cref="DiasDeVentas.AniosMaximos"/> años a la vez: si no, lo dice (<see cref="AntesDelPrimerDia"/>,
+    /// <see cref="MasDeTresAnios"/>).
     /// </summary>
     /// <param name="piloto">El piloto con eleventa: sin el historial de eleventa, que es de toda la tienda.</param>
     public Task<VentasPorPeriodoDto> ArmarAsync(
@@ -84,6 +92,11 @@ public sealed class ReporteVentasPorPeriodo(PosDbContext db)
             throw new ArgumentException(AlReves);
         if (ultimo > hoy)
             ultimo = hoy;
+        // Un año mal escrito («26») pedía siglos de días (revisión del PR #134): desde 2000, y hasta tres años a la vez.
+        if (primero < DiasDeVentas.PrimerDia)
+            throw new ArgumentException(AntesDelPrimerDia);
+        if (ultimo > DiasDeVentas.UltimoQueCabe(primero))
+            throw new ArgumentException(MasDeTresAnios);
         var cajas = await VentasDeOtrosDias.CajasDeAsync(db, sucursal, ct);
         if (deCaja is { } elegida && cajas.All(c => c.Id != elegida))
             throw new ArgumentException("Esa caja no es de esta tienda.");
@@ -91,9 +104,8 @@ public sealed class ReporteVentasPorPeriodo(PosDbContext db)
         var rango = new Rango(HoraMexico.AUtc(primero.ToDateTime(TimeOnly.MinValue)), HoraMexico.AUtc(ultimo.AddDays(1).ToDateTime(TimeOnly.MinValue)));
         return await ReportesDeVentas.EnUnMismoMomentoAsync(db, async () =>
         {
-            var dias = await PorDiaAsync(sucursal, rango, deCaja, ct);
+            var (dias, listados) = await PorDiaAsync(sucursal, rango, deCaja, ct);
             var totales = Sumar(null, dias);
-            var listados = totales.Tickets + totales.Cancelados;
             if (pagina is null && listados > maximo)
                 throw new ArgumentException(
                     $"Son {listados.ToString("N0", CultureInfo.GetCultureInfo("es-MX"))} tickets, y el Excel lleva hasta "
@@ -213,14 +225,16 @@ public sealed class ReporteVentasPorPeriodo(PosDbContext db)
 
     // ── Los totales: por hora en la base, por día aquí ──
 
-    /// <summary>Lo cobrado por hora (UTC): los tickets, lo vendido, el redondeo al peso y los cancelados.</summary>
+    /// <summary>
+    /// Lo cobrado por hora (UTC) en los tickets que no se cancelaron: cuántos, lo vendido y el redondeo al peso; y cuántos se
+    /// listan (también los cancelados).
+    /// </summary>
     private const string VentasPorHoraSql = """
         SELECT substr(v."PagadaUtc", 1, 13) AS "Hora",
                SUM(CASE WHEN v."Estado" = 'Pagada' THEN 1 ELSE 0 END) AS "Tickets",
                SUM(CASE WHEN v."Estado" = 'Pagada' THEN v."TotalCentavos" ELSE 0 END) AS "Centavos",
                SUM(CASE WHEN v."Estado" = 'Pagada' THEN v."RedondeoCentavos" ELSE 0 END) AS "Redondeo",
-               SUM(CASE WHEN v."Estado" = 'Cancelada' THEN 1 ELSE 0 END) AS "Cancelados",
-               SUM(CASE WHEN v."Estado" = 'Cancelada' THEN v."TotalCentavos" ELSE 0 END) AS "CanceladosCentavos"
+               COUNT(*) AS "Listados"
         FROM "Ventas" AS v
         WHERE +v."SucursalId" = {0} AND v."PagadaUtc" >= {1} AND v."PagadaUtc" < {2} AND v."Estado" IN ('Pagada', 'Cancelada')
           AND v."Folio" IS NOT NULL {3}
@@ -236,12 +250,20 @@ public sealed class ReporteVentasPorPeriodo(PosDbContext db)
         GROUP BY substr(v."PagadaUtc", 1, 13), c."Forma"
         """;
 
-    /// <summary>Las devoluciones de esos días, sin las cancelaciones (el ticket cancelado ya no está en lo vendido), por hora.</summary>
+    /// <summary>
+    /// Las devoluciones que se hicieron esos días, por hora, de tickets de cualquier día (de la caja que se ve: la del ticket); las
+    /// cancelaciones, aparte: el ticket cancelado ya no está en lo vendido, y se cuentan como en el corte del día, el día en que
+    /// se cancelaron.
+    /// </summary>
     private const string DevolucionesPorHoraSql = """
-        SELECT substr(d."FechaUtc", 1, 13) AS "Hora", COUNT(*) AS "Devoluciones", SUM(d."TotalCentavos") AS "Centavos"
+        SELECT substr(d."FechaUtc", 1, 13) AS "Hora",
+               SUM(CASE WHEN d."EsCancelacion" = 0 THEN 1 ELSE 0 END) AS "Devoluciones",
+               SUM(CASE WHEN d."EsCancelacion" = 0 THEN d."TotalCentavos" ELSE 0 END) AS "Centavos",
+               SUM(CASE WHEN d."EsCancelacion" = 1 THEN 1 ELSE 0 END) AS "Cancelaciones",
+               SUM(CASE WHEN d."EsCancelacion" = 1 THEN d."TotalCentavos" ELSE 0 END) AS "Cancelado"
         FROM "Devoluciones" AS d
         INNER JOIN "Ventas" AS v ON v."Id" = d."VentaId"
-        WHERE +d."SucursalId" = {0} AND d."FechaUtc" >= {1} AND d."FechaUtc" < {2} AND d."EsCancelacion" = 0 {3}
+        WHERE +d."SucursalId" = {0} AND d."FechaUtc" >= {1} AND d."FechaUtc" < {2} {3}
         GROUP BY substr(d."FechaUtc", 1, 13)
         """;
 
@@ -252,11 +274,11 @@ public sealed class ReporteVentasPorPeriodo(PosDbContext db)
         WHERE +h."SucursalId" = {0} AND h."FechaUtc" >= {1} AND h."FechaUtc" < {2} AND h."Cancelada" = 0
         """;
 
-    private sealed record VentasPorHora(string Hora, long Tickets, long Centavos, long Redondeo, long Cancelados, long CanceladosCentavos);
+    private sealed record VentasPorHora(string Hora, long Tickets, long Centavos, long Redondeo, long Listados);
 
     private sealed record FormaPorHora(string Hora, string Forma, long Centavos);
 
-    private sealed record DevolucionesPorHora(string Hora, long Devoluciones, long Centavos);
+    private sealed record DevolucionesPorHora(string Hora, long Devoluciones, long Centavos, long Cancelaciones, long Cancelado);
 
     private sealed record DelHistorial(long Tickets, long Centavos);
 
@@ -270,8 +292,11 @@ public sealed class ReporteVentasPorPeriodo(PosDbContext db)
     /// <summary>La consulta con la condición de la caja en su lugar ({3}), o sin ella.</summary>
     private static string ConCaja(string sql, Guid? caja) => sql.Replace("{3}", DeLaCaja(caja, 3));
 
-    /// <summary>Lo de cada día con algo (tickets, devoluciones o cancelados), en orden.</summary>
-    private async Task<List<ResumenDeVentasDto>> PorDiaAsync(Guid sucursal, Rango r, Guid? caja, CancellationToken ct)
+    /// <summary>
+    /// Lo de cada día con algo (tickets que cuentan, devoluciones o cancelaciones), en orden; y cuántos tickets se listan en esos
+    /// días (también los cancelados).
+    /// </summary>
+    private async Task<(List<ResumenDeVentasDto> Dias, int Listados)> PorDiaAsync(Guid sucursal, Rango r, Guid? caja, CancellationToken ct)
     {
         var dias = new SortedDictionary<DateOnly, DeUnDia>();
         DeUnDia De(string hora)
@@ -283,14 +308,17 @@ public sealed class ReporteVentasPorPeriodo(PosDbContext db)
             return de;
         }
         var parametros = Parametros(sucursal, r, caja);
+        var listados = 0L;
         foreach (var v in await db.Database.SqlQueryRaw<VentasPorHora>(ConCaja(VentasPorHoraSql, caja), parametros).ToListAsync(ct))
         {
+            listados += v.Listados;
+            // Una hora con solo tickets que después se cancelaron no tiene nada que contar.
+            if (v.Tickets == 0)
+                continue;
             var de = De(v.Hora);
             de.Tickets += v.Tickets;
             de.Vendido += v.Centavos;
             de.Redondeo += v.Redondeo;
-            de.Cancelados += v.Cancelados;
-            de.CanceladosCentavos += v.CanceladosCentavos;
         }
         foreach (var f in await db.Database.SqlQueryRaw<FormaPorHora>(ConCaja(FormasPorHoraSql, caja), parametros).ToListAsync(ct))
         {
@@ -303,8 +331,10 @@ public sealed class ReporteVentasPorPeriodo(PosDbContext db)
             var de = De(d.Hora);
             de.Devoluciones += d.Devoluciones;
             de.Devuelto += d.Centavos;
+            de.Cancelados += d.Cancelaciones;
+            de.CanceladosCentavos += d.Cancelado;
         }
-        return dias.Select(d =>
+        return (dias.Select(d =>
         {
             var de = d.Value;
             // El efectivo, sin el redondeo al peso: así las formas suman lo vendido, como el ticket.
@@ -312,7 +342,7 @@ public sealed class ReporteVentasPorPeriodo(PosDbContext db)
                 de.Formas[FormaPago.Efectivo] = de.Formas.GetValueOrDefault(FormaPago.Efectivo) - de.Redondeo;
             return new ResumenDeVentasDto(d.Key, (int)de.Tickets, de.Vendido, (int)de.Devoluciones, de.Devuelto, (int)de.Cancelados, de.CanceladosCentavos,
                 Formas(de.Formas));
-        }).ToList();
+        }).ToList(), (int)listados);
     }
 
     /// <summary>Las formas de pago con algo, en el orden de siempre (lo fiado al final).</summary>

@@ -24,10 +24,10 @@ public static class ApiReportesInventario
             new RegistroReportesInventario(db).ValorAsync(sucursalId, usuarioId, departamentoId, FiltroDeValor(filtro), pagina ?? 0));
 
         // Lo mismo en Excel: cada departamento y todos los productos del elegido con ese filtro.
-        api.MapGet("/valor/excel", async (Guid sucursalId, Guid usuarioId, Guid? departamentoId, string? filtro, PosDbContext db) =>
+        api.MapGet("/valor/excel", async (Guid sucursalId, Guid usuarioId, Guid? departamentoId, string? filtro, PosDbContext db, CancellationToken ct) =>
         {
-            var valor = await new RegistroReportesInventario(db).TodoElValorAsync(sucursalId, usuarioId, departamentoId, FiltroDeValor(filtro));
-            var quien = await QuienExporta.DeAsync(db, sucursalId, usuarioId);
+            var valor = await new RegistroReportesInventario(db).TodoElValorAsync(sucursalId, usuarioId, departamentoId, FiltroDeValor(filtro), ct);
+            var quien = await QuienExporta.DeAsync(db, sucursalId, usuarioId, ct);
             var de = departamentoId is { } d ? valor.Departamentos.FirstOrDefault(g => g.DepartamentoId == d)?.Nombre ?? "ese departamento" : null;
             var productos = $"{(de is null ? "Todos los productos" : $"Productos de «{de}»")}, {valor.Filtro switch
             {
@@ -47,11 +47,11 @@ public static class ApiReportesInventario
 
         // Todos los de esos filtros en Excel.
         api.MapGet("/movimientos/excel", async (Guid sucursalId, Guid usuarioId, DateOnly? desde, DateOnly? hasta, string? clase, string? q,
-            Guid? departamentoId, Guid? quienId, PosDbContext db) =>
+            Guid? departamentoId, Guid? quienId, PosDbContext db, CancellationToken ct) =>
         {
             var filtro = FiltroDeMovimientos(db, desde, hasta, clase, q, departamentoId, quienId);
-            var movimientos = await new RegistroReportesInventario(db).TodosLosMovimientosAsync(sucursalId, usuarioId, filtro);
-            var quien = await QuienExporta.DeAsync(db, sucursalId, usuarioId);
+            var movimientos = await new RegistroReportesInventario(db).TodosLosMovimientosAsync(sucursalId, usuarioId, filtro, ct);
+            var quien = await QuienExporta.DeAsync(db, sucursalId, usuarioId, ct);
             var filtros = new List<string>();
             if (filtro.Clase is { } tipo)
                 filtros.Add($"tipo: {Textos.Clase(tipo)}");
@@ -72,10 +72,11 @@ public static class ApiReportesInventario
             new RegistroReportesInventario(db).BajosAsync(sucursalId, usuarioId, departamentoId, q, conMinimo ?? false, pagina ?? 0));
 
         // Todos los de esos filtros en Excel.
-        api.MapGet("/bajos/excel", async (Guid sucursalId, Guid usuarioId, Guid? departamentoId, string? q, bool? conMinimo, PosDbContext db) =>
+        api.MapGet("/bajos/excel", async (Guid sucursalId, Guid usuarioId, Guid? departamentoId, string? q, bool? conMinimo, PosDbContext db,
+            CancellationToken ct) =>
         {
-            var bajos = await new RegistroReportesInventario(db).TodosLosBajosAsync(sucursalId, usuarioId, departamentoId, q, conMinimo ?? false);
-            var quien = await QuienExporta.DeAsync(db, sucursalId, usuarioId);
+            var bajos = await new RegistroReportesInventario(db).TodosLosBajosAsync(sucursalId, usuarioId, departamentoId, q, conMinimo ?? false, ct);
+            var quien = await QuienExporta.DeAsync(db, sucursalId, usuarioId, ct);
             var filtros = new List<string>();
             if (departamentoId is { } departamento)
                 filtros.Add($"departamento: {await db.Departamentos.Where(x => x.Id == departamento).Select(x => x.Nombre).SingleOrDefaultAsync() ?? "—"}");
