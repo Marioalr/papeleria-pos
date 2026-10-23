@@ -3,7 +3,8 @@
    más viejo, de 50 en 50. Se filtra por tipo, producto (nombre o código; también escaneándolo), departamento y quién lo
    hizo. Cada renglón dice cuándo, qué (con su folio o su motivo), el producto, cuánto entró o salió, lo que quedó y quién; el
    costo, solo para quien tiene «Ver costos, utilidad y margen». Lo ve quien lleva el inventario (ConsultasInventario). En el
-   piloto con eleventa se ve igual, con la lectura de eleventa como un tipo más. Solo lee. *@
+   piloto con eleventa se ve igual, con la lectura de eleventa como un tipo más. Solo lee. «Exportar a Excel» (entrega 9, parte 2)
+   lleva todos los de esos días con esos filtros, como eleventa. *@
 @implements IDisposable
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
@@ -17,6 +18,9 @@
     </div>
     <label class="vn-reporte-campo">Del <input id="mov-desde" type="date" value="@Fecha(_desde)" @onchange="DesdeAsync" /></label>
     <label class="vn-reporte-campo">al <input id="mov-hasta" type="date" value="@Fecha(_hasta)" @onchange="HastaAsync" /></label>
+    <span class="espacio"></span>
+    @* Todos los de esos días con estos filtros, sin las páginas (entrega 9, parte 2); el costo, solo para quien lo ve. *@
+    <ExportarExcel Id="mov-excel" Pedir="ExcelAsync" Desactivado="@(_movimientos is null)" />
 </div>
 <div class="vn-reporte-filtros">
     <input id="mov-buscar" class="vn-reporte-busca" data-busca placeholder="Producto: nombre o código" autocomplete="off" spellcheck="false"
@@ -199,12 +203,16 @@
         };
     }
 
+    private FiltroMovimientosDto Filtro => new(_desde, _hasta, _clase, _texto, _departamento, _quien);
+
+    private Task<ArchivoPorGuardar> ExcelAsync() => Cliente.ExcelMovimientosAsync(Caja.SucursalId, Sesion.UsuarioId, Filtro);
+
     private async Task CargarAsync()
     {
         var secuencia = ++_secuencia;
         try
         {
-            var filtro = new FiltroMovimientosDto(_desde, _hasta, _clase, _texto, _departamento, _quien);
+            var filtro = Filtro;
             var movimientos = await Cliente.MovimientosInventarioAsync(Caja.SucursalId, Sesion.UsuarioId, filtro, _pagina);
             if (secuencia == _secuencia)
                 (_movimientos, _error, _vista) = (movimientos, null, _vista + 1);
@@ -316,10 +324,13 @@
         }
     }
 
-    private bool HayAnteriores => _movimientos is { } m && Paginador.HaySiguiente(m.Total, m.Pagina, m.Tamano);
+    /// <summary>Hay otra página después de la que se pidió (no de la que ya llegó): Av Pág sostenida no pasa de la última.</summary>
+    private bool HayAnteriores => _movimientos is { } m && Paginador.HaySiguiente(m.Total, _pagina, m.Tamano);
 
     private Task AnterioresAsync()
     {
+        if (!HayAnteriores)
+            return Task.CompletedTask;
         _pagina++;
         return CargarAsync();
     }

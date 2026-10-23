@@ -555,8 +555,8 @@ Una pestaña para quien tiene «ver reportes de ventas»:
   lo que más se vende. Exportar a Excel.
 
 El plan dejó los reportes para después de la prueba con una persona real; se adelantaron el 2026-10-22 (por revisar), y la
-parte 1 de la entrega 9 ya está: todo lo de arriba menos exportar a Excel, que es la parte 2
-([avance](plan.md#primero-la-versión-unicaja-entrega-0)). Lo que se decidió al hacerla, por revisar:
+entrega 9 ya está: la parte 1, todo lo de arriba menos exportar a Excel, y la parte 2 (2026-10-22), «Exportar a Excel» y
+«Ventas por período» ([avance](plan.md#primero-la-versión-unicaja-entrega-0)). Lo que se decidió al hacerlas, por revisar:
 
 - **Con qué se compara:** hoy y la semana, con 52 semanas antes (el mismo día de la semana: un sábado con un sábado); el
   mes y el año, con las mismas fechas. La semana va de lunes a domingo. Lo que va a la fecha se compara hasta el mismo
@@ -569,6 +569,23 @@ parte 1 de la entrega 9 ya está: todo lo de arriba menos exportar a Excel, que 
   el artículo común de eleventa va con el de aquí, y lo que un ticket de eleventa suma sin desglose, aparte. Bajo cada
   cifra, lo que no hay en este periodo («sin tickets todavía») no se confunde con lo que no hubo el año pasado.
 - **Si un periodo no llega,** se ve el error con «Volver a intentar», no las cifras del periodo anterior.
+- **Exportar a Excel** (el botón del prototipo, arriba a la derecha; también en Movimientos, Bajos en inventario y Lo que vale
+  el inventario): lo que se ve, con sus filtros y sin las páginas, una hoja por tabla. Lo arma la caja principal con los
+  permisos de quien entró: sin «ver costos, utilidad y margen», ni la utilidad ni el costo van en el archivo. Cada hoja dice
+  la tienda, qué es y de qué días, quién lo exportó y cuándo; el renglón de los títulos se queda fijo al bajar.
+- **Guardar un archivo desde la caja** (antes no se podía), de una sola forma: en la ventana de Windows, «Guardar como» de
+  Windows, en Documentos (después, en la carpeta del último que se guardó) con el nombre que propone, como «Ventas
+  2026-10.xlsx»; en el navegador, una descarga. La pantalla dice dónde quedó, que se canceló o por qué no se pudo (la carpeta,
+  o el archivo abierto en Excel), y el cursor vuelve al botón. Un Excel se espera hasta dos minutos: si tarda más, la caja
+  dice que la caja principal sigue armándolo, sin pasar a sin conexión.
+- **Ventas por período,** como la de eleventa (en su F3): un botón en Reportes que abre, ahí mismo y con el acomodo de las
+  tareas del inventario («← Reportes» o Esc), los tickets de hoy, ayer, esta semana, este mes, el mes pasado o de una fecha a
+  otra, de una caja o de todas, del primero al último y de 100 en 100, con los totales de todos esos días al final; ← y →,
+  los días de antes o de después. «Imprimir el resumen» manda a la impresora de tickets lo de cada día y las formas de pago,
+  no cada ticket (de más de 31 días, cada semana; de más de tres meses, cada mes); «Exportar a Excel», todos. Las fechas van
+  del 1 de enero de 2000 a hoy y hasta tres años a la vez. Los totales de cada día son los del corte del día: lo cobrado ese
+  día, y lo devuelto y lo cancelado ese día (también de tickets de antes); de una caja, lo de sus tickets, se haya hecho en
+  ella o en otra. El historial de eleventa no se lista: no trae caja, cajero ni forma de pago.
 
 ## Configuración
 
@@ -786,7 +803,7 @@ la 11 y la 12). Qué hace eleventa que el POS todavía no, en qué entrega va y 
 | 1 | Permisos por usuario: el modelo, la migración desde los roles, la primera cuenta, «Conectar a servidor», los de defecto y la pantalla de usuarios y permisos | Mediano | Después de la 3 |
 | 6 | Entrada con fichas y PIN; Ctrl+U; el corte del turno con solo el total y sin volver a pedir el PIN; el corte del día | Mediano | Con la 1 |
 | 5 | Rendimiento para la caja 2: escanear contra la copia local, con su versión en el cobro; la base de la caja fuera del hilo de la pantalla; solo lo que cambió, avisado por SSE; plazos y estados de la red; imprimir aparte; menos repintado; la prueba de la ráfaga. El lector en una sola llamada ya va en la 0, y no perder escaneos en ráfaga ya está en `main` (#56). La parte 1 ya está (2026-10-15): escanear contra la copia, el cobro con su versión, un solo escritor para la base de la caja y medir el escaneo ([avance](plan.md#primero-la-versión-unicaja-entrega-0)) | Grande | Para dejar eleventa: la caja 2 con el servicio nuevo |
-| 9 | Reportes, los que el dueño usa hoy en eleventa. La parte 1 ya está (2026-10-22, se adelantó): la pestaña Reportes con hoy, la semana, el mes y el año a la fecha contra el mismo periodo del año pasado (del historial de eleventa), la venta neta, los tickets, el ticket promedio y la utilidad (con su permiso), la gráfica con «Ver como tabla», y por departamento, cajero, forma de pago y lo que más se vende ([avance](plan.md#primero-la-versión-unicaja-entrega-0)). Falta la parte 2: exportar a Excel | Grande | Para dejar eleventa |
+| 9 | Reportes, los que el dueño usa hoy en eleventa. La parte 1 ya está (2026-10-22, se adelantó): la pestaña Reportes con hoy, la semana, el mes y el año a la fecha contra el mismo periodo del año pasado (del historial de eleventa), la venta neta, los tickets, el ticket promedio y la utilidad (con su permiso), la gráfica con «Ver como tabla», y por departamento, cajero, forma de pago y lo que más se vende ([avance](plan.md#primero-la-versión-unicaja-entrega-0)). La parte 2 también (2026-10-22): exportar a Excel (también los reportes del inventario), guardar archivos desde la caja («Guardar como» en la ventana de Windows, una descarga en el navegador) y «Ventas por período», con su resumen impreso | Grande | Para dejar eleventa |
 | 7 | Configuración nueva: buscador, grupos, alcance y guardado al momento | Mediano | Después |
 | 8 | Las pantallas de atrás con el mismo patrón de lista y detalle: Productos (abre con la lista, no vacío), Inventario por tareas, Clientes | Grande | Después |
 | 13 | Lo que se señala: el mostrador y la temporada con fotos en su acomodo (Ctrl+M), las fotos desde el celular, la hoja de la temporada y las tarjetas de precio, empezar y terminar la temporada, lo más preguntado. La parte 1 ya está (2026-10-17): Ctrl+M con los exhibidores y las temporadas en su acomodo; el verificador, el chip de la temporada, «Acomodar» y Configuración › Mostrador y temporadas. La parte 2 también (2026-10-17): las fotos, desde el celular (la página del conteo) o la PC (F3), en Ctrl+M, la búsqueda y el verificador, de la base de cada caja. Y la parte 3 (2026-10-17): empezar la temporada con los precios del año pasado, su hoja, las tarjetas de precio (y cuáles volver a imprimir), terminarla con su resumen y lo más preguntado en el verificador, en Productos ([avance](plan.md#primero-la-versión-unicaja-entrega-0)) | Mediano | Después |

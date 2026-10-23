@@ -56,6 +56,13 @@ public static class PilotoConEleventa
         "Solo lo que vendió la caja 2: lo de la caja principal está en los reportes de eleventa. Mientras dure el piloto no se compara "
         + "contra el año pasado: el historial de eleventa es de toda la tienda.";
 
+    /// <summary>
+    /// En «Ventas por período» (entrega 9, parte 2, 2026-10-22): como en los reportes, la base de la caja 2 solo tiene lo suyo; el
+    /// historial de eleventa no se cuenta (es de toda la tienda).
+    /// </summary>
+    public const string VentasPorPeriodoDeLaCaja2 =
+        "Solo lo que vendió la caja 2: los tickets de la caja principal están en eleventa (F3 › Ventas por período).";
+
     /// <summary>En la ventana de devoluciones: el turno de esta caja no se cierra aquí y duraría días.</summary>
     public const string SoloSeCancelaElMismoDia =
         "Mientras dure el piloto, el corte de esta caja se hace en eleventa: solo se cancela un ticket del mismo día; después, es devolución.";

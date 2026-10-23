@@ -5,11 +5,20 @@
    luego la gráfica (barras de este año, línea del año pasado, el detalle al pasar el ratón y «Ver como tabla») y las ventas por
    departamento (con el margen, con el permiso), por cajero (con sus diferencias de corte), por forma de pago y lo que más se
    vende. Es una página (como Productos, Inventario y Clientes): F1 o Esc regresan a la venta. Solo con la caja principal; el
-   servicio decide qué se ve. «Exportar a Excel» llega con la parte 2. *@
+   servicio decide qué se ve.
+   La parte 2 (2026-10-22): «Exportar a Excel» (lo que se ve, una hoja por tabla, como dice el prototipo) y «Ventas por período»
+   (los tickets de unos días, como en eleventa), que se abre aquí mismo con el acomodo de las tareas del inventario: «← Reportes»
+   o Esc regresan al resumen. *@
 @implements IPagina
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
 
+@if (Estado.PorPeriodo.Abierta)
+{
+    <VentasPorPeriodo @ref="_porPeriodo" Caja="Caja" Sesion="Sesion" Estado="Estado.PorPeriodo" AlVolver="VolverAsync" />
+}
+else
+{
 <div class="vn-reportes" id="reportes" @onkeydown="AlTeclearAsync">
     <div class="vn-rep-cab">
         <h2>Reportes</h2>
@@ -35,11 +44,18 @@
             }
         </span>
         <span class="espacio"></span>
-        @if (_reporte is { } conQue)
-        {
-            <span class="nota" id="rep-contra">@TextosDeReportes.Comparacion(conQue)</span>
-        }
-        @* Aquí va «Exportar a Excel», con la parte 2 de la entrega 9. *@
+        @* A la derecha, como en el prototipo, también cuando no cabe en un renglón. *@
+        <span class="vn-rep-acciones">
+            @if (_reporte is { } conQue)
+            {
+                <span class="nota" id="rep-contra">@TextosDeReportes.Comparacion(conQue)</span>
+            }
+            <button id="rep-por-periodo" class="vn-boton" title="Los tickets de unos días, de una caja o de todas" @onclick="AbrirPorPeriodo">
+                <Ico Nombre="lista" />Ventas por período
+            </button>
+            @* Lo que se ve (el periodo de arriba), una hoja por tabla, como en el prototipo. *@
+            <ExportarExcel Id="rep-excel" Pedir="ExcelAsync" Desactivado="@(_reporte is null)" />
+        </span>
     </div>
 
     @if (_error is not null)
@@ -90,7 +106,7 @@
                     </div>
                 }
             </div>
-            <p class="vn-rep-nota" id="rep-neta">@VentaNeta(a)</p>
+            <p class="vn-rep-nota" id="rep-neta">@TextosDeReportes.VentaNeta(a)</p>
 
             <div class="vn-grafica" id="grafica">
                 <div class="vn-grafica-cab">
@@ -129,7 +145,7 @@
                         @foreach (var d in r.Departamentos)
                         {
                             <tr>
-                                <td title="@(d.Clase == ClaseVenta.SinDesglose ? SinDesglose : null)">@d.Nombre</td>
+                                <td title="@(d.Clase == ClaseVenta.SinDesglose ? TextosDeReportes.SinDesglose : null)">@d.Nombre</td>
                                 <td class="num">@Formato.ConSigno(d.VentaCentavos)</td>
                                 <td><div class="vn-barra-celda"><i style="width:@Ancho(d.VentaCentavos, mayor)"></i></div></td>
                                 @if (b is not null)
@@ -212,7 +228,7 @@
             </div>
 
             <div class="vn-rep-notas">
-                @foreach (var nota in Notas(r))
+                @foreach (var nota in TextosDeReportes.Notas(r))
                 {
                     <p>@nota</p>
                 }
@@ -220,6 +236,7 @@
         </div>
     }
 </div>
+}
 
 @code {
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
@@ -239,21 +256,62 @@
 
     private bool _enfocar = true;
 
+    /// <summary>«Ventas por período», cuando se ve.</summary>
+    private VentasPorPeriodo? _porPeriodo;
+
+    /// <summary>Se regresó de «Ventas por período»: el cursor vuelve a su botón.</summary>
+    private bool _enfocarPorPeriodo;
+
     protected override Task OnInitializedAsync() => CargarAsync();
 
     protected override async Task OnAfterRenderAsync(bool primera)
     {
+        if (_enfocarPorPeriodo)
+        {
+            _enfocarPorPeriodo = false;
+            await Js.EnfocarAsync("#rep-por-periodo");
+        }
         if (!_enfocar)
             return;
         _enfocar = false;
         await EnfocarAsync();
     }
 
-    /// <summary>El cursor al periodo que se ve: Tab y Enter llegan a lo demás.</summary>
-    public async Task EnfocarAsync() => await Js.EnfocarAsync($"#rep-{Estado.Periodo}");
+    /// <summary>El cursor al periodo que se ve (o a los días de «Ventas por período»): Tab y Enter llegan a lo demás.</summary>
+    public async Task EnfocarAsync()
+    {
+        if (Estado.PorPeriodo.Abierta && _porPeriodo is { } porPeriodo)
+            await porPeriodo.EnfocarAsync();
+        else
+            await Js.EnfocarAsync($"#rep-{Estado.Periodo}");
+    }
 
-    /// <summary>No hay nada adentro que cerrar: Esc regresa a la venta.</summary>
-    public Task<bool> CerrarAsync() => Task.FromResult(false);
+    /// <summary>Esc: de «Ventas por período» regresa a los reportes; si no, no hay nada adentro que cerrar y Esc regresa a la venta.</summary>
+    public async Task<bool> CerrarAsync()
+    {
+        if (!Estado.PorPeriodo.Abierta)
+            return false;
+        await VolverAsync();
+        return true;
+    }
+
+    /// <summary>«Ventas por período»: los tickets de unos días, aquí mismo; se recuerda al ir a la venta y volver.</summary>
+    private void AbrirPorPeriodo() => Estado.PorPeriodo.Abierta = true;
+
+    private Task VolverAsync()
+    {
+        (Estado.PorPeriodo.Abierta, _enfocarPorPeriodo) = (false, true);
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// El Excel de lo que se ve: el periodo del reporte que se cargó (con su primer día, no «hoy»: pasada la medianoche, el de la
+    /// caja principal ya sería otro; revisión del PR #134), con lo que puede ver quien entró.
+    /// </summary>
+    private Task<ArchivoPorGuardar> ExcelAsync() => _reporte is { } r
+        ? Cliente.ExcelReporteVentasAsync(Caja.Id, Sesion.UsuarioId, r.Periodo, r.Desde)
+        : Cliente.ExcelReporteVentasAsync(Caja.Id, Sesion.UsuarioId, Estado.Periodo, Estado.Fecha);
 
     private async Task CargarAsync()
     {
@@ -334,55 +392,6 @@
             <span class="@(cambio.Sube ? "sube" : "baja")">@(cambio.Sube ? "▲" : "▼") @cambio.Porcentaje</span><text> contra el año pasado</text>
         }
     };
-
-    /// <summary>
-    /// De dónde sale la venta neta, como en el corte del día: lo cobrado en los tickets que no se cancelaron menos lo devuelto; y
-    /// las cancelaciones que se hicieron en el periodo, como las cuenta el corte del día (revisión del PR #131, 2026-10-22).
-    /// </summary>
-    private static string VentaNeta(CifrasReporteDto a)
-    {
-        var partes = $"Venta neta: lo cobrado en los tickets que no se cancelaron ({Formato.Dinero(a.VendidoCentavos)})";
-        if (a.DevueltoCentavos != 0)
-            partes += $" menos lo devuelto ({Formato.Dinero(a.DevueltoCentavos)}{(a.Devoluciones == 1 ? ", 1 devolución" : $", {a.Devoluciones} devoluciones")})";
-        partes += ", como en el corte del día.";
-        return a.Cancelados switch
-        {
-            0 => partes,
-            1 => $"{partes} En este periodo se canceló 1 ticket ({Formato.Dinero(a.CanceladosCentavos)}).",
-            _ => $"{partes} En este periodo se cancelaron {a.Cancelados} tickets ({Formato.Dinero(a.CanceladosCentavos)}).",
-        };
-    }
-
-    /// <summary>Qué es «Sin desglose» en las ventas por departamento.</summary>
-    private const string SinDesglose =
-        "Lo que los tickets del historial de eleventa suman y sus artículos no (un total que no es la suma de sus artículos): cuenta en la "
-        + "venta neta, sin departamento ni costo.";
-
-    /// <summary>Las notas de abajo: de dónde sale cada cosa.</summary>
-    private static IEnumerable<string> Notas(ReporteVentasDto r)
-    {
-        if (r.Anterior is { DelHistorialCentavos: not 0 } || r.Actual.DelHistorialCentavos != 0)
-            yield return "Lo de eleventa sale de su historial: cada ticket con lo que eleventa le bajó al devolver (lo devuelto cuenta el día de "
-                + "la venta, así que un mes ya cerrado puede diferir un poco del reporte de eleventa)"
-                + (r.ConUtilidad ? ", y su utilidad con el costo que se capturó en eleventa" : "")
-                + ". Su artículo común va con el de aquí, sin utilidad.";
-        if (r.Departamentos.FirstOrDefault(d => d.Clase == ClaseVenta.SinDesglose) is { } sinDesglose)
-            yield return $"«{sinDesglose.Nombre}» es {char.ToLower(SinDesglose[0], Formato.Mexico)}{SinDesglose[1..]}";
-        yield return r.Actual.DelHistorialCentavos != 0
-            ? $"De este periodo, {Formato.Dinero(r.Actual.DelHistorialCentavos)} ({Formato.Numero(r.Actual.DelHistorialTickets)} tickets) salen del "
-              + "historial de eleventa, que no trae el cajero ni la forma de pago: esas tablas son de lo vendido aquí."
-            : "El cajero y la forma de pago son de lo vendido aquí: el historial de eleventa no los trae. Lo devuelto se resta de la forma "
-              + "en que se regresó: a la cuenta del cliente (lo fiado) o en efectivo.";
-        yield return r.Piloto
-            ? "En el piloto el corte se hace en eleventa: aquí no hay diferencias de corte."
-            : "Las diferencias son las de los cortes del turno hechos en el periodo, a nombre del cajero del turno.";
-        if (r.ConUtilidad && r.Actual.Utilidad is { } u)
-            yield return "La utilidad es lo vendido menos el costo que guardó cada venta al cobrar (el promedio del inventario; el de las "
-                + "impresiones, el de cada trabajo), con lo devuelto restado. El artículo común no tiene costo: no entra."
-                + (u.ServiciosSinCostoCentavos != 0
-                    ? $" Los servicios ({Formato.Dinero(u.ServiciosSinCostoCentavos)}) todavía no tienen costo: cuentan completos, como en el corte del día."
-                    : "");
-    }
 
     private static string Diferencias(CajeroReporteDto c) => c.Cortes switch
     {

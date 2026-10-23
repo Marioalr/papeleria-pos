@@ -371,3 +371,36 @@ public sealed class PaginaQueContesta : IJSRuntime, IJSObjectReference
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
+
+/// <summary>
+/// Hace del «Guardar como» de la caja (<see cref="PapeleriaPos.Interfaz.IGuardarArchivo"/>, entrega 9, parte 2): no pregunta nada,
+/// se queda con lo que se guardó para revisarlo y contesta que quedó en unos Documentos de mentiras; o, si se le pide, como si quien
+/// guardaba hubiera cancelado.
+/// </summary>
+public sealed class GuardadoDePrueba : PapeleriaPos.Interfaz.IGuardarArchivo
+{
+    /// <summary>Donde dice que quedó.</summary>
+    public const string Carpeta = @"C:\Users\caja\Documents";
+
+    private readonly List<PapeleriaPos.Interfaz.ArchivoPorGuardar> _guardados = [];
+
+    /// <summary>Lo que se le pidió guardar, en orden (también lo cancelado).</summary>
+    public IReadOnlyList<PapeleriaPos.Interfaz.ArchivoPorGuardar> Guardados
+    {
+        get
+        {
+            lock (_guardados)
+                return [.. _guardados];
+        }
+    }
+
+    /// <summary>Contesta como si se hubiera cancelado «Guardar como».</summary>
+    public bool Cancelar { get; set; }
+
+    public Task<PapeleriaPos.Interfaz.ArchivoGuardado?> GuardarAsync(PapeleriaPos.Interfaz.ArchivoPorGuardar archivo)
+    {
+        lock (_guardados)
+            _guardados.Add(archivo);
+        return Task.FromResult(Cancelar ? null : new PapeleriaPos.Interfaz.ArchivoGuardado(archivo.Nombre, $@"{Carpeta}\{archivo.Nombre}"));
+    }
+}

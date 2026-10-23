@@ -467,6 +467,23 @@ export function leer(clave) {
     }
 }
 
+// Un archivo que se guarda desde la caja del navegador (el Excel de los reportes, entrega 9, parte 2): se descarga como cualquier
+// otro, a la carpeta de descargas del navegador. Llega por un flujo (DotNetStreamReference). En la ventana de Windows no se usa:
+// ahí sale «Guardar como» de Windows.
+export async function descargar(nombre, tipo, contenido) {
+    const datos = await contenido.arrayBuffer();
+    const url = URL.createObjectURL(new Blob([datos], { type: tipo }));
+    const enlace = document.createElement('a');
+    enlace.href = url;
+    enlace.download = nombre;
+    enlace.style.display = 'none';
+    document.body.appendChild(enlace);
+    enlace.click();
+    enlace.remove();
+    // El navegador ya lo tomó: se suelta después, con calma.
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 // La hoja de etiquetas va en un marco: así se ve como saldrá y se imprime sola, sin la caja alrededor.
 export function mostrarEnMarco(selector, html) {
     const marco = document.querySelector(selector);

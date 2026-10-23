@@ -1,5 +1,6 @@
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Reportes;
 
 namespace PapeleriaPos.Interfaz;
 
@@ -142,6 +143,35 @@ public sealed class ReportesVistos
 
     /// <summary>«Ver como tabla»: la gráfica va como tabla.</summary>
     public bool Tabla { get; set; }
+
+    /// <summary>«Ventas por período» (entrega 9, parte 2): si se ve, y sus días, su caja y su página.</summary>
+    public VentasPorPeriodoVistas PorPeriodo { get; } = new();
+}
+
+/// <summary>Lo que se recuerda de «Ventas por período» al salir de los reportes y volver.</summary>
+public sealed class VentasPorPeriodoVistas
+{
+    /// <summary>Se ve en lugar del resumen de los reportes.</summary>
+    public bool Abierta { get; set; }
+
+    /// <summary>Los de un toque que se eligieron: al volver otro día, son los de ese día. Vacío si se escribieron las fechas.</summary>
+    public DiasElegidos? Dias { get; set; } = DiasElegidos.Hoy;
+
+    /// <summary>Las fechas que se escribieron (o a las que se llegó con ← →), si no son de un toque.</summary>
+    public DateOnly? Desde { get; set; }
+
+    public DateOnly? Hasta { get; set; }
+
+    /// <summary>
+    /// El largo de esas fechas (un mes, una semana o tantos días), el que se eligió: ← → van a los de antes o de después de ese
+    /// largo, aunque las fechas estén cortadas en hoy (revisión del PR #134).
+    /// </summary>
+    public LargoDeVentas? Largo { get; set; }
+
+    /// <summary>La caja; vacía: todas.</summary>
+    public Guid? CajaId { get; set; }
+
+    public int Pagina { get; set; }
 }
 
 /// <summary>Lo que la caja recuerda de sus páginas mientras alguien está adentro.</summary>

@@ -212,4 +212,100 @@ public sealed class MedicionReportesTests(ITestOutputHelper salida) : IDisposabl
             salida.WriteLine($"API {periodo}: mediana {Mediana(tiempos):N0} ms, la más lenta {tiempos.Max():N0} ms, {bytes / 1024.0:N1} KB.");
         }
     }
+
+    /// <summary>
+    /// «Ventas por período» y los Excel (entrega 9, parte 2) con la misma papelería de dos años: la pantalla (una página de 100 y
+    /// los totales) y el Excel de un mes completo (septiembre, unos 1,800 tickets) y del año; el Excel de la pestaña Reportes; y el
+    /// de un mes de movimientos del inventario (aquí se hace un movimiento por cada renglón vendido en septiembre y octubre, como
+    /// los deja la venta). La consulta sola y por la API, con el archivo; anota cuánto mide cada Excel.
+    /// </summary>
+    [FactDeMedicionDeReportes]
+    public async Task Ventas_por_periodo_y_los_excel_con_dos_anios_de_la_papeleria_ficticia()
+    {
+        var (caja, dueno, ventas, _) = await PrepararAsync();
+        await using (var db = Base())
+        {
+            // Un movimiento del kardex por renglón vendido desde septiembre (la papelería ficticia solo trae el inventario inicial).
+            var conexion = (SqliteConnection)db.Database.GetDbConnection();
+            await conexion.OpenAsync();
+            await using var c = conexion.CreateCommand();
+            c.CommandText = """
+                INSERT INTO MovimientosInventario (Id, SucursalId, VarianteId, Tipo, Cantidad, CostoCentavos, FechaUtc, DocumentoTipo, DocumentoId)
+                SELECT lower(hex(randomblob(16))), v.SucursalId, l.VarianteId, 'Venta', -l.CantidadBase, -l.CostoCentavos, v.PagadaUtc, 'Venta', v.Id
+                FROM VentasLineas AS l INNER JOIN Ventas AS v ON v.Id = l.VentaId
+                WHERE v.PagadaUtc >= '2026-09-01' AND l.VarianteId IS NOT NULL
+                """;
+            salida.WriteLine($"Movimientos de venta agregados: {await c.ExecuteNonQueryAsync():N0} (de {ventas:N0} ventas de este POS en el año).");
+        }
+
+        async Task<(double Mediana, double Maxima, T Resultado)> Medir<T>(Func<Task<T>> que)
+        {
+            var tiempos = new List<double>();
+            T resultado = default!;
+            for (var i = 0; i < 6; i++)
+            {
+                var cuanto = Stopwatch.StartNew();
+                resultado = await que();
+                if (i > 0)
+                    tiempos.Add(cuanto.Elapsed.TotalMilliseconds);
+            }
+            return (Mediana(tiempos), tiempos.Max(), resultado);
+        }
+
+        var septiembre = (Desde: new DateOnly(2026, 9, 1), Hasta: new DateOnly(2026, 9, 30));
+        var anio = (Desde: new DateOnly(2025, 10, 22), Hasta: new DateOnly(2026, 10, 21));
+        foreach (var (nombre, dias) in new[] { ("septiembre", septiembre), ("el año", anio) })
+        {
+            var pagina = await Medir(async () =>
+            {
+                await using var db = Base();
+                return await new ReporteVentasPorPeriodo(db).ArmarAsync(caja, dueno, dias.Desde, dias.Hasta, null, pagina: 5);
+            });
+            salida.WriteLine($"Ventas por período, {nombre}, una página: mediana {pagina.Mediana:N0} ms, la más lenta {pagina.Maxima:N0} ms; "
+                + $"{pagina.Resultado.Total:N0} tickets, {pagina.Resultado.Dias.Count} días.");
+            var leidos = await Medir(async () =>
+            {
+                await using var db = Base();
+                return await new ReporteVentasPorPeriodo(db).TodoAsync(caja, dueno, dias.Desde, dias.Hasta, null);
+            });
+            var libro = await Medir(() => Task.FromResult(
+                PapeleriaPos.Servicio.Excel.ExcelDeVentasPorPeriodo.Armar(leidos.Resultado, new PapeleriaPos.Servicio.Excel.QuienExporta("Matriz", "Dueño", Ahora))));
+            salida.WriteLine($"Ventas por período, {nombre}, todos los tickets: leerlos, mediana {leidos.Mediana:N0} ms (la más lenta {leidos.Maxima:N0} ms); "
+                + $"el Excel, mediana {libro.Mediana:N0} ms (la más lenta {libro.Maxima:N0} ms), {libro.Resultado.Length / 1024.0:N0} KB.");
+        }
+        var movimientos = await Medir(async () =>
+        {
+            await using var db = Base();
+            return await new RegistroReportesInventario(db).TodosLosMovimientosAsync(
+                (await db.Cajas.SingleAsync()).SucursalId, dueno, new FiltroMovimientosDto(septiembre.Desde, septiembre.Hasta));
+        });
+        salida.WriteLine($"Movimientos de septiembre, todos (con lo que quedó): mediana {movimientos.Mediana:N0} ms, la más lenta {movimientos.Maxima:N0} ms; "
+            + $"{movimientos.Resultado.Total:N0} movimientos.");
+
+        // Por la API, con el archivo: como lo pide la caja.
+        await using var fabrica = new FabricaDePrueba(b => b.UseSetting("ConnectionStrings:Pos", $"Data Source={_ruta};Pooling=False")
+            .UseSetting("Respaldos:Activo", "false").UseSetting("Telegram:Activo", "false"));
+        var http = fabrica.CreateClient();
+        var sucursal = (await http.GetFromJsonAsync<List<CajaDto>>("api/cajas"))!.Single().SucursalId;
+        foreach (var (que, url) in new[]
+                 {
+                     ("Ventas por período, septiembre, una página", $"api/cajas/{caja}/reportes/ventas-por-periodo?usuarioId={dueno}&desde=2026-09-01&hasta=2026-09-30"),
+                     ("Ventas por período, septiembre, Excel", $"api/cajas/{caja}/reportes/ventas-por-periodo/excel?usuarioId={dueno}&desde=2026-09-01&hasta=2026-09-30"),
+                     ("Ventas por período, el año, Excel", $"api/cajas/{caja}/reportes/ventas-por-periodo/excel?usuarioId={dueno}&desde=2025-10-22&hasta=2026-10-21"),
+                     ("Reporte del año, Excel", $"api/cajas/{caja}/reportes/ventas/excel?usuarioId={dueno}&periodo=Anio&fecha=2026-10-21"),
+                     ("Movimientos de septiembre, Excel", $"api/sucursales/{sucursal}/inventario/movimientos/excel?usuarioId={dueno}&desde=2026-09-01&hasta=2026-09-30"),
+                     ("Lo que vale el inventario, Excel", $"api/sucursales/{sucursal}/inventario/valor/excel?usuarioId={dueno}"),
+                     ("Bajos en inventario, Excel", $"api/sucursales/{sucursal}/inventario/bajos/excel?usuarioId={dueno}"),
+                 })
+        {
+            var (mediana, maxima, bytes) = await Medir(async () =>
+            {
+                var respuesta = await http.GetAsync(url);
+                var cuerpo = await respuesta.Content.ReadAsByteArrayAsync();
+                Assert.True(respuesta.IsSuccessStatusCode, System.Text.Encoding.UTF8.GetString(cuerpo));
+                return cuerpo.Length;
+            });
+            salida.WriteLine($"API {que}: mediana {mediana:N0} ms, la más lenta {maxima:N0} ms, {bytes / 1024.0:N0} KB.");
+        }
+    }
 }

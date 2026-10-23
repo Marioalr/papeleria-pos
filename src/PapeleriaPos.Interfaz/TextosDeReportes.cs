@@ -192,6 +192,111 @@ public static class TextosDeReportes
             : $"${Math.Round(pesos).ToString("0", Formato.Mexico)}");
     }
 
+    /// <summary>
+    /// De dónde sale la venta neta, como en el corte del día: lo cobrado en los tickets que no se cancelaron menos lo devuelto; y
+    /// las cancelaciones que se hicieron en el periodo, como las cuenta el corte del día (revisión del PR #131, 2026-10-22). Lo
+    /// dicen la pantalla y el Excel.
+    /// </summary>
+    public static string VentaNeta(CifrasReporteDto a)
+    {
+        var partes = $"Venta neta: lo cobrado en los tickets que no se cancelaron ({Formato.Dinero(a.VendidoCentavos)})";
+        if (a.DevueltoCentavos != 0)
+            partes += $" menos lo devuelto ({Formato.Dinero(a.DevueltoCentavos)}{(a.Devoluciones == 1 ? ", 1 devolución" : $", {a.Devoluciones} devoluciones")})";
+        partes += ", como en el corte del día.";
+        return a.Cancelados switch
+        {
+            0 => partes,
+            1 => $"{partes} En este periodo se canceló 1 ticket ({Formato.Dinero(a.CanceladosCentavos)}).",
+            _ => $"{partes} En este periodo se cancelaron {a.Cancelados} tickets ({Formato.Dinero(a.CanceladosCentavos)}).",
+        };
+    }
+
+    /// <summary>Qué es «Sin desglose» en las ventas por departamento (la pantalla lo pone al pasar el ratón; el Excel, en las notas).</summary>
+    public const string SinDesglose =
+        "Lo que los tickets del historial de eleventa suman y sus artículos no (un total que no es la suma de sus artículos): cuenta en la "
+        + "venta neta, sin departamento ni costo.";
+
+    /// <summary>La nota de «Sin desglose», si el reporte lo trae (en las notas de la pantalla y en la hoja de los departamentos).</summary>
+    public static string? NotaSinDesglose(ReporteVentasDto r) =>
+        r.Departamentos.FirstOrDefault(d => d.Clase == ClaseVenta.SinDesglose) is { } sinDesglose
+            ? $"«{sinDesglose.Nombre}» es {char.ToLower(SinDesglose[0], Formato.Mexico)}{SinDesglose[1..]}"
+            : null;
+
+    /// <summary>Las notas de abajo: de dónde sale cada cosa. Las dicen la pantalla y el Excel.</summary>
+    public static IEnumerable<string> Notas(ReporteVentasDto r)
+    {
+        if (r.Anterior is { DelHistorialCentavos: not 0 } || r.Actual.DelHistorialCentavos != 0)
+            yield return "Lo de eleventa sale de su historial: cada ticket con lo que eleventa le bajó al devolver (lo devuelto cuenta el día de "
+                + "la venta, así que un mes ya cerrado puede diferir un poco del reporte de eleventa)"
+                + (r.ConUtilidad ? ", y su utilidad con el costo que se capturó en eleventa" : "")
+                + ". Su artículo común va con el de aquí, sin utilidad.";
+        if (NotaSinDesglose(r) is { } sinDesglose)
+            yield return sinDesglose;
+        yield return r.Actual.DelHistorialCentavos != 0
+            ? $"De este periodo, {Formato.Dinero(r.Actual.DelHistorialCentavos)} ({Formato.Numero(r.Actual.DelHistorialTickets)} tickets) salen del "
+              + "historial de eleventa, que no trae el cajero ni la forma de pago: esas tablas son de lo vendido aquí."
+            : "El cajero y la forma de pago son de lo vendido aquí: el historial de eleventa no los trae. Lo devuelto se resta de la forma "
+              + "en que se regresó: a la cuenta del cliente (lo fiado) o en efectivo.";
+        yield return r.Piloto
+            ? "En el piloto el corte se hace en eleventa: aquí no hay diferencias de corte."
+            : "Las diferencias son las de los cortes del turno hechos en el periodo, a nombre del cajero del turno.";
+        if (r.ConUtilidad && r.Actual.Utilidad is { } u)
+            yield return "La utilidad es lo vendido menos el costo que guardó cada venta al cobrar (el promedio del inventario; el de las "
+                + "impresiones, el de cada trabajo), con lo devuelto restado. El artículo común no tiene costo: no entra."
+                + (u.ServiciosSinCostoCentavos != 0
+                    ? $" Los servicios ({Formato.Dinero(u.ServiciosSinCostoCentavos)}) todavía no tienen costo: cuentan completos, como en el corte del día."
+                    : "");
+    }
+
+    // ── Ventas por período (entrega 9, parte 2) ──
+
+    /// <summary>
+    /// Los días de «Ventas por período»: «Hoy, jueves 22 de octubre», «Martes 20 de octubre», «Del 1 al 22 de octubre», «Del 29
+    /// de septiembre al 5 de octubre»; con el año si no es el de hoy (o siempre, con <paramref name="conAnio"/>: el Excel y el
+    /// papel se guardan).
+    /// </summary>
+    public static string Periodo(DateOnly desde, DateOnly hasta, DateOnly hoy, bool conAnio = false)
+    {
+        int? anio = conAnio ? null : hoy.Year;
+        if (desde == hasta)
+            return desde == hoy ? $"Hoy, {Dia(desde, anio)}" : Mayuscula(Dia(desde, anio));
+        return Mayuscula(DelAl(desde, hasta, anio));
+    }
+
+    /// <summary>
+    /// Cómo cuenta «Ventas por período» (lo dicen la pantalla y el Excel). De todas las cajas, como el corte del día y los
+    /// reportes; de una caja, lo devuelto y lo cancelado son los de sus tickets, se hayan hecho en ella o en otra (revisión del
+    /// PR #134): el corte del día no se separa así.
+    /// </summary>
+    public static string ComoCuentaVentasPorPeriodo(VentasPorPeriodoDto d)
+    {
+        const string cancelado = "Un ticket cancelado se lista el día en que se cobró, pero no cuenta en lo vendido; ";
+        if (d.CajaId is { } caja)
+            return cancelado + $"lo devuelto y las cancelaciones son los de los tickets de {d.Cajas.FirstOrDefault(c => c.Id == caja)?.Nombre ?? "esa caja"} "
+                + "que se hicieron esos días, en esa caja o en otra (también de tickets de antes). Lo devuelto se resta de lo vendido.";
+        return cancelado + "lo devuelto y las cancelaciones son los que se hicieron esos días (también de tickets de antes), como en el corte del día "
+            + "y en los reportes. Lo devuelto se resta de lo vendido.";
+    }
+
+    /// <summary>Cómo se pagó un ticket: «Efectivo», «Efectivo y tarjeta», «Tarjeta, transferencia y crédito».</summary>
+    public static string FormasDePago(IReadOnlyList<FormaPago> formas)
+    {
+        var nombres = formas.Select(f => f switch
+        {
+            FormaPago.Tarjeta => "tarjeta",
+            FormaPago.Transferencia => "transferencia",
+            FormaPago.Credito => "crédito",
+            _ => "efectivo",
+        }).ToList();
+        if (nombres.Count == 0)
+            return "Sin cobro";
+        return Mayuscula(nombres.Count == 1 ? nombres[0] : $"{string.Join(", ", nombres.Take(nombres.Count - 1))} y {nombres[^1]}");
+    }
+
+    /// <summary>Si la venta se canceló o se devolvió, como en «Ventas del día»: «Cancelada», «Devuelta», «Devuelta en parte»; vacío si no.</summary>
+    public static string? Estado(VentaDeUnDiaDto v) =>
+        v.Cancelada ? "Cancelada" : v.DevueltoCentavos <= 0 ? null : v.DevueltaCompleta ? "Devuelta" : "Devuelta en parte";
+
     /// <summary>Cómo se llama cada forma de pago en el reporte.</summary>
     public static string Forma(FormaPago forma) => forma switch
     {

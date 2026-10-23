@@ -369,8 +369,9 @@ no-break. La causa **no se conoce** todavía.
   y forma de pago solo sale para lo vendido en el POS. Falta revisar con la copia real desde qué año hay historial, si
   la tabla de tickets de eleventa trae caja o cajero y si trae las recargas.
 - **Hoy el POS** tiene la pestaña Reportes (2026-10-22): hoy, la semana, el mes y el año a la fecha contra el mismo periodo
-  del año pasado, con el historial de eleventa; el cajero y la forma de pago, solo de lo vendido en el POS. Además, las
-  ventas de cada día, el corte del día, el resumen de Telegram y el diagnóstico en Excel.
+  del año pasado, con el historial de eleventa; el cajero y la forma de pago, solo de lo vendido en el POS. También «Ventas
+  por período» (los tickets de una fecha a otra, con su resumen impreso) y el Excel de los reportes y del inventario. Además,
+  las ventas de cada día, el corte del día, el resumen de Telegram y el diagnóstico en Excel.
 
 ### Respaldo fuera de la tienda y aviso de apertura
 

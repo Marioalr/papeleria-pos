@@ -64,15 +64,15 @@ public sealed class ReportesDeVentas(PosDbContext db)
         if (dia > DateOnly.FromDateTime(ahora))
             throw new ArgumentException(TodaviaNoLlega);
         var p = PeriodoDeReporte.De(tipo, dia, ahora);
-        return await EnUnMismoMomentoAsync(() => LeerAsync(sucursal, p, DateOnly.FromDateTime(ahora), conUtilidad, piloto, ct), ct);
+        return await EnUnMismoMomentoAsync(db, () => LeerAsync(sucursal, p, DateOnly.FromDateTime(ahora), conUtilidad, piloto, ct), ct);
     }
 
     /// <summary>
     /// Todo se lee de un mismo momento de la base: una lectura diferida (sin el candado de escritura, así que no detiene ningún
     /// cobro), con la conexión abierta para todas las sumas. Lo que se cobre mientras tanto no cambia unas cifras sí y otras no:
-    /// la venta neta, los departamentos y las formas de pago suman lo mismo.
+    /// la venta neta, los departamentos y las formas de pago suman lo mismo. También lo usan las ventas por período.
     /// </summary>
-    private async Task<T> EnUnMismoMomentoAsync<T>(Func<Task<T>> leer, CancellationToken ct)
+    internal static async Task<T> EnUnMismoMomentoAsync<T>(PosDbContext db, Func<Task<T>> leer, CancellationToken ct)
     {
         await db.Database.OpenConnectionAsync(ct);
         try
