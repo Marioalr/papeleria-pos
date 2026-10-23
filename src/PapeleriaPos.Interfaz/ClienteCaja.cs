@@ -107,11 +107,17 @@ public sealed class ConexionCaja
 /// ventana de Windows), si la caja principal no contesta, lo que se puede hacer sin ella se hace con la copia local y
 /// queda en la bandeja; lo demás espera a que vuelva la conexión.
 /// </summary>
-public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Contingencia? contingencia = null)
+/// <param name="descargas">
+/// Para bajar los archivos que arma la caja principal (el Excel de un reporte), con su propio tope (<see cref="RedCaja.TopeDescargas"/>);
+/// sin él, el mismo de lo demás.
+/// </param>
+public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Contingencia? contingencia = null, HttpClient? descargas = null)
 {
     public const string EncabezadoLlave = "X-Caja-Llave";
 
     private readonly Transporte _http = new(http, conexion);
+
+    private readonly Transporte _archivos = new(descargas ?? http, conexion);
 
     public Task<List<CajaDto>> CajasAsync() =>
         ConRespaldoAsync(async () => (await _http.GetAsync<List<CajaDto>>("api/cajas"))!, l => l.Cajas());
@@ -664,6 +670,96 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// </summary>
     public Task<HistorialCortesDto> HistorialCortesAsync(Guid cajaId, Guid usuarioId, DateOnly? fecha, Guid? caja, Guid? cajero) =>
         SoloConLaPrincipalAsync<HistorialCortesDto>(CortesSinConexion, $"api/cajas/{cajaId}/cortes?usuarioId={usuarioId}" + Filtros(fecha, caja, cajero));
+
+    // ── Los reportes de ventas (entrega 9, parte 1, 2026-10-22): solo con la caja principal ──
+
+    /// <summary>Lo que dice la caja sin la caja principal: las ventas de todas las cajas y del año pasado están allá.</summary>
+    public const string ReportesSinConexion =
+        "Sin conexión con la caja principal: los reportes juntan las ventas de todas las cajas y del año pasado, y se ven cuando vuelva.";
+
+    /// <summary>
+    /// El reporte de ventas de <paramref name="periodo"/> del día <paramref name="fecha"/> (vacío: hoy en la caja principal),
+    /// contra el mismo periodo del año pasado, para quien tiene «Ver reportes de ventas» (lo revisa el servicio).
+    /// </summary>
+    public Task<ReporteVentasDto> ReporteVentasAsync(Guid cajaId, Guid usuarioId, PeriodoReporte periodo, DateOnly? fecha = null) =>
+        SoloConLaPrincipalAsync<ReporteVentasDto>(ReportesSinConexion, $"api/cajas/{cajaId}/reportes/ventas?usuarioId={usuarioId}&periodo={periodo}"
+            + (fecha is { } dia ? $"&fecha={dia.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}" : ""));
+
+    /// <summary>
+    /// Ventas por período (entrega 9, parte 2): una página de los tickets de <paramref name="desde"/> a <paramref name="hasta"/>
+    /// (vacíos: hoy en la caja principal) de <paramref name="caja"/> (vacía: todas), con los totales de todos esos días, para quien
+    /// tiene «Ver reportes de ventas» (lo revisa el servicio).
+    /// </summary>
+    public Task<VentasPorPeriodoDto> VentasPorPeriodoAsync(Guid cajaId, Guid usuarioId, DateOnly? desde, DateOnly? hasta, Guid? caja, int pagina = 0) =>
+        SoloConLaPrincipalAsync<VentasPorPeriodoDto>(ReportesSinConexion,
+            $"api/cajas/{cajaId}/reportes/ventas-por-periodo?usuarioId={usuarioId}{Dias(desde, hasta)}{(caja is { } c ? $"&caja={c}" : "")}&pagina={pagina}");
+
+    // ── Los Excel (entrega 9, parte 2): los arma la caja principal, con los permisos de quien entró; la caja solo los guarda ──
+
+    /// <summary>Lo que dice la caja si no puede pedir un Excel: lo arma la caja principal.</summary>
+    public const string ExcelSinConexion = "Sin conexión con la caja principal: ella arma el Excel; se puede exportar cuando vuelva.";
+
+    /// <summary>Lo que dice si la caja principal contestó que sí pero no terminó a tiempo (muchos días de tickets).</summary>
+    public const string ExcelTarda = "La caja principal sigue armando el Excel y tarda más de lo normal: vuelve a intentarlo en un momento, o con menos días.";
+
+    /// <summary>El reporte de ventas que se ve, en Excel: una hoja por tabla.</summary>
+    public Task<ArchivoPorGuardar> ExcelReporteVentasAsync(Guid cajaId, Guid usuarioId, PeriodoReporte periodo, DateOnly? fecha = null) =>
+        ArchivoDeLaPrincipalAsync($"api/cajas/{cajaId}/reportes/ventas/excel?usuarioId={usuarioId}&periodo={periodo}"
+            + (fecha is { } dia ? $"&fecha={Iso(dia)}" : ""));
+
+    /// <summary>Todos los tickets de esos días en Excel, con sus totales y cada día.</summary>
+    public Task<ArchivoPorGuardar> ExcelVentasPorPeriodoAsync(Guid cajaId, Guid usuarioId, DateOnly? desde, DateOnly? hasta, Guid? caja) =>
+        ArchivoDeLaPrincipalAsync($"api/cajas/{cajaId}/reportes/ventas-por-periodo/excel?usuarioId={usuarioId}{Dias(desde, hasta)}"
+            + (caja is { } c ? $"&caja={c}" : ""));
+
+    /// <summary>Todos los movimientos del inventario de esos filtros en Excel (el costo, solo para quien lo ve).</summary>
+    public Task<ArchivoPorGuardar> ExcelMovimientosAsync(Guid sucursalId, Guid usuarioId, FiltroMovimientosDto filtro) =>
+        ArchivoDeLaPrincipalAsync($"api/sucursales/{sucursalId}/inventario/movimientos/excel?usuarioId={usuarioId}"
+            + $"&desde={Iso(filtro.Desde)}&hasta={Iso(filtro.Hasta)}"
+            + (filtro.Clase is { } clase ? $"&clase={clase}" : "")
+            + (string.IsNullOrWhiteSpace(filtro.Texto) ? "" : $"&q={Uri.EscapeDataString(filtro.Texto.Trim())}")
+            + (filtro.DepartamentoId is { } d ? $"&departamentoId={d}" : "")
+            + (filtro.QuienId is { } q ? $"&quienId={q}" : ""));
+
+    /// <summary>Todo lo que está en su mínimo o debajo con esos filtros, en Excel.</summary>
+    public Task<ArchivoPorGuardar> ExcelBajosAsync(Guid sucursalId, Guid usuarioId, Guid? departamentoId, string? texto, bool soloConMinimo) =>
+        ArchivoDeLaPrincipalAsync($"api/sucursales/{sucursalId}/inventario/bajos/excel?usuarioId={usuarioId}&conMinimo={soloConMinimo}"
+            + (departamentoId is { } d ? $"&departamentoId={d}" : "")
+            + (string.IsNullOrWhiteSpace(texto) ? "" : $"&q={Uri.EscapeDataString(texto.Trim())}"));
+
+    /// <summary>Lo que vale el inventario en Excel: cada departamento y todos los productos del elegido con ese filtro.</summary>
+    public Task<ArchivoPorGuardar> ExcelValorAsync(Guid sucursalId, Guid usuarioId, Guid? departamentoId, FiltroValor filtro) =>
+        ArchivoDeLaPrincipalAsync($"api/sucursales/{sucursalId}/inventario/valor/excel?usuarioId={usuarioId}&filtro={filtro}"
+            + (departamentoId is { } d ? $"&departamentoId={d}" : ""));
+
+    /// <summary>
+    /// Un archivo que arma la caja principal: sin ella, lo dice sin esperar. Con su propio tope (<see cref="RedCaja.TopeDescargas"/>):
+    /// si se le acaba, la caja principal sigue armándolo, no se fue, y la caja no pasa a sin conexión por eso (revisión del PR
+    /// #134; si de verdad se fue, el latido lo nota).
+    /// </summary>
+    private async Task<ArchivoPorGuardar> ArchivoDeLaPrincipalAsync(string url)
+    {
+        if (contingencia is { ServidorResponde: false })
+            throw new ErrorCaja(ExcelSinConexion, "sin-conexion");
+        try
+        {
+            return await _archivos.GetArchivoAsync(url);
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion" && ex.PorPlazo && contingencia is not { ServidorResponde: false })
+        {
+            throw new ErrorCaja(ExcelTarda, "plazo") { PorPlazo = true };
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
+        {
+            contingencia?.MarcarSinConexion();
+            throw new ErrorCaja(ExcelSinConexion, "sin-conexion");
+        }
+    }
+
+    private static string Iso(DateOnly dia) => dia.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    private static string Dias(DateOnly? desde, DateOnly? hasta) =>
+        (desde is { } d ? $"&desde={Iso(d)}" : "") + (hasta is { } h ? $"&hasta={Iso(h)}" : "");
 
     private static string Filtros(DateOnly? fecha, Guid? caja, Guid? cajero) =>
         (fecha is { } dia ? $"&fecha={dia.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}" : "") + (caja is { } c ? $"&caja={c}" : "")

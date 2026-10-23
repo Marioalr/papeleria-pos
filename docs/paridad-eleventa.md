@@ -82,9 +82,9 @@
 |---|---|---|---|---|---|
 | Existencia por producto, que baja con cada venta | La usan | Kardex; la existencia nunca detiene la venta. En el piloto la trae la lectura de eleventa cada 5 minutos | — | — | — |
 | F4: agregar inventario y ajustes | Por confirmar cómo los usan | Compras a ciegas con la factura XML o la nota PDF, ajustes, mermas y conteos | — | — | — |
-| Movimientos (por fecha, cajero, producto, departamento y tipo) y kardex | Por confirmar | Hecho (2026-10-17): Inventario › Movimientos, de unos días (hoy, ayer, 7 o 30 días, el mes o de una fecha a otra), por tipo, producto (también escaneado), departamento y quién, de 50 en 50; cada uno con su folio o su motivo, lo que quedó y quién; el costo, con «Ver costos, utilidad y margen». También el kardex de la ficha y los últimos 8 en Productos | Exportarlos a Excel, como eleventa, si lo usan | Sin plan | Chico |
-| Productos bajos en inventario: mínimo y máximo por producto | Por confirmar | Hecho (2026-10-17): cada variante con su mínimo y su máximo en la ficha (F3), y en el piloto también; «Poca existencia» usa el propio (sin él, 3 o menos) e Inventario › Bajos en inventario lista lo que está en su mínimo o debajo, por departamento, con cuánto pedir (hasta el máximo; sin él, lo del sugerido, y al menos lo que falta para el mínimo) | A Excel, si lo usan; pasar los mínimos que ya tenga eleventa, si los usan (la importación no los lee) | Sin plan | Chico |
-| Reporte de inventario: lo que vale a costo, por departamento | Por confirmar | Hecho (2026-10-17): Inventario › Lo que vale el inventario, a costo promedio, en total y por departamento, con cuántos están en cero, en negativo o sin costo, y los productos de cada departamento; solo con «Ver costos, utilidad y margen». También en el diagnóstico en Excel | Exportarlo a Excel desde la caja, si lo usan | Sin plan | Chico |
+| Movimientos (por fecha, cajero, producto, departamento y tipo) y kardex | Por confirmar | Hecho (2026-10-17): Inventario › Movimientos, de unos días (hoy, ayer, 7 o 30 días, el mes o de una fecha a otra), por tipo, producto (también escaneado), departamento y quién, de 50 en 50; cada uno con su folio o su motivo, lo que quedó y quién; el costo, con «Ver costos, utilidad y margen». También el kardex de la ficha y los últimos 8 en Productos. **A Excel (2026-10-22):** todos los de esos filtros, sin las páginas (el costo, solo con el permiso; hasta 60,000 por archivo) | — | — | — |
+| Productos bajos en inventario: mínimo y máximo por producto | Por confirmar | Hecho (2026-10-17): cada variante con su mínimo y su máximo en la ficha (F3), y en el piloto también; «Poca existencia» usa el propio (sin él, 3 o menos) e Inventario › Bajos en inventario lista lo que está en su mínimo o debajo, por departamento, con cuánto pedir (hasta el máximo; sin él, lo del sugerido, y al menos lo que falta para el mínimo). **A Excel (2026-10-22),** todos los de esos filtros | Pasar los mínimos que ya tenga eleventa, si los usan (la importación no los lee) | Sin plan | Chico |
+| Reporte de inventario: lo que vale a costo, por departamento | Por confirmar | Hecho (2026-10-17): Inventario › Lo que vale el inventario, a costo promedio, en total y por departamento, con cuántos están en cero, en negativo o sin costo, y los productos de cada departamento; solo con «Ver costos, utilidad y margen». También en el diagnóstico en Excel. **A Excel desde la caja (2026-10-22):** cada departamento y los productos que se ven, sin las páginas | — | — | — |
 | Compras y proveedores: órdenes, compras sugeridas | No la usan: sus proveedores están vacíos | Compras, órdenes, proveedores y sugerido (fase 2) | — | — | — |
 
 ### Clientes y crédito
@@ -97,8 +97,8 @@
 
 | eleventa | Uso | El POS hoy | Falta | Dónde | Tamaño |
 |---|---|---|---|---|---|
-| Reportes › Reporte de ventas: semana, mes, año o un periodo; por día, mes o año; ganancia; por departamento y por forma de pago | La usan: ventas por día, mes y año a la fecha, y contra el año anterior (dueño, 2026-10-08) | Las ventas de hoy de cada caja, el corte del día y el diagnóstico en Excel (solo con lo importado de eleventa) | La pestaña de reportes, con el año anterior del historial de eleventa | Entrega 9, después de aprobar la prueba (2026-10-09) | Grande |
-| F3 › Ventas por período: fechas y caja; a Excel o a la impresora de tickets | Por confirmar | No hay | Con la entrega 9 | Entrega 9 | En la 9 |
+| Reportes › Reporte de ventas: semana, mes, año o un periodo; por día, mes o año; ganancia; por departamento y por forma de pago | La usan: ventas por día, mes y año a la fecha, y contra el año anterior (dueño, 2026-10-08) | **Hecho (2026-10-22; se adelantó).** La pestaña Reportes: hoy, la semana, el mes y el año a la fecha, y con ← → los anteriores completos (un mes cerrado, un año), siempre contra el mismo periodo del año pasado (el historial de eleventa más lo de este POS); la venta neta, los tickets, el ticket promedio y la utilidad con su margen (con «Ver costos, utilidad y margen»); la gráfica por hora, día o mes, también como tabla; por departamento (con su margen), por cajero (con sus diferencias de corte), por forma de pago y lo que más se vende. En el piloto, solo lo de la caja 2. Del historial de eleventa, lo devuelto cuenta el día de la venta (el ticket ya lo trae restado): un mes cerrado puede diferir un poco del reporte de eleventa. **Parte 2:** «Exportar a Excel», una hoja por tabla (la utilidad y el costo, solo con el permiso); un periodo de una fecha a otra, en «Ventas por período» (abajo) | — | — | — |
+| F3 › Ventas por período: fechas y caja; a Excel o a la impresora de tickets | Por confirmar | **Hecho (2026-10-22, entrega 9, parte 2).** Reportes › «Ventas por período»: de una fecha a otra (o hoy, ayer, esta semana, este mes, el mes pasado) y de una caja o de todas; los tickets con su folio, fecha y hora, caja, cajero, total, forma de pago y si se canceló o se devolvió, de 100 en 100, con los totales al final; a Excel (todos) o, el resumen por día y forma de pago, a la impresora de tickets. En el piloto, solo lo de la caja 2. Va con «Ver reportes de ventas», no en F3 | — | — | — |
 | Ventas por cliente; Pulso y los reportes en la nube | No la usan: sin clientes; de eleventa solo usan el punto de venta | — | — | — | — |
 
 ### Configuración, usuarios y equipo
@@ -128,7 +128,8 @@
 ## El orden
 
 Va con el orden aprobado de las entregas (0, 10, 3, 2, 1, 6, 5, 9, 7, 8, 13, 4, 11, 12; ya están la 0, la 10, la 3,
-la 2, la 1, la 6, la 7 y la 8) y con las decisiones del [plan](plan.md#la-versión-unicaja-y-el-piloto-en-la-caja-2).
+la 2, la 1, la 6, la 7, la 8 y la parte 1 de la 9) y con las decisiones del
+[plan](plan.md#la-versión-unicaja-y-el-piloto-en-la-caja-2).
 
 **Lo que cambia el piloto:** mientras la caja 2 manda cada venta a eleventa, eleventa sigue completo. Sus reportes, sus
 cortes, sus existencias y sus altas siguen sirviendo como hoy. Por eso al piloto lo detienen el puente y lo básico de la
@@ -177,14 +178,14 @@ Primero el modo multicaja, al aprobar el piloto (decisión del dueño, 2026-10-1
 | 2 | **El modo multicaja con el puente:** un solo servicio en la caja principal y el puente escribiendo por las dos cajas. Antes, revisar los respaldos que hace eleventa al cerrarse y medir que la principal aguante eleventa, Firebird y el servicio juntos | Mediano |
 | 3 | **La red de la tienda** (el arreglo, por aprobar) y, en el POS, volver a buscar a la principal, «sin internet» o «sin red local» y la bitácora de red | Chico, más dos fines de semana |
 | 4 | **Las dos cajas reales en Windows y el día pico** con el simulador de cajas (ya está desde el 2026-10-17; falta correrlo en la caja principal, [guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real)) | Mediano |
-| 5 | **La entrega 9, los reportes que el dueño usa en eleventa:** ventas por día, mes y año a la fecha contra el año anterior, con la ganancia para quien la ve; después por cajero, departamento y forma de pago, lo más vendido y Excel | Grande |
+| 5 | **La entrega 9, los reportes que el dueño usa en eleventa:** ventas por día, mes y año a la fecha contra el año anterior, con la ganancia para quien la ve; después por cajero, departamento y forma de pago, lo más vendido y Excel. Ya está (2026-10-22, se adelantó): la parte 1 y la 2 (Excel, guardar archivos desde la caja y «Ventas por período») | Hecho; falta verlo en Windows |
 | 6 | **El corte del día como el de eleventa:** impreso, de otra fecha y con la ganancia y los departamentos, y el historial de cortes. Ya están los dos (2026-10-17) | Chico |
 | 7 | **Departamentos en el POS:** darlos de alta, cambiarles el nombre y desactivarlos | Chico |
 | 8 | **Respaldo fuera de la tienda** con una restauración de ensayo, y la vigilancia de la caja principal | Chico |
 | 9 | **Instalador de la tienda, actualizaciones y soporte a distancia** (a mano ya se actualiza con `actualizar.ps1`, 2026-10-21) | Mediano |
 | 10 | **Depuración, conteo físico e importación final,** sin las ventas que ya mandó el puente | Grande: la depuración y el conteo son trabajo de la tienda; lo del puente ya está en código (2026-10-17, [importación final](migracion-eleventa.md#la-importación-final)) |
 | 11 | **Promociones con fechas:** ya están (2026-10-22). Los kits siguen pospuestos: la tienda no los usa | — |
-| 12 | **Lo «por confirmar» que sí usen:** cancelar una entrada o salida, Excel (las ventas de otros días, los mínimos por producto, lo que vale el inventario y los movimientos ya están, 2026-10-17) | Chico cada uno |
+| 12 | **Lo «por confirmar» que sí usen:** importar o exportar productos en Excel (las ventas de otros días, los mínimos por producto, lo que vale el inventario y los movimientos ya están, 2026-10-17; cancelar una entrada o salida y los Excel de los reportes, del inventario y de «Ventas por período», 2026-10-22) | Chico |
 
 Al final: enseñar a todos, eleventa de consulta unas semanas y apagar el puente.
 
@@ -202,7 +203,8 @@ Para decidir; no cambian ninguna decisión:
 - **La entrega 9 justo después de aprobar la prueba,** antes de la 13 y la 4, como ya va en el orden. Es lo único que el
   dueño usa hoy en eleventa y el POS no tiene. Puede empezar por lo que hace el reporte de ventas de eleventa (un
   periodo, por día, mes o año, con la ganancia y por departamento) más la comparación contra el año anterior, y dejar lo
-  demás de la 9 para después.
+  demás de la 9 para después. Se adelantó (2026-10-22): ya está toda, con todo eso, lo demás de la propuesta, Excel y
+  «Ventas por período».
 - **Dejar eleventa en dos pasos:** el modo multicaja con el puente escribiendo, mientras eleventa sigue completo y
   regresar es inmediato; y apagar el puente cuando el POS tenga la entrega 9 y un mes cerrado que cuadre con eleventa.
   Así, exportar la base a eleventa (pendiente desde el 2026-10-11) no hace falta para poder regresar mientras dure el
@@ -256,10 +258,11 @@ cambia lo que falta ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-o
   en el POS, 2026-10-22, salvo en el piloto: si alguien cancela una en eleventa, verla con `observar-eleventa`, sin
   cancelar una de prueba, para saber cómo la anota y que el puente pueda mandarla).
 - **Los reportes:** qué pantalla da hoy las ventas por día, mes y año (Reportes › Reporte de ventas, o F3 › Ventas por
-  período), para que la entrega 9 empiece por esa.
+  período). Los dos ya están en el POS (2026-10-22), con Excel y el resumen a la impresora de tickets: anotar quién los
+  usa, para darle «Ver reportes de ventas», y si se mira cada ticket o solo los totales.
 - **El inventario:** cómo se registra lo que llega (Agregar inventario) y si se usan los productos bajos en inventario
-  (con un mínimo por producto), el reporte de inventario o los movimientos. El POS ya los tiene (2026-10-17): si en
-  eleventa hay mínimos puestos, anotar cuántos, para pasarlos en la importación final.
+  (con un mínimo por producto), el reporte de inventario o los movimientos. El POS ya los tiene (2026-10-17), también a
+  Excel (2026-10-22): si en eleventa hay mínimos puestos, anotar cuántos, para pasarlos en la importación final.
 - **Los productos:** si se importan o exportan en Excel y si se cambian precios de varios a la vez.
 
 ## Fuentes

@@ -49,8 +49,12 @@ dotnet run --project src/PapeleriaPos.Herramientas -- importar-eleventa --fdb C:
 - **Último costo** (`PCOSTO`), bajo un proveedor genérico, porque eleventa no tiene proveedores capturados.
 - **Existencias** como inventario inicial al costo de eleventa (solo como referencia: el inventario de arranque sale
   del conteo físico). Las negativas no entran.
-- **Historial de ventas** completo, con cancelados marcados: alimenta el análisis ABC, el sugerido de compra y la
-  temporada.
+- **Historial de ventas** completo, con cancelados marcados: alimenta el análisis ABC, el sugerido de compra, la
+  temporada y los reportes de ventas (el año pasado). Cada ticket trae lo que eleventa le bajó al devolver: lo devuelto
+  cuenta el día de la venta. Su **artículo común** (código `COMUN-…` o, con un código que no es del catálogo, el
+  departamento «Productos Comunes») queda marcado: los reportes lo cuentan como el de aquí, aparte y sin utilidad (eleventa
+  le pone de ganancia todo el precio). Un ticket cuyo total no es la suma de sus artículos se avisa, y en los reportes la
+  diferencia sale «Sin desglose» (revisión del PR #131, 2026-10-22; lo ya importado se marca al migrar la base).
 - **El mayoreo de F11 pasa a escala por cantidad** (fase 3): en eleventa, al vender un paquete se escribían sus piezas
   y se oprimía F11. De esas ventas sale el paquete: la cantidad que, junto con sus múltiplos (dos o tres paquetes),
   explica más ventas con F11, siempre que ella sola se haya vendido al menos 3 veces y explique la mitad. Con 12 ×3 y
@@ -690,7 +694,11 @@ puente: vive en `PapeleriaPos.Eleventa` y en tablas del puente, y se quita al de
       el dinero salió de la caja de eleventa, así que el corte de la caja nueva no la cuenta. Va al turno de la venta, a
       nombre de su cajero, con la hora de eleventa y el motivo «Hecha en eleventa (Caja 2, cajera2, 16/10 12:30): no
       salió de esta caja». La cancelación devuelve lo que queda; la parcial, cada artículo en las líneas de su producto (o,
-      si fue común, de su nombre). Lo que regresa entra al kardex al costo con que salió, así que las existencias ya
+      si fue común, de su nombre). Si el ticket ya tenía devoluciones, eleventa cancela lo que quedó: aquí es la
+      devolución de lo que quedaba y la venta sigue cobrada, como cuando se devuelve todo en la caja (aquí no se cancela un
+      ticket con devoluciones; cancelarla restaría dos veces lo ya devuelto en el corte del día y en los reportes; revisión
+      del PR #131, 2026-10-22). En la bitácora queda como la cancelación que fue. Lo que regresa entra al kardex al costo
+      con que salió, así que las existencias ya
       cuadran con eleventa y no salen como ajuste; los reportes de ventas la descuentan, y queda en la bitácora.
     - La vuelta nunca entra a la bandeja. Lo ya pasado se reconoce por `DEVOLUCIONES.ID` (con su `DEVUELTO_EN`) y lo que
       escribió la caja 2 por la marca `TICKET_ID` + `DEVUELTO_EN`. Si aquí ya no queda tanto (¿se devolvió en las dos

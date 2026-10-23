@@ -102,11 +102,23 @@ public sealed class RegistroReportesInventario(PosDbContext db)
     /// una página de los productos de <paramref name="departamentoId"/> (o de todos) con <paramref name="filtro"/>. Cuenta lo
     /// que se vende y lo que, sin venderse, todavía tiene existencia. Solo con «Ver costos, utilidad y margen».
     /// </summary>
-    public async Task<ValorInventarioDto> ValorAsync(
-        Guid sucursalId, Guid usuarioId, Guid? departamentoId, FiltroValor filtro, int pagina = 0, CancellationToken ct = default)
+    public Task<ValorInventarioDto> ValorAsync(
+        Guid sucursalId, Guid usuarioId, Guid? departamentoId, FiltroValor filtro, int pagina = 0, CancellationToken ct = default) =>
+        ValorDeAsync(sucursalId, usuarioId, departamentoId, filtro, Math.Clamp(pagina, 0, UltimaPagina), ct);
+
+    /// <summary>
+    /// Lo mismo con todos los productos de ese departamento y ese filtro en una sola lista, para el Excel (entrega 9, parte 2):
+    /// lo que se ve en la pantalla, sin las páginas.
+    /// </summary>
+    public Task<ValorInventarioDto> TodoElValorAsync(
+        Guid sucursalId, Guid usuarioId, Guid? departamentoId, FiltroValor filtro, CancellationToken ct = default) =>
+        ValorDeAsync(sucursalId, usuarioId, departamentoId, filtro, pagina: null, ct);
+
+    /// <param name="pagina">Vacía: todos.</param>
+    private async Task<ValorInventarioDto> ValorDeAsync(
+        Guid sucursalId, Guid usuarioId, Guid? departamentoId, FiltroValor filtro, int? pagina, CancellationToken ct)
     {
         await ExigirAsync(usuarioId, ConsultasInventario.Valor, "Lo que vale el inventario", ct);
-        pagina = Math.Clamp(pagina, 0, UltimaPagina);
         var variantes = await (from v in db.Variantes.AsNoTracking()
                                join p in db.Productos.AsNoTracking() on v.ProductoId equals p.Id
                                where p.Tipo == TipoProducto.Mercancia
@@ -142,14 +154,14 @@ public sealed class RegistroReportesInventario(PosDbContext db)
             FiltroValor.SinCosto => delDepartamento.Where(r => r.SinCosto).OrderByDescending(r => r.Cantidad).ThenBy(r => r.Nombre, StringComparer.CurrentCultureIgnoreCase),
             _ => delDepartamento.Where(r => r.ConExistencia).OrderByDescending(r => r.Valor).ThenBy(r => r.Nombre, StringComparer.CurrentCultureIgnoreCase),
         }).ThenBy(r => r.VarianteId).ToList();
-        var deLaPagina = conFiltro.Skip(pagina * ProductosPorPagina).Take(ProductosPorPagina).ToList();
+        var deLaPagina = pagina is { } cual ? conFiltro.Skip(cual * ProductosPorPagina).Take(ProductosPorPagina).ToList() : conFiltro;
         var codigos = await CodigosAsync(deLaPagina.Select(r => r.VarianteId).ToList(), ct);
         var productos = deLaPagina.Select(r => new ProductoValorDto(r.VarianteId, r.ProductoId, r.Nombre, codigos.GetValueOrDefault(r.VarianteId),
                 departamentos.GetValueOrDefault(r.DepartamentoId, "Sin departamento"), r.Unidad, r.Cantidad.EnUnidades,
                 r.ConExistencia ? r.Costo * Cantidad.Escala / (decimal)r.Cantidad.Milesimas : null, r.Valor, r.Activo))
             .ToList();
         return new ValorInventarioDto(HoraMexico.ALocal(Ahora), Grupo(null, "Toda la tienda", renglones), porDepartamento, departamentoId, filtro, productos,
-            conFiltro.Count, pagina, ProductosPorPagina);
+            conFiltro.Count, pagina ?? 0, pagina is null ? Math.Max(conFiltro.Count, 1) : ProductosPorPagina);
     }
 
     // ── Movimientos ─────────────────────────────────────────────────────────
@@ -272,6 +284,44 @@ public sealed class RegistroReportesInventario(PosDbContext db)
     public async Task<MovimientosInventarioDto> MovimientosAsync(
         Guid sucursalId, Guid usuarioId, FiltroMovimientosDto filtro, int pagina = 0, CancellationToken ct = default)
     {
+        var (consulta, conCostos) = await ConsultaDeMovimientosAsync(sucursalId, usuarioId, filtro, ct);
+        var total = await consulta.CountAsync(ct);
+        pagina = Math.Clamp(pagina, 0, UltimaPagina);
+        var movimientos = total == 0
+            ? []
+            : await consulta.OrderByDescending(m => m.FechaUtc).ThenByDescending(m => m.Id)
+                .Skip(pagina * MovimientosPorPagina).Take(MovimientosPorPagina).ToListAsync(ct);
+        var renglones = await RenglonesAsync(movimientos, await QuedoAsync(movimientos, ct), conCostos, ct);
+        return new MovimientosInventarioDto(renglones, total, pagina, MovimientosPorPagina, conCostos);
+    }
+
+    /// <summary>Lo más que lleva el Excel de los movimientos: más ya no se lee bien, y armarlo tardaría.</summary>
+    public const int MaximoMovimientosEnExcel = 60_000;
+
+    /// <summary>
+    /// Todos los movimientos de esos filtros en una sola lista, como en la pantalla (del más reciente al más viejo), para el Excel
+    /// (entrega 9, parte 2). Lo que quedó después de cada uno se suma de una vez para todos (<see cref="QuedoDeTodosAsync"/>).
+    /// </summary>
+    public async Task<MovimientosInventarioDto> TodosLosMovimientosAsync(
+        Guid sucursalId, Guid usuarioId, FiltroMovimientosDto filtro, CancellationToken ct = default)
+    {
+        var (consulta, conCostos) = await ConsultaDeMovimientosAsync(sucursalId, usuarioId, filtro, ct);
+        var total = await consulta.CountAsync(ct);
+        if (total > MaximoMovimientosEnExcel)
+            throw new ArgumentException(
+                $"Son {total.ToString("N0", Mexico)} movimientos, y el Excel lleva hasta {MaximoMovimientosEnExcel.ToString("N0", Mexico)}: elige menos días o un filtro.");
+        var movimientos = total == 0 ? [] : await consulta.OrderByDescending(m => m.FechaUtc).ThenByDescending(m => m.Id).ToListAsync(ct);
+        var renglones = await RenglonesAsync(movimientos, await QuedoDeTodosAsync(sucursalId, movimientos, ct), conCostos, ct);
+        return new MovimientosInventarioDto(renglones, total, 0, Math.Max(total, 1), conCostos);
+    }
+
+    /// <summary>
+    /// Los movimientos de la sucursal en esos días con esos filtros, para quien los puede ver; y si ve los costos («Ver costos,
+    /// utilidad y margen»).
+    /// </summary>
+    private async Task<(IQueryable<MovimientoInventario> Consulta, bool ConCostos)> ConsultaDeMovimientosAsync(
+        Guid sucursalId, Guid usuarioId, FiltroMovimientosDto filtro, CancellationToken ct)
+    {
         await ExigirAsync(usuarioId, ConsultasInventario.Movimientos, "Los movimientos del inventario", ct);
         if (filtro.Hasta < filtro.Desde)
             throw new ArgumentException("El primer día va antes que el último.");
@@ -306,14 +356,13 @@ public sealed class RegistroReportesInventario(PosDbContext db)
             consulta = consulta.Where(m => variantes.Contains(m.VarianteId));
         if (filtro.QuienId is { } quien)
             consulta = DeQuien(consulta, quien);
+        return (consulta, conCostos);
+    }
 
-        var total = await consulta.CountAsync(ct);
-        pagina = Math.Clamp(pagina, 0, UltimaPagina);
-        var movimientos = total == 0
-            ? []
-            : await consulta.OrderByDescending(m => m.FechaUtc).ThenByDescending(m => m.Id)
-                .Skip(pagina * MovimientosPorPagina).Take(MovimientosPorPagina).ToListAsync(ct);
-
+    /// <summary>Cada movimiento como se lee: su producto, lo que entró o salió, lo que quedó, quién y su documento.</summary>
+    private async Task<List<MovimientoInventarioDto>> RenglonesAsync(
+        IReadOnlyList<MovimientoInventario> movimientos, IReadOnlyDictionary<Guid, Cantidad> quedo, bool conCostos, CancellationToken ct)
+    {
         var ids = movimientos.Select(m => m.VarianteId).Distinct().ToList();
         var variantesDeLaPagina = ids.Count == 0 ? [] : await db.Variantes.AsNoTracking().Where(v => ids.Contains(v.Id))
             .Select(v => new
@@ -324,10 +373,9 @@ public sealed class RegistroReportesInventario(PosDbContext db)
             .ToDictionaryAsync(v => v.Id, ct);
         var departamentos = await db.Departamentos.AsNoTracking().ToDictionaryAsync(d => d.Id, d => d.Nombre, ct);
         var codigos = await CodigosAsync(ids, ct);
-        var quedo = await QuedoAsync(movimientos, ct);
         var documentos = await new DocumentosDelKardex(db).DeAsync(movimientos, ct);
 
-        var renglones = movimientos.Select(m =>
+        return movimientos.Select(m =>
         {
             var v = variantesDeLaPagina.GetValueOrDefault(m.VarianteId);
             var documento = documentos[m.Id];
@@ -336,7 +384,52 @@ public sealed class RegistroReportesInventario(PosDbContext db)
                 v is null ? "" : departamentos.GetValueOrDefault(v.DepartamentoId, ""), v?.UnidadBase ?? UnidadBase.Pieza, m.Cantidad.EnUnidades,
                 quedo.GetValueOrDefault(m.Id).EnUnidades, documento.Texto, m.Motivo, documento.Quien, conCostos ? m.CostoCentavos : null);
         }).ToList();
-        return new MovimientosInventarioDto(renglones, total, pagina, MovimientosPorPagina, conCostos);
+    }
+
+    /// <param name="Id">De la variante.</param>
+    private sealed record Antes(Guid Id, long Cantidad);
+
+    private sealed record DelKardex(Guid Id, Guid VarianteId, long Cantidad);
+
+    /// <summary>
+    /// Lo que quedó después de cada uno, para muchos a la vez (el Excel): lo mismo que <see cref="QuedoAsync"/> (la suma del kardex
+    /// de su variante hasta él, con lo de la misma hora en el orden de la lista), en dos consultas en lugar de una suma por
+    /// movimiento: lo que había antes del primero y, en orden, todos los de esas variantes desde ahí (también los que el filtro no
+    /// enseña), que se van sumando.
+    /// </summary>
+    private async Task<Dictionary<Guid, Cantidad>> QuedoDeTodosAsync(Guid sucursalId, IReadOnlyList<MovimientoInventario> movimientos, CancellationToken ct)
+    {
+        if (movimientos.Count == 0)
+            return [];
+        var (primero, ultimo) = (movimientos.Min(m => m.FechaUtc), movimientos.Max(m => m.FechaUtc));
+        var variantes = movimientos.Select(m => m.VarianteId).Distinct().ToList();
+        // Pocas variantes (un producto, un departamento), con su índice; muchas, todas las de la sucursal de una vez. Las variantes
+        // van en una lista de JSON (como las manda EF): sus Id se guardan como texto en mayúsculas.
+        var pocas = variantes.Count <= MaximoProductosDelTexto;
+        var lista = System.Text.Json.JsonSerializer.Serialize(variantes.Select(v => v.ToString().ToUpperInvariant()));
+        string DeEsas(int lugar) => pocas ? $"AND x.\"VarianteId\" IN (SELECT value FROM json_each({{{lugar}}}))" : "";
+
+        var antesSql = """
+            SELECT x."VarianteId" AS "Id", COALESCE(SUM(x."Cantidad"), 0) AS "Cantidad"
+            FROM "MovimientosInventario" AS x
+            WHERE x."SucursalId" = {0} AND x."FechaUtc" < {1}
+            """ + $"\n{DeEsas(2)}\nGROUP BY x.\"VarianteId\"";
+        var antes = (await db.Database.SqlQueryRaw<Antes>(antesSql, pocas ? [sucursalId, primero, lista] : [sucursalId, primero]).ToListAsync(ct))
+            .ToDictionary(a => a.Id, a => a.Cantidad);
+        var desdeAhiSql = """
+            SELECT x."Id" AS "Id", x."VarianteId" AS "VarianteId", x."Cantidad" AS "Cantidad"
+            FROM "MovimientosInventario" AS x
+            WHERE x."SucursalId" = {0} AND x."FechaUtc" >= {1} AND x."FechaUtc" <= {2}
+            """ + $"\n{DeEsas(3)}\nORDER BY x.\"FechaUtc\", x.\"Id\"";
+        var desdeAhi = await db.Database.SqlQueryRaw<DelKardex>(desdeAhiSql, pocas ? [sucursalId, primero, ultimo, lista] : [sucursalId, primero, ultimo])
+            .ToListAsync(ct);
+        var quedo = new Dictionary<Guid, Cantidad>(movimientos.Count);
+        foreach (var m in desdeAhi)
+        {
+            var suma = antes[m.VarianteId] = antes.GetValueOrDefault(m.VarianteId) + m.Cantidad;
+            quedo[m.Id] = new Cantidad(suma);
+        }
+        return quedo;
     }
 
     // ── Bajos en inventario ─────────────────────────────────────────────────
@@ -383,11 +476,23 @@ public sealed class RegistroReportesInventario(PosDbContext db)
     /// no tiene, lo que pide el sugerido de compra (se calcula solo para los de la página), y con su mínimo propio, al menos lo
     /// que falta para llegar a él. Para quien pide la mercancía o pone los mínimos.
     /// </summary>
-    public async Task<BajosInventarioDto> BajosAsync(
-        Guid sucursalId, Guid usuarioId, Guid? departamentoId, string? texto, bool soloConMinimoPropio, int pagina = 0, CancellationToken ct = default)
+    public Task<BajosInventarioDto> BajosAsync(
+        Guid sucursalId, Guid usuarioId, Guid? departamentoId, string? texto, bool soloConMinimoPropio, int pagina = 0, CancellationToken ct = default) =>
+        BajosDeAsync(sucursalId, usuarioId, departamentoId, texto, soloConMinimoPropio, Math.Clamp(pagina, 0, UltimaPagina), ct);
+
+    /// <summary>
+    /// Lo mismo con todos los de esos filtros en una sola lista, para el Excel (entrega 9, parte 2): lo que se ve en la pantalla,
+    /// sin las páginas (el sugerido se calcula para todos los que no tienen máximo).
+    /// </summary>
+    public Task<BajosInventarioDto> TodosLosBajosAsync(
+        Guid sucursalId, Guid usuarioId, Guid? departamentoId, string? texto, bool soloConMinimoPropio, CancellationToken ct = default) =>
+        BajosDeAsync(sucursalId, usuarioId, departamentoId, texto, soloConMinimoPropio, pagina: null, ct);
+
+    /// <param name="pagina">Vacía: todos.</param>
+    private async Task<BajosInventarioDto> BajosDeAsync(
+        Guid sucursalId, Guid usuarioId, Guid? departamentoId, string? texto, bool soloConMinimoPropio, int? pagina, CancellationToken ct)
     {
         await ExigirAsync(usuarioId, ConsultasInventario.Bajos, "Bajos en inventario", ct);
-        pagina = Math.Clamp(pagina, 0, UltimaPagina);
         var bajas = (await VariantesConMinimoAsync(sucursalId, ct)).Where(v => v.EsBaja);
         if (departamentoId is { } d)
             bajas = bajas.Where(v => v.DepartamentoId == d);
@@ -408,7 +513,7 @@ public sealed class RegistroReportesInventario(PosDbContext db)
         var conMinimo = todas.Count(v => v.Minimo is not null);
         var elegidas = soloConMinimoPropio ? todas.Where(v => v.Minimo is not null).ToList() : todas;
 
-        var primeras = elegidas.Skip(pagina * BajosPorPagina).Take(BajosPorPagina).ToList();
+        var primeras = pagina is { } cual ? elegidas.Skip(cual * BajosPorPagina).Take(BajosPorPagina).ToList() : elegidas;
         var ids = primeras.Select(v => v.Id).ToList();
         var codigos = await CodigosAsync(ids, ct);
         var sugerido = new RegistroSugerido(db);
@@ -454,6 +559,6 @@ public sealed class RegistroReportesInventario(PosDbContext db)
                 departamentos.GetValueOrDefault(v.DepartamentoId, "Sin departamento"), v.Unidad, v.Existencia.EnUnidades,
                 PocaExistencia.Minimo(v.Minimo).EnUnidades, v.Minimo is not null, v.Maximo?.EnUnidades, maximoSugerido, viene, pedir, pedirEn);
         }).ToList();
-        return new BajosInventarioDto(productos, elegidas.Count, todas.Count, conMinimo, pagina, BajosPorPagina);
+        return new BajosInventarioDto(productos, elegidas.Count, todas.Count, conMinimo, pagina ?? 0, pagina is null ? Math.Max(elegidas.Count, 1) : BajosPorPagina);
     }
 }

@@ -78,7 +78,11 @@ elegido a la derecha; Inventario, una tarjeta por tarea, solo las de quien entr�
 cortar», para quien tiene productos o compras) van las mismas páginas, con la barra de arriba de la venta. La
 Configuración ya es la del rediseño (entrega 7): ocupa la pantalla,
 con «Buscar un ajuste» y solo los grupos de los permisos de quien entró, y cada cambio se guarda solo, sin «Guardar» ni
-volver a escribir el PIN (Telegram, en pausa, sigue como estaba). `preparar-caja` deja en la base de prueba los rápidos
+volver a escribir el PIN (Telegram, en pausa, sigue como estaba). Quien tiene «Ver reportes de ventas» ve además la página
+Reportes (entrega 9): hoy, la semana, el mes y el año a la fecha contra el mismo periodo del año pasado, con la utilidad
+para quien ve costos, y «Ventas por período» (los tickets de una fecha a otra, con su resumen para la impresora de
+tickets). Los reportes y los del inventario se exportan a Excel: en la ventana de Windows, con «Guardar como»; en el
+navegador, se descargan. `preparar-caja` deja en la base de prueba los rápidos
 Copia B/N y CURP (10 impresiones); `preparar-prueba`, además, con los precios que decidió el dueño ($2 y $10). La caja
 de prueba se actualiza sin tocar su base de trabajo: en una PC donde ya se probó, esos precios salen hasta oprimir
 «Empezar de cero» en la franja de prueba.
@@ -90,7 +94,7 @@ usuario se escribe solo en el conteo desde el celular:
 |---|---|---|---|
 | Cajero de prueba (C) | `cajero` | Permisos por defecto | 1111 |
 | Encargado de prueba (E) | `encargado` | Corte de turno, productos y clientes | 2222 |
-| Dueño de prueba (D) | `dueno` | Todos los permisos · primera cuenta (también el corte del día) | 3333 |
+| Dueño de prueba (D) | `dueno` | Todos los permisos · primera cuenta (también el corte del día y los reportes) | 3333 |
 
 No hay roles: cada usuario tiene sus permisos (Puede, Con autorización o No; en Administración, solo Puede o No), que se ven y se cambian en Configuración →
 «Usuarios y permisos» (entrega 1). Al actualizar una base de antes, cada quien queda con lo que podía hacer con su rol.

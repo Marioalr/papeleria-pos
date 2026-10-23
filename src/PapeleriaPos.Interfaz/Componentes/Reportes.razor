@@ -1,0 +1,404 @@
+@* Reportes (entrega 9, parte 1, 2026-10-22), como en el prototipo (htmlReportes, docs/propuesta-interfaz.md «Reportes»): los
+   reportes de ventas que el dueño usa en eleventa. Hoy, la semana, el mes y el año a la fecha, siempre contra el mismo periodo
+   del año pasado; ← y → (o sus botones) llevan al periodo anterior y al siguiente, completos. Arriba la venta neta, los tickets,
+   el ticket promedio y, para quien tiene «Ver costos, utilidad y margen», la utilidad bruta, con cuánto subieron o bajaron;
+   luego la gráfica (barras de este año, línea del año pasado, el detalle al pasar el ratón y «Ver como tabla») y las ventas por
+   departamento (con el margen, con el permiso), por cajero (con sus diferencias de corte), por forma de pago y lo que más se
+   vende. Es una página (como Productos, Inventario y Clientes): F1 o Esc regresan a la venta. Solo con la caja principal; el
+   servicio decide qué se ve.
+   La parte 2 (2026-10-22): «Exportar a Excel» (lo que se ve, una hoja por tabla, como dice el prototipo) y «Ventas por período»
+   (los tickets de unos días, como en eleventa), que se abre aquí mismo con el acomodo de las tareas del inventario: «← Reportes»
+   o Esc regresan al resumen. *@
+@implements IPagina
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+@if (Estado.PorPeriodo.Abierta)
+{
+    <VentasPorPeriodo @ref="_porPeriodo" Caja="Caja" Sesion="Sesion" Estado="Estado.PorPeriodo" AlVolver="VolverAsync" />
+}
+else
+{
+<div class="vn-reportes" id="reportes" @onkeydown="AlTeclearAsync">
+    <div class="vn-rep-cab">
+        <h2>Reportes</h2>
+        <span class="vn-segmento grande" role="group" aria-label="Periodo">
+            @foreach (var (periodo, nombre) in TextosDeReportes.Periodos)
+            {
+                <button id="rep-@periodo" class="@(Estado.Periodo == periodo ? "on" : null)" aria-pressed="@(Estado.Periodo == periodo ? "true" : "false")"
+                        @onclick="() => ElegirAsync(periodo)">@nombre</button>
+            }
+        </span>
+        <span class="vn-rep-periodo">
+            <button id="rep-anterior" class="vn-boton chico" title="El periodo anterior (←)" disabled="@(_reporte is null)" @onclick="() => MoverAsync(-1)"><kbd>←</kbd></button>
+            <strong id="rep-titulo">@(_reporte is { } visto ? TextosDeReportes.Titulo(visto) : "")</strong>
+            <button id="rep-siguiente" class="vn-boton chico" title="El periodo siguiente (→)" disabled="@(_reporte is not { ALaFecha: false })"
+                    @onclick="() => MoverAsync(1)"><kbd>→</kbd></button>
+            @if (_reporte is { ALaFecha: false })
+            {
+                <button id="rep-al-de-hoy" class="vn-boton chico" @onclick="AlDeHoyAsync">Al de hoy</button>
+            }
+            @if (_cargando)
+            {
+                <span class="nota">Cargando…</span>
+            }
+        </span>
+        <span class="espacio"></span>
+        @* A la derecha, como en el prototipo, también cuando no cabe en un renglón. *@
+        <span class="vn-rep-acciones">
+            @if (_reporte is { } conQue)
+            {
+                <span class="nota" id="rep-contra">@TextosDeReportes.Comparacion(conQue)</span>
+            }
+            <button id="rep-por-periodo" class="vn-boton" title="Los tickets de unos días, de una caja o de todas" @onclick="AbrirPorPeriodo">
+                <Ico Nombre="lista" />Ventas por período
+            </button>
+            @* Lo que se ve (el periodo de arriba), una hoja por tabla, como en el prototipo. *@
+            <ExportarExcel Id="rep-excel" Pedir="ExcelAsync" Desactivado="@(_reporte is null)" />
+        </span>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="vn-alerta"><Ico Nombre="alerta" /><div><span>@_error</span><span><button class="vn-boton chico" @onclick="CargarAsync">Volver a intentar</button></span></div></div>
+    }
+    @if (_reporte is not { } r)
+    {
+        @if (_error is null)
+        {
+            <p class="nota">Cargando el reporte…</p>
+        }
+    }
+    else
+    {
+        var a = r.Actual;
+        var b = r.Anterior;
+        @if (r.Piloto)
+        {
+            <div class="vn-alerta info" id="rep-piloto"><Ico Nombre="info" /><div><span>@PilotoConEleventa.ReportesDeLaCaja2</span></div></div>
+        }
+        <div class="vn-rep-cuerpo @(_cargando ? "cargando" : null)">
+            <div class="vn-kpis">
+                <div class="vn-kpi" id="rep-kpi-venta">
+                    <span>Venta neta</span><strong>@Formato.Pesos(a.VentaCentavos)</strong>
+                    <small>@Cambio(a.VentaCentavos, b?.VentaCentavos, "sin ventas", enPesos: true)</small>
+                </div>
+                <div class="vn-kpi" id="rep-kpi-tickets">
+                    <span>Tickets</span><strong>@Formato.Numero(a.Tickets)</strong>
+                    <small>@Cambio(a.Tickets, b?.Tickets, "sin tickets")</small>
+                </div>
+                <div class="vn-kpi" id="rep-kpi-promedio">
+                    <span>Ticket promedio</span><strong>@(a.TicketPromedioCentavos is { } promedio ? Formato.Dinero(promedio) : "—")</strong>
+                    <small>@Cambio(a.TicketPromedioCentavos, b?.TicketPromedioCentavos, "sin tickets", enPesos: true)</small>
+                </div>
+                @if (r.ConUtilidad && a.Utilidad is { } u)
+                {
+                    @* Solo para quien ve la utilidad: con borde punteado, como lo que depende de un permiso en el corte del día. *@
+                    <div class="vn-kpi restringido" id="rep-kpi-utilidad">
+                        <span>Utilidad bruta</span><strong class="@(u.UtilidadCentavos < 0 ? "vn-dif-mal" : null)">@Formato.Pesos(u.UtilidadCentavos)</strong>
+                        <small>@(u.MargenCentesimas is { } m ? $"margen de {Margen.Texto(m)}" : "sin ventas con costo") · @Cambio(u.UtilidadCentavos, b?.Utilidad?.UtilidadCentavos, "sin utilidad", enPesos: true)</small>
+                    </div>
+                }
+                else
+                {
+                    <div class="vn-kpi" id="rep-kpi-utilidad">
+                        <span>Utilidad</span><strong>—</strong><small>la ve quien tiene «@Textos.Accion(AccionControlada.VerUtilidad)»</small>
+                    </div>
+                }
+            </div>
+            <p class="vn-rep-nota" id="rep-neta">@TextosDeReportes.VentaNeta(a)</p>
+
+            <div class="vn-grafica" id="grafica">
+                <div class="vn-grafica-cab">
+                    <h3>@TextosDeReportes.TituloDeLaGrafica(r)</h3>
+                    <div class="vn-leyenda-g">
+                        <span><i class="vn-sw-barra"></i>Este año</span>
+                        @if (b is not null)
+                        {
+                            <span><i class="vn-sw-linea"></i>Año pasado</span>
+                        }
+                        <button id="rep-ver-tabla" class="vn-enlace" @onclick="CambiarTabla">@(Estado.Tabla ? "Ver la gráfica" : "Ver como tabla")</button>
+                    </div>
+                </div>
+                <GraficaVentas Reporte="r" Tabla="Estado.Tabla" />
+            </div>
+
+            <div class="vn-dos-col">
+                <table class="vn-tabla" id="rep-departamentos">
+                    <thead>
+                        <tr>
+                            <th>Departamento</th><th class="num">Venta</th><th>Parte</th>
+                            @if (b is not null)
+                            {
+                                <th class="num">vs. año pasado</th>
+                            }
+                            @if (r.ConUtilidad)
+                            {
+                                <th class="num">Margen</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{
+                            var mayor = Math.Max(1, r.Departamentos.Select(d => d.VentaCentavos).DefaultIfEmpty(0).Max());
+                        }
+                        @foreach (var d in r.Departamentos)
+                        {
+                            <tr>
+                                <td title="@(d.Clase == ClaseVenta.SinDesglose ? TextosDeReportes.SinDesglose : null)">@d.Nombre</td>
+                                <td class="num">@Formato.ConSigno(d.VentaCentavos)</td>
+                                <td><div class="vn-barra-celda"><i style="width:@Ancho(d.VentaCentavos, mayor)"></i></div></td>
+                                @if (b is not null)
+                                {
+                                    var cambio = TextosDeReportes.CambioCorto(d.VentaCentavos, d.AnteriorCentavos);
+                                    <td class="num @(cambio.StartsWith('−') ? "vn-dif-mal" : null)">@cambio</td>
+                                }
+                                @if (r.ConUtilidad)
+                                {
+                                    <td class="num">@(d.Clase is ClaseVenta.ArticuloComun or ClaseVenta.SinDesglose ? "sin costo" : d.MargenCentesimas is { } margen ? Margen.Texto(margen) : "—")</td>
+                                }
+                            </tr>
+                        }
+                        @if (r.Departamentos.Count == 0)
+                        {
+                            <tr><td colspan="5" class="vn-rep-vacio">No hubo ventas en este periodo.</td></tr>
+                        }
+                    </tbody>
+                </table>
+
+                <div class="vn-rep-columna">
+                    <table class="vn-tabla" id="rep-cajeros">
+                        <thead><tr><th>Cajero</th><th class="num">Tickets</th><th class="num">Venta</th><th class="num">Diferencias</th></tr></thead>
+                        <tbody>
+                            @foreach (var c in r.Cajeros)
+                            {
+                                <tr>
+                                    <td>@c.Nombre</td>
+                                    <td class="num">@Formato.Numero(c.Tickets)</td>
+                                    <td class="num">@Formato.ConSigno(c.VentaCentavos)</td>
+                                    <td class="num @(c.DiferenciaCentavos < 0 ? "vn-dif-mal" : null)" title="@Diferencias(c)">
+                                        @(c.Cortes == 0 ? "—" : Formato.ConSigno(c.DiferenciaCentavos))
+                                    </td>
+                                </tr>
+                            }
+                            @if (r.Cajeros.Count == 0)
+                            {
+                                <tr><td colspan="4" class="vn-rep-vacio">Nadie cobró aquí en este periodo.</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                    <table class="vn-tabla" id="rep-formas">
+                        <thead><tr><th>Forma de pago</th><th class="num">Venta</th><th>Parte</th></tr></thead>
+                        <tbody>
+                            @{
+                                var total = Math.Max(1, r.FormasDePago.Where(f => f.Centavos > 0).Sum(f => f.Centavos));
+                            }
+                            @foreach (var f in r.FormasDePago)
+                            {
+                                <tr>
+                                    <td>@TextosDeReportes.Forma(f.Forma)</td>
+                                    <td class="num">@Formato.ConSigno(f.Centavos)</td>
+                                    <td><div class="vn-barra-celda"><i style="width:@Ancho(f.Centavos, total)"></i></div></td>
+                                </tr>
+                            }
+                            @if (r.FormasDePago.Count == 0)
+                            {
+                                <tr><td colspan="3" class="vn-rep-vacio">Nada cobrado aquí en este periodo.</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                    <table class="vn-tabla" id="rep-mas-vendidos">
+                        <thead><tr><th>Lo que más se vende</th><th class="num">Cantidad</th><th class="num">Venta</th></tr></thead>
+                        <tbody>
+                            @foreach (var p in r.MasVendidos)
+                            {
+                                <tr>
+                                    <td>@p.Nombre</td>
+                                    <td class="num">@Textos.Cantidad(p.Cantidad, p.Unidad)</td>
+                                    <td class="num">@Formato.Dinero(p.VentaCentavos)</td>
+                                </tr>
+                            }
+                            @if (r.MasVendidos.Count == 0)
+                            {
+                                <tr><td colspan="3" class="vn-rep-vacio">No se vendió ningún producto en este periodo.</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="vn-rep-notas">
+                @foreach (var nota in TextosDeReportes.Notas(r))
+                {
+                    <p>@nota</p>
+                }
+            </div>
+        </div>
+    }
+</div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+
+    /// <summary>Quien entró: el servicio revisa que tenga «Ver reportes de ventas» (y, para la utilidad, que la vea).</summary>
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>El periodo, el día y la tabla que se ven: se recuerdan al ir a la venta y volver.</summary>
+    [Parameter, EditorRequired] public ReportesVistos Estado { get; set; } = null!;
+
+    private ReporteVentasDto? _reporte;
+    private string? _error;
+    private bool _cargando;
+
+    /// <summary>Cuántas veces se ha pedido: si se cambió otra vez antes de que llegara, lo que llega tarde no se enseña.</summary>
+    private int _cargas;
+
+    private bool _enfocar = true;
+
+    /// <summary>«Ventas por período», cuando se ve.</summary>
+    private VentasPorPeriodo? _porPeriodo;
+
+    /// <summary>Se regresó de «Ventas por período»: el cursor vuelve a su botón.</summary>
+    private bool _enfocarPorPeriodo;
+
+    protected override Task OnInitializedAsync() => CargarAsync();
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_enfocarPorPeriodo)
+        {
+            _enfocarPorPeriodo = false;
+            await Js.EnfocarAsync("#rep-por-periodo");
+        }
+        if (!_enfocar)
+            return;
+        _enfocar = false;
+        await EnfocarAsync();
+    }
+
+    /// <summary>El cursor al periodo que se ve (o a los días de «Ventas por período»): Tab y Enter llegan a lo demás.</summary>
+    public async Task EnfocarAsync()
+    {
+        if (Estado.PorPeriodo.Abierta && _porPeriodo is { } porPeriodo)
+            await porPeriodo.EnfocarAsync();
+        else
+            await Js.EnfocarAsync($"#rep-{Estado.Periodo}");
+    }
+
+    /// <summary>Esc: de «Ventas por período» regresa a los reportes; si no, no hay nada adentro que cerrar y Esc regresa a la venta.</summary>
+    public async Task<bool> CerrarAsync()
+    {
+        if (!Estado.PorPeriodo.Abierta)
+            return false;
+        await VolverAsync();
+        return true;
+    }
+
+    /// <summary>«Ventas por período»: los tickets de unos días, aquí mismo; se recuerda al ir a la venta y volver.</summary>
+    private void AbrirPorPeriodo() => Estado.PorPeriodo.Abierta = true;
+
+    private Task VolverAsync()
+    {
+        (Estado.PorPeriodo.Abierta, _enfocarPorPeriodo) = (false, true);
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// El Excel de lo que se ve: el periodo del reporte que se cargó (con su primer día, no «hoy»: pasada la medianoche, el de la
+    /// caja principal ya sería otro; revisión del PR #134), con lo que puede ver quien entró.
+    /// </summary>
+    private Task<ArchivoPorGuardar> ExcelAsync() => _reporte is { } r
+        ? Cliente.ExcelReporteVentasAsync(Caja.Id, Sesion.UsuarioId, r.Periodo, r.Desde)
+        : Cliente.ExcelReporteVentasAsync(Caja.Id, Sesion.UsuarioId, Estado.Periodo, Estado.Fecha);
+
+    private async Task CargarAsync()
+    {
+        var carga = ++_cargas;
+        (_cargando, _error) = (true, null);
+        try
+        {
+            var reporte = await Cliente.ReporteVentasAsync(Caja.Id, Sesion.UsuarioId, Estado.Periodo, Estado.Fecha);
+            if (carga != _cargas)
+                return;
+            _reporte = reporte;
+            // El periodo de hoy se queda como «el de hoy»: al volver otro día (o pasada la medianoche) es el nuevo.
+            if (reporte.ALaFecha)
+                Estado.Fecha = null;
+        }
+        catch (ErrorCaja ex)
+        {
+            // Lo de antes no se queda bajo el periodo que se pidió (revisión del PR #131, 2026-10-22): se ve el error, y «Volver
+            // a intentar» pide ese periodo.
+            if (carga == _cargas)
+                (_error, _reporte) = (ex.Message, null);
+        }
+        finally
+        {
+            if (carga == _cargas)
+                _cargando = false;
+        }
+    }
+
+    /// <summary>Un periodo de arriba: el de hoy («a la fecha»); con ← y → se va a los de antes.</summary>
+    private Task ElegirAsync(PeriodoReporte periodo)
+    {
+        (Estado.Periodo, Estado.Fecha) = (periodo, null);
+        return CargarAsync();
+    }
+
+    /// <summary>El periodo anterior (−1) o el siguiente (1), del mismo tipo; después del de hoy no hay.</summary>
+    private Task MoverAsync(int pasos)
+    {
+        if (_reporte is not { } r || (pasos > 0 && r.ALaFecha))
+            return Task.CompletedTask;
+        var dia = Nucleo.Reportes.PeriodoDeReporte.Mover(Estado.Periodo, Estado.Fecha ?? r.Desde, pasos);
+        Estado.Fecha = dia >= r.Hoy ? null : dia;
+        return CargarAsync();
+    }
+
+    private Task AlDeHoyAsync()
+    {
+        Estado.Fecha = null;
+        return CargarAsync();
+    }
+
+    private void CambiarTabla() => Estado.Tabla = !Estado.Tabla;
+
+    /// <summary>← y → mueven de periodo, como los días en el corte del día; lo demás, Tab y Enter.</summary>
+    private Task AlTeclearAsync(KeyboardEventArgs e) => e.CtrlKey || e.AltKey || e.ShiftKey || e.MetaKey
+        ? Task.CompletedTask
+        : e.Key switch
+        {
+            "ArrowLeft" => MoverAsync(-1),
+            "ArrowRight" => MoverAsync(1),
+            _ => Task.CompletedTask,
+        };
+
+    /// <summary>
+    /// Cuánto subió o bajó, como en el prototipo: «▲ 12.3 % contra el año pasado»; si no se puede decir, por qué
+    /// (<see cref="TextosDeReportes.SinCambio"/>).
+    /// </summary>
+    /// <param name="sinNada">Cómo se dice que no la hubo: «sin ventas», «sin tickets», «sin utilidad».</param>
+    private RenderFragment Cambio(long? actual, long? anterior, string sinNada, bool enPesos = false) => __builder =>
+    {
+        if (_reporte is { } r && TextosDeReportes.SinCambio(r, actual, anterior, sinNada, enPesos) is { } porQue)
+        {
+            <text>@porQue</text>
+        }
+        else if (actual is { } este && TextosDeReportes.Cambio(este, anterior) is { } cambio)
+        {
+            <span class="@(cambio.Sube ? "sube" : "baja")">@(cambio.Sube ? "▲" : "▼") @cambio.Porcentaje</span><text> contra el año pasado</text>
+        }
+    };
+
+    private static string Diferencias(CajeroReporteDto c) => c.Cortes switch
+    {
+        0 => "Ningún corte suyo en este periodo",
+        _ => $"{(c.Cortes == 1 ? "1 corte" : $"{c.Cortes} cortes")}: faltó {Formato.Dinero(c.FaltanteCentavos)}, sobró {Formato.Dinero(c.SobranteCentavos)}",
+    };
+
+    /// <summary>El ancho de la barra de una celda: lo suyo contra lo más grande (lo negativo no tiene barra).</summary>
+    private static string Ancho(long valor, long mayor) => $"{Math.Clamp(valor * 100.0 / mayor, 0, 100).ToString("0.#", CultureInfo.InvariantCulture)}%";
+}

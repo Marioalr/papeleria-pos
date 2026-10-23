@@ -175,4 +175,26 @@ public class CorteDelDiaImpresoTests
         Assert.DoesNotContain("Faltante", texto);
         Assert.DoesNotContain("Diferencias de corte", texto);
     }
+
+    /// <summary>
+    /// Un turno que se cortó antes de ese día está en él por lo que se cobró sin conexión y subió tarde, con la hora de ese día
+    /// (revisión del PR #131): lo dice, y su corte va en el día en que se hizo.
+    /// </summary>
+    [Fact]
+    public void Un_turno_que_se_corto_antes_esta_por_lo_que_se_cobro_sin_conexion()
+    {
+        var dia = Dia();
+        var deAyer = dia.Turnos[0] with
+        {
+            AbiertoLocal = new DateTime(2026, 10, 15, 9, 0, 0), CerradoLocal = new DateTime(2026, 10, 15, 23, 55, 0), Tickets = 1, VendidoCentavos = 4000,
+            EsperadoCentavos = null, ContadoCentavos = null, DiferenciaCentavos = null,
+        };
+
+        var (texto, renglones) = Imprimir(dia with { Turnos = [deAyer, dia.Turnos[1]] });
+
+        // Con las dos fechas el horario no cabe con el monto: baja de renglón.
+        Assert.Matches(@"15/10 09:00-15/10 23:55 · 1 ticket\s+\$40\.00 Cobrado sin conexión; su corte es del 15/10\.", texto);
+        Assert.Contains("  Cobrado sin conexión; su corte es del 15/10.", renglones);
+        Assert.DoesNotContain("Faltante", texto);
+    }
 }

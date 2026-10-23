@@ -165,6 +165,10 @@
         {
             <p class="vn-corte-nota">Un turno que se cortó otro día lleva su corte en el de ese día: aquí cuenta lo que vendió este día, sin lo contado ni la diferencia.</p>
         }
+        @if (d.Turnos.Any(t => CortadoAntes(t, d)))
+        {
+            <p class="vn-corte-nota">Un turno que se cerró antes de este día está aquí por lo que se cobró en él sin conexión y subió después, con la hora en que se cobró: cuenta lo que vendió este día; su corte va en el día en que se hizo.</p>
+        }
 
         <div class="vn-corte-dos">
             <table class="vn-corte-tabla">
@@ -609,6 +613,9 @@
     /// <summary>Cuándo se cortó un turno que se cerró después del día que se ve (sin su corte en este día); vacío si no.</summary>
     private static DateTime? CortadoDespues(TurnoDelDiaDto t, CorteDelDiaDto d) =>
         t is { ContadoCentavos: null, CorteEnEleventa: null, CerradoLocal: { } cerrado } && DateOnly.FromDateTime(cerrado) > d.Fecha ? cerrado : null;
+
+    /// <summary>Un turno que se cerró antes de ese día: está por una venta que se cobró sin conexión y subió tarde, con la hora de este día.</summary>
+    private static bool CortadoAntes(TurnoDelDiaDto t, CorteDelDiaDto d) => t.CerradoLocal is { } cerrado && DateOnly.FromDateTime(cerrado) < d.Fecha;
 
     /// <summary>«09:00», o con la fecha si no es del día del corte (un turno que sigue abierto desde antes).</summary>
     private static string Hora(DateTime local, DateOnly dia) =>

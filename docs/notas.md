@@ -350,8 +350,9 @@ no-break. La causa **no se conoce** todavía.
 ### Reportes
 
 - **Pospuestos** (2026-10-09): el dueño los deja para después de la
-  [prueba con una persona real](plan.md#prueba-con-una-persona-real) y de que él la apruebe. Lo de abajo queda para
-  entonces. La captura de cada gasto cuando se paga no es un reporte: no se pospone
+  [prueba con una persona real](plan.md#prueba-con-una-persona-real) y de que él la apruebe. Se adelantaron el
+  2026-10-22 (por revisar): la parte 1 de la entrega 9 ya está ([avance](plan.md#primero-la-versión-unicaja-entrega-0)).
+  La captura de cada gasto cuando se paga no es un reporte: no se pospone
   ([administración](plan.md#administración-y-punto-de-equilibrio)).
 - **La utilidad y la ganancia solo las ve el dueño** (2026-10-09). Hoy ya es así en el margen mínimo, los costos de las
   impresiones y la cotización, y el resumen de Telegram (con la utilidad del día) solo va a los chats que vinculó el
@@ -367,7 +368,10 @@ no-break. La causa **no se conoce** todavía.
   anterior se muestra como «utilidad según eleventa». El importador no lee caja ni cajero: el desglose por caja, cajero
   y forma de pago solo sale para lo vendido en el POS. Falta revisar con la copia real desde qué año hay historial, si
   la tabla de tickets de eleventa trae caja o cajero y si trae las recargas.
-- **Hoy el POS** solo tiene las ventas del día de cada caja, el resumen de Telegram y el diagnóstico en Excel.
+- **Hoy el POS** tiene la pestaña Reportes (2026-10-22): hoy, la semana, el mes y el año a la fecha contra el mismo periodo
+  del año pasado, con el historial de eleventa; el cajero y la forma de pago, solo de lo vendido en el POS. También «Ventas
+  por período» (los tickets de una fecha a otra, con su resumen impreso) y el Excel de los reportes y del inventario. Además,
+  las ventas de cada día, el corte del día, el resumen de Telegram y el diagnóstico en Excel.
 
 ### Respaldo fuera de la tienda y aviso de apertura
 

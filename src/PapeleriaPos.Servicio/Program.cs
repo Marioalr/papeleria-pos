@@ -188,6 +188,7 @@ app.MapearApiControl();
 app.MapearApiUsuarios();
 app.MapearApiDevoluciones();
 app.MapearApiOtrosDias();
+app.MapearApiReportes();
 app.MapearApiContingencia();
 app.MapearApiCopia();
 app.MapearApiTelegram();

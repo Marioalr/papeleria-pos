@@ -1,5 +1,6 @@
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Reportes;
 
 namespace PapeleriaPos.Interfaz;
 
@@ -13,6 +14,9 @@ public enum Pagina
     Productos,
     Inventario,
     Clientes,
+
+    /// <summary>Los reportes de ventas (entrega 9), para quien tiene «Ver reportes de ventas».</summary>
+    Reportes,
 }
 
 /// <summary>
@@ -129,11 +133,53 @@ public sealed class EtiquetasPorImprimir
     }
 }
 
+/// <summary>Lo que se recuerda de los reportes al salir de ellos y volver: el periodo, el día y si la gráfica va como tabla.</summary>
+public sealed class ReportesVistos
+{
+    public PeriodoReporte Periodo { get; set; }
+
+    /// <summary>Un día del periodo que se ve; vacío: el de hoy.</summary>
+    public DateOnly? Fecha { get; set; }
+
+    /// <summary>«Ver como tabla»: la gráfica va como tabla.</summary>
+    public bool Tabla { get; set; }
+
+    /// <summary>«Ventas por período» (entrega 9, parte 2): si se ve, y sus días, su caja y su página.</summary>
+    public VentasPorPeriodoVistas PorPeriodo { get; } = new();
+}
+
+/// <summary>Lo que se recuerda de «Ventas por período» al salir de los reportes y volver.</summary>
+public sealed class VentasPorPeriodoVistas
+{
+    /// <summary>Se ve en lugar del resumen de los reportes.</summary>
+    public bool Abierta { get; set; }
+
+    /// <summary>Los de un toque que se eligieron: al volver otro día, son los de ese día. Vacío si se escribieron las fechas.</summary>
+    public DiasElegidos? Dias { get; set; } = DiasElegidos.Hoy;
+
+    /// <summary>Las fechas que se escribieron (o a las que se llegó con ← →), si no son de un toque.</summary>
+    public DateOnly? Desde { get; set; }
+
+    public DateOnly? Hasta { get; set; }
+
+    /// <summary>
+    /// El largo de esas fechas (un mes, una semana o tantos días), el que se eligió: ← → van a los de antes o de después de ese
+    /// largo, aunque las fechas estén cortadas en hoy (revisión del PR #134).
+    /// </summary>
+    public LargoDeVentas? Largo { get; set; }
+
+    /// <summary>La caja; vacía: todas.</summary>
+    public Guid? CajaId { get; set; }
+
+    public int Pagina { get; set; }
+}
+
 /// <summary>Lo que la caja recuerda de sus páginas mientras alguien está adentro.</summary>
 public sealed class EstadoDePaginas
 {
     public ProductosVistos Productos { get; } = new();
     public ClientesVistos Clientes { get; } = new();
+    public ReportesVistos Reportes { get; } = new();
     public EtiquetasPorImprimir Etiquetas { get; } = new();
 }
 

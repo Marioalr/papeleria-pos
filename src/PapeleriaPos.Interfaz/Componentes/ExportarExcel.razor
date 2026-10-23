@@ -1,0 +1,73 @@
+@* «Exportar a Excel» (entrega 9, parte 2, 2026-10-22; el botón del prototipo, htmlReportes): la caja principal arma el Excel con
+   los permisos de quien entró (lo que no puede ver ni siquiera va en el archivo) y aquí se guarda como se guarda en esta caja
+   (IGuardarArchivo): en la ventana de Windows, «Guardar como» de Windows, en Documentos con el nombre que propone; en la caja del
+   navegador, una descarga. Al lado dice dónde quedó, que se canceló o por qué no se pudo. Lo usan los reportes de ventas,
+   «Ventas por período» y los reportes del inventario. Al terminar, el cursor vuelve al botón (mientras trabaja está apagado y
+   el navegador suelta el foco; revisión del PR #134), así Tab, Esc y las flechas siguen donde iban. *@
+@inject IServiceProvider Servicios
+@inject ModuloCaja Js
+
+<span class="vn-exportar">
+    <button id="@Id" class="vn-boton" disabled="@(_paso is not null || Desactivado)" @onclick="ExportarAsync">@(_paso ?? "Exportar a Excel")</button>
+    @if (_estado is not null)
+    {
+        <span id="@($"{Id}-estado")" class="vn-exportado @(_error ? "error" : null)" role="status">@_estado</span>
+    }
+</span>
+
+@code {
+    /// <summary>El del botón; el de lo que dice al terminar es el mismo con «-estado».</summary>
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+
+    /// <summary>Pide el archivo a la caja principal, con lo que se ve en la pantalla (el periodo, los filtros).</summary>
+    [Parameter, EditorRequired] public Func<Task<ArchivoPorGuardar>> Pedir { get; set; } = null!;
+
+    /// <summary>Todavía no hay nada que exportar (está cargando, o no se pudo).</summary>
+    [Parameter] public bool Desactivado { get; set; }
+
+    /// <summary>
+    /// Cómo se guarda en esta caja: lo que puso su anfitrión (la ventana de Windows, su «Guardar como»); si no puso nada, la descarga
+    /// del navegador, como en <see cref="RegistroInterfaz.AgregarInterfazCaja"/>.
+    /// </summary>
+    private IGuardarArchivo Guardado => Servicios.GetService<IGuardarArchivo>() ?? new DescargaDelNavegador(Servicios.GetRequiredService<ModuloCaja>());
+
+    /// <summary>Lo que dice el botón mientras trabaja: «Preparando el Excel…» y luego «Guardando…».</summary>
+    private string? _paso;
+
+    private string? _estado;
+    private bool _error;
+
+    /// <summary>Terminó: al dibujarse otra vez (ya prendido), el cursor regresa al botón.</summary>
+    private bool _enfocar;
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (!_enfocar)
+            return;
+        _enfocar = false;
+        await Js.EnfocarAsync($"#{Id}");
+    }
+
+    private async Task ExportarAsync()
+    {
+        if (_paso is not null)
+            return;
+        (_paso, _estado, _error) = ("Preparando el Excel…", null, false);
+        try
+        {
+            var archivo = await Pedir();
+            _paso = "Guardando…";
+            StateHasChanged();
+            var guardado = await Guardado.GuardarAsync(archivo);
+            _estado = guardado?.Texto ?? ArchivoGuardado.Cancelado;
+        }
+        catch (ErrorCaja ex)
+        {
+            (_estado, _error) = (ex.Message, true);
+        }
+        finally
+        {
+            (_paso, _enfocar) = (null, true);
+        }
+    }
+}

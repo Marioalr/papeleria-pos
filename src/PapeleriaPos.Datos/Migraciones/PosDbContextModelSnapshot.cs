@@ -2003,6 +2003,9 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<long>("CostoCentavos")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("EsArticuloComun")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("ImporteCentavos")
                         .HasColumnType("INTEGER");
 
