@@ -5,6 +5,7 @@
 @if (_escalas.Escalas.Count <= 1)
 {
     <p>«@Producto.Descripcion» no tiene mayoreo: se vende a @Formato.Dinero(_escalas.Escalas.FirstOrDefault()?.PrecioCentavos ?? 0) @Unidad.</p>
+    @ConPromocion()
 }
 else
 {
@@ -13,7 +14,7 @@ else
         <thead><tr><th>Desde</th><th class="num">Precio</th><th></th></tr></thead>
         @foreach (var escala in _escalas.Escalas)
         {
-            var esta = PrecioCambiadoCentavos is null && escala.Id == _aplicada?.Precio.Id;
+            var esta = PrecioCambiadoCentavos is null && Promocion is null && escala.Id == _aplicada?.Precio.Id;
             <tr class="@(esta ? "seleccionada" : "")">
                 <td>@Formato.Numero(escala.CantidadMinima.EnUnidades) @(_escalas.DePresentacion ? Presentacion.Nombre.ToLowerInvariant() : Unidades)</td>
                 <td class="num">@Formato.Dinero(escala.PrecioCentavos) @Unidad</td>
@@ -24,6 +25,10 @@ else
     @if (PrecioCambiadoCentavos is { } cambiado)
     {
         <p class="nota">El precio de este renglón se cambió a mano (@Formato.Dinero(cambiado)): no aplica el mayoreo.</p>
+    }
+    else if (Promocion is not null)
+    {
+        @ConPromocion()
     }
     else if (MayoreoDeCliente && _aplicada is { EsMayoreo: true } && Siguiente is null)
     {
@@ -52,6 +57,23 @@ else
 
     /// <summary>El cliente del ticket paga mayoreo siempre: la primera escala de mayoreo ya aplica.</summary>
     [Parameter] public bool MayoreoDeCliente { get; set; }
+
+    /// <summary>La promoción del renglón (fase 3): le conviene más que el mayoreo, así que va con ella.</summary>
+    [Parameter] public string? Promocion { get; set; }
+
+    /// <summary>Lo que vale el renglón con su promoción (antes de un descuento).</summary>
+    [Parameter] public long ImporteConPromocionCentavos { get; set; }
+
+    /// <summary>«Así va ahora»: con la promoción, que no se junta con el mayoreo.</summary>
+    private RenderFragment ConPromocion() => __builder =>
+    {
+        if (Promocion is not null && PrecioCambiadoCentavos is null)
+        {
+            <p id="mayoreo-con-promocion" class="nota">
+                Así va ahora: con la promoción «@Promocion», @Formato.Dinero(ImporteConPromocionCentavos) (le conviene más que el mayoreo; no se juntan).
+            </p>
+        }
+    };
 
     private EscalasDePrecio _escalas = new(false, []);
     private PrecioAplicado? _aplicada;

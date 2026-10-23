@@ -17,8 +17,16 @@ namespace PapeleriaPos.Servicio;
 /// un producto que el vigente no tiene (recién dado de alta), y la copia de una caja o sus cambios, que se arman con la
 /// versión que dicen. Cada carga lee la versión y el catálogo de un mismo momento de la base.
 /// </para>
+/// <para>
+/// Con las promociones activas (fase 3), leídas en el mismo momento: cada una con los productos que se venden y toca (los
+/// suyos y los de sus departamentos y marcas). Así la copia de una caja, sus cambios y el cobro las ven con la misma versión
+/// que los precios. Al darlas a una sucursal se quitan los productos que con ellas quedarían debajo de lo que cuestan allí, si
+/// no se autorizó (<see cref="DeLaSucursalAsync"/>). En el piloto con eleventa (<c>Eleventa:Activo</c>, su lectura prendida)
+/// no lleva ninguna: los precios se ponen en eleventa y las promociones no se aplican en la caja
+/// (<see cref="RegistroPromociones.EnElPiloto"/>).
+/// </para>
 /// </summary>
-public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDeLaCopia versiones)
+public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDeLaCopia versiones, OpcionesEleventa eleventa)
 {
     private sealed record Articulo(
         Guid VarianteId, string Descripcion, string? Codigo, Impuesto Impuesto, UnidadBase Unidad, bool LlevaInventario,
@@ -29,10 +37,19 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
     /// <param name="Busqueda">La búsqueda por nombre, la misma que arma cada caja con su copia (entrega 5, parte 3).</param>
     /// <param name="Escaneo">De qué producto es cada código escaneado: la misma regla que la copia de las cajas.</param>
     /// <param name="CodigosDe">Los códigos de cada variante (los de sus presentaciones), como van en la copia y en sus cambios.</param>
+    /// <param name="Promociones">Las promociones activas (fase 3), con lo que se vende y tocan; ninguna en el piloto con eleventa.</param>
     private sealed record Indice(long Version, Dictionary<Guid, Articulo> PorVariante, CodigosDeEscaneo Escaneo,
-        List<CodigoLocalDto> Codigos, IReadOnlyList<string> Marcas, IndiceDeBusqueda Busqueda, ILookup<Guid, CodigoLocalDto> CodigosDe);
+        List<CodigoLocalDto> Codigos, IReadOnlyList<string> Marcas, IndiceDeBusqueda Busqueda, ILookup<Guid, CodigoLocalDto> CodigosDe,
+        IReadOnlyList<PromocionCargada> Promociones);
 
-    private static readonly Indice Vacio = new(-1, [], CodigosDeEscaneo.Ninguno, [], [], IndiceDeBusqueda.Vacio, Array.Empty<CodigoLocalDto>().ToLookup(c => c.VarianteId));
+    /// <summary>
+    /// Una promoción activa con su sucursal (vacía: todas), los productos que se venden y toca, como va en la copia, y si al
+    /// guardarla se autorizó que quede debajo del costo.
+    /// </summary>
+    private sealed record PromocionCargada(Guid? SucursalId, PromocionDto Promocion, bool BajoCostoAutorizado);
+
+    private static readonly Indice Vacio = new(-1, [], CodigosDeEscaneo.Ninguno, [], [], IndiceDeBusqueda.Vacio, Array.Empty<CodigoLocalDto>().ToLookup(c => c.VarianteId),
+        []);
 
     private Indice _indice = Vacio;
     private readonly Lock _candado = new();
@@ -279,7 +296,7 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
     private async Task<Indice> CargarYPonerAsync(int generacion)
     {
         using var alcance = alcances.CreateScope();
-        var nuevo = await CargarAsync(alcance.ServiceProvider.GetRequiredService<PosDbContext>(), CancellationToken.None);
+        var nuevo = await CargarAsync(alcance.ServiceProvider.GetRequiredService<PosDbContext>(), !eleventa.Activo, CancellationToken.None);
         lock (_candado)
         {
             if (generacion == _generacion)
@@ -293,7 +310,7 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
     /// lo primero que se lee es la versión. Antes la versión se leía aparte, y una carga podía traer un cambio posterior con la
     /// versión de antes.
     /// </summary>
-    private static async Task<Indice> CargarAsync(PosDbContext db, CancellationToken ct)
+    private static async Task<Indice> CargarAsync(PosDbContext db, bool conPromociones, CancellationToken ct)
     {
         await db.Database.OpenConnectionAsync(ct);
         try
@@ -302,7 +319,7 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
             await db.Database.UseTransactionAsync(lectura, ct);
             try
             {
-                return await CargarAsync(db, await VersionDeLaBaseAsync(db, ct), ct);
+                return await CargarAsync(db, await VersionDeLaBaseAsync(db, ct), conPromociones, ct);
             }
             finally
             {
@@ -315,7 +332,7 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
         }
     }
 
-    private static async Task<Indice> CargarAsync(PosDbContext db, long version, CancellationToken ct)
+    private static async Task<Indice> CargarAsync(PosDbContext db, long version, bool conPromociones, CancellationToken ct)
     {
         var variantes = await db.Variantes.AsNoTracking()
             .Where(v => v.Activa && v.Producto!.Activo)
@@ -328,6 +345,8 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
                 Marca = v.Producto.Marca == null ? null : v.Producto.Marca.Nombre,
                 v.Producto.Impuesto,
                 v.Producto.Tipo,
+                v.Producto.DepartamentoId,
+                v.Producto.MarcaId,
             })
             .ToListAsync(ct);
         var presentaciones = (await db.Presentaciones.AsNoTracking().ToListAsync(ct)).ToLookup(p => p.VarianteId);
@@ -360,9 +379,96 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
         var busqueda = IndiceDeBusqueda.Armar(
             porVariante.Values.Select(a => new ProductoParaBuscar(a.VarianteId, a.Descripcion, a.Codigo, codigosPorVariante[a.VarianteId].Select(c => c.Codigo))),
             marcas, sinonimos.Select(s => (s.Palabra, s.Equivale)));
+        // Las promociones activas, con lo que se vende y tocan (fase 3): en el mismo momento que los precios.
+        var promociones = conPromociones
+            ? await PromocionesAsync(db, variantes.Select(v => (v.Id, v.DepartamentoId, v.MarcaId)).ToList(), ct)
+            : [];
         // Los cambios de la copia de una caja llevan todos los códigos de cada producto que cambió, como la copia completa.
-        return new Indice(version, porVariante, new CodigosDeEscaneo(deLoQueSeVende), deLoQueSeVende, marcas, busqueda, deLoQueSeVende.ToLookup(c => c.VarianteId));
+        return new Indice(version, porVariante, new CodigosDeEscaneo(deLoQueSeVende), deLoQueSeVende, marcas, busqueda, deLoQueSeVende.ToLookup(c => c.VarianteId),
+            promociones);
     }
+
+    /// <summary>
+    /// Las promociones activas, cada una con lo que se vende y toca: sus productos (con su precio especial) y los de sus
+    /// departamentos y marcas, en el orden de sus Id (el de la copia: con él sale su huella). Una que hoy no toca nada que se
+    /// venda no va.
+    /// </summary>
+    private static async Task<List<PromocionCargada>> PromocionesAsync(
+        PosDbContext db, IReadOnlyList<(Guid Variante, Guid Departamento, Guid? Marca)> vendibles, CancellationToken ct)
+    {
+        var activas = await db.Promociones.AsNoTracking().Include(p => p.Alcance).Where(p => p.Activa).ToListAsync(ct);
+        var cargadas = new List<PromocionCargada>();
+        foreach (var p in activas.OrderBy(p => p.Id))
+        {
+            var suyas = p.Alcance.Where(a => a.VarianteId is not null).GroupBy(a => a.VarianteId!.Value).ToDictionary(g => g.Key, g => g.First().PrecioCentavos);
+            var departamentos = p.Alcance.Where(a => a.DepartamentoId is not null).Select(a => a.DepartamentoId!.Value).ToHashSet();
+            var marcas = p.Alcance.Where(a => a.MarcaId is not null).Select(a => a.MarcaId!.Value).ToHashSet();
+            var especial = p.Tipo == TipoPromocion.PrecioEspecial;
+            var variantes = vendibles
+                .Where(v => especial
+                    ? suyas.GetValueOrDefault(v.Variante) is > 0
+                    : suyas.ContainsKey(v.Variante) || departamentos.Contains(v.Departamento) || v.Marca is { } m && marcas.Contains(m))
+                .Select(v => new VarianteEnPromocionDto(v.Variante, especial ? suyas[v.Variante] : null))
+                .OrderBy(v => v.VarianteId)
+                .ToList();
+            if (variantes.Count > 0)
+                cargadas.Add(new PromocionCargada(p.SucursalId,
+                    new PromocionDto(p.Id, p.Nombre, p.Tipo, p.Lleva, p.Paga, p.Centesimas, p.Desde, p.Hasta, p.Dias, variantes), p.BajoCostoAutorizado));
+        }
+        return cargadas;
+    }
+
+    /// <summary>
+    /// Las de una sucursal (y las de todas) que no terminaron antes de ese día; también las que empiezan después, para que una
+    /// caja las aplique a medianoche sin bajar nada. Lo que lleva la copia de sus cajas y con lo que se cobra.
+    /// <para>
+    /// Sin los productos a los que con ella les quedaría el precio debajo de lo que cuestan en la sucursal, si al guardarla no
+    /// se autorizó (<see cref="Promocion.BajoCostoAutorizado"/>): llegaron después a su departamento o su marca, bajó su precio o
+    /// subió su costo. Con el mismo cálculo que al guardarla (su precio más bajo con cada grupo de precios, contra el costo con
+    /// que saldría del inventario): así nunca se vende debajo del costo sin autorización y el cajero no se entera de nada, la
+    /// caja ya no se la aplica. Se calcula cada vez, con el costo de ahora: su huella cambia con eso y las cajas se enteran con
+    /// sus cambios. El detalle de la promoción los dice («Fuera por el costo»).
+    /// </para>
+    /// </summary>
+    private static async Task<List<PromocionDto>> DeLaSucursalAsync(PosDbContext db, Indice indice, Guid sucursalId, DateOnly desde, CancellationToken ct)
+    {
+        var vigentes = indice.Promociones
+            .Where(c => (c.SucursalId is null || c.SucursalId == sucursalId) && (c.Promocion.Hasta is not { } hasta || hasta >= desde)).ToList();
+        var porRevisar = vigentes.Where(c => !c.BajoCostoAutorizado).SelectMany(c => c.Promocion.Variantes.Select(v => v.VarianteId)).Distinct().ToList();
+        if (porRevisar.Count == 0)
+            return vigentes.Select(c => c.Promocion).ToList();
+        var costos = await RegistroPromociones.CostosPorUnidadAsync(db, sucursalId, porRevisar, ct);
+        var precios = new Dictionary<Guid, (List<Precio> Precios, List<Presentacion> Presentaciones)>();
+        bool Fuera(PromocionDto p, VarianteEnPromocionDto v)
+        {
+            if (!costos.TryGetValue(v.VarianteId, out var costo) || !indice.PorVariante.TryGetValue(v.VarianteId, out var articulo))
+                return false;
+            if (!precios.TryGetValue(v.VarianteId, out var suyos))
+            {
+                var producto = Producto(articulo, null, indice.Version, null);
+                precios[v.VarianteId] = suyos = (producto.PreciosModelo(), producto.Presentaciones.Select(x => producto.PresentacionModelo(x.Id)).ToList());
+            }
+            var regla = new PromocionDeProducto(p.Id, p.Nombre, p.Tipo, p.Lleva, p.Paga, p.Centesimas, v.PrecioCentavos, p.Desde, p.Hasta, p.Dias);
+            return RegistroPromociones.DebajoDelCosto(CalculoPrecio.PrecioMasBajoCon(regla, suyos.Precios, suyos.Presentaciones, sucursalId), costo);
+        }
+        var lista = new List<PromocionDto>();
+        foreach (var c in vigentes)
+        {
+            var quedan = c.BajoCostoAutorizado ? c.Promocion.Variantes : c.Promocion.Variantes.Where(v => !Fuera(c.Promocion, v)).ToList();
+            if (quedan.Count == c.Promocion.Variantes.Count)
+                lista.Add(c.Promocion);
+            else if (quedan.Count > 0)
+                lista.Add(c.Promocion with { Variantes = quedan });
+        }
+        return lista;
+    }
+
+    /// <summary>
+    /// Las promociones con que se cobra en una sucursal (fase 3), del índice vigente (con el que se arma la venta): las que no
+    /// terminaron antes de <paramref name="desde"/>, sin lo que queda fuera por el costo. Ninguna en el piloto con eleventa.
+    /// </summary>
+    public async Task<List<PromocionDto>> PromocionesAsync(PosDbContext db, Guid sucursalId, DateOnly desde, CancellationToken ct = default) =>
+        await DeLaSucursalAsync(db, await ActualAsync(ct), sucursalId, desde, ct);
 
     /// <summary>
     /// La versión del catálogo con que se arma lo que se contesta: la del índice vigente (con que se armó la venta, aunque la
@@ -433,12 +539,13 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
     /// los nombres, para que la caja arme la misma búsqueda (entrega 5, parte 3).
     /// </summary>
     /// <param name="existencias">Las de la sucursal, leídas por quien arma la copia (con su versión).</param>
-    public async Task<(long Version, List<ProductoVentaDto> Productos, List<CodigoLocalDto> Codigos, IReadOnlyList<string> Marcas)> TodosAsync(
-        PosDbContext db, IReadOnlyDictionary<Guid, decimal> existencias, CancellationToken ct = default)
+    /// <param name="sucursalId">La de la caja: sus promociones (fase 3), las que no han terminado <paramref name="hoy"/>.</param>
+    public async Task<(long Version, List<ProductoVentaDto> Productos, List<CodigoLocalDto> Codigos, IReadOnlyList<string> Marcas, List<PromocionDto> Promociones)>
+        TodosAsync(PosDbContext db, IReadOnlyDictionary<Guid, decimal> existencias, Guid sucursalId, DateOnly hoy, CancellationToken ct = default)
     {
         var indice = await AlMenosAsync(await VersionDeLaBaseAsync(db, ct), ct);
         var productos = indice.PorVariante.Values.Select(a => Producto(a, null, indice.Version, existencias)).ToList();
-        return (indice.Version, productos, indice.Codigos, indice.Marcas);
+        return (indice.Version, productos, indice.Codigos, indice.Marcas, await DeLaSucursalAsync(db, indice, sucursalId, hoy, ct));
     }
 
     /// <summary>
@@ -447,8 +554,11 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
     /// marcas con que se leen los nombres en ese índice: las de la búsqueda de la caja (entrega 5, parte 3).
     /// </summary>
     /// <param name="existencias">Las de esas variantes en la sucursal, leídas por quien arma los cambios.</param>
-    public async Task<(long Version, List<ProductoVentaDto> Productos, List<CodigoLocalDto> Codigos, List<Guid> Quitados, IReadOnlyList<string> Marcas)> ParaLaCopiaAsync(
-        long version, IReadOnlyCollection<Guid> variantes, IReadOnlyDictionary<Guid, decimal> existencias, CancellationToken ct = default)
+    /// <param name="sucursalId">La de la caja: sus promociones (fase 3), las que no han terminado <paramref name="hoy"/>, completas.</param>
+    public async Task<(long Version, List<ProductoVentaDto> Productos, List<CodigoLocalDto> Codigos, List<Guid> Quitados, IReadOnlyList<string> Marcas,
+        List<PromocionDto> Promociones)> ParaLaCopiaAsync(
+        PosDbContext db, long version, IReadOnlyCollection<Guid> variantes, IReadOnlyDictionary<Guid, decimal> existencias, Guid sucursalId, DateOnly hoy,
+        CancellationToken ct = default)
     {
         var indice = await AlMenosAsync(version, ct);
         var (productos, codigos, quitados) = (new List<ProductoVentaDto>(), new List<CodigoLocalDto>(), new List<Guid>());
@@ -462,7 +572,7 @@ public sealed class CatalogoEnMemoria(IServiceScopeFactory alcances, VersionesDe
             else
                 quitados.Add(id);
         }
-        return (indice.Version, productos, codigos, quitados, indice.Marcas);
+        return (indice.Version, productos, codigos, quitados, indice.Marcas, await DeLaSucursalAsync(db, indice, sucursalId, hoy, ct));
     }
 
     /// <summary>Cuántos productos tiene el índice vigente (para decidir si unos cambios ya son casi la copia completa).</summary>

@@ -84,6 +84,37 @@ public class TicketTests
         Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
     }
 
+    /// <summary>
+    /// La promoción (fase 3) sale como el mayoreo: el renglón con su importe a menudeo y abajo cuál fue y cuánto se ahorró; un
+    /// nombre largo sigue en el renglón de abajo. Cuenta en lo que se ahorró.
+    /// </summary>
+    [Fact]
+    public void La_promocion_sale_debajo_del_articulo_y_cuenta_en_lo_que_se_ahorro()
+    {
+        var ticket = Ticket() with
+        {
+            Lineas =
+            [
+                new LineaTicketDto("3", "Cuaderno profesional raya", 4500, 9000, AhorroPromocionCentavos: 4500, Promocion: "3×2 en cuadernos"),
+                new LineaTicketDto("2", "Pegamento en barra 40 g", 3000, 3600, 400, "10 %", AhorroPromocionCentavos: 2000,
+                    Promocion: "Regreso a clases: lo estratégico al costo"),
+            ],
+            TotalCentavos = 12600,
+        };
+
+        var renglones = TicketTexto.Generar(ticket).Split(Environment.NewLine);
+
+        Assert.Contains(renglones, r => r.Contains("Cuaderno profesional raya") && r.EndsWith("$135.00"));
+        Assert.Contains(renglones, r => r.Contains("Promoción 3×2 en cuadernos") && r.EndsWith("-$45.00"));
+        Assert.Contains(renglones, r => r.Contains("Pegamento en barra 40 g") && r.EndsWith("$60.00"));
+        var largo = Array.FindIndex(renglones, r => r.Contains("Promoción Regreso a clases:"));
+        Assert.EndsWith("-$20.00", renglones[largo]);
+        Assert.Contains("al costo", renglones[largo + 1]);
+        Assert.Contains(renglones, r => r.Contains("Descuento 10 %") && r.EndsWith("-$4.00"));
+        Assert.Contains(renglones, r => r.Contains("Usted ahorró: $69.00"));
+        Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
+    }
+
     [Fact]
     public void El_texto_cabe_en_48_columnas_y_trae_lo_importante()
     {

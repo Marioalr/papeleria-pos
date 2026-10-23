@@ -135,8 +135,8 @@ public static class CalculoDevolucion
                 DevolucionId = devolucion.Id,
                 VentaLineaId = linea.Id,
                 Cantidad = cantidad,
-                ImporteCentavos = Proporcion(linea.ImporteCentavos, cantidad, linea.Cantidad),
-                CostoCentavos = Proporcion(linea.CostoCentavos, cantidad, linea.Cantidad),
+                ImporteCentavos = ParteDe(linea.ImporteCentavos, linea.CantidadDevuelta, cantidad, linea.Cantidad),
+                CostoCentavos = ParteDe(linea.CostoCentavos, linea.CantidadDevuelta, cantidad, linea.Cantidad),
                 RegresaAlInventario = pedida.All(p => p.RegresaAlInventario),
             });
         }
@@ -227,6 +227,19 @@ public static class CalculoDevolucion
             venta.Cancelar(devolucion.UsuarioId, devolucion.Motivo, devolucion.FechaUtc);
     }
 
-    private static long Proporcion(long total, Cantidad parte, Cantidad todo) =>
-        parte == todo ? total : Redondeo.Dividir((Int128)total * parte.Milesimas, todo.Milesimas);
+    /// <summary>
+    /// Lo que le toca a lo que se devuelve ahora, en proporción a lo vendido y redondeado sobre lo acumulado: lo de lo devuelto
+    /// hasta ahora con esto, menos lo de lo devuelto antes. Así, devolver de una en una las tres piezas de un 3×2 de $20.00 da
+    /// $6.67, $6.66 y $6.67 (suman lo cobrado; antes, $20.01), y lo que completa la línea toma justo lo que le falta. Devolver
+    /// la línea completa de una vez da su importe, como siempre. La ventana de devoluciones calcula igual el monto que autoriza.
+    /// </summary>
+    /// <param name="total">El importe (o el costo) de la línea.</param>
+    /// <param name="antes">Lo que ya se devolvió de la línea, en sus presentaciones.</param>
+    /// <param name="parte">Lo que se devuelve ahora.</param>
+    /// <param name="todo">Lo que se vendió.</param>
+    public static long ParteDe(long total, Cantidad antes, Cantidad parte, Cantidad todo) =>
+        Acumulado(total, antes + parte, todo) - Acumulado(total, antes, todo);
+
+    private static long Acumulado(long total, Cantidad devuelto, Cantidad todo) =>
+        devuelto >= todo ? total : Redondeo.Dividir((Int128)total * devuelto.Milesimas, todo.Milesimas);
 }

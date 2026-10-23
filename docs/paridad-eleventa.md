@@ -39,7 +39,7 @@
 | F6 y F5, tickets pendientes | La usan, poco | F6 y F5 con fichas y «Más»; sobreviven a un apagón | — | — | — |
 | Supr, borrar un artículo | La usan | Supr, a la bitácora | — | — | — |
 | F11, mayoreo: se escriben las piezas del paquete y F11 pone el precio de mayoreo | La usan | Escalas por cantidad que se aplican solas: las promociones por cantidad de eleventa y las deducidas de las ventas con F11. F11 las muestra | El precio de mayoreo a mano no existe: lo que no tenga escala se cobra a menudeo hasta revisarlo en «Mayoreo por revisar» (F3) | Pendiente nuevo, antes del piloto | Chico, con el encargado |
-| Promociones: hoy, F11 al costo en el regreso a clases | La usan, solo en esa temporada (dueño) | Escalas por cantidad; no hay promociones con fechas | Promociones con fechas, con los kits | Fase 3, antes del próximo regreso a clases | Mediano |
+| Promociones: hoy, F11 al costo en el regreso a clases | La usan, solo en esa temporada (dueño) | **Hecho (2026-10-22).** Productos › Promociones: lleva N y paga M (3×2), el segundo a mitad de precio, un porcentaje (en productos, un departamento o una marca) y el precio especial de unos días; «Dejar al costo» pone los marcados a su costo, como el F11 del regreso a clases. Con fechas, días de la semana y sucursal; se aplican solas, también sin conexión y a medianoche; no se juntan con el mayoreo ni con el descuento del cliente registrado (la que más le conviene al cliente) y nunca quedan debajo del costo sin autorización (lo que después quedaría debajo no la lleva y su detalle lo dice). El renglón y el ticket dicen la promoción y lo que se ahorró. Las promociones por cantidad de eleventa ya eran escalas. En el piloto se siguen haciendo en eleventa: en la caja 2 no se aplican, porque los precios se ponen allá | — | — | — |
 | Ctrl+D, descuento; cambiar el precio en la venta | Por confirmar | Ctrl+D y Ctrl+E, con permiso y límite | — | — | — |
 | F12, cobrar en efectivo: pagó con y cambio | La usan | F12 al «Pagó con» con el exacto en gris; redondeo al peso | — | — | — |
 | Al cobrar: F2, sin imprimir el ticket; F4, notas en el ticket | Por confirmar | **Cobrar sin imprimir: hecho (2026-10-17).** Configuración › Ticket › «Al cobrar», para toda la tienda: «Imprimir el ticket» (lo de siempre; sin impresora, se ve en pantalla), «Ofrecerlo» (se cobra igual y el panel ofrece «Imprimir ticket», Ctrl+I, hasta el primer escaneo del siguiente cliente) o «No imprimirlo» (si lo piden, se reimprime desde «Ventas del día»; sin conexión no se puede, así que se ofrece). Nunca pregunta antes de cobrar; lo fiado sale siempre. Sin notas | Las notas (F4), si las usan; reimprimir sin pedir motivo el ticket que no salió al cobrar (hoy lo pide, como toda reimpresión) | Sin plan | Chico |
@@ -72,7 +72,7 @@
 | Productos a granel (metro, kilo, litro) | La usan, con unidades mal puestas | Fracciones; cambiar la unidad en la depuración | Corregir las unidades | Depuración | Trabajo de la tienda |
 | Eliminar productos | La usan | Dar de baja con su historia; juntar los duplicados | — | — | — |
 | Impuestos por producto | No la usan: no se desglosa el IVA | IVA 16 %, 0 % o exento | — | — | — |
-| Kits | No la usan: no hay kits en su base | El tipo existe, sin uso | Con las promociones (arriba) | — | — |
+| Kits | No la usan: no hay kits en su base | El tipo existe, sin uso | Pospuestos (2026-10-22, decidido, por revisar): no hacen falta para dejar eleventa | — | — |
 | Cambiar precios de varios a la vez («Actualizar varios»): un porcentaje, una cantidad o un precio fijo, con un resumen antes de aplicar | Por confirmar | **Hecho (2026-10-17).** Productos › «Cambiar precios»: los de un departamento, una marca, lo que coincide con un texto o los marcados en la lista; subir o bajar un porcentaje o una cantidad, o un precio fijo, sobre el menudeo, con el mayoreo en la misma proporción y el redondeo a los 50 centavos o al peso. Primero se ve cómo quedan (el margen, para quien ve la utilidad) y se aplica todo junto, con la bitácora. En el piloto, lo de eleventa se cambia allá | — | — | — |
 | Importar y exportar productos en Excel | Por confirmar | Nada de eso | Lo que la tienda use | Sin plan | Chico |
 
@@ -183,7 +183,7 @@ Primero el modo multicaja, al aprobar el piloto (decisión del dueño, 2026-10-1
 | 8 | **Respaldo fuera de la tienda** con una restauración de ensayo, y la vigilancia de la caja principal | Chico |
 | 9 | **Instalador de la tienda, actualizaciones y soporte a distancia** (a mano ya se actualiza con `actualizar.ps1`, 2026-10-21) | Mediano |
 | 10 | **Depuración, conteo físico e importación final,** sin las ventas que ya mandó el puente | Grande: la depuración y el conteo son trabajo de la tienda; lo del puente ya está en código (2026-10-17, [importación final](migracion-eleventa.md#la-importación-final)) |
-| 11 | **Promociones con fechas y kits,** si se deja eleventa antes del próximo regreso a clases | Mediano |
+| 11 | **Promociones con fechas:** ya están (2026-10-22). Los kits siguen pospuestos: la tienda no los usa | — |
 | 12 | **Lo «por confirmar» que sí usen:** cancelar una entrada o salida, Excel (las ventas de otros días, los mínimos por producto, lo que vale el inventario y los movimientos ya están, 2026-10-17) | Chico cada uno |
 
 Al final: enseñar a todos, eleventa de consulta unas semanas y apagar el puente.

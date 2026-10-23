@@ -45,7 +45,7 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
         long? version = null) =>
         await Leer<CambiosCopiaDto>(await c.Http.GetAsync(
             $"api/cajas/{c.Datos.Id}/cambios?desde={version ?? desde.Version}&existencias={desde.VersionExistencias}&base={base_ ?? desde.Base}&formato={formato}"
-            + $"&vendidos={desde.VersionVendidos}&elegidos={desde.VersionElegidos}"));
+            + $"&vendidos={desde.VersionVendidos}&elegidos={desde.VersionElegidos}&promociones={desde.HuellaPromociones}"));
 
     /// <summary>Lo que eligió la caja en la lista de la búsqueda con ese texto (lo que manda la venta).</summary>
     private static async Task ElegirAsync(Caja c, string texto, Guid varianteId) =>
@@ -79,6 +79,16 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
     private static List<ProductoVentaDto> DeLaCopia(PaqueteContingenciaDto p, Func<ProductoVentaDto, bool> filtro) =>
         p.Productos.Where(filtro).OrderBy(x => x.VarianteId).ToList();
 
+    /// <summary>Una promoción por la API, como la da de alta (o la cambia, con su Id) el dueño (fase 3): desde ayer y por un mes.</summary>
+    private static async Task<PromocionFichaDto> PromocionAsync(Caja c, string nombre, PapeleriaPos.Nucleo.Catalogo.TipoPromocion tipo,
+        IReadOnlyList<AlcanceSolicitadoDto> alcance, int lleva = 0, int paga = 0, int centesimas = 0, Guid? id = null)
+    {
+        var hoy = DateOnly.FromDateTime(PapeleriaPos.Nucleo.HoraMexico.ALocal(DateTime.UtcNow));
+        return await Leer<PromocionFichaDto>(await c.Http.PostAsJsonAsync("api/promociones", new SolicitudPromocion(c.Dueno.UsuarioId, c.Datos.SucursalId,
+            c.Datos.Id, nombre, tipo, lleva, paga, centesimas, hoy.AddDays(-1), hoy.AddDays(30), PapeleriaPos.Nucleo.Catalogo.DiasDeLaSemana.Todos, false,
+            alcance, Id: id ?? Guid.NewGuid())));
+    }
+
     /// <summary>La foto de un producto, por la API, como la pone el dueño (entrega 13, parte 2).</summary>
     private static async Task<FotoGuardadaDto> FotoAsync(Caja c, Guid varianteId, byte[] imagen) =>
         await Leer<FotoGuardadaDto>(await c.Http.PutAsJsonAsync($"api/fotos/{varianteId}",
@@ -86,11 +96,12 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
 
     /// <summary>
     /// Con cambios de todo tipo (precio, alta, código quitado, baja, marca, usuario, PIN mal tecleado, la tienda, un sinónimo,
-    /// un cliente, una venta, lo que la caja eligió en la búsqueda, una temporada nueva y lo acomodado en el mostrador, y fotos
-    /// nuevas, cambiadas y quitadas), la copia de antes con los cambios encima queda igual que la copia completa de ahora, también
-    /// en lo que usa su búsqueda (todos los códigos, las marcas, lo más vendido y lo elegido: entrega 5, parte 3), en lo que se
-    /// señala (entrega 13) y en las fotos (parte 2), y los cambios traen solo los productos que cambiaron (una foto no trae su
-    /// producto) y lo elegido después.
+    /// un cliente, una venta, lo que la caja eligió en la búsqueda, una temporada nueva y lo acomodado en el mostrador, fotos
+    /// nuevas, cambiadas y quitadas, y promociones: una que se termina, otra que se cambia y una de un departamento al que pasa un
+    /// producto), la copia de antes con los cambios encima queda igual que la copia completa de ahora, también en lo que usa su
+    /// búsqueda (todos los códigos, las marcas, lo más vendido y lo elegido: entrega 5, parte 3), en lo que se señala (entrega
+    /// 13), en las fotos (parte 2) y en las promociones (fase 3), y los cambios traen solo los productos que cambiaron (una foto
+    /// o una promoción no trae su producto) y lo elegido después.
     /// </summary>
     [Fact]
     public async Task La_copia_con_los_cambios_encima_queda_igual_que_la_completa()
@@ -105,7 +116,14 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
         var (fotoCambiada, fotoQuitada) = (conFotos[13], conFotos[14]);
         await FotoAsync(c, fotoCambiada.VarianteId, PapeleriaPos.Pruebas.Impresion.ImagenesDePrueba.Foto(800, 600));
         await FotoAsync(c, fotoQuitada.VarianteId, PapeleriaPos.Pruebas.Impresion.ImagenesDePrueba.Foto(600, 800));
+        // Dos promociones que ya trae la copia de antes: una se va a terminar y la otra a cambiar (fase 3).
+        var seTermina = await PromocionAsync(c, "Se termina", PapeleriaPos.Nucleo.Catalogo.TipoPromocion.Porcentaje,
+            [new AlcanceSolicitadoDto(VarianteId: conFotos[15].VarianteId)], centesimas: 1000);
+        var seCambia = await PromocionAsync(c, "Se cambia", PapeleriaPos.Nucleo.Catalogo.TipoPromocion.LlevaNPagaM,
+            [new AlcanceSolicitadoDto(VarianteId: conFotos[16].VarianteId)], lleva: 3, paga: 2);
+        await servicio.CatalogoAlDiaAsync();
         var antes = await CopiaAsync(c);
+        Assert.Contains(antes.Promociones!, p => p.Id == seTermina.Id);
         Assert.Contains(new ElegidoDto("SEPARADOR DE ANTES", deAntes.VarianteId), antes.Elegidos!);
         Assert.Contains(antes.Fotos!, f => f.VarianteId == fotoQuitada.VarianteId);
         var sinMayoreo = DeLaCopia(antes, p => p.LlevaInventario && p.Precios.Count == 1 && p.Precios[0].PresentacionId is null && p.Presentacion.EsBase);
@@ -144,10 +162,26 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
             .IsSuccessStatusCode);
         // Un PIN mal tecleado no cambia nada.
         Assert.Equal(HttpStatusCode.BadRequest, (await c.Http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("cajero", "9999"))).StatusCode);
-        // Lo demás, en la base: un código quitado, una marca, un usuario nuevo, la tienda y un cliente nuevo.
+        // Las promociones (fase 3): una se termina, otra se cambia (4×3) y una nueva de un departamento, al que pasa el del precio.
+        Assert.True((await c.Http.PostAsJsonAsync($"api/promociones/{seTermina.Id}/terminar",
+            new SolicitudTerminarPromocion(c.Dueno.UsuarioId, c.Datos.SucursalId))).IsSuccessStatusCode);
+        await PromocionAsync(c, "Se cambia", PapeleriaPos.Nucleo.Catalogo.TipoPromocion.LlevaNPagaM,
+            [new AlcanceSolicitadoDto(VarianteId: conFotos[16].VarianteId)], lleva: 4, paga: 3, id: seCambia.Id);
+        var promocionesDepto = (await Leer<DepartamentosDto>(await c.Http.PostAsJsonAsync("api/catalogo/departamentos",
+            new SolicitudDepartamento(c.Dueno.UsuarioId, c.Datos.SucursalId, $"Promociones {Guid.NewGuid():N}"[..20])))).Departamentos
+            .Single(d => d.Nombre.StartsWith("Promociones ", StringComparison.Ordinal));
+        var delDepartamento = await PromocionAsync(c, "Del departamento", PapeleriaPos.Nucleo.Catalogo.TipoPromocion.Porcentaje,
+            [new AlcanceSolicitadoDto(DepartamentoId: promocionesDepto.Id)], centesimas: 1500);
+        // Lo demás, en la base: un código quitado, una marca, un usuario nuevo, la tienda y un cliente nuevo; y el del precio pasa al
+        // departamento de la promoción.
         string marca;
+        List<Guid> delMismoProducto;
         await using (var db = servicio.Base())
         {
+            // Con sus otras variantes (los colores): el producto entero pasa al departamento.
+            var movido = await db.Productos.SingleAsync(p => p.Variantes.Any(v => v.Id == conPrecio.VarianteId));
+            movido.DepartamentoId = promocionesDepto.Id;
+            delMismoProducto = await db.Variantes.Where(v => v.ProductoId == movido.Id && v.Activa).Select(v => v.Id).ToListAsync();
             db.CodigosBarras.Remove(await db.CodigosBarras.SingleAsync(x => x.Codigo == codigoQuitado.Codigo));
             var unaMarca = await db.Marcas.OrderBy(m => m.Nombre).FirstAsync(m => db.Productos.Any(p => p.MarcaId == m.Id && p.Activo));
             unaMarca.Nombre += " Mx";
@@ -180,9 +214,11 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
         Assert.Equal((antes.VersionVendidos, despues.VersionElegidos), (cambios.VersionVendidos, cambios.VersionElegidos));
         Assert.Contains(new ElegidoDto("SEPARADORES", nuevo.VarianteId), despues.Elegidos!);
         Assert.Contains(cambios.Codigos, x => x.Codigo == "9900000777001" && x.VarianteId == nuevo.VarianteId);
-        // Solo lo que cambió: el del precio, el nuevo, el del código quitado y los de la marca; el dado de baja, quitado.
+        // Solo lo que cambió: el del precio (con las otras variantes de su producto, que pasó a otro departamento), el nuevo, el del
+        // código quitado y los de la marca; el dado de baja, quitado.
         var deLaMarca = despues.Productos.Where(p => p.Descripcion.Contains(marca, StringComparison.Ordinal)).Select(p => p.VarianteId).ToHashSet();
-        Assert.Equal(deLaMarca.Union([conPrecio.VarianteId, nuevo.VarianteId, conDosCodigos]).Order(), cambios.Productos.Select(p => p.VarianteId).Order());
+        Assert.Equal(deLaMarca.Union([conPrecio.VarianteId, nuevo.VarianteId, conDosCodigos]).Union(delMismoProducto).Order(),
+            cambios.Productos.Select(p => p.VarianteId).Order());
         Assert.Equal([deBaja.VarianteId], cambios.Quitados);
         Assert.Contains(cambios.Existencias, e => e.VarianteId == vendido.VarianteId && e.Cantidad == vendido.Existencia - 2);
         Assert.NotNull(cambios.Usuarios);
@@ -205,6 +241,13 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
         Assert.Null(cambios.Caja);
         Assert.Null(cambios.Ticket);
         Assert.True(cambios.Version > antes.Version && cambios.VersionExistencias > antes.VersionExistencias);
+        // Las promociones, completas porque cambiaron: sin la terminada, la cambiada como quedó y la del departamento con el producto
+        // que pasó a él (fase 3).
+        Assert.NotNull(cambios.Promociones);
+        Assert.DoesNotContain(despues.Promociones!, p => p.Id == seTermina.Id);
+        Assert.Equal((4, 3), despues.Promociones!.Where(p => p.Id == seCambia.Id).Select(p => (p.Lleva, p.Paga)).Single());
+        Assert.Equal(delMismoProducto.Order(), despues.Promociones!.Single(p => p.Id == delDepartamento.Id).Variantes.Select(v => v.VarianteId));
+        Assert.Equal(despues.HuellaPromociones, cambios.HuellaPromociones);
     }
 
     /// <summary>
@@ -250,6 +293,7 @@ public sealed class CambiosDeLaCopiaTests(ServicioDePrueba servicio) : IClassFix
 
         var cambios = await Leer<CambiosCopiaDto>(await http.GetAsync(
             $"api/cajas/{caja.Id}/cambios?desde={antes.Version}&existencias={antes.VersionExistencias}&base={antes.Base}&formato={CopiaAlDia.Formato}"
+            + $"&promociones={antes.HuellaPromociones}"
             + $"&vendidos={antes.VersionVendidos}&elegidos={antes.VersionElegidos}"));
         var despues = await Leer<PaqueteContingenciaDto>(await http.GetAsync($"api/cajas/{caja.Id}/paquete"));
 

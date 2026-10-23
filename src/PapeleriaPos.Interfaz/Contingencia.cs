@@ -377,6 +377,51 @@ public sealed class Contingencia
     public FotoCatalogo? FotoDeLaCopia => _copia?.Foto;
 
     /// <summary>
+    /// Las promociones de ahora de la caja principal (fase 3), que dijo el cobro con la versión de su catálogo: quedan en la foto,
+    /// encima de la copia, hasta que baje una copia de esa versión o más nueva.
+    /// </summary>
+    public void PromocionesALaFoto(IReadOnlyList<PromocionDto> promociones, long version)
+    {
+        FotoCatalogo? antes;
+        do
+        {
+            antes = Volatile.Read(ref _foto);
+            if (antes is null)
+                return;
+        }
+        while (Interlocked.CompareExchange(ref _foto, antes.ConPromociones(promociones, version), antes) != antes);
+    }
+
+    /// <summary>
+    /// El día de hoy de la caja (hora de México), con su reloj: con él decide qué promociones corren (fase 3). A medianoche
+    /// cambia solo, sin bajar nada, también sin conexión. Si el cobro dijo que la caja principal va en otro día (el reloj de esta
+    /// PC está mal), ese, mientras esta PC siga en el mismo día que cuando lo dijo: así el ticket se pone al día con él, se manda
+    /// con él y no se repite.
+    /// </summary>
+    public DateOnly Hoy => DiaDeLaPc is var pc && _diaDeLaPrincipal is { } principal && principal.EnLaPc == pc ? principal.Dia : pc;
+
+    /// <summary>El día que marca el reloj de esta PC (hora de México).</summary>
+    public DateOnly DiaDeLaPc => DateOnly.FromDateTime(HoraMexico.ALocal(Ahora));
+
+    /// <summary>El día de la caja principal que dijo el cobro, con el día que marcaba esta PC entonces.</summary>
+    private sealed record DiaDeLaPrincipal(DateOnly EnLaPc, DateOnly Dia);
+
+    private volatile DiaDeLaPrincipal? _diaDeLaPrincipal;
+
+    /// <summary>
+    /// El cobro dijo con qué día aplicó las promociones la caja principal (fase 3): si no es el de esta PC, la caja usa ese
+    /// mientras esta PC siga en su día. Devuelve el aviso para el cajero si la fecha de la PC está mal; vacío si no.
+    /// </summary>
+    public string? DiaDeLaCajaPrincipal(DateOnly dia)
+    {
+        var pc = DiaDeLaPc;
+        _diaDeLaPrincipal = dia == pc ? null : new DiaDeLaPrincipal(pc, dia);
+        return dia == pc ? null
+            : $"La fecha de esta computadora ({pc.ToString("d/MM/yyyy", Formato.Mexico)}) no es la de la caja principal "
+              + $"({dia.ToString("d/MM/yyyy", Formato.Mexico)}): las promociones van con la de la caja principal. Corrige la fecha de esta computadora.";
+    }
+
+    /// <summary>
     /// Un producto que la copia no tenía (recién dado de alta en otra caja) o los precios de ahora de uno que sí tenía (los
     /// dijo el cobro): queda en la foto, encima de la copia, hasta que baje una copia que ya lo traiga.
     /// </summary>
@@ -939,10 +984,11 @@ public sealed class Contingencia
                 await BajarCopiaAsync();
             return;
         }
-        // Sin los exhibidores o sin las fotos, una copia de este formato la guardó una versión de esta caja que todavía no los
-        // conocía (y los cambios solo los traen cuando cambian): se baja completa una vez (entrega 13, partes 1 y 2).
+        // Sin los exhibidores, las fotos o las promociones, una copia de este formato la guardó una versión de esta caja que
+        // todavía no los conocía (y los cambios solo los traen cuando cambian): se baja completa una vez (entrega 13, partes 1 y
+        // 2; fase 3).
         if (copia is null || copia.Base != principal.Base || copia.Formato != CopiaAlDia.Formato || copia.VersionExistencias is not { } existencias
-            || copia.Exhibidores is null || copia.Fotos is null || Ahora - _completaDesdeUtc > CopiaCompletaCada)
+            || copia.Exhibidores is null || copia.Fotos is null || copia.Promociones is null || Ahora - _completaDesdeUtc > CopiaCompletaCada)
         {
             await BajarCopiaAsync();
             return;
@@ -965,7 +1011,7 @@ public sealed class Contingencia
         {
             cambios = await _http.GetAsync<CambiosCopiaDto>(
                 $"api/cajas/{caja}/cambios?desde={copia.Version}&existencias={existencias}&base={copia.Base}&formato={CopiaAlDia.Formato}"
-                + $"&vendidos={copia.VersionVendidos ?? 0}&elegidos={copia.VersionElegidos ?? 0}",
+                + $"&vendidos={copia.VersionVendidos ?? 0}&elegidos={copia.VersionElegidos ?? 0}&promociones={copia.HuellaPromociones}",
                 noEncontradoEsNulo: true, espera: EsperaCambios);
         }
         catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
@@ -1486,12 +1532,18 @@ public sealed class Contingencia
         // principal; el cobro no se repite solo.
         if (PreciosCambiados(datos, s) is { } cambiados)
             throw new ErrorCaja(cambiados.Mensaje, PreciosCambiadosDto.CodigoDelError) { PreciosCambiados = cambiados };
-        // Los mismos precios que calculó la pantalla: con el mayoreo del cliente si ella lo usó.
+        // Los mismos precios que calculó la pantalla: con el mayoreo del cliente si ella lo usó, y con las promociones con que
+        // vende la pantalla (las de su foto) y el día con que las puso (fase 3).
+        var conPromociones = s.DiaPromociones is { } dia && (EnLinea ? Foto : FotoDeLaCopia) is { } foto
+            ? new PromocionesDeLaVenta(foto.Promociones.De, () => dia)
+            : null;
         var venta = new Venta
         {
             Id = s.VentaId ?? Ids.Nuevo(), SucursalId = caja.SucursalId, CajaId = caja.Id, TurnoId = turno.Id, CajeroId = s.CajeroId, Serie = caja.Serie,
-            CreadaUtc = ahora, ClienteId = cliente?.Id, MayoreoDeCliente = cliente is not null && s.MayoreoDeCliente == true,
+            CreadaUtc = ahora, ClienteId = cliente?.Id, MayoreoDeCliente = cliente is not null && s.MayoreoDeCliente == true, Promociones = conPromociones,
         };
+        // Un descuento que no entra en su línea se dice después de revisar la promoción (como en el servicio).
+        ArgumentException? descuentoQueNoEntra = null;
         foreach (var l in s.Lineas)
         {
             var cantidad = new Cantidad(l.CantidadMilesimas);
@@ -1504,10 +1556,32 @@ public sealed class Contingencia
             var producto = datos.PorVariante.GetValueOrDefault(varianteId)
                 ?? throw new InvalidOperationException($"«{l.Descripcion ?? "Un producto"}» no está en la copia del catálogo de esta caja.");
             var agregada = venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
-            if (l.PrecioCentavos is { } precio && precio != agregada.PrecioCentavos)
+            // La pantalla manda el precio solo de lo que se cambió con Ctrl+E: es precio cambiado aunque sea el de la lista, sin
+            // promoción (como en el servicio). Si no, se cobraría con una promoción que la pantalla no puso, una y otra vez.
+            if (l.PrecioCentavos is { } precio)
                 venta.CambiarPrecio(agregada, precio, l.AutorizacionId);
-            venta.AplicarDescuentoSolicitado(agregada, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
+            try
+            {
+                venta.AplicarDescuentoSolicitado(agregada, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
+            }
+            catch (ArgumentException ex)
+            {
+                descuentoQueNoEntra ??= ex;
+            }
         }
+        // La promoción de una línea no es la que vio el cajero (empezó o terminó a medianoche, o llegó otra con la copia): como un
+        // precio que cambió, la pantalla pone el ticket al día con su foto y el cobro no se repite solo.
+        if (conPromociones is not null && PromocionesDelCobro.Distintas(venta, s.Lineas) is { Count: > 0 } distintas)
+        {
+            var productos = distintas.Select(v => datos.PorVariante[v]).ToList();
+            var mensaje = $"Cambió la promoción de {Textos.Lista(productos.Select(p => $"«{p.Descripcion}»").ToList())}: revisa el total y cobra otra vez.";
+            throw new ErrorCaja(mensaje, PreciosCambiadosDto.CodigoDelError)
+            {
+                PreciosCambiados = new PreciosCambiadosDto(mensaje, productos, datos.Paquete.Version),
+            };
+        }
+        if (descuentoQueNoEntra is not null)
+            throw descuentoQueNoEntra;
         venta.ValidarCobros(s.Cobros);
 
         var bitacora = new List<BitacoraContingenciaDto>();
@@ -1590,7 +1664,8 @@ public sealed class Contingencia
             with { AlCobrar = datos.Paquete.AlCobrar, EnContingencia = true };
         var subida = new VentaContingenciaDto(venta.Id, caja.Id, turno.Id, s.CajeroId, folio, ahora,
             venta.Lineas.Select(x => new LineaContingenciaDto(x.VarianteId, x.PresentacionId, x.Descripcion, x.Cantidad.Milesimas, x.PrecioCentavos,
-                x.DescuentoCentesimas, x.DescuentoCentesimas is null && x.TieneDescuento ? x.DescuentoCentavos : null, x.MotivoDescuento)).ToList(),
+                x.DescuentoCentesimas, x.DescuentoCentesimas is null && x.TieneDescuento ? x.DescuentoCentavos : null, x.MotivoDescuento,
+                x.PromocionId, x.Promocion, x.AhorroPromocionCentavos)).ToList(),
             s.Cobros, venta.ClienteId, venta.RedondeoCentavos, venta.MayoreoDeCliente, cuenta?.SaldoCentavos, excesoAutorizado, vence);
 
         _almacen.Escribir(lote =>

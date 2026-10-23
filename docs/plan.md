@@ -797,6 +797,59 @@ en la ficha. Abajo de la lista de Productos (F3), «Cambiar precios» se abre a 
   al paso de abajo o como estaba (o el producto no cambia); solo productos activos (sin kits), y hasta 1,000 a la vez;
   Ctrl+Enter para aplicar, para que un doble Enter no aplique sin querer.
 
+**Avance (2026-10-22): las promociones con fechas, en Productos.** Lo que en el regreso a clases se hacía con el F11 de
+eleventa (dejar al costo los productos estratégicos) y sus 3×2 ([fase 3](fase-3-precios-clientes.md#promociones-y-kits),
+[paridad](paridad-eleventa.md#venta-y-cobro)). El dueño las había dejado para antes del próximo regreso a clases; el
+2026-10-22 pidió seguir hasta que el POS iguale a eleventa. Abajo de la lista de Productos (F3), «Promociones» se abre a la
+derecha, con lo que corre hoy, lo que viene y lo que terminó:
+- **Los tipos:** lleva N y paga M (3×2: de cada N iguales, N − M van gratis); el segundo a mitad de precio; un porcentaje
+  menos sobre el menudeo, en productos, un departamento o una marca; y el precio especial de cada producto. Cuentan cada
+  producto aparte y en piezas, como el mayoreo (un paquete de 12 son 12 para el 3×2); a granel, las unidades enteras. Los
+  productos se marcan en la lista de la izquierda, como en «Cambiar precios».
+- **Cuándo:** desde un día y hasta otro (o hasta que se termine), los días de la semana que se elijan, en esta sucursal o
+  en todas. «Terminar ahora» la quita desde ya; una terminada se puede volver a usar («Volver a usarla»).
+- **Se aplican solas y no se acumulan:** el cálculo del precio, el único lugar donde se decide (la pantalla, el cobro sin
+  conexión y el servicio lo usan igual), se queda con la que deja el importe más bajo, también contra el mayoreo y el
+  mayoreo siempre del cliente: con 5 de algo, el 10 %; con 12, el mayoreo si deja menos. Un descuento con Ctrl+D va encima
+  del precio con la promoción; el del cliente registrado, no: se queda lo que más le conviene. Un precio cambiado con Ctrl+E
+  ya no lleva promoción.
+- **Nunca debajo del costo sin autorización,** como Ctrl+D: al guardarla se revisa su precio más bajo (con el grupo
+  completo de un 3×2, y con cada presentación de precio propio) contra el costo con que saldría del inventario; si algo
+  queda debajo, la guarda quien tiene «Vender debajo del costo» (antes ve cuáles) o con la autorización de quien lo tiene,
+  y la bitácora lo dice. Lo que después quedaría debajo sin autorizarse no la lleva («Fuera por el costo»). «Dejar al
+  costo» pone cada producto marcado a su costo (redondeado hacia arriba al centavo), desde hoy y por un mes (se cambia); es
+  para quien tiene «Ver costos, utilidad y margen», que también ve el costo y el margen de cada uno.
+- **La venta y el ticket la dicen:** el renglón, «Regreso a clases · ahorra $6.00», como el mayoreo; bajo el total,
+  «Ahorro por promociones»; el ticket, «Promoción Regreso a clases  -$6.00» bajo el artículo, y cuenta en «Usted ahorró».
+  El verificador (F9) da el precio de hoy con la promoción y dice cuál.
+- **Las cajas, también sin conexión:** su copia lleva las promociones de su sucursal que no han terminado, también las que
+  empiezan después, con sus fechas (el formato de la copia sube a 5). Cada caja decide con su fecha: la que empieza o
+  termina a medianoche se aplica sin bajar nada. Los cambios de la copia las traen completas cuando ya no son las suyas
+  (por su huella), también si una terminó sin que cambiara nada más; la copia puesta al día queda igual que la completa.
+- **El cobro no cobra una promoción que el cajero no vio:** la caja dice qué promoción aplicó en cada línea y con qué día;
+  si la caja principal aplicaría otra (empezó, terminó o la cambiaron), contesta como con un precio que cambió, con sus
+  promociones, y la caja pone el ticket al día. Lo cobrado sin conexión sube como se cobró, con su promoción.
+- **En el piloto con eleventa** no se aplican en la caja 2 ni se dan de alta: los precios se ponen en eleventa
+  (2026-10-10), así la caja 2 cobra lo mismo que la caja de eleventa y el puente manda lo cobrado. La página lo dice; solo
+  se consultan (y se pueden terminar).
+- **Los kits no:** la tienda no los usa en eleventa; siguen pospuestos.
+- **Revisión del PR #132** (el mismo día): un precio cambiado con Ctrl+E justo al de la lista ya no da «cambió el
+  precio» una y otra vez (es precio cambiado: gasta su autorización, queda en la bitácora y va sin promoción), tampoco
+  sin conexión ni en el piloto; el costo se revisa también con la presentación de precio propio (una caja de 12 con un
+  3×2); lo que después quedaría debajo del costo se queda fuera hasta autorizarse («Fuera por el costo»); el día de la
+  caja solo cuenta cerca de la medianoche y, con la fecha de la PC mal, la caja se pone al día con el de la caja
+  principal y lo dice; el descuento del cliente registrado no va encima de la promoción; un descuento en monto más
+  grande que el renglón con su nueva promoción primero pone el ticket al día; devolver de una en una las piezas de un
+  3×2 suma lo cobrado; el porcentaje con coma («7,5») no se acepta; cuánto falta para el costo solo lo ve quien ve la
+  utilidad; Ctrl+E y F11 dicen que el renglón va con su promoción. El navegador de desarrollo sin base local no tiene
+  copia y no aplica promociones: es solo para probar.
+- **Por revisar** (decidido mientras el dueño no estaba; [la tabla](#decidido-mientras-el-dueño-no-estaba-2026-10-17)):
+  que en el piloto no se apliquen; el 3×2 y el segundo a mitad por producto, sin juntar productos distintos de un
+  departamento; en un empate gana el mayoreo; el descuento a mano va encima, el del cliente registrado no (se queda lo
+  que más le conviene); lo que después quedaría debajo del costo se queda fuera hasta autorizarse, y la autorización
+  vale para toda la promoción; el costo se revisa con la sucursal donde se guarda; «Dejar al costo» al centavo y por un
+  mes; el nombre de hasta 40 letras; y el día de la caja al cobrar, solo a menos de una hora de la medianoche.
+
 **Avance (2026-10-16): Productos e Inventario en el piloto.** Con la lectura de eleventa prendida, lo que ella pone no
 se cambia en la caja 2: si no, la siguiente lectura lo regresaría sin avisar. Una nota lo dice en cada página y el
 servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-cada-pocos-minutos-paso-1)).
@@ -1317,7 +1370,7 @@ para esos días ([forma de trabajar](notas.md#forma-de-trabajar), [guía de los 
 | Instalador de la tienda, soporte a distancia (NetBird gratis u otro) y cómo se actualiza | [Por definir](#pendientes) | Falta |
 | Respaldo cifrado fuera de la tienda y vigilancia de la caja principal: se reporta a Healthchecks.io cada pocos minutos en horario, y si no abre o se apaga, Healthchecks.io avisa por Telegram (el bot del POS no puede avisar de su propia caja) | Fase 5 ([notas](notas.md#respaldo-fuera-de-la-tienda-y-aviso-de-apertura)) | Falta (chico) |
 | Depuración, conteo físico, importación final y arranque | Fase 5 y [depuración](#depuración-del-inventario) | Falta |
-| Promociones y kits, si el piloto queda cerca del regreso a clases | [Fase 3](fase-3-precios-clientes.md) | Pospuestas por ahora |
+| Promociones y kits, si el piloto queda cerca del regreso a clases | [Fase 3](fase-3-precios-clientes.md) | Las promociones con fechas ya están (2026-10-22, [avance](#primero-la-versión-unicaja-entrega-0)); en el piloto no se aplican. Los kits siguen pospuestos: la tienda no los usa |
 
 **Avance (2026-10-17): el simulador de cajas y el día pico en la PC de desarrollo.** Lo que pedían la fila del día pico
 y la [prueba de las sucursales](prueba-sucursales-linux.md#lo-que-hay-que-arreglar-o-construir): un día pico con varias
@@ -1482,6 +1535,13 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | Si el `appsettings.json` instalado trae ajustes propios (como se configuraba antes), ¿qué hace `actualizar.ps1`? (2026-10-21) | No sigue y dice cuáles (solo los nombres, nunca un valor): van en `servicio.json`. Con `-Forzar` sigue sin ellos, y el de antes queda en el respaldo | Paso 6 del piloto |
 | Si la base ya tiene el aviso de dañada, ¿se actualiza? (2026-10-21) | No: primero se restaura el respaldo de antes del apagón (actualizar no lo arregla, y regresar por ese aviso no ayudaría). Con `-Forzar` sí, y ese aviso ya no hace regresar | Paso 6 del piloto |
 | Si falta `servicio.json`, ¿lo pone `actualizar.ps1`? (2026-10-21) | Sí, la plantilla sin ajustes (nunca encima de uno que ya esté): así siempre está, y una cuenta común de Windows no puede ponerlo (en ProgramData se pueden crear archivos nuevos) | Paso 6 del piloto |
+| ¿Las promociones se aplican en la caja 2 durante el piloto? (2026-10-22) | No: los precios se ponen en eleventa (2026-10-10). Si la caja 2 aplicara las suyas, cobraría distinto que la caja de eleventa por lo mismo el mismo día; lo de temporada (el F11 al costo) se sigue haciendo allá. Con la lectura de eleventa prendida, el catálogo del servicio no lleva promociones (ni la copia ni el cobro las aplican) y Productos › Promociones solo las consulta, con la nota de por qué; terminarlas sí se puede. Al dejar eleventa se prenden solas | Promociones |
+| Las promociones: cómo cuentan y qué gana (2026-10-22) | El 3×2 y el segundo a mitad cuentan cada producto aparte, en piezas como el mayoreo (no juntan productos distintos de un departamento); no se acumulan: la que deja menos, también contra el mayoreo (en un empate, el mayoreo); el descuento a mano (Ctrl+D) va encima de la promoción; el costo se revisa al guardarla, con su precio más bajo (también el de una presentación con precio propio); «Dejar al costo» al centavo hacia arriba, desde hoy y por un mes, para quien ve la utilidad; el nombre, de hasta 40 letras (sale en el ticket) | Promociones |
+| El descuento del cliente registrado con una promoción (2026-10-22, revisión del PR #132) | No se acumulan: en cada renglón se queda lo que más le conviene al cliente, la promoción o su precio con su descuento (como la promoción contra el mayoreo; en un empate, su descuento). Con la promoción, su descuento queda en pausa en el renglón y vuelve si deja de convenirle (otra cantidad). Antes iba encima y una promoción «al costo» pedía autorización al cobrar | Promociones |
+| Lo que después queda debajo del costo (2026-10-22, revisión del PR #132) | No la lleva: un producto que llega a su departamento o su marca, o al que le baja el precio o le sube el costo, y con ella quedaría debajo de lo que cuesta, se queda fuera (las cajas no se la aplican y el cajero no se entera) mientras no se autorice; el detalle lo dice («Fuera por el costo»). Se autoriza guardándola otra vez con «Vender debajo del costo» o con la autorización de quien lo tiene: guardada así, la llevan todos aunque queden debajo, también lo que llegue después. Quien puede vender debajo del costo ve antes cuáles y la guarda otra vez para dejarla así. Antes, lo que llegaba después se vendía debajo del costo sin autorización | Promociones |
+| Las promociones en varias sucursales (2026-10-22, revisión del PR #132) | Al guardarla se revisa el costo con los precios y costos de la sucursal de la caja donde se guarda; en otra sucursal, lo que allí quedaría debajo se queda fuera si no se autorizó, con sus precios y costos. La tienda tiene una sucursal | Promociones |
+| El día de la caja al cobrar promociones (2026-10-22, revisión del PR #132) | La caja principal acepta el de la caja si es el suyo o, a menos de una hora de su medianoche, el de al lado (un reloj unos minutos atrás o adelante). Si no, cobra con el suyo y su respuesta lo dice: la caja pone el ticket al día con ese día, avisa que la fecha de la PC está mal y el siguiente cobro pasa (no se repite). Antes aceptaba un día de diferencia a cualquier hora | Promociones |
+| Los kits (2026-10-22) | Pospuestos: no hay kits en la base de eleventa («No la usan», [paridad](paridad-eleventa.md#productos-y-precios)) | Promociones |
 
 ## Recomendaciones
 
@@ -1547,7 +1607,8 @@ Fase 3:
 - [x] Entrega 1: mayoreo y redondeo al peso
 - [x] Entrega 2: clientes registrados y crédito
 - [ ] Entrega 3: consumibles del mes
-- [ ] Promociones y kits: antes del próximo regreso a clases
+- [x] Promociones con fechas (2026-10-22): se aplican solas, también sin conexión ([fase 3](fase-3-precios-clientes.md#promociones-y-kits))
+- [ ] Kits: pospuestos, la tienda no los usa en eleventa (decidido el 2026-10-22, por revisar)
 
 Piloto en la caja 2 ([ver arriba](#la-versión-unicaja-y-el-piloto-en-la-caja-2)):
 

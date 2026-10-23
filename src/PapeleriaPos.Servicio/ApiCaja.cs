@@ -193,7 +193,7 @@ public static class ApiCaja
             await db.ConfiguracionesSucursal.AsNoTracking().Where(c => c.SucursalId == sucursalId).Select(c => c.Rapidos).FirstOrDefaultAsync() ?? []);
 
         api.MapPost("/ventas", async (SolicitudCobro s, PosDbContext db, CatalogoEnMemoria catalogo, IOptions<OpcionesTicket> ticket, EnvioVentasEleventa eleventa,
-            OpcionesEleventa opcionesEleventa) =>
+            OpcionesEleventa opcionesEleventa, TimeProvider reloj) =>
         {
             // La caja manda otra vez la misma venta si no le llegó la respuesta: se regresa el ticket que ya se cobró, como se cobró,
             // y la caja dice que ya había quedado.
@@ -205,13 +205,25 @@ public static class ApiCaja
 
             var turno = await db.Turnos.FindAsync(s.TurnoId) ?? throw new InvalidOperationException("El turno no existe.");
             var caja = await db.Cajas.FindAsync(s.CajaId) ?? throw new InvalidOperationException("La caja no existe.");
+            // Las promociones (fase 3), con el día con que las puso la caja: una caja de antes (o sin copia) no las conoce, y se
+            // cobra sin ellas, como las calculó.
+            var delCobro = await PromocionesDelCobroAsync(db, catalogo, caja.SucursalId, s.DiaPromociones, reloj);
+            // Un descuento que no entra (en monto, más que el renglón) se dice después de lo que cambió: con otra promoción, el
+            // renglón vale otra cosa y primero la caja pone el ticket al día (409).
+            var descuentosQueNoEntran = new List<ArgumentException>();
             var venta = await ArmarVentaAsync(db, catalogo, caja, turno.Id, s.CajeroId, s.VentaId ?? Ids.Nuevo(), s.Lineas,
-                await ApiClientes.MayoreoDelCobroAsync(db, s.ClienteId, s.MayoreoDeCliente));
+                await ApiClientes.MayoreoDelCobroAsync(db, s.ClienteId, s.MayoreoDeCliente), delCobro.Venta, descuentosQueNoEntran: descuentosQueNoEntran);
             // La caja escaneó contra su copia (entrega 5): si el precio o el mayoreo de algo del ticket cambió después, no se
             // cobra con precios que el cajero no vio; se le contestan los de ahora y la caja pone el ticket al día. Una caja de
-            // antes no manda la versión: se cobra como siempre.
-            if (s.VersionCatalogo is { } version && await PreciosCambiadosAsync(db, catalogo, caja.SucursalId, s.Lineas, version) is { } cambiados)
+            // antes no manda la versión: se cobra como siempre. Lo mismo si la promoción de una línea no es la que aplica aquí
+            // (empezó, terminó o cambió después de su copia): con las promociones de aquí y su día, para que la caja ponga su
+            // ticket igual.
+            var deLaPromocion = delCobro.Venta is null ? [] : PromocionesDelCobro.Distintas(venta, s.Lineas);
+            if ((s.VersionCatalogo is not null || deLaPromocion.Count > 0)
+                && await PreciosCambiadosAsync(db, catalogo, caja.SucursalId, s.Lineas, s.VersionCatalogo, deLaPromocion, delCobro) is { } cambiados)
                 return Results.Json(cambiados, statusCode: StatusCodes.Status409Conflict);
+            if (descuentosQueNoEntran.Count > 0)
+                throw descuentosQueNoEntran[0];
             (venta.ClienteId, venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId, venta.AutorizacionCreditoId) =
                 (s.ClienteId, s.AutorizacionDescuentoId, s.AutorizacionBajoCostoId, s.AutorizacionCreditoId);
             // Las impresiones van juntas en una línea; su precio y costo salen de cada trabajo, no de la caja.
@@ -282,13 +294,62 @@ public static class ApiCaja
     }
 
     /// <summary>
-    /// Arma la venta con los precios del catálogo: la caja solo dice qué y cuánto. Un precio distinto (cambiado en la caja,
-    /// o el que se cobró sin conexión) queda como precio cambiado. Con <paramref name="mayoreoDeCliente"/> (el cliente del
-    /// ticket paga mayoreo siempre), los mismos precios que calculó la caja.
+    /// Cuánto puede ir el día de la caja distinto del de aquí, cerca de la medianoche de aquí (fase 3): un reloj unos minutos
+    /// atrás o adelante. Fuera de eso, cuenta el día de aquí.
     /// </summary>
+    public static readonly TimeSpan CercaDeMedianoche = TimeSpan.FromMinutes(60);
+
+    /// <summary>Las promociones con que se cobra y el día con que se aplican (vacías sin el día de la caja).</summary>
+    internal sealed record PromocionesDeUnCobro(PromocionesDeLaVenta? Venta, List<PromocionDto>? Lista, DateOnly? Dia);
+
+    /// <summary>
+    /// Las promociones con que se cobra en la sucursal de la caja (fase 3), con el día con que las aplicó la caja: el de hoy
+    /// aquí o, cerca de la medianoche de aquí (<see cref="CercaDeMedianoche"/>), el de ayer (un reloj unos minutos atrás) o el
+    /// de mañana (uno adelantado). Si no, con el de hoy: a mediodía, una caja con el reloj un día atrás no cobra la promoción que
+    /// terminó ayer. Sin el día (una caja de antes, o sin copia todavía), ninguna: se cobra como lo calculó la caja.
+    /// </summary>
+    /// <param name="reloj">El de los trabajos de fondo del servicio (las pruebas lo cambian), como el de la copia.</param>
+    internal static async Task<PromocionesDeUnCobro> PromocionesDelCobroAsync(
+        PosDbContext db, CatalogoEnMemoria catalogo, Guid sucursalId, DateOnly? diaDeLaCaja, TimeProvider reloj, CancellationToken ct = default)
+    {
+        if (diaDeLaCaja is not { } suyo)
+            return new PromocionesDeUnCobro(null, null, null);
+        var dia = DiaDelCobro(suyo, reloj.GetUtcNow().UtcDateTime);
+        var hoy = CopiaDeLaCaja.Hoy(reloj);
+        var lista = await catalogo.PromocionesAsync(db, sucursalId, dia < hoy ? dia : hoy, ct);
+        var porProducto = new PromocionesPorProducto(lista);
+        return new PromocionesDeUnCobro(new PromocionesDeLaVenta(porProducto.De, () => dia), lista, dia);
+    }
+
+    /// <summary>El día con que se cobran las promociones: el de la caja si es el de aquí o, cerca de la medianoche de aquí, el de al lado.</summary>
+    public static DateOnly DiaDelCobro(DateOnly diaDeLaCaja, DateTime ahoraUtc)
+    {
+        var aqui = HoraMexico.ALocal(ahoraUtc);
+        var hoy = DateOnly.FromDateTime(aqui);
+        var desdeMedianoche = aqui - aqui.Date;
+        return diaDeLaCaja == hoy
+               || diaDeLaCaja == hoy.AddDays(-1) && desdeMedianoche <= CercaDeMedianoche
+               || diaDeLaCaja == hoy.AddDays(1) && TimeSpan.FromDays(1) - desdeMedianoche <= CercaDeMedianoche
+            ? diaDeLaCaja
+            : hoy;
+    }
+
+    /// <summary>
+    /// Arma la venta con los precios del catálogo: la caja solo dice qué y cuánto. El precio que manda la caja es el que se
+    /// cambió con Ctrl+E (solo de esas líneas lo manda): queda como precio cambiado aunque sea el de la lista, como en su
+    /// pantalla (sin mayoreo ni promoción). Con <paramref name="comoSeCobro"/> (lo que sube sin conexión, con el precio de cada
+    /// línea), solo uno distinto, o el de una línea que aquí llevaría promoción, es precio cambiado; y la promoción que dice cada
+    /// línea, con lo que se ahorró: ya se cobró así. Con <paramref name="mayoreoDeCliente"/> (el cliente del ticket paga mayoreo
+    /// siempre), los mismos precios que calculó la caja. Con <paramref name="promociones"/> (fase 3), las que aplican aquí.
+    /// </summary>
+    /// <param name="descuentosQueNoEntran">
+    /// Si viene, el descuento que no entra en su línea (en monto, más que ella) se anota aquí en lugar de fallar: el cobro primero
+    /// revisa si cambió el precio o la promoción de algo (con otra promoción, la línea vale otra cosa).
+    /// </param>
     internal static async Task<Venta> ArmarVentaAsync(
         PosDbContext db, CatalogoEnMemoria catalogo, Caja caja, Guid turnoId, Guid cajeroId, Guid ventaId, IReadOnlyList<LineaSolicitada> lineas,
-        bool mayoreoDeCliente = false)
+        bool mayoreoDeCliente = false, PromocionesDeLaVenta? promociones = null, bool comoSeCobro = false,
+        List<ArgumentException>? descuentosQueNoEntran = null)
     {
         var venta = new Venta
         {
@@ -300,6 +361,7 @@ public static class ApiCaja
             Serie = caja.Serie,
             CreadaUtc = db.Reloj.GetUtcNow().UtcDateTime,
             MayoreoDeCliente = mayoreoDeCliente,
+            Promociones = promociones,
         };
         foreach (var l in lineas)
         {
@@ -314,9 +376,20 @@ public static class ApiCaja
             var producto = await catalogo.PorVarianteAsync(db, varianteId, caja.SucursalId, conExistencia: false)
                 ?? throw new InvalidOperationException($"«{l.Descripcion ?? "Un producto"}» ya no está en el catálogo.");
             var agregada = venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
-            if (l.PrecioCentavos is { } precio && precio != agregada.PrecioCentavos)
+            if (comoSeCobro && l.PromocionId is { } promocion && l.AhorroPromocionCentavos is > 0 and var ahorro)
+                venta.FijarPromocionCobrada(agregada, l.PrecioCentavos ?? agregada.PrecioCentavos, promocion, l.Promocion ?? "Promoción", ahorro);
+            // Un precio cambiado en la caja no lleva promoción, aunque sea el de la lista: si no, la caja lo cobraría sin ella y
+            // aquí con ella, y el cobro diría que cambió la promoción una y otra vez.
+            else if (l.PrecioCentavos is { } precio && (!comoSeCobro || precio != agregada.PrecioCentavos || agregada.TienePromocion))
                 venta.CambiarPrecio(agregada, precio, l.AutorizacionId);
-            venta.AplicarDescuentoSolicitado(agregada, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
+            try
+            {
+                venta.AplicarDescuentoSolicitado(agregada, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
+            }
+            catch (ArgumentException ex) when (descuentosQueNoEntran is not null)
+            {
+                descuentosQueNoEntran.Add(ex);
+            }
         }
         return venta;
     }
@@ -327,13 +400,23 @@ public static class ApiCaja
     /// Una versión más nueva que la del servicio quiere decir que su base cambió entera (la prueba empezó de cero): se
     /// revisa todo.
     /// </summary>
+    /// <param name="deLaPromocion">Los de una promoción que no es la que aplicó la caja (fase 3): también cambiaron.</param>
+    /// <param name="promociones">
+    /// Con las que se cobra aquí y su día: van con la respuesta, para que la caja ponga su ticket igual (con ese día, si su reloj
+    /// trae otro).
+    /// </param>
     private static async Task<PreciosCambiadosDto?> PreciosCambiadosAsync(
-        PosDbContext db, CatalogoEnMemoria catalogo, Guid sucursalId, IReadOnlyList<LineaSolicitada> lineas, long version)
+        PosDbContext db, CatalogoEnMemoria catalogo, Guid sucursalId, IReadOnlyList<LineaSolicitada> lineas, long? version,
+        IReadOnlyCollection<Guid> deLaPromocion, PromocionesDeUnCobro promociones)
     {
         var actual = await catalogo.VersionAsync(db);
-        long Desde(LineaSolicitada l) => (l.VersionCatalogo ?? version) is var v && v <= actual ? v : -1;
-        var cambiados = await PreciosDeLaCopia.CambiadosAsync(db, sucursalId, lineas.Select(l => l with { VersionCatalogo = Desde(l) }).ToList(),
-            version, actual);
+        var cambiados = new HashSet<Guid>(deLaPromocion);
+        if (version is { } delTicket)
+        {
+            long Desde(LineaSolicitada l) => (l.VersionCatalogo ?? delTicket) is var v && v <= actual ? v : -1;
+            cambiados.UnionWith(await PreciosDeLaCopia.CambiadosAsync(db, sucursalId, lineas.Select(l => l with { VersionCatalogo = Desde(l) }).ToList(),
+                delTicket, actual));
+        }
         if (cambiados.Count == 0)
             return null;
         var productos = new List<ProductoVentaDto>();
@@ -342,7 +425,8 @@ public static class ApiCaja
             if (await catalogo.PorVarianteAsync(db, varianteId, sucursalId) is { } producto)
                 productos.Add(producto);
         }
-        return new PreciosCambiadosDto(PreciosDeLaCopia.Mensaje(productos), productos, actual);
+        return new PreciosCambiadosDto(PreciosDeLaCopia.Mensaje(productos), productos, actual, Promociones: promociones.Lista,
+            DiaPromociones: promociones.Dia);
     }
 
     internal static async Task<TurnoDto> TurnoDtoAsync(PosDbContext db, Turno t)
