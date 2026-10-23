@@ -404,3 +404,48 @@ public sealed class GuardadoDePrueba : PapeleriaPos.Interfaz.IGuardarArchivo
         return Task.FromResult(Cancelar ? null : new PapeleriaPos.Interfaz.ArchivoGuardado(archivo.Nombre, $@"{Carpeta}\{archivo.Nombre}"));
     }
 }
+
+/// <summary>
+/// Hace del «Abrir» de la caja (<see cref="PapeleriaPos.Interfaz.IAbrirArchivo"/>, la ventana de Windows): no pregunta nada y
+/// contesta con el archivo que se le dé (como si se hubiera elegido), o como si se hubiera cancelado. Anota lo que se le pidió.
+/// </summary>
+public sealed class AbiertoDePrueba : PapeleriaPos.Interfaz.IAbrirArchivo
+{
+    private readonly List<PapeleriaPos.Interfaz.ArchivoPorAbrir> _pedidos = [];
+
+    /// <summary>Lo que contesta la siguiente vez; vacío: como si se cancelara.</summary>
+    public PapeleriaPos.Interfaz.ArchivoAbierto? Elegido { get; set; }
+
+    public IReadOnlyList<PapeleriaPos.Interfaz.ArchivoPorAbrir> Pedidos
+    {
+        get
+        {
+            lock (_pedidos)
+                return [.. _pedidos];
+        }
+    }
+
+    public Task<PapeleriaPos.Interfaz.ArchivoAbierto?> AbrirAsync(PapeleriaPos.Interfaz.ArchivoPorAbrir archivo)
+    {
+        lock (_pedidos)
+            _pedidos.Add(archivo);
+        return Task.FromResult(Elegido);
+    }
+}
+
+/// <summary>
+/// Hace del archivo que da el selector del navegador (<c>&lt;input type=file&gt;</c>, la caja del navegador): con su nombre y lo
+/// que lleva; como el de verdad, no se deja leer más allá de lo que se pide.
+/// </summary>
+public sealed class ArchivoDelNavegadorDePrueba(string nombre, byte[] datos) : Microsoft.AspNetCore.Components.Forms.IBrowserFile
+{
+    public string Name => nombre;
+    public DateTimeOffset LastModified { get; } = DateTimeOffset.UtcNow;
+    public long Size => datos.Length;
+    public string ContentType => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+    public Stream OpenReadStream(long maxAllowedSize = 512000, CancellationToken cancellationToken = default) =>
+        Size > maxAllowedSize
+            ? throw new IOException($"Supplied file with size {Size} bytes exceeds the maximum of {maxAllowedSize} bytes.")
+            : new MemoryStream(datos, writable: false);
+}

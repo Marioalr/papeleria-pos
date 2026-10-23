@@ -705,6 +705,22 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
             + (departamentoId is { } d ? $"&departamentoId={d}" : ""));
 
     /// <summary>
+    /// Los productos de la lista con esos filtros (Productos › Productos en Excel, 2026-10-22), en Excel: una fila por variante y sus
+    /// presentaciones en otra hoja; el costo y el margen, solo para quien los ve.
+    /// </summary>
+    public Task<ArchivoPorGuardar> ExcelProductosAsync(Guid sucursalId, Guid usuarioId, string? texto, FiltroProductos filtro, Guid? departamentoId,
+        bool inactivos) =>
+        ArchivoDeLaPrincipalAsync($"api/catalogo/lista/excel?sucursalId={sucursalId}&usuarioId={usuarioId}&q={Uri.EscapeDataString(texto ?? "")}"
+            + $"&filtro={filtro}" + (departamentoId is { } d ? $"&departamentoId={d}" : "") + $"&inactivos={inactivos}");
+
+    /// <summary>
+    /// Lo completo de un renglón de la bitácora que cambió muchas cosas a la vez (una importación de Excel: cada producto con lo de
+    /// antes y lo que quedó), en Excel.
+    /// </summary>
+    public Task<ArchivoPorGuardar> ExcelDetalleBitacoraAsync(Guid cajaId, Guid usuarioId, Guid bitacoraId) =>
+        ArchivoDeLaPrincipalAsync($"api/cajas/{cajaId}/bitacora/{bitacoraId}/excel?usuarioId={usuarioId}");
+
+    /// <summary>
     /// Un archivo que arma la caja principal: sin ella, lo dice sin esperar. Con su propio tope (<see cref="RedCaja.TopeDescargas"/>):
     /// si se le acaba, la caja principal sigue armándolo, no se fue, y la caja no pasa a sin conexión por eso (revisión del PR
     /// #134; si de verdad se fue, el latido lo nota).
@@ -915,6 +931,19 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     public Task<PromocionFichaDto> TerminarPromocionAsync(Guid id, SolicitudTerminarPromocion solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<PromocionFichaDto>($"api/promociones/{id}/terminar", solicitud));
+
+    // ── Productos en Excel: importar (Productos › Productos en Excel, 2026-10-22, solo con la caja principal) ──
+
+    /// <summary>Qué cambia con ese Excel, sin cambiar nada: lo que cambia producto por producto, lo nuevo y lo que se ignora (y por qué).</summary>
+    public Task<VistaImportacionDto> VistaImportacionAsync(SolicitudImportarProductos solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<VistaImportacionDto>("api/catalogo/importar/vista", solicitud));
+
+    /// <summary>
+    /// Aplica lo que se vio (el mismo archivo, con su huella y el Id de esta vez): si algo cambió desde la vista, el servicio no lo
+    /// aplica; si ya lo había aplicado (se perdió la respuesta), no lo hace otra vez.
+    /// </summary>
+    public Task<ImportacionAplicadaDto> ImportarProductosAsync(SolicitudImportarProductos solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<ImportacionAplicadaDto>("api/catalogo/importar", solicitud));
 
     // ── Compras (F4, solo con la caja principal) ──
 

@@ -1,0 +1,623 @@
+@* Productos (F3) › «Productos en Excel» (2026-10-22; en eleventa, «Exportar» e «Importar» del catálogo), en el detalle de la página
+   como «Cambiar precios». Exportar: los productos de la lista con sus filtros, como se ven, a Excel (ExportarExcel: «Guardar
+   como» en la ventana de Windows, una descarga en el navegador), una fila por variante y sus presentaciones en otra hoja; el
+   costo y el margen solo para quien los ve. Importar: el mismo Excel ya cambiado. En la ventana de Windows se elige con «Abrir»
+   de Windows (IAbrirArchivo, en la carpeta del último que se guardó); en el navegador, con su selector de archivos. Siempre se ve
+   primero qué cambia (producto por producto, con lo de antes y lo nuevo), qué es nuevo y qué se ignora y por qué; nada cambia
+   hasta «Aplicar» o Ctrl+Enter, todo junto. Esc cierra la vista y, sin ella, regresa al producto. En el piloto con eleventa no
+   se importa (y lo dice); exportar, sí. *@
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+@inject IServiceProvider Servicios
+
+<div class="vn-det-cab">
+    <div>
+        <h2>Productos en Excel</h2>
+        <p>Exporta la lista, cámbiala en Excel e impórtala: primero se ve qué cambia. Esc regresa al producto.</p>
+    </div>
+</div>
+<div id="excel-productos" class="vn-adentro vn-excel" tabindex="-1" @onkeydown="AlTeclearAsync">
+    @if (_vista is null)
+    {
+        <h3>Exportar</h3>
+        <p class="vn-excel-que">@ExportarTexto</p>
+        <div class="vn-botonera">
+            <ExportarExcel Id="excel-exportar" Pedir="PedirAsync" Desactivado="@(EnLaLista == 0)" />
+        </div>
+    }
+
+    <h3>Importar</h3>
+    @if (_piloto)
+    {
+        <div class="vn-alerta info"><Ico Nombre="info" /><div><span id="excel-piloto">@ProductosEnExcel.ImportarEnElPiloto</span></div></div>
+    }
+    else if (!Acceso.Puede(AccionControlada.EditarCatalogo))
+    {
+        <p class="nota">Importa quien tiene el permiso «Productos, precios y etiquetas»: puede cambiar los precios de muchos a la vez.</p>
+    }
+    else
+    {
+        @if (_vista is null)
+        {
+            <p class="nota">
+                Elige el Excel que exportaste, ya cambiado y guardado en Excel. Cada producto se reconoce por su código; un código que no tiene
+                nadie es un producto nuevo. Primero se ve qué cambia, qué es nuevo y qué se ignora; nada cambia hasta «Aplicar» (Ctrl+Enter).
+            </p>
+        }
+        <div class="vn-botonera">
+            @if (Abrir is not null)
+            {
+                <button id="excel-elegir" class="vn-boton @(_vista is null ? "primario" : "")" disabled="@(_paso is not null)" @onclick="ElegirAsync">
+                    @(_vista is null ? "Importar de Excel…" : "Elegir otro archivo…")
+                </button>
+            }
+            else
+            {
+                @* En la caja del navegador: su selector de archivos, que solo se abre con un clic o una tecla de quien la usa. *@
+                <label id="excel-elegir" class="vn-boton vn-archivo @(_vista is null ? "primario" : "") @(_paso is not null ? "ocupado" : "")">
+                    @(_vista is null ? "Importar de Excel…" : "Elegir otro archivo…")
+                    <InputFile accept="@Aceptados" disabled="@(_paso is not null)" OnChange="ElegidoEnElNavegadorAsync" />
+                </label>
+            }
+            @if (_vista is { } abierta)
+            {
+                @if (abierta.HayQueAplicar)
+                {
+                    <button id="excel-aplicar" class="vn-boton primario" disabled="@(_paso is not null)" @onclick="AplicarAsync">
+                        @AplicarTexto(abierta) <kbd>Ctrl+Enter</kbd>
+                    </button>
+                }
+                <button id="excel-cerrar" class="vn-boton" @onclick="CerrarVista">@(abierta.HayQueAplicar ? "No aplicar" : "Cerrar") <kbd>Esc</kbd></button>
+            }
+        </div>
+        @if (_paso is not null)
+        {
+            <p class="nota" role="status">@_paso</p>
+        }
+        @if (_error is not null)
+        {
+            <p id="excel-error" class="error">@_error</p>
+        }
+        @if (_aviso is not null)
+        {
+            <p id="excel-aviso" class="aviso" role="status">@_aviso</p>
+        }
+        @if (_vista is { } vista)
+        {
+            <p id="excel-resumen" class="vn-excel-resumen"><strong>«@vista.Archivo»</strong>: @Resumen(vista)</p>
+            @if (vista.DepartamentosNuevos.Count > 0)
+            {
+                <p class="nota">
+                    @(vista.DepartamentosNuevos.Count == 1 ? "Se da de alta el departamento" : "Se dan de alta los departamentos")
+                    @Lista(vista.DepartamentosNuevos.Select(d => $"«{d}»")) (nadie tenía ese nombre).
+                </p>
+            }
+            @if (vista.MarcasNuevas.Count > 0)
+            {
+                <p class="nota">@(vista.MarcasNuevas.Count == 1 ? "Marca nueva:" : "Marcas nuevas:") @Lista(vista.MarcasNuevas.Select(m => $"«{m}»")).</p>
+            }
+            @foreach (var aviso in vista.Avisos)
+            {
+                <p class="nota">@aviso</p>
+            }
+
+            @if (vista.CambiaronDespues is { Count: > 0 } aparte)
+            {
+                <h4>Cambiaron después de exportar este Excel · @Formato.Numero(aparte.Count)</h4>
+                <p class="nota">
+                    No se aplican: el Excel trae lo que tenían al exportarlo, y aplicarlo regresaría lo que se cambió después (en su ficha, en otra
+                    caja, con «Cambiar precios»). Revisa qué cambió; si de todos modos quieres lo del Excel, «Aplicarlos de todos modos».
+                </p>
+                <div class="vn-botonera">
+                    <button id="excel-de-todos-modos" class="vn-boton" disabled="@(_paso is not null)" @onclick="DeTodosModosAsync">Aplicarlos de todos modos</button>
+                </div>
+                <table class="vn-tabla vn-excel-tabla" id="excel-cambiaron-despues">
+                    <thead><tr><th>Producto</th><th>Cambió después de exportar</th><th>Lo que haría el Excel</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in DeLaPagina("cambiaron-despues", aparte))
+                        {
+                            <tr class="vn-excel-ojo">
+                                <td>@c.Producto<small>@(c.Codigo is { } codigo ? $"{codigo} · " : "")@Renglon(c.Hoja, c.Renglon)</small></td>
+                                <td><ul class="vn-excel-cambios">@foreach (var que in c.CambioDespues ?? []) { <li>@que</li> }</ul></td>
+                                <td>@Cambios(c)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @Paginas("cambiaron-despues", aparte.Count)
+            }
+
+            @if (vista.Cambian.Count > 0)
+            {
+                <h4>Cambian · @Formato.Numero(vista.TotalCambian)</h4>
+                @if (vista.ConLosQueCambiaron && vista.Cambian.Count(c => c.CambioDespues is not null) is var deTodosModos and > 0)
+                {
+                    <div class="vn-alerta" id="excel-de-todos-modos-aviso">
+                        <Ico Nombre="alerta" />
+                        <div>
+                            Se aplican de todos modos @(deTodosModos == 1 ? "1 que cambió" : $"{Formato.Numero(deTodosModos)} que cambiaron") después de exportar el
+                            Excel: van primero, con lo que cambió.
+                            <button id="excel-sin-los-cambiados" class="vn-boton" disabled="@(_paso is not null)" @onclick="SinLosCambiadosAsync">No aplicarlos</button>
+                        </div>
+                    </div>
+                }
+                @if (vista.Cambian.Any(c => c.Revisar))
+                {
+                    <p class="nota">Primero, resaltado, lo que conviene revisar: precios que bajan o que regresan a como estaban, lo que deja de venderse o vuelve a
+                        venderse, lo que cambia de departamento y los códigos que se quitan.</p>
+                }
+                <table class="vn-tabla vn-excel-tabla" id="excel-cambian">
+                    <thead>
+                        <tr>
+                            <th>Producto</th>
+                            <th>Qué cambia</th>
+                            @if (vista.ConMargen)
+                            {
+                                <th class="num">Margen</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in DeLaPagina("cambian", vista.Cambian))
+                        {
+                            <tr class="@(c.Revisar ? "vn-excel-ojo" : null)">
+                                <td>
+                                    @c.Producto
+                                    <small>@(c.Codigo is { } codigo ? $"{codigo} · " : "")@Renglon(c.Hoja, c.Renglon)</small>
+                                    @if (c.CambioDespues is { } cambio)
+                                    {
+                                        <small class="vn-excel-aviso">Cambió después de exportar: @string.Join("; ", cambio)</small>
+                                    }
+                                </td>
+                                <td>@Cambios(c)</td>
+                                @if (vista.ConMargen)
+                                {
+                                    <td class="num">
+                                        @if (c.MargenAntesCentesimas is { } antes && c.MargenDespuesCentesimas is { } despues)
+                                        {
+                                            @($"{Margen.Texto(antes)} → {Margen.Texto(despues)}")
+                                            @if (c.MargenMinimoCentesimas is { } minimo && despues < minimo)
+                                            {
+                                                <span class="vn-etiq rojo">debajo del mínimo @Margen.Texto(minimo)</span>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span class="nota">—</span>
+                                        }
+                                    </td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @Paginas("cambian", vista.Cambian.Count)
+            }
+
+            @if (vista.Nuevos.Count > 0)
+            {
+                <h4>Nuevos · @Formato.Numero(vista.TotalNuevos)</h4>
+                <table class="vn-tabla vn-excel-tabla" id="excel-nuevos">
+                    <thead><tr><th>Producto</th><th>Departamento</th><th class="num">Precio</th></tr></thead>
+                    <tbody>
+                        @foreach (var n in DeLaPagina("nuevos", vista.Nuevos))
+                        {
+                            <tr class="@(n.Aviso is null ? null : "vn-excel-ojo")">
+                                <td>
+                                    @n.Producto
+                                    <small>@n.Codigo · @Renglon(ProductosEnExcel.HojaProductos, n.Renglon)@(n.Detalle is { } detalle ? $" · {detalle}" : "")</small>
+                                    @if (n.Aviso is { } avisoNuevo)
+                                    {
+                                        <small class="vn-excel-aviso">@avisoNuevo</small>
+                                    }
+                                </td>
+                                <td>@n.Departamento</td>
+                                <td class="num">@Formato.Dinero(n.PrecioCentavos)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @Paginas("nuevos", vista.Nuevos.Count)
+            }
+
+            @if (vista.Ignorados.Count > 0)
+            {
+                <h4>Se ignoran · @Formato.Numero(vista.TotalIgnorados)</h4>
+                <p class="nota">No se importan; lo demás, sí. Corrígelos en el Excel y vuelve a importarlo: lo que ya se aplicó sale sin cambios.</p>
+                <table class="vn-tabla vn-excel-tabla" id="excel-ignorados">
+                    <thead><tr><th>Renglón</th><th>Producto</th><th>Por qué</th></tr></thead>
+                    <tbody>
+                        @foreach (var i in DeLaPagina("ignorados", vista.Ignorados))
+                        {
+                            <tr>
+                                <td class="vn-excel-renglon">@Renglon(i.Hoja, i.Renglon)</td>
+                                <td>@(i.Producto ?? "—")<small>@i.Codigo</small></td>
+                                <td>@i.Detalle</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @Paginas("ignorados", vista.Ignorados.Count)
+            }
+            @if (!vista.ConMargen && vista.TotalCambian > 0)
+            {
+                <p class="nota">El margen lo ve quien tiene el permiso «Ver costos, utilidad y margen».</p>
+            }
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+    [Parameter, EditorRequired] public PermisosDePagina Acceso { get; set; } = null!;
+
+    /// <summary>La búsqueda y los filtros de la lista: con ellos se exporta.</summary>
+    [Parameter, EditorRequired] public ProductosVistos Estado { get; set; } = null!;
+
+    /// <summary>Cuántos productos trae la lista con esos filtros (no solo los que se ven).</summary>
+    [Parameter] public int EnLaLista { get; set; }
+
+    /// <summary>El nombre del departamento del filtro, si hay uno.</summary>
+    [Parameter] public string? Departamento { get; set; }
+
+    /// <summary>Se aplicó: la página pone al día su lista (cambiaron precios, datos o hay productos nuevos).</summary>
+    [Parameter] public EventCallback AlImportar { get; set; }
+
+    /// <summary>Lo que se acepta en el selector del navegador: un libro de Excel.</summary>
+    private const string Aceptados = ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+    /// <summary>En la ventana de Windows, «Abrir» de Windows; en la caja del navegador no hay (va su selector de archivos).</summary>
+    private IAbrirArchivo? Abrir => Servicios.GetService<IAbrirArchivo>();
+
+    /// <summary>En el piloto con eleventa: aquí no se importa.</summary>
+    private bool _piloto;
+
+    /// <summary>El archivo que se eligió (lo que se vio y lo que se aplica es lo mismo: no se vuelve a leer del disco).</summary>
+    private ArchivoAbierto? _archivo;
+
+    private VistaImportacionDto? _vista;
+
+    /// <summary>El de esta vista: si la respuesta de «Aplicar» se pierde y se vuelve a oprimir, el servicio no aplica dos veces.</summary>
+    private Guid _id;
+
+    /// <summary>Lo que se está haciendo («Revisando «…»…», «Aplicando…»): mientras, no se elige ni se aplica otra cosa.</summary>
+    private string? _paso;
+
+    private string? _error;
+    private string? _aviso;
+
+    /// <summary>A dónde va el cursor después de dibujar.</summary>
+    private string? _enfocar = "#excel-exportar";
+
+    /// <summary>Sube con cada archivo que se elige: la vista de uno anterior que llega tarde ya no se enseña.</summary>
+    private int _cambios;
+
+    /// <summary>«Aplicarlos de todos modos»: también lo de los productos que cambiaron después de exportar el Excel.</summary>
+    private bool _conLosQueCambiaron;
+
+    /// <summary>Cuántos renglones de cada lista se ven a la vez: las listas llegan completas y se recorren por páginas.</summary>
+    private const int PorPagina = 50;
+
+    /// <summary>En qué página va cada lista («cambian», «nuevos», «ignorados», «cambiaron-despues»).</summary>
+    private readonly Dictionary<string, int> _paginas = [];
+
+    private IEnumerable<T> DeLaPagina<T>(string lista, IReadOnlyList<T> todos) => todos.Skip(_paginas.GetValueOrDefault(lista) * PorPagina).Take(PorPagina);
+
+    private void Pasar(string lista, int cuantas, int total)
+    {
+        var ultima = (total - 1) / PorPagina;
+        _paginas[lista] = Math.Clamp(_paginas.GetValueOrDefault(lista) + cuantas, 0, ultima);
+    }
+
+    /// <summary>«1–50 de 1,234» con «Anteriores» y «Siguientes», si la lista no cabe en una página.</summary>
+    private RenderFragment Paginas(string lista, int total) => __builder =>
+    {
+        if (total <= PorPagina)
+            return;
+        var pagina = _paginas.GetValueOrDefault(lista);
+        var desde = pagina * PorPagina + 1;
+        var hasta = Math.Min(total, desde + PorPagina - 1);
+        <div class="vn-excel-paginas">
+            <button id="@($"excel-{lista}-anteriores")" class="vn-boton" disabled="@(pagina == 0)" @onclick="() => Pasar(lista, -1, total)">‹ Anteriores</button>
+            <span id="@($"excel-{lista}-pagina")">@Formato.Numero(desde)–@Formato.Numero(hasta) de @Formato.Numero(total)</span>
+            <button id="@($"excel-{lista}-siguientes")" class="vn-boton" disabled="@(hasta == total)" @onclick="() => Pasar(lista, 1, total)">Siguientes ›</button>
+        </div>
+    };
+
+    /// <summary>Lo que cambia de un producto, un dato por renglón; lo que conviene revisar, resaltado y con por qué.</summary>
+    private RenderFragment Cambios(ProductoQueCambiaDto c) => __builder =>
+    {
+        <ul class="vn-excel-cambios">
+            @foreach (var dato in c.Cambios)
+            {
+                <li class="@(dato.Revisar is null ? null : "ojo")">
+                    <span>@dato.Dato:</span> @dato.Antes → <strong>@dato.Despues</strong>
+                    @if (Revisar(dato) is { } porQue)
+                    {
+                        <span class="vn-etiq ambar">@porQue</span>
+                    }
+                </li>
+            }
+        </ul>
+    };
+
+    /// <summary>Por qué conviene ver ese dato: «baja», «regresa lo de antes», «deja de venderse»…</summary>
+    private static string? Revisar(CambioDeDatoDto dato) => dato.Revisar switch
+    {
+        PorQueSeRevisa.BajaDePrecio => "baja",
+        PorQueSeRevisa.RegresaLoDeAntes => "regresa lo de antes",
+        PorQueSeRevisa.SeVende => dato.Despues == "No" ? "deja de venderse" : "vuelve a venderse",
+        PorQueSeRevisa.Departamento => "otro departamento",
+        PorQueSeRevisa.QuitaCodigos => "quita códigos",
+        _ => null,
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _piloto = (await Cliente.TrastiendaEnElPilotoAsync()).Productos is not null;
+        }
+        catch (ErrorCaja)
+        {
+            // Sin saberlo, el servicio decide igual: en el piloto rechaza la importación con el mismo aviso.
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool primera)
+    {
+        if (_enfocar is { } selector)
+        {
+            _enfocar = null;
+            await Js.EnfocarAsync(selector);
+        }
+    }
+
+    /// <summary>Esc: cierra la vista de lo que cambia. Devuelve si había una; sin ella, la página regresa al producto.</summary>
+    public Task<bool> CerrarAsync()
+    {
+        if (_vista is null && _paso is null)
+            return Task.FromResult(false);
+        CerrarVista();
+        StateHasChanged();
+        return Task.FromResult(true);
+    }
+
+    private void CerrarVista()
+    {
+        (_vista, _archivo, _paso, _error, _conLosQueCambiaron) = (null, null, null, null, false);
+        _cambios++;
+        _enfocar = "#excel-elegir";
+    }
+
+    /// <summary>«Aplicarlos de todos modos»: la vista otra vez, con lo de los que cambiaron después de exportar.</summary>
+    private async Task DeTodosModosAsync()
+    {
+        if (_paso is not null || _archivo is not { } archivo)
+            return;
+        _conLosQueCambiaron = true;
+        await RevisarAsync(archivo);
+    }
+
+    /// <summary>«No aplicarlos»: la vista otra vez, sin ellos.</summary>
+    private async Task SinLosCambiadosAsync()
+    {
+        if (_paso is not null || _archivo is not { } archivo)
+            return;
+        _conLosQueCambiaron = false;
+        await RevisarAsync(archivo);
+    }
+
+    /// <summary>Ctrl+Enter aplica lo que se ve.</summary>
+    private async Task AlTeclearAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && (e.CtrlKey || e.MetaKey) && !e.Repeat && _vista is { HayQueAplicar: true })
+            await AplicarAsync();
+    }
+
+    /// <summary>El Excel de la lista con sus filtros: lo arma la caja principal.</summary>
+    private Task<ArchivoPorGuardar> PedirAsync() =>
+        Cliente.ExcelProductosAsync(Caja.SucursalId, Sesion.UsuarioId, Estado.Texto, Estado.Filtro, Estado.Departamento, Estado.Inactivos);
+
+    /// <summary>«Abrir» de Windows (en la ventana de la caja).</summary>
+    private async Task ElegirAsync()
+    {
+        if (_paso is not null || Abrir is not { } abrir)
+            return;
+        (_error, _aviso) = (null, null);
+        ArchivoAbierto? archivo;
+        try
+        {
+            archivo = await abrir.AbrirAsync(new ArchivoPorAbrir("Elegir el Excel de los productos", ArchivosDeReportes.ExtensionExcel, ProductosEnExcel.BytesMaximos));
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+            return;
+        }
+        if (archivo is null)
+        {
+            _aviso = "No se importó nada: se canceló.";
+            return;
+        }
+        _conLosQueCambiaron = false;
+        await RevisarAsync(archivo);
+    }
+
+    /// <summary>El archivo que dio el selector del navegador (en la caja del navegador).</summary>
+    internal async Task ElegidoEnElNavegadorAsync(InputFileChangeEventArgs e)
+    {
+        if (_paso is not null)
+            return;
+        (_error, _aviso) = (null, null);
+        try
+        {
+            var archivo = await ArchivoDelNavegador.LeerAsync(e.File, ProductosEnExcel.BytesMaximos);
+            _conLosQueCambiaron = false;
+            await RevisarAsync(archivo);
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    /// <summary>Qué cambia con ese archivo, sin cambiar nada.</summary>
+    private async Task RevisarAsync(ArchivoAbierto archivo)
+    {
+        var cambios = ++_cambios;
+        (_vista, _archivo, _paso) = (null, archivo, $"Revisando «{archivo.Nombre}»…");
+        StateHasChanged();
+        try
+        {
+            var vista = await Cliente.VistaImportacionAsync(new SolicitudImportarProductos(Sesion.UsuarioId, Caja.SucursalId, archivo.Nombre,
+                Convert.ToBase64String(archivo.Datos), ConLosQueCambiaron: _conLosQueCambiaron));
+            if (cambios != _cambios)
+                return;
+            // El cursor, en la vista: Ctrl+Enter aplica, y un Enter de más no oprime «Aplicar». Cada lista, en su primera página.
+            (_vista, _id, _enfocar) = (vista, Ids.Nuevo(), "#excel-productos");
+            _paginas.Clear();
+        }
+        catch (ErrorCaja ex)
+        {
+            if (cambios == _cambios)
+                (_error, _archivo) = (ex.Message, null);
+        }
+        finally
+        {
+            if (cambios == _cambios)
+                _paso = null;
+        }
+    }
+
+    /// <summary>
+    /// Aplica lo que se ve, todo junto. Si algo cambió desde la vista, el servicio no aplica: la vista se vuelve a pedir (con el
+    /// mismo archivo), con el aviso. Si la caja principal no contestó, no se sabe si se aplicó: oprimirlo otra vez no lo aplica dos
+    /// veces.
+    /// </summary>
+    private async Task AplicarAsync()
+    {
+        if (_paso is not null || _vista is not { HayQueAplicar: true } vista || _archivo is not { } archivo)
+            return;
+        (_paso, _error, _aviso) = ("Aplicando…", null, null);
+        string? noSeAplico = null;
+        try
+        {
+            var hecho = await Cliente.ImportarProductosAsync(new SolicitudImportarProductos(Sesion.UsuarioId, Caja.SucursalId, archivo.Nombre,
+                Convert.ToBase64String(archivo.Datos), vista.Huella, _id, _conLosQueCambiaron));
+            (_vista, _archivo, _enfocar, _conLosQueCambiaron) = (null, null, "#excel-elegir", false);
+            _cambios++;
+            _aviso = hecho.YaSeHabiaAplicado ? $"Ya se había aplicado: {hecho.Bitacora}." : Listo(hecho);
+            await AlImportar.InvokeAsync();
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
+        {
+            _error = "La caja principal no contestó: no se sabe si se aplicó. Oprime «Aplicar» otra vez: si ya se había aplicado, lo dice sin cambiar "
+                     + "nada de nuevo.";
+        }
+        catch (ErrorCaja ex) when (ex.Codigo is null)
+        {
+            // Lo rechazó el servicio (algo cambió desde la vista): la vista con lo de ahora.
+            noSeAplico = ex.Message;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _paso = null;
+        }
+        if (noSeAplico is not null)
+        {
+            await RevisarAsync(archivo);
+            _error = _error is null ? noSeAplico : $"{noSeAplico} {_error}";
+        }
+    }
+
+    /// <summary>«Listo: cambiaron 12 productos y se dio de alta 1. Las cajas ya los tienen y quedó en la bitácora.»</summary>
+    private static string Listo(ImportacionAplicadaDto hecho)
+    {
+        var partes = new List<string>();
+        if (hecho.Cambiaron > 0)
+            partes.Add(hecho.Cambiaron == 1 ? "cambió 1 producto" : $"cambiaron {Formato.Numero(hecho.Cambiaron)} productos");
+        if (hecho.Nuevos > 0)
+            partes.Add(hecho.Nuevos == 1 ? "se dio de alta 1 producto nuevo" : $"se dieron de alta {Formato.Numero(hecho.Nuevos)} productos nuevos");
+        if (hecho.DepartamentosNuevos > 0)
+            partes.Add(hecho.DepartamentosNuevos == 1 ? "1 departamento nuevo" : $"{Formato.Numero(hecho.DepartamentosNuevos)} departamentos nuevos");
+        return $"Listo: {Lista(partes)}. Las cajas ya los tienen y quedó en la bitácora.";
+    }
+
+    /// <summary>«Los 2,345 productos de la lista, como se ven: los que coinciden con «cuaderno», de «Escritura»…».</summary>
+    private string ExportarTexto
+    {
+        get
+        {
+            var cuales = new List<string>();
+            if (Estado.Texto.Trim().Length > 0)
+                cuales.Add($"los que coinciden con «{Estado.Texto.Trim()}»");
+            if (Departamento is { } departamento)
+                cuales.Add($"de «{departamento}»");
+            cuales.AddRange(Estado.Filtro switch
+            {
+                FiltroProductos.PorCompletar => ["por completar"],
+                FiltroProductos.PocaExistencia => ["en su mínimo o debajo"],
+                FiltroProductos.MargenBajo => ["con margen bajo"],
+                _ => [],
+            });
+            if (Estado.Inactivos)
+                cuales.Add("también los inactivos");
+            var cuantos = EnLaLista switch
+            {
+                0 => "Ningún producto en la lista",
+                1 => "El producto de la lista",
+                var n => $"Los {Formato.Numero(n)} productos de la lista",
+            };
+            var filtros = cuales.Count == 0 ? (Estado.Inactivos ? "" : " (los activos)") : $": {Lista(cuales)}";
+            var costos = Acceso.Puede(AccionControlada.VerUtilidad) ? ", su costo y su margen" : "";
+            return $"{cuantos}{filtros}. Una fila por variante con sus códigos, su precio y su mayoreo, su existencia, su mínimo y su máximo{costos}; "
+                   + "sus cajas y paquetes, en otra hoja.";
+        }
+    }
+
+    /// <summary>«Aplicar: cambiar 12 productos y dar de alta 3».</summary>
+    private static string AplicarTexto(VistaImportacionDto vista)
+    {
+        var partes = new List<string>();
+        if (vista.TotalCambian > 0)
+            partes.Add(vista.TotalCambian == 1 ? "cambiar 1 producto" : $"cambiar {Formato.Numero(vista.TotalCambian)} productos");
+        if (vista.TotalNuevos > 0)
+            partes.Add(vista.TotalNuevos == 1 ? "dar de alta 1" : $"dar de alta {Formato.Numero(vista.TotalNuevos)}");
+        return $"Aplicar: {Lista(partes)}";
+    }
+
+    /// <summary>«cambian 12 · 3 nuevos · se ignoran 4 · 1,234 sin cambios», o que no cambia nada.</summary>
+    private static string Resumen(VistaImportacionDto vista)
+    {
+        var partes = new List<string>();
+        if (vista.TotalCambian > 0)
+            partes.Add(vista.TotalCambian == 1 ? "cambia 1" : $"cambian {Formato.Numero(vista.TotalCambian)}");
+        if (vista.TotalNuevos > 0)
+            partes.Add(vista.TotalNuevos == 1 ? "1 nuevo" : $"{Formato.Numero(vista.TotalNuevos)} nuevos");
+        if (vista.CambiaronDespues is { Count: > 0 } despues)
+            partes.Add(despues.Count == 1 ? "1 cambió después de exportar" : $"{Formato.Numero(despues.Count)} cambiaron después de exportar");
+        if (vista.TotalIgnorados > 0)
+            partes.Add(vista.TotalIgnorados == 1 ? "se ignora 1" : $"se ignoran {Formato.Numero(vista.TotalIgnorados)}");
+        if (vista.SinCambios > 0)
+            partes.Add($"{Formato.Numero(vista.SinCambios)} sin cambios");
+        var resumen = partes.Count == 0 ? "no trae productos" : string.Join(" · ", partes);
+        return vista.HayQueAplicar ? $"{resumen}." : $"{resumen}: no hay nada que aplicar.";
+    }
+
+    /// <summary>«renglón 5», o «renglón 4 de Presentaciones».</summary>
+    private static string Renglon(string hoja, int renglon) =>
+        hoja == ProductosEnExcel.HojaProductos ? $"renglón {renglon}" : $"renglón {renglon} de {hoja}";
+
+    /// <summary>«a», «a y b», «a, b y c».</summary>
+    private static string Lista(IEnumerable<string> partes)
+    {
+        var todas = partes.ToList();
+        return todas.Count <= 1 ? string.Concat(todas) : $"{string.Join(", ", todas.Take(todas.Count - 1))} y {todas[^1]}";
+    }
+}

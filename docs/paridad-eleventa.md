@@ -74,7 +74,7 @@
 | Impuestos por producto | No la usan: no se desglosa el IVA | IVA 16 %, 0 % o exento | — | — | — |
 | Kits | No la usan: no hay kits en su base | El tipo existe, sin uso | Pospuestos (2026-10-22, decidido, por revisar): no hacen falta para dejar eleventa | — | — |
 | Cambiar precios de varios a la vez («Actualizar varios»): un porcentaje, una cantidad o un precio fijo, con un resumen antes de aplicar | Por confirmar | **Hecho (2026-10-17).** Productos › «Cambiar precios»: los de un departamento, una marca, lo que coincide con un texto o los marcados en la lista; subir o bajar un porcentaje o una cantidad, o un precio fijo, sobre el menudeo, con el mayoreo en la misma proporción y el redondeo a los 50 centavos o al peso. Primero se ve cómo quedan (el margen, para quien ve la utilidad) y se aplica todo junto, con la bitácora. En el piloto, lo de eleventa se cambia allá | — | — | — |
-| Importar y exportar productos en Excel | Por confirmar | Nada de eso | Lo que la tienda use | Sin plan | Chico |
+| Importar y exportar productos en Excel | Por confirmar | **Hecho (2026-10-22).** Productos › «Productos en Excel»: exportar la lista como se ve (la búsqueda, que también busca la marca; el departamento; «por completar», «poca existencia» o «margen bajo»; con o sin los inactivos), una fila por variante con sus códigos, nombre, departamento, marca, unidad, precio, mayoreo (desde cuántas y a cuánto), existencia, mínimo, máximo y si se vende; el costo y el margen, solo con «Ver costos, utilidad y margen»; las cajas y paquetes en otra hoja. Importar el mismo Excel ya cambiado: cada producto por su código (uno que no tiene nadie es nuevo), siempre con la vista de lo que cambia, lo nuevo y lo que se ignora con su porqué; Ctrl+Enter lo aplica todo junto, con la bitácora y el historial de precios, con las reglas de la ficha y de «Cambiar precios». Hasta 10,000 renglones. En el piloto no se importa (se exporta igual). **Después de la revisión (2026-10-23):** un renglón sin código se reconoce por la clave escondida de su variante; un Excel exportado antes no regresa lo que cambió después (va aparte hasta «Aplicarlos de todos modos»); la vista trae todo, por páginas; y la bitácora guarda lo completo de cada importación («Lo que cambió», en Excel) | — | — | — |
 
 ### Inventario
 
@@ -185,7 +185,7 @@ Primero el modo multicaja, al aprobar el piloto (decisión del dueño, 2026-10-1
 | 9 | **Instalador de la tienda, actualizaciones y soporte a distancia** (a mano ya se actualiza con `actualizar.ps1`, 2026-10-21) | Mediano |
 | 10 | **Depuración, conteo físico e importación final,** sin las ventas que ya mandó el puente | Grande: la depuración y el conteo son trabajo de la tienda; lo del puente ya está en código (2026-10-17, [importación final](migracion-eleventa.md#la-importación-final)) |
 | 11 | **Promociones con fechas:** ya están (2026-10-22). Los kits siguen pospuestos: la tienda no los usa | — |
-| 12 | **Lo «por confirmar» que sí usen:** importar o exportar productos en Excel (las ventas de otros días, los mínimos por producto, lo que vale el inventario y los movimientos ya están, 2026-10-17; cancelar una entrada o salida y los Excel de los reportes, del inventario y de «Ventas por período», 2026-10-22) | Chico |
+| 12 | **Lo «por confirmar» que sí usen:** ya está todo en el POS: cancelar una entrada o salida, importar y exportar productos en Excel y los Excel de los reportes, del inventario y de «Ventas por período» (2026-10-22 y 23); las ventas de otros días, los mínimos por producto, lo que vale el inventario y los movimientos, desde el 2026-10-17. Falta verlos en la tienda | — |
 
 Al final: enseñar a todos, eleventa de consulta unas semanas y apagar el puente.
 
@@ -263,7 +263,9 @@ cambia lo que falta ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-o
 - **El inventario:** cómo se registra lo que llega (Agregar inventario) y si se usan los productos bajos en inventario
   (con un mínimo por producto), el reporte de inventario o los movimientos. El POS ya los tiene (2026-10-17), también a
   Excel (2026-10-22): si en eleventa hay mínimos puestos, anotar cuántos, para pasarlos en la importación final.
-- **Los productos:** si se importan o exportan en Excel y si se cambian precios de varios a la vez.
+- **Los productos:** si se importan o exportan en Excel y si se cambian precios de varios a la vez. Los dos ya están en el POS
+  («Cambiar precios», 2026-10-17; «Productos en Excel», 2026-10-22): anotar quién los usa y qué cambia en Excel (precios,
+  altas, mínimos), para enseñárselo con el POS.
 
 ## Fuentes
 

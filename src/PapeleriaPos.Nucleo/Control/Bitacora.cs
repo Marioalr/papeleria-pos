@@ -30,6 +30,25 @@ public class Bitacora
 }
 
 /// <summary>
+/// Lo completo de un renglón de la bitácora que cambió muchas cosas a la vez (una importación de Excel, 2026-10-23): el renglón
+/// solo dice cuántas; aquí va cada una con lo de antes y lo que quedó. Como la bitácora, solo se agrega.
+/// </summary>
+public class DetalleBitacora
+{
+    /// <summary>Lo que hay en <see cref="Contenido"/> de una importación de Excel (un <c>DetalleDeImportacionDto</c>).</summary>
+    public const string ImportacionDeExcel = "ImportacionDeExcel";
+
+    /// <summary>El renglón de la bitácora del que es (uno por renglón).</summary>
+    public Guid BitacoraId { get; init; }
+
+    /// <summary>Qué es, para leer <see cref="Contenido"/>: <see cref="ImportacionDeExcel"/>.</summary>
+    public required string Tipo { get; init; }
+
+    /// <summary>En JSON.</summary>
+    public required string Contenido { get; init; }
+}
+
+/// <summary>
 /// Permiso de un encargado (o del dueño) para una acción, una sola vez, por un monto máximo y por poco tiempo: no deja
 /// la caja "abierta" para lo que sigue.
 /// </summary>

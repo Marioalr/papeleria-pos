@@ -164,15 +164,19 @@ public sealed class RegistroCatalogo(PosDbContext db, bool lecturaDeEleventa = f
     /// primeros <paramref name="maximo"/> y cuántos hay. El margen bajo y el margen de cada uno, solo para quien ve la
     /// utilidad: el servicio lo revisa aquí.
     /// </summary>
+    /// <param name="sinPaginas">
+    /// Todos, en el mismo orden y con los mismos filtros, sin las páginas: los que lleva el Excel de «Productos en Excel»
+    /// (<see cref="RegistroProductosEnExcel"/>).
+    /// </param>
     public async Task<ListaProductosDto> ListaAsync(
         Guid sucursalId, Guid usuarioId, string? texto, FiltroProductos filtro, Guid? departamentoId, bool conInactivos,
-        IReadOnlyDictionary<Guid, int> vendidos, int maximo = 50, CancellationToken ct = default)
+        IReadOnlyDictionary<Guid, int> vendidos, int maximo = 50, bool sinPaginas = false, CancellationToken ct = default)
     {
         var veUtilidad = await new ServicioControl(db).PuedeAsync(usuarioId, AccionControlada.VerUtilidad, ct);
         if (filtro == FiltroProductos.MargenBajo && !veUtilidad)
             throw new PermisoRequerido(AccionControlada.VerUtilidad, NivelPermiso.NoPermitido,
                 "El margen lo ve quien tiene el permiso «Ver costos, utilidad y margen».");
-        maximo = Math.Clamp(maximo, 1, 500);
+        maximo = sinPaginas ? int.MaxValue : Math.Clamp(maximo, 1, 500);
 
         var consulta = db.Productos.AsNoTracking().AsQueryable();
         if (!conInactivos)

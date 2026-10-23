@@ -60,6 +60,9 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
     public DbSet<PermisoUsuario> PermisosUsuario => Set<PermisoUsuario>();
     public DbSet<Autorizacion> Autorizaciones => Set<Autorizacion>();
     public DbSet<Bitacora> Bitacora => Set<Bitacora>();
+
+    /// <summary>Lo completo de un renglón de la bitácora que cambió muchas cosas a la vez (una importación de Excel).</summary>
+    public DbSet<DetalleBitacora> DetallesBitacora => Set<DetalleBitacora>();
     public DbSet<Devolucion> Devoluciones => Set<Devolucion>();
     public DbSet<DevolucionLinea> DevolucionesLineas => Set<DevolucionLinea>();
     public DbSet<ChatTelegram> ChatsTelegram => Set<ChatTelegram>();
@@ -258,6 +261,7 @@ public class PosDbContext(DbContextOptions<PosDbContext> options) : DbContext(op
         ProtegerSoloAgregar<MovimientoInventario>();
         ProtegerSoloAgregar<PrecioHistorial>();
         ProtegerSoloAgregar<Bitacora>();
+        ProtegerSoloAgregar<DetalleBitacora>();
         ProtegerSoloAgregar<Devolucion>();
         ProtegerSoloAgregar<MovimientoCredito>();
         ProtegerSoloAgregar<Borrado>();
