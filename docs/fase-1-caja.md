@@ -125,9 +125,10 @@ que los cajeros no tengan que aprender otras.
 | F10 | Buscar por nombre, código o marca, sin importar acentos | 1 |
 | DEL | Borrar el artículo seleccionado | 1 (con bitácora en la 2) |
 | F5 / F6 | Cambiar entre tickets abiertos / dejar el ticket pendiente | 1 |
-| F7 / F8 | Entrada / salida de efectivo, siempre con motivo | 1 |
+| F7 / F8 | Entrada / salida de efectivo, siempre con motivo; ahí mismo se cancela una equivocada (2026-10-22) | 1; cancelar, paridad con eleventa |
 | F9 | Verificador: consultar precio y existencia sin agregar a la venta | 1 |
-| INS / CTRL+P | Artículo varios / artículo común: descripción y precio a mano, sin inventario | 1 (permiso configurable en la 2) |
+| INS | «Varios», como en eleventa: la cantidad y luego el código del producto, escaneado o escrito (2026-10-22, decidido, por revisar) | Paridad con eleventa |
+| CTRL+P | Artículo común: descripción y precio a mano, sin inventario | 1 (permiso configurable en la 2) |
 | F12 | Cobrar | 1 |
 | F11 | Mayoreo | Cuando se decida el mayoreo (fase 3) |
 | F1, F3, F4 | Ventas, productos, inventario | Conforme llegue cada módulo |
@@ -135,8 +136,11 @@ que los cajeros no tengan que aprender otras.
 - El lector escribe en el código del producto; si existe, se agrega solo.
 - `*` antes del código cambia la cantidad (`3*7501015213247`); también se puede editar la columna de cantidad.
 - La columna de existencia se queda, como en eleventa.
-- **Artículo varios y artículo común** son la puerta para vender sin que se descuente inventario. Se conservan porque
-  los cajeros los usan, pero en la entrega 2 su permiso será configurable y cada uso quedará en la bitácora.
+- **El artículo común** (Ctrl+P) es la puerta para vender sin que se descuente inventario. Se conserva porque los cajeros
+  lo usan, pero en la entrega 2 su permiso será configurable y cada uso quedará en la bitácora.
+- **Ins, «Varios»** (decidido, por revisar, 2026-10-22): hasta entonces Ins abría el artículo común, como Ctrl+P. Ahora hace
+  lo de eleventa: pide cuántos y luego el código (escaneado o escrito) y agrega ese producto del catálogo, con las mismas
+  reglas que `5*código`; el artículo común sigue en Ctrl+P ([paridad](paridad-eleventa.md#venta-y-cobro)).
 - **Cobro:** total grande; "pagó con" y cambio; se puede repartir entre efectivo, tarjeta y transferencia.
   La transferencia queda **por verificar**, y la tarjeta guarda la referencia de la terminal.
 
@@ -147,7 +151,10 @@ encargado.**
 
 1. **Abrir turno:** el cajero entra con su ficha y su PIN (2026-10-14; antes, con su usuario) y se cuenta el fondo, que
    no siempre es el mismo monto.
-2. **Durante el turno:** entradas (F7) y salidas (F8) de efectivo, siempre con motivo.
+2. **Durante el turno:** entradas (F7) y salidas (F8) de efectivo, siempre con motivo. Una equivocada se cancela en el
+   mismo panel (2026-10-22, como en eleventa; antes se compensaba con la contraria), con su motivo y con «Cancelar una
+   entrada o salida», solo en su turno y antes del corte; el corte ya no la cuenta y dice cuántas se cancelaron. En el
+   piloto no: van a eleventa.
 3. **Corte X (parcial):** informativo; no cierra el turno.
 4. **Corte del turno (Z):** quien tiene el permiso (el encargado o el dueño) ya entró con su PIN; cuenta el efectivo y
    escribe el total **sin ver cuánto debería haber** (2026-10-14: ya no por denominación ni otra vez el PIN; un escaneo en
@@ -168,7 +175,7 @@ Se suman a los del [modelo de la fase 0](modelo-datos.md), con las mismas reglas
 | **Turno** | Caja, cajero, abierto y cerrado (UTC), fondo |
 | **MovimientoCaja** | Turno, tipo (entrada, salida), monto, motivo, quién |
 | **Venta** | Sucursal, caja, turno, cajero, serie y folio (A-000123), estado (en captura, en espera, pagada, cancelada), total, IVA desglosado, fechas |
-| **VentaLinea** | Venta, variante (vacía en artículo varios o común), presentación, descripción tal como se vendió, cantidad, precio, importe, costo al momento de vender |
+| **VentaLinea** | Venta, variante (vacía en el artículo común), presentación, descripción tal como se vendió, cantidad, precio, importe, costo al momento de vender |
 | **Cobro** | Venta, forma (efectivo, tarjeta, transferencia), monto, recibido y cambio, referencia, verificación (por verificar, verificada, rechazada) |
 | **Corte** | Turno, tipo (X o Z), esperado por forma de pago, contado, diferencia, quién |
 | **CorteConteo** | Corte, denominación, cantidad (ya no se llena desde el 2026-10-14; quedan los de antes) |

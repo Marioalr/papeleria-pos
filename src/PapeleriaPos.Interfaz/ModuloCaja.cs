@@ -36,7 +36,7 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     public async Task MostradorAbiertoAsync(bool abierto) => await (await Modulo).InvokeVoidAsync("mostradorAbierto", abierto);
 
     /// <summary>Lo último que dijo la pantalla de venta de sus ventanas.</summary>
-    private (bool Abierta, bool EnPanel) _deLaVenta;
+    private (bool Abierta, bool EnPanel, bool Varios) _deLaVenta;
 
     /// <summary>Si la franja de la prueba tiene algo encima de la venta (<see cref="VentanaDeLaFranjaAsync"/>).</summary>
     private bool _deLaFranja;
@@ -51,10 +51,12 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     /// <summary>
     /// Con una ventana abierta, caja.js solo atrapa las teclas que no escriben en sus campos. <paramref name="enPanel"/>: es
     /// un panel a la derecha (el ticket y la barra de teclas a la vista), y también Ins y Ctrl+Q son de la venta.
+    /// <paramref name="varios"/>: es el de Ins («Varios», como en eleventa), con el cursor en el cuadro de captura, y su Enter
+    /// va a la venta (<c>EnVarios</c>). Van juntos en una sola llamada: ningún Enter del lector cae entre uno y otro.
     /// </summary>
-    public async Task VentanaAbiertaAsync(bool abierta, bool enPanel = false)
+    public async Task VentanaAbiertaAsync(bool abierta, bool enPanel = false, bool varios = false)
     {
-        _deLaVenta = (abierta, enPanel);
+        _deLaVenta = (abierta, enPanel, varios);
         await MandarVentanaAsync();
     }
 
@@ -72,7 +74,8 @@ public sealed class ModuloCaja(IJSRuntime js) : IAsyncDisposable
     }
 
     private async Task MandarVentanaAsync() =>
-        await (await Modulo).InvokeVoidAsync("ventanaAbierta", _deLaFranja || _deLaVenta.Abierta, !_deLaFranja && _deLaVenta.EnPanel);
+        await (await Modulo).InvokeVoidAsync("ventanaAbierta", _deLaFranja || _deLaVenta.Abierta, !_deLaFranja && _deLaVenta.EnPanel,
+            !_deLaFranja && _deLaVenta.Varios);
 
     /// <summary>
     /// Ya se dibujó lo de esos escaneos (entrega 5): con la hora de su Enter (el reloj de la página), caja.js mide en el

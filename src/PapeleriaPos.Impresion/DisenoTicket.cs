@@ -131,6 +131,13 @@ public static class DisenoTicket
             if (credito.Estimado)
                 e.Add(new Renglon("(saldo según esta caja; se confirma al volver)", Alineacion.Centro));
         }
+        if (t.Nota is { Length: > 0 } nota)
+        {
+            // La nota del ticket (F4 al cobrar, como en eleventa; 2026-10-22): uno o dos renglones, antes del pie.
+            e.Add(Linea('-'));
+            foreach (var renglon in RenglonesDeLaNota(nota))
+                e.Add(new Renglon(renglon));
+        }
         e.Add(Linea('-'));
         // Sin QR por ahora, como el ticket de eleventa (dueño, 2026-10-16: «primero igualar a eleventa»): para devolver se
         // escribe el folio impreso.
@@ -140,6 +147,20 @@ public static class DisenoTicket
     }
 
     private static Renglon Linea(char c) => new(new string(c, Columnas));
+
+    /// <summary>
+    /// «Nota: …» en los renglones del ticket, sin cortar palabras; si así no cabe en dos (una palabra muy larga), cortada justo
+    /// en el renglón: la nota llega hasta <see cref="NotaDelTicket.Maximo"/> letras, que con «Nota: » caben en dos.
+    /// </summary>
+    public static List<string> RenglonesDeLaNota(string nota)
+    {
+        var texto = $"Nota: {nota}";
+        var partes = Partir(texto, Columnas);
+        if (partes.Count <= 2)
+            return partes;
+        return Enumerable.Range(0, (texto.Length + Columnas - 1) / Columnas)
+            .Select(i => texto.Substring(i * Columnas, Math.Min(Columnas, texto.Length - i * Columnas)).Trim()).ToList();
+    }
 
     private static string Columna(string texto, int ancho) => texto.Length >= ancho ? texto[..(ancho - 1)] + " " : texto.PadRight(ancho);
 

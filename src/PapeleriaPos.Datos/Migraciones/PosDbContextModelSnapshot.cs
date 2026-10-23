@@ -3090,6 +3090,15 @@ namespace PapeleriaPos.Datos.Migraciones
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("CancelacionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CanceladoPorId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CanceladoUtc")
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("EnContingencia")
                         .HasColumnType("INTEGER");
 
@@ -3104,6 +3113,9 @@ namespace PapeleriaPos.Datos.Migraciones
 
                     b.Property<string>("Motivo")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MotivoCancelacion")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Tipo")
@@ -3759,6 +3771,10 @@ namespace PapeleriaPos.Datos.Migraciones
                     b.Property<string>("MotivoCancelacion")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Nota")
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("PagadaUtc")
                         .HasColumnType("TEXT");
 
@@ -3771,6 +3787,12 @@ namespace PapeleriaPos.Datos.Migraciones
 
                     b.Property<Guid>("SucursalId")
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("TicketImpresiones")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("TicketSinImprimir")
+                        .HasColumnType("INTEGER");
 
                     b.Property<long>("TotalCentavos")
                         .HasColumnType("INTEGER");

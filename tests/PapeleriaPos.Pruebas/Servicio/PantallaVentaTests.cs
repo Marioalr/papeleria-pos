@@ -88,7 +88,7 @@ public class PantallaVentaTests(ServicioEnPrueba prueba) : IClassFixture<Servici
         Assert.NotNull(dibujo.Boton("Darlo de alta aquí"));
         await dibujo.Dispatcher.InvokeAsync(() => dibujo.ApretarAsync(dibujo.Boton("Venderlo como artículo común")!.Value));
         Assert.True(pagina.VentanaAbierta);
-        Assert.True(dibujo.TieneRenglon("Artículo varios / común"));
+        Assert.True(dibujo.TieneRenglon("Artículo común"));
         await dibujo.Dispatcher.InvokeAsync(() => pantalla.Tecla("Escape", ""));
         Assert.False(pagina.VentanaAbierta);
 

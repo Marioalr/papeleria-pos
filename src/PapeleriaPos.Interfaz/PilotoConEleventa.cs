@@ -40,6 +40,14 @@ public static class PilotoConEleventa
     public const string CorteDelDiaEnEleventa =
         "Mientras dure el piloto, el día se cierra con el corte de eleventa: aquí solo se ve lo de esta caja.";
 
+    /// <summary>
+    /// En las entradas y salidas del turno (F7/F8, 2026-10-22): van a eleventa, y no se sabe cómo anota eleventa una cancelada.
+    /// La misma del servicio (RegistroCaja.NoSeCancelaEnElPiloto).
+    /// </summary>
+    public const string NoSeCancelaMovimiento =
+        "Mientras dure el piloto con eleventa, las entradas y salidas van a eleventa y aquí no se cancelan: no se sabe cómo anota eleventa "
+        + "una cancelada. Si te equivocaste, haz la contraria (F7 o F8).";
+
     /// <summary>En la ventana de devoluciones: el turno de esta caja no se cierra aquí y duraría días.</summary>
     public const string SoloSeCancelaElMismoDia =
         "Mientras dure el piloto, el corte de esta caja se hace en eleventa: solo se cancela un ticket del mismo día; después, es devolución.";

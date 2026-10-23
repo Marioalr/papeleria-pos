@@ -68,6 +68,34 @@ public class Venta
 
     public string? FolioTexto => Folio is { } f ? $"{Serie}-{f:000000}" : null;
 
+    /// <summary>
+    /// La nota del ticket: F4 al cobrar, como en eleventa (2026-10-22). Sale en el ticket y en sus reimpresiones, y en «Ventas
+    /// del día». Vacía si no lleva (<see cref="NotaDelTicket"/>).
+    /// </summary>
+    public string? Nota { get; private set; }
+
+    /// <summary>
+    /// Su ticket no ha salido nunca (2026-10-22): se cobró con «Al cobrar» en «Ofrecerlo» o «No imprimirlo» y no se pidió, o
+    /// no salió de la impresora y se dejó con «No imprimirlo». Su primera impresión no es una reimpresión: no pide motivo, y
+    /// después de ella las demás sí. Lo de una caja sin conexión llega como impreso: ahí no se sabe si salió después, y
+    /// reimprimirlo pide motivo, como siempre.
+    /// </summary>
+    public bool TicketSinImprimir { get; set; }
+
+    /// <summary>
+    /// Cuántas veces salió su ticket después del cobro, según la caja principal: su primera impresión (desde «Ventas del día» o
+    /// con Ctrl+I) y cada reimpresión. «No imprimirlo» solo vuelve a marcar <see cref="TicketSinImprimir"/> si no salió otra
+    /// después del trabajo que no salió (revisión del PR #133): si mientras tanto se reimprimió, ya salió.
+    /// </summary>
+    public int TicketImpresiones { get; set; }
+
+    /// <summary>Pone (o quita, vacía) la nota del ticket, de uno o dos renglones (<see cref="NotaDelTicket.Maximo"/>).</summary>
+    public void PonerNota(string? nota)
+    {
+        RequerirEditable();
+        Nota = NotaDelTicket.Normalizar(nota);
+    }
+
     /// <summary>Artículos para el ticket: piezas por cantidad; lo que se vende por metro o a granel cuenta uno por línea.</summary>
     public decimal NumeroDeArticulos => Lineas.Sum(l => l.Cantidad.EsEntera ? l.Cantidad.EnUnidades : 1);
 
@@ -422,7 +450,7 @@ public class Venta
         return linea;
     }
 
-    /// <summary>INS / CTRL+P: artículo varios o común, con descripción y precio a mano. No descuenta inventario.</summary>
+    /// <summary>Ctrl+P: artículo común, con descripción y precio a mano. No descuenta inventario.</summary>
     public VentaLinea AgregarArticuloComun(string descripcion, long precioCentavos, Cantidad cantidad)
     {
         RequerirEditable();

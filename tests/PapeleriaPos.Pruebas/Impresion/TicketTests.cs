@@ -36,6 +36,49 @@ public class TicketTests
         Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
     }
 
+    /// <summary>
+    /// La nota del ticket (F4 al cobrar, como en eleventa; 2026-10-22): después del cobro y antes del pie, en uno o dos renglones
+    /// de 48, sin cortar palabras. Una palabra muy larga no la deja en tres: se corta en el renglón.
+    /// </summary>
+    [Fact]
+    public void La_nota_sale_antes_del_pie_en_dos_renglones_a_lo_mas()
+    {
+        var nota = "Se entrega en la escuela Benito Juárez, salón 3-B, con la maestra Lupita";
+        Assert.True(nota.Length <= NotaDelTicket.Maximo);
+
+        var renglones = TicketTexto.Generar(Ticket() with { Nota = nota }).Split(Environment.NewLine);
+
+        var primero = Array.FindIndex(renglones, r => r.StartsWith("Nota: Se entrega", StringComparison.Ordinal));
+        Assert.True(primero > Array.FindIndex(renglones, r => r.Contains("Efectivo: $200.00")));
+        Assert.True(primero < Array.FindIndex(renglones, r => r.Contains("Gracias por su compra")));
+        Assert.Equal($"Nota: {nota}", $"{renglones[primero]} {renglones[primero + 1]}");
+        Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
+        Assert.DoesNotContain("Nota:", TicketTexto.Generar(Ticket()));
+
+        var larga = "Recoger " + new string('x', 45) + " en la sucursal";
+        Assert.Equal(2, DisenoTicket.RenglonesDeLaNota(larga).Count);
+        Assert.Equal($"Nota: {larga}", string.Concat(DisenoTicket.RenglonesDeLaNota(larga)).Replace("  ", " "));
+    }
+
+    /// <summary>Como se guarda la nota: sin espacios de más ni saltos de renglón, vacía es ninguna y hasta 80 letras.</summary>
+    [Fact]
+    public void La_nota_se_guarda_en_un_renglon_y_hasta_lo_que_cabe()
+    {
+        Assert.Equal("Entregar en la escuela", NotaDelTicket.Normalizar("  Entregar\n en   la escuela "));
+        Assert.Null(NotaDelTicket.Normalizar("  \n "));
+        Assert.Null(NotaDelTicket.Normalizar(null));
+        Assert.Equal(80, NotaDelTicket.Normalizar(new string('a', 80))!.Length);
+        Assert.Throws<ArgumentException>(() => NotaDelTicket.Normalizar(new string('a', 81)));
+        // Lo que llega con la bandeja ya se cobró: se guarda hasta donde cabe.
+        Assert.Equal(80, NotaDelTicket.Recortada(new string('a', 90))!.Length);
+
+        var venta = new Venta { Serie = "A" };
+        venta.PonerNota(" Para Lupita ");
+        Assert.Equal("Para Lupita", venta.Nota);
+        venta.PonerNota("");
+        Assert.Null(venta.Nota);
+    }
+
     [Fact]
     public void Con_redondeo_sale_el_total_exacto_el_redondeo_y_lo_que_se_paga()
     {
@@ -405,6 +448,26 @@ public class TicketTests
             r => r.StartsWith("Saldo a favor devuelto") && r.EndsWith("-$123.00"));
     }
 
+    /// <summary>
+    /// Una entrada o salida cancelada (2026-10-22) ya no suma en el corte, y el corte dice cuántas se cancelaron junto a lo que
+    /// sí cuenta, como la pantalla del corte.
+    /// </summary>
+    [Fact]
+    public void El_corte_dice_cuantas_entradas_y_salidas_se_cancelaron()
+    {
+        var corte = new CorteDto(TipoCorte.Z, new DateTime(2026, 10, 22, 18, 0, 0), "Ana", "Luis", 3, 50000, 20000, 10000, 5000, 0, 0, 75000, 75000, 0,
+            EntradasCanceladas: 1, SalidasCanceladas: 2);
+
+        var renglones = TicketTexto.Generar(DisenoComprobante.Corte(corte, "Caja 1")).Split(Environment.NewLine);
+        var sinCanceladas = TicketTexto.Generar(DisenoComprobante.Corte(corte with { EntradasCanceladas = 0, SalidasCanceladas = 0 }, "Caja 1"));
+
+        Assert.Contains(renglones, r => r.StartsWith("Entradas (1 cancelada)") && r.EndsWith("$100.00"));
+        Assert.Contains(renglones, r => r.StartsWith("Salidas (2 canceladas)") && r.EndsWith("-$50.00"));
+        Assert.All(renglones, r => Assert.True(r.Length <= DisenoTicket.Columnas, $"«{r}» mide {r.Length}"));
+        Assert.DoesNotContain("cancelada", sinCanceladas);
+        Assert.Equal(("Entradas", "Salidas (1 cancelada)"), (DisenoComprobante.ConCanceladas("Entradas", 0), DisenoComprobante.ConCanceladas("Salidas", 1)));
+    }
+
     [Fact]
     public void Escpos_inicia_corta_y_abre_el_cajon_solo_si_se_pide()
     {
@@ -417,6 +480,47 @@ public class TicketTests
         Assert.Equal(corte, conCajon[^4..]);
         Assert.True(Contiene(conCajon, cajon));
         Assert.False(Contiene(sinCajon, cajon));
+    }
+
+    /// <summary>Cuántas veces está una secuencia de bytes.</summary>
+    private static int Veces(byte[] datos, byte[] buscado)
+    {
+        var veces = 0;
+        for (var i = 0; i + buscado.Length <= datos.Length; i++)
+            if (datos.AsSpan(i, buscado.Length).SequenceEqual(buscado))
+                veces++;
+        return veces;
+    }
+
+    /// <summary>
+    /// Un texto libre con caracteres de control (revisión del PR #133) no le llega a la impresora como comandos: la nota ya no los
+    /// guarda, y aunque un texto los traiga (una nota de antes, un motivo, un nombre, el de una promoción), el ticket los cambia
+    /// por espacios, también lo que la página de códigos dibujaría en esos bytes (←). Solo quedan el reinicio y el corte del
+    /// ticket, una vez, y el cajón solo si se pide.
+    /// </summary>
+    [Fact]
+    public void Un_texto_libre_no_le_manda_comandos_a_la_impresora()
+    {
+        Assert.Equal("Entregar p hoy", NotaDelTicket.Normalizar("Entregar\u001Bp\u0000\u0019\u0019 hoy"));
+        Assert.Equal("Hola VB adios", NotaDelTicket.Normalizar("Hola\u001DVB\u0000 adios"));
+        Assert.Null(NotaDelTicket.Normalizar("\u001B\u001D\u0000"));
+
+        byte[] cajon = [0x1B, (byte)'p'];
+        byte[] reinicio = [0x1B, (byte)'@'];
+        byte[] corte = [0x1D, (byte)'V'];
+        foreach (var texto in new[] { "Entregar\u001Bp\u0000\u0019\u0019 hoy", "Hola\u001DVB\u0000 adios", "Hola\u001B@ adios", "Uno ←p dos\u007F" })
+        {
+            // El nombre de la promoción (fase 3) también sale en el ticket, bajo el artículo.
+            var conPromocion = new LineaTicketDto("3", "Cuaderno profesional raya", 4500, 9000, AhorroPromocionCentavos: 4500, Promocion: texto);
+            var bytes = TicketEscPos.Generar(Ticket() with { Nota = texto, Cliente = texto, Lineas = [.. Ticket().Lineas, conPromocion] },
+                abrirCajon: false);
+            Assert.True(Contiene(bytes, TicketEscPos.Imprimible("Promoción")), texto);
+            Assert.False(Contiene(bytes, cajon), texto);
+            Assert.Equal(1, Veces(bytes, reinicio));
+            Assert.Equal(1, Veces(bytes, corte));
+            Assert.DoesNotContain(TicketEscPos.Imprimible(texto), b => b < 0x20 || b == 0x7F);
+        }
+        Assert.True(Contiene(TicketEscPos.Generar(Ticket() with { Nota = "Hola" }, abrirCajon: true), [0x1B, (byte)'p', 0, 25, 250]));
     }
 
     [Fact]

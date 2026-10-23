@@ -300,7 +300,7 @@ public static class AlertasTelegram
         var devoluciones = await db.Devoluciones.AsNoTracking()
             .Where(d => d.SucursalId == sucursalId && d.FechaUtc >= desde && d.FechaUtc < hasta).ToListAsync(ct);
         var salidas = await db.MovimientosCaja.AsNoTracking()
-            .Where(m => idsTurnos.Contains(m.TurnoId) && m.Tipo == TipoMovimientoCaja.Salida && m.FechaUtc >= desde && m.FechaUtc < hasta)
+            .Where(m => idsTurnos.Contains(m.TurnoId) && m.Tipo == TipoMovimientoCaja.Salida && m.FechaUtc >= desde && m.FechaUtc < hasta && m.CanceladoUtc == null)
             .SumAsync(m => (long?)m.MontoCentavos, ct) ?? 0;
         var precios = await db.Bitacora.AsNoTracking()
             .CountAsync(b => b.SucursalId == sucursalId && b.Accion == AccionControlada.CambiarPrecio && b.Resultado != ResultadoBitacora.Negado

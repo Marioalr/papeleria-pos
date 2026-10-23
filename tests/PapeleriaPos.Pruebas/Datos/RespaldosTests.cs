@@ -45,6 +45,41 @@ public sealed class RespaldosTests : IDisposable
         Assert.False(Respaldos.HayDelDia(_carpeta, new DateOnly(2026, 9, 5)));
     }
 
+    /// <summary>
+    /// Una copia que falla (aquí, el origen no es una base) no deja su temporal (revisión del PR #133): con el nombre por minuto de
+    /// «Respaldar ahora» nadie lo volvía a borrar.
+    /// </summary>
+    [Fact]
+    public void Una_copia_que_falla_no_deja_su_temporal()
+    {
+        Directory.CreateDirectory(_carpeta);
+        var origen = Path.Combine(_carpeta, "no-es-base.sqlite");
+        File.WriteAllBytes(origen, Enumerable.Repeat((byte)0x42, 8192).ToArray());
+        var respaldos = Path.Combine(_carpeta, "respaldos");
+
+        Assert.ThrowsAny<Microsoft.Data.Sqlite.SqliteException>(() =>
+            Respaldos.Hacer($"Data Source={origen};Pooling=False", respaldos, new DateTime(2026, 10, 22, 15, 30, 0), "ahora-1530"));
+
+        Assert.Empty(Directory.GetFiles(respaldos));
+    }
+
+    /// <summary>
+    /// Los temporales que se quedaron de otro día (una copia que se cortó: un apagón a media copia) los borra la limpieza; el de
+    /// hoy no, por si se está escribiendo.
+    /// </summary>
+    [Fact]
+    public void La_limpieza_borra_los_temporales_que_se_quedaron_de_otro_dia()
+    {
+        Directory.CreateDirectory(_carpeta);
+        foreach (var nombre in new[] { "pos-2026-10-20-ahora-1530.db.tmp", "pos-2026-10-20-ahora-1530.db.tmp-journal", "pos-2026-10-21.db.tmp",
+                     "pos-2026-10-22-ahora-0910.db.tmp", "pos-2026-10-21.db" })
+            File.WriteAllText(Path.Combine(_carpeta, nombre), "");
+
+        Assert.Equal(0, Respaldos.Limpiar(_carpeta, new DateOnly(2026, 10, 22), dias: 30));
+
+        Assert.Equal(["pos-2026-10-21.db", "pos-2026-10-22-ahora-0910.db.tmp"], Directory.GetFiles(_carpeta).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+    }
+
     [Fact]
     public void La_ultima_copia_es_la_mas_reciente_aunque_sea_de_un_corte()
     {

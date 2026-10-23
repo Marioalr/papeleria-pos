@@ -159,11 +159,12 @@ public sealed record LineaSolicitada(
 /// caja y la caja principal casi a medianoche); si no, con el suyo. Vacío en las cajas de antes y en una sin copia todavía:
 /// sin promociones, como las calculó la caja.
 /// </param>
+/// <param name="Nota">La nota del ticket (F4 al cobrar, 2026-10-22; <see cref="NotaDelTicket"/>). Vacía: sin nota.</param>
 public sealed record SolicitudCobro(
     Guid CajaId, Guid TurnoId, Guid CajeroId, IReadOnlyList<LineaSolicitada> Lineas, IReadOnlyList<CobroSolicitado> Cobros, Guid? VentaId = null,
     IReadOnlyList<Guid>? Impresiones = null, [property: JsonPropertyName("clienteEspecialId")] Guid? ClienteId = null,
     Guid? AutorizacionDescuentoId = null, Guid? AutorizacionBajoCostoId = null, bool? MayoreoDeCliente = null, Guid? AutorizacionCreditoId = null,
-    long? VersionCatalogo = null, DateOnly? DiaPromociones = null);
+    long? VersionCatalogo = null, DateOnly? DiaPromociones = null, string? Nota = null);
 
 /// <summary>
 /// El cobro no se hizo (entrega 5): el precio o el mayoreo de algo del ticket cambió después de la versión con que la caja
@@ -220,11 +221,18 @@ public sealed record LogoTicketDto(int Ancho, int Alto, string BitsBase64);
 /// Se cobró con la copia de la caja, sin la caja principal (sin conexión o con la red lenta): hasta que suba, no se puede
 /// reimprimir. Lo pone la caja; el servicio nunca.
 /// </param>
+/// <param name="Nota">La nota que se le puso al cobrar (F4, 2026-10-22): sale al final del ticket, también al reimprimirlo.</param>
+/// <param name="Impresiones">
+/// Las veces que la caja principal ya registró que salió (su primera impresión y las reimpresiones) cuando lo armó; el del cobro,
+/// ninguna. Si este no sale y se deja con «No imprimirlo», la caja la manda de vuelta: solo cuenta si no salió otro después
+/// (revisión del PR #133).
+/// </param>
 public sealed record TicketDto(
     string Folio, DateTime FechaLocal, string Caja, string Cajero, IReadOnlyList<LineaTicketDto> Lineas, decimal NumeroDeArticulos,
     long TotalCentavos, long IvaCentavos, IReadOnlyList<CobroTicketDto> Cobros, IReadOnlyList<string> Encabezado, IReadOnlyList<string> Pie,
     LogoTicketDto? Logo = null, Guid? VentaId = null, long RedondeoCentavos = 0, string? Cliente = null, CreditoTicketDto? Credito = null,
-    int? FolioEleventa = null, bool YaCobrada = false, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir, bool EnContingencia = false)
+    int? FolioEleventa = null, bool YaCobrada = false, TicketAlCobrar AlCobrar = TicketAlCobrar.Imprimir, bool EnContingencia = false,
+    string? Nota = null, int Impresiones = 0)
 {
     /// <summary>
     /// Lo fiado se imprime aunque «Al cobrar» diga otra cosa: el cliente se lleva «SU CUENTA», lo que quedó a deber y hasta
@@ -279,12 +287,18 @@ public sealed record SolicitudCorteZ(Guid UsuarioId, long ContadoCentavos, Guid?
 /// <param name="UmbralAvisoCentavos">
 /// En el corte Z: el umbral de la sucursal, si la diferencia pasó de él y el aviso sale por Telegram. Vacío si no.
 /// </param>
+/// <param name="EntradasCanceladas">
+/// Las entradas de efectivo del turno que se cancelaron (2026-10-22): ya no cuentan en las entradas ni en lo esperado, y el
+/// corte dice que se cancelaron.
+/// </param>
+/// <param name="SalidasCanceladas">Lo mismo, de las salidas.</param>
 public sealed record CorteDto(
     TipoCorte Tipo, DateTime FechaLocal, string Cajero, string RealizadoPor, int Ventas, long FondoCentavos, long EfectivoVentasCentavos,
     long EntradasCentavos, long SalidasCentavos, long TarjetaCentavos, long TransferenciaCentavos, long EsperadoCentavos,
     long? ContadoCentavos, long? DiferenciaCentavos, long DevolucionesCentavos = 0, int Cancelaciones = 0, bool EnContingencia = false,
     long RedondeoCentavos = 0, long CreditoCentavos = 0, int Abonos = 0, long AbonosEfectivoCentavos = 0, long AbonosTarjetaCentavos = 0,
-    long AbonosTransferenciaCentavos = 0, long SaldoDevueltoCentavos = 0, long? UmbralAvisoCentavos = null);
+    long AbonosTransferenciaCentavos = 0, long SaldoDevueltoCentavos = 0, long? UmbralAvisoCentavos = null, int EntradasCanceladas = 0,
+    int SalidasCanceladas = 0);
 
 /// <summary>
 /// El corte X (entrega 6, 2026-10-14): lo que la pantalla enseña del turno antes de cerrarlo. Es a ciegas: no trae el
@@ -528,6 +542,55 @@ public sealed record ComprobanteMovimientoDto(
 
 public sealed record SolicitudReimpresion(Guid UsuarioId, Guid CajaId, string? Motivo);
 
+/// <summary>
+/// Las entradas y salidas de efectivo de un turno (F7/F8), las más nuevas primero: ahí se cancela una equivocada (como en
+/// eleventa, 2026-10-22). Solo con la caja principal.
+/// </summary>
+/// <param name="Piloto">El piloto con eleventa: aquí no se cancelan (van a eleventa, y no se sabe cómo anota allá una cancelada).</param>
+public sealed record MovimientosDelTurnoDto(IReadOnlyList<MovimientoDelTurnoDto> Movimientos, bool Piloto);
+
+/// <summary>Una entrada o salida de efectivo del turno, y si se canceló.</summary>
+/// <param name="Folio">El del comprobante (lo que se imprimió en la salida).</param>
+/// <param name="SeCancela">
+/// Se puede cancelar: no se ha cancelado, su turno sigue abierto (antes de su corte) y no va a eleventa (el piloto, o la salida
+/// de una devolución hecha en eleventa). Que quien entró tenga el permiso, lo dice su sesión.
+/// </param>
+public sealed record MovimientoDelTurnoDto(
+    Guid Id, string Folio, TipoMovimientoCaja Tipo, long MontoCentavos, string Motivo, DateTime FechaLocal, string Usuario, bool SeCancela,
+    DateTime? CanceladoLocal = null, string? CanceladoPor = null, string? MotivoCancelacion = null)
+{
+    public bool Cancelado => CanceladoLocal is not null;
+}
+
+/// <summary>
+/// Cancelar una entrada o salida equivocada (F7/F8, 2026-10-22), con su motivo y, si su permiso la pide, la autorización.
+/// </summary>
+/// <param name="Id">
+/// El de esta cancelación, que da la caja (revisión del PR #133): si se manda otra vez porque se perdió la respuesta (la caja 2
+/// va por Wi-Fi), es la misma, y la caja principal contesta como la primera vez sin cancelarla dos veces.
+/// </param>
+public sealed record SolicitudCancelarMovimiento(Guid Id, Guid UsuarioId, Guid CajaId, string Motivo, Guid? AutorizacionId = null);
+
+/// <summary>
+/// La primera impresión del ticket de una venta que no salió al cobrar (2026-10-22): no es una reimpresión y no pide motivo.
+/// Si ya salió (o se canceló o se devolvió algo de ella), el servicio contesta con <see cref="CodigoConMotivo"/>: se
+/// reimprime, con su motivo.
+/// </summary>
+public sealed record SolicitudPrimeraImpresion(Guid UsuarioId, Guid CajaId)
+{
+    public const string CodigoConMotivo = "con-motivo";
+}
+
+/// <summary>
+/// El ticket de una venta no salió y se dejó así («No imprimirlo» en la cola de la impresora, al cobrar o en su primera
+/// impresión): sigue sin salir, y su primera impresión no pedirá motivo.
+/// </summary>
+/// <param name="ImpresionesAntes">
+/// Las que ya llevaba registradas cuando se armó ese ticket (<see cref="TicketDto.Impresiones"/>): si la caja principal tiene
+/// más, salió otro después (se reimprimió, u otra caja lo imprimió) y la marca no se pone (revisión del PR #133).
+/// </param>
+public sealed record SolicitudTicketSinImprimir(Guid UsuarioId, Guid CajaId, int ImpresionesAntes = 0);
+
 /// <summary>De antes de la entrega 1: la regla de un rol, como la copia de la caja se la lleva a una caja que no se ha actualizado.</summary>
 public sealed record ReglaDto(AccionControlada Accion, Rol Rol, NivelPermiso Nivel, long? UmbralCentavos, bool PideMotivo);
 
@@ -759,10 +822,12 @@ public sealed record LineaContingenciaDto(
 /// <param name="SaldoConocidoCentavos">Si fió: lo que la caja creía que debía (con eso imprimió el ticket).</param>
 /// <param name="ExcesoAutorizadoCentavos">Si fió: lo que pasó del límite con permiso en la caja.</param>
 /// <param name="VenceCredito">Si fió: el vencimiento que se imprimió.</param>
+/// <param name="Nota">La nota del ticket (F4), como se imprimió.</param>
 public sealed record VentaContingenciaDto(
     Guid Id, Guid CajaId, Guid TurnoId, Guid CajeroId, int Folio, DateTime PagadaUtc, IReadOnlyList<LineaContingenciaDto> Lineas,
     IReadOnlyList<CobroSolicitado> Cobros, [property: JsonPropertyName("clienteEspecialId")] Guid? ClienteId = null, long? RedondeoCentavos = null,
-    bool? MayoreoDeCliente = null, long? SaldoConocidoCentavos = null, long ExcesoAutorizadoCentavos = 0, DateOnly? VenceCredito = null);
+    bool? MayoreoDeCliente = null, long? SaldoConocidoCentavos = null, long ExcesoAutorizadoCentavos = 0, DateOnly? VenceCredito = null,
+    string? Nota = null);
 
 public sealed record MovimientoContingenciaDto(Guid Id, TipoMovimientoCaja Tipo, long MontoCentavos, string Motivo, Guid UsuarioId, DateTime FechaUtc);
 

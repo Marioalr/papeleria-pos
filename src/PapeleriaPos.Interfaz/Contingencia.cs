@@ -14,7 +14,12 @@ using PapeleriaPos.Nucleo.Ventas;
 namespace PapeleriaPos.Interfaz;
 
 /// <summary>Los totales del turno según la caja principal cuando la caja los pidió; el diario suma lo que pasó después.</summary>
-public sealed record BaseTurno(Guid TurnoId, long FondoCentavos, AnotacionDiario Totales);
+/// <param name="EntradasCanceladas">
+/// Las entradas canceladas hasta entonces (2026-10-22): el corte sin conexión dice cuántas, como el de la caja principal. Las
+/// que se cancelan después van en el diario.
+/// </param>
+/// <param name="SalidasCanceladas">Lo mismo, de las salidas.</param>
+public sealed record BaseTurno(Guid TurnoId, long FondoCentavos, AnotacionDiario Totales, int EntradasCanceladas = 0, int SalidasCanceladas = 0);
 
 /// <summary>
 /// La caja sin la caja principal (docs/fase-1-varias-cajas.md). Revisa cada pocos segundos si el servicio contesta;
@@ -1583,6 +1588,8 @@ public sealed class Contingencia
         if (descuentoQueNoEntra is not null)
             throw descuentoQueNoEntra;
         venta.ValidarCobros(s.Cobros);
+        // La nota del ticket (F4 al cobrar), como en línea.
+        venta.PonerNota(s.Nota);
 
         var bitacora = new List<BitacoraContingenciaDto>();
         var usadas = new List<Guid>();
@@ -1666,7 +1673,7 @@ public sealed class Contingencia
             venta.Lineas.Select(x => new LineaContingenciaDto(x.VarianteId, x.PresentacionId, x.Descripcion, x.Cantidad.Milesimas, x.PrecioCentavos,
                 x.DescuentoCentesimas, x.DescuentoCentesimas is null && x.TieneDescuento ? x.DescuentoCentavos : null, x.MotivoDescuento,
                 x.PromocionId, x.Promocion, x.AhorroPromocionCentavos)).ToList(),
-            s.Cobros, venta.ClienteId, venta.RedondeoCentavos, venta.MayoreoDeCliente, cuenta?.SaldoCentavos, excesoAutorizado, vence);
+            s.Cobros, venta.ClienteId, venta.RedondeoCentavos, venta.MayoreoDeCliente, cuenta?.SaldoCentavos, excesoAutorizado, vence, venta.Nota);
 
         _almacen.Escribir(lote =>
         {
@@ -1862,7 +1869,7 @@ public sealed class Contingencia
                     resumen.EfectivoVentasCentavos, resumen.TarjetaCentavos, resumen.TransferenciaCentavos, resumen.EntradasCentavos,
                     resumen.SalidasCentavos, resumen.DevolucionesCentavos, resumen.Cancelaciones, resumen.RedondeoCentavos, resumen.CreditoCentavos,
                     resumen.Abonos, resumen.AbonosEfectivoCentavos, resumen.AbonosTarjetaCentavos, resumen.AbonosTransferenciaCentavos,
-                    resumen.SaldoDevueltoCentavos))).LimpiarDiario();
+                    resumen.SaldoDevueltoCentavos), resumen.EntradasCanceladas, resumen.SalidasCanceladas)).LimpiarDiario();
         }, "el turno");
     }
 
@@ -1902,6 +1909,18 @@ public sealed class Contingencia
         var entrada = m.Tipo == TipoMovimientoCaja.Entrada;
         return _almacen.EscribirAsync(l => l.Anotar(new AnotacionDiario(id, turnoId, Entradas: entrada ? m.MontoCentavos : 0,
             Salidas: entrada ? 0 : m.MontoCentavos)), "una entrada o salida");
+    }
+
+    /// <summary>
+    /// Una entrada o salida cancelada en línea (2026-10-22) deja de contar en la cuenta del turno, con su propio renglón (el de
+    /// la entrada o salida se queda), como un abono cancelado. El renglón lleva el Id de la cancelación: si la misma llega otra
+    /// vez, no resta dos veces.
+    /// </summary>
+    public Task MovimientoCanceladoEnLineaAsync(Guid turnoId, MovimientoDelTurnoDto m, Guid cancelacionId)
+    {
+        var entrada = m.Tipo == TipoMovimientoCaja.Entrada;
+        return _almacen.EscribirAsync(l => l.Anotar(new AnotacionDiario(cancelacionId, turnoId, Entradas: entrada ? -m.MontoCentavos : 0,
+            Salidas: entrada ? 0 : -m.MontoCentavos)), "una entrada o salida cancelada");
     }
 
     /// <summary>
@@ -1962,6 +1981,7 @@ public sealed class Contingencia
     {
         var base_ = _almacen.Leer<BaseTurno>("base") is { } b && b.TurnoId == turno.Id ? b : new BaseTurno(turno.Id, turno.FondoCentavos, new AnotacionDiario(Guid.Empty, turno.Id));
         var d = _almacen.Diario(turno.Id);
+        var (entradasCanceladas, salidasCanceladas) = _almacen.Canceladas(turno.Id);
         var t = base_.Totales;
         var efectivo = t.Efectivo + d.Efectivo;
         var entradas = t.Entradas + d.Entradas;
@@ -1974,7 +1994,8 @@ public sealed class Contingencia
             t.Tarjeta + d.Tarjeta, t.Transferencia + d.Transferencia, esperado, contado, contado - esperado, devoluciones, t.Cancelaciones + d.Cancelaciones,
             EnContingencia: true, RedondeoCentavos: t.Redondeo + d.Redondeo, CreditoCentavos: t.Credito + d.Credito, Abonos: t.Abonos + d.Abonos,
             AbonosEfectivoCentavos: abonosEfectivo, AbonosTarjetaCentavos: t.AbonosTarjeta + d.AbonosTarjeta,
-            AbonosTransferenciaCentavos: t.AbonosTransferencia + d.AbonosTransferencia, SaldoDevueltoCentavos: saldoDevuelto);
+            AbonosTransferenciaCentavos: t.AbonosTransferencia + d.AbonosTransferencia, SaldoDevueltoCentavos: saldoDevuelto,
+            EntradasCanceladas: base_.EntradasCanceladas + entradasCanceladas, SalidasCanceladas: base_.SalidasCanceladas + salidasCanceladas);
     }
 
     private static AnotacionDiario Anotacion(Guid turnoId, TicketDto ticket) =>
