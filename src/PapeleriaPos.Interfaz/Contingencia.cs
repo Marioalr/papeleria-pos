@@ -341,11 +341,14 @@ public sealed class Contingencia
     /// <param name="deLaRed">Si llegó de la caja principal (y no es la guardada en la base, al abrir).</param>
     private void Poner(Copia copia, bool deLaRed = true)
     {
+        // Lo que llegó encima de la copia de otra base (la caja principal volvió a arrancar o restauró un respaldo) no se queda: sus
+        // versiones son de la otra, y la de un respaldo restaurado pudo ser «más nueva» que la copia que baja (2026-10-23).
+        var mismaBase = _copia?.Paquete.Base == copia.Paquete.Base;
         _copia = copia;
         FotoCatalogo? antes;
         do
             antes = Volatile.Read(ref _foto);
-        while (Interlocked.CompareExchange(ref _foto, copia.Foto.ConLoNuevoDe(antes), antes) != antes);
+        while (Interlocked.CompareExchange(ref _foto, copia.Foto.ConLoNuevoDe(mismaBase ? antes : null), antes) != antes);
         Fotos.Referencias(copia.Paquete.Fotos, deLaRed);
     }
 
@@ -701,6 +704,8 @@ public sealed class Contingencia
             if (_conexion.CajaId is null)
                 return;
         }
+        // La caja principal volvió a arrancar (o restauró un respaldo): antes de subir, que sepa del turno y del folio de esta caja.
+        await SiCambioLaBaseAsync(estado);
         // Lo de la bandeja sube también con la red lenta: va de fondo, y mientras la caja sigue con su copia.
         var subio = Pendientes > 0;
         if (Pendientes > 0 || ImpresionesPorSubir > 0 || (ConError > 0 && Ahora - _ultimoReintentoUtc > ReintentoErrores))
@@ -725,6 +730,63 @@ public sealed class Contingencia
             await ActualizarPaqueteAsync();
         // Las fotos que no se pudieron bajar (no había conexión): otra vuelta, ya con la caja principal contestando.
         Fotos.SiFaltan();
+    }
+
+    /// <summary>La base de la caja principal (<see cref="EstadoServicioDto.Base"/>) a la que ya se le dijo el turno y el folio de esta caja.</summary>
+    private Guid? _baseAtendida;
+
+    /// <summary>
+    /// La caja principal volvió a arrancar: su base de la copia es otra cada vez que arranca, y también después de restaurar un
+    /// respaldo (2026-10-23). Antes de subir lo que esperaba, se le dice el turno abierto de esta caja y su último folio. Si se
+    /// restauró un respaldo de antes de que se abriera el turno, el turno se vuelve a dar de alta allá con su mismo Id (como uno
+    /// abierto sin conexión) y lo que se cobró en él sube ahí, en lugar de quedarse con error; y la serie de la caja sigue después
+    /// de lo que ya imprimió, sin volver a dar folios que ya salieron en un ticket. Si la caja principal ya los tiene (lo de todos los
+    /// días), no cambia nada. Los saldos del crédito se vuelven a pedir: los de la copia son de la base de antes. Un turno que se
+    /// abrió sin conexión y todavía espera en la bandeja sube con ella, en su orden (detrás del corte del turno de antes, si lo hay).
+    /// </summary>
+    private async Task SiCambioLaBaseAsync(EstadoServicioDto? estado)
+    {
+        if (estado?.Base is not { } base_ || base_ == _baseAtendida || _conexion.CajaId is not { } caja)
+            return;
+        try
+        {
+            if (Turno(caja) is { } turno && !_almacen.SinSubir(turno.Id))
+                await DarDeAltaElTurnoAsync(turno);
+            if (UltimoFolio > 0)
+                await _http.PostAsync<object>($"api/cajas/{caja}/folio-usado", new FolioUsadoDto(UltimoFolio), sinRespuesta: true);
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
+        {
+            // Lo intenta el siguiente latido.
+            NoContesto(ex);
+            return;
+        }
+        catch (ErrorCaja)
+        {
+            // La caja principal no lo quiso (no conoce esta caja): lo que pase con el turno lo dice la pantalla al entrar.
+        }
+        _baseAtendida = base_;
+        _refrescarCredito = true;
+    }
+
+    /// <summary>
+    /// El turno abierto de esta caja, en la caja principal y con su mismo Id, como lo sube la bandeja cuando se abrió sin conexión:
+    /// si ya lo tiene (abierto o cerrado), no cambia nada. Sirve después de restaurar en la caja principal un respaldo de antes de
+    /// que se abriera. Falso si no quedó: la caja principal tiene otro turno abierto de esta caja (lo dice el aviso de la bandeja, y
+    /// al entrar se ve cuál) o no contestó.
+    /// </summary>
+    public async Task<bool> DarDeAltaElTurnoAsync(TurnoDto turno)
+    {
+        try
+        {
+            await _http.PostAsync<TurnoDto>("api/bandeja/turnos",
+                new TurnoContingenciaDto(turno.Id, turno.CajaId, turno.CajeroId, turno.FondoCentavos, HoraMexico.AUtc(turno.AbiertoLocal)));
+            return true;
+        }
+        catch (ErrorCaja ex) when (ex.Codigo != "sin-conexion")
+        {
+            return false;
+        }
     }
 
     /// <summary>

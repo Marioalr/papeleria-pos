@@ -1,0 +1,332 @@
+@* Restaurar un respaldo (Configuración › Respaldos, 2026-10-23; en eleventa, «Restaurar»): debajo de su renglón, para quien tiene
+   «Configuración de la tienda». La lista de los respaldos de la caja principal (cuándo, de qué y cuánto mide) y «Restaurar este»,
+   que dice lo que se pierde y qué pasa con las cajas y pide el PIN otra vez. La caja principal se reinicia para restaurarlo
+   (RestauracionDeRespaldos): aquí se espera a que vuelva y se dice cómo quedó y dónde quedó la base de antes. Sin el reinicio
+   automático (la caja del navegador), se dice que se restaura al volver a arrancarla y se puede cancelar. Todo con el teclado:
+   Tab, Enter en el PIN y Esc (cierra la Configuración, sin restaurar). *@
+@implements IDisposable
+@inject ClienteCaja Cliente
+@inject ModuloCaja Js
+
+<div class="vn-cfg-antes vn-restaurar">
+    @if (_restauracion is { Pendiente: true } pendiente)
+    {
+        @if (pendiente.ReinicioAutomatico)
+        {
+            <div class="vn-alerta info" role="status">
+                <Ico Nombre="reloj" />
+                <div>
+                    <span><strong>Restaurando @pendiente.Descripcion.</strong> La caja principal se está reiniciando: tarda unos segundos, a veces
+                        un par de minutos. Mientras, las cajas venden sin conexión.</span>
+                    @if (_tardaDemasiado)
+                    {
+                        <span>No ha vuelto en @((int)TardaDemasiado.TotalMinutes) minutos. Revisa que la caja principal esté prendida y, en ella, que el
+                            servicio «Papeleria POS» esté en marcha (Inicio › Servicios). Si no arranca: en la caja principal, como administrador,
+                            restaurar.ps1 (docs/pruebas-en-tienda.md, «Si la base se daña»).</span>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="vn-alerta" role="status">
+                <Ico Nombre="reloj" />
+                <div>
+                    <span><strong>Se restaura @pendiente.Descripcion al volver a arrancar la caja principal.</strong> No corre como servicio de
+                        Windows, así que no se reinicia sola: ciérrala y ábrela otra vez. Hasta entonces sigue la base de ahora, y lo que se haga en
+                        ella se pierde al restaurar.</span>
+                    <span class="vn-botonera">
+                        <button id="restaurar-cancelar" class="vn-boton chico" disabled="@_trabajando" @onclick="CancelarAsync">Cancelar la restauración</button>
+                    </span>
+                </div>
+            </div>
+        }
+    }
+    else
+    {
+        @if (_restauracion is { Fallo: { } fallo } fallida)
+        {
+            <div class="vn-alerta" role="alert">
+                <Ico Nombre="alerta" />
+                <div><span><strong>No se restauró @fallida.Descripcion:</strong> @fallo La base se quedó como estaba.</span></div>
+            </div>
+        }
+        else if (_restauracion is { HechaLocal: { } hecha } hechaYa)
+        {
+            <div class="vn-alerta info" role="status">
+                <Ico Nombre="check" />
+                <div>
+                    <span><strong>Se restauró @hechaYa.Descripcion</strong> (@CuandoFue(hecha)).</span>
+                    <span>La base de antes quedó en @hechaYa.BaseDeAntes: no se borra. Las cajas bajan su copia completa, y lo que tenían por subir
+                        sube a esta base.</span>
+                </div>
+            </div>
+        }
+        @if (ConLista && _eligiendo is { } elegido)
+        {
+            <div class="vn-alerta" role="alertdialog" aria-labelledby="restaurar-titulo">
+                <Ico Nombre="alerta" />
+                <div>
+                    <span id="restaurar-titulo"><strong>¿Restaurar el respaldo del @Fecha(elegido.FechaLocal) (@elegido.Cual.ToLowerInvariant())?</strong></span>
+                    <span>Lo que se vendió o se cambió después de ese respaldo se pierde: ventas, cortes, entradas y salidas, precios, inventario,
+                        clientes y usuarios. En el corte de los turnos que siguen abiertos, el efectivo de esas ventas sale como sobrante.</span>
+                    <span>La base de ahora no se borra: se guarda aparte en la caja principal, por si hay que rescatar algo.</span>
+                    <span>@(_lista?.ReinicioAutomatico == false
+                        ? "Esta caja principal no corre como servicio de Windows: se restaura la próxima vez que se arranque."
+                        : "La caja principal se reinicia sola (unos segundos): mientras, las cajas venden sin conexión.")
+                        Lo que las cajas tengan por subir sube después, ya al respaldo.</span>
+                    @if (_lista?.PilotoEleventa == true)
+                    {
+                        <span>Eleventa no se toca. Lo que la caja 2 ya mandó a eleventa no se vuelve a mandar: antes se busca allá. Lo que se anotó a mano
+                            en eleventa después del respaldo vuelve a salir «por revisar»: revisa en eleventa antes de anotarlo otra vez.</span>
+                    }
+                    <span class="vn-botonera">
+                        <label for="restaurar-pin">Tu PIN</label>
+                        <input id="restaurar-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="12" aria-label="Tu PIN para restaurar"
+                               value="@_pin" disabled="@_trabajando" @oninput="e => _pin = e.Value?.ToString() ?? string.Empty" @onkeydown="TeclaDelPinAsync" />
+                        <button id="restaurar-si" class="vn-boton chico peligro" disabled="@(_trabajando || _pin.Length == 0)" @onclick="RestaurarAsync">
+                            @(_trabajando ? "Restaurando…" : "Restaurar")
+                        </button>
+                        <button id="restaurar-no" class="vn-boton chico" disabled="@_trabajando" @onclick="NoRestaurar">Cancelar</button>
+                    </span>
+                    @if (_error is not null)
+                    {
+                        <span class="error" role="alert">@_error</span>
+                    }
+                </div>
+            </div>
+        }
+        else if (!ConLista)
+        {
+            // Solo cómo quedó: la lista, con «Elegir respaldo…».
+        }
+        else if (_lista is null)
+        {
+            <p class="nota">@(_error ?? "Cargando los respaldos…")</p>
+        }
+        else if (_lista.Respaldos.Count == 0)
+        {
+            <p class="nota">Todavía no hay respaldos que restaurar.</p>
+        }
+        else
+        {
+            <table class="vn-cfg-tabla">
+                <thead><tr><th>Cuándo</th><th>De qué</th><th class="num">Tamaño</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var (r, i) in Visibles.Select((r, i) => (r, i)))
+                    {
+                        var respaldo = r;
+                        <tr>
+                            <td>@CuandoFue(r.FechaLocal)</td>
+                            <td>
+                                @r.Cual
+                                @if (r.DeAntesDelApagon)
+                                {
+                                    <span class="vn-etiq ambar">el de antes del apagón</span>
+                                }
+                            </td>
+                            <td class="num">@r.Tamano</td>
+                            <td class="num"><button id="restaurar-@i" class="vn-boton chico" @onclick="() => ElegirAsync(respaldo)">Restaurar este</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (!_todos && _lista.Respaldos.Count > Primeros)
+            {
+                <span class="acciones"><button id="restaurar-todos" class="vn-boton chico" @onclick="() => _todos = true">Ver todos (@_lista.Respaldos.Count)</button></span>
+            }
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
+
+    /// <summary>Quien entró: el servicio vuelve a revisar su permiso y su PIN.</summary>
+    [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
+
+    /// <summary>La restauración que dijo la caja principal al abrir la Configuración (pedida, hecha o fallida); vacía si no hay.</summary>
+    [Parameter] public RestauracionDto? Restauracion { get; set; }
+
+    /// <summary>Lo de Respaldos como quedó después de pedir, cancelar o al volver la caja principal: el renglón de arriba lo usa.</summary>
+    [Parameter] public EventCallback<RespaldosDto> AlCambiar { get; set; }
+
+    /// <summary>Con la lista para elegir («Elegir respaldo…»); sin ella, solo cómo va o cómo quedó la restauración.</summary>
+    [Parameter] public bool ConLista { get; set; } = true;
+
+    /// <summary>Los primeros que se ven (los más recientes); «Ver todos» enseña el resto.</summary>
+    private const int Primeros = 8;
+
+    /// <summary>Entre una pregunta y otra mientras la caja principal se reinicia.</summary>
+    internal static TimeSpan EntrePreguntas { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>Después de esto sin volver, se dice qué revisar.</summary>
+    private static readonly TimeSpan TardaDemasiado = TimeSpan.FromMinutes(3);
+
+    private readonly CancellationTokenSource _cerrada = new();
+    private RestauracionDto? _restauracion;
+    private RestaurablesDto? _lista;
+    private RespaldoGuardadoDto? _eligiendo;
+    private string _pin = "";
+    private string? _error;
+    private bool _trabajando;
+    private bool _todos;
+    private bool _tardaDemasiado;
+
+    private IEnumerable<RespaldoGuardadoDto> Visibles => _todos ? _lista!.Respaldos : _lista!.Respaldos.Take(Primeros);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _restauracion = Restauracion;
+        if (_restauracion is { Pendiente: true, ReinicioAutomatico: true })
+        {
+            _ = EsperarAsync();
+            return;
+        }
+        if (ConLista)
+            await CargarAsync();
+    }
+
+    /// <summary>Se abrió la lista después («Elegir respaldo…» con la restauración ya dicha arriba): se carga entonces.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ConLista && _lista is null && _error is null && _restauracion is not { Pendiente: true })
+            await CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            _lista = await Cliente.RespaldosParaRestaurarAsync(Caja.Id, Sesion.UsuarioId);
+            _error = null;
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task ElegirAsync(RespaldoGuardadoDto respaldo)
+    {
+        (_eligiendo, _pin, _error) = (respaldo, "", null);
+        StateHasChanged();
+        await Js.EnfocarAsync("#restaurar-pin");
+    }
+
+    private void NoRestaurar() => (_eligiendo, _pin, _error) = (null, "", null);
+
+    private async Task TeclaDelPinAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && _pin.Length > 0 && !_trabajando)
+            await RestaurarAsync();
+    }
+
+    /// <summary>
+    /// Lo pide con el PIN. Con el reinicio automático, la caja principal se detiene en cuanto contesta: aquí se espera a que vuelva
+    /// (<see cref="EsperarAsync"/>). Un PIN equivocado (o cualquier no) lo dice debajo y deja escribir otra vez.
+    /// </summary>
+    private async Task RestaurarAsync()
+    {
+        if (_eligiendo is not { } elegido || _trabajando)
+            return;
+        _trabajando = true;
+        _error = null;
+        try
+        {
+            var respaldos = await Cliente.RestaurarAsync(Caja.Id, new SolicitudRestaurar(Sesion.UsuarioId, _pin, elegido.Archivo));
+            (_restauracion, _eligiendo, _pin) = (respaldos.Restauracion, null, "");
+            await AlCambiar.InvokeAsync(respaldos);
+        }
+        catch (ErrorCaja ex)
+        {
+            (_error, _pin) = (ex.Message, "");
+            _trabajando = false;
+            StateHasChanged();
+            await Js.EnfocarAsync("#restaurar-pin");
+            return;
+        }
+        _trabajando = false;
+        if (_restauracion is { Pendiente: true, ReinicioAutomatico: true })
+            _ = EsperarAsync();
+    }
+
+    /// <summary>
+    /// Mientras la caja principal se reinicia: pregunta cada segundo hasta que contesta con la restauración hecha (o la que no se
+    /// pudo). Mientras no contesta, o contesta todavía con la pedida (antes de detenerse), sigue esperando; a los 3 minutos dice qué
+    /// revisar, y sigue. Al cerrar la Configuración deja de preguntar.
+    /// </summary>
+    private async Task EsperarAsync()
+    {
+        var desde = DateTime.UtcNow;
+        while (!_cerrada.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(EntrePreguntas, _cerrada.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            _tardaDemasiado = DateTime.UtcNow - desde > TardaDemasiado;
+            try
+            {
+                var respaldos = await Cliente.RespaldosAsync(Caja.Id, Sesion.UsuarioId);
+                if (respaldos.Restauracion is { Pendiente: true })
+                {
+                    StateHasChanged();
+                    continue;
+                }
+                _restauracion = respaldos.Restauracion;
+                await AlCambiar.InvokeAsync(respaldos);
+                await CargarAsync();
+                StateHasChanged();
+                return;
+            }
+            catch (ErrorCaja)
+            {
+                // Todavía no contesta: se reinicia.
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task CancelarAsync()
+    {
+        _trabajando = true;
+        try
+        {
+            var respaldos = await Cliente.CancelarRestauracionAsync(Caja.Id, new SolicitudRespaldo(Sesion.UsuarioId));
+            _restauracion = respaldos.Restauracion;
+            await AlCambiar.InvokeAsync(respaldos);
+            await CargarAsync();
+        }
+        catch (ErrorCaja ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _trabajando = false;
+        }
+    }
+
+    /// <summary>«22 de octubre a las 21:31».</summary>
+    private static string Fecha(DateTime local) => local.ToString("d 'de' MMMM 'a las' HH:mm", Formato.Mexico);
+
+    /// <summary>«Hoy a las 15:34», «Ayer a las 23:10» o «El 20 de octubre a las 13:00».</summary>
+    private static string CuandoFue(DateTime local)
+    {
+        var hoy = DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
+        var dia = DateOnly.FromDateTime(local);
+        var cuando = dia == hoy ? "Hoy" : dia == hoy.AddDays(-1) ? "Ayer" : $"El {local.ToString("d 'de' MMMM", Formato.Mexico)}";
+        return $"{cuando} a las {local.ToString("HH:mm", Formato.Mexico)}";
+    }
+
+    public void Dispose()
+    {
+        _cerrada.Cancel();
+        _cerrada.Dispose();
+    }
+}

@@ -494,7 +494,8 @@ public sealed class BaseContraApagonesTests : IDisposable
             Assert.StartsWith("La base no pasó la revisión", texto);
             Assert.Contains("Page 7: btreeInitPage() returns error code 11", texto);
             Assert.Contains("Hay que restaurar", texto);
-            Assert.Contains($"mueve {Path.GetFileName(servicio.Ruta)}, {Path.GetFileName(servicio.Ruta)}-wal y", texto);
+            Assert.Contains("Configuración › Respaldos › «Restaurar un respaldo»", texto);
+            Assert.Contains($"La base dañada ({Path.GetFileName(servicio.Ruta)}, con su -wal y su -shm) se aparta en una carpeta", texto);
             await using var db = servicio.Base();
             Assert.Equal(TipoAlerta.BaseDanada, (await db.MensajesTelegram.SingleAsync()).Tipo);
         }
