@@ -984,11 +984,11 @@ public sealed class ProductosEnExcelApiTests(ServicioDePrueba servicio) : IClass
         var vista = await VerAsync(c, c.Dueno, datos);
 
         Assert.Equal(renglones, vista.Renglones);
-        Assert.Equal((0, 0), (vista.TotalCambian, vista.TotalNuevos));
-        // Lo único que no se reconoce: los productos sin código que se llaman igual que otro (la papelería ficticia los trae a
-        // propósito, como el catálogo de eleventa).
-        Assert.All(vista.Ignorados, x => Assert.Equal(PorQueSeIgnora.SinCodigo, x.PorQue));
-        Assert.Equal(renglones, vista.SinCambios + vista.TotalIgnorados);
+        // Todos se reconocen, también los productos sin código que se llaman igual que otro (la papelería ficticia los trae a
+        // propósito, como el catálogo de eleventa): cada renglón trae su clave escondida.
+        Assert.Equal((0, 0, 0), (vista.TotalCambian, vista.TotalNuevos, vista.TotalIgnorados));
+        Assert.Empty(vista.CambiaronDespues!);
+        Assert.Equal(renglones, vista.SinCambios);
     }
 
     [Fact]
