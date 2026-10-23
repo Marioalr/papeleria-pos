@@ -81,22 +81,22 @@ else
             <div class="vn-kpis">
                 <div class="vn-kpi" id="rep-kpi-venta">
                     <span>Venta neta</span><strong>@Formato.Pesos(a.VentaCentavos)</strong>
-                    <small>@Cambio(a.VentaCentavos, b?.VentaCentavos)</small>
+                    <small>@Cambio(a.VentaCentavos, b?.VentaCentavos, "sin ventas", enPesos: true)</small>
                 </div>
                 <div class="vn-kpi" id="rep-kpi-tickets">
                     <span>Tickets</span><strong>@Formato.Numero(a.Tickets)</strong>
-                    <small>@Cambio(a.Tickets, b?.Tickets)</small>
+                    <small>@Cambio(a.Tickets, b?.Tickets, "sin tickets")</small>
                 </div>
                 <div class="vn-kpi" id="rep-kpi-promedio">
                     <span>Ticket promedio</span><strong>@(a.TicketPromedioCentavos is { } promedio ? Formato.Dinero(promedio) : "—")</strong>
-                    <small>@Cambio(a.TicketPromedioCentavos, b?.TicketPromedioCentavos)</small>
+                    <small>@Cambio(a.TicketPromedioCentavos, b?.TicketPromedioCentavos, "sin tickets", enPesos: true)</small>
                 </div>
                 @if (r.ConUtilidad && a.Utilidad is { } u)
                 {
                     @* Solo para quien ve la utilidad: con borde punteado, como lo que depende de un permiso en el corte del día. *@
                     <div class="vn-kpi restringido" id="rep-kpi-utilidad">
                         <span>Utilidad bruta</span><strong class="@(u.UtilidadCentavos < 0 ? "vn-dif-mal" : null)">@Formato.Pesos(u.UtilidadCentavos)</strong>
-                        <small>@(u.MargenCentesimas is { } m ? $"margen de {Margen.Texto(m)}" : "sin ventas con costo") · @Cambio(u.UtilidadCentavos, b?.Utilidad?.UtilidadCentavos)</small>
+                        <small>@(u.MargenCentesimas is { } m ? $"margen de {Margen.Texto(m)}" : "sin ventas con costo") · @Cambio(u.UtilidadCentavos, b?.Utilidad?.UtilidadCentavos, "sin utilidad", enPesos: true)</small>
                     </div>
                 }
                 else
@@ -145,7 +145,7 @@ else
                         @foreach (var d in r.Departamentos)
                         {
                             <tr>
-                                <td>@d.Nombre</td>
+                                <td title="@(d.Clase == ClaseVenta.SinDesglose ? TextosDeReportes.SinDesglose : null)">@d.Nombre</td>
                                 <td class="num">@Formato.ConSigno(d.VentaCentavos)</td>
                                 <td><div class="vn-barra-celda"><i style="width:@Ancho(d.VentaCentavos, mayor)"></i></div></td>
                                 @if (b is not null)
@@ -155,7 +155,7 @@ else
                                 }
                                 @if (r.ConUtilidad)
                                 {
-                                    <td class="num">@(d.Clase == ClaseVenta.ArticuloComun ? "sin costo" : d.MargenCentesimas is { } margen ? Margen.Texto(margen) : "—")</td>
+                                    <td class="num">@(d.Clase is ClaseVenta.ArticuloComun or ClaseVenta.SinDesglose ? "sin costo" : d.MargenCentesimas is { } margen ? Margen.Texto(margen) : "—")</td>
                                 }
                             </tr>
                         }
@@ -324,8 +324,10 @@ else
         }
         catch (ErrorCaja ex)
         {
+            // Lo de antes no se queda bajo el periodo que se pidió (revisión del PR #131, 2026-10-22): se ve el error, y «Volver
+            // a intentar» pide ese periodo.
             if (carga == _cargas)
-                _error = ex.Message;
+                (_error, _reporte) = (ex.Message, null);
         }
         finally
         {
@@ -369,24 +371,20 @@ else
             _ => Task.CompletedTask,
         };
 
-    /// <summary>Cuánto subió o bajó, como en el prototipo: «▲ 12.3 % contra el año pasado».</summary>
-    private RenderFragment Cambio(long? actual, long? anterior) => __builder =>
+    /// <summary>
+    /// Cuánto subió o bajó, como en el prototipo: «▲ 12.3 % contra el año pasado»; si no se puede decir, por qué
+    /// (<see cref="TextosDeReportes.SinCambio"/>).
+    /// </summary>
+    /// <param name="sinNada">Cómo se dice que no la hubo: «sin ventas», «sin tickets», «sin utilidad».</param>
+    private RenderFragment Cambio(long? actual, long? anterior, string sinNada, bool enPesos = false) => __builder =>
     {
-        if (_reporte is { Piloto: true })
+        if (_reporte is { } r && TextosDeReportes.SinCambio(r, actual, anterior, sinNada, enPesos) is { } porQue)
         {
-            <text>sin comparar en el piloto</text>
-        }
-        else if (_reporte?.Anterior is null)
-        {
-            <text>sin ventas el año pasado</text>
+            <text>@porQue</text>
         }
         else if (actual is { } este && TextosDeReportes.Cambio(este, anterior) is { } cambio)
         {
             <span class="@(cambio.Sube ? "sube" : "baja")">@(cambio.Sube ? "▲" : "▼") @cambio.Porcentaje</span><text> contra el año pasado</text>
-        }
-        else
-        {
-            <text>sin ventas el año pasado a estas alturas</text>
         }
     };
 

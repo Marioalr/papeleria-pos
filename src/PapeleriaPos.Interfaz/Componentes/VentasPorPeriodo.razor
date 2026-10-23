@@ -131,7 +131,8 @@
                 <span class="neta">Venta neta <strong>@Formato.Dinero(t.VentaCentavos)</strong></span>
                 @if (t.Cancelados > 0)
                 {
-                    <span class="tenue">@(t.Cancelados == 1 ? "1 cancelado" : $"{t.Cancelados} cancelados") (@Formato.Dinero(t.CanceladosCentavos)) no cuentan</span>
+                    @* Como en el corte del día: las que se hicieron esos días; el ticket ya no está en lo vendido. *@
+                    <span class="tenue">@(t.Cancelados == 1 ? "1 cancelación" : $"{t.Cancelados} cancelaciones") (@Formato.Dinero(t.CanceladosCentavos))</span>
                 }
             </div>
             <p class="nota" id="vpp-notas">@Notas(d)</p>
@@ -358,7 +359,8 @@
             ? "Nada cobrado en esos días."
             : $"Cómo se pagó: {string.Join(" · ", d.Totales.Formas.Select(f => $"{TextosDeReportes.Forma(f.Forma)} {Formato.Dinero(f.Centavos)}"))}"
               + (d.Totales.Formas.Any(f => f.Forma == FormaPago.Efectivo) ? " (el efectivo, sin el redondeo al peso)." : ".");
-        var cuentan = " Un ticket cancelado se lista, pero no cuenta; lo devuelto en esos días se resta, como en el corte del día.";
+        var cuentan = " Un ticket cancelado se lista el día en que se cobró, pero no cuenta en lo vendido; lo devuelto y las cancelaciones "
+            + "son los que se hicieron esos días (también de tickets de antes), como en el corte del día.";
         var historial = d.DelHistorialTickets > 0
             ? $" Además, el historial de eleventa tiene {Formato.Numero(d.DelHistorialTickets)} tickets ({Formato.Dinero(d.DelHistorialCentavos)}) en esos "
               + "días: cuentan en los reportes, pero no se listan porque no traen caja, cajero ni forma de pago."

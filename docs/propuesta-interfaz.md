@@ -520,7 +520,8 @@ No está en el prototipo:
   cajero del turno; si pasa del umbral, avisa por Telegram. Tarjeta y transferencias salen como información. Quien no
   tiene el permiso ve el corte X y el nombre de quién puede hacerlo.
 - **El del día, para quien tiene «ver y cerrar el corte del día»** (la primera cuenta). Junta todas las cajas y turnos:
-  - lo vendido;
+  - lo vendido: lo cobrado ese día, por la hora en que se cobró (también lo que se cobró sin conexión y subió después de
+    cerrado su turno: ese turno sale en la lista, con su corte en el día en que se hizo; revisión del PR #131);
   - el efectivo esperado y el contado en cada turno, con sus diferencias;
   - las formas de pago;
   - las salidas por categoría, las devoluciones y las cancelaciones;
@@ -557,8 +558,12 @@ entrega 9 ya está: la parte 1, todo lo de arriba menos exportar a Excel, y la p
   momento; un periodo que ya pasó, completo.
 - **← y →** llevan al periodo anterior y al siguiente (un día, una semana, un mes o un año completos); los botones de
   arriba, al de hoy.
-- **En el piloto con eleventa,** solo lo que vendió la caja 2, sin comparar: lo de la caja principal está en los reportes
-  de eleventa.
+- **En el piloto con eleventa** (la lectura o el envío a eleventa prendidos), solo lo que vendió la caja 2, sin comparar: lo
+  de la caja principal está en los reportes de eleventa.
+- **Lo que cuenta como el corte del día** (revisión del PR #131): las cancelaciones son las que se hicieron en el periodo;
+  el artículo común de eleventa va con el de aquí, y lo que un ticket de eleventa suma sin desglose, aparte. Bajo cada
+  cifra, lo que no hay en este periodo («sin tickets todavía») no se confunde con lo que no hubo el año pasado.
+- **Si un periodo no llega,** se ve el error con «Volver a intentar», no las cifras del periodo anterior.
 - **Exportar a Excel** (el botón del prototipo, arriba a la derecha; también en Movimientos, Bajos en inventario y Lo que vale
   el inventario): lo que se ve, con sus filtros y sin las páginas, una hoja por tabla. Lo arma la caja principal con los
   permisos de quien entró: sin «ver costos, utilidad y margen», ni la utilidad ni el costo van en el archivo. Cada hoja dice
@@ -570,7 +575,9 @@ entrega 9 ya está: la parte 1, todo lo de arriba menos exportar a Excel, y la p
   tareas del inventario («← Reportes» o Esc), los tickets de hoy, ayer, esta semana, este mes, el mes pasado o de una fecha a
   otra, de una caja o de todas, del primero al último y de 100 en 100, con los totales de todos esos días al final; ← y →,
   los días de antes o de después. «Imprimir el resumen» manda a la impresora de tickets lo de cada día y las formas de pago,
-  no cada ticket; «Exportar a Excel», todos. El historial de eleventa no se lista: no trae caja, cajero ni forma de pago.
+  no cada ticket; «Exportar a Excel», todos. Los totales de cada día son los del corte del día: lo cobrado ese día, y lo
+  devuelto y lo cancelado ese día (también de tickets de antes). El historial de eleventa no se lista: no trae caja, cajero
+  ni forma de pago.
 
 ## Configuración
 

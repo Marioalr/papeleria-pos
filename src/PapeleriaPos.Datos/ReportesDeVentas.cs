@@ -18,11 +18,13 @@ namespace PapeleriaPos.Datos;
 /// <para>
 /// Cuentan como el corte del día: la venta neta es lo cobrado en los tickets que no se cancelaron menos lo devuelto en el
 /// periodo, y la utilidad, lo vendido menos el costo que guardó cada renglón al cobrar, con lo devuelto restado y sin el
-/// artículo común (<see cref="VendidoPorDepartamento"/>, el mismo código que el corte). Lo de este POS se suma con el
-/// historial de eleventa (<see cref="Nucleo.Historico.VentaHistorica"/>): sus tickets sin los cancelados, con lo que eleventa
-/// les bajó al devolver, y la utilidad con el costo que se capturó allá. La importación final ya no trae lo que mandó el puente
-/// (2026-10-17), así que nada cuenta dos veces. El historial no trae ni el cajero ni la forma de pago: esas tablas son de lo
-/// vendido aquí.
+/// artículo común (<see cref="VendidoPorDepartamento"/>, el mismo código que el corte). Las cancelaciones que se cuentan son
+/// las que se hicieron en el periodo, como en el corte del día (revisión del PR #131, 2026-10-22). Lo de este POS se suma con
+/// el historial de eleventa (<see cref="Nucleo.Historico.VentaHistorica"/>): sus tickets sin los cancelados, con lo que
+/// eleventa les bajó al devolver (lo devuelto cuenta el día de la venta), y la utilidad con el costo que se capturó allá; su
+/// artículo común, como el de aquí (aparte y sin utilidad), y lo que el total de un ticket tiene de más o de menos contra sus
+/// artículos, «Sin desglose». La importación final ya no trae lo que mandó el puente (2026-10-17), así que nada cuenta dos
+/// veces. El historial no trae ni el cajero ni la forma de pago: esas tablas son de lo vendido aquí.
 /// </para>
 /// <para>
 /// En el piloto con eleventa solo está lo que vendió la caja 2 (lo de la caja principal está en eleventa): el reporte es de lo
@@ -125,14 +127,23 @@ public sealed class ReportesDeVentas(PosDbContext db)
             catalogo.Departamentos, conUtilidad);
         (VentasPorDepartamentoDto PorDepartamento, UtilidadDelDiaDto Utilidad)? anterior = renglonesAnterior is null ? null
             : VendidoPorDepartamento.Armar(renglonesAnterior.Select(r => r.Vendido).ToList(), catalogo.DepartamentoDe, catalogo.Departamentos, conUtilidad);
+        var sinDesglose = SinDesglose(horas.Values, renglones);
+        long? sinDesgloseAnterior = horasAlCorte is null || renglonesAnterior is null ? null : SinDesglose(horasAlCorte.Values, renglonesAnterior);
 
         var cifras = Cifras(horas.Values, conUtilidad ? utilidad : null);
         var cifrasAnteriores = horasAlCorte is null || anterior is not { } a ? null : Cifras(horasAlCorte.Values, conUtilidad ? a.Utilidad : null);
         return new ReporteVentasDto(p.Tipo, p.Desde, p.Hasta.AddDays(-1), hoy, p.Ahora, p.DesdeAnterior, p.HastaAnterior.AddDays(-1),
             p.CorteAnterior, cifras, cifrasAnteriores, await SerieAsync(sucursal, p, horas, horasAnterior, ct),
-            Departamentos(porDepartamento, anterior?.PorDepartamento, conUtilidad), await CajerosAsync(sucursal, actual, ct),
+            Departamentos(porDepartamento, anterior?.PorDepartamento, conUtilidad, sinDesglose, sinDesgloseAnterior), await CajerosAsync(sucursal, actual, ct),
             await FormasDePagoAsync(sucursal, actual, horas.Values, ct), LoMasVendido(renglones, catalogo), conUtilidad, piloto);
     }
+
+    /// <summary>
+    /// Del historial de eleventa, lo que sus tickets suman y sus artículos no (un total que no es la suma de sus artículos: la
+    /// importación lo avisa). Va en la venta neta y, en las ventas por departamento, aparte: así suman la venta neta.
+    /// </summary>
+    private static long SinDesglose(IEnumerable<DeUnaHora> horas, IEnumerable<Renglon> renglones) =>
+        horas.Sum(h => h.Historial) - renglones.Where(r => r.DelHistorial).Sum(r => r.Vendido.ImporteCentavos);
 
     // ── Las sumas en la base ──
 
@@ -144,11 +155,11 @@ public sealed class ReportesDeVentas(PosDbContext db)
             new(HoraMexico.AUtc(desde.ToDateTime(TimeOnly.MinValue)), HoraMexico.AUtc(hasta.ToDateTime(TimeOnly.MinValue)));
     }
 
-    /// <summary>Lo de una hora (UTC): las ventas de aquí, sus devoluciones y el historial de eleventa.</summary>
+    /// <summary>Lo de una hora (UTC): las ventas de aquí, las devoluciones y cancelaciones que se hicieron y el historial de eleventa.</summary>
     private sealed class DeUnaHora
     {
-        public long Tickets, Vendido, Redondeo, Cancelados, CanceladosCentavos;
-        public long Devoluciones, Devuelto, DevueltoAlCredito;
+        public long Tickets, Vendido, Redondeo;
+        public long Devoluciones, Devuelto, DevueltoAlCredito, Cancelados, CanceladosCentavos;
         public long TicketsHistorial, Historial;
 
         /// <summary>La venta neta de la hora.</summary>
@@ -159,23 +170,26 @@ public sealed class ReportesDeVentas(PosDbContext db)
     // sucursal no usa su índice: así la base usa el de la fecha (sin estadísticas, prefiere un índice que empieza por la
     // sucursal, que con una sola sucursal recorre todo).
     private const string VentasPorHoraSql = """
-        SELECT substr(v."PagadaUtc", 1, 13) AS "Hora",
-               SUM(CASE WHEN v."Estado" = 'Pagada' THEN 1 ELSE 0 END) AS "Tickets",
-               SUM(CASE WHEN v."Estado" = 'Pagada' THEN v."TotalCentavos" ELSE 0 END) AS "Centavos",
-               SUM(CASE WHEN v."Estado" = 'Pagada' THEN v."RedondeoCentavos" ELSE 0 END) AS "Redondeo",
-               SUM(CASE WHEN v."Estado" = 'Cancelada' THEN 1 ELSE 0 END) AS "Cancelados",
-               SUM(CASE WHEN v."Estado" = 'Cancelada' THEN v."TotalCentavos" ELSE 0 END) AS "CanceladosCentavos"
+        SELECT substr(v."PagadaUtc", 1, 13) AS "Hora", COUNT(*) AS "Tickets", SUM(v."TotalCentavos") AS "Centavos",
+               SUM(v."RedondeoCentavos") AS "Redondeo"
         FROM "Ventas" AS v
-        WHERE +v."SucursalId" = {0} AND v."PagadaUtc" >= {1} AND v."PagadaUtc" < {2} AND v."Estado" IN ('Pagada', 'Cancelada')
+        WHERE +v."SucursalId" = {0} AND v."PagadaUtc" >= {1} AND v."PagadaUtc" < {2} AND v."Estado" = 'Pagada'
         GROUP BY substr(v."PagadaUtc", 1, 13)
         """;
 
-    /// <summary>Las devoluciones, sin las cancelaciones (el ticket cancelado ya no está en lo vendido).</summary>
+    /// <summary>
+    /// Las devoluciones que se hicieron, de tickets de cualquier día; las cancelaciones, aparte: el ticket cancelado ya no está
+    /// en lo vendido, y se cuentan como en el corte del día, el día en que se cancelaron.
+    /// </summary>
     private const string DevolucionesPorHoraSql = """
-        SELECT substr(d."FechaUtc", 1, 13) AS "Hora", COUNT(*) AS "Devoluciones", SUM(d."TotalCentavos") AS "Centavos",
-               SUM(d."AlCreditoCentavos") AS "AlCredito"
+        SELECT substr(d."FechaUtc", 1, 13) AS "Hora",
+               SUM(CASE WHEN d."EsCancelacion" = 0 THEN 1 ELSE 0 END) AS "Devoluciones",
+               SUM(CASE WHEN d."EsCancelacion" = 0 THEN d."TotalCentavos" ELSE 0 END) AS "Centavos",
+               SUM(CASE WHEN d."EsCancelacion" = 0 THEN d."AlCreditoCentavos" ELSE 0 END) AS "AlCredito",
+               SUM(CASE WHEN d."EsCancelacion" = 1 THEN 1 ELSE 0 END) AS "Cancelaciones",
+               SUM(CASE WHEN d."EsCancelacion" = 1 THEN d."TotalCentavos" ELSE 0 END) AS "Cancelado"
         FROM "Devoluciones" AS d
-        WHERE +d."SucursalId" = {0} AND d."FechaUtc" >= {1} AND d."FechaUtc" < {2} AND d."EsCancelacion" = 0
+        WHERE +d."SucursalId" = {0} AND d."FechaUtc" >= {1} AND d."FechaUtc" < {2}
         GROUP BY substr(d."FechaUtc", 1, 13)
         """;
 
@@ -187,9 +201,9 @@ public sealed class ReportesDeVentas(PosDbContext db)
         GROUP BY substr(h."FechaUtc", 1, 13)
         """;
 
-    private sealed record VentasPorHora(string Hora, long Tickets, long Centavos, long Redondeo, long Cancelados, long CanceladosCentavos);
+    private sealed record VentasPorHora(string Hora, long Tickets, long Centavos, long Redondeo);
 
-    private sealed record DevolucionesPorHora(string Hora, long Devoluciones, long Centavos, long AlCredito);
+    private sealed record DevolucionesPorHora(string Hora, long Devoluciones, long Centavos, long AlCredito, long Cancelaciones, long Cancelado);
 
     private sealed record HistorialPorHora(string Hora, long Tickets, long Centavos);
 
@@ -206,12 +220,13 @@ public sealed class ReportesDeVentas(PosDbContext db)
         foreach (var v in await db.Database.SqlQueryRaw<VentasPorHora>(VentasPorHoraSql, sucursal, r.DesdeUtc, r.HastaUtc).ToListAsync(ct))
         {
             var de = De(v.Hora);
-            (de.Tickets, de.Vendido, de.Redondeo, de.Cancelados, de.CanceladosCentavos) = (v.Tickets, v.Centavos, v.Redondeo, v.Cancelados, v.CanceladosCentavos);
+            (de.Tickets, de.Vendido, de.Redondeo) = (v.Tickets, v.Centavos, v.Redondeo);
         }
         foreach (var d in await db.Database.SqlQueryRaw<DevolucionesPorHora>(DevolucionesPorHoraSql, sucursal, r.DesdeUtc, r.HastaUtc).ToListAsync(ct))
         {
             var de = De(d.Hora);
-            (de.Devoluciones, de.Devuelto, de.DevueltoAlCredito) = (d.Devoluciones, d.Centavos, d.AlCredito);
+            (de.Devoluciones, de.Devuelto, de.DevueltoAlCredito, de.Cancelados, de.CanceladosCentavos) =
+                (d.Devoluciones, d.Centavos, d.AlCredito, d.Cancelaciones, d.Cancelado);
         }
         if (conHistorial)
         {
@@ -249,22 +264,27 @@ public sealed class ReportesDeVentas(PosDbContext db)
         GROUP BY l."VarianteId", l."EsImpresiones"
         """;
 
-    /// <summary>Lo vendido de cada variante en el historial de eleventa, sin los tickets cancelados.</summary>
+    /// <summary>
+    /// Lo vendido de cada variante en el historial de eleventa, sin los tickets cancelados; el artículo común de eleventa, junto
+    /// y sin variante, como el de aquí.
+    /// </summary>
     private const string LineasHistorialSql = """
-        SELECT hl."VarianteId" AS "VarianteId", SUM(hl."ImporteCentavos") AS "Importe", SUM(hl."CostoCentavos") AS "Costo",
-               SUM(hl."Cantidad") AS "Cantidad"
+        SELECT CASE WHEN hl."EsArticuloComun" = 0 THEN hl."VarianteId" END AS "VarianteId", SUM(hl."ImporteCentavos") AS "Importe",
+               SUM(hl."CostoCentavos") AS "Costo", SUM(hl."Cantidad") AS "Cantidad"
         FROM "VentasHistoricasLineas" AS hl
         INNER JOIN "VentasHistoricas" AS h ON h."Id" = hl."VentaHistoricaId"
         WHERE +h."SucursalId" = {0} AND h."FechaUtc" >= {1} AND h."FechaUtc" < {2} AND h."Cancelada" = 0
-        GROUP BY hl."VarianteId"
+        GROUP BY CASE WHEN hl."EsArticuloComun" = 0 THEN hl."VarianteId" END
         """;
 
     private sealed record LineasAgrupadas(Guid? VarianteId, bool EsImpresiones, long Importe, long Costo, long Cantidad, long SinCosto);
 
-    private sealed record LineasDelHistorial(Guid VarianteId, long Importe, long Costo, long Cantidad);
+    /// <param name="VarianteId">Vacía: el artículo común de eleventa.</param>
+    private sealed record LineasDelHistorial(Guid? VarianteId, long Importe, long Costo, long Cantidad);
 
     /// <summary>Un renglón de lo vendido, con su cantidad en unidad base (en milésimas).</summary>
-    private sealed record Renglon(RenglonVendido Vendido, long Cantidad);
+    /// <param name="DelHistorial">Del historial de eleventa (para lo que sus tickets suman sin desglose).</param>
+    private sealed record Renglon(RenglonVendido Vendido, long Cantidad, bool DelHistorial = false);
 
     private async Task<List<Renglon>> RenglonesAsync(Guid sucursal, Rango r, bool conHistorial, CancellationToken ct)
     {
@@ -273,9 +293,10 @@ public sealed class ReportesDeVentas(PosDbContext db)
             .Concat((await db.Database.SqlQueryRaw<LineasAgrupadas>(DevueltoSql, sucursal, r.DesdeUtc, r.HastaUtc).ToListAsync(ct))
                 .Select(l => new Renglon(new RenglonVendido(l.VarianteId, l.EsImpresiones, -l.Importe, -l.Costo, -l.SinCosto), -l.Cantidad)))
             .ToList();
+        // El artículo común de eleventa (sin variante) va como el de aquí: aparte y sin costo, fuera de la utilidad.
         if (conHistorial)
             renglones.AddRange((await db.Database.SqlQueryRaw<LineasDelHistorial>(LineasHistorialSql, sucursal, r.DesdeUtc, r.HastaUtc).ToListAsync(ct))
-                .Select(l => new Renglon(new RenglonVendido(l.VarianteId, false, l.Importe, l.Costo, 0), l.Cantidad)));
+                .Select(l => new Renglon(new RenglonVendido(l.VarianteId, false, l.Importe, l.VarianteId is null ? 0 : l.Costo, 0), l.Cantidad, DelHistorial: true)));
         return renglones;
     }
 
@@ -332,11 +353,16 @@ public sealed class ReportesDeVentas(PosDbContext db)
         }).ToList();
     }
 
+    /// <summary>Cómo se llama en las ventas por departamento lo del historial de eleventa sin desglose.</summary>
+    public const string NombreSinDesglose = "Sin desglose";
+
     /// <summary>
     /// Las ventas por departamento de los dos periodos, juntas por su nombre: de lo que más se vendió a lo que menos (lo que
-    /// solo se vendió el año pasado, después), y al final las impresiones y el artículo común.
+    /// solo se vendió el año pasado, después), y al final las impresiones, el artículo común y lo del historial de eleventa sin
+    /// desglose. Suman la venta neta.
     /// </summary>
-    private static List<DepartamentoReporteDto> Departamentos(VentasPorDepartamentoDto actual, VentasPorDepartamentoDto? anterior, bool conCostos)
+    private static List<DepartamentoReporteDto> Departamentos(
+        VentasPorDepartamentoDto actual, VentasPorDepartamentoDto? anterior, bool conCostos, long sinDesglose, long? sinDesgloseAnterior)
     {
         var deEste = actual.Departamentos.ToDictionary(d => d.Departamento);
         var delAnterior = anterior?.Departamentos.ToDictionary(d => d.Departamento) ?? [];
@@ -351,6 +377,8 @@ public sealed class ReportesDeVentas(PosDbContext db)
                 conCostos ? actual.ImpresionesCostoCentavos ?? 0 : null));
         if (actual.ArticuloComunCentavos != 0 || anterior?.ArticuloComunCentavos is not (null or 0))
             renglones.Add(new DepartamentoReporteDto("Artículo común", ClaseVenta.ArticuloComun, actual.ArticuloComunCentavos, anterior?.ArticuloComunCentavos));
+        if (sinDesglose != 0 || sinDesgloseAnterior is not (null or 0))
+            renglones.Add(new DepartamentoReporteDto(NombreSinDesglose, ClaseVenta.SinDesglose, sinDesglose, anterior is null ? null : sinDesgloseAnterior ?? 0));
         return renglones;
     }
 

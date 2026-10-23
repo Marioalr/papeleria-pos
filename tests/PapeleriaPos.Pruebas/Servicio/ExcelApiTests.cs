@@ -5,6 +5,7 @@ using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Validation;
 using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Datos;
+using PapeleriaPos.Interfaz;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Catalogo;
 using PapeleriaPos.Nucleo.Contratos;
@@ -12,6 +13,8 @@ using PapeleriaPos.Nucleo.Control;
 using PapeleriaPos.Nucleo.Importacion;
 using PapeleriaPos.Nucleo.Inventario;
 using PapeleriaPos.Nucleo.Ventas;
+using PapeleriaPos.Pruebas.Datos;
+using PapeleriaPos.Servicio.Excel;
 
 namespace PapeleriaPos.Pruebas.Servicio;
 
@@ -188,6 +191,47 @@ public sealed class ExcelApiTests(ServicioDePrueba servicio) : IClassFixture<Ser
         Assert.Contains("«Ver reportes de ventas»", (await delCajero.Content.ReadFromJsonAsync<ErrorDto>())!.Mensaje);
     }
 
+    /// <summary>
+    /// Las ventas por departamento, como en la pantalla (revisión del PR #131): lo que un ticket del historial de eleventa suma de
+    /// más contra sus artículos va en «Sin desglose», y el artículo común, aparte; los dos «sin costo», fuera de la utilidad, y
+    /// todos suman la venta neta.
+    /// </summary>
+    [Fact]
+    public async Task Los_departamentos_llevan_sin_desglose_y_el_articulo_comun_sin_costo_como_la_pantalla()
+    {
+        var ahora = new DateTime(2026, 10, 21, 13, 30, 0);
+        await using var t = await TiendaDeReportes.CrearAsync(ahora);
+        var turno = await t.TurnoAsync(t.Ana, TiendaDeReportes.A(2026, 10, 21, 9));
+        await t.VenderAsync(turno, TiendaDeReportes.A(2026, 10, 21, 10), [(t.Pluma, 2)], comun: 1500);
+        // Un ticket del historial de eleventa que suma $5 más que su artículo (una pluma de $10).
+        var historico = await t.HistorialAsync(TiendaDeReportes.A(2026, 10, 21, 9, 30), [(t.Pluma, 1, 400)]);
+        await using (var db = t.Contexto())
+        {
+            (await db.VentasHistoricas.SingleAsync(h => h.Id == historico.Id)).TotalCentavos += 500;
+            await db.SaveChangesAsync();
+        }
+        var reporte = await t.ReporteAsync(PeriodoReporte.Hoy);
+
+        using var libro = new XLWorkbook(new MemoryStream(ExcelDeReportes.Armar(reporte, new QuienExporta("Matriz", "Luis", ahora))));
+
+        var hoja = libro.Worksheet(ExcelDeReportes.HojaDepartamentos);
+        var (_, renglones) = Tabla(hoja);
+        var porNombre = renglones.ToDictionary(r => r["Departamento"].GetText());
+        Assert.Equal(["Escritura", "Artículo común", "Sin desglose"], porNombre.Keys);
+        Assert.Equal((5m, "sin costo"), ((decimal)porNombre["Sin desglose"]["Venta"].GetNumber(), porNombre["Sin desglose"]["Margen"].GetText()));
+        Assert.Equal((15m, "sin costo"), ((decimal)porNombre["Artículo común"]["Venta"].GetNumber(), porNombre["Artículo común"]["Margen"].GetText()));
+        Assert.All([porNombre["Sin desglose"], porNombre["Artículo común"]], r => Assert.True(r["Costo"].IsBlank && r["Utilidad"].IsBlank));
+        // La pluma sí tiene su costo y su margen.
+        Assert.True(porNombre["Escritura"]["Margen"].IsNumber);
+        // Suman la venta neta, y la nota dice qué es «Sin desglose».
+        Assert.Equal(reporte.Actual.VentaCentavos / 100m, renglones.Sum(r => (decimal)r["Venta"].GetNumber()));
+        Assert.Contains(hoja.CellsUsed(), c => c.GetString() == TextosDeReportes.NotaSinDesglose(reporte));
+        Assert.StartsWith("«Sin desglose» es lo que los tickets del historial de eleventa suman", TextosDeReportes.NotaSinDesglose(reporte));
+        // El resumen lleva las notas de la pantalla.
+        var resumen = libro.Worksheet(ExcelDeReportes.HojaResumen);
+        Assert.All(TextosDeReportes.Notas(reporte), nota => Assert.Contains(resumen.CellsUsed(), c => c.GetString() == nota));
+    }
+
     [Fact]
     public async Task Ventas_por_periodo_en_pantalla_por_paginas_y_en_excel_todos_los_tickets_con_sus_totales_y_cada_dia()
     {
@@ -234,7 +278,7 @@ public sealed class ExcelApiTests(ServicioDePrueba servicio) : IClassFixture<Ser
 
         // Cada día del periodo (también el que no tuvo nada) y el total.
         var (columnas, porDia) = Tabla(libro.Worksheet("Por día"));
-        Assert.Equal(["Día", "Tickets", "Vendido", "Efectivo", "Tarjeta", "Devoluciones", "Devuelto", "Venta neta", "Cancelados", "Lo cancelado"], columnas);
+        Assert.Equal(["Día", "Tickets", "Vendido", "Efectivo", "Tarjeta", "Devoluciones", "Devuelto", "Venta neta", "Cancelaciones", "Cancelado"], columnas);
         Assert.Equal([Hoy.AddDays(-1).ToDateTime(TimeOnly.MinValue), Hoy.ToDateTime(TimeOnly.MinValue)], porDia.Select(d => d["Día"].GetDateTime()));
         var deHoy = porDia[1];
         Assert.Equal(pagina.Dias.Single(d => d.Fecha == Hoy).VendidoCentavos / 100m, (decimal)deHoy["Vendido"].GetNumber());

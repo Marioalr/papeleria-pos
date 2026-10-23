@@ -35,6 +35,15 @@ public sealed class OpcionesEleventa
     /// </summary>
     public bool CorteEnEleventa => Escribir;
 
+    /// <summary>
+    /// El piloto para lo que cuenta las ventas de la tienda (los reportes de ventas; revisión del PR #131, 2026-10-22): con
+    /// cualquiera de los dos prendidos, eleventa sigue siendo el punto de venta de la caja principal, así que en esta base solo
+    /// está lo de la caja 2 y el historial de eleventa es de toda la tienda. La lectura (<see cref="Activo"/>) es lo que marca el
+    /// piloto en la trastienda (productos, inventario, promociones); mandar las ventas (<see cref="Escribir"/>), en el cobro y
+    /// el corte. Una caja 2 que solo lee el catálogo también es del piloto. Solo para convivir con eleventa: se quita al dejarlo.
+    /// </summary>
+    public bool Piloto => Activo || Escribir;
+
     /// <summary>La caja de eleventa como la que vende esta caja (<c>CAJAS.ID</c>).</summary>
     public int? Caja { get; set; }
 

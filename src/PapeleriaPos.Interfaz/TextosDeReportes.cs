@@ -109,6 +109,30 @@ public static class TextosDeReportes
         return (cambio >= 0, $"{Math.Abs(cambio).ToString("0.#", Formato.Mexico)} %");
     }
 
+    /// <summary>
+    /// Por qué una cifra de arriba no dice cuánto subió o bajó contra el año pasado; vacío si lo dice (<see cref="Cambio"/>).
+    /// Lo que falta en este periodo no es lo que no hubo el año pasado (revisión del PR #131, 2026-10-22): sin tickets, el
+    /// ticket promedio dice «sin tickets todavía» (o «en este periodo», si ya pasó); una cifra del año pasado en cero dice que
+    /// no la hubo, y una negativa (en dinero), cuánto fue. «A estas alturas», solo si el periodo va a la fecha.
+    /// </summary>
+    /// <param name="actual">La cifra de este periodo; vacía si no la hay (el ticket promedio sin tickets).</param>
+    /// <param name="anterior">La del año pasado, hasta el mismo momento; vacía si no la hay.</param>
+    /// <param name="sinNada">Cómo se dice que no la hubo: «sin ventas», «sin tickets», «sin utilidad».</param>
+    /// <param name="enPesos">Es dinero: lo del año pasado que no es cero ni sirve para sacar el porcentaje se dice con su cifra.</param>
+    public static string? SinCambio(ReporteVentasDto r, long? actual, long? anterior, string sinNada, bool enPesos = false)
+    {
+        if (r.Piloto)
+            return "sin comparar en el piloto";
+        if (r.Anterior is null)
+            return "sin ventas el año pasado";
+        if (actual is not { } este)
+            return r.ALaFecha ? $"{sinNada} todavía" : $"{sinNada} en este periodo";
+        if (Cambio(este, anterior) is not null)
+            return null;
+        var cuando = r.ALaFecha ? "el año pasado a estas alturas" : "el año pasado";
+        return enPesos && anterior is { } antes && antes != 0 ? $"{cuando}: {Formato.ConSigno(antes)}" : $"{sinNada} {cuando}";
+    }
+
     /// <summary>Para las tablas, en enteros: «+12 %», «−8 %», «nuevo» (sin nada el año pasado) o «—».</summary>
     public static string CambioCorto(long actual, long? anterior) => anterior switch
     {
@@ -137,10 +161,25 @@ public static class TextosDeReportes
         _ => Meses[inicio.Month - 1],
     };
 
-    /// <summary>El punto del año pasado que le toca: «mié 22 oct 2025» o «octubre de 2025».</summary>
-    public static string DetalleAnterior(PeriodoReporte periodo, DateTime inicio) => periodo == PeriodoReporte.Anio
-        ? $"{Meses[inicio.Month - 1]} de {inicio.Year}"
-        : $"{DiasCortos[(int)inicio.DayOfWeek]} {inicio.Day} {MesesCortos[inicio.Month - 1]} {inicio.Year}";
+    /// <summary>
+    /// El punto del año pasado que le toca: «mié 22 oct 2025» o «octubre de 2025». En el mes, el último día de un febrero de 28
+    /// lleva también el 29 del año pasado (<see cref="Nucleo.Reportes.PeriodoDeReporte.Cubeta"/>): «lun 28 y mar 29 feb 2028».
+    /// </summary>
+    /// <param name="desde">El primer día del periodo que se ve (para saber cuántos días tiene su mes).</param>
+    public static string DetalleAnterior(PeriodoReporte periodo, DateTime inicio, DateOnly? desde = null)
+    {
+        if (periodo == PeriodoReporte.Anio)
+            return $"{Meses[inicio.Month - 1]} de {inicio.Year}";
+        var dia = $"{DiasCortos[(int)inicio.DayOfWeek]} {inicio.Day}";
+        if (periodo == PeriodoReporte.Mes && desde is { } d && inicio.Day == DateTime.DaysInMonth(d.Year, d.Month)
+            && DateTime.DaysInMonth(inicio.Year, inicio.Month) > inicio.Day)
+        {
+            var despues = Enumerable.Range(inicio.Day + 1, DateTime.DaysInMonth(inicio.Year, inicio.Month) - inicio.Day)
+                .Select(n => new DateTime(inicio.Year, inicio.Month, n)).Select(f => $"{DiasCortos[(int)f.DayOfWeek]} {f.Day}");
+            dia = $"{string.Join(", ", new[] { dia }.Concat(despues.SkipLast(1)))} y {despues.Last()}";
+        }
+        return $"{dia} {MesesCortos[inicio.Month - 1]} {inicio.Year}";
+    }
 
     /// <summary>Las cifras del eje: «$850», «$12.5 mil», «$1.2 M».</summary>
     public static string Compacto(long centavos)
@@ -154,29 +193,45 @@ public static class TextosDeReportes
     }
 
     /// <summary>
-    /// De dónde sale la venta neta: lo cobrado menos lo devuelto, sin los cancelados, como en el corte del día. Lo dicen la pantalla
-    /// y el Excel.
+    /// De dónde sale la venta neta, como en el corte del día: lo cobrado en los tickets que no se cancelaron menos lo devuelto; y
+    /// las cancelaciones que se hicieron en el periodo, como las cuenta el corte del día (revisión del PR #131, 2026-10-22). Lo
+    /// dicen la pantalla y el Excel.
     /// </summary>
     public static string VentaNeta(CifrasReporteDto a)
     {
-        var partes = $"Venta neta: lo cobrado ({Formato.Dinero(a.VendidoCentavos)})";
+        var partes = $"Venta neta: lo cobrado en los tickets que no se cancelaron ({Formato.Dinero(a.VendidoCentavos)})";
         if (a.DevueltoCentavos != 0)
             partes += $" menos lo devuelto ({Formato.Dinero(a.DevueltoCentavos)}{(a.Devoluciones == 1 ? ", 1 devolución" : $", {a.Devoluciones} devoluciones")})";
-        partes += a.Cancelados switch
+        partes += ", como en el corte del día.";
+        return a.Cancelados switch
         {
-            0 => "; los tickets cancelados no cuentan",
-            1 => $"; el ticket cancelado ({Formato.Dinero(a.CanceladosCentavos)}) no cuenta",
-            _ => $"; los {a.Cancelados} tickets cancelados ({Formato.Dinero(a.CanceladosCentavos)}) no cuentan",
+            0 => partes,
+            1 => $"{partes} En este periodo se canceló 1 ticket ({Formato.Dinero(a.CanceladosCentavos)}).",
+            _ => $"{partes} En este periodo se cancelaron {a.Cancelados} tickets ({Formato.Dinero(a.CanceladosCentavos)}).",
         };
-        return partes + ", como en el corte del día.";
     }
+
+    /// <summary>Qué es «Sin desglose» en las ventas por departamento (la pantalla lo pone al pasar el ratón; el Excel, en las notas).</summary>
+    public const string SinDesglose =
+        "Lo que los tickets del historial de eleventa suman y sus artículos no (un total que no es la suma de sus artículos): cuenta en la "
+        + "venta neta, sin departamento ni costo.";
+
+    /// <summary>La nota de «Sin desglose», si el reporte lo trae (en las notas de la pantalla y en la hoja de los departamentos).</summary>
+    public static string? NotaSinDesglose(ReporteVentasDto r) =>
+        r.Departamentos.FirstOrDefault(d => d.Clase == ClaseVenta.SinDesglose) is { } sinDesglose
+            ? $"«{sinDesglose.Nombre}» es {char.ToLower(SinDesglose[0], Formato.Mexico)}{SinDesglose[1..]}"
+            : null;
 
     /// <summary>Las notas de abajo: de dónde sale cada cosa. Las dicen la pantalla y el Excel.</summary>
     public static IEnumerable<string> Notas(ReporteVentasDto r)
     {
-        if (r.Anterior is { DelHistorialCentavos: not 0 })
-            yield return "El año pasado sale del historial de eleventa: sus tickets, con lo que eleventa les bajó al devolver"
-                + (r.ConUtilidad ? "; su utilidad, con el costo que se capturó en eleventa." : ".");
+        if (r.Anterior is { DelHistorialCentavos: not 0 } || r.Actual.DelHistorialCentavos != 0)
+            yield return "Lo de eleventa sale de su historial: cada ticket con lo que eleventa le bajó al devolver (lo devuelto cuenta el día de "
+                + "la venta, así que un mes ya cerrado puede diferir un poco del reporte de eleventa)"
+                + (r.ConUtilidad ? ", y su utilidad con el costo que se capturó en eleventa" : "")
+                + ". Su artículo común va con el de aquí, sin utilidad.";
+        if (NotaSinDesglose(r) is { } sinDesglose)
+            yield return sinDesglose;
         yield return r.Actual.DelHistorialCentavos != 0
             ? $"De este periodo, {Formato.Dinero(r.Actual.DelHistorialCentavos)} ({Formato.Numero(r.Actual.DelHistorialTickets)} tickets) salen del "
               + "historial de eleventa, que no trae el cajero ni la forma de pago: esas tablas son de lo vendido aquí."

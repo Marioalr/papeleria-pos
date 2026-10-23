@@ -156,16 +156,16 @@ public sealed class VentasPorPeriodoTests
             d.Dias.Select(x => (x.Fecha!.Value, x.Tickets, x.VendidoCentavos, x.DevueltoCentavos, x.Cancelados)));
         Assert.Equal([Forma(FormaPago.Efectivo, 9750), Forma(FormaPago.Tarjeta, 3500)], d.Dias[2].Formas);
 
-        // Hoy, lo mismo que el corte del día: lo vendido, los tickets, lo devuelto y lo cancelado; el efectivo del corte trae
-        // el redondeo al peso (50 centavos de la goma de Beto).
-        await using (var db = s.Tienda.Contexto())
+        // Cada día, lo mismo que su corte del día: lo vendido, los tickets, lo devuelto, lo cancelado y cada forma de pago; el
+        // efectivo del corte trae el redondeo al peso (50 centavos de cada goma: la de la medianoche del martes y la de hoy).
+        var redondeo = new Dictionary<DateOnly, long> { [new DateOnly(2026, 10, 19)] = 0, [new DateOnly(2026, 10, 20)] = 50, [Hoy] = 50 };
+        foreach (var dia in d.Dias)
         {
-            var corte = await new RegistroCorteDelDia(db).ArmarAsync(s.Tienda.Matriz.Id, Hoy, new Dictionary<Guid, PresenciaDeCaja>());
-            var hoy = d.Dias[2];
+            var corte = await s.Tienda.CorteDelDiaAsync(dia.Fecha!.Value);
             Assert.Equal((corte.Tickets, corte.VendidoCentavos, corte.Devoluciones, corte.DevolucionesCentavos, corte.Cancelaciones, corte.CancelacionesCentavos),
-                (hoy.Tickets, hoy.VendidoCentavos, hoy.Devoluciones, hoy.DevueltoCentavos, hoy.Cancelados, hoy.CanceladosCentavos));
-            Assert.Equal(corte.EfectivoCentavos - 50, hoy.Formas.Single(f => f.Forma == FormaPago.Efectivo).Centavos);
-            Assert.Equal(corte.TarjetaCentavos, hoy.Formas.Single(f => f.Forma == FormaPago.Tarjeta).Centavos);
+                (dia.Tickets, dia.VendidoCentavos, dia.Devoluciones, dia.DevueltoCentavos, dia.Cancelados, dia.CanceladosCentavos));
+            Assert.Equal((corte.EfectivoCentavos - redondeo[dia.Fecha.Value], corte.TarjetaCentavos, corte.TransferenciaCentavos),
+                (Centavos(dia, FormaPago.Efectivo), Centavos(dia, FormaPago.Tarjeta), Centavos(dia, FormaPago.Transferencia)));
         }
         // Y como el reporte de esos días, sin lo del historial de eleventa (que aquí no se lista).
         var semana = await s.Tienda.ReporteAsync(PeriodoReporte.Semana);
@@ -173,6 +173,47 @@ public sealed class VentasPorPeriodoTests
         Assert.Equal((a.Tickets - a.DelHistorialTickets, a.VendidoCentavos - a.DelHistorialCentavos, a.DevueltoCentavos, a.Cancelados),
             (d.Totales.Tickets, d.Totales.VendidoCentavos, d.Totales.DevueltoCentavos, d.Totales.Cancelados));
         Assert.Equal(semana.FormasDePago.Sum(f => f.Centavos), d.Totales.VentaCentavos);
+    }
+
+    private static long Centavos(ResumenDeVentasDto dia, FormaPago forma) => dia.Formas.FirstOrDefault(f => f.Forma == forma)?.Centavos ?? 0;
+
+    [Fact]
+    public async Task Una_cancelacion_cuenta_el_dia_en_que_se_hizo_como_en_el_corte_del_dia()
+    {
+        await using var t = await TiendaDeReportes.CrearAsync(Ahora);
+        // El martes, Beto cobra un cuaderno ($40) y tres plumas ($30); hoy a las 9:00 se cancela el del cuaderno.
+        var deAyerDeBeto = await t.TurnoAsync(t.Beto, A(2026, 10, 20, 16), A(2026, 10, 20, 21));
+        var cuaderno = await t.VenderAsync(deAyerDeBeto, A(2026, 10, 20, 17), [(t.Cuaderno, 1)]);
+        await t.VenderAsync(deAyerDeBeto, A(2026, 10, 20, 18), [(t.Pluma, 3)]);
+        await t.CancelarAsync(cuaderno, A(2026, 10, 21, 9));
+        var martes = new DateOnly(2026, 10, 20);
+
+        var losDos = await PorPeriodoAsync(t, martes, Hoy);
+
+        // El cuaderno se lista el día en que se cobró, pero no cuenta en lo vendido de ese día; su cancelación cuenta hoy.
+        Assert.Equal(2, losDos.Total);
+        Assert.Equal([("A-000001", true), ("A-000002", false)], losDos.Ventas.Select(v => (v.Folio, v.Cancelada)));
+        Assert.Equal([(martes, 1, 3000L, 0, 0L), (Hoy, 0, 0L, 1, 4000L)],
+            losDos.Dias.Select(x => (x.Fecha!.Value, x.Tickets, x.VendidoCentavos, x.Cancelados, x.CanceladosCentavos)));
+        Assert.Equal((1, 3000L, 1, 4000L, 3000L), (losDos.Totales.Tickets, losDos.Totales.VendidoCentavos, losDos.Totales.Cancelados,
+            losDos.Totales.CanceladosCentavos, losDos.Totales.VentaCentavos));
+        // Cada día, como su corte del día.
+        foreach (var dia in losDos.Dias)
+        {
+            var corte = await t.CorteDelDiaAsync(dia.Fecha!.Value);
+            Assert.Equal((corte.Tickets, corte.VendidoCentavos, corte.Devoluciones, corte.DevolucionesCentavos, corte.Cancelaciones, corte.CancelacionesCentavos),
+                (dia.Tickets, dia.VendidoCentavos, dia.Devoluciones, dia.DevueltoCentavos, dia.Cancelados, dia.CanceladosCentavos));
+        }
+
+        // Solo el martes: el cuaderno se lista (cancelado), sin su cancelación, que es de hoy.
+        var delMartes = await PorPeriodoAsync(t, martes, martes);
+        Assert.Equal((2, 1, 3000L, 0), (delMartes.Total, delMartes.Totales.Tickets, delMartes.Totales.VendidoCentavos, delMartes.Totales.Cancelados));
+        // Solo hoy: ningún ticket que listar, y la cancelación, como en el reporte de hoy.
+        var deHoy = await PorPeriodoAsync(t, Hoy, Hoy);
+        Assert.Empty(deHoy.Ventas);
+        Assert.Equal((0, 0, 1, 4000L), (deHoy.Total, deHoy.Totales.Tickets, deHoy.Totales.Cancelados, deHoy.Totales.CanceladosCentavos));
+        var reporte = await t.ReporteAsync(PeriodoReporte.Hoy);
+        Assert.Equal((reporte.Actual.Cancelados, reporte.Actual.CanceladosCentavos), (deHoy.Totales.Cancelados, deHoy.Totales.CanceladosCentavos));
     }
 
     [Fact]

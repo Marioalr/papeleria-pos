@@ -169,6 +169,9 @@ public static class DisenoComprobante
             // Su corte va en el día en que se hizo.
             else if (t.CerradoLocal is { } despues && DateOnly.FromDateTime(despues) > d.Fecha)
                 Texto($"Su corte, el {despues.ToString("dd/MM", Mexico)}, va en ese día.", sangria: 2);
+            // Se cerró antes: está por lo que se cobró en él sin conexión y subió tarde, con la hora de este día.
+            else if (t.CerradoLocal is { } antes && DateOnly.FromDateTime(antes) < d.Fecha)
+                Texto($"Cobrado sin conexión; su corte es del {antes.ToString("dd/MM", Mexico)}.", sangria: 2);
             else if (t.CerradoLocal is null)
                 Texto(d.Piloto ? "Corte en eleventa" : t.EsperadoCentavos is { } esperado
                     ? $"Turno abierto · esperado {DisenoTicket.Dinero(esperado)}"
@@ -247,7 +250,8 @@ public static class DisenoComprobante
     /// El resumen de «Ventas por período» (entrega 9, parte 2, 2026-10-22), como eleventa lo manda a la impresora de tickets pero sin
     /// cada ticket (eleventa advierte que gasta mucho papel): de qué días y de qué caja, lo de cada día (los tickets y lo vendido; lo
     /// devuelto y las formas de pago que no son efectivo, si las hubo), las formas de pago de todo el periodo y los totales, como en
-    /// la pantalla: lo vendido, lo devuelto, la venta neta y los cancelados, que no cuentan.
+    /// la pantalla: lo vendido, lo devuelto, la venta neta y las cancelaciones de esos días (como en el corte del día: el ticket
+    /// cancelado ya no está en lo vendido).
     /// </summary>
     /// <param name="caja">La caja que se eligió; vacía: todas.</param>
     /// <param name="impresoPor">Quien lo imprime.</param>
@@ -315,7 +319,10 @@ public static class DisenoComprobante
         Dinero($"Devoluciones ({t.Devoluciones})", -t.DevueltoCentavos);
         Dinero("Venta neta", t.VentaCentavos, negrita: true);
         if (t.Cancelados > 0)
-            Dinero($"Cancelados ({t.Cancelados}, no cuentan)", t.CanceladosCentavos);
+        {
+            Dinero($"Cancelaciones ({t.Cancelados})", t.CanceladosCentavos);
+            Texto("El ticket cancelado ya no cuenta en lo vendido.");
+        }
         return e;
     }
 

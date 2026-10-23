@@ -7,8 +7,9 @@ namespace PapeleriaPos.Servicio;
 /// <summary>
 /// Los reportes de ventas (entrega 9, parte 1, 2026-10-22): solo leen, con el usuario que entró a la caja. El servicio revisa
 /// sus permisos (<see cref="ReportesDeVentas"/>): «Ver reportes de ventas» para verlos y «Ver costos, utilidad y margen» para
-/// la utilidad. En el piloto con eleventa, solo lo de la caja 2 (lo de la principal está en eleventa). Los errores van en
-/// palabras de la tienda (ErroresApi): 403 sin el permiso, 400 lo demás.
+/// la utilidad. En el piloto con eleventa (<see cref="OpcionesEleventa.Piloto"/>: la lectura o el envío prendidos), solo lo de
+/// la caja 2 (lo de la principal está en eleventa). Los errores van en palabras de la tienda (ErroresApi): 403 sin el permiso,
+/// 400 lo demás.
 /// <para>
 /// La parte 2 (2026-10-22): «Ventas por período» (<see cref="ReporteVentasPorPeriodo"/>) y el Excel de los dos, que arma este
 /// servicio con los mismos permisos que la pantalla (el reporte que lo llena es el mismo que ve quien lo exporta).
@@ -23,13 +24,13 @@ public static class ApiReportes
         // Hoy, la semana, el mes o el año (sin periodo: hoy) del día pedido (sin fecha: hoy), contra el mismo periodo del año pasado.
         api.MapGet("/cajas/{cajaId:guid}/reportes/ventas", (Guid cajaId, Guid usuarioId, string? periodo, DateOnly? fecha, PosDbContext db,
             OpcionesEleventa opcionesEleventa) =>
-            new ReportesDeVentas(db).ArmarAsync(cajaId, usuarioId, Periodo(periodo), fecha, opcionesEleventa.CorteEnEleventa));
+            new ReportesDeVentas(db).ArmarAsync(cajaId, usuarioId, Periodo(periodo), fecha, opcionesEleventa.Piloto));
 
         // El mismo reporte en Excel: una hoja por tabla.
         api.MapGet("/cajas/{cajaId:guid}/reportes/ventas/excel", async (Guid cajaId, Guid usuarioId, string? periodo, DateOnly? fecha, PosDbContext db,
             OpcionesEleventa opcionesEleventa) =>
         {
-            var reporte = await new ReportesDeVentas(db).ArmarAsync(cajaId, usuarioId, Periodo(periodo), fecha, opcionesEleventa.CorteEnEleventa);
+            var reporte = await new ReportesDeVentas(db).ArmarAsync(cajaId, usuarioId, Periodo(periodo), fecha, opcionesEleventa.Piloto);
             var quien = await QuienExporta.DeAsync(db, await SucursalDeAsync(db, cajaId), usuarioId);
             return Excel(ExcelDeReportes.Armar(reporte, quien), ArchivosDeReportes.ReporteDeVentas(reporte.Periodo, reporte.Desde));
         });
@@ -37,13 +38,13 @@ public static class ApiReportes
         // Ventas por período: los tickets de unos días (sin fechas: hoy) de una caja o de todas, de 100 en 100, con sus totales.
         api.MapGet("/cajas/{cajaId:guid}/reportes/ventas-por-periodo", (Guid cajaId, Guid usuarioId, DateOnly? desde, DateOnly? hasta, Guid? caja,
             int? pagina, PosDbContext db, OpcionesEleventa opcionesEleventa) =>
-            new ReporteVentasPorPeriodo(db).ArmarAsync(cajaId, usuarioId, desde, hasta, caja, pagina ?? 0, opcionesEleventa.CorteEnEleventa));
+            new ReporteVentasPorPeriodo(db).ArmarAsync(cajaId, usuarioId, desde, hasta, caja, pagina ?? 0, opcionesEleventa.Piloto));
 
         // Todos los tickets de esos días en Excel, con los totales y cada día.
         api.MapGet("/cajas/{cajaId:guid}/reportes/ventas-por-periodo/excel", async (Guid cajaId, Guid usuarioId, DateOnly? desde, DateOnly? hasta,
             Guid? caja, PosDbContext db, OpcionesEleventa opcionesEleventa) =>
         {
-            var ventas = await new ReporteVentasPorPeriodo(db).TodoAsync(cajaId, usuarioId, desde, hasta, caja, opcionesEleventa.CorteEnEleventa);
+            var ventas = await new ReporteVentasPorPeriodo(db).TodoAsync(cajaId, usuarioId, desde, hasta, caja, opcionesEleventa.Piloto);
             var quien = await QuienExporta.DeAsync(db, await SucursalDeAsync(db, cajaId), usuarioId);
             var deCaja = caja is { } elegida ? ventas.Cajas.FirstOrDefault(c => c.Id == elegida)?.Nombre : null;
             return Excel(ExcelDeVentasPorPeriodo.Armar(ventas, quien), ArchivosDeReportes.VentasPorPeriodo(ventas.Desde, ventas.Hasta, deCaja));

@@ -97,5 +97,37 @@ public class TextosDeReportesTests
             TextosDeReportes.Detalle(PeriodoReporte.Anio, new DateTime(2026, 10, 1))));
         Assert.Equal("mié 22 oct 2025", TextosDeReportes.DetalleAnterior(PeriodoReporte.Hoy, new DateTime(2025, 10, 22, 9, 0, 0)));
         Assert.Equal("octubre de 2025", TextosDeReportes.DetalleAnterior(PeriodoReporte.Anio, new DateTime(2025, 10, 1)));
+        // Un febrero de 28 días contra uno de 29: el 28 lleva también el 29 del año pasado (revisión del PR #131).
+        Assert.Equal("lun 28 y mar 29 feb 2028", TextosDeReportes.DetalleAnterior(PeriodoReporte.Mes, new DateTime(2028, 2, 28), D(2029, 2, 1)));
+        Assert.Equal("dom 27 feb 2028", TextosDeReportes.DetalleAnterior(PeriodoReporte.Mes, new DateTime(2028, 2, 27), D(2029, 2, 1)));
+        Assert.Equal("dom 28 feb 2027", TextosDeReportes.DetalleAnterior(PeriodoReporte.Mes, new DateTime(2027, 2, 28), D(2028, 2, 1)));
+    }
+
+    /// <summary>
+    /// Lo que dice una cifra de arriba cuando no puede decir cuánto subió o bajó (revisión del PR #131): lo que falta en este
+    /// periodo no es lo que no hubo el año pasado, una utilidad del año pasado en cero o negativa no es «sin ventas», y «a estas
+    /// alturas» solo va con un periodo a la fecha.
+    /// </summary>
+    [Fact]
+    public void Por_que_una_cifra_no_dice_cuanto_subio_o_bajo()
+    {
+        var hoy = Reporte(PeriodoReporte.Hoy, D(2026, 10, 21), anterior: Nada with { VentaCentavos = 12345, Tickets = 1 });
+        var ayer = Reporte(PeriodoReporte.Hoy, D(2026, 10, 20), anterior: Nada);
+
+        // Con algo que comparar, lo dice el cambio.
+        Assert.Null(TextosDeReportes.SinCambio(hoy, 0, 12345, "sin ventas", enPesos: true));
+        // Hoy sin tickets no hay ticket promedio; el año pasado a estas alturas, sí.
+        Assert.Equal("sin tickets todavía", TextosDeReportes.SinCambio(hoy, null, 12345, "sin tickets", enPesos: true));
+        Assert.Equal("sin tickets en este periodo", TextosDeReportes.SinCambio(ayer, null, null, "sin tickets", enPesos: true));
+        // Lo que no hubo el año pasado.
+        Assert.Equal("sin tickets el año pasado a estas alturas", TextosDeReportes.SinCambio(hoy, 2500, null, "sin tickets", enPesos: true));
+        Assert.Equal("sin ventas el año pasado a estas alturas", TextosDeReportes.SinCambio(hoy, 500, 0, "sin ventas", enPesos: true));
+        Assert.Equal("sin ventas el año pasado", TextosDeReportes.SinCambio(ayer, 500, 0, "sin ventas", enPesos: true));
+        // La utilidad del año pasado en cero o negativa.
+        Assert.Equal("sin utilidad el año pasado a estas alturas", TextosDeReportes.SinCambio(hoy, 3000, 0, "sin utilidad", enPesos: true));
+        Assert.Equal("el año pasado a estas alturas: −$12.00", TextosDeReportes.SinCambio(hoy, 3000, -1200, "sin utilidad", enPesos: true));
+        // Sin nada en todo el periodo del año pasado, y en el piloto.
+        Assert.Equal("sin ventas el año pasado", TextosDeReportes.SinCambio(Reporte(PeriodoReporte.Hoy, D(2026, 10, 21), sinAnterior: true), 500, null, "sin ventas"));
+        Assert.Equal("sin comparar en el piloto", TextosDeReportes.SinCambio(Reporte(PeriodoReporte.Hoy, D(2026, 10, 21), piloto: true), null, null, "sin tickets"));
     }
 }

@@ -67,7 +67,9 @@ public sealed class VentasPorPeriodoImpresoTests
         Assert.Contains(renglones, r => Columnas(r, "Vendido", "$20,792.50"));
         Assert.Contains(renglones, r => Columnas(r, "Devoluciones (2)", "-$50.00"));
         Assert.Contains(renglones, r => Columnas(r, "Venta neta", "$20,742.50"));
-        Assert.Contains(renglones, r => Columnas(r, "Cancelados (1, no cuentan)", "$40.00"));
+        // La cancelación de esos días, como en el corte del día: el ticket ya no está en lo vendido.
+        Assert.Contains(renglones, r => Columnas(r, "Cancelaciones (1)", "$40.00"));
+        Assert.Contains("El ticket cancelado ya no cuenta en lo vendido.", seguido);
         // Ningún ticket suelto.
         Assert.DoesNotContain("A-0", seguido);
     }

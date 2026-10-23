@@ -25,13 +25,14 @@ internal static class ExcelDeVentasPorPeriodo
         return LibroExcel.Bytes(libro);
     }
 
-    /// <summary>De qué caja, el piloto, lo que no cuenta y lo que hay del historial de eleventa en esos días.</summary>
+    /// <summary>De qué caja, el piloto, cómo cuenta y lo que hay del historial de eleventa en esos días.</summary>
     public static List<string?> Notas(VentasPorPeriodoDto d) =>
     [
         d.CajaId is { } caja ? $"De la caja: {d.Cajas.FirstOrDefault(c => c.Id == caja)?.Nombre ?? "—"}." : "De todas las cajas.",
         d.Piloto ? PilotoConEleventa.VentasPorPeriodoDeLaCaja2 : null,
-        "Los tickets cancelados se listan, pero no cuentan; lo devuelto en esos días (también de tickets de antes) se resta de lo vendido, "
-        + "como en el corte del día y en los reportes.",
+        "Un ticket cancelado se lista el día en que se cobró, pero no cuenta en lo vendido; lo devuelto y las cancelaciones son los que "
+        + "se hicieron esos días (también de tickets de antes), como en el corte del día y en los reportes: lo devuelto se resta de lo "
+        + "vendido.",
         d.DelHistorialTickets > 0
             ? $"Además, el historial de eleventa tiene {Formato.Numero(d.DelHistorialTickets)} tickets ({Formato.Dinero(d.DelHistorialCentavos)}) de "
               + "toda la tienda en esos días: cuentan en los reportes, pero no se listan aquí porque no traen caja, cajero ni forma de pago."
@@ -66,8 +67,7 @@ internal static class ExcelDeVentasPorPeriodo
             ("Vendido", t.VendidoCentavos, FormatoCelda.Dinero, true),
             (t.Devoluciones == 1 ? "Devuelto (1 devolución)" : $"Devuelto ({t.Devoluciones} devoluciones)", -t.DevueltoCentavos, FormatoCelda.Dinero, false),
             ("Venta neta", t.VentaCentavos, FormatoCelda.Dinero, true),
-            (t.Cancelados == 1 ? "1 ticket cancelado (no cuenta)" : $"{t.Cancelados} tickets cancelados (no cuentan)", t.CanceladosCentavos, FormatoCelda.Dinero,
-                false),
+            (t.Cancelados == 1 ? "Cancelado (1 cancelación)" : $"Cancelado ({t.Cancelados} cancelaciones)", t.CanceladosCentavos, FormatoCelda.Dinero, false),
         };
         renglones.AddRange(t.Formas.Select(f => ($"{TextosDeReportes.Forma(f.Forma)}{(f.Forma == FormaPago.Efectivo ? " (sin el redondeo al peso)" : "")}",
             (object?)f.Centavos, FormatoCelda.Dinero, false)));
@@ -98,8 +98,8 @@ internal static class ExcelDeVentasPorPeriodo
             new("Devoluciones", x => x.Devoluciones, FormatoCelda.Entero, 13),
             new("Devuelto", x => x.DevueltoCentavos, FormatoCelda.Dinero, 13),
             new("Venta neta", x => x.VentaCentavos, FormatoCelda.Dinero, 14),
-            new("Cancelados", x => x.Cancelados, FormatoCelda.Entero, 11),
-            new("Lo cancelado", x => x.CanceladosCentavos, FormatoCelda.Dinero, 13),
+            new("Cancelaciones", x => x.Cancelados, FormatoCelda.Entero, 14),
+            new("Cancelado", x => x.CanceladosCentavos, FormatoCelda.Dinero, 13),
         ]);
         var ultima = LibroExcel.Tabla(hoja, fila, "TablaPorDia", columnas, dias, "No hubo nada en esos días.");
 
