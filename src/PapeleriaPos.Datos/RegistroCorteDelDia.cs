@@ -87,7 +87,9 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
             .OrderBy(t => t.AbiertoUtc).ToListAsync(ct);
         var ids = turnos.Select(t => t.Id).ToList();
         var ventas = await db.Ventas.AsNoTracking().Include(v => v.Lineas).Include(v => v.Cobros).Where(v => ids.Contains(v.TurnoId)).AsSplitQuery().ToListAsync(ct);
-        var movimientos = await db.MovimientosCaja.AsNoTracking().Where(m => ids.Contains(m.TurnoId)).OrderBy(m => m.FechaUtc).ToListAsync(ct);
+        // Las canceladas (2026-10-22) no cuentan: eran equivocadas.
+        var movimientos = await db.MovimientosCaja.AsNoTracking().Where(m => ids.Contains(m.TurnoId) && m.CanceladoUtc == null).OrderBy(m => m.FechaUtc)
+            .ToListAsync(ct);
         // Las de los turnos, para el efectivo que se espera de cada uno (solo lo que salió de su caja).
         var devoluciones = await db.Devoluciones.AsNoTracking().Where(d => ids.Contains(d.TurnoId)).ToListAsync(ct);
         var abonos = await db.Abonos.AsNoTracking().Where(a => ids.Contains(a.TurnoId)).ToListAsync(ct);

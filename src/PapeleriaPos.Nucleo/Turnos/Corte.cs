@@ -120,7 +120,8 @@ public static class CalculoCorte
         var vigentes = cobradas.Where(v => v.Estado == EstadoVenta.Pagada).ToList();
         var cobros = vigentes.SelectMany(v => v.Cobros).ToList();
         var reembolsos = (devoluciones ?? []).Where(d => d.TurnoId == turno.Id).ToList();
-        var delTurno = movimientos.Where(m => m.TurnoId == turno.Id).ToList();
+        // Una entrada o salida cancelada (2026-10-22) no cuenta: era una equivocada.
+        var delTurno = movimientos.Where(m => m.TurnoId == turno.Id && !m.Cancelado).ToList();
         var deClientes = (abonos ?? []).Where(a => a.TurnoId == turno.Id && a.CanceladoUtc is null).ToList();
         var abonosDelTurno = deClientes.Where(a => a.Tipo == TipoAbono.Abono).ToList();
         var devueltos = deClientes.Where(a => a.Tipo == TipoAbono.SaldoDevuelto).ToList();

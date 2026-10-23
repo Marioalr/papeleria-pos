@@ -71,13 +71,14 @@ public sealed class ConfiguracionTests(ServicioDePrueba servicio) : IClassFixtur
         (await (await http.PostAsJsonAsync("api/sesion", new SolicitudEntrada("dueno", "3333"))).Content.ReadFromJsonAsync<SesionDto>())!;
 
     /// <summary>
-    /// Cada grupo solo con su permiso («No»: no aparece), como en el prototipo. Con los usuarios de prueba: el dueño, todos;
-    /// el encargado, lo del ticket, los sinónimos, el mostrador y las temporadas (entrega 13, con «Productos, precios y
-    /// etiquetas»), la impresora (el desglose del día), el sugerido y la bitácora; el cajero no tiene la Configuración.
-    /// «Usuarios y permisos» solo para quien lo tiene, y ya no hay «Reglas».
+    /// Cada grupo solo con su permiso («No»: no aparece), como en el prototipo. Con los usuarios de prueba: el dueño, todos
+    /// (también «Respaldos», con «Configuración de la tienda», 2026-10-22); el encargado, lo del ticket, los sinónimos, el
+    /// mostrador y las temporadas (entrega 13, con «Productos, precios y etiquetas»), la impresora (el desglose del día), el
+    /// sugerido y la bitácora; el cajero no tiene la Configuración. «Usuarios y permisos» solo para quien lo tiene, y ya no
+    /// hay «Reglas».
     /// </summary>
     [Theory]
-    [InlineData("dueno", "3333", "Tienda,Venta y cobro,Mostrador y temporadas,Efectivo y corte,Ticket,Impresoras e impresiones,Inventario,Usuarios y permisos,Avisos por Telegram,Cajas,Bitácora,Teclas,Acerca de")]
+    [InlineData("dueno", "3333", "Tienda,Venta y cobro,Mostrador y temporadas,Efectivo y corte,Ticket,Impresoras e impresiones,Inventario,Usuarios y permisos,Avisos por Telegram,Cajas,Respaldos,Bitácora,Teclas,Acerca de")]
     [InlineData("encargado", "2222", "Tienda,Venta y cobro,Mostrador y temporadas,Ticket,Impresoras e impresiones,Inventario,Bitácora,Teclas,Acerca de")]
     public async Task Los_grupos_son_los_de_los_permisos_de_quien_entro(string usuario, string pin, string grupos)
     {

@@ -127,6 +127,47 @@ con la temporada acomodada y sus fotos tomadas:
   impresas (en blanco y negro y a color), si el lector lee los códigos a la primera (también a través de un portatarjetas o
   una mica), y cuánto tarda en salir cada hoja.
 
+## Actualizar la caja 2 del piloto
+
+Un arreglo para la caja 2 se pone con el paquete nuevo y `actualizar.ps1`, sin perder su base ni la configuración del puente
+([cómo funciona](arquitectura.md#actualizaciones)). La caja 2 deja de vender unos minutos: se hace en un rato tranquilo y,
+mientras, se cobra en el eleventa que sigue abierto en esa caja.
+
+- **Antes, el paquete:** en GitHub, Actions › «Instalador de prueba» › «Run workflow» con `main` (unos 20 minutos: antes
+  corre todas las pruebas). La corrida deja el artefacto `PapeleriaPos-Actualizacion-1.0.<número>`: un zip con
+  `actualizar.ps1`, `servicio\` y `caja\`. Se lleva a la caja 2 en una memoria USB (o se baja ahí) y se descomprime en una
+  carpeta, por ejemplo `Descargas\PapeleriaPos-1.0.57`.
+- **En la caja 2:**
+  1. En la caja: cobrar o dejar en espera la venta, salir y cerrar la ventana; los tickets en espera se guardan. Si se
+     olvida, el script lo pide y espera a que se cierre. Si la caja no responde, con C la cierra a la fuerza: lo último que
+     se escaneó en la venta que se atendía puede no regresar.
+  2. Inicio › escribir «PowerShell» › «Ejecutar como administrador», y ahí:
+
+     ```
+     cd "$env:USERPROFILE\Downloads\PapeleriaPos-1.0.57"
+     powershell -ExecutionPolicy Bypass -File .\actualizar.ps1
+     ```
+
+  3. Dice la versión que hay y la que pone, respalda, cambia y espera a que el servicio conteste: unos minutos. No cerrar la
+     ventana mientras tanto.
+- **Sale bien si** termina con «Actualizado de 1.0.x a 1.0.y» y «Ya se puede abrir la caja». Después, en la caja:
+  - entrar con la ficha y el PIN: Configuración › Acerca de dice la versión nueva, y regresan los tickets en espera;
+  - la primera venta sale con el folio de eleventa (si la caja principal contesta) y arriba no hay avisos nuevos del puente:
+    su configuración sigue.
+- **Si dice que se regresó a la versión de antes:** la caja 2 quedó como estaba, con su base, y se sigue vendiendo. El arreglo
+  no quedó: se trae `actualizar.log` (al final dice dónde está) para revisarlo entre semana.
+- **Si dice que no pudo regresar solo:** no vender en la caja 2 (sí en eleventa) y avisar. Lo de antes está completo en la
+  carpeta del respaldo que dice (`C:\ProgramData\PapeleriaPos\actualizaciones\<fecha>-<versión>`). Para regresarlo a mano,
+  en PowerShell como administrador: `Stop-Service PapeleriaPos`; copiar lo de `base\` a `C:\ProgramData\PapeleriaPos`
+  (antes, borrar ahí `pos.db-wal` y `pos.db-shm` si `base\` no los trae), `servicio\` a `C:\Program Files\PapeleriaPos\Servicio`
+  y `caja\` a `C:\Program Files\PapeleriaPos\Caja`; y al final `Set-Service PapeleriaPos -StartupType Automatic` y
+  `Start-Service PapeleriaPos`.
+- **Lo que no cambia:** la base (`C:\ProgramData\PapeleriaPos\pos.db`), la configuración de esa PC con el puente
+  (`servicio.json`, en la misma carpeta), la clave de eleventa (va solo en la variable de entorno del servicio) y lo de la caja
+  (su alta, su copia y los tickets en espera, en `C:\ProgramData\PapeleriaPos\Caja`).
+- **Otras veces:** con la misma versión no hace nada, y una anterior solo la pone con `-Forzar`. La primera vez, sin el
+  servicio en esa PC, se instala con `servicio\instalar-servicio.ps1` y `caja\instalar-caja.ps1` del mismo paquete.
+
 ## Primer fin de semana: conocer la tienda
 
 Solo mirar y anotar. Lo único que se cambia es la configuración de los grabadores, por seguridad. Si el dueño lo

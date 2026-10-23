@@ -106,7 +106,7 @@ según los permisos de quien entró.
 │                                                              │ └─ la rueda del mouse baja ─┘ │
 │                                                              │ Último: A-000123 · cambio $63 │
 ├──────────────────────────────────────────────────────────────┴───────────────────────────────┤
-│ F12 Cobrar  F10 Buscar  F9 Verificar  F2 Impresiones  Ins Art. común  F7  F8  F6  / Más      │
+│ F12 Cobrar  F10 Buscar  F9 Verificar  F2 Impresiones  Ins Varios  F7  F8  F6  / Más          │
 └──────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -165,7 +165,7 @@ sube. Para eso, de lo más rápido a lo de respaldo:
 | 3 | **El principio de dos palabras, en cualquier orden** (`lus az` y Enter) | 6 a 8 | Todo lo demás. Cada pedazo es el principio de una palabra del nombre, la marca, el color o el código. Los dos pedazos dejan solo al producto aunque casi no se venda. Sin acentos, con los sinónimos que decida la tienda y con un error de dedo («sobre manial» da los sobres manila) |
 | 4 | **Afinar con fichas** (`folder` → «oficio») | 1 clic | Cuando el texto es general, las palabras que separan los resultados salen como fichas. Se tocan o se escribe su principio |
 | 5 | **Las familias en un renglón** (`lapicero` → sus colores; `lapicero negro` → sus tamaños) | 1 clic, Enter, o → y ↓ | Lo que solo cambia en el color, el tamaño, la marca, el contenido o el rayado ocupa un solo renglón, con fichas para cada valor (el color con un punto de referencia). Se despliega lo primero que cambia, Tab despliega por otra cosa y Enter agrega siempre el más vendido |
-| 6 | **Si no existe: artículo común** (Ins) | El precio | Se vende igual, y lo que se buscó queda anotado |
+| 6 | **Si no existe: artículo común** (Ctrl+P) | El precio | Se vende igual, y lo que se buscó queda anotado |
 
 - **El orden:** el código exacto; luego lo que esta caja eligió antes con ese mismo texto; luego lo que empieza con lo
   escrito; al final, lo más vendido en 90 días (para arrancar, el historial de eleventa).
@@ -372,9 +372,14 @@ dejar por caja (Configuración › Esta caja); en el prototipo se cambian arriba
 ### Los demás paneles
 
 Cambian el lado derecho y vuelven con Esc: cliente (Ctrl+L), abono (Ctrl+B), descuento (Ctrl+D), precio (Ctrl+E),
-impresiones por cobrar (F2), entrada y salida (F7/F8), artículo común (Ins o Ctrl+P), alta rápida, devolución,
+impresiones por cobrar (F2), entrada y salida (F7/F8), artículo común (Ctrl+P), «Varios» (Ins), alta rápida, devolución,
 mayoreo (F11), verificador (F9), ventas del día y cotizar un PDF (Ctrl+Q). Cada uno con sus campos y Enter para
 terminar; lo que pide autorización la pide ahí mismo.
+
+**«Varios» (Ins, como en eleventa; 2026-10-22, decidido, por revisar):** la cantidad y luego el código, escaneado o
+escrito, y Enter lo agrega. Como el mostrador (Ctrl+M), el cursor se queda en el cuadro de captura, que dice lo que pide
+cada paso: lo que escanea el lector siempre es el código, nunca la cantidad, también si llega mientras se abre el panel.
+El artículo común sigue en Ctrl+P; en la barra de abajo va «Ins Varios», porque no caben los dos a 1366.
 
 ## WhatsApp: quién escribió hace poco
 

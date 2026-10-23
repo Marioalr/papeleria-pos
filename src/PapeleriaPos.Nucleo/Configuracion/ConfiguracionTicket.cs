@@ -58,6 +58,13 @@ public class ConfiguracionTicket : IVersionado
     public void CambiarAlCobrar(TicketAlCobrar alCobrar) =>
         AlCobrar = Enum.IsDefined(alCobrar) ? alCobrar : throw new ArgumentException("Al cobrar se imprime el ticket, se ofrece o no se imprime.");
 
+    /// <summary>
+    /// Si el ticket de una venta sale al cobrarla, con «Al cobrar» de la sucursal: con «Imprimir el ticket», y lo fiado
+    /// siempre (lleva «SU CUENTA»). Con «Ofrecerlo» o «No imprimirlo» no sale: su primera impresión, después, no es una
+    /// reimpresión y no pide motivo (2026-10-22).
+    /// </summary>
+    public static bool SaleAlCobrar(TicketAlCobrar alCobrar, bool fiado) => fiado || alCobrar == TicketAlCobrar.Imprimir;
+
     /// <summary>Cómo se dice cada opción de «Al cobrar»: en la Configuración y en la bitácora.</summary>
     public static string Nombre(TicketAlCobrar alCobrar) => alCobrar switch
     {

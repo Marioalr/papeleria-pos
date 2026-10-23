@@ -24,7 +24,8 @@ public static class ApiContingencia
         // la tienda, el último folio de la caja y lo que necesita su búsqueda (CopiaDeLaCaja). Una caja de ahora pide después solo
         // lo que cambió (ApiCopia).
         api.MapGet("/cajas/{cajaId:guid}/paquete", (Guid cajaId, PosDbContext db, CatalogoEnMemoria catalogo, VersionesDeLaCopia versiones,
-            IOptions<OpcionesTicket> opciones, CancellationToken ct) => CopiaDeLaCaja.PaqueteAsync(db, catalogo, versiones, cajaId, opciones.Value, ct));
+            IOptions<OpcionesTicket> opciones, TimeProvider reloj, CancellationToken ct) =>
+            CopiaDeLaCaja.PaqueteAsync(db, catalogo, versiones, cajaId, opciones.Value, ct, reloj));
 
         // Lo que lleva el turno, sin guardar un corte: la base de la cuenta que la caja lleva por su lado.
         api.MapGet("/turnos/{turnoId:guid}/resumen", async (Guid turnoId, PosDbContext db) =>
@@ -49,10 +50,14 @@ public static class ApiContingencia
                 return MismaVenta(yaEsta, v) ? Results.NoContent() : throw new InvalidOperationException(VentaDistinta(yaEsta, v));
             var caja = await db.Cajas.FindAsync(v.CajaId) ?? throw new InvalidOperationException("La caja no existe.");
             var lineas = v.Lineas.Select(l => new LineaSolicitada(l.VarianteId, l.PresentacionId, l.CantidadMilesimas, l.Descripcion, l.PrecioCentavos,
-                DescuentoCentesimas: l.DescuentoCentesimas, DescuentoCentavos: l.DescuentoCentavos, MotivoDescuento: l.MotivoDescuento)).ToList();
-            // El precio que se cobró manda; el mayoreo del cliente (el que usó la caja) solo sirve para que el ticket diga el ahorro.
-            var venta = await ApiCaja.ArmarVentaAsync(db, catalogo, caja, v.TurnoId, v.CajeroId, v.Id, lineas, v.MayoreoDeCliente == true);
+                DescuentoCentesimas: l.DescuentoCentesimas, DescuentoCentavos: l.DescuentoCentavos, MotivoDescuento: l.MotivoDescuento,
+                PromocionId: l.PromocionId, AhorroPromocionCentavos: l.AhorroPromocionCentavos, Promocion: l.Promocion)).ToList();
+            // El precio que se cobró manda, y la promoción con que se cobró (fase 3), aunque aquí ya haya cambiado o terminado; el
+            // mayoreo del cliente (el que usó la caja) solo sirve para que el ticket diga el ahorro.
+            var venta = await ApiCaja.ArmarVentaAsync(db, catalogo, caja, v.TurnoId, v.CajeroId, v.Id, lineas, v.MayoreoDeCliente == true, comoSeCobro: true);
             venta.ClienteId = v.ClienteId;
+            // Su nota, como se imprimió; ya se cobró, así que no se rechaza por ella.
+            venta.PonerNota(NotaDelTicket.Recortada(v.Nota));
             // También va a eleventa (el piloto); su ticket ya salió con el folio de la caja, así que se manda en la vuelta.
             // Aunque el piloto sea solo en efectivo, no se rechaza: ya se cobró. Si no fue en efectivo, queda por revisar.
             eleventa.Encolar(db, venta.Id);
@@ -109,17 +114,17 @@ public static class ApiContingencia
     }
 
     /// <summary>
-    /// Lo que subió es la venta que ya está: las mismas líneas (producto, presentación, cantidad, precio y descuento; el
-    /// artículo común, por su descripción), en cualquier orden.
+    /// Lo que subió es la venta que ya está: las mismas líneas (producto, presentación, cantidad, precio, lo que se ahorró por la
+    /// promoción y descuento; el artículo común, por su descripción), en cualquier orden.
     /// </summary>
     private static bool MismaVenta(Venta yaEsta, VentaContingenciaDto v)
     {
-        static string Clave(Guid? variante, Guid? presentacion, string descripcion, long cantidad, long precio, int? porcentaje, long? monto) =>
-            $"{variante}|{presentacion}|{(variante is null ? descripcion.Trim().ToUpperInvariant() : "")}|{cantidad}|{precio}|{porcentaje}|{monto}";
+        static string Clave(Guid? variante, Guid? presentacion, string descripcion, long cantidad, long precio, long promocion, int? porcentaje, long? monto) =>
+            $"{variante}|{presentacion}|{(variante is null ? descripcion.Trim().ToUpperInvariant() : "")}|{cantidad}|{precio}|{promocion}|{porcentaje}|{monto}";
         var alla = yaEsta.Lineas.Select(l => Clave(l.VarianteId, l.PresentacionId, l.Descripcion, l.Cantidad.Milesimas, l.PrecioCentavos,
-            l.DescuentoCentesimas, l.DescuentoCentesimas is null && l.DescuentoCentavos > 0 ? l.DescuentoCentavos : null));
+            l.AhorroPromocionCentavos, l.DescuentoCentesimas, l.DescuentoCentesimas is null && l.DescuentoCentavos > 0 ? l.DescuentoCentavos : null));
         var subio = v.Lineas.Select(l => Clave(l.VarianteId, l.PresentacionId, l.Descripcion, l.CantidadMilesimas, l.PrecioCentavos,
-            l.DescuentoCentesimas, l.DescuentoCentesimas is null && l.DescuentoCentavos > 0 ? l.DescuentoCentavos : null));
+            l.AhorroPromocionCentavos, l.DescuentoCentesimas, l.DescuentoCentesimas is null && l.DescuentoCentavos > 0 ? l.DescuentoCentavos : null));
         return alla.Order(StringComparer.Ordinal).SequenceEqual(subio.Order(StringComparer.Ordinal));
     }
 

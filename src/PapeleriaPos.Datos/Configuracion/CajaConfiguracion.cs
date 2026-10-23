@@ -92,6 +92,9 @@ internal sealed class VentaConfiguracion : IEntityTypeConfiguration<Venta>
         b.Ignore(v => v.CambioCentavos);
         b.Ignore(v => v.LlevaEfectivo);
         b.Ignore(v => v.TotalCobradoCentavos);
+        b.Ignore(v => v.Promociones);
+        // La nota del ticket (F4 al cobrar, 2026-10-22): uno o dos renglones del ticket.
+        b.Property(v => v.Nota).HasMaxLength(NotaDelTicket.Maximo);
     }
 }
 
@@ -133,6 +136,12 @@ internal sealed class VentaLineaConfiguracion : IEntityTypeConfiguration<VentaLi
         b.Ignore(l => l.PorcentajeDescuento);
         b.Ignore(l => l.TieneMayoreo);
         b.Ignore(l => l.MayoreoDeCliente);
+        // La promoción con que se cobró (fase 3), sin llave hacia ella: la línea lleva su nombre y lo que se ahorró, y una venta
+        // que sube sin conexión entra con la que se cobró aunque aquí ya haya terminado.
+        b.Property(l => l.Promocion).HasMaxLength(Nucleo.Catalogo.Promocion.LargoNombre);
+        b.HasIndex(l => l.PromocionId);
+        b.Ignore(l => l.TienePromocion);
+        b.Ignore(l => l.DescuentoDeCliente);
     }
 }
 

@@ -1,4 +1,5 @@
 using PapeleriaPos.Nucleo.Catalogo;
+using PapeleriaPos.Nucleo.Clientes;
 
 namespace PapeleriaPos.Nucleo.Ventas;
 
@@ -67,6 +68,34 @@ public class Venta
 
     public string? FolioTexto => Folio is { } f ? $"{Serie}-{f:000000}" : null;
 
+    /// <summary>
+    /// La nota del ticket: F4 al cobrar, como en eleventa (2026-10-22). Sale en el ticket y en sus reimpresiones, y en «Ventas
+    /// del día». Vacía si no lleva (<see cref="NotaDelTicket"/>).
+    /// </summary>
+    public string? Nota { get; private set; }
+
+    /// <summary>
+    /// Su ticket no ha salido nunca (2026-10-22): se cobró con «Al cobrar» en «Ofrecerlo» o «No imprimirlo» y no se pidió, o
+    /// no salió de la impresora y se dejó con «No imprimirlo». Su primera impresión no es una reimpresión: no pide motivo, y
+    /// después de ella las demás sí. Lo de una caja sin conexión llega como impreso: ahí no se sabe si salió después, y
+    /// reimprimirlo pide motivo, como siempre.
+    /// </summary>
+    public bool TicketSinImprimir { get; set; }
+
+    /// <summary>
+    /// Cuántas veces salió su ticket después del cobro, según la caja principal: su primera impresión (desde «Ventas del día» o
+    /// con Ctrl+I) y cada reimpresión. «No imprimirlo» solo vuelve a marcar <see cref="TicketSinImprimir"/> si no salió otra
+    /// después del trabajo que no salió (revisión del PR #133): si mientras tanto se reimprimió, ya salió.
+    /// </summary>
+    public int TicketImpresiones { get; set; }
+
+    /// <summary>Pone (o quita, vacía) la nota del ticket, de uno o dos renglones (<see cref="NotaDelTicket.Maximo"/>).</summary>
+    public void PonerNota(string? nota)
+    {
+        RequerirEditable();
+        Nota = NotaDelTicket.Normalizar(nota);
+    }
+
     /// <summary>Artículos para el ticket: piezas por cantidad; lo que se vende por metro o a granel cuenta uno por línea.</summary>
     public decimal NumeroDeArticulos => Lineas.Sum(l => l.Cantidad.EsEntera ? l.Cantidad.EnUnidades : 1);
 
@@ -119,30 +148,81 @@ public class Venta
         if (linea.Unidad == UnidadBase.Pieza && !cantidadBase.EsEntera)
             throw new ArgumentException("Este producto se vende por pieza: no admite fracciones.");
 
-        var aplicado = CalculoPrecio.Calcular(precios, SucursalId, presentacion, cantidad, MayoreoDeCliente)
+        // El descuento del cliente registrado no se acumula con una promoción (fase 3): compite con ella.
+        var aplicado = CalculoPrecio.Calcular(precios, SucursalId, presentacion, cantidad, MayoreoDeCliente,
+                linea.VarianteId is { } varianteId ? Promociones?.De(varianteId) : null, Promociones?.Dia,
+                linea.DescuentoDeCliente ? linea.DescuentoCentesimas : null)
             ?? throw new InvalidOperationException($"«{linea.Descripcion}» no tiene precio.");
 
         linea.Cantidad = cantidad;
         linea.CantidadBase = cantidadBase;
+        linea.ConQueSeCalculo = (presentacion, precios);
         if (linea.PrecioCambiado)
         {
-            // Con precio cambiado (autorizado), la cantidad nueva se cobra a ese precio y ya no es mayoreo.
-            AplicarDescuento(linea, cantidad.Importe(linea.PrecioCentavos));
+            // Con precio cambiado (autorizado), la cantidad nueva se cobra a ese precio y ya no es mayoreo ni promoción.
             (linea.MayoreoDesde, linea.AhorroMayoreoCentavos) = (null, 0);
+            SinPromocion(linea);
+            AplicarDescuento(linea, cantidad.Importe(linea.PrecioCentavos));
         }
         else
         {
-            AplicarDescuento(linea, aplicado.ImporteCentavos);
-            linea.PrecioCentavos = aplicado.Precio.PresentacionId is null
-                ? presentacion.Factor.Importe(aplicado.Precio.PrecioCentavos)
-                : aplicado.Precio.PrecioCentavos;
+            linea.PrecioCentavos = aplicado.PrecioPorPresentacion(presentacion);
             // Queda en la línea desde cuánto aplicó el mayoreo y cuánto se ahorró: el ticket y la reimpresión lo dicen.
             linea.MayoreoDesde = !aplicado.EsMayoreo ? null
                 : aplicado.Precio.PresentacionId is null ? aplicado.Precio.CantidadMinima : aplicado.Precio.CantidadMinima.Por(presentacion.Factor);
             linea.AhorroMayoreoCentavos = aplicado.AhorroCentavos;
+            // Y la promoción, si fue la que más le convenía (fase 3): cuál, cómo se llamaba y cuánto se ahorró. Con ella, el
+            // descuento del cliente se queda en pausa (AplicarDescuento).
+            (linea.PromocionId, linea.Promocion, linea.AhorroPromocionCentavos) = aplicado.Promocion is { } promocion
+                ? ((Guid?)promocion.PromocionId, promocion.Nombre, aplicado.AhorroPromocionCentavos)
+                : (null, null, 0L);
+            AplicarDescuento(linea, aplicado.ImporteCentavos);
         }
         Recalcular();
     }
+
+    /// <summary>
+    /// El descuento del cliente registrado entró o salió de un renglón (o cambió): se vuelve a decidir si le conviene más la
+    /// promoción (fase 3), con el producto con que se calculó su precio. Falso si no hace falta o no se puede (un precio cambiado,
+    /// la promoción con que ya se cobró, una venta sin promociones): entonces el descuento va sobre el importe de antes.
+    /// </summary>
+    private bool VolverADecidir(VentaLinea linea)
+    {
+        if (Promociones is null || linea.PrecioCambiado || linea.ConQueSeCalculo is not { } calculo)
+            return false;
+        CambiarCantidad(linea, linea.Cantidad, calculo.Presentacion, calculo.Precios);
+        return true;
+    }
+
+    /// <summary>
+    /// Las promociones (fase 3): de dónde salen las de cada producto y en qué día se cobra. No se guarda: la pone quien arma la
+    /// venta (la caja con su copia y su fecha, la caja sin conexión, el servicio con la fecha del cobro). Sin ella, sin
+    /// promociones: un servicio que recibe una venta de una caja de antes, o el piloto con eleventa.
+    /// </summary>
+    public PromocionesDeLaVenta? Promociones { get; set; }
+
+    /// <summary>
+    /// Una venta que se cobró sin conexión (sube con la bandeja): su línea lleva la promoción con que se cobró, aunque aquí ya
+    /// no sea la misma (se cambió o terminó mientras tanto). Lo que se cobró manda: el precio de la línea y lo que se ahorró.
+    /// </summary>
+    public void FijarPromocionCobrada(VentaLinea linea, long precioCentavos, Guid promocionId, string promocion, long ahorroCentavos)
+    {
+        RequerirEditable();
+        if (linea.VarianteId is null || linea.EsImpresiones)
+            throw new InvalidOperationException("Solo un producto del catálogo lleva promoción.");
+        var importe = linea.Cantidad.Importe(precioCentavos);
+        if (precioCentavos <= 0 || ahorroCentavos <= 0 || ahorroCentavos >= importe)
+            throw new ArgumentException($"La promoción de «{linea.Descripcion}» no cuadra con su precio.");
+        linea.PrecioCentavos = precioCentavos;
+        (linea.MayoreoDesde, linea.AhorroMayoreoCentavos) = (null, 0);
+        (linea.PromocionId, linea.Promocion, linea.AhorroPromocionCentavos) = (promocionId, promocion, ahorroCentavos);
+        // Ya se cobró así: no se vuelve a decidir (ni con el descuento del cliente).
+        linea.ConQueSeCalculo = null;
+        AplicarDescuento(linea, importe - ahorroCentavos);
+        Recalcular();
+    }
+
+    private static void SinPromocion(VentaLinea linea) => (linea.PromocionId, linea.Promocion, linea.AhorroPromocionCentavos) = (null, null, 0);
 
     /// <summary>
     /// El cliente registrado del ticket (fase 3, entrega 2), con descuento o sin él. Su descuento fijo ya lo aprobó quien
@@ -187,7 +267,9 @@ public class Venta
 
     /// <summary>
     /// Descuento a una línea, en porcentaje (centésimas: 1000 = 10 %) o en monto, siempre con motivo. El porcentaje se
-    /// vuelve a aplicar si cambia la cantidad. Las impresiones no llevan descuento (su precio especial va aparte).
+    /// vuelve a aplicar si cambia la cantidad. Las impresiones no llevan descuento (su precio especial va aparte). El del
+    /// cliente registrado no se acumula con una promoción (fase 3): si la promoción le conviene más, el descuento se queda en
+    /// pausa en el renglón; si no, el renglón va sin la promoción y con el descuento.
     /// </summary>
     public void DescontarLinea(VentaLinea linea, int? centesimas, long? montoCentavos, string motivo)
     {
@@ -203,8 +285,19 @@ public class Venta
         var bruto = linea.ImporteSinDescuentoCentavos;
         if (montoCentavos is { } monto && (monto <= 0 || monto > bruto))
             throw new ArgumentException($"El descuento de «{linea.Descripcion}» va de más de $0 a {bruto / 100m:C2}.");
+        var antes = (linea.DescuentoCentesimas, linea.DescuentoCentavos, linea.MotivoDescuento);
+        var delCliente = linea.DescuentoDeCliente;
         (linea.DescuentoCentesimas, linea.DescuentoCentavos, linea.MotivoDescuento) = (centesimas, montoCentavos ?? 0, motivo.Trim());
-        AplicarDescuento(linea, bruto);
+        if (!((delCliente || linea.DescuentoDeCliente) && VolverADecidir(linea)))
+            AplicarDescuento(linea, bruto);
+        else if (montoCentavos is { } aMano && aMano > linea.ImporteSinDescuentoCentavos)
+        {
+            // Salió el del cliente y volvió la promoción, que deja el renglón en menos que el descuento: queda como estaba.
+            var conPromocion = linea.ImporteSinDescuentoCentavos;
+            (linea.DescuentoCentesimas, linea.DescuentoCentavos, linea.MotivoDescuento) = antes;
+            VolverADecidir(linea);
+            throw new ArgumentException($"Con su promoción, el descuento de «{linea.Descripcion}» va de más de $0 a {conPromocion / 100m:C2}.");
+        }
         Recalcular();
     }
 
@@ -242,12 +335,15 @@ public class Venta
         }
     }
 
+    /// <summary>Quita el descuento de una línea. Si era el del cliente registrado, la promoción que no le ganó vuelve a competir (fase 3).</summary>
     public void QuitarDescuento(VentaLinea linea)
     {
         RequerirEditable();
+        var delCliente = linea.DescuentoDeCliente;
         var bruto = linea.ImporteSinDescuentoCentavos;
         (linea.DescuentoCentesimas, linea.DescuentoCentavos, linea.MotivoDescuento) = (null, 0, null);
-        linea.ImporteCentavos = bruto;
+        if (!(delCliente && VolverADecidir(linea)))
+            linea.ImporteCentavos = bruto;
         Recalcular();
     }
 
@@ -263,7 +359,8 @@ public class Venta
     /// <summary>Quita los descuentos (todos, o los que no tienen <paramref name="salvoMotivo"/>) y su autorización. El cliente se queda.</summary>
     public void QuitarDescuentos(string? salvoMotivo = null)
     {
-        foreach (var l in Lineas.Where(l => l.TieneDescuento && (salvoMotivo is null || l.MotivoDescuento != salvoMotivo)))
+        // También el del cliente que está en pausa por una promoción (fase 3).
+        foreach (var l in Lineas.Where(l => (l.TieneDescuento || l.DescuentoCentesimas is not null) && (salvoMotivo is null || l.MotivoDescuento != salvoMotivo)).ToList())
             QuitarDescuento(l);
         AutorizacionDescuentoId = null;
     }
@@ -276,11 +373,14 @@ public class Venta
         Lineas.Where(l => l.TieneDescuento && (preaprobado is null || l.DescuentoCentesimas != preaprobado))
             .Select(l => l.PorcentajeDescuento).DefaultIfEmpty(0).Max();
 
-    /// <summary>El importe sale del bruto menos el descuento (el porcentaje se recalcula; el monto no pasa del bruto).</summary>
+    /// <summary>
+    /// El importe sale del bruto menos el descuento (el porcentaje se recalcula; el monto no pasa del bruto). El del cliente
+    /// registrado, con una promoción, se queda en pausa: no se acumula con ella (fase 3).
+    /// </summary>
     private static void AplicarDescuento(VentaLinea linea, long bruto)
     {
-        linea.DescuentoCentavos = linea.DescuentoCentesimas is { } c
-            ? Redondeo.Dividir((Int128)bruto * c, 10000)
+        linea.DescuentoCentavos = linea.TienePromocion && linea.DescuentoDeCliente ? 0
+            : linea.DescuentoCentesimas is { } c ? Redondeo.Dividir((Int128)bruto * c, 10000)
             : Math.Min(linea.DescuentoCentavos, bruto);
         linea.ImporteCentavos = bruto - linea.DescuentoCentavos;
     }
@@ -298,9 +398,10 @@ public class Venta
             throw new InvalidOperationException("El artículo común ya lleva el precio que se escribió: bórralo y agrégalo de nuevo.");
         linea.PrecioOriginalCentavos ??= linea.PrecioCentavos;
         linea.PrecioCentavos = precioCentavos;
-        AplicarDescuento(linea, linea.Cantidad.Importe(precioCentavos));
         linea.AutorizacionPrecioId = autorizacionId;
         (linea.MayoreoDesde, linea.AhorroMayoreoCentavos) = (null, 0);
+        SinPromocion(linea);
+        AplicarDescuento(linea, linea.Cantidad.Importe(precioCentavos));
         Recalcular();
     }
 
@@ -349,7 +450,7 @@ public class Venta
         return linea;
     }
 
-    /// <summary>INS / CTRL+P: artículo varios o común, con descripción y precio a mano. No descuenta inventario.</summary>
+    /// <summary>Ctrl+P: artículo común, con descripción y precio a mano. No descuenta inventario.</summary>
     public VentaLinea AgregarArticuloComun(string descripcion, long precioCentavos, Cantidad cantidad)
     {
         RequerirEditable();
@@ -557,6 +658,37 @@ public class VentaLinea
 
     /// <summary>El mayoreo se aplicó antes de llegar a la cantidad: es el «mayoreo siempre» del cliente registrado.</summary>
     public bool MayoreoDeCliente => MayoreoDesde is { } desde && CantidadBase < desde;
+
+    /// <summary>
+    /// La promoción que se aplicó (fase 3): la que más le convenía al cliente, también contra el mayoreo; vacía si no hubo. No
+    /// se borra una promoción (se termina), pero la línea no depende de ella: lleva su nombre y lo que se ahorró.
+    /// </summary>
+    public Guid? PromocionId { get; set; }
+
+    /// <summary>El nombre de la promoción al cobrar: el ticket y la reimpresión lo dicen.</summary>
+    public string? Promocion { get; set; }
+
+    /// <summary>
+    /// Lo que se ahorró por la promoción: el precio de la línea por la cantidad, menos esto, es su importe antes del descuento.
+    /// No es un descuento: no pide autorización (la pidió quien la dio de alta, si dejaba algo debajo del costo).
+    /// </summary>
+    public long AhorroPromocionCentavos { get; set; }
+
+    public bool TienePromocion => PromocionId is not null;
+
+    /// <summary>
+    /// Su descuento es el fijo del cliente registrado (el motivo empieza con <see cref="ClienteRegistrado.PrefijoMotivo"/>): no se
+    /// acumula con una promoción (fase 3). Si la promoción le conviene más, se queda en pausa (sin descontar nada) y vuelve si
+    /// deja de convenirle, por ejemplo con otra cantidad.
+    /// </summary>
+    public bool DescuentoDeCliente => DescuentoCentesimas is not null && MotivoDescuento?.StartsWith(ClienteRegistrado.PrefijoMotivo, StringComparison.Ordinal) == true;
+
+    /// <summary>
+    /// Con qué presentación y precios se calculó su precio la última vez (no se guarda): con eso se vuelve a decidir entre la
+    /// promoción y el descuento del cliente cuando ese descuento entra o sale. Vacío en lo que no se calcula aquí (lo cobrado
+    /// sin conexión que sube como se cobró, lo leído de la base).
+    /// </summary>
+    internal (Presentacion Presentacion, IReadOnlyList<Precio> Precios)? ConQueSeCalculo;
 
     public long ImporteSinDescuentoCentavos => ImporteCentavos + DescuentoCentavos;
 

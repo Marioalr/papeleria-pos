@@ -32,6 +32,17 @@ public static class DisenoComprobante
         return e;
     }
 
+    /// <summary>
+    /// «Entradas (1 cancelada)»: lo que se canceló por equivocado (2026-10-22) ya no está en el monto, y el corte lo dice. Lo usa
+    /// también la pantalla del corte.
+    /// </summary>
+    public static string ConCanceladas(string concepto, int canceladas) => canceladas switch
+    {
+        <= 0 => concepto,
+        1 => $"{concepto} (1 cancelada)",
+        _ => $"{concepto} ({canceladas} canceladas)",
+    };
+
     /// <summary>El corte del turno impreso, para guardarlo con el efectivo. Sin conexión, avisa que se cuadra al volver.</summary>
     public static List<Elemento> Corte(CorteDto c, string caja)
     {
@@ -55,8 +66,8 @@ public static class DisenoComprobante
             Linea("Abonos de clientes en efectivo", c.AbonosEfectivoCentavos);
         if (c.SaldoDevueltoCentavos != 0)
             Linea("Saldo a favor devuelto", -c.SaldoDevueltoCentavos);
-        Linea("Entradas", c.EntradasCentavos);
-        Linea("Salidas", -c.SalidasCentavos);
+        Linea(ConCanceladas("Entradas", c.EntradasCanceladas), c.EntradasCentavos);
+        Linea(ConCanceladas("Salidas", c.SalidasCanceladas), -c.SalidasCentavos);
         if (c.DevolucionesCentavos > 0)
             Linea("Devoluciones y cancelaciones", -c.DevolucionesCentavos);
         Linea("Efectivo esperado", c.EsperadoCentavos, negrita: true);

@@ -10,6 +10,15 @@
 else
 {
     <p><strong>@Descripcion</strong> · precio actual @Formato.Dinero(PrecioActualCentavos)</p>
+    @if (Promocion is not null && ImporteConPromocionCentavos is { } conPromocion)
+    {
+        @* Lo que se cobra ahora es con la promoción (fase 3): cambiar el precio la quita de este renglón. *@
+        <p id="precio-con-promocion" class="nota">
+            Con la promoción «@Promocion» va en @Formato.Dinero(conPromocion)@(Cantidad.EnUnidades != 1 && Cantidad.EsPositiva
+                ? $" ({Formato.Dinero((long)Math.Round(conPromocion / Cantidad.EnUnidades, MidpointRounding.AwayFromZero))} c/u)" : "").
+            Si le cambias el precio, ya no lleva la promoción.
+        </p>
+    }
     <label>Precio nuevo (con IVA)
         <input id="precio-nuevo" inputmode="decimal" @bind="_precio" @bind:event="oninput" @onkeydown="AlTeclear" />
     </label>
@@ -26,6 +35,12 @@ else
     [Parameter, EditorRequired] public string Descripcion { get; set; } = "";
     [Parameter] public long PrecioActualCentavos { get; set; }
     [Parameter] public Cantidad Cantidad { get; set; }
+
+    /// <summary>La promoción del renglón (fase 3), si lleva: lo que se cobra ahora es con ella.</summary>
+    [Parameter] public string? Promocion { get; set; }
+
+    /// <summary>Lo que vale el renglón con su promoción (antes de un descuento).</summary>
+    [Parameter] public long? ImporteConPromocionCentavos { get; set; }
     [Parameter, EditorRequired] public CajaDto Caja { get; set; } = null!;
     [Parameter, EditorRequired] public SesionDto Sesion { get; set; } = null!;
 

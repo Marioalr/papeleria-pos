@@ -30,11 +30,12 @@ public static class ApiCopia
         var api = app.MapGroup("/api").ConErrores().SoloSuCaja();
 
         // Lo que cambió desde la versión de la caja (y desde su versión de existencias, y las de lo más vendido y lo elegido que
-        // usa su búsqueda); si no se puede dar desde ahí, lo dice y la caja baja la copia completa.
+        // usa su búsqueda, y la huella de sus promociones); si no se puede dar desde ahí, lo dice y la caja baja la copia completa.
         api.MapGet("/cajas/{cajaId:guid}/cambios", (Guid cajaId, long desde, long existencias, [FromQuery(Name = "base")] Guid laBase, int formato,
-                PosDbContext db, CatalogoEnMemoria catalogo, VersionesDeLaCopia versiones, IOptions<OpcionesTicket> opciones, CancellationToken ct,
-                long vendidos = 0, long elegidos = 0) =>
-            CopiaDeLaCaja.CambiosAsync(db, catalogo, versiones, cajaId, desde, existencias, laBase, formato, opciones.Value, ct, vendidos, elegidos));
+                PosDbContext db, CatalogoEnMemoria catalogo, VersionesDeLaCopia versiones, IOptions<OpcionesTicket> opciones, TimeProvider reloj,
+                CancellationToken ct, long vendidos = 0, long elegidos = 0, string? promociones = null) =>
+            CopiaDeLaCaja.CambiosAsync(db, catalogo, versiones, cajaId, desde, existencias, laBase, formato, opciones.Value, ct, vendidos, elegidos, promociones,
+                reloj));
 
         // El aviso: un canal de solo ida (text/event-stream) con las versiones al conectarse y cada vez que cambia alguna.
         api.MapGet("/cajas/{cajaId:guid}/avisos", (HttpContext http, VersionesDeLaCopia versiones, IConfiguration configuracion,

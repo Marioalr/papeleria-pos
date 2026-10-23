@@ -24,7 +24,15 @@ namespace PapeleriaPos.Pruebas.Servicio;
 /// </summary>
 internal sealed class FabricaDePrueba(Action<IWebHostBuilder> configurar) : WebApplicationFactory<Program>
 {
-    protected override void ConfigureWebHost(IWebHostBuilder builder) => configurar(builder);
+    /// <summary>
+    /// Las pruebas no leen la configuración de la PC donde corren (servicio.json, en ProgramData): en una caja de verdad traería el
+    /// puente con eleventa. La prueba que la necesita pone la suya con «ConfiguracionDeLaPc».
+    /// </summary>
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseSetting("ConfiguracionDeLaPc", "");
+        configurar(builder);
+    }
 }
 
 /// <summary>El servicio de verdad, sobre una base temporal con 30 días de datos ficticios, la Caja 1 y los usuarios de prueba.</summary>

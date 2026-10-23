@@ -125,9 +125,9 @@ public static class GuiaPrueba
         new("alta-rapida", "Más en la venta",
             "Escribe un código que no existe (por ejemplo 7500000000017) y Enter, toca «Venderlo como artículo común» y agrégalo con su "
             + "descripción y su precio. Escribe otra vez el mismo código y Enter, y ahora dalo de alta con «Darlo de alta aquí» (nombre, "
-            + "precio y departamento). Luego oprime Ins y agrega otro artículo común.",
+            + "precio y departamento). Luego oprime Ctrl+P y agrega otro artículo común.",
             "Bajo el cuadro, en rojo: «No existe «7500000000017». Revisa el código o elige:», con «Darlo de alta aquí» y «Venderlo como "
-            + "artículo común». El artículo común (también con Ins) y el alta se llenan en el panel de la derecha y entran a la venta; al "
+            + "artículo común». El artículo común (también con Ctrl+P) y el alta se llenan en el panel de la derecha y entran a la venta; al "
             + "agregarlos, el aviso rojo se quita. El encargado verá el producto nuevo en Productos (F3), en «Por completar»."),
         new("impresiones", "Más en la venta",
             "Oprime F2 (impresiones por cobrar): agrega una a la venta y cóbrala; marca otra como «no vendida» con su motivo.",

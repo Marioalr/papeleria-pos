@@ -1,0 +1,57 @@
+@* Ins: «Varios», como en eleventa (docs/paridad-eleventa.md, 2026-10-22): la cantidad y luego el código, escaneado o escrito.
+   El cursor se queda en el cuadro de captura, como con el mostrador (Ctrl+M): lo que se escribe ahí es lo que pide el paso de
+   ahora, y Enter lo trae aquí (la pantalla de venta, EnVarios). Lo que escanea el lector es el código, nunca la cantidad,
+   también si llega mientras se abre el panel. Esc lo cancela. Solo dice cómo va: lo decide la pantalla de venta. *@
+
+<div class="vn-varios">
+    <p class="vn-panel-sub">En el cuadro de arriba: cuántos y Enter; luego escanea o escribe el código y Enter.</p>
+    <ol class="vn-varios-pasos">
+        <li class="@(PideCantidad ? "activo" : "listo")">
+            <span class="vn-varios-num">1</span>
+            <span class="vn-varios-que">Cantidad</span>
+            <strong>@(Cantidad is { } cantidad ? Formato.Numero(cantidad) : "escríbela y Enter (sin nada, una)")</strong>
+        </li>
+        <li class="@(PideCantidad ? Codigo is null ? null : "listo" : "activo")">
+            <span class="vn-varios-num">2</span>
+            <span class="vn-varios-que">Código</span>
+            @if (Codigo is { } codigo)
+            {
+                <strong>@(Producto?.Descripcion ?? codigo)</strong>
+                @if (Producto is not null)
+                {
+                    <code>@codigo</code>
+                }
+            }
+            else
+            {
+                <strong>escanéalo o escríbelo y Enter</strong>
+            }
+        </li>
+    </ol>
+    @if (Aviso is { } aviso)
+    {
+        <div class="vn-alerta" role="alert"><Ico Nombre="alerta" /><div><span>@aviso</span></div></div>
+    }
+    else if (PideCantidad && Codigo is not null)
+    {
+        <div class="vn-alerta info" role="status"><Ico Nombre="info" /><div><span>Ya está el código: ahora la cantidad y Enter.</span></div></div>
+    }
+    <p class="nota">Lo que escanees es el código, nunca la cantidad.</p>
+    <div class="vn-varios-ayuda"><span><kbd>Enter</kbd> sigue</span><span><kbd>Esc</kbd> cancela</span><span>el artículo común es <kbd>Ctrl+P</kbd></span></div>
+</div>
+
+@code {
+    /// <summary>Cuántos; vacío mientras no se escribe.</summary>
+    [Parameter] public decimal? Cantidad { get; set; }
+
+    /// <summary>El código, si ya llegó (antes o después de la cantidad).</summary>
+    [Parameter] public string? Codigo { get; set; }
+
+    /// <summary>El producto de ese código, de la copia de la caja; vacío si no está en ella (se busca al agregarlo).</summary>
+    [Parameter] public ProductoVentaDto? Producto { get; set; }
+
+    /// <summary>Por qué no se agregó todavía.</summary>
+    [Parameter] public string? Aviso { get; set; }
+
+    private bool PideCantidad => Cantidad is null;
+}

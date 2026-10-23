@@ -257,6 +257,35 @@ public sealed class ColaDeImpresionTests
     }
 
     /// <summary>
+    /// «No imprimirlo» en el ticket de una venta que todavía no salía (2026-10-22): se hace lo que se pidió al encolarlo (la caja
+    /// le dice a la caja principal que sigue sin salir), una vez. Si sale, o con «Reintentar», no.
+    /// </summary>
+    [Fact]
+    public async Task No_imprimirlo_hace_lo_que_se_pidio_al_encolarlo_y_solo_eso()
+    {
+        var impresora = new TicketeraDePrueba { Falla = n => n is 1 or 2 ? new IOException("Sin papel.") : null };
+        var cola = new ColaDeImpresion(impresora, Cortas);
+        var dejados = new List<string>();
+        IReadOnlyList<Elemento> papel = [new Renglon("Venta A-1")];
+
+        var venta = cola.Encolar("Ticket A-1", papel, abrirCajon: false, () => dejados.Add("A-1"));
+        Assert.False(await venta.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
+        cola.Reintentar();
+        Assert.False(await venta.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.Empty(dejados);
+
+        Assert.True(cola.NoImprimir(venta));
+        Assert.Equal(["A-1"], dejados);
+        Assert.False(cola.NoImprimir(venta));
+        Assert.Equal(["A-1"], dejados);
+
+        // El que sale no avisa nada.
+        var otra = cola.Encolar("Ticket A-2", papel, abrirCajon: false, () => dejados.Add("A-2"));
+        Assert.True(await otra.Resultado.WaitAsync(TimeSpan.FromSeconds(20)));
+        Assert.Equal(["A-1"], dejados);
+    }
+
+    /// <summary>
     /// Lo que no se puede armar para la impresora (el logo del ticket dañado) no truena al encolarlo, donde la venta ya quedó
     /// guardada: entra como «no salió», con su motivo y su documento (para verlo en pantalla), sin mandarle nada a la
     /// impresora. La cola se detiene en él como en lo demás; «Reintentar» lo vuelve a armar, y «No imprimirlo» lo deja.

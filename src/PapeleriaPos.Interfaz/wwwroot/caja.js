@@ -8,6 +8,8 @@ let hayPanel = false;
 let hayPagina = false;
 // El mostrador (Ctrl+M, entrega 13) está abierto con el cursor en el cuadro de captura (no al acomodar).
 let hayMostrador = false;
+// «Varios» (Ins, como en eleventa) está abierto con el cursor en el cuadro de captura: la cantidad y luego el código.
+let hayVarios = false;
 let escribiendo = null;
 
 export function registrar(referencia) {
@@ -34,6 +36,7 @@ export function quitar() {
     rafaga = null;
     hayPagina = false;
     hayMostrador = false;
+    hayVarios = false;
     pantalla = null;
 }
 
@@ -101,10 +104,13 @@ export function limpiarCaptura() {
 
 // Con una ventana abierta solo se atrapan las teclas que no escriben en sus campos: Esc, las F y las Ctrl de la caja (la
 // pantalla de venta decide qué hacen; con un panel, las de la barra siguen funcionando). Supr, las flechas, + y −, Enter
-// y Alt+1 a Alt+6 son de la ventana. Con un panel a la derecha, también Ins (como Ctrl+P) y Ctrl+Q.
-export function ventanaAbierta(abierta, enPanel = false) {
+// y Alt+1 a Alt+6 son de la ventana. Con un panel a la derecha, también Ins y Ctrl+Q. Con «varios», el panel es el de Ins
+// y su Enter en el cuadro de captura va a la pantalla (enterDeVarios): las tres cosas cambian juntas, en una sola llamada,
+// para que ningún Enter del lector caiga entre una y otra.
+export function ventanaAbierta(abierta, enPanel = false, varios = false) {
     hayVentana = abierta;
     hayPanel = abierta && enPanel;
+    hayVarios = hayPanel && varios;
 }
 
 // Una página en lugar de la venta (entrega 8). Con algo encima de ella (el corte, la Configuración, la guía de la prueba),
@@ -136,6 +142,22 @@ function teclaDelMostrador(e, campo) {
     } else {
         pantalla.invokeMethodAsync('EnMostrador', tecla === 'Tab' && e.shiftKey ? 'Shift+Tab' : tecla, texto, null, false);
     }
+    return true;
+}
+
+// «Varios» (Ins, como en eleventa; 2026-10-22): el cursor se queda en el cuadro de captura, como con el mostrador, y lo que
+// se escribe ahí es la cantidad y luego el código. Su Enter se toma como el de un escaneo: el texto se lee y el cuadro se
+// vacía al momento (un escaneo nunca se pega al siguiente), y va a la pantalla con su hora y si llegó en ráfaga (el lector:
+// es el código, nunca la cantidad). Lo demás (escribir, Esc, las F, Ins) es como con cualquier panel.
+function enterDeVarios(e, campo) {
+    if (e.key !== 'Enter' || e.ctrlKey || e.altKey || e.metaKey) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    clearTimeout(escribiendo);
+    const texto = campo.value;
+    const delLector = texto.length >= RAFAGA_MINIMO && e.timeStamp - ultimaEscrita < RAFAGA_MS;
+    campo.value = '';
+    pantalla.invokeMethodAsync('EnVarios', texto, e.timeStamp, delLector);
     return true;
 }
 
@@ -276,6 +298,7 @@ function alPresionar(e) {
         return;
     }
     if (hayMostrador && hayPanel && esCaptura(campo) && teclaDelMostrador(e, campo)) return;
+    if (hayVarios && esCaptura(campo) && enterDeVarios(e, campo)) return;
 
     if (tecla === 'Enter' && !hayVentana && esCaptura(campo)) {
         e.preventDefault();
@@ -349,13 +372,14 @@ function alPresionar(e) {
 
     e.preventDefault();
     e.stopPropagation();
-    // Con lo que hay en el cuadro de captura (no está enlazado): «20» y Alt+1, o las piezas y F11.
-    // Lo que usa ese texto (un rápido, F11, Esc) vacía el cuadro aquí mismo, para que la tecla siguiente no lo vuelva a usar.
+    // Con lo que hay en el cuadro de captura (no está enlazado): «20» y Alt+1, las piezas y F11, o «5» e Ins («Varios»).
+    // Lo que usa ese texto (un rápido, F11, Esc, Ins) vacía el cuadro aquí mismo, para que la tecla siguiente no lo vuelva a
+    // usar; con Ins, además, lo que el lector teclee enseguida empieza en el cuadro vacío y no se pega a lo de antes.
     let texto = null;
     if (esCaptura(campo)) {
         clearTimeout(escribiendo);
         texto = campo.value;
-        if (rapido || tecla === 'Escape' || (tecla === 'F11' && texto !== '')) campo.value = '';
+        if (rapido || tecla === 'Escape' || tecla === 'Insert' || (tecla === 'F11' && texto !== '')) campo.value = '';
     }
     let nombre = ctrlP ? 'Ctrl+P' : ctrlE ? 'Ctrl+E' : ctrlD ? 'Ctrl+D' : ctrlL ? 'Ctrl+L' : ctrlB ? 'Ctrl+B' : ctrlM ? 'Ctrl+M' : ctrlU ? 'Ctrl+U'
         : ctrlI ? 'Ctrl+I' : rapido ? 'Alt+' + tecla : tecla;
@@ -369,6 +393,10 @@ function alPresionar(e) {
             nombre = 'F12-pago';
         }
     }
+    // F4 con el cursor en el cobro («Pagó con», sus montos, su botón): la nota del ticket, como en eleventa (2026-10-22). Solo sin
+    // ventana: el panel del abono también es data-cobro, y ahí F4 sigue siendo Inventario, como en lo demás de la venta
+    // (revisión del PR #133).
+    if (tecla === 'F4' && !hayVentana && esDelCobro(e.target)) nombre = 'F4-cobro';
     pantalla.invokeMethodAsync('Tecla', nombre, texto);
 }
 

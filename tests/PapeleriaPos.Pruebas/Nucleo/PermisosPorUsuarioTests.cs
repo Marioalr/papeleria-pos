@@ -97,8 +97,9 @@ public class PermisosPorUsuarioTests
         Assert.Equal(18, (int)AccionControlada.Descuento);
         Assert.Equal(36, (int)AccionControlada.CorteDelDia);
         Assert.Equal((37, 38, 39), ((int)AccionControlada.VerUtilidad, (int)AccionControlada.VerReportes, (int)AccionControlada.ConfigurarTienda));
+        Assert.Equal(40, (int)AccionControlada.CancelarMovimiento);
         Assert.Equal("EditarReglas", AccionControlada.EditarReglas.ToString());
-        Assert.Equal(40, Permisos.Acciones.Count);
+        Assert.Equal(41, Permisos.Acciones.Count);
     }
 
     // ── De los roles a los permisos (la migración) ───────────────────────────

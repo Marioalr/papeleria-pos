@@ -20,13 +20,16 @@ public static class ArmadoTicket
                 l.DescuentoCentavos, l.DescuentoCentesimas is { } c ? Control.Permisos.TextoMonto(Control.AccionControlada.Descuento, c) : null,
                 l.AhorroMayoreoCentavos, l.MayoreoDesde is not { } desde ? null
                     : l.MayoreoDeCliente ? "Mayoreo de cliente"
-                    : $"Mayoreo desde {MayoreoTexto(desde, l.Unidad, esBase: descripcion == l.Descripcion)}");
+                    : $"Mayoreo desde {MayoreoTexto(desde, l.Unidad, esBase: descripcion == l.Descripcion)}",
+                // La promoción (fase 3), como se llamaba al cobrar: la reimpresión dice lo mismo aunque después cambie o termine.
+                l.AhorroPromocionCentavos, l.TienePromocion ? l.Promocion : null);
         }).ToList();
 
         return new TicketDto(v.FolioTexto!, HoraMexico.ALocal(v.PagadaUtc!.Value), caja, cajero, lineas, v.NumeroDeArticulos, v.TotalCentavos,
             v.IvaCentavos,
             v.Cobros.OrderBy(c => c.Forma).Select(c => new CobroTicketDto(c.Forma, c.MontoCentavos, c.RecibidoCentavos, c.CambioCentavos, c.Referencia)).ToList(),
-            encabezado, pie, logo, v.Id, v.RedondeoCentavos, cliente is null ? null : ClienteTexto(cliente.Nombre, PrivilegiosAplicados(v)), credito);
+            encabezado, pie, logo, v.Id, v.RedondeoCentavos, cliente is null ? null : ClienteTexto(cliente.Nombre, PrivilegiosAplicados(v)), credito,
+            Nota: v.Nota);
     }
 
     /// <summary>"Escuela Benito Juárez (descuento 10 % · mayoreo siempre)", o solo el nombre si no tiene privilegios de venta.</summary>
