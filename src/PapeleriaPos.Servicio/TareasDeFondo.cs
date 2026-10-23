@@ -13,6 +13,25 @@ namespace PapeleriaPos.Servicio;
 /// <summary>Dónde vive la base y sus respaldos en la caja principal.</summary>
 public static class RutasServicio
 {
+    /// <summary>
+    /// La configuración de esta PC (<see cref="PapeleriaPos.Servicio.ConfiguracionDeLaPc"/>): <c>servicio.json</c> en ProgramData
+    /// (<c>C:\ProgramData\PapeleriaPos</c>), junto a la base y fuera de la carpeta del programa. «ConfiguracionDeLaPc» la cambia
+    /// (las pruebas; vacía, ninguna).
+    /// <para>
+    /// La prueba con una persona real (<c>Prueba:Activa</c>) no la lee: tiene su propia carpeta de datos, puede estar en la misma
+    /// PC que el servicio de verdad y tomaría su configuración (el puente con eleventa). Se sigue configurando solo con lo que le
+    /// pasa la caja de la prueba al arrancarlo, como antes.
+    /// </para>
+    /// </summary>
+    public static string? ConfiguracionDeLaPc(IConfiguration configuracion)
+    {
+        if (configuracion.GetValue("Prueba:Activa", false))
+            return null;
+        if (configuracion["ConfiguracionDeLaPc"] is { } ruta)
+            return ruta.Length > 0 ? ruta : null;
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PapeleriaPos", "servicio.json");
+    }
+
     /// <summary>Sin configurar, la base va en ProgramData: como servicio de Windows no hay "carpeta actual" útil.</summary>
     public static string CadenaConexion(IConfiguration configuracion)
     {

@@ -248,6 +248,9 @@ la caja con su ficha y su PIN del POS, todos desde la misma cuenta común de Win
   - La carpeta de datos de la caja, con permiso de escritura para los usuarios.
   - En cada PC que imprime, una cola local por impresora (las dos WF-6590 y la L5590), con puerto TCP/IP estándar y
     "Conservar documentos impresos" (cambiarlo pide administrador).
+  - Actualizar: `actualizar.ps1` del paquete nuevo, con respaldo y vuelta atrás; lo de cada PC (como el puente con
+    eleventa) va en `C:\ProgramData\PapeleriaPos\servicio.json`, que actualizar no toca
+    ([cómo](pruebas-en-tienda.md#actualizar-la-caja-2-del-piloto)).
 - **Lo que se hace desde la cuenta común de Windows:** vender y todo lo de la caja, dar de alta la caja (pide el PIN
   del dueño, no administrador), trabajar sin conexión, cotizar e imprimir.
 - **Dónde se escribe:** la base de la sucursal la escribe solo el servicio. Lo de cada caja (su configuración y la
@@ -1324,6 +1327,32 @@ bitácora; lo que se perdió allá queda por revisar. Y antes de lo primero que 
 eleventa con `gbak`, en la caja 2 y fuera de OneDrive, con 5 días de historia; sin él no se escribe (se puede quitar
 esa condición en la configuración). Probado con un gbak de mentiras y contra el Firebird de prueba.
 
+**Avance (2026-10-21): el paso 6, cómo se actualiza la caja 2 con un arreglo** sin perder su base ni la configuración del
+puente ([en la tienda](pruebas-en-tienda.md#actualizar-la-caja-2-del-piloto), [cómo funciona](arquitectura.md#actualizaciones)).
+En la caja 2 corren el servicio, con el puente, y la caja:
+
+- **Lo de la PC, fuera del programa:** el servicio lee la configuración de esa PC (el puente con eleventa) de
+  `C:\ProgramData\PapeleriaPos\servicio.json`, que actualizar no toca. Manda sobre el `appsettings.json` del programa, y las
+  variables de entorno (la clave de eleventa, que nunca va en un archivo) y la línea de órdenes mandan sobre ella.
+- **El programa, en Archivos de programa:** `instalar-servicio.ps1` copia el servicio a `C:\Program Files\PapeleriaPos\Servicio`
+  y lo registra desde ahí, como la caja, y pone `servicio.json` sin ajustes si no hay uno (nunca encima).
+- **`actualizar.ps1`,** como administrador, desde el paquete nuevo (`actualizar.ps1`, `servicio\` y `caja\`; lo deja cada
+  corrida del «Instalador de prueba»): dice qué versión hay y cuál pone, y no pone una anterior; pide cerrar la caja (los
+  tickets en espera se guardan); detiene el servicio con calma; respalda la base y los dos programas (se guardan los últimos 3);
+  cambia los programas, arranca el servicio y espera a que conteste con la versión nueva. Si no contesta, se detiene solo o la
+  base sale dañada, regresa solo a la versión de antes, con su base. Antes de tocar nada se niega si el `appsettings.json`
+  instalado trae ajustes propios (irían a `servicio.json`) o si la base ya tiene el aviso de dañada.
+- **Lo prueba en Windows** el flujo nuevo «Instalación» de GitHub Actions, en cada PR que toca la instalación, el servicio o
+  la caja: instala, pone una marca en la base y otra en `servicio.json`, actualiza con la caja abierta, se niega a poner una
+  versión anterior, regresa sola de una que no arranca, pasa a Archivos de programa un servicio instalado como antes y al final
+  quita todo, y revisa que la marca y `servicio.json` sigan en cada paso.
+- **Decidido, por revisar** (en [la tabla](#decidido-mientras-el-dueño-no-estaba-2026-10-17)): la prueba con una persona real
+  no lee `servicio.json`; la versión de los programas y dónde sale el paquete; qué pasa con los ajustes propios del
+  `appsettings.json` de antes y con una base que ya tiene el aviso de dañada.
+- **Falta:** usarlo en la caja 2 de verdad con el primer arreglo del piloto (con el servicio ya instalado ahí). Un límite
+  conocido: si un día una migración tardara más de unos 30 s (una base muy grande), Windows daría por fallido el arranque y
+  regresaría a la versión de antes ([detalle](arquitectura.md#actualizaciones)).
+
 #### Al terminar el piloto
 
 Cada parte entra sin detener a la caja 2:
@@ -1537,6 +1566,11 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | En el piloto, ¿qué devoluciones hace la caja 2? | Solo las de tickets del turno de eleventa en curso de la caja 2, que el puente sabe escribir. Los de otro turno, otra caja o la principal se devuelven en el eleventa que está abierto en esa misma caja, y la devolución llega sola con la lectura. Así no hay que adivinar qué devolución anotada a mano en eleventa corresponde a cuál (tres revisiones encontraron casos que se perdían o se duplicaban). Cuando se vea en la tienda cómo anota eleventa una devolución de otro turno, el puente puede aprender a escribirla y la caja 2 tomarlas también | Puente (#109) |
 | Una anotación a mano en eleventa que no cuadra exacto | «Resolverlo a mano» con «Configuración de la tienda» y nota en la bitácora; mientras se decide, la existencia sigue a eleventa (sin congelarla) | Puente (#109) |
 | Al devolver en la caja 2 un ticket cobrado en eleventa, ¿el dinero al peso o exacto? | Exacto al centavo, como lo devuelve eleventa ($9.50, no $10): así el ticket de eleventa queda en cero y el cajón cuadra con lo que anota eleventa. Lo que cobró la propia caja se sigue devolviendo al peso, porque se cobró redondeado | Puente (#109) |
+| ¿La prueba con una persona real lee la configuración de la PC (`servicio.json`)? (2026-10-21) | No: tiene su propia carpeta y puede estar en la misma PC que el servicio de verdad, y tomaría su puente con eleventa. Se sigue configurando solo con lo que le pasa su caja al arrancarlo, como antes | Paso 6 del piloto |
+| ¿Qué versión llevan los programas y de dónde sale el paquete para actualizar? (2026-10-21) | 1.0.<número de la corrida> del «Instalador de prueba», el mismo número que su instalador; la misma corrida deja el paquete como otro artefacto (con todas las pruebas antes). Lo compilado a mano sale como 0.0.0-local, y `actualizar.ps1` solo lo pone con `-Forzar` | Paso 6 del piloto |
+| Si el `appsettings.json` instalado trae ajustes propios (como se configuraba antes), ¿qué hace `actualizar.ps1`? (2026-10-21) | No sigue y dice cuáles (solo los nombres, nunca un valor): van en `servicio.json`. Con `-Forzar` sigue sin ellos, y el de antes queda en el respaldo | Paso 6 del piloto |
+| Si la base ya tiene el aviso de dañada, ¿se actualiza? (2026-10-21) | No: primero se restaura el respaldo de antes del apagón (actualizar no lo arregla, y regresar por ese aviso no ayudaría). Con `-Forzar` sí, y ese aviso ya no hace regresar | Paso 6 del piloto |
+| Si falta `servicio.json`, ¿lo pone `actualizar.ps1`? (2026-10-21) | Sí, la plantilla sin ajustes (nunca encima de uno que ya esté): así siempre está, y una cuenta común de Windows no puede ponerlo (en ProgramData se pueden crear archivos nuevos) | Paso 6 del piloto |
 | ¿Las promociones se aplican en la caja 2 durante el piloto? (2026-10-22) | No: los precios se ponen en eleventa (2026-10-10). Si la caja 2 aplicara las suyas, cobraría distinto que la caja de eleventa por lo mismo el mismo día; lo de temporada (el F11 al costo) se sigue haciendo allá. Con la lectura de eleventa prendida, el catálogo del servicio no lleva promociones (ni la copia ni el cobro las aplican) y Productos › Promociones solo las consulta, con la nota de por qué; terminarlas sí se puede. Al dejar eleventa se prenden solas | Promociones |
 | Las promociones: cómo cuentan y qué gana (2026-10-22) | El 3×2 y el segundo a mitad cuentan cada producto aparte, en piezas como el mayoreo (no juntan productos distintos de un departamento); no se acumulan: la que deja menos, también contra el mayoreo (en un empate, el mayoreo); el descuento a mano (Ctrl+D) va encima de la promoción; el costo se revisa al guardarla, con su precio más bajo (también el de una presentación con precio propio); «Dejar al costo» al centavo hacia arriba, desde hoy y por un mes, para quien ve la utilidad; el nombre, de hasta 40 letras (sale en el ticket) | Promociones |
 | El descuento del cliente registrado con una promoción (2026-10-22, revisión del PR #132) | No se acumulan: en cada renglón se queda lo que más le conviene al cliente, la promoción o su precio con su descuento (como la promoción contra el mayoreo; en un empate, su descuento). Con la promoción, su descuento queda en pausa en el renglón y vuelve si deja de convenirle (otra cantidad). Antes iba encima y una promoción «al costo» pedía autorización al cobrar | Promociones |
@@ -1622,8 +1656,10 @@ Piloto en la caja 2 ([ver arriba](#la-versión-unicaja-y-el-piloto-en-la-caja-2)
 - [x] Los riesgos verificados el 2026-10-12: el cobro espera el último escaneo y «Pagó con» no toma escaneos como
   dinero; solo efectivo en la caja 2; la lectura de eleventa respeta lo que sigue en la bandeja (PR #82, #83 y #85)
 - [x] Paso 6, la entrega 10: la base contra apagones (PR #84); el servicio de la caja 2 la respalda cada día
-- [ ] Paso 6, lo que falta: cómo se actualiza la caja 2 del piloto con un arreglo, sin perder su base ni la
-  configuración del puente
+- [x] Paso 6, lo que falta: cómo se actualiza la caja 2 del piloto con un arreglo, sin perder su base ni la
+  configuración del puente (2026-10-21: `servicio.json` en ProgramData y `actualizar.ps1` con respaldo y vuelta atrás, que
+  prueba en Windows el flujo «Instalación»; falta usarlo en la tienda,
+  [cómo](pruebas-en-tienda.md#actualizar-la-caja-2-del-piloto))
 - [x] Eleventa abierto en la caja 2 en el mismo turno (adoptar su turno y tomar su corte) y los folios repetidos
   (2026-10-16, en código; falta probarlo contra la copia en el paso 5)
   ([diseño](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))
@@ -1725,7 +1761,7 @@ Por definir:
 - [ ] Probar el lector en la tienda: qué manda con los códigos de 11 cifras y su ritmo al teclear
 - [ ] Instalador de la tienda para el administrador: servicio, cajas, firewall, carpeta de la caja con permisos y las
   colas de las impresoras de inyección ([detalle](#instalación-y-usuarios-de-windows)). Hoy son los scripts de
-  `instalacion/`
+  `instalacion/`, y para actualizar, `actualizar.ps1` (2026-10-21)
 - [ ] Si eleventa se restaura a un respaldo durante el piloto: lo que la caja 2 le había mandado y se perdió allá, ¿se
   anota a mano en eleventa (así quedó, por revisar en la pantalla de la caja 2) o la caja 2 lo vuelve a mandar sola, con
   folios nuevos? ([respaldos](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))
