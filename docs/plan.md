@@ -1030,6 +1030,31 @@ en la [paridad](paridad-eleventa.md#reportes): lo que quedaba de los reportes de
   la pantalla, el Excel y el papel) cuentan el día en que se hicieron, como en el corte del día y en los reportes; el Excel
   de los reportes lleva las notas nuevas de la pantalla y el renglón «Sin desglose» (sin costo, como el artículo común); y el
   piloto, también para el Excel y «Ventas por período», es con la lectura o con el envío a eleventa.
+- **La revisión del PR #134 (2026-10-23),** corregida con sus pruebas (sin hallazgos altos: las cifras cuadran y el costo no se
+  cuela en ningún archivo):
+  - **Las fechas:** un año mal escrito en «Del» («26») pedía siglos de días: el Excel armaba un renglón por cada uno (unos 20 s
+    y 1.5 GB en la caja principal) y ← tronaba la pantalla. Ahora van del 1 de enero de 2000 a hoy y hasta tres años a la vez
+    (los campos lo acomodan solos y la caja principal lo revisa), «Por día» va del primer al último día con algo, ← → no se
+    desbordan, y si la caja deja de esperar, la caja principal deja de leer y de armar.
+  - **Un Excel que tarda** ya no deja la caja sin conexión: los archivos se esperan hasta dos minutos (lo demás de atrás,
+    15 s) y, si aun así tarda, la caja dice que la caja principal sigue armándolo.
+  - **Al guardar,** lo que se dice depende del paso que falló: la carpeta (no existe, se quitó la memoria, no deja escribir) o
+    el archivo abierto en otro programa, como Excel (antes lo decía al revés). El archivo se cambia fuera del hilo de la
+    pantalla.
+  - **Las cantidades enteras** se leían «5.» en Excel: ahora «5», y con fracción, «1.5».
+  - **Av Pág sostenida** cerca del final regresaba a la primera página: ahora se queda en la última, y una página recordada que
+    ya no existe lleva a la última. Lo mismo en los movimientos, los bajos y lo que vale el inventario.
+  - **← →** guardan el largo que se eligió: «Esta semana» que empieza un día 1 ya no brinca un mes, unos días cortados en hoy
+    regresan a su largo, y «Este mes» el día 1 o «Esta semana» un lunes regresan al mes o a la semana de antes completos.
+  - **El Excel de «Ventas por período»** lleva «Cuenta en lo vendido» (el cancelado, en cero), que con una autosuma da lo
+    vendido de abajo, y «Devuelto (cualquier día)», que es lo devuelto a cada ticket cuando haya sido.
+  - **El Excel de Reportes** es del periodo que se ve: lleva su primer día, no «hoy» (pasada la medianoche, la caja principal
+    armaba otro).
+  - **De una caja,** la pantalla, el Excel y el papel dicen que lo devuelto y lo cancelado son de sus tickets, se hayan hecho en
+    ella o en otra (eso no es el corte del día, que no se separa así).
+  - **El resumen impreso** de más de 31 días va por semana y de más de tres meses por mes (un año día por día eran metros de
+    papel); un nombre de caja largo se parte en renglones.
+  - **Al exportar,** el cursor vuelve al botón (mientras trabajaba estaba apagado y se perdía).
 - **Falta:** verlo en Windows: «Guardar como» encima de la ventana de la caja y abrir cada Excel en Excel.
 
 **Avance (2026-10-17): la red de la tienda en el POS,** como lo pide la [red de la
@@ -1676,6 +1701,10 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | ¿Qué lleva cada Excel? | Lo que se ve, con sus filtros y sin las páginas, una hoja por tabla; sin «Ver costos, utilidad y margen», sin la utilidad ni el costo (ni sus columnas vacías); los movimientos y los tickets de «Ventas por período», hasta 60,000 por archivo (con más, se pide elegir menos días o un filtro: mientras se arma, cada celda ocupa memoria del servicio de la caja principal); de lo que vale el inventario, cada departamento y los productos de la derecha con su filtro | Entrega 9, parte 2 |
 | ¿Dónde va «Ventas por período» y qué cuenta? | En Reportes, con «Ver reportes de ventas» (en eleventa está en F3): un botón que la abre ahí mismo, con el acomodo de las tareas del inventario. Abre en hoy; los tickets del primero al último, de 100 en 100. Cuenta como el corte del día, día por día: un ticket cancelado se lista el día en que se cobró, pero no cuenta en lo vendido; lo devuelto y las cancelaciones son los que se hicieron en esos días, también de tickets de antes (de una caja, los de sus tickets), como en el corte del día desde la revisión del PR #131; lo devuelto se resta; las formas de pago, sin el redondeo al peso. El historial de eleventa no se lista (no trae caja, cajero ni forma de pago): se dice cuánto hay. ← → llevan al mismo largo antes o después. En el piloto, sin el historial | Entrega 9, parte 2 |
 | ¿Qué lleva el resumen impreso de «Ventas por período»? | Lo de cada día (los tickets y lo vendido; lo devuelto y las formas de pago que no son efectivo, si las hubo), las formas de pago del periodo y los totales; no cada ticket | Entrega 9, parte 2 |
+| Las fechas de «Ventas por período» (revisión del PR #134) | Del 1 de enero de 2000 a hoy y hasta tres años a la vez: un año mal escrito («26») pedía siglos de días. Lo escrito se acomoda solo (antes de 2000, el 1 de enero de 2000; a más de tres años, el otro día lo sigue) y la caja principal también lo revisa. ← → van al largo que se eligió (un mes, una semana o tantos días), aunque lo que se ve esté cortado en hoy o empiece un día 1 | Entrega 9, parte 2 |
+| El resumen impreso de muchos días (revisión del PR #134) | Hasta 31 días, cada día; hasta tres meses, cada semana (de lunes a domingo, cortada en los días que se pidieron); más, cada mes. Sin preguntar: así nunca pasa de unos 40 renglones de periodos | Entrega 9, parte 2 |
+| Un Excel que tarda (revisión del PR #134) | La caja lo espera hasta dos minutos (lo demás de atrás, 15 s); si tarda más, dice que la caja principal sigue armándolo y no pasa a sin conexión (si de verdad se fue, el latido lo nota) | Entrega 9, parte 2 |
+| «Ventas por período» de una caja (revisión del PR #134) | Lo devuelto y lo cancelado son los de sus tickets, se hayan hecho en ella o en otra (el corte del día no se separa así); la pantalla, el Excel y el papel lo dicen | Entrega 9, parte 2 |
 | Dejar eleventa | En dos pasos: primero el modo multicaja con el puente escribiendo; al final, apagar el puente cuando el POS tenga la entrega 9 y un mes que cuadre con eleventa | Piloto |
 | La ganancia del día, con Telegram en pausa | En el corte del día, para quien tiene «Ver costos, utilidad y margen», como el de eleventa | El corte del día como el de eleventa |
 | Las tres impresoras de inyección | Van con la entrega 4, después de alcanzar a eleventa (meta del 2026-10-15); mientras, Control Print sigue cobrando aparte. Se alinearon la fase 5 y [impresión](impresion.md) | Plan |

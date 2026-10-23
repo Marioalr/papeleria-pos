@@ -575,14 +575,17 @@ entrega 9 ya está: la parte 1, todo lo de arriba menos exportar a Excel, y la p
   la tienda, qué es y de qué días, quién lo exportó y cuándo; el renglón de los títulos se queda fijo al bajar.
 - **Guardar un archivo desde la caja** (antes no se podía), de una sola forma: en la ventana de Windows, «Guardar como» de
   Windows, en Documentos (después, en la carpeta del último que se guardó) con el nombre que propone, como «Ventas
-  2026-10.xlsx»; en el navegador, una descarga. La pantalla dice dónde quedó o que se canceló.
+  2026-10.xlsx»; en el navegador, una descarga. La pantalla dice dónde quedó, que se canceló o por qué no se pudo (la carpeta,
+  o el archivo abierto en Excel), y el cursor vuelve al botón. Un Excel se espera hasta dos minutos: si tarda más, la caja
+  dice que la caja principal sigue armándolo, sin pasar a sin conexión.
 - **Ventas por período,** como la de eleventa (en su F3): un botón en Reportes que abre, ahí mismo y con el acomodo de las
   tareas del inventario («← Reportes» o Esc), los tickets de hoy, ayer, esta semana, este mes, el mes pasado o de una fecha a
   otra, de una caja o de todas, del primero al último y de 100 en 100, con los totales de todos esos días al final; ← y →,
   los días de antes o de después. «Imprimir el resumen» manda a la impresora de tickets lo de cada día y las formas de pago,
-  no cada ticket; «Exportar a Excel», todos. Los totales de cada día son los del corte del día: lo cobrado ese día, y lo
-  devuelto y lo cancelado ese día (también de tickets de antes). El historial de eleventa no se lista: no trae caja, cajero
-  ni forma de pago.
+  no cada ticket (de más de 31 días, cada semana; de más de tres meses, cada mes); «Exportar a Excel», todos. Las fechas van
+  del 1 de enero de 2000 a hoy y hasta tres años a la vez. Los totales de cada día son los del corte del día: lo cobrado ese
+  día, y lo devuelto y lo cancelado ese día (también de tickets de antes); de una caja, lo de sus tickets, se haya hecho en
+  ella o en otra. El historial de eleventa no se lista: no trae caja, cajero ni forma de pago.
 
 ## Configuración
 
