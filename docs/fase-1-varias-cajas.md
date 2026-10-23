@@ -139,7 +139,11 @@ venta en contingencia queda marcada para que se vea en el corte y en la bitácor
 | `PapeleriaPos.Servicio` | Corre como servicio de Windows, escucha en la red, responde al descubrimiento, revisa la llave de cada caja, recibe la bandeja y hace los respaldos |
 | `PapeleriaPos.Caja` | Configuración inicial (encontrar el servicio y pedir el alta); la base local va en `C:\ProgramData\PapeleriaPos\caja-local.db` |
 | `PapeleriaPos.Interfaz` | `Contingencia` (latido, copia local, bandeja, diario del turno, saldos del crédito y la cuenta propia —lo fiado y abonado sin confirmar— en `AlmacenLocal`) y la franja; el cliente de la caja decide si va a la API o a la copia local |
-| `instalacion/instalar-servicio.ps1` | Instalar y quitar el servicio de Windows y las reglas del firewall (va junto al servicio publicado) |
+| `instalacion/instalar-servicio.ps1` | Instalar y quitar el servicio de Windows (lo copia a `C:\Program Files\PapeleriaPos\Servicio` y lo registra desde ahí) y las reglas del firewall; pone `servicio.json` si no hay (va junto al servicio publicado) |
+| `instalacion/instalar-caja.ps1` | Instalar y quitar la caja en `C:\Program Files\PapeleriaPos\Caja`, con su acceso para todos los usuarios (va junto a la caja publicada) |
+| `instalacion/plantilla-servicio.json` | Cómo empieza la configuración de cada PC, `C:\ProgramData\PapeleriaPos\servicio.json`: sin ajustes, con lo que va ahí (el puente con eleventa) y lo que no (la clave). Va junto al servicio publicado |
+| `instalacion/actualizar.ps1` | Actualizar el servicio y la caja de una PC con el paquete nuevo: respalda la base y los programas, cambia los programas y regresa sola si la versión nueva no arranca ([cómo](pruebas-en-tienda.md#actualizar-la-caja-2-del-piloto)) |
+| `instalacion/armar-paquete.ps1` | Armar el paquete (`actualizar.ps1`, `servicio\` y `caja\`) con su versión; lo usan el «Instalador de prueba» y la prueba de los scripts (`.github/workflows/instalacion.yml`) |
 | Datos nuevos | Caja: llave (solo su huella), equipo y alta. Venta, movimiento, corte, bitácora y abono: "en contingencia" (y "fuera de corte"); turno: "abierto en contingencia"; revisiones del crédito |
 
 Se hace en dos partes: **parte 1,** servicio de Windows, cajas por la red, alta con llave y respaldos; **parte 2,**

@@ -18,6 +18,10 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     // Windows es System32, y abierto desde otra carpeta la caja del navegador saldría sin estilos ni scripts.
     ContentRootPath = AppContext.BaseDirectory,
 });
+// La configuración de esta PC (C:\ProgramData\PapeleriaPos\servicio.json), fuera de la carpeta del programa: actualizar no la
+// toca. Manda sobre appsettings.json; las variables de entorno y la línea de órdenes, sobre ella (la clave de eleventa va solo en
+// una variable de entorno).
+ConfiguracionDeLaPc.Agregar(builder.Configuration, RutasServicio.ConfiguracionDeLaPc(builder.Configuration), args);
 builder.Host.UseWindowsService(o => o.ServiceName = "PapeleriaPos");
 // La caja de la prueba (la que pasa esta opción) guarda lo que escribe este servicio en su registro
 // (registros\servicio-….log): en UTF-8, para que lleguen los acentos; si no, sale en la página de códigos de la consola.
