@@ -103,25 +103,36 @@ Instala el administrador de cada PC; después todo se usa desde una cuenta comú
 (el cajero, el encargado y el dueño entran con su ficha y su PIN del POS desde esa misma cuenta;
 [plan](docs/plan.md#instalación-y-usuarios-de-windows)).
 
-1. Publicar, en la PC de desarrollo:
+1. **El paquete** (`actualizar.ps1`, `servicio\` y `caja\`, publicados para Windows de 64 bits con .NET adentro): lo deja
+   cada corrida del flujo «Instalador de prueba» (el artefacto `PapeleriaPos-Actualizacion-1.0.<número>`), o se arma en una
+   PC con Windows y el SDK de .NET:
 
    ```
-   dotnet publish src/PapeleriaPos.Servicio -c Release -r win-x64 --self-contained -o publicar/servicio
-   dotnet publish src/PapeleriaPos.Caja -c Release -r win-x64 --self-contained -o publicar/caja
+   powershell -ExecutionPolicy Bypass -File instalacion\armar-paquete.ps1 -Version 1.0.57
    ```
 
-2. **Caja principal:** copiar `publicar/servicio` (por ejemplo a `C:\PapeleriaPos\Servicio`) y, como
-   administrador, correr ahí `instalar-servicio.ps1`. El servicio arranca con Windows, deja la base en
-   `C:\ProgramData\PapeleriaPos\pos.db`, los respaldos en `C:\ProgramData\PapeleriaPos\respaldos` y abre el firewall
-   solo para la red local. Mientras no haya datos reales, se copia ahí una base de prueba antes de instalar.
+   Cada .exe lleva esa versión (sin `-Version`, 0.0.0-local), la que compara `actualizar.ps1`.
+
+2. **Caja principal:** como administrador, correr `servicio\instalar-servicio.ps1` desde el paquete. Copia el servicio a
+   `C:\Program Files\PapeleriaPos\Servicio` y lo registra desde ahí. Arranca con Windows, deja la base en
+   `C:\ProgramData\PapeleriaPos\pos.db`, los respaldos en `C:\ProgramData\PapeleriaPos\respaldos`, la configuración de esa
+   PC en `C:\ProgramData\PapeleriaPos\servicio.json` (sin ajustes, si no había) y abre el firewall solo para la red local.
+   Lo de cada PC (como el puente con eleventa) va en `servicio.json`, no en el `appsettings.json` del programa: manda sobre
+   él, y las variables de entorno mandan sobre ella (la clave de eleventa va solo en la variable `Eleventa__Clave`).
+   Mientras no haya datos reales, se copia ahí una base de prueba antes de instalar.
    Por esa misma puerta entran los celulares del conteo completo (`http://<ip>:5080/conteo`; en Inventario (F4) →
    «Conteo completo» salen la dirección y el QR): tienen que estar en el wifi de la misma red que la caja principal.
 
-3. **Cada caja** (también la principal): como administrador, correr `instalar-caja.ps1` desde `publicar/caja` (con
+3. **Cada caja** (también la principal): como administrador, correr `caja\instalar-caja.ps1` desde el paquete (con
    `-ColaImpresion "<cola>"` en la PC de la WF-6590). La copia a Archivos de programa, deja
    `C:\ProgramData\PapeleriaPos\Caja` con escritura para los usuarios y pone el acceso en el escritorio de todos.
    Después, con la cuenta de Windows de todos los días, se abre la caja: la primera vez pide la dirección de la caja principal
    (o la busca en la red) y el PIN del dueño, y queda dada de alta.
+
+4. **Actualizar:** como administrador, `actualizar.ps1` del paquete nuevo
+   ([cómo](docs/pruebas-en-tienda.md#actualizar-la-caja-2-del-piloto)). Respalda la base y los programas en
+   `C:\ProgramData\PapeleriaPos\actualizaciones`, no toca lo de la PC (la base, `servicio.json`, lo de la caja) y regresa sola a
+   la versión de antes si la nueva no arranca. El flujo «Instalación» de GitHub Actions lo prueba en Windows.
 
 Para probar en el navegador lo que hace la ventana de Windows:
 

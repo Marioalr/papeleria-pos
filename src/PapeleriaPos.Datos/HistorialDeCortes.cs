@@ -58,13 +58,17 @@ public sealed class HistorialDeCortes(PosDbContext db)
         var cortes = (await db.Cortes.AsNoTracking().Where(c => c.Tipo == TipoCorte.Z && ids.Contains(c.TurnoId)).ToListAsync(ct))
             .GroupBy(c => c.TurnoId).ToDictionary(g => g.Key, g => g.MaxBy(c => c.FechaUtc)!);
         var cajas = await db.Cajas.AsNoTracking().Where(c => c.SucursalId == caja.SucursalId).ToDictionaryAsync(c => c.Id, c => c.Nombre, ct);
+        // Las entradas y salidas canceladas de cada turno (2026-10-22): su corte lo dice, como al cerrarlo.
+        var canceladas = await RegistroCaja.CanceladasAsync(db, ids, ct);
         var personas = turnos.Select(t => t.CajeroId).Concat(cortes.Values.Select(c => c.RealizadoPorId)).Distinct().ToList();
         var nombres = await db.Usuarios.AsNoTracking().Where(u => personas.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Nombre, ct);
 
         var filas = turnos.Select(t =>
         {
             var cajeroDelTurno = nombres.GetValueOrDefault(t.CajeroId, "—");
-            var corte = cortes.TryGetValue(t.Id, out var z) ? Dto(z, cajeroDelTurno, nombres.GetValueOrDefault(z.RealizadoPorId, "—")) : null;
+            var corte = cortes.TryGetValue(t.Id, out var z)
+                ? Dto(z, cajeroDelTurno, nombres.GetValueOrDefault(z.RealizadoPorId, "—"), canceladas.GetValueOrDefault(t.Id))
+                : null;
             // Sin corte aquí: abierto en el piloto (se corta allá), o cerrado sin corte Z. La caja solo cierra un turno con su
             // corte Z; sin él lo cierra el corte de eleventa cuando la caja lo toma (TurnosDelPiloto, en el puente), y eso
             // sigue siendo cierto después del piloto.
@@ -105,10 +109,14 @@ public sealed class HistorialDeCortes(PosDbContext db)
         return quienes.Count == 0 ? $"{principio}." : $"{principio}: {Permisos.Nombres(quienes)}.";
     }
 
-    /// <summary>El corte como lo enseña la caja y como se imprime (lo mismo que al cerrarlo, sin el aviso de Telegram).</summary>
-    private static CorteDto Dto(Corte c, string cajero, string realizadoPor) =>
+    /// <summary>
+    /// El corte como lo enseña la caja y como se imprime (lo mismo que al cerrarlo, sin el aviso de Telegram), con las entradas y
+    /// salidas que se cancelaron en el turno.
+    /// </summary>
+    private static CorteDto Dto(Corte c, string cajero, string realizadoPor, (int Entradas, int Salidas) canceladas) =>
         new(c.Tipo, HoraMexico.ALocal(c.FechaUtc), cajero, realizadoPor, c.Ventas, c.FondoCentavos, c.EfectivoVentasCentavos, c.EntradasCentavos,
             c.SalidasCentavos, c.TarjetaCentavos, c.TransferenciaCentavos, c.EsperadoCentavos, c.ContadoCentavos, c.DiferenciaCentavos,
             c.DevolucionesCentavos, c.Cancelaciones, c.EnContingencia, c.RedondeoCentavos, c.CreditoCentavos, c.Abonos, c.AbonosEfectivoCentavos,
-            c.AbonosTarjetaCentavos, c.AbonosTransferenciaCentavos, c.SaldoDevueltoCentavos);
+            c.AbonosTarjetaCentavos, c.AbonosTransferenciaCentavos, c.SaldoDevueltoCentavos, EntradasCanceladas: canceladas.Entradas,
+            SalidasCanceladas: canceladas.Salidas);
 }

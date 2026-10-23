@@ -114,8 +114,8 @@
                         {
                             <div class="vn-corte-linea"><span>Abonos de clientes en efectivo</span><strong>@Formato.Dinero(r.AbonosEfectivoCentavos)</strong></div>
                         }
-                        <div class="vn-corte-linea"><span>Entradas</span><strong>@Formato.Dinero(r.EntradasCentavos)</strong></div>
-                        <div class="vn-corte-linea"><span>Salidas</span><strong>@Formato.ConSigno(-r.SalidasCentavos)</strong></div>
+                        <div class="vn-corte-linea"><span>@DisenoComprobante.ConCanceladas("Entradas", r.EntradasCanceladas)</span><strong>@Formato.Dinero(r.EntradasCentavos)</strong></div>
+                        <div class="vn-corte-linea"><span>@DisenoComprobante.ConCanceladas("Salidas", r.SalidasCanceladas)</span><strong>@Formato.ConSigno(-r.SalidasCentavos)</strong></div>
                         @if (r.DevolucionesCentavos > 0)
                         {
                             <div class="vn-corte-linea"><span>Devoluciones y cancelaciones</span><strong>@Formato.ConSigno(-r.DevolucionesCentavos)</strong></div>

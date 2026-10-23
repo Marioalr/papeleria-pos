@@ -64,6 +64,7 @@ public sealed class TicketsEnEsperaTests : IDisposable
         venta.DescontarLinea(cambiada, null, 150, "Dañado");
         venta.AgregarArticuloComun("Recuerdo", 2500, Cantidad.Piezas(1));
         venta.AutorizacionDescuentoId = Ids.Nuevo();
+        venta.PonerNota("Pasa por ellos a las 5");
         var productos = new Dictionary<Guid, ProductoVentaDto> { [lapicero.VarianteId] = lapicero, [cuaderno.VarianteId] = cuaderno };
 
         await CajaReiniciada().GuardarEnEsperaAsync([TicketsEnEspera.Guardar(venta, productos, [], escuela, null, fiadoSinConfirmar: true)]);
@@ -79,6 +80,8 @@ public sealed class TicketsEnEsperaTests : IDisposable
         Assert.Equal(escuela, guardado.Cliente);
         Assert.True(guardado.FiadoSinConfirmar);
         Assert.Equal([lapicero.VarianteId, cuaderno.VarianteId], guardado.Productos.Select(p => p.VarianteId));
+        // La nota del ticket (F4 al cobrar) también vuelve.
+        Assert.Equal("Pasa por ellos a las 5", rearmada.Nota);
     }
 
     [Fact]

@@ -3,7 +3,8 @@
 > **Revisado** (ver [decisiones](#decisiones-de-la-revisión)). Con las fases 1 y 2 la caja vende, controla, compra y
 > cuenta. Esta fase termina el mayoreo que en eleventa se hacía con F11, redondea el cobro al peso y trae a los
 > clientes de confianza con su crédito; también los consumibles del mes, que el dueño pasó aquí al revisar la fase 2.
-> Las promociones y los kits solo se usan en el regreso a clases: quedan para antes del próximo. Parte de los
+> Las promociones con fechas, que solo se usan en el regreso a clases, ya están (2026-10-22): el dueño pidió seguir
+> hasta igualar a eleventa. Los kits siguen pospuestos: la tienda no los usa en eleventa. Parte de los
 > [precios](inventario.md#precios), los [clientes registrados](pedidos.md#el-celular-y-los-clientes-registrados) y la
 > [administración](plan.md#administración-y-punto-de-equilibrio).
 
@@ -16,6 +17,8 @@
   importación avisa cuántos productos lo tenían. F11 Mayoreo está apagada en la caja.
 - **Descuentos (CTRL+D)** con su regla, y **clientes especiales** con un descuento fijo que se eligen de una lista.
   Nada queda debajo del costo sin autorización.
+- **Promociones con fechas** (2026-10-22, [abajo](#promociones-y-kits)): 3×2, el segundo a mitad de precio, un porcentaje y
+  el precio especial de unos días, en Productos (F3) › Promociones; se aplican solas, también sin conexión.
 - **El tipo de producto Kit** existe en el modelo, sin uso todavía.
 - **Formas de pago:** efectivo, tarjeta y transferencia (por verificar). Las salidas de efectivo (F8) llevan motivo.
 
@@ -26,7 +29,8 @@
 | 1 | **Mayoreo y redondeo** | El mayoreo de eleventa pasa a escalas por cantidad (sin F11), el ticket dice cuándo se aplicó y cuánto se ahorró, y el cobro en efectivo se redondea al peso |
 | 2 | **Clientes registrados y crédito** | Los clientes de confianza (unos 25) con sus privilegios y su evaluación, el crédito para la siguiente compra, los abonos en la caja, el estado de cuenta y los avisos de lo vencido |
 | 3 | **Consumibles del mes** | La categoría «Consumibles» en las salidas F8, lo pagado fuera de la caja con su comprobante y el gasto del mes |
-| — | **Promociones y kits** | Para antes del próximo regreso a clases (pospuestos: hoy solo se usan en esa temporada) |
+| 4 | **Promociones con fechas** | **Hecho (2026-10-22).** Lleva N y paga M, el segundo a mitad de precio, un porcentaje y el precio especial de unos días (dejar al costo lo estratégico, el F11 del regreso a clases), con sus fechas, días y sucursal; se aplican solas, no se acumulan y nunca debajo del costo sin autorización ([abajo](#promociones-y-kits)) |
+| — | **Kits** | Pospuestos: la tienda no los usa en eleventa (decidido, por revisar) |
 
 ## 1. Mayoreo y redondeo
 
@@ -36,7 +40,7 @@ En eleventa F11 se usa de dos formas, y ninguna necesita que el cajero decida el
   trae y se oprime F11. En el POS eso es una **escala por cantidad** (desde las piezas del paquete, al precio por pieza
   del paquete), que se aplica sola: se escriben las piezas o se escanea el código del paquete y ya sale a su precio.
 - **Regreso a clases:** con F11 se dejaban al costo los productos estratégicos. En el POS eso es una
-  [promoción](#promociones-y-kits) con fechas (pospuesta: falta casi un año).
+  [promoción](#promociones-y-kits) con fechas: «Dejar al costo», en Productos › Promociones (2026-10-22).
 
 Lo que trae la entrega:
 
@@ -85,14 +89,40 @@ Lo que trae la entrega:
 
 ## Promociones y kits
 
-Hoy solo se usan en el regreso a clases, así que se hacen antes del próximo. Lo propuesto queda como punto de partida:
+Solo se usan en el regreso a clases. El dueño las había dejado para antes del próximo; el 2026-10-22 pidió seguir hasta
+que el POS iguale a eleventa, y las promociones se hicieron entonces. Los kits no: la tienda no tiene kits en eleventa
+([paridad](paridad-eleventa.md#productos-y-precios): «No la usan»).
 
-- **Promociones:** lleva N y paga M (3×2), el segundo a mitad de precio, porcentaje en un producto, un departamento o
-  una marca, y precio especial por unos días (dejar al costo los productos estratégicos, lo que hoy se hace con F11).
-  Con vigencia por fechas, días y sucursal; se aplican solas, no se acumulan (se queda la que más le conviene al
-  cliente) y nunca debajo del costo sin autorización.
-- **Kits:** un producto con su precio propio y su lista de piezas; al venderlo se descuenta cada pieza, y se pueden
-  armar por adelantado. Las listas escolares no son kits: llegan como pedidos en la fase 4.
+**Promociones: hecho (2026-10-22)** ([avance](plan.md#primero-la-versión-unicaja-entrega-0)). En Productos (F3) ›
+Promociones, para quien tiene «Productos, precios y etiquetas»:
+
+- **Los tipos:** lleva N y paga M (3×2), el segundo a mitad de precio, un porcentaje menos (en productos, un departamento
+  o una marca) y el precio especial de cada producto por unos días. «Dejar al costo» arma uno de esos con los productos
+  marcados, cada uno a su costo: lo que en el regreso a clases se hacía con F11. Lo ve quien tiene «Ver costos, utilidad y
+  margen».
+- **Su vigencia:** desde un día y hasta otro (o hasta que se termine), los días de la semana que se elijan, y en esta
+  sucursal o en todas. La lista dice qué corre hoy, qué viene y qué terminó; «Terminar ahora» la quita desde ya.
+- **Se aplican solas y no se acumulan:** se queda la que más le conviene al cliente, también contra el mayoreo y contra el
+  descuento fijo del cliente registrado (en cada renglón, la promoción o su precio con su descuento). Cuentan cada producto
+  aparte, en piezas como el mayoreo. Un descuento a mano (Ctrl+D) va encima de la promoción; un precio cambiado con Ctrl+E
+  la quita del renglón (la ventana lo dice).
+- **Nunca debajo del costo sin autorización:** al guardarla, como Ctrl+D, con su precio más bajo (también el de una
+  presentación con precio propio, como una caja de 12); lo hace quien tiene «Vender debajo del costo» (ve antes cuáles
+  quedan debajo) o con la autorización de quien lo tiene, y queda en la bitácora. Lo que después quedaría debajo sin
+  autorizarse (llegó a su departamento o su marca, bajó su precio, subió su costo) no la lleva: las cajas no se la aplican y
+  su detalle lo dice («Fuera por el costo»); guardarla otra vez con la autorización se la da. Cuánto falta para el costo
+  solo lo ve quien ve la utilidad.
+- **El ticket** dice la promoción y lo que se ahorró, como el mayoreo, y la pantalla de venta la dice en el renglón.
+- **En las cajas, también sin conexión:** van en su copia con sus fechas, y cada caja decide con la suya: la que empieza o
+  termina a medianoche se aplica sin bajar nada. Al cobrar, la caja principal acepta el día de la caja si es el suyo o, a
+  menos de una hora de su medianoche, el de al lado; si no (el reloj de la PC está mal), cobra con el suyo, la caja pone el
+  ticket al día con él y avisa que la fecha de la PC está mal. El navegador de desarrollo sin base local no tiene copia: no
+  las aplica (es solo para probar).
+- **En el piloto con eleventa** no se aplican en la caja 2 ni se dan de alta: los precios se ponen en eleventa.
+
+**Kits: pospuestos** (decidido, por revisar): un producto con su precio propio y su lista de piezas; al venderlo se
+descuenta cada pieza, y se pueden armar por adelantado. Las listas escolares no son kits: llegan como pedidos en la
+fase 4.
 
 ## Decisiones de la revisión
 
@@ -103,8 +133,8 @@ Hoy solo se usan en el regreso a clases, así que se hacen antes del próximo. L
 | Clientes registrados | Hoy no hay formales (si los hay, se depuran); unos 25; sin RFC; se evalúa cuánto compran y si pagan puntual. Los de impresiones son aparte | Alta a mano, sin RFC, con su evaluación (compra y puntualidad) |
 | Crédito | Solo para esos clientes, para su siguiente compra (rara vez más de un mes), sin recargos | Plazo de 30 días por omisión; la caja recuerda el adeudo al elegir al cliente |
 | Privilegios | Solo esos: descuento, mayoreo, crédito, pedido sin anticipo, apartar sin pagar | Sin más privilegios |
-| Promociones | Solo en el regreso a clases; falta casi un año | Pospuestas para antes del próximo regreso a clases |
-| Kits | Igual que las promociones | Pospuestos |
+| Promociones | Solo en el regreso a clases; falta casi un año | Pospuestas para antes del próximo regreso a clases. Hechas el 2026-10-22, cuando el dueño pidió seguir hasta igualar a eleventa |
+| Kits | Igual que las promociones | Pospuestos: no hay kits en eleventa (decidido el 2026-10-22, por revisar) |
 | Insumos | Consumibles (cinta, limpieza…); lo de impresiones (tintas, caja de mantenimiento) aparte | Entrega 3: «Consumibles del mes» |
 | Orden | Sí | 1 mayoreo y redondeo, 2 clientes y crédito, 3 consumibles |
 

@@ -242,6 +242,7 @@ public sealed class FotosApiTests(ServicioDePrueba servicio) : IClassFixture<Ser
 
         var cambios = await Leer<CambiosCopiaDto>(await c.Http.GetAsync(
             $"api/cajas/{c.Datos.Id}/cambios?desde={antes.Version}&existencias={antes.VersionExistencias}&base={antes.Base}&formato={CopiaAlDia.Formato}"
+            + $"&promociones={antes.HuellaPromociones}"
             + $"&vendidos={antes.VersionVendidos}&elegidos={antes.VersionElegidos}"));
         var despues = await Leer<PaqueteContingenciaDto>(await c.Http.GetAsync($"api/cajas/{c.Datos.Id}/paquete"));
 

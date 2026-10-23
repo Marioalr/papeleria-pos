@@ -181,8 +181,44 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
             l => l.Movimiento(turnoId, movimiento), (l, comprobante) => l.MovimientoEnLineaAsync(turnoId, movimiento.Id!.Value, comprobante));
     }
 
+    /// <summary>Lo que dice la caja sin la caja principal en las entradas y salidas del turno: se ven y se cancelan allá.</summary>
+    public const string MovimientosSinConexion =
+        "Sin conexión con la caja principal: las entradas y salidas de este turno se ven, y una equivocada se cancela, cuando vuelva.";
+
+    /// <summary>Las entradas y salidas del turno (F7/F8), para cancelar una equivocada (2026-10-22). Solo con la caja principal.</summary>
+    public Task<MovimientosDelTurnoDto> MovimientosDelTurnoAsync(Guid turnoId) =>
+        SoloConLaPrincipalAsync<MovimientosDelTurnoDto>(MovimientosSinConexion, $"api/turnos/{turnoId}/movimientos");
+
+    /// <summary>
+    /// Cancela una entrada o salida equivocada (2026-10-22), con motivo y, si su permiso la pide, la autorización. Regresa cómo
+    /// quedaron las del turno; la cuenta de esta caja (para el corte sin conexión) deja de contarla. Si se pierde la respuesta,
+    /// no se sabe si quedó: lo dice (<see cref="CancelacionSinConfirmar"/>) y, al mandarla otra vez con el mismo Id, la caja
+    /// principal contesta como si fuera la primera (revisión del PR #133).
+    /// </summary>
+    public Task<MovimientosDelTurnoDto> CancelarMovimientoAsync(Guid turnoId, MovimientoDelTurnoDto movimiento, SolicitudCancelarMovimiento solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<MovimientosDelTurnoDto>($"api/turnos/{turnoId}/movimientos/{movimiento.Id}/cancelacion", solicitud), null,
+            (l, _) => l.MovimientoCanceladoEnLineaAsync(turnoId, movimiento, solicitud.Id),
+            siSePierde: _ => new ErrorCaja(CancelacionSinConfirmar, "cancelacion-sin-confirmar"));
+
+    /// <summary>Lo que dice la caja si se perdió la respuesta de una cancelación: no se sabe si quedó.</summary>
+    public const string CancelacionSinConfirmar =
+        "Se perdió la conexión al cancelar y no se sabe si quedó: no muevas el efectivo todavía. Cuando vuelva la conexión, oprime Enter otra vez "
+        + "(si ya quedó, no se cancela dos veces).";
+
     public Task<TicketDto> ReimprimirAsync(Guid ventaId, SolicitudReimpresion solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<TicketDto>($"api/ventas/{ventaId}/reimpresion", solicitud));
+
+    /// <summary>
+    /// La primera impresión del ticket de una venta que no salió al cobrar (2026-10-22): sin motivo, y la caja principal la anota
+    /// como primera impresión. Si ya salió, <see cref="ErrorCaja"/> con <see cref="SolicitudPrimeraImpresion.CodigoConMotivo"/>.
+    /// Solo con la caja principal, como reimprimir.
+    /// </summary>
+    public Task<TicketDto> PrimeraImpresionAsync(Guid ventaId, SolicitudPrimeraImpresion solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<TicketDto>($"api/ventas/{ventaId}/primera-impresion", solicitud));
+
+    /// <summary>El ticket de esa venta no salió de la impresora y se dejó así («No imprimirlo»): su primera impresión no pedirá motivo.</summary>
+    public Task TicketSinImprimirAsync(Guid ventaId, SolicitudTicketSinImprimir solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<object>($"api/ventas/{ventaId}/sin-imprimir", solicitud, sinRespuesta: true));
 
     public Task<EfectivoCajaDto?> EfectivoAsync(Guid turnoId) =>
         ConRespaldoAsync(() => _http.GetAsync<EfectivoCajaDto>($"api/turnos/{turnoId}/efectivo"), l => l.Efectivo(turnoId));
@@ -342,6 +378,37 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     public void PreciosAlDia(ProductoVentaDto producto) => contingencia?.AgregarALaFoto(producto);
 
     /// <summary>
+    /// Las promociones de ahora que dijo el cobro (fase 3), si las dijo: quedan en la foto, para que el ticket se ponga al día con
+    /// ellas y el siguiente escaneo ya las traiga. Y el día con que las aplicó la caja principal: si no es el de esta PC (su reloj
+    /// está mal), la caja usa ese, así el ticket que se pone al día se cobra a la siguiente. Devuelve el aviso de la fecha, si
+    /// está mal.
+    /// </summary>
+    public string? PromocionesAlDia(PreciosCambiadosDto precios)
+    {
+        if (precios.Promociones is { } promociones)
+            contingencia?.PromocionesALaFoto(promociones, precios.VersionCatalogo);
+        return precios.DiaPromociones is { } dia ? contingencia?.DiaDeLaCajaPrincipal(dia) : null;
+    }
+
+    /// <summary>El día de hoy de la caja (hora de México): con él aplica las promociones (fase 3).</summary>
+    public DateOnly Hoy => contingencia?.Hoy ?? DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
+
+    /// <summary>
+    /// De dónde saca una venta de esta caja sus promociones (fase 3): de la foto de su copia (la de ahora en cada cálculo, con lo
+    /// que dijo el cobro encima), con el día de la caja. Sin copia todavía, ninguna: el cobro tampoco las aplica.
+    /// <para>
+    /// Sin base local (el navegador de desarrollo sin Caja:BaseLocal) no hay copia: no se aplican promociones ni se manda el día,
+    /// y el servicio cobra sin ellas, como las calculó la pantalla. Es solo para probar en desarrollo; la caja de verdad (la
+    /// ventana de Windows) siempre tiene su base local. Mandar el día sin copia haría que el servicio aplicara promociones que la
+    /// pantalla no puso, sin dónde guardarlas para ponerse al día.
+    /// </para>
+    /// </summary>
+    public PromocionesDeLaVenta PromocionesDeLaVenta => new(v => Foto?.Promociones.De(v) ?? [], () => Hoy);
+
+    /// <summary>El día con que se pusieron las promociones del ticket, para el cobro; vacío sin copia (no se pusieron).</summary>
+    private DateOnly? DiaPromociones => Foto is null ? null : Hoy;
+
+    /// <summary>
     /// Cuánto se espera a la caja principal por un código que no está en la copia (docs/propuesta-interfaz.md,
     /// «Rendimiento»: medio segundo). Pasado eso, la línea sale y se le dice al cajero que lo escanee otra vez.
     /// </summary>
@@ -443,7 +510,7 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// </summary>
     public Task<TicketDto> CobrarAsync(SolicitudCobro solicitud, bool soloEnLinea = false)
     {
-        solicitud = solicitud with { VentaId = solicitud.VentaId ?? Ids.Nuevo() };
+        solicitud = solicitud with { VentaId = solicitud.VentaId ?? Ids.Nuevo(), DiaPromociones = solicitud.DiaPromociones ?? DiaPromociones };
         var ventaId = solicitud.VentaId.Value;
         var fiado = solicitud.Cobros.Where(c => c.Forma == FormaPago.Credito).Sum(c => c.MontoCentavos);
         if ((soloEnLinea || contingencia?.CobroSinConfirmar(ventaId) == true) && contingencia is { EnLinea: false })
@@ -501,6 +568,20 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// <summary>«Al cobrar»: imprimir el ticket, ofrecerlo o no imprimirlo, con «Configurar el ticket» de quien entró a la caja.</summary>
     public Task<ConfiguracionTicketDto> GuardarAlCobrarAsync(Guid cajaId, SolicitudAlCobrar solicitud) =>
         ConRespaldoAsync(() => _http.PutAsync<ConfiguracionTicketDto>($"api/cajas/{cajaId}/configuracion/ticket/al-cobrar", solicitud));
+
+    /// <summary>Lo que dice Configuración › Respaldos sin la caja principal: los respaldos se hacen y se ven allá.</summary>
+    public const string RespaldosSinConexion = "Sin conexión con la caja principal: los respaldos se ven, y se respalda, cuando vuelva.";
+
+    /// <summary>Configuración › Respaldos (2026-10-22): dónde se guardan y el último, con «Configuración de la tienda».</summary>
+    public Task<RespaldosDto> RespaldosAsync(Guid cajaId, Guid usuarioId) =>
+        SoloConLaPrincipalAsync<RespaldosDto>(RespaldosSinConexion, $"api/cajas/{cajaId}/configuracion/respaldos?usuarioId={usuarioId}");
+
+    /// <summary>
+    /// «Respaldar ahora»: la caja principal empieza la copia de la base y contesta enseguida (revisión del PR #133); cómo va lo
+    /// dice <see cref="RespaldosAsync"/> (<see cref="RespaldosDto.Ahora"/>). Si ya había una en camino, no empieza otra.
+    /// </summary>
+    public Task<RespaldosDto> RespaldarAhoraAsync(Guid cajaId, SolicitudRespaldo solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<RespaldosDto>($"api/cajas/{cajaId}/configuracion/respaldos", solicitud));
 
     public Task<VentaParaDevolverDto?> VentaPorFolioAsync(Guid sucursalId, string folio) =>
         ConRespaldoAsync(() => _http.GetAsync<VentaParaDevolverDto>($"api/sucursales/{sucursalId}/ventas/folio/{Uri.EscapeDataString(folio)}",
@@ -732,6 +813,26 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// </summary>
     public Task<PreciosDeVariosAplicadosDto> CambiarPreciosDeVariosAsync(SolicitudPreciosDeVarios solicitud) =>
         ConRespaldoAsync(() => _http.PostAsync<PreciosDeVariosAplicadosDto>("api/catalogo/precios-de-varios", solicitud));
+
+    // ── Promociones (Productos › Promociones, fase 3; solo con la caja principal) ──
+
+    public Task<ListaPromocionesDto> PromocionesAsync(Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<ListaPromocionesDto>($"api/promociones?sucursalId={sucursalId}&usuarioId={usuarioId}"))!);
+
+    public Task<PromocionFichaDto> PromocionAsync(Guid id, Guid sucursalId, Guid usuarioId) =>
+        ConRespaldoAsync(async () => (await _http.GetAsync<PromocionFichaDto>($"api/promociones/{id}?sucursalId={sucursalId}&usuarioId={usuarioId}"))!);
+
+    public Task<VistaPromocionDto> VistaPromocionAsync(SolicitudPromocion solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<VistaPromocionDto>("api/promociones/vista", solicitud));
+
+    public Task<ProductosPromocionDto> ProductosPromocionAsync(SolicitudProductosPromocion solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<ProductosPromocionDto>("api/promociones/productos", solicitud));
+
+    public Task<PromocionFichaDto> GuardarPromocionAsync(SolicitudPromocion solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<PromocionFichaDto>("api/promociones", solicitud));
+
+    public Task<PromocionFichaDto> TerminarPromocionAsync(Guid id, SolicitudTerminarPromocion solicitud) =>
+        ConRespaldoAsync(() => _http.PostAsync<PromocionFichaDto>($"api/promociones/{id}/terminar", solicitud));
 
     // ── Compras (F4, solo con la caja principal) ──
 
@@ -1079,7 +1180,8 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
 
     /// <summary>Solo con la caja principal (ahí está el costo); sin conexión, el costo no se revisa.</summary>
     public Task<BajoCostoDto> BajoCostoAsync(SolicitudBajoCosto solicitud) =>
-        ConRespaldoAsync(() => _http.PostAsync<BajoCostoDto>("api/descuentos/bajo-costo", solicitud), _ => new BajoCostoDto(0, []));
+        ConRespaldoAsync(() => _http.PostAsync<BajoCostoDto>("api/descuentos/bajo-costo",
+            solicitud with { DiaPromociones = solicitud.DiaPromociones ?? DiaPromociones }), _ => new BajoCostoDto(0, []));
 
     // ── Impresiones (solo con la caja principal: ahí llegan los trabajos de todas las PC) ──
 

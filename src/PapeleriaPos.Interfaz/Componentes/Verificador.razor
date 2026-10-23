@@ -1,7 +1,8 @@
 @* F9: consulta precio y existencia sin agregar a la venta. Si se lo lleva, «Agregarlo al ticket» (docs/propuesta-interfaz.md,
    «La pantalla de venta»). Desde aquí, Ctrl+M abre el mostrador y la temporada en modo verificador: tocar una pieza la enseña
    aquí, con su foto (entrega 13, parte 2: de la base de esta caja; sin foto, sus iniciales), sin agregarla. Cada producto que
-   enseña cuenta como una consulta (entrega 13, parte 3): Productos › Tarjetas de precio dice lo que más se pregunta. *@
+   enseña cuenta como una consulta (entrega 13, parte 3): Productos › Tarjetas de precio dice lo que más se pregunta. El precio
+   de una pieza es el que se cobra hoy, con su promoción (fase 3), y abajo dice cuál y qué hace (un 3×2 no baja una sola). *@
 @implements IDisposable
 @inject ClienteCaja Cliente
 @inject ModuloCaja Js
@@ -23,6 +24,10 @@
         }
         <div class="descripcion">@producto.Descripcion</div>
         <div class="precio">@Formato.Dinero(Precio(producto))</div>
+        @foreach (var promocion in Cliente.Foto?.Promociones.DeHoy(producto.VarianteId, Cliente.Hoy) ?? [])
+        {
+            <div class="nota"><Ico Nombre="porcentaje" /> Promoción «@promocion.Nombre»: @PromocionTexto.QueHace(promocion)</div>
+        }
         <div class="nota">Existencia: @(producto.Existencia is { } e ? Formato.Numero(e) : "no lleva inventario")</div>
     </div>
     @if (AlAgregar.HasDelegate)
@@ -108,6 +113,11 @@
 
     public void Dispose() => Cliente.Fotos.Cambio -= AlCambiarLasFotos;
 
-    private long Precio(ProductoVentaDto p) =>
-        CalculoPrecio.Calcular(p.PreciosModelo(), SucursalId, p.PresentacionModelo(), Cantidad.Piezas(1))?.ImporteCentavos ?? 0;
+    /// <summary>Lo que cuesta una hoy, como en la venta: con la promoción que más le convenga (fase 3).</summary>
+    private long Precio(ProductoVentaDto p)
+    {
+        var promociones = Cliente.PromocionesDeLaVenta;
+        return CalculoPrecio.Calcular(p.PreciosModelo(), SucursalId, p.PresentacionModelo(), Cantidad.Piezas(1), promociones: promociones.De(p.VarianteId),
+            dia: promociones.Dia)?.ImporteCentavos ?? 0;
+    }
 }

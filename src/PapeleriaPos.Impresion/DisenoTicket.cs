@@ -63,13 +63,21 @@ public static class DisenoTicket
             for (var i = 0; i < partes.Count; i++)
             {
                 var cantidad = i == 0 ? l.Cantidad : "";
-                // Con mayoreo o descuento, el renglón lleva el importe a menudeo y abajo va lo que se ahorró.
-                var importe = i == 0 ? Dinero(l.ImporteCentavos + l.DescuentoCentavos + l.AhorroMayoreoCentavos) : "";
+                // Con mayoreo, promoción o descuento, el renglón lleva el importe a menudeo y abajo va lo que se ahorró.
+                var importe = i == 0 ? Dinero(l.ImporteCentavos + l.DescuentoCentavos + l.AhorroMayoreoCentavos + l.AhorroPromocionCentavos) : "";
                 e.Add(new Renglon(Columna(cantidad, AnchoCantidad) + Columna(partes[i], AnchoDescripcion + 1) + importe.PadLeft(AnchoImporte)));
             }
             if (l.AhorroMayoreoCentavos > 0)
                 e.Add(new Renglon(new string(' ', AnchoCantidad) + Columna(l.Mayoreo ?? "Mayoreo", AnchoDescripcion + 1)
                     + $"-{Dinero(l.AhorroMayoreoCentavos)}".PadLeft(AnchoImporte)));
+            if (l.AhorroPromocionCentavos > 0)
+            {
+                // «Promoción Regreso a clases  -$6.00», como el mayoreo: cuál fue y cuánto se ahorró; un nombre largo sigue abajo.
+                var promocion = Partir(PromocionTexto(l.Promocion), AnchoDescripcion);
+                for (var i = 0; i < promocion.Count; i++)
+                    e.Add(new Renglon(new string(' ', AnchoCantidad) + Columna(promocion[i], AnchoDescripcion + 1)
+                        + (i == 0 ? $"-{Dinero(l.AhorroPromocionCentavos)}" : "").PadLeft(AnchoImporte)));
+            }
             if (l.DescuentoCentavos > 0)
                 e.Add(new Renglon(new string(' ', AnchoCantidad) + Columna(l.Descuento is { } p ? $"Descuento {p}" : "Descuento", AnchoDescripcion + 1)
                     + $"-{Dinero(l.DescuentoCentavos)}".PadLeft(AnchoImporte)));
@@ -123,6 +131,13 @@ public static class DisenoTicket
             if (credito.Estimado)
                 e.Add(new Renglon("(saldo según esta caja; se confirma al volver)", Alineacion.Centro));
         }
+        if (t.Nota is { Length: > 0 } nota)
+        {
+            // La nota del ticket (F4 al cobrar, como en eleventa; 2026-10-22): uno o dos renglones, antes del pie.
+            e.Add(Linea('-'));
+            foreach (var renglon in RenglonesDeLaNota(nota))
+                e.Add(new Renglon(renglon));
+        }
         e.Add(Linea('-'));
         // Sin QR por ahora, como el ticket de eleventa (dueño, 2026-10-16: «primero igualar a eleventa»): para devolver se
         // escribe el folio impreso.
@@ -133,6 +148,20 @@ public static class DisenoTicket
 
     private static Renglon Linea(char c) => new(new string(c, Columnas));
 
+    /// <summary>
+    /// «Nota: …» en los renglones del ticket, sin cortar palabras; si así no cabe en dos (una palabra muy larga), cortada justo
+    /// en el renglón: la nota llega hasta <see cref="NotaDelTicket.Maximo"/> letras, que con «Nota: » caben en dos.
+    /// </summary>
+    public static List<string> RenglonesDeLaNota(string nota)
+    {
+        var texto = $"Nota: {nota}";
+        var partes = Partir(texto, Columnas);
+        if (partes.Count <= 2)
+            return partes;
+        return Enumerable.Range(0, (texto.Length + Columnas - 1) / Columnas)
+            .Select(i => texto.Substring(i * Columnas, Math.Min(Columnas, texto.Length - i * Columnas)).Trim()).ToList();
+    }
+
     private static string Columna(string texto, int ancho) => texto.Length >= ancho ? texto[..(ancho - 1)] + " " : texto.PadRight(ancho);
 
     private static string DosColumnas(string izquierda, string derecha)
@@ -140,6 +169,12 @@ public static class DisenoTicket
         var espacio = Columnas - derecha.Length - 1;
         return (izquierda.Length > espacio ? izquierda[..espacio] : izquierda).PadRight(Columnas - derecha.Length) + derecha;
     }
+
+    /// <summary>«Promoción Regreso a clases»: lo que dice el ticket bajo el renglón de un producto con promoción (fase 3).</summary>
+    public static string PromocionTexto(string? nombre) =>
+        string.IsNullOrWhiteSpace(nombre) ? "Promoción"
+        : nombre.StartsWith("Promo", StringComparison.CurrentCultureIgnoreCase) ? nombre
+        : $"Promoción {nombre}";
 
     /// <summary>Parte el texto en renglones del ancho dado, sin cortar palabras si se puede.</summary>
     public static List<string> Partir(string texto, int ancho)

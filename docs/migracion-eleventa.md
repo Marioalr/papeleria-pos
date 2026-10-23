@@ -199,10 +199,12 @@ la caja principal por la red, como lo abre una caja de eleventa, y se pone al d�
     tarjetas de precio y las consultas del verificador son solo del POS y siguen igual.
 
 Se configura en el servicio de la caja 2, sección `Eleventa`. Los datos reales van en la configuración de esa PC,
-nunca aquí; la clave puede ir en la variable de entorno `Eleventa__Clave`.
+`C:\ProgramData\PapeleriaPos\servicio.json`, nunca aquí ni en el `appsettings.json` del programa, que se reemplaza al
+actualizar ([actualizaciones](arquitectura.md#actualizaciones)). La clave va solo en la variable de entorno
+`Eleventa__Clave` del servicio, nunca en un archivo.
 
 ```json
-"Eleventa": { "Activo": true, "Servidor": "<la caja principal>", "Base": "C:\\…\\PDVDATA.FDB", "Usuario": "SYSDBA", "Clave": "…", "Minutos": 5 }
+"Eleventa": { "Activo": true, "Servidor": "<la caja principal>", "Base": "C:\\…\\PDVDATA.FDB", "Usuario": "SYSDBA", "Minutos": 5 }
 ```
 
 Para probarla una vez a mano, sobre una base ya importada (con `--simular` solo dice qué cambiaría). Por la red, la
@@ -358,6 +360,11 @@ acumulados del turno, del día y del departamento.
   renglón del día, el turno en ceros con el fondo y su ticket abierto. Cerrarlo es del paso 4.
 - No pone los apartados que eleventa pone al escanear: la caja nueva escanea contra su propia base, y al cobrar ya no
   quedaría ninguno.
+- **La nota del ticket (F4 al cobrar, 2026-10-22) no va:** `VENTATICKETS.NOTAS` sigue vacía. La columna existe (un BLOB
+  binario, con `IMPRIMIR_NOTA` junto), pero no se sabe cómo la guarda eleventa (¿texto en Windows-1252, RTF?) ni si su
+  reimpresión la saca, y escribir algo que eleventa no espera en su base real no vale el riesgo. La nota se queda en el
+  POS (en su base, en el ticket de la caja 2 y en sus reimpresiones). Cuando pase una venta con nota en eleventa, se ve
+  con `observar-eleventa` y el puente la puede mandar.
 
 Se probó así:
 - Con pruebas contra un Firebird de prueba en la misma PC: una base vacía con las mismas tablas, tipos, contadores y
@@ -397,11 +404,12 @@ dotnet run --project src/PapeleriaPos.Herramientas -- probar-envio-eleventa --se
 - **Cómo va:** `GET /api/eleventa/envios` dice cuántas ventas están pendientes y por revisar, el último error («No
   contesta el eleventa de…») y los folios repetidos. `POST /api/eleventa/enviar` hace la vuelta ya.
 
-Se configura en el servicio de la caja 2, junto con la lectura. La caja y el cajero son los `ID` de eleventa
-(`CAJAS.ID` de la caja 2, y el cajero a cuyo nombre van las ventas):
+Se configura en el servicio de la caja 2, junto con la lectura, en `servicio.json` (la clave, solo en la variable de entorno
+`Eleventa__Clave`). La caja y el cajero son los `ID` de eleventa (`CAJAS.ID` de la caja 2, y el cajero a cuyo nombre van
+las ventas):
 
 ```json
-"Eleventa": { "Activo": true, "Escribir": true, "Servidor": "<la caja principal>", "Base": "C:\\…\\PDVDATA.FDB", "Usuario": "SYSDBA", "Clave": "…", "Caja": 0, "Cajero": 0 }
+"Eleventa": { "Activo": true, "Escribir": true, "Servidor": "<la caja principal>", "Base": "C:\\…\\PDVDATA.FDB", "Usuario": "SYSDBA", "Caja": 0, "Cajero": 0 }
 ```
 
 Se probó de punta a punta en esta PC, con una base importada de la copia y otra copia servida por un Firebird de

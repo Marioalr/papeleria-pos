@@ -12,6 +12,11 @@ using PapeleriaPos.Nucleo.Ventas;
 namespace PapeleriaPos.Datos;
 
 /// <summary>
+/// El ticket ya salió (o se canceló o se devolvió algo de él): su impresión es una reimpresión, con su motivo (2026-10-22).
+/// </summary>
+public sealed class TicketYaSalio(string mensaje) : InvalidOperationException(mensaje);
+
+/// <summary>
 /// Lo que pasa en una caja y se guarda: turnos, cobros, entradas y salidas de efectivo y cortes. Cada operación es una
 /// sola transacción: o queda todo o no queda nada.
 /// </summary>
@@ -65,6 +70,116 @@ public sealed class RegistroCaja(PosDbContext db)
         await EncolarParaEleventaAsync(movimiento, aEleventa, ct);
         await db.SaveChangesAsync(ct);
         return movimiento;
+    }
+
+    /// <summary>
+    /// Lo que dice la caja en el piloto con eleventa al cancelar una entrada o salida (2026-10-22): la misma que dice su pantalla
+    /// (PilotoConEleventa, en la interfaz; una prueba lo revisa).
+    /// </summary>
+    public const string NoSeCancelaEnElPiloto =
+        "Mientras dure el piloto con eleventa, las entradas y salidas van a eleventa y aquí no se cancelan: no se sabe cómo anota eleventa "
+        + "una cancelada. Si te equivocaste, haz la contraria (F7 o F8).";
+
+    /// <summary>
+    /// Las entradas y salidas de efectivo de un turno (F7/F8), las más nuevas primero, y si cada una se puede cancelar (2026-10-22):
+    /// la de un turno abierto (antes de su corte) que no se ha cancelado y no va a eleventa. En el piloto, ninguna; fuera de él,
+    /// tampoco la que ya fue a eleventa ni la salida de una devolución hecha en eleventa, que va con ella.
+    /// </summary>
+    public async Task<MovimientosDelTurnoDto> MovimientosDelTurnoAsync(Guid turnoId, bool piloto, CancellationToken ct = default)
+    {
+        var turno = await TurnoPorIdAsync(turnoId, ct);
+        var movimientos = await db.MovimientosCaja.AsNoTracking().Where(m => m.TurnoId == turnoId).OrderByDescending(m => m.FechaUtc).ToListAsync(ct);
+        var deEleventa = await DeEleventaAsync(movimientos.Select(m => m.Id).ToList(), ct);
+        var personas = movimientos.Select(m => m.UsuarioId).Concat(movimientos.Select(m => m.CanceladoPorId).OfType<Guid>()).Distinct().ToList();
+        var nombres = await db.Usuarios.AsNoTracking().Where(u => personas.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Nombre, ct);
+        return new MovimientosDelTurnoDto(movimientos.Select(m => new MovimientoDelTurnoDto(m.Id, FolioDe(m), m.Tipo, m.MontoCentavos, m.Motivo,
+                HoraMexico.ALocal(m.FechaUtc), nombres.GetValueOrDefault(m.UsuarioId, "—"), !m.Cancelado && turno.Abierto && !piloto && !deEleventa.Contains(m.Id),
+                m.CanceladoUtc is { } cancelado ? HoraMexico.ALocal(cancelado) : null, m.CanceladoPorId is { } quien ? nombres.GetValueOrDefault(quien, "—") : null,
+                m.MotivoCancelacion)).ToList(),
+            piloto);
+    }
+
+    /// <summary>El folio de su comprobante: el final de su Id, como lo imprime la salida.</summary>
+    public static string FolioDe(MovimientoCaja m) => m.Id.ToString()[^6..].ToUpperInvariant();
+
+    /// <summary>
+    /// Cuántas entradas y cuántas salidas de cada turno se cancelaron (2026-10-22): el corte ya no las cuenta y lo dice, al
+    /// cerrarlo y en el historial. Como solo se cancelan antes del corte, después no cambia.
+    /// </summary>
+    public static async Task<Dictionary<Guid, (int Entradas, int Salidas)>> CanceladasAsync(
+        PosDbContext db, IReadOnlyCollection<Guid> turnos, CancellationToken ct = default)
+    {
+        var lista = turnos.ToList();
+        var canceladas = await db.MovimientosCaja.AsNoTracking().Where(m => lista.Contains(m.TurnoId) && m.CanceladoUtc != null)
+            .Select(m => new { m.TurnoId, m.Tipo }).ToListAsync(ct);
+        return canceladas.GroupBy(m => m.TurnoId).ToDictionary(g => g.Key,
+            g => (g.Count(m => m.Tipo == TipoMovimientoCaja.Entrada), g.Count(m => m.Tipo == TipoMovimientoCaja.Salida)));
+    }
+
+    /// <summary>
+    /// Cancelar una entrada o salida equivocada (F7/F8, como en eleventa; 2026-10-22; antes se compensaba con la contraria): solo
+    /// en su caja y en su mismo turno, antes de su corte, con motivo y con «Cancelar una entrada o salida» (el monto es el del
+    /// movimiento; si pide autorización, se gasta la que se mande). Queda en la bitácora y el corte ya no la cuenta. En el
+    /// piloto con eleventa no (<see cref="NoSeCancelaEnElPiloto"/>), ni la que ya va a eleventa.
+    /// </summary>
+    /// <param name="piloto">El piloto: esta caja manda sus entradas y salidas a eleventa.</param>
+    /// <remarks>
+    /// La misma solicitud (<see cref="SolicitudCancelarMovimiento.Id"/>) otra vez, porque se perdió la respuesta, ya está hecha:
+    /// regresa la misma, sin otra bitácora ni otra apertura del cajón (revisión del PR #133).
+    /// </remarks>
+    public async Task<MovimientoCaja> CancelarMovimientoAsync(Guid movimientoId, SolicitudCancelarMovimiento s, bool piloto = false, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(s.Motivo))
+            throw new ArgumentException("La cancelación lleva motivo.");
+        // Lo que decide se lee dentro de la transacción: una cancelación y un corte a la vez no pasan los dos (el corte Z también
+        // lee dentro de la suya).
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            var movimiento = await db.MovimientosCaja.FindAsync([movimientoId], ct) ?? throw new InvalidOperationException("Esa entrada o salida no existe.");
+            await db.Entry(movimiento).ReloadAsync(ct);
+            if (movimiento.Cancelado && movimiento.CancelacionId == s.Id)
+                return movimiento;
+            var turno = await TurnoPorIdAsync(movimiento.TurnoId, ct);
+            await db.Entry(turno).ReloadAsync(ct);
+            if (!turno.Abierto || turno.CajaId != s.CajaId)
+                throw new InvalidOperationException("Una entrada o salida se cancela en su caja y en su mismo turno, antes de su corte.");
+            if (piloto || (await DeEleventaAsync([movimiento.Id], ct)).Count > 0)
+                throw new InvalidOperationException(NoSeCancelaEnElPiloto);
+            var entrada = movimiento.Tipo == TipoMovimientoCaja.Entrada;
+            // Antes del permiso: una ya cancelada no pide autorización para luego decir que ya se canceló.
+            if (movimiento.Cancelado)
+                throw new InvalidOperationException($"Esa {(entrada ? "entrada" : "salida")} ya se canceló.");
+            await new ServicioControl(db).RequerirAsync(s.UsuarioId, turno.SucursalId, s.CajaId, AccionControlada.CancelarMovimiento, movimiento.MontoCentavos,
+                $"Canceló la {(entrada ? "entrada" : "salida")} de efectivo {FolioDe(movimiento)} de las {HoraMexico.ALocal(movimiento.FechaUtc):HH:mm} "
+                + $"({movimiento.Motivo})", s.AutorizacionId, s.Motivo.Trim(), ct: ct);
+            var ahora = Ahora;
+            movimiento.Cancelar(s.UsuarioId, s.Motivo, ahora, s.Id);
+            // El efectivo regresa (o sale otra vez) del cajón.
+            db.AperturasCajon.Add(new AperturaCajon
+            {
+                CajaId = turno.CajaId, TurnoId = turno.Id, UsuarioId = s.UsuarioId, Motivo = MotivoApertura.SinVenta,
+                Nota = $"Cancelación de la {(entrada ? "entrada" : "salida")} {FolioDe(movimiento)}: {movimiento.MotivoCancelacion}", FechaUtc = ahora,
+            });
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return movimiento;
+        }
+        catch
+        {
+            db.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    /// <summary>De esas, las que van (o ya fueron) a eleventa: por su bandeja, o la salida de una devolución hecha en eleventa.</summary>
+    private async Task<HashSet<Guid>> DeEleventaAsync(List<Guid> ids, CancellationToken ct)
+    {
+        var conIds = ids.Select(id => (Guid?)id).ToList();
+        var enLaBandeja = await db.EnviosAEleventa.AsNoTracking().Where(e => conIds.Contains(e.MovimientoId)).Select(e => e.MovimientoId!.Value).ToListAsync(ct);
+        var deDevoluciones = await db.Set<DevolucionDeEleventa>().AsNoTracking().Where(d => conIds.Contains(d.MovimientoId))
+            .Select(d => d.MovimientoId!.Value).ToListAsync(ct);
+        return [.. enLaBandeja, .. deDevoluciones];
     }
 
     /// <summary>
@@ -293,36 +408,73 @@ public sealed class RegistroCaja(PosDbContext db)
     /// El que le dio la caja (entrega 5, parte 2): si ya está (la caja lo mandó otra vez, o subió el que hizo sin conexión porque
     /// no le llegó la respuesta), es ese; no se cierra otra vez.
     /// </param>
+    /// <remarks>
+    /// Todo dentro de una transacción, desde antes de leer el turno (revisión del PR #133): lo que entra al corte (las ventas,
+    /// las entradas y salidas, las devoluciones, los abonos) se lee con el candado de escritura ya tomado, así que una
+    /// cancelación de una entrada o salida (o un cobro) que llega a la vez espera a que el corte termine, y ya no lo encuentra
+    /// abierto. Antes el corte leía fuera de ella y una cancelación podía entrar entre sus lecturas y su guardado: el corte
+    /// contaba la entrada cancelada y le marcaba al cajero un faltante que no era.
+    /// </remarks>
     public async Task<Corte> CorteZAsync(Guid turnoId, Guid usuarioId, long contadoCentavos, Guid? id = null, CancellationToken ct = default)
     {
-        if (id is { } dado && await db.Cortes.FindAsync([dado], ct) is { } existente)
-            return existente;
-        var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
-        var control = new ServicioControl(db);
-        if ((await control.EvaluarAsync(usuarioId, turno.SucursalId, AccionControlada.CorteZ, ct: ct)).Nivel != NivelPermiso.Permitido)
+        await using var tx = await TransaccionPropiaAsync(ct);
+        try
         {
-            control.Registrar(turno.SucursalId, turno.CajaId, usuarioId, AccionControlada.CorteZ, "Intento sin permiso", resultado: ResultadoBitacora.Negado);
-            await db.SaveChangesAsync(ct);
-            throw new PermisoRequerido(AccionControlada.CorteZ, NivelPermiso.NoPermitido,
-                $"El corte del turno lo hace quien tiene ese permiso: {Permisos.Nombres(await control.QuienesPuedenAsync(turno.SucursalId, AccionControlada.CorteZ, ct))}.");
-        }
+            if (id is { } dado && await db.Cortes.FindAsync([dado], ct) is { } existente)
+                return existente;
+            var turno = await TurnoAbiertoAlDiaAsync(turnoId, ct);
+            var control = new ServicioControl(db);
+            if ((await control.EvaluarAsync(usuarioId, turno.SucursalId, AccionControlada.CorteZ, ct: ct)).Nivel != NivelPermiso.Permitido)
+            {
+                control.Registrar(turno.SucursalId, turno.CajaId, usuarioId, AccionControlada.CorteZ, "Intento sin permiso", resultado: ResultadoBitacora.Negado);
+                await db.SaveChangesAsync(ct);
+                if (tx is not null)
+                    await tx.CommitAsync(ct);
+                throw new PermisoRequerido(AccionControlada.CorteZ, NivelPermiso.NoPermitido,
+                    $"El corte del turno lo hace quien tiene ese permiso: {Permisos.Nombres(await control.QuienesPuedenAsync(turno.SucursalId, AccionControlada.CorteZ, ct))}.");
+            }
 
-        var ahora = Ahora;
-        var corte = CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.Z, usuarioId, ahora,
-            contadoCentavos, await DevolucionesAsync(turno.Id, ct), await AbonosAsync(turno.Id, ct));
-        if (id is { } suyo)
-            corte.Id = suyo;
-        turno.CerradoUtc = ahora;
-        control.Registrar(turno.SucursalId, turno.CajaId, usuarioId, AccionControlada.CorteZ,
-            $"Corte del turno de {await NombreAsync(turno.CajeroId, ct)}: esperado {corte.EsperadoCentavos / 100m:N2}, contado {corte.ContadoCentavos / 100m:N2}",
-            corte.DiferenciaCentavos);
-        db.Cortes.Add(corte);
-        await CerrarEnEleventaAsync(turno, ct);
-        await db.SaveChangesAsync(ct);
-        // Si era el último turno abierto de la sucursal, sale el resumen del día por Telegram.
-        await AlertasTelegram.ResumenSiEsElUltimoAsync(db, corte, turno.SucursalId, ct);
-        await db.SaveChangesAsync(ct);
-        return corte;
+            var ahora = Ahora;
+            var corte = CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.Z, usuarioId, ahora,
+                contadoCentavos, await DevolucionesAsync(turno.Id, ct), await AbonosAsync(turno.Id, ct));
+            if (id is { } suyo)
+                corte.Id = suyo;
+            turno.CerradoUtc = ahora;
+            control.Registrar(turno.SucursalId, turno.CajaId, usuarioId, AccionControlada.CorteZ,
+                $"Corte del turno de {await NombreAsync(turno.CajeroId, ct)}: esperado {corte.EsperadoCentavos / 100m:N2}, contado {corte.ContadoCentavos / 100m:N2}",
+                corte.DiferenciaCentavos);
+            db.Cortes.Add(corte);
+            await CerrarEnEleventaAsync(turno, ct);
+            await db.SaveChangesAsync(ct);
+            // Si era el último turno abierto de la sucursal, sale el resumen del día por Telegram.
+            await AlertasTelegram.ResumenSiEsElUltimoAsync(db, corte, turno.SucursalId, ct);
+            await db.SaveChangesAsync(ct);
+            if (tx is not null)
+                await tx.CommitAsync(ct);
+            return corte;
+        }
+        catch (Exception ex) when (ex is not PermisoRequerido)
+        {
+            // Lo que se quedó a medias en el contexto no se guarda después por otro camino.
+            db.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// La transacción de una operación que decide con lo que lee (el corte Z): la abre si quien llama no trae una. Con
+    /// Microsoft.Data.Sqlite empieza con el candado de escritura (BEGIN IMMEDIATE): otra que también escribe espera a que
+    /// termine. Vacía si ya había una: entonces es de quien llama, y él la confirma.
+    /// </summary>
+    private async Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction?> TransaccionPropiaAsync(CancellationToken ct) =>
+        db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
+
+    /// <summary>El turno como está en la base (no como lo trae el contexto) y abierto; si no, el error de siempre.</summary>
+    private async Task<Turno> TurnoAbiertoAlDiaAsync(Guid turnoId, CancellationToken ct)
+    {
+        var turno = await TurnoPorIdAsync(turnoId, ct);
+        await db.Entry(turno).ReloadAsync(ct);
+        return turno.Abierto ? turno : throw new InvalidOperationException("El turno ya está cerrado: cambia de usuario (Ctrl+U) para abrir otro.");
     }
 
     /// <summary>
@@ -363,6 +515,73 @@ public sealed class RegistroCaja(PosDbContext db)
             devoluciones: await DevolucionesAsync(turno.Id, ct), abonos: await AbonosAsync(turno.Id, ct));
         var limite = await db.ConfiguracionesSucursal.Where(c => c.SucursalId == turno.SucursalId).Select(c => c.LimiteEfectivoCentavos).FirstOrDefaultAsync(ct);
         return (corte.EsperadoCentavos, limite);
+    }
+
+    /// <summary>
+    /// La primera impresión del ticket de una venta que no salió al cobrar (2026-10-22): «Al cobrar» en «Ofrecerlo» o «No
+    /// imprimirlo», o la impresora no lo sacó y se dejó con «No imprimirlo». No es una reimpresión, así que no pide motivo ni el
+    /// permiso de reimprimir, y queda en la bitácora como primera impresión. Una sola vez, aunque dos cajas la pidan a la vez:
+    /// si ya salió (o se canceló o se devolvió algo de ella, y saldría completo), <see cref="TicketYaSalio"/>: se reimprime con
+    /// su motivo.
+    /// </summary>
+    public async Task<Venta> PrimeraImpresionAsync(Guid ventaId, Guid usuarioId, Guid cajaId, CancellationToken ct = default)
+    {
+        if (!await db.Usuarios.AnyAsync(u => u.Id == usuarioId && u.Activo, ct))
+            throw new InvalidOperationException("El usuario no existe o está inactivo.");
+        // Lo que decide se lee dentro de la transacción: dos cajas a la vez no la imprimen las dos.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            var venta = await db.Ventas.Include(v => v.Lineas).Include(v => v.Cobros).SingleOrDefaultAsync(v => v.Id == ventaId, ct)
+                ?? throw new InvalidOperationException("La venta no existe.");
+            if (venta.Estado != EstadoVenta.Pagada || venta.Lineas.Any(l => l.CantidadDevuelta.EsPositiva))
+                throw new TicketYaSalio($"El ticket {venta.FolioTexto} se canceló o se devolvió algo de él: se reimprime, con su motivo.");
+            if (!venta.TicketSinImprimir)
+                throw new TicketYaSalio($"El ticket {venta.FolioTexto} ya salió: si lo vuelven a pedir, se reimprime con su motivo.");
+            venta.TicketSinImprimir = false;
+            venta.TicketImpresiones++;
+            new ServicioControl(db).Registrar(venta.SucursalId, cajaId, usuarioId, AccionControlada.Reimprimir,
+                $"Primera impresión del ticket {venta.FolioTexto}: no salió al cobrar (no es una reimpresión)", venta.TotalCentavos, venta.Id);
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return venta;
+        }
+        catch
+        {
+            db.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// El ticket de una venta no salió y se dejó así («No imprimirlo» en la cola de la impresora de la caja): sigue sin salir y
+    /// su primera impresión no pedirá motivo (<see cref="PrimeraImpresionAsync"/>). Solo si de verdad no salió otro (revisión
+    /// del PR #133): si después de ese trabajo se registró otra impresión (se reimprimió, u otra caja la imprimió), si ya está
+    /// marcada, o si se canceló o se devolvió algo, no cambia nada. Cuando la pone, queda en la bitácora.
+    /// </summary>
+    /// <returns>Si la puso.</returns>
+    public async Task<bool> TicketSinImprimirAsync(Guid ventaId, SolicitudTicketSinImprimir s, CancellationToken ct = default)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            var venta = await db.Ventas.Include(v => v.Lineas).SingleOrDefaultAsync(v => v.Id == ventaId, ct)
+                ?? throw new InvalidOperationException("La venta no existe.");
+            if (venta.TicketSinImprimir || venta.TicketImpresiones > s.ImpresionesAntes || venta.Estado != EstadoVenta.Pagada
+                || venta.Lineas.Any(l => l.CantidadDevuelta.EsPositiva))
+                return false;
+            venta.TicketSinImprimir = true;
+            new ServicioControl(db).Registrar(venta.SucursalId, s.CajaId, s.UsuarioId, AccionControlada.Reimprimir,
+                $"El ticket {venta.FolioTexto} no salió de la impresora y se dejó sin imprimir: su primera impresión no pedirá motivo", ventaId: venta.Id);
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+            return true;
+        }
+        catch
+        {
+            db.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     /// <summary>El encargado confirma que una transferencia llegó a la cuenta, o la rechaza. Queda en la bitácora.</summary>
@@ -474,32 +693,44 @@ public sealed class RegistroCaja(PosDbContext db)
     /// y con lo que se contó; si no cuadra con el ticket que imprimió la caja, aquí se ve. Una caja de antes del
     /// 2026-10-14 manda el conteo billete por billete: se acepta (nada se atora en la bandeja) y se guarda su total.
     /// </summary>
+    /// <remarks>Como el corte Z en línea, dentro de una transacción desde antes de leer el turno (<see cref="CorteZAsync"/>).</remarks>
     public async Task<Corte> CorteZDeContingenciaAsync(Guid turnoId, CorteContingenciaDto c, CancellationToken ct = default)
     {
-        if (await db.Cortes.FindAsync([c.Id], ct) is { } existente)
-            return existente;
-        var turno = await TurnoAbiertoPorIdAsync(turnoId, ct);
-        var contado = c.ContadoCentavos
-            ?? (c.Conteo is { } conteo ? Denominaciones.Total(conteo) : throw new ArgumentException("El corte sin conexión no trae lo que se contó."));
-        var corte = CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.Z, c.RealizadoPorId, c.FechaUtc,
-            contado, await DevolucionesAsync(turno.Id, ct), await AbonosAsync(turno.Id, ct));
-        corte.Id = c.Id;
-        corte.EnContingencia = true;
-        turno.CerradoUtc = c.FechaUtc;
-        db.Bitacora.Add(new Bitacora
+        await using var tx = await TransaccionPropiaAsync(ct);
+        try
         {
-            SucursalId = turno.SucursalId, CajaId = turno.CajaId, UsuarioId = c.RealizadoPorId, Accion = AccionControlada.CorteZ,
-            Detalle = $"Corte del turno de {await NombreAsync(turno.CajeroId, ct)} sin conexión: esperado {corte.EsperadoCentavos / 100m:N2}, "
-                + $"contado {corte.ContadoCentavos / 100m:N2}",
-            MontoCentavos = corte.DiferenciaCentavos, Resultado = ResultadoBitacora.Hecho, FechaUtc = c.FechaUtc, EnContingencia = true,
-        });
-        db.Cortes.Add(corte);
-        await CerrarEnEleventaAsync(turno, ct);
-        await db.SaveChangesAsync(ct);
-        // Si era el último turno abierto de la sucursal, sale el resumen del día por Telegram.
-        await AlertasTelegram.ResumenSiEsElUltimoAsync(db, corte, turno.SucursalId, ct);
-        await db.SaveChangesAsync(ct);
-        return corte;
+            if (await db.Cortes.FindAsync([c.Id], ct) is { } existente)
+                return existente;
+            var turno = await TurnoAbiertoAlDiaAsync(turnoId, ct);
+            var contado = c.ContadoCentavos
+                ?? (c.Conteo is { } conteo ? Denominaciones.Total(conteo) : throw new ArgumentException("El corte sin conexión no trae lo que se contó."));
+            var corte = CalculoCorte.Calcular(turno, await VentasAsync(turno.Id, ct), await MovimientosAsync(turno.Id, ct), TipoCorte.Z, c.RealizadoPorId,
+                c.FechaUtc, contado, await DevolucionesAsync(turno.Id, ct), await AbonosAsync(turno.Id, ct));
+            corte.Id = c.Id;
+            corte.EnContingencia = true;
+            turno.CerradoUtc = c.FechaUtc;
+            db.Bitacora.Add(new Bitacora
+            {
+                SucursalId = turno.SucursalId, CajaId = turno.CajaId, UsuarioId = c.RealizadoPorId, Accion = AccionControlada.CorteZ,
+                Detalle = $"Corte del turno de {await NombreAsync(turno.CajeroId, ct)} sin conexión: esperado {corte.EsperadoCentavos / 100m:N2}, "
+                    + $"contado {corte.ContadoCentavos / 100m:N2}",
+                MontoCentavos = corte.DiferenciaCentavos, Resultado = ResultadoBitacora.Hecho, FechaUtc = c.FechaUtc, EnContingencia = true,
+            });
+            db.Cortes.Add(corte);
+            await CerrarEnEleventaAsync(turno, ct);
+            await db.SaveChangesAsync(ct);
+            // Si era el último turno abierto de la sucursal, sale el resumen del día por Telegram.
+            await AlertasTelegram.ResumenSiEsElUltimoAsync(db, corte, turno.SucursalId, ct);
+            await db.SaveChangesAsync(ct);
+            if (tx is not null)
+                await tx.CommitAsync(ct);
+            return corte;
+        }
+        catch
+        {
+            db.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     /// <summary>La caja avisa el último folio que usó sin conexión: aunque una venta no haya subido, ese folio no se repite.</summary>

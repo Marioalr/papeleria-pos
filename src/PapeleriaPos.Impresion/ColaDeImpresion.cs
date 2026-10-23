@@ -72,6 +72,12 @@ public sealed class TrabajoDeImpresion
     public string? Motivo { get; internal set; }
 
     /// <summary>
+    /// Lo que se hace si se deja sin imprimir («No imprimirlo»): el ticket de una venta que no salió nunca se puede imprimir
+    /// después sin pedir motivo (no es una reimpresión), y la caja principal tiene que saberlo. Lo de las reimpresiones, no.
+    /// </summary>
+    internal Action? AlDejarloSinImprimir { get; init; }
+
+    /// <summary>
     /// Termina cuando sale (true) o cuando no salió (false). Con «Reintentar» vuelve a empezar: quien lo esperaba ya supo que
     /// no salió esa vez.
     /// </summary>
@@ -219,9 +225,13 @@ public sealed class ColaDeImpresion
     /// puede armar para la impresora (un logo dañado), entra ya como «no salió», con su motivo: no truena aquí, donde la
     /// venta ya quedó guardada.
     /// </summary>
-    public TrabajoDeImpresion Encolar(string titulo, IReadOnlyList<Elemento> documento, bool abrirCajon)
+    /// <param name="alDejarloSinImprimir">
+    /// Si se deja sin imprimir («No imprimirlo»), lo que hay que hacer: con el ticket de una venta que todavía no salía (al
+    /// cobrar, «Imprimir ticket» o su primera impresión), decirle a la caja principal que sigue sin salir.
+    /// </param>
+    public TrabajoDeImpresion Encolar(string titulo, IReadOnlyList<Elemento> documento, bool abrirCajon, Action? alDejarloSinImprimir = null)
     {
-        var trabajo = new TrabajoDeImpresion(titulo, documento, abrirCajon, DateTime.UtcNow);
+        var trabajo = new TrabajoDeImpresion(titulo, documento, abrirCajon, DateTime.UtcNow) { AlDejarloSinImprimir = alDejarloSinImprimir };
         trabajo.Armar();
         return Agregar(trabajo);
     }
@@ -265,7 +275,8 @@ public sealed class ColaDeImpresion
     /// <summary>
     /// «No imprimirlo», junto a «Reintentar»: lo que no salió se quita de la cola sin imprimirlo, y lo que esperaba sigue en
     /// su orden. Si el cliente ya se fue, la cola no se queda detenida; y lo que no salió con «no confirmó» pudo salir ya:
-    /// con «Reintentar» saldría dos veces. Lo que dice ya quedó guardado: un ticket se reimprime desde las ventas del día.
+    /// con «Reintentar» saldría dos veces. Lo que dice ya quedó guardado: un ticket que no salió se imprime desde las ventas del día,
+    /// sin pedir motivo (quien lo encoló se entera, <see cref="TrabajoDeImpresion.AlDejarloSinImprimir"/>).
     /// Solo lo que no salió y no se está mandando (otro pudo reintentarlo ya): si no, no hace nada.
     /// </summary>
     /// <returns>Si se quitó (quien lo pidió lo anota en el registro de la caja).</returns>
@@ -285,6 +296,7 @@ public sealed class ColaDeImpresion
             }
         }
         Avisar();
+        trabajo.AlDejarloSinImprimir?.Invoke();
         return true;
     }
 

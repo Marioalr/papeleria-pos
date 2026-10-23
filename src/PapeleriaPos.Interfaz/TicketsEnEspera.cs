@@ -10,10 +10,11 @@ namespace PapeleriaPos.Interfaz;
 /// (<see cref="ArmadoSolicitud"/>), los productos como estaban al agregarlos, las impresiones y el cliente. Con el mismo
 /// Id de la venta: si se mandó a fiar y no llegó la respuesta, se cobra como la misma venta.
 /// </summary>
+/// <param name="Nota">La nota del ticket (F4 al cobrar), si ya se escribió.</param>
 public sealed record TicketGuardado(
     Guid VentaId, DateTime CreadaUtc, List<LineaSolicitada> Lineas, List<ProductoVentaDto> Productos, List<ImpresionPorCobrarDto> Impresiones,
     ClienteRegistradoDto? Cliente, CreditoClienteDto? Cuenta, bool MayoreoDeCliente, Guid? AutorizacionDescuentoId, Guid? AutorizacionBajoCostoId,
-    bool FiadoSinConfirmar);
+    bool FiadoSinConfirmar, string? Nota = null);
 
 /// <summary>
 /// Los tickets en espera sobreviven a un apagón o a un reinicio de la caja (docs/propuesta-interfaz.md, «Tickets en
@@ -23,9 +24,10 @@ public static class TicketsEnEspera
 {
     public static TicketGuardado Guardar(Venta venta, IReadOnlyDictionary<Guid, ProductoVentaDto> productos, IReadOnlyList<ImpresionPorCobrarDto> impresiones,
         ClienteRegistradoDto? cliente, CreditoClienteDto? cuenta, bool fiadoSinConfirmar) =>
-        new(venta.Id, venta.CreadaUtc, ArmadoSolicitud.Lineas(venta),
+        new(venta.Id, venta.CreadaUtc, ArmadoSolicitud.Lineas(venta, conDescuentoEnPausa: true),
             venta.Lineas.Select(l => l.VarianteId).OfType<Guid>().Distinct().Select(productos.GetValueOrDefault).OfType<ProductoVentaDto>().ToList(),
-            [.. impresiones], cliente, cuenta, venta.MayoreoDeCliente, venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId, fiadoSinConfirmar);
+            [.. impresiones], cliente, cuenta, venta.MayoreoDeCliente, venta.AutorizacionDescuentoId, venta.AutorizacionBajoCostoId, fiadoSinConfirmar,
+            venta.Nota);
 
     /// <summary>
     /// Vuelve a armar la venta sobre <paramref name="venta"/> (vacía, con la caja, el turno y el cajero de ahora), con los
@@ -58,7 +60,8 @@ public static class TicketsEnEspera
                     continue;
                 }
                 var agregada = venta.AgregarProducto(producto.ParaVenta(), producto.PresentacionModelo(l.PresentacionId), cantidad, producto.PreciosModelo());
-                if (l.PrecioCentavos is { } precio && precio != agregada.PrecioCentavos)
+                // Solo lo cambiado con Ctrl+E se guarda con su precio: vuelve cambiado aunque sea el de la lista, sin promoción.
+                if (l.PrecioCentavos is { } precio)
                     venta.CambiarPrecio(agregada, precio, l.AutorizacionId);
                 venta.AplicarDescuentoSolicitado(agregada, l.DescuentoCentesimas, l.DescuentoCentavos, l.MotivoDescuento);
             }
@@ -71,6 +74,7 @@ public static class TicketsEnEspera
             venta.FijarImpresiones(t.Impresiones.Sum(i => i.PrecioCentavos), 0);
         venta.AutorizacionDescuentoId = t.AutorizacionDescuentoId;
         venta.AutorizacionBajoCostoId = t.AutorizacionBajoCostoId;
+        venta.PonerNota(NotaDelTicket.Recortada(t.Nota));
         return perdidas;
     }
 }

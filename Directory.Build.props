@@ -1,0 +1,14 @@
+<Project>
+
+  <!--
+    La versión de todo lo que se compila (docs/pruebas-en-tienda.md, «Actualizar la caja 2 del piloto»). Sale en
+    Configuración › Acerca de, en api/estado y en las propiedades del .exe, y actualizar.ps1 la compara para no instalar una
+    anterior. El paquete de la tienda la recibe al armarse (instalacion/armar-paquete.ps1 -Version, que pasa -p:Version):
+    1.0.<corrida> en GitHub Actions (prueba.yml). Lo que se compila aquí sin darla sale como 0.0.0-local: más vieja que
+    cualquiera del CI y que las de antes (1.0.0), así que actualizar.ps1 no la pone encima sin -Forzar.
+  -->
+  <PropertyGroup>
+    <Version Condition="'$(Version)' == ''">0.0.0-local</Version>
+  </PropertyGroup>
+
+</Project>

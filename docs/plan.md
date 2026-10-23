@@ -248,6 +248,9 @@ la caja con su ficha y su PIN del POS, todos desde la misma cuenta común de Win
   - La carpeta de datos de la caja, con permiso de escritura para los usuarios.
   - En cada PC que imprime, una cola local por impresora (las dos WF-6590 y la L5590), con puerto TCP/IP estándar y
     "Conservar documentos impresos" (cambiarlo pide administrador).
+  - Actualizar: `actualizar.ps1` del paquete nuevo, con respaldo y vuelta atrás; lo de cada PC (como el puente con
+    eleventa) va en `C:\ProgramData\PapeleriaPos\servicio.json`, que actualizar no toca
+    ([cómo](pruebas-en-tienda.md#actualizar-la-caja-2-del-piloto)).
 - **Lo que se hace desde la cuenta común de Windows:** vender y todo lo de la caja, dar de alta la caja (pide el PIN
   del dueño, no administrador), trabajar sin conexión, cotizar e imprimir.
 - **Dónde se escribe:** la base de la sucursal la escribe solo el servicio. Lo de cada caja (su configuración y la
@@ -794,6 +797,59 @@ en la ficha. Abajo de la lista de Productos (F3), «Cambiar precios» se abre a 
   al paso de abajo o como estaba (o el producto no cambia); solo productos activos (sin kits), y hasta 1,000 a la vez;
   Ctrl+Enter para aplicar, para que un doble Enter no aplique sin querer.
 
+**Avance (2026-10-22): las promociones con fechas, en Productos.** Lo que en el regreso a clases se hacía con el F11 de
+eleventa (dejar al costo los productos estratégicos) y sus 3×2 ([fase 3](fase-3-precios-clientes.md#promociones-y-kits),
+[paridad](paridad-eleventa.md#venta-y-cobro)). El dueño las había dejado para antes del próximo regreso a clases; el
+2026-10-22 pidió seguir hasta que el POS iguale a eleventa. Abajo de la lista de Productos (F3), «Promociones» se abre a la
+derecha, con lo que corre hoy, lo que viene y lo que terminó:
+- **Los tipos:** lleva N y paga M (3×2: de cada N iguales, N − M van gratis); el segundo a mitad de precio; un porcentaje
+  menos sobre el menudeo, en productos, un departamento o una marca; y el precio especial de cada producto. Cuentan cada
+  producto aparte y en piezas, como el mayoreo (un paquete de 12 son 12 para el 3×2); a granel, las unidades enteras. Los
+  productos se marcan en la lista de la izquierda, como en «Cambiar precios».
+- **Cuándo:** desde un día y hasta otro (o hasta que se termine), los días de la semana que se elijan, en esta sucursal o
+  en todas. «Terminar ahora» la quita desde ya; una terminada se puede volver a usar («Volver a usarla»).
+- **Se aplican solas y no se acumulan:** el cálculo del precio, el único lugar donde se decide (la pantalla, el cobro sin
+  conexión y el servicio lo usan igual), se queda con la que deja el importe más bajo, también contra el mayoreo y el
+  mayoreo siempre del cliente: con 5 de algo, el 10 %; con 12, el mayoreo si deja menos. Un descuento con Ctrl+D va encima
+  del precio con la promoción; el del cliente registrado, no: se queda lo que más le conviene. Un precio cambiado con Ctrl+E
+  ya no lleva promoción.
+- **Nunca debajo del costo sin autorización,** como Ctrl+D: al guardarla se revisa su precio más bajo (con el grupo
+  completo de un 3×2, y con cada presentación de precio propio) contra el costo con que saldría del inventario; si algo
+  queda debajo, la guarda quien tiene «Vender debajo del costo» (antes ve cuáles) o con la autorización de quien lo tiene,
+  y la bitácora lo dice. Lo que después quedaría debajo sin autorizarse no la lleva («Fuera por el costo»). «Dejar al
+  costo» pone cada producto marcado a su costo (redondeado hacia arriba al centavo), desde hoy y por un mes (se cambia); es
+  para quien tiene «Ver costos, utilidad y margen», que también ve el costo y el margen de cada uno.
+- **La venta y el ticket la dicen:** el renglón, «Regreso a clases · ahorra $6.00», como el mayoreo; bajo el total,
+  «Ahorro por promociones»; el ticket, «Promoción Regreso a clases  -$6.00» bajo el artículo, y cuenta en «Usted ahorró».
+  El verificador (F9) da el precio de hoy con la promoción y dice cuál.
+- **Las cajas, también sin conexión:** su copia lleva las promociones de su sucursal que no han terminado, también las que
+  empiezan después, con sus fechas (el formato de la copia sube a 5). Cada caja decide con su fecha: la que empieza o
+  termina a medianoche se aplica sin bajar nada. Los cambios de la copia las traen completas cuando ya no son las suyas
+  (por su huella), también si una terminó sin que cambiara nada más; la copia puesta al día queda igual que la completa.
+- **El cobro no cobra una promoción que el cajero no vio:** la caja dice qué promoción aplicó en cada línea y con qué día;
+  si la caja principal aplicaría otra (empezó, terminó o la cambiaron), contesta como con un precio que cambió, con sus
+  promociones, y la caja pone el ticket al día. Lo cobrado sin conexión sube como se cobró, con su promoción.
+- **En el piloto con eleventa** no se aplican en la caja 2 ni se dan de alta: los precios se ponen en eleventa
+  (2026-10-10), así la caja 2 cobra lo mismo que la caja de eleventa y el puente manda lo cobrado. La página lo dice; solo
+  se consultan (y se pueden terminar).
+- **Los kits no:** la tienda no los usa en eleventa; siguen pospuestos.
+- **Revisión del PR #132** (el mismo día): un precio cambiado con Ctrl+E justo al de la lista ya no da «cambió el
+  precio» una y otra vez (es precio cambiado: gasta su autorización, queda en la bitácora y va sin promoción), tampoco
+  sin conexión ni en el piloto; el costo se revisa también con la presentación de precio propio (una caja de 12 con un
+  3×2); lo que después quedaría debajo del costo se queda fuera hasta autorizarse («Fuera por el costo»); el día de la
+  caja solo cuenta cerca de la medianoche y, con la fecha de la PC mal, la caja se pone al día con el de la caja
+  principal y lo dice; el descuento del cliente registrado no va encima de la promoción; un descuento en monto más
+  grande que el renglón con su nueva promoción primero pone el ticket al día; devolver de una en una las piezas de un
+  3×2 suma lo cobrado; el porcentaje con coma («7,5») no se acepta; cuánto falta para el costo solo lo ve quien ve la
+  utilidad; Ctrl+E y F11 dicen que el renglón va con su promoción. El navegador de desarrollo sin base local no tiene
+  copia y no aplica promociones: es solo para probar.
+- **Por revisar** (decidido mientras el dueño no estaba; [la tabla](#decidido-mientras-el-dueño-no-estaba-2026-10-17)):
+  que en el piloto no se apliquen; el 3×2 y el segundo a mitad por producto, sin juntar productos distintos de un
+  departamento; en un empate gana el mayoreo; el descuento a mano va encima, el del cliente registrado no (se queda lo
+  que más le conviene); lo que después quedaría debajo del costo se queda fuera hasta autorizarse, y la autorización
+  vale para toda la promoción; el costo se revisa con la sucursal donde se guarda; «Dejar al costo» al centavo y por un
+  mes; el nombre de hasta 40 letras; y el día de la caja al cobrar, solo a menos de una hora de la medianoche.
+
 **Avance (2026-10-16): Productos e Inventario en el piloto.** Con la lectura de eleventa prendida, lo que ella pone no
 se cambia en la caja 2: si no, la siguiente lectura lo regresaría sin avisar. Una nota lo dice en cada página y el
 servicio lo rechaza ([qué se queda fijo](migracion-eleventa.md#la-lectura-de-cada-pocos-minutos-paso-1)).
@@ -1041,6 +1097,37 @@ compras), pero hace que el POS lo aguante, lo diga bien y lo anote:
   del ticket de venta; reimprimir después sigue pidiendo motivo; sin papel no se abre el cajón; Ctrl+I como su tecla;
   sin conexión, «No imprimirlo» se ofrece como «Ofrecerlo» (sin la caja principal no hay reimpresión; de la revisión del
   PR #118).
+
+**Avance (2026-10-22): lo chico que faltaba para igualar a eleventa,** las filas «Por confirmar» de la
+[paridad](paridad-eleventa.md#venta-y-cobro): eleventa lo tiene y falta ver si la tienda lo usa. El dueño pidió el
+2026-10-22 seguir hasta que el POS sea como eleventa, así que se hizo ya, cada cosa chica y sin cambiar lo que ya
+funciona:
+- **Ins, «Varios»:** como en eleventa, pide la cantidad (con las reglas de `5*código`) y luego el código, escaneado o
+  escrito; Enter lo agrega y Esc lo cancela. El cursor se queda en el cuadro de captura, así que lo que escanea el
+  lector siempre es el código, también si llega mientras se abre el panel. El artículo común sigue en Ctrl+P.
+- **F4 al cobrar, la nota del ticket:** hasta 80 letras (dos renglones del ticket de 80 mm). Se guarda con la venta
+  (migración `NotaEnElTicket`) y sale en el ticket, en sus reimpresiones y en «Ventas del día», también sin conexión y
+  en la espera. En el piloto se queda en el POS: no se sabe cómo guarda eleventa `VENTATICKETS.NOTAS`.
+- **El ticket que no salió se imprime sin motivo:** con «Ofrecerlo» o «No imprimirlo» al cobrar, o «No imprimirlo» en la
+  cola, la venta guarda que su ticket no salió (migración `TicketSinImprimir`) y «Ventas del día» ofrece «Imprimir», sin
+  motivo ni el permiso de reimprimir; queda en la bitácora como primera impresión. Después ya es «Reimprimir», con su
+  motivo.
+- **Cancelar una entrada o salida equivocada (F7/F8):** debajo del panel, las del turno, con «Cancelar» para quien tiene
+  el permiso nuevo «Cancelar una entrada o salida» (en «Efectivo y corte»), con motivo, en su caja y en su turno, antes
+  del corte (migración `CancelarMovimientos`). Va a la bitácora, abre el cajón, y el corte ya no la cuenta y dice
+  cuántas se cancelaron. En el piloto no: van a eleventa y no se sabe cómo anota una cancelada; la pantalla lo dice.
+- **«Respaldar ahora»:** Configuración › Respaldos, con «Configuración de la tienda»: el último, dónde se guardan y una
+  copia en ese momento con el mismo `ServicioRespaldos` de la diaria (la copia en línea de SQLite, también lo que sigue
+  en el -wal), que dice dónde quedó y cuánto mide y va a la bitácora. Restaurar desde la pantalla no: es más delicado y
+  se diseña aparte.
+- **Revisión del PR #133 (2026-10-22):** el corte Z ya no se cruza con una cancelación (lee todo dentro de su
+  transacción); Ctrl+I espera a la caja principal y «No imprimirlo» ya no marca sin imprimir lo que salió después; el
+  ticket no le manda a la impresora caracteres de control de ningún texto libre; «Varios» no pierde lo escrito (F11 por
+  error) ni lo escaneado («3*otro»; sin copia, el panel primero) y F6 o F12 esperan su renglón; F4 en el abono vuelve a
+  ser Inventario; la nota no se cambia con el cobro en camino; una cancelación cuya respuesta se pierde se termina con
+  Enter, sin cancelar dos veces; «Respaldar ahora» va en segundo plano y no deja temporales; el historial dice las
+  canceladas.
+- **Decidido, por revisar:** en la tabla de [abajo](#decidido-mientras-el-dueño-no-estaba-2026-10-17).
 
 **Avance (2026-10-17), entrega 13, parte 1: lo que se señala,** como en la
 [propuesta](propuesta-interfaz.md#lo-que-se-señala-exhibidos-y-temporada) y el
@@ -1314,6 +1401,32 @@ bitácora; lo que se perdió allá queda por revisar. Y antes de lo primero que 
 eleventa con `gbak`, en la caja 2 y fuera de OneDrive, con 5 días de historia; sin él no se escribe (se puede quitar
 esa condición en la configuración). Probado con un gbak de mentiras y contra el Firebird de prueba.
 
+**Avance (2026-10-21): el paso 6, cómo se actualiza la caja 2 con un arreglo** sin perder su base ni la configuración del
+puente ([en la tienda](pruebas-en-tienda.md#actualizar-la-caja-2-del-piloto), [cómo funciona](arquitectura.md#actualizaciones)).
+En la caja 2 corren el servicio, con el puente, y la caja:
+
+- **Lo de la PC, fuera del programa:** el servicio lee la configuración de esa PC (el puente con eleventa) de
+  `C:\ProgramData\PapeleriaPos\servicio.json`, que actualizar no toca. Manda sobre el `appsettings.json` del programa, y las
+  variables de entorno (la clave de eleventa, que nunca va en un archivo) y la línea de órdenes mandan sobre ella.
+- **El programa, en Archivos de programa:** `instalar-servicio.ps1` copia el servicio a `C:\Program Files\PapeleriaPos\Servicio`
+  y lo registra desde ahí, como la caja, y pone `servicio.json` sin ajustes si no hay uno (nunca encima).
+- **`actualizar.ps1`,** como administrador, desde el paquete nuevo (`actualizar.ps1`, `servicio\` y `caja\`; lo deja cada
+  corrida del «Instalador de prueba»): dice qué versión hay y cuál pone, y no pone una anterior; pide cerrar la caja (los
+  tickets en espera se guardan); detiene el servicio con calma; respalda la base y los dos programas (se guardan los últimos 3);
+  cambia los programas, arranca el servicio y espera a que conteste con la versión nueva. Si no contesta, se detiene solo o la
+  base sale dañada, regresa solo a la versión de antes, con su base. Antes de tocar nada se niega si el `appsettings.json`
+  instalado trae ajustes propios (irían a `servicio.json`) o si la base ya tiene el aviso de dañada.
+- **Lo prueba en Windows** el flujo nuevo «Instalación» de GitHub Actions, en cada PR que toca la instalación, el servicio o
+  la caja: instala, pone una marca en la base y otra en `servicio.json`, actualiza con la caja abierta, se niega a poner una
+  versión anterior, regresa sola de una que no arranca, pasa a Archivos de programa un servicio instalado como antes y al final
+  quita todo, y revisa que la marca y `servicio.json` sigan en cada paso.
+- **Decidido, por revisar** (en [la tabla](#decidido-mientras-el-dueño-no-estaba-2026-10-17)): la prueba con una persona real
+  no lee `servicio.json`; la versión de los programas y dónde sale el paquete; qué pasa con los ajustes propios del
+  `appsettings.json` de antes y con una base que ya tiene el aviso de dañada.
+- **Falta:** usarlo en la caja 2 de verdad con el primer arreglo del piloto (con el servicio ya instalado ahí). Un límite
+  conocido: si un día una migración tardara más de unos 30 s (una base muy grande), Windows daría por fallido el arranque y
+  regresaría a la versión de antes ([detalle](arquitectura.md#actualizaciones)).
+
 #### Al terminar el piloto
 
 Cada parte entra sin detener a la caja 2:
@@ -1362,7 +1475,7 @@ para esos días ([forma de trabajar](notas.md#forma-de-trabajar), [guía de los 
 | Instalador de la tienda, soporte a distancia (NetBird gratis u otro) y cómo se actualiza | [Por definir](#pendientes) | Falta |
 | Respaldo cifrado fuera de la tienda y vigilancia de la caja principal: se reporta a Healthchecks.io cada pocos minutos en horario, y si no abre o se apaga, Healthchecks.io avisa por Telegram (el bot del POS no puede avisar de su propia caja) | Fase 5 ([notas](notas.md#respaldo-fuera-de-la-tienda-y-aviso-de-apertura)) | Falta (chico) |
 | Depuración, conteo físico, importación final y arranque | Fase 5 y [depuración](#depuración-del-inventario) | Falta |
-| Promociones y kits, si el piloto queda cerca del regreso a clases | [Fase 3](fase-3-precios-clientes.md) | Pospuestas por ahora |
+| Promociones y kits, si el piloto queda cerca del regreso a clases | [Fase 3](fase-3-precios-clientes.md) | Las promociones con fechas ya están (2026-10-22, [avance](#primero-la-versión-unicaja-entrega-0)); en el piloto no se aplican. Los kits siguen pospuestos: la tienda no los usa |
 
 **Avance (2026-10-17): el simulador de cajas y el día pico en la PC de desarrollo.** Lo que pedían la fila del día pico
 y la [prueba de las sucursales](prueba-sucursales-linux.md#lo-que-hay-que-arreglar-o-construir): un día pico con varias
@@ -1520,7 +1633,12 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | El mostrador y las temporadas (entrega 13, parte 1) | Se acomoda en Ctrl+M › «Acomodar» (no en F3) con «Productos, precios y etiquetas»; un solo acomodo para todas las cajas; lugares de inicio «Repisa de arriba/abajo» y «Mesa de la entrada»; con el panel abierto, un número de hasta 4 cifras y Enter es la cantidad, salvo que sea el código de un producto (entonces entra ese producto); «45*» siempre es cantidad | #121 |
 | La importación final al dejar eleventa | A la base de la tienda que ya existe, solo el historial y sin los tickets que mandó el puente (por su número y su marca, nunca por el folio); lo dudoso se lista, no se resuelve; con la caja cerrada | #120 |
 | Cambiar precios de varios a la vez | Con «Poner un precio» además de porcentaje y cantidad; mayoreo en proporción y redondeo a $0.50 por omisión; el redondeo nunca va en contra de lo pedido ni deja $0; el mayoreo siempre más barato que el menudeo (si el redondeo lo rompe, la escala baja al paso de abajo o se queda; si nada cabe, el producto no cambia); en el piloto, las escalas del POS de un producto de eleventa solo suben hasta abajo de los precios de eleventa; hasta 1,000 a la vez; aplicar con Ctrl+Enter o el botón; el cobro cobra siempre la escala más barata que alcanza | #119 |
-| Qué hacer con el ticket al cobrar | «Imprimir» (por omisión), «Ofrecerlo» (nunca pregunta antes de cobrar: se ofrece con Ctrl+I hasta el siguiente escaneo) o «No imprimirlo»; para toda la tienda; lo fiado se imprime siempre; imprimirlo después con «Reimprimir» sigue pidiendo motivo; sin conexión, «No imprimirlo» lo ofrece como «Ofrecerlo» (reimprimir no se puede sin la principal) | #118 |
+| Qué hacer con el ticket al cobrar | «Imprimir» (por omisión), «Ofrecerlo» (nunca pregunta antes de cobrar: se ofrece con Ctrl+I hasta el siguiente escaneo) o «No imprimirlo»; para toda la tienda; lo fiado se imprime siempre; imprimirlo después: la primera vez, desde «Ventas del día» y sin motivo (no es una reimpresión, 2026-10-22), y las siguientes con «Reimprimir» y su motivo; sin conexión, «No imprimirlo» lo ofrece como «Ofrecerlo» (reimprimir no se puede sin la principal) | #118 |
+| Ins: ¿«Varios» como en eleventa, o el artículo común como hasta hoy? | Como en eleventa: la cantidad y luego el código; el artículo común sigue en Ctrl+P. La barra dice «Ins Varios» (a 1366 no caben los dos). Lo que escanea el lector siempre es el código: si llega antes que la cantidad, se pide la cantidad, y si llega otro, el primero entra con una pieza. Lo tecleado es cantidad salvo que sea un código que existe; hasta 9999; Enter sin cantidad, una. Con el panel vacío, las demás teclas siguen funcionando. Revisión del PR #133: con un código esperando su cantidad, «3*otro» mete el primero con una pieza; F11 o Ins por error, con el panel que no se deja, regresan lo escrito al cuadro; sin copia (el navegador) el panel se abre antes de preguntar si lo escrito es un código; y su renglón toma su lugar en la cola antes de cerrar el panel, así F6 o F12 lo esperan | Ins «Varios» |
+| La nota del ticket (F4 al cobrar) | Hasta 80 letras, dos renglones del ticket; F4 solo con el cursor en el cobro y sin ventana (fuera de él, y en el panel del abono, sigue siendo Inventario); en el piloto no va a eleventa. Revisión del PR #133: sin caracteres de control (el ticket ya no le manda a la impresora ninguno que venga en un texto libre: la nota, un motivo, un nombre), y con el cobro en camino ya no se cambia | F4 al cobrar |
+| ¿El ticket que no salió se imprime sin motivo? | Sí, una vez, desde «Ventas del día» y sin el permiso de reimprimir; Ctrl+I («Ofrecerlo») también cuenta como su primera impresión; lo cobrado sin conexión cuenta como impreso; si se canceló o se devolvió algo, pide motivo; el «Reimprimir» de abajo (la última venta) sigue pidiendo motivo. Revisión del PR #133: Ctrl+I espera a la caja principal antes de imprimir (si otra caja ya lo imprimió, pide el motivo; sin conexión sale y no se anota), y «No imprimirlo» solo lo vuelve a marcar sin imprimir si después de ese trabajo no salió otro (la venta cuenta sus impresiones), y queda en la bitácora | Ventas del día |
+| Cancelar una entrada o salida: ¿con qué permiso y quién? | Uno propio, «Cancelar una entrada o salida», en «Efectivo y corte», con motivo siempre, como cancelar un ticket o un abono. De inicio, el dueño sí y el cajero «No» (no «Con autorización»: «o puede o no puede»); a los usuarios que ya existen les llega como el de defecto («No») y el dueño se lo da a quien quiera. Solo en su caja y en su turno, antes del corte; abre el cajón; sin comprobante impreso ni aviso por Telegram (en pausa). En el piloto no se ofrece, ni para la salida de una devolución hecha en eleventa. Revisión del PR #133: el corte Z lee todo dentro de su transacción, así una cancelación a la vez espera y ya no entra; si se pierde la respuesta, Enter la manda otra vez con el mismo Id y no se cancela dos veces; el historial de cortes y el corte sin conexión también dicen cuántas se cancelaron | F7/F8 |
+| «Respaldar ahora»: ¿quién y cómo? | Configuración › Respaldos, con «Configuración de la tienda» (el grupo se ve o no se ve); el archivo `pos-AAAA-MM-DD-ahora-HHmm.db`, junto a los demás y con la misma limpieza de 30 días; restaurar desde la pantalla, no. Revisión del PR #133: en segundo plano (contesta enseguida y la pantalla pregunta cada segundo cómo va; uno a la vez), la limpieza que falla se dice aparte y no como respaldo fallido, y el temporal de una copia que falla se borra (la limpieza borra los que se quedaron de otro día) | Configuración |
 | La memoria del servicio (370–420 MB al final de un día pico en la PC de desarrollo; meta: 300 MB) | Medirla primero en la caja principal real con el simulador; si allá pasa de 300 MB, probar el otro modo de memoria de .NET (baja a ~307 MB, pero el cobro más lento sube de 33 a 97 ms) o ajustar la meta | #117 |
 | La red de la tienda en el POS | La caja se cambia a la IP comprobada de la principal si la guardada (también por nombre) deja de contestar; en la principal sin internet ni router, la franja no dice «no desconectes nada»; en el piloto, ping a la PC de eleventa; «Volver a buscarla» solo con el ratón; el detalle del Wi-Fi apagado por omisión | #116 |
 | La llave propia de la caja principal | Para que una copia de la base en otra PC no se haga pasar por ella. **Consecuencia:** si se reinstala o se cambia la PC principal (o se restaura en la de repuesto), hay que dar de alta otra vez cada caja con el PIN del dueño | #116 |
@@ -1530,6 +1648,18 @@ apruébala; cuando vuelva reviso todo». Esto se decidió así, con la opción r
 | En el piloto, ¿qué devoluciones hace la caja 2? | Solo las de tickets del turno de eleventa en curso de la caja 2, que el puente sabe escribir. Los de otro turno, otra caja o la principal se devuelven en el eleventa que está abierto en esa misma caja, y la devolución llega sola con la lectura. Así no hay que adivinar qué devolución anotada a mano en eleventa corresponde a cuál (tres revisiones encontraron casos que se perdían o se duplicaban). Cuando se vea en la tienda cómo anota eleventa una devolución de otro turno, el puente puede aprender a escribirla y la caja 2 tomarlas también | Puente (#109) |
 | Una anotación a mano en eleventa que no cuadra exacto | «Resolverlo a mano» con «Configuración de la tienda» y nota en la bitácora; mientras se decide, la existencia sigue a eleventa (sin congelarla) | Puente (#109) |
 | Al devolver en la caja 2 un ticket cobrado en eleventa, ¿el dinero al peso o exacto? | Exacto al centavo, como lo devuelve eleventa ($9.50, no $10): así el ticket de eleventa queda en cero y el cajón cuadra con lo que anota eleventa. Lo que cobró la propia caja se sigue devolviendo al peso, porque se cobró redondeado | Puente (#109) |
+| ¿La prueba con una persona real lee la configuración de la PC (`servicio.json`)? (2026-10-21) | No: tiene su propia carpeta y puede estar en la misma PC que el servicio de verdad, y tomaría su puente con eleventa. Se sigue configurando solo con lo que le pasa su caja al arrancarlo, como antes | Paso 6 del piloto |
+| ¿Qué versión llevan los programas y de dónde sale el paquete para actualizar? (2026-10-21) | 1.0.<número de la corrida> del «Instalador de prueba», el mismo número que su instalador; la misma corrida deja el paquete como otro artefacto (con todas las pruebas antes). Lo compilado a mano sale como 0.0.0-local, y `actualizar.ps1` solo lo pone con `-Forzar` | Paso 6 del piloto |
+| Si el `appsettings.json` instalado trae ajustes propios (como se configuraba antes), ¿qué hace `actualizar.ps1`? (2026-10-21) | No sigue y dice cuáles (solo los nombres, nunca un valor): van en `servicio.json`. Con `-Forzar` sigue sin ellos, y el de antes queda en el respaldo | Paso 6 del piloto |
+| Si la base ya tiene el aviso de dañada, ¿se actualiza? (2026-10-21) | No: primero se restaura el respaldo de antes del apagón (actualizar no lo arregla, y regresar por ese aviso no ayudaría). Con `-Forzar` sí, y ese aviso ya no hace regresar | Paso 6 del piloto |
+| Si falta `servicio.json`, ¿lo pone `actualizar.ps1`? (2026-10-21) | Sí, la plantilla sin ajustes (nunca encima de uno que ya esté): así siempre está, y una cuenta común de Windows no puede ponerlo (en ProgramData se pueden crear archivos nuevos) | Paso 6 del piloto |
+| ¿Las promociones se aplican en la caja 2 durante el piloto? (2026-10-22) | No: los precios se ponen en eleventa (2026-10-10). Si la caja 2 aplicara las suyas, cobraría distinto que la caja de eleventa por lo mismo el mismo día; lo de temporada (el F11 al costo) se sigue haciendo allá. Con la lectura de eleventa prendida, el catálogo del servicio no lleva promociones (ni la copia ni el cobro las aplican) y Productos › Promociones solo las consulta, con la nota de por qué; terminarlas sí se puede. Al dejar eleventa se prenden solas | Promociones |
+| Las promociones: cómo cuentan y qué gana (2026-10-22) | El 3×2 y el segundo a mitad cuentan cada producto aparte, en piezas como el mayoreo (no juntan productos distintos de un departamento); no se acumulan: la que deja menos, también contra el mayoreo (en un empate, el mayoreo); el descuento a mano (Ctrl+D) va encima de la promoción; el costo se revisa al guardarla, con su precio más bajo (también el de una presentación con precio propio); «Dejar al costo» al centavo hacia arriba, desde hoy y por un mes, para quien ve la utilidad; el nombre, de hasta 40 letras (sale en el ticket) | Promociones |
+| El descuento del cliente registrado con una promoción (2026-10-22, revisión del PR #132) | No se acumulan: en cada renglón se queda lo que más le conviene al cliente, la promoción o su precio con su descuento (como la promoción contra el mayoreo; en un empate, su descuento). Con la promoción, su descuento queda en pausa en el renglón y vuelve si deja de convenirle (otra cantidad). Antes iba encima y una promoción «al costo» pedía autorización al cobrar | Promociones |
+| Lo que después queda debajo del costo (2026-10-22, revisión del PR #132) | No la lleva: un producto que llega a su departamento o su marca, o al que le baja el precio o le sube el costo, y con ella quedaría debajo de lo que cuesta, se queda fuera (las cajas no se la aplican y el cajero no se entera) mientras no se autorice; el detalle lo dice («Fuera por el costo»). Se autoriza guardándola otra vez con «Vender debajo del costo» o con la autorización de quien lo tiene: guardada así, la llevan todos aunque queden debajo, también lo que llegue después. Quien puede vender debajo del costo ve antes cuáles y la guarda otra vez para dejarla así. Antes, lo que llegaba después se vendía debajo del costo sin autorización | Promociones |
+| Las promociones en varias sucursales (2026-10-22, revisión del PR #132) | Al guardarla se revisa el costo con los precios y costos de la sucursal de la caja donde se guarda; en otra sucursal, lo que allí quedaría debajo se queda fuera si no se autorizó, con sus precios y costos. La tienda tiene una sucursal | Promociones |
+| El día de la caja al cobrar promociones (2026-10-22, revisión del PR #132) | La caja principal acepta el de la caja si es el suyo o, a menos de una hora de su medianoche, el de al lado (un reloj unos minutos atrás o adelante). Si no, cobra con el suyo y su respuesta lo dice: la caja pone el ticket al día con ese día, avisa que la fecha de la PC está mal y el siguiente cobro pasa (no se repite). Antes aceptaba un día de diferencia a cualquier hora | Promociones |
+| Los kits (2026-10-22) | Pospuestos: no hay kits en la base de eleventa («No la usan», [paridad](paridad-eleventa.md#productos-y-precios)) | Promociones |
 
 ## Recomendaciones
 
@@ -1595,7 +1725,8 @@ Fase 3:
 - [x] Entrega 1: mayoreo y redondeo al peso
 - [x] Entrega 2: clientes registrados y crédito
 - [ ] Entrega 3: consumibles del mes
-- [ ] Promociones y kits: antes del próximo regreso a clases
+- [x] Promociones con fechas (2026-10-22): se aplican solas, también sin conexión ([fase 3](fase-3-precios-clientes.md#promociones-y-kits))
+- [ ] Kits: pospuestos, la tienda no los usa en eleventa (decidido el 2026-10-22, por revisar)
 
 Piloto en la caja 2 ([ver arriba](#la-versión-unicaja-y-el-piloto-en-la-caja-2)):
 
@@ -1607,8 +1738,10 @@ Piloto en la caja 2 ([ver arriba](#la-versión-unicaja-y-el-piloto-en-la-caja-2)
 - [x] Los riesgos verificados el 2026-10-12: el cobro espera el último escaneo y «Pagó con» no toma escaneos como
   dinero; solo efectivo en la caja 2; la lectura de eleventa respeta lo que sigue en la bandeja (PR #82, #83 y #85)
 - [x] Paso 6, la entrega 10: la base contra apagones (PR #84); el servicio de la caja 2 la respalda cada día
-- [ ] Paso 6, lo que falta: cómo se actualiza la caja 2 del piloto con un arreglo, sin perder su base ni la
-  configuración del puente
+- [x] Paso 6, lo que falta: cómo se actualiza la caja 2 del piloto con un arreglo, sin perder su base ni la
+  configuración del puente (2026-10-21: `servicio.json` en ProgramData y `actualizar.ps1` con respaldo y vuelta atrás, que
+  prueba en Windows el flujo «Instalación»; falta usarlo en la tienda,
+  [cómo](pruebas-en-tienda.md#actualizar-la-caja-2-del-piloto))
 - [x] Eleventa abierto en la caja 2 en el mismo turno (adoptar su turno y tomar su corte) y los folios repetidos
   (2026-10-16, en código; falta probarlo contra la copia en el paso 5)
   ([diseño](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))
@@ -1712,7 +1845,7 @@ Por definir:
 - [ ] Probar el lector en la tienda: qué manda con los códigos de 11 cifras y su ritmo al teclear
 - [ ] Instalador de la tienda para el administrador: servicio, cajas, firewall, carpeta de la caja con permisos y las
   colas de las impresoras de inyección ([detalle](#instalación-y-usuarios-de-windows)). Hoy son los scripts de
-  `instalacion/`
+  `instalacion/`, y para actualizar, `actualizar.ps1` (2026-10-21)
 - [ ] Si eleventa se restaura a un respaldo durante el piloto: lo que la caja 2 le había mandado y se perdió allá, ¿se
   anota a mano en eleventa (así quedó, por revisar en la pantalla de la caja 2) o la caja 2 lo vuelve a mandar sola, con
   folios nuevos? ([respaldos](migracion-eleventa.md#lo-que-falta-para-el-piloto-diseño-2026-10-12-por-aprobar))

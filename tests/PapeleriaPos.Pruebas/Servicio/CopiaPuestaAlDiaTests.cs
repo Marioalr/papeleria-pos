@@ -40,7 +40,8 @@ public sealed class CopiaPuestaAlDiaTests(ITestOutputHelper salida)
     /// <summary>Lo que cambió desde esa copia, como lo pide la caja.</summary>
     internal static async Task<CambiosCopiaDto> CambiosAsync(HttpClient http, Guid cajaId, PaqueteContingenciaDto desde) =>
         await Leer<CambiosCopiaDto>(await http.GetAsync($"api/cajas/{cajaId}/cambios?desde={desde.Version}&existencias={desde.VersionExistencias}"
-            + $"&base={desde.Base}&formato={CopiaAlDia.Formato}&vendidos={desde.VersionVendidos}&elegidos={desde.VersionElegidos}"));
+            + $"&base={desde.Base}&formato={CopiaAlDia.Formato}&vendidos={desde.VersionVendidos}&elegidos={desde.VersionElegidos}"
+            + $"&promociones={desde.HuellaPromociones}"));
 
     /// <summary>Dos códigos que solo cambian en mayúsculas, uno en cada producto (el de B, primero en la base).</summary>
     private static async Task CodigosParecidosAsync(ServicioDePrueba servicio, ProductoVentaDto a, ProductoVentaDto b, string deB, string deA)
