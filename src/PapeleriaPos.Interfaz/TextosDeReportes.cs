@@ -263,6 +263,21 @@ public static class TextosDeReportes
         return Mayuscula(DelAl(desde, hasta, anio));
     }
 
+    /// <summary>
+    /// Cómo cuenta «Ventas por período» (lo dicen la pantalla y el Excel). De todas las cajas, como el corte del día y los
+    /// reportes; de una caja, lo devuelto y lo cancelado son los de sus tickets, se hayan hecho en ella o en otra (revisión del
+    /// PR #134): el corte del día no se separa así.
+    /// </summary>
+    public static string ComoCuentaVentasPorPeriodo(VentasPorPeriodoDto d)
+    {
+        const string cancelado = "Un ticket cancelado se lista el día en que se cobró, pero no cuenta en lo vendido; ";
+        if (d.CajaId is { } caja)
+            return cancelado + $"lo devuelto y las cancelaciones son los de los tickets de {d.Cajas.FirstOrDefault(c => c.Id == caja)?.Nombre ?? "esa caja"} "
+                + "que se hicieron esos días, en esa caja o en otra (también de tickets de antes). Lo devuelto se resta de lo vendido.";
+        return cancelado + "lo devuelto y las cancelaciones son los que se hicieron esos días (también de tickets de antes), como en el corte del día "
+            + "y en los reportes. Lo devuelto se resta de lo vendido.";
+    }
+
     /// <summary>Cómo se pagó un ticket: «Efectivo», «Efectivo y tarjeta», «Tarjeta, transferencia y crédito».</summary>
     public static string FormasDePago(IReadOnlyList<FormaPago> formas)
     {

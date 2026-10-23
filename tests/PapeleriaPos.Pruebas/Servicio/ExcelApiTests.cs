@@ -262,7 +262,8 @@ public sealed class ExcelApiTests(ServicioDePrueba servicio) : IClassFixture<Ser
 
         // Todos los tickets, con lo de la pantalla: folio, fecha y hora, caja, cajero, forma de pago y total.
         var (titulos, tickets) = Tabla(hoja);
-        Assert.Equal(["Folio", "Fecha y hora", "Caja", "Cajero", "Forma de pago", "Total", "Cancelada o devuelta", "Devuelto"], titulos);
+        Assert.Equal(["Folio", "Fecha y hora", "Caja", "Cajero", "Forma de pago", "Total", "Cuenta en lo vendido", "Cancelada o devuelta",
+            "Devuelto (cualquier día)"], titulos);
         Assert.Equal(pagina.Ventas.Select(v => v.Folio), tickets.Select(t => t["Folio"].GetText()));
         var conTarjeta = tickets.Single(t => t["Folio"].GetText() == vendidos[1].Folio);
         Assert.Equal(("Tarjeta", "Caja 1", "Cajero de prueba", 25m), (conTarjeta["Forma de pago"].GetText(), conTarjeta["Caja"].GetText(),
@@ -275,12 +276,16 @@ public sealed class ExcelApiTests(ServicioDePrueba servicio) : IClassFixture<Ser
         Assert.Equal(pagina.Totales.VendidoCentavos / 100m, (decimal)totales["Vendido"].GetNumber());
         Assert.Equal(pagina.Totales.VentaCentavos / 100m, (decimal)totales["Venta neta"].GetNumber());
         Assert.Equal(pagina.Totales.Tickets, totales["Tickets cobrados"].GetNumber());
+        // «Cuenta en lo vendido» (los cancelados, en cero) suma lo vendido de abajo, con una autosuma (revisión del PR #134).
+        Assert.Equal((decimal)totales["Vendido"].GetNumber(), tickets.Sum(t => (decimal)t["Cuenta en lo vendido"].GetNumber()));
 
-        // Cada día del periodo (también el que no tuvo nada) y el total.
+        // Del primer día con algo al último (los de antes, sin nada, no van: revisión del PR #134), y el total.
         var (columnas, porDia) = Tabla(libro.Worksheet("Por día"));
         Assert.Equal(["Día", "Tickets", "Vendido", "Efectivo", "Tarjeta", "Devoluciones", "Devuelto", "Venta neta", "Cancelaciones", "Cancelado"], columnas);
-        Assert.Equal([Hoy.AddDays(-1).ToDateTime(TimeOnly.MinValue), Hoy.ToDateTime(TimeOnly.MinValue)], porDia.Select(d => d["Día"].GetDateTime()));
-        var deHoy = porDia[1];
+        var conAlgo = pagina.Dias.Select(d => d.Fecha!.Value).ToList();
+        Assert.Equal(Enumerable.Range(0, conAlgo.Max().DayNumber - conAlgo.Min().DayNumber + 1).Select(n => conAlgo.Min().AddDays(n).ToDateTime(TimeOnly.MinValue)),
+            porDia.Select(d => d["Día"].GetDateTime()));
+        var deHoy = porDia.Single(d => d["Día"].GetDateTime() == Hoy.ToDateTime(TimeOnly.MinValue));
         Assert.Equal(pagina.Dias.Single(d => d.Fecha == Hoy).VendidoCentavos / 100m, (decimal)deHoy["Vendido"].GetNumber());
         Assert.Equal((decimal)deHoy["Vendido"].GetNumber(), (decimal)deHoy["Efectivo"].GetNumber() + (decimal)deHoy["Tarjeta"].GetNumber());
 

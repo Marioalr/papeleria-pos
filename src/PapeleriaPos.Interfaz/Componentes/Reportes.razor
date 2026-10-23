@@ -305,8 +305,13 @@ else
         return Task.CompletedTask;
     }
 
-    /// <summary>El Excel de lo que se ve: el periodo de arriba, con lo que puede ver quien entró.</summary>
-    private Task<ArchivoPorGuardar> ExcelAsync() => Cliente.ExcelReporteVentasAsync(Caja.Id, Sesion.UsuarioId, Estado.Periodo, Estado.Fecha);
+    /// <summary>
+    /// El Excel de lo que se ve: el periodo del reporte que se cargó (con su primer día, no «hoy»: pasada la medianoche, el de la
+    /// caja principal ya sería otro; revisión del PR #134), con lo que puede ver quien entró.
+    /// </summary>
+    private Task<ArchivoPorGuardar> ExcelAsync() => _reporte is { } r
+        ? Cliente.ExcelReporteVentasAsync(Caja.Id, Sesion.UsuarioId, r.Periodo, r.Desde)
+        : Cliente.ExcelReporteVentasAsync(Caja.Id, Sesion.UsuarioId, Estado.Periodo, Estado.Fecha);
 
     private async Task CargarAsync()
     {

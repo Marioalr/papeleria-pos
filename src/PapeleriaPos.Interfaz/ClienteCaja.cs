@@ -107,11 +107,17 @@ public sealed class ConexionCaja
 /// ventana de Windows), si la caja principal no contesta, lo que se puede hacer sin ella se hace con la copia local y
 /// queda en la bandeja; lo demás espera a que vuelva la conexión.
 /// </summary>
-public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Contingencia? contingencia = null)
+/// <param name="descargas">
+/// Para bajar los archivos que arma la caja principal (el Excel de un reporte), con su propio tope (<see cref="RedCaja.TopeDescargas"/>);
+/// sin él, el mismo de lo demás.
+/// </param>
+public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Contingencia? contingencia = null, HttpClient? descargas = null)
 {
     public const string EncabezadoLlave = "X-Caja-Llave";
 
     private readonly Transporte _http = new(http, conexion);
+
+    private readonly Transporte _archivos = new(descargas ?? http, conexion);
 
     public Task<List<CajaDto>> CajasAsync() =>
         ConRespaldoAsync(async () => (await _http.GetAsync<List<CajaDto>>("api/cajas"))!, l => l.Cajas());
@@ -665,6 +671,9 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
     /// <summary>Lo que dice la caja si no puede pedir un Excel: lo arma la caja principal.</summary>
     public const string ExcelSinConexion = "Sin conexión con la caja principal: ella arma el Excel; se puede exportar cuando vuelva.";
 
+    /// <summary>Lo que dice si la caja principal contestó que sí pero no terminó a tiempo (muchos días de tickets).</summary>
+    public const string ExcelTarda = "La caja principal sigue armando el Excel y tarda más de lo normal: vuelve a intentarlo en un momento, o con menos días.";
+
     /// <summary>El reporte de ventas que se ve, en Excel: una hoja por tabla.</summary>
     public Task<ArchivoPorGuardar> ExcelReporteVentasAsync(Guid cajaId, Guid usuarioId, PeriodoReporte periodo, DateOnly? fecha = null) =>
         ArchivoDeLaPrincipalAsync($"api/cajas/{cajaId}/reportes/ventas/excel?usuarioId={usuarioId}&periodo={periodo}"
@@ -695,14 +704,22 @@ public sealed class ClienteCaja(HttpClient http, ConexionCaja conexion, Continge
         ArchivoDeLaPrincipalAsync($"api/sucursales/{sucursalId}/inventario/valor/excel?usuarioId={usuarioId}&filtro={filtro}"
             + (departamentoId is { } d ? $"&departamentoId={d}" : ""));
 
-    /// <summary>Un archivo que arma la caja principal: sin ella, lo dice sin esperar.</summary>
+    /// <summary>
+    /// Un archivo que arma la caja principal: sin ella, lo dice sin esperar. Con su propio tope (<see cref="RedCaja.TopeDescargas"/>):
+    /// si se le acaba, la caja principal sigue armándolo, no se fue, y la caja no pasa a sin conexión por eso (revisión del PR
+    /// #134; si de verdad se fue, el latido lo nota).
+    /// </summary>
     private async Task<ArchivoPorGuardar> ArchivoDeLaPrincipalAsync(string url)
     {
         if (contingencia is { ServidorResponde: false })
             throw new ErrorCaja(ExcelSinConexion, "sin-conexion");
         try
         {
-            return await _http.GetArchivoAsync(url);
+            return await _archivos.GetArchivoAsync(url);
+        }
+        catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion" && ex.PorPlazo && contingencia is not { ServidorResponde: false })
+        {
+            throw new ErrorCaja(ExcelTarda, "plazo") { PorPlazo = true };
         }
         catch (ErrorCaja ex) when (ex.Codigo == "sin-conexion")
         {

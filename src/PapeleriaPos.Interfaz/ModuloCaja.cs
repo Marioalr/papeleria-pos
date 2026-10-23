@@ -194,7 +194,7 @@ public static class RegistroInterfaz
             contingencia.Iniciar();
         }
         servicios.AddSingleton(conexion);
-        servicios.AddScoped(_ => new ClienteCaja(redCaja.Interactivo, conexion, contingencia)
+        servicios.AddScoped(_ => new ClienteCaja(redCaja.Interactivo, conexion, contingencia, redCaja.Descargas)
         {
             PlazoLectura = Transporte.PlazoLectura,
             PlazoEscritura = Transporte.PlazoEscritura,

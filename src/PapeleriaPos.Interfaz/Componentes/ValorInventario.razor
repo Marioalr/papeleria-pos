@@ -182,8 +182,11 @@ else
         await CargarAsync();
     }
 
+    /// <summary>Otra página, si la hay después de la que se pidió (no de la que ya llegó): dos clics seguidos no pasan de la última.</summary>
     private Task SiguientesAsync()
     {
+        if (_valor is not { } v || !Paginador.HaySiguiente(v.TotalProductos, _pagina, v.Tamano))
+            return Task.CompletedTask;
         _pagina++;
         return CargarAsync();
     }

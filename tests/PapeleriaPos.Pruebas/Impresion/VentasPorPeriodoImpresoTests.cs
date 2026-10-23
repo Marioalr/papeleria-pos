@@ -91,6 +91,63 @@ public sealed class VentasPorPeriodoImpresoTests
         Assert.Contains("Nada cobrado en esos días.", seguido);
     }
 
+    /// <summary>De una caja no es lo del corte del día: lo devuelto y lo cancelado son de sus tickets (revisión del PR #134).</summary>
+    [Fact]
+    public void De_una_caja_dice_que_lo_devuelto_y_lo_cancelado_son_de_sus_tickets()
+    {
+        const string nota = "Lo devuelto y lo cancelado son de los tickets de esta caja, en esta caja o en otra.";
+        Assert.Contains(nota, Imprimir(Periodo(), "Caja 2").Seguido);
+        Assert.DoesNotContain(nota, Imprimir(Periodo()).Seguido);
+        Assert.DoesNotContain(nota, Imprimir(Periodo(piloto: true), "Caja 2").Seguido);
+    }
+
+    /// <summary>Unos días seguidos, cada uno con dos tickets de $5 en efectivo.</summary>
+    private static VentasPorPeriodoDto CadaDia(DateOnly desde, DateOnly hasta)
+    {
+        var dias = Enumerable.Range(0, hasta.DayNumber - desde.DayNumber + 1)
+            .Select(n => new ResumenDeVentasDto(desde.AddDays(n), 2, 1000, 0, 0, 0, 0, [Forma(FormaPago.Efectivo, 1000)])).ToList();
+        var totales = new ResumenDeVentasDto(null, dias.Sum(x => x.Tickets), dias.Sum(x => x.VendidoCentavos), 0, 0, 0, 0,
+            [Forma(FormaPago.Efectivo, dias.Sum(x => x.VendidoCentavos))]);
+        return new VentasPorPeriodoDto(desde, hasta, hasta, null, [], [], totales.Tickets, 0, 100, totales, dias, 0, 0, false);
+    }
+
+    /// <summary>
+    /// Un año día por día eran metros de papel (revisión del PR #134): hasta 31 días va cada día; hasta tres meses, cada semana (de
+    /// lunes a domingo, solo los días que se pidieron); más, cada mes.
+    /// </summary>
+    [Fact]
+    public void Mas_de_un_mes_va_por_semana_y_mas_de_tres_meses_por_mes()
+    {
+        // 31 días: todavía día por día.
+        var (unMes, _) = Imprimir(CadaDia(new DateOnly(2026, 9, 21), new DateOnly(2026, 10, 21)));
+        Assert.Contains("POR DÍA", unMes);
+
+        // Del sábado 12 de septiembre al miércoles 21 de octubre (40 días): siete semanas, la primera y la última cortadas.
+        var (porSemana, semanas) = Imprimir(CadaDia(new DateOnly(2026, 9, 12), new DateOnly(2026, 10, 21)));
+        Assert.Contains("POR SEMANA", porSemana);
+        Assert.DoesNotContain("POR DÍA", porSemana);
+        Assert.Contains(semanas, r => Columnas(r, "Semana", "Tickets", "Vendido"));
+        Assert.Contains(semanas, r => Columnas(r, "12/09 al 13/09", "4", "$20.00"));
+        Assert.Contains(semanas, r => Columnas(r, "14/09 al 20/09", "14", "$70.00"));
+        Assert.Contains(semanas, r => Columnas(r, "19/10 al 21/10", "6", "$30.00"));
+        Assert.Equal(7, semanas.Count(r => Regex.IsMatch(r.Trim(), @"^\d\d/\d\d al \d\d/\d\d ")));
+        Assert.Contains(semanas, r => Columnas(r, "Vendido", "$400.00"));
+
+        // De enero al 21 de octubre: diez meses.
+        var (porMes, meses) = Imprimir(CadaDia(new DateOnly(2026, 1, 1), new DateOnly(2026, 10, 21)));
+        Assert.Contains("POR MES", porMes);
+        Assert.Contains(meses, r => Columnas(r, "Mes", "Tickets", "Vendido"));
+        Assert.Contains(meses, r => Columnas(r, "ene 2026", "62", "$310.00"));
+        Assert.Contains(meses, r => Columnas(r, "feb 2026", "56", "$280.00"));
+        Assert.Contains(meses, r => Columnas(r, "oct 2026", "42", "$210.00"));
+        Assert.Equal(10, meses.Count(r => Regex.IsMatch(r.Trim(), @"^[a-z]{3} 2026 ")));
+
+        // Tres años (lo más que se puede pedir), por mes: unos 37 renglones de meses, no más de mil de días.
+        var (_, tresAnios) = Imprimir(CadaDia(new DateOnly(2023, 10, 22), new DateOnly(2026, 10, 21)));
+        Assert.Equal(37, tresAnios.Count(r => Regex.IsMatch(r.Trim(), @"^[a-z]{3} 20\d\d ")));
+        Assert.True(tresAnios.Length < 80, $"Son {tresAnios.Length} renglones.");
+    }
+
     [Fact]
     public async Task Sale_por_la_cola_de_la_impresora_de_tickets()
     {

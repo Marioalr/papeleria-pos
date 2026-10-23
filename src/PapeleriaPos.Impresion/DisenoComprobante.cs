@@ -263,6 +263,10 @@ public static class DisenoComprobante
     /// devuelto y las formas de pago que no son efectivo, si las hubo), las formas de pago de todo el periodo y los totales, como en
     /// la pantalla: lo vendido, lo devuelto, la venta neta y las cancelaciones de esos días (como en el corte del día: el ticket
     /// cancelado ya no está en lo vendido).
+    /// <para>
+    /// Hasta <see cref="DiasPorDia"/> días va cada día; hasta <see cref="DiasPorSemana"/>, cada semana; más, cada mes (revisión del
+    /// PR #134: un año día por día eran metros de papel). Así nunca pasa de unos 40 renglones de periodos.
+    /// </para>
     /// </summary>
     /// <param name="caja">La caja que se eligió; vacía: todas.</param>
     /// <param name="impresoPor">Quien lo imprime.</param>
@@ -276,11 +280,13 @@ public static class DisenoComprobante
             new Renglon(d.Desde == d.Hasta
                 ? d.Desde.ToString("dddd dd/MM/yyyy", Mexico)
                 : $"Del {d.Desde.ToString("dd/MM/yyyy", Mexico)} al {d.Hasta.ToString("dd/MM/yyyy", Mexico)}", Alineacion.Centro),
-            // En el piloto, aquí solo está lo de la caja 2: lo de las demás cajas está en eleventa.
-            new Renglon(d.Piloto ? "Solo esta caja (lo demás, en eleventa)" : caja ?? "Todas las cajas", Alineacion.Centro),
-            new Renglon(new string('-', DisenoTicket.Columnas)),
-            new Renglon($"Impreso: {impresoLocal.ToString("dd/MM/yyyy  HH:mm", Mexico)}"),
         };
+        // De qué caja (un nombre largo, en varios renglones: el papel es de 48 columnas). En el piloto, aquí solo está lo de la caja
+        // 2: lo de las demás cajas está en eleventa.
+        foreach (var parte in DisenoTicket.Partir(d.Piloto ? "Solo esta caja (lo demás, en eleventa)" : caja ?? "Todas las cajas", DisenoTicket.Columnas))
+            e.Add(new Renglon(parte, Alineacion.Centro));
+        e.Add(new Renglon(new string('-', DisenoTicket.Columnas)));
+        e.Add(new Renglon($"Impreso: {impresoLocal.ToString("dd/MM/yyyy  HH:mm", Mexico)}"));
         void Texto(string texto, bool negrita = false)
         {
             foreach (var parte in DisenoTicket.Partir(texto, DisenoTicket.Columnas))
@@ -297,22 +303,21 @@ public static class DisenoComprobante
         }
         Texto($"Lo imprimió: {impresoPor}");
 
-        Seccion("POR DÍA");
-        if (d.Dias.Count == 0)
+        var (seccion, encabezado, periodos) = Periodos(d);
+        Seccion(seccion);
+        if (periodos.Count == 0)
             e.Add(new Renglon("No hubo ventas en esos días."));
         else
-            Linea($"{"Día",-21}{"Tickets",7}", "Vendido");
-        foreach (var dia in d.Dias)
+            Linea($"{encabezado,-21}{"Tickets",7}", "Vendido");
+        foreach (var (nombre, periodo) in periodos)
         {
-            var fecha = dia.Fecha!.Value;
-            var nombre = $"{DiasCortos[(int)fecha.DayOfWeek]} {fecha.ToString("dd/MM", Mexico)}";
-            Linea($"{nombre,-21}{dia.Tickets.ToString("N0", Mexico),7}", DisenoTicket.Dinero(dia.VendidoCentavos));
+            Linea($"{nombre,-21}{periodo.Tickets.ToString("N0", Mexico),7}", DisenoTicket.Dinero(periodo.VendidoCentavos));
             // Las formas, solo si no fue todo en efectivo (casi siempre lo es).
-            if (dia.Formas.Any(f => f.Forma != Nucleo.Ventas.FormaPago.Efectivo))
-                foreach (var forma in dia.Formas)
+            if (periodo.Formas.Any(f => f.Forma != Nucleo.Ventas.FormaPago.Efectivo))
+                foreach (var forma in periodo.Formas)
                     Dinero($"  {NombreForma(forma.Forma)}", forma.Centavos);
-            if (dia.Devoluciones > 0)
-                Dinero($"  Devuelto ({dia.Devoluciones})", -dia.DevueltoCentavos);
+            if (periodo.Devoluciones > 0)
+                Dinero($"  Devuelto ({periodo.Devoluciones})", -periodo.DevueltoCentavos);
         }
 
         var t = d.Totales;
@@ -334,7 +339,51 @@ public static class DisenoComprobante
             Dinero($"Cancelaciones ({t.Cancelados})", t.CanceladosCentavos);
             Texto("El ticket cancelado ya no cuenta en lo vendido.");
         }
+        // De una caja, lo devuelto y lo cancelado son de sus tickets, se hayan hecho en ella o en otra: no es lo del corte del día
+        // (revisión del PR #134).
+        if (caja is not null && !d.Piloto && (t.Devoluciones > 0 || t.Cancelados > 0))
+            Texto("Lo devuelto y lo cancelado son de los tickets de esta caja, en esta caja o en otra.");
         return e;
+    }
+
+    /// <summary>Hasta cuántos días el resumen impreso va día por día.</summary>
+    public const int DiasPorDia = 31;
+
+    /// <summary>Hasta cuántos días va por semana (unas trece semanas); más, por mes.</summary>
+    public const int DiasPorSemana = 92;
+
+    private static readonly string[] MesesCortos = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+    /// <summary>
+    /// Los renglones de lo de cada periodo: cada día, cada semana (de lunes a domingo, solo los días que se pidieron: «19/10 al
+    /// 25/10») o cada mes («oct 2026»), según cuántos días son.
+    /// </summary>
+    private static (string Seccion, string Encabezado, List<(string Nombre, ResumenDeVentasDto Periodo)> Periodos) Periodos(VentasPorPeriodoDto d)
+    {
+        var dias = d.Dias.Where(x => x.Fecha is not null).ToList();
+        var largo = d.Hasta.DayNumber - d.Desde.DayNumber + 1;
+        if (largo <= DiasPorDia)
+            return ("POR DÍA", "Día",
+                dias.Select(x => ($"{DiasCortos[(int)x.Fecha!.Value.DayOfWeek]} {x.Fecha.Value.ToString("dd/MM", Mexico)}", x)).ToList());
+        if (largo <= DiasPorSemana)
+            return ("POR SEMANA", "Semana", dias.GroupBy(x => Nucleo.Reportes.PeriodoDeReporte.Lunes(x.Fecha!.Value)).OrderBy(g => g.Key)
+                .Select(g =>
+                {
+                    var (desde, hasta) = (g.Key < d.Desde ? d.Desde : g.Key, g.Key.AddDays(6) > d.Hasta ? d.Hasta : g.Key.AddDays(6));
+                    return ($"{desde.ToString("dd/MM", Mexico)} al {hasta.ToString("dd/MM", Mexico)}", Sumar(g));
+                }).ToList());
+        return ("POR MES", "Mes", dias.GroupBy(x => (x.Fecha!.Value.Year, x.Fecha.Value.Month)).OrderBy(g => g.Key)
+            .Select(g => ($"{MesesCortos[g.Key.Month - 1]} {g.Key.Year}", Sumar(g))).ToList());
+    }
+
+    /// <summary>Lo de varios días juntos (una semana, un mes).</summary>
+    private static ResumenDeVentasDto Sumar(IEnumerable<ResumenDeVentasDto> dias)
+    {
+        var lista = dias.ToList();
+        return new ResumenDeVentasDto(null, lista.Sum(x => x.Tickets), lista.Sum(x => x.VendidoCentavos), lista.Sum(x => x.Devoluciones),
+            lista.Sum(x => x.DevueltoCentavos), lista.Sum(x => x.Cancelados), lista.Sum(x => x.CanceladosCentavos),
+            lista.SelectMany(x => x.Formas).GroupBy(f => f.Forma).OrderBy(g => g.Key)
+                .Select(g => new FormaPagoReporteDto(g.Key, g.Sum(f => f.Centavos))).Where(f => f.Centavos != 0).ToList());
     }
 
     /// <summary>Lo que no cabe en su lugar se corta (los nombres van completos en la pantalla y en el Excel).</summary>

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using PapeleriaPos.Nucleo;
 using PapeleriaPos.Nucleo.Contratos;
 using PapeleriaPos.Nucleo.Control;
+using PapeleriaPos.Nucleo.Reportes;
 using PapeleriaPos.Nucleo.Ventas;
 
 namespace PapeleriaPos.Datos;
@@ -46,10 +47,16 @@ public sealed class ReporteVentasPorPeriodo(PosDbContext db)
 
     public const string AlReves = "El primer día va antes que el último.";
 
+    public const string AntesDelPrimerDia = "El primer día es de antes de 2000: revisa el año.";
+
+    public const string MasDeTresAnios = "Son más de tres años: elige hasta tres años a la vez.";
+
     /// <summary>
     /// Una página de los tickets de <paramref name="desde"/> a <paramref name="hasta"/> (vacíos: hoy; el último, si pasa de hoy,
     /// llega hasta hoy) de <paramref name="deCaja"/> (vacía: todas), con los totales de todos esos días, vista desde
-    /// <paramref name="cajaId"/> por <paramref name="usuarioId"/>, quien entró a esa caja.
+    /// <paramref name="cajaId"/> por <paramref name="usuarioId"/>, quien entró a esa caja. Desde <see cref="DiasDeVentas.PrimerDia"/>
+    /// y hasta <see cref="DiasDeVentas.AniosMaximos"/> años a la vez: si no, lo dice (<see cref="AntesDelPrimerDia"/>,
+    /// <see cref="MasDeTresAnios"/>).
     /// </summary>
     /// <param name="piloto">El piloto con eleventa: sin el historial de eleventa, que es de toda la tienda.</param>
     public Task<VentasPorPeriodoDto> ArmarAsync(
@@ -85,6 +92,11 @@ public sealed class ReporteVentasPorPeriodo(PosDbContext db)
             throw new ArgumentException(AlReves);
         if (ultimo > hoy)
             ultimo = hoy;
+        // Un año mal escrito («26») pedía siglos de días (revisión del PR #134): desde 2000, y hasta tres años a la vez.
+        if (primero < DiasDeVentas.PrimerDia)
+            throw new ArgumentException(AntesDelPrimerDia);
+        if (ultimo > DiasDeVentas.UltimoQueCabe(primero))
+            throw new ArgumentException(MasDeTresAnios);
         var cajas = await VentasDeOtrosDias.CajasDeAsync(db, sucursal, ct);
         if (deCaja is { } elegida && cajas.All(c => c.Id != elegida))
             throw new ArgumentException("Esa caja no es de esta tienda.");

@@ -162,6 +162,12 @@ public sealed class VentasPorPeriodoVistas
 
     public DateOnly? Hasta { get; set; }
 
+    /// <summary>
+    /// El largo de esas fechas (un mes, una semana o tantos días), el que se eligió: ← → van a los de antes o de después de ese
+    /// largo, aunque las fechas estén cortadas en hoy (revisión del PR #134).
+    /// </summary>
+    public LargoDeVentas? Largo { get; set; }
+
     /// <summary>La caja; vacía: todas.</summary>
     public Guid? CajaId { get; set; }
 

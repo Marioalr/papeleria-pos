@@ -1,5 +1,6 @@
 using System.Text;
 using ClosedXML.Excel;
+using Microsoft.AspNetCore.Components;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.JSInterop;
@@ -27,24 +28,28 @@ namespace PapeleriaPos.Pruebas.Interfaz;
 /// </summary>
 public sealed class ExcelYVentasPorPeriodoTests(ServicioDePrueba servicio) : IClassFixture<ServicioDePrueba>
 {
-    private sealed record Caja(ClienteCaja Cliente, CajaDto Datos, ServiceProvider Servicios, GuardadoDePrueba Guardado, SesionDto Encargado, SesionDto Dueno);
+    private sealed record Caja(
+        ClienteCaja Cliente, CajaDto Datos, ServiceProvider Servicios, GuardadoDePrueba Guardado, SesionDto Encargado, SesionDto Dueno, PaginaQueContesta Pagina);
 
-    private static async Task<Caja> PrepararAsync(ServicioDePrueba servicio, IImpresora? impresora = null)
+    /// <param name="envolver">Lo que se pone entre la caja y el servicio (una red lenta, lo que anota lo que se pidió).</param>
+    private static async Task<Caja> PrepararAsync(ServicioDePrueba servicio, IImpresora? impresora = null, Func<HttpMessageHandler, HttpMessageHandler>? envolver = null)
     {
         var conexion = new ConexionCaja { Servicio = new Uri("http://localhost:5080/") };
-        var cliente = new ClienteCaja(new HttpClient(servicio.Fabrica.Server.CreateHandler()), conexion);
+        var manejador = servicio.Fabrica.Server.CreateHandler();
+        var cliente = new ClienteCaja(new HttpClient(envolver is null ? manejador : envolver(manejador)), conexion);
         var caja = (await cliente.CajasAsync()).Single();
         conexion.CajaId = caja.Id;
         var guardado = new GuardadoDePrueba();
+        var pagina = new PaginaQueContesta();
         var servicios = new ServiceCollection()
             .AddSingleton(conexion)
             .AddSingleton(cliente)
             .AddSingleton(impresora ?? new SinImpresora())
             .AddSingleton<IGuardarArchivo>(guardado)
-            .AddSingleton<IJSRuntime>(new PaginaQueContesta())
+            .AddSingleton<IJSRuntime>(pagina)
             .AddScoped<ModuloCaja>()
             .BuildServiceProvider();
-        return new Caja(cliente, caja, servicios, guardado, await cliente.EntrarAsync("encargado", "2222"), await cliente.EntrarAsync("dueno", "3333"));
+        return new Caja(cliente, caja, servicios, guardado, await cliente.EntrarAsync("encargado", "2222"), await cliente.EntrarAsync("dueno", "3333"), pagina);
     }
 
     private static DateOnly Hoy => DateOnly.FromDateTime(HoraMexico.ALocal(DateTime.UtcNow));
@@ -354,5 +359,133 @@ public sealed class ExcelYVentasPorPeriodoTests(ServicioDePrueba servicio) : ICl
             Assert.Equal(["Pantalla excel de prueba"], bajos.Worksheet("Bajos en inventario").Tables.Single().DataRange.Rows().Select(r => r.Field("Producto").GetString()));
         using (var valor = Abrir(c.Guardado.Guardados[2]))
             Assert.Equal(["Por departamento", "Productos"], valor.Worksheets.Select(h => h.Name));
+    }
+
+    // ── Lo que encontró la revisión del PR #134 ──
+
+    /// <summary>Lo que la caja le pide al servicio, en orden; y, si se le dice, una espera antes de «Ventas por período».</summary>
+    private sealed class RedQueAnota(HttpMessageHandler interno) : DelegatingHandler(interno)
+    {
+        private readonly List<string> _pedidos = [];
+
+        public TimeSpan EsperaPorPeriodo { get; set; }
+
+        public IReadOnlyList<string> Pedidos
+        {
+            get
+            {
+                lock (_pedidos)
+                    return [.. _pedidos];
+            }
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            lock (_pedidos)
+                _pedidos.Add(request.RequestUri!.PathAndQuery);
+            if (EsperaPorPeriodo > TimeSpan.Zero && request.RequestUri.AbsolutePath.EndsWith("/ventas-por-periodo", StringComparison.Ordinal))
+                await Task.Delay(EsperaPorPeriodo, cancellationToken);
+            return await base.SendAsync(request, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// El Excel es del reporte que se ve: lleva su primer día, no «hoy» (pasada la medianoche, el de la caja principal ya sería
+    /// otro periodo); y al terminar, el cursor vuelve al botón (mientras trabajaba estaba apagado y el navegador soltó el foco).
+    /// </summary>
+    [Fact]
+    public async Task El_excel_es_del_periodo_que_se_ve_y_el_cursor_vuelve_al_boton()
+    {
+        RedQueAnota? red = null;
+        var c = await PrepararAsync(servicio, envolver: m => red = new RedQueAnota(m));
+        await VenderAsync(c, 4500);
+        var (p, _) = await ReportesAsync(c, c.Dueno, new ReportesVistos { Periodo = PeriodoReporte.Semana });
+        await using var __ = p;
+
+        await p.OprimirAsync(await p.PorIdAsync("rep-excel"));
+        await EsperarTextoAsync(p, "rep-excel-estado", t => t.StartsWith("Se guardó en", StringComparison.Ordinal), "dónde se guardó");
+
+        Assert.Contains(red!.Pedidos, x => x.Contains("/reportes/ventas/excel?", StringComparison.Ordinal) && x.Contains("periodo=Semana", StringComparison.Ordinal)
+            && x.Contains($"fecha={Iso(PeriodoDeReporte.Lunes(Hoy))}", StringComparison.Ordinal));
+        await p.EsperarAsync(_ => c.Pagina.Llamadas.Any(l => l.Funcion == "enfocar" && Equals(l.Argumentos?[0], "#rep-excel")), "el cursor en el botón");
+        Assert.Empty(p.Errores);
+    }
+
+    /// <summary>
+    /// Av Pág dos veces seguidas cerca del final (la tecla sostenida) mientras la caja principal contesta: se queda en la última,
+    /// no regresa a la primera; y una página recordada que ya no existe lleva a la última. Con su propio servicio: llena tres
+    /// páginas de tickets de hoy.
+    /// </summary>
+    [Fact]
+    public async Task Av_pag_sostenida_no_pasa_de_la_ultima_pagina()
+    {
+        await using var propio = await ServicioDePrueba.CrearAsync();
+        RedQueAnota? red = null;
+        var c = await PrepararAsync(propio, envolver: m => red = new RedQueAnota(m));
+        for (var i = (await c.Cliente.VentasPorPeriodoAsync(c.Datos.Id, c.Dueno.UsuarioId, null, null, null)).Total; i < 201; i++)
+            await VenderAsync(c, 1000);
+        var hoy = await c.Cliente.VentasPorPeriodoAsync(c.Datos.Id, c.Dueno.UsuarioId, null, null, null);
+        var ultima = (hoy.Total - 1) / hoy.Tamano;
+        Assert.True(ultima >= 2);
+
+        var estado = new ReportesVistos { PorPeriodo = { Abierta = true, Pagina = ultima - 1 } };
+        var (p, _) = await ReportesAsync(c, c.Dueno, estado);
+        await using (p)
+        {
+            await EsperarTextoAsync(p, "vpp-totales", _ => true, "la penúltima página");
+            Assert.Equal(ultima - 1, estado.PorPeriodo.Pagina);
+
+            red!.EsperaPorPeriodo = TimeSpan.FromMilliseconds(400);
+            await Task.WhenAll(p.TeclaAsync("ventas-periodo", "PageDown"), p.TeclaAsync("ventas-periodo", "PageDown"));
+            red.EsperaPorPeriodo = TimeSpan.Zero;
+
+            await EsperarTextoAsync(p, "vpp-totales", _ => true, "la última página");
+            Assert.Equal(ultima, estado.PorPeriodo.Pagina);
+            Assert.Contains($"de {Formato.Numero(hoy.Total)} tickets", await p.TextoAsync());
+            Assert.Contains($"{Formato.Numero(ultima * hoy.Tamano + 1)}–{Formato.Numero(hoy.Total)}", await p.TextoAsync());
+            Assert.Empty(p.Errores);
+        }
+
+        // Una página recordada que ya no existe (la de otro día, con más tickets): la última, no la primera.
+        var recordada = new ReportesVistos { PorPeriodo = { Abierta = true, Pagina = 50 } };
+        var (otra, _) = await ReportesAsync(c, c.Dueno, recordada);
+        await using (otra)
+        {
+            await EsperarTextoAsync(otra, "vpp-totales", _ => true, "la última página");
+            Assert.Equal(ultima, recordada.PorPeriodo.Pagina);
+            Assert.Empty(otra.Errores);
+        }
+    }
+
+    /// <summary>
+    /// Un año mal escrito («26» en «Del») ya no pide siglos de días: los campos tienen su mínimo (2000), lo escrito se queda en
+    /// 2000 y en tres años, y ← no truena. Unos días escritos, cortados en hoy con →, regresan con ← a su mismo largo.
+    /// </summary>
+    [Fact]
+    public async Task Las_fechas_escritas_van_de_2000_a_hoy_y_las_flechas_guardan_su_largo()
+    {
+        var c = await PrepararAsync(servicio);
+        var (p, _) = await ReportesAsync(c, c.Dueno, new ReportesVistos { PorPeriodo = { Abierta = true } });
+        await using var __ = p;
+        Assert.Equal("2000-01-01", (await p.PorIdAsync("vpp-desde")).Atributos["min"]);
+        Assert.Equal("2000-01-01", (await p.PorIdAsync("vpp-hasta")).Atributos["min"]);
+
+        await p.DispararAsync(await p.PorIdAsync("vpp-desde"), "onchange", new ChangeEventArgs { Value = "0026-10-01" });
+        var tresAnios = TextosDeReportes.Periodo(new DateOnly(2000, 1, 1), new DateOnly(2002, 12, 31), Hoy);
+        await EsperarTextoAsync(p, "vpp-titulo", t => t == tresAnios, "de 2000, tres años");
+        await p.TeclaAsync("ventas-periodo", "ArrowLeft");
+        Assert.Equal(tresAnios, await TextoDeAsync(p, "vpp-titulo"));
+        Assert.DoesNotContain(ReporteVentasPorPeriodo.AntesDelPrimerDia, await p.TextoAsync());
+        Assert.DoesNotContain(ReporteVentasPorPeriodo.MasDeTresAnios, await p.TextoAsync());
+
+        // Del Hoy−10 al Hoy−5 (seis días): → los corta en hoy (del Hoy−4 a hoy) y ← regresa a los mismos seis, no a cinco.
+        await p.DispararAsync(await p.PorIdAsync("vpp-hasta"), "onchange", new ChangeEventArgs { Value = Iso(Hoy.AddDays(-5)) });
+        await p.DispararAsync(await p.PorIdAsync("vpp-desde"), "onchange", new ChangeEventArgs { Value = Iso(Hoy.AddDays(-10)) });
+        await EsperarTextoAsync(p, "vpp-titulo", t => t == TextosDeReportes.Periodo(Hoy.AddDays(-10), Hoy.AddDays(-5), Hoy), "los seis días");
+        await p.TeclaAsync("ventas-periodo", "ArrowRight");
+        await EsperarTextoAsync(p, "vpp-titulo", t => t == TextosDeReportes.Periodo(Hoy.AddDays(-4), Hoy, Hoy), "cortados en hoy");
+        await p.TeclaAsync("ventas-periodo", "ArrowLeft");
+        await EsperarTextoAsync(p, "vpp-titulo", t => t == TextosDeReportes.Periodo(Hoy.AddDays(-10), Hoy.AddDays(-5), Hoy), "otra vez los seis días");
+        Assert.Empty(p.Errores);
     }
 }

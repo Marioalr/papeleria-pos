@@ -20,34 +20,36 @@ public static class ApiReportes
     public static void MapearApiReportes(this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api").ConErrores().SoloSuCaja();
+        // Cada uno con el CancellationToken de la petición (RequestAborted): si la caja deja de esperar, se deja de leer y de armar el
+        // Excel (revisión del PR #134).
 
         // Hoy, la semana, el mes o el año (sin periodo: hoy) del día pedido (sin fecha: hoy), contra el mismo periodo del año pasado.
         api.MapGet("/cajas/{cajaId:guid}/reportes/ventas", (Guid cajaId, Guid usuarioId, string? periodo, DateOnly? fecha, PosDbContext db,
-            OpcionesEleventa opcionesEleventa) =>
-            new ReportesDeVentas(db).ArmarAsync(cajaId, usuarioId, Periodo(periodo), fecha, opcionesEleventa.Piloto));
+            OpcionesEleventa opcionesEleventa, CancellationToken ct) =>
+            new ReportesDeVentas(db).ArmarAsync(cajaId, usuarioId, Periodo(periodo), fecha, opcionesEleventa.Piloto, ct));
 
         // El mismo reporte en Excel: una hoja por tabla.
         api.MapGet("/cajas/{cajaId:guid}/reportes/ventas/excel", async (Guid cajaId, Guid usuarioId, string? periodo, DateOnly? fecha, PosDbContext db,
-            OpcionesEleventa opcionesEleventa) =>
+            OpcionesEleventa opcionesEleventa, CancellationToken ct) =>
         {
-            var reporte = await new ReportesDeVentas(db).ArmarAsync(cajaId, usuarioId, Periodo(periodo), fecha, opcionesEleventa.Piloto);
-            var quien = await QuienExporta.DeAsync(db, await SucursalDeAsync(db, cajaId), usuarioId);
+            var reporte = await new ReportesDeVentas(db).ArmarAsync(cajaId, usuarioId, Periodo(periodo), fecha, opcionesEleventa.Piloto, ct);
+            var quien = await QuienExporta.DeAsync(db, await SucursalDeAsync(db, cajaId), usuarioId, ct);
             return Excel(ExcelDeReportes.Armar(reporte, quien), ArchivosDeReportes.ReporteDeVentas(reporte.Periodo, reporte.Desde));
         });
 
         // Ventas por período: los tickets de unos días (sin fechas: hoy) de una caja o de todas, de 100 en 100, con sus totales.
         api.MapGet("/cajas/{cajaId:guid}/reportes/ventas-por-periodo", (Guid cajaId, Guid usuarioId, DateOnly? desde, DateOnly? hasta, Guid? caja,
-            int? pagina, PosDbContext db, OpcionesEleventa opcionesEleventa) =>
-            new ReporteVentasPorPeriodo(db).ArmarAsync(cajaId, usuarioId, desde, hasta, caja, pagina ?? 0, opcionesEleventa.Piloto));
+            int? pagina, PosDbContext db, OpcionesEleventa opcionesEleventa, CancellationToken ct) =>
+            new ReporteVentasPorPeriodo(db).ArmarAsync(cajaId, usuarioId, desde, hasta, caja, pagina ?? 0, opcionesEleventa.Piloto, ct));
 
         // Todos los tickets de esos días en Excel, con los totales y cada día.
         api.MapGet("/cajas/{cajaId:guid}/reportes/ventas-por-periodo/excel", async (Guid cajaId, Guid usuarioId, DateOnly? desde, DateOnly? hasta,
-            Guid? caja, PosDbContext db, OpcionesEleventa opcionesEleventa) =>
+            Guid? caja, PosDbContext db, OpcionesEleventa opcionesEleventa, CancellationToken ct) =>
         {
-            var ventas = await new ReporteVentasPorPeriodo(db).TodoAsync(cajaId, usuarioId, desde, hasta, caja, opcionesEleventa.Piloto);
-            var quien = await QuienExporta.DeAsync(db, await SucursalDeAsync(db, cajaId), usuarioId);
+            var ventas = await new ReporteVentasPorPeriodo(db).TodoAsync(cajaId, usuarioId, desde, hasta, caja, opcionesEleventa.Piloto, ct: ct);
+            var quien = await QuienExporta.DeAsync(db, await SucursalDeAsync(db, cajaId), usuarioId, ct);
             var deCaja = caja is { } elegida ? ventas.Cajas.FirstOrDefault(c => c.Id == elegida)?.Nombre : null;
-            return Excel(ExcelDeVentasPorPeriodo.Armar(ventas, quien), ArchivosDeReportes.VentasPorPeriodo(ventas.Desde, ventas.Hasta, deCaja));
+            return Excel(ExcelDeVentasPorPeriodo.Armar(ventas, quien, ct), ArchivosDeReportes.VentasPorPeriodo(ventas.Desde, ventas.Hasta, deCaja));
         });
     }
 
