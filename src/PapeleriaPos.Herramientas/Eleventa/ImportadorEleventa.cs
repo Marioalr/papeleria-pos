@@ -45,6 +45,17 @@ public static class ImportadorEleventa
     public const string AvisoLineaSinCantidad = "Línea con cantidad cero o negativa: no se importó";
     public const string AvisoPrecioCero = "Producto sin precio";
 
+    /// <summary>
+    /// Un ticket cobrado cuyo total no es la suma de sus artículos (una versión vieja de eleventa, o una línea sin cantidad que
+    /// no se importó): la venta neta de los reportes lleva su total, y la diferencia sale aparte, «Sin desglose», en las ventas
+    /// por departamento (revisión del PR #131, 2026-10-22).
+    /// </summary>
+    public const string AvisoTotalSinDesglose =
+        "Ticket cuyo total no es la suma de sus artículos: en los reportes la diferencia sale como «Sin desglose»";
+
+    /// <summary>Cómo empieza el código con que eleventa guarda un artículo común: «COMUN-», un número al azar y un contador.</summary>
+    public const string PrefijoComun = "COMUN-";
+
     private const string ProveedorGenerico = "Sin proveedor (importado de eleventa)";
 
     public static ResultadoImportacion Importar(DatosEleventa e)
@@ -134,6 +145,7 @@ public static class ImportadorEleventa
 
         // Ventas
         var lineasPorTicket = e.Lineas.ToLookup(l => l.TicketId);
+        var esComun = Comunes(e);
         Guid VarianteDe(FilaLinea l)
         {
             var codigo = l.Codigo.Trim();
@@ -155,7 +167,7 @@ public static class ImportadorEleventa
                 continue;
             }
 
-            var venta = Venta(t, lineasPorTicket[t.Id], matriz.Id, VarianteDe, aviso => r.Avisar(aviso));
+            var venta = Venta(t, lineasPorTicket[t.Id], matriz.Id, VarianteDe, esComun, aviso => r.Avisar(aviso));
             r.Ventas.Add(venta);
             Mapear(r, nameof(VentaHistorica), t.Id.ToString(), venta.Id);
         }
@@ -184,13 +196,16 @@ public static class ImportadorEleventa
 
     /// <summary>
     /// Un ticket cobrado de eleventa como venta del historial: su total (eleventa ya le bajó lo devuelto) y, de cada línea, la
-    /// cantidad, el precio, el importe y el costo. Lo mismo para una base nueva que en la importación final
-    /// (<see cref="ImportacionFinal"/>).
+    /// cantidad, el precio, el importe, el costo y si es un artículo común. Lo mismo para una base nueva que en la importación
+    /// final (<see cref="ImportacionFinal"/>). Si el total de un ticket que no se canceló no es la suma de sus líneas, lo avisa
+    /// (<see cref="AvisoTotalSinDesglose"/>).
     /// </summary>
     /// <param name="variante">La variante de cada línea (por su código); no se pide para las líneas sin cantidad.</param>
+    /// <param name="esComun">Si una línea es un artículo común de eleventa (<see cref="Comunes"/>).</param>
     /// <param name="id">El de la venta que reemplaza, si ya estaba en el historial; si no, uno nuevo.</param>
     internal static VentaHistorica Venta(
-        FilaTicket t, IEnumerable<FilaLinea> lineas, Guid sucursalId, Func<FilaLinea, Guid> variante, Action<string> avisar, Guid? id = null)
+        FilaTicket t, IEnumerable<FilaLinea> lineas, Guid sucursalId, Func<FilaLinea, Guid> variante, Func<FilaLinea, bool> esComun, Action<string> avisar,
+        Guid? id = null)
     {
         var venta = new VentaHistorica
         {
@@ -221,9 +236,26 @@ public static class ImportadorEleventa
                 PrecioCentavos = Centavos(l.PrecioFinal),
                 ImporteCentavos = importe,
                 CostoCentavos = importe - Centavos(l.Ganancia * l.Cantidad),
+                EsArticuloComun = esComun(l),
             });
         }
+        if (!venta.Cancelada && venta.TotalCentavos != venta.Lineas.Sum(l => l.ImporteCentavos))
+            avisar(AvisoTotalSinDesglose);
         return venta;
+    }
+
+    /// <summary>
+    /// Si una línea de eleventa es un artículo común: su código empieza con <see cref="PrefijoComun"/> o, con un código que no
+    /// es de ningún producto de eleventa, va en el departamento de los comunes («Productos Comunes»,
+    /// <see cref="EnvioEleventa.DepartamentoComunes"/>). Un producto del catálogo en ese departamento sigue siendo producto.
+    /// </summary>
+    internal static Func<FilaLinea, bool> Comunes(DatosEleventa e)
+    {
+        var deComunes = e.Departamentos.Where(d => string.Equals(d.Nombre.Trim(), EnvioEleventa.DepartamentoComunes, StringComparison.OrdinalIgnoreCase))
+            .Select(d => d.Id).ToHashSet();
+        var delCatalogo = e.Productos.Select(p => p.Codigo.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return l => l.Codigo.Trim().StartsWith(PrefijoComun, StringComparison.OrdinalIgnoreCase)
+            || (l.DepartamentoId is { } departamento && deComunes.Contains(departamento) && !delCatalogo.Contains(l.Codigo.Trim()));
     }
 
     /// <summary>

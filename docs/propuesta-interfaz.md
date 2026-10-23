@@ -525,7 +525,8 @@ No está en el prototipo:
   cajero del turno; si pasa del umbral, avisa por Telegram. Tarjeta y transferencias salen como información. Quien no
   tiene el permiso ve el corte X y el nombre de quién puede hacerlo.
 - **El del día, para quien tiene «ver y cerrar el corte del día»** (la primera cuenta). Junta todas las cajas y turnos:
-  - lo vendido;
+  - lo vendido: lo cobrado ese día, por la hora en que se cobró (también lo que se cobró sin conexión y subió después de
+    cerrado su turno: ese turno sale en la lista, con su corte en el día en que se hizo; revisión del PR #131);
   - el efectivo esperado y el contado en cada turno, con sus diferencias;
   - las formas de pago;
   - las salidas por categoría, las devoluciones y las cancelaciones;
@@ -553,8 +554,21 @@ Una pestaña para quien tiene «ver reportes de ventas»:
 - Por departamento (con el margen, si tiene el permiso), por cajero (con sus diferencias de corte), por forma de pago y
   lo que más se vende. Exportar a Excel.
 
-El plan dejó los reportes para después de la prueba con una persona real. Aquí va su pantalla para aprobarla junto con
-lo demás; se programan cuando toque.
+El plan dejó los reportes para después de la prueba con una persona real; se adelantaron el 2026-10-22 (por revisar), y la
+parte 1 de la entrega 9 ya está: todo lo de arriba menos exportar a Excel, que es la parte 2
+([avance](plan.md#primero-la-versión-unicaja-entrega-0)). Lo que se decidió al hacerla, por revisar:
+
+- **Con qué se compara:** hoy y la semana, con 52 semanas antes (el mismo día de la semana: un sábado con un sábado); el
+  mes y el año, con las mismas fechas. La semana va de lunes a domingo. Lo que va a la fecha se compara hasta el mismo
+  momento; un periodo que ya pasó, completo.
+- **← y →** llevan al periodo anterior y al siguiente (un día, una semana, un mes o un año completos); los botones de
+  arriba, al de hoy.
+- **En el piloto con eleventa** (la lectura o el envío a eleventa prendidos), solo lo que vendió la caja 2, sin comparar: lo
+  de la caja principal está en los reportes de eleventa.
+- **Lo que cuenta como el corte del día** (revisión del PR #131): las cancelaciones son las que se hicieron en el periodo;
+  el artículo común de eleventa va con el de aquí, y lo que un ticket de eleventa suma sin desglose, aparte. Bajo cada
+  cifra, lo que no hay en este periodo («sin tickets todavía») no se confunde con lo que no hubo el año pasado.
+- **Si un periodo no llega,** se ve el error con «Volver a intentar», no las cifras del periodo anterior.
 
 ## Configuración
 
@@ -772,7 +786,7 @@ la 11 y la 12). Qué hace eleventa que el POS todavía no, en qué entrega va y 
 | 1 | Permisos por usuario: el modelo, la migración desde los roles, la primera cuenta, «Conectar a servidor», los de defecto y la pantalla de usuarios y permisos | Mediano | Después de la 3 |
 | 6 | Entrada con fichas y PIN; Ctrl+U; el corte del turno con solo el total y sin volver a pedir el PIN; el corte del día | Mediano | Con la 1 |
 | 5 | Rendimiento para la caja 2: escanear contra la copia local, con su versión en el cobro; la base de la caja fuera del hilo de la pantalla; solo lo que cambió, avisado por SSE; plazos y estados de la red; imprimir aparte; menos repintado; la prueba de la ráfaga. El lector en una sola llamada ya va en la 0, y no perder escaneos en ráfaga ya está en `main` (#56). La parte 1 ya está (2026-10-15): escanear contra la copia, el cobro con su versión, un solo escritor para la base de la caja y medir el escaneo ([avance](plan.md#primero-la-versión-unicaja-entrega-0)) | Grande | Para dejar eleventa: la caja 2 con el servicio nuevo |
-| 9 | Reportes, los que el dueño usa hoy en eleventa | Grande | Para dejar eleventa |
+| 9 | Reportes, los que el dueño usa hoy en eleventa. La parte 1 ya está (2026-10-22, se adelantó): la pestaña Reportes con hoy, la semana, el mes y el año a la fecha contra el mismo periodo del año pasado (del historial de eleventa), la venta neta, los tickets, el ticket promedio y la utilidad (con su permiso), la gráfica con «Ver como tabla», y por departamento, cajero, forma de pago y lo que más se vende ([avance](plan.md#primero-la-versión-unicaja-entrega-0)). Falta la parte 2: exportar a Excel | Grande | Para dejar eleventa |
 | 7 | Configuración nueva: buscador, grupos, alcance y guardado al momento | Mediano | Después |
 | 8 | Las pantallas de atrás con el mismo patrón de lista y detalle: Productos (abre con la lista, no vacío), Inventario por tareas, Clientes | Grande | Después |
 | 13 | Lo que se señala: el mostrador y la temporada con fotos en su acomodo (Ctrl+M), las fotos desde el celular, la hoja de la temporada y las tarjetas de precio, empezar y terminar la temporada, lo más preguntado. La parte 1 ya está (2026-10-17): Ctrl+M con los exhibidores y las temporadas en su acomodo; el verificador, el chip de la temporada, «Acomodar» y Configuración › Mostrador y temporadas. La parte 2 también (2026-10-17): las fotos, desde el celular (la página del conteo) o la PC (F3), en Ctrl+M, la búsqueda y el verificador, de la base de cada caja. Y la parte 3 (2026-10-17): empezar la temporada con los precios del año pasado, su hoja, las tarjetas de precio (y cuáles volver a imprimir), terminarla con su resumen y lo más preguntado en el verificador, en Productos ([avance](plan.md#primero-la-versión-unicaja-entrega-0)) | Mediano | Después |

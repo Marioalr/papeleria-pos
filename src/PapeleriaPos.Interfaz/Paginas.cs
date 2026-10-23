@@ -13,6 +13,9 @@ public enum Pagina
     Productos,
     Inventario,
     Clientes,
+
+    /// <summary>Los reportes de ventas (entrega 9), para quien tiene «Ver reportes de ventas».</summary>
+    Reportes,
 }
 
 /// <summary>
@@ -129,11 +132,24 @@ public sealed class EtiquetasPorImprimir
     }
 }
 
+/// <summary>Lo que se recuerda de los reportes al salir de ellos y volver: el periodo, el día y si la gráfica va como tabla.</summary>
+public sealed class ReportesVistos
+{
+    public PeriodoReporte Periodo { get; set; }
+
+    /// <summary>Un día del periodo que se ve; vacío: el de hoy.</summary>
+    public DateOnly? Fecha { get; set; }
+
+    /// <summary>«Ver como tabla»: la gráfica va como tabla.</summary>
+    public bool Tabla { get; set; }
+}
+
 /// <summary>Lo que la caja recuerda de sus páginas mientras alguien está adentro.</summary>
 public sealed class EstadoDePaginas
 {
     public ProductosVistos Productos { get; } = new();
     public ClientesVistos Clientes { get; } = new();
+    public ReportesVistos Reportes { get; } = new();
     public EtiquetasPorImprimir Etiquetas { get; } = new();
 }
 

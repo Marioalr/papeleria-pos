@@ -48,6 +48,14 @@ public static class PilotoConEleventa
         "Mientras dure el piloto con eleventa, las entradas y salidas van a eleventa y aquí no se cancelan: no se sabe cómo anota eleventa "
         + "una cancelada. Si te equivocaste, haz la contraria (F7 o F8).";
 
+    /// <summary>
+    /// En los reportes de ventas (entrega 9, 2026-10-22): la base de la caja 2 solo tiene lo suyo, y el historial de eleventa
+    /// que trae es de toda la tienda, así que no se mezclan ni se comparan.
+    /// </summary>
+    public const string ReportesDeLaCaja2 =
+        "Solo lo que vendió la caja 2: lo de la caja principal está en los reportes de eleventa. Mientras dure el piloto no se compara "
+        + "contra el año pasado: el historial de eleventa es de toda la tienda.";
+
     /// <summary>En la ventana de devoluciones: el turno de esta caja no se cierra aquí y duraría días.</summary>
     public const string SoloSeCancelaElMismoDia =
         "Mientras dure el piloto, el corte de esta caja se hace en eleventa: solo se cancela un ticket del mismo día; después, es devolución.";

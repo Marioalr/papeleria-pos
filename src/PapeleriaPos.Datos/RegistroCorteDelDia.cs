@@ -19,9 +19,12 @@ public sealed record PresenciaDeCaja(DateTime? VistoUtc, int? PorSubir, int? Con
 /// El corte del día (entrega 6, docs/propuesta-interfaz.md «Corte», 2026-10-14): todas las cajas y turnos de la
 /// sucursal en un día, para quien tiene «ver y cerrar el corte del día». Los turnos del día son los que tocan ese día:
 /// los que se abrieron, los que se cerraron (uno olvidado de ayer que se corta hoy entra hoy, con su diferencia) y los que
-/// siguen abiertos. Lo vendido, las formas de pago, las salidas, lo fiado, los abonos y las impresiones son lo de esos
-/// turnos que pasó ese día, como en el resumen de Telegram: un turno que viene de otro día cuenta aquí solo lo de hoy (el de
-/// la caja 2 en el piloto suma días: si no, «Vendido hoy» diría lo de todo el piloto). Las devoluciones son todas las de la
+/// siguen abiertos; y el de una venta cobrada ese día que subió tarde (sin conexión, con la hora en que se cobró) después de
+/// que su turno se cerró, en otro día: cuenta lo que vendió este día, sin su corte (revisión del PR #131, 2026-10-22). Lo
+/// vendido, las formas de pago, las salidas, lo fiado, los abonos y las impresiones son lo de esos turnos que pasó ese día,
+/// como en el resumen de Telegram y en los reportes de ventas (lo vendido, por la hora en que se cobró): un turno que viene
+/// de otro día cuenta aquí solo lo de hoy (el de la caja 2 en el piloto suma días: si no, «Vendido hoy» diría lo de todo el
+/// piloto). Las devoluciones son todas las de la
 /// sucursal ese día, como en el resumen: una hecha en eleventa de un ticket de la caja 2 va en el turno de esa venta, que
 /// pudo cerrarse antes (2026-10-17). Lo esperado, lo contado y la diferencia de un turno son los de todo el turno, como en
 /// su corte, y van en el día en que se cortó: el día en que se abrió no los repite (2026-10-17).
@@ -73,9 +76,14 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
         var (desde, hasta) = Rango(fecha);
         var ahora = Ahora;
         var deOtroDia = fecha < Hoy;
-        // Los que tocan el día: se abrieron, se cerraron o siguen abiertos en él.
+        // Los que tocan el día (se abrieron, se cerraron o siguen abiertos en él) y los de lo que se cobró ese día: una venta
+        // sin conexión sube con la hora en que se cobró, aunque su turno se haya cerrado antes, en otro día. Así lo vendido del
+        // día es lo cobrado ese día en la sucursal, como en los reportes de ventas y en el resumen del día.
+        var cobradasEseDia = db.Ventas.Where(v => v.SucursalId == sucursalId && v.Estado == EstadoVenta.Pagada && v.PagadaUtc >= desde && v.PagadaUtc < hasta)
+            .Select(v => v.TurnoId);
         var turnos = await db.Turnos.AsNoTracking()
-            .Where(t => t.SucursalId == sucursalId && t.AbiertoUtc < hasta && (t.CerradoUtc == null || t.CerradoUtc >= desde))
+            .Where(t => t.SucursalId == sucursalId
+                && ((t.AbiertoUtc < hasta && (t.CerradoUtc == null || t.CerradoUtc >= desde)) || cobradasEseDia.Contains(t.Id)))
             .OrderBy(t => t.AbiertoUtc).ToListAsync(ct);
         var ids = turnos.Select(t => t.Id).ToList();
         var ventas = await db.Ventas.AsNoTracking().Include(v => v.Lineas).Include(v => v.Cobros).Where(v => ids.Contains(v.TurnoId)).AsSplitQuery().ToListAsync(ct);
@@ -108,9 +116,9 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
             var cobros = vigentes.SelectMany(v => v.Cobros).ToList();
             long? esperado = null, contado = null, diferencia = null;
             var enContingencia = t.AbiertoEnContingencia;
-            // Su corte va en el día en que se hizo: el de un turno que se cortó otro día no entra en este (su diferencia se
-            // contaría dos veces), y aquí se ve como cerrado ese otro día.
-            if (cortes.TryGetValue(t.Id, out var z) && z.FechaUtc < hasta)
+            // Su corte va en el día en que se hizo: el de un turno que se cortó otro día (después, o antes y aquí está por una
+            // venta que subió tarde) no entra en este (su diferencia se contaría dos veces), y aquí se ve como cerrado ese otro día.
+            if (cortes.TryGetValue(t.Id, out var z) && z.FechaUtc >= desde && z.FechaUtc < hasta)
             {
                 // Lo que dijo su corte: lo que llegó después de él (sin conexión) no lo cambia.
                 (esperado, contado, diferencia) = (z.EsperadoCentavos, z.ContadoCentavos, z.DiferenciaCentavos);
@@ -229,7 +237,8 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
     /// Lo vendido por departamento (<see cref="VentasPorDepartamentoDto"/>) y, con <paramref name="conUtilidad"/>, su costo y la
     /// utilidad del día (<see cref="UtilidadDelDiaDto"/>): cada renglón vendido ese día suma su importe y su costo (el que
     /// guardó al cobrar), y cada renglón devuelto ese día los resta, en el departamento de su producto. El artículo común y las
-    /// impresiones van aparte. Sin <paramref name="conUtilidad"/>, ningún costo sale de aquí.
+    /// impresiones van aparte. Sin <paramref name="conUtilidad"/>, ningún costo sale de aquí. Se cuenta como en los reportes de
+    /// ventas (<see cref="VendidoPorDepartamento"/>).
     /// </summary>
     /// <param name="devueltas">Las devoluciones del día (sin las cancelaciones: un ticket cancelado ya no está en lo vendido).</param>
     private async Task<(VentasPorDepartamentoDto PorDepartamento, UtilidadDelDiaDto? Utilidad)> PorDepartamentoAsync(
@@ -240,37 +249,18 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
         // Lo devuelto puede ser de un ticket de otro día: sus renglones se leen aparte.
         var idsVendidas = lineasDevueltas.Select(l => l.VentaLineaId).Distinct().ToList();
         var deLoDevuelto = await db.VentasLineas.AsNoTracking().Where(l => idsVendidas.Contains(l.Id)).ToDictionaryAsync(l => l.Id, ct);
-        var renglones = vigentes.SelectMany(v => v.Lineas).Select(l => new RenglonDelDia(l, l.ImporteCentavos, l.CostoCentavos))
+        var renglones = vigentes.SelectMany(v => v.Lineas).Select(l => RenglonVendido.De(l, l.ImporteCentavos, l.CostoCentavos))
             .Concat(lineasDevueltas.Where(d => deLoDevuelto.ContainsKey(d.VentaLineaId))
-                .Select(d => new RenglonDelDia(deLoDevuelto[d.VentaLineaId], -d.ImporteCentavos, -d.CostoCentavos)))
+                .Select(d => RenglonVendido.De(deLoDevuelto[d.VentaLineaId], -d.ImporteCentavos, -d.CostoCentavos)))
             .ToList();
 
-        var variantes = renglones.Select(r => r.Linea.VarianteId).OfType<Guid>().Distinct().ToList();
+        var variantes = renglones.Select(r => r.VarianteId).OfType<Guid>().Distinct().ToList();
         var departamentoDe = await db.Variantes.AsNoTracking().Where(v => variantes.Contains(v.Id))
             .Select(v => new { v.Id, v.Producto!.DepartamentoId }).ToDictionaryAsync(v => v.Id, v => v.DepartamentoId, ct);
         var nombres = await db.Departamentos.AsNoTracking().ToDictionaryAsync(d => d.Id, d => d.Nombre, ct);
-        var departamentos = renglones.Where(r => r.Linea.VarianteId is not null && !r.Linea.EsImpresiones)
-            .GroupBy(r => departamentoDe.TryGetValue(r.Linea.VarianteId!.Value, out var d) ? nombres.GetValueOrDefault(d, "Sin departamento") : "Sin departamento")
-            .Select(g => (Nombre: g.Key, Venta: g.Sum(r => r.ImporteCentavos), Costo: g.Sum(r => r.CostoCentavos)))
-            .Where(d => d.Venta != 0 || d.Costo != 0)
-            .OrderByDescending(d => d.Venta).ThenBy(d => d.Nombre, StringComparer.CurrentCultureIgnoreCase)
-            .ToList();
-        var impresiones = renglones.Where(r => r.Linea.EsImpresiones).ToList();
-        var (ventaImpresiones, costoImpresiones) = (impresiones.Sum(r => r.ImporteCentavos), impresiones.Sum(r => r.CostoCentavos));
-        var porDepartamento = new VentasPorDepartamentoDto(
-            departamentos.Select(d => new DepartamentoDelDiaDto(d.Nombre, d.Venta, conUtilidad ? d.Costo : null)).ToList(),
-            ventaImpresiones, conUtilidad ? costoImpresiones : null,
-            renglones.Where(r => r.Linea.VarianteId is null && !r.Linea.EsImpresiones).Sum(r => r.ImporteCentavos));
-        if (!conUtilidad)
-            return (porDepartamento, null);
-        return (porDepartamento, new UtilidadDelDiaDto(departamentos.Sum(d => d.Venta) + ventaImpresiones, departamentos.Sum(d => d.Costo) + costoImpresiones,
-            // Los servicios (lo del catálogo que no lleva inventario) se cobran con costo 0 hasta que lleguen sus recetas.
-            renglones.Where(r => r.Linea.VarianteId is not null && !r.Linea.EsImpresiones && !r.Linea.LlevaInventario && r.Linea.CostoCentavos == 0)
-                .Sum(r => r.ImporteCentavos)));
+        var (porDepartamento, utilidad) = VendidoPorDepartamento.Armar(renglones, departamentoDe, nombres, conUtilidad);
+        return (porDepartamento, conUtilidad ? utilidad : null);
     }
-
-    /// <summary>Un renglón de lo vendido por departamento: lo vendido (en positivo) o lo devuelto (en negativo), con su costo.</summary>
-    private sealed record RenglonDelDia(VentaLinea Linea, long ImporteCentavos, long CostoCentavos);
 
     /// <summary>
     /// Cierra el día: queda en la bitácora (con la suma de las diferencias de corte) y manda el resumen por Telegram, si no
@@ -297,8 +287,10 @@ public sealed class RegistroCorteDelDia(PosDbContext db)
             $"Cerró el día {fecha:dd/MM/yyyy}: {dia.Turnos.Count} {(dia.Turnos.Count == 1 ? "turno" : "turnos")}, vendido {dia.VendidoCentavos / 100m:N2}, "
             + $"diferencias de corte {diferencias / 100m:N2}",
             diferencias);
+        // Los cortes Z del día: el de un turno que está aquí por una venta que subió tarde se hizo otro día.
         var ids = dia.Turnos.Select(t => t.Id).ToList();
-        var cortesZ = await db.Cortes.AsNoTracking().Where(c => c.Tipo == TipoCorte.Z && ids.Contains(c.TurnoId))
+        var (desde, hasta) = Rango(fecha);
+        var cortesZ = await db.Cortes.AsNoTracking().Where(c => c.Tipo == TipoCorte.Z && ids.Contains(c.TurnoId) && c.FechaUtc >= desde && c.FechaUtc < hasta)
             .OrderBy(c => c.FechaUtc).Select(c => c.Id).ToListAsync(ct);
         var resumen = await AlertasTelegram.ResumenAlCerrarElDiaAsync(db, sucursalId, fecha, cortesZ, ct);
         await db.SaveChangesAsync(ct);

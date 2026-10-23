@@ -97,8 +97,8 @@
 
 | eleventa | Uso | El POS hoy | Falta | Dónde | Tamaño |
 |---|---|---|---|---|---|
-| Reportes › Reporte de ventas: semana, mes, año o un periodo; por día, mes o año; ganancia; por departamento y por forma de pago | La usan: ventas por día, mes y año a la fecha, y contra el año anterior (dueño, 2026-10-08) | Las ventas de hoy de cada caja, el corte del día y el diagnóstico en Excel (solo con lo importado de eleventa) | La pestaña de reportes, con el año anterior del historial de eleventa | Entrega 9, después de aprobar la prueba (2026-10-09) | Grande |
-| F3 › Ventas por período: fechas y caja; a Excel o a la impresora de tickets | Por confirmar | No hay | Con la entrega 9 | Entrega 9 | En la 9 |
+| Reportes › Reporte de ventas: semana, mes, año o un periodo; por día, mes o año; ganancia; por departamento y por forma de pago | La usan: ventas por día, mes y año a la fecha, y contra el año anterior (dueño, 2026-10-08) | **Hecho, parte 1 (2026-10-22; se adelantó).** La pestaña Reportes: hoy, la semana, el mes y el año a la fecha, y con ← → los anteriores completos (un mes cerrado, un año), siempre contra el mismo periodo del año pasado (el historial de eleventa más lo de este POS); la venta neta, los tickets, el ticket promedio y la utilidad con su margen (con «Ver costos, utilidad y margen»); la gráfica por hora, día o mes, también como tabla; por departamento (con su margen), por cajero (con sus diferencias de corte), por forma de pago y lo que más se vende. En el piloto, solo lo de la caja 2. Del historial de eleventa, lo devuelto cuenta el día de la venta (el ticket ya lo trae restado): un mes cerrado puede diferir un poco del reporte de eleventa | Exportar a Excel; un periodo libre (de una fecha a otra), si lo usan | Entrega 9, parte 2 (Excel) | Mediano |
+| F3 › Ventas por período: fechas y caja; a Excel o a la impresora de tickets | Por confirmar | Los reportes (2026-10-22): un día, una semana, un mes o un año, también los anteriores; de todas las cajas | De una fecha a otra y por caja; a Excel o a la impresora de tickets, si lo usan | Entrega 9, parte 2 (Excel) | Chico |
 | Ventas por cliente; Pulso y los reportes en la nube | No la usan: sin clientes; de eleventa solo usan el punto de venta | — | — | — | — |
 
 ### Configuración, usuarios y equipo
@@ -128,7 +128,8 @@
 ## El orden
 
 Va con el orden aprobado de las entregas (0, 10, 3, 2, 1, 6, 5, 9, 7, 8, 13, 4, 11, 12; ya están la 0, la 10, la 3,
-la 2, la 1, la 6, la 7 y la 8) y con las decisiones del [plan](plan.md#la-versión-unicaja-y-el-piloto-en-la-caja-2).
+la 2, la 1, la 6, la 7, la 8 y la parte 1 de la 9) y con las decisiones del
+[plan](plan.md#la-versión-unicaja-y-el-piloto-en-la-caja-2).
 
 **Lo que cambia el piloto:** mientras la caja 2 manda cada venta a eleventa, eleventa sigue completo. Sus reportes, sus
 cortes, sus existencias y sus altas siguen sirviendo como hoy. Por eso al piloto lo detienen el puente y lo básico de la
@@ -177,7 +178,7 @@ Primero el modo multicaja, al aprobar el piloto (decisión del dueño, 2026-10-1
 | 2 | **El modo multicaja con el puente:** un solo servicio en la caja principal y el puente escribiendo por las dos cajas. Antes, revisar los respaldos que hace eleventa al cerrarse y medir que la principal aguante eleventa, Firebird y el servicio juntos | Mediano |
 | 3 | **La red de la tienda** (el arreglo, por aprobar) y, en el POS, volver a buscar a la principal, «sin internet» o «sin red local» y la bitácora de red | Chico, más dos fines de semana |
 | 4 | **Las dos cajas reales en Windows y el día pico** con el simulador de cajas (ya está desde el 2026-10-17; falta correrlo en la caja principal, [guía](pruebas-en-tienda.md#el-día-pico-en-la-caja-principal-real)) | Mediano |
-| 5 | **La entrega 9, los reportes que el dueño usa en eleventa:** ventas por día, mes y año a la fecha contra el año anterior, con la ganancia para quien la ve; después por cajero, departamento y forma de pago, lo más vendido y Excel | Grande |
+| 5 | **La entrega 9, los reportes que el dueño usa en eleventa:** ventas por día, mes y año a la fecha contra el año anterior, con la ganancia para quien la ve; después por cajero, departamento y forma de pago, lo más vendido y Excel. La parte 1 ya está (2026-10-22, se adelantó): todo menos Excel | Grande; falta Excel |
 | 6 | **El corte del día como el de eleventa:** impreso, de otra fecha y con la ganancia y los departamentos, y el historial de cortes. Ya están los dos (2026-10-17) | Chico |
 | 7 | **Departamentos en el POS:** darlos de alta, cambiarles el nombre y desactivarlos | Chico |
 | 8 | **Respaldo fuera de la tienda** con una restauración de ensayo, y la vigilancia de la caja principal | Chico |
@@ -202,7 +203,8 @@ Para decidir; no cambian ninguna decisión:
 - **La entrega 9 justo después de aprobar la prueba,** antes de la 13 y la 4, como ya va en el orden. Es lo único que el
   dueño usa hoy en eleventa y el POS no tiene. Puede empezar por lo que hace el reporte de ventas de eleventa (un
   periodo, por día, mes o año, con la ganancia y por departamento) más la comparación contra el año anterior, y dejar lo
-  demás de la 9 para después.
+  demás de la 9 para después. Se adelantó (2026-10-22): la parte 1 ya está, con todo eso y lo demás de la propuesta menos
+  Excel.
 - **Dejar eleventa en dos pasos:** el modo multicaja con el puente escribiendo, mientras eleventa sigue completo y
   regresar es inmediato; y apagar el puente cuando el POS tenga la entrega 9 y un mes cerrado que cuadre con eleventa.
   Así, exportar la base a eleventa (pendiente desde el 2026-10-11) no hace falta para poder regresar mientras dure el
@@ -256,7 +258,8 @@ cambia lo que falta ([guía](pruebas-en-tienda.md#fin-de-semana-del-17-y-18-de-o
   en el POS, 2026-10-22, salvo en el piloto: si alguien cancela una en eleventa, verla con `observar-eleventa`, sin
   cancelar una de prueba, para saber cómo la anota y que el puente pueda mandarla).
 - **Los reportes:** qué pantalla da hoy las ventas por día, mes y año (Reportes › Reporte de ventas, o F3 › Ventas por
-  período), para que la entrega 9 empiece por esa.
+  período). La parte 1 de la entrega 9 ya está (2026-10-22): anotar si también se pide un periodo de una fecha a otra, por
+  caja, o si se manda a Excel o a la impresora de tickets.
 - **El inventario:** cómo se registra lo que llega (Agregar inventario) y si se usan los productos bajos en inventario
   (con un mínimo por producto), el reporte de inventario o los movimientos. El POS ya los tiene (2026-10-17): si en
   eleventa hay mínimos puestos, anotar cuántos, para pasarlos en la importación final.
