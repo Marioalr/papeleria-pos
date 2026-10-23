@@ -113,9 +113,15 @@ public sealed class ContingenciaTests(ServicioDePrueba servicio) : IClassFixture
         Assert.Equal("sin-conexion", sinOtrasCosas.Codigo);
         Assert.True(contingencia.Pendientes > 0);
 
-        // Vuelve: sube la bandeja y ya trabaja en línea.
+        // Vuelve: sube la bandeja y ya trabaja en línea. Latidos hasta que contesta y no queda nada por subir, como los repite la
+        // caja: al volver, el primero prueba antes quién es la caja principal, y en una máquina ocupada (el CI de Windows) puede
+        // pasar de su plazo y terminar sin subir nada (pasó una vez: quedaban 6 por subir).
         interruptor.Caido = false;
-        await contingencia.LatidoAsync();
+        for (var latido = 1; !(contingencia.EnLinea && contingencia.Pendientes == 0); latido++)
+        {
+            Assert.True(latido <= 10, $"En 10 latidos no subió todo: quedan {contingencia.Pendientes}.");
+            await contingencia.LatidoAsync();
+        }
 
         Assert.Equal(0, contingencia.Pendientes);
         Assert.Equal(0, contingencia.ConError);
